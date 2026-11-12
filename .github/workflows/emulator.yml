@@ -5,7 +5,7 @@ name: Emulator-Tests
 
 on:
   push:
-    branches: [main, 'claude/**']
+    branches: ['**']
     paths: ['app/maestro/**', 'tools/ci-emulator.sh', 'tools/run-maestro.sh', '.github/workflows/emulator.yml']
   workflow_dispatch:
 

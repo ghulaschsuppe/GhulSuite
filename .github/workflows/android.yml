@@ -3,7 +3,7 @@ name: Android & Kern
 
 on:
   push:
-    branches: [main, 'claude/**']
+    branches: ['**']
     paths: ['core/**', 'app/**', 'docs/testvectors/**', 'tools/**', '.github/workflows/android.yml', '.github/actions/ftps-upload/**',
             '!app/maestro/**', '!tools/ci-emulator.sh', '!tools/run-maestro.sh']
   pull_request:
@@ -206,14 +206,23 @@ jobs:
         with:
           name: ghulsuite-windows-dev
           path: dist/
-      - name: Upload auf den eigenen Testserver (Ordner ghulsuite/download)
+      - name: Zielordner auf dem Testserver
+        id: dest
+        shell: bash
+        run: |
+          # main -> ghulsuite/, every other branch -> ghulsuite/branches/<branch>/
+          if [ "$GITHUB_REF_NAME" = "main" ]; then dir=ghulsuite; else
+            b=$(printf '%s' "$GITHUB_REF_NAME" | tr -c 'A-Za-z0-9._-' '-'); dir="ghulsuite/branches/$b"; fi
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+
+      - name: Upload auf den eigenen Testserver (Ordner ghulsuite/download bzw. Branch-Ordner)
         uses: ./.github/actions/ftps-upload
         with:
           server: ${{ secrets.FTP_SERVER }}
           user: ${{ secrets.FTP_USER }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./dist/
-          remote-dir: ghulsuite/download/
+          remote-dir: ${{ steps.dest.outputs.dir }}/download/
 
   build:
     runs-on: ubuntu-latest
@@ -288,7 +297,16 @@ jobs:
           path: app/composeApp/build/screenshots/
           retention-days: 30
 
-      - name: Upload auf den eigenen Testserver (Ordner ghulsuite/download)
+      - name: Zielordner auf dem Testserver
+        id: dest
+        shell: bash
+        run: |
+          # main -> ghulsuite/, every other branch -> ghulsuite/branches/<branch>/
+          if [ "$GITHUB_REF_NAME" = "main" ]; then dir=ghulsuite; else
+            b=$(printf '%s' "$GITHUB_REF_NAME" | tr -c 'A-Za-z0-9._-' '-'); dir="ghulsuite/branches/$b"; fi
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+
+      - name: Upload auf den eigenen Testserver (Ordner ghulsuite/download bzw. Branch-Ordner)
         if: github.event_name != 'pull_request' && github.repository_owner == 'ghulaschsuppe'
         uses: ./.github/actions/ftps-upload
         with:
@@ -296,7 +314,7 @@ jobs:
           user: ${{ secrets.FTP_USER }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./dist/
-          remote-dir: ghulsuite/download/
+          remote-dir: ${{ steps.dest.outputs.dir }}/download/
 
   emulator:
     name: Emulator-Tests (Maestro-Abläufe aus app/maestro)
