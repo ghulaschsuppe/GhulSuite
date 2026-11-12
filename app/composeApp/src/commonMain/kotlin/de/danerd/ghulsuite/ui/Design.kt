@@ -14,6 +14,9 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.draw.shadow
+import de.danerd.ghulsuite.resources.Res
+import de.danerd.ghulsuite.resources.a_back
+import de.danerd.ghulsuite.resources.a_lock_now
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -509,7 +512,7 @@ fun GhulTopBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        if (onBack != null) BarIcon(backIcon, org.jetbrains.compose.resources.stringResource(de.danerd.ghulsuite.resources.Res.string.a_back), onClick = onBack)
+        if (onBack != null) BarIcon(backIcon, org.jetbrains.compose.resources.stringResource(Res.string.a_back), onClick = onBack)
         Column(Modifier.weight(1f).padding(start = if (onBack == null) 4.dp else 0.dp)) {
             if (title.isNotEmpty()) {
                 Text(
@@ -522,7 +525,7 @@ fun GhulTopBar(
             context?.invoke()
         }
         actions()
-        if (showLock) BarIcon(androidx.compose.material.icons.Icons.Outlined.Lock, org.jetbrains.compose.resources.stringResource(de.danerd.ghulsuite.resources.Res.string.a_lock_now), onClick = onLock)
+        if (showLock) BarIcon(androidx.compose.material.icons.Icons.Outlined.Lock, org.jetbrains.compose.resources.stringResource(Res.string.a_lock_now), onClick = onLock)
     }
 }
 
