@@ -219,7 +219,7 @@ function topbar(title, opts = {}) {
     <button class="icon-btn" data-act="lock" aria-label="Sperren">${icon('lock')}</button></div>`;
 }
 function nav() {
-  const tabs = [['pass', 'GhulPass', 'key', 'c-pass'], ['auth', 'GhulAuth', 'shieldcheck', 'c-auth'], ['drive', 'GhulDrive', 'cloud', 'c-drive'], ['mail', 'GhulMail', 'mail', 'c-mail'], ['settings', 'Optionen', 'sliders', 'c-set']];
+  const tabs = [['pass', 'GhulPass', 'key', 'c-pass'], ['auth', 'GhulAuth', 'shieldcheck', 'c-auth'], ['drive', 'GhulDrive', 'cloud', 'c-drive'], ['mail', 'GhulMail', 'mail', 'c-mail'], ['cal', 'GhulCal', 'cal', 'c-cal'], ['settings', 'Optionen', 'sliders', 'c-set']];
   const unread = MAILS.filter((m) => m.unread && !S.read[m.id]).length;
   return `<nav class="nav">${tabs.map(([id, label, ic, c]) => `<button class="${c} ${S.tab === id ? 'on' : ''}" data-act="tab" data-arg="${id}">
     <span class="ind">${icon(ic)}${id === 'mail' && unread ? `<span class="badge">${unread}</span>` : ''}</span>${label}</button>`).join('')}</nav>`;
@@ -228,12 +228,12 @@ function nav() {
 // --- start and unlock ----------------------------------------------------------------------------
 function brand(sub) {
   return `<div class="hero"><div class="logo">${icon('shield')}</div><h1>GhulSuite</h1>
-    <div class="bars"><i class="bg-pass"></i><i class="bg-auth"></i><i class="bg-drive"></i><i class="bg-mail"></i></div>${sub ? `<p>${sub}</p>` : ''}</div>`;
+    <div class="bars"><i class="bg-pass"></i><i class="bg-auth"></i><i class="bg-drive"></i><i class="bg-mail"></i><i class="bg-cal"></i></div>${sub ? `<p>${sub}</p>` : ''}</div>`;
 }
 function startScreen() {
   const opt = (ic, cls, t, s, act, primary) => `<button class="card row plain" data-act="${act}">
     <span class="avatar ${cls}">${icon(ic)}</span><span class="grow"><span class="t">${t}</span><span class="s">${s}</span></span>${icon('chev', 'chev')}</button>`;
-  return `<div class="screen">${brand('Passwörter, 2FA, Dateien und Mail – verschlüsselt auf deinen Geräten und deinem eigenen Server.')}
+  return `<div class="screen">${brand('Passwörter, 2FA, Dateien, Mail und Kalender – verschlüsselt auf deinen Geräten und deinem eigenen Server.')}
     ${opt('plus', 'a0', 'Neu einrichten', 'Master-Passwort + Security Key oder Schlüsseldatei', 'start-new')}
     ${opt('cloud', 'a1', 'Von meinem Server holen', 'Suite liegt schon auf deinem Server', 'start-new')}
     ${opt('folder', 'a2', 'Vorhandene Suite öffnen', 'Ordner auf dem Gerät, USB-Stick, Cloud-Ordner', 'start-new')}
@@ -766,10 +766,12 @@ function screenHtml() {
       case 'thread': return mailThread(t.id);
       case 'compose': return composeScreen(t.kind);
       case 'set-page': return settingsPage(t.id);
+      case 'cal-event': return calEvent(t.id, t.day);
+      case 'cal-edit': return calEdit();
       default: break;
     }
   }
-  const tabs = { pass: passList, auth: authScreen, drive: driveScreen, mail: mailScreen, settings: settingsScreen };
+  const tabs = { pass: passList, auth: authScreen, drive: driveScreen, mail: mailScreen, cal: () => calScreen(), settings: settingsScreen };
   if (S.tab === 'drive' && S.select) return tabs[S.tab]().replace(/<button class="fab[^]*?<\/button>/, '') + selBar();
   return tabs[S.tab]() + nav();
 }
@@ -877,10 +879,12 @@ $('mark-new').addEventListener('change', (ev) => document.body.classList.toggle(
 const JUMPS = [
   ['Start', 'start'], ['Entsperren', 'unlock'], ['GhulPass', 'app:pass'], ['Eintrag', 'app:pass:entry:1'], ['Sicherheitscheck', 'app:pass:security'],
   ['Generator', 'app:pass:gen'], ['GhulAuth', 'app:auth'], ['GhulDrive', 'app:drive'], ['GhulMail', 'app:mail'], ['Mail lesen', 'app:mail:thread:1'],
-  ['Mail schreiben', 'app:mail:compose:new'], ['Optionen', 'app:settings'], ['Mail-Optionen', 'app:settings:set-page:m-mail'],
+  ['Mail schreiben', 'app:mail:compose:new'], ['GhulCal', 'app:cal'], ['Termin', 'app:cal:cal-event:2'], ['Neuer Termin', 'app:cal:cal-edit:new'],
+  ['Optionen', 'app:settings'], ['Mail-Optionen', 'app:settings:set-page:m-mail'], ['Kalender-Optionen', 'app:settings:set-page:m-cal'],
 ];
 $('jump').innerHTML = JUMPS.map(([l, a]) => `<button class="chip" data-act="jump" data-arg="${a}">${l}</button>`).join('');
 const PROPOSALS = [
+  ['GhulCal bauen', 'Kalender als eigener verschlüsselter Tresor (.ghlcal): Monat, Woche, Tag, Liste, Serien, Erinnerungen, Feiertage offline, Schnell-Eintragen, .ics-Austausch – bewusst ohne CalDAV.'],
   ['Dieses Design in die App übernehmen', 'Einheitliche Bausteine, neue Startseiten je Bereich, neu gegliederte Optionen. Danach Screenshots zum Abgleich.'],
   ['GhulPass ausbauen', 'Favoriten, Kategorien, zuletzt verwendet, Sicherheitscheck, Passwortverlauf, Passphrasen, Anhänge, 2FA-Code direkt im Eintrag.'],
   ['GhulMail zu einem echten Mailprogramm machen', 'Gemeinsamer Posteingang, Unterhaltungen, Vorschautext, verschlüsselter Offline-Speicher, Entwürfe, Adressvorschläge, Wischgesten.'],
