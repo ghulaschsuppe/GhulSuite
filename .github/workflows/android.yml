@@ -18,6 +18,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  # No incremental build data in CI: smaller caches, same result.
+  CARGO_INCREMENTAL: "0"
   NDK_VERSION: 28.2.13676358
   CARGO_NDK_VERSION: 4.1.2
 
@@ -39,23 +41,73 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      # Compiled Rust code from earlier runs: only what changed is built again.
+      - name: Rust-Zwischenspeicher
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-audit-${{ hashFiles('core/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-audit-${{ hashFiles('core/Cargo.lock') }}-
+            ${{ runner.os }}-audit-
       - name: cargo audit (Ausnahmen begründet in docs/AUDIT.md)
         working-directory: core
         run: |
           rustup toolchain install stable --profile minimal
-          cargo install cargo-audit --locked --quiet
+          command -v cargo-audit > /dev/null || cargo install cargo-audit --locked --quiet
           cargo audit
+
+  # Which parts changed: fuzzing only runs when the core (or its test vectors) changed.
+  changes:
+    name: Geänderte Bereiche
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      core: ${{ steps.c.outputs.core }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - id: c
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$BASE" ] || [ "$BASE" = 0000000000000000000000000000000000000000 ] || ! git cat-file -e "$BASE^{commit}" 2> /dev/null; then
+            echo "core=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if git diff --name-only "$BASE" HEAD | grep -qE '^(core/|docs/testvectors/)'; then core=true; else core=false; fi
+          echo "Kern geändert: $core"; echo "core=$core" >> "$GITHUB_OUTPUT"
 
   fuzz:
     name: Fuzzing (je 2 Minuten)
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      # Compiled Rust code from earlier runs: only what changed is built again.
+      - name: Rust-Zwischenspeicher
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            core/fuzz/target/
+          key: ${{ runner.os }}-fuzz-${{ hashFiles('core/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-fuzz-${{ hashFiles('core/Cargo.lock') }}-
+            ${{ runner.os }}-fuzz-
       - name: Nightly und cargo-fuzz
         run: |
           rustup toolchain install nightly --profile minimal
-          cargo install cargo-fuzz --locked
+          command -v cargo-fuzz > /dev/null || cargo install cargo-fuzz --locked
       - name: Fuzzing
         working-directory: core/fuzz
         run: |
@@ -81,6 +133,20 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      # Compiled Rust code from earlier runs: only what changed is built again.
+      - name: Rust-Zwischenspeicher
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            core/target/
+          key: ${{ runner.os }}-network-${{ hashFiles('core/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-network-${{ hashFiles('core/Cargo.lock') }}-
+            ${{ runner.os }}-network-
 
       - name: Testserver starten (SFTP, IMAP, SMTP – nur lokal für die Netzwerk-Tests)
         timeout-minutes: 20
@@ -148,6 +214,21 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      # Compiled Rust code from earlier runs: only what changed is built again.
+      - name: Rust-Zwischenspeicher
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            core/target/
+            app/composeApp/build/rust/
+          key: ${{ runner.os }}-windows-${{ hashFiles('core/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-windows-${{ hashFiles('core/Cargo.lock') }}-
+            ${{ runner.os }}-windows-
 
       - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
         with:
@@ -229,6 +310,21 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      # Compiled Rust code from earlier runs: only what changed is built again.
+      - name: Rust-Zwischenspeicher
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            core/target/
+            app/composeApp/build/rust/
+          key: ${{ runner.os }}-build-${{ hashFiles('core/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-build-${{ hashFiles('core/Cargo.lock') }}-
+            ${{ runner.os }}-build-
 
       - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
         with:
@@ -244,7 +340,7 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal
           rustup target add aarch64-linux-android x86_64-linux-android
-          cargo install cargo-ndk --locked --version "$CARGO_NDK_VERSION"
+          cargo ndk --version 2> /dev/null | grep -q "$CARGO_NDK_VERSION" || cargo install cargo-ndk --locked --force --version "$CARGO_NDK_VERSION"
 
       - name: Android NDK
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION" > /dev/null
