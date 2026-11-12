@@ -267,15 +267,28 @@ mod imp {
                 pwszHashAlgId: WEBAUTHN_HASH_ALGORITHM_SHA_256,
             };
             let mut enable: BOOL = 1;
-            let mut ext = [WEBAUTHN_EXTENSION {
-                pwszExtensionIdentifier: WEBAUTHN_EXTENSIONS_IDENTIFIER_HMAC_SECRET,
-                cbExtension: std::mem::size_of::<BOOL>() as u32,
-                pvExtension: &mut enable as *mut BOOL as *mut _,
-            }];
+            // credProtect 3: the key uses the credential only after PIN verification. Not
+            // required, so keys without the extension still work.
+            let mut protect = WEBAUTHN_CRED_PROTECT_EXTENSION_IN {
+                dwCredProtect: WEBAUTHN_USER_VERIFICATION_REQUIRED,
+                bRequireCredProtect: 0,
+            };
+            let mut ext = [
+                WEBAUTHN_EXTENSION {
+                    pwszExtensionIdentifier: WEBAUTHN_EXTENSIONS_IDENTIFIER_HMAC_SECRET,
+                    cbExtension: std::mem::size_of::<BOOL>() as u32,
+                    pvExtension: &mut enable as *mut BOOL as *mut _,
+                },
+                WEBAUTHN_EXTENSION {
+                    pwszExtensionIdentifier: WEBAUTHN_EXTENSIONS_IDENTIFIER_CRED_PROTECT,
+                    cbExtension: std::mem::size_of::<WEBAUTHN_CRED_PROTECT_EXTENSION_IN>() as u32,
+                    pvExtension: &mut protect as *mut WEBAUTHN_CRED_PROTECT_EXTENSION_IN as *mut _,
+                },
+            ];
             let mut options: WEBAUTHN_AUTHENTICATOR_MAKE_CREDENTIAL_OPTIONS = unsafe { std::mem::zeroed() };
             options.dwVersion = WEBAUTHN_AUTHENTICATOR_MAKE_CREDENTIAL_OPTIONS_VERSION_3;
             options.dwTimeoutMilliseconds = TIMEOUT_MS;
-            options.Extensions = WEBAUTHN_EXTENSIONS { cExtensions: 1, pExtensions: ext.as_mut_ptr() };
+            options.Extensions = WEBAUTHN_EXTENSIONS { cExtensions: ext.len() as u32, pExtensions: ext.as_mut_ptr() };
             // Only external security keys: Windows Hello has no hmac-secret.
             options.dwAuthenticatorAttachment = WEBAUTHN_AUTHENTICATOR_ATTACHMENT_CROSS_PLATFORM;
             options.bRequireResidentKey = 0;
