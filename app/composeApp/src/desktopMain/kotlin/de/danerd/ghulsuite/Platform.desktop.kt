@@ -192,3 +192,7 @@ actual fun rememberTakePhoto(onResult: (ByteArray?) -> Unit): () -> Unit = { onR
 
 actual fun deviceInfo(): String =
     "${System.getProperty("os.name")} ${System.getProperty("os.version")} (${System.getProperty("os.arch")}) · Java ${System.getProperty("java.version")}"
+
+actual fun applyAppLanguage(tag: String) {
+    // Takes effect at the next start (Main.kt applies the stored language before the window opens).
+}

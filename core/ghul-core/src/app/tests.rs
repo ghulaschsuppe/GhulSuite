@@ -1753,6 +1753,17 @@ fn pass_extras_history_attachments_move_and_security_check() {
     let extras = s.entry_extras(privat.clone(), id.clone()).unwrap();
     assert!(extras.created > 0 && !extras.favorite && extras.history.is_empty());
 
+    // Exporting single entries needs the master password and contains only those entries.
+    let forum = s.save_entry(privat.clone(), login("Forum", "du", "Anders2")).unwrap();
+    assert!(matches!(
+        s.export_entries(privat.clone(), vec![id.clone()], "falsch".into()),
+        Err(GhulError::WrongPassword)
+    ));
+    let one =
+        String::from_utf8(s.export_entries(privat.clone(), vec![id.clone()], "pw-123456".into()).unwrap()).unwrap();
+    assert!(one.contains("Bank") && one.contains("Kurz1") && !one.contains("Forum"));
+    s.delete_entry(privat.clone(), forum).unwrap();
+
     // Password history: the old password is kept when it changes, newest first.
     let mut e = s.get_entry(privat.clone(), id.clone()).unwrap();
     for f in e.fields.iter_mut().filter(|f| f.name == "password") {

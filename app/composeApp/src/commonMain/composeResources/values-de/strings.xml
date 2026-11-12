@@ -947,6 +947,14 @@
     <string name="about_made_by">Made by Daniel Erdmann · 2026</string>
     <string name="about_made_by_sub">Selbst gehostete Passwörter, 2FA, Dateien und Mail – Open Source unter AGPL-3.0.</string>
     <string name="about_trademark">„GhulSuite“ und das Logo sind Kennzeichen von Daniel Erdmann. Veränderte Fassungen brauchen einen eigenen Namen.</string>
+    <string name="pass_export_one">Eintrag exportieren</string>
+    <string name="pass_export_one_sub">Als unverschlüsselte CSV-Datei</string>
+    <string name="pass_export_one_warning">Die Datei enthält das Passwort im Klartext. Lösche sie, sobald du sie nicht mehr brauchst.</string>
+    <string name="set_language">Sprache</string>
+    <string name="set_language_system">Wie das System</string>
+    <string name="set_language_de">Deutsch</string>
+    <string name="set_language_en">English</string>
+    <string name="set_language_note">Unter Windows gilt die neue Sprache nach einem Neustart der App.</string>
     <string name="mail_images_blocked">%1$s Bild(er) aus dem Internet blockiert – sie könnten dem Absender verraten, dass du die Mail gelesen hast.</string>
     <string name="mail_images_load">Bilder laden</string>
     <string name="mail_images_always">Immer für diesen Absender</string>

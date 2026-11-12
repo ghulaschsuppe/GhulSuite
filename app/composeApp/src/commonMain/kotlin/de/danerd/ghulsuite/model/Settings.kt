@@ -115,6 +115,8 @@ class Settings(private val store: KeyValueStore) {
     // --- GhulMail
     /** Swipe left: 0 archive, 1 delete, 2 mark as read. */
     var mailSwipeLeft by int("mail_swipe_left", 0)
+    /** App language: "" follows the system, otherwise a language tag ("de", "en"). */
+    var appLanguage by str("app_language", "")
     /** Senders whose HTML mails load images from the internet without asking (lower case, newline separated). */
     var mailImageSenders by str("mail_image_senders", "")
 

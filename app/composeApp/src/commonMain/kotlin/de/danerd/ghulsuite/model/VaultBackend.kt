@@ -126,6 +126,8 @@ interface VaultBackend {
     ): ImportResultUi
     /** Unencrypted export of one vault (CSV or otpauth links); needs the master password. */
     suspend fun exportPlain(vaultId: String, password: String): ByteArray
+    /** Some entries as unencrypted CSV (or otpauth links), only with the master password. */
+    suspend fun exportEntries(vaultId: String, ids: List<String>, password: String): ByteArray = throw UnsupportedOperationException()
 
     // --- Autofill (Android)
     fun autofillStatus(): AutofillStatus

@@ -123,7 +123,9 @@ fn parse_zip(data: &[u8]) -> Result<Parsed> {
     let names: Vec<String> = zip.file_names().filter_map(|n| n.ok().map(|n| n.into_owned())).collect();
     let pick = names
         .iter()
-        .find(|n| n.ends_with("data.json"))
+        // 1Password (.1pux): the items are in "export.data" (JSON).
+        .find(|n| n.ends_with("export.data"))
+        .or_else(|| names.iter().find(|n| n.ends_with("data.json")))
         .or_else(|| names.iter().find(|n| n.ends_with(".json")))
         .or_else(|| names.iter().find(|n| n.ends_with(".csv")))
         .cloned()
@@ -137,6 +139,11 @@ fn parse_zip(data: &[u8]) -> Result<Parsed> {
     }
     let mut buf = Zeroizing::new(Vec::new());
     file.take(MAX_IMPORT_BYTES).read_to_end(&mut buf).map_err(|_| GhulError::ImportUnknownFormat)?;
+    if pick.ends_with("export.data") {
+        let text = std::str::from_utf8(&buf).map_err(|_| GhulError::ImportUnknownFormat)?;
+        let json: Json = serde_json::from_str(text).map_err(|_| GhulError::ImportUnknownFormat)?;
+        return parse_json(&json);
+    }
     parse(&buf, &pick)
 }
 
@@ -175,6 +182,10 @@ fn parse_json(json: &Json) -> Result<Parsed> {
     if let Some(vaults) = json.get("vaults").and_then(Json::as_object) {
         return Ok(parse_proton_pass(vaults));
     }
+    // 1Password (.1pux)
+    if let Some(accounts) = json.get("accounts").and_then(Json::as_array) {
+        return Ok(parse_1password(accounts));
+    }
     // Proton Authenticator and anything else with otpauth links
     let mut uris = Vec::new();
     collect_uris(json, &mut uris);
@@ -189,6 +200,120 @@ fn parse_json(json: &Json) -> Result<Parsed> {
         add_uri(&mut p, &u);
     }
     Ok(p)
+}
+
+/// 1Password 1PUX export: accounts → vaults → items (logins, passwords, notes, cards).
+fn parse_1password(accounts: &[Json]) -> Parsed {
+    let mut p = Parsed { format: "1Password (1PUX)".into(), ..Default::default() };
+    let items = accounts
+        .iter()
+        .flat_map(|a| a.get("vaults").and_then(Json::as_array).cloned().unwrap_or_default())
+        .flat_map(|v| {
+            let name = v.get("attrs").map(|a| s(a, "name").to_owned()).unwrap_or_default();
+            v.get("items")
+                .and_then(Json::as_array)
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .map(move |i| (name.clone(), i))
+        });
+    for (vault, item) in items {
+        if s(&item, "state") == "archived" || item.get("trashed").and_then(Json::as_bool) == Some(true) {
+            continue;
+        }
+        let overview = item.get("overview").cloned().unwrap_or(Json::Null);
+        let details = item.get("details").cloned().unwrap_or(Json::Null);
+        let title = s(&overview, "title").to_owned();
+        let category = s(&item, "categoryUuid");
+        let mut d = match category {
+            "001" | "005" => Draft::new("login"),
+            "003" => Draft::new("note"),
+            "002" => Draft::new("card"),
+            _ => {
+                p.skipped += 1;
+                continue;
+            }
+        };
+        d.text("title", &title);
+        let mut username = String::new();
+        for f in details.get("loginFields").and_then(Json::as_array).into_iter().flatten() {
+            match s(f, "designation") {
+                "username" => username = s(f, "value").to_owned(),
+                "password" => d.secret("password", s(f, "value")),
+                _ => {}
+            }
+        }
+        if category == "005" {
+            d.secret("password", s(&details, "password"));
+        }
+        if !username.is_empty() {
+            d.text("username", &username);
+        }
+        let mut urls: Vec<String> = overview
+            .get("urls")
+            .and_then(Json::as_array)
+            .into_iter()
+            .flatten()
+            .map(|u| s(u, "url").to_owned())
+            .collect();
+        if urls.is_empty() && !s(&overview, "url").is_empty() {
+            urls.push(s(&overview, "url").to_owned());
+        }
+        if category != "003" && category != "002" {
+            d.urls(urls);
+        }
+        d.text("notes", s(&details, "notesPlain"));
+        for section in details.get("sections").and_then(Json::as_array).into_iter().flatten() {
+            for f in section.get("fields").and_then(Json::as_array).into_iter().flatten() {
+                let id = s(f, "id");
+                let value = f.get("value").cloned().unwrap_or(Json::Null);
+                let text = value
+                    .as_object()
+                    .and_then(|o| {
+                        o.values()
+                            .find_map(|v| v.as_str().map(str::to_owned).or_else(|| v.as_i64().map(|n| n.to_string())))
+                    })
+                    .unwrap_or_default();
+                if let Some(otp) = value.get("totp").and_then(Json::as_str) {
+                    if category != "003" {
+                        d.secret("totp", otp);
+                        login_totp(&mut p, otp, &title, &username);
+                    }
+                    continue;
+                }
+                match (category, id) {
+                    ("002", "cardholder") => d.text("holder", &text),
+                    ("002", "ccnum") => d.secret("number", &text),
+                    ("002", "cvv") => d.secret("cvc", &text),
+                    ("002", "expiry") => {
+                        // 1Password stores the expiry as YYYYMM.
+                        let e = if text.len() == 6 { format!("{}/{}", &text[4..], &text[2..4]) } else { text.clone() };
+                        d.text("expiry", &e)
+                    }
+                    ("002", "pin") => d.secret("pin", &text),
+                    _ if !text.is_empty() => {
+                        let name = s(f, "title");
+                        if !name.is_empty() {
+                            if value.get("concealed").is_some() {
+                                d.secret(name, &text)
+                            } else {
+                                d.text(name, &text)
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        if !vault.is_empty() {
+            d.folder = Some(vault);
+        }
+        if d.is_empty() {
+            continue;
+        }
+        p.entries.push(d);
+    }
+    p
 }
 
 fn collect_uris(v: &Json, out: &mut Vec<String>) {
@@ -717,6 +842,10 @@ fn parse_csv(text: &str) -> Result<Parsed> {
         "Proton Pass (CSV)"
     } else if header.first().is_some_and(|h| h == "group") {
         "KeePass (CSV)"
+    } else if header.iter().any(|h| h == "grouping") && header.iter().any(|h| h == "extra") {
+        "LastPass (CSV)"
+    } else if header.iter().any(|h| h == "otpauth") && header.iter().any(|h| h == "archived") {
+        "1Password (CSV)"
     } else {
         "CSV"
     };
@@ -929,6 +1058,58 @@ mod tests {
         assert_eq!(p.entries[0].get("email"), "a@b.de");
         assert_eq!(p.entries[1].entry_type, "note");
         assert!(matches!(parse(b"-----BEGIN PGP MESSAGE-----\nxx", "a.pgp"), Err(GhulError::ImportEncrypted)));
+    }
+
+    #[test]
+    fn lastpass_and_1password_csv() {
+        let lp = "url,username,password,totp,extra,name,grouping,fav\n\
+            https://example.org,max,geheim1,JBSWY3DPEHPK3PXP,Notiz,Example,Privat,0\n\
+            http://sn,,,,Geheime Notiz,Notiz A,,0\n";
+        let p = parse(lp.as_bytes(), "lastpass.csv").unwrap();
+        assert_eq!(p.format, "LastPass (CSV)");
+        assert_eq!(p.entries.len(), 2);
+        assert_eq!(p.entries[0].folder.as_deref(), Some("Privat"));
+        assert_eq!(p.entries[1].entry_type, "note");
+        assert_eq!(p.totps.len(), 1);
+        let op = "Title,Url,Username,Password,OTPAuth,Favorite,Archived,Tags,Notes\n\
+            Codeberg,https://codeberg.org,ghul,pw2,,false,false,,\n";
+        let p = parse(op.as_bytes(), "1password.csv").unwrap();
+        assert_eq!(p.format, "1Password (CSV)");
+        assert_eq!(p.entries.len(), 1);
+    }
+
+    #[test]
+    fn onepassword_1pux() {
+        let data = serde_json::json!({ "accounts": [{ "vaults": [{ "attrs": { "name": "Privat" }, "items": [
+            { "categoryUuid": "001", "state": "active",
+              "overview": { "title": "Codeberg", "urls": [{ "url": "https://codeberg.org" }] },
+              "details": { "loginFields": [
+                  { "designation": "username", "value": "ghul" }, { "designation": "password", "value": "pw" }],
+                "notesPlain": "Hinweis",
+                "sections": [{ "fields": [{ "id": "otp", "title": "Einmalcode", "value": { "totp": "otpauth://totp/Codeberg:ghul?secret=JBSWY3DPEHPK3PXP&issuer=Codeberg" } }] }] } },
+            { "categoryUuid": "002", "overview": { "title": "Visa" }, "details": { "sections": [{ "fields": [
+                { "id": "cardholder", "value": { "string": "Max" } }, { "id": "ccnum", "value": { "creditCardNumber": "4111111111111111" } },
+                { "id": "expiry", "value": { "monthYear": 202812 } }] }] } },
+            { "categoryUuid": "003", "overview": { "title": "Notiz" }, "details": { "notesPlain": "Text" } },
+            { "categoryUuid": "001", "state": "archived", "overview": { "title": "Alt" }, "details": {} },
+            { "categoryUuid": "110", "overview": { "title": "Server" }, "details": {} }
+        ] }] }] });
+        let mut buf = std::io::Cursor::new(Vec::new());
+        {
+            let mut z = zip::ZipWriter::new(&mut buf);
+            z.start_file("export.attributes", zip::write::SimpleFileOptions::default()).unwrap();
+            std::io::Write::write_all(&mut z, b"{}").unwrap();
+            z.start_file("export.data", zip::write::SimpleFileOptions::default()).unwrap();
+            std::io::Write::write_all(&mut z, data.to_string().as_bytes()).unwrap();
+            z.finish().unwrap();
+        }
+        let p = parse(buf.get_ref(), "export.1pux").unwrap();
+        assert_eq!(p.format, "1Password (1PUX)");
+        assert_eq!(p.entries.len(), 3, "login, card, note; archived item left out");
+        assert_eq!(p.skipped, 1, "unsupported category counted");
+        assert_eq!(p.totps.len(), 1);
+        let card = p.entries.iter().find(|e| e.entry_type == "card").unwrap();
+        assert_eq!(card.folder.as_deref(), Some("Privat"));
     }
 
     #[test]
