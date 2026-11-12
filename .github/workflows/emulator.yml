@@ -5,7 +5,7 @@ name: Emulator-Tests
 
 on:
   push:
-    branches: [main, 'claude/**']
+    branches: ['**']
     paths: ['app/maestro/**', 'tools/ci-emulator.sh', 'tools/run-maestro.sh', '.github/workflows/emulator.yml']
   workflow_dispatch:
 
@@ -31,8 +31,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          for id in $(gh run list -R "$GITHUB_REPOSITORY" -w android.yml -b "$GITHUB_REF_NAME" -L 15 --json databaseId -q '.[].databaseId'); do
-            if gh run download "$id" -R "$GITHUB_REPOSITORY" -n ghulsuite-dev -D dist 2> /dev/null; then echo "APK aus Lauf $id"; break; fi
+          # Newest APK of this branch; a new branch without its own build yet uses the one of main.
+          for branch in "$GITHUB_REF_NAME" main; do
+            for id in $(gh run list -R "$GITHUB_REPOSITORY" -w android.yml -b "$branch" -L 15 --json databaseId -q '.[].databaseId'); do
+              if gh run download "$id" -R "$GITHUB_REPOSITORY" -n ghulsuite-dev -D dist 2> /dev/null; then echo "APK aus Lauf $id ($branch)"; break 2; fi
+            done
           done
           test -f dist/ghulsuite-dev.apk
       - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1

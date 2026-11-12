@@ -56,11 +56,20 @@ tools/                 Testserver (SFTP/IMAP/SMTP), Prüfskripte, Emulator-Skrip
   Windows-Pakete (MSI und portabel), APK, Emulator-Abläufe. Artefakte: `ghulsuite-dev`, `ghulsuite-windows-dev`,
   `screenshots`, `emulator-tests`.
 - Uploads auf den Testserver des Inhabers laufen **nur im Original-Repository** und nie bei Pull Requests.
-  Ziel ist der Ordner `ghulsuite/` (Testseiten) bzw. `ghulsuite/download/` (App-Pakete).
+  Ziel ist für `main` der Ordner `ghulsuite/` (Testseiten) bzw. `ghulsuite/download/` (App-Pakete), für jeden
+  anderen Branch `ghulsuite/branches/<branch>/` bzw. `…/download/` – so bleibt `ghulsuite/download/` der stabile Stand.
 - **Secrets** (vom Inhaber selbst eingetragen, niemals im Repository): `FTP_SERVER`, `FTP_USER`, `FTP_PASSWORD`,
   `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`.
 - **Signatur:** Der Android-Schlüssel kommt nur aus den Secrets (`GHUL_KEYSTORE_FILE`, `GHUL_KEYSTORE_PASSWORD`,
   `GHUL_KEY_ALIAS` in `app/composeApp/build.gradle.kts`). Ohne ihn signiert Gradle mit dem lokalen Debug-Schlüssel.
+
+## Arbeitsweise: Branches, Pull Requests, Issues
+
+- `main` ist immer lauffähig und geschützt: Änderungen kommen nur über einen **Pull Request** mit grünen Tests hinein.
+- Jede Aufgabe bekommt einen eigenen **Branch** (`feature/…`, `fix/…`, `ci/…`, `docs/…`) und einen Pull Request,
+  der das zugehörige **Issue** nennt (`Closes #12`).
+- Getestet wird der Branch über die CI und die App-Pakete aus seinem Lauf (Artefakte oder der Branch-Ordner auf dem
+  Testserver). Zusammengeführt wird nach Durchsicht durch den Inhaber.
 
 ## Regeln für Änderungen
 

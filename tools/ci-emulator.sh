@@ -28,7 +28,17 @@ trap finish EXIT
 if [ -e /dev/kvm ]; then log "KVM vorhanden"; ls -la /dev/kvm; else log "::warning::/dev/kvm fehlt"; fi
 log "SDK-Pakete installieren"
 (yes 2>/dev/null || true) | timeout 300 "$sdkm" --licenses > /dev/null 2>&1 || true
-timeout 900 "$sdkm" --install "platform-tools" "emulator" "$image" > /dev/null
+# Downloads from Google's mirror occasionally arrive broken ("unknown archive"): up to three tries.
+for try in 1 2 3; do
+  if timeout 900 "$sdkm" --install "platform-tools" "emulator" "$image" > "$out/sdk-install.log" 2>&1 \
+    && [ -d "$sdk/system-images/android-34/google_apis/x86_64" ]; then
+    break
+  fi
+  log "SDK-Download fehlgeschlagen (Versuch $try)"; tail -n 5 "$out/sdk-install.log" || true
+  rm -rf "$sdk/system-images/android-34/google_apis/x86_64" "$HOME/.android/cache" 2>/dev/null || true
+  [ "$try" = 3 ] && { log "::error::SDK-Pakete nicht installierbar"; exit 1; }
+  sleep 15
+done
 export PATH="$sdk/platform-tools:$sdk/emulator:$PATH"
 log "AVD anlegen"
 echo no | timeout 120 "$avdm" create avd --force -n ghul -k "$image" -d pixel_6 -p "$ANDROID_AVD_HOME/ghul.avd" > /dev/null

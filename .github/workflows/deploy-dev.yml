@@ -2,7 +2,7 @@ name: Deploy dev
 
 on:
   push:
-    branches: [main, 'claude/**']
+    branches: ['**']
     paths: ['public/**', '.github/workflows/deploy-dev.yml', '.github/actions/ftps-upload/**']
   workflow_dispatch:
 
@@ -21,11 +21,20 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Upload auf den eigenen Testserver (Ordner ghulsuite)
+      - name: Zielordner auf dem Testserver
+        id: dest
+        shell: bash
+        run: |
+          # main -> ghulsuite/, every other branch -> ghulsuite/branches/<branch>/
+          if [ "$GITHUB_REF_NAME" = "main" ]; then dir=ghulsuite; else
+            b=$(printf '%s' "$GITHUB_REF_NAME" | tr -c 'A-Za-z0-9._-' '-'); dir="ghulsuite/branches/$b"; fi
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+
+      - name: Upload auf den eigenen Testserver (Ordner ghulsuite bzw. Branch-Ordner)
         uses: ./.github/actions/ftps-upload
         with:
           server: ${{ secrets.FTP_SERVER }}
           user: ${{ secrets.FTP_USER }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./public/
-          remote-dir: ghulsuite/
+          remote-dir: ${{ steps.dest.outputs.dir }}/

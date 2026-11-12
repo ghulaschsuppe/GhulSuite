@@ -11,7 +11,6 @@ import android.provider.Settings as AndroidSettings
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
-import android.security.keystore.StrongBoxUnavailableException
 import android.util.Base64
 import de.danerd.ghulsuite.core.GhulException
 import de.danerd.ghulsuite.core.GhulSuite
@@ -80,14 +79,14 @@ class AndroidQuickUnlock(
     private fun createKey(name: String, biometric: Boolean): SecretKey {
         val alias = alias(name)
         if (keyStore.containsAlias(alias)) keyStore.deleteEntry(alias)
-        fun spec(strongBox: Boolean) = KeyGenParameterSpec.Builder(
+        fun spec(strongBox: Boolean, unlockedOnly: Boolean) = KeyGenParameterSpec.Builder(
             alias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
         ).apply {
             setBlockModes(KeyProperties.BLOCK_MODE_GCM)
             setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
             setKeySize(256)
             if (strongBox && Build.VERSION.SDK_INT >= 28) setIsStrongBoxBacked(true)
-            if (Build.VERSION.SDK_INT >= 28) setUnlockedDeviceRequired(true)
+            if (unlockedOnly && Build.VERSION.SDK_INT >= 28) setUnlockedDeviceRequired(true)
             if (biometric) {
                 setUserAuthenticationRequired(true)
                 setInvalidatedByBiometricEnrollment(true)
@@ -99,19 +98,22 @@ class AndroidQuickUnlock(
                 }
             }
         }.build()
+        // "Only while the device is unlocked" needs a screen lock on the device; without one Android
+        // refuses such keys (and the protection would be empty anyway). StrongBox is used where there
+        // is one; any failure there falls back to the normal hardware keystore.
+        val secureDevice = context.getSystemService(android.app.KeyguardManager::class.java)?.isDeviceSecure == true
         val gen = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
-        return try {
-            gen.init(spec(strongBox = true))
-            gen.generateKey()
-        } catch (e: Exception) {
-            if (e !is StrongBoxUnavailableException && e.cause !is StrongBoxUnavailableException &&
-                e !is java.security.ProviderException
-            ) {
-                throw e
+        var last: Exception? = null
+        for (strongBox in listOf(true, false)) {
+            try {
+                gen.init(spec(strongBox, unlockedOnly = secureDevice))
+                return gen.generateKey()
+            } catch (e: Exception) {
+                last = e
+                runCatching { keyStore.deleteEntry(alias) }
             }
-            gen.init(spec(strongBox = false))
-            gen.generateKey()
         }
+        throw last ?: IllegalStateException("no key")
     }
 
     private fun store(name: String, cipher: Cipher, qk: ByteArray) {

@@ -8,9 +8,10 @@ name: App PIN, lock and unlock
 - tapOn: "Unlocking"
 - tapOn: "App PIN"
 # In the sheet: the field right above "Repeat app PIN" (the sheet title is also "App PIN").
+# In the sheet the title and the field are both "App PIN": index 1 is the field.
 - tapOn:
     text: "App PIN"
-    above: "Repeat app PIN"
+    index: 1
 - inputText: "246813"
 - tapOn: "Repeat app PIN"
 - inputText: "246813"
