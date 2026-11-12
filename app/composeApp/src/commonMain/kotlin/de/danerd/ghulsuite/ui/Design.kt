@@ -509,7 +509,7 @@ fun GhulTopBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        if (onBack != null) BarIcon(backIcon, null, onClick = onBack)
+        if (onBack != null) BarIcon(backIcon, org.jetbrains.compose.resources.stringResource(de.danerd.ghulsuite.resources.Res.string.a_back), onClick = onBack)
         Column(Modifier.weight(1f).padding(start = if (onBack == null) 4.dp else 0.dp)) {
             if (title.isNotEmpty()) {
                 Text(
@@ -522,7 +522,7 @@ fun GhulTopBar(
             context?.invoke()
         }
         actions()
-        if (showLock) BarIcon(androidx.compose.material.icons.Icons.Outlined.Lock, null, onClick = onLock)
+        if (showLock) BarIcon(androidx.compose.material.icons.Icons.Outlined.Lock, org.jetbrains.compose.resources.stringResource(de.danerd.ghulsuite.resources.Res.string.a_lock_now), onClick = onLock)
     }
 }
 

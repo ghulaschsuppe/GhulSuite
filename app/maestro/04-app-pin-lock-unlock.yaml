@@ -17,8 +17,8 @@ name: App PIN, lock and unlock
 - hideKeyboard
 - tapOn: "Save"
 - takeScreenshot: 04-pin-on
-- back
-- tapOn: "Lock"
+# Header button (screen reader label), works with and without a keyboard on screen.
+- tapOn: "Lock now"
 - extendedWaitUntil:
     visible: "Unlock with app PIN"
     timeout: 15000
