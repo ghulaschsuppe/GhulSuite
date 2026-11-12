@@ -287,7 +287,15 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                 OutlinedButton(onClick = { state.push(Screen.SettingsPage(SetPage.MODULES)) }, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(Res.string.set_areas_in_bar))
                 }
-                Hint(stringResource(Res.string.set_language_hint))
+                ChoiceRow(
+                    stringResource(Res.string.set_language),
+                    listOf("" to Res.string.set_language_system, "de" to Res.string.set_language_de, "en" to Res.string.set_language_en),
+                    settings.appLanguage,
+                ) { tag ->
+                    settings.appLanguage = tag
+                    applyAppLanguage(tag)
+                }
+                Hint(stringResource(Res.string.set_language_note))
             }
                 }
                 SetPage.ABOUT -> {

@@ -947,4 +947,12 @@
     <string name="about_made_by">Made by Daniel Erdmann · 2026</string>
     <string name="about_made_by_sub">Self-hosted passwords, 2FA, files and mail – open source under AGPL-3.0.</string>
     <string name="about_trademark">“GhulSuite” and the logo are marks of Daniel Erdmann. Changed versions need a name of their own.</string>
+    <string name="pass_export_one">Export entry</string>
+    <string name="pass_export_one_sub">As an unencrypted CSV file</string>
+    <string name="pass_export_one_warning">The file contains the password in plain text. Delete it once you no longer need it.</string>
+    <string name="set_language">Language</string>
+    <string name="set_language_system">Like the system</string>
+    <string name="set_language_de">Deutsch</string>
+    <string name="set_language_en">English</string>
+    <string name="set_language_note">On Windows the new language applies after restarting the app.</string>
 </resources>

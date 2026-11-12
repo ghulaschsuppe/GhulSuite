@@ -70,3 +70,6 @@ expect fun rememberTakePhoto(onResult: (ByteArray?) -> Unit): () -> Unit
 
 /** Operating system and device for error reports, e.g. "Android 15 (API 35) · Google Pixel 8". */
 expect fun deviceInfo(): String
+
+/** Switches the app language ("" = follow the system). Android restarts the screen; Windows after a restart. */
+expect fun applyAppLanguage(tag: String)

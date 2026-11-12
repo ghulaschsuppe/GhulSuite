@@ -369,6 +369,8 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
     }
 
     override suspend fun exportPlain(vaultId: String, password: String): ByteArray = io { suite.exportPlain(vaultId, password) }
+    override suspend fun exportEntries(vaultId: String, ids: List<String>, password: String): ByteArray =
+        io { suite.exportEntries(vaultId, ids.map { it.hexToBytes() }, password) }
 
     // --- tools --------------------------------------------------------------------------------
 

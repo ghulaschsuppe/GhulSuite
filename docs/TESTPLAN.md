@@ -377,6 +377,10 @@ oder Proton.
 | N22 | Optionen → Sicherung → „Komplette Suite sichern“; neues Gerät/leerer Ordner → Start → „Sicherung wiederherstellen“. | Alles wieder da (Tresore, Einstellungen); Hauptpasswort wie vorher. Automatische Wochensicherung in gewählten Ordner (hält die letzten 4). |
 | N23 | Optionen → Darstellung → Start-Bereich „Zuletzt geöffnet“ / Bereiche ausblenden. | Startet im gewählten Bereich; ausgeblendete fehlen in der Leiste. |
 | N24 | Optionen → Über: Lizenzen, Bibliotheken, „Fehlerbericht“. | „Made by Daniel Erdmann · 2026“, AGPL-3.0 und Liste (inkl. EFF-Wortliste); Fehlerbericht ohne Geheimnisse. |
+| N30 | Optionen → Darstellung → Sprache: „English“, dann „Wie das System“. | Die App wechselt sofort die Sprache (Android); zurück auf Systemsprache. |
+| N31 | Import einer 1Password-Datei (.1pux oder CSV) bzw. LastPass-CSV. | Anmeldungen, Notizen, Karten und 2FA-Codes übernommen; archivierte Einträge nicht. |
+| N32 | Eintrag → Menü → „Eintrag exportieren“ mit Master-Passwort. | CSV nur mit diesem Eintrag; falsches Passwort wird abgelehnt. |
+| N33 | Eintrag als Favorit markieren, dann in einer App das Autofill öffnen. | Favoriten stehen in der Auswahl ganz oben. |
 
 ---
 

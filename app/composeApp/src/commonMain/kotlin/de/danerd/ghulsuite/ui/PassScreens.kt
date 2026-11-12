@@ -361,6 +361,27 @@ fun EntryDetailScreen(state: AppState, vaultId: String, id: String, padding: Pad
             }
         }
     }
+    if (sheet == "export") {
+        var pw by remember { mutableStateOf("") }
+        var error by remember { mutableStateOf<String?>(null) }
+        val savedMsg = stringResource(Res.string.msg_saved_file)
+        val saveExport = rememberSaveFile { ok -> if (ok) { state.message(savedMsg); sheet = "" } }
+        val fileName = (e.value("title").ifBlank { "eintrag" }).replace(Regex("[^\\p{L}\\p{N} ._-]"), "_") + ".csv"
+        GhulSheet({ sheet = "" }, stringResource(Res.string.pass_export_one)) {
+            HintText(stringResource(Res.string.pass_export_one_warning))
+            SecretTextField(pw, { pw = it; error = null }, stringResource(Res.string.l_master_password))
+            ErrorText(error)
+            ButtonRow {
+                OutlinedButton(onClick = { sheet = "" }, modifier = Modifier.weight(1f)) { Text(stringResource(Res.string.a_cancel)) }
+                Button(onClick = {
+                    state.run(onError = { error = it }, block = { state.backend.exportEntries(vaultId, listOf(id), pw) }) { data ->
+                        pw = ""
+                        saveExport(fileName, data)
+                    }
+                }, enabled = pw.isNotEmpty() && !state.busy, modifier = Modifier.weight(1f)) { Text(stringResource(Res.string.a_save)) }
+            }
+        }
+    }
     if (menu) {
         val others = state.vaultsOf(VaultKindUi.PASS).filter { it.id != vaultId && it.available }
         val copySuffix = stringResource(Res.string.pass_copy_suffix)
@@ -376,6 +397,9 @@ fun EntryDetailScreen(state: AppState, vaultId: String, id: String, padding: Pad
                     }
                 }
                 if (others.isNotEmpty()) SheetRow(stringResource(Res.string.pass_move), divider = true) { menu = false; sheet = "move" }
+                if (filePickersAvailable) {
+                    SheetRow(stringResource(Res.string.pass_export_one), stringResource(Res.string.pass_export_one_sub), divider = true) { menu = false; sheet = "export" }
+                }
                 SheetRow(stringResource(Res.string.a_delete), color = g.danger, divider = true) { menu = false; confirmDelete = true }
             }
         }

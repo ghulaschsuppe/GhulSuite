@@ -58,3 +58,14 @@ actual fun rememberTakePhoto(onResult: (ByteArray?) -> Unit): () -> Unit {
 actual fun deviceInfo(): String =
     "Android ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT}) · " +
         "${android.os.Build.MANUFACTURER.replaceFirstChar { it.uppercase() }} ${android.os.Build.MODEL}"
+
+actual fun applyAppLanguage(tag: String) {
+    val activity = de.danerd.ghulsuite.MainActivity.current?.get() ?: return
+    if (android.os.Build.VERSION.SDK_INT >= 33) {
+        // The system keeps the choice (also visible under Settings › Apps › GhulSuite › Language).
+        activity.getSystemService(android.app.LocaleManager::class.java)?.applicationLocales =
+            if (tag.isEmpty()) android.os.LocaleList.getEmptyLocaleList() else android.os.LocaleList.forLanguageTags(tag)
+    } else {
+        activity.recreate() // MainActivity.attachBaseContext applies the stored language
+    }
+}

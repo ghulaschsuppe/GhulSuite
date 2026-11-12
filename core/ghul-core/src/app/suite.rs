@@ -1694,6 +1694,28 @@ impl GhulSuite {
         })
     }
 
+    /// Some entries of a vault as unencrypted CSV (same columns as the full export). Like the full
+    /// export, only with the master password.
+    pub fn export_entries(&self, vault_id: String, ids: Vec<Vec<u8>>, password: String) -> Result<Vec<u8>> {
+        if !self.verify_password(password)? {
+            return Err(GhulError::WrongPassword);
+        }
+        self.with_open(|o| {
+            let (r, c) = o.vault_mut(&vault_id)?;
+            let picked: Vec<Entry> =
+                c.payload.entries.iter().filter(|e| !e.deleted && ids.contains(&e.id)).cloned().collect();
+            if picked.is_empty() {
+                return Err(GhulError::NotFound);
+            }
+            let text = if r.kind == "pass" {
+                super::import::export_csv(&picked)
+            } else {
+                super::import::export_otpauth(&picked)
+            };
+            Ok(text.as_bytes().to_vec())
+        })
+    }
+
     /// Logins that fit a website (`web_domain`) or an app (`package` with the SHA-256 of its
     /// signing certificate `cert`), for autofill. Without website and app, all logins are returned
     /// (for the picker), none of them as `direct`.
@@ -1705,7 +1727,7 @@ impl GhulSuite {
     ) -> Result<Vec<AutofillLogin>> {
         let everything = web_domain.is_none() && package.is_none();
         self.with_open(|o| {
-            let mut out = Vec::new();
+            let mut out: Vec<(bool, AutofillLogin)> = Vec::new();
             for v in o.vaults.iter().filter(|v| v.reference.kind == "pass") {
                 let Some(c) = &v.container else { continue };
                 for e in c.payload.entries.iter().filter(|e| !e.deleted && e.entry_type == "login") {
@@ -1719,21 +1741,25 @@ impl GhulSuite {
                     if m == super::autofill::Match::None && !everything {
                         continue;
                     }
-                    out.push(AutofillLogin {
-                        vault_id: v.reference.id.clone(),
-                        id: e.id.clone(),
-                        title: text_field(e, "title"),
-                        username: text_field(e, "username"),
-                        password: match e.fields.get("password") {
-                            Some(Field::Secret(s)) | Some(Field::Text(s)) => s.clone(),
-                            _ => String::new(),
+                    out.push((
+                        super::passx::is_favorite(e),
+                        AutofillLogin {
+                            vault_id: v.reference.id.clone(),
+                            id: e.id.clone(),
+                            title: text_field(e, "title"),
+                            username: text_field(e, "username"),
+                            password: match e.fields.get("password") {
+                                Some(Field::Secret(s)) | Some(Field::Text(s)) => s.clone(),
+                                _ => String::new(),
+                            },
+                            direct: m == super::autofill::Match::Direct,
                         },
-                        direct: m == super::autofill::Match::Direct,
-                    });
+                    ));
                 }
             }
-            out.sort_by_key(|l| (l.title.to_lowercase(), l.username.to_lowercase()));
-            Ok(out)
+            // Favourites first ("pinned" for autofill), then alphabetically.
+            out.sort_by_key(|(fav, l)| (!*fav, l.title.to_lowercase(), l.username.to_lowercase()));
+            Ok(out.into_iter().map(|(_, l)| l).collect())
         })
     }
 

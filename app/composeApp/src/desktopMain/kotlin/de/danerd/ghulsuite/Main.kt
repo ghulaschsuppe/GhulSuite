@@ -40,6 +40,8 @@ fun main() {
 
     var awtWindow: java.awt.Window? = null
     val backend = DesktopVaultBackend { awtWindow }
+    // The language chosen in the app (otherwise the system's).
+    backend.settings.appLanguage.takeIf { it.isNotEmpty() }?.let { java.util.Locale.setDefault(java.util.Locale.forLanguageTag(it)) }
     val state = AppState(backend, CoroutineScope(SupervisorJob() + Dispatchers.Main))
 
     // Activity tracking for the idle lock.
