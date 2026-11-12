@@ -174,7 +174,8 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
     }
 
     LaunchedEffect(messages, folder) {
-        if (folder.equals("INBOX", true) && !searching) state.mailUnread = messages.count { !it.m.seen }
+        // Every reload of the inbox (also after reading or marking) updates the badge for all accounts.
+        if (folder.equals("INBOX", true) && !searching) state.refreshUnread()
         state.mailLoaded = messages
     }
     LaunchedEffect(key, reload, filter == "flagged", state.liveRevision(), state.mailRefreshTick) {
@@ -433,7 +434,7 @@ fun MailReadScreen(state: AppState, accountId: String, folder: String, uid: Long
     val savedMsg = stringResource(Res.string.msg_saved_file)
     val save = rememberSaveFile { ok -> if (ok) state.message(savedMsg) }
     LaunchedEffect(uid) {
-        runCatching { net.mailGet(accountId, folder, uid) }.onSuccess { message = it }.onFailure { error = describe(it) }
+        runCatching { net.mailGet(accountId, folder, uid) }.onSuccess { message = it; state.refreshUnread() }.onFailure { error = describe(it) }
         folders = runCatching { net.mailFolders(accountId) }.getOrDefault(emptyList())
     }
     val replyPrefix = stringResource(Res.string.mail_re)
