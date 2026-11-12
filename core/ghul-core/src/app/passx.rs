@@ -326,7 +326,12 @@ impl GhulSuite {
             for v in o.vaults.iter().filter(|v| v.reference.kind == "pass") {
                 let Some(c) = &v.container else { continue };
                 // Wi-Fi passwords count for weak and reused passwords too (N6).
-                for e in c.payload.entries.iter().filter(|e| !e.deleted && (e.entry_type == "login" || e.entry_type == "wifi")) {
+                for e in c
+                    .payload
+                    .entries
+                    .iter()
+                    .filter(|e| !e.deleted && (e.entry_type == "login" || e.entry_type == "wifi"))
+                {
                     logins.push((&v.reference, e));
                 }
             }

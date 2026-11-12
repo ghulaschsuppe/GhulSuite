@@ -1522,7 +1522,8 @@ impl GhulSuite {
                 return Err(GhulError::InvalidInput { msg: "not a GhulAuth vault".into() });
             }
             // The same key twice (e.g. a QR code read again from an image) is not added (N9).
-            let same = |e: &Entry| matches!(e.fields.get("secret"), Some(Field::Bytes(b)) if b.as_slice() == &secret[..]);
+            let same =
+                |e: &Entry| matches!(e.fields.get("secret"), Some(Field::Bytes(b)) if b.as_slice() == &secret[..]);
             if c.payload.entries.iter().any(|e| !e.deleted && same(e)) {
                 return Err(GhulError::AlreadyExists);
             }
