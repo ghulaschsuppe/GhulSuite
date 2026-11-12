@@ -15,6 +15,8 @@ interface VaultBackend {
     val settings: Settings
     /** Servers, synchronisation, GhulDrive and GhulMail. */
     val net: NetBackend
+    /** GhulCal. */
+    val cal: CalBackend get() = NoCalBackend
 
     // --- Storage location and suite
     /** Whether a suite exists in the configured storage location. */
@@ -181,7 +183,7 @@ data class FolderRef(val uri: String, val name: String)
 /** A file picked by the user. */
 class PickedFile(val name: String, val bytes: ByteArray)
 
-enum class VaultKindUi { PASS, TOTP }
+enum class VaultKindUi { PASS, TOTP, CAL }
 
 data class VaultUi(
     val id: String,

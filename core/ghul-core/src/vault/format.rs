@@ -51,6 +51,8 @@ pub enum ContainerKind {
     Pass,
     Totp,
     Suite,
+    /// GhulCal calendar vault.
+    Cal,
 }
 
 impl ContainerKind {
@@ -59,11 +61,12 @@ impl ContainerKind {
             ContainerKind::Pass => b"GHULPASS",
             ContainerKind::Totp => b"GHULTOTP",
             ContainerKind::Suite => b"GHULSUIT",
+            ContainerKind::Cal => b"GHULCLDR",
         }
     }
 
     pub fn from_magic(magic: &[u8]) -> Option<Self> {
-        [ContainerKind::Pass, ContainerKind::Totp, ContainerKind::Suite]
+        [ContainerKind::Pass, ContainerKind::Totp, ContainerKind::Suite, ContainerKind::Cal]
             .into_iter()
             .find(|k| k.magic().as_slice() == magic)
     }
@@ -74,6 +77,7 @@ impl ContainerKind {
             ContainerKind::Pass => "pass",
             ContainerKind::Totp => "totp",
             ContainerKind::Suite => "suite",
+            ContainerKind::Cal => "cal",
         }
     }
 
@@ -82,6 +86,7 @@ impl ContainerKind {
             ContainerKind::Pass => "ghlpss",
             ContainerKind::Totp => "ghltotp",
             ContainerKind::Suite => "ghlsuite",
+            ContainerKind::Cal => "ghlcal",
         }
     }
 }

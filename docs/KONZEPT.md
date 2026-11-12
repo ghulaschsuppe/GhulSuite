@@ -268,6 +268,7 @@ Ein Fingerabdruck kann erzwungen werden, ein Passwort im Kopf nicht so leicht. D
 |---|---|---|
 | `.ghlpss` | `GHULPASS` | GhulPass-Tresor |
 | `.ghltotp` | `GHULTOTP` | GhulAuth-Tresor |
+| `.ghlcal` | `GHULCLDR` | GhulCal-Kalender (bewusst ohne CalDAV; Austausch per .ics) |
 | `.ghlsuite` | `GHULSUIT` | Suite-Container: Speicherverbindungen, Mail-Konten, Drive-Schlüssel und -Index-Verweise, Einstellungen |
 | `.ghlkey` | `GHULKEY\0` | Schlüsseldatei |
 

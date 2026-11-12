@@ -58,6 +58,7 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
     override val settings: Settings = Settings(PrefsStore(context))
     private val quick = AndroidQuickUnlock(context, { suite }, settings, activity)
     override val net: NetBackend = AndroidNetBackend(context) { suite }
+    override val cal: de.danerd.ghulsuite.model.CalBackend = AndroidCalBackend(context) { suite }
     override val appVersion: String =
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "?"
 
@@ -118,6 +119,7 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
         lock()
         quick.disableAll()
         MailNotifications(context).disableAll()
+        CalReminders(context).clear()
     }
 
     // --- key access -----------------------------------------------------------------------

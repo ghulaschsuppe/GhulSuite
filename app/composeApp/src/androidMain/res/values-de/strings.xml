@@ -23,4 +23,8 @@
         <item quantity="one">%d neue E-Mail</item>
         <item quantity="other">%d neue E-Mails</item>
     </plurals>
+    <string name="cal_channel">Termin-Erinnerungen</string>
+    <string name="cal_channel_silent">Termin-Erinnerungen (lautlos)</string>
+    <string name="cal_snooze">In 5 Min. erneut</string>
+    <string name="cal_done">Erledigt</string>
 </resources>

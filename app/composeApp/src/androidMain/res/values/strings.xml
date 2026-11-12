@@ -24,4 +24,8 @@
         <item quantity="one">%d new e-mail</item>
         <item quantity="other">%d new e-mails</item>
     </plurals>
+    <string name="cal_channel">Event reminders</string>
+    <string name="cal_channel_silent">Event reminders (silent)</string>
+    <string name="cal_snooze">Again in 5 min</string>
+    <string name="cal_done">Done</string>
 </resources>

@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Password
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -42,7 +43,18 @@ import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
 import org.jetbrains.compose.resources.stringResource
 
-fun extensionOf(kind: VaultKindUi) = if (kind == VaultKindUi.PASS) "ghlpss" else "ghltotp"
+fun extensionOf(kind: VaultKindUi) = when (kind) {
+    VaultKindUi.PASS -> "ghlpss"
+    VaultKindUi.TOTP -> "ghltotp"
+    VaultKindUi.CAL -> "ghlcal"
+}
+
+/** Name of the area a vault belongs to. */
+fun kindLabel(kind: VaultKindUi) = when (kind) {
+    VaultKindUi.PASS -> Res.string.tab_pass
+    VaultKindUi.TOTP -> Res.string.tab_auth
+    VaultKindUi.CAL -> Res.string.tab_cal
+}
 
 /** Filter chips "All" + one per vault; hidden when there is only one vault. */
 @Composable
@@ -106,8 +118,8 @@ fun CreateVaultDialog(state: AppState, kind: VaultKindUi?, onCreated: (String) -
                 if (kind == null) {
                     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                         VaultKindUi.entries.forEachIndexed { i, k ->
-                            SegmentedButton(chosen == k, { chosen = k }, SegmentedButtonDefaults.itemShape(i, 2)) {
-                                Text(stringResource(if (k == VaultKindUi.PASS) Res.string.tab_pass else Res.string.tab_auth))
+                            SegmentedButton(chosen == k, { chosen = k }, SegmentedButtonDefaults.itemShape(i, 3)) {
+                                Text(stringResource(kindLabel(k)))
                             }
                         }
                     }
@@ -182,7 +194,7 @@ fun VaultsSection(state: AppState) {
                                 if (v.available) {
                                     stringResource(
                                         Res.string.vault_summary,
-                                        stringResource(if (v.kind == VaultKindUi.PASS) Res.string.tab_pass else Res.string.tab_auth),
+                                        stringResource(kindLabel(v.kind)),
                                         v.entries.toString(),
                                         v.file,
                                     )
@@ -198,6 +210,7 @@ fun VaultsSection(state: AppState) {
                             when {
                                 !v.available -> Icons.Filled.Warning
                                 v.kind == VaultKindUi.PASS -> Icons.Filled.Password
+                                v.kind == VaultKindUi.CAL -> Icons.Filled.CalendarMonth
                                 else -> Icons.Filled.Key
                             },
                             null,
@@ -306,7 +319,7 @@ private fun FoundRow(state: AppState, f: FoundVaultUi, onForeign: () -> Unit) {
     Column(Modifier.fillMaxWidth()) {
         Text(f.file, style = androidx.compose.material3.MaterialTheme.typography.titleSmall)
         Hint(
-            stringResource(if (f.kind == VaultKindUi.PASS) Res.string.tab_pass else Res.string.tab_auth) + " · " +
+            stringResource(kindLabel(f.kind)) + " · " +
                 stringResource(Res.string.found_own_protection),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

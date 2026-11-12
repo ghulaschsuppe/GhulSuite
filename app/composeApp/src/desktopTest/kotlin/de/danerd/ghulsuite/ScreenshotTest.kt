@@ -59,6 +59,7 @@ class ScreenshotTest {
             VaultUi("p1", VaultKindUi.PASS, "Privat", "privat-p1.ghlpss", true, 4),
             VaultUi("p2", VaultKindUi.PASS, "Arbeit", "arbeit-p2.ghlpss", true, 1),
             VaultUi("t1", VaultKindUi.TOTP, "Persönlich", "personlich-t1.ghltotp", true, 2),
+            VaultUi("c1", VaultKindUi.CAL, "Kalender", "kalender-c1.ghlcal", true, 21),
             VaultUi("f1", VaultKindUi.PASS, "Verein", "verein.ghlpss", true, 3, outdated = true),
         )
         override val settings = Settings(object : KeyValueStore {
@@ -92,6 +93,7 @@ class ScreenshotTest {
         override fun disableQuickUnlockMethod(bio: Boolean) {}
         override suspend fun unlockWithBiometric() {}
         override suspend fun unlockWithPin(pin: String) {}
+        override val cal: de.danerd.ghulsuite.model.CalBackend = FakeCal()
         override suspend fun listVaults() = vaults
         override suspend fun createVault(kind: VaultKindUi, name: String) = "new"
         override suspend fun renameVault(id: String, name: String) {}
@@ -256,6 +258,18 @@ class ScreenshotTest {
             de.danerd.ghulsuite.ui.GeneratorDialog(s, {}, {})
         }
         render("42-mail-compose-new") { GhulSuiteApp(state(true, true) { push(Screen.MailCompose(de.danerd.ghulsuite.ui.MailDraft("m1"))) }) }
+        render("60-cal-month") { GhulSuiteApp(state(true, true) { tab = Tab.CAL }) }
+        render("61-cal-week") { GhulSuiteApp(state(true, true) { tab = Tab.CAL; calView = de.danerd.ghulsuite.ui.CalView.WEEK }) }
+        render("62-cal-day") { GhulSuiteApp(state(true, true) { tab = Tab.CAL; calView = de.danerd.ghulsuite.ui.CalView.DAY }) }
+        render("63-cal-list") { GhulSuiteApp(state(true, true) { tab = Tab.CAL; calView = de.danerd.ghulsuite.ui.CalView.LIST }) }
+        render("64-cal-event") { GhulSuiteApp(state(true, true) { tab = Tab.CAL; push(Screen.CalEvent("2", de.danerd.ghulsuite.ui.today().plus(1).toString())) }) }
+        render("65-cal-edit") { GhulSuiteApp(state(true, true) { tab = Tab.CAL; push(Screen.CalEdit(de.danerd.ghulsuite.model.CalEventUi("2", "priv", "Zahnarzt Dr. Weber", false,
+            de.danerd.ghulsuite.ui.dateTime(de.danerd.ghulsuite.ui.today().plus(1), 600), de.danerd.ghulsuite.ui.dateTime(de.danerd.ghulsuite.ui.today().plus(1), 645),
+            reminders = listOf(1440, 60), location = "Praxis am Markt, Hauptstraße 12", notes = "Überweisung und Versichertenkarte mitnehmen."))) }) }
+        render("66-cal-quick") { GhulSuiteApp(state(true, true) { tab = Tab.CAL; calQuickOpen = true }) }
+        render("67-cal-dark") {
+            GhulSuiteApp(state(true, true) { tab = Tab.CAL; backend.settings.theme = de.danerd.ghulsuite.model.ThemeMode.DARK })
+        }
         render("46-mail-html") { GhulSuiteApp(state(true, true) { tab = Tab.MAIL; push(Screen.MailRead("m1", "INBOX", 9)) }) }
         render("43-drive-grid") { GhulSuiteApp(state(true, true) { tab = Tab.DRIVE; driveGrid = true }) }
         render("44-auth-grid") { GhulSuiteApp(state(true, true) { tab = Tab.AUTH; authGrid = true }) }

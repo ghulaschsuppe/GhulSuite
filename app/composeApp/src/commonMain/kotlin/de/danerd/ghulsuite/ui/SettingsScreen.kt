@@ -115,7 +115,7 @@ fun <T> ChoiceRow(label: String, options: List<Pair<T, StringResource>>, selecte
 }
 
 /** Pages of the settings, opened from the overview. */
-enum class SetPage { UNLOCK, LOCK, PRIVACY, FACTORS, VAULTS, IMPORT, SERVERS, MODULES, PASS, AUTH, DRIVE, MAIL, LOOK, ABOUT }
+enum class SetPage { UNLOCK, LOCK, PRIVACY, FACTORS, VAULTS, IMPORT, SERVERS, MODULES, PASS, AUTH, DRIVE, MAIL, CAL, LOOK, ABOUT }
 
 @Composable
 fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
@@ -254,6 +254,7 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                 SwitchRow(stringResource(Res.string.tab_auth), settings.moduleGhulAuth) { settings.moduleGhulAuth = it }
                 SwitchRow(stringResource(Res.string.tab_drive), settings.moduleGhulDrive) { settings.moduleGhulDrive = it }
                 SwitchRow(stringResource(Res.string.tab_mail), settings.moduleGhulMail) { settings.moduleGhulMail = it }
+                SwitchRow(stringResource(Res.string.tab_cal), settings.moduleGhulCal) { settings.moduleGhulCal = it; state.refreshCalendar() }
             }
 
                 }
@@ -274,12 +275,13 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                 }
                 SetPage.DRIVE -> DriveSettingsSection(state)
                 SetPage.MAIL -> MailAccountsSection(state)
+                SetPage.CAL -> CalSettingsSection(state)
                 SetPage.LOOK -> {
             SectionCard(stringResource(Res.string.set_view)) {
                 ChoiceRow(stringResource(Res.string.set_theme), THEME_OPTIONS, settings.theme) { settings.theme = it }
                 ChoiceRow(
                     stringResource(Res.string.set_start_tab),
-                    listOf(-1 to Res.string.set_start_last, 0 to Res.string.set_start_first, 1 to Res.string.set_start_second, 2 to Res.string.set_start_third, 3 to Res.string.set_start_fourth)
+                    listOf(-1 to Res.string.set_start_last, 0 to Res.string.set_start_first, 1 to Res.string.set_start_second, 2 to Res.string.set_start_third, 3 to Res.string.set_start_fourth, 4 to Res.string.set_start_fifth)
                         .filter { it.first < state.tabs.size - 1 },
                     settings.startTab,
                 ) { settings.startTab = it }

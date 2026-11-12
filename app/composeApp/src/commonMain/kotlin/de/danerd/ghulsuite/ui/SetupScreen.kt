@@ -463,7 +463,7 @@ private fun OpenVaultWizard(state: AppState, file: PickedFile, info: ContainerIn
         Hint(
             stringResource(
                 Res.string.open_vault_text, file.name,
-                stringResource(if (kind == VaultKindUi.PASS) Res.string.tab_pass else Res.string.tab_auth),
+                stringResource(kindLabel(kind)),
             ),
         )
         OutlinedTextField(

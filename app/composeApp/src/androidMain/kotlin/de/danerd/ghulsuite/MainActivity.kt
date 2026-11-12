@@ -90,9 +90,14 @@ class MainActivity : ComponentActivity() {
             AppLaunch.openTab.value = Tab.MAIL
             intent.action = null
         }
+        if (intent?.action == ACTION_OPEN_EVENT) {
+            AppLaunch.openEvent.value = intent.getStringExtra(CalReminders.EXTRA_KEY)
+            intent.action = null
+        }
     }
 
     companion object {
         const val ACTION_OPEN_MAIL = "de.danerd.ghulsuite.OPEN_MAIL"
+        const val ACTION_OPEN_EVENT = "de.danerd.ghulsuite.OPEN_EVENT"
     }
 }
