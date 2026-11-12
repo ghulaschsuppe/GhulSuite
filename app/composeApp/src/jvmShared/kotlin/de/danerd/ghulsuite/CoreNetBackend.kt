@@ -260,6 +260,10 @@ abstract class CoreNetBackend(protected val suite: () -> GhulSuite) : NetBackend
         }
     }
 
+    override suspend fun mailUnseen(accountId: String): Int = io {
+        de.danerd.ghulsuite.core.mailPoll(suite().mailPollConfig(accountId), 0u).unseen.toInt()
+    }
+
     override suspend fun mailRemoveAccount(id: String) {
         io { suite().mailRemoveAccount(id) }
         onMailAccountRemoved(id)

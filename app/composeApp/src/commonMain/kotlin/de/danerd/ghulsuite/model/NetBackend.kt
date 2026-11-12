@@ -85,6 +85,8 @@ interface NetBackend {
     suspend fun mailCheck(input: MailAccountInputUi): MailCheckUi
     suspend fun mailSaveAccount(id: String?, input: MailAccountInputUi): String
     suspend fun mailAccounts(): List<MailAccountUi>
+    /** Unread messages in the inbox of [accountId] (asks the server). */
+    suspend fun mailUnseen(accountId: String): Int = 0
     suspend fun mailRemoveAccount(id: String)
     suspend fun mailFolders(accountId: String): List<MailFolderUi>
     suspend fun mailList(accountId: String, folder: String, offset: Int, limit: Int): MailPageUi

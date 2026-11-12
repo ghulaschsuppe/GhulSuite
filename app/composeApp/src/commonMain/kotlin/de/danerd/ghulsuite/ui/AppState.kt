@@ -22,6 +22,14 @@ import org.jetbrains.compose.resources.getString
 
 enum class Tab { PASS, AUTH, DRIVE, MAIL, SETTINGS }
 
+/**
+ * Requests from outside the app UI, e.g. a tapped notification ("open GhulMail"). Applied as soon
+ * as the suite is unlocked.
+ */
+object AppLaunch {
+    val openTab = kotlinx.coroutines.flow.MutableStateFlow<Tab?>(null)
+}
+
 /** Screens shown on top of the tabs. */
 sealed interface Screen {
     data class EntryDetail(val vaultId: String, val id: String) : Screen
@@ -141,6 +149,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     outdatedNotified = false
                     passwordChangedElsewhere = false
                     syncing = false
+                    mailUnread = 0
                 } else {
                     refreshVaults()
                     scanFound()
@@ -150,8 +159,37 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     runAutoBackup()
                     val start = backend.settings.startTab.let { if (it < 0) backend.settings.lastTab else it }
                     tabs.getOrNull(start)?.let { tab = it }
+                    applyLaunch()
+                    refreshUnread()
                 }
             }
+        }
+        scope.launch { AppLaunch.openTab.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
+        // Unread count for the navigation badge (and the window icon on Windows) while unlocked.
+        scope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(5 * 60 * 1000L)
+                if (backend.unlocked.value) refreshUnread()
+            }
+        }
+    }
+
+    private fun applyLaunch() {
+        val t = AppLaunch.openTab.value ?: return
+        AppLaunch.openTab.value = null
+        if (t !in tabs) return
+        stack.clear()
+        tab = t
+    }
+
+    /** Sums the unread messages of all inboxes; keeps the old count when offline. */
+    fun refreshUnread() {
+        if (!backend.settings.moduleGhulMail) return
+        scope.launch {
+            val accounts = runCatching { backend.net.mailAccounts() }.getOrNull() ?: return@launch
+            var sum = 0
+            for (a in accounts) sum += runCatching { backend.net.mailUnseen(a.id) }.getOrElse { return@launch }
+            mailUnread = sum
         }
     }
 

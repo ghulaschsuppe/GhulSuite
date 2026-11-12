@@ -143,7 +143,7 @@ class MailCheckWorker(context: Context, params: WorkerParameters) : CoroutineWor
             val config = n.config(id) ?: continue
             val since = n.lastUid(id)
             val r = runCatching { mailPoll(config, since.toUInt()) }.getOrNull() ?: continue
-            if (since > 0 && r.newMessages > 0u) postMailNotification(applicationContext, config, r.newMessages.toInt(), r.newestFrom, r.newestSubject)
+            if (since > 0 && r.newMessages > 0u) postMailNotification(applicationContext, config, r.newMessages.toInt(), r.newestFrom, r.newestSubject, r.unseen.toInt())
             n.setLastUid(id, r.nextUid.toInt())
         }
         // Brings the instant notifications back if Android stopped them (works only when allowed).
@@ -157,13 +157,17 @@ class MailCheckWorker(context: Context, params: WorkerParameters) : CoroutineWor
  * request with the sender or sender and subject of the newest mail. Encrypted mails have no
  * readable subject ("..."). The lock screen always shows only the neutral version.
  */
-fun postMailNotification(ctx: Context, config: MailPollConfig, count: Int, from: String = "", subject: String = "") {
+fun postMailNotification(ctx: Context, config: MailPollConfig, count: Int, from: String = "", subject: String = "", unseen: Int = count) {
     val nm = ctx.getSystemService(NotificationManager::class.java)
     nm.createNotificationChannel(
         NotificationChannel(MailNotifications.CHANNEL, ctx.getString(R.string.mail_channel), NotificationManager.IMPORTANCE_DEFAULT),
     )
     val open = PendingIntent.getActivity(
-        ctx, 2, Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE,
+        ctx, 2,
+        Intent(ctx, MainActivity::class.java)
+            .setAction(MainActivity.ACTION_OPEN_MAIL)
+            .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
     val neutral = ctx.resources.getQuantityString(R.plurals.mail_new, count, count)
     val detail = MailNotifications(ctx).detail
@@ -185,6 +189,9 @@ fun postMailNotification(ctx: Context, config: MailPollConfig, count: Int, from:
         .setContentText(text)
         .setContentIntent(open)
         .setAutoCancel(true)
+        // Launchers show this as the number on the app icon (with the mail symbol of the notification).
+        .setNumber(unseen.coerceAtLeast(count))
+        .setCategory(Notification.CATEGORY_EMAIL)
         .setVisibility(Notification.VISIBILITY_PRIVATE)
         .setPublicVersion(public)
         .build()

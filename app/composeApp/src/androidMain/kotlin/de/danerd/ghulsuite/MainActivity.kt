@@ -4,6 +4,7 @@ package de.danerd.ghulsuite
 import android.Manifest
 import android.app.Application
 import android.content.pm.PackageManager
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
@@ -15,7 +16,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.compose.runtime.snapshotFlow
+import de.danerd.ghulsuite.ui.AppLaunch
 import de.danerd.ghulsuite.ui.AppState
+import de.danerd.ghulsuite.ui.Tab
 import de.danerd.ghulsuite.ui.GhulSuiteApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -76,6 +79,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val vm = ViewModelProvider(this)[MainViewModel::class.java]
         setContent { GhulSuiteApp(vm.state) }
+        handleLaunch(intent)
 
         // Ask once for notifications so that the "Lock" notification is visible while unlocked.
         lifecycleScope.launch {
@@ -91,7 +95,21 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleLaunch(intent)
+    }
+
+    /** A tapped mail notification opens GhulMail (right away, or once the suite is unlocked). */
+    private fun handleLaunch(intent: Intent?) {
+        if (intent?.action == ACTION_OPEN_MAIL) {
+            AppLaunch.openTab.value = Tab.MAIL
+            intent.action = null
+        }
+    }
+
     companion object {
+        const val ACTION_OPEN_MAIL = "de.danerd.ghulsuite.OPEN_MAIL"
         /** The running activity (language switch). */
         @Volatile
         var current: java.lang.ref.WeakReference<android.app.Activity>? = null
