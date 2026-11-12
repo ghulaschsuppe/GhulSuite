@@ -108,13 +108,36 @@ class FakeNet(private val configured: Boolean = true) : NetBackend {
     )
     override suspend fun mailList(accountId: String, folder: String, offset: Int, limit: Int) = MailPageUi(3, list)
     override suspend fun mailSearch(accountId: String, folder: String, query: String) = list
-    override suspend fun mailGet(accountId: String, folder: String, uid: Long) = MailMessageUi(
+    override suspend fun mailGet(accountId: String, folder: String, uid: Long) = if (uid == 9L) htmlMail() else MailMessageUi(
         uid, "Stadtwerke", "service@stadtwerke.example", listOf("Max Mustermann <max@posteo.de>"), emptyList(), "",
         "Ihre Jahresabrechnung", now - 86_400,
         "Guten Tag,\n\nanbei erhalten Sie Ihre Jahresabrechnung.\n\nMit freundlichen Grüßen\nIhre Stadtwerke",
         true, "abc@stadtwerke.example", listOf(MailAttachmentUi(0, "Abrechnung.pdf", "application/pdf", 118_000)),
         encrypted = true, signature = de.danerd.ghulsuite.model.MailSignatureUi.VALID, signer = "service@stadtwerke.example",
     )
+    private fun htmlMail(): MailMessageUi {
+        fun span(t: String, b: Boolean = false, i: Boolean = false, l: String = "") = de.danerd.ghulsuite.model.MailSpanUi(t, b, i, l)
+        fun block(k: de.danerd.ghulsuite.model.MailBlockKindUi, vararg s: de.danerd.ghulsuite.model.MailSpanUi, level: Int = 0, src: String = "", alt: String = "") =
+            de.danerd.ghulsuite.model.MailBlockUi(k, level, s.toList(), src, alt)
+
+        return MailMessageUi(
+            9, "Radverein Musterstadt", "info@radverein.example", listOf("Max Mustermann <max@posteo.de>"), emptyList(), "",
+            "Newsletter November", now - 3_600, "Newsletter November …", true, "nl@radverein.example", emptyList(),
+            blocks = listOf(
+                block(de.danerd.ghulsuite.model.MailBlockKindUi.HEADING, span("Herbsttour am Samstag"), level = 1),
+                block(de.danerd.ghulsuite.model.MailBlockKindUi.PARAGRAPH, span("Wir starten um "), span("10 Uhr", b = true), span(" am Marktplatz. Bitte denkt an "), span("Licht und Helm", i = true), span(".")),
+                block(de.danerd.ghulsuite.model.MailBlockKindUi.LIST_ITEM, span("Strecke: 42 km"), level = 1),
+                block(de.danerd.ghulsuite.model.MailBlockKindUi.LIST_ITEM, span("Einkehr im Gasthaus Linde"), level = 1),
+                block(de.danerd.ghulsuite.model.MailBlockKindUi.QUOTE, span("„Der Weg ist das Ziel.“"), level = 1),
+                block(de.danerd.ghulsuite.model.MailBlockKindUi.PARAGRAPH, span("Zur Anmeldung", l = "https://radverein.example/anmeldung"), span(" · "), span("Abmelden", l = "https://radverein.example/abmelden")),
+                block(de.danerd.ghulsuite.model.MailBlockKindUi.IMAGE, src = "https://radverein.example/banner.jpg", alt = "Tourkarte"),
+                block(de.danerd.ghulsuite.model.MailBlockKindUi.RULE),
+                block(de.danerd.ghulsuite.model.MailBlockKindUi.PARAGRAPH, span("Radverein Musterstadt e. V.", i = true)),
+            ),
+            remoteImages = 1,
+        )
+    }
+
     override suspend fun mailAttachment(accountId: String, folder: String, uid: Long, index: Int) = ByteArray(0)
     override suspend fun mailSetSeen(accountId: String, folder: String, uid: Long, seen: Boolean) {}
     override suspend fun mailSetFlagged(accountId: String, folder: String, uid: Long, flagged: Boolean) {}

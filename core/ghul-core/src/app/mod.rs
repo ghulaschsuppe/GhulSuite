@@ -9,6 +9,7 @@ pub mod error;
 pub mod import;
 pub mod mail;
 pub(crate) mod mailcrypt;
+pub mod mailhtml;
 pub mod mailx;
 pub mod passx;
 pub mod quick;

@@ -245,7 +245,7 @@ private fun MailboxSheet(state: AppState, close: () -> Unit) {
             for (d in drafts) {
                 Pill(false, { Avatar(d.to.ifBlank { "?" }, size = 30.dp) }, d.subject.ifBlank { "–" }, d.to.ifBlank { formatDateTime(d.updated) }) {
                     close()
-                    state.push(Screen.MailCompose(MailDraft(d.accountId, d.to, d.cc, d.subject, d.text, d.inReplyTo, draftId = d.id, bcc = d.bcc)))
+                    state.push(Screen.MailCompose(MailDraft(d.accountId, d.to, d.cc, d.subject, d.text, d.inReplyTo, attachments = d.attachments, draftId = d.id, bcc = d.bcc)))
                 }
             }
         }

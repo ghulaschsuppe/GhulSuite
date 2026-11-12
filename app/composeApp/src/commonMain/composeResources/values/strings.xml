@@ -947,6 +947,14 @@
     <string name="about_made_by">Made by Daniel Erdmann · 2026</string>
     <string name="about_made_by_sub">Self-hosted passwords, 2FA, files and mail – open source under AGPL-3.0.</string>
     <string name="about_trademark">“GhulSuite” and the logo are marks of Daniel Erdmann. Changed versions need a name of their own.</string>
+    <string name="mail_images_blocked">%1$s image(s) from the internet blocked – they could tell the sender that you read the mail.</string>
+    <string name="mail_images_load">Load images</string>
+    <string name="mail_images_always">Always for this sender</string>
+    <string name="mail_link_title">Open link?</string>
+    <string name="mail_link_open">Open</string>
+    <string name="mail_image_placeholder">Image</string>
+    <string name="mail_show_text">Show as plain text</string>
+    <string name="mail_show_formatted">Show formatted</string>
     <string name="key_waiting_title">Plug in your security key now</string>
     <string name="key_waiting_text">Waiting up to one minute – then touch it when it blinks.</string>
 </resources>

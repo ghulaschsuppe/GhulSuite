@@ -213,9 +213,22 @@ pub struct MailMessage {
     pub signature: MailSignatureStatus,
     /// Address whose key made the valid signature (empty otherwise).
     pub signer: String,
+    /// HTML mails as safe building blocks (empty for plain-text mails); see `mailhtml`.
+    pub blocks: Vec<super::mailhtml::MailBlock>,
+    /// Images from the internet in the HTML (loaded only on request).
+    pub remote_images: u32,
+    /// Images inside the mail (`cid:`), at most 8 MB together.
+    pub inline_images: Vec<MailInlineImage>,
 }
 
-#[derive(uniffi::Record, Clone, Debug)]
+#[derive(uniffi::Record, Clone, Debug, PartialEq)]
+pub struct MailInlineImage {
+    /// Content-ID without angle brackets, as referenced by `cid:` in the HTML.
+    pub cid: String,
+    pub data: Vec<u8>,
+}
+
+#[derive(uniffi::Record, Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct OutgoingAttachment {
     pub name: String,
     pub mime: String,
@@ -722,6 +735,30 @@ fn message(uid: u32, raw: &[u8], u: &Unwrapped) -> Result<MailMessage> {
     let from_address = first.and_then(|a| a.address()).unwrap_or_default().to_owned();
     let from = first.and_then(|a| a.name()).map(str::to_owned).unwrap_or_else(|| from_address.clone());
     let was_html = c.text_body.is_empty() && !c.html_body.is_empty();
+    let html_part = c
+        .html_body
+        .first()
+        .and_then(|i| c.parts.get(*i as usize))
+        .is_some_and(|p| matches!(p.body, mail_parser::PartType::Html(_)));
+    let html = if html_part { c.body_html(0).map(|h| super::mailhtml::parse(&h)) } else { None };
+    let mut inline_images = Vec::new();
+    let mut inline_total = 0usize;
+    if html.is_some() {
+        use mail_parser::MimeHeaders;
+        for part in c.parts.iter() {
+            let image = part.content_type().is_some_and(|t| t.ctype().eq_ignore_ascii_case("image"));
+            if let (true, Some(cid)) = (image, part.content_id()) {
+                let data = part.contents();
+                if inline_total + data.len() <= 8 * 1024 * 1024 {
+                    inline_total += data.len();
+                    inline_images.push(MailInlineImage {
+                        cid: cid.trim_matches(|c| c == '<' || c == '>').to_owned(),
+                        data: data.to_vec(),
+                    });
+                }
+            }
+        }
+    }
     let text = c.body_text(0).map(|t| t.replace("\r\n", "\n")).unwrap_or_default();
     let attachments = c
         .attachments()
@@ -756,6 +793,9 @@ fn message(uid: u32, raw: &[u8], u: &Unwrapped) -> Result<MailMessage> {
         encrypted: u.encrypted,
         signature: u.signature,
         signer: u.signer.clone(),
+        remote_images: html.as_ref().map(|h| h.remote_images).unwrap_or(0),
+        blocks: html.map(|h| h.blocks).unwrap_or_default(),
+        inline_images,
     })
 }
 

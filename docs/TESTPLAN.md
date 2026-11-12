@@ -379,6 +379,11 @@ oder Proton.
 | N22 | Optionen → Sicherung → „Komplette Suite sichern“; neues Gerät/leerer Ordner → Start → „Sicherung wiederherstellen“. | Alles wieder da (Tresore, Einstellungen); Hauptpasswort wie vorher. Automatische Wochensicherung in gewählten Ordner (hält die letzten 4). |
 | N23 | Optionen → Darstellung → Start-Bereich „Zuletzt geöffnet“ / Bereiche ausblenden. | Startet im gewählten Bereich; ausgeblendete fehlen in der Leiste. |
 | N24 | Optionen → Über: Lizenzen, Bibliotheken, „Fehlerbericht“. | „Made by Daniel Erdmann · 2026“, AGPL-3.0 und Liste (inkl. EFF-Wortliste); Fehlerbericht ohne Geheimnisse. |
+| N25 | Newsletter (HTML-Mail mit Bildern und Links) öffnen. | Formatiert: Überschriften, fett/kursiv, Listen, Links. Hinweis „x Bild(er) aus dem Internet blockiert“; Bilder in der Mail selbst (z. B. Logo) sichtbar. Keine Skripte, keine Formulare. |
+| N26 | „Bilder laden“ bzw. „Immer für diesen Absender“. | Bilder erscheinen; bei „Immer“ auch bei der nächsten Mail dieses Absenders ohne Nachfrage. |
+| N27 | Link in einer HTML-Mail antippen. | Rückfrage mit Ziel-Domain und vollständiger Adresse, erst „Öffnen“ öffnet den Browser. |
+| N28 | „Als reinen Text anzeigen“ und zurück. | Wechselt zwischen Text- und formatierter Ansicht. |
+| N29 | Neue Mail mit Anhang beginnen, zurück, später unter „Entwürfe“ fortsetzen. | Anhang ist noch da. Anhänge über 10 MB zusammen werden im Entwurf nicht gespeichert. |
 
 ---
 
