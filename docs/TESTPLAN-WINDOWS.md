@@ -126,7 +126,7 @@ Zusätzlich:
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| W-N1 | Optionen → Sicherung → automatische Sicherung in einen Ordner, Uhr eine Woche vorstellen (oder Datum in der Einstellung zurücksetzen), entsperren. | Neue Datei `GhulSuite-Sicherung-….zip` im Ordner. |
+| W-N1 | Optionen → Sicherung → automatische Sicherung in einen Ordner, Uhr eine Woche vorstellen (oder Datum in der Einstellung zurücksetzen), entsperren. | Neue Datei `GhulSuite-Backup-JJJJ-MM-TT-HHMM.zip` im Ordner. |
 | W-N3 | App starten. | Fenster im Querformat (ca. 1280 × 820): Seitenleiste links mit GhulPass, GhulAuth, GhulDrive, GhulMail, Optionen und „Sperren (Strg+L)“ unten. |
 | W-N4 | GhulPass: Eintrag anklicken, dann einen anderen. | Eintrag öffnet sich rechts, Liste bleibt links stehen, der geöffnete Eintrag ist markiert; der zweite ersetzt den ersten. |
 | W-N5 | GhulMail: Mail anklicken; „Schreiben“. | Mail bzw. Entwurf rechts neben dem Posteingang. |

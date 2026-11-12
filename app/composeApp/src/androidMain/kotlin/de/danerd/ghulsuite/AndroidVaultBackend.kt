@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package de.danerd.ghulsuite
 
+import de.danerd.ghulsuite.ui.backupPrefix
 import android.app.Activity
 import android.app.ActivityManager
 import android.content.ClipData
@@ -247,7 +248,7 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
         val store = SafStorage(context, android.net.Uri.parse(folder.uri))
         store.write(name, data)
         // Only the newest backups stay.
-        val old = store.list().filter { it.startsWith(name.substringBefore('-') + "-") && it.endsWith(".zip") }.sortedDescending().drop(keep)
+        val old = store.list().filter { it.startsWith(backupPrefix(name)) && it.endsWith(".zip") }.sortedDescending().drop(keep)
         for (o in old) runCatching { store.delete(o) }
     }
 

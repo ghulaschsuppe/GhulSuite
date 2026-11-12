@@ -107,7 +107,7 @@ object EmergencySheet {
             ) {
                 if (cancellationSignal?.isCanceled == true) return callback.onLayoutCancelled()
                 callback.onLayoutFinished(
-                    PrintDocumentInfo.Builder("GhulSuite-Notfallblatt.pdf")
+                    PrintDocumentInfo.Builder(if (java.util.Locale.getDefault().language == "de") "GhulSuite-Notfallblatt.pdf" else "GhulSuite-Emergency-Sheet.pdf")
                         .setContentType(PrintDocumentInfo.CONTENT_TYPE_DOCUMENT).setPageCount(1).build(),
                     true,
                 )

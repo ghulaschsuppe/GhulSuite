@@ -44,7 +44,7 @@ soll; weicht etwas ab, notiere die Nummer, was du gemacht hast und was stattdess
 | E10 | Richtige Gruppe 3 eingeben → Fertig. | Hauptansicht mit GhulPass, GhulAuth, GhulDrive, GhulMail, Optionen. |
 | E11 | (Zweite Installation oder anderer Speicherort) Einrichtung mit „Schlüsseldatei“ statt Key: Datei erstellen und z. B. auf den USB-Stick speichern. | Ohne gespeicherte Datei geht es nicht weiter. Danach wie E8–E10. |
 | E12 | Beim Schritt „Tresore“ einen eigenen Ordner als Speicherort wählen, in dem schon GhulSuite-Dateien liegen. | Hinweis „Hier liegen bereits GhulSuite-Dateien“ und „Diese Suite öffnen“. |
-| E13 | Nur GhulAuth wählen (GhulPass abwählen) und einrichten. | Im Menü erscheint nur GhulAuth (plus Einstellungen). |
+| E13 | Nur GhulAuth wählen (GhulPass abwählen) und einrichten. | In der Leiste fehlt GhulPass; GhulAuth, GhulDrive, GhulMail und Optionen sind da. GhulDrive und GhulMail lassen sich unter Optionen → Bereiche ausblenden. |
 
 ## 2. Entsperren
 

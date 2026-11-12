@@ -314,7 +314,11 @@ fun EntryDetailScreen(state: AppState, vaultId: String, id: String, padding: Pad
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         if (vaultName != null) Tag(vaultName, icon = Icons.Filled.Layers)
                         val pw = e.value("password")
-                        if (pw.isNotEmpty() && state.backend.passwordScore(pw) < 3) Tag(stringResource(Res.string.sec_weak_tag), t.danger)
+                        if (pw.isNotEmpty()) {
+                            // Same wording as the strength bar ("medium" is not called "weak").
+                            val sc = state.backend.passwordScore(pw)
+                            if (sc < 3) Tag(stringResource(strengthLabel(sc)).replaceFirstChar { it.uppercase() }, if (sc < 2) t.danger else t.warn)
+                        }
                     }
                 }
             }
@@ -683,11 +687,12 @@ fun EntryEditScreen(state: AppState, vaultId: String, id: String?, type: String,
                 for (f in def.fields) {
                     val v = values[f.name].orEmpty()
                     when (f.edit) {
-                        EditKind.SECRET -> SecretTextField(v, { values[f.name] = it }, stringResource(f.label), trailing = {
+                        // The generator only for passwords, not for 2FA keys, card numbers or CVCs.
+                        EditKind.SECRET -> SecretTextField(v, { values[f.name] = it }, stringResource(f.label), trailing = if (f.name in GENERATED_FIELDS) ({
                             IconButton(onClick = { generatorFor = f.name }) {
                                 Icon(Icons.Filled.Password, stringResource(Res.string.a_generate))
                             }
-                        })
+                        }) else null)
                         EditKind.TEXT -> OutlinedTextField(
                             v, { values[f.name] = it }, label = { Text(stringResource(f.label)) },
                             singleLine = true, modifier = Modifier.fillMaxWidth(),
@@ -830,3 +835,6 @@ fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
         Switch(checked, onChange)
     }
 }
+
+/** Secret fields that get the password generator. */
+private val GENERATED_FIELDS = setOf("password", "passphrase")

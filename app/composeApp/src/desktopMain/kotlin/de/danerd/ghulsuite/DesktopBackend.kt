@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package de.danerd.ghulsuite
 
+import de.danerd.ghulsuite.ui.backupPrefix
 import de.danerd.ghulsuite.core.GhulSuite
 import de.danerd.ghulsuite.core.HidTransport
 import de.danerd.ghulsuite.core.VaultStorage
@@ -132,7 +133,7 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
         val dir = File(folder.uri)
         dir.mkdirs()
         File(dir, name).writeBytes(data)
-        dir.listFiles { f -> f.name.startsWith(name.substringBefore('-') + "-") && f.name.endsWith(".zip") }
+        dir.listFiles { f -> f.name.startsWith(backupPrefix(name)) && f.name.endsWith(".zip") }
             ?.sortedByDescending { it.name }?.drop(keep)?.forEach { it.delete() }
         Unit
     }

@@ -674,3 +674,6 @@ einmal ein Projekt in ähnlicher Größe. Jede Phase ist für sich nutzbar.
    Zugangsdaten gehören nie ins Repository; für automatische Tests in CI trägst du sie selbst als GitHub-Secrets ein.
 3. Android-Mindestversion (Vorschlag: Android 10 / API 29 – deckt fast alle aktiven Geräte ab und bringt die nötigen Sicherheitsfunktionen mit)
 4. Verbreitung der APK: GitHub Releases, später ggf. F-Droid
+8. Idee: **GhulCal – Kalender als Tresor** (`.ghlcal`): Termine verschlüsselt im Suite-Ordner, Synchronisation wie die
+   anderen Tresore über den eigenen Server, Erinnerungen auf dem Gerät, Import/Export als `.ics`. Ein CalDAV-Server
+   kann verschlüsselte Termine nicht lesen; Abos fremder Kalender (nur lesen) wären zusätzlich möglich.
