@@ -117,6 +117,8 @@ class Settings(private val store: KeyValueStore) {
     var mailSwipeLeft by int("mail_swipe_left", 0)
     /** App language: "" follows the system, otherwise a language tag ("de", "en"). */
     var appLanguage by str("app_language", "")
+    /** Senders whose HTML mails load images from the internet without asking (lower case, newline separated). */
+    var mailImageSenders by str("mail_image_senders", "")
 
     // --- GhulAuth
     /** 0 = by name, 1 = newest first, 2 = favourites first. */

@@ -290,8 +290,20 @@ abstract class CoreNetBackend(protected val suite: () -> GhulSuite) : NetBackend
                 de.danerd.ghulsuite.core.MailSignatureStatus.INVALID -> MailSignatureUi.INVALID
             },
             signer = m.signer,
+            blocks = m.blocks.map { b ->
+                de.danerd.ghulsuite.model.MailBlockUi(
+                    de.danerd.ghulsuite.model.MailBlockKindUi.valueOf(b.kind.name),
+                    b.level.toInt(),
+                    b.spans.map { de.danerd.ghulsuite.model.MailSpanUi(it.text, it.bold, it.italic, it.link) },
+                    b.imageSrc, b.imageAlt,
+                )
+            },
+            remoteImages = m.remoteImages.toInt(),
+            inlineImages = m.inlineImages.associate { it.cid to it.data },
         )
     }
+
+    override suspend fun mailFetchImage(url: String): ByteArray = io { de.danerd.ghulsuite.core.mailFetchImage(url) }
 
     override suspend fun mailAttachment(accountId: String, folder: String, uid: Long, index: Int): ByteArray =
         io { suite().mailAttachment(accountId, folder, uid.toUInt(), index.toUInt()) }
@@ -330,10 +342,20 @@ abstract class CoreNetBackend(protected val suite: () -> GhulSuite) : NetBackend
         io { suite().mailRaw(accountId, folder, uid.toUInt(), decrypted) }
     override suspend fun mailHeaders(accountId: String, folder: String, uid: Long): String = io { suite().mailHeaders(accountId, folder, uid.toUInt()) }
     override suspend fun mailSaveDraft(draft: de.danerd.ghulsuite.model.MailDraftUi): String = io {
-        suite().mailSaveDraft(de.danerd.ghulsuite.core.MailDraftData(draft.id, draft.accountId, draft.to, draft.cc, draft.bcc, draft.subject, draft.text, draft.inReplyTo, 0))
+        suite().mailSaveDraft(
+            de.danerd.ghulsuite.core.MailDraftData(
+                draft.id, draft.accountId, draft.to, draft.cc, draft.bcc, draft.subject, draft.text, draft.inReplyTo, 0,
+                draft.attachments.map { OutgoingAttachment(it.name, it.mime, it.data) },
+            ),
+        )
     }
     override suspend fun mailDrafts() = io {
-        suite().mailDrafts().map { de.danerd.ghulsuite.model.MailDraftUi(it.id, it.accountId, it.to, it.cc, it.bcc, it.subject, it.text, it.inReplyTo, it.updated) }
+        suite().mailDrafts().map {
+            de.danerd.ghulsuite.model.MailDraftUi(
+                it.id, it.accountId, it.to, it.cc, it.bcc, it.subject, it.text, it.inReplyTo, it.updated,
+                it.attachments.map { a -> de.danerd.ghulsuite.model.OutgoingAttachmentUi(a.name, a.mime, a.data) },
+            )
+        }
     }
     override suspend fun mailDeleteDraft(id: String) = io { suite().mailDeleteDraft(id) }
     override suspend fun mailSchedule(mail: OutgoingMailUi, sendAt: Long): String = io { suite().mailSchedule(mail.toCore(), sendAt) }

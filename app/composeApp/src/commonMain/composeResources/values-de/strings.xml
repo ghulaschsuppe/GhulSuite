@@ -955,6 +955,14 @@
     <string name="set_language_de">Deutsch</string>
     <string name="set_language_en">English</string>
     <string name="set_language_note">Unter Windows gilt die neue Sprache nach einem Neustart der App.</string>
+    <string name="mail_images_blocked">%1$s Bild(er) aus dem Internet blockiert – sie könnten dem Absender verraten, dass du die Mail gelesen hast.</string>
+    <string name="mail_images_load">Bilder laden</string>
+    <string name="mail_images_always">Immer für diesen Absender</string>
+    <string name="mail_link_title">Link öffnen?</string>
+    <string name="mail_link_open">Öffnen</string>
+    <string name="mail_image_placeholder">Bild</string>
+    <string name="mail_show_text">Als reinen Text anzeigen</string>
+    <string name="mail_show_formatted">Formatiert anzeigen</string>
     <string name="key_waiting_title">Steck jetzt deinen Security Key ein</string>
     <string name="key_waiting_text">Ich warte bis zu einer Minute – danach berühren, wenn er blinkt.</string>
 </resources>

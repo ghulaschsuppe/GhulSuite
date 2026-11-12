@@ -1121,6 +1121,18 @@ fn mail_with_imap_and_smtp() {
         })
         .unwrap();
     assert_eq!(s.mail_drafts().unwrap()[0].subject, "Entwurf");
+    // Attachments stay with the draft; too large ones are refused.
+    let pdf = OutgoingAttachment { name: "a.pdf".into(), mime: "application/pdf".into(), data: vec![7u8; 2048] };
+    let mut with_file = s.mail_drafts().unwrap()[0].clone();
+    with_file.attachments = vec![pdf.clone()];
+    s.mail_save_draft(with_file.clone()).unwrap();
+    assert_eq!(s.mail_drafts().unwrap()[0].attachments, vec![pdf]);
+    with_file.attachments = vec![OutgoingAttachment {
+        name: "big.bin".into(),
+        mime: "application/octet-stream".into(),
+        data: vec![0u8; 10 * 1024 * 1024 + 1],
+    }];
+    assert!(s.mail_save_draft(with_file).is_err());
     s.mail_delete_draft(draft).unwrap();
     assert!(s.mail_drafts().unwrap().is_empty());
     assert_eq!(s.mail_contacts("".into(), 5).unwrap()[0].email, email.to_lowercase());

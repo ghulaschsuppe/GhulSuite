@@ -104,6 +104,8 @@ interface NetBackend {
     suspend fun mailHeaders(accountId: String, folder: String, uid: Long): String = ""
     suspend fun mailSaveDraft(draft: MailDraftUi): String = draft.id
     suspend fun mailDrafts(): List<MailDraftUi> = emptyList()
+    /** An image from the internet for an HTML mail (only on request; https/http, max 5 MB). */
+    suspend fun mailFetchImage(url: String): ByteArray = throw UnsupportedOperationException()
     suspend fun mailDeleteDraft(id: String) {}
     suspend fun mailSchedule(mail: OutgoingMailUi, sendAt: Long): String = ""
     suspend fun mailScheduled(): List<ScheduledMailUi> = emptyList()
@@ -311,6 +313,7 @@ data class MailDraftUi(
     val text: String,
     val inReplyTo: String,
     val updated: Long = 0,
+    val attachments: List<OutgoingAttachmentUi> = emptyList(),
 )
 
 data class ScheduledMailUi(val id: String, val accountId: String, val to: List<String>, val subject: String, val sendAt: Long)
@@ -339,7 +342,19 @@ data class MailMessageUi(
     val signature: MailSignatureUi = MailSignatureUi.NONE,
     /** Address whose key made the valid signature. */
     val signer: String = "",
+    /** HTML mails as safe building blocks (empty: show [text]). */
+    val blocks: List<MailBlockUi> = emptyList(),
+    /** Images from the internet in the HTML (loaded only on request). */
+    val remoteImages: Int = 0,
+    /** Images inside the mail, by Content-ID. */
+    val inlineImages: Map<String, ByteArray> = emptyMap(),
 )
+
+enum class MailBlockKindUi { PARAGRAPH, HEADING, LIST_ITEM, QUOTE, RULE, IMAGE }
+
+data class MailSpanUi(val text: String, val bold: Boolean, val italic: Boolean, val link: String)
+
+data class MailBlockUi(val kind: MailBlockKindUi, val level: Int, val spans: List<MailSpanUi>, val imageSrc: String, val imageAlt: String)
 
 class OutgoingAttachmentUi(val name: String, val mime: String, val data: ByteArray)
 
