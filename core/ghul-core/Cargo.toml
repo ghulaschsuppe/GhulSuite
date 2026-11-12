@@ -1,0 +1,60 @@
+[package]
+name = "ghul-core"
+description = "GhulSuite core: cryptography, container formats and FIDO2 (CTAP2) client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "ghul_core"
+
+[features]
+# Exposes a software authenticator for FFI tests on the host. Never enabled in app builds.
+mock = []
+
+[dependencies]
+uniffi = "=0.29.4"
+thiserror = "2"
+ciborium = "0.2.2"
+p256 = { version = "0.14", features = ["ecdh"] }
+aes = "0.8"
+cbc = { version = "0.1", features = ["alloc"] }
+hmac = "0.12"
+sha2 = "0.10"
+hkdf = "0.12"
+argon2 = { version = "0.5", features = ["zeroize"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+zeroize = { version = "1", features = ["derive"] }
+subtle = "2"
+chacha20poly1305 = "0.10"
+aes-gcm = { version = "0.10", default-features = false, features = ["aes", "alloc"] }
+pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
+unicode-normalization = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_bytes = "0.11"
+sha1 = "0.10"
+base64 = "0.22"
+zxcvbn = { version = "3.1", default-features = false }
+serde_json = "1"
+pgp = { version = "0.21", default-features = false }
+zip = { version = "9", default-features = false, features = ["deflate", "aes-crypto"] }
+# Network (SFTP, IMAP, SMTP) – pure Rust with ring, no OpenSSL/C dependencies
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time", "macros", "sync"] }
+russh = { version = "0.65", default-features = false, features = ["ring"] }
+russh-sftp = "2"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+webpki-roots = "1"
+async-imap = { version = "0.10", default-features = false, features = ["runtime-tokio"] }
+futures = "0.3"
+mail-parser = "0.11"
+lettre = { version = "0.11", default-features = false, features = ["builder"] }
+
+[dev-dependencies]
+rand_chacha = "0.3"
+
+[target.'cfg(windows)'.dependencies]
+# Security keys through the system's WebAuthn API (webauthn.dll) – see src/key_device.rs.
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Networking_WindowsWebServices"] }

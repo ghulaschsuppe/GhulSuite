@@ -1,0 +1,26 @@
+# Testplan 5: add a 2FA account by hand; a 6-digit code is shown.
+appId: de.danerd.ghulsuite.dev
+name: GhulAuth
+---
+- launchApp:
+    stopApp: false
+- tapOn: "GhulAuth"
+- tapOn: "Add"
+- tapOn: "Enter manually"
+- tapOn: "Service"
+- inputText: "Codeberg"
+- tapOn: "Account"
+- inputText: "ghul"
+- tapOn: "Secret key (Base32)"
+- inputText: "JBSWY3DPEHPK3PXP"
+- hideKeyboard
+- scrollUntilVisible:
+    element: "Add"
+    direction: DOWN
+- tapOn:
+    text: "Add"
+    index: 0
+- extendedWaitUntil:
+    visible: "\\d{3} \\d{3}"
+    timeout: 15000
+- takeScreenshot: 03-codes

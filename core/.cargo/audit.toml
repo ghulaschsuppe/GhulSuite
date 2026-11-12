@@ -1,0 +1,14 @@
+# cargo audit: findings reviewed in docs/AUDIT.md. Each ignore has a reason and is re-checked
+# with every audit; remove it as soon as a fixed version can be used.
+[advisories]
+ignore = [
+    # Via the OpenPGP library (pgp 0.21) only – see docs/AUDIT.md, "OpenPGP":
+    # RSA "Marvin" needs decryption with an own RSA secret key; GhulMail only creates and holds
+    # Curve25519 keys, RSA is used only with contacts' public keys (encrypt to, verify).
+    "RUSTSEC-2023-0071",
+    # crypto-bigint 0.5 under the NIST/X448 curves of contacts' keys (public operations).
+    "RUSTSEC-2026-0387",
+    # Unmaintained, no known vulnerability: basic-toml (uniffi build tooling), pin-utils (futures).
+    "RUSTSEC-2026-0374",
+    "RUSTSEC-2026-0441",
+]

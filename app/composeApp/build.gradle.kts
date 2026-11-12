@@ -1,0 +1,288 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
+plugins {
+    alias(libs.plugins.kotlin.multiplatform)
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.compose.multiplatform)
+    alias(libs.plugins.compose.compiler)
+}
+
+val coreDir = rootProject.layout.projectDirectory.dir("../core")
+val rustOut = layout.buildDirectory.dir("rust/jniLibs")
+val bindingsOut = layout.buildDirectory.dir("generated/uniffi/kotlin")
+val hostTargetDir = layout.buildDirectory.dir("rust/host")
+val hostBindingsOut = layout.buildDirectory.dir("generated/uniffi-host/kotlin")
+// Release build of the core for this computer (Windows: ghul_core.dll) – for the desktop app
+// and as the source of the Kotlin bindings (identical for Android and Windows).
+val hostReleaseDir = layout.buildDirectory.dir("rust/host-release")
+val os = System.getProperty("os.name").lowercase()
+val hostLibName = when {
+    os.contains("win") -> "ghul_core.dll"
+    os.contains("mac") -> "libghul_core.dylib"
+    else -> "libghul_core.so"
+}
+val hostOsDir = when {
+    os.contains("win") -> "windows"
+    os.contains("mac") -> "macos"
+    else -> "linux"
+}
+// Code shared by Android and Windows (core bindings in use, error mapping, backends).
+val jvmShared = layout.projectDirectory.dir("src/jvmShared/kotlin")
+val appResourcesDir = layout.buildDirectory.dir("appResources")
+
+kotlin {
+    androidTarget {
+        compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
+    }
+    // Windows (and other desktops): same UI, same core.
+    jvm("desktop") {
+        compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
+    }
+
+    sourceSets {
+        commonMain.dependencies {
+            implementation(compose.runtime)
+            implementation(compose.foundation)
+            implementation(compose.material3)
+            implementation(compose.ui)
+            implementation(compose.components.resources)
+            implementation(libs.compose.material.icons.extended)
+            implementation(libs.kotlinx.coroutines.core)
+        }
+        getByName("desktopMain") {
+            kotlin.srcDir(bindingsOut)
+            kotlin.srcDir(jvmShared)
+            dependencies {
+                implementation(compose.desktop.currentOs)
+                implementation(libs.jna)
+                implementation(libs.kotlinx.coroutines.swing)
+                implementation(libs.zxing.core)
+            }
+        }
+        getByName("desktopTest") {
+            // FFI tests against the host build of ghul-core with its software authenticator
+            // (own package de.danerd.ghulsuite.coretest, see core/ghul-core/uniffi-test.toml).
+            kotlin.srcDir(hostBindingsOut)
+            dependencies {
+                implementation(kotlin("test"))
+                implementation(libs.jna)
+                implementation(compose.desktop.currentOs)
+            }
+        }
+        androidMain {
+            kotlin.srcDir(bindingsOut)
+            kotlin.srcDir(jvmShared)
+            dependencies {
+                implementation(libs.androidx.activity.compose)
+                implementation(libs.androidx.lifecycle.process)
+                implementation(libs.androidx.camera.camera2)
+                implementation(libs.androidx.camera.lifecycle)
+                implementation(libs.androidx.camera.view)
+                implementation(libs.zxing.core)
+                implementation(libs.androidx.documentfile)
+                implementation(libs.androidx.work.runtime)
+                implementation(libs.kotlinx.coroutines.android)
+                implementation("${libs.jna.get()}@aar")
+            }
+        }
+    }
+}
+
+compose.resources {
+    publicResClass = false
+    packageOfResClass = "de.danerd.ghulsuite.resources"
+}
+
+android {
+    namespace = "de.danerd.ghulsuite"
+    compileSdk = 36
+    ndkVersion = "28.2.13676358"
+
+    defaultConfig {
+        applicationId = "de.danerd.ghulsuite"
+        minSdk = 29
+        targetSdk = 36
+        versionCode = 5
+        versionName = "0.5.0-dev"
+        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+    }
+
+    // Signing key: only from the environment (GitHub secrets in CI, or your own key locally):
+    // GHUL_KEYSTORE_FILE, GHUL_KEYSTORE_PASSWORD, GHUL_KEY_ALIAS. It is never part of the repository.
+    // Without it, builds use the Android debug key of the computer that builds them.
+    val keystoreFile = System.getenv("GHUL_KEYSTORE_FILE")?.takeIf { it.isNotBlank() && file(it).exists() }
+    signingConfigs {
+        if (keystoreFile != null) {
+            create("ghul") {
+                storeFile = file(keystoreFile)
+                storePassword = System.getenv("GHUL_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("GHUL_KEY_ALIAS") ?: "ghulsuite"
+                keyPassword = System.getenv("GHUL_KEY_PASSWORD") ?: System.getenv("GHUL_KEYSTORE_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("debug") {
+            applicationIdSuffix = ".dev"
+            if (keystoreFile != null) signingConfig = signingConfigs.getByName("ghul")
+            // Shrink also during development: the icon library alone would add ~50 MB.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+        getByName("release") {
+            if (keystoreFile != null) signingConfig = signingConfigs.getByName("ghul")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
+
+    sourceSets["main"].jniLibs.srcDir(rustOut)
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    packaging {
+        resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+    }
+}
+
+// --- Rust core (ghul-core) -------------------------------------------------------------
+
+val buildRustCore by tasks.registering(Exec::class) {
+    group = "rust"
+    description = "Builds ghul-core for Android with cargo-ndk."
+    workingDir = coreDir.asFile
+    inputs.dir(coreDir.dir("ghul-core/src"))
+    inputs.files(coreDir.file("Cargo.toml"), coreDir.file("Cargo.lock"), coreDir.file("ghul-core/Cargo.toml"))
+    outputs.dir(rustOut)
+    doFirst { environment("ANDROID_NDK_HOME", android.ndkDirectory.absolutePath) }
+    commandLine(
+        "cargo", "ndk",
+        "-t", "arm64-v8a", "-t", "x86_64",
+        "-P", "29",
+        "-o", rustOut.get().asFile.absolutePath,
+        "build", "--release", "--locked", "-p", "ghul-core",
+    )
+}
+
+val buildRustHost by tasks.registering(Exec::class) {
+    group = "rust"
+    description = "Builds ghul-core for this computer (release), for the desktop app and the bindings."
+    workingDir = coreDir.asFile
+    inputs.dir(coreDir.dir("ghul-core/src"))
+    inputs.files(coreDir.file("Cargo.toml"), coreDir.file("Cargo.lock"), coreDir.file("ghul-core/Cargo.toml"))
+    outputs.dir(hostReleaseDir)
+    commandLine(
+        "cargo", "build", "--release", "--locked", "-p", "ghul-core",
+        "--target-dir", hostReleaseDir.get().asFile.absolutePath,
+    )
+}
+
+val generateUniffiBindings by tasks.registering(Exec::class) {
+    group = "rust"
+    description = "Generates Kotlin bindings for ghul-core with UniFFI."
+    dependsOn(buildRustHost)
+    workingDir = coreDir.asFile
+    inputs.dir(hostReleaseDir.map { it.dir("release") })
+    inputs.file(coreDir.file("ghul-core/uniffi.toml"))
+    outputs.dir(bindingsOut)
+    commandLine(
+        "cargo", "run", "--locked", "-q", "-p", "uniffi-bindgen", "--",
+        "generate",
+        "--library", hostReleaseDir.get().file("release/$hostLibName").asFile.absolutePath,
+        "--language", "kotlin",
+        "--no-format",
+        "--config", coreDir.file("ghul-core/uniffi.toml").asFile.absolutePath,
+        "--out-dir", bindingsOut.get().asFile.absolutePath,
+    )
+}
+
+tasks.named("preBuild") { dependsOn(generateUniffiBindings, buildRustCore) }
+tasks.matching { it.name == "compileKotlinDesktop" }.configureEach { dependsOn(generateUniffiBindings) }
+
+// --- Host build with the software authenticator, for FFI tests (desktopTest) -----------
+
+val buildRustHostMock by tasks.registering(Exec::class) {
+    group = "rust"
+    description = "Builds ghul-core for the host with the mock authenticator."
+    workingDir = coreDir.asFile
+    inputs.dir(coreDir.dir("ghul-core/src"))
+    inputs.files(coreDir.file("Cargo.toml"), coreDir.file("Cargo.lock"), coreDir.file("ghul-core/Cargo.toml"))
+    outputs.dir(hostTargetDir)
+    commandLine(
+        "cargo", "build", "--locked", "-p", "ghul-core", "--features", "mock",
+        "--target-dir", hostTargetDir.get().asFile.absolutePath,
+    )
+}
+
+val generateHostBindings by tasks.registering(Exec::class) {
+    group = "rust"
+    dependsOn(buildRustHostMock)
+    workingDir = coreDir.asFile
+    inputs.dir(hostTargetDir)
+    outputs.dir(hostBindingsOut)
+    commandLine(
+        "cargo", "run", "--locked", "-q", "-p", "uniffi-bindgen", "--",
+        "generate",
+        "--library", hostTargetDir.get().file("debug/$hostLibName").asFile.absolutePath,
+        "--language", "kotlin",
+        "--no-format",
+        "--config", coreDir.file("ghul-core/uniffi-test.toml").asFile.absolutePath,
+        "--out-dir", hostBindingsOut.get().asFile.absolutePath,
+    )
+}
+
+tasks.matching { it.name == "compileTestKotlinDesktop" }.configureEach { dependsOn(generateHostBindings) }
+tasks.withType<Test>().matching { it.name == "desktopTest" }.configureEach {
+    dependsOn(generateHostBindings)
+    systemProperty("jna.library.path", hostTargetDir.get().dir("debug").asFile.absolutePath)
+}
+
+// --- Windows app (installer and portable folder) --------------------------------------------
+
+val copyNativeLib by tasks.registering(Copy::class) {
+    group = "rust"
+    description = "Puts the core library next to the desktop app (app resources)."
+    dependsOn(buildRustHost)
+    from(hostReleaseDir.map { it.file("release/$hostLibName") })
+    into(appResourcesDir.map { it.dir(hostOsDir) })
+}
+
+tasks.matching { it.name == "prepareAppResources" }.configureEach { dependsOn(copyNativeLib) }
+
+compose.desktop {
+    application {
+        mainClass = "de.danerd.ghulsuite.MainKt"
+        jvmArgs += listOf("-Dfile.encoding=UTF-8", "-Dsun.stdout.encoding=UTF-8")
+        nativeDistributions {
+            targetFormats(TargetFormat.Msi)
+            packageName = "GhulSuite"
+            // MSI needs a purely numeric version.
+            packageVersion = "0.5.0"
+            description = "GhulSuite – Passwörter, 2FA, Drive und Mail, verschlüsselt"
+            vendor = "GhulSuite"
+            copyright = "© 2026 Daniel Erdmann · AGPL-3.0-or-later"
+            licenseFile.set(rootProject.layout.projectDirectory.file("../LICENSE"))
+            appResourcesRootDir.set(appResourcesDir)
+            // The whole runtime: the app must start from a USB stick without anything installed.
+            includeAllModules = true
+            windows {
+                menuGroup = "GhulSuite"
+                shortcut = true
+                dirChooser = true
+                perUserInstall = true
+                // Fixed, so a newer MSI replaces the installed version.
+                upgradeUuid = "6d1f3c52-8e0b-4b1e-9a57-2f4c8a1d7e39"
+                iconFile.set(project.layout.projectDirectory.file("icons/ghulsuite.ico"))
+            }
+        }
+    }
+}
+

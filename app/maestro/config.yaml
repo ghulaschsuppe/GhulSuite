@@ -1,0 +1,13 @@
+# Maestro test suite for GhulSuite (Android dev build). Runs on any emulator or device:
+#   maestro test app/maestro/
+# The flows use the English texts (default language of a fresh emulator).
+flows:
+  - "0*.yaml"
+executionOrder:
+  continueOnFailure: false
+  flowsOrder:
+    - Setup
+    - GhulPass
+    - GhulAuth
+    - App PIN, lock and unlock
+    - Options pages

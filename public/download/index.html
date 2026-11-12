@@ -1,0 +1,42 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="robots" content="noindex">
+  <title>GhulSuite herunterladen</title>
+  <link rel="stylesheet" href="download.css">
+</head>
+<body>
+  <main>
+    <h1>GhulSuite <span class="tag">Entwicklerversion</span></h1>
+    <p class="lead">Nur zum Testen – bitte keine echten Passwörter speichern. Die Pakete sind mit einem öffentlichen
+      Testschlüssel bzw. gar nicht signiert.</p>
+
+    <section>
+      <h2>Android</h2>
+      <a class="btn" href="ghulsuite-dev.apk" download>APK herunterladen</a>
+      <p class="sum"><a href="ghulsuite-dev.apk.sha256">SHA-256-Prüfsumme</a></p>
+      <p>Installation aus unbekannter Quelle erlauben, dann die APK öffnen.</p>
+    </section>
+
+    <section>
+      <h2>Windows 10 und 11</h2>
+      <a class="btn" href="ghulsuite-dev.msi" download>Installer (MSI)</a>
+      <a class="btn secondary" href="ghulsuite-dev-portable.zip" download>Portable Version (ZIP, z. B. für USB-Stick)</a>
+      <p class="sum"><a href="ghulsuite-dev.msi.sha256">Prüfsumme MSI</a> · <a href="ghulsuite-dev-portable.zip.sha256">Prüfsumme ZIP</a></p>
+      <ul>
+        <li><strong>Installer:</strong> installiert nur für dich (keine Administratorrechte nötig). Daten liegen in
+          <code>%APPDATA%\GhulSuite</code>.</li>
+        <li><strong>Portabel:</strong> ZIP entpacken (z. B. auf den USB-Stick) und <code>GhulSuite.exe</code> starten.
+          Alle Daten bleiben im Ordner <code>GhulSuite-Daten</code> daneben – auf dem PC bleibt nichts zurück.</li>
+        <li>Windows SmartScreen warnt beim ersten Start, weil das Programm nicht kostenpflichtig signiert ist:
+          „Weitere Informationen“ → „Trotzdem ausführen“.</li>
+        <li>Security Keys: Windows zeigt ein eigenes Fenster für PIN und Berührung.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

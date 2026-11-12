@@ -1,0 +1,5 @@
+# Bindings for the desktop FFI tests: a separate package, so they can live next to the app's
+# bindings. The test library is built with the `mock` feature (software security key).
+[bindings.kotlin]
+package_name = "de.danerd.ghulsuite.coretest"
+cdylib_name = "ghul_core"

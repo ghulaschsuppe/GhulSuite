@@ -1,0 +1,7 @@
+Options -Indexes
+ForceType application/octet-stream
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Content-Disposition "attachment"
+  Header always set X-Robots-Tag "noindex, nofollow"
+</IfModule>

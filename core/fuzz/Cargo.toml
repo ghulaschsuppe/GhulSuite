@@ -1,0 +1,27 @@
+[package]
+name = "ghul-core-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+license = "AGPL-3.0-or-later"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+ghul-core = { path = "../ghul-core" }
+
+[[bin]]
+name = "container_parse"
+path = "fuzz_targets/container_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ctap_responses"
+path = "fuzz_targets/ctap_responses.rs"
+test = false
+doc = false
+bench = false

@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# CI only: installs an Android 14 emulator, starts it headless, waits for the boot and runs
+# the Maestro flows (tools/run-maestro.sh). Usage: tools/ci-emulator.sh <apk> <output-dir>
+# Every step has a time limit, so a hanging emulator ends the job with a log instead of a timeout.
+set -euo pipefail
+apk="$1"; out="$2"
+mkdir -p "$out"
+sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+sdkm="$sdk/cmdline-tools/latest/bin/sdkmanager"
+avdm="$sdk/cmdline-tools/latest/bin/avdmanager"
+image="system-images;android-34;google_apis;x86_64"
+# One place for the virtual device, used by avdmanager and the emulator alike.
+export ANDROID_USER_HOME="$HOME/.android"
+export ANDROID_AVD_HOME="$HOME/.android/avd"
+mkdir -p "$ANDROID_AVD_HOME"
+log() { echo "[$(date +%H:%M:%S)] $*"; }
+finish() {
+  status=$?
+  log "Ende (Status $status) – letzte Zeilen des Emulators:"
+  tail -n 40 "$out/emulator.log" 2>/dev/null || true
+  timeout 20 adb exec-out screencap -p > "$out/last-screen.png" 2>/dev/null || true
+  timeout 30 adb logcat -d > "$out/logcat.txt" 2>/dev/null || true
+  timeout 10 adb emu kill > /dev/null 2>&1 || true
+}
+trap finish EXIT
+
+if [ -e /dev/kvm ]; then log "KVM vorhanden"; ls -la /dev/kvm; else log "::warning::/dev/kvm fehlt"; fi
+log "SDK-Pakete installieren"
+(yes 2>/dev/null || true) | timeout 300 "$sdkm" --licenses > /dev/null 2>&1 || true
+timeout 900 "$sdkm" --install "platform-tools" "emulator" "$image" > /dev/null
+export PATH="$sdk/platform-tools:$sdk/emulator:$PATH"
+log "AVD anlegen"
+echo no | timeout 120 "$avdm" create avd --force -n ghul -k "$image" -d pixel_6 -p "$ANDROID_AVD_HOME/ghul.avd" > /dev/null
+ls "$ANDROID_AVD_HOME"
+log "Emulator starten"
+nohup emulator -avd ghul -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot \
+  -no-metrics -camera-back none -camera-front none -accel auto > "$out/emulator.log" 2>&1 &
+timeout 300 adb wait-for-device
+log "Gerät da, warte auf Systemstart"
+booted=""
+for i in $(seq 1 90); do
+  if [ "$(timeout 10 adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; then booted=1; break; fi
+  sleep 5
+done
+[ -n "$booted" ] || { log "::error::Emulator nicht hochgefahren"; exit 1; }
+log "System bereit"
+for k in window_animation_scale transition_animation_scale animator_duration_scale; do
+  timeout 10 adb shell settings put global "$k" 0 || true
+done
+timeout 10 adb shell input keyevent 82 || true
+log "Maestro-Abläufe starten"
+timeout 1200 "$(dirname "$0")/run-maestro.sh" "$apk" "$out"
+log "Maestro fertig"

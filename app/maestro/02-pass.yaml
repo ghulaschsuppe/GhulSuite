@@ -1,0 +1,39 @@
+# Testplan 4 / N2: create a login, find it, open it, mark it as favourite.
+appId: de.danerd.ghulsuite.dev
+name: GhulPass
+---
+- launchApp:
+    stopApp: false
+- tapOn: "GhulPass"
+- tapOn: "Add"
+- extendedWaitUntil:
+    visible: "New entry"
+    timeout: 10000
+- takeScreenshot: 02-type-picker
+- tapOn: "Login"
+- tapOn: "Title"
+- inputText: "Codeberg"
+- tapOn: "Username"
+- inputText: "ghul"
+- tapOn: "Password"
+- inputText: "Sehr-Geheim-4711!"
+- hideKeyboard
+- takeScreenshot: 02-edit
+- scrollUntilVisible:
+    element: "Save"
+    direction: DOWN
+- tapOn: "Save"
+- extendedWaitUntil:
+    visible: "Codeberg"
+    timeout: 15000
+- takeScreenshot: 02-detail
+- back
+- tapOn: "Search entries"
+- inputText: "code"
+- assertVisible: "Codeberg"
+- eraseText
+- hideKeyboard
+- tapOn: "Codeberg"
+- assertVisible: "ghul"
+- back
+- takeScreenshot: 02-list

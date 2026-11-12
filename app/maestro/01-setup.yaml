@@ -1,0 +1,63 @@
+# Testplan 1: new suite with master password and key file, recovery code confirmed.
+appId: de.danerd.ghulsuite.dev
+name: Setup
+---
+- launchApp:
+    clearState: true
+    permissions:
+      all: allow
+- extendedWaitUntil:
+    visible: "Set up new"
+    timeout: 30000
+- takeScreenshot: 01-start
+- tapOn: "Set up new"
+- tapOn: "Key file"
+- tapOn: "Next"
+# Text matching ignores case: index 1 is the field label, index 0 the section title.
+- tapOn:
+    text: "Master password"
+    index: 1
+- inputText: "Ghul-Test-Passwort-2026!"
+- tapOn: "Repeat password"
+- inputText: "Ghul-Test-Passwort-2026!"
+- hideKeyboard
+- takeScreenshot: 01-password
+- tapOn: "Next"
+- tapOn: "Create and save key file"
+# System dialog "Save to" (DocumentsUI)
+- tapOn:
+    text: "(?i)save"
+    retryTapIfNoChange: false
+- extendedWaitUntil:
+    visible: "Key file ready."
+    timeout: 15000
+- tapOn: "Next"
+# The Set up button is enabled once the key derivation is calibrated for this device.
+- scrollUntilVisible:
+    element: "Set up"
+    direction: DOWN
+- extendedWaitUntil:
+    visible:
+      text: "Set up"
+      enabled: true
+    timeout: 90000
+- takeScreenshot: 01-vaults
+- tapOn: "Set up"
+- extendedWaitUntil:
+    visible: "Your recovery code"
+    timeout: 90000
+- takeScreenshot: 01-recovery-code
+- copyTextFrom:
+    text: "[A-Z0-9]{5}\\s+[A-Z0-9]{5}\\s+[A-Z0-9]{5}"
+    index: 0
+- evalScript: ${output.group3 = maestro.copiedText.trim().split(/\s+/)[2]}
+- tapOn: "I have written down or printed the code"
+- tapOn: "Next"
+- tapOn: "Group 3 of the code"
+- inputText: ${output.group3}
+- hideKeyboard
+- tapOn: "Finish"
+- extendedWaitUntil:
+    visible: "Search entries"
+    timeout: 30000
+- takeScreenshot: 01-done

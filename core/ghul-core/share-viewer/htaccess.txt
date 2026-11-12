@@ -1,0 +1,9 @@
+# GhulSuite share folder: only encrypted packages, no listing, strict headers.
+Options -Indexes
+<IfModule mod_headers.c>
+  Header always set Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+  Header always set Referrer-Policy "no-referrer"
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Robots-Tag "noindex, nofollow"
+  Header always set Cache-Control "no-store"
+</IfModule>

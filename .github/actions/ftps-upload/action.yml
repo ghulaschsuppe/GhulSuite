@@ -1,0 +1,90 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+name: FTPS upload
+description: Uploads a local directory to the dev server via FTPS (lftp). Credentials come from the caller's secrets.
+
+inputs:
+  server:
+    description: FTP host (protocol prefix, path, port and whitespace are stripped)
+    required: true
+  user:
+    description: FTP user
+    required: true
+  password:
+    description: FTP password
+    required: true
+  local-dir:
+    description: Local directory to upload
+    required: true
+  remote-dir:
+    description: Target directory on the server
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: FTP-Server prüfen
+      id: host
+      shell: bash
+      env:
+        RAW: ${{ inputs.server }}
+      run: |
+        if [ -z "$RAW" ]; then echo "::error::Secret FTP_SERVER ist leer oder fehlt."; exit 1; fi
+        host="$(printf '%s' "$RAW" | tr -d '[:space:]')"
+        case "$host" in *://*) host="${host#*://}";; esac
+        case "$host" in */*) host="${host%%/*}";; esac
+        case "$host" in *:*) host="${host%%:*}";; esac
+        echo "::add-mask::$host"
+        if ! getent hosts "$host" > /dev/null; then
+          echo "::error::Hostname aus FTP_SERVER lässt sich nicht auflösen. Bitte nur den Servernamen eintragen."
+          exit 1
+        fi
+        echo "host=$host" >> "$GITHUB_OUTPUT"
+
+    # lftp is preferred; if the package mirror is down, the upload falls back to curl (always installed).
+    - name: lftp installieren
+      shell: bash
+      run: |
+        command -v lftp > /dev/null && exit 0
+        timeout 120 sudo apt-get update -qq || true
+        timeout 120 sudo apt-get install -y -qq lftp || echo "::warning::lftp nicht installierbar, Upload per curl."
+
+    # lftp beherrscht die bei vielen Hostern nötige TLS-Session-Wiederverwendung im Datenkanal.
+    - name: Upload per FTPS
+      shell: bash
+      env:
+        FTP_HOST: ${{ steps.host.outputs.host }}
+        FTP_USER: ${{ inputs.user }}
+        LFTP_PASSWORD: ${{ inputs.password }}
+        LOCAL_DIR: ${{ inputs.local-dir }}
+        REMOTE_DIR: ${{ inputs.remote-dir }}
+      run: |
+        if ! command -v lftp > /dev/null; then
+          # Fallback: curl with FTPS (TLS for control and data), credentials from a temporary netrc file.
+          netrc="$(mktemp)"
+          trap 'rm -f "$netrc"' EXIT
+          printf 'machine %s login %s password %s\n' "$FTP_HOST" "$FTP_USER" "$LFTP_PASSWORD" > "$netrc"
+          cd "$LOCAL_DIR"
+          find . -type f ! -path '*/.git*' | while read -r f; do
+            f="${f#./}"
+            echo "Upload $f"
+            # Upload under a temporary name, then rename: a cancelled run never leaves half a file.
+            name="$(basename "$f")"
+            curl --silent --show-error --fail --ssl-reqd --ftp-create-dirs --retry 2 --connect-timeout 20 \
+              --netrc-file "$netrc" -T "$f" "ftp://$FTP_HOST/${REMOTE_DIR%/}/$f.part" \
+              -Q "-RNFR $name.part" -Q "-RNTO $name"
+          done
+          exit 0
+        fi
+        lftp --env-password -u "$FTP_USER" "$FTP_HOST" <<LFTP
+        set cmd:fail-exit true
+        set ftp:ssl-force true
+        set ftp:ssl-protect-data true
+        set ssl:verify-certificate true
+        set net:max-retries 2
+        set net:timeout 20
+        # Write to "name.part" and rename when complete, so a cancelled run never leaves a broken file.
+        set xfer:use-temp-file true
+        set xfer:temp-file-name *.part
+        mirror --reverse --verbose --exclude-glob .git* "$LOCAL_DIR" "$REMOTE_DIR"
+        bye
+        LFTP

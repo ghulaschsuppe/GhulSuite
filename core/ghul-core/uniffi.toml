@@ -1,0 +1,3 @@
+[bindings.kotlin]
+package_name = "de.danerd.ghulsuite.core"
+cdylib_name = "ghul_core"

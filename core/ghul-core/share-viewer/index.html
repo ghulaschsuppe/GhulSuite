@@ -1,0 +1,32 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
+<title>GhulSuite – geteilte Datei</title>
+<link rel="stylesheet" href="viewer.css">
+</head>
+<body>
+<main class="box">
+  <div class="logo" aria-hidden="true"></div>
+  <h1 id="title">Geteilte Datei</h1>
+  <p id="msg" class="muted">Wird geladen …</p>
+  <div id="file" hidden>
+    <p class="name" id="name"></p>
+    <p class="muted" id="size"></p>
+  </div>
+  <form id="pwform" hidden>
+    <label for="pw" id="pwlabel">Passwort</label>
+    <input id="pw" type="password" autocomplete="off" required>
+    <button type="submit" id="pwbtn">Öffnen</button>
+  </form>
+  <button id="dl" hidden>Herunterladen</button>
+  <p class="note" id="note">Ende-zu-Ende verschlüsselt. Der Schlüssel steht nur im Link und wird nie an den Server geschickt.</p>
+</main>
+<script src="viewer.js"></script>
+</body>
+</html>

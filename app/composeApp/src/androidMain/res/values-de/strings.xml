@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tile_label">GhulSuite sperren</string>
+    <string name="notif_channel">Entsperrt</string>
+    <string name="notif_title">GhulSuite ist entsperrt</string>
+    <string name="notif_text">Tippen zum Öffnen. Schütteln oder „Sperren“ sperrt sofort.</string>
+    <string name="notif_lock">Sperren</string>
+    <string name="bio_title">GhulSuite entsperren</string>
+    <string name="bio_subtitle">Mit Fingerabdruck bestätigen</string>
+    <string name="bio_cancel">Abbrechen</string>
+    <string name="autofill_unlock">GhulSuite entsperren</string>
+    <string name="autofill_pick">Andere Anmeldung wählen …</string>
+    <string name="autofill_save_locked">GhulSuite ist gesperrt – Anmeldung nicht gespeichert.</string>
+    <string name="autofill_saved">Anmeldung in GhulSuite gespeichert.</string>
+    <string name="autofill_updated">Passwort in GhulSuite aktualisiert.</string>
+    <string name="autofill_unchanged">Schon so in GhulSuite gespeichert.</string>
+    <string name="autofill_save_failed">Die Anmeldung konnte nicht in GhulSuite gespeichert werden.</string>
+    <string name="mail_channel">Neue E-Mails</string>
+    <string name="mail_push_channel">GhulMail wartet auf neue E-Mails</string>
+    <string name="mail_push_title">GhulMail ist bereit</string>
+    <string name="mail_push_text">Neue E-Mails werden sofort gemeldet. Ausschalten: in GhulMail beim Konto.</string>
+    <plurals name="mail_new">
+        <item quantity="one">%d neue E-Mail</item>
+        <item quantity="other">%d neue E-Mails</item>
+    </plurals>
+</resources>

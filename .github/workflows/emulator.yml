@@ -1,0 +1,62 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Fast run of the emulator tests alone when only the flows change: takes the APK of the latest
+# "Android & Kern" run of this branch instead of building it again (that workflow runs them too).
+name: Emulator-Tests
+
+on:
+  push:
+    branches: [main, 'claude/**']
+    paths: ['app/maestro/**', 'tools/ci-emulator.sh', 'tools/run-maestro.sh', '.github/workflows/emulator.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: emulator-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  emulator:
+    name: Maestro-Abläufe im Android-Emulator
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      MAESTRO_VERSION: cli-2.12.1
+      MAESTRO_SHA256: 54dbb0716425626604973cbb374c585ca30272375d9ce15177a1152765ddd9d7
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: APK des letzten Laufs dieses Branches holen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for id in $(gh run list -R "$GITHUB_REPOSITORY" -w android.yml -b "$GITHUB_REF_NAME" -L 15 --json databaseId -q '.[].databaseId'); do
+            if gh run download "$id" -R "$GITHUB_REPOSITORY" -n ghulsuite-dev -D dist 2> /dev/null; then echo "APK aus Lauf $id"; break; fi
+          done
+          test -f dist/ghulsuite-dev.apk
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: KVM für den Emulator freischalten
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Maestro (feste Version, Prüfsumme geprüft)
+        run: |
+          curl -fsSL -o /tmp/maestro.zip "https://github.com/mobile-dev-inc/maestro/releases/download/$MAESTRO_VERSION/maestro.zip"
+          echo "$MAESTRO_SHA256  /tmp/maestro.zip" | sha256sum -c -
+          unzip -q /tmp/maestro.zip -d "$HOME"
+          echo "$HOME/maestro/bin" >> "$GITHUB_PATH"
+      - name: Abläufe im Emulator (Android 14)
+        run: |
+          mkdir -p maestro-out
+          tools/ci-emulator.sh dist/ghulsuite-dev.apk maestro-out
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: emulator-tests
+          path: maestro-out/
+          retention-days: 30

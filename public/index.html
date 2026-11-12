@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>GhulPass PRF-Test</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <h1>GhulPass · PRF-Test</h1>
+    <p class="intro">
+      Prüft, ob dein Security Key in diesem Browser die <strong>PRF-Erweiterung</strong> unterstützt.
+      Davon hängt ab, ob der Key später Teil des Tresor-Schlüssels sein kann.
+      Es werden keine Daten an einen Server gesendet.
+    </p>
+
+    <section>
+      <h2>Umgebung</h2>
+      <table id="env"></table>
+    </section>
+
+    <section>
+      <h2>Test</h2>
+      <ol class="steps">
+        <li><button id="btn-register" type="button">1. Key registrieren</button></li>
+        <li><button id="btn-test" type="button">2. PRF abfragen</button>
+          <span class="hint">mehrmals ausführen – auch im Flugmodus</span></li>
+      </ol>
+      <div id="result" class="result" hidden></div>
+    </section>
+
+    <section>
+      <h2>Protokoll</h2>
+      <pre id="log"></pre>
+      <div class="row">
+        <button id="btn-copy" type="button">Bericht kopieren</button>
+        <button id="btn-reset" type="button" class="secondary">Zurücksetzen</button>
+      </div>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

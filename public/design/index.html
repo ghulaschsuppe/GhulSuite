@@ -1,0 +1,46 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex">
+  <title>GhulSuite Design-Vorschau</title>
+  <link rel="stylesheet" href="design.css">
+</head>
+<body>
+  <div class="stage">
+    <aside class="panel" id="panel">
+      <h1>GhulSuite <span>Design-Vorschau</span></h1>
+      <p class="lead">Klickbarer Prototyp für Aussehen und Funktionen. Alle Daten sind erfunden, nichts wird gespeichert oder übertragen.</p>
+      <div class="panel-controls">
+        <button class="pill chip" data-act="theme" type="button">Hell / Dunkel</button>
+        <label class="check"><input type="checkbox" id="mark-new" checked> Neue Funktionen markieren</label>
+      </div>
+      <p class="legend"><span class="new-tag">neu</span> = gibt es in der App noch nicht, Vorschlag zum Bauen.</p>
+      <h2>Direkt zu</h2>
+      <div class="jump" id="jump"></div>
+      <h2>Teilen je Verbindungsart</h2>
+      <table class="compat">
+        <tr><th></th><th>App</th><th>Link</th><th>Limit</th></tr>
+        <tr><td>SFTP (eigener Server mit Webserver)</td><td class="y">ja</td><td class="y">ja</td><td class="n">nein</td></tr>
+        <tr><td>FTPS (Webhosting)</td><td class="y">ja</td><td class="y">ja</td><td class="n">nein</td></tr>
+        <tr><td>GhulSuite-Server-Modul (PHP)</td><td class="y">ja</td><td class="y">ja</td><td class="y">ja</td></tr>
+      </table>
+      <p class="legend">App = an andere App auf dem Handy · Link = verschlüsselter Freigabelink · Limit = Download-Zähler, Einmal-Link. Einrichten: Optionen → Eigene Server → Teilen einrichten.</p>
+      <h2>Vorschläge für die nächsten Schritte</h2>
+      <ol class="proposals" id="proposals"></ol>
+    </aside>
+    <main class="device-wrap">
+      <div class="device" id="device">
+        <div class="statusbar"><span id="clock">9:41</span><span class="sb-icons"><i></i><i></i><i></i></span></div>
+        <div class="app" id="app"></div>
+        <div class="toast" id="toast" role="status" aria-live="polite"></div>
+        <div class="sheet-backdrop" id="backdrop" data-act="close-sheet"></div>
+        <div class="sheet" id="sheet" role="dialog" aria-modal="true"></div>
+      </div>
+    </main>
+  </div>
+  <script src="design.js"></script>
+</body>
+</html>

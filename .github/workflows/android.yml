@@ -1,0 +1,339 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+name: Android & Kern
+
+on:
+  push:
+    branches: [main, 'claude/**']
+    paths: ['core/**', 'app/**', 'docs/testvectors/**', 'tools/**', '.github/workflows/android.yml', '.github/actions/ftps-upload/**',
+            '!app/maestro/**', '!tools/ci-emulator.sh', '!tools/run-maestro.sh']
+  pull_request:
+    paths: ['core/**', 'app/**', 'docs/testvectors/**', 'tools/**', '.github/workflows/android.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NDK_VERSION: 28.2.13676358
+  CARGO_NDK_VERSION: 4.1.2
+
+jobs:
+  testvectors:
+    name: Testvektoren unabhängig prüfen (Python)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - run: |
+          python3 -m venv .venv
+          .venv/bin/pip install -q argon2-cffi cryptography pynacl cbor2
+          .venv/bin/python tools/verify_testvectors.py
+
+  audit:
+    name: Abhängigkeiten auf bekannte Sicherheitslücken prüfen
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: cargo audit (Ausnahmen begründet in docs/AUDIT.md)
+        working-directory: core
+        run: |
+          rustup toolchain install stable --profile minimal
+          cargo install cargo-audit --locked --quiet
+          cargo audit
+
+  fuzz:
+    name: Fuzzing (je 2 Minuten)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Nightly und cargo-fuzz
+        run: |
+          rustup toolchain install nightly --profile minimal
+          cargo install cargo-fuzz --locked
+      - name: Fuzzing
+        working-directory: core/fuzz
+        run: |
+          mkdir -p corpus/container_parse
+          python3 - <<'PY'
+          import json
+          d = json.load(open('../../docs/testvectors/container-v1.json'))
+          for i, v in enumerate(d['vectors']):
+              open(f'corpus/container_parse/vector{i}', 'wb').write(bytes.fromhex(v['file']))
+          PY
+          cargo +nightly fuzz run container_parse corpus/container_parse -- -max_total_time=120 -rss_limit_mb=3000
+          cargo +nightly fuzz run ctap_responses -- -max_total_time=120
+      - name: Fundstücke sichern
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fuzz-artifacts
+          path: core/fuzz/artifacts/
+
+  network:
+    name: Netzwerk-Tests (echte SFTP-, IMAP- und SMTP-Testserver)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Testserver starten (SFTP, IMAP, SMTP – nur lokal für die Netzwerk-Tests)
+        timeout-minutes: 20
+        run: |
+          # The package mirror sometimes fails briefly: retry a few times.
+          # If the mirror stays down, skip these tests with a warning instead of failing the run:
+          # an outage at the package mirror says nothing about our code.
+          ok=0
+          for i in 1 2 3; do
+            timeout 120 sudo apt-get update -qq || true
+            if timeout 240 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o Acquire::Retries=3 openssh-server dovecot-imapd vsftpd > /dev/null; then ok=1; break; fi
+            sleep $((i * 15))
+          done
+          if [ "$ok" != 1 ]; then
+            echo "::warning title=Netzwerk-Tests übersprungen::Ubuntu-Paketspiegel nicht erreichbar; SFTP/IMAP/SMTP-Testserver konnten nicht installiert werden."
+            echo "GHUL_NET_SKIP=1" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          sudo systemctl stop dovecot vsftpd 2>/dev/null || true
+          sudo bash tools/test-servers.sh | sed 's/^export //' >> "$GITHUB_ENV"
+
+      - name: Sync, Drive und Mail gegen die Testserver
+        if: env.GHUL_NET_SKIP != '1'
+        working-directory: core
+        run: |
+          rustup toolchain install stable --profile minimal
+          # The network tests must really run (without servers they skip silently).
+          test -n "$GHUL_TEST_SFTP" && test -n "$GHUL_TEST_MAIL"
+          cargo test --locked -p ghul-core -- sftp ftps mail sync drive share php
+
+  browser:
+    name: Browser-Tests (Empfängerseite, PHP-Server-Modul)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: PHP-Modul mit PHP 8.1 prüfen (Syntax)
+        run: |
+          docker run --rm -v "$PWD/core/ghul-core/server:/m:ro" php:8.1-cli php -l /m/ghulsuite.php
+
+      - name: Chromium für Playwright
+        run: |
+          mkdir -p /tmp/pw && cd /tmp/pw && npm init -y > /dev/null && npm install --silent playwright@1.49.1
+          npx --prefix /tmp/pw playwright install chromium
+
+      - name: Empfängerseite und PHP-Modul im Browser
+        env:
+          NODE_PATH: /tmp/pw/node_modules
+        run: |
+          rustup toolchain install stable --profile minimal
+          cd core && cargo test --locked -p ghul-core --no-run
+          D=$(mktemp -d)
+          GHUL_SHARE_FIXTURE=$D cargo test --locked -p ghul-core viewer_fixture
+          cp ghul-core/share-viewer/index.html ghul-core/share-viewer/viewer.js ghul-core/share-viewer/viewer.css "$D/"
+          node ../tools/test-share-viewer.js "$D"
+          P=$(mktemp -d)
+          GHUL_PHP_FIXTURE=$P cargo test --locked -p ghul-core php_browser_fixture &
+          node ../tools/test-share-php.js "$P"
+          wait $!
+
+  windows:
+    name: Windows-App (Installer und portable Version)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+          cache-dependency-path: |
+            app/**/*.gradle.kts
+            app/gradle/libs.versions.toml
+            app/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Rust-Kern unter Windows prüfen (Clippy, Tests)
+        working-directory: core
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy
+          cargo clippy --locked -p ghul-core --all-targets -- -D warnings
+          cargo test --locked -p ghul-core
+
+      - name: FFI-Tests, Installer (MSI) und portable Version
+        working-directory: app
+        shell: bash
+        run: ./gradlew --no-daemon --console=plain :composeApp:desktopTest :composeApp:packageMsi :composeApp:createDistributable
+
+      - name: Pakete bereitstellen
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $msi = Get-ChildItem app/composeApp/build/compose/binaries/main/msi/*.msi | Select-Object -First 1
+          Copy-Item $msi.FullName dist/ghulsuite-dev.msi
+          # Portable: the marker file "portable" keeps all data next to the program (e.g. on a USB stick).
+          $app = "app/composeApp/build/compose/binaries/main/app/GhulSuite"
+          Set-Content -Path "$app/portable" -Value "GhulSuite portabel: Daten liegen im Ordner GhulSuite-Daten neben dem Programm."
+          Compress-Archive -Path $app -DestinationPath dist/ghulsuite-dev-portable.zip -Force
+          Get-ChildItem dist | ForEach-Object {
+            $h = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "$h  $($_.Name)" | Out-File -Encoding ascii -FilePath "dist/$($_.Name).sha256"
+          }
+          Get-ChildItem dist
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ghulsuite-windows-dev
+          path: dist/
+          retention-days: 30
+
+  windows-upload:
+    name: Windows-Pakete nach dev hochladen
+    if: github.event_name != 'pull_request' && github.repository_owner == 'ghulaschsuppe'
+    needs: windows
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ghulsuite-windows-dev
+          path: dist/
+      - name: Upload auf den eigenen Testserver (Ordner ghulsuite/download)
+        uses: ./.github/actions/ftps-upload
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          user: ${{ secrets.FTP_USER }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./dist/
+          remote-dir: ghulsuite/download/
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+          cache-dependency-path: |
+            app/**/*.gradle.kts
+            app/gradle/libs.versions.toml
+            app/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Rust-Toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add aarch64-linux-android x86_64-linux-android
+          cargo install cargo-ndk --locked --version "$CARGO_NDK_VERSION"
+
+      - name: Android NDK
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION" > /dev/null
+
+      - name: Rust-Kern prüfen (Format, Clippy, Tests inkl. simuliertem Key und Testvektoren)
+        working-directory: core
+        run: |
+          rustup component add rustfmt clippy
+          cargo fmt --all -- --check
+          cargo clippy --locked -p ghul-core --all-targets --features mock -- -D warnings
+          cargo test --locked -p ghul-core
+
+      # The signing key only exists as a secret; the file lives in the runner's temp folder for
+      # this job only. Without the secret (forks, pull requests) the APK gets a throwaway key.
+      - name: Signaturschlüssel aus den Secrets
+        if: github.event_name != 'pull_request' && github.repository_owner == 'ghulaschsuppe'
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then echo "::warning::Secret ANDROID_KEYSTORE_BASE64 fehlt – APK wird nur mit einem Wegwerf-Schlüssel signiert."; exit 0; fi
+          file="$RUNNER_TEMP/ghulsuite-release.jks"
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$file"
+          {
+            echo "GHUL_KEYSTORE_FILE=$file"
+            echo "GHUL_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+            echo "GHUL_KEY_ALIAS=$KEY_ALIAS"
+          } >> "$GITHUB_ENV"
+
+      - name: FFI-Tests und APK
+        working-directory: app
+        run: ./gradlew --no-daemon --console=plain :composeApp:desktopTest :composeApp:assembleDebug
+
+      - name: APK bereitstellen
+        run: |
+          mkdir -p dist
+          cp app/composeApp/build/outputs/apk/debug/composeApp-debug.apk dist/ghulsuite-dev.apk
+          (cd dist && sha256sum ghulsuite-dev.apk | tee ghulsuite-dev.apk.sha256)
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ghulsuite-dev
+          path: dist/
+          retention-days: 30
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: screenshots
+          path: app/composeApp/build/screenshots/
+          retention-days: 30
+
+      - name: Upload auf den eigenen Testserver (Ordner ghulsuite/download)
+        if: github.event_name != 'pull_request' && github.repository_owner == 'ghulaschsuppe'
+        uses: ./.github/actions/ftps-upload
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          user: ${{ secrets.FTP_USER }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./dist/
+          remote-dir: ghulsuite/download/
+
+  emulator:
+    name: Emulator-Tests (Maestro-Abläufe aus app/maestro)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      MAESTRO_VERSION: cli-2.12.1
+      MAESTRO_SHA256: 54dbb0716425626604973cbb374c585ca30272375d9ce15177a1152765ddd9d7
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ghulsuite-dev
+          path: dist/
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: KVM für den Emulator freischalten
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Maestro (feste Version, Prüfsumme geprüft)
+        run: |
+          curl -fsSL -o /tmp/maestro.zip "https://github.com/mobile-dev-inc/maestro/releases/download/$MAESTRO_VERSION/maestro.zip"
+          echo "$MAESTRO_SHA256  /tmp/maestro.zip" | sha256sum -c -
+          unzip -q /tmp/maestro.zip -d "$HOME"
+          echo "$HOME/maestro/bin" >> "$GITHUB_PATH"
+      - name: Abläufe im Emulator (Android 14)
+        run: |
+          mkdir -p maestro-out
+          tools/ci-emulator.sh dist/ghulsuite-dev.apk maestro-out
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: emulator-tests
+          path: maestro-out/
+          retention-days: 30

@@ -1,0 +1,26 @@
+GhulSuite
+Copyright (C) 2026 Daniel Erdmann
+
+This program is free software: you can redistribute it and/or modify it under the terms of the
+GNU Affero General Public License as published by the Free Software Foundation, either version 3
+of the License, or (at your option) any later version. See LICENSE.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+Additional terms under section 7 of the GNU Affero General Public License
+------------------------------------------------------------------------
+
+(b) Attribution: Modified versions must keep the author notice "Made by Daniel Erdmann" visible
+    in the "About" section (or an equivalent place showing legal notices) of their user
+    interface, together with a link to or the name of the original project "GhulSuite".
+
+(c) Origin: Modified versions must be marked as modified and must not be presented as the
+    original GhulSuite.
+
+(e) Names and marks: This licence grants no rights to use the name "GhulSuite", the names of
+    its areas used as product names or the logo. See TRADEMARKS.md.
+
+Third-party components keep their own licences; they are listed in the app under
+"About and help → Libraries". The passphrase word list is the EFF Large Wordlist
+(Electronic Frontier Foundation, CC BY 3.0 US).

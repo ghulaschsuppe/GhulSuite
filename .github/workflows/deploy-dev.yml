@@ -1,0 +1,31 @@
+name: Deploy dev
+
+on:
+  push:
+    branches: [main, 'claude/**']
+    paths: ['public/**', '.github/workflows/deploy-dev.yml', '.github/actions/ftps-upload/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # Only in the original repository (forks have no access to the test server).
+    if: github.repository_owner == 'ghulaschsuppe'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Upload auf den eigenen Testserver (Ordner ghulsuite)
+        uses: ./.github/actions/ftps-upload
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          user: ${{ secrets.FTP_USER }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./public/
+          remote-dir: ghulsuite/

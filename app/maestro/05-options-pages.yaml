@@ -1,0 +1,16 @@
+# Testplan 11 / 16: every page under Options opens.
+appId: de.danerd.ghulsuite.dev
+name: Options pages
+---
+- launchApp:
+    stopApp: false
+- tapOn: "Options"
+- runFlow:
+    file: open-option.yaml
+    env: { PAGE: "Unlocking", SHOT: "05-unlocking" }
+- runFlow:
+    file: open-option.yaml
+    env: { PAGE: "Privacy", SHOT: "05-privacy" }
+- runFlow:
+    file: open-option.yaml
+    env: { PAGE: "About and help", SHOT: "05-about" }

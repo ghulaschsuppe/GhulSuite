@@ -1,0 +1,9 @@
+# Helper: scroll to an Options row, open it, take a screenshot, go back.
+appId: de.danerd.ghulsuite.dev
+---
+- scrollUntilVisible:
+    element: ${PAGE}
+    direction: DOWN
+- tapOn: ${PAGE}
+- takeScreenshot: ${SHOT}
+- back

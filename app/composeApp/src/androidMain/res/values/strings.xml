@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">GhulSuite</string>
+    <string name="tile_label">Lock GhulSuite</string>
+    <string name="notif_channel">Unlocked</string>
+    <string name="notif_title">GhulSuite is unlocked</string>
+    <string name="notif_text">Tap to open. Shake or “Lock” locks immediately.</string>
+    <string name="notif_lock">Lock</string>
+    <string name="bio_title">Unlock GhulSuite</string>
+    <string name="bio_subtitle">Confirm with your fingerprint</string>
+    <string name="bio_cancel">Cancel</string>
+    <string name="autofill_unlock">Unlock GhulSuite</string>
+    <string name="autofill_pick">Choose another login …</string>
+    <string name="autofill_save_locked">GhulSuite is locked – login not saved.</string>
+    <string name="autofill_saved">Login saved in GhulSuite.</string>
+    <string name="autofill_updated">Password updated in GhulSuite.</string>
+    <string name="autofill_unchanged">Already saved in GhulSuite.</string>
+    <string name="autofill_save_failed">Could not save the login in GhulSuite.</string>
+    <string name="mail_channel">New e-mail</string>
+    <string name="mail_push_channel">GhulMail waiting for new e-mail</string>
+    <string name="mail_push_title">GhulMail is ready</string>
+    <string name="mail_push_text">New e-mail is reported at once. Turn off: in GhulMail, at the account.</string>
+    <plurals name="mail_new">
+        <item quantity="one">%d new e-mail</item>
+        <item quantity="other">%d new e-mails</item>
+    </plurals>
+</resources>
