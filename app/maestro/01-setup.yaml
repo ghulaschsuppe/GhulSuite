@@ -6,6 +6,10 @@ name: Setup
     clearState: true
     permissions:
       all: allow
+# A dialog of the (still busy) system could cover the app on a fresh emulator.
+- tapOn:
+    text: "Wait"
+    optional: true
 - extendedWaitUntil:
     visible: "Set up new"
     timeout: 30000

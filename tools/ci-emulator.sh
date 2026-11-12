@@ -48,6 +48,10 @@ log "System bereit"
 for k in window_animation_scale transition_animation_scale animator_duration_scale; do
   timeout 10 adb shell settings put global "$k" 0 || true
 done
+# A freshly booted emulator is busy for a while; system "isn't responding" dialogs would cover the app.
+timeout 10 adb shell settings put global hide_error_dialogs 1 || true
+sleep 30
+timeout 10 adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS > /dev/null || true
 timeout 10 adb shell input keyevent 82 || true
 log "Maestro-Abläufe starten"
 timeout 1200 "$(dirname "$0")/run-maestro.sh" "$apk" "$out"
