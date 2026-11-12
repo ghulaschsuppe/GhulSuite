@@ -955,4 +955,6 @@
     <string name="mail_image_placeholder">Image</string>
     <string name="mail_show_text">Show as plain text</string>
     <string name="mail_show_formatted">Show formatted</string>
+    <string name="key_waiting_title">Plug in your security key now</string>
+    <string name="key_waiting_text">Waiting up to one minute – then touch it when it blinks.</string>
 </resources>

@@ -8,6 +8,9 @@ import kotlinx.coroutines.flow.StateFlow
  * Android implements it with USB/CTAP2; Windows will use the WebAuthn API.
  */
 interface VaultBackend {
+    /** True while the app waits for a security key to be plugged in (Android). */
+    val waitingForKey: kotlinx.coroutines.flow.StateFlow<Boolean> get() = NOT_WAITING
+
     val unlocked: StateFlow<Boolean>
     val settings: Settings
     /** Servers, synchronisation, GhulDrive and GhulMail. */
@@ -381,3 +384,5 @@ enum class VaultErrorKind {
 
 class VaultException(val kind: VaultErrorKind, val detail: String = "", val retries: Int? = null) :
     Exception("$kind: $detail")
+
+private val NOT_WAITING = kotlinx.coroutines.flow.MutableStateFlow(false)
