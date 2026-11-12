@@ -947,4 +947,12 @@
     <string name="about_made_by">Made by Daniel Erdmann · 2026</string>
     <string name="about_made_by_sub">Selbst gehostete Passwörter, 2FA, Dateien und Mail – Open Source unter AGPL-3.0.</string>
     <string name="about_trademark">„GhulSuite“ und das Logo sind Kennzeichen von Daniel Erdmann. Veränderte Fassungen brauchen einen eigenen Namen.</string>
+    <string name="mail_images_blocked">%1$s Bild(er) aus dem Internet blockiert – sie könnten dem Absender verraten, dass du die Mail gelesen hast.</string>
+    <string name="mail_images_load">Bilder laden</string>
+    <string name="mail_images_always">Immer für diesen Absender</string>
+    <string name="mail_link_title">Link öffnen?</string>
+    <string name="mail_link_open">Öffnen</string>
+    <string name="mail_image_placeholder">Bild</string>
+    <string name="mail_show_text">Als reinen Text anzeigen</string>
+    <string name="mail_show_formatted">Formatiert anzeigen</string>
 </resources>

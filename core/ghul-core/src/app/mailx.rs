@@ -41,7 +41,13 @@ pub struct MailDraftData {
     /// Unix milliseconds.
     #[serde(default)]
     pub updated: i64,
+    /// Attachments, kept encrypted in the suite like the rest of the draft (at most 10 MiB).
+    #[serde(default)]
+    pub attachments: Vec<super::mail::OutgoingAttachment>,
 }
+
+/// Largest total size of the attachments of one draft (they live in the synchronised suite file).
+const MAX_DRAFT_ATTACHMENTS: usize = 10 * 1024 * 1024;
 
 #[derive(Serialize, Deserialize, Clone)]
 struct StoredAttachment {
@@ -249,6 +255,9 @@ impl GhulSuite {
         self.with_open(|o| {
             let mut list: Vec<MailDraftData> = setting(&o.suite, DRAFTS_KEY);
             let mut d = draft;
+            if d.attachments.iter().map(|a| a.data.len()).sum::<usize>() > MAX_DRAFT_ATTACHMENTS {
+                return Err(GhulError::InvalidInput { msg: "draft attachments larger than 10 MB".into() });
+            }
             if d.id.is_empty() {
                 d.id = crate::kdf::hex(&new_id());
             }

@@ -523,11 +523,24 @@ fun MailReadScreen(state: AppState, accountId: String, folder: String, uid: Long
                     }
                     if (m.date > 0) Text(mailTime(m.date), fontSize = 12.sp, color = t.faint)
                 }
-                if (m.wasHtml) Box(Modifier.padding(top = 12.dp)) { Banner(Icons.Filled.Image, stringResource(Res.string.mail_html_hint)) }
+                var asText by remember(m.uid) { mutableStateOf(false) }
+                val formatted = m.blocks.isNotEmpty() && !asText
+                if (m.wasHtml && m.blocks.isEmpty()) Box(Modifier.padding(top = 12.dp)) { Banner(Icons.Filled.Image, stringResource(Res.string.mail_html_hint)) }
                 if (m.signature == de.danerd.ghulsuite.model.MailSignatureUi.INVALID) {
                     Box(Modifier.padding(top = 12.dp)) { Banner(Icons.Filled.GppBad, stringResource(Res.string.mail_badge_invalid)) }
                 }
-                SelectionContainer { Text(m.text, Modifier.padding(top = 14.dp), fontSize = 15.sp, lineHeight = 22.sp, color = t.fg) }
+                if (formatted) {
+                    MailHtmlView(state, m)
+                } else {
+                    SelectionContainer { Text(m.text, Modifier.padding(top = 14.dp), fontSize = 15.sp, lineHeight = 22.sp, color = t.fg) }
+                }
+                if (m.blocks.isNotEmpty()) {
+                    Text(
+                        stringResource(if (asText) Res.string.mail_show_formatted else Res.string.mail_show_text),
+                        Modifier.padding(top = 10.dp).clickable { asText = !asText },
+                        color = t.accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                    )
+                }
                 for (a in m.attachments) {
                     Row(
                         Modifier.fillMaxWidth().padding(top = 12.dp).clip(RoundedCornerShape(14.dp))
@@ -702,14 +715,14 @@ fun MailComposeScreen(state: AppState, draft: MailDraft, padding: PaddingValues)
         if (accountId == null) accountId = accounts.firstOrNull()?.id
     }
     val attach = rememberOpenFile { f -> attachments.add(OutgoingAttachmentUi(f.name, mimeOf(f.name), f.bytes)) }
-    // Drafts are saved encrypted in the suite a moment after typing stops (no attachments).
-    LaunchedEffect(to, cc, bcc, subject, text, accountId) {
+    // Drafts are saved encrypted in the suite a moment after typing stops, attachments included.
+    LaunchedEffect(to, cc, bcc, subject, text, accountId, attachments.size) {
         val acc = accountId ?: return@LaunchedEffect
         if (to.isBlank() && subject.isBlank() && text.isBlank()) return@LaunchedEffect
-        if (to == draft.to && subject == draft.subject && text == draft.text && draftId.isEmpty()) return@LaunchedEffect
+        if (to == draft.to && subject == draft.subject && text == draft.text && attachments.size == draft.attachments.size && draftId.isEmpty()) return@LaunchedEffect
         kotlinx.coroutines.delay(1500)
         draftId = runCatching {
-            net.mailSaveDraft(de.danerd.ghulsuite.model.MailDraftUi(draftId, acc, to, cc, bcc, subject, text, draft.inReplyTo))
+            net.mailSaveDraft(de.danerd.ghulsuite.model.MailDraftUi(draftId, acc, to, cc, bcc, subject, text, draft.inReplyTo, attachments = attachments.toList()))
         }.getOrDefault(draftId)
     }
     // Address suggestions for the last address being typed.
