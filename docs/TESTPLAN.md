@@ -63,6 +63,8 @@ soll; weicht etwas ab, notiere die Nummer, was du gemacht hast und was stattdess
 | U11 | Handy neu starten, App öffnen. | Fingerabdruck/PIN gehen nicht, Passwort + Key nötig. |
 | U12 | Gültigkeit auf 1 Stunde stellen, nach über 1 Stunde öffnen. | Passwort + Key nötig. |
 | U13 | Handy **ohne** Bildschirmsperre: Optionen → Entsperren → App-PIN einschalten. | PIN lässt sich setzen und entsperrt die App (früher: „Keystore key generation failed“). |
+| U14 | Key abziehen, App sperren, „Entsperren“ tippen und **erst danach** den Key einstecken (innerhalb einer Minute). | Unten erscheint „Steck jetzt deinen Security Key ein“; nach dem Einstecken geht es von selbst weiter (berühren, wenn er blinkt). Ohne Key nach einer Minute: „No security key found“. |
+| U15 | Neue Suite mit Key einrichten (oder Key hinzufügen) und danach mit einem anderen FIDO-Programm prüfen, ob der Key das Credential ohne PIN preisgibt (optional, Fachleute). | Der Key verlangt die PIN (credProtect Stufe 3). |
 
 ## 3. Sperren und Panik
 

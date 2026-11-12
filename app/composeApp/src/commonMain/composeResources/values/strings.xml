@@ -955,4 +955,6 @@
     <string name="set_language_de">Deutsch</string>
     <string name="set_language_en">English</string>
     <string name="set_language_note">On Windows the new language applies after restarting the app.</string>
+    <string name="key_waiting_title">Plug in your security key now</string>
+    <string name="key_waiting_text">Waiting up to one minute – then touch it when it blinks.</string>
 </resources>

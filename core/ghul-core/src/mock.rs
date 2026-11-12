@@ -33,6 +33,7 @@ struct State {
     retries: u32,
     token: Vec<u8>,
     creds: HashMap<Vec<u8>, [u8; 32]>,
+    cred_protect: HashMap<Vec<u8>, u64>,
     incoming: Vec<u8>,
     expected_len: usize,
     expected_cmd: u8,
@@ -54,12 +55,21 @@ impl MockAuthenticator {
                 retries: 8,
                 token: vec![],
                 creds: HashMap::new(),
+                cred_protect: HashMap::new(),
                 incoming: vec![],
                 expected_len: 0,
                 expected_cmd: 0,
                 outgoing: VecDeque::new(),
             }),
         })
+    }
+}
+
+#[cfg(test)]
+impl MockAuthenticator {
+    /// The credProtect level a credential was created with (tests).
+    pub fn cred_protect_of(&self, credential_id: &[u8]) -> Option<u64> {
+        self.state.lock().unwrap().cred_protect.get(credential_id).copied()
     }
 }
 
@@ -129,7 +139,7 @@ impl State {
                 }
                 Ok(Some(Cbor::Map(vec![
                     (Cbor::Int(1), Cbor::Array(versions)),
-                    (Cbor::Int(2), Cbor::Array(vec![Cbor::text("hmac-secret")])),
+                    (Cbor::Int(2), Cbor::Array(vec![Cbor::text("hmac-secret"), Cbor::text("credProtect")])),
                     (Cbor::Int(3), Cbor::bytes(&[0xAA; 16])),
                     (
                         Cbor::Int(4),
@@ -216,6 +226,12 @@ impl State {
         let mut cred_random = [0u8; 32];
         OsRng.fill_bytes(&mut cred_random);
         self.creds.insert(cred_id.clone(), cred_random);
+        if let Some(level) = map_get_int(p, 6).and_then(|e| map_get_text(e, "credProtect")).and_then(as_u64) {
+            if !(1..=3).contains(&level) {
+                return Err(0x02);
+            }
+            self.cred_protect.insert(cred_id.clone(), level);
+        }
 
         let mut ad = Sha256::digest(rp_id.as_bytes()).to_vec();
         ad.push(0x01 | 0x04 | 0x40 | 0x80);
@@ -352,6 +368,7 @@ mod tests {
         let reg = fido_register(mock.clone(), listener.clone(), "1234".into()).unwrap();
         assert!(reg.hmac_secret_enabled);
         assert_eq!(reg.credential_id.len(), 48);
+        assert_eq!(mock.cred_protect_of(&reg.credential_id), Some(3), "credential must require user verification");
 
         let a = fido_unlock_test(mock.clone(), listener.clone(), "1234".into(), reg.credential_id.clone(), "pw".into())
             .unwrap();

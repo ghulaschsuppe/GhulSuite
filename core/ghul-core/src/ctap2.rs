@@ -33,6 +33,9 @@ const FLAG_AT: u8 = 0x40;
 const FLAG_ED: u8 = 0x80;
 
 const SHORT: Duration = Duration::from_secs(5);
+/// credProtect level "userVerificationRequired" (CTAP 2.1, §12.1).
+pub const CRED_PROTECT_UV_REQUIRED: i64 = 3;
+
 const USER_ACTION: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Default, Clone)]
@@ -54,6 +57,10 @@ impl Info {
 
     pub fn supports_hmac_secret(&self) -> bool {
         self.extensions.iter().any(|e| e == "hmac-secret")
+    }
+
+    pub fn supports_cred_protect(&self) -> bool {
+        self.extensions.iter().any(|e| e == "credProtect")
     }
 
     /// Picks the best PIN/UV auth protocol the key supports.
@@ -248,6 +255,12 @@ impl<'a> Authenticator<'a> {
         OsRng.fill_bytes(&mut cdh);
         let mut user_id = [0u8; 16];
         OsRng.fill_bytes(&mut user_id);
+        let mut ext = vec![(Cbor::text("hmac-secret"), Cbor::Bool(true))];
+        // credProtect 3 (userVerificationRequired): the key only uses the credential after PIN
+        // verification, so it cannot be probed without the PIN. Keys without the extension ignore it.
+        if self.info.supports_cred_protect() {
+            ext.push((Cbor::text("credProtect"), Cbor::Int(CRED_PROTECT_UV_REQUIRED)));
+        }
         let params = Cbor::Map(vec![
             (Cbor::Int(1), Cbor::bytes(&cdh)),
             (
@@ -269,7 +282,7 @@ impl<'a> Authenticator<'a> {
                     (Cbor::text("type"), Cbor::text("public-key")),
                 ])]),
             ),
-            (Cbor::Int(6), Cbor::Map(vec![(Cbor::text("hmac-secret"), Cbor::Bool(true))])),
+            (Cbor::Int(6), Cbor::Map(ext)),
             (Cbor::Int(7), Cbor::Map(vec![(Cbor::text("rk"), Cbor::Bool(false))])),
             (Cbor::Int(8), Cbor::Bytes(proto.authenticate(&token, &cdh))),
             (Cbor::Int(9), Cbor::Int(proto.id())),
