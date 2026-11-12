@@ -46,6 +46,9 @@ class PrefsStore(context: Context) : KeyValueStore {
 }
 
 /** Android: storage via SAF, security key via USB, quick unlock via Keystore, autofill. */
+/** How long unlocking waits for a security key to be plugged in. */
+private const val KEY_WAIT_MS = 60_000L
+
 class AndroidVaultBackend(private val context: Context, private val activity: () -> Activity?) :
     CoreVaultBackend(File(context.filesDir, "local").absolutePath) {
     private val keys = UsbSecurityKeys(context)
@@ -119,12 +122,32 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
 
     // --- key access -----------------------------------------------------------------------
 
+    private val keyWaiting = kotlinx.coroutines.flow.MutableStateFlow(false)
+    override val waitingForKey: kotlinx.coroutines.flow.StateFlow<Boolean> = keyWaiting
+
     override suspend fun <T> withKey(block: (HidTransport) -> T): T = withUsbKey { t -> block(t) }
 
     /** Finds a FIDO key, asks for USB permission and runs [block] on an IO thread. */
     private suspend fun <T> withUsbKey(block: (UsbHidTransport) -> T): T {
-        val devices = keys.candidates()
-        if (devices.isEmpty()) throw VaultException(VaultErrorKind.NO_KEY)
+        var devices = keys.candidates()
+        if (devices.isEmpty()) {
+            // No key plugged in yet: wait for it (up to a minute) instead of failing at once.
+            keyWaiting.value = true
+            try {
+                devices = kotlinx.coroutines.withTimeoutOrNull(KEY_WAIT_MS) {
+                    var found = keys.candidates()
+                    while (found.isEmpty()) {
+                        kotlinx.coroutines.delay(400)
+                        found = keys.candidates()
+                    }
+                    kotlinx.coroutines.delay(300) // let the key finish starting up
+                    found
+                } ?: emptyList()
+            } finally {
+                keyWaiting.value = false
+            }
+            if (devices.isEmpty()) throw VaultException(VaultErrorKind.NO_KEY)
+        }
         var last: VaultException? = null
         for (device in devices) {
             if (!keys.ensurePermission(device)) {

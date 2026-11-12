@@ -6,6 +6,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.material.icons.filled.Usb
+import androidx.compose.ui.draw.alpha
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -107,8 +111,31 @@ fun GhulSuiteApp(state: AppState) {
                             else -> MainScreen(state, wide, maxWidth)
                         }
                     }
+                    // While unlocking waits for the security key to be plugged in.
+                    val waiting by state.backend.waitingForKey.collectAsState()
+                    if (waiting) KeyWaitingBanner(Modifier.align(Alignment.BottomCenter))
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun KeyWaitingBanner(modifier: Modifier) {
+    val t = g
+    val pulse = androidx.compose.animation.core.rememberInfiniteTransition()
+    val a by pulse.animateFloat(1f, 0.4f, androidx.compose.animation.core.infiniteRepeatable(
+        androidx.compose.animation.core.tween(800), androidx.compose.animation.core.RepeatMode.Reverse))
+    Row(
+        modifier.padding(16.dp).navigationBarsPadding().widthIn(max = 520.dp).fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp)).background(t.accentSoft).padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Icon(Icons.Filled.Usb, null, Modifier.size(28.dp).alpha(a), tint = t.accent)
+        Column(Modifier.weight(1f)) {
+            Text(stringResource(Res.string.key_waiting_title), color = t.accent, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(Res.string.key_waiting_text), color = t.muted, fontSize = 13.sp)
         }
     }
 }

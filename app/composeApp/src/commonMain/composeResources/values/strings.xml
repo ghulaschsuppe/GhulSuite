@@ -947,4 +947,6 @@
     <string name="about_made_by">Made by Daniel Erdmann · 2026</string>
     <string name="about_made_by_sub">Self-hosted passwords, 2FA, files and mail – open source under AGPL-3.0.</string>
     <string name="about_trademark">“GhulSuite” and the logo are marks of Daniel Erdmann. Changed versions need a name of their own.</string>
+    <string name="key_waiting_title">Plug in your security key now</string>
+    <string name="key_waiting_text">Waiting up to one minute – then touch it when it blinks.</string>
 </resources>
