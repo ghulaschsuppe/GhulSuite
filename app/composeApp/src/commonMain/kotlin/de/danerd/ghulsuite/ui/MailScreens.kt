@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package de.danerd.ghulsuite.ui
 
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MarkEmailRead
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.foundation.horizontalScroll
@@ -121,11 +123,23 @@ fun MailScreen(state: AppState, padding: PaddingValues) {
     val list = accounts ?: return
     Column(Modifier.padding(padding)) {
         if (list.isEmpty()) {
-            // Not set up yet: the full account form right here (#24).
-            MailAccountScreen(state, null, PaddingValues(0.dp), inline = true)
+            MailSetup(state)
         } else {
             val shown = if (state.mailAccount == ALL_INBOXES) list else listOf(list.firstOrNull { it.id == state.mailAccount } ?: list.first())
             Mailbox(state, list, shown)
+        }
+    }
+}
+
+/** GhulMail without an account yet: set up right here, in the same sheet as everywhere (#24). */
+@Composable
+private fun MailSetup(state: AppState) {
+    ScreenColumn {
+        BusyBanner(state)
+        AreaSetupCard(Icons.Filled.Email, 4, stringResource(Res.string.mail_setup_title), stringResource(Res.string.mail_setup_inline))
+        ListCard {
+            ListRow(stringResource(Res.string.mail_account_new), stringResource(Res.string.mail_add_sub),
+                leading = { IconTile(Icons.Filled.Add, paletteColor(4)) }) { state.mailAccountSheet = MailSheet(null) }
         }
     }
 }
@@ -182,6 +196,10 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
     }
     // While the list is visible, new mail shows up by itself (quietly, without the loading bar).
     val visible = LocalTabActive.current
+    // Seen the inbox: its new-mail notification has done its job.
+    LaunchedEffect(key, visible, messages) {
+        if (visible && folder.equals("INBOX", true)) shown.forEach { net.clearMailNotification(it.id) }
+    }
     LaunchedEffect(key, visible, query.isBlank(), filter) {
         if (!visible || query.isNotBlank()) return@LaunchedEffect
         while (true) {
@@ -704,6 +722,8 @@ fun MailComposeScreen(state: AppState, draft: MailDraft, padding: PaddingValues)
     var suggestions by remember { mutableStateOf<List<de.danerd.ghulsuite.model.MailContactUi>>(emptyList()) }
     var subject by remember { mutableStateOf(draft.subject) }
     var text by remember { mutableStateOf(draft.text) }
+    // OpenPGP for this one mail (signature, own key, encryption); off sends a plain mail.
+    var pgp by remember { mutableStateOf(true) }
     val attachments = remember { mutableStateListOf<OutgoingAttachmentUi>().apply { addAll(draft.attachments) } }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
@@ -752,7 +772,7 @@ fun MailComposeScreen(state: AppState, draft: MailDraft, padding: PaddingValues)
     val canSend = !state.busy && accountId != null && splitAddresses(to + "," + cc + "," + bcc).isNotEmpty()
     fun send() {
         val acc = accountId ?: return
-        val mail = OutgoingMailUi(acc, splitAddresses(to), splitAddresses(cc), splitAddresses(bcc), subject, text, draft.inReplyTo, attachments.toList())
+        val mail = OutgoingMailUi(acc, splitAddresses(to), splitAddresses(cc), splitAddresses(bcc), subject, text, draft.inReplyTo, attachments.toList(), pgp = pgp)
         state.run(onError = { error = it }, block = { net.mailSend(mail); if (draftId.isNotEmpty()) runCatching { net.mailDeleteDraft(draftId) } }) {
             state.message(sentMsg)
             state.pop()
@@ -761,7 +781,7 @@ fun MailComposeScreen(state: AppState, draft: MailDraft, padding: PaddingValues)
     val scheduledMsg = stringResource(Res.string.mail_scheduled_done)
     fun sendLater(atMillis: Long) {
         val acc = accountId ?: return
-        val mail = OutgoingMailUi(acc, splitAddresses(to), splitAddresses(cc), splitAddresses(bcc), subject, text, draft.inReplyTo, attachments.toList())
+        val mail = OutgoingMailUi(acc, splitAddresses(to), splitAddresses(cc), splitAddresses(bcc), subject, text, draft.inReplyTo, attachments.toList(), pgp = pgp)
         state.run(onError = { error = it }, block = { net.mailSchedule(mail, atMillis); if (draftId.isNotEmpty()) runCatching { net.mailDeleteDraft(draftId) } }) {
             state.message(scheduledMsg.replace("%1\$s", formatDateTime(atMillis)))
             state.pop()
@@ -828,7 +848,13 @@ fun MailComposeScreen(state: AppState, draft: MailDraft, padding: PaddingValues)
                 ComposeLine(stringResource(Res.string.mail_bcc_short)) { LineInput(bcc, { bcc = it }, "", Modifier.weight(1f), KeyboardType.Email) }
             }
             ComposeLine(stringResource(Res.string.mail_subject_short)) { LineInput(subject, { subject = it }, "", Modifier.weight(1f)) }
-            keys?.let { Box(Modifier.padding(top = 12.dp)) { EncryptionPreview(it) } }
+            if (!pgp) {
+                Box(Modifier.padding(top = 12.dp)) {
+                    SecurityLine(Icons.Filled.LockOpen, androidx.compose.ui.graphics.Color(0xFF8A8CA0), stringResource(Res.string.mail_pgp_off_hint))
+                }
+            } else {
+                keys?.let { Box(Modifier.padding(top = 12.dp)) { EncryptionPreview(it) } }
+            }
             val style = MaterialTheme.typography.bodyLarge.copy(color = t.fg)
             androidx.compose.foundation.text.BasicTextField(
                 text, { text = it }, Modifier.fillMaxWidth().heightIn(min = 220.dp).padding(vertical = 14.dp), textStyle = style,
@@ -853,9 +879,19 @@ fun MailComposeScreen(state: AppState, draft: MailDraft, padding: PaddingValues)
             Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (filePickersAvailable) BarIcon(Icons.Filled.Attachment, stringResource(Res.string.a_attach)) { attach() }
                 Box(Modifier.weight(1f))
-                val encrypted = keys?.isNotEmpty() == true && keys!!.all { it.hasKey }
+                val encrypted = pgp && keys?.isNotEmpty() == true && keys!!.all { it.hasKey }
                 BarIcon(Icons.Filled.Schedule, stringResource(Res.string.mail_send_later)) { scheduling = true }
-                BarIcon(if (encrypted) Icons.Filled.Lock else Icons.Filled.LockOpen, null, tint = if (encrypted) t.ok else t.muted) {}
+                // PGP on/off for this mail, as a clear switch instead of a bare lock.
+                val pgpLabel = stringResource(if (pgp) Res.string.mail_pgp_on else Res.string.mail_pgp_off)
+                Row(
+                    Modifier.padding(start = 6.dp).clip(RoundedCornerShape(16.dp))
+                        .border(1.dp, if (pgp) t.ok.copy(alpha = 0.5f) else t.line, RoundedCornerShape(16.dp))
+                        .clickable { pgp = !pgp }.padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(if (encrypted || pgp) Icons.Filled.Lock else Icons.Filled.LockOpen, null, Modifier.size(16.dp), tint = if (pgp) t.ok else t.muted)
+                    Text(pgpLabel, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (pgp) t.ok else t.muted)
+                }
             }
             ErrorText(error)
             if (draftId.isNotEmpty()) HintText(stringResource(Res.string.mail_draft_saved))
@@ -923,14 +959,26 @@ private fun mimeOf(name: String): String = when (name.substringAfterLast('.', ""
 }
 
 /** Add or edit an e-mail account. */
+/**
+ * Adds or edits an e-mail account in a sheet: the same form in the GhulMail area, its settings
+ * page, the account switcher and the setup wizard (like GhulDrive's storage).
+ */
 @Composable
-fun MailAccountScreen(state: AppState, id: String?, padding: PaddingValues, inline: Boolean = false) {
+fun MailAccountSheet(state: AppState, id: String?, onSaved: (String) -> Unit = {}, onDismiss: () -> Unit) {
+    GhulSheet(onDismiss, stringResource(if (id == null) Res.string.mail_account_new else Res.string.mail_account_edit)) {
+        MailAccountForm(state, id) { newId -> onSaved(newId); onDismiss() }
+    }
+}
+
+/** The account form: address, password, name, signature and (optionally) the servers. */
+@Composable
+private fun MailAccountForm(state: AppState, id: String?, onSaved: (String) -> Unit) {
     val net = state.backend.net
     var input by remember {
         mutableStateOf(MailAccountInputUi("", "", "", "", "", MailServersUi("", 993, MailSecurityUi.TLS, "", 465, MailSecurityUi.TLS)))
     }
     var serversTouched by remember { mutableStateOf(id != null) }
-    var advanced by remember { mutableStateOf(id != null || inline) }
+    var advanced by remember { mutableStateOf(id != null) }
     // Existing accounts keep their signature; new ones get "Greetings, <name>" until edited.
     var signatureTouched by remember { mutableStateOf(id != null) }
     val defaultSignature = stringResource(Res.string.mail_signature_default)
@@ -955,20 +1003,16 @@ fun MailAccountScreen(state: AppState, id: String?, padding: PaddingValues, inli
             if (newId != null) {
                 state.mailAccount = newId
                 state.changed()
-                state.pop()
+                onSaved(newId)
             } else {
                 certToConfirm = check
             }
         }
     }
 
-    Column(Modifier.padding(padding)) {
-        ScreenColumn {
-            BusyBanner(state)
-            if (inline) {
-                AreaSetupCard(Icons.Filled.Email, 4, stringResource(Res.string.mail_setup_title), stringResource(Res.string.mail_setup_inline))
-            }
-            SectionCard(stringResource(if (id == null) Res.string.mail_account_new else Res.string.mail_account_edit)) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        BusyBanner(state)
+        run {
                 Hint(stringResource(Res.string.mail_account_text))
                 OutlinedTextField(input.email, { v ->
                     input = input.copy(email = v.trim())
@@ -1014,7 +1058,6 @@ fun MailAccountScreen(state: AppState, id: String?, padding: PaddingValues, inli
                         input.servers.imapHost.isNotBlank() && input.servers.smtpHost.isNotBlank(),
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text(stringResource(Res.string.a_check_and_save)) }
-            }
         }
     }
     certToConfirm?.let { c ->
@@ -1073,20 +1116,17 @@ fun MailAccountsSection(state: AppState) {
     var notifyTick by remember { mutableStateOf(0) }
     LaunchedEffect(state.liveRevision()) { accounts = runCatching { net.mailAccounts() }.getOrDefault(emptyList()) }
     // Accounts with logins, signatures and keys live in the GhulMail file (all devices).
+    // Like GhulDrive's storage: rows that open the form in a sheet, the page stays where it is.
     SectionCard(stringResource(Res.string.mail_accounts_all)) {
+        if (accounts.isEmpty()) Hint(stringResource(Res.string.ctx_not_set_up))
         for (a in accounts) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(a.name)
-                    Hint(a.email)
-                }
-                TextButton(onClick = { state.push(Screen.MailAccount(a.id)) }) { Text(stringResource(Res.string.a_edit)) }
-                TextButton(onClick = { removing = a }) { Text(stringResource(Res.string.a_remove)) }
+            ListRow(a.name, a.email, leading = { Avatar(a.name.ifBlank { a.email }, size = 38.dp) },
+                trailing = { BarIcon(Icons.Filled.Delete, stringResource(Res.string.a_remove)) { removing = a } }) {
+                state.mailAccountSheet = MailSheet(a.id)
             }
         }
-        OutlinedButton(onClick = { state.push(Screen.MailAccount(null)) }, modifier = Modifier.fillMaxWidth()) {
-            Text(stringResource(Res.string.mail_account_new))
-        }
+        ListRow(stringResource(Res.string.mail_account_new), stringResource(Res.string.mail_add_sub),
+            leading = { IconTile(Icons.Filled.Add, paletteColor(4)) }, divider = accounts.isNotEmpty()) { state.mailAccountSheet = MailSheet(null) }
     }
     if (accounts.isNotEmpty()) {
         val settings = state.backend.settings

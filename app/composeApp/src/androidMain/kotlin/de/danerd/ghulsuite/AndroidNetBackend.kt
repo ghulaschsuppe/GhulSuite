@@ -65,6 +65,10 @@ class AndroidNetBackend(private val context: Context, suite: () -> GhulSuite) : 
 
     override fun mailNotificationsOn(accountId: String): Boolean = notifications.isOn(accountId)
 
+    override fun clearMailNotification(accountId: String) {
+        runCatching { context.getSystemService(android.app.NotificationManager::class.java).cancel(accountId.hashCode()) }
+    }
+
     override fun mailNotifyDetail(): Int = notifications.detail
 
     override fun setMailNotifyDetail(level: Int) {

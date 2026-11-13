@@ -1026,12 +1026,14 @@ fn mail_with_imap_and_smtp() {
             mime: "application/octet-stream".into(),
             data: attachment.clone(),
         }],
+        pgp: true,
     })
     .unwrap();
 
     let pushed = waiting.join().unwrap();
     assert!(started.elapsed() < std::time::Duration::from_secs(60), "{:?}", started.elapsed());
     assert_eq!(pushed.new_messages, 1);
+    assert!(pushed.newest_uid > 0 && pushed.newest_uid < pushed.next_uid);
     // Nothing new: waits for the given time and reports nothing.
     let quiet = std::time::Instant::now();
     assert_eq!(super::mail::mail_wait(poll.clone(), pushed.next_uid, 2).unwrap().new_messages, 0);
@@ -1076,6 +1078,7 @@ fn mail_with_imap_and_smtp() {
         text: "Antwort".into(),
         in_reply_to: full.message_id.clone(),
         attachments: vec![],
+        pgp: true,
     })
     .unwrap();
     let page = s.mail_list(id.clone(), "INBOX".into(), 0, 50).unwrap();
@@ -1157,6 +1160,7 @@ fn mail_with_imap_and_smtp() {
         text: "Geplant".into(),
         in_reply_to: String::new(),
         attachments: vec![],
+        pgp: true,
     };
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
     s.mail_schedule(later, now + 3_600_000).unwrap();
@@ -1672,6 +1676,7 @@ fn drive_file_and_share_link_into_mail() {
             mime: "application/pdf".into(),
             data: attachment,
         }],
+        pgp: true,
     })
     .unwrap();
 
@@ -1820,6 +1825,7 @@ fn pgp_mail_between_two_users() {
         text: text.to_owned(),
         in_reply_to: String::new(),
         attachments,
+        pgp: true,
     };
     let newest = |s: &GhulSuite, id: &str| {
         let page = s.mail_list(id.to_owned(), "INBOX".into(), 0, 1).unwrap();

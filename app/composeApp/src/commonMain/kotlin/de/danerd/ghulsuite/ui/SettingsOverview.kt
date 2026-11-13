@@ -163,8 +163,21 @@ fun SettingsScreen(state: AppState, padding: PaddingValues) {
 
             Group(stringResource(Res.string.set_g_security)) {
                 if (!backend.isDesktop) {
+                    // What is really switched on (and ready on this device), with its validity.
+                    val ready = remember(state.revision) { backend.quickUnlockReady() }
+                    val bio = settings.quickUnlockBiometric && ready.biometric
+                    val pin = settings.quickUnlockPin && ready.pin
+                    val method = when {
+                        bio && pin -> stringResource(Res.string.set_unlock_sub_both)
+                        bio -> stringResource(Res.string.set_quick_bio)
+                        pin -> stringResource(Res.string.set_quick_pin)
+                        else -> null
+                    }
+                    val validity = if (settings.quickUnlockHours == 0) stringResource(Res.string.set_unlock_no_expiry)
+                    else QUICK_HOURS_OPTIONS.firstOrNull { it.first == settings.quickUnlockHours }?.let { stringResource(it.second) }
                     SetRow(Icons.Filled.Fingerprint, Violet, stringResource(Res.string.set_unlock),
-                        stringResource(if (settings.quickUnlockBiometric || settings.quickUnlockPin) Res.string.set_unlock_sub_on else Res.string.set_unlock_sub_off), first = true) { open(SetPage.UNLOCK) }
+                        if (method == null) stringResource(Res.string.set_unlock_sub_off) else listOfNotNull(method, validity).joinToString(" · "),
+                        first = true) { open(SetPage.UNLOCK) }
                 }
                 SetRow(Icons.Filled.Lock, Red, stringResource(Res.string.set_lock_panic),
                     stringResource(if (backend.isDesktop) Res.string.set_lock_panic_sub_desktop else Res.string.set_lock_panic_sub), first = backend.isDesktop) { open(SetPage.LOCK) }

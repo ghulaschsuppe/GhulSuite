@@ -36,6 +36,7 @@ import de.danerd.ghulsuite.model.VaultSourceUi
 import de.danerd.ghulsuite.model.FoundVaultUi
 import de.danerd.ghulsuite.ui.AppState
 import de.danerd.ghulsuite.ui.GhulSuiteApp
+import de.danerd.ghulsuite.ui.MailSheet
 import de.danerd.ghulsuite.ui.Screen
 import de.danerd.ghulsuite.ui.Tab
 import java.io.File
@@ -213,7 +214,7 @@ class ScreenshotTest {
         render("23-mail-compose") {
             GhulSuiteApp(state(true, true) { push(Screen.MailCompose(de.danerd.ghulsuite.ui.MailDraft("m1", to = "erika@example.org", subject = "AW: Treffen am Freitag"))) })
         }
-        render("24-mail-account") { GhulSuiteApp(state(true, true) { push(Screen.MailAccount(null)) }) }
+        render("24-mail-account") { GhulSuiteApp(state(true, true) { mailAccountSheet = MailSheet(null) }) }
         render("25-add-server") { GhulSuiteApp(state(true, true) { push(Screen.AddServer) }) }
         render("26-settings-servers") { GhulSuiteApp(state(true, true) { tab = Tab.SETTINGS }) }
         render("27-shares") { GhulSuiteApp(state(true, true) { push(Screen.Shares) }) }

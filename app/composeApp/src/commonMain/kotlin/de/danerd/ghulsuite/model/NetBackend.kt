@@ -151,6 +151,9 @@ interface NetBackend {
 
     /** Whether new-mail notifications are on for an account (needs a device-bound copy of the login). */
     fun mailNotificationsOn(accountId: String): Boolean
+
+    /** Removes the new-mail notification of an account once its inbox or the mail was opened. */
+    fun clearMailNotification(accountId: String) {}
     suspend fun setMailNotifications(accountId: String, on: Boolean)
 
     /** What a new-mail notification shows (device setting): 0 only the count, 1 the sender, 2 sender and subject. */
@@ -426,4 +429,6 @@ data class OutgoingMailUi(
     val text: String,
     val inReplyTo: String,
     val attachments: List<OutgoingAttachmentUi>,
+    /** OpenPGP for this mail; off sends a plain mail without signature and key. */
+    val pgp: Boolean = true,
 )

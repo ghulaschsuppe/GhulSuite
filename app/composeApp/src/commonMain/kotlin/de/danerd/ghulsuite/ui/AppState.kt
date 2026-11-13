@@ -31,7 +31,19 @@ object AppLaunch {
 
     /** A tapped reminder: event id and day (`id|YYYY-MM-DD`). */
     val openEvent = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+
+    /** Counts new-mail notifications posted in this process: open lists and the badge refresh. */
+    val newMail = kotlinx.coroutines.flow.MutableStateFlow(0)
+
+    /** A tapped mail notification: the new mail, or the account's inbox. */
+    val openMail = kotlinx.coroutines.flow.MutableStateFlow<MailTarget?>(null)
 }
+
+/** The e-mail account sheet: [id] null adds an account, else edits that one. */
+data class MailSheet(val id: String?)
+
+/** What a mail notification opens: [uid] 0 = the inbox of [accountId], else that mail in it. */
+data class MailTarget(val accountId: String, val uid: Long)
 
 /** Screens shown on top of the tabs. */
 sealed interface Screen {
@@ -48,7 +60,6 @@ sealed interface Screen {
     data class ShareSetup(val serverId: String) : Screen
     data object Shares : Screen
     data object Security : Screen
-    data class MailAccount(val id: String?) : Screen
     data class MailRead(val accountId: String, val folder: String, val uid: Long) : Screen
     data class MailCompose(val draft: MailDraft) : Screen
     data class CalEvent(val id: String, val day: String) : Screen
@@ -132,6 +143,9 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     var driveGrid by mutableStateOf(false)
     var authGrid by mutableStateOf(false)
     var mailRefreshTick by mutableStateOf(0)
+
+    /** Open e-mail account sheet (shown above everything, from any place that offers it). */
+    var mailAccountSheet by mutableStateOf<MailSheet?>(null)
     var mailUnread by mutableStateOf(0)
     /** Messages of the open mailbox (for conversations in the reading view). */
     var mailLoaded by mutableStateOf<List<MailItem>>(emptyList())
@@ -254,6 +268,15 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         }
         scope.launch { AppLaunch.openTab.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
         scope.launch { AppLaunch.openEvent.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
+        scope.launch { AppLaunch.openMail.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
+        scope.launch {
+            AppLaunch.newMail.collect {
+                if (it > 0 && backend.unlocked.value) {
+                    mailRefreshTick++
+                    refreshUnread()
+                }
+            }
+        }
         // Unread count for the navigation badge (and the window icon on Windows) while unlocked.
         scope.launch {
             while (true) {
@@ -270,6 +293,17 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                 stack.clear()
                 tab = Tab.CAL
                 stack.add(Screen.CalEvent(ev.substringBefore('|'), ev.substringAfter('|', "")))
+            }
+        }
+        AppLaunch.openMail.value?.let { m ->
+            AppLaunch.openMail.value = null
+            if (Tab.MAIL in tabs) {
+                // Always the inbox of that account, whatever folder was open before.
+                stack.clear()
+                tab = Tab.MAIL
+                mailAccount = m.accountId
+                mailFolder = "INBOX"
+                if (m.uid > 0) stack.add(Screen.MailRead(m.accountId, "INBOX", m.uid))
             }
         }
         val t = AppLaunch.openTab.value ?: return

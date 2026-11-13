@@ -17,6 +17,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.compose.runtime.snapshotFlow
 import de.danerd.ghulsuite.ui.AppLaunch
+import de.danerd.ghulsuite.ui.MailTarget
 import de.danerd.ghulsuite.ui.AppState
 import de.danerd.ghulsuite.ui.Tab
 import de.danerd.ghulsuite.ui.GhulSuiteApp
@@ -100,10 +101,18 @@ class MainActivity : ComponentActivity() {
         handleLaunch(intent)
     }
 
-    /** A tapped mail notification opens GhulMail (right away, or once the suite is unlocked). */
+    /**
+     * A tapped mail notification opens the new mail, or the account's inbox if several arrived
+     * (right away, or once the suite is unlocked).
+     */
     private fun handleLaunch(intent: Intent?) {
         if (intent?.action == ACTION_OPEN_MAIL) {
-            AppLaunch.openTab.value = Tab.MAIL
+            val account = intent.getStringExtra(EXTRA_MAIL_ACCOUNT)
+            if (account != null) {
+                AppLaunch.openMail.value = MailTarget(account, intent.getIntExtra(EXTRA_MAIL_UID, 0).toUInt().toLong())
+            } else {
+                AppLaunch.openTab.value = Tab.MAIL
+            }
             intent.action = null
         }
         if (intent?.action == ACTION_OPEN_EVENT) {
@@ -114,6 +123,8 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val ACTION_OPEN_MAIL = "de.danerd.ghulsuite.OPEN_MAIL"
+        const val EXTRA_MAIL_ACCOUNT = "de.danerd.ghulsuite.MAIL_ACCOUNT"
+        const val EXTRA_MAIL_UID = "de.danerd.ghulsuite.MAIL_UID"
         const val ACTION_OPEN_EVENT = "de.danerd.ghulsuite.OPEN_EVENT"
         /** The running activity (language switch). */
         @Volatile

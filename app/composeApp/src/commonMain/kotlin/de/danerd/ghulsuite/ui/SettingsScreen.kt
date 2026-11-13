@@ -68,7 +68,7 @@ private val CLIPBOARD_OPTIONS: List<Pair<Int, StringResource>> = listOf(
     120 to Res.string.lock_2m,
 )
 
-private val QUICK_HOURS_OPTIONS: List<Pair<Int, StringResource>> = listOf(
+internal val QUICK_HOURS_OPTIONS: List<Pair<Int, StringResource>> = listOf(
     1 to Res.string.quick_1h,
     4 to Res.string.quick_4h,
     8 to Res.string.quick_8h,
@@ -240,11 +240,6 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                 Hint(stringResource(Res.string.storage_current, storageLabel(backend.storageName())))
             }
 
-            SectionCard(stringResource(Res.string.set_password)) {
-                OutlinedButton(onClick = { state.push(Screen.ChangePassword) }, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(Res.string.a_change_password))
-                }
-            }
 
                 }
                 SetPage.VAULTS -> VaultsSection(state)

@@ -168,6 +168,7 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
     val visited = remember { LinkedHashSet<Tab>() }
     visited.add(state.tab)
     if (state.codeUnconfirmed && top !is Screen.RecoveryCode) CodeReminderDialog(state)
+    state.mailAccountSheet?.let { sheet -> MailAccountSheet(state, sheet.id) { state.mailAccountSheet = null } }
     // A new recovery code cannot be skipped: it must be confirmed first.
     PlatformBackHandler(enabled = top != null && top !is Screen.RecoveryCode) { state.pop() }
 
@@ -431,7 +432,6 @@ private fun TopScreen(state: AppState, top: Screen, padding: PaddingValues) {
             is Screen.ShareSetup -> ShareSetupScreen(state, top.serverId, padding)
             Screen.Shares -> SharesScreen(state, padding)
             Screen.Security -> SecurityScreen(state, padding)
-            is Screen.MailAccount -> MailAccountScreen(state, top.id, padding)
             is Screen.MailRead -> key(top) { MailReadScreen(state, top.accountId, top.folder, top.uid, padding) }
             is Screen.MailCompose -> key(top) { MailComposeScreen(state, top.draft, padding) }
             is Screen.CalEvent -> key(top) { CalEventScreen(state, top.id, top.day, padding) }
@@ -539,7 +539,6 @@ private fun screenTitle(top: Screen?, tab: Tab): String = stringResource(
                             is Screen.ShareSetup -> Res.string.share_setup_title
                             Screen.Shares -> Res.string.shares_title
                             Screen.Security -> Res.string.sec_title
-                            is Screen.MailAccount -> if (top.id == null) Res.string.mail_account_new else Res.string.mail_account_edit
                             is Screen.MailRead -> Res.string.mail_read_title
                             is Screen.MailCompose -> Res.string.mail_compose_title
                             is Screen.CalEvent -> Res.string.cal_event_title
