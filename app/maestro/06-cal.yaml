@@ -1,4 +1,4 @@
-# Testplan K1–K3: GhulCal opens with its calendars, quick add creates an event with the default
+# Testplan K1 to K3: GhulCal opens with its calendars, quick add creates an event with the default
 # reminder, the event shows in the list and opens. tools/check-reminders.sh then looks for the
 # alarm of this event in the system.
 appId: de.danerd.ghulsuite.dev
@@ -11,9 +11,10 @@ name: GhulCal
     visible: "Month"
     timeout: 30000
 - takeScreenshot: 06-month
-# The list has no second "Event" link, so the button below is the only match.
+# The list has no second "Event" link, so the button below is the only match. (The list is not
+# empty: it shows the public holidays of the next 60 days.)
 - tapOn: "List"
-- assertVisible: "No events in the next 60 days\\."
+- takeScreenshot: 06-list-before
 - tapOn: "Event"
 - extendedWaitUntil:
     visible: "Quick add"

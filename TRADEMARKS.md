@@ -12,7 +12,7 @@ Logo (violettes Schild mit den vier Farbstreifen) sind Kennzeichen von **Daniel 
 
 **Nicht erlaubt ohne schriftliche Zustimmung**
 - Veränderte Fassungen (Forks) unter dem Namen „GhulSuite“ oder mit dem Logo veröffentlichen.
-  Ein Fork braucht einen eigenen Namen und ein eigenes Symbol – der Hinweis „basiert auf GhulSuite“ ist erwünscht.
+  Ein Fork braucht einen eigenen Namen und ein eigenes Symbol, der Hinweis „basiert auf GhulSuite“ ist erwünscht.
 - Den Namen oder das Logo so verwenden, dass der Eindruck einer offiziellen Version oder Unterstützung entsteht.
 
 Fragen dazu bitte als Issue in diesem Repository.

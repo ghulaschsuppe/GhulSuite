@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Quick fuzzing of every parser that reads data from outside (servers, mails, files, links,
 //! other apps). Thousands of random inputs and mutations of real examples per parser, on every
-//! test run. Promise Z3 of docs/TESTKONZEPT.md: whatever comes in, no crash – an error at most.
+//! test run. Promise Z3 of docs/TESTKONZEPT.md: whatever comes in, no crash, an error at most.
 //! (Long runs with libFuzzer live in `core/fuzz`.)
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -264,6 +264,8 @@ fn calendar_files_and_quick_entries() {
     let zoned = "BEGIN:VCALENDAR\r\nBEGIN:VTIMEZONE\r\nTZID:Eastern Standard Time\r\nBEGIN:STANDARD\r\nDTSTART:16010101T020000\r\nTZOFFSETFROM:-0400\r\nTZOFFSETTO:-0500\r\nRRULE:FREQ=YEARLY;INTERVAL=1;BYDAY=1SU;BYMONTH=11\r\nEND:STANDARD\r\nBEGIN:DAYLIGHT\r\nDTSTART:19870405T020000\r\nTZOFFSETFROM:-0500\r\nTZOFFSETTO:-0400\r\nRRULE:FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=8,9,10,11,12,13,14;BYDAY=SU;UNTIL=20261101T060000Z\r\nRDATE:19740106T020000,19750223T020000\r\nEND:DAYLIGHT\r\nBEGIN:STANDARD\r\nDTSTART:19181027T020000\r\nTZOFFSETFROM:-035602\r\nTZOFFSETTO:-0500\r\nRRULE:FREQ=YEARLY;BYYEARDAY=-7,-6,-5,-4,-3,-2,-1;BYDAY=SU\r\nEND:STANDARD\r\nEND:VTIMEZONE\r\nBEGIN:VEVENT\r\nUID:2@x\r\nSUMMARY:Call\r\nDTSTART;TZID=\"Eastern Standard Time\":20260308T023000\r\nDTEND;TZID=Eastern Standard Time:20260308T033000\r\nRRULE:FREQ=DAILY;UNTIL=20260401T000000Z\r\nEXDATE;TZID=Eastern Standard Time:20260310T023000\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
     fuzz("ics", &seeds(&[ics, zoned]), 4000, |d| {
         let _ = crate::app::caltext::ics_import(&s(d), 60);
+        // A device that knows the zones: series keep their zone (another path through the import).
+        let _ = crate::app::caltext::ics_import_zoned(&s(d), &crate::app::caltext::test_zones::World("Europe/Berlin"));
         let _ = crate::app::caltext::parse_duration(&s(d));
     });
     let quick = seeds(&[

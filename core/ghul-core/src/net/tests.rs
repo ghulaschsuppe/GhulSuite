@@ -309,7 +309,7 @@ fn badssl_broken_tls_is_refused() {
     };
     // Without the reference site the test says nothing (network down, site gone).
     if get("https://badssl.com/").is_err() {
-        eprintln!("badssl.com not reachable – skipped");
+        eprintln!("badssl.com not reachable, skipped");
         return;
     }
     assert!(get("https://tls-v1-2.badssl.com:1012/").is_ok(), "a good TLS 1.2 server must work");

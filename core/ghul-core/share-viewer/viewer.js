@@ -5,13 +5,13 @@
 (function () {
   const de = (navigator.language || 'de').toLowerCase().startsWith('de');
   const T = de ? {
-    loading: 'Wird geladen …', gone: 'Diese Freigabe gibt es nicht mehr – sie ist abgelaufen oder wurde beendet.',
+    loading: 'Wird geladen …', gone: 'Diese Freigabe gibt es nicht mehr. Sie ist abgelaufen oder wurde beendet.',
     bad: 'Der Link ist unvollständig. Bitte den ganzen Link kopieren.', wrong: 'Falsches Passwort oder der Link ist beschädigt.',
     pw: 'Diese Datei ist zusätzlich mit einem Passwort geschützt.', ready: 'Bereit zum Herunterladen.',
     dl: 'Herunterladen', working: 'Wird entschlüsselt …', done: 'Fertig.', old: 'Dieser Browser ist zu alt für verschlüsselte Freigaben.',
     net: 'Die Datei konnte nicht geladen werden.',
   } : {
-    loading: 'Loading …', gone: 'This share no longer exists – it expired or was ended.',
+    loading: 'Loading …', gone: 'This share no longer exists. It expired or was ended.',
     bad: 'The link is incomplete. Please copy the whole link.', wrong: 'Wrong password, or the link is damaged.',
     pw: 'This file is additionally protected with a password.', ready: 'Ready to download.',
     dl: 'Download', working: 'Decrypting …', done: 'Done.', old: 'This browser is too old for encrypted shares.',

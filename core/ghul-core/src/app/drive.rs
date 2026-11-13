@@ -1009,7 +1009,7 @@ impl GhulSuite {
     }
 
     /// The chosen files (folders with their content) as a ZIP encrypted with AES-256 and a
-    /// password – for e-mail or a USB stick. At most 200 MB.
+    /// password, for e-mail or a USB stick. At most 200 MB.
     pub fn drive_zip(&self, ids: Vec<String>, password: String) -> Result<Vec<u8>> {
         let password = Zeroizing::new(password);
         if password.chars().count() < 8 {

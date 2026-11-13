@@ -2,23 +2,23 @@
 
 Stand: 13. November 2026 (dritte Runde: Kalender, Zeitzonen, Emulator-Abläufe für alle Bereiche) · Branch `test/chaos` (noch nicht gemergt) · Grundlage: Audit vom selben Tag (`docs/AUDIT-2026-11.md`) und Testkonzept (`docs/TESTKONZEPT.md`).
 
-Dieses Protokoll ist die Arbeitsliste für die nächsten Durchgänge: Jeder Fund hat eine Nummer, eine Schwere, den Test, der ihn zeigt, und – wenn behoben – den Commit. Offene Punkte haben einen Vorschlag, wie sie behoben werden, und den Test, der danach grün werden muss.
+Dieses Protokoll ist die Arbeitsliste für die nächsten Durchgänge: Jeder Fund hat eine Nummer, eine Schwere, den Test, der ihn zeigt, und, wenn behoben, den Commit. Offene Punkte haben einen Vorschlag, wie sie behoben werden, und den Test, der danach grün werden muss.
 
 ## 1. Ergebnis in Zahlen
 
 | | |
 |---|---|
-| Testfunktionen im Kern | 216 (212 bei jedem Lauf, 4 lange nur nachts) |
+| Testfunktionen im Kern | 219 (215 bei jedem Lauf, 4 lange nur nachts) |
 | Einzelprüfungen pro Lauf | über 1,1 Millionen (u. a. 777.000 Zeitzonen-Umrechnungen in 446 Zonen, 292.000 Kalendertage, 45.000 Fuzz-Eingaben, 20.000 Base32-Schreibweisen, 12.000 Wiederherstellungscodes, 5.000 HOTP-Fälle, 5.000 Passwortgenerator-Varianten, 3.000 Zusammenführungen, 3.000+ Aktionen „bekloppter Nutzer“, 515 Naughty Strings × 8 Felder) |
 | Davon gegen echte Server | 54 (SFTP, FTPS, IMAP, SMTP, PHP-Modul) |
 | Externe Testsammlungen | Big List of Naughty Strings, Project Wycheproof (5 Algorithmen), Public-Suffix-Liste mit offiziellen Testfällen, RFC 4226/6238, PayloadsAllTheThings (XSS, CRLF), SecLists (XSS), DOMPurify-Testfälle, WHATWG-URL-Testdaten, JSONTestSuite, 304 Kalenderdateien aus den Tests von iCal4j und python-icalendar (auch deren Fuzzing-Funde), Zeitzonen-Regeln aller Zonen der IANA-Datenbank |
-| Gefundene Fehler | 37, davon **34 behoben**, 2 bewusst als Entscheidung offen, 1 als Einzelheit (B12) |
+| Gefundene Fehler | 38, davon **35 behoben**, 2 bewusst als Entscheidung offen, 1 als Einzelheit (B12) |
 | Offene Punkte aus dem Audit | 22 (Abschnitt 4) + Bedienung/Texte (Abschnitt 5) |
 | Laufzeit | Kern-Tests ca. 95 s, Android/Desktop-Build ca. 10 min, Nachtlauf ca. 2 h |
 
 Alle Tests sind grün (Kern, Netzwerk, Android-Kotlin, Desktop-Tests). Die App-Tests im Emulator (Maestro, Monkey) laufen in der CI.
 
-## 2. Testsuite – was es gibt und wie man es startet
+## 2. Testsuite: was es gibt und wie man es startet
 
 | Datei | Was | Zusage* |
 |---|---|---|
@@ -26,12 +26,12 @@ Alle Tests sind grün (Kern, Netzwerk, Android-Kotlin, Desktop-Tests). Die App-T
 | `…/tests/crazy_user.rs` | „Bekloppter Nutzer“: tausende zufällige, oft unsinnige Aktionen auf drei Geräten; danach nichts verloren, nichts Gelöschtes zurück, alle Geräte gleich, nur verständliche Fehler | Z1, Z3, Z5, Z6 |
 | `…/tests/absurd.rs` | Naughty Strings in jedem Feld, riesige/leere Werte, seltsame Master-Passwörter, unmögliche Termine, kaputte Drive-Namen, Aufrufe im gesperrten Zustand | Z3, Z6, Z8 |
 | `…/tests/attacks.rs` | Datenklau (Klartextsuche in allen Dateien), gestohlene Dateien, manipulierter Drive-Server, gefälschte/geschwächte Tresordateien, Sicherungen mit Pfad-Tricks und Zip-Bomben, Mail-Kopfzeilen-Injektion, 34 HTML-Mail-Tricks, CSV-Formeln | Z2, Z3, Z4, Z7 |
-| `…/tests/properties.rs` | Generierte Reihen: Kalender 1600–2400, RFC-Vektoren, Base32, Wiederherstellungscodes, Zusammenführen (Reihenfolge, Wiederholung), Passwortgenerator, Lookalike-Domains, ICS-Rundreise | Z5, Z8 |
+| `…/tests/properties.rs` | Generierte Reihen: Kalender 1600 bis 2400, RFC-Vektoren, Base32, Wiederherstellungscodes, Zusammenführen (Reihenfolge, Wiederholung), Passwortgenerator, Lookalike-Domains, ICS-Rundreise | Z5, Z8 |
 | `…/tests/everyday.rs` | Alltagstest (2 Geräte, 30 Tage) und Stresstests (5.000 Einträge, 64 MB, 8 Threads) | Z1, Z5 |
 | `core/ghul-core/src/fuzz_tests.rs` | Schnelles Fuzzing aller Parser bei jedem Lauf | Z3 |
 | `…/tests/collections.rs` | Öffentliche Angriffssammlungen: ~500 XSS-Muster (in 3 Schreibweisen), CRLF-Muster in jedem Mail-Kopffeld, WHATWG-URL-Testdaten, JSONTestSuite durch alle JSON-Importe | Z3, Z4 |
 | `…/tests/collections.rs` (Kalender) | 304 Kalenderdateien anderer Programme (echte Exporte, kaputte Dateien, Fuzzing-Funde): was der Import annimmt, ist ein gültiger Termin und übersteht Export → Import unverändert; alle Dateien zusätzlich durch einen echten Kalender (anzeigen, Erinnerungen, exportieren, sperren) | Z3, Z8 |
-| `core/ghul-core/src/app/caltext.rs` `zone_tests` | Zeitzonen: UTC-Zeiten mit dem Versatz ihres Tages, Termine aus anderen Zonen, Zonen, die nur die Datei kennt (Outlook), Serien-Ausnahmen; dazu die Regeln **aller 446 Zeitzonen** gegen die Zeitzonendatenbank, 2000–2023 (Vergleichswerte: `tools/make-zone-oracle.py`) | Z8 |
+| `core/ghul-core/src/app/caltext.rs` `zone_tests` | Zeitzonen: UTC-Zeiten mit dem Versatz ihres Tages, Termine aus anderen Zonen, Zonen, die nur die Datei kennt (Outlook), Serien-Ausnahmen; dazu die Regeln **aller 446 Zeitzonen** gegen die Zeitzonendatenbank, 2000 bis 2023 (Vergleichswerte: `tools/make-zone-oracle.py`) | Z8 |
 | `app/…/desktopTest/VaultFfiTest.kt` | Kalender-Import über die echte Anbindung mit der Zeitzonendatenbank des Geräts | Z8 |
 | `core/ghul-core/src/wycheproof_tests.rs` | Wycheproof-Vektoren für XChaCha20-Poly1305, AES-GCM, HKDF, HMAC, P-256 | Z2 |
 | `core/ghul-core/src/app/autofill.rs` (Tests) | Public-Suffix-Testfälle, Phishing-Matrix | Z4 |
@@ -41,10 +41,10 @@ Alle Tests sind grün (Kern, Netzwerk, Android-Kotlin, Desktop-Tests). Die App-T
 | `net/tests.rs` `badssl_…` (nachts) | 21 echte Server mit kaputtem TLS (abgelaufen, falscher Name, selbst signiert, alte Protokolle, schwache Verfahren, bekannte Schad-Zertifikate) müssen abgelehnt werden | Z4 |
 | `tools/check-texts.py` | Texte: fehlende Übersetzungen und Platzhalter (Fehler), uneinheitliche Begriffe und ungenutzte Texte (Hinweise) | Z6 |
 | `tools/ci-emulator.sh` | Maestro-Abläufe (Einrichtung, GhulPass, GhulAuth, GhulCal, App-PIN, Optionen, GhulDrive und GhulMail mit nicht erreichbarem Server); nachts zusätzlich Monkey (3 × 30.000 zufällige Gesten) | Z3, Z6 |
-| `tools/check-reminders.sh` | Im Emulator nach den Abläufen: Der Termin hat einen Alarm im System; nach Zeitzonen-Wechsel steht er auf derselben Uhrzeit; nach „App beendet + Neustart“ ist er wieder da; beim Auslösen kommt die Benachrichtigung – bei beendeter, gesperrter App | Z1, Z8 |
+| `tools/check-reminders.sh` | Im Emulator nach den Abläufen: Der Termin hat einen Alarm im System; nach Zeitzonen-Wechsel steht er auf derselben Uhrzeit; nach „App beendet + Neustart“ ist er wieder da; beim Auslösen kommt die Benachrichtigung, bei beendeter, gesperrter App | Z1, Z8 |
 | `.github/workflows/nightly.yml` | Nachtlauf: Fuzzing lang, Langläufe in Release, Monkey, gitleaks (ganze Historie), PHPStan, cargo audit | alle |
 
-\* Zusagen Z1–Z8 siehe `docs/TESTKONZEPT.md`, Abschnitt 1.
+\* Zusagen Z1 bis Z8 siehe `docs/TESTKONZEPT.md`, Abschnitt 1.
 
 Lokal starten:
 
@@ -81,30 +81,31 @@ Schwere: **K** kritisch (Datenverlust, Geheimnis preisgegeben) · **H** hoch (An
 | F15 | M | CSV-Export: Zellen mit `= + - @` liefen in Tabellenprogrammen als Formel (CSV-Injection); eigener Import schnitt Leerzeichen in Passwörtern ab | `attacks::exports_are_safe_to_open_in_a_spreadsheet` | behoben `471710c` |
 | F16 | M | HTML-Mail-Link zeigt „https://bank.example“, führt aber woanders hin | `attacks::html_mails_cannot_run_code_or_hide_links` | behoben `471710c` (echtes Ziel wird angezeigt) |
 | F17 | H | Autocrypt: gefälschter Absender ersetzt einen gelernten PGP-Schlüssel; eigene Adresse lernbar; Signatur mit dem Schlüssel aus derselben Mail galt als „gültig“ | Code-Prüfung, Netzwerktest `pgp_mail_between_two_users` | behoben `471710c` |
-| F18 | H | Autofill: Basis-Domain zu grob – `evil.github.io` bekam Login von `alice.github.io`, fremde IPs den Router-Login | `autofill::phishing_matrix`, `public_suffix_list_test_cases`, `properties::autofill_never_fills_a_lookalike` | behoben `7c0c49f` |
+| F18 | H | Autofill: Basis-Domain zu grob, `evil.github.io` bekam Login von `alice.github.io`, fremde IPs den Router-Login | `autofill::phishing_matrix`, `public_suffix_list_test_cases`, `properties::autofill_never_fills_a_lookalike` | behoben `7c0c49f` |
 | F19 | H | Autofill glaubte jeder App ihre Webadresse (eigene WebView, gefälschter Browser) | Code-Prüfung (App) | behoben `7c0c49f` |
-| F20 | H | „Per E-Mail senden“ las Anhänge mit GhulSuites Rechten – fremde App konnte private Dateien/entschlüsselte Drive-Kopien in einen Entwurf schmuggeln | Code-Prüfung (App) | behoben `7c0c49f` |
+| F20 | H | „Per E-Mail senden“ las Anhänge mit GhulSuites Rechten, fremde App konnte private Dateien/entschlüsselte Drive-Kopien in einen Entwurf schmuggeln | Code-Prüfung (App) | behoben `7c0c49f` |
 | F21 | H | Verteilte Dev-APK war debuggbar und mit dem echten Schlüssel signiert | Code-Prüfung | behoben `7c0c49f` |
 | F22 | N | Kopiertes Passwort blieb nach dem Sperren in der Zwischenablage | Code-Prüfung | behoben `7c0c49f` |
 | F25 | H | Adressen mit Backslash las GhulSuite anders als ein Browser: aus `https://evil.com\@bank.de` wurde `bank.de`, der Browser geht zu `evil.com` | `collections::urls_belong_to_the_same_site_as_in_a_browser` (WHATWG-Testdaten) | behoben (Branch `test/chaos`) |
 | F26 | N | IPv4 in anderen Schreibweisen (`0xC0A80001`, `192.168.1`) las GhulSuite anders als ein Browser | dto. | behoben (Branch `test/chaos`) |
 | F27 | M | Dateinamen, die ein Server oder eine Sicherung liefert, durften Windows-Gerätenamen (`CON`, `AUX`), Doppelpunkte (Laufwerk/Datenstrom), Steuer- und Richtungszeichen enthalten | `attacks::a_server_cannot_plant_files_through_names` | behoben (zweite Audit-Runde) |
-| F28 | M | Bilder in Mails konnten das eigene Gerät (`http://localhost`), den Router und andere private Adressen ansprechen – auch über eine Weiterleitung | `mailhtml::mail_images_cannot_reach_private_addresses` | behoben: nur https zu öffentlichen Adressen (erledigt B16) |
+| F28 | M | Bilder in Mails konnten das eigene Gerät (`http://localhost`), den Router und andere private Adressen ansprechen, auch über eine Weiterleitung | `mailhtml::mail_images_cannot_reach_private_addresses` | behoben: nur https zu öffentlichen Adressen (erledigt B16) |
 | F29 | M | Debug-Ausgaben von 13 Datenstrukturen enthielten Passwörter, Codes und Schlüssel (Gefahr: Logzeile, Absturzbericht) | `attacks::secrets_never_show_up_in_debug_output_or_errors` | behoben: Geheimnisse erscheinen nie in Debug-Ausgaben |
 | F30 | N | PHP-Modul: Namen mit Punkt/Leerzeichen am Ende (`x.php.` wird auf Windows-Servern zu `x.php`); Freigabe- und Viewer-Antworten ohne `nosniff`/`no-store` | `tools/attack-php-module.py` (335 Angriffe) | behoben (erledigt B15 teilweise) |
-| F31 | M | App-PIN: der Fehlversuch wurde erst nach dem Versuch und verzögert gespeichert – App direkt nach falscher PIN abschießen gab einen Freiversuch | Code-Prüfung | behoben: erst zählen (sofort auf Platte), dann prüfen |
-| F32 | M | Kalender-Import: Zeiten in UTC (so exportiert Google einzelne Termine) wurden mit dem Versatz von **heute** umgerechnet – ein Sommertermin, im Winter importiert, lag eine Stunde daneben | `caltext::zone_tests::utc_times_use_the_offset_of_their_own_day` | behoben: Versatz des Termintags aus der Zeitzonendatenbank des Geräts |
-| F33 | M | Kalender-Import: Die Zeitzone eines Termins (`TZID`) wurde ignoriert – „10 Uhr New York“ stand um 10 Uhr Ortszeit | `…::times_of_another_zone_are_converted`, `…::zones_only_the_file_knows`, `…::world_time_zones_by_the_rules_of_a_file` | behoben: Zone über das Gerät, sonst über die Regeln in der Datei (Outlook-Namen); unbekannte Zone bleibt wie geschrieben |
+| F31 | M | App-PIN: der Fehlversuch wurde erst nach dem Versuch und verzögert gespeichert, App direkt nach falscher PIN abschießen gab einen Freiversuch | Code-Prüfung | behoben: erst zählen (sofort auf Platte), dann prüfen |
+| F32 | M | Kalender-Import: Zeiten in UTC (so exportiert Google einzelne Termine) wurden mit dem Versatz von **heute** umgerechnet, ein Sommertermin, im Winter importiert, lag eine Stunde daneben | `caltext::zone_tests::utc_times_use_the_offset_of_their_own_day` | behoben: Versatz des Termintags aus der Zeitzonendatenbank des Geräts |
+| F33 | M | Kalender-Import: Die Zeitzone eines Termins (`TZID`) wurde ignoriert, „10 Uhr New York“ stand um 10 Uhr Ortszeit | `…::times_of_another_zone_are_converted`, `…::zones_only_the_file_knows`, `…::world_time_zones_by_the_rules_of_a_file` | behoben: Zone über das Gerät, sonst über die Regeln in der Datei (Outlook-Namen); unbekannte Zone bleibt wie geschrieben |
 | F34 | M | Android: Erinnerungen blieben nach einem Zeitzonen-Wechsel (Reise) auf dem alten Zeitpunkt, bis die App geöffnet wurde | `tools/check-reminders.sh` (Emulator) | behoben: Erinnerung merkt sich die Uhrzeit und wird beim Wechsel neu geplant |
 | F35 | N | Kalenderdateien anderer Programme können Erinnerungen Jahrzehnte vor dem Termin tragen; sie wurden übernommen, gingen beim Export aber verloren | `collections::public_calendar_files_import_soundly…` | behoben: Erinnerungen höchstens ein Jahr vorher, beim Import und beim Speichern |
-| F36 | N | README und Konzept sprachen von „vier Bereichen“ – der Kalender fehlte auf der Hauptseite | Durchsicht | behoben; Regel in `PROJEKT.md`: README bei jedem relevanten Pull Request mitziehen |
-| F37 | N | Schnell-Eintrag: Das Beispiel, das die App selbst vorschlägt („Run tomorrow 6:30pm-7:30pm #sports“), wurde nicht verstanden – ganztägiger Termin mit der Uhrzeit im Titel | `caltext::tests::quick_examples_of_the_app` (prüft alle Beispiele der App, deutsch und englisch) | behoben: Zeitspannen mit am/pm oder „Uhr“ auf beiden Seiten |
-| F23 | M | **Tresornamen stehen im Dateinamen** (Server, Sicherung): „bank-privat.ghlpss“ verrät, welche Tresore es gibt | `attacks::stolen_device_files…` (bewusst ausgenommen) | **offen – Entscheidung nötig** |
-| F24 | N | Termintitel und Import-Titel werden getrimmt (führender Tab geht verloren); Passwörter bleiben exakt | `attacks::exports_are_safe…` | **offen – vertretbar** |
+| F36 | N | README und Konzept sprachen von „vier Bereichen“, der Kalender fehlte auf der Hauptseite | Durchsicht | behoben; Regel in `PROJEKT.md`: README bei jedem relevanten Pull Request mitziehen |
+| F37 | N | Schnell-Eintrag: Das Beispiel, das die App selbst vorschlägt („Run tomorrow 6:30pm-7:30pm #sports“), wurde nicht verstanden, ganztägiger Termin mit der Uhrzeit im Titel | `caltext::tests::quick_examples_of_the_app` (prüft alle Beispiele der App, deutsch und englisch) | behoben: Zeitspannen mit am/pm oder „Uhr“ auf beiden Seiten |
+| F38 | M | Serien aus einer anderen Zeitzone (Einladung aus den USA, Termin in Tokio): Nur der erste Termin wurde umgerechnet. In den Wochen, in denen nur eine Seite die Uhr umstellt, und bei Zonen ohne Sommerzeit das halbe Jahr lang, lagen die Folgetermine eine Stunde daneben | `properties::series_from_other_time_zones_are_right_all_year`, `caltext::zone_tests::a_series_keeps_the_time_zone_it_came_from`, `…::windows_names_of_outlook` | behoben: Die Serie merkt sich ihre Zeitzone (neues Feld `zone`), jedes Vorkommen wird mit dem Versatz seines Tages umgerechnet; auch Anzeige, Erinnerungen, Löschen einzelner Tage und Export |
+| F23 | M | **Tresornamen stehen im Dateinamen** (Server, Sicherung): „bank-privat.ghlpss“ verrät, welche Tresore es gibt | `attacks::stolen_device_files…` (bewusst ausgenommen) | **offen, Entscheidung nötig** |
+| F24 | N | Termintitel und Import-Titel werden getrimmt (führender Tab geht verloren); Passwörter bleiben exakt | `attacks::exports_are_safe…` | **offen, vertretbar** |
 
-Zu F23: Vorschlag – Dateien künftig nach ihrer Kennung benennen (`3f9a….ghlpss`), den Namen nur verschlüsselt führen; alte Dateinamen beim nächsten Sync umbenennen. Nachteil: Im Ordner sieht man nicht mehr, welche Datei welcher Tresor ist. Test danach: Marker im Tresornamen darf auch in Datei- und ZIP-Namen nicht vorkommen.
+Zu F23: Vorschlag, Dateien künftig nach ihrer Kennung benennen (`3f9a….ghlpss`), den Namen nur verschlüsselt führen; alte Dateinamen beim nächsten Sync umbenennen. Nachteil: Im Ordner sieht man nicht mehr, welche Datei welcher Tresor ist. Test danach: Marker im Tresornamen darf auch in Datei- und ZIP-Namen nicht vorkommen.
 
-Zu F17 (Verhalten seit der Behebung): Die erste Mail eines neuen Kontakts mit Autocrypt-Schlüssel zeigt „Schlüssel unbekannt/unbestätigt“; ab der nächsten Mail „gültig“ (Vertrauen beim ersten Kontakt). Öffnet man dieselbe erste Mail erneut, zeigt sie „gültig“ – das ist eine kleine Unstimmigkeit (siehe B12).
+Zu F17 (Verhalten seit der Behebung): Die erste Mail eines neuen Kontakts mit Autocrypt-Schlüssel zeigt „Schlüssel unbekannt/unbestätigt“; ab der nächsten Mail „gültig“ (Vertrauen beim ersten Kontakt). Öffnet man dieselbe erste Mail erneut, zeigt sie „gültig“, das ist eine kleine Unstimmigkeit (siehe B12).
 
 ## 4. Offene Punkte (Audit und Tests)
 
@@ -116,21 +117,21 @@ Zu F17 (Verhalten seit der Behebung): Die erste Mail eines neuen Kontakts mit Au
 | B2 | M | Entfernte Keys können per Sync zurückkommen (Gerät war offline und fügt selbst einen Key hinzu) | Löschmarken je Key in der Suite-Datei | neu in `chaos.rs` |
 | B3 | M | Drive-Index ohne Schutz gegen Zurücksetzen (alter Index vom Server) und gleichzeitige Änderungen zweier Geräte | Revision im Drive-Bereich merken, älteren Index ablehnen; vor dem Schreiben vergleichen | neu: Index-Rollback wird erkannt |
 | B4 | M | Sperrbildschirm zeigt Absender/Betreff/Termin, wenn Android „alle Inhalte“ zeigt | Kanäle mit `lockscreenVisibility = PRIVATE` (neue Kanal-IDs) | Emulator-Ablauf |
-| B5 | M | Mail-Zugang für Benachrichtigungen: Keystore ohne StrongBox; Doku (KONZEPT) beschreibt noch „opt-in, Panik löscht“ | Doku angleichen, StrongBox versuchen, optional „harte Panik“ | – |
+| B5 | M | Mail-Zugang für Benachrichtigungen: Keystore ohne StrongBox; Doku (KONZEPT) beschreibt noch „opt-in, Panik löscht“ | Doku angleichen, StrongBox versuchen, optional „harte Panik“ | - |
 | B6 | N | `.ics` aus fremden Apps wird ohne Rückfrage importiert | Vorschau mit Bestätigung | Emulator-Ablauf |
-| B7 | N | Interne Aktionen (`OPEN_MAIL`, `OPEN_EVENT`) über die exportierte MainActivity von fremden Apps auslösbar | Nicht exportierte Ziel-Activity oder Zufallskennung im PendingIntent | – |
-| B8 | N | Auto-Sperre: Timer läuft im Tiefschlaf nicht weiter; nach Teilen/Kamera gilt dauerhaft eine Mindestfrist von 120 s | Zeit beim Verlassen merken und beim Zurückkommen vergleichen; Frist nach Rückkehr zurücksetzen | – |
-| B9 | N | Autofill verknüpft eine App nach einmaliger Auswahl dauerhaft, ohne Rückfrage | Bestätigung mit App-Name und Paket | – |
-| B10 | N | Windows: entschlüsselte Kopien in `%TEMP%` bleiben liegen, wenn ein Programm sie noch offen hat | Löschergebnis prüfen, Hinweis; Ordner im Profil mit Zufallsnamen | – |
+| B7 | N | Interne Aktionen (`OPEN_MAIL`, `OPEN_EVENT`) über die exportierte MainActivity von fremden Apps auslösbar | Nicht exportierte Ziel-Activity oder Zufallskennung im PendingIntent | - |
+| B8 | N | Auto-Sperre: Timer läuft im Tiefschlaf nicht weiter; nach Teilen/Kamera gilt dauerhaft eine Mindestfrist von 120 s | Zeit beim Verlassen merken und beim Zurückkommen vergleichen; Frist nach Rückkehr zurücksetzen | - |
+| B9 | N | Autofill verknüpft eine App nach einmaliger Auswahl dauerhaft, ohne Rückfrage | Bestätigung mit App-Name und Paket | - |
+| B10 | N | Windows: entschlüsselte Kopien in `%TEMP%` bleiben liegen, wenn ein Programm sie noch offen hat | Löschergebnis prüfen, Hinweis; Ordner im Profil mit Zufallsnamen | - |
 | B11 | N | „Passwort anderswo geändert“: Server kann teure Argon2-Werte erzwingen (bis 2 GiB) | Werte nicht über die eigenen hinaus annehmen oder vorher fragen | `attacks::forged_or_weakened…` erweitern |
 | B12 | N | Erste Autocrypt-Mail: beim zweiten Öffnen „gültig“ statt „unbestätigt“ | Herkunft des Schlüssels (Mail-ID) merken | Netzwerktest erweitern |
 | B13 | N | Geänderte Server-/Kontodaten in der Suite-Datei werden nicht an andere Geräte weitergegeben (gleiche ID gewinnt lokal) | Zeitstempel je Listeneintrag wie bei Bereichs-Optionen | neu in `chaos.rs` |
-| B14 | N | Freigabe zurückziehen meldet Erfolg, auch wenn das Paket auf dem Server bleibt | Paket immer löschen, Fehler melden | – |
+| B14 | N | Freigabe zurückziehen meldet Erfolg, auch wenn das Paket auf dem Server bleibt | Paket immer löschen, Fehler melden | - |
 | B15 | N | PHP-Modul: Fehlversuchssperre per IP (hinter Proxy aussperrbar), Endungsliste erfasst `x.php.jpg` nicht, Modul-Datei ohne `chmod` | Sperre an Schlüssel statt IP koppeln; Allowlist der Endungen; `chmod 0600` | PHP-Test |
-| B16 | – | ~~Mail-Bilder zu `localhost`/privaten Adressen~~ | erledigt (F28); Rest: Namensauflösung kann zwischen Prüfung und Verbindung wechseln (DNS-Rebinding) – Adresse nach dem Verbinden prüfen | – |
-| B17 | N | CI: Signaturschlüssel und FTP-Zugang stehen bei Pushes auf jeden Branch bereit | Nur `main` (GitHub-Environment mit Freigabe) | – |
+| B16 | - | ~~Mail-Bilder zu `localhost`/privaten Adressen~~ | erledigt (F28); Rest: Namensauflösung kann zwischen Prüfung und Verbindung wechseln (DNS-Rebinding), Adresse nach dem Verbinden prüfen | - |
+| B17 | N | CI: Signaturschlüssel und FTP-Zugang stehen bei Pushes auf jeden Branch bereit | Nur `main` (GitHub-Environment mit Freigabe) | - |
 | B18 | N | Zusammenführen bei gleichzeitigem Löschen (Gerät A) und Bearbeiten (Gerät B) desselben Eintrags: Ergebnis hängt von Revision/Zeit ab | Regel festlegen („Bearbeiten gewinnt, Löschung wird gemeldet“) und testen | neu in `crazy_user.rs` |
-| B20 | N | Kalender-Import: Bei einer **Serie** aus einer anderen Zeitzone wird der erste Termin umgerechnet; in den Wochen, in denen dort und hier die Uhr an verschiedenen Tagen umgestellt wird, liegen die Folgetermine eine Stunde daneben | Zeitzone am Termin speichern (Formatänderung) oder Hinweis beim Import | neu in `zone_tests` |
+| B20 | - | ~~Serie aus einer anderen Zeitzone: nur der erste Termin wurde umgerechnet~~ | erledigt (F38): die Serie merkt sich ihre Zeitzone | `properties::series_from_other_time_zones_are_right_all_year` |
 | B21 | N | Emulator: GhulDrive und GhulMail werden nur bis zur Fehlermeldung „Server nicht erreichbar“ bedient; mit echtem Server prüft sie nur der Kern (Netzwerk-Tests) | Testserver neben dem Emulator starten (SFTP mit Passwort, IMAP/SMTP), Abläufe erweitern | Maestro |
 | B22 | N | Windows: Erinnerungen werden nur geplant, solange die App läuft; ein Zeitzonen-Wechsel im laufenden Programm ist ungeprüft | prüfen, bei Bedarf neu planen | Desktop-Test |
 | B19 | N | Test-Hilfe: Nach Sperren/Entsperren muss Drive im Test neu verbunden werden (`NotConfigured`); in der App verbindet sie sich selbst | prüfen, ob die App nach Entsperren immer neu verbindet | Desktop-UI-Test |
@@ -159,7 +160,7 @@ Zu F17 (Verhalten seit der Behebung): Die erste Mail eines neuen Kontakts mit Au
 
 | Nr. | Punkt |
 |---|---|
-| K1 | Listen: GhulPass (⋮ + langes Drücken), GhulAuth (Wischen, ⋮ nur bei einer Auswahl), GhulMail (Wischen, keine Mehrfachauswahl), GhulDrive (Auswahlleiste unten statt oben) – auf ein Muster bringen |
+| K1 | Listen: GhulPass (⋮ + langes Drücken), GhulAuth (Wischen, ⋮ nur bei einer Auswahl), GhulMail (Wischen, keine Mehrfachauswahl), GhulDrive (Auswahlleiste unten statt oben), auf ein Muster bringen |
 | K2 | Löschschutz: Pass/Auth/Drive-Ordner fragen, Mail/Termin/„Endgültig“ nicht; Papierkorb nur bei Drive und Mail |
 | K3 | Assistent und Optionen bieten verschiedene Werte (Auto-Sperre ohne „2 Minuten“, Schnell-Entsperren ohne „1 Std./8 Std.“) |
 | K4 | Kalender-Blatt „Fertig“, sonst „Speichern“ |
@@ -200,18 +201,18 @@ Sobald die Begriffe bereinigt sind: `tools/check-texts.py --strict` in der CI ei
 
 ## 7. Empfohlene Reihenfolge
 
-1. **Diesen Branch mergen** (alle Funde F01–F22 behoben, Nachtlauf aktiv).
-2. **F23** entscheiden (Tresornamen in Dateinamen) – betrifft das Format, besser früh.
-3. **B1** (Schlüssel bei Code-Wechsel erneuern) – größter Sicherheitspunkt, Formatänderung.
+1. **Diesen Branch mergen** (alle Funde F01 bis F22 behoben, Nachtlauf aktiv).
+2. **F23** entscheiden (Tresornamen in Dateinamen), betrifft das Format, besser früh.
+3. **B1** (Schlüssel bei Code-Wechsel erneuern), größter Sicherheitspunkt, Formatänderung.
 4. **Texte (Abschnitt 5)** in einem Durchgang, danach `--strict` einschalten.
-5. **U1–U5** (Rückgängig, Rückfragen, deutsche Fehlermeldungen).
+5. **U1 bis U5** (Rückgängig, Rückfragen, deutsche Fehlermeldungen).
 6. Rest von B und U/K nach Aufwand.
 
 Nach jedem Durchgang: dieses Protokoll aktualisieren (Status, Commit), neue Funde mit nächster Nummer anhängen.
 
 ## 8. Lückenanalyse Sicherheit (zweite Runde)
 
-Was nach beiden Runden **nicht** oder nur teilweise abgedeckt ist – ehrlich aufgelistet, damit nichts als „geprüft“ gilt, was es nicht ist.
+Was nach beiden Runden **nicht** oder nur teilweise abgedeckt ist, ehrlich aufgelistet, damit nichts als „geprüft“ gilt, was es nicht ist.
 
 ### Braucht eine Entscheidung oder größeren Umbau
 
@@ -253,7 +254,7 @@ Was nach beiden Runden **nicht** oder nur teilweise abgedeckt ist – ehrlich au
 | **NIST CAVP** (AES-GCM, HMAC, SHA) | weitere Krypto-Vektoren | klein |
 | **RFC 8949 Anhang A** (CBOR), **RFC 9106** (Argon2) | Format-Vektoren | klein |
 | **csv-spectrum**, **fuzzdb**, **IntruderPayloads** | weitere Eingabe-Sammlungen | klein |
-| Geräte-Matrix (Samsung, Pixel, Xiaomi; Android 10–16) | Hersteller-Eigenheiten bei Hintergrunddiensten, Autofill, Keystore | groß, braucht Testgeräte oder einen Gerätedienst |
+| Geräte-Matrix (Samsung, Pixel, Xiaomi; Android 10 bis 16) | Hersteller-Eigenheiten bei Hintergrunddiensten, Autofill, Keystore | groß, braucht Testgeräte oder einen Gerätedienst |
 
 ### Stand der Abdeckung nach Angriffsfläche
 
@@ -261,13 +262,13 @@ Was nach beiden Runden **nicht** oder nur teilweise abgedeckt ist – ehrlich au
 |---|---|---|
 | Dateien auf Gerät, Server, Sicherung | hoch (Klartextsuche, Manipulation, Fälschung, Namen) | L1, F23 |
 | Synchronisation | hoch (Chaos, bekloppter Nutzer, Rollback einzelner Dateien) | B2, B3, B13 |
-| Netzwerk-Parser | hoch (Fuzzing schnell und lang) | – |
+| Netzwerk-Parser | hoch (Fuzzing schnell und lang) | - |
 | TLS | mittel → hoch mit badssl im Nachtlauf | L11 |
 | PHP-Modul | hoch (335 Angriffe, PHPStan nachts) | L5, ZAP |
 | Mail (HTML, Kopfzeilen, PGP) | hoch (≈500 XSS-Muster, CRLF, Autocrypt) | L7, Interop-Suite |
 | Autofill | hoch (Suffix-Liste, Browser-URL-Daten, vertrauenswürdige Browser) | Geräte-Matrix, B9 |
 | Andere Apps (Intents) | mittel (Manifest-Liste, nur fremde Inhalte) | drozer, B6, B7, L10 |
 | Entsperren (Fingerabdruck, PIN) | mittel (Zähler, Bindung an Neustart) | Test im Emulator, L10 |
-| Lieferkette | niedrig–mittel (cargo audit, gepinnte Actions) | L3, L4 |
-| Kalender (Rechnen, Import, Zeitzonen, Erinnerungen) | hoch (Kalendertage, Dateien anderer Programme, alle Zeitzonen, Alarm-Prüfung im Emulator) | B20, B22, B6, B4 |
+| Lieferkette | niedrig bis mittel (cargo audit, gepinnte Actions) | L3, L4 |
+| Kalender (Rechnen, Import, Zeitzonen, Erinnerungen) | hoch (Kalendertage, Dateien anderer Programme, alle Zeitzonen, Alarm-Prüfung im Emulator) | B22, B6, B4 |
 | Oberfläche (Fehlbedienung) | mittel (Maestro für alle fünf Bereiche, Monkey nachts) | B21, Desktop-UI-Tests, Abschnitt 4 U/K |

@@ -14,7 +14,7 @@ val rustOut = layout.buildDirectory.dir("rust/jniLibs")
 val bindingsOut = layout.buildDirectory.dir("generated/uniffi/kotlin")
 val hostTargetDir = layout.buildDirectory.dir("rust/host")
 val hostBindingsOut = layout.buildDirectory.dir("generated/uniffi-host/kotlin")
-// Release build of the core for this computer (Windows: ghul_core.dll) – for the desktop app
+// Release build of the core for this computer (Windows: ghul_core.dll), for the desktop app
 // and as the source of the Kotlin bindings (identical for Android and Windows).
 val hostReleaseDir = layout.buildDirectory.dir("rust/host-release")
 val os = System.getProperty("os.name").lowercase()
@@ -273,7 +273,7 @@ compose.desktop {
             packageName = "GhulSuite"
             // MSI needs a purely numeric version.
             packageVersion = "0.5.0"
-            description = "GhulSuite – Passwörter, 2FA, Drive und Mail, verschlüsselt"
+            description = "GhulSuite: Passwörter, 2FA, Dateien, Mail und Kalender, verschlüsselt"
             vendor = "GhulSuite"
             copyright = "© 2026 Daniel Erdmann · AGPL-3.0-or-later"
             licenseFile.set(rootProject.layout.projectDirectory.file("../LICENSE"))

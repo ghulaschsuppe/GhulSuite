@@ -2,7 +2,7 @@
 //! Quick unlock (fingerprint or app PIN) after a full unlock.
 //!
 //! A full unlock yields the password key `PK` and the suite's container key `VMK`. For quick unlock they are stored in `quick-<name>.ghlq` (device-local, never in a shared
-//! folder), encrypted with a key derived from a random 32-byte "quick key" `QK` – and, for PIN
+//! folder), encrypted with a key derived from a random 32-byte "quick key" `QK`: and, for PIN
 //! mode, additionally from Argon2id(PIN). The app keeps `QK` only wrapped by a
 //! hardware-backed platform key (Android Keystore: fingerprint-bound or device-bound).
 //!

@@ -72,17 +72,17 @@ class AreaInfo(
     val kind: VaultKindUi,
     val title: StringResource,
     val sub: StringResource,
-    val icon: ImageVector,
-    val colorIndex: Int,
+    /** The tab of the area: its colour and icon come from [areaColor] and [tabIcon], like everywhere. */
+    val tab: Tab,
     val ext: String,
 )
 
 val AREAS = listOf(
-    AreaInfo(VaultKindUi.PASS, Res.string.tab_pass, Res.string.area_pass_sub, Icons.Filled.Key, 0, ".ghlpss"),
-    AreaInfo(VaultKindUi.TOTP, Res.string.tab_auth, Res.string.area_auth_sub, Icons.Filled.Security, 2, ".ghltotp"),
-    AreaInfo(VaultKindUi.DRIVE, Res.string.tab_drive, Res.string.area_drive_sub, Icons.Filled.Cloud, 1, ".ghldrv"),
-    AreaInfo(VaultKindUi.MAIL, Res.string.tab_mail, Res.string.area_mail_sub, Icons.Filled.Mail, 4, ".ghlmail"),
-    AreaInfo(VaultKindUi.CAL, Res.string.tab_cal, Res.string.area_cal_sub, Icons.Filled.CalendarMonth, 6, ".ghlcal"),
+    AreaInfo(VaultKindUi.PASS, Res.string.tab_pass, Res.string.area_pass_sub, Tab.PASS, ".ghlpss"),
+    AreaInfo(VaultKindUi.TOTP, Res.string.tab_auth, Res.string.area_auth_sub, Tab.AUTH, ".ghltotp"),
+    AreaInfo(VaultKindUi.DRIVE, Res.string.tab_drive, Res.string.area_drive_sub, Tab.DRIVE, ".ghldrv"),
+    AreaInfo(VaultKindUi.MAIL, Res.string.tab_mail, Res.string.area_mail_sub, Tab.MAIL, ".ghlmail"),
+    AreaInfo(VaultKindUi.CAL, Res.string.tab_cal, Res.string.area_cal_sub, Tab.CAL, ".ghlcal"),
 )
 
 /** Areas with a name the user picks (Drive and Mail have one file without a name of its own). */
@@ -108,7 +108,7 @@ fun showModule(state: AppState, kind: VaultKindUi, on: Boolean) {
 }
 
 /**
- * New setup in eight steps (#24). The suite is created when leaving step 3 (storage) – the steps
+ * New setup in eight steps (#24). The suite is created when leaving step 3 (storage), the steps
  * after it need an open suite (sync server check, area files). Should the app stop later, the suite
  * exists with an unconfirmed recovery code, and GhulSuite asks for a new code after unlocking.
  */
@@ -383,7 +383,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                             .heightIn(min = 60.dp).padding(horizontal = 16.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
-                        IconTile(a.icon, paletteColor(a.colorIndex))
+                        IconTile(tabIcon(a.tab), areaColor(a.tab))
                         Column(Modifier.weight(1f)) {
                             Text(stringResource(a.title), fontWeight = FontWeight.W500, fontSize = 15.sp, color = if (on) g.fg else g.muted)
                             Text(stringResource(a.sub), fontSize = 14.sp, color = g.muted)

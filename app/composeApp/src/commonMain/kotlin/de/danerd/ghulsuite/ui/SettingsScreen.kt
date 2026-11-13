@@ -108,7 +108,7 @@ fun <T> ChoiceRow(label: String, options: List<Pair<T, StringResource>>, selecte
             SheetList {
                 options.forEachIndexed { i, (value, text) ->
                     SheetRow(stringResource(text), divider = i > 0,
-                        end = { if (value == selected) Icon(Icons.Filled.Check, null, Modifier.size(20.dp), tint = t.accent) }) {
+                        end = { if (value == selected) SheetCheck() }) {
                         onSelect(value); open = false
                     }
                 }
@@ -351,6 +351,7 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
     }
     removing?.let { s ->
         AlertDialog(
+            danger = true,
             onDismissRequest = { removing = null },
             title = { Text(stringResource(Res.string.set_remove_title)) },
             text = {
@@ -547,7 +548,7 @@ private fun AboutSection(state: AppState) {
         appendLine(backend.coreVersion)
         appendLine(deviceInfo())
         appendLine()
-        append(backend.crashReport() ?: "–")
+        append(backend.crashReport() ?: "-")
     }
     // Author (AGPL-3.0 section 7(b): this notice must stay visible in modified versions too).
     SectionCard {
@@ -588,11 +589,6 @@ private fun AboutSection(state: AppState) {
 
 @Composable
 private fun stringResource_report(): String = stringResource(Res.string.about_report)
-
-@Composable
-private fun ChevronEnd() {
-    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp), tint = g.faint)
-}
 
 private val LIBRARIES = listOf(
     "Kotlin, Compose Multiplatform" to "Apache-2.0",

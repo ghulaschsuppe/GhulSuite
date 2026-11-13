@@ -14,7 +14,7 @@
 /// Lower-case host of a URL or bare domain, without `www.`, port, path and credentials.
 pub(crate) fn host_of(url: &str) -> Option<String> {
     // Like a browser (WHATWG URL standard): tabs and line breaks inside are ignored, and a
-    // backslash ends the host just like "/" – "https://evil.com\\@bank.de" goes to evil.com.
+    // backslash ends the host just like "/", "https://evil.com\\@bank.de" goes to evil.com.
     let cleaned: String = url.chars().filter(|c| !matches!(c, '\t' | '\n' | '\r')).collect();
     let s = cleaned.trim_matches(|c: char| c <= ' ');
     let s = s.split_once("://").map_or(s, |(_, rest)| rest);

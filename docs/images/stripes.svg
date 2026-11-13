@@ -1,6 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="152" height="8" viewBox="0 0 152 8" role="img" aria-label="GhulPass, GhulAuth, GhulDrive, GhulMail">
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="8" viewBox="0 0 192 8" role="img" aria-label="GhulPass, GhulAuth, GhulDrive, GhulMail, GhulCal">
   <rect x="0" y="0" width="32" height="8" rx="4" fill="#6A4DF5"/>
   <rect x="40" y="0" width="32" height="8" rx="4" fill="#0E9F80"/>
   <rect x="80" y="0" width="32" height="8" rx="4" fill="#2F74E8"/>
   <rect x="120" y="0" width="32" height="8" rx="4" fill="#E0700F"/>
+  <rect x="160" y="0" width="32" height="8" rx="4" fill="#D6336C"/>
 </svg>

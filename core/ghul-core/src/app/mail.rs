@@ -1193,7 +1193,7 @@ impl GhulSuite {
             Ok(()) => {}
             Err(e) => return check(e, true),
         }
-        // SMTP: connect, TLS, login – without sending (an empty recipient list fails after AUTH).
+        // SMTP: connect, TLS, login, without sending (an empty recipient list fails after AUTH).
         let scfg = smtp_config(&a);
         match block_on(smtp::login_only(&scfg), TIMEOUT) {
             Ok(()) => Ok(MailCheck::Ok),
@@ -1669,7 +1669,7 @@ mod tests {
             to: vec!["Bob <bob@example.org>".into()],
             cc: vec![],
             bcc: vec![],
-            subject: "Grüße – Test".into(),
+            subject: "Grüße \u{2013} Test".into(),
             text: "Zeile 1\nZeile mit Umlauten äöü\n.\nEnde".into(),
             in_reply_to: String::new(),
             attachments,
@@ -1725,7 +1725,7 @@ mod tests {
             let (raw, rcpt) = build(&account(&sk), &mail, &Protection::Plain).unwrap();
             assert_eq!(rcpt, vec!["bob@example.org".to_string()]);
             let m = mail_parser::MessageParser::default().parse(&raw).unwrap();
-            assert_eq!(m.subject(), Some("Grüße – Test"));
+            assert_eq!(m.subject(), Some("Grüße \u{2013} Test"));
             assert!(m.header_raw("Autocrypt").is_none());
             let text = String::from_utf8_lossy(&raw);
             assert!(!text.contains("pgp-signature") && !text.contains("BEGIN PGP"));
@@ -1755,7 +1755,7 @@ mod tests {
             let ct = m.content_type().unwrap();
             assert_eq!((ct.ctype(), ct.subtype()), ("multipart", Some("signed")));
             let boundary = ct.attribute("boundary").unwrap().to_owned();
-            assert_eq!(m.subject(), Some("Grüße – Test"));
+            assert_eq!(m.subject(), Some("Grüße \u{2013} Test"));
             assert!(m.header_raw("Autocrypt").unwrap().contains("addr=alice@example.org"));
             let body = &raw[body_offset(&raw)..];
             let parts = mime_parts(body, &boundary);
@@ -1793,7 +1793,7 @@ mod tests {
         let opened = mailcrypt::decrypt(parts[1], &bob, &[mailcrypt::public_of(&key)]).unwrap();
         assert!(opened.signer.is_some());
         let inner = mail_parser::MessageParser::default().parse(&opened.plain[..]).unwrap();
-        assert_eq!(inner.subject(), Some("Grüße – Test"));
+        assert_eq!(inner.subject(), Some("Grüße \u{2013} Test"));
         assert!(inner.body_text(0).unwrap().contains("Zeile mit Umlauten äöü"));
     }
 

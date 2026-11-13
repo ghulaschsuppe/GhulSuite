@@ -9,7 +9,7 @@
 //! chunk 1..n   AES-256-GCM(chunk_size bytes of the file)  last one shorter
 //!
 //! nonce(i) = nonce_prefix ‖ u32 BE i
-//! aad(i)   = header ‖ u8 (1 for the last chunk of the package, else 0)   – detects truncation
+//! aad(i)   = header ‖ u8 (1 for the last chunk of the package, else 0); detects truncation
 //! key      = HKDF-SHA256(ikm = link_key[32] (‖ PBKDF2-SHA256(password, salt, iterations, 32)),
 //!                        salt = empty, info = "ghul/v1/share")
 //! ```

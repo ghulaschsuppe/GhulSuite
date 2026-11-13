@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! The crazy user: thousands of random – often pointless or wrong – actions on three devices
+//! The crazy user: thousands of random, often pointless or wrong, actions on three devices
 //! that share one suite. Delete twice, edit what is gone, rename to nothing, move a folder into
 //! itself, lock in between, type wrong passwords, restart the app, import rubbish, synchronise
 //! with a wrong folder, ... Afterwards:
@@ -182,7 +182,7 @@ fn run(seed: u64, steps: usize) -> Stats {
                 }
             }
             5 => {
-                // Edit something – maybe deleted meanwhile, maybe on another device.
+                // Edit something, maybe deleted meanwhile, maybe on another device.
                 if let Some((t, id)) = logins.iter().nth(rng.below(logins.len())).map(|(t, i)| (t.clone(), i.clone())) {
                     if let Some(mut e) = st.note("get", s.get_entry(pass.clone(), id.clone())) {
                         for f in e.fields.iter_mut().filter(|f| f.name == "password") {
@@ -194,7 +194,7 @@ fn run(seed: u64, steps: usize) -> Stats {
                 }
             }
             6 => {
-                // Delete – twice in a row sometimes.
+                // Delete, twice in a row sometimes.
                 if let Some((t, id)) = logins.iter().nth(rng.below(logins.len())).map(|(t, i)| (t.clone(), i.clone())) {
                     // Not yet on this device (created elsewhere, not synchronised): "not found", nothing deleted.
                     if st.note("delete", s.delete_entry(pass.clone(), id.clone())).is_some() {

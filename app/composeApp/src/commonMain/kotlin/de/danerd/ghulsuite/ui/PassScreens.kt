@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package de.danerd.ghulsuite.ui
 
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Schedule
@@ -136,9 +139,10 @@ fun PassListScreen(state: AppState, padding: PaddingValues) {
             onDelete = { deleting = all.filter { keyOf(it) in selected } },
         )
     }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
+    // The same insets as every tab (ScreenColumn): the search field sits at the same height everywhere.
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 4.dp, bottom = 100.dp)) {
         item(key = "search") {
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 SearchField(query, { query = it }, placeholder = stringResource(Res.string.pass_search))
                 if (all.isNotEmpty()) {
                     FilterChipRow(
@@ -168,7 +172,7 @@ fun PassListScreen(state: AppState, padding: PaddingValues) {
                                 fontSize = 14.sp, color = t.muted,
                             )
                         }
-                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp), tint = t.faint)
+                        ChevronEnd()
                     }
                 }
             }
@@ -261,6 +265,7 @@ fun PassListScreen(state: AppState, padding: PaddingValues) {
     }
     deleting?.let { list ->
         AlertDialog(
+            danger = true,
             onDismissRequest = { deleting = null },
             title = { Text(stringResource(Res.string.pass_delete_n_title, list.size.toString())) },
             text = { Text(if (list.size == 1) stringResource(Res.string.pass_delete_one_text, list[0].title) else stringResource(Res.string.pass_delete_n_text, list.size.toString())) },
@@ -314,7 +319,7 @@ fun TypePickerDialog(onPick: (String) -> Unit, onDismiss: () -> Unit, onGenerate
                 SheetRow(
                     stringResource(t.label),
                     leading = { IconTile(typeIcon(t.type), avatarColor(t.type)) },
-                    end = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp), tint = g.faint) },
+                    end = { ChevronEnd() },
                     divider = i > 0,
                 ) { onPick(t.type) }
             }
@@ -323,7 +328,7 @@ fun TypePickerDialog(onPick: (String) -> Unit, onDismiss: () -> Unit, onGenerate
                 SheetRow(
                     stringResource(Res.string.pass_add_import), stringResource(Res.string.pass_add_import_sub),
                     leading = { IconTile(Icons.Filled.Download, paletteColor(3)) },
-                    end = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp), tint = g.faint) },
+                    end = { ChevronEnd() },
                     divider = true,
                 ) { onImport() }
             }
@@ -370,13 +375,15 @@ fun EntryDetailScreen(state: AppState, vaultId: String, id: String, padding: Pad
     val fav = extras?.favorite == true
     val t = g
     Column(Modifier.padding(padding)) {
+        // Detail screens: no title in the bar (the name stands below), edit as a pencil, then the menu.
         GhulTopBar(
-            stringResource(def.label), onLock = { state.backend.lock() }, onBack = { state.pop() },
+            "", onLock = { state.backend.lock() }, onBack = { state.pop() },
             actions = {
                 BarIcon(if (fav) Icons.Filled.Star else Icons.Filled.StarBorder, stringResource(Res.string.chip_favorites),
                     tint = if (fav) areaColor(Tab.MAIL) else Color.Unspecified) {
                     state.run(block = { state.backend.setFavorite(vaultId, id, !fav) }) { reloadExtras++; state.changed() }
                 }
+                BarIcon(Icons.Filled.Edit, stringResource(Res.string.a_edit)) { state.push(Screen.EntryEdit(vaultId, id, e.type)) }
                 BarIcon(Icons.Filled.MoreVert, stringResource(Res.string.entry_more)) { menu = true }
             },
         )
@@ -433,10 +440,6 @@ fun EntryDetailScreen(state: AppState, vaultId: String, id: String, padding: Pad
                     if (created > 0) stringResource(Res.string.entry_created, formatDate(created)) else null,
                 ).joinToString(" · "),
             )
-            Button(onClick = { state.push(Screen.EntryEdit(vaultId, id, e.type)) }, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Filled.Edit, null, Modifier.size(18.dp))
-                Text(stringResource(Res.string.a_edit))
-            }
         }
     }
     if (sheet == "export") {
@@ -463,22 +466,24 @@ fun EntryDetailScreen(state: AppState, vaultId: String, id: String, padding: Pad
     if (menu) {
         val others = state.vaultsOf(VaultKindUi.PASS).filter { it.id != vaultId && it.available }
         val copySuffix = stringResource(Res.string.pass_copy_suffix)
-        GhulSheet({ menu = false }, stringResource(Res.string.title_entry)) {
+        GhulSheet({ menu = false }, e.value("title").ifBlank { stringResource(Res.string.untitled) }) {
             SheetList {
                 if (shareServers.isNotEmpty()) {
-                    SheetRow(stringResource(Res.string.pass_share_short), stringResource(Res.string.pass_share_hint)) { menu = false; sharing = true }
+                    SheetRow(stringResource(Res.string.pass_share_short), stringResource(Res.string.pass_share_hint),
+                        leading = { IconTile(Icons.Filled.Link, paletteColor(2)) }) { menu = false; sharing = true }
                 }
-                SheetRow(stringResource(Res.string.pass_duplicate), divider = shareServers.isNotEmpty()) {
+                SheetRow(stringResource(Res.string.pass_duplicate), leading = { IconTile(Icons.Filled.ContentCopy, paletteColor(1)) }, divider = shareServers.isNotEmpty()) {
                     menu = false
                     state.run(block = { state.backend.duplicateEntry(vaultId, id, copySuffix) }) { nid ->
                         state.changed(); state.pop(); state.push(Screen.EntryDetail(vaultId, nid))
                     }
                 }
-                if (others.isNotEmpty()) SheetRow(stringResource(Res.string.pass_move), divider = true) { menu = false; sheet = "move" }
+                if (others.isNotEmpty()) SheetRow(stringResource(Res.string.pass_move), leading = { IconTile(Icons.Filled.Folder, paletteColor(5)) }, divider = true) { menu = false; sheet = "move" }
                 if (filePickersAvailable) {
-                    SheetRow(stringResource(Res.string.pass_export_one), stringResource(Res.string.pass_export_one_sub), divider = true) { menu = false; sheet = "export" }
+                    SheetRow(stringResource(Res.string.pass_export_one), stringResource(Res.string.pass_export_one_sub),
+                        leading = { IconTile(Icons.Filled.Upload, paletteColor(9)) }, divider = true) { menu = false; sheet = "export" }
                 }
-                SheetRow(stringResource(Res.string.a_delete), color = g.danger, divider = true) { menu = false; confirmDelete = true }
+                SheetRow(stringResource(Res.string.a_delete), leading = { IconTile(Icons.Filled.Delete, g.danger) }, color = g.danger, divider = true) { menu = false; confirmDelete = true }
             }
         }
     }
@@ -530,6 +535,7 @@ fun EntryDetailScreen(state: AppState, vaultId: String, id: String, padding: Pad
     }
     if (confirmDelete) {
         AlertDialog(
+            danger = true,
             onDismissRequest = { confirmDelete = false },
             title = { Text(stringResource(Res.string.pass_delete_title)) },
             text = { Text(stringResource(Res.string.pass_delete_text)) },
@@ -552,7 +558,7 @@ private fun stringResource_old(): String = stringResource(Res.string.pass_histor
 private fun MoreEnd(text: String) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         if (text.isNotEmpty()) Text(text, fontSize = 13.sp, color = g.faint)
-        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp), tint = g.faint)
+        ChevronEnd()
     }
 }
 
@@ -781,7 +787,28 @@ fun EntryEditScreen(state: AppState, vaultId: String, id: String?, type: String,
         }
     }
     if (!loaded) return
+    val save = {
+        val names = def.fields.map { it.name }.toSet()
+        val kept = customOrder.filter { it !in names }.map { n -> FieldUi(n, original?.fields?.firstOrNull { it.name == n }?.type ?: FieldType.TEXT, values[n].orEmpty()) }
+            .filter { it.value.isNotEmpty() }
+        val fields = def.fields.map { f ->
+            val raw = values[f.name].orEmpty()
+            val clean = if (f.edit == EditKind.LIST) raw.lines().map { it.trim() }.filter { it.isNotEmpty() }.joinToString("\n") else raw
+            FieldUi(f.name, f.storageType, clean)
+        }.filter { it.value.isNotEmpty() } + kept
+        state.run(block = { state.backend.saveEntry(EntryUi(vaultId, id, type, fields)) }) { newId ->
+            state.changed()
+            state.pop()
+            if (id == null) state.push(Screen.EntryDetail(vaultId, newId))
+        }
+    }
     Column(Modifier.padding(padding)) {
+        // Full-screen editor: close on the left, the main action on the right, as in every area.
+        GhulTopBar(
+            stringResource(if (id == null) Res.string.pass_new_entry else Res.string.a_edit),
+            onLock = { state.backend.lock() }, onBack = { state.pop() }, backIcon = Icons.Filled.Close, showLock = false,
+            actions = { HeaderButton(stringResource(Res.string.a_save), enabled = !state.busy) { save() } },
+        )
         ScreenColumn {
             BusyBanner(state)
             SectionLabel(stringResource(def.label))
@@ -819,24 +846,6 @@ fun EntryEditScreen(state: AppState, vaultId: String, id: String?, type: String,
             }
             FilledTonalButton(onClick = { addField = true }, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Filled.Add, null, Modifier.size(18.dp)); Text(stringResource(Res.string.pass_add_field))
-            }
-            ButtonRow {
-                OutlinedButton(onClick = { state.pop() }, modifier = Modifier.weight(1f)) { Text(stringResource(Res.string.a_cancel)) }
-                Button(modifier = Modifier.weight(1f), onClick = {
-                    val known = def.fields.associateBy { it.name }
-                    val kept = customOrder.filter { it !in knownNames }.map { n -> FieldUi(n, original?.fields?.firstOrNull { it.name == n }?.type ?: FieldType.TEXT, values[n].orEmpty()) }
-                        .filter { it.value.isNotEmpty() }
-                    val fields = def.fields.map { f ->
-                        val raw = values[f.name].orEmpty()
-                        val clean = if (f.edit == EditKind.LIST) raw.lines().map { it.trim() }.filter { it.isNotEmpty() }.joinToString("\n") else raw
-                        FieldUi(f.name, f.storageType, clean)
-                    }.filter { it.value.isNotEmpty() } + kept
-                    state.run(block = { state.backend.saveEntry(EntryUi(vaultId, id, type, fields)) }) { newId ->
-                        state.changed()
-                        state.pop()
-                        if (id == null) state.push(Screen.EntryDetail(vaultId, newId))
-                    }
-                }, enabled = !state.busy) { Text(stringResource(Res.string.a_save)) }
             }
         }
     }

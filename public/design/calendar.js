@@ -58,7 +58,7 @@ const CALS = [
   { id: 'hol', name: 'Feiertage', color: '#6f7187', ro: true, sub: 'Nordrhein-Westfalen · eingebaut, offline' },
 ];
 const calOf = (id) => CALS.find((c) => c.id === id) || CALS[0];
-const REP = { '': 'Nie', d: 'Täglich', wd: 'Werktags (Mo–Fr)', w: 'Wöchentlich', w2: 'Alle 2 Wochen', m: 'Monatlich', y: 'Jährlich' };
+const REP = { '': 'Nie', d: 'Täglich', wd: 'Werktags (Mo bis Fr)', w: 'Wöchentlich', w2: 'Alle 2 Wochen', m: 'Monatlich', y: 'Jährlich' };
 
 const T0 = today();
 const M0 = monday(T0);
@@ -181,7 +181,7 @@ function evRow(o, day) {
 function dayAgenda(d, occ) {
   const list = dayOcc(occ, d);
   return `<div class="section-title">${dayLabel(d)}<button data-act="cal-new" data-arg="${dkey(d)}">${icon('plus')} Termin</button></div>
-    <div class="card flush">${list.length ? list.map((o) => evRow(o, d)).join('') : `<div class="cal-free">${icon('smile')} Keine Termine – der Tag gehört dir.</div>`}</div>`;
+    <div class="card flush">${list.length ? list.map((o) => evRow(o, d)).join('') : `<div class="cal-free">${icon('smile')} Keine Termine. Der Tag gehört dir.</div>`}</div>`;
 }
 function strip(days, occ, pick) {
   return `<div class="cal-strip ${pick ? 'pick' : ''}">${pick ? '' : '<span></span>'}${days.map((d) => {
@@ -222,7 +222,7 @@ function timeGrid(days, occ) {
     const blocks = lanes(list).map(({ o, l, n }) => {
       const s = Math.max(o.s, ds), e = Math.min(o.e, de);
       const top = ((s - ds) / 36e5) * HH, h = Math.max(((e - s) / 36e5) * HH - 2, 18);
-      const meta = h > 34 ? `<span>${hm(o.s)}–${hm(o.e)}${one && o.ev.loc ? ` · ${esc(o.ev.loc)}` : ''}</span>` : '';
+      const meta = h > 34 ? `<span>${hm(o.s)}-${hm(o.e)}${one && o.ev.loc ? ` · ${esc(o.ev.loc)}` : ''}</span>` : '';
       return `<button class="blk js-c js-pos ${o.e < new Date() ? 'past' : ''}" data-c="${calOf(o.ev.cal).color}" data-top="${top}px" data-height="${h}px"
         data-left="calc(${(l / n) * 100}% + 1px)" data-width="calc(${100 / n}% - 2px)" data-act="cal-open" data-arg="${o.ev.id}|${dkey(o.s)}"><b>${esc(evTitle(o))}</b>${meta}</button>`;
     }).join('');
@@ -258,7 +258,7 @@ function calMonth() {
 function calWeek() {
   const d0 = monday(S.calSel), days = Array.from({ length: 7 }, (_, i) => addD(d0, i)), d6 = days[6];
   const occ = occurrences(d0, addD(d0, 7));
-  const label = `KW ${isoWeek(d0)} · ${d0.getDate()}.${d0.getMonth() !== d6.getMonth() ? ' ' + MONS[d0.getMonth()] : ''} – ${d6.getDate()}. ${MONS[d6.getMonth()]}`;
+  const label = `KW ${isoWeek(d0)} · ${d0.getDate()}.${d0.getMonth() !== d6.getMonth() ? ' ' + MONS[d0.getMonth()] : ''} bis ${d6.getDate()}. ${MONS[d6.getMonth()]}`;
   return `${calHead(label)}${strip(days, occ, false)}${allDayRow(days, occ)}${timeGrid(days, occ)}`;
 }
 function calDay() {
@@ -283,7 +283,7 @@ function calList() {
   const body = [...groups.keys()].sort().map((k) => `<div class="section-title">${dayLabel(fromKey(k))}</div><div class="card flush">${groups.get(k).map((o) => evRow(o, fromKey(k))).join('')}</div>`).join('');
   return `<label class="search">${icon('search')}<input id="q" placeholder="Termine, Orte, Notizen durchsuchen" value="${esc(S.query)}" autocomplete="off"></label>
     ${body || `<div class="empty">${q ? `Nichts gefunden zu „${esc(S.query)}“.` : 'Keine Termine in den nächsten 60 Tagen.'}</div>`}
-    <p class="hint-text">${q ? 'Durchsucht ein Jahr zurück und voraus – nur auf dem Gerät, im entsperrten Kalender.' : 'Zeigt die nächsten 60 Tage.'}</p>`;
+    <p class="hint-text">${q ? 'Durchsucht ein Jahr zurück und voraus, nur auf dem Gerät, im entsperrten Kalender.' : 'Zeigt die nächsten 60 Tage.'}</p>`;
 }
 function calScreen() {
   const v = S.calView, visible = CALS.filter((c) => !S.calHidden[c.id]).length;
@@ -300,9 +300,9 @@ function calScreen() {
 function whenLines(o) {
   const days = Math.round((o.e - o.s) / DAYMS);
   if (o.ev.all) {
-    return days > 1 ? [`${shortDate(o.s)} – ${shortDate(addD(o.e, -1))} ${o.e.getFullYear()}`, `Ganztägig · ${days} Tage`] : [longDate(o.s), 'Ganztägig'];
+    return days > 1 ? [`${shortDate(o.s)} bis ${shortDate(addD(o.e, -1))} ${o.e.getFullYear()}`, `Ganztägig · ${days} Tage`] : [longDate(o.s), 'Ganztägig'];
   }
-  return [longDate(o.s), `${hm(o.s)} – ${hm(o.e)} · ${fmtDur(o.e - o.s)}`];
+  return [longDate(o.s), `${hm(o.s)} - ${hm(o.e)} · ${fmtDur(o.e - o.s)}`];
 }
 function calEvent(id, k) {
   const ev = evById(id);
@@ -317,13 +317,13 @@ function calEvent(id, k) {
       ${ev.rep ? `<p class="s">${icon('repeat')}${REP[ev.rep]}${ev.until ? ` · bis ${shortDate(addD(ev.until, -1))}` : ''}</p>` : ''}</div>
     <div class="card flush">
       ${ev.loc ? `<button class="row" data-act="toast" data-arg="Öffnet die Karten-App mit „${esc(ev.loc)}“"><span class="avatar a7">${icon('pinmap')}</span><span class="grow"><span class="t">${esc(ev.loc)}</span><span class="s">In Karten-App öffnen</span></span>${icon('chev', 'chev')}</button>` : ''}
-      <button class="row" data-act="cal-edit" data-arg="${ev.id}"><span class="avatar a4">${icon('bell')}</span><span class="grow"><span class="t">${ev.rem.length ? ev.rem.map((m) => remLabel(m, ev.all)).join(', ') : 'Keine Erinnerung'}</span><span class="s">${ev.rem.length ? 'Benachrichtigung – auch bei gesperrter App' : 'Tippen zum Hinzufügen'}</span></span>${icon('chev', 'chev')}</button>
+      <button class="row" data-act="cal-edit" data-arg="${ev.id}"><span class="avatar a4">${icon('bell')}</span><span class="grow"><span class="t">${ev.rem.length ? ev.rem.map((m) => remLabel(m, ev.all)).join(', ') : 'Keine Erinnerung'}</span><span class="s">${ev.rem.length ? 'Benachrichtigung, auch bei gesperrter App' : 'Tippen zum Hinzufügen'}</span></span>${icon('chev', 'chev')}</button>
       ${ev.notes ? `<div class="row"><span class="avatar a9">${icon('note')}</span><span class="grow"><span class="s wrap">${esc(ev.notes)}</span></span></div>` : ''}
     </div>
     ${ev.links.length ? `<div class="section-title">Verknüpft</div><div class="card flush">${ev.links.map((l) => `<button class="row" data-act="cal-link" data-arg="${l.k}|${l.arg || ''}|${esc(l.label)}"><span class="avatar ${linkIcon[l.k][1]}">${icon(linkIcon[l.k][0])}</span><span class="grow"><span class="t">${esc(l.label)}</span><span class="s">${linkIcon[l.k][2]}</span></span>${icon('chev', 'chev')}</button>`).join('')}</div>` : ''}
     ${next.length ? `<div class="section-title">Nächste Termine der Serie</div><div class="card flush">${next.map((x) => evRow(x)).join('')}</div>` : ''}
-    <div class="btn-row"><button class="btn tonal" data-act="toast" data-arg="${esc(ev.title)}.ics – an andere App teilen">${icon('upload')} Als .ics teilen</button><button class="btn outline" data-act="cal-mail" data-arg="${ev.id}">${icon('send')} Per GhulMail</button></div>
-    <p class="hint-text" data-u="33">Einladungen gehen als .ics-Anhang per Mail – ohne Kalenderserver, ohne Teilnehmerverwaltung.</p>
+    <div class="btn-row"><button class="btn tonal" data-act="toast" data-arg="${esc(ev.title)}.ics, an andere App teilen">${icon('upload')} Als .ics teilen</button><button class="btn outline" data-act="cal-mail" data-arg="${ev.id}">${icon('send')} Per GhulMail</button></div>
+    <p class="hint-text" data-u="33">Einladungen gehen als .ics-Anhang per Mail, ohne Kalenderserver, ohne Teilnehmerverwaltung.</p>
   </div>`;
 }
 function evMenuSheet(a) {
@@ -374,7 +374,7 @@ function calEdit() {
       <button class="row plain" data-act="cal-linksheet">${icon('link')}<span class="grow">Verknüpfen: Datei, Mail oder Eintrag</span>${icon('chev', 'chev')}</button>
       ${d.links.length ? `<div class="rems pad">${d.links.map((l, i) => `<span class="chip sm">${icon({ drive: 'cloud', mail: 'mail', pass: 'key' }[l.k])}${esc(l.label)}<button data-act="cal-d-linkdel" data-arg="${i}" aria-label="Entfernen">${icon('x')}</button></span>`).join('')}</div>` : ''}
     </div>
-    <p class="hint-text">Gespeichert wird nur verschlüsselt im Kalender-Tresor (.ghlcal). Erinnerungen plant das Gerät selbst – ohne Server und ohne Dauerbenachrichtigung.</p>
+    <p class="hint-text">Gespeichert wird nur verschlüsselt im Kalender-Tresor (.ghlcal). Erinnerungen plant das Gerät selbst, ohne Server und ohne Dauerbenachrichtigung.</p>
   </div>`;
 }
 function repSheet() {
@@ -437,7 +437,7 @@ function parseQuick(text) {
     r.day = addD(today(), diff);
   });
   const hmOf = (h, m) => (Number(h) < 24 && Number(m || 0) < 60 ? `${pad(h)}:${pad(m || 0)}` : null);
-  take(/(?<=\s)(?:von\s+|um\s+|ab\s+)?(\d{1,2})(?:[:.](\d{2}))?\s*(?:uhr\s*)?(?:-|–|bis)\s*(\d{1,2})(?:[:.](\d{2}))?\s*(?:uhr)?(?=[\s,])/i, (_, h1, m1, h2, m2) => { r.from = hmOf(h1, m1); r.to = hmOf(h2, m2); });
+  take(/(?<=\s)(?:von\s+|um\s+|ab\s+)?(\d{1,2})(?:[:.](\d{2}))?\s*(?:uhr\s*)?(?:-|\u2013|bis)\s*(\d{1,2})(?:[:.](\d{2}))?\s*(?:uhr)?(?=[\s,])/i, (_, h1, m1, h2, m2) => { r.from = hmOf(h1, m1); r.to = hmOf(h2, m2); });
   if (!r.from) take(/(?<=\s)(?:um\s+|ab\s+)?(\d{1,2})(?:[:.](\d{2}))?\s*uhr(?=[\s,])/i, (_, h, m) => { r.from = hmOf(h, m); });
   if (!r.from) take(/(?<=\s)(?:um\s+|ab\s+)?(\d{1,2}):(\d{2})(?=[\s,])/, (_, h, m) => { r.from = hmOf(h, m); });
   let title = t.replace(/\s(am|um|ab|von|bis|,)(?=\s)/gi, ' ').replace(/\s+/g, ' ').trim().replace(/^[,\s]+|[,\s]+$/g, '');
@@ -451,10 +451,10 @@ function quickPreview() {
   const box = $('cal-qprev');
   if (!box) return;
   const v = $('cal-quick').value.trim();
-  if (!v) { box.innerHTML = '<p class="hint-text">Schreib einfach los – Tag, Uhrzeit, Wiederholung und #Kalender werden erkannt.</p>'; return; }
+  if (!v) { box.innerHTML = '<p class="hint-text">Schreib einfach los: Tag, Uhrzeit, Wiederholung und #Kalender werden erkannt.</p>'; return; }
   const p = parseQuick(v), c = calOf(p.cal);
   box.innerHTML = `<div class="qa js-c" data-c="${c.color}"><span class="bar"></span><span class="grow"><b>${esc(p.title || '(ohne Titel)')}</b>
-    <span class="s">${longDate(p.day)}</span><span class="s">${p.all ? 'Ganztägig' : `${p.from} – ${p.to}`}${p.rep ? ` · ${REP[p.rep]}` : ''}</span></span>
+    <span class="s">${longDate(p.day)}</span><span class="s">${p.all ? 'Ganztägig' : `${p.from} - ${p.to}`}${p.rep ? ` · ${REP[p.rep]}` : ''}</span></span>
     <span class="tag ev">${cdot(c.color)}${esc(c.name)}</span></div>`;
   afterRender(box);
 }
@@ -477,7 +477,7 @@ function calsSheet() {
       ${c.ro ? '' : `<button class="icon-btn" data-act="cal-calmenu" data-arg="${c.id}" aria-label="${esc(c.name)} bearbeiten">${icon('more')}</button>`}</div>`;
   }).join('')}
     <button class="row" data-act="cal-newcal"><span class="avatar a5">${icon('plus')}</span><span class="grow"><span class="t">Neuer Kalender</span></span></button></div>
-    <div class="btn-row" data-u="24"><button class="btn outline" data-act="toast" data-arg=".ics-Datei auswählen – z. B. aus Google, Outlook oder Apple">${icon('download')} Import (.ics)</button><button class="btn outline" data-act="toast" data-arg="Alle sichtbaren Kalender als .ics exportiert">${icon('upload')} Export (.ics)</button></div>
+    <div class="btn-row" data-u="24"><button class="btn outline" data-act="toast" data-arg=".ics-Datei auswählen, z. B. aus Google, Outlook oder Apple">${icon('download')} Import (.ics)</button><button class="btn outline" data-act="toast" data-arg="Alle sichtbaren Kalender als .ics exportiert">${icon('upload')} Export (.ics)</button></div>
     <p class="hint-text" data-u="24">Jeder Kalender liegt verschlüsselt in deiner Suite (.ghlcal) und synchronisiert wie deine Passwörter über deinen eigenen Speicher. Bewusst ohne CalDAV.</p>`;
 }
 function calMenuSheet(id) {
@@ -486,7 +486,7 @@ function calMenuSheet(id) {
     <div class="field" data-u="31"><div class="grow"><label for="cal-name">Name</label><input id="cal-name" value="${esc(c.name)}" data-cal="${c.id}" autocomplete="off"></div></div>
     <div class="swatches">${CAL_COLORS.map((col) => `<button class="sw js-c ${c.color === col ? 'on' : ''}" data-c="${col}" data-act="cal-color" data-arg="${c.id}|${col}" aria-label="Farbe ${col}"></button>`).join('')}</div>
     <div class="card flush sheet-list">
-      ${choice('Standard-Erinnerung', '15 Min. vorher', 'keine, Zum Beginn, 5 – 60 Min., 1 Tag')}
+      ${choice('Standard-Erinnerung', '15 Min. vorher', 'keine, Zum Beginn, 5 bis 60 Min., 1 Tag')}
       <button class="row plain" data-act="toast" data-arg="Kommt mit geteilten Tresoren: Familie lädt den Kalender mit eigenem Schlüssel"><span class="grow"><span class="t">Mit anderen teilen ${NEW}</span><span class="s">Als geteilter Tresor, Ende-zu-Ende verschlüsselt</span></span>${icon('chev', 'chev')}</button>
       <button class="row plain" data-act="toast" data-arg="${esc(c.name)}.ics exportiert"><span class="grow">Als .ics exportieren</span></button>
       <button class="row plain" data-act="cal-delcal" data-arg="${c.id}"><span class="grow" data-u="34">Kalender löschen</span></button></div>
@@ -499,7 +499,7 @@ function showNotification() {
   const o = occurrences(now, addD(today(), 8)).find((x) => !x.ev.all && x.s > now) || occAt(evById(2));
   const lvl = S.calNotify;
   const title = lvl === 'min' ? 'Termin in 15 Minuten' : `${evTitle(o)}`;
-  const text = lvl === 'min' ? 'Details siehst du nach dem Entsperren.' : lvl === 'title' ? `in 15 Min. · ${shortDate(o.s)}, ${hm(o.s)}` : `${shortDate(o.s)}, ${hm(o.s)} – ${hm(o.e)}${o.ev.loc ? ` · ${esc(o.ev.loc)}` : ''}`;
+  const text = lvl === 'min' ? 'Details siehst du nach dem Entsperren.' : lvl === 'title' ? `in 15 Min. · ${shortDate(o.s)}, ${hm(o.s)}` : `${shortDate(o.s)}, ${hm(o.s)} - ${hm(o.e)}${o.ev.loc ? ` · ${esc(o.ev.loc)}` : ''}`;
   const n = $('notif');
   n.innerHTML = `<div class="hd"><span class="ic">${icon('cal')}</span>GhulCal · jetzt<span class="grow"></span>${S.toggles.calSound ? icon('bell') : ''}</div>
     <b>${esc(title)}</b><p>${text}</p>
@@ -525,21 +525,21 @@ const CAL_SETTINGS = {
       ${choice('Startansicht', { month: 'Monat', week: 'Woche', day: 'Tag', list: 'Liste' }[S.calView], 'Monat, Woche, Tag, Liste')}
       ${choice('Woche beginnt am', 'Montag', 'Montag, Samstag, Sonntag')}
       ${toggle('calKw', 'Kalenderwochen anzeigen')}
-      ${toggle('calHoliday', 'Feiertage anzeigen', 'Eingebaut und offline – keine Abfrage im Netz')}
+      ${toggle('calHoliday', 'Feiertage anzeigen', 'Eingebaut und offline, keine Abfrage im Netz')}
       ${choice('Bundesland', 'Nordrhein-Westfalen', 'alle 16 Bundesländer, Österreich, Schweiz')}</div>
     <div class="section-title">Erinnerungen</div><div class="card flush">
       ${choice('Standard für Termine', remLabel(S.calDefRem), 'keine, Zum Beginn, 5, 10, 15, 30, 60 Min., 1 Tag')}
       ${choice('Standard für ganztägige', 'Am Vortag um 9:00', 'keine, Am Tag um 9:00, Am Vortag um 9:00')}
       ${toggle('calSound', 'Ton und Vibration')}
-      <div class="row plain"><span class="grow"><span class="t">Inhalt auf dem Sperrbildschirm</span><span class="s">${{ min: '„Termin in 15 Minuten“ – ohne Titel und Ort', title: 'Titel und Uhrzeit, ohne Ort', full: 'Titel, Uhrzeit und Ort' }[S.calNotify]}</span></span></div>
+      <div class="row plain"><span class="grow"><span class="t">Inhalt auf dem Sperrbildschirm</span><span class="s">${{ min: '„Termin in 15 Minuten“, ohne Titel und Ort', title: 'Titel und Uhrzeit, ohne Ort', full: 'Titel, Uhrzeit und Ort' }[S.calNotify]}</span></span></div>
       <div class="seg cal-nseg">${lv.map(([k, l]) => `<button class="${S.calNotify === k ? 'on' : ''}" data-act="cal-nlevel" data-arg="${k}">${l}</button>`).join('')}</div>
       ${link('Test-Erinnerung zeigen', 'So sieht eine Benachrichtigung aus', 'cal-notify')}</div>
-    <p class="hint-text">Beim Entsperren plant das Gerät die Erinnerungen der nächsten 30 Tage selbst ein (Android: exakte Wecker, Windows: Infobereich). Sie kommen pünktlich, auch wenn die App gesperrt oder geschlossen ist – ohne Server und ohne Dauerbenachrichtigung.</p>
+    <p class="hint-text">Beim Entsperren plant das Gerät die Erinnerungen der nächsten 30 Tage selbst ein (Android: exakte Wecker, Windows: Infobereich). Sie kommen pünktlich, auch wenn die App gesperrt oder geschlossen ist, ohne Server und ohne Dauerbenachrichtigung.</p>
     <div class="section-title">Daten</div><div class="card flush">
       ${link('Kalender verwalten', `${CALS.length} Kalender · Farben, Sichtbarkeit`, 'cal-cals')}
       ${link('Importieren (.ics)', 'Export aus Google, Outlook, Apple oder Thunderbird')}
       ${link('Exportieren (.ics)', 'Einzelne Kalender oder alle, als Datei')}</div>
-    <div class="card"><h3>Bewusst geschlossen</h3><p>GhulCal spricht kein CalDAV und abonniert keine fremden Kalender. Termine verlassen das Gerät nur verschlüsselt – zu deinem eigenen Speicher. Austausch mit anderen Programmen über .ics-Dateien oder als Mail-Anhang.</p></div>`;
+    <div class="card"><h3>Bewusst geschlossen</h3><p>GhulCal spricht kein CalDAV und abonniert keine fremden Kalender. Termine verlassen das Gerät nur verschlüsselt und nur zu deinem eigenen Speicher. Austausch mit anderen Programmen über .ics-Dateien oder als Mail-Anhang.</p></div>`;
   },
 };
 {
@@ -554,7 +554,7 @@ mailThread = function (id) { // eslint-disable-line no-global-assign
   const html = baseMailThread(id);
   const tip = {
     6: `<div class="banner cal-banner">${icon('cal')}<span>Termin erkannt: Reifenwechsel am 18.11.</span><button data-act="cal-frommail" data-arg="6">In GhulCal ${NEW}</button></div>`,
-    5: `<div class="banner cal-banner">${icon('cal')}<span>Steht schon in GhulCal: ${shortDate(addD(M0, 5))}, 06:00 – 09:00</span><button data-act="cal-open" data-arg="4|${dkey(addD(M0, 5))}">Ansehen</button></div>`,
+    5: `<div class="banner cal-banner">${icon('cal')}<span>Steht schon in GhulCal: ${shortDate(addD(M0, 5))}, 06:00 - 09:00</span><button data-act="cal-open" data-arg="4|${dkey(addD(M0, 5))}">Ansehen</button></div>`,
   }[id];
   return tip ? html.replace('<div class="screen">', `<div class="screen">${tip}`) : html;
 };

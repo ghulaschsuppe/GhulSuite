@@ -1,0 +1,98 @@
+# Testplan M1 to M6: a mail account on the IMAP and SMTP test servers (self-signed certificate,
+# so it has to be confirmed), a mail to oneself, and reading it. tools/check-server-flows.sh
+# looks at the mailbox afterwards: the mail must lie there encrypted.
+appId: de.danerd.ghulsuite.dev
+name: GhulMail on a real server
+---
+- runFlow: unlock.yaml
+- tapOn: "GhulMail"
+- extendedWaitUntil:
+    visible: "Add e-mail account"
+    timeout: 20000
+- tapOn:
+    text: "Add e-mail account"
+    index: 0
+- extendedWaitUntil:
+    visible: "E-mail address"
+    timeout: 10000
+- tapOn: "E-mail address"
+- inputText: "ghul@test.example"
+- tapOn: "Password"
+- inputText: "test-pw-123"
+- hideKeyboard
+- scrollUntilVisible:
+    element: "Show server settings"
+    direction: DOWN
+- tapOn: "Show server settings"
+- scrollUntilVisible:
+    element: "STARTTLS"
+    direction: DOWN
+# First the kind of connection (it sets its usual port), then the ports of the test servers.
+- tapOn: "STARTTLS"
+- tapOn:
+    text: "Server address"
+    below: "Incoming server \\(IMAP\\)"
+- eraseText
+- inputText: "10.0.2.2"
+- tapOn:
+    text: "Port"
+    below: "Incoming server \\(IMAP\\)"
+- eraseText
+- inputText: "10993"
+- tapOn:
+    text: "Server address"
+    below: "Outgoing server \\(SMTP\\)"
+- eraseText
+- inputText: "10.0.2.2"
+- tapOn:
+    text: "Port"
+    below: "Outgoing server \\(SMTP\\)"
+- eraseText
+- inputText: "10587"
+- hideKeyboard
+- takeScreenshot: s2-mail-servers
+- scrollUntilVisible:
+    element: "Check and save"
+    direction: DOWN
+- tapOn: "Check and save"
+# Self-signed test certificate: asked for the incoming and for the outgoing server.
+- extendedWaitUntil:
+    visible: "Check the certificate"
+    timeout: 60000
+- takeScreenshot: s2-mail-certificate
+- tapOn: "Fingerprint matches"
+- runFlow:
+    when:
+      visible: "Check the certificate"
+    commands:
+      - tapOn: "Fingerprint matches"
+- extendedWaitUntil:
+    visible: "No messages\\."
+    timeout: 120000
+- takeScreenshot: s2-mail-inbox-empty
+# A mail to oneself: it is encrypted with the key of the own account.
+- tapOn: "Write"
+- extendedWaitUntil:
+    visible: "Name or address"
+    timeout: 10000
+- tapOn: "Name or address"
+- inputText: "ghul@test.example"
+- tapOn: "Subject"
+- inputText: "Hallo vom Emulator"
+- tapOn: "Message"
+- inputText: "Geheimtext-Maestro-4711"
+- hideKeyboard
+- takeScreenshot: s2-mail-compose
+- tapOn: "Send"
+- extendedWaitUntil:
+    visible: "Message sent\\."
+    timeout: 120000
+# It comes back into the inbox.
+- extendedWaitUntil:
+    visible: "Hallo vom Emulator"
+    timeout: 120000
+- tapOn: "Hallo vom Emulator"
+- extendedWaitUntil:
+    visible: "Geheimtext-Maestro-4711"
+    timeout: 60000
+- takeScreenshot: s2-mail-read

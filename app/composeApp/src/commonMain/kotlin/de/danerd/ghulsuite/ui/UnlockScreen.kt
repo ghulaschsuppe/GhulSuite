@@ -112,7 +112,7 @@ fun UnlockScreen(state: AppState) {
     fun Links(vararg rows: Pair<String, () -> Unit>) {
         ListCard {
             rows.forEachIndexed { i, (label, action) ->
-                ListRow(label, divider = i > 0, trailing = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp), tint = t.faint) }, onClick = action)
+                ListRow(label, divider = i > 0, trailing = { ChevronEnd() }, onClick = action)
             }
         }
     }

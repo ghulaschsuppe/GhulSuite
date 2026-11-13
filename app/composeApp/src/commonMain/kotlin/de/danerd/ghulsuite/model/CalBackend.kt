@@ -38,6 +38,12 @@ data class CalEventUi(
     val notes: String = "",
     val links: List<CalLinkUi> = emptyList(),
     val birthYear: Int = 0,
+    /**
+     * Time zone of a series that came from another zone (e.g. `America/New_York`), empty: the
+     * clock of this device. With a zone, [start] and [end] are on the clock of that zone; the
+     * calendar shows every occurrence converted.
+     */
+    val zone: String = "",
 )
 
 data class CalOccurrenceUi(

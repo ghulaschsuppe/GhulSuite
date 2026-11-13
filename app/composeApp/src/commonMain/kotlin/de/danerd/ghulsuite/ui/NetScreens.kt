@@ -253,7 +253,7 @@ private fun ServerKindRow(kind: ServerKindUi, current: ServerKindUi, title: Stri
     ) {
         RadioButton(kind == current, { onPick(kind) })
         Column(Modifier.weight(1f)) {
-            Text(stringResource(title), style = MaterialTheme.typography.titleSmall)
+            SectionLabel(stringResource(title))
             Hint(stringResource(sub))
         }
     }
@@ -282,7 +282,7 @@ private fun PhpModuleFields(
     val save = rememberSaveFile { ok -> if (ok) state.message(savedMsg) }
 
     Hint(stringResource(Res.string.php_text))
-    Text(stringResource(Res.string.php_step1), style = MaterialTheme.typography.titleSmall)
+    SectionLabel(stringResource(Res.string.php_step1))
     if (module == null) {
         OutlinedButton(onClick = { onModule(net.phpModuleCreate()) }, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(Res.string.php_create))
@@ -300,7 +300,7 @@ private fun PhpModuleFields(
         }
         if (uploaded) Hint(stringResource(Res.string.php_uploaded))
     }
-    Text(stringResource(Res.string.php_step2), style = MaterialTheme.typography.titleSmall)
+    SectionLabel(stringResource(Res.string.php_step2))
     OutlinedTextField(input.name, { onInput(input.copy(name = it)) }, Modifier.fillMaxWidth(),
         label = { Text(stringResource(Res.string.server_name)) }, singleLine = true)
     // Placeholder instead of a pre-filled "https://": emptying the field must not put it back (ST10).
@@ -445,6 +445,7 @@ fun ServersSection(state: AppState) {
     driveAsk?.let { action -> DriveFollowsSyncDialog(state, onProceed = action, onDismiss = { driveAsk = null }) }
     removing?.let { s ->
         AlertDialog(
+            danger = true,
             onDismissRequest = { removing = null },
             title = { Text(stringResource(Res.string.server_remove_title, s.name)) },
             text = { Text(stringResource(Res.string.server_remove_text)) },

@@ -25,7 +25,7 @@ name: Setup
 - hideKeyboard
 - takeScreenshot: 01-password
 - tapOn: "Next"
-# Step 2: second factor – key file.
+# Step 2: second factor: key file.
 - tapOn: "Key file"
 - tapOn: "Create and save key file"
 # System dialog "Save to" (DocumentsUI)

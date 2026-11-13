@@ -135,18 +135,18 @@ private fun DriveSetup(state: AppState) {
     val syncOn = storage?.syncAvailable == true
     ScreenColumn {
         BusyBanner(state)
-        AreaSetupCard(Icons.Filled.Cloud, 1, stringResource(Res.string.drive_setup_title), stringResource(Res.string.drive_setup_text))
+        AreaSetupCard(Tab.DRIVE, stringResource(Res.string.drive_setup_title), stringResource(Res.string.drive_setup_text))
         if (storage?.mode == DriveModeUi.SYNC) Banner(Icons.Filled.Info, stringResource(Res.string.drive_sync_gone))
         SectionLabel(stringResource(Res.string.wz_drive_where))
         ListCard {
             if (syncOn) {
                 ListRow(stringResource(Res.string.drive_like_sync), stringResource(Res.string.drive_like_sync_sub),
-                    leading = { IconTile(Icons.Filled.Sync, paletteColor(2)) }) {
+                    leading = { IconTile(Icons.Filled.Sync, areaColor(Tab.DRIVE)) }) {
                     state.run(onError = { error = it }, block = { net.driveUseSync() }) { state.changed() }
                 }
             }
             ListRow(stringResource(Res.string.wz_own_server), stringResource(Res.string.drive_own_sub),
-                leading = { IconTile(Icons.Filled.Dns, paletteColor(1)) }, divider = syncOn) { own = true }
+                leading = { IconTile(Icons.Filled.Dns, areaColor(Tab.DRIVE)) }, divider = syncOn) { own = true }
         }
         if (!syncOn) HintText(stringResource(Res.string.drive_sync_tip))
         ErrorText(error)
@@ -187,12 +187,11 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
     var newFolder by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf<DriveItemUi?>(null) }
     var moving by remember { mutableStateOf<DriveItemUi?>(null) }
-    var deleting by remember { mutableStateOf<DriveItemUi?>(null) }
+    var forever by remember { mutableStateOf<DriveItemUi?>(null) }
     var downloadItem by remember { mutableStateOf<DriveItemUi?>(null) }
     var selecting by remember { mutableStateOf(false) }
     val selected = remember { androidx.compose.runtime.mutableStateListOf<DriveItemUi>() }
     var sharing by remember { mutableStateOf<List<DriveItemUi>?>(null) }
-    var deletingMany by remember { mutableStateOf(false) }
     var driveServer by remember { mutableStateOf<ServerUi?>(null) }
     /** "" = folders, or one of the quick views: recent, fav, offline, trash. */
     var view by remember { mutableStateOf("") }
@@ -299,7 +298,13 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
         state.driveSelection = if (!selecting) null else DriveSelection(
             count = selected.size,
             onShare = { sharing = selected.toList() },
-            onDelete = { deletingMany = true },
+            onDelete = {
+                // Into the trash: no question, it can be restored from there.
+                val ids = selected.map { it.id }
+                state.run(onError = { error = it }, block = { ids.forEach { net.driveDelete(it) } }) {
+                    selected.clear(); selecting = false; state.changed(); state.messageRes(Res.string.msg_moved_to_trash)
+                }
+            },
             onAll = { selected.clear(); selected.addAll(items) },
             onDone = { selecting = false; selected.clear() },
             onZip = { zipping = selected.toList() },
@@ -377,7 +382,7 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
                     Text(stringResource(Res.string.shares_title), fontWeight = FontWeight.W500)
                     Text(stringResource(Res.string.drive_shares_active, sharesActive.toString()), fontSize = 14.sp, color = t.muted)
                 }
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp), tint = t.faint)
+                ChevronEnd()
             }
         } else if (query.isBlank()) {
             HintText(path.joinToString(" › ") { it.name })
@@ -469,44 +474,46 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
             SheetTitle(item.name)
             HintText(formatSize(item.size) + " · " + stringResource(Res.string.drive_changed, formatDate(item.modified)) + " · " + stringResource(Res.string.drive_encrypted_blocks), Modifier.padding(start = 0.dp))
             ButtonRow {
-                Button(onClick = { fileSheet = null; state.run(onError = { error = it }, block = { net.shareDriveToApps(listOf(item)) }) {} }, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Filled.Visibility, null, Modifier.size(18.dp)); Text(stringResource(Res.string.a_open))
-                }
                 OutlinedButton(onClick = { fileSheet = null; downloadItem = item; download(item.name, "application/octet-stream") }, modifier = Modifier.weight(1f),
                     enabled = filePickersAvailable) {
                     Icon(Icons.Filled.Download, null, Modifier.size(18.dp)); Text(stringResource(Res.string.a_save))
                 }
+                Button(onClick = { fileSheet = null; state.run(onError = { error = it }, block = { net.shareDriveToApps(listOf(item)) }) {} }, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Filled.Visibility, null, Modifier.size(18.dp)); Text(stringResource(Res.string.a_open))
+                }
             }
+            // Rows of an action sheet: a tile in front, the row that deletes last and in red.
             @Composable
-            fun End(icon: androidx.compose.ui.graphics.vector.ImageVector) = Icon(icon, null, Modifier.size(20.dp), tint = t.muted)
+            fun Tile(icon: androidx.compose.ui.graphics.vector.ImageVector, danger: Boolean = false) = IconTile(icon, if (danger) t.danger else areaColor(Tab.DRIVE))
             if (item.trashed != 0L) SheetList {
-                SheetRow(stringResource(Res.string.drive_restore), end = { End(Icons.Filled.Restore) }) {
+                SheetRow(stringResource(Res.string.drive_restore), leading = { Tile(Icons.Filled.Restore) }) {
                     fileSheet = null
                     state.run(onError = { error = it }, block = { net.driveRestore(item.id) }) { trashTick++; state.changed() }
                 }
-                SheetRow(stringResource(Res.string.drive_delete_forever), color = t.danger, divider = true, end = { End(Icons.Filled.DeleteForever) }) {
+                SheetRow(stringResource(Res.string.drive_delete_forever), color = t.danger, divider = true, leading = { Tile(Icons.Filled.DeleteForever, danger = true) }) {
                     fileSheet = null
-                    state.run(onError = { error = it }, block = { net.driveDeleteForever(item.id) }) { trashTick++; state.changed() }
+                    forever = item
                 }
             } else SheetList {
-                SheetRow(stringResource(if (item.offline) Res.string.drive_offline_off else Res.string.drive_offline_on), end = { End(Icons.Filled.Download) }) {
+                SheetRow(stringResource(if (item.offline) Res.string.drive_offline_off else Res.string.drive_offline_on), leading = { Tile(Icons.Filled.Download) }) {
                     fileSheet = null
                     state.run(onError = { error = it }, block = { net.driveSetOffline(item.id, !item.offline) }) { reload++ }
                 }
-                SheetRow(stringResource(if (item.favorite) Res.string.auth_unfavorite else Res.string.auth_favorite), divider = true,
-                    end = { End(if (item.favorite) Icons.Filled.Star else Icons.Filled.StarBorder) }) {
+                SheetRow(stringResource(if (item.favorite) Res.string.a_unfavorite else Res.string.a_favorite), divider = true,
+                    leading = { Tile(if (item.favorite) Icons.Filled.Star else Icons.Filled.StarBorder) }) {
                     fileSheet = null
                     state.run(onError = { error = it }, block = { net.driveSetFavorite(item.id, !item.favorite) }) { reload++ }
                 }
-                SheetRow(stringResource(Res.string.a_share_dots), divider = true, end = { End(Icons.AutoMirrored.Filled.Send) }) { fileSheet = null; sharing = listOf(item) }
+                SheetRow(stringResource(Res.string.a_share_dots), divider = true, leading = { Tile(Icons.AutoMirrored.Filled.Send) }) { fileSheet = null; sharing = listOf(item) }
                 if (item.versions > 0) {
-                    SheetRow(stringResource(Res.string.drive_versions), item.versions.toString(), divider = true, end = { End(Icons.Filled.History) }) { fileSheet = null; versionsOf = item }
+                    SheetRow(stringResource(Res.string.drive_versions), item.versions.toString(), divider = true, leading = { Tile(Icons.Filled.History) }) { fileSheet = null; versionsOf = item }
                 }
-                SheetRow(stringResource(Res.string.a_rename), divider = true, end = { End(Icons.Filled.Edit) }) { fileSheet = null; renaming = item }
-                SheetRow(stringResource(Res.string.a_move), divider = true, end = { End(Icons.Filled.Folder) }) { fileSheet = null; moving = item }
-                SheetRow(stringResource(Res.string.drive_to_trash), color = t.danger, divider = true, end = { End(Icons.Filled.Delete) }) {
+                SheetRow(stringResource(Res.string.a_rename), divider = true, leading = { Tile(Icons.Filled.Edit) }) { fileSheet = null; renaming = item }
+                SheetRow(stringResource(Res.string.a_move), divider = true, leading = { Tile(Icons.Filled.Folder) }) { fileSheet = null; moving = item }
+                SheetRow(stringResource(Res.string.drive_to_trash), color = t.danger, divider = true, leading = { Tile(Icons.Filled.Delete, danger = true) }) {
                     fileSheet = null
-                    state.run(onError = { error = it }, block = { net.driveDelete(item.id) }) { state.changed() }
+                    // Into the trash: no question, it can be restored from there.
+                    state.run(onError = { error = it }, block = { net.driveDelete(item.id) }) { state.changed(); state.messageRes(Res.string.msg_moved_to_trash) }
                 }
             }
         }
@@ -553,6 +560,7 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
     }
     if (emptyTrash) {
         AlertDialog(
+            danger = true,
             onDismissRequest = { emptyTrash = false },
             title = { Text(stringResource(Res.string.drive_empty_trash)) },
             text = { Text(stringResource(Res.string.drive_empty_trash_text)) },
@@ -563,23 +571,6 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
                 }) { Text(stringResource(Res.string.drive_delete_forever)) }
             },
             dismissButton = { TextButton(onClick = { emptyTrash = false }) { Text(stringResource(Res.string.a_cancel)) } },
-        )
-    }
-    if (deletingMany) {
-        AlertDialog(
-            onDismissRequest = { deletingMany = false },
-            title = { Text(stringResource(Res.string.drive_delete_many_title, selected.size.toString())) },
-            text = { Text(stringResource(Res.string.drive_delete_folder_text)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    deletingMany = false
-                    val ids = selected.map { it.id }
-                    state.run(onError = { error = it }, block = { ids.forEach { net.driveDelete(it) } }) {
-                        selected.clear(); selecting = false; state.changed()
-                    }
-                }) { Text(stringResource(Res.string.a_delete)) }
-            },
-            dismissButton = { TextButton(onClick = { deletingMany = false }) { Text(stringResource(Res.string.a_cancel)) } },
         )
     }
     if (newFolder) {
@@ -600,18 +591,19 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
             state.run(onError = { error = it }, block = { net.driveMove(item.id, target) }) { reload++ }
         }
     }
-    deleting?.let { item ->
+    forever?.let { item ->
         AlertDialog(
-            onDismissRequest = { deleting = null },
-            title = { Text(stringResource(Res.string.drive_delete_title, item.name)) },
-            text = { Text(stringResource(if (item.isDir) Res.string.drive_delete_folder_text else Res.string.drive_delete_text)) },
+            danger = true,
+            onDismissRequest = { forever = null },
+            title = { Text(stringResource(Res.string.drive_delete_forever_title)) },
+            text = { Text(stringResource(Res.string.delete_for_good_text, item.name)) },
             confirmButton = {
                 TextButton(onClick = {
-                    deleting = null
-                    state.run(onError = { error = it }, block = { net.driveDelete(item.id) }) { state.changed() }
-                }) { Text(stringResource(Res.string.a_delete)) }
+                    forever = null
+                    state.run(onError = { error = it }, block = { net.driveDeleteForever(item.id) }) { trashTick++; state.changed(); state.messageRes(Res.string.msg_deleted) }
+                }) { Text(stringResource(Res.string.drive_delete_forever)) }
             },
-            dismissButton = { TextButton(onClick = { deleting = null }) { Text(stringResource(Res.string.a_cancel)) } },
+            dismissButton = { TextButton(onClick = { forever = null }) { Text(stringResource(Res.string.a_cancel)) } },
         )
     }
 }
@@ -727,8 +719,8 @@ private fun MoveDialog(state: AppState, item: DriveItemUi, onDismiss: () -> Unit
                 if (path.size > 1) TextButton(onClick = { path = path.dropLast(1) }) { Text("← " + stringResource(Res.string.a_back)) }
                 for (f in folders) {
                     TextButton(onClick = { path = path + Crumb(f.id, f.name) }) {
-                        Icon(Icons.Filled.Folder, null)
-                        Text(" " + f.name)
+                        Icon(Icons.Filled.Folder, null, Modifier.size(18.dp))
+                        Text(f.name, Modifier.padding(start = 8.dp))
                     }
                 }
             }

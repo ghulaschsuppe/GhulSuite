@@ -159,7 +159,7 @@ suspend fun loadCalNames(): CalNames = CalNames(
  */
 suspend fun calAlarm(r: de.danerd.ghulsuite.model.CalReminderUi, detail: Int, names: CalNames): de.danerd.ghulsuite.model.CalAlarmUi {
     val day = Day.parse(r.start) ?: today()
-    val time = if (r.allDay) names.short(day) + " · " + getString(Res.string.cal_all_day) else names.short(day) + ", " + hm(r.start) + " – " + hm(r.end)
+    val time = if (r.allDay) names.short(day) + " · " + getString(Res.string.cal_all_day) else names.short(day) + ", " + hm(r.start) + " - " + hm(r.end)
     val full = time + if (r.location.isNotEmpty()) " · " + r.location else ""
     val soon = when {
         r.allDay && r.minutesBefore <= 0 -> getString(Res.string.cal_notify_today)
@@ -264,7 +264,7 @@ fun CalScreen(state: AppState, padding: PaddingValues) {
     }
     Column(
         Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())
-            .padding(start = 16.dp, end = 16.dp, bottom = 120.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 100.dp),
     ) {
         SingleChoiceSegmentedButtonRow(Modifier.padding(bottom = 10.dp)) {
             listOf(CalView.MONTH to Res.string.cal_view_month, CalView.WEEK to Res.string.cal_view_week, CalView.DAY to Res.string.cal_view_day, CalView.LIST to Res.string.cal_view_list)
@@ -620,7 +620,7 @@ private fun lanesOf(list: List<CalOccurrenceUi>): List<Placed> {
     return out
 }
 
-/** Hours 6–24 with the events of one or seven days (.tg). */
+/** Hours 6 to 24 with the events of one or seven days (.tg). */
 @Composable
 private fun TimeGrid(state: AppState, days: List<Day>, occ: List<CalOccurrenceUi>, swipe: Modifier) {
     val t = g
@@ -687,7 +687,7 @@ private fun TimeGrid(state: AppState, days: List<Day>, occ: List<CalOccurrenceUi
                                 Text(p.o.label, fontSize = if (one) 13.sp else 10.5.sp, lineHeight = if (one) 16.sp else 13.sp, fontWeight = FontWeight.Bold,
                                     color = t.fg, maxLines = 1, softWrap = false, overflow = if (one) TextOverflow.Ellipsis else TextOverflow.Clip)
                                 if (h > 34.dp) {
-                                    val meta = "${hm(p.o.start)}–${hm(p.o.end)}" + if (one && p.o.location.isNotEmpty()) " · ${p.o.location}" else ""
+                                    val meta = "${hm(p.o.start)}-${hm(p.o.end)}" + if (one && p.o.location.isNotEmpty()) " · ${p.o.location}" else ""
                                     Text(meta, fontSize = if (one) 13.sp else 10.5.sp, lineHeight = if (one) 16.sp else 13.sp, color = t.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                             }

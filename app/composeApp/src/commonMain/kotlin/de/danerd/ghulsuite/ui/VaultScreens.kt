@@ -275,6 +275,7 @@ fun VaultsSection(state: AppState) {
     }
     removing?.let { v ->
         AlertDialog(
+            danger = true,
             onDismissRequest = { removing = null },
             title = { Text(stringResource(Res.string.vault_remove_title, v.name)) },
             text = { Text(stringResource(Res.string.vault_remove_text), color = warnColor()) },

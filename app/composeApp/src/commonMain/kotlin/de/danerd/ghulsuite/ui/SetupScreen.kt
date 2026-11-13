@@ -191,7 +191,7 @@ private fun StartOption(icon: ImageVector, color: androidx.compose.ui.graphics.C
             Text(title, fontWeight = FontWeight.W500)
             Text(text, fontSize = 14.sp, color = g.muted)
         }
-        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp), tint = g.faint)
+        ChevronEnd()
     }
 }
 

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -106,9 +107,9 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
         )
     }
     LazyColumn(
-        Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 120.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        Modifier.align(Alignment.CenterHorizontally).widthIn(max = 672.dp).fillMaxSize(),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 100.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item(key = "search") { SearchField(query, { query = it }, placeholder = stringResource(Res.string.auth_search)) }
         if (shown?.isEmpty() == true) {
@@ -178,6 +179,7 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
     }
     deletingMany?.let { list ->
         AlertDialog(
+            danger = true,
             onDismissRequest = { deletingMany = null },
             title = { Text(stringResource(Res.string.auth_delete_n_title, list.size.toString())) },
             text = { Text(stringResource(Res.string.auth_delete_n_text, list.size.toString())) },
@@ -197,7 +199,7 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
         GhulSheet({ sorting = false }, stringResource(Res.string.auth_sort)) {
             SheetList {
                 listOf(0 to Res.string.auth_sort_name, 1 to Res.string.auth_sort_newest).forEachIndexed { i, (v, label) ->
-                    SheetRow(stringResource(label), divider = i > 0, end = { if (settings.authSort == v) Icon(Icons.Filled.Check, null, Modifier.size(20.dp), tint = g.accent) }) {
+                    SheetRow(stringResource(label), divider = i > 0, end = { if (settings.authSort == v) SheetCheck() }) {
                         settings.authSort = v; sorting = false
                     }
                 }
@@ -251,6 +253,7 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
     }
     deleting?.let { c ->
         AlertDialog(
+            danger = true,
             onDismissRequest = { deleting = null },
             title = { Text(stringResource(Res.string.auth_delete_title)) },
             text = { Text(stringResource(Res.string.auth_delete_text, c.issuer.ifBlank { c.account })) },
@@ -419,7 +422,7 @@ fun AddTotpScreen(state: AppState, vaultId: String, padding: PaddingValues, star
                     OutlinedTextField(issuer, { issuer = it }, label = { Text(stringResource(Res.string.f_issuer)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(account, { account = it }, label = { Text(stringResource(Res.string.f_account)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     SecretTextField(secret, { secret = it; error = null }, stringResource(Res.string.f_secret_base32))
-                    Text(stringResource(Res.string.auth_advanced), style = MaterialTheme.typography.labelLarge)
+                    SectionLabel(stringResource(Res.string.auth_advanced))
                     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                         OtpAlgorithmUi.entries.forEachIndexed { i, a ->
                             // Steam Guard: five characters, every 30 seconds.

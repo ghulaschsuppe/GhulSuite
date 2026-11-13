@@ -19,7 +19,7 @@ import java.io.StringWriter
 
 /**
  * Remembers a crash and shows it on the next start, so it can be copied into a bug report.
- * The report holds only the error and device information – no vault content (secrets never
+ * The report holds only the error and device information, no vault content (secrets never
  * appear in exception messages of the app).
  */
 object CrashLog {

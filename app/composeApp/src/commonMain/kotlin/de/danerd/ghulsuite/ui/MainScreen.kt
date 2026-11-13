@@ -312,7 +312,7 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
 }
 
 private fun ownHeader(top: Screen) = top is Screen.MailRead || top is Screen.MailCompose || top is Screen.EntryDetail ||
-    top is Screen.CalEvent || top is Screen.CalEdit
+    top is Screen.EntryEdit || top is Screen.CalEvent || top is Screen.CalEdit
 
 @Composable
 private fun TabTopBar(state: AppState) {
@@ -364,7 +364,8 @@ private fun navTabs(state: AppState): List<NavTab> = state.tabs.map { t ->
     )
 }
 
-private fun tabIcon(t: Tab) = when (t) {
+/** The icon of an area: the same in the navigation, in Options and wherever the area is named. */
+fun tabIcon(t: Tab) = when (t) {
     Tab.PASS -> Icons.Outlined.Key
     Tab.AUTH -> Icons.Outlined.VerifiedUser
     Tab.DRIVE -> Icons.Outlined.Cloud
@@ -381,14 +382,19 @@ private fun MainFab(state: AppState, onAdd: () -> Unit) {
         }
     }
     if (state.tab == Tab.DRIVE && state.driveReady && state.driveSelection == null) {
-        GhulFab(areaColor(Tab.DRIVE), Icons.Filled.Add, description = stringResource(Res.string.drive_upload_fab)) { state.driveUploadTick++ }
+        GhulFab(areaColor(Tab.DRIVE), Icons.Filled.Add, stringResource(Res.string.a_add)) { state.driveUploadTick++ }
     }
     if (state.tab == Tab.CAL) {
         GhulFab(areaColor(Tab.CAL), Icons.Filled.Add, stringResource(Res.string.cal_event_short)) { state.calQuickOpen = true }
     }
     if (state.tab == Tab.PASS || state.tab == Tab.AUTH) {
-        // Always "+": scanning a QR code is one of the choices behind it.
-        GhulFab(areaColor(state.tab), Icons.Filled.Add, description = stringResource(Res.string.a_add), onClick = onAdd)
+        // Always "+": scanning a QR code is one of the choices behind it. Icon and short text, as in
+        // every area; the icon keeps the description "Add".
+        GhulFab(
+            areaColor(state.tab), Icons.Filled.Add,
+            stringResource(if (state.tab == Tab.PASS) Res.string.fab_entry else Res.string.fab_account),
+            description = stringResource(Res.string.a_add), onClick = onAdd,
+        )
     }
 }
 
@@ -465,7 +471,7 @@ private fun SideNav(state: AppState, tabs: List<Tab>) {
             val on = state.tab == area
             Row(
                 Modifier.fillMaxWidth().padding(vertical = 2.dp).clip(RoundedCornerShape(14.dp))
-                    .background(if (on) nav.color.copy(alpha = 0.14f) else Color.Transparent)
+                    .background(if (on) nav.color.copy(alpha = 0.16f) else Color.Transparent)
                     .clickable { state.selectTab(area) }
                     .padding(horizontal = 12.dp, vertical = 11.dp),
                 verticalAlignment = Alignment.CenterVertically,

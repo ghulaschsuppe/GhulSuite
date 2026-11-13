@@ -136,10 +136,10 @@ fun MailScreen(state: AppState, padding: PaddingValues) {
 private fun MailSetup(state: AppState) {
     ScreenColumn {
         BusyBanner(state)
-        AreaSetupCard(Icons.Filled.Email, 4, stringResource(Res.string.mail_setup_title), stringResource(Res.string.mail_setup_inline))
+        AreaSetupCard(Tab.MAIL, stringResource(Res.string.mail_setup_title), stringResource(Res.string.mail_setup_inline))
         ListCard {
             ListRow(stringResource(Res.string.mail_account_new), stringResource(Res.string.mail_add_sub),
-                leading = { IconTile(Icons.Filled.Add, paletteColor(4)) }) { state.mailAccountSheet = MailSheet(null) }
+                leading = { IconTile(Icons.Filled.Add, areaColor(Tab.MAIL)) }) { state.mailAccountSheet = MailSheet(null) }
         }
     }
 }
@@ -400,7 +400,7 @@ private fun MailRow(m: MailSummaryUi, today: String, yesterday: String, divider:
                 )
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(m.subject.ifBlank { "–" }, Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                Text(m.subject.ifBlank { stringResource(Res.string.mail_no_subject) }, Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis,
                     color = g.fg, fontWeight = if (unread) FontWeight.Bold else FontWeight.Normal)
                 if (m.flagged) Icon(Icons.Filled.Star, null, Modifier.size(18.dp), tint = color)
             }
@@ -488,7 +488,7 @@ fun MailReadScreen(state: AppState, accountId: String, folder: String, uid: Long
             ErrorText(error)
             val m = m0 ?: return@Column
             SelectionContainer {
-                Text(m.subject.ifBlank { "–" }, fontSize = 22.sp, lineHeight = 27.sp, fontWeight = FontWeight.Bold,
+                Text(m.subject.ifBlank { stringResource(Res.string.mail_no_subject) }, fontSize = 22.sp, lineHeight = 27.sp, fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 6.dp))
             }
             FlowRow(Modifier.padding(start = 4.dp, end = 4.dp, bottom = 14.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -586,16 +586,16 @@ fun MailReadScreen(state: AppState, accountId: String, folder: String, uid: Long
             ) {
                 FilledTonalButton(onClick = {
                     state.push(Screen.MailCompose(MailDraft(accountId, to = m.replyTo.ifBlank { m.fromAddress }, subject = re(m.subject), text = quote(m), inReplyTo = m.messageId)))
-                }, modifier = Modifier.weight(1f).height(42.dp), contentPadding = PaddingValues(horizontal = 10.dp)) {
+                }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 10.dp)) {
                     Icon(Icons.AutoMirrored.Filled.Reply, null, Modifier.size(18.dp))
-                    Text(stringResource(Res.string.a_reply), Modifier.padding(start = 6.dp), maxLines = 1)
+                    Text(stringResource(Res.string.a_reply), maxLines = 1)
                 }
                 // Two clear actions; "reply to all" is in the ⋮ menu when there are other recipients.
                 OutlinedButton(onClick = {
                     state.push(Screen.MailCompose(MailDraft(accountId, subject = "$forwardPrefix ${m.subject}", text = quote(m))))
-                }, modifier = Modifier.weight(1f).height(42.dp), contentPadding = PaddingValues(horizontal = 10.dp)) {
+                }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 10.dp)) {
                     Icon(Icons.AutoMirrored.Filled.Forward, null, Modifier.size(18.dp))
-                    Text(stringResource(Res.string.a_forward), Modifier.padding(start = 6.dp), maxLines = 1)
+                    Text(stringResource(Res.string.a_forward), maxLines = 1)
                 }
             }
         }
@@ -794,19 +794,14 @@ fun MailComposeScreen(state: AppState, draft: MailDraft, padding: PaddingValues)
         }
     }
     Column(Modifier.padding(padding)) {
-        // Header: close, title, attach, send.
-        Row(
-            Modifier.fillMaxWidth().statusBarsPadding().heightIn(min = 56.dp).padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 10.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            BarIcon(Icons.Filled.Close, stringResource(Res.string.a_cancel)) { state.pop() }
-            Text(title, Modifier.weight(1f), fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-            if (filePickersAvailable) BarIcon(Icons.Filled.Attachment, stringResource(Res.string.a_attach)) { attach() }
-            Button(onClick = { send() }, enabled = canSend, modifier = Modifier.heightIn(max = 40.dp), contentPadding = PaddingValues(horizontal = 18.dp)) {
-                Icon(Icons.AutoMirrored.Filled.Send, null, Modifier.size(18.dp))
-                Text(stringResource(Res.string.a_send))
-            }
-        }
+        // Header like every full-screen editor: close, title, own actions, the main action.
+        GhulTopBar(
+            title, onLock = { state.backend.lock() }, onBack = { state.pop() }, backIcon = Icons.Filled.Close, showLock = false,
+            actions = {
+                if (filePickersAvailable) BarIcon(Icons.Filled.Attachment, stringResource(Res.string.a_attach)) { attach() }
+                HeaderButton(stringResource(Res.string.a_send), enabled = canSend, icon = Icons.AutoMirrored.Filled.Send) { send() }
+            },
+        )
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 20.dp)) {
             BusyBanner(state)
             val current = accounts.firstOrNull { it.id == accountId }
@@ -856,7 +851,7 @@ fun MailComposeScreen(state: AppState, draft: MailDraft, padding: PaddingValues)
             ComposeLine(stringResource(Res.string.mail_subject_short)) { LineInput(subject, { subject = it }, "", Modifier.weight(1f)) }
             if (!pgp) {
                 Box(Modifier.padding(top = 12.dp)) {
-                    SecurityLine(Icons.Filled.LockOpen, androidx.compose.ui.graphics.Color(0xFF8A8CA0), stringResource(Res.string.mail_pgp_off_hint))
+                    SecurityLine(Icons.Filled.LockOpen, g.faint, stringResource(Res.string.mail_pgp_off_hint))
                 }
             } else {
                 keys?.let { Box(Modifier.padding(top = 12.dp)) { EncryptionPreview(it) } }
@@ -1055,7 +1050,7 @@ private fun MailAccountForm(state: AppState, id: String?, onSaved: (String) -> U
                         { h, p, sec -> upd(s.copy(smtpHost = h, smtpPort = p, smtpSecurity = sec)) }, 465, 587)
                     Hint(stringResource(Res.string.mail_secure_only))
                 } else {
-                    Hint(stringResource(Res.string.mail_servers_auto, input.servers.imapHost.ifBlank { "–" }, input.servers.smtpHost.ifBlank { "–" }))
+                    Hint(stringResource(Res.string.mail_servers_auto, input.servers.imapHost.ifBlank { "-" }, input.servers.smtpHost.ifBlank { "-" }))
                 }
                 ErrorText(error)
                 Button(
@@ -1097,7 +1092,7 @@ private fun ServerRow(
     /** null: only TLS from the start is allowed (IMAP). */
     startTlsPort: Int?,
 ) {
-    Text(label, style = MaterialTheme.typography.titleSmall)
+    SectionLabel(label)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedTextField(host, { onChange(it.trim(), port, security) }, Modifier.weight(3f), singleLine = true,
             label = { Text(stringResource(Res.string.server_host)) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
@@ -1132,7 +1127,7 @@ fun MailAccountsSection(state: AppState) {
             }
         }
         ListRow(stringResource(Res.string.mail_account_new), stringResource(Res.string.mail_add_sub),
-            leading = { IconTile(Icons.Filled.Add, paletteColor(4)) }, divider = accounts.isNotEmpty()) { state.mailAccountSheet = MailSheet(null) }
+            leading = { IconTile(Icons.Filled.Add, areaColor(Tab.MAIL)) }, divider = accounts.isNotEmpty()) { state.mailAccountSheet = MailSheet(null) }
     }
     if (accounts.isNotEmpty()) {
         val settings = state.backend.settings
@@ -1190,6 +1185,7 @@ fun MailAccountsSection(state: AppState) {
     }
     removing?.let { a ->
         AlertDialog(
+            danger = true,
             onDismissRequest = { removing = null },
             title = { Text(stringResource(Res.string.mail_remove_title, a.name)) },
             text = { Text(stringResource(Res.string.mail_remove_text)) },
@@ -1205,10 +1201,8 @@ fun MailAccountsSection(state: AppState) {
 }
 
 
-private val SecureGreen = androidx.compose.ui.graphics.Color(0xFF14874F)
-private val WarnRed = androidx.compose.ui.graphics.Color(0xFFD03B4C)
 
-/** Lock and seal: whether the mail was encrypted and who signed it – in plain words. */
+/** Lock and seal: whether the mail was encrypted and who signed it, in plain words. */
 @Composable
 fun MailSecurityBadges(m: de.danerd.ghulsuite.model.MailMessageUi) {
     val sig = m.signature
@@ -1218,15 +1212,15 @@ fun MailSecurityBadges(m: de.danerd.ghulsuite.model.MailMessageUi) {
     }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (m.encrypted) {
-            SecurityLine(Icons.Filled.Lock, SecureGreen, stringResource(Res.string.mail_badge_encrypted))
+            SecurityLine(Icons.Filled.Lock, g.ok, stringResource(Res.string.mail_badge_encrypted))
         }
         when (sig) {
             de.danerd.ghulsuite.model.MailSignatureUi.VALID ->
-                SecurityLine(Icons.Filled.Verified, SecureGreen, stringResource(Res.string.mail_badge_signed, m.signer))
+                SecurityLine(Icons.Filled.Verified, g.ok, stringResource(Res.string.mail_badge_signed, m.signer))
             de.danerd.ghulsuite.model.MailSignatureUi.UNKNOWN_KEY ->
-                SecurityLine(Icons.Filled.HelpOutline, androidx.compose.ui.graphics.Color(0xFF8A8CA0), stringResource(Res.string.mail_badge_unknown))
+                SecurityLine(Icons.Filled.HelpOutline, g.faint, stringResource(Res.string.mail_badge_unknown))
             de.danerd.ghulsuite.model.MailSignatureUi.INVALID ->
-                SecurityLine(Icons.Filled.GppBad, WarnRed, stringResource(Res.string.mail_badge_invalid))
+                SecurityLine(Icons.Filled.GppBad, g.danger, stringResource(Res.string.mail_badge_invalid))
             de.danerd.ghulsuite.model.MailSignatureUi.NONE -> {}
         }
     }
@@ -1241,17 +1235,17 @@ private fun SecurityLine(icon: androidx.compose.ui.graphics.vector.ImageVector, 
 }
 
 
-/** Under the recipients: will this mail be encrypted? If not, why not – without jargon. */
+/** Under the recipients: will this mail be encrypted? If not, why not, without jargon. */
 @Composable
 private fun EncryptionPreview(keys: List<de.danerd.ghulsuite.model.MailRecipientKeyUi>) {
     val missing = keys.filter { !it.hasKey }
     if (keys.isEmpty()) return
     if (missing.isEmpty()) {
-        SecurityLine(Icons.Filled.Lock, SecureGreen, stringResource(Res.string.mail_will_encrypt))
+        SecurityLine(Icons.Filled.Lock, g.ok, stringResource(Res.string.mail_will_encrypt))
     } else {
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             SecurityLine(
-                Icons.Filled.LockOpen, androidx.compose.ui.graphics.Color(0xFF8A8CA0),
+                Icons.Filled.LockOpen, g.faint,
                 stringResource(Res.string.mail_will_sign_only),
             )
             Hint(stringResource(Res.string.mail_no_key_for, missing.joinToString(", ") { it.address }))
@@ -1294,7 +1288,7 @@ private fun MailKeysSection(state: AppState, accounts: List<MailAccountUi>) {
                 }) { Text(stringResource(Res.string.mail_key_save)) }
             }
         }
-        Text(stringResource(Res.string.mail_contact_keys), style = MaterialTheme.typography.titleSmall)
+        SectionLabel(stringResource(Res.string.mail_contact_keys))
         if (known.isEmpty()) Hint(stringResource(Res.string.mail_contact_keys_none))
         for (k in known) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1312,6 +1306,7 @@ private fun MailKeysSection(state: AppState, accounts: List<MailAccountUi>) {
     }
     forgetting?.let { k ->
         AlertDialog(
+            danger = true,
             onDismissRequest = { forgetting = null },
             title = { Text(stringResource(Res.string.mail_key_forget_title, k.email)) },
             text = { Text(stringResource(Res.string.mail_key_forget_text)) },

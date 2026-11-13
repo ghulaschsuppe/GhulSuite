@@ -10,7 +10,7 @@
     <string name="bio_cancel">Abbrechen</string>
     <string name="autofill_unlock">GhulSuite entsperren</string>
     <string name="autofill_pick">Andere Anmeldung wählen …</string>
-    <string name="autofill_save_locked">GhulSuite ist gesperrt – Anmeldung nicht gespeichert.</string>
+    <string name="autofill_save_locked">GhulSuite ist gesperrt, Anmeldung nicht gespeichert.</string>
     <string name="autofill_saved">Anmeldung in GhulSuite gespeichert.</string>
     <string name="autofill_updated">Passwort in GhulSuite aktualisiert.</string>
     <string name="autofill_unchanged">Schon so in GhulSuite gespeichert.</string>

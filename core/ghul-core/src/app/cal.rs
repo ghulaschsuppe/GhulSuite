@@ -55,6 +55,12 @@ pub struct CalEvent {
     /// Birthdays: year of birth, shown as age (0 = none).
     pub birth_year: u32,
     pub modified: i64,
+    /// Time zone of a series that came from another zone (IANA name such as
+    /// `America/New_York`); empty: the clock of this device. With a zone, `start`, `end`,
+    /// `repeat_until` and `exceptions` are on the clock of that zone, and every occurrence is
+    /// converted for display with the offsets of its own day.
+    #[uniffi(default = "")]
+    pub zone: String,
 }
 
 impl Default for CalEvent {
@@ -75,6 +81,7 @@ impl Default for CalEvent {
             links: Vec::new(),
             birth_year: 0,
             modified: 0,
+            zone: String::new(),
         }
     }
 }
@@ -235,6 +242,7 @@ pub(crate) fn event_of(e: &Entry) -> CalEvent {
             .collect(),
         birth_year: int(e, "birth_year", 0) as u32,
         modified: e.modified,
+        zone: text_field(e, "zone"),
     }
 }
 
@@ -254,6 +262,7 @@ fn put_event_fields(e: &mut Entry, ev: &CalEvent) {
     text("until", &ev.repeat_until);
     text("location", ev.location.trim());
     text("notes", ev.notes.trim());
+    text("zone", &ev.zone);
     f.insert("all_day".into(), Field::Bool(ev.all_day));
     if !ev.exceptions.is_empty() {
         f.insert("exceptions".into(), Field::List(ev.exceptions.clone()));
@@ -270,6 +279,12 @@ fn put_event_fields(e: &mut Entry, ev: &CalEvent) {
     }
     if ev.birth_year > 0 {
         f.insert("birth_year".into(), Field::Int(ev.birth_year as i64));
+    }
+}
+
+impl GhulSuite {
+    fn time_zones(&self) -> Option<std::sync::Arc<dyn super::caltext::TimeZones>> {
+        self.zones.lock().unwrap_or_else(|p| p.into_inner()).clone()
     }
 }
 
@@ -297,6 +312,10 @@ fn validate(ev: &mut CalEvent) -> Result<()> {
     ev.exceptions.sort();
     ev.exceptions.dedup();
     ev.reminders.retain(|r| *r <= MAX_REMINDER_MINUTES);
+    let plain_name = |z: &str| z.len() <= 64 && z.bytes().all(|b| b.is_ascii_alphanumeric() || b"/_-+".contains(&b));
+    if ev.all_day || !plain_name(&ev.zone) {
+        ev.zone.clear();
+    }
     Ok(())
 }
 
@@ -418,6 +437,35 @@ pub(crate) fn expand(ev: &CalEvent, from: Date, to: Date) -> Vec<(DateTime, Date
             continue;
         }
         out.push((s, s.add_minutes(span)));
+    }
+    out
+}
+
+/// Occurrences of `ev` on the clock of this device, each with the day it has in the event's own
+/// time zone (exceptions and the end of a series are counted in those days). An event without a
+/// zone, or with one this device does not know, is taken as written.
+fn expand_local(
+    ev: &CalEvent,
+    from: Date,
+    to: Date,
+    zones: Option<&dyn super::caltext::TimeZones>,
+) -> Vec<(DateTime, DateTime, Date)> {
+    let as_written = || expand(ev, from, to).into_iter().map(|(s, e)| (s, e, s.date)).collect();
+    let Some(z) = zones.filter(|_| !ev.zone.is_empty() && !ev.all_day) else {
+        return as_written();
+    };
+    let mut out = Vec::new();
+    // Two days more on both sides: no zone is further away than that.
+    for (s, e) in expand(ev, from.add_days(-2), to.add_days(2)) {
+        let (Some(ls), Some(le)) =
+            (super::caltext::wall_to_device(z, &ev.zone, s), super::caltext::wall_to_device(z, &ev.zone, e))
+        else {
+            return as_written();
+        };
+        let last_day = if le.min > 0 { le.date } else { le.date.add_days(-1) };
+        if ls.date <= to && last_day.max(ls.date) >= from {
+            out.push((ls, le.max(ls), s.date));
+        }
     }
     out
 }
@@ -548,12 +596,17 @@ impl GhulSuite {
     /// Deletes an event, one occurrence of a series (`date` = its start day) or the series from
     /// that day on.
     pub fn cal_delete_event(&self, id: String, date: String, mode: CalDeleteMode) -> Result<()> {
+        let zones = self.time_zones();
         self.with_open(|o| {
             let vid = vault_with(o, &id, T_EVENT)?;
             let (_, c) = o.vault_mut(&vid)?;
             let e = find_mut(c, &id, T_EVENT)?;
             let mut ev = event_of(e);
-            let day = Date::parse(&date);
+            // The day comes from the calendar (clock of this device); a series with its own
+            // time zone counts its days there.
+            let day = Date::parse(&date).map(|d| {
+                expand_local(&ev, d, d, zones.as_deref()).into_iter().find(|(s, _, _)| s.date == d).map_or(d, |o| o.2)
+            });
             let first = Date::parse(ev.start.get(..10).unwrap_or(""));
             match (mode, day) {
                 (CalDeleteMode::One, Some(d)) if ev.repeat != CalRepeat::None => {
@@ -587,6 +640,7 @@ impl GhulSuite {
         let (Some(f), Some(t)) = (Date::parse(&from), Date::parse(&to)) else {
             return Err(GhulError::InvalidInput { msg: "invalid range".into() });
         };
+        let zones = self.time_zones();
         let mut out = self.with_open(|o| {
             let mut out = Vec::new();
             for vid in cal_vault_ids(o) {
@@ -596,7 +650,7 @@ impl GhulSuite {
                 for e in live(c, T_EVENT) {
                     let ev = event_of(e);
                     let Some(&color) = colors.get(&ev.calendar_id) else { continue };
-                    for (s, en) in expand(&ev, f, t) {
+                    for (s, en, _) in expand_local(&ev, f, t, zones.as_deref()) {
                         let (start, end) = fmt_occ(ev.all_day, s, en);
                         out.push(CalOccurrence {
                             event_id: ev.id.clone(),
@@ -650,6 +704,7 @@ impl GhulSuite {
     pub fn cal_reminders(&self, now: String, days: u32) -> Result<Vec<CalReminder>> {
         let now = DateTime::parse(&now).ok_or_else(|| GhulError::InvalidInput { msg: "invalid time".into() })?;
         let horizon = now.add_minutes(days as i64 * 1440);
+        let zones = self.time_zones();
         self.with_open(|o| {
             let mut out = Vec::new();
             for vid in cal_vault_ids(o) {
@@ -662,7 +717,7 @@ impl GhulSuite {
                     }
                     let max_before = *ev.reminders.iter().max().unwrap_or(&0) as i64;
                     let to = horizon.add_minutes(max_before + 1440).date;
-                    for (s, en) in expand(&ev, now.date, to) {
+                    for (s, en, _) in expand_local(&ev, now.date, to, zones.as_deref()) {
                         let anchor = if ev.all_day { s.add_minutes(9 * 60) } else { s };
                         for &m in &ev.reminders {
                             let at = anchor.add_minutes(-(m as i64));
@@ -686,6 +741,13 @@ impl GhulSuite {
             out.sort_by(|a, b| a.at.cmp(&b.at).then(a.title.cmp(&b.title)));
             Ok(out)
         })
+    }
+
+    /// Hands over the time zone database of this device (the core carries none). Series that
+    /// live in another time zone are shown on the clock of this device with it; without it they
+    /// are shown as written.
+    pub fn set_time_zones(&self, zones: std::sync::Arc<dyn super::caltext::TimeZones>) {
+        *self.zones.lock().unwrap_or_else(|p| p.into_inner()) = Some(zones);
     }
 
     /// The given calendars (all if empty) as one `.ics` file.

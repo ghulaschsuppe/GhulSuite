@@ -87,22 +87,16 @@ private fun SetRow(icon: ImageVector, color: Color, title: String, subtitle: Str
     ListRow(
         title = title,
         subtitle = subtitle,
-        leading = { IconTile(icon, color, size = 36.dp, solid = true) },
+        leading = { IconTile(icon, color, solid = true) },
         divider = !first,
-        dividerStart = 66.dp,
-        trailing = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+        trailing = { ChevronEnd() },
         onClick = onClick,
     )
 }
 
 @Composable
 private fun Group(title: String, content: @Composable () -> Unit) {
-    Text(
-        title.uppercase(),
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = 4.dp, top = 6.dp),
-    )
+    SectionLabel(title)
     ListCard { content() }
 }
 
@@ -152,11 +146,12 @@ fun SettingsScreen(state: AppState, padding: PaddingValues) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(stringResource(Res.string.a_lock_now), style = MaterialTheme.typography.titleSmall)
-                        Hint(stringResource(if (backend.isDesktop) Res.string.set_lock_hint_short else Res.string.lock_now_shake))
+                        // The shake hint only where shaking is switched on.
+                        Hint(stringResource(if (backend.isDesktop || !settings.shakeToLock) Res.string.set_lock_hint_short else Res.string.lock_now_shake))
                     }
                     FilledTonalButton(onClick = { backend.lock() }) {
-                        Icon(Icons.Filled.Lock, null)
-                        Text(" " + stringResource(Res.string.a_lock))
+                        Icon(Icons.Filled.Lock, null, Modifier.size(18.dp))
+                        Text(stringResource(Res.string.a_lock))
                     }
                 }
             }
@@ -210,20 +205,20 @@ fun SettingsScreen(state: AppState, padding: PaddingValues) {
             Group(stringResource(Res.string.set_g_areas)) {
                 SetRow(Icons.Filled.Apps, Gray, stringResource(Res.string.set_modules), stringResource(Res.string.set_modules_sub), first = true) { open(SetPage.MODULES) }
                 if (state.vaults.any { it.kind == VaultKindUi.PASS }) {
-                    SetRow(Icons.Filled.Key, areaColor(Tab.PASS), stringResource(Res.string.tab_pass),
+                    SetRow(tabIcon(Tab.PASS), areaColor(Tab.PASS), stringResource(Res.string.tab_pass),
                         stringResource(if (backend.isDesktop) Res.string.set_pass_sub_desktop else Res.string.set_pass_sub)) { open(SetPage.PASS) }
                 }
                 if (state.vaults.any { it.kind == VaultKindUi.TOTP }) {
-                    SetRow(Icons.Filled.VerifiedUser, areaColor(Tab.AUTH), stringResource(Res.string.tab_auth), stringResource(Res.string.set_auth_sub)) { open(SetPage.AUTH) }
+                    SetRow(tabIcon(Tab.AUTH), areaColor(Tab.AUTH), stringResource(Res.string.tab_auth), stringResource(Res.string.set_auth_sub)) { open(SetPage.AUTH) }
                 }
                 if (state.vaults.any { it.kind == VaultKindUi.DRIVE }) {
-                    SetRow(Icons.Filled.Cloud, areaColor(Tab.DRIVE), stringResource(Res.string.tab_drive), stringResource(Res.string.set_drive_sub)) { open(SetPage.DRIVE) }
+                    SetRow(tabIcon(Tab.DRIVE), areaColor(Tab.DRIVE), stringResource(Res.string.tab_drive), stringResource(Res.string.set_drive_sub)) { open(SetPage.DRIVE) }
                 }
                 if (state.vaults.any { it.kind == VaultKindUi.MAIL }) {
-                    SetRow(Icons.Filled.Email, areaColor(Tab.MAIL), stringResource(Res.string.tab_mail), stringResource(Res.string.set_mail_sub)) { open(SetPage.MAIL) }
+                    SetRow(tabIcon(Tab.MAIL), areaColor(Tab.MAIL), stringResource(Res.string.tab_mail), stringResource(Res.string.set_mail_sub)) { open(SetPage.MAIL) }
                 }
                 if (state.vaults.any { it.kind == VaultKindUi.CAL }) {
-                    SetRow(Icons.Filled.CalendarMonth, Color(0xFFD6336C), stringResource(Res.string.tab_cal),
+                    SetRow(tabIcon(Tab.CAL), areaColor(Tab.CAL), stringResource(Res.string.tab_cal),
                         stringResource(if (settings.calHolidays && state.calRegionName.isNotEmpty()) Res.string.set_cal_sub_holidays else Res.string.set_cal_sub, state.calRegionName)) { open(SetPage.CAL) }
                 }
             }

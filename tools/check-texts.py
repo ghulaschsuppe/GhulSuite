@@ -3,7 +3,8 @@
 """Checks the app texts (German and English) for errors and inconsistencies.
 
 Errors (exit code 1): a text missing in one language, placeholders (%1$s ...) that differ
-between the languages (crash or wrong text at runtime), broken XML.
+between the languages (crash or wrong text at runtime), broken XML, and long dashes (U+2013,
+U+2014) anywhere in the project: texts use full stops, commas, colons or "bis"/"to" instead.
 Notes (only listed, see docs/TESTPROTOKOLL.md): terms used inconsistently, English words in
 the German texts, texts that are no longer used.
 
@@ -11,6 +12,7 @@ Usage: tools/check-texts.py [--strict]   (--strict: notes count as errors too)
 """
 import pathlib
 import re
+import subprocess
 import sys
 import xml.etree.ElementTree as ET
 
@@ -40,6 +42,26 @@ def load(lang):
     return {e.get("name"): (e.text or "") for e in tree.getroot().iter("string")}
 
 
+def long_dashes():
+    """Files of the project (not the test data of others) that contain a long dash."""
+    try:
+        names = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.split("\n")
+    except (OSError, subprocess.CalledProcessError):
+        names = [str(p.relative_to(ROOT)) for p in ROOT.rglob("*") if p.is_file() and ".git/" not in str(p)]
+    found = []
+    for name in names:
+        if not name or "tests/data/" in name or "/build/" in name or "/target/" in name:
+            continue
+        try:
+            text = (ROOT / name).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        for number, line in enumerate(text.split("\n"), 1):
+            if "\u2013" in line or "\u2014" in line:
+                found.append(f"{name}:{number}: {line.strip()[:80]}")
+    return found
+
+
 def placeholders(text):
     return sorted(re.findall(r"%\d+\$[sd]", text))
 
@@ -53,6 +75,8 @@ def main():
     for name in sorted(set(de) & set(en)):
         if placeholders(de[name]) != placeholders(en[name]):
             errors.append(f"Platzhalter unterschiedlich: {name}: {placeholders(de[name])} / {placeholders(en[name])}")
+    for place in long_dashes():
+        errors.append(f"langer Strich (stattdessen Punkt, Komma, Doppelpunkt oder „bis“): {place}")
     for name, text in sorted(de.items()):
         for pattern, meant, better in TERMS:
             if re.search(pattern, text):

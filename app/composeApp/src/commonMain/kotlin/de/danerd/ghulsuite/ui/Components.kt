@@ -206,7 +206,7 @@ private val AvatarColors = listOf(
     0xFF7B61FF, 0xFF2F74E8, 0xFF0E9F80, 0xFFE0700F, 0xFFD03B7E, 0xFF8E5BD8, 0xFF1E9BB8, 0xFFC0533A, 0xFF4E8A2E, 0xFFB58600,
 )
 
-/** Colour n of the avatar palette (a0–a9 of the design preview). */
+/** Colour n of the avatar palette (a0 to a9 of the design preview). */
 fun paletteColor(i: Int): Color = Color(AvatarColors[i % AvatarColors.size])
 
 /** Stable colour for a name (same name → same colour). */
@@ -565,12 +565,11 @@ fun StrengthMeter(score: Int) {
     }
 }
 
+/** The same as [HintText]: one look for every hint. */
 @Composable
-fun Hint(text: String) {
-    Text(text, fontSize = 13.sp, lineHeight = 18.sp, color = g.muted)
-}
+fun Hint(text: String) = HintText(text)
 
-/** App name with a shield tile and the four areas, at the top of start and unlock. */
+/** App name with a shield tile and the five areas, at the top of start and unlock. */
 @Composable
 fun BrandHeader(subtitle: String? = null) {
     Column(Modifier.fillMaxWidth().padding(top = 40.dp, bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally,
@@ -585,7 +584,7 @@ fun BrandHeader(subtitle: String? = null) {
         }
         Text(stringResource(Res.string.app_name), fontSize = 28.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.84).sp, modifier = Modifier.padding(top = 4.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            for (t in listOf(Tab.PASS, Tab.AUTH, Tab.DRIVE, Tab.MAIL)) {
+            for (t in listOf(Tab.PASS, Tab.AUTH, Tab.DRIVE, Tab.MAIL, Tab.CAL)) {
                 Box(Modifier.size(width = 24.dp, height = 4.dp).clip(RoundedCornerShape(2.dp)).background(areaColor(t)))
             }
         }

@@ -75,7 +75,7 @@ def check(name, got, want):
 
 def main():
     if not shutil.which("php"):
-        print("php not found – skipped")
+        print("php not found, skipped")
         return 0
     work = pathlib.Path(tempfile.mkdtemp(prefix="ghul-php-attack-"))
     web = work / "web"

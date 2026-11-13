@@ -3,7 +3,7 @@
 //! - XSS payloads (PayloadsAllTheThings, SecLists, DOMPurify's test fixtures) through the HTML
 //!   mail filter;
 //! - CRLF injection payloads (PayloadsAllTheThings) through every mail header value;
-//! - the URL test data of the web platform tests (WHATWG) through the autofill host parser – a
+//! - the URL test data of the web platform tests (WHATWG) through the autofill host parser, a
 //!   browser and GhulSuite must agree on which site a URL belongs to;
 //! - JSONTestSuite (318 valid, invalid and pathological JSON files) through every JSON import;
 //! - the calendar files ical4j and python-icalendar test themselves with (valid, invalid and
@@ -69,7 +69,7 @@ fn xss_collections_through_the_html_mail_filter() {
                 for span in &b.spans {
                     assert!(safe_url(&span.link), "link {:?} from {p}", span.link);
                     let t = span.text.to_ascii_lowercase();
-                    // Text is shown as text, never run – but script-like markup must not survive
+                    // Text is shown as text, never run, but script-like markup must not survive
                     // as such (it would look like a trick to the reader).
                     assert!(
                         !t.contains("<script") && !t.contains("<iframe") && !t.contains("<svg"),

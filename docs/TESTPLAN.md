@@ -1,8 +1,8 @@
-# GhulSuite – Testplan Android (Version 0.5.0-dev)
+# GhulSuite: Testplan Android (Version 0.5.0-dev)
 
 **Stand:** 13.11.2026 · neu: Assistent in acht Schritten und „Ein Bereich, eine Datei“ (Abschnitte 1 und 23) · deckt Phase 2 (Etappen 1, 2a, 2b, „Der Ordner ist die Suite“) und Phase 3 ab: eigene Server,
-Synchronisation, GhulDrive und GhulMail (Abschnitte 12–15) sowie 0.5.0: neues Design, Servertypen FTPS und
-PHP-Server-Modul, Teilen mit Freigabelinks und die Modultrennung (Abschnitte 16–19), verschlüsselte Mails (Abschnitt 20), Korrekturen nach dem ersten Test (Abschnitt 21).
+Synchronisation, GhulDrive und GhulMail (Abschnitte 12 bis 15) sowie 0.5.0: neues Design, Servertypen FTPS und
+PHP-Server-Modul, Teilen mit Freigabelinks und die Modultrennung (Abschnitte 16 bis 19), verschlüsselte Mails (Abschnitt 20), Korrekturen nach dem ersten Test (Abschnitt 21).
 
 **Neu in 0.5.0:** Die Einstellungen sind jetzt eine Übersicht mit Unterseiten. Pfade wie „Optionen → Tresore“
 meinen: Tab **Optionen** → Zeile **Tresore**. Den Testplan für Windows gibt es getrennt:
@@ -22,16 +22,16 @@ soll; weicht etwas ab, notiere die Nummer, was du gemacht hast und was stattdess
 | V3 | Bereitlegen: Security Key mit PIN (USB-C), möglichst ein zweiter Key, Stift und Papier, ein USB-Stick oder ein Ordner, den du selbst anlegen kannst. |
 | V4 | Für den Import Exportdateien bereitlegen, z. B. aus Proton Pass (ZIP oder CSV), Proton Authenticator, Bitwarden, KeePassXC, Aegis, 2FAS, und Google Authenticator auf einem zweiten Gerät. **Nur Testdaten** verwenden. |
 | V5 | Wichtig: Diese Entwicklerversion ist mit einem öffentlichen Testschlüssel signiert. Keine echten Passwörter speichern. |
-| V6 | Für Abschnitt 12–13: deinen Server mit SSH/SFTP (Adresse, Port, Benutzer) und Zugriff auf `~/.ssh/authorized_keys`. Fingerabdruck des Servers bereithalten: auf dem Server `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`. Ein zweites Android-Gerät (oder eine zweite Installation nach Deinstallation) für die Synchronisation. |
-| V7 | Für Abschnitt 14–15: ein **Test**-Mailkonto mit IMAP/SMTP (Server, Benutzer, Passwort bzw. App-Passwort) und eine zweite Adresse, von der du Mails schicken kannst. |
-| V8 | Für Abschnitt 17–18: ein **Webspace** mit FTP-Zugang (FTPS) und PHP 8.1 oder neuer, darin ein öffentlich erreichbarer Ordner (z. B. `public_html/teilen`) mit https-Adresse. Optional: dein SFTP-Server mit Webserver. |
+| V6 | Für Abschnitt 12 bis 13: deinen Server mit SSH/SFTP (Adresse, Port, Benutzer) und Zugriff auf `~/.ssh/authorized_keys`. Fingerabdruck des Servers bereithalten: auf dem Server `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`. Ein zweites Android-Gerät (oder eine zweite Installation nach Deinstallation) für die Synchronisation. |
+| V7 | Für Abschnitt 14 bis 15: ein **Test**-Mailkonto mit IMAP/SMTP (Server, Benutzer, Passwort bzw. App-Passwort) und eine zweite Adresse, von der du Mails schicken kannst. |
+| V8 | Für Abschnitt 17 bis 18: ein **Webspace** mit FTP-Zugang (FTPS) und PHP 8.1 oder neuer, darin ein öffentlich erreichbarer Ordner (z. B. `public_html/teilen`) mit https-Adresse. Optional: dein SFTP-Server mit Webserver. |
 
 ---
 
 ## 1. Erster Start und Einrichtung
 
 Der Assistent hat acht Schritte; oben steht „Schritt n von 8“ mit Fortschrittsbalken. Die Suite entsteht beim Verlassen
-von Schritt 3 – danach geht „Zurück“ nur noch bis Schritt 4.
+von Schritt 3, danach geht „Zurück“ nur noch bis Schritt 4.
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
@@ -40,9 +40,9 @@ von Schritt 3 – danach geht „Zurück“ nur noch bis Schritt 4.
 | E3 | Passwort „abc“ eingeben, Weiter. Dann ein schwaches 10-Zeichen-Passwort. Dann zwei verschiedene Passwörter. | Jeweils klare Meldung: zu kurz / zu leicht zu erraten / stimmen nicht überein. |
 | E4 | „Passwort vorschlagen“ antippen, Wiederholung eingeben, Weiter. | Langes Zufallspasswort, Stärkebalken voll; Schritt 2 · Zweiter Faktor. |
 | E5 | „Security Key“ gewählt lassen, Name des Keys, Key-PIN eingeben (Android: „Key prüfen“ zeigt „Erkannt: …“). Weiter. | Schritt 3 · Speicherort. |
-| E6 | App-Speicher lassen, „Key registrieren“, Key **zweimal** berühren. | Schritt 4 · Synchronisation; kein „Zurück“ zu den Schritten 1–3 mehr. |
+| E6 | App-Speicher lassen, „Key registrieren“, Key **zweimal** berühren. | Schritt 4 · Synchronisation; kein „Zurück“ zu den Schritten 1 bis 3 mehr. |
 | E7 | „Eigener Server“ wählen, ohne Angaben „Weiter“. | Meldung „Noch offen: Anmeldung“ (bzw. der fehlende Schritt). Checkliste unter dem Formular zeigt Anmeldung, Ordner, Verbindung testen. |
-| E8 | SFTP-Server eintragen (siehe Abschnitt 12), „Ordner wählen“. | Fingerabdruck bestätigen, dann die Ordner des Servers; „ghulsuite – Neu anlegen (empfohlen)“, Unterordner öffnen, „Eine Ebene höher“, „Neuer Ordner …“. |
+| E8 | SFTP-Server eintragen (siehe Abschnitt 12), „Ordner wählen“. | Fingerabdruck bestätigen, dann die Ordner des Servers; „ghulsuite, Neu anlegen (empfohlen)“, Unterordner öffnen, „Eine Ebene höher“, „Neuer Ordner …“. |
 | E9 | Ordner wählen → „Verbindung testen“ → Weiter. | „Verbunden · host:/ordner“, Haken in der Checkliste; Schritt 5 · Bereiche. |
 | E10 | Alle fünf Bereiche einschalten. Bei GhulDrive „Wie Synchronisation“. Weiter. | Namen für GhulPass, GhulAuth, GhulCal änderbar; „Wie Synchronisation“ nur wählbar, weil Schritt 4 eingerichtet wurde. Schritt 6 · Sperren. |
 | E11 | Sperrzeit wählen, Schalter für Bildschirm aus und Schütteln. Weiter. | Schritt 7 · Entsperren mit Hinweis, dass „Schnell entsperren“ Fingerabdruck und App-PIN meint. |
@@ -52,7 +52,7 @@ von Schritt 3 – danach geht „Zurück“ nur noch bis Schritt 4.
 | E15 | Richtige Gruppe 3 eingeben → Fertig. | Hauptansicht mit allen fünf Bereichen und Optionen; GhulMail zeigt „Noch kein Konto“ mit dem vollständigen Kontoformular. |
 | E16 | Zweite Einrichtung: in Schritt 4 „Später“, in Schritt 5 GhulDrive einschalten. | „Wie Synchronisation“ ist ausgegraut („Erst Synchronisation einrichten (Schritt 4)“); „Eigener Server“ klappt das Formular direkt auf. |
 | E17 | GhulDrive „Eigener Server“ → PHP-Modul: FTPS-Daten des Webhostings, Ordner wählen (z. B. `public_html/ghulsuite`), „Modul hochladen“, vorgeschlagene Adresse „Adresse prüfen“. | Modul liegt im Ordner, Adresse wird aus Domain und Ordner abgeleitet und geprüft; „FTPS-Zugang behalten“ wählbar. Bei kleinem Upload-Limit ein Hinweis auf kleinere Teile. |
-| E18 | Einrichtung mit „Schlüsseldatei“ statt Key: Datei erstellen und z. B. auf den USB-Stick speichern. | Ohne gespeicherte Datei geht es nicht weiter. Danach wie E6–E15 (ohne Key-Berührung). |
+| E18 | Einrichtung mit „Schlüsseldatei“ statt Key: Datei erstellen und z. B. auf den USB-Stick speichern. | Ohne gespeicherte Datei geht es nicht weiter. Danach wie E6 bis E15 (ohne Key-Berührung). |
 | E19 | In Schritt 3 einen eigenen Ordner wählen, in dem schon GhulSuite-Dateien liegen. | Hinweis „Hier liegen bereits GhulSuite-Dateien“ und „Diese Suite öffnen“. |
 | E20 | Nur GhulAuth wählen und einrichten. | In der Leiste nur GhulAuth und Optionen; keine weiteren Dateien im Ordner. |
 | E21 | Einrichtung in Schritt 6 abbrechen (App schließen), App neu öffnen. | Entsperren-Bildschirm; nach dem Entsperren verlangt GhulSuite einen neuen Wiederherstellungscode (ohne „später“), bestätigt per Gruppe. |
@@ -70,7 +70,7 @@ von Schritt 3 – danach geht „Zurück“ nur noch bis Schritt 4.
 | U7 | „Kein Zugang mehr? Mit Wiederherstellungscode“ → Code (Kleinbuchstaben, ohne Bindestriche) + neues Passwort. | Entsperrt; Hinweis, einen neuen Code zu erstellen. |
 | U8 | Sperren, mit dem **alten** Passwort entsperren. Dann mit dem neuen. | Altes Passwort: falsch. Neues Passwort + Key: geht. Key und Code gelten weiter. |
 | U9 | Optionen → Entsperren: Fingerabdruck aktivieren. Sperren, App öffnen. | Fingerabdruck-Abfrage erscheint direkt. |
-| U10 | App-PIN (6–12 Ziffern) aktivieren, sperren, mit PIN entsperren. 5× falsche PIN. | Danach ist der PIN-Zugang gelöscht, Passwort + Key nötig. |
+| U10 | App-PIN (6 bis 12 Ziffern) aktivieren, sperren, mit PIN entsperren. 5× falsche PIN. | Danach ist der PIN-Zugang gelöscht, Passwort + Key nötig. |
 | U11 | Handy neu starten, App öffnen. | Fingerabdruck/PIN gehen nicht, Passwort + Key nötig. |
 | U12 | Gültigkeit auf 1 Stunde stellen, nach über 1 Stunde öffnen. | Passwort + Key nötig. |
 | U13 | Handy **ohne** Bildschirmsperre: Optionen → Entsperren → App-PIN einschalten. | PIN lässt sich setzen und entsperrt die App (früher: „Keystore key generation failed“). |
@@ -86,7 +86,7 @@ von Schritt 3 – danach geht „Zurück“ nur noch bis Schritt 4.
 | P3 | „Bei Bildschirm aus sperren“ an, Bildschirm aus und an. | Gesperrt. |
 | P4 | Benachrichtigung „GhulSuite entsperrt“ → „Sperren“. | Gesperrt. |
 | P5 | Schnelleinstellungs-Kachel „GhulSuite sperren“ hinzufügen und antippen. | Gesperrt, Fingerabdruck/PIN-Zugang gelöscht. |
-| P6 | „Schütteln zum Sperren“ an, Handy eine halbe Sekunde deutlich hin und her schütteln – in der App, mit der App im Hintergrund und mit gesperrtem Startbildschirm-Wechsel. Jede Empfindlichkeit ausprobieren. | Gesperrt, kurzes Vibrieren, Fingerabdruck/PIN-Zugang gelöscht. Gehen, Treppensteigen, Handy auf den Tisch legen sperren **nicht**. |
+| P6 | „Schütteln zum Sperren“ an, Handy eine halbe Sekunde deutlich hin und her schütteln, in der App, mit der App im Hintergrund und mit gesperrtem Startbildschirm-Wechsel. Jede Empfindlichkeit ausprobieren. | Gesperrt, kurzes Vibrieren, Fingerabdruck/PIN-Zugang gelöscht. Gehen, Treppensteigen, Handy auf den Tisch legen sperren **nicht**. |
 | P7 | Bildschirmfoto in der App versuchen; App-Übersicht öffnen. | Bildschirmfoto blockiert, Vorschau schwarz (solange „Bildschirmfotos erlauben“ aus ist). |
 
 ## 4. GhulPass
@@ -112,9 +112,9 @@ von Schritt 3 – danach geht „Zurück“ nur noch bis Schritt 4.
 | A5 | „Codes verbergen“ und „Nächsten Code zeigen“ unter Optionen → GhulAuth. | Codes erst nach Antippen sichtbar; in den letzten Sekunden erscheint der nächste Code. |
 | A6 | Google Authenticator (zweites Gerät): Konten exportieren, den Export-QR in GhulAuth scannen. | Alle Konten auf einmal übernommen, Meldung mit Anzahl. Erneut scannen: „schon vorhanden“. |
 
-## 6. Tresore – „Der Ordner ist die Suite“
+## 6. Tresore: „Der Ordner ist die Suite“
 
-Für T5–T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick oder ein Ordner im internen Speicher).
+Für T5 bis T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick oder ein Ordner im internen Speicher).
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
@@ -150,7 +150,7 @@ Für T5–T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick o
 | I5 | Proton Authenticator, Aegis (unverschlüsselt), 2FAS. | 2FA-Konten erscheinen, Codes stimmen (A2). |
 | I6 | Eine **verschlüsselte** Exportdatei (z. B. Aegis oder Bitwarden verschlüsselt). | Meldung „Diese Exportdatei ist verschlüsselt …“. |
 | I7 | Eine beliebige andere Datei (z. B. ein Foto). | „Dieses Dateiformat wird nicht erkannt“. |
-| I8 | Exportdateien danach löschen. | — |
+| I8 | Exportdateien danach löschen. | - |
 
 ## 9. Export
 
@@ -166,7 +166,7 @@ Für T5–T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick o
 | Nr. | Schritt | Erwartet |
 |---|---|---|
 | F1 | Optionen → GhulPass → Autofill → „Als Autofill-Dienst einstellen“, GhulSuite wählen. | Zurück in der App steht „aktiv“. |
-| F2 | GhulSuite **sperren**. Im Browser (z. B. Chrome) eine Login-Seite öffnen, für die ein Eintrag existiert, ins Benutzerfeld tippen. | Vorschlag „GhulSuite entsperren“ – **kein** Benutzername sichtbar. |
+| F2 | GhulSuite **sperren**. Im Browser (z. B. Chrome) eine Login-Seite öffnen, für die ein Eintrag existiert, ins Benutzerfeld tippen. | Vorschlag „GhulSuite entsperren“, **kein** Benutzername sichtbar. |
 | F3 | Antippen, entsperren, Anmeldung wählen. | Benutzer und Passwort werden eingefügt. |
 | F4 | Entsperrt erneut ins Feld tippen. | Passende Anmeldung direkt vorgeschlagen, plus „Andere Anmeldung wählen …“. |
 | F5 | Eine Seite mit ähnlicher, aber anderer Domain (z. B. `github.com.example.org`). | **Keine** direkte Anmeldung angeboten. |
@@ -174,10 +174,10 @@ Für T5–T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick o
 | F7 | Dieselbe App beim zweiten Mal. | Jetzt wird die gewählte Anmeldung direkt angeboten. |
 | F8 | Neue Anmeldung auf einer Website/in einer App eingeben und absenden. | Android fragt „In GhulSuite speichern?“ → gespeichert, Meldung. |
 | F9 | Passwort einer bestehenden Anmeldung ändern und absenden. | „Passwort in GhulSuite aktualisiert“. |
-| F10 | GhulSuite gesperrt, neue Anmeldung absenden. | „GhulSuite ist gesperrt – Anmeldung nicht gespeichert“. |
+| F10 | GhulSuite gesperrt, neue Anmeldung absenden. | „GhulSuite ist gesperrt, Anmeldung nicht gespeichert“. |
 | F11 | Tastatur mit Vorschlagsleiste (z. B. Gboard), Android 11 oder neuer: in ein Anmeldefeld tippen. | Die Vorschläge erscheinen als Chips oben in der Tastatur, mit Schloss-Symbol. |
 | F12 | Vivaldi, Brave, Edge oder Samsung Internet: Login-Seite öffnen, ins Feld tippen. | Vorschlag „GhulSuite entsperren“ bzw. die passende Anmeldung. |
-| F13 | Chrome: Einstellungen → Autofill-Dienste → „Autofill über einen anderen Dienst“, Chrome neu starten, F2–F4 wiederholen. | Wie F2–F4. |
+| F13 | Chrome: Einstellungen → Autofill-Dienste → „Autofill über einen anderen Dienst“, Chrome neu starten, F2 bis F4 wiederholen. | Wie F2 bis F4. |
 | F14 | In einem Browser, dessen Seite Android nicht erkennt, „Andere Anmeldung wählen …“ benutzen. | Ausfüllen klappt; die Anmeldung wird **nicht** mit dem Browser verknüpft (in anderen Seiten kein direkter Vorschlag). Kein Angebot zum Speichern. |
 | F15 | Es erscheint nichts: lange auf das Feld drücken → „Automatisch ausfüllen“. | GhulSuite-Vorschläge erscheinen. |
 | F16 | Optionen → GhulPass → Autofill bei aktivem Dienst. | Abschnitt „So erscheinen die Vorschläge“ mit Hinweisen zu Tastatur, Apps, Chrome und langem Drücken. |
@@ -201,8 +201,8 @@ Für T5–T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick o
 | SY3 | „Fingerabdruck stimmt“. | Server erscheint in der Liste. Auf dem Server gibt es den Ordner `ghulsuite/suite/` (leer). |
 | SY4 | Server mit falschem Fingerabdruck-Abgleich: „Abbrechen“ im Dialog. | Nichts wird gespeichert. |
 | SY4b | Einfachster Weg: „Server hinzufügen“ → „Passwort“ → SSH-Passwort eingeben, „SSH-Schlüssel automatisch einrichten“ eingeschaltet lassen → „Verbinden“ → Fingerabdruck bestätigen. | Server erscheint mit „Ordner: /home/…/ghulsuite“. Auf dem Server steht in `~/.ssh/authorized_keys` eine neue Zeile `ssh-ed25519 … GhulSuite`, alte Zeilen sind unverändert. Das Passwort ist nicht gespeichert (Server funktioniert auch nach Passwortänderung weiter). |
-| SY5 | Variante Passwort: zweiten Server-Eintrag mit „Passwort“ anlegen (falls der Server Passwort-Anmeldung erlaubt). | Funktioniert wie SY2–SY3. Falsches Passwort → „Der Server hat die Anmeldung abgelehnt …“. |
-| SY6 | Synchronisation → Server wählen. | Synchronisiert sofort; „Zuletzt synchronisiert: …“. Auf dem Server liegen jetzt `suite.ghlsuite` und die Tresordateien – alle verschlüsselt (Inhalt unlesbar). |
+| SY5 | Variante Passwort: zweiten Server-Eintrag mit „Passwort“ anlegen (falls der Server Passwort-Anmeldung erlaubt). | Funktioniert wie SY2 bis SY3. Falsches Passwort → „Der Server hat die Anmeldung abgelehnt …“. |
+| SY6 | Synchronisation → Server wählen. | Synchronisiert sofort; „Zuletzt synchronisiert: …“. Auf dem Server liegen jetzt `suite.ghlsuite` und die Tresordateien, alle verschlüsselt (Inhalt unlesbar). |
 | SY7 | **Zweites Gerät:** Startbildschirm → „Von meinem Server holen“. Adresse usw. eingeben; den angezeigten **Geräteschlüssel** zusätzlich in `authorized_keys` eintragen; „Suite holen“, Fingerabdruck bestätigen. | „Suite geladen. Jetzt entsperren.“ → Entsperren mit Passwort und Key/Schlüsseldatei klappt, alle Einträge sind da. |
 | SY8 | Gerät 1: Eintrag A anlegen. Gerät 2: Eintrag B anlegen (beide mit „Automatisch“). Danach auf beiden „Jetzt synchronisieren“. | Beide Geräte zeigen A **und** B. Nichts geht verloren. |
 | SY9 | Denselben Eintrag auf beiden Geräten unterschiedlich ändern, nacheinander synchronisieren. | Die später gespeicherte Änderung gewinnt auf beiden Geräten. |
@@ -221,7 +221,7 @@ Für T5–T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick o
 | D1 | Tab GhulDrive (ggf. unter Optionen → Module einschalten). | „GhulDrive einrichten“ mit deinen Servern. |
 | D2 | „<Server> verwenden“. | Leere Liste „Meine Dateien“, unten „Auf dem Server: /home/…/ghulsuite/drive“. Dort entsteht `index.ghldrv`. |
 | D3 | „Hochladen“, ein Foto oder PDF wählen. | Fortschritt, dann „… hochgeladen.“; Datei mit Größe und Datum in der Liste. |
-| D4 | Auf dem Server in `ghulsuite/drive/` schauen. | Nur `index.ghldrv` und `blocks/xx/<lange ID>` – **kein** Dateiname, Inhalt unlesbar. |
+| D4 | Auf dem Server in `ghulsuite/drive/` schauen. | Nur `index.ghldrv` und `blocks/xx/<lange ID>`: **kein** Dateiname, Inhalt unlesbar. |
 | D5 | Große Datei (> 50 MB, z. B. Video) hochladen. | Fortschritt läuft durch; App bleibt bedienbar; Datei erscheint. |
 | D6 | Datei antippen → Speicherort wählen. | Gespeicherte Datei ist identisch (öffnen, ansehen). |
 | D7 | Upload starten und „Abbrechen“. | Bricht ab, keine halbe Datei in der Liste. |
@@ -261,7 +261,7 @@ Für T5–T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick o
 |---|---|---|
 | N1 | Neues Mailkonto anlegen (oder nach dem Update entsperren). | Benachrichtigungen für das Konto sind **von selbst an** (Optionen → GhulMail → Benachrichtigungen). Android fragt einmal nach Benachrichtigungen und Akku-Optimierung → erlauben. |
 | N1b | Optionen → GhulMail. | Grün: „GhulMail darf im Hintergrund laufen“. Sonst Hinweis mit Knopf „Im Hintergrund erlauben“; danach grün. In der Statusleiste steht die stille Benachrichtigung „GhulMail ist bereit“. |
-| N2 | GhulSuite sperren, Handy sperren. Von der zweiten Adresse eine Mail schicken. | **Innerhalb weniger Sekunden** Benachrichtigung „<Kontoname> – 1 neue E-Mail“, **ohne** Absender und Betreff. |
+| N2 | GhulSuite sperren, Handy sperren. Von der zweiten Adresse eine Mail schicken. | **Innerhalb weniger Sekunden** Benachrichtigung „<Kontoname>, 1 neue E-Mail“, **ohne** Absender und Betreff. |
 | N2b | Handy neu starten, ohne GhulSuite zu öffnen eine Mail schicken. | „GhulMail ist bereit“ ist wieder da, die Benachrichtigung kommt sofort. |
 | N3 | Benachrichtigung antippen (vorher in GhulMail den Postausgang oder einen anderen Ordner offen lassen). | Nach dem Entsperren öffnet sich **genau diese Mail** im Posteingang des Kontos; zurück führt in den Posteingang. Bei mehreren neuen Mails: der Posteingang. Die Benachrichtigung verschwindet. |
 | N4 | Schalter aus, wieder Mail schicken. | Keine Benachrichtigung mehr; „GhulMail ist bereit“ verschwindet (wenn kein anderes Konto benachrichtigt). |
@@ -270,7 +270,7 @@ Für T5–T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick o
 | N7 | Mailpasswort auf dem **anderen** Gerät ändern, hier synchronisieren und einmal entsperren. | Benachrichtigungen kommen weiter (die Kopie für den Empfang wird beim Entsperren erneuert). |
 | N8 | GhulSuite aus der Liste der letzten Apps wischen, Mail schicken. | Benachrichtigung kommt sofort. |
 | N9 | WLAN aus (nur mobile Daten), Mail schicken; dann WLAN wieder an, Mail schicken. | Beide Male Benachrichtigung innerhalb weniger Sekunden (bei Netzwechsel verbindet GhulMail sofort neu). |
-| N10 | Handy 30 Minuten unberührt liegen lassen (Bildschirm aus), dann Mail schicken. | Benachrichtigung innerhalb von 1–2 Minuten, meist sofort. |
+| N10 | Handy 30 Minuten unberührt liegen lassen (Bildschirm aus), dann Mail schicken. | Benachrichtigung innerhalb von 1 bis 2 Minuten, meist sofort. |
 | N11 | Android-Einstellungen → Apps → GhulSuite → „Beenden erzwingen“, Mail schicken. | **Keine** Benachrichtigung (Android-Regel). Nach dem nächsten Öffnen von GhulSuite kommt sie wieder. |
 | N12 | Zwei Konten mit Benachrichtigung, an beide gleichzeitig eine Mail. | Zwei Benachrichtigungen; jede öffnet die Mail ihres Kontos. Keine Mail meldet sich doppelt. |
 
@@ -290,14 +290,14 @@ Für T5–T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick o
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| ST1 | Optionen → Server, Sync & Teilen → „Server hinzufügen“. | Auswahl Verbindungsart: SFTP (SSH), FTPS, PHP-Server-Modul – jeweils mit Erklärung. |
+| ST1 | Optionen → Server, Sync & Teilen → „Server hinzufügen“. | Auswahl Verbindungsart: SFTP (SSH), FTPS, PHP-Server-Modul, jeweils mit Erklärung. |
 | ST2 | **FTPS**: Adresse, Port 21, Benutzer, Passwort, Ordner `ghulsuite` → Verbinden. | Dialog mit Zertifikat-Fingerabdruck (bei gültigem Zertifikat ggf. direkt gespeichert). Nach Bestätigung: Server in der Liste „Name · FTPS“, „Ordner: /ghulsuite“. |
 | ST3 | FTPS mit falschem Passwort. | Fehlermeldung „Anmeldung abgelehnt“, nichts gespeichert. |
-| ST4 | Synchronisation und GhulDrive mit dem FTPS-Server (wie SY6, D2–D6). | Funktioniert; auf dem Webspace nur verschlüsselte Dateien. |
+| ST4 | Synchronisation und GhulDrive mit dem FTPS-Server (wie SY6, D2 bis D6). | Funktioniert; auf dem Webspace nur verschlüsselte Dateien. |
 | ST5 | **PHP-Modul**: Verbindungsart „PHP-Server-Modul“ → „Server-Modul erstellen“. | „Modul ghulsuite.php mit eigenem Zugangsschlüssel erstellt.“ Knöpfe „Datei speichern“ und (wenn ein FTPS/SFTP-Server existiert) „Über Server hochladen“. |
 | ST6 | „Über Server hochladen“ → FTPS-Server wählen, Webordner (z. B. `public_html`) → Hochladen. | „Modul hochgeladen.“ Auf dem Webspace liegt `ghulsuite.php`. *(Alternativ: „Datei speichern“ und selbst per FTP hochladen.)* |
 | ST7 | Adresse `https://deine-domain/ghulsuite.php` eintragen → Verbinden. | Server „Webspace · PHP-Modul“ in der Liste, „Teilen: https://…/ghulsuite.php“. Neben der PHP-Datei entsteht ein Ordner `ghul-data-…`. |
-| ST8 | Im Browser `https://deine-domain/ghul-data-…/` öffnen. | Zugriff verweigert (403) bzw. leere Seite – kein Inhalt. |
+| ST8 | Im Browser `https://deine-domain/ghul-data-…/` öffnen. | Zugriff verweigert (403) bzw. leere Seite, kein Inhalt. |
 | ST9 | Im Browser `https://deine-domain/ghulsuite.php` öffnen. | Seite „Geteilte Datei“ mit Meldung „Der Link ist unvollständig“ (es fehlt der Teil nach #). |
 | ST10 | Adresse mit `http://` statt `https://`. | „Verbinden“ bleibt gesperrt. |
 | ST11 | GhulDrive auf dem PHP-Modul einrichten (anderes Gerät oder nach Entfernen des Drive-Servers) und eine Datei hoch- und herunterladen. | Funktioniert. |
@@ -306,7 +306,7 @@ Für T5–T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick o
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| SH1 | Ohne eingerichteten Teilen-Ordner in GhulDrive eine Datei → ⋮ → Teilen. | Teilen-Menü: „Freigabelink – Zuerst einen Teilen-Ordner einrichten“, „An App senden“, ggf. „Als Mail-Anhang“. |
+| SH1 | Ohne eingerichteten Teilen-Ordner in GhulDrive eine Datei → ⋮ → Teilen. | Teilen-Menü: „Freigabelink, Zuerst einen Teilen-Ordner einrichten“, „An App senden“, ggf. „Als Mail-Anhang“. |
 | SH2 | Optionen → Server, Sync & Teilen → beim SFTP- oder FTPS-Server „Teilen einrichten“. | Assistent: 1. Ordner auf dem Server durchblättern (Ordner antippen, „..“ zurück, „Neuer Ordner“), 2. Webadresse, 3. Prüfung. |
 | SH3 | Ordner im Webbereich wählen (z. B. `public_html/teilen`), passende https-Adresse → „Einrichten und prüfen“. | Vier grüne Haken: Ordner beschreibbar, über HTTPS erreichbar, Ordnerinhalt wird nicht aufgelistet, Abrufseite funktioniert. „Alles funktioniert …“. |
 | SH4 | Falsche Adresse (passt nicht zum Ordner) prüfen. | Mindestens ein roter Punkt mit Erklärung; nichts wird gespeichert. |
@@ -318,14 +318,14 @@ Für T5–T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick o
 | SH10 | Mit dem **PHP-Modul**: „Abrufe“ auf „1×“ → Link erstellen, zweimal öffnen. | Erster Abruf klappt, zweiter: „Diese Freigabe gibt es nicht mehr …“. |
 | SH11 | Mit dem PHP-Modul „5×“ → zweimal öffnen → GhulDrive → Kontextzeile → Freigabelinks. | Eintrag zeigt „2 von 5 Abrufen“. |
 | SH12 | Mit SFTP/FTPS-Teilen-Ordner. | Abrufbegrenzung nicht wählbar, Hinweis „geht nur mit dem PHP-Server-Modul“. |
-| SH13 | Freigabelinks → Eintrag „Zurückziehen“ → Link im Browser neu laden. | Eintrag verschwindet sofort, Meldung „Link zurückgezogen“. Im Browser: „Diese Freigabe gibt es nicht mehr …“. Die Datei bleibt in GhulDrive. Mit eingeschalteter Synchronisation: einige Sekunden warten, Freigabelinks erneut öffnen – der Eintrag bleibt weg. |
+| SH13 | Freigabelinks → Eintrag „Zurückziehen“ → Link im Browser neu laden. | Eintrag verschwindet sofort, Meldung „Link zurückgezogen“. Im Browser: „Diese Freigabe gibt es nicht mehr …“. Die Datei bleibt in GhulDrive. Mit eingeschalteter Synchronisation: einige Sekunden warten, Freigabelinks erneut öffnen, der Eintrag bleibt weg. |
 | SH14 | In GhulDrive „Auswählen“ (oder lange drücken), zwei Dateien und einen Ordner markieren → Teilen → Freigabelink. | Ein Link; im Browser kommt ein ZIP mit allen Dateien in ihrer Ordnerstruktur. |
 | SH15 | Mehrfachauswahl → „Löschen“. | Rückfrage mit Anzahl; danach sind alle markierten weg. |
 | SH16 | Datei → Teilen → „An App senden“ → z. B. Messenger oder Dateien-App. | Android-Teilen-Menü; die Ziel-App erhält die **entschlüsselte** Datei mit richtigem Namen. |
-| SH17 | Nach SH16 GhulSuite sperren. | Die entschlüsselte Kopie im App-Cache wird gelöscht (ein erneutes Öffnen aus der Ziel-App kann fehlschlagen – gewollt). |
+| SH17 | Nach SH16 GhulSuite sperren. | Die entschlüsselte Kopie im App-Cache wird gelöscht (ein erneutes Öffnen aus der Ziel-App kann fehlschlagen, gewollt). |
 | SH18 | GhulPass → Eintrag öffnen → „Sicher teilen (Einmal-Link)“. | Formular: 1 Tag, bei PHP-Modul 1 Abruf vorgewählt. Link erstellen und im Browser öffnen: Textdatei mit Titel und Feldern (Benutzer, Passwort, …). |
 | SH19 | Ohne Server mit Teilen-Ordner einen GhulPass-Eintrag öffnen. | Kein „Sicher teilen“-Knopf. |
-| SH20 | Abgelaufenen Link testen: Freigabe mit „1 Tag“ erstellen, am nächsten Tag öffnen. | „Diese Freigabe gibt es nicht mehr …“ – auch beim SFTP/FTPS-Teilen-Ordner. |
+| SH20 | Abgelaufenen Link testen: Freigabe mit „1 Tag“ erstellen, am nächsten Tag öffnen. | „Diese Freigabe gibt es nicht mehr …“, auch beim SFTP/FTPS-Teilen-Ordner. |
 
 ## 19. Modultrennung und GhulMail-Anbindung
 
@@ -334,15 +334,15 @@ Für T5–T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick o
 | MO1 | GhulMail eingeschaltet, mindestens ein Konto: GhulDrive → Datei → Teilen. | „Als Mail-Anhang“ wird angeboten. |
 | MO2 | „Als Mail-Anhang“. | „Schreiben“ öffnet sich: Betreff = Dateiname, Datei als Anhang. Senden an die zweite Adresse: Anhang kommt identisch an. |
 | MO3 | Freigabelink erstellen → „Mit GhulMail senden“. | Entwurf mit Text „Hallo, hier ist … für dich:“ und dem Link. Nach dem Senden: Link in der empfangenen Mail anklicken → Datei öffnet sich im Browser. |
-| MO4 | Datei über 20 MB → Teilen. | „Als Mail-Anhang“: „Zu groß für eine Mail – bitte als Link teilen“, nicht antippbar. |
-| MO5 | Optionen → Module → GhulMail **aus**. Dann MO1 und SH6 wiederholen. | Kein „Als Mail-Anhang“, im Link-Dialog kein „Mit GhulMail senden“ – nur „Kopieren“. Freigabelinks und „An App senden“ funktionieren normal. |
+| MO4 | Datei über 20 MB → Teilen. | „Als Mail-Anhang“: „Zu groß für eine Mail, bitte als Link teilen“, nicht antippbar. |
+| MO5 | Optionen → Module → GhulMail **aus**. Dann MO1 und SH6 wiederholen. | Kein „Als Mail-Anhang“, im Link-Dialog kein „Mit GhulMail senden“, nur „Kopieren“. Freigabelinks und „An App senden“ funktionieren normal. |
 | MO6 | GhulMail ein, aber **kein** Konto (alle entfernt). | Wie MO5: keine Mail-Optionen. |
 | MO7 | GhulDrive **aus**, GhulMail ein. | GhulMail funktioniert vollständig (Lesen, Schreiben, Anhänge aus Dateien). GhulPass-Einmal-Link funktioniert weiter, wenn ein Teilen-Server existiert. |
 | MO8 | Alle Module außer GhulPass aus. | App läuft normal; Einstellungen zeigen unter „Bereiche“ nur GhulPass. Teilen-Einrichtung bleibt unter „Server, Sync & Teilen“ erreichbar. |
 
-## 20. Verschlüsselte Mails (PGP) – läuft automatisch
+## 20. Verschlüsselte Mails (PGP): läuft automatisch
 
-Du brauchst dafür nichts einzurichten. Für P5–P9 eine zweite Adresse, deren Programm OpenPGP kann: ein zweites
+Du brauchst dafür nichts einzurichten. Für P5 bis P9 eine zweite Adresse, deren Programm OpenPGP kann: ein zweites
 GhulSuite-Konto (z. B. auf dem zweiten Gerät), Thunderbird (Konto-Optionen → Ende-zu-Ende-Verschlüsselung)
 oder Proton.
 
@@ -361,7 +361,7 @@ oder Proton.
 | P11 | Bei einem Kontakt „Vergessen“. | Rückfrage; danach wieder „nicht verschlüsselt“ beim Schreiben. |
 | P12 | An eine Adresse schreiben, deren Anbieter Schlüssel veröffentlicht (z. B. Proton oder Posteo mit eingerichtetem Schlüssel). | Auch ohne vorherige Mail: „Wird Ende-zu-Ende verschlüsselt gesendet“; in der Kontaktliste „vom Anbieter“. |
 | P13 | Fingerabdruck mit der Gegenseite vergleichen (sie liest ihn vor). | Stimmt mit der Anzeige bei dir überein. |
-| P14 | Suche nach einem Wort aus einer verschlüsselten Mail. | Wird **nicht** gefunden (der Server kann verschlüsselte Mails nicht durchsuchen) – Suche nach dem Absender klappt. *Bekannte Grenze.* |
+| P14 | Suche nach einem Wort aus einer verschlüsselten Mail. | Wird **nicht** gefunden (der Server kann verschlüsselte Mails nicht durchsuchen), Suche nach dem Absender klappt. *Bekannte Grenze.* |
 | P15 | Eine signierte Mail, bei der unterwegs etwas verändert wurde (falls verfügbar, sonst überspringen). | Rote Warnung „Achtung: Die Signatur passt nicht …“. |
 
 ## 21. Korrekturen nach dem ersten Test
@@ -372,7 +372,7 @@ oder Proton.
 | K2 | In GhulMail eine Mail öffnen und zurück. | Die Liste ist sofort da (kein erneutes Laden). |
 | K3 | In GhulDrive in einem Unterordner die Android-Zurück-Geste. | Geht einen Ordner nach oben, nicht aus der App. |
 | K4 | GhulMail offen lassen, von der zweiten Adresse eine Mail schicken. | Taucht nach spätestens etwa einer Minute ohne Antippen in der Liste auf. |
-| K5 | Design: alle Bereiche, Unterseiten und Blätter mit der Webvorschau (`public/design/`, auf dem Testserver unter `ghulsuite/design/`) vergleichen – hell und dunkel. | Gleiches Aussehen: Kopfzeile mit farbiger Kontextzeile, Navigationsleiste „Optionen“, Eingabefelder als Karten mit Beschriftung oben, Pillen-Knöpfe, Blätter von unten statt Dialoge („Neuer Eintrag“, „2FA-Konto hinzufügen“, „Zu GhulDrive hinzufügen“, Datei, Teilen, Generator), „Neue Mail“ mit Zeilen Von/An/Betreff und Senden oben, Lesen mit Aktionsleiste unten. |
+| K5 | Design: alle Bereiche, Unterseiten und Blätter mit der Webvorschau (`public/design/`, auf dem Testserver unter `ghulsuite/design/`) vergleichen, hell und dunkel. | Gleiches Aussehen: Kopfzeile mit farbiger Kontextzeile, Navigationsleiste „Optionen“, Eingabefelder als Karten mit Beschriftung oben, Pillen-Knöpfe, Blätter von unten statt Dialoge („Neuer Eintrag“, „2FA-Konto hinzufügen“, „Zu GhulDrive hinzufügen“, Datei, Teilen, Generator), „Neue Mail“ mit Zeilen Von/An/Betreff und Senden oben, Lesen mit Aktionsleiste unten. |
 
 ## 22. Neue Funktionen aus der Vorschau
 
@@ -436,7 +436,7 @@ oder Proton.
 |---|---|---|
 | I1 | GhulPass → „+“ → „Aus anderer App importieren“. | Der Import öffnet sich direkt (nicht nur über Optionen). |
 | I2 | Proton-Pass- oder Proton-Authenticator-Export wählen, in dem Aliase, SSH-Schlüssel, Steam- oder HOTP-Codes vorkommen. | Unter „Nicht umgewandelt (n)“ steht jeder Eintrag mit Namen und Grund. Aliase landen als Login, SSH-Schlüssel und eigene Arten als Notiz mit allen Feldern. |
-| I3 | „Als Notiz in GhulPass sichern“ an lassen → Importieren. | Ergebnis direkt auf der Seite (kein Infokasten): Anzahl übernommen, doppelt, als Notiz gesichert, und die Liste. Im Ordner „Import – nicht umgewandelt“ liegen Notizen mit „Grund“ und „Originaldaten“. |
+| I3 | „Als Notiz in GhulPass sichern“ an lassen → Importieren. | Ergebnis direkt auf der Seite (kein Infokasten): Anzahl übernommen, doppelt, als Notiz gesichert, und die Liste. Im Ordner „Import (nicht umgewandelt)“ liegen Notizen mit „Grund“ und „Originaldaten“. |
 | I4 | Dieselbe Datei noch einmal importieren. | Nichts doppelt, auch keine doppelten Notizen. |
 | I5 | Steam-Code importieren oder in GhulAuth von Hand mit „Steam“ anlegen. | Fünfstelliger Code aus Buchstaben und Ziffern, der zum Steam-Code passt. |
 | I6 | Irgendeine Aktion mit Meldung (z. B. Passwort kopieren). | Die Meldung erscheint einmal, dunkel und abgerundet. |
@@ -449,7 +449,7 @@ oder Proton.
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| R1 | GhulMail ohne Konto öffnen. | Karte „GhulMail einrichten“ und Zeile „E-Mail-Konto hinzufügen“ – wie bei GhulDrive. Antippen öffnet das Formular in einem Blatt. |
+| R1 | GhulMail ohne Konto öffnen. | Karte „GhulMail einrichten“ und Zeile „E-Mail-Konto hinzufügen“, wie bei GhulDrive. Antippen öffnet das Formular in einem Blatt. |
 | R2 | Optionen → GhulMail. | Konten als Zeilen (antippen = bearbeiten im Blatt, Papierkorb = entfernen mit Rückfrage), darunter „E-Mail-Konto hinzufügen“. Die Seite bleibt offen. |
 | R3 | Kontoauswahl oben in GhulMail → „E-Mail-Konto hinzufügen“. | Dasselbe Blatt. |
 | R4 | Neue Suite: im Assistenten bei „Bereiche“ GhulMail einschalten → „E-Mail-Konto hinzufügen“. | Blatt mit dem Formular; danach „E-Mail-Konto eingerichtet“. Nach dem Assistenten ist das Konto in GhulMail da. |
@@ -467,7 +467,7 @@ oder Proton.
 
 ## 26. Alltagstest (eine Woche, Handy und Windows)
 
-Ziel: GhulSuite eine Woche wie im echten Leben benutzen – mit echten Konten, aber mit einer **Kopie** wichtiger Daten. Jeden Tag kurz notieren, was hakt (Fehler melden siehe unten).
+Ziel: GhulSuite eine Woche wie im echten Leben benutzen, mit echten Konten, aber mit einer **Kopie** wichtiger Daten. Jeden Tag kurz notieren, was hakt (Fehler melden siehe unten).
 
 | Tag | Was du tust | Worauf du achtest |
 |---|---|---|
@@ -498,7 +498,7 @@ Automatisch läuft bei jedem Push der Alltagstest im Kern (zwei Geräte, 30 simu
 | Nr. | Schritt | Erwartet |
 |---|---|---|
 | K1 | GhulCal zum ersten Mal öffnen. | Ein Kalender-Tresor „Kalender“ (`.ghlcal`) mit Privat, Arbeit, Familie, Sport, Geburtstage entsteht; Monatsansicht mit KW, heute rot eingekreist, Feiertage (NRW). |
-| K2 | „+ Termin“ → „Zahnarzt Fr 10 Uhr #privat“ eintippen. | Vorschau zeigt Titel, Freitag, 10:00–11:00, Kalender Privat; „Eintragen“ legt ihn an, Erinnerung nach Standard. |
+| K2 | „+ Termin“ → „Zahnarzt Fr 10 Uhr #privat“ eintippen. | Vorschau zeigt Titel, Freitag, 10:00 bis 11:00, Kalender Privat; „Eintragen“ legt ihn an, Erinnerung nach Standard. |
 | K3 | „Team-Call jeden Montag 9 Uhr #arbeit“ eintragen, Woche und Liste ansehen. | Serie jeden Montag; Wiederholungs-Symbol in der Liste. |
 | K4 | Monat/Woche/Tag/Liste umschalten, wischen, ‹ › und „12“-Symbol (Heute). | Ansichten wie in der Design-Vorschau; Tag-Ansicht mit Jetzt-Linie; Tippen auf eine leere Stunde legt dort einen Termin an. |
 | K5 | Termin öffnen → Bearbeiten: ganztägig, Datum/Uhrzeit, Wiederholen, zwei Erinnerungen, Ort, Notiz, Verknüpfung. | Alles wird gespeichert; Detailansicht zeigt Ort („In Karten-App öffnen“), Erinnerungen, Notiz, Verknüpfung. |
@@ -509,9 +509,10 @@ Automatisch läuft bei jedem Push der Alltagstest im Kern (zwei Geräte, 30 simu
 | K10 | Optionen → GhulCal: Detailstufe „Nur Hinweis“ → „Test-Erinnerung zeigen“. | Auf dem Sperrbildschirm nur „Termin in 15 Min.“ ohne Titel. |
 | K11 | Panik-Sperre auslösen. | Erinnerungen kommen weiter (die Panik-Sperre sperrt nur die App). |
 | K12 | Zweites Gerät synchronisieren, dort einen Termin ändern, zurück synchronisieren. | Änderungen beider Seiten kommen an (Zusammenführen pro Termin). |
-| K13 | Mail-Benachrichtigung antippen (gesperrt und entsperrt). | Die neue Mail öffnet sich (nach dem Entsperren); Leiste und App-Symbol zeigen die Zahl ungelesener Mails – vollständig, nicht angeschnitten, ab 100 „99+“. Windows-Taskleiste: Briefumschlag mit Zahl. |
-| K14 | Eine `.ics` importieren, die Zeiten in UTC (`…Z`, z. B. Google-Export) und in einer anderen Zeitzone (`TZID=America/New_York`) enthält – je ein Termin im Sommer und im Winter. | Alle Termine stehen auf der Stunde, zu der sie hier stattfinden (10:00 New York = 16:00 in Deutschland), unabhängig davon, ob gerade Sommer- oder Winterzeit ist. Ganztägige Termine bleiben auf ihrem Tag. |
+| K13 | Mail-Benachrichtigung antippen (gesperrt und entsperrt). | Die neue Mail öffnet sich (nach dem Entsperren); Leiste und App-Symbol zeigen die Zahl ungelesener Mails, vollständig, nicht angeschnitten, ab 100 „99+“. Windows-Taskleiste: Briefumschlag mit Zahl. |
+| K14 | Eine `.ics` importieren, die Zeiten in UTC (`…Z`, z. B. Google-Export) und in einer anderen Zeitzone (`TZID=America/New_York`) enthält, je ein Termin im Sommer und im Winter. | Alle Termine stehen auf der Stunde, zu der sie hier stattfinden (10:00 New York = 16:00 in Deutschland), unabhängig davon, ob gerade Sommer- oder Winterzeit ist. Ganztägige Termine bleiben auf ihrem Tag. |
 | K15 | Termin mit Erinnerung anlegen, App schließen, in den Systemeinstellungen die Zeitzone ändern (z. B. London). | Die Erinnerung kommt zur selben Uhrzeit der neuen Zone (Termin 10:00 → Erinnerung 09:45 Londoner Zeit), ohne dass die App geöffnet wurde. |
+| K16 | Eine Serie aus einer anderen Zeitzone importieren (z. B. Einladung „jeden Dienstag 10:00 New York“ aus Outlook oder Google) und durch das Jahr blättern: Januar, Mitte März, April, Ende Oktober, November. | In Deutschland steht der Termin um 16:00, in den Wochen, in denen nur die USA oder nur Europa Sommerzeit haben, um 15:00. Die Termin-Ansicht zeigt zusätzlich „Ortszeit in New York: 10:00 - 11:00“; beim Bearbeiten steht unter „Zeitzone“ der Ort. „Nur diesen Termin löschen“ entfernt genau den angezeigten Tag. |
 
 ## Fehler melden
 

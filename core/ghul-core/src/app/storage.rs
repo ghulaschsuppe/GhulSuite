@@ -63,7 +63,7 @@ pub(crate) fn write_atomic(dir: &Path, name: &str, data: &[u8]) -> Result<()> {
 
 /// A plain file name that is safe on every system: no folders, no drive or stream separators
 /// (`C:`, `file:stream`), no control or direction characters, no Windows device names, not
-/// hidden, not ending in a dot or space. File names also come from servers and backups –
+/// hidden, not ending in a dot or space. File names also come from servers and backups,
 /// whoever controls those must not be able to write anywhere else.
 pub(crate) fn plain_file_name(name: &str) -> bool {
     const DEVICES: [&str; 22] = [

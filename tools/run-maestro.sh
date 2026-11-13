@@ -12,3 +12,8 @@ timeout 300 adb install -r "$apk"
 # English texts, as the flows expect them.
 adb shell "settings put system system_locales en-US" > /dev/null 2>&1 || true
 timeout 1400 maestro test "$(dirname "$0")/../app/maestro" --format junit --output "$out/report.xml" --test-output-dir "$out"
+# With test servers next to the emulator (CI: GHUL_TEST_SERVERS=1, see tools/test-servers.sh):
+# GhulDrive and GhulMail against a real server. They continue where the flows above ended.
+if [ "${GHUL_TEST_SERVERS:-0}" = 1 ]; then
+  timeout 900 maestro test "$(dirname "$0")/../app/maestro/server" --format junit --output "$out/report-server.xml" --test-output-dir "$out"
+fi

@@ -1,0 +1,16 @@
+# Helper: start the app anew and unlock with the app PIN. Ends on the start tab (GhulPass), where
+# every name in the bottom bar is on screen only once.
+appId: de.danerd.ghulsuite.dev
+---
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible: "Unlock with app PIN"
+    timeout: 30000
+- tapOn: "App PIN"
+- inputText: "246813"
+- hideKeyboard
+- tapOn: "Unlock with app PIN"
+- extendedWaitUntil:
+    visible: "Search entries"
+    timeout: 30000

@@ -125,12 +125,12 @@ fun AreaContext(state: AppState) {
 private fun CtxRow(title: String, subtitle: String? = null, selected: Boolean = false, divider: Boolean = false, leading: @Composable () -> Unit, onClick: () -> Unit) {
     SheetRow(
         title, subtitle, leading = leading, divider = divider,
-        end = { if (selected) Icon(Icons.Filled.Check, null, Modifier.size(20.dp), tint = g.muted) },
+        end = { if (selected) SheetCheck() },
         onClick = onClick,
     )
 }
 
-/** Bottom sheet behind the context line: vault filter, storage, mailbox – the same pattern everywhere. */
+/** Bottom sheet behind the context line: vault filter, storage, mailbox, the same pattern everywhere. */
 @Composable
 fun AreaContextSheet(state: AppState) {
     val close = { state.contextSheet = false }
@@ -236,8 +236,7 @@ private fun MailboxSheet(state: AppState, close: () -> Unit) {
             }
         }
         if (folders.isNotEmpty()) {
-            Text(stringResource(Res.string.ctx_folders).uppercase(), fontSize = 12.sp, letterSpacing = 0.7.sp, fontWeight = FontWeight.SemiBold,
-                color = t.muted, modifier = Modifier.padding(start = 14.dp, top = 10.dp))
+            SectionLabel(stringResource(Res.string.ctx_folders), Modifier.padding(start = 10.dp, top = 4.dp))
             for (f in folders) {
                 val on = f.name == state.mailFolder
                 Pill(on, { Icon(folderIcon(f.role), null, Modifier.size(20.dp), tint = if (on) mail else t.fg) }, folderLabelOf(f)) {
@@ -252,7 +251,7 @@ private fun MailboxSheet(state: AppState, close: () -> Unit) {
         if (showDrafts) {
             if (drafts.isEmpty()) HintText(stringResource(Res.string.mail_drafts_none), Modifier.padding(start = 14.dp))
             for (d in drafts) {
-                Pill(false, { Avatar(d.to.ifBlank { "?" }, size = 30.dp) }, d.subject.ifBlank { "–" }, d.to.ifBlank { formatDateTime(d.updated) }) {
+                Pill(false, { Avatar(d.to.ifBlank { "?" }, size = 30.dp) }, d.subject.ifBlank { stringResource(Res.string.mail_no_subject) }, d.to.ifBlank { formatDateTime(d.updated) }) {
                     close()
                     state.push(Screen.MailCompose(MailDraft(d.accountId, d.to, d.cc, d.subject, d.text, d.inReplyTo, attachments = d.attachments, draftId = d.id, bcc = d.bcc)))
                 }
@@ -265,7 +264,7 @@ private fun MailboxSheet(state: AppState, close: () -> Unit) {
             for (m in scheduled) {
                 Row(Modifier.fillMaxWidth().padding(start = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(m.subject.ifBlank { "–" }, fontWeight = FontWeight.W500, maxLines = 1)
+                        Text(m.subject.ifBlank { stringResource(Res.string.mail_no_subject) }, fontWeight = FontWeight.W500, maxLines = 1)
                         Text(formatDateTime(m.sendAt) + " · " + m.to.joinToString(", "), fontSize = 13.sp, color = t.muted, maxLines = 1)
                     }
                     BarIcon(Icons.Filled.Close, stringResource(Res.string.a_cancel)) {

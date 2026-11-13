@@ -229,7 +229,7 @@ impl FtpsFs {
         let mut path = String::new();
         for part in full_dir.split('/').filter(|p| !p.is_empty() && *p != ".") {
             path = if path.is_empty() { part.to_owned() } else { format!("{path}/{part}") };
-            // 550/521: exists already (or not allowed – the following write reports that).
+            // 550/521: exists already (or not allowed, the following write reports that).
             let _ = cmd(c, &format!("MKD {path}")).await?;
         }
         Ok(())

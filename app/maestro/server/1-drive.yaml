@@ -1,0 +1,72 @@
+# Testplan D1 to D4: GhulDrive on an SFTP server with user name and password (the emulator reaches
+# the test server of the runner as 10.0.2.2), then a folder. tools/check-server-flows.sh looks at
+# the server afterwards: the folder name must not be readable there.
+appId: de.danerd.ghulsuite.dev
+name: GhulDrive on a real server
+---
+- runFlow: unlock.yaml
+- tapOn: "Options"
+- scrollUntilVisible:
+    element: "Manage areas"
+    direction: DOWN
+- tapOn: "Manage areas"
+- tapOn: "GhulDrive"
+- extendedWaitUntil:
+    visible: "Set up GhulDrive"
+    timeout: 10000
+- tapOn: "Set up"
+- extendedWaitUntil:
+    visible: "Own server for GhulDrive"
+    timeout: 10000
+- tapOn: "Server address"
+- inputText: "10.0.2.2"
+- tapOn: "Port"
+- eraseText
+- inputText: "2223"
+- tapOn: "User name"
+- inputText: "ghulsftp"
+- hideKeyboard
+# The chip "Password" (the field below is called "Server password").
+- tapOn: "Password"
+- tapOn: "Server password"
+- inputText: "test-pw-123"
+- hideKeyboard
+- takeScreenshot: s1-drive-server
+- tapOn:
+    text: "Choose folder"
+    index: 0
+# First connection: the key of the server has to be confirmed.
+- extendedWaitUntil:
+    visible: "Check the server key"
+    timeout: 60000
+- takeScreenshot: s1-drive-server-key
+- tapOn: "Fingerprint matches"
+- extendedWaitUntil:
+    visible: "Create new \\(recommended\\)"
+    timeout: 60000
+- tapOn: "ghulsuite"
+- tapOn:
+    text: "Test connection"
+    index: 0
+- extendedWaitUntil:
+    visible: "GhulDrive set up"
+    timeout: 120000
+- takeScreenshot: s1-drive-set-up
+# The new tab, from a fresh start.
+- runFlow: unlock.yaml
+- tapOn: "GhulDrive"
+- extendedWaitUntil:
+    visible: "This folder is empty\\."
+    timeout: 60000
+- tapOn: "Add"
+- extendedWaitUntil:
+    visible: "Add to GhulDrive"
+    timeout: 10000
+- tapOn: "New folder"
+- inputText: "Urlaub-Maestro"
+- hideKeyboard
+- tapOn: "Create"
+- extendedWaitUntil:
+    visible: "Urlaub-Maestro"
+    timeout: 60000
+- takeScreenshot: s1-drive-folder

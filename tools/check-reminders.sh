@@ -5,7 +5,7 @@
 #   1. Android holds an alarm for the reminder.
 #   2. After a change of the time zone the alarm is at the same time on the clock.
 #   3. After the app was killed for good and the device "restarted", the alarm is back.
-#   4. When the alarm fires, a notification arrives – with the app closed and locked.
+#   4. When the alarm fires, a notification arrives: with the app closed and locked.
 # Usage: tools/check-reminders.sh <output-dir>
 set -euo pipefail
 out="${1:-.}"
@@ -42,7 +42,7 @@ if [ "$(zone)" = "$z2" ]; then
   [ "$(clock "$before" "$z1")" = "$(clock "$after" "$z2")" ] \
     || fail "Erinnerung nach Zeitzonen-Wechsel zur falschen Uhrzeit: $(clock "$before" "$z1") wurde $(clock "$after" "$z2")"
 else
-  log "::warning::Zeitzone ließ sich im Emulator nicht umstellen – Schritt 2 übersprungen"
+  log "::warning::Zeitzone ließ sich im Emulator nicht umstellen, Schritt 2 übersprungen"
 fi
 
 # 3 -------------------------------------------------------------------------------------------
@@ -64,4 +64,4 @@ sleep 6
 timeout 30 adb shell dumpsys notification --noredact | tr -d '\r' > "$out/notifications.txt" || true
 grep -qE "NotificationRecord.*pkg=$pkg.*channel=cal(_silent)?([ :,)]|$)" "$out/notifications.txt" \
   || fail "der ausgelöste Alarm hat keine Benachrichtigung gezeigt (siehe notifications.txt)"
-log "Benachrichtigung ist da – auch bei beendeter, gesperrter App"
+log "Benachrichtigung ist da, auch bei beendeter, gesperrter App"

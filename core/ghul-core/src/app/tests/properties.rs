@@ -334,7 +334,7 @@ fn autofill_never_fills_a_lookalike() {
             // Only another name under the very same registrable domain may fill.
             assert_eq!(match_entry(&urls, Some(&a), None, None) == Match::Direct, same, "{site} vs {a}");
             // (A name under the same registrable domain, e.g. evil-nextcloud.example.org next to
-            // nextcloud.example.org, belongs to the same owner and may fill – that is the rule.)
+            // nextcloud.example.org, belongs to the same owner and may fill, that is the rule.)
             checked += 1;
         }
     }
@@ -365,7 +365,7 @@ fn calendar_files_round_trip() {
         };
         events.push(CalEvent {
             id: format!("{i:032x}"),
-            title: format!("Termin {i}; mit, Sonderzeichen \\ und \"Zitat\" – äöü 😀"),
+            title: format!("Termin {i}; mit, Sonderzeichen \\ und \"Zitat\" \u{2013} äöü 😀"),
             location: if i % 3 == 0 { "Ort, Straße 1".into() } else { String::new() },
             notes: if i % 5 == 0 { "Zeile 1\nZeile 2".into() } else { String::new() },
             all_day,
@@ -386,4 +386,109 @@ fn calendar_files_round_trip() {
             "{a:?}"
         );
     }
+}
+
+/// A weekly call at 10:00 in New York and one at 18:00 in Tokyo, seen from Berlin through the
+/// year: the hour here changes whenever only one side changes its clock. Deleting single dates
+/// and reminders follow what the calendar shows.
+#[test]
+fn series_from_other_time_zones_are_right_all_year() {
+    use super::super::cal::{CalCalendar, CalDeleteMode};
+    use super::super::caltext::test_zones::World;
+    use super::{generate_keyfile, options, vault_id, Dirs, VaultKind};
+    use std::sync::Arc;
+    let d = Dirs::new("zoned-series");
+    let s = d.suite();
+    let kf = generate_keyfile();
+    s.create(options("pw pw pw pw", Some(kf), &[(VaultKind::Cal, "Kalender")]), None, None, None).unwrap();
+    let cal = s
+        .cal_save_calendar(CalCalendar {
+            id: String::new(),
+            vault_id: vault_id(&s, "Kalender"),
+            name: "Arbeit".into(),
+            color: 1,
+            default_reminder: -1,
+            events: 0,
+        })
+        .unwrap();
+    let ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n\
+BEGIN:VEVENT\r\nUID:ny\r\nSUMMARY:Call New York\r\nDTSTART;TZID=America/New_York:20260106T100000\r\n\
+DTEND;TZID=America/New_York:20260106T110000\r\nRRULE:FREQ=WEEKLY\r\nBEGIN:VALARM\r\nTRIGGER:-PT15M\r\nEND:VALARM\r\nEND:VEVENT\r\n\
+BEGIN:VEVENT\r\nUID:tokyo\r\nSUMMARY:Call Tokio\r\nDTSTART;TZID=Asia/Tokyo:20260107T180000\r\n\
+DTEND;TZID=Asia/Tokyo:20260107T190000\r\nRRULE:FREQ=WEEKLY\r\nEND:VEVENT\r\n\
+BEGIN:VEVENT\r\nUID:late\r\nSUMMARY:Spät in New York\r\nDTSTART;TZID=America/New_York:20260105T200000\r\n\
+DTEND;TZID=America/New_York:20260105T210000\r\nRRULE:FREQ=WEEKLY\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+    let berlin: Arc<dyn super::super::caltext::TimeZones> = Arc::new(World("Europe/Berlin"));
+    assert_eq!(s.cal_import_ics(cal.clone(), ics.as_bytes().to_vec(), berlin.clone()).unwrap(), 3);
+    let starts = |title: &str, from: &str, to: &str| -> Vec<String> {
+        let all = s.cal_occurrences(from.into(), to.into(), String::new(), "de".into()).unwrap();
+        all.into_iter().filter(|o| o.title == title).map(|o| o.start).collect()
+    };
+
+    // Without the time zone database of the device the series show as written.
+    assert_eq!(starts("Call New York", "2026-01-06", "2026-01-06"), ["2026-01-06T10:00"]);
+    s.set_time_zones(berlin.clone());
+
+    // New York: winter both, then only the USA on summer time (8 to 28 March), then both,
+    // then Europe back first (25 October), then the USA (1 November).
+    assert_eq!(starts("Call New York", "2026-01-06", "2026-01-06"), ["2026-01-06T16:00"]);
+    assert_eq!(
+        starts("Call New York", "2026-03-10", "2026-03-24"),
+        ["2026-03-10T15:00", "2026-03-17T15:00", "2026-03-24T15:00"]
+    );
+    assert_eq!(starts("Call New York", "2026-03-31", "2026-03-31"), ["2026-03-31T16:00"]);
+    assert_eq!(starts("Call New York", "2026-07-14", "2026-07-14"), ["2026-07-14T16:00"]);
+    assert_eq!(starts("Call New York", "2026-10-27", "2026-10-27"), ["2026-10-27T15:00"]);
+    assert_eq!(starts("Call New York", "2026-11-03", "2026-11-03"), ["2026-11-03T16:00"]);
+    // Tokyo never changes: 10:00 here in winter, 11:00 in summer.
+    assert_eq!(starts("Call Tokio", "2026-01-07", "2026-01-07"), ["2026-01-07T10:00"]);
+    assert_eq!(starts("Call Tokio", "2026-07-15", "2026-07-15"), ["2026-07-15T11:00"]);
+    // Monday evening in New York is Tuesday night here.
+    assert_eq!(starts("Spät in New York", "2026-07-13", "2026-07-14"), ["2026-07-14T02:00"]);
+    assert_eq!(starts("Spät in New York", "2026-07-13", "2026-07-13"), Vec::<String>::new());
+    let ends: Vec<String> = s
+        .cal_occurrences("2026-07-14".into(), "2026-07-14".into(), String::new(), "de".into())
+        .unwrap()
+        .into_iter()
+        .filter(|o| o.title == "Spät in New York")
+        .map(|o| o.end)
+        .collect();
+    assert_eq!(ends, ["2026-07-14T03:00"]);
+
+    // The reminder comes a quarter of an hour before the time shown here.
+    let rem = s.cal_reminders("2026-03-17T00:00".into(), 1).unwrap();
+    assert_eq!(
+        rem.iter().map(|r| (r.title.as_str(), r.at.as_str())).collect::<Vec<_>>(),
+        [("Call New York", "2026-03-17T14:45")]
+    );
+
+    // Deleting the date the calendar shows deletes that date, also when it is another day there.
+    let id = |title: &str| {
+        s.cal_occurrences("2026-07-01".into(), "2026-07-31".into(), String::new(), "de".into())
+            .unwrap()
+            .into_iter()
+            .find(|o| o.title == title)
+            .unwrap()
+            .event_id
+    };
+    s.cal_delete_event(id("Spät in New York"), "2026-07-14".into(), CalDeleteMode::One).unwrap();
+    assert_eq!(starts("Spät in New York", "2026-07-06", "2026-07-22"), ["2026-07-07T02:00", "2026-07-21T02:00"]);
+    s.cal_delete_event(id("Spät in New York"), "2026-07-21".into(), CalDeleteMode::Following).unwrap();
+    assert_eq!(starts("Spät in New York", "2026-07-06", "2026-12-31"), ["2026-07-07T02:00"]);
+
+    // Saved from the editor (start moved to 11:00 over there), the zone stays.
+    let mut ev = s.cal_get_event(id("Call New York")).unwrap();
+    assert_eq!((ev.zone.as_str(), ev.start.as_str()), ("America/New_York", "2026-01-06T10:00"));
+    ev.start = "2026-01-06T11:00".into();
+    ev.end = "2026-01-06T12:00".into();
+    s.cal_save_event(ev).unwrap();
+    assert_eq!(starts("Call New York", "2026-07-14", "2026-07-14"), ["2026-07-14T17:00"]);
+
+    // Out as a file and into a second calendar: the same hours.
+    let out = s.cal_export_ics(vec![cal]).unwrap();
+    assert!(out.contains("DTSTART;TZID=Asia/Tokyo:20260107T180000"), "{out}");
+    // On a device in New York the same file shows New York time, and the series needs no zone.
+    let ny = super::super::caltext::ics_import_zoned(&out, &World("America/New_York")).unwrap();
+    let call = ny.iter().find(|e| e.title == "Call New York").unwrap();
+    assert_eq!((call.zone.as_str(), call.start.as_str()), ("", "2026-01-06T11:00"));
 }

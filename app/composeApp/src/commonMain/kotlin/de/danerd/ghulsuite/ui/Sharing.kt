@@ -63,7 +63,6 @@ import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
 import org.jetbrains.compose.resources.stringResource
 
-internal val Green = Color(0xFF0E9F6E)
 private val Blue = Color(0xFF2F74E8)
 
 /** Expiry choices in days; 0 = never. */
@@ -128,7 +127,7 @@ fun ShareSheet(state: AppState, files: List<DriveItemUi>, onDismiss: () -> Unit,
                     stringResource(Res.string.share_link),
                     stringResource(if (servers.isEmpty()) Res.string.share_link_setup else Res.string.share_link_sub),
                     leading = { IconTile(Icons.Filled.Link, paletteColor(5)) },
-                    end = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp), tint = t.faint) },
+                    end = { ChevronEnd() },
                     divider = onlyFiles,
                 ) {
                     if (servers.isEmpty()) {
@@ -141,7 +140,7 @@ fun ShareSheet(state: AppState, files: List<DriveItemUi>, onDismiss: () -> Unit,
                     SheetRow(
                         stringResource(Res.string.drive_zip_title), stringResource(Res.string.drive_zip_sub),
                         leading = { IconTile(Icons.Filled.Archive, paletteColor(9)) },
-                        end = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp), tint = t.faint) },
+                        end = { ChevronEnd() },
                         divider = true,
                     ) { onZip() }
                 }
@@ -152,7 +151,7 @@ fun ShareSheet(state: AppState, files: List<DriveItemUi>, onDismiss: () -> Unit,
                         stringResource(Res.string.share_mail_attach),
                         stringResource(if (tooBig) Res.string.share_mail_too_big else Res.string.share_mail_attach_sub),
                         leading = { IconTile(Icons.Filled.Email, paletteColor(3)) },
-                        end = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp), tint = t.faint) },
+                        end = { ChevronEnd() },
                         divider = true, enabled = !tooBig,
                     ) {
                         state.run(onError = { error = it }, block = { net.driveFilesForMail(files) }) { list ->
@@ -226,8 +225,8 @@ fun ShareOptionsForm(
         enabled = !state.busy && serverId != null && (!usePassword || password.length >= 4),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Icon(Icons.Filled.Link, null)
-        Text(" " + stringResource(Res.string.share_create))
+        Icon(Icons.Filled.Link, null, Modifier.size(18.dp))
+        Text(stringResource(Res.string.share_create))
     }
 }
 
@@ -314,7 +313,7 @@ fun SharesScreen(state: AppState, padding: PaddingValues) {
             when {
                 list == null -> Hint(stringResource(Res.string.loading))
                 list.isEmpty() -> {
-                    EmptyState(Icons.Filled.Link, stringResource(Res.string.shares_empty), Green)
+                    EmptyState(Icons.Filled.Link, stringResource(Res.string.shares_empty), g.ok)
                     if (servers.none { it.canShare }) {
                         OutlinedButton(onClick = { state.push(Screen.SettingsPage(SetPage.SERVERS)) }, modifier = Modifier.fillMaxWidth()) {
                             Text(stringResource(Res.string.share_setup_title))
@@ -327,7 +326,7 @@ fun SharesScreen(state: AppState, padding: PaddingValues) {
                         ListRow(
                             s.name,
                             listOf(formatSize(s.size), server, shareSummary(s)).filter { it.isNotBlank() }.joinToString(" · "),
-                            leading = { IconTile(if (s.password) Icons.Filled.Lock else Icons.Filled.Link, Green) },
+                            leading = { IconTile(if (s.password) Icons.Filled.Lock else Icons.Filled.Link, g.ok) },
                             trailing = { TextButton(onClick = { removing = s }) { Text(stringResource(Res.string.share_withdraw)) } },
                             onClick = { showing = s },
                         )
@@ -340,6 +339,7 @@ fun SharesScreen(state: AppState, padding: PaddingValues) {
     showing?.let { ShareResultDialog(state, it, mail) { showing = null } }
     removing?.let { s ->
         AlertDialog(
+            danger = true,
             onDismissRequest = { removing = null },
             title = { Text(stringResource(Res.string.share_withdraw_title, s.name)) },
             text = { Text(stringResource(Res.string.share_withdraw_text)) },
@@ -392,7 +392,7 @@ fun ShareSetupScreen(state: AppState, serverId: String, padding: PaddingValues) 
             BusyBanner(state)
             SectionCard(stringResource(Res.string.share_setup_step1)) {
                 Hint(stringResource(Res.string.share_setup_step1_hint))
-                Text("/" + path, fontFamily = FontFamily.Monospace, color = Green)
+                Text("/" + path, fontFamily = FontFamily.Monospace, color = g.ok)
                 ListCard {
                     if (path.isNotEmpty()) {
                         ListRow("..", leading = { IconTile(Icons.Filled.Folder, MaterialTheme.colorScheme.onSurfaceVariant, size = 34.dp) }) {
@@ -417,7 +417,7 @@ fun ShareSetupScreen(state: AppState, serverId: String, padding: PaddingValues) 
             SectionCard(stringResource(Res.string.share_setup_step3)) {
                 for (c in checks) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(if (c.ok) Icons.Filled.CheckCircle else Icons.Filled.Error, null, tint = if (c.ok) Green else MaterialTheme.colorScheme.error)
+                        Icon(if (c.ok) Icons.Filled.CheckCircle else Icons.Filled.Error, null, tint = if (c.ok) g.ok else g.danger)
                         Column(Modifier.weight(1f)) {
                             Text(checkLabel(c.step))
                             if (!c.ok && c.detail.isNotBlank()) Hint(c.detail)

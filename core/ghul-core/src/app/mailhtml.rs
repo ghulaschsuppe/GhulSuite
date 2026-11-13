@@ -4,7 +4,7 @@
 //!
 //! Nothing of the HTML is ever executed or shown as HTML: scripts, styles, forms, frames and
 //! comments are dropped, links are only kept for `https`, `http` and `mailto`, and images become
-//! placeholders – inline images (`cid:`) are shown, remote images only when the user asks for them
+//! placeholders, inline images (`cid:`) are shown, remote images only when the user asks for them
 //! (they can tell the sender that and when a mail was read). Tracking pixels (1×1, hidden) are
 //! removed completely.
 
@@ -33,7 +33,7 @@ pub struct MailSpan {
 #[derive(uniffi::Record, Clone, Debug, PartialEq)]
 pub struct MailBlock {
     pub kind: MailBlockKind,
-    /// Heading level 1–6, list nesting, quote depth.
+    /// Heading level 1 to 6, list nesting, quote depth.
     pub level: u8,
     pub spans: Vec<MailSpan>,
     /// Images: `cid:…` for inline images, otherwise the https/http address.
@@ -177,8 +177,8 @@ pub fn decode_entities(s: &str) -> String {
                     "quot" => Some('"'),
                     "apos" | "#39" => Some('\''),
                     "nbsp" => Some(' '),
-                    "ndash" => Some('–'),
-                    "mdash" => Some('—'),
+                    "ndash" => Some('\u{2013}'),
+                    "mdash" => Some('\u{2014}'),
                     "hellip" => Some('…'),
                     "euro" => Some('€'),
                     "copy" => Some('©'),
@@ -417,7 +417,7 @@ pub fn parse(html: &str) -> HtmlMail {
 }
 
 /// A link whose text looks like an address but points somewhere else ("https://bank.example"
-/// leading to evil.example) – a classic phishing trick. The real destination is added to the
+/// leading to evil.example), a classic phishing trick. The real destination is added to the
 /// text, so the reader sees where the link goes.
 fn reveal_deceptive_links(mail: &mut HtmlMail) {
     for b in &mut mail.blocks {
@@ -507,7 +507,7 @@ fn public_https(u: &crate::net::http::Url) -> bool {
     }
 }
 
-/// Loads an image from the internet for an HTML mail – only when the user asked for it.
+/// Loads an image from the internet for an HTML mail, only when the user asked for it.
 /// At most 5 MB and three redirects; only answers that are images.
 #[uniffi::export]
 pub fn mail_fetch_image(url: String) -> Result<Vec<u8>, super::error::GhulError> {

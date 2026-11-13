@@ -25,7 +25,7 @@ const MARKS: &[&str] = &[
     "KlauKontoX9",
     "KlauTresorX9",
 ];
-/// 2FA secret "Hello!\xde\xad\xbe\xef" in Base32 – its raw bytes must not show up either.
+/// 2FA secret "Hello!\xde\xad\xbe\xef" in Base32, its raw bytes must not show up either.
 const TOTP_SECRET: &str = "JBSWY3DPEHPK3PXP";
 
 fn all_files(dir: &std::path::Path) -> Vec<(std::path::PathBuf, Vec<u8>)> {

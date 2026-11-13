@@ -4,7 +4,7 @@
 //! **The folder is the suite:** every vault file (`*.ghlpss`, `*.ghltotp`) in the storage folder
 //! belongs to it. All containers share the same password, the same factor slots (security keys
 //! and key files, each wrapping the same factor secret) and the same recovery code, so one key
-//! touch – or the recovery code alone – opens everything, and every file can also be opened on
+//! touch, or the recovery code alone, opens everything, and every file can also be opened on
 //! its own. `suite.ghlsuite` only holds settings (last seen revisions, dismissed files, later mail
 //! and storage accounts); it decides nothing about membership and is recreated if missing.
 //! Vault files with another protection are offered and, once opened with their own password,
@@ -316,7 +316,7 @@ pub struct SkippedImport {
 /// nothing of an import is lost. The texts come from the app (its language).
 #[derive(uniffi::Record, Clone, Debug, PartialEq)]
 pub struct KeepSkipped {
-    /// Folder of the notes, e.g. "Import – not converted".
+    /// Folder of the notes, e.g. "Import (not converted)".
     pub folder: String,
     /// Field names of the note.
     pub reason_label: String,
@@ -606,6 +606,8 @@ pub struct GhulSuite {
     open: Mutex<Option<Open>>,
     /// Open server connection, Drive index and running uploads (dropped when locking).
     pub(super) net: Mutex<NetCache>,
+    /// The time zone database of the device (see `set_time_zones`).
+    pub(super) zones: Mutex<Option<Arc<dyn super::caltext::TimeZones>>>,
 }
 
 #[derive(Default)]
@@ -820,7 +822,7 @@ impl GhulSuite {
         Ok(files)
     }
 
-    /// The suite file, or – if it is missing – any readable vault file of the folder. All
+    /// The suite file, or, if it is missing, any readable vault file of the folder. All
     /// containers carry the same slots, so each of them can be used to unlock.
     fn anchor(&self) -> Result<LockedContainer> {
         if let Some(l) = self.read_locked(SUITE_FILE)? {
@@ -1082,6 +1084,7 @@ impl GhulSuite {
             local_dir: PathBuf::from(local_dir),
             open: Mutex::new(None),
             net: Mutex::new(NetCache::default()),
+            zones: Mutex::new(None),
         })
     }
 

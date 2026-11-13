@@ -1,5 +1,5 @@
 # Testplan B2 and a careless user: GhulDrive and GhulMail are set up with a server that does not
-# exist. The app must say so in plain words and stay usable – no crash, no half-made area.
+# exist. The app must say so in plain words and stay usable: no crash, no half-made area.
 appId: de.danerd.ghulsuite.dev
 name: GhulDrive and GhulMail without a server
 ---

@@ -1,4 +1,4 @@
-# GhulSuite – Projekt- und Entwicklerhinweise
+# GhulSuite: Projekt- und Entwicklerhinweise
 
 Diese Datei ist der Einstieg für alle, die am Code arbeiten (Menschen wie KI-Assistenten).
 Was GhulSuite ist und kann, steht in der [README](README.md), das vollständige Konzept in
@@ -20,7 +20,7 @@ Was GhulSuite ist und kann, steht in der [README](README.md), das vollständige 
 - **Sprachen:** Deutsch und Englisch (`app/composeApp/src/commonMain/composeResources/values*/strings.xml`).
 - **Lizenz:** AGPL-3.0-or-later mit Zusatzbedingung (Urhebervermerk bleibt sichtbar), siehe [`LICENSE`](LICENSE)
   und [`NOTICE`](NOTICE). Name und Logo: [`TRADEMARKS.md`](TRADEMARKS.md). Beiträge: [`CONTRIBUTING.md`](CONTRIBUTING.md).
-- **Keine Geheimnisse im Repository** – keine Zugangsdaten, keine Signaturschlüssel, keine echten Daten.
+- **Keine Geheimnisse im Repository**: keine Zugangsdaten, keine Signaturschlüssel, keine echten Daten.
 
 ## Aufbau
 
@@ -62,7 +62,7 @@ tools/                 Testserver (SFTP/IMAP/SMTP), Prüfskripte, Emulator-Skrip
   `screenshots`, `emulator-tests`.
 - Uploads auf den Testserver des Inhabers laufen **nur im Original-Repository** und nie bei Pull Requests.
   Ziel ist für `main` der Ordner `ghulsuite/` (Testseiten) bzw. `ghulsuite/download/` (App-Pakete), für jeden
-  anderen Branch `ghulsuite/branches/<branch>/` bzw. `…/download/` – so bleibt `ghulsuite/download/` der stabile Stand.
+  anderen Branch `ghulsuite/branches/<branch>/` bzw. `…/download/`; so bleibt `ghulsuite/download/` der stabile Stand.
 - **Secrets** (vom Inhaber selbst eingetragen, niemals im Repository): `FTP_SERVER`, `FTP_USER`, `FTP_PASSWORD`,
   `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`.
 - **Signatur:** Der Android-Schlüssel kommt nur aus den Secrets (`GHUL_KEYSTORE_FILE`, `GHUL_KEYSTORE_PASSWORD`,
@@ -80,6 +80,9 @@ tools/                 Testserver (SFTP/IMAP/SMTP), Prüfskripte, Emulator-Skrip
 
 - Vor jedem Commit: `cargo fmt`, Clippy (auch `--target x86_64-pc-windows-gnu`), Kern-Tests, Desktop-Tests.
 - Neue Texte immer auf Deutsch **und** Englisch.
+- **Keine langen Striche** (Geviert- und Halbgeviertstrich) in Texten der App und des Projekts: stattdessen Punkt,
+  Komma, Doppelpunkt, Klammern oder „bis“; für Zeitspannen der einfache Bindestrich. `tools/check-texts.py` prüft das.
+- Die Bereiche werden überall in derselben Reihenfolge genannt: Passwörter, 2FA, Dateien, Mail, Kalender.
 - Neue Funktionen bekommen Tests im Kern und einen Eintrag im Testplan.
 - **Die README ist die Hauptseite des Projekts und bleibt aktuell:** Jeder Pull Request, der etwas ändert, das Nutzer
   oder Mitlesende betrifft (Funktionen, Bereiche, Sicherheit, Server-Varianten, Plattformen, Download, Stand der

@@ -1083,7 +1083,7 @@ fn mail_with_imap_and_smtp() {
     .unwrap();
     let page = s.mail_list(id.clone(), "INBOX".into(), 0, 50).unwrap();
     assert_eq!(page.total, 2);
-    // Both are encrypted: the server only sees "..." – the newest is the reply.
+    // Both are encrypted: the server only sees "...", the newest is the reply.
     let reply = page.messages.iter().map(|x| x.uid).max().unwrap();
     let raw_reply = s.mail_get(id.clone(), "INBOX".into(), reply).unwrap();
     assert_eq!(raw_reply.subject, "Re: Grüße aus GhulMail");
@@ -1610,7 +1610,7 @@ fn drive_file_and_share_link_into_mail() {
     let s = d.suite();
     s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
 
-    // GhulDrive on the PHP module; no mail account exists yet – Drive and sharing work without it.
+    // GhulDrive on the PHP module; no mail account exists yet, Drive and sharing work without it.
     let srv = saved(
         s.save_server(
             ServerInput {
@@ -1859,7 +1859,7 @@ fn pgp_mail_between_two_users() {
     let contract: Vec<u8> = (0..50_000u32).map(|i| (i % 251) as u8).collect();
     bob.mail_send(mail(
         &alice_mail,
-        "Geheimes Angebot – 5 % Rabatt",
+        "Geheimes Angebot \u{2013} 5 % Rabatt",
         "Hallo Alice, siehe Anhang.",
         vec![OutgoingAttachment { name: "Angebot.pdf".into(), mime: "application/pdf".into(), data: contract.clone() }],
         &bob_id,
@@ -1868,7 +1868,7 @@ fn pgp_mail_between_two_users() {
     let (list_subject, m) = newest(&alice, &alice_id);
     assert_eq!(list_subject, "...", "the server only sees a placeholder subject");
     assert!(m.encrypted);
-    assert_eq!(m.subject, "Geheimes Angebot – 5 % Rabatt");
+    assert_eq!(m.subject, "Geheimes Angebot \u{2013} 5 % Rabatt");
     // Alice had no key of Bob before reading: it came with this very mail (Autocrypt), so the
     // signature counts as "not yet confirmed".
     assert_eq!(m.signature, MailSignatureStatus::UnknownKey);
@@ -2413,7 +2413,7 @@ fn import_keeps_what_it_cannot_convert_and_names_it() {
     assert_eq!((item.name.as_str(), item.reason, item.in_entry), ("Alt", SkipReason::Hotp, false));
 
     let keep = KeepSkipped {
-        folder: "Import – nicht umgewandelt".into(),
+        folder: "Import (nicht umgewandelt)".into(),
         reason_label: "Grund".into(),
         data_label: "Originaldaten".into(),
         reason_hotp: "Zählerbasierter Code (HOTP)".into(),

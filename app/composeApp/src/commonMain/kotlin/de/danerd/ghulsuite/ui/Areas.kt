@@ -53,10 +53,10 @@ fun moduleShown(state: AppState, kind: VaultKindUi): Boolean {
 
 /** Card at the top of an area that is not set up yet: icon, title, explanation. */
 @Composable
-fun AreaSetupCard(icon: ImageVector, colorIndex: Int, title: String, text: String) {
+fun AreaSetupCard(tab: Tab, title: String, text: String) {
     SectionCard {
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            IconTile(icon, paletteColor(colorIndex), size = 56.dp)
+            IconTile(tabIcon(tab), areaColor(tab), size = 56.dp)
             Text(title, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             Text(text, fontSize = 14.sp, color = g.muted)
         }
@@ -107,6 +107,7 @@ fun RemoveAreaDialog(state: AppState, kind: VaultKindUi, onDone: () -> Unit, onD
     val name = stringResource(areaInfo(kind).title)
     val removed = stringResource(Res.string.area_removed, name)
     AlertDialog(
+        danger = true,
         onDismissRequest = onDismiss,
         title = { Text(stringResource(Res.string.area_remove_title, name)) },
         text = {
@@ -140,7 +141,7 @@ fun AreasPage(state: AppState) {
             val names = state.vaults.filter { it.kind == a.kind }.joinToString(", ") { it.name + a.ext }
             ListRow(
                 stringResource(a.title), if (exists) names else stringResource(a.sub),
-                leading = { IconTile(a.icon, paletteColor(a.colorIndex)) },
+                leading = { IconTile(tabIcon(a.tab), areaColor(a.tab)) },
                 trailing = {
                     when {
                         !exists -> Tag(stringResource(Res.string.area_tag_not_set_up))
@@ -185,7 +186,7 @@ private fun AreaSheet(state: AppState, kind: VaultKindUi, onDismiss: () -> Unit)
         }
         GhulSheet(onDismiss, stringResource(Res.string.area_set_up_title, title)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                IconTile(a.icon, paletteColor(a.colorIndex), size = 56.dp)
+                IconTile(tabIcon(a.tab), areaColor(a.tab), size = 56.dp)
                 HintText(stringResource(Res.string.area_set_up_text, stringResource(a.sub), (if (kind in NAMED_AREAS) name else title.removePrefix("Ghul")) + a.ext), Modifier.weight(1f))
             }
             if (kind in NAMED_AREAS) {

@@ -1,4 +1,4 @@
-# GhulSuite – Testplan Windows (Version 0.5.0-dev)
+# GhulSuite: Testplan Windows (Version 0.5.0-dev)
 
 **Stand:** 13.11.2026 · erste Windows-Version (neu: Abschnitt 11, Assistent und Bereiche), mit neuem Design. Oberfläche und Kern sind dieselben wie unter Android; dieser Plan prüft,
 was unter Windows anders ist (Installation, portabler Betrieb, Security Key über Windows, Sperre, Zwischenablage,
@@ -35,7 +35,7 @@ Jeder Test hat eine Nummer, die mit **W** beginnt (z. B. **WE3**), damit sie sic
 | Nr. | Schritt | Erwartet |
 |---|---|---|
 | WE1 | „Neu einrichten“ → „Security Key (empfohlen)“ → Passwort → Tresore → „Einrichten“. | Statt eines PIN-Felds der Hinweis, dass Windows nach PIN und Berührung fragt. |
-| WE2 | Key einstecken, weiter. | Windows-Sicherheitsfenster: PIN eingeben, Key berühren – **zweimal** (Registrieren und Schlüssel ableiten). Danach Wiederherstellungscode. |
+| WE2 | Key einstecken, weiter. | Windows-Sicherheitsfenster: PIN eingeben, Key berühren, **zweimal** (Registrieren und Schlüssel ableiten). Danach Wiederherstellungscode. |
 | WE3 | „Notfallblatt drucken / als PDF speichern“ → Drucker „Microsoft Print to PDF“. | PDF mit Code, QR-Code und Anleitung. Danach das PDF vom PC löschen. |
 | WE4 | Code bestätigen (Gruppe 3). | Hauptansicht GhulPass. |
 | WE5 | Strg+L drücken. | Sofort gesperrt (Entsperren-Seite). |
@@ -81,7 +81,7 @@ Jeder Test hat eine Nummer, die mit **W** beginnt (z. B. **WE3**), damit sie sic
 | Nr. | Schritt | Erwartet |
 |---|---|---|
 | WX1 | Den Suite-Ordner vom Handy auf den PC bringen (Synchronisation über eigenen Server, Abschnitt 7, oder den Ordner kopieren) und unter Windows „Vorhandene Suite öffnen“. | Entsperren mit **demselben** Security Key klappt unter Windows (Windows-Fenster). |
-| WX2 | Unter Windows einen zweiten Key hinzufügen (Optionen → Keys & Schlüsseldateien → Security Key hinzufügen), synchronisieren, am Handy sperren und mit diesem Key entsperren. | Klappt – Keys sind zwischen Android und Windows austauschbar. |
+| WX2 | Unter Windows einen zweiten Key hinzufügen (Optionen → Keys & Schlüsseldateien → Security Key hinzufügen), synchronisieren, am Handy sperren und mit diesem Key entsperren. | Klappt, Keys sind zwischen Android und Windows austauschbar. |
 | WX3 | Auf beiden Geräten Einträge ändern, synchronisieren. | Beide zeigen alle Änderungen. |
 
 ## 7. Server, Sync, Drive und Teilen
@@ -102,7 +102,7 @@ Jeder Test hat eine Nummer, die mit **W** beginnt (z. B. **WE3**), damit sie sic
 | WM1 | Mailkonto hinzufügen (wie Android-Plan 14). | Signatur mit deinem Namen vorbelegt; IMAP nur SSL/TLS. Ein Schalter für Benachrichtigungen fehlt unter Windows (gewollt). |
 | WM2 | Mail mit Anhang schreiben (Windows-Dateidialog), senden. | Kommt an; „Wird signiert …“ bzw. „… verschlüsselt …“ unter den Empfängern. |
 | WM3 | Zwischen Windows und Android hin und her mailen (zwei Konten oder dasselbe Konto). | Ab der zweiten Mail verschlüsselt; beide Seiten zeigen Schloss und „Wirklich von …“. |
-| WM4 | Mit Thunderbird/Proton wie Android-Plan P5–P13. | Gleiches Ergebnis. |
+| WM4 | Mit Thunderbird/Proton wie Android-Plan P5 bis P13. | Gleiches Ergebnis. |
 | WM5 | Anhang einer verschlüsselten Mail speichern. | Inhalt identisch. |
 
 ## 9. Allgemein
@@ -115,19 +115,19 @@ Jeder Test hat eine Nummer, die mit **W** beginnt (z. B. **WE3**), damit sie sic
 | WO4 | Fenster schließen (X) und neu starten. | Beim Schließen wird gesperrt; nach dem Start Entsperren nötig. |
 | WO6 | Zwischen den Bereichen wechseln (z. B. Drive-Unterordner → Mail → Drive). | Bereiche bleiben, wie sie waren (kein Neuladen). |
 | WO7 | GhulMail offen lassen, Mail an das Konto schicken. | Erscheint nach spätestens etwa einer Minute von selbst. |
-| WO5 | Bei einem Absturz: `%APPDATA%\GhulSuite\absturz.txt` (portabel: `GhulSuite-Daten\absturz.txt`). | Datei mit Fehlerbericht – bitte mitschicken. |
+| WO5 | Bei einem Absturz: `%APPDATA%\GhulSuite\absturz.txt` (portabel: `GhulSuite-Daten\absturz.txt`). | Datei mit Fehlerbericht, bitte mitschicken. |
 
 ---
 
 ## 10. Neue Funktionen aus der Vorschau
 
-Wie im Android-Testplan Abschnitt 22 (N2–N13, N16–N24). Nicht unter Windows: Dokument scannen (N14) und Foto-Sicherung (N15).
+Wie im Android-Testplan Abschnitt 22 (N2 bis N13, N16 bis N24). Nicht unter Windows: Dokument scannen (N14) und Foto-Sicherung (N15).
 Zusätzlich:
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
 | W-N1 | Optionen → Sicherung → automatische Sicherung in einen Ordner, Uhr eine Woche vorstellen (oder Datum in der Einstellung zurücksetzen), entsperren. | Neue Datei `GhulSuite-Backup-JJJJ-MM-TT-HHMM.zip` im Ordner. |
-| W-N3 | App starten. | Fenster im Querformat (ca. 1280 × 820): Seitenleiste links mit GhulPass, GhulAuth, GhulDrive, GhulMail, Optionen und „Sperren (Strg+L)“ unten. |
+| W-N3 | App starten. | Fenster im Querformat (ca. 1280 × 820): Seitenleiste links mit GhulPass, GhulAuth, GhulDrive, GhulMail, GhulCal, Optionen und „Sperren (Strg+L)“ unten. |
 | W-N4 | GhulPass: Eintrag anklicken, dann einen anderen. | Eintrag öffnet sich rechts, Liste bleibt links stehen, der geöffnete Eintrag ist markiert; der zweite ersetzt den ersten. |
 | W-N5 | GhulMail: Mail anklicken; „Schreiben“. | Mail bzw. Entwurf rechts neben dem Posteingang. |
 | W-N6 | Optionen: Bereich anklicken. | Einstellungen rechts, Übersicht links. |

@@ -22,7 +22,7 @@ import de.danerd.ghulsuite.model.CalRepeatUi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** GhulCal on top of the Rust core – the same on Android and Windows; platforms add reminders. */
+/** GhulCal on top of the Rust core, the same on Android and Windows; platforms add reminders. */
 open class CoreCalBackend(protected val suite: () -> GhulSuite) : CalBackend {
     protected suspend fun <T> io(block: () -> T): T = withContext(Dispatchers.IO) { mapped(block) }
 
@@ -103,10 +103,10 @@ internal fun CalRepeatUi.toCore() = when (this) {
 
 internal fun CalEvent.toUi() = CalEventUi(
     id, calendarId, title, allDay, start, end, repeat.toUi(), repeatUntil, exceptions, reminders.map { it.toInt() },
-    location, notes, links.map { CalLinkUi(it.kind, it.label, it.target) }, birthYear.toInt(),
+    location, notes, links.map { CalLinkUi(it.kind, it.label, it.target) }, birthYear.toInt(), zone,
 )
 
 internal fun CalEventUi.toCore() = CalEvent(
     id, calendarId, title, allDay, start, end, repeat.toCore(), repeatUntil, exceptions, reminders.map { it.toUInt() },
-    location, notes, links.map { CalLink(it.kind, it.label, it.target) }, birthYear.toUInt(), 0L,
+    location, notes, links.map { CalLink(it.kind, it.label, it.target) }, birthYear.toUInt(), 0L, zone,
 )
