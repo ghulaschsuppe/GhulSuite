@@ -15,5 +15,14 @@ timeout 1400 maestro test "$(dirname "$0")/../app/maestro" --format junit --outp
 # With test servers next to the emulator (CI: GHUL_TEST_SERVERS=1, see tools/test-servers.sh):
 # GhulDrive and GhulMail against a real server. They continue where the flows above ended.
 if [ "${GHUL_TEST_SERVERS:-0}" = 1 ]; then
+  # The servers listen on 127.0.0.1 of this computer. "adb reverse" makes the same ports the
+  # device's own 127.0.0.1 (the emulator's 10.0.2.2 alias is not reliable on every version).
+  echo "Testserver auf diesem Rechner:"
+  ports="2223 10993 10587"
+  for p in $ports; do
+    if (exec 3<>"/dev/tcp/127.0.0.1/$p") 2>/dev/null; then echo "  Port $p lauscht"; else echo "::error::Testserver-Port $p lauscht nicht"; exit 1; fi
+    adb reverse "tcp:$p" "tcp:$p" > /dev/null
+  done
+  adb shell "for p in $ports; do if nc -z -w 3 127.0.0.1 \$p; then echo \"  Gerät erreicht Port \$p\"; else echo \"  Gerät erreicht Port \$p NICHT\"; fi; done" || true
   timeout 900 maestro test "$(dirname "$0")/../app/maestro/server" --format junit --output "$out/report-server.xml" --test-output-dir "$out"
 fi

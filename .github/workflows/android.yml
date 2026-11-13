@@ -508,7 +508,7 @@ jobs:
       - name: Testserver für die Abläufe mit echtem Server (SFTP mit Passwort, IMAP, SMTP)
         timeout-minutes: 12
         run: |
-          # The emulator reaches these servers of the runner as 10.0.2.2. If the package mirror
+          # tools/run-maestro.sh forwards these ports to the emulator (adb reverse). If the package mirror
           # is down, the flows with a real server are skipped with a warning.
           ok=0
           for i in 1 2 3; do

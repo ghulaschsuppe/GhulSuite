@@ -5,7 +5,7 @@
 #   IMAP: Dovecot on 127.0.0.1:10993 (TLS, self-signed) and 10143 (STARTTLS)
 #   SMTP: a small test server on 127.0.0.1:10587 (STARTTLS) that delivers into the Dovecot mailbox
 #   With GHUL_TEST_SFTP_PASSWORD=1 also SFTP with user name and password on 127.0.0.1:2223
-#   (for the emulator flows; the emulator reaches all of them as 10.0.2.2)
+#   (for the emulator flows; tools/run-maestro.sh forwards the ports to the device with adb reverse)
 # Prints the environment variables the tests read; use:  eval "$(tools/test-servers.sh)"
 # Needs: openssh-server, dovecot-imapd, python3, openssl (Debian/Ubuntu packages). Runs as root
 # (CI: sudo). Nothing here is used by the app itself.
