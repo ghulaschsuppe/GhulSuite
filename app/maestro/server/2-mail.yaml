@@ -25,13 +25,17 @@ name: GhulMail on a real server
     direction: DOWN
 - tapOn: "Show server settings"
 # The servers were filled in from the address (imap./smtp. + domain). Tap their values, not the
-# labels: "Server address" and "Port" exist twice.
+# labels ("Server address" and "Port" exist twice); close the keyboard and scroll to each one.
 - scrollUntilVisible:
     element: "imap\\.test\\.example"
     direction: DOWN
 - tapOn: "imap\\.test\\.example"
 - eraseText
 - inputText: ${GHUL_SERVER}
+- hideKeyboard
+- scrollUntilVisible:
+    element: "993"
+    direction: DOWN
 - tapOn: "993"
 - eraseText
 - inputText: "10993"
@@ -41,15 +45,25 @@ name: GhulMail on a real server
     element: "STARTTLS"
     direction: DOWN
 - tapOn: "STARTTLS"
+- scrollUntilVisible:
+    element: "smtp\\.test\\.example"
+    direction: DOWN
 - tapOn: "smtp\\.test\\.example"
 - eraseText
 - inputText: ${GHUL_SERVER}
+- hideKeyboard
+- scrollUntilVisible:
+    element: "587"
+    direction: DOWN
 - tapOn: "587"
 - eraseText
 - inputText: "10587"
 - hideKeyboard
-- assertVisible: "10993"
+# The values really are in their fields (the incoming one may be scrolled out of view by now).
 - assertVisible: "10587"
+- scrollUntilVisible:
+    element: "10993"
+    direction: UP
 - takeScreenshot: s2-mail-servers
 - scrollUntilVisible:
     element: "Check and save"
