@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package de.danerd.ghulsuite.ui
 
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -714,9 +717,12 @@ fun SelectionBar(count: String, actions: List<Triple<androidx.compose.ui.graphic
                     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp),
                 ) {
                     Box(Modifier.size(56.dp, 30.dp), contentAlignment = Alignment.Center) {
-                        androidx.compose.material3.Icon(icon, null, Modifier.size(22.dp), tint = t.fg)
+                        // The action that deletes is red, here as everywhere.
+                        val c = if (icon == androidx.compose.material.icons.Icons.Filled.Delete) t.danger else t.fg
+                        androidx.compose.material3.Icon(icon, null, Modifier.size(22.dp), tint = c)
                     }
-                    Text(label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = t.fg, maxLines = 1)
+                    Text(label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                        color = if (icon == androidx.compose.material.icons.Icons.Filled.Delete) t.danger else t.fg, maxLines = 1)
                 }
             }
         }

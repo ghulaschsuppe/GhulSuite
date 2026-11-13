@@ -279,9 +279,10 @@ private fun OpenVaultWizard(state: AppState, file: PickedFile, info: ContainerIn
         Hint(stringResource(Res.string.open_vault_new_code))
         StorageChooser(state)
         ErrorText(error)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onCancel) { Text(stringResource(Res.string.a_back)) }
+        ButtonRow {
+            OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text(stringResource(Res.string.a_back)) }
             Button(
+                modifier = Modifier.weight(1f),
                 onClick = {
                     state.run(onError = { error = it }, block = {
                         backend.createFromVault(
@@ -383,10 +384,10 @@ fun RecoveryCodeSteps(state: AppState, code: String, onDone: () -> Unit) {
             )
             ErrorText(error)
             val wrong = stringResource(Res.string.setup_confirm_wrong)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { confirming = false }) { Text(stringResource(Res.string.a_back)) }
+            ButtonRow {
+                OutlinedButton(onClick = { confirming = false }, modifier = Modifier.weight(1f)) { Text(stringResource(Res.string.a_back)) }
                 // The core checks the group and only then marks the code as confirmed.
-                Button(onClick = {
+                Button(modifier = Modifier.weight(1f), onClick = {
                     state.run(onError = { error = it }, block = { state.backend.confirmRecoveryCode(2, confirm) }) { ok ->
                         if (ok) {
                             state.codeUnconfirmed = false

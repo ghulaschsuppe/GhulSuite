@@ -1,6 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package de.danerd.ghulsuite.ui
 
+import androidx.compose.material.icons.automirrored.filled.ReplyAll
+import androidx.compose.material.icons.filled.MarkEmailUnread
+import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.outlined.Flag
+import androidx.compose.material.icons.filled.NewLabel
+import androidx.compose.material.icons.filled.LabelOff
+import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MarkEmailRead
@@ -80,6 +88,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -247,7 +256,6 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
             }
         })
         ErrorText(error)
-        val color = areaColor(Tab.MAIL)
         FilterChipRow(
             listOf(
                 "" to stringResource(Res.string.filter_all),
@@ -255,8 +263,8 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
                 "flagged" to stringResource(Res.string.mail_filter_flagged),
                 "attachments" to stringResource(Res.string.mail_filter_attachments),
             ),
-            filter, color, { filter = it },
-            icons = mapOf("flagged" to Icons.Filled.StarBorder, "attachments" to Icons.Filled.Attachment),
+            filter, { filter = it },
+            icons = mapOf("flagged" to Icons.Outlined.Flag, "attachments" to Icons.Filled.Attachment),
         )
         if (loading && messages.isEmpty()) Hint(stringResource(Res.string.mail_loading))
         val shownItems = messages.filter {
@@ -267,7 +275,7 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
                 else -> true
             }
         }
-        if (!loading && shownItems.isEmpty() && error == null) EmptyState(Icons.Filled.Email, stringResource(Res.string.mail_empty), color)
+        if (!loading && shownItems.isEmpty() && error == null) EmptyState(tabIcon(Tab.MAIL), stringResource(Res.string.mail_empty), areaColor(Tab.MAIL))
         // Conversations: the newest message of each subject stands for the others (count in brackets).
         val threads = shownItems.groupBy { it.accountId + "|" + it.m.threadKey.ifEmpty { it.m.uid.toString() } }
         val heads = shownItems.filter { item -> threads[item.accountId + "|" + item.m.threadKey.ifEmpty { item.m.uid.toString() }]?.first() === item }
@@ -332,7 +340,7 @@ private fun SwipeRow(onLeft: () -> Unit, onRight: () -> Unit, leftAction: Int, c
         backgroundContent = {
             val left = st.dismissDirection == androidx.compose.material3.SwipeToDismissBoxValue.EndToStart
             Row(
-                Modifier.fillMaxSize().background(if (left) (if (leftAction == 1) t.danger else areaColor(Tab.MAIL)) else areaColor(Tab.DRIVE)).padding(horizontal = 24.dp),
+                Modifier.fillMaxSize().background(if (left && leftAction == 1) t.danger else t.accent).padding(horizontal = 24.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = if (left) Arrangement.End else Arrangement.Start,
             ) {
@@ -402,7 +410,7 @@ private fun MailRow(m: MailSummaryUi, today: String, yesterday: String, divider:
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(m.subject.ifBlank { stringResource(Res.string.mail_no_subject) }, Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis,
                     color = g.fg, fontWeight = if (unread) FontWeight.Bold else FontWeight.Normal)
-                if (m.flagged) Icon(Icons.Filled.Star, null, Modifier.size(18.dp), tint = color)
+                if (m.flagged) Icon(Icons.Filled.Flag, null, Modifier.size(18.dp), tint = color)
             }
             if (m.encrypted) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -421,17 +429,6 @@ private fun MailRow(m: MailSummaryUi, today: String, yesterday: String, divider:
             }
         }
         if (unread) Box(Modifier.padding(top = 6.dp).size(8.dp).clip(CircleShape).background(color))
-    }
-}
-
-@Composable
-private fun MailTag(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, color: androidx.compose.ui.graphics.Color) {
-    Row(
-        Modifier.clip(RoundedCornerShape(8.dp)).background(color.copy(alpha = 0.12f)).padding(horizontal = 8.dp, vertical = 3.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Icon(icon, null, Modifier.size(13.dp), tint = color)
-        Text(text, style = MaterialTheme.typography.labelSmall, color = color, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -460,6 +457,25 @@ fun MailReadScreen(state: AppState, accountId: String, folder: String, uid: Long
     val t = g
     val accountName by produceState("", accountId) { value = runCatching { net.mailAccounts().firstOrNull { it.id == accountId }?.name }.getOrNull().orEmpty() }
     val archive = folders.firstOrNull { it.role == "archive" }
+    val inTrash = folders.any { it.role == "trash" && it.name == folder }
+    var deleting by remember { mutableStateOf(false) }
+    if (deleting) {
+        AlertDialog(
+            danger = true,
+            onDismissRequest = { deleting = false },
+            title = { Text(stringResource(Res.string.drive_delete_forever_title)) },
+            text = { Text(stringResource(Res.string.mail_delete_for_good_text)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    deleting = false
+                    state.run(onError = { error = it }, block = { net.mailDelete(accountId, folder, uid) }) {
+                        state.changed(); state.pop(); state.messageRes(Res.string.msg_deleted)
+                    }
+                }) { Text(stringResource(Res.string.drive_delete_forever)) }
+            },
+            dismissButton = { TextButton(onClick = { deleting = false }) { Text(stringResource(Res.string.a_cancel)) } },
+        )
+    }
     var more by remember { mutableStateOf(false) }
     var labelAdd by remember { mutableStateOf(false) }
     var original by remember { mutableStateOf<String?>(null) }
@@ -472,14 +488,19 @@ fun MailReadScreen(state: AppState, accountId: String, folder: String, uid: Long
     val saveFile = rememberSaveFile { ok -> if (ok) state.message(savedMsg2) }
     val driveDone = stringResource(Res.string.mail_to_drive_done)
     Column(Modifier.padding(padding)) {
-        GhulTopBar("", onLock = { state.backend.lock() }, onBack = { state.pop() }, actions = {
+        GhulTopBar("", onLock = { state.backend.lock() }, onBack = { state.pop() }, backIcon = backIcon(state), actions = {
             if (archive != null && archive.name != folder) {
                 BarIcon(Icons.Filled.Archive, stringResource(Res.string.mail_archive)) {
                     state.run(onError = { error = it }, block = { net.mailMove(accountId, folder, uid, archive.name) }) { state.changed(); state.pop() }
                 }
             }
-            BarIcon(Icons.Filled.Delete, stringResource(Res.string.a_delete)) {
-                state.run(onError = { error = it }, block = { net.mailDelete(accountId, folder, uid) }) { state.changed(); state.pop() }
+            BarIcon(Icons.Filled.Delete, stringResource(Res.string.a_delete), tint = g.danger) {
+                // Into the trash of the mailbox: no question, it can be moved back from there.
+                // Inside the trash it is deleted for good, so that asks first.
+                if (inTrash) deleting = true
+                else state.run(onError = { error = it }, block = { net.mailDelete(accountId, folder, uid) }) {
+                    state.changed(); state.pop(); state.messageRes(Res.string.msg_moved_to_trash)
+                }
             }
             BarIcon(Icons.Filled.MoreVert, stringResource(Res.string.entry_more)) { more = true }
         })
@@ -601,45 +622,47 @@ fun MailReadScreen(state: AppState, accountId: String, folder: String, uid: Long
         }
     }
     if (more) {
-        GhulSheet({ more = false }, stringResource(Res.string.mail_read_title)) {
+        GhulSheet({ more = false }, message?.subject?.ifBlank { null } ?: stringResource(Res.string.mail_no_subject)) {
             SheetList {
                 val rm = message
                 if (rm != null && (rm.to + rm.cc).size > 1) {
-                    SheetRow(stringResource(Res.string.a_reply_all)) {
+                    SheetRow(stringResource(Res.string.a_reply_all), leading = { IconTile(Icons.AutoMirrored.Filled.ReplyAll, paletteColor(1)) }) {
                         more = false
                         state.push(Screen.MailCompose(MailDraft(accountId, to = rm.replyTo.ifBlank { rm.fromAddress },
                             cc = (rm.to + rm.cc).joinToString(", "), subject = re(rm.subject), text = quote(rm), inReplyTo = rm.messageId)))
                     }
                 }
-                SheetRow(stringResource(Res.string.a_mark_unread), divider = rm != null && (rm.to + rm.cc).size > 1) {
+                SheetRow(stringResource(Res.string.a_mark_unread), leading = { IconTile(Icons.Filled.MarkEmailUnread, paletteColor(1)) }, divider = rm != null && (rm.to + rm.cc).size > 1) {
                     more = false
                     state.run(onError = { error = it }, block = { net.mailSetSeen(accountId, folder, uid, false) }) { state.changed(); state.pop() }
                 }
-                SheetRow(stringResource(if (flagged) Res.string.a_unflag else Res.string.a_flag), divider = true) {
+                SheetRow(stringResource(if (flagged) Res.string.a_unflag else Res.string.a_flag),
+                    leading = { IconTile(if (flagged) Icons.Filled.Flag else Icons.Outlined.Flag, paletteColor(3)) }, divider = true) {
                     more = false
                     state.run(onError = { error = it }, block = { net.mailSetFlagged(accountId, folder, uid, !flagged) }) { flagged = !flagged }
                 }
-                SheetRow(stringResource(Res.string.a_move), divider = true) { more = false; moveOpen = true }
-                SheetRow(stringResource(Res.string.mail_label_add), divider = true) { more = false; labelAdd = true }
+                SheetRow(stringResource(Res.string.a_move), leading = { IconTile(Icons.Filled.Folder, paletteColor(5)) }, divider = true) { more = false; moveOpen = true }
+                SheetRow(stringResource(Res.string.mail_label_add), leading = { IconTile(Icons.Filled.NewLabel, paletteColor(2)) }, divider = true) { more = false; labelAdd = true }
                 for (l in labels) {
-                    SheetRow(stringResource(Res.string.mail_label_remove, l), divider = true) {
+                    SheetRow(stringResource(Res.string.mail_label_remove, l), leading = { IconTile(Icons.Filled.LabelOff, paletteColor(2)) }, divider = true) {
                         more = false
                         state.run(onError = { error = it }, block = { net.mailSetLabel(accountId, folder, uid, l, false) }) { labels = labels - l; state.changed() }
                     }
                 }
                 val m = message
                 if (m != null && filePickersAvailable) {
-                    SheetRow(stringResource(Res.string.mail_save_eml), if (m.encrypted) stringResource(Res.string.mail_eml_encrypted_hint) else null, divider = true) {
+                    SheetRow(stringResource(Res.string.mail_save_eml), if (m.encrypted) stringResource(Res.string.mail_eml_encrypted_hint) else null,
+                        leading = { IconTile(Icons.Filled.Download, paletteColor(9)) }, divider = true) {
                         more = false
                         state.run(onError = { error = it }, block = { net.mailRaw(accountId, folder, uid, false) }) { saveFile(fileBase(m.subject) + ".eml", it) }
                     }
-                    SheetRow(stringResource(Res.string.mail_save_pdf), divider = true) {
+                    SheetRow(stringResource(Res.string.mail_save_pdf), leading = { IconTile(Icons.Filled.PictureAsPdf, paletteColor(7)) }, divider = true) {
                         more = false
                         saveFile(fileBase(m.subject) + ".pdf", textPdf(m.subject, mailAsText(m)))
                     }
                 }
                 if (m != null && state.backend.settings.moduleGhulDrive) {
-                    SheetRow(stringResource(Res.string.mail_to_drive), divider = true) {
+                    SheetRow(stringResource(Res.string.mail_to_drive), leading = { IconTile(tabIcon(Tab.DRIVE), areaColor(Tab.DRIVE)) }, divider = true) {
                         more = false
                         state.run(onError = { error = it }, block = {
                             net.driveSaveBytes("Mail", fileBase(m.subject) + ".pdf", textPdf(m.subject, mailAsText(m)))
@@ -647,7 +670,7 @@ fun MailReadScreen(state: AppState, accountId: String, folder: String, uid: Long
                         }) { state.message(driveDone); state.changed() }
                     }
                 }
-                SheetRow(stringResource(Res.string.mail_show_original), divider = true) {
+                SheetRow(stringResource(Res.string.mail_show_original), leading = { IconTile(Icons.Filled.Code, paletteColor(8)) }, divider = true) {
                     more = false
                     state.run(onError = { error = it }, block = { net.mailHeaders(accountId, folder, uid) }) { original = it }
                 }
@@ -805,6 +828,9 @@ fun MailComposeScreen(state: AppState, draft: MailDraft, padding: PaddingValues)
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 20.dp)) {
             BusyBanner(state)
             val current = accounts.firstOrNull { it.id == accountId }
+            val subjectFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+            val ccFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+            val bccFocus = remember { androidx.compose.ui.focus.FocusRequester() }
             ComposeLine(stringResource(Res.string.mail_from_short)) {
                 var open by remember { mutableStateOf(false) }
                 Box {
@@ -845,10 +871,10 @@ fun MailComposeScreen(state: AppState, draft: MailDraft, padding: PaddingValues)
                 }
             }
             if (showCc) {
-                ComposeLine(stringResource(Res.string.mail_cc_short)) { LineInput(cc, { cc = it }, "", Modifier.weight(1f), KeyboardType.Email) }
-                ComposeLine(stringResource(Res.string.mail_bcc_short)) { LineInput(bcc, { bcc = it }, "", Modifier.weight(1f), KeyboardType.Email) }
+                ComposeLine(stringResource(Res.string.mail_cc_short), ccFocus) { LineInput(cc, { cc = it }, "", Modifier.weight(1f).focusRequester(ccFocus), KeyboardType.Email) }
+                ComposeLine(stringResource(Res.string.mail_bcc_short), bccFocus) { LineInput(bcc, { bcc = it }, "", Modifier.weight(1f).focusRequester(bccFocus), KeyboardType.Email) }
             }
-            ComposeLine(stringResource(Res.string.mail_subject_short)) { LineInput(subject, { subject = it }, "", Modifier.weight(1f)) }
+            ComposeLine(stringResource(Res.string.mail_subject_short), subjectFocus) { LineInput(subject, { subject = it }, "", Modifier.weight(1f).focusRequester(subjectFocus)) }
             if (!pgp) {
                 Box(Modifier.padding(top = 12.dp)) {
                     SecurityLine(Icons.Filled.LockOpen, g.faint, stringResource(Res.string.mail_pgp_off_hint))
@@ -919,11 +945,15 @@ fun MailComposeScreen(state: AppState, draft: MailDraft, padding: PaddingValues)
 
 /** One line of the compose form (.compose .line): label on the left, line below. */
 @Composable
-private fun ComposeLine(label: String, content: @Composable RowScope.() -> Unit) {
+private fun ComposeLine(label: String, focus: androidx.compose.ui.focus.FocusRequester? = null, content: @Composable RowScope.() -> Unit) {
     val t = g
     Column {
+        // Tapping the label (or anywhere in the line) puts the cursor into the field.
+        val tap = if (focus == null) Modifier else Modifier.clickable(
+            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null,
+        ) { runCatching { focus.requestFocus() } }
         Row(
-            Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(vertical = 12.dp),
+            Modifier.fillMaxWidth().heightIn(min = 48.dp).then(tap).padding(vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(label, Modifier.width(60.dp), color = t.muted, maxLines = 1)
@@ -1121,12 +1151,12 @@ fun MailAccountsSection(state: AppState) {
     SectionCard(stringResource(Res.string.mail_accounts_all)) {
         if (accounts.isEmpty()) Hint(stringResource(Res.string.ctx_not_set_up))
         for (a in accounts) {
-            ListRow(a.name, a.email, leading = { Avatar(a.name.ifBlank { a.email }, size = 38.dp) },
-                trailing = { BarIcon(Icons.Filled.Delete, stringResource(Res.string.a_remove)) { removing = a } }) {
+            ListRow(a.name, a.email, flush = true, divider = a != accounts.first(), leading = { Avatar(a.name.ifBlank { a.email }) },
+                trailing = { BarIcon(Icons.Filled.Delete, stringResource(Res.string.a_remove), tint = g.danger) { removing = a } }) {
                 state.mailAccountSheet = MailSheet(a.id)
             }
         }
-        ListRow(stringResource(Res.string.mail_account_new), stringResource(Res.string.mail_add_sub),
+        ListRow(stringResource(Res.string.mail_account_new), stringResource(Res.string.mail_add_sub), flush = true,
             leading = { IconTile(Icons.Filled.Add, areaColor(Tab.MAIL)) }, divider = accounts.isNotEmpty()) { state.mailAccountSheet = MailSheet(null) }
     }
     if (accounts.isNotEmpty()) {
@@ -1201,30 +1231,6 @@ fun MailAccountsSection(state: AppState) {
 }
 
 
-
-/** Lock and seal: whether the mail was encrypted and who signed it, in plain words. */
-@Composable
-fun MailSecurityBadges(m: de.danerd.ghulsuite.model.MailMessageUi) {
-    val sig = m.signature
-    if (!m.encrypted && sig == de.danerd.ghulsuite.model.MailSignatureUi.NONE) {
-        Hint(stringResource(Res.string.mail_not_protected))
-        return
-    }
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        if (m.encrypted) {
-            SecurityLine(Icons.Filled.Lock, g.ok, stringResource(Res.string.mail_badge_encrypted))
-        }
-        when (sig) {
-            de.danerd.ghulsuite.model.MailSignatureUi.VALID ->
-                SecurityLine(Icons.Filled.Verified, g.ok, stringResource(Res.string.mail_badge_signed, m.signer))
-            de.danerd.ghulsuite.model.MailSignatureUi.UNKNOWN_KEY ->
-                SecurityLine(Icons.Filled.HelpOutline, g.faint, stringResource(Res.string.mail_badge_unknown))
-            de.danerd.ghulsuite.model.MailSignatureUi.INVALID ->
-                SecurityLine(Icons.Filled.GppBad, g.danger, stringResource(Res.string.mail_badge_invalid))
-            de.danerd.ghulsuite.model.MailSignatureUi.NONE -> {}
-        }
-    }
-}
 
 @Composable
 private fun SecurityLine(icon: androidx.compose.ui.graphics.vector.ImageVector, color: androidx.compose.ui.graphics.Color, text: String) {

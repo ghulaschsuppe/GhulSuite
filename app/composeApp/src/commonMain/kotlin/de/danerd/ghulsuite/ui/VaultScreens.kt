@@ -94,13 +94,9 @@ fun VaultPickerDialog(state: AppState, kind: VaultKindUi, onPick: (String) -> Un
             Column {
                 if (vaults.isEmpty()) Hint(stringResource(Res.string.vault_none_yet))
                 for (v in vaults) {
-                    ListItem(headlineContent = { Text(v.name) }, modifier = Modifier.clickable { onPick(v.id) })
+                    ListRow(v.name, leading = { Avatar(v.name) }, divider = v != vaults.first()) { onPick(v.id) }
                 }
-                ListItem(
-                    headlineContent = { Text(stringResource(Res.string.vault_new)) },
-                    leadingContent = { Icon(Icons.Filled.Add, null) },
-                    modifier = Modifier.clickable { create = true },
-                )
+                ListRow(stringResource(Res.string.vault_new), leading = { IconTile(Icons.Filled.Add, paletteColor(0)) }, divider = vaults.isNotEmpty()) { create = true }
             }
         },
         confirmButton = {},
@@ -190,39 +186,26 @@ fun VaultsSection(state: AppState) {
         Hint(stringResource(Res.string.set_vaults_hint))
         for (v in state.vaults) {
             Box {
-                ListItem(
-                    headlineContent = { Text(v.name) },
-                    supportingContent = {
-                        Column {
-                            Text(
-                                if (v.available) {
-                                    stringResource(
-                                        Res.string.vault_summary,
-                                        stringResource(kindLabel(v.kind)),
-                                        v.entries.toString(),
-                                        v.file,
-                                    )
-                                } else {
-                                    stringResource(Res.string.vault_missing, v.file)
-                                },
-                            )
-                            if (v.outdated) Text(stringResource(Res.string.vault_outdated), color = warnColor())
-                        }
+                // The same row as in every list: tile in the colour of the area, name, what it holds.
+                val tab = when (v.kind) {
+                    VaultKindUi.PASS -> Tab.PASS
+                    VaultKindUi.CAL -> Tab.CAL
+                    VaultKindUi.DRIVE -> Tab.DRIVE
+                    VaultKindUi.MAIL -> Tab.MAIL
+                    else -> Tab.AUTH
+                }
+                ListRow(
+                    v.name,
+                    when {
+                        !v.available -> stringResource(Res.string.vault_missing, v.file)
+                        v.outdated -> stringResource(Res.string.vault_outdated)
+                        else -> stringResource(Res.string.vault_summary, stringResource(kindLabel(v.kind)), v.entries.toString(), v.file)
                     },
-                    leadingContent = {
-                        Icon(
-                            when {
-                                !v.available -> Icons.Filled.Warning
-                                v.kind == VaultKindUi.PASS -> Icons.Filled.Password
-                                v.kind == VaultKindUi.CAL -> Icons.Filled.CalendarMonth
-                                else -> Icons.Filled.Key
-                            },
-                            null,
-                        )
+                    leading = {
+                        if (v.available && !v.outdated) IconTile(tabIcon(tab), areaColor(tab)) else IconTile(Icons.Filled.Warning, warnColor())
                     },
-                    trailingContent = {
-                        IconButton(onClick = { menuFor = v.id }) { Icon(Icons.Filled.MoreVert, stringResource(Res.string.a_more)) }
-                    },
+                    trailing = { BarIcon(Icons.Filled.MoreVert, stringResource(Res.string.a_more)) { menuFor = v.id } },
+                    divider = v != state.vaults.first(), flush = true,
                 )
                 DropdownMenu(expanded = menuFor == v.id, onDismissRequest = { menuFor = null }) {
                     DropdownMenuItem(text = { Text(stringResource(Res.string.a_rename)) }, onClick = { renaming = v; menuFor = null })
@@ -240,7 +223,7 @@ fun VaultsSection(state: AppState) {
                             state.run(block = { backend.acceptVaultState(v.id) }) { state.changed() }
                         })
                     }
-                    DropdownMenuItem(text = { Text(stringResource(Res.string.a_remove)) }, onClick = { removing = v; menuFor = null })
+                    DropdownMenuItem(text = { Text(stringResource(Res.string.a_delete), color = g.danger) }, onClick = { removing = v; menuFor = null })
                 }
             }
         }

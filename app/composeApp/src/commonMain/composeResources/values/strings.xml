@@ -1365,9 +1365,11 @@
     <string name="a_unfavorite">Remove from favourites</string>
     <string name="msg_deleted">Deleted</string>
     <string name="msg_moved_to_trash">Moved to trash</string>
+    <string name="mail_delete_for_good_text">This mail is in the trash already. Now it is deleted for good.</string>
     <string name="cal_delete_event_title">Delete event?</string>
     <string name="delete_for_good_text">“%1$s” will be deleted for good.</string>
     <string name="drive_delete_forever_title">Delete for good?</string>
     <string name="pass_attachment_delete_title">Delete attachment?</string>
     <string name="set_panic_hint_sidebar">Quick lock: the lock at the bottom of the sidebar, or Ctrl+L.</string>
+    <string name="wz_key_touch_desktop">Plug in the key and touch it when GhulSuite asks (after choosing the storage location).</string>
 </resources>

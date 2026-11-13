@@ -43,7 +43,7 @@ Jeder Test hat eine Nummer, die mit **W** beginnt (z. B. **WE3**), damit sie sic
 | WE7 | Entsperren, im Windows-Fenster „Abbrechen“. | Verständliche Meldung, App bleibt gesperrt und bedienbar. |
 | WE8 | Mit einem **anderen**, nicht registrierten Key entsperren. | Windows bzw. GhulSuite meldet, dass dieser Key nicht passt. |
 | WE9 | Variante Schlüsseldatei: neue Suite (portabel oder anderer Ordner) mit „Schlüsseldatei“ einrichten, speichern (Windows-Speichern-Dialog), sperren, mit Passwort und Datei entsperren. | Klappt. |
-| WE10 | „Kein Zugang mehr? Mit Wiederherstellungscode“. | Mit Code und neuem Passwort wieder offen. |
+| WE10 | „Mit Wiederherstellungscode öffnen“. | Mit Code und neuem Passwort wieder offen. |
 
 ## 3. Sperre und Privatsphäre
 

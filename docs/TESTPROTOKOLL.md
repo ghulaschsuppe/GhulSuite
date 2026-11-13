@@ -132,7 +132,7 @@ Zu F17 (Verhalten seit der Behebung): Die erste Mail eines neuen Kontakts mit Au
 | B17 | N | CI: Signaturschlüssel und FTP-Zugang stehen bei Pushes auf jeden Branch bereit | Nur `main` (GitHub-Environment mit Freigabe) | - |
 | B18 | N | Zusammenführen bei gleichzeitigem Löschen (Gerät A) und Bearbeiten (Gerät B) desselben Eintrags: Ergebnis hängt von Revision/Zeit ab | Regel festlegen („Bearbeiten gewinnt, Löschung wird gemeldet“) und testen | neu in `crazy_user.rs` |
 | B20 | - | ~~Serie aus einer anderen Zeitzone: nur der erste Termin wurde umgerechnet~~ | erledigt (F38): die Serie merkt sich ihre Zeitzone | `properties::series_from_other_time_zones_are_right_all_year` |
-| B21 | N | Emulator: GhulDrive und GhulMail werden nur bis zur Fehlermeldung „Server nicht erreichbar“ bedient; mit echtem Server prüft sie nur der Kern (Netzwerk-Tests) | Testserver neben dem Emulator starten (SFTP mit Passwort, IMAP/SMTP), Abläufe erweitern | Maestro |
+| B21 | N | Emulator: GhulDrive und GhulMail mit echtem Server | Testserver laufen in der CI neben dem Emulator (SFTP mit Passwort, IMAP, SMTP); Abläufe `app/maestro/server/`; danach prüft `tools/check-server-flows.sh`, dass auf den Servern nur Verschlüsseltes liegt | in Arbeit: siehe Stand der CI |
 | B22 | N | Windows: Erinnerungen werden nur geplant, solange die App läuft; ein Zeitzonen-Wechsel im laufenden Programm ist ungeprüft | prüfen, bei Bedarf neu planen | Desktop-Test |
 | B19 | N | Test-Hilfe: Nach Sperren/Entsperren muss Drive im Test neu verbunden werden (`NotConfigured`); in der App verbindet sie sich selbst | prüfen, ob die App nach Entsperren immer neu verbindet | Desktop-UI-Test |
 
@@ -141,8 +141,8 @@ Zu F17 (Verhalten seit der Behebung): Die erste Mail eines neuen Kontakts mit Au
 | Nr. | Punkt | Vorschlag |
 |---|---|---|
 | U1 | Mail löschen ohne Rückfrage/Rückgängig; Wischen „Archivieren“ löscht still ohne Archivordner | „Rückgängig“ in der Meldungsleiste; ohne Archivordner nichts tun und sagen |
-| U2 | Einzelnen Termin löschen ohne Rückgängig | „Rückgängig“ |
-| U3 | Drive „Endgültig löschen“ ohne Rückfrage; Löschtext sagt „vom Server gelöscht“, obwohl Papierkorb | Rückfrage; Text „kommt in den Papierkorb (n Tage)“ |
+| U2 | ~~Einzelnen Termin löschen ohne Rückfrage~~ | erledigt: Rückfrage vor dem Löschen. „Rückgängig“ gibt es weiterhin nirgends (siehe Abschnitt 9) |
+| U3 | ~~Drive „Endgültig löschen“ ohne Rückfrage; Löschtext sagt „vom Server gelöscht“, obwohl Papierkorb~~ | erledigt: Rückfrage mit rotem Knopf; der Papierkorb fragt nicht und meldet „In den Papierkorb verschoben“ |
 | U4 | Bereich/Tresor löschen: ein Tipp vernichtet alles auf allen Geräten | Anzahl nennen, Export anbieten, Namen abtippen |
 | U5 | ~80 englische Fehlermeldungen aus dem Kern im deutschen UI | Fehlercodes statt Text, je Fall deutsche Meldung mit nächstem Schritt |
 | U6 | „Sicherung wiederherstellen“ bei vorhandener Suite: technische Meldung, keine Ordnerwahl | Ordnerwahl anbieten |
@@ -160,14 +160,14 @@ Zu F17 (Verhalten seit der Behebung): Die erste Mail eines neuen Kontakts mit Au
 
 | Nr. | Punkt |
 |---|---|
-| K1 | Listen: GhulPass (⋮ + langes Drücken), GhulAuth (Wischen, ⋮ nur bei einer Auswahl), GhulMail (Wischen, keine Mehrfachauswahl), GhulDrive (Auswahlleiste unten statt oben), auf ein Muster bringen |
-| K2 | Löschschutz: Pass/Auth/Drive-Ordner fragen, Mail/Termin/„Endgültig“ nicht; Papierkorb nur bei Drive und Mail |
-| K3 | Assistent und Optionen bieten verschiedene Werte (Auto-Sperre ohne „2 Minuten“, Schnell-Entsperren ohne „1 Std./8 Std.“) |
-| K4 | Kalender-Blatt „Fertig“, sonst „Speichern“ |
-| K5 | `set_start_first` „1. Bereich“, aber „Fünfter Bereich“ |
-| K6 | Drive-Kontextblatt führt zu „Server, Sync & Teilen“, obwohl der Drive-Speicher unter Optionen → GhulDrive eingestellt wird |
-| K7 | Hinweise für Windows erscheinen auf Android und umgekehrt („Unter Windows …“, „Oder Handy schütteln“ auch bei ausgeschaltetem Schütteln) |
-| K8 | Hinweis „Favorit: Konto lange drücken“ falsch (langes Drücken wählt aus) |
+| K1 | Listen bedienen sich je Bereich anders: GhulPass (langes Drücken, Menü je Zeile), GhulAuth (Wischen, langes Drücken), GhulMail (Wischen, keine Mehrfachauswahl), GhulDrive (Auswahlleiste unten), GhulCal (keine Auswahl). Das Aussehen der Auswahl ist angeglichen, die Bedienung noch nicht |
+| K2 | ~~Löschschutz uneinheitlich~~ erledigt: Was endgültig gelöscht wird, fragt vorher (roter Knopf); was in einen Papierkorb wandert, fragt nicht und zeigt eine Meldung |
+| K3 | ~~Assistent und Optionen bieten verschiedene Werte~~ erledigt: eine gemeinsame Liste |
+| K4 | ~~Kalender-Blatt „Fertig“, sonst „Speichern“~~ erledigt |
+| K5 | ~~„1. Bereich“, aber „Fünfter Bereich“~~ erledigt |
+| K6 | ~~Drive-Kontextblatt führt zur falschen Seite~~ erledigt |
+| K7 | ~~Hinweise für Windows erscheinen auf Android und umgekehrt~~ erledigt |
+| K8 | ~~Falscher Hinweis „Favorit: Konto lange drücken“~~ erledigt (entfernt) |
 
 ## 5. Texte und Begriffe
 
@@ -272,3 +272,32 @@ Was nach beiden Runden **nicht** oder nur teilweise abgedeckt ist, ehrlich aufge
 | Lieferkette | niedrig bis mittel (cargo audit, gepinnte Actions) | L3, L4 |
 | Kalender (Rechnen, Import, Zeitzonen, Erinnerungen) | hoch (Kalendertage, Dateien anderer Programme, alle Zeitzonen, Alarm-Prüfung im Emulator) | B22, B6, B4 |
 | Oberfläche (Fehlbedienung) | mittel (Maestro für alle fünf Bereiche, Monkey nachts) | B21, Desktop-UI-Tests, Abschnitt 4 U/K |
+
+## 9. Gestaltung (Durchsicht aller Bildschirme)
+
+Der Oberflächen-Code wurde Bildschirm für Bildschirm gegen das eigene Design-System geprüft (rund 50 Abweichungen) und angeglichen. Geprüft an den gerenderten Bildschirmfotos (hell, dunkel, Handy, breites Fenster).
+
+Jetzt überall gleich:
+
+| Was | Regel |
+|---|---|
+| Bereiche | Fünf, immer in der Reihenfolge Passwörter, 2FA, Dateien, Mail, Kalender; Farbe und Symbol eines Bereichs kommen aus einer Stelle (auch im Assistenten und unter „Bereiche verwalten“, wo Mail und Kalender falsche Farben hatten). Logo-Streifen, Start- und Entsperrseite zeigen fünf. Das Android-Symbol ist der Schild des Logos (vorher ein Schloss auf Blau) |
+| Farben | Gewähltes immer in der Akzentfarbe; die Bereichsfarbe nur für Leiste, Kontextzeile, Hauptknopf, Heute-Markierung und Ungelesen-Zähler. Keine fest eingebauten hellen Farben mehr (dunkles Design: Zähler, Sicherheitszeilen der Mail) |
+| Kopfzeilen | Detailansichten ohne Titel, Bearbeiten als Stift oben. Editoren mit Kreuz links und der Hauptaktion oben rechts („Speichern“, „Senden“) |
+| Knöpfe | Hauptknopf rechts, Abbrechen links; Bestätigen von Löschen in Rot. Der Knopf unten rechts hat in allen fünf Bereichen ein Symbol und ein Wort |
+| Löschen | Endgültiges fragt vorher (Termin, Drive „Endgültig löschen“, Mail im Papierkorb, Anhang); der Papierkorb fragt nicht. Nach jedem Löschen eine kurze Meldung |
+| Menüs | Titel ist der Name der Sache, Zeilen mit Symbol, Löschen zuletzt und rot |
+| Abstände | Gleiche Ränder in allen Listen (das Suchfeld sitzt in jedem Reiter gleich hoch), eine Art Abschnittstitel, gleiche Symbolgrößen, Pfeile und Trennlinien |
+| Leere Zustände | Symbol und Satz in allen Bereichen, auch im Kalender |
+| Texte | Keine langen Striche. „Optionen“ statt „Einstellungen“, „Fertig“ nur noch für „fertig“ („Abschließen“ am Ende der Einrichtung), „Löschen“ für Gelöschtes und „Entfernen“ für Konten und Server, „Passwort und zweiter Faktor“ statt „Passwort und Key“, Suchfelder „… suchen“. Leerer Betreff heißt „(kein Betreff)“ |
+
+Bewusst noch offen (Bedienung, nicht Aussehen):
+
+| Nr. | Punkt |
+|---|---|
+| G1 | Mehrfachauswahl in GhulMail und GhulCal, eine Auswahlleiste für alle Listen (K1) |
+| G2 | „Rückgängig“ nach dem Löschen (U1) |
+| G3 | Auf breiten Fenstern haben nur GhulPass, GhulMail und Optionen zwei Spalten; in den anderen Bereichen springt die Ansicht beim Öffnen |
+| G4 | GhulAuth und GhulCal zeigen einen Fehler beim Laden der Liste nicht an |
+| G5 | Das Tresor-Menü in den Optionen ist noch ein Aufklappmenü statt eines Blatts; einige handgebaute Karten |
+| G6 | Nicht als Bild geprüft: Menüs und Rückfragen (im Bildtest nicht von außen zu öffnen), das Kreuz statt Pfeil in der zweiten Spalte, das neue App-Symbol auf einem Gerät |

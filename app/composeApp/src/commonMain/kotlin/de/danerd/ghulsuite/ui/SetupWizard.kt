@@ -92,8 +92,6 @@ private enum class DriveChoice { SYNC, OWN, LATER }
 
 private enum class QuickChoice { NONE, BIO, PIN }
 
-private val LOCK_CHOICES = listOf(0 to Res.string.lock_immediately, 30 to Res.string.lock_30s, 60 to Res.string.lock_1m, 300 to Res.string.lock_5m, 900 to Res.string.lock_15m)
-private val QUICK_CHOICES = listOf(4 to Res.string.quick_4h, 24 to Res.string.quick_24h, 72 to Res.string.quick_3d, 168 to Res.string.quick_7d, 0 to Res.string.quick_always)
 
 /** Area visibility on this device follows the areas chosen (a file exists = shown). */
 fun showModule(state: AppState, kind: VaultKindUi, on: Boolean) {
@@ -326,7 +324,8 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                         }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.a_check_key)) }
                         keyStatus?.let { Hint(stringResource(Res.string.setup_key_detected, it.product)) }
                     }
-                    HintText(stringResource(Res.string.wz_key_touch))
+                    // Holding the key to the phone (NFC) only where there is a phone.
+                    HintText(stringResource(if (state.backend.isDesktop) Res.string.wz_key_touch_desktop else Res.string.wz_key_touch))
                 }
                 if (filePickersAvailable) {
                     PickRow(!useKey, Icons.Filled.Description, 9, stringResource(Res.string.setup_use_keyfile), stringResource(Res.string.setup_use_keyfile_text), divider = true, onClick = { useKey = false }) {
@@ -436,7 +435,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
         6 -> {
             SectionCard(stringResource(Res.string.set_auto_lock)) {
                 Hint(stringResource(Res.string.wz_lock_sub))
-                FilterChipRow(LOCK_CHOICES.map { it.first.toString() to stringResource(it.second) }, settings.autoLockSeconds.toString(), g.accent,
+                FilterChipRow(AUTO_LOCK_OPTIONS.map { it.first.toString() to stringResource(it.second) }, settings.autoLockSeconds.toString(),
                     { settings.autoLockSeconds = it.toInt() })
             }
             ListCard {
@@ -465,7 +464,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
             if (quick != QuickChoice.NONE) {
                 SectionCard(stringResource(Res.string.wz_quick_valid)) {
                     Hint(stringResource(Res.string.wz_quick_valid_sub))
-                    FilterChipRow(QUICK_CHOICES.map { it.first.toString() to stringResource(it.second) }, settings.quickUnlockHours.toString(), g.accent,
+                    FilterChipRow(QUICK_HOURS_OPTIONS.map { it.first.toString() to stringResource(it.second) }, settings.quickUnlockHours.toString(),
                         { settings.quickUnlockHours = it.toInt() })
                     if (settings.quickUnlockHours == 0) Hint(stringResource(Res.string.wz_quick_always_note))
                 }

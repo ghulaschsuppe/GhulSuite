@@ -49,7 +49,7 @@ von Schritt 3, danach geht „Zurück“ nur noch bis Schritt 4.
 | E12 | „Zusätzlich Fingerabdruck“, Gültigkeit „Immer“. Weiter. | Hinweis: ohne Ablauf, aber nach Neustart, Panik-Sperre oder Passwortwechsel wieder Passwort und Key. Fingerabdruck-Abfrage; Schritt 8. |
 | E13 | Code ansehen, „Notfallblatt drucken“ → „Als PDF speichern“. | PDF mit Code, QR-Code und Anleitung. PDF danach vom Handy löschen. |
 | E14 | „Ich habe den Code notiert“ → Weiter → falsche Gruppe 3 eingeben. | Meldung „Das ist nicht die dritte Gruppe“. Es gibt kein „Später“. |
-| E15 | Richtige Gruppe 3 eingeben → Fertig. | Hauptansicht mit allen fünf Bereichen und Optionen; GhulMail zeigt „Noch kein Konto“ mit dem vollständigen Kontoformular. |
+| E15 | Richtige Gruppe 3 eingeben → Abschließen. | Hauptansicht mit allen fünf Bereichen und Optionen; GhulMail zeigt „Noch kein Konto“ mit dem vollständigen Kontoformular. |
 | E16 | Zweite Einrichtung: in Schritt 4 „Später“, in Schritt 5 GhulDrive einschalten. | „Wie Synchronisation“ ist ausgegraut („Erst Synchronisation einrichten (Schritt 4)“); „Eigener Server“ klappt das Formular direkt auf. |
 | E17 | GhulDrive „Eigener Server“ → PHP-Modul: FTPS-Daten des Webhostings, Ordner wählen (z. B. `public_html/ghulsuite`), „Modul hochladen“, vorgeschlagene Adresse „Adresse prüfen“. | Modul liegt im Ordner, Adresse wird aus Domain und Ordner abgeleitet und geprüft; „FTPS-Zugang behalten“ wählbar. Bei kleinem Upload-Limit ein Hinweis auf kleinere Teile. |
 | E18 | Einrichtung mit „Schlüsseldatei“ statt Key: Datei erstellen und z. B. auf den USB-Stick speichern. | Ohne gespeicherte Datei geht es nicht weiter. Danach wie E6 bis E15 (ohne Key-Berührung). |
@@ -67,7 +67,7 @@ von Schritt 3, danach geht „Zurück“ nur noch bis Schritt 4.
 | U4 | Ohne eingesteckten Key auf Entsperren tippen. | Meldung „Kein Key gefunden“ (o. ä.). |
 | U5 | Suite mit Schlüsseldatei: Passwort + Datei wählen. Dann eine falsche Datei. | Entsperrt / „Diese Schlüsseldatei gehört nicht zu dieser Suite“. |
 | U6 | Wenn Key **und** Schlüsseldatei eingetragen sind (siehe S2): Umschalter oben. | Man kann zwischen „Security Key“ und „Schlüsseldatei“ wählen, beides funktioniert. |
-| U7 | „Kein Zugang mehr? Mit Wiederherstellungscode“ → Code (Kleinbuchstaben, ohne Bindestriche) + neues Passwort. | Entsperrt; Hinweis, einen neuen Code zu erstellen. |
+| U7 | „Mit Wiederherstellungscode öffnen“ → Code (Kleinbuchstaben, ohne Bindestriche) + neues Passwort. | Entsperrt; Hinweis, einen neuen Code zu erstellen. |
 | U8 | Sperren, mit dem **alten** Passwort entsperren. Dann mit dem neuen. | Altes Passwort: falsch. Neues Passwort + Key: geht. Key und Code gelten weiter. |
 | U9 | Optionen → Entsperren: Fingerabdruck aktivieren. Sperren, App öffnen. | Fingerabdruck-Abfrage erscheint direkt. |
 | U10 | App-PIN (6 bis 12 Ziffern) aktivieren, sperren, mit PIN entsperren. 5× falsche PIN. | Danach ist der PIN-Zugang gelöscht, Passwort + Key nötig. |

@@ -374,10 +374,15 @@ fun ListRow(
     divider: Boolean = false,
     dividerStart: Dp? = null,
     selected: Boolean = false,
+    /** Inside a card that has its own padding (SectionCard): no side padding, so the row lines up with the text around it. */
+    flush: Boolean = false,
     onLongClick: (() -> Unit)? = null,
     onClick: (() -> Unit)? = null,
 ) {
-    if (divider) RowDivider(dividerStart ?: if (leading != null) 70.dp else 16.dp)
+    if (divider) {
+        if (flush) Box(Modifier.fillMaxWidth().padding(start = dividerStart ?: if (leading != null) 56.dp else 0.dp).height(1.dp).background(g.line))
+        else RowDivider(dividerStart ?: if (leading != null) 70.dp else 16.dp)
+    }
     Row(
         Modifier.fillMaxWidth().heightIn(min = 60.dp)
             .then(if (selected) Modifier.background(g.surface2) else Modifier)
@@ -388,7 +393,7 @@ fun ListRow(
                     else -> Modifier
                 },
             )
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = if (flush) 0.dp else 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
@@ -445,7 +450,6 @@ fun SectionLabel(text: String, modifier: Modifier = Modifier, trailing: @Composa
 fun FilterChipRow(
     options: List<Pair<String, String>>,
     selected: String,
-    color: Color,
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
     icons: Map<String, ImageVector> = emptyMap(),

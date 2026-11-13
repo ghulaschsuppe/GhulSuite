@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package de.danerd.ghulsuite.ui
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -364,9 +367,14 @@ fun ServersSection(state: AppState) {
     SectionCard(stringResource(Res.string.set_servers)) {
         Hint(stringResource(Res.string.set_servers_hint))
         for (s in servers) {
+            // Like the list of mail accounts: a row with a tile, and removing as a red icon.
+            ListRow(
+                s.name, kindLabel(s.kind), leading = { IconTile(Icons.Filled.Dns, paletteColor(1)) },
+                trailing = { BarIcon(Icons.Filled.Delete, stringResource(Res.string.a_remove), tint = g.danger) { removing = s } },
+                divider = s != servers.first(), flush = true,
+            )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(s.name + " · " + kindLabel(s.kind))
                     if (s.kind == ServerKindUi.PHP) {
                         // One address for storage and links; the module also counts downloads.
                         Hint(stringResource(Res.string.server_address, s.location.ifBlank { s.shareUrl }))
@@ -380,7 +388,6 @@ fun ServersSection(state: AppState) {
                         )
                     }
                 }
-                TextButton(onClick = { removing = s }) { Text(stringResource(Res.string.a_remove)) }
             }
             if (s.kind != ServerKindUi.PHP) {
                 TextButton(onClick = { state.push(Screen.ShareSetup(s.id)) }) {
@@ -531,13 +538,15 @@ fun FetchFromServer(state: AppState, onCancel: () -> Unit) {
             PublicKeyBox(state, deviceKey)
         }
         ErrorText(error)
-        Button(
-            onClick = { fetch(null) },
-            enabled = !state.busy && input.host.isNotBlank() && input.user.isNotBlank() &&
-                (!usePassword || !input.password.isNullOrEmpty()),
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text(stringResource(Res.string.a_fetch)) }
-        TextButton(onClick = onCancel) { Text(stringResource(Res.string.a_back)) }
+        ButtonRow {
+            OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text(stringResource(Res.string.a_back)) }
+            Button(
+                onClick = { fetch(null) },
+                enabled = !state.busy && input.host.isNotBlank() && input.user.isNotBlank() &&
+                    (!usePassword || !input.password.isNullOrEmpty()),
+                modifier = Modifier.weight(1f),
+            ) { Text(stringResource(Res.string.a_fetch)) }
+        }
     }
     fingerprint?.let { fp ->
         FingerprintDialog(

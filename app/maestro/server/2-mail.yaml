@@ -87,7 +87,10 @@ name: GhulMail on a real server
 - extendedWaitUntil:
     visible: "Message sent\\."
     timeout: 120000
-# It comes back into the inbox.
+# It comes back into the inbox (the header button "Refresh" asks the server at once).
+- tapOn:
+    text: "Refresh"
+    optional: true
 - extendedWaitUntil:
     visible: "Hallo vom Emulator"
     timeout: 120000

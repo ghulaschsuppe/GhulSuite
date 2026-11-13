@@ -148,7 +148,7 @@ fun PassListScreen(state: AppState, padding: PaddingValues) {
                     FilterChipRow(
                         listOf("" to stringResource(Res.string.filter_all), "fav" to stringResource(Res.string.chip_favorites)) +
                             types.map { it.type to stringResource(chipLabel(it.type) ?: it.label) },
-                        filter, color, { filter = it },
+                        filter, { filter = it },
                         icons = types.associate { it.type to typeIcon(it.type) } + ("fav" to Icons.Filled.StarBorder),
                     )
                 }
@@ -377,7 +377,7 @@ fun EntryDetailScreen(state: AppState, vaultId: String, id: String, padding: Pad
     Column(Modifier.padding(padding)) {
         // Detail screens: no title in the bar (the name stands below), edit as a pencil, then the menu.
         GhulTopBar(
-            "", onLock = { state.backend.lock() }, onBack = { state.pop() },
+            "", onLock = { state.backend.lock() }, onBack = { state.pop() }, backIcon = backIcon(state),
             actions = {
                 BarIcon(if (fav) Icons.Filled.Star else Icons.Filled.StarBorder, stringResource(Res.string.chip_favorites),
                     tint = if (fav) areaColor(Tab.MAIL) else Color.Unspecified) {
@@ -425,12 +425,12 @@ fun EntryDetailScreen(state: AppState, vaultId: String, id: String, padding: Pad
             SectionLabel(stringResource(Res.string.entry_more))
             ListCard {
                 val x = extras
-                ListRow(stringResource(Res.string.pass_history), leading = { IconTile(Icons.Filled.History, paletteColor(5), size = 34.dp) },
+                ListRow(stringResource(Res.string.pass_history), leading = { IconTile(Icons.Filled.History, paletteColor(5)) },
                     trailing = { MoreEnd((x?.history?.size ?: 0).toString()) }, onClick = { sheet = "history" })
-                ListRow(stringResource(Res.string.pass_attachments), leading = { IconTile(Icons.Filled.Attachment, paletteColor(1), size = 34.dp) },
-                    trailing = { MoreEnd((x?.attachments?.size ?: 0).toString()) }, divider = true, dividerStart = 64.dp, onClick = { sheet = "attachments" })
-                ListRow(stringResource(Res.string.pass_add_field), leading = { IconTile(Icons.Filled.Add, paletteColor(2), size = 34.dp) },
-                    trailing = { MoreEnd("") }, divider = true, dividerStart = 64.dp,
+                ListRow(stringResource(Res.string.pass_attachments), leading = { IconTile(Icons.Filled.Attachment, paletteColor(1)) },
+                    trailing = { MoreEnd((x?.attachments?.size ?: 0).toString()) }, divider = true, onClick = { sheet = "attachments" })
+                ListRow(stringResource(Res.string.pass_add_field), leading = { IconTile(Icons.Filled.Add, paletteColor(2)) },
+                    trailing = { MoreEnd("") }, divider = true,
                     onClick = { state.push(Screen.EntryEdit(vaultId, id, e.type)) })
             }
             val created = extras?.created ?: 0L
@@ -590,19 +590,34 @@ private fun AttachmentsSheet(state: AppState, vaultId: String, id: String, list:
     val savedMsg = stringResource(Res.string.msg_saved_file)
     val save = rememberSaveFile { ok -> if (ok) state.message(savedMsg) }
     val add = rememberOpenFile { f -> state.run(block = { state.backend.addAttachment(vaultId, id, f.name, f.bytes) }) { onChanged(); state.changed() } }
+    var removing by remember { mutableStateOf<String?>(null) }
+    removing?.let { name ->
+        AlertDialog(
+            danger = true,
+            onDismissRequest = { removing = null },
+            title = { Text(stringResource(Res.string.pass_attachment_delete_title)) },
+            text = { Text(stringResource(Res.string.delete_for_good_text, name)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    removing = null
+                    state.run(block = { state.backend.removeAttachment(vaultId, id, name) }) { onChanged(); state.changed(); state.messageRes(Res.string.msg_deleted) }
+                }) { Text(stringResource(Res.string.a_delete)) }
+            },
+            dismissButton = { TextButton(onClick = { removing = null }) { Text(stringResource(Res.string.a_cancel)) } },
+        )
+        return
+    }
     GhulSheet(onDismiss, stringResource(Res.string.pass_attachments)) {
         if (list.isEmpty()) HintText(stringResource(Res.string.pass_attachments_empty))
         if (list.isNotEmpty()) SheetList {
             list.forEachIndexed { i, a ->
                 val (ic, c) = fileKind(a.name)
-                SheetRow(a.name, formatSize(a.size), leading = { IconTile(ic, c, size = 34.dp) }, divider = i > 0, end = {
+                SheetRow(a.name, formatSize(a.size), leading = { IconTile(ic, c) }, divider = i > 0, end = {
                     Row {
                         if (filePickersAvailable) BarIcon(Icons.Filled.Download, stringResource(Res.string.a_save)) {
                             state.run(block = { state.backend.attachment(vaultId, id, a.name) }) { data -> save(a.name, data) }
                         }
-                        BarIcon(Icons.Filled.Delete, stringResource(Res.string.a_remove)) {
-                            state.run(block = { state.backend.removeAttachment(vaultId, id, a.name) }) { onChanged(); state.changed() }
-                        }
+                        BarIcon(Icons.Filled.Delete, stringResource(Res.string.a_delete), tint = g.danger) { removing = a.name }
                     }
                 })
             }
@@ -841,7 +856,7 @@ fun EntryEditScreen(state: AppState, vaultId: String, id: String?, type: String,
             for (name in customOrder) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(values[name].orEmpty(), { values[name] = it }, Modifier.weight(1f), label = { Text(name) })
-                    BarIcon(Icons.Filled.Delete, stringResource(Res.string.a_remove)) { customOrder.remove(name); values.remove(name) }
+                    BarIcon(Icons.Filled.Delete, stringResource(Res.string.a_remove), tint = g.danger) { customOrder.remove(name); values.remove(name) }
                 }
             }
             FilledTonalButton(onClick = { addField = true }, modifier = Modifier.fillMaxWidth()) {

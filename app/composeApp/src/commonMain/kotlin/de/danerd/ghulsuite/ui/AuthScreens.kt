@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package de.danerd.ghulsuite.ui
 
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material.icons.filled.QrCode2
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Check
@@ -217,16 +222,17 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
     menuFor?.let { c ->
         GhulSheet({ menuFor = null }, c.issuer.ifBlank { c.account }) {
             SheetList {
-                SheetRow(stringResource(Res.string.a_rename)) { renaming = c; menuFor = null; selected.clear() }
-                SheetRow(stringResource(if (c.favorite) Res.string.auth_unfavorite else Res.string.auth_favorite), divider = true) {
+                SheetRow(stringResource(Res.string.a_rename), leading = { IconTile(Icons.Filled.Edit, paletteColor(5)) }) { renaming = c; menuFor = null; selected.clear() }
+                SheetRow(stringResource(if (c.favorite) Res.string.a_unfavorite else Res.string.a_favorite),
+                    leading = { IconTile(if (c.favorite) Icons.Filled.Star else Icons.Filled.StarBorder, paletteColor(3)) }, divider = true) {
                     menuFor = null
                     state.run(block = { state.backend.setFavorite(c.vaultId, c.id, !c.favorite) }) { state.changed() }
                 }
-                SheetRow(stringResource(Res.string.auth_export_qr), divider = true) {
+                SheetRow(stringResource(Res.string.auth_export_qr), leading = { IconTile(Icons.Filled.QrCode2, paletteColor(1)) }, divider = true) {
                     menuFor = null
                     state.run(block = { state.backend.totpUri(c.vaultId, c.id) }) { exporting = c to it }
                 }
-                SheetRow(stringResource(Res.string.a_delete), color = g.danger, divider = true) { deleting = c; menuFor = null }
+                SheetRow(stringResource(Res.string.a_delete), leading = { IconTile(Icons.Filled.Delete, g.danger) }, color = g.danger, divider = true) { deleting = c; menuFor = null }
             }
         }
     }
@@ -308,7 +314,7 @@ private fun TotpCard(
     val sub = listOfNotNull(c.account.takeIf { c.issuer.isNotBlank() && it.isNotBlank() }, vaultName).joinToString(" · ")
     Box(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(if (selected) t.accentSoft else t.surface)
-            .then(if (selected) Modifier.border(2.dp, accent, RoundedCornerShape(20.dp)) else Modifier)
+            .then(if (selected) Modifier.border(2.dp, t.accent, RoundedCornerShape(20.dp)) else Modifier)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick).padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
         if (grid) {
@@ -415,7 +421,7 @@ fun AddTotpScreen(state: AppState, vaultId: String, padding: PaddingValues, star
                             val parsed = state.backend.parseOtpauth(uri)
                             state.backend.addTotp(vaultId, parsed)
                         }) { done() }
-                    }, enabled = !state.busy && uri.isNotBlank()) { Text(stringResource(Res.string.a_add)) }
+                    }, enabled = !state.busy && uri.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.a_add)) }
                 }
             } else {
                 SectionCard {
@@ -439,12 +445,12 @@ fun AddTotpScreen(state: AppState, vaultId: String, padding: PaddingValues, star
                         OutlinedTextField(period, { period = it.filter(Char::isDigit) }, label = { Text(stringResource(Res.string.f_period)) }, singleLine = true, modifier = Modifier.weight(1f))
                     }
                     ErrorText(error)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { state.pop() }) { Text(stringResource(Res.string.a_cancel)) }
+                    ButtonRow {
+                        OutlinedButton(onClick = { state.pop() }, modifier = Modifier.weight(1f)) { Text(stringResource(Res.string.a_cancel)) }
                         Button(onClick = {
                             val input = TotpInputUi(issuer, account, secret, algorithm, digits.toIntOrNull() ?: 0, period.toIntOrNull() ?: 0)
                             state.run(onError = { error = it }, block = { state.backend.addTotp(vaultId, input) }) { done() }
-                        }, enabled = !state.busy && secret.isNotBlank()) { Text(stringResource(Res.string.a_add)) }
+                        }, enabled = !state.busy && secret.isNotBlank(), modifier = Modifier.weight(1f)) { Text(stringResource(Res.string.a_add)) }
                     }
                 }
             }

@@ -62,6 +62,9 @@ class ScreenshotTest {
             VaultUi("p2", VaultKindUi.PASS, "Arbeit", "arbeit-p2.ghlpss", true, 1),
             VaultUi("t1", VaultKindUi.TOTP, "Persönlich", "personlich-t1.ghltotp", true, 2),
             VaultUi("c1", VaultKindUi.CAL, "Kalender", "kalender-c1.ghlcal", true, 21),
+            // The areas with one file each: without them their tabs would not exist.
+            VaultUi("d1", VaultKindUi.DRIVE, "Drive", "Drive.ghldrv", true, 0),
+            VaultUi("m1", VaultKindUi.MAIL, "Mail", "Mail.ghlmail", true, 0),
             VaultUi("f1", VaultKindUi.PASS, "Verein", "verein.ghlpss", true, 3, outdated = true),
         )
         override val settings = Settings(object : KeyValueStore {

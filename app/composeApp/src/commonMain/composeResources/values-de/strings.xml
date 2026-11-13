@@ -317,7 +317,7 @@
     <string name="sheet_created">Erstellt am %1$s</string>
     <string name="sheet_intro">Dieser Wiederherstellungscode öffnet deine GhulSuite vollständig, auch ohne Master-Passwort, Security Key und Schlüsseldatei. Bewahre dieses Blatt so sicher auf wie Bargeld, getrennt von Gerät und Key.</string>
     <string name="sheet_print_hint">Am besten direkt per USB oder WLAN-Direkt drucken. Netzwerk- und Cloud-Drucker speichern Druckaufträge teilweise. Ein gespeichertes PDF sollte nicht auf diesem Gerät bleiben.</string>
-    <string name="sheet_step1">GhulSuite öffnen und „Kein Zugang mehr? Mit Wiederherstellungscode“ wählen.</string>
+    <string name="sheet_step1">GhulSuite öffnen und „Mit Wiederherstellungscode öffnen“ wählen.</string>
     <string name="sheet_step2">Diesen Code eingeben (Bindestriche und Groß-/Kleinschreibung sind egal) und ein neues Master-Passwort festlegen.</string>
     <string name="sheet_step3">In den Optionen verlorene Keys entfernen und bei Bedarf neue registrieren.</string>
     <string name="sheet_step4">Einen neuen Wiederherstellungscode erstellen und dieses Blatt vernichten.</string>
@@ -365,7 +365,7 @@
     <string name="unlock_text">Stecke deinen Security Key ein und gib dein Master-Passwort und die PIN des Keys ein.</string>
     <string name="unlock_text_keyfile">Gib dein Master-Passwort ein und wähle deine Schlüsseldatei.</string>
     <string name="unlock_title">Entsperren</string>
-    <string name="unlock_use_code">Kein Zugang mehr? Mit Wiederherstellungscode</string>
+    <string name="unlock_use_code">Mit Wiederherstellungscode öffnen</string>
     <string name="unlock_use_full">Mit Passwort und Key oder Schlüsseldatei</string>
     <string name="unlock_use_password">Mit Passwort und Schlüsseldatei</string>
     <string name="unlock_use_quick">Mit Fingerabdruck oder App-PIN</string>
@@ -1365,9 +1365,11 @@
     <string name="a_unfavorite">Aus Favoriten entfernen</string>
     <string name="msg_deleted">Gelöscht</string>
     <string name="msg_moved_to_trash">In den Papierkorb verschoben</string>
+    <string name="mail_delete_for_good_text">Diese Mail liegt schon im Papierkorb. Jetzt wird sie endgültig gelöscht.</string>
     <string name="cal_delete_event_title">Termin löschen?</string>
     <string name="delete_for_good_text">„%1$s“ wird endgültig gelöscht.</string>
     <string name="drive_delete_forever_title">Endgültig löschen?</string>
     <string name="pass_attachment_delete_title">Anhang löschen?</string>
     <string name="set_panic_hint_sidebar">Schnell sperren: das Schloss unten in der Seitenleiste oder Strg+L.</string>
+    <string name="wz_key_touch_desktop">Key einstecken und berühren, wenn GhulSuite darum bittet (nach der Wahl des Speicherorts).</string>
 </resources>

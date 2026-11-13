@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package de.danerd.ghulsuite.ui
 
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -150,6 +153,7 @@ fun CalEventScreen(state: AppState, id: String, day: String, padding: PaddingVal
     var gone by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
     var moving by remember { mutableStateOf(false) }
     val names = rememberCalNames()
     val lang = stringResource(Res.string.cal_lang)
@@ -171,7 +175,7 @@ fun CalEventScreen(state: AppState, id: String, day: String, padding: PaddingVal
     val uri = androidx.compose.ui.platform.LocalUriHandler.current
     androidx.compose.foundation.layout.Column(Modifier.padding(padding)) {
         GhulTopBar(
-            "", onLock = { state.backend.lock() }, onBack = { state.pop() },
+            "", onLock = { state.backend.lock() }, onBack = { state.pop() }, backIcon = backIcon(state),
             actions = {
                 if (ev != null) {
                     BarIcon(Icons.Filled.Edit, stringResource(Res.string.a_edit)) { state.push(Screen.CalEdit(ev!!)) }
@@ -287,23 +291,37 @@ fun CalEventScreen(state: AppState, id: String, day: String, padding: PaddingVal
         val close = { menu = false }
         GhulSheet(close, e.title) {
             SheetList {
-                SheetRow(stringResource(Res.string.cal_duplicate)) {
+                SheetRow(stringResource(Res.string.cal_duplicate), leading = { IconTile(Icons.Filled.ContentCopy, paletteColor(1)) }) {
                     close()
                     state.run(block = { cal.saveEvent(e.copy(id = "", title = e.title + " " + getString(Res.string.cal_copy_suffix), exceptions = emptyList())) }) {
                         state.changed(); state.pop(); state.messageRes(Res.string.cal_copied)
                     }
                 }
-                SheetRow(stringResource(Res.string.cal_move), divider = true) { close(); moving = true }
-                SheetRow(stringResource(Res.string.cal_save_ics), divider = true) {
+                SheetRow(stringResource(Res.string.cal_move), leading = { IconTile(Icons.Filled.Folder, paletteColor(5)) }, divider = true) { close(); moving = true }
+                SheetRow(stringResource(Res.string.cal_save_ics), leading = { IconTile(Icons.Filled.Upload, paletteColor(9)) }, divider = true) {
                     close(); state.run(block = { cal.eventIcs(id) }) { shareIcs("${safeName(e.title)}.ics", it.encodeToByteArray()) }
                 }
-                SheetRow(stringResource(Res.string.a_delete), color = t.danger, divider = true) {
+                SheetRow(stringResource(Res.string.a_delete), leading = { IconTile(Icons.Filled.Delete, t.danger) }, color = t.danger, divider = true) {
                     close()
-                    if (e.repeat != CalRepeatUi.NONE) deleting = true
-                    else state.run(block = { cal.deleteEvent(id, day, CalDeleteModeUi.ALL) }) { state.changed(); state.pop(); state.messageRes(Res.string.cal_deleted_msg) }
+                    if (e.repeat != CalRepeatUi.NONE) deleting = true else confirmDelete = true
                 }
             }
         }
+    }
+    if (confirmDelete) {
+        AlertDialog(
+            danger = true,
+            onDismissRequest = { confirmDelete = false },
+            title = { Text(stringResource(Res.string.cal_delete_event_title)) },
+            text = { Text(stringResource(Res.string.delete_for_good_text, e.title)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDelete = false
+                    state.run(block = { cal.deleteEvent(id, day, CalDeleteModeUi.ALL) }) { state.changed(); state.pop(); state.messageRes(Res.string.cal_deleted_msg) }
+                }) { Text(stringResource(Res.string.a_delete)) }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(stringResource(Res.string.a_cancel)) } },
+        )
     }
     if (deleting) {
         val close = { deleting = false }
@@ -510,7 +528,7 @@ fun CalEditScreen(state: AppState, start: CalEventUi, padding: PaddingValues) {
                         d.reminders.sortedDescending().forEach { m ->
                             SmallChip(reminderText(m, d.allDay), Icons.Outlined.Notifications) { d = d.copy(reminders = d.reminders - m) }
                         }
-                        val cc = areaColor(Tab.CAL)
+                        val cc = g.accent
                         Row(
                             Modifier.height(30.dp).clip(CircleShape).background(cc.copy(alpha = 0.1f)).clickable { remSheet = true }.padding(horizontal = 12.dp),
                             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -935,7 +953,7 @@ private fun CalendarEditSheet(state: AppState, start: CalCalendarUi, close: () -
         Button(onClick = {
             val v = c.copy(name = c.name.ifBlank { defaultName })
             state.run(block = { cal.saveCalendar(v) }) { state.changed(); close() }
-        }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.a_done)) }
+        }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.a_save)) }
     }
     if (confirm) {
         AlertDialog(

@@ -324,14 +324,21 @@ private fun TabTopBar(state: AppState) {
     )
 }
 
+/**
+ * The icon that leaves a sub-page: a cross for the page that fills the second pane of a wide
+ * window (closing it shows the list alone again), else the arrow back. The same for every screen,
+ * also for those that draw their own header.
+ */
+fun backIcon(state: AppState): androidx.compose.ui.graphics.vector.ImageVector =
+    if (state.wide && state.stack.size == 1) Icons.Filled.Close else Icons.AutoMirrored.Filled.ArrowBack
+
 @Composable
 private fun ScreenTopBar(state: AppState, top: Screen) {
-    val root = state.wide && state.stack.size == 1
     GhulTopBar(
         title = screenTitle(top, state.tab),
         onLock = { state.backend.lock() },
         onBack = if (top !is Screen.RecoveryCode) ({ state.pop() }) else null,
-        backIcon = if (root) Icons.Filled.Close else Icons.AutoMirrored.Filled.ArrowBack,
+        backIcon = backIcon(state),
     )
 }
 

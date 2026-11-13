@@ -351,7 +351,7 @@ private fun MonthPickSheet(state: AppState, close: () -> Unit) {
                     val on = state.calSel.y == year && state.calSel.m == m
                     val now = today().y == year && today().m == m
                     Box(
-                        Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(14.dp)).background(if (on) cal else g.surface2)
+                        Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(14.dp)).background(if (on) g.accent else g.surface2)
                             .clickable {
                                 state.calSel = if (now) today() else Day(year, m, 1)
                                 if (state.calView == CalView.LIST) state.calView = CalView.MONTH
@@ -359,7 +359,7 @@ private fun MonthPickSheet(state: AppState, close: () -> Unit) {
                             },
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(names.months[m - 1].take(3), fontWeight = FontWeight.SemiBold, color = if (on) Color.White else if (now) cal else g.fg)
+                        Text(names.months[m - 1].take(3), fontWeight = FontWeight.SemiBold, color = if (on) g.onAccent else if (now) cal else g.fg)
                     }
                 }
             }
@@ -718,9 +718,9 @@ private fun CalList(state: AppState, occ: List<CalOccurrenceUi>, query: String, 
     SearchField(query, onQuery, Modifier.padding(bottom = 12.dp).focusRequester(focus), placeholder = stringResource(Res.string.cal_search))
     val groups = list.groupBy { if (it.startDay < from) from else it.startDay }.toSortedMap()
     if (groups.isEmpty()) {
-        Text(
-            if (q.isEmpty()) stringResource(Res.string.cal_list_empty) else stringResource(Res.string.cal_search_empty, query),
-            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 40.dp), textAlign = TextAlign.Center, color = g.muted,
+        EmptyState(
+            tabIcon(Tab.CAL), if (q.isEmpty()) stringResource(Res.string.cal_list_empty) else stringResource(Res.string.cal_search_empty, query),
+            areaColor(Tab.CAL),
         )
     }
     for ((d, items) in groups) {

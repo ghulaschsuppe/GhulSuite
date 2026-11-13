@@ -70,6 +70,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -612,10 +613,11 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 private fun DriveRow(item: DriveItemUi, selecting: Boolean, selected: Boolean, divider: Boolean, onSelect: () -> Unit, onOpen: () -> Unit) {
     val t = g
-    val color = areaColor(Tab.DRIVE)
+    // What is chosen is shown in the accent colour, in every area.
+    val color = t.accent
     if (divider) RowDivider()
     Row(
-        Modifier.fillMaxWidth().background(if (selected) color.copy(alpha = 0.12f) else androidx.compose.ui.graphics.Color.Transparent)
+        Modifier.fillMaxWidth().background(if (selected) t.accentSoft else androidx.compose.ui.graphics.Color.Transparent)
             .combinedClickable(onClick = onOpen, onLongClick = onSelect)
             .heightIn(min = 60.dp).padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -623,7 +625,7 @@ private fun DriveRow(item: DriveItemUi, selecting: Boolean, selected: Boolean, d
     ) {
         if (selected) {
             Box(Modifier.size(42.dp).clip(RoundedCornerShape(13.dp)).background(color), contentAlignment = Alignment.Center) {
-                Icon(Icons.Filled.Check, null, Modifier.size(22.dp), tint = androidx.compose.ui.graphics.Color.White)
+                Icon(Icons.Filled.Check, null, Modifier.size(22.dp), tint = t.onAccent)
             }
         } else {
             val (ic, c) = if (item.isDir) Icons.Filled.Folder to paletteColor(1) else fileKind(item.name)
@@ -643,7 +645,7 @@ private fun DriveRow(item: DriveItemUi, selecting: Boolean, selected: Boolean, d
 private fun DriveTile(item: DriveItemUi, modifier: Modifier, onClick: () -> Unit) {
     val t = g
     val (ic, c) = if (item.isDir) Icons.Filled.Folder to paletteColor(1) else fileKind(item.name)
-    Column(modifier.clip(RoundedCornerShape(18.dp)).background(t.surface).clickable(onClick = onClick).padding(10.dp)) {
+    Column(modifier.clip(RoundedCornerShape(20.dp)).background(t.surface).clickable(onClick = onClick).padding(10.dp)) {
         Box(Modifier.fillMaxWidth().height(92.dp).clip(RoundedCornerShape(12.dp)).background(c.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
             Icon(ic, null, Modifier.size(34.dp), tint = c)
         }
@@ -667,34 +669,31 @@ fun fileKind(name: String): Pair<androidx.compose.ui.graphics.vector.ImageVector
 private fun QuickTile(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, modifier: Modifier = Modifier, enabled: Boolean = true, on: Boolean = false, onClick: () -> Unit) {
     val t = g
     Column(
-        modifier.clip(RoundedCornerShape(18.dp)).background(if (on) areaColor(Tab.DRIVE).copy(alpha = 0.14f) else t.surface).clickable(enabled = enabled, onClick = onClick)
+        modifier.clip(RoundedCornerShape(20.dp)).background(if (on) t.accentSoft else t.surface).clickable(enabled = enabled, onClick = onClick)
             .alpha(if (enabled) 1f else 0.5f).padding(vertical = 12.dp, horizontal = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Icon(icon, null, Modifier.size(22.dp), tint = t.muted)
-        Text(label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = t.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
-}
-
-@Composable
-private fun ActionTile(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Surface(onClick = onClick, shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surface, modifier = modifier) {
-        Column(Modifier.padding(vertical = 14.dp, horizontal = 6.dp), horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Icon(icon, null, tint = MaterialTheme.colorScheme.onSurface)
-            Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
+        Icon(icon, null, Modifier.size(22.dp), tint = if (on) t.accent else t.muted)
+        Text(label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = if (on) t.accent else t.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
 @Composable
 fun NameDialog(title: String, initial: String, onDismiss: () -> Unit, onDone: (String) -> Unit) {
+    // Something new is created, something that exists is saved under its new name.
+    val confirm = stringResource(if (initial.isEmpty()) Res.string.a_create else Res.string.a_save)
     var name by remember { mutableStateOf(initial) }
+    // The cursor is in the field right away: there is nothing else to do in this dialog.
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(Unit) { kotlinx.coroutines.delay(250); runCatching { focus.requestFocus() } }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
-        text = { OutlinedTextField(name, { name = it }, singleLine = true, modifier = Modifier.fillMaxWidth()) },
-        confirmButton = { TextButton(onClick = { onDone(name.trim()) }, enabled = name.isNotBlank()) { Text(stringResource(Res.string.a_save)) } },
+        text = {
+            OutlinedTextField(name, { name = it }, singleLine = true, label = { Text(stringResource(Res.string.f_name)) },
+                modifier = Modifier.fillMaxWidth().focusRequester(focus))
+        },
+        confirmButton = { TextButton(onClick = { onDone(name.trim()) }, enabled = name.isNotBlank()) { Text(confirm) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(Res.string.a_cancel)) } },
     )
 }
@@ -734,19 +733,3 @@ private fun MoveDialog(state: AppState, item: DriveItemUi, onDismiss: () -> Unit
 
 private fun ext(name: String) = name.substringAfterLast('.', "").lowercase()
 
-private fun fileIcon(name: String) = when (ext(name)) {
-    "jpg", "jpeg", "png", "gif", "webp", "heic" -> Icons.Filled.Image
-    "mp4", "mov", "mkv", "webm" -> Icons.Filled.Movie
-    "mp3", "m4a", "ogg", "flac", "wav" -> Icons.Filled.MusicNote
-    "pdf" -> Icons.Filled.PictureAsPdf
-    "zip", "7z", "rar", "tar", "gz" -> Icons.Filled.FolderZip
-    else -> Icons.Filled.Description
-}
-
-@Composable
-private fun fileColor(name: String) = when (ext(name)) {
-    "jpg", "jpeg", "png", "gif", "webp", "heic" -> avatarColor("c")
-    "mp4", "mov", "mkv", "webm" -> avatarColor("d")
-    "pdf" -> MaterialTheme.colorScheme.error
-    else -> MaterialTheme.colorScheme.onSurfaceVariant
-}

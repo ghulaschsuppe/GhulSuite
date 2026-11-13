@@ -63,6 +63,11 @@ name: GhulDrive on a real server
     visible: "Add to GhulDrive"
     timeout: 10000
 - tapOn: "New folder"
+# The dialog is called "New folder" too; its field is labelled "Name".
+- extendedWaitUntil:
+    visible: "Name"
+    timeout: 10000
+- tapOn: "Name"
 - inputText: "Urlaub-Maestro"
 - hideKeyboard
 - tapOn: "Create"
