@@ -105,6 +105,18 @@ jobs:
         run: |
           mkdir -p maestro-out
           tools/ci-emulator.sh dist/ghulsuite-dev.apk maestro-out
+      - name: Logs der Testserver zu den Ergebnissen legen
+        if: always()
+        run: |
+          # Only the logs of the throwaway test servers (no keys); they show why a login failed.
+          if [ -f servers.env ]; then
+            . ./servers.env
+            mkdir -p maestro-out/servers
+            for f in dovecot/dovecot.log smtp.log; do
+              sudo cp "$GHUL_TEST_DIR/$f" maestro-out/servers/ 2>/dev/null || true
+            done
+            sudo chown -R "$(id -u)" maestro-out/servers
+          fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:

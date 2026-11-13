@@ -20,6 +20,9 @@ name: GhulMail on a real server
 - tapOn: "Password"
 - inputText: "test-pw-123"
 - hideKeyboard
+# Show the password once to see that it arrived completely.
+- tapOn: "Show"
+- assertVisible: "test-pw-123"
 - scrollUntilVisible:
     element: "Show server settings"
     direction: DOWN
