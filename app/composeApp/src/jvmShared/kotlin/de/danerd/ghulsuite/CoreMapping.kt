@@ -53,9 +53,17 @@ internal fun VaultSourceUi.toCore(): VaultSource = when (this) {
     is VaultSourceUi.Bytes -> VaultSource.Bytes(data)
 }
 
-internal fun VaultKindUi.toCore() = if (this == VaultKindUi.PASS) VaultKind.PASS else VaultKind.TOTP
+internal fun VaultKindUi.toCore() = when (this) {
+    VaultKindUi.PASS -> VaultKind.PASS
+    VaultKindUi.TOTP -> VaultKind.TOTP
+    VaultKindUi.CAL -> VaultKind.CAL
+}
 
-internal fun VaultKind.toUi() = if (this == VaultKind.PASS) VaultKindUi.PASS else VaultKindUi.TOTP
+internal fun VaultKind.toUi() = when (this) {
+    VaultKind.PASS -> VaultKindUi.PASS
+    VaultKind.TOTP -> VaultKindUi.TOTP
+    VaultKind.CAL -> VaultKindUi.CAL
+}
 
 internal fun ProtectionInfo.toUi() = ProtectionUi(securityKeys.toInt(), keyfiles.toInt(), recoveryCodes.toInt())
 

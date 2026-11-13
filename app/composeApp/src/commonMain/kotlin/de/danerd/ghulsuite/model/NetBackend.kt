@@ -38,6 +38,8 @@ interface NetBackend {
     suspend fun shareDelete(id: String)
     /** Decrypts Drive files on the device and offers them to other apps (Android share sheet). */
     suspend fun shareDriveToApps(files: List<DriveItemUi>)
+    /** Hands a file to other apps (share sheet); false if the platform has none (then save it). */
+    suspend fun shareBytesToApps(name: String, mime: String, data: ByteArray): Boolean = false
     /** Decrypted content of Drive files as mail attachments (folders are skipped). */
     suspend fun driveFilesForMail(files: List<DriveItemUi>): List<OutgoingAttachmentUi>
 

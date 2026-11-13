@@ -193,6 +193,7 @@ fun areaColor(tab: Tab): Color {
         Tab.AUTH -> if (dark) Color(0xFF4FD8B6) else Color(0xFF0E9F80)
         Tab.DRIVE -> if (dark) Color(0xFF6FA8FF) else Color(0xFF2F74E8)
         Tab.MAIL -> if (dark) Color(0xFFFFA25C) else Color(0xFFE0700F)
+        Tab.CAL -> if (dark) Color(0xFFFF7AA8) else Color(0xFFD6336C)
         Tab.SETTINGS -> g.accent
     }
 }

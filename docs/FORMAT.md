@@ -1,6 +1,6 @@
 # GhulSuite – Dateiformat, Version 1
 
-**Stand:** 11.11.2026 (zweiter Faktor immer Pflicht: Security Key oder Schlüsseldatei; derselbe Wiederherstellungscode in jeder Datei; der Ordner ist die Suite) · gilt für `.ghlpss`, `.ghltotp`, `.ghlsuite` und `.ghlkey`
+**Stand:** 11.11.2026 (zweiter Faktor immer Pflicht: Security Key oder Schlüsseldatei; derselbe Wiederherstellungscode in jeder Datei; der Ordner ist die Suite) · gilt für `.ghlpss`, `.ghltotp`, `.ghlcal`, `.ghlsuite` und `.ghlkey`
 **Referenzimplementierung:** `core/ghul-core/src/vault/`
 **Testvektoren:** [`docs/testvectors/container-v1.json`](testvectors/container-v1.json), unabhängig geprüft mit
 [`tools/verify_testvectors.py`](../tools/verify_testvectors.py) (Python, andere Krypto-Bibliotheken)
@@ -16,6 +16,7 @@ Alle Zahlen sind **Little-Endian**, sofern nicht anders angegeben. `‖` bedeute
 |---|---|---|
 | `.ghlpss` | `GHULPASS` | Passwort-Tresor (`pass`) |
 | `.ghltotp` | `GHULTOTP` | TOTP/HOTP-Tresor (`totp`) |
+| `.ghlcal` | `GHULCLDR` | Kalender-Tresor (`cal`): Einträge `calendar` (name, color, reminder, order) und `event` (calendar, title, start, end, all_day, repeat, until, exceptions, reminders, location, notes, links, birth_year); Zeiten als Ortszeit `YYYY-MM-DDTHH:MM` |
 | `.ghlsuite` | `GHULSUIT` | Suite-Container: Speicher, Mail-Konten, Einstellungen (`suite`) |
 | `.ghlkey` | `GHULKEY\0` | Schlüsseldatei (Abschnitt 7) |
 
@@ -377,7 +378,7 @@ Zugangsdaten stehen nur in den verschlüsselten Einstellungen des Suite-Containe
 **Ablage auf dem Server** (`<base>` = gewählter Ordner):
 
 ```text
-<base>/suite/                 Tresore (.ghlpss, .ghltotp) und suite.ghlsuite – unverändert im Container-Format
+<base>/suite/                 Tresore (.ghlpss, .ghltotp, .ghlcal) und suite.ghlsuite – unverändert im Container-Format
 <base>/drive/index.ghldrv     "GHULDRV1" ‖ nonce[24] ‖ XChaCha20-Poly1305(IK, pad(CBOR-Index), aad = "")
 <base>/drive/blocks/<ab>/<id> "GHULBLK1" ‖ nonce[24] ‖ XChaCha20-Poly1305(BK, Block, aad = "GHULBLK1" ‖ id)
 ```

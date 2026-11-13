@@ -391,6 +391,24 @@ oder Proton.
 
 ---
 
+## GhulCal (Kalender)
+
+| Nr. | Schritt | Erwartet |
+|---|---|---|
+| K1 | GhulCal zum ersten Mal öffnen. | Ein Kalender-Tresor „Kalender“ (`.ghlcal`) mit Privat, Arbeit, Familie, Sport, Geburtstage entsteht; Monatsansicht mit KW, heute rot eingekreist, Feiertage (NRW). |
+| K2 | „+ Termin“ → „Zahnarzt Fr 10 Uhr #privat“ eintippen. | Vorschau zeigt Titel, Freitag, 10:00–11:00, Kalender Privat; „Eintragen“ legt ihn an, Erinnerung nach Standard. |
+| K3 | „Team-Call jeden Montag 9 Uhr #arbeit“ eintragen, Woche und Liste ansehen. | Serie jeden Montag; Wiederholungs-Symbol in der Liste. |
+| K4 | Monat/Woche/Tag/Liste umschalten, wischen, ‹ › und „12“-Symbol (Heute). | Ansichten wie in der Design-Vorschau; Tag-Ansicht mit Jetzt-Linie; Tippen auf eine leere Stunde legt dort einen Termin an. |
+| K5 | Termin öffnen → Bearbeiten: ganztägig, Datum/Uhrzeit, Wiederholen, zwei Erinnerungen, Ort, Notiz, Verknüpfung. | Alles wird gespeichert; Detailansicht zeigt Ort („In Karten-App öffnen“), Erinnerungen, Notiz, Verknüpfung. |
+| K6 | Serientermin → Menü → Löschen: „Nur diesen“, dann „Diesen und alle folgenden“. | Erst fehlt nur der eine Tag, dann endet die Serie davor. |
+| K7 | „Alle Kalender“ → Kalender aus-/einblenden, Farbe ändern, neuen Kalender anlegen, löschen. | Ansicht folgt sofort; Kopfzeile „x von y Kalendern“. |
+| K8 | Import einer `.ics` aus Google/Outlook, Export „Alle“ und „Als .ics teilen“. | Termine samt Serien und Erinnerungen übernommen; zweiter Import legt keine Doppelten an; Export öffnet sich in anderen Kalendern. |
+| K9 | Termin mit Erinnerung in 2 Minuten anlegen, App sperren (Android: auch schließen). | Benachrichtigung pünktlich; auf dem Sperrbildschirm nur die gewählte Detailstufe; „In 5 Min. erneut“, „Erledigt“; Tippen öffnet nach dem Entsperren den Termin. |
+| K10 | Optionen → GhulCal: Detailstufe „Nur Hinweis“ → „Test-Erinnerung zeigen“. | Auf dem Sperrbildschirm nur „Termin in 15 Min.“ ohne Titel. |
+| K11 | Panik-Sperre auslösen. | Geplante Erinnerungen sind gelöscht (kommen erst nach dem nächsten Entsperren wieder). |
+| K12 | Zweites Gerät synchronisieren, dort einen Termin ändern, zurück synchronisieren. | Änderungen beider Seiten kommen an (Zusammenführen pro Termin). |
+| K13 | Mail-Benachrichtigung antippen (gesperrt und entsperrt). | GhulMail öffnet sich (nach dem Entsperren); Leiste und App-Symbol zeigen die Zahl ungelesener Mails, Windows-Taskleiste einen Briefumschlag mit Zahl. |
+
 ## Fehler melden
 
 Bitte je Fehler: **Testnummer**, Handy und Android-Version, App-Version (Optionen → Über GhulSuite), was du gemacht hast,

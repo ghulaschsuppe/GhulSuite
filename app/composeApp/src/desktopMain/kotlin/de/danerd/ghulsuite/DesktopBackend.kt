@@ -94,6 +94,7 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
     private val device = PropertiesStore(File(DesktopPaths.dataDir, "device.properties"))
     override val settings: Settings = Settings(PropertiesStore(File(DesktopPaths.dataDir, "settings.properties")))
     override val net: NetBackend = DesktopNetBackend { suite }
+    override val cal: de.danerd.ghulsuite.model.CalBackend = DesktopCalBackend(window) { suite }
     override val appVersion: String = DESKTOP_VERSION + if (DesktopPaths.portable) " (portabel)" else ""
     override val keyPinInApp: Boolean = false
     override val isDesktop: Boolean = true
@@ -140,7 +141,10 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
 
     override fun crashReport(): String? = File(DesktopPaths.dataDir, "absturz.txt").takeIf { it.exists() }?.readText()
 
-    override fun panicLock() = lock()
+    override fun panicLock() {
+        lock()
+        cal.clearReminders()
+    }
 
     // --- security key: Windows WebAuthn API with its own PIN and touch dialog --------------------
 
@@ -199,6 +203,15 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
 
 /** Desktop: decrypted files are opened with the program Windows uses for them. */
 class DesktopNetBackend(suite: () -> GhulSuite) : CoreNetBackend(suite) {
+    /** Windows has no share sheet: the file opens in the program registered for it. */
+    override suspend fun shareBytesToApps(name: String, mime: String, data: ByteArray): Boolean {
+        val f = withContext(Dispatchers.IO) {
+            val dir = DesktopPaths.shareDir.apply { mkdirs() }
+            File(dir, safeFileName(name, mutableSetOf())).apply { writeBytes(data) }
+        }
+        return runCatching { java.awt.Desktop.getDesktop().open(f) }.isSuccess
+    }
+
     override suspend fun shareDriveToApps(files: List<DriveItemUi>) {
         val written = withContext(Dispatchers.IO) {
             val dir = DesktopPaths.shareDir.apply { mkdirs() }

@@ -79,6 +79,35 @@ class Settings(private val store: KeyValueStore) {
     var moduleGhulAuth by bool("module_auth", true)
     var moduleGhulDrive by bool("module_drive", true)
     var moduleGhulMail by bool("module_mail", true)
+    var moduleGhulCal by bool("module_cal", true)
+
+    // --- GhulCal
+    /** Start view: 0 month, 1 week, 2 day, 3 list. */
+    var calStartView by int("cal_start_view", 0)
+    /** 0 = weeks start on Monday, 6 = on Sunday. */
+    var calWeekStart by int("cal_week_start", 0)
+    var calWeekNumbers by bool("cal_week_numbers", true)
+    var calHolidays by bool("cal_holidays", true)
+    /** Region of the public holidays (e.g. DE-NW, AT, CH; empty = none). */
+    var calRegion by str("cal_region", "DE-NW")
+    /** Hidden calendars (ids, comma separated; `holidays` for the public holidays). */
+    var calHidden by str("cal_hidden", "")
+    /** Minutes before timed events (-1 none). */
+    var calDefaultReminder by int("cal_default_reminder", 15)
+    /** All-day events: minutes before 9:00 of the day (-1 none; 1440 = day before at 9:00). */
+    var calAllDayReminder by int("cal_allday_reminder", 1440)
+    /** Lock screen: 0 only "event in x min", 1 with title, 2 title, time and place. */
+    var calNotifyDetail by int("cal_notify_detail", 1)
+    var calSound by bool("cal_sound", true)
+    /** Calendar of new events (empty = first). */
+    var calDefault by str("cal_default", "")
+
+    fun calHiddenSet(): Set<String> = calHidden.split(',').filter { it.isNotBlank() }.toSet()
+
+    fun toggleCalHidden(id: String) {
+        val s = calHiddenSet()
+        calHidden = (if (id in s) s - id else s + id).joinToString(",")
+    }
 
     // --- Servers
     /** Synchronise after unlocking and after changes (if a sync server is set). */

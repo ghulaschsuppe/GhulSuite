@@ -146,7 +146,11 @@ fun ExportScreen(state: AppState, padding: PaddingValues) {
                 VaultDropdown(stringResource(Res.string.export_vault), vaults, target, false) { target = it }
                 val v = vaults.firstOrNull { it.id == target }
                 if (v != null) {
-                    Hint(stringResource(if (v.kind == VaultKindUi.PASS) Res.string.export_format_csv else Res.string.export_format_otpauth))
+                    Hint(stringResource(when (v.kind) {
+                        VaultKindUi.PASS -> Res.string.export_format_csv
+                        VaultKindUi.TOTP -> Res.string.export_format_otpauth
+                        VaultKindUi.CAL -> Res.string.export_format_ics
+                    }))
                 }
                 SecretTextField(password, { password = it; error = null }, stringResource(Res.string.l_master_password))
                 ErrorText(error)
@@ -156,7 +160,11 @@ fun ExportScreen(state: AppState, padding: PaddingValues) {
                         state.run(onError = { error = it }, block = { backend.exportPlain(vault.id, password) }) { data ->
                             password = ""
                             val name = vault.name.ifBlank { "ghulsuite" }
-                            save(if (vault.kind == VaultKindUi.PASS) "$name.csv" else "$name-2fa.txt", data)
+                            save(when (vault.kind) {
+                                VaultKindUi.PASS -> "$name.csv"
+                                VaultKindUi.TOTP -> "$name-2fa.txt"
+                                VaultKindUi.CAL -> "$name.ics"
+                            }, data)
                         }
                     },
                     enabled = !state.busy && v != null && password.isNotEmpty() && filePickersAvailable,
@@ -253,4 +261,4 @@ fun backupPrefix(name: String): String = name.split('-').take(2).joinToString("-
 
 /** Vault name, with its area when the list mixes GhulPass and GhulAuth vaults ("Personal · GhulAuth"). */
 private fun vaultLabel(v: de.danerd.ghulsuite.model.VaultUi, all: List<de.danerd.ghulsuite.model.VaultUi>): String =
-    if (all.map { it.kind }.distinct().size > 1) v.name + " · " + (if (v.kind == VaultKindUi.PASS) "GhulPass" else "GhulAuth") else v.name
+    if (all.map { it.kind }.distinct().size > 1) v.name + " · " + (when (v.kind) { VaultKindUi.PASS -> "GhulPass"; VaultKindUi.TOTP -> "GhulAuth"; VaultKindUi.CAL -> "GhulCal" }) else v.name

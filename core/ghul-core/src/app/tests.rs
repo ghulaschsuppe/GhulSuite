@@ -1866,3 +1866,164 @@ fn backup_and_restore_into_an_empty_folder() {
     t.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
     assert_eq!(t.list_entries(VaultKind::Pass, None).unwrap()[0].title, "Bank");
 }
+
+#[test]
+fn calendar_vault_events_series_reminders_and_sync() {
+    use super::cal::{CalCalendar, CalDeleteMode, CalEvent, CalLink, CalRepeat};
+    use crate::net::remote::LocalFs;
+    let server_dir = std::env::temp_dir().join(format!("ghul-cal-server-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&server_dir);
+    let server = LocalFs::new(&server_dir);
+    let kf = generate_keyfile();
+    let (da, db) = (Dirs::new("cal-a"), Dirs::new("cal-b"));
+    let a = da.suite();
+    a.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Cal, "Kalender")]), None, None, None).unwrap();
+    let vault = vault_id(&a, "Kalender");
+    let file = vault_file(&a, &vault);
+    assert!(file.ends_with(".ghlcal"), "{file}");
+    assert_eq!(a.list_vaults().unwrap()[0].kind, VaultKind::Cal);
+
+    let cal = |name: &str, color: u32| CalCalendar {
+        id: String::new(),
+        vault_id: vault.clone(),
+        name: name.into(),
+        color,
+        default_reminder: 15,
+        events: 0,
+    };
+    let privat = a.cal_save_calendar(cal("Privat", 0xd6336c)).unwrap();
+    let work = a.cal_save_calendar(cal("Arbeit", 0x2f74e8)).unwrap();
+    let dentist = a
+        .cal_save_event(CalEvent {
+            calendar_id: privat.clone(),
+            title: " Zahnarzt Dr. Weber ".into(),
+            start: "2026-11-13T10:00".into(),
+            end: "2026-11-13T10:45".into(),
+            reminders: vec![1440, 60],
+            location: "Praxis am Markt".into(),
+            links: vec![CalLink { kind: "drive".into(), label: "Überweisung.pdf".into(), target: "x".into() }],
+            ..Default::default()
+        })
+        .unwrap();
+    let standup = a
+        .cal_save_event(CalEvent {
+            calendar_id: work.clone(),
+            title: "Team-Standup".into(),
+            start: "2026-11-09T09:30".into(),
+            end: "2026-11-09T09:45".into(),
+            repeat: CalRepeat::Weekdays,
+            reminders: vec![5],
+            ..Default::default()
+        })
+        .unwrap();
+    a.cal_save_event(CalEvent {
+        calendar_id: privat.clone(),
+        title: "Urlaub".into(),
+        all_day: true,
+        start: "2026-12-06".into(),
+        end: "2026-12-13".into(),
+        reminders: vec![1440],
+        ..Default::default()
+    })
+    .unwrap();
+    // Invalid input is refused.
+    assert!(a
+        .cal_save_event(CalEvent {
+            calendar_id: privat.clone(),
+            start: "2026-11-13T10:00".into(),
+            ..Default::default()
+        })
+        .is_err());
+    assert!(a
+        .cal_save_event(CalEvent {
+            calendar_id: "00".into(),
+            title: "x".into(),
+            start: "2026-11-13".into(),
+            ..Default::default()
+        })
+        .is_err());
+
+    let e = a.cal_get_event(dentist.clone()).unwrap();
+    assert_eq!(e.title, "Zahnarzt Dr. Weber");
+    assert_eq!(e.reminders, vec![60, 1440]);
+    assert_eq!(e.links[0].label, "Überweisung.pdf");
+
+    let cals = a.cal_calendars().unwrap();
+    assert_eq!(cals.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), vec!["Privat", "Arbeit"]);
+    assert_eq!(cals[0].events, 2);
+
+    // A week with holidays: the standup on five days, the dentist, all-day first on its day.
+    let week = a.cal_occurrences("2026-11-09".into(), "2026-11-15".into(), "DE-NW".into(), "de".into()).unwrap();
+    assert_eq!(week.iter().filter(|o| o.event_id == standup).count(), 5);
+    let fri: Vec<&str> = week.iter().filter(|o| o.start.starts_with("2026-11-13")).map(|o| o.title.as_str()).collect();
+    assert_eq!(fri, vec!["Team-Standup", "Zahnarzt Dr. Weber"]);
+    let nov1 = a.cal_occurrences("2026-11-01".into(), "2026-11-01".into(), "DE-NW".into(), "de".into()).unwrap();
+    assert_eq!(nov1.len(), 1);
+    assert_eq!((nov1[0].calendar_id.as_str(), nov1[0].title.as_str()), ("holidays", "Allerheiligen"));
+    let mid = a.cal_occurrences("2026-12-10".into(), "2026-12-10".into(), "".into(), "de".into()).unwrap();
+    assert_eq!(mid.iter().map(|o| o.title.as_str()).collect::<Vec<_>>(), vec!["Urlaub", "Team-Standup"]);
+
+    // Reminders over the next days, in time order (all-day relative to 9:00).
+    let rem = a.cal_reminders("2026-11-12T08:00".into(), 2).unwrap();
+    let at: Vec<(&str, &str)> = rem.iter().map(|r| (r.at.as_str(), r.title.as_str())).collect();
+    assert_eq!(
+        at,
+        vec![
+            ("2026-11-12T09:25", "Team-Standup"),
+            ("2026-11-12T10:00", "Zahnarzt Dr. Weber"),
+            ("2026-11-13T09:00", "Zahnarzt Dr. Weber"),
+            ("2026-11-13T09:25", "Team-Standup"),
+        ]
+    );
+    let dec = a.cal_reminders("2026-12-05T00:00".into(), 1).unwrap();
+    assert!(dec.iter().any(|r| r.title == "Urlaub" && r.at == "2026-12-05T09:00"));
+
+    // Deleting one occurrence and the rest of a series.
+    a.cal_delete_event(standup.clone(), "2026-11-11".into(), CalDeleteMode::One).unwrap();
+    a.cal_delete_event(standup.clone(), "2026-11-13".into(), CalDeleteMode::Following).unwrap();
+    let week = a.cal_occurrences("2026-11-09".into(), "2026-11-30".into(), "".into(), "de".into()).unwrap();
+    let days: Vec<&str> = week.iter().filter(|o| o.event_id == standup).map(|o| &o.start[..10]).collect();
+    assert_eq!(days, vec!["2026-11-09", "2026-11-10", "2026-11-12"]);
+
+    // Moving to another calendar keeps the id.
+    let mut e = a.cal_get_event(dentist.clone()).unwrap();
+    e.calendar_id = work.clone();
+    assert_eq!(a.cal_save_event(e).unwrap(), dentist);
+
+    // .ics out and back in: duplicates are skipped.
+    let ics = a.cal_export_ics(vec![]).unwrap();
+    assert!(ics.contains("SUMMARY:Zahnarzt Dr. Weber"));
+    let fresh = a.cal_save_calendar(cal("Import", 0x0e9f80)).unwrap();
+    let n = a.cal_import_ics(fresh.clone(), ics.clone().into_bytes(), 60).unwrap();
+    assert_eq!(n, 3);
+    assert_eq!(a.cal_import_ics(fresh.clone(), ics.into_bytes(), 60).unwrap(), 0);
+    a.cal_delete_calendar(fresh).unwrap();
+    assert_eq!(a.cal_calendars().unwrap().len(), 2);
+
+    // Sync to a second device, change on both, merge.
+    a.sync_folder(&server).unwrap();
+    copy_suite(&server_dir, &db);
+    let b = db.suite();
+    b.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    assert_eq!(b.cal_calendars().unwrap().len(), 2);
+    let mut on_b = b.cal_get_event(dentist.clone()).unwrap();
+    on_b.location = "Praxis Süd".into();
+    b.cal_save_event(on_b).unwrap();
+    a.cal_save_event(CalEvent {
+        calendar_id: privat,
+        title: "Abendessen".into(),
+        start: "2026-11-12T19:00".into(),
+        end: "2026-11-12T21:00".into(),
+        ..Default::default()
+    })
+    .unwrap();
+    a.sync_folder(&server).unwrap();
+    b.sync_folder(&server).unwrap();
+    a.sync_folder(&server).unwrap();
+    for s in [&a, &b] {
+        let day = s.cal_occurrences("2026-11-12".into(), "2026-11-13".into(), "".into(), "de".into()).unwrap();
+        assert!(day.iter().any(|o| o.title == "Abendessen"));
+        assert!(day.iter().any(|o| o.location == "Praxis Süd"));
+    }
+    let _ = std::fs::remove_dir_all(&server_dir);
+}

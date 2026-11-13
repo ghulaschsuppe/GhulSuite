@@ -57,6 +57,8 @@ pub(super) fn new_id() -> [u8; 16] {
 pub enum VaultKind {
     Pass,
     Totp,
+    /// GhulCal (`.ghlcal`).
+    Cal,
 }
 
 impl VaultKind {
@@ -64,6 +66,15 @@ impl VaultKind {
         match self {
             VaultKind::Pass => ContainerKind::Pass,
             VaultKind::Totp => ContainerKind::Totp,
+            VaultKind::Cal => ContainerKind::Cal,
+        }
+    }
+
+    pub(super) fn from_name(name: &str) -> Self {
+        match name {
+            "pass" => VaultKind::Pass,
+            "cal" => VaultKind::Cal,
+            _ => VaultKind::Totp,
         }
     }
 
@@ -71,6 +82,7 @@ impl VaultKind {
         match k {
             ContainerKind::Pass => Some(VaultKind::Pass),
             ContainerKind::Totp => Some(VaultKind::Totp),
+            ContainerKind::Cal => Some(VaultKind::Cal),
             ContainerKind::Suite => None,
         }
     }
@@ -296,7 +308,7 @@ fn dedup_key(entry_type: &str, fields: &BTreeMap<String, Field>) -> String {
 // --- files and names --------------------------------------------------------------------------
 
 pub(super) fn is_vault_file(name: &str) -> bool {
-    name.ends_with(".ghlpss") || name.ends_with(".ghltotp")
+    name.ends_with(".ghlpss") || name.ends_with(".ghltotp") || name.ends_with(".ghlcal")
 }
 
 pub(super) fn file_name(kind: VaultKind, name: &str, id: &str) -> String {
@@ -762,7 +774,13 @@ impl GhulSuite {
         let mut vaults: Vec<OpenVault> = Vec::new();
         let mut found = Vec::new();
         for file in self.vault_files()? {
-            let kind_by_ext = if file.ends_with(".ghlpss") { VaultKind::Pass } else { VaultKind::Totp };
+            let kind_by_ext = if file.ends_with(".ghlpss") {
+                VaultKind::Pass
+            } else if file.ends_with(".ghlcal") {
+                VaultKind::Cal
+            } else {
+                VaultKind::Totp
+            };
             let damaged = |file: &str| OpenVault {
                 reference: VaultRef {
                     id: format!("file:{file}"),
@@ -1227,7 +1245,7 @@ impl GhulSuite {
                 .iter()
                 .map(|v| VaultInfo {
                     id: v.reference.id.clone(),
-                    kind: if v.reference.kind == "pass" { VaultKind::Pass } else { VaultKind::Totp },
+                    kind: VaultKind::from_name(&v.reference.kind),
                     name: v.reference.name.clone(),
                     file: v.reference.file.clone(),
                     available: v.container.is_some(),
@@ -1687,6 +1705,9 @@ impl GhulSuite {
             let (r, c) = o.vault_mut(&vault_id)?;
             let text = if r.kind == "pass" {
                 super::import::export_csv(&c.payload.entries)
+            } else if r.kind == "cal" {
+                let name = vault_name(c, &r.file);
+                super::cal::export_vault_ics(c, &name)
             } else {
                 super::import::export_otpauth(&c.payload.entries)
             };

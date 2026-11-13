@@ -20,7 +20,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.getString
 
-enum class Tab { PASS, AUTH, DRIVE, MAIL, SETTINGS }
+enum class Tab { PASS, AUTH, DRIVE, MAIL, CAL, SETTINGS }
 
 /**
  * Requests from outside the app UI, e.g. a tapped notification ("open GhulMail"). Applied as soon
@@ -28,6 +28,9 @@ enum class Tab { PASS, AUTH, DRIVE, MAIL, SETTINGS }
  */
 object AppLaunch {
     val openTab = kotlinx.coroutines.flow.MutableStateFlow<Tab?>(null)
+
+    /** A tapped reminder: event id and day (`id|YYYY-MM-DD`). */
+    val openEvent = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
 }
 
 /** Screens shown on top of the tabs. */
@@ -48,6 +51,8 @@ sealed interface Screen {
     data class MailAccount(val id: String?) : Screen
     data class MailRead(val accountId: String, val folder: String, val uid: Long) : Screen
     data class MailCompose(val draft: MailDraft) : Screen
+    data class CalEvent(val id: String, val day: String) : Screen
+    data class CalEdit(val draft: de.danerd.ghulsuite.model.CalEventUi) : Screen
 }
 
 /** Content prefilled when writing, replying or forwarding. */
@@ -119,6 +124,66 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     /** Messages of the open mailbox (for conversations in the reading view). */
     var mailLoaded by mutableStateOf<List<MailItem>>(emptyList())
 
+    // --- GhulCal
+    var calView by mutableStateOf(CalView.entries[backend.settings.calStartView.coerceIn(0, 3)])
+    var calSel by mutableStateOf(today())
+    /** Incremented to focus the search field of the list view. */
+    var calSearchTick by mutableStateOf(0)
+    /** The first calendar vault was created in this session (only once). */
+    var calSetupDone = false
+    /** Calendars of all calendar vaults (refreshed with the vaults). */
+    var calendars by mutableStateOf<List<de.danerd.ghulsuite.model.CalCalendarUi>>(emptyList())
+    val calNames: Map<String, String> get() = calendars.associate { it.id to it.name }
+    var calRegionName by mutableStateOf("")
+        private set
+    var calQuickOpen by mutableStateOf(false)
+
+    /** Calendar for new events: the chosen default, else the first one. */
+    val calDefaultCalendar: String
+        get() = calendars.firstOrNull { it.id == backend.settings.calDefault }?.id ?: calendars.firstOrNull()?.id ?: ""
+
+    /** Shows a sample reminder with the chosen lock-screen detail (options). */
+    fun calTestReminder(title: String) {
+        val st = backend.settings
+        scope.launch {
+            val now = localNow()
+            val start = fromAbsMinutes(absMinutes(now) + 15)
+            val r = de.danerd.ghulsuite.model.CalReminderUi("", title, getString(Res.string.cal_test_place), false, start,
+                fromAbsMinutes(absMinutes(start) + 45), now, 15)
+            backend.cal.showReminder(calAlarm(r, st.calNotifyDetail, loadCalNames()), st.calSound)
+        }
+    }
+
+    /** ‹ › in the calendar: one month, week or day back or forward. */
+    fun calNav(n: Int) {
+        val s = calSel
+        calSel = when (calView) {
+            CalView.MONTH -> {
+                val d = s.firstOfMonth.plusMonths(n)
+                if (d.y == today().y && d.m == today().m) today() else d
+            }
+            CalView.WEEK -> s.plus(7 * n)
+            else -> s.plus(n)
+        }
+    }
+
+    /** Reloads the calendars and hands the reminders of the next 30 days to the system. */
+    fun refreshCalendar() {
+        val st = backend.settings
+        if (!st.moduleGhulCal) {
+            backend.cal.clearReminders()
+            return
+        }
+        scope.launch {
+            calendars = runCatching { backend.cal.calendars() }.getOrDefault(emptyList())
+            val lang = getString(Res.string.cal_lang)
+            calRegionName = runCatching { backend.cal.regions(lang) }.getOrDefault(emptyList()).firstOrNull { it.code == st.calRegion }?.name ?: ""
+            val rem = runCatching { backend.cal.reminders(localNow(), 30) }.getOrDefault(emptyList())
+            val names = loadCalNames()
+            backend.cal.scheduleReminders(rem.take(400).map { calAlarm(it, st.calNotifyDetail, names) }, st.calSound)
+        }
+    }
+
     /** Drive selection mode: the navigation shows the selection bar instead. */
     var driveSelection by mutableStateOf<DriveSelection?>(null)
     var mailFolder by mutableStateOf("INBOX")
@@ -161,10 +226,12 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     tabs.getOrNull(start)?.let { tab = it }
                     applyLaunch()
                     refreshUnread()
+                    refreshCalendar()
                 }
             }
         }
         scope.launch { AppLaunch.openTab.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
+        scope.launch { AppLaunch.openEvent.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
         // Unread count for the navigation badge (and the window icon on Windows) while unlocked.
         scope.launch {
             while (true) {
@@ -175,6 +242,14 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     }
 
     private fun applyLaunch() {
+        AppLaunch.openEvent.value?.let { ev ->
+            AppLaunch.openEvent.value = null
+            if (Tab.CAL in tabs) {
+                stack.clear()
+                tab = Tab.CAL
+                stack.add(Screen.CalEvent(ev.substringBefore('|'), ev.substringAfter('|', "")))
+            }
+        }
         val t = AppLaunch.openTab.value ?: return
         AppLaunch.openTab.value = null
         if (t !in tabs) return
@@ -200,6 +275,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             if (backend.settings.moduleGhulAuth) add(Tab.AUTH)
             if (backend.settings.moduleGhulDrive) add(Tab.DRIVE)
             if (backend.settings.moduleGhulMail) add(Tab.MAIL)
+            if (backend.settings.moduleGhulCal) add(Tab.CAL)
             add(Tab.SETTINGS)
         }
 
@@ -250,6 +326,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         revision++
         refreshVaults()
         autoSync()
+        refreshCalendar()
     }
 
 
@@ -278,6 +355,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     if (r.downloaded > 0 || r.merged > 0 || r.deleted > 0) {
                         revision++
                         refreshVaults()
+                        refreshCalendar()
                     }
                     onDone(r)
                 } while (syncAgain)
@@ -326,6 +404,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         when (kind) {
             VaultKindUi.PASS -> backend.settings.moduleGhulPass = true
             VaultKindUi.TOTP -> backend.settings.moduleGhulAuth = true
+            VaultKindUi.CAL -> backend.settings.moduleGhulCal = true
         }
     }
 

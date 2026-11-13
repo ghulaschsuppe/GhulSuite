@@ -4,6 +4,9 @@
 pub mod authx;
 pub mod autofill;
 pub mod backup;
+pub mod cal;
+pub mod caldate;
+pub mod caltext;
 pub mod drive;
 pub mod error;
 pub mod import;

@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
@@ -75,6 +76,7 @@ fun SetPage.title(): StringResource = when (this) {
     SetPage.AUTH -> Res.string.tab_auth
     SetPage.DRIVE -> Res.string.tab_drive
     SetPage.MAIL -> Res.string.tab_mail
+    SetPage.CAL -> Res.string.tab_cal
     SetPage.LOOK -> Res.string.set_view
     SetPage.ABOUT -> Res.string.set_about
 }
@@ -205,6 +207,10 @@ fun SettingsScreen(state: AppState, padding: PaddingValues) {
                 }
                 if (settings.moduleGhulMail) {
                     SetRow(Icons.Filled.Email, areaColor(Tab.MAIL), stringResource(Res.string.tab_mail), stringResource(Res.string.set_mail_sub)) { open(SetPage.MAIL) }
+                }
+                if (settings.moduleGhulCal) {
+                    SetRow(Icons.Filled.CalendarMonth, Color(0xFFD6336C), stringResource(Res.string.tab_cal),
+                        stringResource(if (settings.calHolidays && state.calRegionName.isNotEmpty()) Res.string.set_cal_sub_holidays else Res.string.set_cal_sub, state.calRegionName)) { open(SetPage.CAL) }
                 }
             }
             Group(stringResource(Res.string.set_g_general)) {

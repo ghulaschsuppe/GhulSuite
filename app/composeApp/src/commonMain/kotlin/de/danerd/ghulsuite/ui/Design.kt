@@ -553,7 +553,8 @@ fun GhulNavBar(tabs: List<NavTab>, selected: Int, onSelect: (Int) -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(3.dp),
                 ) {
                     Box(
-                        Modifier.size(56.dp, 30.dp).clip(RoundedCornerShape(15.dp)).background(if (on) tab.color.copy(alpha = 0.16f) else Color.Transparent),
+                        // Six areas: a little narrower, as in the design preview.
+                        Modifier.size(if (tabs.size >= 6) 50.dp else 56.dp, 30.dp).clip(RoundedCornerShape(15.dp)).background(if (on) tab.color.copy(alpha = 0.16f) else Color.Transparent),
                         contentAlignment = Alignment.Center,
                     ) {
                         androidx.compose.material3.Icon(tab.icon, null, Modifier.size(22.dp), tint = if (on) tab.color else t.muted)
@@ -565,7 +566,7 @@ fun GhulNavBar(tabs: List<NavTab>, selected: Int, onSelect: (Int) -> Unit) {
                             ) { Text(tab.badge.toString(), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
                         }
                     }
-                    Text(tab.label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = if (on) tab.color else t.muted, maxLines = 1, softWrap = false)
+                    Text(tab.label, fontSize = if (tabs.size >= 6) 10.5.sp else 11.sp, fontWeight = FontWeight.SemiBold, color = if (on) tab.color else t.muted, maxLines = 1, softWrap = false)
                 }
             }
         }

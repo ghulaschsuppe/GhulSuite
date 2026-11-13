@@ -71,5 +71,13 @@ expect fun rememberTakePhoto(onResult: (ByteArray?) -> Unit): () -> Unit
 /** Operating system and device for error reports, e.g. "Android 15 (API 35) · Google Pixel 8". */
 expect fun deviceInfo(): String
 
+/** Local wall-clock time now as `YYYY-MM-DDTHH:MM` (GhulCal). */
+expect fun localNow(): String
+
+/** Offset of local time to UTC in minutes (for .ics times given in UTC). */
+expect fun utcOffsetMinutes(): Int
+
+/** Unix milliseconds of a local `YYYY-MM-DDTHH:MM`. */
+expect fun epochMillisOf(local: String): Long
 /** Switches the app language ("" = follow the system). Android restarts the screen; Windows after a restart. */
 expect fun applyAppLanguage(tag: String)

@@ -61,6 +61,8 @@ import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Email
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.VerifiedUser
@@ -293,6 +295,7 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
     if (state.found.isNotEmpty() && !state.foundPostponed && top == null) FoundVaultsDialog(state)
     if (state.passwordChangedElsewhere) PasswordChangedDialog(state)
     if (state.contextSheet && top == null) AreaContextSheet(state)
+    if (state.calQuickOpen && top == null) CalQuickSheet(state) { state.calQuickOpen = false }
     vaultFor?.let { kind ->
         VaultPickerDialog(state, kind, onPick = { id ->
             vaultFor = null
@@ -301,7 +304,8 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
     }
 }
 
-private fun ownHeader(top: Screen) = top is Screen.MailRead || top is Screen.MailCompose || top is Screen.EntryDetail
+private fun ownHeader(top: Screen) = top is Screen.MailRead || top is Screen.MailCompose || top is Screen.EntryDetail ||
+    top is Screen.CalEvent || top is Screen.CalEdit
 
 @Composable
 private fun TabTopBar(state: AppState) {
@@ -358,6 +362,7 @@ private fun tabIcon(t: Tab) = when (t) {
     Tab.AUTH -> Icons.Outlined.VerifiedUser
     Tab.DRIVE -> Icons.Outlined.Cloud
     Tab.MAIL -> Icons.Outlined.Email
+    Tab.CAL -> Icons.Outlined.CalendarMonth
     Tab.SETTINGS -> Icons.Outlined.Tune
 }
 
@@ -370,6 +375,9 @@ private fun MainFab(state: AppState, onAdd: () -> Unit) {
     }
     if (state.tab == Tab.DRIVE && state.driveReady && state.driveSelection == null) {
         GhulFab(areaColor(Tab.DRIVE), Icons.Filled.Add, description = stringResource(Res.string.drive_upload_fab)) { state.driveUploadTick++ }
+    }
+    if (state.tab == Tab.CAL) {
+        GhulFab(areaColor(Tab.CAL), Icons.Filled.Add, stringResource(Res.string.cal_event_short)) { state.calQuickOpen = true }
     }
     if (state.tab == Tab.PASS || state.tab == Tab.AUTH) {
         GhulFab(areaColor(state.tab), if (state.tab == Tab.AUTH) Icons.Filled.QrCode2 else Icons.Filled.Add, description = stringResource(Res.string.a_add), onClick = onAdd)
@@ -390,6 +398,7 @@ private fun TabContents(state: AppState, visited: Set<Tab>, visible: Boolean, pa
                             Tab.AUTH -> AuthListScreen(state, padding)
                             Tab.DRIVE -> DriveScreen(state, padding)
                             Tab.MAIL -> MailScreen(state, padding)
+                            Tab.CAL -> CalScreen(state, padding)
                             Tab.SETTINGS -> SettingsScreen(state, padding)
                         }
                     }
@@ -418,6 +427,8 @@ private fun TopScreen(state: AppState, top: Screen, padding: PaddingValues) {
             is Screen.MailAccount -> MailAccountScreen(state, top.id, padding)
             is Screen.MailRead -> key(top) { MailReadScreen(state, top.accountId, top.folder, top.uid, padding) }
             is Screen.MailCompose -> key(top) { MailComposeScreen(state, top.draft, padding) }
+            is Screen.CalEvent -> key(top) { CalEventScreen(state, top.id, top.day, padding) }
+            is Screen.CalEdit -> key(top) { CalEditScreen(state, top.draft, padding) }
         }
     }
 }
@@ -436,7 +447,7 @@ private fun SideNav(state: AppState, tabs: List<Tab>) {
             Column {
                 Text(stringResource(Res.string.app_name), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = t.fg, letterSpacing = (-0.3).sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 3.dp)) {
-                    for (a in listOf(Tab.PASS, Tab.AUTH, Tab.DRIVE, Tab.MAIL)) {
+                    for (a in listOf(Tab.PASS, Tab.AUTH, Tab.DRIVE, Tab.MAIL, Tab.CAL)) {
                         Box(Modifier.size(width = 14.dp, height = 3.dp).clip(RoundedCornerShape(2.dp)).background(areaColor(a)))
                     }
                 }
@@ -524,6 +535,8 @@ private fun screenTitle(top: Screen?, tab: Tab): String = stringResource(
                             is Screen.MailAccount -> if (top.id == null) Res.string.mail_account_new else Res.string.mail_account_edit
                             is Screen.MailRead -> Res.string.mail_read_title
                             is Screen.MailCompose -> Res.string.mail_compose_title
+                            is Screen.CalEvent -> Res.string.cal_event_title
+                            is Screen.CalEdit -> if (top.draft.id.isEmpty()) Res.string.cal_new_event else Res.string.cal_edit_event
                             null -> tabTitle(tab)
                         },
 )
@@ -537,6 +550,10 @@ private fun TabActions(state: AppState) {
             BarIcon(if (state.driveGrid) Icons.AutoMirrored.Filled.ViewList else Icons.Filled.GridView, null) { state.driveGrid = !state.driveGrid }
         }
         Tab.MAIL -> if (state.mailReady) BarIcon(Icons.Filled.Refresh, stringResource(Res.string.a_refresh)) { state.mailRefreshTick++ }
+        Tab.CAL -> {
+            CalTodayIcon { state.calSel = today(); if (state.calView == CalView.LIST) state.calView = CalView.MONTH }
+            BarIcon(Icons.Filled.Search, stringResource(Res.string.cal_search_short)) { state.calView = CalView.LIST; state.calSearchTick++ }
+        }
         else -> {}
     }
 }
@@ -571,5 +588,6 @@ private fun tabTitle(t: Tab) = when (t) {
     Tab.AUTH -> Res.string.tab_auth
     Tab.DRIVE -> Res.string.tab_drive
     Tab.MAIL -> Res.string.tab_mail
+    Tab.CAL -> Res.string.tab_cal
     Tab.SETTINGS -> Res.string.tab_settings
 }

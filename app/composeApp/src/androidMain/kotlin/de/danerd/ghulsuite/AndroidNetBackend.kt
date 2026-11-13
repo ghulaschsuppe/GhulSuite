@@ -45,6 +45,24 @@ class AndroidNetBackend(private val context: Context, suite: () -> GhulSuite) : 
         )
     }
 
+    override suspend fun shareBytesToApps(name: String, mime: String, data: ByteArray): Boolean {
+        val uri = withContext(Dispatchers.IO) {
+            val dir = java.io.File(context.cacheDir, "shared").apply { deleteRecursively(); mkdirs() }
+            val target = java.io.File(dir, safeFileName(name, mutableSetOf())).apply { writeBytes(data) }
+            androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".files", target)
+        }
+        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).putExtra(android.content.Intent.EXTRA_STREAM, uri)
+        intent.type = mime
+        intent.clipData = android.content.ClipData.newRawUri("", uri)
+        intent.addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        ExternalActivity.started()
+        context.startActivity(
+            android.content.Intent.createChooser(intent, null)
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION),
+        )
+        return true
+    }
+
     override fun mailNotificationsOn(accountId: String): Boolean = notifications.isOn(accountId)
 
     override fun mailNotifyDetail(): Int = notifications.detail

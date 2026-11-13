@@ -22,6 +22,9 @@
     <!-- Instant new-mail notifications (only if switched on for an account): an open IMAP IDLE connection. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- GhulCal reminders at the exact minute (calendar apps may use exact alarms). -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!-- Autofill: read the signing certificate of the app asking for a login (fake apps must not get it). -->
@@ -69,6 +72,14 @@
             android:name=".MailPushService"
             android:exported="false"
             android:foregroundServiceType="remoteMessaging" />
+
+        <receiver android:name=".CalAlarmReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
+            </intent-filter>
+        </receiver>
 
         <receiver android:name=".MailPushBootReceiver" android:exported="false">
             <intent-filter>
