@@ -205,11 +205,15 @@ function wzStep7(w) {
 }
 
 function wzStep8(w) {
+  const check = w.confirmed
+    ? `<div class="banner ok-banner">${icon('check')}<span>Richtig – der Code ist bestätigt.</span></div>`
+    : `<div class="field"><div class="grow"><label>Zur Bestätigung: 3. Block des Codes</label><input value="" placeholder="z. B. 9TRW" aria-label="3. Block des Codes"></div></div>
+      <button class="btn tonal block" data-act="wz-check">${icon('check')} Block prüfen</button>`;
   return `<div class="card"><h3>Dein Notfall-Zugang</h3><p>Der Code öffnet allein alles – auch ohne Passwort und Key. Schreib ihn auf oder drucke das Notfallblatt.</p>
       <div class="codebox">${['K7QD', 'M2XF', '9TRW', 'B4NE', 'H8PZ', 'C6VJ', 'R3LS', 'Y5GA'].map((g) => `<span>${g}</span>`).join('')}</div></div>
     <div class="btn-row"><button class="btn outline" data-act="toast" data-arg="Notfallblatt wird gedruckt">${icon('filetext')} Notfallblatt drucken</button></div>
-    <div class="card flush" data-u="24"><div class="row plain"><span class="grow"><span class="t">Ich habe den Code sicher notiert</span><span class="s" data-u="27">Ohne diese Bestätigung erinnert dich GhulSuite nach dem Entsperren daran.</span></span>
-      <button class="toggle ${w.confirmed ? 'on' : ''}" data-act="wz-confirm" aria-label="Code notiert"></button></div></div>`;
+    ${check}
+    <p class="hint-text" data-u="27">Ohne richtigen Block geht es nicht weiter – ein „Später“ gibt es nicht. Bricht die Einrichtung hier ab, verlangt GhulSuite nach dem Entsperren einen neuen Code.</p>`;
 }
 
 function setupScreen() {
@@ -282,7 +286,7 @@ const basePassList = passList;
 passList = function () { // eslint-disable-line no-global-assign
   const html = basePassList();
   if (S.codeConfirmed) return html;
-  return html.replace('<div class="screen">', `<div class="screen"><div class="banner warn-banner">${icon('alert')}<span>Dein Wiederherstellungscode wurde nie bestätigt.</span><button data-act="code-sheet">Jetzt erledigen</button></div>`);
+  return html.replace('<div class="screen">', `<div class="screen"><div class="banner warn-banner">${icon('alert')}<span>Dein Wiederherstellungscode wurde nie bestätigt. Ohne Bestätigung geht es nicht weiter.</span><button data-act="code-sheet">Jetzt erledigen</button></div>`);
 };
 
 // --- navigation follows the areas ---------------------------------------------------------------
@@ -373,9 +377,11 @@ function removeSheet(id) {
 }
 
 function codeSheet() {
-  return `<h2>Neuen Wiederherstellungscode erzeugen</h2><p class="hint-text">Der bisherige Code wird ungültig. Schreib den neuen auf oder drucke das Notfallblatt.</p>
+  return `<h2>Neuen Wiederherstellungscode erzeugen</h2><p class="hint-text">Dein bisheriger Code wurde nie bestätigt. Schreib den neuen auf oder drucke das Notfallblatt, dann tippe einen Block ab.</p>
     <div class="codebox">${['P9WD', 'X4KM', 'T7RA', 'N2HE', 'Q5ZB', 'G8VL', 'D3SC', 'F6YJ'].map((g) => `<span>${g}</span>`).join('')}</div>
-    <div class="btn-row" data-u="24"><button class="btn outline" data-act="toast" data-arg="Notfallblatt wird gedruckt">${icon('filetext')} Drucken</button><button class="btn primary" data-act="code-done">${icon('check')} Notiert</button></div>`;
+    <button class="btn outline block" data-act="toast" data-arg="Notfallblatt wird gedruckt">${icon('filetext')} Notfallblatt drucken</button>
+    <div class="field"><div class="grow"><label>3. Block des Codes</label><input value="" placeholder="z. B. T7RA" aria-label="3. Block des Codes"></div></div>
+    <button class="btn primary block" data-u="24" data-act="code-done">${icon('check')} Block prüfen und bestätigen</button>`;
 }
 
 function driveStorageSheet() {
@@ -446,9 +452,10 @@ Object.assign(ACT, {
     if (a === 'drive' && w.areas.drive) w.driveMode = w.sync === 'server' && srv('sync').ok ? 'sync' : 'later';
     render(true);
   },
-  'wz-confirm': () => { S.setup.confirmed = !S.setup.confirmed; render(true); },
+  'wz-check': () => { S.setup.confirmed = true; render(true); toast('Block richtig – Code bestätigt'); },
   'wz-finish': () => {
     const w = S.setup;
+    if (!w.confirmed) { toast('Bitte erst den 3. Block des Codes eingeben'); return; }
     for (const a of AREAS) S.areas[a.id] = { on: !!w.areas[a.id], hidden: false };
     S.syncOn = w.sync === 'server';
     S.driveSetup = w.areas.drive && w.driveMode !== 'later';
@@ -466,7 +473,7 @@ Object.assign(ACT, {
   },
   'mail-setup': () => { S.mailSetup = true; render(); toast('Konto geprüft und hinzugefügt'); },
   'code-sheet': () => sheet(codeSheet()),
-  'code-done': () => { S.codeConfirmed = true; closeSheet(); render(true); toast('Wiederherstellungscode bestätigt'); },
+  'code-done': () => { S.codeConfirmed = true; closeSheet(); render(true); toast('Block richtig – neuer Wiederherstellungscode bestätigt'); },
   'area-sheet': (a) => sheet(areaSheet(a)),
   'area-enable': (a) => {
     S.areas[a] = { on: true, hidden: false };
