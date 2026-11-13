@@ -1510,20 +1510,7 @@ fn php_module_is_installed_over_ftps_and_takes_large_files_in_parts() {
     let web = home.join(&cfg.base).join("www");
     let served = std::env::temp_dir().join(format!("ghul-php-served-{}", cfg.base));
     std::fs::create_dir_all(&served).unwrap();
-    let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
-    let mut php = std::process::Command::new("php")
-        .args(["-S", &format!("127.0.0.1:{port}"), "-t"])
-        .arg(&served)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .unwrap();
-    for _ in 0..50 {
-        if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    }
+    let (mut php, port) = crate::net::tests::spawn_php(&served).unwrap();
     let d = Dirs::new("php-install");
     let s = d.suite();
     s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
