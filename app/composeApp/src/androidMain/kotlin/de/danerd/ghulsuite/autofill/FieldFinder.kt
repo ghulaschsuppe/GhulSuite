@@ -17,6 +17,12 @@ class LoginFields(
 ) {
     val ids: List<AutofillId> get() = username + password
     val isEmpty: Boolean get() = username.isEmpty() && password.isEmpty()
+
+    /** A browser whose website was not recognised: never treat the browser itself as the app. */
+    val unknownSite: Boolean get() = webDomain == null && Browsers.isBrowser(packageName)
+
+    /** The app to match logins against: null for websites and for browsers. */
+    val appPackage: String? get() = if (webDomain == null && !unknownSite) packageName else null
 }
 
 /** Finds user name and password fields by autofill hints, HTML attributes, input type and names. */

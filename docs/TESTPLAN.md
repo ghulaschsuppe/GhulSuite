@@ -175,6 +175,12 @@ Für T5–T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick o
 | F8 | Neue Anmeldung auf einer Website/in einer App eingeben und absenden. | Android fragt „In GhulSuite speichern?“ → gespeichert, Meldung. |
 | F9 | Passwort einer bestehenden Anmeldung ändern und absenden. | „Passwort in GhulSuite aktualisiert“. |
 | F10 | GhulSuite gesperrt, neue Anmeldung absenden. | „GhulSuite ist gesperrt – Anmeldung nicht gespeichert“. |
+| F11 | Tastatur mit Vorschlagsleiste (z. B. Gboard), Android 11 oder neuer: in ein Anmeldefeld tippen. | Die Vorschläge erscheinen als Chips oben in der Tastatur, mit Schloss-Symbol. |
+| F12 | Vivaldi, Brave, Edge oder Samsung Internet: Login-Seite öffnen, ins Feld tippen. | Vorschlag „GhulSuite entsperren“ bzw. die passende Anmeldung. |
+| F13 | Chrome: Einstellungen → Autofill-Dienste → „Autofill über einen anderen Dienst“, Chrome neu starten, F2–F4 wiederholen. | Wie F2–F4. |
+| F14 | In einem Browser, dessen Seite Android nicht erkennt, „Andere Anmeldung wählen …“ benutzen. | Ausfüllen klappt; die Anmeldung wird **nicht** mit dem Browser verknüpft (in anderen Seiten kein direkter Vorschlag). Kein Angebot zum Speichern. |
+| F15 | Es erscheint nichts: lange auf das Feld drücken → „Automatisch ausfüllen“. | GhulSuite-Vorschläge erscheinen. |
+| F16 | Optionen → GhulPass → Autofill bei aktivem Dienst. | Abschnitt „So erscheinen die Vorschläge“ mit Hinweisen zu Tastatur, Apps, Chrome und langem Drücken. |
 
 ## 11. Einstellungen und Allgemeines
 
