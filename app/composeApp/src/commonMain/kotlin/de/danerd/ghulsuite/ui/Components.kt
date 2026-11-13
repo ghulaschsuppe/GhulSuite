@@ -49,6 +49,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Card
@@ -373,7 +374,10 @@ fun ListRow(
     bold: Boolean = false,
     divider: Boolean = false,
     dividerStart: Dp? = null,
+    /** Chosen in a selection: accent background (the tile shows the check, see [SelectableTile]). */
     selected: Boolean = false,
+    /** Open in the second pane of a wide window. */
+    highlighted: Boolean = false,
     /** Inside a card that has its own padding (SectionCard): no side padding, so the row lines up with the text around it. */
     flush: Boolean = false,
     onLongClick: (() -> Unit)? = null,
@@ -385,7 +389,7 @@ fun ListRow(
     }
     Row(
         Modifier.fillMaxWidth().heightIn(min = 60.dp)
-            .then(if (selected) Modifier.background(g.surface2) else Modifier)
+            .then(if (selected) Modifier.background(g.accentSoft) else if (highlighted) Modifier.background(g.surface2) else Modifier)
             .then(
                 when {
                     onLongClick != null -> Modifier.combinedClickable(onClick = onClick ?: {}, onLongClick = onLongClick)
@@ -553,6 +557,37 @@ fun BusyBanner(state: AppState) {
 fun ErrorText(text: String?) {
     if (text.isNullOrEmpty()) return
     Text(text, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+}
+
+/**
+ * A list could not be loaded: the reason and "Try again", in the same place (under the search
+ * field) in every area.
+ */
+@Composable
+fun LoadError(error: String?, onRetry: () -> Unit) {
+    if (error.isNullOrEmpty()) return
+    val t = g
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(t.danger.copy(alpha = 0.10f))
+            .padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp).heightIn(min = 48.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(Icons.Filled.ErrorOutline, null, Modifier.size(20.dp), tint = t.danger)
+        Text(error, Modifier.weight(1f).padding(vertical = 8.dp), color = t.danger, fontSize = 14.sp)
+        TextButton(onClick = onRetry) { Text(stringResource(Res.string.a_retry)) }
+    }
+}
+
+/** A list is being read for the first time: the same quiet line in every area. */
+@Composable
+fun LoadingHint() {
+    val t = g
+    Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = t.muted)
+        Text(stringResource(Res.string.loading), fontSize = 14.sp, color = t.muted)
+    }
 }
 
 /** zxcvbn score 0..4 as a bar with a label. */

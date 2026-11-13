@@ -28,10 +28,17 @@ name: GhulDrive on a real server
 - hideKeyboard
 # The chip "Password" (the field below is called "Server password").
 - tapOn: "Password"
+- scrollUntilVisible:
+    element: "Server password"
+    direction: DOWN
 - tapOn: "Server password"
 - inputText: "test-pw-123"
 - hideKeyboard
 - takeScreenshot: s1-drive-server
+# The row sits below the password and key options: scroll the sheet down to it first.
+- scrollUntilVisible:
+    element: "Choose folder"
+    direction: DOWN
 - tapOn:
     text: "Choose folder"
     index: 0

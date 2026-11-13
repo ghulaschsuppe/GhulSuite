@@ -58,6 +58,8 @@ import androidx.compose.material.icons.filled.Report
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.runtime.produceState
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -73,8 +75,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -222,24 +222,66 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
         }
     }
     val swipeLeft = state.backend.settings.mailSwipeLeft
+    val keyOf = { item: MailItem -> item.accountId + "|" + item.m.uid }
+    fun hideKey(item: MailItem) = hiddenKey("mail", item.accountId + "/" + folder, item.m.uid.toString())
+    val trashMsg = stringResource(Res.string.msg_moved_to_trash)
+    val archivedMsg = stringResource(Res.string.mail_archived_n)
+    val movedMsg = stringResource(Res.string.mail_moved_n)
+    // Removing mails from this list (trash, archive, another folder) goes through "Undo".
+    fun remove(list: List<MailItem>, message: String, action: suspend (MailItem) -> Unit) {
+        state.undoable(list.map(::hideKey), message.replace("%1\$s", list.size.toString()), after = { reload++ }) { list.forEach { action(it) } }
+    }
+    fun delete(list: List<MailItem>) = remove(list, trashMsg) { net.mailDelete(it.accountId, folder, it.m.uid) }
+    fun archive(list: List<MailItem>) = scope.launch {
+        // Without an archive folder there is nothing to archive into: it says so, nothing happens.
+        val targets = list.associateWith { net.runCatching { mailFolders(it.accountId) }.getOrDefault(emptyList()).firstOrNull { f -> f.role == "archive" } }
+        val todo = list.filter { targets[it]?.name != folder }
+        if (todo.any { targets[it] == null }) state.messageRes(Res.string.mail_no_archive)
+        else if (todo.isNotEmpty()) remove(todo, archivedMsg) { net.mailMove(it.accountId, folder, it.m.uid, targets.getValue(it)!!.name) }
+    }
     fun swipe(item: MailItem, left: Boolean) {
+        if (left && swipeLeft == 0) return archive(listOf(item)).let {}
+        if (left && swipeLeft == 1) return delete(listOf(item))
         scope.launch {
-            runCatching {
-                if (!left) {
-                    net.mailSetSeen(item.accountId, folder, item.m.uid, !item.m.seen)
-                } else when (swipeLeft) {
-                    0 -> {
-                        val archive = net.mailFolders(item.accountId).firstOrNull { it.role == "archive" }
-                        if (archive != null) net.mailMove(item.accountId, folder, item.m.uid, archive.name) else net.mailDelete(item.accountId, folder, item.m.uid)
-                    }
-                    1 -> net.mailDelete(item.accountId, folder, item.m.uid)
-                    else -> net.mailSetSeen(item.accountId, folder, item.m.uid, true)
-                }
-            }.onFailure { state.message(describe(it)) }
+            runCatching { net.mailSetSeen(item.accountId, folder, item.m.uid, if (left) true else !item.m.seen) }.onFailure { state.message(describe(it)) }
             reload++
         }
     }
+    // Long press selects mails (as in every list); the bar on top acts on them.
+    val selected = rememberListSelection()
+    var moving by remember { mutableStateOf<List<MailItem>?>(null) }
+    val listed = messages.filter { hideKey(it) !in state.hidden }
+    val chosen = listed.filter { keyOf(it) in selected }
 
+    Column(Modifier.fillMaxSize()) {
+    if (selected.active) {
+        val anyUnread = chosen.any { !it.m.seen }
+        val anyUnflagged = chosen.any { !it.m.flagged }
+        fun flags(block: suspend (MailItem) -> Unit) {
+            val list = chosen
+            selected.clear()
+            state.run(onError = { error = it }, block = { list.forEach { block(it) } }) { reload++ }
+        }
+        SelectionHeader(
+            selected.keys.size,
+            onClose = { selected.clear() },
+            onAll = { selected.all(listed.map(keyOf)) },
+            actions = buildList {
+                add(SelAction(if (anyUnread) Icons.Filled.MarkEmailRead else Icons.Filled.MarkEmailUnread,
+                    stringResource(if (anyUnread) Res.string.a_mark_read else Res.string.a_mark_unread)) {
+                    flags { net.mailSetSeen(it.accountId, folder, it.m.uid, anyUnread) }
+                })
+                add(SelAction(if (anyUnflagged) Icons.Outlined.Flag else Icons.Filled.Flag, stringResource(if (anyUnflagged) Res.string.a_flag else Res.string.a_unflag)) {
+                    flags { net.mailSetFlagged(it.accountId, folder, it.m.uid, anyUnflagged) }
+                })
+                add(SelAction(Icons.Filled.Archive, stringResource(Res.string.mail_archive)) { val list = chosen; selected.clear(); archive(list) })
+                // Moving needs the folders of one account.
+                if (chosen.map { it.accountId }.distinct().size == 1) add(SelAction(Icons.Filled.Folder, stringResource(Res.string.a_move)) { moving = chosen })
+                add(SelAction(Icons.Filled.Delete, stringResource(Res.string.a_delete), danger = true) { val list = chosen; selected.clear(); delete(list) })
+            },
+        )
+    }
+    Box(Modifier.weight(1f)) {
     ScreenColumn {
         BusyBanner(state)
         SearchField(query, {
@@ -255,7 +297,7 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
                 }
             }
         })
-        ErrorText(error)
+        LoadError(error) { error = null; reload++ }
         FilterChipRow(
             listOf(
                 "" to stringResource(Res.string.filter_all),
@@ -266,8 +308,8 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
             filter, { filter = it },
             icons = mapOf("flagged" to Icons.Outlined.Flag, "attachments" to Icons.Filled.Attachment),
         )
-        if (loading && messages.isEmpty()) Hint(stringResource(Res.string.mail_loading))
-        val shownItems = messages.filter {
+        if (loading && messages.isEmpty()) LoadingHint()
+        val shownItems = listed.filter {
             when (filter) {
                 "unread" -> !it.m.seen
                 "flagged" -> it.m.flagged
@@ -299,10 +341,12 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
                 list.forEachIndexed { i, item ->
                     val count = threads[item.accountId + "|" + item.m.threadKey.ifEmpty { item.m.uid.toString() }]?.size ?: 1
                     val open = state.wide && state.stack.firstOrNull().let { it is Screen.MailRead && it.uid == item.m.uid && it.accountId == item.accountId }
-                    SwipeRow(onLeft = { swipe(item, true) }, onRight = { swipe(item, false) }, leftAction = swipeLeft) {
-                        Box(if (open) Modifier.background(g.surface2) else Modifier) {
-                        MailRow(item.m, today, yesterdayLabel, divider = i > 0, count = count, account = if (all) names[item.accountId] else null) {
-                            state.push(Screen.MailRead(item.accountId, folder, item.m.uid))
+                    val chosenRow = keyOf(item) in selected
+                    SwipeRow(enabled = !selected.active, onLeft = { swipe(item, true) }, onRight = { swipe(item, false) }, leftAction = swipeLeft) {
+                        Box(if (chosenRow) Modifier.background(g.accentSoft) else if (open) Modifier.background(g.surface2) else Modifier) {
+                        MailRow(item.m, today, yesterdayLabel, divider = i > 0, count = count, account = if (all) names[item.accountId] else null,
+                            selected = chosenRow, onLongClick = { selected.toggle(keyOf(item)) }) {
+                            if (selected.active) selected.toggle(keyOf(item)) else state.push(Screen.MailRead(item.accountId, folder, item.m.uid))
                         }
                         }
                     }
@@ -320,12 +364,30 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
         }
         if (messages.isNotEmpty()) HintText(stringResource(Res.string.mail_swipe_hint))
     }
+    }
+    }
+    moving?.let { list ->
+        val account = list.first().accountId
+        val folders by produceState(emptyList<MailFolderUi>(), account) { value = runCatching { net.mailFolders(account) }.getOrDefault(emptyList()) }
+        GhulSheet({ moving = null }, stringResource(Res.string.a_move)) {
+            SheetList {
+                folders.filter { it.name != folder }.forEachIndexed { i, f ->
+                    SheetRow(folderLabel(f), leading = { IconTile(folderIcon(f.role), areaColor(Tab.MAIL)) }, divider = i > 0) {
+                        moving = null
+                        selected.clear()
+                        remove(list, movedMsg) { net.mailMove(it.accountId, folder, it.m.uid, f.name) }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /** Swipe a mail row: to the right toggles read, to the left does the chosen action. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SwipeRow(onLeft: () -> Unit, onRight: () -> Unit, leftAction: Int, content: @Composable () -> Unit) {
+private fun SwipeRow(enabled: Boolean = true, onLeft: () -> Unit, onRight: () -> Unit, leftAction: Int, content: @Composable () -> Unit) {
+    if (!enabled) return content()
     val st = androidx.compose.material3.rememberSwipeToDismissBoxState(confirmValueChange = { v ->
         when (v) {
             androidx.compose.material3.SwipeToDismissBoxValue.EndToStart -> onLeft()
@@ -354,17 +416,6 @@ private fun SwipeRow(onLeft: () -> Unit, onRight: () -> Unit, leftAction: Int, c
 }
 
 @Composable
-private fun Picker(label: String, options: List<Pair<String, String>>, onPick: (String) -> Unit) {
-    var open by remember { mutableStateOf(false) }
-    Box {
-        OutlinedButton(onClick = { open = true }) { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-        DropdownMenu(open, { open = false }) {
-            for ((id, text) in options) DropdownMenuItem(text = { Text(text) }, onClick = { open = false; onPick(id) })
-        }
-    }
-}
-
-@Composable
 private fun folderLabel(f: MailFolderUi): String = when (f.role) {
     "inbox" -> stringResource(Res.string.mail_inbox)
     "sent" -> stringResource(Res.string.mail_sent)
@@ -376,17 +427,25 @@ private fun folderLabel(f: MailFolderUi): String = when (f.role) {
 }
 
 @Composable
-private fun MailRow(m: MailSummaryUi, today: String, yesterday: String, divider: Boolean, count: Int = 1, account: String? = null, onClick: () -> Unit) {
+@OptIn(ExperimentalFoundationApi::class)
+private fun MailRow(
+    m: MailSummaryUi, today: String, yesterday: String, divider: Boolean, count: Int = 1, account: String? = null,
+    selected: Boolean = false, onLongClick: (() -> Unit)? = null, onClick: () -> Unit,
+) {
     val name = m.from.ifBlank { m.fromAddress }
     val unread = !m.seen
     val color = areaColor(Tab.MAIL)
+    // An encrypted mail shows "..." as its subject on the server (the real one is inside).
+    val hiddenSubject = m.encrypted && (m.subject.isBlank() || m.subject.trim() == "...")
     if (divider) RowDivider()
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp),
+        Modifier.fillMaxWidth()
+            .then(if (onLongClick != null) Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick) else Modifier.clickable(onClick = onClick))
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        Avatar(name)
+        SelectableTile(selected) { Avatar(name) }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -408,11 +467,22 @@ private fun MailRow(m: MailSummaryUi, today: String, yesterday: String, divider:
                 )
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(m.subject.ifBlank { stringResource(Res.string.mail_no_subject) }, Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    color = g.fg, fontWeight = if (unread) FontWeight.Bold else FontWeight.Normal)
+                if (hiddenSubject) {
+                    // The subject travels encrypted too: say so once, quietly, instead of "...".
+                    Row(Modifier.weight(1f, fill = false), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Icon(Icons.Filled.Lock, null, Modifier.size(14.dp), tint = g.ok)
+                        Text(stringResource(Res.string.mail_preview_encrypted), color = g.muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            fontWeight = if (unread) FontWeight.SemiBold else FontWeight.Normal)
+                    }
+                } else {
+                    Text(m.subject.ifBlank { stringResource(Res.string.mail_no_subject) }, Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        color = g.fg, fontWeight = if (unread) FontWeight.Bold else FontWeight.Normal)
+                }
                 if (m.flagged) Icon(Icons.Filled.Flag, null, Modifier.size(18.dp), tint = color)
             }
-            if (m.encrypted) {
+            if (hiddenSubject) {
+                // Nothing more to show: the line above says it.
+            } else if (m.encrypted) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     Icon(Icons.Filled.Lock, null, Modifier.size(14.dp), tint = g.ok)
                     Text(stringResource(Res.string.mail_preview_encrypted), fontSize = 14.sp, color = g.muted, maxLines = 1)
@@ -458,24 +528,16 @@ fun MailReadScreen(state: AppState, accountId: String, folder: String, uid: Long
     val accountName by produceState("", accountId) { value = runCatching { net.mailAccounts().firstOrNull { it.id == accountId }?.name }.getOrNull().orEmpty() }
     val archive = folders.firstOrNull { it.role == "archive" }
     val inTrash = folders.any { it.role == "trash" && it.name == folder }
-    var deleting by remember { mutableStateOf(false) }
-    if (deleting) {
-        AlertDialog(
-            danger = true,
-            onDismissRequest = { deleting = false },
-            title = { Text(stringResource(Res.string.drive_delete_forever_title)) },
-            text = { Text(stringResource(Res.string.mail_delete_for_good_text)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    deleting = false
-                    state.run(onError = { error = it }, block = { net.mailDelete(accountId, folder, uid) }) {
-                        state.changed(); state.pop(); state.messageRes(Res.string.msg_deleted)
-                    }
-                }) { Text(stringResource(Res.string.drive_delete_forever)) }
-            },
-            dismissButton = { TextButton(onClick = { deleting = false }) { Text(stringResource(Res.string.a_cancel)) } },
-        )
+    val readKey = listOf(hiddenKey("mail", "$accountId/$folder", uid.toString()))
+    // Leaving the mail is the action: the list no longer shows it, "Undo" brings it back.
+    fun leave(message: String, action: suspend () -> Unit) {
+        state.pop()
+        state.undoable(readKey, message, after = { state.refreshUnread() }, action = action)
     }
+    val trashMsg = stringResource(Res.string.msg_moved_to_trash)
+    val deletedMsg = stringResource(Res.string.msg_deleted)
+    val archivedMsg = stringResource(Res.string.mail_archived_n).replace("%1\$s", "1")
+    val movedMsg = stringResource(Res.string.mail_moved_n).replace("%1\$s", "1")
     var more by remember { mutableStateOf(false) }
     var labelAdd by remember { mutableStateOf(false) }
     var original by remember { mutableStateOf<String?>(null) }
@@ -488,19 +550,15 @@ fun MailReadScreen(state: AppState, accountId: String, folder: String, uid: Long
     val saveFile = rememberSaveFile { ok -> if (ok) state.message(savedMsg2) }
     val driveDone = stringResource(Res.string.mail_to_drive_done)
     Column(Modifier.padding(padding)) {
-        GhulTopBar("", onLock = { state.backend.lock() }, onBack = { state.pop() }, backIcon = backIcon(state), actions = {
+        GhulTopBar("", onLock = { state.lockNow() }, onBack = { state.pop() }, backIcon = backIcon(state), actions = {
             if (archive != null && archive.name != folder) {
                 BarIcon(Icons.Filled.Archive, stringResource(Res.string.mail_archive)) {
-                    state.run(onError = { error = it }, block = { net.mailMove(accountId, folder, uid, archive.name) }) { state.changed(); state.pop() }
+                    leave(archivedMsg) { net.mailMove(accountId, folder, uid, archive.name) }
                 }
             }
             BarIcon(Icons.Filled.Delete, stringResource(Res.string.a_delete), tint = g.danger) {
-                // Into the trash of the mailbox: no question, it can be moved back from there.
-                // Inside the trash it is deleted for good, so that asks first.
-                if (inTrash) deleting = true
-                else state.run(onError = { error = it }, block = { net.mailDelete(accountId, folder, uid) }) {
-                    state.changed(); state.pop(); state.messageRes(Res.string.msg_moved_to_trash)
-                }
+                // Into the trash of the mailbox (inside the trash: for good). No question, "Undo".
+                leave(if (inTrash) deletedMsg else trashMsg) { net.mailDelete(accountId, folder, uid) }
             }
             BarIcon(Icons.Filled.MoreVert, stringResource(Res.string.entry_more)) { more = true }
         })
@@ -537,8 +595,15 @@ fun MailReadScreen(state: AppState, accountId: String, folder: String, uid: Long
                             Text(o.m.from.ifBlank { o.m.fromAddress }, fontWeight = FontWeight.Bold, maxLines = 1)
                             if (o.m.date > 0) Text("· " + mailTime(o.m.date), color = t.muted)
                         }
-                        Text(if (o.m.encrypted) stringResource(Res.string.mail_preview_encrypted) else o.m.preview.ifBlank { o.m.subject },
-                            fontSize = 14.sp, color = t.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (o.m.encrypted) {
+                            // As in the list: one quiet line with the lock, never the "..." subject.
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Icon(Icons.Filled.Lock, null, Modifier.size(14.dp), tint = t.ok)
+                                Text(stringResource(Res.string.mail_preview_encrypted), fontSize = 14.sp, color = t.muted, maxLines = 1)
+                            }
+                        } else {
+                            Text(o.m.preview.ifBlank { o.m.subject }, fontSize = 14.sp, color = t.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
                     }
                 }
             }
@@ -697,7 +762,7 @@ fun MailReadScreen(state: AppState, accountId: String, folder: String, uid: Long
                 folders.filter { it.name != folder }.forEachIndexed { i, f ->
                     SheetRow(folderLabel(f), leading = { IconTile(folderIcon(f.role), areaColor(Tab.MAIL), size = 34.dp) }, divider = i > 0) {
                         moveOpen = false
-                        state.run(onError = { error = it }, block = { net.mailMove(accountId, folder, uid, f.name) }) { state.changed(); state.pop() }
+                        leave(movedMsg) { net.mailMove(accountId, folder, uid, f.name) }
                     }
                 }
             }
@@ -819,7 +884,7 @@ fun MailComposeScreen(state: AppState, draft: MailDraft, padding: PaddingValues)
     Column(Modifier.padding(padding)) {
         // Header like every full-screen editor: close, title, own actions, the main action.
         GhulTopBar(
-            title, onLock = { state.backend.lock() }, onBack = { state.pop() }, backIcon = Icons.Filled.Close, showLock = false,
+            title, onLock = { state.lockNow() }, onBack = { state.pop() }, backIcon = Icons.Filled.Close, showLock = false,
             actions = {
                 if (filePickersAvailable) BarIcon(Icons.Filled.Attachment, stringResource(Res.string.a_attach)) { attach() }
                 HeaderButton(stringResource(Res.string.a_send), enabled = canSend, icon = Icons.AutoMirrored.Filled.Send) { send() }
@@ -842,8 +907,15 @@ fun MailComposeScreen(state: AppState, draft: MailDraft, padding: PaddingValues)
                         Avatar(current?.name ?: "?", size = 24.dp)
                         Text(current?.email ?: "", fontSize = 14.sp)
                     }
-                    DropdownMenu(open, { open = false }) {
-                        for (a in accounts) DropdownMenuItem(text = { Text(a.email) }, onClick = { open = false; accountId = a.id })
+                    if (open) {
+                        GhulSheet({ open = false }, stringResource(Res.string.mail_from_short)) {
+                            SheetList {
+                                accounts.forEachIndexed { i, a ->
+                                    SheetRow(a.name.ifBlank { a.email }, a.email, leading = { Avatar(a.name.ifBlank { a.email }) }, divider = i > 0,
+                                        end = { if (a.id == accountId) SheetCheck() }) { open = false; accountId = a.id }
+                                }
+                            }
+                        }
                     }
                 }
                 if (accounts.size > 1) Icon(Icons.Filled.KeyboardArrowDown, null, Modifier.size(20.dp), tint = t.muted)

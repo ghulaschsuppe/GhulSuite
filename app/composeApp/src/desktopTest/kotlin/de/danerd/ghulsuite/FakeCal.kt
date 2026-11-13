@@ -17,6 +17,8 @@ import de.danerd.ghulsuite.ui.today
 
 /** The sample week of the design preview, relative to today, for screenshots. */
 class FakeCal : CalBackend {
+    /** What the UI asked to change (the UI tests check these). */
+    val calls = java.util.Collections.synchronizedList(mutableListOf<String>())
     private val cals = listOf(
         CalCalendarUi("priv", "c1", "Privat", 0xD6336C, 15, 5),
         CalCalendarUi("work", "c1", "Arbeit", 0x2F74E8, 15, 6),
@@ -66,7 +68,7 @@ class FakeCal : CalBackend {
         )
     }
     override suspend fun saveEvent(event: CalEventUi) = "x"
-    override suspend fun deleteEvent(id: String, date: String, mode: CalDeleteModeUi) {}
+    override suspend fun deleteEvent(id: String, date: String, mode: CalDeleteModeUi) { calls += "deleteEvent:$id:$date:$mode" }
     override suspend fun occurrences(from: String, to: String, holidayRegion: String, lang: String): List<CalOccurrenceUi> {
         val f = Day.parse(from)!!
         val t = Day.parse(to)!!

@@ -30,7 +30,7 @@ import de.danerd.ghulsuite.model.SyncReportUi
 import de.danerd.ghulsuite.model.SyncStatusUi
 
 /** Sample data for screenshots of the network screens. */
-class FakeNet(private val configured: Boolean = true) : NetBackend {
+class FakeNet(private val configured: Boolean = true, private val encryptedMail: Boolean = false) : NetBackend {
     private val now = 1_762_000_000L
     private val server = ServerUi(
         "s1", "Heimserver", "nas.example.org", 22, "max", "ghulsuite", true, "SHA256:abc", "/home/max/ghulsuite",
@@ -40,7 +40,7 @@ class FakeNet(private val configured: Boolean = true) : NetBackend {
         "s2", "Webspace", "", 0, "", "", false, "", "https://example.org/ghulsuite.php", ServerKindUi.PHP, "https://example.org/ghulsuite.php", "",
     )
     /** Calls the screens made, for tests. */
-    val calls = mutableListOf<String>()
+    val calls: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf<String>())
     private val share = ShareInfoUi("a1", "s2", "Steuer 2025.pdf", 2_400_000, now * 1000, (now + 7 * 86_400) * 1000, true, 5, 1,
         "https://example.org/ghulsuite.php#a1b2c3.k3yk3yk3y")
     private val servers = MailServersUi("posteo.de", 993, MailSecurityUi.TLS, "posteo.de", 587, MailSecurityUi.STARTTLS)
@@ -88,7 +88,10 @@ class FakeNet(private val configured: Boolean = true) : NetBackend {
     override suspend fun driveCreateFolder(parent: String?, name: String) = "d3"
     override suspend fun driveRename(id: String, name: String) {}
     override suspend fun driveMove(id: String, folder: String?) {}
-    override suspend fun driveDelete(id: String) {}
+    override suspend fun driveDelete(id: String) { calls += "driveDelete:$id" }
+    override suspend fun driveTrash() = listOf(DriveItemUi("f9", null, "Alter Entwurf.docx", false, 48_000, now * 1000, trashed = now * 1000))
+    override suspend fun driveDeleteForever(id: String) { calls += "driveDeleteForever:$id" }
+    override suspend fun driveEmptyTrash(days: Int): Int { if (days == 0) calls += "driveEmptyTrash"; return 0 }
     override suspend fun driveUpload(folder: String?, source: ByteSource, onProgress: (Long) -> Unit) = "f3"
     override suspend fun driveDownload(id: String, sink: ByteSink, onProgress: (Long) -> Unit) {}
 
@@ -105,8 +108,11 @@ class FakeNet(private val configured: Boolean = true) : NetBackend {
         MailSummaryUi(3, "Erika Musterfrau", "erika@example.org", "Treffen am Freitag", now, false, false, false, 2_000),
         MailSummaryUi(2, "Stadtwerke", "service@stadtwerke.example", "Ihre Jahresabrechnung", now - 86_400, true, true, true, 120_000),
         MailSummaryUi(1, "Max Mustermann", "max@posteo.de", "Notiz an mich", now - 3 * 86_400, true, false, false, 900),
-    )
-    override suspend fun mailList(accountId: String, folder: String, offset: Int, limit: Int) = MailPageUi(3, list)
+    ) + if (encryptedMail) {
+        // Encrypted with the subject inside (outer subject "..."), as Thunderbird and Proton send it.
+        listOf(MailSummaryUi(4, "Jana Beispiel", "jana@example.net", "...", now - 3_600, false, false, false, 5_000, encrypted = true))
+    } else emptyList()
+    override suspend fun mailList(accountId: String, folder: String, offset: Int, limit: Int) = MailPageUi(list.size, list)
     override suspend fun mailSearch(accountId: String, folder: String, query: String) = list
     override suspend fun mailGet(accountId: String, folder: String, uid: Long) = if (uid == 9L) htmlMail() else MailMessageUi(
         uid, "Stadtwerke", "service@stadtwerke.example", listOf("Max Mustermann <max@posteo.de>"), emptyList(), "",
@@ -142,7 +148,7 @@ class FakeNet(private val configured: Boolean = true) : NetBackend {
     override suspend fun mailSetSeen(accountId: String, folder: String, uid: Long, seen: Boolean) {}
     override suspend fun mailSetFlagged(accountId: String, folder: String, uid: Long, flagged: Boolean) {}
     override suspend fun mailMove(accountId: String, folder: String, uid: Long, target: String) {}
-    override suspend fun mailDelete(accountId: String, folder: String, uid: Long) {}
+    override suspend fun mailDelete(accountId: String, folder: String, uid: Long) { calls += "mailDelete:$accountId:$folder:$uid" }
     override suspend fun mailSend(mail: OutgoingMailUi) {}
     override suspend fun mailRecipientKeys(recipients: List<String>) =
         recipients.map { de.danerd.ghulsuite.model.MailRecipientKeyUi(it, it.contains("erika"), if (it.contains("erika")) "autocrypt" else "") }

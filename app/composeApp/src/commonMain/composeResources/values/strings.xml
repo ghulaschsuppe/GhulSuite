@@ -49,8 +49,6 @@
     <string name="auth_add_title">Add account</string>
     <string name="auth_add_uri">otpauth link</string>
     <string name="auth_advanced">Advanced (usually leave as is)</string>
-    <string name="auth_delete_text">Delete the codes for “%1$s”? Make sure you can still sign in to this account, for example with another 2FA method.</string>
-    <string name="auth_delete_title">Delete account?</string>
     <string name="auth_empty">No accounts yet. Use + to add the 2FA code of a service.</string>
     <string name="auth_next">next: %1$s</string>
     <string name="auth_qr_hint">Point the camera at the website's QR code. The export QR code of Google Authenticator works too. Then all accounts are taken over at once.</string>
@@ -211,8 +209,6 @@
     <string name="open_vault_new_code">The file is copied to your storage location. If it already carries a recovery code, its emergency sheet stays valid; otherwise you get a new code.</string>
     <string name="open_vault_text">File: %1$s (%2$s)</string>
     <string name="open_vault_title">Open vault</string>
-    <string name="pass_delete_text">The entry will be deleted for good.</string>
-    <string name="pass_delete_title">Delete entry?</string>
     <string name="pass_empty">No entries yet. Use + to add your first password.</string>
     <string name="pass_new_entry">New entry</string>
     <string name="pass_no_match">Nothing found.</string>
@@ -381,7 +377,8 @@
     <string name="vault_none_yet">There is no vault for this area yet.</string>
     <string name="vault_outdated">Older than the last state seen, maybe an old copy.</string>
     <string name="vault_pick_title">Which vault?</string>
-    <string name="vault_remove_text">The file is deleted from your folder. All its entries are gone unless you have a copy. Tip: export it first.</string>
+    <string name="vault_remove_warning">The file is deleted from your folder, with all its entries.</string>
+    <string name="vault_remove_tip">Tip: export first what you want to keep.</string>
     <string name="vault_remove_title">Delete “%1$s”?</string>
     <string name="vault_scan">Search folder for vaults</string>
     <string name="vault_summary">%1$s · entries: %2$s · %3$s</string>
@@ -499,7 +496,6 @@
     <string name="mail_trash">Trash</string>
     <string name="mail_junk">Spam</string>
     <string name="mail_archive">Archive</string>
-    <string name="mail_loading">Loading …</string>
     <string name="mail_empty">No messages.</string>
     <string name="mail_more">Load more (%1$s)</string>
     <string name="mail_read_title">Message</string>
@@ -550,7 +546,6 @@
     <string name="ctx_storage">Storage</string>
     <string name="drive_crypto_hint">Files are encrypted on this device (AES-256-GCM, 1 MiB blocks). The server only sees encrypted blocks.</string>
     <string name="drive_delete_many_title">Delete %1$s items?</string>
-    <string name="drive_selected">%1$s selected</string>
     <string name="pass_share">Share securely (one-time link)</string>
     <string name="pass_share_hint">Encrypted on this device. The key is only in the link, so the server cannot read the entry.</string>
     <string name="php_create">Create server module</string>
@@ -659,8 +654,6 @@
     <string name="share_until">until %1$s</string>
     <string name="share_withdraw">Withdraw</string>
     <string name="share_withdrawn">Link withdrawn. It no longer works.</string>
-    <string name="share_withdraw_text">The link stops working immediately. The file stays in GhulDrive.</string>
-    <string name="share_withdraw_title">Withdraw %1$s?</string>
     <string name="shares_empty">No share links yet</string>
     <string name="shares_hint">Expired links are deleted from the server automatically.</string>
     <string name="shares_title">Share links</string>
@@ -765,7 +758,6 @@
     <string name="drive_changed">changed %1$s</string>
     <string name="drive_encrypted_blocks">encrypted in 4 MiB blocks</string>
     <string name="a_share_dots">Share …</string>
-    <string name="drive_n_selected">%1$s selected</string>
     <string name="vault_all_vaults">All vaults</string>
     <string name="mail_settings_row">Mail options</string>
     <string name="drive_quick_folder">Folder</string>
@@ -1335,11 +1327,6 @@
     <string name="pass_no_value">%1$s is empty in this entry.</string>
     <string name="pass_copy_username">Copy user name</string>
     <string name="pass_copy_password">Copy password</string>
-    <string name="pass_delete_n_title">Delete %1$s entries?</string>
-    <string name="pass_delete_one_text">“%1$s” will be deleted for good.</string>
-    <string name="pass_delete_n_text">The %1$s selected entries will be deleted for good.</string>
-    <string name="auth_delete_n_title">Delete %1$s accounts?</string>
-    <string name="auth_delete_n_text">The %1$s selected 2FA accounts will be deleted. Make sure you can still sign in to these services.</string>
     <string name="auth_swipe_hint">Swipe right to edit, left to delete. Long press selects several.</string>
     <string name="auth_tap_hint_short">Tap copies the code.</string>
     <string name="mail_pgp_on">PGP on</string>
@@ -1365,11 +1352,19 @@
     <string name="a_unfavorite">Remove from favourites</string>
     <string name="msg_deleted">Deleted</string>
     <string name="msg_moved_to_trash">Moved to trash</string>
-    <string name="mail_delete_for_good_text">This mail is in the trash already. Now it is deleted for good.</string>
-    <string name="cal_delete_event_title">Delete event?</string>
-    <string name="delete_for_good_text">“%1$s” will be deleted for good.</string>
     <string name="drive_delete_forever_title">Delete for good?</string>
-    <string name="pass_attachment_delete_title">Delete attachment?</string>
     <string name="set_panic_hint_sidebar">Quick lock: the lock at the bottom of the sidebar, or Ctrl+L.</string>
     <string name="wz_key_touch_desktop">Plug in the key and touch it when GhulSuite asks (after choosing the storage location).</string>
+    <string name="a_undo">Undo</string>
+    <string name="a_retry">Try again</string>
+    <string name="a_mark_read">Mark read</string>
+    <string name="n_selected">%1$s selected</string>
+    <string name="msg_deleted_n">%1$s deleted</string>
+    <string name="mail_archived_n">%1$s archived</string>
+    <string name="mail_moved_n">%1$s moved</string>
+    <string name="mail_no_archive">This mailbox has no archive folder.</string>
+    <string name="delete_n_for_good_text">%1$s items will be deleted for good.</string>
+    <string name="pane_pick_account">No account open</string>
+    <string name="pane_pick_event">No event open</string>
+    <string name="pane_pick_hint_auth">Adding an account opens here.</string>
 </resources>

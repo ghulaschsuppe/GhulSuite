@@ -49,8 +49,6 @@
     <string name="auth_add_title">Konto hinzufügen</string>
     <string name="auth_add_uri">otpauth-Link</string>
     <string name="auth_advanced">Erweitert (meist so lassen)</string>
-    <string name="auth_delete_text">Codes für „%1$s“ löschen? Stelle sicher, dass du dich noch anders bei diesem Konto anmelden kannst.</string>
-    <string name="auth_delete_title">Konto löschen?</string>
     <string name="auth_empty">Noch keine Konten. Mit + fügst du den 2FA-Code eines Dienstes hinzu.</string>
     <string name="auth_next">danach: %1$s</string>
     <string name="auth_qr_hint">Halte die Kamera auf den QR-Code der Website. Auch der Export-QR-Code von Google Authenticator funktioniert. Dann werden alle Konten auf einmal übernommen.</string>
@@ -211,8 +209,6 @@
     <string name="open_vault_new_code">Die Datei wird in deinen Speicherort kopiert. Trägt sie schon einen Wiederherstellungscode, gilt das zugehörige Notfallblatt weiter, sonst bekommst du einen neuen Code.</string>
     <string name="open_vault_text">Datei: %1$s (%2$s)</string>
     <string name="open_vault_title">Tresor öffnen</string>
-    <string name="pass_delete_text">Der Eintrag wird endgültig gelöscht.</string>
-    <string name="pass_delete_title">Eintrag löschen?</string>
     <string name="pass_empty">Noch keine Einträge. Mit + legst du dein erstes Passwort an.</string>
     <string name="pass_new_entry">Neuer Eintrag</string>
     <string name="pass_no_match">Nichts gefunden.</string>
@@ -381,7 +377,8 @@
     <string name="vault_none_yet">Es gibt noch keinen Tresor für diesen Bereich.</string>
     <string name="vault_outdated">Älter als der zuletzt gesehene Stand, vielleicht eine alte Kopie.</string>
     <string name="vault_pick_title">In welchen Tresor?</string>
-    <string name="vault_remove_text">Die Datei wird aus deinem Ordner gelöscht. Alle Einträge darin sind dann weg, sofern du keine Kopie hast. Tipp: vorher exportieren.</string>
+    <string name="vault_remove_warning">Die Datei wird aus deinem Ordner gelöscht, mit allen Einträgen.</string>
+    <string name="vault_remove_tip">Tipp: Exportiere vorher, was du behalten willst.</string>
     <string name="vault_remove_title">„%1$s“ löschen?</string>
     <string name="vault_scan">Ordner nach Tresoren durchsuchen</string>
     <string name="vault_summary">%1$s · Einträge: %2$s · %3$s</string>
@@ -499,7 +496,6 @@
     <string name="mail_trash">Papierkorb</string>
     <string name="mail_junk">Spam</string>
     <string name="mail_archive">Archiv</string>
-    <string name="mail_loading">Wird geladen …</string>
     <string name="mail_empty">Keine Nachrichten.</string>
     <string name="mail_more">Weitere laden (%1$s)</string>
     <string name="mail_read_title">Nachricht</string>
@@ -550,7 +546,6 @@
     <string name="ctx_storage">Speicherort</string>
     <string name="drive_crypto_hint">Dateien werden auf diesem Gerät verschlüsselt (AES-256-GCM, 1-MiB-Blöcke). Der Server sieht nur verschlüsselte Blöcke.</string>
     <string name="drive_delete_many_title">%1$s Elemente löschen?</string>
-    <string name="drive_selected">%1$s ausgewählt</string>
     <string name="pass_share">Sicher teilen (Einmal-Link)</string>
     <string name="pass_share_hint">Wird auf dem Gerät verschlüsselt. Der Schlüssel steht nur im Link, der Server kann den Eintrag nicht lesen.</string>
     <string name="php_create">Server-Modul erstellen</string>
@@ -659,8 +654,6 @@
     <string name="share_until">bis %1$s</string>
     <string name="share_withdraw">Zurückziehen</string>
     <string name="share_withdrawn">Link zurückgezogen. Er funktioniert nicht mehr.</string>
-    <string name="share_withdraw_text">Der Link funktioniert sofort nicht mehr. Die Datei bleibt in GhulDrive.</string>
-    <string name="share_withdraw_title">%1$s zurückziehen?</string>
     <string name="shares_empty">Noch keine Freigabelinks</string>
     <string name="shares_hint">Abgelaufene Links werden automatisch vom Server gelöscht.</string>
     <string name="shares_title">Freigabelinks</string>
@@ -765,7 +758,6 @@
     <string name="drive_changed">geändert %1$s</string>
     <string name="drive_encrypted_blocks">verschlüsselt in 4-MiB-Blöcken</string>
     <string name="a_share_dots">Teilen …</string>
-    <string name="drive_n_selected">%1$s ausgewählt</string>
     <string name="vault_all_vaults">Alle Tresore</string>
     <string name="mail_settings_row">Mail-Optionen</string>
     <string name="drive_quick_folder">Ordner</string>
@@ -1335,11 +1327,6 @@
     <string name="pass_no_value">%1$s ist in diesem Eintrag leer.</string>
     <string name="pass_copy_username">Benutzername kopieren</string>
     <string name="pass_copy_password">Passwort kopieren</string>
-    <string name="pass_delete_n_title">%1$s Einträge löschen?</string>
-    <string name="pass_delete_one_text">„%1$s“ wird endgültig gelöscht.</string>
-    <string name="pass_delete_n_text">Die %1$s ausgewählten Einträge werden endgültig gelöscht.</string>
-    <string name="auth_delete_n_title">%1$s Konten löschen?</string>
-    <string name="auth_delete_n_text">Die %1$s ausgewählten 2FA-Konten werden gelöscht. Stell sicher, dass du dich bei diesen Diensten weiterhin anmelden kannst.</string>
     <string name="auth_swipe_hint">Nach rechts wischen: bearbeiten, nach links: löschen. Lange drücken wählt mehrere aus.</string>
     <string name="auth_tap_hint_short">Antippen kopiert den Code.</string>
     <string name="mail_pgp_on">PGP an</string>
@@ -1365,11 +1352,19 @@
     <string name="a_unfavorite">Aus Favoriten entfernen</string>
     <string name="msg_deleted">Gelöscht</string>
     <string name="msg_moved_to_trash">In den Papierkorb verschoben</string>
-    <string name="mail_delete_for_good_text">Diese Mail liegt schon im Papierkorb. Jetzt wird sie endgültig gelöscht.</string>
-    <string name="cal_delete_event_title">Termin löschen?</string>
-    <string name="delete_for_good_text">„%1$s“ wird endgültig gelöscht.</string>
     <string name="drive_delete_forever_title">Endgültig löschen?</string>
-    <string name="pass_attachment_delete_title">Anhang löschen?</string>
     <string name="set_panic_hint_sidebar">Schnell sperren: das Schloss unten in der Seitenleiste oder Strg+L.</string>
     <string name="wz_key_touch_desktop">Key einstecken und berühren, wenn GhulSuite darum bittet (nach der Wahl des Speicherorts).</string>
+    <string name="a_undo">Rückgängig</string>
+    <string name="a_retry">Erneut versuchen</string>
+    <string name="a_mark_read">Als gelesen</string>
+    <string name="n_selected">%1$s ausgewählt</string>
+    <string name="msg_deleted_n">%1$s gelöscht</string>
+    <string name="mail_archived_n">%1$s archiviert</string>
+    <string name="mail_moved_n">%1$s verschoben</string>
+    <string name="mail_no_archive">Dieses Postfach hat keinen Archivordner.</string>
+    <string name="delete_n_for_good_text">%1$s Einträge werden endgültig gelöscht.</string>
+    <string name="pane_pick_account">Kein Konto geöffnet</string>
+    <string name="pane_pick_event">Kein Termin geöffnet</string>
+    <string name="pane_pick_hint_auth">Ein neues Konto wird hier hinzugefügt.</string>
 </resources>

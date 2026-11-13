@@ -149,7 +149,7 @@ fun SettingsScreen(state: AppState, padding: PaddingValues) {
                         // The shake hint only where shaking is switched on.
                         Hint(stringResource(if (backend.isDesktop || !settings.shakeToLock) Res.string.set_lock_hint_short else Res.string.lock_now_shake))
                     }
-                    FilledTonalButton(onClick = { backend.lock() }) {
+                    FilledTonalButton(onClick = { state.lockNow() }) {
                         Icon(Icons.Filled.Lock, null, Modifier.size(18.dp))
                         Text(stringResource(Res.string.a_lock))
                     }

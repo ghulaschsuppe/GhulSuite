@@ -292,26 +292,24 @@ fun SharesScreen(state: AppState, padding: PaddingValues) {
     val net = state.backend.net
     var shares by remember { mutableStateOf<List<ShareInfoUi>?>(null) }
     var servers by remember { mutableStateOf<List<ServerUi>>(emptyList()) }
-    var removing by remember { mutableStateOf<ShareInfoUi?>(null) }
     var showing by remember { mutableStateOf<ShareInfoUi?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    var retry by remember { mutableStateOf(0) }
     val mail = rememberMailAvailable(state)
-    LaunchedEffect(state.liveRevision()) {
+    LaunchedEffect(state.liveRevision(), retry) {
         servers = runCatching { net.servers() }.getOrDefault(emptyList())
-        shares = try {
-            net.shareList()
-        } catch (e: Exception) {
-            error = e.message
-            emptyList()
-        }
+        runCatching { net.shareList() }.onSuccess { shares = it; error = null }.onFailure { error = describe(it); if (shares == null) shares = emptyList() }
     }
+    val withdrawnMsg = stringResource(Res.string.share_withdrawn)
+    // Withdrawing asks nothing: the link is gone from the list at once, "Undo" brings it back.
+    fun withdraw(s: ShareInfoUi) = state.undoable(listOf(hiddenKey("share", "", s.id)), withdrawnMsg) { net.shareDelete(s.id) }
     Column(Modifier.padding(padding)) {
         ScreenColumn {
             BusyBanner(state)
-            ErrorText(error)
-            val list = shares
+            LoadError(error) { error = null; retry++ }
+            val list = shares?.filter { hiddenKey("share", "", it.id) !in state.hidden }
             when {
-                list == null -> Hint(stringResource(Res.string.loading))
+                list == null -> LoadingHint()
                 list.isEmpty() -> {
                     EmptyState(Icons.Filled.Link, stringResource(Res.string.shares_empty), g.ok)
                     if (servers.none { it.canShare }) {
@@ -321,13 +319,14 @@ fun SharesScreen(state: AppState, padding: PaddingValues) {
                     }
                 }
                 else -> ListCard {
-                    for (s in list) {
+                    list.forEachIndexed { i, s ->
                         val server = servers.firstOrNull { it.id == s.serverId }?.name.orEmpty()
                         ListRow(
                             s.name,
                             listOf(formatSize(s.size), server, shareSummary(s)).filter { it.isNotBlank() }.joinToString(" · "),
                             leading = { IconTile(if (s.password) Icons.Filled.Lock else Icons.Filled.Link, g.ok) },
-                            trailing = { TextButton(onClick = { removing = s }) { Text(stringResource(Res.string.share_withdraw)) } },
+                            trailing = { TextButton(onClick = { withdraw(s) }) { Text(stringResource(Res.string.share_withdraw)) } },
+                            divider = i > 0,
                             onClick = { showing = s },
                         )
                     }
@@ -337,26 +336,6 @@ fun SharesScreen(state: AppState, padding: PaddingValues) {
         }
     }
     showing?.let { ShareResultDialog(state, it, mail) { showing = null } }
-    removing?.let { s ->
-        AlertDialog(
-            danger = true,
-            onDismissRequest = { removing = null },
-            title = { Text(stringResource(Res.string.share_withdraw_title, s.name)) },
-            text = { Text(stringResource(Res.string.share_withdraw_text)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    removing = null
-                    state.run(block = { net.shareDelete(s.id) }) {
-                        // Gone at once; the list reloads after the change (and stays gone after syncing).
-                        shares = shares?.filterNot { it.id == s.id }
-                        state.messageRes(Res.string.share_withdrawn)
-                        state.changed()
-                    }
-                }) { Text(stringResource(Res.string.share_withdraw)) }
-            },
-            dismissButton = { TextButton(onClick = { removing = null }) { Text(stringResource(Res.string.a_cancel)) } },
-        )
-    }
 }
 
 /** Assistant: choose the share folder on the server, enter its web address, check everything. */

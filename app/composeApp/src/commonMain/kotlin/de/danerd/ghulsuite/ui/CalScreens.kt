@@ -66,6 +66,10 @@ import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import de.danerd.ghulsuite.model.CalDeleteModeUi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.ui.focus.focusRequester
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
@@ -203,15 +207,33 @@ private val HH = 44.dp
 private const val H0 = 6
 private const val H1 = 24
 
-/** Calendars and occurrences shared by the tab and the sheets. */
-class CalData(val calendars: List<CalCalendarUi>, val occ: List<CalOccurrenceUi>)
+/** Calendars and occurrences shared by the tab and the sheets; [error] if they could not be read. */
+class CalData(
+    val calendars: List<CalCalendarUi>,
+    val occ: List<CalOccurrenceUi>,
+    val error: String? = null,
+    val loaded: Boolean = true,
+    val retry: () -> Unit = {},
+)
+
+/** Key of an occurrence in a selection: event and day. */
+fun occKey(o: CalOccurrenceUi) = o.eventId + "|" + o.startDay
+
+/** Whether an occurrence waits for "Undo" of its deletion (the event, this day, or from this day on). */
+fun calHidden(hidden: Set<String>, o: CalOccurrenceUi): Boolean {
+    if (o.eventId.isEmpty() || hidden.isEmpty()) return false
+    if (hiddenKey("cal", "event", o.eventId) in hidden || hiddenKey("cal", o.eventId, o.startDay.toString()) in hidden) return true
+    val from = hiddenKey("cal", "from:" + o.eventId, "")
+    return hidden.any { k -> k.startsWith(from) && Day.parse(k.removePrefix(from))?.let { o.startDay >= it } == true }
+}
 
 /** Loads what the current view shows; creates the first calendar vault on first use. */
 @Composable
 private fun rememberCalData(state: AppState, from: Day, to: Day, extraQuery: String = ""): CalData {
     val cal = state.backend.cal
     val settings = state.backend.settings
-    var data by remember { mutableStateOf(CalData(emptyList(), emptyList())) }
+    var data by remember { mutableStateOf(CalData(emptyList(), emptyList(), loaded = false)) }
+    var retry by remember { mutableStateOf(0) }
     val lang = stringResource(Res.string.cal_lang)
     val defaults = listOf(
         stringResource(Res.string.cal_def_private) to 0xD6336C,
@@ -221,8 +243,11 @@ private fun rememberCalData(state: AppState, from: Day, to: Day, extraQuery: Str
         stringResource(Res.string.cal_def_birthdays) to 0x8E5BD8,
     )
     val rev = state.liveRevision()
-    LaunchedEffect(rev, from, to, settings.calHidden, settings.calHolidays, settings.calRegion, extraQuery) {
-        val cals = runCatching { cal.calendars() }.getOrDefault(emptyList())
+    LaunchedEffect(rev, from, to, settings.calHidden, settings.calHolidays, settings.calRegion, extraQuery, retry) {
+        val cals = runCatching { cal.calendars() }.getOrElse { e ->
+            data = CalData(data.calendars, data.occ, describe(e), retry = { retry++ })
+            return@LaunchedEffect
+        }
         // A new GhulCal file (chosen in the setup or under Areas) gets the usual calendars once.
         // Without a GhulCal file nothing is created: the area is set up in Options → Areas.
         val calVault = state.vaultsOf(VaultKindUi.CAL).firstOrNull { it.available }
@@ -234,8 +259,10 @@ private fun rememberCalData(state: AppState, from: Day, to: Day, extraQuery: Str
         }
         val hidden = settings.calHiddenSet()
         val region = if (settings.calHolidays && CalOccurrenceUi.HOLIDAYS !in hidden) settings.calRegion else ""
-        val occ = runCatching { cal.occurrences(from.toString(), to.toString(), region, lang) }.getOrDefault(emptyList())
-            .filter { it.calendarId !in hidden }
+        val occ = runCatching { cal.occurrences(from.toString(), to.toString(), region, lang) }.getOrElse { e ->
+            data = CalData(cals, data.occ, describe(e), retry = { retry++ })
+            return@LaunchedEffect
+        }.filter { it.calendarId !in hidden }
         data = CalData(cals, occ)
         if (cals != state.calendars) state.calendars = cals
     }
@@ -255,17 +282,43 @@ fun CalScreen(state: AppState, padding: PaddingValues) {
         CalView.WEEK, CalView.DAY -> weekStartOf(sel, sundayFirst).let { it to it.plus(6) }
         CalView.LIST -> if (query.isBlank()) today() to today().plus(60) else today().plus(-365) to today().plus(366)
     }
-    val data = rememberCalData(state, from, to, query)
+    val loadedData = rememberCalData(state, from, to, query)
+    // What waits for "Undo" is gone from every view already.
+    val data = CalData(loadedData.calendars, loadedData.occ.filter { !calHidden(state.hidden, it) }, loadedData.error, loadedData.loaded, loadedData.retry)
+    // Long press selects events in the lists (day under the month, list view), as in every area.
+    val selected = rememberListSelection()
+    val chosen = data.occ.filter { occKey(it) in selected }
+    var movingTo by remember { mutableStateOf<List<CalOccurrenceUi>?>(null) }
+    val deletedOne = stringResource(Res.string.cal_deleted_msg)
+    val deletedN = stringResource(Res.string.msg_deleted_n)
     val swipe = Modifier.pointerInput(state.calView) {
         var dx = 0f
         detectHorizontalDragGestures(onDragStart = { dx = 0f }, onDragEnd = {
             if (kotlin.math.abs(dx) > 60.dp.toPx()) state.calNav(if (dx < 0) 1 else -1)
         }) { _, d -> dx += d }
     }
+    Column(Modifier.fillMaxSize().padding(padding)) {
+    if (selected.active) {
+        SelectionHeader(
+            selected.keys.size,
+            onClose = { selected.clear() },
+            onAll = { selected.all(data.occ.filter { it.eventId.isNotEmpty() && (state.calView == CalView.LIST || it in data.occ.on(sel)) }.map(::occKey)) },
+            actions = listOf(
+                SelAction(Icons.Filled.Folder, stringResource(Res.string.cal_move)) { movingTo = chosen },
+                SelAction(Icons.Filled.Delete, stringResource(Res.string.a_delete), danger = true) {
+                    val list = chosen
+                    selected.clear()
+                    deleteOccurrences(state, list, if (list.size == 1) deletedOne else deletedN.replace("%1\$s", list.size.toString()))
+                },
+            ),
+        )
+    }
     Column(
-        Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 100.dp),
     ) {
+        LoadError(data.error, data.retry)
+        if (!data.loaded) LoadingHint()
         SingleChoiceSegmentedButtonRow(Modifier.padding(bottom = 10.dp)) {
             listOf(CalView.MONTH to Res.string.cal_view_month, CalView.WEEK to Res.string.cal_view_week, CalView.DAY to Res.string.cal_view_day, CalView.LIST to Res.string.cal_view_list)
                 .forEach { (v, label) -> SegmentedButton(state.calView == v, { state.calView = v }) { Text(stringResource(label)) } }
@@ -274,7 +327,7 @@ fun CalScreen(state: AppState, padding: PaddingValues) {
             CalView.MONTH -> {
                 CalHead(state, names.month(sel))
                 MonthGrid(state, data, names, sundayFirst, swipe)
-                DayAgenda(state, data.occ, sel, names)
+                DayAgenda(state, data.occ, sel, names, selected)
             }
             CalView.WEEK -> {
                 val days = (0..6).map { from.plus(it) }
@@ -302,7 +355,40 @@ fun CalScreen(state: AppState, padding: PaddingValues) {
                 AllDayRow(state, listOf(sel), data.occ)
                 TimeGrid(state, listOf(sel), data.occ, swipe)
             }
-            CalView.LIST -> CalList(state, data.occ, query, { query = it }, names)
+            CalView.LIST -> CalList(state, data.occ, query, { query = it }, names, selected)
+        }
+    }
+    }
+    movingTo?.let { list ->
+        val close = { movingTo = null }
+        GhulSheet(close, stringResource(Res.string.cal_move_to)) {
+            SheetList {
+                state.calendars.forEachIndexed { i, c ->
+                    SheetRow(c.name, leading = { ColorDot(calColor(c.color)) }, divider = i > 0) {
+                        close()
+                        selected.clear()
+                        // A series moves as a whole: its days belong to one calendar.
+                        val ids = list.map { it.eventId }.distinct()
+                        state.run(block = { ids.forEach { id -> state.backend.cal.saveEvent(state.backend.cal.event(id).copy(calendarId = c.id)) } }) {
+                            state.changed()
+                            state.scope.launch { state.message(getString(Res.string.cal_moved_to, c.name)) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Deletes occurrences with "Undo": a single event as a whole, of a series only the chosen day.
+ * Used by the selection of the lists.
+ */
+fun deleteOccurrences(state: AppState, list: List<CalOccurrenceUi>, msg: String) {
+    val keys = list.map { o -> if (o.repeating) hiddenKey("cal", o.eventId, o.startDay.toString()) else hiddenKey("cal", "event", o.eventId) }
+    state.undoable(keys, msg) {
+        for (o in list) {
+            state.backend.cal.deleteEvent(o.eventId, o.startDay.toString(), if (o.repeating) CalDeleteModeUi.ONE else CalDeleteModeUi.ALL)
         }
     }
 }
@@ -449,7 +535,7 @@ private fun Pill(o: CalOccurrenceUi, modifier: Modifier = Modifier, big: Boolean
 
 /** Section with the selected day's events under the month (+ Termin). */
 @Composable
-private fun DayAgenda(state: AppState, occ: List<CalOccurrenceUi>, d: Day, names: CalNames) {
+private fun DayAgenda(state: AppState, occ: List<CalOccurrenceUi>, d: Day, names: CalNames, sel: ListSelectionState) {
     val list = occ.on(d)
     SectionLabel(names.dayLabel(d), Modifier.padding(top = 12.dp, bottom = 8.dp)) {
         Row(Modifier.clickable { state.push(Screen.CalEdit(newEventDraft(state, d, null))) }, verticalAlignment = Alignment.CenterVertically) {
@@ -464,25 +550,34 @@ private fun DayAgenda(state: AppState, occ: List<CalOccurrenceUi>, d: Day, names
                 Text(stringResource(Res.string.cal_free_day), fontSize = 14.sp, color = g.muted)
             }
         }
-        list.forEachIndexed { i, o -> EvRow(state, o, d, divider = i > 0) }
+        list.forEachIndexed { i, o -> EvRow(state, o, d, divider = i > 0, sel = sel) }
     }
 }
 
 /** Card without padding (.card.flush). */
 @Composable
 fun CalCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    Column(modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(g.surface).padding(vertical = 4.dp)) { content() }
+    // The card of every list (the same shape, colour and padding).
+    ListCard(modifier) { content() }
 }
 
 /** One event in lists (.ev-row): times, colour bar, title, place, symbols. */
 @Composable
-fun EvRow(state: AppState, o: CalOccurrenceUi, day: Day?, divider: Boolean) {
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+fun EvRow(state: AppState, o: CalOccurrenceUi, day: Day?, divider: Boolean, sel: ListSelectionState? = null) {
     val t = g
     val c = calColor(o.color)
     val past = absMinutes(if (o.allDay) o.lastDay.plus(1).toString() else o.end) < absMinutes(localNow())
+    // Holidays are not events of the user: they cannot be chosen.
+    val selectable = sel != null && o.eventId.isNotEmpty()
+    val chosen = selectable && occKey(o) in sel!!
     if (divider) Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(1.dp).background(t.line))
     Row(
-        Modifier.fillMaxWidth().clickable { openOccurrence(state, o) }.alpha(if (past) 0.55f else 1f)
+        Modifier.fillMaxWidth().background(if (chosen) t.accentSoft else androidx.compose.ui.graphics.Color.Transparent)
+            .combinedClickable(
+                onClick = { if (sel != null && sel.active) { if (selectable) sel.toggle(occKey(o)) } else openOccurrence(state, o) },
+                onLongClick = if (selectable) ({ sel!!.toggle(occKey(o)) }) else null,
+            ).alpha(if (past && !chosen) 0.55f else 1f)
             .padding(horizontal = 16.dp, vertical = 10.dp).height(androidx.compose.foundation.layout.IntrinsicSize.Min),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -499,7 +594,7 @@ fun EvRow(state: AppState, o: CalOccurrenceUi, day: Day?, divider: Boolean) {
                 Text(hm(o.end), fontSize = 13.sp, color = t.faint, fontWeight = FontWeight.W500, lineHeight = 17.sp)
             }
         }
-        Box(Modifier.width(4.dp).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(c))
+        Box(Modifier.width(4.dp).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(if (chosen) t.accent else c))
         Column(Modifier.weight(1f)) {
             Text(o.label, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = t.fg)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -707,7 +802,7 @@ private fun TimeGrid(state: AppState, days: List<Day>, occ: List<CalOccurrenceUi
 // --- list ----------------------------------------------------------------------------------------
 
 @Composable
-private fun CalList(state: AppState, occ: List<CalOccurrenceUi>, query: String, onQuery: (String) -> Unit, names: CalNames) {
+private fun CalList(state: AppState, occ: List<CalOccurrenceUi>, query: String, onQuery: (String) -> Unit, names: CalNames, sel: ListSelectionState) {
     val q = query.trim().lowercase()
     val from = if (q.isEmpty()) today() else today().plus(-365)
     val list = if (q.isEmpty()) occ else occ.filter {
@@ -725,7 +820,7 @@ private fun CalList(state: AppState, occ: List<CalOccurrenceUi>, query: String, 
     }
     for ((d, items) in groups) {
         SectionLabel(names.dayLabel(d), Modifier.padding(top = 12.dp, bottom = 8.dp))
-        CalCard { items.forEachIndexed { i, o -> EvRow(state, o, d, divider = i > 0) } }
+        CalCard { items.forEachIndexed { i, o -> EvRow(state, o, d, divider = i > 0, sel = sel) } }
     }
     HintText(stringResource(if (q.isEmpty()) Res.string.cal_list_hint else Res.string.cal_search_hint), Modifier.padding(top = 10.dp))
 }

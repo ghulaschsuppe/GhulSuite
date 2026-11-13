@@ -104,7 +104,8 @@ fun GhulSuiteApp(state: AppState) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 // Wide windows (Windows, tablets in landscape) get side navigation and two panes.
                 val wide = maxWidth >= 840.dp
-                SideEffect { state.wide = wide }
+                val undoLabel = stringResource(Res.string.a_undo)
+                SideEffect { state.wide = wide; state.undoLabel = undoLabel }
                 CompositionLocalProvider(LocalWide provides wide) {
                     // One place for messages: the main screen on phones shows them above its own bar,
                     // everywhere else this outer host shows them (never both, which doubled every message).
@@ -194,7 +195,7 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
                 else if (!ownHeader(top)) ScreenTopBar(state, top)
             },
             bottomBar = {
-                if (top == null && !DriveSelectionBar(state)) {
+                if (top == null) {
                     GhulNavBar(navTabs(state), tabs.indexOf(state.tab)) { state.selectTab(tabs[it]) }
                 }
             },
@@ -207,7 +208,9 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
         }
     } else {
         // Side navigation | list | opened screen.
-        val twoPane = top != null || state.tab == Tab.PASS || state.tab == Tab.MAIL || state.tab == Tab.SETTINGS
+        // Every area with something to open keeps its list on the left and opens it on the right, so
+        // the list never jumps. GhulDrive opens files in a sheet and keeps the whole width.
+        val twoPane = top != null || state.tab != Tab.DRIVE
         val listWidth = if (width >= 1300.dp) 440.dp else 400.dp
         val rest = width - 240.dp - 1.dp
         val listPane = if (twoPane) listWidth else rest
@@ -220,7 +223,6 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
                     Scaffold(
                         containerColor = MaterialTheme.colorScheme.background,
                         topBar = { TabTopBar(state) },
-                        bottomBar = { DriveSelectionBar(state) },
                         floatingActionButton = { MainFab(state, onAdd) },
                     ) { padding -> TabContents(state, visited, true, padding) }
                 }
@@ -318,7 +320,7 @@ private fun ownHeader(top: Screen) = top is Screen.MailRead || top is Screen.Mai
 private fun TabTopBar(state: AppState) {
     GhulTopBar(
         title = screenTitle(null, state.tab),
-        onLock = { state.backend.lock() },
+        onLock = { state.lockNow() },
         context = { AreaContext(state) },
         actions = { TabActions(state) },
     )
@@ -336,29 +338,10 @@ fun backIcon(state: AppState): androidx.compose.ui.graphics.vector.ImageVector =
 private fun ScreenTopBar(state: AppState, top: Screen) {
     GhulTopBar(
         title = screenTitle(top, state.tab),
-        onLock = { state.backend.lock() },
+        onLock = { state.lockNow() },
         onBack = if (top !is Screen.RecoveryCode) ({ state.pop() }) else null,
         backIcon = backIcon(state),
     )
-}
-
-/** Selection bar of GhulDrive while files are being selected; false when there is none. */
-@Composable
-private fun DriveSelectionBar(state: AppState): Boolean {
-    val sel = state.driveSelection
-    if (state.tab != Tab.DRIVE || sel == null) return false
-    SelectionBar(
-        stringResource(Res.string.drive_n_selected, sel.count.toString()),
-        listOf(
-            Triple(Icons.AutoMirrored.Filled.Send, stringResource(Res.string.a_share), sel.onShare),
-            Triple(Icons.Filled.Archive, stringResource(Res.string.drive_as_zip), sel.onZip),
-            Triple(Icons.Filled.DoneAll, stringResource(Res.string.a_select_all), sel.onAll),
-            Triple(Icons.Filled.Delete, stringResource(Res.string.a_delete), sel.onDelete),
-            Triple(Icons.Filled.Close, stringResource(Res.string.a_done), sel.onDone),
-        ),
-        enabled = listOf(sel.count > 0, sel.count > 0, true, sel.count > 0, true),
-    )
-    return true
 }
 
 @Composable
@@ -388,7 +371,7 @@ private fun MainFab(state: AppState, onAdd: () -> Unit) {
             state.push(Screen.MailCompose(MailDraft(state.mailAccount)))
         }
     }
-    if (state.tab == Tab.DRIVE && state.driveReady && state.driveSelection == null) {
+    if (state.tab == Tab.DRIVE && state.driveReady) {
         GhulFab(areaColor(Tab.DRIVE), Icons.Filled.Add, stringResource(Res.string.a_add)) { state.driveUploadTick++ }
     }
     if (state.tab == Tab.CAL) {
@@ -500,7 +483,7 @@ private fun SideNav(state: AppState, tabs: List<Tab>) {
         Spacer(Modifier.weight(1f))
         Row(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(t.surface2)
-                .clickable { state.backend.lock() }.padding(horizontal = 12.dp, vertical = 11.dp),
+                .clickable { state.lockNow() }.padding(horizontal = 12.dp, vertical = 11.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
@@ -525,7 +508,9 @@ private fun EmptyPane(tab: Tab) {
             stringResource(
                 when (tab) {
                     Tab.PASS -> Res.string.pane_pick_entry
+                    Tab.AUTH -> Res.string.pane_pick_account
                     Tab.MAIL -> Res.string.pane_pick_mail
+                    Tab.CAL -> Res.string.pane_pick_event
                     Tab.SETTINGS -> Res.string.pane_pick_setting
                     else -> Res.string.pane_pick_entry
                 },
@@ -533,7 +518,7 @@ private fun EmptyPane(tab: Tab) {
             fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = g.fg,
         )
         Spacer(Modifier.height(6.dp))
-        Text(stringResource(Res.string.pane_pick_hint), color = g.muted, textAlign = TextAlign.Center)
+        Text(stringResource(if (tab == Tab.AUTH) Res.string.pane_pick_hint_auth else Res.string.pane_pick_hint), color = g.muted, textAlign = TextAlign.Center)
     }
 }
 

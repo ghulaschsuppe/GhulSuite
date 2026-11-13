@@ -406,17 +406,21 @@ fun ServersSection(state: AppState) {
         var open by remember { mutableStateOf(false) }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(Res.string.sync_server), Modifier.weight(1f))
-            androidx.compose.foundation.layout.Box {
-                TextButton(onClick = { open = true }, enabled = servers.isNotEmpty()) {
-                    Text(servers.firstOrNull { it.id == sync.serverId }?.name ?: noSync)
-                }
-                androidx.compose.material3.DropdownMenu(open, { open = false }) {
-                    androidx.compose.material3.DropdownMenuItem(text = { Text(noSync) }, onClick = {
+            TextButton(onClick = { open = true }, enabled = servers.isNotEmpty()) {
+                Text(servers.firstOrNull { it.id == sync.serverId }?.name ?: noSync)
+            }
+        }
+        // The choice opens as a sheet like every other choice in the app.
+        if (open) {
+            GhulSheet({ open = false }, stringResource(Res.string.sync_server)) {
+                SheetList {
+                    SheetRow(noSync, end = { if (sync.serverId == null) SheetCheck() }) {
                         open = false
                         guarded { state.run(block = { net.setSyncServer(null) }) { state.changed() } }
-                    })
-                    for (s in servers) {
-                        androidx.compose.material3.DropdownMenuItem(text = { Text(s.name) }, onClick = {
+                    }
+                    servers.forEach { s ->
+                        SheetRow(s.name, s.location.ifBlank { s.host }, leading = { IconTile(Icons.Filled.Dns, paletteColor(1)) }, divider = true,
+                            end = { if (s.id == sync.serverId) SheetCheck() }) {
                             open = false
                             if (s.id != sync.serverId) guarded {
                                 state.run(block = { net.setSyncServer(s.id) }) {
@@ -424,7 +428,7 @@ fun ServersSection(state: AppState) {
                                     state.sync()
                                 }
                             }
-                        })
+                        }
                     }
                 }
             }

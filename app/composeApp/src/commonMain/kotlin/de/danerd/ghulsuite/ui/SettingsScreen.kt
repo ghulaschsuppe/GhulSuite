@@ -173,7 +173,7 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                 }
                 SetPage.LOCK -> {
             SectionCard(stringResource(Res.string.set_security)) {
-                Button(onClick = { backend.lock() }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.a_lock_now)) }
+                Button(onClick = { state.lockNow() }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.a_lock_now)) }
                 ChoiceRow(stringResource(Res.string.set_auto_lock), AUTO_LOCK_OPTIONS, settings.autoLockSeconds) { settings.autoLockSeconds = it }
                 SwitchRow(
                     stringResource(if (backend.isDesktop) Res.string.set_lock_session else Res.string.set_lock_screen_off),

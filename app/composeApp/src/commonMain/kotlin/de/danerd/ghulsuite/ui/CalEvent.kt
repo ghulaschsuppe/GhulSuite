@@ -153,7 +153,6 @@ fun CalEventScreen(state: AppState, id: String, day: String, padding: PaddingVal
     var gone by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
-    var confirmDelete by remember { mutableStateOf(false) }
     var moving by remember { mutableStateOf(false) }
     val names = rememberCalNames()
     val lang = stringResource(Res.string.cal_lang)
@@ -175,7 +174,7 @@ fun CalEventScreen(state: AppState, id: String, day: String, padding: PaddingVal
     val uri = androidx.compose.ui.platform.LocalUriHandler.current
     androidx.compose.foundation.layout.Column(Modifier.padding(padding)) {
         GhulTopBar(
-            "", onLock = { state.backend.lock() }, onBack = { state.pop() }, backIcon = backIcon(state),
+            "", onLock = { state.lockNow() }, onBack = { state.pop() }, backIcon = backIcon(state),
             actions = {
                 if (ev != null) {
                     BarIcon(Icons.Filled.Edit, stringResource(Res.string.a_edit)) { state.push(Screen.CalEdit(ev!!)) }
@@ -287,6 +286,24 @@ fun CalEventScreen(state: AppState, id: String, day: String, padding: PaddingVal
         }
     }
     val e = ev ?: return
+    val msgEvent = stringResource(Res.string.cal_deleted_msg)
+    val msgOne = stringResource(Res.string.cal_deleted_one)
+    val msgSeries = stringResource(Res.string.cal_deleted_series)
+    // Deleting leaves the event: it is gone from the calendar at once, "Undo" brings it back.
+    fun del(mode: CalDeleteModeUi) {
+        val key = when (mode) {
+            CalDeleteModeUi.ONE -> hiddenKey("cal", id, day)
+            CalDeleteModeUi.FOLLOWING -> hiddenKey("cal", "from:$id", day)
+            else -> hiddenKey("cal", "event", id)
+        }
+        val msg = when {
+            e.repeat == CalRepeatUi.NONE -> msgEvent
+            mode == CalDeleteModeUi.ONE -> msgOne
+            else -> msgSeries
+        }
+        state.pop()
+        state.undoable(listOf(key), msg) { cal.deleteEvent(id, day, mode) }
+    }
     if (menu) {
         val close = { menu = false }
         GhulSheet(close, e.title) {
@@ -303,40 +320,19 @@ fun CalEventScreen(state: AppState, id: String, day: String, padding: PaddingVal
                 }
                 SheetRow(stringResource(Res.string.a_delete), leading = { IconTile(Icons.Filled.Delete, t.danger) }, color = t.danger, divider = true) {
                     close()
-                    if (e.repeat != CalRepeatUi.NONE) deleting = true else confirmDelete = true
+                    // A single event goes at once ("Undo"); a series asks which of its days.
+                    if (e.repeat != CalRepeatUi.NONE) deleting = true else del(CalDeleteModeUi.ALL)
                 }
             }
         }
-    }
-    if (confirmDelete) {
-        AlertDialog(
-            danger = true,
-            onDismissRequest = { confirmDelete = false },
-            title = { Text(stringResource(Res.string.cal_delete_event_title)) },
-            text = { Text(stringResource(Res.string.delete_for_good_text, e.title)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmDelete = false
-                    state.run(block = { cal.deleteEvent(id, day, CalDeleteModeUi.ALL) }) { state.changed(); state.pop(); state.messageRes(Res.string.cal_deleted_msg) }
-                }) { Text(stringResource(Res.string.a_delete)) }
-            },
-            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(stringResource(Res.string.a_cancel)) } },
-        )
     }
     if (deleting) {
         val close = { deleting = false }
         GhulSheet(close, stringResource(Res.string.cal_delete_series)) {
             SheetList {
-                fun del(mode: CalDeleteModeUi) {
-                    close()
-                    state.run(block = { cal.deleteEvent(id, day, mode) }) {
-                        state.changed(); state.pop()
-                        state.messageRes(if (mode == CalDeleteModeUi.ONE) Res.string.cal_deleted_one else Res.string.cal_deleted_series)
-                    }
-                }
-                SheetRow(stringResource(Res.string.cal_delete_one), Day.parse(day)?.let { names.short(it) }) { del(CalDeleteModeUi.ONE) }
-                SheetRow(stringResource(Res.string.cal_delete_following), divider = true) { del(CalDeleteModeUi.FOLLOWING) }
-                SheetRow(stringResource(Res.string.cal_delete_all), color = t.danger, divider = true) { del(CalDeleteModeUi.ALL) }
+                SheetRow(stringResource(Res.string.cal_delete_one), Day.parse(day)?.let { names.short(it) }) { close(); del(CalDeleteModeUi.ONE) }
+                SheetRow(stringResource(Res.string.cal_delete_following), divider = true) { close(); del(CalDeleteModeUi.FOLLOWING) }
+                SheetRow(stringResource(Res.string.cal_delete_all), color = t.danger, divider = true) { close(); del(CalDeleteModeUi.ALL) }
             }
         }
     }
@@ -466,7 +462,7 @@ fun CalEditScreen(state: AppState, start: CalEventUi, padding: PaddingValues) {
     androidx.compose.foundation.layout.Column(Modifier.padding(padding)) {
         GhulTopBar(
             stringResource(if (start.id.isEmpty()) Res.string.cal_new_event else Res.string.cal_edit_event),
-            onLock = { state.backend.lock() }, onBack = { state.pop() }, backIcon = Icons.Filled.Close, showLock = false,
+            onLock = { state.lockNow() }, onBack = { state.pop() }, backIcon = Icons.Filled.Close, showLock = false,
             actions = {
                 HeaderButton(stringResource(Res.string.a_save), onClick = ::save)
             },

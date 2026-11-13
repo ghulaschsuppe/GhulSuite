@@ -22,6 +22,12 @@ import org.jetbrains.compose.resources.getString
 
 enum class Tab { PASS, AUTH, DRIVE, MAIL, CAL, SETTINGS }
 
+/** How long "Undo" is offered after a deletion or move. */
+const val UNDO_MILLIS = 6000L
+
+/** Key of an item for [AppState.hidden]: area, place (vault, folder, view) and id. */
+fun hiddenKey(area: String, place: String, id: String) = "$area|$place|$id"
+
 /**
  * Requests from outside the app UI, e.g. a tapped notification ("open GhulMail"). Applied as soon
  * as the suite is unlocked.
@@ -95,8 +101,6 @@ data class MailDraft(
     val bcc: String = "",
 )
 
-/** What the selection bar of GhulDrive shows and does. */
-class DriveSelection(val count: Int, val onShare: () -> Unit, val onDelete: () -> Unit, val onAll: () -> Unit, val onDone: () -> Unit, val onZip: () -> Unit = {})
 
 /** UI state and navigation of the whole app. */
 class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
@@ -242,8 +246,6 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         }
     }
 
-    /** Drive selection mode: the navigation shows the selection bar instead. */
-    var driveSelection by mutableStateOf<DriveSelection?>(null)
     var mailFolder by mutableStateOf("INBOX")
 
     /** The context sheet of the current area is open (vault, storage, mailbox). */
@@ -262,6 +264,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         scope.launch {
             backend.unlocked.collect { unlocked ->
                 if (!unlocked) {
+                    dropPending()
                     stack.clear()
                     tab = tabs.first()
                     vaults = emptyList()
@@ -293,6 +296,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                 }
             }
         }
+        // Going to the background carries out what waits for "Undo": the auto lock may come next.
+        scope.launch { AppLaunch.inFront.collect { if (!it) runCatching { settlePending() } } }
         // Area settings go into the area's file (and from there to the other devices).
         backend.settings.onAreaChange = { kind, key, value ->
             if (backend.unlocked.value && vaults.any { it.kind == kind }) {
@@ -424,7 +429,9 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     fun push(screen: Screen) {
         // In two panes, opening another entry, mail or settings page from the list replaces the
         // right side instead of piling up screens behind it.
-        if (wide && (screen is Screen.EntryDetail || screen is Screen.MailRead || screen is Screen.SettingsPage || screen == Screen.Security || screen == Screen.Shares)) {
+        if (wide && (screen is Screen.EntryDetail || screen is Screen.MailRead || screen is Screen.SettingsPage || screen == Screen.Security ||
+                screen == Screen.Shares || screen is Screen.CalEvent || screen is Screen.AddTotp ||
+                (screen is Screen.CalEdit && stack.lastOrNull() !is Screen.CalEvent))) {
             stack.clear()
         }
         stack.add(screen)
@@ -555,6 +562,109 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
 
     fun message(text: String) {
         scope.launch { snackbar.showSnackbar(text) }
+    }
+
+    // --- Undo -------------------------------------------------------------------------------------
+
+    /** A deletion or move that is shown as done but not carried out yet ("Undo" in the snackbar). */
+    private class Pending(val keys: Set<String>, val message: String, val action: suspend () -> Unit, val after: () -> Unit)
+
+    private var pending: Pending? = null
+
+    /** "Undo" in the language shown (set by the screen, which knows it without a lookup). */
+    var undoLabel = ""
+
+    /** How long "Undo" is offered (tests shorten or lengthen it). */
+    var undoMillis = UNDO_MILLIS
+
+    /**
+     * Items that are gone from their lists while their deletion waits for "Undo". Lists leave out
+     * what is in here: [hiddenKey] builds the keys (area, place and id, so a file in the trash is
+     * not the same key as the file in its folder).
+     */
+    var hidden by mutableStateOf<Set<String>>(emptySet())
+        private set
+
+    /** Whether there is an action waiting for "Undo" (tests, and the lock that carries it out first). */
+    val hasPending: Boolean get() = pending != null
+
+    /**
+     * Deletes or moves something the way every area does it: the items with [keys] disappear at
+     * once, the snackbar shows [message] with "Undo" for a few seconds. Undo brings them back and
+     * nothing happened; otherwise [action] runs when the snackbar ends, when the next such action
+     * starts (the earlier one first), or before the app locks itself or goes to the background. If
+     * the suite was locked in another way (panic lock, auto lock) the action is dropped and the
+     * items simply stay: nothing is lost and nothing is half deleted. [after] runs once it is done.
+     */
+    fun undoable(keys: Collection<String>, message: String, after: () -> Unit = {}, action: suspend () -> Unit) {
+        val p = Pending(keys.toSet(), message, action, after)
+        scope.launch {
+            settlePending()
+            pending = p
+            hidden = hidden + p.keys
+            snackbar.currentSnackbarData?.dismiss()
+            val undo = kotlinx.coroutines.coroutineScope {
+                val timer = launch {
+                    kotlinx.coroutines.delay(undoMillis)
+                    snackbar.currentSnackbarData?.takeIf { it.visuals.message == p.message && it.visuals.actionLabel != null }?.dismiss()
+                }
+                val r = snackbar.showSnackbar(p.message, undoLabel.ifEmpty { getString(Res.string.a_undo) }, duration = androidx.compose.material3.SnackbarDuration.Indefinite)
+                timer.cancel()
+                r == androidx.compose.material3.SnackbarResult.ActionPerformed
+            }
+            settle(p, undo)
+        }
+    }
+
+    /** Carries out the action that waits for "Undo" now (before the next one, before locking). */
+    suspend fun settlePending() {
+        val p = pending ?: return
+        snackbar.currentSnackbarData?.takeIf { it.visuals.message == p.message && it.visuals.actionLabel != null }?.dismiss()
+        settle(p, undo = false)
+    }
+
+    private suspend fun settle(p: Pending, undo: Boolean) {
+        if (pending !== p) return
+        pending = null
+        if (undo || !backend.unlocked.value) {
+            hidden = hidden - p.keys
+            return
+        }
+        try {
+            p.action()
+        } catch (e: CancellationException) {
+            hidden = hidden - p.keys
+            throw e
+        } catch (e: Exception) {
+            // Not done: the items come back and the error says why.
+            hidden = hidden - p.keys
+            message(describe(e))
+            revision++
+            return
+        }
+        p.after()
+        changed()
+        // The keys stay hidden until the lists have read the new state, so nothing flickers back.
+        scope.launch {
+            kotlinx.coroutines.delay(1500)
+            hidden = hidden - p.keys
+        }
+    }
+
+    /** Drops what waits for "Undo" (the suite was locked from outside): the items stay. */
+    private fun dropPending() {
+        val p = pending ?: return
+        pending = null
+        hidden = hidden - p.keys
+        snackbar.currentSnackbarData?.takeIf { it.visuals.message == p.message }?.dismiss()
+    }
+
+    /** Locks the suite after carrying out what waits for "Undo". Every lock button uses this. */
+    fun lockNow() {
+        scope.launch {
+            runCatching { settlePending() }
+            backend.lock()
+        }
     }
 
     /** Weekly backup into the folder chosen in Options (if set). */

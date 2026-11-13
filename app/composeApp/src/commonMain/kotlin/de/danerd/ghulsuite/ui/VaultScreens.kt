@@ -11,14 +11,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Password
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -207,23 +209,31 @@ fun VaultsSection(state: AppState) {
                     trailing = { BarIcon(Icons.Filled.MoreVert, stringResource(Res.string.a_more)) { menuFor = v.id } },
                     divider = v != state.vaults.first(), flush = true,
                 )
-                DropdownMenu(expanded = menuFor == v.id, onDismissRequest = { menuFor = null }) {
-                    DropdownMenuItem(text = { Text(stringResource(Res.string.a_rename)) }, onClick = { renaming = v; menuFor = null })
-                    if (v.available && filePickersAvailable) {
-                        DropdownMenuItem(text = { Text(stringResource(Res.string.a_export)) }, onClick = {
-                            menuFor = null
-                            state.run(block = { backend.exportVault(v.id) }) { data ->
-                                save("${v.name.ifBlank { "vault" }}.${extensionOf(v.kind)}", data)
+                // The menu of a vault: an action sheet like every other (title = name, tiles, delete last in red).
+                if (menuFor == v.id) {
+                    val close = { menuFor = null }
+                    GhulSheet(close, v.name) {
+                        SheetList {
+                            SheetRow(stringResource(Res.string.a_rename), leading = { IconTile(Icons.Filled.Edit, g.accent) }) { renaming = v; close() }
+                            if (v.available && filePickersAvailable) {
+                                SheetRow(stringResource(Res.string.a_export), leading = { IconTile(Icons.Filled.Upload, g.accent) }, divider = true) {
+                                    close()
+                                    state.run(block = { backend.exportVault(v.id) }) { data ->
+                                        save("${v.name.ifBlank { "vault" }}.${extensionOf(v.kind)}", data)
+                                    }
+                                }
                             }
-                        })
+                            if (v.outdated) {
+                                SheetRow(stringResource(Res.string.a_accept_state), leading = { IconTile(Icons.Filled.Check, g.accent) }, divider = true) {
+                                    close()
+                                    state.run(block = { backend.acceptVaultState(v.id) }) { state.changed() }
+                                }
+                            }
+                            SheetRow(stringResource(Res.string.a_delete), leading = { IconTile(Icons.Filled.Delete, g.danger) }, color = g.danger, divider = true) {
+                                removing = v; close()
+                            }
+                        }
                     }
-                    if (v.outdated) {
-                        DropdownMenuItem(text = { Text(stringResource(Res.string.a_accept_state)) }, onClick = {
-                            menuFor = null
-                            state.run(block = { backend.acceptVaultState(v.id) }) { state.changed() }
-                        })
-                    }
-                    DropdownMenuItem(text = { Text(stringResource(Res.string.a_delete), color = g.danger) }, onClick = { removing = v; menuFor = null })
                 }
             }
         }
@@ -261,7 +271,13 @@ fun VaultsSection(state: AppState) {
             danger = true,
             onDismissRequest = { removing = null },
             title = { Text(stringResource(Res.string.vault_remove_title, v.name)) },
-            text = { Text(stringResource(Res.string.vault_remove_text), color = warnColor()) },
+            // The same look as removing an area: the warning as a banner, the tip below.
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Banner(Icons.Filled.Warning, stringResource(Res.string.vault_remove_warning))
+                    Text(stringResource(Res.string.vault_remove_tip))
+                }
+            },
             confirmButton = {
                 TextButton(onClick = {
                     removing = null

@@ -69,6 +69,8 @@ kotlin {
                 implementation(kotlin("test"))
                 implementation(libs.jna)
                 implementation(compose.desktop.currentOs)
+                // Clicking through the real screens (InteractionTest).
+                implementation(compose.desktop.uiTestJUnit4)
             }
         }
         androidMain {

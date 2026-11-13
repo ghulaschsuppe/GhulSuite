@@ -61,6 +61,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.text.TextStyle
@@ -102,6 +103,10 @@ val DarkTokens = GhulTokens(
     accent = Color(0xFFA996FF), accentSoft = Color(0xFF2E2560), onAccent = Color(0xFF160D40),
     ok = Color(0xFF4FD8A0), warn = Color(0xFFFFB85C), danger = Color(0xFFFF7A86),
 )
+
+/** The accent on a bar in the text colour (snackbar): the light accent on dark, the dark one on light. */
+val GhulTokens.accentOnFg: Color
+    get() = if (fg.luminance() < 0.5f) DarkTokens.accent else LightTokens.accent
 
 val LocalTokens = staticCompositionLocalOf { LightTokens }
 
@@ -679,11 +684,24 @@ fun GhulSnackbarHost(host: androidx.compose.material3.SnackbarHostState, modifie
     androidx.compose.material3.SnackbarHost(host, modifier) { data ->
         val t = g
         Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
-            Text(
-                data.visuals.message,
-                Modifier.widthIn(max = 560.dp).clip(RoundedCornerShape(14.dp)).background(t.fg).padding(horizontal = 16.dp, vertical = 10.dp),
-                color = t.bg, fontSize = 14.sp, fontWeight = FontWeight.W500,
-            )
+            Row(
+                Modifier.widthIn(max = 560.dp).clip(RoundedCornerShape(14.dp)).background(t.fg)
+                    .padding(start = 16.dp, end = if (data.visuals.actionLabel != null) 6.dp else 16.dp, top = 4.dp, bottom = 4.dp)
+                    .heightIn(min = 36.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(data.visuals.message, Modifier.weight(1f, fill = false).padding(vertical = 6.dp), color = t.bg, fontSize = 14.sp, fontWeight = FontWeight.W500)
+                // "Undo": the light accent reads on the dark bar (light design) and the dark accent
+                // on the light bar (dark design).
+                data.visuals.actionLabel?.let { label ->
+                    Text(
+                        label,
+                        Modifier.clip(RoundedCornerShape(10.dp)).clickable { data.performAction() }.padding(horizontal = 10.dp, vertical = 8.dp),
+                        color = t.accentOnFg, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
         }
     }
 }
@@ -699,34 +717,6 @@ fun SingleChoiceSegmentedButtonRow(modifier: Modifier = Modifier, content: @Comp
 
 object SegmentedButtonDefaults {
     fun itemShape(index: Int, count: Int): Any? = null
-}
-
-/** Selection bar (.selbar): replaces the navigation while files are selected. */
-@Composable
-fun SelectionBar(count: String, actions: List<Triple<androidx.compose.ui.graphics.vector.ImageVector, String, () -> Unit>>, enabled: List<Boolean>) {
-    val t = g
-    Column(Modifier.fillMaxWidth().background(t.surface)) {
-        Box(Modifier.fillMaxWidth().height(1.dp).background(t.line))
-        Text(count, Modifier.fillMaxWidth().padding(top = 6.dp), fontSize = 12.sp, fontWeight = FontWeight.Bold,
-            color = areaColor(Tab.DRIVE), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-        Row(Modifier.fillMaxWidth().navigationBarsPadding().height(70.dp).padding(start = 4.dp, end = 4.dp, top = 4.dp, bottom = 12.dp)) {
-            actions.forEachIndexed { i, (icon, label, onClick) ->
-                val on = enabled.getOrElse(i) { true }
-                Column(
-                    Modifier.weight(1f).alpha(if (on) 1f else 0.35f).clickable(enabled = on, onClick = onClick),
-                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp),
-                ) {
-                    Box(Modifier.size(56.dp, 30.dp), contentAlignment = Alignment.Center) {
-                        // The action that deletes is red, here as everywhere.
-                        val c = if (icon == androidx.compose.material.icons.Icons.Filled.Delete) t.danger else t.fg
-                        androidx.compose.material3.Icon(icon, null, Modifier.size(22.dp), tint = c)
-                    }
-                    Text(label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
-                        color = if (icon == androidx.compose.material.icons.Icons.Filled.Delete) t.danger else t.fg, maxLines = 1)
-                }
-            }
-        }
-    }
 }
 
 /** Chip (.chip): pill, outlined; chosen = soft accent. Replaces Material's filter chip. */

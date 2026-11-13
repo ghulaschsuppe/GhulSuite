@@ -12,7 +12,7 @@ Dieses Protokoll ist die Arbeitsliste für die nächsten Durchgänge: Jeder Fund
 | Einzelprüfungen pro Lauf | über 1,1 Millionen (u. a. 777.000 Zeitzonen-Umrechnungen in 446 Zonen, 292.000 Kalendertage, 45.000 Fuzz-Eingaben, 20.000 Base32-Schreibweisen, 12.000 Wiederherstellungscodes, 5.000 HOTP-Fälle, 5.000 Passwortgenerator-Varianten, 3.000 Zusammenführungen, 3.000+ Aktionen „bekloppter Nutzer“, 515 Naughty Strings × 8 Felder) |
 | Davon gegen echte Server | 54 (SFTP, FTPS, IMAP, SMTP, PHP-Modul) |
 | Externe Testsammlungen | Big List of Naughty Strings, Project Wycheproof (5 Algorithmen), Public-Suffix-Liste mit offiziellen Testfällen, RFC 4226/6238, PayloadsAllTheThings (XSS, CRLF), SecLists (XSS), DOMPurify-Testfälle, WHATWG-URL-Testdaten, JSONTestSuite, 304 Kalenderdateien aus den Tests von iCal4j und python-icalendar (auch deren Fuzzing-Funde), Zeitzonen-Regeln aller Zonen der IANA-Datenbank |
-| Gefundene Fehler | 38, davon **35 behoben**, 2 bewusst als Entscheidung offen, 1 als Einzelheit (B12) |
+| Gefundene Fehler | 39, davon **36 behoben**, 2 bewusst als Entscheidung offen, 1 als Einzelheit (B12) |
 | Offene Punkte aus dem Audit | 22 (Abschnitt 4) + Bedienung/Texte (Abschnitt 5) |
 | Laufzeit | Kern-Tests ca. 95 s, Android/Desktop-Build ca. 10 min, Nachtlauf ca. 2 h |
 
@@ -41,6 +41,8 @@ Alle Tests sind grün (Kern, Netzwerk, Android-Kotlin, Desktop-Tests). Die App-T
 | `net/tests.rs` `badssl_…` (nachts) | 21 echte Server mit kaputtem TLS (abgelaufen, falscher Name, selbst signiert, alte Protokolle, schwache Verfahren, bekannte Schad-Zertifikate) müssen abgelehnt werden | Z4 |
 | `tools/check-texts.py` | Texte: fehlende Übersetzungen und Platzhalter (Fehler), uneinheitliche Begriffe und ungenutzte Texte (Hinweise) | Z6 |
 | `tools/ci-emulator.sh` | Maestro-Abläufe (Einrichtung, GhulPass, GhulAuth, GhulCal, App-PIN, Optionen, GhulDrive und GhulMail mit nicht erreichbarem Server); nachts zusätzlich Monkey (3 × 30.000 zufällige Gesten) | Z3, Z6 |
+| `app/…/desktopTest/InteractionTest.kt` | Bedienung am Desktop mit Compose UI Test: langes Drücken, Auswahlkopf, Löschen mit „Rückgängig“ in allen fünf Bereichen (der Aufruf erreicht den Speicher nur ohne Rückgängig), Rückfragen mit rotem Knopf, Aktionsblätter, zweite Spalte im breiten Fenster, verschlüsselte Mail in der Liste; speichert je ein Bild | Z1, Z6 |
+| `app/maestro/server/` + `tools/check-server-flows.sh` | Im Emulator mit echten Testservern daneben: GhulDrive auf SFTP mit Passwort einrichten und einen Ordner anlegen, ein Mailkonto mit selbst signiertem Zertifikat anlegen, sich selbst eine Mail schicken und lesen; danach prüfen, dass auf den Servern nur Verschlüsseltes liegt | Z2, Z4 |
 | `tools/check-reminders.sh` | Im Emulator nach den Abläufen: Der Termin hat einen Alarm im System; nach Zeitzonen-Wechsel steht er auf derselben Uhrzeit; nach „App beendet + Neustart“ ist er wieder da; beim Auslösen kommt die Benachrichtigung, bei beendeter, gesperrter App | Z1, Z8 |
 | `.github/workflows/nightly.yml` | Nachtlauf: Fuzzing lang, Langläufe in Release, Monkey, gitleaks (ganze Historie), PHPStan, cargo audit | alle |
 
@@ -100,6 +102,7 @@ Schwere: **K** kritisch (Datenverlust, Geheimnis preisgegeben) · **H** hoch (An
 | F36 | N | README und Konzept sprachen von „vier Bereichen“, der Kalender fehlte auf der Hauptseite | Durchsicht | behoben; Regel in `PROJEKT.md`: README bei jedem relevanten Pull Request mitziehen |
 | F37 | N | Schnell-Eintrag: Das Beispiel, das die App selbst vorschlägt („Run tomorrow 6:30pm-7:30pm #sports“), wurde nicht verstanden, ganztägiger Termin mit der Uhrzeit im Titel | `caltext::tests::quick_examples_of_the_app` (prüft alle Beispiele der App, deutsch und englisch) | behoben: Zeitspannen mit am/pm oder „Uhr“ auf beiden Seiten |
 | F38 | M | Serien aus einer anderen Zeitzone (Einladung aus den USA, Termin in Tokio): Nur der erste Termin wurde umgerechnet. In den Wochen, in denen nur eine Seite die Uhr umstellt, und bei Zonen ohne Sommerzeit das halbe Jahr lang, lagen die Folgetermine eine Stunde daneben | `properties::series_from_other_time_zones_are_right_all_year`, `caltext::zone_tests::a_series_keeps_the_time_zone_it_came_from`, `…::windows_names_of_outlook` | behoben: Die Serie merkt sich ihre Zeitzone (neues Feld `zone`), jedes Vorkommen wird mit dem Versatz seines Tages umgerechnet; auch Anzeige, Erinnerungen, Löschen einzelner Tage und Export |
+| F39 | H | **CI: Tests gegen echte Server liefen ins Leere.** GitHub hat die CI auf Ubuntu 26.04 umgestellt; dessen Dovecot 2.4 lehnte die Testkonfiguration ab. Der Startschritt verschluckte den Fehler (Rohrleitung) und die Prüfung `test -n A && test -n B` hält ein `bash -e`-Skript nicht an. Zwei Läufe meldeten 57 Netzwerk-Tests als grün, obwohl alle übersprungen wurden | CI-Log (`doveconf: Fatal`) | behoben: Konfiguration für Dovecot 2.3 und 2.4, Fehler beim Serverstart und fehlende Server-Variablen machen die CI rot; Netzwerk-Tests laufen wieder echt (31 s, 57 Tests) |
 | F23 | M | **Tresornamen stehen im Dateinamen** (Server, Sicherung): „bank-privat.ghlpss“ verrät, welche Tresore es gibt | `attacks::stolen_device_files…` (bewusst ausgenommen) | **offen, Entscheidung nötig** |
 | F24 | N | Termintitel und Import-Titel werden getrimmt (führender Tab geht verloren); Passwörter bleiben exakt | `attacks::exports_are_safe…` | **offen, vertretbar** |
 
@@ -140,8 +143,8 @@ Zu F17 (Verhalten seit der Behebung): Die erste Mail eines neuen Kontakts mit Au
 
 | Nr. | Punkt | Vorschlag |
 |---|---|---|
-| U1 | Mail löschen ohne Rückfrage/Rückgängig; Wischen „Archivieren“ löscht still ohne Archivordner | „Rückgängig“ in der Meldungsleiste; ohne Archivordner nichts tun und sagen |
-| U2 | ~~Einzelnen Termin löschen ohne Rückfrage~~ | erledigt: Rückfrage vor dem Löschen. „Rückgängig“ gibt es weiterhin nirgends (siehe Abschnitt 9) |
+| U1 | ~~Mail löschen ohne Rückgängig; Wischen „Archivieren“ ohne Archivordner löscht still~~ | erledigt: Rückgängig nach jedem Löschen und Verschieben; ohne Archivordner kommt die Meldung „Dieses Postfach hat keinen Archivordner.“ |
+| U2 | ~~Einzelnen Termin löschen ohne Rückgängig~~ | erledigt: Rückgängig |
 | U3 | ~~Drive „Endgültig löschen“ ohne Rückfrage; Löschtext sagt „vom Server gelöscht“, obwohl Papierkorb~~ | erledigt: Rückfrage mit rotem Knopf; der Papierkorb fragt nicht und meldet „In den Papierkorb verschoben“ |
 | U4 | Bereich/Tresor löschen: ein Tipp vernichtet alles auf allen Geräten | Anzahl nennen, Export anbieten, Namen abtippen |
 | U5 | ~80 englische Fehlermeldungen aus dem Kern im deutschen UI | Fehlercodes statt Text, je Fall deutsche Meldung mit nächstem Schritt |
@@ -160,8 +163,8 @@ Zu F17 (Verhalten seit der Behebung): Die erste Mail eines neuen Kontakts mit Au
 
 | Nr. | Punkt |
 |---|---|
-| K1 | Listen bedienen sich je Bereich anders: GhulPass (langes Drücken, Menü je Zeile), GhulAuth (Wischen, langes Drücken), GhulMail (Wischen, keine Mehrfachauswahl), GhulDrive (Auswahlleiste unten), GhulCal (keine Auswahl). Das Aussehen der Auswahl ist angeglichen, die Bedienung noch nicht |
-| K2 | ~~Löschschutz uneinheitlich~~ erledigt: Was endgültig gelöscht wird, fragt vorher (roter Knopf); was in einen Papierkorb wandert, fragt nicht und zeigt eine Meldung |
+| K1 | ~~Listen bedienen sich je Bereich anders~~ erledigt: ein Auswahlkopf oben in allen fünf Listen, langes Drücken überall, gleiche Auswahl-Darstellung |
+| K2 | ~~Löschschutz uneinheitlich~~ erledigt: einzelne Einträge ohne Rückfrage mit „Rückgängig“; Ganzes (Tresor, Bereich, Konto, Server, Papierkorb leeren, mehrere endgültig) mit Rückfrage und rotem Knopf |
 | K3 | ~~Assistent und Optionen bieten verschiedene Werte~~ erledigt: eine gemeinsame Liste |
 | K4 | ~~Kalender-Blatt „Fertig“, sonst „Speichern“~~ erledigt |
 | K5 | ~~„1. Bereich“, aber „Fünfter Bereich“~~ erledigt |
@@ -271,7 +274,7 @@ Was nach beiden Runden **nicht** oder nur teilweise abgedeckt ist, ehrlich aufge
 | Entsperren (Fingerabdruck, PIN) | mittel (Zähler, Bindung an Neustart) | Test im Emulator, L10 |
 | Lieferkette | niedrig bis mittel (cargo audit, gepinnte Actions) | L3, L4 |
 | Kalender (Rechnen, Import, Zeitzonen, Erinnerungen) | hoch (Kalendertage, Dateien anderer Programme, alle Zeitzonen, Alarm-Prüfung im Emulator) | B22, B6, B4 |
-| Oberfläche (Fehlbedienung) | mittel (Maestro für alle fünf Bereiche, Monkey nachts) | B21, Desktop-UI-Tests, Abschnitt 4 U/K |
+| Oberfläche (Fehlbedienung) | hoch (Maestro für alle fünf Bereiche, auch mit echtem Server; 10 Bedienungstests am Desktop; Monkey nachts) | Abschnitt 4 U |
 
 ## 9. Gestaltung (Durchsicht aller Bildschirme)
 
@@ -291,13 +294,15 @@ Jetzt überall gleich:
 | Leere Zustände | Symbol und Satz in allen Bereichen, auch im Kalender |
 | Texte | Keine langen Striche. „Optionen“ statt „Einstellungen“, „Fertig“ nur noch für „fertig“ („Abschließen“ am Ende der Einrichtung), „Löschen“ für Gelöschtes und „Entfernen“ für Konten und Server, „Passwort und zweiter Faktor“ statt „Passwort und Key“, Suchfelder „… suchen“. Leerer Betreff heißt „(kein Betreff)“ |
 
-Bewusst noch offen (Bedienung, nicht Aussehen):
+Bedienung (zweiter Durchgang), alles erledigt:
 
-| Nr. | Punkt |
-|---|---|
-| G1 | Mehrfachauswahl in GhulMail und GhulCal, eine Auswahlleiste für alle Listen (K1) |
-| G2 | „Rückgängig“ nach dem Löschen (U1) |
-| G3 | Auf breiten Fenstern haben nur GhulPass, GhulMail und Optionen zwei Spalten; in den anderen Bereichen springt die Ansicht beim Öffnen |
-| G4 | GhulAuth und GhulCal zeigen einen Fehler beim Laden der Liste nicht an |
-| G5 | Das Tresor-Menü in den Optionen ist noch ein Aufklappmenü statt eines Blatts; einige handgebaute Karten |
-| G6 | Nicht als Bild geprüft: Menüs und Rückfragen (im Bildtest nicht von außen zu öffnen), das Kreuz statt Pfeil in der zweiten Spalte, das neue App-Symbol auf einem Gerät |
+| Nr. | Punkt | Stand |
+|---|---|---|
+| G1 | Mehrfachauswahl in allen fünf Bereichen, ein Auswahlkopf oben | erledigt |
+| G2 | „Rückgängig“ nach jedem Löschen und Verschieben einzelner Einträge (die Aktion wird erst nach etwa 6 s, beim nächsten Löschen oder vor dem eigenen Sperren ausgeführt; bei Panik-Sperre bleibt der Eintrag) | erledigt |
+| G3 | Breite Fenster: GhulAuth (Konto hinzufügen) und GhulCal (Termin ansehen und bearbeiten) öffnen rechts; GhulDrive bleibt ein Blatt | erledigt |
+| G4 | Ladefehler in allen Listen sichtbar, mit „Erneut versuchen“ | erledigt |
+| G5 | Aufklappmenüs sind Aktionsblätter im gemeinsamen Stil; Tresor löschen sieht aus wie Bereich entfernen | erledigt |
+| G6 | Geprüft: 10 neue Bedienungstests klicken durch die echten Bildschirme (Auswahl, Löschen, Rückgängig, Rückfragen, Menüs, breites Fenster) und speichern 25 Bilder; App-Symbol in den drei Android-Formen gezeichnet | erledigt |
+
+Noch nicht auf einem Gerät ausprobiert: Zurück-Taste beendet die Auswahl, Wechsel in den Hintergrund führt eine offene Löschung aus, Strg+L unter Windows.

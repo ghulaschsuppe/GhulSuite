@@ -225,7 +225,7 @@ Für T5 bis T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick
 | D5 | Große Datei (> 50 MB, z. B. Video) hochladen. | Fortschritt läuft durch; App bleibt bedienbar; Datei erscheint. |
 | D6 | Datei antippen → Speicherort wählen. | Gespeicherte Datei ist identisch (öffnen, ansehen). |
 | D7 | Upload starten und „Abbrechen“. | Bricht ab, keine halbe Datei in der Liste. |
-| D8 | Ordner-Symbol (neben „Auswählen“) → Name; Ordner öffnen, Datei hineinladen; Zurück-Pfeil. | Ordnerstruktur stimmt, Pfad oben passt. |
+| D8 | „Hinzufügen“ → „Neuer Ordner“ → Name; Ordner öffnen, Datei hineinladen; Zurück-Pfeil. | Ordnerstruktur stimmt, Pfad oben passt. |
 | D9 | Datei umbenennen, in einen anderen Ordner verschieben („Hierher verschieben“). | Name bzw. Ort ändern sich. |
 | D10 | Suche nach einem Teil des Dateinamens. | Treffer aus allen Ordnern. |
 | D11 | Datei löschen; Ordner mit Inhalt löschen. | Weg; nach dem Löschen auf dem Server weniger Blöcke. |
@@ -319,8 +319,8 @@ Für T5 bis T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick
 | SH11 | Mit dem PHP-Modul „5×“ → zweimal öffnen → GhulDrive → Kontextzeile → Freigabelinks. | Eintrag zeigt „2 von 5 Abrufen“. |
 | SH12 | Mit SFTP/FTPS-Teilen-Ordner. | Abrufbegrenzung nicht wählbar, Hinweis „geht nur mit dem PHP-Server-Modul“. |
 | SH13 | Freigabelinks → Eintrag „Zurückziehen“ → Link im Browser neu laden. | Eintrag verschwindet sofort, Meldung „Link zurückgezogen“. Im Browser: „Diese Freigabe gibt es nicht mehr …“. Die Datei bleibt in GhulDrive. Mit eingeschalteter Synchronisation: einige Sekunden warten, Freigabelinks erneut öffnen, der Eintrag bleibt weg. |
-| SH14 | In GhulDrive „Auswählen“ (oder lange drücken), zwei Dateien und einen Ordner markieren → Teilen → Freigabelink. | Ein Link; im Browser kommt ein ZIP mit allen Dateien in ihrer Ordnerstruktur. |
-| SH15 | Mehrfachauswahl → „Löschen“. | Rückfrage mit Anzahl; danach sind alle markierten weg. |
+| SH14 | In GhulDrive lange drücken, zwei Dateien und einen Ordner dazu antippen → Teilen → Freigabelink. | Ein Link; im Browser kommt ein ZIP mit allen Dateien in ihrer Ordnerstruktur. |
+| SH15 | Mehrfachauswahl → „In den Papierkorb“. | Ohne Rückfrage weg, Meldung „Rückgängig“; „Rückgängig“ bringt alle zurück. |
 | SH16 | Datei → Teilen → „An App senden“ → z. B. Messenger oder Dateien-App. | Android-Teilen-Menü; die Ziel-App erhält die **entschlüsselte** Datei mit richtigem Namen. |
 | SH17 | Nach SH16 GhulSuite sperren. | Die entschlüsselte Kopie im App-Cache wird gelöscht (ein erneutes Öffnen aus der Ziel-App kann fehlschlagen, gewollt). |
 | SH18 | GhulPass → Eintrag öffnen → „Sicher teilen (Einmal-Link)“. | Formular: 1 Tag, bei PHP-Modul 1 Abruf vorgewählt. Link erstellen und im Browser öffnen: Textdatei mit Titel und Feldern (Benutzer, Passwort, …). |
@@ -441,9 +441,9 @@ oder Proton.
 | I5 | Steam-Code importieren oder in GhulAuth von Hand mit „Steam“ anlegen. | Fünfstelliger Code aus Buchstaben und Ziffern, der zum Steam-Code passt. |
 | I6 | Irgendeine Aktion mit Meldung (z. B. Passwort kopieren). | Die Meldung erscheint einmal, dunkel und abgerundet. |
 | I7 | GhulPass und GhulAuth: der runde Knopf unten rechts. | Zeigt ein „+“. |
-| I8 | GhulPass: Drei-Punkte-Menü eines Eintrags. | Benutzername kopieren, Passwort kopieren, Bearbeiten, Löschen (mit Rückfrage). |
-| I9 | GhulPass und GhulAuth: Eintrag lange drücken, weitere antippen, „Alle“, Löschen. | Auswahlleiste oben mit Anzahl; Löschen fragt nach; Zurück beendet die Auswahl. |
-| I10 | GhulAuth (Listenansicht): Konto nach rechts wischen, dann nach links. | Rechts: Bearbeiten (Anbieter, Konto). Links: Rückfrage, dann gelöscht. |
+| I8 | GhulPass: Eintrag lange drücken. | Auswahlkopf oben (Anzahl, Alle, Kopieren, Löschen, ⋮ mit Passwort kopieren und Bearbeiten). Ein ⋮ je Zeile gibt es nicht mehr. |
+| I9 | In allen fünf Bereichen (Pass, Auth, Drive, Mail, Kalender-Liste) einen Eintrag lange drücken, weitere antippen, „Alle“, Löschen. | Gleicher Auswahlkopf oben überall; Löschen ohne Rückfrage, Meldung mit „Rückgängig“ (ca. 6 s), „Rückgängig“ bringt alle zurück; Zurück beendet die Auswahl. |
+| I10 | GhulAuth (Listenansicht): Konto nach rechts wischen, dann nach links. | Rechts: Bearbeiten (Anbieter, Konto). Links: gelöscht, Meldung mit „Rückgängig“. |
 
 ## 25. Mail, Optionen und Panik (zweite Runde)
 
@@ -513,6 +513,10 @@ Automatisch läuft bei jedem Push der Alltagstest im Kern (zwei Geräte, 30 simu
 | K14 | Eine `.ics` importieren, die Zeiten in UTC (`…Z`, z. B. Google-Export) und in einer anderen Zeitzone (`TZID=America/New_York`) enthält, je ein Termin im Sommer und im Winter. | Alle Termine stehen auf der Stunde, zu der sie hier stattfinden (10:00 New York = 16:00 in Deutschland), unabhängig davon, ob gerade Sommer- oder Winterzeit ist. Ganztägige Termine bleiben auf ihrem Tag. |
 | K15 | Termin mit Erinnerung anlegen, App schließen, in den Systemeinstellungen die Zeitzone ändern (z. B. London). | Die Erinnerung kommt zur selben Uhrzeit der neuen Zone (Termin 10:00 → Erinnerung 09:45 Londoner Zeit), ohne dass die App geöffnet wurde. |
 | K16 | Eine Serie aus einer anderen Zeitzone importieren (z. B. Einladung „jeden Dienstag 10:00 New York“ aus Outlook oder Google) und durch das Jahr blättern: Januar, Mitte März, April, Ende Oktober, November. | In Deutschland steht der Termin um 16:00, in den Wochen, in denen nur die USA oder nur Europa Sommerzeit haben, um 15:00. Die Termin-Ansicht zeigt zusätzlich „Ortszeit in New York: 10:00 - 11:00“; beim Bearbeiten steht unter „Zeitzone“ der Ort. „Nur diesen Termin löschen“ entfernt genau den angezeigten Tag. |
+| K17 | Einen einzelnen Eintrag löschen: GhulPass-Eintrag, GhulAuth-Konto, Drive-Datei, Mail, Termin. Einmal „Rückgängig“ tippen, einmal die Meldung ablaufen lassen; einmal löschen und sofort sperren. | Ohne Rückfrage weg, Meldung mit „Rückgängig“. Rückgängig: wieder da, nichts passiert. Abgelaufen: endgültig gelöscht (nach Sperren/Entsperren weiterhin weg). Sofort gesperrt: die Löschung wird vor dem Sperren ausgeführt. Panik-Sperre direkt nach dem Löschen: der Eintrag bleibt. |
+| K18 | Ganzes löschen: Tresor, Bereich, Mailkonto, Server, Papierkorb leeren, mehrere endgültig löschen. | Immer eine Rückfrage mit rotem Knopf, Warnung als Hinweisfeld wie bei „Bereich entfernen“. |
+| K19 | Breites Fenster (Windows oder Tablet quer): Termin öffnen, Termin bearbeiten, in GhulAuth „Konto hinzufügen“. | Öffnet rechts in der zweiten Spalte, die Liste bleibt links stehen. Ohne Auswahl rechts „Kein Termin geöffnet“ bzw. „Kein Konto geöffnet“. |
+| K20 | Verschlüsselte Mail in der Liste. | Schloss und „Verschlüsselte Nachricht“ an der Stelle des Betreffs (kein „...“); geöffnet Betreff und Text. |
 
 ## Fehler melden
 
