@@ -86,6 +86,9 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     /** The vault list was read since unlocking (until then all areas switched on count as there). */
     private var areasKnown by mutableStateOf(false)
 
+    /** After the setup wizard: show the first area once the vault list is read. */
+    var openFirstArea = false
+
     /** The recovery code was never confirmed: a banner asks for a new one (#24). */
     var codeUnconfirmed by mutableStateOf(false)
 
@@ -401,6 +404,11 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             vaults = runCatching { backend.listVaults() }.getOrDefault(vaults)
             if (backend.unlocked.value) {
                 areasKnown = true
+                if (openFirstArea) {
+                    openFirstArea = false
+                    stack.clear()
+                    tab = tabs.first()
+                }
                 codeUnconfirmed = runCatching { !backend.recoveryConfirmed() }.getOrDefault(false)
                 loadAreaOptions()
             }

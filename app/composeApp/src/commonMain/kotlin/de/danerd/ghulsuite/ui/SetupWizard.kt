@@ -481,6 +481,8 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
 
 /** End of the wizard: leave the start screen and show the areas. */
 private fun finishWizard(state: AppState) {
+    // The suite was unlocked before its areas existed: start in the first area, not in Options.
+    state.openFirstArea = true
     state.showStart = false
     state.vaultExists = true
     state.refreshVaults()

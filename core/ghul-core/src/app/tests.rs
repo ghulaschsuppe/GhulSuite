@@ -1496,17 +1496,16 @@ fn php_module_is_installed_over_ftps_and_takes_large_files_in_parts() {
     if std::process::Command::new("php").arg("-v").output().is_err() {
         return;
     }
+    // The module goes to the FTP server's folder; a copy of it is served from a folder this test
+    // owns (the web server must be able to create the module's data folder next to it).
     let home = std::env::var("GHUL_TEST_DIR").map(|d| std::path::PathBuf::from(d).join("ftp-home")).unwrap();
     let web = home.join(&cfg.base).join("www");
-    std::fs::create_dir_all(&web).unwrap();
-    for dir in [home.join(&cfg.base), web.clone()] {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o777)).unwrap();
-    }
+    let served = std::env::temp_dir().join(format!("ghul-php-served-{}", cfg.base));
+    std::fs::create_dir_all(&served).unwrap();
     let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
     let mut php = std::process::Command::new("php")
         .args(["-S", &format!("127.0.0.1:{port}"), "-t"])
-        .arg(&web)
+        .arg(&served)
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
@@ -1538,10 +1537,14 @@ fn php_module_is_installed_over_ftps_and_takes_large_files_in_parts() {
     assert_eq!(first.confirm, cfg.cert);
     assert!(!web.join("ghulsuite.php").exists());
     let done = s.php_module_install(ftps, cfg.cert.clone(), dir, url.clone()).unwrap();
-    assert_eq!(done.url.as_deref(), Some(url.as_str()));
-    assert!(done.limit > 0);
+    // Uploaded over FTPS; the address does not answer yet (the copy is not served yet).
+    let uploaded = std::fs::read_to_string(web.join("ghulsuite.php")).unwrap();
+    assert!(uploaded.contains(&done.key));
+    assert_eq!((done.url.as_deref(), done.tried.clone()), (None, vec![url.clone()]));
+    std::fs::write(served.join("ghulsuite.php"), &uploaded).unwrap();
     let info = super::servers::php_module_probe(url.clone(), done.key.clone()).unwrap();
     assert_eq!(info.version, info.current);
+    assert!(info.limit > 0);
 
     // Drive on the module, keeping the FTPS login for later updates.
     let id = saved(
@@ -1566,11 +1569,13 @@ fn php_module_is_installed_over_ftps_and_takes_large_files_in_parts() {
     let big: Vec<u8> = (0..9_000_000u32).map(|i| (i % 253) as u8).collect();
     let f = upload(&s, None, "Film.mp4", &big);
     assert_eq!(download(&s, &f), big);
-    // Updating the module keeps the key and the files.
+    // Updating the module uploads it again over the kept FTPS login, with the same key and data folder.
     assert_eq!(s.php_module_update(id).unwrap(), info.current);
+    assert_eq!(std::fs::read_to_string(web.join("ghulsuite.php")).unwrap(), uploaded);
     assert_eq!(download(&s, &f), big);
     let _ = php.kill();
     let _ = php.wait();
+    let _ = std::fs::remove_dir_all(&served);
 }
 
 #[test]
