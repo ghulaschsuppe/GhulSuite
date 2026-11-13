@@ -32,13 +32,17 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Conn<S> {
         loop {
             let mut line = String::new();
             let n = self.io.read_line(&mut line).await.map_err(|e| NetError::Connect(e.to_string()))?;
-            if n == 0 || line.len() < 4 {
+            if n == 0 {
                 return Err(NetError::Protocol("connection closed".into()));
             }
             text.push_str(line.trim_end());
             text.push('\n');
-            if line.as_bytes()[3] != b'-' {
-                let code = line[..3].parse().map_err(|_| NetError::Protocol(line.clone()))?;
+            // A server that never ends its reply must not fill the memory.
+            if text.len() > MAX_REPLY {
+                return Err(NetError::Protocol("reply too long".into()));
+            }
+            let (code, last) = reply_line(&line).ok_or_else(|| NetError::Protocol(line.trim_end().to_owned()))?;
+            if last {
                 return Ok((code, text));
             }
         }
@@ -64,6 +68,25 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Conn<S> {
             return Err(NetError::Protocol(text));
         }
         Ok(())
+    }
+}
+
+/// Longest reply accepted from a server (all lines together).
+const MAX_REPLY: usize = 64 * 1024;
+
+/// Code of one reply line and whether it is the last line (`250 ok`) or not (`250-more`).
+/// `None` for anything that is not a reply line (also lines cut inside a multi-byte character).
+pub(crate) fn reply_line(line: &str) -> Option<(u16, bool)> {
+    let b = line.as_bytes();
+    let digits = b.get(..3)?;
+    if !digits.iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    let code = digits.iter().fold(0u16, |n, d| n * 10 + u16::from(d - b'0'));
+    match b.get(3) {
+        None | Some(b' ') | Some(b'\r') | Some(b'\n') => Some((code, true)),
+        Some(b'-') => Some((code, false)),
+        _ => None,
     }
 }
 

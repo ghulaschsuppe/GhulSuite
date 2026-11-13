@@ -96,9 +96,10 @@ pub(crate) fn data_port(code: u16, text: &str) -> Option<u16> {
         let inner = text.split('(').nth(1)?.split(')').next()?;
         return inner.trim_matches('|').parse().ok();
     }
-    let nums: Vec<u16> =
+    let nums: Vec<u8> =
         text.split('(').nth(1)?.split(')').next()?.split(',').filter_map(|n| n.trim().parse().ok()).collect();
-    (nums.len() == 6).then(|| nums[4] * 256 + nums[5])
+    // Each part is one byte; anything else (e.g. 300) is not a valid reply.
+    (nums.len() == 6).then(|| u16::from(nums[4]) * 256 + u16::from(nums[5]))
 }
 
 /// Parses one line of a Unix `LIST` output.

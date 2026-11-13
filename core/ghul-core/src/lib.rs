@@ -26,6 +26,9 @@ mod mock;
 #[cfg(test)]
 mod wycheproof_tests;
 
+#[cfg(test)]
+mod fuzz_tests;
+
 pub use error::{FidoError, TransportError};
 
 use ctap2::{prf_salt, Authenticator};

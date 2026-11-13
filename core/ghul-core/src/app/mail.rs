@@ -1601,6 +1601,41 @@ mod tests {
         }
     }
 
+    /// Received mails can be anything: header, MIME structure, encodings, the preview line.
+    #[test]
+    fn received_mails_never_crash_the_reader() {
+        let seeds = crate::fuzz_tests::seeds(&[
+            "From: =?utf-8?q?M=C3=BCller?= <m@example.org>\r\nTo: a@example.org, \"B, C\" <b@example.org>\r\nSubject: =?utf-8?b?SGFsbG8g8J+Ygg==?=\r\nDate: Fri, 13 Nov 2026 10:00:00 +0100\r\nMessage-ID: <1@x>\r\nContent-Type: multipart/mixed; boundary=\"b1\"\r\n\r\n--b1\r\nContent-Type: text/plain; charset=iso-8859-1\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\nGr=FC=DFe=\r\n weiter\r\n--b1\r\nContent-Type: text/html\r\n\r\n<p>Hallo</p>\r\n--b1\r\nContent-Type: application/pdf; name=\"a.pdf\"\r\nContent-Disposition: attachment; filename=\"../../a.pdf\"\r\nContent-Transfer-Encoding: base64\r\n\r\nJVBERi0xLjQK\r\n--b1--\r\n",
+            "From: x\r\nSubject: kurz\r\n\r\nText",
+            "Content-Type: multipart/signed; boundary=s; protocol=\"application/pgp-signature\"\r\n\r\n--s\r\nContent-Type: text/plain\r\n\r\nsigned\r\n--s\r\nContent-Type: application/pgp-signature\r\n\r\n-----BEGIN PGP SIGNATURE-----\r\nabc\r\n-----END PGP SIGNATURE-----\r\n--s--\r\n",
+        ]);
+        crate::fuzz_tests::fuzz("mail", &seeds, 3000, |d| {
+            let split = body_offset(d);
+            let listed = imap::Listed {
+                uid: 1,
+                seen: false,
+                flagged: false,
+                size: d.len() as u32,
+                header: d[..split.min(d.len())].to_vec(),
+                text: d[split.min(d.len())..].to_vec(),
+                labels: vec!["\u{202e}x".into()],
+            };
+            let _ = summary(&listed);
+            let _ = preview(&listed, false);
+            let _ = mime_parts(d, "b1");
+            let _ = thread_key(&String::from_utf8_lossy(d));
+            let u = Unwrapped {
+                raw: Zeroizing::new(d.to_vec()),
+                encrypted: false,
+                signature: MailSignatureStatus::None,
+                signer: String::new(),
+                subject: None,
+                changed: false,
+            };
+            let _ = message(1, d, &u);
+        });
+    }
+
     /// With OpenPGP off for a mail: a normal mail, no signature, no Autocrypt header, readable subject.
     #[test]
     fn mail_without_pgp_is_plain() {
