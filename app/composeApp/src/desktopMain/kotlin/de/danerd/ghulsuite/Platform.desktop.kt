@@ -192,3 +192,24 @@ actual fun rememberTakePhoto(onResult: (ByteArray?) -> Unit): () -> Unit = { onR
 
 actual fun deviceInfo(): String =
     "${System.getProperty("os.name")} ${System.getProperty("os.version")} (${System.getProperty("os.arch")}) · Java ${System.getProperty("java.version")}"
+
+actual fun localNow(): String {
+    val c = java.util.Calendar.getInstance()
+    fun p(n: Int) = n.toString().padStart(2, '0')
+    return "${c.get(java.util.Calendar.YEAR)}-${p(c.get(java.util.Calendar.MONTH) + 1)}-${p(c.get(java.util.Calendar.DAY_OF_MONTH))}" +
+        "T${p(c.get(java.util.Calendar.HOUR_OF_DAY))}:${p(c.get(java.util.Calendar.MINUTE))}"
+}
+
+actual fun utcOffsetMinutes(): Int = java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 60000
+
+actual fun epochMillisOf(local: String): Long {
+    val c = java.util.Calendar.getInstance()
+    c.clear()
+    c.set(local.substring(0, 4).toInt(), local.substring(5, 7).toInt() - 1, local.substring(8, 10).toInt(),
+        local.substring(11, 13).toInt(), local.substring(14, 16).toInt(), 0)
+    return c.timeInMillis
+}
+
+actual fun applyAppLanguage(tag: String) {
+    // Takes effect at the next start (Main.kt applies the stored language before the window opens).
+}

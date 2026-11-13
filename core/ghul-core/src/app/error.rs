@@ -58,6 +58,9 @@ pub enum GhulError {
     WrongKeyfile,
     #[error("the last security key or key file cannot be removed")]
     LastFactor,
+    /// The file was made by a newer GhulSuite (new file kind or format): update the app.
+    #[error("please update GhulSuite to open this file")]
+    UpdateRequired,
     // --- servers and network
     #[error("network error: {msg}")]
     Network { msg: String },
@@ -119,6 +122,8 @@ impl From<VaultError> for GhulError {
             }
             VaultError::InvalidInput(msg) => GhulError::InvalidInput { msg },
             VaultError::LastSlot => GhulError::LastFactor,
+            VaultError::NewerKind => GhulError::UpdateRequired,
+            VaultError::UnsupportedVersion(v) if v > crate::vault::format::FORMAT_VERSION => GhulError::UpdateRequired,
             other => GhulError::Corrupted { msg: other.to_string() },
         }
     }

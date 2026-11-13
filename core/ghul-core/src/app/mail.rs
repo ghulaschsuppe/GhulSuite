@@ -14,9 +14,10 @@ use zeroize::Zeroizing;
 use base64::Engine;
 use pgp::composed::{SignedPublicKey, SignedSecretKey};
 
+use super::areas::{area_setting, mark_area_deleted, put_area_setting};
 use super::error::{GhulError, Result};
 use super::mailcrypt;
-use super::suite::{new_id, put_setting, setting, GhulSuite, Open, SUITE_FILE};
+use super::suite::{new_id, GhulSuite, Open, VaultKind};
 use crate::net::imap::{self, ImapConfig, ImapSession, Security};
 use crate::net::smtp::{self, SmtpConfig};
 use crate::net::{block_on, NetError, TIMEOUT};
@@ -213,9 +214,22 @@ pub struct MailMessage {
     pub signature: MailSignatureStatus,
     /// Address whose key made the valid signature (empty otherwise).
     pub signer: String,
+    /// HTML mails as safe building blocks (empty for plain-text mails); see `mailhtml`.
+    pub blocks: Vec<super::mailhtml::MailBlock>,
+    /// Images from the internet in the HTML (loaded only on request).
+    pub remote_images: u32,
+    /// Images inside the mail (`cid:`), at most 8 MB together.
+    pub inline_images: Vec<MailInlineImage>,
 }
 
-#[derive(uniffi::Record, Clone, Debug)]
+#[derive(uniffi::Record, Clone, Debug, PartialEq)]
+pub struct MailInlineImage {
+    /// Content-ID without angle brackets, as referenced by `cid:` in the HTML.
+    pub cid: String,
+    pub data: Vec<u8>,
+}
+
+#[derive(uniffi::Record, Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct OutgoingAttachment {
     pub name: String,
     pub mime: String,
@@ -268,7 +282,7 @@ pub enum MailCheck {
 }
 
 fn accounts(o: &Open) -> Vec<StoredAccount> {
-    setting(&o.suite, ACCOUNTS_KEY)
+    area_setting(o, VaultKind::Mail, ACCOUNTS_KEY)
 }
 
 fn account(o: &Open, id: &str) -> Result<StoredAccount> {
@@ -317,7 +331,7 @@ fn info(a: &StoredAccount) -> MailAccountInfo {
 }
 
 fn contact_keys(o: &Open) -> Vec<ContactKey> {
-    setting(&o.suite, KEYS_KEY)
+    area_setting(o, VaultKind::Mail, KEYS_KEY)
 }
 
 fn now_secs() -> i64 {
@@ -366,7 +380,7 @@ fn remember_key(o: &mut Open, email: &str, key: &SignedPublicKey, source: &str) 
         source: source.to_owned(),
         updated: now_secs(),
     });
-    put_setting(&mut o.suite, KEYS_KEY, &list)?;
+    put_area_setting(o, VaultKind::Mail, KEYS_KEY, &list)?;
     Ok(true)
 }
 
@@ -382,7 +396,7 @@ fn ensure_key_changed(o: &mut Open, account_id: &str) -> Result<(SignedSecretKey
         let (armored, _) = mailcrypt::generate(&a.display_name, &a.email)?;
         a.pgp_key = armored.to_string();
         let key = mailcrypt::secret_key(&a.pgp_key)?;
-        put_setting(&mut o.suite, ACCOUNTS_KEY, &list)?;
+        put_area_setting(o, VaultKind::Mail, ACCOUNTS_KEY, &list)?;
         return Ok((key, true));
     }
     Ok((mailcrypt::secret_key(&a.pgp_key)?, false))
@@ -722,6 +736,30 @@ fn message(uid: u32, raw: &[u8], u: &Unwrapped) -> Result<MailMessage> {
     let from_address = first.and_then(|a| a.address()).unwrap_or_default().to_owned();
     let from = first.and_then(|a| a.name()).map(str::to_owned).unwrap_or_else(|| from_address.clone());
     let was_html = c.text_body.is_empty() && !c.html_body.is_empty();
+    let html_part = c
+        .html_body
+        .first()
+        .and_then(|i| c.parts.get(*i as usize))
+        .is_some_and(|p| matches!(p.body, mail_parser::PartType::Html(_)));
+    let html = if html_part { c.body_html(0).map(|h| super::mailhtml::parse(&h)) } else { None };
+    let mut inline_images = Vec::new();
+    let mut inline_total = 0usize;
+    if html.is_some() {
+        use mail_parser::MimeHeaders;
+        for part in c.parts.iter() {
+            let image = part.content_type().is_some_and(|t| t.ctype().eq_ignore_ascii_case("image"));
+            if let (true, Some(cid)) = (image, part.content_id()) {
+                let data = part.contents();
+                if inline_total + data.len() <= 8 * 1024 * 1024 {
+                    inline_total += data.len();
+                    inline_images.push(MailInlineImage {
+                        cid: cid.trim_matches(|c| c == '<' || c == '>').to_owned(),
+                        data: data.to_vec(),
+                    });
+                }
+            }
+        }
+    }
     let text = c.body_text(0).map(|t| t.replace("\r\n", "\n")).unwrap_or_default();
     let attachments = c
         .attachments()
@@ -756,6 +794,9 @@ fn message(uid: u32, raw: &[u8], u: &Unwrapped) -> Result<MailMessage> {
         encrypted: u.encrypted,
         signature: u.signature,
         signer: u.signer.clone(),
+        remote_images: html.as_ref().map(|h| h.remote_images).unwrap_or(0),
+        blocks: html.map(|h| h.blocks).unwrap_or_default(),
+        inline_images,
     })
 }
 
@@ -1067,6 +1108,7 @@ impl GhulSuite {
         }
         require_secure(&input.servers)?;
         self.with_open(|o| {
+            self.ensure_area(o, VaultKind::Mail)?;
             let mut list = accounts(o);
             let id = id.unwrap_or_else(|| crate::kdf::hex(&new_id()[..8]));
             let mut password = input.password.clone();
@@ -1105,9 +1147,9 @@ impl GhulSuite {
                 signature: input.signature.clone(),
                 pgp_key,
             });
-            put_setting(&mut o.suite, ACCOUNTS_KEY, &list)?;
+            put_area_setting(o, VaultKind::Mail, ACCOUNTS_KEY, &list)?;
             self.net.lock().unwrap_or_else(|p| p.into_inner()).imap.remove(&id);
-            self.save_container(&mut o.suite, SUITE_FILE)?;
+            self.save_area(o, VaultKind::Mail)?;
             Ok(id)
         })
     }
@@ -1120,10 +1162,10 @@ impl GhulSuite {
         self.with_open(|o| {
             let mut list = accounts(o);
             list.retain(|a| a.id != id);
-            put_setting(&mut o.suite, ACCOUNTS_KEY, &list)?;
-            super::sync::mark_deleted(&mut o.suite.payload.settings, ACCOUNTS_KEY, &id);
+            put_area_setting(o, VaultKind::Mail, ACCOUNTS_KEY, &list)?;
+            mark_area_deleted(o, VaultKind::Mail, ACCOUNTS_KEY, &id)?;
             self.net.lock().unwrap_or_else(|p| p.into_inner()).imap.remove(&id);
-            self.save_container(&mut o.suite, SUITE_FILE)
+            self.save_area(o, VaultKind::Mail)
         })
     }
 
@@ -1205,7 +1247,7 @@ impl GhulSuite {
         let u = self.with_open(|o| {
             let u = unwrap_message(o, &account_id, &raw)?;
             if u.changed {
-                self.save_container(&mut o.suite, SUITE_FILE)?;
+                self.save_area(o, VaultKind::Mail)?;
             }
             Ok(u)
         })?;
@@ -1271,7 +1313,7 @@ impl GhulSuite {
         let (acc, protection) = self.with_open(|o| {
             let (key, created) = ensure_key_changed(o, &mail.account_id)?;
             if created {
-                self.save_container(&mut o.suite, SUITE_FILE)?;
+                self.save_area(o, VaultKind::Mail)?;
             }
             let acc = account(o, &mail.account_id)?;
             // Encrypted when every recipient has a key; otherwise signed.
@@ -1314,7 +1356,7 @@ impl GhulSuite {
                 for (r, k) in &found {
                     remember_key(o, r, k, "wkd")?;
                 }
-                self.save_container(&mut o.suite, SUITE_FILE)?;
+                self.save_area(o, VaultKind::Mail)?;
             }
             Ok(wanted
                 .iter()
@@ -1331,7 +1373,7 @@ impl GhulSuite {
         self.with_open(|o| {
             let (key, created) = ensure_key_changed(o, &account_id)?;
             if created {
-                self.save_container(&mut o.suite, SUITE_FILE)?;
+                self.save_area(o, VaultKind::Mail)?;
             }
             mailcrypt::public_armored(&mailcrypt::public_of(&key))
         })
@@ -1349,10 +1391,10 @@ impl GhulSuite {
                 // An import is a deliberate choice: it replaces any key learned before.
                 let mut list = contact_keys(o);
                 list.retain(|c| &c.email != a);
-                put_setting(&mut o.suite, KEYS_KEY, &list)?;
+                put_area_setting(o, VaultKind::Mail, KEYS_KEY, &list)?;
                 remember_key(o, a, &key, "import")?;
             }
-            self.save_container(&mut o.suite, SUITE_FILE)?;
+            self.save_area(o, VaultKind::Mail)?;
             Ok(addrs.clone())
         })
     }
@@ -1377,9 +1419,9 @@ impl GhulSuite {
         self.with_open(|o| {
             let mut list = contact_keys(o);
             list.retain(|c| c.email != bare(&email));
-            put_setting(&mut o.suite, KEYS_KEY, &list)?;
-            super::sync::mark_deleted(&mut o.suite.payload.settings, KEYS_KEY, &bare(&email));
-            self.save_container(&mut o.suite, SUITE_FILE)
+            put_area_setting(o, VaultKind::Mail, KEYS_KEY, &list)?;
+            mark_area_deleted(o, VaultKind::Mail, KEYS_KEY, &bare(&email))?;
+            self.save_area(o, VaultKind::Mail)
         })
     }
 

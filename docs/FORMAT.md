@@ -1,6 +1,6 @@
 # GhulSuite – Dateiformat, Version 1
 
-**Stand:** 11.11.2026 (zweiter Faktor immer Pflicht: Security Key oder Schlüsseldatei; derselbe Wiederherstellungscode in jeder Datei; der Ordner ist die Suite) · gilt für `.ghlpss`, `.ghltotp`, `.ghlsuite` und `.ghlkey`
+**Stand:** 13.11.2026 (ein Bereich, eine Datei: `.ghldrv` und `.ghlmail` neu; zweiter Faktor immer Pflicht; derselbe Wiederherstellungscode in jeder Datei; der Ordner ist die Suite) · gilt für `.ghlpss`, `.ghltotp`, `.ghlcal`, `.ghldrv`, `.ghlmail`, `.ghlsuite` und `.ghlkey`
 **Referenzimplementierung:** `core/ghul-core/src/vault/`
 **Testvektoren:** [`docs/testvectors/container-v1.json`](testvectors/container-v1.json), unabhängig geprüft mit
 [`tools/verify_testvectors.py`](../tools/verify_testvectors.py) (Python, andere Krypto-Bibliotheken)
@@ -16,12 +16,19 @@ Alle Zahlen sind **Little-Endian**, sofern nicht anders angegeben. `‖` bedeute
 |---|---|---|
 | `.ghlpss` | `GHULPASS` | Passwort-Tresor (`pass`) |
 | `.ghltotp` | `GHULTOTP` | TOTP/HOTP-Tresor (`totp`) |
-| `.ghlsuite` | `GHULSUIT` | Suite-Container: Speicher, Mail-Konten, Einstellungen (`suite`) |
+| `.ghlcal` | `GHULCLDR` | Kalender-Tresor (`cal`): Einträge `calendar` (name, color, reminder, order) und `event` (calendar, title, start, end, all_day, repeat, until, exceptions, reminders, location, notes, links, birth_year); Zeiten als Ortszeit `YYYY-MM-DDTHH:MM` |
+| `.ghldrv` | `GHULDRIV` | GhulDrive-Bereich (`drive`): keine Einträge; Drive-Schlüssel, Speicher und Optionen in `settings` (Abschnitt 10) |
+| `.ghlmail` | `GHULMAIL` | GhulMail-Bereich (`mail`): keine Einträge; Konten, Schlüssel, Entwürfe, Postausgang und Optionen in `settings` (Abschnitt 10) |
+| `.ghlsuite` | `GHULSUIT` | Suite-Container: Schutz, Sync-Server, Sync-Zustand, Freigaben (`suite`) |
 | `.ghlkey` | `GHULKEY\0` | Schlüsseldatei (Abschnitt 7) |
 
 Ein Container besteht aus einem **Klartext-Header**, der nur öffentliche Angaben enthält (Parameter, Salts, Schlüssel-Slots),
 und einem **verschlüsselten Inhalt**. Der Header ist vollständig in die Authentifizierung des Inhalts eingebunden:
 Jede Änderung an irgendeinem Byte macht die Datei unbrauchbar.
+
+**Ein Bereich, eine Datei:** Jeder Bereich hat seine eigene Datei mit seinen Einstellungen. Eine Datei mit `GHUL`
+am Anfang, aber unbekannter Art oder höherer Formatversion stammt von einer neueren App: Leser melden dann „bitte
+aktualisieren“ statt „beschädigt“ (Fehler `UpdateRequired`).
 
 ### Verwendete Verfahren (keine Alternativen in Version 1)
 
@@ -361,7 +368,11 @@ verrät sie nichts Verwertbares.
 ## 10. GhulDrive und Server-Daten (seit 0.4.0)
 
 Diese Daten liegen **nicht** in den Tresor-Containern, sondern auf dem eigenen Server des Nutzers. Ihre Schlüssel und
-Zugangsdaten stehen nur in den verschlüsselten Einstellungen des Suite-Containers (CBOR-Map `settings`):
+Zugangsdaten stehen nur in verschlüsselten Einstellungen (CBOR-Map `settings`). Seit 0.5.0 gilt **ein Bereich, eine
+Datei**: Der Suite-Container behält Schutz, Sync-Server, Sync-Zustand und Freigaben; GhulDrive und GhulMail haben
+ihre eigenen Dateien (`.ghldrv`, `.ghlmail`).
+
+**Suite-Container (`suite.ghlsuite`):**
 
 | Schlüssel | Inhalt | Synchronisiert |
 |---|---|---|
@@ -370,14 +381,35 @@ Zugangsdaten stehen nur in den verschlüsselten Einstellungen des Suite-Containe
 | `sync` | `server` (ID), `last` (ms) | nein (je Gerät) |
 | `sync_known` | bereits synchronisierte Tresor-IDs (für das Übertragen von Löschungen) | nein (je Gerät) |
 | `protection_changed` | Zeitpunkt der letzten Schutzänderung (ms) | ja |
-| `drive` | `server` (ID), `key` (32 Byte, Drive-Schlüssel DK) | ja |
+| `recovery_confirmed` | `{v, at}`: `v` = hex(SHA-256(„ghul/recovery-confirmed/v1“ ‖ Code-Geheimnis)[0..8]) des bestätigten Codes, `at` = Zeit (ms); fehlt bei Suiten von vor 0.5.0 (gilt als bestätigt) | ja |
 | `shares` | Liste der eigenen Freigaben: `id`, `server`, `name`, `size`, `created`, `expires` (ms, 0 = nie), `password`, `max_downloads`, `url` (vollständiger Link mit Schlüssel) | ja |
 | `mail_accounts` | Liste: `id`, `name`, `display_name`, `email`, `username`, `password`, `servers`, `imap_cert`, `smtp_cert`, `signature` | ja |
+
+**GhulDrive (`.ghldrv`):**
+
+| Schlüssel | Inhalt | Synchronisiert |
+|---|---|---|
+| `drive` | `server` (ID, leer bei `use_sync`), `use_sync` (bool: der Server, mit dem dieses Gerät synchronisiert; nur ein Verweis), `key` (32 Byte, Drive-Schlüssel DK) | ja |
+| `servers` | höchstens ein eigener Server nur für GhulDrive (Aufbau wie im Suite-Container); ein PHP-Modul kann `upload` mit dem FTPS-Zugang für Updates tragen (`host`, `port`, `user`, `password`, `cert`, `dir`, `data_dir`) | ja |
+| `options` | Optionen des Bereichs, je Schlüssel `{v, at}` (Text, Zeit in ms) | ja |
+
+**GhulMail (`.ghlmail`):** `mail_accounts` (wie oben), `mail_keys`, `mail_contacts`, `mail_cache_key`, `mail_drafts`,
+`mail_outbox`, `options`. **GhulPass, GhulAuth, GhulCal:** `options` in ihren Dateien.
+
+**Optionen und Zusammenführen:** Ein Wert `{v, at}` (Map aus genau `v` und ganzzahligem `at`) wird beim Synchronisieren
+als Ganzes übernommen, wenn sein `at` neuer ist – die letzte Änderung gewinnt. Bekannte Optionen: GhulPass
+`generator_mode`, `generator_length`; GhulDrive `drive_trash_days`; GhulMail `mail_image_senders`; GhulCal
+`cal_holidays`, `cal_region`, `cal_default_reminder`, `cal_allday_reminder`, `cal_default`, `cal_week_start`.
+Unbekannte Optionen bleiben erhalten.
+
+**Umzug älterer Suiten:** Stehen `drive` oder `mail_*` noch im Suite-Container, wandern sie beim Entsperren samt ihren
+Löschmarken in die Bereichsdatei (die bei Bedarf angelegt wird). Das geschieht auch, wenn eine Synchronisation sie von
+einem Gerät mit älterer App zurückbringt.
 
 **Ablage auf dem Server** (`<base>` = gewählter Ordner):
 
 ```text
-<base>/suite/                 Tresore (.ghlpss, .ghltotp) und suite.ghlsuite – unverändert im Container-Format
+<base>/suite/                 Tresore (.ghlpss, .ghltotp, .ghlcal) und suite.ghlsuite – unverändert im Container-Format
 <base>/drive/index.ghldrv     "GHULDRV1" ‖ nonce[24] ‖ XChaCha20-Poly1305(IK, pad(CBOR-Index), aad = "")
 <base>/drive/blocks/<ab>/<id> "GHULBLK1" ‖ nonce[24] ‖ XChaCha20-Poly1305(BK, Block, aad = "GHULBLK1" ‖ id)
 ```
@@ -442,8 +474,9 @@ zufälligem Datenordner `ghul-data-<24 hex>` daneben (`.htaccess` „deny“, `i
 |---|---|
 | `GET` ohne Parameter | Empfängerseite (CSP `default-src 'none'; script-src 'self'; …`); `?v=js`, `?v=css` |
 | `GET ?s=<id>` | Paket ausliefern; zählt unter Dateisperre, prüft Ablauf und Höchstzahl; danach 404/410 |
-| `POST ?a=info` | `{version, php, free}` |
+| `POST ?a=info` | `{version, php, free, limit}`; `limit` = größte Anfrage des Hostings in Byte (`post_max_size`, höchstens ein Drittel von `memory_limit`; 0 = unbekannt) |
 | `POST ?a=list&p=` · `read` · `write` · `delete` · `mkdir` | Speicher wie ein Ordner (`p` = relativer Pfad) |
+| `POST ?a=write_part&p=&n=&u=` · `write_done&p=&u=&size=` | (ab Version 2) große Datei in Teilen in eine temporäre Datei, dann atomar ersetzen; `u` = 16–64 Hex-Zeichen je Upload; unvollständige Teile verfallen nach einem Tag |
 | `POST ?a=share_part&id=&n=` · `share_done&id=&exp=&max=` | Freigabe in Teilen hochladen, dann veröffentlichen |
 | `POST ?a=share_delete&id=` · `share_list` | Freigabe beenden; Liste `{id, exp, max, count}` |
 
@@ -452,8 +485,11 @@ Jeder `POST` ist signiert:
 ```text
 X-Ghul-Time  = Unix-Sekunden (±300 s)          X-Ghul-Nonce = 32 Hex-Zeichen, jede nur einmal
 X-Ghul-Sig   = hex(HMAC-SHA256(K, "ghul/v1\n" ‖ Methode ‖ "\n" ‖ kanonisch ‖ "\n" ‖ Zeit ‖ "\n" ‖ Nonce ‖ "\n" ‖ hex(SHA-256(Body))))
-kanonisch    = die vorhandenen Parameter in der Reihenfolge a, p, id, exp, max, n als k=rawurlencode(v), mit & verbunden
+kanonisch    = die vorhandenen Parameter in der Reihenfolge a, p, id, exp, max, n, u, size als k=rawurlencode(v), mit & verbunden
 ```
+
+**Teilgröße:** Die App fragt `info` einmal je Verbindung und teilt Uploads in Teile von `limit` − 64 KiB, mindestens
+256 KiB und höchstens 4 MiB. Dateien bis 256 KiB (und alles bei Modul-Version 1) gehen in einem Stück.
 
 Pfade: keine `.`/`..`-Teile, keine Steuerzeichen, kein `\`; Dateien mit ausführbarer Endung (`.php`, `.phtml`, `.phar`,
 `.cgi`, …) sowie `.htaccess`, `.htpasswd`, `.user.ini` werden abgelehnt. Nach 20 Fehlversuchen in 10 Minuten

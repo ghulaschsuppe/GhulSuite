@@ -36,6 +36,10 @@ import de.danerd.ghulsuite.model.VaultErrorKind
 import de.danerd.ghulsuite.model.VaultException
 import de.danerd.ghulsuite.model.VaultKindUi
 import de.danerd.ghulsuite.model.VaultSourceUi
+import de.danerd.ghulsuite.core.UploadAccess
+import de.danerd.ghulsuite.core.ServerInfo
+import de.danerd.ghulsuite.model.UploadAccessUi
+import de.danerd.ghulsuite.model.ServerUi
 
 private const val HEX = "0123456789abcdef"
 
@@ -53,9 +57,21 @@ internal fun VaultSourceUi.toCore(): VaultSource = when (this) {
     is VaultSourceUi.Bytes -> VaultSource.Bytes(data)
 }
 
-internal fun VaultKindUi.toCore() = if (this == VaultKindUi.PASS) VaultKind.PASS else VaultKind.TOTP
+internal fun VaultKindUi.toCore() = when (this) {
+    VaultKindUi.PASS -> VaultKind.PASS
+    VaultKindUi.TOTP -> VaultKind.TOTP
+    VaultKindUi.CAL -> VaultKind.CAL
+    VaultKindUi.DRIVE -> VaultKind.DRIVE
+    VaultKindUi.MAIL -> VaultKind.MAIL
+}
 
-internal fun VaultKind.toUi() = if (this == VaultKind.PASS) VaultKindUi.PASS else VaultKindUi.TOTP
+internal fun VaultKind.toUi() = when (this) {
+    VaultKind.PASS -> VaultKindUi.PASS
+    VaultKind.TOTP -> VaultKindUi.TOTP
+    VaultKind.CAL -> VaultKindUi.CAL
+    VaultKind.DRIVE -> VaultKindUi.DRIVE
+    VaultKind.MAIL -> VaultKindUi.MAIL
+}
 
 internal fun ProtectionInfo.toUi() = ProtectionUi(securityKeys.toInt(), keyfiles.toInt(), recoveryCodes.toInt())
 
@@ -130,6 +146,7 @@ internal fun GhulException.toVault(): VaultException {
         is GhulException.PasswordChangedElsewhere -> VaultException(VaultErrorKind.PASSWORD_CHANGED_ELSEWHERE, d)
         is GhulException.NotConfigured -> VaultException(VaultErrorKind.NOT_CONFIGURED, d)
         is GhulException.NotFound -> VaultException(VaultErrorKind.NOT_FOUND, d)
+        is GhulException.UpdateRequired -> VaultException(VaultErrorKind.UPDATE_REQUIRED, d)
         else -> VaultException(VaultErrorKind.OTHER, d)
     }
 }
@@ -152,7 +169,14 @@ internal fun FidoException.toVault(): VaultException {
     }
 }
 
-fun ServerInputUi.toCore() = ServerInput(kind.toCore(), name, host, port.toUShort(), user, password, base, url)
+fun ServerInputUi.toCore() = ServerInput(kind.toCore(), name, host, port.toUShort(), user, password, base, url, upload?.toCore())
+
+internal fun UploadAccessUi.toCore() = UploadAccess(host, port.toUShort(), user, password, cert, dir, dataDir)
+
+internal fun UploadAccess.toUi() = UploadAccessUi(host, port.toInt(), user, password, cert, dir, dataDir)
+
+internal fun ServerInfo.toUi() =
+    ServerUi(id, name, host, port.toInt(), user, base, usesKey, hostKey, location, kind.toUi(), shareUrl, shareDir)
 
 internal fun ServerKindUi.toCore() = when (this) {
     ServerKindUi.SFTP -> ServerKind.SFTP

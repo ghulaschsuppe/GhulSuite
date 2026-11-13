@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 use super::error::{GhulError, Result};
-use super::servers::{self, ServerKind, StoredServer};
+use super::servers::{self, ServerKind};
 use super::suite::{now_ms, put_setting, setting, GhulSuite, Open, SUITE_FILE};
 use crate::net::http::{self, Url};
 use crate::net::remote::RemoteFs;
@@ -285,13 +285,10 @@ impl GhulSuite {
             if checks.iter().all(|c| c.ok) {
                 srv.share_dir = dir.clone();
                 srv.share_url = public.to_string();
-                let mut list: Vec<StoredServer> = servers::servers(o);
-                for s in list.iter_mut().filter(|s| s.id == srv.id) {
-                    s.share_dir = srv.share_dir.clone();
-                    s.share_url = srv.share_url.clone();
+                match servers::update_server(o, &srv)? {
+                    servers::ServerHome::Suite => self.save_container(&mut o.suite, SUITE_FILE)?,
+                    servers::ServerHome::Drive => self.save_area(o, super::suite::VaultKind::Drive)?,
                 }
-                servers::put_servers(o, &list)?;
-                self.save_container(&mut o.suite, SUITE_FILE)?;
             }
             Ok(checks)
         })

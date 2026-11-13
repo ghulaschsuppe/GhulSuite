@@ -20,7 +20,18 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.getString
 
-enum class Tab { PASS, AUTH, DRIVE, MAIL, SETTINGS }
+enum class Tab { PASS, AUTH, DRIVE, MAIL, CAL, SETTINGS }
+
+/**
+ * Requests from outside the app UI, e.g. a tapped notification ("open GhulMail"). Applied as soon
+ * as the suite is unlocked.
+ */
+object AppLaunch {
+    val openTab = kotlinx.coroutines.flow.MutableStateFlow<Tab?>(null)
+
+    /** A tapped reminder: event id and day (`id|YYYY-MM-DD`). */
+    val openEvent = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+}
 
 /** Screens shown on top of the tabs. */
 sealed interface Screen {
@@ -40,6 +51,8 @@ sealed interface Screen {
     data class MailAccount(val id: String?) : Screen
     data class MailRead(val accountId: String, val folder: String, val uid: Long) : Screen
     data class MailCompose(val draft: MailDraft) : Screen
+    data class CalEvent(val id: String, val day: String) : Screen
+    data class CalEdit(val draft: de.danerd.ghulsuite.model.CalEventUi) : Screen
 }
 
 /** Content prefilled when writing, replying or forwarding. */
@@ -69,6 +82,18 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     /** Vaults of the open suite. */
     var vaults by mutableStateOf<List<VaultUi>>(emptyList())
         private set
+
+    /** The vault list was read since unlocking (until then all areas switched on count as there). */
+    private var areasKnown by mutableStateOf(false)
+
+    /** After the setup wizard: show the first area once the vault list is read. */
+    var openFirstArea = false
+
+    /** The recovery code was never confirmed: a banner asks for a new one (#24). */
+    var codeUnconfirmed by mutableStateOf(false)
+
+    /** The area has its file in this suite (it may still be hidden on this device). */
+    fun hasArea(kind: VaultKindUi): Boolean = !areasKnown || vaults.any { it.kind == kind }
 
     /** Vault files in the folder that are not part of the suite yet (offered after unlocking). */
     var found by mutableStateOf<List<FoundVaultUi>>(emptyList())
@@ -111,6 +136,66 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     /** Messages of the open mailbox (for conversations in the reading view). */
     var mailLoaded by mutableStateOf<List<MailItem>>(emptyList())
 
+    // --- GhulCal
+    var calView by mutableStateOf(CalView.entries[backend.settings.calStartView.coerceIn(0, 3)])
+    var calSel by mutableStateOf(today())
+    /** Incremented to focus the search field of the list view. */
+    var calSearchTick by mutableStateOf(0)
+    /** The first calendar vault was created in this session (only once). */
+    var calSetupDone = false
+    /** Calendars of all calendar vaults (refreshed with the vaults). */
+    var calendars by mutableStateOf<List<de.danerd.ghulsuite.model.CalCalendarUi>>(emptyList())
+    val calNames: Map<String, String> get() = calendars.associate { it.id to it.name }
+    var calRegionName by mutableStateOf("")
+        private set
+    var calQuickOpen by mutableStateOf(false)
+
+    /** Calendar for new events: the chosen default, else the first one. */
+    val calDefaultCalendar: String
+        get() = calendars.firstOrNull { it.id == backend.settings.calDefault }?.id ?: calendars.firstOrNull()?.id ?: ""
+
+    /** Shows a sample reminder with the chosen lock-screen detail (options). */
+    fun calTestReminder(title: String) {
+        val st = backend.settings
+        scope.launch {
+            val now = localNow()
+            val start = fromAbsMinutes(absMinutes(now) + 15)
+            val r = de.danerd.ghulsuite.model.CalReminderUi("", title, getString(Res.string.cal_test_place), false, start,
+                fromAbsMinutes(absMinutes(start) + 45), now, 15)
+            backend.cal.showReminder(calAlarm(r, st.calNotifyDetail, loadCalNames()), st.calSound)
+        }
+    }
+
+    /** ‹ › in the calendar: one month, week or day back or forward. */
+    fun calNav(n: Int) {
+        val s = calSel
+        calSel = when (calView) {
+            CalView.MONTH -> {
+                val d = s.firstOfMonth.plusMonths(n)
+                if (d.y == today().y && d.m == today().m) today() else d
+            }
+            CalView.WEEK -> s.plus(7 * n)
+            else -> s.plus(n)
+        }
+    }
+
+    /** Reloads the calendars and hands the reminders of the next 30 days to the system. */
+    fun refreshCalendar() {
+        val st = backend.settings
+        if (!st.moduleGhulCal) {
+            backend.cal.clearReminders()
+            return
+        }
+        scope.launch {
+            calendars = runCatching { backend.cal.calendars() }.getOrDefault(emptyList())
+            val lang = getString(Res.string.cal_lang)
+            calRegionName = runCatching { backend.cal.regions(lang) }.getOrDefault(emptyList()).firstOrNull { it.code == st.calRegion }?.name ?: ""
+            val rem = runCatching { backend.cal.reminders(localNow(), 30) }.getOrDefault(emptyList())
+            val names = loadCalNames()
+            backend.cal.scheduleReminders(rem.take(400).map { calAlarm(it, st.calNotifyDetail, names) }, st.calSound)
+        }
+    }
+
     /** Drive selection mode: the navigation shows the selection bar instead. */
     var driveSelection by mutableStateOf<DriveSelection?>(null)
     var mailFolder by mutableStateOf("INBOX")
@@ -141,6 +226,9 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     outdatedNotified = false
                     passwordChangedElsewhere = false
                     syncing = false
+                    mailUnread = 0
+                    areasKnown = false
+                    codeUnconfirmed = false
                 } else {
                     refreshVaults()
                     scanFound()
@@ -150,18 +238,67 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     runAutoBackup()
                     val start = backend.settings.startTab.let { if (it < 0) backend.settings.lastTab else it }
                     tabs.getOrNull(start)?.let { tab = it }
+                    applyLaunch()
+                    refreshUnread()
+                    refreshCalendar()
                 }
+            }
+        }
+        // Area settings go into the area's file (and from there to the other devices).
+        backend.settings.onAreaChange = { kind, key, value ->
+            if (backend.unlocked.value && vaults.any { it.kind == kind }) {
+                scope.launch {
+                    runCatching { backend.setAreaOptions(kind, mapOf(key to value)) }.onSuccess { autoSync() }
+                }
+            }
+        }
+        scope.launch { AppLaunch.openTab.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
+        scope.launch { AppLaunch.openEvent.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
+        // Unread count for the navigation badge (and the window icon on Windows) while unlocked.
+        scope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(5 * 60 * 1000L)
+                if (backend.unlocked.value) refreshUnread()
             }
         }
     }
 
+    private fun applyLaunch() {
+        AppLaunch.openEvent.value?.let { ev ->
+            AppLaunch.openEvent.value = null
+            if (Tab.CAL in tabs) {
+                stack.clear()
+                tab = Tab.CAL
+                stack.add(Screen.CalEvent(ev.substringBefore('|'), ev.substringAfter('|', "")))
+            }
+        }
+        val t = AppLaunch.openTab.value ?: return
+        AppLaunch.openTab.value = null
+        if (t !in tabs) return
+        stack.clear()
+        tab = t
+    }
+
+    /** Sums the unread messages of all inboxes; keeps the old count when offline. */
+    fun refreshUnread() {
+        if (!backend.settings.moduleGhulMail) return
+        scope.launch {
+            val accounts = runCatching { backend.net.mailAccounts() }.getOrNull() ?: return@launch
+            var sum = 0
+            for (a in accounts) sum += runCatching { backend.net.mailUnseen(a.id) }.getOrElse { return@launch }
+            mailUnread = sum
+        }
+    }
+
     /** Tabs of enabled modules plus settings. */
+    /** Tabs of the areas this suite has and this device shows, plus settings. */
     val tabs: List<Tab>
         get() = buildList {
-            if (backend.settings.moduleGhulPass) add(Tab.PASS)
-            if (backend.settings.moduleGhulAuth) add(Tab.AUTH)
-            if (backend.settings.moduleGhulDrive) add(Tab.DRIVE)
-            if (backend.settings.moduleGhulMail) add(Tab.MAIL)
+            if (backend.settings.moduleGhulPass && hasArea(VaultKindUi.PASS)) add(Tab.PASS)
+            if (backend.settings.moduleGhulAuth && hasArea(VaultKindUi.TOTP)) add(Tab.AUTH)
+            if (backend.settings.moduleGhulDrive && hasArea(VaultKindUi.DRIVE)) add(Tab.DRIVE)
+            if (backend.settings.moduleGhulMail && hasArea(VaultKindUi.MAIL)) add(Tab.MAIL)
+            if (backend.settings.moduleGhulCal && hasArea(VaultKindUi.CAL)) add(Tab.CAL)
             add(Tab.SETTINGS)
         }
 
@@ -212,6 +349,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         revision++
         refreshVaults()
         autoSync()
+        refreshCalendar()
     }
 
 
@@ -240,6 +378,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     if (r.downloaded > 0 || r.merged > 0 || r.deleted > 0) {
                         revision++
                         refreshVaults()
+                        refreshCalendar()
                     }
                     onDone(r)
                 } while (syncAgain)
@@ -263,6 +402,16 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     fun refreshVaults() {
         scope.launch {
             vaults = runCatching { backend.listVaults() }.getOrDefault(vaults)
+            if (backend.unlocked.value) {
+                areasKnown = true
+                if (openFirstArea) {
+                    openFirstArea = false
+                    stack.clear()
+                    tab = tabs.first()
+                }
+                codeUnconfirmed = runCatching { !backend.recoveryConfirmed() }.getOrDefault(false)
+                loadAreaOptions()
+            }
             val old = vaults.filter { it.outdated }
             if (old.isNotEmpty() && !outdatedNotified) {
                 outdatedNotified = true
@@ -270,6 +419,20 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             }
             if (passVault != null && vaults.none { it.id == passVault }) passVault = null
             if (authVault != null && vaults.none { it.id == authVault }) authVault = null
+        }
+    }
+
+    /**
+     * Takes over the settings stored in the area files. Settings an area's file does not have yet
+     * are filled in once from this device (suites from before #24).
+     */
+    private suspend fun loadAreaOptions() {
+        val st = backend.settings
+        for (kind in vaults.map { it.kind }.distinct()) {
+            val stored = runCatching { backend.areaOptions(kind) }.getOrNull() ?: continue
+            st.applyArea(stored)
+            val missing = st.deviceValues(kind).filterKeys { it !in stored }
+            if (missing.isNotEmpty()) runCatching { backend.setAreaOptions(kind, missing) }
         }
     }
 
@@ -288,6 +451,9 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         when (kind) {
             VaultKindUi.PASS -> backend.settings.moduleGhulPass = true
             VaultKindUi.TOTP -> backend.settings.moduleGhulAuth = true
+            VaultKindUi.CAL -> backend.settings.moduleGhulCal = true
+            VaultKindUi.DRIVE -> backend.settings.moduleGhulDrive = true
+            VaultKindUi.MAIL -> backend.settings.moduleGhulMail = true
         }
     }
 
@@ -390,6 +556,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
 suspend fun describe(e: Throwable): String {
     if (e !is VaultException) return getString(Res.string.err_other, e.message ?: e.toString())
     return when (e.kind) {
+        VaultErrorKind.UPDATE_REQUIRED -> getString(Res.string.err_update_required)
         VaultErrorKind.NO_KEY -> getString(Res.string.err_no_key)
         VaultErrorKind.PERMISSION_DENIED -> getString(Res.string.err_permission)
         VaultErrorKind.NOT_A_FIDO_KEY -> getString(Res.string.err_not_fido)

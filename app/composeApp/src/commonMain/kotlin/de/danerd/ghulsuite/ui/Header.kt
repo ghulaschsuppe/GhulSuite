@@ -74,7 +74,9 @@ fun AreaContext(state: AppState) {
     val accountsWord = stringResource(Res.string.auth_count)
     val myFiles = stringResource(Res.string.drive_my_files)
     val allInboxes = stringResource(Res.string.mail_all_inboxes)
-    LaunchedEffect(state.tab, state.revision, state.passVault, state.authVault, state.mailAccount, state.mailFolder) {
+    val allCalendars = stringResource(Res.string.cal_all_calendars)
+    val someCalendars = stringResource(Res.string.cal_some_calendars)
+    LaunchedEffect(state.tab, state.revision, state.passVault, state.authVault, state.mailAccount, state.mailFolder, state.calendars, state.backend.settings.calHidden) {
         label = when (state.tab) {
             Tab.PASS -> state.vaults.firstOrNull { it.id == state.passVault }?.name ?: allVaults
             Tab.AUTH -> {
@@ -93,6 +95,12 @@ fun AreaContext(state: AppState) {
                     acc == null -> notSet
                     else -> "${acc.name} · " + if (state.mailFolder.equals("INBOX", true)) inbox else state.mailFolder
                 }
+            }
+            Tab.CAL -> {
+                val cals = state.calendars
+                val hidden = state.backend.settings.calHiddenSet()
+                val visible = cals.count { it.id !in hidden }
+                if (visible == cals.size) allCalendars else someCalendars.replace("%1\$s", visible.toString()).replace("%2\$s", cals.size.toString())
             }
             Tab.SETTINGS -> "$suite · Version " + state.backend.appVersion.substringBefore("-").split('.').take(2).joinToString(".")
         }
@@ -130,6 +138,7 @@ fun AreaContextSheet(state: AppState) {
         Tab.PASS, Tab.AUTH -> VaultSheet(state, if (state.tab == Tab.PASS) VaultKindUi.PASS else VaultKindUi.TOTP, close)
         Tab.DRIVE -> DriveSheet(state, close)
         Tab.MAIL -> MailboxSheet(state, close)
+        Tab.CAL -> CalendarsSheet(state, close)
         Tab.SETTINGS -> close()
     }
 }
@@ -245,7 +254,7 @@ private fun MailboxSheet(state: AppState, close: () -> Unit) {
             for (d in drafts) {
                 Pill(false, { Avatar(d.to.ifBlank { "?" }, size = 30.dp) }, d.subject.ifBlank { "–" }, d.to.ifBlank { formatDateTime(d.updated) }) {
                     close()
-                    state.push(Screen.MailCompose(MailDraft(d.accountId, d.to, d.cc, d.subject, d.text, d.inReplyTo, draftId = d.id, bcc = d.bcc)))
+                    state.push(Screen.MailCompose(MailDraft(d.accountId, d.to, d.cc, d.subject, d.text, d.inReplyTo, attachments = d.attachments, draftId = d.id, bcc = d.bcc)))
                 }
             }
         }

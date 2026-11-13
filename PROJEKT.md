@@ -10,7 +10,7 @@ Was GhulSuite ist und kann, steht in der [README](README.md), das vollständige 
   Server sehen nur Chiffretext.
 - **Selbst hostbar, ohne bestimmten Anbieter:** beliebige IMAP/SMTP-Mailserver, eigene Speicher per SFTP, FTPS
   oder das GhulSuite-Server-Modul. Das Server-Modul läuft auf **Standard-Webhosting mit PHP 8.1, ohne Datenbank**.
-- **Der Ordner ist die Suite:** `.ghlpss` (Passwörter) und `.ghltotp` (2FA) im Ordner gehören dazu, `.ghlsuite`
+- **Der Ordner ist die Suite:** `.ghlpss` (Passwörter), `.ghltotp` (2FA) und `.ghlcal` (Kalender) im Ordner gehören dazu, `.ghlsuite`
   hält Einstellungen, Mail-Konten und den Drive-Schlüssel, `.ghlkey` ist eine Schlüsseldatei.
 - **Schutz:** Master-Passwort **plus** zweiter Faktor (Security Key oder Schlüsseldatei); der Wiederherstellungscode
   ist Pflicht und steckt in jeder Datei.
@@ -24,6 +24,7 @@ Was GhulSuite ist und kann, steht in der [README](README.md), das vollständige 
 
 ```
 core/ghul-core/        Rust-Kern: Krypto, FIDO2/CTAP2, Dateiformat, Suite-API, Sync, Drive, Mail, PGP, Teilen
+                       (ein Bereich, eine Datei: .ghlpss, .ghltotp, .ghldrv, .ghlmail, .ghlcal + suite.ghlsuite)
 core/ghul-core/server/ PHP-Server-Modul (ghulsuite.php, PHP 8.1, ohne Datenbank)
 core/fuzz/             Fuzzing-Ziele (cargo-fuzz)
 app/                   Kotlin + Compose Multiplatform (Android und Windows), Anbindung per UniFFI

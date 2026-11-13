@@ -26,31 +26,84 @@ enum class QuickUnlockMode { OFF, BIOMETRIC, PIN }
  * Defaults favour security; the user can relax them deliberately.
  */
 class Settings(private val store: KeyValueStore) {
+    /**
+     * Settings that belong to an area travel in the area's file (#24): every change goes to
+     * [onAreaChange], values from the file come back through [applyArea]. The device keeps a copy
+     * so the app shows them before the suite is unlocked.
+     */
+    var onAreaChange: ((VaultKindUi, String, String) -> Unit)? = null
+    private val appliers = mutableMapOf<String, (String) -> Unit>()
+    private val readers = mutableMapOf<String, () -> String>()
+
+    private fun changed(key: String, value: String) {
+        AREA_KEYS[key]?.let { kind -> onAreaChange?.invoke(kind, key, value) }
+    }
+
+    /** Takes over values from an area's file (without writing them back). */
+    fun applyArea(values: Map<String, String>) {
+        for ((k, v) in values) appliers[k]?.invoke(v)
+    }
+
+    /** This device's values of an area's settings (to put into the file once). */
+    fun deviceValues(kind: VaultKindUi): Map<String, String> =
+        AREA_KEYS.filterValues { it == kind }.keys.mapNotNull { k -> readers[k]?.let { k to it() } }.toMap()
+
     private fun int(key: String, default: Int) = object : ReadWriteProperty<Any?, Int> {
         private var state by mutableStateOf(store.getInt(key, default))
+        init {
+            appliers[key] = { v -> v.toIntOrNull()?.let { state = it; store.putInt(key, it) } }
+            readers[key] = { state.toString() }
+        }
         override fun getValue(thisRef: Any?, property: KProperty<*>) = state
         override fun setValue(thisRef: Any?, property: KProperty<*>, value: Int) {
             state = value
             store.putInt(key, value)
+            changed(key, value.toString())
         }
     }
 
     private fun bool(key: String, default: Boolean) = object : ReadWriteProperty<Any?, Boolean> {
         private var state by mutableStateOf(store.getBoolean(key, default))
+        init {
+            appliers[key] = { v -> v.toBooleanStrictOrNull()?.let { state = it; store.putBoolean(key, it) } }
+            readers[key] = { state.toString() }
+        }
         override fun getValue(thisRef: Any?, property: KProperty<*>) = state
         override fun setValue(thisRef: Any?, property: KProperty<*>, value: Boolean) {
             state = value
             store.putBoolean(key, value)
+            changed(key, value.toString())
         }
     }
 
     private fun str(key: String, default: String) = object : ReadWriteProperty<Any?, String> {
         private var state by mutableStateOf(store.getString(key, default))
+        init {
+            appliers[key] = { v -> state = v; store.putString(key, v) }
+            readers[key] = { state }
+        }
         override fun getValue(thisRef: Any?, property: KProperty<*>) = state
         override fun setValue(thisRef: Any?, property: KProperty<*>, value: String) {
             state = value
             store.putString(key, value)
+            changed(key, value)
         }
+    }
+
+    companion object {
+        /** Settings stored in an area's file (synchronised), by key. Everything else stays on the device. */
+        val AREA_KEYS: Map<String, VaultKindUi> = mapOf(
+            "generator_mode" to VaultKindUi.PASS,
+            "generator_length" to VaultKindUi.PASS,
+            "drive_trash_days" to VaultKindUi.DRIVE,
+            "mail_image_senders" to VaultKindUi.MAIL,
+            "cal_holidays" to VaultKindUi.CAL,
+            "cal_region" to VaultKindUi.CAL,
+            "cal_default_reminder" to VaultKindUi.CAL,
+            "cal_allday_reminder" to VaultKindUi.CAL,
+            "cal_default" to VaultKindUi.CAL,
+            "cal_week_start" to VaultKindUi.CAL,
+        )
     }
 
     // --- Security
@@ -79,6 +132,35 @@ class Settings(private val store: KeyValueStore) {
     var moduleGhulAuth by bool("module_auth", true)
     var moduleGhulDrive by bool("module_drive", true)
     var moduleGhulMail by bool("module_mail", true)
+    var moduleGhulCal by bool("module_cal", true)
+
+    // --- GhulCal
+    /** Start view: 0 month, 1 week, 2 day, 3 list. */
+    var calStartView by int("cal_start_view", 0)
+    /** 0 = weeks start on Monday, 6 = on Sunday. */
+    var calWeekStart by int("cal_week_start", 0)
+    var calWeekNumbers by bool("cal_week_numbers", true)
+    var calHolidays by bool("cal_holidays", true)
+    /** Region of the public holidays (e.g. DE-NW, AT, CH; empty = none). */
+    var calRegion by str("cal_region", "DE-NW")
+    /** Hidden calendars (ids, comma separated; `holidays` for the public holidays). */
+    var calHidden by str("cal_hidden", "")
+    /** Minutes before timed events (-1 none). */
+    var calDefaultReminder by int("cal_default_reminder", 15)
+    /** All-day events: minutes before 9:00 of the day (-1 none; 1440 = day before at 9:00). */
+    var calAllDayReminder by int("cal_allday_reminder", 1440)
+    /** Lock screen: 0 only "event in x min", 1 with title, 2 title, time and place. */
+    var calNotifyDetail by int("cal_notify_detail", 1)
+    var calSound by bool("cal_sound", true)
+    /** Calendar of new events (empty = first). */
+    var calDefault by str("cal_default", "")
+
+    fun calHiddenSet(): Set<String> = calHidden.split(',').filter { it.isNotBlank() }.toSet()
+
+    fun toggleCalHidden(id: String) {
+        val s = calHiddenSet()
+        calHidden = (if (id in s) s - id else s + id).joinToString(",")
+    }
 
     // --- Servers
     /** Synchronise after unlocking and after changes (if a sync server is set). */
@@ -115,6 +197,10 @@ class Settings(private val store: KeyValueStore) {
     // --- GhulMail
     /** Swipe left: 0 archive, 1 delete, 2 mark as read. */
     var mailSwipeLeft by int("mail_swipe_left", 0)
+    /** App language: "" follows the system, otherwise a language tag ("de", "en"). */
+    var appLanguage by str("app_language", "")
+    /** Senders whose HTML mails load images from the internet without asking (lower case, newline separated). */
+    var mailImageSenders by str("mail_image_senders", "")
 
     // --- GhulAuth
     /** 0 = by name, 1 = newest first, 2 = favourites first. */

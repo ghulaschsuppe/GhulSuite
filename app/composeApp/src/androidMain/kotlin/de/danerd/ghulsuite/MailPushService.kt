@@ -60,7 +60,7 @@ class MailPushService : Service() {
                 // A few minutes per round: keeps the connection alive behind routers and notices changed logins.
                 val r = mailWait(config, since.toUInt(), WAIT_SECONDS)
                 if (!running || accountId !in n.accounts()) break
-                if (since > 0 && r.newMessages > 0u) postMailNotification(this, config, r.newMessages.toInt(), r.newestFrom, r.newestSubject)
+                if (since > 0 && r.newMessages > 0u) postMailNotification(this, config, r.newMessages.toInt(), r.newestFrom, r.newestSubject, r.unseen.toInt())
                 n.setLastUid(accountId, r.nextUid.toInt())
                 backoff = 5_000L
             } catch (e: Exception) {

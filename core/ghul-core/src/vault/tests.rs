@@ -411,6 +411,15 @@ fn build_vectors() -> Json {
             ContainerKind::Suite => {
                 c.payload.settings.insert("note".into(), ciborium::value::Value::Text("keyring lives here".into()));
             }
+            ContainerKind::Drive | ContainerKind::Mail => {
+                c.payload.settings.insert("note".into(), ciborium::value::Value::Text("area settings".into()));
+            }
+            ContainerKind::Cal => {
+                let mut e = Entry::new([3; 16], "event", NOW);
+                e.fields.insert("title".into(), Field::Text("Dentist".into()));
+                e.fields.insert("start".into(), Field::Text("2026-11-13T10:00".into()));
+                c.payload.entries.push(e);
+            }
         }
         let file = c.seal(&mut r).unwrap();
         let cid = c.header().container_id;

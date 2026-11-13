@@ -60,8 +60,6 @@ import org.jetbrains.compose.resources.stringResource
 
 private enum class Flow { START, NEW, OPEN_VAULT, FETCH }
 
-private enum class NewStep { PROTECTION, PASSWORD, KEYFILE, VAULTS, KEY, CODE }
-
 const val KEYFILE_NAME = "ghulsuite.ghlkey"
 
 @Composable
@@ -127,8 +125,11 @@ fun SetupScreen(state: AppState) {
     PlatformBackHandler(enabled = flow != Flow.START) { flow = Flow.START }
 
     ScreenColumn {
-        BrandHeader(if (flow == Flow.START) stringResource(Res.string.start_tagline) else null)
-        BusyBanner(state)
+        // The wizard has its own header (title, step, progress).
+        if (flow != Flow.NEW) {
+            BrandHeader(if (flow == Flow.START) stringResource(Res.string.start_tagline) else null)
+            BusyBanner(state)
+        }
         when (flow) {
             Flow.START -> {
                 StartOption(Icons.Filled.Add, paletteColor(0), stringResource(Res.string.start_new), stringResource(Res.string.start_new_text)) {
@@ -235,208 +236,6 @@ private fun finishSetup(state: AppState, pass: Boolean, totp: Boolean) {
     state.refreshVaults()
 }
 
-@Composable
-private fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
-    val backend = state.backend
-    var step by remember { mutableStateOf(NewStep.PROTECTION) }
-    // Second factor: security key (recommended) or key file. Both can be added or swapped later.
-    var useKey by remember { mutableStateOf(true) }
-    val useKeyfile = !useKey
-    var kdf by remember { mutableStateOf<KdfChoice?>(null) }
-    var password by remember { mutableStateOf("") }
-    var repeat by remember { mutableStateOf("") }
-    var keyfile by remember { mutableStateOf<ByteArray?>(null) }
-    var keyfileSaved by remember { mutableStateOf(false) }
-    var pass by remember { mutableStateOf(true) }
-    var passName by remember { mutableStateOf("") }
-    var totp by remember { mutableStateOf(true) }
-    var totpName by remember { mutableStateOf("") }
-    var pin by remember { mutableStateOf("") }
-    var newPin by remember { mutableStateOf("") }
-    var keyLabel by remember { mutableStateOf("") }
-    var keyStatus by remember { mutableStateOf<KeyStatus?>(null) }
-    var code by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
-
-    LaunchedEffect(Unit) {
-        kdf = runCatching { backend.calibrateKdf() }.getOrElse { KdfChoice(64 * 1024, 3, 0) }
-        keyLabel = getString(Res.string.setup_default_key_label)
-        passName = getString(Res.string.vault_default_name)
-        totpName = getString(Res.string.vault_default_name)
-    }
-
-    val saveKeyfile = rememberSaveFile { ok -> keyfileSaved = ok; if (ok) error = null }
-    val notSaved = stringResource(Res.string.keyfile_not_saved)
-    val openKeyfile = rememberOpenFile { file -> keyfile = file.bytes; keyfileSaved = true; error = null }
-
-    fun create() {
-        val choice = kdf ?: KdfChoice(64 * 1024, 3, 0)
-        state.run(onError = { error = it }, block = {
-            val vaults = buildList {
-                if (pass) add(NewVaultUi(VaultKindUi.PASS, passName.ifBlank { getString(Res.string.vault_default_name) }))
-                if (totp) add(NewVaultUi(VaultKindUi.TOTP, totpName.ifBlank { getString(Res.string.vault_default_name) }))
-            }
-            backend.create(
-                SetupUi(
-                    password = password,
-                    keyPin = if (useKey) pin else null,
-                    keyLabel = keyLabel.ifBlank { getString(Res.string.setup_default_key_label) },
-                    keyfile = if (useKeyfile) keyfile else null,
-                    keyfileLabel = getString(Res.string.keyfile_default_label),
-                    recoveryLabel = getString(Res.string.setup_recovery_label),
-                    kdf = choice,
-                    vaults = vaults,
-                ),
-                state.onTouchNeeded,
-            )
-        }) {
-            code = it
-            password = ""
-            repeat = ""
-            pin = ""
-            keyfile = null
-            step = NewStep.CODE
-        }
-    }
-
-    when (step) {
-        NewStep.PROTECTION -> SectionCard(stringResource(Res.string.setup_protection_title)) {
-            Hint(stringResource(Res.string.setup_protection_text))
-            ChoiceCard(useKey, stringResource(Res.string.setup_use_key), stringResource(Res.string.setup_use_key_on)) { useKey = true }
-            if (filePickersAvailable) {
-                ChoiceCard(!useKey, stringResource(Res.string.setup_use_keyfile), stringResource(Res.string.setup_use_keyfile_text)) {
-                    useKey = false
-                }
-            }
-            Hint(stringResource(Res.string.setup_swap_later))
-            Hint(stringResource(Res.string.setup_recovery_always))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onCancel) { Text(stringResource(Res.string.a_back)) }
-                Button(onClick = { step = NewStep.PASSWORD }) { Text(stringResource(Res.string.a_next)) }
-            }
-        }
-
-        NewStep.PASSWORD -> SectionCard(stringResource(Res.string.setup_pw_title)) {
-            Hint(stringResource(Res.string.setup_pw_text))
-            SecretTextField(password, { password = it; error = null }, stringResource(Res.string.l_master_password))
-            StrengthMeter(backend.passwordScore(password))
-            SecretTextField(repeat, { repeat = it; error = null }, stringResource(Res.string.l_repeat_password))
-            TextButton(onClick = {
-                password = backend.generatePassword(PasswordOptionsUi(length = 24))
-                repeat = ""
-            }) { Text(stringResource(Res.string.setup_pw_suggest)) }
-            ErrorText(error)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { step = NewStep.PROTECTION; error = null }) { Text(stringResource(Res.string.a_back)) }
-                Button(onClick = {
-                    scope.launch {
-                        error = PasswordPolicy.check(backend, password, repeat)
-                        if (error == null) step = if (useKeyfile) NewStep.KEYFILE else NewStep.VAULTS
-                    }
-                }) { Text(stringResource(Res.string.a_next)) }
-            }
-        }
-
-        NewStep.KEYFILE -> SectionCard(stringResource(Res.string.keyfile_title)) {
-            Hint(stringResource(Res.string.keyfile_text))
-            Button(onClick = {
-                val data = keyfile ?: backend.generateKeyfile().also { keyfile = it }
-                saveKeyfile(KEYFILE_NAME, data)
-            }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.keyfile_create_save)) }
-            OutlinedButton(onClick = openKeyfile, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(Res.string.keyfile_use_existing))
-            }
-            if (keyfileSaved) Text(stringResource(Res.string.keyfile_ready), color = okColor())
-            ErrorText(error)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { step = NewStep.PASSWORD }) { Text(stringResource(Res.string.a_back)) }
-                Button(onClick = {
-                    if (keyfile != null && keyfileSaved) step = NewStep.VAULTS else error = notSaved
-                }) { Text(stringResource(Res.string.a_next)) }
-            }
-        }
-
-        NewStep.VAULTS -> SectionCard(stringResource(Res.string.setup_vaults_title)) {
-            Hint(stringResource(Res.string.setup_vaults_text))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(pass, { pass = it })
-                Text(stringResource(Res.string.tab_pass) + " – " + stringResource(Res.string.module_pass_text))
-            }
-            if (pass) {
-                OutlinedTextField(
-                    passName, { passName = it }, label = { Text(stringResource(Res.string.l_vault_name)) },
-                    singleLine = true, modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(totp, { totp = it })
-                Text(stringResource(Res.string.tab_auth) + " – " + stringResource(Res.string.module_auth_text))
-            }
-            if (totp) {
-                OutlinedTextField(
-                    totpName, { totpName = it }, label = { Text(stringResource(Res.string.l_vault_name)) },
-                    singleLine = true, modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            Hint(stringResource(Res.string.setup_vaults_more))
-            StorageChooser(state)
-            ErrorText(error)
-            if (!useKey && kdf == null) Hint(stringResource(Res.string.setup_calibrating))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { step = if (useKeyfile) NewStep.KEYFILE else NewStep.PASSWORD; error = null }) {
-                    Text(stringResource(Res.string.a_back))
-                }
-                if (useKey) {
-                    Button(onClick = { step = NewStep.KEY }) { Text(stringResource(Res.string.a_next)) }
-                } else {
-                    Button(onClick = { create() }, enabled = !state.busy && kdf != null) { Text(stringResource(Res.string.a_setup)) }
-                }
-            }
-        }
-
-        NewStep.KEY -> SectionCard(stringResource(Res.string.setup_key_title)) {
-            Hint(stringResource(Res.string.setup_key_text))
-            OutlinedTextField(
-                keyLabel, { keyLabel = it }, label = { Text(stringResource(Res.string.l_key_label)) },
-                singleLine = true, modifier = Modifier.fillMaxWidth(),
-            )
-            if (!backend.keyPinInApp) {
-                KeyPinField(state, pin) { pin = it; error = null }
-            } else if (keyStatus?.pinSet == false) {
-                Hint(stringResource(Res.string.setup_key_no_pin))
-                SecretTextField(newPin, { newPin = it }, stringResource(Res.string.l_new_pin))
-                OutlinedButton(onClick = {
-                    state.run(onError = { error = it }, block = { backend.setKeyPin(newPin); backend.keyInfo() }) {
-                        keyStatus = it
-                        pin = newPin
-                        newPin = ""
-                    }
-                }, enabled = !state.busy && newPin.length >= (keyStatus?.minPinLength ?: 4)) {
-                    Text(stringResource(Res.string.a_set_pin))
-                }
-            } else {
-                KeyPinField(state, pin) { pin = it; error = null }
-            }
-            ErrorText(error)
-            keyStatus?.let { Hint(stringResource(Res.string.setup_key_detected, it.product)) }
-            if (kdf == null) Hint(stringResource(Res.string.setup_calibrating))
-            // The system dialog (Windows) checks the key itself; no separate check there.
-            if (backend.keyPinInApp) OutlinedButton(onClick = {
-                state.run(onError = { error = it }, block = { backend.keyInfo() }) { keyStatus = it; error = null }
-            }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.a_check_key)) }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { step = NewStep.VAULTS; error = null }) { Text(stringResource(Res.string.a_back)) }
-                Button(onClick = { create() }, enabled = !state.busy && keyPinOk(state, pin) && kdf != null) {
-                    Text(stringResource(Res.string.a_register_key))
-                }
-            }
-        }
-
-        NewStep.CODE -> RecoveryCodeSteps(state, code) { finishSetup(state, pass, totp) }
-    }
-}
-
 /** Builds a new suite around a single vault file. */
 @Composable
 private fun OpenVaultWizard(state: AppState, file: PickedFile, info: ContainerInfoUi, onCancel: () -> Unit) {
@@ -463,7 +262,7 @@ private fun OpenVaultWizard(state: AppState, file: PickedFile, info: ContainerIn
         Hint(
             stringResource(
                 Res.string.open_vault_text, file.name,
-                stringResource(if (kind == VaultKindUi.PASS) Res.string.tab_pass else Res.string.tab_auth),
+                stringResource(kindLabel(kind)),
             ),
         )
         OutlinedTextField(
@@ -586,10 +385,17 @@ fun RecoveryCodeSteps(state: AppState, code: String, onDone: () -> Unit) {
             val wrong = stringResource(Res.string.setup_confirm_wrong)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { confirming = false }) { Text(stringResource(Res.string.a_back)) }
+                // The core checks the group and only then marks the code as confirmed.
                 Button(onClick = {
-                    val group = code.split('-').getOrNull(2).orEmpty()
-                    if (confirm.trim().replace('O', '0') == group.replace('O', '0')) onDone() else error = wrong
-                }) { Text(stringResource(Res.string.a_finish)) }
+                    state.run(onError = { error = it }, block = { state.backend.confirmRecoveryCode(2, confirm) }) { ok ->
+                        if (ok) {
+                            state.codeUnconfirmed = false
+                            onDone()
+                        } else {
+                            error = wrong
+                        }
+                    }
+                }, enabled = !state.busy && confirm.isNotBlank()) { Text(stringResource(Res.string.a_finish)) }
             }
         }
     }

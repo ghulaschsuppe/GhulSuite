@@ -551,20 +551,28 @@ fn import_export_and_autofill() {
     let preview = super::suite::preview_import(bw.as_bytes().to_vec(), "bitwarden.json".into()).unwrap();
     assert_eq!((preview.entries, preview.totps, preview.totps_in_logins), (3, 0, 1));
     let r = s
-        .import_data(bw.as_bytes().to_vec(), "bitwarden.json".into(), Some(pass.clone()), Some(totp.clone()), true)
+        .import_data(
+            bw.as_bytes().to_vec(),
+            "bitwarden.json".into(),
+            Some(pass.clone()),
+            Some(totp.clone()),
+            true,
+            None,
+        )
         .unwrap();
     assert_eq!((r.entries, r.totps, r.duplicates), (3, 1, 0));
     assert_eq!(s.totp_codes(59).unwrap()[0].code, "287082");
     // Importing again finds only duplicates.
-    let r =
-        s.import_data(bw.as_bytes().to_vec(), "b.json".into(), Some(pass.clone()), Some(totp.clone()), true).unwrap();
+    let r = s
+        .import_data(bw.as_bytes().to_vec(), "b.json".into(), Some(pass.clone()), Some(totp.clone()), true, None)
+        .unwrap();
     assert_eq!((r.entries, r.totps, r.duplicates), (0, 0, 4));
     assert!(matches!(
-        s.import_data(bw.as_bytes().to_vec(), "b.json".into(), Some(totp.clone()), None, false),
+        s.import_data(bw.as_bytes().to_vec(), "b.json".into(), Some(totp.clone()), None, false, None),
         Err(GhulError::InvalidInput { .. })
     ));
     assert!(matches!(
-        s.import_data(b"random bytes".to_vec(), "x.bin".into(), Some(pass.clone()), None, false),
+        s.import_data(b"random bytes".to_vec(), "x.bin".into(), Some(pass.clone()), None, false, None),
         Err(GhulError::ImportUnknownFormat)
     ));
 
@@ -607,7 +615,7 @@ fn import_export_and_autofill() {
     let links = s.export_plain(totp.clone(), "pw-123456".into()).unwrap();
     assert!(String::from_utf8(links.clone()).unwrap().starts_with("otpauth://totp/GitHub:ghul?"));
     let other = s.create_vault(VaultKind::Pass, "Kopie".into()).unwrap();
-    let r = s.import_data(csv, "export.csv".into(), Some(other.clone()), None, false).unwrap();
+    let r = s.import_data(csv, "export.csv".into(), Some(other.clone()), None, false, None).unwrap();
     assert_eq!(r.entries, 5);
 }
 
@@ -740,6 +748,7 @@ fn sync_over_sftp() {
         password: None,
         base: base.clone(),
         url: String::new(),
+        upload: None,
     };
     // First the fingerprint is shown; then the server is stored with the confirmed fingerprint.
     assert_eq!(a.save_server(input.clone(), None).unwrap(), ServerSaved::Confirm { fingerprint: hostkey.clone() });
@@ -917,6 +926,7 @@ fn drive_over_sftp_two_devices() {
         password: None,
         base: format!("{root}/drive-{run}"),
         url: String::new(),
+        upload: None,
     };
     let id = saved(a.save_server(input.clone(), Some(hostkey.clone())).unwrap());
     a.drive_setup(id.clone()).unwrap();
@@ -1121,6 +1131,18 @@ fn mail_with_imap_and_smtp() {
         })
         .unwrap();
     assert_eq!(s.mail_drafts().unwrap()[0].subject, "Entwurf");
+    // Attachments stay with the draft; too large ones are refused.
+    let pdf = OutgoingAttachment { name: "a.pdf".into(), mime: "application/pdf".into(), data: vec![7u8; 2048] };
+    let mut with_file = s.mail_drafts().unwrap()[0].clone();
+    with_file.attachments = vec![pdf.clone()];
+    s.mail_save_draft(with_file.clone()).unwrap();
+    assert_eq!(s.mail_drafts().unwrap()[0].attachments, vec![pdf]);
+    with_file.attachments = vec![OutgoingAttachment {
+        name: "big.bin".into(),
+        mime: "application/octet-stream".into(),
+        data: vec![0u8; 10 * 1024 * 1024 + 1],
+    }];
+    assert!(s.mail_save_draft(with_file).is_err());
     s.mail_delete_draft(draft).unwrap();
     assert!(s.mail_drafts().unwrap().is_empty());
     assert_eq!(s.mail_contacts("".into(), 5).unwrap()[0].email, email.to_lowercase());
@@ -1314,6 +1336,7 @@ fn share_over_sftp_with_web_folder() {
         password: None,
         base: format!("{root}/suite-{run}"),
         url: String::new(),
+        upload: None,
     };
     let id = saved(s.save_server(input, Some(hostkey)).unwrap());
     s.drive_setup(id.clone()).unwrap();
@@ -1341,6 +1364,7 @@ fn ftps_storage_drive_and_sharing() {
         password: Some(cfg.password.to_string()),
         base: cfg.base.clone(),
         url: String::new(),
+        upload: None,
     };
     // Self-signed certificate: confirm its fingerprint first.
     let fp = match s.save_server(input.clone(), None).unwrap() {
@@ -1378,6 +1402,7 @@ fn php_module_storage_drive_and_limited_shares() {
         password: Some(crate::kdf::hex(&[3u8; 32])),
         base: String::new(),
         url: php.url.clone(),
+        upload: None,
     };
     // A wrong key is refused before anything is stored.
     assert!(matches!(s.save_server(input.clone(), None), Err(GhulError::ServerAuthFailed)));
@@ -1408,6 +1433,169 @@ fn php_module_storage_drive_and_limited_shares() {
     assert_eq!(s.share_list().unwrap()[0].downloads, 1);
     s.share_delete(text.id).unwrap();
     assert!(open_link(&text.url, None).is_none());
+}
+
+#[test]
+fn drive_storage_follows_sync_or_uses_its_own_server() {
+    use super::drive::DriveMode;
+    use super::servers::{ServerFolders, ServerInput, ServerKind};
+    let Some(cfg) = crate::net::tests::ftps_test_config("drive-modes") else { return };
+    let d = Dirs::new("drive-modes");
+    let s = d.suite();
+    let kf = generate_keyfile();
+    s.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    let input = |base: &str| ServerInput {
+        kind: ServerKind::Ftps,
+        name: String::new(),
+        host: cfg.host.clone(),
+        port: cfg.port,
+        user: cfg.user.clone(),
+        password: Some(cfg.password.to_string()),
+        base: base.to_owned(),
+        url: String::new(),
+        upload: None,
+    };
+    // Folder picker before anything is stored: confirm the certificate, then list.
+    let fp = match s.server_browse_input(input(""), None, String::new()).unwrap() {
+        ServerFolders::Confirm { fingerprint } => fingerprint,
+        other => panic!("{other:?}"),
+    };
+    let sync_id = saved(s.save_server(input(&cfg.base), Some(fp.clone())).unwrap());
+    match s.server_browse_input(input(""), Some(fp.clone()), String::new()).unwrap() {
+        ServerFolders::Folders { folders } => assert!(folders.contains(&cfg.base)),
+        other => panic!("{other:?}"),
+    }
+    // "Like synchronisation" needs synchronisation.
+    let st = s.drive_storage().unwrap();
+    assert_eq!((st.mode, st.sync_available), (DriveMode::None, false));
+    assert!(matches!(s.drive_use_sync(), Err(GhulError::NotConfigured)));
+    s.set_sync_server(Some(sync_id.clone())).unwrap();
+    s.drive_use_sync().unwrap();
+    let st = s.drive_storage().unwrap();
+    assert_eq!((st.mode, st.server.map(|x| x.id)), (DriveMode::Sync, Some(sync_id.clone())));
+    let f = upload(&s, None, "Plan.txt", b"Plan A");
+
+    // Before the sync server goes: Drive keeps that server as its own, in the Drive file.
+    s.drive_detach_from_sync().unwrap();
+    s.remove_server(sync_id.clone()).unwrap();
+    let st = s.drive_storage().unwrap();
+    assert_eq!(st.mode, DriveMode::Own);
+    let own = st.server.unwrap().id;
+    assert_ne!(own, sync_id);
+    assert_eq!(download(&s, &f), b"Plan A");
+    assert!(s.list_servers().unwrap().is_empty(), "Drive's server is not offered for synchronisation");
+    assert!(s.remove_server(own.clone()).is_err(), "Drive's server is changed in GhulDrive");
+
+    // A different own server replaces the earlier one; it survives locking.
+    let other = format!("{}-b", cfg.base);
+    let new_id = saved(s.drive_save_server(input(&other), Some(fp)).unwrap());
+    s.lock();
+    s.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    let st = s.drive_storage().unwrap();
+    assert_eq!((st.mode, st.server.map(|x| x.id)), (DriveMode::Own, Some(new_id)));
+    assert!(s.drive_list(None, true).unwrap().is_empty(), "a fresh Drive on the other folder");
+}
+
+#[test]
+fn php_module_is_installed_over_ftps_and_takes_large_files_in_parts() {
+    use super::drive::DriveMode;
+    use super::servers::{ServerInput, ServerKind};
+    let Some(cfg) = crate::net::tests::ftps_test_config("php-install") else { return };
+    if std::process::Command::new("php").arg("-v").output().is_err() {
+        return;
+    }
+    // The module goes to the FTP server's folder; a copy of it is served from a folder this test
+    // owns (the web server must be able to create the module's data folder next to it).
+    let home = std::env::var("GHUL_TEST_DIR").map(|d| std::path::PathBuf::from(d).join("ftp-home")).unwrap();
+    let web = home.join(&cfg.base).join("www");
+    let served = std::env::temp_dir().join(format!("ghul-php-served-{}", cfg.base));
+    std::fs::create_dir_all(&served).unwrap();
+    let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    let mut php = std::process::Command::new("php")
+        .args(["-S", &format!("127.0.0.1:{port}"), "-t"])
+        .arg(&served)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    for _ in 0..50 {
+        if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    let d = Dirs::new("php-install");
+    let s = d.suite();
+    s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    let ftps = ServerInput {
+        kind: ServerKind::Ftps,
+        name: String::new(),
+        host: cfg.host.clone(),
+        port: cfg.port,
+        user: cfg.user.clone(),
+        password: Some(cfg.password.to_string()),
+        base: String::new(),
+        url: String::new(),
+        upload: None,
+    };
+    let dir = format!("{}/www", cfg.base);
+    let url = format!("http://127.0.0.1:{port}/ghulsuite.php");
+    // Unknown certificate: nothing is uploaded until it is confirmed.
+    let first = s.php_module_install(ftps.clone(), None, dir.clone(), url.clone()).unwrap();
+    assert_eq!(first.confirm, cfg.cert);
+    assert!(!web.join("ghulsuite.php").exists());
+    let done = s.php_module_install(ftps, cfg.cert.clone(), dir, url.clone()).unwrap();
+    // Uploaded over FTPS; the address does not answer yet (the copy is not served yet).
+    let uploaded = std::fs::read_to_string(web.join("ghulsuite.php")).unwrap();
+    assert!(uploaded.contains(&done.key));
+    assert_eq!((done.url.as_deref(), done.tried.clone()), (None, vec![url.clone()]));
+    std::fs::write(served.join("ghulsuite.php"), &uploaded).unwrap();
+    let info = super::servers::php_module_probe(url.clone(), done.key.clone()).unwrap();
+    assert_eq!(info.version, info.current);
+    assert!(info.limit > 0);
+
+    // Drive on the module, keeping the FTPS login for later updates.
+    let id = saved(
+        s.drive_save_server(
+            ServerInput {
+                kind: ServerKind::Php,
+                name: String::new(),
+                host: String::new(),
+                port: 0,
+                user: String::new(),
+                password: Some(done.key.clone()),
+                base: String::new(),
+                url,
+                upload: done.upload.clone(),
+            },
+            None,
+        )
+        .unwrap(),
+    );
+    assert_eq!(s.drive_storage().unwrap().mode, DriveMode::Own);
+    // Drive blocks are larger than one part: they go up in parts.
+    let big: Vec<u8> = (0..9_000_000u32).map(|i| (i % 253) as u8).collect();
+    let f = upload(&s, None, "Film.mp4", &big);
+    assert_eq!(download(&s, &f), big);
+    // Updating the module uploads it again over the kept FTPS login, with the same key and data folder.
+    assert_eq!(s.php_module_update(id).unwrap(), info.current);
+    assert_eq!(std::fs::read_to_string(web.join("ghulsuite.php")).unwrap(), uploaded);
+    assert_eq!(download(&s, &f), big);
+    let _ = php.kill();
+    let _ = php.wait();
+    let _ = std::fs::remove_dir_all(&served);
+}
+
+#[test]
+fn module_addresses_are_guessed_from_the_ftps_folder() {
+    let urls = super::servers::module_urls;
+    assert_eq!(urls("ftp.example.org", "public_html/ghul")[0], "https://example.org/ghul/ghulsuite.php");
+    assert_eq!(urls("w0123.webhost.test", "example.org/tools")[0], "https://example.org/tools/ghulsuite.php");
+    assert_eq!(urls("ftp.example.org", "example.net/htdocs")[0], "https://example.net/ghulsuite.php");
+    assert_eq!(
+        urls("ftp.example.org", ""),
+        vec!["https://example.org/ghulsuite.php", "https://www.example.org/ghulsuite.php"]
+    );
 }
 
 #[test]
@@ -1443,6 +1631,7 @@ fn drive_file_and_share_link_into_mail() {
                 password: Some(crate::kdf::hex(&php.key)),
                 base: String::new(),
                 url: php.url.clone(),
+                upload: None,
             },
             None,
         )
@@ -1539,6 +1728,7 @@ fn php_browser_fixture() {
                 password: Some(crate::kdf::hex(&php.key)),
                 base: String::new(),
                 url: php.url.clone(),
+                upload: None,
             },
             None,
         )
@@ -1741,6 +1931,17 @@ fn pass_extras_history_attachments_move_and_security_check() {
     let extras = s.entry_extras(privat.clone(), id.clone()).unwrap();
     assert!(extras.created > 0 && !extras.favorite && extras.history.is_empty());
 
+    // Exporting single entries needs the master password and contains only those entries.
+    let forum = s.save_entry(privat.clone(), login("Forum", "du", "Anders2")).unwrap();
+    assert!(matches!(
+        s.export_entries(privat.clone(), vec![id.clone()], "falsch".into()),
+        Err(GhulError::WrongPassword)
+    ));
+    let one =
+        String::from_utf8(s.export_entries(privat.clone(), vec![id.clone()], "pw-123456".into()).unwrap()).unwrap();
+    assert!(one.contains("Bank") && one.contains("Kurz1") && !one.contains("Forum"));
+    s.delete_entry(privat.clone(), forum).unwrap();
+
     // Password history: the old password is kept when it changes, newest first.
     let mut e = s.get_entry(privat.clone(), id.clone()).unwrap();
     for f in e.fields.iter_mut().filter(|f| f.name == "password") {
@@ -1842,4 +2043,408 @@ fn backup_and_restore_into_an_empty_folder() {
     assert!(t.restore_backup(zip).is_err(), "not over an existing suite");
     t.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
     assert_eq!(t.list_entries(VaultKind::Pass, None).unwrap()[0].title, "Bank");
+}
+
+#[test]
+fn calendar_vault_events_series_reminders_and_sync() {
+    use super::cal::{CalCalendar, CalDeleteMode, CalEvent, CalLink, CalRepeat};
+    use crate::net::remote::LocalFs;
+    let server_dir = std::env::temp_dir().join(format!("ghul-cal-server-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&server_dir);
+    let server = LocalFs::new(&server_dir);
+    let kf = generate_keyfile();
+    let (da, db) = (Dirs::new("cal-a"), Dirs::new("cal-b"));
+    let a = da.suite();
+    a.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Cal, "Kalender")]), None, None, None).unwrap();
+    let vault = vault_id(&a, "Kalender");
+    let file = vault_file(&a, &vault);
+    assert!(file.ends_with(".ghlcal"), "{file}");
+    assert_eq!(a.list_vaults().unwrap()[0].kind, VaultKind::Cal);
+
+    let cal = |name: &str, color: u32| CalCalendar {
+        id: String::new(),
+        vault_id: vault.clone(),
+        name: name.into(),
+        color,
+        default_reminder: 15,
+        events: 0,
+    };
+    let privat = a.cal_save_calendar(cal("Privat", 0xd6336c)).unwrap();
+    let work = a.cal_save_calendar(cal("Arbeit", 0x2f74e8)).unwrap();
+    let dentist = a
+        .cal_save_event(CalEvent {
+            calendar_id: privat.clone(),
+            title: " Zahnarzt Dr. Weber ".into(),
+            start: "2026-11-13T10:00".into(),
+            end: "2026-11-13T10:45".into(),
+            reminders: vec![1440, 60],
+            location: "Praxis am Markt".into(),
+            links: vec![CalLink { kind: "drive".into(), label: "Überweisung.pdf".into(), target: "x".into() }],
+            ..Default::default()
+        })
+        .unwrap();
+    let standup = a
+        .cal_save_event(CalEvent {
+            calendar_id: work.clone(),
+            title: "Team-Standup".into(),
+            start: "2026-11-09T09:30".into(),
+            end: "2026-11-09T09:45".into(),
+            repeat: CalRepeat::Weekdays,
+            reminders: vec![5],
+            ..Default::default()
+        })
+        .unwrap();
+    a.cal_save_event(CalEvent {
+        calendar_id: privat.clone(),
+        title: "Urlaub".into(),
+        all_day: true,
+        start: "2026-12-06".into(),
+        end: "2026-12-13".into(),
+        reminders: vec![1440],
+        ..Default::default()
+    })
+    .unwrap();
+    // Invalid input is refused.
+    assert!(a
+        .cal_save_event(CalEvent {
+            calendar_id: privat.clone(),
+            start: "2026-11-13T10:00".into(),
+            ..Default::default()
+        })
+        .is_err());
+    assert!(a
+        .cal_save_event(CalEvent {
+            calendar_id: "00".into(),
+            title: "x".into(),
+            start: "2026-11-13".into(),
+            ..Default::default()
+        })
+        .is_err());
+
+    let e = a.cal_get_event(dentist.clone()).unwrap();
+    assert_eq!(e.title, "Zahnarzt Dr. Weber");
+    assert_eq!(e.reminders, vec![60, 1440]);
+    assert_eq!(e.links[0].label, "Überweisung.pdf");
+
+    let cals = a.cal_calendars().unwrap();
+    assert_eq!(cals.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), vec!["Privat", "Arbeit"]);
+    assert_eq!(cals[0].events, 2);
+
+    // A week with holidays: the standup on five days, the dentist, all-day first on its day.
+    let week = a.cal_occurrences("2026-11-09".into(), "2026-11-15".into(), "DE-NW".into(), "de".into()).unwrap();
+    assert_eq!(week.iter().filter(|o| o.event_id == standup).count(), 5);
+    let fri: Vec<&str> = week.iter().filter(|o| o.start.starts_with("2026-11-13")).map(|o| o.title.as_str()).collect();
+    assert_eq!(fri, vec!["Team-Standup", "Zahnarzt Dr. Weber"]);
+    let nov1 = a.cal_occurrences("2026-11-01".into(), "2026-11-01".into(), "DE-NW".into(), "de".into()).unwrap();
+    assert_eq!(nov1.len(), 1);
+    assert_eq!((nov1[0].calendar_id.as_str(), nov1[0].title.as_str()), ("holidays", "Allerheiligen"));
+    let mid = a.cal_occurrences("2026-12-10".into(), "2026-12-10".into(), "".into(), "de".into()).unwrap();
+    assert_eq!(mid.iter().map(|o| o.title.as_str()).collect::<Vec<_>>(), vec!["Urlaub", "Team-Standup"]);
+
+    // Reminders over the next days, in time order (all-day relative to 9:00).
+    let rem = a.cal_reminders("2026-11-12T08:00".into(), 2).unwrap();
+    let at: Vec<(&str, &str)> = rem.iter().map(|r| (r.at.as_str(), r.title.as_str())).collect();
+    assert_eq!(
+        at,
+        vec![
+            ("2026-11-12T09:25", "Team-Standup"),
+            ("2026-11-12T10:00", "Zahnarzt Dr. Weber"),
+            ("2026-11-13T09:00", "Zahnarzt Dr. Weber"),
+            ("2026-11-13T09:25", "Team-Standup"),
+        ]
+    );
+    let dec = a.cal_reminders("2026-12-05T00:00".into(), 1).unwrap();
+    assert!(dec.iter().any(|r| r.title == "Urlaub" && r.at == "2026-12-05T09:00"));
+
+    // Deleting one occurrence and the rest of a series.
+    a.cal_delete_event(standup.clone(), "2026-11-11".into(), CalDeleteMode::One).unwrap();
+    a.cal_delete_event(standup.clone(), "2026-11-13".into(), CalDeleteMode::Following).unwrap();
+    let week = a.cal_occurrences("2026-11-09".into(), "2026-11-30".into(), "".into(), "de".into()).unwrap();
+    let days: Vec<&str> = week.iter().filter(|o| o.event_id == standup).map(|o| &o.start[..10]).collect();
+    assert_eq!(days, vec!["2026-11-09", "2026-11-10", "2026-11-12"]);
+
+    // Moving to another calendar keeps the id.
+    let mut e = a.cal_get_event(dentist.clone()).unwrap();
+    e.calendar_id = work.clone();
+    assert_eq!(a.cal_save_event(e).unwrap(), dentist);
+
+    // .ics out and back in: duplicates are skipped.
+    let ics = a.cal_export_ics(vec![]).unwrap();
+    assert!(ics.contains("SUMMARY:Zahnarzt Dr. Weber"));
+    let fresh = a.cal_save_calendar(cal("Import", 0x0e9f80)).unwrap();
+    let n = a.cal_import_ics(fresh.clone(), ics.clone().into_bytes(), 60).unwrap();
+    assert_eq!(n, 3);
+    assert_eq!(a.cal_import_ics(fresh.clone(), ics.into_bytes(), 60).unwrap(), 0);
+    a.cal_delete_calendar(fresh).unwrap();
+    assert_eq!(a.cal_calendars().unwrap().len(), 2);
+
+    // Sync to a second device, change on both, merge.
+    a.sync_folder(&server).unwrap();
+    copy_suite(&server_dir, &db);
+    let b = db.suite();
+    b.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    assert_eq!(b.cal_calendars().unwrap().len(), 2);
+    let mut on_b = b.cal_get_event(dentist.clone()).unwrap();
+    on_b.location = "Praxis Süd".into();
+    b.cal_save_event(on_b).unwrap();
+    a.cal_save_event(CalEvent {
+        calendar_id: privat,
+        title: "Abendessen".into(),
+        start: "2026-11-12T19:00".into(),
+        end: "2026-11-12T21:00".into(),
+        ..Default::default()
+    })
+    .unwrap();
+    a.sync_folder(&server).unwrap();
+    b.sync_folder(&server).unwrap();
+    a.sync_folder(&server).unwrap();
+    for s in [&a, &b] {
+        let day = s.cal_occurrences("2026-11-12".into(), "2026-11-13".into(), "".into(), "de".into()).unwrap();
+        assert!(day.iter().any(|o| o.title == "Abendessen"));
+        assert!(day.iter().any(|o| o.location == "Praxis Süd"));
+    }
+    let _ = std::fs::remove_dir_all(&server_dir);
+}
+
+#[test]
+fn old_suites_move_drive_and_mail_into_their_own_files() {
+    use ciborium::value::Value;
+    let d = Dirs::new("areas");
+    let kf = generate_keyfile();
+    let s = d.suite();
+    s.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    // A suite from before: GhulMail and GhulDrive keep their settings in the suite file.
+    s.with_open(|o| {
+        let st = &mut o.suite.payload.settings;
+        st.insert(
+            "mail_accounts".into(),
+            Value::Array(vec![Value::Map(vec![(Value::Text("id".into()), Value::Text("a1".into()))])]),
+        );
+        st.insert("mail_drafts".into(), Value::Array(vec![]));
+        st.insert("drive".into(), Value::Map(vec![(Value::Text("server".into()), Value::Text("s1".into()))]));
+        st.insert("servers".into(), Value::Array(vec![]));
+        Ok(())
+    })
+    .unwrap();
+    // Any call moves them; the suite keeps only its own settings.
+    let kinds: Vec<VaultKind> = s.list_vaults().unwrap().iter().map(|v| v.kind).collect();
+    assert!(kinds.contains(&VaultKind::Mail) && kinds.contains(&VaultKind::Drive), "{kinds:?}");
+    s.with_open(|o| {
+        let st = &o.suite.payload.settings;
+        assert!(!st.contains_key("mail_accounts") && !st.contains_key("drive") && st.contains_key("servers"));
+        let mail = o.area_id(VaultKind::Mail).unwrap();
+        assert!(o.vault_mut(&mail)?.1.payload.settings.contains_key("mail_accounts"));
+        Ok(())
+    })
+    .unwrap();
+    let files: Vec<String> = s.list_vaults().unwrap().into_iter().map(|v| v.file).collect();
+    assert!(files.iter().any(|f| f.ends_with(".ghlmail")) && files.iter().any(|f| f.ends_with(".ghldrv")), "{files:?}");
+    // The files are written: after locking, everything is still where it moved to.
+    s.lock();
+    s.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    s.with_open(|o| {
+        assert!(!o.suite.payload.settings.contains_key("mail_accounts"));
+        let id = o.area_id(VaultKind::Mail).unwrap();
+        assert!(o.vault_mut(&id)?.1.payload.settings.contains_key("mail_accounts"));
+        Ok(())
+    })
+    .unwrap();
+}
+
+#[test]
+fn recovery_code_counts_only_when_a_group_was_typed_back() {
+    let d = Dirs::new("code-confirm");
+    let s = d.suite();
+    let kf = generate_keyfile();
+    let code = s
+        .create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None)
+        .unwrap()
+        .recovery_code
+        .unwrap();
+    // Closed before confirming (e.g. the app crashed in the last setup step).
+    assert!(!s.recovery_confirmed().unwrap());
+    s.lock();
+    s.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
+    assert!(!s.recovery_confirmed().unwrap(), "still asked for after unlocking");
+    let group = |c: &str, i: usize| c.split('-').nth(i).unwrap().to_owned();
+    assert!(!s.confirm_recovery_code(2, group(&code, 3)).unwrap());
+    assert!(!s.recovery_confirmed().unwrap());
+    assert!(s.confirm_recovery_code(2, format!(" {} ", group(&code, 2).to_lowercase())).unwrap());
+    assert!(s.recovery_confirmed().unwrap());
+    assert!(s.confirm_recovery_code(99, "x".into()).is_err());
+    s.lock();
+    s.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    assert!(s.recovery_confirmed().unwrap());
+    // A new code needs its own confirmation.
+    let new = s.new_recovery_code("Neu".into()).unwrap();
+    assert!(!s.recovery_confirmed().unwrap());
+    assert!(s.confirm_recovery_code(0, group(&new, 0)).unwrap());
+    assert!(s.recovery_confirmed().unwrap());
+}
+
+#[test]
+fn a_setup_that_stopped_halfway_is_completed_by_unlocking() {
+    let d = Dirs::new("setup-abort");
+    let kf = generate_keyfile();
+    let storage = d.storage();
+    // Stopped before anything was written (e.g. while touching the key): nothing to clean up.
+    assert_eq!(d.suite().setup_state().unwrap(), super::setup::SetupState::Empty);
+    let s = d.suite();
+    s.create(
+        options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat"), (VaultKind::Totp, "2FA")]),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    assert_eq!(s.setup_state().unwrap(), super::setup::SetupState::Complete);
+    s.lock();
+    // Stopped after the first vault file: the second vault and the suite file are missing.
+    let files = storage.list().unwrap();
+    let totp = files.iter().find(|f| f.ends_with(".ghltotp")).unwrap().clone();
+    storage.delete(totp).unwrap();
+    storage.delete(super::suite::SUITE_FILE.to_owned()).unwrap();
+    let s = d.suite();
+    assert_eq!(s.setup_state().unwrap(), super::setup::SetupState::Incomplete);
+    assert!(s.exists().unwrap(), "the setup is not offered again over the existing files");
+    s.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
+    assert_eq!(s.setup_state().unwrap(), super::setup::SetupState::Complete);
+    let vaults = s.list_vaults().unwrap();
+    assert_eq!(vaults.iter().map(|v| v.name.as_str()).collect::<Vec<_>>(), vec!["Privat"]);
+    // The code was never confirmed: the app asks for a new one; a missing area can be added.
+    assert!(!s.recovery_confirmed().unwrap());
+    s.add_area(VaultKind::Totp, String::new()).unwrap();
+    s.lock();
+    let s = d.suite();
+    s.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    assert_eq!(s.list_vaults().unwrap().len(), 2);
+}
+
+#[test]
+fn area_options_live_in_the_area_file_and_areas_can_be_removed_everywhere() {
+    use crate::net::remote::LocalFs;
+    let server_dir = std::env::temp_dir().join(format!("ghul-areas-server-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&server_dir);
+    let server = LocalFs::new(&server_dir);
+    let kf = generate_keyfile();
+    let (da, db) = (Dirs::new("areas-a"), Dirs::new("areas-b"));
+    let a = da.suite();
+    a.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Cal, "Kalender")]), None, None, None).unwrap();
+    // No file, no options: Drive was not chosen.
+    assert!(a.area_options(VaultKind::Drive).unwrap().is_empty());
+    let set = |s: &GhulSuite, k: &str, v: &str| {
+        s.set_area_options(VaultKind::Cal, [(k.to_owned(), v.to_owned())].into_iter().collect()).unwrap()
+    };
+    assert!(matches!(
+        a.set_area_options(VaultKind::Drive, [("trash_days".into(), "30".into())].into_iter().collect()),
+        Err(GhulError::NotConfigured)
+    ));
+    set(&a, "holiday_region", "DE-NW");
+    set(&a, "week_start", "0");
+    a.sync_folder(&server).unwrap();
+    copy_suite(&server_dir, &db);
+    let b = db.suite();
+    b.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    assert_eq!(b.area_options(VaultKind::Cal).unwrap()["holiday_region"], "DE-NW");
+    // Both change options: the later change of each option wins, on both devices.
+    set(&a, "week_start", "6");
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    set(&b, "holiday_region", "AT");
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    set(&a, "holiday_region", "CH");
+    b.sync_folder(&server).unwrap();
+    a.sync_folder(&server).unwrap();
+    b.sync_folder(&server).unwrap();
+    for s in [&a, &b] {
+        let o = s.area_options(VaultKind::Cal).unwrap();
+        assert_eq!((o["holiday_region"].as_str(), o["week_start"].as_str()), ("CH", "6"));
+    }
+    // Removing an area deletes its file here, on the server and on the other device.
+    a.add_area(VaultKind::Drive, String::new()).unwrap();
+    a.remove_area(VaultKind::Cal).unwrap();
+    assert!(a.area_options(VaultKind::Cal).unwrap().is_empty());
+    a.sync_folder(&server).unwrap();
+    b.sync_folder(&server).unwrap();
+    let kinds = |s: &GhulSuite| s.list_vaults().unwrap().into_iter().map(|v| v.kind).collect::<Vec<_>>();
+    assert_eq!(kinds(&a), vec![VaultKind::Drive]);
+    assert_eq!(kinds(&b), vec![VaultKind::Drive]);
+    let _ = std::fs::remove_dir_all(&server_dir);
+}
+
+#[test]
+fn files_of_a_newer_app_ask_for_an_update() {
+    let mut data = b"GHULFUTR".to_vec();
+    data.extend_from_slice(&[1, 0, 0, 0, 0, 0]);
+    data.extend_from_slice(&[0u8; 64]);
+    let e: GhulError = crate::vault::LockedContainer::parse(&data).err().unwrap().into();
+    assert!(matches!(e, GhulError::UpdateRequired));
+    let e: GhulError =
+        crate::vault::LockedContainer::parse(b"PK\x03\x04 not ours at all, really").err().unwrap().into();
+    assert!(matches!(e, GhulError::Corrupted { .. }));
+}
+
+#[test]
+fn import_keeps_what_it_cannot_convert_and_names_it() {
+    use super::import::SkipReason;
+    use super::suite::KeepSkipped;
+    let d = Dirs::new("import-keep");
+    let s = d.suite();
+    s.create(
+        options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "Privat"), (VaultKind::Totp, "2FA")]),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    let (pass, totp) = (vault_id(&s, "Privat"), vault_id(&s, "2FA"));
+    // Proton Authenticator: a normal code, a link without a label (the name comes separately),
+    // a Steam code and a counter-based code (HOTP).
+    let secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+    let export = format!(
+        r#"{{"version":1,"entries":[
+          {{"content":{{"uri":"otpauth://totp/Proton:me?secret={secret}&issuer=Proton","entry_type":"Totp","name":"Proton"}}}},
+          {{"content":{{"uri":"otpauth://totp/?secret=JBSWY3DPEHPK3PXP","entry_type":"Totp","name":"Sparkasse"}}}},
+          {{"content":{{"uri":"steam://MFRGGZDFMZTWQ2LK","entry_type":"Steam","name":"Steam"}}}},
+          {{"content":{{"uri":"otpauth://hotp/Alt:konto?secret={secret}&counter=3","entry_type":"Totp","name":"Alt"}}}}]}}"#
+    );
+    let preview = super::suite::preview_import(export.as_bytes().to_vec(), "proton.json".into()).unwrap();
+    assert_eq!((preview.format.as_str(), preview.totps, preview.skipped), ("Proton Authenticator", 3, 1));
+    let item = &preview.skipped_items[0];
+    assert_eq!((item.name.as_str(), item.reason, item.in_entry), ("Alt", SkipReason::Hotp, false));
+
+    let keep = KeepSkipped {
+        folder: "Import – nicht umgewandelt".into(),
+        reason_label: "Grund".into(),
+        data_label: "Originaldaten".into(),
+        reason_hotp: "Zählerbasierter Code (HOTP)".into(),
+        reason_unsupported: "Eintragsart unbekannt".into(),
+        reason_invalid: "Code-Daten unvollständig".into(),
+    };
+    let r = s
+        .import_data(
+            export.as_bytes().to_vec(),
+            "proton.json".into(),
+            Some(pass.clone()),
+            Some(totp.clone()),
+            false,
+            Some(keep.clone()),
+        )
+        .unwrap();
+    assert_eq!((r.totps, r.skipped, r.kept), (3, 1, 1));
+    let codes = s.totp_codes(59).unwrap();
+    assert!(codes.iter().any(|c| c.issuer == "Sparkasse"), "label filled in from Proton's name");
+    let steam = codes.iter().find(|c| c.issuer == "Steam").unwrap();
+    assert_eq!(steam.code.len(), 5, "Steam Guard code: {}", steam.code);
+    // The HOTP account is kept as a note with its original data.
+    let notes = s.list_entries(VaultKind::Pass, Some(pass.clone())).unwrap();
+    let note = notes.iter().find(|e| e.title == "Alt").unwrap();
+    let full = s.get_entry(pass.clone(), note.id.clone()).unwrap();
+    let field =
+        |n: &str| full.fields.iter().find(|f| f.name == n).map(|f| format!("{:?}", f.value)).unwrap_or_default();
+    assert!(field("Originaldaten").contains("otpauth://hotp/Alt:konto"));
+    assert!(field("Grund").contains("HOTP"));
+    // A second import keeps nothing twice.
+    let r =
+        s.import_data(export.into_bytes(), "proton.json".into(), Some(pass), Some(totp), false, Some(keep)).unwrap();
+    assert_eq!((r.totps, r.kept), (0, 0));
 }

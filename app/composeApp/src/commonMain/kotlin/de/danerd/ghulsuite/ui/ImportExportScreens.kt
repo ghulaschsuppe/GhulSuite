@@ -29,6 +29,13 @@ import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
+import de.danerd.ghulsuite.model.ImportResultUi
+import de.danerd.ghulsuite.model.SkippedImportUi
+import de.danerd.ghulsuite.model.SkipReasonUi
+import de.danerd.ghulsuite.model.KeepSkippedUi
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.ui.unit.dp
 
 /** Drop-down to choose a vault; `null` = "do not import". */
 @Composable
@@ -58,8 +65,13 @@ fun ImportScreen(state: AppState, padding: PaddingValues) {
     var totpTarget by remember { mutableStateOf(totpVaults.firstOrNull()?.id) }
     var fromLogins by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
+    /** Keep what cannot be converted as notes (on by default: nothing gets lost). */
+    var keep by remember { mutableStateOf(true) }
+    var result by remember { mutableStateOf<ImportResultUi?>(null) }
+    val keepFolder = stringResource(Res.string.import_keep_folder)
     val pick = rememberOpenFile { f ->
         file = f
+        result = null
         preview = null
         error = null
         state.run(onError = { error = it }, block = { backend.previewImport(f.bytes, f.name) }) { preview = it }
@@ -76,13 +88,17 @@ fun ImportScreen(state: AppState, padding: PaddingValues) {
                 }
                 ErrorText(error)
             }
-            preview?.let { p ->
+            val res = result
+            if (res != null) {
+                ImportResultCard(res) { state.pop() }
+            } else preview?.let { p ->
+                // Items whose data would otherwise be lost (not counting 2FA codes that stay in their login).
+                val lost = p.skippedItems.count { !it.inEntry }
                 SectionCard(stringResource(Res.string.import_found, p.format)) {
                     if (p.entries > 0) Hint(stringResource(Res.string.import_count_entries, p.entries.toString()))
                     if (p.totps > 0) Hint(stringResource(Res.string.import_count_totps, p.totps.toString()))
                     if (p.totpsInLogins > 0) Hint(stringResource(Res.string.import_count_login_totps, p.totpsInLogins.toString()))
-                    if (p.skipped > 0) Text(stringResource(Res.string.import_count_skipped, p.skipped.toString()), color = warnColor())
-                    if (p.entries > 0) {
+                    if (p.entries > 0 || (keep && lost > 0)) {
                         VaultDropdown(stringResource(Res.string.import_target_pass), passVaults, passTarget, true) { passTarget = it }
                         if (passVaults.isEmpty()) Hint(stringResource(Res.string.import_no_vault))
                     }
@@ -96,41 +112,92 @@ fun ImportScreen(state: AppState, padding: PaddingValues) {
                             Text(stringResource(Res.string.import_from_logins))
                         }
                     }
+                }
+                if (p.skippedItems.isNotEmpty()) {
+                    SkippedList(p.skippedItems)
+                    if (lost > 0) {
+                        SectionCard {
+                            SwitchRow(stringResource(Res.string.import_keep), keep) { keep = it }
+                            Hint(stringResource(Res.string.import_keep_sub, keepFolder))
+                            if (keep && passTarget == null) Text(stringResource(Res.string.import_keep_needs_vault), color = warnColor())
+                        }
+                    }
+                }
+                SectionCard {
                     Text(stringResource(Res.string.import_delete_hint), style = MaterialTheme.typography.bodySmall, color = warnColor())
                     val f = file
                     Button(
                         onClick = {
                             if (f == null) return@Button
                             state.run(onError = { error = it }, block = {
-                                val r = backend.importData(
+                                backend.importData(
                                     f.bytes, f.name,
-                                    passTarget.takeIf { p.entries > 0 },
+                                    passTarget.takeIf { p.entries > 0 || (keep && lost > 0) },
                                     totpTarget.takeIf { p.totps > 0 || p.totpsInLogins > 0 },
                                     fromLogins,
+                                    if (keep && lost > 0) KeepSkippedUi(
+                                        keepFolder,
+                                        getString(Res.string.import_keep_reason_label),
+                                        getString(Res.string.import_keep_data_label),
+                                        getString(Res.string.import_reason_hotp),
+                                        getString(Res.string.import_reason_unsupported_short),
+                                        getString(Res.string.import_reason_invalid),
+                                    ) else null,
                                 )
-                                getString(
-                                    Res.string.import_done,
-                                    r.entries.toString(), r.totps.toString(), r.duplicates.toString(),
-                                )
-                            }) { msg ->
+                            }) { r ->
                                 state.changed()
-                                state.message(msg)
-                                state.pop()
+                                result = r
                             }
                         },
                         enabled = !state.busy && f != null && (passTarget != null || totpTarget != null),
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text(stringResource(Res.string.a_import)) }
+                    ErrorText(error)
                 }
             }
         }
     }
 }
 
+/** Why an item could not be converted, in words. */
+@Composable
+private fun skipText(x: SkippedImportUi): String = when (x.reason) {
+    SkipReasonUi.HOTP -> stringResource(Res.string.import_reason_hotp)
+    SkipReasonUi.UNSUPPORTED -> stringResource(Res.string.import_reason_unsupported, x.kind)
+    SkipReasonUi.INVALID_CODE -> stringResource(Res.string.import_reason_invalid)
+} + if (x.inEntry) " · " + stringResource(Res.string.import_in_entry) else ""
+
+/** The items an import could not convert: name and reason, one per row. */
+@Composable
+private fun SkippedList(items: List<SkippedImportUi>) {
+    SectionLabel(stringResource(Res.string.import_skipped_title, items.size.toString()))
+    ListCard {
+        items.forEachIndexed { i, x ->
+            ListRow(
+                x.name.ifBlank { stringResource(Res.string.untitled) }, skipText(x),
+                leading = { IconTile(Icons.Filled.Warning, if (x.inEntry) g.faint else warnColor(), size = 36.dp) },
+                divider = i > 0,
+            )
+        }
+    }
+}
+
+/** What the import did, shown in place (no message box): counts and what was not converted. */
+@Composable
+private fun ImportResultCard(r: ImportResultUi, onDone: () -> Unit) {
+    SectionCard(stringResource(Res.string.import_result_title)) {
+        Hint(stringResource(Res.string.import_done, r.entries.toString(), r.totps.toString(), r.duplicates.toString()))
+        if (r.kept > 0) Text(stringResource(Res.string.import_result_kept, r.kept.toString()), color = okColor())
+    }
+    if (r.skippedItems.isNotEmpty()) SkippedList(r.skippedItems)
+    Button(onClick = onDone, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.a_finish)) }
+}
+
 @Composable
 fun ExportScreen(state: AppState, padding: PaddingValues) {
     val backend = state.backend
-    val vaults = state.vaults.filter { it.available }
+    // GhulDrive and GhulMail files hold settings and logins only: nothing to export as plain text.
+    val vaults = state.vaults.filter { it.available && it.kind != VaultKindUi.DRIVE && it.kind != VaultKindUi.MAIL }
     var target by remember { mutableStateOf(vaults.firstOrNull()?.id) }
     var password by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
@@ -146,7 +213,11 @@ fun ExportScreen(state: AppState, padding: PaddingValues) {
                 VaultDropdown(stringResource(Res.string.export_vault), vaults, target, false) { target = it }
                 val v = vaults.firstOrNull { it.id == target }
                 if (v != null) {
-                    Hint(stringResource(if (v.kind == VaultKindUi.PASS) Res.string.export_format_csv else Res.string.export_format_otpauth))
+                    Hint(stringResource(when (v.kind) {
+                        VaultKindUi.PASS -> Res.string.export_format_csv
+                        VaultKindUi.TOTP -> Res.string.export_format_otpauth
+                        VaultKindUi.CAL, VaultKindUi.DRIVE, VaultKindUi.MAIL -> Res.string.export_format_ics
+                    }))
                 }
                 SecretTextField(password, { password = it; error = null }, stringResource(Res.string.l_master_password))
                 ErrorText(error)
@@ -156,7 +227,11 @@ fun ExportScreen(state: AppState, padding: PaddingValues) {
                         state.run(onError = { error = it }, block = { backend.exportPlain(vault.id, password) }) { data ->
                             password = ""
                             val name = vault.name.ifBlank { "ghulsuite" }
-                            save(if (vault.kind == VaultKindUi.PASS) "$name.csv" else "$name-2fa.txt", data)
+                            save(when (vault.kind) {
+                                VaultKindUi.PASS -> "$name.csv"
+                                VaultKindUi.TOTP -> "$name-2fa.txt"
+                                VaultKindUi.CAL, VaultKindUi.DRIVE, VaultKindUi.MAIL -> "$name.ics"
+                            }, data)
                         }
                     },
                     enabled = !state.busy && v != null && password.isNotEmpty() && filePickersAvailable,
@@ -253,4 +328,4 @@ fun backupPrefix(name: String): String = name.split('-').take(2).joinToString("-
 
 /** Vault name, with its area when the list mixes GhulPass and GhulAuth vaults ("Personal · GhulAuth"). */
 private fun vaultLabel(v: de.danerd.ghulsuite.model.VaultUi, all: List<de.danerd.ghulsuite.model.VaultUi>): String =
-    if (all.map { it.kind }.distinct().size > 1) v.name + " · " + (if (v.kind == VaultKindUi.PASS) "GhulPass" else "GhulAuth") else v.name
+    if (all.map { it.kind }.distinct().size > 1) v.name + " · " + (when (v.kind) { VaultKindUi.PASS -> "GhulPass"; VaultKindUi.TOTP -> "GhulAuth"; VaultKindUi.CAL -> "GhulCal"; VaultKindUi.DRIVE -> "GhulDrive"; VaultKindUi.MAIL -> "GhulMail" }) else v.name

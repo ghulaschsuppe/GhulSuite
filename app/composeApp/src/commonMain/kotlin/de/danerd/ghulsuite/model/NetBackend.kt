@@ -28,6 +28,16 @@ interface NetBackend {
     fun phpModuleCreate(): PhpModuleUi
     /** Uploads a server module through another stored server (e.g. FTPS of the same hosting). */
     suspend fun phpModuleUpload(viaServerId: String, dir: String, module: PhpModuleUi)
+    /** Folders of a server as entered, before it is stored (folder picker). SFTP and FTPS. */
+    suspend fun serverBrowseInput(input: ServerInputUi, confirmed: String?, path: String): ServerFoldersUi =
+        ServerFoldersUi.Folders(emptyList())
+    /** Uploads a new PHP module over FTPS into [dir] and looks for its address ([url] empty: guess). */
+    suspend fun phpModuleInstall(ftps: ServerInputUi, confirmed: String?, dir: String, url: String): PhpInstalledUi =
+        throw UnsupportedOperationException()
+    /** Checks that a PHP module answers at [url] with access key [key]. */
+    suspend fun phpModuleProbe(url: String, key: String): PhpModuleInfoUi = throw UnsupportedOperationException()
+    /** Uploads a new version of a module through the FTPS login kept with it; returns its version. */
+    suspend fun phpModuleUpdate(serverId: String): Int = 0
 
     // --- Sharing (needs a server that can share; independent of the modules)
     /** Sets up the share folder of an SFTP/FTPS server and checks it; stores it only if all checks pass. */
@@ -38,6 +48,8 @@ interface NetBackend {
     suspend fun shareDelete(id: String)
     /** Decrypts Drive files on the device and offers them to other apps (Android share sheet). */
     suspend fun shareDriveToApps(files: List<DriveItemUi>)
+    /** Hands a file to other apps (share sheet); false if the platform has none (then save it). */
+    suspend fun shareBytesToApps(name: String, mime: String, data: ByteArray): Boolean = false
     /** Decrypted content of Drive files as mail attachments (folders are skipped). */
     suspend fun driveFilesForMail(files: List<DriveItemUi>): List<OutgoingAttachmentUi>
 
@@ -51,6 +63,14 @@ interface NetBackend {
     // --- GhulDrive
     suspend fun driveStatus(): DriveStatusUi
     suspend fun driveSetup(serverId: String)
+    /** Where GhulDrive stores its files. */
+    suspend fun driveStorage(): DriveStorageUi = DriveStorageUi(DriveModeUi.NONE, null, false)
+    /** GhulDrive uses the server this device synchronises with ("wie Synchronisation"). */
+    suspend fun driveUseSync() {}
+    /** Checks a server for GhulDrive alone and stores it in the Drive file. */
+    suspend fun driveSaveServer(input: ServerInputUi, confirmed: String?): ServerSavedUi = ServerSavedUi.Saved("")
+    /** Before the sync server is removed or changed: GhulDrive keeps that server as its own. */
+    suspend fun driveDetachFromSync() {}
     suspend fun driveList(folder: String?, refresh: Boolean): List<DriveItemUi>
     suspend fun driveSearch(query: String): List<DriveItemUi>
     suspend fun driveCreateFolder(parent: String?, name: String): String
@@ -85,6 +105,8 @@ interface NetBackend {
     suspend fun mailCheck(input: MailAccountInputUi): MailCheckUi
     suspend fun mailSaveAccount(id: String?, input: MailAccountInputUi): String
     suspend fun mailAccounts(): List<MailAccountUi>
+    /** Unread messages in the inbox of [accountId] (asks the server). */
+    suspend fun mailUnseen(accountId: String): Int = 0
     suspend fun mailRemoveAccount(id: String)
     suspend fun mailFolders(accountId: String): List<MailFolderUi>
     suspend fun mailList(accountId: String, folder: String, offset: Int, limit: Int): MailPageUi
@@ -104,6 +126,8 @@ interface NetBackend {
     suspend fun mailHeaders(accountId: String, folder: String, uid: Long): String = ""
     suspend fun mailSaveDraft(draft: MailDraftUi): String = draft.id
     suspend fun mailDrafts(): List<MailDraftUi> = emptyList()
+    /** An image from the internet for an HTML mail (only on request; https/http, max 5 MB). */
+    suspend fun mailFetchImage(url: String): ByteArray = throw UnsupportedOperationException()
     suspend fun mailDeleteDraft(id: String) {}
     suspend fun mailSchedule(mail: OutgoingMailUi, sendAt: Long): String = ""
     suspend fun mailScheduled(): List<ScheduledMailUi> = emptyList()
@@ -168,7 +192,44 @@ data class ServerInputUi(
     val base: String,
     /** PHP module: address of ghulsuite.php. */
     val url: String = "",
+    /** PHP module: the FTPS login it was installed with, kept for updates (null: not kept). */
+    val upload: UploadAccessUi? = null,
 )
+
+/** FTPS login a PHP module was installed with. */
+data class UploadAccessUi(
+    val host: String,
+    val port: Int,
+    val user: String,
+    val password: String,
+    val cert: String,
+    val dir: String,
+    val dataDir: String,
+)
+
+sealed interface ServerFoldersUi {
+    data class Confirm(val fingerprint: String) : ServerFoldersUi
+    data class Folders(val folders: List<String>) : ServerFoldersUi
+}
+
+/** Result of installing a PHP module. */
+data class PhpInstalledUi(
+    /** Set: confirm this certificate first; nothing was uploaded. */
+    val confirm: String?,
+    /** Address the module answered at; null: ask for it and check with phpModuleProbe. */
+    val url: String?,
+    val tried: List<String>,
+    val key: String,
+    /** Largest request of the hosting in bytes (0 = not reported). */
+    val limit: Long,
+    val upload: UploadAccessUi?,
+)
+
+data class PhpModuleInfoUi(val version: Int, val current: Int, val limit: Long, val free: Long)
+
+enum class DriveModeUi { NONE, SYNC, OWN, SUITE }
+
+data class DriveStorageUi(val mode: DriveModeUi, val server: ServerUi?, val syncAvailable: Boolean)
 
 class PhpModuleUi(val fileName: String, val content: String, val key: String)
 
@@ -311,6 +372,7 @@ data class MailDraftUi(
     val text: String,
     val inReplyTo: String,
     val updated: Long = 0,
+    val attachments: List<OutgoingAttachmentUi> = emptyList(),
 )
 
 data class ScheduledMailUi(val id: String, val accountId: String, val to: List<String>, val subject: String, val sendAt: Long)
@@ -339,7 +401,19 @@ data class MailMessageUi(
     val signature: MailSignatureUi = MailSignatureUi.NONE,
     /** Address whose key made the valid signature. */
     val signer: String = "",
+    /** HTML mails as safe building blocks (empty: show [text]). */
+    val blocks: List<MailBlockUi> = emptyList(),
+    /** Images from the internet in the HTML (loaded only on request). */
+    val remoteImages: Int = 0,
+    /** Images inside the mail, by Content-ID. */
+    val inlineImages: Map<String, ByteArray> = emptyMap(),
 )
+
+enum class MailBlockKindUi { PARAGRAPH, HEADING, LIST_ITEM, QUOTE, RULE, IMAGE }
+
+data class MailSpanUi(val text: String, val bold: Boolean, val italic: Boolean, val link: String)
+
+data class MailBlockUi(val kind: MailBlockKindUi, val level: Int, val spans: List<MailSpanUi>, val imageSrc: String, val imageAlt: String)
 
 class OutgoingAttachmentUi(val name: String, val mime: String, val data: ByteArray)
 

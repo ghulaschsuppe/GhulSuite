@@ -6,8 +6,9 @@ on:
     branches: ['**']
     paths: ['core/**', 'app/**', 'docs/testvectors/**', 'tools/**', '.github/workflows/android.yml', '.github/actions/ftps-upload/**',
             '!app/maestro/**', '!tools/ci-emulator.sh', '!tools/run-maestro.sh']
+  # Every pull request: "build" and "Windows-App" are required checks for main. Without changes to
+  # the app or the core they are skipped (which counts as passed) instead of missing.
   pull_request:
-    paths: ['core/**', 'app/**', 'docs/testvectors/**', 'tools/**', '.github/workflows/android.yml']
   workflow_dispatch:
 
 permissions:
@@ -26,6 +27,8 @@ env:
 jobs:
   testvectors:
     name: Testvektoren unabhängig prüfen (Python)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -37,6 +40,8 @@ jobs:
 
   audit:
     name: Abhängigkeiten auf bekannte Sicherheitslücken prüfen
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -61,13 +66,15 @@ jobs:
           command -v cargo-audit > /dev/null || cargo install cargo-audit --locked --quiet
           cargo audit
 
-  # Which parts changed: fuzzing only runs when the core (or its test vectors) changed.
+  # Which parts changed: fuzzing only runs when the core (or its test vectors) changed; the other
+  # jobs only when app, core, tools or this workflow changed (pull requests run this workflow always).
   changes:
     name: Geänderte Bereiche
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       core: ${{ steps.c.outputs.core }}
+      code: ${{ steps.c.outputs.code }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -77,10 +84,13 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
           if [ -z "$BASE" ] || [ "$BASE" = 0000000000000000000000000000000000000000 ] || ! git cat-file -e "$BASE^{commit}" 2> /dev/null; then
-            echo "core=true" >> "$GITHUB_OUTPUT"; exit 0
+            echo "core=true" >> "$GITHUB_OUTPUT"; echo "code=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          if git diff --name-only "$BASE" HEAD | grep -qE '^(core/|docs/testvectors/)'; then core=true; else core=false; fi
-          echo "Kern geändert: $core"; echo "core=$core" >> "$GITHUB_OUTPUT"
+          files=$(git diff --name-only "$BASE" HEAD)
+          if printf '%s\n' "$files" | grep -qE '^(core/|docs/testvectors/)'; then core=true; else core=false; fi
+          if printf '%s\n' "$files" | grep -qE '^(core/|app/|docs/testvectors/|tools/|\.github/workflows/android\.yml|\.github/actions/ftps-upload/)'; then code=true; else code=false; fi
+          echo "Kern geändert: $core · App/Kern/Werkzeuge geändert: $code"
+          echo "core=$core" >> "$GITHUB_OUTPUT"; echo "code=$code" >> "$GITHUB_OUTPUT"
 
   fuzz:
     name: Fuzzing (je 2 Minuten)
@@ -129,6 +139,8 @@ jobs:
 
   network:
     name: Netzwerk-Tests (echte SFTP-, IMAP- und SMTP-Testserver)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -179,6 +191,8 @@ jobs:
 
   browser:
     name: Browser-Tests (Empfängerseite, PHP-Server-Modul)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -210,6 +224,8 @@ jobs:
 
   windows:
     name: Windows-App (Installer und portable Version)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
@@ -306,6 +322,8 @@ jobs:
           remote-dir: ${{ steps.dest.outputs.dir }}/download/
 
   build:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:

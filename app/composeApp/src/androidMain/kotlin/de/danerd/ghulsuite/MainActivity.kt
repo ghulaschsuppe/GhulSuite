@@ -4,6 +4,7 @@ package de.danerd.ghulsuite
 import android.Manifest
 import android.app.Application
 import android.content.pm.PackageManager
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
@@ -15,7 +16,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.compose.runtime.snapshotFlow
+import de.danerd.ghulsuite.ui.AppLaunch
 import de.danerd.ghulsuite.ui.AppState
+import de.danerd.ghulsuite.ui.Tab
 import de.danerd.ghulsuite.ui.GhulSuiteApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,8 +40,24 @@ class MainActivity : ComponentActivity() {
     private val notificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* optional */ }
 
+    /** Before Android 13: the language chosen in the app (newer versions do this themselves). */
+    override fun attachBaseContext(base: android.content.Context) {
+        val tag = base.getSharedPreferences("settings", MODE_PRIVATE).getString("app_language", "").orEmpty()
+        if (tag.isEmpty() || android.os.Build.VERSION.SDK_INT >= 33) return super.attachBaseContext(base)
+        val locale = java.util.Locale.forLanguageTag(tag)
+        java.util.Locale.setDefault(locale)
+        val conf = android.content.res.Configuration(base.resources.configuration).apply { setLocale(locale) }
+        super.attachBaseContext(base.createConfigurationContext(conf))
+    }
+
+    override fun onDestroy() {
+        if (current?.get() === this) current = null
+        super.onDestroy()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        current = java.lang.ref.WeakReference(this)
         CrashLog.pending(this)?.let { report ->
             CrashLog.show(this, report)
             return
@@ -60,6 +79,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val vm = ViewModelProvider(this)[MainViewModel::class.java]
         setContent { GhulSuiteApp(vm.state) }
+        handleLaunch(intent)
 
         // Ask once for notifications so that the "Lock" notification is visible while unlocked.
         lifecycleScope.launch {
@@ -73,5 +93,30 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleLaunch(intent)
+    }
+
+    /** A tapped mail notification opens GhulMail (right away, or once the suite is unlocked). */
+    private fun handleLaunch(intent: Intent?) {
+        if (intent?.action == ACTION_OPEN_MAIL) {
+            AppLaunch.openTab.value = Tab.MAIL
+            intent.action = null
+        }
+        if (intent?.action == ACTION_OPEN_EVENT) {
+            AppLaunch.openEvent.value = intent.getStringExtra(CalReminders.EXTRA_KEY)
+            intent.action = null
+        }
+    }
+
+    companion object {
+        const val ACTION_OPEN_MAIL = "de.danerd.ghulsuite.OPEN_MAIL"
+        const val ACTION_OPEN_EVENT = "de.danerd.ghulsuite.OPEN_EVENT"
+        /** The running activity (language switch). */
+        @Volatile
+        var current: java.lang.ref.WeakReference<android.app.Activity>? = null
     }
 }

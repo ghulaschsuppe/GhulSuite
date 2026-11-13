@@ -78,6 +78,7 @@ import de.danerd.ghulsuite.model.ThemeMode
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.foundation.combinedClickable
 
 // --- Design system -------------------------------------------------------------------------
 // Calm dark-slate surfaces, one violet accent, a colour per area, rounded cards without borders.
@@ -184,6 +185,9 @@ fun okColor(): Color = g.ok
 @Composable
 fun warnColor(): Color = g.warn
 
+@Composable
+fun dangerColor(): Color = g.danger
+
 /** Colour of each area, used for its icon, avatars and accents. */
 @Composable
 fun areaColor(tab: Tab): Color {
@@ -193,6 +197,7 @@ fun areaColor(tab: Tab): Color {
         Tab.AUTH -> if (dark) Color(0xFF4FD8B6) else Color(0xFF0E9F80)
         Tab.DRIVE -> if (dark) Color(0xFF6FA8FF) else Color(0xFF2F74E8)
         Tab.MAIL -> if (dark) Color(0xFFFFA25C) else Color(0xFFE0700F)
+        Tab.CAL -> if (dark) Color(0xFFFF7AA8) else Color(0xFFD6336C)
         Tab.SETTINGS -> g.accent
     }
 }
@@ -358,6 +363,7 @@ fun ListCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() 
 }
 
 /** One row of a list: leading tile, title, subtitle, trailing content. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun ListRow(
     title: String,
@@ -368,13 +374,20 @@ fun ListRow(
     divider: Boolean = false,
     dividerStart: Dp? = null,
     selected: Boolean = false,
+    onLongClick: (() -> Unit)? = null,
     onClick: (() -> Unit)? = null,
 ) {
     if (divider) RowDivider(dividerStart ?: if (leading != null) 70.dp else 16.dp)
     Row(
         Modifier.fillMaxWidth().heightIn(min = 60.dp)
             .then(if (selected) Modifier.background(g.surface2) else Modifier)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .then(
+                when {
+                    onLongClick != null -> Modifier.combinedClickable(onClick = onClick ?: {}, onLongClick = onLongClick)
+                    onClick != null -> Modifier.clickable(onClick = onClick)
+                    else -> Modifier
+                },
+            )
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),

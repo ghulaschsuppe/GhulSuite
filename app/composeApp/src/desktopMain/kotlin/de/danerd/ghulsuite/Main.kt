@@ -2,15 +2,14 @@
 package de.danerd.ghulsuite
 
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.res.loadImageBitmap
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
@@ -40,6 +39,8 @@ fun main() {
 
     var awtWindow: java.awt.Window? = null
     val backend = DesktopVaultBackend { awtWindow }
+    // The language chosen in the app (otherwise the system's).
+    backend.settings.appLanguage.takeIf { it.isNotEmpty() }?.let { java.util.Locale.setDefault(java.util.Locale.forLanguageTag(it)) }
     val state = AppState(backend, CoroutineScope(SupervisorJob() + Dispatchers.Main))
 
     // Activity tracking for the idle lock.
@@ -50,9 +51,9 @@ fun main() {
     )
 
     application {
-        val icon = remember {
-            Thread.currentThread().contextClassLoader.getResourceAsStream("ghulsuite.png")?.use { BitmapPainter(loadImageBitmap(it)) }
-        }
+        // Unread mails appear as a number on a small envelope in the taskbar icon (only while unlocked).
+        val unread = if (backend.unlocked.collectAsState().value) state.mailUnread else 0
+        val icon = remember(unread) { badgeIcon(unread) }
         Window(
             onCloseRequest = {
                 backend.lock()

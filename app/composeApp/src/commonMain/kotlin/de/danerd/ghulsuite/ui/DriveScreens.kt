@@ -87,6 +87,10 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Sync
+import de.danerd.ghulsuite.model.DriveModeUi
+import de.danerd.ghulsuite.model.DriveStorageUi
 
 /** A running upload or download. */
 private class Transfer(val name: String, val total: Long, val upload: Boolean) {
@@ -120,30 +124,47 @@ fun DriveScreen(state: AppState, padding: PaddingValues) {
     }
 }
 
+/** GhulDrive without storage yet: where the files go, set up right here (#24). */
 @Composable
 private fun DriveSetup(state: AppState) {
     val net = state.backend.net
-    var servers by remember { mutableStateOf<List<ServerUi>>(emptyList()) }
+    var storage by remember { mutableStateOf<DriveStorageUi?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(state.liveRevision()) { servers = runCatching { net.servers() }.getOrDefault(emptyList()) }
+    var own by remember { mutableStateOf(false) }
+    LaunchedEffect(state.liveRevision()) { storage = runCatching { net.driveStorage() }.getOrNull() }
+    val syncOn = storage?.syncAvailable == true
     ScreenColumn {
         BusyBanner(state)
-        SectionCard(stringResource(Res.string.drive_setup_title)) {
-            Hint(stringResource(Res.string.drive_setup_text))
-            if (servers.isEmpty()) {
-                Hint(stringResource(Res.string.drive_no_server))
-            }
-            for (s in servers) {
-                OutlinedButton(onClick = {
-                    state.run(onError = { error = it }, block = { net.driveSetup(s.id) }) { state.changed() }
-                }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(Res.string.drive_use_server, s.name))
+        AreaSetupCard(Icons.Filled.Cloud, 1, stringResource(Res.string.drive_setup_title), stringResource(Res.string.drive_setup_text))
+        if (storage?.mode == DriveModeUi.SYNC) Banner(Icons.Filled.Info, stringResource(Res.string.drive_sync_gone))
+        SectionLabel(stringResource(Res.string.wz_drive_where))
+        ListCard {
+            if (syncOn) {
+                ListRow(stringResource(Res.string.drive_like_sync), stringResource(Res.string.drive_like_sync_sub),
+                    leading = { IconTile(Icons.Filled.Sync, paletteColor(2)) }) {
+                    state.run(onError = { error = it }, block = { net.driveUseSync() }) { state.changed() }
                 }
             }
-            Button(onClick = { state.push(Screen.AddServer) }, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(Res.string.server_add_title))
-            }
-            ErrorText(error)
+            ListRow(stringResource(Res.string.wz_own_server), stringResource(Res.string.drive_own_sub),
+                leading = { IconTile(Icons.Filled.Dns, paletteColor(1)) }, divider = syncOn) { own = true }
+        }
+        if (!syncOn) HintText(stringResource(Res.string.drive_sync_tip))
+        ErrorText(error)
+    }
+    if (own) DriveServerSheet(state) { own = false }
+}
+
+/** Sheet with the server form for GhulDrive's own server (stored in the Drive file). */
+@Composable
+fun DriveServerSheet(state: AppState, onDone: () -> Unit) {
+    val net = state.backend.net
+    val form = rememberServerForm()
+    val done = stringResource(Res.string.drive_set_up)
+    GhulSheet(onDone, stringResource(Res.string.drive_own_title)) {
+        ServerSetup(state, form, { input, fp -> net.driveSaveServer(input, fp) }) {
+            state.message(done)
+            state.changed()
+            onDone()
         }
     }
 }

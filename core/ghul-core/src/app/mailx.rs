@@ -10,10 +10,10 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
 
+use super::areas::{area_setting, mark_area_deleted, put_area_setting};
 use super::error::{GhulError, Result};
 use super::mail::{summary, MailPage, MailSummary, OutgoingAttachment, OutgoingMail};
-use super::suite::{new_id, now_ms, put_setting, setting, GhulSuite, SUITE_FILE};
-use super::sync::mark_deleted;
+use super::suite::{new_id, now_ms, GhulSuite, VaultKind};
 use crate::net::imap;
 
 const DRAFTS_KEY: &str = "mail_drafts";
@@ -41,7 +41,13 @@ pub struct MailDraftData {
     /// Unix milliseconds.
     #[serde(default)]
     pub updated: i64,
+    /// Attachments, kept encrypted in the suite like the rest of the draft (at most 10 MiB).
+    #[serde(default)]
+    pub attachments: Vec<super::mail::OutgoingAttachment>,
 }
+
+/// Largest total size of the attachments of one draft (they live in the synchronised suite file).
+const MAX_DRAFT_ATTACHMENTS: usize = 10 * 1024 * 1024;
 
 #[derive(Serialize, Deserialize, Clone)]
 struct StoredAttachment {
@@ -120,7 +126,7 @@ fn keyword(label: &str) -> Result<String> {
 impl GhulSuite {
     pub(super) fn remember_contacts(&self, addresses: &[String]) -> Result<()> {
         self.with_open(|o| {
-            let mut list: Vec<StoredContact> = setting(&o.suite, CONTACTS_KEY);
+            let mut list: Vec<StoredContact> = area_setting(o, VaultKind::Mail, CONTACTS_KEY);
             let now = now_ms();
             for a in addresses {
                 let (name, email) = split_address(a);
@@ -140,8 +146,8 @@ impl GhulSuite {
             }
             list.sort_by_key(|c| std::cmp::Reverse((c.count, c.last)));
             list.truncate(MAX_CONTACTS);
-            put_setting(&mut o.suite, CONTACTS_KEY, &list)?;
-            self.save_container(&mut o.suite, SUITE_FILE)
+            put_area_setting(o, VaultKind::Mail, CONTACTS_KEY, &list)?;
+            self.save_area(o, VaultKind::Mail)
         })
     }
 
@@ -155,12 +161,12 @@ impl GhulSuite {
 
     fn cache_key(&self) -> Result<Zeroizing<[u8; 32]>> {
         self.with_open(|o| {
-            let mut key: Vec<u8> = setting(&o.suite, CACHE_KEY);
+            let mut key: Vec<u8> = area_setting(o, VaultKind::Mail, CACHE_KEY);
             if key.len() != 32 {
                 key = vec![0u8; 32];
                 OsRng.fill_bytes(&mut key);
-                put_setting(&mut o.suite, CACHE_KEY, &key)?;
-                self.save_container(&mut o.suite, SUITE_FILE)?;
+                put_area_setting(o, VaultKind::Mail, CACHE_KEY, &key)?;
+                self.save_area(o, VaultKind::Mail)?;
             }
             let mut k = Zeroizing::new([0u8; 32]);
             k.copy_from_slice(&key);
@@ -247,8 +253,11 @@ impl GhulSuite {
 
     pub fn mail_save_draft(&self, draft: MailDraftData) -> Result<String> {
         self.with_open(|o| {
-            let mut list: Vec<MailDraftData> = setting(&o.suite, DRAFTS_KEY);
+            let mut list: Vec<MailDraftData> = area_setting(o, VaultKind::Mail, DRAFTS_KEY);
             let mut d = draft;
+            if d.attachments.iter().map(|a| a.data.len()).sum::<usize>() > MAX_DRAFT_ATTACHMENTS {
+                return Err(GhulError::InvalidInput { msg: "draft attachments larger than 10 MB".into() });
+            }
             if d.id.is_empty() {
                 d.id = crate::kdf::hex(&new_id());
             }
@@ -257,23 +266,23 @@ impl GhulSuite {
             list.retain(|x| x.id != id);
             list.insert(0, d);
             list.truncate(100);
-            put_setting(&mut o.suite, DRAFTS_KEY, &list)?;
-            self.save_container(&mut o.suite, SUITE_FILE)?;
+            put_area_setting(o, VaultKind::Mail, DRAFTS_KEY, &list)?;
+            self.save_area(o, VaultKind::Mail)?;
             Ok(id)
         })
     }
 
     pub fn mail_drafts(&self) -> Result<Vec<MailDraftData>> {
-        self.with_open(|o| Ok(setting(&o.suite, DRAFTS_KEY)))
+        self.with_open(|o| Ok(area_setting(o, VaultKind::Mail, DRAFTS_KEY)))
     }
 
     pub fn mail_delete_draft(&self, id: String) -> Result<()> {
         self.with_open(|o| {
-            let mut list: Vec<MailDraftData> = setting(&o.suite, DRAFTS_KEY);
+            let mut list: Vec<MailDraftData> = area_setting(o, VaultKind::Mail, DRAFTS_KEY);
             list.retain(|x| x.id != id);
-            put_setting(&mut o.suite, DRAFTS_KEY, &list)?;
-            mark_deleted(&mut o.suite.payload.settings, DRAFTS_KEY, &id);
-            self.save_container(&mut o.suite, SUITE_FILE)
+            put_area_setting(o, VaultKind::Mail, DRAFTS_KEY, &list)?;
+            mark_area_deleted(o, VaultKind::Mail, DRAFTS_KEY, &id)?;
+            self.save_area(o, VaultKind::Mail)
         })
     }
 
@@ -287,7 +296,7 @@ impl GhulSuite {
             return Err(GhulError::InvalidInput { msg: "too large to schedule (max 10 MB)".into() });
         }
         self.with_open(|o| {
-            let mut list: Vec<StoredScheduled> = setting(&o.suite, OUTBOX_KEY);
+            let mut list: Vec<StoredScheduled> = area_setting(o, VaultKind::Mail, OUTBOX_KEY);
             let id = crate::kdf::hex(&new_id());
             list.push(StoredScheduled {
                 id: id.clone(),
@@ -306,15 +315,15 @@ impl GhulSuite {
                 send_at,
                 updated: now_ms(),
             });
-            put_setting(&mut o.suite, OUTBOX_KEY, &list)?;
-            self.save_container(&mut o.suite, SUITE_FILE)?;
+            put_area_setting(o, VaultKind::Mail, OUTBOX_KEY, &list)?;
+            self.save_area(o, VaultKind::Mail)?;
             Ok(id)
         })
     }
 
     pub fn mail_scheduled(&self) -> Result<Vec<ScheduledMail>> {
         self.with_open(|o| {
-            let list: Vec<StoredScheduled> = setting(&o.suite, OUTBOX_KEY);
+            let list: Vec<StoredScheduled> = area_setting(o, VaultKind::Mail, OUTBOX_KEY);
             Ok(list
                 .into_iter()
                 .map(|s| ScheduledMail {
@@ -330,18 +339,18 @@ impl GhulSuite {
 
     pub fn mail_cancel_scheduled(&self, id: String) -> Result<()> {
         self.with_open(|o| {
-            let mut list: Vec<StoredScheduled> = setting(&o.suite, OUTBOX_KEY);
+            let mut list: Vec<StoredScheduled> = area_setting(o, VaultKind::Mail, OUTBOX_KEY);
             list.retain(|x| x.id != id);
-            put_setting(&mut o.suite, OUTBOX_KEY, &list)?;
-            mark_deleted(&mut o.suite.payload.settings, OUTBOX_KEY, &id);
-            self.save_container(&mut o.suite, SUITE_FILE)
+            put_area_setting(o, VaultKind::Mail, OUTBOX_KEY, &list)?;
+            mark_area_deleted(o, VaultKind::Mail, OUTBOX_KEY, &id)?;
+            self.save_area(o, VaultKind::Mail)
         })
     }
 
     /// Sends scheduled mail that is due at `now` (Unix ms). Returns how many were sent.
     pub fn mail_send_due(&self, now: i64) -> Result<u32> {
         let due: Vec<StoredScheduled> = self.with_open(|o| {
-            let list: Vec<StoredScheduled> = setting(&o.suite, OUTBOX_KEY);
+            let list: Vec<StoredScheduled> = area_setting(o, VaultKind::Mail, OUTBOX_KEY);
             Ok(list.into_iter().filter(|s| s.send_at <= now).collect())
         })?;
         let mut sent = 0;
@@ -379,7 +388,7 @@ impl GhulSuite {
     pub fn mail_contacts(&self, query: String, limit: u32) -> Result<Vec<MailContact>> {
         let q = query.trim().to_lowercase();
         self.with_open(|o| {
-            let list: Vec<StoredContact> = setting(&o.suite, CONTACTS_KEY);
+            let list: Vec<StoredContact> = area_setting(o, VaultKind::Mail, CONTACTS_KEY);
             Ok(list
                 .into_iter()
                 .filter(|c| q.is_empty() || c.email.contains(&q) || c.name.to_lowercase().contains(&q))

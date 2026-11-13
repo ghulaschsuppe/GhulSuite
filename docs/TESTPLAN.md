@@ -1,6 +1,6 @@
 # GhulSuite – Testplan Android (Version 0.5.0-dev)
 
-**Stand:** 12.11.2026 · deckt Phase 2 (Etappen 1, 2a, 2b, „Der Ordner ist die Suite“) und Phase 3 ab: eigene Server,
+**Stand:** 13.11.2026 · neu: Assistent in acht Schritten und „Ein Bereich, eine Datei“ (Abschnitte 1 und 23) · deckt Phase 2 (Etappen 1, 2a, 2b, „Der Ordner ist die Suite“) und Phase 3 ab: eigene Server,
 Synchronisation, GhulDrive und GhulMail (Abschnitte 12–15) sowie 0.5.0: neues Design, Servertypen FTPS und
 PHP-Server-Modul, Teilen mit Freigabelinks und die Modultrennung (Abschnitte 16–19), verschlüsselte Mails (Abschnitt 20), Korrekturen nach dem ersten Test (Abschnitt 21).
 
@@ -30,21 +30,32 @@ soll; weicht etwas ab, notiere die Nummer, was du gemacht hast und was stattdess
 
 ## 1. Erster Start und Einrichtung
 
+Der Assistent hat acht Schritte; oben steht „Schritt n von 8“ mit Fortschrittsbalken. Die Suite entsteht beim Verlassen
+von Schritt 3 – danach geht „Zurück“ nur noch bis Schritt 4.
+
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| E1 | App öffnen. | Startbildschirm mit „Neu einrichten“, „Vorhandene Suite öffnen“, „Einzelnen Tresor öffnen“. |
-| E2 | „Neu einrichten“ → „Security Key (empfohlen)“ → Weiter. | Passwortschritt. |
+| E1 | App öffnen. | Startbildschirm mit „Neu einrichten“, „Von meinem Server holen“, „Vorhandene Suite öffnen“, „Einzelnen Tresor öffnen“. |
+| E2 | „Neu einrichten“. | Schritt 1 von 8 · Master-Passwort. |
 | E3 | Passwort „abc“ eingeben, Weiter. Dann ein schwaches 10-Zeichen-Passwort. Dann zwei verschiedene Passwörter. | Jeweils klare Meldung: zu kurz / zu leicht zu erraten / stimmen nicht überein. |
-| E4 | „Passwort vorschlagen“ antippen. | Langes Zufallspasswort erscheint, Stärkebalken voll. Wiederholung muss trotzdem eingegeben werden. |
-| E5 | Gültiges Passwort, Weiter. Bereiche: GhulPass „Privat“ und GhulAuth „Persönlich“ lassen. Speicherort: App-Speicher. Weiter. | Schritt „Security Key verbinden“. |
-| E6 | Key einstecken, „Key prüfen“. | „Erkannt: Yubico …“. |
-| E7 | Key-PIN eingeben, „Key registrieren“, Key **zweimal** berühren. | Wiederherstellungscode (11 Gruppen) wird angezeigt. |
-| E8 | „Notfallblatt drucken“ → „Als PDF speichern“. | PDF mit Code, QR-Code und Anleitung. PDF danach vom Handy löschen. |
-| E9 | „Ich habe den Code notiert“ → Weiter → falsche Gruppe 3 eingeben. | Meldung „Das ist nicht die dritte Gruppe“. |
-| E10 | Richtige Gruppe 3 eingeben → Fertig. | Hauptansicht mit GhulPass, GhulAuth, GhulDrive, GhulMail, Optionen. |
-| E11 | (Zweite Installation oder anderer Speicherort) Einrichtung mit „Schlüsseldatei“ statt Key: Datei erstellen und z. B. auf den USB-Stick speichern. | Ohne gespeicherte Datei geht es nicht weiter. Danach wie E8–E10. |
-| E12 | Beim Schritt „Tresore“ einen eigenen Ordner als Speicherort wählen, in dem schon GhulSuite-Dateien liegen. | Hinweis „Hier liegen bereits GhulSuite-Dateien“ und „Diese Suite öffnen“. |
-| E13 | Nur GhulAuth wählen (GhulPass abwählen) und einrichten. | In der Leiste fehlt GhulPass; GhulAuth, GhulDrive, GhulMail und Optionen sind da. GhulDrive und GhulMail lassen sich unter Optionen → Bereiche ausblenden. |
+| E4 | „Passwort vorschlagen“ antippen, Wiederholung eingeben, Weiter. | Langes Zufallspasswort, Stärkebalken voll; Schritt 2 · Zweiter Faktor. |
+| E5 | „Security Key“ gewählt lassen, Name des Keys, Key-PIN eingeben (Android: „Key prüfen“ zeigt „Erkannt: …“). Weiter. | Schritt 3 · Speicherort. |
+| E6 | App-Speicher lassen, „Key registrieren“, Key **zweimal** berühren. | Schritt 4 · Synchronisation; kein „Zurück“ zu den Schritten 1–3 mehr. |
+| E7 | „Eigener Server“ wählen, ohne Angaben „Weiter“. | Meldung „Noch offen: Anmeldung“ (bzw. der fehlende Schritt). Checkliste unter dem Formular zeigt Anmeldung, Ordner, Verbindung testen. |
+| E8 | SFTP-Server eintragen (siehe Abschnitt 12), „Ordner wählen“. | Fingerabdruck bestätigen, dann die Ordner des Servers; „ghulsuite – Neu anlegen (empfohlen)“, Unterordner öffnen, „Eine Ebene höher“, „Neuer Ordner …“. |
+| E9 | Ordner wählen → „Verbindung testen“ → Weiter. | „Verbunden · host:/ordner“, Haken in der Checkliste; Schritt 5 · Bereiche. |
+| E10 | Alle fünf Bereiche einschalten. Bei GhulDrive „Wie Synchronisation“. Weiter. | Namen für GhulPass, GhulAuth, GhulCal änderbar; „Wie Synchronisation“ nur wählbar, weil Schritt 4 eingerichtet wurde. Schritt 6 · Sperren. |
+| E11 | Sperrzeit wählen, Schalter für Bildschirm aus und Schütteln. Weiter. | Schritt 7 · Entsperren mit Hinweis, dass „Schnell entsperren“ Fingerabdruck und App-PIN meint. |
+| E12 | „Zusätzlich Fingerabdruck“, Gültigkeit „Immer“. Weiter. | Hinweis: ohne Ablauf, aber nach Neustart, Panik-Sperre oder Passwortwechsel wieder Passwort und Key. Fingerabdruck-Abfrage; Schritt 8. |
+| E13 | Code ansehen, „Notfallblatt drucken“ → „Als PDF speichern“. | PDF mit Code, QR-Code und Anleitung. PDF danach vom Handy löschen. |
+| E14 | „Ich habe den Code notiert“ → Weiter → falsche Gruppe 3 eingeben. | Meldung „Das ist nicht die dritte Gruppe“. Es gibt kein „Später“. |
+| E15 | Richtige Gruppe 3 eingeben → Fertig. | Hauptansicht mit allen fünf Bereichen und Optionen; GhulMail zeigt „Noch kein Konto“ mit dem vollständigen Kontoformular. |
+| E16 | Zweite Einrichtung: in Schritt 4 „Später“, in Schritt 5 GhulDrive einschalten. | „Wie Synchronisation“ ist ausgegraut („Erst Synchronisation einrichten (Schritt 4)“); „Eigener Server“ klappt das Formular direkt auf. |
+| E17 | GhulDrive „Eigener Server“ → PHP-Modul: FTPS-Daten des Webhostings, Ordner wählen (z. B. `public_html/ghulsuite`), „Modul hochladen“, vorgeschlagene Adresse „Adresse prüfen“. | Modul liegt im Ordner, Adresse wird aus Domain und Ordner abgeleitet und geprüft; „FTPS-Zugang behalten“ wählbar. Bei kleinem Upload-Limit ein Hinweis auf kleinere Teile. |
+| E18 | Einrichtung mit „Schlüsseldatei“ statt Key: Datei erstellen und z. B. auf den USB-Stick speichern. | Ohne gespeicherte Datei geht es nicht weiter. Danach wie E6–E15 (ohne Key-Berührung). |
+| E19 | In Schritt 3 einen eigenen Ordner wählen, in dem schon GhulSuite-Dateien liegen. | Hinweis „Hier liegen bereits GhulSuite-Dateien“ und „Diese Suite öffnen“. |
+| E20 | Nur GhulAuth wählen und einrichten. | In der Leiste nur GhulAuth und Optionen; keine weiteren Dateien im Ordner. |
+| E21 | Einrichtung in Schritt 6 abbrechen (App schließen), App neu öffnen. | Entsperren-Bildschirm; nach dem Entsperren verlangt GhulSuite einen neuen Wiederherstellungscode (ohne „später“), bestätigt per Gruppe. |
 
 ## 2. Entsperren
 
@@ -379,8 +390,66 @@ oder Proton.
 | N22 | Optionen → Sicherung → „Komplette Suite sichern“; neues Gerät/leerer Ordner → Start → „Sicherung wiederherstellen“. | Alles wieder da (Tresore, Einstellungen); Hauptpasswort wie vorher. Automatische Wochensicherung in gewählten Ordner (hält die letzten 4). |
 | N23 | Optionen → Darstellung → Start-Bereich „Zuletzt geöffnet“ / Bereiche ausblenden. | Startet im gewählten Bereich; ausgeblendete fehlen in der Leiste. |
 | N24 | Optionen → Über: Lizenzen, Bibliotheken, „Fehlerbericht“. | „Made by Daniel Erdmann · 2026“, AGPL-3.0 und Liste (inkl. EFF-Wortliste); Fehlerbericht ohne Geheimnisse. |
+| N25 | Newsletter (HTML-Mail mit Bildern und Links) öffnen. | Formatiert: Überschriften, fett/kursiv, Listen, Links. Hinweis „x Bild(er) aus dem Internet blockiert“; Bilder in der Mail selbst (z. B. Logo) sichtbar. Keine Skripte, keine Formulare. |
+| N26 | „Bilder laden“ bzw. „Immer für diesen Absender“. | Bilder erscheinen; bei „Immer“ auch bei der nächsten Mail dieses Absenders ohne Nachfrage. |
+| N27 | Link in einer HTML-Mail antippen. | Rückfrage mit Ziel-Domain und vollständiger Adresse, erst „Öffnen“ öffnet den Browser. |
+| N28 | „Als reinen Text anzeigen“ und zurück. | Wechselt zwischen Text- und formatierter Ansicht. |
+| N29 | Neue Mail mit Anhang beginnen, zurück, später unter „Entwürfe“ fortsetzen. | Anhang ist noch da. Anhänge über 10 MB zusammen werden im Entwurf nicht gespeichert. |
+| N30 | Optionen → Darstellung → Sprache: „English“, dann „Wie das System“. | Die App wechselt sofort die Sprache (Android); zurück auf Systemsprache. |
+| N31 | Import einer 1Password-Datei (.1pux oder CSV) bzw. LastPass-CSV. | Anmeldungen, Notizen, Karten und 2FA-Codes übernommen; archivierte Einträge nicht. |
+| N32 | Eintrag → Menü → „Eintrag exportieren“ mit Master-Passwort. | CSV nur mit diesem Eintrag; falsches Passwort wird abgelehnt. |
+| N33 | Eintrag als Favorit markieren, dann in einer App das Autofill öffnen. | Favoriten stehen in der Auswahl ganz oben. |
 
 ---
+
+## 23. Ein Bereich, eine Datei (#24)
+
+| Nr. | Schritt | Erwartet |
+|---|---|---|
+| B1 | Optionen → Bereiche verwalten. | Alle fünf Bereiche mit „aktiv“, „hier ausgeblendet“ oder „nicht eingerichtet“ und dem Dateinamen. |
+| B2 | Nicht eingerichteten Bereich antippen (z. B. GhulCal) → Einrichten. | Name abgefragt; Datei `….ghlcal` entsteht, Bereich erscheint in der Leiste. Bei GhulDrive: Speicherwahl (wie Synchronisation / eigener Server). |
+| B3 | Bereich → „Auf diesem Gerät ausblenden“. | Verschwindet nur hier aus der Leiste; zweites Gerät zeigt ihn weiter. Wieder einblenden geht. |
+| B4 | Bereich → „Bereich entfernen“. | Rückfrage mit Warnung; danach ist die Datei weg, nach dem Synchronisieren auch auf dem zweiten Gerät und dem Server. |
+| B5 | Optionen → GhulCal: Bundesland ändern, synchronisieren, zweites Gerät synchronisieren. | Oben „Für GhulCal · alle Geräte“, unten „Nur auf diesem Gerät“. Das Bundesland ist auf dem zweiten Gerät übernommen, die Startansicht nicht. |
+| B6 | Optionen → GhulDrive → Speicher. | „Wie Synchronisation“ (nur mit Sync) oder „Eigener Server“; der eigene Server erscheint nicht unter Optionen → Synchronisation. |
+| B7 | GhulDrive nutzt „Wie Synchronisation“. Optionen → Synchronisation → Sync-Server entfernen oder wechseln. | Rückfrage: „Zugang für GhulDrive behalten“ oder „GhulDrive später neu einrichten“. Mit „behalten“ funktioniert GhulDrive weiter. |
+| B8 | GhulDrive ohne Speicher öffnen. | „Noch nicht eingerichtet“ mit der Speicherwahl direkt im Bereich. |
+| B9 | GhulMail ohne Konto öffnen, Anbieter mit eigenem Benutzernamen einrichten. | Vollständiges Formular: Mailadresse, Passwort, Benutzername, IMAP und SMTP getrennt; bekannte Anbieter vorgeschlagen, alles änderbar. |
+| B10 | Alte Suite (Version vor diesem Stand) mit Drive und Mail öffnen. | Drive und Mail funktionieren weiter; im Ordner liegen danach `Drive.ghldrv` und `Mail.ghlmail`. |
+| B11 | Optionen → Entsperren → Gültigkeit „Immer“, App neu starten, Gerät neu starten. | Nach App-Neustart Fingerabdruck reicht; nach Geräte-Neustart wieder Passwort und Key. |
+
+## 24. Import ohne Verluste, Listen bedienen
+
+| Nr. | Schritt | Erwartet |
+|---|---|---|
+| I1 | GhulPass → „+“ → „Aus anderer App importieren“. | Der Import öffnet sich direkt (nicht nur über Optionen). |
+| I2 | Proton-Pass- oder Proton-Authenticator-Export wählen, in dem Aliase, SSH-Schlüssel, Steam- oder HOTP-Codes vorkommen. | Unter „Nicht umgewandelt (n)“ steht jeder Eintrag mit Namen und Grund. Aliase landen als Login, SSH-Schlüssel und eigene Arten als Notiz mit allen Feldern. |
+| I3 | „Als Notiz in GhulPass sichern“ an lassen → Importieren. | Ergebnis direkt auf der Seite (kein Infokasten): Anzahl übernommen, doppelt, als Notiz gesichert, und die Liste. Im Ordner „Import – nicht umgewandelt“ liegen Notizen mit „Grund“ und „Originaldaten“. |
+| I4 | Dieselbe Datei noch einmal importieren. | Nichts doppelt, auch keine doppelten Notizen. |
+| I5 | Steam-Code importieren oder in GhulAuth von Hand mit „Steam“ anlegen. | Fünfstelliger Code aus Buchstaben und Ziffern, der zum Steam-Code passt. |
+| I6 | Irgendeine Aktion mit Meldung (z. B. Passwort kopieren). | Die Meldung erscheint einmal, dunkel und abgerundet. |
+| I7 | GhulPass und GhulAuth: der runde Knopf unten rechts. | Zeigt ein „+“. |
+| I8 | GhulPass: Drei-Punkte-Menü eines Eintrags. | Benutzername kopieren, Passwort kopieren, Bearbeiten, Löschen (mit Rückfrage). |
+| I9 | GhulPass und GhulAuth: Eintrag lange drücken, weitere antippen, „Alle“, Löschen. | Auswahlleiste oben mit Anzahl; Löschen fragt nach; Zurück beendet die Auswahl. |
+| I10 | GhulAuth (Listenansicht): Konto nach rechts wischen, dann nach links. | Rechts: Bearbeiten (Anbieter, Konto). Links: Rückfrage, dann gelöscht. |
+
+## GhulCal (Kalender)
+
+| Nr. | Schritt | Erwartet |
+|---|---|---|
+| K1 | GhulCal zum ersten Mal öffnen. | Ein Kalender-Tresor „Kalender“ (`.ghlcal`) mit Privat, Arbeit, Familie, Sport, Geburtstage entsteht; Monatsansicht mit KW, heute rot eingekreist, Feiertage (NRW). |
+| K2 | „+ Termin“ → „Zahnarzt Fr 10 Uhr #privat“ eintippen. | Vorschau zeigt Titel, Freitag, 10:00–11:00, Kalender Privat; „Eintragen“ legt ihn an, Erinnerung nach Standard. |
+| K3 | „Team-Call jeden Montag 9 Uhr #arbeit“ eintragen, Woche und Liste ansehen. | Serie jeden Montag; Wiederholungs-Symbol in der Liste. |
+| K4 | Monat/Woche/Tag/Liste umschalten, wischen, ‹ › und „12“-Symbol (Heute). | Ansichten wie in der Design-Vorschau; Tag-Ansicht mit Jetzt-Linie; Tippen auf eine leere Stunde legt dort einen Termin an. |
+| K5 | Termin öffnen → Bearbeiten: ganztägig, Datum/Uhrzeit, Wiederholen, zwei Erinnerungen, Ort, Notiz, Verknüpfung. | Alles wird gespeichert; Detailansicht zeigt Ort („In Karten-App öffnen“), Erinnerungen, Notiz, Verknüpfung. |
+| K6 | Serientermin → Menü → Löschen: „Nur diesen“, dann „Diesen und alle folgenden“. | Erst fehlt nur der eine Tag, dann endet die Serie davor. |
+| K7 | „Alle Kalender“ → Kalender aus-/einblenden, Farbe ändern, neuen Kalender anlegen, löschen. | Ansicht folgt sofort; Kopfzeile „x von y Kalendern“. |
+| K8 | Import einer `.ics` aus Google/Outlook, Export „Alle“ und „Als .ics teilen“. | Termine samt Serien und Erinnerungen übernommen; zweiter Import legt keine Doppelten an; Export öffnet sich in anderen Kalendern. |
+| K9 | Termin mit Erinnerung in 2 Minuten anlegen, App sperren (Android: auch schließen). | Benachrichtigung pünktlich; auf dem Sperrbildschirm nur die gewählte Detailstufe; „In 5 Min. erneut“, „Erledigt“; Tippen öffnet nach dem Entsperren den Termin. |
+| K10 | Optionen → GhulCal: Detailstufe „Nur Hinweis“ → „Test-Erinnerung zeigen“. | Auf dem Sperrbildschirm nur „Termin in 15 Min.“ ohne Titel. |
+| K11 | Panik-Sperre auslösen. | Geplante Erinnerungen sind gelöscht (kommen erst nach dem nächsten Entsperren wieder). |
+| K12 | Zweites Gerät synchronisieren, dort einen Termin ändern, zurück synchronisieren. | Änderungen beider Seiten kommen an (Zusammenführen pro Termin). |
+| K13 | Mail-Benachrichtigung antippen (gesperrt und entsperrt). | GhulMail öffnet sich (nach dem Entsperren); Leiste und App-Symbol zeigen die Zahl ungelesener Mails, Windows-Taskleiste einen Briefumschlag mit Zahl. |
 
 ## Fehler melden
 

@@ -15,6 +15,8 @@ interface VaultBackend {
     val settings: Settings
     /** Servers, synchronisation, GhulDrive and GhulMail. */
     val net: NetBackend
+    /** GhulCal. */
+    val cal: CalBackend get() = NoCalBackend
 
     // --- Storage location and suite
     /** Whether a suite exists in the configured storage location. */
@@ -72,6 +74,20 @@ interface VaultBackend {
     suspend fun renameVault(id: String, name: String)
     /** Deletes the vault file from the folder. */
     suspend fun removeVault(id: String)
+
+    // --- Areas: one file per area (GhulPass, GhulAuth, GhulDrive, GhulMail, GhulCal)
+    fun setupState(): SetupStateUi = if (exists()) SetupStateUi.COMPLETE else SetupStateUi.EMPTY
+    /** Creates the area's file (when switched on later); an existing area keeps its file. */
+    suspend fun addArea(kind: VaultKindUi, name: String): String = createVault(kind, name)
+    /** Removes the area on every device (its files are deleted, also through the synchronisation). */
+    suspend fun removeArea(kind: VaultKindUi) {}
+    /** Options stored in the area's file (empty without the area). */
+    suspend fun areaOptions(kind: VaultKindUi): Map<String, String> = emptyMap()
+    suspend fun setAreaOptions(kind: VaultKindUi, options: Map<String, String>) {}
+    /** Whether the current recovery code was confirmed by typing a group back. */
+    suspend fun recoveryConfirmed(): Boolean = true
+    /** Checks a typed group (0-based) of the recovery code; only a correct one confirms it. */
+    suspend fun confirmRecoveryCode(group: Int, typed: String): Boolean = true
     suspend fun exportVault(id: String): ByteArray
     /** Adds a vault file with the suite's protection; DIFFERENT_PROTECTION if it needs its own password. */
     suspend fun addVaultFile(data: ByteArray, name: String): String
@@ -123,9 +139,12 @@ interface VaultBackend {
         passVault: String?,
         totpVault: String?,
         totpsFromLogins: Boolean,
+        keep: KeepSkippedUi? = null,
     ): ImportResultUi
     /** Unencrypted export of one vault (CSV or otpauth links); needs the master password. */
     suspend fun exportPlain(vaultId: String, password: String): ByteArray
+    /** Some entries as unencrypted CSV (or otpauth links), only with the master password. */
+    suspend fun exportEntries(vaultId: String, ids: List<String>, password: String): ByteArray = throw UnsupportedOperationException()
 
     // --- Autofill (Android)
     fun autofillStatus(): AutofillStatus
@@ -181,7 +200,15 @@ data class FolderRef(val uri: String, val name: String)
 /** A file picked by the user. */
 class PickedFile(val name: String, val bytes: ByteArray)
 
-enum class VaultKindUi { PASS, TOTP }
+enum class VaultKindUi { PASS, TOTP, CAL, DRIVE, MAIL }
+
+/** What the app finds in the suite folder. */
+enum class SetupStateUi {
+    EMPTY,
+    COMPLETE,
+    /** Vault files without the suite file: a setup that stopped; unlocking completes it. */
+    INCOMPLETE,
+}
 
 data class VaultUi(
     val id: String,
@@ -306,7 +333,7 @@ data class SecurityReportUi(val score: Int, val checked: Int, val issues: List<S
 
 data class TotpNowUi(val code: String, val nextCode: String, val remaining: Int, val period: Int)
 
-enum class OtpAlgorithmUi { SHA1, SHA256, SHA512 }
+enum class OtpAlgorithmUi { SHA1, SHA256, SHA512, STEAM }
 
 data class TotpInputUi(
     val issuer: String,
@@ -330,13 +357,54 @@ data class PasswordOptionsUi(
     val avoidAmbiguous: Boolean = true,
 )
 
-data class ImportPreviewUi(val format: String, val entries: Int, val totps: Int, val totpsInLogins: Int, val skipped: Int)
+data class ImportPreviewUi(
+    val format: String,
+    val entries: Int,
+    val totps: Int,
+    val totpsInLogins: Int,
+    val skipped: Int,
+    /** Which items cannot be converted, and why. */
+    val skippedItems: List<SkippedImportUi> = emptyList(),
+)
 
-data class ImportResultUi(val entries: Int, val totps: Int, val duplicates: Int, val skipped: Int)
+data class ImportResultUi(
+    val entries: Int,
+    val totps: Int,
+    val duplicates: Int,
+    val skipped: Int,
+    val skippedItems: List<SkippedImportUi> = emptyList(),
+    /** Skipped items kept as notes with their original data. */
+    val kept: Int = 0,
+)
+
+enum class SkipReasonUi { HOTP, UNSUPPORTED, INVALID_CODE }
+
+/** An item of an import file that could not be converted. */
+data class SkippedImportUi(
+    val name: String,
+    /** Type in the source app (e.g. alias, hotp, sshKey). */
+    val kind: String,
+    val reason: SkipReasonUi,
+    val detail: String,
+    /** A 2FA code that stays in its imported login (only GhulAuth does not get it). */
+    val inEntry: Boolean,
+)
+
+/** Keep what cannot be converted as notes in GhulPass (folder, field names and reasons in the app's language). */
+data class KeepSkippedUi(
+    val folder: String,
+    val reasonLabel: String,
+    val dataLabel: String,
+    val reasonHotp: String,
+    val reasonUnsupported: String,
+    val reasonInvalid: String,
+)
 
 enum class AutofillStatus { UNSUPPORTED, OFF, ON }
 
 enum class VaultErrorKind {
+    /** A file from a newer GhulSuite: update the app. */
+    UPDATE_REQUIRED,
     NO_KEY,
     PERMISSION_DENIED,
     NOT_A_FIDO_KEY,
