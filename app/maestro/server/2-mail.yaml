@@ -25,17 +25,22 @@ name: GhulMail on a real server
     direction: DOWN
 - tapOn: "Show server settings"
 # The servers were filled in from the address (imap./smtp. + domain). Tap their values, not the
-# labels ("Server address" and "Port" exist twice); close the keyboard and scroll to each one.
+# labels ("Server address" and "Port" exist twice); close the keyboard and scroll each one to the
+# middle of the screen: a field cut off at the bottom edge does not take the tap, and the text
+# would go into the password field, which still has the focus. Each value is checked right away.
 - scrollUntilVisible:
     element: "imap\\.test\\.example"
     direction: DOWN
+    centerElement: true
 - tapOn: "imap\\.test\\.example"
 - eraseText
 - inputText: ${GHUL_SERVER}
 - hideKeyboard
+- assertVisible: ${GHUL_SERVER}
 - scrollUntilVisible:
     element: "993"
     direction: DOWN
+    centerElement: true
 - tapOn: "993"
 - eraseText
 - inputText: "10993"
@@ -45,17 +50,21 @@ name: GhulMail on a real server
 - scrollUntilVisible:
     element: "STARTTLS"
     direction: DOWN
+    centerElement: true
 - tapOn: "STARTTLS"
 - scrollUntilVisible:
     element: "smtp\\.test\\.example"
     direction: DOWN
+    centerElement: true
 - tapOn: "smtp\\.test\\.example"
 - eraseText
 - inputText: ${GHUL_SERVER}
 - hideKeyboard
+- assertVisible: ${GHUL_SERVER}
 - scrollUntilVisible:
     element: "587"
     direction: DOWN
+    centerElement: true
 - tapOn: "587"
 - eraseText
 - inputText: "10587"
