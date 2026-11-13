@@ -88,12 +88,11 @@ userdb static {
   }
 }
 service imap-login {
+  # (2.4 has no address per listener; "listen" above applies to all of them.)
   inet_listener imap {
-    address = 127.0.0.1
     port = 10143
   }
   inet_listener imaps {
-    address = 127.0.0.1
     port = 10993
     ssl = yes
   }
