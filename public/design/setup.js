@@ -224,13 +224,27 @@ function driveEmpty() {
 
 function mailEmpty() {
   const a = areaOf('mail');
+  const fld = (label, value, extra = '', type = '') => `<div class="field"><div class="grow"><label>${label}</label><input ${type ? `type="${type}"` : ''} value="${value}" aria-label="${label}"></div>${extra}</div>`;
+  const server = (label, host, port, sec) => `<div class="field"><div class="grow"><label>${label}</label><input value="${host}" aria-label="${label}"></div>
+    <span class="port">${port}</span><span class="tag ok">${icon('lock')} ${sec}</span></div>`;
   return `${topbar('GhulMail', { ctx: { label: 'Noch kein Konto', c: 'c-mail' } })}<div class="screen">
     <div class="card setup-card">${aico(a, 'lg')}<h3>GhulMail einrichten</h3>
       <p>Nutze deine bestehende Mailadresse. Die Anmeldung liegt verschlüsselt in der Mail-Datei deiner Suite.</p></div>
-    <div class="field"><div class="grow"><label>Mailadresse</label><input value="max@posteo.de" aria-label="Mailadresse"></div>${icon('mail')}</div>
-    <div class="field"><div class="grow"><label>Passwort</label><input type="password" value="geheim123" aria-label="Passwort"></div>${icon('eye')}</div>
-    <button class="btn primary block" data-act="mail-setup">${icon('check')} Konto prüfen und hinzufügen</button>
-    <p class="hint-text" data-u="33">Server werden aus der Adresse erkannt (z. B. Posteo, mailbox.org, eigene Domain). Nur verschlüsselte Verbindungen.</p>
+    <div class="section-title">Konto</div>
+    ${fld('Mailadresse', 'max@meine-domain.de', icon('mail'))}
+    ${fld('Passwort', 'geheim123', icon('eye'), 'password')}
+    <p class="hint-text">Bei Gmail, Outlook oder iCloud: ein App-Passwort des Anbieters verwenden.</p>
+    <div class="section-title">Server <button data-act="toast" data-arg="Erneut aus der Adresse ermittelt">${icon('refresh')} Erkennen</button></div>
+    <div class="banner">${icon('info')}<span>Für <b>meine-domain.de</b> nichts Bekanntes gefunden – bitte die Angaben deines Anbieters eintragen.</span></div>
+    ${fld('Benutzername', 'web123p4', '', '')}
+    <p class="hint-text" data-u="36">Oft die Mailadresse – bei manchen Anbietern ein eigener Name.</p>
+    ${server('Eingang (IMAP)', 'mail.anbieter-xyz.de', '993', 'TLS')}
+    ${server('Ausgang (SMTP)', 'smtp.anbieter-xyz.de', '465', 'TLS')}
+    <div class="section-title">Anzeige</div>
+    ${fld('Dein Name (Absender)', 'Max Mustermann')}
+    ${fld('Kontoname in GhulSuite', 'Privat')}
+    <button class="btn primary block" data-act="mail-setup">${icon('check')} Verbindung prüfen und hinzufügen</button>
+    <p class="hint-text" data-u="33">Nur verschlüsselte Verbindungen (TLS oder STARTTLS). Bei bekannten Anbietern (Posteo, mailbox.org, Gmail …) füllt GhulSuite die Server selbst aus – alles bleibt änderbar. Signatur und PGP folgen danach in den Konto-Einstellungen.</p>
   </div>`;
 }
 

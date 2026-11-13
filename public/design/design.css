@@ -601,3 +601,4 @@ body.hide-new .app .new-tag { display: none; }
 .row.pick .s, .setup-rows .row .s { white-space: normal; }
 .folder-row { background: var(--surface-2); border-radius: 16px; margin-bottom: 10px; }
 .sheet .field, .sheet .folder-row { background: var(--surface-2); }
+.field .port { font-family: var(--mono); font-size: 14px; color: var(--muted); flex: none; }
