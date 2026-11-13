@@ -128,7 +128,13 @@ android {
     buildTypes {
         getByName("debug") {
             applicationIdSuffix = ".dev"
-            if (keystoreFile != null) signingConfig = signingConfigs.getByName("ghul")
+            if (keystoreFile != null) {
+                signingConfig = signingConfigs.getByName("ghul")
+                // The test version handed out (signed with the real key) is not debuggable:
+                // otherwise anyone with USB debugging could read the app's private files and
+                // attach to the unlocked app. Local builds without the key stay debuggable.
+                isDebuggable = false
+            }
             // Shrink also during development: the icon library alone would add ~50 MB.
             isMinifyEnabled = true
             isShrinkResources = true

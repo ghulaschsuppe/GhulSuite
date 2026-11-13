@@ -51,6 +51,7 @@ async-imap = { version = "0.10", default-features = false, features = ["runtime-
 futures = "0.3"
 mail-parser = "0.11"
 lettre = { version = "0.11", default-features = false, features = ["builder"] }
+psl = "2.1.253"
 
 [dev-dependencies]
 rand_chacha = "0.3"

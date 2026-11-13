@@ -57,4 +57,41 @@ object Browsers {
     )
 
     fun isBrowser(packageName: String): Boolean = packageName in PACKAGES
+
+    /** App stores whose browsers are trusted to report the website they show. */
+    private val TRUSTED_INSTALLERS = setOf(
+        "com.android.vending", // Google Play
+        "com.sec.android.app.samsungapps", // Galaxy Store
+        "com.huawei.appmarket",
+        "com.xiaomi.market",
+        "com.heytap.market",
+        "com.oppo.market",
+        "org.fdroid.fdroid",
+        "org.fdroid.basic",
+        "com.aurora.store",
+        "com.amazon.venezia",
+    )
+
+    /**
+     * A known browser that really is that browser: preinstalled or installed from an app store.
+     * Any app can carry a browser's package name if that browser is not installed (sideloaded
+     * fake); only a trusted one may say "this page is bank.de".
+     */
+    fun isTrustedBrowser(context: android.content.Context, packageName: String): Boolean {
+        if (!isBrowser(packageName)) return false
+        return runCatching {
+            val pm = context.packageManager
+            val info = pm.getApplicationInfo(packageName, 0)
+            if (info.flags and (android.content.pm.ApplicationInfo.FLAG_SYSTEM or android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0) {
+                return@runCatching true
+            }
+            val installer = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                pm.getInstallSourceInfo(packageName).installingPackageName
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getInstallerPackageName(packageName)
+            }
+            installer in TRUSTED_INSTALLERS
+        }.getOrDefault(false)
+    }
 }

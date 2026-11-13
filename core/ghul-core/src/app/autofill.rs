@@ -1,17 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Matching of logins for autofill: which entries fit a website or an app.
 //!
-//! Websites match by their base domain (`login.example.com` fits `example.com`, but
-//! `example.com.evil.net` does not) and are filled directly.
+//! Websites match by their registrable domain after the Public Suffix List (`login.example.com`
+//! fits `example.com`; `example.com.evil.net`, `evil.github.io` for `alice.github.io` and other IP
+//! addresses do not) and are filled directly.
 //!
 //! Apps are filled directly only if the entry links them with their signing certificate
 //! (`androidapp://<package>?cert=<sha256 hex>`), which the app sets when the user picks a login by
 //! hand. A link without certificate (e.g. imported) or a package name that only fits the entry's
 //! domain (`com.github.android` → `github.com`) is merely *suggested*, because any app can choose
 //! such a package name. A link with a different certificate excludes the entry.
-
-/// Second-level labels under which registrations happen one level deeper (`example.co.uk`).
-const SECOND_LEVEL: &[&str] = &["co", "com", "org", "net", "ac", "gov", "edu", "or", "ne", "go"];
 
 /// Lower-case host of a URL or bare domain, without `www.`, port, path and credentials.
 pub(crate) fn host_of(url: &str) -> Option<String> {
@@ -28,15 +26,19 @@ pub(crate) fn host_of(url: &str) -> Option<String> {
     Some(host)
 }
 
-/// The registrable part of a host: `a.b.example.com` → `example.com`, `x.example.co.uk` → `example.co.uk`.
+/// The registrable part of a host, after the Public Suffix List: `a.b.example.com` →
+/// `example.com`, `x.example.co.uk` → `example.co.uk`, `alice.github.io` → `alice.github.io`
+/// (github.io is a suffix where everyone gets their own name). IP addresses stay exactly as they
+/// are, as do hosts without a registrable part.
 pub(crate) fn base_domain(host: &str) -> String {
-    let labels: Vec<&str> = host.split('.').filter(|l| !l.is_empty()).collect();
-    if labels.len() <= 2 {
-        return labels.join(".");
+    let host = host.trim_end_matches('.').to_lowercase();
+    if host.parse::<std::net::IpAddr>().is_ok() {
+        return host;
     }
-    let n = labels.len();
-    let take = if labels[n - 1].len() == 2 && SECOND_LEVEL.contains(&labels[n - 2]) { 3 } else { 2 };
-    labels[n - take.min(n)..].join(".")
+    match psl::domain_str(&host) {
+        Some(d) => d.to_owned(),
+        None => host,
+    }
 }
 
 /// Guesses a website from an Android package name (`com.github.android` → `github.com`).
@@ -125,6 +127,60 @@ mod tests {
         assert_eq!(base_domain("a.b.example.com"), "example.com");
         assert_eq!(base_domain("login.example.co.uk"), "example.co.uk");
         assert_eq!(domain_of_package("com.github.android").as_deref(), Some("github.com"));
+    }
+
+    /// The official test cases of the Public Suffix List (tests/data/test_psl.txt).
+    #[test]
+    fn public_suffix_list_test_cases() {
+        let text = std::fs::read_to_string(format!("{}/tests/data/test_psl.txt", env!("CARGO_MANIFEST_DIR"))).unwrap();
+        let mut checked = 0;
+        for line in text.lines().map(str::trim).filter(|l| l.starts_with("checkPublicSuffix(")) {
+            let args = line.trim_start_matches("checkPublicSuffix(").trim_end_matches(");");
+            let (input, want) = args.split_once(", ").unwrap();
+            let unquote = |x: &str| (x != "null").then(|| x.trim_matches('\'').to_owned());
+            let (Some(input), want) = (unquote(input), unquote(want)) else { continue };
+            // Leading dots and non-ASCII names are not hosts the app ever sees in this form.
+            if input.starts_with('.') || !input.is_ascii() {
+                continue;
+            }
+            let got = super::base_domain(&input);
+            match want {
+                Some(w) => assert_eq!(got, w, "{input}"),
+                // No registrable part: the host itself (only an exact match fills).
+                None => assert_eq!(got, input.to_lowercase(), "{input}"),
+            }
+            checked += 1;
+        }
+        assert!(checked > 40, "{checked}");
+    }
+
+    /// Who may get a login for `https://login.bank.example`, `alice.github.io`, a router ...
+    #[test]
+    fn phishing_matrix() {
+        let cases: &[(&str, &str, Match)] = &[
+            ("https://login.bank.de", "bank.de", Match::Direct),
+            ("https://login.bank.de", "www.bank.de", Match::Direct),
+            ("https://login.bank.de", "BANK.DE.", Match::Direct),
+            ("https://login.bank.de", "bank.de.evil.com", Match::None),
+            ("https://login.bank.de", "bank-de.com", Match::None),
+            ("https://login.bank.de", "xn--bank-9na.de", Match::None),
+            ("https://login.bank.de", "evil.com", Match::None),
+            ("https://alice.github.io", "evil.github.io", Match::None),
+            ("https://alice.github.io", "alice.github.io", Match::Direct),
+            ("https://nas.synology.me", "evil.synology.me", Match::None),
+            ("https://box.myfritz.net", "other.myfritz.net", Match::None),
+            ("https://shop.co.uk", "evil.co.uk", Match::None),
+            ("https://a.example.co.uk", "b.example.co.uk", Match::Direct),
+            ("http://192.168.1.1/", "192.168.1.1", Match::Direct),
+            ("http://192.168.1.1/", "10.0.1.1", Match::None),
+            ("http://192.168.1.1/", "203.0.1.1", Match::None),
+            ("https://user:pw@bank.de:8443/x", "bank.de", Match::Direct),
+            ("https://bank.de", "", Match::None),
+            ("bank.de", "bank.de", Match::Direct),
+        ];
+        for (url, domain, want) in cases {
+            assert_eq!(match_entry(&u(&[url]), Some(domain), None, None), *want, "{url} vs {domain}");
+        }
     }
 
     #[test]
