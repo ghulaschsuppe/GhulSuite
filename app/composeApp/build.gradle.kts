@@ -82,6 +82,7 @@ kotlin {
                 implementation(libs.androidx.camera.view)
                 implementation(libs.zxing.core)
                 implementation(libs.androidx.documentfile)
+                implementation(libs.androidx.autofill)
                 implementation(libs.androidx.work.runtime)
                 implementation(libs.kotlinx.coroutines.android)
                 implementation("${libs.jna.get()}@aar")

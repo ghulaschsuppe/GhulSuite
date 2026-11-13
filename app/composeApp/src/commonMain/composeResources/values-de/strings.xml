@@ -1339,4 +1339,9 @@
     <string name="auth_delete_n_text">Die %1$s ausgewählten 2FA-Konten werden gelöscht. Stell sicher, dass du dich bei diesen Diensten weiterhin anmelden kannst.</string>
     <string name="auth_swipe_hint">Nach rechts wischen: bearbeiten, nach links: löschen. Lange drücken wählt mehrere aus.</string>
     <string name="auth_tap_hint_short">Antippen kopiert den Code.</string>
+    <string name="set_autofill_how">So erscheinen die Vorschläge</string>
+    <string name="set_autofill_how_field">Tippe in ein Anmeldefeld. Die Vorschläge erscheinen unter dem Feld oder oben in der Tastaturleiste.</string>
+    <string name="set_autofill_how_apps">In einer App bietet GhulSuite beim ersten Mal „Andere Anmeldung wählen …“ an. Danach merkt es sich die App und schlägt die Anmeldung direkt vor.</string>
+    <string name="set_autofill_how_chrome">Chrome: Einstellungen → Autofill-Dienste → „Autofill über einen anderen Dienst“ wählen und Chrome neu starten. Firefox und Browser wie Vivaldi, Brave oder Edge brauchen keine Einstellung.</string>
+    <string name="set_autofill_how_manual">Erscheint nichts? Lange auf das Feld drücken und „Automatisch ausfüllen“ wählen.</string>
 </resources>

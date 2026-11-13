@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.IntentSender
+import android.os.Build
 import android.os.CancellationSignal
 import android.service.autofill.AutofillService
 import android.service.autofill.Dataset
@@ -29,7 +30,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 /**
- * Offers matching logins in other apps and in browsers. While GhulSuite is locked, only an
+ * Offers matching logins in other apps and in browsers, below the field and, where the keyboard
+ * supports it, in the keyboard's suggestion bar. While GhulSuite is locked, only an
  * "Unlock GhulSuite" entry is offered; it opens [AutofillAuthActivity]. Nothing is revealed
  * to the requesting app before the user picks an entry.
  */
@@ -48,21 +50,30 @@ class GhulAutofillService : AutofillService() {
             return
         }
         val backend = applicationContext.ghul.backend
-        val appPackage = if (fields.webDomain == null) fields.packageName else null
+        val appPackage = fields.appPackage
         val cert = appPackage?.let { AppCert.sha256(this, it) }
+        val chips = InlineChips.of(this, request)
         val job = scope.launch {
             val response = FillResponse.Builder()
+            var index = 0
             if (backend.unlocked.value) {
                 // Only exact matches are offered directly; suggestions need a deliberate pick.
-                val logins = runCatching { backend.autofillLogins(fields.webDomain, appPackage, cert) }
-                    .getOrDefault(emptyList())
-                    .filter { it.direct }
-                for (l in logins.take(MAX_DATASETS)) response.addDataset(dataset(this@GhulAutofillService, fields, l))
-                response.addDataset(pickerDataset(fields, getString(R.string.autofill_pick)))
+                val logins = if (fields.unknownSite) {
+                    emptyList()
+                } else {
+                    runCatching { backend.autofillLogins(fields.webDomain, appPackage, cert) }
+                        .getOrDefault(emptyList())
+                        .filter { it.direct }
+                }
+                for (l in logins.take(MAX_DATASETS)) {
+                    response.addDataset(dataset(this@GhulAutofillService, fields, l, chips, index++))
+                }
+                response.addDataset(pickerDataset(fields, getString(R.string.autofill_pick), chips, index))
             } else {
-                response.addDataset(pickerDataset(fields, getString(R.string.autofill_unlock)))
+                response.addDataset(pickerDataset(fields, getString(R.string.autofill_unlock), chips, index))
             }
-            if (fields.password.isNotEmpty()) {
+            // Saving needs to know the website or app; a browser without a recognised site has neither.
+            if (fields.password.isNotEmpty() && !fields.unknownSite) {
                 var type = SaveInfo.SAVE_DATA_TYPE_PASSWORD
                 if (fields.username.isNotEmpty()) type = type or SaveInfo.SAVE_DATA_TYPE_USERNAME
                 response.setSaveInfo(SaveInfo.Builder(type, fields.ids.toTypedArray()).build())
@@ -80,12 +91,16 @@ class GhulAutofillService : AutofillService() {
             callback.onSuccess()
             return
         }
+        if (fields.unknownSite) {
+            callback.onSuccess()
+            return
+        }
         if (!backend.unlocked.value) {
             toast(R.string.autofill_save_locked)
             callback.onSuccess()
             return
         }
-        val appPackage = if (fields.webDomain == null) fields.packageName else null
+        val appPackage = fields.appPackage
         val cert = appPackage?.let { AppCert.sha256(this, it) }
         scope.launch {
             val result = runCatching {
@@ -107,12 +122,16 @@ class GhulAutofillService : AutofillService() {
 
     /** Entry that opens GhulSuite (unlock if needed) and lets the user pick a login. */
     @Suppress("DEPRECATION")
-    private fun pickerDataset(fields: LoginFields, label: String): Dataset {
+    private fun pickerDataset(fields: LoginFields, label: String, chips: InlineChips?, index: Int): Dataset {
         val presentation = RemoteViews(packageName, android.R.layout.simple_list_item_1).apply {
             setTextViewText(android.R.id.text1, label)
         }
+        val chip = chips?.chip(index, label, null)
         val builder = Dataset.Builder(presentation)
-        for (id in fields.ids) builder.setValue(id, null, presentation)
+        for (id in fields.ids) {
+            if (chip != null && Build.VERSION.SDK_INT >= 30) builder.setValue(id, null, presentation, chip)
+            else builder.setValue(id, null, presentation)
+        }
         builder.setAuthentication(AutofillAuthActivity.intentSender(this, fields))
         return builder.build()
     }
@@ -122,14 +141,20 @@ class GhulAutofillService : AutofillService() {
 
         /** A dataset that fills [login] into the fields; shown with title and user name. */
         @Suppress("DEPRECATION")
-        fun dataset(context: Context, fields: LoginFields, login: AutofillLogin): Dataset {
+        fun dataset(context: Context, fields: LoginFields, login: AutofillLogin, chips: InlineChips? = null, index: Int = 0): Dataset {
+            val title = login.title.ifBlank { login.username }
             val presentation = RemoteViews(context.packageName, android.R.layout.simple_list_item_2).apply {
-                setTextViewText(android.R.id.text1, login.title.ifBlank { login.username })
+                setTextViewText(android.R.id.text1, title)
                 setTextViewText(android.R.id.text2, login.username)
             }
+            val chip = chips?.chip(index, title, login.username.takeIf { it != title })
             val builder = Dataset.Builder(presentation)
-            for (id in fields.username) builder.setValue(id, AutofillValue.forText(login.username), presentation)
-            for (id in fields.password) builder.setValue(id, AutofillValue.forText(login.password), presentation)
+            val values = fields.username.map { it to login.username } + fields.password.map { it to login.password }
+            for ((id, text) in values) {
+                val value = AutofillValue.forText(text)
+                if (chip != null && Build.VERSION.SDK_INT >= 30) builder.setValue(id, value, presentation, chip)
+                else builder.setValue(id, value, presentation)
+            }
             return builder.build()
         }
 
@@ -140,7 +165,7 @@ class GhulAutofillService : AutofillService() {
 internal fun AutofillAuthActivity.Companion.intentSender(context: Context, fields: LoginFields): IntentSender {
     val intent = Intent(context, AutofillAuthActivity::class.java)
         .putExtra(AutofillAuthActivity.EXTRA_DOMAIN, fields.webDomain)
-        .putExtra(AutofillAuthActivity.EXTRA_PACKAGE, if (fields.webDomain == null) fields.packageName else null)
+        .putExtra(AutofillAuthActivity.EXTRA_PACKAGE, fields.appPackage)
         .putParcelableArrayListExtra(AutofillAuthActivity.EXTRA_USER_IDS, GhulAutofillService.idsExtra(fields.username))
         .putParcelableArrayListExtra(AutofillAuthActivity.EXTRA_PASS_IDS, GhulAutofillService.idsExtra(fields.password))
     val flags = PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_MUTABLE
