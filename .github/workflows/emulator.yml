@@ -1,56 +1,30 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-# Fast run of the emulator tests alone when only the flows change: takes the APK of the latest
-# "Android & Kern" run of this branch instead of building it again (that workflow runs them too).
+# Emulator tests alone: by hand for any branch ("Run workflow"), and every night from nightly.yml.
+# Takes the APK of the latest "Android & Kern" run of the branch instead of building it again.
+# With "servers" also the flows against real test servers (app/maestro/server) and the check of
+# what those servers hold.
 name: Emulator-Tests
 
 on:
-  push:
-    branches: ['**']
-    paths: ['app/maestro/**', 'tools/ci-emulator.sh', 'tools/run-maestro.sh', 'tools/check-reminders.sh', '.github/workflows/emulator.yml']
   workflow_dispatch:
+    inputs:
+      servers:
+        description: Auch die Abläufe mit echten Testservern (SFTP, IMAP, SMTP)
+        type: boolean
+        default: true
+  workflow_call:
+    inputs:
+      servers:
+        type: boolean
+        default: true
 
 permissions:
   contents: read
   actions: read
 
-concurrency:
-  group: emulator-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  # When the same push also changes the app, the core or the tools, "Android & Kern" builds a fresh
-  # APK and runs these flows itself. Running them here against the previous APK would test new
-  # flows with an old app and fail for no reason.
-  changes:
-    name: Nur Abläufe geändert?
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      only_flows: ${{ steps.c.outputs.only_flows }}
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          fetch-depth: 0
-      - id: c
-        env:
-          BASE: ${{ github.event.before }}
-        run: |
-          if [ "${{ github.event_name }}" != push ] || [ -z "$BASE" ] || [ "$BASE" = 0000000000000000000000000000000000000000 ] || ! git cat-file -e "$BASE^{commit}" 2> /dev/null; then
-            echo "only_flows=true" >> "$GITHUB_OUTPUT"; exit 0
-          fi
-          # Same paths as the push trigger of android.yml (without the flows themselves).
-          if git diff --name-only "$BASE" HEAD | grep -vE '^(app/maestro/|tools/ci-emulator\.sh|tools/run-maestro\.sh|tools/check-reminders\.sh)' \
-              | grep -qE '^(core/|app/|docs/testvectors/|tools/|\.github/workflows/android\.yml|\.github/actions/ftps-upload/)'; then
-            echo "App oder Kern geändert: die Abläufe laufen in \"Android & Kern\" mit der neuen APK."
-            echo "only_flows=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "only_flows=true" >> "$GITHUB_OUTPUT"
-          fi
-
   emulator:
     name: Maestro-Abläufe im Android-Emulator
-    needs: changes
-    if: needs.changes.outputs.only_flows == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 70
     env:
@@ -85,6 +59,7 @@ jobs:
           unzip -q /tmp/maestro.zip -d "$HOME"
           echo "$HOME/maestro/bin" >> "$GITHUB_PATH"
       - name: Testserver für die Abläufe mit echtem Server (SFTP mit Passwort, IMAP, SMTP)
+        if: inputs.servers
         timeout-minutes: 12
         run: |
           # tools/run-maestro.sh forwards these ports to the emulator (adb reverse). If the package mirror

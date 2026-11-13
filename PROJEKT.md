@@ -60,6 +60,10 @@ tools/                 Testserver (SFTP/IMAP/SMTP), Prüfskripte, Emulator-Skrip
 - `.github/workflows/android.yml`: Kern (Format, Clippy, Tests, Fuzzing, Audit), Netzwerk-Tests, Browser-Tests,
   Windows-Pakete (MSI und portabel), APK, Emulator-Abläufe. Artefakte: `ghulsuite-dev`, `ghulsuite-windows-dev`,
   `screenshots`, `emulator-tests`.
+- **Emulator-Abläufe** (langsam, weil ein ganzes Android startet) laufen nicht bei jedem Push eines Arbeits-Branches,
+  sondern bei Pull Requests, auf `main` und nachts. Nachts kommen die Abläufe mit echten Testservern (GhulDrive,
+  GhulMail) und die Prüfung dazu, dass dort nur Verschlüsseltes liegt. Von Hand für jeden Branch:
+  `.github/workflows/emulator.yml` („Run workflow“, nutzt die zuletzt gebaute APK des Branches).
 - Uploads auf den Testserver des Inhabers laufen **nur im Original-Repository** und nie bei Pull Requests.
   Ziel ist für `main` der Ordner `ghulsuite/` (Testseiten) bzw. `ghulsuite/download/` (App-Pakete), für jeden
   anderen Branch `ghulsuite/branches/<branch>/` bzw. `…/download/`; so bleibt `ghulsuite/download/` der stabile Stand.

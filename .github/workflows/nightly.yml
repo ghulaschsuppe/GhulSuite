@@ -90,6 +90,15 @@ jobs:
           path: monkey-out/
           retention-days: 14
 
+  # All Maestro flows of the app on main, also against real test servers (GhulDrive, GhulMail),
+  # then the check that those servers only hold ciphertext. Pull requests run the flows without
+  # servers (android.yml).
+  emulator:
+    name: Emulator-Abläufe mit echten Testservern
+    uses: ./.github/workflows/emulator.yml
+    with:
+      servers: true
+
   static:
     name: Statische Prüfung (Geheimnisse, PHP-Modul, Abhängigkeiten)
     runs-on: ubuntu-latest

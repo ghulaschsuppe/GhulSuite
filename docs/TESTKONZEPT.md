@@ -67,7 +67,7 @@ SFTP, FTPS, IMAP, SMTP, PHP-Modul im Browser, vorhanden; erweitert um die kaputt
 
 ### E10: App und Oberfläche
 - **Desktop-UI-Tests** (Compose, Fake-Backends): alle Hauptwege, absurde Eingaben (Naughty Strings in Formularen), schnelles Doppeltippen, Zurück an jeder Stelle.
-- **Maestro-Abläufe** im Android-Emulator, vorhanden.
+- **Maestro-Abläufe** im Android-Emulator, vorhanden: bei Pull Requests und auf `main` die Grundabläufe aller fünf Bereiche, nachts zusätzlich gegen echte Testserver.
 - **Android Monkey:** zehntausende zufällige Gesten mit mehreren festen Startwerten; jeder Absturz oder „App reagiert nicht“ ist ein Fehler.
 - Barrierefreiheit (Kontraste, Beschriftungen, Zielgrößen).
 

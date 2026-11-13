@@ -5,7 +5,7 @@ on:
   push:
     branches: ['**']
     paths: ['core/**', 'app/**', 'docs/testvectors/**', 'tools/**', '.github/workflows/android.yml', '.github/actions/ftps-upload/**',
-            '!app/maestro/**', '!tools/ci-emulator.sh', '!tools/run-maestro.sh']
+            '!app/maestro/**', '!tools/ci-emulator.sh', '!tools/run-maestro.sh', '!tools/check-reminders.sh', '!tools/check-server-flows.sh']
   # Every pull request: "build" and "Windows-App" are required checks for main. Without changes to
   # the app or the core they are skipped (which counts as passed) instead of missing.
   pull_request:
@@ -476,9 +476,14 @@ jobs:
           local-dir: ./dist/
           remote-dir: ${{ steps.dest.outputs.dir }}/download/
 
+  # The emulator is slow (it boots a whole Android), so it does not run on every push of a work
+  # branch: it guards pull requests and main. The flows with real servers, the reminders against
+  # servers and Monkey run in the nightly run (nightly.yml, via emulator.yml); emulator.yml can
+  # also be started by hand for any branch.
   emulator:
     name: Emulator-Tests (Maestro-Abläufe aus app/maestro)
     needs: build
+    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 70
     env:
@@ -505,39 +510,10 @@ jobs:
           echo "$MAESTRO_SHA256  /tmp/maestro.zip" | sha256sum -c -
           unzip -q /tmp/maestro.zip -d "$HOME"
           echo "$HOME/maestro/bin" >> "$GITHUB_PATH"
-      - name: Testserver für die Abläufe mit echtem Server (SFTP mit Passwort, IMAP, SMTP)
-        timeout-minutes: 12
-        run: |
-          # tools/run-maestro.sh forwards these ports to the emulator (adb reverse). If the package mirror
-          # is down, the flows with a real server are skipped with a warning.
-          ok=0
-          for i in 1 2 3; do
-            timeout 120 sudo apt-get update -qq || true
-            if timeout 240 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o Acquire::Retries=3 openssh-server dovecot-imapd > /dev/null; then ok=1; break; fi
-            sleep 10
-          done
-          if [ "$ok" = 1 ]; then
-            sudo env GHUL_TEST_SFTP_PASSWORD=1 bash tools/test-servers.sh > servers.env
-            echo "GHUL_TEST_SERVERS=1" >> "$GITHUB_ENV"
-          else
-            echo "::warning::Paketserver nicht erreichbar: Abläufe mit echtem Server übersprungen."
-          fi
       - name: Abläufe im Emulator (Android 14)
         run: |
           mkdir -p maestro-out
           tools/ci-emulator.sh dist/ghulsuite-dev.apk maestro-out
-      - name: Logs der Testserver zu den Ergebnissen legen
-        if: always()
-        run: |
-          # Only the logs of the throwaway test servers (no keys); they show why a login failed.
-          if [ -f servers.env ]; then
-            . ./servers.env
-            mkdir -p maestro-out/servers
-            for f in dovecot/dovecot.log smtp.log; do
-              sudo cp "$GHUL_TEST_DIR/$f" maestro-out/servers/ 2>/dev/null || true
-            done
-            sudo chown -R "$(id -u)" maestro-out/servers
-          fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
