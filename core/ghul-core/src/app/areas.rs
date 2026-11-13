@@ -12,8 +12,10 @@ use ciborium::value::Value;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
+use std::collections::HashMap;
+
 use super::error::{GhulError, Result};
-use super::suite::{put_setting, setting, GhulSuite, Open, VaultKind, SUITE_FILE};
+use super::suite::{now_ms, put_setting, setting, GhulSuite, Open, VaultKind, SUITE_FILE};
 use super::sync::{merge_settings, DELETED_KEY};
 use crate::vault::UnlockedContainer;
 
@@ -22,6 +24,22 @@ pub(super) const DRIVE_KEYS: &[&str] = &["drive"];
 /// Settings that belong to GhulMail.
 pub(super) const MAIL_KEYS: &[&str] =
     &["mail_accounts", "mail_keys", "mail_contacts", "mail_cache_key", "mail_drafts", "mail_outbox"];
+
+/// Options of an area that travel with its file (e.g. GhulCal's holiday region); each one is
+/// stamped and the latest change wins when two devices changed it.
+const OPTIONS_KEY: &str = "options";
+
+/// A value with the time of its last change (Unix ms). Synchronisation keeps the later one.
+#[derive(Serialize, serde::Deserialize, Clone, Default, Debug, PartialEq)]
+pub(super) struct Stamped<T> {
+    pub v: T,
+    pub at: i64,
+}
+
+/// `v`, stamped now.
+pub(super) fn stamp<T>(v: T) -> Stamped<T> {
+    Stamped { v, at: now_ms() }
+}
 
 /// Name of an area file created without asking for one.
 fn default_name(kind: VaultKind) -> &'static str {
@@ -130,6 +148,69 @@ impl GhulSuite {
             }
         }
         Ok(())
+    }
+}
+
+#[uniffi::export]
+impl GhulSuite {
+    /// Options stored in the area's file (empty when the area has not been set up). Keys and
+    /// values are chosen by the app, e.g. `holiday_region` → `DE-NW`.
+    pub fn area_options(&self, kind: VaultKind) -> Result<HashMap<String, String>> {
+        self.with_open(|o| {
+            let map: BTreeMap<String, Stamped<String>> = area_setting(o, kind, OPTIONS_KEY);
+            Ok(map.into_iter().map(|(k, s)| (k, s.v)).collect())
+        })
+    }
+
+    /// Stores options in the area's file and saves it (`NotConfigured` without the area).
+    /// Unchanged values keep their time, so they do not override a change from another device.
+    pub fn set_area_options(&self, kind: VaultKind, options: HashMap<String, String>) -> Result<()> {
+        self.with_open(|o| {
+            let mut map: BTreeMap<String, Stamped<String>> = area_setting(o, kind, OPTIONS_KEY);
+            let mut changed = false;
+            for (k, v) in options {
+                if map.get(&k).map(|s| &s.v) != Some(&v) {
+                    map.insert(k, stamp(v));
+                    changed = true;
+                }
+            }
+            if !changed {
+                return Ok(());
+            }
+            put_area_setting(o, kind, OPTIONS_KEY, &map)?;
+            self.save_area(o, kind)
+        })
+    }
+
+    /// Removes an area on every device: its files are deleted here and, with the next
+    /// synchronisation, on the server and the other devices. Hiding an area on one device is a
+    /// setting of the app instead.
+    pub fn remove_area(&self, kind: VaultKind) -> Result<()> {
+        let name = kind.container().name();
+        let ids: Vec<String> = self.with_open(|o| {
+            Ok(o.vaults.iter().filter(|v| v.reference.kind == name).map(|v| v.reference.id.clone()).collect())
+        })?;
+        for id in ids {
+            self.remove_vault(id)?;
+        }
+        if kind == VaultKind::Drive {
+            self.net.lock().unwrap_or_else(|p| p.into_inner()).drive = None;
+        }
+        Ok(())
+    }
+
+    /// Creates the area's file now (when the area is switched on later) and returns its id;
+    /// an existing area keeps its file. `name` empty: the usual name.
+    pub fn add_area(&self, kind: VaultKind, name: String) -> Result<String> {
+        self.with_open(|o| {
+            if let Some(id) = o.area_id(kind) {
+                return Ok(id);
+            }
+            let name = if name.trim().is_empty() { default_name(kind).to_owned() } else { name.trim().to_owned() };
+            let id = self.add_vault(o, kind, &name)?;
+            self.save_vault(o, &id)?;
+            Ok(id)
+        })
     }
 }
 

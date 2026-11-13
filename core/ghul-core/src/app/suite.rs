@@ -780,6 +780,7 @@ impl GhulSuite {
                 .unwrap_or_default();
             suite.set_recovery_code(&code, &label, now_ms(), &mut OsRng)?;
         }
+        super::setup::mark_unconfirmed(&mut suite)?;
         Ok(suite)
     }
 
@@ -1064,6 +1065,7 @@ impl GhulSuite {
             );
         }
         let (_, code) = suite.add_recovery_slot(&options.recovery_label, now, &mut OsRng)?;
+        super::setup::mark_unconfirmed(&mut suite)?;
         let mut open = Open {
             password_key: PasswordKey::from_bytes(*keys.password_key.expose()),
             suite,

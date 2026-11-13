@@ -8,6 +8,9 @@ pub enum VaultError {
     Format(String),
     #[error("unsupported format version {0}")]
     UnsupportedVersion(u16),
+    /// A GhulSuite file of a kind this version does not know (made by a newer app).
+    #[error("file from a newer GhulSuite")]
+    NewerKind,
     #[error("container has kind {found}, expected {expected}")]
     WrongKind { expected: &'static str, found: &'static str },
     /// The second factor (security key output or recovery code) does not open any slot.

@@ -2237,3 +2237,135 @@ fn old_suites_move_drive_and_mail_into_their_own_files() {
     })
     .unwrap();
 }
+
+#[test]
+fn recovery_code_counts_only_when_a_group_was_typed_back() {
+    let d = Dirs::new("code-confirm");
+    let s = d.suite();
+    let kf = generate_keyfile();
+    let code = s
+        .create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None)
+        .unwrap()
+        .recovery_code
+        .unwrap();
+    // Closed before confirming (e.g. the app crashed in the last setup step).
+    assert!(!s.recovery_confirmed().unwrap());
+    s.lock();
+    s.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
+    assert!(!s.recovery_confirmed().unwrap(), "still asked for after unlocking");
+    let group = |c: &str, i: usize| c.split('-').nth(i).unwrap().to_owned();
+    assert!(!s.confirm_recovery_code(2, group(&code, 3)).unwrap());
+    assert!(!s.recovery_confirmed().unwrap());
+    assert!(s.confirm_recovery_code(2, format!(" {} ", group(&code, 2).to_lowercase())).unwrap());
+    assert!(s.recovery_confirmed().unwrap());
+    assert!(s.confirm_recovery_code(99, "x".into()).is_err());
+    s.lock();
+    s.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    assert!(s.recovery_confirmed().unwrap());
+    // A new code needs its own confirmation.
+    let new = s.new_recovery_code("Neu".into()).unwrap();
+    assert!(!s.recovery_confirmed().unwrap());
+    assert!(s.confirm_recovery_code(0, group(&new, 0)).unwrap());
+    assert!(s.recovery_confirmed().unwrap());
+}
+
+#[test]
+fn a_setup_that_stopped_halfway_is_completed_by_unlocking() {
+    let d = Dirs::new("setup-abort");
+    let kf = generate_keyfile();
+    let storage = d.storage();
+    // Stopped before anything was written (e.g. while touching the key): nothing to clean up.
+    assert_eq!(d.suite().setup_state().unwrap(), super::setup::SetupState::Empty);
+    let s = d.suite();
+    s.create(
+        options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat"), (VaultKind::Totp, "2FA")]),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    assert_eq!(s.setup_state().unwrap(), super::setup::SetupState::Complete);
+    s.lock();
+    // Stopped after the first vault file: the second vault and the suite file are missing.
+    let files = storage.list().unwrap();
+    let totp = files.iter().find(|f| f.ends_with(".ghltotp")).unwrap().clone();
+    storage.delete(totp).unwrap();
+    storage.delete(super::suite::SUITE_FILE.to_owned()).unwrap();
+    let s = d.suite();
+    assert_eq!(s.setup_state().unwrap(), super::setup::SetupState::Incomplete);
+    assert!(s.exists().unwrap(), "the setup is not offered again over the existing files");
+    s.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
+    assert_eq!(s.setup_state().unwrap(), super::setup::SetupState::Complete);
+    let vaults = s.list_vaults().unwrap();
+    assert_eq!(vaults.iter().map(|v| v.name.as_str()).collect::<Vec<_>>(), vec!["Privat"]);
+    // The code was never confirmed: the app asks for a new one; a missing area can be added.
+    assert!(!s.recovery_confirmed().unwrap());
+    s.add_area(VaultKind::Totp, String::new()).unwrap();
+    s.lock();
+    let s = d.suite();
+    s.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    assert_eq!(s.list_vaults().unwrap().len(), 2);
+}
+
+#[test]
+fn area_options_live_in_the_area_file_and_areas_can_be_removed_everywhere() {
+    use crate::net::remote::LocalFs;
+    let server_dir = std::env::temp_dir().join(format!("ghul-areas-server-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&server_dir);
+    let server = LocalFs::new(&server_dir);
+    let kf = generate_keyfile();
+    let (da, db) = (Dirs::new("areas-a"), Dirs::new("areas-b"));
+    let a = da.suite();
+    a.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Cal, "Kalender")]), None, None, None).unwrap();
+    // No file, no options: Drive was not chosen.
+    assert!(a.area_options(VaultKind::Drive).unwrap().is_empty());
+    let set = |s: &GhulSuite, k: &str, v: &str| {
+        s.set_area_options(VaultKind::Cal, [(k.to_owned(), v.to_owned())].into_iter().collect()).unwrap()
+    };
+    assert!(matches!(
+        a.set_area_options(VaultKind::Drive, [("trash_days".into(), "30".into())].into_iter().collect()),
+        Err(GhulError::NotConfigured)
+    ));
+    set(&a, "holiday_region", "DE-NW");
+    set(&a, "week_start", "0");
+    a.sync_folder(&server).unwrap();
+    copy_suite(&server_dir, &db);
+    let b = db.suite();
+    b.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    assert_eq!(b.area_options(VaultKind::Cal).unwrap()["holiday_region"], "DE-NW");
+    // Both change options: the later change of each option wins, on both devices.
+    set(&a, "week_start", "6");
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    set(&b, "holiday_region", "AT");
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    set(&a, "holiday_region", "CH");
+    b.sync_folder(&server).unwrap();
+    a.sync_folder(&server).unwrap();
+    b.sync_folder(&server).unwrap();
+    for s in [&a, &b] {
+        let o = s.area_options(VaultKind::Cal).unwrap();
+        assert_eq!((o["holiday_region"].as_str(), o["week_start"].as_str()), ("CH", "6"));
+    }
+    // Removing an area deletes its file here, on the server and on the other device.
+    a.add_area(VaultKind::Drive, String::new()).unwrap();
+    a.remove_area(VaultKind::Cal).unwrap();
+    assert!(a.area_options(VaultKind::Cal).unwrap().is_empty());
+    a.sync_folder(&server).unwrap();
+    b.sync_folder(&server).unwrap();
+    let kinds = |s: &GhulSuite| s.list_vaults().unwrap().into_iter().map(|v| v.kind).collect::<Vec<_>>();
+    assert_eq!(kinds(&a), vec![VaultKind::Drive]);
+    assert_eq!(kinds(&b), vec![VaultKind::Drive]);
+    let _ = std::fs::remove_dir_all(&server_dir);
+}
+
+#[test]
+fn files_of_a_newer_app_ask_for_an_update() {
+    let mut data = b"GHULFUTR".to_vec();
+    data.extend_from_slice(&[1, 0, 0, 0, 0, 0]);
+    data.extend_from_slice(&[0u8; 64]);
+    let e: GhulError = crate::vault::LockedContainer::parse(&data).err().unwrap().into();
+    assert!(matches!(e, GhulError::UpdateRequired));
+    let e: GhulError =
+        crate::vault::LockedContainer::parse(b"PK\x03\x04 not ours at all, really").err().unwrap().into();
+    assert!(matches!(e, GhulError::Corrupted { .. }));
+}

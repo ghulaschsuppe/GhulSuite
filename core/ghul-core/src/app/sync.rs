@@ -206,8 +206,28 @@ fn value_id(v: &Value) -> Option<Value> {
     v.as_map()?.iter().find(|(k, _)| k.as_text() == Some("id")).map(|(_, v)| v.clone())
 }
 
+/// The time of a stamped value: a map of exactly `v` and `at` (integer).
+fn stamp_time(v: &Value) -> Option<i128> {
+    let m = v.as_map()?;
+    if m.len() != 2 || !m.iter().any(|(k, _)| k.as_text() == Some("v")) {
+        return None;
+    }
+    m.iter().find(|(k, _)| k.as_text() == Some("at")).and_then(|(_, t)| match t {
+        Value::Integer(i) => Some(i128::from(*i)),
+        _ => None,
+    })
+}
+
 fn merge_value(lv: &mut Value, rv: &Value) -> bool {
     if lv == rv {
+        return false;
+    }
+    // A stamped value ({v, at}): the later change wins as a whole.
+    if let (Some(lt), Some(rt)) = (stamp_time(lv), stamp_time(rv)) {
+        if rt > lt {
+            *lv = rv.clone();
+            return true;
+        }
         return false;
     }
     match (lv, rv) {
@@ -362,9 +382,12 @@ impl GhulSuite {
                     } else if merge_settings(&mut local.payload.settings, &remote.payload.settings) {
                         settings_changed = true;
                     }
+                    // Settings changed only here (e.g. an area option) must reach the server too.
+                    let settings_newer_here = local.payload.settings != remote.payload.settings;
                     let protection_differs =
                         local.header().slots != remote.header().slots || local.header().kdf != remote.header().kdf;
-                    if local_changed || remote_changed || settings_changed || protection_differs {
+                    if local_changed || remote_changed || settings_changed || settings_newer_here || protection_differs
+                    {
                         if local_changed && remote_changed {
                             rep.merged += 1;
                         } else if local_changed {
@@ -375,7 +398,7 @@ impl GhulSuite {
                         v.reference.name = vault_name(local, &v.reference.file);
                         v.stale = false;
                         // Written below, locally and to the server, under the server's name.
-                        if remote_changed || settings_changed || protection_differs {
+                        if remote_changed || settings_changed || settings_newer_here || protection_differs {
                             rep.uploaded += 1;
                         }
                         let file = v.reference.file.clone();

@@ -438,7 +438,13 @@ pub fn split_file(data: &[u8]) -> Result<FileParts<'_>> {
     if data.len() < PREFIX_LEN {
         return Err(VaultError::format("file too short"));
     }
-    let kind = ContainerKind::from_magic(&data[..8]).ok_or_else(|| VaultError::format("not a GhulSuite container"))?;
+    let kind = ContainerKind::from_magic(&data[..8]).ok_or_else(|| {
+        if data.starts_with(b"GHUL") {
+            VaultError::NewerKind
+        } else {
+            VaultError::format("not a GhulSuite container")
+        }
+    })?;
     let version = u16::from_le_bytes([data[8], data[9]]);
     if version != FORMAT_VERSION {
         return Err(VaultError::UnsupportedVersion(version));

@@ -18,6 +18,7 @@ pub mod mailx;
 pub mod passx;
 pub mod quick;
 pub mod servers;
+pub mod setup;
 pub mod shares;
 pub mod storage;
 pub mod suite;
