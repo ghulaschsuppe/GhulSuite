@@ -59,6 +59,10 @@ pub enum VaultKind {
     Totp,
     /// GhulCal (`.ghlcal`).
     Cal,
+    /// GhulDrive (`.ghldrv`).
+    Drive,
+    /// GhulMail (`.ghlmail`).
+    Mail,
 }
 
 impl VaultKind {
@@ -67,6 +71,8 @@ impl VaultKind {
             VaultKind::Pass => ContainerKind::Pass,
             VaultKind::Totp => ContainerKind::Totp,
             VaultKind::Cal => ContainerKind::Cal,
+            VaultKind::Drive => ContainerKind::Drive,
+            VaultKind::Mail => ContainerKind::Mail,
         }
     }
 
@@ -74,6 +80,8 @@ impl VaultKind {
         match name {
             "pass" => VaultKind::Pass,
             "cal" => VaultKind::Cal,
+            "drive" => VaultKind::Drive,
+            "mail" => VaultKind::Mail,
             _ => VaultKind::Totp,
         }
     }
@@ -83,6 +91,8 @@ impl VaultKind {
             ContainerKind::Pass => Some(VaultKind::Pass),
             ContainerKind::Totp => Some(VaultKind::Totp),
             ContainerKind::Cal => Some(VaultKind::Cal),
+            ContainerKind::Drive => Some(VaultKind::Drive),
+            ContainerKind::Mail => Some(VaultKind::Mail),
             ContainerKind::Suite => None,
         }
     }
@@ -308,7 +318,7 @@ fn dedup_key(entry_type: &str, fields: &BTreeMap<String, Field>) -> String {
 // --- files and names --------------------------------------------------------------------------
 
 pub(super) fn is_vault_file(name: &str) -> bool {
-    name.ends_with(".ghlpss") || name.ends_with(".ghltotp") || name.ends_with(".ghlcal")
+    [".ghlpss", ".ghltotp", ".ghlcal", ".ghldrv", ".ghlmail"].iter().any(|e| name.ends_with(e))
 }
 
 pub(super) fn file_name(kind: VaultKind, name: &str, id: &str) -> String {
@@ -701,6 +711,14 @@ impl GhulSuite {
     pub(super) fn with_open<T>(&self, f: impl FnOnce(&mut Open) -> Result<T>) -> Result<T> {
         let mut guard = self.guard();
         let open = guard.as_mut().ok_or(GhulError::Locked)?;
+        // Settings of older suites (or synced from a device with an older app) move into the area files.
+        if super::areas::DRIVE_KEYS
+            .iter()
+            .chain(super::areas::MAIL_KEYS)
+            .any(|k| open.suite.payload.settings.contains_key(*k))
+        {
+            self.migrate_areas(open)?;
+        }
         f(open)
     }
 
@@ -778,6 +796,10 @@ impl GhulSuite {
                 VaultKind::Pass
             } else if file.ends_with(".ghlcal") {
                 VaultKind::Cal
+            } else if file.ends_with(".ghldrv") {
+                VaultKind::Drive
+            } else if file.ends_with(".ghlmail") {
+                VaultKind::Mail
             } else {
                 VaultKind::Totp
             };
@@ -895,7 +917,7 @@ impl GhulSuite {
     }
 
     /// Creates a vault with the suite's protection and recovery code.
-    fn add_vault(&self, o: &mut Open, kind: VaultKind, name: &str) -> Result<String> {
+    pub(super) fn add_vault(&self, o: &mut Open, kind: VaultKind, name: &str) -> Result<String> {
         let slots = factor_slots(&o.suite);
         let mut c = o.keys().create_container(kind.container(), slots.clone(), &mut OsRng)?;
         for s in &slots {

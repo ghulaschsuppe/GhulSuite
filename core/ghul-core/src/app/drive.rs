@@ -25,8 +25,9 @@ use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use zeroize::Zeroizing;
 
+use super::areas::{area_setting, put_area_setting};
 use super::error::{GhulError, Result};
-use super::suite::{new_id, now_ms, put_setting, setting, GhulSuite, Open, SUITE_FILE};
+use super::suite::{new_id, now_ms, GhulSuite, Open, VaultKind};
 use crate::net::remote::RemoteFs;
 use crate::vault::keys::{hkdf, open, seal};
 use crate::vault::payload::{pad, unpad};
@@ -284,7 +285,7 @@ fn check_name(name: &str) -> Result<String> {
 impl GhulSuite {
     /// Drive settings, the server connection and the keys.
     fn drive_ctx(&self, o: &mut Open) -> Result<(Arc<dyn RemoteFs>, Keys)> {
-        let d: DriveSettings = setting(&o.suite, DRIVE_KEY);
+        let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
         if d.server.is_empty() || d.key.len() != 32 {
             return Err(GhulError::NotConfigured);
         }
@@ -327,27 +328,28 @@ impl GhulSuite {
             if !super::servers::servers(o).iter().any(|s| s.id == server_id) {
                 return Err(GhulError::NotFound);
             }
-            let mut d: DriveSettings = setting(&o.suite, DRIVE_KEY);
+            self.ensure_area(o, VaultKind::Drive)?;
+            let mut d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
             if d.key.len() != 32 {
                 let mut k = vec![0u8; 32];
                 OsRng.fill_bytes(&mut k);
                 d.key = k;
             }
             d.server = server_id;
-            put_setting(&mut o.suite, DRIVE_KEY, &d)?;
+            put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
             let (fs, keys) = self.drive_ctx(o)?;
             // An existing index must open with our key (otherwise it belongs to someone else).
             let mut index = load_index(fs.as_ref(), &keys)?;
             if fs.read(INDEX)?.is_none() {
                 save_index(fs.as_ref(), &keys, &mut index)?;
             }
-            self.save_container(&mut o.suite, SUITE_FILE)
+            self.save_area(o, VaultKind::Drive)
         })
     }
 
     pub fn drive_status(&self) -> Result<DriveStatus> {
         self.with_open(|o| {
-            let d: DriveSettings = setting(&o.suite, DRIVE_KEY);
+            let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
             if d.server.is_empty() {
                 return Ok(DriveStatus { server_id: None, files: 0, bytes: 0 });
             }
@@ -892,12 +894,13 @@ impl GhulSuite {
     /// Uses a folder instead of a server (tests).
     pub(crate) fn drive_use_folder(&self, fs: Arc<dyn RemoteFs>) -> Result<()> {
         self.with_open(|o| {
-            let mut d: DriveSettings = setting(&o.suite, DRIVE_KEY);
+            self.ensure_area(o, VaultKind::Drive)?;
+            let mut d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
             if d.key.len() != 32 {
                 d.key = vec![7u8; 32];
             }
             d.server = "test".into();
-            put_setting(&mut o.suite, DRIVE_KEY, &d)?;
+            put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
             Ok(())
         })?;
         self.net.lock().unwrap_or_else(|p| p.into_inner()).conn = Some(("test".into(), fs));

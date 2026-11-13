@@ -2027,3 +2027,48 @@ fn calendar_vault_events_series_reminders_and_sync() {
     }
     let _ = std::fs::remove_dir_all(&server_dir);
 }
+
+#[test]
+fn old_suites_move_drive_and_mail_into_their_own_files() {
+    use ciborium::value::Value;
+    let d = Dirs::new("areas");
+    let kf = generate_keyfile();
+    let s = d.suite();
+    s.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    // A suite from before: GhulMail and GhulDrive keep their settings in the suite file.
+    s.with_open(|o| {
+        let st = &mut o.suite.payload.settings;
+        st.insert(
+            "mail_accounts".into(),
+            Value::Array(vec![Value::Map(vec![(Value::Text("id".into()), Value::Text("a1".into()))])]),
+        );
+        st.insert("mail_drafts".into(), Value::Array(vec![]));
+        st.insert("drive".into(), Value::Map(vec![(Value::Text("server".into()), Value::Text("s1".into()))]));
+        st.insert("servers".into(), Value::Array(vec![]));
+        Ok(())
+    })
+    .unwrap();
+    // Any call moves them; the suite keeps only its own settings.
+    let kinds: Vec<VaultKind> = s.list_vaults().unwrap().iter().map(|v| v.kind).collect();
+    assert!(kinds.contains(&VaultKind::Mail) && kinds.contains(&VaultKind::Drive), "{kinds:?}");
+    s.with_open(|o| {
+        let st = &o.suite.payload.settings;
+        assert!(!st.contains_key("mail_accounts") && !st.contains_key("drive") && st.contains_key("servers"));
+        let mail = o.area_id(VaultKind::Mail).unwrap();
+        assert!(o.vault_mut(&mail)?.1.payload.settings.contains_key("mail_accounts"));
+        Ok(())
+    })
+    .unwrap();
+    let files: Vec<String> = s.list_vaults().unwrap().into_iter().map(|v| v.file).collect();
+    assert!(files.iter().any(|f| f.ends_with(".ghlmail")) && files.iter().any(|f| f.ends_with(".ghldrv")), "{files:?}");
+    // The files are written: after locking, everything is still where it moved to.
+    s.lock();
+    s.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    s.with_open(|o| {
+        assert!(!o.suite.payload.settings.contains_key("mail_accounts"));
+        let id = o.area_id(VaultKind::Mail).unwrap();
+        assert!(o.vault_mut(&id)?.1.payload.settings.contains_key("mail_accounts"));
+        Ok(())
+    })
+    .unwrap();
+}
