@@ -78,13 +78,73 @@ pub(crate) struct ImportedTotp {
     pub from_login: bool,
 }
 
+/// Why an item of an import file could not be converted.
+#[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SkipReason {
+    /// A counter-based code (HOTP): GhulAuth only shows time-based codes.
+    Hotp,
+    /// An item type GhulSuite has no counterpart for.
+    Unsupported,
+    /// A 2FA code whose data is incomplete or invalid (secret, digits, period …).
+    InvalidCode,
+}
+
+/// An item of an import file that was not converted. Its original data can be kept as a note.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Skipped {
+    pub name: String,
+    /// Type in the source app, e.g. `alias`, `hotp`, `sshKey`.
+    pub kind: String,
+    pub reason: SkipReason,
+    /// Technical detail (e.g. "secret is not valid Base32").
+    pub detail: String,
+    /// The original data (JSON, link or CSV line). Secret: only ever stored encrypted.
+    pub raw: String,
+    /// The data is already part of an imported entry (a 2FA code inside a login): nothing to keep.
+    pub in_entry: bool,
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct Parsed {
     pub format: String,
     pub entries: Vec<Draft>,
     pub totps: Vec<ImportedTotp>,
-    /// Items that cannot be imported (e.g. HOTP counters, unsupported types).
-    pub skipped: u32,
+    /// Items that could not be converted, with their original data.
+    pub skipped: Vec<Skipped>,
+}
+
+impl Parsed {
+    fn skip(&mut self, name: &str, kind: &str, reason: SkipReason, detail: &str, raw: String) {
+        self.skipped.push(Skipped {
+            name: name.trim().to_owned(),
+            kind: kind.to_owned(),
+            reason,
+            detail: detail.to_owned(),
+            raw,
+            in_entry: false,
+        });
+    }
+}
+
+/// Reason of a failed 2FA link.
+fn otp_reason(uri: &str) -> SkipReason {
+    if uri.trim_start().to_ascii_lowercase().starts_with("otpauth://hotp") {
+        SkipReason::Hotp
+    } else {
+        SkipReason::InvalidCode
+    }
+}
+
+/// Best-effort name of a 2FA link (its label) for the list of skipped items.
+fn uri_label(uri: &str) -> String {
+    let rest = uri.split_once("://").map(|(_, r)| r).unwrap_or(uri);
+    let label = rest.split_once('/').map(|(_, l)| l).unwrap_or("");
+    let label = label.split('?').next().unwrap_or("");
+    percent_decode(label).unwrap_or_else(|| label.to_owned())
+}
+
+fn json_text(v: &Json) -> String {
+    serde_json::to_string_pretty(v).unwrap_or_default()
 }
 
 fn invalid(msg: &str) -> GhulError {
@@ -108,9 +168,9 @@ pub(crate) fn parse(data: &[u8], file_name: &str) -> Result<Parsed> {
         let json: Json = serde_json::from_str(text).map_err(|_| GhulError::ImportUnknownFormat)?;
         return parse_json(&json);
     }
-    if text.lines().any(|l| l.trim_start().starts_with("otpauth")) {
+    if text.lines().any(|l| l.trim_start().starts_with("otpauth") || l.trim_start().starts_with("steam://")) {
         let mut p = Parsed { format: "otpauth".into(), ..Default::default() };
-        for line in text.lines().map(str::trim).filter(|l| l.starts_with("otpauth")) {
+        for line in text.lines().map(str::trim).filter(|l| l.starts_with("otpauth") || l.starts_with("steam://")) {
             add_uri(&mut p, line);
         }
         return Ok(p);
@@ -186,7 +246,13 @@ fn parse_json(json: &Json) -> Result<Parsed> {
     if let Some(accounts) = json.get("accounts").and_then(Json::as_array) {
         return Ok(parse_1password(accounts));
     }
-    // Proton Authenticator and anything else with otpauth links
+    // Proton Authenticator: entries with content {uri, name, entry_type}
+    if let Some(entries) = json.get("entries").and_then(Json::as_array) {
+        if entries.iter().any(|e| e.get("content").and_then(|c| c.get("uri")).is_some()) {
+            return Ok(parse_proton_authenticator(entries));
+        }
+    }
+    // Anything else with otpauth links
     let mut uris = Vec::new();
     collect_uris(json, &mut uris);
     if uris.is_empty() {
@@ -229,8 +295,8 @@ fn parse_1password(accounts: &[Json]) -> Parsed {
             "001" | "005" => Draft::new("login"),
             "003" => Draft::new("note"),
             "002" => Draft::new("card"),
-            _ => {
-                p.skipped += 1;
+            other => {
+                p.skip(&title, other, SkipReason::Unsupported, "", json_text(&item));
                 continue;
             }
         };
@@ -316,9 +382,66 @@ fn parse_1password(accounts: &[Json]) -> Parsed {
     p
 }
 
+/// Proton Authenticator export: `{"version": 1, "entries": [{"content": {"uri", "name",
+/// "entry_type": "Totp" | "Steam"}, "note"}]}`. The name fills in a missing label of the link.
+fn parse_proton_authenticator(entries: &[Json]) -> Parsed {
+    let mut p = Parsed { format: "Proton Authenticator".into(), ..Default::default() };
+    for e in entries {
+        let c = e.get("content").unwrap_or(&Json::Null);
+        let uri = s(c, "uri").trim();
+        let name = s(c, "name").trim();
+        let parsed = if s(c, "entry_type").eq_ignore_ascii_case("steam") && !uri.starts_with("otpauth") {
+            let secret = uri.strip_prefix("steam://").unwrap_or(uri);
+            let input = super::tools::steam_input(if name.is_empty() { "Steam" } else { name }, "", secret);
+            validate_totp(&input).map(|_| input)
+        } else {
+            parse_otpauth_uri(uri.to_owned())
+        };
+        match parsed {
+            Ok(mut input) => {
+                if !name.is_empty() && input.issuer.is_empty() {
+                    input.issuer = name.to_owned();
+                }
+                p.totps.push(ImportedTotp { input, from_login: false });
+            }
+            Err(err) => {
+                // A link without a label is fine when Proton has a name for it.
+                let retry =
+                    (!name.is_empty()).then(|| parse_otpauth_uri(with_label(uri, name)).ok()).flatten().map(|mut i| {
+                        // Proton shows the name as the service: it becomes the issuer.
+                        if i.issuer.is_empty() {
+                            i.issuer = std::mem::take(&mut i.account);
+                        }
+                        i
+                    });
+                match retry {
+                    Some(input) => p.totps.push(ImportedTotp { input, from_login: false }),
+                    None => {
+                        let label = if name.is_empty() { uri_label(uri) } else { name.to_owned() };
+                        p.skip(&label, s(c, "entry_type"), otp_reason(uri), &err.to_string(), json_text(e));
+                    }
+                }
+            }
+        }
+    }
+    p
+}
+
+/// The link with `name` as its label (for links whose label is empty).
+fn with_label(uri: &str, name: &str) -> String {
+    let Some(rest) = uri.strip_prefix("otpauth://") else { return uri.to_owned() };
+    let Some((kind, after)) = rest.split_once('/') else { return uri.to_owned() };
+    let query = after.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let label: String = name
+        .bytes()
+        .map(|b| if b.is_ascii_alphanumeric() { (b as char).to_string() } else { format!("%{b:02X}") })
+        .collect();
+    format!("otpauth://{kind}/{label}?{query}")
+}
+
 fn collect_uris(v: &Json, out: &mut Vec<String>) {
     match v {
-        Json::String(s) if s.starts_with("otpauth") => out.push(s.clone()),
+        Json::String(s) if s.starts_with("otpauth") || s.starts_with("steam://") => out.push(s.clone()),
         Json::Array(a) => a.iter().for_each(|x| collect_uris(x, out)),
         Json::Object(o) => o.values().for_each(|x| collect_uris(x, out)),
         _ => {}
@@ -349,21 +472,41 @@ fn parse_aegis(db: &Json) -> Parsed {
     for e in db.get("entries").and_then(Json::as_array).into_iter().flatten() {
         let info = e.get("info").unwrap_or(&Json::Null);
         let t = s(e, "type");
-        let made = (t.is_empty() || t == "totp")
-            .then(|| {
-                totp_from_parts(
-                    s(e, "issuer"),
-                    s(e, "name"),
-                    s(info, "secret"),
-                    s(info, "algo"),
-                    info.get("digits").and_then(Json::as_i64).unwrap_or(6),
-                    info.get("period").and_then(Json::as_i64).unwrap_or(30),
-                )
-            })
-            .flatten();
+        let made = if t.eq_ignore_ascii_case("steam") {
+            let input = super::tools::steam_input(s(e, "issuer"), s(e, "name"), s(info, "secret"));
+            validate_totp(&input).ok().map(|_| input)
+        } else {
+            (t.is_empty() || t == "totp")
+                .then(|| {
+                    totp_from_parts(
+                        s(e, "issuer"),
+                        s(e, "name"),
+                        s(info, "secret"),
+                        s(info, "algo"),
+                        info.get("digits").and_then(Json::as_i64).unwrap_or(6),
+                        info.get("period").and_then(Json::as_i64).unwrap_or(30),
+                    )
+                })
+                .flatten()
+        };
         match made {
             Some(input) => p.totps.push(ImportedTotp { input, from_login: false }),
-            None => p.skipped += 1,
+            None => {
+                let reason = if t == "hotp" {
+                    SkipReason::Hotp
+                } else if t.is_empty() || t == "totp" {
+                    SkipReason::InvalidCode
+                } else {
+                    SkipReason::Unsupported
+                };
+                let name = [s(e, "issuer"), s(e, "name")]
+                    .iter()
+                    .filter(|x| !x.is_empty())
+                    .copied()
+                    .collect::<Vec<_>>()
+                    .join(" · ");
+                p.skip(&name, t, reason, "", json_text(e));
+            }
         }
     }
     p
@@ -375,21 +518,35 @@ fn parse_2fas(services: &[Json]) -> Parsed {
         let otp = e.get("otp").unwrap_or(&Json::Null);
         let t = s(otp, "tokenType");
         let issuer = if s(otp, "issuer").is_empty() { s(e, "name") } else { s(otp, "issuer") };
-        let made = (t.is_empty() || t.eq_ignore_ascii_case("totp"))
-            .then(|| {
-                totp_from_parts(
-                    issuer,
-                    s(otp, "account"),
-                    s(e, "secret"),
-                    s(otp, "algorithm"),
-                    otp.get("digits").and_then(Json::as_i64).unwrap_or(6),
-                    otp.get("period").and_then(Json::as_i64).unwrap_or(30),
-                )
-            })
-            .flatten();
+        let made = if t.eq_ignore_ascii_case("steam") {
+            let input = super::tools::steam_input(issuer, s(otp, "account"), s(e, "secret"));
+            validate_totp(&input).ok().map(|_| input)
+        } else {
+            (t.is_empty() || t.eq_ignore_ascii_case("totp"))
+                .then(|| {
+                    totp_from_parts(
+                        issuer,
+                        s(otp, "account"),
+                        s(e, "secret"),
+                        s(otp, "algorithm"),
+                        otp.get("digits").and_then(Json::as_i64).unwrap_or(6),
+                        otp.get("period").and_then(Json::as_i64).unwrap_or(30),
+                    )
+                })
+                .flatten()
+        };
         match made {
             Some(input) => p.totps.push(ImportedTotp { input, from_login: false }),
-            None => p.skipped += 1,
+            None => {
+                let reason = if t.eq_ignore_ascii_case("hotp") {
+                    SkipReason::Hotp
+                } else if t.is_empty() || t.eq_ignore_ascii_case("totp") {
+                    SkipReason::InvalidCode
+                } else {
+                    SkipReason::Unsupported
+                };
+                p.skip(issuer, t, reason, "", json_text(e));
+            }
         }
     }
     p
@@ -413,7 +570,17 @@ fn login_totp(p: &mut Parsed, value: &str, title: &str, username: &str) {
     };
     match input {
         Some(input) => p.totps.push(ImportedTotp { input, from_login: true }),
-        None => p.skipped += 1,
+        None => {
+            // The value stays in the login's "totp" field; only GhulAuth does not get it.
+            p.skipped.push(Skipped {
+                name: title.trim().to_owned(),
+                kind: "totp".into(),
+                reason: otp_reason(v),
+                detail: String::new(),
+                raw: v.to_owned(),
+                in_entry: true,
+            });
+        }
     }
 }
 
@@ -482,8 +649,9 @@ fn parse_bitwarden(root: &Json, items: &[Json]) -> Parsed {
                 d.text("address", &addr.join("\n"));
                 d
             }
-            _ => {
-                p.skipped += 1;
+            other => {
+                let kind = other.map(|n| n.to_string()).unwrap_or_default();
+                p.skip(name, &kind, SkipReason::Unsupported, "", json_text(it));
                 continue;
             }
         };
@@ -583,9 +751,21 @@ fn parse_proton_pass(vaults: &serde_json::Map<String, Json>) -> Parsed {
                     d.secret("password", s(c, "password"));
                     d
                 }
-                _ => {
-                    p.skipped += 1;
-                    continue;
+                "alias" => {
+                    // An e-mail alias: the address is what matters.
+                    let mut d = Draft::new("login");
+                    d.text("title", name);
+                    d.text("username", s(it, "aliasEmail"));
+                    d
+                }
+                other => {
+                    // Item types without a counterpart (SSH keys, custom items, newer types):
+                    // a note with every value of the item, so nothing is lost.
+                    let mut d = Draft::new("note");
+                    d.text("title", name);
+                    d.text("type", other);
+                    flatten_into(&mut d, c, "");
+                    d
                 }
             };
             d.text("notes", s(meta, "note"));
@@ -609,6 +789,34 @@ fn parse_proton_pass(vaults: &serde_json::Map<String, Json>) -> Parsed {
     p
 }
 
+/// Every text value of `v` as a field of `d` (nested keys joined with "."); keys that sound
+/// secret become hidden fields.
+fn flatten_into(d: &mut Draft, v: &Json, prefix: &str) {
+    match v {
+        Json::Object(o) => {
+            for (k, x) in o {
+                let key = if prefix.is_empty() { k.clone() } else { format!("{prefix}.{k}") };
+                flatten_into(d, x, &key);
+            }
+        }
+        Json::Array(a) => {
+            for (i, x) in a.iter().enumerate() {
+                flatten_into(d, x, &format!("{prefix}.{}", i + 1));
+            }
+        }
+        Json::String(t) if !t.is_empty() && !prefix.is_empty() && !d.fields.contains_key(prefix) => {
+            let l = prefix.to_lowercase();
+            if ["key", "password", "secret", "token", "pin", "private"].iter().any(|w| l.contains(w)) {
+                d.secret(prefix, t);
+            } else {
+                d.text(prefix, t);
+            }
+        }
+        Json::Number(n) if !prefix.is_empty() => d.text(prefix, &n.to_string()),
+        _ => {}
+    }
+}
+
 // --- otpauth and Google Authenticator migration ---------------------------------------------
 
 fn add_uri(p: &mut Parsed, uri: &str) {
@@ -616,16 +824,18 @@ fn add_uri(p: &mut Parsed, uri: &str) {
         match parse_migration(uri) {
             Ok((list, skipped)) => {
                 p.format = "Google Authenticator".into();
-                p.skipped += skipped;
+                p.skipped.extend(skipped);
                 p.totps.extend(list.into_iter().map(|input| ImportedTotp { input, from_login: false }));
             }
-            Err(_) => p.skipped += 1,
+            Err(e) => {
+                p.skip("Google Authenticator", "migration", SkipReason::InvalidCode, &e.to_string(), uri.to_owned())
+            }
         }
         return;
     }
     match parse_otpauth_uri(uri.to_owned()) {
         Ok(input) => p.totps.push(ImportedTotp { input, from_login: false }),
-        Err(_) => p.skipped += 1,
+        Err(e) => p.skip(&uri_label(uri), "otpauth", otp_reason(uri), &e.to_string(), uri.to_owned()),
     }
 }
 
@@ -712,8 +922,8 @@ fn base32_encode(data: &[u8]) -> String {
 }
 
 /// Decodes a Google Authenticator export link (`otpauth-migration://offline?data=…`).
-/// Returns the TOTP accounts and the number of skipped (HOTP) accounts.
-pub(crate) fn parse_migration(uri: &str) -> Result<(Vec<TotpInput>, u32)> {
+/// Returns the TOTP accounts and the accounts that were skipped (HOTP), with their data.
+pub(crate) fn parse_migration(uri: &str) -> Result<(Vec<TotpInput>, Vec<Skipped>)> {
     let bad = || invalid("not a valid Google Authenticator export");
     let query = uri.split_once('?').map(|(_, q)| q).ok_or_else(bad)?;
     let data = query
@@ -723,7 +933,18 @@ pub(crate) fn parse_migration(uri: &str) -> Result<(Vec<TotpInput>, u32)> {
         .and_then(|d| base64_decode(&d))
         .ok_or_else(bad)?;
     let mut list = Vec::new();
-    let mut skipped = 0;
+    let mut skipped = Vec::new();
+    let skip = |skipped: &mut Vec<Skipped>, name: &str, issuer: &str, secret: &[u8], kind: &str, reason: SkipReason| {
+        let label = if issuer.is_empty() { name.to_owned() } else { format!("{issuer}: {name}") };
+        skipped.push(Skipped {
+            name: label.clone(),
+            kind: kind.into(),
+            reason,
+            detail: String::new(),
+            raw: format!("{label}\nSecret (Base32): {}\nType: {kind}", base32_encode(secret)),
+            in_entry: false,
+        });
+    };
     for (field, value) in proto_fields(&data).ok_or_else(bad)? {
         let Err(otp) = value else { continue };
         if field != 1 {
@@ -743,7 +964,7 @@ pub(crate) fn parse_migration(uri: &str) -> Result<(Vec<TotpInput>, u32)> {
             }
         }
         if otp_type != 2 && otp_type != 0 {
-            skipped += 1;
+            skip(&mut skipped, &name, &issuer, &secret, "hotp", SkipReason::Hotp);
             continue;
         }
         let account = match name.split_once(':') {
@@ -769,7 +990,7 @@ pub(crate) fn parse_migration(uri: &str) -> Result<(Vec<TotpInput>, u32)> {
         };
         match validate_totp(&input) {
             Ok(_) => list.push(input),
-            Err(_) => skipped += 1,
+            Err(_) => skip(&mut skipped, &input.account, &input.issuer, &secret, "totp", SkipReason::InvalidCode),
         }
     }
     Ok((list, skipped))
@@ -857,7 +1078,28 @@ fn parse_csv(text: &str) -> Result<Parsed> {
         let t = get(row, kind).to_lowercase();
         let is_note = t == "note" || t == "securenote" || get(row, url) == "http://sn";
         if !t.is_empty() && !is_note && t != "login" {
-            p.skipped += 1;
+            // Other types (aliases, cards, identities …): a note with every column, nothing is lost.
+            let mut d = Draft::new("note");
+            d.text("title", &get(row, title));
+            d.text("type", &t);
+            for (i, h) in header.iter().enumerate() {
+                let v = row.get(i).map(|x| x.trim()).unwrap_or("");
+                if v.is_empty() || d.fields.contains_key(h) || Some(i) == title {
+                    continue;
+                }
+                if h.contains("password") || h.contains("totp") || h.contains("secret") {
+                    d.secret(h, v);
+                } else {
+                    d.text(h, v);
+                }
+            }
+            let f = get(row, folder);
+            if !f.is_empty() && f != "Root" {
+                d.folder = Some(f);
+            }
+            if !d.is_empty() {
+                p.entries.push(d);
+            }
             continue;
         }
         let mut d = Draft::new(if is_note { "note" } else { "login" });
@@ -1013,7 +1255,10 @@ mod tests {
           {"type":5,"name":"SSH"}]}"#;
         let p = parse(json.as_bytes(), "export.json").unwrap();
         assert_eq!(p.format, "Bitwarden");
-        assert_eq!((p.entries.len(), p.totps.len(), p.skipped), (3, 1, 1));
+        assert_eq!((p.entries.len(), p.totps.len(), p.skipped.len()), (3, 1, 1));
+        // The SSH key item is not lost: name, reason and the original data come along.
+        assert_eq!((p.skipped[0].name.as_str(), p.skipped[0].reason), ("SSH", SkipReason::Unsupported));
+        assert!(p.skipped[0].raw.contains("\"SSH\""));
         let gh = &p.entries[0];
         assert_eq!(gh.get("username"), "ghul");
         assert_eq!(gh.fields["PIN"], Field::Secret("1234".into()));
@@ -1041,7 +1286,8 @@ mod tests {
         }
         let p = parse(&zip_bytes, "Proton Pass_export.zip").unwrap();
         assert_eq!(p.format, "Proton Pass");
-        assert_eq!((p.entries.len(), p.totps.len(), p.skipped), (2, 1, 1));
+        // The alias is taken over as a login (nothing skipped any more).
+        assert_eq!((p.entries.len(), p.totps.len(), p.skipped.len()), (3, 1, 0));
         assert_eq!(p.entries[0].get("username"), "a@b.de");
         assert_eq!(p.entries[0].get("Kundennr"), "42");
         assert_eq!(p.entries[0].folder.as_deref(), Some("Persönlich"));
@@ -1106,7 +1352,8 @@ mod tests {
         let p = parse(buf.get_ref(), "export.1pux").unwrap();
         assert_eq!(p.format, "1Password (1PUX)");
         assert_eq!(p.entries.len(), 3, "login, card, note; archived item left out");
-        assert_eq!(p.skipped, 1, "unsupported category counted");
+        assert_eq!(p.skipped.len(), 1, "unsupported category listed");
+        assert_eq!(p.skipped[0].name, "Server");
         assert_eq!(p.totps.len(), 1);
         let card = p.entries.iter().find(|e| e.entry_type == "card").unwrap();
         assert_eq!(card.folder.as_deref(), Some("Privat"));
@@ -1140,7 +1387,8 @@ mod tests {
               {{"type":"hotp","name":"c","issuer":"H","info":{{"secret":"{SECRET}","algo":"SHA1","digits":6,"counter":1}}}}]}}}}"#
         );
         let p = parse(aegis.as_bytes(), "aegis.json").unwrap();
-        assert_eq!((p.format.as_str(), p.totps.len(), p.skipped), ("Aegis", 1, 1));
+        assert_eq!((p.format.as_str(), p.totps.len(), p.skipped.len()), ("Aegis", 1, 1));
+        assert_eq!((p.skipped[0].name.as_str(), p.skipped[0].reason), ("H · c", SkipReason::Hotp));
         assert_eq!((p.totps[0].input.algorithm, p.totps[0].input.digits), (OtpAlgo::Sha256, 8));
         assert!(matches!(parse(br#"{"db":"ENCRYPTED"}"#, "a.json"), Err(GhulError::ImportEncrypted)));
 
@@ -1162,7 +1410,8 @@ mod tests {
 
         let list = format!("otpauth://totp/A:a?secret={SECRET}\notpauth://hotp/B:b?secret={SECRET}&counter=1\n");
         let p = parse(list.as_bytes(), "list.txt").unwrap();
-        assert_eq!((p.totps.len(), p.skipped), (1, 1));
+        assert_eq!((p.totps.len(), p.skipped.len()), (1, 1));
+        assert_eq!((p.skipped[0].name.as_str(), p.skipped[0].reason), ("B:b", SkipReason::Hotp));
     }
 
     #[test]
@@ -1198,7 +1447,8 @@ mod tests {
         }
         let uri = format!("otpauth-migration://offline?data={}", percent_encode(&b64));
         let p = parse(uri.as_bytes(), "qr").unwrap();
-        assert_eq!((p.format.as_str(), p.totps.len(), p.skipped), ("Google Authenticator", 1, 1));
+        assert_eq!((p.format.as_str(), p.totps.len(), p.skipped.len()), ("Google Authenticator", 1, 1));
+        assert!(p.skipped[0].raw.contains("Secret (Base32)"));
         let t = &p.totps[0].input;
         assert_eq!(
             (t.issuer.as_str(), t.account.as_str(), t.secret_base32.as_str()),

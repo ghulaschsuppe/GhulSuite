@@ -551,20 +551,28 @@ fn import_export_and_autofill() {
     let preview = super::suite::preview_import(bw.as_bytes().to_vec(), "bitwarden.json".into()).unwrap();
     assert_eq!((preview.entries, preview.totps, preview.totps_in_logins), (3, 0, 1));
     let r = s
-        .import_data(bw.as_bytes().to_vec(), "bitwarden.json".into(), Some(pass.clone()), Some(totp.clone()), true)
+        .import_data(
+            bw.as_bytes().to_vec(),
+            "bitwarden.json".into(),
+            Some(pass.clone()),
+            Some(totp.clone()),
+            true,
+            None,
+        )
         .unwrap();
     assert_eq!((r.entries, r.totps, r.duplicates), (3, 1, 0));
     assert_eq!(s.totp_codes(59).unwrap()[0].code, "287082");
     // Importing again finds only duplicates.
-    let r =
-        s.import_data(bw.as_bytes().to_vec(), "b.json".into(), Some(pass.clone()), Some(totp.clone()), true).unwrap();
+    let r = s
+        .import_data(bw.as_bytes().to_vec(), "b.json".into(), Some(pass.clone()), Some(totp.clone()), true, None)
+        .unwrap();
     assert_eq!((r.entries, r.totps, r.duplicates), (0, 0, 4));
     assert!(matches!(
-        s.import_data(bw.as_bytes().to_vec(), "b.json".into(), Some(totp.clone()), None, false),
+        s.import_data(bw.as_bytes().to_vec(), "b.json".into(), Some(totp.clone()), None, false, None),
         Err(GhulError::InvalidInput { .. })
     ));
     assert!(matches!(
-        s.import_data(b"random bytes".to_vec(), "x.bin".into(), Some(pass.clone()), None, false),
+        s.import_data(b"random bytes".to_vec(), "x.bin".into(), Some(pass.clone()), None, false, None),
         Err(GhulError::ImportUnknownFormat)
     ));
 
@@ -607,7 +615,7 @@ fn import_export_and_autofill() {
     let links = s.export_plain(totp.clone(), "pw-123456".into()).unwrap();
     assert!(String::from_utf8(links.clone()).unwrap().starts_with("otpauth://totp/GitHub:ghul?"));
     let other = s.create_vault(VaultKind::Pass, "Kopie".into()).unwrap();
-    let r = s.import_data(csv, "export.csv".into(), Some(other.clone()), None, false).unwrap();
+    let r = s.import_data(csv, "export.csv".into(), Some(other.clone()), None, false, None).unwrap();
     assert_eq!(r.entries, 5);
 }
 
@@ -2373,4 +2381,70 @@ fn files_of_a_newer_app_ask_for_an_update() {
     let e: GhulError =
         crate::vault::LockedContainer::parse(b"PK\x03\x04 not ours at all, really").err().unwrap().into();
     assert!(matches!(e, GhulError::Corrupted { .. }));
+}
+
+#[test]
+fn import_keeps_what_it_cannot_convert_and_names_it() {
+    use super::import::SkipReason;
+    use super::suite::KeepSkipped;
+    let d = Dirs::new("import-keep");
+    let s = d.suite();
+    s.create(
+        options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "Privat"), (VaultKind::Totp, "2FA")]),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    let (pass, totp) = (vault_id(&s, "Privat"), vault_id(&s, "2FA"));
+    // Proton Authenticator: a normal code, a link without a label (the name comes separately),
+    // a Steam code and a counter-based code (HOTP).
+    let secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+    let export = format!(
+        r#"{{"version":1,"entries":[
+          {{"content":{{"uri":"otpauth://totp/Proton:me?secret={secret}&issuer=Proton","entry_type":"Totp","name":"Proton"}}}},
+          {{"content":{{"uri":"otpauth://totp/?secret=JBSWY3DPEHPK3PXP","entry_type":"Totp","name":"Sparkasse"}}}},
+          {{"content":{{"uri":"steam://MFRGGZDFMZTWQ2LK","entry_type":"Steam","name":"Steam"}}}},
+          {{"content":{{"uri":"otpauth://hotp/Alt:konto?secret={secret}&counter=3","entry_type":"Totp","name":"Alt"}}}}]}}"#
+    );
+    let preview = super::suite::preview_import(export.as_bytes().to_vec(), "proton.json".into()).unwrap();
+    assert_eq!((preview.format.as_str(), preview.totps, preview.skipped), ("Proton Authenticator", 3, 1));
+    let item = &preview.skipped_items[0];
+    assert_eq!((item.name.as_str(), item.reason, item.in_entry), ("Alt", SkipReason::Hotp, false));
+
+    let keep = KeepSkipped {
+        folder: "Import – nicht umgewandelt".into(),
+        reason_label: "Grund".into(),
+        data_label: "Originaldaten".into(),
+        reason_hotp: "Zählerbasierter Code (HOTP)".into(),
+        reason_unsupported: "Eintragsart unbekannt".into(),
+        reason_invalid: "Code-Daten unvollständig".into(),
+    };
+    let r = s
+        .import_data(
+            export.as_bytes().to_vec(),
+            "proton.json".into(),
+            Some(pass.clone()),
+            Some(totp.clone()),
+            false,
+            Some(keep.clone()),
+        )
+        .unwrap();
+    assert_eq!((r.totps, r.skipped, r.kept), (3, 1, 1));
+    let codes = s.totp_codes(59).unwrap();
+    assert!(codes.iter().any(|c| c.issuer == "Sparkasse"), "label filled in from Proton's name");
+    let steam = codes.iter().find(|c| c.issuer == "Steam").unwrap();
+    assert_eq!(steam.code.len(), 5, "Steam Guard code: {}", steam.code);
+    // The HOTP account is kept as a note with its original data.
+    let notes = s.list_entries(VaultKind::Pass, Some(pass.clone())).unwrap();
+    let note = notes.iter().find(|e| e.title == "Alt").unwrap();
+    let full = s.get_entry(pass.clone(), note.id.clone()).unwrap();
+    let field =
+        |n: &str| full.fields.iter().find(|f| f.name == n).map(|f| format!("{:?}", f.value)).unwrap_or_default();
+    assert!(field("Originaldaten").contains("otpauth://hotp/Alt:konto"));
+    assert!(field("Grund").contains("HOTP"));
+    // A second import keeps nothing twice.
+    let r =
+        s.import_data(export.into_bytes(), "proton.json".into(), Some(pass), Some(totp), false, Some(keep)).unwrap();
+    assert_eq!((r.totps, r.kept), (0, 0));
 }
