@@ -40,6 +40,7 @@ name: GhulMail on a real server
 - eraseText
 - inputText: "10993"
 - hideKeyboard
+- assertVisible: "10993"
 # The kind of connection first (it sets its usual port 587), then the test server's port.
 - scrollUntilVisible:
     element: "STARTTLS"
@@ -59,11 +60,9 @@ name: GhulMail on a real server
 - eraseText
 - inputText: "10587"
 - hideKeyboard
-# The values really are in their fields (the incoming one may be scrolled out of view by now).
+# The value really is in its field. No upward scroll here: on the bottom sheet that drags
+# the sheet down and closes it.
 - assertVisible: "10587"
-- scrollUntilVisible:
-    element: "10993"
-    direction: UP
 - takeScreenshot: s2-mail-servers
 - scrollUntilVisible:
     element: "Check and save"
