@@ -299,6 +299,13 @@ fun AutofillSection(state: AppState) {
             Text(stringResource(if (status == AutofillStatus.ON) Res.string.a_autofill_change else Res.string.a_autofill_enable))
         }
         Hint(stringResource(Res.string.set_autofill_hint))
+        if (status == AutofillStatus.ON) {
+            Text(stringResource(Res.string.set_autofill_how), style = MaterialTheme.typography.labelLarge)
+            Hint(stringResource(Res.string.set_autofill_how_field))
+            Hint(stringResource(Res.string.set_autofill_how_apps))
+            Hint(stringResource(Res.string.set_autofill_how_chrome))
+            Hint(stringResource(Res.string.set_autofill_how_manual))
+        }
     }
 }
 

@@ -1351,4 +1351,9 @@
     <string name="mail_bg_limited">Android slows GhulSuite down in the background (battery optimisation). New mail may arrive late or only every 15 minutes.</string>
     <string name="mail_bg_allow">Allow in the background</string>
     <string name="mail_bg_check">Check background setting</string>
+    <string name="set_autofill_how">Where suggestions appear</string>
+    <string name="set_autofill_how_field">Tap a login field. Suggestions appear below the field or in the keyboard\'s suggestion bar.</string>
+    <string name="set_autofill_how_apps">In an app GhulSuite first offers “Choose another login …”. After that it remembers the app and suggests the login directly.</string>
+    <string name="set_autofill_how_chrome">Chrome: Settings → Autofill services → “Autofill using another service”, then restart Chrome. Firefox and browsers such as Vivaldi, Brave or Edge need no setting.</string>
+    <string name="set_autofill_how_manual">Nothing shows up? Long-press the field and choose “Autofill”.</string>
 </resources>

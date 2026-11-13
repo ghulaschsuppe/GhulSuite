@@ -1351,4 +1351,9 @@
     <string name="mail_bg_limited">Android bremst GhulSuite im Hintergrund (Akku-Optimierung). Neue Mails kommen dann verspätet oder nur alle 15 Minuten.</string>
     <string name="mail_bg_allow">Im Hintergrund erlauben</string>
     <string name="mail_bg_check">Hintergrund-Einstellung prüfen</string>
+    <string name="set_autofill_how">So erscheinen die Vorschläge</string>
+    <string name="set_autofill_how_field">Tippe in ein Anmeldefeld. Die Vorschläge erscheinen unter dem Feld oder oben in der Tastaturleiste.</string>
+    <string name="set_autofill_how_apps">In einer App bietet GhulSuite beim ersten Mal „Andere Anmeldung wählen …“ an. Danach merkt es sich die App und schlägt die Anmeldung direkt vor.</string>
+    <string name="set_autofill_how_chrome">Chrome: Einstellungen → Autofill-Dienste → „Autofill über einen anderen Dienst“ wählen und Chrome neu starten. Firefox und Browser wie Vivaldi, Brave oder Edge brauchen keine Einstellung.</string>
+    <string name="set_autofill_how_manual">Erscheint nichts? Lange auf das Feld drücken und „Automatisch ausfüllen“ wählen.</string>
 </resources>
