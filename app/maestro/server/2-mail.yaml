@@ -24,37 +24,32 @@ name: GhulMail on a real server
     element: "Show server settings"
     direction: DOWN
 - tapOn: "Show server settings"
-# Incoming server first (it is above), then scroll on to the outgoing one.
+# The servers were filled in from the address (imap./smtp. + domain). Tap their values, not the
+# labels: "Server address" and "Port" exist twice.
 - scrollUntilVisible:
-    element: "Incoming server \\(IMAP\\)"
+    element: "imap\\.test\\.example"
     direction: DOWN
-- tapOn:
-    text: "Server address"
-    below: "Incoming server \\(IMAP\\)"
+- tapOn: "imap\\.test\\.example"
 - eraseText
 - inputText: ${GHUL_SERVER}
-- tapOn:
-    text: "Port"
-    below: "Incoming server \\(IMAP\\)"
+- tapOn: "993"
 - eraseText
 - inputText: "10993"
 - hideKeyboard
-# The kind of connection first (it sets its usual port), then the test server's port.
+# The kind of connection first (it sets its usual port 587), then the test server's port.
 - scrollUntilVisible:
     element: "STARTTLS"
     direction: DOWN
 - tapOn: "STARTTLS"
-- tapOn:
-    text: "Server address"
-    below: "Outgoing server \\(SMTP\\)"
+- tapOn: "smtp\\.test\\.example"
 - eraseText
 - inputText: ${GHUL_SERVER}
-- tapOn:
-    text: "Port"
-    below: "Outgoing server \\(SMTP\\)"
+- tapOn: "587"
 - eraseText
 - inputText: "10587"
 - hideKeyboard
+- assertVisible: "10993"
+- assertVisible: "10587"
 - takeScreenshot: s2-mail-servers
 - scrollUntilVisible:
     element: "Check and save"

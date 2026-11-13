@@ -21,12 +21,16 @@ name: GhulDrive on a real server
     timeout: 10000
 - tapOn: "Server address"
 - inputText: ${GHUL_SERVER}
-- tapOn: "Port"
+# Tap the port's own value ("22"), not its label: the label sits next to the address field.
+- tapOn: "22"
 - eraseText
 - inputText: "2223"
 - tapOn: "User name"
 - inputText: "ghulsftp"
 - hideKeyboard
+# The values really are in their fields (the log shows the fields if not).
+- assertVisible: ${GHUL_SERVER}
+- assertVisible: "2223"
 # The chip "Password" (the field below is called "Server password").
 - tapOn: "Password"
 - scrollUntilVisible:
