@@ -350,7 +350,7 @@ fn shares_and_mail_keys() {
     let key: [u8; 32] = *sealed.link_key;
     // Without the password: PBKDF2 with the real iteration count would make every try slow
     // (the parser is the same; the iteration count itself is bounded by MAX_ITERATIONS).
-    fuzz("share", &[sealed.data.clone()], 2000, |d| {
+    fuzz("share", std::slice::from_ref(&sealed.data), 2000, |d| {
         let _ = crate::share::open(d, &key, None);
         let _ = crate::share::b64url_decode(&s(d));
     });

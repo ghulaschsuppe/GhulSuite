@@ -11,6 +11,8 @@ crate-type = ["cdylib", "lib"]
 name = "ghul_core"
 
 [features]
+# Entry points for the long fuzzing runs in core/fuzz (no effect on the app).
+fuzzing = []
 # Exposes a software authenticator for FFI tests on the host. Never enabled in app builds.
 mock = []
 

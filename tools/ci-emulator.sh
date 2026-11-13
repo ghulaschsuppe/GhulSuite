@@ -63,6 +63,29 @@ timeout 10 adb shell settings put global hide_error_dialogs 1 || true
 sleep 30
 timeout 10 adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS > /dev/null || true
 timeout 10 adb shell input keyevent 82 || true
-log "Maestro-Abläufe starten"
-timeout 1200 "$(dirname "$0")/run-maestro.sh" "$apk" "$out"
-log "Maestro fertig"
+if [ "${SKIP_MAESTRO:-0}" != 1 ]; then
+  log "Maestro-Abläufe starten"
+  timeout 1200 "$(dirname "$0")/run-maestro.sh" "$apk" "$out"
+  log "Maestro fertig"
+else
+  timeout 120 adb install -r "$apk" > /dev/null
+fi
+# App fuzzing (nightly): tens of thousands of random taps, swipes and keys inside the app.
+# Every crash or "app isn't responding" fails the job; the log names the seed to repeat it.
+if [ "${MONKEY_EVENTS:-0}" -gt 0 ]; then
+  pkg="de.danerd.ghulsuite.dev"
+  failed=""
+  for seed in ${MONKEY_SEEDS:-11 4242 90210}; do
+    log "Monkey: $MONKEY_EVENTS Ereignisse, Seed $seed"
+    timeout 2400 adb shell monkey -p "$pkg" -s "$seed" --throttle 20 --pct-syskeys 0 --pct-appswitch 2 \
+      --ignore-security-exceptions -v "$MONKEY_EVENTS" > "$out/monkey-$seed.txt" 2>&1 || true
+    if grep -qE "// CRASH|// NOT RESPONDING|ANR in $pkg" "$out/monkey-$seed.txt"; then
+      log "::error::Monkey: Absturz oder Hänger mit Seed $seed (siehe monkey-$seed.txt)"
+      grep -A 25 -E "// CRASH|// NOT RESPONDING" "$out/monkey-$seed.txt" | head -60 || true
+      failed=1
+    fi
+    timeout 20 adb shell am force-stop "$pkg" || true
+  done
+  [ -z "$failed" ] || exit 1
+  log "Monkey ohne Absturz"
+fi

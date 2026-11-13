@@ -1,0 +1,125 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# The long tests of docs/TESTKONZEPT.md: every night (and on demand). They take too long for every
+# push. A failure shows up as a failed run (GitHub e-mails the owner) with the logs as artifacts.
+name: Nachtlauf (lange Tests)
+
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  fuzz:
+    name: Fuzzing lang (libFuzzer, je Ziel 15 Minuten)
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Nightly und cargo-fuzz
+        run: |
+          rustup toolchain install nightly --profile minimal
+          cargo install cargo-fuzz --locked
+      - name: Fuzzing
+        working-directory: core/fuzz
+        run: |
+          for t in parsers container_parse ctap_responses; do
+            cargo +nightly fuzz run "$t" -- -max_total_time=900 -rss_limit_mb=3000 -timeout=10
+          done
+      - name: Fundstücke sichern
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fuzz-funde
+          path: core/fuzz/artifacts/
+
+  long:
+    name: Chaos-Nutzer, Alltags- und Stresstest lang (Release)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Lange Läufe
+        working-directory: core
+        run: |
+          rustup toolchain install stable --profile minimal
+          cargo test --locked --release -p ghul-core --lib -- --include-ignored --nocapture --test-threads=2 \
+            crazy everyday chaos attacks absurd fuzz_tests wycheproof
+
+  monkey:
+    name: App-Fuzzing im Emulator (Monkey, 3 × 30.000 Gesten)
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: APK des letzten Laufs von main holen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for id in $(gh run list -R "$GITHUB_REPOSITORY" -w android.yml -b main -L 15 --json databaseId -q '.[].databaseId'); do
+            if gh run download "$id" -R "$GITHUB_REPOSITORY" -n ghulsuite-dev -D dist 2> /dev/null; then echo "APK aus Lauf $id"; break; fi
+          done
+          test -f dist/ghulsuite-dev.apk
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: KVM für den Emulator freischalten
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Monkey
+        env:
+          SKIP_MAESTRO: '1'
+          MONKEY_EVENTS: '30000'
+        run: |
+          mkdir -p monkey-out
+          tools/ci-emulator.sh dist/ghulsuite-dev.apk monkey-out
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: monkey
+          path: monkey-out/
+          retention-days: 14
+
+  static:
+    name: Statische Prüfung (Geheimnisse, PHP-Modul, Abhängigkeiten)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      GITLEAKS_VERSION: '8.21.2'
+      GITLEAKS_SHA256: 5bc41815076e6ed6ef8fbecc9d9b75bcae31f39029ceb55da08086315316e3ba
+      PHPSTAN_VERSION: '1.12.7'
+      PHPSTAN_SHA256: e5c896f4bf3afa9a2893d8f0ac00381f5b9a66de9b92f3c7955388aa18bc209d
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - name: Zugangsdaten im Repository? (gitleaks, ganze Historie)
+        run: |
+          curl -fsSL -o /tmp/gl.tgz "https://github.com/gitleaks/gitleaks/releases/download/v$GITLEAKS_VERSION/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "$GITLEAKS_SHA256  /tmp/gl.tgz" | sha256sum -c -
+          tar xzf /tmp/gl.tgz -C /tmp gitleaks
+          /tmp/gitleaks detect --source . --redact --no-banner -v
+      - name: PHP-Modul (PHPStan, Stufe 6)
+        run: |
+          curl -fsSL -o /tmp/phpstan.phar "https://github.com/phpstan/phpstan/releases/download/$PHPSTAN_VERSION/phpstan.phar"
+          echo "$PHPSTAN_SHA256  /tmp/phpstan.phar" | sha256sum -c -
+          php /tmp/phpstan.phar analyse --no-progress --level 6 core/ghul-core/server/ghulsuite.php
+      # New advisories appear without any push: checked every night (exceptions: core/.cargo/audit.toml).
+      - name: Abhängigkeiten (neue bekannte Lücken)
+        working-directory: core
+        run: |
+          command -v cargo-audit > /dev/null || cargo install cargo-audit --locked --quiet
+          cargo audit
+          # Unmaintained crates are reported, not failed on.
+          cargo audit --deny unmaintained > /tmp/unmaintained.txt 2>&1 || echo "::warning::Nicht mehr gepflegte Abhängigkeiten, siehe Log"
+          tail -n 40 /tmp/unmaintained.txt

@@ -148,7 +148,7 @@ fn a_damaged_server_file_never_deletes_a_vault() {
     // The server got the good copy back, A sees everything too.
     p.a.sync_folder(&fs).unwrap();
     assert_eq!(titles(&p.a), vec!["Bank", "Mail", "Shop"]);
-    assert_eq!(std::fs::read(&path).unwrap().len() > data.len() / 2, true);
+    assert!(std::fs::read(&path).unwrap().len() > data.len() / 2);
 }
 
 #[test]
