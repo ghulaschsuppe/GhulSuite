@@ -147,6 +147,52 @@ impl Drop for PhpServer {
 }
 
 /// Starts the server module under `php -S`; `None` if PHP is not installed.
+/// Starts PHP's built-in web server for `dir` on a free port and returns it once it answers.
+///
+/// Tests run in parallel, and a port found free can be taken by another test's server before
+/// ours binds it (seen on Windows). Then ours exits and the other one answers: the test would talk
+/// to the wrong server. So the server must hand out a token only this folder has; otherwise it is
+/// stopped and another port is tried.
+pub(crate) fn spawn_php(dir: &std::path::Path) -> Option<(std::process::Child, u16)> {
+    use rand_core::RngCore;
+    let mut t = [0u8; 16];
+    rand_core::OsRng.fill_bytes(&mut t);
+    let token = crate::kdf::hex(&t);
+    let check = dir.join("ghul-port-check.txt");
+    std::fs::write(&check, &token).ok()?;
+    for _ in 0..10 {
+        let port = std::net::TcpListener::bind("127.0.0.1:0").ok()?.local_addr().ok()?.port();
+        let mut child = std::process::Command::new("php")
+            .args(["-S", &format!("127.0.0.1:{port}"), "-t"])
+            .arg(dir)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .ok()?;
+        let url = super::http::Url::parse(&format!("http://127.0.0.1:{port}/ghul-port-check.txt")).ok()?;
+        let mut ours = false;
+        for _ in 0..50 {
+            if child.try_wait().ok().flatten().is_some() {
+                break; // could not bind the port
+            }
+            let r =
+                super::block_on(super::http::request("GET", &url, &[], b"", None), std::time::Duration::from_secs(2));
+            if let Ok(r) = r {
+                ours = r.status == 200 && r.body == token.as_bytes();
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        if ours {
+            let _ = std::fs::remove_file(&check);
+            return Some((child, port));
+        }
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    None
+}
+
 pub(crate) fn php_server() -> Option<PhpServer> {
     use rand_core::RngCore;
     std::process::Command::new("php").arg("-v").output().ok()?;
@@ -156,20 +202,7 @@ pub(crate) fn php_server() -> Option<PhpServer> {
     let dir = std::env::temp_dir().join(format!("ghul-php-{run}"));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("ghulsuite.php"), super::phpfs::server_file(&key, "ghul-data-test")).unwrap();
-    let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
-    let child = std::process::Command::new("php")
-        .args(["-S", &format!("127.0.0.1:{port}"), "-t"])
-        .arg(&dir)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .ok()?;
-    for _ in 0..50 {
-        if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    }
+    let (child, port) = spawn_php(&dir)?;
     Some(PhpServer { child, url: format!("http://127.0.0.1:{port}/ghulsuite.php"), key, dir })
 }
 
