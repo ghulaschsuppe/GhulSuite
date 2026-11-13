@@ -209,3 +209,7 @@ actual fun epochMillisOf(local: String): Long {
         local.substring(11, 13).toInt(), local.substring(14, 16).toInt(), 0)
     return c.timeInMillis
 }
+
+actual fun applyAppLanguage(tag: String) {
+    // Takes effect at the next start (Main.kt applies the stored language before the window opens).
+}

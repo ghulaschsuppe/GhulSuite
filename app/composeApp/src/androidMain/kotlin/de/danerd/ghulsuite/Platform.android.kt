@@ -75,3 +75,14 @@ actual fun epochMillisOf(local: String): Long {
         local.substring(11, 13).toInt(), local.substring(14, 16).toInt(), 0)
     return c.timeInMillis
 }
+
+actual fun applyAppLanguage(tag: String) {
+    val activity = de.danerd.ghulsuite.MainActivity.current?.get() ?: return
+    if (android.os.Build.VERSION.SDK_INT >= 33) {
+        // The system keeps the choice (also visible under Settings › Apps › GhulSuite › Language).
+        activity.getSystemService(android.app.LocaleManager::class.java)?.applicationLocales =
+            if (tag.isEmpty()) android.os.LocaleList.getEmptyLocaleList() else android.os.LocaleList.forLanguageTags(tag)
+    } else {
+        activity.recreate() // MainActivity.attachBaseContext applies the stored language
+    }
+}

@@ -40,8 +40,24 @@ class MainActivity : ComponentActivity() {
     private val notificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* optional */ }
 
+    /** Before Android 13: the language chosen in the app (newer versions do this themselves). */
+    override fun attachBaseContext(base: android.content.Context) {
+        val tag = base.getSharedPreferences("settings", MODE_PRIVATE).getString("app_language", "").orEmpty()
+        if (tag.isEmpty() || android.os.Build.VERSION.SDK_INT >= 33) return super.attachBaseContext(base)
+        val locale = java.util.Locale.forLanguageTag(tag)
+        java.util.Locale.setDefault(locale)
+        val conf = android.content.res.Configuration(base.resources.configuration).apply { setLocale(locale) }
+        super.attachBaseContext(base.createConfigurationContext(conf))
+    }
+
+    override fun onDestroy() {
+        if (current?.get() === this) current = null
+        super.onDestroy()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        current = java.lang.ref.WeakReference(this)
         CrashLog.pending(this)?.let { report ->
             CrashLog.show(this, report)
             return
@@ -99,5 +115,8 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val ACTION_OPEN_MAIL = "de.danerd.ghulsuite.OPEN_MAIL"
         const val ACTION_OPEN_EVENT = "de.danerd.ghulsuite.OPEN_EVENT"
+        /** The running activity (language switch). */
+        @Volatile
+        var current: java.lang.ref.WeakReference<android.app.Activity>? = null
     }
 }

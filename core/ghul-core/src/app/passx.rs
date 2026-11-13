@@ -499,13 +499,15 @@ mod tests {
 
     #[test]
     fn passphrases() {
-        let p = generate_passphrase(4, "-".into(), true, true).unwrap();
-        let parts: Vec<&str> = p.split('-').collect();
+        // Space as separator: a few list words contain a hyphen ("t-shirt", "yo-yo").
+        let p = generate_passphrase(4, " ".into(), true, true).unwrap();
+        let parts: Vec<&str> = p.split(' ').collect();
         assert_eq!(parts.len(), 5);
         assert!(parts[..4].iter().all(|w| w.chars().next().unwrap().is_uppercase()));
         assert!(parts[4].parse::<u32>().unwrap() >= 10);
         assert!(generate_passphrase(2, "-".into(), false, false).is_err());
         assert_eq!(WORDS.lines().count(), 7776);
+        assert!(WORDS.lines().all(|w| !w.contains(' ')));
     }
 
     #[test]

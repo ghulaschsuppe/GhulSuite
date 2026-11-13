@@ -79,3 +79,5 @@ expect fun utcOffsetMinutes(): Int
 
 /** Unix milliseconds of a local `YYYY-MM-DDTHH:MM`. */
 expect fun epochMillisOf(local: String): Long
+/** Switches the app language ("" = follow the system). Android restarts the screen; Windows after a restart. */
+expect fun applyAppLanguage(tag: String)
