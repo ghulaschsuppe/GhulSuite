@@ -191,7 +191,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             while (calDefaultCalendar.isEmpty() && waited < 50) { kotlinx.coroutines.delay(100); waited++ }
             val target = calDefaultCalendar
             if (target.isEmpty()) return@launch
-            runCatching { backend.cal.importIcs(target, data, utcOffsetMinutes()) }
+            runCatching { backend.cal.importIcs(target, data) }
                 .onSuccess { n ->
                     changed()
                     message(getString(Res.string.cal_import_done).replace("%1\$s", n.toString()))

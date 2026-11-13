@@ -10,6 +10,8 @@ Was GhulSuite ist und kann, steht in der [README](README.md), das vollständige 
   Server sehen nur Chiffretext.
 - **Selbst hostbar, ohne bestimmten Anbieter:** beliebige IMAP/SMTP-Mailserver, eigene Speicher per SFTP, FTPS
   oder das GhulSuite-Server-Modul. Das Server-Modul läuft auf **Standard-Webhosting mit PHP 8.1, ohne Datenbank**.
+- **Fünf Bereiche in einer App:** GhulPass (Passwörter), GhulAuth (2FA), GhulCal (Kalender), GhulDrive (Dateien),
+  GhulMail (E-Mail).
 - **Der Ordner ist die Suite:** `.ghlpss` (Passwörter), `.ghltotp` (2FA) und `.ghlcal` (Kalender) im Ordner gehören dazu, `.ghlsuite`
   hält Einstellungen, Mail-Konten und den Drive-Schlüssel, `.ghlkey` ist eine Schlüsseldatei.
 - **Schutz:** Master-Passwort **plus** zweiter Faktor (Security Key oder Schlüsseldatei); der Wiederherstellungscode
@@ -49,6 +51,8 @@ tools/                 Testserver (SFTP/IMAP/SMTP), Prüfskripte, Emulator-Skrip
   Netzwerk-Tests gegen echte lokale Server: vorher `eval "$(sudo -E tools/test-servers.sh)"`.
 - App: `cd app && ./gradlew :composeApp:desktopTest :composeApp:assembleDebug` (baut Kern und Anbindung mit).
 - Oberfläche im Emulator: `tools/run-maestro.sh <apk>`, unter Windows `maestro test app\maestro`.
+- Weitere Prüfungen: `python3 tools/attack-php-module.py` (Angriffe auf das Server-Modul), `tools/check-texts.py`,
+  `tools/check-android-manifest.py`; nachts läuft `.github/workflows/nightly.yml` (Fuzzing lang, Langläufe, Monkey).
 - Manuelle Tests: [`docs/TESTPLAN.md`](docs/TESTPLAN.md) (Android), [`docs/TESTPLAN-WINDOWS.md`](docs/TESTPLAN-WINDOWS.md).
 
 ## CI und Testserver
@@ -77,5 +81,11 @@ tools/                 Testserver (SFTP/IMAP/SMTP), Prüfskripte, Emulator-Skrip
 - Vor jedem Commit: `cargo fmt`, Clippy (auch `--target x86_64-pc-windows-gnu`), Kern-Tests, Desktop-Tests.
 - Neue Texte immer auf Deutsch **und** Englisch.
 - Neue Funktionen bekommen Tests im Kern und einen Eintrag im Testplan.
+- **Die README ist die Hauptseite des Projekts und bleibt aktuell:** Jeder Pull Request, der etwas ändert, das Nutzer
+  oder Mitlesende betrifft (Funktionen, Bereiche, Sicherheit, Server-Varianten, Plattformen, Download, Stand der
+  Prüfungen), passt die README im selben Pull Request an. Vor dem Merge kurz gegenlesen: Stimmt noch, was dort steht?
+  Die README verspricht nichts, was der Code nicht hält; bekannte offene Punkte stehen in
+  [`docs/TESTPROTOKOLL.md`](docs/TESTPROTOKOLL.md).
+- Gefundene Fehler und offene Punkte kommen mit Nummer ins Testprotokoll; Testkonzept: [`docs/TESTKONZEPT.md`](docs/TESTKONZEPT.md).
 - Kommentare und Commit-Nachrichten auf Englisch, Dokumentation auf Deutsch.
 - Neue Quelldateien beginnen mit `// SPDX-License-Identifier: AGPL-3.0-or-later`.

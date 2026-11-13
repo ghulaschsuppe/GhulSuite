@@ -6,7 +6,7 @@
 
 <img src="docs/images/stripes.svg" width="152" alt="">
 
-**Passwörter · 2FA · Dateien · Mail – in einer App, verschlüsselt auf deinem Gerät, gespeichert auf deinem eigenen Server.**
+**Passwörter · 2FA · Kalender · Dateien · Mail – in einer App, verschlüsselt auf deinem Gerät, gespeichert auf deinem eigenen Server.**
 
 Die selbst gehostete Alternative zu den bekannten Privacy-Suiten: gleicher Komfort, aber ohne Abo,
 ohne Konto bei einem Anbieter und ohne Vertrauensvorschuss – die Daten liegen da, wo **du** sie hinlegst.
@@ -34,24 +34,25 @@ Die meisten „sicheren“ Suiten verlangen, dass du einem Unternehmen vertraust
 dessen Zukunft. GhulSuite dreht das um:
 
 - 🔐 **Ende-zu-Ende verschlüsselt, immer.** Alles wird auf deinem Gerät verschlüsselt, bevor es irgendwohin geht.
-  Dein Server sieht nur Datensalat – keine Namen, keine Ordner, keine Inhalte.
+  Dein Server sieht nur Datensalat – keine Inhalte, keine Datei- und Ordnernamen deiner Ablage.
 - 🏠 **Dein Server, deine Regeln.** Ein günstiges Standard-Webhosting mit PHP reicht. Keine Datenbank, kein Docker,
   kein Root-Zugang nötig. Oder jeder Server mit SFTP/FTPS.
 - 🗝️ **Zwei Faktoren, ohne Ausnahme.** Master-Passwort **plus** Security Key (FIDO2) oder Schlüsseldatei.
   Dazu ein Wiederherstellungscode mit Notfallblatt – für den Tag, an dem alles schiefgeht.
 - 📦 **Der Ordner ist die Suite.** Deine Daten sind normale, verschlüsselte Dateien. Kopieren, sichern, auf den
   USB-Stick legen – ohne Export-Zwang und ohne Anbieterbindung.
-- 🧩 **Eine App statt vier.** Ein Entsperren, ein Design, eine Synchronisation.
+- 🧩 **Eine App statt fünf.** Ein Entsperren, ein Design, eine Synchronisation.
 - 💯 **Open Source.** Jede Zeile ist hier nachlesbar.
 
-## Die vier Bereiche
+## Die fünf Bereiche
 
 | | Bereich | Was er kann |
 |---|---|---|
-| 🟣 | **GhulPass** – Passwörter | Anmeldungen, Notizen, Karten, WLAN, Identitäten, SSH-Schlüssel · Autofill in Apps und Browsern · Passwort- und Passphrasen-Generator · Sicherheitscheck (schwach, doppelt, ohne 2FA, optional Datenlecks per k-Anonymität) · Passwortverlauf, Anhänge, eigene Felder · mehrere Tresore |
+| 🟣 | **GhulPass** – Passwörter | Anmeldungen, Notizen, Karten, WLAN, Identitäten, SSH-Schlüssel · Autofill in Apps und Browsern, nur auf der echten Seite (Schutz vor Phishing-Adressen) · Passwort- und Passphrasen-Generator · Sicherheitscheck (schwach, doppelt, ohne 2FA, optional Datenlecks per k-Anonymität) · Passwortverlauf, Anhänge, eigene Felder · mehrere Tresore |
 | 🟢 | **GhulAuth** – 2FA-Codes | TOTP für alle Dienste · QR-Code per Kamera oder aus einem Bild · Import aus Google Authenticator, Aegis, 2FAS u. a. · Export als QR · Favoriten, Kachelansicht · Uhr-Prüfung |
+| 🔴 | **GhulCal** – Kalender | Termine verschlüsselt im Suite-Ordner · Monat, Woche, Tag, Liste · Serien und Erinnerungen · Schnell-Eintragen („Zahnarzt Fr 10 Uhr“) · Feiertage nach Bundesland, Österreich, Schweiz · mehrere Kalender, Geburtstage mit Alter · Import und Export als .ics, Zeitzonen werden umgerechnet · bewusst ohne CalDAV |
 | 🔵 | **GhulDrive** – Dateien | Verschlüsselte Ablage auf deinem Server · Ordner, Suche, Favoriten, Zuletzt · Offline verfügbar · Versionen und Papierkorb · Freigabelinks mit Ablauf, Passwort und Einmal-Link · verschlüsselte ZIPs · Dokumente scannen · Foto-Sicherung |
-| 🟠 | **GhulMail** – E-Mail | Jedes IMAP/SMTP-Postfach · OpenPGP ohne Einrichtung (Autocrypt, WKD): signiert immer, verschlüsselt automatisch · Alle Posteingänge, Unterhaltungen, Labels · Entwürfe, Später senden · Benachrichtigungen mit wählbarem Inhalt · offline lesen |
+| 🟠 | **GhulMail** – E-Mail | Jedes IMAP/SMTP-Postfach · OpenPGP ohne Einrichtung (Autocrypt, WKD): signiert immer, verschlüsselt automatisch · Alle Posteingänge, Unterhaltungen, Labels · Entwürfe, Später senden · Benachrichtigungen mit wählbarem Inhalt · offline lesen · als Standard-Mail-App nutzbar (Android) |
 
 Dazu: **Panik-Sperre** (Schütteln oder Schnellkachel), Auto-Sperre, Entsperren per Fingerabdruck oder App-PIN,
 Schutz vor Bildschirmfotos, Komplett-Sicherung als ZIP und Synchronisation zwischen all deinen Geräten.
@@ -104,6 +105,23 @@ Mails brauchen keinen eigenen Server: GhulMail spricht direkt mit deinem Postfac
 - **Kern in Rust**, eine gemeinsame Codebasis für Android und Windows; Fuzzing, Abhängigkeitsprüfung und Tests gegen
   echte SFTP-, FTPS-, IMAP- und SMTP-Server in jeder CI-Runde.
 - Ein offenes [Sicherheits-Audit](docs/AUDIT.md) beschreibt Risiken und was dagegen getan wurde.
+
+## Geprüft – und ehrlich, was noch fehlt
+
+GhulSuite ist ein Soloprojekt ohne bezahlten externen Audit. Umso wichtiger ist, dass jeder nachprüfen kann, was
+getestet wird und was nicht:
+
+- **Bei jeder Änderung** laufen über eine Million Einzelprüfungen: Angriffe auf Dateien, Server und Synchronisation,
+  ein „bekloppter Nutzer“ auf drei Geräten, kaputte und böswillige Eingaben in jeden Parser – dazu öffentliche
+  Sammlungen wie Project Wycheproof (Kryptografie), die Big List of Naughty Strings, XSS- und CRLF-Sammlungen für
+  Mails, die URL-Testdaten der Browser, JSONTestSuite, Kalenderdateien anderer Programme und die Zeitzonen-Regeln
+  der ganzen Welt. Das Server-Modul muss 335 gezielte Angriffe abwehren.
+- **Jede Nacht** zusätzlich: langes Fuzzing, Dauerläufe, zufällige Bedienung im Emulator, Server mit kaputtem TLS.
+- **Was gefunden wurde und was offen ist,** steht mit Nummer und Schwere im
+  [Testprotokoll](docs/TESTPROTOKOLL.md); wie getestet wird, im [Testkonzept](docs/TESTKONZEPT.md).
+
+Kein Test beweist, dass es keine Lücke mehr gibt. GhulSuite ist eine **Entwicklungsversion**: Nutze sie mit
+regelmäßiger Sicherung – und wenn du dich mit Sicherheit auskennst: Lies mit, greif an, melde, was du findest.
 
 ## Umziehen leicht gemacht
 

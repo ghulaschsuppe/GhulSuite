@@ -66,8 +66,6 @@ actual fun localNow(): String {
         "T${p(c.get(java.util.Calendar.HOUR_OF_DAY))}:${p(c.get(java.util.Calendar.MINUTE))}"
 }
 
-actual fun utcOffsetMinutes(): Int = java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 60000
-
 actual fun epochMillisOf(local: String): Long {
     val c = java.util.Calendar.getInstance()
     c.clear()

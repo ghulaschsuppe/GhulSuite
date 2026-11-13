@@ -296,8 +296,12 @@ fn validate(ev: &mut CalEvent) -> Result<()> {
     ev.exceptions.retain(|d| Date::parse(d).is_some());
     ev.exceptions.sort();
     ev.exceptions.dedup();
+    ev.reminders.retain(|r| *r <= MAX_REMINDER_MINUTES);
     Ok(())
 }
+
+/// A reminder comes at most a year ahead; files of other programs carry odd ones (decades).
+pub(crate) const MAX_REMINDER_MINUTES: u32 = 366 * 1440;
 
 fn tombstone(e: &mut Entry) {
     e.fields.clear();
@@ -714,11 +718,17 @@ impl GhulSuite {
     }
 
     /// Imports the events of an `.ics` file into a calendar; returns how many were added.
-    /// Events already present (same title, start and end) are skipped.
-    pub fn cal_import_ics(&self, calendar_id: String, data: Vec<u8>, utc_offset_minutes: i32) -> Result<u32> {
+    /// Events already present (same title, start and end) are skipped. Times in UTC or in another
+    /// time zone become wall-clock time of this device, with the offsets `zones` gives for that day.
+    pub fn cal_import_ics(
+        &self,
+        calendar_id: String,
+        data: Vec<u8>,
+        zones: std::sync::Arc<dyn super::caltext::TimeZones>,
+    ) -> Result<u32> {
         let text = String::from_utf8_lossy(&data);
         let events =
-            super::caltext::ics_import(&text, utc_offset_minutes).map_err(|msg| GhulError::InvalidInput { msg })?;
+            super::caltext::ics_import_zoned(&text, zones.as_ref()).map_err(|msg| GhulError::InvalidInput { msg })?;
         self.with_open(|o| {
             let vid = vault_with(o, &calendar_id, T_CAL)?;
             let (_, c) = o.vault_mut(&vid)?;

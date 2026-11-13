@@ -11,4 +11,4 @@ adb uninstall de.danerd.ghulsuite.dev > /dev/null 2>&1 || true
 timeout 300 adb install -r "$apk"
 # English texts, as the flows expect them.
 adb shell "settings put system system_locales en-US" > /dev/null 2>&1 || true
-timeout 1100 maestro test "$(dirname "$0")/../app/maestro" --format junit --output "$out/report.xml" --test-output-dir "$out"
+timeout 1400 maestro test "$(dirname "$0")/../app/maestro" --format junit --output "$out/report.xml" --test-output-dir "$out"

@@ -70,8 +70,8 @@ open class CoreCalBackend(protected val suite: () -> GhulSuite) : CalBackend {
 
     override suspend fun eventIcs(id: String): String = io { suite().calEventIcs(id) }
 
-    override suspend fun importIcs(calendarId: String, data: ByteArray, utcOffsetMinutes: Int): Int =
-        io { suite().calImportIcs(calendarId, data, utcOffsetMinutes).toInt() }
+    override suspend fun importIcs(calendarId: String, data: ByteArray): Int =
+        io { suite().calImportIcs(calendarId, data, DeviceTimeZones).toInt() }
 
     override fun quickParse(text: String, today: String, nowMinutes: Int): CalQuickUi {
         val q = calQuickParse(text, today, nowMinutes.toUInt())

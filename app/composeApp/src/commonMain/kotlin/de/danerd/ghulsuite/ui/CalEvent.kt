@@ -835,7 +835,7 @@ fun CalendarsSheet(state: AppState, close: () -> Unit) {
     val doneMsg = stringResource(Res.string.cal_import_done)
     val pick = rememberOpenFile { f ->
         val target = importInto ?: return@rememberOpenFile
-        state.run(block = { cal.importIcs(target, f.bytes, utcOffsetMinutes()) }) { n ->
+        state.run(block = { cal.importIcs(target, f.bytes) }) { n ->
             state.changed(); state.message(doneMsg.replace("%1\$s", n.toString()))
         }
     }

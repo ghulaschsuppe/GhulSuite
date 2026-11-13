@@ -472,7 +472,7 @@ jobs:
     name: Emulator-Tests (Maestro-Abläufe aus app/maestro)
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 50
     env:
       MAESTRO_VERSION: cli-2.12.1
       MAESTRO_SHA256: 54dbb0716425626604973cbb374c585ca30272375d9ce15177a1152765ddd9d7

@@ -174,7 +174,7 @@ suspend fun calAlarm(r: de.danerd.ghulsuite.model.CalReminderUi, detail: Int, na
         1 -> if (r.allDay) time else getString(Res.string.cal_notify_in, durationLabel(r.minutesBefore), names.short(day) + ", " + hm(r.start))
         else -> full
     }
-    return de.danerd.ghulsuite.model.CalAlarmUi("${r.eventId}|$day", epochMillisOf(r.at), r.title, full, publicTitle, publicText)
+    return de.danerd.ghulsuite.model.CalAlarmUi("${r.eventId}|$day", epochMillisOf(r.at), r.title, full, publicTitle, publicText, r.at)
 }
 
 private suspend fun durationLabel(m: Int): String = when {

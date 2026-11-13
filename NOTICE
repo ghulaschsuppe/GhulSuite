@@ -38,3 +38,11 @@ core/ghul-core/tests/data/dompurify_payloads.json – payloads from DOMPurify's 
     (Cure53), Apache License 2.0 / MPL 2.0.
 core/ghul-core/tests/data/wpt_urltestdata.json – web-platform-tests URL test data, BSD 3-Clause.
 core/ghul-core/tests/data/jsontestsuite/ – JSONTestSuite (Nicolas Seriot), MIT.
+core/ghul-core/tests/data/ics/icalendar/ – calendar files from the tests and the fuzzing corpus of
+    python-icalendar, (c) Plone Foundation, BSD 2-Clause (LICENSE-icalendar.rst next to the data).
+core/ghul-core/tests/data/ics/ical4j-*/ – sample calendars from the tests of iCal4j,
+    (c) Ben Fortuna, BSD 3-Clause (LICENSE-ical4j.txt next to the data).
+core/ghul-core/tests/data/zoneinfo/ – time zone rules as VTIMEZONE (tzurl.org, from the IANA time
+    zone database, public domain), as shipped with iCal4j.
+core/ghul-core/tests/data/zone_offsets.tsv – written by tools/make-zone-oracle.py from the IANA
+    time zone database (public domain).

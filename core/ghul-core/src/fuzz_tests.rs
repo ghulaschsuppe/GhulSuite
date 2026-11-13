@@ -259,7 +259,10 @@ fn html_mails() {
 #[test]
 fn calendar_files_and_quick_entries() {
     let ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:1@x\r\nSUMMARY:Zahnarzt\\, Dr. Weber\r\nDTSTART;TZID=Europe/Berlin:20261113T100000\r\nDTEND:20261113T104500Z\r\nRRULE:FREQ=WEEKLY;COUNT=10;BYDAY=MO,WE\r\nEXDATE:20261120T100000\r\nDURATION:PT45M\r\nLOCATION:Praxis\r\nDESCRIPTION:Lange\r\n  Zeile\r\nBEGIN:VALARM\r\nTRIGGER:-PT15M\r\nEND:VALARM\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nSUMMARY:Geburtstag\r\nDTSTART;VALUE=DATE:20000229\r\nRRULE:FREQ=YEARLY\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
-    fuzz("ics", &seeds(&[ics]), 3000, |d| {
+    // Time zone rules as Outlook and tzurl.org write them: the device does not know these names,
+    // so the rules of the file are parsed and used.
+    let zoned = "BEGIN:VCALENDAR\r\nBEGIN:VTIMEZONE\r\nTZID:Eastern Standard Time\r\nBEGIN:STANDARD\r\nDTSTART:16010101T020000\r\nTZOFFSETFROM:-0400\r\nTZOFFSETTO:-0500\r\nRRULE:FREQ=YEARLY;INTERVAL=1;BYDAY=1SU;BYMONTH=11\r\nEND:STANDARD\r\nBEGIN:DAYLIGHT\r\nDTSTART:19870405T020000\r\nTZOFFSETFROM:-0500\r\nTZOFFSETTO:-0400\r\nRRULE:FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=8,9,10,11,12,13,14;BYDAY=SU;UNTIL=20261101T060000Z\r\nRDATE:19740106T020000,19750223T020000\r\nEND:DAYLIGHT\r\nBEGIN:STANDARD\r\nDTSTART:19181027T020000\r\nTZOFFSETFROM:-035602\r\nTZOFFSETTO:-0500\r\nRRULE:FREQ=YEARLY;BYYEARDAY=-7,-6,-5,-4,-3,-2,-1;BYDAY=SU\r\nEND:STANDARD\r\nEND:VTIMEZONE\r\nBEGIN:VEVENT\r\nUID:2@x\r\nSUMMARY:Call\r\nDTSTART;TZID=\"Eastern Standard Time\":20260308T023000\r\nDTEND;TZID=Eastern Standard Time:20260308T033000\r\nRRULE:FREQ=DAILY;UNTIL=20260401T000000Z\r\nEXDATE;TZID=Eastern Standard Time:20260310T023000\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+    fuzz("ics", &seeds(&[ics, zoned]), 4000, |d| {
         let _ = crate::app::caltext::ics_import(&s(d), 60);
         let _ = crate::app::caltext::parse_duration(&s(d));
     });

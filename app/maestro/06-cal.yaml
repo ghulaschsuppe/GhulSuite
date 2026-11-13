@@ -1,0 +1,42 @@
+# Testplan K1–K3: GhulCal opens with its calendars, quick add creates an event with the default
+# reminder, the event shows in the list and opens. tools/check-reminders.sh then looks for the
+# alarm of this event in the system.
+appId: de.danerd.ghulsuite.dev
+name: GhulCal
+---
+- launchApp:
+    stopApp: false
+- tapOn: "GhulCal"
+- extendedWaitUntil:
+    visible: "Month"
+    timeout: 30000
+- takeScreenshot: 06-month
+# The list has no second "Event" link, so the button below is the only match.
+- tapOn: "List"
+- assertVisible: "No events in the next 60 days\\."
+- tapOn: "Event"
+- extendedWaitUntil:
+    visible: "Quick add"
+    timeout: 10000
+# Always in the future, in the calendar "Sports", reminder by the default of that calendar.
+- tapOn: "e\\.g\\. Dentist Fri 10am #personal"
+- inputText: "Run tomorrow 6:30pm-7:30pm #sports"
+- hideKeyboard
+- takeScreenshot: 06-quick-add
+- tapOn: "Add"
+- extendedWaitUntil:
+    visible: "Added: .*"
+    timeout: 15000
+- extendedWaitUntil:
+    visible: "Run"
+    timeout: 15000
+- takeScreenshot: 06-list
+- tapOn: "Run"
+- extendedWaitUntil:
+    visible: "15 min before"
+    timeout: 15000
+- assertVisible: "Sports"
+- takeScreenshot: 06-event
+- back
+- tapOn: "Month"
+- takeScreenshot: 06-month-with-event

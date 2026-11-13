@@ -86,7 +86,7 @@ class FakeCal : CalBackend {
     override suspend fun reminders(now: String, days: Int) = emptyList<CalReminderUi>()
     override suspend fun exportIcs(calendarIds: List<String>) = ""
     override suspend fun eventIcs(id: String) = ""
-    override suspend fun importIcs(calendarId: String, data: ByteArray, utcOffsetMinutes: Int) = 0
+    override suspend fun importIcs(calendarId: String, data: ByteArray) = 0
     override fun quickParse(text: String, today: String, nowMinutes: Int) =
         CalQuickUi("Friseur", t0.plus(1).toString(), "14:30", "15:30", false, CalRepeatUi.NONE, "privat")
     override fun regions(lang: String) = listOf(CalRegionUi("DE-NW", "Nordrhein-Westfalen"))

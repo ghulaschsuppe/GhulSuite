@@ -15,6 +15,7 @@ import android.security.keystore.KeyProperties
 import android.util.Base64
 import de.danerd.ghulsuite.core.GhulSuite
 import de.danerd.ghulsuite.model.CalAlarmUi
+import de.danerd.ghulsuite.ui.epochMillisOf
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -44,11 +45,17 @@ class CalReminders(private val context: Context) {
         future.forEachIndexed { i, a -> setAlarm(i, a.atMillis) }
     }
 
-    /** After a reboot: the stored alarms again. */
+    /**
+     * After a reboot or a change of the time zone: the stored alarms again. A reminder belongs to
+     * a time on the clock ("09:45"), so its moment is worked out anew for the zone the device is in now.
+     */
     fun restore() {
         val list = load()
         val now = System.currentTimeMillis()
-        list.forEachIndexed { i, a -> if (a.atMillis > now - 10 * 60_000) setAlarm(i, maxOf(a.atMillis, now + 5_000)) }
+        list.forEachIndexed { i, a ->
+            val at = if (a.atLocal.isEmpty()) a.atMillis else runCatching { epochMillisOf(a.atLocal) }.getOrDefault(a.atMillis)
+            if (at > now - 10 * 60_000) setAlarm(i, maxOf(at, now + 5_000))
+        }
     }
 
     fun clear() {
@@ -129,9 +136,10 @@ class CalReminders(private val context: Context) {
 }
 
 private fun CalAlarmUi.toJson() = JSONObject()
-    .put("k", key).put("at", atMillis).put("t", title).put("x", text).put("pt", publicTitle).put("px", publicText)
+    .put("k", key).put("at", atMillis).put("t", title).put("x", text).put("pt", publicTitle).put("px", publicText).put("al", atLocal)
 
-private fun JSONObject.toAlarm() = CalAlarmUi(getString("k"), getLong("at"), getString("t"), getString("x"), getString("pt"), getString("px"))
+private fun JSONObject.toAlarm() =
+    CalAlarmUi(getString("k"), getLong("at"), getString("t"), getString("x"), getString("pt"), getString("px"), optString("al"))
 
 /** Posts a reminder: full text while unlocked, the chosen detail on the lock screen. */
 fun postCalNotification(ctx: Context, a: CalAlarmUi, sound: Boolean, index: Int) {
@@ -195,7 +203,13 @@ class CalAlarmReceiver : BroadcastReceiver() {
                 if (Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms()) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
                 else am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
             }
-            Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED, "android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" -> r.restore()
+            Intent.ACTION_TIMEZONE_CHANGED -> {
+                // Forget the remembered zone of this process, so the new one of the system counts.
+                java.util.TimeZone.setDefault(null)
+                r.restore()
+            }
+            Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED,
+            "android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" -> r.restore()
         }
     }
 }

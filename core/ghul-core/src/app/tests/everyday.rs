@@ -464,8 +464,9 @@ fn stress_big_suite_on_two_devices() {
         ));
     }
     ics.push_str("END:VCALENDAR\r\n");
-    let n =
-        timed("Import 2.000 Termine (ICS)", 30.0, || a.cal_import_ics(calendar.clone(), ics.into_bytes(), 60).unwrap());
+    let n = timed("Import 2.000 Termine (ICS)", 30.0, || {
+        a.cal_import_ics(calendar.clone(), ics.into_bytes(), Arc::new(super::super::caltext::FixedOffset(60))).unwrap()
+    });
     assert_eq!(n, 2_000);
     timed("Jahresansicht mit allen Terminen", 5.0, || {
         let occ = a.cal_occurrences("2027-01-01".into(), "2028-01-01".into(), "DE-NW".into(), "de".into()).unwrap();

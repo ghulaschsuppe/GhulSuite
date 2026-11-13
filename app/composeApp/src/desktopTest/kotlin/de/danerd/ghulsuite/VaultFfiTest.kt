@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package de.danerd.ghulsuite
 
+import de.danerd.ghulsuite.coretest.CalCalendar
 import de.danerd.ghulsuite.coretest.EntryData
 import de.danerd.ghulsuite.coretest.FidoListener
 import de.danerd.ghulsuite.coretest.FidoStatus
@@ -12,6 +13,7 @@ import de.danerd.ghulsuite.coretest.NewVault
 import de.danerd.ghulsuite.coretest.OtpAlgo
 import de.danerd.ghulsuite.coretest.SetupOptions
 import de.danerd.ghulsuite.coretest.SlotKind
+import de.danerd.ghulsuite.coretest.TimeZones
 import de.danerd.ghulsuite.coretest.TotpInput
 import de.danerd.ghulsuite.coretest.VaultKind
 import de.danerd.ghulsuite.coretest.generateKeyfile
@@ -93,6 +95,55 @@ class VaultFfiTest {
             s.unlockWithRecoveryCode(setup.recoveryCode!!, "Neues Passwort!")
             assertEquals(1, s.totpCodes(59uL).size)
         } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    /** Times of an .ics file land on the right hour, with this device's own time zone database. */
+    @Test
+    fun calendarImportUsesTheTimeZonesOfTheDevice() {
+        val dir = Files.createTempDirectory("ghul-zones").toFile()
+        val before = java.util.TimeZone.getDefault()
+        try {
+            java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Europe/Berlin"))
+            val zones = object : TimeZones {
+                override fun offsetAtUtc(zone: String, utcMinutes: Long) = DeviceTimeZones.offsetAtUtc(zone, utcMinutes)
+                override fun offsetAtLocal(zone: String, localMinutes: Long) = DeviceTimeZones.offsetAtLocal(zone, localMinutes)
+            }
+            assertEquals(120, zones.offsetAtUtc("", 29_727_360L)) // 2026-07-10T00:00Z
+            assertEquals(60, zones.offsetAtUtc("Europe/Berlin", 29_979_360L)) // 2027-01-01T00:00Z
+            assertEquals(-240, zones.offsetAtLocal("America/New_York", 29_727_360L))
+            assertEquals(null, zones.offsetAtLocal("Mars/Olympus_Mons", 0L))
+            assertEquals(null, zones.offsetAtLocal("../../etc/passwd", 0L))
+            assertEquals(null, zones.offsetAtUtc("Europe/Berlin", Long.MAX_VALUE))
+
+            val s = suite(dir)
+            s.create(
+                options(generateKeyfile()).copy(vaults = listOf(NewVault(VaultKind.CAL, "Kalender"))), null, null, null,
+            )
+            val vault = s.listVaults().first { it.name == "Kalender" }.id
+            val cal = s.calSaveCalendar(CalCalendar("", vault, "Import", 1u, -1, 0u))
+            fun event(n: Int, start: String) = "BEGIN:VEVENT\r\nUID:$n@x\r\nSUMMARY:T$n\r\n$start\r\nEND:VEVENT\r\n"
+            val ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n" +
+                event(1, "DTSTART:20260714T080000Z") +
+                event(2, "DTSTART:20261214T080000Z") +
+                event(3, "DTSTART;TZID=America/New_York:20260320T100000") +
+                event(4, "DTSTART;TZID=Europe/Berlin:20260714T100000") +
+                event(5, "DTSTART;TZID=Asia/Kolkata:20260714T100000") +
+                event(6, "DTSTART;TZID=Nirgendwo/Nie:20260714T100000") +
+                "END:VCALENDAR\r\n"
+            assertEquals(6u, s.calImportIcs(cal, ics.toByteArray(), zones))
+            val starts = s.calOccurrences("2026-01-01", "2027-01-01", "", "de")
+                .filter { Regex("T\\d").matches(it.title) }.associate { it.title to it.start }
+            assertEquals(
+                mapOf(
+                    "T1" to "2026-07-14T10:00", "T2" to "2026-12-14T09:00", "T3" to "2026-03-20T15:00",
+                    "T4" to "2026-07-14T10:00", "T5" to "2026-07-14T06:30", "T6" to "2026-07-14T10:00",
+                ),
+                starts,
+            )
+        } finally {
+            java.util.TimeZone.setDefault(before)
             dir.deleteRecursively()
         }
     }

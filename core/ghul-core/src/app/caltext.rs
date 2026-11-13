@@ -5,7 +5,7 @@
 //! a vault. Times are floating local wall-clock times (see [`super::caldate`]).
 
 use super::cal::{CalEvent, CalRepeat};
-use super::caldate::{Date, DateTime};
+use super::caldate::{days_in_month, is_leap, Date, DateTime};
 
 // =============================================================================================
 // iCalendar export
@@ -326,9 +326,10 @@ struct IcsTime {
     is_date: bool,
 }
 
-/// Parses one date or date-time value. `Z` (UTC) is converted to local time with the offset,
-/// `TZID` is ignored (treated as floating local time).
-fn parse_ics_time(value: &str, value_param: Option<&str>, offset: i32) -> Option<IcsTime> {
+/// Parses one date or date-time value as local wall-clock time of this device: `Z` (UTC) and
+/// times with a `TZID` are converted with the offsets valid on that day; a time without either
+/// (or with a zone nobody knows) is taken as it stands.
+fn parse_ics_time(value: &str, value_param: Option<&str>, tzid: Option<&str>, z: &Zones) -> Option<IcsTime> {
     let v = value.trim();
     if !v.is_ascii() || v.len() < 8 {
         return None;
@@ -341,13 +342,299 @@ fn parse_ics_time(value: &str, value_param: Option<&str>, offset: i32) -> Option
     }
     let mut dt = DateTime::parse_compact(v)?;
     if v.ends_with('Z') || v.ends_with('z') {
-        dt = dt.add_minutes(offset as i64);
+        dt = z.utc_to_device(dt);
+    } else if let Some(id) = tzid {
+        dt = z.zone_to_device(id, dt);
     }
     Some(IcsTime { dt, is_date: false })
 }
 
-fn prop_time(p: &Prop, offset: i32) -> Option<IcsTime> {
-    parse_ics_time(&p.value, p.param("VALUE"), offset)
+fn prop_time(p: &Prop, z: &Zones) -> Option<IcsTime> {
+    parse_ics_time(&p.value, p.param("VALUE"), p.param("TZID"), z)
+}
+
+// ---------------------------------------------------------------------------------------------
+// Time zones
+// ---------------------------------------------------------------------------------------------
+
+/// The time zone database of the device, provided by the app – the core carries none of its own.
+#[uniffi::export(with_foreign)]
+pub trait TimeZones: Send + Sync {
+    /// UTC offset in minutes of `zone` (IANA name; empty: the zone of this device) at the UTC
+    /// instant `utc_minutes` (minutes since 1970-01-01T00:00Z). `None` if the zone is unknown.
+    fn offset_at_utc(&self, zone: String, utc_minutes: i64) -> Option<i32>;
+    /// The same for a wall-clock time in that zone.
+    fn offset_at_local(&self, zone: String, local_minutes: i64) -> Option<i32>;
+}
+
+/// A device that is always at the same offset and knows no other zone.
+pub(crate) struct FixedOffset(pub i32);
+
+impl TimeZones for FixedOffset {
+    fn offset_at_utc(&self, zone: String, _: i64) -> Option<i32> {
+        zone.is_empty().then_some(self.0)
+    }
+    fn offset_at_local(&self, zone: String, _: i64) -> Option<i32> {
+        zone.is_empty().then_some(self.0)
+    }
+}
+
+const MAX_OFFSET: i32 = 24 * 60;
+// A file full of time zone rules must not make the import slow: the full history of a real zone
+// (tzurl.org) has up to about 150 blocks and 300 single dates.
+const MAX_FILE_ZONES: usize = 64;
+const MAX_OBSERVANCES: usize = 256;
+const MAX_SINGLE_ONSETS: usize = 1024;
+
+/// On which day of a year an observance (standard or daylight time) begins.
+#[derive(Clone, Debug)]
+enum Onset {
+    /// The `nth` weekday (0 = Monday) of the month; negative counts from the end.
+    Weekday {
+        month: u32,
+        nth: i32,
+        weekday: u32,
+    },
+    Day {
+        month: u32,
+        day: u32,
+    },
+    /// The weekday that falls on one of these days of the month ("Sunday on or after the 8th");
+    /// negative days count from the end of the month.
+    WeekdayAmong {
+        month: u32,
+        days: Vec<i32>,
+        weekday: u32,
+    },
+    /// The same with days of the year.
+    WeekdayAmongYearDays {
+        days: Vec<i32>,
+        weekday: u32,
+    },
+}
+
+impl Onset {
+    fn in_year(&self, y: i32) -> Option<Date> {
+        match self {
+            Onset::Day { month, day } => Date::new(y, *month, *day),
+            Onset::Weekday { month, nth, weekday } => nth_weekday(y, *month, *nth, *weekday),
+            Onset::WeekdayAmong { month, days, weekday } => {
+                if !(1..=12).contains(month) {
+                    return None;
+                }
+                let len = days_in_month(y, *month) as i32;
+                days.iter()
+                    .filter_map(|d| Date::new(y, *month, u32::try_from(if *d > 0 { *d } else { len + 1 + *d }).ok()?))
+                    .find(|d| d.weekday() == *weekday)
+            }
+            Onset::WeekdayAmongYearDays { days, weekday } => {
+                let first = Date::new(y, 1, 1)?;
+                let len = if is_leap(y) { 366 } else { 365 };
+                days.iter()
+                    .filter(|d| (1..=len).contains(&d.abs()))
+                    .map(|d| first.add_days(if *d > 0 { *d as i64 - 1 } else { (len + *d) as i64 }))
+                    .find(|d| d.weekday() == *weekday)
+            }
+        }
+    }
+}
+
+/// `STANDARD` or `DAYLIGHT` inside a `VTIMEZONE`.
+#[derive(Clone, Debug)]
+struct Observance {
+    /// First onset, wall-clock time.
+    start: DateTime,
+    from: i32,
+    to: i32,
+    yearly: Option<Onset>,
+    /// Last onset of the yearly rule, as minutes since 1970 in UTC.
+    until_utc: Option<i64>,
+    extra: Vec<DateTime>,
+}
+
+impl Observance {
+    /// The latest onset at or before `local` (minutes since 1970).
+    fn onset_before(&self, local: i64) -> Option<i64> {
+        let first = self.start.minutes();
+        let mut best = (first <= local).then_some(first);
+        let mut take = |m: i64| {
+            if m >= first && m <= local && best.map_or(true, |b| m > b) {
+                best = Some(m);
+            }
+        };
+        for x in &self.extra {
+            take(x.minutes());
+        }
+        if let Some(rule) = &self.yearly {
+            // The last onset before `local` is in that year or the one before – or, if the rule
+            // has ended long ago, around its last year.
+            let year = DateTime::from_minutes(local).date.y;
+            let last = self.until_utc.map_or(year, |u| DateTime::from_minutes(u).date.y.min(year));
+            for y in [last - 1, last, last + 1, year - 1, year] {
+                if let Some(d) = rule.in_year(y) {
+                    let at = DateTime { date: d, min: self.start.min }.minutes();
+                    // The clock shows the old offset until the onset.
+                    if self.until_utc.map_or(true, |u| at - self.from as i64 <= u) {
+                        take(at);
+                    }
+                }
+            }
+        }
+        best
+    }
+}
+
+fn nth_weekday(y: i32, month: u32, nth: i32, weekday: u32) -> Option<Date> {
+    if !(1..=12).contains(&month) || nth == 0 || nth.abs() > 5 || weekday > 6 {
+        return None;
+    }
+    let len = days_in_month(y, month);
+    let day = if nth > 0 {
+        let first = Date::new(y, month, 1)?;
+        1 + (weekday + 7 - first.weekday()) % 7 + (nth as u32 - 1) * 7
+    } else {
+        let last = Date::new(y, month, len)?;
+        let back = (last.weekday() + 7 - weekday) % 7 + (nth.unsigned_abs() - 1) * 7;
+        if back >= len {
+            return None;
+        }
+        len - back
+    };
+    Date::new(y, month, day)
+}
+
+/// A `VTIMEZONE` of the file: used for zone names the device does not know (Windows names of
+/// Outlook, made-up names).
+#[derive(Clone, Debug, Default)]
+struct FileZone {
+    id: String,
+    observances: Vec<Observance>,
+}
+
+impl FileZone {
+    fn offset_at_local(&self, local: i64) -> Option<i32> {
+        let current = self
+            .observances
+            .iter()
+            .filter_map(|o| o.onset_before(local).map(|at| (at, o.to)))
+            .max_by_key(|(at, _)| *at)
+            .map(|(_, to)| to);
+        // Before the first onset the zone was at the offset it then left.
+        current.or_else(|| self.observances.iter().min_by_key(|o| o.start.minutes()).map(|o| o.from))
+    }
+}
+
+/// `+0100`, `-0530`, `+013000` in minutes.
+fn parse_utc_offset(s: &str) -> Option<i32> {
+    let s = s.trim();
+    let (sign, digits) = match s.as_bytes().first()? {
+        b'+' => (1, &s[1..]),
+        b'-' => (-1, &s[1..]),
+        _ => return None,
+    };
+    if digits.len() < 4 || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let (h, m): (i32, i32) = (digits[0..2].parse().ok()?, digits[2..4].parse().ok()?);
+    (h <= 23 && m <= 59).then_some(sign * (h * 60 + m))
+}
+
+/// What is collected of a `STANDARD`/`DAYLIGHT` block before it is complete.
+#[derive(Default)]
+struct RawObservance {
+    start: Option<String>,
+    from: Option<i32>,
+    to: Option<i32>,
+    rrule: Option<String>,
+    rdates: Vec<String>,
+}
+
+impl RawObservance {
+    fn finish(self) -> Option<Observance> {
+        let start = DateTime::parse_compact(self.start?.trim())?;
+        let to = self.to?;
+        let from = self.from.unwrap_or(to);
+        let mut o = Observance { start, from, to, yearly: None, until_utc: None, extra: Vec::new() };
+        o.extra = self.rdates.iter().filter_map(|v| DateTime::parse_compact(v.trim())).collect();
+        if let Some(rule) = self.rrule {
+            let list = |v: &str| -> Option<Vec<i32>> { v.split(',').take(31).map(|d| d.trim().parse().ok()).collect() };
+            let (mut yearly, mut month) = (false, start.date.m);
+            let (mut byday, mut month_days, mut year_days) = (None, None, None);
+            for part in rule.split(';') {
+                let Some((k, v)) = part.split_once('=') else { continue };
+                let v = v.trim().to_ascii_uppercase();
+                match k.trim().to_ascii_uppercase().as_str() {
+                    "FREQ" => yearly = v == "YEARLY",
+                    "BYMONTH" => month = v.parse().ok()?,
+                    "BYMONTHDAY" => month_days = Some(list(&v)?),
+                    "BYYEARDAY" => year_days = Some(list(&v)?),
+                    "BYDAY" if v.is_ascii() && v.len() >= 2 => {
+                        let (n, wd) = v.split_at(v.len() - 2);
+                        let weekday = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"].iter().position(|d| *d == wd)?;
+                        let nth: Option<i32> = if n.is_empty() { None } else { Some(n.parse().ok()?) };
+                        byday = Some((nth, weekday as u32));
+                    }
+                    // In UTC ("…Z"); a plain date counts to the end of that day.
+                    "UNTIL" => {
+                        o.until_utc = match DateTime::parse_compact(&v) {
+                            Some(dt) if v.ends_with('Z') => Some(dt.minutes()),
+                            Some(dt) => Some(dt.minutes() - from as i64),
+                            None => Date::parse_compact(&v).map(|d| d.days() * 1440 + 1439 + MAX_OFFSET as i64),
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if yearly {
+                o.yearly = Some(match (byday, month_days, year_days) {
+                    (Some((None, weekday)), Some(days), _) => Onset::WeekdayAmong { month, days, weekday },
+                    (Some((None, weekday)), None, Some(days)) => Onset::WeekdayAmongYearDays { days, weekday },
+                    (Some((nth, weekday)), _, _) => Onset::Weekday { month, nth: nth.unwrap_or(1), weekday },
+                    (None, Some(days), _) => Onset::Day { month, day: u32::try_from(*days.first()?).ok()? },
+                    (None, None, _) => Onset::Day { month, day: start.date.d },
+                });
+            }
+        }
+        Some(o)
+    }
+}
+
+/// Converts the times of a file into wall-clock time of this device.
+struct Zones<'a> {
+    device: &'a dyn TimeZones,
+    file: Vec<FileZone>,
+}
+
+impl Zones<'_> {
+    fn utc_to_device(&self, utc: DateTime) -> DateTime {
+        let m = utc.minutes();
+        let off = self.device.offset_at_utc(String::new(), m).unwrap_or(0).clamp(-MAX_OFFSET, MAX_OFFSET);
+        DateTime::from_minutes(m + off as i64)
+    }
+
+    /// A wall-clock time in the zone `tzid`. An unknown zone leaves the time as it is.
+    fn zone_to_device(&self, tzid: &str, local: DateTime) -> DateTime {
+        let m = local.minutes();
+        let tzid = tzid.trim().trim_matches('"');
+        if tzid.is_empty() || tzid.len() > 100 {
+            return local;
+        }
+        // Some programs put a prefix before the name: "/mozilla.org/20050126_1/Europe/Berlin".
+        let parts: Vec<&str> = tzid.split('/').filter(|p| !p.is_empty()).collect();
+        let mut names = vec![tzid.to_owned()];
+        for n in [3, 2] {
+            if tzid.starts_with('/') && parts.len() > n {
+                names.push(parts[parts.len() - n..].join("/"));
+            }
+        }
+        let known = names.into_iter().find_map(|n| self.device.offset_at_local(n, m));
+        let off = known
+            .or_else(|| self.file.iter().find(|z| z.id.eq_ignore_ascii_case(tzid)).and_then(|z| z.offset_at_local(m)));
+        match off {
+            Some(o) => self.utc_to_device(DateTime::from_minutes(m - o.clamp(-MAX_OFFSET, MAX_OFFSET) as i64)),
+            None => local,
+        }
+    }
 }
 
 /// Signed RFC 5545 duration (`-PT15M`, `P1D`, `-P1W`, `PT1H30M`) in minutes; seconds are cut.
@@ -399,10 +686,17 @@ pub(crate) fn parse_duration(s: &str) -> Option<i64> {
     Some(if neg { -min } else { min })
 }
 
-/// Reads an `.ics` file. `utc_offset_minutes` converts UTC times (`…Z`) to local wall-clock time.
-/// Ids and calendar ids of the result are empty: the caller assigns them.
+/// Reads an `.ics` file on a device that is always `utc_offset_minutes` ahead of UTC.
 pub fn ics_import(text: &str, utc_offset_minutes: i32) -> Result<Vec<CalEvent>, String> {
-    let offset = utc_offset_minutes.clamp(-24 * 60, 24 * 60);
+    ics_import_zoned(text, &FixedOffset(utc_offset_minutes))
+}
+
+/// Reads an `.ics` file; all times become wall-clock time of this device (see [`TimeZones`]).
+/// Ids and calendar ids of the result are empty: the caller assigns them.
+pub fn ics_import_zoned(text: &str, device: &dyn TimeZones) -> Result<Vec<CalEvent>, String> {
+    let mut zones = Zones { device, file: Vec::new() };
+    let mut zone: Option<FileZone> = None;
+    let mut observance: Option<RawObservance> = None;
     let mut seen_calendar = false;
     let mut stack: Vec<String> = Vec::new();
     let mut cur: Option<RawEvent> = None;
@@ -422,6 +716,8 @@ pub fn ics_import(text: &str, utc_offset_minutes: i32) -> Result<Vec<CalEvent>, 
                     "VALARM" if stack.last().map(String::as_str) == Some("VEVENT") && cur.is_some() => {
                         alarm = Some(None)
                     }
+                    "VTIMEZONE" if cur.is_none() => zone = Some(FileZone::default()),
+                    "STANDARD" | "DAYLIGHT" if zone.is_some() => observance = Some(RawObservance::default()),
                     _ => {}
                 }
                 stack.push(comp);
@@ -443,6 +739,22 @@ pub fn ics_import(text: &str, utc_offset_minutes: i32) -> Result<Vec<CalEvent>, 
                             raws.push(ev);
                         }
                     }
+                    "STANDARD" | "DAYLIGHT" => {
+                        if let (Some(z), Some(o)) = (zone.as_mut(), observance.take().and_then(RawObservance::finish)) {
+                            let singles: usize = z.observances.iter().map(|x| x.extra.len()).sum();
+                            if z.observances.len() < MAX_OBSERVANCES && singles + o.extra.len() <= MAX_SINGLE_ONSETS {
+                                z.observances.push(o);
+                            }
+                        }
+                    }
+                    "VTIMEZONE" => {
+                        observance = None;
+                        if let Some(z) = zone.take() {
+                            if !z.id.is_empty() && !z.observances.is_empty() && zones.file.len() < MAX_FILE_ZONES {
+                                zones.file.push(z);
+                            }
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -452,6 +764,25 @@ pub fn ics_import(text: &str, utc_offset_minutes: i32) -> Result<Vec<CalEvent>, 
                     if let Some(a) = alarm.as_mut() {
                         if p.name == "TRIGGER" {
                             *a = Some(p);
+                        }
+                    }
+                }
+                (Some("VTIMEZONE"), None) => {
+                    if let (Some(z), "TZID") = (zone.as_mut(), p.name.as_str()) {
+                        z.id = p.value.trim().to_string();
+                    }
+                }
+                (Some("STANDARD" | "DAYLIGHT"), None) => {
+                    if let Some(o) = observance.as_mut() {
+                        match p.name.as_str() {
+                            "DTSTART" => o.start = Some(p.value),
+                            "TZOFFSETFROM" => o.from = parse_utc_offset(&p.value),
+                            "TZOFFSETTO" => o.to = parse_utc_offset(&p.value),
+                            "RRULE" => o.rrule = Some(p.value),
+                            "RDATE" if o.rdates.len() < MAX_SINGLE_ONSETS => {
+                                o.rdates.extend(p.value.split(',').take(MAX_SINGLE_ONSETS).map(str::to_owned))
+                            }
+                            _ => {}
                         }
                     }
                 }
@@ -467,11 +798,11 @@ pub fn ics_import(text: &str, utc_offset_minutes: i32) -> Result<Vec<CalEvent>, 
     let mut out: Vec<(String, CalEvent)> = Vec::new();
     let mut overrides: Vec<(String, Option<Date>, Option<CalEvent>)> = Vec::new();
     for raw in raws {
-        let rid = raw.recurrence_id.as_ref().and_then(|p| prop_time(p, offset)).map(|t| t.dt.date);
+        let rid = raw.recurrence_id.as_ref().and_then(|p| prop_time(p, &zones)).map(|t| t.dt.date);
         let is_override = raw.recurrence_id.is_some();
         let cancelled = raw.cancelled;
         let uid = raw.uid.clone();
-        let ev = finish_event(raw, offset);
+        let ev = finish_event(raw, &zones);
         if is_override {
             overrides.push((uid, rid, if cancelled { None } else { ev }));
         } else if let Some(ev) = ev {
@@ -522,9 +853,9 @@ fn event_prop(ev: &mut RawEvent, p: Prop) {
     }
 }
 
-fn finish_event(raw: RawEvent, offset: i32) -> Option<CalEvent> {
-    let st = prop_time(raw.dtstart.as_ref()?, offset)?;
-    let end = raw.dtend.as_ref().and_then(|p| prop_time(p, offset));
+fn finish_event(raw: RawEvent, z: &Zones) -> Option<CalEvent> {
+    let st = prop_time(raw.dtstart.as_ref()?, z)?;
+    let end = raw.dtend.as_ref().and_then(|p| prop_time(p, z));
     let dur = raw.duration.as_deref().and_then(parse_duration);
     let mut ev = CalEvent {
         title: raw.summary.trim().to_string(),
@@ -556,7 +887,7 @@ fn finish_event(raw: RawEvent, offset: i32) -> Option<CalEvent> {
         ev.end = e.to_string();
     }
     if let Some(rule) = raw.rrule.as_deref() {
-        let (rep, until) = map_rrule(rule, start_date, offset);
+        let (rep, until) = map_rrule(rule, start_date, z);
         ev.repeat = rep;
         if rep != CalRepeat::None {
             ev.repeat_until = until.map(|d| d.to_string()).unwrap_or_default();
@@ -569,7 +900,7 @@ fn finish_event(raw: RawEvent, offset: i32) -> Option<CalEvent> {
             .flat_map(|p| {
                 p.value
                     .split(',')
-                    .filter_map(|v| parse_ics_time(v, p.param("VALUE"), offset))
+                    .filter_map(|v| parse_ics_time(v, p.param("VALUE"), p.param("TZID"), z))
                     .map(|t| t.dt.date.to_string())
                     .collect::<Vec<_>>()
             })
@@ -585,13 +916,14 @@ fn finish_event(raw: RawEvent, offset: i32) -> Option<CalEvent> {
         .filter_map(|a| {
             let t = a.as_ref()?;
             let rel = if t.param("VALUE").is_some_and(|v| v.eq_ignore_ascii_case("DATE-TIME")) {
-                prop_time(t, offset)?.dt.minutes() - start_min
+                prop_time(t, z)?.dt.minutes() - start_min
             } else {
                 parse_duration(&t.value)?
             };
             let before = if ev.all_day { 540 - rel } else { -rel };
             Some(before.clamp(0, u32::MAX as i64) as u32)
         })
+        .filter(|before| *before <= super::cal::MAX_REMINDER_MINUTES)
         .collect();
     rem.sort_unstable_by(|a, b| b.cmp(a));
     rem.dedup();
@@ -600,7 +932,7 @@ fn finish_event(raw: RawEvent, offset: i32) -> Option<CalEvent> {
 }
 
 /// Maps the supported `RRULE` subset onto [`CalRepeat`]; returns the last day if known.
-fn map_rrule(rule: &str, start: Date, offset: i32) -> (CalRepeat, Option<Date>) {
+fn map_rrule(rule: &str, start: Date, z: &Zones) -> (CalRepeat, Option<Date>) {
     let mut freq = "";
     let mut interval = 1u32;
     let mut byday: Vec<String> = Vec::new();
@@ -615,7 +947,7 @@ fn map_rrule(rule: &str, start: Date, offset: i32) -> (CalRepeat, Option<Date>) 
             "FREQ" => freq = v,
             "INTERVAL" => interval = v.parse().unwrap_or(1),
             "BYDAY" => byday = v.split(',').map(|d| d.trim().to_ascii_uppercase()).collect(),
-            "UNTIL" => until = parse_ics_time(v, None, offset).map(|t| t.dt.date),
+            "UNTIL" => until = parse_ics_time(v, None, None, z).map(|t| t.dt.date),
             "COUNT" => count = v.parse().ok().filter(|n| (1..=10_000).contains(n)),
             _ => {}
         }
@@ -714,7 +1046,8 @@ fn quick_tokens(text: &str) -> Vec<QTok> {
             push(word.to_string(), false);
             continue;
         }
-        // Split "14-15", "18:30–19:30", "2-3pm" into time, dash, time; keep "Team-Call" whole.
+        // Split "14-15", "18:30–19:30", "2-3pm", "6:30pm-7:30pm" into time, dash, time; keep
+        // "Team-Call" whole.
         let chars: Vec<char> = word.chars().collect();
         let mut piece = String::new();
         let mut first = true;
@@ -722,8 +1055,8 @@ fn quick_tokens(text: &str) -> Vec<QTok> {
             let split = is_dash(c)
                 && i > 0
                 && i + 1 < chars.len()
-                && chars[i - 1].is_ascii_digit()
-                && chars[i + 1].is_ascii_digit();
+                && chars[i + 1].is_ascii_digit()
+                && (chars[i - 1].is_ascii_digit() || parse_time_word(&piece.to_lowercase()).is_some());
             if split {
                 push(std::mem::take(&mut piece), !first);
                 push(c.to_string(), true);
@@ -1642,6 +1975,22 @@ BEGIN:VEVENT\nDTSTART:20261120\nX-GHUL-BIRTH-YEAR:1988\nEND:VEVENT\nEND:VCALENDA
             "RRULE:UNTIL=Z;;=;",
             "EXDATE:,,,",
             "EXDATE;VALUE=DATE:2026111ä",
+            "BEGIN:VTIMEZONE",
+            "END:VTIMEZONE",
+            "BEGIN:DAYLIGHT",
+            "END:DAYLIGHT",
+            "BEGIN:STANDARD",
+            "TZID:X",
+            "TZOFFSETTO:+9999",
+            "TZOFFSETTO:-0500",
+            "TZOFFSETFROM:-",
+            "RRULE:FREQ=YEARLY;BYDAY=-9SU;BYMONTH=13",
+            "RRULE:FREQ=YEARLY;BYDAY=ä;BYMONTH=x",
+            "RRULE:FREQ=YEARLY;BYDAY=5SU;BYMONTH=2;UNTIL=x",
+            "RDATE:,,,20261112T100000",
+            "DTSTART;TZID=X:20261112T100000",
+            "DTSTART;TZID=/a/b/c/d/e:00000101T000000",
+            "EXDATE;TZID=X:99991231T235900",
             "TRIGGER:-P",
             "TRIGGER;VALUE=DATE-TIME:x",
             "TRIGGER:PT99999999H",
@@ -1754,6 +2103,44 @@ BEGIN:VEVENT\nDTSTART:20261120\nX-GHUL-BIRTH-YEAR:1988\nEND:VEVENT\nEND:VCALENDA
         assert_eq!(q("Zahnarzt, Fr, 10 Uhr").title, "Zahnarzt");
         assert_eq!(q("um 10 Uhr kaffee").title, "Kaffee");
         assert_eq!(q("Termin mit Anna am").title, "Termin mit Anna");
+    }
+
+    /// The examples the app itself offers under "Quick add" (today is Thursday, 2026-11-12).
+    #[test]
+    fn quick_examples_of_the_app() {
+        assert_eq!(q("Dentist Fri 10am"), timed("Dentist", "2026-11-13", "10:00", "11:00"));
+        assert_eq!(
+            q("Run tomorrow 6:30pm-7:30pm #sports"),
+            CalQuick { calendar_hint: "sports".into(), ..timed("Run", "2026-11-13", "18:30", "19:30") }
+        );
+        let r = q("Team call every Monday 9am #work");
+        assert_eq!(
+            (r.title.as_str(), r.repeat, r.start.as_str(), r.calendar_hint.as_str()),
+            ("Team call", CalRepeat::Weekly, "09:00", "work")
+        );
+        let r = q("Grandma’s birthday 24.12. #family");
+        assert_eq!(
+            (r.title.as_str(), r.date.as_str(), r.all_day, r.calendar_hint.as_str()),
+            ("Grandma’s birthday", "2026-12-24", true, "family")
+        );
+        assert_eq!(q("Zahnarzt Fr 10 Uhr #privat").calendar_hint, "privat");
+        let r = q("Laufen morgen 18:30-19:30 #sport");
+        assert_eq!((r.title.as_str(), r.start.as_str(), r.end.as_str()), ("Laufen", "18:30", "19:30"));
+        // More ranges with "am"/"pm" or "Uhr" on both sides.
+        for (text, start, end) in [
+            ("Yoga 6pm-7pm", "18:00", "19:00"),
+            ("Lunch 11:30am-1pm", "11:30", "13:00"),
+            ("Dienst 10uhr-12uhr", "10:00", "12:00"),
+            ("Flug 9:15am–11:45am", "09:15", "11:45"),
+        ] {
+            let r = q(text);
+            assert_eq!((r.start.as_str(), r.end.as_str(), r.all_day), (start, end, false), "{text}: {r:?}");
+        }
+        assert_eq!(q("Team-Call 9-10").title, "Team-Call");
+        let r = q("Team-Call jeden Montag 9 Uhr #arbeit");
+        assert_eq!((r.title.as_str(), r.repeat, r.start.as_str()), ("Team-Call", CalRepeat::Weekly, "09:00"));
+        let r = q("Omas Geburtstag 24.12. #familie");
+        assert_eq!((r.title.as_str(), r.date.as_str(), r.all_day), ("Omas Geburtstag", "2026-12-24", true));
     }
 
     #[test]
@@ -1909,5 +2296,294 @@ BEGIN:VEVENT\nDTSTART:20261120\nX-GHUL-BIRTH-YEAR:1988\nEND:VEVENT\nEND:VCALENDA
         assert!(en.contains(&CalRegion { code: "DE-BY".into(), name: "Bavaria".into() }));
         assert!(en.contains(&CalRegion { code: "AT".into(), name: "Austria".into() }));
         assert_eq!(cal_regions("de-AT".into())[17].name, "Österreich");
+    }
+}
+
+/// Time zones: what a file says in UTC or in another zone must land on the right hour here.
+#[cfg(test)]
+mod zone_tests {
+    use super::*;
+
+    const SUNDAY: u32 = 6;
+
+    /// A device with a real time zone database, reduced to Berlin and New York (rules since 2007).
+    struct World(&'static str);
+
+    fn at(y: i32, month: u32, nth: i32, hour: i64) -> i64 {
+        nth_weekday(y, month, nth, SUNDAY).unwrap().days() * 1440 + hour * 60
+    }
+
+    impl World {
+        /// Offset of `zone`; `local` tells whether `minutes` is wall-clock time or UTC.
+        fn offset(&self, zone: &str, minutes: i64, local: bool) -> Option<i32> {
+            let zone = if zone.is_empty() { self.0 } else { zone };
+            let y = DateTime::from_minutes(minutes).date.y;
+            match zone {
+                "Europe/Berlin" => {
+                    let (on, off) = if local { (2, 3) } else { (1, 1) };
+                    let summer = minutes >= at(y, 3, -1, on) && minutes < at(y, 10, -1, off);
+                    Some(if summer { 120 } else { 60 })
+                }
+                "America/New_York" => {
+                    let (on, off) = if local { (2, 2) } else { (7, 6) };
+                    let summer = minutes >= at(y, 3, 2, on) && minutes < at(y, 11, 1, off);
+                    Some(if summer { -240 } else { -300 })
+                }
+                "UTC" => Some(0),
+                _ => None,
+            }
+        }
+    }
+
+    impl TimeZones for World {
+        fn offset_at_utc(&self, zone: String, utc_minutes: i64) -> Option<i32> {
+            self.offset(&zone, utc_minutes, false)
+        }
+        fn offset_at_local(&self, zone: String, local_minutes: i64) -> Option<i32> {
+            self.offset(&zone, local_minutes, true)
+        }
+    }
+
+    fn file(head: &str, events: &[&str]) -> String {
+        let mut s = format!("BEGIN:VCALENDAR\r\nVERSION:2.0\r\n{head}");
+        for (i, e) in events.iter().enumerate() {
+            s += &format!("BEGIN:VEVENT\r\nUID:{i}@x\r\nSUMMARY:T{i}\r\n{e}\r\nEND:VEVENT\r\n");
+        }
+        s + "END:VCALENDAR\r\n"
+    }
+
+    fn starts(device: &'static str, head: &str, events: &[&str]) -> Vec<String> {
+        ics_import_zoned(&file(head, events), &World(device)).unwrap().into_iter().map(|e| e.start).collect()
+    }
+
+    /// Google exports single events in UTC. A summer event imported in winter (and the other way
+    /// round) must not be an hour off.
+    #[test]
+    fn utc_times_use_the_offset_of_their_own_day() {
+        let got = starts(
+            "Europe/Berlin",
+            "",
+            &[
+                "DTSTART:20260714T080000Z",
+                "DTSTART:20261214T080000Z",
+                "DTSTART:20260329T003000Z",
+                "DTSTART:20260329T010000Z",
+            ],
+        );
+        assert_eq!(got, ["2026-07-14T10:00", "2026-12-14T09:00", "2026-03-29T01:30", "2026-03-29T03:00"]);
+        let got = starts("America/New_York", "", &["DTSTART:20260714T020000Z", "DTSTART:20261214T020000Z"]);
+        assert_eq!(got, ["2026-07-13T22:00", "2026-12-13T21:00"]);
+    }
+
+    #[test]
+    fn times_of_another_zone_are_converted() {
+        let got = starts(
+            "Europe/Berlin",
+            "",
+            &[
+                "DTSTART;TZID=America/New_York:20260714T100000",
+                "DTSTART;TZID=America/New_York:20261214T100000",
+                // The USA are on summer time already, Europe is not yet.
+                "DTSTART;TZID=America/New_York:20260320T100000",
+                "DTSTART;TZID=\"America/New_York\":20260714T100000\r\nDTEND;TZID=America/New_York:20260714T113000",
+                "DTSTART;TZID=UTC:20260714T080000",
+            ],
+        );
+        assert_eq!(
+            got,
+            ["2026-07-14T16:00", "2026-12-14T16:00", "2026-03-20T15:00", "2026-07-14T16:00", "2026-07-14T10:00"]
+        );
+        let v = ics_import_zoned(
+            &file(
+                "",
+                &["DTSTART;TZID=America/New_York:20260714T100000\r\nDTEND;TZID=America/New_York:20260714T113000"],
+            ),
+            &World("Europe/Berlin"),
+        )
+        .unwrap();
+        assert_eq!(v[0].end, "2026-07-14T17:30");
+    }
+
+    #[test]
+    fn the_own_zone_and_unknown_zones_stay_as_written() {
+        let got = starts(
+            "Europe/Berlin",
+            "",
+            &[
+                "DTSTART;TZID=Europe/Berlin:20260714T100000",
+                "DTSTART;TZID=/mozilla.org/20050126_1/Europe/Berlin:20261214T100000",
+                "DTSTART;TZID=/freeassociation.sourceforge.net/Tzfile/America/New_York:20260714T100000",
+                "DTSTART;TZID=Mars/Olympus_Mons:20260714T100000",
+                "DTSTART:20260714T100000",
+                "DTSTART;VALUE=DATE:20260714",
+            ],
+        );
+        assert_eq!(
+            got,
+            [
+                "2026-07-14T10:00",
+                "2026-12-14T10:00",
+                "2026-07-14T16:00",
+                "2026-07-14T10:00",
+                "2026-07-14T10:00",
+                "2026-07-14"
+            ]
+        );
+    }
+
+    /// Outlook names its zones the Windows way and always sends their rules along.
+    #[test]
+    fn zones_only_the_file_knows() {
+        let outlook = "BEGIN:VTIMEZONE\r\nTZID:Eastern Standard Time\r\n\
+BEGIN:STANDARD\r\nDTSTART:16010101T020000\r\nTZOFFSETFROM:-0400\r\nTZOFFSETTO:-0500\r\n\
+RRULE:FREQ=YEARLY;INTERVAL=1;BYDAY=1SU;BYMONTH=11\r\nEND:STANDARD\r\n\
+BEGIN:DAYLIGHT\r\nDTSTART:16010101T020000\r\nTZOFFSETFROM:-0500\r\nTZOFFSETTO:-0400\r\n\
+RRULE:FREQ=YEARLY;INTERVAL=1;BYDAY=2SU;BYMONTH=3\r\nEND:DAYLIGHT\r\nEND:VTIMEZONE\r\n\
+BEGIN:VTIMEZONE\r\nTZID:India\r\nBEGIN:STANDARD\r\nDTSTART:19700101T000000\r\n\
+TZOFFSETFROM:+0530\r\nTZOFFSETTO:+0530\r\nEND:STANDARD\r\nEND:VTIMEZONE\r\n";
+        let got = starts(
+            "Europe/Berlin",
+            outlook,
+            &[
+                "DTSTART;TZID=\"Eastern Standard Time\":20260714T100000",
+                "DTSTART;TZID=Eastern Standard Time:20261214T100000",
+                "DTSTART;TZID=Eastern Standard Time:20260320T100000",
+                // The day the clocks change over there: 01:59 is still winter time, 03:00 summer.
+                "DTSTART;TZID=Eastern Standard Time:20260308T015900",
+                "DTSTART;TZID=Eastern Standard Time:20260308T030000",
+                "DTSTART;TZID=India:20260714T100000",
+                "DTSTART;TZID=India:19600101T100000",
+            ],
+        );
+        assert_eq!(
+            got,
+            [
+                "2026-07-14T16:00",
+                "2026-12-14T16:00",
+                "2026-03-20T15:00",
+                "2026-03-08T07:59",
+                "2026-03-08T08:00",
+                "2026-07-14T06:30",
+                "1960-01-01T05:30"
+            ]
+        );
+    }
+
+    /// The file's own rules agree with the database for every day of several years.
+    #[test]
+    fn file_rules_match_the_database() {
+        let rules = "BEGIN:VTIMEZONE\r\nTZID:Berlin der Datei\r\n\
+BEGIN:DAYLIGHT\r\nTZOFFSETFROM:+0100\r\nTZOFFSETTO:+0200\r\nDTSTART:19700329T020000\r\n\
+RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU\r\nEND:DAYLIGHT\r\n\
+BEGIN:STANDARD\r\nTZOFFSETFROM:+0200\r\nTZOFFSETTO:+0100\r\nDTSTART:19701025T030000\r\n\
+RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU\r\nEND:STANDARD\r\nEND:VTIMEZONE\r\n";
+        let mut lines = Vec::new();
+        let mut want = Vec::new();
+        let mut day = Date::new(2024, 1, 1).unwrap();
+        while day.y < 2031 {
+            for hour in [0, 4, 12, 23] {
+                let dt = DateTime::new(day, hour, 30).unwrap();
+                lines.push(format!("DTSTART;TZID=Berlin der Datei:{}", dt.compact()));
+                want.push(dt.to_string());
+            }
+            day = day.add_days(1);
+        }
+        let refs: Vec<&str> = lines.iter().map(String::as_str).collect();
+        // On a device in Berlin the times of "Berlin by the file's rules" must not move at all.
+        assert_eq!(starts("Europe/Berlin", rules, &refs), want);
+    }
+
+    /// Days left out of a series and its last day follow the converted time, not the written one.
+    #[test]
+    fn exceptions_and_end_of_a_series_move_with_the_time() {
+        let v = ics_import_zoned(
+            &file(
+                "",
+                &["DTSTART;TZID=America/New_York:20260714T200000\r\nRRULE:FREQ=WEEKLY;UNTIL=20260902T000000Z\r\n\
+EXDATE;TZID=America/New_York:20260721T200000\r\nBEGIN:VALARM\r\nACTION:DISPLAY\r\n\
+TRIGGER;VALUE=DATE-TIME:20260714T233000Z\r\nEND:VALARM"],
+            ),
+            &World("Europe/Berlin"),
+        )
+        .unwrap();
+        assert_eq!(v[0].start, "2026-07-15T02:00");
+        assert_eq!(v[0].exceptions, ["2026-07-22"]);
+        assert_eq!(v[0].repeat_until, "2026-09-02");
+        assert_eq!(v[0].reminders, [30]);
+    }
+
+    /// The rules of every time zone of the world as a file carries them (tzurl.org, taken from
+    /// ical4j) against what a time zone database says for 2000 to 2023
+    /// (tests/data/zone_offsets.tsv, written by tools/make-zone-oracle.py).
+    #[test]
+    fn world_time_zones_by_the_rules_of_a_file() {
+        let data = format!("{}/tests/data", env!("CARGO_MANIFEST_DIR"));
+        let oracle = std::fs::read_to_string(format!("{data}/zone_offsets.tsv")).unwrap();
+        let first_sample = Date::new(2000, 1, 2).unwrap().days() * 1440 + 680;
+        let last_sample = Date::new(2023, 12, 28).unwrap().days() * 1440;
+        let (mut zones, mut checked) = (0, 0);
+        let mut wrong: Vec<String> = Vec::new();
+        for line in oracle.lines().filter(|l| !l.trim().is_empty()) {
+            let cols: Vec<&str> = line.split('\t').collect();
+            let (name, first): (&str, i64) = (cols[0], cols[1].parse().unwrap());
+            let changes: Vec<(i64, i64)> = cols
+                .get(2)
+                .unwrap_or(&"")
+                .split_whitespace()
+                .map(|c| c.split_once(':').unwrap())
+                .map(|(at, off)| (at.parse().unwrap(), off.parse().unwrap()))
+                .collect();
+            let rules = std::fs::read_to_string(format!("{data}/zoneinfo/{name}.ics")).unwrap();
+            // Some zones are another one under a second name: the file then carries the first name.
+            let tzid = rules.lines().find_map(|l| l.strip_prefix("TZID:")).unwrap().trim().to_owned();
+            let (mut body, mut want) = (String::new(), Vec::new());
+            // Every five days at a drifting time of day, but not on the days the clock changes
+            // (an hour that exists twice has two right answers).
+            let mut utc = first_sample;
+            while utc < last_sample {
+                if changes.iter().all(|(at, _)| (at - utc).abs() > 26 * 60) {
+                    let offset = changes.iter().rev().find(|(at, _)| *at <= utc).map_or(first, |c| c.1);
+                    let local = DateTime::from_minutes(utc + offset);
+                    body += &format!(
+                        "BEGIN:VEVENT\r\nUID:{utc}\r\nSUMMARY:x\r\nDTSTART;TZID={tzid}:{}\r\nEND:VEVENT\r\n",
+                        local.compact()
+                    );
+                    want.push(DateTime::from_minutes(utc).to_string());
+                }
+                utc += 5 * 1440 + 7;
+            }
+            let text = rules.replace("END:VCALENDAR", &format!("{body}END:VCALENDAR"));
+            // This device is on UTC and knows no zone by name: only the rules of the file count.
+            let got: Vec<String> =
+                ics_import_zoned(&text, &FixedOffset(0)).unwrap().into_iter().map(|e| e.start).collect();
+            assert_eq!(got.len(), want.len(), "{name}");
+            for (g, w) in got.iter().zip(&want) {
+                if g != w {
+                    wrong.push(format!("{name}: {w} UTC became {g}"));
+                }
+            }
+            zones += 1;
+            checked += want.len();
+        }
+        assert!(zones > 400 && checked > 500_000, "{zones} zones, {checked} times");
+        assert!(wrong.is_empty(), "{} of {checked} wrong, e.g. {:#?}", wrong.len(), &wrong[..wrong.len().min(25)]);
+    }
+
+    #[test]
+    fn nth_weekdays() {
+        let d = |y, m, n| nth_weekday(y, m, n, SUNDAY).map(|d| d.to_string());
+        assert_eq!(d(2026, 3, -1).as_deref(), Some("2026-03-29"));
+        assert_eq!(d(2026, 10, -1).as_deref(), Some("2026-10-25"));
+        assert_eq!(d(2026, 3, 2).as_deref(), Some("2026-03-08"));
+        assert_eq!(d(2026, 11, 1).as_deref(), Some("2026-11-01"));
+        assert_eq!(d(2026, 2, 5), None);
+        assert_eq!(d(2026, 2, -5), None);
+        assert_eq!(d(2026, 13, 1), None);
+        assert_eq!(d(2026, 3, 0), None);
+        assert_eq!(parse_utc_offset("+0100"), Some(60));
+        assert_eq!(parse_utc_offset("-0530"), Some(-330));
+        assert_eq!(parse_utc_offset("+013000"), Some(90));
+        assert_eq!(parse_utc_offset("0100"), None);
+        assert_eq!(parse_utc_offset("+9999"), None);
     }
 }

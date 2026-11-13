@@ -2168,9 +2168,13 @@ fn calendar_vault_events_series_reminders_and_sync() {
     let ics = a.cal_export_ics(vec![]).unwrap();
     assert!(ics.contains("SUMMARY:Zahnarzt Dr. Weber"));
     let fresh = a.cal_save_calendar(cal("Import", 0x0e9f80)).unwrap();
-    let n = a.cal_import_ics(fresh.clone(), ics.clone().into_bytes(), 60).unwrap();
+    let n =
+        a.cal_import_ics(fresh.clone(), ics.clone().into_bytes(), Arc::new(super::caltext::FixedOffset(60))).unwrap();
     assert_eq!(n, 3);
-    assert_eq!(a.cal_import_ics(fresh.clone(), ics.into_bytes(), 60).unwrap(), 0);
+    assert_eq!(
+        a.cal_import_ics(fresh.clone(), ics.into_bytes(), Arc::new(super::caltext::FixedOffset(60))).unwrap(),
+        0
+    );
     a.cal_delete_calendar(fresh).unwrap();
     assert_eq!(a.cal_calendars().unwrap().len(), 2);
 
