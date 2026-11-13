@@ -253,7 +253,7 @@
     <string name="set_modules_hint">Ausgeschaltete Module verschwinden aus dem Menü. Ihre Daten bleiben verschlüsselt und unverändert erhalten.</string>
     <string name="set_new_code_text">Es wird ein neuer Wiederherstellungscode erstellt. Der bisherige Code funktioniert danach nicht mehr.</string>
     <string name="set_no_key_hint">Deine Suite ist mit einer Schlüsseldatei geschützt. Ein Security Key ist noch sicherer: Er lässt sich nicht kopieren.</string>
-    <string name="set_panic_hint">Der Sperr-Knopf und die Benachrichtigung sperren normal. Schütteln und die Kachel „GhulSuite sperren“ in den Schnelleinstellungen sind eine Panik-Sperre: Sie löschen zusätzlich Fingerabdruck- und App-PIN-Entsperren.</string>
+    <string name="set_panic_hint">Der Sperr-Knopf und die Benachrichtigung sperren normal. Schütteln und die Kachel „GhulSuite sperren“ in den Schnelleinstellungen sind eine Panik-Sperre: Sie löschen zusätzlich Fingerabdruck- und App-PIN-Entsperren, danach öffnet nur das Master-Passwort. Mail-Benachrichtigungen und Termin-Erinnerungen laufen weiter. Ein kurzes Vibrieren bestätigt das Sperren durch Schütteln.</string>
     <string name="set_password">Master-Passwort</string>
     <string name="set_pin_mismatch">Die PINs stimmen nicht überein.</string>
     <string name="set_quick_always_full">Passwort und Key sind immer nötig nach einem Neustart, nach Ablauf der Gültigkeit, nach einer Panik-Sperre, nach 5 falschen App-PINs und wenn Fingerabdrücke geändert werden.</string>
@@ -522,7 +522,7 @@
     <string name="mail_attachment_warning">Öffne Anhänge nur von Absendern, denen du vertraust.</string>
     <string name="mail_sent_msg">Nachricht gesendet.</string>
     <string name="mail_notify">Bei neuen E-Mails benachrichtigen</string>
-    <string name="mail_notify_hint">Benachrichtigungen funktionieren auch, wenn GhulSuite gesperrt ist. Dafür bleibt eine Kopie der Posteingangs-Anmeldung auf diesem Gerät, geschützt durch den Android-Keystore. Neue E-Mails meldet der Server sofort; dafür zeigt Android eine stille Dauer-Benachrichtigung „GhulMail ist bereit“. Benachrichtigungen zeigen standardmäßig nur den Kontonamen und die Anzahl neuer Nachrichten (unten änderbar). Die Panik-Sperre entfernt die Kopie. Kommen Mails trotzdem spät: Akku-Optimierung für GhulSuite ausschalten (wird beim Einschalten angeboten).</string>
+    <string name="mail_notify_hint">Neue E-Mails kommen auch, wenn GhulSuite gesperrt oder geschlossen ist, nach einem Neustart des Handys und nach der Panik-Sperre. Dafür bleibt eine Kopie der Posteingangs-Anmeldung auf diesem Gerät, geschützt durch den Android-Keystore. Der Server meldet neue Mails sofort; dafür zeigt Android eine stille Dauer-Benachrichtigung „GhulMail ist bereit“. Benachrichtigungen zeigen standardmäßig nur den Kontonamen und die Anzahl neuer Nachrichten (oben änderbar). Nur „Beenden erzwingen“ in den Android-Einstellungen stoppt den Empfang, bis du GhulSuite wieder öffnest.</string>
     <string name="mail_remove_title">%1$s entfernen?</string>
     <string name="mail_remove_text">Das Konto wird aus GhulSuite entfernt. Deine E-Mails bleiben auf dem Mailserver.</string>
     <string name="set_mail">GhulMail-Konten</string>
@@ -1347,4 +1347,8 @@
     <string name="mail_add_sub">Adresse und Passwort, die Server werden erkannt</string>
     <string name="wz_mail_added">E-Mail-Konto eingerichtet</string>
     <string name="wz_mail_more">Weitere Konten später in GhulMail</string>
+    <string name="mail_bg_ok">GhulMail darf im Hintergrund laufen: neue Mails kommen sofort.</string>
+    <string name="mail_bg_limited">Android bremst GhulSuite im Hintergrund (Akku-Optimierung). Neue Mails kommen dann verspätet oder nur alle 15 Minuten.</string>
+    <string name="mail_bg_allow">Im Hintergrund erlauben</string>
+    <string name="mail_bg_check">Hintergrund-Einstellung prüfen</string>
 </resources>

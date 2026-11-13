@@ -254,6 +254,9 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     tabs.getOrNull(start)?.let { tab = it }
                     applyLaunch()
                     refreshUnread()
+                    if (backend.settings.moduleGhulMail && hasArea(VaultKindUi.MAIL)) {
+                        scope.launch { runCatching { backend.net.refreshMailNotifications() } }
+                    }
                     refreshCalendar()
                 }
             }

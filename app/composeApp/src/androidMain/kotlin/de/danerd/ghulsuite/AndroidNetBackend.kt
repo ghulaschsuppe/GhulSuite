@@ -12,8 +12,8 @@ class AndroidNetBackend(private val context: Context, suite: () -> GhulSuite) : 
     private val notifications = MailNotifications(context)
 
     override suspend fun onMailAccountSaved(id: String) {
-        // A stored notification copy must follow password or server changes.
-        if (notifications.isOn(id)) notifications.enable(io { suite().mailPollConfig(id) })
+        // A stored notification copy follows password or server changes; a new account notifies.
+        refreshMailNotifications()
     }
 
     override fun onMailAccountRemoved(id: String) = notifications.disable(id)
@@ -75,7 +75,25 @@ class AndroidNetBackend(private val context: Context, suite: () -> GhulSuite) : 
         notifications.detail = level
     }
 
+    override suspend fun refreshMailNotifications() {
+        val configs = io { suite().mailAccounts().map { suite().mailPollConfig(it.id) } }
+        if (notifications.refresh(configs) && !askedBattery()) askToIgnoreBatteryOptimization()
+    }
+
+    override fun mailBackgroundAllowed(): Boolean? =
+        context.getSystemService(android.os.PowerManager::class.java).isIgnoringBatteryOptimizations(context.packageName)
+
+    override fun openMailBackgroundSettings() = askToIgnoreBatteryOptimization(force = true)
+
+    private fun askedBattery(): Boolean {
+        val p = context.getSharedPreferences("mail_notify_ui", android.content.Context.MODE_PRIVATE)
+        if (p.getBoolean("asked_battery", false)) return true
+        p.edit().putBoolean("asked_battery", true).apply()
+        return false
+    }
+
     override suspend fun setMailNotifications(accountId: String, on: Boolean) {
+        notifications.setDecided(accountId)
         if (on) {
             notifications.enable(io { suite().mailPollConfig(accountId) })
             askToIgnoreBatteryOptimization()
@@ -85,9 +103,22 @@ class AndroidNetBackend(private val context: Context, suite: () -> GhulSuite) : 
     }
 
     /** Without this, Android may cut the waiting connection in deep sleep and mail arrives late. */
-    private fun askToIgnoreBatteryOptimization() {
+    private fun askToIgnoreBatteryOptimization(force: Boolean = false) {
         val power = context.getSystemService(android.os.PowerManager::class.java)
-        if (power.isIgnoringBatteryOptimizations(context.packageName)) return
+        if (power.isIgnoringBatteryOptimizations(context.packageName) && !force) {
+            return
+        }
+        if (power.isIgnoringBatteryOptimizations(context.packageName)) {
+            // Already allowed: show the list where it can be checked (and switched back).
+            runCatching {
+                ExternalActivity.started()
+                context.startActivity(
+                    android.content.Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            }
+            return
+        }
         runCatching {
             ExternalActivity.started()
             context.startActivity(

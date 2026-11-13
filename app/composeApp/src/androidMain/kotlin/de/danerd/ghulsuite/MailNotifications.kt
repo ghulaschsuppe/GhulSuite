@@ -31,13 +31,16 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 /**
- * New-mail notifications while GhulSuite is locked (opt-in per account). Instant via
- * [MailPushService]; a check every 15 minutes remains as a fallback.
+ * New-mail notifications, also while GhulSuite is locked, after a restart of the phone and when
+ * the app was swiped away. On by default for every account on this device (it can be switched
+ * off per account). Instant via [MailPushService]; a check every 15 minutes remains as a
+ * fallback and brings the instant notifications back when Android stopped them.
  *
  * The suite stays locked; the worker only needs the inbox login. A copy of it is kept encrypted
- * with a key of the Android Keystore that never leaves the device and is removed when
- * notifications are turned off, the account is removed or the panic lock is used. Notifications
- * show only the account name and the number of new messages – no sender, no subject.
+ * with a key of the Android Keystore that never leaves the device. It is refreshed at every
+ * unlock (a password changed on another device arrives this way) and removed when notifications
+ * are turned off or the account is removed. By default notifications show only the account name
+ * and the number of new messages.
  */
 class MailNotifications(private val context: Context) {
     private val prefs = context.getSharedPreferences("mail_notify", Context.MODE_PRIVATE)
@@ -77,12 +80,33 @@ class MailNotifications(private val context: Context) {
         }
     }
 
-    /** Panic lock: no login copy remains on the device. */
-    fun disableAll() {
-        prefs.edit().clear().apply()
-        runCatching { keyStore.deleteEntry(ALIAS) }
-        WorkManager.getInstance(context).cancelUniqueWork(WORK)
-        MailPushService.stop(context)
+    /** The user chose on this device whether this account notifies (otherwise: on by default). */
+    fun decided(accountId: String): Boolean = prefs.getBoolean("$accountId.decided", false)
+
+    fun setDecided(accountId: String) = prefs.edit().putBoolean("$accountId.decided", true).apply()
+
+    /**
+     * After unlocking: every account notifies unless switched off on this device; stored login
+     * copies follow changes from other devices; removed accounts lose theirs. Returns whether an
+     * account was switched on for the first time.
+     */
+    fun refresh(configs: List<MailPollConfig>): Boolean {
+        var newlyOn = false
+        val ids = configs.map { it.accountId }.toSet()
+        for (gone in accounts().filter { it !in ids }) disable(gone)
+        for (c in configs) {
+            when {
+                isOn(c.accountId) -> if (config(c.accountId) != c) enable(c)
+                !decided(c.accountId) -> {
+                    enable(c)
+                    setDecided(c.accountId)
+                    newlyOn = true
+                }
+            }
+        }
+        // Also when nothing changed: make sure the check and the instant service are running.
+        if (accounts().isNotEmpty()) ensureRunning()
+        return newlyOn
     }
 
     fun config(accountId: String): MailPollConfig? = runCatching {
@@ -129,6 +153,12 @@ class MailNotifications(private val context: Context) {
                 .build(),
         )
         return gen.generateKey()
+    }
+
+    /** The periodic check and the instant service (after a restart of the phone, for example). */
+    fun ensureRunning() {
+        schedule()
+        MailPushService.start(context)
     }
 
     private fun schedule() {

@@ -588,16 +588,14 @@ fun MailReadScreen(state: AppState, accountId: String, folder: String, uid: Long
                     state.push(Screen.MailCompose(MailDraft(accountId, to = m.replyTo.ifBlank { m.fromAddress }, subject = re(m.subject), text = quote(m), inReplyTo = m.messageId)))
                 }, modifier = Modifier.weight(1f).height(42.dp), contentPadding = PaddingValues(horizontal = 10.dp)) {
                     Icon(Icons.AutoMirrored.Filled.Reply, null, Modifier.size(18.dp))
-                    Text(stringResource(Res.string.a_reply), maxLines = 1)
+                    Text(stringResource(Res.string.a_reply), Modifier.padding(start = 6.dp), maxLines = 1)
                 }
-                OutlinedButton(onClick = {
-                    state.push(Screen.MailCompose(MailDraft(accountId, to = m.replyTo.ifBlank { m.fromAddress },
-                        cc = (m.to + m.cc).joinToString(", "), subject = re(m.subject), text = quote(m), inReplyTo = m.messageId)))
-                }, modifier = Modifier.weight(1f).height(42.dp), contentPadding = PaddingValues(horizontal = 10.dp)) { Text(stringResource(Res.string.a_reply_all_short), maxLines = 1) }
+                // Two clear actions; "reply to all" is in the ⋮ menu when there are other recipients.
                 OutlinedButton(onClick = {
                     state.push(Screen.MailCompose(MailDraft(accountId, subject = "$forwardPrefix ${m.subject}", text = quote(m))))
                 }, modifier = Modifier.weight(1f).height(42.dp), contentPadding = PaddingValues(horizontal = 10.dp)) {
-                    Icon(Icons.AutoMirrored.Filled.Forward, stringResource(Res.string.a_forward), Modifier.size(18.dp))
+                    Icon(Icons.AutoMirrored.Filled.Forward, null, Modifier.size(18.dp))
+                    Text(stringResource(Res.string.a_forward), Modifier.padding(start = 6.dp), maxLines = 1)
                 }
             }
         }
@@ -605,7 +603,15 @@ fun MailReadScreen(state: AppState, accountId: String, folder: String, uid: Long
     if (more) {
         GhulSheet({ more = false }, stringResource(Res.string.mail_read_title)) {
             SheetList {
-                SheetRow(stringResource(Res.string.a_mark_unread)) {
+                val rm = message
+                if (rm != null && (rm.to + rm.cc).size > 1) {
+                    SheetRow(stringResource(Res.string.a_reply_all)) {
+                        more = false
+                        state.push(Screen.MailCompose(MailDraft(accountId, to = rm.replyTo.ifBlank { rm.fromAddress },
+                            cc = (rm.to + rm.cc).joinToString(", "), subject = re(rm.subject), text = quote(rm), inReplyTo = rm.messageId)))
+                    }
+                }
+                SheetRow(stringResource(Res.string.a_mark_unread), divider = rm != null && (rm.to + rm.cc).size > 1) {
                     more = false
                     state.run(onError = { error = it }, block = { net.mailSetSeen(accountId, folder, uid, false) }) { state.changed(); state.pop() }
                 }
@@ -1143,6 +1149,19 @@ fun MailAccountsSection(state: AppState) {
         MailKeysSection(state, accounts)
         SectionCard(deviceGroupTitle()) {
             if (!state.backend.isDesktop) {
+                // Reliable reception: is Android allowed to let mail in while the phone sleeps?
+                // Re-read while visible: the user comes back from the system settings without an event.
+                var bgTick by remember { mutableStateOf(0) }
+                LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(2000); bgTick++ } }
+                val bg = remember(notifyTick, bgTick) { net.mailBackgroundAllowed() }
+                if (bg == false) {
+                    Text(stringResource(Res.string.mail_bg_limited), color = warnColor(), style = MaterialTheme.typography.bodyMedium)
+                    OutlinedButton(onClick = { net.openMailBackgroundSettings(); notifyTick++ }, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(Res.string.mail_bg_allow))
+                    }
+                } else if (bg == true) {
+                    Text(stringResource(Res.string.mail_bg_ok), color = okColor(), style = MaterialTheme.typography.bodyMedium)
+                }
                 for (a in accounts) key(notifyTick, a.id) {
                     SwitchRow(stringResource(Res.string.mail_notify_for, a.name), net.mailNotificationsOn(a.id)) { on ->
                         state.run(block = { net.setMailNotifications(a.id, on) }) { notifyTick++ }

@@ -8,23 +8,15 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.hardware.Sensor
-import android.hardware.SensorEvent
-import android.hardware.SensorEventListener
-import android.hardware.SensorManager
 import android.os.Build
 import android.os.IBinder
-import android.os.SystemClock
-import kotlin.math.sqrt
 
 /**
  * Runs only while the vault is unlocked: shows a notification with a "Lock" action and
  * detects shaking (panic lock). Stops as soon as the vault is locked.
  */
-class UnlockedService : Service(), SensorEventListener {
-    private var sensors: SensorManager? = null
-    private var lastShake = 0L
-    private var shakeCount = 0
+class UnlockedService : Service() {
+    private var shake: ShakeDetector? = null
 
     override fun onBind(intent: android.content.Intent?): IBinder? = null
 
@@ -74,35 +66,23 @@ class UnlockedService : Service(), SensorEventListener {
             .build()
     }
 
+    /**
+     * Listens always while unlocked; [ShakeDetector] checks the setting on each sample, so
+     * switching "shake to lock" on or off takes effect at once.
+     */
     private fun startShakeDetection() {
-        if (sensors != null || !ghul.backend.settings.shakeToLock) return
-        val sm = getSystemService(SensorManager::class.java) ?: return
-        val acc = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) ?: return
-        sm.registerListener(this, acc, SensorManager.SENSOR_DELAY_UI)
-        sensors = sm
-    }
-
-    /** Two strong shakes (> 2.7 g) within one second lock the vault. */
-    override fun onSensorChanged(event: SensorEvent) {
-        val (x, y, z) = event.values
-        val g = sqrt(x * x + y * y + z * z) / SensorManager.GRAVITY_EARTH
-        val threshold = SHAKE_THRESHOLDS_G[ghul.backend.settings.shakeSensitivity.coerceIn(0, 2)]
-        if (g < threshold) return
-        val now = SystemClock.elapsedRealtime()
-        if (now - lastShake < 150) return // same movement
-        shakeCount = if (now - lastShake > 1000) 1 else shakeCount + 1
-        lastShake = now
-        if (shakeCount >= 2) {
+        if (shake != null) return
+        shake = ShakeDetector(this) {
+            val wasUnlocked = ghul.backend.unlocked.value
             ghul.backend.panicLock()
             stopSelf()
-        }
+            wasUnlocked
+        }.also { it.start() }
     }
 
-    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
-
     override fun onDestroy() {
-        sensors?.unregisterListener(this)
-        sensors = null
+        shake?.stop()
+        shake = null
         super.onDestroy()
     }
 
@@ -110,7 +90,5 @@ class UnlockedService : Service(), SensorEventListener {
         const val ACTION_LOCK = "de.danerd.ghulsuite.LOCK"
         private const val CHANNEL = "unlocked"
         private const val NOTIFICATION_ID = 1
-        /** low, medium, high sensitivity */
-        private val SHAKE_THRESHOLDS_G = floatArrayOf(3.3f, 2.7f, 2.2f)
     }
 }

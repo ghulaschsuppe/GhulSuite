@@ -96,6 +96,23 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** Shaking also works while the app is visible, even if Android stopped [UnlockedService]. */
+    private val shake by lazy { ShakeDetector(this) {
+            val unlocked = ghul.backend.unlocked.value
+            if (unlocked) ghul.backend.panicLock()
+            unlocked
+        } }
+
+    override fun onResume() {
+        super.onResume()
+        if (!ghul.startFailed) shake.start()
+    }
+
+    override fun onPause() {
+        shake.stop()
+        super.onPause()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleLaunch(intent)

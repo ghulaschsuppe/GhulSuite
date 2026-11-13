@@ -115,11 +115,14 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
         super.lock()
     }
 
+    /**
+     * Panic lock: locks the app and removes fingerprint and app PIN, so only the master password
+     * opens it again. Mail notifications and calendar reminders keep working: the panic lock
+     * closes the app, it does not switch off its mail reception.
+     */
     override fun panicLock() {
         lock()
         quick.disableAll()
-        MailNotifications(context).disableAll()
-        CalReminders(context).clear()
     }
 
     // --- key access -----------------------------------------------------------------------

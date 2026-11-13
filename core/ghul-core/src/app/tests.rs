@@ -2441,3 +2441,5 @@ fn import_keeps_what_it_cannot_convert_and_names_it() {
         s.import_data(export.into_bytes(), "proton.json".into(), Some(pass), Some(totp), false, Some(keep)).unwrap();
     assert_eq!((r.totps, r.kept), (0, 0));
 }
+
+mod everyday;

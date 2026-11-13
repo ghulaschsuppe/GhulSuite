@@ -14,6 +14,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <!-- A short buzz confirms the panic lock by shaking. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <!-- "Unlocked" notification with lock button and shake detection, only while unlocked. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -85,6 +87,8 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
 
