@@ -14,9 +14,10 @@ use zeroize::Zeroizing;
 use base64::Engine;
 use pgp::composed::{SignedPublicKey, SignedSecretKey};
 
+use super::areas::{area_setting, mark_area_deleted, put_area_setting};
 use super::error::{GhulError, Result};
 use super::mailcrypt;
-use super::suite::{new_id, put_setting, setting, GhulSuite, Open, SUITE_FILE};
+use super::suite::{new_id, GhulSuite, Open, VaultKind};
 use crate::net::imap::{self, ImapConfig, ImapSession, Security};
 use crate::net::smtp::{self, SmtpConfig};
 use crate::net::{block_on, NetError, TIMEOUT};
@@ -281,7 +282,7 @@ pub enum MailCheck {
 }
 
 fn accounts(o: &Open) -> Vec<StoredAccount> {
-    setting(&o.suite, ACCOUNTS_KEY)
+    area_setting(o, VaultKind::Mail, ACCOUNTS_KEY)
 }
 
 fn account(o: &Open, id: &str) -> Result<StoredAccount> {
@@ -330,7 +331,7 @@ fn info(a: &StoredAccount) -> MailAccountInfo {
 }
 
 fn contact_keys(o: &Open) -> Vec<ContactKey> {
-    setting(&o.suite, KEYS_KEY)
+    area_setting(o, VaultKind::Mail, KEYS_KEY)
 }
 
 fn now_secs() -> i64 {
@@ -379,7 +380,7 @@ fn remember_key(o: &mut Open, email: &str, key: &SignedPublicKey, source: &str) 
         source: source.to_owned(),
         updated: now_secs(),
     });
-    put_setting(&mut o.suite, KEYS_KEY, &list)?;
+    put_area_setting(o, VaultKind::Mail, KEYS_KEY, &list)?;
     Ok(true)
 }
 
@@ -395,7 +396,7 @@ fn ensure_key_changed(o: &mut Open, account_id: &str) -> Result<(SignedSecretKey
         let (armored, _) = mailcrypt::generate(&a.display_name, &a.email)?;
         a.pgp_key = armored.to_string();
         let key = mailcrypt::secret_key(&a.pgp_key)?;
-        put_setting(&mut o.suite, ACCOUNTS_KEY, &list)?;
+        put_area_setting(o, VaultKind::Mail, ACCOUNTS_KEY, &list)?;
         return Ok((key, true));
     }
     Ok((mailcrypt::secret_key(&a.pgp_key)?, false))
@@ -1107,6 +1108,7 @@ impl GhulSuite {
         }
         require_secure(&input.servers)?;
         self.with_open(|o| {
+            self.ensure_area(o, VaultKind::Mail)?;
             let mut list = accounts(o);
             let id = id.unwrap_or_else(|| crate::kdf::hex(&new_id()[..8]));
             let mut password = input.password.clone();
@@ -1145,9 +1147,9 @@ impl GhulSuite {
                 signature: input.signature.clone(),
                 pgp_key,
             });
-            put_setting(&mut o.suite, ACCOUNTS_KEY, &list)?;
+            put_area_setting(o, VaultKind::Mail, ACCOUNTS_KEY, &list)?;
             self.net.lock().unwrap_or_else(|p| p.into_inner()).imap.remove(&id);
-            self.save_container(&mut o.suite, SUITE_FILE)?;
+            self.save_area(o, VaultKind::Mail)?;
             Ok(id)
         })
     }
@@ -1160,10 +1162,10 @@ impl GhulSuite {
         self.with_open(|o| {
             let mut list = accounts(o);
             list.retain(|a| a.id != id);
-            put_setting(&mut o.suite, ACCOUNTS_KEY, &list)?;
-            super::sync::mark_deleted(&mut o.suite.payload.settings, ACCOUNTS_KEY, &id);
+            put_area_setting(o, VaultKind::Mail, ACCOUNTS_KEY, &list)?;
+            mark_area_deleted(o, VaultKind::Mail, ACCOUNTS_KEY, &id)?;
             self.net.lock().unwrap_or_else(|p| p.into_inner()).imap.remove(&id);
-            self.save_container(&mut o.suite, SUITE_FILE)
+            self.save_area(o, VaultKind::Mail)
         })
     }
 
@@ -1245,7 +1247,7 @@ impl GhulSuite {
         let u = self.with_open(|o| {
             let u = unwrap_message(o, &account_id, &raw)?;
             if u.changed {
-                self.save_container(&mut o.suite, SUITE_FILE)?;
+                self.save_area(o, VaultKind::Mail)?;
             }
             Ok(u)
         })?;
@@ -1311,7 +1313,7 @@ impl GhulSuite {
         let (acc, protection) = self.with_open(|o| {
             let (key, created) = ensure_key_changed(o, &mail.account_id)?;
             if created {
-                self.save_container(&mut o.suite, SUITE_FILE)?;
+                self.save_area(o, VaultKind::Mail)?;
             }
             let acc = account(o, &mail.account_id)?;
             // Encrypted when every recipient has a key; otherwise signed.
@@ -1354,7 +1356,7 @@ impl GhulSuite {
                 for (r, k) in &found {
                     remember_key(o, r, k, "wkd")?;
                 }
-                self.save_container(&mut o.suite, SUITE_FILE)?;
+                self.save_area(o, VaultKind::Mail)?;
             }
             Ok(wanted
                 .iter()
@@ -1371,7 +1373,7 @@ impl GhulSuite {
         self.with_open(|o| {
             let (key, created) = ensure_key_changed(o, &account_id)?;
             if created {
-                self.save_container(&mut o.suite, SUITE_FILE)?;
+                self.save_area(o, VaultKind::Mail)?;
             }
             mailcrypt::public_armored(&mailcrypt::public_of(&key))
         })
@@ -1389,10 +1391,10 @@ impl GhulSuite {
                 // An import is a deliberate choice: it replaces any key learned before.
                 let mut list = contact_keys(o);
                 list.retain(|c| &c.email != a);
-                put_setting(&mut o.suite, KEYS_KEY, &list)?;
+                put_area_setting(o, VaultKind::Mail, KEYS_KEY, &list)?;
                 remember_key(o, a, &key, "import")?;
             }
-            self.save_container(&mut o.suite, SUITE_FILE)?;
+            self.save_area(o, VaultKind::Mail)?;
             Ok(addrs.clone())
         })
     }
@@ -1417,9 +1419,9 @@ impl GhulSuite {
         self.with_open(|o| {
             let mut list = contact_keys(o);
             list.retain(|c| c.email != bare(&email));
-            put_setting(&mut o.suite, KEYS_KEY, &list)?;
-            super::sync::mark_deleted(&mut o.suite.payload.settings, KEYS_KEY, &bare(&email));
-            self.save_container(&mut o.suite, SUITE_FILE)
+            put_area_setting(o, VaultKind::Mail, KEYS_KEY, &list)?;
+            mark_area_deleted(o, VaultKind::Mail, KEYS_KEY, &bare(&email))?;
+            self.save_area(o, VaultKind::Mail)
         })
     }
 

@@ -24,6 +24,7 @@ Was GhulSuite ist und kann, steht in der [README](README.md), das vollständige 
 
 ```
 core/ghul-core/        Rust-Kern: Krypto, FIDO2/CTAP2, Dateiformat, Suite-API, Sync, Drive, Mail, PGP, Teilen
+                       (ein Bereich, eine Datei: .ghlpss, .ghltotp, .ghldrv, .ghlmail, .ghlcal + suite.ghlsuite)
 core/ghul-core/server/ PHP-Server-Modul (ghulsuite.php, PHP 8.1, ohne Datenbank)
 core/fuzz/             Fuzzing-Ziele (cargo-fuzz)
 app/                   Kotlin + Compose Multiplatform (Android und Windows), Anbindung per UniFFI

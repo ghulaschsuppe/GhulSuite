@@ -17,6 +17,7 @@ import de.danerd.ghulsuite.core.PhpModule
 import de.danerd.ghulsuite.core.ShareInfo
 import de.danerd.ghulsuite.core.ShareOptions
 import de.danerd.ghulsuite.core.phpModuleCreate as phpModuleCreateCore
+import de.danerd.ghulsuite.core.phpModuleProbe as phpModuleProbeCore
 import de.danerd.ghulsuite.model.ServerKindUi
 import de.danerd.ghulsuite.model.ServerSavedUi
 import de.danerd.ghulsuite.model.PhpModuleUi
@@ -53,6 +54,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.coroutineContext
+import de.danerd.ghulsuite.core.ServerFolders
+import de.danerd.ghulsuite.core.DriveMode
+import de.danerd.ghulsuite.model.ServerFoldersUi
+import de.danerd.ghulsuite.model.PhpInstalledUi
+import de.danerd.ghulsuite.model.PhpModuleInfoUi
+import de.danerd.ghulsuite.model.DriveStorageUi
+import de.danerd.ghulsuite.model.DriveModeUi
 
 /** Size of the pieces handed to the core when uploading (the core encrypts 4 MiB blocks). */
 private const val UPLOAD_CHUNK = 1024 * 1024
@@ -80,11 +88,26 @@ abstract class CoreNetBackend(protected val suite: () -> GhulSuite) : NetBackend
 
     // --- servers -------------------------------------------------------------------------------
 
-    override suspend fun servers(): List<ServerUi> = io {
-        suite().listServers().map {
-            ServerUi(it.id, it.name, it.host, it.port.toInt(), it.user, it.base, it.usesKey, it.hostKey, it.location, it.kind.toUi(), it.shareUrl, it.shareDir)
+    override suspend fun servers(): List<ServerUi> = io { suite().listServers().map { it.toUi() } }
+
+    override suspend fun serverBrowseInput(input: ServerInputUi, confirmed: String?, path: String): ServerFoldersUi = io {
+        when (val r = suite().serverBrowseInput(input.toCore(), confirmed, path)) {
+            is ServerFolders.Confirm -> ServerFoldersUi.Confirm(r.fingerprint)
+            is ServerFolders.Folders -> ServerFoldersUi.Folders(r.folders)
         }
     }
+
+    override suspend fun phpModuleInstall(ftps: ServerInputUi, confirmed: String?, dir: String, url: String): PhpInstalledUi = io {
+        val r = suite().phpModuleInstall(ftps.toCore(), confirmed, dir, url)
+        PhpInstalledUi(r.confirm, r.url, r.tried, r.key, r.limit.toLong(), r.upload?.toUi())
+    }
+
+    override suspend fun phpModuleProbe(url: String, key: String): PhpModuleInfoUi = io {
+        val i = phpModuleProbeCore(url, key)
+        PhpModuleInfoUi(i.version.toInt(), i.current.toInt(), i.limit.toLong(), i.free.toLong())
+    }
+
+    override suspend fun phpModuleUpdate(serverId: String): Int = io { suite().phpModuleUpdate(serverId).toInt() }
 
     override suspend fun saveServer(input: ServerInputUi, confirmed: String?): ServerSavedUi = io {
         when (val r = suite().saveServer(input.toCore(), confirmed)) {
@@ -152,6 +175,28 @@ abstract class CoreNetBackend(protected val suite: () -> GhulSuite) : NetBackend
     }
 
     override suspend fun driveSetup(serverId: String) = io { suite().driveSetup(serverId) }
+
+    override suspend fun driveStorage(): DriveStorageUi = io {
+        val s = suite().driveStorage()
+        val mode = when (s.mode) {
+            DriveMode.NONE -> DriveModeUi.NONE
+            DriveMode.SYNC -> DriveModeUi.SYNC
+            DriveMode.OWN -> DriveModeUi.OWN
+            DriveMode.SUITE -> DriveModeUi.SUITE
+        }
+        DriveStorageUi(mode, s.server?.toUi(), s.syncAvailable)
+    }
+
+    override suspend fun driveUseSync() = io { suite().driveUseSync() }
+
+    override suspend fun driveSaveServer(input: ServerInputUi, confirmed: String?): ServerSavedUi = io {
+        when (val r = suite().driveSaveServer(input.toCore(), confirmed)) {
+            is ServerSaved.Confirm -> ServerSavedUi.Confirm(r.fingerprint)
+            is ServerSaved.Saved -> ServerSavedUi.Saved(r.id)
+        }
+    }
+
+    override suspend fun driveDetachFromSync() = io { suite().driveDetachFromSync() }
 
     override suspend fun driveList(folder: String?, refresh: Boolean): List<DriveItemUi> =
         io { suite().driveList(folder, refresh).map { it.toUi() } }

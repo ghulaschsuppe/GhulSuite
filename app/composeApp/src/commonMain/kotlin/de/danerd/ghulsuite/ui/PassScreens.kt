@@ -89,6 +89,9 @@ import de.danerd.ghulsuite.model.VaultKindUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Key
 
 @Composable
 fun PassListScreen(state: AppState, padding: PaddingValues) {
@@ -116,7 +119,24 @@ fun PassListScreen(state: AppState, padding: PaddingValues) {
     }
     val color = areaColor(Tab.PASS)
     val t = g
-    LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(bottom = 96.dp)) {
+    // Long press selects entries (then tap adds or removes); the bar on top deletes them.
+    val selected = remember { mutableStateListOf<String>() }
+    val keyOf = { e: EntrySummaryUi -> e.vaultId + "/" + e.id }
+    val selecting = selected.isNotEmpty()
+    var menuFor by remember { mutableStateOf<EntrySummaryUi?>(null) }
+    var deleting by remember { mutableStateOf<List<EntrySummaryUi>?>(null) }
+    PlatformBackHandler(enabled = selecting && LocalTabActive.current) { selected.clear() }
+    val toggle = { e: EntrySummaryUi -> if (keyOf(e) in selected) selected.remove(keyOf(e)) else selected.add(keyOf(e)) }
+    Column(Modifier.fillMaxSize().padding(padding)) {
+    if (selecting) {
+        SelectionHeader(
+            selected.size,
+            onClose = { selected.clear() },
+            onAll = { shown.forEach { if (keyOf(it) !in selected) selected.add(keyOf(it)) } },
+            onDelete = { deleting = all.filter { keyOf(it) in selected } },
+        )
+    }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
         item(key = "search") {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 SearchField(query, { query = it }, placeholder = stringResource(Res.string.pass_search))
@@ -192,20 +212,69 @@ fun PassListScreen(state: AppState, padding: PaddingValues) {
                     title = e.title.ifBlank { stringResource(Res.string.untitled) },
                     subtitle = sub,
                     leading = { TypeBadge(e.type, e.title) },
-                    trailing = if (e.hasTotp || e.favorite) {
-                        {
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                if (e.hasTotp) Icon(Icons.Filled.Schedule, null, Modifier.size(20.dp), tint = t.muted)
-                                if (e.favorite) Icon(Icons.Filled.Star, null, Modifier.size(20.dp), tint = areaColor(Tab.MAIL))
+                    trailing = {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (e.hasTotp) Icon(Icons.Filled.Schedule, null, Modifier.size(20.dp), tint = t.muted)
+                            if (e.favorite) Icon(Icons.Filled.Star, null, Modifier.size(20.dp), tint = areaColor(Tab.MAIL))
+                            if (selecting) {
+                                Checkbox(keyOf(e) in selected, { toggle(e) })
+                            } else {
+                                IconButton(onClick = { menuFor = e }) { Icon(Icons.Filled.MoreVert, stringResource(Res.string.a_more), tint = t.muted) }
                             }
                         }
-                    } else null,
+                    },
                     divider = i > 0,
-                    selected = state.wide && state.stack.firstOrNull().let { it is Screen.EntryDetail && it.id == e.id && it.vaultId == e.vaultId },
-                    onClick = { state.push(Screen.EntryDetail(e.vaultId, e.id)) },
+                    selected = keyOf(e) in selected ||
+                        state.wide && state.stack.firstOrNull().let { it is Screen.EntryDetail && it.id == e.id && it.vaultId == e.vaultId },
+                    onLongClick = { toggle(e) },
+                    onClick = { if (selecting) toggle(e) else state.push(Screen.EntryDetail(e.vaultId, e.id)) },
                 )
             }
         }
+    }
+    }
+
+    // Menu of one entry: copy user name or password, edit, delete.
+    val noValue = stringResource(Res.string.pass_no_value)
+    menuFor?.let { e ->
+        val close = { menuFor = null }
+        fun copyField(field: String, label: String) {
+            close()
+            state.run(block = { state.backend.getEntry(e.vaultId, e.id).value(field) }) { v ->
+                if (v.isEmpty()) state.message(noValue.replace("%1\$s", label)) else state.copy(label, v)
+            }
+        }
+        val userLabel = stringResource(Res.string.f_username)
+        val pwLabel = stringResource(Res.string.f_password)
+        GhulSheet(close, e.title.ifBlank { stringResource(Res.string.untitled) }) {
+            SheetList {
+                SheetRow(stringResource(Res.string.pass_copy_username), leading = { IconTile(Icons.Filled.Person, paletteColor(1)) }) { copyField("username", userLabel) }
+                SheetRow(stringResource(Res.string.pass_copy_password), leading = { IconTile(Icons.Filled.Key, paletteColor(0)) }, divider = true) { copyField("password", pwLabel) }
+                SheetRow(stringResource(Res.string.a_edit), leading = { IconTile(Icons.Filled.Edit, paletteColor(5)) }, divider = true) {
+                    close(); state.push(Screen.EntryEdit(e.vaultId, e.id, e.type))
+                }
+                SheetRow(stringResource(Res.string.a_delete), leading = { IconTile(Icons.Filled.Delete, t.danger) }, color = t.danger, divider = true) {
+                    close(); deleting = listOf(e)
+                }
+            }
+        }
+    }
+    deleting?.let { list ->
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text(stringResource(Res.string.pass_delete_n_title, list.size.toString())) },
+            text = { Text(if (list.size == 1) stringResource(Res.string.pass_delete_one_text, list[0].title) else stringResource(Res.string.pass_delete_n_text, list.size.toString())) },
+            confirmButton = {
+                TextButton(onClick = {
+                    deleting = null
+                    state.run(block = { for (x in list) state.backend.deleteEntry(x.vaultId, x.id) }) {
+                        selected.clear()
+                        state.changed()
+                    }
+                }) { Text(stringResource(Res.string.a_delete)) }
+            },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text(stringResource(Res.string.a_cancel)) } },
+        )
     }
 }
 
@@ -238,7 +307,7 @@ fun typeIcon(type: String): androidx.compose.ui.graphics.vector.ImageVector = wh
 
 /** "New entry" sheet: entry types as a list, plus the password generator on its own. */
 @Composable
-fun TypePickerDialog(onPick: (String) -> Unit, onDismiss: () -> Unit, onGenerate: (() -> Unit)? = null) {
+fun TypePickerDialog(onPick: (String) -> Unit, onDismiss: () -> Unit, onGenerate: (() -> Unit)? = null, onImport: (() -> Unit)? = null) {
     GhulSheet(onDismiss, stringResource(Res.string.pass_new_entry)) {
         SheetList {
             ENTRY_TYPES.forEachIndexed { i, t ->
@@ -248,6 +317,15 @@ fun TypePickerDialog(onPick: (String) -> Unit, onDismiss: () -> Unit, onGenerate
                     end = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp), tint = g.faint) },
                     divider = i > 0,
                 ) { onPick(t.type) }
+            }
+            // Bring in passwords from another app (Proton Pass, Bitwarden, KeePass …) right here.
+            if (onImport != null) {
+                SheetRow(
+                    stringResource(Res.string.pass_add_import), stringResource(Res.string.pass_add_import_sub),
+                    leading = { IconTile(Icons.Filled.Download, paletteColor(3)) },
+                    end = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp), tint = g.faint) },
+                    divider = true,
+                ) { onImport() }
             }
         }
         if (onGenerate != null) {

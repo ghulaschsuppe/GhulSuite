@@ -620,6 +620,21 @@ class SegScope(private val row: RowScope) : RowScope by row {
     }
 }
 
+/** Messages (.toast): dark pill with light text, centred, like in the design preview. */
+@Composable
+fun GhulSnackbarHost(host: androidx.compose.material3.SnackbarHostState, modifier: Modifier = Modifier) {
+    androidx.compose.material3.SnackbarHost(host, modifier) { data ->
+        val t = g
+        Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
+            Text(
+                data.visuals.message,
+                Modifier.widthIn(max = 560.dp).clip(RoundedCornerShape(14.dp)).background(t.fg).padding(horizontal = 16.dp, vertical = 10.dp),
+                color = t.bg, fontSize = 14.sp, fontWeight = FontWeight.W500,
+            )
+        }
+    }
+}
+
 /** Segmented choice in the look of the design preview: grey track, the chosen part raised. */
 @Composable
 fun SingleChoiceSegmentedButtonRow(modifier: Modifier = Modifier, content: @Composable SegScope.() -> Unit) {

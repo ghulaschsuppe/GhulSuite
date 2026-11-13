@@ -13,7 +13,7 @@
 
 declare(strict_types=1);
 
-const GHUL_VERSION = 1;
+const GHUL_VERSION = 2;
 const GHUL_KEY = '__GHUL_KEY__';
 const GHUL_DATA = '__GHUL_DATA__';
 const GHUL_VIEWER_HTML = '__GHUL_VIEWER_HTML__';
@@ -107,6 +107,39 @@ function ghul_write(string $file, string $data, int $flags = 0): void
     }
 }
 
+/** A php.ini size ("8M", "1G", "-1") in bytes; 0 for unlimited. */
+function ghul_ini_bytes(string $key): int
+{
+    $v = trim((string) ini_get($key));
+    if ($v === '' || $v === '-1' || $v === '0') {
+        return 0;
+    }
+    $n = (int) $v;
+    return match (strtolower(substr($v, -1))) {
+        'g' => $n << 30,
+        'm' => $n << 20,
+        'k' => $n << 10,
+        default => $n,
+    };
+}
+
+/** Largest request body this hosting accepts (the body is held in memory once, plus a copy). */
+function ghul_limit(): int
+{
+    $limits = array_filter([ghul_ini_bytes('post_max_size'), intdiv(ghul_ini_bytes('memory_limit'), 3)]);
+    return $limits === [] ? 0 : min($limits);
+}
+
+/** Temporary file of a write that arrives in parts; `u` is chosen by the app per upload. */
+function ghul_upload_part(string $file): string
+{
+    $u = (string) ($_GET['u'] ?? '');
+    if (!preg_match('/^[0-9a-f]{16,64}$/', $u)) {
+        ghul_fail(400, 'bad upload id');
+    }
+    return dirname($file) . '/.tmp-up-' . $u;
+}
+
 /** Counts failed logins per address; too many in ten minutes block the address for a while. */
 function ghul_fails(bool $add): void
 {
@@ -125,7 +158,7 @@ function ghul_fails(bool $add): void
 /** Canonical query of the signed parameters. */
 function ghul_canonical(): string
 {
-    $keys = ['a', 'p', 'id', 'exp', 'max', 'n'];
+    $keys = ['a', 'p', 'id', 'exp', 'max', 'n', 'u', 'size'];
     $parts = [];
     foreach ($keys as $k) {
         if (isset($_GET[$k])) {
@@ -282,7 +315,7 @@ $files = ghul_dir('files');
 $a = (string) ($_GET['a'] ?? '');
 switch ($a) {
     case 'info':
-        ghul_json(['version' => GHUL_VERSION, 'php' => PHP_VERSION, 'free' => @disk_free_space($files) ?: 0]);
+        ghul_json(['version' => GHUL_VERSION, 'php' => PHP_VERSION, 'free' => @disk_free_space($files) ?: 0, 'limit' => ghul_limit()]);
     case 'list':
         $p = ghul_path((string) ($_GET['p'] ?? ''), true);
         $dir = $p === '' ? $files : $files . '/' . $p;
@@ -306,6 +339,43 @@ switch ($a) {
         exit;
     case 'write':
         ghul_write($files . '/' . ghul_path((string) ($_GET['p'] ?? '')), $body);
+        ghul_json(true);
+    case 'write_part':
+        // Files larger than one request arrive in parts and replace the old file at once
+        // on write_done, so a broken upload never leaves half a vault behind.
+        $f = $files . '/' . ghul_path((string) ($_GET['p'] ?? ''));
+        $dir = dirname($f);
+        if (!is_dir($dir) && !@mkdir($dir, 0700, true)) {
+            ghul_fail(500, 'cannot create folder');
+        }
+        $part = ghul_upload_part($f);
+        if ((int) ($_GET['n'] ?? 0) === 0) {
+            @unlink($part);
+        } elseif (!is_file($part)) {
+            ghul_fail(409, 'missing earlier parts');
+        }
+        if (file_put_contents($part, $body, FILE_APPEND | LOCK_EX) === false) {
+            ghul_fail(500, 'cannot write');
+        }
+        ghul_json(true);
+    case 'write_done':
+        $f = $files . '/' . ghul_path((string) ($_GET['p'] ?? ''));
+        $part = ghul_upload_part($f);
+        $size = (int) ($_GET['size'] ?? -1);
+        if (!is_file($part) || filesize($part) !== $size) {
+            @unlink($part);
+            ghul_fail(409, 'incomplete upload');
+        }
+        if (!rename($part, $f)) {
+            @unlink($part);
+            ghul_fail(500, 'cannot write');
+        }
+        // Parts of uploads that never finished.
+        foreach (glob(dirname($f) . '/.tmp-up-*') ?: [] as $old) {
+            if (@filemtime($old) < time() - 86400) {
+                @unlink($old);
+            }
+        }
         ghul_json(true);
     case 'delete':
         $f = $files . '/' . ghul_path((string) ($_GET['p'] ?? ''));

@@ -48,6 +48,7 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
+import de.danerd.ghulsuite.model.VaultKindUi
 
 private val AUTO_LOCK_OPTIONS: List<Pair<Int, StringResource>> = listOf(
     0 to Res.string.lock_immediately,
@@ -69,10 +70,12 @@ private val CLIPBOARD_OPTIONS: List<Pair<Int, StringResource>> = listOf(
 
 private val QUICK_HOURS_OPTIONS: List<Pair<Int, StringResource>> = listOf(
     1 to Res.string.quick_1h,
+    4 to Res.string.quick_4h,
     8 to Res.string.quick_8h,
     24 to Res.string.quick_24h,
     72 to Res.string.quick_3d,
     168 to Res.string.quick_7d,
+    0 to Res.string.quick_always,
 )
 
 private val SHAKE_OPTIONS: List<Pair<Int, StringResource>> = listOf(
@@ -247,35 +250,46 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                 SetPage.VAULTS -> VaultsSection(state)
                 SetPage.IMPORT -> ImportExportSection(state)
                 SetPage.SERVERS -> ServersSection(state)
-                SetPage.MODULES -> {
-            SectionCard(stringResource(Res.string.set_modules)) {
-                Hint(stringResource(Res.string.set_modules_hint))
-                SwitchRow(stringResource(Res.string.tab_pass), settings.moduleGhulPass) { settings.moduleGhulPass = it }
-                SwitchRow(stringResource(Res.string.tab_auth), settings.moduleGhulAuth) { settings.moduleGhulAuth = it }
-                SwitchRow(stringResource(Res.string.tab_drive), settings.moduleGhulDrive) { settings.moduleGhulDrive = it }
-                SwitchRow(stringResource(Res.string.tab_mail), settings.moduleGhulMail) { settings.moduleGhulMail = it }
-                SwitchRow(stringResource(Res.string.tab_cal), settings.moduleGhulCal) { settings.moduleGhulCal = it; state.refreshCalendar() }
-            }
-
-                }
+                SetPage.MODULES -> AreasPage(state)
                 SetPage.PASS -> {
-            SectionCard(stringResource(Res.string.set_view)) {
-                SwitchRow(stringResource(Res.string.set_show_subtitles), settings.showEntrySubtitles) { settings.showEntrySubtitles = it }
+            SectionCard(areaGroupTitle(VaultKindUi.PASS)) {
                 ChoiceRow(stringResource(Res.string.set_gen_default), listOf(0 to Res.string.gen_chars, 1 to Res.string.gen_passphrase), settings.generatorMode) { settings.generatorMode = it }
+            }
+            SectionCard(deviceGroupTitle()) {
+                SwitchRow(stringResource(Res.string.set_show_subtitles), settings.showEntrySubtitles) { settings.showEntrySubtitles = it }
                 SwitchRow(stringResource(Res.string.sec_pwned), settings.pwnedCheck) { settings.pwnedCheck = it }
                 Hint(stringResource(Res.string.sec_pwned_sub))
             }
             if (!backend.isDesktop) AutofillSection(state)
+            AreaFileNote(VaultKindUi.PASS)
+            AreaFooter(state, VaultKindUi.PASS)
                 }
                 SetPage.AUTH -> {
-            SectionCard(stringResource(Res.string.set_view)) {
+            SectionCard(areaGroupTitle(VaultKindUi.TOTP)) {
+                Hint(stringResource(Res.string.area_auth_nothing))
+            }
+            SectionCard(deviceGroupTitle()) {
                 SwitchRow(stringResource(Res.string.set_totp_hide), settings.totpHideCodes) { settings.totpHideCodes = it }
                 SwitchRow(stringResource(Res.string.set_totp_next), settings.totpShowNext) { settings.totpShowNext = it }
             }
+            AreaFileNote(VaultKindUi.TOTP)
+            AreaFooter(state, VaultKindUi.TOTP)
                 }
-                SetPage.DRIVE -> DriveSettingsSection(state)
-                SetPage.MAIL -> MailAccountsSection(state)
-                SetPage.CAL -> CalSettingsSection(state)
+                SetPage.DRIVE -> {
+                    DriveSettingsSection(state)
+                    AreaFileNote(VaultKindUi.DRIVE)
+                    AreaFooter(state, VaultKindUi.DRIVE)
+                }
+                SetPage.MAIL -> {
+                    MailAccountsSection(state)
+                    AreaFileNote(VaultKindUi.MAIL)
+                    AreaFooter(state, VaultKindUi.MAIL)
+                }
+                SetPage.CAL -> {
+                    CalSettingsSection(state)
+                    AreaFileNote(VaultKindUi.CAL)
+                    AreaFooter(state, VaultKindUi.CAL)
+                }
                 SetPage.LOOK -> {
             SectionCard(stringResource(Res.string.set_view)) {
                 ChoiceRow(stringResource(Res.string.set_theme), THEME_OPTIONS, settings.theme) { settings.theme = it }
@@ -480,11 +494,11 @@ private fun AddKeyDialog(state: AppState, onDismiss: () -> Unit) {
 fun RecoveryCodeScreen(state: AppState, code: String, padding: PaddingValues) {
     Column(Modifier.padding(padding)) {
         ScreenColumn {
-            SectionCard(stringResource(Res.string.setup_code_title)) {
-                Hint(stringResource(Res.string.set_code_shown_once))
-                RecoveryCodeView(code)
-                PrintSheetButton(state, code)
-                Button(onClick = { state.pop() }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.setup_code_noted)) }
+            Hint(stringResource(Res.string.set_code_shown_once))
+            // Like during setup: the code counts only once a group of it was typed back.
+            RecoveryCodeSteps(state, code) {
+                state.changed()
+                state.pop()
             }
         }
     }

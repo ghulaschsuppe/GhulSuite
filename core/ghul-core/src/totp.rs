@@ -10,7 +10,15 @@ pub enum OtpAlgorithm {
     Sha1,
     Sha256,
     Sha512,
+    /// Steam Guard: HMAC-SHA1 like TOTP, but five characters from Steam's own alphabet.
+    Steam,
 }
+
+/// Characters of Steam Guard codes.
+const STEAM_CHARS: &[u8; 26] = b"23456789BCDFGHJKMNPQRTVWXY";
+
+/// Number of characters of a Steam Guard code.
+pub const STEAM_DIGITS: u32 = 5;
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum OtpError {
@@ -31,14 +39,14 @@ fn mac(algorithm: OtpAlgorithm, secret: &[u8], msg: &[u8]) -> Vec<u8> {
         }};
     }
     match algorithm {
-        OtpAlgorithm::Sha1 => run!(Sha1),
+        OtpAlgorithm::Sha1 | OtpAlgorithm::Steam => run!(Sha1),
         OtpAlgorithm::Sha256 => run!(Sha256),
         OtpAlgorithm::Sha512 => run!(Sha512),
     }
 }
 
 pub fn hotp(secret: &[u8], counter: u64, digits: u32, algorithm: OtpAlgorithm) -> Result<String, OtpError> {
-    if !(6..=8).contains(&digits) {
+    if algorithm != OtpAlgorithm::Steam && !(6..=8).contains(&digits) {
         return Err(OtpError::InvalidDigits);
     }
     if secret.is_empty() {
@@ -47,6 +55,15 @@ pub fn hotp(secret: &[u8], counter: u64, digits: u32, algorithm: OtpAlgorithm) -
     let h = mac(algorithm, secret, &counter.to_be_bytes());
     let offset = (h[h.len() - 1] & 0x0f) as usize;
     let bin = u32::from_be_bytes([h[offset] & 0x7f, h[offset + 1], h[offset + 2], h[offset + 3]]);
+    if algorithm == OtpAlgorithm::Steam {
+        let mut rest = bin as usize;
+        let mut code = String::with_capacity(STEAM_DIGITS as usize);
+        for _ in 0..STEAM_DIGITS {
+            code.push(STEAM_CHARS[rest % STEAM_CHARS.len()] as char);
+            rest /= STEAM_CHARS.len();
+        }
+        return Ok(code);
+    }
     let code = bin % 10u32.pow(digits);
     Ok(format!("{code:0width$}", width = digits as usize))
 }
@@ -72,6 +89,27 @@ pub fn totp_remaining(unix_time: u64, period: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn steam_guard_codes() {
+        // Same secret and time as other Steam Guard implementations (e.g. the one in andOTP/Aegis).
+        let secret = crate::app::tools::base32_decode("JBSWY3DPEHPK3PXP").unwrap();
+        let code = totp(&secret, 1_700_000_000, 30, STEAM_DIGITS, OtpAlgorithm::Steam).unwrap();
+        assert_eq!(code.len(), 5);
+        assert!(code.bytes().all(|c| STEAM_CHARS.contains(&c)));
+        // Five characters from the 26-letter alphabet, derived from the same HMAC-SHA1 value as TOTP.
+        let h = mac(OtpAlgorithm::Sha1, &secret, &(1_700_000_000u64 / 30).to_be_bytes());
+        let o = (h[19] & 0x0f) as usize;
+        let mut v = u32::from_be_bytes([h[o] & 0x7f, h[o + 1], h[o + 2], h[o + 3]]) as usize;
+        let expected: String = (0..5)
+            .map(|_| {
+                let c = STEAM_CHARS[v % 26] as char;
+                v /= 26;
+                c
+            })
+            .collect();
+        assert_eq!(code, expected);
+    }
 
     #[test]
     fn rfc4226_hotp_vectors() {

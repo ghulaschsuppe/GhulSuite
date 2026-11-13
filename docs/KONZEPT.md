@@ -321,8 +321,17 @@ des Inhalts eingebunden.
 | **Lokaler Datenträger** | Externe Festplatte, USB-Stick | – (Inhalte trotzdem verschlüsselt) | nur als **Sicherungsziel** |
 
 - **Mehrere Speicher gleichzeitig:** Ein Hauptspeicher plus Spiegel, z. B. vServer plus NAS. Fällt einer aus, ist der andere noch da.
-- Alle Zugangsdaten (Host, Benutzer, SSH-Schlüssel, Passwörter) liegen **nur verschlüsselt im Suite-Container**.
-  Ohne Entsperren ist nicht erkennbar, welche Server eingerichtet sind.
+- Alle Zugangsdaten (Host, Benutzer, SSH-Schlüssel, Passwörter) liegen **nur verschlüsselt** – der Sync-Server im
+  Suite-Container, ein eigener Server nur für GhulDrive in der Drive-Datei. Ohne Entsperren ist nicht erkennbar,
+  welche Server eingerichtet sind.
+- **Synchronisation und GhulDrive sind unabhängig** (abgestimmt am 13.11.2026, #24): GhulDrive nutzt entweder
+  „wie Synchronisation“ (nur ein Verweis auf den Sync-Server dieses Geräts, keine Kopie der Zugangsdaten) oder einen
+  eigenen Server, auch mit anderer Methode. Wird der Sync-Server entfernt oder gewechselt, fragt die App vorher:
+  Zugang für GhulDrive behalten (Kopie in die Drive-Datei) oder GhulDrive später neu einrichten.
+- **Ein Server-Formular** für Assistent, GhulDrive und Optionen: SFTP/FTPS anmelden, **Ordner aus der Liste des
+  Servers wählen**, Verbindung testen. PHP-Modul: einmal per FTPS anmelden, Ordner wählen, die App lädt das Modul mit
+  eigenem Schlüssel hoch, leitet die Adresse aus Domain und Ordner ab und prüft sie; der FTPS-Zugang kann für
+  Modul-Updates behalten werden. Eine Checkliste nennt den fehlenden Schritt.
 
 ### 8.2.1 SFTP im Detail
 
@@ -398,6 +407,10 @@ desselben Eintrags gewinnt die letzte. Eine Konfliktansicht folgt.
 ### 8.5 Server-Modul (PHP)
 
 Für Webhosting ohne SSH, läuft auf **jedem PHP-Webhosting ab 8.1 ohne Datenbank**.
+- **Grenzen des Webhostings:** Das Modul meldet das Upload-Limit des Hostings. Die App teilt große Dateien – auch
+  Tresordateien mit großen Anhängen – in passende Teile (höchstens 4 MiB) und ersetzt die Datei erst nach dem letzten
+  Teil atomar. Liegt das Limit unter 4 MiB, zeigt die App das an. GhulDrive zerlegt ohnehin in 4-MiB-Blöcke;
+  Freigaben bis 1 GiB, „Als ZIP“ bis 200 MB.
 - Speichert nur verschlüsselte Dateien und Blöcke, mit Versionen. Schreibt atomar (temporäre Datei, dann `rename`, mit `flock`).
 - **Anfragen werden signiert**, mit einem Zugangsschlüssel, der verschlüsselt im Suite-Container liegt.
   Zeitstempel und Einmal-Werte verhindern Wiederholungen. Es gibt keine Sitzungen und keine Cookies.
@@ -408,6 +421,24 @@ Für Webhosting ohne SSH, läuft auf **jedem PHP-Webhosting ab 8.1 ohne Datenban
 ---
 
 ## 9. Die Bereiche
+
+**Ein Bereich, eine Datei** (abgestimmt am 13.11.2026, #24): GhulPass `.ghlpss`, GhulAuth `.ghltotp`, GhulDrive
+`.ghldrv`, GhulMail `.ghlmail`, GhulCal `.ghlcal`. Jede Datei trägt die Einstellungen ihres Bereichs, die auf allen
+Geräten gelten; was nur dieses Gerät betrifft (Sperren, Schnell-Entsperren, Thema, Benachrichtigungen, Foto-Sicherung,
+Datenleck-Prüfung …), bleibt auf dem Gerät. Die Bereichsseiten der Optionen zeigen beides getrennt.
+- **Bereich entfernen** löscht die Datei auf allen Geräten (mit Rückfrage). **Auf diesem Gerät ausblenden** ändert nur
+  die Anzeige. Ein später eingeschalteter Bereich fragt sofort nach seiner Einrichtung; nichts wird still angelegt.
+- **GhulDrive und GhulMail ohne Zugang** zeigen auf ihrem Hauptbildschirm „Noch nicht eingerichtet“ mit der
+  Einrichtung direkt dort (Drive: Speicherwahl; Mail: vollständiges Kontoformular mit Benutzername, IMAP, SMTP).
+
+**Einrichtungsassistent** in acht Schritten: Master-Passwort, zweiter Faktor, Speicherort, Synchronisation (optional),
+Bereiche (mit Speicherwahl für GhulDrive), Sperren, Entsperren (Schnell entsperren = Fingerabdruck oder App-PIN; gültig
+4 Std., 24 Std., 3 Tage, 7 Tage oder immer – nach Neustart, Panik-Sperre oder Passwortwechsel trotzdem wieder Passwort
+und Key), Wiederherstellungscode. Die Suite entsteht nach Schritt 3; der Code gilt erst als bestätigt, wenn ein Block
+richtig abgetippt wurde. **Absturzsicher:** Wurde der Code nie bestätigt, verlangt die App nach dem Entsperren einen
+neuen (ohne „später“). Liegen Tresordateien ohne Suite-Datei vor, erkennt die App die unterbrochene Einrichtung, und
+das Entsperren vervollständigt die Suite. Auf dem Security Key ist nichts aufzuräumen: GhulSuite legt nicht-residente
+Zugänge an (`rk = false`), der Key speichert nichts.
 
 ### 9.1 GhulPass
 

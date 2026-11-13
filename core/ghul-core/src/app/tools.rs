@@ -16,6 +16,8 @@ pub enum OtpAlgo {
     Sha1,
     Sha256,
     Sha512,
+    /// Steam Guard (five characters, `digits` is 5).
+    Steam,
 }
 
 impl From<OtpAlgo> for OtpAlgorithm {
@@ -24,6 +26,7 @@ impl From<OtpAlgo> for OtpAlgorithm {
             OtpAlgo::Sha1 => OtpAlgorithm::Sha1,
             OtpAlgo::Sha256 => OtpAlgorithm::Sha256,
             OtpAlgo::Sha512 => OtpAlgorithm::Sha512,
+            OtpAlgo::Steam => OtpAlgorithm::Steam,
         }
     }
 }
@@ -34,6 +37,7 @@ impl OtpAlgo {
             OtpAlgo::Sha1 => "SHA1",
             OtpAlgo::Sha256 => "SHA256",
             OtpAlgo::Sha512 => "SHA512",
+            OtpAlgo::Steam => "STEAM",
         }
     }
 
@@ -42,6 +46,7 @@ impl OtpAlgo {
             "SHA1" => Some(OtpAlgo::Sha1),
             "SHA256" => Some(OtpAlgo::Sha256),
             "SHA512" => Some(OtpAlgo::Sha512),
+            "STEAM" => Some(OtpAlgo::Steam),
             _ => None,
         }
     }
@@ -105,7 +110,11 @@ pub(crate) fn percent_decode(s: &str) -> Option<String> {
 pub fn validate_totp(input: &TotpInput) -> Result<Zeroizing<Vec<u8>>> {
     let secret = base32_decode(&input.secret_base32)
         .ok_or_else(|| GhulError::InvalidInput { msg: "secret is not valid Base32".into() })?;
-    if !(6..=8).contains(&input.digits) {
+    if input.algorithm == OtpAlgo::Steam {
+        if input.digits != crate::totp::STEAM_DIGITS {
+            return Err(GhulError::InvalidInput { msg: "Steam codes have 5 characters".into() });
+        }
+    } else if !(6..=8).contains(&input.digits) {
         return Err(GhulError::InvalidInput { msg: "digits must be 6 to 8".into() });
     }
     if !(1..=3600).contains(&input.period) {
@@ -117,10 +126,28 @@ pub fn validate_totp(input: &TotpInput) -> Result<Zeroizing<Vec<u8>>> {
     Ok(secret)
 }
 
-/// Parses an `otpauth://totp/...` URI (Key Uri Format).
+/// A Steam Guard account.
+pub(crate) fn steam_input(issuer: &str, account: &str, secret: &str) -> TotpInput {
+    TotpInput {
+        issuer: issuer.to_owned(),
+        account: account.to_owned(),
+        secret_base32: secret.to_owned(),
+        algorithm: OtpAlgo::Steam,
+        digits: crate::totp::STEAM_DIGITS,
+        period: 30,
+    }
+}
+
+/// Parses an `otpauth://totp/...` URI (Key Uri Format); also `steam://<secret>` links.
 #[uniffi::export]
 pub fn parse_otpauth_uri(uri: String) -> Result<TotpInput> {
     let invalid = |m: &str| GhulError::InvalidInput { msg: m.to_owned() };
+    // Steam Guard as Proton Authenticator and others export it: steam://<Base32 secret>
+    if let Some(secret) = uri.trim().strip_prefix("steam://") {
+        let input = steam_input("Steam", "", secret.trim());
+        validate_totp(&input)?;
+        return Ok(input);
+    }
     let rest = uri.trim().strip_prefix("otpauth://").ok_or_else(|| invalid("not an otpauth:// URI"))?;
     let (otp_type, rest) = rest.split_once('/').ok_or_else(|| invalid("missing type"))?;
     if !otp_type.eq_ignore_ascii_case("totp") {
@@ -149,8 +176,16 @@ pub fn parse_otpauth_uri(uri: String) -> Result<TotpInput> {
             "algorithm" => input.algorithm = OtpAlgo::from_name(&v).ok_or_else(|| invalid("unknown algorithm"))?,
             "digits" => input.digits = v.parse().map_err(|_| invalid("invalid digits"))?,
             "period" => input.period = v.parse().map_err(|_| invalid("invalid period"))?,
+            // Steam Guard as some apps write it: otpauth://totp/Steam:name?secret=…&encoder=steam
+            "encoder" if v.eq_ignore_ascii_case("steam") => {
+                input.algorithm = OtpAlgo::Steam;
+                input.digits = crate::totp::STEAM_DIGITS;
+            }
             _ => {}
         }
+    }
+    if input.algorithm == OtpAlgo::Steam {
+        input.digits = crate::totp::STEAM_DIGITS;
     }
     validate_totp(&input)?;
     Ok(input)

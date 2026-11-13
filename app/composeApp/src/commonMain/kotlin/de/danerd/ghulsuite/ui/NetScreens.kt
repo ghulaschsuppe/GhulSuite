@@ -102,8 +102,36 @@ fun FingerprintDialog(title: String, text: String, fingerprint: String, onTrust:
 
 private fun defaultServer() = ServerInputUi(name = "", host = "", port = 22, user = "", password = null, base = "ghulsuite")
 
+/** Options → add a server: the shared server form (#24); the module file by hand as fallback. */
 @Composable
 fun AddServerScreen(state: AppState, padding: PaddingValues) {
+    val net = state.backend.net
+    val form = rememberServerForm()
+    var manual by remember { mutableStateOf(false) }
+    if (manual) {
+        ManualServerScreen(state, padding)
+        return
+    }
+    Column(Modifier.padding(padding)) {
+        ScreenColumn {
+            BusyBanner(state)
+            SectionCard(stringResource(Res.string.server_add_title)) {
+                Hint(stringResource(Res.string.set_servers_hint))
+                ServerSetup(state, form, { input, fp -> net.saveServer(input, fp) }) {
+                    state.changed()
+                    state.pop()
+                }
+                if (form.kind == ServerKindUi.PHP) {
+                    TextButton(onClick = { manual = true }) { Text(stringResource(Res.string.php_manual)) }
+                }
+            }
+        }
+    }
+}
+
+/** Server input of earlier versions: also creates a PHP module file to upload by hand. */
+@Composable
+private fun ManualServerScreen(state: AppState, padding: PaddingValues) {
     val net = state.backend.net
     var kind by remember { mutableStateOf(ServerKindUi.SFTP) }
     var input by remember { mutableStateOf(defaultServer()) }
@@ -321,6 +349,13 @@ fun ServersSection(state: AppState) {
     var servers by remember { mutableStateOf<List<ServerUi>>(emptyList()) }
     var sync by remember { mutableStateOf(SyncStatusUi(null, 0)) }
     var removing by remember { mutableStateOf<ServerUi?>(null) }
+    /** Removing or switching the sync server while GhulDrive uses it: ask first (#24). */
+    var driveAsk by remember { mutableStateOf<(() -> Unit)?>(null) }
+    fun guarded(action: () -> Unit) {
+        state.run(block = { net.driveStorage() }) { d ->
+            if (d.mode == de.danerd.ghulsuite.model.DriveModeUi.SYNC && d.server != null) driveAsk = action else action()
+        }
+    }
     LaunchedEffect(state.liveRevision(), state.syncing) {
         servers = runCatching { net.servers() }.getOrDefault(emptyList())
         sync = runCatching { net.syncStatus() }.getOrDefault(SyncStatusUi(null, 0))
@@ -371,14 +406,16 @@ fun ServersSection(state: AppState) {
                 androidx.compose.material3.DropdownMenu(open, { open = false }) {
                     androidx.compose.material3.DropdownMenuItem(text = { Text(noSync) }, onClick = {
                         open = false
-                        state.run(block = { net.setSyncServer(null) }) { state.changed() }
+                        guarded { state.run(block = { net.setSyncServer(null) }) { state.changed() } }
                     })
                     for (s in servers) {
                         androidx.compose.material3.DropdownMenuItem(text = { Text(s.name) }, onClick = {
                             open = false
-                            state.run(block = { net.setSyncServer(s.id) }) {
-                                state.changed()
-                                state.sync()
+                            if (s.id != sync.serverId) guarded {
+                                state.run(block = { net.setSyncServer(s.id) }) {
+                                    state.changed()
+                                    state.sync()
+                                }
                             }
                         })
                     }
@@ -405,6 +442,7 @@ fun ServersSection(state: AppState) {
         }
     }
 
+    driveAsk?.let { action -> DriveFollowsSyncDialog(state, onProceed = action, onDismiss = { driveAsk = null }) }
     removing?.let { s ->
         AlertDialog(
             onDismissRequest = { removing = null },
@@ -413,7 +451,8 @@ fun ServersSection(state: AppState) {
             confirmButton = {
                 TextButton(onClick = {
                     removing = null
-                    state.run(block = { net.removeServer(s.id) }) { state.changed() }
+                    val remove = { state.run(block = { net.removeServer(s.id) }) { state.changed() } }
+                    if (s.id == sync.serverId) guarded(remove) else remove()
                 }) { Text(stringResource(Res.string.a_remove)) }
             },
             dismissButton = { TextButton(onClick = { removing = null }) { Text(stringResource(Res.string.a_cancel)) } },

@@ -40,6 +40,7 @@ import de.danerd.ghulsuite.resources.*
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.material.icons.filled.Info
 
 private enum class UnlockMode { QUICK, FULL, RECOVERY }
 
@@ -103,6 +104,9 @@ fun UnlockScreen(state: AppState) {
     ScreenColumn {
         BrandHeader()
         BusyBanner(state)
+        // Vault files without the suite file: the setup stopped halfway; unlocking completes it.
+        val incomplete = remember { backend.setupState() == de.danerd.ghulsuite.model.SetupStateUi.INCOMPLETE }
+        if (incomplete) Banner(androidx.compose.material.icons.Icons.Filled.Info, stringResource(Res.string.setup_incomplete))
         when (mode) {
             UnlockMode.QUICK -> {
                 if (ready.pin) {
