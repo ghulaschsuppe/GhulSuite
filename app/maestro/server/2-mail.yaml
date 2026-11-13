@@ -24,11 +24,10 @@ name: GhulMail on a real server
     element: "Show server settings"
     direction: DOWN
 - tapOn: "Show server settings"
+# Incoming server first (it is above), then scroll on to the outgoing one.
 - scrollUntilVisible:
-    element: "STARTTLS"
+    element: "Incoming server \\(IMAP\\)"
     direction: DOWN
-# First the kind of connection (it sets its usual port), then the ports of the test servers.
-- tapOn: "STARTTLS"
 - tapOn:
     text: "Server address"
     below: "Incoming server \\(IMAP\\)"
@@ -39,6 +38,12 @@ name: GhulMail on a real server
     below: "Incoming server \\(IMAP\\)"
 - eraseText
 - inputText: "10993"
+- hideKeyboard
+# The kind of connection first (it sets its usual port), then the test server's port.
+- scrollUntilVisible:
+    element: "STARTTLS"
+    direction: DOWN
+- tapOn: "STARTTLS"
 - tapOn:
     text: "Server address"
     below: "Outgoing server \\(SMTP\\)"
@@ -55,17 +60,20 @@ name: GhulMail on a real server
     element: "Check and save"
     direction: DOWN
 - tapOn: "Check and save"
-# Self-signed test certificate: asked for the incoming and for the outgoing server.
+# Self-signed test certificate: the incoming server asks first; the outgoing server may ask
+# again after the next round to the network.
 - extendedWaitUntil:
     visible: "Check the certificate"
     timeout: 60000
 - takeScreenshot: s2-mail-certificate
 - tapOn: "Fingerprint matches"
-- runFlow:
-    when:
-      visible: "Check the certificate"
-    commands:
-      - tapOn: "Fingerprint matches"
+- extendedWaitUntil:
+    visible: "Check the certificate"
+    timeout: 30000
+    optional: true
+- tapOn:
+    text: "Fingerprint matches"
+    optional: true
 - extendedWaitUntil:
     visible: "No messages\\."
     timeout: 120000
