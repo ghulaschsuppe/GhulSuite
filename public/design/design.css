@@ -602,3 +602,7 @@ body.hide-new .app .new-tag { display: none; }
 .folder-row { background: var(--surface-2); border-radius: 16px; margin-bottom: 10px; }
 .sheet .field, .sheet .folder-row { background: var(--surface-2); }
 .field .port { font-family: var(--mono); font-size: 14px; color: var(--muted); flex: none; }
+.checklist { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 12px 4px 2px; font-size: 13px; color: var(--muted); }
+.checklist span { display: inline-flex; align-items: center; gap: 4px; }
+.checklist svg { width: 14px; height: 14px; }
+.checklist .done { color: var(--ok); }

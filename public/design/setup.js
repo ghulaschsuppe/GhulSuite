@@ -57,17 +57,35 @@ function serverForm(k) {
       + (f.type === 'php' ? `<div class="card flush sheet-list">${toggle('keepFtps', 'FTPS-Zugang behalten', 'Für Updates des Moduls. Aus: GhulSuite arbeitet nur noch über HTTPS mit dem Schlüssel des Moduls')}</div>` : '');
   }
   if (f.type !== 'php') {
-    return `${seg}${login}${folder}${f.folder ? `<button class="btn tonal block" data-act="srv-test" data-arg="${k}">${icon('sync')} Verbindung testen</button>` : ''}`;
+    return `${seg}${login}${folder}${f.folder ? `<button class="btn tonal block" data-act="srv-test" data-arg="${k}">${icon('sync')} Verbindung testen</button>` : ''}${srvChecklist(k)}`;
   }
   if (!f.uploaded) {
     return `${seg}<p class="hint-text" data-u="36">Für Webhosting ohne SSH: GhulSuite lädt sein Modul einmal per FTPS hoch und arbeitet danach über HTTPS.</p>${login}${folder}
-      ${f.folder ? `<button class="btn tonal block" data-act="srv-upload" data-arg="${k}">${icon('upload')} Modul hochladen</button>` : ''}`;
+      ${f.folder ? `<button class="btn tonal block" data-act="srv-upload" data-arg="${k}">${icon('upload')} Modul hochladen</button>` : ''}${srvChecklist(k)}`;
   }
   const url = `https://max.example.org/${f.folder.replace(/^public_html\/?/, '')}${f.folder === 'public_html' ? '' : '/'}ghulsuite.php`;
   return `${seg}<div class="banner ok-banner">${icon('check')}<span>ghulsuite.php und Datenordner liegen in <b>${f.folder}/</b></span></div>
     <div class="field"><div class="grow"><label>Adresse im Internet (Vorschlag)</label><div class="value">${url}</div></div>${icon('edit')}</div>
     <p class="hint-text" data-u="36">Aus Domain und Ordner abgeleitet. Nur ändern, wenn deine Website eine andere Adresse hat.</p>
-    <button class="btn tonal block" data-act="srv-test" data-arg="${k}">${icon('sync')} Adresse prüfen</button>`;
+    <button class="btn tonal block" data-act="srv-test" data-arg="${k}">${icon('sync')} Adresse prüfen</button>${srvChecklist(k)}`;
+}
+
+/** What is still missing in a server form ("" = done). */
+function srvMissing(k) {
+  const f = srv(k);
+  if (!f.folder) return 'Ordner wählen';
+  if (f.type === 'php' && !f.uploaded) return 'Modul hochladen';
+  if (!f.ok) return f.type === 'php' ? 'Adresse prüfen' : 'Verbindung testen';
+  return '';
+}
+
+/** Checklist under a server form: login, folder, (upload), test. */
+function srvChecklist(k) {
+  const f = srv(k);
+  const steps = [['Anmeldung', true], ['Ordner wählen', !!f.folder]];
+  if (f.type === 'php') steps.push(['Modul hochladen', f.uploaded]);
+  steps.push([f.type === 'php' ? 'Adresse prüfen' : 'Verbindung testen', f.ok]);
+  return `<div class="checklist">${steps.map(([t, done]) => `<span class="${done ? 'done' : ''}">${icon(done ? 'check' : 'clock')}${t}</span>`).join('')}</div>`;
 }
 
 function folderSheet(k) {
@@ -136,7 +154,7 @@ function wzStep4(w) {
   return `<div class="card flush">
       ${pick(w.sync === 'later', 'wz-set', 'sync:later', `<span class="avatar a5">${icon('phone')}</span>`, 'Später', 'Erst einmal nur auf diesem Gerät')}
       ${pick(w.sync === 'server', 'wz-set', 'sync:server', `<span class="avatar a1">${icon('server')}</span>`, 'Eigener Server', 'Alle Geräte gleichen sich darüber ab – nur verschlüsselt', server)}</div>
-    <p class="hint-text">Optional. Auf weiteren Geräten wählst du dann „Von meinem Server holen“. GhulDrive kann denselben Server mitnutzen (nächster Schritt).</p>`;
+    <p class="hint-text">Optional. Auf weiteren Geräten wählst du dann „Von meinem Server holen“. GhulDrive kann denselben Server mitnutzen oder einen ganz anderen – auch mit anderer Methode (nächster Schritt).</p>`;
 }
 
 function wzStep5(w) {
@@ -406,8 +424,8 @@ Object.assign(ACT, {
   'start-new': () => { S.phase = 'setup'; S.setup = newSetup(); S.srv = {}; closeSheet(); render(); },
   'wz-back': () => { if (S.setup.step > 1) S.setup.step--; else S.phase = 'start'; render(); },
   'wz-next': () => {
-    if (S.setup.step === 4 && S.setup.sync === 'server' && !srv('sync').ok) { toast('Bitte erst den Server fertig einrichten'); return; }
-    if (S.setup.step === 5 && S.setup.areas.drive && S.setup.driveMode === 'own' && !srv('drive').ok) { toast('Bitte erst den Server für GhulDrive einrichten'); return; }
+    if (S.setup.step === 4 && S.setup.sync === 'server' && srvMissing('sync')) { toast(`Noch offen: ${srvMissing('sync')} – oder „Später“ wählen`); return; }
+    if (S.setup.step === 5 && S.setup.areas.drive && S.setup.driveMode === 'own' && srvMissing('drive')) { toast(`GhulDrive – noch offen: ${srvMissing('drive')} – oder „Später“ wählen`); return; }
     if (S.setup.step === 5 && !Object.values(S.setup.areas).some(Boolean)) { toast('Mindestens einen Bereich wählen'); return; }
     S.setup.step++; render();
   },
@@ -421,7 +439,7 @@ Object.assign(ACT, {
   'srv-pick': (a) => { const [k, d] = a.split('|'); Object.assign(srv(k), { folder: d, uploaded: false, ok: false }); closeSheet(); rerender(); },
   'srv-upload': (a) => { srv(a).uploaded = true; rerender(); toast('Modul hochgeladen · eigener Schlüssel erzeugt'); },
   'srv-test': (a) => { srv(a).ok = true; rerender(); toast(srv(a).type === 'php' ? 'Modul antwortet mit dem richtigen Schlüssel · nur https' : 'Verbunden · Server-Fingerabdruck bestätigt'); },
-  'drive-own-done': () => { if (!srv('drive2').ok) { toast('Bitte erst den Server fertig einrichten'); return; } S.driveSetup = true; S.driveMode = 'own'; closeSheet(); render(); toast('GhulDrive eingerichtet'); },
+  'drive-own-done': () => { if (srvMissing('drive2')) { toast(`Noch offen: ${srvMissing('drive2')}`); return; } S.driveSetup = true; S.driveMode = 'own'; closeSheet(); render(); toast('GhulDrive eingerichtet'); },
   'wz-area': (a) => {
     const w = S.setup;
     w.areas[a] = !w.areas[a];
