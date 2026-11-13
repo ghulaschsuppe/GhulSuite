@@ -599,3 +599,5 @@ body.hide-new .app .new-tag { display: none; }
 .nav.n7 button { font-size: 10px; }
 .nav.n4 .ind, .nav.n3 .ind, .nav.n2 .ind { width: 64px; }
 .row.pick .s, .setup-rows .row .s { white-space: normal; }
+.folder-row { background: var(--surface-2); border-radius: 16px; margin-bottom: 10px; }
+.sheet .field, .sheet .folder-row { background: var(--surface-2); }

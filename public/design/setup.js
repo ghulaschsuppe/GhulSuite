@@ -23,8 +23,67 @@ Object.assign(S, {
   driveMode: 'sync',
   mailSetup: true,
   codeConfirmed: true,
+  /** Server forms (sync, drive, …): type, chosen folder, PHP module uploaded, checked. */
+  srv: {},
+  folderFor: null,
 });
-Object.assign(S.toggles, { wzShot: false });
+const srv = (k) => (S.srv[k] = S.srv[k] || { type: 'sftp', folder: '', uploaded: false, ok: false, keep: true });
+
+/** Folders on the server, as the app lists them (made up). */
+const FOLDERS = {
+  sftp: [['ghulsuite', 'Neu anlegen (empfohlen)'], ['backup', ''], ['daten', '']],
+  ftps: [['public_html', 'Wird im Internet ausgeliefert – nicht für Tresore'], ['ghulsuite', 'Neu anlegen (empfohlen)'], ['private', 'Nicht öffentlich']],
+  php: [['public_html/ghulsuite', 'Neu anlegen (empfohlen)'], ['public_html', 'Hauptordner der Website'], ['public_html/cloud', '']],
+};
+
+/**
+ * Server form used in the wizard, for GhulDrive and in the options. SFTP/FTPS: login and a folder
+ * chosen from the server. PHP module: log in to the web hosting once via FTPS, pick a folder, the app
+ * uploads the module and suggests and checks the address itself – no typing of URLs.
+ */
+function serverForm(k) {
+  const f = srv(k);
+  const types = [['sftp', 'SFTP'], ['ftps', 'FTPS'], ['php', 'PHP-Modul']];
+  const seg = `<div class="seg" data-u="30">${types.map(([t, l]) => `<button class="${f.type === t ? 'on' : ''}" data-act="srv-type" data-arg="${k}|${t}">${l}</button>`).join('')}</div>`;
+  const host = f.type === 'sftp' ? 'nas.example.org' : 'ftp.max.example.org';
+  const login = `<div class="field"><div class="grow"><label>${f.type === 'php' ? 'Webhosting (FTPS)' : 'Server'}</label><input value="${host}" aria-label="Server"></div></div>
+    <div class="field"><div class="grow"><label>Benutzer</label><input value="${f.type === 'sftp' ? 'max' : 'w01234ab'}" aria-label="Benutzer"></div></div>
+    <div class="field"><div class="grow"><label>Anmeldung</label><div class="value">${f.type === 'sftp' ? 'SSH-Schlüssel dieses Geräts' : 'Passwort ••••••••'}</div></div>${icon('chev')}</div>`;
+  const folder = `<button class="row folder-row" data-act="srv-folder" data-arg="${k}"><span class="avatar a9">${icon('folder')}</span>
+    <span class="grow"><span class="t">${f.folder ? f.folder + '/' : 'Ordner wählen'}</span><span class="s">${f.folder ? 'Antippen zum Ändern' : 'Die App zeigt die Ordner auf dem Server'}</span></span>${icon('chev', 'chev')}</button>`;
+  if (f.ok) {
+    const where = f.type === 'php' ? `https://max.example.org/${f.folder.replace(/^public_html\/?/, '')}${f.folder === 'public_html' ? '' : '/'}ghulsuite.php` : `${host}:/${f.folder}`;
+    return `${seg}<div class="banner ok-banner">${icon('check')}<span>${f.type === 'php' ? 'Modul läuft unter' : 'Verbunden ·'} <b>${where}</b></span></div>`
+      + (f.type === 'php' ? `<div class="card flush sheet-list">${toggle('keepFtps', 'FTPS-Zugang behalten', 'Für Updates des Moduls. Aus: GhulSuite arbeitet nur noch über HTTPS mit dem Schlüssel des Moduls')}</div>` : '');
+  }
+  if (f.type !== 'php') {
+    return `${seg}${login}${folder}${f.folder ? `<button class="btn tonal block" data-act="srv-test" data-arg="${k}">${icon('sync')} Verbindung testen</button>` : ''}`;
+  }
+  if (!f.uploaded) {
+    return `${seg}<p class="hint-text" data-u="36">Für Webhosting ohne SSH: GhulSuite lädt sein Modul einmal per FTPS hoch und arbeitet danach über HTTPS.</p>${login}${folder}
+      ${f.folder ? `<button class="btn tonal block" data-act="srv-upload" data-arg="${k}">${icon('upload')} Modul hochladen</button>` : ''}`;
+  }
+  const url = `https://max.example.org/${f.folder.replace(/^public_html\/?/, '')}${f.folder === 'public_html' ? '' : '/'}ghulsuite.php`;
+  return `${seg}<div class="banner ok-banner">${icon('check')}<span>ghulsuite.php und Datenordner liegen in <b>${f.folder}/</b></span></div>
+    <div class="field"><div class="grow"><label>Adresse im Internet (Vorschlag)</label><div class="value">${url}</div></div>${icon('edit')}</div>
+    <p class="hint-text" data-u="36">Aus Domain und Ordner abgeleitet. Nur ändern, wenn deine Website eine andere Adresse hat.</p>
+    <button class="btn tonal block" data-act="srv-test" data-arg="${k}">${icon('sync')} Adresse prüfen</button>`;
+}
+
+function folderSheet(k) {
+  const f = srv(k);
+  const list = FOLDERS[f.type];
+  return `<h2>Ordner wählen</h2><p class="hint-text">${f.type === 'php' ? 'Auf deinem Webhosting · der Ordner muss im Internet erreichbar sein.' : 'Auf dem Server · hier liegen später nur verschlüsselte Dateien.'}</p>
+    <div class="card flush sheet-list"><div class="row plain"><span class="grow"><span class="s">${f.type === 'sftp' ? '/home/max' : '/'}</span></span></div>
+    ${list.map(([d, h]) => `<button class="row ${f.folder === d ? 'selected' : ''}" data-act="srv-pick" data-arg="${k}|${d}"><span class="avatar a1">${icon('folder')}</span><span class="grow"><span class="t">${d}</span>${h ? `<span class="s">${h}</span>` : ''}</span>${f.folder === d ? icon('check') : ''}</button>`).join('')}
+    <button class="row" data-act="toast" data-arg="Neuer Ordner"><span class="avatar a5">${icon('plus')}</span><span class="grow"><span class="t">Neuer Ordner …</span></span></button></div>`;
+}
+
+function driveServerSheet() {
+  return `<h2>Eigener Server für GhulDrive</h2>${serverForm('drive2')}
+    <button class="btn primary block" data-u="24" data-act="drive-own-done">${icon('check')} Fertig</button>`;
+}
+Object.assign(S.toggles, { keepFtps: true });
 
 function newSetup() {
   return {
@@ -73,14 +132,7 @@ function wzStep3(w) {
 }
 
 function wzStep4(w) {
-  const types = [['sftp', 'SFTP'], ['ftps', 'FTPS'], ['php', 'PHP-Modul']];
-  const server = w.sync === 'server' ? `<div class="pick-more">
-      <div class="seg" data-u="30">${types.map(([k, l]) => `<button class="${w.syncType === k ? 'on' : ''}" data-act="wz-set" data-arg="syncType:${k}">${l}</button>`).join('')}</div>
-      <div class="field"><div class="grow"><label>Server</label><input value="${w.syncType === 'php' ? 'https://max.example.org/ghulsuite.php' : 'nas.example.org'}" aria-label="Server"></div></div>
-      ${w.syncType === 'php' ? '' : `<div class="field"><div class="grow"><label>Benutzer</label><input value="max" aria-label="Benutzer"></div></div>`}
-      <div class="field"><div class="grow"><label>Anmeldung</label><div class="value">${w.syncType === 'sftp' ? 'SSH-Schlüssel dieses Geräts' : 'Passwort'}</div></div>${icon('chev')}</div>
-      ${w.syncOk ? `<div class="banner ok-banner">${icon('check')}<span>Verbunden · Ordner <b>ghulsuite/</b> ist beschreibbar</span></div>`
-        : `<button class="btn tonal block" data-act="wz-sync-test">${icon('sync')} Verbindung testen</button>`}</div>` : '';
+  const server = w.sync === 'server' ? `<div class="pick-more">${serverForm('sync')}</div>` : '';
   return `<div class="card flush">
       ${pick(w.sync === 'later', 'wz-set', 'sync:later', `<span class="avatar a5">${icon('phone')}</span>`, 'Später', 'Erst einmal nur auf diesem Gerät')}
       ${pick(w.sync === 'server', 'wz-set', 'sync:server', `<span class="avatar a1">${icon('server')}</span>`, 'Eigener Server', 'Alle Geräte gleichen sich darüber ab – nur verschlüsselt', server)}</div>
@@ -88,7 +140,7 @@ function wzStep4(w) {
 }
 
 function wzStep5(w) {
-  const syncReady = w.sync === 'server' && w.syncOk;
+  const syncReady = w.sync === 'server' && srv('sync').ok;
   return AREAS.map((a) => {
     const on = w.areas[a.id];
     let more = '';
@@ -100,7 +152,7 @@ function wzStep5(w) {
         ${syncReady
           ? pick(w.driveMode === 'sync', 'wz-set', 'driveMode:sync', `<span class="avatar a2">${icon('sync')}</span>`, 'Wie Synchronisation', 'nas.example.org · eigener Ordner ghulsuite/drive')
           : `<div class="row pick disabled"><span class="avatar a2">${icon('sync')}</span><span class="grow"><span class="t">Wie Synchronisation</span><span class="s">Erst Synchronisation einrichten (Schritt 4)</span></span><span class="radio"></span></div>`}
-        ${pick(w.driveMode === 'own', 'wz-set', 'driveMode:own', `<span class="avatar a1">${icon('server')}</span>`, 'Eigener Server', 'Z. B. Webhosting – richtest du gleich danach ein')}
+        ${pick(w.driveMode === 'own', 'wz-set', 'driveMode:own', `<span class="avatar a1">${icon('server')}</span>`, 'Eigener Server', 'Z. B. Webhosting', w.driveMode === 'own' ? `<div class="pick-more">${serverForm('drive')}</div>` : '')}
         ${pick(w.driveMode === 'later', 'wz-set', 'driveMode:later', `<span class="avatar a5">${icon('clock')}</span>`, 'Später', 'GhulDrive zeigt dann „Noch nicht eingerichtet“')}</div></div>`;
     }
     if (on && a.id === 'mail') {
@@ -121,14 +173,16 @@ function wzStep6(w) {
 }
 
 function wzStep7(w) {
-  const hours = ['4 Std.', '24 Std.', '3 Tage', '7 Tage'];
+  const hours = ['4 Std.', '24 Std.', '3 Tage', '7 Tage', 'Immer'];
   const pinField = w.unlock === 'pin' ? `<div class="pick-more"><div class="field"><div class="grow"><label>App-PIN (6–12 Ziffern)</label><input type="password" value="482915" aria-label="App-PIN"></div></div></div>` : '';
-  return `<div class="card flush">
+  return `<p class="hint-text" data-u="36">Schnell entsperren heißt: mit <b>Fingerabdruck</b> oder einer <b>App-PIN</b> statt Passwort und Key – für die Zeit zwischen zwei vollständigen Anmeldungen.</p>
+    <div class="card flush">
       ${pick(w.unlock === 'none', 'wz-set', 'unlock:none', `<span class="avatar a0">${icon('usbkey')}</span>`, 'Immer Passwort und Key', 'Am sichersten')}
       ${pick(w.unlock === 'bio', 'wz-set', 'unlock:bio', `<span class="avatar a2">${icon('fingerprint')}</span>`, 'Zusätzlich Fingerabdruck', 'Für die Zeit dazwischen')}
       ${pick(w.unlock === 'pin', 'wz-set', 'unlock:pin', `<span class="avatar a5">${icon('dice')}</span>`, 'Zusätzlich App-PIN', 'Wenn kein Fingerabdruck möglich ist', pinField)}</div>
     ${w.unlock === 'none' ? '' : `<div class="card"><h3>Schnellzugang gilt</h3><p>Danach wieder Passwort und Key.</p>
-      <div class="chips wrap" data-u="24">${hours.map((h) => `<button class="chip ${w.hours === h ? 'on' : ''}" data-act="wz-set" data-arg="hours:${h}">${h}</button>`).join('')}</div></div>`}
+      <div class="chips wrap" data-u="24">${hours.map((h) => `<button class="chip ${w.hours === h ? 'on' : ''}" data-act="wz-set" data-arg="hours:${h}">${h}</button>`).join('')}</div>
+      ${w.hours === 'Immer' ? '<p class="hint-text" data-u="33">Ohne Ablauf – aber nach einem Neustart des Geräts, einer Panik-Sperre oder einem Passwortwechsel trotzdem wieder Passwort und Key.</p>' : ''}</div>`}
     <p class="hint-text">Nach einem Neustart, einer Panik-Sperre oder einem Passwortwechsel brauchst du immer wieder Passwort und Key.</p>`;
 }
 
@@ -311,7 +365,7 @@ function driveStorageSheet() {
         <div class="card"><h3>Zuletzt synchronisiert: vor 2 Min.</h3><p>${AREAS.filter((a) => S.areas[a.id].on).length} Bereichsdateien + Suite · keine Konflikte</p></div>
         <button class="btn primary block" data-act="toast" data-arg="Synchronisiert">${icon('sync')} Jetzt synchronisieren</button>
         <p class="hint-text" data-u="33">GhulDrive nutzt diesen Server mit („wie Synchronisation“). Eigene Server für GhulDrive stellst du unter GhulDrive ein.</p>`
-      : `<button class="card row plain" data-act="toast" data-arg="Server einrichten"><span class="avatar a1">${icon('server')}</span><span class="grow"><span class="t">Server einrichten</span><span class="s">SFTP, FTPS oder PHP-Modul</span></span>${icon('chev', 'chev')}</button>`),
+      : `<div class="card">${serverForm('set-sync')}</div>${srv('set-sync').ok ? `<button class="btn primary block" data-act="sync-on">${icon('check')} Synchronisation einschalten</button>` : ''}`),
   }];
   const areaGroup = SETTINGS.find(([g]) => g === 'Bereiche');
   areaGroup[1].unshift({ id: 'areas', icon: 'grid', cls: 'i-gray', title: 'Bereiche verwalten', sub: 'Einrichten, ausblenden, entfernen', page: areasPage });
@@ -327,26 +381,37 @@ settingsScreen = function () { // eslint-disable-line no-global-assign
   return AREAS.reduce((h, a) => (S.areas[a.id].on ? h : h.replace(new RegExp(`<button class="row set-row" data-act="set-page" data-arg="m-${a.id}">[\\s\\S]*?</button>`), '')), html);
 };
 
+/** Re-renders the app, or the drive server sheet when it is open. */
+function rerender() {
+  if ($('device').classList.contains('sheet-open') && $('sheet').innerHTML.includes('Eigener Server für GhulDrive')) sheet(driveServerSheet());
+  else render(true);
+}
+
 // --- actions -------------------------------------------------------------------------------------
 Object.assign(ACT, {
-  'start-new': () => { S.phase = 'setup'; S.setup = newSetup(); closeSheet(); render(); },
+  'start-new': () => { S.phase = 'setup'; S.setup = newSetup(); S.srv = {}; closeSheet(); render(); },
   'wz-back': () => { if (S.setup.step > 1) S.setup.step--; else S.phase = 'start'; render(); },
   'wz-next': () => {
-    if (S.setup.step === 4 && S.setup.sync === 'server' && !S.setup.syncOk) { toast('Bitte erst die Verbindung testen'); return; }
+    if (S.setup.step === 4 && S.setup.sync === 'server' && !srv('sync').ok) { toast('Bitte erst den Server fertig einrichten'); return; }
+    if (S.setup.step === 5 && S.setup.areas.drive && S.setup.driveMode === 'own' && !srv('drive').ok) { toast('Bitte erst den Server für GhulDrive einrichten'); return; }
     if (S.setup.step === 5 && !Object.values(S.setup.areas).some(Boolean)) { toast('Mindestens einen Bereich wählen'); return; }
     S.setup.step++; render();
   },
   'wz-set': (a) => {
     const [k, v] = a.split(':');
     S.setup[k] = v;
-    if (k === 'sync') S.setup.syncOk = false;
     render(true);
   },
-  'wz-sync-test': () => { S.setup.syncOk = true; render(true); toast('Verbunden · Server-Fingerabdruck bestätigt'); },
+  'srv-type': (a) => { const [k, t] = a.split('|'); Object.assign(srv(k), { type: t, folder: '', uploaded: false, ok: false }); rerender(); },
+  'srv-folder': (a) => { S.folderFor = a; sheet(folderSheet(a)); },
+  'srv-pick': (a) => { const [k, d] = a.split('|'); Object.assign(srv(k), { folder: d, uploaded: false, ok: false }); closeSheet(); rerender(); },
+  'srv-upload': (a) => { srv(a).uploaded = true; rerender(); toast('Modul hochgeladen · eigener Schlüssel erzeugt'); },
+  'srv-test': (a) => { srv(a).ok = true; rerender(); toast(srv(a).type === 'php' ? 'Modul antwortet mit dem richtigen Schlüssel · nur https' : 'Verbunden · Server-Fingerabdruck bestätigt'); },
+  'drive-own-done': () => { if (!srv('drive2').ok) { toast('Bitte erst den Server fertig einrichten'); return; } S.driveSetup = true; S.driveMode = 'own'; closeSheet(); render(); toast('GhulDrive eingerichtet'); },
   'wz-area': (a) => {
     const w = S.setup;
     w.areas[a] = !w.areas[a];
-    if (a === 'drive' && w.areas.drive) w.driveMode = w.sync === 'server' && w.syncOk ? 'sync' : 'later';
+    if (a === 'drive' && w.areas.drive) w.driveMode = w.sync === 'server' && srv('sync').ok ? 'sync' : 'later';
     render(true);
   },
   'wz-confirm': () => { S.setup.confirmed = !S.setup.confirmed; render(true); },
@@ -363,7 +428,10 @@ Object.assign(ACT, {
     render();
     toast(`Suite eingerichtet · ${AREAS.filter((a) => S.areas[a.id].on).length} Bereiche`);
   },
-  'drive-setup': (a) => { S.driveSetup = true; S.driveMode = a; render(); toast(a === 'sync' ? 'GhulDrive nutzt den Sync-Server' : 'Server prüfen …'); },
+  'drive-setup': (a) => {
+    if (a === 'own') { sheet(driveServerSheet()); return; }
+    S.driveSetup = true; S.driveMode = a; render(); toast('GhulDrive nutzt den Sync-Server');
+  },
   'mail-setup': () => { S.mailSetup = true; render(); toast('Konto geprüft und hinzugefügt'); },
   'code-sheet': () => sheet(codeSheet()),
   'code-done': () => { S.codeConfirmed = true; closeSheet(); render(true); toast('Wiederherstellungscode bestätigt'); },
@@ -378,6 +446,7 @@ Object.assign(ACT, {
   'area-remove': (a) => sheet(removeSheet(a)),
   'area-remove-ok': (a) => { S.areas[a] = { on: false, hidden: false }; closeSheet(); if (current()?.id === `m-${a}`) pop(); else render(true); toast(`${areaOf(a).name} entfernt`); },
   'drive-storage': () => sheet(driveStorageSheet()),
+  'sync-on': () => { S.syncOn = true; render(true); toast('Synchronisation eingeschaltet'); },
   'drive-mode': (a) => { S.driveMode = a; closeSheet(); render(true); toast(a === 'own' ? 'Dateien werden auf den eigenen Server umgezogen' : 'GhulDrive nutzt jetzt den Sync-Server'); },
   'demo': (a) => {
     closeSheet();
