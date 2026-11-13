@@ -565,3 +565,37 @@ body.hide-new .app .new-tag { display: none; }
 .notif p { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
 .notif .acts { display: flex; gap: 18px; margin-top: 10px; }
 .notif .acts button { color: var(--cal); font-weight: 700; font-size: 14px; }
+
+/* --- Setup wizard and areas (setup.js, issue #24) -------------------------------------------- */
+.aico { width: 42px; height: 42px; border-radius: 13px; display: grid; place-items: center; color: #fff; flex: none; }
+.aico svg { width: 22px; height: 22px; }
+.aico.lg { width: 64px; height: 64px; border-radius: 20px; }
+.aico.lg svg { width: 32px; height: 32px; }
+.wz-title { margin: 6px 4px 12px; font-size: 22px; letter-spacing: -0.02em; }
+.row.pick { min-height: 64px; }
+.row.pick.selected { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.row.pick.disabled { opacity: .5; }
+.radio { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--faint); flex: none; position: relative; }
+.radio.on { border-color: var(--accent); }
+.radio.on::after { content: ""; position: absolute; inset: 4px; border-radius: 50%; background: var(--accent); }
+.pick-more { padding: 4px 16px 14px; }
+.pick-more .field { background: var(--surface-2); }
+.pick-more .card.flush { background: var(--surface-2); margin: 0; }
+.area-card.off .row .t { color: var(--muted); }
+.codebox { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 14px; }
+.codebox span { font-family: var(--mono); font-size: 18px; font-weight: 700; letter-spacing: .08em; text-align: center; padding: 10px 0; border-radius: 12px; background: var(--surface-2); }
+.setup-card { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; padding: 26px 20px; }
+.setup-card h3 { margin: 4px 0 0; font-size: 20px; }
+.banner.ok-banner { background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--fg); }
+.banner.ok-banner svg { color: var(--ok); }
+.banner.warn-banner { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--fg); margin: 0 0 12px; }
+.banner.warn-banner svg { color: var(--warn); }
+.btn.danger-fill { background: var(--danger); color: #fff; }
+.chips.wrap { flex-wrap: wrap; overflow: visible; margin: 0; padding: 0; }
+.sheet-head { display: flex; gap: 14px; align-items: center; margin-bottom: 8px; }
+.sheet-head .hint-text { padding: 0; }
+.section-title .tag { text-transform: none; letter-spacing: 0; }
+.nav.n7 .ind { width: 44px; }
+.nav.n7 button { font-size: 10px; }
+.nav.n4 .ind, .nav.n3 .ind, .nav.n2 .ind { width: 64px; }
+.row.pick .s, .setup-rows .row .s { white-space: normal; }
