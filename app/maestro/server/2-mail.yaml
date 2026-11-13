@@ -27,21 +27,28 @@ name: GhulMail on a real server
 # The servers were filled in from the address (imap./smtp. + domain). Tap their values, not the
 # labels ("Server address" and "Port" exist twice); close the keyboard and scroll each one to the
 # middle of the screen: a field cut off at the bottom edge does not take the tap, and the text
-# would go into the password field, which still has the focus. Each value is checked right away.
+# would go into the password field, which still has the focus. Tap near the right end of each
+# field so the cursor stands behind the old value and eraseText removes all of it. Each value is
+# checked right away.
 - scrollUntilVisible:
     element: "imap\\.test\\.example"
     direction: DOWN
     centerElement: true
-- tapOn: "imap\\.test\\.example"
+- tapOn:
+    text: "imap\\.test\\.example"
+    point: "95%,50%"
 - eraseText
 - inputText: ${GHUL_SERVER}
 - hideKeyboard
 - assertVisible: ${GHUL_SERVER}
+- assertNotVisible: "imap\\.test\\.example"
 - scrollUntilVisible:
     element: "993"
     direction: DOWN
     centerElement: true
-- tapOn: "993"
+- tapOn:
+    text: "993"
+    point: "95%,50%"
 - eraseText
 - inputText: "10993"
 - hideKeyboard
@@ -56,16 +63,20 @@ name: GhulMail on a real server
     element: "smtp\\.test\\.example"
     direction: DOWN
     centerElement: true
-- tapOn: "smtp\\.test\\.example"
+- tapOn:
+    text: "smtp\\.test\\.example"
+    point: "95%,50%"
 - eraseText
 - inputText: ${GHUL_SERVER}
 - hideKeyboard
-- assertVisible: ${GHUL_SERVER}
+- assertNotVisible: "smtp\\.test\\.example"
 - scrollUntilVisible:
     element: "587"
     direction: DOWN
     centerElement: true
-- tapOn: "587"
+- tapOn:
+    text: "587"
+    point: "95%,50%"
 - eraseText
 - inputText: "10587"
 - hideKeyboard
