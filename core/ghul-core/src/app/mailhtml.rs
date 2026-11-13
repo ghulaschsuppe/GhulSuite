@@ -412,7 +412,36 @@ pub fn parse(html: &str) -> HtmlMail {
     }
     let next = base(0);
     flush(&mut mail, &mut current, next);
+    reveal_deceptive_links(&mut mail);
     mail
+}
+
+/// A link whose text looks like an address but points somewhere else ("https://bank.example"
+/// leading to evil.example) – a classic phishing trick. The real destination is added to the
+/// text, so the reader sees where the link goes.
+fn reveal_deceptive_links(mail: &mut HtmlMail) {
+    for b in &mut mail.blocks {
+        for span in &mut b.spans {
+            if span.link.is_empty() {
+                continue;
+            }
+            let shown = span.text.trim();
+            let looks_like_address = !shown.contains(char::is_whitespace)
+                && (shown.contains("://")
+                    || shown.starts_with("www.")
+                    || shown.matches('.').count() >= 1 && shown.len() > 3);
+            if !looks_like_address {
+                continue;
+            }
+            let target = super::autofill::host_of(&span.link);
+            let claimed = super::autofill::host_of(shown);
+            if let (Some(t), Some(c)) = (target, claimed) {
+                if super::autofill::base_domain(&t) != super::autofill::base_domain(&c) {
+                    span.text = format!("{shown} \u{2192} {t}");
+                }
+            }
+        }
+    }
 }
 
 /// Loads an image from the internet for an HTML mail – only when the user asked for it.

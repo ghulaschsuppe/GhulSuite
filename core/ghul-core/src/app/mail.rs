@@ -370,11 +370,17 @@ fn key_for(o: &Open, email: &str) -> Option<(SignedPublicKey, String)> {
 /// Stores a contact key. Keys from a mail (Autocrypt) never replace keys that were looked up
 /// at the provider or imported by hand.
 fn remember_key(o: &mut Open, email: &str, key: &SignedPublicKey, source: &str) -> Result<bool> {
+    remember_key_seen(o, email, key, source, now_secs())
+}
+
+/// Like [`remember_key`]; `seen` is when the key was seen (for Autocrypt: the mail's date). An
+/// Autocrypt key replaces another Autocrypt key only from a newer mail.
+fn remember_key_seen(o: &mut Open, email: &str, key: &SignedPublicKey, source: &str, seen: i64) -> Result<bool> {
     let email = bare(email);
     let fingerprint = mailcrypt::fingerprint(key);
     let mut list = contact_keys(o);
     if let Some(c) = list.iter().find(|c| c.email == email) {
-        if c.fingerprint == fingerprint || (source == "autocrypt" && c.source != "autocrypt") {
+        if c.fingerprint == fingerprint || (source == "autocrypt" && (c.source != "autocrypt" || seen <= c.updated)) {
             return Ok(false);
         }
     }
@@ -384,7 +390,7 @@ fn remember_key(o: &mut Open, email: &str, key: &SignedPublicKey, source: &str) 
         key: base64::engine::general_purpose::STANDARD.encode(mailcrypt::public_bytes(key)?),
         fingerprint,
         source: source.to_owned(),
-        updated: now_secs(),
+        updated: seen,
     });
     put_area_setting(o, VaultKind::Mail, KEYS_KEY, &list)?;
     Ok(true)
@@ -486,19 +492,33 @@ pub(super) fn unwrap_raw(o: &mut Open, account_id: &str, raw: &[u8]) -> Result<Z
 }
 
 fn unwrap_message(o: &mut Open, account_id: &str, raw: &[u8]) -> Result<Unwrapped> {
+    let (mut u, key_from_this_mail) = unwrap_message_inner(o, account_id, raw)?;
+    if key_from_this_mail && u.signature == MailSignatureStatus::Valid {
+        u.signature = MailSignatureStatus::UnknownKey;
+    }
+    Ok(u)
+}
+
+fn unwrap_message_inner(o: &mut Open, account_id: &str, raw: &[u8]) -> Result<(Unwrapped, bool)> {
     let m = mail_parser::MessageParser::default()
         .parse(raw)
         .ok_or_else(|| GhulError::Network { msg: "message cannot be read".into() })?;
     let from = m.from().and_then(|a| a.first()).and_then(|a| a.address()).unwrap_or_default().to_lowercase();
-    // Autocrypt: the sender's key, if the header belongs to the From address.
+    // Autocrypt: the sender's key, if the header belongs to the From address. Never for an own
+    // address (anyone can write "From: me"), and only from a mail newer than the key we have.
+    let own = accounts(o).iter().any(|a| bare(&a.email) == bare(&from));
+    let sent = m.date().map(|d| d.to_timestamp()).unwrap_or_else(now_secs);
     let mut learned = false;
     if let Some(h) = m.header_raw("Autocrypt") {
         if let Some((addr, key)) = mailcrypt::parse_autocrypt(&h.replace(['\r', '\n'], "")) {
-            if addr == from {
-                learned = remember_key(o, &addr, &key, "autocrypt")?;
+            if addr == from && !own {
+                learned = remember_key_seen(o, &addr, &key, "autocrypt", sent)?;
             }
         }
     }
+    // A key that came with this very mail proves nothing about this mail: its signature counts
+    // as "key not confirmed" (shown like an unknown key), not as valid.
+    let key_from_this_mail = learned;
     let signer_keys: Vec<SignedPublicKey> = key_for(o, &from).map(|(k, _)| vec![k]).unwrap_or_default();
     let signer_name = |fp: Option<String>| fp.map(|_| from.clone()).unwrap_or_default();
     let ct = m.content_type();
@@ -602,7 +622,7 @@ fn unwrap_message(o: &mut Open, account_id: &str, raw: &[u8]) -> Result<Unwrappe
             }
         }
     };
-    Ok(Unwrapped { changed: learned || result.changed, ..result })
+    Ok((Unwrapped { changed: learned || result.changed, ..result }, key_from_this_mail))
 }
 
 /// Suggested servers for an e-mail address: known providers, otherwise `imap.`/`smtp.` + domain.
@@ -845,13 +865,56 @@ fn random_boundary() -> String {
     format!("ghul-{}", crate::kdf::hex(&new_id()))
 }
 
+/// One header line: no line breaks or other control characters (they could add headers, e.g.
+/// a hidden Bcc), no surrounding spaces.
+fn header_text(s: &str) -> String {
+    s.chars().map(|c| if c.is_control() { ' ' } else { c }).collect::<String>().trim().to_owned()
+}
+
+/// Values that end up in headers, made safe: subject, reference, attachment names and types.
+fn header_safe(mail: &OutgoingMail) -> OutgoingMail {
+    let mut m = mail.clone();
+    m.subject = header_text(&mail.subject);
+    // A message id has no spaces, brackets or control characters.
+    m.in_reply_to = mail
+        .in_reply_to
+        .trim()
+        .trim_matches(['<', '>'])
+        .chars()
+        .take_while(|c| !c.is_control() && !c.is_whitespace() && *c != '<' && *c != '>')
+        .collect();
+    for a in &mut m.attachments {
+        a.name = header_text(&a.name).replace(['/', '\\'], "_");
+        if a.name.is_empty() {
+            a.name = "Anhang".into();
+        }
+        let simple = a.mime.split_once('/').is_some_and(|(t, st)| {
+            let token =
+                |x: &str| !x.is_empty() && x.chars().all(|c| c.is_ascii_alphanumeric() || "!#$&-^_.+".contains(c));
+            token(t) && token(st)
+        });
+        if !simple {
+            a.mime = "application/octet-stream".into();
+        }
+    }
+    m
+}
+
+#[cfg(test)]
+pub(crate) fn build_for_tests(s: &GhulSuite, mail: &OutgoingMail) -> Result<(Vec<u8>, Vec<String>)> {
+    let acc = s.with_open(|o| account(o, &mail.account_id))?;
+    build(&acc, mail, &Protection::Plain)
+}
+
 fn build(account: &StoredAccount, mail: &OutgoingMail, protection: &Protection) -> Result<(Vec<u8>, Vec<String>)> {
+    let mail = &header_safe(mail);
     use lettre::message::{header::ContentType, Attachment, Body, Mailbox, MultiPart, SinglePart};
     let bad = |e: &dyn std::fmt::Display| GhulError::InvalidInput { msg: e.to_string() };
-    let from: Mailbox = format!("{} <{}>", account.display_name.replace(['<', '>', '"'], ""), account.email)
-        .parse()
-        .or_else(|_| account.email.parse())
-        .map_err(|e| bad(&e))?;
+    let from: Mailbox =
+        format!("{} <{}>", header_text(&account.display_name).replace(['<', '>', '"'], ""), account.email)
+            .parse()
+            .or_else(|_| account.email.parse())
+            .map_err(|e| bad(&e))?;
     let encrypted = matches!(protection, Protection::Encrypted(..));
     // Encrypted mails show "..." outside; the real subject travels inside.
     let outer_subject = if encrypted { "...".to_owned() } else { mail.subject.clone() };

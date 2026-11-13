@@ -1844,7 +1844,9 @@ fn pgp_mail_between_two_users() {
     let (list_subject, m) = newest(&bob, &bob_id);
     assert_eq!(list_subject, "Hallo Bob");
     assert!(!m.encrypted);
-    assert_eq!(m.signature, MailSignatureStatus::Valid);
+    // Signed with the key that came with this very mail: correct, but not yet confirmed (an
+    // attacker could have sent both); shown like an unknown key the first time.
+    assert_eq!(m.signature, MailSignatureStatus::UnknownKey);
     assert_eq!(m.signer, alice_mail.to_lowercase());
     assert!(m.text.contains("Erste Nachricht.") && m.text.contains("Viele Grüße\nAlice Ä."), "{}", m.text);
     assert!(m.attachments.is_empty(), "the signature is no attachment");
@@ -1867,8 +1869,9 @@ fn pgp_mail_between_two_users() {
     assert_eq!(list_subject, "...", "the server only sees a placeholder subject");
     assert!(m.encrypted);
     assert_eq!(m.subject, "Geheimes Angebot – 5 % Rabatt");
-    // Alice had no key of Bob before reading: it came with this very mail (Autocrypt).
-    assert_eq!(m.signature, MailSignatureStatus::Valid);
+    // Alice had no key of Bob before reading: it came with this very mail (Autocrypt), so the
+    // signature counts as "not yet confirmed".
+    assert_eq!(m.signature, MailSignatureStatus::UnknownKey);
     assert!(m.text.contains("Hallo Alice, siehe Anhang."));
     assert_eq!(m.attachments.len(), 1);
     assert_eq!(m.attachments[0].name, "Angebot.pdf");
@@ -2443,5 +2446,6 @@ fn import_keeps_what_it_cannot_convert_and_names_it() {
 }
 
 mod absurd;
+mod attacks;
 mod chaos;
 mod everyday;
