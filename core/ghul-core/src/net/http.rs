@@ -156,7 +156,7 @@ async fn exchange<S: AsyncRead + AsyncWrite + Unpin>(
     parse(&raw)
 }
 
-fn parse(raw: &[u8]) -> NetResult<Response> {
+pub(crate) fn parse(raw: &[u8]) -> NetResult<Response> {
     let bad = || NetError::Protocol("invalid HTTP response".into());
     let end = raw.windows(4).position(|w| w == b"\r\n\r\n").ok_or_else(bad)?;
     let head = std::str::from_utf8(&raw[..end]).map_err(|_| bad())?;

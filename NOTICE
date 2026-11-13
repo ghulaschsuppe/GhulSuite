@@ -24,3 +24,12 @@ Additional terms under section 7 of the GNU Affero General Public License
 Third-party components keep their own licences; they are listed in the app under
 "About and help → Libraries". The passphrase word list is the EFF Large Wordlist
 (Electronic Frontier Foundation, CC BY 3.0 US).
+
+Test data (only used by the automated tests, not part of the app)
+------------------------------------------------------------------
+
+core/ghul-core/tests/data/blns.json – Big List of Naughty Strings, (c) 2015-2020 Max Woolf, MIT.
+core/ghul-core/tests/data/wycheproof_*.json – Project Wycheproof test vectors (C2SP / Google),
+    Apache License 2.0.
+core/ghul-core/tests/data/test_psl.txt – Public Suffix List test cases (Mozilla Foundation),
+    Mozilla Public License 2.0.

@@ -23,6 +23,9 @@ pub mod vault;
 #[cfg(any(test, feature = "mock"))]
 mod mock;
 
+#[cfg(test)]
+mod wycheproof_tests;
+
 pub use error::{FidoError, TransportError};
 
 use ctap2::{prf_salt, Authenticator};

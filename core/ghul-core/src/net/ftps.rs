@@ -91,7 +91,7 @@ async fn expect(c: &mut Ctrl, line: &str, ok: &[u16]) -> NetResult<String> {
 }
 
 /// Port from an EPSV reply `229 Entering Extended Passive Mode (|||6446|)` or a PASV reply.
-fn data_port(code: u16, text: &str) -> Option<u16> {
+pub(crate) fn data_port(code: u16, text: &str) -> Option<u16> {
     if code == 229 {
         let inner = text.split('(').nth(1)?.split(')').next()?;
         return inner.trim_matches('|').parse().ok();
@@ -102,7 +102,7 @@ fn data_port(code: u16, text: &str) -> Option<u16> {
 }
 
 /// Parses one line of a Unix `LIST` output.
-fn parse_list_line(line: &str) -> Option<RemoteEntry> {
+pub(crate) fn parse_list_line(line: &str) -> Option<RemoteEntry> {
     let fields: Vec<&str> = line.split_whitespace().collect();
     if fields.len() < 9 {
         return None;
@@ -120,7 +120,7 @@ fn parse_list_line(line: &str) -> Option<RemoteEntry> {
 }
 
 /// Parses one line of `MLSD` output (`type=file;size=12; name`).
-fn parse_mlsd_line(line: &str) -> Option<RemoteEntry> {
+pub(crate) fn parse_mlsd_line(line: &str) -> Option<RemoteEntry> {
     let (facts, name) = line.split_once(' ')?;
     let name = name.trim_end_matches(['\r', '\n']).to_owned();
     let mut kind = "";
