@@ -1,6 +1,7 @@
 # Testplan D1 to D4: GhulDrive on an SFTP server with user name and password (the test server of
-# the runner, forwarded to the device with adb reverse), then a folder. tools/check-server-flows.sh looks at
-# the server afterwards: the folder name must not be readable there.
+# the runner; tools/run-maestro.sh passes the address the device reaches it at as GHUL_SERVER),
+# then a folder. tools/check-server-flows.sh looks at the server afterwards: the folder name must
+# not be readable there.
 appId: de.danerd.ghulsuite.dev
 name: GhulDrive on a real server
 ---
@@ -19,7 +20,7 @@ name: GhulDrive on a real server
     visible: "Own server for GhulDrive"
     timeout: 10000
 - tapOn: "Server address"
-- inputText: "127.0.0.1"
+- inputText: ${GHUL_SERVER}
 - tapOn: "Port"
 - eraseText
 - inputText: "2223"

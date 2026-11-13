@@ -15,14 +15,23 @@ timeout 1400 maestro test "$(dirname "$0")/../app/maestro" --format junit --outp
 # With test servers next to the emulator (CI: GHUL_TEST_SERVERS=1, see tools/test-servers.sh):
 # GhulDrive and GhulMail against a real server. They continue where the flows above ended.
 if [ "${GHUL_TEST_SERVERS:-0}" = 1 ]; then
-  # The servers listen on 127.0.0.1 of this computer. "adb reverse" makes the same ports the
-  # device's own 127.0.0.1 (the emulator's 10.0.2.2 alias is not reliable on every version).
   echo "Testserver auf diesem Rechner:"
   ports="2223 10993 10587"
   for p in $ports; do
     if (exec 3<>"/dev/tcp/127.0.0.1/$p") 2>/dev/null; then echo "  Port $p lauscht"; else echo "::error::Testserver-Port $p lauscht nicht"; exit 1; fi
-    adb reverse "tcp:$p" "tcp:$p" > /dev/null
+    adb reverse "tcp:$p" "tcp:$p" > /dev/null 2>&1 || true
   done
-  adb shell "for p in $ports; do if nc -z -w 3 127.0.0.1 \$p; then echo \"  Gerät erreicht Port \$p\"; else echo \"  Gerät erreicht Port \$p NICHT\"; fi; done" || true
-  timeout 900 maestro test "$(dirname "$0")/../app/maestro/server" --format junit --output "$out/report-server.xml" --test-output-dir "$out"
+  adb reverse --list || true
+  # Which address does the device reach the servers at? The SSH server greets with "SSH-": the
+  # device's own 127.0.0.1 (adb reverse) or the emulator's alias of the host. The servers only
+  # listen on this computer's 127.0.0.1, never on its other interfaces.
+  server=""
+  for cand in 127.0.0.1 10.0.2.2; do
+    greeting=$(timeout 15 adb shell "echo | nc -w 3 $cand 2223 2>&1 | head -c 40" 2>&1 | tr -d '\r' || true)
+    echo "  Gerät -> $cand:2223: ${greeting:-keine Antwort}"
+    if [ -z "$server" ] && echo "$greeting" | grep -q "SSH-"; then server="$cand"; fi
+  done
+  [ -n "$server" ] || { echo "::error::Das Gerät erreicht die Testserver auf keinem Weg."; exit 1; }
+  echo "Abläufe mit echtem Server über $server"
+  timeout 900 maestro test -e GHUL_SERVER="$server" "$(dirname "$0")/../app/maestro/server" --format junit --output "$out/report-server.xml" --test-output-dir "$out"
 fi

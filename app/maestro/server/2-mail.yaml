@@ -32,7 +32,7 @@ name: GhulMail on a real server
     text: "Server address"
     below: "Incoming server \\(IMAP\\)"
 - eraseText
-- inputText: "127.0.0.1"
+- inputText: ${GHUL_SERVER}
 - tapOn:
     text: "Port"
     below: "Incoming server \\(IMAP\\)"
@@ -48,7 +48,7 @@ name: GhulMail on a real server
     text: "Server address"
     below: "Outgoing server \\(SMTP\\)"
 - eraseText
-- inputText: "127.0.0.1"
+- inputText: ${GHUL_SERVER}
 - tapOn:
     text: "Port"
     below: "Outgoing server \\(SMTP\\)"
