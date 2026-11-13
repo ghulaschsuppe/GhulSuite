@@ -212,7 +212,12 @@ jobs:
             exit 0
           fi
           sudo systemctl stop dovecot vsftpd 2>/dev/null || true
-          sudo bash tools/test-servers.sh | sed 's/^export //' >> "$GITHUB_ENV"
+          # A server that does not start fails the run: the tests would skip and look green.
+          if ! sudo bash tools/test-servers.sh > servers.env; then
+            echo "::error title=Testserver::Die Testserver ließen sich nicht starten (siehe oben)."
+            exit 1
+          fi
+          sed 's/^export //' servers.env >> "$GITHUB_ENV"
 
       - name: Sync, Drive und Mail gegen die Testserver
         if: env.GHUL_NET_SKIP != '1'
@@ -220,7 +225,10 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal
           # The network tests must really run (without servers they skip silently).
-          test -n "$GHUL_TEST_SFTP" && test -n "$GHUL_TEST_MAIL"
+          # ("a && b" does not stop a bash -e script when a fails: each check on its own line.)
+          for v in GHUL_TEST_SFTP GHUL_TEST_MAIL GHUL_TEST_FTPS; do
+            if [ -z "${!v:-}" ]; then echo "::error title=Testserver::$v fehlt: die Netzwerk-Tests würden still übersprungen."; exit 1; fi
+          done
           cargo test --locked -p ghul-core -- sftp ftps mail sync drive share php
 
   browser:
@@ -509,7 +517,7 @@ jobs:
             sleep 10
           done
           if [ "$ok" = 1 ]; then
-            sudo -E env GHUL_TEST_SFTP_PASSWORD=1 bash tools/test-servers.sh > servers.env
+            sudo env GHUL_TEST_SFTP_PASSWORD=1 bash tools/test-servers.sh > servers.env
             echo "GHUL_TEST_SERVERS=1" >> "$GITHUB_ENV"
           else
             echo "::warning::Paketserver nicht erreichbar: Abläufe mit echtem Server übersprungen."

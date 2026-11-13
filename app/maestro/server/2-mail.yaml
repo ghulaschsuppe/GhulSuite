@@ -87,15 +87,18 @@ name: GhulMail on a real server
 - extendedWaitUntil:
     visible: "Message sent\\."
     timeout: 120000
-# It comes back into the inbox (the header button "Refresh" asks the server at once).
+# It comes back into the inbox (the header button "Refresh" asks the server at once). It is
+# encrypted, so the list knows neither subject nor text: only the app can open it.
 - tapOn:
     text: "Refresh"
     optional: true
 - extendedWaitUntil:
-    visible: "Hallo vom Emulator"
+    visible: "Encrypted message"
     timeout: 120000
-- tapOn: "Hallo vom Emulator"
+- takeScreenshot: s2-mail-inbox
+- tapOn: "Encrypted message"
 - extendedWaitUntil:
     visible: "Geheimtext-Maestro-4711"
     timeout: 60000
+- assertVisible: "Hallo vom Emulator"
 - takeScreenshot: s2-mail-read

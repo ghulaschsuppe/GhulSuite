@@ -96,7 +96,7 @@ jobs:
             sleep 10
           done
           if [ "$ok" = 1 ]; then
-            sudo -E env GHUL_TEST_SFTP_PASSWORD=1 bash tools/test-servers.sh > servers.env
+            sudo env GHUL_TEST_SFTP_PASSWORD=1 bash tools/test-servers.sh > servers.env
             echo "GHUL_TEST_SERVERS=1" >> "$GITHUB_ENV"
           else
             echo "::warning::Paketserver nicht erreichbar: Abläufe mit echtem Server übersprungen."

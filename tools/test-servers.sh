@@ -51,6 +51,70 @@ if command -v dovecot >/dev/null; then
   mkdir -p "$D/mail" "$D/dovecot"
   chown "$MAIL_UID:$MAIL_GID" "$D/mail"
   chmod 644 "$D/tls.key"
+  # Dovecot 2.4 (Ubuntu 26.04 and newer) has a new configuration format; 2.3 keeps the old one.
+  case "$(dovecot --version 2>/dev/null)" in
+    2.[0-3].*) DOVECOT_24=0 ;;
+    *) DOVECOT_24=1 ;;
+  esac
+  if [ "$DOVECOT_24" = 1 ]; then
+  cat > "$D/dovecot/dovecot.conf" <<CFG
+dovecot_config_version = 2.4.0
+dovecot_storage_version = 2.4.0
+base_dir = $D/dovecot/run
+state_dir = $D/dovecot/state
+log_path = $D/dovecot/dovecot.log
+protocols {
+  imap = yes
+}
+listen = 127.0.0.1
+ssl = yes
+ssl_server_cert_file = $D/tls.crt
+ssl_server_key_file = $D/tls.key
+auth_allow_cleartext = no
+auth_mechanisms {
+  plain = yes
+  login = yes
+}
+mail_driver = maildir
+mail_path = $D/mail/%{user}
+passdb static {
+  password = test-pw-123
+}
+userdb static {
+  fields {
+    uid = $MAIL_UID
+    gid = $MAIL_GID
+    home = $D/mail/%{user}
+  }
+}
+service imap-login {
+  inet_listener imap {
+    address = 127.0.0.1
+    port = 10143
+  }
+  inet_listener imaps {
+    address = 127.0.0.1
+    port = 10993
+    ssl = yes
+  }
+}
+namespace inbox {
+  inbox = yes
+  mailbox Sent {
+    special_use = \\Sent
+    auto = create
+  }
+  mailbox Trash {
+    special_use = \\Trash
+    auto = create
+  }
+  mailbox Drafts {
+    special_use = \\Drafts
+    auto = create
+  }
+}
+CFG
+  else
   cat > "$D/dovecot/dovecot.conf" <<CFG
 base_dir = $D/dovecot/run
 state_dir = $D/dovecot/state
@@ -98,7 +162,13 @@ namespace inbox {
   }
 }
 CFG
-  dovecot -c "$D/dovecot/dovecot.conf"
+
+  fi
+  if ! dovecot -c "$D/dovecot/dovecot.conf"; then
+    echo "dovecot did not start ($(dovecot --version 2>/dev/null))" >&2
+    cat "$D/dovecot/dovecot.log" 2>/dev/null >&2 || true
+    exit 1
+  fi
   # --- SMTP: delivers into the user's Maildir ---
   # Copy the server next to the mail data: "nobody" may not read the checkout (e.g. CI home).
   install -m 644 "$HERE/test-smtp.py" "$D/test-smtp.py"
