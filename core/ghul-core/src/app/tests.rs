@@ -2442,5 +2442,6 @@ fn import_keeps_what_it_cannot_convert_and_names_it() {
     assert_eq!((r.totps, r.kept), (0, 0));
 }
 
+mod absurd;
 mod chaos;
 mod everyday;

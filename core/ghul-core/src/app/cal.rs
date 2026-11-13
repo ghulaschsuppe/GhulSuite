@@ -247,7 +247,7 @@ fn put_event_fields(e: &mut Entry, ev: &CalEvent) {
         }
     };
     text("calendar", &ev.calendar_id);
-    text("title", ev.title.trim());
+    text("title", super::drive::trim_invisible(&ev.title));
     text("start", &ev.start);
     text("end", &ev.end);
     text("repeat", repeat_code(ev.repeat));
@@ -276,7 +276,7 @@ fn put_event_fields(e: &mut Entry, ev: &CalEvent) {
 /// Checks and normalises an event; returns (start, end) for convenience.
 fn validate(ev: &mut CalEvent) -> Result<()> {
     let bad = |m: &str| GhulError::InvalidInput { msg: m.into() };
-    if ev.title.trim().is_empty() {
+    if super::drive::trim_invisible(&ev.title).is_empty() {
         return Err(bad("title required"));
     }
     if ev.all_day {

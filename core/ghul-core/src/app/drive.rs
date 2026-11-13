@@ -311,9 +311,30 @@ fn free_name(index: &DriveIndex, parent: &str, name: &str, skip: Option<&str>) -
     (2..).map(|i| format!("{stem} ({i}){ext}")).find(|n| !taken(n)).expect("unbounded")
 }
 
+/// Characters that take no space on screen: a name made only of them looks empty.
+fn invisible(c: char) -> bool {
+    c.is_whitespace() || matches!(c, '\u{200b}'..='\u{200d}' | '\u{2060}' | '\u{feff}' | '\u{180e}')
+}
+
+/// Direction overrides can hide the real file type ("rechnung\u{202e}fdp.exe" shows as "rechnungexe.pdf").
+fn direction_override(c: char) -> bool {
+    matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+}
+
+/// Text without spaces and invisible characters at both ends.
+pub(crate) fn trim_invisible(s: &str) -> &str {
+    s.trim_matches(invisible)
+}
+
 fn check_name(name: &str) -> Result<String> {
-    let n = name.trim();
-    if n.is_empty() || n.contains('/') || n.contains('\0') || n.len() > 255 {
+    let n = trim_invisible(name);
+    let bad = n.is_empty()
+        || n == "."
+        || n == ".."
+        || n.contains('/')
+        || n.chars().any(|c| c.is_control() || direction_override(c))
+        || n.len() > 255;
+    if bad {
         return Err(GhulError::InvalidInput { msg: "invalid name".into() });
     }
     Ok(n.to_owned())
