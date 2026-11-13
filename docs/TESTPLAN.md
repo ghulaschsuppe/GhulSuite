@@ -452,6 +452,12 @@ oder Proton.
 | R7 | Dasselbe mit „Später senden“. | Die geplante Mail geht ebenfalls ohne PGP raus. |
 | R8 | Optionen-Übersicht → „Entsperren“ mit nur Fingerabdruck, nur App-PIN, beidem, nichts. | Untertitel „Fingerabdruck · 24 Stunden“, „App-PIN · …“, „Fingerabdruck und App-PIN · …“ bzw. „Nur Passwort“; bei „Immer“: „ohne Ablauf“. |
 | R9 | Optionen → Schlüssel und Schlüsseldateien. | Kein zweites „Master-Passwort ändern“ (das steht als eigene Zeile in der Übersicht). |
+| R10 | Android-Einstellungen → Apps → Standard-Apps (je nach Hersteller „E-Mail“, „Kalender“). | GhulSuite ist als Mail- und Kalender-App wählbar. |
+| R11 | In einer anderen App (Browser, Kontakte) einen `mailto:`-Link antippen. | Auswahl zeigt GhulSuite; nach dem Entsperren ist eine neue Mail mit Empfänger, Betreff und Text offen. |
+| R12 | In der Galerie ein Foto teilen → „Per E-Mail senden (GhulMail)“. | Neue Mail mit dem Foto als Anhang. |
+| R13 | Eine `.ics`-Datei (z. B. Einladung im Download-Ordner) mit GhulSuite öffnen. | Nach dem Entsperren: „n Termine importiert“ in den Standardkalender. |
+| R14 | In einer App „Zum Kalender hinzufügen“ (z. B. Bahn- oder Kino-App). | Neuer Termin mit Titel, Zeit und Ort, zum Speichern bereit. |
+| R15 | Schnell entsperren mit Fingerabdruck an. App gesperrt im Hintergrund lassen, wieder hineinwechseln. | Die Fingerabdruck-Abfrage erscheint **sofort**, ohne den Knopf zu drücken. Abbrechen: sie kommt nicht in Dauerschleife wieder, der Knopf bleibt. |
 
 ## 26. Alltagstest (eine Woche, Handy und Windows)
 

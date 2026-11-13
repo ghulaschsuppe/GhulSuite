@@ -27,4 +27,5 @@
     <string name="cal_channel_silent">Termin-Erinnerungen (lautlos)</string>
     <string name="cal_snooze">In 5 Min. erneut</string>
     <string name="cal_done">Erledigt</string>
+    <string name="share_as_mail">Per E-Mail senden (GhulMail)</string>
 </resources>

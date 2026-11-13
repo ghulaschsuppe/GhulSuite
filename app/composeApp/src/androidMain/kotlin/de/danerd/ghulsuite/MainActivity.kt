@@ -106,9 +106,13 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         if (!ghul.startFailed) shake.start()
+        // A locked app asks for the fingerprint as soon as it is back in front.
+        AppLaunch.inFront.value = true
+        AppLaunch.resumed.value++
     }
 
     override fun onPause() {
+        AppLaunch.inFront.value = false
         shake.stop()
         super.onPause()
     }
