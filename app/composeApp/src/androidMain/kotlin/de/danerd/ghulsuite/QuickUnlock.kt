@@ -186,15 +186,21 @@ class AndroidQuickUnlock(
     }
 
     suspend fun unlockPin(pin: String) {
+        // Counted before the try and written to disk at once: killing the app right after a wrong
+        // PIN (before a delayed write) must not give a free attempt.
+        val fails = prefs.getInt("$PIN.fails", 0) + 1
+        if (fails > MAX_PIN_ATTEMPTS) {
+            disable(PIN)
+            throw VaultException(VaultErrorKind.QUICK_INVALID, retries = 0)
+        }
+        prefs.edit().putInt("$PIN.fails", fails).commit()
         val (cipher, ct) = decryptCipher(PIN)
         val qk = cipher.doFinal(ct)
         try {
             withContext(Dispatchers.IO) { mappedQuick { suite().unlockQuick(PIN, qk, pin, maxAgeSeconds()) } }
-            prefs.edit().putInt("$PIN.fails", 0).apply()
+            prefs.edit().putInt("$PIN.fails", 0).commit()
         } catch (e: VaultException) {
             if (e.kind == VaultErrorKind.QUICK_INVALID) {
-                val fails = prefs.getInt("$PIN.fails", 0) + 1
-                prefs.edit().putInt("$PIN.fails", fails).apply()
                 val left = MAX_PIN_ATTEMPTS - fails
                 if (left <= 0) disable(PIN)
                 throw VaultException(VaultErrorKind.QUICK_INVALID, retries = left.coerceAtLeast(0))

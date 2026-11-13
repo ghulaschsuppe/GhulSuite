@@ -78,7 +78,7 @@ pub struct ShareCheck {
     pub detail: String,
 }
 
-#[derive(uniffi::Record, Clone, Debug)]
+#[derive(uniffi::Record, Clone)]
 pub struct ShareOptions {
     pub server_id: String,
     /// Optional second secret; recipients must enter it besides opening the link.
@@ -88,6 +88,8 @@ pub struct ShareOptions {
     /// 0 = unlimited; 1 = one-time link. Only with the server module.
     pub max_downloads: u32,
 }
+
+super::redact::redacted_debug!(ShareOptions { server_id, expires_days, max_downloads });
 
 fn shares(o: &Open) -> Vec<StoredShare> {
     setting(&o.suite, SHARES_KEY)

@@ -77,6 +77,10 @@ function ghul_path(string $p, bool $allowEmpty = false): string
         if ($seg === '' || $seg === '.' || $seg === '..' || !preg_match('/^[\p{L}\p{N} ._()+\-]+$/u', $seg)) {
             ghul_fail(400, 'invalid path');
         }
+        // Windows drops dots and spaces at the end of a name: "x.php." would become "x.php".
+        if (preg_match('/[. ]$/', $seg) || str_starts_with($seg, ' ')) {
+            ghul_fail(400, 'invalid path');
+        }
         // Even with the key nothing executable or server configuration can be placed here.
         if (preg_match('/\.(php\d?|phtml|phar|pht|phps|cgi|pl|py|sh|shtml)$/i', $seg) || preg_match('/^\.(htaccess|htpasswd|user\.ini)$/i', $seg)) {
             ghul_fail(400, 'file type not allowed');
@@ -259,6 +263,9 @@ function ghul_serve_share(string $id): never
     fwrite($h, (string) json_encode($m));
     fflush($h);
     header('Content-Type: application/octet-stream');
+    header('Content-Disposition: attachment');
+    header('X-Content-Type-Options: nosniff');
+    header('Cache-Control: no-store');
     header('Content-Length: ' . filesize($bin));
     readfile($bin);
     if ($last) {
@@ -276,6 +283,10 @@ function ghul_serve_share(string $id): never
 function ghul_viewer(): never
 {
     header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+    header('X-Content-Type-Options: nosniff');
+    header('Referrer-Policy: no-referrer');
+    header('X-Robots-Tag: noindex, nofollow');
+    header('Cache-Control: no-store');
     $v = $_GET['v'] ?? '';
     if ($v === 'js') {
         header('Content-Type: text/javascript; charset=utf-8');

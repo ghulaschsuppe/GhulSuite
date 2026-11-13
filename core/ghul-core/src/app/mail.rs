@@ -50,7 +50,7 @@ pub struct MailServers {
     pub smtp_security: MailSecurity,
 }
 
-#[derive(uniffi::Record, Clone, Debug)]
+#[derive(uniffi::Record, Clone)]
 pub struct MailAccountInput {
     /// Shown name of the account, e.g. "Privat".
     pub name: String,
@@ -65,6 +65,17 @@ pub struct MailAccountInput {
     pub smtp_cert: Option<String>,
     pub signature: String,
 }
+
+super::redact::redacted_debug!(MailAccountInput {
+    name,
+    display_name,
+    email,
+    username,
+    servers,
+    imap_cert,
+    smtp_cert,
+    signature
+});
 
 #[derive(Serialize, Deserialize, Clone)]
 struct StoredAccount {
@@ -254,7 +265,7 @@ pub struct OutgoingMail {
 }
 
 /// What a notification check needs; the app keeps it device-bound while locked.
-#[derive(uniffi::Record, Clone, Debug)]
+#[derive(uniffi::Record, Clone)]
 pub struct MailPollConfig {
     pub account_id: String,
     pub account_name: String,
@@ -265,6 +276,8 @@ pub struct MailPollConfig {
     pub password: String,
     pub cert: Option<String>,
 }
+
+super::redact::redacted_debug!(MailPollConfig { account_id, account_name, host, port, security, username, cert });
 
 #[derive(uniffi::Record, Clone, Debug, PartialEq)]
 pub struct MailPollResult {

@@ -51,7 +51,7 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal
           cargo test --locked --release -p ghul-core --lib -- --include-ignored --nocapture --test-threads=2 \
-            crazy everyday chaos attacks absurd fuzz_tests wycheproof
+            crazy everyday chaos attacks absurd fuzz_tests wycheproof collections properties badssl
 
   monkey:
     name: App-Fuzzing im Emulator (Monkey, 3 × 30.000 Gesten)
@@ -109,6 +109,8 @@ jobs:
           echo "$GITLEAKS_SHA256  /tmp/gl.tgz" | sha256sum -c -
           tar xzf /tmp/gl.tgz -C /tmp gitleaks
           /tmp/gitleaks detect --source . --redact --no-banner -v
+      - name: Angriffe auf das PHP-Modul
+        run: python3 tools/attack-php-module.py
       - name: PHP-Modul (PHPStan, Stufe 6)
         run: |
           curl -fsSL -o /tmp/phpstan.phar "https://github.com/phpstan/phpstan/releases/download/$PHPSTAN_VERSION/phpstan.phar"

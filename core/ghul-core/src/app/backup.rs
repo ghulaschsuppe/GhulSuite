@@ -14,12 +14,10 @@ const MAX_BACKUP: u64 = 512 * 1024 * 1024;
 /// A file of the suite: the suite file or a vault file with a plain name. Anything with folders,
 /// drive letters, streams (`a:b`), control or direction characters is no part of a backup.
 fn suite_file(name: &str) -> bool {
-    let plain = !name.is_empty()
-        && !name.starts_with('.')
-        && !name.chars().any(|c| {
-            c.is_control() || matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
-        });
-    plain && (name == super::suite::SUITE_FILE || super::suite::is_vault_file(name))
+    super::storage::plain_file_name(name)
+        && !name.ends_with(".tmp")
+        && !name.ends_with(".bak")
+        && (name == super::suite::SUITE_FILE || super::suite::is_vault_file(name))
 }
 
 #[uniffi::export]

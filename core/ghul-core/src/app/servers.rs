@@ -122,7 +122,7 @@ pub enum ServerSaved {
 }
 
 /// A server as entered by the user.
-#[derive(uniffi::Record, Clone, Debug)]
+#[derive(uniffi::Record, Clone)]
 pub struct ServerInput {
     pub kind: ServerKind,
     pub name: String,
@@ -141,8 +141,10 @@ pub struct ServerInput {
     pub upload: Option<UploadAccess>,
 }
 
+super::redact::redacted_debug!(ServerInput { kind, name, host, port, user, base, url, upload });
+
 /// FTPS login that a PHP module was uploaded with (from `php_module_install`).
-#[derive(uniffi::Record, Clone, Debug)]
+#[derive(uniffi::Record, Clone)]
 pub struct UploadAccess {
     pub host: String,
     pub port: u16,
@@ -152,6 +154,8 @@ pub struct UploadAccess {
     pub dir: String,
     pub data_dir: String,
 }
+
+super::redact::redacted_debug!(UploadAccess { host, port, user, cert, dir, data_dir });
 
 #[derive(uniffi::Record, Clone, Debug, PartialEq)]
 pub struct ServerInfo {
@@ -435,7 +439,7 @@ pub fn php_module_probe(url: String, key: String) -> Result<PhpModuleInfo> {
 }
 
 /// Result of installing a server module.
-#[derive(uniffi::Record, Clone, Debug)]
+#[derive(uniffi::Record, Clone)]
 pub struct PhpInstalled {
     /// Set: confirm this certificate fingerprint first and call again; nothing was uploaded.
     pub confirm: Option<String>,
@@ -450,6 +454,8 @@ pub struct PhpInstalled {
     /// The FTPS login, for `ServerInput.upload` if the user keeps it for later updates.
     pub upload: Option<UploadAccess>,
 }
+
+super::redact::redacted_debug!(PhpInstalled { confirm, url, tried, limit, upload });
 
 /// Folders of a server as entered.
 #[derive(uniffi::Enum, Clone, Debug, PartialEq)]
@@ -612,6 +618,7 @@ impl GhulSuite {
             .list("suite")?
             .into_iter()
             .filter(|e| !e.is_dir && (super::suite::is_vault_file(&e.name) || e.name == super::suite::SUITE_FILE))
+            .filter(|e| super::storage::plain_file_name(&e.name))
             .map(|e| e.name)
             .collect();
         if files.is_empty() {

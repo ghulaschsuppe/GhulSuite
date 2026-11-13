@@ -294,8 +294,14 @@ impl GhulSuite {
     fn sync_with(&self, o: &mut Open, fs: &dyn RemoteFs) -> Result<SyncReport> {
         let mut rep = SyncReport::default();
         fs.mkdir_all(DIR)?;
-        let remote_files: Vec<String> =
-            fs.list(DIR)?.into_iter().filter(|e| !e.is_dir).map(|e| e.name).filter(|n| is_vault_file(n)).collect();
+        // Names come from the server: only plain vault file names are ever touched.
+        let remote_files: Vec<String> = fs
+            .list(DIR)?
+            .into_iter()
+            .filter(|e| !e.is_dir)
+            .map(|e| e.name)
+            .filter(|n| is_vault_file(n) && super::storage::plain_file_name(n))
+            .collect();
 
         // 1. Settings and protection from the remote suite file.
         // A damaged suite file (cut off by a dropped upload) is replaced by this device's one at

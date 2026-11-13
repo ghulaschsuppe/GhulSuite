@@ -468,3 +468,189 @@ fn exports_are_safe_to_open_in_a_spreadsheet() {
     want.sort();
     assert_eq!(got, want);
 }
+
+/// Names in a server's folder listing come from the server. Whatever it lists, nothing is
+/// written outside the suite folder, nothing odd is created, and the sync still works.
+#[test]
+fn a_server_cannot_plant_files_through_names() {
+    let (d, s, server, _kf) = marked_suite("names");
+    let dir = server.join("sync/suite");
+    let good = std::fs::read(dir.join(vault_file(&s, &vault_id(&s, "KlauTresorX9")))).unwrap();
+    // What a file system allows as names on the server side.
+    for name in [
+        ".versteckt.ghlpss",
+        "aux.ghlpss",
+        "CON.ghlpss",
+        "nul.ghltotp",
+        "a:b.ghlpss",
+        "x\u{202e}sspslhg.exe.ghlpss",
+        "ende .ghlpss ",
+        "tab\there.ghlpss",
+        "stern*.ghlpss",
+        "frage?.ghlpss",
+        "pipe|.ghlpss",
+        "<kleiner>.ghlpss",
+        "zitat\".ghlpss",
+        "neue\nzeile.ghlpss",
+        "..ghlpss",
+    ] {
+        let _ = std::fs::write(dir.join(name), &good);
+    }
+    /// A server that lists names no file system would allow.
+    struct Liar(LocalFs);
+    impl RemoteFs for Liar {
+        fn list(&self, dir: &str) -> crate::net::NetResult<Vec<crate::net::remote::RemoteEntry>> {
+            let mut l = self.0.list(dir)?;
+            for n in [
+                "../raus.ghlpss",
+                "..\\raus.ghlpss",
+                "/tmp/abs.ghlpss",
+                "a/b.ghlpss",
+                "C:\\x.ghlpss",
+                "\0.ghlpss",
+                "../../suite.ghlsuite",
+            ] {
+                l.push(crate::net::remote::RemoteEntry { name: n.into(), is_dir: false, size: 10 });
+            }
+            Ok(l)
+        }
+        fn read(&self, path: &str) -> crate::net::NetResult<Option<Vec<u8>>> {
+            self.0.read(path)
+        }
+        fn write(&self, path: &str, data: &[u8]) -> crate::net::NetResult<()> {
+            self.0.write(path, data)
+        }
+        fn delete(&self, path: &str) -> crate::net::NetResult<()> {
+            self.0.delete(path)
+        }
+        fn mkdir_all(&self, dir: &str) -> crate::net::NetResult<()> {
+            self.0.mkdir_all(dir)
+        }
+    }
+    s.sync_folder(&Liar(LocalFs::new(server.join("sync")))).unwrap();
+    assert_eq!(titles(&s), vec!["Bank"]);
+    for f in d.storage().list().unwrap() {
+        assert!(super::super::storage::plain_file_name(&f), "odd local file {f:?}");
+    }
+    let outside: Vec<_> = files_under(&d.root)
+        .into_iter()
+        .filter(|p| !p.starts_with(d.root.join("vault")) && !p.starts_with(d.root.join("local")))
+        .collect();
+    assert!(outside.is_empty(), "{outside:?}");
+    assert!(!d.root.parent().unwrap().join("raus.ghlpss").exists());
+    let _ = std::fs::remove_dir_all(&server);
+}
+
+/// Passwords, keys and codes never appear in debug output (logs, crash reports, error texts).
+#[test]
+fn secrets_never_show_up_in_debug_output_or_errors() {
+    use super::super::mail::{MailAccountInput, MailPollConfig, MailSecurity};
+    use super::super::servers::{ServerInput, ServerKind, UploadAccess};
+    const M: &str = "DebugGeheimX7";
+    let servers = super::super::mail::mail_suggest_servers("a@example.org".into());
+    let shown = [
+        format!(
+            "{:?}",
+            MailAccountInput {
+                name: "n".into(),
+                display_name: "d".into(),
+                email: "a@example.org".into(),
+                username: "u".into(),
+                password: M.into(),
+                servers: servers.clone(),
+                imap_cert: None,
+                smtp_cert: None,
+                signature: String::new()
+            }
+        ),
+        format!(
+            "{:?}",
+            MailPollConfig {
+                account_id: "a".into(),
+                account_name: "n".into(),
+                host: "h".into(),
+                port: 993,
+                security: MailSecurity::Tls,
+                username: "u".into(),
+                password: M.into(),
+                cert: None
+            }
+        ),
+        format!(
+            "{:?}",
+            ServerInput {
+                kind: ServerKind::Ftps,
+                name: "n".into(),
+                host: "h".into(),
+                port: 21,
+                user: "u".into(),
+                password: Some(M.into()),
+                base: "b".into(),
+                url: String::new(),
+                upload: Some(UploadAccess {
+                    host: "h".into(),
+                    port: 21,
+                    user: "u".into(),
+                    password: M.into(),
+                    cert: String::new(),
+                    dir: "d".into(),
+                    data_dir: String::new()
+                })
+            }
+        ),
+        format!("{:?}", options(M, Some(M.as_bytes().to_vec()), &[(VaultKind::Pass, "P")])),
+        format!("{:?}", login("t", "u", M)),
+        format!("{:?}", TotpInput { secret_base32: M.into(), ..totp_input() }),
+        format!(
+            "{:?}",
+            super::super::shares::ShareOptions {
+                server_id: "s".into(),
+                password: Some(M.into()),
+                expires_days: 0,
+                max_downloads: 0
+            }
+        ),
+    ];
+    for s in &shown {
+        assert!(!s.contains(M) && !s.contains(&format!("{:?}", M.as_bytes())), "{s}");
+    }
+    // Errors from wrong input name no secret either.
+    let d = Dirs::new("debug");
+    let s = d.suite();
+    let kf = generate_keyfile();
+    s.create(options(M, Some(kf.clone()), &[(VaultKind::Pass, "P")]), None, None, None).unwrap();
+    let pass = vault_id(&s, "P");
+    s.save_entry(pass.clone(), login("Bank", "u", "PasswortGeheimX7")).unwrap();
+    s.lock();
+    let errors = [
+        format!("{:?}", s.unlock(format!("{M}x"), None, None, None, Some(kf.clone())).unwrap_err()),
+        format!("{:?}", s.unlock(M.into(), None, None, None, Some(M.as_bytes().to_vec())).unwrap_err()),
+        format!("{:?}", s.export_plain(pass.clone(), M.into()).unwrap_err()),
+    ];
+    for e in &errors {
+        assert!(!e.contains(M) && !e.contains("PasswortGeheimX7"), "{e}");
+    }
+}
+
+/// An import archive that claims to be small but unpacks to gigabytes is cut off.
+#[test]
+fn import_archives_cannot_exhaust_memory() {
+    let mut out = std::io::Cursor::new(Vec::new());
+    {
+        let mut z = zip::ZipWriter::new(&mut out);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated)
+            .large_file(true);
+        z.start_file("data.json", opts).unwrap();
+        let block = vec![b' '; 1 << 20];
+        for _ in 0..200 {
+            z.write_all(&block).unwrap();
+        }
+        z.finish().unwrap();
+    }
+    let bomb = out.into_inner();
+    assert!(bomb.len() < 1_000_000, "{}", bomb.len());
+    let t = std::time::Instant::now();
+    assert!(super::super::import::parse(&bomb, "export.zip").is_err());
+    assert!(t.elapsed().as_secs() < 20);
+}

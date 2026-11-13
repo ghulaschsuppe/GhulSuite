@@ -2435,8 +2435,12 @@ fn import_keeps_what_it_cannot_convert_and_names_it() {
     let notes = s.list_entries(VaultKind::Pass, Some(pass.clone())).unwrap();
     let note = notes.iter().find(|e| e.title == "Alt").unwrap();
     let full = s.get_entry(pass.clone(), note.id.clone()).unwrap();
-    let field =
-        |n: &str| full.fields.iter().find(|f| f.name == n).map(|f| format!("{:?}", f.value)).unwrap_or_default();
+    let field = |n: &str| match full.fields.iter().find(|f| f.name == n).map(|f| f.value.clone()) {
+        Some(FieldValue::Text { value }) | Some(FieldValue::Secret { value }) | Some(FieldValue::Url { value }) => {
+            value
+        }
+        other => format!("{other:?}"),
+    };
     assert!(field("Originaldaten").contains("otpauth://hotp/Alt:konto"));
     assert!(field("Grund").contains("HOTP"));
     // A second import keeps nothing twice.

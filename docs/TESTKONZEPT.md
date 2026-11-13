@@ -93,6 +93,7 @@ Stresstest (vorhanden), dazu: 50.000 Mails im Postfach (Fake-IMAP), 100.000 Eint
 | DOMPurify-Testfälle (223 XSS-Muster) | Apache-2.0/MPL-2.0 | E8: HTML-Mails |
 | WHATWG/web-platform-tests URL-Testdaten | BSD-3 | E8: GhulSuite und Browser lesen Adressen gleich |
 | JSONTestSuite (318 Dateien) | MIT | E4: alle JSON-Importe |
+| badssl.com (21 Server mit kaputtem TLS) | – (Dienst) | E9 nachts: Zertifikats- und Protokollprüfung |
 | OWASP MASVS/MASTG | CC BY-SA | Prüfliste Mobil-Sicherheit (nur als Liste, nichts kopiert) |
 | OWASP XSS Filter Evasion Cheat Sheet | CC BY-SA | Ideen für HTML-Mail-Angriffe (Vektoren selbst formuliert) |
 | libFuzzer / cargo-fuzz | Apache/MIT | E4 lang |

@@ -61,8 +61,29 @@ pub(crate) fn write_atomic(dir: &Path, name: &str, data: &[u8]) -> Result<()> {
     Ok(())
 }
 
+/// A plain file name that is safe on every system: no folders, no drive or stream separators
+/// (`C:`, `file:stream`), no control or direction characters, no Windows device names, not
+/// hidden, not ending in a dot or space. File names also come from servers and backups –
+/// whoever controls those must not be able to write anywhere else.
+pub(crate) fn plain_file_name(name: &str) -> bool {
+    const DEVICES: [&str; 22] = [
+        "con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9", "lpt1",
+        "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
+    ];
+    let stem = name.split('.').next().unwrap_or("").to_ascii_lowercase();
+    !name.is_empty()
+        && name.len() <= 200
+        && !name.starts_with('.')
+        && !name.ends_with(['.', ' '])
+        && !DEVICES.contains(&stem.as_str())
+        && !name.chars().any(|c| {
+            c.is_control()
+                || matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+        })
+}
+
 fn valid_name(name: &str) -> std::result::Result<(), StorageError> {
-    if name.is_empty() || name.contains('/') || name.contains('\\') || name.starts_with('.') {
+    if !plain_file_name(name) {
         return Err(StorageError::Io { msg: format!("invalid file name {name:?}") });
     }
     Ok(())

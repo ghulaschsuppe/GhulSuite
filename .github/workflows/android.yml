@@ -40,6 +40,9 @@ jobs:
       # Texts: missing translations and differing placeholders fail; terms are listed.
       - name: Texte prüfen (Übersetzungen, Platzhalter, Begriffe)
         run: python3 tools/check-texts.py
+      # What other apps can reach and which permissions the app asks for: only as listed.
+      - name: Android-Manifest prüfen (von außen erreichbare Komponenten, Berechtigungen)
+        run: python3 tools/check-android-manifest.py
 
   audit:
     name: Abhängigkeiten auf bekannte Sicherheitslücken prüfen
@@ -232,6 +235,10 @@ jobs:
       - name: PHP-Modul mit PHP 8.1 prüfen (Syntax)
         run: |
           docker run --rm -v "$PWD/core/ghul-core/server:/m:ro" php:8.1-cli php -l /m/ghulsuite.php
+      # Forged, stale and replayed requests, paths out of the data folder, planted scripts,
+      # share id tricks, uploads out of order: every case has its expected answer.
+      - name: Angriffe auf das PHP-Modul
+        run: python3 tools/attack-php-module.py
 
       - name: Chromium für Playwright
         run: |

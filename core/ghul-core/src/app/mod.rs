@@ -17,6 +17,7 @@ pub mod mailhtml;
 pub mod mailx;
 pub mod passx;
 pub mod quick;
+pub(crate) mod redact;
 pub mod servers;
 pub mod setup;
 pub mod shares;

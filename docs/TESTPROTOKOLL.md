@@ -8,11 +8,11 @@ Dieses Protokoll ist die Arbeitsliste für die nächsten Durchgänge: Jeder Fund
 
 | | |
 |---|---|
-| Testfunktionen im Kern | 195 (192 bei jedem Lauf, 3 lange nur nachts) |
+| Testfunktionen im Kern | 204 (200 bei jedem Lauf, 4 lange nur nachts) |
 | Einzelprüfungen pro Lauf | über 380.000 (u. a. 292.000 Kalendertage, 45.000 Fuzz-Eingaben, 20.000 Base32-Schreibweisen, 12.000 Wiederherstellungscodes, 5.000 HOTP-Fälle, 5.000 Passwortgenerator-Varianten, 3.000 Zusammenführungen, 3.000+ Aktionen „bekloppter Nutzer“, 515 Naughty Strings × 8 Felder) |
 | Davon gegen echte Server | 54 (SFTP, FTPS, IMAP, SMTP, PHP-Modul) |
 | Externe Testsammlungen | Big List of Naughty Strings, Project Wycheproof (5 Algorithmen), Public-Suffix-Liste mit offiziellen Testfällen, RFC 4226/6238, PayloadsAllTheThings (XSS, CRLF), SecLists (XSS), DOMPurify-Testfälle, WHATWG-URL-Testdaten, JSONTestSuite |
-| Gefundene Fehler | 26, davon **23 behoben**, 2 bewusst als Entscheidung offen, 1 als Einzelheit (B12) |
+| Gefundene Fehler | 31, davon **28 behoben**, 2 bewusst als Entscheidung offen, 1 als Einzelheit (B12) |
 | Offene Punkte aus dem Audit | 19 (Abschnitt 4) + Bedienung/Texte (Abschnitt 5) |
 | Laufzeit | Kern-Tests ca. 95 s, Android/Desktop-Build ca. 10 min, Nachtlauf ca. 2 h |
 
@@ -33,6 +33,9 @@ Alle Tests sind grün (Kern, Netzwerk, Android-Kotlin, Desktop-Tests). Die App-T
 | `core/ghul-core/src/wycheproof_tests.rs` | Wycheproof-Vektoren für XChaCha20-Poly1305, AES-GCM, HKDF, HMAC, P-256 | Z2 |
 | `core/ghul-core/src/app/autofill.rs` (Tests) | Public-Suffix-Testfälle, Phishing-Matrix | Z4 |
 | `core/fuzz/` | libFuzzer-Ziele `parsers`, `container_parse`, `ctap_responses` (nachts 15 min je Ziel) | Z3 |
+| `tools/attack-php-module.py` | 335 Angriffe auf das PHP-Modul: gefälschte, alte und wiederholte Anfragen, geänderte Inhalte und Parameter, Pfade aus dem Datenordner, eingeschleuste Skripte, falsche Methoden, Freigabe-Tricks, Uploads außer der Reihe, Sperre nach Fehlversuchen | Z2, Z4 |
+| `tools/check-android-manifest.py` | Von außen erreichbare Komponenten und Berechtigungen nur wie in einer festen Liste; verbotene Berechtigungen | Z7 |
+| `net/tests.rs` `badssl_…` (nachts) | 21 echte Server mit kaputtem TLS (abgelaufen, falscher Name, selbst signiert, alte Protokolle, schwache Verfahren, bekannte Schad-Zertifikate) müssen abgelehnt werden | Z4 |
 | `tools/check-texts.py` | Texte: fehlende Übersetzungen und Platzhalter (Fehler), uneinheitliche Begriffe und ungenutzte Texte (Hinweise) | Z6 |
 | `tools/ci-emulator.sh` | Maestro-Abläufe; nachts zusätzlich Monkey (3 × 30.000 zufällige Gesten) | Z3, Z6 |
 | `.github/workflows/nightly.yml` | Nachtlauf: Fuzzing lang, Langläufe in Release, Monkey, gitleaks (ganze Historie), PHPStan, cargo audit | alle |
@@ -81,6 +84,11 @@ Schwere: **K** kritisch (Datenverlust, Geheimnis preisgegeben) · **H** hoch (An
 | F22 | N | Kopiertes Passwort blieb nach dem Sperren in der Zwischenablage | Code-Prüfung | behoben `7c0c49f` |
 | F25 | H | Adressen mit Backslash las GhulSuite anders als ein Browser: aus `https://evil.com\@bank.de` wurde `bank.de`, der Browser geht zu `evil.com` | `collections::urls_belong_to_the_same_site_as_in_a_browser` (WHATWG-Testdaten) | behoben (Branch `test/chaos`) |
 | F26 | N | IPv4 in anderen Schreibweisen (`0xC0A80001`, `192.168.1`) las GhulSuite anders als ein Browser | dto. | behoben (Branch `test/chaos`) |
+| F27 | M | Dateinamen, die ein Server oder eine Sicherung liefert, durften Windows-Gerätenamen (`CON`, `AUX`), Doppelpunkte (Laufwerk/Datenstrom), Steuer- und Richtungszeichen enthalten | `attacks::a_server_cannot_plant_files_through_names` | behoben (zweite Audit-Runde) |
+| F28 | M | Bilder in Mails konnten das eigene Gerät (`http://localhost`), den Router und andere private Adressen ansprechen – auch über eine Weiterleitung | `mailhtml::mail_images_cannot_reach_private_addresses` | behoben: nur https zu öffentlichen Adressen (erledigt B16) |
+| F29 | M | Debug-Ausgaben von 13 Datenstrukturen enthielten Passwörter, Codes und Schlüssel (Gefahr: Logzeile, Absturzbericht) | `attacks::secrets_never_show_up_in_debug_output_or_errors` | behoben: Geheimnisse erscheinen nie in Debug-Ausgaben |
+| F30 | N | PHP-Modul: Namen mit Punkt/Leerzeichen am Ende (`x.php.` wird auf Windows-Servern zu `x.php`); Freigabe- und Viewer-Antworten ohne `nosniff`/`no-store` | `tools/attack-php-module.py` (335 Angriffe) | behoben (erledigt B15 teilweise) |
+| F31 | M | App-PIN: der Fehlversuch wurde erst nach dem Versuch und verzögert gespeichert – App direkt nach falscher PIN abschießen gab einen Freiversuch | Code-Prüfung | behoben: erst zählen (sofort auf Platte), dann prüfen |
 | F23 | M | **Tresornamen stehen im Dateinamen** (Server, Sicherung): „bank-privat.ghlpss“ verrät, welche Tresore es gibt | `attacks::stolen_device_files…` (bewusst ausgenommen) | **offen – Entscheidung nötig** |
 | F24 | N | Termintitel und Import-Titel werden getrimmt (führender Tab geht verloren); Passwörter bleiben exakt | `attacks::exports_are_safe…` | **offen – vertretbar** |
 
@@ -109,7 +117,7 @@ Zu F17 (Verhalten seit der Behebung): Die erste Mail eines neuen Kontakts mit Au
 | B13 | N | Geänderte Server-/Kontodaten in der Suite-Datei werden nicht an andere Geräte weitergegeben (gleiche ID gewinnt lokal) | Zeitstempel je Listeneintrag wie bei Bereichs-Optionen | neu in `chaos.rs` |
 | B14 | N | Freigabe zurückziehen meldet Erfolg, auch wenn das Paket auf dem Server bleibt | Paket immer löschen, Fehler melden | – |
 | B15 | N | PHP-Modul: Fehlversuchssperre per IP (hinter Proxy aussperrbar), Endungsliste erfasst `x.php.jpg` nicht, Modul-Datei ohne `chmod` | Sperre an Schlüssel statt IP koppeln; Allowlist der Endungen; `chmod 0600` | PHP-Test |
-| B16 | N | Mail-Bilder folgen Weiterleitungen auch zu `localhost`/privaten Adressen | Private Adressen nach Auflösung ablehnen | Fuzz/Unit-Test |
+| B16 | – | ~~Mail-Bilder zu `localhost`/privaten Adressen~~ | erledigt (F28); Rest: Namensauflösung kann zwischen Prüfung und Verbindung wechseln (DNS-Rebinding) – Adresse nach dem Verbinden prüfen | – |
 | B17 | N | CI: Signaturschlüssel und FTP-Zugang stehen bei Pushes auf jeden Branch bereit | Nur `main` (GitHub-Environment mit Freigabe) | – |
 | B18 | N | Zusammenführen bei gleichzeitigem Löschen (Gerät A) und Bearbeiten (Gerät B) desselben Eintrags: Ergebnis hängt von Revision/Zeit ab | Regel festlegen („Bearbeiten gewinnt, Löschung wird gemeldet“) und testen | neu in `crazy_user.rs` |
 | B19 | N | Test-Hilfe: Nach Sperren/Entsperren muss Drive im Test neu verbunden werden (`NotConfigured`); in der App verbindet sie sich selbst | prüfen, ob die App nach Entsperren immer neu verbindet | Desktop-UI-Test |
@@ -186,3 +194,65 @@ Sobald die Begriffe bereinigt sind: `tools/check-texts.py --strict` in der CI ei
 6. Rest von B und U/K nach Aufwand.
 
 Nach jedem Durchgang: dieses Protokoll aktualisieren (Status, Commit), neue Funde mit nächster Nummer anhängen.
+
+## 8. Lückenanalyse Sicherheit (zweite Runde)
+
+Was nach beiden Runden **nicht** oder nur teilweise abgedeckt ist – ehrlich aufgelistet, damit nichts als „geprüft“ gilt, was es nicht ist.
+
+### Braucht eine Entscheidung oder größeren Umbau
+
+| Nr. | Lücke | Bedeutung | Vorschlag |
+|---|---|---|---|
+| L1 | **Schlüssel werden nie erneuert** (B1) | Altes Notfallblatt oder entfernter Key + alte Dateikopie öffnet die aktuelle Suite | Formatänderung: bei Code-Wechsel/Key-Entfernen alles neu verschlüsseln |
+| L2 | **Kein unabhängiger Audit** | Eigene Tests finden nur, woran man denkt | Externer Code-Audit und Pentest vor Version 1.0 |
+| L3 | **Abhängigkeiten der App (Gradle) ohne Prüfsummen** | Manipuliertes Paket auf dem Weg vom Server würde eingebaut | `gradle/verification-metadata.xml` (SHA-256 je Paket); `cargo deny` für Quellen und Lizenzen |
+| L4 | **Build nicht nachprüfbar** | Niemand kann prüfen, dass die APK aus diesem Quelltext stammt | Reproduzierbare Builds; signieren nur für `main`/Tags in geschützter Umgebung (B17) |
+| L5 | **PHP-Modul: Schlüssel steht in der PHP-Datei** | Liefert ein falsch eingestellter Server PHP als Text aus, ist der Zugriffsschlüssel lesbar (Daten bleiben verschlüsselt, aber löschbar/überschreibbar) | Schlüssel in eine Datei im gesperrten Datenordner auslagern; Selbsttest „wird PHP ausgeführt?“ beim Einrichten |
+| L6 | **Metadaten auf dem Server** | Server sieht Anzahl, Größe und Änderungszeit der Dateien, Tresornamen (F23), die IP | F23 beheben; Rest dokumentieren (unvermeidbar ohne eigenen Dienst) |
+| L7 | **PGP-Schlüssel von Kontakten nur „Vertrauen beim ersten Kontakt“** | Erster Schlüssel kann untergeschoben sein | Fingerabdruck-Vergleich in der App (QR/vorlesen), Warnung bei Schlüsselwechsel |
+
+### Technisch nicht testbar oder außerhalb der App
+
+| Nr. | Lücke | Einordnung |
+|---|---|---|
+| L8 | Geheimnisse im Arbeitsspeicher der Oberfläche (Kotlin-Zeichenketten lassen sich nicht sicher löschen), Auslagerungsdatei/Ruhezustand unter Windows | Nur der Rust-Kern löscht sicher. Schutz: Sperren leert den Kern; Geräteverschlüsselung nutzen |
+| L9 | Gerät mit Schadsoftware, Root, fremde Tastatur-App, Bedienungshilfen-Dienste, Bildschirmaufnahme durch das System | Dagegen schützt keine App. Hinweis in der Doku; Passwortfelder ohne Vorschläge sind gesetzt |
+| L10 | Tapjacking (fremde App legt ein Fenster über GhulSuite) | Offen: `filterTouchesWhenObscured` für Entsperren, Löschen und Autofill-Auswahl setzen und im Emulator testen |
+| L11 | Zertifikats-Widerruf wird nicht geprüft | Üblich bei Apps (auch Browser prüfen nur eingeschränkt); mit festem Fingerabdruck (eigene Server) ohne Belang |
+| L12 | Zeit-Seitenkanäle | Nicht gemessen; Vergleiche von Geheimnissen laufen in konstanter Zeit, die Kryptobibliotheken sind dafür ausgelegt |
+| L13 | Windows: portable Version auf fremden PCs (Keylogger), DLL-Suchpfad, Rechte des Datenordners | Offen: Rechte beim Anlegen setzen; Hinweis „nur auf eigenen Geräten entsperren“ |
+
+### Weitere Sammlungen und Werkzeuge (noch nicht eingebaut)
+
+| Was | Wofür | Aufwand |
+|---|---|---|
+| **MobSF** (statisch) nach **OWASP MASVS** | Standard-Prüfliste für Mobil-Apps gegen die fertige APK | klein, Nachtlauf |
+| **drozer** / **QARK** | Angriffe auf von außen erreichbare Android-Komponenten im Emulator (Intents, Provider) | mittel |
+| **Semgrep** (Regeln für Kotlin, PHP, Geheimnisse) | bekannte Fehlermuster im Quelltext | klein, Nachtlauf |
+| **OWASP ZAP** (Baseline + aktiv) | automatischer Angriffsscan auf PHP-Modul und Empfängerseite | klein, Nachtlauf |
+| **cargo-mutants** | prüft, ob die Tests absichtlich eingebaute Fehler bemerken | mittel, wöchentlich |
+| **x509-limbo** (C2SP) | tausende Zertifikatsketten-Fälle | mittel; prüft v. a. die TLS-Bibliothek |
+| **OpenPGP Interoperability Test Suite** (Sequoia) | PGP-Verhalten gegenüber anderen Programmen, bekannte Angriffe (z. B. EFAIL-Muster) | mittel |
+| **Unicode `confusables.txt`**, **IDNA-Testdaten** | Warnung bei Namen/Domains, die wie andere aussehen | klein |
+| **MIME-Torture-Tests** (jwz), Beispielmails großer Mailprogramme | kaputte und extreme Mails | klein |
+| **Dovecot imaptest** | IMAP-Dauerlast und Protokollfehler | mittel |
+| **NIST CAVP** (AES-GCM, HMAC, SHA) | weitere Krypto-Vektoren | klein |
+| **RFC 8949 Anhang A** (CBOR), **RFC 9106** (Argon2) | Format-Vektoren | klein |
+| **csv-spectrum**, **fuzzdb**, **IntruderPayloads** | weitere Eingabe-Sammlungen | klein |
+| Geräte-Matrix (Samsung, Pixel, Xiaomi; Android 10–16) | Hersteller-Eigenheiten bei Hintergrunddiensten, Autofill, Keystore | groß, braucht Testgeräte oder einen Gerätedienst |
+
+### Stand der Abdeckung nach Angriffsfläche
+
+| Angriffsfläche | Abdeckung | Rest |
+|---|---|---|
+| Dateien auf Gerät, Server, Sicherung | hoch (Klartextsuche, Manipulation, Fälschung, Namen) | L1, F23 |
+| Synchronisation | hoch (Chaos, bekloppter Nutzer, Rollback einzelner Dateien) | B2, B3, B13 |
+| Netzwerk-Parser | hoch (Fuzzing schnell und lang) | – |
+| TLS | mittel → hoch mit badssl im Nachtlauf | L11 |
+| PHP-Modul | hoch (335 Angriffe, PHPStan nachts) | L5, ZAP |
+| Mail (HTML, Kopfzeilen, PGP) | hoch (≈500 XSS-Muster, CRLF, Autocrypt) | L7, Interop-Suite |
+| Autofill | hoch (Suffix-Liste, Browser-URL-Daten, vertrauenswürdige Browser) | Geräte-Matrix, B9 |
+| Andere Apps (Intents) | mittel (Manifest-Liste, nur fremde Inhalte) | drozer, B6, B7, L10 |
+| Entsperren (Fingerabdruck, PIN) | mittel (Zähler, Bindung an Neustart) | Test im Emulator, L10 |
+| Lieferkette | niedrig–mittel (cargo audit, gepinnte Actions) | L3, L4 |
+| Oberfläche (Fehlbedienung) | mittel (Maestro, Monkey nachts) | Desktop-UI-Tests, Abschnitt 4 U/K |

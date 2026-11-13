@@ -444,6 +444,69 @@ fn reveal_deceptive_links(mail: &mut HtmlMail) {
     }
 }
 
+/// Whether an address is on the public internet (not this device, the home network, link-local,
+/// carrier NAT, multicast or reserved ranges).
+pub(crate) fn public_ip(ip: std::net::IpAddr) -> bool {
+    use std::net::IpAddr;
+    match ip {
+        IpAddr::V4(v4) => {
+            let o = v4.octets();
+            !(v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_broadcast()
+                || v4.is_unspecified()
+                || v4.is_multicast()
+                || v4.is_documentation()
+                || o[0] == 0
+                || (o[0] == 100 && (64..128).contains(&o[1]))
+                || (o[0] == 192 && o[1] == 0 && o[2] == 0)
+                || (o[0] == 198 && (18..20).contains(&o[1]))
+                || o[0] >= 240)
+        }
+        IpAddr::V6(v6) => {
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return public_ip(IpAddr::V4(v4));
+            }
+            let s = v6.segments();
+            !(v6.is_loopback()
+                || v6.is_unspecified()
+                || v6.is_multicast()
+                || (s[0] & 0xfe00) == 0xfc00
+                || (s[0] & 0xffc0) == 0xfe80
+                || (s[0] == 0x2001 && s[1] == 0x0db8)
+                || (s[0] == 0x64 && s[1] == 0xff9b))
+        }
+    }
+}
+
+/// https to a host whose every address is public.
+fn public_https(u: &crate::net::http::Url) -> bool {
+    use std::net::ToSocketAddrs;
+    if !u.tls {
+        return false;
+    }
+    if let Ok(ip) = u.host.parse::<std::net::IpAddr>() {
+        return public_ip(ip);
+    }
+    let name = u.host.trim_end_matches('.');
+    if name == "localhost"
+        || name.ends_with(".localhost")
+        || name.ends_with(".local")
+        || name.ends_with(".internal")
+        || !name.contains('.')
+    {
+        return false;
+    }
+    match (name, u.port).to_socket_addrs() {
+        Ok(addrs) => {
+            let addrs: Vec<_> = addrs.collect();
+            !addrs.is_empty() && addrs.iter().all(|a| public_ip(a.ip()))
+        }
+        Err(_) => false,
+    }
+}
+
 /// Loads an image from the internet for an HTML mail – only when the user asked for it.
 /// At most 5 MB and three redirects; only answers that are images.
 #[uniffi::export]
@@ -452,6 +515,11 @@ pub fn mail_fetch_image(url: String) -> Result<Vec<u8>, super::error::GhulError>
     let mut url = url;
     for _ in 0..4 {
         let u = http::Url::parse(&url).map_err(|e| super::error::GhulError::Network { msg: e.to_string() })?;
+        // A mail must not make the device call itself, the router or other devices at home
+        // (directly or through a redirect): only https to public addresses.
+        if !public_https(&u) {
+            break;
+        }
         let r = crate::net::block_on(http::request("GET", &u, &[], b"", None), std::time::Duration::from_secs(15))
             .map_err(|e| super::error::GhulError::Network { msg: e.to_string() })?;
         if (300..400).contains(&r.status) {
@@ -474,6 +542,60 @@ mod tests {
 
     fn text(b: &MailBlock) -> String {
         b.spans.iter().map(|s| s.text.as_str()).collect()
+    }
+
+    /// Images in mails never reach this device, the home network or other private ranges.
+    #[test]
+    fn mail_images_cannot_reach_private_addresses() {
+        let private = [
+            "127.0.0.1",
+            "127.8.9.1",
+            "10.0.0.1",
+            "172.16.5.4",
+            "172.31.255.255",
+            "192.168.178.1",
+            "169.254.169.254",
+            "0.0.0.0",
+            "100.64.0.1",
+            "198.18.0.1",
+            "224.0.0.1",
+            "255.255.255.255",
+            "240.0.0.1",
+            "192.0.0.8",
+            "::1",
+            "::",
+            "fe80::1",
+            "fc00::1",
+            "fd12:3456::1",
+            "::ffff:127.0.0.1",
+            "::ffff:192.168.1.1",
+            "ff02::1",
+            "64:ff9b::7f00:1",
+        ];
+        for ip in private {
+            assert!(!public_ip(ip.parse().unwrap()), "{ip}");
+        }
+        for ip in ["93.184.216.34", "1.1.1.1", "8.8.8.8", "172.32.0.1", "2606:4700::1111", "2a00:1450:4001::1"] {
+            assert!(public_ip(ip.parse().unwrap()), "{ip}");
+        }
+        for url in [
+            "http://127.0.0.1:8080/x.png",
+            "http://localhost/x.png",
+            "https://localhost/x.png",
+            "https://127.0.0.1/x.png",
+            "https://192.168.178.1/logo.png",
+            "https://[::1]/x.png",
+            "https://router/x.png",
+            "https://fritz.box.local/x.png",
+            "https://169.254.169.254/latest/meta-data",
+            "https://0x7f000001/x.png",
+            "https://service.internal/x.png",
+        ] {
+            assert!(mail_fetch_image(url.into()).is_err(), "{url}");
+            if let Ok(u) = crate::net::http::Url::parse(url) {
+                assert!(!public_https(&u), "{url}");
+            }
+        }
     }
 
     #[test]
