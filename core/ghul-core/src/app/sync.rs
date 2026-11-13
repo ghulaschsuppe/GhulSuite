@@ -63,6 +63,12 @@ pub(super) fn mark_protection_changed(o: &mut Open) -> Result<()> {
     put_setting(&mut o.suite, PROTECTION_CHANGED, &now_ms())
 }
 
+/// The server this device synchronises with, if any.
+pub(super) fn sync_server(o: &Open) -> Option<String> {
+    let s: SyncSettings = setting(&o.suite, SYNC_KEY);
+    (!s.server.is_empty()).then_some(s.server)
+}
+
 pub(super) fn forget_server(o: &mut Open, id: &str) -> Result<()> {
     let s: SyncSettings = setting(&o.suite, SYNC_KEY);
     if s.server == id {

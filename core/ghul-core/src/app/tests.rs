@@ -740,6 +740,7 @@ fn sync_over_sftp() {
         password: None,
         base: base.clone(),
         url: String::new(),
+        upload: None,
     };
     // First the fingerprint is shown; then the server is stored with the confirmed fingerprint.
     assert_eq!(a.save_server(input.clone(), None).unwrap(), ServerSaved::Confirm { fingerprint: hostkey.clone() });
@@ -917,6 +918,7 @@ fn drive_over_sftp_two_devices() {
         password: None,
         base: format!("{root}/drive-{run}"),
         url: String::new(),
+        upload: None,
     };
     let id = saved(a.save_server(input.clone(), Some(hostkey.clone())).unwrap());
     a.drive_setup(id.clone()).unwrap();
@@ -1326,6 +1328,7 @@ fn share_over_sftp_with_web_folder() {
         password: None,
         base: format!("{root}/suite-{run}"),
         url: String::new(),
+        upload: None,
     };
     let id = saved(s.save_server(input, Some(hostkey)).unwrap());
     s.drive_setup(id.clone()).unwrap();
@@ -1353,6 +1356,7 @@ fn ftps_storage_drive_and_sharing() {
         password: Some(cfg.password.to_string()),
         base: cfg.base.clone(),
         url: String::new(),
+        upload: None,
     };
     // Self-signed certificate: confirm its fingerprint first.
     let fp = match s.save_server(input.clone(), None).unwrap() {
@@ -1390,6 +1394,7 @@ fn php_module_storage_drive_and_limited_shares() {
         password: Some(crate::kdf::hex(&[3u8; 32])),
         base: String::new(),
         url: php.url.clone(),
+        upload: None,
     };
     // A wrong key is refused before anything is stored.
     assert!(matches!(s.save_server(input.clone(), None), Err(GhulError::ServerAuthFailed)));
@@ -1420,6 +1425,164 @@ fn php_module_storage_drive_and_limited_shares() {
     assert_eq!(s.share_list().unwrap()[0].downloads, 1);
     s.share_delete(text.id).unwrap();
     assert!(open_link(&text.url, None).is_none());
+}
+
+#[test]
+fn drive_storage_follows_sync_or_uses_its_own_server() {
+    use super::drive::DriveMode;
+    use super::servers::{ServerFolders, ServerInput, ServerKind};
+    let Some(cfg) = crate::net::tests::ftps_test_config("drive-modes") else { return };
+    let d = Dirs::new("drive-modes");
+    let s = d.suite();
+    let kf = generate_keyfile();
+    s.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    let input = |base: &str| ServerInput {
+        kind: ServerKind::Ftps,
+        name: String::new(),
+        host: cfg.host.clone(),
+        port: cfg.port,
+        user: cfg.user.clone(),
+        password: Some(cfg.password.to_string()),
+        base: base.to_owned(),
+        url: String::new(),
+        upload: None,
+    };
+    // Folder picker before anything is stored: confirm the certificate, then list.
+    let fp = match s.server_browse_input(input(""), None, String::new()).unwrap() {
+        ServerFolders::Confirm { fingerprint } => fingerprint,
+        other => panic!("{other:?}"),
+    };
+    let sync_id = saved(s.save_server(input(&cfg.base), Some(fp.clone())).unwrap());
+    match s.server_browse_input(input(""), Some(fp.clone()), String::new()).unwrap() {
+        ServerFolders::Folders { folders } => assert!(folders.contains(&cfg.base)),
+        other => panic!("{other:?}"),
+    }
+    // "Like synchronisation" needs synchronisation.
+    let st = s.drive_storage().unwrap();
+    assert_eq!((st.mode, st.sync_available), (DriveMode::None, false));
+    assert!(matches!(s.drive_use_sync(), Err(GhulError::NotConfigured)));
+    s.set_sync_server(Some(sync_id.clone())).unwrap();
+    s.drive_use_sync().unwrap();
+    let st = s.drive_storage().unwrap();
+    assert_eq!((st.mode, st.server.map(|x| x.id)), (DriveMode::Sync, Some(sync_id.clone())));
+    let f = upload(&s, None, "Plan.txt", b"Plan A");
+
+    // Before the sync server goes: Drive keeps that server as its own, in the Drive file.
+    s.drive_detach_from_sync().unwrap();
+    s.remove_server(sync_id.clone()).unwrap();
+    let st = s.drive_storage().unwrap();
+    assert_eq!(st.mode, DriveMode::Own);
+    let own = st.server.unwrap().id;
+    assert_ne!(own, sync_id);
+    assert_eq!(download(&s, &f), b"Plan A");
+    assert!(s.list_servers().unwrap().is_empty(), "Drive's server is not offered for synchronisation");
+    assert!(s.remove_server(own.clone()).is_err(), "Drive's server is changed in GhulDrive");
+
+    // A different own server replaces the earlier one; it survives locking.
+    let other = format!("{}-b", cfg.base);
+    let new_id = saved(s.drive_save_server(input(&other), Some(fp)).unwrap());
+    s.lock();
+    s.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    let st = s.drive_storage().unwrap();
+    assert_eq!((st.mode, st.server.map(|x| x.id)), (DriveMode::Own, Some(new_id)));
+    assert!(s.drive_list(None, true).unwrap().is_empty(), "a fresh Drive on the other folder");
+}
+
+#[test]
+fn php_module_is_installed_over_ftps_and_takes_large_files_in_parts() {
+    use super::drive::DriveMode;
+    use super::servers::{ServerInput, ServerKind};
+    let Some(cfg) = crate::net::tests::ftps_test_config("php-install") else { return };
+    if std::process::Command::new("php").arg("-v").output().is_err() {
+        return;
+    }
+    let home = std::env::var("GHUL_TEST_DIR").map(|d| std::path::PathBuf::from(d).join("ftp-home")).unwrap();
+    let web = home.join(&cfg.base).join("www");
+    std::fs::create_dir_all(&web).unwrap();
+    for dir in [home.join(&cfg.base), web.clone()] {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o777)).unwrap();
+    }
+    let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    let mut php = std::process::Command::new("php")
+        .args(["-S", &format!("127.0.0.1:{port}"), "-t"])
+        .arg(&web)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    for _ in 0..50 {
+        if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    let d = Dirs::new("php-install");
+    let s = d.suite();
+    s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    let ftps = ServerInput {
+        kind: ServerKind::Ftps,
+        name: String::new(),
+        host: cfg.host.clone(),
+        port: cfg.port,
+        user: cfg.user.clone(),
+        password: Some(cfg.password.to_string()),
+        base: String::new(),
+        url: String::new(),
+        upload: None,
+    };
+    let dir = format!("{}/www", cfg.base);
+    let url = format!("http://127.0.0.1:{port}/ghulsuite.php");
+    // Unknown certificate: nothing is uploaded until it is confirmed.
+    let first = s.php_module_install(ftps.clone(), None, dir.clone(), url.clone()).unwrap();
+    assert_eq!(first.confirm, cfg.cert);
+    assert!(!web.join("ghulsuite.php").exists());
+    let done = s.php_module_install(ftps, cfg.cert.clone(), dir, url.clone()).unwrap();
+    assert_eq!(done.url.as_deref(), Some(url.as_str()));
+    assert!(done.limit > 0);
+    let info = super::servers::php_module_probe(url.clone(), done.key.clone()).unwrap();
+    assert_eq!(info.version, info.current);
+
+    // Drive on the module, keeping the FTPS login for later updates.
+    let id = saved(
+        s.drive_save_server(
+            ServerInput {
+                kind: ServerKind::Php,
+                name: String::new(),
+                host: String::new(),
+                port: 0,
+                user: String::new(),
+                password: Some(done.key.clone()),
+                base: String::new(),
+                url,
+                upload: done.upload.clone(),
+            },
+            None,
+        )
+        .unwrap(),
+    );
+    assert_eq!(s.drive_storage().unwrap().mode, DriveMode::Own);
+    // Drive blocks are larger than one part: they go up in parts.
+    let big: Vec<u8> = (0..9_000_000u32).map(|i| (i % 253) as u8).collect();
+    let f = upload(&s, None, "Film.mp4", &big);
+    assert_eq!(download(&s, &f), big);
+    // Updating the module keeps the key and the files.
+    assert_eq!(s.php_module_update(id).unwrap(), info.current);
+    assert_eq!(download(&s, &f), big);
+    let _ = php.kill();
+    let _ = php.wait();
+}
+
+#[test]
+fn module_addresses_are_guessed_from_the_ftps_folder() {
+    let urls = super::servers::module_urls;
+    assert_eq!(urls("ftp.example.org", "public_html/ghul")[0], "https://example.org/ghul/ghulsuite.php");
+    assert_eq!(urls("w0123.webhost.test", "example.org/tools")[0], "https://example.org/tools/ghulsuite.php");
+    assert_eq!(urls("ftp.example.org", "example.net/htdocs")[0], "https://example.net/ghulsuite.php");
+    assert_eq!(
+        urls("ftp.example.org", ""),
+        vec!["https://example.org/ghulsuite.php", "https://www.example.org/ghulsuite.php"]
+    );
 }
 
 #[test]
@@ -1455,6 +1618,7 @@ fn drive_file_and_share_link_into_mail() {
                 password: Some(crate::kdf::hex(&php.key)),
                 base: String::new(),
                 url: php.url.clone(),
+                upload: None,
             },
             None,
         )
@@ -1551,6 +1715,7 @@ fn php_browser_fixture() {
                 password: Some(crate::kdf::hex(&php.key)),
                 base: String::new(),
                 url: php.url.clone(),
+                upload: None,
             },
             None,
         )
