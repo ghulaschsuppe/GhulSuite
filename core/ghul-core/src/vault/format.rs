@@ -53,6 +53,10 @@ pub enum ContainerKind {
     Suite,
     /// GhulCal calendar vault.
     Cal,
+    /// GhulDrive: Drive key, storage and settings.
+    Drive,
+    /// GhulMail: accounts, keys, drafts and settings.
+    Mail,
 }
 
 impl ContainerKind {
@@ -62,13 +66,22 @@ impl ContainerKind {
             ContainerKind::Totp => b"GHULTOTP",
             ContainerKind::Suite => b"GHULSUIT",
             ContainerKind::Cal => b"GHULCLDR",
+            ContainerKind::Drive => b"GHULDRIV",
+            ContainerKind::Mail => b"GHULMAIL",
         }
     }
 
     pub fn from_magic(magic: &[u8]) -> Option<Self> {
-        [ContainerKind::Pass, ContainerKind::Totp, ContainerKind::Suite, ContainerKind::Cal]
-            .into_iter()
-            .find(|k| k.magic().as_slice() == magic)
+        [
+            ContainerKind::Pass,
+            ContainerKind::Totp,
+            ContainerKind::Suite,
+            ContainerKind::Cal,
+            ContainerKind::Drive,
+            ContainerKind::Mail,
+        ]
+        .into_iter()
+        .find(|k| k.magic().as_slice() == magic)
     }
 
     /// Value of the `kind` field in the payload.
@@ -78,6 +91,8 @@ impl ContainerKind {
             ContainerKind::Totp => "totp",
             ContainerKind::Suite => "suite",
             ContainerKind::Cal => "cal",
+            ContainerKind::Drive => "drive",
+            ContainerKind::Mail => "mail",
         }
     }
 
@@ -87,6 +102,8 @@ impl ContainerKind {
             ContainerKind::Totp => "ghltotp",
             ContainerKind::Suite => "ghlsuite",
             ContainerKind::Cal => "ghlcal",
+            ContainerKind::Drive => "ghldrv",
+            ContainerKind::Mail => "ghlmail",
         }
     }
 }
@@ -421,7 +438,13 @@ pub fn split_file(data: &[u8]) -> Result<FileParts<'_>> {
     if data.len() < PREFIX_LEN {
         return Err(VaultError::format("file too short"));
     }
-    let kind = ContainerKind::from_magic(&data[..8]).ok_or_else(|| VaultError::format("not a GhulSuite container"))?;
+    let kind = ContainerKind::from_magic(&data[..8]).ok_or_else(|| {
+        if data.starts_with(b"GHUL") {
+            VaultError::NewerKind
+        } else {
+            VaultError::format("not a GhulSuite container")
+        }
+    })?;
     let version = u16::from_le_bytes([data[8], data[9]]);
     if version != FORMAT_VERSION {
         return Err(VaultError::UnsupportedVersion(version));

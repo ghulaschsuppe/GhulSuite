@@ -28,6 +28,16 @@ interface NetBackend {
     fun phpModuleCreate(): PhpModuleUi
     /** Uploads a server module through another stored server (e.g. FTPS of the same hosting). */
     suspend fun phpModuleUpload(viaServerId: String, dir: String, module: PhpModuleUi)
+    /** Folders of a server as entered, before it is stored (folder picker). SFTP and FTPS. */
+    suspend fun serverBrowseInput(input: ServerInputUi, confirmed: String?, path: String): ServerFoldersUi =
+        ServerFoldersUi.Folders(emptyList())
+    /** Uploads a new PHP module over FTPS into [dir] and looks for its address ([url] empty: guess). */
+    suspend fun phpModuleInstall(ftps: ServerInputUi, confirmed: String?, dir: String, url: String): PhpInstalledUi =
+        throw UnsupportedOperationException()
+    /** Checks that a PHP module answers at [url] with access key [key]. */
+    suspend fun phpModuleProbe(url: String, key: String): PhpModuleInfoUi = throw UnsupportedOperationException()
+    /** Uploads a new version of a module through the FTPS login kept with it; returns its version. */
+    suspend fun phpModuleUpdate(serverId: String): Int = 0
 
     // --- Sharing (needs a server that can share; independent of the modules)
     /** Sets up the share folder of an SFTP/FTPS server and checks it; stores it only if all checks pass. */
@@ -53,6 +63,14 @@ interface NetBackend {
     // --- GhulDrive
     suspend fun driveStatus(): DriveStatusUi
     suspend fun driveSetup(serverId: String)
+    /** Where GhulDrive stores its files. */
+    suspend fun driveStorage(): DriveStorageUi = DriveStorageUi(DriveModeUi.NONE, null, false)
+    /** GhulDrive uses the server this device synchronises with ("wie Synchronisation"). */
+    suspend fun driveUseSync() {}
+    /** Checks a server for GhulDrive alone and stores it in the Drive file. */
+    suspend fun driveSaveServer(input: ServerInputUi, confirmed: String?): ServerSavedUi = ServerSavedUi.Saved("")
+    /** Before the sync server is removed or changed: GhulDrive keeps that server as its own. */
+    suspend fun driveDetachFromSync() {}
     suspend fun driveList(folder: String?, refresh: Boolean): List<DriveItemUi>
     suspend fun driveSearch(query: String): List<DriveItemUi>
     suspend fun driveCreateFolder(parent: String?, name: String): String
@@ -174,7 +192,44 @@ data class ServerInputUi(
     val base: String,
     /** PHP module: address of ghulsuite.php. */
     val url: String = "",
+    /** PHP module: the FTPS login it was installed with, kept for updates (null: not kept). */
+    val upload: UploadAccessUi? = null,
 )
+
+/** FTPS login a PHP module was installed with. */
+data class UploadAccessUi(
+    val host: String,
+    val port: Int,
+    val user: String,
+    val password: String,
+    val cert: String,
+    val dir: String,
+    val dataDir: String,
+)
+
+sealed interface ServerFoldersUi {
+    data class Confirm(val fingerprint: String) : ServerFoldersUi
+    data class Folders(val folders: List<String>) : ServerFoldersUi
+}
+
+/** Result of installing a PHP module. */
+data class PhpInstalledUi(
+    /** Set: confirm this certificate first; nothing was uploaded. */
+    val confirm: String?,
+    /** Address the module answered at; null: ask for it and check with phpModuleProbe. */
+    val url: String?,
+    val tried: List<String>,
+    val key: String,
+    /** Largest request of the hosting in bytes (0 = not reported). */
+    val limit: Long,
+    val upload: UploadAccessUi?,
+)
+
+data class PhpModuleInfoUi(val version: Int, val current: Int, val limit: Long, val free: Long)
+
+enum class DriveModeUi { NONE, SYNC, OWN, SUITE }
+
+data class DriveStorageUi(val mode: DriveModeUi, val server: ServerUi?, val syncAvailable: Boolean)
 
 class PhpModuleUi(val fileName: String, val content: String, val key: String)
 

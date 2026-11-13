@@ -52,6 +52,7 @@ import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
+import de.danerd.ghulsuite.model.VaultKindUi
 
 private val Violet = Color(0xFF7B61FF)
 private val Red = Color(0xFFD03B4C)
@@ -195,20 +196,20 @@ fun SettingsScreen(state: AppState, padding: PaddingValues) {
             }
             Group(stringResource(Res.string.set_g_areas)) {
                 SetRow(Icons.Filled.Apps, Gray, stringResource(Res.string.set_modules), stringResource(Res.string.set_modules_sub), first = true) { open(SetPage.MODULES) }
-                if (settings.moduleGhulPass) {
+                if (state.vaults.any { it.kind == VaultKindUi.PASS }) {
                     SetRow(Icons.Filled.Key, areaColor(Tab.PASS), stringResource(Res.string.tab_pass),
                         stringResource(if (backend.isDesktop) Res.string.set_pass_sub_desktop else Res.string.set_pass_sub)) { open(SetPage.PASS) }
                 }
-                if (settings.moduleGhulAuth) {
+                if (state.vaults.any { it.kind == VaultKindUi.TOTP }) {
                     SetRow(Icons.Filled.VerifiedUser, areaColor(Tab.AUTH), stringResource(Res.string.tab_auth), stringResource(Res.string.set_auth_sub)) { open(SetPage.AUTH) }
                 }
-                if (settings.moduleGhulDrive) {
+                if (state.vaults.any { it.kind == VaultKindUi.DRIVE }) {
                     SetRow(Icons.Filled.Cloud, areaColor(Tab.DRIVE), stringResource(Res.string.tab_drive), stringResource(Res.string.set_drive_sub)) { open(SetPage.DRIVE) }
                 }
-                if (settings.moduleGhulMail) {
+                if (state.vaults.any { it.kind == VaultKindUi.MAIL }) {
                     SetRow(Icons.Filled.Email, areaColor(Tab.MAIL), stringResource(Res.string.tab_mail), stringResource(Res.string.set_mail_sub)) { open(SetPage.MAIL) }
                 }
-                if (settings.moduleGhulCal) {
+                if (state.vaults.any { it.kind == VaultKindUi.CAL }) {
                     SetRow(Icons.Filled.CalendarMonth, Color(0xFFD6336C), stringResource(Res.string.tab_cal),
                         stringResource(if (settings.calHolidays && state.calRegionName.isNotEmpty()) Res.string.set_cal_sub_holidays else Res.string.set_cal_sub, state.calRegionName)) { open(SetPage.CAL) }
                 }

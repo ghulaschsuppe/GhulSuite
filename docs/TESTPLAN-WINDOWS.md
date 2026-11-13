@@ -1,6 +1,6 @@
 # GhulSuite – Testplan Windows (Version 0.5.0-dev)
 
-**Stand:** 12.11.2026 · erste Windows-Version, mit neuem Design. Oberfläche und Kern sind dieselben wie unter Android; dieser Plan prüft,
+**Stand:** 13.11.2026 · erste Windows-Version (neu: Abschnitt 11, Assistent und Bereiche), mit neuem Design. Oberfläche und Kern sind dieselben wie unter Android; dieser Plan prüft,
 was unter Windows anders ist (Installation, portabler Betrieb, Security Key über Windows, Sperre, Zwischenablage,
 Bildschirmschutz) und dass Android und Windows dieselbe Suite gemeinsam nutzen können. Den Android-Plan gibt es
 getrennt: [`TESTPLAN.md`](TESTPLAN.md).
@@ -135,6 +135,18 @@ Zusätzlich:
 | W-N8 | „+“ in GhulPass, Kontextzeile antippen, Datei-Menü in GhulDrive. | Auswahl erscheint als Dialog in der Fenstermitte (nicht von unten). |
 | W-N9 | Fenster schmal ziehen (unter ca. 840 Pixel). | Wechselt auf das Handy-Layout mit Leiste unten; wieder breit ziehen stellt die Seitenleiste wieder her. |
 | W-N2 | Optionen → Über → „Fehlerbericht“. | Datei `absturz.txt` neben der App bzw. Text in der Zwischenablage, ohne Passwörter. |
+
+## 11. Assistent in acht Schritten und „Ein Bereich, eine Datei“ (#24)
+
+Die Abläufe sind dieselben wie unter Android (Testplan Android, Abschnitte 1 und 23). Unter Windows zusätzlich:
+
+| Nr. | Schritt | Erwartet |
+|---|---|---|
+| W11.1 | „Neu einrichten“ mit Security Key: Schritt 2 → Schritt 3 „Key registrieren“. | Der Windows-Dialog fragt PIN und Berührung ab; danach Schritt 4 · Synchronisation. |
+| W11.2 | Schritt 7 · Entsperren. | „Zusätzlich Fingerabdruck“ ist ausgegraut (unter Windows nicht verfügbar); App-PIN geht. |
+| W11.3 | Schritt 4 „Eigener Server“ → FTPS → „Ordner wählen“. | Zertifikats-Fingerabdruck bestätigen, dann Ordnerliste im Dialog in der Fenstermitte. |
+| W11.4 | Optionen → Bereiche verwalten → GhulDrive einrichten → „Eigener Server“ → PHP-Modul. | Modul wird per FTPS hochgeladen, Adresse geprüft; GhulDrive erscheint in der Leiste. |
+| W11.5 | Ordner der Suite im Explorer ansehen. | Je gewähltem Bereich eine Datei (`.ghlpss`, `.ghltotp`, `.ghldrv`, `.ghlmail`, `.ghlcal`) und `suite.ghlsuite`. |
 
 ## Fehler melden
 

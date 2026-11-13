@@ -47,6 +47,8 @@ fun extensionOf(kind: VaultKindUi) = when (kind) {
     VaultKindUi.PASS -> "ghlpss"
     VaultKindUi.TOTP -> "ghltotp"
     VaultKindUi.CAL -> "ghlcal"
+    VaultKindUi.DRIVE -> "ghldrv"
+    VaultKindUi.MAIL -> "ghlmail"
 }
 
 /** Name of the area a vault belongs to. */
@@ -54,6 +56,8 @@ fun kindLabel(kind: VaultKindUi) = when (kind) {
     VaultKindUi.PASS -> Res.string.tab_pass
     VaultKindUi.TOTP -> Res.string.tab_auth
     VaultKindUi.CAL -> Res.string.tab_cal
+    VaultKindUi.DRIVE -> Res.string.tab_drive
+    VaultKindUi.MAIL -> Res.string.tab_mail
 }
 
 /** Filter chips "All" + one per vault; hidden when there is only one vault. */

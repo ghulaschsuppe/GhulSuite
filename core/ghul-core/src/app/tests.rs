@@ -740,6 +740,7 @@ fn sync_over_sftp() {
         password: None,
         base: base.clone(),
         url: String::new(),
+        upload: None,
     };
     // First the fingerprint is shown; then the server is stored with the confirmed fingerprint.
     assert_eq!(a.save_server(input.clone(), None).unwrap(), ServerSaved::Confirm { fingerprint: hostkey.clone() });
@@ -917,6 +918,7 @@ fn drive_over_sftp_two_devices() {
         password: None,
         base: format!("{root}/drive-{run}"),
         url: String::new(),
+        upload: None,
     };
     let id = saved(a.save_server(input.clone(), Some(hostkey.clone())).unwrap());
     a.drive_setup(id.clone()).unwrap();
@@ -1326,6 +1328,7 @@ fn share_over_sftp_with_web_folder() {
         password: None,
         base: format!("{root}/suite-{run}"),
         url: String::new(),
+        upload: None,
     };
     let id = saved(s.save_server(input, Some(hostkey)).unwrap());
     s.drive_setup(id.clone()).unwrap();
@@ -1353,6 +1356,7 @@ fn ftps_storage_drive_and_sharing() {
         password: Some(cfg.password.to_string()),
         base: cfg.base.clone(),
         url: String::new(),
+        upload: None,
     };
     // Self-signed certificate: confirm its fingerprint first.
     let fp = match s.save_server(input.clone(), None).unwrap() {
@@ -1390,6 +1394,7 @@ fn php_module_storage_drive_and_limited_shares() {
         password: Some(crate::kdf::hex(&[3u8; 32])),
         base: String::new(),
         url: php.url.clone(),
+        upload: None,
     };
     // A wrong key is refused before anything is stored.
     assert!(matches!(s.save_server(input.clone(), None), Err(GhulError::ServerAuthFailed)));
@@ -1420,6 +1425,169 @@ fn php_module_storage_drive_and_limited_shares() {
     assert_eq!(s.share_list().unwrap()[0].downloads, 1);
     s.share_delete(text.id).unwrap();
     assert!(open_link(&text.url, None).is_none());
+}
+
+#[test]
+fn drive_storage_follows_sync_or_uses_its_own_server() {
+    use super::drive::DriveMode;
+    use super::servers::{ServerFolders, ServerInput, ServerKind};
+    let Some(cfg) = crate::net::tests::ftps_test_config("drive-modes") else { return };
+    let d = Dirs::new("drive-modes");
+    let s = d.suite();
+    let kf = generate_keyfile();
+    s.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    let input = |base: &str| ServerInput {
+        kind: ServerKind::Ftps,
+        name: String::new(),
+        host: cfg.host.clone(),
+        port: cfg.port,
+        user: cfg.user.clone(),
+        password: Some(cfg.password.to_string()),
+        base: base.to_owned(),
+        url: String::new(),
+        upload: None,
+    };
+    // Folder picker before anything is stored: confirm the certificate, then list.
+    let fp = match s.server_browse_input(input(""), None, String::new()).unwrap() {
+        ServerFolders::Confirm { fingerprint } => fingerprint,
+        other => panic!("{other:?}"),
+    };
+    let sync_id = saved(s.save_server(input(&cfg.base), Some(fp.clone())).unwrap());
+    match s.server_browse_input(input(""), Some(fp.clone()), String::new()).unwrap() {
+        ServerFolders::Folders { folders } => assert!(folders.contains(&cfg.base)),
+        other => panic!("{other:?}"),
+    }
+    // "Like synchronisation" needs synchronisation.
+    let st = s.drive_storage().unwrap();
+    assert_eq!((st.mode, st.sync_available), (DriveMode::None, false));
+    assert!(matches!(s.drive_use_sync(), Err(GhulError::NotConfigured)));
+    s.set_sync_server(Some(sync_id.clone())).unwrap();
+    s.drive_use_sync().unwrap();
+    let st = s.drive_storage().unwrap();
+    assert_eq!((st.mode, st.server.map(|x| x.id)), (DriveMode::Sync, Some(sync_id.clone())));
+    let f = upload(&s, None, "Plan.txt", b"Plan A");
+
+    // Before the sync server goes: Drive keeps that server as its own, in the Drive file.
+    s.drive_detach_from_sync().unwrap();
+    s.remove_server(sync_id.clone()).unwrap();
+    let st = s.drive_storage().unwrap();
+    assert_eq!(st.mode, DriveMode::Own);
+    let own = st.server.unwrap().id;
+    assert_ne!(own, sync_id);
+    assert_eq!(download(&s, &f), b"Plan A");
+    assert!(s.list_servers().unwrap().is_empty(), "Drive's server is not offered for synchronisation");
+    assert!(s.remove_server(own.clone()).is_err(), "Drive's server is changed in GhulDrive");
+
+    // A different own server replaces the earlier one; it survives locking.
+    let other = format!("{}-b", cfg.base);
+    let new_id = saved(s.drive_save_server(input(&other), Some(fp)).unwrap());
+    s.lock();
+    s.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    let st = s.drive_storage().unwrap();
+    assert_eq!((st.mode, st.server.map(|x| x.id)), (DriveMode::Own, Some(new_id)));
+    assert!(s.drive_list(None, true).unwrap().is_empty(), "a fresh Drive on the other folder");
+}
+
+#[test]
+fn php_module_is_installed_over_ftps_and_takes_large_files_in_parts() {
+    use super::drive::DriveMode;
+    use super::servers::{ServerInput, ServerKind};
+    let Some(cfg) = crate::net::tests::ftps_test_config("php-install") else { return };
+    if std::process::Command::new("php").arg("-v").output().is_err() {
+        return;
+    }
+    // The module goes to the FTP server's folder; a copy of it is served from a folder this test
+    // owns (the web server must be able to create the module's data folder next to it).
+    let home = std::env::var("GHUL_TEST_DIR").map(|d| std::path::PathBuf::from(d).join("ftp-home")).unwrap();
+    let web = home.join(&cfg.base).join("www");
+    let served = std::env::temp_dir().join(format!("ghul-php-served-{}", cfg.base));
+    std::fs::create_dir_all(&served).unwrap();
+    let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    let mut php = std::process::Command::new("php")
+        .args(["-S", &format!("127.0.0.1:{port}"), "-t"])
+        .arg(&served)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    for _ in 0..50 {
+        if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    let d = Dirs::new("php-install");
+    let s = d.suite();
+    s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    let ftps = ServerInput {
+        kind: ServerKind::Ftps,
+        name: String::new(),
+        host: cfg.host.clone(),
+        port: cfg.port,
+        user: cfg.user.clone(),
+        password: Some(cfg.password.to_string()),
+        base: String::new(),
+        url: String::new(),
+        upload: None,
+    };
+    let dir = format!("{}/www", cfg.base);
+    let url = format!("http://127.0.0.1:{port}/ghulsuite.php");
+    // Unknown certificate: nothing is uploaded until it is confirmed.
+    let first = s.php_module_install(ftps.clone(), None, dir.clone(), url.clone()).unwrap();
+    assert_eq!(first.confirm, cfg.cert);
+    assert!(!web.join("ghulsuite.php").exists());
+    let done = s.php_module_install(ftps, cfg.cert.clone(), dir, url.clone()).unwrap();
+    // Uploaded over FTPS; the address does not answer yet (the copy is not served yet).
+    let uploaded = std::fs::read_to_string(web.join("ghulsuite.php")).unwrap();
+    assert!(uploaded.contains(&done.key));
+    assert_eq!((done.url.as_deref(), done.tried.clone()), (None, vec![url.clone()]));
+    std::fs::write(served.join("ghulsuite.php"), &uploaded).unwrap();
+    let info = super::servers::php_module_probe(url.clone(), done.key.clone()).unwrap();
+    assert_eq!(info.version, info.current);
+    assert!(info.limit > 0);
+
+    // Drive on the module, keeping the FTPS login for later updates.
+    let id = saved(
+        s.drive_save_server(
+            ServerInput {
+                kind: ServerKind::Php,
+                name: String::new(),
+                host: String::new(),
+                port: 0,
+                user: String::new(),
+                password: Some(done.key.clone()),
+                base: String::new(),
+                url,
+                upload: done.upload.clone(),
+            },
+            None,
+        )
+        .unwrap(),
+    );
+    assert_eq!(s.drive_storage().unwrap().mode, DriveMode::Own);
+    // Drive blocks are larger than one part: they go up in parts.
+    let big: Vec<u8> = (0..9_000_000u32).map(|i| (i % 253) as u8).collect();
+    let f = upload(&s, None, "Film.mp4", &big);
+    assert_eq!(download(&s, &f), big);
+    // Updating the module uploads it again over the kept FTPS login, with the same key and data folder.
+    assert_eq!(s.php_module_update(id).unwrap(), info.current);
+    assert_eq!(std::fs::read_to_string(web.join("ghulsuite.php")).unwrap(), uploaded);
+    assert_eq!(download(&s, &f), big);
+    let _ = php.kill();
+    let _ = php.wait();
+    let _ = std::fs::remove_dir_all(&served);
+}
+
+#[test]
+fn module_addresses_are_guessed_from_the_ftps_folder() {
+    let urls = super::servers::module_urls;
+    assert_eq!(urls("ftp.example.org", "public_html/ghul")[0], "https://example.org/ghul/ghulsuite.php");
+    assert_eq!(urls("w0123.webhost.test", "example.org/tools")[0], "https://example.org/tools/ghulsuite.php");
+    assert_eq!(urls("ftp.example.org", "example.net/htdocs")[0], "https://example.net/ghulsuite.php");
+    assert_eq!(
+        urls("ftp.example.org", ""),
+        vec!["https://example.org/ghulsuite.php", "https://www.example.org/ghulsuite.php"]
+    );
 }
 
 #[test]
@@ -1455,6 +1623,7 @@ fn drive_file_and_share_link_into_mail() {
                 password: Some(crate::kdf::hex(&php.key)),
                 base: String::new(),
                 url: php.url.clone(),
+                upload: None,
             },
             None,
         )
@@ -1551,6 +1720,7 @@ fn php_browser_fixture() {
                 password: Some(crate::kdf::hex(&php.key)),
                 base: String::new(),
                 url: php.url.clone(),
+                upload: None,
             },
             None,
         )
@@ -2026,4 +2196,181 @@ fn calendar_vault_events_series_reminders_and_sync() {
         assert!(day.iter().any(|o| o.location == "Praxis Süd"));
     }
     let _ = std::fs::remove_dir_all(&server_dir);
+}
+
+#[test]
+fn old_suites_move_drive_and_mail_into_their_own_files() {
+    use ciborium::value::Value;
+    let d = Dirs::new("areas");
+    let kf = generate_keyfile();
+    let s = d.suite();
+    s.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    // A suite from before: GhulMail and GhulDrive keep their settings in the suite file.
+    s.with_open(|o| {
+        let st = &mut o.suite.payload.settings;
+        st.insert(
+            "mail_accounts".into(),
+            Value::Array(vec![Value::Map(vec![(Value::Text("id".into()), Value::Text("a1".into()))])]),
+        );
+        st.insert("mail_drafts".into(), Value::Array(vec![]));
+        st.insert("drive".into(), Value::Map(vec![(Value::Text("server".into()), Value::Text("s1".into()))]));
+        st.insert("servers".into(), Value::Array(vec![]));
+        Ok(())
+    })
+    .unwrap();
+    // Any call moves them; the suite keeps only its own settings.
+    let kinds: Vec<VaultKind> = s.list_vaults().unwrap().iter().map(|v| v.kind).collect();
+    assert!(kinds.contains(&VaultKind::Mail) && kinds.contains(&VaultKind::Drive), "{kinds:?}");
+    s.with_open(|o| {
+        let st = &o.suite.payload.settings;
+        assert!(!st.contains_key("mail_accounts") && !st.contains_key("drive") && st.contains_key("servers"));
+        let mail = o.area_id(VaultKind::Mail).unwrap();
+        assert!(o.vault_mut(&mail)?.1.payload.settings.contains_key("mail_accounts"));
+        Ok(())
+    })
+    .unwrap();
+    let files: Vec<String> = s.list_vaults().unwrap().into_iter().map(|v| v.file).collect();
+    assert!(files.iter().any(|f| f.ends_with(".ghlmail")) && files.iter().any(|f| f.ends_with(".ghldrv")), "{files:?}");
+    // The files are written: after locking, everything is still where it moved to.
+    s.lock();
+    s.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    s.with_open(|o| {
+        assert!(!o.suite.payload.settings.contains_key("mail_accounts"));
+        let id = o.area_id(VaultKind::Mail).unwrap();
+        assert!(o.vault_mut(&id)?.1.payload.settings.contains_key("mail_accounts"));
+        Ok(())
+    })
+    .unwrap();
+}
+
+#[test]
+fn recovery_code_counts_only_when_a_group_was_typed_back() {
+    let d = Dirs::new("code-confirm");
+    let s = d.suite();
+    let kf = generate_keyfile();
+    let code = s
+        .create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None)
+        .unwrap()
+        .recovery_code
+        .unwrap();
+    // Closed before confirming (e.g. the app crashed in the last setup step).
+    assert!(!s.recovery_confirmed().unwrap());
+    s.lock();
+    s.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
+    assert!(!s.recovery_confirmed().unwrap(), "still asked for after unlocking");
+    let group = |c: &str, i: usize| c.split('-').nth(i).unwrap().to_owned();
+    assert!(!s.confirm_recovery_code(2, group(&code, 3)).unwrap());
+    assert!(!s.recovery_confirmed().unwrap());
+    assert!(s.confirm_recovery_code(2, format!(" {} ", group(&code, 2).to_lowercase())).unwrap());
+    assert!(s.recovery_confirmed().unwrap());
+    assert!(s.confirm_recovery_code(99, "x".into()).is_err());
+    s.lock();
+    s.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    assert!(s.recovery_confirmed().unwrap());
+    // A new code needs its own confirmation.
+    let new = s.new_recovery_code("Neu".into()).unwrap();
+    assert!(!s.recovery_confirmed().unwrap());
+    assert!(s.confirm_recovery_code(0, group(&new, 0)).unwrap());
+    assert!(s.recovery_confirmed().unwrap());
+}
+
+#[test]
+fn a_setup_that_stopped_halfway_is_completed_by_unlocking() {
+    let d = Dirs::new("setup-abort");
+    let kf = generate_keyfile();
+    let storage = d.storage();
+    // Stopped before anything was written (e.g. while touching the key): nothing to clean up.
+    assert_eq!(d.suite().setup_state().unwrap(), super::setup::SetupState::Empty);
+    let s = d.suite();
+    s.create(
+        options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat"), (VaultKind::Totp, "2FA")]),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    assert_eq!(s.setup_state().unwrap(), super::setup::SetupState::Complete);
+    s.lock();
+    // Stopped after the first vault file: the second vault and the suite file are missing.
+    let files = storage.list().unwrap();
+    let totp = files.iter().find(|f| f.ends_with(".ghltotp")).unwrap().clone();
+    storage.delete(totp).unwrap();
+    storage.delete(super::suite::SUITE_FILE.to_owned()).unwrap();
+    let s = d.suite();
+    assert_eq!(s.setup_state().unwrap(), super::setup::SetupState::Incomplete);
+    assert!(s.exists().unwrap(), "the setup is not offered again over the existing files");
+    s.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
+    assert_eq!(s.setup_state().unwrap(), super::setup::SetupState::Complete);
+    let vaults = s.list_vaults().unwrap();
+    assert_eq!(vaults.iter().map(|v| v.name.as_str()).collect::<Vec<_>>(), vec!["Privat"]);
+    // The code was never confirmed: the app asks for a new one; a missing area can be added.
+    assert!(!s.recovery_confirmed().unwrap());
+    s.add_area(VaultKind::Totp, String::new()).unwrap();
+    s.lock();
+    let s = d.suite();
+    s.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    assert_eq!(s.list_vaults().unwrap().len(), 2);
+}
+
+#[test]
+fn area_options_live_in_the_area_file_and_areas_can_be_removed_everywhere() {
+    use crate::net::remote::LocalFs;
+    let server_dir = std::env::temp_dir().join(format!("ghul-areas-server-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&server_dir);
+    let server = LocalFs::new(&server_dir);
+    let kf = generate_keyfile();
+    let (da, db) = (Dirs::new("areas-a"), Dirs::new("areas-b"));
+    let a = da.suite();
+    a.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Cal, "Kalender")]), None, None, None).unwrap();
+    // No file, no options: Drive was not chosen.
+    assert!(a.area_options(VaultKind::Drive).unwrap().is_empty());
+    let set = |s: &GhulSuite, k: &str, v: &str| {
+        s.set_area_options(VaultKind::Cal, [(k.to_owned(), v.to_owned())].into_iter().collect()).unwrap()
+    };
+    assert!(matches!(
+        a.set_area_options(VaultKind::Drive, [("trash_days".into(), "30".into())].into_iter().collect()),
+        Err(GhulError::NotConfigured)
+    ));
+    set(&a, "holiday_region", "DE-NW");
+    set(&a, "week_start", "0");
+    a.sync_folder(&server).unwrap();
+    copy_suite(&server_dir, &db);
+    let b = db.suite();
+    b.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    assert_eq!(b.area_options(VaultKind::Cal).unwrap()["holiday_region"], "DE-NW");
+    // Both change options: the later change of each option wins, on both devices.
+    set(&a, "week_start", "6");
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    set(&b, "holiday_region", "AT");
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    set(&a, "holiday_region", "CH");
+    b.sync_folder(&server).unwrap();
+    a.sync_folder(&server).unwrap();
+    b.sync_folder(&server).unwrap();
+    for s in [&a, &b] {
+        let o = s.area_options(VaultKind::Cal).unwrap();
+        assert_eq!((o["holiday_region"].as_str(), o["week_start"].as_str()), ("CH", "6"));
+    }
+    // Removing an area deletes its file here, on the server and on the other device.
+    a.add_area(VaultKind::Drive, String::new()).unwrap();
+    a.remove_area(VaultKind::Cal).unwrap();
+    assert!(a.area_options(VaultKind::Cal).unwrap().is_empty());
+    a.sync_folder(&server).unwrap();
+    b.sync_folder(&server).unwrap();
+    let kinds = |s: &GhulSuite| s.list_vaults().unwrap().into_iter().map(|v| v.kind).collect::<Vec<_>>();
+    assert_eq!(kinds(&a), vec![VaultKind::Drive]);
+    assert_eq!(kinds(&b), vec![VaultKind::Drive]);
+    let _ = std::fs::remove_dir_all(&server_dir);
+}
+
+#[test]
+fn files_of_a_newer_app_ask_for_an_update() {
+    let mut data = b"GHULFUTR".to_vec();
+    data.extend_from_slice(&[1, 0, 0, 0, 0, 0]);
+    data.extend_from_slice(&[0u8; 64]);
+    let e: GhulError = crate::vault::LockedContainer::parse(&data).err().unwrap().into();
+    assert!(matches!(e, GhulError::UpdateRequired));
+    let e: GhulError =
+        crate::vault::LockedContainer::parse(b"PK\x03\x04 not ours at all, really").err().unwrap().into();
+    assert!(matches!(e, GhulError::Corrupted { .. }));
 }

@@ -189,8 +189,16 @@ fn php_server_module() {
         cert: None,
     };
     let fs = PhpFs::new(&cfg).unwrap();
-    assert_eq!(fs.info().unwrap(), 1);
+    let info = fs.info().unwrap();
+    assert_eq!(info.version, 2);
+    assert!(info.limit > 0, "the module reports the hosting's upload limit");
     exercise(&fs);
+    // Large files go up in parts and replace the old file only when complete.
+    let big: Vec<u8> = (0..9 * 1024 * 1024 + 13).map(|i| (i % 251) as u8).collect();
+    fs.write("big/vault.bin", b"old").unwrap();
+    fs.write("big/vault.bin", &big).unwrap();
+    assert_eq!(fs.read("big/vault.bin").unwrap().as_deref(), Some(&big[..]));
+    assert!(fs.list("big").unwrap().iter().all(|e| e.name == "vault.bin"), "no parts left behind");
     // A wrong key is refused.
     let bad = PhpFs::new(&PhpConfig { key: zeroize::Zeroizing::new([1u8; 32]), ..cfg.clone() }).unwrap();
     assert_eq!(bad.info().err(), Some(NetError::AuthFailed));

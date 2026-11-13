@@ -58,6 +58,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+import de.danerd.ghulsuite.core.SetupState
+import de.danerd.ghulsuite.model.SetupStateUi
 
 /**
  * Everything of [VaultBackend] that is the same on Android and Windows: the open suite, vaults,
@@ -216,6 +218,26 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
     override suspend fun renameVault(id: String, name: String) = io { suite.renameVault(id, name) }
 
     override suspend fun removeVault(id: String) = io { suite.removeVault(id) }
+
+    override fun setupState(): SetupStateUi = when (runCatching { suite.setupState() }.getOrDefault(SetupState.EMPTY)) {
+        SetupState.EMPTY -> SetupStateUi.EMPTY
+        SetupState.COMPLETE -> SetupStateUi.COMPLETE
+        SetupState.INCOMPLETE -> SetupStateUi.INCOMPLETE
+    }
+
+    override suspend fun addArea(kind: VaultKindUi, name: String): String = io { suite.addArea(kind.toCore(), name) }
+
+    override suspend fun removeArea(kind: VaultKindUi) = io { suite.removeArea(kind.toCore()) }
+
+    override suspend fun areaOptions(kind: VaultKindUi): Map<String, String> = io { suite.areaOptions(kind.toCore()) }
+
+    override suspend fun setAreaOptions(kind: VaultKindUi, options: Map<String, String>) =
+        io { suite.setAreaOptions(kind.toCore(), options) }
+
+    override suspend fun recoveryConfirmed(): Boolean = io { suite.recoveryConfirmed() }
+
+    override suspend fun confirmRecoveryCode(group: Int, typed: String): Boolean =
+        io { suite.confirmRecoveryCode(group.toUInt(), typed) }
 
     override suspend fun exportVault(id: String): ByteArray = io { suite.exportVault(id) }
 

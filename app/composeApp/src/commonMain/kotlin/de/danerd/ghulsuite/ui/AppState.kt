@@ -83,6 +83,18 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     var vaults by mutableStateOf<List<VaultUi>>(emptyList())
         private set
 
+    /** The vault list was read since unlocking (until then all areas switched on count as there). */
+    private var areasKnown by mutableStateOf(false)
+
+    /** After the setup wizard: show the first area once the vault list is read. */
+    var openFirstArea = false
+
+    /** The recovery code was never confirmed: a banner asks for a new one (#24). */
+    var codeUnconfirmed by mutableStateOf(false)
+
+    /** The area has its file in this suite (it may still be hidden on this device). */
+    fun hasArea(kind: VaultKindUi): Boolean = !areasKnown || vaults.any { it.kind == kind }
+
     /** Vault files in the folder that are not part of the suite yet (offered after unlocking). */
     var found by mutableStateOf<List<FoundVaultUi>>(emptyList())
 
@@ -215,6 +227,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     passwordChangedElsewhere = false
                     syncing = false
                     mailUnread = 0
+                    areasKnown = false
+                    codeUnconfirmed = false
                 } else {
                     refreshVaults()
                     scanFound()
@@ -227,6 +241,14 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     applyLaunch()
                     refreshUnread()
                     refreshCalendar()
+                }
+            }
+        }
+        // Area settings go into the area's file (and from there to the other devices).
+        backend.settings.onAreaChange = { kind, key, value ->
+            if (backend.unlocked.value && vaults.any { it.kind == kind }) {
+                scope.launch {
+                    runCatching { backend.setAreaOptions(kind, mapOf(key to value)) }.onSuccess { autoSync() }
                 }
             }
         }
@@ -269,13 +291,14 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     }
 
     /** Tabs of enabled modules plus settings. */
+    /** Tabs of the areas this suite has and this device shows, plus settings. */
     val tabs: List<Tab>
         get() = buildList {
-            if (backend.settings.moduleGhulPass) add(Tab.PASS)
-            if (backend.settings.moduleGhulAuth) add(Tab.AUTH)
-            if (backend.settings.moduleGhulDrive) add(Tab.DRIVE)
-            if (backend.settings.moduleGhulMail) add(Tab.MAIL)
-            if (backend.settings.moduleGhulCal) add(Tab.CAL)
+            if (backend.settings.moduleGhulPass && hasArea(VaultKindUi.PASS)) add(Tab.PASS)
+            if (backend.settings.moduleGhulAuth && hasArea(VaultKindUi.TOTP)) add(Tab.AUTH)
+            if (backend.settings.moduleGhulDrive && hasArea(VaultKindUi.DRIVE)) add(Tab.DRIVE)
+            if (backend.settings.moduleGhulMail && hasArea(VaultKindUi.MAIL)) add(Tab.MAIL)
+            if (backend.settings.moduleGhulCal && hasArea(VaultKindUi.CAL)) add(Tab.CAL)
             add(Tab.SETTINGS)
         }
 
@@ -379,6 +402,16 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     fun refreshVaults() {
         scope.launch {
             vaults = runCatching { backend.listVaults() }.getOrDefault(vaults)
+            if (backend.unlocked.value) {
+                areasKnown = true
+                if (openFirstArea) {
+                    openFirstArea = false
+                    stack.clear()
+                    tab = tabs.first()
+                }
+                codeUnconfirmed = runCatching { !backend.recoveryConfirmed() }.getOrDefault(false)
+                loadAreaOptions()
+            }
             val old = vaults.filter { it.outdated }
             if (old.isNotEmpty() && !outdatedNotified) {
                 outdatedNotified = true
@@ -386,6 +419,20 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             }
             if (passVault != null && vaults.none { it.id == passVault }) passVault = null
             if (authVault != null && vaults.none { it.id == authVault }) authVault = null
+        }
+    }
+
+    /**
+     * Takes over the settings stored in the area files. Settings an area's file does not have yet
+     * are filled in once from this device (suites from before #24).
+     */
+    private suspend fun loadAreaOptions() {
+        val st = backend.settings
+        for (kind in vaults.map { it.kind }.distinct()) {
+            val stored = runCatching { backend.areaOptions(kind) }.getOrNull() ?: continue
+            st.applyArea(stored)
+            val missing = st.deviceValues(kind).filterKeys { it !in stored }
+            if (missing.isNotEmpty()) runCatching { backend.setAreaOptions(kind, missing) }
         }
     }
 
@@ -405,6 +452,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             VaultKindUi.PASS -> backend.settings.moduleGhulPass = true
             VaultKindUi.TOTP -> backend.settings.moduleGhulAuth = true
             VaultKindUi.CAL -> backend.settings.moduleGhulCal = true
+            VaultKindUi.DRIVE -> backend.settings.moduleGhulDrive = true
+            VaultKindUi.MAIL -> backend.settings.moduleGhulMail = true
         }
     }
 
@@ -507,6 +556,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
 suspend fun describe(e: Throwable): String {
     if (e !is VaultException) return getString(Res.string.err_other, e.message ?: e.toString())
     return when (e.kind) {
+        VaultErrorKind.UPDATE_REQUIRED -> getString(Res.string.err_update_required)
         VaultErrorKind.NO_KEY -> getString(Res.string.err_no_key)
         VaultErrorKind.PERMISSION_DENIED -> getString(Res.string.err_permission)
         VaultErrorKind.NOT_A_FIDO_KEY -> getString(Res.string.err_not_fido)

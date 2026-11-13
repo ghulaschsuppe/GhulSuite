@@ -19,10 +19,18 @@ const TEMPLATE: &str = include_str!("../../server/ghulsuite.php");
 const VIEWER_HTML: &str = include_str!("../../share-viewer/index.html");
 const VIEWER_JS: &str = include_str!("../../share-viewer/viewer.js");
 const VIEWER_CSS: &str = include_str!("../../share-viewer/viewer.css");
-/// Parts of a share upload (web hosting limits the size of one request).
+/// Largest part of an upload (web hosting limits the size of one request).
 const PART: usize = 4 * 1024 * 1024;
+/// Smallest part, even when the hosting reports a lower limit.
+const MIN_PART: usize = 256 * 1024;
+/// Room for headers and form overhead below the hosting's limit.
+const LIMIT_MARGIN: usize = 64 * 1024;
+/// Version of the module this app creates (`GHUL_VERSION` in `server/ghulsuite.php`).
+pub const MODULE_VERSION: u32 = 2;
+/// First module version that takes files in parts (`write_part` / `write_done`).
+const PARTS_VERSION: u32 = 2;
 /// Signed query parameters in the order the server checks them.
-const SIGNED: [&str; 6] = ["a", "p", "id", "exp", "max", "n"];
+const SIGNED: [&str; 8] = ["a", "p", "id", "exp", "max", "n", "u", "size"];
 
 /// The PHP file for a new server module, with its own access key and data folder.
 pub fn server_file(key: &[u8; 32], data_dir: &str) -> String {
@@ -62,6 +70,28 @@ pub struct PhpFs {
     key: Zeroizing<[u8; 32]>,
     base: String,
     cert: Option<String>,
+    /// What the module reported, fetched once on the first large upload.
+    module: std::sync::OnceLock<ModuleInfo>,
+}
+
+/// What a server module reports about itself.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ModuleInfo {
+    pub version: u32,
+    /// Largest request body the hosting accepts, in bytes (0 = not known / no limit).
+    pub limit: u64,
+    /// Free space in bytes (0 = not known).
+    pub free: u64,
+}
+
+impl ModuleInfo {
+    /// Size of the parts an upload is split into on this hosting.
+    pub fn part_size(&self) -> usize {
+        match usize::try_from(self.limit) {
+            Ok(0) | Err(_) => PART,
+            Ok(l) => l.saturating_sub(LIMIT_MARGIN).clamp(MIN_PART, PART),
+        }
+    }
 }
 
 /// A share as the server module reports it.
@@ -86,7 +116,13 @@ impl PhpFs {
         if !url.path.split('?').next().unwrap_or("").ends_with(".php") {
             return Err(NetError::Protocol("the address must end with .php".into()));
         }
-        Ok(PhpFs { url, key: cfg.key.clone(), base: cfg.base.trim_matches('/').to_owned(), cert: cfg.cert.clone() })
+        Ok(PhpFs {
+            url,
+            key: cfg.key.clone(),
+            base: cfg.base.trim_matches('/').to_owned(),
+            cert: cfg.cert.clone(),
+            module: std::sync::OnceLock::new(),
+        })
     }
 
     /// The public address of the module (also the address of the share page).
@@ -146,20 +182,43 @@ impl PhpFs {
         }
     }
 
-    /// Checks the address and the key; returns the module's version.
-    pub fn info(&self) -> NetResult<u32> {
+    /// Checks the address and the key; returns what the module reports (version, upload limit).
+    pub fn info(&self) -> NetResult<ModuleInfo> {
         let r = self.call(&[("a", "info".into())], b"")?;
         let v: serde_json::Value =
             serde_json::from_slice(&r.body).map_err(|_| NetError::Protocol("not a GhulSuite server module".into()))?;
-        v["version"]
-            .as_u64()
-            .map(|v| v as u32)
-            .ok_or_else(|| NetError::Protocol("not a GhulSuite server module".into()))
+        let version =
+            v["version"].as_u64().ok_or_else(|| NetError::Protocol("not a GhulSuite server module".into()))? as u32;
+        let info = ModuleInfo {
+            version,
+            limit: v["limit"].as_u64().unwrap_or(0),
+            free: v["free"].as_f64().map(|f| f as u64).unwrap_or(0),
+        };
+        let _ = self.module.set(info);
+        Ok(info)
+    }
+
+    /// The module's report, asked for once per connection.
+    fn module(&self) -> NetResult<ModuleInfo> {
+        match self.module.get() {
+            Some(m) => Ok(*m),
+            None => self.info(),
+        }
+    }
+
+    /// Splits `data` into upload parts (at least one, possibly empty).
+    fn parts<'a>(&self, data: &'a [u8], size: usize) -> Vec<&'a [u8]> {
+        if data.is_empty() {
+            vec![&[][..]]
+        } else {
+            data.chunks(size).collect()
+        }
     }
 
     /// Uploads a share package; `expires` in Unix ms (0 = none), `max_downloads` 0 = unlimited.
     pub fn share_put(&self, id: &str, data: &[u8], expires: i64, max_downloads: u32) -> NetResult<()> {
-        let parts: Vec<&[u8]> = if data.is_empty() { vec![&[][..]] } else { data.chunks(PART).collect() };
+        let size = if data.len() > MIN_PART { self.module()?.part_size() } else { PART };
+        let parts = self.parts(data, size);
         for (n, part) in parts.iter().enumerate() {
             self.call(&[("a", "share_part".into()), ("id", id.into()), ("n", n.to_string())], part)?;
         }
@@ -203,8 +262,25 @@ impl RemoteFs for PhpFs {
         }
     }
 
+    /// Small files go in one request. Larger ones go in parts when the module can take them and
+    /// replace the old file only once the last part has arrived.
     fn write(&self, path: &str, data: &[u8]) -> NetResult<()> {
-        self.call(&[("a", "write".into()), ("p", self.full(path)?)], data).map(|_| ())
+        let p = self.full(path)?;
+        if data.len() <= MIN_PART {
+            return self.call(&[("a", "write".into()), ("p", p)], data).map(|_| ());
+        }
+        let module = self.module()?;
+        let size = module.part_size();
+        if module.version < PARTS_VERSION || data.len() <= size {
+            return self.call(&[("a", "write".into()), ("p", p)], data).map(|_| ());
+        }
+        let mut u = [0u8; 16];
+        OsRng.fill_bytes(&mut u);
+        let u = crate::kdf::hex(&u);
+        for (n, part) in self.parts(data, size).iter().enumerate() {
+            self.call(&[("a", "write_part".into()), ("p", p.clone()), ("n", n.to_string()), ("u", u.clone())], part)?;
+        }
+        self.call(&[("a", "write_done".into()), ("p", p), ("u", u), ("size", data.len().to_string())], b"").map(|_| ())
     }
 
     fn delete(&self, path: &str) -> NetResult<()> {
@@ -235,5 +311,15 @@ mod tests {
         let f = server_file(&[7u8; 32], "ghul-data-abc");
         assert!(!f.contains("__GHUL_"));
         assert!(f.contains(&"07".repeat(32)));
+        assert!(f.contains(&format!("const GHUL_VERSION = {MODULE_VERSION};")));
+    }
+
+    #[test]
+    fn part_size_follows_the_hosting_limit() {
+        let m = |limit| ModuleInfo { version: 2, limit, free: 0 };
+        assert_eq!(m(0).part_size(), PART);
+        assert_eq!(m(64 << 20).part_size(), PART);
+        assert_eq!(m(2 << 20).part_size(), (2 << 20) - LIMIT_MARGIN);
+        assert_eq!(m(100 * 1024).part_size(), MIN_PART);
     }
 }
