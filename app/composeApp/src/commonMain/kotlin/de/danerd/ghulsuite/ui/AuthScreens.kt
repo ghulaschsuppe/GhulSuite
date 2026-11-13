@@ -53,6 +53,9 @@ import de.danerd.ghulsuite.resources.*
 import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.foundation.border
 
 private fun grouped(code: String): String = if (code.length >= 6) code.chunked((code.length + 1) / 2).joinToString(" ") else code
 
@@ -84,8 +87,26 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
     val cols = LocalColumns.current
     // Grid: tiles per row; list: one card per row on phones, two side by side in wide panes.
     val perRow = if (grid) cols else (cols / 2).coerceAtLeast(1)
+    // Long press selects accounts; swipe right edits, swipe left deletes (after asking).
+    val selected = remember { mutableStateListOf<String>() }
+    val keyOf = { c: TotpCodeUi -> c.vaultId + "/" + c.id }
+    val selecting = selected.isNotEmpty()
+    var deletingMany by remember { mutableStateOf<List<TotpCodeUi>?>(null) }
+    val toggle = { c: TotpCodeUi -> if (keyOf(c) in selected) selected.remove(keyOf(c)) else selected.add(keyOf(c)) }
+    PlatformBackHandler(enabled = selecting && LocalTabActive.current) { selected.clear() }
+    Column(Modifier.fillMaxSize().padding(padding)) {
+    if (selecting) {
+        val one = codes.orEmpty().filter { keyOf(it) in selected }.singleOrNull()
+        SelectionHeader(
+            selected.size,
+            onClose = { selected.clear() },
+            onAll = { shown.orEmpty().forEach { if (keyOf(it) !in selected) selected.add(keyOf(it)) } },
+            onDelete = { deletingMany = codes.orEmpty().filter { keyOf(it) in selected } },
+            extra = if (one != null) listOf(Triple(Icons.Filled.MoreVert, stringResource(Res.string.a_more)) { menuFor = one }) else emptyList(),
+        )
+    }
     LazyColumn(
-        Modifier.fillMaxSize().padding(padding),
+        Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -106,17 +127,24 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
                     for (c in row) {
                         val hidden = settings.totpHideCodes && (revealed[c.id] ?: 0L) < nowSeconds()
                         Box(Modifier.weight(1f)) {
-                            TotpCard(
-                                c,
-                                vaultName = c.vaultName.takeIf { showVault },
-                                hidden = hidden,
-                                showNext = settings.totpShowNext,
-                                grid = grid,
-                                onClick = {
-                                    if (hidden) revealed = revealed + (c.id to nowSeconds() + 15) else state.copy(c.issuer.ifBlank { c.account }, c.code)
-                                },
-                                onMenu = { menuFor = c },
-                            )
+                            EditDeleteSwipe(!grid && !selecting, onEdit = { renaming = c }, onDelete = { deleting = c }) {
+                                TotpCard(
+                                    c,
+                                    vaultName = c.vaultName.takeIf { showVault },
+                                    hidden = hidden,
+                                    showNext = settings.totpShowNext,
+                                    grid = grid,
+                                    selected = keyOf(c) in selected,
+                                    onClick = {
+                                        when {
+                                            selecting -> toggle(c)
+                                            hidden -> revealed = revealed + (c.id to nowSeconds() + 15)
+                                            else -> state.copy(c.issuer.ifBlank { c.account }, c.code)
+                                        }
+                                    },
+                                    onLongClick = { toggle(c) },
+                                )
+                            }
                         }
                     }
                     repeat(perRow - row.size) { Box(Modifier.weight(1f)) }
@@ -136,7 +164,9 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
             section("a", rest)
         }
         if (!shown.isNullOrEmpty()) {
-            item(key = "hint") { HintText(stringResource(Res.string.auth_tap_hint), Modifier.padding(top = 2.dp)) }
+            item(key = "hint") {
+                HintText(stringResource(Res.string.auth_tap_hint_short) + " " + stringResource(Res.string.auth_swipe_hint), Modifier.padding(top = 2.dp))
+            }
             item(key = "clock") {
                 clock?.let { off ->
                     val ok = kotlin.math.abs(off) <= 15
@@ -144,6 +174,24 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
                 }
             }
         }
+    }
+    }
+    deletingMany?.let { list ->
+        AlertDialog(
+            onDismissRequest = { deletingMany = null },
+            title = { Text(stringResource(Res.string.auth_delete_n_title, list.size.toString())) },
+            text = { Text(stringResource(Res.string.auth_delete_n_text, list.size.toString())) },
+            confirmButton = {
+                TextButton(onClick = {
+                    deletingMany = null
+                    state.run(block = { for (c in list) state.backend.deleteTotp(c.vaultId, c.id) }) {
+                        selected.clear()
+                        state.changed()
+                    }
+                }) { Text(stringResource(Res.string.a_delete)) }
+            },
+            dismissButton = { TextButton(onClick = { deletingMany = null }) { Text(stringResource(Res.string.a_cancel)) } },
+        )
     }
     if (sorting) {
         GhulSheet({ sorting = false }, stringResource(Res.string.auth_sort)) {
@@ -167,7 +215,7 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
     menuFor?.let { c ->
         GhulSheet({ menuFor = null }, c.issuer.ifBlank { c.account }) {
             SheetList {
-                SheetRow(stringResource(Res.string.a_rename)) { renaming = c; menuFor = null }
+                SheetRow(stringResource(Res.string.a_rename)) { renaming = c; menuFor = null; selected.clear() }
                 SheetRow(stringResource(if (c.favorite) Res.string.auth_unfavorite else Res.string.auth_favorite), divider = true) {
                     menuFor = null
                     state.run(block = { state.backend.setFavorite(c.vaultId, c.id, !c.favorite) }) { state.changed() }
@@ -209,7 +257,7 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
             confirmButton = {
                 TextButton(onClick = {
                     deleting = null
-                    state.run(block = { state.backend.deleteTotp(c.vaultId, c.id) }) { state.changed() }
+                    state.run(block = { state.backend.deleteTotp(c.vaultId, c.id) }) { selected.clear(); state.changed() }
                 }) { Text(stringResource(Res.string.a_delete)) }
             },
             dismissButton = { TextButton(onClick = { deleting = null }) { Text(stringResource(Res.string.a_cancel)) } },
@@ -239,7 +287,16 @@ fun CodeRing(remaining: Int, period: Int, color: androidx.compose.ui.graphics.Co
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun TotpCard(c: TotpCodeUi, vaultName: String?, hidden: Boolean, showNext: Boolean, grid: Boolean, onClick: () -> Unit, onMenu: () -> Unit) {
+private fun TotpCard(
+    c: TotpCodeUi,
+    vaultName: String?,
+    hidden: Boolean,
+    showNext: Boolean,
+    grid: Boolean,
+    selected: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+) {
     val t = g
     val accent = areaColor(Tab.AUTH)
     val soon = c.remaining <= 5
@@ -247,8 +304,9 @@ private fun TotpCard(c: TotpCodeUi, vaultName: String?, hidden: Boolean, showNex
     val code = if (hidden) "••• •••" else grouped(c.code)
     val sub = listOfNotNull(c.account.takeIf { c.issuer.isNotBlank() && it.isNotBlank() }, vaultName).joinToString(" · ")
     Box(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(t.surface)
-            .combinedClickable(onClick = onClick, onLongClick = onMenu).padding(horizontal = 16.dp, vertical = 14.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(if (selected) t.accentSoft else t.surface)
+            .then(if (selected) Modifier.border(2.dp, accent, RoundedCornerShape(20.dp)) else Modifier)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick).padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
         if (grid) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -364,8 +422,12 @@ fun AddTotpScreen(state: AppState, vaultId: String, padding: PaddingValues, star
                     Text(stringResource(Res.string.auth_advanced), style = MaterialTheme.typography.labelLarge)
                     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                         OtpAlgorithmUi.entries.forEachIndexed { i, a ->
-                            SegmentedButton(selected = algorithm == a, onClick = { algorithm = a }, shape = SegmentedButtonDefaults.itemShape(i, OtpAlgorithmUi.entries.size)) {
-                                Text(a.name)
+                            // Steam Guard: five characters, every 30 seconds.
+                            SegmentedButton(selected = algorithm == a, onClick = {
+                                algorithm = a
+                                if (a == OtpAlgorithmUi.STEAM) { digits = "5"; period = "30" } else if (digits == "5") digits = "6"
+                            }, shape = SegmentedButtonDefaults.itemShape(i, OtpAlgorithmUi.entries.size)) {
+                                Text(if (a == OtpAlgorithmUi.STEAM) "Steam" else a.name)
                             }
                         }
                     }

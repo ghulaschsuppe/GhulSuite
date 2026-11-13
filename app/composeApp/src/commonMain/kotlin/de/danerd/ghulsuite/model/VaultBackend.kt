@@ -139,6 +139,7 @@ interface VaultBackend {
         passVault: String?,
         totpVault: String?,
         totpsFromLogins: Boolean,
+        keep: KeepSkippedUi? = null,
     ): ImportResultUi
     /** Unencrypted export of one vault (CSV or otpauth links); needs the master password. */
     suspend fun exportPlain(vaultId: String, password: String): ByteArray
@@ -332,7 +333,7 @@ data class SecurityReportUi(val score: Int, val checked: Int, val issues: List<S
 
 data class TotpNowUi(val code: String, val nextCode: String, val remaining: Int, val period: Int)
 
-enum class OtpAlgorithmUi { SHA1, SHA256, SHA512 }
+enum class OtpAlgorithmUi { SHA1, SHA256, SHA512, STEAM }
 
 data class TotpInputUi(
     val issuer: String,
@@ -356,9 +357,48 @@ data class PasswordOptionsUi(
     val avoidAmbiguous: Boolean = true,
 )
 
-data class ImportPreviewUi(val format: String, val entries: Int, val totps: Int, val totpsInLogins: Int, val skipped: Int)
+data class ImportPreviewUi(
+    val format: String,
+    val entries: Int,
+    val totps: Int,
+    val totpsInLogins: Int,
+    val skipped: Int,
+    /** Which items cannot be converted, and why. */
+    val skippedItems: List<SkippedImportUi> = emptyList(),
+)
 
-data class ImportResultUi(val entries: Int, val totps: Int, val duplicates: Int, val skipped: Int)
+data class ImportResultUi(
+    val entries: Int,
+    val totps: Int,
+    val duplicates: Int,
+    val skipped: Int,
+    val skippedItems: List<SkippedImportUi> = emptyList(),
+    /** Skipped items kept as notes with their original data. */
+    val kept: Int = 0,
+)
+
+enum class SkipReasonUi { HOTP, UNSUPPORTED, INVALID_CODE }
+
+/** An item of an import file that could not be converted. */
+data class SkippedImportUi(
+    val name: String,
+    /** Type in the source app (e.g. alias, hotp, sshKey). */
+    val kind: String,
+    val reason: SkipReasonUi,
+    val detail: String,
+    /** A 2FA code that stays in its imported login (only GhulAuth does not get it). */
+    val inEntry: Boolean,
+)
+
+/** Keep what cannot be converted as notes in GhulPass (folder, field names and reasons in the app's language). */
+data class KeepSkippedUi(
+    val folder: String,
+    val reasonLabel: String,
+    val dataLabel: String,
+    val reasonHotp: String,
+    val reasonUnsupported: String,
+    val reasonInvalid: String,
+)
 
 enum class AutofillStatus { UNSUPPORTED, OFF, ON }
 
