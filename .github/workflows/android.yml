@@ -37,6 +37,9 @@ jobs:
           python3 -m venv .venv
           .venv/bin/pip install -q argon2-cffi cryptography pynacl cbor2
           .venv/bin/python tools/verify_testvectors.py
+      # Texts: missing translations and differing placeholders fail; terms are listed.
+      - name: Texte prüfen (Übersetzungen, Platzhalter, Begriffe)
+        run: python3 tools/check-texts.py
 
   audit:
     name: Abhängigkeiten auf bekannte Sicherheitslücken prüfen
