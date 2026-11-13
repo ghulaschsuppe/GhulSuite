@@ -1339,4 +1339,9 @@
     <string name="auth_delete_n_text">The %1$s selected 2FA accounts will be deleted. Make sure you can still sign in to these services.</string>
     <string name="auth_swipe_hint">Swipe right to edit, left to delete. Long press selects several.</string>
     <string name="auth_tap_hint_short">Tap copies the code.</string>
+    <string name="set_autofill_how">Where suggestions appear</string>
+    <string name="set_autofill_how_field">Tap a login field. Suggestions appear below the field or in the keyboard\'s suggestion bar.</string>
+    <string name="set_autofill_how_apps">In an app GhulSuite first offers “Choose another login …”. After that it remembers the app and suggests the login directly.</string>
+    <string name="set_autofill_how_chrome">Chrome: Settings → Autofill services → “Autofill using another service”, then restart Chrome. Firefox and browsers such as Vivaldi, Brave or Edge need no setting.</string>
+    <string name="set_autofill_how_manual">Nothing shows up? Long-press the field and choose “Autofill”.</string>
 </resources>
