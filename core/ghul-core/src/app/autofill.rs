@@ -13,17 +13,69 @@
 
 /// Lower-case host of a URL or bare domain, without `www.`, port, path and credentials.
 pub(crate) fn host_of(url: &str) -> Option<String> {
-    let s = url.trim();
+    // Like a browser (WHATWG URL standard): tabs and line breaks inside are ignored, and a
+    // backslash ends the host just like "/" – "https://evil.com\\@bank.de" goes to evil.com.
+    let cleaned: String = url.chars().filter(|c| !matches!(c, '\t' | '\n' | '\r')).collect();
+    let s = cleaned.trim_matches(|c: char| c <= ' ');
     let s = s.split_once("://").map_or(s, |(_, rest)| rest);
-    let s = s.split(['/', '?', '#']).next()?;
+    let s = s.trim_start_matches(['/', '\\']);
+    let s = s.split(['/', '\\', '?', '#']).next()?;
     let s = s.rsplit_once('@').map_or(s, |(_, h)| h);
     let s = s.split(':').next()?;
     let host = s.trim_end_matches('.').to_lowercase();
+    // Numbers in any spelling a browser accepts (0xC0A80001, 192.168.1, 0300.0250.0.1) are the
+    // same address as 192.168.0.1.
+    if let Some(ip) = ipv4_like_a_browser(&host) {
+        return ip;
+    }
     let host = host.strip_prefix("www.").unwrap_or(&host).to_owned();
     if host.is_empty() || !host.contains('.') || host.contains(' ') {
         return None;
     }
     Some(host)
+}
+
+/// IPv4 parsing of the WHATWG URL standard: `None` if the host is no IPv4 address at all,
+/// `Some(None)` if it looks like one but is invalid, else the dotted address.
+fn ipv4_like_a_browser(host: &str) -> Option<Option<String>> {
+    let parts: Vec<&str> = host.split('.').collect();
+    let number = |p: &str| -> Option<u64> {
+        let (digits, radix) = if let Some(h) = p.strip_prefix("0x").or_else(|| p.strip_prefix("0X")) {
+            (h, 16)
+        } else if p.len() > 1 && p.starts_with('0') {
+            (&p[1..], 8)
+        } else {
+            (p, 10)
+        };
+        if digits.is_empty() {
+            return Some(0);
+        }
+        u64::from_str_radix(digits, radix).ok().filter(|_| digits.len() <= 20)
+    };
+    // Only when the last part is a number is the host an IPv4 address.
+    let last = parts.last()?;
+    if last.is_empty() || number(last).is_none() {
+        return None;
+    }
+    if parts.len() > 4 || parts.iter().any(|p| p.is_empty()) {
+        return Some(None);
+    }
+    let nums: Option<Vec<u64>> = parts.iter().map(|p| number(p)).collect();
+    let Some(nums) = nums else { return Some(None) };
+    let (head, tail) = nums.split_at(nums.len() - 1);
+    if head.iter().any(|&n| n > 255) {
+        return Some(None);
+    }
+    let limit = 256u64.pow(5 - nums.len() as u32);
+    if tail[0] >= limit {
+        return Some(None);
+    }
+    let mut value = tail[0];
+    for (i, &n) in head.iter().enumerate() {
+        value += n * 256u64.pow(3 - i as u32);
+    }
+    let b = (value as u32).to_be_bytes();
+    Some(Some(format!("{}.{}.{}.{}", b[0], b[1], b[2], b[3])))
 }
 
 /// The registrable part of a host, after the Public Suffix List: `a.b.example.com` →

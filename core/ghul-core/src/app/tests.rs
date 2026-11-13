@@ -2448,6 +2448,7 @@ fn import_keeps_what_it_cannot_convert_and_names_it() {
 mod absurd;
 mod attacks;
 mod chaos;
+mod collections;
 mod crazy_user;
 mod everyday;
 mod properties;

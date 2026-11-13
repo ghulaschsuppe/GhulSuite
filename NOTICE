@@ -32,3 +32,9 @@ core/ghul-core/tests/data/blns.json – Big List of Naughty Strings, (c) 2015-20
 core/ghul-core/tests/data/wycheproof_*.json – Project Wycheproof test vectors (C2SP / Google),
     Apache License 2.0.
 core/ghul-core/tests/data/test_psl.txt – Public Suffix List test cases, public domain (CC0).
+core/ghul-core/tests/data/payloads_*.txt – PayloadsAllTheThings (swisskyrepo), MIT.
+core/ghul-core/tests/data/seclists_*.txt – SecLists (Daniel Miessler et al.), MIT.
+core/ghul-core/tests/data/dompurify_payloads.json – payloads from DOMPurify's test fixtures
+    (Cure53), Apache License 2.0 / MPL 2.0.
+core/ghul-core/tests/data/wpt_urltestdata.json – web-platform-tests URL test data, BSD 3-Clause.
+core/ghul-core/tests/data/jsontestsuite/ – JSONTestSuite (Nicolas Seriot), MIT.

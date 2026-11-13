@@ -88,6 +88,11 @@ Stresstest (vorhanden), dazu: 50.000 Mails im Postfach (Fake-IMAP), 100.000 Eint
 | Project Wycheproof (C2SP) | Apache-2.0 | E1: Krypto-Bausteine |
 | Public Suffix List + `test_psl.txt` | MPL-2.0 | E8: Autofill-Domains |
 | RFC-Testvektoren (6238, 4226, 5869, 9106, 4648) | frei | E1 |
+| PayloadsAllTheThings (XSS, CRLF) | MIT | E8: HTML-Mails, Mail-Kopfzeilen |
+| SecLists (XSS) | MIT | E8: HTML-Mails |
+| DOMPurify-Testfälle (223 XSS-Muster) | Apache-2.0/MPL-2.0 | E8: HTML-Mails |
+| WHATWG/web-platform-tests URL-Testdaten | BSD-3 | E8: GhulSuite und Browser lesen Adressen gleich |
+| JSONTestSuite (318 Dateien) | MIT | E4: alle JSON-Importe |
 | OWASP MASVS/MASTG | CC BY-SA | Prüfliste Mobil-Sicherheit (nur als Liste, nichts kopiert) |
 | OWASP XSS Filter Evasion Cheat Sheet | CC BY-SA | Ideen für HTML-Mail-Angriffe (Vektoren selbst formuliert) |
 | libFuzzer / cargo-fuzz | Apache/MIT | E4 lang |

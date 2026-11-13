@@ -197,8 +197,9 @@ fn merging_is_independent_of_order_and_repetition() {
         }
         e
     };
+    type Key = Vec<(Vec<u8>, u64, bool, i64, Vec<String>)>;
     let key = |v: &[Entry]| {
-        let mut k: Vec<(Vec<u8>, u64, bool, i64, Vec<String>)> = v
+        let mut k: Key = v
             .iter()
             .map(|e| (e.id.clone(), e.revision, e.deleted, e.modified, e.fields.keys().cloned().collect()))
             .collect();
@@ -323,7 +324,10 @@ fn autofill_never_fills_a_lookalike() {
     for site in sites {
         let urls = vec![format!("https://{site}/login")];
         assert_eq!(match_entry(&urls, Some(site), None, None), Match::Direct, "{site}");
-        assert_eq!(match_entry(&urls, Some(&format!("www.{site}")), None, None), Match::Direct, "www.{site}");
+        // ("www." in front of an IP address is no valid host for a browser either.)
+        if !site.chars().next().unwrap().is_ascii_digit() {
+            assert_eq!(match_entry(&urls, Some(&format!("www.{site}")), None, None), Match::Direct, "www.{site}");
+        }
         for a in attacks(site) {
             let same = super::super::autofill::base_domain(&super::super::autofill::host_of(&a).unwrap())
                 == super::super::autofill::base_domain(site);
