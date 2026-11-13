@@ -375,6 +375,7 @@ abstract class CoreNetBackend(protected val suite: () -> GhulSuite) : NetBackend
                 accountId = mail.accountId, to = mail.to, cc = mail.cc, bcc = mail.bcc, subject = mail.subject,
                 text = mail.text, inReplyTo = mail.inReplyTo,
                 attachments = mail.attachments.map { OutgoingAttachment(it.name, it.mime, it.data) },
+                pgp = mail.pgp,
             ),
         )
     }
@@ -382,6 +383,7 @@ abstract class CoreNetBackend(protected val suite: () -> GhulSuite) : NetBackend
     private fun OutgoingMailUi.toCore() = OutgoingMail(
         accountId = accountId, to = to, cc = cc, bcc = bcc, subject = subject, text = text, inReplyTo = inReplyTo,
         attachments = attachments.map { OutgoingAttachment(it.name, it.mime, it.data) },
+        pgp = pgp,
     )
 
     override suspend fun mailFlagged(accountId: String, folder: String) = io { suite().mailFlagged(accountId, folder).map { it.toUi() } }

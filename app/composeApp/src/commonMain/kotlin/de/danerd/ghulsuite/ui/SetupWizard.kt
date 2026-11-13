@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Description
@@ -146,6 +148,8 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
     val made = remember { mutableStateMapOf<VaultKindUi, Boolean>() }
     var drive by remember { mutableStateOf(DriveChoice.LATER) }
     val driveForm = rememberServerForm()
+    var mailSheet by remember { mutableStateOf(false) }
+    var mailAdded by remember { mutableStateOf(false) }
     // 7: unlock
     var quick by remember { mutableStateOf(if (backend.biometricAvailable()) QuickChoice.BIO else QuickChoice.NONE) }
     var quickPin by remember { mutableStateOf("") }
@@ -407,7 +411,20 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                                             divider = true, onClick = { drive = DriveChoice.LATER })
                                     }
                                 }
-                                VaultKindUi.MAIL -> Hint(stringResource(Res.string.wz_mail_later))
+                                VaultKindUi.MAIL -> {
+                                    // The first account right here, in the same sheet as later in GhulMail.
+                                    SheetList {
+                                        ListRow(
+                                            stringResource(if (mailAdded) Res.string.wz_mail_added else Res.string.mail_account_new),
+                                            stringResource(if (mailAdded) Res.string.wz_mail_more else Res.string.mail_add_sub),
+                                            leading = { IconTile(if (mailAdded) Icons.Filled.Check else Icons.Filled.Add, paletteColor(4)) },
+                                        ) { mailSheet = true }
+                                    }
+                                    if (!mailAdded) Hint(stringResource(Res.string.wz_mail_later))
+                                    if (mailSheet) {
+                                        MailAccountSheet(state, null, onSaved = { made[VaultKindUi.MAIL] = true; mailAdded = true }) { mailSheet = false }
+                                    }
+                                }
                             }
                         }
                     }

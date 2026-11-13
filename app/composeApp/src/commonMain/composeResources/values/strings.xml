@@ -253,7 +253,7 @@
     <string name="set_modules_hint">Switched-off modules disappear from the menu. Their data stays encrypted and unchanged.</string>
     <string name="set_new_code_text">A new recovery code is created. The previous code stops working.</string>
     <string name="set_no_key_hint">Your suite is protected with a key file. A security key is even more secure: it cannot be copied.</string>
-    <string name="set_panic_hint">The lock button and the notification lock normally. Shaking and the quick settings tile “Lock GhulSuite” are a panic lock: they additionally delete fingerprint and app PIN unlock.</string>
+    <string name="set_panic_hint">The lock button and the notification lock normally. Shaking and the quick settings tile "Lock GhulSuite" are a panic lock: they also remove fingerprint and app PIN unlock, afterwards only the master password opens the app. Mail notifications and reminders keep working. A short buzz confirms locking by shaking.</string>
     <string name="set_password">Master password</string>
     <string name="set_pin_mismatch">The PINs do not match.</string>
     <string name="set_quick_always_full">Password and key are always required after a restart, after the validity ends, after a panic lock, after 5 wrong app PINs and when fingerprints are changed.</string>
@@ -522,7 +522,7 @@
     <string name="mail_attachment_warning">Only open attachments from senders you trust.</string>
     <string name="mail_sent_msg">Message sent.</string>
     <string name="mail_notify">Notify about new e-mails</string>
-    <string name="mail_notify_hint">Notifications also work while GhulSuite is locked. For this, a copy of the inbox login is kept on this device, protected by the Android Keystore. The server reports new e-mail at once; for this Android shows a silent ongoing notification “GhulMail is ready”. By default notifications only show the account name and the number of new messages (changeable below). The panic lock removes the copy. If e-mail still arrives late: turn off battery optimization for GhulSuite (offered when switching on).</string>
+    <string name="mail_notify_hint">New e-mail arrives even when GhulSuite is locked or closed, after a restart of the phone and after the panic lock. For this a copy of the inbox login stays on this device, protected by the Android Keystore. The server reports new mail at once; Android shows a silent permanent notification "GhulMail is ready" for this. By default notifications show only the account name and the number of new messages (changeable above). Only "Force stop" in the Android settings stops reception until you open GhulSuite again.</string>
     <string name="mail_remove_title">Remove %1$s?</string>
     <string name="mail_remove_text">The account is removed from GhulSuite. Your e-mails stay on the mail server.</string>
     <string name="set_mail">GhulMail accounts</string>
@@ -1227,7 +1227,7 @@
     <string name="wz_drive_where">Where should the files be stored?</string>
     <string name="wz_drive_sync_first">Set up synchronisation first (step 4)</string>
     <string name="wz_drive_later_sub">GhulDrive then shows “Not set up yet”</string>
-    <string name="wz_mail_later">You set up your mail account in GhulMail right after the setup.</string>
+    <string name="wz_mail_later">Or later, right in GhulMail.</string>
     <string name="wz_areas_hint">Every chosen area gets its own file with its settings. Areas not chosen create no file and are hidden – switch them on any time in Options → Areas.</string>
     <string name="wz_one_area">Choose at least one area.</string>
     <string name="wz_drive_missing">GhulDrive – still open: %1$s – or choose “Later”</string>
@@ -1339,6 +1339,18 @@
     <string name="auth_delete_n_text">The %1$s selected 2FA accounts will be deleted. Make sure you can still sign in to these services.</string>
     <string name="auth_swipe_hint">Swipe right to edit, left to delete. Long press selects several.</string>
     <string name="auth_tap_hint_short">Tap copies the code.</string>
+    <string name="mail_pgp_on">PGP on</string>
+    <string name="mail_pgp_off">PGP off</string>
+    <string name="mail_pgp_off_hint">This mail goes out without PGP: not signed, not encrypted and without your public key.</string>
+    <string name="set_unlock_sub_both">Fingerprint and app PIN</string>
+    <string name="set_unlock_no_expiry">no expiry</string>
+    <string name="mail_add_sub">Address and password; the servers are detected</string>
+    <string name="wz_mail_added">E-mail account set up</string>
+    <string name="wz_mail_more">Further accounts later in GhulMail</string>
+    <string name="mail_bg_ok">Mail may run in the background: new mail arrives at once.</string>
+    <string name="mail_bg_limited">Android slows GhulSuite down in the background (battery optimisation). New mail may arrive late or only every 15 minutes.</string>
+    <string name="mail_bg_allow">Allow in the background</string>
+    <string name="mail_bg_check">Check background setting</string>
     <string name="set_autofill_how">Where suggestions appear</string>
     <string name="set_autofill_how_field">Tap a login field. Suggestions appear below the field or in the keyboard\'s suggestion bar.</string>
     <string name="set_autofill_how_apps">In an app GhulSuite first offers “Choose another login …”. After that it remembers the app and suggests the login directly.</string>

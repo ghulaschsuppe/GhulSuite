@@ -25,6 +25,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -552,18 +554,30 @@ fun GhulNavBar(tabs: List<NavTab>, selected: Int, onSelect: (Int) -> Unit) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(3.dp),
                 ) {
-                    Box(
-                        // Six areas: a little narrower, as in the design preview.
-                        Modifier.size(if (tabs.size >= 6) 50.dp else 56.dp, 30.dp).clip(RoundedCornerShape(15.dp)).background(if (on) tab.color.copy(alpha = 0.16f) else Color.Transparent),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        androidx.compose.material3.Icon(tab.icon, null, Modifier.size(22.dp), tint = if (on) tab.color else t.muted)
+                    val pill = if (tabs.size >= 6) 50.dp else 56.dp
+                    // The badge sits on top of the pill, not inside it: the pill clips its content.
+                    Box(Modifier.size(pill, 30.dp)) {
+                        Box(
+                            // Six areas: a little narrower, as in the design preview.
+                            Modifier.fillMaxSize().clip(RoundedCornerShape(15.dp)).background(if (on) tab.color.copy(alpha = 0.16f) else Color.Transparent),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            androidx.compose.material3.Icon(tab.icon, null, Modifier.size(22.dp), tint = if (on) tab.color else t.muted)
+                        }
                         if (tab.badge > 0) {
                             Box(
-                                Modifier.offset(x = 12.dp, y = (-10).dp).heightIn(min = 16.dp).clip(RoundedCornerShape(8.dp))
+                                Modifier.align(Alignment.TopStart).offset(x = pill / 2 + 4.dp, y = (-5).dp)
+                                    .heightIn(min = 16.dp).widthIn(min = 16.dp)
+                                    .border(1.5.dp, t.surface, RoundedCornerShape(8.dp))
+                                    .clip(RoundedCornerShape(8.dp))
                                     .background(LocalAreaMail.current).padding(horizontal = 4.dp),
                                 contentAlignment = Alignment.Center,
-                            ) { Text(tab.badge.toString(), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
+                            ) {
+                                Text(
+                                    if (tab.badge > 99) "99+" else tab.badge.toString(),
+                                    color = Color.White, fontSize = 10.sp, lineHeight = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false,
+                                )
+                            }
                         }
                     }
                     Text(tab.label, fontSize = if (tabs.size >= 6) 10.5.sp else 11.sp, fontWeight = FontWeight.SemiBold, color = if (on) tab.color else t.muted, maxLines = 1, softWrap = false)

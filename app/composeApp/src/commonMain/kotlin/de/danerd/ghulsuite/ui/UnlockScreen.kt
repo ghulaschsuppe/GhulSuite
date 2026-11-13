@@ -26,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -77,8 +78,12 @@ fun UnlockScreen(state: AppState) {
         }
     }
 
+    // When the last fingerprint prompt ended: the prompt itself can pause and resume the app,
+    // which must not open it again right away (a cancelled prompt would come back forever).
+    var promptEnded by remember { mutableStateOf<kotlin.time.TimeSource.Monotonic.ValueTimeMark?>(null) }
+
     fun biometric() {
-        state.run(onError = { error = it }, block = {
+        state.run(onError = { error = it; promptEnded = kotlin.time.TimeSource.Monotonic.markNow() }, block = {
             try {
                 backend.unlockWithBiometric()
                 true
@@ -86,10 +91,21 @@ fun UnlockScreen(state: AppState) {
                 if (e.kind != VaultErrorKind.BIOMETRIC_CANCELLED) quickFailed(e) else error = null
                 false
             }
-        }) { ok -> if (ok) clear() }
+        }) { ok ->
+            promptEnded = kotlin.time.TimeSource.Monotonic.markNow()
+            if (ok) clear()
+        }
     }
 
-    LaunchedEffect(Unit) { if (mode == UnlockMode.QUICK && ready.biometric) biometric() }
+    // Ask for the fingerprint at once: when the screen appears and every time the app comes back
+    // to the front while locked, without tapping "Unlock with fingerprint" first.
+    // Never while in the background (Android would refuse the prompt).
+    val resumed by AppLaunch.resumed.collectAsState()
+    val inFront by AppLaunch.inFront.collectAsState()
+    LaunchedEffect(resumed, inFront) {
+        val recent = promptEnded?.let { it.elapsedNow() < kotlin.time.Duration.parse("1.5s") } == true
+        if (inFront && mode == UnlockMode.QUICK && ready.biometric && !state.busy && !recent) biometric()
+    }
 
     val t = g
     @Composable

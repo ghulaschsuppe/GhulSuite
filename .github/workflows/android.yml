@@ -137,6 +137,34 @@ jobs:
           name: fuzz-artifacts
           path: core/fuzz/artifacts/
 
+  stress:
+    name: Alltags- und Stresstest (Release)
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Rust-Zwischenspeicher
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            core/target/
+          key: ${{ runner.os }}-stress-${{ hashFiles('core/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-stress-${{ hashFiles('core/Cargo.lock') }}-
+            ${{ runner.os }}-stress-
+      # Thousands of entries, appointments and files, many sync rounds and parallel threads; the
+      # log lists the time of every step.
+      - name: Alltagstest und Stresstests
+        working-directory: core
+        run: |
+          rustup toolchain install stable --profile minimal
+          cargo test --locked --release -p ghul-core --lib everyday -- --include-ignored --nocapture --test-threads=1
+
   network:
     name: Netzwerk-Tests (echte SFTP-, IMAP- und SMTP-Testserver)
     needs: changes

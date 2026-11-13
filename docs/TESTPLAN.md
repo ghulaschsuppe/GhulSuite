@@ -86,7 +86,7 @@ von Schritt 3 – danach geht „Zurück“ nur noch bis Schritt 4.
 | P3 | „Bei Bildschirm aus sperren“ an, Bildschirm aus und an. | Gesperrt. |
 | P4 | Benachrichtigung „GhulSuite entsperrt“ → „Sperren“. | Gesperrt. |
 | P5 | Schnelleinstellungs-Kachel „GhulSuite sperren“ hinzufügen und antippen. | Gesperrt, Fingerabdruck/PIN-Zugang gelöscht. |
-| P6 | „Schütteln zum Sperren“ an, Handy kräftig schütteln (Empfindlichkeit ausprobieren). | Gesperrt, Fingerabdruck/PIN-Zugang gelöscht. |
+| P6 | „Schütteln zum Sperren“ an, Handy eine halbe Sekunde deutlich hin und her schütteln – in der App, mit der App im Hintergrund und mit gesperrtem Startbildschirm-Wechsel. Jede Empfindlichkeit ausprobieren. | Gesperrt, kurzes Vibrieren, Fingerabdruck/PIN-Zugang gelöscht. Gehen, Treppensteigen, Handy auf den Tisch legen sperren **nicht**. |
 | P7 | Bildschirmfoto in der App versuchen; App-Übersicht öffnen. | Bildschirmfoto blockiert, Vorschau schwarz (solange „Bildschirmfotos erlauben“ aus ist). |
 
 ## 4. GhulPass
@@ -259,14 +259,20 @@ Für T5–T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick o
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| N1 | Optionen → GhulMail → „Bei neuen E-Mails benachrichtigen“ an. Android fragt ggf. nach Benachrichtigungen → erlauben. | Schalter bleibt an. |
-| N1b | Direkt nach N1. | Android fragt „Akku-Optimierung ignorieren?“ → Zulassen. In der Statusleiste erscheint die stille Benachrichtigung „GhulMail ist bereit“. |
+| N1 | Neues Mailkonto anlegen (oder nach dem Update entsperren). | Benachrichtigungen für das Konto sind **von selbst an** (Optionen → GhulMail → Benachrichtigungen). Android fragt einmal nach Benachrichtigungen und Akku-Optimierung → erlauben. |
+| N1b | Optionen → GhulMail. | Grün: „GhulMail darf im Hintergrund laufen“. Sonst Hinweis mit Knopf „Im Hintergrund erlauben“; danach grün. In der Statusleiste steht die stille Benachrichtigung „GhulMail ist bereit“. |
 | N2 | GhulSuite sperren, Handy sperren. Von der zweiten Adresse eine Mail schicken. | **Innerhalb weniger Sekunden** Benachrichtigung „<Kontoname> – 1 neue E-Mail“, **ohne** Absender und Betreff. |
 | N2b | Handy neu starten, ohne GhulSuite zu öffnen eine Mail schicken. | „GhulMail ist bereit“ ist wieder da, die Benachrichtigung kommt sofort. |
-| N3 | Benachrichtigung antippen. | GhulSuite öffnet sich (Entsperren nötig). |
+| N3 | Benachrichtigung antippen (vorher in GhulMail den Postausgang oder einen anderen Ordner offen lassen). | Nach dem Entsperren öffnet sich **genau diese Mail** im Posteingang des Kontos; zurück führt in den Posteingang. Bei mehreren neuen Mails: der Posteingang. Die Benachrichtigung verschwindet. |
 | N4 | Schalter aus, wieder Mail schicken. | Keine Benachrichtigung mehr; „GhulMail ist bereit“ verschwindet (wenn kein anderes Konto benachrichtigt). |
-| N5 | Schalter an, dann **Panik-Sperre** (Schütteln oder Schnellkachel). | Schalter danach aus (Abrufdaten gelöscht); keine Benachrichtigungen mehr. |
+| N5 | Schalter an, dann **Panik-Sperre** (Schütteln oder Schnellkachel), danach Mail schicken. | Gesperrt, aber **Benachrichtigungen kommen weiter**; Schalter bleibt an. |
 | N6 | Konto-Passwort in GhulSuite ändern (M16 mit neuem Passwort), Benachrichtigung an. | Benachrichtigungen kommen weiter. |
+| N7 | Mailpasswort auf dem **anderen** Gerät ändern, hier synchronisieren und einmal entsperren. | Benachrichtigungen kommen weiter (die Kopie für den Empfang wird beim Entsperren erneuert). |
+| N8 | GhulSuite aus der Liste der letzten Apps wischen, Mail schicken. | Benachrichtigung kommt sofort. |
+| N9 | WLAN aus (nur mobile Daten), Mail schicken; dann WLAN wieder an, Mail schicken. | Beide Male Benachrichtigung innerhalb weniger Sekunden (bei Netzwechsel verbindet GhulMail sofort neu). |
+| N10 | Handy 30 Minuten unberührt liegen lassen (Bildschirm aus), dann Mail schicken. | Benachrichtigung innerhalb von 1–2 Minuten, meist sofort. |
+| N11 | Android-Einstellungen → Apps → GhulSuite → „Beenden erzwingen“, Mail schicken. | **Keine** Benachrichtigung (Android-Regel). Nach dem nächsten Öffnen von GhulSuite kommt sie wieder. |
+| N12 | Zwei Konten mit Benachrichtigung, an beide gleichzeitig eine Mail. | Zwei Benachrichtigungen; jede öffnet die Mail ihres Kontos. Keine Mail meldet sich doppelt. |
 
 ## 16. Neues Design und Einstellungen
 
@@ -439,6 +445,54 @@ oder Proton.
 | I9 | GhulPass und GhulAuth: Eintrag lange drücken, weitere antippen, „Alle“, Löschen. | Auswahlleiste oben mit Anzahl; Löschen fragt nach; Zurück beendet die Auswahl. |
 | I10 | GhulAuth (Listenansicht): Konto nach rechts wischen, dann nach links. | Rechts: Bearbeiten (Anbieter, Konto). Links: Rückfrage, dann gelöscht. |
 
+## 25. Mail, Optionen und Panik (zweite Runde)
+
+| Nr. | Schritt | Erwartet |
+|---|---|---|
+| R1 | GhulMail ohne Konto öffnen. | Karte „GhulMail einrichten“ und Zeile „E-Mail-Konto hinzufügen“ – wie bei GhulDrive. Antippen öffnet das Formular in einem Blatt. |
+| R2 | Optionen → GhulMail. | Konten als Zeilen (antippen = bearbeiten im Blatt, Papierkorb = entfernen mit Rückfrage), darunter „E-Mail-Konto hinzufügen“. Die Seite bleibt offen. |
+| R3 | Kontoauswahl oben in GhulMail → „E-Mail-Konto hinzufügen“. | Dasselbe Blatt. |
+| R4 | Neue Suite: im Assistenten bei „Bereiche“ GhulMail einschalten → „E-Mail-Konto hinzufügen“. | Blatt mit dem Formular; danach „E-Mail-Konto eingerichtet“. Nach dem Assistenten ist das Konto in GhulMail da. |
+| R5 | Mail lesen. | Unten nur **Antworten** und **Weiterleiten**. „Allen antworten“ steht im ⋮-Menü, wenn die Mail mehrere Empfänger hat. |
+| R6 | Mail schreiben, unten „PGP an“ antippen. | Wird „PGP aus“, Hinweis „ohne PGP: nicht signiert, nicht verschlüsselt, ohne Schlüssel“. Beim Empfänger: keine signature.asc, kein Autocrypt-Kopf, Betreff lesbar. |
+| R7 | Dasselbe mit „Später senden“. | Die geplante Mail geht ebenfalls ohne PGP raus. |
+| R8 | Optionen-Übersicht → „Entsperren“ mit nur Fingerabdruck, nur App-PIN, beidem, nichts. | Untertitel „Fingerabdruck · 24 Stunden“, „App-PIN · …“, „Fingerabdruck und App-PIN · …“ bzw. „Nur Passwort“; bei „Immer“: „ohne Ablauf“. |
+| R9 | Optionen → Schlüssel und Schlüsseldateien. | Kein zweites „Master-Passwort ändern“ (das steht als eigene Zeile in der Übersicht). |
+| R10 | Android-Einstellungen → Apps → Standard-Apps (je nach Hersteller „E-Mail“, „Kalender“). | GhulSuite ist als Mail- und Kalender-App wählbar. |
+| R11 | In einer anderen App (Browser, Kontakte) einen `mailto:`-Link antippen. | Auswahl zeigt GhulSuite; nach dem Entsperren ist eine neue Mail mit Empfänger, Betreff und Text offen. |
+| R12 | In der Galerie ein Foto teilen → „Per E-Mail senden (GhulMail)“. | Neue Mail mit dem Foto als Anhang. |
+| R13 | Eine `.ics`-Datei (z. B. Einladung im Download-Ordner) mit GhulSuite öffnen. | Nach dem Entsperren: „n Termine importiert“ in den Standardkalender. |
+| R14 | In einer App „Zum Kalender hinzufügen“ (z. B. Bahn- oder Kino-App). | Neuer Termin mit Titel, Zeit und Ort, zum Speichern bereit. |
+| R15 | Schnell entsperren mit Fingerabdruck an. App gesperrt im Hintergrund lassen, wieder hineinwechseln. | Die Fingerabdruck-Abfrage erscheint **sofort**, ohne den Knopf zu drücken. Abbrechen: sie kommt nicht in Dauerschleife wieder, der Knopf bleibt. |
+
+## 26. Alltagstest (eine Woche, Handy und Windows)
+
+Ziel: GhulSuite eine Woche wie im echten Leben benutzen – mit echten Konten, aber mit einer **Kopie** wichtiger Daten. Jeden Tag kurz notieren, was hakt (Fehler melden siehe unten).
+
+| Tag | Was du tust | Worauf du achtest |
+|---|---|---|
+| 1 | Neue Suite mit Assistent: Sync-Server, alle Bereiche, Mailkonto im Assistenten, Fingerabdruck. Passwörter aus deinem alten Manager importieren. Windows: Suite vom Server holen. | Alles importiert oder als Notiz behalten? Beide Geräte zeigen dasselbe? |
+| 2 | Den Tag über nur mit GhulSuite anmelden (Autofill in Apps und Browser). 2FA-Codes aus GhulAuth nutzen. Abends ein Passwort ändern. | Schlägt Autofill passend vor? Kommt die Änderung auf Windows an? |
+| 3 | Mails nur in GhulMail lesen und schreiben, auch mit Anhang und an jemanden mit PGP. Handy zwischendurch neu starten. | Kommt **jede** Mail sofort als Benachrichtigung, auch nach dem Neustart? Öffnet das Antippen die Mail? |
+| 4 | Fotos und Dokumente in GhulDrive (auch Ordner, Umbenennen, Papierkorb), eine Datei teilen. Zwischen WLAN und mobilen Daten wechseln. | Uploads brechen nicht ab oder setzen fort; Freigabelink funktioniert. |
+| 5 | Termine in GhulCal, auch wiederkehrend und mit Erinnerung; einen davon auf Windows ändern. Panik-Sperre durch Schütteln testen (in der App und im Hintergrund). | Erinnerung kommt pünktlich; Schütteln sperrt beim ersten Versuch, Mails und Erinnerungen kommen danach weiter. |
+| 6 | Beide Geräte gleichzeitig benutzen: dieselbe Anmeldung auf beiden ändern, offline (Flugmodus) Einträge anlegen, später wieder online. | Nach dem Synchronisieren nichts verloren, nichts doppelt. |
+| 7 | Sicherung erstellen, auf einem zweiten Gerät oder in einem leeren Ordner wiederherstellen. Master-Passwort ändern; das andere Gerät fragt einmal nach dem neuen. | Wiederhergestellt ist alles da; danach weiter ganz normal. |
+
+## 27. Stresstest (von Hand)
+
+| Nr. | Schritt | Erwartet |
+|---|---|---|
+| S1 | 5.000 Anmeldungen importieren (z. B. große CSV aus einem anderen Passwortmanager). | Import in unter einer Minute; Liste scrollt flüssig; Suche antwortet sofort. |
+| S2 | 200 2FA-Codes. | Codes laufen flüssig, keine Ruckler beim Wechsel der 30-Sekunden-Runde. |
+| S3 | Ein Video über 500 MB in GhulDrive hochladen, währenddessen App in den Hintergrund und WLAN aus/an. | Upload setzt fort; danach herunterladen, Datei ist unversehrt. |
+| S4 | Ein Postfach mit über 10.000 Mails öffnen, schnell scrollen, suchen. | Liste lädt nach, nichts friert ein. |
+| S5 | 50-mal schnell hintereinander sperren (Knopf) und entsperren (Fingerabdruck). | Kein Absturz, kein „hängendes“ Entsperren. |
+| S6 | 20-mal kurz hintereinander synchronisieren, auf beiden Geräten gleichzeitig. | Keine Fehlermeldung, keine doppelten Einträge. |
+| S7 | Handy mit wenig freiem Speicher (unter 500 MB) benutzen. | Klare Meldung statt Absturz, keine kaputten Dateien. |
+
+Automatisch läuft bei jedem Push der Alltagstest im Kern (zwei Geräte, 30 simulierte Tage mit allen Bereichen) und in einem eigenen Job der Stresstest (5.000 Anmeldungen, 2.000 Termine, 300 Dateien und 64 MB, 20 Sync-Runden, 8 parallele Threads).
+
 ## GhulCal (Kalender)
 
 | Nr. | Schritt | Erwartet |
@@ -453,9 +507,9 @@ oder Proton.
 | K8 | Import einer `.ics` aus Google/Outlook, Export „Alle“ und „Als .ics teilen“. | Termine samt Serien und Erinnerungen übernommen; zweiter Import legt keine Doppelten an; Export öffnet sich in anderen Kalendern. |
 | K9 | Termin mit Erinnerung in 2 Minuten anlegen, App sperren (Android: auch schließen). | Benachrichtigung pünktlich; auf dem Sperrbildschirm nur die gewählte Detailstufe; „In 5 Min. erneut“, „Erledigt“; Tippen öffnet nach dem Entsperren den Termin. |
 | K10 | Optionen → GhulCal: Detailstufe „Nur Hinweis“ → „Test-Erinnerung zeigen“. | Auf dem Sperrbildschirm nur „Termin in 15 Min.“ ohne Titel. |
-| K11 | Panik-Sperre auslösen. | Geplante Erinnerungen sind gelöscht (kommen erst nach dem nächsten Entsperren wieder). |
+| K11 | Panik-Sperre auslösen. | Erinnerungen kommen weiter (die Panik-Sperre sperrt nur die App). |
 | K12 | Zweites Gerät synchronisieren, dort einen Termin ändern, zurück synchronisieren. | Änderungen beider Seiten kommen an (Zusammenführen pro Termin). |
-| K13 | Mail-Benachrichtigung antippen (gesperrt und entsperrt). | GhulMail öffnet sich (nach dem Entsperren); Leiste und App-Symbol zeigen die Zahl ungelesener Mails, Windows-Taskleiste einen Briefumschlag mit Zahl. |
+| K13 | Mail-Benachrichtigung antippen (gesperrt und entsperrt). | Die neue Mail öffnet sich (nach dem Entsperren); Leiste und App-Symbol zeigen die Zahl ungelesener Mails – vollständig, nicht angeschnitten, ab 100 „99+“. Windows-Taskleiste: Briefumschlag mit Zahl. |
 
 ## Fehler melden
 

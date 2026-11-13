@@ -31,13 +31,16 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 /**
- * New-mail notifications while GhulSuite is locked (opt-in per account). Instant via
- * [MailPushService]; a check every 15 minutes remains as a fallback.
+ * New-mail notifications, also while GhulSuite is locked, after a restart of the phone and when
+ * the app was swiped away. On by default for every account on this device (it can be switched
+ * off per account). Instant via [MailPushService]; a check every 15 minutes remains as a
+ * fallback and brings the instant notifications back when Android stopped them.
  *
  * The suite stays locked; the worker only needs the inbox login. A copy of it is kept encrypted
- * with a key of the Android Keystore that never leaves the device and is removed when
- * notifications are turned off, the account is removed or the panic lock is used. Notifications
- * show only the account name and the number of new messages – no sender, no subject.
+ * with a key of the Android Keystore that never leaves the device. It is refreshed at every
+ * unlock (a password changed on another device arrives this way) and removed when notifications
+ * are turned off or the account is removed. By default notifications show only the account name
+ * and the number of new messages.
  */
 class MailNotifications(private val context: Context) {
     private val prefs = context.getSharedPreferences("mail_notify", Context.MODE_PRIVATE)
@@ -77,12 +80,33 @@ class MailNotifications(private val context: Context) {
         }
     }
 
-    /** Panic lock: no login copy remains on the device. */
-    fun disableAll() {
-        prefs.edit().clear().apply()
-        runCatching { keyStore.deleteEntry(ALIAS) }
-        WorkManager.getInstance(context).cancelUniqueWork(WORK)
-        MailPushService.stop(context)
+    /** The user chose on this device whether this account notifies (otherwise: on by default). */
+    fun decided(accountId: String): Boolean = prefs.getBoolean("$accountId.decided", false)
+
+    fun setDecided(accountId: String) = prefs.edit().putBoolean("$accountId.decided", true).apply()
+
+    /**
+     * After unlocking: every account notifies unless switched off on this device; stored login
+     * copies follow changes from other devices; removed accounts lose theirs. Returns whether an
+     * account was switched on for the first time.
+     */
+    fun refresh(configs: List<MailPollConfig>): Boolean {
+        var newlyOn = false
+        val ids = configs.map { it.accountId }.toSet()
+        for (gone in accounts().filter { it !in ids }) disable(gone)
+        for (c in configs) {
+            when {
+                isOn(c.accountId) -> if (config(c.accountId) != c) enable(c)
+                !decided(c.accountId) -> {
+                    enable(c)
+                    setDecided(c.accountId)
+                    newlyOn = true
+                }
+            }
+        }
+        // Also when nothing changed: make sure the check and the instant service are running.
+        if (accounts().isNotEmpty()) ensureRunning()
+        return newlyOn
     }
 
     fun config(accountId: String): MailPollConfig? = runCatching {
@@ -107,6 +131,17 @@ class MailNotifications(private val context: Context) {
 
     fun setLastUid(accountId: String, uid: Int) = prefs.edit().putInt("$accountId.uid", uid).apply()
 
+    /**
+     * Moves the account from [since] to [next] if nobody else did in the meantime. The periodic
+     * check and the instant notifications run side by side; only the one that claims the new
+     * mails reports them, so a mail never rings twice.
+     */
+    fun claim(accountId: String, since: Int, next: Int): Boolean = synchronized(CLAIM_LOCK) {
+        if (lastUid(accountId) != since) return false
+        prefs.edit().putInt("$accountId.uid", next).commit()
+        true
+    }
+
     private fun key(): SecretKey {
         (keyStore.getKey(ALIAS, null) as? SecretKey)?.let { return it }
         val gen = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
@@ -120,6 +155,12 @@ class MailNotifications(private val context: Context) {
         return gen.generateKey()
     }
 
+    /** The periodic check and the instant service (after a restart of the phone, for example). */
+    fun ensureRunning() {
+        schedule()
+        MailPushService.start(context)
+    }
+
     private fun schedule() {
         val request = PeriodicWorkRequestBuilder<MailCheckWorker>(15, TimeUnit.MINUTES)
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
@@ -128,6 +169,7 @@ class MailNotifications(private val context: Context) {
     }
 
     companion object {
+        private val CLAIM_LOCK = Any()
         private const val ALIAS = "ghulsuite.mail.notify"
         private const val WORK = "ghulsuite.mail.check"
         private const val DETAIL = "detail"
@@ -143,8 +185,8 @@ class MailCheckWorker(context: Context, params: WorkerParameters) : CoroutineWor
             val config = n.config(id) ?: continue
             val since = n.lastUid(id)
             val r = runCatching { mailPoll(config, since.toUInt()) }.getOrNull() ?: continue
-            if (since > 0 && r.newMessages > 0u) postMailNotification(applicationContext, config, r.newMessages.toInt(), r.newestFrom, r.newestSubject, r.unseen.toInt())
-            n.setLastUid(id, r.nextUid.toInt())
+            if (!n.claim(id, since, r.nextUid.toInt())) continue
+            if (since > 0 && r.newMessages > 0u) postMailNotification(applicationContext, config, r.newMessages.toInt(), r.newestFrom, r.newestSubject, r.unseen.toInt(), r.newestUid.toInt())
         }
         // Brings the instant notifications back if Android stopped them (works only when allowed).
         MailPushService.start(applicationContext)
@@ -157,15 +199,27 @@ class MailCheckWorker(context: Context, params: WorkerParameters) : CoroutineWor
  * request with the sender or sender and subject of the newest mail. Encrypted mails have no
  * readable subject ("..."). The lock screen always shows only the neutral version.
  */
-fun postMailNotification(ctx: Context, config: MailPollConfig, count: Int, from: String = "", subject: String = "", unseen: Int = count) {
+fun postMailNotification(
+    ctx: Context,
+    config: MailPollConfig,
+    count: Int,
+    from: String = "",
+    subject: String = "",
+    unseen: Int = count,
+    newestUid: Int = 0,
+) {
     val nm = ctx.getSystemService(NotificationManager::class.java)
     nm.createNotificationChannel(
         NotificationChannel(MailNotifications.CHANNEL, ctx.getString(R.string.mail_channel), NotificationManager.IMPORTANCE_DEFAULT),
     )
+    // One new mail opens that mail; several open the account's inbox. One request code per
+    // account, so the notifications of two accounts do not overwrite each other's target.
     val open = PendingIntent.getActivity(
-        ctx, 2,
+        ctx, config.accountId.hashCode(),
         Intent(ctx, MainActivity::class.java)
             .setAction(MainActivity.ACTION_OPEN_MAIL)
+            .putExtra(MainActivity.EXTRA_MAIL_ACCOUNT, config.accountId)
+            .putExtra(MainActivity.EXTRA_MAIL_UID, if (count == 1) newestUid else 0)
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
@@ -196,4 +250,5 @@ fun postMailNotification(ctx: Context, config: MailPollConfig, count: Int, from:
         .setPublicVersion(public)
         .build()
     runCatching { nm.notify(config.accountId.hashCode(), notification) }
+    de.danerd.ghulsuite.ui.AppLaunch.newMail.value++
 }

@@ -275,7 +275,7 @@ private fun MailboxSheet(state: AppState, close: () -> Unit) {
             }
         }
         Pill(false, { Icon(Icons.Filled.Add, null, Modifier.size(20.dp), tint = t.fg) }, stringResource(Res.string.mail_account_new)) {
-            close(); state.push(Screen.MailAccount(null))
+            close(); state.mailAccountSheet = MailSheet(null)
         }
         Pill(false, { Icon(Icons.Filled.Tune, null, Modifier.size(20.dp), tint = t.fg) }, stringResource(Res.string.mail_settings_row)) {
             close(); state.push(Screen.SettingsPage(SetPage.MAIL))

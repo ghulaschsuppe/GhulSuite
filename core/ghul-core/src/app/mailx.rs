@@ -72,6 +72,13 @@ struct StoredScheduled {
     send_at: i64,
     #[serde(default)]
     updated: i64,
+    /// OpenPGP on (older entries: on).
+    #[serde(default = "pgp_on")]
+    pgp: bool,
+}
+
+fn pgp_on() -> bool {
+    true
 }
 
 #[derive(uniffi::Record, Clone, Debug, PartialEq)]
@@ -314,6 +321,7 @@ impl GhulSuite {
                     .collect(),
                 send_at,
                 updated: now_ms(),
+                pgp: mail.pgp,
             });
             put_area_setting(o, VaultKind::Mail, OUTBOX_KEY, &list)?;
             self.save_area(o, VaultKind::Mail)?;
@@ -369,6 +377,7 @@ impl GhulSuite {
                     .into_iter()
                     .map(|a| OutgoingAttachment { name: a.name, mime: a.mime, data: a.data })
                     .collect(),
+                pgp: d.pgp,
             };
             // Removed first: a mail must never go out twice (another device may sync meanwhile).
             self.mail_cancel_scheduled(id)?;

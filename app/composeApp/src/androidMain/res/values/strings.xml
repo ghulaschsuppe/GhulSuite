@@ -28,4 +28,5 @@
     <string name="cal_channel_silent">Event reminders (silent)</string>
     <string name="cal_snooze">Again in 5 min</string>
     <string name="cal_done">Done</string>
+    <string name="share_as_mail">Send by e-mail (GhulMail)</string>
 </resources>

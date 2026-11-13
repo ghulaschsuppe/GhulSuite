@@ -151,6 +151,21 @@ interface NetBackend {
 
     /** Whether new-mail notifications are on for an account (needs a device-bound copy of the login). */
     fun mailNotificationsOn(accountId: String): Boolean
+
+    /** Removes the new-mail notification of an account once its inbox or the mail was opened. */
+    fun clearMailNotification(accountId: String) {}
+
+    /**
+     * After unlocking: new accounts notify by default, stored logins for notifications follow
+     * changes from other devices, and the background check and instant service run.
+     */
+    suspend fun refreshMailNotifications() {}
+
+    /** Whether Android lets mail arrive in deep sleep (battery optimisation off); null: not relevant. */
+    fun mailBackgroundAllowed(): Boolean? = null
+
+    /** Opens the system setting for mail in the background (battery optimisation). */
+    fun openMailBackgroundSettings() {}
     suspend fun setMailNotifications(accountId: String, on: Boolean)
 
     /** What a new-mail notification shows (device setting): 0 only the count, 1 the sender, 2 sender and subject. */
@@ -426,4 +441,6 @@ data class OutgoingMailUi(
     val text: String,
     val inReplyTo: String,
     val attachments: List<OutgoingAttachmentUi>,
+    /** OpenPGP for this mail; off sends a plain mail without signature and key. */
+    val pgp: Boolean = true,
 )

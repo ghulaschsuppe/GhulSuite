@@ -31,7 +31,34 @@ object AppLaunch {
 
     /** A tapped reminder: event id and day (`id|YYYY-MM-DD`). */
     val openEvent = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+
+    /** Counts new-mail notifications posted in this process: open lists and the badge refresh. */
+    val newMail = kotlinx.coroutines.flow.MutableStateFlow(0)
+
+    /** Counts how often the app came to the front (Android: activity resumed). */
+    val resumed = kotlinx.coroutines.flow.MutableStateFlow(0)
+
+    /** Whether the app is in front (Android: between onResume and onPause; elsewhere always). */
+    val inFront = kotlinx.coroutines.flow.MutableStateFlow(true)
+
+    /** A mail handed over by another app (mailto link, "send by e-mail"). */
+    val compose = kotlinx.coroutines.flow.MutableStateFlow<MailDraft?>(null)
+
+    /** An appointment handed over by another app ("add to calendar"). */
+    val newEvent = kotlinx.coroutines.flow.MutableStateFlow<de.danerd.ghulsuite.model.CalEventUi?>(null)
+
+    /** A calendar file (.ics) opened with GhulSuite: imported into the default calendar. */
+    val icsFile = kotlinx.coroutines.flow.MutableStateFlow<ByteArray?>(null)
+
+    /** A tapped mail notification: the new mail, or the account's inbox. */
+    val openMail = kotlinx.coroutines.flow.MutableStateFlow<MailTarget?>(null)
 }
+
+/** The e-mail account sheet: [id] null adds an account, else edits that one. */
+data class MailSheet(val id: String?)
+
+/** What a mail notification opens: [uid] 0 = the inbox of [accountId], else that mail in it. */
+data class MailTarget(val accountId: String, val uid: Long)
 
 /** Screens shown on top of the tabs. */
 sealed interface Screen {
@@ -48,7 +75,6 @@ sealed interface Screen {
     data class ShareSetup(val serverId: String) : Screen
     data object Shares : Screen
     data object Security : Screen
-    data class MailAccount(val id: String?) : Screen
     data class MailRead(val accountId: String, val folder: String, val uid: Long) : Screen
     data class MailCompose(val draft: MailDraft) : Screen
     data class CalEvent(val id: String, val day: String) : Screen
@@ -132,6 +158,9 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     var driveGrid by mutableStateOf(false)
     var authGrid by mutableStateOf(false)
     var mailRefreshTick by mutableStateOf(0)
+
+    /** Open e-mail account sheet (shown above everything, from any place that offers it). */
+    var mailAccountSheet by mutableStateOf<MailSheet?>(null)
     var mailUnread by mutableStateOf(0)
     /** Messages of the open mailbox (for conversations in the reading view). */
     var mailLoaded by mutableStateOf<List<MailItem>>(emptyList())
@@ -153,6 +182,23 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     /** Calendar for new events: the chosen default, else the first one. */
     val calDefaultCalendar: String
         get() = calendars.firstOrNull { it.id == backend.settings.calDefault }?.id ?: calendars.firstOrNull()?.id ?: ""
+
+    /** Imports a calendar file opened with GhulSuite into the default calendar. */
+    fun importIcs(data: ByteArray) {
+        scope.launch {
+            // Right after unlocking the calendars may still be loading.
+            var waited = 0
+            while (calDefaultCalendar.isEmpty() && waited < 50) { kotlinx.coroutines.delay(100); waited++ }
+            val target = calDefaultCalendar
+            if (target.isEmpty()) return@launch
+            runCatching { backend.cal.importIcs(target, data, utcOffsetMinutes()) }
+                .onSuccess { n ->
+                    changed()
+                    message(getString(Res.string.cal_import_done).replace("%1\$s", n.toString()))
+                }
+                .onFailure { message(describe(it)) }
+        }
+    }
 
     /** Shows a sample reminder with the chosen lock-screen detail (options). */
     fun calTestReminder(title: String) {
@@ -240,6 +286,9 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     tabs.getOrNull(start)?.let { tab = it }
                     applyLaunch()
                     refreshUnread()
+                    if (backend.settings.moduleGhulMail && hasArea(VaultKindUi.MAIL)) {
+                        scope.launch { runCatching { backend.net.refreshMailNotifications() } }
+                    }
                     refreshCalendar()
                 }
             }
@@ -254,6 +303,18 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         }
         scope.launch { AppLaunch.openTab.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
         scope.launch { AppLaunch.openEvent.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
+        scope.launch { AppLaunch.openMail.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
+        scope.launch { AppLaunch.compose.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
+        scope.launch { AppLaunch.newEvent.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
+        scope.launch { AppLaunch.icsFile.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
+        scope.launch {
+            AppLaunch.newMail.collect {
+                if (it > 0 && backend.unlocked.value) {
+                    mailRefreshTick++
+                    refreshUnread()
+                }
+            }
+        }
         // Unread count for the navigation badge (and the window icon on Windows) while unlocked.
         scope.launch {
             while (true) {
@@ -270,6 +331,41 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                 stack.clear()
                 tab = Tab.CAL
                 stack.add(Screen.CalEvent(ev.substringBefore('|'), ev.substringAfter('|', "")))
+            }
+        }
+        AppLaunch.openMail.value?.let { m ->
+            AppLaunch.openMail.value = null
+            if (Tab.MAIL in tabs) {
+                // Always the inbox of that account, whatever folder was open before.
+                stack.clear()
+                tab = Tab.MAIL
+                mailAccount = m.accountId
+                mailFolder = "INBOX"
+                if (m.uid > 0) stack.add(Screen.MailRead(m.accountId, "INBOX", m.uid))
+            }
+        }
+        AppLaunch.compose.value?.let { draft ->
+            AppLaunch.compose.value = null
+            if (Tab.MAIL in tabs) {
+                stack.clear()
+                tab = Tab.MAIL
+                stack.add(Screen.MailCompose(draft))
+            }
+        }
+        AppLaunch.newEvent.value?.let { ev ->
+            AppLaunch.newEvent.value = null
+            if (Tab.CAL in tabs) {
+                stack.clear()
+                tab = Tab.CAL
+                stack.add(Screen.CalEdit(ev.copy(calendarId = ev.calendarId.ifEmpty { calDefaultCalendar })))
+            }
+        }
+        AppLaunch.icsFile.value?.let { data ->
+            AppLaunch.icsFile.value = null
+            if (Tab.CAL in tabs) {
+                stack.clear()
+                tab = Tab.CAL
+                importIcs(data)
             }
         }
         val t = AppLaunch.openTab.value ?: return

@@ -247,6 +247,10 @@ pub struct OutgoingMail {
     /// Message-ID of the message answered (for threading), or empty.
     pub in_reply_to: String,
     pub attachments: Vec<OutgoingAttachment>,
+    /// OpenPGP for this mail: signed (or encrypted when every recipient has a key), with the own
+    /// key in the Autocrypt header. Off: a plain mail without signature, key or encryption.
+    #[uniffi(default = true)]
+    pub pgp: bool,
 }
 
 /// What a notification check needs; the app keeps it device-bound while locked.
@@ -271,6 +275,8 @@ pub struct MailPollResult {
     pub new_messages: u32,
     pub newest_from: String,
     pub newest_subject: String,
+    /// UID of the newest message in the inbox (0 if none is new), to open it from a notification.
+    pub newest_uid: u32,
 }
 
 /// Result of checking a server: either fine, or a certificate fingerprint to confirm.
@@ -806,6 +812,8 @@ pub(crate) enum Protection {
     Signed(SignedSecretKey),
     /// Encrypted for these recipients (and the sender), signed inside.
     Encrypted(SignedSecretKey, Vec<SignedPublicKey>),
+    /// No OpenPGP at all (switched off for this mail).
+    Plain,
 }
 
 /// RFC 2047 encoded word for a header value with non-ASCII characters.
@@ -867,11 +875,6 @@ fn build(account: &StoredAccount, mail: &OutgoingMail, protection: &Protection) 
         let id = format!("<{}>", mail.in_reply_to.trim().trim_matches(['<', '>']));
         b = b.in_reply_to(id.clone()).references(id);
     }
-    let key = match protection {
-        Protection::Signed(k) | Protection::Encrypted(k, _) => k,
-    };
-    b = b.header(AutocryptHeader(mailcrypt::autocrypt_header(&account.email, &mailcrypt::public_of(key))?));
-
     // The content as its own MIME entity: text plus attachments.
     let mut text = mail.text.clone();
     if !account.signature.trim().is_empty() {
@@ -879,6 +882,26 @@ fn build(account: &StoredAccount, mail: &OutgoingMail, protection: &Protection) 
         text.push_str(account.signature.trim());
     }
     let text_part = SinglePart::plain(text);
+    let key = match protection {
+        Protection::Signed(k) | Protection::Encrypted(k, _) => k,
+        Protection::Plain => {
+            // A normal mail: no signature part, no Autocrypt header.
+            let msg = if mail.attachments.is_empty() {
+                b.singlepart(text_part)
+            } else {
+                let mut mp = MultiPart::mixed().singlepart(text_part);
+                for a in &mail.attachments {
+                    let ct = ContentType::parse(&a.mime)
+                        .unwrap_or(ContentType::parse("application/octet-stream").expect("valid"));
+                    mp = mp.singlepart(Attachment::new(a.name.clone()).body(a.data.clone(), ct));
+                }
+                b.multipart(mp)
+            }
+            .map_err(|e| bad(&e))?;
+            return Ok((msg.formatted(), rcpt));
+        }
+    };
+    b = b.header(AutocryptHeader(mailcrypt::autocrypt_header(&account.email, &mailcrypt::public_of(key))?));
     let mut entity = if mail.attachments.is_empty() && !encrypted {
         text_part.formatted()
     } else {
@@ -941,6 +964,7 @@ fn build(account: &StoredAccount, mail: &OutgoingMail, protection: &Protection) 
             body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
             (format!("multipart/encrypted; boundary=\"{boundary}\"; protocol=\"application/pgp-encrypted\""), body)
         }
+        Protection::Plain => unreachable!("plain mails return above"),
     };
     let body = Body::new_with_encoding(body, lettre::message::header::ContentTransferEncoding::SevenBit)
         .map_err(|_| bad(&"message is not 7-bit clean"))?;
@@ -1311,6 +1335,9 @@ impl GhulSuite {
     /// Sends a message and stores a copy in "Sent".
     pub fn mail_send(&self, mail: OutgoingMail) -> Result<()> {
         let (acc, protection) = self.with_open(|o| {
+            if !mail.pgp {
+                return Ok((account(o, &mail.account_id)?, Protection::Plain));
+            }
             let (key, created) = ensure_key_changed(o, &mail.account_id)?;
             if created {
                 self.save_area(o, VaultKind::Mail)?;
@@ -1466,12 +1493,14 @@ async fn poll_status(
 
 fn poll_result(since_uid: u32, (next_uid, unseen, newest): (u32, u32, Option<imap::Listed>)) -> MailPollResult {
     let (from, subject) = newest.as_ref().map(summary).map(|m| (m.from, m.subject)).unwrap_or_default();
+    let newest_uid = newest.as_ref().map_or(0, |m| m.uid);
     MailPollResult {
         next_uid,
         unseen,
         new_messages: if since_uid > 0 { next_uid.saturating_sub(since_uid) } else { 0 },
         newest_from: from,
         newest_subject: subject,
+        newest_uid,
     }
 }
 
@@ -1568,6 +1597,30 @@ mod tests {
             text: "Zeile 1\nZeile mit Umlauten äöü\n.\nEnde".into(),
             in_reply_to: String::new(),
             attachments,
+            pgp: true,
+        }
+    }
+
+    /// With OpenPGP off for a mail: a normal mail, no signature, no Autocrypt header, readable subject.
+    #[test]
+    fn mail_without_pgp_is_plain() {
+        let (sk, _) = mailcrypt::generate("Alice", "alice@example.org").unwrap();
+        for attachments in [
+            vec![],
+            vec![OutgoingAttachment { name: "a.txt".into(), mime: "text/plain".into(), data: b"hallo".to_vec() }],
+        ] {
+            let mut mail = outgoing(attachments.clone());
+            mail.pgp = false;
+            let (raw, rcpt) = build(&account(&sk), &mail, &Protection::Plain).unwrap();
+            assert_eq!(rcpt, vec!["bob@example.org".to_string()]);
+            let m = mail_parser::MessageParser::default().parse(&raw).unwrap();
+            assert_eq!(m.subject(), Some("Grüße – Test"));
+            assert!(m.header_raw("Autocrypt").is_none());
+            let text = String::from_utf8_lossy(&raw);
+            assert!(!text.contains("pgp-signature") && !text.contains("BEGIN PGP"));
+            assert!(m.body_text(0).unwrap().contains("Zeile mit Umlauten äöü"));
+            assert!(m.body_text(0).unwrap().contains("Viele Grüße"));
+            assert_eq!(m.attachment_count(), attachments.len());
         }
     }
 

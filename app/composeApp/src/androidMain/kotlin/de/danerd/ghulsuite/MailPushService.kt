@@ -24,6 +24,13 @@ class MailPushService : Service() {
     @Volatile private var running = true
     private val watchers = mutableMapOf<String, Thread>()
 
+    /**
+     * Bumped when the network changes: every account gets a fresh connection at once instead of
+     * waiting on one that silently died (Wi-Fi to mobile data, router restart) or in a back-off.
+     */
+    @Volatile private var generation = 0
+    private var network: android.net.ConnectivityManager.NetworkCallback? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -38,39 +45,88 @@ class MailPushService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
-        synchronized(watchers) {
-            watchers.entries.removeAll { !it.value.isAlive }
-            for (id in accounts) if (id !in watchers) watchers[id] = Thread({ watch(id) }, "mail-push").apply { isDaemon = true; start() }
-        }
+        watchNetwork()
+        startWatchers(accounts)
         return START_STICKY
+    }
+
+    private fun startWatchers(accounts: List<String>) {
+        synchronized(watchers) {
+            watchers.entries.removeAll { !it.value.isAlive || it.value.name != threadName(it.key) }
+            for (id in accounts) {
+                if (id !in watchers) {
+                    val gen = generation
+                    watchers[id] = Thread({ watch(id, gen) }, threadName(id)).apply { isDaemon = true; start() }
+                }
+            }
+        }
+    }
+
+    private fun threadName(id: String) = "mail-push-$id-$generation"
+
+    /** A new or changed network: reconnect every account right away. */
+    private fun watchNetwork() {
+        if (network != null) return
+        val cm = getSystemService(android.net.ConnectivityManager::class.java) ?: return
+        val cb = object : android.net.ConnectivityManager.NetworkCallback() {
+            private var last: android.net.Network? = cm.activeNetwork
+
+            // Called at once for the current network too: only a different one reconnects.
+            override fun onAvailable(net: android.net.Network) {
+                if (net != last) reconnect()
+                last = net
+            }
+        }
+        runCatching { cm.registerDefaultNetworkCallback(cb) }.onSuccess { network = cb }
+    }
+
+    private fun reconnect() {
+        if (!running) return
+        synchronized(watchers) {
+            generation++
+            watchers.clear()
+        }
+        startWatchers(MailNotifications(this).accounts())
     }
 
     override fun onDestroy() {
         running = false
+        network?.let { cb -> runCatching { getSystemService(android.net.ConnectivityManager::class.java).unregisterNetworkCallback(cb) } }
+        network = null
         super.onDestroy()
     }
 
-    private fun watch(accountId: String) {
+    private fun watch(accountId: String, gen: Int) {
         val n = MailNotifications(this)
         var backoff = 5_000L
-        while (running && accountId in n.accounts()) {
+        while (running && gen == generation && accountId in n.accounts()) {
             val config = n.config(accountId) ?: break
             val since = n.lastUid(accountId)
             try {
-                // A few minutes per round: keeps the connection alive behind routers and notices changed logins.
+                // A few minutes per round: keeps the connection alive behind routers and mobile
+                // networks that drop idle connections after about five minutes.
                 val r = mailWait(config, since.toUInt(), WAIT_SECONDS)
                 if (!running || accountId !in n.accounts()) break
-                if (since > 0 && r.newMessages > 0u) postMailNotification(this, config, r.newMessages.toInt(), r.newestFrom, r.newestSubject, r.unseen.toInt())
-                n.setLastUid(accountId, r.nextUid.toInt())
+                // Claimed atomically: an older connection or the periodic check may report too.
+                if (n.claim(accountId, since, r.nextUid.toInt()) && since > 0 && r.newMessages > 0u) {
+                    postMailNotification(this, config, r.newMessages.toInt(), r.newestFrom, r.newestSubject, r.unseen.toInt(), r.newestUid.toInt())
+                }
                 backoff = 5_000L
             } catch (e: Exception) {
-                // Offline or server trouble: try again later, up to every 5 minutes.
-                Thread.sleep(backoff)
+                // Offline or server trouble: try again later, up to every 5 minutes (a new
+                // network starts a fresh connection at once, see [watchNetwork]).
+                var waited = 0L
+                while (waited < backoff && running && gen == generation) {
+                    Thread.sleep(1_000L)
+                    waited += 1_000L
+                }
                 backoff = (backoff * 2).coerceAtMost(300_000L)
             }
         }
-        synchronized(watchers) { watchers.remove(accountId) }
-        if (synchronized(watchers) { watchers.isEmpty() }) stopSelf()
+        synchronized(watchers) {
+            if (watchers[accountId]?.name == Thread.currentThread().name) watchers.remove(accountId)
+            if (watchers.isEmpty() && gen == generation) stopSelf()
+        }
     }
 
     private fun buildNotification(): Notification {
@@ -96,7 +152,7 @@ class MailPushService : Service() {
     companion object {
         private const val CHANNEL = "mail_push"
         private const val NOTIFICATION_ID = 7
-        private const val WAIT_SECONDS = 540u
+        private const val WAIT_SECONDS = 240u
 
         fun start(context: Context) {
             if (MailNotifications(context).accounts().isEmpty()) return
@@ -110,11 +166,25 @@ class MailPushService : Service() {
     }
 }
 
-/** Restarts the instant notifications after a restart of the phone or an app update. */
+/**
+ * Restarts mail reception after a restart of the phone or an app update: the instant service and
+ * the periodic check (without opening the app).
+ */
 class MailPushBootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == Intent.ACTION_BOOT_COMPLETED || intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
-            MailPushService.start(context)
+        if (intent.action in BOOT_ACTIONS) {
+            val n = MailNotifications(context)
+            if (n.accounts().isNotEmpty()) n.ensureRunning()
         }
+    }
+
+    companion object {
+        private val BOOT_ACTIONS = setOf(
+            Intent.ACTION_BOOT_COMPLETED,
+            Intent.ACTION_MY_PACKAGE_REPLACED,
+            // Some manufacturers send their own "fast boot" broadcasts instead.
+            "android.intent.action.QUICKBOOT_POWERON",
+            "com.htc.intent.action.QUICKBOOT_POWERON",
+        )
     }
 }
