@@ -1359,6 +1359,13 @@ impl GhulSuite {
             let pos = o.vaults.iter().position(|v| v.reference.id == id).ok_or(GhulError::NotFound)?;
             let v = o.vaults.remove(pos);
             self.storage.delete(v.reference.file.clone())?;
+            // Deleted on purpose: the next synchronisation removes it on the server and the other
+            // devices (and only such a mark does; a missing file is repaired instead).
+            let mut deleted: Vec<String> = setting(&o.suite, super::sync::DELETED_VAULTS_KEY);
+            if !deleted.contains(&v.reference.id) {
+                deleted.push(v.reference.id.clone());
+            }
+            put_setting(&mut o.suite, super::sync::DELETED_VAULTS_KEY, &deleted)?;
             let mut map = revisions(&o.suite);
             map.remove(&v.reference.id);
             put_setting(&mut o.suite, REVISIONS_KEY, &map)?;

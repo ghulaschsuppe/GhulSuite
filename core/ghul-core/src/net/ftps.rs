@@ -331,10 +331,15 @@ impl RemoteFs for FtpsFs {
                 d.shutdown().await.map_err(io)?;
                 drop(d);
                 FtpsFs::finish(c).await?;
-                // RNTO does not replace on every server: remove the old file first.
-                let _ = cmd(c, &format!("DELE {full}")).await?;
+                // Replace in one step where the server allows it: the old file stays until the new
+                // one is complete. Only servers that refuse to overwrite get DELE first (then the
+                // file is missing for a moment; synchronisation copes with that).
                 expect(c, &format!("RNFR {tmp}"), &[350]).await?;
-                expect(c, &format!("RNTO {full}"), &[250]).await?;
+                if expect(c, &format!("RNTO {full}"), &[250]).await.is_err() {
+                    let _ = cmd(c, &format!("DELE {full}")).await?;
+                    expect(c, &format!("RNFR {tmp}"), &[350]).await?;
+                    expect(c, &format!("RNTO {full}"), &[250]).await?;
+                }
                 Ok(())
             })
         })
