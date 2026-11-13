@@ -45,6 +45,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.jetbrains.skia.EncodedImageFormat
 import kotlin.test.Test
+import de.danerd.ghulsuite.model.KeepSkippedUi
 
 /** Renders the main screens with a fake backend to PNG files (build/screenshots) for review. */
 class ScreenshotTest {
@@ -148,7 +149,7 @@ class ScreenshotTest {
         override fun copySensitive(label: String, text: String) {}
         override suspend fun previewImport(data: ByteArray, fileName: String) = ImportPreviewUi("Proton Pass", 42, 0, 5, 1)
         override suspend fun importData(
-            data: ByteArray, fileName: String, passVault: String?, totpVault: String?, totpsFromLogins: Boolean,
+            data: ByteArray, fileName: String, passVault: String?, totpVault: String?, totpsFromLogins: Boolean, keep: KeepSkippedUi?,
         ) = ImportResultUi(42, 5, 0, 1)
         override suspend fun exportPlain(vaultId: String, password: String) = ByteArray(0)
         override fun autofillStatus() = AutofillStatus.OFF

@@ -106,7 +106,10 @@ fun GhulSuiteApp(state: AppState) {
                 val wide = maxWidth >= 840.dp
                 SideEffect { state.wide = wide }
                 CompositionLocalProvider(LocalWide provides wide) {
-                    Scaffold(snackbarHost = { SnackbarHost(state.snackbar) }, containerColor = MaterialTheme.colorScheme.background) { _ ->
+                    // One place for messages: the main screen on phones shows them above its own bar,
+                    // everywhere else this outer host shows them (never both, which doubled every message).
+                    val mainHasHost = state.vaultExists && !state.showStart && unlocked && !wide
+                    Scaffold(snackbarHost = { if (!mainHasHost) GhulSnackbarHost(state.snackbar) }, containerColor = MaterialTheme.colorScheme.background) { _ ->
                         when {
                             !state.vaultExists || state.showStart -> Centered(wide) { SetupScreen(state) }
                             !unlocked -> Centered(wide) { UnlockScreen(state) }
@@ -183,7 +186,7 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
     if (!wide) {
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
-            snackbarHost = { SnackbarHost(state.snackbar) },
+            snackbarHost = { GhulSnackbarHost(state.snackbar) },
             topBar = {
                 // Mail, compose and entry draw their own header (own actions).
                 if (top == null) TabTopBar(state)
@@ -243,6 +246,7 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
             onPick = { picker = null; state.push(Screen.EntryEdit(vaultId, null, it)) },
             onDismiss = { picker = null },
             onGenerate = { picker = null; generatorOnly = true },
+            onImport = if (filePickersAvailable) ({ picker = null; state.push(Screen.Import) }) else null,
         )
     }
     val noQr = stringResource(Res.string.auth_no_qr)
@@ -382,7 +386,8 @@ private fun MainFab(state: AppState, onAdd: () -> Unit) {
         GhulFab(areaColor(Tab.CAL), Icons.Filled.Add, stringResource(Res.string.cal_event_short)) { state.calQuickOpen = true }
     }
     if (state.tab == Tab.PASS || state.tab == Tab.AUTH) {
-        GhulFab(areaColor(state.tab), if (state.tab == Tab.AUTH) Icons.Filled.QrCode2 else Icons.Filled.Add, description = stringResource(Res.string.a_add), onClick = onAdd)
+        // Always "+": scanning a QR code is one of the choices behind it.
+        GhulFab(areaColor(state.tab), Icons.Filled.Add, description = stringResource(Res.string.a_add), onClick = onAdd)
     }
 }
 

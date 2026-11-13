@@ -418,6 +418,21 @@ oder Proton.
 | B10 | Alte Suite (Version vor diesem Stand) mit Drive und Mail öffnen. | Drive und Mail funktionieren weiter; im Ordner liegen danach `Drive.ghldrv` und `Mail.ghlmail`. |
 | B11 | Optionen → Entsperren → Gültigkeit „Immer“, App neu starten, Gerät neu starten. | Nach App-Neustart Fingerabdruck reicht; nach Geräte-Neustart wieder Passwort und Key. |
 
+## 24. Import ohne Verluste, Listen bedienen
+
+| Nr. | Schritt | Erwartet |
+|---|---|---|
+| I1 | GhulPass → „+“ → „Aus anderer App importieren“. | Der Import öffnet sich direkt (nicht nur über Optionen). |
+| I2 | Proton-Pass- oder Proton-Authenticator-Export wählen, in dem Aliase, SSH-Schlüssel, Steam- oder HOTP-Codes vorkommen. | Unter „Nicht umgewandelt (n)“ steht jeder Eintrag mit Namen und Grund. Aliase landen als Login, SSH-Schlüssel und eigene Arten als Notiz mit allen Feldern. |
+| I3 | „Als Notiz in GhulPass sichern“ an lassen → Importieren. | Ergebnis direkt auf der Seite (kein Infokasten): Anzahl übernommen, doppelt, als Notiz gesichert, und die Liste. Im Ordner „Import – nicht umgewandelt“ liegen Notizen mit „Grund“ und „Originaldaten“. |
+| I4 | Dieselbe Datei noch einmal importieren. | Nichts doppelt, auch keine doppelten Notizen. |
+| I5 | Steam-Code importieren oder in GhulAuth von Hand mit „Steam“ anlegen. | Fünfstelliger Code aus Buchstaben und Ziffern, der zum Steam-Code passt. |
+| I6 | Irgendeine Aktion mit Meldung (z. B. Passwort kopieren). | Die Meldung erscheint einmal, dunkel und abgerundet. |
+| I7 | GhulPass und GhulAuth: der runde Knopf unten rechts. | Zeigt ein „+“. |
+| I8 | GhulPass: Drei-Punkte-Menü eines Eintrags. | Benutzername kopieren, Passwort kopieren, Bearbeiten, Löschen (mit Rückfrage). |
+| I9 | GhulPass und GhulAuth: Eintrag lange drücken, weitere antippen, „Alle“, Löschen. | Auswahlleiste oben mit Anzahl; Löschen fragt nach; Zurück beendet die Auswahl. |
+| I10 | GhulAuth (Listenansicht): Konto nach rechts wischen, dann nach links. | Rechts: Bearbeiten (Anbieter, Konto). Links: Rückfrage, dann gelöscht. |
+
 ## GhulCal (Kalender)
 
 | Nr. | Schritt | Erwartet |

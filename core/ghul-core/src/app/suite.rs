@@ -256,8 +256,37 @@ pub struct ImportPreview {
     pub totps: u32,
     /// 2FA codes stored inside logins (can also be copied to GhulAuth).
     pub totps_in_logins: u32,
-    /// Items that cannot be imported (e.g. HOTP counters, unsupported types).
+    /// Items that cannot be converted (e.g. HOTP counters, unsupported types).
     pub skipped: u32,
+    /// Which items, and why. Their original data can be kept as notes (`KeepSkipped`).
+    pub skipped_items: Vec<SkippedImport>,
+}
+
+/// An item of an import file that could not be converted.
+#[derive(uniffi::Record, Clone, Debug, PartialEq)]
+pub struct SkippedImport {
+    pub name: String,
+    /// Type in the source app, e.g. `alias`, `hotp`, `sshKey`.
+    pub kind: String,
+    pub reason: super::import::SkipReason,
+    pub detail: String,
+    /// A 2FA code that stays in its imported login (only GhulAuth does not get it).
+    pub in_entry: bool,
+}
+
+/// Keep items that could not be converted as notes in GhulPass, with their original data, so
+/// nothing of an import is lost. The texts come from the app (its language).
+#[derive(uniffi::Record, Clone, Debug, PartialEq)]
+pub struct KeepSkipped {
+    /// Folder of the notes, e.g. "Import – not converted".
+    pub folder: String,
+    /// Field names of the note.
+    pub reason_label: String,
+    pub data_label: String,
+    /// Reason texts for `Hotp`, `Unsupported`, `InvalidCode`.
+    pub reason_hotp: String,
+    pub reason_unsupported: String,
+    pub reason_invalid: String,
 }
 
 #[derive(uniffi::Record, Clone, Debug, PartialEq)]
@@ -267,6 +296,21 @@ pub struct ImportResult {
     /// Already present in the target vault, not imported again.
     pub duplicates: u32,
     pub skipped: u32,
+    pub skipped_items: Vec<SkippedImport>,
+    /// Skipped items kept as notes with their original data.
+    pub kept: u32,
+}
+
+fn skipped_items(list: &[super::import::Skipped]) -> Vec<SkippedImport> {
+    list.iter()
+        .map(|x| SkippedImport {
+            name: x.name.clone(),
+            kind: x.kind.clone(),
+            reason: x.reason,
+            detail: x.detail.clone(),
+            in_entry: x.in_entry,
+        })
+        .collect()
 }
 
 /// A login that fits a website or app (for autofill).
@@ -302,7 +346,8 @@ pub fn preview_import(data: Vec<u8>, file_name: String) -> Result<ImportPreview>
         entries: p.entries.len() as u32,
         totps: p.totps.iter().filter(|t| !t.from_login).count() as u32,
         totps_in_logins: p.totps.iter().filter(|t| t.from_login).count() as u32,
-        skipped: p.skipped,
+        skipped: p.skipped.len() as u32,
+        skipped_items: skipped_items(&p.skipped),
     })
 }
 
@@ -1635,7 +1680,9 @@ impl GhulSuite {
 
     /// Imports a file into the given vaults (GhulPass entries into `pass_vault`, 2FA accounts into
     /// `totp_vault`; `None` skips that part). With `totps_from_logins`, 2FA codes stored in logins
-    /// are also added to GhulAuth. Items already present in the target vault are skipped.
+    /// are also added to GhulAuth. Items already present in the target vault are skipped. With
+    /// `keep` (and a GhulPass vault), items that cannot be converted become notes with their
+    /// original data.
     pub fn import_data(
         &self,
         data: Vec<u8>,
@@ -1643,12 +1690,14 @@ impl GhulSuite {
         pass_vault: Option<String>,
         totp_vault: Option<String>,
         totps_from_logins: bool,
+        keep: Option<KeepSkipped>,
     ) -> Result<ImportResult> {
         let data = Zeroizing::new(data);
-        let parsed = super::import::parse(&data, &file_name)?;
+        let mut parsed = super::import::parse(&data, &file_name)?;
         self.with_open(|o| {
             let now = now_ms();
-            let mut result = ImportResult { entries: 0, totps: 0, duplicates: 0, skipped: parsed.skipped };
+            let mut result =
+                ImportResult { entries: 0, totps: 0, duplicates: 0, skipped: 0, skipped_items: Vec::new(), kept: 0 };
             if let Some(vid) = &pass_vault {
                 let (r, c) = o.vault_mut(vid)?;
                 if r.kind != "pass" {
@@ -1692,7 +1741,15 @@ impl GhulSuite {
                     .collect();
                 for t in parsed.totps.iter().filter(|t| totps_from_logins || !t.from_login) {
                     let Some(secret) = super::import::totp_secret(&t.input) else {
-                        result.skipped += 1;
+                        let i = &t.input;
+                        parsed.skipped.push(super::import::Skipped {
+                            name: format!("{} {}", i.issuer, i.account).trim().to_owned(),
+                            kind: "totp".into(),
+                            reason: super::import::SkipReason::InvalidCode,
+                            detail: String::new(),
+                            raw: format!("{}\n{}\nSecret (Base32): {}", i.issuer, i.account, i.secret_base32),
+                            in_entry: t.from_login,
+                        });
                         continue;
                     };
                     if secrets.iter().any(|x| **x == *secret) {
@@ -1712,6 +1769,44 @@ impl GhulSuite {
                     result.totps += 1;
                 }
             }
+            // Nothing is lost: what could not be converted becomes a note with its original data.
+            if let (Some(k), Some(vid)) = (&keep, &pass_vault) {
+                let (_, c) = o.vault_mut(vid)?;
+                // Already kept by an earlier import of the same file: not again.
+                let kept_before: Vec<String> = c
+                    .payload
+                    .entries
+                    .iter()
+                    .filter(|e| !e.deleted && e.entry_type == "note")
+                    .filter_map(|e| match e.fields.get(&k.data_label) {
+                        Some(Field::Secret(raw)) => Some(raw.clone()),
+                        _ => None,
+                    })
+                    .collect();
+                for x in parsed.skipped.iter().filter(|x| !x.in_entry && !x.raw.is_empty()) {
+                    if kept_before.contains(&x.raw) {
+                        result.duplicates += 1;
+                        continue;
+                    }
+                    let reason = match x.reason {
+                        super::import::SkipReason::Hotp => &k.reason_hotp,
+                        super::import::SkipReason::Unsupported => &k.reason_unsupported,
+                        super::import::SkipReason::InvalidCode => &k.reason_invalid,
+                    };
+                    let mut e = Entry::new(new_id(), "note", now);
+                    let title =
+                        if x.name.is_empty() { format!("{} ({})", parsed.format, x.kind) } else { x.name.clone() };
+                    e.fields.insert("title".into(), Field::Text(title));
+                    let why = if x.detail.is_empty() { reason.clone() } else { format!("{reason} ({})", x.detail) };
+                    e.fields.insert(k.reason_label.clone(), Field::Text(format!("{} · {why}", parsed.format)));
+                    e.fields.insert(k.data_label.clone(), Field::Secret(x.raw.clone()));
+                    e.folder = (!k.folder.is_empty()).then(|| k.folder.clone());
+                    c.payload.entries.push(e);
+                    result.kept += 1;
+                }
+            }
+            result.skipped = parsed.skipped.len() as u32;
+            result.skipped_items = skipped_items(&parsed.skipped);
             for vid in [&pass_vault, &totp_vault].into_iter().flatten() {
                 self.save_vault(o, vid)?;
             }
