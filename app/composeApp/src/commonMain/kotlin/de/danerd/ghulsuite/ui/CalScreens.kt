@@ -213,7 +213,6 @@ private fun rememberCalData(state: AppState, from: Day, to: Day, extraQuery: Str
     val settings = state.backend.settings
     var data by remember { mutableStateOf(CalData(emptyList(), emptyList())) }
     val lang = stringResource(Res.string.cal_lang)
-    val vaultName = stringResource(Res.string.cal_vault_default)
     val defaults = listOf(
         stringResource(Res.string.cal_def_private) to 0xD6336C,
         stringResource(Res.string.cal_def_work) to 0x2F74E8,
@@ -223,16 +222,16 @@ private fun rememberCalData(state: AppState, from: Day, to: Day, extraQuery: Str
     )
     val rev = state.liveRevision()
     LaunchedEffect(rev, from, to, settings.calHidden, settings.calHolidays, settings.calRegion, extraQuery) {
-        if (state.vaultsOf(VaultKindUi.CAL).isEmpty() && state.vaults.isNotEmpty() && !state.calSetupDone) {
+        val cals = runCatching { cal.calendars() }.getOrDefault(emptyList())
+        // A new GhulCal file (chosen in the setup or under Areas) gets the usual calendars once.
+        // Without a GhulCal file nothing is created: the area is set up in Options → Areas.
+        val calVault = state.vaultsOf(VaultKindUi.CAL).firstOrNull { it.available }
+        if (cals.isEmpty() && calVault != null && !state.calSetupDone) {
             state.calSetupDone = true
-            runCatching {
-                val vid = state.backend.createVault(VaultKindUi.CAL, vaultName)
-                for ((n, c) in defaults) cal.saveCalendar(CalCalendarUi("", vid, n, c, 15, 0))
-            }
+            runCatching { for ((n, c) in defaults) cal.saveCalendar(CalCalendarUi("", calVault.id, n, c, 15, 0)) }
             state.changed()
             return@LaunchedEffect
         }
-        val cals = runCatching { cal.calendars() }.getOrDefault(emptyList())
         val hidden = settings.calHiddenSet()
         val region = if (settings.calHolidays && CalOccurrenceUi.HOLIDAYS !in hidden) settings.calRegion else ""
         val occ = runCatching { cal.occurrences(from.toString(), to.toString(), region, lang) }.getOrDefault(emptyList())

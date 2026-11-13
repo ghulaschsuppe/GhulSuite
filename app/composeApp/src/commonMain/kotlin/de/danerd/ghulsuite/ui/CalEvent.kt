@@ -989,25 +989,31 @@ fun CalSettingsSection(state: AppState) {
     var regionSheet by remember { mutableStateOf(false) }
     var calSheet by remember { mutableStateOf(false) }
     val testText = stringResource(Res.string.cal_test_title)
-    SectionCard(stringResource(Res.string.set_view)) {
-        ChoiceRow(stringResource(Res.string.cal_start_view),
-            listOf(0 to Res.string.cal_view_month, 1 to Res.string.cal_view_week, 2 to Res.string.cal_view_day, 3 to Res.string.cal_view_list), settings.calStartView) { settings.calStartView = it }
-        ChoiceRow(stringResource(Res.string.cal_week_starts), listOf(0 to Res.string.cal_monday, 6 to Res.string.cal_sunday), settings.calWeekStart) { settings.calWeekStart = it }
-        SwitchRow(stringResource(Res.string.cal_show_week_numbers), settings.calWeekNumbers) { settings.calWeekNumbers = it }
-        SwitchRow(stringResource(Res.string.cal_show_holidays), settings.calHolidays) { settings.calHolidays = it }
+    // Settings stored in the GhulCal file (all devices).
+    SectionCard(areaGroupTitle(de.danerd.ghulsuite.model.VaultKindUi.CAL)) {
+        SwitchRow(stringResource(Res.string.cal_show_holidays), settings.calHolidays) { settings.calHolidays = it; state.refreshCalendar() }
         Hint(stringResource(Res.string.cal_holidays_offline))
         Row(Modifier.fillMaxWidth().heightIn(min = 40.dp).clickable { regionSheet = true }, verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(Res.string.cal_region), Modifier.weight(1f), fontSize = 15.sp)
             Text(regions.firstOrNull { it.code == settings.calRegion }?.name ?: stringResource(Res.string.cal_region_none), fontSize = 14.sp, color = g.muted)
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp), tint = g.faint)
         }
-    }
-    SectionCard(stringResource(Res.string.cal_reminders)) {
         ChoiceRow(stringResource(Res.string.cal_default_timed),
             listOf(-1 to Res.string.cal_no_reminder, 0 to Res.string.cal_rem_start, 5 to Res.string.cal_rem_5, 10 to Res.string.cal_rem_10, 15 to Res.string.cal_rem_15,
                 30 to Res.string.cal_rem_30, 60 to Res.string.cal_rem_60, 1440 to Res.string.cal_rem_day), settings.calDefaultReminder) { settings.calDefaultReminder = it }
         ChoiceRow(stringResource(Res.string.cal_default_allday),
             listOf(-1 to Res.string.cal_no_reminder, 0 to Res.string.cal_rem_day_9, 1440 to Res.string.cal_rem_daybefore_9), settings.calAllDayReminder) { settings.calAllDayReminder = it }
+        ChoiceRow(stringResource(Res.string.cal_week_starts), listOf(0 to Res.string.cal_monday, 6 to Res.string.cal_sunday), settings.calWeekStart) { settings.calWeekStart = it }
+        OutlinedButton(onClick = { calSheet = true }, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(Res.string.cal_manage, state.calendars.size.toString()))
+        }
+        Hint(stringResource(Res.string.cal_data_hint))
+    }
+    // Only on this device.
+    SectionCard(deviceGroupTitle()) {
+        ChoiceRow(stringResource(Res.string.cal_start_view),
+            listOf(0 to Res.string.cal_view_month, 1 to Res.string.cal_view_week, 2 to Res.string.cal_view_day, 3 to Res.string.cal_view_list), settings.calStartView) { settings.calStartView = it }
+        SwitchRow(stringResource(Res.string.cal_show_week_numbers), settings.calWeekNumbers) { settings.calWeekNumbers = it }
         SwitchRow(stringResource(Res.string.cal_sound), settings.calSound) { settings.calSound = it; state.refreshCalendar() }
         Text(stringResource(Res.string.cal_lock_content), fontSize = 15.sp)
         Text(stringResource(listOf(Res.string.cal_lock_min_sub, Res.string.cal_lock_title_sub, Res.string.cal_lock_full_sub)[settings.calNotifyDetail.coerceIn(0, 2)]),
@@ -1021,12 +1027,6 @@ fun CalSettingsSection(state: AppState) {
             Text(stringResource(Res.string.cal_test))
         }
         Hint(stringResource(Res.string.cal_reminder_info))
-    }
-    SectionCard(stringResource(Res.string.cal_data)) {
-        OutlinedButton(onClick = { calSheet = true }, modifier = Modifier.fillMaxWidth()) {
-            Text(stringResource(Res.string.cal_manage, state.calendars.size.toString()))
-        }
-        Hint(stringResource(Res.string.cal_data_hint))
     }
     SectionCard(stringResource(Res.string.cal_closed_title)) {
         Text(stringResource(Res.string.cal_closed_text), fontSize = 14.sp, color = g.muted)

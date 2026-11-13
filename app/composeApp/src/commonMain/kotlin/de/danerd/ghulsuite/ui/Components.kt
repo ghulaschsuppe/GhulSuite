@@ -184,6 +184,9 @@ fun okColor(): Color = g.ok
 @Composable
 fun warnColor(): Color = g.warn
 
+@Composable
+fun dangerColor(): Color = g.danger
+
 /** Colour of each area, used for its icon, avatars and accents. */
 @Composable
 fun areaColor(tab: Tab): Color {

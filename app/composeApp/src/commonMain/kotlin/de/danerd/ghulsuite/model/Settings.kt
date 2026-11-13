@@ -26,31 +26,84 @@ enum class QuickUnlockMode { OFF, BIOMETRIC, PIN }
  * Defaults favour security; the user can relax them deliberately.
  */
 class Settings(private val store: KeyValueStore) {
+    /**
+     * Settings that belong to an area travel in the area's file (#24): every change goes to
+     * [onAreaChange], values from the file come back through [applyArea]. The device keeps a copy
+     * so the app shows them before the suite is unlocked.
+     */
+    var onAreaChange: ((VaultKindUi, String, String) -> Unit)? = null
+    private val appliers = mutableMapOf<String, (String) -> Unit>()
+    private val readers = mutableMapOf<String, () -> String>()
+
+    private fun changed(key: String, value: String) {
+        AREA_KEYS[key]?.let { kind -> onAreaChange?.invoke(kind, key, value) }
+    }
+
+    /** Takes over values from an area's file (without writing them back). */
+    fun applyArea(values: Map<String, String>) {
+        for ((k, v) in values) appliers[k]?.invoke(v)
+    }
+
+    /** This device's values of an area's settings (to put into the file once). */
+    fun deviceValues(kind: VaultKindUi): Map<String, String> =
+        AREA_KEYS.filterValues { it == kind }.keys.mapNotNull { k -> readers[k]?.let { k to it() } }.toMap()
+
     private fun int(key: String, default: Int) = object : ReadWriteProperty<Any?, Int> {
         private var state by mutableStateOf(store.getInt(key, default))
+        init {
+            appliers[key] = { v -> v.toIntOrNull()?.let { state = it; store.putInt(key, it) } }
+            readers[key] = { state.toString() }
+        }
         override fun getValue(thisRef: Any?, property: KProperty<*>) = state
         override fun setValue(thisRef: Any?, property: KProperty<*>, value: Int) {
             state = value
             store.putInt(key, value)
+            changed(key, value.toString())
         }
     }
 
     private fun bool(key: String, default: Boolean) = object : ReadWriteProperty<Any?, Boolean> {
         private var state by mutableStateOf(store.getBoolean(key, default))
+        init {
+            appliers[key] = { v -> v.toBooleanStrictOrNull()?.let { state = it; store.putBoolean(key, it) } }
+            readers[key] = { state.toString() }
+        }
         override fun getValue(thisRef: Any?, property: KProperty<*>) = state
         override fun setValue(thisRef: Any?, property: KProperty<*>, value: Boolean) {
             state = value
             store.putBoolean(key, value)
+            changed(key, value.toString())
         }
     }
 
     private fun str(key: String, default: String) = object : ReadWriteProperty<Any?, String> {
         private var state by mutableStateOf(store.getString(key, default))
+        init {
+            appliers[key] = { v -> state = v; store.putString(key, v) }
+            readers[key] = { state }
+        }
         override fun getValue(thisRef: Any?, property: KProperty<*>) = state
         override fun setValue(thisRef: Any?, property: KProperty<*>, value: String) {
             state = value
             store.putString(key, value)
+            changed(key, value)
         }
+    }
+
+    companion object {
+        /** Settings stored in an area's file (synchronised), by key. Everything else stays on the device. */
+        val AREA_KEYS: Map<String, VaultKindUi> = mapOf(
+            "generator_mode" to VaultKindUi.PASS,
+            "generator_length" to VaultKindUi.PASS,
+            "drive_trash_days" to VaultKindUi.DRIVE,
+            "mail_image_senders" to VaultKindUi.MAIL,
+            "cal_holidays" to VaultKindUi.CAL,
+            "cal_region" to VaultKindUi.CAL,
+            "cal_default_reminder" to VaultKindUi.CAL,
+            "cal_allday_reminder" to VaultKindUi.CAL,
+            "cal_default" to VaultKindUi.CAL,
+            "cal_week_start" to VaultKindUi.CAL,
+        )
     }
 
     // --- Security

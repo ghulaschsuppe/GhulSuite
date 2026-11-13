@@ -98,6 +98,7 @@ import de.danerd.ghulsuite.model.OutgoingMailUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
 import org.jetbrains.compose.resources.stringResource
+import de.danerd.ghulsuite.model.VaultKindUi
 
 private const val PAGE = 50
 
@@ -120,14 +121,8 @@ fun MailScreen(state: AppState, padding: PaddingValues) {
     val list = accounts ?: return
     Column(Modifier.padding(padding)) {
         if (list.isEmpty()) {
-            ScreenColumn {
-                SectionCard(stringResource(Res.string.mail_setup_title)) {
-                    Hint(stringResource(Res.string.mail_setup_text))
-                    Button(onClick = { state.push(Screen.MailAccount(null)) }, modifier = Modifier.fillMaxWidth()) {
-                        Text(stringResource(Res.string.mail_account_new))
-                    }
-                }
-            }
+            // Not set up yet: the full account form right here (#24).
+            MailAccountScreen(state, null, PaddingValues(0.dp), inline = true)
         } else {
             val shown = if (state.mailAccount == ALL_INBOXES) list else listOf(list.firstOrNull { it.id == state.mailAccount } ?: list.first())
             Mailbox(state, list, shown)
@@ -929,13 +924,13 @@ private fun mimeOf(name: String): String = when (name.substringAfterLast('.', ""
 
 /** Add or edit an e-mail account. */
 @Composable
-fun MailAccountScreen(state: AppState, id: String?, padding: PaddingValues) {
+fun MailAccountScreen(state: AppState, id: String?, padding: PaddingValues, inline: Boolean = false) {
     val net = state.backend.net
     var input by remember {
         mutableStateOf(MailAccountInputUi("", "", "", "", "", MailServersUi("", 993, MailSecurityUi.TLS, "", 465, MailSecurityUi.TLS)))
     }
     var serversTouched by remember { mutableStateOf(id != null) }
-    var advanced by remember { mutableStateOf(id != null) }
+    var advanced by remember { mutableStateOf(id != null || inline) }
     // Existing accounts keep their signature; new ones get "Greetings, <name>" until edited.
     var signatureTouched by remember { mutableStateOf(id != null) }
     val defaultSignature = stringResource(Res.string.mail_signature_default)
@@ -970,6 +965,9 @@ fun MailAccountScreen(state: AppState, id: String?, padding: PaddingValues) {
     Column(Modifier.padding(padding)) {
         ScreenColumn {
             BusyBanner(state)
+            if (inline) {
+                AreaSetupCard(Icons.Filled.Email, 4, stringResource(Res.string.mail_setup_title), stringResource(Res.string.mail_setup_inline))
+            }
             SectionCard(stringResource(if (id == null) Res.string.mail_account_new else Res.string.mail_account_edit)) {
                 Hint(stringResource(Res.string.mail_account_text))
                 OutlinedTextField(input.email, { v ->
@@ -1069,13 +1067,13 @@ private fun ServerRow(
 /** Settings: e-mail accounts and notifications. */
 @Composable
 fun MailAccountsSection(state: AppState) {
-    if (!state.backend.settings.moduleGhulMail) return
     val net = state.backend.net
     var accounts by remember { mutableStateOf<List<MailAccountUi>>(emptyList()) }
     var removing by remember { mutableStateOf<MailAccountUi?>(null) }
     var notifyTick by remember { mutableStateOf(0) }
     LaunchedEffect(state.liveRevision()) { accounts = runCatching { net.mailAccounts() }.getOrDefault(emptyList()) }
-    SectionCard(stringResource(Res.string.set_mail)) {
+    // Accounts with logins, signatures and keys live in the GhulMail file (all devices).
+    SectionCard(stringResource(Res.string.mail_accounts_all)) {
         for (a in accounts) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -1085,21 +1083,6 @@ fun MailAccountsSection(state: AppState) {
                 TextButton(onClick = { state.push(Screen.MailAccount(a.id)) }) { Text(stringResource(Res.string.a_edit)) }
                 TextButton(onClick = { removing = a }) { Text(stringResource(Res.string.a_remove)) }
             }
-            if (!state.backend.isDesktop) key(notifyTick) {
-                SwitchRow(stringResource(Res.string.mail_notify), net.mailNotificationsOn(a.id)) { on ->
-                    state.run(block = { net.setMailNotifications(a.id, on) }) { notifyTick++ }
-                }
-            }
-        }
-        if (accounts.isNotEmpty() && !state.backend.isDesktop) {
-            var detail by remember { mutableStateOf(net.mailNotifyDetail()) }
-            ChoiceRow(
-                stringResource(Res.string.mail_notify_detail),
-                listOf(0 to Res.string.mail_notify_detail_0, 1 to Res.string.mail_notify_detail_1, 2 to Res.string.mail_notify_detail_2),
-                detail,
-            ) { detail = it; net.setMailNotifyDetail(it) }
-            Hint(stringResource(Res.string.mail_notify_detail_hint))
-            Hint(stringResource(Res.string.mail_notify_hint))
         }
         OutlinedButton(onClick = { state.push(Screen.MailAccount(null)) }, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(Res.string.mail_account_new))
@@ -1107,7 +1090,33 @@ fun MailAccountsSection(state: AppState) {
     }
     if (accounts.isNotEmpty()) {
         val settings = state.backend.settings
-        SectionCard(stringResource(Res.string.mail_behaviour)) {
+        SectionCard(areaGroupTitle(VaultKindUi.MAIL)) {
+            val senders = settings.mailImageSenders.lines().filter { it.isNotBlank() }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(Res.string.mail_images_always))
+                    Hint(stringResource(Res.string.mail_images_always_sub, senders.size.toString()))
+                }
+                if (senders.isNotEmpty()) TextButton(onClick = { settings.mailImageSenders = "" }) { Text(stringResource(Res.string.a_reset)) }
+            }
+        }
+        MailKeysSection(state, accounts)
+        SectionCard(deviceGroupTitle()) {
+            if (!state.backend.isDesktop) {
+                for (a in accounts) key(notifyTick, a.id) {
+                    SwitchRow(stringResource(Res.string.mail_notify_for, a.name), net.mailNotificationsOn(a.id)) { on ->
+                        state.run(block = { net.setMailNotifications(a.id, on) }) { notifyTick++ }
+                    }
+                }
+                var detail by remember { mutableStateOf(net.mailNotifyDetail()) }
+                ChoiceRow(
+                    stringResource(Res.string.mail_notify_detail),
+                    listOf(0 to Res.string.mail_notify_detail_0, 1 to Res.string.mail_notify_detail_1, 2 to Res.string.mail_notify_detail_2),
+                    detail,
+                ) { detail = it; net.setMailNotifyDetail(it) }
+                Hint(stringResource(Res.string.mail_notify_detail_hint))
+                Hint(stringResource(Res.string.mail_notify_hint))
+            }
             var offline by remember { mutableStateOf(net.mailOffline()) }
             SwitchRow(stringResource(Res.string.mail_offline), offline) { on ->
                 state.run(block = { net.setMailOffline(on) }) { offline = on }
@@ -1119,7 +1128,6 @@ fun MailAccountsSection(state: AppState) {
                 settings.mailSwipeLeft,
             ) { settings.mailSwipeLeft = it }
         }
-        MailKeysSection(state, accounts)
     }
     removing?.let { a ->
         AlertDialog(

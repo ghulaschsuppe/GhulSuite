@@ -80,7 +80,7 @@ fun MailHtmlView(state: AppState, m: MailMessageUi) {
                     Text(stringResource(Res.string.mail_images_load), color = t.accent, fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
                         modifier = Modifier.clickable { loadRemote = true })
                     if (sender.isNotEmpty()) {
-                        Text(stringResource(Res.string.mail_images_always), color = t.accent, fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
+                        Text(stringResource(Res.string.mail_images_always_sender), color = t.accent, fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
                             modifier = Modifier.clickable {
                                 settings.mailImageSenders = (settings.mailImageSenders.lines() + sender).filter { it.isNotBlank() }.distinct().joinToString("\n")
                                 loadRemote = true

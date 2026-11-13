@@ -72,7 +72,9 @@ class AndroidQuickUnlock(
         pin = settings.quickUnlockPin && usable(PIN),
     )
 
-    private fun maxAgeSeconds(): ULong = (settings.quickUnlockHours.coerceIn(1, 24 * 7) * 3600L).toULong()
+    /** 0 hours = "always": no expiry, but a reboot, panic lock or password change still ends it. */
+    private fun maxAgeSeconds(): ULong =
+        if (settings.quickUnlockHours <= 0) ALWAYS_SECONDS else (settings.quickUnlockHours.coerceIn(1, 24 * 7) * 3600L).toULong()
 
     private fun alias(name: String) = "ghulsuite.quick.$name"
 
@@ -273,6 +275,8 @@ class AndroidQuickUnlock(
         }
 
     companion object {
+        /** "Always" valid quick unlock: about 100 years. */
+        const val ALWAYS_SECONDS: ULong = 100uL * 365uL * 24uL * 3600uL
         const val BIO = "bio"
         const val PIN = "pin"
         const val MAX_PIN_ATTEMPTS = 5

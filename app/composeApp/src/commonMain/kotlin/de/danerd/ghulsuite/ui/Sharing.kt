@@ -457,45 +457,31 @@ private fun checkLabel(step: String): String = when (step) {
     else -> step
 }
 
-/** Settings → GhulDrive: storage, shares. */
+/** Settings → GhulDrive: storage, trash and shares (all devices), photo backup (this device). */
 @Composable
 fun DriveSettingsSection(state: AppState) {
     val net = state.backend.net
-    var status by remember { mutableStateOf<DriveStatusUi?>(null) }
-    var servers by remember { mutableStateOf<List<ServerUi>>(emptyList()) }
-    LaunchedEffect(state.liveRevision()) {
-        status = runCatching { net.driveStatus() }.getOrNull()
-        servers = runCatching { net.servers() }.getOrDefault(emptyList())
-    }
-    val srv = servers.firstOrNull { it.id == status?.serverId }
-    SectionCard(stringResource(Res.string.ctx_storage)) {
-        if (srv == null) {
-            Hint(stringResource(Res.string.ctx_not_set_up))
-        } else {
-            ListRow(srv.name, srv.location.ifBlank { srv.host }, leading = { IconTile(Icons.Filled.Cloud, areaColor(Tab.DRIVE)) })
-            status?.let { Hint(stringResource(Res.string.drive_status, it.files.toString(), formatSize(it.bytes))) }
-        }
-        Hint(stringResource(Res.string.drive_crypto_hint))
-    }
     val settings = state.backend.settings
-    SectionCard(stringResource(Res.string.drive_behaviour)) {
+    var status by remember { mutableStateOf<DriveStatusUi?>(null) }
+    LaunchedEffect(state.liveRevision()) { status = runCatching { net.driveStatus() }.getOrNull() }
+    SectionCard(areaGroupTitle(de.danerd.ghulsuite.model.VaultKindUi.DRIVE)) {
+        DriveStorageRow(state)
+        status?.takeIf { it.serverId != null }?.let { Hint(stringResource(Res.string.drive_status, it.files.toString(), formatSize(it.bytes))) }
         ChoiceRow(
             stringResource(Res.string.drive_trash_days),
             listOf(7 to Res.string.drive_days_7, 30 to Res.string.drive_days_30, 90 to Res.string.drive_days_90, 0 to Res.string.drive_days_never),
             settings.driveTrashDays,
         ) { settings.driveTrashDays = it }
-        if (net.photoBackupAvailable) {
+        Hint(stringResource(Res.string.ctx_shares_sub))
+        OutlinedButton(onClick = { state.push(Screen.Shares) }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.shares_title)) }
+        Hint(stringResource(Res.string.drive_crypto_hint))
+    }
+    if (net.photoBackupAvailable) {
+        SectionCard(deviceGroupTitle()) {
             val ask = rememberPhotoPermission { granted -> settings.photoBackup = granted; if (granted) state.runPhotoBackup() }
             SwitchRow(stringResource(Res.string.drive_photo_backup), settings.photoBackup) { on -> if (on) ask() else settings.photoBackup = false }
             Hint(stringResource(Res.string.drive_photo_backup_sub))
             SwitchRow(stringResource(Res.string.drive_wifi_only), settings.photoBackupWifiOnly) { settings.photoBackupWifiOnly = it }
-        }
-    }
-    SectionCard(stringResource(Res.string.shares_title)) {
-        Hint(stringResource(Res.string.ctx_shares_sub))
-        OutlinedButton(onClick = { state.push(Screen.Shares) }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.shares_title)) }
-        OutlinedButton(onClick = { state.push(Screen.SettingsPage(SetPage.SERVERS)) }, modifier = Modifier.fillMaxWidth()) {
-            Text(stringResource(Res.string.set_servers_sync_share))
         }
     }
 }

@@ -164,7 +164,9 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
     // Tabs opened since unlocking; a plain set, read together with state.tab.
     val visited = remember { LinkedHashSet<Tab>() }
     visited.add(state.tab)
-    PlatformBackHandler(enabled = top != null) { state.pop() }
+    if (state.codeUnconfirmed && top !is Screen.RecoveryCode) CodeReminderDialog(state)
+    // A new recovery code cannot be skipped: it must be confirmed first.
+    PlatformBackHandler(enabled = top != null && top !is Screen.RecoveryCode) { state.pop() }
 
     val onAdd: () -> Unit = {
         val kind = if (state.tab == Tab.PASS) VaultKindUi.PASS else VaultKindUi.TOTP

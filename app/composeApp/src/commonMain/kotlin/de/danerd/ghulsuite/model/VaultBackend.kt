@@ -74,6 +74,20 @@ interface VaultBackend {
     suspend fun renameVault(id: String, name: String)
     /** Deletes the vault file from the folder. */
     suspend fun removeVault(id: String)
+
+    // --- Areas: one file per area (GhulPass, GhulAuth, GhulDrive, GhulMail, GhulCal)
+    fun setupState(): SetupStateUi = if (exists()) SetupStateUi.COMPLETE else SetupStateUi.EMPTY
+    /** Creates the area's file (when switched on later); an existing area keeps its file. */
+    suspend fun addArea(kind: VaultKindUi, name: String): String = createVault(kind, name)
+    /** Removes the area on every device (its files are deleted, also through the synchronisation). */
+    suspend fun removeArea(kind: VaultKindUi) {}
+    /** Options stored in the area's file (empty without the area). */
+    suspend fun areaOptions(kind: VaultKindUi): Map<String, String> = emptyMap()
+    suspend fun setAreaOptions(kind: VaultKindUi, options: Map<String, String>) {}
+    /** Whether the current recovery code was confirmed by typing a group back. */
+    suspend fun recoveryConfirmed(): Boolean = true
+    /** Checks a typed group (0-based) of the recovery code; only a correct one confirms it. */
+    suspend fun confirmRecoveryCode(group: Int, typed: String): Boolean = true
     suspend fun exportVault(id: String): ByteArray
     /** Adds a vault file with the suite's protection; DIFFERENT_PROTECTION if it needs its own password. */
     suspend fun addVaultFile(data: ByteArray, name: String): String
@@ -185,7 +199,15 @@ data class FolderRef(val uri: String, val name: String)
 /** A file picked by the user. */
 class PickedFile(val name: String, val bytes: ByteArray)
 
-enum class VaultKindUi { PASS, TOTP, CAL }
+enum class VaultKindUi { PASS, TOTP, CAL, DRIVE, MAIL }
+
+/** What the app finds in the suite folder. */
+enum class SetupStateUi {
+    EMPTY,
+    COMPLETE,
+    /** Vault files without the suite file: a setup that stopped; unlocking completes it. */
+    INCOMPLETE,
+}
 
 data class VaultUi(
     val id: String,
@@ -341,6 +363,8 @@ data class ImportResultUi(val entries: Int, val totps: Int, val duplicates: Int,
 enum class AutofillStatus { UNSUPPORTED, OFF, ON }
 
 enum class VaultErrorKind {
+    /** A file from a newer GhulSuite: update the app. */
+    UPDATE_REQUIRED,
     NO_KEY,
     PERMISSION_DENIED,
     NOT_A_FIDO_KEY,
