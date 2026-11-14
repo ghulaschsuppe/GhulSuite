@@ -53,6 +53,8 @@ have() { command -v "$1" > /dev/null 2>&1; }
 # --- texts, manifest, test vectors -------------------------------------------------------------
 step "Texte (Übersetzungen, Platzhalter, Striche)" python3 tools/check-texts.py
 step "Android-Manifest" python3 tools/check-android-manifest.py
+# The website (www.ghulsuite.de) builds: templates, texts in both languages, links between them.
+step "Website bauen (Vorschau)" env GHUL_RELEASES_JSON=/dev/null python3 tools/build-website.py --out "$out/website" --preview
 # Like the CI: an own Python environment with the independent crypto libraries (made once, reused).
 venv="${XDG_CACHE_HOME:-$HOME/.cache}/ghul-precheck-venv"
 if [ ! -x "$venv/bin/python" ]; then
@@ -101,6 +103,7 @@ fi
 if have php; then
   step "PHP-Modul (Syntax)" php -l core/ghul-core/server/ghulsuite.php
   step "PHP-Modul (Angriffe)" python3 tools/attack-php-module.py
+  step "Fehlerberichte (report.php)" python3 tools/test-report-php.py
 else
   skip "PHP-Modul" "php fehlt"
 fi

@@ -36,6 +36,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.key
 import androidx.compose.ui.layout.Layout
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -228,7 +229,9 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
             },
             floatingActionButton = { if (top == null) MainFab(state, onAdd) },
         ) { padding ->
-            Box(Modifier.fillMaxSize()) {
+            // The bars already make room for the status and navigation bar: pages that pad for
+            // them themselves (ScreenColumn) must not do it a second time.
+            Box(Modifier.fillMaxSize().consumeWindowInsets(padding)) {
                 TabContents(state, visited, top == null, padding)
                 if (top != null) TopScreen(state, top, padding)
             }
@@ -251,7 +254,7 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
                         containerColor = MaterialTheme.colorScheme.background,
                         topBar = { TabTopBar(state) },
                         floatingActionButton = { MainFab(state, onAdd) },
-                    ) { padding -> TabContents(state, visited, true, padding) }
+                    ) { padding -> Box(Modifier.consumeWindowInsets(padding)) { TabContents(state, visited, true, padding) } }
                 }
             }
             if (twoPane) {
@@ -264,7 +267,7 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
                             Scaffold(
                                 containerColor = Color.Transparent,
                                 topBar = { if (!ownHeader(top)) ScreenTopBar(state, top) },
-                            ) { padding -> TopScreen(state, top, padding) }
+                            ) { padding -> Box(Modifier.consumeWindowInsets(padding)) { TopScreen(state, top, padding) } }
                         }
                     }
                 }

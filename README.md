@@ -16,6 +16,7 @@ ohne Konto bei einem Anbieter und ohne Vertrauensvorschuss. Die Daten liegen da,
 ![Windows](https://img.shields.io/badge/Windows-10%2F11%20%C2%B7%20portabel-2F74E8)
 ![Server](https://img.shields.io/badge/Server-SFTP%20%C2%B7%20FTPS%20%C2%B7%20PHP%208.1-E0700F)
 ![Status](https://img.shields.io/badge/Status-Entwicklungsversion-lightgrey)
+[![Website](https://img.shields.io/badge/Website-www.ghulsuite.de-A996FF)](https://www.ghulsuite.de)
 
 <br>
 
@@ -34,7 +35,8 @@ ohne Konto bei einem Anbieter und ohne Vertrauensvorschuss. Die Daten liegen da,
 [Synchronisation](#synchronisation-zwischen-deinen-geräten) ·
 [Selbst hosten](#selbst-hosten-in-fünf-minuten) ·
 [Sicherheit](#so-schützt-ghulsuite-deine-daten) ·
-[Download](#download)
+[Download](#download) ·
+**[www.ghulsuite.de](https://www.ghulsuite.de)**
 
 </div>
 
@@ -303,7 +305,7 @@ Für normale Mails brauchst du keinen eigenen Server: GhulMail spricht direkt mi
 GhulSuite ist ein Soloprojekt ohne bezahlten externen Audit. Umso wichtiger ist, dass jeder nachprüfen kann, was
 getestet wird und was nicht:
 
-- **Bei jeder Änderung** laufen über eine Million Einzelprüfungen in 272 Testfunktionen: Angriffe auf Dateien,
+- **Bei jeder Änderung** laufen über eine Million Einzelprüfungen in 275 Testfunktionen: Angriffe auf Dateien,
   Server und Synchronisation, ein „bekloppter Nutzer“ auf drei Geräten, kaputte und böswillige Eingaben in jeden
   Parser, Tests gegen echte SFTP-, FTPS-, IMAP- und SMTP-Server. Dazu kommen öffentliche Sammlungen wie Project
   Wycheproof (Kryptografie), die Big List of Naughty Strings, XSS- und CRLF-Sammlungen für Mails, die URL-Testdaten
@@ -370,6 +372,13 @@ GhulSuite ist freie Software unter der **[GNU Affero General Public License 3.0]
 weitergibt oder als Dienst betreibt, muss den Quelltext ebenfalls offenlegen.
 Name und Logo sind geschützt, siehe [`TRADEMARKS.md`](TRADEMARKS.md).
 
+**Website:** [www.ghulsuite.de](https://www.ghulsuite.de) ·
+[Impressum](https://www.ghulsuite.de/impressum.html) ·
+[Datenschutz (App)](https://www.ghulsuite.de/datenschutz-app.html) ·
+[Datenschutz (Website)](https://www.ghulsuite.de/datenschutz.html).
+Die App schickt dem Entwickler keinerlei Daten; welche Verbindungen sie aufbaut, steht vollständig in der
+Datenschutzerklärung der App.
+
 ---
 
 ### English
@@ -379,6 +388,8 @@ Android and Windows. Everything is encrypted on your device (master password **p
 file); your own server only ever stores ciphertext. Any SFTP/FTPS server or plain PHP 8.1 web hosting without a
 database is enough. Older mail can move into an encrypted archive on your own server, deleted at the provider only
 after it was read back and checked. Free software under the AGPL-3.0, see [`LICENSE`](LICENSE).
+Website: [www.ghulsuite.de/en](https://www.ghulsuite.de/en/) · [legal notice](https://www.ghulsuite.de/en/imprint.html) ·
+[privacy policy of the app](https://www.ghulsuite.de/en/privacy-app.html).
 
 <div align="center">
 <br>

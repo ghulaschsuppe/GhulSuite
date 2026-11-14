@@ -565,21 +565,74 @@ private fun AboutSection(state: AppState) {
         Text(stringResource(Res.string.about_made_by), fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, fontSize = 16.sp)
         Text(stringResource(Res.string.about_made_by_sub), color = g.muted, fontSize = 14.sp)
     }
+    // Website, legal notice and privacy policy (open in the browser).
+    val uri = androidx.compose.ui.platform.LocalUriHandler.current
+    val siteUrl = stringResource(Res.string.about_site_url)
+    val imprintUrl = stringResource(Res.string.about_imprint_url)
+    val privacyUrl = stringResource(Res.string.about_privacy_url)
     ListCard {
-        ListRow(stringResource(Res.string.about_report), stringResource(Res.string.about_report_sub), flush = true, trailing = { ChevronEnd() }) { sheet = "report" }
-        ListRow(stringResource(Res.string.about_license), "AGPL-3.0-or-later", divider = true, flush = true, trailing = { ChevronEnd() }) { sheet = "license" }
-        ListRow(stringResource(Res.string.about_libraries), divider = true, flush = true, trailing = { ChevronEnd() }) { sheet = "libs" }
+        ListRow(stringResource(Res.string.about_site), "www.ghulsuite.de", trailing = { ChevronEnd() }) { runCatching { uri.openUri(siteUrl) } }
+        ListRow(stringResource(Res.string.about_imprint), divider = true, trailing = { ChevronEnd() }) { runCatching { uri.openUri(imprintUrl) } }
+        ListRow(stringResource(Res.string.about_privacy), stringResource(Res.string.about_privacy_sub), divider = true, trailing = { ChevronEnd() }) { runCatching { uri.openUri(privacyUrl) } }
+    }
+    ListCard {
+        ListRow(stringResource(Res.string.about_report), stringResource(Res.string.about_report_sub), trailing = { ChevronEnd() }) { sheet = "report" }
+        ListRow(stringResource(Res.string.about_license), "AGPL-3.0-or-later", divider = true, trailing = { ChevronEnd() }) { sheet = "license" }
+        ListRow(stringResource(Res.string.about_libraries), divider = true, trailing = { ChevronEnd() }) { sheet = "libs" }
     }
     HintText("GhulSuite ${backend.appVersion} · ${backend.coreVersion}")
     when (sheet) {
         "report" -> GhulSheet({ sheet = "" }, stringResource(Res.string.about_report)) {
             val reportLabel = stringResource_report()
+            var note by remember { mutableStateOf("") }
+            var contact by remember { mutableStateOf("") }
+            var sending by remember { mutableStateOf(false) }
+            var error by remember { mutableStateOf<String?>(null) }
+            val sentMsg = stringResource(Res.string.report_sent)
+            val scope = androidx.compose.runtime.rememberCoroutineScope()
             HintText(stringResource(Res.string.about_report_hint))
             Text(report, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = 12.sp,
                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(g.surface2).padding(12.dp))
+            // A note of the user: what happened, what they did before.
+            OutlinedTextField(
+                note, { if (it.length <= 4000) note = it },
+                label = { Text(stringResource(Res.string.report_note)) },
+                placeholder = { Text(stringResource(Res.string.report_note_hint)) },
+                minLines = 3, modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                contact, { contact = it.take(200) },
+                label = { Text(stringResource(Res.string.report_contact)) },
+                singleLine = true, modifier = Modifier.fillMaxWidth(),
+            )
+            HintText(stringResource(Res.string.report_send_hint))
+            ErrorText(error)
+            Button(onClick = {
+                error = null
+                sending = true
+                scope.launch {
+                    try {
+                        backend.sendReport(report, note, contact)
+                        state.message(sentMsg)
+                        sheet = ""
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        error = describe(e)
+                    } finally {
+                        sending = false
+                    }
+                }
+            }, enabled = !sending, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(if (sending) Res.string.report_sending else Res.string.report_send))
+            }
             ButtonRow {
-                OutlinedButton(onClick = { state.copy(reportLabel, report) }, modifier = Modifier.weight(1f)) { Text(stringResource(Res.string.a_copy)) }
-                if (filePickersAvailable) Button(onClick = { save("GhulSuite-Fehlerbericht.txt", report.encodeToByteArray()) }, modifier = Modifier.weight(1f)) {
+                OutlinedButton(onClick = {
+                    state.copy(reportLabel, if (note.isBlank()) report else "$report\n\n$note")
+                }, modifier = Modifier.weight(1f)) { Text(stringResource(Res.string.a_copy)) }
+                if (filePickersAvailable) OutlinedButton(onClick = {
+                    save("GhulSuite-Fehlerbericht.txt", (if (note.isBlank()) report else "$report\n\n$note").encodeToByteArray())
+                }, modifier = Modifier.weight(1f)) {
                     Text(stringResource(Res.string.a_save))
                 }
             }

@@ -1584,4 +1584,25 @@
     <string name="upd_open_page">Release-Seite öffnen</string>
     <string name="upd_loading">Update wird geladen…</string>
     <string name="upd_allow">Erlaube einmalig „Unbekannte Apps installieren“ für GhulSuite und tippe dann noch einmal auf „Installieren“.</string>
+    <string name="about_site">Website</string>
+    <string name="about_site_url">https://www.ghulsuite.de/</string>
+    <string name="about_imprint">Impressum</string>
+    <string name="about_imprint_url">https://www.ghulsuite.de/impressum.html</string>
+    <string name="about_privacy">Datenschutzerklärung</string>
+    <string name="about_privacy_sub">Was die App wohin schickt: nichts an den Entwickler</string>
+    <string name="about_privacy_url">https://www.ghulsuite.de/datenschutz-app.html</string>
+    <string name="report_note">Deine Notiz (optional)</string>
+    <string name="report_note_hint">Was ist passiert? Was hast du kurz vorher gemacht?</string>
+    <string name="report_contact">E-Mail für Rückfragen (optional)</string>
+    <string name="report_send_hint">„Senden“ überträgt den Bericht oben mit deiner Notiz an www.ghulsuite.de, von dort geht er per E-Mail an den Entwickler. Gespeichert wird dort nichts; Tresor-Inhalte sind nicht dabei.</string>
+    <string name="report_send">Senden</string>
+    <string name="report_sending">Wird gesendet…</string>
+    <string name="report_sent">Danke! Dein Bericht ist angekommen.</string>
+    <string name="core_rep_note_long">Deine Notiz ist zu lang (höchstens 4.000 Zeichen).</string>
+    <string name="core_rep_contact">Diese E-Mail-Adresse sieht nicht gültig aus.</string>
+    <string name="core_rep_too_long">Der Bericht ist zu lang.</string>
+    <string name="core_rep_busy">Gerade zu viele Berichte von hier. Bitte in einer Stunde noch einmal versuchen.</string>
+    <string name="core_rep_clock">Die Uhr dieses Geräts geht falsch. Bitte Datum und Uhrzeit korrigieren.</string>
+    <string name="core_rep_refused">Der Bericht wurde abgelehnt.</string>
+    <string name="core_rep_unavailable">Senden ist gerade nicht möglich. Du kannst den Bericht stattdessen kopieren oder speichern.</string>
 </resources>

@@ -4,7 +4,7 @@ name: Android & Kern
 on:
   push:
     branches: ['**']
-    paths: ['core/**', 'app/**', 'docs/testvectors/**', 'tools/**', '.github/workflows/android.yml', '.github/actions/ftps-upload/**',
+    paths: ['core/**', 'app/**', 'docs/testvectors/**', 'tools/**', 'website/static/report.php', '.github/workflows/android.yml', '.github/actions/ftps-upload/**',
             '!app/maestro/**', '!tools/ci-emulator.sh', '!tools/run-maestro.sh', '!tools/check-reminders.sh', '!tools/check-server-flows.sh']
   # Every pull request: "build" and "Windows-App" are required checks for main. Without changes to
   # the app or the core they are skipped (which counts as passed) instead of missing.
@@ -94,7 +94,7 @@ jobs:
           fi
           files=$(git diff --name-only "$BASE" HEAD)
           if printf '%s\n' "$files" | grep -qE '^(core/|docs/testvectors/)'; then core=true; else core=false; fi
-          if printf '%s\n' "$files" | grep -qE '^(core/|app/|docs/testvectors/|tools/|\.github/workflows/android\.yml|\.github/actions/ftps-upload/)'; then code=true; else code=false; fi
+          if printf '%s\n' "$files" | grep -qE '^(core/|app/|docs/testvectors/|tools/|website/static/report\.php|\.github/workflows/android\.yml|\.github/actions/ftps-upload/)'; then code=true; else code=false; fi
           echo "Kern geändert: $core · App/Kern/Werkzeuge geändert: $code"
           echo "core=$core" >> "$GITHUB_OUTPUT"; echo "code=$code" >> "$GITHUB_OUTPUT"
 
@@ -243,10 +243,14 @@ jobs:
       - name: PHP-Modul mit PHP 8.1 prüfen (Syntax)
         run: |
           docker run --rm -v "$PWD/core/ghul-core/server:/m:ro" php:8.1-cli php -l /m/ghulsuite.php
+          docker run --rm -v "$PWD/website/static:/w:ro" php:8.1-cli php -l /w/report.php
       # Forged, stale and replayed requests, paths out of the data folder, planted scripts,
       # share id tricks, uploads out of order: every case has its expected answer.
       - name: Angriffe auf das PHP-Modul
         run: python3 tools/attack-php-module.py
+      # Error reports from the app (website/static/report.php): spam, replays, injection, limits.
+      - name: Fehlerberichte (report.php) gegen Missbrauch
+        run: python3 tools/test-report-php.py
 
       - name: Chromium für Playwright
         run: |

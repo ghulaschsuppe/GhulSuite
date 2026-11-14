@@ -507,4 +507,8 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
     override suspend fun restoreBackup(data: ByteArray): Int = io { suite.restoreBackup(data).toInt() }
 
     override suspend fun pwnedCount(password: String): Int = io { de.danerd.ghulsuite.core.pwnedCount(password).toInt() }
+
+    override suspend fun sendReport(report: String, note: String, contact: String) = io {
+        de.danerd.ghulsuite.core.reportSend(report, note, contact)
+    }
 }

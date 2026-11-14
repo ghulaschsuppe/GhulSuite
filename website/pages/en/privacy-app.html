@@ -1,0 +1,85 @@
+<section class="legal">
+  <div class="wrap">
+    <p class="eyebrow">Legal</p>
+    <h1>Privacy policy for the app</h1>
+    <p>This is a translation for convenience. The German <a href="../datenschutz-app.html" lang="de">Datenschutzerklärung</a> is the legally binding version. This policy applies to the app GhulSuite on Android and Windows. This website has a <a href="privacy.html">privacy policy of its own</a>.</p>
+
+    <div class="box">
+      <p style="margin:0"><strong>In short:</strong> GhulSuite sends no data at all to the developer. There is no account, no telemetry, no crash reports in the background, no advertising and no analytics. Your content is encrypted on your device and stored only where you set it up: on your own server. The few connections to other services are all listed below.</p>
+    </div>
+
+    <h2>1. Controller</h2>
+    <div class="box">
+      <address>{{v.imp_name}}<br>{{v.imp_address}}</address>
+      <p style="margin:12px 0 0">E-mail: <a href="mailto:{{v.imp_email}}">{{v.imp_email}}</a></p>
+    </div>
+    <p>The controller receives no personal data through the use of the app. They are responsible for the design of the app and the connections it makes on its own (section 4).</p>
+
+    <h2>2. Data on your device</h2>
+    <p>Passwords, 2FA codes, files, mails, events and settings are kept in encrypted files (Argon2id, XChaCha20-Poly1305; opened only with the master password and a security key or key file). For the optional unlock by fingerprint or app PIN, the app uses the system's protected key store; the app never sees fingerprints. An error report is only stored on the device and only passed on if you copy or save it yourself.</p>
+
+    <h2>3. Connections you set up yourself</h2>
+    <p>You or the respective provider are responsible for these connections; the app makes them on your behalf:</p>
+    <ul>
+      <li><strong>Your server</strong> (SFTP, FTPS or the PHP server module) for sync, files, the mail archive and share links. Only encrypted data is stored there. The server's operator sees your IP address and access times.</li>
+      <li><strong>Your mail providers</strong> (IMAP and SMTP, encrypted with TLS only). Their privacy policies apply.</li>
+      <li><strong>Share links:</strong> whoever opens a link from you fetches it from your server; the key is only in the part of the link that is never sent to the server.</li>
+    </ul>
+
+    <h2>4. Connections the app makes on its own</h2>
+    <table>
+      <tr><th>When</th><th>Where and what</th><th>Legal basis</th></tr>
+      <tr>
+        <td><strong>Update check</strong>: at most once a day after unlocking, and when you tap "Check for updates now". Can be switched off in Options → About → Updates.</td>
+        <td>GitHub (api.github.com, github.com, GitHub's download servers). Sent: your IP address, the time and "GhulSuite" as the program name. No device or user identifier. Installing loads the new version from GitHub.</td>
+        <td>Art. 6 (1) (f) GDPR: protecting your data with current, fixed versions. Versions from an app store and test versions do not check themselves.</td>
+      </tr>
+      <tr>
+        <td><strong>Password check</strong>: only when you start it for a password.</td>
+        <td>"Pwned Passwords" (api.pwnedpasswords.com). Sent: only the first five characters of the SHA-1 hash of your password, never the password (k-anonymity), and your IP address.</td>
+        <td>Art. 6 (1) (a) GDPR (your action as consent in the single case)</td>
+      </tr>
+      <tr>
+        <td><strong>Key lookup for encrypted mail</strong>: when you write to an address whose key is not known yet (once per address).</td>
+        <td>The recipient's mail provider (Web Key Directory on their domain). Sent: your IP address and the address looked up, hashed and in readable form, as the standard requires. The provider learns that someone looked for this address's key.</td>
+        <td>Art. 6 (1) (f) GDPR: confidential communication through encryption</td>
+      </tr>
+      <tr>
+        <td><strong>Sending an error report</strong>: only when you tap "Send" in Options → About → Error report. You see what is sent before.</td>
+        <td>This website (www.ghulsuite.de/report.php). Sent: the report shown (app and core version, device and system version, the last crash report if any, no vault contents), your note, your e-mail address for questions if you enter one, and your IP address. The report is forwarded by e-mail to the controller and not stored on the server; the e-mail is deleted once the bug has been dealt with.</td>
+        <td>Art. 6 (1) (a) GDPR (your consent by sending; can be withdrawn by e-mail to the address above)</td>
+      </tr>
+      <tr>
+        <td><strong>Images in mails</strong>: only when you tap "Load images" or allowed it for a sender.</td>
+        <td>The server holding the image. The sender may learn that and when you opened the mail. The app removes invisible tracking pixels.</td>
+        <td>Art. 6 (1) (a) GDPR (your decision in the single case)</td>
+      </tr>
+    </table>
+    <p>The app makes no other connections. Holidays, time zones and translations are built in.</p>
+
+    <h2>5. Android permissions</h2>
+    <table>
+      <tr><th>Permission</th><th>What for</th></tr>
+      <tr><td>Internet, network state</td><td>Connecting to your server and mail providers; mail archive on Wi-Fi only if you wish.</td></tr>
+      <tr><td>Camera</td><td>Scanning QR codes (2FA, import, emergency sheet). No pictures are stored.</td></tr>
+      <tr><td>Photos</td><td>Photo backup in GhulDrive and QR codes from pictures, only when you switch it on.</td></tr>
+      <tr><td>Biometrics</td><td>Optional fingerprint unlock.</td></tr>
+      <tr><td>Notifications, foreground service, start after reboot, battery optimisation</td><td>New mail and event reminders, also while the app is closed.</td></tr>
+      <tr><td>Exact alarms</td><td>Reminders on time.</td></tr>
+      <tr><td>Vibration</td><td>Feedback for the instant lock.</td></tr>
+      <tr><td>Install apps</td><td>Installing updates, only after you confirm in the system's dialog.</td></tr>
+    </table>
+    <p>The autofill service works on the device only; login data is not sent anywhere.</p>
+
+    <h2>6. Storage period and deletion</h2>
+    <p>Data stays until you delete it. Uninstalling the app makes the system remove its data on the device; you delete files on your own server and in your suite folder yourself.</p>
+
+    <h2>7. Your rights</h2>
+    <p>You have the right of access (Art. 15 GDPR), rectification (Art. 16), erasure (Art. 17), restriction (Art. 18), data portability (Art. 20), to object (Art. 21) and to lodge a complaint with a supervisory authority (Art. 77). As the controller receives no data from the app, most data is with you alone: the app offers export, backup and deletion for it.</p>
+
+    <h2>8. Changes</h2>
+    <p>This policy is updated when the app changes. New connections to other services are listed here before they appear in a version.</p>
+
+    <p class="stand">Last updated: 14 November 2026</p>
+  </div>
+</section>

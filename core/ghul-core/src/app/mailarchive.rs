@@ -460,6 +460,30 @@ pub(super) struct Store {
     keys: Keys,
     /// This device's copy (encrypted files as on the server), if it keeps one.
     copy: Option<std::path::PathBuf>,
+    /// Blocks being written by the threads of this run. Blocks are named by their content, so
+    /// the same block can come twice at once (a mail listed twice, one attachment in two mails);
+    /// writing one name from two threads at a time would make the servers' "write under a
+    /// temporary name, then rename" fail for one of them. The second waits for the first.
+    writing: Writing,
+}
+
+#[derive(Default)]
+pub(super) struct Writing(std::sync::Mutex<BTreeSet<String>>, std::sync::Condvar);
+
+impl Writing {
+    /// Writes `path` once at a time across threads.
+    fn one_at_a_time<T>(&self, path: &str, f: impl FnOnce() -> T) -> T {
+        let mut busy = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        while busy.contains(path) {
+            busy = self.1.wait(busy).unwrap_or_else(|e| e.into_inner());
+        }
+        busy.insert(path.to_owned());
+        drop(busy);
+        let out = f();
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).remove(path);
+        self.1.notify_all();
+        out
+    }
 }
 
 impl Store {
@@ -628,7 +652,8 @@ impl Store {
         for chunk in raw.chunks(BLOCK) {
             let id = self.keys.block_id(chunk);
             let path = block_path(&id);
-            self.fs.write(&path, &seal_file(BLOCK_MAGIC, e, key, &path, chunk))?;
+            let sealed = seal_file(BLOCK_MAGIC, e, key, &path, chunk);
+            self.writing.one_at_a_time(&path, || self.fs.write(&path, &sealed))?;
             ids.push(id);
         }
         Ok(ids)
@@ -1022,14 +1047,20 @@ impl GhulSuite {
             self.net.lock().unwrap_or_else(|p| p.into_inner()).conn.clone().filter(|c| c.0 == "archive-test")
         {
             let f = fs.1.clone();
-            return Ok(Store { fs: fs.1, fresh: Box::new(move || Ok(f.clone())), keys, copy });
+            return Ok(Store {
+                fs: fs.1,
+                fresh: Box::new(move || Ok(f.clone())),
+                keys,
+                copy,
+                writing: Writing::default(),
+            });
         }
         let server = server_id(o, &s).ok_or(GhulError::NotConfigured)?;
         let fs = self.remote(o, &server)?;
         // A second, separate connection: what was written is read back over it.
         let second = servers::connect(o, &server)?;
         let fresh = Box::new(move || Ok(second.clone()));
-        Ok(Store { fs, fresh, keys, copy })
+        Ok(Store { fs, fresh, keys, copy, writing: Writing::default() })
     }
 
     /// Starts a new key epoch if the suite's protection changed since the last one.

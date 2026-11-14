@@ -1,0 +1,85 @@
+<section class="legal">
+  <div class="wrap">
+    <p class="eyebrow">Rechtliches</p>
+    <h1>Datenschutzerklärung für die App</h1>
+    <p>Diese Erklärung gilt für die App GhulSuite unter Android und Windows. Für diese Website gibt es eine <a href="datenschutz.html">eigene Datenschutzerklärung</a>.</p>
+
+    <div class="box">
+      <p style="margin:0"><strong>Kurz gesagt:</strong> GhulSuite schickt dem Entwickler keinerlei Daten. Es gibt kein Konto, keine Telemetrie, keine Absturzberichte im Hintergrund, keine Werbung und keine Analyse-Dienste. Deine Inhalte werden auf deinem Gerät verschlüsselt und nur dort gespeichert, wo du es einrichtest: auf deinem eigenen Server. Die wenigen Verbindungen zu anderen Diensten stehen unten vollständig aufgelistet.</p>
+    </div>
+
+    <h2>1. Verantwortlicher</h2>
+    <div class="box">
+      <address>{{v.imp_name}}<br>{{v.imp_address}}</address>
+      <p style="margin:12px 0 0">E-Mail: <a href="mailto:{{v.imp_email}}">{{v.imp_email}}</a></p>
+    </div>
+    <p>Der Verantwortliche selbst erhält durch die Nutzung der App keine personenbezogenen Daten. Verantwortlich ist er für die Gestaltung der App und für die Verbindungen, die die App von sich aus aufbaut (Abschnitt 4).</p>
+
+    <h2>2. Daten auf deinem Gerät</h2>
+    <p>Passwörter, 2FA-Codes, Dateien, Mails, Termine und Einstellungen liegen in verschlüsselten Dateien (Argon2id, XChaCha20-Poly1305; geöffnet nur mit Master-Passwort und Security Key oder Schlüsseldatei). Für das optionale Entsperren per Fingerabdruck oder App-PIN nutzt die App den geschützten Schlüsselspeicher des Systems; Fingerabdrücke selbst sieht die App nie. Ein Fehlerbericht wird nur auf dem Gerät gespeichert und nur weitergegeben, wenn du ihn selbst kopierst oder speicherst.</p>
+
+    <h2>3. Verbindungen, die du selbst einrichtest</h2>
+    <p>Für die folgenden Verbindungen bist du bzw. der jeweilige Anbieter verantwortlich; die App führt sie in deinem Auftrag aus:</p>
+    <ul>
+      <li><strong>Dein Server</strong> (SFTP, FTPS oder das PHP-Server-Modul) für Synchronisation, Dateien, das Mail-Archiv und Freigabelinks. Dort liegen nur verschlüsselte Daten. Der Betreiber des Servers sieht deine IP-Adresse und die Zugriffszeiten.</li>
+      <li><strong>Deine Mail-Anbieter</strong> (IMAP und SMTP, nur verschlüsselt über TLS). Es gelten deren Datenschutzbestimmungen.</li>
+      <li><strong>Freigabelinks:</strong> Wer einen Link von dir öffnet, ruft ihn von deinem Server ab; der Schlüssel steht nur im Teil des Links, der nicht an den Server übertragen wird.</li>
+    </ul>
+
+    <h2>4. Verbindungen, die die App von sich aus aufbaut</h2>
+    <table>
+      <tr><th>Wann</th><th>Wohin und was</th><th>Rechtsgrundlage</th></tr>
+      <tr>
+        <td><strong>Update-Prüfung</strong>: höchstens einmal am Tag nach dem Entsperren und wenn du „Jetzt nach Updates suchen“ tippst. Abschaltbar unter Optionen → Über → Updates.</td>
+        <td>GitHub (api.github.com, github.com, Download-Server von GitHub). Übertragen werden deine IP-Adresse, der Zeitpunkt und die Kennung „GhulSuite“ als Programmname. Keine Geräte- oder Nutzerkennung. Beim Installieren wird die neue Version von GitHub geladen.</td>
+        <td>Art. 6 Abs. 1 lit. f DSGVO: Schutz deiner Daten durch aktuelle, fehlerbereinigte Versionen. Versionen aus einem App-Store und Testversionen prüfen nicht selbst.</td>
+      </tr>
+      <tr>
+        <td><strong>Passwort-Prüfung</strong>: nur wenn du sie bei einem Passwort selbst startest.</td>
+        <td>Dienst „Pwned Passwords“ (api.pwnedpasswords.com). Übertragen werden nur die ersten fünf Zeichen der SHA-1-Prüfsumme deines Passworts, nie das Passwort selbst (k-Anonymität), dazu deine IP-Adresse.</td>
+        <td>Art. 6 Abs. 1 lit. a DSGVO (deine Handlung als Einwilligung im Einzelfall)</td>
+      </tr>
+      <tr>
+        <td><strong>Schlüsselsuche für verschlüsselte Mails</strong>: wenn du an eine Adresse schreibst, für die noch kein Schlüssel bekannt ist (einmal je Adresse).</td>
+        <td>Der Mail-Anbieter des Empfängers (Web Key Directory unter dessen Domain). Übertragen werden deine IP-Adresse und die gesuchte Adresse in gehashter und lesbarer Form, wie es der Standard vorsieht. Der Anbieter erfährt so, dass jemand den Schlüssel dieser Adresse gesucht hat.</td>
+        <td>Art. 6 Abs. 1 lit. f DSGVO: vertrauliche Kommunikation durch Verschlüsselung</td>
+      </tr>
+      <tr>
+        <td><strong>Fehlerbericht senden</strong>: nur wenn du unter Optionen → Über → Fehlerbericht auf „Senden“ tippst. Was gesendet wird, siehst du vorher.</td>
+        <td>Diese Website (www.ghulsuite.de/report.php). Übertragen werden der angezeigte Bericht (App- und Kern-Version, Gerät und Systemversion, gegebenenfalls der letzte Absturzbericht, keine Tresor-Inhalte), deine Notiz, auf Wunsch deine E-Mail-Adresse für Rückfragen, dazu deine IP-Adresse. Der Bericht wird per E-Mail an den Verantwortlichen weitergeleitet und auf dem Server nicht gespeichert; die E-Mail wird gelöscht, sobald der Fehler bearbeitet ist.</td>
+        <td>Art. 6 Abs. 1 lit. a DSGVO (deine Einwilligung durch das Senden; widerrufbar per E-Mail an die oben genannte Adresse)</td>
+      </tr>
+      <tr>
+        <td><strong>Bilder in Mails</strong>: nur wenn du „Bilder laden“ tippst oder es für einen Absender erlaubt hast.</td>
+        <td>Der Server, auf dem das Bild liegt. Der Absender kann dadurch erfahren, dass und wann du die Mail geöffnet hast. Unsichtbare Zählpixel entfernt die App.</td>
+        <td>Art. 6 Abs. 1 lit. a DSGVO (deine Entscheidung im Einzelfall)</td>
+      </tr>
+    </table>
+    <p>Andere Verbindungen baut die App nicht auf. Feiertage, Zeitzonen und Übersetzungen sind in der App enthalten.</p>
+
+    <h2>5. Berechtigungen unter Android</h2>
+    <table>
+      <tr><th>Berechtigung</th><th>Wofür</th></tr>
+      <tr><td>Internet, Netzwerkstatus</td><td>Verbindung zu deinem Server und deinen Mail-Anbietern; Mail-Archiv auf Wunsch nur im WLAN.</td></tr>
+      <tr><td>Kamera</td><td>QR-Codes einscannen (2FA, Übernahme, Notfallblatt). Bilder werden nicht gespeichert.</td></tr>
+      <tr><td>Fotos</td><td>Foto-Sicherung in GhulDrive und QR-Codes aus Bildern, nur wenn du es einschaltest.</td></tr>
+      <tr><td>Biometrie</td><td>Optionales Entsperren per Fingerabdruck.</td></tr>
+      <tr><td>Benachrichtigungen, Vordergrunddienst, Start nach dem Neustart, Akku-Optimierung</td><td>Neue Mails und Termin-Erinnerungen, auch wenn die App geschlossen ist.</td></tr>
+      <tr><td>Genaue Wecker</td><td>Erinnerungen pünktlich zur eingestellten Zeit.</td></tr>
+      <tr><td>Vibration</td><td>Rückmeldung bei der Sofortsperre.</td></tr>
+      <tr><td>Apps installieren</td><td>Updates installieren, nur nach deiner Bestätigung im Dialog des Systems.</td></tr>
+    </table>
+    <p>Der Dienst zum automatischen Ausfüllen arbeitet nur auf dem Gerät; Anmeldedaten werden dabei nirgendwohin übertragen.</p>
+
+    <h2>6. Speicherdauer und Löschen</h2>
+    <p>Daten bleiben, bis du sie löschst. Wenn du die App deinstallierst, entfernt das System ihre Daten auf dem Gerät; Dateien auf deinem eigenen Server und in deinem Suite-Ordner löschst du selbst.</p>
+
+    <h2>7. Deine Rechte</h2>
+    <p>Du hast das Recht auf Auskunft (Art. 15 DSGVO), Berichtigung (Art. 16), Löschung (Art. 17), Einschränkung der Verarbeitung (Art. 18), Datenübertragbarkeit (Art. 20) und Widerspruch (Art. 21) sowie das Recht auf Beschwerde bei einer Aufsichtsbehörde (Art. 77). Da der Verantwortliche keine Daten aus der App erhält, liegen die meisten Daten allein bei dir: Die App bietet dafür Export, Sicherung und Löschen an.</p>
+
+    <h2>8. Änderungen</h2>
+    <p>Diese Erklärung wird angepasst, wenn sich die App ändert. Neue Verbindungen zu anderen Diensten werden hier aufgeführt, bevor sie in einer Version erscheinen.</p>
+
+    <p class="stand">Stand: 14. November 2026</p>
+  </div>
+</section>

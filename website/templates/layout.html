@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="{{v.lang}}" class="no-js" data-page="{{v.page}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{v.title}}</title>
+<meta name="description" content="{{v.description}}">
+{{v.robots}}
+<meta name="theme-color" content="#07080c">
+<link rel="canonical" href="{{v.canonical}}">
+<link rel="alternate" hreflang="de" href="{{v.url_de}}">
+<link rel="alternate" hreflang="en" href="{{v.url_en}}">
+<link rel="alternate" hreflang="x-default" href="{{v.url_de}}">
+<link rel="icon" href="{{v.root}}assets/favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="GhulSuite">
+<meta property="og:title" content="{{v.title}}">
+<meta property="og:description" content="{{v.description}}">
+<meta property="og:url" content="{{v.canonical}}">
+<meta property="og:image" content="{{v.site}}/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="stylesheet" href="{{v.root}}assets/site.css?v={{v.build}}">
+</head>
+<body>
+<a class="skip" href="#main">{{t.skip}}</a>
+<div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+<div class="grid" aria-hidden="true"></div>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="{{v.home}}" aria-label="GhulSuite, {{t.nav_home}}"><img src="{{v.root}}assets/favicon.svg" alt="" width="34" height="34">GhulSuite</a>
+    <button class="menu-btn" type="button" aria-expanded="false" aria-controls="nav" aria-label="{{t.menu}}">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+    <nav class="nav" id="nav" aria-label="{{t.menu}}">
+      <a href="{{v.home}}#bereiche">{{t.nav_areas}}</a>
+      <a href="{{v.home}}#sicherheit">{{t.nav_security}}</a>
+      <a href="{{v.home}}#hosten">{{t.nav_host}}</a>
+      <a href="{{v.home}}#download">{{t.nav_download}}</a>
+      <a href="https://github.com/ghulaschsuppe/GhulSuite" rel="noopener">GitHub</a>
+      <div class="lang" role="group" aria-label="{{t.language}}">
+        <a href="{{v.href_de}}" hreflang="de" lang="de" data-lang="de" aria-current="{{v.cur_de}}">DE</a>
+        <a href="{{v.href_en}}" hreflang="en" lang="en" data-lang="en" aria-current="{{v.cur_en}}">EN</a>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+{{v.content}}
+</main>
+
+<footer>
+  <div class="wrap">
+    <div>
+      <a class="brand" href="{{v.home}}"><img src="{{v.root}}assets/favicon.svg" alt="" width="34" height="34">GhulSuite</a>
+      <p>{{t.footer_claim}}</p>
+      <div class="stripes" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+    </div>
+    <div>
+      <h4>{{t.footer_product}}</h4>
+      <ul>
+        <li><a href="{{v.home}}#bereiche">{{t.nav_areas}}</a></li>
+        <li><a href="{{v.home}}#sicherheit">{{t.nav_security}}</a></li>
+        <li><a href="{{v.home}}#download">{{t.nav_download}}</a></li>
+      </ul>
+    </div>
+    <div>
+      <h4>{{t.footer_project}}</h4>
+      <ul>
+        <li><a href="https://github.com/ghulaschsuppe/GhulSuite" rel="noopener">{{t.footer_source}}</a></li>
+        <li><a href="https://github.com/ghulaschsuppe/GhulSuite/releases" rel="noopener">Releases</a></li>
+        <li><a href="https://github.com/ghulaschsuppe/GhulSuite/issues" rel="noopener">{{t.footer_issues}}</a></li>
+        <li><a href="https://github.com/ghulaschsuppe/GhulSuite/blob/main/SECURITY.md" rel="noopener">{{t.footer_security}}</a></li>
+      </ul>
+    </div>
+    <div>
+      <h4>{{t.footer_legal}}</h4>
+      <ul>
+        <li><a href="{{v.page_imprint}}">{{t.imprint}}</a></li>
+        <li><a href="{{v.page_privacy}}">{{t.privacy_site}}</a></li>
+        <li><a href="{{v.page_privacy_app}}">{{t.privacy_app}}</a></li>
+        <li><a href="https://github.com/ghulaschsuppe/GhulSuite/blob/main/LICENSE" rel="noopener">{{t.license}}</a></li>
+      </ul>
+    </div>
+    <div class="made">
+      <span>© <span data-year>2026</span> {{v.imp_name}} · AGPL-3.0-or-later</span>
+      <span>{{t.footer_nocookies}}</span>
+    </div>
+  </div>
+</footer>
+
+<div class="notice" role="region" aria-label="{{t.notice_label}}">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.2 8.2-8 9-4.8-.8-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg>
+  <p>{{t.notice_text}}</p>
+  <div class="acts">
+    <a class="btn small" href="{{v.page_privacy}}">{{t.notice_more}}</a>
+    <button class="btn small primary" type="button" data-ok>{{t.notice_ok}}</button>
+  </div>
+</div>
+
+<script src="{{v.root}}assets/site.js?v={{v.build}}" defer></script>
+</body>
+</html>

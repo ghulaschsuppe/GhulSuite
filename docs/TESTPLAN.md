@@ -601,6 +601,17 @@ Vorher: eine Version aus den Releases (nicht die Testversion aus den Artefakten)
 | U8 | Windows, installierte Version (MSI): Update installieren. | App schließt sich, der Installer läuft ohne Fragen, GhulSuite startet neu in der neuen Version; Daten bleiben. |
 | U9 | Windows portabel: Update. | Es öffnet sich nur die Release-Seite; auf dem Stick wird nichts verändert. |
 
+## 32. Über, Website und Fehlerbericht
+
+| Nr. | Schritt | Erwartet |
+|---|---|---|
+| W1 | Optionen → Über: „Website“, „Impressum“, „Datenschutzerklärung“ antippen. | Die jeweilige Seite von www.ghulsuite.de öffnet sich im Browser, in der Sprache der App. Die Zeilen haben Innenabstand wie alle Listen. |
+| W2 | Fehlerbericht öffnen, Notiz und E-Mail eintragen, „Senden“. | „Wird gesendet…“, nach wenigen Sekunden „Danke! Dein Bericht ist angekommen.“; beim Entwickler kommt eine Mail mit Notiz, Adresse und Bericht an. |
+| W3 | Ungültige E-Mail-Adresse (z. B. „abc“), „Senden“. | Hinweis, dass die Adresse nicht gültig aussieht; nichts wird gesendet. |
+| W4 | Flugmodus, „Senden“. | Verständliche Fehlermeldung; „Kopieren“ und „Speichern“ funktionieren weiter. |
+| W5 | Sechs Berichte hintereinander senden. | Der sechste innerhalb einer Stunde wird mit „Gerade zu viele Berichte von hier“ abgelehnt. |
+| W6 | Optionen und eine Unterseite (z. B. Über) öffnen. | Zwischen Kopfleiste und Inhalt kein zusätzlicher leerer Streifen. |
+
 ## Fehler melden
 
 Bitte je Fehler: **Testnummer**, Handy und Android-Version, App-Version (Optionen → Über GhulSuite), was du gemacht hast,
