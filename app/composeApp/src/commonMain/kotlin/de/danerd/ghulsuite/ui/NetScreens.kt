@@ -363,13 +363,26 @@ fun ServersSection(state: AppState) {
             if (d.mode == de.danerd.ghulsuite.model.DriveModeUi.SYNC && d.server != null) driveAsk = action else action()
         }
     }
+    /** Loaded once (until then: "Loading …", not "no servers" and "Off"), and why it failed. */
+    var loaded by remember { mutableStateOf(false) }
+    var loadError by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(state.liveRevision(), state.syncing) {
-        servers = catching { net.servers() }.getOrDefault(emptyList())
-        sync = catching { net.syncStatus() }.getOrDefault(SyncStatusUi(null, 0))
+        // While a synchronisation runs the core answers only after it (it holds the suite);
+        // until then the page says it is loading instead of showing an empty list and "Off".
+        catching { net.servers() to net.syncStatus() }
+            .onSuccess { (list, status) -> servers = list; sync = status; loadError = null; loaded = true }
+            .onFailure { loadError = describe(it) }
     }
 
+    if (!loaded) {
+        SectionCard(stringResource(Res.string.set_servers)) {
+            if (loadError != null) ErrorText(loadError) else Hint(stringResource(Res.string.loading))
+        }
+        return
+    }
     SectionCard(stringResource(Res.string.set_servers)) {
         Hint(stringResource(Res.string.set_servers_hint))
+        ErrorText(loadError)
         for (s in servers) {
             // Like the list of mail accounts: a row with a tile, and removing as a red icon.
             ListRow(

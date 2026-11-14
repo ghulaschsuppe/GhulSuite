@@ -223,6 +223,10 @@ impl GhulSuite {
     }
 }
 
+/// Detail of a step of [`GhulSuite::share_setup`] that could not be checked because the address
+/// did not answer over https.
+pub const SHARE_CHECK_SKIPPED: &str = "skipped";
+
 #[uniffi::export]
 impl GhulSuite {
     /// Sets up sharing on an SFTP or FTPS server: `dir` (relative to the login folder) must be
@@ -273,10 +277,18 @@ impl GhulSuite {
             let name = listing_probe.trim_start_matches("s/");
             let listing_ok =
                 installed.is_ok() && matches!(&listed, Ok(r) if !String::from_utf8_lossy(&r.body).contains(name));
+            // Without an answer over https nothing about the listing or the page is known: those
+            // steps say "not checked" instead of a result that was never seen.
             checks.push(ShareCheck {
                 step: "listing".into(),
                 ok: listing_ok,
-                detail: if listing_ok { String::new() } else { "the folder content is visible".into() },
+                detail: if listing_ok {
+                    String::new()
+                } else if !https_ok {
+                    SHARE_CHECK_SKIPPED.into()
+                } else {
+                    "the folder content is visible".into()
+                },
             });
             let _ = fs.delete(&listing_probe);
             let page = get(&public.join(""));
@@ -285,7 +297,15 @@ impl GhulSuite {
             checks.push(ShareCheck {
                 step: "page".into(),
                 ok: page_ok,
-                detail: installed.err().map(|e| e.to_string()).unwrap_or_default(),
+                detail: match installed {
+                    Err(e) => e.to_string(),
+                    Ok(_) if !page_ok && !https_ok => SHARE_CHECK_SKIPPED.into(),
+                    Ok(_) if !page_ok => match &page {
+                        Ok(r) => format!("HTTP {}", r.status),
+                        Err(e) => e.clone(),
+                    },
+                    Ok(_) => String::new(),
+                },
             });
             if checks.iter().all(|c| c.ok) {
                 srv.share_dir = dir.clone();

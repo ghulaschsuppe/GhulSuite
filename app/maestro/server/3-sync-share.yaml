@@ -74,8 +74,10 @@ name: Sync server and sharing on a real server
 - hideKeyboard
 - tapOn: "Use sync-maestro \\(created when testing\\)"
 - extendedWaitUntil:
-    visible: "Connection works\\. Now choose the folder for your data\\."
+    visible: "Connection works, folder chosen\\."
     timeout: 10000
+# The old hint ("Now choose the folder") is gone once the folder is chosen.
+- assertNotVisible: ".*Now choose the folder.*"
 - assertVisible: "sync-maestro/"
 - assertNotVisible: ".*composition.*"
 - takeScreenshot: s3-05-connected
@@ -153,6 +155,11 @@ name: Sync server and sharing on a real server
     timeout: 120000
 - assertNotVisible: ".*composition.*"
 - assertNotVisible: ".*[Cc]oroutine.*"
+# The address does not answer: what depends on it is "not checked", not a result nobody saw.
+- scrollUntilVisible:
+    element: "Not checked: the address does not answer"
+    direction: DOWN
+- assertNotVisible: "the folder content is visible"
 - takeScreenshot: s3-11-share-checked
 - back
 - back

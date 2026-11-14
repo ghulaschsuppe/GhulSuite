@@ -131,6 +131,10 @@ Schwere: **K** kritisch (Datenverlust, Geheimnis preisgegeben) · **H** hoch (An
 | F58 | N | Hinweistexte in Karten standen 4 dp weiter eingerückt als die Beschriftungen darüber und darunter | Durchsicht der Bilder | behoben: in Karten bündig |
 | F59 | N | Schalterzeilen hatten zwei Tippziele (Zeile und Schalter, 52 × 32 dp); Wahlschalter waren 36 dp hoch; bei großer Schrift stieß die Beschriftung an den Schalter | `LayoutCheckTest` (Tippflächen), Bilder | behoben: eine Zeile, ein Schalter (auch für Bildschirmleser), 48 dp; Wahlschalter 40 dp; Abstand zum Schalter |
 | F60 | M | Testumgebung: Alle Bildschirmfotos der Emulator-Abläufe waren schwarz, weil die App Bildschirmfotos verbietet. Die Durchsicht der Emulator-Bilder war damit nie möglich | beim ersten Ansehen der Bilder | behoben: nur die Entwicklerversion auf einem Testgerät mit `debug.ghulsuite.screenshots=1` erlaubt sie (`TestDevice.kt`); ein schwarzes Bild lässt den Lauf scheitern |
+| F61 | M | Nach dem Neustart zeigte „Server, Sync & Teilen“ keinen Server und Synchronisation „Aus“, solange die automatische Synchronisation lief: die Seite zeigte ihren leeren Anfangszustand, ein Ladefehler wurde verschluckt | Emulator-Bild (Teil „server“, langsamer Server) | behoben: „Wird geladen …“ bis die Daten da sind, ein Ladefehler steht auf der Seite. Offen: der Kern hält seine Sperre während der ganzen Synchronisation (siehe 4.) |
+| F62 | N | Nach der Ordnerwahl stand im Server-Formular weiter „Jetzt den Ordner für deine Daten wählen“ | Emulator-Bild | behoben: „Verbindung steht, Ordner gewählt.“; Abläufe 1-drive und 3-sync-share prüfen den Text |
+| F63 | N | GhulDrive im Auswahlmodus: „My files“ als Pfadzeile und darunter die Überschrift „MY FILES“ | Emulator-Bild | behoben: die Pfadzeile nur in Unterordnern; `InteractionTest` zählt die Überschrift |
+| F64 | M | Teilen einrichten mit einer Adresse, die nicht antwortet: „Ordnerinhalt sichtbar“ und „Download-Seite“ rot, obwohl nichts davon geprüft werden konnte | Emulator-Bild | behoben: der Kern meldet diese Schritte als nicht geprüft, die App zeigt sie grau mit „Nicht geprüft: die Adresse antwortet nicht“; Kern-Test mit falscher Adresse, `InteractionTest`, Ablauf 3-sync-share |
 | F23 | M | ~~Tresornamen stehen im Dateinamen~~ (Server, Sicherung): „bank-privat.ghlpss“ verriet, welche Tresore es gibt | `attacks::stolen_device_files_server_and_backup_reveal_nothing` (jetzt auch Datei- und ZIP-Namen), `rekey::vault_files_get_neutral_names_here_and_on_the_server` | behoben: Dateien heißen nach ihrer Kennung (`3f9a1c2b7d4e5f60.ghlpss`), der Name steht nur verschlüsselt darin; alte Namen werden beim Entsperren und beim nächsten Sync ersetzt |
 | F24 | N | Termintitel und Import-Titel werden getrimmt (führender Tab geht verloren); Passwörter bleiben exakt | `attacks::exports_are_safe…` | **gewollt:** Titel ohne Leerraum am Rand sind Absicht (Suche, Sortierung, Anzeige); alles Geheime (Passwörter, Notizen, Schlüssel) bleibt Zeichen für Zeichen erhalten |
 
@@ -189,6 +193,8 @@ Zu F17 (Verhalten seit der Behebung): Die erste Mail eines neuen Kontakts mit Au
 
 
 Offen (Layout): `LayoutCheckTest` prüft die Handy-Darstellung mit den Schriften unter Linux (strenger als Roboto auf Android). Unter Windows fand er mit den dortigen Schriften Funde; ein schmal gezogenes Windows-Fenster ist damit noch nicht geprüft und bekommt eine eigene Prüfung mit Fensterbreiten.
+
+Offen (Kern): `sync_now` arbeitet über das Netz, während der Kern seine Sperre hält (`with_open`). Solange eine Synchronisation mit einem langsamen Server läuft, warten alle anderen Aufrufe der App (Serverliste, Status). Die App zeigt dann „Wird geladen …“ (F61); die Sperre kürzer zu halten (Netz außerhalb, nur das Zusammenführen unter der Sperre) ist ein eigener Umbau.
 
 ### Uneinheitliche Bedienung
 

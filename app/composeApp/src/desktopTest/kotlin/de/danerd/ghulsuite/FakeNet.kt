@@ -63,9 +63,10 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
     }
     override fun phpModuleCreate() = PhpModuleUi("ghulsuite-1a2b3c4d.php", "<?php // module", "00".repeat(32))
     override suspend fun phpModuleUpload(viaServerId: String, dir: String, module: PhpModuleUi) { calls += "phpUpload:$viaServerId:$dir" }
-    override suspend fun shareSetup(serverId: String, dir: String, publicUrl: String) = listOf(
+    var shareChecks = listOf(
         ShareCheckUi("write", true, ""), ShareCheckUi("https", true, ""), ShareCheckUi("listing", true, ""), ShareCheckUi("page", true, ""),
     )
+    override suspend fun shareSetup(serverId: String, dir: String, publicUrl: String) = shareChecks
     override suspend fun shareDrive(ids: List<String>, name: String?, options: ShareOptionsUi): ShareInfoUi {
         calls += "shareDrive:${ids.joinToString(",")}:${options.serverId}:${options.expiresDays}:${options.maxDownloads}:${options.password != null}"
         return share

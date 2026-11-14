@@ -36,6 +36,11 @@ import org.jetbrains.skia.Image
 import java.awt.HeadlessException
 import java.io.File
 import java.util.Locale
+import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.onNodeWithText
+import de.danerd.ghulsuite.model.ShareCheckUi
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -163,6 +168,8 @@ class InteractionTest {
         val net = fake.net as FakeNet
         longPress("Notizen.txt")
         waitFor("1 selected")
+        // In "My files" the heading says where; no path line with the same words above it.
+        assertEquals(1, onAllNodesWithText("My files", ignoreCase = true).fetchSemanticsNodes().size)
         // Three actions: all of them icons in the header.
         assertTrue(onAllNodesWithContentDescription("Share").fetchSemanticsNodes().isNotEmpty())
         desc("Cancel").performClick()
@@ -423,6 +430,28 @@ class InteractionTest {
             waitForIdle()
             assertTrue(onAllNodesWithText("composition", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isEmpty())
             shot("share-setup-quick-browse")
+        }
+    }
+
+    /**
+     * The address does not answer: the steps that depend on it say "not checked" in grey, not a
+     * red result nobody saw (bug: "the folder content is visible" for an address that is not there).
+     */
+    @Test
+    fun shareCheckWithoutAnswerSaysNotChecked() {
+        app(setup = { push(Screen.ShareSetup("s1")) }) { _, fake ->
+            val net = fake.net as FakeNet
+            net.shareChecks = listOf(
+                ShareCheckUi("write", true, ""), ShareCheckUi("https", false, "connection failed"),
+                ShareCheckUi("listing", false, "skipped"), ShareCheckUi("page", false, "skipped"),
+            )
+            waitFor("blog")
+            onNode(hasSetTextAction() and hasText("https://", substring = true)).performTextReplacement("https://example.invalid/teilen")
+            onNodeWithText("Set up and check").performScrollTo().performClick()
+            waitFor("connection failed")
+            assertEquals(2, onAllNodesWithText("Not checked: the address does not answer").fetchSemanticsNodes().size)
+            assertTrue(onAllNodesWithText("skipped").fetchSemanticsNodes().isEmpty())
+            shot("share-check-not-checked")
         }
     }
 

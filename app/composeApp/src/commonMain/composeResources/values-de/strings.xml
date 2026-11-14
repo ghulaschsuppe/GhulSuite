@@ -610,6 +610,7 @@
     <string name="share_check_listing">Ordnerinhalt wird nicht aufgelistet</string>
     <string name="share_check_page">Abrufseite funktioniert</string>
     <string name="share_check_write">Ordner beschreibbar</string>
+    <string name="share_check_skipped">Nicht geprüft: die Adresse antwortet nicht</string>
     <string name="share_count">%1$s Abrufe</string>
     <string name="share_count_of">%1$s von %2$s Abrufen</string>
     <string name="share_create">Link erstellen</string>
@@ -1608,6 +1609,7 @@
     <string name="srvf_step_connect">Verbindung testen</string>
     <string name="srvf_connecting">Wird verbunden…</string>
     <string name="srvf_connect_ok">Verbindung steht. Jetzt den Ordner für deine Daten wählen.</string>
+    <string name="srvf_connect_folder">Verbindung steht, Ordner gewählt.</string>
     <string name="srvf_save">Server speichern</string>
     <string name="srvf_saving">Wird gespeichert…</string>
     <string name="drive_no_server">Noch kein Server</string>

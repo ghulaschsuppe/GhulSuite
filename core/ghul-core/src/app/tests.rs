@@ -1491,6 +1491,11 @@ fn share_via_folder(s: &GhulSuite, server_id: &str, dir: &str, web_root: &std::p
     // A wrong address fails the https check and stores nothing.
     let bad = s.share_setup(server_id.into(), dir.into(), format!("http://127.0.0.1:{}/falsch", web.port)).unwrap();
     assert!(!bad.iter().find(|c| c.step == "https").unwrap().ok, "{bad:?}");
+    // What depends on the address is "not checked", never a result nobody saw.
+    let page = bad.iter().find(|c| c.step == "page").unwrap();
+    assert!(!page.ok && page.detail == crate::app::shares::SHARE_CHECK_SKIPPED, "{bad:?}");
+    let listing = bad.iter().find(|c| c.step == "listing").unwrap();
+    assert!(listing.ok || listing.detail == crate::app::shares::SHARE_CHECK_SKIPPED, "{bad:?}");
     assert!(s.list_servers().unwrap().iter().find(|x| x.id == server_id).unwrap().share_url.is_empty());
     let checks = s.share_setup(server_id.into(), dir.into(), public.clone()).unwrap();
     assert!(checks.iter().all(|c| c.ok), "{checks:?}");

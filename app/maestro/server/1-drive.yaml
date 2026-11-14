@@ -62,7 +62,7 @@ name: GhulDrive on a real server
 - takeScreenshot: s1-drive-folders
 - tapOn: "ghulsuite"
 - extendedWaitUntil:
-    visible: "Connection works\\. Now choose the folder for your data\\."
+    visible: "Connection works, folder chosen\\."
     timeout: 10000
 - assertVisible: "ghulsuite/"
 - takeScreenshot: s1-drive-connected

@@ -419,7 +419,8 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
                     leading = { IconTile(Icons.Filled.Link, paletteColor(5)) }, trailing = { ChevronEnd() },
                 ) { state.push(Screen.Shares) }
             }
-        } else if (query.isBlank()) {
+        } else if (query.isBlank() && path.size > 1) {
+            // The path only in a subfolder: in "My files" the heading below already says where.
             HintText(path.joinToString(" › ") { it.name })
         }
         transfer?.let { tr ->

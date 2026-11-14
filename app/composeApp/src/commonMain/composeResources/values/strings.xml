@@ -610,6 +610,7 @@
     <string name="share_check_listing">Folder content is not listed</string>
     <string name="share_check_page">Download page works</string>
     <string name="share_check_write">Folder writable</string>
+    <string name="share_check_skipped">Not checked: the address does not answer</string>
     <string name="share_count">%1$s downloads</string>
     <string name="share_count_of">%1$s of %2$s downloads</string>
     <string name="share_create">Create link</string>
@@ -1608,6 +1609,7 @@
     <string name="srvf_step_connect">Test connection</string>
     <string name="srvf_connecting">Connecting…</string>
     <string name="srvf_connect_ok">Connection works. Now choose the folder for your data.</string>
+    <string name="srvf_connect_folder">Connection works, folder chosen.</string>
     <string name="srvf_save">Save server</string>
     <string name="srvf_saving">Saving…</string>
     <string name="drive_no_server">No server yet</string>

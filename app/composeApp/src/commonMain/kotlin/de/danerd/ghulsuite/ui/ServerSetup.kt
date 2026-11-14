@@ -239,7 +239,7 @@ fun ServerSetup(
             Text(stringResource(if (state.busy) Res.string.srvf_connecting else Res.string.srvf_test))
         }
     } else {
-        Banner(Icons.Filled.CheckCircle, stringResource(Res.string.srvf_connect_ok))
+        Banner(Icons.Filled.CheckCircle, stringResource(if (form.folder.isBlank()) Res.string.srvf_connect_ok else Res.string.srvf_connect_folder))
         // Step 2: folder from the server's own list.
         ListCard {
             ListRow(

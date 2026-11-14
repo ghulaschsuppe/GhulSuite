@@ -29,6 +29,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Attachment
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Folder
@@ -393,11 +394,17 @@ fun ShareSetupScreen(state: AppState, serverId: String, padding: PaddingValues) 
             }
             SectionCard(stringResource(Res.string.share_setup_step3)) {
                 for (c in checks) {
+                    // "skipped": the address did not answer, so this step could not be checked.
+                    val skipped = !c.ok && c.detail == "skipped"
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(if (c.ok) Icons.Filled.CheckCircle else Icons.Filled.Error, null, tint = if (c.ok) g.ok else g.danger)
+                        Icon(
+                            when { c.ok -> Icons.Filled.CheckCircle; skipped -> Icons.Filled.RadioButtonUnchecked; else -> Icons.Filled.Error },
+                            null, tint = when { c.ok -> g.ok; skipped -> g.faint; else -> g.danger },
+                        )
                         Column(Modifier.weight(1f)) {
-                            Text(checkLabel(c.step))
-                            if (!c.ok && c.detail.isNotBlank()) Hint(c.detail)
+                            Text(checkLabel(c.step), color = if (skipped) g.muted else Color.Unspecified)
+                            if (skipped) Hint(stringResource(Res.string.share_check_skipped))
+                            else if (!c.ok && c.detail.isNotBlank()) Hint(c.detail)
                         }
                     }
                 }

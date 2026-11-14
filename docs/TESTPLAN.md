@@ -315,6 +315,7 @@ Für T5 bis T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick
 | SH2 | Optionen → Server, Sync & Teilen → beim SFTP- oder FTPS-Server „Teilen einrichten“. | Assistent: 1. Ordner auf dem Server durchblättern (Ordner antippen, „..“ zurück, „Neuer Ordner“), 2. Webadresse, 3. Prüfung. |
 | SH3 | Ordner im Webbereich wählen (z. B. `public_html/teilen`), passende https-Adresse → „Einrichten und prüfen“. | Vier grüne Haken: Ordner beschreibbar, über HTTPS erreichbar, Ordnerinhalt wird nicht aufgelistet, Abrufseite funktioniert. „Alles funktioniert …“. |
 | SH4 | Falsche Adresse (passt nicht zum Ordner) prüfen. | Mindestens ein roter Punkt mit Erklärung; nichts wird gespeichert. |
+| SH4b | Eine Adresse prüfen, die es nicht gibt (z. B. `https://example.invalid/teilen`). | „Ordner beschreibbar“ grün, „Über HTTPS erreichbar“ rot mit Grund; „Ordnerinhalt“ und „Abrufseite“ grau mit „Nicht geprüft: die Adresse antwortet nicht“, kein rotes Ergebnis, das nie geprüft wurde. |
 | SH5 | Den Suite-Ordner (`ghulsuite`) als Teilen-Ordner wählen. | Abgelehnt. |
 | SH6 | GhulDrive → Datei → Teilen → Freigabelink → Gültig „7 Tage“ → „Link erstellen“. | „Link erstellt“ mit Link, Größe, „bis …“. „Kopieren“ legt ihn in die Zwischenablage. |
 | SH7 | Link auf einem anderen Gerät/PC im Browser öffnen. | Seite zeigt Dateiname und Größe, „Herunterladen“ liefert die identische Datei. Der Teil nach # verschwindet aus der Adresszeile. |
