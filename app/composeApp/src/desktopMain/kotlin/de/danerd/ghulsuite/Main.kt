@@ -105,7 +105,8 @@ fun main() {
                     val now = System.currentTimeMillis()
                     val away = lostFocusAt?.let { now - it } ?: 0L
                     // A system dialog (e.g. Windows asking for the key PIN) must not lock.
-                    val waitingForKey = state.busy
+                    // A mail archive run waits for its end (the long first run), then the lock follows.
+                    val waitingForKey = state.busy || state.archiveRunning
                     // A few seconds of grace, so that a short switch (e.g. to a system dialog) does not lock.
                     val autoLock = maxOf(backend.settings.autoLockSeconds * 1000L, 3000L)
                     when {

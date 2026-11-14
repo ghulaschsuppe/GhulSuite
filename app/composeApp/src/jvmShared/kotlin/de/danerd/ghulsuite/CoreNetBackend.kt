@@ -448,7 +448,8 @@ abstract class CoreNetBackend(protected val suite: () -> GhulSuite) : NetBackend
         MailArchivePlace.FOREIGN -> ArchivePlaceUi.FOREIGN
     }
     private fun MailArchiveRun.toUi() = MailArchiveRunUi(
-        archived.toInt(), removed.toInt(), deletedByRule.toInt(), remaining.toInt(), waitingForConfirmation.toInt(), renumbered.toInt(), busy,
+        archived.toInt(), removed.toInt(), deletedByRule.toInt(), remaining.toInt(), waitingForConfirmation.toInt(), renumbered.toInt(),
+        tooLarge.toInt(), busy,
     )
     private fun MailArchivedMail.toUi() = ArchivedMailUi(key, folder, role, summary.toUi(), atProvider, trashed)
     private fun List<de.danerd.ghulsuite.model.ArchiveRefUi>.refs() = map { MailArchiveRef(it.key, it.folder) }

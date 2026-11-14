@@ -288,6 +288,10 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     var archiveAsk by mutableStateOf<Pair<String, Int>?>(null)
     /** An archive run is going on. */
     var archiveRunning by mutableStateOf(false)
+    /** Mails too large for the archive (per account), from the last run. */
+    var archiveTooLarge by mutableStateOf<Map<String, Int>>(emptyMap())
+    /** Progress of the run going on ("1.200 archived, 28.800 left"), null otherwise. */
+    var archiveProgress by mutableStateOf<String?>(null)
     private var archiveJob: kotlinx.coroutines.Job? = null
     /** "Where should your mails live?" after the first account, while no archive is set up. */
     var archiveWhereAsk by mutableStateOf(false)
@@ -320,13 +324,19 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         if (archiveRunning) return null
         archiveRunning = true
         var total = de.danerd.ghulsuite.model.MailArchiveRunUi()
+        suspend fun progress(left: Int) {
+            val text = getString(Res.string.archive_progress, total.archived.toString(), left.toString())
+            archiveProgress = text
+            net.archiveRunning(text)
+        }
         try {
+            progress(0)
             for (a in st.options.accounts) {
                 var rounds = 0
                 while (backend.unlocked.value && rounds < 500) {
                     rounds++
                     val r = try {
-                        net.archiveRun(a, 200)
+                        net.archiveRun(a, ARCHIVE_BATCH)
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Throwable) {
@@ -334,11 +344,13 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                         return null
                     }
                     archiveUnreachable = null
+                    archiveTooLarge = archiveTooLarge + (a to r.tooLarge)
                     total = total.copy(
                         archived = total.archived + r.archived, removed = total.removed + r.removed,
                         deletedByRule = total.deletedByRule + r.deletedByRule, remaining = r.remaining,
                         waitingForConfirmation = r.waitingForConfirmation, renumbered = total.renumbered + r.renumbered, busy = r.busy,
                     )
+                    progress(r.remaining)
                     if (r.busy.isNotEmpty() || r.remaining == 0) {
                         if (r.remaining == 0 && r.waitingForConfirmation > 0 && st.options.deleteAtProvider &&
                             a !in st.confirmed && archiveAsked.add(a)
@@ -352,10 +364,15 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             if (st.fullCopy) runCatching { net.archiveDownload(500, archiveDeviceName()) }
         } finally {
             archiveRunning = false
+            archiveProgress = null
+            net.archiveRunning(null)
         }
         if (total.archived > 0 || total.removed > 0) changed()
         return total
     }
+
+    /** Mails per call of the core (each call ends with everything checked; the progress follows it). */
+    private val ARCHIVE_BATCH = 1000
 
     /** How this device is called in "a copy of the archive has: ...". */
     fun archiveDeviceName(): String = if (backend.isDesktop) "Windows-PC" else "Android"

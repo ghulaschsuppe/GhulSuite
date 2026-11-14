@@ -197,7 +197,8 @@ durchsuchbar und mit einer Kopie auf dem Gerät auch offline lesbar. Beim Anbiet
 4. **Zählregel:** Mails beim Anbieter plus Mails im Archiv sind nach jedem einzelnen Schritt nie weniger als vorher.
    Die Tests brechen nach jedem Schritt ab (hochgeladen, geprüft, verzeichnet, gelöscht) und prüfen das, nachts mit
    30.000 Mails und zufälligen Abbrüchen.
-5. **Ein Gerät zur Zeit** archiviert ein Konto; die anderen warten.
+5. **Ein Gerät zur Zeit** archiviert ein Konto; die anderen warten. Mails über 100 MB bleiben beim Anbieter und werden
+   dort nie gelöscht.
 6. **Server weg?** Das Archiv zieht auf einen neuen Server um (kopieren, prüfen, umschalten), oder ein Gerät mit
    vollständiger Kopie baut es dort wieder auf. Wiederherstellen fügt nur hinzu, es löscht nie.
 7. **Schlüssel-Epochen:** Nach einer Schutzänderung (neues Notfallblatt, Key entfernt) bekommt Neues einen neuen
@@ -302,7 +303,7 @@ Für normale Mails brauchst du keinen eigenen Server: GhulMail spricht direkt mi
 GhulSuite ist ein Soloprojekt ohne bezahlten externen Audit. Umso wichtiger ist, dass jeder nachprüfen kann, was
 getestet wird und was nicht:
 
-- **Bei jeder Änderung** laufen über eine Million Einzelprüfungen in 263 Testfunktionen: Angriffe auf Dateien,
+- **Bei jeder Änderung** laufen über eine Million Einzelprüfungen in 266 Testfunktionen: Angriffe auf Dateien,
   Server und Synchronisation, ein „bekloppter Nutzer“ auf drei Geräten, kaputte und böswillige Eingaben in jeden
   Parser, Tests gegen echte SFTP-, FTPS-, IMAP- und SMTP-Server. Dazu kommen öffentliche Sammlungen wie Project
   Wycheproof (Kryptografie), die Big List of Naughty Strings, XSS- und CRLF-Sammlungen für Mails, die URL-Testdaten

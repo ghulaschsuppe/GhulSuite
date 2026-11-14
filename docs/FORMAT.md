@@ -566,7 +566,7 @@ Adressen, keine Ordnernamen, keine Monate, keine Inhalte.
 ```text
 mailarchive/head.ghlarc            "GHULARH1" | Epoche u32 = 0 | nonce[24] | AEAD(Kopf-Schlüssel, CBOR {id, created})
 mailarchive/a/<konto>/m/<monat>    "GHULARM1" | Epoche u32 | nonce[24] | AEAD(Index-Schlüssel(e), aufgefülltes CBOR)
-mailarchive/a/<konto>/state        "GHULARS1" | ...  UIDVALIDITY je Ordner, wie zuletzt gesehen
+mailarchive/a/<konto>/state        "GHULARS1" | ...  UIDVALIDITY je Ordner, UID-Verzeichnis (UID → Monat, gelöscht, zu groß)
 mailarchive/a/<konto>/lock         "GHULARL1" | ...  {Gerät, gültig bis}: archiviert gerade
 mailarchive/b/<ab>/<block-id>      "GHULARB1" | Epoche u32 | nonce[24] | AEAD(Block-Schlüssel(e), Block bis 4 MiB)
 mailarchive/gc                     "GHULARG1" | ...  Blöcke, die beim letzten Aufräumen unbenutzt waren
@@ -585,15 +585,20 @@ mailarchive/gc                     "GHULARG1" | ...  Blöcke, die beim letzten A
 - **Zusätzliche Daten** jeder AEAD-Verschlüsselung: Magic ‖ Epoche ‖ Pfad der Datei. Eine Datei lässt sich deshalb nicht
   als eine andere ausgeben (etwa ein alter Monat an Stelle eines neuen).
 - **Monat:** CBOR `{month, revision, items}`; je Mail `key`, Ordner, Rolle, UIDs und UIDVALIDITY beim Anbieter, Datum,
-  Größe, Block-IDs, Kopf (bis 16 KiB) und Textanfang (2 KiB) für Liste, Vorschau und Suche, gelesen, markiert,
+  Größe, Block-IDs, die für die Liste nötigen Kopfzeilen (bis 8 KiB) und Textanfang (1 KiB) für Liste, Vorschau und Suche, gelesen, markiert,
   Schlagwörter, archiviert/geändert, im Archiv-Papierkorb seit, `removed` (beim Anbieter gelöscht). Änderungen laden den
   Monat neu und schreiben nur, wenn sich die Revision dazwischen nicht geändert hat.
 
-**Ablauf je Konto** (ein Gerät zugleich: Sperre je Aufruf mit höchstens 200 Mails, gilt 15 Minuten, am Ende freigegeben):
+**UID-Verzeichnis im `state`:** je Ordner die archivierten UIDs mit ihrem Monat, die beim Anbieter gelöschten und die zu
+großen. Ein Lauf liest dadurch nur die Monate, die er ändert. Es ist nur eine Abkürzung: Fehlt es, wird es aus den
+Monaten neu aufgebaut; vor dem Löschen beim Anbieter wird weiterhin jede Mail aus dem Monat und ihren Blöcken geprüft.
+
+**Ablauf je Konto** (ein Gerät zugleich: Sperre je Aufruf mit höchstens 1.000 Mails, gilt 15 Minuten, am Ende freigegeben):
 1. Ordner des Anbieters lesen (Entwürfe nie, Spam und Papierkorb nach Einstellung), UIDVALIDITY und die UIDs der Mails
    vor der Frist (`UID SEARCH BEFORE`) holen. Hat sich UIDVALIDITY geändert, wird über den Inhalt neu zugeordnet.
-2. In Schritten zu 50 Mails, die neuesten zuerst: Mail mit `BODY.PEEK[]` holen (ändert keine Markierung), Blöcke
-   schreiben, **über eine zweite Verbindung zurücklesen und Byte für Byte vergleichen**, dann den Monat schreiben und
+2. Größen vorab (`RFC822.SIZE`): Mails über **100 MB** werden nicht geholt, bleiben beim Anbieter und werden dort nie
+   gelöscht. In Schritten zu 100 Mails, die neuesten zuerst: bis zu 10 Mails bzw. 20 MB mit einem `BODY.PEEK[]`-Befehl
+   holen (ändert keine Markierung), Blöcke von vier Mails gleichzeitig schreiben, **über eine zweite Verbindung zurücklesen und Byte für Byte vergleichen**, dann den Monat schreiben und
    ebenfalls zurücklesen.
 3. Nur wenn „beim Anbieter löschen“ eingeschaltet **und** einmal bestätigt ist: jede Mail noch einmal vollständig aus
    dem Archiv lesen und prüfen, dann genau ihre UIDs löschen (`UID EXPUNGE`, ohne UIDPLUS nur genau diese), und nur,

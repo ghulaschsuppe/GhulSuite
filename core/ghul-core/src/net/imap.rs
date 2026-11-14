@@ -403,6 +403,9 @@ pub async fn flagged(s: &mut ImapSession, folder: &str, limit: u32) -> NetResult
     Ok(out)
 }
 
+/// Bytes fetched with one command for the archive at most (a single larger mail goes alone).
+const FETCH_BYTES: u64 = 20 * 1024 * 1024;
+
 /// A message as the archive takes it: complete and unchanged, with its flags.
 pub struct Archivable {
     pub uid: u32,
@@ -467,6 +470,99 @@ pub async fn fetch_archivable(
         labels: listed(f).map(|l| l.labels).unwrap_or_default(),
         received: f.internal_date().map(|d| d.timestamp()).unwrap_or(0),
     }))
+}
+
+/// Sizes (RFC822.SIZE) of these messages, without fetching them. Nothing if the folder has
+/// another UIDVALIDITY now.
+pub async fn sizes(
+    s: &mut ImapSession,
+    folder: &str,
+    validity: u32,
+    uids: &[u32],
+) -> NetResult<std::collections::BTreeMap<u32, u64>> {
+    let mb = s.examine(folder).await.map_err(proto)?;
+    let mut out = std::collections::BTreeMap::new();
+    if mb.uid_validity.unwrap_or(0) != validity {
+        return Ok(out);
+    }
+    for set in uid_sets(uids) {
+        let fetches: Vec<async_imap::types::Fetch> =
+            s.uid_fetch(set, "(UID RFC822.SIZE)").await.map_err(proto)?.try_collect().await.map_err(proto)?;
+        for f in &fetches {
+            if let Some(uid) = f.uid {
+                out.insert(uid, u64::from(f.size.unwrap_or(0)));
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Several complete messages for the archive with one command (EXAMINE, BODY.PEEK), in the order
+/// of `uids`; missing ones are left out. Nothing if the folder has another UIDVALIDITY now.
+pub async fn fetch_archivable_many(
+    s: &mut ImapSession,
+    folder: &str,
+    validity: u32,
+    uids: &[u32],
+) -> NetResult<Vec<Archivable>> {
+    use async_imap::types::Flag;
+    let mb = s.examine(folder).await.map_err(proto)?;
+    if mb.uid_validity.unwrap_or(0) != validity || uids.is_empty() {
+        return Ok(Vec::new());
+    }
+    // Sizes first: one command fetches at most about 20 MB (a single larger mail goes alone).
+    let mut sizes = std::collections::HashMap::new();
+    for set in uid_sets(uids) {
+        let fetches: Vec<async_imap::types::Fetch> =
+            s.uid_fetch(set, "(UID RFC822.SIZE)").await.map_err(proto)?.try_collect().await.map_err(proto)?;
+        for f in &fetches {
+            if let Some(uid) = f.uid {
+                sizes.insert(uid, u64::from(f.size.unwrap_or(0)));
+            }
+        }
+    }
+    let mut groups: Vec<Vec<u32>> = Vec::new();
+    let mut size = 0u64;
+    for uid in uids.iter().copied().filter(|u| sizes.contains_key(u)) {
+        let this = sizes[&uid];
+        match groups.last_mut() {
+            Some(g) if !g.is_empty() && size + this <= FETCH_BYTES => {
+                g.push(uid);
+                size += this;
+            }
+            _ => {
+                groups.push(vec![uid]);
+                size = this;
+            }
+        }
+    }
+    let mut found = std::collections::HashMap::new();
+    for set in groups.iter().flat_map(|g| uid_sets(g)) {
+        let fetches: Vec<async_imap::types::Fetch> = s
+            .uid_fetch(set, "(UID FLAGS INTERNALDATE BODY.PEEK[])")
+            .await
+            .map_err(proto)?
+            .try_collect()
+            .await
+            .map_err(proto)?;
+        for f in &fetches {
+            let (Some(uid), Some(raw)) = (f.uid, f.body()) else { continue };
+            let flags: Vec<Flag<'_>> = f.flags().collect();
+            found.insert(
+                uid,
+                Archivable {
+                    uid,
+                    raw: raw.to_vec(),
+                    seen: flags.iter().any(|x| matches!(x, Flag::Seen)),
+                    flagged: flags.iter().any(|x| matches!(x, Flag::Flagged)),
+                    labels: listed(f).map(|l| l.labels).unwrap_or_default(),
+                    received: f.internal_date().map(|d| d.timestamp()).unwrap_or(0),
+                },
+            );
+        }
+    }
+    let mut seen = std::collections::HashSet::new();
+    Ok(uids.iter().filter(|u| seen.insert(**u)).filter_map(|u| found.remove(u)).collect())
 }
 
 /// Deletes exactly these messages for good, but only while the folder still has UIDVALIDITY

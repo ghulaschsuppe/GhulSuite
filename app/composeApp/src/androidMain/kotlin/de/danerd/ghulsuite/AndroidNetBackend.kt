@@ -129,6 +129,16 @@ class AndroidNetBackend(private val context: Context, suite: () -> GhulSuite) : 
         }
     }
 
+    override fun archiveRunning(progress: String?) {
+        ArchiveRun.set(progress)
+        // The notification of the unlocked suite shows the progress.
+        if (context.ghul.backend.unlocked.value) {
+            runCatching {
+                context.startForegroundService(android.content.Intent(context, UnlockedService::class.java).setAction(UnlockedService.ACTION_UPDATE))
+            }
+        }
+    }
+
     override fun unmeteredNetwork(): Boolean {
         val cm = context.getSystemService(android.net.ConnectivityManager::class.java) ?: return false
         val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false

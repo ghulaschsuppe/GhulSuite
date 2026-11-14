@@ -44,6 +44,10 @@ struct Sim {
     fetches: Cell<usize>,
     /// Lists every old UID twice (a confused server).
     list_twice: Cell<bool>,
+    /// Sizes reported instead of the real ones (huge mails without the memory).
+    claimed_sizes: RefCell<BTreeMap<Vec<u8>, u64>>,
+    /// Mails fetched (the test of huge mails checks they never are).
+    fetched: RefCell<Vec<u32>>,
 }
 
 impl Sim {
@@ -92,6 +96,11 @@ impl Sim {
         self.folders.borrow().iter().flat_map(|f| f.mails.iter().map(|m| m.raw.clone())).collect()
     }
 
+    /// The size the provider reports (a test can pretend a mail is huge without holding it).
+    fn size_of(&self, m: &SimMail) -> u64 {
+        self.claimed_sizes.borrow().get(&m.raw).copied().unwrap_or(m.raw.len() as u64)
+    }
+
     fn count(&self, folder: &str) -> usize {
         self.folders.borrow().iter().find(|f| f.name == folder).unwrap().mails.len()
     }
@@ -112,9 +121,19 @@ impl Provider for Sim {
         Ok((f.validity, uids))
     }
 
+    fn sizes(&self, folder: &str, validity: u32, uids: &[u32]) -> Result<BTreeMap<u32, u64>> {
+        let fs = self.folders.borrow();
+        let f = fs.iter().find(|f| f.name == folder).ok_or(GhulError::NotFound)?;
+        if f.validity != validity {
+            return Ok(BTreeMap::new());
+        }
+        Ok(f.mails.iter().filter(|m| uids.contains(&m.uid)).map(|m| (m.uid, self.size_of(m))).collect())
+    }
+
     fn fetch(&self, folder: &str, validity: u32, uid: u32) -> Result<Option<Archivable>> {
         let n = self.fetches.get();
         self.fetches.set(n + 1);
+        self.fetched.borrow_mut().push(uid);
         if self.fail_fetch_after.get().is_some_and(|max| n >= max) {
             return Err(GhulError::Network { msg: "connection reset".into() });
         }
@@ -410,28 +429,28 @@ fn a_lost_connection_while_fetching_and_small_budgets_continue_where_they_stoppe
     let store = place.store(&s);
     let sim = Sim::new();
     let mut before = Vec::new();
-    for n in 0..130 {
+    for n in 0..260 {
         let m = mail(n, "many");
         sim.add("INBOX", &m, 40 + i64::from(n % 50));
         before.push(m);
     }
-    sim.fail_fetch_after.set(Some(57));
+    sim.fail_fetch_after.set(Some(STEP + 7));
     assert!(run_at(&store, &sim, &s, NOW_MS, 1000).is_err());
     assert_nothing_lost(&store, &sim, &before);
     let partly = archived(&store).len();
-    assert!((50..130).contains(&partly), "the first step of 50 was finished: {partly}");
+    assert!((STEP..260).contains(&partly), "the first step was finished: {partly}");
     sim.fail_fetch_after.set(None);
 
     let mut rounds = 0;
     loop {
-        let r = run_at(&store, &sim, &s, NOW_MS, 20).unwrap();
+        let r = run_at(&store, &sim, &s, NOW_MS, 40).unwrap();
         rounds += 1;
         if r.remaining == 0 {
             break;
         }
         assert!(rounds < 20);
     }
-    assert_eq!(archived(&store).len(), 130);
+    assert_eq!(archived(&store).len(), 260);
     assert_no_duplicates(&store);
 }
 
@@ -671,6 +690,130 @@ fn the_index_entry_of_a_mail_is_listed_and_found() {
     assert!(m.summary.preview.contains("Dachdecker"));
     assert!(m.summary.date > 0);
     assert!(m.at_provider);
+}
+
+#[test]
+fn mails_larger_than_the_limit_stay_at_the_provider() {
+    let place = Place::new("huge");
+    let mut s = settings_with(1);
+    s.delete_at_provider = true;
+    s.confirmed.insert("acc".into());
+    let store = place.store(&s);
+    let sim = Sim::new();
+    let before = mailbox(&sim);
+    // A mail of 1 GB (as the provider reports it) between ordinary old mails.
+    let huge = mail(77, "1 GB attachment");
+    let huge_uid = sim.add("INBOX", &huge, 50);
+    sim.claimed_sizes.borrow_mut().insert(huge.clone(), 1024 * 1024 * 1024);
+    let r = run_at(&store, &sim, &s, NOW_MS, 1000).unwrap();
+    assert_eq!((r.archived, r.removed, r.too_large), (9, 9, 1));
+    assert!(!sim.fetched.borrow().contains(&huge_uid), "a too large mail is never fetched");
+    assert!(sim.all().contains(&huge), "it stays at the provider");
+    assert_nothing_lost(&store, &sim, &before);
+    // The next run does not try it again, and still says so.
+    sim.fetched.borrow_mut().clear();
+    let r = run_at(&store, &sim, &s, NOW_MS, 1000).unwrap();
+    assert_eq!((r.archived, r.removed, r.too_large, r.remaining), (0, 0, 1, 0));
+    assert!(sim.fetched.borrow().is_empty());
+    assert!(sim.all().contains(&huge));
+}
+
+/// Counts what is read from the server (for the tests that a run reads only what it needs).
+struct CountingFs {
+    inner: LocalFs,
+    read_bytes: std::sync::atomic::AtomicU64,
+}
+
+impl RemoteFs for CountingFs {
+    fn list(&self, dir: &str) -> crate::net::NetResult<Vec<crate::net::remote::RemoteEntry>> {
+        self.inner.list(dir)
+    }
+    fn read(&self, path: &str) -> crate::net::NetResult<Option<Vec<u8>>> {
+        let r = self.inner.read(path)?;
+        if let Some(d) = &r {
+            self.read_bytes.fetch_add(d.len() as u64, std::sync::atomic::Ordering::Relaxed);
+        }
+        Ok(r)
+    }
+    fn write(&self, path: &str, data: &[u8]) -> crate::net::NetResult<()> {
+        self.inner.write(path, data)
+    }
+    fn delete(&self, path: &str) -> crate::net::NetResult<()> {
+        self.inner.delete(path)
+    }
+    fn mkdir_all(&self, dir: &str) -> crate::net::NetResult<()> {
+        self.inner.mkdir_all(dir)
+    }
+}
+
+#[test]
+fn a_run_reads_only_what_it_needs() {
+    let place = Place::new("lean");
+    let s = settings_with(1);
+    let counting = Arc::new(CountingFs { inner: LocalFs::new(&place.root), read_bytes: Default::default() });
+    let fs: Arc<dyn RemoteFs> = counting.clone();
+    let second = fs.clone();
+    let store = Store { fs, fresh: Box::new(move || Ok(second.clone())), keys: Keys::new(&s).unwrap(), copy: None };
+    let sim = Sim::new();
+    // 600 mails over 50 months, each with a 20 KB attachment.
+    for n in 0..600u32 {
+        let mut m =
+            String::from_utf8(mail(n, "lean")).unwrap().replace("2 Mar 2026", &format!("2 Mar {}", 2020 + n % 5));
+        m = m.replace("Mar", ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct"][(n % 10) as usize]);
+        let mut raw = m.into_bytes();
+        raw.extend(std::iter::repeat_n(b'x', 20_000));
+        sim.add("INBOX", &raw, 40 + i64::from(n % 900));
+    }
+    run_at(&store, &sim, &s, NOW_MS, 1000).unwrap();
+    assert_eq!(archived(&store).len(), 600);
+    // Nothing new: the run reads the state file, not the month files of the whole archive.
+    counting.read_bytes.store(0, std::sync::atomic::Ordering::Relaxed);
+    let r = run_at(&store, &sim, &s, NOW_MS, 1000).unwrap();
+    assert_eq!(r.archived, 0);
+    let read = counting.read_bytes.load(std::sync::atomic::Ordering::Relaxed);
+    let months: u64 = place.all_files().iter().filter(|(p, _)| p.contains("/m/")).map(|(_, d)| d.len() as u64).sum();
+    assert!(read * 4 < months, "read {read} bytes, the month files are {months}");
+    // One new old mail: only its month is read and written.
+    sim.add("INBOX", &mail(9999, "one more"), 45);
+    counting.read_bytes.store(0, std::sync::atomic::Ordering::Relaxed);
+    assert_eq!(run_at(&store, &sim, &s, NOW_MS, 1000).unwrap().archived, 1);
+    let read = counting.read_bytes.load(std::sync::atomic::Ordering::Relaxed);
+    assert!(read * 4 < months, "read {read} bytes for one mail, the month files are {months}");
+}
+
+#[test]
+fn a_lost_state_file_is_rebuilt_from_the_month_files() {
+    let place = Place::new("state");
+    let mut s = settings_with(1);
+    let store = place.store(&s);
+    let sim = Sim::new();
+    let before = mailbox(&sim);
+    run_at(&store, &sim, &s, NOW_MS, 1000).unwrap();
+    // The state file (with the index) is gone or damaged: rebuilt, nothing archived twice.
+    for damage in ["gone", "garbage"] {
+        let path = place.root.join(dir(&store)).join("state");
+        match damage {
+            "gone" => std::fs::remove_file(&path).unwrap(),
+            _ => std::fs::write(&path, b"GHULARS1 not a state file at all, but long enough to try").unwrap(),
+        }
+        let r = run_at(&store, &sim, &s, NOW_MS, 1000);
+        if damage == "garbage" {
+            // A damaged state file is an error, never a reason to archive or delete anything.
+            assert!(r.is_err());
+            std::fs::remove_file(&path).unwrap();
+            run_at(&store, &sim, &s, NOW_MS, 1000).unwrap();
+        } else {
+            assert_eq!(r.unwrap().archived, 0, "{damage}");
+        }
+        assert_no_duplicates(&store);
+        assert_eq!(archived(&store).len(), 9);
+    }
+    // Deleting still works from the rebuilt index, and still reads every mail back first.
+    s.delete_at_provider = true;
+    s.confirmed.insert("acc".into());
+    let r = run_at(&store, &sim, &s, NOW_MS, 1000).unwrap();
+    assert_eq!(r.removed, 9);
+    assert_nothing_lost(&store, &sim, &before);
 }
 
 /// 30 000 mails, some with large attachments, through the whole cycle with random failures:

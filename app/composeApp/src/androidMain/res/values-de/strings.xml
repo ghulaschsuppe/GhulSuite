@@ -28,4 +28,5 @@
     <string name="cal_snooze">In 5 Min. erneut</string>
     <string name="cal_done">Erledigt</string>
     <string name="share_as_mail">Per E-Mail senden (GhulMail)</string>
+    <string name="notif_archive">%1$s Bleibt entsperrt, bis es fertig ist. Schütteln oder „Sperren“ sperrt sofort.</string>
 </resources>

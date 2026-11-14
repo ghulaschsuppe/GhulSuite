@@ -582,6 +582,8 @@ oder die Synchronisation. **Bitte nicht mit dem einzigen Postfach eines wichtige
 | A12 | „Kopie auf diesem Gerät löschen“, während kein anderes Gerät eine vollständige Kopie hat. | Warnung, dass es die einzige Kopie sein könnte; Löschen erst nach Eintippen von „löschen“. |
 | A13 | Spam-Ordner auf „Nach der Frist beim Anbieter löschen“. | Erst eine Warnung; danach sind alte Spam-Mails beim Anbieter weg, neue bleiben. |
 | A14 | Auf zwei Geräten gleichzeitig „Jetzt archivieren“. | Eines meldet „Ein anderes Gerät archiviert dieses Konto gerade“; nichts doppelt. |
+| A15 | Großes Postfach: „Jetzt archivieren“, dann in eine andere App wechseln und den Bildschirm ausschalten. | Die Benachrichtigung zeigt „Mail-Archiv: N archiviert, M übrig“; der Lauf geht weiter. Nach dem Ende sperrt die Suite wie eingestellt. „Sperren“ in der Benachrichtigung sperrt sofort und hält den Lauf an; nach dem Entsperren geht es weiter. |
+| A16 | Eine Mail mit einem Anhang über 100 MB im Postfach (z. B. selbst über Webmail in den Ordner gelegt, falls der Anbieter das zulässt). | Wird nicht archiviert, bleibt beim Anbieter; die Mail-Optionen nennen „1 Mails sind größer als 100 MB …“. Alle anderen werden archiviert. |
 
 ## Fehler melden
 

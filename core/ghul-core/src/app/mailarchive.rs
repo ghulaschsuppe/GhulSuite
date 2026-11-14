@@ -61,7 +61,15 @@ pub const DEFAULT_DAYS: u32 = 30;
 /// Largest block of a mail.
 const BLOCK: usize = 4 * 1024 * 1024;
 /// Mails per step: each step is finished (uploaded, checked, in the index) on its own.
-const STEP: usize = 50;
+const STEP: usize = 100;
+/// Mails larger than this are not archived: they stay at the provider, untouched (and are never
+/// deleted there). Fetching one would need that much memory at once; mail providers rarely accept
+/// mails of this size anyway.
+pub const MAX_MAIL: u64 = 100 * 1024 * 1024;
+/// Mails fetched from the provider with one command (bounds the memory a step needs).
+const FETCH_CHUNK: usize = 10;
+/// Mails uploaded and read back at the same time.
+const PARALLEL: usize = 4;
 /// A device's lock on an account: renewed every step, given up at the end.
 const LOCK_MS: i64 = 15 * 60 * 1000;
 /// Mails deleted in the archive stay in its trash this long.
@@ -69,9 +77,12 @@ pub const TRASH_DAYS: u32 = 30;
 /// Blocks no mail uses are deleted only when they were unused at an earlier clean-up at least
 /// this long ago (another device may be archiving and not have written its index yet).
 const GC_GRACE_MS: i64 = 24 * 60 * 60 * 1000;
-/// Kept of a mail's header and text in the index (for the list, the preview and the search).
-const HEADER_MAX: usize = 16 * 1024;
-const TEXT_MAX: usize = 2048;
+/// Kept of a mail's header and text in the index (for the list, the preview and the search):
+/// only the header fields the list needs, so a month file of hundreds of mails stays small.
+const HEADER_MAX: usize = 8 * 1024;
+const TEXT_MAX: usize = 1024;
+const HEADER_FIELDS: &[&str] =
+    &["from", "to", "cc", "reply-to", "subject", "date", "message-id", "in-reply-to", "references", "content-type"];
 
 type Key = Zeroizing<[u8; 32]>;
 
@@ -365,6 +376,63 @@ pub(crate) struct Month {
 struct State {
     /// UIDVALIDITY per folder as last seen.
     folders: BTreeMap<String, u32>,
+    /// What is archived per folder under its current numbering, so a run knows what is left to do
+    /// without reading every month file. Only a shortcut: the month files stay the truth, and
+    /// deleting at the provider still reads every mail back from them. `None` until built once.
+    #[serde(default)]
+    index: Option<BTreeMap<String, FolderIndex>>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+struct FolderIndex {
+    validity: u32,
+    /// Archived UID and the month file its mail is in.
+    uids: BTreeMap<u32, String>,
+    /// UIDs already deleted at the provider.
+    #[serde(default)]
+    removed: BTreeSet<u32>,
+    /// UIDs of mails larger than [`MAX_MAIL`] (with their size): left at the provider, not tried again.
+    #[serde(default)]
+    too_large: BTreeMap<u32, u64>,
+}
+
+impl State {
+    /// Builds the index from the month files (the first time, or after a lost state file).
+    fn ensure_index(&mut self, store: &Store, account_dir: &str) -> Result<()> {
+        if self.index.is_some() {
+            return Ok(());
+        }
+        let mut index: BTreeMap<String, FolderIndex> = BTreeMap::new();
+        for m in store.months(account_dir)?.values() {
+            for i in &m.items {
+                let want = self.folders.get(&i.folder).copied().unwrap_or(i.validity);
+                if i.validity != want {
+                    continue;
+                }
+                let f = index
+                    .entry(i.folder.clone())
+                    .or_insert_with(|| FolderIndex { validity: want, ..Default::default() });
+                for u in &i.uids {
+                    f.uids.insert(*u, m.month.clone());
+                    if i.removed {
+                        f.removed.insert(*u);
+                    }
+                }
+            }
+        }
+        self.index = Some(index);
+        Ok(())
+    }
+
+    fn folder(&mut self, name: &str, validity: u32) -> &mut FolderIndex {
+        let index = self.index.get_or_insert_with(BTreeMap::new);
+        let f = index.entry(name.to_owned()).or_default();
+        if f.validity != validity {
+            // Renumbered: nothing is known under the new numbers; matched again by content.
+            *f = FolderIndex { validity, ..Default::default() };
+        }
+        f
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -648,6 +716,18 @@ pub(super) trait Provider {
     /// UIDVALIDITY and the UIDs of mails received before the day `before` (days since 1970).
     fn old_uids(&self, folder: &str, before: i64) -> Result<(u32, Vec<u32>)>;
     fn fetch(&self, folder: &str, validity: u32, uid: u32) -> Result<Option<Archivable>>;
+    /// Sizes of these mails as the provider reports them (missing ones are left out).
+    fn sizes(&self, folder: &str, validity: u32, uids: &[u32]) -> Result<BTreeMap<u32, u64>>;
+    /// Several mails with one command where the provider can; missing ones are left out.
+    fn fetch_many(&self, folder: &str, validity: u32, uids: &[u32]) -> Result<Vec<Archivable>> {
+        let mut out = Vec::new();
+        for &uid in uids {
+            if let Some(m) = self.fetch(folder, validity, uid)? {
+                out.push(m);
+            }
+        }
+        Ok(out)
+    }
     /// Deletes exactly these UIDs while the folder keeps `validity`; false if it changed.
     fn delete(&self, folder: &str, validity: u32, uids: &[u32]) -> Result<bool>;
 }
@@ -673,6 +753,21 @@ impl Provider for ImapProvider<'_> {
         self.suite.with_imap(&self.account, |s| {
             let folder = folder.to_owned();
             Box::pin(async move { imap::fetch_archivable(s, &folder, validity, uid).await })
+        })
+    }
+
+    fn sizes(&self, folder: &str, validity: u32, uids: &[u32]) -> Result<BTreeMap<u32, u64>> {
+        self.suite.with_imap(&self.account, |s| {
+            let (folder, uids) = (folder.to_owned(), uids.to_vec());
+            Box::pin(async move { imap::sizes(s, &folder, validity, &uids).await })
+        })
+    }
+
+    fn fetch_many(&self, folder: &str, validity: u32, uids: &[u32]) -> Result<Vec<Archivable>> {
+        // Large attachments over a slow line: up to 20 MB per command, 10 minutes for it.
+        self.suite.with_imap_for(&self.account, std::time::Duration::from_secs(600), |s| {
+            let (folder, uids) = (folder.to_owned(), uids.to_vec());
+            Box::pin(async move { imap::fetch_archivable_many(s, &folder, validity, &uids).await })
         })
     }
 
@@ -777,6 +872,8 @@ pub struct MailArchiveRun {
     pub waiting_for_confirmation: u32,
     /// Folders the provider has renumbered (UIDVALIDITY changed): matched again by content.
     pub renumbered: u32,
+    /// Mails larger than 100 MB in the archived folders: left at the provider, never deleted.
+    pub too_large: u32,
     /// Another device is archiving this account right now (its name), nothing was done.
     pub busy: String,
 }
@@ -818,9 +915,27 @@ pub struct MailArchiveCount {
 /// Header and the start of the text of a raw mail.
 fn split_mail(raw: &[u8]) -> (Vec<u8>, Vec<u8>) {
     let at = super::mail::body_offset(raw);
-    let header = raw[..at.min(HEADER_MAX)].to_vec();
     let text = raw[at..].iter().take(TEXT_MAX).copied().collect();
-    (header, text)
+    (slim_header(&raw[..at]), text)
+}
+
+/// Only the header fields the list, the preview and the search need (with their folded lines).
+fn slim_header(header: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut keep = false;
+    for line in header.split_inclusive(|b| *b == b'\n') {
+        let folded = line.first().is_some_and(|b| *b == b' ' || *b == b'\t');
+        if !folded {
+            let name = line.split(|b| *b == b':').next().unwrap_or_default();
+            let name = String::from_utf8_lossy(name).trim().to_ascii_lowercase();
+            keep = HEADER_FIELDS.contains(&name.as_str());
+        }
+        if keep && out.len() + line.len() <= HEADER_MAX {
+            out.extend_from_slice(line);
+        }
+    }
+    out.extend_from_slice(b"\r\n");
+    out
 }
 
 fn date_of(raw_header: &[u8], received: i64) -> i64 {
@@ -988,6 +1103,7 @@ fn run_locked(
 ) -> Result<()> {
     let before = now.div_euclid(86_400_000) - i64::from(s.days.max(1));
     let mut state = store.read_state(account_dir)?;
+    state.ensure_index(store, account_dir)?;
     let mut left = budget as usize;
     let deleting = s.delete_at_provider && s.confirmed.contains(account_id);
     for folder in provider.folders()? {
@@ -1012,34 +1128,44 @@ fn run_locked(
             store.write_state(account_dir, &state)?;
         }
         // What is archived from this folder under the current numbering.
-        let months = store.months(account_dir)?;
-        let have: BTreeSet<u32> = months
-            .values()
-            .flat_map(|m| m.items.iter())
-            .filter(|i| i.folder == folder.name && i.validity == validity)
-            .flat_map(|i| i.uids.iter().copied())
-            .collect();
-        let mut todo: Vec<u32> = uids.iter().copied().filter(|u| !have.contains(u)).collect();
+        let known = state.folder(&folder.name, validity);
+        out.too_large += uids.iter().filter(|u| known.too_large.contains_key(u)).count() as u32;
+        let mut todo: Vec<u32> =
+            uids.iter().copied().filter(|u| !known.uids.contains_key(u) && !known.too_large.contains_key(u)).collect();
         // Newest first; a server listing a UID twice does not make it count twice.
         todo.sort_unstable_by(|a, b| b.cmp(a));
         todo.dedup();
         let take = todo.len().min(left);
         out.remaining += (todo.len() - take) as u32;
         for step in todo[..take].chunks(STEP) {
-            archive_step(store, provider, &folder, validity, step, account_dir, device, now, out)?;
+            let (added, too_large) = archive_step(store, provider, &folder, validity, step, account_dir, now, out)?;
+            // After the month files were written and read back: the shortcut.
+            let f = state.folder(&folder.name, validity);
+            out.too_large += too_large.len() as u32;
+            f.too_large.extend(too_large);
+            for (uid, month) in added {
+                f.uids.insert(uid, month);
+                f.removed.remove(&uid);
+            }
+            store.write_state(account_dir, &state)?;
             left -= step.len();
         }
         if deleting && validity != 0 {
-            out.removed += remove_at_provider(store, provider, &folder, validity, &uids, account_dir)?;
+            out.removed += remove_at_provider(store, provider, &folder, validity, &uids, account_dir, &mut state)?;
         }
     }
     if !deleting {
-        out.waiting_for_confirmation = waiting(store, account_dir)?;
+        out.waiting_for_confirmation = waiting(&state);
     }
+    let _ = device;
     Ok(())
 }
 
-/// One step: fetch, upload, read back, write the index, read the index back.
+/// What a step archived (UID and month) and what was too large (UID and size).
+type StepResult = (Vec<(u32, String)>, Vec<(u32, u64)>);
+
+/// One step: fetch, upload, read back, write the index, read the index back. Returns the UIDs
+/// that are now archived and checked, with their month, and those too large to archive.
 #[allow(clippy::too_many_arguments)]
 fn archive_step(
     store: &Store,
@@ -1048,55 +1174,90 @@ fn archive_step(
     validity: u32,
     uids: &[u32],
     account_dir: &str,
-    device: &str,
     now: i64,
     out: &mut MailArchiveRun,
-) -> Result<()> {
+) -> Result<StepResult> {
     let fresh = (store.fresh)()?;
     let mut items: Vec<Item> = Vec::new();
-    for &uid in uids {
-        let Some(m) = provider.fetch(&folder.name, validity, uid)? else { continue };
-        let blocks = store.put_mail(&m.raw)?;
-        failpoint("uploaded")?;
-        if !store.verify_blocks(fresh.as_ref(), &m.raw, &blocks)? {
-            return Err(GhulError::Network { msg: "the mail archive did not read back what was written".into() });
-        }
-        failpoint("verified")?;
-        let (header, text) = split_mail(&m.raw);
-        let key = store.keys.mail_key(&m.raw);
-        // The same mail twice in this step (a server listing it twice): one entry, both UIDs.
-        if let Some(i) = items.iter_mut().find(|i| i.key == key) {
-            if !i.uids.contains(&uid) {
-                i.uids.push(uid);
-            }
-            continue;
-        }
-        items.push(Item {
-            key,
-            folder: folder.name.clone(),
-            role: folder.role.clone(),
-            uids: vec![uid],
-            validity,
-            date: date_of(&header, m.received),
-            size: m.raw.len() as u64,
-            blocks,
-            header,
-            text,
-            seen: m.seen,
-            flagged: m.flagged,
-            labels: m.labels,
-            archived: now,
-            changed: now,
-            trashed: 0,
-            removed: false,
+    // Too large ones are never fetched (the size comes from the provider, before the mail).
+    let sizes = provider.sizes(&folder.name, validity, uids)?;
+    let too_large: Vec<(u32, u64)> =
+        uids.iter().filter_map(|u| sizes.get(u).filter(|s| **s > MAX_MAIL).map(|s| (*u, *s))).collect();
+    let uids: Vec<u32> = uids.iter().copied().filter(|u| !too_large.iter().any(|(t, _)| t == u)).collect();
+    for chunk in uids.chunks(FETCH_CHUNK) {
+        let mails: Vec<Archivable> = provider
+            .fetch_many(&folder.name, validity, chunk)?
+            .into_iter()
+            .filter(|m| m.raw.len() as u64 <= MAX_MAIL)
+            .collect();
+        // Upload and read back several mails at once (each on its own; the order does not matter).
+        let results: Vec<Result<Vec<String>>> = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..PARALLEL.min(mails.len()))
+                .map(|t| {
+                    let (mails, fresh) = (&mails, &fresh);
+                    scope.spawn(move || {
+                        let mut mine = Vec::new();
+                        for (i, m) in mails.iter().enumerate().filter(|(i, _)| i % PARALLEL == t) {
+                            let r = store.put_mail(&m.raw).and_then(|blocks| {
+                                if store.verify_blocks(fresh.as_ref(), &m.raw, &blocks)? {
+                                    Ok(blocks)
+                                } else {
+                                    Err(GhulError::Network {
+                                        msg: "the mail archive did not read back what was written".into(),
+                                    })
+                                }
+                            });
+                            mine.push((i, r));
+                        }
+                        mine
+                    })
+                })
+                .collect();
+            let mut all: Vec<(usize, Result<Vec<String>>)> =
+                handles.into_iter().flat_map(|h| h.join().unwrap_or_default()).collect();
+            all.sort_by_key(|(i, _)| *i);
+            all.into_iter().map(|(_, r)| r).collect()
         });
+        failpoint("uploaded")?;
+        failpoint("verified")?;
+        for (m, blocks) in mails.into_iter().zip(results) {
+            let blocks = blocks?;
+            let (header, text) = split_mail(&m.raw);
+            let key = store.keys.mail_key(&m.raw);
+            // The same mail twice in this step (a server listing it twice): one entry, both UIDs.
+            if let Some(i) = items.iter_mut().find(|i| i.key == key) {
+                if !i.uids.contains(&m.uid) {
+                    i.uids.push(m.uid);
+                }
+                continue;
+            }
+            items.push(Item {
+                key,
+                folder: folder.name.clone(),
+                role: folder.role.clone(),
+                uids: vec![m.uid],
+                validity,
+                date: date_of(&header, m.received),
+                size: m.raw.len() as u64,
+                blocks,
+                header,
+                text,
+                seen: m.seen,
+                flagged: m.flagged,
+                labels: m.labels,
+                archived: now,
+                changed: now,
+                trashed: 0,
+                removed: false,
+            });
+        }
     }
     // Into the month files, then read back over the new connection.
     let mut by_month: BTreeMap<String, Vec<Item>> = BTreeMap::new();
     for i in items {
         by_month.entry(month_of(i.date)).or_default().push(i);
     }
-    let mut added = 0u32;
+    let mut added = Vec::new();
     for (month, list) in &by_month {
         let path = store.keys.month_path(account_dir, month);
         store.change_month(&path, month, |m| {
@@ -1130,17 +1291,17 @@ fn archive_step(
             if !ok {
                 return Err(GhulError::Network { msg: "the mail archive index did not read back".into() });
             }
-            added += 1;
+            added.extend(new.uids.iter().map(|u| (*u, month.clone())));
         }
     }
     failpoint("checked")?;
-    out.archived += added;
-    let _ = (device, now);
-    Ok(())
+    out.archived += by_month.values().map(|l| l.len() as u32).sum::<u32>();
+    Ok((added, too_large))
 }
 
 /// Deletes at the provider what is archived and checked: exactly these UIDs, each mail read back
-/// from the archive over a new connection right before.
+/// from the archive over a new connection right before. Only the month files that hold such
+/// mails are read.
 fn remove_at_provider(
     store: &Store,
     provider: &dyn Provider,
@@ -1148,23 +1309,22 @@ fn remove_at_provider(
     validity: u32,
     old_uids: &[u32],
     account_dir: &str,
+    state: &mut State,
 ) -> Result<u32> {
     let still: BTreeSet<u32> = old_uids.iter().copied().collect();
-    let fresh = (store.fresh)()?;
-    let months = {
-        // Over the new connection, not from any cache.
-        let mut out = BTreeMap::new();
-        for e in fresh.list(&format!("{account_dir}/m"))?.into_iter().filter(|e| !e.is_dir && !e.name.ends_with(".tmp"))
-        {
-            let path = format!("{account_dir}/m/{}", e.name);
-            if let Some(m) = Store::load_month(fresh.as_ref(), &store.keys, &path)? {
-                out.insert(path, m);
-            }
+    let f = state.folder(&folder.name, validity);
+    let mut months: BTreeSet<String> = BTreeSet::new();
+    for (uid, month) in &f.uids {
+        if still.contains(uid) && !f.removed.contains(uid) {
+            months.insert(month.clone());
         }
-        out
-    };
+    }
+    let fresh = (store.fresh)()?;
     let mut removed = 0;
-    for (path, m) in months {
+    for month in months {
+        let path = store.keys.month_path(account_dir, &month);
+        // Over the new connection, not from any cache.
+        let Some(m) = Store::load_month(fresh.as_ref(), &store.keys, &path)? else { continue };
         let mut uids = Vec::new();
         let mut keys = Vec::new();
         for i in m.items.iter().filter(|i| i.folder == folder.name && i.validity == validity && !i.removed) {
@@ -1192,18 +1352,21 @@ fn remove_at_provider(
                 i.removed = true;
             }
         })?;
+        state.folder(&folder.name, validity).removed.extend(uids.iter().copied());
+        store.write_state(account_dir, state)?;
     }
     Ok(removed)
 }
 
 /// Archived and checked, still at the provider (before the user's first confirmation).
-fn waiting(store: &Store, account_dir: &str) -> Result<u32> {
-    Ok(store
-        .months(account_dir)?
-        .values()
-        .flat_map(|m| m.items.iter())
-        .filter(|i| !i.removed && i.trashed == 0 && i.validity != 0)
-        .count() as u32)
+fn waiting(state: &State) -> u32 {
+    state
+        .index
+        .iter()
+        .flat_map(|i| i.values())
+        .filter(|f| f.validity != 0)
+        .map(|f| f.uids.keys().filter(|u| !f.removed.contains(u)).count() as u32)
+        .sum()
 }
 
 // --- the API --------------------------------------------------------------------------------

@@ -1213,6 +1213,21 @@ impl GhulSuite {
             + Send
             + Sync,
     ) -> Result<T> {
+        self.with_imap_for(account_id, TIMEOUT * 4, f)
+    }
+
+    /// [`Self::with_imap`] with its own time limit (the archive fetches large mails).
+    pub(super) fn with_imap_for<T: Send>(
+        &self,
+        account_id: &str,
+        limit: std::time::Duration,
+        f: impl for<'a> Fn(
+                &'a mut ImapSession,
+            )
+                -> std::pin::Pin<Box<dyn std::future::Future<Output = crate::net::NetResult<T>> + Send + 'a>>
+            + Send
+            + Sync,
+    ) -> Result<T> {
         let acc = self.with_open(|o| account(o, account_id))?;
         let cfg = imap_config(&acc);
         let cached = self.net.lock().unwrap_or_else(|p| p.into_inner()).imap.remove(account_id);
@@ -1220,13 +1235,13 @@ impl GhulSuite {
             Some(s) => s,
             None => block_on(imap::connect(&cfg), TIMEOUT)?,
         };
-        let r = block_on(f(&mut session), TIMEOUT * 4);
+        let r = block_on(f(&mut session), limit);
         let (r, session) = match r {
             Ok(v) => (Ok(v), Some(session)),
             Err(NetError::Protocol(_)) | Err(NetError::Connect(_)) | Err(NetError::Timeout) => {
                 // The connection may have timed out on the server: once more, fresh.
                 let mut fresh = block_on(imap::connect(&cfg), TIMEOUT)?;
-                let r = block_on(f(&mut fresh), TIMEOUT * 4);
+                let r = block_on(f(&mut fresh), limit);
                 let keep = r.is_ok().then_some(fresh);
                 (r, keep)
             }
