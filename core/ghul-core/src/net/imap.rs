@@ -276,7 +276,8 @@ pub async fn set_flag_many(s: &mut ImapSession, folder: &str, uids: &[u32], flag
     s.select(folder).await.map_err(proto)?;
     let op = if on { "+FLAGS" } else { "-FLAGS" };
     for set in uid_sets(uids) {
-        let _: Vec<_> = s.uid_store(set, format!("{op} ({flag})")).await.map_err(proto)?.try_collect().await.map_err(proto)?;
+        let _: Vec<_> =
+            s.uid_store(set, format!("{op} ({flag})")).await.map_err(proto)?.try_collect().await.map_err(proto)?;
     }
     Ok(())
 }
@@ -316,15 +317,18 @@ async fn expunge_set(s: &mut ImapSession, set: &str) -> NetResult<()> {
         let _: Vec<_> = s.uid_expunge(set).await.map_err(proto)?.try_collect().await.map_err(proto)?;
         return Ok(());
     }
-    let mine: std::collections::HashSet<u32> = s.uid_search(format!("UID {set}")).await.map_err(proto)?.into_iter().collect();
+    let mine: std::collections::HashSet<u32> =
+        s.uid_search(format!("UID {set}")).await.map_err(proto)?.into_iter().collect();
     let others: Vec<u32> =
         s.uid_search("DELETED").await.map_err(proto)?.into_iter().filter(|u| !mine.contains(u)).collect();
     for o in uid_sets(&others) {
-        let _: Vec<_> = s.uid_store(o, "-FLAGS (\\Deleted)").await.map_err(proto)?.try_collect().await.map_err(proto)?;
+        let _: Vec<_> =
+            s.uid_store(o, "-FLAGS (\\Deleted)").await.map_err(proto)?.try_collect().await.map_err(proto)?;
     }
     let _: Vec<_> = s.expunge().await.map_err(proto)?.try_collect().await.map_err(proto)?;
     for o in uid_sets(&others) {
-        let _: Vec<_> = s.uid_store(o, "+FLAGS (\\Deleted)").await.map_err(proto)?.try_collect().await.map_err(proto)?;
+        let _: Vec<_> =
+            s.uid_store(o, "+FLAGS (\\Deleted)").await.map_err(proto)?.try_collect().await.map_err(proto)?;
     }
     Ok(())
 }

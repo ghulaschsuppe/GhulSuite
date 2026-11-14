@@ -1470,7 +1470,13 @@ impl GhulSuite {
     }
 
     /// [`Self::mail_set_flagged`] for many messages of one folder.
-    pub fn mail_set_flagged_many(&self, account_id: String, folder: String, uids: Vec<u32>, flagged: bool) -> Result<()> {
+    pub fn mail_set_flagged_many(
+        &self,
+        account_id: String,
+        folder: String,
+        uids: Vec<u32>,
+        flagged: bool,
+    ) -> Result<()> {
         self.with_imap(&account_id, |s| {
             let (folder, uids) = (folder.clone(), uids.clone());
             Box::pin(async move { imap::set_flag_many(s, &folder, &uids, "\\Flagged", flagged).await })
