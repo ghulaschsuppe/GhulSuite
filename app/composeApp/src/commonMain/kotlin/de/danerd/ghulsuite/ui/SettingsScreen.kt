@@ -559,6 +559,7 @@ private fun AboutSection(state: AppState) {
         appendLine()
         append(backend.crashReport() ?: "-")
     }
+    UpdateSection(state)
     // Author (AGPL-3.0 section 7(b): this notice must stay visible in modified versions too).
     SectionCard {
         Text(stringResource(Res.string.about_made_by), fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, fontSize = 16.sp)
@@ -598,6 +599,58 @@ private fun AboutSection(state: AppState) {
 
 @Composable
 private fun stringResource_report(): String = stringResource(Res.string.about_report)
+
+/** Updates: automatically or by hand, stable or development versions. */
+@Composable
+private fun UpdateSection(state: AppState) {
+    val up = state.backend.updater
+    val s = state.backend.settings
+    SectionCard(stringResource(Res.string.upd_section)) {
+        if (!up.available) {
+            HintText(stringResource(Res.string.upd_unavailable))
+            return@SectionCard
+        }
+        SwitchRow(stringResource(Res.string.upd_auto), s.updateAuto) { s.updateAuto = it }
+        ChoiceRow(
+            stringResource(Res.string.upd_channel),
+            listOf(false to Res.string.upd_stable, true to Res.string.upd_dev),
+            s.updateDev,
+        ) { dev ->
+            s.updateDev = dev
+            state.update = null
+        }
+        HintText(stringResource(if (s.updateDev) Res.string.upd_dev_hint else Res.string.upd_stable_hint))
+        Button(onClick = { state.checkUpdate(manual = true) }, enabled = !state.updateBusy, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(if (state.updateBusy) Res.string.upd_checking else Res.string.upd_check))
+        }
+    }
+}
+
+/** "Version X is available" after a check: install, or later. */
+@Composable
+fun UpdateDialog(state: AppState) {
+    val u = state.update ?: return
+    val up = state.backend.updater
+    AlertDialog(
+        onDismissRequest = { state.update = null },
+        title = { Text(stringResource(if (u.version.contains('-')) Res.string.upd_title_dev else Res.string.upd_title, u.version)) },
+        text = {
+            // The sheet of the dialog scrolls long release notes itself.
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(if (up.installs) Res.string.upd_text else Res.string.upd_text_portable, formatSize(u.size)))
+                if (u.notes.isNotBlank()) {
+                    Text(u.notes.take(3000), fontSize = 13.sp, color = g.muted)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { state.installUpdate(u) }) {
+                Text(stringResource(if (up.installs) Res.string.upd_install else Res.string.upd_open_page))
+            }
+        },
+        dismissButton = { TextButton(onClick = { state.update = null }) { Text(stringResource(Res.string.a_later)) } },
+    )
+}
 
 private val LIBRARIES = listOf(
     "Kotlin, Compose Multiplatform" to "Apache-2.0",

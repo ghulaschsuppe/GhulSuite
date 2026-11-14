@@ -643,6 +643,11 @@ Löschen im Archiv: 30 Tage im Archiv-Papierkorb. Export als `.eml`/`.mbox` jede
   - Mails über 100 MB werden nicht archiviert: Sie bleiben beim Anbieter und werden dort nie gelöscht; die Mail-Optionen
     nennen ihre Anzahl. (Eine solche Mail müsste sonst auf einmal in den Speicher, auf einem Handy zu viel.)
   - Die Frage „Wo sollen deine Mails liegen?“ kommt nach dem ersten hinzugefügten Konto, nicht im Einrichtungsassistenten.
+  - **Gmail: vorerst kein Löschen beim Anbieter.** Gmail bildet Labels als IMAP-Ordner ab; ob eine Mail beim Löschen
+    aus einem Ordner nur ein Label verliert oder ganz verschwindet, hängt von den IMAP-Einstellungen des Kontos ab. Bis
+    das mit echten Konten erprobt ist, archiviert GhulSuite Gmail-Konten (`imap.gmail.com`, `imap.googlemail.com`)
+    nur: Löschen beim Anbieter und die Regel „nach der Frist löschen“ wirken dort nicht, die Rückfrage entfällt, die
+    Mail-Optionen sagen das beim Konto.
   - Die Mail-Datei enthält Schlüssel und Ort des Archivs; ein eigener Server liegt mit in ihr. Das Öffnen nur der
     Mail-Datei mit dem Archiv ist damit möglich, aber noch nicht eigens getestet.
 - **Tests:** `app::mailarchive::tests` (simulierter Anbieter): Abbruch nach jedem einzelnen Schritt, Verbindungsabbruch
@@ -780,12 +785,25 @@ Löschen im Archiv: 30 Tage im Archiv-Papierkorb. Export als `.eml`/`.mbox` jede
   GitHub Actions auf Commit-Hashes festgelegt, CodeQL.
 - **Tests:** Testvektoren für jede Ableitung, Fuzzing des Container-Parsers, Tests über beide Plattformen hinweg
   (sobald Windows dazukommt: eine Datei von Android öffnet sich unter Windows identisch und umgekehrt), Tests jedes Adapters gegen echte Testserver in CI.
-- **Signierte Releases:**
-  - Android-APK mit eigenem Signaturschlüssel
-  - Zusätzlich eine Ed25519-Release-Signatur, deren Schlüssel offline liegt
+- **Signierte Releases** (`.github/workflows/release.yml`):
+  - Zwei Kanäle: **stabil** aus `main` (`v0.6.0`) und **Vorab** aus `dev` (`v0.6.0-dev.3`, GitHub-Pre-Release). Die
+    Nummer zählt der Workflow selbst weiter (nach `v0.5.0` kommt `0.6.0`); die Datei `VERSION` braucht man nur für
+    einen Sprung oder eine Fehlerbehebung.
+  - Android-APK mit dem Signaturschlüssel der App.
+  - `SHA256SUMS` mit den Prüfsummen aller Dateien, signiert mit **demselben Schlüssel** (`SHA256SUMS.sig`; ein
+    Schlüssel für alles, siehe AUDIT 4.1). Abweichung vom ursprünglichen Plan einer zweiten, offline liegenden
+    Ed25519-Signatur: Ein zweiter Schlüssel müsste in der CI liegen, um automatisch zu signieren, und brächte dort
+    keinen zusätzlichen Schutz.
   - Windows: **keine** kostenpflichtige Code-Signatur. SmartScreen warnt beim ersten Start („Weitere Informationen → Trotzdem ausführen“).
-    Zur Prüfung der Echtheit gibt es SHA-256-Prüfsummen und die Ed25519-Release-Signatur.
+    Zur Prüfung der Echtheit gibt es die signierten SHA-256-Prüfsummen.
   - Die Signaturschlüssel trägt der Inhaber selbst als GitHub-Secrets ein.
+- **Updates aus der App** (`core/ghul-core/src/update.rs`): Optionen → Über → Updates, Kanal „Stabil“ oder „Vorab“,
+  automatische Prüfung höchstens einmal am Tag nach dem Entsperren (abschaltbar), Installation nur nach Zustimmung.
+  Angenommen wird eine Datei nur, wenn die Signatur über `SHA256SUMS` zum eingebauten öffentlichen Schlüssel passt und
+  Größe und SHA-256 stimmen; geladen wird nur per `https` von GitHub (auch nach Weiterleitungen). Android installiert
+  über den System-Installer (der zusätzlich den Signaturschlüssel vergleicht), Windows-MSI über `msiexec` mit
+  Neustart der App, die portable Version öffnet nur die Release-Seite. Testversionen, Builds ohne Update-Schlüssel
+  (lokal, F-Droid, Forks) und Installationen aus einem Store aktualisieren sich nicht selbst.
 - **Sprache im Repository:** Code und Kommentare auf Englisch (öffentliches Projekt), Oberfläche Deutsch und Englisch.
   Konzept-Dokumente vorerst auf Deutsch, README zur Veröffentlichung zweisprachig.
 - **Lizenz: AGPL-3.0-or-later** für App, Kern und Server-Modul. Alle Abhängigkeiten müssen AGPL-3.0-kompatibel sein (MIT, Apache-2.0,

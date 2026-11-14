@@ -471,6 +471,7 @@ abstract class CoreNetBackend(protected val suite: () -> GhulSuite) : NetBackend
             fullCopy = s.fullCopy,
             offlineBytes = s.offlineBytes.toLong(),
             confirmed = s.confirmed,
+            deleteBlocked = s.deleteBlocked,
         )
     }
 

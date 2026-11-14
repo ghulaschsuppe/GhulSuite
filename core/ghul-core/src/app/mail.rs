@@ -85,7 +85,7 @@ pub(super) struct StoredAccount {
     pub(super) email: String,
     username: String,
     password: String,
-    servers: MailServers,
+    pub(super) servers: MailServers,
     #[serde(default)]
     imap_cert: Option<String>,
     #[serde(default)]

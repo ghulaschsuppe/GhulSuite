@@ -18,6 +18,7 @@ pub mod net;
 pub mod pin;
 pub mod share;
 pub mod totp;
+pub mod update;
 pub mod vault;
 
 #[cfg(any(test, feature = "mock"))]

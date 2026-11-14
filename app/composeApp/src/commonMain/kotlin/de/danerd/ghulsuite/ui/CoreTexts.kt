@@ -89,6 +89,7 @@ private val CORE_TEXTS: Map<String, StringResource> = mapOf(
     "only the trash and the spam folder can be emptied" to Res.string.core_empty_only_trash,
     "the server asks for password parameters far more expensive than this suite's; not used" to Res.string.core_kdf_expensive,
     "deleting at the provider is switched off" to Res.string.core_arc_delete_off,
+    "nothing is deleted at Gmail for now" to Res.string.core_arc_gmail,
     "mail archive block missing" to Res.string.core_arc_block_missing,
     "mail archive damaged or from another key" to Res.string.core_arc_damaged,
     "mail archive key damaged" to Res.string.core_arc_key_damaged,
@@ -98,6 +99,20 @@ private val CORE_TEXTS: Map<String, StringResource> = mapOf(
     "the mail archive is being changed on another device, please try again" to Res.string.core_arc_busy,
     "the new place did not read back what was written" to Res.string.core_arc_move_readback,
     "the number of days must be between 1 and 36500" to Res.string.core_arc_days,
+    "invalid repository name" to Res.string.core_upd_repo,
+    "the update server refused the request, please try again later" to Res.string.core_upd_refused,
+    "update information unreadable" to Res.string.core_upd_unreadable,
+    "the release has no signed checksums" to Res.string.core_upd_no_sums,
+    "the signature of the update is not valid" to Res.string.core_upd_bad_sig,
+    "the update file is not in the signed checksums" to Res.string.core_upd_not_listed,
+    "update file size or checksum invalid" to Res.string.core_upd_bad_info,
+    "the update file does not match its checksum" to Res.string.core_upd_mismatch,
+    "the release has more than one file for this platform" to Res.string.core_upd_ambiguous,
+    "update address not allowed" to Res.string.core_upd_host,
+    "redirect without address" to Res.string.core_upd_redirect,
+    "too many redirects" to Res.string.core_upd_redirects,
+    "checksums of the update unreadable" to Res.string.core_upd_sums_unreadable,
+    "this build has no update key" to Res.string.core_upd_no_key,
 )
 
 private val PIN_MIN = Regex("PIN must have at least (\\d+) characters")

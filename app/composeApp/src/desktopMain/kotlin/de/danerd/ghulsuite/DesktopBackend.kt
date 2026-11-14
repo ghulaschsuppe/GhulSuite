@@ -29,7 +29,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /** Version shown in the app (the MSI version is purely numeric). */
-const val DESKTOP_VERSION = "0.5.0-dev"
+const val DESKTOP_VERSION = BuildInfo.VERSION
 
 /**
  * Where GhulSuite keeps its files on this computer.
@@ -151,6 +151,7 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
     override val settings: Settings = Settings(PropertiesStore(File(DesktopPaths.dataDir, "settings.properties")))
     override val net: NetBackend = DesktopNetBackend { suite }
     override val cal: de.danerd.ghulsuite.model.CalBackend = DesktopCalBackend(window) { suite }
+    override val updater: de.danerd.ghulsuite.model.AppUpdater = DesktopUpdater()
     override val appVersion: String = DESKTOP_VERSION + if (DesktopPaths.portable) " (portabel)" else ""
     override val keyPinInApp: Boolean = false
     override val isDesktop: Boolean = true

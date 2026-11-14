@@ -59,6 +59,7 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
     private val quick = AndroidQuickUnlock(context, { suite }, settings, activity)
     override val net: NetBackend = AndroidNetBackend(context) { suite }
     override val cal: de.danerd.ghulsuite.model.CalBackend = AndroidCalBackend(context) { suite }
+    override val updater: de.danerd.ghulsuite.model.AppUpdater = AndroidUpdater(context)
     override val appVersion: String =
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "?"
 
