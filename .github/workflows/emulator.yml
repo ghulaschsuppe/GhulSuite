@@ -4,8 +4,9 @@
 #   base    setup, GhulPass, GhulAuth, GhulCal, app PIN, options, areas with an unreachable server
 #   server  with a real SFTP server: GhulDrive, servers, synchronisation, sharing
 #   mail    with real IMAP/SMTP servers: a mail account, a mail to oneself, reading it
-# The servers answer slowly on purpose (150 ms per packet), as on a phone outside the home network:
-# that is where waiting, cancelled loads and taps in between show their mistakes.
+# The servers answer slowly on purpose (150 ms each way, 2 % of the packets lost), as on a phone
+# outside the home network: that is where waiting, cancelled loads and taps in between show their
+# mistakes. The server part also cuts the servers off for a while (tools/slow-servers.sh).
 # Every step leaves a screenshot (artifact emulator-<part>).
 #
 # Called by android.yml for every pull request and for main (APK of the same run), by nightly.yml,
@@ -95,8 +96,13 @@ jobs:
           [ "$ok" = 1 ] || { echo "::error::Paketserver nicht erreichbar, die Testserver fehlen."; exit 1; }
           sudo env GHUL_TEST_SFTP_PASSWORD=1 bash tools/test-servers.sh > servers.env
           echo "GHUL_TEST_SERVERS=1" >> "$GITHUB_ENV"
-          sudo bash tools/slow-servers.sh 150
+          sudo bash tools/slow-servers.sh 150 2
       - name: Abläufe im Emulator (Android 14, Teil ${{ matrix.part }})
+        env:
+          # After the flows of the server part: a short monkey (random taps and swipes) with the
+          # real, slow servers; a new seed each run, named in the log to repeat it.
+          MONKEY_EVENTS: ${{ matrix.part == 'server' && '3000' || '0' }}
+          MONKEY_SEEDS: ${{ github.run_number }}
         run: |
           if [ "$MAESTRO_SHARD" != base ] && [ "${GHUL_TEST_SERVERS:-0}" != 1 ]; then
             echo "Ohne Testserver: Teil $MAESTRO_SHARD entfällt."; exit 0

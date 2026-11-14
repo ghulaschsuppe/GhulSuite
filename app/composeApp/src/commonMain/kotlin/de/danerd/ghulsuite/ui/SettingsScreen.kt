@@ -95,15 +95,7 @@ private val THEME_OPTIONS: List<Pair<ThemeMode, StringResource>> = listOf(
 @Composable
 fun <T> ChoiceRow(label: String, options: List<Pair<T, StringResource>>, selected: T, onSelect: (T) -> Unit) {
     var open by remember { mutableStateOf(false) }
-    val t = g
-    Row(
-        Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { open = true },
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(label, Modifier.weight(1f), fontSize = 15.sp)
-        Text(stringResource(options.firstOrNull { it.first == selected }?.second ?: options.first().second), fontSize = 13.sp, color = t.faint)
-        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.padding(start = 6.dp).size(18.dp), tint = t.faint)
-    }
+    LabelValueRow(label, stringResource(options.firstOrNull { it.first == selected }?.second ?: options.first().second)) { open = true }
     if (open) {
         GhulSheet({ open = false }, label) {
             SheetList {

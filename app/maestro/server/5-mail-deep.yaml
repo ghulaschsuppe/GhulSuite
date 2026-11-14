@@ -17,12 +17,11 @@ name: GhulMail in depth on a real server
     visible: "Geheimtext-Maestro-4711"
     timeout: 60000
 - tapOn: "Reply"
+# The reply opens with the quoted mail in its text (so the field shows no "Message" label).
 - extendedWaitUntil:
-    visible: "Message"
+    visible: "Send"
     timeout: 10000
-- tapOn: "Message"
-- inputText: "Antwort-Maestro"
-- hideKeyboard
+- assertVisible: "Re: Hallo vom Emulator|RE: Hallo vom Emulator|AW: Hallo vom Emulator"
 - takeScreenshot: s5-02-reply
 - tapOn:
     text: "Send"

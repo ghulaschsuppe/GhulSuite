@@ -123,7 +123,7 @@ fun CreateVaultDialog(state: AppState, kind: VaultKindUi?, onCreated: (String) -
                     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                         VaultKindUi.entries.forEachIndexed { i, k ->
                             SegmentedButton(chosen == k, { chosen = k }, SegmentedButtonDefaults.itemShape(i, 3)) {
-                                Text(stringResource(kindLabel(k)))
+                                SegLabel(stringResource(kindLabel(k)))
                             }
                         }
                     }

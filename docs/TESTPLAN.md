@@ -625,6 +625,8 @@ Diese Punkte prüft auch der Emulator-Ablauf `app/maestro/server/3-sync-share.ya
 | R5 | Teilen einrichten: im Ordner-Browser schnell hintereinander mehrere Ordner antippen (auch „..“). | Nie eine Meldung wie „The coroutine scope left the composition“; die Liste zeigt den zuletzt gewählten Ordner. |
 | R6 | GhulDrive mit eigenem Server (ohne Synchronisation): Reiter GhulDrive. | Die Karte oben nennt den Server mit Ordner und „verschlüsselt“, dazu Dateien und Größe; kein „…“ und kein „Nicht eingerichtet“. Ohne Server: „Noch kein Server“ und „Server wählen“. |
 | R7 | In einer Liste alles auswählen (oder das einzige Element). | Das Symbol „Alle“ verschwindet, sobald alles ausgewählt ist. |
+| R9 | Handy auf große Schrift stellen (Einstellungen → Anzeige → Schriftgröße, größte Stufe) und alle Bereiche und Optionsseiten durchgehen. | Kein Wort ist mitten im Wort getrennt; zu lange Knopfpaare stehen untereinander, Einstellungswerte unter ihrer Beschriftung; Titel höchstens zweizeilig. |
+| R10 | Auf „Speichern“, „Senden“ oder „Erstellen“ schnell zweimal tippen. | Der Eintrag, die Mail oder der Ordner entsteht genau einmal. |
 | R8 | Etwas Langsames starten (z. B. Server speichern) und währenddessen auf Knöpfe tippen, auch in einem offenen Blatt. | Nach kurzer Zeit liegt „Arbeite …“ mit Kreisel über dem Bildschirm bzw. dem Blatt; Tippen dahinter bewirkt nichts. |
 
 ## Fehler melden

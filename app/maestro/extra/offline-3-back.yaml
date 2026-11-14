@@ -1,0 +1,27 @@
+# Servers back, part 3: synchronising works again by itself or with one tap, GhulDrive lists
+# its folders, no error is left over.
+appId: de.danerd.ghulsuite.dev
+name: Server weg 3
+---
+- tapOn: "GhulDrive"
+- runFlow:
+    when:
+      notVisible: "Urlaub-Maestro"
+    commands:
+      - tapOn:
+          text: "Try again|Retry|Refresh"
+          optional: true
+- extendedWaitUntil: { visible: "Urlaub-Maestro", timeout: 180000 }
+- takeScreenshot: x1-05-drive-back
+- tapOn: "Options"
+- scrollUntilVisible: { element: "Servers, sync & sharing", direction: DOWN }
+- tapOn: "Servers, sync & sharing"
+- scrollUntilVisible: { element: "Synchronise now", direction: DOWN }
+- tapOn: "Synchronise now"
+- extendedWaitUntil:
+    visible: "Synchronised: .*"
+    timeout: 180000
+- assertNotVisible: "Synchronisation failed: .*"
+- assertNotVisible: "GHUL-DEV-ALARM.*"
+- takeScreenshot: x1-06-sync-back
+- back

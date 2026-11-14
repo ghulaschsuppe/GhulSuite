@@ -5,8 +5,7 @@
 appId: de.danerd.ghulsuite.dev
 name: GhulCal in depth
 ---
-- launchApp:
-    stopApp: false
+- runFlow: home.yaml
 - tapOn: "GhulCal"
 - extendedWaitUntil:
     visible: "Month"

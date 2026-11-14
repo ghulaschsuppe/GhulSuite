@@ -68,7 +68,8 @@ class MainActivity : ComponentActivity() {
         // L10: no taps while another app draws over GhulSuite (tapjacking).
         window.decorView.filterTouchesWhenObscured = true
         lifecycleScope.launch {
-            snapshotFlow { ghul.backend.settings.allowScreenshots }.collect { allowed ->
+            val testRun = TestDevice.screenshotsAllowed(this@MainActivity)
+            snapshotFlow { ghul.backend.settings.allowScreenshots || testRun }.collect { allowed ->
                 // Newer Android versions show a live preview in the app switcher despite FLAG_SECURE
                 // unless the recents screenshot is switched off as well (P7).
                 if (android.os.Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(allowed)

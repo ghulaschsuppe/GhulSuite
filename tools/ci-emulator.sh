@@ -55,9 +55,17 @@ for i in $(seq 1 90); do
 done
 [ -n "$booted" ] || { log "::error::Emulator nicht hochgefahren"; exit 1; }
 log "System bereit"
+# The whole system log of the run (the device keeps only the last few hundred kilobytes), for
+# tools/check-logcat.sh: crashes, hangs and alarms of the development build fail the run.
+adb logcat -c || true
+nohup adb logcat -v threadtime > "$out/logcat-full.txt" 2> /dev/null &
+logcat_pid=$!
 for k in window_animation_scale transition_animation_scale animator_duration_scale; do
   timeout 10 adb shell settings put global "$k" 0 || true
 done
+# The development build may be photographed on this device (otherwise every screenshot of the
+# flows is black: the app forbids screenshots by default; TestDevice.kt).
+timeout 10 adb shell setprop debug.ghulsuite.screenshots 1 || true
 # A freshly booted emulator is busy for a while; system "isn't responding" dialogs would cover the app.
 timeout 10 adb shell settings put global hide_error_dialogs 1 || true
 sleep 30
@@ -65,8 +73,22 @@ timeout 10 adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS 
 timeout 10 adb shell input keyevent 82 || true
 if [ "${SKIP_MAESTRO:-0}" != 1 ]; then
   log "Maestro-Abläufe starten"
-  timeout 3600 "$(dirname "$0")/run-maestro.sh" "$apk" "$out"
-  log "Maestro fertig"
+  maestro_rc=0
+  timeout 3600 "$(dirname "$0")/run-maestro.sh" "$apk" "$out" || maestro_rc=$?
+  log "Maestro fertig (Status $maestro_rc)"
+  kill "$logcat_pid" 2> /dev/null || true
+  # Also after a failed flow: a crash in the log is most likely why it failed, and says so.
+  logcat_rc=0
+  "$(dirname "$0")/check-logcat.sh" "$out/logcat-full.txt" "$out" || logcat_rc=$?
+  # Every step leaves a picture to be looked at. A picture of a black screen (the app forbids
+  # screenshots, see TestDevice.kt) is a few kilobytes as PNG, a real screen many times that.
+  black=$(find "$out" -name '*.png' -size -20k | grep -v last-screen || true)
+  if [ -n "$black" ]; then
+    echo "::error::Schwarze Bildschirmfotos (die App hat Bildschirmfotos verboten): $(printf '%s\n' "$black" | head -n 5 | tr '\n' ' ')"
+    logcat_rc=1
+  fi
+  [ "$maestro_rc" = 0 ] || exit "$maestro_rc"
+  [ "$logcat_rc" = 0 ] || exit "$logcat_rc"
   shard="${MAESTRO_SHARD:-all}"
   # What no flow can see: the reminder of the calendar flow as an alarm of the system.
   if [ "$shard" = all ] || [ "$shard" = base ]; then

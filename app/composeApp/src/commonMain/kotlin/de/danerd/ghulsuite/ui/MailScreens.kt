@@ -1309,7 +1309,7 @@ private fun ServerRow(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
     }
     if (startTlsPort != null) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ChipRow {
             FilterChip(security == MailSecurityUi.TLS, { onChange(host, tlsPort, MailSecurityUi.TLS) }, label = { Text("SSL/TLS") })
             FilterChip(security == MailSecurityUi.STARTTLS, { onChange(host, startTlsPort, MailSecurityUi.STARTTLS) }, label = { Text("STARTTLS") })
         }
@@ -1476,19 +1476,21 @@ private fun MailKeysSection(state: AppState, accounts: List<MailAccountUi>) {
         SectionLabel(stringResource(Res.string.mail_contact_keys))
         if (known.isEmpty()) Hint(stringResource(Res.string.mail_contact_keys_none))
         for (k in known) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(k.email)
-                    Hint(
-                        stringResource(keySourceLabel(k.source)) + " · " + k.fingerprint.takeLast(19) +
-                            if (k.verified) " · " + stringResource(Res.string.mail_key_verified) else "",
-                    )
-                    // L7: a changed or a refused key is a warning until the user compared it.
-                    if (k.previous.isNotEmpty()) Text(stringResource(Res.string.mail_key_changed), color = warnColor(), style = MaterialTheme.typography.bodySmall)
-                    if (k.offered.isNotEmpty()) Text(stringResource(Res.string.mail_key_offered), color = warnColor(), style = MaterialTheme.typography.bodySmall)
+            // The actions below the key, not beside it: beside it they squeezed the fingerprint
+            // until words broke (F57).
+            Column(Modifier.fillMaxWidth()) {
+                Text(k.email)
+                Hint(
+                    stringResource(keySourceLabel(k.source)) + " · " + k.fingerprint.takeLast(19) +
+                        if (k.verified) " · " + stringResource(Res.string.mail_key_verified) else "",
+                )
+                // L7: a changed or a refused key is a warning until the user compared it.
+                if (k.previous.isNotEmpty()) Text(stringResource(Res.string.mail_key_changed), color = warnColor(), style = MaterialTheme.typography.bodySmall)
+                if (k.offered.isNotEmpty()) Text(stringResource(Res.string.mail_key_offered), color = warnColor(), style = MaterialTheme.typography.bodySmall)
+                Row {
+                    TextButton(onClick = { comparing = k }) { Text(stringResource(Res.string.mail_key_compare)) }
+                    TextButton(onClick = { forgetting = k }) { Text(stringResource(Res.string.mail_key_forget)) }
                 }
-                TextButton(onClick = { comparing = k }) { Text(stringResource(Res.string.mail_key_compare)) }
-                TextButton(onClick = { forgetting = k }) { Text(stringResource(Res.string.mail_key_forget)) }
             }
         }
         if (filePickersAvailable) {

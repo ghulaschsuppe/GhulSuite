@@ -140,7 +140,7 @@ fun ServerSetup(
 
     SingleChoiceSegmentedButtonRow {
         for ((k, label) in listOf(ServerKindUi.SFTP to "SFTP", ServerKindUi.FTPS to "FTPS", ServerKindUi.PHP to stringResource(Res.string.srvf_kind_php))) {
-            SegmentedButton(form.kind == k, { if (form.kind != k) { form.switchKind(k); error = null } }) { Text(label) }
+            SegmentedButton(form.kind == k, { if (form.kind != k) { form.switchKind(k); error = null } }) { SegLabel(label) }
         }
     }
 
@@ -201,7 +201,7 @@ fun ServerSetup(
     OutlinedTextField(form.input.user, { form.input = form.input.copy(user = it.trim()); form.relogin(); error = null }, Modifier.fillMaxWidth(),
         label = { Text(stringResource(Res.string.server_user)) }, singleLine = true)
     if (form.kind == ServerKindUi.SFTP) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ChipRow {
             FilterChip(!form.usePassword, { form.usePassword = false; form.relogin() }, label = { Text(stringResource(Res.string.server_auth_key)) })
             FilterChip(form.usePassword, { form.usePassword = true; form.relogin(); if (form.input.password == null) form.input = form.input.copy(password = "") },
                 label = { Text(stringResource(Res.string.server_auth_password)) })

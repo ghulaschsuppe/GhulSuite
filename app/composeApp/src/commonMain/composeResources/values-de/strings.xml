@@ -593,7 +593,7 @@
     <string name="set_privacy_sub">Zwischenablage, Bildschirmfotos</string>
     <string name="set_servers_none">Noch kein Server</string>
     <string name="set_servers_sub">%1$s Server · %2$s · %3$s</string>
-    <string name="set_servers_sync_share">Server, Synchronisation &amp; Teilen</string>
+    <string name="set_servers_sync_share">Server, Sync &amp; Teilen</string>
     <string name="set_share_off">Teilen aus</string>
     <string name="set_share_on">Teilen an</string>
     <string name="set_suite_summary">%1$s Tresore · %2$s</string>

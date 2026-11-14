@@ -1,0 +1,80 @@
+# The whole app in German, the way the owner uses it. tools/run-maestro.sh runs it twice after
+# the other flows: with the normal font, and with the large system font (130 %) and the large
+# display size. Every area and every options page is photographed (${PREFIX}-…); no technical
+# error text and no alarm of the development build may be shown. English again at the end.
+appId: de.danerd.ghulsuite.dev
+name: Rundgang auf Deutsch
+---
+- runFlow: ../home.yaml
+# --- Language: German ---
+- tapOn: "Options|Optionen"
+- scrollUntilVisible:
+    element: "Theme, language|Design, Sprache"
+    direction: DOWN
+- tapOn: "Theme, language|Design, Sprache"
+- tapOn: "Language|Sprache"
+- tapOn: "Deutsch"
+- waitForAnimationToEnd:
+    timeout: 3000
+- back
+# --- Areas ---
+- tapOn: "GhulPass"
+- waitForAnimationToEnd: { timeout: 3000 }
+- takeScreenshot: ${PREFIX}-01-pass
+- tapOn: "GhulAuth"
+- waitForAnimationToEnd: { timeout: 3000 }
+- takeScreenshot: ${PREFIX}-02-auth
+- tapOn: "GhulDrive"
+- waitForAnimationToEnd: { timeout: 3000 }
+- takeScreenshot: ${PREFIX}-03-drive
+- tapOn: "GhulMail"
+- waitForAnimationToEnd: { timeout: 3000 }
+- takeScreenshot: ${PREFIX}-04-mail
+- tapOn: "GhulCal"
+- waitForAnimationToEnd: { timeout: 3000 }
+- takeScreenshot: ${PREFIX}-05-cal-monat
+- tapOn: "Woche"
+- takeScreenshot: ${PREFIX}-06-cal-woche
+- tapOn: "Tag"
+- takeScreenshot: ${PREFIX}-07-cal-tag
+- tapOn: "Liste"
+- takeScreenshot: ${PREFIX}-08-cal-liste
+- tapOn: "Monat"
+- assertNotVisible: ".*[Cc]oroutine.*"
+- assertNotVisible: "GHUL-DEV-ALARM.*"
+# --- Every options page ---
+- tapOn: "Optionen"
+- takeScreenshot: ${PREFIX}-10-optionen
+- runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Entsperren", SHOT: "${PREFIX}-11-entsperren" } }
+- runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Sperren", SHOT: "${PREFIX}-12-sperren" } }
+- runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Privatsphäre", SHOT: "${PREFIX}-13-privatsphaere" } }
+- runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Keys und Schlüsseldateien", SHOT: "${PREFIX}-14-keys" } }
+- runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Tresore", SHOT: "${PREFIX}-15-tresore" } }
+- runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Import, Export und Sicherung", SHOT: "${PREFIX}-16-import" } }
+- runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Server, Sync & Teilen", SHOT: "${PREFIX}-17-server" } }
+- runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Bereiche verwalten", SHOT: "${PREFIX}-18-bereiche" } }
+- runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Anzeige, Autofill", SHOT: "${PREFIX}-19-pass" } }
+- runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Code-Anzeige", SHOT: "${PREFIX}-20-auth" } }
+- runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Design, Sprache", SHOT: "${PREFIX}-21-darstellung" } }
+- runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Über und Hilfe", SHOT: "${PREFIX}-22-ueber" } }
+# --- Server form (the checklist of the PHP module) ---
+- scrollUntilVisible: { element: "Server, Sync & Teilen", direction: DOWN }
+- tapOn: "Server, Sync & Teilen"
+- tapOn: "Server hinzufügen"
+- takeScreenshot: ${PREFIX}-23-server-sftp
+- tapOn: "FTPS"
+- takeScreenshot: ${PREFIX}-24-server-ftps
+- tapOn: "PHP-Modul"
+- scrollUntilVisible: { element: "Speichern|.*Adresse prüfen", direction: DOWN }
+- takeScreenshot: ${PREFIX}-25-server-php
+- back
+- back
+- assertNotVisible: "GHUL-DEV-ALARM.*"
+# --- English again ---
+- scrollUntilVisible:
+    element: "Design, Sprache"
+    direction: DOWN
+- tapOn: "Design, Sprache"
+- tapOn: "Sprache"
+- tapOn: "English"
+- back

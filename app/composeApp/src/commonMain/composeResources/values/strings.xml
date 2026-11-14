@@ -238,7 +238,7 @@
     <string name="set_change_pw_text">Applies to the suite and all vaults. Keys, key files and the recovery code stay valid.</string>
     <string name="set_clipboard">Clear clipboard</string>
     <string name="set_code_shown_once">This code is shown only now. Write it down or print it and keep it in a safe place. The old code no longer works.</string>
-    <string name="set_import_export">Import and export</string>
+    <string name="set_import_export">Import, export and backup</string>
     <string name="set_import_hint">For moving from Proton, Bitwarden, KeePass, Aegis, 2FAS or Google Authenticator.</string>
     <string name="set_keys">Protection and recovery</string>
     <string name="set_keys_hint">What opens your suite: the password plus one of the keys or key files. The recovery code opens everything on its own. Keep it safe.</string>

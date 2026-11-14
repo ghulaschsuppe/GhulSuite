@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package de.danerd.ghulsuite.ui
 
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -121,6 +124,8 @@ fun GhulSuiteApp(state: AppState) {
                     }
                     // A running action, in front of the screens (sheets show it themselves).
                     BusyOverlay()
+                    // Development build only: alarms of DevChecks, in every screenshot.
+                    DevAlarmBar(Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.statusBars))
                     // While unlocking waits for the security key to be plugged in.
                     val waiting by state.backend.waitingForKey.collectAsState()
                     if (waiting) KeyWaitingBanner(Modifier.align(Alignment.BottomCenter))

@@ -1,0 +1,19 @@
+# Helper (German): scroll to an Options row, open it, photograph top and end, back, up again.
+appId: de.danerd.ghulsuite.dev
+---
+- scrollUntilVisible:
+    element: ${PAGE}
+    direction: DOWN
+- tapOn: ${PAGE}
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: ${SHOT}
+- assertNotVisible: ".*[Cc]oroutine.*"
+- assertNotVisible: "GHUL-DEV-ALARM.*"
+- swipe: { direction: UP, duration: 300 }
+- swipe: { direction: UP, duration: 300 }
+- takeScreenshot: ${SHOT}-ende
+- back
+- scrollUntilVisible:
+    element: "Entsperren"
+    direction: UP

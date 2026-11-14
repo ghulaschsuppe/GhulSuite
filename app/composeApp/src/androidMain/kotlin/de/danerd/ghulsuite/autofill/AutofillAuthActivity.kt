@@ -71,7 +71,7 @@ class AutofillAuthActivity : ComponentActivity() {
         val backend = ghul.backend
         // L10: no taps while another app draws over the login choice (tapjacking).
         window.decorView.filterTouchesWhenObscured = true
-        if (!backend.settings.allowScreenshots) {
+        if (!backend.settings.allowScreenshots && !de.danerd.ghulsuite.TestDevice.screenshotsAllowed(this)) {
             window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         }
         val domain = intent.getStringExtra(EXTRA_DOMAIN)

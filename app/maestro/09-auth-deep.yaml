@@ -3,8 +3,7 @@
 appId: de.danerd.ghulsuite.dev
 name: GhulAuth in depth
 ---
-- launchApp:
-    stopApp: false
+- runFlow: home.yaml
 - tapOn: "GhulAuth"
 - extendedWaitUntil:
     visible: "\\d{3} \\d{3}"

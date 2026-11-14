@@ -6,8 +6,7 @@
 appId: de.danerd.ghulsuite.dev
 name: Design, landscape and background
 ---
-- launchApp:
-    stopApp: false
+- runFlow: home.yaml
 - tapOn: "Options"
 - scrollUntilVisible:
     element: "Theme, language"

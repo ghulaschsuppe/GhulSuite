@@ -321,7 +321,7 @@ fun CalScreen(state: AppState, padding: PaddingValues) {
         if (!data.loaded) LoadingHint()
         SingleChoiceSegmentedButtonRow(Modifier.padding(bottom = 10.dp)) {
             listOf(CalView.MONTH to Res.string.cal_view_month, CalView.WEEK to Res.string.cal_view_week, CalView.DAY to Res.string.cal_view_day, CalView.LIST to Res.string.cal_view_list)
-                .forEach { (v, label) -> SegmentedButton(state.calView == v, { state.calView = v }) { Text(stringResource(label)) } }
+                .forEach { (v, label) -> SegmentedButton(state.calView == v, { state.calView = v }) { SegLabel(stringResource(label)) } }
         }
         when (state.calView) {
             CalView.MONTH -> {

@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.Color
 import de.danerd.ghulsuite.model.EntryExtrasUi
 import de.danerd.ghulsuite.model.SecurityReportUi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -852,8 +853,8 @@ fun GeneratorDialog(state: AppState, onUse: (String) -> Unit, onDismiss: () -> U
     val pwLabel = stringResource(Res.string.f_password)
     GhulSheet(onDismiss, stringResource(Res.string.gen_title)) {
         SingleChoiceSegmentedButtonRow {
-            SegmentedButton(!passphrase, { settings.generatorMode = 0 }) { Text(stringResource(Res.string.gen_chars)) }
-            SegmentedButton(passphrase, { settings.generatorMode = 1 }) { Text(stringResource(Res.string.gen_passphrase)) }
+            SegmentedButton(!passphrase, { settings.generatorMode = 0 }) { SegLabel(stringResource(Res.string.gen_chars)) }
+            SegmentedButton(passphrase, { settings.generatorMode = 1 }) { SegLabel(stringResource(Res.string.gen_passphrase)) }
         }
         val score = state.backend.passwordScore(password).coerceIn(0, 4)
         Row(
@@ -913,10 +914,15 @@ private fun stringResource_password(): String = stringResource(Res.string.f_pass
 
 @Composable
 fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    // The whole line switches, not only the small switch.
-    Row(Modifier.fillMaxWidth().heightIn(min = 40.dp).clickable { onChange(!checked) }, verticalAlignment = Alignment.CenterVertically) {
-        Text(label, Modifier.weight(1f), fontSize = 15.sp)
-        Switch(checked, onChange)
+    // The whole line switches, as one control (the switch itself is not a second, smaller target
+    // of 52 x 32 dp; F59), and a screen reader reads it as a switch with its label.
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            .toggleable(value = checked, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = onChange),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, Modifier.weight(1f).padding(end = 12.dp), fontSize = 15.sp)
+        Switch(checked, null)
     }
 }
 

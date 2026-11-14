@@ -69,7 +69,7 @@ fun ServerFields(
         label = { Text(stringResource(Res.string.server_base)) }, singleLine = true)
     Hint(stringResource(Res.string.server_base_hint))
     if (!passwordOnly) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ChipRow {
             FilterChip(!usePassword, { onUsePassword(false) }, label = { Text(stringResource(Res.string.server_auth_key)) })
             FilterChip(usePassword, { onUsePassword(true) }, label = { Text(stringResource(Res.string.server_auth_password)) })
         }
@@ -328,7 +328,7 @@ private fun PhpModuleFields(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Hint(stringResource(Res.string.php_upload_hint))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ChipRow {
                         for (s in servers) FilterChip(s.id == via.id, { uploadVia = s }, label = { Text(s.name) })
                     }
                     OutlinedTextField(uploadDir, { uploadDir = it.trim() }, Modifier.fillMaxWidth(), singleLine = true,
@@ -615,7 +615,7 @@ fun FetchFromServer(state: AppState, onCancel: () -> Unit) {
     SectionCard(stringResource(Res.string.start_fetch)) {
         Hint(stringResource(Res.string.fetch_text))
         StorageChooser(state)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ChipRow {
             for (k in listOf(ServerKindUi.SFTP, ServerKindUi.FTPS, ServerKindUi.PHP)) {
                 FilterChip(input.kind == k, {
                     input = input.copy(kind = k, port = when (k) { ServerKindUi.SFTP -> 22; ServerKindUi.FTPS -> 21; else -> 0 }, password = null)

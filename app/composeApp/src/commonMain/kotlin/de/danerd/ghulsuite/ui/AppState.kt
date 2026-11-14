@@ -19,6 +19,7 @@ import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.getString
 
@@ -946,26 +947,39 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         block: suspend () -> T,
         onSuccess: (T) -> Unit = {},
     ) {
-        if (busy) return
-        scope.launch {
-            busy = true
-            touchNeeded = false
+        if (busy) {
+            // A second tap while the first one still runs is meant to be dropped. An action the app
+            // starts itself while another one is running would be lost without a word (F49).
+            if (inCallback > 0) DevChecks.alarm("Folgeaktion verworfen, die App war noch beschäftigt")
+            return
+        }
+        // Busy at once, in the same tap: a second tap right after it must find the app busy, also
+        // before the coroutine had its first turn (else Save tapped twice saved twice).
+        busy = true
+        touchNeeded = false
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            var failure: String? = null
             val result = try {
                 block()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                onError(describe(e))
-                return@launch
+                failure = describe(e)
+                null
             } finally {
                 busy = false
                 touchNeeded = false
             }
             // Only once the action is done: a follow-up action started here (run inside onSuccess,
             // e.g. "check GhulDrive first, then set the sync server") must not find the app busy,
-            // or it would be dropped without a word.
+            // or it would be dropped without a word. The same for onError.
+            failure?.let { text ->
+                callback { onError(text) }
+                return@launch
+            }
             try {
-                onSuccess(result)
+                @Suppress("UNCHECKED_CAST")
+                callback { onSuccess(result as T) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -973,10 +987,25 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             }
         }
     }
+
+    /** Depth of onSuccess/onError calls of [run] running now (for [DevChecks]). */
+    private var inCallback = 0
+
+    private inline fun callback(f: () -> Unit) {
+        inCallback++
+        try {
+            f()
+        } finally {
+            inCallback--
+        }
+    }
 }
 
 suspend fun describe(e: Throwable): String {
-    if (e !is VaultException) return getString(Res.string.err_other, e.message ?: e.toString())
+    if (e !is VaultException) {
+        DevChecks.shown(e)
+        return getString(Res.string.err_other, e.message ?: e.toString())
+    }
     return when (e.kind) {
         VaultErrorKind.UPDATE_REQUIRED -> getString(Res.string.err_update_required)
         VaultErrorKind.NO_KEY -> getString(Res.string.err_no_key)

@@ -298,6 +298,8 @@ tasks.matching { it.name == "compileTestKotlinDesktop" }.configureEach { depends
 tasks.withType<Test>().matching { it.name == "desktopTest" }.configureEach {
     dependsOn(generateHostBindings)
     systemProperty("jna.library.path", hostTargetDir.get().dir("debug").asFile.absolutePath)
+    // The layout check renders every screen on several phones (the default of 512 MB is too little).
+    maxHeapSize = "2g"
 }
 
 // --- Windows app (installer and portable folder) --------------------------------------------

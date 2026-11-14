@@ -167,5 +167,10 @@ tools/                 Testserver (SFTP/IMAP/SMTP), Prüfskripte, Emulator-Skrip
   Überschriften, Platzhalter wie „…“ oder „0“, wo ein Wert stehen müsste, leere oder halbe Zustände, technische
   Fehlertexte, Knöpfe ohne Wirkung, Probleme im dunklen Design und im Querformat. Jeder Fund kommt mit Nummer ins
   Testprotokoll und wird im selben Pull Request behoben oder ausdrücklich zurückgestellt.
+- **Vor jedem Push eine unabhängige Durchsicht:** Ein zweiter Prüfer, der die Änderung nicht geschrieben hat, liest
+  den Diff gezielt auf Fehler (verworfene oder doppelte Aktionen, Abbruch als Fehler angezeigt, fehlende
+  Fehlerfälle, Speicher- und Lebenszyklusfehler). Was er findet, wird vor dem Push behoben oder begründet verworfen.
+- Neue Bildschirme kommen in `LayoutCheckTest` (drei Handys, zwei Sprachen); gemeinsame Bausteine (`ButtonRow`,
+  `LabelValueRow`, `ChipRow`, `SegLabel`, `ShrinkText`) statt fester Breiten nebeneinander.
 - Kommentare und Commit-Nachrichten auf Englisch, Dokumentation auf Deutsch.
 - Neue Quelldateien beginnen mit `// SPDX-License-Identifier: AGPL-3.0-or-later`.

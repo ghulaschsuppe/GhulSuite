@@ -6,10 +6,12 @@
 # MAESTRO_SHARD chooses which flows (CI runs the three side by side, each on its own emulator):
 #   all     (default) everything below one after the other
 #   base    the flows in app/maestro (setup, GhulPass, GhulAuth, GhulCal, app PIN, options,
-#           GhulDrive and GhulMail with a server that does not exist)
+#           GhulDrive and GhulMail with a server that does not exist, the areas in depth, dark
+#           design, landscape), then the German tour with normal and with large font
 #   server  setup and app PIN, then with a real server: GhulDrive (server/1-drive.yaml), servers,
 #           synchronisation, sharing, Drive card, selection (3-sync-share.yaml), GhulDrive in
-#           depth (4-drive-deep.yaml)
+#           depth (4-drive-deep.yaml), servers cut off and back, the process ended in the
+#           background (app/maestro/extra)
 #   mail    setup, app PIN and GhulMail without account, then a real mail account (server/2-mail.yaml)
 #           and GhulMail in depth (5-mail-deep.yaml)
 # "server" and "mail" need the test servers next to the emulator (GHUL_TEST_SERVERS=1, see
@@ -58,10 +60,51 @@ server_address() {
   echo "$server"
 }
 
+# The German tour (app/maestro/extra/tour-de.yaml): with the normal font, then with the large
+# system font (130 %) and the large display size, as many people set their phones.
+tour_de() {
+  echo "::group::Rundgang auf Deutsch"
+  timeout 900 maestro test -e PREFIX=de "$flows/extra/tour-de.yaml" --format junit --output "$out/report-tour-de.xml" --test-output-dir "$out"
+  echo "::endgroup::"
+  echo "::group::Rundgang auf Deutsch, große Schrift und Anzeige"
+  local dens
+  dens=$(adb shell wm density | tr -d '\r' | grep -oE '[0-9]+' | head -n 1)
+  adb shell settings put system font_scale 1.3
+  [ -n "$dens" ] && adb shell wm density $((dens * 115 / 100))
+  local rc=0
+  timeout 900 maestro test -e PREFIX=de-gross "$flows/extra/tour-de.yaml" --format junit --output "$out/report-tour-de-gross.xml" --test-output-dir "$out" || rc=$?
+  adb shell settings put system font_scale 1.0
+  adb shell wm density reset
+  echo "::endgroup::"
+  return $rc
+}
+
+# Harder conditions (server part): the servers cut off and back, then the app's process ended
+# in the background the way Android does it when memory runs short.
+hard_conditions() {
+  local addr="$1" rc=0
+  run "$flows/extra/offline-1-before.yaml" 600
+  sudo bash "$(dirname "$0")/slow-servers.sh" 150 100
+  run "$flows/extra/offline-2-gone.yaml" 900 || rc=$?
+  sudo bash "$(dirname "$0")/slow-servers.sh" 150 2
+  [ "$rc" = 0 ] || return "$rc"
+  run "$flows/extra/offline-3-back.yaml" 900
+  run "$flows/extra/killed-1-before.yaml" 600 -e GHUL_SERVER="$addr"
+  local pkg=de.danerd.ghulsuite.dev pid
+  pid=$(adb shell pidof "$pkg" | tr -d '\r')
+  echo "Prozess $pkg ($pid) wird beendet wie bei Speichermangel"
+  # The development build may end its own process (run-as); kill -9 is what Android does.
+  adb shell run-as "$pkg" kill -9 "$pid" || adb shell am kill "$pkg"
+  sleep 3
+  if [ -n "$(adb shell pidof "$pkg" | tr -d '\r')" ]; then echo "::error::Der Prozess der App läuft noch"; return 1; fi
+  run "$flows/extra/killed-2-after.yaml" 600 -e GHUL_SERVER="$addr"
+}
+
 servers="${GHUL_TEST_SERVERS:-0}"
 case "$shard" in
   base)
     timeout 2400 maestro test "$flows" --format junit --output "$out/report.xml" --test-output-dir "$out"
+    tour_de
     ;;
   server)
     [ "$servers" = 1 ] || { echo "::error::Teil „server“ braucht die Testserver"; exit 1; }
@@ -71,6 +114,7 @@ case "$shard" in
     run "$flows/server/1-drive.yaml" 900 -e GHUL_SERVER="$addr"
     run "$flows/server/3-sync-share.yaml" 1200 -e GHUL_SERVER="$addr"
     run "$flows/server/4-drive-deep.yaml" 900 -e GHUL_SERVER="$addr"
+    hard_conditions "$addr"
     ;;
   mail)
     [ "$servers" = 1 ] || { echo "::error::Teil „mail“ braucht die Testserver"; exit 1; }
@@ -83,6 +127,7 @@ case "$shard" in
     ;;
   all)
     timeout 2400 maestro test "$flows" --format junit --output "$out/report.xml" --test-output-dir "$out"
+    tour_de
     # With test servers: GhulDrive, GhulMail, servers and sharing against a real server. They
     # continue where the flows above ended.
     if [ "$servers" = 1 ]; then

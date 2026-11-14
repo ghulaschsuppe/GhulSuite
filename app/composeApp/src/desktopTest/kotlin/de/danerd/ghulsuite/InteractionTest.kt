@@ -19,6 +19,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.runDesktopComposeUiTest
 import androidx.compose.ui.unit.Density
+import de.danerd.ghulsuite.ui.DevChecks
 import de.danerd.ghulsuite.ui.AppState
 import de.danerd.ghulsuite.ui.CalView
 import de.danerd.ghulsuite.ui.GhulSuiteApp
@@ -60,6 +61,9 @@ class InteractionTest {
         block: DesktopComposeUiTest.(AppState, ScreenshotTest.Fake) -> Unit,
     ) {
         Locale.setDefault(Locale.ENGLISH)
+        // As in the development build: dropped follow-up actions and unexpected errors are alarms.
+        DevChecks.enabled = true
+        DevChecks.alarms.clear()
         val fake = ScreenshotTest.Fake(exists = true, unlocked = true).apply(prepare)
         // Texts that AppState looks up outside of the screen need a display (screen resolution);
         // the tests run without one, so only that failure is let through, every other one counts.
@@ -73,6 +77,7 @@ class InteractionTest {
             block(state, fake)
         }
         assertTrue(errors.isEmpty(), "errors in the app: $errors")
+        assertTrue(DevChecks.alarms.isEmpty(), "alarms of the development build: ${DevChecks.alarms.toList()}")
     }
 
     private fun DesktopComposeUiTest.shot(name: String) {

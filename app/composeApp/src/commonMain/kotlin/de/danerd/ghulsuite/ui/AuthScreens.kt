@@ -361,7 +361,7 @@ fun AddTotpScreen(state: AppState, vaultId: String, padding: PaddingValues, star
                 )
                 modes.forEachIndexed { i, (m, label) ->
                     SegmentedButton(selected = mode == m, onClick = { mode = m; error = null }, shape = SegmentedButtonDefaults.itemShape(i, modes.size)) {
-                        Text(stringResource(label))
+                        SegLabel(stringResource(label))
                     }
                 }
             }
@@ -419,7 +419,7 @@ fun AddTotpScreen(state: AppState, vaultId: String, padding: PaddingValues, star
                                 algorithm = a
                                 if (a == OtpAlgorithmUi.STEAM) { digits = "5"; period = "30" } else if (digits == "5") digits = "6"
                             }, shape = SegmentedButtonDefaults.itemShape(i, OtpAlgorithmUi.entries.size)) {
-                                Text(if (a == OtpAlgorithmUi.STEAM) "Steam" else a.name)
+                                SegLabel(if (a == OtpAlgorithmUi.STEAM) "Steam" else a.name)
                             }
                         }
                     }

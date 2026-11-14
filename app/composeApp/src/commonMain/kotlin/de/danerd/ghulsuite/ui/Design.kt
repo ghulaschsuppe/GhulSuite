@@ -70,6 +70,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
@@ -543,16 +545,63 @@ fun Banner(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, 
     }
 }
 
-/** Row of buttons that share the width (.btn-row). */
+/**
+ * Row of buttons that share the width (.btn-row). If a label would have to break inside a word
+ * (a narrow phone, the large system font, a long German word), the buttons stand one below the
+ * other at full width instead (bug F57: "Abbreche n", "Hinzufüg en").
+ * Buttons with Modifier.weight share the rest of the width equally, others keep their own width.
+ */
 @Composable
 fun ButtonRow(content: @Composable RowScope.() -> Unit) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), content = content)
+    val gap = 8.dp
+    Layout(content = { ButtonRowScope.content() }, modifier = Modifier.fillMaxWidth()) { items, constraints ->
+        val space = gap.roundToPx()
+        val width = constraints.maxWidth
+        val weighted = items.filter { it.layoutId == WEIGHTED }
+        val fixed = items.filter { it.layoutId != WEIGHTED }
+        val fixedWidths = fixed.map { it.maxIntrinsicWidth(constraints.maxHeight) }
+        val share = if (weighted.isEmpty()) 0 else (width - fixedWidths.sum() - space * (items.size - 1)) / weighted.size
+        val fits = fixedWidths.sum() + space * (items.size - 1) <= width &&
+            weighted.all { it.minIntrinsicWidth(constraints.maxHeight) <= share }
+        if (fits) {
+            val placeables = items.map { m ->
+                val w = if (m.layoutId == WEIGHTED) share else fixedWidths[fixed.indexOf(m)]
+                m.measure(androidx.compose.ui.unit.Constraints.fixedWidth(w.coerceAtLeast(0)))
+            }
+            val h = placeables.maxOfOrNull { it.height } ?: 0
+            layout(width, h) {
+                var x = 0
+                for (p in placeables) { p.place(x, (h - p.height) / 2); x += p.width + space }
+            }
+        } else {
+            val placeables = items.map { it.measure(androidx.compose.ui.unit.Constraints.fixedWidth(width)) }
+            val h = placeables.sumOf { it.height } + space * (placeables.size - 1).coerceAtLeast(0)
+            layout(width, h) {
+                var y = 0
+                for (p in placeables) { p.place(0, y); y += p.height + space }
+            }
+        }
+    }
+}
+
+private const val WEIGHTED = "ghul-button-row-weighted"
+
+/** The scope of [ButtonRow]: weight marks a button that shares the free width. */
+private object ButtonRowScope : RowScope {
+    override fun Modifier.weight(weight: Float, fill: Boolean): Modifier = this.layoutId(WEIGHTED)
+    override fun Modifier.align(alignment: Alignment.Vertical): Modifier = this
+    override fun Modifier.alignBy(alignmentLine: androidx.compose.ui.layout.HorizontalAlignmentLine): Modifier = this
+    override fun Modifier.alignByBaseline(): Modifier = this
+    override fun Modifier.alignBy(alignmentLineBlock: (androidx.compose.ui.layout.Measured) -> Int): Modifier = this
 }
 
 /** Small hint text below a section (.hint-text). */
 @Composable
 fun HintText(text: String, modifier: Modifier = Modifier) {
-    Text(text, fontSize = 13.sp, lineHeight = 18.sp, color = g.muted, modifier = modifier.padding(horizontal = 4.dp))
+    // Inside a card flush with the labels above and below it (it stood 4 dp further in, F58);
+    // outside of cards slightly in, like the group titles.
+    val inset = if (LocalOnCard.current) 0.dp else 4.dp
+    Text(text, fontSize = 13.sp, lineHeight = 18.sp, color = g.muted, modifier = modifier.padding(horizontal = inset))
 }
 
 /** Small filled button of the header (.btn.primary, 36 dp): the main action of a full-screen editor. */
@@ -619,11 +668,18 @@ fun GhulTopBar(
         if (onBack != null) BarIcon(backIcon, org.jetbrains.compose.resources.stringResource(Res.string.a_back), onClick = onBack)
         Column(Modifier.weight(1f).padding(start = if (onBack == null) 4.dp else 0.dp)) {
             if (title.isNotEmpty()) {
-                Text(
-                    title, color = g.fg, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                    fontSize = if (onBack != null) 18.sp else 22.sp,
-                    fontWeight = if (onBack != null) FontWeight.SemiBold else FontWeight.Bold,
-                    letterSpacing = if (onBack != null) 0.sp else (-0.44).sp, lineHeight = if (onBack != null) 22.sp else 26.sp,
+                // A long title gets a little smaller (down to 15 sp) before it is shortened with "…".
+                val size = if (onBack != null) 18.sp else 22.sp
+                ShrinkText(
+                    title,
+                    TextStyle(
+                        color = g.fg, fontSize = size,
+                        fontWeight = if (onBack != null) FontWeight.SemiBold else FontWeight.Bold,
+                        letterSpacing = if (onBack != null) 0.sp else (-0.44).sp, lineHeight = if (onBack != null) 22.sp else 26.sp,
+                    ),
+                    15.sp,
+                    Modifier.testTag(TITLE_TAG),
+                    fallbackLines = 2,
                 )
             }
             context?.invoke()
@@ -695,12 +751,18 @@ val LocalWide = compositionLocalOf { false }
 /** Columns for tile grids (Drive, Auth): 2 on phones, more in wide panes. */
 val LocalColumns = compositionLocalOf { 2 }
 
+/** Tag of the title of a screen: the layout check reports it when it is shortened with "…". */
+const val TITLE_TAG = "ghul-title"
+
+/** Tag of [GhulFab]: the layout check knows it floats over the list on purpose. */
+const val FAB_TAG = "ghul-fab"
+
 /** Floating action button (.fab): 56 dp, 18 dp corners, white content, optional text. */
 @Composable
 fun GhulFab(color: Color, icon: androidx.compose.ui.graphics.vector.ImageVector, text: String? = null, description: String? = null, onClick: () -> Unit) {
     androidx.compose.material3.Surface(
         onClick = onClick, shape = RoundedCornerShape(18.dp), color = color, contentColor = Color.White,
-        shadowElevation = 6.dp, modifier = Modifier.heightIn(min = 56.dp).widthIn(min = 56.dp),
+        shadowElevation = 6.dp, modifier = Modifier.heightIn(min = 56.dp).widthIn(min = 56.dp).testTag(FAB_TAG),
     ) {
         Row(
             Modifier.height(56.dp).padding(horizontal = if (text != null) 18.dp else 16.dp),
@@ -725,7 +787,8 @@ class SegScope(private val row: RowScope) : RowScope by row {
             shape = RoundedCornerShape(10.dp),
             color = if (selected) t.surface else Color.Transparent,
             shadowElevation = if (selected) 1.dp else 0.dp,
-            modifier = modifier.weight(1f).height(36.dp),
+            // 40 dp: the smallest height that is still easy to hit with a finger.
+            modifier = modifier.weight(1f).height(40.dp),
         ) {
             Box(contentAlignment = Alignment.Center) {
                 ProvideTextStyle(TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (selected) t.fg else t.muted)) { content() }
@@ -765,10 +828,121 @@ fun GhulSnackbarHost(host: androidx.compose.material3.SnackbarHostState, modifie
 /** Segmented choice in the look of the design preview: grey track, the chosen part raised. */
 @Composable
 fun SingleChoiceSegmentedButtonRow(modifier: Modifier = Modifier, content: @Composable SegScope.() -> Unit) {
+    // All labels of one bar in the same size: the smallest one any of them needs.
+    val sizes = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateMapOf<String, Float>() }
+    androidx.compose.runtime.CompositionLocalProvider(LocalSegSizes provides sizes) { SegRow(modifier, content) }
+}
+
+private val LocalSegSizes = compositionLocalOf<androidx.compose.runtime.snapshots.SnapshotStateMap<String, Float>?> { null }
+
+@Composable
+private fun SegRow(modifier: Modifier, content: @Composable SegScope.() -> Unit) {
     Row(
         modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(if (LocalOnCard.current) g.surface3 else g.surface2).padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) { SegScope(this).content() }
+}
+
+/**
+ * One line of text that gets smaller (down to [minSize]) when it does not fit. If it does not fit
+ * even then, it takes up to [fallbackLines] lines at that size (wrapped between words), and only
+ * after that is it shortened with "…". Measures first, so it works for any font scale and width.
+ * [sizes]: segments of one bar share it, so all of them use the same (smallest) size.
+ */
+@Composable
+fun ShrinkText(
+    text: String,
+    style: TextStyle,
+    minSize: androidx.compose.ui.unit.TextUnit,
+    modifier: Modifier = Modifier,
+    fallbackLines: Int = 1,
+    sizes: androidx.compose.runtime.snapshots.SnapshotStateMap<String, Float>? = null,
+) {
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier) {
+        val max = constraints.maxWidth
+        var size = style.fontSize.value
+        var fits = true
+        if (max < androidx.compose.ui.unit.Constraints.Infinity) {
+            fun wide(v: Float) = measurer.measure(text, style.copy(fontSize = v.sp), maxLines = 1, softWrap = false).size.width > max
+            while (size > minSize.value && wide(size)) size -= 0.5f
+            fits = !wide(size)
+        }
+        if (sizes != null) {
+            androidx.compose.runtime.SideEffect { sizes[text] = size }
+            size = minOf(size, sizes.values.minOrNull() ?: size)
+        }
+        val lines = if (fits) 1 else fallbackLines
+        Text(text, style = style.copy(fontSize = size.sp), maxLines = lines, softWrap = lines > 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+    }
+}
+
+/**
+ * A setting: label on the left, its value on the right. When both do not fit side by side (a
+ * long value, the large system font, a narrow phone), the value goes below the label instead of
+ * squeezing it until a word breaks ("Zwischenablag e leeren", bug F57).
+ */
+@Composable
+fun LabelValueRow(label: String, value: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val t = g
+    Layout(
+        content = {
+            Text(label, fontSize = 15.sp)
+            Text(value, fontSize = 13.sp, color = t.faint)
+            androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.padding(start = 6.dp).size(18.dp), tint = t.faint)
+        },
+        modifier = modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClick = onClick),
+    ) { (labelM, valueM, arrowM), c ->
+        val width = c.maxWidth
+        val gap = 8.dp.roundToPx()
+        val arrow = arrowM.measure(androidx.compose.ui.unit.Constraints())
+        val valueWidth = valueM.maxIntrinsicWidth(c.maxHeight)
+        // Side by side only if the label then keeps every word whole.
+        val besides = labelM.minIntrinsicWidth(c.maxHeight) + gap + valueWidth + arrow.width <= width
+        if (besides) {
+            val v = valueM.measure(androidx.compose.ui.unit.Constraints(maxWidth = valueWidth))
+            val l = labelM.measure(androidx.compose.ui.unit.Constraints(maxWidth = width - v.width - gap - arrow.width))
+            val h = maxOf(c.minHeight, l.height, v.height, arrow.height)
+            layout(width, h) {
+                l.place(0, (h - l.height) / 2)
+                v.place(width - arrow.width - v.width, (h - v.height) / 2)
+                arrow.place(width - arrow.width, (h - arrow.height) / 2)
+            }
+        } else {
+            val l = labelM.measure(androidx.compose.ui.unit.Constraints(maxWidth = width - arrow.width))
+            val v = valueM.measure(androidx.compose.ui.unit.Constraints(maxWidth = width - arrow.width))
+            val pad = 6.dp.roundToPx()
+            val h = maxOf(c.minHeight, pad + l.height + 2 + v.height + pad)
+            layout(width, h) {
+                l.place(0, pad)
+                v.place(0, pad + l.height + 2)
+                arrow.place(width - arrow.width, (h - arrow.height) / 2)
+            }
+        }
+    }
+}
+
+/**
+ * Chips side by side that continue in the next line when they do not fit (a narrow phone, the
+ * large system font) instead of squeezing their labels until a word breaks ("Passwo rt").
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+fun ChipRow(content: @Composable androidx.compose.foundation.layout.FlowRowScope.() -> Unit) {
+    androidx.compose.foundation.layout.FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        content = content,
+    )
+}
+
+/**
+ * Label of a segment: one line. A long word (German, the large system font, a narrow phone)
+ * makes the text a little smaller, down to 10 sp, instead of breaking it ("SHA25 6", bug F57).
+ */
+@Composable
+fun SegLabel(text: String) {
+    ShrinkText(text, androidx.compose.material3.LocalTextStyle.current, 10.sp, Modifier.padding(horizontal = 4.dp), sizes = LocalSegSizes.current)
 }
 
 object SegmentedButtonDefaults {

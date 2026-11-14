@@ -1,0 +1,12 @@
+# Killed by Android, part 1: GhulDrive is open in a folder, then the app goes to the background
+# (tools/run-maestro.sh then ends its process, as Android does with apps in the background).
+appId: de.danerd.ghulsuite.dev
+name: Vom System beendet 1
+---
+- runFlow: ../server/unlock.yaml
+- tapOn: "GhulDrive"
+- extendedWaitUntil: { visible: "Urlaub-Maestro", timeout: 60000 }
+- tapOn: "Urlaub-Maestro"
+- waitForAnimationToEnd: { timeout: 3000 }
+- takeScreenshot: x2-01-before
+- pressKey: Home

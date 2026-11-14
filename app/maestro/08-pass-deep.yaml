@@ -6,8 +6,7 @@
 appId: de.danerd.ghulsuite.dev
 name: GhulPass in depth
 ---
-- launchApp:
-    stopApp: false
+- runFlow: home.yaml
 - tapOn: "GhulPass"
 - extendedWaitUntil:
     visible: "Codeberg"

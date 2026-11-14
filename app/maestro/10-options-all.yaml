@@ -4,8 +4,7 @@
 appId: de.danerd.ghulsuite.dev
 name: All options pages
 ---
-- launchApp:
-    stopApp: false
+- runFlow: home.yaml
 - tapOn: "Options"
 - takeScreenshot: 10-00-overview
 - runFlow:
@@ -25,7 +24,7 @@ name: All options pages
     env: { PAGE: "Vaults", SHOT: "10-05-vaults" }
 - runFlow:
     file: open-option-full.yaml
-    env: { PAGE: "Import and export", SHOT: "10-06-import" }
+    env: { PAGE: "Import, export and backup", SHOT: "10-06-import" }
 - runFlow:
     file: open-option-full.yaml
     env: { PAGE: "Servers, sync & sharing", SHOT: "10-07-servers" }

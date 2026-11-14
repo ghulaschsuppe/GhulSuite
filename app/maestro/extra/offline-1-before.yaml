@@ -1,0 +1,11 @@
+# Servers gone, part 1 (tools/run-maestro.sh cuts the servers off after it): the page of the
+# synchronisation is open.
+appId: de.danerd.ghulsuite.dev
+name: Server weg 1
+---
+- runFlow: ../server/unlock.yaml
+- tapOn: "Options"
+- scrollUntilVisible: { element: "Servers, sync & sharing", direction: DOWN }
+- tapOn: "Servers, sync & sharing"
+- scrollUntilVisible: { element: "Synchronise now", direction: DOWN }
+- takeScreenshot: x1-01-before

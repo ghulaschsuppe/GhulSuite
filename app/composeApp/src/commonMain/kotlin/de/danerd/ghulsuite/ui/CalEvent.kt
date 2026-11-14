@@ -1034,11 +1034,10 @@ fun CalSettingsSection(state: AppState) {
     SectionCard(areaGroupTitle(de.danerd.ghulsuite.model.VaultKindUi.CAL)) {
         SwitchRow(stringResource(Res.string.cal_show_holidays), settings.calHolidays) { settings.calHolidays = it; state.refreshCalendar() }
         Hint(stringResource(Res.string.cal_holidays_offline))
-        Row(Modifier.fillMaxWidth().heightIn(min = 40.dp).clickable { regionSheet = true }, verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(Res.string.cal_region), Modifier.weight(1f), fontSize = 15.sp)
-            Text(regions.firstOrNull { it.code == settings.calRegion }?.name ?: stringResource(Res.string.cal_region_none), fontSize = 14.sp, color = g.muted)
-            ChevronEnd()
-        }
+        LabelValueRow(
+            stringResource(Res.string.cal_region),
+            regions.firstOrNull { it.code == settings.calRegion }?.name ?: stringResource(Res.string.cal_region_none),
+        ) { regionSheet = true }
         ChoiceRow(stringResource(Res.string.cal_default_timed),
             listOf(-1 to Res.string.cal_no_reminder, 0 to Res.string.cal_rem_start, 5 to Res.string.cal_rem_5, 10 to Res.string.cal_rem_10, 15 to Res.string.cal_rem_15,
                 30 to Res.string.cal_rem_30, 60 to Res.string.cal_rem_60, 1440 to Res.string.cal_rem_day), settings.calDefaultReminder) { settings.calDefaultReminder = it }
@@ -1061,7 +1060,7 @@ fun CalSettingsSection(state: AppState) {
             fontSize = 14.sp, color = g.muted)
         SingleChoiceSegmentedButtonRow {
             listOf(Res.string.cal_lock_min, Res.string.cal_lock_title, Res.string.cal_lock_full).forEachIndexed { i, r ->
-                SegmentedButton(settings.calNotifyDetail == i, { settings.calNotifyDetail = i; state.refreshCalendar() }) { Text(stringResource(r)) }
+                SegmentedButton(settings.calNotifyDetail == i, { settings.calNotifyDetail = i; state.refreshCalendar() }) { SegLabel(stringResource(r)) }
             }
         }
         OutlinedButton(onClick = { state.calTestReminder(testText) }, modifier = Modifier.fillMaxWidth()) {

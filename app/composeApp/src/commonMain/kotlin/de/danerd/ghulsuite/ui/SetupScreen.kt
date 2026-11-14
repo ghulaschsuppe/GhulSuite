@@ -352,7 +352,7 @@ fun ChoiceCard(selected: Boolean, title: String, text: String, onSelect: () -> U
 /** Security key or key file, when the suite has both. */
 @Composable
 fun FactorChoice(withKey: Boolean, onChange: (Boolean) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    ChipRow {
         FilterChip(withKey, { onChange(true) }, label = { Text(stringResource(Res.string.factor_key)) })
         FilterChip(!withKey, { onChange(false) }, label = { Text(stringResource(Res.string.factor_keyfile)) })
     }
