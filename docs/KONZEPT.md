@@ -46,7 +46,7 @@ verschlüsselten Dateien, die man überall ablegen kann. Speicher und Mailserver
 | Wiederherstellungscode | **Pflicht** bei jeder Suite; öffnet alles allein, auch ohne Passwort, Key und Schlüsseldatei; danach wird ein neues Passwort gesetzt |
 | Suite und Tresore | **Der Ordner ist die Suite:** Alle Tresordateien im Ordner gehören dazu, es gibt keine Liste und keine Frage „gehört das dazu?“. Je Bereich beliebig viele Tresore (z. B. GhulPass „Privat“ und „Arbeit“), später ebenso mehrere Mail- und Drive-Konten. `suite.ghlsuite` hält nur Einstellungen (geändert am 11.11.2026, Konzept A) |
 | Erster Start | Auswahl: **neu einrichten**, **vorhandene Suite öffnen** (Ordner) oder **einzelnen Tresor öffnen** (Datei; um ihn wird eine neue Suite gebaut, nur dieser Bereich wird eingeschaltet) |
-| Speicherort | Standard: privater App-Speicher; optional ein eigener Ordner (z. B. USB-Stick). Suite und Tresore liegen im **selben Ordner** |
+| Speicherort | Standard: privater App-Speicher; optional ein eigener Ordner (z. B. USB-Stick). Suite und Tresore liegen im **selben Ordner**. „Speicherort wechseln“ (Optionen → Tresore) kopiert alle Dateien, prüft jede Kopie Byte für Byte und nutzt erst dann den neuen Ort; ein Ordner mit einer anderen Suite wird nie überschrieben, die alten Dateien bleiben liegen |
 | GhulAuth-Passwort | Alle Tresore einer Suite haben dasselbe Passwort und dieselben Faktoren. Wer ein getrenntes Passwort will, legt eine zweite Suite an |
 | Lizenz | **AGPL-3.0-or-later** |
 | Windows-Code-Signatur | **Nein** (SmartScreen-Warnung beim ersten Start wird in Kauf genommen) |
@@ -314,6 +314,12 @@ des Inhalts eingebunden.
 ## 8. Speicherorte und Synchronisation
 
 ### 8.1 Zwei getrennte Wege
+
+GhulSuite bringt keine Anbindung an Cloud-Ordner mit (kein Nextcloud-, Dropbox- oder Syncthing-Client). Wer die
+Dateien in einem eigenen Ordner hält, kann ihn mit einem selbst installierten Programm abgleichen; das ist erlaubt,
+aber nicht nötig. Entsteht dabei eine Konfliktkopie derselben Datei, führt die App beide beim Entsperren zusammen.
+Tresordateien werden am Inhalt erkannt (Kennung im verschlüsselten Kopf), nicht am Namen: Umbenennen schadet nicht,
+die App gibt der Datei beim nächsten Entsperren ihren neutralen Namen zurück.
 
 1. **Speicher-Adapter (automatische Synchronisation):** für Tresore, Suite-Container und Drive.
 2. **Export und Import (manuell, überall):** Container-Datei auf USB-Stick, in einen Cloud-Ordner, per Mail an sich selbst

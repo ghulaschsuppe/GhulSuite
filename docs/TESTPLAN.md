@@ -498,6 +498,26 @@ Ziel: GhulSuite eine Woche wie im echten Leben benutzen, mit echten Konten, aber
 
 Automatisch läuft bei jedem Push der Alltagstest im Kern (zwei Geräte, 30 simulierte Tage mit allen Bereichen) und in einem eigenen Job der Stresstest (5.000 Anmeldungen, 2.000 Termine, 300 Dateien und 64 MB, 20 Sync-Runden, 8 parallele Threads).
 
+## 28. Sicherheitspunkte und Speicherort (Runde 5)
+
+| Nr. | Schritt | Erwartet |
+|---|---|---|
+| R1 | Optionen → Tresore → „Speicherort wechseln“ → „Ordner wählen“, einen leeren Ordner wählen. Danach entsperren. | Meldung „… Dateien kopiert und geprüft“, Entsperren nötig, danach alles da; „Speicherort:“ zeigt den neuen Ordner. Im alten Ort liegen die Dateien noch. |
+| R2 | Dasselbe noch einmal mit einem Ordner, in dem schon eine Suite liegt. | Meldung „Im gewählten Ordner liegt schon eine Suite …“, nichts überschrieben, der alte Ort bleibt aktiv. |
+| R3 | Aus dem eigenen Ordner „In den App-Speicher“ wählen. | Wie R1; „Speicherort: App-Speicher“. |
+| R4 | Im eigenen Ordner eine Tresordatei umbenennen (z. B. in `Urlaub.ghlpss`), dann entsperren. | Tresor ist vollständig da, die Datei heißt wieder nach ihrer Kennung. |
+| R5 | Sperrbildschirm mit Android-Einstellung „alle Inhalte anzeigen“; Mail und Termin-Erinnerung kommen lassen. | Auf dem Sperrbildschirm nur „GhulMail“ bzw. „Termin“ ohne Absender, Betreff oder Titel (B4). |
+| R6 | Optionen → Sperren → „Sofortsperre stoppt auch Mail-Benachrichtigungen“ an; schütteln; Mail schicken; dann entsperren. | Gesperrt keine Mail-Benachrichtigung; nach dem Entsperren kommen sie wieder (B5). |
+| R7 | Eine `.ics`-Datei aus einer anderen App (z. B. Dateien) mit GhulSuite öffnen. | Vorschau mit Anzahl und ersten Terminen, Import erst nach „Importieren“ (B6). |
+| R8 | App sperren, Handy 20 Minuten in den Standby (Bildschirm aus), dann App wieder öffnen. | Gesperrt, auch wenn das Handy zwischendurch tief geschlafen hat (B8). |
+| R9 | In einer App ohne Verknüpfung über Autofill eine Anmeldung von Hand wählen. | Rückfrage mit App-Name und Paket: „Verknüpfen und ausfüllen“ oder „Nur diesmal ausfüllen“. Nur beim Verknüpfen wird sie beim nächsten Mal direkt angeboten (B9). |
+| R10 | Eine App mit Bildschirm-Overlay (z. B. Blaulichtfilter) einschalten und in GhulSuite entsperren bzw. Autofill wählen. | Tipps werden ignoriert, solange etwas darüberliegt (L10); Overlay aus, dann geht es. |
+| R11 | Zwei Geräte mit Sync: auf A einen Eintrag löschen, auf B (offline) denselben Eintrag ändern; dann beide synchronisieren. | Der geänderte Eintrag ist auf beiden Geräten wieder da (B18). Andersherum (B kannte die Löschung): bleibt gelöscht. |
+| R12 | Windows: eine Drive-Datei öffnen, das Programm offen lassen, GhulSuite sperren; Programm schließen, eine Minute warten. | Der Weitergabe-Ordner ist danach leer (B10). Portabel: der Ordner liegt in `GhulSuite-Daten`, nicht im Windows-Temp. |
+| R13 | Optionen → Sicherheit: Hinweis „Etwas verloren …“ lesen. | Hinweis nennt: entfernen bzw. neues Notfallblatt, alte Sicherungen, Mail- und Server-Passwörter wechseln (L1). |
+| R14 | GhulMail: bei einem Kontakt mit PGP-Schlüssel „Vergleichen“ öffnen. | Fingerabdruck in Vierergruppen; nach dem Bestätigen gilt er als geprüft; ein später geänderter Schlüssel wird gemeldet (L7). |
+| R15 | Drive-Server auf einen alten Stand zurücksetzen (alte Index-Datei zurückkopieren), dann GhulDrive öffnen. | Meldung „Drive auf dem Server ist älter …“, nichts verschwindet; „Älteren Serverstand übernehmen“ (Optionen → GhulDrive) nur nach Rückfrage (B3). |
+
 ## GhulCal (Kalender)
 
 | Nr. | Schritt | Erwartet |

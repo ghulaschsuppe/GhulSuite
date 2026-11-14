@@ -309,9 +309,15 @@ gesehene `revision`. Taucht eine niedrigere auf, warnt die App, bis der Stand be
 | `revision` | uint | Änderungszähler des Eintrags (zum Zusammenführen) |
 | `modified` | int | Unix-Zeit in Millisekunden |
 | `deleted` | bool | Löschmarker; Felder werden geleert, der Eintrag bleibt für die Synchronisation erhalten |
+| `deleted_from` | uint | nur bei Löschmarkern: die `revision`, die gelöscht wurde (fehlt bei älteren Löschmarkern) |
 | `fields` | map | Feldname → Feld (unten) |
 | `tags` | array of text | Schlagworte |
 | `folder` | text | optional |
+
+**Zusammenführen zweier Stände desselben Eintrags:** Die höhere `revision` gewinnt, bei Gleichstand die spätere
+`modified`. Ausnahme Löschen gegen Ändern: Eine Löschmarke gewinnt nur gegen Stände mit `revision` ≤ `deleted_from`,
+also gegen das, was das löschende Gerät kannte. Eine Änderung, die es nie gesehen hat, bleibt erhalten. Die Uhren der
+Geräte spielen dabei keine Rolle. Löschmarken ohne `deleted_from` folgen der allgemeinen Regel.
 
 **Feld:** `{ "t": Typ, "v": Wert }` mit
 
@@ -432,6 +438,7 @@ ihre eigenen Dateien (`.ghldrv`, `.ghlmail`).
 | `sync_known` | bereits synchronisierte Tresor-IDs (für das Übertragen von Löschungen) | nein (je Gerät) |
 | `protection_before` | Liste (neueste zuerst, höchstens 256): `s` (vorheriges `S`), `code` (vorheriges Code-Geheimnis). Damit liest das Gerät Dateien auf dem Server, die ein anderes Gerät schrieb, bevor es von der Schutzänderung wusste | nein (je Gerät) |
 | `protection_changed` | Zeitpunkt der letzten Schutzänderung (ms) | ja |
+| `removed_slots` | Slot-IDs (hex) absichtlich entfernter Keys und Schlüsseldateien. Werden beim Synchronisieren vereinigt; ein Gerät, das die Entfernung verpasst hat, entfernt sie ebenfalls | ja |
 | `recovery_confirmed` | `{v, at}`: `v` = hex(SHA-256(„ghul/recovery-confirmed/v1“ ‖ Code-Geheimnis)[0..8]) des bestätigten Codes, `at` = Zeit (ms); fehlt bei Suiten von vor 0.5.0 (gilt als bestätigt) | ja |
 | `shares` | Liste der eigenen Freigaben: `id`, `server`, `name`, `size`, `created`, `expires` (ms, 0 = nie), `password`, `max_downloads`, `url` (vollständiger Link mit Schlüssel) | ja |
 | `mail_accounts` | Liste: `id`, `name`, `display_name`, `email`, `username`, `password`, `servers`, `imap_cert`, `smtp_cert`, `signature` | ja |
@@ -440,12 +447,15 @@ ihre eigenen Dateien (`.ghldrv`, `.ghlmail`).
 
 | Schlüssel | Inhalt | Synchronisiert |
 |---|---|---|
-| `drive` | `server` (ID, leer bei `use_sync`), `use_sync` (bool: der Server, mit dem dieses Gerät synchronisiert; nur ein Verweis), `key` (32 Byte, Drive-Schlüssel DK) | ja |
+| `drive` | `server` (ID, leer bei `use_sync`), `use_sync` (bool: der Server, mit dem dieses Gerät synchronisiert; nur ein Verweis), `key` (32 Byte, Drive-Schlüssel DK), `seen` (Server-ID → höchste gesehene Index-Revision; ein älterer Index wird abgelehnt) | ja |
 | `servers` | höchstens ein eigener Server nur für GhulDrive (Aufbau wie im Suite-Container); ein PHP-Modul kann `upload` mit dem FTPS-Zugang für Updates tragen (`host`, `port`, `user`, `password`, `cert`, `dir`, `data_dir`) | ja |
 | `options` | Optionen des Bereichs, je Schlüssel `{v, at}` (Text, Zeit in ms) | ja |
 
 **GhulMail (`.ghlmail`):** `mail_accounts` (wie oben), `mail_keys`, `mail_contacts`, `mail_cache_key`, `mail_drafts`,
 `mail_outbox`, `options`. **GhulPass, GhulAuth, GhulCal:** `options` in ihren Dateien.
+
+**Listen mit `changed`:** Einträge von `servers` und `mail_accounts` tragen `changed` (ms). Beim Zusammenführen gewinnt
+der später geänderte Eintrag derselben `id`; ohne `changed` bleibt der lokale.
 
 **Optionen und Zusammenführen:** Ein Wert `{v, at}` (Map aus genau `v` und ganzzahligem `at`) wird beim Synchronisieren
 als Ganzes übernommen, wenn sein `at` neuer ist, die letzte Änderung gewinnt. Bekannte Optionen: GhulPass

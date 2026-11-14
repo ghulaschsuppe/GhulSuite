@@ -43,7 +43,9 @@ dessen Zukunft. GhulSuite dreht das um:
   Dazu ein Wiederherstellungscode mit Notfallblatt für den Tag, an dem alles schiefgeht. Verlierst du einen Key
   oder das Blatt, entfernst bzw. erneuerst du es: Ab dann öffnet es nichts mehr, auch nicht mit einer alten Sicherung.
 - 📦 **Der Ordner ist die Suite.** Deine Daten sind normale, verschlüsselte Dateien. Kopieren, sichern, auf den
-  USB-Stick legen, ohne Export-Zwang und ohne Anbieterbindung.
+  USB-Stick legen, ohne Export-Zwang und ohne Anbieterbindung. Standard ist der private App-Speicher; unter
+  Optionen → Tresore wechselst du jederzeit in einen eigenen Ordner und zurück (alles wird kopiert und geprüft).
+  Dateinamen sind egal: Umbenannte Tresordateien erkennt die App am Inhalt.
 - 🧩 **Eine App statt fünf.** Ein Entsperren, ein Design, eine Synchronisation.
 - 💯 **Open Source.** Jede Zeile ist hier nachlesbar.
 

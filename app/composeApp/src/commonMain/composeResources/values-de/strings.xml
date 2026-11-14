@@ -434,7 +434,7 @@
     <string name="mail_key_offered">Eine Mail bot einen anderen Schlüssel an. Der bestätigte bleibt; frag nach, ob der Kontakt einen neuen hat.</string>
     <string name="mail_key_compare">Vergleichen</string>
     <string name="mail_key_compare_title">Fingerabdruck von %1$s</string>
-    <string name="mail_key_compare_text">Lass dir den Fingerabdruck vom Kontakt zeigen oder vorlesen, persönlich oder am Telefon. Stimmt er Zeichen für Zeichen überein, ist es wirklich sein Schlüssel.</string>
+    <string name="mail_key_compare_text">Lass dir den Fingerabdruck vom Kontakt zeigen oder vorlesen, persönlich oder am Telefon. Stimmt er Zeichen für Zeichen überein, ist es wirklich der Schlüssel dieses Kontakts.</string>
     <string name="mail_key_offered_was">Angeboten wurde: %1$s</string>
     <string name="mail_key_matches">Stimmt überein</string>
     <string name="err_password_elsewhere">Das Master-Passwort wurde auf einem anderen Gerät geändert.</string>
