@@ -303,7 +303,7 @@ Für normale Mails brauchst du keinen eigenen Server: GhulMail spricht direkt mi
 GhulSuite ist ein Soloprojekt ohne bezahlten externen Audit. Umso wichtiger ist, dass jeder nachprüfen kann, was
 getestet wird und was nicht:
 
-- **Bei jeder Änderung** laufen über eine Million Einzelprüfungen in 266 Testfunktionen: Angriffe auf Dateien,
+- **Bei jeder Änderung** laufen über eine Million Einzelprüfungen in 272 Testfunktionen: Angriffe auf Dateien,
   Server und Synchronisation, ein „bekloppter Nutzer“ auf drei Geräten, kaputte und böswillige Eingaben in jeden
   Parser, Tests gegen echte SFTP-, FTPS-, IMAP- und SMTP-Server. Dazu kommen öffentliche Sammlungen wie Project
   Wycheproof (Kryptografie), die Big List of Naughty Strings, XSS- und CRLF-Sammlungen für Mails, die URL-Testdaten
@@ -328,8 +328,23 @@ was sich nicht übernehmen lässt, wird mit Namen genannt und nicht stillschweig
 
 ## Download
 
-GhulSuite ist in Entwicklung. Testversionen (Android-APK, Windows-Installer und portable Version) entstehen bei jeder
-Änderung automatisch. Du findest sie unter **Actions → letzter grüner Lauf → Artefakte**. Feste Versionen folgen unter **Releases**.
+| | Stabil (freigegeben) | Vorab (Entwicklung) |
+|---|---|---|
+| **Android** | [GhulSuite.apk](https://github.com/ghulaschsuppe/GhulSuite/releases/latest/download/GhulSuite.apk) | [Vorabversionen](https://github.com/ghulaschsuppe/GhulSuite/releases) |
+| **Windows, Installer** | [GhulSuite.msi](https://github.com/ghulaschsuppe/GhulSuite/releases/latest/download/GhulSuite.msi) | [Vorabversionen](https://github.com/ghulaschsuppe/GhulSuite/releases) |
+| **Windows, portabel** (USB-Stick) | [GhulSuite-portable.zip](https://github.com/ghulaschsuppe/GhulSuite/releases/latest/download/GhulSuite-portable.zip) | [Vorabversionen](https://github.com/ghulaschsuppe/GhulSuite/releases) |
+
+- **Stabil** sind die freigegebenen Versionen vom Zweig `main`. **Vorabversionen** (`0.6.0-dev.3`) entstehen
+  automatisch aus dem Zweig `dev`, bevor sie freigegeben werden: neuer, aber weniger getestet. Auf der
+  Release-Seite sind sie als „Pre-release“ markiert.
+- **Updates kommen aus der App:** Optionen → Über → Updates. Einmal am Tag nach dem Entsperren schaut GhulSuite nach
+  (abschaltbar), installiert wird nur nach deiner Zustimmung. Dort wählst du auch den Kanal: „Stabil“ oder „Vorab“.
+- **Geprüft vor jeder Installation:** Jede Version enthält `SHA256SUMS`, signiert mit dem Signaturschlüssel der App
+  (`SHA256SUMS.sig`). Die App installiert nur, was zu dieser Signatur, Größe und Prüfsumme passt; Android prüft
+  zusätzlich, dass das neue APK mit demselben Schlüssel signiert ist. Von Hand: `sha256sum -c SHA256SUMS`.
+- Der Windows-Installer ist (noch) nicht von Microsoft signiert: Windows SmartScreen fragt beim ersten Start nach.
+- **Testversionen** zu jeder Änderung (als eigene App neben der normalen installierbar, ohne Updates) gibt es weiterhin unter
+  **Actions → letzter grüner Lauf → Artefakte**.
 
 ## Selbst bauen
 

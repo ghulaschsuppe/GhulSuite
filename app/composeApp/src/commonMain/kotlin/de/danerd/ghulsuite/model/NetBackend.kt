@@ -533,6 +533,8 @@ data class MailArchiveStatusUi(
     val offlineBytes: Long,
     /** Accounts whose first removal at the provider the user confirmed. */
     val confirmed: List<String>,
+    /** Accounts at which nothing is deleted, whatever the options say (Gmail, for now). */
+    val deleteBlocked: List<String> = emptyList(),
 )
 
 data class MailArchiveRunUi(

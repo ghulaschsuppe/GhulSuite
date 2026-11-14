@@ -33,7 +33,9 @@ import java.awt.HeadlessException
 import java.io.File
 import java.util.Locale
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -315,6 +317,59 @@ class InteractionTest {
         app(wide = true, setup = { tab = Tab.AUTH }) { _, _ ->
             waitFor("No account open")
             shot("wide-auth")
+        }
+    }
+
+    /** A test updater: finds [found] on the pre-release channel only, records what it was asked. */
+    private class FakeUpdater(val found: de.danerd.ghulsuite.model.UpdateUi?) : de.danerd.ghulsuite.model.AppUpdater {
+        val checks = java.util.Collections.synchronizedList(mutableListOf<Boolean>())
+        val installed = java.util.Collections.synchronizedList(mutableListOf<String>())
+        override val available = true
+        override val installs = true
+        override suspend fun check(prerelease: Boolean) = found.takeIf { prerelease }.also { checks += prerelease }
+        override suspend fun install(update: de.danerd.ghulsuite.model.UpdateUi): de.danerd.ghulsuite.model.UpdateStep {
+            installed += update.version
+            return de.danerd.ghulsuite.model.UpdateStep.STARTED
+        }
+    }
+
+    @Test
+    fun updatesByHandOnBothChannels() {
+        val dev = de.danerd.ghulsuite.model.UpdateUi("0.6.0-dev.3", "Mail archive faster", "https://github.com/x/y/releases/v", 31_000_000)
+        // Stable: nothing newer, the app says so; no automatic check when switched off.
+        val stable = FakeUpdater(dev)
+        app(setup = { push(Screen.SettingsPage(SetPage.ABOUT)) }, prepare = {
+            updater = stable
+            settings.updateAuto = false
+            settings.updateDev = false
+        }) { state, _ ->
+            waitFor("Check for updates now")
+            assertTrue(stable.checks.isEmpty(), "no automatic check while switched off")
+            shot("about-updates")
+            text("Check for updates now").performScrollTo().performClick()
+            waitUntil(timeoutMillis = 10_000) { stable.checks.isNotEmpty() && !state.updateBusy }
+            assertEquals(listOf(false), stable.checks.toList())
+            assertNull(state.update)
+        }
+        // Pre-release channel, checked automatically after unlocking: the dialog offers it, "Install" installs.
+        val pre = FakeUpdater(dev)
+        app(prepare = {
+            updater = pre
+            settings.updateAuto = true
+            settings.updateDev = true
+            settings.updateLastCheck = "0"
+        }) { state, _ ->
+            waitFor("Pre-release 0.6.0-dev.3")
+            assertTrue(shown("Mail archive faster"))
+            shot("update-dialog")
+            text("Install").performClick()
+            waitUntil(timeoutMillis = 10_000) { pre.installed.isNotEmpty() }
+            assertEquals(listOf("0.6.0-dev.3"), pre.installed.toList())
+            assertNull(state.update)
+        }
+        // Without an updater (test versions, store installs): only the hint.
+        app(setup = { push(Screen.SettingsPage(SetPage.ABOUT)) }) { _, _ ->
+            waitFor("This version does not update itself: it is a test version, an own build or was installed from a store, which then brings the updates.")
         }
     }
 }

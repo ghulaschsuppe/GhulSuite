@@ -199,6 +199,9 @@ interface VaultBackend {
 
     val appVersion: String
 
+    /** Updates of the app itself (GitHub releases). */
+    val updater: AppUpdater get() = NoUpdater
+
     /** false where the system asks for the key PIN in its own dialog (Windows). */
     val keyPinInApp: Boolean get() = true
 

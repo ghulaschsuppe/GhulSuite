@@ -718,6 +718,34 @@ fn mails_larger_than_the_limit_stay_at_the_provider() {
     assert!(sim.all().contains(&huge));
 }
 
+#[test]
+fn nothing_is_deleted_at_gmail() {
+    for host in ["imap.gmail.com", "IMAP.GMAIL.COM.", "imap.googlemail.com", "gmail.com"] {
+        assert!(is_gmail(host), "{host}");
+    }
+    for host in ["imap.gmx.net", "gmail.com.example.org", "notgmail.com", "posteo.de"] {
+        assert!(!is_gmail(host), "{host}");
+    }
+    let place = Place::new("gmail");
+    let mut s = settings_with(1);
+    s.delete_at_provider = true;
+    s.confirmed.insert("acc".into());
+    s.spam = ArchiveFolderRule::Delete;
+    s.trash = ArchiveFolderRule::Delete;
+    let store = place.store(&s);
+    let sim = Sim::new();
+    let before = mailbox(&sim);
+    let s = without_deleting(s, true);
+    let r = run_at(&store, &sim, &s, NOW_MS, 1000).unwrap();
+    assert_eq!((r.archived, r.removed, r.deleted_by_rule), (9, 0, 0));
+    assert_eq!(sim.all(), before, "Gmail keeps everything");
+    // Not blocked: the same options delete.
+    let mut t = settings_with(1);
+    t.delete_at_provider = true;
+    t.confirmed.insert("acc".into());
+    assert!(without_deleting(t, false).delete_at_provider);
+}
+
 /// Counts what is read from the server (for the tests that a run reads only what it needs).
 struct CountingFs {
     inner: LocalFs,

@@ -106,6 +106,13 @@ class Settings(private val store: KeyValueStore) {
         )
     }
 
+    // --- Updates (only builds that update themselves, see AppUpdater)
+    var updateAuto by bool("update_auto", true)
+    /** Also development versions ("Vorab"). Starts on for a development version. */
+    var updateDev by bool("update_dev", de.danerd.ghulsuite.BuildInfo.VERSION.contains('-'))
+    /** Last automatic check (seconds since 1970, as text). */
+    var updateLastCheck by str("update_last_check", "0")
+
     // --- Security
     /** Seconds in the background before locking; 0 = immediately. */
     var autoLockSeconds by int("auto_lock_seconds", 60)

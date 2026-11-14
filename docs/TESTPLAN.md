@@ -585,6 +585,22 @@ oder die Synchronisation. **Bitte nicht mit dem einzigen Postfach eines wichtige
 | A15 | Großes Postfach: „Jetzt archivieren“, dann in eine andere App wechseln und den Bildschirm ausschalten. | Die Benachrichtigung zeigt „Mail-Archiv: N archiviert, M übrig“; der Lauf geht weiter. Nach dem Ende sperrt die Suite wie eingestellt. „Sperren“ in der Benachrichtigung sperrt sofort und hält den Lauf an; nach dem Entsperren geht es weiter. |
 | A16 | Eine Mail mit einem Anhang über 100 MB im Postfach (z. B. selbst über Webmail in den Ordner gelegt, falls der Anbieter das zulässt). | Wird nicht archiviert, bleibt beim Anbieter; die Mail-Optionen nennen „1 Mails sind größer als 100 MB …“. Alle anderen werden archiviert. |
 
+## 31. Updates
+
+Vorher: eine Version aus den Releases (nicht die Testversion aus den Artefakten), installiert per APK-Datei.
+
+| Nr. | Schritt | Erwartet |
+|---|---|---|
+| U1 | Optionen → Über → Updates. | Schalter „Automatisch nach Updates suchen“ (an), Kanal „Stabil“ (bei einer Vorabversion „Vorab“), Knopf „Jetzt nach Updates suchen“. In der Testversion steht nur der Hinweis, dass sie sich nicht selbst aktualisiert. |
+| U2 | „Jetzt nach Updates suchen“ auf der neuesten Version. | „GhulSuite ist aktuell (…)“. |
+| U3 | Ältere stabile Version installieren, „Jetzt nach Updates suchen“. | Dialog „Update auf X“ mit Größe und Änderungen; „Installieren“ fragt beim ersten Mal nach „Unbekannte Apps installieren“, danach der Dialog des Systems; nach der Installation ist die Suite noch da und entsperrbar. |
+| U4 | Kanal „Vorab“, suchen. | Bietet die neueste Vorabversion an („Vorabversion 0.x.y-dev.n“), wenn es eine neuere als die installierte gibt. |
+| U5 | Zurück auf „Stabil“ mit installierter Vorabversion. | Kein Angebot, bis eine neuere stabile Version erscheint; keine Rückstufung. |
+| U6 | Flugmodus, „Jetzt nach Updates suchen“. | Verständliche Netzwerk-Fehlermeldung, sonst nichts. |
+| U7 | Automatische Prüfung: App entsperren, am nächsten Tag noch einmal. | Höchstens einmal am Tag ein Dialog; „Später“ schließt ihn ohne Folgen. |
+| U8 | Windows, installierte Version (MSI): Update installieren. | App schließt sich, der Installer läuft ohne Fragen, GhulSuite startet neu in der neuen Version; Daten bleiben. |
+| U9 | Windows portabel: Update. | Es öffnet sich nur die Release-Seite; auf dem Stick wird nichts verändert. |
+
 ## Fehler melden
 
 Bitte je Fehler: **Testnummer**, Handy und Android-Version, App-Version (Optionen → Über GhulSuite), was du gemacht hast,

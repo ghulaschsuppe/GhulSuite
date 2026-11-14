@@ -19,9 +19,10 @@ Dieser Bericht fasst alle bisherigen Runden zusammen und sagt ehrlich, was offen
 | 14.11.2026 | Runde 4: Schlüssel bei jeder Schutzänderung erneuern (B1), neutrale Dateinamen (F23), Geräte lange offline | 2 weitere Funde, alle behoben |
 | 14.11.2026 | Runde 5: alle übrigen Punkte des Audits, Konfliktkopien fremder Sync-Programme, Prüfwerkzeuge im Nachtlauf (x509-limbo, GnuPG, ZAP, MobSF, Intent-Angriffe, reproduzierbarer Kern), Prüfsummen für Gradle | 2 weitere Funde (F42, F43), behoben; nichts mehr offen |
 | 14.11.2026 | Runde 6: Bedienung (U4 bis U15), Mail-Ablauf mit echten Servern im Emulator (B21), neues verschlüsseltes Mail-Archiv mit Prüfung jeder Mail vor dem Löschen beim Anbieter | 4 weitere Funde (F44 bis F47), behoben; nichts offen |
+| 14.11.2026 | Runde 7: Updates aus der App (signierte Prüfsummen, nur GitHub, Kanäle Stabil und Vorab), Gmail vorerst ohne Löschen beim Anbieter | keine Funde; Schutz des Updaters in 4.2 |
 
 **In Zahlen:** 47 Funde aus den Testrunden, alle behoben bzw. entschieden (F24 ist gewollt). Alle Punkte des Audits
-vom 13.11.2026 sind erledigt (B1 bis B18, L1, L3, L5, L7, L10, L13) oder begründet entschieden (L4/B17). 266 Testfunktionen im Kern mit über einer Million Einzelprüfungen je Lauf, 347 Angriffe auf das
+vom 13.11.2026 sind erledigt (B1 bis B18, L1, L3, L5, L7, L10, L13) oder begründet entschieden (L4/B17). 272 Testfunktionen im Kern mit über einer Million Einzelprüfungen je Lauf, 347 Angriffe auf das
 PHP-Modul, Nachtlauf mit langem Fuzzing, Monkey im Emulator und Server mit kaputtem TLS.
 
 ## 2. Wogegen GhulSuite schützt
@@ -89,6 +90,14 @@ Zugriff auf Tresorinhalte.
 - **Reproduzierbarkeit (L4, B17):** Der Nachtlauf baut den Kern zweimal in verschiedenen Ordnern und verlangt
   byte-gleiche Ergebnisse. Für die ganze APK (Kotlin, Ressourcen) ist das noch nicht nachgewiesen; das gehört zu
   festen Releases (Issue #6).
+
+- **Updates (Runde 7):** Der Updater ist ein neuer Weg, Code auf das Gerät zu bringen. Geschützt durch: signierte
+  Prüfsummen (RSA oder P-256, geprüft mit `ring`), Größe und SHA-256 der Datei vor der Übergabe an den Installer,
+  nur `https` zu `api.github.com`, `github.com` und `*.githubusercontent.com` (auch Weiterleitungen), Download
+  höchstens 600 MB in eine Datei statt in den Speicher, Entwürfe und auf dem stabilen Kanal Vorabversionen werden
+  nie angeboten, Installation nur nach Zustimmung. Wer den Signaturschlüssel hat, kann Updates ausliefern; das war
+  mit der APK-Signatur schon vorher so (AUDIT 4.1). Ein kompromittiertes GitHub-Konto allein reicht nicht: Ohne den
+  Schlüssel passt die Signatur nicht. Rücksprung auf ältere Versionen bietet die App nie an (nur neuere).
 
 ### 4.3 Grenzen, die keine App lösen kann
 

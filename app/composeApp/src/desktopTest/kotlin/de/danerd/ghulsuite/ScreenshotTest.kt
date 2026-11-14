@@ -55,6 +55,7 @@ class ScreenshotTest {
         val calls = java.util.Collections.synchronizedList(mutableListOf<String>())
         override val unlocked = MutableStateFlow(unlocked)
         override var net: de.danerd.ghulsuite.model.NetBackend = FakeNet()
+        override var updater: de.danerd.ghulsuite.model.AppUpdater = de.danerd.ghulsuite.model.NoUpdater
         override fun deviceSshKey() = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDeviceKeyExample ghulsuite-device"
         override suspend fun fetchFromServer(input: de.danerd.ghulsuite.model.ServerInputUi, hostKey: String?) = ""
         private val existsFlag = exists

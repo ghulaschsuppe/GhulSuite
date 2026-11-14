@@ -140,6 +140,7 @@ fun MailArchiveSection(state: AppState) {
                 counts[a.id]?.takeIf { on && it.mails > 0 }?.let { c ->
                     Hint(stringResource(Res.string.archive_count, c.mails.toString(), formatSize(c.bytes)))
                 }
+                if (on && a.id in s.deleteBlocked) Hint(stringResource(Res.string.archive_gmail))
                 state.archiveTooLarge[a.id]?.takeIf { on && it > 0 }?.let { n ->
                     Hint(stringResource(Res.string.archive_too_large, n.toString()))
                 }

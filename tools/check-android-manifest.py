@@ -40,6 +40,7 @@ PERMISSIONS = {
     "android.permission.USE_EXACT_ALARM",
     "android.permission.SCHEDULE_EXACT_ALARM",
     "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
+    "android.permission.REQUEST_INSTALL_PACKAGES",  # app updates from signed releases (AndroidUpdater)
 }
 # Never, whatever the reason.
 FORBIDDEN = {

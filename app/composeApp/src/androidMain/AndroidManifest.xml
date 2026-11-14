@@ -28,6 +28,8 @@
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- App updates from the project's signed releases (AndroidUpdater); not used by store installs. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Autofill: read the signing certificate of the app asking for a login (fake apps must not get it). -->
     <queries>
@@ -135,6 +137,9 @@
                 <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
             </intent-filter>
         </receiver>
+
+        <!-- Result of an app update (only the system installer sends it, through our PendingIntent). -->
+        <receiver android:name=".UpdateResultReceiver" android:exported="false" />
 
         <receiver android:name=".MailPushBootReceiver" android:exported="false">
             <intent-filter>

@@ -63,6 +63,8 @@ tools/                 Testserver (SFTP/IMAP/SMTP), Prüfskripte, Emulator-Skrip
 
 ## CI und Testserver
 
+- `.github/workflows/release.yml`: stabile Versionen (`main`) und Vorabversionen (`dev`) als GitHub-Releases,
+  siehe „Versionen und Veröffentlichung“.
 - `.github/workflows/android.yml`: Kern (Format, Clippy, Tests, Fuzzing, Audit), Netzwerk-Tests, Browser-Tests,
   Windows-Pakete (MSI und portabel), APK, Emulator-Abläufe. Format, Clippy, Tests und der App-Build laufen auch nach
   einem Fehler weiter, damit ein Lauf alle Fehler auf einmal zeigt. Artefakte: `ghulsuite-dev`, `ghulsuite-windows-dev`,
@@ -82,11 +84,36 @@ tools/                 Testserver (SFTP/IMAP/SMTP), Prüfskripte, Emulator-Skrip
   Keystore-Datei und ihr Passwort gehören zusätzlich offline gesichert: Ohne sie lässt sich keine installierte App
   mehr aktualisieren.
 
+## Versionen und Veröffentlichung
+
+- **Zwei Kanäle.** `main` ist der freigegebene Stand: Jede neue Version dort wird zur **stabilen Version** `v<VERSION>`
+  (GitHub-Release, „latest“). `dev` ist der Zwischenschritt: Jeder Push dort wird zur **Vorabversion**
+  `v<VERSION>-dev.<n>` (GitHub-Pre-Release, die neuesten fünf bleiben). Beides baut und signiert
+  `.github/workflows/release.yml`; die README verlinkt die Dateien, die App holt daraus ihre Updates.
+- **`VERSION`** (Wurzel) ist die nächste stabile Version. Ablauf: Arbeits-Branches per PR nach `dev`, dort Vorabversionen
+  testen; zum Freigeben PR `dev` → `main`. Danach auf `dev` `VERSION` erhöhen (sonst schlägt die nächste
+  Vorabversion fehl, weil ihre Version schon veröffentlicht ist). Ein Merge nach `main` ohne neue `VERSION`
+  veröffentlicht nichts.
+- **Versionsnummern der Pakete** (`app/composeApp/build.gradle.kts`): Android `versionCode` = Version × 100 plus
+  laufende Nummer (Vorabversionen 0 bis 98, die stabile 99), Windows-MSI `Major.Minor.(Patch × 100 + Nummer)`. So
+  ist jede Version höher als die vorige und eine stabile höher als alle ihre Vorabversionen.
+- **Signierte Prüfsummen:** Jedes Release enthält `SHA256SUMS` und `SHA256SUMS.sig` (signiert im Workflow mit dem
+  Signaturschlüssel der App). Der öffentliche Teil steckt als `BuildInfo.UPDATE_KEY` in der App (Gradle-Variable
+  `GHUL_UPDATE_KEY`); ohne ihn (lokale Builds, F-Droid, Forks) aktualisiert sich die App nicht selbst.
+- **Updates in der App** (`core/ghul-core/src/update.rs`, `AppUpdater`): nur `https` zu GitHub, nur signierte
+  Prüfsummen, Größe und SHA-256 vor der Installation. Android über den System-Installer (prüft zusätzlich den
+  Signaturschlüssel), Windows-MSI über `msiexec`, portabel nur die Release-Seite. Testversionen (`.dev`) und
+  Installationen aus einem Store aktualisieren sich nicht selbst.
+- **F-Droid:** IzzyOnDroid kann die APKs direkt aus den Releases übernehmen (gleiche Signatur). Das offizielle F-Droid
+  baut selbst, ohne `GHUL_UPDATE_KEY`: Der Updater ist dort von selbst aus. Mit reproduzierbaren Builds (Issue #6)
+  kann F-Droid unser signiertes APK ausliefern.
+
 ## Arbeitsweise: Branches, Pull Requests, Issues
 
 - `main` ist immer lauffähig und geschützt: Änderungen kommen nur über einen **Pull Request** mit grünen Tests hinein.
 - Jede Aufgabe bekommt einen eigenen **Branch** (`feature/…`, `fix/…`, `ci/…`, `docs/…`) und einen Pull Request,
-  der das zugehörige **Issue** nennt (`Closes #12`).
+  der das zugehörige **Issue** nennt (`Closes #12`). Ziel der Pull Requests ist `dev`, sobald es den Zweig gibt
+  (siehe „Versionen und Veröffentlichung“).
 - Getestet wird der Branch über die CI und die App-Pakete aus seinem Lauf (Artefakte oder der Branch-Ordner auf dem
   Testserver). Zusammengeführt wird nach Durchsicht durch den Inhaber.
 

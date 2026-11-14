@@ -30,4 +30,5 @@
     <string name="cal_done">Done</string>
     <string name="share_as_mail">Send by e-mail (GhulMail)</string>
     <string name="notif_archive">%1$s Stays unlocked until done. Shake or “Lock” locks at once.</string>
+    <string name="update_failed">Update could not be installed. Download it from the release page instead.</string>
 </resources>

@@ -843,6 +843,8 @@ pub struct MailArchiveStatus {
     pub offline_bytes: u64,
     /// Accounts whose first run still waits for the user's "remove at the provider now?".
     pub confirmed: Vec<String>,
+    /// Accounts at which nothing is deleted, whatever the options say (Gmail, for now).
+    pub delete_blocked: Vec<String>,
 }
 
 /// How setting up a place for the archive went.
@@ -1409,6 +1411,12 @@ impl GhulSuite {
                 full_copy: !s.id.is_empty() && self.full_copy_here(&s.id),
                 offline_bytes,
                 confirmed: s.confirmed.iter().cloned().collect(),
+                delete_blocked: s
+                    .accounts
+                    .iter()
+                    .filter(|a| super::mail::account(o, a).is_ok_and(|acc| is_gmail(&acc.servers.imap_host)))
+                    .cloned()
+                    .collect(),
             })
         })
     }
@@ -1470,17 +1478,22 @@ impl GhulSuite {
     /// Archives up to `max` old mails of an account (newest first), checks them and, if switched
     /// on and confirmed, deletes them at the provider. Call again while `remaining` > 0.
     pub fn mail_archive_run(&self, account_id: String, max: u32) -> Result<MailArchiveRun> {
-        let (store, s, dir) = self.with_open(|o| {
+        let (store, s, dir, blocked) = self.with_open(|o| {
             self.archive_epoch(o)?;
             let s = settings(o);
             if !s.accounts.contains(&account_id) {
                 return Err(GhulError::NotConfigured);
             }
             let dir = Keys::new(&s)?.account_dir(&self.account_email(o, &account_id)?);
-            Ok((self.archive_store(o)?, s, dir))
+            let blocked = is_gmail(&super::mail::account(o, &account_id)?.servers.imap_host);
+            Ok((self.archive_store(o)?, s, dir, blocked))
         })?;
         let provider = ImapProvider { suite: self, account: account_id.clone() };
-        let out = run(&store, &provider, &s, &account_id, &dir, &self.device_id(), now_ms(), max)?;
+        let s = without_deleting(s, blocked);
+        let mut out = run(&store, &provider, &s, &account_id, &dir, &self.device_id(), now_ms(), max)?;
+        if blocked {
+            out.waiting_for_confirmation = 0;
+        }
         self.net.lock().unwrap_or_else(|p| p.into_inner()).archive.remove(&dir);
         Ok(out)
     }
@@ -1492,6 +1505,9 @@ impl GhulSuite {
             let mut s = settings(o);
             if !s.delete_at_provider {
                 return Err(GhulError::InvalidInput { msg: "deleting at the provider is switched off".into() });
+            }
+            if is_gmail(&super::mail::account(o, &account_id)?.servers.imap_host) {
+                return Err(GhulError::InvalidInput { msg: "nothing is deleted at Gmail for now".into() });
             }
             s.confirmed.insert(account_id.clone());
             put_settings(o, &s)?;
@@ -1770,6 +1786,28 @@ impl GhulSuite {
         self.net.lock().unwrap_or_else(|p| p.into_inner()).archive.clear();
         Ok(added)
     }
+}
+
+/// Gmail: labels instead of folders. Deleting a mail in a "folder" over IMAP often only removes a
+/// label, the mail stays in "All Mail"; deleting from "All Mail" removes it from every label.
+/// Until that is handled and tested on its own, nothing is deleted at Gmail.
+pub(super) fn is_gmail(imap_host: &str) -> bool {
+    let h = imap_host.trim().trim_end_matches('.').to_ascii_lowercase();
+    ["gmail.com", "googlemail.com"].iter().any(|d| h == *d || h.ends_with(&format!(".{d}")))
+}
+
+/// The options as they apply to an account at which nothing may be deleted.
+fn without_deleting(mut s: Settings, blocked: bool) -> Settings {
+    if blocked {
+        s.delete_at_provider = false;
+        s.confirmed.clear();
+        for rule in [&mut s.spam, &mut s.trash] {
+            if *rule == ArchiveFolderRule::Delete {
+                *rule = ArchiveFolderRule::Leave;
+            }
+        }
+    }
+    s
 }
 
 fn options_of(s: &Settings) -> MailArchiveOptions {

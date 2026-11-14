@@ -174,6 +174,7 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
     // A new recovery code cannot be skipped: it must be confirmed first.
     PlatformBackHandler(enabled = top != null && top !is Screen.RecoveryCode) { state.back() }
     MailArchiveDialogs(state)
+    UpdateDialog(state)
     if (state.archiveWhereAsk) ArchiveWhereDialog(state) { state.archiveWhereAsk = false }
     if (state.recoveredGuide) {
         AlertDialog(

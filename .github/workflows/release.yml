@@ -1,0 +1,225 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Releases on GitHub, the source of the downloads in the README and of the updates in the app.
+#
+#   main -> stable release  v<VERSION>          (e.g. v0.6.0), once per version
+#   dev  -> pre-release     v<VERSION>-dev.<n>  (e.g. v0.6.0-dev.3), on every push
+#
+# Each release carries GhulSuite.apk, GhulSuite.msi, GhulSuite-portable.zip, SHA256SUMS and
+# SHA256SUMS.sig: the list of checksums signed with the app's signing key (the same key that
+# signs the APK). The app checks that signature with the public key built into it, then size and
+# SHA-256 of the file, before anything is installed (see core/ghul-core/src/update.rs).
+# Releasing a new stable version: raise VERSION on dev, merge dev into main.
+name: Veröffentlichen
+
+on:
+  push:
+    branches: [main, dev]
+    paths: ['core/**', 'app/**', 'VERSION', '.github/workflows/release.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_INCREMENTAL: "0"
+  NDK_VERSION: 28.2.13676358
+  CARGO_NDK_VERSION: 4.1.2
+
+jobs:
+  plan:
+    name: Version und Schlüssel
+    # Only the original repository has the signing key.
+    if: github.repository_owner == 'ghulaschsuppe' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+      skip: ${{ steps.v.outputs.skip }}
+      pubkey: ${{ steps.k.outputs.pubkey }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - id: v
+        run: |
+          base=$(tr -d ' \r\n' < VERSION)
+          if ! printf '%s' "$base" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then echo "::error::VERSION muss wie 0.6.0 aussehen, ist: $base"; exit 1; fi
+          git fetch --tags --quiet
+          if [ "$GITHUB_REF_NAME" = main ]; then
+            version=$base; pre=false
+            if git rev-parse -q --verify "refs/tags/v$version" > /dev/null; then
+              echo "::notice title=Keine neue Version::v$version gibt es schon. Für eine neue stabile Version VERSION erhöhen."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            if git rev-parse -q --verify "refs/tags/v$base" > /dev/null; then
+              echo "::error::v$base ist schon veröffentlicht: auf dev VERSION auf die nächste Version erhöhen."; exit 1
+            fi
+            n=$(( $(git tag -l "v$base-dev.*" | sed "s/^v$base-dev\.//" | sort -n | tail -1) + 1 ))
+            version="$base-dev.$n"; pre=true
+          fi
+          echo "Version: $version (Vorab: $pre)"
+          { echo "version=$version"; echo "prerelease=$pre"; } >> "$GITHUB_OUTPUT"
+      # The public half of the signing key: built into the app, it checks SHA256SUMS.sig. Not a secret.
+      - id: k
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then echo "::error::Secret ANDROID_KEYSTORE_BASE64 fehlt: ohne Signaturschlüssel keine Veröffentlichung."; exit 1; fi
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/k.jks"
+          keytool -exportcert -rfc -keystore "$RUNNER_TEMP/k.jks" -storepass:env KEYSTORE_PASSWORD -alias "$KEY_ALIAS" > "$RUNNER_TEMP/cert.pem"
+          pub=$(openssl x509 -in "$RUNNER_TEMP/cert.pem" -pubkey -noout | grep -v -- '-----' | tr -d '\n')
+          rm -f "$RUNNER_TEMP/k.jks" "$RUNNER_TEMP/cert.pem"
+          echo "pubkey=$pub" >> "$GITHUB_OUTPUT"
+
+  android:
+    name: Android (signiertes Release-APK)
+    needs: plan
+    if: needs.plan.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Rust-Toolchain und NDK
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add aarch64-linux-android x86_64-linux-android
+          cargo install cargo-ndk --locked --version "$CARGO_NDK_VERSION"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION" > /dev/null
+      - name: Signaturschlüssel aus den Secrets
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          file="$RUNNER_TEMP/ghulsuite-release.jks"
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$file"
+          { echo "GHUL_KEYSTORE_FILE=$file"; echo "GHUL_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"; echo "GHUL_KEY_ALIAS=$KEY_ALIAS"; } >> "$GITHUB_ENV"
+      - name: Release-APK
+        working-directory: app
+        env:
+          GHUL_VERSION: ${{ needs.plan.outputs.version }}
+          GHUL_UPDATE_KEY: ${{ needs.plan.outputs.pubkey }}
+        run: ./gradlew --no-daemon --console=plain :composeApp:assembleRelease
+      - name: Bereitstellen
+        run: |
+          mkdir -p dist
+          cp app/composeApp/build/outputs/apk/release/composeApp-release.apk dist/GhulSuite.apk
+          rm -f "$GHUL_KEYSTORE_FILE"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-android
+          path: dist/
+          retention-days: 7
+
+  windows:
+    name: Windows (Installer und portable Version)
+    needs: plan
+    if: needs.plan.outputs.skip != 'true'
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Installer (MSI) und portable Version
+        working-directory: app
+        shell: bash
+        env:
+          GHUL_VERSION: ${{ needs.plan.outputs.version }}
+          GHUL_UPDATE_KEY: ${{ needs.plan.outputs.pubkey }}
+        run: |
+          rustup toolchain install stable --profile minimal
+          ./gradlew --no-daemon --console=plain :composeApp:packageMsi :composeApp:createDistributable
+      - name: Bereitstellen
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $msi = Get-ChildItem app/composeApp/build/compose/binaries/main/msi/*.msi | Select-Object -First 1
+          Copy-Item $msi.FullName dist/GhulSuite.msi
+          $app = "app/composeApp/build/compose/binaries/main/app/GhulSuite"
+          Set-Content -Path "$app/portable" -Value "GhulSuite portabel: Daten liegen im Ordner GhulSuite-Daten neben dem Programm."
+          Compress-Archive -Path $app -DestinationPath dist/GhulSuite-portable.zip -Force
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-windows
+          path: dist/
+          retention-days: 7
+
+  publish:
+    name: Signieren und veröffentlichen
+    needs: [plan, android, windows]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist/
+      # SHA256SUMS signed with the private key of the signing key (never leaves this job), then
+      # checked against the public key the app carries: what the app would accept.
+      - name: Prüfsummen signieren
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          PUBKEY: ${{ needs.plan.outputs.pubkey }}
+        run: |
+          cd dist
+          sha256sum GhulSuite.apk GhulSuite.msi GhulSuite-portable.zip > SHA256SUMS
+          cat SHA256SUMS
+          t="$RUNNER_TEMP"
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$t/k.jks"
+          keytool -importkeystore -noprompt -srckeystore "$t/k.jks" -srcstorepass:env KEYSTORE_PASSWORD -srcalias "$KEY_ALIAS" \
+            -srckeypass:env KEYSTORE_PASSWORD -destkeystore "$t/k.p12" -deststoretype PKCS12 -deststorepass:env KEYSTORE_PASSWORD > /dev/null
+          openssl pkcs12 -in "$t/k.p12" -nocerts -nodes -passin env:KEYSTORE_PASSWORD -out "$t/key.pem" 2> /dev/null
+          openssl dgst -sha256 -sign "$t/key.pem" -out SHA256SUMS.sig SHA256SUMS
+          rm -f "$t/k.jks" "$t/k.p12" "$t/key.pem"
+          { echo "-----BEGIN PUBLIC KEY-----"; printf '%s\n' "$PUBKEY" | fold -w 64; echo "-----END PUBLIC KEY-----"; } > "$t/pub.pem"
+          openssl dgst -sha256 -verify "$t/pub.pem" -signature SHA256SUMS.sig SHA256SUMS
+      - name: Release anlegen
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          PRE: ${{ needs.plan.outputs.prerelease }}
+        run: |
+          if [ "$PRE" = true ]; then
+            title="GhulSuite $VERSION (Vorabversion)"
+            notes="Entwicklungsversion vom Zweig dev ($GITHUB_SHA). Neuer, aber weniger getestet als die stabile Version. In der App: Optionen, Über, Updates, Kanal „Vorab“."
+            flags="--prerelease"
+          else
+            title="GhulSuite $VERSION"
+            notes="Stabile Version. Prüfsummen in SHA256SUMS, signiert in SHA256SUMS.sig."
+            flags="--latest"
+          fi
+          gh release create "v$VERSION" dist/* --target "$GITHUB_SHA" --title "$title" --notes "$notes" --generate-notes $flags
+      # Only the newest five development versions stay (the stable ones all stay).
+      - name: Alte Vorabversionen aufräumen
+        if: needs.plan.outputs.prerelease == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release list --limit 100 --json tagName,isPrerelease,createdAt \
+            --jq '[.[] | select(.isPrerelease)] | sort_by(.createdAt) | reverse | .[5:] | .[].tagName' |
+          while read -r tag; do
+            [ -n "$tag" ] && gh release delete "$tag" --cleanup-tag --yes
+          done

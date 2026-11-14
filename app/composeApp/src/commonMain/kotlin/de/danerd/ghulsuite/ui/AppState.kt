@@ -7,6 +7,8 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import de.danerd.ghulsuite.model.VaultBackend
+import de.danerd.ghulsuite.model.UpdateStep
+import de.danerd.ghulsuite.model.UpdateUi
 import de.danerd.ghulsuite.model.FoundVaultUi
 import de.danerd.ghulsuite.model.VaultKindUi
 import de.danerd.ghulsuite.model.VaultUi
@@ -284,6 +286,61 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     // --- Mail archive (KONZEPT 9.3.1): runs while the suite is unlocked, every 30 minutes.
     /** The archive could not be reached (the reason), shown at the top of GhulMail. */
     var archiveUnreachable by mutableStateOf<String?>(null)
+    /** A newer version was found: the update dialog shows it. */
+    var update by mutableStateOf<UpdateUi?>(null)
+    /** Looking for or loading an update. */
+    var updateBusy by mutableStateOf(false)
+
+    /**
+     * Looks for a newer version on the chosen channel. Automatically at most once a day after
+     * unlocking (and only if switched on); [manual] from the options, with a message either way.
+     */
+    fun checkUpdate(manual: Boolean) {
+        val up = backend.updater
+        val s = backend.settings
+        if (!up.available || updateBusy) return
+        val now = nowSeconds()
+        if (!manual && (!s.updateAuto || now - (s.updateLastCheck.toLongOrNull() ?: 0) < 86_400)) return
+        updateBusy = true
+        scope.launch {
+            try {
+                val found = up.check(s.updateDev)
+                s.updateLastCheck = now.toString()
+                if (found != null) update = found
+                else if (manual) message(getString(Res.string.upd_none, backend.appVersion))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Automatically: silent, tried again after the next unlock.
+                if (manual) message(describe(e))
+            } finally {
+                updateBusy = false
+            }
+        }
+    }
+
+    /** Downloads the update, checks it and hands it to the installer of the system. */
+    fun installUpdate(u: UpdateUi) {
+        if (updateBusy) return
+        update = null
+        updateBusy = true
+        scope.launch {
+            try {
+                message(getString(Res.string.upd_loading))
+                if (backend.updater.install(u) == UpdateStep.ALLOW_FIRST) {
+                    update = u
+                    message(getString(Res.string.upd_allow))
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                message(describe(e))
+            } finally {
+                updateBusy = false
+            }
+        }
+    }
+
     /** First run of an account done: "remove N mails at the provider now?" (account id, N). */
     var archiveAsk by mutableStateOf<Pair<String, Int>?>(null)
     /** An archive run is going on. */
@@ -436,6 +493,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     }
                     refreshCalendar()
                     startArchive()
+                    checkUpdate(manual = false)
                 }
             }
         }
