@@ -224,7 +224,6 @@ fun postMailNotification(
     nm.deleteNotificationChannel(MailNotifications.OLD_CHANNEL)
     nm.createNotificationChannel(
         NotificationChannel(MailNotifications.CHANNEL, ctx.getString(R.string.mail_channel), NotificationManager.IMPORTANCE_DEFAULT)
-            .apply { lockscreenVisibility = Notification.VISIBILITY_PRIVATE },
     )
     // One new mail opens that mail; several open the account's inbox. One request code per
     // account, so the notifications of two accounts do not overwrite each other's target.
@@ -252,10 +251,12 @@ fun postMailNotification(
         .setContentTitle(config.accountName)
         .setContentText(neutral)
         .build()
+    // B4: arriving while the device is locked, it carries only the neutral version (see deviceLocked).
+    val locked = deviceLocked(ctx)
     val notification = Notification.Builder(ctx, MailNotifications.CHANNEL)
         .setSmallIcon(R.drawable.ic_mail)
-        .setContentTitle(title)
-        .setContentText(text)
+        .setContentTitle(if (locked) config.accountName else title)
+        .setContentText(if (locked) neutral else text)
         .setContentIntent(open)
         .setAutoCancel(true)
         // Launchers show this as the number on the app icon (with the mail symbol of the notification).

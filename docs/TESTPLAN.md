@@ -506,7 +506,7 @@ Automatisch läuft bei jedem Push der Alltagstest im Kern (zwei Geräte, 30 simu
 | R2 | Dasselbe noch einmal mit einem Ordner, in dem schon eine Suite liegt. | Meldung „Im gewählten Ordner liegt schon eine Suite …“, nichts überschrieben, der alte Ort bleibt aktiv. |
 | R3 | Aus dem eigenen Ordner „In den App-Speicher“ wählen. | Wie R1; „Speicherort: App-Speicher“. |
 | R4 | Im eigenen Ordner eine Tresordatei umbenennen (z. B. in `Urlaub.ghlpss`), dann entsperren. | Tresor ist vollständig da, die Datei heißt wieder nach ihrer Kennung. |
-| R5 | Sperrbildschirm mit Android-Einstellung „alle Inhalte anzeigen“; Mail und Termin-Erinnerung kommen lassen. | Auf dem Sperrbildschirm nur „GhulMail“ bzw. „Termin“ ohne Absender, Betreff oder Titel (B4). |
+| R5 | Android-Einstellung „alle Inhalte anzeigen“, Handy mit PIN sperren; Mail und Termin-Erinnerung kommen lassen. Danach entsperren und noch eine Mail kommen lassen. | Gesperrt eingetroffen: nur die in GhulSuite gewählte Sperrbildschirm-Stufe (Mail: Kontoname und Anzahl; Termin: wie in den Kalender-Optionen gewählt), auch nach dem Entsperren in der Leiste. Entsperrt eingetroffen: mit Details (B4, F43). |
 | R6 | Optionen → Sperren → „Sofortsperre stoppt auch Mail-Benachrichtigungen“ an; schütteln; Mail schicken; dann entsperren. | Gesperrt keine Mail-Benachrichtigung; nach dem Entsperren kommen sie wieder (B5). |
 | R7 | Eine `.ics`-Datei aus einer anderen App (z. B. Dateien) mit GhulSuite öffnen. | Vorschau mit Anzahl und ersten Terminen, Import erst nach „Importieren“ (B6). |
 | R8 | App sperren, Handy 20 Minuten in den Standby (Bildschirm aus), dann App wieder öffnen. | Gesperrt, auch wenn das Handy zwischendurch tief geschlafen hat (B8). |

@@ -17,9 +17,9 @@ Dieser Bericht fasst alle bisherigen Runden zusammen und sagt ehrlich, was offen
 | 13.11.2026 | Audit des ganzen Codes in drei unabhängigen Durchsichten: Kern (Rust, PHP), App (Android, Windows, CI), Bedienung bei Fehlern | 6 Punkte „vor echtem Einsatz“, 10 für den nächsten Durchgang, Wortwahl; alle 6 dringenden behoben |
 | 13.11.2026 | Testrunden 1 bis 3: Chaos-Sync, Fuzzing, absurde Eingaben, Angriffe, öffentliche Testsammlungen, Kalender und Zeitzonen, Emulator | 39 Funde, 36 behoben |
 | 14.11.2026 | Runde 4: Schlüssel bei jeder Schutzänderung erneuern (B1), neutrale Dateinamen (F23), Geräte lange offline | 2 weitere Funde, alle behoben |
-| 14.11.2026 | Runde 5: alle übrigen Punkte des Audits, Konfliktkopien fremder Sync-Programme, Prüfwerkzeuge im Nachtlauf (x509-limbo, GnuPG, ZAP, MobSF, Intent-Angriffe, reproduzierbarer Kern), Prüfsummen für Gradle | 1 weiterer Fund (F42), behoben; nichts mehr offen |
+| 14.11.2026 | Runde 5: alle übrigen Punkte des Audits, Konfliktkopien fremder Sync-Programme, Prüfwerkzeuge im Nachtlauf (x509-limbo, GnuPG, ZAP, MobSF, Intent-Angriffe, reproduzierbarer Kern), Prüfsummen für Gradle | 2 weitere Funde (F42, F43), behoben; nichts mehr offen |
 
-**In Zahlen:** 42 Funde aus den Testrunden, alle behoben bzw. entschieden (F24 ist gewollt). Alle Punkte des Audits
+**In Zahlen:** 43 Funde aus den Testrunden, alle behoben bzw. entschieden (F24 ist gewollt). Alle Punkte des Audits
 vom 13.11.2026 sind erledigt (B1 bis B18, L1, L3, L5, L7, L10, L13) oder begründet entschieden (L4/B17). 244 Testfunktionen im Kern mit über einer Million Einzelprüfungen je Lauf, 347 Angriffe auf das
 PHP-Modul, Nachtlauf mit langem Fuzzing, Monkey im Emulator und Server mit kaputtem TLS.
 
@@ -58,7 +58,7 @@ Nach Bereich zusammengefasst; die Nummern führen ins [Testprotokoll](TESTPROTOK
 | **Android-Teilen und Anhänge** (Audit 0.5.0) | Dateinamen wie `..`, Anhänge beliebiger Größe | A6, A7 |
 | **Sync, Runde 5** | Ein entfernter Key kommt nie per Sync zurück (Löschmarken je Key). Geänderte Server- und Kontodaten erreichen andere Geräte. Gelöscht auf A, geändert auf B: feste Regel, eine nie gesehene Änderung bleibt. Konfliktkopien fremder Sync-Programme werden zusammengeführt. Ein Server kann keine übermäßig teuren Argon2-Werte erzwingen | B2, B11, B13, B18, F42 |
 | **Drive** | Ein zurückgesetzter Index auf dem Server wird abgelehnt (nichts verschwindet); zwei Geräte, die gleichzeitig ändern, verlieren nichts | B3 |
-| **Android** | Sperrbildschirm zeigt keine Absender, Betreffe oder Termine mehr; Mail-Zugang für Benachrichtigungen bevorzugt in StrongBox, wahlweise löscht ihn die Sofortsperre; `.ics` von fremden Apps nur nach Vorschau; interne Aktionen nur aus eigenen Benachrichtigungen; Auto-Sperre zählt die echte Zeit; Autofill fragt vor dem Verknüpfen; kein Tippen durch darübergelegte Fenster | B4 bis B9, L10 |
+| **Android** | Benachrichtigungen, die bei gesperrtem Gerät eintreffen, enthalten nur ihre Sperrbildschirm-Fassung (Android lässt Apps die Kanal-Einstellung nicht vorgeben, daher entscheidet die App beim Eintreffen); Mail-Zugang für Benachrichtigungen bevorzugt in StrongBox, wahlweise löscht ihn die Sofortsperre; `.ics` von fremden Apps nur nach Vorschau; interne Aktionen nur aus eigenen Benachrichtigungen; Auto-Sperre zählt die echte Zeit; Autofill fragt vor dem Verknüpfen; kein Tippen durch darübergelegte Fenster | B4 bis B9, L10, F43 |
 | **Windows** | Entschlüsselte Kopien werden überschrieben und gelöscht, auch wenn ein Programm sie erst später freigibt; portabel bleiben sie im Datenordner; Arbeitsverzeichnis nicht mehr im DLL-Suchpfad | B10, L13 |
 | **Mail** (Runde 5) | Herkunft von Kontaktschlüsseln gemerkt; Fingerabdruck vergleichen und bestätigen, Warnung bei Wechsel; Bilder nur von genau der geprüften Adresse (kein DNS-Rebinding) | B12, B16, L7 |
 | **PHP-Modul und Freigaben** (Runde 5) | Gültig signierte Anfragen werden nie gesperrt, Doppel-Endungen abgelehnt, Dateien 0600; Server ohne PHP-Ausführung wird erkannt und die Datei sofort gelöscht; Zurückziehen meldet Fehler ehrlich | B14, B15, L5 |
