@@ -105,6 +105,15 @@ name: GhulMail on a real server
 - tapOn:
     text: "Fingerprint matches"
     optional: true
+# With the first account Android asks to let the app run in the background (mail notifications);
+# the system dialog covers the app until it is answered.
+- extendedWaitUntil:
+    visible: "Let app always run in background\\?"
+    timeout: 20000
+    optional: true
+- tapOn:
+    text: "Allow"
+    optional: true
 - extendedWaitUntil:
     visible: "No messages\\."
     timeout: 120000

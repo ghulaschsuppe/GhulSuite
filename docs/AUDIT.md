@@ -18,9 +18,10 @@ Dieser Bericht fasst alle bisherigen Runden zusammen und sagt ehrlich, was offen
 | 13.11.2026 | Testrunden 1 bis 3: Chaos-Sync, Fuzzing, absurde Eingaben, Angriffe, öffentliche Testsammlungen, Kalender und Zeitzonen, Emulator | 39 Funde, 36 behoben |
 | 14.11.2026 | Runde 4: Schlüssel bei jeder Schutzänderung erneuern (B1), neutrale Dateinamen (F23), Geräte lange offline | 2 weitere Funde, alle behoben |
 | 14.11.2026 | Runde 5: alle übrigen Punkte des Audits, Konfliktkopien fremder Sync-Programme, Prüfwerkzeuge im Nachtlauf (x509-limbo, GnuPG, ZAP, MobSF, Intent-Angriffe, reproduzierbarer Kern), Prüfsummen für Gradle | 2 weitere Funde (F42, F43), behoben; nichts mehr offen |
+| 14.11.2026 | Runde 6: Bedienung (U4 bis U15), Mail-Ablauf mit echten Servern im Emulator (B21), neues verschlüsseltes Mail-Archiv mit Prüfung jeder Mail vor dem Löschen beim Anbieter | 2 weitere Funde (F44, F45), behoben; nichts offen |
 
-**In Zahlen:** 43 Funde aus den Testrunden, alle behoben bzw. entschieden (F24 ist gewollt). Alle Punkte des Audits
-vom 13.11.2026 sind erledigt (B1 bis B18, L1, L3, L5, L7, L10, L13) oder begründet entschieden (L4/B17). 244 Testfunktionen im Kern mit über einer Million Einzelprüfungen je Lauf, 347 Angriffe auf das
+**In Zahlen:** 45 Funde aus den Testrunden, alle behoben bzw. entschieden (F24 ist gewollt). Alle Punkte des Audits
+vom 13.11.2026 sind erledigt (B1 bis B18, L1, L3, L5, L7, L10, L13) oder begründet entschieden (L4/B17). 263 Testfunktionen im Kern mit über einer Million Einzelprüfungen je Lauf, 347 Angriffe auf das
 PHP-Modul, Nachtlauf mit langem Fuzzing, Monkey im Emulator und Server mit kaputtem TLS.
 
 ## 2. Wogegen GhulSuite schützt
@@ -131,6 +132,12 @@ Geräte oder einen bezahlten Gerätedienst; bis dahin deckt der Testplan die Her
   auch nicht in Datei- und ZIP-Namen. Gestohlene Dateien öffnen sich nur mit beiden Faktoren.
 - **Drive:** gekippte Bits, vertauschte oder gelöschte Blöcke, gefälschter Index: immer eine Fehlermeldung, nie
   falsche Daten.
+- **Mail-Archiv:** Der Server sieht keine Adressen, Ordner, Monate oder Inhalte (Namen sind HMACs, die zusätzlichen
+  Daten jeder Verschlüsselung enthalten den Pfad, vertauschte Dateien werden erkannt). Beim Anbieter wird nur gelöscht,
+  was über eine zweite Verbindung zurückgelesen und unmittelbar vorher erneut vollständig geprüft wurde, genau per
+  UID und nur bei unveränderter UIDVALIDITY; Löschen ist aus, bis es eingeschaltet und einmal bestätigt ist.
+  Abbrüche nach jedem Schritt, beschädigte, fehlende und vertauschte Archivdateien, neu nummerierte Ordner und
+  doppelte Mails sind getestet; nach jedem Schritt gilt „Anbieter + Archiv nie weniger als vorher“.
 - **Freigaben:** zufälliger 256-Bit-Schlüssel je Freigabe, nur im Teil nach `#`; AES-256-GCM mit eindeutigen Nonces,
   Abschneiden und Vertauschen werden erkannt; optional Passwort (PBKDF2, 600 000 Runden). Empfängerseite mit
   strenger CSP, ohne fremde Inhalte, ohne Referrer.

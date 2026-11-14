@@ -532,7 +532,7 @@ Zugänge an (`rk = false`), der Key speichert nichts.
   wirken dann auf den ganzen Ordner. Löschen heißt wie überall: in den Papierkorb.
 - **„Ordner leeren“** nur in Papierkorb und Spam: Rückfrage mit Anzahl, danach beim Anbieter endgültig gelöscht.
 
-#### 9.3.1 Verschlüsseltes Mail-Archiv (abgestimmt am 14.11.2026, geplant)
+#### 9.3.1 Verschlüsseltes Mail-Archiv (abgestimmt am 14.11.2026, umgesetzt in 0.6.0-dev)
 
 **Ziel:** Beim Anbieter liegt nur noch Neues im Klartext; alles Ältere liegt verschlüsselt auf dem eigenen Server
 (oder im Suite-Ordner), auf allen Geräten sichtbar, durchsuchbar, offline lesbar. Kein POP3-Prinzip: Ein einzelnes
@@ -620,6 +620,33 @@ Löschen im Archiv: 30 Tage im Archiv-Papierkorb. Export als `.eml`/`.mbox` jede
 - Zwei Geräte gleichzeitig, eines tagelang offline; Server umgezogen, leerer Ordner, fremdes Archiv, Server weg;
   Kopie nur auf einem anderen Gerät; Teilkopien zweier Geräte; jede Antwort jeder Rückfrage und das Wegtippen.
 - Im Nachtlauf lang und mit Zufallsfehlern.
+
+**Stand der Umsetzung (0.6.0-dev), Format in [`FORMAT.md`, Abschnitt 12](FORMAT.md#12-mail-archiv-seit-060):**
+- Umgesetzt: Frist (1, 7, 30, 90, 365 Tage oder eigener Wert, 30 vorausgewählt), Löschen beim Anbieter von Hand
+  einschalten und einmal bestätigen, gesendete Mails, Spam und Papierkorb je Regel, Ort „wie Synchronisation“ oder eigener
+  Server, Schlüssel-Epochen, Sperre je Konto, Prüfen über eine zweite Verbindung, Löschen nur per UID bei unveränderter
+  UIDVALIDITY, neu nummerierte Ordner über den Inhalt neu zugeordnet, Archiv-Ort ändern und umziehen, fremdes Archiv
+  ablehnen, vollständige Kopie auf dem Gerät, Wiederherstellen aus dieser Kopie (nur hinzufügen), Löschen der Kopie mit
+  getipptem Wort, solange sie die einzige sein könnte, Archiv-Papierkorb (30 Tage), archivierte Mails unter den Mails
+  des Anbieters, Lesen, Antworten, Weiterleiten, Anhänge und `.eml`, Suche.
+- **Abweichungen:**
+  - Kein Ort „Suite-Ordner (nur dieses Gerät)“: Das Archiv braucht immer einen Server. Damit entfällt die Sonderregel
+    für Sicherungen; die vollständige Kopie auf dem Gerät ist die zusätzliche Absicherung.
+  - Doppeltes wird je gleicher Mail und je gleichem Block (bis 4 MiB) einmal gespeichert, nicht je einzelnem Anhang.
+  - Die Suche läuft über Betreff, Absender und Textanfang aus dem Archiv-Verzeichnis (auch offline, weil die
+    Verzeichnisse auf dem Gerät mitgeführt werden), nicht über den ganzen Text.
+  - Archiviert wird, solange die Suite entsperrt ist (beim Entsperren und alle 30 Minuten, auf Android standardmäßig nur
+    im WLAN, „Jetzt archivieren“ jederzeit). Gesperrt fehlen die Schlüssel; eine stille Fortschritts-Benachrichtigung
+    gibt es noch nicht.
+  - Die Frage „Wo sollen deine Mails liegen?“ kommt nach dem ersten hinzugefügten Konto, nicht im Einrichtungsassistenten.
+  - Die Mail-Datei enthält Schlüssel und Ort des Archivs; ein eigener Server liegt mit in ihr. Das Öffnen nur der
+    Mail-Datei mit dem Archiv ist damit möglich, aber noch nicht eigens getestet.
+- **Tests:** `app::mailarchive::tests` (simulierter Anbieter): Abbruch nach jedem einzelnen Schritt, Verbindungsabbruch
+  beim Abholen, kleine Schritte, neu nummerierte Ordner (auch zwischen Prüfen und Löschen), doppelt gemeldete und
+  doppelte Mails, kaputte, leere und große Mails, beschädigte, fehlende und vertauschte Archivdateien, Spam- und
+  Papierkorb-Regeln, Sperre, Schlüssel-Epochen, Umzug, der Server sieht keine Inhalte und Namen; nach jedem Schritt die
+  Zählregel. Im Nachtlauf 30.000 Mails mit Zufallsabbrüchen. `app::tests::mail_archive_against_imap_and_sftp` geht den
+  ganzen Weg über die App-Schnittstelle gegen Dovecot und SFTP.
 
 ### 9.4 GhulDrive
 

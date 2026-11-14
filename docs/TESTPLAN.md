@@ -561,6 +561,28 @@ Automatisch läuft bei jedem Push der Alltagstest im Kern (zwei Geräte, 30 simu
 | K19 | Breites Fenster (Windows oder Tablet quer): Termin öffnen, Termin bearbeiten, in GhulAuth „Konto hinzufügen“. | Öffnet rechts in der zweiten Spalte, die Liste bleibt links stehen. Ohne Auswahl rechts „Kein Termin geöffnet“ bzw. „Kein Konto geöffnet“. |
 | K20 | Verschlüsselte Mail in der Liste. | Schloss und „Verschlüsselte Nachricht“ an der Stelle des Betreffs (kein „...“); geöffnet Betreff und Text. |
 
+## 30. Mail-Archiv
+
+Vorher: ein Mail-Konto mit einigen Mails, die älter als 30 Tage sind (am besten ein Testkonto), und ein eigener Server
+oder die Synchronisation. **Bitte nicht mit dem einzigen Postfach eines wichtigen Kontos beginnen.**
+
+| Nr. | Schritt | Erwartet |
+|---|---|---|
+| A1 | Ein neues Mail-Konto hinzufügen, solange kein Archiv eingerichtet ist. | Frage „Wo sollen deine Mails liegen?“; „Beim Anbieter lassen“ ändert nichts, „Verschlüsselt archivieren“ öffnet die Mail-Optionen. |
+| A2 | Optionen → GhulMail → Mail-Archiv: „Wie Synchronisation“ oder „Eigener Server“ wählen. | „Mail-Archiv eingerichtet.“; Ort wird angezeigt. Auf dem Server liegt ein Ordner `mailarchive` mit unlesbaren Dateinamen. |
+| A3 | Das Konto einschalten, Frist 30 Tage, „Jetzt archivieren“. | Meldung „N Mails archiviert, 0 beim Anbieter entfernt.“; beim Anbieter (Webmail) sind alle Mails noch da. |
+| A4 | Optionen: „Nach dem Archivieren beim Anbieter löschen“ einschalten. | Erst eine Warnung mit „Einschalten“; danach beim nächsten Lauf die Frage „Alles sicher archiviert … N Mails entfernen?“. Danebentippen = Später: nichts wird gelöscht. |
+| A5 | Die Frage mit „N Mails entfernen“ bestätigen. | Beim Anbieter fehlen genau die alten Mails; neue bleiben. In GhulMail erscheinen sie unter „Archiv · N“ unterhalb der Mails des Anbieters. |
+| A6 | Eine archivierte Mail öffnen, Anhang speichern, antworten, als `.eml` speichern, löschen. | Alles wie bei normalen Mails; Löschen legt sie in den Archiv-Papierkorb (Rückgängig möglich), dort wiederherstellbar. |
+| A7 | Zweites Gerät mit derselben Suite: GhulMail öffnen. | Dieselben archivierten Mails sind dort zu sehen und zu lesen. |
+| A8 | „Vollständige Archivkopie auf diesem Gerät“ einschalten, dann Flugmodus, eine archivierte Mail öffnen. | Öffnet ohne Netz. |
+| A9 | Den Ordner `mailarchive` auf dem Server umbenennen, „Jetzt archivieren“. | Hinweis „Mail-Archiv nicht erreichbar“ mit „Erneut versuchen“ und „Archiv-Ort ändern“; beim Anbieter wird nichts gelöscht. |
+| A10 | „Archiv-Ort ändern“ auf einen leeren Ordner, während das alte Archiv noch erreichbar ist. | Frage „Archiv hierher umziehen?“; nach „Umziehen“ ist alles am neuen Ort. |
+| A11 | Archiv-Ort auf einen leeren Ordner, das alte ist weg; auf dem Gerät mit vollständiger Kopie „Archiv aus dieser Kopie wiederherstellen“. | Meldung „N Mails ins Archiv wiederhergestellt.“; die anderen Geräte sehen sie wieder. |
+| A12 | „Kopie auf diesem Gerät löschen“, während kein anderes Gerät eine vollständige Kopie hat. | Warnung, dass es die einzige Kopie sein könnte; Löschen erst nach Eintippen von „löschen“. |
+| A13 | Spam-Ordner auf „Nach der Frist beim Anbieter löschen“. | Erst eine Warnung; danach sind alte Spam-Mails beim Anbieter weg, neue bleiben. |
+| A14 | Auf zwei Geräten gleichzeitig „Jetzt archivieren“. | Eines meldet „Ein anderes Gerät archiviert dieses Konto gerade“; nichts doppelt. |
+
 ## Fehler melden
 
 Bitte je Fehler: **Testnummer**, Handy und Android-Version, App-Version (Optionen → Über GhulSuite), was du gemacht hast,

@@ -65,6 +65,11 @@ pub struct SyncStatus {
 }
 
 /// Marks a change of the protection (password, keys, code) for the synchronisation.
+/// When the protection of the suite last changed (Unix ms, 0 if never).
+pub(super) fn protection_changed(o: &Open) -> i64 {
+    setting(&o.suite, PROTECTION_CHANGED)
+}
+
 pub(super) fn mark_protection_changed(o: &mut Open) -> Result<()> {
     put_setting(&mut o.suite, PROTECTION_CHANGED, &now_ms())
 }

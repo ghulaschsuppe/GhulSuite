@@ -78,11 +78,11 @@ super::redact::redacted_debug!(MailAccountInput {
 });
 
 #[derive(Serialize, Deserialize, Clone)]
-struct StoredAccount {
-    id: String,
+pub(super) struct StoredAccount {
+    pub(super) id: String,
     name: String,
     display_name: String,
-    email: String,
+    pub(super) email: String,
     username: String,
     password: String,
     servers: MailServers,
@@ -327,7 +327,7 @@ fn accounts(o: &Open) -> Vec<StoredAccount> {
     area_setting(o, VaultKind::Mail, ACCOUNTS_KEY)
 }
 
-fn account(o: &Open, id: &str) -> Result<StoredAccount> {
+pub(super) fn account(o: &Open, id: &str) -> Result<StoredAccount> {
     accounts(o).into_iter().find(|a| a.id == id).ok_or(GhulError::NotFound)
 }
 
@@ -525,7 +525,7 @@ fn mime_parts<'a>(body: &'a [u8], boundary: &str) -> Vec<&'a [u8]> {
     parts
 }
 
-fn body_offset(raw: &[u8]) -> usize {
+pub(super) fn body_offset(raw: &[u8]) -> usize {
     raw.windows(4)
         .position(|w| w == b"\r\n\r\n")
         .map(|p| p + 4)
@@ -547,7 +547,7 @@ fn to_crlf(data: &[u8]) -> Vec<u8> {
 }
 
 /// The readable content of a message: decrypted if needed, and how it was protected.
-struct Unwrapped {
+pub(super) struct Unwrapped {
     raw: Zeroizing<Vec<u8>>,
     encrypted: bool,
     signature: MailSignatureStatus,
@@ -555,7 +555,7 @@ struct Unwrapped {
     /// Subject from inside the encryption ("protected headers").
     subject: Option<String>,
     /// Settings changed (key learned or created): the suite must be saved.
-    changed: bool,
+    pub(super) changed: bool,
 }
 
 /// Opens PGP/MIME (encrypted or signed) and learns the sender's key from Autocrypt.
@@ -564,7 +564,7 @@ pub(super) fn unwrap_raw(o: &mut Open, account_id: &str, raw: &[u8]) -> Result<Z
     Ok(unwrap_message(o, account_id, raw)?.raw)
 }
 
-fn unwrap_message(o: &mut Open, account_id: &str, raw: &[u8]) -> Result<Unwrapped> {
+pub(super) fn unwrap_message(o: &mut Open, account_id: &str, raw: &[u8]) -> Result<Unwrapped> {
     let (mut u, key_from_this_mail) = unwrap_message_inner(o, account_id, raw)?;
     if key_from_this_mail && u.signature == MailSignatureStatus::Valid {
         u.signature = MailSignatureStatus::UnknownKey;
@@ -832,7 +832,20 @@ fn addresses(a: Option<&mail_parser::Address<'_>>) -> Vec<String> {
     .unwrap_or_default()
 }
 
-fn message(uid: u32, raw: &[u8], u: &Unwrapped) -> Result<MailMessage> {
+/// Attachment `index` of an unwrapped message (signatures do not count).
+pub(super) fn attachment_of(u: &Unwrapped, index: u32) -> Result<Vec<u8>> {
+    let m = mail_parser::MessageParser::default().parse(&u.raw[..]).ok_or(GhulError::NotFound)?;
+    let a = m
+        .attachments()
+        .filter(|a| {
+            !a.content_type().is_some_and(|t| t.subtype().is_some_and(|s| s.eq_ignore_ascii_case("pgp-signature")))
+        })
+        .nth(index as usize)
+        .ok_or(GhulError::NotFound)?;
+    Ok(a.contents().to_vec())
+}
+
+pub(super) fn message(uid: u32, raw: &[u8], u: &Unwrapped) -> Result<MailMessage> {
     let m = mail_parser::MessageParser::default()
         .parse(raw)
         .ok_or_else(|| GhulError::Network { msg: "message cannot be read".into() })?;
@@ -1427,15 +1440,7 @@ impl GhulSuite {
             Box::pin(async move { imap::fetch(s, &folder, uid).await })
         })?;
         let u = self.with_open(|o| unwrap_message(o, &account_id, &raw))?;
-        let m = mail_parser::MessageParser::default().parse(&u.raw[..]).ok_or(GhulError::NotFound)?;
-        let a = m
-            .attachments()
-            .filter(|a| {
-                !a.content_type().is_some_and(|t| t.subtype().is_some_and(|s| s.eq_ignore_ascii_case("pgp-signature")))
-            })
-            .nth(index as usize)
-            .ok_or(GhulError::NotFound)?;
-        Ok(a.contents().to_vec())
+        attachment_of(&u, index)
     }
 
     pub fn mail_set_seen(&self, account_id: String, folder: String, uid: u32, seen: bool) -> Result<()> {

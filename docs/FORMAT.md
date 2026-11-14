@@ -556,3 +556,53 @@ Pfade: keine `.`/`..`-Teile, keine Steuerzeichen, kein `\`; Dateien mit ausführ
 `.cgi`, …) sowie `.htaccess`, `.htpasswd`, `.user.ini` werden abgelehnt. Nach 20 Fehlversuchen in 10 Minuten
 antwortet das Modul der Adresse mit 429.
 
+
+## 12. Mail-Archiv (seit 0.6.0)
+
+Das verschlüsselte Mail-Archiv (Konzept, Abschnitt 9.3.1) liegt in einem eigenen Ordner `mailarchive/` auf dem Server
+der Synchronisation oder einem eigenen Server. Der Server sieht nur Anzahl und ungefähre Größe der Dateien: keine
+Adressen, keine Ordnernamen, keine Monate, keine Inhalte.
+
+```text
+mailarchive/head.ghlarc            "GHULARH1" | Epoche u32 = 0 | nonce[24] | AEAD(Kopf-Schlüssel, CBOR {id, created})
+mailarchive/a/<konto>/m/<monat>    "GHULARM1" | Epoche u32 | nonce[24] | AEAD(Index-Schlüssel(e), aufgefülltes CBOR)
+mailarchive/a/<konto>/state        "GHULARS1" | ...  UIDVALIDITY je Ordner, wie zuletzt gesehen
+mailarchive/a/<konto>/lock         "GHULARL1" | ...  {Gerät, gültig bis}: archiviert gerade
+mailarchive/b/<ab>/<block-id>      "GHULARB1" | Epoche u32 | nonce[24] | AEAD(Block-Schlüssel(e), Block bis 4 MiB)
+mailarchive/gc                     "GHULARG1" | ...  Blöcke, die beim letzten Aufräumen unbenutzt waren
+```
+
+- **Schlüssel-Epochen:** Je Epoche ein zufälliger 256-Bit-Schlüssel `K_e`, gespeichert in den verschlüsselten
+  Einstellungen der Mail-Datei (`.ghlmail`). Index-Schlüssel = HKDF(`K_e`, `ghul/v1/mailarchive/index`),
+  Block-Schlüssel = HKDF(`K_e`, `ghul/v1/mailarchive/block`). Nach jeder Schutzänderung der Suite beginnt beim nächsten
+  Archivieren eine neue Epoche; vorhandene Blöcke werden nicht neu verschlüsselt. Eine alte Sicherung mit altem Faktor
+  öffnet nur Blöcke früherer Epochen.
+- **Namen und Block-IDs** nutzen Schlüssel aus der ersten Epoche, damit sie sich nie ändern:
+  `<konto>` = HMAC(HKDF(`K_0`, `.../name`), `account:` ‖ Adresse in Kleinbuchstaben)[..32 Hex],
+  `<monat>` = HMAC(Namens-Schlüssel, `<konto>` ‖ `/` ‖ `JJJJ-MM`)[..32 Hex],
+  Block-ID = HMAC(HKDF(`K_0`, `.../block-id`), Block). Der Schlüssel einer Mail ist derselbe HMAC über `mail:` ‖ die
+  ganze Mail; gleiche Mails im selben Ordner werden einmal abgelegt.
+- **Zusätzliche Daten** jeder AEAD-Verschlüsselung: Magic ‖ Epoche ‖ Pfad der Datei. Eine Datei lässt sich deshalb nicht
+  als eine andere ausgeben (etwa ein alter Monat an Stelle eines neuen).
+- **Monat:** CBOR `{month, revision, items}`; je Mail `key`, Ordner, Rolle, UIDs und UIDVALIDITY beim Anbieter, Datum,
+  Größe, Block-IDs, Kopf (bis 16 KiB) und Textanfang (2 KiB) für Liste, Vorschau und Suche, gelesen, markiert,
+  Schlagwörter, archiviert/geändert, im Archiv-Papierkorb seit, `removed` (beim Anbieter gelöscht). Änderungen laden den
+  Monat neu und schreiben nur, wenn sich die Revision dazwischen nicht geändert hat.
+
+**Ablauf je Konto** (ein Gerät zugleich: Sperre je Aufruf mit höchstens 200 Mails, gilt 15 Minuten, am Ende freigegeben):
+1. Ordner des Anbieters lesen (Entwürfe nie, Spam und Papierkorb nach Einstellung), UIDVALIDITY und die UIDs der Mails
+   vor der Frist (`UID SEARCH BEFORE`) holen. Hat sich UIDVALIDITY geändert, wird über den Inhalt neu zugeordnet.
+2. In Schritten zu 50 Mails, die neuesten zuerst: Mail mit `BODY.PEEK[]` holen (ändert keine Markierung), Blöcke
+   schreiben, **über eine zweite Verbindung zurücklesen und Byte für Byte vergleichen**, dann den Monat schreiben und
+   ebenfalls zurücklesen.
+3. Nur wenn „beim Anbieter löschen“ eingeschaltet **und** einmal bestätigt ist: jede Mail noch einmal vollständig aus
+   dem Archiv lesen und prüfen, dann genau ihre UIDs löschen (`UID EXPUNGE`, ohne UIDPLUS nur genau diese), und nur,
+   solange der Ordner dieselbe UIDVALIDITY hat. Danach `removed` setzen.
+
+**Aufräumen:** Gelöschte Mails bleiben 30 Tage im Archiv-Papierkorb. Blöcke, die keine Mail mehr nutzt, werden erst
+gelöscht, wenn sie auch beim vorigen Aufräumen mindestens einen Tag zuvor schon unbenutzt waren (ein anderes Gerät
+könnte gerade Blöcke geschrieben, aber seinen Monat noch nicht).
+
+**Kopie auf dem Gerät:** dieselben verschlüsselten Dateien unter dem lokalen App-Ordner (`mail-archive/<id>/`).
+„Aus dieser Kopie wiederherstellen“ lädt fehlende Blöcke hoch und führt die Monate Eintrag für Eintrag zusammen; es
+fügt nur hinzu.

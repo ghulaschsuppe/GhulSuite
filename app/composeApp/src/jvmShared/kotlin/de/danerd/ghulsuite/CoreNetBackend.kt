@@ -2,6 +2,23 @@
 package de.danerd.ghulsuite
 
 import de.danerd.ghulsuite.core.DriveItem
+import de.danerd.ghulsuite.core.ArchiveFolderRule
+import de.danerd.ghulsuite.core.MailArchivePlace
+import de.danerd.ghulsuite.core.MailArchiveRun
+import de.danerd.ghulsuite.core.MailArchivedMail
+import de.danerd.ghulsuite.core.MailArchiveRef
+import de.danerd.ghulsuite.core.MailArchiveMode
+import de.danerd.ghulsuite.core.MailArchiveOptions
+import de.danerd.ghulsuite.model.ArchiveRuleUi
+import de.danerd.ghulsuite.model.ArchivePlaceUi
+import de.danerd.ghulsuite.model.MailArchiveRunUi
+import de.danerd.ghulsuite.model.ArchivedMailUi
+import de.danerd.ghulsuite.model.MailArchiveStatusUi
+import de.danerd.ghulsuite.model.ArchiveModeUi
+import de.danerd.ghulsuite.model.MailArchiveOptionsUi
+import de.danerd.ghulsuite.model.MailArchiveCopyUi
+import de.danerd.ghulsuite.model.ArchivePageUi
+import de.danerd.ghulsuite.model.MailArchiveCountUi
 import de.danerd.ghulsuite.core.GhulSuite
 import de.danerd.ghulsuite.core.MailAccountInput
 import de.danerd.ghulsuite.core.MailCheck
@@ -328,8 +345,12 @@ abstract class CoreNetBackend(protected val suite: () -> GhulSuite) : NetBackend
         io { suite().mailSearch(accountId, folder, query).map { it.toUi() } }
 
     override suspend fun mailGet(accountId: String, folder: String, uid: Long): MailMessageUi = io {
-        val m = suite().mailGet(accountId, folder, uid.toUInt())
-        MailMessageUi(
+        suite().mailGet(accountId, folder, uid.toUInt()).toUi()
+    }
+
+    private fun de.danerd.ghulsuite.core.MailMessage.toUi(): MailMessageUi {
+        val m = this
+        return MailMessageUi(
             uid = m.uid.toLong(), from = m.from, fromAddress = m.fromAddress, to = m.to, cc = m.cc, replyTo = m.replyTo,
             subject = m.subject, date = m.date, text = m.text, wasHtml = m.wasHtml, messageId = m.messageId,
             attachments = m.attachments.map { MailAttachmentUi(it.index.toInt(), it.name, it.mime, it.size.toLong()) },
@@ -409,6 +430,97 @@ abstract class CoreNetBackend(protected val suite: () -> GhulSuite) : NetBackend
     override suspend fun mailFlagged(accountId: String, folder: String) = io { suite().mailFlagged(accountId, folder).map { it.toUi() } }
     override suspend fun mailSetLabel(accountId: String, folder: String, uid: Long, label: String, on: Boolean) =
         io { suite().mailSetLabel(accountId, folder, uid.toUInt(), label, on) }
+    // --- Mail archive
+    private fun ArchiveFolderRule.toUi() = when (this) {
+        ArchiveFolderRule.LEAVE -> ArchiveRuleUi.LEAVE
+        ArchiveFolderRule.ARCHIVE -> ArchiveRuleUi.ARCHIVE
+        ArchiveFolderRule.DELETE -> ArchiveRuleUi.DELETE
+    }
+    private fun ArchiveRuleUi.toCore() = when (this) {
+        ArchiveRuleUi.LEAVE -> ArchiveFolderRule.LEAVE
+        ArchiveRuleUi.ARCHIVE -> ArchiveFolderRule.ARCHIVE
+        ArchiveRuleUi.DELETE -> ArchiveFolderRule.DELETE
+    }
+    private fun MailArchivePlace.toUi() = when (this) {
+        MailArchivePlace.CREATED -> ArchivePlaceUi.CREATED
+        MailArchivePlace.CONNECTED -> ArchivePlaceUi.CONNECTED
+        MailArchivePlace.MOVE_OFFERED -> ArchivePlaceUi.MOVE_OFFERED
+        MailArchivePlace.FOREIGN -> ArchivePlaceUi.FOREIGN
+    }
+    private fun MailArchiveRun.toUi() = MailArchiveRunUi(
+        archived.toInt(), removed.toInt(), deletedByRule.toInt(), remaining.toInt(), waitingForConfirmation.toInt(), renumbered.toInt(), busy,
+    )
+    private fun MailArchivedMail.toUi() = ArchivedMailUi(key, folder, role, summary.toUi(), atProvider, trashed)
+    private fun List<de.danerd.ghulsuite.model.ArchiveRefUi>.refs() = map { MailArchiveRef(it.key, it.folder) }
+
+    override suspend fun archiveStatus(): MailArchiveStatusUi = io {
+        val s = suite().mailArchiveStatus()
+        val o = s.options
+        MailArchiveStatusUi(
+            mode = when (s.mode) {
+                MailArchiveMode.NONE -> ArchiveModeUi.NONE
+                MailArchiveMode.SYNC -> ArchiveModeUi.SYNC
+                MailArchiveMode.OWN -> ArchiveModeUi.OWN
+                MailArchiveMode.SUITE -> ArchiveModeUi.SUITE
+            },
+            server = s.server?.toUi(),
+            syncAvailable = s.syncAvailable,
+            options = MailArchiveOptionsUi(o.days.toInt(), o.deleteAtProvider, o.sent, o.spam.toUi(), o.trash.toUi(), o.accounts),
+            copies = s.copies.map { MailArchiveCopyUi(it.device, it.name, it.mails.toLong(), it.at, it.full, it.thisDevice) },
+            fullCopy = s.fullCopy,
+            offlineBytes = s.offlineBytes.toLong(),
+            confirmed = s.confirmed,
+        )
+    }
+
+    override suspend fun archiveSetOptions(options: MailArchiveOptionsUi) = io {
+        suite().mailArchiveSetOptions(
+            MailArchiveOptions(options.days.toUInt(), options.deleteAtProvider, options.sent, options.spam.toCore(), options.trash.toCore(), options.accounts),
+        )
+    }
+
+    override suspend fun archiveSetup(serverId: String?): ArchivePlaceUi = io { suite().mailArchiveSetup(serverId).toUi() }
+
+    override suspend fun archiveSaveServer(input: ServerInputUi, confirmed: String?): ServerSavedUi = io {
+        when (val r = suite().mailArchiveSaveServer(input.toCore(), confirmed)) {
+            is ServerSaved.Confirm -> ServerSavedUi.Confirm(r.fingerprint)
+            is ServerSaved.Saved -> ServerSavedUi.Saved(r.id)
+        }
+    }
+
+    override suspend fun archiveMove(serverId: String?): ArchivePlaceUi = io { suite().mailArchiveMove(serverId).toUi() }
+    override suspend fun archiveRun(accountId: String, max: Int): MailArchiveRunUi = io { suite().mailArchiveRun(accountId, max.toUInt()).toUi() }
+    override suspend fun archiveConfirmRemoval(accountId: String): MailArchiveRunUi = io { suite().mailArchiveConfirmRemoval(accountId).toUi() }
+    override suspend fun archiveList(accountId: String, folder: String, offset: Int, limit: Int, withProvider: Boolean): ArchivePageUi = io {
+        val p = suite().mailArchiveList(accountId, folder, offset.toUInt(), limit.toUInt(), withProvider)
+        ArchivePageUi(p.total.toInt(), p.mails.map { it.toUi() })
+    }
+    override suspend fun archiveSearch(accountId: String, query: String): List<ArchivedMailUi> =
+        io { suite().mailArchiveSearch(accountId, query, 100u).map { it.toUi() } }
+    override suspend fun archiveGet(accountId: String, folder: String, key: String): MailMessageUi =
+        io { suite().mailArchiveGet(accountId, MailArchiveRef(key, folder)).toUi() }
+    override suspend fun archiveRaw(accountId: String, folder: String, key: String): ByteArray =
+        io { suite().mailArchiveRaw(accountId, MailArchiveRef(key, folder)) }
+    override suspend fun archiveAttachment(accountId: String, folder: String, key: String, index: Int): ByteArray =
+        io { suite().mailArchiveAttachment(accountId, MailArchiveRef(key, folder), index.toUInt()) }
+    override suspend fun archiveSetSeen(accountId: String, items: List<de.danerd.ghulsuite.model.ArchiveRefUi>, seen: Boolean) =
+        io { suite().mailArchiveSetSeen(accountId, items.refs(), seen) }
+    override suspend fun archiveSetFlagged(accountId: String, items: List<de.danerd.ghulsuite.model.ArchiveRefUi>, flagged: Boolean) =
+        io { suite().mailArchiveSetFlagged(accountId, items.refs(), flagged) }
+    override suspend fun archiveDelete(accountId: String, items: List<de.danerd.ghulsuite.model.ArchiveRefUi>) = io { suite().mailArchiveDelete(accountId, items.refs()) }
+    override suspend fun archiveRestore(accountId: String, items: List<de.danerd.ghulsuite.model.ArchiveRefUi>) = io { suite().mailArchiveRestore(accountId, items.refs()) }
+    override suspend fun archiveTrash(accountId: String): List<ArchivedMailUi> = io { suite().mailArchiveTrash(accountId).map { it.toUi() } }
+    override suspend fun archiveEmptyTrash(accountId: String, days: Int): Int = io { suite().mailArchiveEmptyTrash(accountId, days.toUInt()).toInt() }
+    override suspend fun archiveCount(accountId: String): MailArchiveCountUi = io {
+        val c = suite().mailArchiveCount(accountId)
+        MailArchiveCountUi(c.mails.toLong(), c.bytes.toLong(), c.inTrash.toLong())
+    }
+    override suspend fun archiveSetFullCopy(on: Boolean, deviceName: String) = io { suite().mailArchiveSetFullCopy(on, deviceName) }
+    override suspend fun archiveDownload(max: Int, deviceName: String): Int = io { suite().mailArchiveDownload(max.toUInt(), deviceName).toInt() }
+    override suspend fun archiveClearCopy() = io { suite().mailArchiveClearCopy() }
+    override suspend fun archiveOnlyCopy(): Boolean = io { suite().mailArchiveOnlyCopy() }
+    override suspend fun archiveRestoreFromCopy(): Int = io { suite().mailArchiveRestoreFromCopy().toInt() }
+
     override suspend fun mailRaw(accountId: String, folder: String, uid: Long, decrypted: Boolean): ByteArray =
         io { suite().mailRaw(accountId, folder, uid.toUInt(), decrypted) }
     override suspend fun mailHeaders(accountId: String, folder: String, uid: Long): String = io { suite().mailHeaders(accountId, folder, uid.toUInt()) }
