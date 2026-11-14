@@ -172,6 +172,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
     val driveMissingFmt = stringResource(Res.string.wz_drive_missing)
     val oneArea = stringResource(Res.string.wz_one_area)
     val pinRule = stringResource(Res.string.wz_pin_rule)
+    val keyPinMissing = stringResource(Res.string.wz_key_pin_missing)
 
     fun create() {
         if (backend.exists()) { error = suiteThere; return }
@@ -227,7 +228,8 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                 if (error == null) step = 2
             }
             2 -> if (useKey) {
-                if (keyPinOk(state, pin)) step = 3
+                // U9: "Next" without the key's PIN says why it does not go on.
+                if (keyPinOk(state, pin)) step = 3 else error = keyPinMissing
             } else if (keyfile != null && keyfileSaved) step = 3 else error = notSaved
             3 -> create()
             4 -> if (!syncOn) step = 5 else {
@@ -457,10 +459,14 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                 PickRow(quick == QuickChoice.BIO, Icons.Filled.Fingerprint, 2, stringResource(Res.string.wz_quick_bio),
                     stringResource(if (backend.biometricAvailable()) Res.string.wz_quick_bio_sub else Res.string.set_quick_bio_unavailable),
                     enabled = backend.biometricAvailable(), divider = true, onClick = { quick = QuickChoice.BIO })
-                PickRow(quick == QuickChoice.PIN, Icons.Filled.Pin, 5, stringResource(Res.string.wz_quick_pin), stringResource(Res.string.wz_quick_pin_sub), divider = true, onClick = { quick = QuickChoice.PIN }) {
-                    SecretTextField(quickPin, { quickPin = it.filter(Char::isDigit).take(12); error = null }, stringResource(Res.string.wz_quick_pin_field), numeric = true)
+                // U8: Windows has no app PIN (and no fingerprint unlock yet): not offered there.
+                if (!backend.isDesktop) {
+                    PickRow(quick == QuickChoice.PIN, Icons.Filled.Pin, 5, stringResource(Res.string.wz_quick_pin), stringResource(Res.string.wz_quick_pin_sub), divider = true, onClick = { quick = QuickChoice.PIN }) {
+                        SecretTextField(quickPin, { quickPin = it.filter(Char::isDigit).take(12); error = null }, stringResource(Res.string.wz_quick_pin_field), numeric = true)
+                    }
                 }
             }
+            if (backend.isDesktop) Hint(stringResource(Res.string.wz_quick_desktop))
             if (quick != QuickChoice.NONE) {
                 SectionCard(stringResource(Res.string.wz_quick_valid)) {
                     Hint(stringResource(Res.string.wz_quick_valid_sub))

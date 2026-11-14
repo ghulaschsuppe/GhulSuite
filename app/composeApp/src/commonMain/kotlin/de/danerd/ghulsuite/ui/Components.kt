@@ -647,6 +647,15 @@ fun KeyPinField(state: AppState, pin: String, onPin: (String) -> Unit) {
 /** A PIN is entered, or the system asks for it itself. */
 fun keyPinOk(state: AppState, pin: String): Boolean = !state.backend.keyPinInApp || pin.isNotEmpty()
 
+/** The area of a container kind as the core names it (`pass`, `totp`, `cal`, `drive`, `mail`). */
+fun vaultKindOf(kind: String): de.danerd.ghulsuite.model.VaultKindUi = when (kind) {
+    "pass" -> de.danerd.ghulsuite.model.VaultKindUi.PASS
+    "cal" -> de.danerd.ghulsuite.model.VaultKindUi.CAL
+    "drive" -> de.danerd.ghulsuite.model.VaultKindUi.DRIVE
+    "mail" -> de.danerd.ghulsuite.model.VaultKindUi.MAIL
+    else -> de.danerd.ghulsuite.model.VaultKindUi.TOTP
+}
+
 /** Display name of the storage location: the app's own storage gets a readable name. */
 @Composable
 fun storageLabel(raw: String): String = if (raw == "app") stringResource(Res.string.storage_app) else raw

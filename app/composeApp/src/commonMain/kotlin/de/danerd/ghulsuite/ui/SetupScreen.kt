@@ -227,10 +227,11 @@ fun StorageChooser(state: AppState) {
     }
 }
 
-/** Finish of every setup: switch on the modules of the vaults and leave the start screen. */
-private fun finishSetup(state: AppState, pass: Boolean, totp: Boolean) {
-    state.backend.settings.moduleGhulPass = pass
-    state.backend.settings.moduleGhulAuth = totp
+/** Finish of a setup around one vault file: only the area of that vault is switched on. */
+private fun finishSetup(state: AppState, kind: VaultKindUi) {
+    state.backend.settings.moduleGhulPass = kind == VaultKindUi.PASS
+    state.backend.settings.moduleGhulAuth = kind == VaultKindUi.TOTP
+    state.enableModule(kind)
     state.showStart = false
     state.vaultExists = true
     state.refreshVaults()
@@ -240,7 +241,8 @@ private fun finishSetup(state: AppState, pass: Boolean, totp: Boolean) {
 @Composable
 private fun OpenVaultWizard(state: AppState, file: PickedFile, info: ContainerInfoUi, onCancel: () -> Unit) {
     val backend = state.backend
-    val kind = if (info.kind == "pass") VaultKindUi.PASS else VaultKindUi.TOTP
+    // U10: the kind comes from the file itself (a calendar file is no GhulAuth vault).
+    val kind = vaultKindOf(info.kind)
     val hasKey = info.protection.securityKeys > 0
     val hasKeyfile = info.protection.keyfiles > 0
     var withKey by remember { mutableStateOf(hasKey) }
@@ -255,7 +257,7 @@ private fun OpenVaultWizard(state: AppState, file: PickedFile, info: ContainerIn
 
     val current = code
     if (current != null) {
-        RecoveryCodeSteps(state, current) { finishSetup(state, kind == VaultKindUi.PASS, kind == VaultKindUi.TOTP) }
+        RecoveryCodeSteps(state, current) { finishSetup(state, kind) }
         return
     }
     SectionCard(stringResource(Res.string.open_vault_title)) {
@@ -301,7 +303,7 @@ private fun OpenVaultWizard(state: AppState, file: PickedFile, info: ContainerIn
                         pin = ""
                         if (newCode == null) {
                             state.message(keptCode)
-                            finishSetup(state, kind == VaultKindUi.PASS, kind == VaultKindUi.TOTP)
+                            finishSetup(state, kind)
                         } else {
                             code = newCode
                         }

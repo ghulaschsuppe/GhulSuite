@@ -271,6 +271,7 @@ fun DriveStorageRow(state: AppState) {
     val net = state.backend.net
     var storage by remember { mutableStateOf<DriveStorageUi?>(null) }
     var sheet by remember { mutableStateOf(false) }
+    var confirmSync by remember { mutableStateOf(false) }
     var own by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(state.liveRevision()) { storage = runCatching { net.driveStorage() }.getOrNull() }
@@ -291,6 +292,20 @@ fun DriveStorageRow(state: AppState) {
         }) { Text(stringResource(Res.string.php_module_update)) }
     }
     ErrorText(error)
+    if (confirmSync) {
+        AlertDialog(
+            onDismissRequest = { confirmSync = false },
+            title = { Text(stringResource(Res.string.drive_to_sync_title)) },
+            text = { Text(stringResource(Res.string.drive_to_sync_text)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmSync = false
+                    state.run(onError = { error = it }, block = { net.driveUseSync() }) { state.changed() }
+                }) { Text(stringResource(Res.string.drive_to_sync_yes)) }
+            },
+            dismissButton = { TextButton(onClick = { confirmSync = false }) { Text(stringResource(Res.string.a_cancel)) } },
+        )
+    }
     if (own) DriveServerSheet(state) { own = false }
     if (sheet) {
         GhulSheet({ sheet = false }, stringResource(Res.string.drive_storage_title)) {
@@ -299,7 +314,8 @@ fun DriveStorageRow(state: AppState) {
                     stringResource(if (s.syncAvailable) Res.string.drive_like_sync_ref else Res.string.wz_drive_sync_first), enabled = s.syncAvailable,
                     onClick = {
                         sheet = false
-                        state.run(onError = { error = it }, block = { net.driveUseSync() }) { state.changed() }
+                        // U14: switching away from a server that holds files asks first (Drive looks empty).
+                        if (s.mode != DriveModeUi.SYNC) confirmSync = true
                     })
                 PickRow(s.mode == DriveModeUi.OWN || s.mode == DriveModeUi.SUITE, Icons.Filled.Dns, 1, stringResource(Res.string.wz_own_server),
                     stringResource(Res.string.drive_own_in_file), divider = true, onClick = { sheet = false; own = true })

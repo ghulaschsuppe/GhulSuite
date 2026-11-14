@@ -173,7 +173,7 @@ fun VaultsSection(state: AppState) {
             } catch (e: VaultException) {
                 if (e.kind != VaultErrorKind.DIFFERENT_PROTECTION) throw e
                 val info = backend.inspectFile(file.bytes)
-                null to ForeignRequest(source, if (info.kind == "pass") VaultKindUi.PASS else VaultKindUi.TOTP, info.protection, name)
+                null to ForeignRequest(source, vaultKindOf(info.kind), info.protection, name)
             }
         }) { (kind, request) ->
             if (request != null) {

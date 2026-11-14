@@ -62,6 +62,26 @@ def long_dashes():
     return found
 
 
+def untranslated_core_texts():
+    """U5: every error detail the core can show (a literal in the Rust code) has a translation in
+    CoreTexts.kt. Test code does not count."""
+    core = ROOT / "core" / "ghul-core" / "src"
+    table = (CODE / "commonMain/kotlin/de/danerd/ghulsuite/ui/CoreTexts.kt").read_text()
+    known = set(re.findall(r'^\s*"((?:[^"\\]|\\.)*)" to Res\.string\.', table, re.M))
+    known = {k.replace('\\"', '"') for k in known}
+    missing = set()
+    for f in core.rglob("*.rs"):
+        if "tests" in f.parts or f.name.startswith("tests") or f.name.endswith("_tests.rs"):
+            continue
+        text = f.read_text(errors="ignore")
+        # Only the part before the unit tests of a file.
+        text = text.split("#[cfg(test)]\nmod tests")[0]
+        for m in re.finditer(r'(?:InvalidInput|Storage|Corrupted|Network|Protocol)\s*\{\s*msg:\s*"((?:[^"\\]|\\.)*)"', text):
+            if m.group(1) not in known:
+                missing.add(f"{f.name}: {m.group(1)}")
+    return sorted(missing)
+
+
 def placeholders(text):
     return sorted(re.findall(r"%\d+\$[sd]", text))
 
@@ -77,6 +97,8 @@ def main():
             errors.append(f"Platzhalter unterschiedlich: {name}: {placeholders(de[name])} / {placeholders(en[name])}")
     for place in long_dashes():
         errors.append(f"langer Strich (stattdessen Punkt, Komma, Doppelpunkt oder „bis“): {place}")
+    for place in untranslated_core_texts():
+        errors.append(f"Meldung des Kerns ohne Übersetzung in ui/CoreTexts.kt: {place}")
     for name, text in sorted(de.items()):
         for pattern, meant, better in TERMS:
             if re.search(pattern, text):
