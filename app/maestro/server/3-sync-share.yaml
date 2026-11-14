@@ -180,3 +180,32 @@ name: Sync server and sharing on a real server
 - extendedWaitUntil:
     notVisible: "1 selected"
     timeout: 10000
+
+# --- 6. Background and back, and a fresh start (the card must be right at once) -------------
+- pressKey: Home
+- launchApp:
+    stopApp: false
+- runFlow:
+    when:
+      visible: "Unlock with app PIN"
+    commands:
+      - tapOn: "App PIN"
+      - inputText: "246813"
+      - hideKeyboard
+      - tapOn: "Unlock with app PIN"
+- extendedWaitUntil:
+    visible: "Urlaub-Maestro"
+    timeout: 60000
+- assertVisible: ${GHUL_SERVER}
+- assertNotVisible: "Not set up"
+- assertNotVisible: "No server yet"
+- takeScreenshot: s3-14-drive-after-background
+- runFlow: unlock.yaml
+- tapOn: "GhulDrive"
+- extendedWaitUntil:
+    visible: "Urlaub-Maestro"
+    timeout: 60000
+- assertVisible: ${GHUL_SERVER}
+- assertNotVisible: "Not set up"
+- assertNotVisible: "No server yet"
+- takeScreenshot: s3-15-drive-after-restart

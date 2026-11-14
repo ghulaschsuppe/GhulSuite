@@ -1,0 +1,24 @@
+# Helper: scroll to an Options row, open it, photograph its top and its end, check that no
+# technical error text is shown, go back and scroll up again.
+appId: de.danerd.ghulsuite.dev
+---
+- scrollUntilVisible:
+    element: ${PAGE}
+    direction: DOWN
+- tapOn: ${PAGE}
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: ${SHOT}
+- assertNotVisible: ".*[Cc]oroutine.*"
+- assertNotVisible: ".*[Ee]xception.*"
+- swipe:
+    direction: UP
+    duration: 300
+- swipe:
+    direction: UP
+    duration: 300
+- takeScreenshot: ${SHOT}-end
+- back
+- scrollUntilVisible:
+    element: "Unlocking"
+    direction: UP

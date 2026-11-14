@@ -68,10 +68,11 @@ tools/                 Testserver (SFTP/IMAP/SMTP), Prüfskripte, Emulator-Skrip
 - `.github/workflows/android.yml`: Kern (Format, Clippy, Tests, Fuzzing, Audit), Netzwerk-Tests, Browser-Tests,
   Windows-Pakete (MSI und portabel), APK, Emulator-Abläufe. Format, Clippy, Tests und der App-Build laufen auch nach
   einem Fehler weiter, damit ein Lauf alle Fehler auf einmal zeigt. Artefakte: `ghulsuite-dev`, `ghulsuite-windows-dev`,
-  `screenshots`, `emulator-tests`.
+  `screenshots`, `emulator-base`, `emulator-server`, `emulator-mail`.
 - **Emulator-Abläufe** (langsam, weil ein ganzes Android startet) laufen nicht bei jedem Push eines Arbeits-Branches,
-  sondern bei Pull Requests, auf `main` und nachts. Nachts kommen die Abläufe mit echten Testservern (GhulDrive,
-  GhulMail) und die Prüfung dazu, dass dort nur Verschlüsseltes liegt. Von Hand für jeden Branch:
+  sondern bei jedem Pull Request, auf `main` und nachts, in drei Teilen nebeneinander (`base`, `server`, `mail`).
+  `server` und `mail` laufen gegen echte Testserver, die absichtlich langsam antworten (`tools/slow-servers.sh`);
+  danach wird geprüft, dass dort nur Verschlüsseltes liegt. Von Hand für jeden Branch:
   `.github/workflows/emulator.yml` („Run workflow“, nutzt die zuletzt gebaute APK des Branches).
 - Uploads auf den Testserver des Inhabers laufen **nur im Original-Repository** und nie bei Pull Requests.
   Ziel ist für `main` der Ordner `ghulsuite/` (Testseiten) bzw. `ghulsuite/download/` (App-Pakete), für jeden
@@ -154,5 +155,17 @@ tools/                 Testserver (SFTP/IMAP/SMTP), Prüfskripte, Emulator-Skrip
   Die README verspricht nichts, was der Code nicht hält; bekannte offene Punkte stehen in
   [`docs/TESTPROTOKOLL.md`](docs/TESTPROTOKOLL.md).
 - Gefundene Fehler und offene Punkte kommen mit Nummer ins Testprotokoll; Testkonzept: [`docs/TESTKONZEPT.md`](docs/TESTKONZEPT.md).
+- **Getestet wird wie auf dem Handy.** Jede Änderung an der Oberfläche läuft vor dem Merge im Android-Emulator
+  (`emulator.yml`, bei jedem Pull Request automatisch, drei Teile, zwei davon gegen echte und absichtlich langsame
+  Testserver). Neue Funktionen bekommen einen Maestro-Ablauf in `app/maestro/` mit einem Bild nach jedem Schritt.
+  Testattrappen im Desktop-Test verhalten sich wie der echte Kern (Wartezeit, Abbruch erst nach der Antwort,
+  gespeicherte Werte bleiben gespeichert); eine Attrappe, die alles sofort und fehlerfrei beantwortet, beweist nichts.
+- **Bilder werden angesehen, nicht nur erzeugt.** Ein Pull Request ist erst fertig, wenn die Bilder aller Abläufe
+  (Emulator und Desktop) durchgesehen sind. Dabei zählt nicht nur, ob etwas kaputt ist, sondern jede
+  **Unstimmigkeit**: unterschiedliche Abstände, Schriftgrößen, Farben oder Ecken für dasselbe Element, abweichende
+  Begriffe für dieselbe Sache, abgeschnittene oder umgebrochene Texte, schief ausgerichtete Elemente, doppelte
+  Überschriften, Platzhalter wie „…“ oder „0“, wo ein Wert stehen müsste, leere oder halbe Zustände, technische
+  Fehlertexte, Knöpfe ohne Wirkung, Probleme im dunklen Design und im Querformat. Jeder Fund kommt mit Nummer ins
+  Testprotokoll und wird im selben Pull Request behoben oder ausdrücklich zurückgestellt.
 - Kommentare und Commit-Nachrichten auf Englisch, Dokumentation auf Deutsch.
 - Neue Quelldateien beginnen mit `// SPDX-License-Identifier: AGPL-3.0-or-later`.

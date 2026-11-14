@@ -1,0 +1,78 @@
+# GhulCal in depth, with the event of 06-cal.yaml ("Run", tomorrow):
+#   - Edit the title, Save tapped twice: one event with the new title, not two.
+#   - Delete it, "Undo": it is back.
+#   - Week and day view photographed.
+appId: de.danerd.ghulsuite.dev
+name: GhulCal in depth
+---
+- launchApp:
+    stopApp: false
+- tapOn: "GhulCal"
+- extendedWaitUntil:
+    visible: "Month"
+    timeout: 30000
+- tapOn: "List"
+- extendedWaitUntil:
+    visible: "Run"
+    timeout: 15000
+- tapOn: "Run"
+- extendedWaitUntil:
+    visible: "15 min before"
+    timeout: 15000
+# --- Edit, Save twice ---
+- tapOn: "Edit"
+- extendedWaitUntil:
+    visible: "Edit event"
+    timeout: 10000
+- tapOn: "Run"
+- eraseText
+- inputText: "Laufen am Fluss"
+- hideKeyboard
+- takeScreenshot: 12-01-edit
+- tapOn:
+    text: "Save"
+    repeat: 2
+    delay: 80
+- extendedWaitUntil:
+    visible: "Saved.*"
+    timeout: 15000
+- extendedWaitUntil:
+    visible: "Laufen am Fluss"
+    timeout: 15000
+- takeScreenshot: 12-02-saved
+- back
+- extendedWaitUntil:
+    visible: "Laufen am Fluss"
+    timeout: 15000
+- assertNotVisible:
+    text: "Laufen am Fluss"
+    index: 1
+- assertNotVisible: "Run"
+- takeScreenshot: 12-03-list
+# --- Delete, undo ---
+- tapOn: "Laufen am Fluss"
+- extendedWaitUntil:
+    visible: "15 min before"
+    timeout: 15000
+- tapOn: "More"
+- tapOn: "Delete"
+- extendedWaitUntil:
+    visible: "Event deleted"
+    timeout: 10000
+- takeScreenshot: 12-04-deleted
+- tapOn: "Undo"
+- extendedWaitUntil:
+    visible: "Laufen am Fluss"
+    timeout: 15000
+- takeScreenshot: 12-05-undone
+# --- Views ---
+- tapOn: "Week"
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 12-06-week
+- tapOn: "Day"
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 12-07-day
+- tapOn: "Month"
+- assertNotVisible: ".*[Cc]oroutine.*"

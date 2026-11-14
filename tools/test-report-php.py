@@ -114,9 +114,19 @@ def main():
         check("kaputtes JSON: 400", post(url, b"{not json") == (400, "bad_request"))
         check("fehlende Felder: 400", post(url, {"report": REPORT}) == (400, "bad_request"))
         check("kein Bericht der App: 400", post(url, report(text="Kauf billige Uhren!\nhttp://spam")) == (400, "not_a_report"))
-        check("falscher Beweis: 400", post(url, report(nonce="x")) == (400, "proof"))
-        r = report(note="a")
-        r["note"] = "b"
+        # A nonce that surely does not fit: with few bits a fixed one would fit now and then.
+        t = int(time.time())
+        c = content_hash(REPORT, "", "")
+        bad = next(n for n in (f"x{i}" for i in range(1000))
+                   if zero_bits(hashlib.sha256(f"ghulsuite-report|{t}|{c}|{n}".encode()).digest()) < BITS)
+        check("falscher Beweis: 400", post(url, report(t=t, nonce=bad)) == (400, "proof"))
+        # The proof of note "a" for note "b" (one that surely does not fit "b" as well).
+        for i in range(1000):
+            r = report(note=f"a{i}")
+            r["note"] = "b"
+            if zero_bits(hashlib.sha256(
+                    f"ghulsuite-report|{r['time']}|{content_hash(REPORT, 'b', '')}|{r['nonce']}".encode()).digest()) < BITS:
+                break
         check("Beweis zu anderem Inhalt: 400", post(url, r) == (400, "proof"))
         check("alte Zeit: 400", post(url, report(t=int(time.time()) - 3600)) == (400, "clock"))
         check("Notiz zu lang: 413", post(url, report(note="x" * 4001)) == (413, "too_large"))

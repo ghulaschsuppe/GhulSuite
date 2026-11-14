@@ -2,7 +2,7 @@
 #   maestro test app/maestro/
 # The flows use the English texts (default language of a fresh emulator).
 flows:
-  - "0*.yaml"
+  - "[01][0-9]-*.yaml"
 executionOrder:
   continueOnFailure: false
   flowsOrder:
@@ -13,3 +13,8 @@ executionOrder:
     - App PIN, lock and unlock
     - Options pages
     - GhulDrive and GhulMail without a server
+    - GhulPass in depth
+    - GhulAuth in depth
+    - All options pages
+    - GhulCal in depth
+    - Design, landscape and background

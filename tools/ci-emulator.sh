@@ -65,13 +65,24 @@ timeout 10 adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS 
 timeout 10 adb shell input keyevent 82 || true
 if [ "${SKIP_MAESTRO:-0}" != 1 ]; then
   log "Maestro-Abläufe starten"
-  timeout 3300 "$(dirname "$0")/run-maestro.sh" "$apk" "$out"
+  timeout 3600 "$(dirname "$0")/run-maestro.sh" "$apk" "$out"
   log "Maestro fertig"
+  shard="${MAESTRO_SHARD:-all}"
   # What no flow can see: the reminder of the calendar flow as an alarm of the system.
-  timeout 300 "$(dirname "$0")/check-reminders.sh" "$out"
+  if [ "$shard" = all ] || [ "$shard" = base ]; then
+    timeout 300 "$(dirname "$0")/check-reminders.sh" "$out"
+  fi
   # And what the servers of the flows with a real server hold now: only ciphertext.
   if [ "${GHUL_TEST_SERVERS:-0}" = 1 ] && [ -f servers.env ]; then
-    timeout 120 "$(dirname "$0")/check-server-flows.sh" servers.env "$out"
+    case "$shard" in
+      all) parts="drive mail" ;;
+      server) parts="drive" ;;
+      mail) parts="mail" ;;
+      *) parts="" ;;
+    esac
+    if [ -n "$parts" ]; then
+      CHECK_PARTS="$parts" timeout 120 "$(dirname "$0")/check-server-flows.sh" servers.env "$out"
+    fi
   fi
 else
   timeout 120 adb install -r "$apk" > /dev/null

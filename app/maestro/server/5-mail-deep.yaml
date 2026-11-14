@@ -1,0 +1,91 @@
+# GhulMail in depth on the real (slow) mail servers, after 2-mail.yaml:
+#   - The mail to oneself: mark unread, open again, answer it (reply arrives).
+#   - Search in the list.
+#   - Select all, delete, "Undo": back.
+appId: de.danerd.ghulsuite.dev
+name: GhulMail in depth on a real server
+---
+- runFlow: unlock.yaml
+- tapOn: "GhulMail"
+- extendedWaitUntil:
+    visible: "Encrypted message"
+    timeout: 120000
+- takeScreenshot: s5-01-inbox
+# --- Reply ---
+- tapOn: "Encrypted message"
+- extendedWaitUntil:
+    visible: "Geheimtext-Maestro-4711"
+    timeout: 60000
+- tapOn: "Reply"
+- extendedWaitUntil:
+    visible: "Message"
+    timeout: 10000
+- tapOn: "Message"
+- inputText: "Antwort-Maestro"
+- hideKeyboard
+- takeScreenshot: s5-02-reply
+- tapOn:
+    text: "Send"
+    repeat: 2
+    delay: 80
+- extendedWaitUntil:
+    visible: "Message sent\\."
+    timeout: 120000
+- back
+- tapOn:
+    text: "Refresh"
+    optional: true
+# The answer arrives, once (Send was tapped twice).
+- extendedWaitUntil:
+    visible:
+      text: "Encrypted message"
+      index: 1
+    timeout: 120000
+- assertNotVisible:
+    text: "Encrypted message"
+    index: 2
+- takeScreenshot: s5-03-reply-arrived
+# --- Mark unread ---
+- longPressOn:
+    text: "Encrypted message"
+    index: 0
+- extendedWaitUntil:
+    visible: "1 selected"
+    timeout: 10000
+- tapOn: "Mark unread"
+- takeScreenshot: s5-04-unread
+# --- Search ---
+- tapOn: "Search mails"
+- inputText: "nichts-dergleichen"
+- hideKeyboard
+- assertNotVisible: "Encrypted message"
+- assertNotVisible: ".*[Cc]oroutine.*"
+- takeScreenshot: s5-05-search-empty
+- tapOn: "nichts-dergleichen"
+- eraseText
+- hideKeyboard
+- extendedWaitUntil:
+    visible: "Encrypted message"
+    timeout: 60000
+# --- Select all, delete, undo ---
+- longPressOn:
+    text: "Encrypted message"
+    index: 0
+- extendedWaitUntil:
+    visible: "1 selected"
+    timeout: 10000
+- tapOn: "All"
+- extendedWaitUntil:
+    visible: "2 selected"
+    timeout: 10000
+- assertNotVisible: "All"
+- tapOn: "Delete"
+- extendedWaitUntil:
+    visible: "Undo"
+    timeout: 10000
+- takeScreenshot: s5-06-deleted
+- tapOn: "Undo"
+- extendedWaitUntil:
+    visible: "Encrypted message"
+    timeout: 60000
+- takeScreenshot: s5-07-undone
