@@ -75,13 +75,13 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
     var sorting by remember { mutableStateOf(false) }
     var exporting by remember { mutableStateOf<Pair<TotpCodeUi, String>?>(null) }
     var clock by remember { mutableStateOf<Long?>(null) }
-    LaunchedEffect(Unit) { clock = runCatching { state.backend.clockOffset(nowSeconds()) }.getOrNull() }
+    LaunchedEffect(Unit) { clock = catching { state.backend.clockOffset(nowSeconds()) }.getOrNull() }
     val settings = state.backend.settings
     val vaults = state.vaultsOf(VaultKindUi.TOTP)
     val filter = state.authVault
     LaunchedEffect(state.liveRevision(), retry) {
         while (true) {
-            runCatching { state.backend.totpCodes(nowSeconds()) }
+            catching { state.backend.totpCodes(nowSeconds()) }
                 .onSuccess { codes = it; error = null }
                 .onFailure { e -> error = describe(e); if (codes == null) codes = emptyList() }
             // After an error it waits for "Try again" instead of asking every second.
@@ -121,6 +121,7 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
             selected.keys.size,
             onClose = { selected.clear() },
             onAll = { selected.all(shown.orEmpty().map(keyOf)) },
+            total = shown.orEmpty().size,
             actions = buildList {
                 if (one != null) {
                     add(SelAction(Icons.Filled.Edit, stringResource(Res.string.a_rename)) { selected.clear(); renaming = one })

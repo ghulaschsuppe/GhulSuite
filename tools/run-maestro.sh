@@ -36,4 +36,5 @@ if [ "${GHUL_TEST_SERVERS:-0}" = 1 ]; then
   flows="$(dirname "$0")/../app/maestro/server"
   timeout 600 maestro test -e GHUL_SERVER="$server" "$flows/1-drive.yaml" --format junit --output "$out/report-server-drive.xml" --test-output-dir "$out"
   timeout 600 maestro test -e GHUL_SERVER="$server" "$flows/2-mail.yaml" --format junit --output "$out/report-server-mail.xml" --test-output-dir "$out"
+  timeout 900 maestro test -e GHUL_SERVER="$server" "$flows/3-sync-share.yaml" --format junit --output "$out/report-server-sync-share.xml" --test-output-dir "$out"
 fi

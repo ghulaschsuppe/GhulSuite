@@ -98,7 +98,7 @@ fun SetupScreen(state: AppState) {
     }
     val openFile = rememberOpenFile { file ->
         scope.launch {
-            runCatching { backend.inspectFile(file.bytes) }
+            catching { backend.inspectFile(file.bytes) }
                 .onSuccess { info ->
                     if (info.kind == "suite") {
                         error = isSuiteFile

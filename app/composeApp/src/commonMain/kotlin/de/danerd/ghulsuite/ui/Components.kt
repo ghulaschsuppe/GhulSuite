@@ -541,23 +541,7 @@ fun BusyBanner(state: AppState) {
             Banner(Icons.Filled.CloudOff, stringResource(Res.string.sync_offline_banner))
         }
     }
-    if (!state.busy) return
-    val color = if (state.touchNeeded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
-        color = if (state.touchNeeded) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-    ) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = color)
-            Spacer(Modifier.width(12.dp))
-            Text(
-                stringResource(if (state.touchNeeded) Res.string.s_touch_key else Res.string.s_busy),
-                color = color,
-                fontWeight = FontWeight.SemiBold,
-            )
-        }
-    }
+    // The running action itself is shown in front of everything (BusyOverlay).
 }
 
 @Composable

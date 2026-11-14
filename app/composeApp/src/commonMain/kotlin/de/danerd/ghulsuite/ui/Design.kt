@@ -20,6 +20,8 @@ import androidx.compose.ui.draw.shadow
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.a_back
 import de.danerd.ghulsuite.resources.a_lock_now
+import de.danerd.ghulsuite.resources.s_busy
+import de.danerd.ghulsuite.resources.s_touch_key
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -36,6 +38,9 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -58,6 +63,7 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -264,7 +270,7 @@ fun OutlinedTextField(
                     enabled = enabled && !readOnly,
                     interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                     indication = null,
-                ) { runCatching { focus.requestFocus() } }
+                ) { catching { focus.requestFocus() } }
                 .then(if (isError) Modifier.background(t.danger.copy(alpha = 0.06f)) else Modifier)
                 .padding(start = 16.dp, end = if (trailingIcon != null) 4.dp else 16.dp, top = 12.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -306,6 +312,52 @@ fun OutlinedTextField(
     }
 }
 
+// --- Busy: in front of everything -----------------------------------------------------------------
+
+/** Something is running (state.busy), and whether the security key waits for a touch. */
+class BusyState(val busy: Boolean, val touch: Boolean)
+
+val LocalBusy = androidx.compose.runtime.compositionLocalOf { BusyState(false, false) }
+
+/**
+ * While an action runs: nothing behind can be tapped twice, and after a moment a card in the
+ * middle says that something happens (or that the key waits for a touch). Drawn on top of the
+ * screens and inside every sheet and dialog (they are windows of their own).
+ */
+@Composable
+fun BusyOverlay(modifier: Modifier = Modifier) {
+    val b = LocalBusy.current
+    if (!b.busy) return
+    var show by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(250)
+        show = true
+    }
+    val t = g
+    Box(
+        modifier.fillMaxSize()
+            // Takes every touch: nothing behind starts a second time.
+            .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } } }
+            .then(if (show || b.touch) Modifier.background(Color.Black.copy(alpha = 0.45f)) else Modifier),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (show || b.touch) {
+            Row(
+                Modifier.padding(24.dp).shadow(16.dp, RoundedCornerShape(20.dp)).clip(RoundedCornerShape(20.dp))
+                    .background(if (b.touch) t.accentSoft else t.surface2).padding(horizontal = 22.dp, vertical = 18.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                androidx.compose.material3.CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 3.dp, color = t.accent)
+                Text(
+                    org.jetbrains.compose.resources.stringResource(if (b.touch) Res.string.s_touch_key else Res.string.s_busy),
+                    color = t.fg, fontWeight = FontWeight.SemiBold, fontSize = 16.sp,
+                )
+            }
+        }
+    }
+}
+
 // --- Sheets (.sheet: from the bottom, handle, 28 dp corners) -------------------------------------
 
 /** Bottom sheet in the look of the design preview: handle, title, content. */
@@ -332,6 +384,7 @@ fun GhulSheet(onDismissRequest: () -> Unit, title: String? = null, content: @Com
                         content()
                     }
                 }
+                BusyOverlay(Modifier.matchParentSize())
             }
         }
         return
@@ -347,14 +400,17 @@ fun GhulSheet(onDismissRequest: () -> Unit, title: String? = null, content: @Com
             Box(Modifier.padding(top = 10.dp, bottom = 14.dp).size(36.dp, 4.dp).clip(RoundedCornerShape(2.dp)).background(t.line))
         },
     ) {
-        CompositionLocalProvider(LocalOnCard provides true) {
-            Column(
-                Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 28.dp).navigationBarsPadding(),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                if (title != null) SheetTitle(title)
-                content()
+        Box {
+            CompositionLocalProvider(LocalOnCard provides true) {
+                Column(
+                    Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 28.dp).navigationBarsPadding(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    if (title != null) SheetTitle(title)
+                    content()
+                }
             }
+            BusyOverlay(Modifier.matchParentSize())
         }
     }
 }
@@ -781,7 +837,7 @@ fun GhulSlider(value: Float, onValueChange: (Float) -> Unit, valueRange: ClosedF
 /** A QR code, dark on white with a quiet zone, for scanning from another device. */
 @Composable
 fun QrImage(text: String, modifier: Modifier = Modifier) {
-    val modules = androidx.compose.runtime.remember(text) { runCatching { qrModules(text) }.getOrDefault(emptyList()) }
+    val modules = androidx.compose.runtime.remember(text) { catching { qrModules(text) }.getOrDefault(emptyList()) }
     Box(modifier.clip(RoundedCornerShape(16.dp)).background(Color.White).padding(16.dp)) {
         androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().aspectRatio(1f)) {
             val n = modules.size

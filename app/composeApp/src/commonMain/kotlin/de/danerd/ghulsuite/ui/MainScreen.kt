@@ -108,7 +108,7 @@ fun GhulSuiteApp(state: AppState) {
                 val wide = maxWidth >= 840.dp
                 val undoLabel = stringResource(Res.string.a_undo)
                 SideEffect { state.wide = wide; state.undoLabel = undoLabel }
-                CompositionLocalProvider(LocalWide provides wide) {
+                CompositionLocalProvider(LocalWide provides wide, LocalBusy provides BusyState(state.busy, state.touchNeeded)) {
                     // One place for messages: the main screen on phones shows them above its own bar,
                     // everywhere else this outer host shows them (never both, which doubled every message).
                     val mainHasHost = state.vaultExists && !state.showStart && unlocked && !wide
@@ -119,6 +119,8 @@ fun GhulSuiteApp(state: AppState) {
                             else -> MainScreen(state, wide, maxWidth)
                         }
                     }
+                    // A running action, in front of the screens (sheets show it themselves).
+                    BusyOverlay()
                     // While unlocking waits for the security key to be plugged in.
                     val waiting by state.backend.waitingForKey.collectAsState()
                     if (waiting) KeyWaitingBanner(Modifier.align(Alignment.BottomCenter))

@@ -80,16 +80,17 @@ fun AreaContext(state: AppState) {
         label = when (state.tab) {
             Tab.PASS -> state.vaults.firstOrNull { it.id == state.passVault }?.name ?: allVaults
             Tab.AUTH -> {
-                val n = runCatching { state.backend.totpCodes(nowSeconds()) }.getOrDefault(emptyList()).count { state.authVault == null || it.vaultId == state.authVault }
+                val n = catching { state.backend.totpCodes(nowSeconds()) }.getOrDefault(emptyList()).count { state.authVault == null || it.vaultId == state.authVault }
                 (state.vaults.firstOrNull { it.id == state.authVault }?.name ?: allAccounts) + " · " + accountsWord.replace("%1\$s", n.toString())
             }
             Tab.DRIVE -> {
-                val st = runCatching { net.driveStatus() }.getOrNull()
-                val srv = runCatching { net.servers() }.getOrDefault(emptyList()).firstOrNull { it.id == st?.serverId }
+                val st = catching { net.driveStatus() }.getOrNull()
+                // Drive's own server is not in the suite's list (only the sync servers are).
+                val srv = if (st?.serverId == null) null else catching { net.driveStorage().server }.getOrNull()
                 if (srv == null) notSet else "${srv.name} · $myFiles"
             }
             Tab.MAIL -> {
-                val acc = runCatching { net.mailAccounts() }.getOrDefault(emptyList()).firstOrNull { it.id == state.mailAccount }
+                val acc = catching { net.mailAccounts() }.getOrDefault(emptyList()).firstOrNull { it.id == state.mailAccount }
                 when {
                     state.mailAccount == ALL_INBOXES -> allInboxes
                     acc == null -> notSet
@@ -166,10 +167,10 @@ private fun DriveSheet(state: AppState, close: () -> Unit) {
     var status by remember { mutableStateOf<DriveStatusUi?>(null) }
     var servers by remember { mutableStateOf<List<ServerUi>>(emptyList()) }
     LaunchedEffect(Unit) {
-        status = runCatching { net.driveStatus() }.getOrNull()
-        servers = runCatching { net.servers() }.getOrDefault(emptyList())
+        status = catching { net.driveStatus() }.getOrNull()
+        servers = listOfNotNull(catching { net.driveStorage().server }.getOrNull())
     }
-    val srv = servers.firstOrNull { it.id == status?.serverId }
+    val srv = servers.firstOrNull()
     GhulSheet(close, stringResource(Res.string.ctx_storage)) {
         SheetList {
             if (srv != null) {
@@ -192,8 +193,8 @@ private fun MailboxSheet(state: AppState, close: () -> Unit) {
     var accounts by remember { mutableStateOf<List<MailAccountUi>>(emptyList()) }
     var folders by remember { mutableStateOf<List<MailFolderUi>>(emptyList()) }
     LaunchedEffect(state.mailAccount) {
-        accounts = runCatching { net.mailAccounts() }.getOrDefault(emptyList())
-        folders = state.mailAccount?.let { runCatching { net.mailFolders(it) }.getOrDefault(emptyList()) } ?: emptyList()
+        accounts = catching { net.mailAccounts() }.getOrDefault(emptyList())
+        folders = state.mailAccount?.let { catching { net.mailFolders(it) }.getOrDefault(emptyList()) } ?: emptyList()
     }
     val t = g
     GhulSheet(close, stringResource(Res.string.ctx_mailbox)) {
@@ -218,8 +219,8 @@ private fun MailboxSheet(state: AppState, close: () -> Unit) {
         var showDrafts by remember { mutableStateOf(false) }
         var showScheduled by remember { mutableStateOf(false) }
         LaunchedEffect(Unit) {
-            drafts = runCatching { net.mailDrafts() }.getOrDefault(emptyList())
-            scheduled = runCatching { net.mailScheduled() }.getOrDefault(emptyList())
+            drafts = catching { net.mailDrafts() }.getOrDefault(emptyList())
+            scheduled = catching { net.mailScheduled() }.getOrDefault(emptyList())
         }
         if (accounts.size > 1) {
             Pill(state.mailAccount == ALL_INBOXES, { Icon(Icons.Filled.Inbox, null, Modifier.size(20.dp), tint = if (state.mailAccount == ALL_INBOXES) t.accent else t.fg) },

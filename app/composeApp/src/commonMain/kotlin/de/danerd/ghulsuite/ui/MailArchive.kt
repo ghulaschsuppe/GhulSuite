@@ -60,11 +60,11 @@ fun MailArchiveSection(state: AppState) {
     var clearCopy by remember { mutableStateOf(false) }
     var trashFor by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(reload, state.liveRevision()) {
-        status = runCatching { net.archiveStatus() }.onFailure { error = describe(it) }.getOrNull()
-        accounts = runCatching { net.mailAccounts() }.getOrDefault(emptyList())
+        status = catching { net.archiveStatus() }.onFailure { error = describe(it) }.getOrNull()
+        accounts = catching { net.mailAccounts() }.getOrDefault(emptyList())
         val s = status
         counts = if (s != null && s.mode != ArchiveModeUi.NONE) {
-            s.options.accounts.associateWith { a -> runCatching { net.archiveCount(a) }.getOrNull() ?: MailArchiveCountUi(0, 0, 0) }
+            s.options.accounts.associateWith { a -> catching { net.archiveCount(a) }.getOrNull() ?: MailArchiveCountUi(0, 0, 0) }
         } else {
             emptyMap()
         }
@@ -325,7 +325,7 @@ fun MailArchiveSection(state: AppState) {
 @Composable
 private fun ClearCopyDialog(state: AppState, onDismiss: () -> Unit, onDone: () -> Unit) {
     val net = state.backend.net
-    val only by produceState<Boolean?>(null) { value = runCatching { net.archiveOnlyCopy() }.getOrDefault(true) }
+    val only by produceState<Boolean?>(null) { value = catching { net.archiveOnlyCopy() }.getOrDefault(true) }
     var typed by remember { mutableStateOf("") }
     val word = stringResource(Res.string.archive_clear_word)
     AlertDialog(
@@ -354,7 +354,7 @@ private fun ArchiveTrashSheet(state: AppState, accountId: String, onDismiss: () 
     val net = state.backend.net
     var list by remember { mutableStateOf<List<ArchivedMailUi>?>(null) }
     var reload by remember { mutableStateOf(0) }
-    LaunchedEffect(reload) { list = runCatching { net.archiveTrash(accountId) }.getOrDefault(emptyList()) }
+    LaunchedEffect(reload) { list = catching { net.archiveTrash(accountId) }.getOrDefault(emptyList()) }
     GhulSheet(onDismiss, stringResource(Res.string.archive_trash_title)) {
         Hint(stringResource(Res.string.archive_trash_hint))
         val l = list
@@ -388,11 +388,11 @@ fun ArchivedMails(state: AppState, accountId: String, folder: String, offline: B
     var page by remember(accountId, folder) { mutableStateOf<List<ArchivedMailUi>>(emptyList()) }
     var total by remember(accountId, folder) { mutableStateOf(0) }
     LaunchedEffect(accountId, folder, offline, state.liveRevision()) {
-        val st = runCatching { net.archiveStatus() }.getOrNull()
+        val st = catching { net.archiveStatus() }.getOrNull()
         if (st == null || st.mode == ArchiveModeUi.NONE || accountId !in st.options.accounts) {
             page = emptyList(); total = 0; return@LaunchedEffect
         }
-        runCatching { net.archiveList(accountId, folder, 0, 50, offline) }.onSuccess { page = it.mails; total = it.total }
+        catching { net.archiveList(accountId, folder, 0, 50, offline) }.onSuccess { page = it.mails; total = it.total }
     }
     if (page.isEmpty()) return
     SectionLabel(stringResource(Res.string.archive_section, total.toString()))
@@ -433,8 +433,8 @@ fun MailArchiveReadScreen(state: AppState, accountId: String, folder: String, ke
     val save = rememberSaveFile { ok -> if (ok) state.message(savedMsg) }
     val ref = ArchiveRefUi(key, folder)
     LaunchedEffect(key) {
-        runCatching { net.archiveGet(accountId, folder, key) }.onSuccess { message = it }.onFailure { error = describe(it) }
-        runCatching { net.archiveSetSeen(accountId, listOf(ref), true) }
+        catching { net.archiveGet(accountId, folder, key) }.onSuccess { message = it }.onFailure { error = describe(it) }
+        catching { net.archiveSetSeen(accountId, listOf(ref), true) }
     }
     val replyPrefix = stringResource(Res.string.mail_re)
     val forwardPrefix = stringResource(Res.string.mail_fwd)

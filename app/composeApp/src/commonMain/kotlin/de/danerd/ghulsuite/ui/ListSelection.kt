@@ -54,7 +54,7 @@ class SelAction(val icon: ImageVector, val label: String, val danger: Boolean = 
  * in the style of all action sheets.
  */
 @Composable
-fun SelectionHeader(count: Int, onClose: () -> Unit, onAll: () -> Unit, actions: List<SelAction>) {
+fun SelectionHeader(count: Int, onClose: () -> Unit, onAll: () -> Unit, actions: List<SelAction>, total: Int = -1) {
     val t = g
     var more by remember { mutableStateOf(false) }
     val ordered = actions.filter { !it.danger } + actions.filter { it.danger }
@@ -68,7 +68,10 @@ fun SelectionHeader(count: Int, onClose: () -> Unit, onAll: () -> Unit, actions:
     ) {
         IconButton(onClick = onClose) { Icon(Icons.Filled.Close, stringResource(Res.string.a_cancel), tint = t.fg) }
         Text(title, Modifier.weight(1f), fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = t.fg, maxLines = 1)
-        IconButton(onClick = onAll) { Icon(Icons.Filled.SelectAll, stringResource(Res.string.a_select_all), tint = t.fg) }
+        // "Select all" only while there is something left to select (else the tap would show nothing).
+        if (total < 0 || count < total) {
+            IconButton(onClick = onAll) { Icon(Icons.Filled.SelectAll, stringResource(Res.string.a_select_all), tint = t.fg) }
+        }
         for (a in icons) {
             IconButton(onClick = a.onClick, enabled = count > 0) { Icon(a.icon, a.label, tint = if (a.danger) t.danger else t.fg) }
         }

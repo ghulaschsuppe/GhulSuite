@@ -108,9 +108,9 @@ fun SettingsScreen(state: AppState, padding: PaddingValues) {
     var servers by remember { mutableStateOf<List<ServerUi>>(emptyList()) }
     var sync by remember { mutableStateOf(SyncStatusUi(null, 0)) }
     LaunchedEffect(state.liveRevision()) {
-        slots = runCatching { backend.slots() }.getOrDefault(emptyList())
-        servers = runCatching { backend.net.servers() }.getOrDefault(emptyList())
-        sync = runCatching { backend.net.syncStatus() }.getOrDefault(SyncStatusUi(null, 0))
+        slots = catching { backend.slots() }.getOrDefault(emptyList())
+        servers = catching { backend.net.servers() }.getOrDefault(emptyList())
+        sync = catching { backend.net.syncStatus() }.getOrDefault(SyncStatusUi(null, 0))
     }
     val open = { p: SetPage -> state.push(Screen.SettingsPage(p)) }
     val keys = slots.count { it.type == SlotType.SECURITY_KEY }

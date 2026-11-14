@@ -123,7 +123,7 @@ fun MailScreen(state: AppState, padding: PaddingValues) {
     val net = state.backend.net
     var accounts by remember { mutableStateOf<List<MailAccountUi>?>(null) }
     LaunchedEffect(state.liveRevision()) {
-        accounts = runCatching { net.mailAccounts() }.getOrDefault(emptyList())
+        accounts = catching { net.mailAccounts() }.getOrDefault(emptyList())
         val list = accounts.orEmpty()
         if (state.mailAccount == null || (state.mailAccount != ALL_INBOXES && list.none { it.id == state.mailAccount })) {
             state.mailAccount = list.firstOrNull()?.id
@@ -199,7 +199,7 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
     }
     LaunchedEffect(key, reload, filter == "flagged", state.liveRevision(), state.mailRefreshTick) {
         loading = true
-        runCatching { load() }
+        catching { load() }
             .onSuccess { (t, items) -> messages = items; total = t; error = null; searching = false }
             .onFailure { error = describe(it) }
         loading = false
@@ -214,7 +214,7 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
         if (!visible || query.isNotBlank()) return@LaunchedEffect
         while (true) {
             kotlinx.coroutines.delay(MAIL_REFRESH_MS)
-            runCatching { load() }.onSuccess { (t, items) ->
+            catching { load() }.onSuccess { (t, items) ->
                 if (!searching && (t != total || items.firstOrNull()?.m?.uid != messages.firstOrNull()?.m?.uid)) {
                     messages = items
                     total = t
@@ -235,7 +235,7 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
     fun delete(list: List<MailItem>) = remove(list, trashMsg) { net.mailDelete(it.accountId, folder, it.m.uid) }
     fun archive(list: List<MailItem>) = scope.launch {
         // Without an archive folder there is nothing to archive into: it says so, nothing happens.
-        val targets = list.associateWith { net.runCatching { mailFolders(it.accountId) }.getOrDefault(emptyList()).firstOrNull { f -> f.role == "archive" } }
+        val targets = list.associateWith { net.catching { mailFolders(it.accountId) }.getOrDefault(emptyList()).firstOrNull { f -> f.role == "archive" } }
         val todo = list.filter { targets[it]?.name != folder }
         if (todo.any { targets[it] == null }) state.messageRes(Res.string.mail_no_archive)
         else if (todo.isNotEmpty()) remove(todo, archivedMsg) { net.mailMove(it.accountId, folder, it.m.uid, targets.getValue(it)!!.name) }
@@ -244,7 +244,7 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
         if (left && swipeLeft == 0) return archive(listOf(item)).let {}
         if (left && swipeLeft == 1) return delete(listOf(item))
         scope.launch {
-            runCatching { net.mailSetSeen(item.accountId, folder, item.m.uid, if (left) true else !item.m.seen) }.onFailure { state.message(describe(it)) }
+            catching { net.mailSetSeen(item.accountId, folder, item.m.uid, if (left) true else !item.m.seen) }.onFailure { state.message(describe(it)) }
             reload++
         }
     }
@@ -261,7 +261,7 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
     var deleteAll by remember { mutableStateOf(false) }
     var emptying by remember { mutableStateOf(false) }
     val folderRole by produceState("", key) {
-        value = single?.let { a -> runCatching { net.mailFolders(a.id) }.getOrNull()?.firstOrNull { it.name == folder }?.role } ?: ""
+        value = single?.let { a -> catching { net.mailFolders(a.id) }.getOrNull()?.firstOrNull { it.name == folder }?.role } ?: ""
     }
     val doneMsg = stringResource(Res.string.mail_bulk_done)
     // Runs an action on every mail of the folder, then leaves the selection.
@@ -288,6 +288,7 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
             if (wholeFolder) total else selected.keys.size,
             onClose = { selected.clear() },
             onAll = { selected.all(listed.map(keyOf)) },
+            total = listed.size,
             actions = buildList {
                 add(SelAction(if (anyUnread) Icons.Filled.MarkEmailRead else Icons.Filled.MarkEmailUnread,
                     stringResource(if (anyUnread) Res.string.a_mark_read else Res.string.a_mark_unread)) {
@@ -458,7 +459,7 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
         )
     }
     if (movingAll && single != null) {
-        val folders by produceState(emptyList<MailFolderUi>(), single.id) { value = runCatching { net.mailFolders(single.id) }.getOrDefault(emptyList()) }
+        val folders by produceState(emptyList<MailFolderUi>(), single.id) { value = catching { net.mailFolders(single.id) }.getOrDefault(emptyList()) }
         GhulSheet({ movingAll = false }, stringResource(Res.string.a_move)) {
             SheetList {
                 folders.filter { it.name != folder }.forEachIndexed { i, f ->
@@ -472,7 +473,7 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
     }
     moving?.let { list ->
         val account = list.first().accountId
-        val folders by produceState(emptyList<MailFolderUi>(), account) { value = runCatching { net.mailFolders(account) }.getOrDefault(emptyList()) }
+        val folders by produceState(emptyList<MailFolderUi>(), account) { value = catching { net.mailFolders(account) }.getOrDefault(emptyList()) }
         GhulSheet({ moving = null }, stringResource(Res.string.a_move)) {
             SheetList {
                 folders.filter { it.name != folder }.forEachIndexed { i, f ->
@@ -618,8 +619,8 @@ fun MailReadScreen(state: AppState, accountId: String, folder: String, uid: Long
     val savedMsg = stringResource(Res.string.msg_saved_file)
     val save = rememberSaveFile { ok -> if (ok) state.message(savedMsg) }
     LaunchedEffect(uid) {
-        runCatching { net.mailGet(accountId, folder, uid) }.onSuccess { message = it; state.refreshUnread() }.onFailure { error = describe(it) }
-        folders = runCatching { net.mailFolders(accountId) }.getOrDefault(emptyList())
+        catching { net.mailGet(accountId, folder, uid) }.onSuccess { message = it; state.refreshUnread() }.onFailure { error = describe(it) }
+        folders = catching { net.mailFolders(accountId) }.getOrDefault(emptyList())
     }
     val replyPrefix = stringResource(Res.string.mail_re)
     val forwardPrefix = stringResource(Res.string.mail_fwd)
@@ -629,7 +630,7 @@ fun MailReadScreen(state: AppState, accountId: String, folder: String, uid: Long
     fun quote(m: MailMessageUi) = "\n\n" + quoteHead.replace("%1\$s", m.from) + "\n" + m.text.lines().joinToString("\n") { "> $it" }
     fun re(s: String) = if (s.startsWith(replyPrefix, ignoreCase = true) || s.startsWith("Re:", true)) s else "$replyPrefix $s"
     val t = g
-    val accountName by produceState("", accountId) { value = runCatching { net.mailAccounts().firstOrNull { it.id == accountId }?.name }.getOrNull().orEmpty() }
+    val accountName by produceState("", accountId) { value = catching { net.mailAccounts().firstOrNull { it.id == accountId }?.name }.getOrNull().orEmpty() }
     val archive = folders.firstOrNull { it.role == "archive" }
     val inTrash = folders.any { it.role == "trash" && it.name == folder }
     val readKey = listOf(hiddenKey("mail", "$accountId/$folder", uid.toString()))
@@ -925,7 +926,7 @@ fun MailComposeScreen(state: AppState, draft: MailDraft, padding: PaddingValues)
     val attachments = remember { mutableStateListOf<OutgoingAttachmentUi>().apply { addAll(draft.attachments) } }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
-        accounts = runCatching { net.mailAccounts() }.getOrDefault(emptyList())
+        accounts = catching { net.mailAccounts() }.getOrDefault(emptyList())
         if (accountId == null) accountId = accounts.firstOrNull()?.id
     }
     val attach = rememberOpenFile { f -> attachments.add(OutgoingAttachmentUi(f.name, mimeOf(f.name), f.bytes)) }
@@ -935,7 +936,7 @@ fun MailComposeScreen(state: AppState, draft: MailDraft, padding: PaddingValues)
         if (to.isBlank() && subject.isBlank() && text.isBlank()) return@LaunchedEffect
         if (to == draft.to && subject == draft.subject && text == draft.text && attachments.size == draft.attachments.size && draftId.isEmpty()) return@LaunchedEffect
         kotlinx.coroutines.delay(1500)
-        draftId = runCatching {
+        draftId = catching {
             net.mailSaveDraft(de.danerd.ghulsuite.model.MailDraftUi(draftId, acc, to, cc, bcc, subject, text, draft.inReplyTo, attachments = attachments.toList()))
         }.getOrDefault(draftId)
     }
@@ -943,7 +944,7 @@ fun MailComposeScreen(state: AppState, draft: MailDraft, padding: PaddingValues)
     LaunchedEffect(to) {
         val last = to.substringAfterLast(',').trim()
         suggestions = if (last.length < 2 || last.contains('@') && last.substringAfter('@').contains('.')) emptyList()
-        else runCatching { net.mailContacts(last) }.getOrDefault(emptyList())
+        else catching { net.mailContacts(last) }.getOrDefault(emptyList())
     }
     val sentMsg = stringResource(Res.string.mail_sent_msg)
     // Encryption preview: looked up a moment after the recipients stop changing.
@@ -955,7 +956,7 @@ fun MailComposeScreen(state: AppState, draft: MailDraft, padding: PaddingValues)
             return@LaunchedEffect
         }
         kotlinx.coroutines.delay(700)
-        keys = runCatching { net.mailRecipientKeys(all) }.getOrNull()
+        keys = catching { net.mailRecipientKeys(all) }.getOrNull()
     }
 
     val t = g
@@ -971,7 +972,7 @@ fun MailComposeScreen(state: AppState, draft: MailDraft, padding: PaddingValues)
     fun send() {
         val acc = accountId ?: return
         val mail = OutgoingMailUi(acc, splitAddresses(to), splitAddresses(cc), splitAddresses(bcc), subject, text, draft.inReplyTo, attachments.toList(), pgp = pgp)
-        state.run(onError = { error = it }, block = { net.mailSend(mail); if (draftId.isNotEmpty()) runCatching { net.mailDeleteDraft(draftId) } }) {
+        state.run(onError = { error = it }, block = { net.mailSend(mail); if (draftId.isNotEmpty()) catching { net.mailDeleteDraft(draftId) } }) {
             state.message(sentMsg)
             state.pop()
         }
@@ -980,7 +981,7 @@ fun MailComposeScreen(state: AppState, draft: MailDraft, padding: PaddingValues)
     fun sendLater(atMillis: Long) {
         val acc = accountId ?: return
         val mail = OutgoingMailUi(acc, splitAddresses(to), splitAddresses(cc), splitAddresses(bcc), subject, text, draft.inReplyTo, attachments.toList(), pgp = pgp)
-        state.run(onError = { error = it }, block = { net.mailSchedule(mail, atMillis); if (draftId.isNotEmpty()) runCatching { net.mailDeleteDraft(draftId) } }) {
+        state.run(onError = { error = it }, block = { net.mailSchedule(mail, atMillis); if (draftId.isNotEmpty()) catching { net.mailDeleteDraft(draftId) } }) {
             state.message(scheduledMsg.replace("%1\$s", formatDateTime(atMillis)))
             state.pop()
         }
@@ -1127,7 +1128,7 @@ private fun ComposeLine(label: String, focus: androidx.compose.ui.focus.FocusReq
         // Tapping the label (or anywhere in the line) puts the cursor into the field.
         val tap = if (focus == null) Modifier else Modifier.clickable(
             interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null,
-        ) { runCatching { focus.requestFocus() } }
+        ) { catching { focus.requestFocus() } }
         Row(
             Modifier.fillMaxWidth().heightIn(min = 48.dp).then(tap).padding(vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -1322,7 +1323,7 @@ fun MailAccountsSection(state: AppState) {
     var accounts by remember { mutableStateOf<List<MailAccountUi>>(emptyList()) }
     var removing by remember { mutableStateOf<MailAccountUi?>(null) }
     var notifyTick by remember { mutableStateOf(0) }
-    LaunchedEffect(state.liveRevision()) { accounts = runCatching { net.mailAccounts() }.getOrDefault(emptyList()) }
+    LaunchedEffect(state.liveRevision()) { accounts = catching { net.mailAccounts() }.getOrDefault(emptyList()) }
     // Accounts with logins, signatures and keys live in the GhulMail file (all devices).
     // Like GhulDrive's storage: rows that open the form in a sheet, the page stays where it is.
     SectionCard(stringResource(Res.string.mail_accounts_all)) {
@@ -1445,7 +1446,7 @@ private fun MailKeysSection(state: AppState, accounts: List<MailAccountUi>) {
     var forgetting by remember { mutableStateOf<de.danerd.ghulsuite.model.MailKeyInfoUi?>(null) }
     var comparing by remember { mutableStateOf<de.danerd.ghulsuite.model.MailKeyInfoUi?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(state.liveRevision()) { known = runCatching { net.mailKnownKeys() }.getOrDefault(emptyList()) }
+    LaunchedEffect(state.liveRevision()) { known = catching { net.mailKnownKeys() }.getOrDefault(emptyList()) }
     val savedMsg = stringResource(Res.string.msg_saved_file)
     val save = rememberSaveFile { ok -> if (ok) state.message(savedMsg) }
     val importedMsg = stringResource(Res.string.mail_key_imported)

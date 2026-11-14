@@ -149,7 +149,7 @@ private fun ManualServerScreen(state: AppState, padding: PaddingValues) {
     var module by remember { mutableStateOf<PhpModuleUi?>(null) }
     // With a password: set up the SSH key automatically and do not store the password (default).
     var installKey by remember { mutableStateOf(true) }
-    LaunchedEffect(Unit) { publicKey = runCatching { net.sshPublicKey() }.getOrNull() }
+    LaunchedEffect(Unit) { publicKey = catching { net.sshPublicKey() }.getOrNull() }
     val effective = when (kind) {
         ServerKindUi.SFTP -> if (usePassword && !installKey) input else input.copy(password = null)
         else -> input
@@ -284,7 +284,7 @@ private fun PhpModuleFields(
     var uploadDir by remember { mutableStateOf("") }
     var uploaded by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(Unit) { servers = runCatching { net.servers() }.getOrDefault(emptyList()).filter { it.kind != ServerKindUi.PHP } }
+    LaunchedEffect(Unit) { servers = catching { net.servers() }.getOrDefault(emptyList()).filter { it.kind != ServerKindUi.PHP } }
     val savedMsg = stringResource(Res.string.php_saved)
     val save = rememberSaveFile { ok -> if (ok) state.message(savedMsg) }
 
@@ -364,8 +364,8 @@ fun ServersSection(state: AppState) {
         }
     }
     LaunchedEffect(state.liveRevision(), state.syncing) {
-        servers = runCatching { net.servers() }.getOrDefault(emptyList())
-        sync = runCatching { net.syncStatus() }.getOrDefault(SyncStatusUi(null, 0))
+        servers = catching { net.servers() }.getOrDefault(emptyList())
+        sync = catching { net.syncStatus() }.getOrDefault(SyncStatusUi(null, 0))
     }
 
     SectionCard(stringResource(Res.string.set_servers)) {
@@ -584,7 +584,7 @@ fun FetchFromServer(state: AppState, onCancel: () -> Unit) {
     var usePassword by remember { mutableStateOf(false) }
     var fingerprint by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    val deviceKey = remember { runCatching { backend.deviceSshKey() }.getOrNull() }
+    val deviceKey = remember { catching { backend.deviceSshKey() }.getOrNull() }
     // U7: SFTP (key or password), FTPS (password) or the PHP module (address and access key).
     val effective = when (input.kind) {
         ServerKindUi.SFTP -> if (usePassword) input else input.copy(password = null)

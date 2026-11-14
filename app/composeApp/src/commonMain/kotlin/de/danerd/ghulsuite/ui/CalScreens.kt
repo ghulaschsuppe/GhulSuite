@@ -244,7 +244,7 @@ private fun rememberCalData(state: AppState, from: Day, to: Day, extraQuery: Str
     )
     val rev = state.liveRevision()
     LaunchedEffect(rev, from, to, settings.calHidden, settings.calHolidays, settings.calRegion, extraQuery, retry) {
-        val cals = runCatching { cal.calendars() }.getOrElse { e ->
+        val cals = catching { cal.calendars() }.getOrElse { e ->
             data = CalData(data.calendars, data.occ, describe(e), retry = { retry++ })
             return@LaunchedEffect
         }
@@ -253,13 +253,13 @@ private fun rememberCalData(state: AppState, from: Day, to: Day, extraQuery: Str
         val calVault = state.vaultsOf(VaultKindUi.CAL).firstOrNull { it.available }
         if (cals.isEmpty() && calVault != null && !state.calSetupDone) {
             state.calSetupDone = true
-            runCatching { for ((n, c) in defaults) cal.saveCalendar(CalCalendarUi("", calVault.id, n, c, 15, 0)) }
+            catching { for ((n, c) in defaults) cal.saveCalendar(CalCalendarUi("", calVault.id, n, c, 15, 0)) }
             state.changed()
             return@LaunchedEffect
         }
         val hidden = settings.calHiddenSet()
         val region = if (settings.calHolidays && CalOccurrenceUi.HOLIDAYS !in hidden) settings.calRegion else ""
-        val occ = runCatching { cal.occurrences(from.toString(), to.toString(), region, lang) }.getOrElse { e ->
+        val occ = catching { cal.occurrences(from.toString(), to.toString(), region, lang) }.getOrElse { e ->
             data = CalData(cals, data.occ, describe(e), retry = { retry++ })
             return@LaunchedEffect
         }.filter { it.calendarId !in hidden }
@@ -809,7 +809,7 @@ private fun CalList(state: AppState, occ: List<CalOccurrenceUi>, query: String, 
         listOf(it.title, it.location, state.calNames[it.calendarId] ?: "").joinToString(" ").lowercase().contains(q)
     }
     val focus = remember { androidx.compose.ui.focus.FocusRequester() }
-    LaunchedEffect(state.calSearchTick) { if (state.calSearchTick > 0) runCatching { focus.requestFocus() } }
+    LaunchedEffect(state.calSearchTick) { if (state.calSearchTick > 0) catching { focus.requestFocus() } }
     SearchField(query, onQuery, Modifier.padding(bottom = 12.dp).focusRequester(focus), placeholder = stringResource(Res.string.cal_search))
     val groups = list.groupBy { if (it.startDay < from) from else it.startDay }.toSortedMap()
     if (groups.isEmpty()) {

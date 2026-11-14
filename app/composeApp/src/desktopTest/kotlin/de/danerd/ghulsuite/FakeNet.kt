@@ -51,8 +51,16 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
     override suspend fun removeServer(id: String) {}
     override suspend fun installSshKey(input: ServerInputUi, hostKey: String?) = hostKey?.let { "" } ?: "SHA256:fp"
     override suspend fun sshPublicKey() = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGhulSuiteBeispielSchluessel0123456789abcdef ghulsuite"
-    override suspend fun serverBrowse(serverId: String, path: String) =
-        if (path.isEmpty()) listOf("ghulsuite", "public_html") else listOf("teilen", "blog")
+    /** How long listing a folder takes (to tap on before it is done). */
+    var browseDelayMs = 0L
+    @Volatile var slowBrowsesDone = 0
+    override suspend fun serverBrowse(serverId: String, path: String): List<String> {
+        // Like the real backend: a blocking call on another thread, which is not interrupted by a
+        // cancellation; the cancellation arrives only when it is done.
+        val wait = browseDelayMs
+        if (wait > 0) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Thread.sleep(wait); slowBrowsesDone++ }
+        return if (path.isEmpty()) listOf("ghulsuite", "public_html") else listOf("teilen", "blog")
+    }
     override fun phpModuleCreate() = PhpModuleUi("ghulsuite-1a2b3c4d.php", "<?php // module", "00".repeat(32))
     override suspend fun phpModuleUpload(viaServerId: String, dir: String, module: PhpModuleUi) { calls += "phpUpload:$viaServerId:$dir" }
     override suspend fun shareSetup(serverId: String, dir: String, publicUrl: String) = listOf(
@@ -71,12 +79,24 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
     override suspend fun shareDriveToApps(files: List<DriveItemUi>) { calls += "toApps:${files.size}" }
     override suspend fun driveFilesForMail(files: List<DriveItemUi>) =
         files.filter { !it.isDir }.map { OutgoingAttachmentUi(it.name, "application/octet-stream", ByteArray(3)) }
-    override suspend fun syncStatus() = SyncStatusUi(if (configured) "s1" else null, now * 1000)
-    override suspend fun setSyncServer(id: String?) {}
+    /** The sync server as set through the screens (the fake starts with s1 when configured). */
+    var syncServer: String? = if (configured) "s1" else null
+    override suspend fun syncStatus() = SyncStatusUi(syncServer, now * 1000)
+    override suspend fun setSyncServer(id: String?) {
+        calls += "setSyncServer:$id"
+        syncServer = id
+    }
     override suspend fun syncNow() = SyncReportUi(1, 2, 0, 0, 0)
     override suspend fun adoptRemotePassword(password: String) = SyncReportUi(0, 0, 0, 0, 0)
 
-    override suspend fun driveStatus() = DriveStatusUi(if (configured) "s1" else null, 3, 12_345_678)
+    /** GhulDrive's storage; tests can give Drive a server of its own (not in the suite's list). */
+    var driveOwnServer: ServerUi? = null
+    override suspend fun driveStorage() = when {
+        driveOwnServer != null -> de.danerd.ghulsuite.model.DriveStorageUi(de.danerd.ghulsuite.model.DriveModeUi.OWN, driveOwnServer, syncServer != null)
+        configured && syncServer != null -> de.danerd.ghulsuite.model.DriveStorageUi(de.danerd.ghulsuite.model.DriveModeUi.SYNC, server, true)
+        else -> de.danerd.ghulsuite.model.DriveStorageUi(de.danerd.ghulsuite.model.DriveModeUi.NONE, null, false)
+    }
+    override suspend fun driveStatus() = DriveStatusUi(driveOwnServer?.id ?: if (configured) "s1" else null, 3, 12_345_678)
     override suspend fun driveSetup(serverId: String) {}
     override suspend fun driveList(folder: String?, refresh: Boolean) = listOf(
         DriveItemUi("d1", null, "Fotos", true, 0, now * 1000),

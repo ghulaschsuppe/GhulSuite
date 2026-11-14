@@ -2,6 +2,8 @@
 package de.danerd.ghulsuite
 
 import androidx.compose.runtime.CompositionLocalProvider
+import de.danerd.ghulsuite.model.ServerKindUi
+import de.danerd.ghulsuite.model.ServerUi
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.asSkiaBitmap
 import androidx.compose.ui.test.DesktopComposeUiTest
@@ -11,6 +13,7 @@ import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
@@ -370,6 +373,67 @@ class InteractionTest {
         // Without an updater (test versions, store installs): only the hint.
         app(setup = { push(Screen.SettingsPage(SetPage.ABOUT)) }) { _, _ ->
             waitFor("This version does not update itself: it is a test version, an own build or was installed from a store, which then brings the updates.")
+        }
+    }
+
+    /** Choosing the sync server must stick: it is saved and shown (bug: it stayed "Off"). */
+    @Test
+    fun choosingTheSyncServerSticks() {
+        app(setup = { push(Screen.SettingsPage(SetPage.SERVERS)) }, prepare = { (net as FakeNet).syncServer = null }) { _, fake ->
+            val net = fake.net as FakeNet
+            waitFor("Off")
+            text("Off").performScrollTo().performClick()
+            waitFor("Heimserver")
+            onAllNodesWithText("Heimserver", useUnmergedTree = true).onLast().performClick()
+            waitUntil(timeoutMillis = 10_000) { net.calls.contains("setSyncServer:s1") }
+            assertEquals("s1", net.syncServer)
+            // The row now names the server, not "Off".
+            waitUntil(timeoutMillis = 10_000) { !shown("Off") }
+            shot("sync-server-chosen")
+            // With a server, the controls of the synchronisation appear.
+            waitFor("Synchronise now")
+        }
+    }
+
+    /**
+     * Tapping the next folder while the last one is still loading: the loading is cancelled, and
+     * that is not an error (bug: "The coroutine scope left the composition" under the button).
+     */
+    @Test
+    fun browsingFoldersQuicklyShowsNoError() {
+        app(setup = { push(Screen.ShareSetup("s1")) }) { _, fake ->
+            val net = fake.net as FakeNet
+            // The server's share folder is public_html/teilen: its subfolders are listed.
+            waitFor("blog")
+            net.browseDelayMs = 1500
+            text("teilen").performClick()
+            // The old list is still shown while the folder loads: on to the next one at once.
+            text("blog").performClick()
+            waitFor("/public_html/teilen/teilen/blog")
+            // Both slow listings are done (the first one answers only now with its cancellation).
+            waitUntil(timeoutMillis = 10_000) { net.slowBrowsesDone >= 2 }
+            net.browseDelayMs = 0
+            waitFor("blog")
+            Thread.sleep(200)
+            waitForIdle()
+            assertTrue(onAllNodesWithText("composition", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isEmpty())
+            shot("share-setup-quick-browse")
+        }
+    }
+
+    /** GhulDrive with a server of its own (no synchronisation): the card and the header name it. */
+    @Test
+    fun driveWithItsOwnServerShowsIt() {
+        app(setup = { tab = Tab.DRIVE }, prepare = {
+            val n = net as FakeNet
+            n.syncServer = null
+            n.driveOwnServer = ServerUi("d1", "Drive-NAS", "nas.example.org", 22, "max", "drive", true, "SHA256:x", "/srv/drive",
+                ServerKindUi.SFTP, "", "")
+        }) { _, _ ->
+            waitFor("Drive-NAS")
+            assertFalse(shown("No server yet"))
+            assertFalse(shown("Not set up"))
+            shot("drive-own-server")
         }
     }
 }

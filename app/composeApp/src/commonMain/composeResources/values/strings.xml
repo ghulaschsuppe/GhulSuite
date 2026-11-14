@@ -1180,7 +1180,7 @@
     <string name="srvf_step_login">Login</string>
     <string name="srvf_step_folder">Choose folder</string>
     <string name="srvf_step_upload">Upload module</string>
-    <string name="srvf_step_test">Test connection</string>
+    <string name="srvf_step_test">Save</string>
     <string name="srvf_step_check">Check address</string>
     <string name="srvf_connected">Connected · %1$s</string>
     <string name="srvf_module_runs">Module runs at %1$s</string>
@@ -1605,4 +1605,12 @@
     <string name="core_rep_clock">The clock of this device is wrong. Please correct date and time.</string>
     <string name="core_rep_refused">The report was refused.</string>
     <string name="core_rep_unavailable">Sending reports is not available right now. You can copy or save the report instead.</string>
+    <string name="srvf_step_connect">Test connection</string>
+    <string name="srvf_connecting">Connecting…</string>
+    <string name="srvf_connect_ok">Connection works. Now choose the folder for your data.</string>
+    <string name="srvf_save">Save server</string>
+    <string name="srvf_saving">Saving…</string>
+    <string name="drive_no_server">No server yet</string>
+    <string name="drive_no_server_sub">GhulDrive has no server to store on yet.</string>
+    <string name="drive_choose_server">Choose server</string>
 </resources>

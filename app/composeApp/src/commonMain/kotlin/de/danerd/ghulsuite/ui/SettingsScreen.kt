@@ -135,7 +135,7 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
     var keyfileDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.liveRevision()) {
-        slots = runCatching { backend.slots() }.getOrDefault(emptyList())
+        slots = catching { backend.slots() }.getOrDefault(emptyList())
         ready = backend.quickUnlockReady()
     }
     val keyCount = slots.count { it.type == SlotType.SECURITY_KEY }
@@ -571,9 +571,9 @@ private fun AboutSection(state: AppState) {
     val imprintUrl = stringResource(Res.string.about_imprint_url)
     val privacyUrl = stringResource(Res.string.about_privacy_url)
     ListCard {
-        ListRow(stringResource(Res.string.about_site), "www.ghulsuite.de", trailing = { ChevronEnd() }) { runCatching { uri.openUri(siteUrl) } }
-        ListRow(stringResource(Res.string.about_imprint), divider = true, trailing = { ChevronEnd() }) { runCatching { uri.openUri(imprintUrl) } }
-        ListRow(stringResource(Res.string.about_privacy), stringResource(Res.string.about_privacy_sub), divider = true, trailing = { ChevronEnd() }) { runCatching { uri.openUri(privacyUrl) } }
+        ListRow(stringResource(Res.string.about_site), "www.ghulsuite.de", trailing = { ChevronEnd() }) { catching { uri.openUri(siteUrl) } }
+        ListRow(stringResource(Res.string.about_imprint), divider = true, trailing = { ChevronEnd() }) { catching { uri.openUri(imprintUrl) } }
+        ListRow(stringResource(Res.string.about_privacy), stringResource(Res.string.about_privacy_sub), divider = true, trailing = { ChevronEnd() }) { catching { uri.openUri(privacyUrl) } }
     }
     ListCard {
         ListRow(stringResource(Res.string.about_report), stringResource(Res.string.about_report_sub), trailing = { ChevronEnd() }) { sheet = "report" }

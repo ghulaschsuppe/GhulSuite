@@ -79,7 +79,7 @@ fun rememberMailAvailable(state: AppState): Boolean {
     var available by remember { mutableStateOf(false) }
     val enabled = state.backend.settings.moduleGhulMail
     LaunchedEffect(enabled, state.liveRevision()) {
-        available = enabled && runCatching { state.backend.net.mailAccounts() }.getOrDefault(emptyList()).isNotEmpty()
+        available = enabled && catching { state.backend.net.mailAccounts() }.getOrDefault(emptyList()).isNotEmpty()
     }
     return available && enabled
 }
@@ -100,7 +100,7 @@ fun ShareSheet(state: AppState, files: List<DriveItemUi>, onDismiss: () -> Unit,
     var result by remember { mutableStateOf<ShareInfoUi?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     val mail = rememberMailAvailable(state)
-    LaunchedEffect(Unit) { servers = runCatching { net.servers() }.getOrDefault(emptyList()).filter { it.canShare } }
+    LaunchedEffect(Unit) { servers = catching { net.servers() }.getOrDefault(emptyList()).filter { it.canShare } }
     val onlyFiles = files.none { it.isDir }
     val title = if (files.size == 1) files[0].name else stringResource(Res.string.share_n_items, files.size.toString())
 
@@ -297,8 +297,8 @@ fun SharesScreen(state: AppState, padding: PaddingValues) {
     var retry by remember { mutableStateOf(0) }
     val mail = rememberMailAvailable(state)
     LaunchedEffect(state.liveRevision(), retry) {
-        servers = runCatching { net.servers() }.getOrDefault(emptyList())
-        runCatching { net.shareList() }.onSuccess { shares = it; error = null }.onFailure { error = describe(it); if (shares == null) shares = emptyList() }
+        servers = catching { net.servers() }.getOrDefault(emptyList())
+        catching { net.shareList() }.onSuccess { shares = it; error = null }.onFailure { error = describe(it); if (shares == null) shares = emptyList() }
     }
     val withdrawnMsg = stringResource(Res.string.share_withdrawn)
     // Withdrawing asks nothing: the link is gone from the list at once, "Undo" brings it back.
@@ -350,7 +350,7 @@ fun ShareSetupScreen(state: AppState, serverId: String, padding: PaddingValues) 
     var error by remember { mutableStateOf<String?>(null) }
     var newDir by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        server = runCatching { net.servers() }.getOrDefault(emptyList()).firstOrNull { it.id == serverId }
+        server = catching { net.servers() }.getOrDefault(emptyList()).firstOrNull { it.id == serverId }
         server?.let { s ->
             if (s.shareDir.isNotEmpty()) path = s.shareDir
             if (s.shareUrl.isNotEmpty()) url = s.shareUrl
@@ -358,10 +358,8 @@ fun ShareSetupScreen(state: AppState, serverId: String, padding: PaddingValues) 
     }
     LaunchedEffect(path) {
         error = null
-        dirs = try {
-            net.serverBrowse(serverId, path)
-        } catch (e: Exception) {
-            error = e.message
+        dirs = catching { net.serverBrowse(serverId, path) }.getOrElse {
+            error = describe(it)
             emptyList()
         }
     }
@@ -442,7 +440,7 @@ fun DriveSettingsSection(state: AppState) {
     val net = state.backend.net
     val settings = state.backend.settings
     var status by remember { mutableStateOf<DriveStatusUi?>(null) }
-    LaunchedEffect(state.liveRevision()) { status = runCatching { net.driveStatus() }.getOrNull() }
+    LaunchedEffect(state.liveRevision()) { status = catching { net.driveStatus() }.getOrNull() }
     SectionCard(areaGroupTitle(de.danerd.ghulsuite.model.VaultKindUi.DRIVE)) {
         DriveStorageRow(state)
         status?.takeIf { it.serverId != null }?.let { Hint(stringResource(Res.string.drive_status, it.files.toString(), formatSize(it.bytes))) }

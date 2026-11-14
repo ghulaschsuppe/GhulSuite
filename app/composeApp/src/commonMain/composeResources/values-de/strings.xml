@@ -1180,7 +1180,7 @@
     <string name="srvf_step_login">Anmeldung</string>
     <string name="srvf_step_folder">Ordner wählen</string>
     <string name="srvf_step_upload">Modul hochladen</string>
-    <string name="srvf_step_test">Verbindung testen</string>
+    <string name="srvf_step_test">Speichern</string>
     <string name="srvf_step_check">Adresse prüfen</string>
     <string name="srvf_connected">Verbunden · %1$s</string>
     <string name="srvf_module_runs">Modul läuft unter %1$s</string>
@@ -1605,4 +1605,12 @@
     <string name="core_rep_clock">Die Uhr dieses Geräts geht falsch. Bitte Datum und Uhrzeit korrigieren.</string>
     <string name="core_rep_refused">Der Bericht wurde abgelehnt.</string>
     <string name="core_rep_unavailable">Senden ist gerade nicht möglich. Du kannst den Bericht stattdessen kopieren oder speichern.</string>
+    <string name="srvf_step_connect">Verbindung testen</string>
+    <string name="srvf_connecting">Wird verbunden…</string>
+    <string name="srvf_connect_ok">Verbindung steht. Jetzt den Ordner für deine Daten wählen.</string>
+    <string name="srvf_save">Server speichern</string>
+    <string name="srvf_saving">Wird gespeichert…</string>
+    <string name="drive_no_server">Noch kein Server</string>
+    <string name="drive_no_server_sub">GhulDrive hat noch keinen Server zum Speichern.</string>
+    <string name="drive_choose_server">Server wählen</string>
 </resources>

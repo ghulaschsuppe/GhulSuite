@@ -183,7 +183,7 @@ private fun AreaSheet(state: AppState, kind: VaultKindUi, onDismiss: () -> Unit)
         var own by remember { mutableStateOf(false) }
         LaunchedEffect(kind) {
             name = getString(when (kind) { VaultKindUi.PASS -> Res.string.area_pass_default; VaultKindUi.TOTP -> Res.string.area_auth_default; else -> Res.string.area_cal_default })
-            if (kind == VaultKindUi.DRIVE) storage = runCatching { state.backend.net.driveStorage() }.getOrNull()
+            if (kind == VaultKindUi.DRIVE) storage = catching { state.backend.net.driveStorage() }.getOrNull()
         }
         val syncOn = storage?.syncAvailable == true
         var useSync by remember(syncOn) { mutableStateOf(syncOn) }
@@ -282,7 +282,7 @@ fun DriveStorageRow(state: AppState) {
     var confirmSync by remember { mutableStateOf(false) }
     var own by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(state.liveRevision()) { storage = runCatching { net.driveStorage() }.getOrNull() }
+    LaunchedEffect(state.liveRevision()) { storage = catching { net.driveStorage() }.getOrNull() }
     val s = storage ?: return
     val server = s.server
     val sub = when (s.mode) {

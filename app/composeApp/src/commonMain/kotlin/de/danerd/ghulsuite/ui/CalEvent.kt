@@ -125,7 +125,7 @@ fun reminderText(m: Int, allDay: Boolean): String = when {
 @Composable
 private fun EnsureCalendars(state: AppState) {
     LaunchedEffect(Unit) {
-        if (state.calendars.isEmpty()) state.calendars = runCatching { state.backend.cal.calendars() }.getOrDefault(emptyList())
+        if (state.calendars.isEmpty()) state.calendars = catching { state.backend.cal.calendars() }.getOrDefault(emptyList())
     }
 }
 
@@ -157,13 +157,13 @@ fun CalEventScreen(state: AppState, id: String, day: String, padding: PaddingVal
     val names = rememberCalNames()
     val lang = stringResource(Res.string.cal_lang)
     LaunchedEffect(id, state.liveRevision()) {
-        runCatching { cal.event(id) }.onSuccess { e ->
+        catching { cal.event(id) }.onSuccess { e ->
             ev = e
-            here = if (e.zone.isEmpty()) null else runCatching { cal.occurrences(day, day, "", lang) }.getOrDefault(emptyList())
+            here = if (e.zone.isEmpty()) null else catching { cal.occurrences(day, day, "", lang) }.getOrDefault(emptyList())
                 .firstOrNull { it.eventId == id }?.let { it.start to it.end }
             next = if (e.repeat != CalRepeatUi.NONE) {
                 val from = (Day.parse(day) ?: today()).plus(1)
-                runCatching { cal.occurrences(from.toString(), from.plus(400).toString(), "", lang) }.getOrDefault(emptyList())
+                catching { cal.occurrences(from.toString(), from.plus(400).toString(), "", lang) }.getOrDefault(emptyList())
                     .filter { it.eventId == id }.take(3)
             } else emptyList()
         }.onFailure { gone = true }
@@ -230,7 +230,7 @@ fun CalEventScreen(state: AppState, id: String, day: String, padding: PaddingVal
                     SheetRow(e.location, stringResource(Res.string.cal_open_map), leading = { IconTile(Icons.Filled.Place, paletteColor(7)) },
                         end = { ChevronEnd() }) {
                         val q = urlEncode(e.location)
-                        runCatching { uri.openUri(if (state.backend.isDesktop) "https://www.openstreetmap.org/search?query=$q" else "geo:0,0?q=$q") }
+                        catching { uri.openUri(if (state.backend.isDesktop) "https://www.openstreetmap.org/search?query=$q" else "geo:0,0?q=$q") }
                     }
                     first = false
                 }
@@ -713,9 +713,9 @@ private fun LinkSheet(state: AppState, close: () -> Unit, onPick: (CalLinkUi) ->
     var query by remember { mutableStateOf("") }
     LaunchedEffect(kind) {
         items = when (kind) {
-            "pass" -> runCatching { state.backend.listEntries(null) }.getOrDefault(emptyList())
+            "pass" -> catching { state.backend.listEntries(null) }.getOrDefault(emptyList())
                 .map { CalLinkUi("pass", it.title, "${it.vaultId}|${it.id}") }
-            "drive" -> runCatching { state.backend.net.driveRecent(60) }.getOrDefault(emptyList()).filter { !it.isDir }
+            "drive" -> catching { state.backend.net.driveRecent(60) }.getOrDefault(emptyList()).filter { !it.isDir }
                 .map { CalLinkUi("drive", it.name, it.id) }
             "mail" -> state.mailLoaded.map { CalLinkUi("mail", it.m.subject.ifBlank { it.m.from }, "${it.accountId}|${state.mailFolder}|${it.m.uid}") }
             else -> emptyList()
@@ -752,7 +752,7 @@ fun CalQuickSheet(state: AppState, close: () -> Unit) {
     val names = rememberCalNames()
     var text by remember { mutableStateOf("") }
     val focus = remember { androidx.compose.ui.focus.FocusRequester() }
-    LaunchedEffect(Unit) { kotlinx.coroutines.delay(250); runCatching { focus.requestFocus() } }
+    LaunchedEffect(Unit) { kotlinx.coroutines.delay(250); catching { focus.requestFocus() } }
     val q = if (text.isBlank()) null else cal.quickParse(text, today().toString(), minutesOf(localNow()))
     val target = q?.let { calendarFor(state, it.calendarHint) }
     val calName = state.calendars.firstOrNull { it.id == target }
@@ -870,7 +870,7 @@ fun CalendarsSheet(state: AppState, close: () -> Unit) {
         val year = remember(state.revision) { mutableStateOf<Map<String, Int>>(emptyMap()) }
         val lang = stringResource(Res.string.cal_lang)
         LaunchedEffect(state.revision) {
-            year.value = runCatching { cal.occurrences(today().toString(), today().plus(365).toString(), "", lang) }.getOrDefault(emptyList())
+            year.value = catching { cal.occurrences(today().toString(), today().plus(365).toString(), "", lang) }.getOrDefault(emptyList())
                 .groupingBy { it.calendarId }.eachCount()
         }
         SheetList {
@@ -1026,7 +1026,7 @@ fun CalSettingsSection(state: AppState) {
     val settings = state.backend.settings
     val cal = state.backend.cal
     val lang = stringResource(Res.string.cal_lang)
-    val regions = remember(lang) { runCatching { cal.regions(lang) }.getOrDefault(emptyList()) }
+    val regions = remember(lang) { catching { cal.regions(lang) }.getOrDefault(emptyList()) }
     var regionSheet by remember { mutableStateOf(false) }
     var calSheet by remember { mutableStateOf(false) }
     val testText = stringResource(Res.string.cal_test_title)

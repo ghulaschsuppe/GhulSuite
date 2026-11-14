@@ -111,7 +111,7 @@ fun DriveScreen(state: AppState, padding: PaddingValues) {
     var loadError by remember { mutableStateOf<String?>(null) }
     var retry by remember { mutableStateOf(0) }
     LaunchedEffect(state.liveRevision(), retry) {
-        runCatching { net.driveStatus() }
+        catching { net.driveStatus() }
             .onSuccess { status = it; loadError = null }
             .onFailure { loadError = describe(it) }
     }
@@ -135,7 +135,7 @@ private fun DriveSetup(state: AppState) {
     var storage by remember { mutableStateOf<DriveStorageUi?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var own by remember { mutableStateOf(false) }
-    LaunchedEffect(state.liveRevision()) { storage = runCatching { net.driveStorage() }.getOrNull() }
+    LaunchedEffect(state.liveRevision()) { storage = catching { net.driveStorage() }.getOrNull() }
     val syncOn = storage?.syncAvailable == true
     ScreenColumn {
         BusyBanner(state)
@@ -205,14 +205,15 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
     var emptyTrash by remember { mutableStateOf(false) }
     PlatformBackHandler(enabled = LocalTabActive.current && view.isNotEmpty() && path.size == 1) { view = "" }
     LaunchedEffect(status.serverId) {
-        driveServer = runCatching { net.servers() }.getOrDefault(emptyList()).firstOrNull { it.id == status.serverId }
+        // Drive's own server is not in the suite's list: the storage of Drive names it in every case.
+        driveServer = catching { net.driveStorage().server }.getOrNull()
     }
 
     // Long press selects (as in every list); the bar on top acts on the chosen files.
     val selected = rememberListSelection()
     val selecting = selected.active
     LaunchedEffect(folder, query, reload, view, trashTick, state.liveRevision()) {
-        runCatching {
+        catching {
             when {
                 query.isNotBlank() -> net.driveSearch(query)
                 view == "recent" -> net.driveRecent(30)
@@ -224,12 +225,12 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
         }.onSuccess { items = it; error = null }.onFailure { error = describe(it) }
         loaded = true
         refresh = false
-        usage = runCatching { net.driveUsage() }.getOrNull()
+        usage = catching { net.driveUsage() }.getOrNull()
     }
     // Empties the trash of old items once per session (setting: after 30 days).
     LaunchedEffect(Unit) {
         val days = state.backend.settings.driveTrashDays
-        if (days > 0) runCatching { net.driveEmptyTrash(days) }.onSuccess { if (it > 0) reload++ }
+        if (days > 0) catching { net.driveEmptyTrash(days) }.onSuccess { if (it > 0) reload++ }
     }
 
     val uploadedMsg = stringResource(Res.string.drive_uploaded)
@@ -298,7 +299,7 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
     }
     var sharesActive by remember { mutableStateOf(0) }
     LaunchedEffect(state.liveRevision()) {
-        sharesActive = runCatching { net.shareList().size }.getOrDefault(0)
+        sharesActive = catching { net.shareList().size }.getOrDefault(0)
     }
     // What waits for "Undo" is gone from the list already. A file in the trash is another key
     // than the same file in its folder.
@@ -338,6 +339,7 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
             selected.keys.size,
             onClose = { selected.clear() },
             onAll = { selected.all(visible.map { it.id }) },
+            total = visible.size,
             actions = if (view == "trash") listOf(
                 SelAction(Icons.Filled.Restore, stringResource(Res.string.drive_restore)) {
                     val list = chosen
@@ -367,14 +369,19 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     IconTile(Icons.Filled.Dns, paletteColor(1))
                     Column(Modifier.weight(1f)) {
-                        Text(driveServer?.name ?: "…", fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(driveServer?.name ?: stringResource(Res.string.drive_no_server), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
-                            listOfNotNull(driveServer?.let { it.location.ifBlank { "~/" + it.base } + "/drive" }, stringResource(Res.string.drive_encrypted)).joinToString(" · "),
+                            if (driveServer == null) stringResource(Res.string.drive_no_server_sub)
+                            else listOfNotNull(driveServer?.let { it.location.ifBlank { "~/" + it.base } + "/drive" }, stringResource(Res.string.drive_encrypted)).joinToString(" · "),
                             fontSize = 13.sp, color = t.muted,
                         )
                     }
-                    if (error == null) Box(Modifier.clickable { refresh = true; reload++ }) { Tag(stringResource(Res.string.drive_current), t.ok, Icons.Filled.Check) }
+                    if (error == null && driveServer != null) Box(Modifier.clickable { refresh = true; reload++ }) { Tag(stringResource(Res.string.drive_current), t.ok, Icons.Filled.Check) }
                 }
+                // Without a server the numbers would say "0 files" next to the files in the list.
+                if (driveServer == null) {
+                    TextButton(onClick = { state.push(Screen.SettingsPage(SetPage.SERVERS)) }) { Text(stringResource(Res.string.drive_choose_server)) }
+                } else {
                 usage?.let { u ->
                     val total = (u.images + u.videos + u.audio + u.documents + u.other + u.trash + u.versions).coerceAtLeast(1)
                     Row(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(t.surface3)) {
@@ -394,6 +401,7 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
                         fontSize = 13.sp, color = t.muted,
                     )
                 } ?: Text(stringResource(Res.string.drive_status, status.files.toString(), formatSize(status.bytes)), fontSize = 13.sp, color = t.muted)
+                }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 for ((v, ic, label) in listOf(
@@ -547,7 +555,7 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
     }
     versionsOf?.let { item ->
         var list by remember(item.id) { mutableStateOf<List<de.danerd.ghulsuite.model.DriveVersionUi>>(emptyList()) }
-        LaunchedEffect(item.id) { list = runCatching { net.driveVersions(item.id) }.getOrDefault(emptyList()) }
+        LaunchedEffect(item.id) { list = catching { net.driveVersions(item.id) }.getOrDefault(emptyList()) }
         GhulSheet({ versionsOf = null }, stringResource(Res.string.drive_versions)) {
             HintText(item.name)
             SheetList {
@@ -706,7 +714,7 @@ fun NameDialog(title: String, initial: String, onDismiss: () -> Unit, onDone: (S
     var name by remember { mutableStateOf(initial) }
     // The cursor is in the field right away: there is nothing else to do in this dialog.
     val focus = remember { androidx.compose.ui.focus.FocusRequester() }
-    LaunchedEffect(Unit) { kotlinx.coroutines.delay(250); runCatching { focus.requestFocus() } }
+    LaunchedEffect(Unit) { kotlinx.coroutines.delay(250); catching { focus.requestFocus() } }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
@@ -727,7 +735,7 @@ private fun MoveDialog(state: AppState, item: DriveItemUi, onDismiss: () -> Unit
     var folders by remember { mutableStateOf<List<DriveItemUi>>(emptyList()) }
     val here = path.last().id
     LaunchedEffect(here) {
-        folders = runCatching { state.backend.net.driveList(here, false) }.getOrDefault(emptyList())
+        folders = catching { state.backend.net.driveList(here, false) }.getOrDefault(emptyList())
             .filter { it.isDir && it.id != item.id }
     }
     AlertDialog(

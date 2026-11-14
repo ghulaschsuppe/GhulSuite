@@ -66,7 +66,7 @@ fun MailHtmlView(state: AppState, m: MailMessageUi) {
         for (b in m.blocks) {
             val src = b.imageSrc
             if (b.kind != MailBlockKindUi.IMAGE || src.startsWith("cid:", ignoreCase = true) || src in remote) continue
-            remote[src] = runCatching { net.mailFetchImage(src).decodeToImageBitmap() }.getOrNull()
+            remote[src] = catching { net.mailFetchImage(src).decodeToImageBitmap() }.getOrNull()
         }
     }
     Column(Modifier.padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -103,7 +103,7 @@ fun MailHtmlView(state: AppState, m: MailMessageUi) {
                     Text(link, fontSize = 13.sp, color = t.muted)
                 }
             },
-            confirmButton = { TextButton(onClick = { linkToOpen = null; runCatching { uri.openUri(link) } }) { Text(stringResource(Res.string.mail_link_open)) } },
+            confirmButton = { TextButton(onClick = { linkToOpen = null; catching { uri.openUri(link) } }) { Text(stringResource(Res.string.mail_link_open)) } },
             dismissButton = { TextButton(onClick = { linkToOpen = null }) { Text(stringResource(Res.string.a_cancel)) } },
         )
     }
@@ -117,7 +117,7 @@ private fun HtmlBlock(b: MailBlockUi, m: MailMessageUi, remote: Map<String, Imag
         MailBlockKindUi.IMAGE -> {
             val cid = b.imageSrc.takeIf { it.startsWith("cid:", ignoreCase = true) }?.substring(4)
             val bitmap = if (cid != null) {
-                remember(m.uid, cid) { m.inlineImages[cid]?.let { runCatching { it.decodeToImageBitmap() }.getOrNull() } }
+                remember(m.uid, cid) { m.inlineImages[cid]?.let { catching { it.decodeToImageBitmap() }.getOrNull() } }
             } else {
                 remote[b.imageSrc]
             }

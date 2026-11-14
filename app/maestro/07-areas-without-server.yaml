@@ -23,13 +23,15 @@ name: GhulDrive and GhulMail without a server
 - extendedWaitUntil:
     visible: "Own server for GhulDrive"
     timeout: 10000
-# Too early: nothing is filled in yet.
-# The row sits below the public key box: scroll the sheet down to it first.
+# Too early: nothing is filled in yet. The first step is testing the login; there is no folder
+# to choose before that.
+# The button sits below the public key box: scroll the sheet down to it first.
 - scrollUntilVisible:
-    element: "Choose folder"
+    element: "Test connection"
     direction: DOWN
+- assertNotVisible: "Choose folder"
 - tapOn:
-    text: "Choose folder"
+    text: "Test connection"
     index: 0
 - assertVisible: "Enter server, user and password first\\."
 - scrollUntilVisible:
@@ -41,19 +43,19 @@ name: GhulDrive and GhulMail without a server
 - inputText: "ghul"
 - hideKeyboard
 - takeScreenshot: 07-drive-server
-# The row sits below the public key box: scroll the sheet down to it first.
 - scrollUntilVisible:
-    element: "Choose folder"
+    element: "Test connection"
     direction: DOWN
 - tapOn:
-    text: "Choose folder"
+    text: "Test connection"
     index: 0
+# The error stands in the form; no folder list opens for a server that cannot be reached.
 - extendedWaitUntil:
     visible: "No connection to the server: .*"
     timeout: 90000
+- assertNotVisible: "Choose folder"
 - takeScreenshot: 07-drive-no-server
-# Out of the folder list, then out of the server form (that also closes "Set up GhulDrive").
-- back
+# Out of the server form (that also closes "Set up GhulDrive").
 - back
 - extendedWaitUntil:
     visible: "GhulMail"

@@ -65,7 +65,7 @@ timeout 10 adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS 
 timeout 10 adb shell input keyevent 82 || true
 if [ "${SKIP_MAESTRO:-0}" != 1 ]; then
   log "Maestro-Abläufe starten"
-  timeout 2400 "$(dirname "$0")/run-maestro.sh" "$apk" "$out"
+  timeout 3300 "$(dirname "$0")/run-maestro.sh" "$apk" "$out"
   log "Maestro fertig"
   # What no flow can see: the reminder of the calendar flow as an alarm of the system.
   timeout 300 "$(dirname "$0")/check-reminders.sh" "$out"
