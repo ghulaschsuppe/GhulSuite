@@ -1150,6 +1150,17 @@
     <string name="cal_import_confirm_title">Take over the calendar file?</string>
     <string name="cal_import_confirm_text">Another app handed GhulSuite a calendar file with %1$s events. They will be added to the calendar “%2$s”.</string>
     <string name="cal_import_done">%1$s events imported</string>
+    <string name="mail_whole_folder">Select all %1$s mails in this folder</string>
+    <string name="mail_whole_folder_on">All %1$s mails in this folder are selected.</string>
+    <string name="mail_bulk_done">Done for %1$s mails.</string>
+    <string name="mail_delete_all_title">Delete %1$s mails?</string>
+    <string name="mail_delete_all_text">They go to the trash. There they can be brought back until it is emptied.</string>
+    <string name="mail_delete_all_final">They are in the trash and are deleted for good at the provider.</string>
+    <string name="mail_empty_folder">Empty folder</string>
+    <string name="mail_empty_title">Delete %1$s mails for good?</string>
+    <string name="mail_empty_text">All mails in this folder are deleted for good at the provider. This cannot be undone.</string>
+    <string name="mail_empty_yes">Delete for good</string>
+    <string name="mail_emptied">%1$s mails deleted for good.</string>
     <string name="restore_exists_title">A suite is already here</string>
     <string name="restore_exists_text">A backup never overwrites an existing suite. Choose an empty folder: the backup is restored there and the app uses that folder from then on. The existing suite stays as it is.</string>
     <string name="restore_choose_folder">Choose empty folder</string>

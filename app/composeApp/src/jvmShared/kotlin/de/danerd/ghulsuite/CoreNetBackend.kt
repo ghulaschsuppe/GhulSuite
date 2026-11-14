@@ -371,6 +371,24 @@ abstract class CoreNetBackend(protected val suite: () -> GhulSuite) : NetBackend
     override suspend fun mailDelete(accountId: String, folder: String, uid: Long) =
         io { suite().mailDelete(accountId, folder, uid.toUInt()) }
 
+    override suspend fun mailFolderUids(accountId: String, folder: String): List<Long> =
+        io { suite().mailFolderUids(accountId, folder).map { it.toLong() } }
+
+    override suspend fun mailSetSeenMany(accountId: String, folder: String, uids: List<Long>, seen: Boolean) =
+        io { suite().mailSetSeenMany(accountId, folder, uids.map { it.toUInt() }, seen) }
+
+    override suspend fun mailSetFlaggedMany(accountId: String, folder: String, uids: List<Long>, flagged: Boolean) =
+        io { suite().mailSetFlaggedMany(accountId, folder, uids.map { it.toUInt() }, flagged) }
+
+    override suspend fun mailMoveMany(accountId: String, folder: String, uids: List<Long>, target: String) =
+        io { suite().mailMoveMany(accountId, folder, uids.map { it.toUInt() }, target) }
+
+    override suspend fun mailDeleteMany(accountId: String, folder: String, uids: List<Long>) =
+        io { suite().mailDeleteMany(accountId, folder, uids.map { it.toUInt() }) }
+
+    override suspend fun mailEmptyFolder(accountId: String, folder: String): Int =
+        io { suite().mailEmptyFolder(accountId, folder).toInt() }
+
     override suspend fun mailSend(mail: OutgoingMailUi) = io {
         suite().mailSend(
             OutgoingMail(

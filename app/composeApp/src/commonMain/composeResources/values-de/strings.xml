@@ -1150,6 +1150,17 @@
     <string name="cal_import_confirm_title">Kalenderdatei übernehmen?</string>
     <string name="cal_import_confirm_text">Eine andere App hat GhulSuite eine Kalenderdatei mit %1$s Terminen übergeben. Sie werden in den Kalender „%2$s“ eingetragen.</string>
     <string name="cal_import_done">%1$s Termine importiert</string>
+    <string name="mail_whole_folder">Alle %1$s Mails in diesem Ordner auswählen</string>
+    <string name="mail_whole_folder_on">Alle %1$s Mails in diesem Ordner sind ausgewählt.</string>
+    <string name="mail_bulk_done">Erledigt für %1$s Mails.</string>
+    <string name="mail_delete_all_title">%1$s Mails löschen?</string>
+    <string name="mail_delete_all_text">Sie kommen in den Papierkorb. Dort lassen sie sich zurückholen, bis er geleert wird.</string>
+    <string name="mail_delete_all_final">Sie liegen im Papierkorb und werden beim Anbieter endgültig gelöscht.</string>
+    <string name="mail_empty_folder">Ordner leeren</string>
+    <string name="mail_empty_title">%1$s Mails endgültig löschen?</string>
+    <string name="mail_empty_text">Alle Mails in diesem Ordner werden beim Anbieter endgültig gelöscht. Das lässt sich nicht rückgängig machen.</string>
+    <string name="mail_empty_yes">Endgültig löschen</string>
+    <string name="mail_emptied">%1$s Mails endgültig gelöscht.</string>
     <string name="restore_exists_title">Hier liegt schon eine Suite</string>
     <string name="restore_exists_text">Eine Sicherung überschreibt nie eine vorhandene Suite. Wähle einen leeren Ordner, dorthin wird die Sicherung wiederhergestellt und die App nutzt ab dann diesen Ordner. Die vorhandene Suite bleibt unverändert.</string>
     <string name="restore_choose_folder">Leeren Ordner wählen</string>

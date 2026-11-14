@@ -119,6 +119,15 @@ interface NetBackend {
     suspend fun mailSetFlagged(accountId: String, folder: String, uid: Long, flagged: Boolean)
     suspend fun mailMove(accountId: String, folder: String, uid: Long, target: String)
     suspend fun mailDelete(accountId: String, folder: String, uid: Long)
+    /** All UIDs of a folder ("select all mails in this folder"). */
+    suspend fun mailFolderUids(accountId: String, folder: String): List<Long> = emptyList()
+    suspend fun mailSetSeenMany(accountId: String, folder: String, uids: List<Long>, seen: Boolean) {}
+    suspend fun mailSetFlaggedMany(accountId: String, folder: String, uids: List<Long>, flagged: Boolean) {}
+    suspend fun mailMoveMany(accountId: String, folder: String, uids: List<Long>, target: String) {}
+    /** To the trash; in the trash for good. */
+    suspend fun mailDeleteMany(accountId: String, folder: String, uids: List<Long>) {}
+    /** Deletes everything in the trash or spam folder for good; returns how many. */
+    suspend fun mailEmptyFolder(accountId: String, folder: String): Int = 0
     suspend fun mailSend(mail: OutgoingMailUi)
 
     // GhulMail extras (defaults for test fakes)
