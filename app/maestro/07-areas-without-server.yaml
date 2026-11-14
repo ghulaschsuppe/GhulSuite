@@ -5,7 +5,7 @@ name: GhulDrive and GhulMail without a server
 ---
 - launchApp:
     stopApp: false
-- tapOn: "Options"
+- tapOn: { id: "tab-settings" }
 - scrollUntilVisible:
     element: "Manage areas"
     direction: DOWN

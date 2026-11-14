@@ -6,7 +6,7 @@ appId: de.danerd.ghulsuite.dev
 name: GhulCal in depth
 ---
 - runFlow: home.yaml
-- tapOn: "GhulCal"
+- tapOn: { id: "tab-cal" }
 - extendedWaitUntil:
     visible: "Month"
     timeout: 30000

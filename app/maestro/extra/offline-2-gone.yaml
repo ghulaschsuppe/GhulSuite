@@ -14,7 +14,7 @@ name: Server weg 2
     visible: "Synchronise now"
     timeout: 60000
 - back
-- tapOn: "GhulDrive"
+- tapOn: { id: "tab-drive" }
 - extendedWaitUntil:
     visible: "No connection to the server.*|.*offline.*|.*Offline.*|Urlaub-Maestro"
     timeout: 180000
@@ -22,6 +22,6 @@ name: Server weg 2
 - assertNotVisible: "GHUL-DEV-ALARM.*"
 - takeScreenshot: x1-03-drive-offline
 # Still usable: the other areas open.
-- tapOn: "GhulPass"
+- tapOn: { id: "tab-pass" }
 - extendedWaitUntil: { visible: "Search entries", timeout: 15000 }
 - takeScreenshot: x1-04-pass-offline

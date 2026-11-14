@@ -5,7 +5,7 @@ appId: de.danerd.ghulsuite.dev
 name: All options pages
 ---
 - runFlow: home.yaml
-- tapOn: "Options"
+- tapOn: { id: "tab-settings" }
 - takeScreenshot: 10-00-overview
 - runFlow:
     file: open-option-full.yaml

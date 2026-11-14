@@ -4,7 +4,7 @@ name: GhulPass
 ---
 - launchApp:
     stopApp: false
-- tapOn: "GhulPass"
+- tapOn: { id: "tab-pass" }
 - tapOn: "Add"
 - extendedWaitUntil:
     visible: "New entry"

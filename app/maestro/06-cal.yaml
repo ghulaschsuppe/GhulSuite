@@ -6,7 +6,7 @@ name: GhulCal
 ---
 - launchApp:
     stopApp: false
-- tapOn: "GhulCal"
+- tapOn: { id: "tab-cal" }
 - extendedWaitUntil:
     visible: "Month"
     timeout: 30000

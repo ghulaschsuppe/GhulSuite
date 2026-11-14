@@ -5,7 +5,7 @@ appId: de.danerd.ghulsuite.dev
 name: GhulMail on a real server
 ---
 - runFlow: unlock.yaml
-- tapOn: "GhulMail"
+- tapOn: { id: "tab-mail" }
 - extendedWaitUntil:
     visible: "Add e-mail account"
     timeout: 20000

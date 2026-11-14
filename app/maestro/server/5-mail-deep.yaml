@@ -6,7 +6,7 @@ appId: de.danerd.ghulsuite.dev
 name: GhulMail in depth on a real server
 ---
 - runFlow: unlock.yaml
-- tapOn: "GhulMail"
+- tapOn: { id: "tab-mail" }
 - extendedWaitUntil:
     visible: "Encrypted message"
     timeout: 120000

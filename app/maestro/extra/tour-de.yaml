@@ -18,19 +18,19 @@ name: Rundgang auf Deutsch
     timeout: 3000
 - back
 # --- Areas ---
-- tapOn: "GhulPass"
+- tapOn: { id: "tab-pass" }
 - waitForAnimationToEnd: { timeout: 3000 }
 - takeScreenshot: ${PREFIX}-01-pass
-- tapOn: "GhulAuth"
+- tapOn: { id: "tab-auth" }
 - waitForAnimationToEnd: { timeout: 3000 }
 - takeScreenshot: ${PREFIX}-02-auth
-- tapOn: "GhulDrive"
+- tapOn: { id: "tab-drive" }
 - waitForAnimationToEnd: { timeout: 3000 }
 - takeScreenshot: ${PREFIX}-03-drive
-- tapOn: "GhulMail"
+- tapOn: { id: "tab-mail" }
 - waitForAnimationToEnd: { timeout: 3000 }
 - takeScreenshot: ${PREFIX}-04-mail
-- tapOn: "GhulCal"
+- tapOn: { id: "tab-cal" }
 - waitForAnimationToEnd: { timeout: 3000 }
 - takeScreenshot: ${PREFIX}-05-cal-monat
 - tapOn: "Woche"
@@ -43,7 +43,7 @@ name: Rundgang auf Deutsch
 - assertNotVisible: ".*[Cc]oroutine.*"
 - assertNotVisible: "GHUL-DEV-ALARM.*"
 # --- Every options page ---
-- tapOn: "Optionen"
+- tapOn: { id: "tab-settings" }
 - takeScreenshot: ${PREFIX}-10-optionen
 - runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Entsperren", SHOT: "${PREFIX}-11-entsperren" } }
 - runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Sperren", SHOT: "${PREFIX}-12-sperren" } }

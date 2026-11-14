@@ -7,7 +7,7 @@ appId: de.danerd.ghulsuite.dev
 name: GhulDrive in depth on a real server
 ---
 - runFlow: unlock.yaml
-- tapOn: "GhulDrive"
+- tapOn: { id: "tab-drive" }
 - extendedWaitUntil:
     visible: "Urlaub-Maestro"
     timeout: 60000

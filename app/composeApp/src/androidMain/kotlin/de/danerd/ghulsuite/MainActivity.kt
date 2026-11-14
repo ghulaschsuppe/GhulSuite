@@ -8,6 +8,8 @@ import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
+import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.compose.ui.semantics.semantics
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -82,7 +84,13 @@ class MainActivity : ComponentActivity() {
         }
         enableEdgeToEdge()
         val vm = ViewModelProvider(this)[MainViewModel::class.java]
-        setContent { GhulSuiteApp(vm.state) }
+        setContent {
+            // Test tags (e.g. "tab-pass" of the bottom bar) are visible to the emulator flows as ids.
+            @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+            androidx.compose.foundation.layout.Box(
+                androidx.compose.ui.Modifier.semantics { testTagsAsResourceId = true },
+            ) { GhulSuiteApp(vm.state) }
+        }
         handleLaunch(intent)
 
         // Ask once for notifications so that the "Lock" notification is visible while unlocked.

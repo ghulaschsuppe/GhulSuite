@@ -13,7 +13,7 @@ appId: de.danerd.ghulsuite.dev
 name: Sync server and sharing on a real server
 ---
 - runFlow: unlock.yaml
-- tapOn: "Options"
+- tapOn: { id: "tab-settings" }
 - scrollUntilVisible:
     element: "Servers, sync & sharing"
     direction: DOWN
@@ -158,7 +158,7 @@ name: Sync server and sharing on a real server
 - back
 
 # --- 4. GhulDrive card -----------------------------------------------------------------------
-- tapOn: "GhulDrive"
+- tapOn: { id: "tab-drive" }
 - extendedWaitUntil:
     visible: "Urlaub-Maestro"
     timeout: 60000
@@ -201,7 +201,7 @@ name: Sync server and sharing on a real server
 - assertNotVisible: "No server yet"
 - takeScreenshot: s3-14-drive-after-background
 - runFlow: unlock.yaml
-- tapOn: "GhulDrive"
+- tapOn: { id: "tab-drive" }
 - extendedWaitUntil:
     visible: "Urlaub-Maestro"
     timeout: 60000

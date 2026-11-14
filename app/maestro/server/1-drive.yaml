@@ -6,7 +6,7 @@ appId: de.danerd.ghulsuite.dev
 name: GhulDrive on a real server
 ---
 - runFlow: unlock.yaml
-- tapOn: "Options"
+- tapOn: { id: "tab-settings" }
 - scrollUntilVisible:
     element: "Manage areas"
     direction: DOWN
@@ -77,7 +77,7 @@ name: GhulDrive on a real server
 - takeScreenshot: s1-drive-set-up
 # The new tab, from a fresh start.
 - runFlow: unlock.yaml
-- tapOn: "GhulDrive"
+- tapOn: { id: "tab-drive" }
 - extendedWaitUntil:
     visible: "This folder is empty\\."
     timeout: 60000

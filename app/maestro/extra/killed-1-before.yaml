@@ -4,7 +4,7 @@ appId: de.danerd.ghulsuite.dev
 name: Vom System beendet 1
 ---
 - runFlow: ../server/unlock.yaml
-- tapOn: "GhulDrive"
+- tapOn: { id: "tab-drive" }
 - extendedWaitUntil: { visible: "Urlaub-Maestro", timeout: 60000 }
 - tapOn: "Urlaub-Maestro"
 - waitForAnimationToEnd: { timeout: 3000 }

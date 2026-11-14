@@ -4,7 +4,7 @@ name: Options pages
 ---
 - launchApp:
     stopApp: false
-- tapOn: "Options"
+- tapOn: { id: "tab-settings" }
 - runFlow:
     file: open-option.yaml
     env: { PAGE: "Unlocking", SHOT: "05-unlocking" }

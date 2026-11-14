@@ -3,7 +3,7 @@
 appId: de.danerd.ghulsuite.dev
 name: Server weg 3
 ---
-- tapOn: "GhulDrive"
+- tapOn: { id: "tab-drive" }
 - runFlow:
     when:
       notVisible: "Urlaub-Maestro"
@@ -13,7 +13,7 @@ name: Server weg 3
           optional: true
 - extendedWaitUntil: { visible: "Urlaub-Maestro", timeout: 180000 }
 - takeScreenshot: x1-05-drive-back
-- tapOn: "Options"
+- tapOn: { id: "tab-settings" }
 - scrollUntilVisible: { element: "Servers, sync & sharing", direction: DOWN }
 - tapOn: "Servers, sync & sharing"
 - scrollUntilVisible: { element: "Synchronise now", direction: DOWN }

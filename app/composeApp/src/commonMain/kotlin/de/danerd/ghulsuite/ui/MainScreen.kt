@@ -95,6 +95,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import de.danerd.ghulsuite.model.VaultKindUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
@@ -390,6 +391,7 @@ private fun navTabs(state: AppState): List<NavTab> = state.tabs.map { t ->
         tabIcon(t),
         areaColor(t),
         badge = if (t == Tab.MAIL) state.mailUnread else 0,
+        tag = "tab-" + t.name.lowercase(),
     )
 }
 
@@ -500,7 +502,7 @@ private fun SideNav(state: AppState, tabs: List<Tab>) {
             val (nav, area) = tab
             val on = state.tab == area
             Row(
-                Modifier.fillMaxWidth().padding(vertical = 2.dp).clip(RoundedCornerShape(14.dp))
+                Modifier.fillMaxWidth().testTag(nav.tag).padding(vertical = 2.dp).clip(RoundedCornerShape(14.dp))
                     .background(if (on) nav.color.copy(alpha = 0.16f) else Color.Transparent)
                     .clickable { state.selectTab(area) }
                     .padding(horizontal = 12.dp, vertical = 11.dp),

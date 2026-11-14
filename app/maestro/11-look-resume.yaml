@@ -7,7 +7,7 @@ appId: de.danerd.ghulsuite.dev
 name: Design, landscape and background
 ---
 - runFlow: home.yaml
-- tapOn: "Options"
+- tapOn: { id: "tab-settings" }
 - scrollUntilVisible:
     element: "Theme, language"
     direction: DOWN
@@ -32,7 +32,7 @@ name: Design, landscape and background
 - waitForAnimationToEnd:
     timeout: 3000
 # --- Background and back ---
-- tapOn: "GhulCal"
+- tapOn: { id: "tab-cal" }
 - extendedWaitUntil:
     visible: "Month"
     timeout: 15000
@@ -53,7 +53,7 @@ name: Design, landscape and background
 - assertNotVisible: ".*[Cc]oroutine.*"
 - takeScreenshot: 11-20-back-from-background
 # --- Light again ---
-- tapOn: "Options"
+- tapOn: { id: "tab-settings" }
 - scrollUntilVisible:
     element: "Theme, language"
     direction: DOWN

@@ -4,7 +4,7 @@ name: GhulAuth
 ---
 - launchApp:
     stopApp: false
-- tapOn: "GhulAuth"
+- tapOn: { id: "tab-auth" }
 - tapOn: "Add"
 - tapOn: "Enter manually"
 - tapOn: "Service"

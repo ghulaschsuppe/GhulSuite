@@ -12,7 +12,7 @@ name: Vom System beendet 2
 - hideKeyboard
 - tapOn: "Unlock with app PIN"
 - extendedWaitUntil: { visible: "Lock now", timeout: 30000 }
-- tapOn: "GhulDrive"
+- tapOn: { id: "tab-drive" }
 - extendedWaitUntil: { visible: "Urlaub-Maestro", timeout: 60000 }
 - assertVisible: ${GHUL_SERVER}
 - assertNotVisible: "Not set up"

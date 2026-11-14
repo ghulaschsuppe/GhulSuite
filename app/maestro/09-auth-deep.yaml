@@ -4,7 +4,7 @@ appId: de.danerd.ghulsuite.dev
 name: GhulAuth in depth
 ---
 - runFlow: home.yaml
-- tapOn: "GhulAuth"
+- tapOn: { id: "tab-auth" }
 - extendedWaitUntil:
     visible: "\\d{3} \\d{3}"
     timeout: 15000

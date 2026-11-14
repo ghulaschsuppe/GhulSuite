@@ -695,7 +695,8 @@ fun GhulTopBar(
 private fun Modifier.androidx_statusBarsPadding(): Modifier = this.statusBarsPadding()
 
 /** One tab of the bottom navigation. */
-class NavTab(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector, val color: Color, val badge: Int = 0)
+/** [tag]: "tab-pass", "tab-auth" …: the emulator flows tap the bar by it (the area's name is also its title). */
+class NavTab(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector, val color: Color, val badge: Int = 0, val tag: String = "")
 
 /** Bottom navigation: 80 dp, surface, line on top, pill indicator in the tab colour. */
 @Composable
@@ -707,7 +708,7 @@ fun GhulNavBar(tabs: List<NavTab>, selected: Int, onSelect: (Int) -> Unit) {
             tabs.forEachIndexed { i, tab ->
                 val on = i == selected
                 Column(
-                    Modifier.weight(1f).clickable(
+                    Modifier.weight(1f).testTag(tab.tag).clickable(
                         interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                         indication = null,
                     ) { onSelect(i) },

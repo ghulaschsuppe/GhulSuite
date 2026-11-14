@@ -7,7 +7,7 @@ appId: de.danerd.ghulsuite.dev
 name: GhulPass in depth
 ---
 - runFlow: home.yaml
-- tapOn: "GhulPass"
+- tapOn: { id: "tab-pass" }
 - extendedWaitUntil:
     visible: "Codeberg"
     timeout: 15000

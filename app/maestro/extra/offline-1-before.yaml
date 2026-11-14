@@ -4,7 +4,7 @@ appId: de.danerd.ghulsuite.dev
 name: Server weg 1
 ---
 - runFlow: ../server/unlock.yaml
-- tapOn: "Options"
+- tapOn: { id: "tab-settings" }
 - scrollUntilVisible: { element: "Servers, sync & sharing", direction: DOWN }
 - tapOn: "Servers, sync & sharing"
 - scrollUntilVisible: { element: "Synchronise now", direction: DOWN }

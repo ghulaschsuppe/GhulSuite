@@ -1,29 +1,29 @@
 # Helper: every area once, photographed (${PREFIX}-<area>), no technical error text anywhere.
 appId: de.danerd.ghulsuite.dev
 ---
-- tapOn: "GhulPass"
+- tapOn: { id: "tab-pass" }
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: ${PREFIX}-pass
 - assertNotVisible: ".*[Cc]oroutine.*"
-- tapOn: "GhulAuth"
+- tapOn: { id: "tab-auth" }
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: ${PREFIX}-auth
-- tapOn: "GhulDrive"
+- tapOn: { id: "tab-drive" }
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: ${PREFIX}-drive
 - assertNotVisible: ".*[Cc]oroutine.*"
-- tapOn: "GhulMail"
+- tapOn: { id: "tab-mail" }
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: ${PREFIX}-mail
-- tapOn: "GhulCal"
+- tapOn: { id: "tab-cal" }
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: ${PREFIX}-cal
-- tapOn: "Options"
+- tapOn: { id: "tab-settings" }
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: ${PREFIX}-options
