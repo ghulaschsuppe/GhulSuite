@@ -86,14 +86,16 @@ tools/                 Testserver (SFTP/IMAP/SMTP), Prüfskripte, Emulator-Skrip
 
 ## Versionen und Veröffentlichung
 
-- **Zwei Kanäle.** `main` ist der freigegebene Stand: Jede neue Version dort wird zur **stabilen Version** `v<VERSION>`
+- **Zwei Kanäle.** `main` ist der freigegebene Stand: Jede neue Version dort wird zur **stabilen Version** `v0.6.0`
   (GitHub-Release, „latest“). `dev` ist der Zwischenschritt: Jeder Push dort wird zur **Vorabversion**
-  `v<VERSION>-dev.<n>` (GitHub-Pre-Release, die neuesten fünf bleiben). Beides baut und signiert
+  `v0.6.0-dev.<n>` (GitHub-Pre-Release, die neuesten fünf bleiben). Beides baut und signiert
   `.github/workflows/release.yml`; die README verlinkt die Dateien, die App holt daraus ihre Updates.
-- **`VERSION`** (Wurzel) ist die nächste stabile Version. Ablauf: Arbeits-Branches per PR nach `dev`, dort Vorabversionen
-  testen; zum Freigeben PR `dev` → `main`. Danach auf `dev` `VERSION` erhöhen (sonst schlägt die nächste
-  Vorabversion fehl, weil ihre Version schon veröffentlicht ist). Ein Merge nach `main` ohne neue `VERSION`
-  veröffentlicht nichts.
+- **Versionsnummern ohne Handarbeit:** Ablauf: Arbeits-Branches per PR nach `dev`, dort Vorabversionen testen; zum
+  Freigeben PR `dev` → `main`. Die Nummer ergibt sich von selbst: nach `v0.5.0` heißt die nächste Version `0.6.0`
+  (auf `dev` `0.6.0-dev.1`, `-dev.2` …, bis `main` sie veröffentlicht). **`VERSION`** (Wurzel) braucht man nur für
+  einen Sprung (`1.0.0`) oder eine Fehlerbehebung (`0.5.1`); ist die Version darin schon veröffentlicht oder älter,
+  zählt der Workflow selbst weiter. Jeder Merge nach `main`, der App, Kern oder `VERSION` ändert, wird eine stabile
+  Version.
 - **Versionsnummern der Pakete** (`app/composeApp/build.gradle.kts`): Android `versionCode` = Version × 100 plus
   laufende Nummer (Vorabversionen 0 bis 98, die stabile 99), Windows-MSI `Major.Minor.(Patch × 100 + Nummer)`. So
   ist jede Version höher als die vorige und eine stabile höher als alle ihre Vorabversionen.

@@ -787,7 +787,8 @@ Löschen im Archiv: 30 Tage im Archiv-Papierkorb. Export als `.eml`/`.mbox` jede
   (sobald Windows dazukommt: eine Datei von Android öffnet sich unter Windows identisch und umgekehrt), Tests jedes Adapters gegen echte Testserver in CI.
 - **Signierte Releases** (`.github/workflows/release.yml`):
   - Zwei Kanäle: **stabil** aus `main` (`v0.6.0`) und **Vorab** aus `dev` (`v0.6.0-dev.3`, GitHub-Pre-Release). Die
-    Datei `VERSION` nennt die nächste stabile Version.
+    Nummer zählt der Workflow selbst weiter (nach `v0.5.0` kommt `0.6.0`); die Datei `VERSION` braucht man nur für
+    einen Sprung oder eine Fehlerbehebung.
   - Android-APK mit dem Signaturschlüssel der App.
   - `SHA256SUMS` mit den Prüfsummen aller Dateien, signiert mit **demselben Schlüssel** (`SHA256SUMS.sig`; ein
     Schlüssel für alles, siehe AUDIT 4.1). Abweichung vom ursprünglichen Plan einer zweiten, offline liegenden
