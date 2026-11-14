@@ -18,8 +18,27 @@ class DesktopCalBackend(private val window: () -> java.awt.Window?, suite: () ->
     @Volatile private var sound = true
     private var tray: TrayIcon? = null
     private var lastKey: String? = null
+    private var zone = java.util.TimeZone.getDefault().id
+    private var ticks = 0
     private val timer = Timer("ghulcal-reminders", true).apply {
-        scheduleAtFixedRate(timerTask { fireDue() }, 20_000, 20_000)
+        scheduleAtFixedRate(timerTask { fireDue(); checkZone() }, 20_000, 20_000)
+    }
+
+    /**
+     * B22: Java keeps the time zone it started with. Every 5 minutes it is read again from Windows;
+     * after a change (travel, setting) the reminders are planned anew, so local times stay right.
+     */
+    private fun checkZone() {
+        if (++ticks % 15 != 0) return
+        runCatching {
+            System.clearProperty("user.timezone")
+            java.util.TimeZone.setDefault(null)
+            val now = java.util.TimeZone.getDefault().id
+            if (now != zone) {
+                zone = now
+                AppLaunch.timeZoneChanged.value++
+            }
+        }
     }
 
     override fun scheduleReminders(alarms: List<CalAlarmUi>, sound: Boolean) {

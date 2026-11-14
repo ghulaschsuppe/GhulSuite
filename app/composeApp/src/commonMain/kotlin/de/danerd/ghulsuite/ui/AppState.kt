@@ -41,6 +41,9 @@ object AppLaunch {
     /** Counts new-mail notifications posted in this process: open lists and the badge refresh. */
     val newMail = kotlinx.coroutines.flow.MutableStateFlow(0)
 
+    /** B22: counts changes of the device's time zone noticed while running (Windows): reminders are planned anew. */
+    val timeZoneChanged = kotlinx.coroutines.flow.MutableStateFlow(0)
+
     /** Counts how often the app came to the front (Android: activity resumed). */
     val resumed = kotlinx.coroutines.flow.MutableStateFlow(0)
 
@@ -346,6 +349,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             }
         }
         scope.launch { AppLaunch.openTab.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
+        scope.launch { AppLaunch.timeZoneChanged.collect { if (it > 0 && backend.unlocked.value) refreshCalendar() } }
         scope.launch { AppLaunch.openEvent.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
         scope.launch { AppLaunch.openMail.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
         scope.launch { AppLaunch.compose.collect { if (it != null && backend.unlocked.value) applyLaunch() } }

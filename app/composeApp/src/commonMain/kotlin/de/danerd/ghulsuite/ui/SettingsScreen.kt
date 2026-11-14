@@ -287,6 +287,8 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                     AreaFooter(state, VaultKindUi.MAIL)
                 }
                 SetPage.CAL -> {
+                    // B22: Windows has no background service: reminders need the app running (also locked).
+                    if (backend.isDesktop) Hint(stringResource(Res.string.cal_desktop_running))
                     CalSettingsSection(state)
                     AreaFileNote(VaultKindUi.CAL)
                     AreaFooter(state, VaultKindUi.CAL)
