@@ -130,8 +130,10 @@ class CalReminders(private val context: Context) {
         const val ACTION_DONE = "de.danerd.ghulsuite.CAL_DONE"
         const val EXTRA_INDEX = "index"
         const val EXTRA_KEY = "key"
-        const val CHANNEL = "cal"
-        const val CHANNEL_SILENT = "cal_silent"
+        // B4: new IDs, private on the lock screen also with Android's default settings.
+        const val CHANNEL = "cal_private"
+        const val CHANNEL_SILENT = "cal_silent_private"
+        val OLD_CHANNELS = listOf("cal", "cal_silent")
     }
 }
 
@@ -144,9 +146,14 @@ private fun JSONObject.toAlarm() =
 /** Posts a reminder: full text while unlocked, the chosen detail on the lock screen. */
 fun postCalNotification(ctx: Context, a: CalAlarmUi, sound: Boolean, index: Int) {
     val nm = ctx.getSystemService(NotificationManager::class.java)
-    nm.createNotificationChannel(NotificationChannel(CalReminders.CHANNEL, ctx.getString(R.string.cal_channel), NotificationManager.IMPORTANCE_HIGH))
+    CalReminders.OLD_CHANNELS.forEach { nm.deleteNotificationChannel(it) }
     nm.createNotificationChannel(
-        NotificationChannel(CalReminders.CHANNEL_SILENT, ctx.getString(R.string.cal_channel_silent), NotificationManager.IMPORTANCE_LOW),
+        NotificationChannel(CalReminders.CHANNEL, ctx.getString(R.string.cal_channel), NotificationManager.IMPORTANCE_HIGH)
+            .apply { lockscreenVisibility = Notification.VISIBILITY_PRIVATE },
+    )
+    nm.createNotificationChannel(
+        NotificationChannel(CalReminders.CHANNEL_SILENT, ctx.getString(R.string.cal_channel_silent), NotificationManager.IMPORTANCE_LOW)
+            .apply { lockscreenVisibility = Notification.VISIBILITY_PRIVATE },
     )
     val channel = if (sound) CalReminders.CHANNEL else CalReminders.CHANNEL_SILENT
     val id = NOTIFY_BASE + (a.key.hashCode() and 0xffff)

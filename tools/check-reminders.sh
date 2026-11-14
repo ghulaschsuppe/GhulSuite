@@ -62,6 +62,10 @@ log "nach Neustart wieder geplant für $(clock "$restored" "$(zone)")"
 timeout 20 adb shell am broadcast --include-stopped-packages -a "$fire" -n "$receiver" --ei index 0 > "$out/fire-broadcast.txt" 2>&1 || true
 sleep 6
 timeout 30 adb shell dumpsys notification --noredact | tr -d '\r' > "$out/notifications.txt" || true
-grep -qE "NotificationRecord.*pkg=$pkg.*channel=cal(_silent)?([ :,)]|$)" "$out/notifications.txt" \
+grep -qE "NotificationRecord.*pkg=$pkg.*channel=cal(_silent)?_private([ :,)]|$)" "$out/notifications.txt" \
   || fail "der ausgelöste Alarm hat keine Benachrichtigung gezeigt (siehe notifications.txt)"
 log "Benachrichtigung ist da, auch bei beendeter, gesperrter App"
+# B4: the channel keeps the details off the lock screen, also with "show all content".
+grep -qE "mId='cal(_silent)?_private'.*mLockscreenVisibility=0" "$out/notifications.txt" \
+  || fail "der Erinnerungskanal ist auf dem Sperrbildschirm nicht privat (siehe notifications.txt)"
+log "Sperrbildschirm: Kanal privat (Details verborgen)"

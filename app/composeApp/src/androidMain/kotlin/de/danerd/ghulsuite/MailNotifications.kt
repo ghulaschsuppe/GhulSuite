@@ -173,7 +173,10 @@ class MailNotifications(private val context: Context) {
         private const val ALIAS = "ghulsuite.mail.notify"
         private const val WORK = "ghulsuite.mail.check"
         private const val DETAIL = "detail"
-        const val CHANNEL = "mail"
+        // B4: new IDs (a channel's lock screen setting is fixed once created), private on the
+        // lock screen also with Android's default "show all content".
+        const val CHANNEL = "mail_private"
+        const val OLD_CHANNEL = "mail"
     }
 }
 
@@ -209,8 +212,10 @@ fun postMailNotification(
     newestUid: Int = 0,
 ) {
     val nm = ctx.getSystemService(NotificationManager::class.java)
+    nm.deleteNotificationChannel(MailNotifications.OLD_CHANNEL)
     nm.createNotificationChannel(
-        NotificationChannel(MailNotifications.CHANNEL, ctx.getString(R.string.mail_channel), NotificationManager.IMPORTANCE_DEFAULT),
+        NotificationChannel(MailNotifications.CHANNEL, ctx.getString(R.string.mail_channel), NotificationManager.IMPORTANCE_DEFAULT)
+            .apply { lockscreenVisibility = Notification.VISIBILITY_PRIVATE },
     )
     // One new mail opens that mail; several open the account's inbox. One request code per
     // account, so the notifications of two accounts do not overwrite each other's target.
