@@ -845,15 +845,30 @@ fn mail_archive_against_imap_and_sftp() {
         .unwrap()
         .contains("Archivtext"));
 
-    // The server holds nothing readable.
-    let base = std::path::PathBuf::from(format!("{sroot}/archive-eins-{run}"));
+    // The server holds nothing readable, read over SFTP as the server hands it out (the test may not
+    // read the server's files directly: in CI they belong to another user).
+    let over_sftp = |name: &str| {
+        let mut cfg = crate::net::tests::sftp_test_config("archive-check").unwrap();
+        cfg.base = format!("{sroot}/archive-{name}-{run}");
+        crate::net::sftp::SftpFs::connect(&cfg).unwrap()
+    };
+    let server = over_sftp("eins");
     let mut files = Vec::new();
-    super::mailarchive::tests_walk(&base, &mut files);
+    let mut dirs = vec![String::new()];
+    while let Some(d) = dirs.pop() {
+        for e in crate::net::remote::RemoteFs::list(&server, &d).unwrap() {
+            let p = if d.is_empty() { e.name.clone() } else { format!("{d}/{}", e.name) };
+            if e.is_dir {
+                dirs.push(p);
+            } else {
+                files.push(p);
+            }
+        }
+    }
     assert!(files.len() > 4);
     let local_part = format!("archiv{run}");
-    for f in files {
-        let data = std::fs::read(&f).unwrap_or_default();
-        let rel = f.strip_prefix(&base).unwrap().to_string_lossy().into_owned();
+    for rel in files {
+        let data = crate::net::remote::RemoteFs::read(&server, &rel).unwrap().unwrap();
         for secret in ["Archivtext", "Archivbetreff", "erika", "INBOX", "Sent", local_part.as_str()] {
             assert!(!data.windows(secret.len()).any(|w| w == secret.as_bytes()), "{secret} in {rel}");
             assert!(!rel.contains(secret), "{secret} in the name {rel}");
@@ -912,7 +927,7 @@ fn mail_archive_against_imap_and_sftp() {
     assert_eq!(s.mail_archive_count(account.clone()).unwrap().mails, 4);
 
     // The server is lost; a new, empty place is filled from the device's copy (adds only).
-    std::fs::remove_dir_all(format!("{sroot}/archive-zwei-{run}")).unwrap();
+    crate::net::remote::RemoteFs::delete(&over_sftp("zwei"), "mailarchive/head.ghlarc").unwrap();
     let third = place("drei");
     assert_eq!(s.mail_archive_setup(Some(third)).unwrap(), MailArchivePlace::Created);
     assert_eq!(s.mail_archive_restore_from_copy().unwrap(), 4);

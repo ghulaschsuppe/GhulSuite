@@ -1818,12 +1818,6 @@ fn list_all(fs: &dyn RemoteFs, dir: &str, out: &mut Vec<String>) -> Result<()> {
     Ok(())
 }
 
-/// For the API tests: every file below a folder.
-#[cfg(test)]
-pub(super) fn tests_walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
-    walk(dir, out)
-}
-
 #[cfg(test)]
 #[path = "tests/mailarchive.rs"]
 mod tests;
