@@ -636,8 +636,12 @@ Löschen im Archiv: 30 Tage im Archiv-Papierkorb. Export als `.eml`/`.mbox` jede
   - Die Suche läuft über Betreff, Absender und Textanfang aus dem Archiv-Verzeichnis (auch offline, weil die
     Verzeichnisse auf dem Gerät mitgeführt werden), nicht über den ganzen Text.
   - Archiviert wird, solange die Suite entsperrt ist (beim Entsperren und alle 30 Minuten, auf Android standardmäßig nur
-    im WLAN, „Jetzt archivieren“ jederzeit). Gesperrt fehlen die Schlüssel; eine stille Fortschritts-Benachrichtigung
-    gibt es noch nicht.
+    im WLAN, „Jetzt archivieren“ jederzeit). Gesperrt fehlen die Schlüssel. Während eines Laufs wartet die Auto-Sperre
+    (Zeit im Hintergrund, Bildschirm aus, Windows-Sperre), damit der lange erste Lauf nicht bei jedem App-Wechsel
+    abbricht; die Benachrichtigung der entsperrten Suite zeigt den Fortschritt, „Sperren“, Schütteln und die Kachel
+    sperren weiterhin sofort.
+  - Mails über 100 MB werden nicht archiviert: Sie bleiben beim Anbieter und werden dort nie gelöscht; die Mail-Optionen
+    nennen ihre Anzahl. (Eine solche Mail müsste sonst auf einmal in den Speicher, auf einem Handy zu viel.)
   - Die Frage „Wo sollen deine Mails liegen?“ kommt nach dem ersten hinzugefügten Konto, nicht im Einrichtungsassistenten.
   - Die Mail-Datei enthält Schlüssel und Ort des Archivs; ein eigener Server liegt mit in ihr. Das Öffnen nur der
     Mail-Datei mit dem Archiv ist damit möglich, aber noch nicht eigens getestet.
