@@ -35,8 +35,11 @@ run() {
   local name
   name=$(basename "$file" .yaml)
   echo "::group::Ablauf $name"
-  timeout "$limit" maestro test "$@" "$file" --format junit --output "$out/report-$name.xml" --test-output-dir "$out"
+  # The status of maestro itself: called as `run … || rc=$?`, set -e does not apply in here.
+  local rc=0
+  timeout "$limit" maestro test "$@" "$file" --format junit --output "$out/report-$name.xml" --test-output-dir "$out" || rc=$?
   echo "::endgroup::"
+  return "$rc"
 }
 
 # Which address does the device reach the test servers at? The SSH server greets with "SSH-": the
@@ -91,12 +94,13 @@ hard_conditions() {
   run "$flows/extra/offline-3-back.yaml" 900
   run "$flows/extra/killed-1-before.yaml" 600 -e GHUL_SERVER="$addr"
   local pkg=de.danerd.ghulsuite.dev pid
-  pid=$(adb shell pidof "$pkg" | tr -d '\r')
+  pid=$(adb shell pidof "$pkg" | tr -d '\r' || true)
+  [ -n "$pid" ] || { echo "::error::Die App läuft nicht, es gibt keinen Prozess zu beenden"; return 1; }
   echo "Prozess $pkg ($pid) wird beendet wie bei Speichermangel"
   # The development build may end its own process (run-as); kill -9 is what Android does.
   adb shell run-as "$pkg" kill -9 "$pid" || adb shell am kill "$pkg"
   sleep 3
-  if [ -n "$(adb shell pidof "$pkg" | tr -d '\r')" ]; then echo "::error::Der Prozess der App läuft noch"; return 1; fi
+  if [ -n "$(adb shell pidof "$pkg" | tr -d '\r' || true)" ]; then echo "::error::Der Prozess der App läuft noch"; return 1; fi
   run "$flows/extra/killed-2-after.yaml" 600 -e GHUL_SERVER="$addr"
 }
 

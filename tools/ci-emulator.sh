@@ -22,6 +22,7 @@ finish() {
   timeout 20 adb exec-out screencap -p > "$out/last-screen.png" 2>/dev/null || true
   timeout 30 adb logcat -d > "$out/logcat.txt" 2>/dev/null || true
   timeout 10 adb emu kill > /dev/null 2>&1 || true
+  [ -z "${logcat_pid:-}" ] || kill "$logcat_pid" 2> /dev/null || true
 }
 trap finish EXIT
 
@@ -76,15 +77,14 @@ if [ "${SKIP_MAESTRO:-0}" != 1 ]; then
   maestro_rc=0
   timeout 3600 "$(dirname "$0")/run-maestro.sh" "$apk" "$out" || maestro_rc=$?
   log "Maestro fertig (Status $maestro_rc)"
-  kill "$logcat_pid" 2> /dev/null || true
   # Also after a failed flow: a crash in the log is most likely why it failed, and says so.
+  # (The log keeps recording for the monkey below and is checked again after it.)
   logcat_rc=0
   "$(dirname "$0")/check-logcat.sh" "$out/logcat-full.txt" "$out" || logcat_rc=$?
   # Every step leaves a picture to be looked at. A picture of a black screen (the app forbids
   # screenshots, see TestDevice.kt) is a few kilobytes as PNG, a real screen many times that.
-  black=$(find "$out" -name '*.png' -size -20k | grep -v last-screen || true)
-  if [ -n "$black" ]; then
-    echo "::error::Schwarze Bildschirmfotos (die App hat Bildschirmfotos verboten): $(printf '%s\n' "$black" | head -n 5 | tr '\n' ' ')"
+  python3 -c "import PIL" 2> /dev/null || pip install --quiet pillow > /dev/null 2>&1 || true
+  if ! python3 "$(dirname "$0")/check-black-screenshots.py" "$out"; then
     logcat_rc=1
   fi
   [ "$maestro_rc" = 0 ] || exit "$maestro_rc"
@@ -134,6 +134,8 @@ if [ "${MONKEY_EVENTS:-0}" -gt 0 ]; then
     fi
     timeout 20 adb shell am force-stop "$pkg" || true
   done
+  # Alarms of the development build during the monkey count as well.
+  "$(dirname "$0")/check-logcat.sh" "$out/logcat-full.txt" "$out" || failed=1
   [ -z "$failed" ] || exit 1
   log "Monkey ohne Absturz"
 fi

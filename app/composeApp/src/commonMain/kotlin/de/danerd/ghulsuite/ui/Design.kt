@@ -556,10 +556,12 @@ fun ButtonRow(content: @Composable RowScope.() -> Unit) {
     val gap = 8.dp
     Layout(content = { ButtonRowScope.content() }, modifier = Modifier.fillMaxWidth()) { items, constraints ->
         val space = gap.roundToPx()
-        val width = constraints.maxWidth
         val weighted = items.filter { it.layoutId == WEIGHTED }
         val fixed = items.filter { it.layoutId != WEIGHTED }
         val fixedWidths = fixed.map { it.maxIntrinsicWidth(constraints.maxHeight) }
+        // Without a width limit (inside horizontal scrolling) every button takes its own width.
+        val width = if (constraints.hasBoundedWidth) constraints.maxWidth
+        else items.sumOf { it.maxIntrinsicWidth(constraints.maxHeight) } + space * (items.size - 1).coerceAtLeast(0)
         val share = if (weighted.isEmpty()) 0 else (width - fixedWidths.sum() - space * (items.size - 1)) / weighted.size
         val fits = fixedWidths.sum() + space * (items.size - 1) <= width &&
             weighted.all { it.minIntrinsicWidth(constraints.maxHeight) <= share }
@@ -901,7 +903,7 @@ fun LabelValueRow(label: String, value: String, modifier: Modifier = Modifier, o
         val besides = labelM.minIntrinsicWidth(c.maxHeight) + gap + valueWidth + arrow.width <= width
         if (besides) {
             val v = valueM.measure(androidx.compose.ui.unit.Constraints(maxWidth = valueWidth))
-            val l = labelM.measure(androidx.compose.ui.unit.Constraints(maxWidth = width - v.width - gap - arrow.width))
+            val l = labelM.measure(androidx.compose.ui.unit.Constraints(maxWidth = (width - v.width - gap - arrow.width).coerceAtLeast(0)))
             val h = maxOf(c.minHeight, l.height, v.height, arrow.height)
             layout(width, h) {
                 l.place(0, (h - l.height) / 2)
@@ -909,8 +911,9 @@ fun LabelValueRow(label: String, value: String, modifier: Modifier = Modifier, o
                 arrow.place(width - arrow.width, (h - arrow.height) / 2)
             }
         } else {
-            val l = labelM.measure(androidx.compose.ui.unit.Constraints(maxWidth = width - arrow.width))
-            val v = valueM.measure(androidx.compose.ui.unit.Constraints(maxWidth = width - arrow.width))
+            // (coerceAtLeast: a pane that animates its width from 0 is narrower than the arrow)
+            val l = labelM.measure(androidx.compose.ui.unit.Constraints(maxWidth = (width - arrow.width).coerceAtLeast(0)))
+            val v = valueM.measure(androidx.compose.ui.unit.Constraints(maxWidth = (width - arrow.width).coerceAtLeast(0)))
             val pad = 6.dp.roundToPx()
             val h = maxOf(c.minHeight, pad + l.height + 2 + v.height + pad)
             layout(width, h) {
