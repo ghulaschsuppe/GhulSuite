@@ -67,6 +67,8 @@ interface NetBackend {
     suspend fun driveStorage(): DriveStorageUi = DriveStorageUi(DriveModeUi.NONE, null, false)
     /** GhulDrive uses the server this device synchronises with ("wie Synchronisation"). */
     suspend fun driveUseSync() {}
+    /** After "server state older than seen": takes the server's GhulDrive as it is. */
+    suspend fun driveAcceptServerState() {}
     /** Checks a server for GhulDrive alone and stores it in the Drive file. */
     suspend fun driveSaveServer(input: ServerInputUi, confirmed: String?): ServerSavedUi = ServerSavedUi.Saved("")
     /** Before the sync server is removed or changed: GhulDrive keeps that server as its own. */
@@ -148,6 +150,8 @@ interface NetBackend {
     suspend fun mailImportKey(data: ByteArray): List<String>
     suspend fun mailKnownKeys(): List<MailKeyInfoUi>
     suspend fun mailForgetKey(email: String)
+    /** The fingerprint matches what the contact sees: the key counts as confirmed. */
+    suspend fun mailVerifyKey(email: String) {}
 
     /** Whether new-mail notifications are on for an account (needs a device-bound copy of the login). */
     fun mailNotificationsOn(accountId: String): Boolean
@@ -349,7 +353,19 @@ enum class MailSignatureUi { NONE, VALID, UNKNOWN_KEY, INVALID }
 
 data class MailRecipientKeyUi(val address: String, val hasKey: Boolean, val source: String)
 
-data class MailKeyInfoUi(val email: String, val fingerprint: String, val source: String, val updated: Long)
+/**
+ * [verified]: the fingerprint was compared with the contact. [previous]: the key changed (the
+ * fingerprint before). [offered]: a mail offered another key than the confirmed one.
+ */
+data class MailKeyInfoUi(
+    val email: String,
+    val fingerprint: String,
+    val source: String,
+    val updated: Long,
+    val verified: Boolean = false,
+    val previous: String = "",
+    val offered: String = "",
+)
 
 sealed interface MailCheckUi {
     data object Ok : MailCheckUi

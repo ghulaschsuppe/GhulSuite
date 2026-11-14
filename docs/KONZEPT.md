@@ -38,7 +38,7 @@ verschlüsselten Dateien, die man überall ablegen kann. Speicher und Mailserver
 | Mail-Benachrichtigung | **Ja, auch bei gesperrter App**: mit eigenem, gerätegebundenem Mail-Zugang (Abschnitt 9.3); geändert am 11.11.2026 |
 | Schnell-Entsperren | **Fingerabdruck und/oder App-PIN**, optional und mit engen Grenzen (Abschnitt 6.5) |
 | Module | Jeder Bereich (GhulPass, GhulAuth, später GhulMail, GhulDrive) ist in den Einstellungen **abschaltbar**; er verschwindet dann aus dem Menü, die Daten bleiben erhalten |
-| Panikfunktion | **Sofort sperren** (Stufe 1), auch durch **Schütteln**; kein Löschen, kein Notfall-Passwort (Abschnitt 6.6) |
+| Sofortsperre | **Sofort sperren** (Stufe 1), auch durch **Schütteln**; kein Löschen, kein Notfall-Passwort (Abschnitt 6.6) |
 | Erster Speicher-Adapter | **SFTP**: eigener Server mit SSH/SFTP ist vorhanden |
 | Drive-Speicher | **Eigene Server bzw. vServer** (SFTP, WebDAV, S3, Server-Modul); lokale Datenträger nur als verschlüsseltes Sicherungsziel |
 | Plattformen | **Zuerst nur Android.** Windows folgt später; die Architektur ist von Anfang an darauf ausgelegt (Abschnitt 4.1) |
@@ -243,14 +243,14 @@ Nach einer vollständigen Entsperrung (Passwort und Key) lässt sich die App fü
     nach **5 Fehlversuchen** wird der PIN-Zugang gelöscht.
 - **Gültigkeit** (1 Stunde bis 7 Tage, Standard 24 Stunden) zählt ab dem **letzten vollständigen Entsperren**
   (signierter Zeitstempel, nur mit `S` fälschbar).
-- Passwort und Key sind immer wieder nötig: nach **jedem Neustart**, nach Ablauf, nach einer **Panik-Sperre**, nach
+- Passwort und Key sind immer wieder nötig: nach **jedem Neustart**, nach Ablauf, nach einer **Sofortsperre**, nach
   einem **Passwortwechsel** und wenn Fingerabdrücke geändert wurden.
 - **Ehrlich:** In der Gültigkeitszeit reichen das entsperrte Handy plus Finger bzw. App-PIN. Deshalb optional und
   standardmäßig aus. Ein Angreifer mit Root-Zugriff auf das laufende Gerät könnte den Fehlversuchszähler umgehen;
   die PIN ist aber an den Hardware-Schlüssel des Geräts gebunden, ein Durchprobieren außerhalb des Geräts ist nicht möglich.
 - **Nicht verfügbar in der portablen Windows-Version.**
 
-### 6.6 Panik-Sperre
+### 6.6 Sofortsperre
 
 Ein Fingerabdruck kann erzwungen werden, ein Passwort im Kopf nicht so leicht. Deshalb gibt es eine Sofort-Sperre:
 
@@ -442,7 +442,7 @@ Datenleck-Prüfung …), bleibt auf dem Gerät. Die Bereichsseiten der Optionen 
 
 **Einrichtungsassistent** in acht Schritten: Master-Passwort, zweiter Faktor, Speicherort, Synchronisation (optional),
 Bereiche (mit Speicherwahl für GhulDrive), Sperren, Entsperren (Schnell entsperren = Fingerabdruck oder App-PIN; gültig
-4 Std., 24 Std., 3 Tage, 7 Tage oder immer, nach Neustart, Panik-Sperre oder Passwortwechsel trotzdem wieder Passwort
+4 Std., 24 Std., 3 Tage, 7 Tage oder immer, nach Neustart, Sofortsperre oder Passwortwechsel trotzdem wieder Passwort
 und Key), Wiederherstellungscode. Die Suite entsteht nach Schritt 3; der Code gilt erst als bestätigt, wenn ein Block
 richtig abgetippt wurde. **Absturzsicher:** Wurde der Code nie bestätigt, verlangt die App nach dem Entsperren einen
 neuen (ohne „später“). Liegen Tresordateien ohne Suite-Datei vor, erkennt die App die unterbrochene Einrichtung, und
@@ -484,11 +484,13 @@ Zugänge an (`rk = false`), der Key speichert nichts.
 - Zugangsdaten und Kontoeinstellungen nur im Suite-Container. Der Mail-Zwischenspeicher liegt verschlüsselt auf dem Gerät.
 - **Benachrichtigungen auch bei gesperrter App** (Entscheidung vom 11.11.2026). Damit der Tresor dafür nicht offen
   bleiben muss, bekommt jedes Mail-Konto einen **eigenen Abruf-Zugang auf dem Gerät**: Die IMAP-Zugangsdaten werden
-  zusätzlich mit einem gerätegebundenen Android-Keystore-Schlüssel gespeichert (ohne Biometrie, nur bei entsperrtem
-  Gerät, StrongBox wenn vorhanden). Der Hintergrunddienst kann damit nur **prüfen, ob neue Mails da sind**: Inhalte
-  und alle anderen Geheimnisse bleiben im gesperrten Tresor.
+  zusätzlich mit einem gerätegebundenen Android-Keystore-Schlüssel gespeichert (ohne Biometrie, im Sicherheitschip
+  **StrongBox**, wo vorhanden, sonst in der geschützten Umgebung des Keystores). Er ist auch bei gesperrtem Gerät
+  nutzbar, sonst kämen bei gesperrtem Handy keine Benachrichtigungen. Der Hintergrunddienst kann damit nur **prüfen,
+  ob neue Mails da sind**: Inhalte und alle anderen Geheimnisse bleiben im gesperrten Tresor.
   - Inhalt der Benachrichtigung einstellbar: neutral („Neue Nachricht“, Standard), Absender, oder Absender und Betreff.
-  - Pro Konto abschaltbar; die Panik-Sperre löscht auch die Abruf-Zugänge.
+  - Standardmäßig an, pro Konto abschaltbar. Die Sofortsperre lässt die Abruf-Zugänge bestehen, damit Mails weiter
+    ankommen; wahlweise löscht sie sie mit („Sofortsperre stoppt auch Mail-Benachrichtigungen“, bis zum nächsten Entsperren).
   - Wo der Anbieter es erlaubt, sollte dafür ein **App-Passwort** genutzt werden, das sich einzeln widerrufen lässt.
   - **Ehrlich:** Wer das entsperrte Handy samt Root-Zugriff hat, kommt an diesen Abruf-Zugang, also an das Postfach,
     nicht an Passwörter, 2FA oder Drive.
@@ -508,10 +510,9 @@ Zugänge an (`rk = false`), der Key speichert nichts.
   senden, Antworten (mit `In-Reply-To`/`References`), Allen antworten, Weiterleiten, Markieren, Ungelesen, Verschieben,
   Löschen über den Papierkorb, Suche, Kopie gesendeter Mails im Ordner „Gesendet“.
 - Kein Zwischenspeicher auf dem Gerät (alles wird bei Bedarf geladen).
-- Benachrichtigungen: Opt-in je Konto. Die Abruf-Daten (nur IMAP) liegen AES-GCM-verschlüsselt mit einem
-  Android-Keystore-Schlüssel; dieser ist **auch bei gesperrtem Gerät** nutzbar, sonst kämen bei gesperrtem Handy keine
-  Benachrichtigungen. Inhalt immer neutral (Kontoname und Anzahl), Prüfung alle 15 Minuten (WorkManager).
-  Absender/Betreff als Option, PGP, gemeinsamer Posteingang und Proton-Import folgen.
+- Benachrichtigungen: siehe oben (Abruf-Zugang je Konto, AES-GCM mit einem Keystore-Schlüssel, StrongBox wo
+  vorhanden). Sofort per IMAP IDLE, zusätzlich alle 15 Minuten (WorkManager). Inhalt wählbar (neutral, Absender,
+  Absender und Betreff); auf dem Sperrbildschirm immer die neutrale Fassung.
 
 **Ehrliche Grenzen:**
 - Mails von außen liegen beim Anbieter im Klartext, sofern nicht mit PGP verschlüsselt.
@@ -621,7 +622,7 @@ Zugänge an (`rk = false`), der Key speichert nichts.
 | Container-Datei gestohlen (Stick, Cloud, Server, Gerät) | wertlos ohne Passwort **und** Key bzw. Schlüsseldatei (oder das Notfallblatt) |
 | Passwort ausgespäht | wertlos ohne Key |
 | Key gestohlen | wertlos ohne Passwort; der Key sperrt sich nach 8 falschen PINs |
-| Entsperren per Fingerabdruck wird erzwungen | Panik-Sperre vorher auslösen (Schütteln); danach nur noch Passwort und Key |
+| Entsperren per Fingerabdruck wird erzwungen | Sofortsperre vorher auslösen (Schütteln); danach nur noch Passwort und Key |
 | Gerät mit aktivem Fingerabdruck-Zugang gestohlen | ohne deinen Finger wertlos; erlischt spätestens nach Neustart oder Ablauf der Frist |
 | SFTP-Geräteschlüssel gestohlen | nur Zugriff auf verschlüsselte Blöcke im eingesperrten Ordner; Schlüssel auf dem Server entfernen |
 | Key **und** Passwort gestohlen | Zugriff, sofort Slot des Keys löschen (von jedem anderen Gerät aus) |
@@ -671,7 +672,7 @@ Zugänge an (`rk = false`), der Key speichert nichts.
 | Anbindung über den Android-Dateidialog als Sync | gestrichen | unzuverlässig; bleibt für Export und Import |
 | FTP-Adapter | gestrichen | unsicher bzw. unzuverlässig; Server-Modul als Alternative |
 | Mail-Abruf im Hintergrund | geplant (v0.5) | mit eigenem Abruf-Zugang, siehe Abschnitt 9.3 |
-| Panik: lokale Daten löschen, Notfall-Passwort, Fernsperre | nicht geplant | Stufe 1 reicht kryptografisch; Täuschung ist schwer überzeugend umzusetzen |
+| Sofortsperre: lokale Daten löschen, Notfall-Passwort, Fernsperre | nicht geplant | Stufe 1 reicht kryptografisch; Täuschung ist schwer überzeugend umzusetzen |
 | OAuth-Mailanbieter (Gmail, Microsoft) | später, vielleicht | Aufwand und Kosten der Google-Prüfung |
 | Windows-Ordner-Synchronisation für Drive | später | aufwendig; zuerst Drive-Ansicht in der App |
 | Browser-Erweiterung für Windows | später | zuerst Auto-Type |
@@ -689,7 +690,7 @@ Zugänge an (`rk = false`), der Key speichert nichts.
 | 0 ✓ | PRF-Test im Browser | Key liefert deterministisch und offline |
 | 0b ✓ | **Android-Prototyp:** CTAP2 per USB-C mit deinem Key (`hmac-secret`, PIN, RP-ID `ghulsuite.invalid`), Rust-Kern per UniFFI in einer Compose-Multiplatform-App | Technische Machbarkeit auf Android bestätigt |
 | 1 ✓ | `docs/FORMAT.md` und `ghul-core`: Schlüssel, Container, Testvektoren, Fuzzing | Geprüfter Kern |
-| 2 | **GhulPass + GhulAuth** für Android: Einrichtung, Notfallblatt, Fingerabdruck, Panik-Sperre, Autofill, QR-Scan, Import, Export | Ersetzt Proton Pass und den Authenticator (lokal und per Export) |
+| 2 | **GhulPass + GhulAuth** für Android: Einrichtung, Notfallblatt, Fingerabdruck, Sofortsperre, Autofill, QR-Scan, Import, Export | Ersetzt Proton Pass und den Authenticator (lokal und per Export) |
 | 3 | **Speicher-Adapter** SFTP (zuerst, gegen deinen Server) und WebDAV, Synchronisation der Container, Spiegel | Automatische Synchronisation und Sicherung |
 | 4 | **GhulDrive** für Android, dazu die Adapter S3 und Server-Modul | Ersetzt Cloud-Speicher von Drittanbietern |
 | 5 | **GhulMail** für Android | Ersetzt Mail-Apps von Drittanbietern |

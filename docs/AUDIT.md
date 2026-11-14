@@ -69,7 +69,7 @@ Faktor Zugriff auf Tresorinhalte.
 | B2 | Ein entfernter Key kann per Sync zurückkommen: Ein Gerät war offline und fügt dort selbst einen Key hinzu; seine Schutzänderung ist dann die neuere und bringt den alten Key mit | Löschmarken je Key in der Suite-Datei |
 | B3 | Drive-Index ohne Schutz gegen Zurücksetzen (ein alter Index vom Server lässt Drive älter aussehen) und gegen gleichzeitige Änderungen zweier Geräte | Revision merken, älteren Index ablehnen, vor dem Schreiben vergleichen |
 | B4 | Sperrbildschirm: Mail-Absender, Betreff und Termindetails sind sichtbar, wenn Android auf „alle Inhalte anzeigen“ steht (Standard). Die neutrale Version greift nur bei „sensible Inhalte ausblenden“ | Benachrichtigungskanäle mit privater Sichtbarkeit erzwingen |
-| B5 | Mail-Zugang für Benachrichtigungen liegt im Android-Keystore ohne StrongBox und bleibt bei der Panik-Sperre (gewollt, damit Mails weiter ankommen); das Konzept beschreibt noch das alte Verhalten | Doku angleichen, StrongBox versuchen, wahlweise „harte Panik“ |
+| B5 | Mail-Zugang für Benachrichtigungen liegt im Android-Keystore ohne StrongBox und bleibt bei der Sofortsperre (gewollt, damit Mails weiter ankommen); das Konzept beschreibt noch das alte Verhalten | Doku angleichen, StrongBox versuchen, wahlweise löscht die Sofortsperre ihn mit |
 | L10 | Tapjacking: Eine fremde App kann ein Fenster über GhulSuite legen und Tipps umleiten | `filterTouchesWhenObscured` für Entsperren, Löschen und Autofill-Auswahl |
 | L3 | Gradle-Abhängigkeiten der App ohne Prüfsummen: Ein unterwegs manipuliertes Paket würde eingebaut | `gradle/verification-metadata.xml` |
 | L4, B17 | Build nicht nachprüfbar; der Signaturschlüssel steht bei Pushes auf jeden Branch bereit | Reproduzierbare Builds; signieren nur für `main` in einer geschützten Umgebung |
@@ -121,7 +121,7 @@ Geräte-Matrix (Samsung, Pixel, Xiaomi; Android 10 bis 16). Liste mit Aufwand im
   Frische Nonces bei jedem Schreiben, Geheimnisse werden im Kern genullt, Vergleiche in konstanter Zeit.
 - **FIDO2:** nur mit PIN-Prüfung, eigene RP-ID, die keine Webseite ansprechen kann.
 - **Schnell-Entsperren:** Android-Keystore, Fingerabdruck „stark“, ungültig bei neuem Fingerabdruck, Fehlversuche
-  begrenzt, an den Neustart gebunden; Panik-Sperre löscht es.
+  begrenzt, an den Neustart gebunden; Sofortsperre löscht es.
 - **Dateien:** kein Klartext auf Gerät, Server, in Sicherung oder Export (gesucht auch als UTF-16, Hex, Base64),
   auch nicht in Datei- und ZIP-Namen. Gestohlene Dateien öffnen sich nur mit beiden Faktoren.
 - **Drive:** gekippte Bits, vertauschte oder gelöschte Blöcke, gefälschter Index: immer eine Fehlermeldung, nie

@@ -144,15 +144,24 @@ class MailNotifications(private val context: Context) {
 
     private fun key(): SecretKey {
         (keyStore.getKey(ALIAS, null) as? SecretKey)?.let { return it }
-        val gen = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
-        gen.init(
-            KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+        // B5: in the phone's security chip (StrongBox) where there is one, else in the Keystore's
+        // trusted environment. The key never leaves it; the mail login is only stored encrypted.
+        fun generate(strongBox: Boolean): SecretKey {
+            val gen = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+            val spec = KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                 .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                 .setKeySize(256)
-                .build(),
-        )
-        return gen.generateKey()
+            if (strongBox && android.os.Build.VERSION.SDK_INT >= 28) spec.setIsStrongBoxBacked(true)
+            gen.init(spec.build())
+            return gen.generateKey()
+        }
+        return try {
+            generate(strongBox = true)
+        } catch (e: Exception) {
+            // No StrongBox (android.security.keystore.StrongBoxUnavailableException) or it refused.
+            generate(strongBox = false)
+        }
     }
 
     /** The periodic check and the instant service (after a restart of the phone, for example). */

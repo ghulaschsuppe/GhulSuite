@@ -253,10 +253,12 @@
     <string name="set_modules_hint">Ausgeschaltete Module verschwinden aus dem Menü. Ihre Daten bleiben verschlüsselt und unverändert erhalten.</string>
     <string name="set_new_code_text">Es wird ein neuer Wiederherstellungscode erstellt. Der bisherige Code funktioniert danach nicht mehr.</string>
     <string name="set_no_key_hint">Deine Suite ist mit einer Schlüsseldatei geschützt. Ein Security Key ist noch sicherer: Er lässt sich nicht kopieren.</string>
-    <string name="set_panic_hint">Der Sperr-Knopf und die Benachrichtigung sperren normal. Schütteln und die Kachel „GhulSuite sperren“ in den Schnelleinstellungen sind eine Panik-Sperre: Sie löschen zusätzlich Fingerabdruck- und App-PIN-Entsperren, danach öffnet nur das Master-Passwort. Mail-Benachrichtigungen und Termin-Erinnerungen laufen weiter. Ein kurzes Vibrieren bestätigt das Sperren durch Schütteln.</string>
+    <string name="set_panic_mail">Sofortsperre stoppt auch Mail-Benachrichtigungen</string>
+    <string name="set_panic_mail_hint">Für Benachrichtigungen bei gesperrter App hält das Handy einen eigenen Mail-Zugang, geschützt im Sicherheitschip des Geräts. Eingeschaltet löscht die Sofortsperre auch ihn: Bis zum nächsten Entsperren kommen keine Mail-Benachrichtigungen mehr.</string>
+    <string name="set_panic_hint">Der Sperr-Knopf und die Benachrichtigung sperren normal. Schütteln und die Kachel „GhulSuite sperren“ in den Schnelleinstellungen sind eine Sofortsperre: Sie löschen zusätzlich Fingerabdruck- und App-PIN-Entsperren, danach öffnet nur das Master-Passwort. Mail-Benachrichtigungen und Termin-Erinnerungen laufen weiter. Ein kurzes Vibrieren bestätigt das Sperren durch Schütteln.</string>
     <string name="set_password">Master-Passwort</string>
     <string name="set_pin_mismatch">Die PINs stimmen nicht überein.</string>
-    <string name="set_quick_always_full">Passwort und zweiter Faktor (Key oder Schlüsseldatei) sind immer nötig nach einem Neustart, nach Ablauf der Gültigkeit, nach einer Panik-Sperre, nach 5 falschen App-PINs und wenn Fingerabdrücke geändert werden.</string>
+    <string name="set_quick_always_full">Passwort und zweiter Faktor (Key oder Schlüsseldatei) sind immer nötig nach einem Neustart, nach Ablauf der Gültigkeit, nach einer Sofortsperre, nach 5 falschen App-PINs und wenn Fingerabdrücke geändert werden.</string>
     <string name="set_quick_bio">Fingerabdruck</string>
     <string name="set_quick_bio_unavailable">Kein sicherer Fingerabdrucksensor oder kein Fingerabdruck auf diesem Gerät eingerichtet.</string>
     <string name="set_quick_hint">Nach dem Entsperren mit Passwort und zweitem Faktor kannst du GhulSuite für eine Weile per Fingerabdruck oder App-PIN öffnen.</string>
@@ -413,6 +415,20 @@
     <string name="err_host_key_changed">Achtung: Der Server zeigt einen anderen Schlüssel (%1$s). Möglicherweise hört jemand mit. Es wurde nichts übertragen.</string>
     <string name="err_cert_untrusted">Dem Server-Zertifikat wird nicht vertraut (%1$s).</string>
     <string name="err_server_auth">Der Server hat die Anmeldung abgelehnt. Prüfe Benutzername, Passwort oder Schlüssel.</string>
+    <string name="err_drive_rolled_back">Der GhulDrive-Stand auf dem Server ist älter als der zuletzt gesehene (Server zurückgesetzt oder alte Sicherung eingespielt). Es wurde nichts geändert. War das Absicht: Optionen → GhulDrive → „Älteren Serverstand übernehmen“.</string>
+    <string name="err_share_not_deleted">Der Server dieses Links ist nicht mehr eingetragen, das Paket konnte nicht gelöscht werden. Der Link funktioniert bis zu seinem Ablauf.</string>
+    <string name="err_php_not_executed">Der Webserver führt PHP nicht aus und liefert das Server-Modul als Text aus: Sein Zugangsschlüssel wäre lesbar. Die App hat die Datei wieder gelöscht. Prüfe beim Hoster, ob PHP für diesen Ordner aktiv ist.</string>
+    <string name="drive_accept_state">Älteren Serverstand übernehmen</string>
+    <string name="drive_accept_state_hint">Nur nötig, wenn GhulDrive meldet, dass der Stand auf dem Server älter ist als zuletzt gesehen, zum Beispiel nach dem Einspielen einer Server-Sicherung.</string>
+    <string name="drive_accept_state_text">GhulDrive übernimmt den Stand, der jetzt auf dem Server liegt. Dateien, die erst danach hinzugekommen waren, sind dann nicht mehr aufgeführt. Nur übernehmen, wenn du den Server selbst zurückgesetzt hast.</string>
+    <string name="mail_key_verified">bestätigt</string>
+    <string name="mail_key_changed">Der Schlüssel hat sich geändert. Vergleiche den Fingerabdruck mit dem Kontakt.</string>
+    <string name="mail_key_offered">Eine Mail bot einen anderen Schlüssel an. Der bestätigte bleibt; frag nach, ob der Kontakt einen neuen hat.</string>
+    <string name="mail_key_compare">Vergleichen</string>
+    <string name="mail_key_compare_title">Fingerabdruck von %1$s</string>
+    <string name="mail_key_compare_text">Lass dir den Fingerabdruck vom Kontakt zeigen oder vorlesen, persönlich oder am Telefon. Stimmt er Zeichen für Zeichen überein, ist es wirklich sein Schlüssel.</string>
+    <string name="mail_key_offered_was">Angeboten wurde: %1$s</string>
+    <string name="mail_key_matches">Stimmt überein</string>
     <string name="err_password_elsewhere">Das Master-Passwort wurde auf einem anderen Gerät geändert.</string>
     <string name="err_protection_elsewhere">Die Schlüssel deiner Suite wurden auf einem anderen Gerät geändert.</string>
     <string name="err_not_configured">Noch nicht eingerichtet.</string>
@@ -528,7 +544,7 @@
     <string name="mail_attachment_warning">Öffne Anhänge nur von Absendern, denen du vertraust.</string>
     <string name="mail_sent_msg">Nachricht gesendet.</string>
     <string name="mail_notify">Bei neuen E-Mails benachrichtigen</string>
-    <string name="mail_notify_hint">Neue E-Mails kommen auch, wenn GhulSuite gesperrt oder geschlossen ist, nach einem Neustart des Handys und nach der Panik-Sperre. Dafür bleibt eine Kopie der Posteingangs-Anmeldung auf diesem Gerät, geschützt durch den Android-Keystore. Der Server meldet neue Mails sofort; dafür zeigt Android eine stille Dauer-Benachrichtigung „GhulMail ist bereit“. Benachrichtigungen zeigen standardmäßig nur den Kontonamen und die Anzahl neuer Nachrichten (oben änderbar). Nur „Beenden erzwingen“ in den Android-Einstellungen stoppt den Empfang, bis du GhulSuite wieder öffnest.</string>
+    <string name="mail_notify_hint">Neue E-Mails kommen auch, wenn GhulSuite gesperrt oder geschlossen ist, nach einem Neustart des Handys und nach der Sofortsperre. Dafür bleibt eine Kopie der Posteingangs-Anmeldung auf diesem Gerät, geschützt durch den Android-Keystore. Der Server meldet neue Mails sofort; dafür zeigt Android eine stille Dauer-Benachrichtigung „GhulMail ist bereit“. Benachrichtigungen zeigen standardmäßig nur den Kontonamen und die Anzahl neuer Nachrichten (oben änderbar). Nur „Beenden erzwingen“ in den Android-Einstellungen stoppt den Empfang, bis du GhulSuite wieder öffnest.</string>
     <string name="mail_remove_title">%1$s entfernen?</string>
     <string name="mail_remove_text">Das Konto wird aus GhulSuite entfernt. Deine E-Mails bleiben auf dem Mailserver.</string>
     <string name="set_mail">GhulMail-Konten</string>
@@ -600,7 +616,7 @@
     <string name="set_g_servers">Synchronisation</string>
     <string name="set_import_sub">Proton, Bitwarden, Aegis, 2FAS, KeePass …</string>
     <string name="set_lock_hint_short">Entfernt alle Schlüssel aus dem Speicher</string>
-    <string name="set_lock_panic">Sperren und Panik</string>
+    <string name="set_lock_panic">Sperren</string>
     <string name="set_lock_panic_sub">Zeit, Schütteln, Schnellkachel</string>
     <string name="set_mail_sub">Konten, Benachrichtigungen</string>
     <string name="set_modules_sub">Einrichten, ausblenden, entfernen</string>
@@ -1239,8 +1255,8 @@
     <string name="wz_one_area">Mindestens einen Bereich wählen.</string>
     <string name="wz_drive_missing">GhulDrive, noch offen: %1$s. Oder „Später“ wählen.</string>
     <string name="wz_lock_sub">Wenn GhulSuite im Hintergrund ist oder du nichts tust.</string>
-    <string name="wz_shake_sub">Schütteln = Panik-Sperre: sperrt sofort und löscht das Schnell-Entsperren (Fingerabdruck, PIN).</string>
-    <string name="wz_lock_hint">Alles lässt sich später unter Optionen → Sperren und Panik ändern. Gilt nur für dieses Gerät.</string>
+    <string name="wz_shake_sub">Schütteln = Sofortsperre: sperrt sofort und löscht das Schnell-Entsperren (Fingerabdruck, PIN).</string>
+    <string name="wz_lock_hint">Alles lässt sich später unter Optionen → Sperren ändern. Gilt nur für dieses Gerät.</string>
     <string name="wz_quick_explain">Schnell-Entsperren heißt: mit Fingerabdruck oder einer App-PIN statt Passwort und zweitem Faktor (Key oder Schlüsseldatei), für die Zeit zwischen zwei vollständigen Anmeldungen.</string>
     <string name="wz_quick_none">Immer Passwort und zweiter Faktor</string>
     <string name="wz_quick_none_sub">Am sichersten</string>
@@ -1252,7 +1268,7 @@
     <string name="wz_pin_rule">Die App-PIN braucht 6 bis 12 Ziffern.</string>
     <string name="wz_quick_valid">Schnell-Entsperren gilt</string>
     <string name="wz_quick_valid_sub">Danach wieder Passwort und zweiter Faktor.</string>
-    <string name="wz_quick_always_note">Ohne Ablauf. Nach einem Neustart des Geräts, einer Panik-Sperre oder einem Passwortwechsel brauchst du trotzdem wieder Passwort und zweiten Faktor.</string>
+    <string name="wz_quick_always_note">Ohne Ablauf. Nach einem Neustart des Geräts, einer Sofortsperre oder einem Passwortwechsel brauchst du trotzdem wieder Passwort und zweiten Faktor.</string>
     <string name="area_pass_sub">Passwörter, Notizen, Karten, WLAN</string>
     <string name="area_auth_sub">2FA-Codes für deine Konten</string>
     <string name="area_drive_sub">Verschlüsselte Dateien auf deinem Server</string>

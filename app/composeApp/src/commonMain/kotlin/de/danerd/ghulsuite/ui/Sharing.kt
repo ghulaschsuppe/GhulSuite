@@ -454,6 +454,25 @@ fun DriveSettingsSection(state: AppState) {
         Hint(stringResource(Res.string.ctx_shares_sub))
         OutlinedButton(onClick = { state.push(Screen.Shares) }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.shares_title)) }
         Hint(stringResource(Res.string.drive_crypto_hint))
+        // B3: after a reset of the server (old GhulDrive put back) GhulDrive refuses to write.
+        var accept by remember { mutableStateOf(false) }
+        TextButton(onClick = { accept = true }) { Text(stringResource(Res.string.drive_accept_state)) }
+        Hint(stringResource(Res.string.drive_accept_state_hint))
+        if (accept) {
+            AlertDialog(
+                danger = true,
+                onDismissRequest = { accept = false },
+                title = { Text(stringResource(Res.string.drive_accept_state)) },
+                text = { Text(stringResource(Res.string.drive_accept_state_text)) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        accept = false
+                        state.run(block = { net.driveAcceptServerState() }) { state.changed() }
+                    }) { Text(stringResource(Res.string.a_take_over)) }
+                },
+                dismissButton = { TextButton(onClick = { accept = false }) { Text(stringResource(Res.string.a_cancel)) } },
+            )
+        }
     }
     if (net.photoBackupAvailable) {
         SectionCard(deviceGroupTitle()) {

@@ -185,6 +185,8 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                         ChoiceRow(stringResource(Res.string.set_shake_sensitivity), SHAKE_OPTIONS, settings.shakeSensitivity) { settings.shakeSensitivity = it }
                     }
                     Hint(stringResource(Res.string.set_panic_hint))
+                    SwitchRow(stringResource(Res.string.set_panic_mail), settings.panicStopsMail) { settings.panicStopsMail = it }
+                    Hint(stringResource(Res.string.set_panic_mail_hint))
                 } else {
                     // On wide windows the lock is in the sidebar, else in the top bar.
                     Hint(stringResource(if (LocalWide.current) Res.string.set_panic_hint_sidebar else Res.string.set_panic_hint_desktop))

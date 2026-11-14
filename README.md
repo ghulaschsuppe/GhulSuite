@@ -57,7 +57,7 @@ dessen Zukunft. GhulSuite dreht das um:
 | 🟠 | **GhulMail**: E-Mail | Jedes IMAP/SMTP-Postfach · OpenPGP ohne Einrichtung (Autocrypt, WKD): signiert immer, verschlüsselt automatisch · Alle Posteingänge, Unterhaltungen, Labels · Entwürfe, Später senden · Benachrichtigungen mit wählbarem Inhalt · offline lesen · als Standard-Mail-App nutzbar (Android) |
 | 🔴 | **GhulCal**: Kalender | Termine verschlüsselt im Suite-Ordner · Monat, Woche, Tag, Liste · Serien und Erinnerungen · Schnell-Eintragen („Zahnarzt Fr 10 Uhr“) · Feiertage nach Bundesland, Österreich, Schweiz · mehrere Kalender, Geburtstage mit Alter · Import und Export als .ics, Zeitzonen werden umgerechnet · bewusst ohne CalDAV |
 
-Dazu: **Panik-Sperre** (Schütteln oder Schnellkachel), Auto-Sperre, Entsperren per Fingerabdruck oder App-PIN,
+Dazu: **Sofortsperre** (Schütteln oder Schnellkachel), Auto-Sperre, Entsperren per Fingerabdruck oder App-PIN,
 Schutz vor Bildschirmfotos, Komplett-Sicherung als ZIP und Synchronisation zwischen all deinen Geräten.
 
 ## Auch auf dem großen Bildschirm

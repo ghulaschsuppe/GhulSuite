@@ -253,10 +253,12 @@
     <string name="set_modules_hint">Switched-off modules disappear from the menu. Their data stays encrypted and unchanged.</string>
     <string name="set_new_code_text">A new recovery code is created. The previous code stops working.</string>
     <string name="set_no_key_hint">Your suite is protected with a key file. A security key is even more secure: it cannot be copied.</string>
-    <string name="set_panic_hint">The lock button and the notification lock normally. Shaking and the quick settings tile "Lock GhulSuite" are a panic lock: they also remove fingerprint and app PIN unlock, afterwards only the master password opens the app. Mail notifications and reminders keep working. A short buzz confirms locking by shaking.</string>
+    <string name="set_panic_mail">Instant lock also stops mail notifications</string>
+    <string name="set_panic_mail_hint">For notifications while the app is locked, the phone keeps its own mail login, protected in the device's security chip. Switched on, the instant lock deletes it too: no mail notifications until the next unlock.</string>
+    <string name="set_panic_hint">The lock button and the notification lock normally. Shaking and the quick settings tile "Lock GhulSuite" are a instant lock: they also remove fingerprint and app PIN unlock, afterwards only the master password opens the app. Mail notifications and reminders keep working. A short buzz confirms locking by shaking.</string>
     <string name="set_password">Master password</string>
     <string name="set_pin_mismatch">The PINs do not match.</string>
-    <string name="set_quick_always_full">Password and second factor (key or key file) are always required after a restart, after the validity ends, after a panic lock, after 5 wrong app PINs and when fingerprints are changed.</string>
+    <string name="set_quick_always_full">Password and second factor (key or key file) are always required after a restart, after the validity ends, after a instant lock, after 5 wrong app PINs and when fingerprints are changed.</string>
     <string name="set_quick_bio">Fingerprint</string>
     <string name="set_quick_bio_unavailable">No secure fingerprint sensor or no fingerprint set up on this device.</string>
     <string name="set_quick_hint">After unlocking with password and second factor, you can open GhulSuite with your fingerprint or an app PIN for a while.</string>
@@ -413,6 +415,20 @@
     <string name="err_host_key_changed">Warning: the server presents a different key (%1$s). Someone may be intercepting the connection. Nothing was transferred.</string>
     <string name="err_cert_untrusted">The server certificate is not trusted (%1$s).</string>
     <string name="err_server_auth">The server rejected the login. Check user name, password or key.</string>
+    <string name="err_drive_rolled_back">The GhulDrive state on the server is older than the one seen last (server reset or an old backup put back). Nothing was changed. If that was on purpose: Options → GhulDrive → “Take older server state”.</string>
+    <string name="err_share_not_deleted">The server of this link is no longer set up, its package could not be deleted. The link works until it expires.</string>
+    <string name="err_php_not_executed">The web server does not run PHP and delivers the server module as text: its access key would be readable. The app deleted the file again. Ask your host whether PHP is active for this folder.</string>
+    <string name="drive_accept_state">Take older server state</string>
+    <string name="drive_accept_state_hint">Only needed if GhulDrive reports that the state on the server is older than seen last, for example after restoring a server backup.</string>
+    <string name="drive_accept_state_text">GhulDrive takes the state that is on the server now. Files added only after it are then no longer listed. Only take it if you reset the server yourself.</string>
+    <string name="mail_key_verified">confirmed</string>
+    <string name="mail_key_changed">The key has changed. Compare the fingerprint with the contact.</string>
+    <string name="mail_key_offered">A mail offered another key. The confirmed one stays; ask whether the contact has a new one.</string>
+    <string name="mail_key_compare">Compare</string>
+    <string name="mail_key_compare_title">Fingerprint of %1$s</string>
+    <string name="mail_key_compare_text">Have the contact show or read out their fingerprint, in person or on the phone. If it matches character by character, it really is their key.</string>
+    <string name="mail_key_offered_was">Offered was: %1$s</string>
+    <string name="mail_key_matches">It matches</string>
     <string name="err_password_elsewhere">The master password was changed on another device.</string>
     <string name="err_protection_elsewhere">The keys of your suite were changed on another device.</string>
     <string name="err_not_configured">Not set up yet.</string>
@@ -528,7 +544,7 @@
     <string name="mail_attachment_warning">Only open attachments from senders you trust.</string>
     <string name="mail_sent_msg">Message sent.</string>
     <string name="mail_notify">Notify about new e-mails</string>
-    <string name="mail_notify_hint">New e-mail arrives even when GhulSuite is locked or closed, after a restart of the phone and after the panic lock. For this a copy of the inbox login stays on this device, protected by the Android Keystore. The server reports new mail at once; Android shows a silent permanent notification "GhulMail is ready" for this. By default notifications show only the account name and the number of new messages (changeable above). Only "Force stop" in the Android settings stops reception until you open GhulSuite again.</string>
+    <string name="mail_notify_hint">New e-mail arrives even when GhulSuite is locked or closed, after a restart of the phone and after the instant lock. For this a copy of the inbox login stays on this device, protected by the Android Keystore. The server reports new mail at once; Android shows a silent permanent notification "GhulMail is ready" for this. By default notifications show only the account name and the number of new messages (changeable above). Only "Force stop" in the Android settings stops reception until you open GhulSuite again.</string>
     <string name="mail_remove_title">Remove %1$s?</string>
     <string name="mail_remove_text">The account is removed from GhulSuite. Your e-mails stay on the mail server.</string>
     <string name="set_mail">GhulMail accounts</string>
@@ -600,7 +616,7 @@
     <string name="set_g_servers">Synchronisation</string>
     <string name="set_import_sub">Proton, Bitwarden, Aegis, 2FAS, KeePass …</string>
     <string name="set_lock_hint_short">Removes all keys from memory</string>
-    <string name="set_lock_panic">Lock and panic</string>
+    <string name="set_lock_panic">Locking</string>
     <string name="set_lock_panic_sub">Time, shake, quick tile</string>
     <string name="set_mail_sub">Accounts, notifications</string>
     <string name="set_modules_sub">Set up, hide, remove</string>
@@ -1239,8 +1255,8 @@
     <string name="wz_one_area">Choose at least one area.</string>
     <string name="wz_drive_missing">GhulDrive, still open: %1$s. Or choose “Later”.</string>
     <string name="wz_lock_sub">When GhulSuite is in the background or you do nothing.</string>
-    <string name="wz_shake_sub">Shake = panic lock: locks at once and deletes the quick unlock (fingerprint, PIN).</string>
-    <string name="wz_lock_hint">Everything can be changed later in Options → Locking and panic. Applies to this device only.</string>
+    <string name="wz_shake_sub">Shake = instant lock: locks at once and deletes the quick unlock (fingerprint, PIN).</string>
+    <string name="wz_lock_hint">Everything can be changed later in Options → Locking. Applies to this device only.</string>
     <string name="wz_quick_explain">Quick unlock means: with your fingerprint or an app PIN instead of password and second factor (key or key file), for the time between two full unlocks.</string>
     <string name="wz_quick_none">Always password and second factor</string>
     <string name="wz_quick_none_sub">The safest</string>
@@ -1252,7 +1268,7 @@
     <string name="wz_pin_rule">The app PIN needs 6 to 12 digits.</string>
     <string name="wz_quick_valid">Quick unlock is valid</string>
     <string name="wz_quick_valid_sub">Then password and second factor again.</string>
-    <string name="wz_quick_always_note">No expiry. After a restart of the device, a panic lock or a password change you still need password and second factor again.</string>
+    <string name="wz_quick_always_note">No expiry. After a restart of the device, a instant lock or a password change you still need password and second factor again.</string>
     <string name="area_pass_sub">Passwords, notes, cards, Wi-Fi</string>
     <string name="area_auth_sub">2FA codes for your accounts</string>
     <string name="area_drive_sub">Encrypted files on your server</string>

@@ -124,6 +124,11 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
     override fun panicLock() {
         lock()
         quick.disableAll()
+        // B5 "hard panic": also the mail logins kept for notifications go (until the next unlock).
+        if (settings.panicStopsMail) {
+            val mail = MailNotifications(context)
+            mail.accounts().forEach { mail.disable(it) }
+        }
     }
 
     // --- key access -----------------------------------------------------------------------

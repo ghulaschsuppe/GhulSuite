@@ -1338,6 +1338,7 @@ private fun MailKeysSection(state: AppState, accounts: List<MailAccountUi>) {
     val net = state.backend.net
     var known by remember { mutableStateOf<List<de.danerd.ghulsuite.model.MailKeyInfoUi>>(emptyList()) }
     var forgetting by remember { mutableStateOf<de.danerd.ghulsuite.model.MailKeyInfoUi?>(null) }
+    var comparing by remember { mutableStateOf<de.danerd.ghulsuite.model.MailKeyInfoUi?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(state.liveRevision()) { known = runCatching { net.mailKnownKeys() }.getOrDefault(emptyList()) }
     val savedMsg = stringResource(Res.string.msg_saved_file)
@@ -1372,8 +1373,15 @@ private fun MailKeysSection(state: AppState, accounts: List<MailAccountUi>) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(k.email)
-                    Hint(stringResource(keySourceLabel(k.source)) + " · " + k.fingerprint.takeLast(19))
+                    Hint(
+                        stringResource(keySourceLabel(k.source)) + " · " + k.fingerprint.takeLast(19) +
+                            if (k.verified) " · " + stringResource(Res.string.mail_key_verified) else "",
+                    )
+                    // L7: a changed or a refused key is a warning until the user compared it.
+                    if (k.previous.isNotEmpty()) Text(stringResource(Res.string.mail_key_changed), color = warnColor(), style = MaterialTheme.typography.bodySmall)
+                    if (k.offered.isNotEmpty()) Text(stringResource(Res.string.mail_key_offered), color = warnColor(), style = MaterialTheme.typography.bodySmall)
                 }
+                TextButton(onClick = { comparing = k }) { Text(stringResource(Res.string.mail_key_compare)) }
                 TextButton(onClick = { forgetting = k }) { Text(stringResource(Res.string.mail_key_forget)) }
             }
         }
@@ -1381,6 +1389,30 @@ private fun MailKeysSection(state: AppState, accounts: List<MailAccountUi>) {
             OutlinedButton(onClick = import, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.mail_key_import)) }
         }
         ErrorText(error)
+    }
+    comparing?.let { k ->
+        AlertDialog(
+            onDismissRequest = { comparing = null },
+            title = { Text(stringResource(Res.string.mail_key_compare_title, k.email)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(Res.string.mail_key_compare_text))
+                    SelectionContainer {
+                        Text(k.fingerprint, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                    }
+                    if (k.offered.isNotEmpty()) {
+                        Text(stringResource(Res.string.mail_key_offered_was, k.offered), color = warnColor(), style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    comparing = null
+                    state.run(block = { net.mailVerifyKey(k.email) }) { state.changed() }
+                }) { Text(stringResource(Res.string.mail_key_matches)) }
+            },
+            dismissButton = { TextButton(onClick = { comparing = null }) { Text(stringResource(Res.string.a_cancel)) } },
+        )
     }
     forgetting?.let { k ->
         AlertDialog(
