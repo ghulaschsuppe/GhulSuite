@@ -75,7 +75,7 @@ Zugriff auf Tresorinhalte.
 
 | Nr. | Entscheidung | Begründung |
 |---|---|---|
-| L4, B17 | Die App wird bei Pushes auf **jeden eigenen Branch** mit dem echten Schlüssel signiert, nicht nur auf `main` | Entwicklerversionen sollen sich über die installierte App aktualisieren lassen; mit einem anderen Schlüssel müsste man sie erst deinstallieren und verlöre die Daten auf dem Gerät. Schutz: Der Schlüssel steht nur bei Pushes im eigenen Repository bereit, nie bei Pull Requests oder Forks, und pushen kann nur der Inhaber. Vor Version 1.0: eigener Release-Schlüssel in einer geschützten GitHub-Umgebung |
+| L4, B17 | **Ein Signaturschlüssel für alles:** Entwicklerversionen aller eigenen Branches und spätere Veröffentlichungen werden mit demselben Schlüssel signiert, ein getrennter Release-Schlüssel ist nicht vorgesehen | Entwicklerversionen sollen sich über die installierte App aktualisieren lassen; mit einem anderen Schlüssel müsste man sie erst deinstallieren und verlöre die Daten auf dem Gerät. Ein zweiter Schlüssel schützte vor allem gegen einen übernommenen GitHub-Zugang, und mit dem ließe sich auch `main` ändern. Schutz: Der Schlüssel steht nur bei Pushes im eigenen Repository bereit, nie bei Pull Requests oder Forks; pushen kann nur der Inhaber. Voraussetzungen: Zwei-Faktor-Anmeldung bei GitHub (Passkey oder Security Key), eine Offline-Sicherung der Keystore-Datei und ihres Passworts (ohne sie lässt sich keine installierte App mehr aktualisieren), Abhängigkeiten nur bewusst aktualisieren (Gradle-Prüfsummen, `Cargo.lock`) |
 | F24 | Titel werden ohne Leerraum am Rand gespeichert | Absicht (Suche, Sortierung, Anzeige); alles Geheime bleibt Zeichen für Zeichen erhalten |
 
 ### 4.2 Nachprüfbarkeit des Builds
@@ -86,8 +86,8 @@ Zugriff auf Tresorinhalte.
   sha256 help` und die Änderung der Datei im Pull Request prüfen. Für den Rust-Kern sichern `Cargo.lock` und
   `cargo deny` dasselbe.
 - **Reproduzierbarkeit (L4, B17):** Der Nachtlauf baut den Kern zweimal in verschiedenen Ordnern und verlangt
-  byte-gleiche Ergebnisse. Für die ganze APK (Kotlin, Ressourcen, Signatur) ist das noch nicht nachgewiesen; das
-  gehört zum eigenen Release-Schlüssel vor Version 1.0.
+  byte-gleiche Ergebnisse. Für die ganze APK (Kotlin, Ressourcen) ist das noch nicht nachgewiesen; das gehört zu
+  festen Releases (Issue #6).
 
 ### 4.3 Grenzen, die keine App lösen kann
 

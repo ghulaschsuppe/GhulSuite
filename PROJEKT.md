@@ -45,6 +45,12 @@ tools/                 Testserver (SFTP/IMAP/SMTP), Prüfskripte, Emulator-Skrip
 
 ## Bauen und testen
 
+- **Vor jedem Push: `tools/precheck.sh`.** Führt alle Prüfungen der CI aus, die lokal gehen (Texte, Testvektoren,
+  Format, Clippy für Linux und Windows, alle Kerntests, PHP-Modul, Workflows, signierte APK mit Lint,
+  Desktop-Paketierung mit den Gradle-Prüfsummen), bricht beim ersten Fehler **nicht** ab und listet am Ende alle
+  Fehler mit Log. Erst wenn alles grün ist, pushen; mehrere Korrekturen gesammelt pushen. `--quick` lässt Gradle
+  weg, `--full` nimmt die langen Release- und Browser-Tests dazu. Nur Windows selbst, der Emulator und die
+  Netzwerk-Tests gegen echte Testserver bleiben der CI.
 - Voraussetzungen: Rust (Ziele `aarch64-linux-android`, `x86_64-linux-android`), `cargo-ndk`, Android SDK mit
   NDK 28.2.13676358, JDK 17+.
 - Kern: `cd core && cargo fmt --all && cargo clippy -p ghul-core --all-targets -- -D warnings && cargo test -p ghul-core`.
@@ -58,7 +64,8 @@ tools/                 Testserver (SFTP/IMAP/SMTP), Prüfskripte, Emulator-Skrip
 ## CI und Testserver
 
 - `.github/workflows/android.yml`: Kern (Format, Clippy, Tests, Fuzzing, Audit), Netzwerk-Tests, Browser-Tests,
-  Windows-Pakete (MSI und portabel), APK, Emulator-Abläufe. Artefakte: `ghulsuite-dev`, `ghulsuite-windows-dev`,
+  Windows-Pakete (MSI und portabel), APK, Emulator-Abläufe. Format, Clippy, Tests und der App-Build laufen auch nach
+  einem Fehler weiter, damit ein Lauf alle Fehler auf einmal zeigt. Artefakte: `ghulsuite-dev`, `ghulsuite-windows-dev`,
   `screenshots`, `emulator-tests`.
 - **Emulator-Abläufe** (langsam, weil ein ganzes Android startet) laufen nicht bei jedem Push eines Arbeits-Branches,
   sondern bei Pull Requests, auf `main` und nachts. Nachts kommen die Abläufe mit echten Testservern (GhulDrive,
@@ -71,6 +78,9 @@ tools/                 Testserver (SFTP/IMAP/SMTP), Prüfskripte, Emulator-Skrip
   `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`.
 - **Signatur:** Der Android-Schlüssel kommt nur aus den Secrets (`GHUL_KEYSTORE_FILE`, `GHUL_KEYSTORE_PASSWORD`,
   `GHUL_KEY_ALIAS` in `app/composeApp/build.gradle.kts`). Ohne ihn signiert Gradle mit dem lokalen Debug-Schlüssel.
+  **Ein Schlüssel für alles** (Entwicklerversionen und Veröffentlichungen, Begründung in `docs/AUDIT.md` 4.1). Die
+  Keystore-Datei und ihr Passwort gehören zusätzlich offline gesichert: Ohne sie lässt sich keine installierte App
+  mehr aktualisieren.
 
 ## Arbeitsweise: Branches, Pull Requests, Issues
 

@@ -526,6 +526,101 @@ Zugänge an (`rk = false`), der Key speichert nichts.
   Abhilfe: privates DNS bzw. DNS-over-HTTPS, VPN.
 - Manche Mailserver schreiben beim Versand deine IP-Adresse in den Mail-Header.
 
+**Auswahl und Aufräumen (abgestimmt am 14.11.2026):**
+- Mehrfachauswahl per langem Drücken, „Alle“ wählt die geladenen Mails. Sind alle geladen ausgewählt, erscheint
+  „Alle N Mails in diesem Ordner auswählen“; die Aktionen (gelesen, markieren, archivieren, verschieben, löschen)
+  wirken dann auf den ganzen Ordner. Löschen heißt wie überall: in den Papierkorb.
+- **„Ordner leeren“** nur in Papierkorb und Spam: Rückfrage mit Anzahl, danach beim Anbieter endgültig gelöscht.
+
+#### 9.3.1 Verschlüsseltes Mail-Archiv (abgestimmt am 14.11.2026, geplant)
+
+**Ziel:** Beim Anbieter liegt nur noch Neues im Klartext; alles Ältere liegt verschlüsselt auf dem eigenen Server
+(oder im Suite-Ordner), auf allen Geräten sichtbar, durchsuchbar, offline lesbar. Kein POP3-Prinzip: Ein einzelnes
+Gerät ist nie der einzige Aufbewahrungsort.
+
+**Grundgesetz:** Zu keinem Zeitpunkt darf eine Mail weder beim Anbieter noch geprüft im Archiv liegen. Löschen gibt es
+nur bewusst, nie als Nebenwirkung einer Frage. Jede Rückfrage hat eine harmlose Antwort, und Wegtippen ist „Später“.
+
+**Einstellungen**
+- *Frist* bis zum Archivieren: frei wählbar, Auswahl 1, 7, 30 (vorausgewählt), 90, 365 Tage oder eigener Wert.
+- *Löschen beim Anbieter* nach dem Archivieren: **aus**, muss von Hand eingeschaltet und bestätigt werden.
+- *Gesendete Mails* werden mit archiviert.
+- *Spam und Papierkorb* je Ordner wählbar: archivieren, nach der Frist beim Anbieter löschen, oder in Ruhe lassen.
+- *Ort:* „wie Synchronisation“, eigener Server (wie GhulDrive) oder der Suite-Ordner (nur dieses Gerät).
+- *Offline:* standardmäßig alle Texte, Anhänge bis 10 MB je Anhang und nur im WLAN, alles Geöffnete; Speicherbalken und
+  „Offline-Speicher leeren“ wie bei GhulDrive. Je Gerät „Vollständige Archivkopie auf diesem Gerät“ (Windows: an,
+  Android: aus).
+
+**Einrichtung** (Assistent beim Hinzufügen eines Kontos, später in den Mail-Optionen änderbar):
+„Wo sollen deine Mails liegen?“ Beim Anbieter lassen / Verschlüsselt archivieren (empfohlen, nur mit eigenem Server,
+sonst ausgegraut mit Begründung) / Archivieren, beim Anbieter aber behalten.
+
+**Anzeige:** keine eigene Archiv-Ansicht. Die Ordner zeigen die neuen Mails vom Anbieter und darunter nahtlos die
+archivierten (kleines Symbol). Suche über alles, auch offline (Suchindex verschlüsselt auf dem Gerät). Gelesen,
+Markieren, Verschieben, Löschen, Antworten wie gewohnt; Änderungen werden wie Tresoreinträge zusammengeführt.
+Löschen im Archiv: 30 Tage im Archiv-Papierkorb. Export als `.eml`/`.mbox` jederzeit.
+
+**Ablage und Format**
+- In der Mail-Datei (`.ghlmail`): Archiv-Kennung, Archiv-Schlüssel (je Epoche), Verweis auf den Ort, Einstellungen,
+  je Gerät eine kurze Angabe, wie viel es offline hat und von wann (keine Inhalte). Die Suite-Datei ändert sich nicht.
+- Auf dem Server ein eigener Ordner: verschlüsselte Kopfdatei mit der Archiv-Kennung, Index je Konto und Monat,
+  Mails und Anhänge als verschlüsselte Blöcke wie bei GhulDrive. Doppelte Anhänge nur einmal (geheime Prüfsumme, die
+  der Server nicht zuordnen kann). Der Server sieht nur Anzahl und ungefähre Größe.
+- Mail-Datei plus Archiv-Ordner sind ein eigenständiges Postfach: öffnet mit Master-Passwort und Key, ohne Anbieter,
+  ohne Internet; lässt sich wie ein Tresor zu einer Suite hinzufügen.
+- *Schlüssel-Epochen:* Ein Archiv mit Gigabytes wird bei einer Schutzänderung nicht neu verschlüsselt. Nach neuem
+  Notfallblatt oder entferntem Key bekommen neue Mails einen neuen Archiv-Schlüssel; eine alte Sicherung samt altem
+  Faktor öffnet nur, was bis dahin archiviert war.
+
+**Archivieren**
+1. Vorab zählen und anzeigen (Anzahl, Größe, freier Platz auf dem Server, geschätzte Dauer); reicht der Platz nicht,
+   fragen oder ein Teilarchiv wählen (z. B. die letzten 5 Jahre).
+2. Im Hintergrund in Paketen von etwa 200 Mails, die neuesten zuerst; jedes Paket einzeln abgeschlossen, nach Abbruch
+   geht es genau dort weiter. Standardmäßig nur im WLAN, der große erste Lauf nur beim Laden. Fortschritt in den
+   Mail-Optionen, auf Android als stille Benachrichtigung.
+3. Eine Mail gilt erst als archiviert, wenn sie über eine neue Verbindung zurückgelesen wurde und Byte für Byte
+   übereinstimmt.
+4. Beim Anbieter gelöscht wird nur, wenn das eingeschaltet ist, nur geprüft Archiviertes und nur genau diese Mail (per
+   UID, nie „alles Markierte“). Der erste große Lauf löscht gar nichts; am Ende fragt die App einmal: „Alles sicher
+   archiviert. Jetzt N Mails beim Anbieter entfernen?“
+5. Neu nummerierter Ordner beim Anbieter (UIDVALIDITY): sofort anhalten und neu abgleichen, nichts zuordnen.
+6. Je Konto archiviert immer nur ein Gerät (Sperre im Archiv), die anderen warten.
+7. Liegt das Archiv nur im Suite-Ordner (ohne Server), wird beim Anbieter nur gelöscht, wenn eine Sicherung des
+   Archivs jünger ist als die zu löschenden Mails. Gibt es weder Server noch vollständige Kopie noch frische
+   Sicherung, pausiert das Löschen und die Mail-Optionen warnen („Letzte Archiv-Sicherung: vor 34 Tagen“).
+
+**Archiv nicht erreichbar** (Server gewechselt, Ordner verschoben, offline)
+- Die Suite öffnet normal, Mails beim Anbieter und alles Offline-Gespeicherte bleiben nutzbar. In GhulMail oben:
+  „Mail-Archiv nicht erreichbar“ mit „Erneut versuchen“ und „Archiv-Ort ändern“. Das Archivieren pausiert, beim
+  Anbieter wird nichts gelöscht.
+- „Archiv-Ort ändern“: Server-Formular, Ordner aus der Liste wählen. Liegt dort dasselbe Archiv (gleiche Kennung):
+  verbinden. Leer: „Archiv hierher umziehen?“ (vom alten Ort kopieren, prüfen, umschalten). Ein fremdes Archiv: ablehnen.
+  Der neue Ort wird über die Mail-Datei synchronisiert, die anderen Geräte ziehen nach.
+- Wechsel des Sync-Servers in den Optionen: Rückfrage „Dein Mail-Archiv liegt auf diesem Server. Mitnehmen?“ (wie bei
+  GhulDrive).
+
+**Wiederherstellen aus Geräte-Kopien** (alter Server weg, keine Sicherung)
+- Der Neuaufbau läuft auf dem Gerät mit der Kopie; Geräte sprechen nie direkt miteinander. Andere Geräte zeigen:
+  „Eine Kopie des Archivs hat: Windows-PC (34.512 Mails, Stand 12.11.). Öffne GhulSuite dort.“
+- Das Gerät mit der Kopie fragt einmal und lädt dann in den neuen Ort hoch, in Paketen, geprüft wie beim Archivieren.
+  Mehrere Geräte mit Teilkopien tragen bei, was sie haben (Zusammenführen über die Kennung jeder Mail).
+- Wiederherstellen fügt nur hinzu, löscht nie etwas. „Später“ oder Wegtippen ändert nichts; die Frage kommt beim
+  nächsten Entsperren wieder, dauerhaft gibt es „Archiv aus dieser Kopie wiederherstellen“ in den Mail-Optionen.
+- Solange das Archiv fehlt oder ein Gerät die einzige vollständige Kopie hat, räumt dessen Offline-Speicher nichts
+  auf. Diese Kopie zu löschen („Offline-Speicher leeren“, „Bereich entfernen“, „Hier neu anfangen“) verlangt das
+  Abtippen eines Worts.
+- Alternativ: verschlüsselte Archiv-Sicherung auf einen USB-Stick und am anderen Gerät einlesen.
+
+**Tests (vor jeder Nutzung)**
+- Abbruch nach jedem einzelnen Schritt (hochgeladen, geprüft, gelöscht): danach ist jede Mail an mindestens einem Ort
+  vollständig. Zählregel nach jedem Schritt: Anbieter plus Archiv ist nie weniger als vorher.
+- Chaos-IMAP-Server: abbrechende Verbindungen, doppelt gemeldete Mails, neu nummerierte Ordner, volles Postfach,
+  kaputte Mails. Großes Postfach (30.000 Mails, Hunderte Anhänge) gegen echte Testserver, einmal hin und zurück
+  (Export, Import, Vergleich).
+- Zwei Geräte gleichzeitig, eines tagelang offline; Server umgezogen, leerer Ordner, fremdes Archiv, Server weg;
+  Kopie nur auf einem anderen Gerät; Teilkopien zweier Geräte; jede Antwort jeder Rückfrage und das Wegtippen.
+- Im Nachtlauf lang und mit Zufallsfehlern.
+
 ### 9.4 GhulDrive
 
 - Jede Datei hat einen eigenen Schlüssel. Sie wird in Blöcke zerlegt und im STREAM-Verfahren verschlüsselt
