@@ -8,12 +8,12 @@ Dieses Protokoll ist die Arbeitsliste für die nächsten Durchgänge: Jeder Fund
 
 | | |
 |---|---|
-| Testfunktionen im Kern | 230 (226 bei jedem Lauf, 4 lange nur nachts) |
+| Testfunktionen im Kern | 244 (237 bei jedem Lauf, 7 lange oder mit externen Daten nur nachts) |
 | Einzelprüfungen pro Lauf | über 1,1 Millionen (u. a. 777.000 Zeitzonen-Umrechnungen in 446 Zonen, 292.000 Kalendertage, 45.000 Fuzz-Eingaben, 20.000 Base32-Schreibweisen, 12.000 Wiederherstellungscodes, 5.000 HOTP-Fälle, 5.000 Passwortgenerator-Varianten, 3.000 Zusammenführungen, 3.000+ Aktionen „bekloppter Nutzer“, 515 Naughty Strings × 8 Felder) |
 | Davon gegen echte Server | 54 (SFTP, FTPS, IMAP, SMTP, PHP-Modul) |
 | Externe Testsammlungen | Big List of Naughty Strings, Project Wycheproof (5 Algorithmen), Public-Suffix-Liste mit offiziellen Testfällen, RFC 4226/6238, PayloadsAllTheThings (XSS, CRLF), SecLists (XSS), DOMPurify-Testfälle, WHATWG-URL-Testdaten, JSONTestSuite, 304 Kalenderdateien aus den Tests von iCal4j und python-icalendar (auch deren Fuzzing-Funde), Zeitzonen-Regeln aller Zonen der IANA-Datenbank |
-| Gefundene Fehler | 41, davon **39 behoben**, 1 bewusst offen (F24), 1 als Einzelheit (B12) |
-| Offene Punkte aus dem Audit | 22 (Abschnitt 4) + Bedienung/Texte (Abschnitt 5) |
+| Gefundene Fehler | 42, alle behoben bzw. entschieden (F24 gewollt) |
+| Offene Punkte aus dem Audit | keine mehr (Abschnitt 4: erledigt oder entschieden) + Bedienung/Texte (Abschnitt 5) |
 | Laufzeit | Kern-Tests ca. 95 s, Android/Desktop-Build ca. 10 min, Nachtlauf ca. 2 h |
 
 Alle Tests sind grün (Kern, Netzwerk, Android-Kotlin, Desktop-Tests). Die App-Tests im Emulator (Maestro, Monkey) laufen in der CI.
@@ -135,7 +135,7 @@ Zu F17 (Verhalten seit der Behebung): Die erste Mail eines neuen Kontakts mit Au
 | B14 | - | ~~Freigabe zurückziehen meldet Erfolg, auch wenn das Paket auf dem Server bleibt~~ | erledigt: Fehler wird gemeldet, die Freigabe bleibt in der Liste | `tests::share_via_folder` |
 | B15 | - | ~~PHP-Modul: Sperre je IP, `x.php.jpg`, Modul ohne `chmod`~~ | erledigt: gültig signierte Anfragen werden nie gesperrt, Doppel-Endungen abgelehnt, Dateien mit 0600 | `tools/attack-php-module.py` (347 Angriffe) |
 | B16 | - | ~~Mail-Bilder: DNS-Rebinding zwischen Prüfung und Verbindung~~ | erledigt: verbunden wird genau mit der geprüften Adresse | Kern-Test |
-| B17 | - | ~~CI: Signaturschlüssel und FTP-Zugang stehen bei Pushes auf jeden Branch bereit~~ | entschieden, siehe L4 | - |
+| B17 | - | ~~CI: Signaturschlüssel und FTP-Zugang stehen bei Pushes auf jeden Branch bereit~~ | entschieden, siehe L4 (Abschnitt 8) | Nachtlauf `reproducible` |
 | B18 | - | ~~Gleichzeitig auf A gelöscht und auf B bearbeitet: Ergebnis hängt von Revision/Zeit ab~~ | erledigt, feste Regel: Die Löschung gilt nur für den Stand, den das löschende Gerät kannte; eine Änderung, die es nie gesehen hat, bleibt erhalten. Unabhängig von den Uhren der Geräte | `security::delete_against_edit_follows_a_fixed_rule` |
 | B20 | - | ~~Serie aus einer anderen Zeitzone: nur der erste Termin wurde umgerechnet~~ | erledigt (F38): die Serie merkt sich ihre Zeitzone | `properties::series_from_other_time_zones_are_right_all_year` |
 | B21 | N | Emulator: GhulDrive und GhulMail mit echtem Server | Testserver laufen in der CI neben dem Emulator (SFTP mit Passwort, IMAP, SMTP); Abläufe `app/maestro/server/`; danach prüft `tools/check-server-flows.sh`, dass auf den Servern nur Verschlüsseltes liegt | teilweise: GhulDrive läuft verpflichtend durch (Ordner auf dem Server nicht lesbar). Der Mail-Ablauf verbindet sich und bestätigt das Zertifikat, scheitert aber noch an der Anmeldung im Testskript; bis er sicher läuft, ist er nur eine Warnung (`GHUL_MAIL_FLOW_REQUIRED=1` macht ihn verpflichtend). Beide laufen nachts und von Hand (`emulator.yml`) |
@@ -226,8 +226,8 @@ Was nach beiden Runden **nicht** oder nur teilweise abgedeckt ist, ehrlich aufge
 |---|---|---|---|
 | L1 | ~~Schlüssel werden nie erneuert~~ (B1) | erledigt. Eine alte Kopie öffnet sich mit dem damals Gültigen weiter und zeigt den Stand von damals; das liegt in der Natur einer Sicherung. Die App sagt unter Optionen → Sicherheit, was nach einem Verlust zu tun ist: Mail- und Server-Passwörter beim Anbieter wechseln (ohne Server-Zugang kommt auch niemand an die Drive-Blöcke) | erledigt |
 | L2 | **Kein unabhängiger Audit** | Eigene Tests finden nur, woran man denkt | Externer Code-Audit und Pentest vor Version 1.0 |
-| L3 | **Abhängigkeiten der App (Gradle) ohne Prüfsummen** | Manipuliertes Paket auf dem Weg vom Server würde eingebaut | `gradle/verification-metadata.xml` (SHA-256 je Paket); `cargo deny` für Quellen und Lizenzen |
-| L4 | **Build nicht nachprüfbar** | Niemand kann prüfen, dass die APK aus diesem Quelltext stammt | Reproduzierbare Builds; signieren nur für `main`/Tags in geschützter Umgebung (B17) |
+| L3 | ~~Abhängigkeiten der App (Gradle) ohne Prüfsummen~~ | erledigt: `app/gradle/verification-metadata.xml` mit SHA-256 für 607 Pakete (auch Windows-Varianten); jedes veränderte oder neue Paket bricht den Build ab | erledigt |
+| L4 | **Build nicht nachprüfbar** (mit B17) | Kern: Nachtlauf baut zweimal in verschiedenen Ordnern und verlangt byte-gleiche Ergebnisse. Signierung: bewusst auf allen eigenen Branches, damit Entwicklerversionen sich über die installierte App aktualisieren lassen (nie bei Pull Requests oder Forks). Vor 1.0: eigener Release-Schlüssel in geschützter Umgebung, reproduzierbare APK | entschieden |
 | L5 | ~~PHP-Modul: Schlüssel steht in der PHP-Datei~~ | erledigt: Beim Einrichten und Prüfen erkennt die App, ob der Server PHP ausführt; liefert er die Datei als Text aus, wird sie sofort gelöscht und klar gemeldet (`security::a_web_server_without_php_is_detected`) | erledigt |
 | L6 | **Metadaten auf dem Server** | Server sieht Anzahl, Größe und Änderungszeit der Dateien und die IP (Tresornamen nicht mehr, F23) | dokumentieren (unvermeidbar ohne eigenen Dienst) |
 | L7 | ~~PGP-Schlüssel von Kontakten nur „Vertrauen beim ersten Kontakt“~~ | erledigt: Fingerabdruck vergleichen und bestätigen; ein bestätigter Schlüssel wird nicht stillschweigend ersetzt, ein Wechsel wird gemeldet (`security::confirmed_pgp_keys_stay_and_key_changes_are_reported`) | erledigt |
@@ -243,17 +243,19 @@ Was nach beiden Runden **nicht** oder nur teilweise abgedeckt ist, ehrlich aufge
 | L12 | Zeit-Seitenkanäle | Nicht gemessen; Vergleiche von Geheimnissen laufen in konstanter Zeit, die Kryptobibliotheken sind dafür ausgelegt |
 | L13 | ~~Windows portable: Rechte, DLL-Suchpfad, fremde PCs~~ | erledigt, soweit eine App es kann: Das Arbeitsverzeichnis ist aus dem DLL-Suchpfad genommen; entschlüsselte Kopien liegen portabel im Datenordner statt im Windows-Temp und werden sicher gelöscht (B10). Der installierte Datenordner liegt im Benutzerprofil (lesbar nur für dich und Administratoren); auf einem USB-Stick (FAT/exFAT) gibt es keine Rechte, dort schützt die Verschlüsselung. Auf fremden PCs kann ein Keylogger mitlesen: nur auf eigenen Geräten entsperren (Hinweis in Abschnitt 7 des Sicherheitsberichts) |
 
-### Weitere Sammlungen und Werkzeuge (noch nicht eingebaut)
+### Weitere Sammlungen und Werkzeuge
+
+Seit 14.11.2026 im Nachtlauf: MobSF, Intent-Angriffe (statt drozer), OWASP ZAP, x509-limbo, OpenPGP mit GnuPG (statt der Sequoia-Testsuite, die einen eigenen Dienst braucht) und ein Reproduzierbarkeits-Check des Kerns. Die übrigen Zeilen (auch Semgrep und cargo-mutants) sind Ideen für später; sie betreffen keine offene Sicherheitslücke.
 
 | Was | Wofür | Aufwand |
 |---|---|---|
-| **MobSF** (statisch) nach **OWASP MASVS** | Standard-Prüfliste für Mobil-Apps gegen die fertige APK | klein, Nachtlauf |
-| **drozer** / **QARK** | Angriffe auf von außen erreichbare Android-Komponenten im Emulator (Intents, Provider) | mittel |
+| **MobSF** (statisch) nach **OWASP MASVS** | Standard-Prüfliste für Mobil-Apps gegen die fertige APK | **eingebaut** |
+| **drozer** / **QARK** | Angriffe auf von außen erreichbare Android-Komponenten im Emulator (Intents, Provider) | **eingebaut** als eigene Intent-Angriffe (`tools/intent-attacks.sh`) |
 | **Semgrep** (Regeln für Kotlin, PHP, Geheimnisse) | bekannte Fehlermuster im Quelltext | klein, Nachtlauf |
-| **OWASP ZAP** (Baseline + aktiv) | automatischer Angriffsscan auf PHP-Modul und Empfängerseite | klein, Nachtlauf |
+| **OWASP ZAP** (Baseline + aktiv) | automatischer Angriffsscan auf PHP-Modul und Empfängerseite | **eingebaut** |
 | **cargo-mutants** | prüft, ob die Tests absichtlich eingebaute Fehler bemerken | mittel, wöchentlich |
-| **x509-limbo** (C2SP) | tausende Zertifikatsketten-Fälle | mittel; prüft v. a. die TLS-Bibliothek |
-| **OpenPGP Interoperability Test Suite** (Sequoia) | PGP-Verhalten gegenüber anderen Programmen, bekannte Angriffe (z. B. EFAIL-Muster) | mittel |
+| **x509-limbo** (C2SP) | tausende Zertifikatsketten-Fälle | **eingebaut** |
+| **OpenPGP Interoperability Test Suite** (Sequoia) | PGP-Verhalten gegenüber anderen Programmen, bekannte Angriffe (z. B. EFAIL-Muster) | **eingebaut** als Test gegen GnuPG; die Sequoia-Suite selbst braucht einen eigenen Dienst |
 | **Unicode `confusables.txt`**, **IDNA-Testdaten** | Warnung bei Namen/Domains, die wie andere aussehen | klein |
 | **MIME-Torture-Tests** (jwz), Beispielmails großer Mailprogramme | kaputte und extreme Mails | klein |
 | **Dovecot imaptest** | IMAP-Dauerlast und Protokollfehler | mittel |

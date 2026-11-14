@@ -17,9 +17,10 @@ Dieser Bericht fasst alle bisherigen Runden zusammen und sagt ehrlich, was offen
 | 13.11.2026 | Audit des ganzen Codes in drei unabhängigen Durchsichten: Kern (Rust, PHP), App (Android, Windows, CI), Bedienung bei Fehlern | 6 Punkte „vor echtem Einsatz“, 10 für den nächsten Durchgang, Wortwahl; alle 6 dringenden behoben |
 | 13.11.2026 | Testrunden 1 bis 3: Chaos-Sync, Fuzzing, absurde Eingaben, Angriffe, öffentliche Testsammlungen, Kalender und Zeitzonen, Emulator | 39 Funde, 36 behoben |
 | 14.11.2026 | Runde 4: Schlüssel bei jeder Schutzänderung erneuern (B1), neutrale Dateinamen (F23), Geräte lange offline | 2 weitere Funde, alle behoben |
+| 14.11.2026 | Runde 5: alle übrigen Punkte des Audits, Konfliktkopien fremder Sync-Programme, Prüfwerkzeuge im Nachtlauf (x509-limbo, GnuPG, ZAP, MobSF, Intent-Angriffe, reproduzierbarer Kern), Prüfsummen für Gradle | 1 weiterer Fund (F42), behoben; nichts mehr offen |
 
-**In Zahlen:** 41 Funde aus den Testrunden, davon 39 behoben (offen: F24, eine vertretbare Kleinigkeit, und die
-Einzelheit B12). 230 Testfunktionen im Kern mit über einer Million Einzelprüfungen je Lauf, 335 Angriffe auf das
+**In Zahlen:** 42 Funde aus den Testrunden, alle behoben bzw. entschieden (F24 ist gewollt). Alle Punkte des Audits
+vom 13.11.2026 sind erledigt (B1 bis B18, L1, L3, L5, L7, L10, L13) oder begründet entschieden (L4/B17). 244 Testfunktionen im Kern mit über einer Million Einzelprüfungen je Lauf, 347 Angriffe auf das
 PHP-Modul, Nachtlauf mit langem Fuzzing, Monkey im Emulator und Server mit kaputtem TLS.
 
 ## 2. Wogegen GhulSuite schützt
@@ -55,45 +56,38 @@ Nach Bereich zusammengefasst; die Nummern führen ins [Testprotokoll](TESTPROTOK
 | **CI** | Tests gegen echte Server liefen nach einem Runner-Wechsel ins Leere und wurden grün gemeldet | F39 |
 | **Freigaben und PHP-Modul** (Audit 0.5.0) | Abgelaufene Pakete abrufbar, beliebige PBKDF2-Runden aus dem Paket, ausführbare Dateien im Datenordner, Namen mit Punkt am Ende, fehlende Kopfzeilen | A3 bis A5, F30 |
 | **Android-Teilen und Anhänge** (Audit 0.5.0) | Dateinamen wie `..`, Anhänge beliebiger Größe | A6, A7 |
+| **Sync, Runde 5** | Ein entfernter Key kommt nie per Sync zurück (Löschmarken je Key). Geänderte Server- und Kontodaten erreichen andere Geräte. Gelöscht auf A, geändert auf B: feste Regel, eine nie gesehene Änderung bleibt. Konfliktkopien fremder Sync-Programme werden zusammengeführt. Ein Server kann keine übermäßig teuren Argon2-Werte erzwingen | B2, B11, B13, B18, F42 |
+| **Drive** | Ein zurückgesetzter Index auf dem Server wird abgelehnt (nichts verschwindet); zwei Geräte, die gleichzeitig ändern, verlieren nichts | B3 |
+| **Android** | Sperrbildschirm zeigt keine Absender, Betreffe oder Termine mehr; Mail-Zugang für Benachrichtigungen bevorzugt in StrongBox, wahlweise löscht ihn die Sofortsperre; `.ics` von fremden Apps nur nach Vorschau; interne Aktionen nur aus eigenen Benachrichtigungen; Auto-Sperre zählt die echte Zeit; Autofill fragt vor dem Verknüpfen; kein Tippen durch darübergelegte Fenster | B4 bis B9, L10 |
+| **Windows** | Entschlüsselte Kopien werden überschrieben und gelöscht, auch wenn ein Programm sie erst später freigibt; portabel bleiben sie im Datenordner; Arbeitsverzeichnis nicht mehr im DLL-Suchpfad | B10, L13 |
+| **Mail** (Runde 5) | Herkunft von Kontaktschlüsseln gemerkt; Fingerabdruck vergleichen und bestätigen, Warnung bei Wechsel; Bilder nur von genau der geprüften Adresse (kein DNS-Rebinding) | B12, B16, L7 |
+| **PHP-Modul und Freigaben** (Runde 5) | Gültig signierte Anfragen werden nie gesperrt, Doppel-Endungen abgelehnt, Dateien 0600; Server ohne PHP-Ausführung wird erkannt und die Datei sofort gelöscht; Zurückziehen meldet Fehler ehrlich | B14, B15, L5 |
+| **Hinweise** | Nach einem Verlust sagt die App, was zu wechseln ist (Mail- und Server-Passwörter) | L1 |
 | **Abhängigkeiten** | `russh` (Speicher-Angriff durch bösartigen SSH-Server), `zip`, `crypto-bigint` über `p256` auf sichere Versionen | A1, A2, R1 |
 
 ## 4. Offen
 
-Alles, was nicht behoben ist, ehrlich aufgelistet. Nichts davon gibt einem Angreifer ohne Passwort **und** zweiten
-Faktor Zugriff auf Tresorinhalte.
+Aus den Testrunden und Audits ist **nichts mehr offen**. Was bleibt, sind zwei bewusste Entscheidungen und die
+Grenzen, die keine App lösen kann (4.3). Nichts davon gibt einem Angreifer ohne Passwort **und** zweiten Faktor
+Zugriff auf Tresorinhalte.
 
-### 4.1 Mittel
+### 4.1 Bewusst entschieden
 
-| Nr. | Punkt | Vorschlag |
+| Nr. | Entscheidung | Begründung |
 |---|---|---|
-| B2 | Ein entfernter Key kann per Sync zurückkommen: Ein Gerät war offline und fügt dort selbst einen Key hinzu; seine Schutzänderung ist dann die neuere und bringt den alten Key mit | Löschmarken je Key in der Suite-Datei |
-| B3 | Drive-Index ohne Schutz gegen Zurücksetzen (ein alter Index vom Server lässt Drive älter aussehen) und gegen gleichzeitige Änderungen zweier Geräte | Revision merken, älteren Index ablehnen, vor dem Schreiben vergleichen |
-| B4 | Sperrbildschirm: Mail-Absender, Betreff und Termindetails sind sichtbar, wenn Android auf „alle Inhalte anzeigen“ steht (Standard). Die neutrale Version greift nur bei „sensible Inhalte ausblenden“ | Benachrichtigungskanäle mit privater Sichtbarkeit erzwingen |
-| B5 | Mail-Zugang für Benachrichtigungen liegt im Android-Keystore ohne StrongBox und bleibt bei der Sofortsperre (gewollt, damit Mails weiter ankommen); das Konzept beschreibt noch das alte Verhalten | Doku angleichen, StrongBox versuchen, wahlweise löscht die Sofortsperre ihn mit |
-| L10 | Tapjacking: Eine fremde App kann ein Fenster über GhulSuite legen und Tipps umleiten | `filterTouchesWhenObscured` für Entsperren, Löschen und Autofill-Auswahl |
-| L3 | Gradle-Abhängigkeiten der App ohne Prüfsummen: Ein unterwegs manipuliertes Paket würde eingebaut | `gradle/verification-metadata.xml` |
-| L4, B17 | Build nicht nachprüfbar; der Signaturschlüssel steht bei Pushes auf jeden Branch bereit | Reproduzierbare Builds; signieren nur für `main` in einer geschützten Umgebung |
-| L5 | Der Zugangsschlüssel des PHP-Moduls steht in der PHP-Datei. Liefert ein falsch eingestellter Server PHP als Text aus, ist er lesbar (Daten bleiben verschlüsselt, ließen sich aber löschen) | Schlüssel in den gesperrten Datenordner, Selbsttest „wird PHP ausgeführt?“ |
-| L7 | PGP-Schlüssel von Kontakten: Vertrauen beim ersten Kontakt; der erste Schlüssel kann untergeschoben sein | Fingerabdruck-Vergleich per QR oder Vorlesen, Warnung bei Schlüsselwechsel |
+| L4, B17 | Die App wird bei Pushes auf **jeden eigenen Branch** mit dem echten Schlüssel signiert, nicht nur auf `main` | Entwicklerversionen sollen sich über die installierte App aktualisieren lassen; mit einem anderen Schlüssel müsste man sie erst deinstallieren und verlöre die Daten auf dem Gerät. Schutz: Der Schlüssel steht nur bei Pushes im eigenen Repository bereit, nie bei Pull Requests oder Forks, und pushen kann nur der Inhaber. Vor Version 1.0: eigener Release-Schlüssel in einer geschützten GitHub-Umgebung |
+| F24 | Titel werden ohne Leerraum am Rand gespeichert | Absicht (Suche, Sortierung, Anzeige); alles Geheime bleibt Zeichen für Zeichen erhalten |
 
-### 4.2 Niedrig
+### 4.2 Nachprüfbarkeit des Builds
 
-| Nr. | Punkt |
-|---|---|
-| L1 (Rest) | Eine alte Sicherung öffnet sich mit dem damals Gültigen weiter und zeigt den Stand von damals, auch den Drive-Schlüssel und Mail-Zugänge von damals. Nach einem Verlust sollten diese gewechselt werden; ein Hinweis in der App fehlt noch |
-| B6 | `.ics`-Dateien aus fremden Apps werden ohne Rückfrage importiert |
-| B7 | Interne Aktionen („Mail öffnen“, „Termin öffnen“) lassen sich über die exportierte Haupt-Activity von fremden Apps auslösen (öffnet nur, zeigt nichts ohne Entsperren) |
-| B8 | Auto-Sperre: Der Zeitgeber läuft im Tiefschlaf nicht weiter; nach Teilen oder Kamera gilt dauerhaft eine Mindestfrist von 120 s |
-| B9 | Autofill verknüpft eine App nach einmaliger Auswahl dauerhaft, ohne Rückfrage mit App-Name |
-| B10 | Windows: entschlüsselte Kopien in `%TEMP%` bleiben liegen, wenn ein Programm sie noch offen hat |
-| B11 | „Passwort anderswo geändert“: Ein Server kann teure Argon2-Werte (bis 2 GiB) vorgeben, alte Handys können daran scheitern |
-| B12 | Erste Autocrypt-Mail eines Kontakts zeigt beim zweiten Öffnen „gültig“ statt „unbestätigt“ |
-| B13 | Geänderte Server- und Kontodaten in der Suite-Datei erreichen andere Geräte nicht |
-| B14 | Freigabe zurückziehen meldet Erfolg, auch wenn das Paket auf dem Server bleibt |
-| B15 | PHP-Modul: Fehlversuchssperre je IP (hinter einem Proxy aussperrbar), `x.php.jpg` wird nicht abgelehnt, Modul-Datei ohne `chmod` |
-| B16 (Rest) | Mail-Bilder: Die Namensauflösung könnte zwischen Prüfung und Verbindung wechseln (DNS-Rebinding) |
-| B18 | Gleichzeitig auf Gerät A gelöscht und auf Gerät B bearbeitet: Das Ergebnis hängt von Revision und Zeit ab, eine feste Regel fehlt |
-| L13 | Windows portable: Rechte des Datenordners, DLL-Suchpfad, Nutzung auf fremden PCs |
+- **Abhängigkeiten der App (L3, erledigt):** `app/gradle/verification-metadata.xml` enthält die SHA-256-Prüfsumme
+  jedes Gradle-Pakets (607 Pakete, auch die Windows-Varianten). Ein Paket, das unterwegs verändert wurde oder neu
+  dazukommt, bricht den Build ab. Neue oder aktualisierte Abhängigkeiten: `./gradlew --write-verification-metadata
+  sha256 help` und die Änderung der Datei im Pull Request prüfen. Für den Rust-Kern sichern `Cargo.lock` und
+  `cargo deny` dasselbe.
+- **Reproduzierbarkeit (L4, B17):** Der Nachtlauf baut den Kern zweimal in verschiedenen Ordnern und verlangt
+  byte-gleiche Ergebnisse. Für die ganze APK (Kotlin, Ressourcen, Signatur) ist das noch nicht nachgewiesen; das
+  gehört zum eigenen Release-Schlüssel vor Version 1.0.
 
 ### 4.3 Grenzen, die keine App lösen kann
 
@@ -107,10 +101,21 @@ Faktor Zugriff auf Tresorinhalte.
 | L12 | Zeit-Seitenkanäle sind nicht gemessen; Vergleiche von Geheimnissen laufen in konstanter Zeit |
 | - | Passwort vergessen heißt Daten weg, wenn auch das Notfallblatt fehlt. Es gibt bewusst keine Hintertür |
 
-### 4.4 Noch nicht eingebaute Prüfwerkzeuge
+### 4.4 Prüfwerkzeuge im Nachtlauf
 
-MobSF nach OWASP MASVS, drozer, OWASP ZAP, x509-limbo, die OpenPGP Interoperability Test Suite und eine
-Geräte-Matrix (Samsung, Pixel, Xiaomi; Android 10 bis 16). Liste mit Aufwand im Testprotokoll, Abschnitt 8.
+Alle früher als „noch nicht eingebaut“ geführten Werkzeuge laufen jetzt jede Nacht (`.github/workflows/nightly.yml`):
+
+| Werkzeug | Was es prüft | Ergebnis beim Einbau |
+|---|---|---|
+| **x509-limbo** (C2SP) | 9.807 Zertifikatsketten gegen den TLS-Prüfer der App | 9.707 wie erwartet; 54 Fälle, in denen die Bibliothek bewusst großzügiger ist (z. B. Felder des Wurzelzertifikats, Namen nur aus dem SAN, schwache Schlüssel, die der Handshake danach ablehnt), stehen begründet in `core/ghul-core/tests/limbo-known.txt`. Keiner lässt eine falsche Signatur, einen falschen Namen, eine kaputte Kette oder ein abgelaufenes Zertifikat durch. Jeder neue Fall bricht den Lauf ab |
+| **OpenPGP mit GnuPG** | Verschlüsseln, Signieren und Entschlüsseln in beide Richtungen, auch abgetrennte Signaturen; gefälschte Signaturen werden auf beiden Seiten abgelehnt | grün mit Ed25519/X25519, RSA-3072 und NIST P-256 |
+| **OWASP ZAP** (Baseline) | PHP-Modul und Empfängerseite, nur auf 127.0.0.1 | bricht bei fehlenden Schutz-Kopfzeilen, CORS- oder Cookie-Fehlern ab |
+| **MobSF** (statisch, MASVS) | die fertige APK | Bericht als Artefakt, schwere Befunde als Warnung |
+| **Intent-Angriffe** (statt drozer) | jede von außen erreichbare Komponente im Emulator: falsche und riesige Extras, interne Aktionen ohne Kennung, fremde Datei- und Inhalts-Adressen | bricht bei Absturz, ANR oder wenn eine geschützte Komponente einen fremden Aufrufer annimmt ab |
+| **Reproduzierbarer Kern** | zwei Builds in verschiedenen Ordnern | müssen byte-gleich sein |
+
+Bewusst nicht automatisiert: eine Geräte-Matrix (Samsung, Pixel, Xiaomi; Android 10 bis 16). Dafür braucht es echte
+Geräte oder einen bezahlten Gerätedienst; bis dahin deckt der Testplan die Hersteller-Eigenheiten von Hand ab.
 
 ## 5. Geprüft und in Ordnung
 
@@ -131,7 +136,7 @@ Geräte-Matrix (Samsung, Pixel, Xiaomi; Android 10 bis 16). Liste mit Aufwand im
   strenger CSP, ohne fremde Inhalte, ohne Referrer.
 - **PHP-Modul:** jeder Aufruf signiert (HMAC über Methode, Parameter, Zeit, Nonce, Inhalt), Einmal-Nonces gegen
   Wiederholung, Pfadprüfung, atomares Schreiben, zufälliger gesperrter Datenordner, keine Datenbank, keine
-  Fehlerdetails. 335 gezielte Angriffe, PHPStan im Nachtlauf, PHP-8.1-Syntax in der CI.
+  Fehlerdetails. 347 gezielte Angriffe, PHPStan im Nachtlauf, PHP-8.1-Syntax in der CI.
 - **Netz:** SFTP mit festem Host-Schlüssel (Host-Zertifikate abgelehnt), TLS mit webpki oder bestätigtem
   Fingerabdruck, `http://` nur für `localhost`, FTPS nur mit TLS und `PROT P`, kein „FTP bounce“.
 - **OpenPGP (rPGP 0.21):** eigene Schlüssel Ed25519/X25519 mit SHA-512/256 und AES-256; gegen GnuPG 2.4 in beide
@@ -155,13 +160,14 @@ Geräte-Matrix (Samsung, Pixel, Xiaomi; Android 10 bis 16). Liste mit Aufwand im
 ## 7. Hinweise für Nutzer
 
 - **Key oder Notfallblatt verloren:** Key entfernen bzw. neues Notfallblatt erstellen. Danach öffnet das Verlorene
-  nichts mehr, was gespeichert wird. Alte Sicherungen zeigen weiter den Stand von damals: Drive-Schlüssel und
-  Mail-Passwörter von damals bei Bedarf wechseln.
+  nichts mehr, was gespeichert wird. Alte Sicherungen zeigen weiter den Stand von damals, auch die Zugänge von damals:
+  Mail- und Server-Passwörter beim Anbieter wechseln (die App erinnert unter Optionen → Sicherheit daran).
 - **Freigabelinks:** Wer den Link hat, kann die Datei öffnen. Für Sensibles ein Passwort setzen und getrennt
   mitteilen. Ein Einmal-Link gilt als verbraucht, sobald der Abruf beginnt.
 - **Webserver ohne `.htaccess`** (z. B. nginx): Dort schützt nur der zufällige Name den Datenordner bzw. die
   zufällige ID das Paket; Inhalte bleiben verschlüsselt.
-- **Sperrbildschirm:** Bis B4 behoben ist, in Android „sensible Inhalte ausblenden“ einschalten, wenn Absender und
-  Termine dort nicht zu sehen sein sollen.
-- **Windows portable:** nur auf eigenen Geräten entsperren.
+- **Speicherort:** Der App-Speicher ist für die meisten am sichersten. Einen eigenen Ordner (Optionen → Tresore →
+  „Speicherort wechseln“) brauchst du nur, wenn du die Dateien selbst sichern oder mit einem eigenen Programm abgleichen
+  willst. Dateien in einem gemeinsamen Ordner können andere Apps sehen, aber nicht öffnen.
+- **Windows portable:** nur auf eigenen Geräten entsperren; auf einem fremden PC kann ein Keylogger mitlesen.
 - GhulSuite ist eine **Entwicklungsversion**: mit regelmäßiger Sicherung nutzen.
