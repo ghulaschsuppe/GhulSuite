@@ -55,6 +55,10 @@
     <string name="auth_tap_to_show">zum Anzeigen antippen</string>
     <string name="auth_uri_hint">Füge einen otpauth://totp/…-Link ein, z. B. aus einem QR-Code-Leser oder einem Export.</string>
     <string name="autofill_for">Für: %1$s</string>
+    <string name="autofill_link_title">Mit dieser App verknüpfen?</string>
+    <string name="autofill_link_text">„%1$s“ (%2$s) bekommt den Login „%3$s“ künftig direkt vorgeschlagen. Nur verknüpfen, wenn das wirklich die App dieses Dienstes ist.</string>
+    <string name="autofill_link_yes">Verknüpfen und ausfüllen</string>
+    <string name="autofill_link_once">Nur diesmal ausfüllen</string>
     <string name="autofill_link_hint">Wählst du eine Anmeldung von Hand, merkt sich GhulSuite diese App samt Signatur dafür. Eine gefälschte App mit gleichem Namen bekommt sie nicht.</string>
     <string name="autofill_matching">Passend oder vorgeschlagen</string>
     <string name="autofill_pick_title">Anmeldung wählen</string>
@@ -1117,6 +1121,8 @@
     <string name="cal_delete_calendar_text">„%1$s“ und alle seine Termine werden gelöscht, auch auf deinen anderen Geräten.</string>
     <string name="cal_import">Import (.ics)</string>
     <string name="cal_export">Export (.ics)</string>
+    <string name="cal_import_confirm_title">Kalenderdatei übernehmen?</string>
+    <string name="cal_import_confirm_text">Eine andere App hat GhulSuite eine Kalenderdatei mit %1$s Terminen übergeben. Sie werden in den Kalender „%2$s“ eingetragen.</string>
     <string name="cal_import_done">%1$s Termine importiert</string>
     <string name="cal_closed_hint">Jeder Kalender liegt verschlüsselt in deiner Suite (.ghlcal) und synchronisiert wie deine Passwörter über deinen eigenen Speicher. Bewusst ohne CalDAV.</string>
     <string name="cal_start_view">Startansicht</string>

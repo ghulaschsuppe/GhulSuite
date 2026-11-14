@@ -65,6 +65,8 @@ class MainActivity : ComponentActivity() {
         }
         // No screenshots, screen recordings or previews in the app switcher (unless allowed in the settings).
         window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        // L10: no taps while another app draws over GhulSuite (tapjacking).
+        window.decorView.filterTouchesWhenObscured = true
         lifecycleScope.launch {
             snapshotFlow { ghul.backend.settings.allowScreenshots }.collect { allowed ->
                 // Newer Android versions show a live preview in the app switcher despite FLAG_SECURE
@@ -127,6 +129,13 @@ class MainActivity : ComponentActivity() {
      * (right away, or once the suite is unlocked).
      */
     private fun handleLaunch(intent: Intent?) {
+        // B7: only from the app's own notifications.
+        if (intent != null && (intent.action == ACTION_OPEN_MAIL || intent.action == ACTION_OPEN_EVENT) &&
+            !IntentToken.valid(this, intent)
+        ) {
+            intent.action = null
+            return
+        }
         if (intent?.action == ACTION_OPEN_MAIL) {
             val account = intent.getStringExtra(EXTRA_MAIL_ACCOUNT)
             if (account != null) {

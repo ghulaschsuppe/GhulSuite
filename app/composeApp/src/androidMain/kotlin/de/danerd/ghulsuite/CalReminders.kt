@@ -160,6 +160,7 @@ fun postCalNotification(ctx: Context, a: CalAlarmUi, sound: Boolean, index: Int)
     val open = PendingIntent.getActivity(
         ctx, id,
         Intent(ctx, MainActivity::class.java).setAction(MainActivity.ACTION_OPEN_EVENT).putExtra(CalReminders.EXTRA_KEY, a.key)
+            .putExtra(IntentToken.EXTRA, IntentToken.get(ctx))
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )

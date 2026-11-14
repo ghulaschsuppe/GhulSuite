@@ -976,9 +976,15 @@ impl GhulSuite {
     }
 
     /// Opens every vault file of the folder. Files with another protection end up in `found`,
-    /// damaged files are listed as unavailable, copies of the same vault are skipped (the
-    /// newest one wins).
-    fn scan(&self, suite: &UnlockedContainer, opener: &Opener<'_>) -> Result<(Vec<OpenVault>, Vec<FoundVault>)> {
+    /// damaged files are listed as unavailable. Copies of the same vault (e.g. conflict copies of
+    /// a folder sync tool such as Syncthing or Nextcloud) are merged entry by entry into the
+    /// newest one; their files are returned to be deleted once the merged vault is saved.
+    fn scan(
+        &self,
+        suite: &UnlockedContainer,
+        opener: &Opener<'_>,
+    ) -> Result<(Vec<OpenVault>, Vec<FoundVault>, Vec<String>)> {
+        let mut copies: Vec<String> = Vec::new();
         let seen = revisions(suite);
         let ignored = ignored_files(suite);
         let mut vaults: Vec<OpenVault> = Vec::new();
@@ -1041,14 +1047,27 @@ impl GhulSuite {
             };
             let id = crate::kdf::hex(&c.container_id());
             if let Some(existing) = vaults.iter_mut().find(|v| v.reference.id == id) {
-                let newer = existing.container.as_ref().is_some_and(|e| c.payload.revision > e.payload.revision);
-                if !newer {
-                    continue;
+                let Some(e) = existing.container.as_mut() else { continue };
+                let mut c = c;
+                // Both copies may hold changes of their own: merge, the newer copy carries on.
+                let (winner, loser_file) = if c.payload.revision > e.payload.revision {
+                    let (merged, _, _) = super::sync::merge_entries(&c.payload.entries, &e.payload.entries);
+                    c.payload.entries = merged;
+                    super::sync::merge_settings(&mut c.payload.settings, &e.payload.settings);
+                    let old = std::mem::replace(&mut existing.reference.file, file.clone());
+                    existing.reference.name = vault_name(&c, &file);
+                    existing.stale = seen.get(&id).is_some_and(|r| c.payload.revision < *r);
+                    (Some(c), old)
+                } else {
+                    let (merged, _, _) = super::sync::merge_entries(&e.payload.entries, &c.payload.entries);
+                    e.payload.entries = merged;
+                    super::sync::merge_settings(&mut e.payload.settings, &c.payload.settings);
+                    (None, file.clone())
+                };
+                if let Some(w) = winner {
+                    existing.container = Some(w);
                 }
-                existing.reference.file = file.clone();
-                existing.reference.name = vault_name(&c, &file);
-                existing.stale = seen.get(&id).is_some_and(|r| c.payload.revision < *r);
-                existing.container = Some(c);
+                copies.push(loser_file);
                 continue;
             }
             let stale = seen.get(&id).is_some_and(|r| c.payload.revision < *r);
@@ -1058,7 +1077,20 @@ impl GhulSuite {
                 stale,
             });
         }
-        Ok((vaults, found))
+        copies.retain(|f| !vaults.iter().any(|v| &v.reference.file == f));
+        Ok((vaults, found, copies))
+    }
+
+    /// Saves vaults that were merged from copies and deletes the copies.
+    fn remove_copies(&self, o: &mut Open, copies: Vec<String>) -> Result<()> {
+        if copies.is_empty() {
+            return Ok(());
+        }
+        self.save_all(o)?;
+        for f in copies {
+            self.storage.delete(f)?;
+        }
+        Ok(())
     }
 
     pub(super) fn save_container(&self, c: &mut UnlockedContainer, file: &str) -> Result<()> {
@@ -1128,8 +1160,9 @@ impl GhulSuite {
         let s = FactorSecret::from_bytes(*suite.factor_secret().expose());
         let kdf = suite.header().kdf.clone();
         let opener = Opener::Factors { pk: &password_key, s: &s, suite_id: suite.header().suite_id, kdf: &kdf };
-        let (vaults, found) = self.scan(&suite, &opener)?;
+        let (vaults, found, copies) = self.scan(&suite, &opener)?;
         let mut open = Open { password_key, suite, vaults, found };
+        self.remove_copies(&mut open, copies)?;
         let suite_missing = self.storage.read(SUITE_FILE.to_owned())?.is_none();
         if open.harmonize(now_ms())? {
             self.save_all(&mut open)?;
@@ -1418,7 +1451,7 @@ impl GhulSuite {
         OsRng.fill_bytes(&mut kdf.salt);
         let pk = PasswordKey::derive(&new_password, &kdf)?;
         let suite = self.suite_from_anchor(anchor, &pk)?;
-        let (vaults, found) = self.scan(&suite, &Opener::Code(&code))?;
+        let (vaults, found, copies) = self.scan(&suite, &Opener::Code(&code))?;
         let mut open = Open { password_key: PasswordKey::from_bytes(*pk.expose()), suite, vaults, found };
         open.suite.rekey(&pk, kdf.clone(), &mut OsRng)?;
         open.harmonize(now_ms())?;
@@ -1428,6 +1461,7 @@ impl GhulSuite {
         open.renew_keys(false, now_ms())?;
         super::sync::mark_protection_changed(&mut open)?;
         self.save_all(&mut open)?;
+        self.remove_copies(&mut open, copies)?;
         super::quick::delete_all(&self.local_dir);
         super::quick::refresh_stamps(&self.local_dir, open.password_key.expose(), now_ms());
         *self.guard() = Some(open);
@@ -1613,9 +1647,10 @@ impl GhulSuite {
             let kdf = o.kdf();
             let opener = Opener::Factors { pk: &o.password_key, s: &s, suite_id: o.suite.header().suite_id, kdf: &kdf };
             // Everything is saved immediately, so the folder is the truth: read it again.
-            let (vaults, found) = self.scan(&o.suite, &opener)?;
+            let (vaults, found, copies) = self.scan(&o.suite, &opener)?;
             o.vaults = vaults;
             o.found = found;
+            self.remove_copies(o, copies)?;
             if o.harmonize(now_ms())? {
                 self.save_all(o)?;
             }

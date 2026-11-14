@@ -257,6 +257,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
 
     /** The server has a suite with a newer master password: ask for it. */
     var passwordChangedElsewhere by mutableStateOf(false)
+    /** B6: a calendar file another app handed over, waiting for the user to confirm the import. */
+    var icsPending by mutableStateOf<ByteArray?>(null)
     /** A key was removed and the code renewed on another device (see [ProtectionChangedDialog]). */
     var protectionChangedElsewhere by mutableStateOf(false)
 
@@ -373,7 +375,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             if (Tab.CAL in tabs) {
                 stack.clear()
                 tab = Tab.CAL
-                importIcs(data)
+                icsPending = data
             }
         }
         val t = AppLaunch.openTab.value ?: return

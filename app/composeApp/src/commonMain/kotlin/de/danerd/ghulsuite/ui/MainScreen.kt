@@ -77,6 +77,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -303,6 +304,7 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
     }
     if (state.found.isNotEmpty() && !state.foundPostponed && top == null) FoundVaultsDialog(state)
     if (state.passwordChangedElsewhere) PasswordChangedDialog(state)
+    state.icsPending?.let { IcsImportDialog(state, it) }
     if (state.protectionChangedElsewhere && !state.passwordChangedElsewhere) ProtectionChangedDialog(state)
     if (state.contextSheet && top == null) AreaContextSheet(state)
     if (state.calQuickOpen && top == null) CalQuickSheet(state) { state.calQuickOpen = false }
@@ -595,4 +597,26 @@ private fun tabTitle(t: Tab) = when (t) {
     Tab.MAIL -> Res.string.tab_mail
     Tab.CAL -> Res.string.tab_cal
     Tab.SETTINGS -> Res.string.tab_settings
+}
+
+/**
+ * B6: a calendar file from another app (shared or opened with GhulSuite) is only imported after
+ * the user confirmed it, with the number of events and the target calendar.
+ */
+@Composable
+private fun IcsImportDialog(state: AppState, data: ByteArray) {
+    val events = remember(data) { Regex("BEGIN:VEVENT").findAll(data.decodeToString()).count() }
+    val target = state.calendars.firstOrNull { it.id == state.calDefaultCalendar }?.name ?: ""
+    AlertDialog(
+        onDismissRequest = { state.icsPending = null },
+        title = { Text(stringResource(Res.string.cal_import_confirm_title)) },
+        text = { Text(stringResource(Res.string.cal_import_confirm_text, events.toString(), target)) },
+        confirmButton = {
+            TextButton(onClick = {
+                state.icsPending = null
+                state.importIcs(data)
+            }, enabled = events > 0) { Text(stringResource(Res.string.a_import)) }
+        },
+        dismissButton = { TextButton(onClick = { state.icsPending = null }) { Text(stringResource(Res.string.a_cancel)) } },
+    )
 }

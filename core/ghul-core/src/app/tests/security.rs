@@ -238,3 +238,35 @@ fn confirmed_pgp_keys_stay_and_key_changes_are_reported() {
     assert!(carol.verified);
     assert_eq!(carol.offered, mailcrypt::pretty_fingerprint(&mailcrypt::fingerprint(&c3)));
 }
+
+/// A folder synchronised by another tool (Syncthing, Nextcloud) can end up with two copies of a
+/// vault ("conflict copy"): both are merged, nothing of either is lost, the copy goes.
+#[test]
+fn conflict_copies_of_a_folder_sync_tool_are_merged() {
+    let kf = generate_keyfile();
+    let (d1, d2) = (Dirs::new("copy-1"), Dirs::new("copy-2"));
+    let a = d1.suite();
+    a.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    a.save_entry(vault_id(&a, "Privat"), login("Gemeinsam", "u", "1")).unwrap();
+    a.lock();
+    // The same folder on a second device (copied by the sync tool).
+    for e in std::fs::read_dir(d1.root.join("vault")).unwrap().flatten() {
+        d2.storage().write(e.file_name().to_string_lossy().into_owned(), std::fs::read(e.path()).unwrap()).unwrap();
+    }
+    let b = d2.suite();
+    b.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
+    a.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
+    // Both change the vault before the tool could copy anything.
+    a.save_entry(vault_id(&a, "Privat"), login("Von A", "a", "2")).unwrap();
+    b.save_entry(vault_id(&b, "Privat"), login("Von B", "b", "3")).unwrap();
+    b.save_entry(vault_id(&b, "Privat"), login("Noch von B", "b", "4")).unwrap();
+    a.lock();
+    // The tool puts B's version next to A's as a conflict copy.
+    let file = vault_file(&b, &vault_id(&b, "Privat"));
+    let conflict = format!("{}.sync-conflict-20261114-101500-ABCDEFG.ghlpss", file.trim_end_matches(".ghlpss"));
+    d1.storage().write(conflict.clone(), d2.storage().read(file.clone()).unwrap().unwrap()).unwrap();
+    a.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    assert_eq!(titles(&a), vec!["Gemeinsam", "Noch von B", "Von A", "Von B"]);
+    assert!(d1.storage().read(conflict).unwrap().is_none(), "the copy is gone");
+    assert!(d1.storage().read(file).unwrap().is_some());
+}

@@ -69,6 +69,8 @@ class AutofillAuthActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val backend = ghul.backend
+        // L10: no taps while another app draws over the login choice (tapjacking).
+        window.decorView.filterTouchesWhenObscured = true
         if (!backend.settings.allowScreenshots) {
             window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         }
@@ -87,8 +89,37 @@ class AutofillAuthActivity : ComponentActivity() {
                         if (!unlocked) {
                             UnlockScreen(state)
                         } else {
-                            Picker(backend, domain, pkg, onPick = { login, _ -> finishWith(backend, fields, login) }) {
+                            var confirm by remember { mutableStateOf<AutofillLogin?>(null) }
+                            Picker(backend, domain, pkg, onPick = { login, _ ->
+                                // B9: an app is only linked to a login after the user confirmed it.
+                                if (!login.direct && pkg != null) confirm = login else finishWith(backend, fields, login, link = false)
+                            }) {
                                 finish()
+                            }
+                            confirm?.let { login ->
+                                val appName = remember(pkg) {
+                                    runCatching {
+                                        packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg!!, 0)).toString()
+                                    }.getOrDefault(pkg.orEmpty())
+                                }
+                                de.danerd.ghulsuite.ui.AlertDialog(
+                                    onDismissRequest = { confirm = null },
+                                    title = { Text(stringResource(Res.string.autofill_link_title)) },
+                                    text = {
+                                        Text(stringResource(Res.string.autofill_link_text, appName, pkg.orEmpty(),
+                                            login.title.ifBlank { stringResource(Res.string.untitled) }))
+                                    },
+                                    confirmButton = {
+                                        TextButton(onClick = { confirm = null; finishWith(backend, fields, login, link = true) }) {
+                                            Text(stringResource(Res.string.autofill_link_yes))
+                                        }
+                                    },
+                                    dismissButton = {
+                                        TextButton(onClick = { confirm = null; finishWith(backend, fields, login, link = false) }) {
+                                            Text(stringResource(Res.string.autofill_link_once))
+                                        }
+                                    },
+                                )
                             }
                         }
                     }
@@ -110,10 +141,10 @@ class AutofillAuthActivity : ComponentActivity() {
             intent.getParcelableArrayListExtra<AutofillId>(key).orEmpty()
         }
 
-    private fun finishWith(backend: AndroidVaultBackend, fields: LoginFields, login: AutofillLogin) {
+    private fun finishWith(backend: AndroidVaultBackend, fields: LoginFields, login: AutofillLogin, link: Boolean) {
         val pkg = intent.getStringExtra(EXTRA_PACKAGE)
         scope.launch {
-            if (!login.direct && pkg != null) {
+            if (link && !login.direct && pkg != null) {
                 val cert = AppCert.sha256(this@AutofillAuthActivity, pkg)
                 if (cert != null) runCatching { backend.linkAppToLogin(login.vaultId, login.id, pkg, cert) }
             }
