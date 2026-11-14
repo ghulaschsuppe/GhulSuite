@@ -41,6 +41,9 @@ object AppLaunch {
     /** Counts new-mail notifications posted in this process: open lists and the badge refresh. */
     val newMail = kotlinx.coroutines.flow.MutableStateFlow(0)
 
+    /** B22: counts changes of the device's time zone noticed while running (Windows): reminders are planned anew. */
+    val timeZoneChanged = kotlinx.coroutines.flow.MutableStateFlow(0)
+
     /** Counts how often the app came to the front (Android: activity resumed). */
     val resumed = kotlinx.coroutines.flow.MutableStateFlow(0)
 
@@ -194,7 +197,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             var waited = 0
             while (calDefaultCalendar.isEmpty() && waited < 50) { kotlinx.coroutines.delay(100); waited++ }
             val target = calDefaultCalendar
-            if (target.isEmpty()) return@launch
+            // U15: without any calendar the import says so instead of doing nothing.
+            if (target.isEmpty()) return@launch message(getString(Res.string.cal_import_no_calendar))
             runCatching { backend.cal.importIcs(target, data) }
                 .onSuccess { n ->
                     changed()
@@ -264,10 +268,39 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
 
     private var syncAgain = false
 
+    /**
+     * U12: an editor (login, event) holds input that is not saved. "Back" then asks first. Locking
+     * cannot wait (security): it drops the input, and after unlocking the app says so.
+     */
+    var editorDirty by mutableStateOf(false)
+
+    /** U11: opened with the recovery code: the next steps are shown once (see [RecoveredDialog]). */
+    var recoveredGuide by mutableStateOf(false)
+
+    /** U13: the last automatic sync found no connection; shown on the area pages until a sync works. */
+    var syncOffline by mutableStateOf(false)
+    var confirmDiscard by mutableStateOf(false)
+    private var discardedOnLock = false
+
+    /** Back from the current screen; an editor with unsaved input asks first. */
+    fun back() {
+        if (editorDirty) confirmDiscard = true else pop()
+    }
+
+    fun discardAndBack() {
+        editorDirty = false
+        confirmDiscard = false
+        pop()
+    }
+
     init {
         scope.launch {
             backend.unlocked.collect { unlocked ->
                 if (!unlocked) {
+                    if (editorDirty) discardedOnLock = true
+                    editorDirty = false
+                    recoveredGuide = false
+                    confirmDiscard = false
                     dropPending()
                     stack.clear()
                     tab = tabs.first()
@@ -284,6 +317,10 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     areasKnown = false
                     codeUnconfirmed = false
                 } else {
+                    if (discardedOnLock) {
+                        discardedOnLock = false
+                        message(getString(Res.string.edit_dropped_on_lock))
+                    }
                     refreshVaults()
                     scanFound()
                     autoSync()
@@ -312,6 +349,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             }
         }
         scope.launch { AppLaunch.openTab.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
+        scope.launch { AppLaunch.timeZoneChanged.collect { if (it > 0 && backend.unlocked.value) refreshCalendar() } }
         scope.launch { AppLaunch.openEvent.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
         scope.launch { AppLaunch.openMail.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
         scope.launch { AppLaunch.compose.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
@@ -483,6 +521,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                         return@launch
                     }
                     val r = backend.net.syncNow()
+                    syncOffline = false
                     if (r.downloaded > 0 || r.merged > 0 || r.deleted > 0) {
                         revision++
                         refreshVaults()
@@ -498,8 +537,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     kind == VaultErrorKind.PASSWORD_CHANGED_ELSEWHERE -> passwordChangedElsewhere = true
                     kind == VaultErrorKind.PROTECTION_CHANGED_ELSEWHERE -> protectionChangedElsewhere = true
                     kind == VaultErrorKind.LOCKED -> {}
-                    // Offline is normal for automatic runs.
-                    quiet && kind == VaultErrorKind.NETWORK -> {}
+                    // Offline is normal for automatic runs: no message, a quiet note on the area pages.
+                    quiet && kind == VaultErrorKind.NETWORK -> syncOffline = true
                     else -> message(getString(Res.string.sync_failed, describe(e)))
                 }
             } finally {
@@ -772,7 +811,7 @@ suspend fun describe(e: Throwable): String {
         VaultErrorKind.NO_KEY -> getString(Res.string.err_no_key)
         VaultErrorKind.PERMISSION_DENIED -> getString(Res.string.err_permission)
         VaultErrorKind.NOT_A_FIDO_KEY -> getString(Res.string.err_not_fido)
-        VaultErrorKind.TRANSPORT -> getString(Res.string.err_transport, e.detail)
+        VaultErrorKind.TRANSPORT -> getString(Res.string.err_transport, coreText(e.detail) ?: e.detail)
         VaultErrorKind.TIMEOUT -> getString(Res.string.err_timeout)
         VaultErrorKind.PIN_NOT_SET -> getString(Res.string.err_pin_not_set)
         VaultErrorKind.PIN_INVALID -> getString(Res.string.err_pin_invalid, (e.retries ?: 0).toString())
@@ -787,14 +826,15 @@ suspend fun describe(e: Throwable): String {
         VaultErrorKind.HMAC_UNSUPPORTED -> getString(Res.string.err_hmac)
         VaultErrorKind.KEY_NOT_REGISTERED -> getString(Res.string.err_key_not_registered)
         VaultErrorKind.NOT_CONFIRMED -> getString(Res.string.err_not_confirmed)
-        VaultErrorKind.KEY_PROTOCOL -> getString(Res.string.err_key_protocol, e.detail)
+        VaultErrorKind.KEY_PROTOCOL -> getString(Res.string.err_key_protocol, coreText(e.detail) ?: e.detail)
         VaultErrorKind.WRONG_PASSWORD -> getString(Res.string.err_wrong_password)
         VaultErrorKind.WRONG_SECOND_FACTOR -> getString(Res.string.err_wrong_code)
         VaultErrorKind.INVALID_RECOVERY_CODE -> getString(Res.string.err_invalid_code)
         VaultErrorKind.LOCKED -> getString(Res.string.err_locked)
-        VaultErrorKind.CORRUPTED -> getString(Res.string.err_corrupted, e.detail)
-        VaultErrorKind.STORAGE -> getString(Res.string.err_storage, e.detail)
-        VaultErrorKind.INVALID_INPUT -> getString(Res.string.err_input, e.detail)
+        VaultErrorKind.CORRUPTED -> getString(Res.string.err_corrupted, coreText(e.detail) ?: e.detail)
+        VaultErrorKind.STORAGE -> getString(Res.string.err_storage, coreText(e.detail) ?: e.detail)
+        // U5: the core's known details are complete sentences in the app's language.
+        VaultErrorKind.INVALID_INPUT -> coreText(e.detail) ?: getString(Res.string.err_input, e.detail)
         VaultErrorKind.SECURITY_KEY_REQUIRED -> getString(Res.string.err_key_required)
         VaultErrorKind.KEYFILE_REQUIRED -> getString(Res.string.err_keyfile_required)
         VaultErrorKind.WRONG_KEYFILE -> getString(Res.string.err_wrong_keyfile)
@@ -803,7 +843,7 @@ suspend fun describe(e: Throwable): String {
         VaultErrorKind.LAST_FACTOR -> getString(Res.string.err_last_factor)
         VaultErrorKind.IMPORT_ENCRYPTED -> getString(Res.string.err_import_encrypted)
         VaultErrorKind.IMPORT_UNKNOWN -> getString(Res.string.err_import_unknown)
-        VaultErrorKind.NETWORK -> getString(Res.string.err_network, e.detail)
+        VaultErrorKind.NETWORK -> getString(Res.string.err_network, coreText(e.detail) ?: e.detail)
         VaultErrorKind.HOST_KEY_UNKNOWN -> getString(Res.string.err_host_key_unknown, e.detail)
         VaultErrorKind.HOST_KEY_CHANGED -> getString(Res.string.err_host_key_changed, e.detail)
         VaultErrorKind.CERT_UNTRUSTED -> getString(Res.string.err_cert_untrusted, e.detail)
@@ -815,7 +855,7 @@ suspend fun describe(e: Throwable): String {
         VaultErrorKind.PHP_NOT_EXECUTED -> getString(Res.string.err_php_not_executed)
         VaultErrorKind.NOT_CONFIGURED -> getString(Res.string.err_not_configured)
         VaultErrorKind.NOT_FOUND -> getString(Res.string.err_not_found)
-        VaultErrorKind.OTHER -> getString(Res.string.err_other, e.detail)
+        VaultErrorKind.OTHER -> getString(Res.string.err_other, coreText(e.detail) ?: e.detail)
     }
 }
 

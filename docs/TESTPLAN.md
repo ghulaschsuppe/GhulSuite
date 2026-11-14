@@ -518,6 +518,24 @@ Automatisch läuft bei jedem Push der Alltagstest im Kern (zwei Geräte, 30 simu
 | R14 | GhulMail: bei einem Kontakt mit PGP-Schlüssel „Vergleichen“ öffnen. | Fingerabdruck in Vierergruppen; nach dem Bestätigen gilt er als geprüft; ein später geänderter Schlüssel wird gemeldet (L7). |
 | R15 | Drive-Server auf einen alten Stand zurücksetzen (alte Index-Datei zurückkopieren), dann GhulDrive öffnen. | Meldung „Drive auf dem Server ist älter …“, nichts verschwindet; „Älteren Serverstand übernehmen“ (Optionen → GhulDrive) nur nach Rückfrage (B3). |
 
+## 29. Bedienung und Mail (Runde 6)
+
+| Nr. | Schritt | Erwartet |
+|---|---|---|
+| V1 | Optionen → Bereiche → einen Bereich entfernen; ebenso Optionen → Tresore → einen Tresor löschen. | Dialog nennt die Anzahl der Einträge, bietet „Vorher exportieren“; „Entfernen“ bzw. „Löschen“ geht erst, wenn der Name eingetippt ist (U4). |
+| V2 | Etwas Falsches eingeben, das der Kern ablehnt (z. B. beim Server-Abruf FTPS ohne Passwort, oder IMAP mit Port 143). | Meldung auf Deutsch, kein englischer Rest (U5). |
+| V3 | Startbildschirm, obwohl schon eine Suite da ist: „Sicherung wiederherstellen“. | Frage „Hier liegt schon eine Suite“, dann einen leeren Ordner wählen; vorhandene Suite bleibt unverändert (U6). |
+| V4 | Neues Gerät: „Von meinem Server holen“ mit FTPS, dann mit dem PHP-Modul (Adresse und Zugangsschlüssel). | Suite wird geladen, danach normal entsperren (U7). |
+| V5 | Einrichtung: Key wählen, keine PIN eingeben, „Weiter“. | Meldung „Bitte gib die PIN deines Keys ein …“ (U9). |
+| V6 | Startbildschirm: „Einzelne Tresordatei öffnen“ mit einer `.ghlcal`-Datei. | Wird als Kalender erkannt, GhulCal ist danach eingeschaltet (U10). |
+| V7 | „Mit Wiederherstellungscode öffnen“. | Danach Dialog mit den drei Schritten; „Jetzt erledigen“ öffnet die Keys (U11). |
+| V8 | Anmeldung bearbeiten, etwas ändern, Zurück; danach etwas ändern und die App sperren lassen. | Zurück fragt „Änderungen verwerfen?“; nach dem Entsperren die Meldung, dass eine Bearbeitung verworfen wurde (U12). Ebenso im Termin-Editor. |
+| V9 | Flugmodus, Synchronisation automatisch an, App entsperren. | Auf den Bereichsseiten der Hinweis „Synchronisation gerade nicht möglich …“; Tippen versucht es erneut; mit Netz verschwindet er (U13). |
+| V10 | Optionen → GhulDrive → Speicher von eigenem Server auf „wie Synchronisation“. | Rückfrage mit Erklärung, erst dann umgestellt (U14). |
+| V11 | Kalender ohne Kalender: Import; dann mit zwei Kalendern: Import; Export mit einem ausgeblendeten Kalender. | Meldung „Lege zuerst einen Kalender an“; Wahl des Ziels; Export enthält alle Kalender, Hinweis darunter (U15). |
+| V12 | Mail-Ordner mit mehr als 50 Mails: eine lang drücken, „Alle“, dann „Alle N Mails in diesem Ordner auswählen“, „Als gelesen“. | Alle Mails des Ordners gelesen, Meldung mit Anzahl. Ebenso Verschieben, Archivieren, Löschen (Löschen fragt vorher). |
+| V13 | Papierkorb bzw. Spam: „Ordner leeren“. | Rückfrage mit Anzahl, danach beim Anbieter leer; in anderen Ordnern gibt es den Knopf nicht. |
+
 ## GhulCal (Kalender)
 
 | Nr. | Schritt | Erwartet |

@@ -236,10 +236,10 @@ fun UnlockScreen(state: AppState) {
                         scope.launch {
                             error = PasswordPolicy.check(backend, password, repeat)
                             if (error != null) return@launch
-                            val done = getString(Res.string.msg_recovered)
                             state.run(onError = { error = it }, block = { backend.unlockWithRecoveryCode(code, password) }) {
                                 clear()
-                                state.message(done)
+                                // U11: what to do now is shown right after unlocking, not only as a toast.
+                                state.recoveredGuide = true
                             }
                         }
                     },

@@ -1000,6 +1000,12 @@ fn mail_with_imap_and_smtp() {
     assert!(matches!(s.mail_check_account(starttls.clone()), Err(GhulError::InvalidInput { .. })));
     assert!(s.mail_save_account(None, starttls).is_err());
     assert_eq!(s.mail_check_account(input.clone()).unwrap(), MailCheck::Ok);
+    // B21: the field "Login name" usually stays empty; the check then logs in with the address,
+    // like the saved account does (before, it logged in with an empty name and always failed).
+    let mut no_login = input.clone();
+    no_login.username = String::new();
+    no_login.email = format!(" {email} ");
+    assert_eq!(s.mail_check_account(no_login).unwrap(), MailCheck::Ok);
 
     let id = s.mail_save_account(None, input.clone()).unwrap();
     assert_eq!(s.mail_accounts().unwrap()[0].email, email);
@@ -1411,7 +1417,8 @@ fn php_module_storage_drive_and_limited_shares() {
     let Some(php) = crate::net::tests::php_server() else { return };
     let d = Dirs::new("php");
     let s = d.suite();
-    s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    let kf = generate_keyfile();
+    s.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
     let mut input = ServerInput {
         kind: ServerKind::Php,
         name: String::new(),
@@ -1426,13 +1433,24 @@ fn php_module_storage_drive_and_limited_shares() {
     // A wrong key is refused before anything is stored.
     assert!(matches!(s.save_server(input.clone(), None), Err(GhulError::ServerAuthFailed)));
     input.password = Some(crate::kdf::hex(&php.key));
+    let fetch_input = input.clone();
     let id = saved(s.save_server(input, None).unwrap());
     let info = s.list_servers().unwrap().into_iter().find(|x| x.id == id).unwrap();
     assert_eq!((info.kind, info.share_url.as_str()), (ServerKind::Php, php.url.as_str()));
     s.set_sync_server(Some(id.clone())).unwrap();
     s.sync_now().unwrap();
+    // U7: a new device fetches the suite through the module (not only over SFTP).
+    let new_device = Dirs::new("php-fetch");
+    let b = new_device.suite();
+    assert_eq!(b.fetch_from_server(fetch_input, None, None).unwrap(), "");
+    b.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
+    assert_eq!(b.list_vaults().unwrap().len(), s.list_vaults().unwrap().len());
     s.drive_setup(id.clone()).unwrap();
     let f = upload(&s, None, "Vertrag.pdf", b"%PDF Vertrag");
+    assert_eq!(download(&s, &f), b"%PDF Vertrag");
+    // B19: after locking and unlocking, Drive connects again by itself (from the stored server).
+    s.lock();
+    s.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
     assert_eq!(download(&s, &f), b"%PDF Vertrag");
 
     // One-time link: the second download fails, and the share disappears from the list.

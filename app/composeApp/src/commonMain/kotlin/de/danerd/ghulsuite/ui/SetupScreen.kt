@@ -122,6 +122,25 @@ fun SetupScreen(state: AppState) {
         }
     }
 
+    // U6: a backup never goes over an existing suite: there the app offers another (empty) folder.
+    var restoreAsk by remember { mutableStateOf(false) }
+    val folderHasSuite = stringResource(Res.string.core_folder_has_suite)
+    val pickRestoreFolder = rememberPickFolder { folder ->
+        backend.useStorage(folder)
+        if (backend.exists()) error = folderHasSuite else restoreBackup()
+    }
+    if (restoreAsk) {
+        AlertDialog(
+            onDismissRequest = { restoreAsk = false },
+            title = { Text(stringResource(Res.string.restore_exists_title)) },
+            text = { Text(stringResource(Res.string.restore_exists_text)) },
+            confirmButton = {
+                TextButton(onClick = { restoreAsk = false; pickRestoreFolder() }) { Text(stringResource(Res.string.restore_choose_folder)) }
+            },
+            dismissButton = { TextButton(onClick = { restoreAsk = false }) { Text(stringResource(Res.string.a_cancel)) } },
+        )
+    }
+
     PlatformBackHandler(enabled = flow != Flow.START) { flow = Flow.START }
 
     ScreenColumn {
@@ -152,7 +171,7 @@ fun SetupScreen(state: AppState) {
                 if (filePickersAvailable) {
                     StartOption(Icons.Filled.Restore, paletteColor(5), stringResource(Res.string.backup_restore), stringResource(Res.string.backup_restore_sub)) {
                         error = null
-                        restoreBackup()
+                        if (backend.exists()) restoreAsk = true else restoreBackup()
                     }
                 }
                 HintText(stringResource(Res.string.start_footer))
@@ -227,10 +246,11 @@ fun StorageChooser(state: AppState) {
     }
 }
 
-/** Finish of every setup: switch on the modules of the vaults and leave the start screen. */
-private fun finishSetup(state: AppState, pass: Boolean, totp: Boolean) {
-    state.backend.settings.moduleGhulPass = pass
-    state.backend.settings.moduleGhulAuth = totp
+/** Finish of a setup around one vault file: only the area of that vault is switched on. */
+private fun finishSetup(state: AppState, kind: VaultKindUi) {
+    state.backend.settings.moduleGhulPass = kind == VaultKindUi.PASS
+    state.backend.settings.moduleGhulAuth = kind == VaultKindUi.TOTP
+    state.enableModule(kind)
     state.showStart = false
     state.vaultExists = true
     state.refreshVaults()
@@ -240,7 +260,8 @@ private fun finishSetup(state: AppState, pass: Boolean, totp: Boolean) {
 @Composable
 private fun OpenVaultWizard(state: AppState, file: PickedFile, info: ContainerInfoUi, onCancel: () -> Unit) {
     val backend = state.backend
-    val kind = if (info.kind == "pass") VaultKindUi.PASS else VaultKindUi.TOTP
+    // U10: the kind comes from the file itself (a calendar file is no GhulAuth vault).
+    val kind = vaultKindOf(info.kind)
     val hasKey = info.protection.securityKeys > 0
     val hasKeyfile = info.protection.keyfiles > 0
     var withKey by remember { mutableStateOf(hasKey) }
@@ -255,7 +276,7 @@ private fun OpenVaultWizard(state: AppState, file: PickedFile, info: ContainerIn
 
     val current = code
     if (current != null) {
-        RecoveryCodeSteps(state, current) { finishSetup(state, kind == VaultKindUi.PASS, kind == VaultKindUi.TOTP) }
+        RecoveryCodeSteps(state, current) { finishSetup(state, kind) }
         return
     }
     SectionCard(stringResource(Res.string.open_vault_title)) {
@@ -301,7 +322,7 @@ private fun OpenVaultWizard(state: AppState, file: PickedFile, info: ContainerIn
                         pin = ""
                         if (newCode == null) {
                             state.message(keptCode)
-                            finishSetup(state, kind == VaultKindUi.PASS, kind == VaultKindUi.TOTP)
+                            finishSetup(state, kind)
                         } else {
                             code = newCode
                         }

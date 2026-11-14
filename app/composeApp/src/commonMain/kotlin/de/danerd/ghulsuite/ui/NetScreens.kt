@@ -48,6 +48,7 @@ fun ServerFields(
     onInput: (ServerInputUi) -> Unit,
     onUsePassword: (Boolean) -> Unit,
     showName: Boolean = true,
+    passwordOnly: Boolean = false,
 ) {
     if (showName) {
         OutlinedTextField(input.name, { onInput(input.copy(name = it)) }, Modifier.fillMaxWidth(),
@@ -67,9 +68,11 @@ fun ServerFields(
     OutlinedTextField(input.base, { onInput(input.copy(base = it.trim())) }, Modifier.fillMaxWidth(),
         label = { Text(stringResource(Res.string.server_base)) }, singleLine = true)
     Hint(stringResource(Res.string.server_base_hint))
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        FilterChip(!usePassword, { onUsePassword(false) }, label = { Text(stringResource(Res.string.server_auth_key)) })
-        FilterChip(usePassword, { onUsePassword(true) }, label = { Text(stringResource(Res.string.server_auth_password)) })
+    if (!passwordOnly) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(!usePassword, { onUsePassword(false) }, label = { Text(stringResource(Res.string.server_auth_key)) })
+            FilterChip(usePassword, { onUsePassword(true) }, label = { Text(stringResource(Res.string.server_auth_password)) })
+        }
     }
     if (usePassword) {
         SecretTextField(input.password.orEmpty(), { onInput(input.copy(password = it)) }, stringResource(Res.string.server_password))
@@ -582,7 +585,11 @@ fun FetchFromServer(state: AppState, onCancel: () -> Unit) {
     var fingerprint by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     val deviceKey = remember { runCatching { backend.deviceSshKey() }.getOrNull() }
-    val effective = if (usePassword) input else input.copy(password = null)
+    // U7: SFTP (key or password), FTPS (password) or the PHP module (address and access key).
+    val effective = when (input.kind) {
+        ServerKindUi.SFTP -> if (usePassword) input else input.copy(password = null)
+        else -> input
+    }
     val notFound = stringResource(Res.string.fetch_nothing)
     val doneMsg = stringResource(Res.string.fetch_done)
 
@@ -608,18 +615,43 @@ fun FetchFromServer(state: AppState, onCancel: () -> Unit) {
     SectionCard(stringResource(Res.string.start_fetch)) {
         Hint(stringResource(Res.string.fetch_text))
         StorageChooser(state)
-        ServerFields(input, usePassword, { input = it; error = null }, { usePassword = it }, showName = false)
-        if (!usePassword && deviceKey != null) {
-            Hint(stringResource(Res.string.fetch_device_key))
-            PublicKeyBox(state, deviceKey)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            for (k in listOf(ServerKindUi.SFTP, ServerKindUi.FTPS, ServerKindUi.PHP)) {
+                FilterChip(input.kind == k, {
+                    input = input.copy(kind = k, port = when (k) { ServerKindUi.SFTP -> 22; ServerKindUi.FTPS -> 21; else -> 0 }, password = null)
+                    error = null
+                }, label = { Text(kindLabel(k)) })
+            }
+        }
+        when (input.kind) {
+            ServerKindUi.SFTP -> {
+                ServerFields(input, usePassword, { input = it; error = null }, { usePassword = it }, showName = false)
+                if (!usePassword && deviceKey != null) {
+                    Hint(stringResource(Res.string.fetch_device_key))
+                    PublicKeyBox(state, deviceKey)
+                }
+            }
+            ServerKindUi.FTPS -> {
+                ServerFields(input, true, { input = it; error = null }, {}, showName = false, passwordOnly = true)
+            }
+            ServerKindUi.PHP -> {
+                OutlinedTextField(input.url, { input = input.copy(url = it.trim()); error = null }, Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(Res.string.php_url)) }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
+                Hint(stringResource(Res.string.php_url_hint, "ghulsuite.php"))
+                SecretTextField(input.password.orEmpty(), { input = input.copy(password = it.trim()); error = null }, stringResource(Res.string.php_key))
+            }
         }
         ErrorText(error)
         ButtonRow {
             OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text(stringResource(Res.string.a_back)) }
             Button(
                 onClick = { fetch(null) },
-                enabled = !state.busy && input.host.isNotBlank() && input.user.isNotBlank() &&
-                    (!usePassword || !input.password.isNullOrEmpty()),
+                enabled = !state.busy && when (input.kind) {
+                    ServerKindUi.SFTP -> input.host.isNotBlank() && input.user.isNotBlank() && (!usePassword || !input.password.isNullOrEmpty())
+                    ServerKindUi.FTPS -> input.host.isNotBlank() && input.user.isNotBlank() && !input.password.isNullOrEmpty()
+                    ServerKindUi.PHP -> input.url.startsWith("https://") && !input.password.isNullOrEmpty()
+                },
                 modifier = Modifier.weight(1f),
             ) { Text(stringResource(Res.string.a_fetch)) }
         }

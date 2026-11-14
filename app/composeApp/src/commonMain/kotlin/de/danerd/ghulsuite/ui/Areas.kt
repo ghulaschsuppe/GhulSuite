@@ -106,6 +106,9 @@ fun AreaFooter(state: AppState, kind: VaultKindUi) {
 fun RemoveAreaDialog(state: AppState, kind: VaultKindUi, onDone: () -> Unit, onDismiss: () -> Unit) {
     val name = stringResource(areaInfo(kind).title)
     val removed = stringResource(Res.string.area_removed, name)
+    // U4: how much goes, a way to save it first, and the name typed out instead of one tap.
+    val entries = state.vaultsOf(kind).sumOf { it.entries }
+    var typed by remember { mutableStateOf("") }
     AlertDialog(
         danger = true,
         onDismissRequest = onDismiss,
@@ -113,11 +116,16 @@ fun RemoveAreaDialog(state: AppState, kind: VaultKindUi, onDone: () -> Unit, onD
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Banner(Icons.Filled.Warning, stringResource(Res.string.area_remove_warning, areaInfo(kind).ext))
+                if (entries > 0) Text(stringResource(Res.string.remove_count, entries.toString()))
                 Text(stringResource(Res.string.area_remove_tip))
+                OutlinedButton(onClick = { onDismiss(); state.push(Screen.Export) }, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(Res.string.remove_export_first))
+                }
+                ConfirmByName(name, typed) { typed = it }
             }
         },
         confirmButton = {
-            TextButton(onClick = {
+            TextButton(enabled = nameMatches(typed, name), onClick = {
                 state.run(block = { state.backend.removeArea(kind) }) {
                     showModule(state, kind, false)
                     state.message(removed)
@@ -271,6 +279,7 @@ fun DriveStorageRow(state: AppState) {
     val net = state.backend.net
     var storage by remember { mutableStateOf<DriveStorageUi?>(null) }
     var sheet by remember { mutableStateOf(false) }
+    var confirmSync by remember { mutableStateOf(false) }
     var own by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(state.liveRevision()) { storage = runCatching { net.driveStorage() }.getOrNull() }
@@ -291,6 +300,20 @@ fun DriveStorageRow(state: AppState) {
         }) { Text(stringResource(Res.string.php_module_update)) }
     }
     ErrorText(error)
+    if (confirmSync) {
+        AlertDialog(
+            onDismissRequest = { confirmSync = false },
+            title = { Text(stringResource(Res.string.drive_to_sync_title)) },
+            text = { Text(stringResource(Res.string.drive_to_sync_text)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmSync = false
+                    state.run(onError = { error = it }, block = { net.driveUseSync() }) { state.changed() }
+                }) { Text(stringResource(Res.string.drive_to_sync_yes)) }
+            },
+            dismissButton = { TextButton(onClick = { confirmSync = false }) { Text(stringResource(Res.string.a_cancel)) } },
+        )
+    }
     if (own) DriveServerSheet(state) { own = false }
     if (sheet) {
         GhulSheet({ sheet = false }, stringResource(Res.string.drive_storage_title)) {
@@ -299,7 +322,8 @@ fun DriveStorageRow(state: AppState) {
                     stringResource(if (s.syncAvailable) Res.string.drive_like_sync_ref else Res.string.wz_drive_sync_first), enabled = s.syncAvailable,
                     onClick = {
                         sheet = false
-                        state.run(onError = { error = it }, block = { net.driveUseSync() }) { state.changed() }
+                        // U14: switching away from a server that holds files asks first (Drive looks empty).
+                        if (s.mode != DriveModeUi.SYNC) confirmSync = true
                     })
                 PickRow(s.mode == DriveModeUi.OWN || s.mode == DriveModeUi.SUITE, Icons.Filled.Dns, 1, stringResource(Res.string.wz_own_server),
                     stringResource(Res.string.drive_own_in_file), divider = true, onClick = { sheet = false; own = true })

@@ -75,6 +75,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -752,6 +754,11 @@ fun EntryEditScreen(state: AppState, vaultId: String, id: String?, type: String,
         }
     }
     if (!loaded) return
+    // U12: unsaved input makes "back" ask first (compared with the state when the editor opened).
+    val initial = remember { values.toMap() }
+    val dirty = values.toMap().filterValues { it.isNotEmpty() } != initial.filterValues { it.isNotEmpty() }
+    SideEffect { state.editorDirty = dirty }
+    DisposableEffect(Unit) { onDispose { state.editorDirty = false } }
     val save = {
         val names = def.fields.map { it.name }.toSet()
         val kept = customOrder.filter { it !in names }.map { n -> FieldUi(n, original?.fields?.firstOrNull { it.name == n }?.type ?: FieldType.TEXT, values[n].orEmpty()) }
@@ -771,7 +778,7 @@ fun EntryEditScreen(state: AppState, vaultId: String, id: String?, type: String,
         // Full-screen editor: close on the left, the main action on the right, as in every area.
         GhulTopBar(
             stringResource(if (id == null) Res.string.pass_new_entry else Res.string.a_edit),
-            onLock = { state.lockNow() }, onBack = { state.pop() }, backIcon = Icons.Filled.Close, showLock = false,
+            onLock = { state.lockNow() }, onBack = { state.back() }, backIcon = Icons.Filled.Close, showLock = false,
             actions = { HeaderButton(stringResource(Res.string.a_save), enabled = !state.busy) { save() } },
         )
         ScreenColumn {

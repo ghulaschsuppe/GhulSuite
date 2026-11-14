@@ -3,7 +3,7 @@
 # app PIN 246813, GhulMail set up without an account, GhulDrive not set up.
 #   GHUL_TEST_SFTP_PASSWORD=1 sudo -E bash tools/test-servers.sh
 #   maestro test app/maestro/server
-# CI (tools/run-maestro.sh) runs the two flows one by one: the mail flow is not yet required.
+# CI (tools/run-maestro.sh) runs the two flows one by one; both are required.
 flows:
   - "[0-9]-*.yaml"
 executionOrder:

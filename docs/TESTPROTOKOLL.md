@@ -107,6 +107,7 @@ Schwere: **K** kritisch (Datenverlust, Geheimnis preisgegeben) · **H** hoch (An
 | F41 | M | Sync: Wurde auf einem anderen Gerät ein Key entfernt **und** das Master-Passwort geändert, konnte die Passwortabfrage nie gelingen | `rekey::a_device_offline_for_a_week_loses_nothing` | behoben: einmal mit einem übrigen Key oder der Schlüsseldatei bestätigen, das neue Passwort wird in derselben Abfrage verlangt |
 | F42 | M | Eigener Ordner mit einem Sync-Programm (Syncthing, Nextcloud): Eine Konfliktkopie derselben Tresordatei wurde nicht zusammengeführt, nur die neuere zählte; Änderungen der anderen gingen beim nächsten Speichern verloren | `security::conflict_copies_of_a_folder_sync_tool_are_merged` | behoben: Kopien desselben Tresors werden Eintrag für Eintrag zusammengeführt, danach wird die Kopie gelöscht |
 | F43 | M | B4 wirkte nicht: Android übernimmt die Sperrbildschirm-Einstellung eines Kanals nicht von der App (`mLockscreenVisibility=-1000` statt „privat“), nur der Nutzer kann sie setzen. Bei „alle Inhalte anzeigen“ standen Termin bzw. Absender und Betreff weiter auf dem Sperrbildschirm | `tools/check-reminders.sh` (gefunden durch die neue Kanal-Prüfung im Emulator) | behoben: Ist das Gerät beim Eintreffen gesperrt, enthält die Benachrichtigung nur die Sperrbildschirm-Fassung; geprüft mit echter PIN-Sperre im Emulator |
+| F44 | M | GhulMail: Blieb beim neuen Konto das Feld „Anmeldename“ leer (der Normalfall), meldete „Prüfen und speichern“ immer „Anmeldung abgelehnt“. Die Prüfung vor dem Speichern meldete sich mit leerem Namen an, erst das gespeicherte Konto setzte die Mail-Adresse ein | `app::tests::mail_with_imap_and_smtp` (gegen Dovecot und den SMTP-Testserver), Emulator-Ablauf `app/maestro/server/2-mail.yaml` (gefunden durch B21) | behoben: Prüfung und gespeichertes Konto nutzen denselben Anmeldenamen (leer heißt: die Mail-Adresse, Leerraum am Rand entfernt) |
 | F23 | M | ~~Tresornamen stehen im Dateinamen~~ (Server, Sicherung): „bank-privat.ghlpss“ verriet, welche Tresore es gibt | `attacks::stolen_device_files_server_and_backup_reveal_nothing` (jetzt auch Datei- und ZIP-Namen), `rekey::vault_files_get_neutral_names_here_and_on_the_server` | behoben: Dateien heißen nach ihrer Kennung (`3f9a1c2b7d4e5f60.ghlpss`), der Name steht nur verschlüsselt darin; alte Namen werden beim Entsperren und beim nächsten Sync ersetzt |
 | F24 | N | Termintitel und Import-Titel werden getrimmt (führender Tab geht verloren); Passwörter bleiben exakt | `attacks::exports_are_safe…` | **gewollt:** Titel ohne Leerraum am Rand sind Absicht (Suche, Sortierung, Anzeige); alles Geheime (Passwörter, Notizen, Schlüssel) bleibt Zeichen für Zeichen erhalten |
 
@@ -139,9 +140,9 @@ Zu F17 (Verhalten seit der Behebung): Die erste Mail eines neuen Kontakts mit Au
 | B17 | - | ~~CI: Signaturschlüssel und FTP-Zugang stehen bei Pushes auf jeden Branch bereit~~ | entschieden, siehe L4 (Abschnitt 8) | Nachtlauf `reproducible` |
 | B18 | - | ~~Gleichzeitig auf A gelöscht und auf B bearbeitet: Ergebnis hängt von Revision/Zeit ab~~ | erledigt, feste Regel: Die Löschung gilt nur für den Stand, den das löschende Gerät kannte; eine Änderung, die es nie gesehen hat, bleibt erhalten. Unabhängig von den Uhren der Geräte | `security::delete_against_edit_follows_a_fixed_rule` |
 | B20 | - | ~~Serie aus einer anderen Zeitzone: nur der erste Termin wurde umgerechnet~~ | erledigt (F38): die Serie merkt sich ihre Zeitzone | `properties::series_from_other_time_zones_are_right_all_year` |
-| B21 | N | Emulator: GhulDrive und GhulMail mit echtem Server | Testserver laufen in der CI neben dem Emulator (SFTP mit Passwort, IMAP, SMTP); Abläufe `app/maestro/server/`; danach prüft `tools/check-server-flows.sh`, dass auf den Servern nur Verschlüsseltes liegt | teilweise: GhulDrive läuft verpflichtend durch (Ordner auf dem Server nicht lesbar). Der Mail-Ablauf verbindet sich und bestätigt das Zertifikat, scheitert aber noch an der Anmeldung im Testskript; bis er sicher läuft, ist er nur eine Warnung (`GHUL_MAIL_FLOW_REQUIRED=1` macht ihn verpflichtend). Beide laufen nachts und von Hand (`emulator.yml`) |
-| B22 | N | Windows: Erinnerungen werden nur geplant, solange die App läuft; ein Zeitzonen-Wechsel im laufenden Programm ist ungeprüft | prüfen, bei Bedarf neu planen | Desktop-Test |
-| B19 | N | Test-Hilfe: Nach Sperren/Entsperren muss Drive im Test neu verbunden werden (`NotConfigured`); in der App verbindet sie sich selbst | prüfen, ob die App nach Entsperren immer neu verbindet | Desktop-UI-Test |
+| B21 | N | Emulator: GhulDrive und GhulMail mit echtem Server | Testserver laufen in der CI neben dem Emulator (SFTP mit Passwort, IMAP, SMTP); Abläufe `app/maestro/server/`; danach prüft `tools/check-server-flows.sh`, dass auf den Servern nur Verschlüsseltes liegt | erledigt: Der Mail-Ablauf scheiterte nicht am Testskript, sondern an einem echten Fehler der App (F44, behoben). Beide Abläufe und die Prüfung des Postfachs sind jetzt verpflichtend; sie laufen nachts und von Hand (`emulator.yml`) |
+| B22 | - | ~~Windows: Erinnerungen nur, solange die App läuft; Zeitzonen-Wechsel im laufenden Programm ungeprüft~~ | erledigt: Zeitzonen-Wechsel wird alle 5 Minuten erkannt und die Erinnerungen neu geplant. Dass Erinnerungen nur bei laufendem Programm kommen, ist eine Grenze der Windows-Version ohne Hintergrunddienst (zusammen mit #9); die Kalender-Optionen sagen es | Testplan WR |
+| B19 | - | ~~Test-Hilfe: Nach Sperren/Entsperren muss Drive im Test neu verbunden werden~~ | erledigt: nur die Test-Hilfe `drive_use_folder` hält die Verbindung im Speicher; die App verbindet sich aus dem gespeicherten Server neu (Nachweis im PHP-Modul-Test: sperren, entsperren, herunterladen) | `tests::php_module_storage_drive_and_limited_shares` |
 
 ### Bedienung (Fehler, die Nutzer machen)
 
@@ -150,18 +151,18 @@ Zu F17 (Verhalten seit der Behebung): Die erste Mail eines neuen Kontakts mit Au
 | U1 | ~~Mail löschen ohne Rückgängig; Wischen „Archivieren“ ohne Archivordner löscht still~~ | erledigt: Rückgängig nach jedem Löschen und Verschieben; ohne Archivordner kommt die Meldung „Dieses Postfach hat keinen Archivordner.“ |
 | U2 | ~~Einzelnen Termin löschen ohne Rückgängig~~ | erledigt: Rückgängig |
 | U3 | ~~Drive „Endgültig löschen“ ohne Rückfrage; Löschtext sagt „vom Server gelöscht“, obwohl Papierkorb~~ | erledigt: Rückfrage mit rotem Knopf; der Papierkorb fragt nicht und meldet „In den Papierkorb verschoben“ |
-| U4 | Bereich/Tresor löschen: ein Tipp vernichtet alles auf allen Geräten | Anzahl nennen, Export anbieten, Namen abtippen |
-| U5 | ~80 englische Fehlermeldungen aus dem Kern im deutschen UI | Fehlercodes statt Text, je Fall deutsche Meldung mit nächstem Schritt |
-| U6 | „Sicherung wiederherstellen“ bei vorhandener Suite: technische Meldung, keine Ordnerwahl | Ordnerwahl anbieten |
-| U7 | „Von meinem Server holen“ nur SFTP | FTPS und PHP-Modul ergänzen |
-| U8 | Windows-Assistent bietet App-PIN an, die dort nicht geht | Schritt auf Windows auslassen |
-| U9 | Assistent Schritt 2: Key ohne PIN → „Weiter“ tut nichts | Meldung |
-| U10 | Einzelne Tresordatei öffnen: Kalenderdatei wird als GhulAuth geöffnet | Art aus der Datei lesen |
-| U11 | Verlorene Schlüsseldatei: nach Wiederherstellung kein Hinweis, alte entfernen/neue anlegen | Geführter Notfall |
-| U12 | Formulare verwerfen Ungespeichertes ohne Nachfrage (Zurück, Auto-Sperre) | Entwurf merken oder fragen |
-| U13 | Synchronisation scheitert offline still, kein Status | Status sichtbar (Konzept §10.8) |
-| U14 | Drive-Speicher „Wie Synchronisation“ umschalten wirkt sofort, Drive scheinbar leer | Rückfrage mit Erklärung |
-| U15 | Kalender-Import ohne Standardkalender tut nichts; Export nimmt still nur sichtbare Kalender | Zielkalender fragen; Hinweis |
+| U4 | ~~Bereich/Tresor löschen: ein Tipp vernichtet alles auf allen Geräten~~ | erledigt: Anzahl der Einträge, Knopf „Vorher exportieren“, Bestätigen erst nach Eintippen des Namens |
+| U5 | ~~~80 englische Fehlermeldungen aus dem Kern im deutschen UI~~ | erledigt: alle 75 Meldungen des Kerns übersetzt (`ui/CoreTexts.kt`); `tools/check-texts.py` meldet jede neue Kernmeldung ohne Übersetzung als Fehler |
+| U6 | ~~„Sicherung wiederherstellen“ bei vorhandener Suite: technische Meldung, keine Ordnerwahl~~ | erledigt: nie über eine vorhandene Suite; die App bietet einen leeren Ordner an |
+| U7 | ~~„Von meinem Server holen“ nur SFTP~~ | erledigt: auch FTPS und PHP-Modul (Test gegen das PHP-Modul) |
+| U8 | ~~Windows-Assistent bietet App-PIN an, die dort nicht geht~~ | erledigt: unter Windows nicht angeboten, mit Hinweis |
+| U9 | ~~Assistent Schritt 2: Key ohne PIN → „Weiter“ tut nichts~~ | erledigt: Meldung mit nächstem Schritt |
+| U10 | ~~Einzelne Tresordatei öffnen: Kalenderdatei wird als GhulAuth geöffnet~~ | erledigt: Art kommt aus der Datei, der richtige Bereich wird eingeschaltet |
+| U11 | ~~Verlorene Schlüsseldatei: nach Wiederherstellung kein Hinweis, alte entfernen/neue anlegen~~ | erledigt: nach dem Öffnen mit dem Notfallblatt die drei nächsten Schritte, mit Knopf zu den Keys |
+| U12 | ~~Formulare verwerfen Ungespeichertes ohne Nachfrage (Zurück, Auto-Sperre)~~ | erledigt: Zurück fragt „Änderungen verwerfen?“; die Sperre wartet aus Sicherheitsgründen nicht, sagt aber nach dem Entsperren, dass etwas verworfen wurde. Mail speichert Entwürfe ohnehin selbst |
+| U13 | ~~Synchronisation scheitert offline still, kein Status~~ | erledigt: Hinweis auf den Bereichsseiten, solange der automatische Abgleich keine Verbindung bekommt (Tippen versucht es erneut) |
+| U14 | ~~Drive-Speicher „Wie Synchronisation“ umschalten wirkt sofort, Drive scheinbar leer~~ | erledigt: Rückfrage mit Erklärung |
+| U15 | ~~Kalender-Import ohne Standardkalender tut nichts; Export nimmt still nur sichtbare Kalender~~ | erledigt: ohne Kalender eine Meldung, bei mehreren die Wahl des Ziels; Export nimmt alle Kalender und sagt es |
 
 ### Uneinheitliche Bedienung
 
@@ -178,7 +179,7 @@ Zu F17 (Verhalten seit der Behebung): Die erste Mail eines neuen Kontakts mit Au
 
 ## 5. Texte und Begriffe
 
-`tools/check-texts.py` findet aktuell **0 Fehler** (alle Texte in beiden Sprachen, Platzhalter gleich) und **121 Hinweise**: 73 Stellen mit uneinheitlichen Begriffen, 48 nicht mehr verwendete Texte. Die wichtigsten Gruppen (vollständige Liste: Skript ausführen):
+`tools/check-texts.py` findet aktuell **0 Fehler** und **22 Hinweise** (Stand 14.11.2026). Die 60 nicht mehr verwendeten Texte sind entfernt; „Security Key“, „Ersatzkey“, „Label“, „Login“, „Sync“ und das NFC-Versprechen sind vereinheitlicht. Die übrigen Hinweise sind überwiegend Fehlalarme der Begriffsregeln (z. B. „Autofill-Einstellungen“ von Android, „Webspace“). Die wichtigsten Gruppen (vollständige Liste: Skript ausführen):
 
 | Gruppe | Beispiel | Einheitlich |
 |---|---|---|
@@ -228,7 +229,7 @@ Was nach beiden Runden **nicht** oder nur teilweise abgedeckt ist, ehrlich aufge
 | L1 | ~~Schlüssel werden nie erneuert~~ (B1) | erledigt. Eine alte Kopie öffnet sich mit dem damals Gültigen weiter und zeigt den Stand von damals; das liegt in der Natur einer Sicherung. Die App sagt unter Optionen → Sicherheit, was nach einem Verlust zu tun ist: Mail- und Server-Passwörter beim Anbieter wechseln (ohne Server-Zugang kommt auch niemand an die Drive-Blöcke) | erledigt |
 | L2 | **Kein unabhängiger Audit** | Eigene Tests finden nur, woran man denkt | Externer Code-Audit und Pentest vor Version 1.0 |
 | L3 | ~~Abhängigkeiten der App (Gradle) ohne Prüfsummen~~ | erledigt: `app/gradle/verification-metadata.xml` mit SHA-256 für 607 Pakete (auch Windows-Varianten); jedes veränderte oder neue Paket bricht den Build ab | erledigt |
-| L4 | **Build nicht nachprüfbar** (mit B17) | Kern: Nachtlauf baut zweimal in verschiedenen Ordnern und verlangt byte-gleiche Ergebnisse. Signierung: bewusst auf allen eigenen Branches, damit Entwicklerversionen sich über die installierte App aktualisieren lassen (nie bei Pull Requests oder Forks). Vor 1.0: eigener Release-Schlüssel in geschützter Umgebung, reproduzierbare APK | entschieden |
+| L4 | **Build nicht nachprüfbar** (mit B17) | Kern: Nachtlauf baut zweimal in verschiedenen Ordnern und verlangt byte-gleiche Ergebnisse. Signierung: ein Schlüssel für alles, bewusst auf allen eigenen Branches, damit Entwicklerversionen sich über die installierte App aktualisieren lassen (nie bei Pull Requests oder Forks); kein getrennter Release-Schlüssel (Begründung und Voraussetzungen im Sicherheitsbericht 4.1). Reproduzierbare APK mit festen Releases (#6) | entschieden |
 | L5 | ~~PHP-Modul: Schlüssel steht in der PHP-Datei~~ | erledigt: Beim Einrichten und Prüfen erkennt die App, ob der Server PHP ausführt; liefert er die Datei als Text aus, wird sie sofort gelöscht und klar gemeldet (`security::a_web_server_without_php_is_detected`) | erledigt |
 | L6 | **Metadaten auf dem Server** | Server sieht Anzahl, Größe und Änderungszeit der Dateien und die IP (Tresornamen nicht mehr, F23) | dokumentieren (unvermeidbar ohne eigenen Dienst) |
 | L7 | ~~PGP-Schlüssel von Kontakten nur „Vertrauen beim ersten Kontakt“~~ | erledigt: Fingerabdruck vergleichen und bestätigen; ein bestätigter Schlüssel wird nicht stillschweigend ersetzt, ein Wechsel wird gemeldet (`security::confirmed_pgp_keys_stay_and_key_changes_are_reported`) | erledigt |

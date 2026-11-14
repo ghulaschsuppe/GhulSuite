@@ -443,6 +443,10 @@ fun CalEditScreen(state: AppState, start: CalEventUi, padding: PaddingValues) {
     var datePick by remember { mutableStateOf<Int?>(null) }
     var timePick by remember { mutableStateOf<Int?>(null) }
     EnsureCalendars(state)
+    // U12: unsaved changes make "back" ask first.
+    val dirty = d != start
+    androidx.compose.runtime.SideEffect { state.editorDirty = dirty }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { state.editorDirty = false } }
     val needTitle = stringResource(Res.string.cal_need_title)
     fun save() {
         if (d.title.isBlank()) {
@@ -462,7 +466,7 @@ fun CalEditScreen(state: AppState, start: CalEventUi, padding: PaddingValues) {
     androidx.compose.foundation.layout.Column(Modifier.padding(padding)) {
         GhulTopBar(
             stringResource(if (start.id.isEmpty()) Res.string.cal_new_event else Res.string.cal_edit_event),
-            onLock = { state.lockNow() }, onBack = { state.pop() }, backIcon = Icons.Filled.Close, showLock = false,
+            onLock = { state.lockNow() }, onBack = { state.back() }, backIcon = Icons.Filled.Close, showLock = false,
             actions = {
                 HeaderButton(stringResource(Res.string.a_save), onClick = ::save)
             },
@@ -846,6 +850,8 @@ fun CalendarsSheet(state: AppState, close: () -> Unit) {
     val settings = state.backend.settings
     var editing by remember { mutableStateOf<CalCalendarUi?>(null) }
     var importInto by remember { mutableStateOf<String?>(null) }
+    var chooseImport by remember { mutableStateOf(false) }
+    val noCalendar = stringResource(Res.string.cal_import_no_calendar)
     val save = rememberSaveFile { }
     val doneMsg = stringResource(Res.string.cal_import_done)
     val pick = rememberOpenFile { f ->
@@ -884,16 +890,35 @@ fun CalendarsSheet(state: AppState, close: () -> Unit) {
             }
         }
         ButtonRow {
+            // U15: no calendar: say so; several: ask which one gets the events.
             OutlinedButton(onClick = {
-                importInto = state.calDefaultCalendar.ifEmpty { null }
-                if (importInto != null) pick()
+                when (state.calendars.size) {
+                    0 -> state.message(noCalendar)
+                    1 -> { importInto = state.calendars.first().id; pick() }
+                    else -> chooseImport = true
+                }
             }, modifier = Modifier.weight(1f)) { Text(stringResource(Res.string.cal_import)) }
+            // All calendars, also hidden ones: nothing is left out silently (one calendar: its settings).
             OutlinedButton(onClick = {
-                val ids = state.calendars.map { it.id }.filter { it !in hidden }
+                val ids = state.calendars.map { it.id }
                 state.run(block = { cal.exportIcs(ids) }) { save("ghulcal.ics", it.encodeToByteArray()) }
             }, modifier = Modifier.weight(1f)) { Text(stringResource(Res.string.cal_export)) }
         }
+        HintText(stringResource(Res.string.cal_export_all_hint))
         HintText(stringResource(Res.string.cal_closed_hint))
+        if (chooseImport) {
+            GhulSheet({ chooseImport = false }, stringResource(Res.string.cal_import_into)) {
+                SheetList {
+                    state.calendars.forEachIndexed { i, c ->
+                        SheetRow(c.name.ifBlank { stringResource(Res.string.untitled) }, divider = i > 0) {
+                            chooseImport = false
+                            importInto = c.id
+                            pick()
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

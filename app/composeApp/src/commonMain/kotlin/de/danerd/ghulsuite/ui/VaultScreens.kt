@@ -173,7 +173,7 @@ fun VaultsSection(state: AppState) {
             } catch (e: VaultException) {
                 if (e.kind != VaultErrorKind.DIFFERENT_PROTECTION) throw e
                 val info = backend.inspectFile(file.bytes)
-                null to ForeignRequest(source, if (info.kind == "pass") VaultKindUi.PASS else VaultKindUi.TOTP, info.protection, name)
+                null to ForeignRequest(source, vaultKindOf(info.kind), info.protection, name)
             }
         }) { (kind, request) ->
             if (request != null) {
@@ -280,19 +280,26 @@ fun VaultsSection(state: AppState) {
         )
     }
     removing?.let { v ->
+        var typed by remember(v.id) { mutableStateOf("") }
         AlertDialog(
             danger = true,
             onDismissRequest = { removing = null },
             title = { Text(stringResource(Res.string.vault_remove_title, v.name)) },
-            // The same look as removing an area: the warning as a banner, the tip below.
+            // The same look as removing an area: the warning as a banner, the tip below. U4: how many
+            // entries go, a way to export first, and the name typed out instead of one tap.
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Banner(Icons.Filled.Warning, stringResource(Res.string.vault_remove_warning))
+                    if (v.entries > 0) Text(stringResource(Res.string.remove_count, v.entries.toString()))
                     Text(stringResource(Res.string.vault_remove_tip))
+                    OutlinedButton(onClick = { removing = null; state.push(Screen.Export) }, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(Res.string.remove_export_first))
+                    }
+                    ConfirmByName(v.name, typed) { typed = it }
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
+                TextButton(enabled = nameMatches(typed, v.name), onClick = {
                     removing = null
                     state.run(block = { backend.removeVault(v.id) }) { state.changed() }
                 }) { Text(stringResource(Res.string.a_delete)) }

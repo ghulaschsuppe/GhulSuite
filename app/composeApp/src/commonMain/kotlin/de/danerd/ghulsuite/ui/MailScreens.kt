@@ -252,6 +252,27 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
     var moving by remember { mutableStateOf<List<MailItem>?>(null) }
     val listed = messages.filter { hideKey(it) !in state.hidden }
     val chosen = listed.filter { keyOf(it) in selected }
+    // "All N mails in this folder" (also the ones not loaded yet): one account, plain list only.
+    val single = if (all) null else shown.singleOrNull()
+    var wholeFolder by remember(key) { mutableStateOf(false) }
+    LaunchedEffect(selected.active) { if (!selected.active) wholeFolder = false }
+    var movingAll by remember { mutableStateOf(false) }
+    var deleteAll by remember { mutableStateOf(false) }
+    var emptying by remember { mutableStateOf(false) }
+    val folderRole by produceState("", key) {
+        value = single?.let { a -> runCatching { net.mailFolders(a.id) }.getOrNull()?.firstOrNull { it.name == folder }?.role } ?: ""
+    }
+    val doneMsg = stringResource(Res.string.mail_bulk_done)
+    // Runs an action on every mail of the folder, then leaves the selection.
+    fun bulk(block: suspend (String, List<Long>) -> Unit) {
+        val a = single ?: return
+        state.run(onError = { error = it }, block = { val uids = net.mailFolderUids(a.id, folder); block(a.id, uids); uids.size }) { n ->
+            selected.clear()
+            wholeFolder = false
+            reload++
+            state.message(doneMsg.replace("%1\$s", n.toString()))
+        }
+    }
 
     Column(Modifier.fillMaxSize()) {
     if (selected.active) {
@@ -263,27 +284,55 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
             state.run(onError = { error = it }, block = { list.forEach { block(it) } }) { reload++ }
         }
         SelectionHeader(
-            selected.keys.size,
+            if (wholeFolder) total else selected.keys.size,
             onClose = { selected.clear() },
             onAll = { selected.all(listed.map(keyOf)) },
             actions = buildList {
                 add(SelAction(if (anyUnread) Icons.Filled.MarkEmailRead else Icons.Filled.MarkEmailUnread,
                     stringResource(if (anyUnread) Res.string.a_mark_read else Res.string.a_mark_unread)) {
-                    flags { net.mailSetSeen(it.accountId, folder, it.m.uid, anyUnread) }
+                    if (wholeFolder) bulk { a, u -> net.mailSetSeenMany(a, folder, u, anyUnread) }
+                    else flags { net.mailSetSeen(it.accountId, folder, it.m.uid, anyUnread) }
                 })
                 add(SelAction(if (anyUnflagged) Icons.Outlined.Flag else Icons.Filled.Flag, stringResource(if (anyUnflagged) Res.string.a_flag else Res.string.a_unflag)) {
-                    flags { net.mailSetFlagged(it.accountId, folder, it.m.uid, anyUnflagged) }
+                    if (wholeFolder) bulk { a, u -> net.mailSetFlaggedMany(a, folder, u, anyUnflagged) }
+                    else flags { net.mailSetFlagged(it.accountId, folder, it.m.uid, anyUnflagged) }
                 })
-                add(SelAction(Icons.Filled.Archive, stringResource(Res.string.mail_archive)) { val list = chosen; selected.clear(); archive(list) })
+                add(SelAction(Icons.Filled.Archive, stringResource(Res.string.mail_archive)) {
+                    if (wholeFolder) bulk { a, u ->
+                        val target = net.mailFolders(a).firstOrNull { it.role == "archive" }?.name
+                            ?: throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.INVALID_INPUT, "no archive folder")
+                        if (target != folder) net.mailMoveMany(a, folder, u, target)
+                    } else { val list = chosen; selected.clear(); archive(list) }
+                })
                 // Moving needs the folders of one account.
-                if (chosen.map { it.accountId }.distinct().size == 1) add(SelAction(Icons.Filled.Folder, stringResource(Res.string.a_move)) { moving = chosen })
-                add(SelAction(Icons.Filled.Delete, stringResource(Res.string.a_delete), danger = true) { val list = chosen; selected.clear(); delete(list) })
+                if (chosen.map { it.accountId }.distinct().size == 1) add(SelAction(Icons.Filled.Folder, stringResource(Res.string.a_move)) {
+                    if (wholeFolder) movingAll = true else moving = chosen
+                })
+                add(SelAction(Icons.Filled.Delete, stringResource(Res.string.a_delete), danger = true) {
+                    if (wholeFolder) deleteAll = true else { val list = chosen; selected.clear(); delete(list) }
+                })
             },
         )
+    }
+    if (selected.active && single != null && filter.isEmpty() && !searching && total > listed.size &&
+        (wholeFolder || selected.keys.size >= listed.size)
+    ) {
+        Box(Modifier.fillMaxWidth().clickable(enabled = !wholeFolder) { wholeFolder = true }.padding(horizontal = 16.dp, vertical = 10.dp)) {
+            Text(
+                stringResource(if (wholeFolder) Res.string.mail_whole_folder_on else Res.string.mail_whole_folder, total.toString()),
+                color = areaColor(Tab.MAIL), fontWeight = FontWeight.SemiBold,
+            )
+        }
     }
     Box(Modifier.weight(1f)) {
     ScreenColumn {
         BusyBanner(state)
+        // "Empty folder" only in the trash and spam, with the number and a question first.
+        if (!selected.active && single != null && total > 0 && (folderRole == "trash" || folderRole == "junk")) {
+            OutlinedButton(onClick = { emptying = true }, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(Res.string.mail_empty_folder))
+            }
+        }
         SearchField(query, {
             query = it
             if (it.isBlank() && searching) reload++
@@ -365,6 +414,51 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
         if (messages.isNotEmpty()) HintText(stringResource(Res.string.mail_swipe_hint))
     }
     }
+    }
+    if (deleteAll) {
+        AlertDialog(
+            danger = true,
+            onDismissRequest = { deleteAll = false },
+            title = { Text(stringResource(Res.string.mail_delete_all_title, total.toString())) },
+            text = { Text(stringResource(if (folderRole == "trash") Res.string.mail_delete_all_final else Res.string.mail_delete_all_text)) },
+            confirmButton = {
+                TextButton(onClick = { deleteAll = false; bulk { a, u -> net.mailDeleteMany(a, folder, u) } }) { Text(stringResource(Res.string.a_delete)) }
+            },
+            dismissButton = { TextButton(onClick = { deleteAll = false }) { Text(stringResource(Res.string.a_cancel)) } },
+        )
+    }
+    if (emptying) {
+        val emptied = stringResource(Res.string.mail_emptied)
+        AlertDialog(
+            danger = true,
+            onDismissRequest = { emptying = false },
+            title = { Text(stringResource(Res.string.mail_empty_title, total.toString())) },
+            text = { Text(stringResource(Res.string.mail_empty_text)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    emptying = false
+                    val a = single ?: return@TextButton
+                    state.run(onError = { error = it }, block = { net.mailEmptyFolder(a.id, folder) }) { n ->
+                        reload++
+                        state.message(emptied.replace("%1\$s", n.toString()))
+                    }
+                }) { Text(stringResource(Res.string.mail_empty_yes)) }
+            },
+            dismissButton = { TextButton(onClick = { emptying = false }) { Text(stringResource(Res.string.a_cancel)) } },
+        )
+    }
+    if (movingAll && single != null) {
+        val folders by produceState(emptyList<MailFolderUi>(), single.id) { value = runCatching { net.mailFolders(single.id) }.getOrDefault(emptyList()) }
+        GhulSheet({ movingAll = false }, stringResource(Res.string.a_move)) {
+            SheetList {
+                folders.filter { it.name != folder }.forEachIndexed { i, f ->
+                    SheetRow(folderLabel(f), leading = { IconTile(folderIcon(f.role), areaColor(Tab.MAIL)) }, divider = i > 0) {
+                        movingAll = false
+                        bulk { a, u -> net.mailMoveMany(a, folder, u, f.name) }
+                    }
+                }
+            }
+        }
     }
     moving?.let { list ->
         val account = list.first().accountId

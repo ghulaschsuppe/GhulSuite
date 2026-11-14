@@ -305,15 +305,20 @@ jobs:
       - name: Rust-Kern unter Windows prüfen (Clippy, Tests)
         working-directory: core
         shell: bash
+        # All checks run, also after a failing one: one run shows every error (tools/precheck.sh
+        # finds most of them before a push).
         run: |
           rustup toolchain install stable --profile minimal --component clippy
-          cargo clippy --locked -p ghul-core --all-targets -- -D warnings
-          cargo test --locked -p ghul-core
+          rc=0
+          cargo clippy --locked -p ghul-core --all-targets -- -D warnings || { echo "::error::Clippy (Windows)"; rc=1; }
+          cargo test --locked --no-fail-fast -p ghul-core || { echo "::error::Tests (Windows)"; rc=1; }
+          exit $rc
 
       - name: FFI-Tests, Installer (MSI) und portable Version
+        if: ${{ !cancelled() }}
         working-directory: app
         shell: bash
-        run: ./gradlew --no-daemon --console=plain :composeApp:desktopTest :composeApp:packageMsi :composeApp:createDistributable
+        run: ./gradlew --no-daemon --console=plain --continue :composeApp:desktopTest :composeApp:packageMsi :composeApp:createDistributable
 
       - name: Pakete bereitstellen
         shell: pwsh
@@ -411,16 +416,19 @@ jobs:
 
       - name: Rust-Kern prüfen (Format, Clippy, Tests inkl. simuliertem Key und Testvektoren)
         working-directory: core
+        # All checks run, also after a failing one: one run shows every error.
         run: |
           rustup component add rustfmt clippy
-          cargo fmt --all -- --check
-          cargo clippy --locked -p ghul-core --all-targets --features mock -- -D warnings
-          cargo test --locked -p ghul-core
+          rc=0
+          cargo fmt --all -- --check || { echo "::error::Formatierung (cargo fmt)"; rc=1; }
+          cargo clippy --locked -p ghul-core --all-targets --features mock -- -D warnings || { echo "::error::Clippy"; rc=1; }
+          cargo test --locked --no-fail-fast -p ghul-core || { echo "::error::Tests"; rc=1; }
+          exit $rc
 
       # The signing key only exists as a secret; the file lives in the runner's temp folder for
       # this job only. Without the secret (forks, pull requests) the APK gets a throwaway key.
       - name: Signaturschlüssel aus den Secrets
-        if: github.event_name != 'pull_request' && github.repository_owner == 'ghulaschsuppe'
+        if: ${{ !cancelled() && github.event_name != 'pull_request' && github.repository_owner == 'ghulaschsuppe' }}
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -435,9 +443,11 @@ jobs:
             echo "GHUL_KEY_ALIAS=$KEY_ALIAS"
           } >> "$GITHUB_ENV"
 
+      # Also runs when the Rust checks above failed, so their errors and the app's come in one run.
       - name: FFI-Tests und APK
+        if: ${{ !cancelled() }}
         working-directory: app
-        run: ./gradlew --no-daemon --console=plain :composeApp:desktopTest :composeApp:assembleDebug
+        run: ./gradlew --no-daemon --console=plain --continue :composeApp:desktopTest :composeApp:assembleDebug
 
       - name: APK bereitstellen
         run: |

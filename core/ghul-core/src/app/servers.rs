@@ -612,9 +612,11 @@ pub fn generate_ssh_key() -> Result<SshKeyPair> {
 #[uniffi::export]
 impl GhulSuite {
     /// New device: downloads the suite files from `<base>/suite/` on the server into the
-    /// (empty) local folder. Logs in with `input.password` or the given `private_key` (from
-    /// `generate_ssh_key`). Without `host_key` it returns the server key fingerprint to confirm
-    /// and downloads nothing; afterwards it returns an empty string. Then unlock as usual.
+    /// (empty) local folder. SFTP logs in with `input.password` or the given `private_key` (from
+    /// `generate_ssh_key`), FTPS with `input.password`, the PHP module with its access key in
+    /// `input.password` and `input.url` (U7). Without `host_key` an unknown SFTP host key or an
+    /// untrusted FTPS certificate is returned as fingerprint to confirm and nothing is downloaded;
+    /// otherwise it returns an empty string. Then unlock as usual.
     pub fn fetch_from_server(
         &self,
         input: ServerInput,
@@ -624,24 +626,51 @@ impl GhulSuite {
         if self.exists()? {
             return Err(GhulError::AlreadyExists);
         }
-        let auth = match (&input.password, private_key) {
-            (Some(p), _) if !p.is_empty() => SshAuth::Password(Zeroizing::new(p.clone())),
-            (_, Some(k)) => SshAuth::Key(Zeroizing::new(k)),
-            _ => return Err(GhulError::InvalidInput { msg: "password or key required".into() }),
-        };
-        let cfg = SftpConfig {
-            host: input.host.trim().to_owned(),
-            port: if input.port == 0 { 22 } else { input.port },
-            user: input.user.trim().to_owned(),
-            auth,
-            base: input.base.trim().trim_end_matches('/').to_owned(),
-            host_key: host_key.clone(),
-        };
-        let fs = match SftpFs::connect(&cfg) {
-            Err(NetError::HostKeyUnknown(fp)) if host_key.is_none() => return Ok(fp),
-            other => other?,
-        };
         use crate::net::remote::RemoteFs;
+        let base = input.base.trim().trim_end_matches('/').to_owned();
+        let fs: Arc<dyn RemoteFs> = match input.kind {
+            ServerKind::Sftp => {
+                let auth = match (&input.password, private_key) {
+                    (Some(p), _) if !p.is_empty() => SshAuth::Password(Zeroizing::new(p.clone())),
+                    (_, Some(k)) => SshAuth::Key(Zeroizing::new(k)),
+                    _ => return Err(GhulError::InvalidInput { msg: "password or key required".into() }),
+                };
+                let cfg = SftpConfig {
+                    host: input.host.trim().to_owned(),
+                    port: if input.port == 0 { 22 } else { input.port },
+                    user: input.user.trim().to_owned(),
+                    auth,
+                    base,
+                    host_key: host_key.clone(),
+                };
+                match SftpFs::connect(&cfg) {
+                    Err(NetError::HostKeyUnknown(fp)) if host_key.is_none() => return Ok(fp),
+                    other => Arc::new(other?),
+                }
+            }
+            ServerKind::Ftps => {
+                let password = input.password.clone().filter(|p| !p.is_empty());
+                let Some(password) = password else {
+                    return Err(GhulError::InvalidInput { msg: "password required".into() });
+                };
+                let cfg = FtpsConfig {
+                    host: input.host.trim().to_owned(),
+                    port: if input.port == 0 { 21 } else { input.port },
+                    user: input.user.trim().to_owned(),
+                    password: Zeroizing::new(password),
+                    base,
+                    cert: host_key.clone(),
+                };
+                match FtpsFs::connect(&cfg) {
+                    Err(NetError::CertUntrusted(fp)) if host_key.is_none() => return Ok(fp),
+                    other => Arc::new(other?),
+                }
+            }
+            ServerKind::Php => {
+                let s = stored_from(&input, None);
+                Arc::new(php_fs(&s, &s.base)?)
+            }
+        };
         let files: Vec<String> = fs
             .list("suite")?
             .into_iter()
