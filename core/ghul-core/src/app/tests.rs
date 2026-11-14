@@ -1000,6 +1000,12 @@ fn mail_with_imap_and_smtp() {
     assert!(matches!(s.mail_check_account(starttls.clone()), Err(GhulError::InvalidInput { .. })));
     assert!(s.mail_save_account(None, starttls).is_err());
     assert_eq!(s.mail_check_account(input.clone()).unwrap(), MailCheck::Ok);
+    // B21: the field "Login name" usually stays empty; the check then logs in with the address,
+    // like the saved account does (before, it logged in with an empty name and always failed).
+    let mut no_login = input.clone();
+    no_login.username = String::new();
+    no_login.email = format!(" {email} ");
+    assert_eq!(s.mail_check_account(no_login).unwrap(), MailCheck::Ok);
 
     let id = s.mail_save_account(None, input.clone()).unwrap();
     assert_eq!(s.mail_accounts().unwrap()[0].email, email);

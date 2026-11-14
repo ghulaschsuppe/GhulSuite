@@ -331,6 +331,15 @@ fn account(o: &Open, id: &str) -> Result<StoredAccount> {
     accounts(o).into_iter().find(|a| a.id == id).ok_or(GhulError::NotFound)
 }
 
+/// The login name for the servers: the field "Login name", or the e-mail address when it is empty.
+/// The check before saving and the saved account use the same one.
+fn login_name(input: &MailAccountInput) -> String {
+    match input.username.trim() {
+        "" => input.email.trim().to_owned(),
+        u => u.to_owned(),
+    }
+}
+
 fn imap_config(a: &StoredAccount) -> ImapConfig {
     ImapConfig {
         host: a.servers.imap_host.clone(),
@@ -1230,8 +1239,9 @@ impl GhulSuite {
             id: String::new(),
             name: input.name.clone(),
             display_name: input.display_name.clone(),
-            email: input.email.clone(),
-            username: input.username.clone(),
+            email: input.email.trim().to_owned(),
+            // The same login name the account is saved with (B21): an empty field means the address.
+            username: login_name(&input),
             password: input.password.clone(),
             servers: input.servers.clone(),
             imap_cert: input.imap_cert.clone(),
@@ -1294,11 +1304,7 @@ impl GhulSuite {
                 },
                 display_name: input.display_name.trim().to_owned(),
                 email: input.email.trim().to_owned(),
-                username: if input.username.trim().is_empty() {
-                    input.email.trim().to_owned()
-                } else {
-                    input.username.trim().to_owned()
-                },
+                username: login_name(&input),
                 password,
                 servers: input.servers.clone(),
                 imap_cert: input.imap_cert.clone(),

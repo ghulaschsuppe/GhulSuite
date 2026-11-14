@@ -32,10 +32,6 @@ fi
 log "GhulDrive: $files Dateien auf dem Server, der Ordnername ist dort nicht lesbar"
 
 # 2 -------------------------------------------------------------------------------------------
-if [ -f "$out/mail-flow-failed" ]; then
-  echo "::warning::Server-Prüfung: Postfach übersprungen, der Mail-Ablauf ist nicht durchgelaufen"
-  exit 0
-fi
 box="$GHUL_TEST_DIR/mail"
 sudo grep -r -l -a -F -e "BEGIN PGP MESSAGE" "$box" > "$out/server-mail-encrypted.txt" 2> /dev/null || true
 [ -s "$out/server-mail-encrypted.txt" ] || fail "im Postfach liegt keine verschlüsselte Mail der App"

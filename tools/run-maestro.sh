@@ -35,12 +35,5 @@ if [ "${GHUL_TEST_SERVERS:-0}" = 1 ]; then
   echo "Abläufe mit echtem Server über $server"
   flows="$(dirname "$0")/../app/maestro/server"
   timeout 600 maestro test -e GHUL_SERVER="$server" "$flows/1-drive.yaml" --format junit --output "$out/report-server-drive.xml" --test-output-dir "$out"
-  # The mail flow is not yet required (GHUL_MAIL_FLOW_REQUIRED=1 makes it so): its failure is a
-  # warning, and tools/check-server-flows.sh then skips the mailbox.
-  rm -f "$out/mail-flow-failed"
-  if ! timeout 600 maestro test -e GHUL_SERVER="$server" "$flows/2-mail.yaml" --format junit --output "$out/report-server-mail.xml" --test-output-dir "$out"; then
-    if [ "${GHUL_MAIL_FLOW_REQUIRED:-0}" = 1 ]; then exit 1; fi
-    echo "::warning::Ablauf „GhulMail on a real server“ fehlgeschlagen (noch nicht verpflichtend)"
-    touch "$out/mail-flow-failed"
-  fi
+  timeout 600 maestro test -e GHUL_SERVER="$server" "$flows/2-mail.yaml" --format junit --output "$out/report-server-mail.xml" --test-output-dir "$out"
 fi
