@@ -338,6 +338,13 @@ pub async fn append(s: &mut ImapSession, folder: &str, message: &[u8], seen: boo
     s.append(folder, if seen { Some("(\\Seen)") } else { None }, None, message).await.map_err(proto)
 }
 
+/// Stores a message with a given arrival date, e.g. "02-Mar-2025 10:00:00 +0000" (tests: old mail).
+#[cfg(test)]
+pub async fn append_dated(s: &mut ImapSession, folder: &str, message: &[u8], date: &str) -> NetResult<()> {
+    // async-imap passes the date as it is: quoted here, as RFC 3501 wants it.
+    s.append(folder, None, Some(&format!("\"{date}\"")), message).await.map_err(proto)
+}
+
 /// Next UID and number of unread messages of a folder (for notifications).
 pub async fn status(s: &mut ImapSession, folder: &str) -> NetResult<(u32, u32)> {
     let mb = s.status(folder, "(UIDNEXT UNSEEN)").await.map_err(proto)?;
@@ -396,6 +403,85 @@ pub async fn flagged(s: &mut ImapSession, folder: &str, limit: u32) -> NetResult
     Ok(out)
 }
 
+/// A message as the archive takes it: complete and unchanged, with its flags.
+pub struct Archivable {
+    pub uid: u32,
+    pub raw: Vec<u8>,
+    pub seen: bool,
+    pub flagged: bool,
+    pub labels: Vec<String>,
+    /// When the server received it (Unix seconds, 0 if unknown).
+    pub received: i64,
+}
+
+/// IMAP date for SEARCH (`7-Mar-2026`) of a day given as days since 1970-01-01.
+pub fn search_date(days: i64) -> String {
+    const M: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    let d = crate::app::caldate::Date::from_days(days);
+    format!("{}-{}-{}", d.d, M[(d.m - 1) as usize], d.y)
+}
+
+/// UIDVALIDITY of a folder (0 if the server sends none) and the UIDs of the messages the server
+/// received before the day `before` (days since 1970-01-01). Read-only (EXAMINE).
+pub async fn old_uids(s: &mut ImapSession, folder: &str, before: i64) -> NetResult<(u32, Vec<u32>)> {
+    let mb = s.examine(folder).await.map_err(proto)?;
+    let validity = mb.uid_validity.unwrap_or(0);
+    if mb.exists == 0 {
+        return Ok((validity, Vec::new()));
+    }
+    let mut uids: Vec<u32> =
+        s.uid_search(format!("BEFORE {}", search_date(before))).await.map_err(proto)?.into_iter().collect();
+    uids.sort_unstable();
+    uids.dedup();
+    Ok((validity, uids))
+}
+
+/// One complete message for the archive, without changing its flags (EXAMINE, BODY.PEEK).
+/// `None` if the folder has another UIDVALIDITY now or the message is gone.
+pub async fn fetch_archivable(
+    s: &mut ImapSession,
+    folder: &str,
+    validity: u32,
+    uid: u32,
+) -> NetResult<Option<Archivable>> {
+    use async_imap::types::Flag;
+    let mb = s.examine(folder).await.map_err(proto)?;
+    if mb.uid_validity.unwrap_or(0) != validity {
+        return Ok(None);
+    }
+    let fetches: Vec<async_imap::types::Fetch> = s
+        .uid_fetch(uid.to_string(), "(UID FLAGS INTERNALDATE BODY.PEEK[])")
+        .await
+        .map_err(proto)?
+        .try_collect()
+        .await
+        .map_err(proto)?;
+    let Some(f) = fetches.iter().find(|f| f.uid == Some(uid)) else { return Ok(None) };
+    let Some(raw) = f.body() else { return Ok(None) };
+    let flags: Vec<Flag<'_>> = f.flags().collect();
+    Ok(Some(Archivable {
+        uid,
+        raw: raw.to_vec(),
+        seen: flags.iter().any(|x| matches!(x, Flag::Seen)),
+        flagged: flags.iter().any(|x| matches!(x, Flag::Flagged)),
+        labels: listed(f).map(|l| l.labels).unwrap_or_default(),
+        received: f.internal_date().map(|d| d.timestamp()).unwrap_or(0),
+    }))
+}
+
+/// Deletes exactly these messages for good, but only while the folder still has UIDVALIDITY
+/// `validity` (otherwise the UIDs could name other messages now). Returns whether it deleted.
+pub async fn delete_if_valid(s: &mut ImapSession, folder: &str, validity: u32, uids: &[u32]) -> NetResult<bool> {
+    let mb = s.select(folder).await.map_err(proto)?;
+    if validity == 0 || mb.uid_validity.unwrap_or(0) != validity {
+        return Ok(false);
+    }
+    for set in uid_sets(uids) {
+        expunge_set(s, &set).await?;
+    }
+    Ok(true)
+}
+
 #[cfg(test)]
 mod uid_set_tests {
     use super::uid_sets;
@@ -410,5 +496,12 @@ mod uid_set_tests {
         // Every UID appears exactly once over all sets.
         let back: Vec<u32> = sets.iter().flat_map(|s| s.split(',')).map(|p| p.parse::<u32>().unwrap()).collect();
         assert_eq!(back, many);
+    }
+
+    #[test]
+    fn search_dates_in_imap_form() {
+        assert_eq!(super::search_date(0), "1-Jan-1970");
+        assert_eq!(super::search_date(20_520), "8-Mar-2026");
+        assert_eq!(super::search_date(19_782), "29-Feb-2024");
     }
 }

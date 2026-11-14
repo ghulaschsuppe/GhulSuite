@@ -194,10 +194,18 @@ pub(super) fn drive_servers(o: &Open) -> Vec<StoredServer> {
     area_setting(o, VaultKind::Drive, SERVERS_KEY)
 }
 
-/// Every server this suite knows: the suite's and the Drive file's.
+/// The mail archive's own server (in the Mail file); at most one.
+pub(super) fn archive_servers(o: &Open) -> Vec<StoredServer> {
+    area_setting(o, VaultKind::Mail, ARCHIVE_SERVERS_KEY)
+}
+
+pub(super) const ARCHIVE_SERVERS_KEY: &str = "archive_servers";
+
+/// Every server this suite knows: the suite's, the Drive file's and the mail archive's.
 pub(super) fn all_servers(o: &Open) -> Vec<StoredServer> {
     let mut list = servers(o);
     list.extend(drive_servers(o));
+    list.extend(archive_servers(o));
     list
 }
 
