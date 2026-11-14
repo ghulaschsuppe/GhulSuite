@@ -35,11 +35,13 @@ Die meisten „sicheren“ Suiten verlangen, dass du einem Unternehmen vertraust
 dessen Zukunft. GhulSuite dreht das um:
 
 - 🔐 **Ende-zu-Ende verschlüsselt, immer.** Alles wird auf deinem Gerät verschlüsselt, bevor es irgendwohin geht.
-  Dein Server sieht nur Datensalat: keine Inhalte, keine Datei- und Ordnernamen deiner Ablage.
+  Dein Server sieht nur Datensalat: keine Inhalte, keine Datei- und Ordnernamen deiner Ablage, nicht einmal die
+  Namen deiner Tresore.
 - 🏠 **Dein Server, deine Regeln.** Ein günstiges Standard-Webhosting mit PHP reicht. Keine Datenbank, kein Docker,
   kein Root-Zugang nötig. Oder jeder Server mit SFTP/FTPS.
 - 🗝️ **Zwei Faktoren, ohne Ausnahme.** Master-Passwort **plus** Security Key (FIDO2) oder Schlüsseldatei.
-  Dazu ein Wiederherstellungscode mit Notfallblatt für den Tag, an dem alles schiefgeht.
+  Dazu ein Wiederherstellungscode mit Notfallblatt für den Tag, an dem alles schiefgeht. Verlierst du einen Key
+  oder das Blatt, entfernst bzw. erneuerst du es: Ab dann öffnet es nichts mehr, auch nicht mit einer alten Sicherung.
 - 📦 **Der Ordner ist die Suite.** Deine Daten sind normale, verschlüsselte Dateien. Kopieren, sichern, auf den
   USB-Stick legen, ohne Export-Zwang und ohne Anbieterbindung.
 - 🧩 **Eine App statt fünf.** Ein Entsperren, ein Design, eine Synchronisation.

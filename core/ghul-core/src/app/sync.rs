@@ -597,7 +597,9 @@ impl GhulSuite {
         if new_secret {
             super::quick::delete_all(&self.local_dir);
         }
-        Ok(())
+        // Written now: the sync below only rewrites files whose content or protection differ
+        // from the server's, and this device's files must carry the new protection either way.
+        self.save_all(o)
     }
 }
 

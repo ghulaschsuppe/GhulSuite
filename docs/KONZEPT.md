@@ -156,8 +156,7 @@ Daten neu verschlüsselt werden müssen.
 
 Mindestens ein Key oder eine Schlüsseldatei muss immer eingetragen sein. Jeder Key und jede Schlüsseldatei öffnet
 zusammen mit dem Passwort dasselbe Faktor-Geheimnis `S`. Darum lässt sich eine Schlüsseldatei später gegen einen Key
-tauschen (Key hinzufügen, Datei entfernen), ohne dass etwas neu verschlüsselt wird oder der Wiederherstellungscode
-ungültig wird.
+tauschen (Key hinzufügen, Datei entfernen), ohne dass der Wiederherstellungscode oder die übrigen Keys ungültig werden.
 
 ### 6.2 Schlüsselhierarchie
 
@@ -176,8 +175,11 @@ flowchart TB
 1. `PK = Argon2id(NFC(Passwort), suite_salt)`: einmal pro Entsperren. Mindestens 64 MiB und 3 Durchläufe,
    kalibriert auf ca. 1 Sekunde am langsamsten Gerät.
 2. Jeder zweite Faktor hat einen **Slot**, der das zufällige **Faktor-Geheimnis `S`** (256 Bit) verschlüsselt enthält.
-   - FIDO2-Slot: Schlüssel = `HKDF(hmac-secret(Key, slot_salt))`
-   - Schlüsseldatei-Slot: Schlüssel = `HKDF(Geheimnis der Datei)`
+   - FIDO2-Slot: privater X25519-Schlüssel = `HKDF(hmac-secret(Key, slot_salt))`
+   - Schlüsseldatei-Slot: privater X25519-Schlüssel = `HKDF(Geheimnis der Datei)`
+   - Im Slot steht der zugehörige **öffentliche** Schlüssel. Damit kann die App ein neues `S` für jeden Key
+     verschließen, ohne ihn zu berühren (Formatversion 2; Slots älterer Versionen ziehen beim nächsten Entsperren
+     mit diesem Key um).
 3. Je Container: `KEK = HKDF-SHA256(PK ‖ S, info = "ghul/v1/kek" ‖ Container-UUID)`
 4. Der `KEK` entschlüsselt den zufälligen **Container-Hauptschlüssel (VMK)**. Aus dem VMK wird der Inhalts-Schlüssel
    abgeleitet; der Header ist als AAD eingebunden. Exakte Ableitungen: [`docs/FORMAT.md`](FORMAT.md), Abschnitt 4.
@@ -189,6 +191,12 @@ flowchart TB
 - Jeder Container enthält alle Slots in seinem eigenen Header und lässt sich daher **auch einzeln** öffnen,
   z. B. nur `.ghlpss` vom USB-Stick ohne Suite-Container.
 - Passwort ändern geht mit einem einzigen Key. Ein Key oder eine Schlüsseldatei wird hinzugefügt oder entfernt, indem man einen Slot hinzufügt oder löscht. Die App aktualisiert dabei alle Container. Der letzte zweite Faktor lässt sich nicht entfernen.
+- **Erneuern bei jeder Schutzänderung:** Neues Notfallblatt, neues Passwort oder ein entfernter Key geben jedem
+  Container einen neuen VMK; ein entfernter Key erneuert zusätzlich `S` für alle übrigen Keys. So öffnet ein
+  verlorenes Notfallblatt oder ein entfernter Key zusammen mit einer **alten Sicherungskopie** nichts, was danach
+  gespeichert wurde. Die alte Kopie selbst zeigt weiter den Stand von damals.
+- **Dateinamen verraten nichts:** Tresordateien heißen nach ihrer zufälligen Kennung (`3f9a1c2b7d4e5f60.ghlpss`),
+  der Name steht nur verschlüsselt darin.
 - **Der Ordner ist die Suite:** Beim Entsperren öffnet die App jede Tresordatei im Ordner mit Passwort und Faktor.
   Eine Datei, die auf einem anderen Gerät angelegt und in den Ordner kopiert wurde, ist einfach dabei. Gelöscht wird ein
   Tresor, indem seine Datei verschwindet. Eine beschädigte Datei wird als „beschädigt“ angezeigt, der Rest öffnet sich.
@@ -206,7 +214,8 @@ flowchart TB
 
 - **Pflicht** bei jeder Suite. Derselbe Code steckt in **jeder** Datei des Ordners und öffnet sie direkt (ohne Passwort,
   Key oder Schlüsseldatei), auch eine einzelne Tresordatei ohne den Rest. Danach wird ein neues Master-Passwort gesetzt; Keys, Schlüsseldateien und der
-  Code selbst bleiben gültig. Empfohlen wird anschließend ein neuer Code.
+  Code selbst bleiben gültig. Empfohlen wird anschließend ein neuer Code. Ein neuer Code macht das alte Blatt
+  wertlos, auch zusammen mit einer alten Sicherungskopie (für alles, was danach gespeichert wird).
 - Bewusste Abwägung: Wer Notfallblatt **und** Dateien hat, hat Zugriff. Das Blatt ist wie ein Tresorschlüssel aufzubewahren.
 
 - 256 Bit Zufall, dargestellt als 52 Zeichen Base32 in Vierergruppen mit Prüfsumme, zusätzlich als QR-Code.

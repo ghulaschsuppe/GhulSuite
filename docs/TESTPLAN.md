@@ -138,6 +138,11 @@ Für T5 bis T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick
 | S4 | Suite mit Schlüsseldatei (E11): Key hinzufügen, dann Datei entfernen. | Key funktioniert, Datei nicht mehr, **alter Wiederherstellungscode funktioniert weiterhin**. |
 | S5 | „Neuer Wiederherstellungscode“. Sperren, alten Code probieren, dann neuen. | Alter Code: ungültig. Neuer: geht. |
 | S6 | Passwort ändern (aktuelles falsch, dann richtig). | Falsch: Meldung. Richtig: neues Passwort gilt, Fingerabdruck/PIN-Zugang ist neu einzurichten. |
+| S7 | Vor S5: den Suite-Ordner kopieren (alte Sicherung). Nach S5 die Kopie in einen leeren Ordner legen und mit dem **alten** Code öffnen; dann die **aktuellen** Dateien mit dem alten Code. | Die alte Kopie öffnet sich (Stand von damals). Die aktuellen Dateien öffnen sich mit dem alten Code nicht. Fingerabdruck/PIN funktionieren nach S5 weiter. |
+| S8 | Zwei Keys (oder Key + Schlüsseldatei). Ordner kopieren, dann einen Key entfernen. Mit dem entfernten Key + Passwort die Kopie öffnen, dann die aktuellen Dateien. | Kopie: öffnet sich. Aktuelle Dateien: „Key nicht eingetragen“. Der verbliebene Key öffnet alles, **ohne** dass er beim Entfernen berührt werden musste. Fingerabdruck/PIN ist neu einzurichten. |
+| S9 | Suite aus einer älteren App-Version (vor Formatversion 2) mit zwei Keys öffnen. Optionen → Keys. | Der benutzte Key ist normal, der andere zeigt „einmal damit entsperren …“. Nach einem Entsperren mit ihm verschwindet der Hinweis. |
+| S10 | Zwei Geräte mit Sync. Gerät B in den Flugmodus, dort Einträge ändern. Auf A einen Key entfernen und einen neuen Code erstellen, Sync. B wieder online, Sync. | B fragt einmal „Schutz geändert“ nach einem übrigen Key oder der Schlüsseldatei (bei neuem Passwort auch danach). Danach sind die Änderungen beider Geräte auf beiden. Auf dem Server wurde nichts überschrieben. |
+| S11 | Suite-Ordner auf dem Gerät und auf dem Server ansehen. | Tresordateien heißen nur nach ihrer Kennung (z. B. `3f9a1c2b7d4e5f60.ghlpss`), kein Tresorname; ältere Namen sind nach dem Entsperren bzw. nächsten Sync verschwunden. Die Tresorliste zeigt keine Dateinamen. |
 
 ## 8. Import
 
