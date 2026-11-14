@@ -107,7 +107,7 @@ Mails brauchen keinen eigenen Server: GhulMail spricht direkt mit deinem Postfac
   unabhängig geprüften Testvektoren.
 - **Kern in Rust**, eine gemeinsame Codebasis für Android und Windows; Fuzzing, Abhängigkeitsprüfung und Tests gegen
   echte SFTP-, FTPS-, IMAP- und SMTP-Server in jeder CI-Runde.
-- Ein offenes [Sicherheits-Audit](docs/AUDIT.md) beschreibt Risiken und was dagegen getan wurde.
+- Der [Sicherheitsbericht](docs/AUDIT.md) fasst alle Audits und Testrunden zusammen: was behoben ist, was offen ist und wogegen GhulSuite schützt.
 
 ## Was geprüft ist und was noch fehlt
 
