@@ -114,6 +114,14 @@ name: GhulMail on a real server
 - tapOn:
     text: "Allow"
     optional: true
+# After the first account GhulSuite asks where the mails should live (mail archive): stay at the provider.
+- extendedWaitUntil:
+    visible: "Where should your mails live\\?"
+    timeout: 20000
+    optional: true
+- tapOn:
+    text: "Leave them at the provider"
+    optional: true
 - extendedWaitUntil:
     visible: "No messages\\."
     timeout: 120000
