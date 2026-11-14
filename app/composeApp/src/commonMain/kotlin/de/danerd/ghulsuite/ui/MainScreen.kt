@@ -172,7 +172,30 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
     if (state.codeUnconfirmed && top !is Screen.RecoveryCode) CodeReminderDialog(state)
     state.mailAccountSheet?.let { sheet -> MailAccountSheet(state, sheet.id) { state.mailAccountSheet = null } }
     // A new recovery code cannot be skipped: it must be confirmed first.
-    PlatformBackHandler(enabled = top != null && top !is Screen.RecoveryCode) { state.pop() }
+    PlatformBackHandler(enabled = top != null && top !is Screen.RecoveryCode) { state.back() }
+    if (state.recoveredGuide) {
+        AlertDialog(
+            onDismissRequest = { state.recoveredGuide = false },
+            title = { Text(stringResource(Res.string.recovered_title)) },
+            text = { Text(stringResource(Res.string.recovered_steps)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    state.recoveredGuide = false
+                    state.push(Screen.SettingsPage(SetPage.FACTORS))
+                }) { Text(stringResource(Res.string.recovered_go)) }
+            },
+            dismissButton = { TextButton(onClick = { state.recoveredGuide = false }) { Text(stringResource(Res.string.a_later)) } },
+        )
+    }
+    if (state.confirmDiscard) {
+        AlertDialog(
+            onDismissRequest = { state.confirmDiscard = false },
+            title = { Text(stringResource(Res.string.edit_discard_title)) },
+            text = { Text(stringResource(Res.string.edit_discard_text)) },
+            confirmButton = { TextButton(onClick = { state.discardAndBack() }) { Text(stringResource(Res.string.edit_discard_yes)) } },
+            dismissButton = { TextButton(onClick = { state.confirmDiscard = false }) { Text(stringResource(Res.string.edit_keep)) } },
+        )
+    }
 
     val onAdd: () -> Unit = {
         val kind = if (state.tab == Tab.PASS) VaultKindUi.PASS else VaultKindUi.TOTP

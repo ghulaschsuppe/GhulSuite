@@ -1150,6 +1150,27 @@
     <string name="cal_import_confirm_title">Take over the calendar file?</string>
     <string name="cal_import_confirm_text">Another app handed GhulSuite a calendar file with %1$s events. They will be added to the calendar “%2$s”.</string>
     <string name="cal_import_done">%1$s events imported</string>
+    <string name="restore_exists_title">A suite is already here</string>
+    <string name="restore_exists_text">A backup never overwrites an existing suite. Choose an empty folder: the backup is restored there and the app uses that folder from then on. The existing suite stays as it is.</string>
+    <string name="restore_choose_folder">Choose empty folder</string>
+    <string name="recovered_title">Opened with the recovery sheet</string>
+    <string name="recovered_steps">Your new password applies right away. Three more steps in Options → Keys and key files:
+1. Remove the lost key or key file. Afterwards it opens nothing.
+2. Add a new key or key file.
+3. Create a new recovery sheet. The old one is then no longer valid.</string>
+    <string name="recovered_go">Do it now</string>
+    <string name="sync_offline_banner">Sync not possible right now (no connection to the server). Your changes are saved and will be synced later. Tap to try again.</string>
+    <string name="edit_discard_title">Discard changes?</string>
+    <string name="edit_discard_text">What you entered here is not saved yet.</string>
+    <string name="edit_discard_yes">Discard</string>
+    <string name="edit_keep">Keep editing</string>
+    <string name="edit_dropped_on_lock">An edit was not saved when the app locked. It was discarded.</string>
+    <string name="remove_count">It holds %1$s entries.</string>
+    <string name="remove_export_first">Export first</string>
+    <string name="remove_type_name">Type "%1$s" to confirm</string>
+    <string name="cal_import_no_calendar">Create a calendar first, then you can import events.</string>
+    <string name="cal_import_into">Import into which calendar?</string>
+    <string name="cal_export_all_hint">"Export" takes all calendars, also hidden ones. A single calendar is exported in its settings.</string>
     <string name="cal_closed_hint">Every calendar is stored encrypted in your suite (.ghlcal) and syncs like your passwords via your own storage. Deliberately without CalDAV.</string>
     <string name="cal_start_view">Start view</string>
     <string name="cal_week_starts">Week starts on</string>
@@ -1483,6 +1504,7 @@
     <string name="core_bad_file">Invalid file name.</string>
     <string name="core_bad_entry">Unknown kind of entry.</string>
     <string name="core_kdf_expensive">The server asks for far more expensive password parameters than this suite. They are not used.</string>
+    <string name="core_empty_only_trash">Only the trash and the spam folder can be emptied.</string>
     <string name="core_move_self">A folder cannot be moved into itself.</string>
     <string name="core_pin_min">The PIN needs at least %1$s characters.</string>
 </resources>

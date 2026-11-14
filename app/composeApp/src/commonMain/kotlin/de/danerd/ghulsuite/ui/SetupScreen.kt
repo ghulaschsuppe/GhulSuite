@@ -122,6 +122,25 @@ fun SetupScreen(state: AppState) {
         }
     }
 
+    // U6: a backup never goes over an existing suite: there the app offers another (empty) folder.
+    var restoreAsk by remember { mutableStateOf(false) }
+    val folderHasSuite = stringResource(Res.string.core_folder_has_suite)
+    val pickRestoreFolder = rememberPickFolder { folder ->
+        backend.useStorage(folder)
+        if (backend.exists()) error = folderHasSuite else restoreBackup()
+    }
+    if (restoreAsk) {
+        AlertDialog(
+            onDismissRequest = { restoreAsk = false },
+            title = { Text(stringResource(Res.string.restore_exists_title)) },
+            text = { Text(stringResource(Res.string.restore_exists_text)) },
+            confirmButton = {
+                TextButton(onClick = { restoreAsk = false; pickRestoreFolder() }) { Text(stringResource(Res.string.restore_choose_folder)) }
+            },
+            dismissButton = { TextButton(onClick = { restoreAsk = false }) { Text(stringResource(Res.string.a_cancel)) } },
+        )
+    }
+
     PlatformBackHandler(enabled = flow != Flow.START) { flow = Flow.START }
 
     ScreenColumn {
@@ -152,7 +171,7 @@ fun SetupScreen(state: AppState) {
                 if (filePickersAvailable) {
                     StartOption(Icons.Filled.Restore, paletteColor(5), stringResource(Res.string.backup_restore), stringResource(Res.string.backup_restore_sub)) {
                         error = null
-                        restoreBackup()
+                        if (backend.exists()) restoreAsk = true else restoreBackup()
                     }
                 }
                 HintText(stringResource(Res.string.start_footer))

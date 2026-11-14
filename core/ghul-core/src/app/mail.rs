@@ -1453,6 +1453,71 @@ impl GhulSuite {
         })
     }
 
+    /// All UIDs of a folder: "select all N mails in this folder" (also the ones not loaded yet).
+    pub fn mail_folder_uids(&self, account_id: String, folder: String) -> Result<Vec<u32>> {
+        self.with_imap(&account_id, |s| {
+            let folder = folder.clone();
+            Box::pin(async move { imap::uids(s, &folder).await })
+        })
+    }
+
+    /// [`Self::mail_set_seen`] for many messages of one folder.
+    pub fn mail_set_seen_many(&self, account_id: String, folder: String, uids: Vec<u32>, seen: bool) -> Result<()> {
+        self.with_imap(&account_id, |s| {
+            let (folder, uids) = (folder.clone(), uids.clone());
+            Box::pin(async move { imap::set_flag_many(s, &folder, &uids, "\\Seen", seen).await })
+        })
+    }
+
+    /// [`Self::mail_set_flagged`] for many messages of one folder.
+    pub fn mail_set_flagged_many(&self, account_id: String, folder: String, uids: Vec<u32>, flagged: bool) -> Result<()> {
+        self.with_imap(&account_id, |s| {
+            let (folder, uids) = (folder.clone(), uids.clone());
+            Box::pin(async move { imap::set_flag_many(s, &folder, &uids, "\\Flagged", flagged).await })
+        })
+    }
+
+    /// [`Self::mail_move`] for many messages of one folder.
+    pub fn mail_move_many(&self, account_id: String, folder: String, uids: Vec<u32>, target: String) -> Result<()> {
+        self.with_imap(&account_id, |s| {
+            let (folder, uids, target) = (folder.clone(), uids.clone(), target.clone());
+            Box::pin(async move { imap::move_many(s, &folder, &uids, &target).await })
+        })
+    }
+
+    /// [`Self::mail_delete`] for many messages of one folder: to the trash, in the trash for good.
+    pub fn mail_delete_many(&self, account_id: String, folder: String, uids: Vec<u32>) -> Result<()> {
+        let folders = self.mail_folders_raw(&account_id)?;
+        let trash = trash_folder(&folders);
+        self.with_imap(&account_id, |s| {
+            let (folder, uids, trash) = (folder.clone(), uids.clone(), trash.clone());
+            Box::pin(async move {
+                match trash {
+                    Some(t) if t != folder => imap::move_many(s, &folder, &uids, &t).await,
+                    _ => imap::delete_many(s, &folder, &uids).await,
+                }
+            })
+        })
+    }
+
+    /// "Empty folder": deletes every message of the trash or spam folder for good. Refused for any
+    /// other folder (there, deleting goes through the trash). Returns how many were deleted.
+    pub fn mail_empty_folder(&self, account_id: String, folder: String) -> Result<u32> {
+        let folders = self.mail_folders_raw(&account_id)?;
+        let role = folders.iter().find(|f| f.name == folder).map(|f| f.role.clone()).unwrap_or_default();
+        if role != "trash" && role != "junk" {
+            return Err(GhulError::InvalidInput { msg: "only the trash and the spam folder can be emptied".into() });
+        }
+        self.with_imap(&account_id, |s| {
+            let folder = folder.clone();
+            Box::pin(async move {
+                let all = imap::uids(s, &folder).await?;
+                imap::delete_many(s, &folder, &all).await?;
+                Ok(all.len() as u32)
+            })
+        })
+    }
+
     /// Moves a message to the trash; in the trash it is deleted for good.
     pub fn mail_delete(&self, account_id: String, folder: String, uid: u32) -> Result<()> {
         let folders = self.mail_folders_raw(&account_id)?;

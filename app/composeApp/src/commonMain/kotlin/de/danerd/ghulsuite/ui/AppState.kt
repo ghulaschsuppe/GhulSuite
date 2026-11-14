@@ -194,7 +194,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             var waited = 0
             while (calDefaultCalendar.isEmpty() && waited < 50) { kotlinx.coroutines.delay(100); waited++ }
             val target = calDefaultCalendar
-            if (target.isEmpty()) return@launch
+            // U15: without any calendar the import says so instead of doing nothing.
+            if (target.isEmpty()) return@launch message(getString(Res.string.cal_import_no_calendar))
             runCatching { backend.cal.importIcs(target, data) }
                 .onSuccess { n ->
                     changed()
@@ -264,10 +265,39 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
 
     private var syncAgain = false
 
+    /**
+     * U12: an editor (login, event) holds input that is not saved. "Back" then asks first. Locking
+     * cannot wait (security): it drops the input, and after unlocking the app says so.
+     */
+    var editorDirty by mutableStateOf(false)
+
+    /** U11: opened with the recovery code: the next steps are shown once (see [RecoveredDialog]). */
+    var recoveredGuide by mutableStateOf(false)
+
+    /** U13: the last automatic sync found no connection; shown on the area pages until a sync works. */
+    var syncOffline by mutableStateOf(false)
+    var confirmDiscard by mutableStateOf(false)
+    private var discardedOnLock = false
+
+    /** Back from the current screen; an editor with unsaved input asks first. */
+    fun back() {
+        if (editorDirty) confirmDiscard = true else pop()
+    }
+
+    fun discardAndBack() {
+        editorDirty = false
+        confirmDiscard = false
+        pop()
+    }
+
     init {
         scope.launch {
             backend.unlocked.collect { unlocked ->
                 if (!unlocked) {
+                    if (editorDirty) discardedOnLock = true
+                    editorDirty = false
+                    recoveredGuide = false
+                    confirmDiscard = false
                     dropPending()
                     stack.clear()
                     tab = tabs.first()
@@ -284,6 +314,10 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     areasKnown = false
                     codeUnconfirmed = false
                 } else {
+                    if (discardedOnLock) {
+                        discardedOnLock = false
+                        message(getString(Res.string.edit_dropped_on_lock))
+                    }
                     refreshVaults()
                     scanFound()
                     autoSync()
@@ -483,6 +517,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                         return@launch
                     }
                     val r = backend.net.syncNow()
+                    syncOffline = false
                     if (r.downloaded > 0 || r.merged > 0 || r.deleted > 0) {
                         revision++
                         refreshVaults()
@@ -498,8 +533,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     kind == VaultErrorKind.PASSWORD_CHANGED_ELSEWHERE -> passwordChangedElsewhere = true
                     kind == VaultErrorKind.PROTECTION_CHANGED_ELSEWHERE -> protectionChangedElsewhere = true
                     kind == VaultErrorKind.LOCKED -> {}
-                    // Offline is normal for automatic runs.
-                    quiet && kind == VaultErrorKind.NETWORK -> {}
+                    // Offline is normal for automatic runs: no message, a quiet note on the area pages.
+                    quiet && kind == VaultErrorKind.NETWORK -> syncOffline = true
                     else -> message(getString(Res.string.sync_failed, describe(e)))
                 }
             } finally {

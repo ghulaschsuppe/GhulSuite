@@ -106,6 +106,9 @@ fun AreaFooter(state: AppState, kind: VaultKindUi) {
 fun RemoveAreaDialog(state: AppState, kind: VaultKindUi, onDone: () -> Unit, onDismiss: () -> Unit) {
     val name = stringResource(areaInfo(kind).title)
     val removed = stringResource(Res.string.area_removed, name)
+    // U4: how much goes, a way to save it first, and the name typed out instead of one tap.
+    val entries = state.vaultsOf(kind).sumOf { it.entries }
+    var typed by remember { mutableStateOf("") }
     AlertDialog(
         danger = true,
         onDismissRequest = onDismiss,
@@ -113,11 +116,16 @@ fun RemoveAreaDialog(state: AppState, kind: VaultKindUi, onDone: () -> Unit, onD
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Banner(Icons.Filled.Warning, stringResource(Res.string.area_remove_warning, areaInfo(kind).ext))
+                if (entries > 0) Text(stringResource(Res.string.remove_count, entries.toString()))
                 Text(stringResource(Res.string.area_remove_tip))
+                OutlinedButton(onClick = { onDismiss(); state.push(Screen.Export) }, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(Res.string.remove_export_first))
+                }
+                ConfirmByName(name, typed) { typed = it }
             }
         },
         confirmButton = {
-            TextButton(onClick = {
+            TextButton(enabled = nameMatches(typed, name), onClick = {
                 state.run(block = { state.backend.removeArea(kind) }) {
                     showModule(state, kind, false)
                     state.message(removed)

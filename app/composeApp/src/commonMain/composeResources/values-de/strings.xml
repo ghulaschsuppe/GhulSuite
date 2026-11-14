@@ -1150,6 +1150,27 @@
     <string name="cal_import_confirm_title">Kalenderdatei übernehmen?</string>
     <string name="cal_import_confirm_text">Eine andere App hat GhulSuite eine Kalenderdatei mit %1$s Terminen übergeben. Sie werden in den Kalender „%2$s“ eingetragen.</string>
     <string name="cal_import_done">%1$s Termine importiert</string>
+    <string name="restore_exists_title">Hier liegt schon eine Suite</string>
+    <string name="restore_exists_text">Eine Sicherung überschreibt nie eine vorhandene Suite. Wähle einen leeren Ordner, dorthin wird die Sicherung wiederhergestellt und die App nutzt ab dann diesen Ordner. Die vorhandene Suite bleibt unverändert.</string>
+    <string name="restore_choose_folder">Leeren Ordner wählen</string>
+    <string name="recovered_title">Mit dem Notfallblatt geöffnet</string>
+    <string name="recovered_steps">Dein neues Passwort gilt ab sofort. Jetzt noch drei Schritte unter Optionen → Keys und Schlüsseldateien:
+1. Den verlorenen Key bzw. die verlorene Schlüsseldatei entfernen. Danach öffnet sie nichts mehr.
+2. Einen neuen Key oder eine neue Schlüsseldatei hinzufügen.
+3. Ein neues Notfallblatt erstellen. Das alte gilt dann nicht mehr.</string>
+    <string name="recovered_go">Jetzt erledigen</string>
+    <string name="sync_offline_banner">Synchronisation gerade nicht möglich (keine Verbindung zum Server). Deine Änderungen sind gespeichert und werden später abgeglichen. Tippen, um es erneut zu versuchen.</string>
+    <string name="edit_discard_title">Änderungen verwerfen?</string>
+    <string name="edit_discard_text">Was du hier eingegeben hast, ist noch nicht gespeichert.</string>
+    <string name="edit_discard_yes">Verwerfen</string>
+    <string name="edit_keep">Weiter bearbeiten</string>
+    <string name="edit_dropped_on_lock">Beim Sperren war eine Bearbeitung nicht gespeichert. Sie wurde verworfen.</string>
+    <string name="remove_count">Darin: %1$s Einträge.</string>
+    <string name="remove_export_first">Vorher exportieren</string>
+    <string name="remove_type_name">Zum Bestätigen „%1$s“ eintippen</string>
+    <string name="cal_import_no_calendar">Lege zuerst einen Kalender an, dann kannst du Termine importieren.</string>
+    <string name="cal_import_into">In welchen Kalender importieren?</string>
+    <string name="cal_export_all_hint">„Export“ nimmt alle Kalender, auch ausgeblendete. Einen einzelnen Kalender exportierst du in seinen Einstellungen.</string>
     <string name="cal_closed_hint">Jeder Kalender liegt verschlüsselt in deiner Suite (.ghlcal) und synchronisiert wie deine Passwörter über deinen eigenen Speicher. Bewusst ohne CalDAV.</string>
     <string name="cal_start_view">Startansicht</string>
     <string name="cal_week_starts">Woche beginnt am</string>
@@ -1483,6 +1504,7 @@
     <string name="core_bad_file">Ungültiger Dateiname.</string>
     <string name="core_bad_entry">Unbekannte Eintragsart.</string>
     <string name="core_kdf_expensive">Der Server verlangt für das Passwort viel aufwendigere Einstellungen als diese Suite. Sie werden nicht übernommen.</string>
+    <string name="core_empty_only_trash">Leeren lassen sich nur der Papierkorb und der Spam-Ordner.</string>
     <string name="core_move_self">Ein Ordner kann nicht in sich selbst verschoben werden.</string>
     <string name="core_pin_min">Die PIN braucht mindestens %1$s Zeichen.</string>
 </resources>

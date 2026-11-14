@@ -86,6 +86,7 @@ private val CORE_TEXTS: Map<String, StringResource> = mapOf(
     "invalid file name" to Res.string.core_bad_file,
     "invalid entry type" to Res.string.core_bad_entry,
     "cannot move a folder into itself" to Res.string.core_move_self,
+    "only the trash and the spam folder can be emptied" to Res.string.core_empty_only_trash,
     "the server asks for password parameters far more expensive than this suite's; not used" to Res.string.core_kdf_expensive,
 )
 

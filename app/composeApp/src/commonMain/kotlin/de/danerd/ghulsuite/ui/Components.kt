@@ -49,6 +49,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -534,6 +535,12 @@ fun SectionCard(title: String? = null, content: @Composable ColumnScope.() -> Un
 /** Busy indicator, with "touch your key" when the key is waiting. */
 @Composable
 fun BusyBanner(state: AppState) {
+    // U13: on the area pages, a sync that could not reach the server is not silent. Tap: try again.
+    if (state.syncOffline && state.stack.isEmpty() && !state.busy) {
+        Box(Modifier.fillMaxWidth().clickable { state.sync() }) {
+            Banner(Icons.Filled.CloudOff, stringResource(Res.string.sync_offline_banner))
+        }
+    }
     if (!state.busy) return
     val color = if (state.touchNeeded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
     Surface(
@@ -646,6 +653,20 @@ fun KeyPinField(state: AppState, pin: String, onPin: (String) -> Unit) {
 
 /** A PIN is entered, or the system asks for it itself. */
 fun keyPinOk(state: AppState, pin: String): Boolean = !state.backend.keyPinInApp || pin.isNotEmpty()
+
+/** U4: whether the typed text is the name (case and outer spaces do not matter). */
+fun nameMatches(typed: String, name: String): Boolean = typed.trim().equals(name.trim(), ignoreCase = true) && name.isNotBlank()
+
+/** U4: before something is deleted everywhere, its name is typed out instead of one tap. */
+@Composable
+fun ConfirmByName(name: String, typed: String, onTyped: (String) -> Unit) {
+    androidx.compose.material3.OutlinedTextField(
+        typed, onTyped,
+        label = { Text(stringResource(Res.string.remove_type_name, name)) },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
 
 /** The area of a container kind as the core names it (`pass`, `totp`, `cal`, `drive`, `mail`). */
 fun vaultKindOf(kind: String): de.danerd.ghulsuite.model.VaultKindUi = when (kind) {

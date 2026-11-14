@@ -232,13 +232,99 @@ pub async fn delete(s: &mut ImapSession, folder: &str, uid: u32) -> NetResult<()
 }
 
 async fn expunge_uid(s: &mut ImapSession, uid: u32) -> NetResult<()> {
-    let _: Vec<_> =
-        s.uid_store(uid.to_string(), "+FLAGS (\\Deleted)").await.map_err(proto)?.try_collect().await.map_err(proto)?;
+    expunge_set(s, &uid.to_string()).await
+}
+
+/// At most this many UIDs per command: long UID lists stay well below any server's line limit.
+const UID_CHUNK: usize = 400;
+
+/// UID sets for commands: sorted, runs joined (`1:5,9,12:20`), split into chunks.
+pub(crate) fn uid_sets(uids: &[u32]) -> Vec<String> {
+    let mut sorted: Vec<u32> = uids.to_vec();
+    sorted.sort_unstable();
+    sorted.dedup();
+    sorted
+        .chunks(UID_CHUNK)
+        .map(|chunk| {
+            let mut parts: Vec<String> = Vec::new();
+            let mut i = 0;
+            while i < chunk.len() {
+                let start = chunk[i];
+                let mut end = start;
+                while i + 1 < chunk.len() && chunk[i + 1] == end + 1 {
+                    i += 1;
+                    end = chunk[i];
+                }
+                parts.push(if start == end { start.to_string() } else { format!("{start}:{end}") });
+                i += 1;
+            }
+            parts.join(",")
+        })
+        .collect()
+}
+
+/// All UIDs of a folder (for "select all mails in this folder").
+pub async fn uids(s: &mut ImapSession, folder: &str) -> NetResult<Vec<u32>> {
+    s.select(folder).await.map_err(proto)?;
+    let mut all: Vec<u32> = s.uid_search("ALL").await.map_err(proto)?.into_iter().collect();
+    all.sort_unstable();
+    Ok(all)
+}
+
+/// [`set_flag`] for many messages.
+pub async fn set_flag_many(s: &mut ImapSession, folder: &str, uids: &[u32], flag: &str, on: bool) -> NetResult<()> {
+    s.select(folder).await.map_err(proto)?;
+    let op = if on { "+FLAGS" } else { "-FLAGS" };
+    for set in uid_sets(uids) {
+        let _: Vec<_> = s.uid_store(set, format!("{op} ({flag})")).await.map_err(proto)?.try_collect().await.map_err(proto)?;
+    }
+    Ok(())
+}
+
+/// [`move_to`] for many messages.
+pub async fn move_many(s: &mut ImapSession, folder: &str, uids: &[u32], target: &str) -> NetResult<()> {
+    s.select(folder).await.map_err(proto)?;
+    let caps = s.capabilities().await.map_err(proto)?;
+    let has_move = caps.has_str("MOVE");
+    for set in uid_sets(uids) {
+        if has_move {
+            s.uid_mv(set, target).await.map_err(proto)?;
+        } else {
+            s.uid_copy(set.clone(), target).await.map_err(proto)?;
+            expunge_set(s, &set).await?;
+        }
+    }
+    Ok(())
+}
+
+/// Deletes many messages for good.
+pub async fn delete_many(s: &mut ImapSession, folder: &str, uids: &[u32]) -> NetResult<()> {
+    s.select(folder).await.map_err(proto)?;
+    for set in uid_sets(uids) {
+        expunge_set(s, &set).await?;
+    }
+    Ok(())
+}
+
+/// Deletes exactly the messages of `set`. Without UIDPLUS a plain EXPUNGE would also remove
+/// messages another program has marked as deleted; so then only these are expunged: every other
+/// message marked \Deleted is unmarked first and marked again afterwards.
+async fn expunge_set(s: &mut ImapSession, set: &str) -> NetResult<()> {
+    let _: Vec<_> = s.uid_store(set, "+FLAGS (\\Deleted)").await.map_err(proto)?.try_collect().await.map_err(proto)?;
     let caps = s.capabilities().await.map_err(proto)?;
     if caps.has_str("UIDPLUS") {
-        let _: Vec<_> = s.uid_expunge(uid.to_string()).await.map_err(proto)?.try_collect().await.map_err(proto)?;
-    } else {
-        let _: Vec<_> = s.expunge().await.map_err(proto)?.try_collect().await.map_err(proto)?;
+        let _: Vec<_> = s.uid_expunge(set).await.map_err(proto)?.try_collect().await.map_err(proto)?;
+        return Ok(());
+    }
+    let mine: std::collections::HashSet<u32> = s.uid_search(format!("UID {set}")).await.map_err(proto)?.into_iter().collect();
+    let others: Vec<u32> =
+        s.uid_search("DELETED").await.map_err(proto)?.into_iter().filter(|u| !mine.contains(u)).collect();
+    for o in uid_sets(&others) {
+        let _: Vec<_> = s.uid_store(o, "-FLAGS (\\Deleted)").await.map_err(proto)?.try_collect().await.map_err(proto)?;
+    }
+    let _: Vec<_> = s.expunge().await.map_err(proto)?.try_collect().await.map_err(proto)?;
+    for o in uid_sets(&others) {
+        let _: Vec<_> = s.uid_store(o, "+FLAGS (\\Deleted)").await.map_err(proto)?.try_collect().await.map_err(proto)?;
     }
     Ok(())
 }
@@ -304,4 +390,21 @@ pub async fn flagged(s: &mut ImapSession, folder: &str, limit: u32) -> NetResult
     let mut out: Vec<Listed> = fetches.iter().filter_map(listed).collect();
     out.sort_by_key(|x| std::cmp::Reverse(x.uid));
     Ok(out)
+}
+
+#[cfg(test)]
+mod uid_set_tests {
+    use super::uid_sets;
+
+    #[test]
+    fn uid_sets_join_runs_and_split_long_lists() {
+        assert_eq!(uid_sets(&[5, 1, 2, 3, 9, 9, 12, 13]), vec!["1:3,5,9,12:13".to_string()]);
+        assert!(uid_sets(&[]).is_empty());
+        let many: Vec<u32> = (1..=1000).map(|i| i * 2).collect();
+        let sets = uid_sets(&many);
+        assert_eq!(sets.len(), 3, "400 UIDs per command");
+        // Every UID appears exactly once over all sets.
+        let back: Vec<u32> = sets.iter().flat_map(|s| s.split(',')).map(|p| p.parse::<u32>().unwrap()).collect();
+        assert_eq!(back, many);
+    }
 }
