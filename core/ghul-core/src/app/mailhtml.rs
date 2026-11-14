@@ -481,6 +481,7 @@ pub(crate) fn public_ip(ip: std::net::IpAddr) -> bool {
 }
 
 /// https to a host whose every address is public.
+#[cfg(test)]
 fn public_https(u: &crate::net::http::Url) -> bool {
     public_address(u).is_some()
 }
