@@ -173,6 +173,8 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
     state.mailAccountSheet?.let { sheet -> MailAccountSheet(state, sheet.id) { state.mailAccountSheet = null } }
     // A new recovery code cannot be skipped: it must be confirmed first.
     PlatformBackHandler(enabled = top != null && top !is Screen.RecoveryCode) { state.back() }
+    MailArchiveDialogs(state)
+    if (state.archiveWhereAsk) ArchiveWhereDialog(state) { state.archiveWhereAsk = false }
     if (state.recoveredGuide) {
         AlertDialog(
             onDismissRequest = { state.recoveredGuide = false },
@@ -339,7 +341,7 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
     }
 }
 
-private fun ownHeader(top: Screen) = top is Screen.MailRead || top is Screen.MailCompose || top is Screen.EntryDetail ||
+private fun ownHeader(top: Screen) = top is Screen.MailRead || top is Screen.MailArchiveRead || top is Screen.MailCompose || top is Screen.EntryDetail ||
     top is Screen.EntryEdit || top is Screen.CalEvent || top is Screen.CalEdit
 
 @Composable
@@ -455,6 +457,7 @@ private fun TopScreen(state: AppState, top: Screen, padding: PaddingValues) {
             Screen.Shares -> SharesScreen(state, padding)
             Screen.Security -> SecurityScreen(state, padding)
             is Screen.MailRead -> key(top) { MailReadScreen(state, top.accountId, top.folder, top.uid, padding) }
+            is Screen.MailArchiveRead -> key(top) { MailArchiveReadScreen(state, top.accountId, top.folder, top.key, padding) }
             is Screen.MailCompose -> key(top) { MailComposeScreen(state, top.draft, padding) }
             is Screen.CalEvent -> key(top) { CalEventScreen(state, top.id, top.day, padding) }
             is Screen.CalEdit -> key(top) { CalEditScreen(state, top.draft, padding) }
@@ -564,6 +567,7 @@ private fun screenTitle(top: Screen?, tab: Tab): String = stringResource(
                             Screen.Shares -> Res.string.shares_title
                             Screen.Security -> Res.string.sec_title
                             is Screen.MailRead -> Res.string.mail_read_title
+                            is Screen.MailArchiveRead -> Res.string.mail_read_title
                             is Screen.MailCompose -> Res.string.mail_compose_title
                             is Screen.CalEvent -> Res.string.cal_event_title
                             is Screen.CalEdit -> if (top.draft.id.isEmpty()) Res.string.cal_new_event else Res.string.cal_edit_event

@@ -85,6 +85,7 @@ sealed interface Screen {
     data object Shares : Screen
     data object Security : Screen
     data class MailRead(val accountId: String, val folder: String, val uid: Long) : Screen
+    data class MailArchiveRead(val accountId: String, val folder: String, val key: String) : Screen
     data class MailCompose(val draft: MailDraft) : Screen
     data class CalEvent(val id: String, val day: String) : Screen
     data class CalEdit(val draft: de.danerd.ghulsuite.model.CalEventUi) : Screen
@@ -279,6 +280,85 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
 
     /** U13: the last automatic sync found no connection; shown on the area pages until a sync works. */
     var syncOffline by mutableStateOf(false)
+
+    // --- Mail archive (KONZEPT 9.3.1): runs while the suite is unlocked, every 30 minutes.
+    /** The archive could not be reached (the reason), shown at the top of GhulMail. */
+    var archiveUnreachable by mutableStateOf<String?>(null)
+    /** First run of an account done: "remove N mails at the provider now?" (account id, N). */
+    var archiveAsk by mutableStateOf<Pair<String, Int>?>(null)
+    /** An archive run is going on. */
+    var archiveRunning by mutableStateOf(false)
+    private var archiveJob: kotlinx.coroutines.Job? = null
+    /** "Where should your mails live?" after the first account, while no archive is set up. */
+    var archiveWhereAsk by mutableStateOf(false)
+
+    fun askArchiveWhere() {
+        scope.launch {
+            val st = runCatching { backend.net.archiveStatus() }.getOrNull()
+            if (st != null && st.mode == de.danerd.ghulsuite.model.ArchiveModeUi.NONE) archiveWhereAsk = true
+        }
+    }
+    private val archiveAsked = mutableSetOf<String>()
+
+    fun startArchive() {
+        archiveJob?.cancel()
+        if (!backend.settings.moduleGhulMail || !hasArea(VaultKindUi.MAIL)) return
+        archiveJob = scope.launch {
+            while (backend.unlocked.value) {
+                runArchiveOnce(manual = false)
+                kotlinx.coroutines.delay(30 * 60_000L)
+            }
+        }
+    }
+
+    /** One pass over every archived account. [manual]: "Archive now" (also outside Wi-Fi). */
+    suspend fun runArchiveOnce(manual: Boolean): de.danerd.ghulsuite.model.MailArchiveRunUi? {
+        val net = backend.net
+        val st = runCatching { net.archiveStatus() }.getOrNull() ?: return null
+        if (st.mode == de.danerd.ghulsuite.model.ArchiveModeUi.NONE || st.options.accounts.isEmpty()) return null
+        if (!manual && backend.settings.archiveWifiOnly && !net.unmeteredNetwork()) return null
+        if (archiveRunning) return null
+        archiveRunning = true
+        var total = de.danerd.ghulsuite.model.MailArchiveRunUi()
+        try {
+            for (a in st.options.accounts) {
+                var rounds = 0
+                while (backend.unlocked.value && rounds < 500) {
+                    rounds++
+                    val r = try {
+                        net.archiveRun(a, 200)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Throwable) {
+                        archiveUnreachable = describe(e)
+                        return null
+                    }
+                    archiveUnreachable = null
+                    total = total.copy(
+                        archived = total.archived + r.archived, removed = total.removed + r.removed,
+                        deletedByRule = total.deletedByRule + r.deletedByRule, remaining = r.remaining,
+                        waitingForConfirmation = r.waitingForConfirmation, renumbered = total.renumbered + r.renumbered, busy = r.busy,
+                    )
+                    if (r.busy.isNotEmpty() || r.remaining == 0) {
+                        if (r.remaining == 0 && r.waitingForConfirmation > 0 && st.options.deleteAtProvider &&
+                            a !in st.confirmed && archiveAsked.add(a)
+                        ) {
+                            archiveAsk = a to r.waitingForConfirmation
+                        }
+                        break
+                    }
+                }
+            }
+            if (st.fullCopy) runCatching { net.archiveDownload(500, archiveDeviceName()) }
+        } finally {
+            archiveRunning = false
+        }
+        if (total.archived > 0 || total.removed > 0) changed()
+        return total
+    }
+
+    /** How this device is called in "a copy of the archive has: ...". */
+    fun archiveDeviceName(): String = if (backend.isDesktop) "Windows-PC" else "Android"
     var confirmDiscard by mutableStateOf(false)
     private var discardedOnLock = false
 
@@ -316,6 +396,9 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     mailUnread = 0
                     areasKnown = false
                     codeUnconfirmed = false
+                    archiveJob?.cancel()
+                    archiveAsk = null
+                    archiveUnreachable = null
                 } else {
                     if (discardedOnLock) {
                         discardedOnLock = false
@@ -335,6 +418,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                         scope.launch { runCatching { backend.net.refreshMailNotifications() } }
                     }
                     refreshCalendar()
+                    startArchive()
                 }
             }
         }
@@ -472,7 +556,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     fun push(screen: Screen) {
         // In two panes, opening another entry, mail or settings page from the list replaces the
         // right side instead of piling up screens behind it.
-        if (wide && (screen is Screen.EntryDetail || screen is Screen.MailRead || screen is Screen.SettingsPage || screen == Screen.Security ||
+        if (wide && (screen is Screen.EntryDetail || screen is Screen.MailRead || screen is Screen.MailArchiveRead || screen is Screen.SettingsPage || screen == Screen.Security ||
                 screen == Screen.Shares || screen is Screen.CalEvent || screen is Screen.AddTotp ||
                 (screen is Screen.CalEdit && stack.lastOrNull() !is Screen.CalEvent))) {
             stack.clear()

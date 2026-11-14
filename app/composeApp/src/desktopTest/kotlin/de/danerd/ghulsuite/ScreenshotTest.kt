@@ -279,6 +279,9 @@ class ScreenshotTest {
             GhulSuiteApp(state(true, true) { tab = Tab.CAL; backend.settings.theme = de.danerd.ghulsuite.model.ThemeMode.DARK })
         }
         render("46-mail-html") { GhulSuiteApp(state(true, true) { tab = Tab.MAIL; push(Screen.MailRead("m1", "INBOX", 9)) }) }
+        render("68-mail-archive-read") { GhulSuiteApp(state(true, true) { tab = Tab.MAIL; push(Screen.MailArchiveRead("m1", "INBOX", "k1")) }) }
+        // The whole page, for the picture of the archive options at its end.
+        render("69-set-mail-long", h = 2900) { GhulSuiteApp(state(true, true) { push(Screen.SettingsPage(de.danerd.ghulsuite.ui.SetPage.MAIL)) }) }
         render("43-drive-grid") { GhulSuiteApp(state(true, true) { tab = Tab.DRIVE; driveGrid = true }) }
         render("44-auth-grid") { GhulSuiteApp(state(true, true) { tab = Tab.AUTH; authGrid = true }) }
         render("45-pass-dark") {

@@ -20,6 +20,7 @@ import de.danerd.ghulsuite.ui.AppState
 import de.danerd.ghulsuite.ui.CalView
 import de.danerd.ghulsuite.ui.GhulSuiteApp
 import de.danerd.ghulsuite.ui.Screen
+import de.danerd.ghulsuite.model.NetBackend
 import de.danerd.ghulsuite.ui.SetPage
 import de.danerd.ghulsuite.ui.Tab
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -44,6 +45,7 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalTestApi::class)
 class InteractionTest {
     private val out = File("build/screenshots").apply { mkdirs() }
+    private val optionsSet = java.util.Collections.synchronizedList(mutableListOf<de.danerd.ghulsuite.model.MailArchiveOptionsUi>())
 
     /** The app in English on a phone (412 × 892) or a wide window (1280 × 820), unlocked. */
     private fun app(
@@ -198,6 +200,60 @@ class InteractionTest {
         desc("More").performClick()
         waitFor("Move")
         shot("mail-reader-sheet")
+    }
+
+    /**
+     * Mail archive: archived mails appear below the provider's, open in their own reader and go into
+     * the archive's trash with Undo. The first removal at the provider waits for "Remove";
+     * tapping beside the question removes nothing.
+     */
+    @Test
+    fun mailArchiveListReaderAndFirstRemoval() = app(setup = { tab = Tab.MAIL }) { state, fake ->
+        val net = fake.net as FakeNet
+        waitFor("ARCHIVE · 3")
+        assertTrue(shown("Steuerbescheid 2024"))
+        shot("mail-archive-list")
+        text("Steuerbescheid 2024").performClick()
+        waitFor("Bescheid.pdf")
+        assertTrue(shown("Archived"))
+        shot("mail-archive-read")
+        state.undoMillis = 300
+        desc("Delete").performClick()
+        waitUntil(timeoutMillis = 10_000) { net.calls.any { it == "archiveDelete:k1" } }
+        // The first removal at the provider: tapping beside it is "later".
+        state.archiveAsk = "m1" to 42
+        waitFor("Everything safely archived")
+        shot("mail-archive-first-removal")
+        text("Later").performClick()
+        waitGone("Everything safely archived")
+        assertFalse(net.calls.any { it.startsWith("archiveConfirm") }, "nothing removed without the answer")
+        state.archiveAsk = "m1" to 42
+        waitFor("Remove 42 mails")
+        text("Remove 42 mails").performClick()
+        waitUntil(timeoutMillis = 10_000) { net.calls.contains("archiveConfirm:m1") }
+    }
+
+    /** The archive options: switching deleting on asks first; "Cancel" changes nothing. */
+    @Test
+    fun mailArchiveOptionsAskBeforeDeleting() = app(setup = { push(Screen.SettingsPage(SetPage.MAIL)) }, prepare = {
+        net = object : NetBackend by FakeNet() {
+            override suspend fun archiveStatus() = FakeNet().archiveStatus()?.let { it.copy(options = it.options.copy(deleteAtProvider = false), confirmed = emptyList()) }
+            override suspend fun archiveSetOptions(options: de.danerd.ghulsuite.model.MailArchiveOptionsUi) { optionsSet += options }
+        }
+    }) { _, _ ->
+        waitFor("MAIL ARCHIVE")
+        waitFor("Delete at the provider after archiving")
+        text("Archive now").performScrollTo()
+        shot("mail-archive-options")
+        text("Delete at the provider after archiving").performScrollTo().performClick()
+        waitFor("Delete archived mails at the provider?")
+        text("Cancel").performClick()
+        waitGone("Delete archived mails at the provider?")
+        assertTrue(optionsSet.isEmpty(), "Cancel changes nothing")
+        text("Delete at the provider after archiving").performScrollTo().performClick()
+        waitFor("Switch on")
+        text("Switch on").performClick()
+        waitUntil(timeoutMillis = 10_000) { optionsSet.any { it.deleteAtProvider } }
     }
 
     @Test

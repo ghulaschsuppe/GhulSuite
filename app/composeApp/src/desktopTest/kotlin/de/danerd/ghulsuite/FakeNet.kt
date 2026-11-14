@@ -113,6 +113,42 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
         listOf(MailSummaryUi(4, "Jana Beispiel", "jana@example.net", "...", now - 3_600, false, false, false, 5_000, encrypted = true))
     } else emptyList()
     override suspend fun mailList(accountId: String, folder: String, offset: Int, limit: Int) = MailPageUi(list.size, list)
+
+    // --- Mail archive: set up on the home server, three old mails no longer at the provider.
+    private val archived = listOf(
+        de.danerd.ghulsuite.model.ArchivedMailUi("k1", "INBOX", "inbox",
+            MailSummaryUi(0, "Finanzamt", "post@finanzamt.example", "Steuerbescheid 2024", now - 400 * 86_400, true, false, true, 300_000), false, 0),
+        de.danerd.ghulsuite.model.ArchivedMailUi("k2", "INBOX", "inbox",
+            MailSummaryUi(0, "Erika Musterfrau", "erika@example.org", "Urlaubsfotos Ostsee", now - 200 * 86_400, true, true, true, 4_000_000), false, 0),
+        de.danerd.ghulsuite.model.ArchivedMailUi("k3", "INBOX", "inbox",
+            MailSummaryUi(0, "Vermieter", "verwaltung@wohnen.example", "Nebenkostenabrechnung", now - 90 * 86_400, false, false, false, 20_000), false, 0),
+    )
+    override suspend fun archiveStatus() = if (!configured) null else de.danerd.ghulsuite.model.MailArchiveStatusUi(
+        de.danerd.ghulsuite.model.ArchiveModeUi.OWN, server, true,
+        de.danerd.ghulsuite.model.MailArchiveOptionsUi(30, true, true, de.danerd.ghulsuite.model.ArchiveRuleUi.LEAVE, de.danerd.ghulsuite.model.ArchiveRuleUi.ARCHIVE, listOf("m1")),
+        listOf(de.danerd.ghulsuite.model.MailArchiveCopyUi("d2", "Windows-PC", 12_480, now * 1000 - 86_400_000, true, false)),
+        false, 48_000_000, listOf("m1"),
+    )
+    override suspend fun archiveList(accountId: String, folder: String, offset: Int, limit: Int, withProvider: Boolean) =
+        if (configured && folder == "INBOX") de.danerd.ghulsuite.model.ArchivePageUi(archived.size, archived) else de.danerd.ghulsuite.model.ArchivePageUi(0, emptyList())
+    override suspend fun archiveCount(accountId: String) = de.danerd.ghulsuite.model.MailArchiveCountUi(12_480, 3_400_000_000, 4)
+    override suspend fun archiveGet(accountId: String, folder: String, key: String) = MailMessageUi(
+        0, "Finanzamt", "post@finanzamt.example", listOf("Max Mustermann <max@posteo.de>"), emptyList(), "",
+        "Steuerbescheid 2024", now - 400 * 86_400, "Sehr geehrter Herr Mustermann,\n\nanbei Ihr Steuerbescheid.",
+        false, "bescheid@finanzamt.example", listOf(MailAttachmentUi(0, "Bescheid.pdf", "application/pdf", 280_000)),
+    )
+    override suspend fun archiveDelete(accountId: String, items: List<de.danerd.ghulsuite.model.ArchiveRefUi>) {
+        calls += "archiveDelete:" + items.joinToString { it.key }
+    }
+    override suspend fun archiveSetOptions(options: de.danerd.ghulsuite.model.MailArchiveOptionsUi) { calls += "archiveOptions:${options.days}:${options.deleteAtProvider}" }
+    override suspend fun archiveRun(accountId: String, max: Int): de.danerd.ghulsuite.model.MailArchiveRunUi {
+        calls += "archiveRun:$accountId"
+        return de.danerd.ghulsuite.model.MailArchiveRunUi(archived = 42, removed = 0, waitingForConfirmation = 42)
+    }
+    override suspend fun archiveConfirmRemoval(accountId: String): de.danerd.ghulsuite.model.MailArchiveRunUi {
+        calls += "archiveConfirm:$accountId"
+        return de.danerd.ghulsuite.model.MailArchiveRunUi(removed = 42)
+    }
     override suspend fun mailSearch(accountId: String, folder: String, query: String) = list
     override suspend fun mailGet(accountId: String, folder: String, uid: Long) = if (uid == 9L) htmlMail() else MailMessageUi(
         uid, "Stadtwerke", "service@stadtwerke.example", listOf("Max Mustermann <max@posteo.de>"), emptyList(), "",

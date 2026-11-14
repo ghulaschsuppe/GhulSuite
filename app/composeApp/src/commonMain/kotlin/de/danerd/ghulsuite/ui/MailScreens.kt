@@ -25,6 +25,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -347,6 +348,13 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
             }
         })
         LoadError(error) { error = null; reload++ }
+        state.archiveUnreachable?.let { why ->
+            // KONZEPT 9.3.1: the provider's mails and what is kept offline stay usable; nothing is deleted.
+            Banner(Icons.Filled.CloudOff, stringResource(Res.string.archive_unreachable, why)) {
+                TextButton(onClick = { scope.launch { state.runArchiveOnce(manual = true) } }) { Text(stringResource(Res.string.a_retry)) }
+            }
+            TextButton(onClick = { state.push(Screen.SettingsPage(SetPage.MAIL)) }) { Text(stringResource(Res.string.archive_place_change)) }
+        }
         FilterChipRow(
             listOf(
                 "" to stringResource(Res.string.filter_all),
@@ -411,6 +419,8 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
                 }
             }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.mail_more, (total - messages.size).toString())) }
         }
+        // The archived mails of this folder, below the provider's (KONZEPT 9.3.1).
+        if (!searching && !all && filter.isEmpty() && shown.isNotEmpty()) ArchivedMails(state, shown.first().id, folder, offline = error != null)
         if (messages.isNotEmpty()) HintText(stringResource(Res.string.mail_swipe_hint))
     }
     }
@@ -1200,6 +1210,7 @@ private fun MailAccountForm(state: AppState, id: String?, onSaved: (String) -> U
             if (newId != null) {
                 state.mailAccount = newId
                 state.changed()
+                if (id == null) state.askArchiveWhere()
                 onSaved(newId)
             } else {
                 certToConfirm = check

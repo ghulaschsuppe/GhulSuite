@@ -88,6 +88,16 @@ private val CORE_TEXTS: Map<String, StringResource> = mapOf(
     "cannot move a folder into itself" to Res.string.core_move_self,
     "only the trash and the spam folder can be emptied" to Res.string.core_empty_only_trash,
     "the server asks for password parameters far more expensive than this suite's; not used" to Res.string.core_kdf_expensive,
+    "deleting at the provider is switched off" to Res.string.core_arc_delete_off,
+    "mail archive block missing" to Res.string.core_arc_block_missing,
+    "mail archive damaged or from another key" to Res.string.core_arc_damaged,
+    "mail archive key damaged" to Res.string.core_arc_key_damaged,
+    "mail archive part from a newer key: open the suite on a current device first" to Res.string.core_arc_newer_key,
+    "the mail archive did not read back what was written" to Res.string.core_arc_readback,
+    "the mail archive index did not read back" to Res.string.core_arc_index_readback,
+    "the mail archive is being changed on another device, please try again" to Res.string.core_arc_busy,
+    "the new place did not read back what was written" to Res.string.core_arc_move_readback,
+    "the number of days must be between 1 and 36500" to Res.string.core_arc_days,
 )
 
 private val PIN_MIN = Regex("PIN must have at least (\\d+) characters")

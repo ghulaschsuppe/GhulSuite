@@ -129,6 +129,12 @@ class AndroidNetBackend(private val context: Context, suite: () -> GhulSuite) : 
         }
     }
 
+    override fun unmeteredNetwork(): Boolean {
+        val cm = context.getSystemService(android.net.ConnectivityManager::class.java) ?: return false
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
+        return caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+    }
+
     override val photoBackupAvailable: Boolean get() = true
 
     override suspend fun photoBackup(sinceSeconds: Long, wifiOnly: Boolean, onFile: (String) -> Unit): Long = withContext(Dispatchers.IO) {
