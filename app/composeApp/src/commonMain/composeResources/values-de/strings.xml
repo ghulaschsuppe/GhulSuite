@@ -610,7 +610,7 @@
     <string name="share_check_listing">Ordnerinhalt wird nicht aufgelistet</string>
     <string name="share_check_page">Abrufseite funktioniert</string>
     <string name="share_check_write">Ordner beschreibbar</string>
-    <string name="share_check_skipped">Nicht geprüft: die Adresse antwortet nicht</string>
+    <string name="share_check_skipped">Nicht geprüft, weil der HTTPS-Schritt fehlschlug</string>
     <string name="share_count">%1$s Abrufe</string>
     <string name="share_count_of">%1$s von %2$s Abrufen</string>
     <string name="share_create">Link erstellen</string>

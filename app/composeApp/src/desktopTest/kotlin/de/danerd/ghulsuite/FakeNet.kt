@@ -45,7 +45,12 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
         "https://example.org/ghulsuite.php#a1b2c3.k3yk3yk3y")
     private val servers = MailServersUi("posteo.de", 993, MailSecurityUi.TLS, "posteo.de", 587, MailSecurityUi.STARTTLS)
 
-    override suspend fun servers() = if (configured) listOf(server, php) else emptyList()
+    /** The next calls of servers() that fail (a core that is busy or gone). */
+    var serversFailures = 0
+    override suspend fun servers(): List<ServerUi> {
+        if (serversFailures > 0) { serversFailures--; throw java.io.IOException("connection reset") }
+        return if (configured) listOf(server, php) else emptyList()
+    }
     override suspend fun saveServer(input: ServerInputUi, confirmed: String?): ServerSavedUi =
         if (confirmed == null) ServerSavedUi.Confirm("SHA256:7beJP+X7anXY96H6FlO+I7u8z2xP1gJsp7GiBGawac4") else ServerSavedUi.Saved("s3")
     override suspend fun removeServer(id: String) {}

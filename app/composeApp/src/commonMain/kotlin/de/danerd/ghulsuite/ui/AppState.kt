@@ -1001,7 +1001,21 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     }
 }
 
-suspend fun describe(e: Throwable): String {
+/**
+ * The text shown for an error. Never throws itself: if even the translated text cannot be read
+ * (e.g. the resources need a display that is not there), the raw message is shown, so a failure
+ * while loading a page still ends as a message and not as a crash.
+ */
+suspend fun describe(e: Throwable): String = try {
+    describeText(e)
+} catch (c: CancellationException) {
+    throw c
+} catch (_: Exception) {
+    // describeText has already told DevChecks about it.
+    e.message ?: e.toString()
+}
+
+private suspend fun describeText(e: Throwable): String {
     if (e !is VaultException) {
         DevChecks.shown(e)
         return getString(Res.string.err_other, e.message ?: e.toString())

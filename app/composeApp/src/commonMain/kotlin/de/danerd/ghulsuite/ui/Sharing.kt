@@ -394,7 +394,8 @@ fun ShareSetupScreen(state: AppState, serverId: String, padding: PaddingValues) 
             }
             SectionCard(stringResource(Res.string.share_setup_step3)) {
                 for (c in checks) {
-                    // "skipped": the address did not answer, so this step could not be checked.
+                    // "skipped" (SHARE_CHECK_SKIPPED in the core's shares.rs): the https step
+                    // failed, so this step could not be checked.
                     val skipped = !c.ok && c.detail == "skipped"
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Icon(

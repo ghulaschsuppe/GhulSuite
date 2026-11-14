@@ -223,8 +223,8 @@ impl GhulSuite {
     }
 }
 
-/// Detail of a step of [`GhulSuite::share_setup`] that could not be checked because the address
-/// did not answer over https.
+/// Detail of a step of [`GhulSuite::share_setup`] that could not be checked because the https
+/// step failed. The app compares this text (`Sharing.kt`); a test pins it.
 pub const SHARE_CHECK_SKIPPED: &str = "skipped";
 
 #[uniffi::export]
@@ -277,15 +277,18 @@ impl GhulSuite {
             let name = listing_probe.trim_start_matches("s/");
             let listing_ok =
                 installed.is_ok() && matches!(&listed, Ok(r) if !String::from_utf8_lossy(&r.body).contains(name));
-            // Without an answer over https nothing about the listing or the page is known: those
-            // steps say "not checked" instead of a result that was never seen.
+            // When the address does not deliver the folder over https (no answer, a wrong folder,
+            // an error page), nothing about the listing or the page is known: those steps say
+            // "not checked" instead of a result that was never seen (also not a green one).
             checks.push(ShareCheck {
                 step: "listing".into(),
-                ok: listing_ok,
-                detail: if listing_ok {
-                    String::new()
-                } else if !https_ok {
+                ok: https_ok && listing_ok,
+                detail: if !https_ok {
                     SHARE_CHECK_SKIPPED.into()
+                } else if listing_ok {
+                    String::new()
+                } else if let Err(e) = &installed {
+                    e.to_string()
                 } else {
                     "the folder content is visible".into()
                 },
@@ -296,10 +299,10 @@ impl GhulSuite {
                 matches!(&page, Ok(r) if r.status == 200 && String::from_utf8_lossy(&r.body).contains("viewer.js"));
             checks.push(ShareCheck {
                 step: "page".into(),
-                ok: page_ok,
+                ok: https_ok && page_ok,
                 detail: match installed {
                     Err(e) => e.to_string(),
-                    Ok(_) if !page_ok && !https_ok => SHARE_CHECK_SKIPPED.into(),
+                    Ok(_) if !https_ok => SHARE_CHECK_SKIPPED.into(),
                     Ok(_) if !page_ok => match &page {
                         Ok(r) => format!("HTTP {}", r.status),
                         Err(e) => e.clone(),

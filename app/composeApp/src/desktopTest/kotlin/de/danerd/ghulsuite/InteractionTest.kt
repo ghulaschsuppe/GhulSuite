@@ -388,6 +388,22 @@ class InteractionTest {
         }
     }
 
+    /**
+     * The servers cannot be read: the page says why and offers to try again, instead of an empty
+     * list and "Off" (looked as if the server was gone) or an error with no way out.
+     */
+    @Test
+    fun serversPageLoadErrorOffersRetry() {
+        app(setup = { push(Screen.SettingsPage(SetPage.SERVERS)) }, prepare = { (net as FakeNet).serversFailures = 1 }) { _, _ ->
+            waitFor("Try again")
+            assertTrue(onAllNodesWithText("Off").fetchSemanticsNodes().isEmpty())
+            assertTrue(onAllNodesWithText("Add server").fetchSemanticsNodes().isEmpty())
+            text("Try again").performClick()
+            waitFor("Heimserver")
+            waitGone("Try again")
+        }
+    }
+
     /** Choosing the sync server must stick: it is saved and shown (bug: it stayed "Off"). */
     @Test
     fun choosingTheSyncServerSticks() {
@@ -449,7 +465,7 @@ class InteractionTest {
             onNode(hasSetTextAction() and hasText("https://", substring = true)).performTextReplacement("https://example.invalid/teilen")
             onNodeWithText("Set up and check").performScrollTo().performClick()
             waitFor("connection failed")
-            assertEquals(2, onAllNodesWithText("Not checked: the address does not answer").fetchSemanticsNodes().size)
+            assertEquals(2, onAllNodesWithText("Not checked, because the HTTPS step failed").fetchSemanticsNodes().size)
             assertTrue(onAllNodesWithText("skipped").fetchSemanticsNodes().isEmpty())
             shot("share-check-not-checked")
         }

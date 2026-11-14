@@ -610,7 +610,7 @@
     <string name="share_check_listing">Folder content is not listed</string>
     <string name="share_check_page">Download page works</string>
     <string name="share_check_write">Folder writable</string>
-    <string name="share_check_skipped">Not checked: the address does not answer</string>
+    <string name="share_check_skipped">Not checked, because the HTTPS step failed</string>
     <string name="share_count">%1$s downloads</string>
     <string name="share_count_of">%1$s of %2$s downloads</string>
     <string name="share_create">Create link</string>
