@@ -1323,6 +1323,14 @@ fn share_via_folder(s: &GhulSuite, server_id: &str, dir: &str, web_root: &std::p
         .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
     assert!(stored.iter().all(|n| !n.contains("Steuer") && !n.contains("Urlaub")), "{stored:?}");
+    // B14: once its server is gone, withdrawing a link says that its package stays.
+    let left = s.share_list().unwrap();
+    if let Some(last) = left.first() {
+        if s.remove_server(server_id.into()).is_ok() {
+            assert!(matches!(s.share_delete(last.id.clone()), Err(GhulError::ShareNotDeleted)));
+            assert!(s.share_list().unwrap().is_empty());
+        }
+    }
 }
 
 #[test]
@@ -1854,6 +1862,9 @@ fn pgp_mail_between_two_users() {
     // attacker could have sent both); shown like an unknown key the first time.
     assert_eq!(m.signature, MailSignatureStatus::UnknownKey);
     assert_eq!(m.signer, alice_mail.to_lowercase());
+    // B12: opened a second time, it is still the mail the key came with: not confirmed either.
+    let (_, again) = newest(&bob, &bob_id);
+    assert_eq!(again.signature, MailSignatureStatus::UnknownKey);
     assert!(m.text.contains("Erste Nachricht.") && m.text.contains("Viele Grüße\nAlice Ä."), "{}", m.text);
     assert!(m.attachments.is_empty(), "the signature is no attachment");
     // Bob learned Alice's key from the Autocrypt header.
@@ -2467,3 +2478,4 @@ mod crazy_user;
 mod everyday;
 mod properties;
 mod rekey;
+mod security;

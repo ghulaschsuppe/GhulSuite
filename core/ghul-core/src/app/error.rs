@@ -78,6 +78,18 @@ pub enum GhulError {
     /// remaining key (or the key file) takes the new protection over (`adopt_remote_protection`).
     #[error("the protection was changed on another device")]
     ProtectionChangedElsewhere,
+    /// B3: the Drive index on the server is older than the one this suite saw last (server
+    /// reset or an old copy put back). Nothing is written; `drive_accept_server_state` takes it.
+    #[error("the GhulDrive index on the server is older than the one seen last")]
+    DriveRolledBack,
+    /// B14: the link's server is no longer set up, its package could not be deleted: the link
+    /// keeps working until it expires.
+    #[error("the server of this link is no longer set up; the package could not be deleted")]
+    ShareNotDeleted,
+    /// L5: the web server delivers the server module as text instead of running PHP; its access
+    /// key would be readable. The app deleted the file again (if it uploaded it).
+    #[error("the web server does not run PHP: it delivers the module as text")]
+    PhpNotExecuted,
     #[error("no server set up for this")]
     NotConfigured,
     // --- import

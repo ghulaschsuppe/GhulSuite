@@ -482,12 +482,18 @@ pub(crate) fn public_ip(ip: std::net::IpAddr) -> bool {
 
 /// https to a host whose every address is public.
 fn public_https(u: &crate::net::http::Url) -> bool {
+    public_address(u).is_some()
+}
+
+/// For https to a host whose every address is public: the address to connect to. The image is
+/// then fetched from exactly this address (B16: a second lookup could return a private one).
+fn public_address(u: &crate::net::http::Url) -> Option<std::net::SocketAddr> {
     use std::net::ToSocketAddrs;
     if !u.tls {
-        return false;
+        return None;
     }
     if let Ok(ip) = u.host.parse::<std::net::IpAddr>() {
-        return public_ip(ip);
+        return public_ip(ip).then(|| std::net::SocketAddr::new(ip, u.port));
     }
     let name = u.host.trim_end_matches('.');
     if name == "localhost"
@@ -496,15 +502,10 @@ fn public_https(u: &crate::net::http::Url) -> bool {
         || name.ends_with(".internal")
         || !name.contains('.')
     {
-        return false;
+        return None;
     }
-    match (name, u.port).to_socket_addrs() {
-        Ok(addrs) => {
-            let addrs: Vec<_> = addrs.collect();
-            !addrs.is_empty() && addrs.iter().all(|a| public_ip(a.ip()))
-        }
-        Err(_) => false,
-    }
+    let addrs: Vec<std::net::SocketAddr> = (name, u.port).to_socket_addrs().ok()?.collect();
+    (!addrs.is_empty() && addrs.iter().all(|a| public_ip(a.ip()))).then(|| addrs[0])
 }
 
 /// Loads an image from the internet for an HTML mail, only when the user asked for it.
@@ -517,10 +518,8 @@ pub fn mail_fetch_image(url: String) -> Result<Vec<u8>, super::error::GhulError>
         let u = http::Url::parse(&url).map_err(|e| super::error::GhulError::Network { msg: e.to_string() })?;
         // A mail must not make the device call itself, the router or other devices at home
         // (directly or through a redirect): only https to public addresses.
-        if !public_https(&u) {
-            break;
-        }
-        let r = crate::net::block_on(http::request("GET", &u, &[], b"", None), std::time::Duration::from_secs(15))
+        let Some(addr) = public_address(&u) else { break };
+        let r = crate::net::block_on(http::request_at(addr, "GET", &u, &[], b""), std::time::Duration::from_secs(15))
             .map_err(|e| super::error::GhulError::Network { msg: e.to_string() })?;
         if (300..400).contains(&r.status) {
             let Some(loc) = r.header("location") else { break };

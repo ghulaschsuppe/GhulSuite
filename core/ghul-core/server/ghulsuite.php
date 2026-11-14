@@ -22,6 +22,15 @@ const GHUL_VIEWER_CSS = '__GHUL_VIEWER_CSS__';
 const GHUL_MAX_SKEW = 300;
 const GHUL_MAX_FAILS = 20;
 
+// Files of this module only for its own user, where PHP runs as the owner of this file (the
+// usual case on shared hosting); elsewhere the web server user still needs to read them.
+if (function_exists('posix_geteuid') && @fileowner(__FILE__) === posix_geteuid()) {
+    umask(0077);
+    if ((@fileperms(__FILE__) & 0077) !== 0) {
+        @chmod(__FILE__, 0600);
+    }
+}
+
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: no-referrer');
 header('X-Robots-Tag: noindex, nofollow');
@@ -82,7 +91,8 @@ function ghul_path(string $p, bool $allowEmpty = false): string
             ghul_fail(400, 'invalid path');
         }
         // Even with the key nothing executable or server configuration can be placed here.
-        if (preg_match('/\.(php\d?|phtml|phar|pht|phps|cgi|pl|py|sh|shtml)$/i', $seg) || preg_match('/^\.(htaccess|htpasswd|user\.ini)$/i', $seg)) {
+        // Also in the middle ("x.php.jpg"): some servers run a file for any of its extensions.
+        if (preg_match('/\.(php\d?|phtml|phar|pht|phps|cgi|pl|py|sh|shtml)(\.|$)/i', $seg) || preg_match('/^\.(htaccess|htpasswd|user\.ini)$/i', $seg)) {
             ghul_fail(400, 'file type not allowed');
         }
     }
@@ -174,19 +184,20 @@ function ghul_canonical(): string
 
 function ghul_auth(string $body): void
 {
-    ghul_fails(false);
-    $time = $_SERVER['HTTP_X_GHUL_TIME'] ?? '';
-    $nonce = $_SERVER['HTTP_X_GHUL_NONCE'] ?? '';
-    $sig = $_SERVER['HTTP_X_GHUL_SIG'] ?? '';
-    if (!ctype_digit($time) || abs(time() - (int) $time) > GHUL_MAX_SKEW || !preg_match('/^[0-9a-f]{32}$/', $nonce)) {
-        ghul_fails(true);
-        ghul_fail(401, 'invalid request time');
-    }
+    $time = (string) ($_SERVER['HTTP_X_GHUL_TIME'] ?? '');
+    $nonce = (string) ($_SERVER['HTTP_X_GHUL_NONCE'] ?? '');
+    $sig = (string) ($_SERVER['HTTP_X_GHUL_SIG'] ?? '');
     $msg = "ghul/v1\n" . $_SERVER['REQUEST_METHOD'] . "\n" . ghul_canonical() . "\n" . $time . "\n" . $nonce . "\n" . hash('sha256', $body);
     $expected = hash_hmac('sha256', $msg, (string) hex2bin(GHUL_KEY));
+    // Only requests without the key count as failed attempts and are ever blocked: someone
+    // behind the same address (proxy, mobile network) cannot lock the owner out.
     if (!hash_equals($expected, $sig)) {
+        ghul_fails(false);
         ghul_fails(true);
         ghul_fail(401, 'invalid signature');
+    }
+    if (!ctype_digit($time) || abs(time() - (int) $time) > GHUL_MAX_SKEW || !preg_match('/^[0-9a-f]{32}$/', $nonce)) {
+        ghul_fail(401, 'invalid request time');
     }
     // Each nonce works once (replay protection); old nonces are cleaned up now and then.
     $nonces = ghul_dir('nonces');

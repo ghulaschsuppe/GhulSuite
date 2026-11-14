@@ -208,13 +208,16 @@ impl GhulSuite {
         Ok(info(&stored, if kind == ServerKind::Php { 0 } else { -1 }))
     }
 
+    /// Deletes the package from its server. `ShareNotDeleted` if that server is no longer set
+    /// up (B14: never report a link as gone while its package is still there).
     fn share_remove(o: &mut Open, s: &StoredShare) -> Result<()> {
-        if let Ok(srv) = servers::server(o, &s.server) {
-            if ServerKind::of(&srv) == ServerKind::Php {
-                servers::php_fs(&srv, "")?.share_delete(&s.id)?;
-            } else if !srv.share_dir.is_empty() {
-                servers::open_fs(o, &srv, Some(&srv.share_dir))?.delete(&format!("s/{}", s.id))?;
-            }
+        let srv = servers::server(o, &s.server).map_err(|_| GhulError::ShareNotDeleted)?;
+        if ServerKind::of(&srv) == ServerKind::Php {
+            servers::php_fs(&srv, "")?.share_delete(&s.id)?;
+        } else if !srv.share_dir.is_empty() {
+            servers::open_fs(o, &srv, Some(&srv.share_dir))?.delete(&format!("s/{}", s.id))?;
+        } else {
+            return Err(GhulError::ShareNotDeleted);
         }
         Ok(())
     }
@@ -370,17 +373,25 @@ impl GhulSuite {
         })
     }
 
-    /// Ends a share: the package is deleted from the server at once.
+    /// Ends a share: the package is deleted from the server at once. If the server cannot be
+    /// reached, nothing changes (try again). If its server is no longer set up, the entry goes
+    /// but `ShareNotDeleted` says that the link keeps working until it expires.
     pub fn share_delete(&self, id: String) -> Result<()> {
         self.with_open(|o| {
             let mut list = shares(o);
-            if let Some(s) = list.iter().find(|s| s.id == id).cloned() {
-                Self::share_remove(o, &s)?;
-            }
+            let removed = match list.iter().find(|s| s.id == id).cloned() {
+                Some(s) => match Self::share_remove(o, &s) {
+                    Err(GhulError::ShareNotDeleted) => Err(GhulError::ShareNotDeleted),
+                    Err(e) => return Err(e),
+                    Ok(()) => Ok(()),
+                },
+                None => Ok(()),
+            };
             list.retain(|s| s.id != id);
             put_setting(&mut o.suite, SHARES_KEY, &list)?;
             super::sync::mark_deleted(&mut o.suite.payload.settings, SHARES_KEY, &id);
-            self.save_container(&mut o.suite, SUITE_FILE)
+            self.save_container(&mut o.suite, SUITE_FILE)?;
+            removed
         })
     }
 
@@ -393,7 +404,11 @@ impl GhulSuite {
             let mut keep = Vec::new();
             let mut removed = 0;
             for s in list {
-                if s.expires > 0 && s.expires < now && Self::share_remove(o, &s).is_ok() {
+                // Expired: also gone when its server is no longer set up (the page refuses it anyway).
+                if s.expires > 0
+                    && s.expires < now
+                    && matches!(Self::share_remove(o, &s), Ok(()) | Err(GhulError::ShareNotDeleted))
+                {
                     removed += 1;
                 } else {
                     keep.push(s);

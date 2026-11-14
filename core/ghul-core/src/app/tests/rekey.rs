@@ -480,3 +480,41 @@ fn many_changes_while_the_other_device_is_offline() {
     a.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
     let _ = std::fs::remove_dir_all(&server_dir);
 }
+
+#[test]
+fn a_removed_key_does_not_come_back_through_a_device_that_was_offline() {
+    let server_dir = std::env::temp_dir().join(format!("ghul-b2-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&server_dir);
+    let server = LocalFs::new(&server_dir);
+    let (kf1, kf2, kf3) = (generate_keyfile(), generate_keyfile(), generate_keyfile());
+    let (da, db) = (Dirs::new("b2-a"), Dirs::new("b2-b"));
+    let a = da.suite();
+    a.create(options("pw-123456", Some(kf1.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    a.add_keyfile(kf2.clone(), "Verloren".into()).unwrap();
+    a.sync_folder(&server).unwrap();
+    copy_suite(&server_dir, &db);
+    let b = db.suite();
+    b.unlock("pw-123456".into(), None, None, None, Some(kf1.clone())).unwrap();
+    // A removes the lost key file; B, offline, adds a new one (its protection change is newer).
+    a.remove_slot(slot_id(&a, "Verloren")).unwrap();
+    a.sync_folder(&server).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    b.add_keyfile(kf3.clone(), "Neu".into()).unwrap();
+    b.sync_folder(&server).unwrap();
+    a.sync_folder(&server).unwrap();
+    b.sync_folder(&server).unwrap();
+    for (d, s) in [(&da, &a), (&db, &b)] {
+        let labels: Vec<String> = s.slots().unwrap().into_iter().map(|x| x.label).collect();
+        assert!(!labels.contains(&"Verloren".to_string()), "{labels:?}");
+        assert!(labels.contains(&"Neu".to_string()), "{labels:?}");
+        let lost = Keyfile::parse(&kf2).unwrap();
+        for (name, data) in files(d) {
+            let l = LockedContainer::parse(&data).unwrap();
+            assert!(l.factor_secret(&SecondFactor::Keyfile(&lost)).is_err(), "{name}: the removed key file is back");
+        }
+    }
+    a.lock();
+    assert!(a.unlock("pw-123456".into(), None, None, None, Some(kf2)).is_err());
+    a.unlock("pw-123456".into(), None, None, None, Some(kf3)).unwrap();
+    let _ = std::fs::remove_dir_all(&server_dir);
+}

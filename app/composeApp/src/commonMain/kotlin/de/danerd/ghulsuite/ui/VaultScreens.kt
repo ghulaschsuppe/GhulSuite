@@ -242,10 +242,17 @@ fun VaultsSection(state: AppState) {
             OutlinedButton(onClick = addFile, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.vault_add_file)) }
             Hint(stringResource(Res.string.vault_add_file_hint))
         }
-        OutlinedButton(onClick = {
-            state.foundPostponed = false
-            state.scanFound { if (it.isEmpty()) state.message(noneFound) }
-        }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.vault_scan)) }
+        // Where the files are. Searching only makes sense in an own folder (files copied in by
+        // hand); in the app storage nobody can put files, there "Add vault file" is the way.
+        val storage = state.backend.storageName()
+        Hint(stringResource(Res.string.storage_current, storageLabel(storage)))
+        if (storage != "app") {
+            OutlinedButton(onClick = {
+                state.foundPostponed = false
+                state.scanFound { if (it.isEmpty()) state.message(noneFound) }
+            }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.vault_scan)) }
+            Hint(stringResource(Res.string.vault_scan_hint))
+        }
     }
 
     foreign?.let { r -> ForeignVaultDialog(state, r, onDone = { foreign = null }) }

@@ -55,6 +55,9 @@ pub(super) struct StoredServer {
     /// PHP module: the FTPS login it was uploaded with, kept to update it later (optional).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub upload: Option<StoredUpload>,
+    /// Last edit (Unix ms): the later edit wins when devices synchronise (B13).
+    #[serde(default)]
+    pub changed: i64,
 }
 
 /// FTPS login that a PHP module was uploaded with.
@@ -278,6 +281,9 @@ pub(super) enum ServerHome {
 /// Replaces a stored server with `changed` (same id) in the file it lives in.
 pub(super) fn update_server(o: &mut Open, changed: &StoredServer) -> Result<ServerHome> {
     let mut list = servers(o);
+    let mut changed = changed.clone();
+    changed.changed = super::suite::now_ms();
+    let changed = &changed;
     if let Some(s) = list.iter_mut().find(|s| s.id == changed.id) {
         *s = changed.clone();
         put_setting(&mut o.suite, SERVERS_KEY, &list)?;
@@ -328,6 +334,7 @@ fn stored_from(input: &ServerInput, confirmed: Option<&str>) -> StoredServer {
             dir: u.dir.clone(),
             data_dir: u.data_dir.clone(),
         }),
+        changed: 0,
     }
 }
 
@@ -429,13 +436,34 @@ pub struct PhpModuleInfo {
     pub free: u64,
 }
 
-/// Checks that a server module answers at `url` with access key `key` (hex).
+/// Checks that a server module answers at `url` with access key `key` (hex). If the web server
+/// delivers the file as text instead of running it (its access key would be readable), the
+/// answer is `PhpNotExecuted` (L5).
 #[uniffi::export]
 pub fn php_module_probe(url: String, key: String) -> Result<PhpModuleInfo> {
     let fs =
         PhpFs::new(&PhpConfig { url: url.trim().to_owned(), key: php_key(&key)?, base: String::new(), cert: None })?;
-    let i = fs.info()?;
-    Ok(PhpModuleInfo { version: i.version, current: crate::net::phpfs::MODULE_VERSION, limit: i.limit, free: i.free })
+    match fs.info() {
+        Ok(i) => Ok(PhpModuleInfo {
+            version: i.version,
+            current: crate::net::phpfs::MODULE_VERSION,
+            limit: i.limit,
+            free: i.free,
+        }),
+        Err(_) if reveals_source(url.trim()) => Err(GhulError::PhpNotExecuted),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// Whether `url` delivers the module's PHP source (with its key) instead of running it.
+fn reveals_source(url: &str) -> bool {
+    let Ok(u) = crate::net::http::Url::parse(url) else { return false };
+    let r =
+        crate::net::block_on(crate::net::http::request("GET", &u, &[], b"", None), std::time::Duration::from_secs(15));
+    matches!(r, Ok(r) if {
+        let body = String::from_utf8_lossy(&r.body);
+        body.contains("<?php") || body.contains("GHUL_KEY")
+    })
 }
 
 /// Result of installing a server module.
@@ -664,6 +692,8 @@ impl GhulSuite {
                     && s.url == stored.url)
             });
             let id = stored.id.clone();
+            let mut stored = stored;
+            stored.changed = super::suite::now_ms();
             list.push(stored);
             put_setting(&mut o.suite, SERVERS_KEY, &list)?;
             self.net.lock().unwrap_or_else(|p| p.into_inner()).conn = None;
@@ -748,6 +778,20 @@ impl GhulSuite {
         };
         let tried = if url.trim().is_empty() { module_urls(&upload.host, &dir) } else { vec![url.trim().to_owned()] };
         let found = tried.iter().find_map(|u| php_module_probe(u.clone(), module.key.clone()).ok().map(|i| (u, i)));
+        // L5: delivered as text, the key is readable: take the file down again at once.
+        if found.is_none() && tried.iter().any(|u| reveals_source(u)) {
+            self.with_open(|o| {
+                let mut stored = stored_from(&ftps, confirmed.as_deref());
+                stored.base = String::new();
+                if let Ok(fs) = open_input(o, &stored, true)? {
+                    let path =
+                        if dir.is_empty() { module.file_name.clone() } else { format!("{dir}/{}", module.file_name) };
+                    fs.delete(&path)?;
+                }
+                Ok(())
+            })?;
+            return Err(GhulError::PhpNotExecuted);
+        }
         Ok(PhpInstalled {
             confirm: None,
             url: found.as_ref().map(|(u, _)| (*u).clone()),

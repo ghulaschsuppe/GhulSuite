@@ -95,6 +95,9 @@ struct StoredAccount {
     /// The account's OpenPGP secret key (armored, no passphrase: it lives in the encrypted suite).
     #[serde(default)]
     pgp_key: String,
+    /// Last edit (Unix ms): the later edit wins when devices synchronise (B13).
+    #[serde(default)]
+    changed: i64,
 }
 
 impl Drop for StoredAccount {
@@ -116,6 +119,20 @@ struct ContactKey {
     source: String,
     /// Unix seconds of the last update.
     updated: i64,
+    /// B12: for a key from Autocrypt, the mail it came with (SHA-256 of its Message-ID, else of
+    /// the whole mail): that mail's own signature never counts as confirmed, also when reopened.
+    #[serde(default)]
+    origin: String,
+    /// L7: the user compared the fingerprint with the contact. Only an import replaces it then.
+    #[serde(default)]
+    verified: bool,
+    /// The fingerprint of the key this one replaced (a key change, shown as a warning until
+    /// the new key is confirmed).
+    #[serde(default)]
+    previous: String,
+    /// A confirmed key stays; a mail that offered another one leaves its fingerprint here.
+    #[serde(default)]
+    offered: String,
 }
 
 const KEYS_KEY: &str = "mail_keys";
@@ -162,6 +179,12 @@ pub struct MailKeyInfo {
     pub fingerprint: String,
     pub source: String,
     pub updated: i64,
+    /// The fingerprint was compared with the contact (`mail_verify_key`).
+    pub verified: bool,
+    /// Set after a key change: the fingerprint of the key before (warning until confirmed).
+    pub previous: String,
+    /// A mail offered another key than the confirmed one (warning): its fingerprint.
+    pub offered: String,
 }
 
 #[derive(uniffi::Record, Clone, Debug, PartialEq)]
@@ -383,18 +406,42 @@ fn key_for(o: &Open, email: &str) -> Option<(SignedPublicKey, String)> {
 /// Stores a contact key. Keys from a mail (Autocrypt) never replace keys that were looked up
 /// at the provider or imported by hand.
 fn remember_key(o: &mut Open, email: &str, key: &SignedPublicKey, source: &str) -> Result<bool> {
-    remember_key_seen(o, email, key, source, now_secs())
+    remember_key_seen(o, email, key, source, now_secs(), "")
 }
 
 /// Like [`remember_key`]; `seen` is when the key was seen (for Autocrypt: the mail's date). An
 /// Autocrypt key replaces another Autocrypt key only from a newer mail.
-fn remember_key_seen(o: &mut Open, email: &str, key: &SignedPublicKey, source: &str, seen: i64) -> Result<bool> {
+pub(super) fn remember_key_seen(
+    o: &mut Open,
+    email: &str,
+    key: &SignedPublicKey,
+    source: &str,
+    seen: i64,
+    origin: &str,
+) -> Result<bool> {
     let email = bare(email);
     let fingerprint = mailcrypt::fingerprint(key);
     let mut list = contact_keys(o);
-    if let Some(c) = list.iter().find(|c| c.email == email) {
-        if c.fingerprint == fingerprint || (source == "autocrypt" && (c.source != "autocrypt" || seen <= c.updated)) {
+    let mut previous = String::new();
+    if let Some(c) = list.iter_mut().find(|c| c.email == email) {
+        if c.fingerprint == fingerprint {
             return Ok(false);
+        }
+        // A confirmed key is only replaced by a deliberate import; another key from a mail or
+        // the provider is remembered as a warning (L7).
+        if c.verified && source != "import" {
+            if c.offered != fingerprint {
+                c.offered = fingerprint;
+                put_area_setting(o, VaultKind::Mail, KEYS_KEY, &list)?;
+                return Ok(true);
+            }
+            return Ok(false);
+        }
+        if source == "autocrypt" && (c.source != "autocrypt" || seen <= c.updated) {
+            return Ok(false);
+        }
+        if source != "import" {
+            previous = c.fingerprint.clone();
         }
     }
     list.retain(|c| c.email != email);
@@ -404,6 +451,10 @@ fn remember_key_seen(o: &mut Open, email: &str, key: &SignedPublicKey, source: &
         fingerprint,
         source: source.to_owned(),
         updated: seen,
+        origin: origin.to_owned(),
+        verified: false,
+        previous,
+        offered: String::new(),
     });
     put_area_setting(o, VaultKind::Mail, KEYS_KEY, &list)?;
     Ok(true)
@@ -522,16 +573,23 @@ fn unwrap_message_inner(o: &mut Open, account_id: &str, raw: &[u8]) -> Result<(U
     let own = accounts(o).iter().any(|a| bare(&a.email) == bare(&from));
     let sent = m.date().map(|d| d.to_timestamp()).unwrap_or_else(now_secs);
     let mut learned = false;
+    let origin = {
+        use sha2::Digest;
+        let id = m.message_id().map(|i| i.as_bytes().to_vec()).unwrap_or_else(|| raw.to_vec());
+        crate::kdf::hex(&sha2::Sha256::digest(&id))
+    };
     if let Some(h) = m.header_raw("Autocrypt") {
         if let Some((addr, key)) = mailcrypt::parse_autocrypt(&h.replace(['\r', '\n'], "")) {
             if addr == from && !own {
-                learned = remember_key_seen(o, &addr, &key, "autocrypt", sent)?;
+                learned = remember_key_seen(o, &addr, &key, "autocrypt", sent, &origin)?;
             }
         }
     }
     // A key that came with this very mail proves nothing about this mail: its signature counts
-    // as "key not confirmed" (shown like an unknown key), not as valid.
-    let key_from_this_mail = learned;
+    // as "key not confirmed" (shown like an unknown key), not as valid. Also when the mail is
+    // opened again later (B12): the key remembers which mail it came with.
+    let key_from_this_mail = learned
+        || contact_keys(o).iter().any(|c| c.email == bare(&from) && c.source == "autocrypt" && c.origin == origin);
     let signer_keys: Vec<SignedPublicKey> = key_for(o, &from).map(|(k, _)| vec![k]).unwrap_or_default();
     let signer_name = |fp: Option<String>| fp.map(|_| from.clone()).unwrap_or_default();
     let ct = m.content_type();
@@ -1180,6 +1238,7 @@ impl GhulSuite {
             smtp_cert: input.smtp_cert.clone(),
             signature: String::new(),
             pgp_key: String::new(),
+            changed: 0,
         };
         require_secure(&input.servers)?;
         let cfg = imap_config(&a);
@@ -1246,6 +1305,7 @@ impl GhulSuite {
                 smtp_cert: input.smtp_cert.clone(),
                 signature: input.signature.clone(),
                 pgp_key,
+                changed: super::suite::now_ms(),
             });
             put_area_setting(o, VaultKind::Mail, ACCOUNTS_KEY, &list)?;
             self.net.lock().unwrap_or_else(|p| p.into_inner()).imap.remove(&id);
@@ -1511,10 +1571,35 @@ impl GhulSuite {
                     fingerprint: mailcrypt::pretty_fingerprint(&c.fingerprint),
                     source: c.source.clone(),
                     updated: c.updated,
+                    verified: c.verified,
+                    previous: if c.previous.is_empty() {
+                        String::new()
+                    } else {
+                        mailcrypt::pretty_fingerprint(&c.previous)
+                    },
+                    offered: if c.offered.is_empty() {
+                        String::new()
+                    } else {
+                        mailcrypt::pretty_fingerprint(&c.offered)
+                    },
                 })
                 .collect();
             list.sort_by(|a, b| a.email.cmp(&b.email));
             Ok(list)
+        })
+    }
+
+    /// L7: the user compared the key's fingerprint with the contact (in person or on the phone)
+    /// and it matches: the key counts as confirmed; warnings about a change are cleared.
+    pub fn mail_verify_key(&self, email: String) -> Result<()> {
+        self.with_open(|o| {
+            let mut list = contact_keys(o);
+            let c = list.iter_mut().find(|c| c.email == bare(&email)).ok_or(GhulError::NotFound)?;
+            c.verified = true;
+            c.previous.clear();
+            c.offered.clear();
+            put_area_setting(o, VaultKind::Mail, KEYS_KEY, &list)?;
+            self.save_area(o, VaultKind::Mail)
         })
     }
 
@@ -1660,6 +1745,7 @@ mod tests {
             smtp_cert: None,
             signature: "Viele Grüße\nAlice".into(),
             pgp_key: key.to_owned(),
+            changed: 0,
         }
     }
 

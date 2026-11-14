@@ -381,7 +381,8 @@
     <string name="vault_remove_warning">Die Datei wird aus deinem Ordner gelöscht, mit allen Einträgen.</string>
     <string name="vault_remove_tip">Tipp: Exportiere vorher, was du behalten willst.</string>
     <string name="vault_remove_title">„%1$s“ löschen?</string>
-    <string name="vault_scan">Ordner nach Tresoren durchsuchen</string>
+    <string name="vault_scan">Ordner nach neuen Tresordateien durchsuchen</string>
+    <string name="vault_scan_hint">Nur nötig, wenn du selbst Tresordateien in diesen Ordner kopiert hast. Beim Entsperren sucht die App ohnehin.</string>
     <string name="vault_summary">%1$s · Einträge: %2$s</string>
     <string name="a_attach">Datei anhängen</string>
     <string name="a_check_and_save">Prüfen und speichern</string>

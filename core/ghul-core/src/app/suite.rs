@@ -46,6 +46,9 @@ const NAME_KEY: &str = "name";
 pub(super) const PREVIOUS_KEY: &str = "protection_before";
 /// Practically no limit: 256 changes of the protection while another device is offline (64 bytes each).
 const MAX_PREVIOUS: usize = 256;
+/// Slot IDs (hex) of keys and key files removed on purpose (B2). Synchronised and united, so a
+/// device that missed the removal (and changed its own protection meanwhile) drops them too.
+pub(super) const REMOVED_SLOTS_KEY: &str = "removed_slots";
 
 #[derive(Serialize, serde::Deserialize, Default, Clone, PartialEq)]
 struct PreviousProtection {
@@ -567,6 +570,39 @@ impl Open {
                 Some((FactorSecret::from_bytes(s), code))
             })
             .collect()
+    }
+
+    /// B2: removes keys and key files that some device removed on purpose but that are still
+    /// here (this device missed the removal). Renews the keys then. Returns whether anything changed.
+    pub(super) fn drop_removed_slots(&mut self, now: i64) -> Result<bool> {
+        let removed: Vec<String> = setting(&self.suite, REMOVED_SLOTS_KEY);
+        let doomed: Vec<[u8; 16]> = self
+            .suite
+            .slots()
+            .iter()
+            .filter(|s| s.provides_factor() && removed.contains(&crate::kdf::hex(s.id())))
+            .map(|s| *s.id())
+            .collect();
+        let mut dropped = false;
+        for id in doomed {
+            // The last key or key file stays (a second factor is always required).
+            if self.suite.slots().iter().filter(|s| s.provides_factor()).count() <= 1 {
+                break;
+            }
+            self.remember_protection()?;
+            for (c, _) in self.containers_mut() {
+                match c.remove_slot(&id) {
+                    Ok(()) | Err(crate::vault::VaultError::SlotNotFound) => {}
+                    Err(e) => return Err(e.into()),
+                }
+            }
+            dropped = true;
+        }
+        if dropped {
+            self.renew_keys(true, now)?;
+            super::sync::mark_protection_changed(self)?;
+        }
+        Ok(dropped)
     }
 
     /// B1: after a change of the protection, older copies of the files (backups, `.bak`, server
@@ -2278,6 +2314,9 @@ impl GhulSuite {
                 return Err(GhulError::LastFactor);
             }
             o.remember_protection()?;
+            let mut removed: Vec<String> = setting(&o.suite, REMOVED_SLOTS_KEY);
+            removed.push(crate::kdf::hex(&id));
+            put_setting(&mut o.suite, REMOVED_SLOTS_KEY, &removed)?;
             for (c, _) in o.containers_mut() {
                 match c.remove_slot(&id) {
                     Ok(()) | Err(crate::vault::VaultError::SlotNotFound) => {}

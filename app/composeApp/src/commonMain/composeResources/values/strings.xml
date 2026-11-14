@@ -381,7 +381,8 @@
     <string name="vault_remove_warning">The file is deleted from your folder, with all its entries.</string>
     <string name="vault_remove_tip">Tip: export first what you want to keep.</string>
     <string name="vault_remove_title">Delete “%1$s”?</string>
-    <string name="vault_scan">Search folder for vaults</string>
+    <string name="vault_scan">Search the folder for new vault files</string>
+    <string name="vault_scan_hint">Only needed if you copied vault files into this folder yourself. The app looks anyway when unlocking.</string>
     <string name="vault_summary">%1$s · entries: %2$s</string>
     <string name="a_attach">Attach file</string>
     <string name="a_check_and_save">Check and save</string>
