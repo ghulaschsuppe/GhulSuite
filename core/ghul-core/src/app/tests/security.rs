@@ -289,7 +289,7 @@ fn delete_against_edit_follows_a_fixed_rule() {
     edited.revision = 6;
     edited.modified = 1;
     for (local, remote) in [(&deleted, &edited), (&edited, &deleted)] {
-        let (merged, _, _) = crate::app::sync::merge_entries(&[local.clone()], &[remote.clone()]);
+        let (merged, _, _) = crate::app::sync::merge_entries(std::slice::from_ref(local), std::slice::from_ref(remote));
         assert!(!merged[0].deleted, "an unseen change survives");
         assert_eq!(merged[0].fields.get("title"), Some(&Field::Text("Bank neu".into())));
     }
@@ -301,7 +301,7 @@ fn delete_against_edit_follows_a_fixed_rule() {
     let mut late = edited.clone();
     late.modified = i64::MAX / 2;
     for (local, remote) in [(&seen, &late), (&late, &seen)] {
-        let (merged, _, _) = crate::app::sync::merge_entries(&[local.clone()], &[remote.clone()]);
+        let (merged, _, _) = crate::app::sync::merge_entries(std::slice::from_ref(local), std::slice::from_ref(remote));
         assert!(merged[0].deleted, "a known state is deleted");
     }
 

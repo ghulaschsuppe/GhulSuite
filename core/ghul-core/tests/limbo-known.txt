@@ -1,0 +1,75 @@
+# x509-limbo test cases (https://github.com/C2SP/x509-limbo) that GhulSuite's TLS verifier
+# (rustls-webpki behind core/ghul-core/src/net/tls.rs) accepts although limbo expects them to be
+# refused, and that were checked and judged harmless. One test case ID per line, then "#" and the
+# reason. The nightly test limbo_certificate_validation fails on every other wrong accept.
+#
+# Checked against x509-limbo of 2026-11-14 with rustls 0.23.46 / rustls-webpki 0.103.16: all of these
+# are documented strictness choices of rustls-webpki (it implements the Web PKI profile, not every
+# MUST of RFC 5280 or the CA/Browser Forum rules for issuing CAs). None of them lets a certificate
+# through that has a wrong signature, a wrong name in the SAN, a broken chain or an expired leaf.
+
+# Extensions a conforming CA must (not) set, not checked by verifiers (RFC 5280, CABF profile).
+rfc5280::aki::critical-aki  # criticality of AKI on a root is not checked
+rfc5280::aki::leaf-missing-aki  # AKI is optional for path building in webpki
+rfc5280::aki::intermediate-missing-aki  # AKI is optional for path building in webpki
+rfc5280::aki::cross-signed-root-missing-aki  # AKI is optional for path building in webpki
+rfc5280::ski::critical-ski  # criticality of SKI is not checked
+rfc5280::ski::root-missing-ski  # SKI is optional for path building in webpki
+rfc5280::ski::intermediate-missing-ski  # SKI is optional for path building in webpki
+webpki::aki::root-with-aki-missing-keyidentifier  # AKI contents of trust anchors are not checked
+webpki::aki::root-with-aki-authoritycertissuer  # AKI contents of trust anchors are not checked
+webpki::aki::root-with-aki-authoritycertserialnumber  # AKI contents of trust anchors are not checked
+webpki::aki::root-with-aki-all-fields  # AKI contents of trust anchors are not checked
+webpki::aki::root-with-aki-ski-mismatch  # AKI contents of trust anchors are not checked
+rfc5280::pc::ica-noncritical-pc  # certificate policies are not processed at all
+rfc5280::san::noncritical-with-empty-subject  # SAN criticality is not checked, the SAN itself is
+webpki::san::san-critical-with-nonempty-subject  # SAN criticality is not checked, the SAN itself is
+rfc5280::serial::too-long  # serial number length is a CA issuance rule
+rfc5280::serial::zero  # serial number value is a CA issuance rule
+rfc5280::leaf-ku-keycertsign  # keyCertSign in a leaf is ignored, the leaf cannot act as CA (cA=FALSE)
+webpki::malformed-aia  # AIA is not used (no fetching of intermediates), so it is not parsed
+webpki::eku::ee-anyeku  # leaf has serverAuth next to anyEKU; serverAuth is required and present
+webpki::eku::ee-critical-eku  # EKU criticality is not checked, serverAuth is required and present
+webpki::eku::ee-without-eku  # a leaf without EKU is accepted for any purpose (RFC 5280 semantics)
+webpki::eku::root-has-eku  # EKU of trust anchors is not checked
+
+# Trust anchors: webpki only takes name, key and name constraints of a root, nothing else.
+rfc5280::validity::expired-root  # validity of trust anchors is not checked (as in most verifiers)
+rfc5280::ca-empty-subject  # subject of a trust anchor is not checked
+rfc5280::unknown-critical-extension-root  # extensions of trust anchors are not parsed
+rfc5280::root-missing-basic-constraints  # basic constraints of trust anchors are not checked
+rfc5280::root-non-critical-basic-constraints  # basic constraints of trust anchors are not checked
+rfc5280::root-inconsistent-ca-extensions  # key usage of trust anchors is not checked
+webpki::forbidden-rsa-not-divisible-by-8-in-root  # RSA-2052 root, strong enough; the 8-bit rule is a CA rule
+
+# Name constraints: edge cases of malformed or misplaced constraints, matching names are checked.
+rfc5280::nc::permitted-dns-match-noncritical  # NC criticality is not checked, the constraint is applied
+rfc5280::nc::permitted-empty-sequence-excluded-nonempty  # empty permittedSubtrees treated as absent
+rfc5280::nc::permitted-nonempty-excluded-empty-sequence  # empty excludedSubtrees treated as absent
+rfc5280::nc::invalid-dnsname-leading-period  # leading-period constraint read like most verifiers do
+rfc5280::nc::not-allowed-in-ee-noncritical  # NC in a leaf is ignored, it constrains nothing below
+rfc5280::nc::not-allowed-in-ee-critical  # NC in a leaf is ignored, it constrains nothing below
+webpki::nc::intermediate-permitted-excluded-subtrees-both-null  # empty NC treated as no constraint
+webpki::nc::intermediate-permitted-excluded-subtrees-both-empty-sequences  # empty NC treated as no constraint
+
+# Names: webpki matches only the SAN and never the subject CN, so CN contents do not matter.
+rfc5280::san::underscore-dns  # underscore in a SAN dNSName is tolerated (common in practice)
+webpki::cn::ipv4-hex-mismatch  # CN is ignored, the SAN matches
+webpki::cn::ipv4-leading-zeros-mismatch  # CN is ignored, the SAN matches
+webpki::cn::ipv6-uppercase-mismatch  # CN is ignored, the SAN matches
+webpki::cn::ipv6-uncompressed-mismatch  # CN is ignored, the SAN matches
+webpki::cn::ipv6-non-rfc5952-mismatch  # CN is ignored, the SAN matches
+webpki::cn::punycode-not-in-san  # CN is ignored, the SAN matches
+webpki::cn::utf8-vs-punycode-mismatch  # CN is ignored, the SAN matches
+webpki::cn::not-in-san  # CN is ignored, the SAN matches
+webpki::cn::case-mismatch  # CN is ignored, the SAN matches
+webpki::san::public-suffix-multi-label-wildcard-san  # no Public Suffix List in webpki; such a cert would be CA misissuance
+webpki::san::public-suffix-private-namespace-wildcard-san  # no Public Suffix List in webpki; such a cert would be CA misissuance
+
+# Weak leaf keys: the chain check does not look at the leaf key, but the TLS handshake does. ring
+# verifies RSA handshake signatures only with keys of 2048 bits or more, and DSA and P-192 have no
+# supported signature scheme, so a server with such a key cannot complete a handshake.
+webpki::forbidden-p192-leaf  # no TLS signature scheme for P-192, the handshake fails
+webpki::forbidden-dsa-leaf  # no TLS signature scheme for DSA, the handshake fails
+webpki::forbidden-weak-rsa-in-leaf  # RSA-1024: ring refuses the handshake signature
+webpki::forbidden-rsa-key-not-divisible-by-8-in-leaf  # RSA-2052 is above 2048 bits, the 8-bit rule is a CA rule

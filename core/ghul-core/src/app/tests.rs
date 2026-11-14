@@ -2476,6 +2476,7 @@ mod chaos;
 mod collections;
 mod crazy_user;
 mod everyday;
+mod gnupg;
 mod properties;
 mod rekey;
 mod security;

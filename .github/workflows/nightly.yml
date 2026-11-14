@@ -53,10 +53,33 @@ jobs:
           cargo test --locked --release -p ghul-core --lib -- --include-ignored --nocapture --test-threads=2 \
             crazy everyday chaos attacks absurd fuzz_tests wycheproof collections properties badssl
 
-  monkey:
-    name: App-Fuzzing im Emulator (Monkey, 3 × 30.000 Gesten)
+  # B17/L4: anyone can check that a build comes from this source. The core is built twice, in two
+  # different folders, and must come out byte for byte the same (paths are mapped away).
+  reproducible:
+    name: Reproduzierbarer Build des Kerns
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: a
+      - name: Zweite Kopie in einem anderen Ordner
+        run: cp -r a b
+      - name: Zweimal bauen und vergleichen
+        run: |
+          rustup toolchain install stable --profile minimal
+          for d in a b; do
+            (cd "$d/core" && SOURCE_DATE_EPOCH=0 CARGO_INCREMENTAL=0 \
+              RUSTFLAGS="--remap-path-prefix=$GITHUB_WORKSPACE/$d=/src --remap-path-prefix=$HOME/.cargo=/cargo" \
+              cargo build --locked --release -p ghul-core)
+          done
+          sha256sum a/core/target/release/libghul_core.so b/core/target/release/libghul_core.so | tee hashes.txt
+          test "$(cut -d' ' -f1 hashes.txt | sort -u | wc -l)" = 1
+
+  monkey:
+    name: App-Fuzzing im Emulator (Intent-Angriffe, Monkey 3 × 30.000 Gesten)
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: APK des letzten Laufs von main holen
@@ -76,10 +99,13 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Monkey
+      # Before the monkey: intent attacks on every exported component (tools/intent-attacks.sh,
+      # report and screenshots in monkey-out/intent-attacks/).
+      - name: Intent-Angriffe und Monkey
         env:
           SKIP_MAESTRO: '1'
           MONKEY_EVENTS: '30000'
+          EXTRA_CHECKS: tools/intent-attacks.sh
         run: |
           mkdir -p monkey-out
           tools/ci-emulator.sh dist/ghulsuite-dev.apk monkey-out
@@ -134,3 +160,156 @@ jobs:
           # Unmaintained crates are reported, not failed on.
           cargo audit --deny unmaintained > /tmp/unmaintained.txt 2>&1 || echo "::warning::Nicht mehr gepflegte Abhängigkeiten, siehe Log"
           tail -n 40 /tmp/unmaintained.txt
+
+  # Certificate checking of the TLS connections (IMAP, SMTP, FTPS, GhulDrive) against the
+  # x509-limbo suite, and OpenPGP in both directions with GnuPG. Fails only when a certificate
+  # that must be refused is accepted (and is not explained in core/ghul-core/tests/limbo-known.txt).
+  interop:
+    name: Zertifikatsprüfung (x509-limbo) und OpenPGP mit GnuPG
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: x509-limbo laden
+        run: |
+          mkdir -p interop-out
+          # The current suite on purpose (new test cases count), its hash goes into the report.
+          curl -fsSL --retry 3 -o interop-out/limbo.json https://raw.githubusercontent.com/C2SP/x509-limbo/main/limbo.json
+          sha256sum interop-out/limbo.json | tee interop-out/limbo.sha256
+      - name: Kern bauen (Tests)
+        working-directory: core
+        run: |
+          rustup toolchain install stable --profile minimal
+          cargo test --locked -p ghul-core --lib --no-run
+      - name: TLS-Zertifikatsprüfung gegen x509-limbo
+        working-directory: core
+        env:
+          GHUL_LIMBO: ${{ github.workspace }}/interop-out/limbo.json
+          GHUL_LIMBO_REPORT: ${{ github.workspace }}/interop-out/limbo-report.txt
+        run: cargo test --locked -p ghul-core --lib -- --ignored --nocapture limbo_certificate_validation
+      - name: OpenPGP mit GnuPG (beide Richtungen, Ed25519, RSA, NIST P-256)
+        if: success() || failure()
+        working-directory: core
+        run: |
+          set -o pipefail
+          gpg --version | head -n 2
+          if ! cargo test --locked -p ghul-core --lib -- --ignored --nocapture gnupg_interop 2>&1 | tee ../interop-out/gnupg.txt; then
+            echo "::warning::OpenPGP-Austausch mit GnuPG gestört, siehe gnupg.txt im Artefakt interop"
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: interop
+          path: |
+            interop-out/limbo-report.txt
+            interop-out/limbo.sha256
+            interop-out/gnupg.txt
+          retention-days: 14
+
+  # OWASP ZAP (passive baseline scan) against the PHP server module and the static share viewer,
+  # both served by `php -S` on 127.0.0.1 only (tools/zap-targets.py). Fails only on the rules set
+  # to FAIL in tools/zap-baseline.conf (missing protective headers); everything else warns.
+  zap:
+    name: Web-Scan (OWASP ZAP) des PHP-Moduls und der Freigabeseite
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ZAP_IMAGE: ghcr.io/zaproxy/zaproxy:2.17.0@sha256:9624669db72f54d86c4b46a7064518bd9bf79d8c61a4c31befa9923489f328af
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: ZAP-Abbild laden
+        run: docker pull -q "$ZAP_IMAGE"
+      - name: ZAP Baseline gegen Modul und Freigabeseite
+        run: |
+          mkdir -p zap-out
+          chmod 777 zap-out
+          cp tools/zap-baseline.conf zap-out/
+          python3 tools/zap-targets.py 8081 8082 > zap-out/targets.log 2>&1 &
+          targets=$!
+          for i in $(seq 1 100); do
+            curl -fs -o /dev/null http://127.0.0.1:8081/ghulsuite.php && curl -fs -o /dev/null http://127.0.0.1:8082/ && break
+            sleep 0.2
+          done
+          cat zap-out/targets.log
+          fail=0
+          for t in modul=http://127.0.0.1:8081/ghulsuite.php freigabe=http://127.0.0.1:8082/; do
+            name=${t%%=*}; url=${t#*=}
+            set +e
+            docker run --rm --network host -v "$PWD/zap-out:/zap/wrk:rw" "$ZAP_IMAGE" \
+              zap-baseline.py -t "$url" -c zap-baseline.conf -I -m 2 \
+              -r "zap-$name.html" -J "zap-$name.json" -w "zap-$name.md" > "zap-out/zap-$name.log" 2>&1
+            rc=$?
+            set -e
+            tail -n 30 "zap-out/zap-$name.log"
+            case $rc in
+              0) ;;
+              1) echo "::error::ZAP ($name): Regel auf FAIL verletzt, siehe zap-$name.html"; fail=1 ;;
+              *) echo "::warning::ZAP ($name) lief nicht sauber durch (Code $rc), siehe zap-$name.log" ;;
+            esac
+          done
+          kill "$targets" || true
+          # Medium and high alerts as warnings in the run's summary.
+          python3 - zap-out/zap-*.json <<'PY'
+          import json, sys
+          for path in sys.argv[1:]:
+              try:
+                  report = json.load(open(path))
+              except (OSError, ValueError):
+                  continue
+              for site in report.get("site", []):
+                  for a in site.get("alerts", []):
+                      if int(a.get("riskcode", 0)) >= 2:
+                          print(f"::warning::ZAP {site.get('@name', '')}: {a.get('name') or a.get('alert')} "
+                                f"(Regel {a.get('pluginid')}, {a.get('count', '?')} Stellen)")
+          PY
+          exit $fail
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: zap
+          path: zap-out/
+          retention-days: 14
+
+  # MobSF (static analysis of the APK) in Docker on 127.0.0.1, driven through its REST API by
+  # tools/mobsf-scan.py. The API key is a random value of this run, not a secret. Only warns:
+  # MobSF's findings need a human look, and a broken MobSF must not fail the night.
+  mobsf:
+    name: Statische APK-Prüfung (MobSF)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      MOBSF_IMAGE: opensecurity/mobile-security-framework-mobsf:v4.6.4@sha256:cf1465a3cc0c95488b9a6cdb1c7799d4b576d391ee28232c221f6a196bf2f74c
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: APK des letzten Laufs von main holen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for id in $(gh run list -R "$GITHUB_REPOSITORY" -w android.yml -b main -L 15 --json databaseId -q '.[].databaseId'); do
+            if gh run download "$id" -R "$GITHUB_REPOSITORY" -n ghulsuite-dev -D dist 2> /dev/null; then echo "APK aus Lauf $id"; break; fi
+          done
+          test -f dist/ghulsuite-dev.apk
+      - name: MobSF starten (nur 127.0.0.1)
+        run: |
+          key=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
+          echo "::add-mask::$key"
+          echo "MOBSF_API_KEY=$key" >> "$GITHUB_ENV"
+          docker pull -q "$MOBSF_IMAGE"
+          docker run -d --name mobsf -p 127.0.0.1:8000:8000 -e MOBSF_API_KEY="$key" "$MOBSF_IMAGE"
+      - name: APK scannen
+        run: |
+          if ! python3 tools/mobsf-scan.py --url http://127.0.0.1:8000 --wait 600 dist/ghulsuite-dev.apk mobsf-out; then
+            echo "::warning::MobSF-Scan nicht vollständig, siehe Log und mobsf-docker.log"
+          fi
+      - name: MobSF-Protokoll sichern
+        if: always()
+        run: |
+          mkdir -p mobsf-out
+          docker logs mobsf > mobsf-out/mobsf-docker.log 2>&1 || true
+          docker rm -f mobsf > /dev/null 2>&1 || true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: mobsf
+          path: mobsf-out/
+          retention-days: 14

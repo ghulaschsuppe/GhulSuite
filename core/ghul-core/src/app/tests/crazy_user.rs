@@ -387,7 +387,8 @@ fn run(seed: u64, steps: usize) -> Stats {
         }
         for t in &deleted_logins {
             // Only a change made on another device may bring it back (B18), never nothing.
-            let edited_elsewhere = edited_on.get(t).is_some_and(|devs| devs.iter().any(|d| Some(d) != deleted_on.get(t)));
+            let edited_elsewhere =
+                edited_on.get(t).is_some_and(|devs| devs.iter().any(|d| Some(d) != deleted_on.get(t)));
             assert!(!first.contains(t) || edited_elsewhere, "{t} came back after being deleted (seed {seed})");
         }
     }

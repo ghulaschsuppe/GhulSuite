@@ -28,6 +28,30 @@ struct Verifier {
     seen: Arc<Mutex<Option<String>>>,
 }
 
+impl Verifier {
+    fn new(
+        roots: rustls::RootCertStore,
+        provider: Arc<rustls::crypto::CryptoProvider>,
+        pinned: Option<&str>,
+    ) -> NetResult<Verifier> {
+        let inner = rustls::client::WebPkiServerVerifier::builder_with_provider(Arc::new(roots), provider)
+            .build()
+            .map_err(|e| NetError::Protocol(e.to_string()))?;
+        Ok(Verifier { inner, pinned: pinned.map(str::to_lowercase), seen: Arc::new(Mutex::new(None)) })
+    }
+}
+
+/// The certificate verifier of [`Client`], but trusting only the given roots instead of the
+/// Mozilla ones. For tests against certificate test suites (x509-limbo).
+#[cfg(test)]
+pub(crate) fn verifier_with_roots(
+    roots: rustls::RootCertStore,
+    pinned: Option<&str>,
+) -> NetResult<Arc<dyn ServerCertVerifier>> {
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    Ok(Arc::new(Verifier::new(roots, provider, pinned)?))
+}
+
 impl ServerCertVerifier for Verifier {
     fn verify_server_cert(
         &self,
@@ -96,12 +120,8 @@ impl Client {
         let provider = Arc::new(rustls::crypto::ring::default_provider());
         let mut roots = rustls::RootCertStore::empty();
         roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-        let inner = rustls::client::WebPkiServerVerifier::builder_with_provider(Arc::new(roots), provider.clone())
-            .build()
-            .map_err(|e| NetError::Protocol(e.to_string()))?;
-        let seen = Arc::new(Mutex::new(None));
-        let pinned = pinned.map(str::to_lowercase);
-        let verifier = Verifier { inner, pinned: pinned.clone(), seen: seen.clone() };
+        let verifier = Verifier::new(roots, provider.clone(), pinned)?;
+        let (seen, pinned) = (verifier.seen.clone(), verifier.pinned.clone());
         let config = rustls::ClientConfig::builder_with_provider(provider)
             .with_protocol_versions(versions)
             .map_err(|e| NetError::Protocol(e.to_string()))?

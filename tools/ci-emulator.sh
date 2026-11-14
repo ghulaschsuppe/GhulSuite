@@ -76,6 +76,15 @@ if [ "${SKIP_MAESTRO:-0}" != 1 ]; then
 else
   timeout 120 adb install -r "$apk" > /dev/null
 fi
+# Extra checks on the emulator with the app installed (nightly: tools/intent-attacks.sh). The
+# script in EXTRA_CHECKS is called as `<script> <apk> <output-dir>`; its failure fails the job,
+# but only after the monkey below has run as well.
+extra_failed=""
+if [ -n "${EXTRA_CHECKS:-}" ]; then
+  log "Zusatzprüfung: $EXTRA_CHECKS"
+  timeout "${EXTRA_CHECKS_TIMEOUT:-2400}" "$EXTRA_CHECKS" "$apk" "$out" || extra_failed=1
+  timeout 20 adb shell am force-stop de.danerd.ghulsuite.dev || true
+fi
 # App fuzzing (nightly): tens of thousands of random taps, swipes and keys inside the app.
 # Every crash or "app isn't responding" fails the job; the log names the seed to repeat it.
 if [ "${MONKEY_EVENTS:-0}" -gt 0 ]; then
@@ -94,4 +103,8 @@ if [ "${MONKEY_EVENTS:-0}" -gt 0 ]; then
   done
   [ -z "$failed" ] || exit 1
   log "Monkey ohne Absturz"
+fi
+if [ -n "$extra_failed" ]; then
+  log "::error::Zusatzprüfung $EXTRA_CHECKS fehlgeschlagen"
+  exit 1
 fi
