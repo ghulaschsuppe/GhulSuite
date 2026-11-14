@@ -161,6 +161,10 @@ fn run(seed: u64, steps: usize) -> Stats {
     // What the user created and never deleted (by anyone): must survive.
     let mut logins: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     let mut deleted_logins: BTreeSet<String> = BTreeSet::new();
+    // B18: a login deleted on one device but changed on another device that had not seen the
+    // deletion comes back (the change is kept). Which devices edited / deleted each login:
+    let mut edited_on: BTreeMap<String, BTreeSet<usize>> = BTreeMap::new();
+    let mut deleted_on: BTreeMap<String, usize> = BTreeMap::new();
     let mut counter = 0u32;
     let mut extra_vaults: Vec<String> = Vec::new();
     let mut events: Vec<(String, String)> = Vec::new();
@@ -188,9 +192,10 @@ fn run(seed: u64, steps: usize) -> Stats {
                         for f in e.fields.iter_mut().filter(|f| f.name == "password") {
                             f.value = FieldValue::Secret { value: format!("neu {}", rng.next()) };
                         }
-                        st.note("edit", s.save_entry(pass.clone(), e));
+                        if st.note("edit", s.save_entry(pass.clone(), e)).is_some() {
+                            edited_on.entry(t.clone()).or_default().insert(di);
+                        }
                     }
-                    let _ = t;
                 }
             }
             6 => {
@@ -199,6 +204,7 @@ fn run(seed: u64, steps: usize) -> Stats {
                     // Not yet on this device (created elsewhere, not synchronised): "not found", nothing deleted.
                     if st.note("delete", s.delete_entry(pass.clone(), id.clone())).is_some() {
                         logins.remove(&t);
+                        deleted_on.insert(t.clone(), di);
                         deleted_logins.insert(t);
                     }
                     if rng.chance(50) {
@@ -380,7 +386,9 @@ fn run(seed: u64, steps: usize) -> Stats {
             assert!(first.contains(t), "{t} was lost (seed {seed})");
         }
         for t in &deleted_logins {
-            assert!(!first.contains(t), "{t} came back after being deleted (seed {seed})");
+            // Only a change made on another device may bring it back (B18), never nothing.
+            let edited_elsewhere = edited_on.get(t).is_some_and(|devs| devs.iter().any(|d| Some(d) != deleted_on.get(t)));
+            assert!(!first.contains(t) || edited_elsewhere, "{t} came back after being deleted (seed {seed})");
         }
     }
     let _ = std::fs::remove_dir_all(&server);
