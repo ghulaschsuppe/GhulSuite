@@ -258,7 +258,8 @@
     <string name="set_quick_hint">After unlocking with password and second factor, you can open GhulSuite with your fingerprint or an app PIN for a while.</string>
     <string name="set_quick_pin">App PIN</string>
     <string name="set_quick_validity">Valid for</string>
-    <string name="set_remove_text">“%1$s” will no longer open your suite. Everything else stays valid.</string>
+    <string name="set_remove_text">“%1$s” will no longer open anything you save from now on, not even together with an old backup copy. Your other keys, key files and the recovery sheet stay valid.</string>
+    <string name="slot_needs_update">unlock with it once to bring it up to the current protection</string>
     <string name="set_remove_title">Remove access?</string>
     <string name="set_screenshots">Allow screenshots</string>
     <string name="set_screenshots_warning">Screenshots and screen recordings may then contain your passwords and codes, and the app is visible in the app switcher. Only allow this if you really need it.</string>
@@ -381,7 +382,7 @@
     <string name="vault_remove_tip">Tip: export first what you want to keep.</string>
     <string name="vault_remove_title">Delete “%1$s”?</string>
     <string name="vault_scan">Search folder for vaults</string>
-    <string name="vault_summary">%1$s · entries: %2$s · %3$s</string>
+    <string name="vault_summary">%1$s · entries: %2$s</string>
     <string name="a_attach">Attach file</string>
     <string name="a_check_and_save">Check and save</string>
     <string name="a_connect">Connect</string>
@@ -408,6 +409,7 @@
     <string name="err_cert_untrusted">The server certificate is not trusted (%1$s).</string>
     <string name="err_server_auth">The server rejected the login. Check user name, password or key.</string>
     <string name="err_password_elsewhere">The master password was changed on another device.</string>
+    <string name="err_protection_elsewhere">The keys of your suite were changed on another device.</string>
     <string name="err_not_configured">Not set up yet.</string>
     <string name="err_not_found">Not found.</string>
     <string name="server_add_title">Add server</string>
@@ -442,6 +444,9 @@
     <string name="sync_not_set">No server set for synchronisation.</string>
     <string name="sync_pw_title">New master password</string>
     <string name="sync_pw_text">The master password was changed on another device. Enter the new password to take it over on this device as well.</string>
+    <string name="sync_protection_title">Protection changed</string>
+    <string name="sync_protection_text">A key was removed on another device and a new recovery sheet was made. Confirm once with one of your remaining keys or your key file, then this device synchronises again.</string>
+    <string name="sync_protection_password">The master password was changed there as well. Enter the new password.</string>
     <string name="start_fetch">Fetch from my server</string>
     <string name="start_fetch_text">Your suite is already synchronised to your own server: download it to this device.</string>
     <string name="fetch_text">The encrypted suite is downloaded from the server. Afterwards you unlock it as usual with password and security key or key file.</string>

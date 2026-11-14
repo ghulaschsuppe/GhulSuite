@@ -303,6 +303,7 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
     }
     if (state.found.isNotEmpty() && !state.foundPostponed && top == null) FoundVaultsDialog(state)
     if (state.passwordChangedElsewhere) PasswordChangedDialog(state)
+    if (state.protectionChangedElsewhere && !state.passwordChangedElsewhere) ProtectionChangedDialog(state)
     if (state.contextSheet && top == null) AreaContextSheet(state)
     if (state.calQuickOpen && top == null) CalQuickSheet(state) { state.calQuickOpen = false }
     vaultFor?.let { kind ->

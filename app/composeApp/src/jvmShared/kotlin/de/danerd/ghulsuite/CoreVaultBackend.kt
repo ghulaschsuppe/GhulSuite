@@ -359,6 +359,7 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
                 },
                 it.label,
                 it.created,
+                it.needsUpdate,
             )
         }
     }
@@ -372,6 +373,11 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
 
     override suspend fun removeSlot(id: String) {
         io { suite.removeSlot(id.hexToBytes()) }
+        onProtectionChanged()
+    }
+
+    override suspend fun adoptRemoteProtection(password: String?, pin: String?, keyfile: ByteArray?, onTouchNeeded: () -> Unit) {
+        maybeWithKey(pin) { t -> suite.adoptRemoteProtection(password, t, t?.let { Touch(onTouchNeeded) }, pin, keyfile) }
         onProtectionChanged()
     }
 

@@ -16,13 +16,14 @@ use zeroize::Zeroizing;
 
 use super::error::{Result, VaultError};
 use super::format::{
-    encode_prefix, split_file, ContainerKind, Fido2Slot, Header, KdfParams, KeyfileSlot, RecoverySlot, Slot, MAX_SLOTS,
-    NONCE_LEN,
+    encode_prefix, split_file, ContainerKind, Fido2Slot, Header, KdfParams, KeyfileSlot, PublicWrap, RecoverySlot,
+    Slot, FORMAT_VERSION, MAX_SLOTS, NONCE_LEN,
 };
 use super::keyfile::Keyfile;
 use super::keys::{
-    factor_aad, fido2_slot_key, kek, keyfile_slot_key, open, payload_key, random32, recovery_aad, recovery_slot_key,
-    seal, unwrap32, vmk_aad, wrap32, FactorSecret, Key32, PasswordKey,
+    factor_aad, fido2_slot_key, kek, keyfile_slot_key, open, payload_key, public_key, random32, recovery_aad,
+    recovery_slot_key, seal, slot_private_key, unwrap32, unwrap_with_private, vmk_aad, wrap32, wrap_to_public,
+    FactorSecret, Key32, PasswordKey, INFO_X25519_FIDO2, INFO_X25519_KEYFILE,
 };
 use super::payload::{pad, unpad, Payload, SlotMeta};
 use super::recovery::RecoveryCode;
@@ -136,14 +137,83 @@ impl SuiteKeys {
     }
 }
 
+fn random_slot_id(rng: &mut impl CryptoRngCore) -> [u8; 16] {
+    let mut slot_id = [0u8; 16];
+    rng.fill_bytes(&mut slot_id);
+    slot_id
+}
+
+/// Wraps `s` to a public key; the key comes from a key pair derived by us, so it never has small order.
+fn public_wrap(
+    public_key: [u8; 32],
+    suite_id: &[u8; 16],
+    slot_id: &[u8; 16],
+    s: &FactorSecret,
+    rng: &mut impl CryptoRngCore,
+) -> Result<(PublicWrap, super::format::Wrapped)> {
+    let (ephemeral, wrapped) = wrap_to_public(&public_key, slot_id, s.expose(), &factor_aad(suite_id, slot_id), rng)
+        .ok_or_else(|| VaultError::format("invalid public key in slot"))?;
+    Ok((PublicWrap { public_key, ephemeral }, wrapped))
+}
+
+/// A security key slot (type 4) for `slot_id`.
+fn fido2_slot_with_id(
+    slot_id: [u8; 16],
+    suite_id: &[u8; 16],
+    s: &FactorSecret,
+    reg: &Fido2Registration<'_>,
+    rng: &mut impl CryptoRngCore,
+) -> Slot {
+    let public = public_key(&slot_private_key(reg.hmac_output, INFO_X25519_FIDO2, &slot_id));
+    let (public, wrapped) = public_wrap(public, suite_id, &slot_id, s, rng).expect("own public key");
+    Slot::Fido2(Fido2Slot {
+        slot_id,
+        rp_id: reg.rp_id.to_owned(),
+        credential_id: reg.credential_id.to_vec(),
+        prf_input: reg.prf_input,
+        uv_required: true,
+        public: Some(public),
+        wrapped,
+    })
+}
+
+/// A key file slot (type 5) for `slot_id`.
+fn keyfile_slot_with_id(
+    slot_id: [u8; 16],
+    suite_id: &[u8; 16],
+    s: &FactorSecret,
+    keyfile: &Keyfile,
+    rng: &mut impl CryptoRngCore,
+) -> Slot {
+    let public = public_key(&slot_private_key(keyfile.expose(), INFO_X25519_KEYFILE, &slot_id));
+    let (public, wrapped) = public_wrap(public, suite_id, &slot_id, s, rng).expect("own public key");
+    Slot::Keyfile(KeyfileSlot { slot_id, keyfile_id: keyfile.id(), public: Some(public), wrapped })
+}
+
 fn new_fido2_slot(
     suite_id: &[u8; 16],
     s: &FactorSecret,
     reg: &Fido2Registration<'_>,
     rng: &mut impl CryptoRngCore,
 ) -> Slot {
-    let mut slot_id = [0u8; 16];
-    rng.fill_bytes(&mut slot_id);
+    let slot_id = random_slot_id(rng);
+    fido2_slot_with_id(slot_id, suite_id, s, reg, rng)
+}
+
+fn new_keyfile_slot(suite_id: &[u8; 16], s: &FactorSecret, keyfile: &Keyfile, rng: &mut impl CryptoRngCore) -> Slot {
+    let slot_id = random_slot_id(rng);
+    keyfile_slot_with_id(slot_id, suite_id, s, keyfile, rng)
+}
+
+/// Slots of format version 1 (type 1 and 3), only to test reading and upgrading older files.
+#[cfg(test)]
+pub(crate) fn legacy_fido2_slot(
+    suite_id: &[u8; 16],
+    s: &FactorSecret,
+    reg: &Fido2Registration<'_>,
+    rng: &mut impl CryptoRngCore,
+) -> Slot {
+    let slot_id = random_slot_id(rng);
     let key = fido2_slot_key(reg.hmac_output, &slot_id);
     let wrapped = wrap32(&key, s.expose(), &factor_aad(suite_id, &slot_id), rng);
     Slot::Fido2(Fido2Slot {
@@ -152,21 +222,52 @@ fn new_fido2_slot(
         credential_id: reg.credential_id.to_vec(),
         prf_input: reg.prf_input,
         uv_required: true,
+        public: None,
         wrapped,
     })
 }
 
-fn new_keyfile_slot(suite_id: &[u8; 16], s: &FactorSecret, keyfile: &Keyfile, rng: &mut impl CryptoRngCore) -> Slot {
-    let mut slot_id = [0u8; 16];
-    rng.fill_bytes(&mut slot_id);
+#[cfg(test)]
+pub(crate) fn legacy_keyfile_slot(
+    suite_id: &[u8; 16],
+    s: &FactorSecret,
+    keyfile: &Keyfile,
+    rng: &mut impl CryptoRngCore,
+) -> Slot {
+    let slot_id = random_slot_id(rng);
     let key = keyfile_slot_key(keyfile.expose(), &slot_id);
     let wrapped = wrap32(&key, s.expose(), &factor_aad(suite_id, &slot_id), rng);
-    Slot::Keyfile(KeyfileSlot { slot_id, keyfile_id: keyfile.id(), wrapped })
+    Slot::Keyfile(KeyfileSlot { slot_id, keyfile_id: keyfile.id(), public: None, wrapped })
+}
+
+/// Opens the factor secret of one security key slot with the key's hmac-secret output.
+fn fido2_factor(suite_id: &[u8; 16], f: &Fido2Slot, hmac_output: &[u8; 32]) -> Option<Key32> {
+    let aad = factor_aad(suite_id, &f.slot_id);
+    match &f.public {
+        Some(p) => {
+            let private = slot_private_key(hmac_output, INFO_X25519_FIDO2, &f.slot_id);
+            unwrap_with_private(&private, &p.public_key, &p.ephemeral, &f.slot_id, &f.wrapped, &aad)
+        }
+        None => unwrap32(&fido2_slot_key(hmac_output, &f.slot_id), &f.wrapped, &aad),
+    }
+}
+
+/// Opens the factor secret of one key file slot with the key file.
+fn keyfile_factor(suite_id: &[u8; 16], k: &KeyfileSlot, keyfile: &Keyfile) -> Option<Key32> {
+    let aad = factor_aad(suite_id, &k.slot_id);
+    match &k.public {
+        Some(p) => {
+            let private = slot_private_key(keyfile.expose(), INFO_X25519_KEYFILE, &k.slot_id);
+            unwrap_with_private(&private, &p.public_key, &p.ephemeral, &k.slot_id, &k.wrapped, &aad)
+        }
+        None => unwrap32(&keyfile_slot_key(keyfile.expose(), &k.slot_id), &k.wrapped, &aad),
+    }
 }
 
 /// A parsed container whose header is readable but whose content is still encrypted.
 pub struct LockedContainer {
     kind: ContainerKind,
+    version: u16,
     header: Header,
     data: Vec<u8>,
 }
@@ -175,7 +276,15 @@ impl LockedContainer {
     pub fn parse(data: &[u8]) -> Result<Self> {
         let parts = split_file(data)?;
         let header = Header::parse(parts.header)?;
-        Ok(LockedContainer { kind: parts.kind, header, data: data.to_vec() })
+        if !header.fits_version(parts.version) {
+            return Err(VaultError::format("slot type not allowed in this format version"));
+        }
+        Ok(LockedContainer { kind: parts.kind, version: parts.version, header, data: data.to_vec() })
+    }
+
+    /// The format version of the file (1 or 2).
+    pub fn version(&self) -> u16 {
+        self.version
     }
 
     pub fn kind(&self) -> ContainerKind {
@@ -217,19 +326,16 @@ impl LockedContainer {
         let suite_id = &self.header.suite_id;
         match factor {
             SecondFactor::Fido2 { slot_id, hmac_output } => {
-                let wrapped = self
+                let slot = self
                     .header
                     .slots
                     .iter()
                     .find_map(|s| match s {
-                        Slot::Fido2(f) if &f.slot_id == slot_id => Some(&f.wrapped),
+                        Slot::Fido2(f) if &f.slot_id == slot_id => Some(f),
                         _ => None,
                     })
                     .ok_or(VaultError::SlotNotFound)?;
-                let key = fido2_slot_key(hmac_output, slot_id);
-                unwrap32(&key, wrapped, &factor_aad(suite_id, slot_id))
-                    .map(FactorSecret)
-                    .ok_or(VaultError::WrongSecondFactor)
+                fido2_factor(suite_id, slot, hmac_output).map(FactorSecret).ok_or(VaultError::WrongSecondFactor)
             }
             SecondFactor::Keyfile(keyfile) => {
                 let id = keyfile.id();
@@ -240,8 +346,7 @@ impl LockedContainer {
                         if k.keyfile_id != id {
                             continue;
                         }
-                        let key = keyfile_slot_key(keyfile.expose(), &k.slot_id);
-                        if let Some(sec) = unwrap32(&key, &k.wrapped, &factor_aad(suite_id, &k.slot_id)) {
+                        if let Some(sec) = keyfile_factor(suite_id, k, keyfile) {
                             return Ok(FactorSecret(sec));
                         }
                     }
@@ -329,6 +434,14 @@ impl UnlockedContainer {
 
     /// Encrypts and serializes the container. Increments the payload revision.
     pub fn seal(&mut self, rng: &mut impl CryptoRngCore) -> Result<Vec<u8>> {
+        self.seal_version(FORMAT_VERSION, rng)
+    }
+
+    /// Like [`Self::seal`], in an older format version (only for tests of older files).
+    pub(crate) fn seal_version(&mut self, version: u16, rng: &mut impl CryptoRngCore) -> Result<Vec<u8>> {
+        if !self.header.fits_version(version) {
+            return Err(VaultError::InvalidInput("slots need a newer format version".into()));
+        }
         self.payload.revision =
             self.payload.revision.checked_add(1).ok_or_else(|| VaultError::Payload("revision overflow".into()))?;
         self.payload.factor_secret = Some(self.factor_secret.expose().to_vec());
@@ -336,7 +449,7 @@ impl UnlockedContainer {
         let cbor = self.payload.to_cbor()?;
         let plaintext = pad(&cbor)?;
         let mut out = Vec::with_capacity(14 + header.len() + NONCE_LEN + plaintext.len() + 16);
-        encode_prefix(self.kind, header.len(), &mut out);
+        encode_prefix(self.kind, version, header.len(), &mut out);
         out.extend_from_slice(&header);
         let mut nonce = [0u8; NONCE_LEN];
         rng.fill_bytes(&mut nonce);
@@ -491,6 +604,130 @@ impl UnlockedContainer {
         let k = kek(new_password_key, &self.factor_secret, &cid);
         self.header.vmk = wrap32(&k, &self.vmk, &vmk_aad(&cid), rng);
         self.header.kdf = new_kdf;
+        Ok(())
+    }
+
+    /// The security key or key file slot of version 1 that `factor` opens, rebuilt as a slot
+    /// with a public key (same slot ID, wrapping this container's factor secret). `None` if the
+    /// slot already has a public key or `factor` opens no slot of this container.
+    pub fn upgraded_slot(&self, factor: &SecondFactor<'_>, rng: &mut impl CryptoRngCore) -> Option<Slot> {
+        let suite_id = &self.header.suite_id;
+        let s = &self.factor_secret;
+        self.header.slots.iter().find_map(|slot| match (slot, factor) {
+            (Slot::Fido2(f), SecondFactor::Fido2 { slot_id, hmac_output })
+                if f.public.is_none() && &f.slot_id == slot_id =>
+            {
+                let opened = fido2_factor(suite_id, f, hmac_output)?;
+                if opened.as_ref() != s.expose() {
+                    return None;
+                }
+                let reg = Fido2Registration {
+                    rp_id: &f.rp_id,
+                    credential_id: &f.credential_id,
+                    prf_input: f.prf_input,
+                    hmac_output,
+                };
+                Some(fido2_slot_with_id(f.slot_id, suite_id, s, &reg, rng))
+            }
+            (Slot::Keyfile(k), SecondFactor::Keyfile(kf)) if k.public.is_none() && k.keyfile_id == kf.id() => {
+                let opened = keyfile_factor(suite_id, k, kf)?;
+                if opened.as_ref() != s.expose() {
+                    return None;
+                }
+                Some(keyfile_slot_with_id(k.slot_id, suite_id, s, kf, rng))
+            }
+            _ => None,
+        })
+    }
+
+    /// Replaces the slot with the same ID (e.g. by [`Self::upgraded_slot`]); the label stays.
+    pub fn replace_slot(&mut self, slot: Slot) -> Result<()> {
+        let pos = self.header.slots.iter().position(|s| s.id() == slot.id()).ok_or(VaultError::SlotNotFound)?;
+        let mut slots = self.header.slots.clone();
+        slots[pos] = slot;
+        let candidate = Header { slots, ..self.header.clone() };
+        candidate.validate()?;
+        self.header = candidate;
+        Ok(())
+    }
+
+    /// A new factor secret wrapped for every security key and key file of this container,
+    /// without touching them (their slots carry public keys). Nothing changes here: give the
+    /// result to [`Self::replace_factor`] of every container of the suite. `None` while a slot
+    /// of version 1 remains (it can only get a new secret when its key or key file is used).
+    pub fn renewed_factor(&self, rng: &mut impl CryptoRngCore) -> Result<Option<(FactorSecret, Vec<Slot>)>> {
+        let factor: Vec<&Slot> = self.header.slots.iter().filter(|s| s.provides_factor()).collect();
+        if factor.iter().any(|s| s.is_legacy()) {
+            return Ok(None);
+        }
+        let new_s = FactorSecret::generate(rng);
+        let suite_id = self.header.suite_id;
+        let mut slots = Vec::with_capacity(factor.len());
+        for slot in factor {
+            let mut slot = slot.clone();
+            match &mut slot {
+                Slot::Fido2(Fido2Slot { slot_id, public: Some(p), wrapped, .. })
+                | Slot::Keyfile(KeyfileSlot { slot_id, public: Some(p), wrapped, .. }) => {
+                    let (np, nw) = public_wrap(p.public_key, &suite_id, slot_id, &new_s, rng)?;
+                    *p = np;
+                    *wrapped = nw;
+                }
+                _ => unreachable!("only factor slots with a public key"),
+            }
+            slots.push(slot);
+        }
+        Ok(Some((new_s, slots)))
+    }
+
+    /// Switches to another factor secret and its slots (from [`Self::renewed_factor`]); the
+    /// recovery slot stays. Call [`Self::renew_container_key`] afterwards.
+    pub fn replace_factor(
+        &mut self,
+        factor_secret: FactorSecret,
+        factor_slots: Vec<Slot>,
+        password_key: &PasswordKey,
+        rng: &mut impl CryptoRngCore,
+    ) -> Result<()> {
+        if factor_slots.iter().any(|s| !s.provides_factor()) {
+            return Err(VaultError::InvalidInput("only key and key file slots".into()));
+        }
+        let mut slots = factor_slots;
+        slots.extend(self.header.slots.iter().filter(|s| !s.provides_factor()).cloned());
+        let candidate = Header { slots, ..self.header.clone() };
+        candidate.validate()?;
+        self.header = candidate;
+        self.factor_secret = factor_secret;
+        self.payload.slots.retain(|id, _| self.header.slots.iter().any(|s| &crate::kdf::hex(s.id()) == id));
+        let kdf = self.header.kdf.clone();
+        self.rekey(password_key, kdf, rng)
+    }
+
+    /// Gives the container a new random container key: copies of the file from before (with
+    /// an old recovery code, a removed key or an old password) no longer open the content
+    /// written from now on. The recovery code (if any) gets a new slot for the new key.
+    pub fn renew_container_key(&mut self, password_key: &PasswordKey, rng: &mut impl CryptoRngCore) -> Result<()> {
+        let cid = self.header.container_id;
+        self.vmk = random32(rng);
+        let k = kek(password_key, &self.factor_secret, &cid);
+        self.header.vmk = wrap32(&k, &self.vmk, &vmk_aad(&cid), rng);
+        if let Some(code) = self.recovery_code() {
+            let label = self
+                .header
+                .slots
+                .iter()
+                .find(|s| matches!(s, Slot::Recovery(_)))
+                .and_then(|s| self.payload.slots.get(&crate::kdf::hex(s.id())))
+                .map(|m| (m.label.clone(), m.created))
+                .unwrap_or_default();
+            self.set_recovery_code(&code, &label.0, label.1, rng)?;
+        } else {
+            // Without the code a recovery slot would still open the old key only: drop it.
+            let old: Vec<[u8; 16]> =
+                self.header.slots.iter().filter(|s| matches!(s, Slot::Recovery(_))).map(|s| *s.id()).collect();
+            for id in &old {
+                self.remove_slot(id)?;
+            }
+        }
         Ok(())
     }
 

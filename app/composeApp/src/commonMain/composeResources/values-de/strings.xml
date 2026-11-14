@@ -258,7 +258,8 @@
     <string name="set_quick_hint">Nach dem Entsperren mit Passwort und zweitem Faktor kannst du GhulSuite für eine Weile per Fingerabdruck oder App-PIN öffnen.</string>
     <string name="set_quick_pin">App-PIN</string>
     <string name="set_quick_validity">Gültig für</string>
-    <string name="set_remove_text">„%1$s“ kann deine Suite danach nicht mehr öffnen. Alles andere bleibt gültig.</string>
+    <string name="set_remove_text">„%1$s“ öffnet danach nichts mehr, was du ab jetzt speicherst, auch nicht zusammen mit einer alten Sicherungskopie. Deine übrigen Keys, Schlüsseldateien und das Notfallblatt bleiben gültig.</string>
+    <string name="slot_needs_update">einmal damit entsperren, um ihn auf den neuesten Schutz umzustellen</string>
     <string name="set_remove_title">Zugang entfernen?</string>
     <string name="set_screenshots">Bildschirmfotos erlauben</string>
     <string name="set_screenshots_warning">Bildschirmfotos und -aufnahmen können dann deine Passwörter und Codes enthalten, und die App ist in der App-Übersicht sichtbar. Nur erlauben, wenn du es wirklich brauchst.</string>
@@ -381,7 +382,7 @@
     <string name="vault_remove_tip">Tipp: Exportiere vorher, was du behalten willst.</string>
     <string name="vault_remove_title">„%1$s“ löschen?</string>
     <string name="vault_scan">Ordner nach Tresoren durchsuchen</string>
-    <string name="vault_summary">%1$s · Einträge: %2$s · %3$s</string>
+    <string name="vault_summary">%1$s · Einträge: %2$s</string>
     <string name="a_attach">Datei anhängen</string>
     <string name="a_check_and_save">Prüfen und speichern</string>
     <string name="a_connect">Verbinden</string>
@@ -408,6 +409,7 @@
     <string name="err_cert_untrusted">Dem Server-Zertifikat wird nicht vertraut (%1$s).</string>
     <string name="err_server_auth">Der Server hat die Anmeldung abgelehnt. Prüfe Benutzername, Passwort oder Schlüssel.</string>
     <string name="err_password_elsewhere">Das Master-Passwort wurde auf einem anderen Gerät geändert.</string>
+    <string name="err_protection_elsewhere">Die Schlüssel deiner Suite wurden auf einem anderen Gerät geändert.</string>
     <string name="err_not_configured">Noch nicht eingerichtet.</string>
     <string name="err_not_found">Nicht gefunden.</string>
     <string name="server_add_title">Server hinzufügen</string>
@@ -442,6 +444,9 @@
     <string name="sync_not_set">Kein Server für die Synchronisation gewählt.</string>
     <string name="sync_pw_title">Neues Master-Passwort</string>
     <string name="sync_pw_text">Das Master-Passwort wurde auf einem anderen Gerät geändert. Gib das neue Passwort ein, um es auch auf diesem Gerät zu übernehmen.</string>
+    <string name="sync_protection_title">Schutz geändert</string>
+    <string name="sync_protection_text">Auf einem anderen Gerät wurde ein Key entfernt und ein neues Notfallblatt erstellt. Bestätige einmal mit einem deiner übrigen Keys oder deiner Schlüsseldatei, dann synchronisiert dieses Gerät wieder.</string>
+    <string name="sync_protection_password">Dort wurde auch das Master-Passwort geändert. Gib das neue Passwort ein.</string>
     <string name="start_fetch">Von meinem Server holen</string>
     <string name="start_fetch_text">Deine Suite liegt schon synchronisiert auf deinem eigenen Server: auf dieses Gerät holen.</string>
     <string name="fetch_text">Die verschlüsselte Suite wird vom Server geladen. Danach entsperrst du sie wie gewohnt mit Passwort und Security Key oder Schlüsseldatei.</string>

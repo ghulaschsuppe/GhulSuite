@@ -128,6 +128,12 @@ interface VaultBackend {
     suspend fun newRecoveryCode(label: String): String
     /** Removes a security key or key file (not the last one). */
     suspend fun removeSlot(id: String)
+    /**
+     * A key was removed and the recovery code renewed on another device: a remaining security key
+     * ([pin]) or [keyfile] takes the new protection over, then the sync runs. [password] only if
+     * the master password was changed there as well.
+     */
+    suspend fun adoptRemoteProtection(password: String?, pin: String?, keyfile: ByteArray?, onTouchNeeded: () -> Unit)
     suspend fun changePassword(current: String, new: String)
 
     // --- Import and export
@@ -346,7 +352,8 @@ data class TotpInputUi(
 
 enum class SlotType { SECURITY_KEY, KEYFILE, RECOVERY_CODE }
 
-data class SlotUi(val id: String, val type: SlotType, val label: String, val created: Long)
+/** [needsUpdate]: added with an older app version; it gets the current protection when it is used once. */
+data class SlotUi(val id: String, val type: SlotType, val label: String, val created: Long, val needsUpdate: Boolean = false)
 
 data class PasswordOptionsUi(
     val length: Int = 20,
@@ -445,6 +452,7 @@ enum class VaultErrorKind {
     CERT_UNTRUSTED,
     SERVER_AUTH,
     PASSWORD_CHANGED_ELSEWHERE,
+    PROTECTION_CHANGED_ELSEWHERE,
     NOT_CONFIGURED,
     NOT_FOUND,
     OTHER,

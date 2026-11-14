@@ -144,6 +144,7 @@ internal fun GhulException.toVault(): VaultException {
         is GhulException.CertUntrusted -> VaultException(VaultErrorKind.CERT_UNTRUSTED, fingerprint)
         is GhulException.ServerAuthFailed -> VaultException(VaultErrorKind.SERVER_AUTH, d)
         is GhulException.PasswordChangedElsewhere -> VaultException(VaultErrorKind.PASSWORD_CHANGED_ELSEWHERE, d)
+        is GhulException.ProtectionChangedElsewhere -> VaultException(VaultErrorKind.PROTECTION_CHANGED_ELSEWHERE, d)
         is GhulException.NotConfigured -> VaultException(VaultErrorKind.NOT_CONFIGURED, d)
         is GhulException.NotFound -> VaultException(VaultErrorKind.NOT_FOUND, d)
         is GhulException.UpdateRequired -> VaultException(VaultErrorKind.UPDATE_REQUIRED, d)

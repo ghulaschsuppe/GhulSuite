@@ -206,7 +206,8 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                 for (s in slots) {
                     ListRow(
                         s.label.ifBlank { stringResource(typeLabel(s.type)) },
-                        stringResource(typeLabel(s.type)) + if (s.created > 0) " · " + formatDate(s.created) else "",
+                        stringResource(typeLabel(s.type)) + (if (s.created > 0) " · " + formatDate(s.created) else "") +
+                            if (s.needsUpdate) " · " + stringResource(Res.string.slot_needs_update) else "",
                         leading = {
                             IconTile(
                                 when (s.type) {

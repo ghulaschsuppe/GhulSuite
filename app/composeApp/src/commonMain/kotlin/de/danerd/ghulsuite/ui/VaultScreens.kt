@@ -201,7 +201,7 @@ fun VaultsSection(state: AppState) {
                     when {
                         !v.available -> stringResource(Res.string.vault_missing, v.file)
                         v.outdated -> stringResource(Res.string.vault_outdated)
-                        else -> stringResource(Res.string.vault_summary, stringResource(kindLabel(v.kind)), v.entries.toString(), v.file)
+                        else -> stringResource(Res.string.vault_summary, stringResource(kindLabel(v.kind)), v.entries.toString())
                     },
                     leading = {
                         if (v.available && !v.outdated) IconTile(tabIcon(tab), areaColor(tab)) else IconTile(Icons.Filled.Warning, warnColor())

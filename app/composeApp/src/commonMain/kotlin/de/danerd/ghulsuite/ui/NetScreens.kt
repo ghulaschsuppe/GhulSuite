@@ -27,6 +27,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import de.danerd.ghulsuite.model.PhpModuleUi
+import de.danerd.ghulsuite.model.PickedFile
 import de.danerd.ghulsuite.model.ServerInputUi
 import de.danerd.ghulsuite.model.ServerKindUi
 import de.danerd.ghulsuite.model.ServerSavedUi
@@ -489,14 +490,85 @@ fun PasswordChangedDialog(state: AppState) {
         },
         confirmButton = {
             TextButton(onClick = {
-                state.run(onError = { error = it }, block = { state.backend.net.adoptRemotePassword(password) }) {
+                state.run(onError = { error = it }, block = {
+                    try {
+                        state.backend.net.adoptRemotePassword(password)
+                        true
+                    } catch (e: VaultException) {
+                        // A key was removed there as well: the key dialog takes it over (and asks
+                        // for the password again).
+                        if (e.kind == VaultErrorKind.PROTECTION_CHANGED_ELSEWHERE) false else throw e
+                    }
+                }) { done ->
                     state.passwordChangedElsewhere = false
-                    state.changed()
+                    if (done) state.changed() else state.protectionChangedElsewhere = true
                 }
             }, enabled = password.isNotEmpty() && !state.busy) { Text(stringResource(Res.string.a_take_over)) }
         },
         dismissButton = {
             TextButton(onClick = { state.passwordChangedElsewhere = false }) { Text(stringResource(Res.string.a_later)) }
+        },
+    )
+}
+
+/**
+ * A key was removed and the recovery code renewed on another device: this device can no longer
+ * read the server's files. One touch of a remaining key (or the key file) takes the new
+ * protection over; the new master password is asked for only if it changed as well.
+ */
+@Composable
+fun ProtectionChangedDialog(state: AppState) {
+    val backend = state.backend
+    var withKey by remember { mutableStateOf(true) }
+    var pin by remember { mutableStateOf("") }
+    var keyfile by remember { mutableStateOf<PickedFile?>(null) }
+    var password by remember { mutableStateOf("") }
+    var askPassword by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = {},
+        title = { Text(stringResource(Res.string.sync_protection_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(Res.string.sync_protection_text))
+                FactorChoice(withKey) { withKey = it; error = null }
+                if (withKey) KeyPinField(state, pin) { pin = it; error = null } else KeyfilePicker(keyfile) { keyfile = it; error = null }
+                if (askPassword) {
+                    Hint(stringResource(Res.string.sync_protection_password))
+                    SecretTextField(password, { password = it; error = null }, stringResource(Res.string.l_new_password))
+                }
+                ErrorText(error)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                state.run(onError = { error = it }, block = {
+                    try {
+                        backend.adoptRemoteProtection(
+                            if (askPassword) password else null,
+                            if (withKey) pin else null,
+                            if (withKey) null else keyfile?.bytes,
+                            state.onTouchNeeded,
+                        )
+                        true
+                    } catch (e: VaultException) {
+                        // The master password changed there too: ask for it, then try again.
+                        if (e.kind == VaultErrorKind.PASSWORD_CHANGED_ELSEWHERE && !askPassword) false else throw e
+                    }
+                }) { done ->
+                    if (done) {
+                        state.protectionChangedElsewhere = false
+                        state.changed()
+                        state.sync(quiet = true)
+                    } else {
+                        askPassword = true
+                    }
+                }
+            }, enabled = !state.busy && (if (withKey) keyPinOk(state, pin) else keyfile != null) &&
+                (!askPassword || password.isNotEmpty())) { Text(stringResource(Res.string.a_take_over)) }
+        },
+        dismissButton = {
+            TextButton(onClick = { state.protectionChangedElsewhere = false }) { Text(stringResource(Res.string.a_later)) }
         },
     )
 }

@@ -8,6 +8,10 @@
 //! VMK  = random 256 bit, AEAD(KEK, aad = "ghul/v1/vmk" || container_id)
 //! PKEY = HKDF(VMK, "ghul/v1/payload" || container_id)
 //! ```
+//!
+//! Slots of format version 2 hold an X25519 public key per security key or key file: the
+//! private key is derived from the key's hmac-secret output (or the key file), so the app can
+//! wrap a new `S` for every slot without touching the keys (`wrap_to_public`).
 
 use chacha20poly1305::aead::{Aead, KeyInit, Payload as AeadPayload};
 use chacha20poly1305::{XChaCha20Poly1305, XNonce};
@@ -28,6 +32,9 @@ pub const INFO_SLOT_RECOVERY: &[u8] = b"ghul/v1/slot/recovery";
 pub const AAD_VMK: &[u8] = b"ghul/v1/vmk";
 pub const AAD_FACTOR: &[u8] = b"ghul/v1/factor";
 pub const AAD_RECOVERY: &[u8] = b"ghul/v1/recovery";
+pub const INFO_X25519_FIDO2: &[u8] = b"ghul/v2/slot/fido2-x25519";
+pub const INFO_X25519_KEYFILE: &[u8] = b"ghul/v2/slot/keyfile-x25519";
+pub const INFO_X25519_WRAP: &[u8] = b"ghul/v2/slot/x25519-wrap";
 
 pub type Key32 = Zeroizing<[u8; 32]>;
 
@@ -112,6 +119,64 @@ pub fn keyfile_slot_key(keyfile_secret: &[u8; 32], slot_id: &[u8; 16]) -> Key32 
     hkdf(keyfile_secret, &[INFO_SLOT_KEYFILE, slot_id])
 }
 
+/// X25519 private key of a version-2 slot, derived from the hmac-secret output or key file
+/// secret (`info` = [`INFO_X25519_FIDO2`] or [`INFO_X25519_KEYFILE`]). Clamped as in RFC 7748.
+pub fn slot_private_key(ikm: &[u8; 32], info: &[u8], slot_id: &[u8; 16]) -> x25519_dalek::StaticSecret {
+    x25519_dalek::StaticSecret::from(*hkdf(ikm, &[info, slot_id]))
+}
+
+pub fn public_key(private: &x25519_dalek::StaticSecret) -> [u8; 32] {
+    x25519_dalek::PublicKey::from(private).to_bytes()
+}
+
+fn x25519_wrap_key(shared: &[u8; 32], ephemeral: &[u8; 32], public: &[u8; 32], slot_id: &[u8; 16]) -> Key32 {
+    let mut ikm = Zeroizing::new([0u8; 96]);
+    ikm[..32].copy_from_slice(shared);
+    ikm[32..64].copy_from_slice(ephemeral);
+    ikm[64..].copy_from_slice(public);
+    hkdf(ikm.as_ref(), &[INFO_X25519_WRAP, slot_id])
+}
+
+/// Wraps `secret` for the holder of `public` (X25519 with a fresh ephemeral key). Returns the
+/// ephemeral public key and the wrapped secret; `None` for a public key of small order.
+pub fn wrap_to_public(
+    public: &[u8; 32],
+    slot_id: &[u8; 16],
+    secret: &[u8; 32],
+    aad: &[u8],
+    rng: &mut impl CryptoRngCore,
+) -> Option<([u8; 32], Wrapped)> {
+    let eph = x25519_dalek::StaticSecret::random_from_rng(&mut *rng);
+    let eph_pub = public_key(&eph);
+    let shared = eph.diffie_hellman(&x25519_dalek::PublicKey::from(*public));
+    if !shared.was_contributory() {
+        return None;
+    }
+    let key = x25519_wrap_key(shared.as_bytes(), &eph_pub, public, slot_id);
+    Some((eph_pub, wrap32(&key, secret, aad, rng)))
+}
+
+/// Opens a secret wrapped by [`wrap_to_public`] with the slot's private key.
+pub fn unwrap_with_private(
+    private: &x25519_dalek::StaticSecret,
+    public: &[u8; 32],
+    ephemeral: &[u8; 32],
+    slot_id: &[u8; 16],
+    wrapped: &Wrapped,
+    aad: &[u8],
+) -> Option<Key32> {
+    use subtle::ConstantTimeEq;
+    if !bool::from(public_key(private).ct_eq(public)) {
+        return None;
+    }
+    let shared = private.diffie_hellman(&x25519_dalek::PublicKey::from(*ephemeral));
+    if !shared.was_contributory() {
+        return None;
+    }
+    let key = x25519_wrap_key(shared.as_bytes(), ephemeral, public, slot_id);
+    unwrap32(&key, wrapped, aad)
+}
+
 pub fn factor_aad(suite_id: &[u8; 16], slot_id: &[u8; 16]) -> Vec<u8> {
     [AAD_FACTOR, suite_id, slot_id].concat()
 }
@@ -175,6 +240,30 @@ mod tests {
     fn rejects_weak_kdf() {
         let kdf = KdfParams { memory_kib: 1024, iterations: 3, parallelism: 1, salt: [9; 32] };
         assert!(PasswordKey::derive("pw", &kdf).is_err());
+    }
+
+    #[test]
+    fn public_key_wrap_roundtrip() {
+        use rand_core::SeedableRng;
+        let mut rng = rand_chacha::ChaCha20Rng::seed_from_u64(2);
+        let slot_id = [5u8; 16];
+        let private = slot_private_key(&[7u8; 32], INFO_X25519_FIDO2, &slot_id);
+        let public = public_key(&private);
+        let (eph, w) = wrap_to_public(&public, &slot_id, &[8u8; 32], b"aad", &mut rng).unwrap();
+        assert_eq!(*unwrap_with_private(&private, &public, &eph, &slot_id, &w, b"aad").unwrap(), [8u8; 32]);
+        // Other key material, other slot, other AAD: nothing opens.
+        let other = slot_private_key(&[6u8; 32], INFO_X25519_FIDO2, &slot_id);
+        assert!(unwrap_with_private(&other, &public, &eph, &slot_id, &w, b"aad").is_none());
+        assert!(unwrap_with_private(&private, &public, &eph, &[4u8; 16], &w, b"aad").is_none());
+        assert!(unwrap_with_private(&private, &public, &eph, &slot_id, &w, b"other").is_none());
+        // Same key file or key, other kind of slot: another key pair.
+        let keyfile = slot_private_key(&[7u8; 32], INFO_X25519_KEYFILE, &slot_id);
+        assert_ne!(public_key(&keyfile), public);
+        // Public keys of small order are refused (the shared secret would be known).
+        assert!(wrap_to_public(&[0u8; 32], &slot_id, &[8u8; 32], b"aad", &mut rng).is_none());
+        let mut one = [0u8; 32];
+        one[0] = 1;
+        assert!(wrap_to_public(&one, &slot_id, &[8u8; 32], b"aad", &mut rng).is_none());
     }
 
     #[test]

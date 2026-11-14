@@ -74,6 +74,10 @@ pub enum GhulError {
     ServerAuthFailed,
     #[error("the password was changed on another device")]
     PasswordChangedElsewhere,
+    /// A key was removed and the recovery code renewed on another device: one touch of a
+    /// remaining key (or the key file) takes the new protection over (`adopt_remote_protection`).
+    #[error("the protection was changed on another device")]
+    ProtectionChangedElsewhere,
     #[error("no server set up for this")]
     NotConfigured,
     // --- import
