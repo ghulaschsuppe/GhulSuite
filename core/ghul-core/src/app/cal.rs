@@ -323,13 +323,7 @@ fn validate(ev: &mut CalEvent) -> Result<()> {
 pub(crate) const MAX_REMINDER_MINUTES: u32 = 366 * 1440;
 
 fn tombstone(e: &mut Entry) {
-    e.fields.clear();
-    e.tags.clear();
-    e.folder = None;
-    e.extra.clear();
-    e.deleted = true;
-    e.revision += 1;
-    e.modified = now_ms();
+    e.make_tombstone(now_ms());
 }
 
 fn live<'a>(c: &'a UnlockedContainer, t: &'a str) -> impl Iterator<Item = &'a Entry> + 'a {

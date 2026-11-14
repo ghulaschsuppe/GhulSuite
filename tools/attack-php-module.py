@@ -116,7 +116,7 @@ def main():
         planted = [
             "x.php", "x.PHP", "x.pHp", "x.php5", "x.php7", "x.phtml", "x.phar", "x.pht", "x.phps", "x.cgi", "x.pl", "x.py", "x.sh",
             "x.shtml", ".htaccess", ".htpasswd", ".user.ini", "dir/.htaccess", "dir/x.php", "x.php.", "x.php ", " x.php", "x.php..",
-            "x.", "x ", ".", "x.php/y",
+            "x.", "x ", ".", "x.php/y", "x.php.jpg", "x.phtml.png", "a.b.PHP7.txt", "x.cgi.gif",
         ]
         for p in planted:
             for a in ["write", "write_part", "mkdir"]:
@@ -199,7 +199,8 @@ def main():
         # --- guessing the key is slowed down (last: locks this address) ------------------------
         codes = [call(port, {"a": "info"}, key=secrets.token_bytes(32))[0] for _ in range(30)]
         check("too many failures are locked out", 429 in codes, True)
-        check("locked out even with the right key (for ten minutes)", call(port, {"a": "info"})[0], 429)
+        # B15: the owner (with the key) is never locked out, also behind the same address.
+        check("not locked out with the right key", call(port, {"a": "info"})[0], 200)
     finally:
         server.terminate()
         shutil.rmtree(work, ignore_errors=True)

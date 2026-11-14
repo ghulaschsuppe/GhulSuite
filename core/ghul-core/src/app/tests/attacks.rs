@@ -134,9 +134,12 @@ fn stolen_device_files_server_and_backup_reveal_nothing() {
     for (p, data) in all_files(&d.root).into_iter().chain(all_files(&server)) {
         assert_no_marks(&p.display().to_string(), &data);
     }
-    // The ZIP directories list file names, and vault files are named after their vaults
-    // (see docs/TESTPROTOKOLL.md, finding about vault names in file names): only the contents count.
-    let _ = (&backup, &export);
+    // File names say nothing either (F23): not here, not on the server, not in the backup.
+    for p in files_under(&d.root).into_iter().chain(files_under(&server)) {
+        let name = p.file_name().unwrap().to_string_lossy().into_owned();
+        assert_no_marks(&format!("file name {name}"), name.as_bytes());
+    }
+    let _ = &export;
     // Inside the backup ZIP as well (entries stored, but check unpacked too).
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(backup)).unwrap();
     for i in 0..z.len() {
@@ -144,6 +147,7 @@ fn stolen_device_files_server_and_backup_reveal_nothing() {
         let mut buf = Vec::new();
         std::io::Read::read_to_end(&mut f, &mut buf).unwrap();
         assert_no_marks(&format!("backup entry {}", f.name().unwrap()), &buf);
+        assert_no_marks("backup entry name", f.name().unwrap().as_bytes());
     }
     let _ = std::fs::remove_dir_all(&server);
 }

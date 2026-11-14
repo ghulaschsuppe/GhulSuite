@@ -111,6 +111,8 @@ class Settings(private val store: KeyValueStore) {
     var autoLockSeconds by int("auto_lock_seconds", 60)
     var lockOnScreenOff by bool("lock_on_screen_off", true)
     var shakeToLock by bool("shake_to_lock", true)
+    /** B5: the panic lock also removes the mail logins kept for notifications (no more mails until unlocked). */
+    var panicStopsMail by bool("panic_stops_mail", false)
     /** 0 = low, 1 = medium, 2 = high sensitivity. */
     var shakeSensitivity by int("shake_sensitivity", 1)
     /** 0 = never clear. */

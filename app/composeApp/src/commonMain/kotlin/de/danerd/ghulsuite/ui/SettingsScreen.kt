@@ -185,6 +185,8 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                         ChoiceRow(stringResource(Res.string.set_shake_sensitivity), SHAKE_OPTIONS, settings.shakeSensitivity) { settings.shakeSensitivity = it }
                     }
                     Hint(stringResource(Res.string.set_panic_hint))
+                    SwitchRow(stringResource(Res.string.set_panic_mail), settings.panicStopsMail) { settings.panicStopsMail = it }
+                    Hint(stringResource(Res.string.set_panic_mail_hint))
                 } else {
                     // On wide windows the lock is in the sidebar, else in the top bar.
                     Hint(stringResource(if (LocalWide.current) Res.string.set_panic_hint_sidebar else Res.string.set_panic_hint_desktop))
@@ -206,7 +208,8 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                 for (s in slots) {
                     ListRow(
                         s.label.ifBlank { stringResource(typeLabel(s.type)) },
-                        stringResource(typeLabel(s.type)) + if (s.created > 0) " · " + formatDate(s.created) else "",
+                        stringResource(typeLabel(s.type)) + (if (s.created > 0) " · " + formatDate(s.created) else "") +
+                            if (s.needsUpdate) " · " + stringResource(Res.string.slot_needs_update) else "",
                         leading = {
                             IconTile(
                                 when (s.type) {
@@ -238,6 +241,8 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                 }
                 OutlinedButton(onClick = { newCode = true }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.a_new_code)) }
                 Hint(stringResource(Res.string.set_swap_hint))
+                // L1: old backups still open with what was valid back then.
+                Hint(stringResource(Res.string.set_lost_hint))
                 Hint(stringResource(Res.string.storage_current, storageLabel(backend.storageName())))
             }
 

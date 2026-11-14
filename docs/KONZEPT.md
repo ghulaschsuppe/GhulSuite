@@ -38,7 +38,7 @@ verschlüsselten Dateien, die man überall ablegen kann. Speicher und Mailserver
 | Mail-Benachrichtigung | **Ja, auch bei gesperrter App**: mit eigenem, gerätegebundenem Mail-Zugang (Abschnitt 9.3); geändert am 11.11.2026 |
 | Schnell-Entsperren | **Fingerabdruck und/oder App-PIN**, optional und mit engen Grenzen (Abschnitt 6.5) |
 | Module | Jeder Bereich (GhulPass, GhulAuth, später GhulMail, GhulDrive) ist in den Einstellungen **abschaltbar**; er verschwindet dann aus dem Menü, die Daten bleiben erhalten |
-| Panikfunktion | **Sofort sperren** (Stufe 1), auch durch **Schütteln**; kein Löschen, kein Notfall-Passwort (Abschnitt 6.6) |
+| Sofortsperre | **Sofort sperren** (Stufe 1), auch durch **Schütteln**; kein Löschen, kein Notfall-Passwort (Abschnitt 6.6) |
 | Erster Speicher-Adapter | **SFTP**: eigener Server mit SSH/SFTP ist vorhanden |
 | Drive-Speicher | **Eigene Server bzw. vServer** (SFTP, WebDAV, S3, Server-Modul); lokale Datenträger nur als verschlüsseltes Sicherungsziel |
 | Plattformen | **Zuerst nur Android.** Windows folgt später; die Architektur ist von Anfang an darauf ausgelegt (Abschnitt 4.1) |
@@ -46,7 +46,7 @@ verschlüsselten Dateien, die man überall ablegen kann. Speicher und Mailserver
 | Wiederherstellungscode | **Pflicht** bei jeder Suite; öffnet alles allein, auch ohne Passwort, Key und Schlüsseldatei; danach wird ein neues Passwort gesetzt |
 | Suite und Tresore | **Der Ordner ist die Suite:** Alle Tresordateien im Ordner gehören dazu, es gibt keine Liste und keine Frage „gehört das dazu?“. Je Bereich beliebig viele Tresore (z. B. GhulPass „Privat“ und „Arbeit“), später ebenso mehrere Mail- und Drive-Konten. `suite.ghlsuite` hält nur Einstellungen (geändert am 11.11.2026, Konzept A) |
 | Erster Start | Auswahl: **neu einrichten**, **vorhandene Suite öffnen** (Ordner) oder **einzelnen Tresor öffnen** (Datei; um ihn wird eine neue Suite gebaut, nur dieser Bereich wird eingeschaltet) |
-| Speicherort | Standard: privater App-Speicher; optional ein eigener Ordner (z. B. USB-Stick). Suite und Tresore liegen im **selben Ordner** |
+| Speicherort | Standard: privater App-Speicher; optional ein eigener Ordner (z. B. USB-Stick). Suite und Tresore liegen im **selben Ordner**. „Speicherort wechseln“ (Optionen → Tresore) kopiert alle Dateien, prüft jede Kopie Byte für Byte und nutzt erst dann den neuen Ort; ein Ordner mit einer anderen Suite wird nie überschrieben, die alten Dateien bleiben liegen |
 | GhulAuth-Passwort | Alle Tresore einer Suite haben dasselbe Passwort und dieselben Faktoren. Wer ein getrenntes Passwort will, legt eine zweite Suite an |
 | Lizenz | **AGPL-3.0-or-later** |
 | Windows-Code-Signatur | **Nein** (SmartScreen-Warnung beim ersten Start wird in Kauf genommen) |
@@ -156,8 +156,7 @@ Daten neu verschlüsselt werden müssen.
 
 Mindestens ein Key oder eine Schlüsseldatei muss immer eingetragen sein. Jeder Key und jede Schlüsseldatei öffnet
 zusammen mit dem Passwort dasselbe Faktor-Geheimnis `S`. Darum lässt sich eine Schlüsseldatei später gegen einen Key
-tauschen (Key hinzufügen, Datei entfernen), ohne dass etwas neu verschlüsselt wird oder der Wiederherstellungscode
-ungültig wird.
+tauschen (Key hinzufügen, Datei entfernen), ohne dass der Wiederherstellungscode oder die übrigen Keys ungültig werden.
 
 ### 6.2 Schlüsselhierarchie
 
@@ -176,8 +175,11 @@ flowchart TB
 1. `PK = Argon2id(NFC(Passwort), suite_salt)`: einmal pro Entsperren. Mindestens 64 MiB und 3 Durchläufe,
    kalibriert auf ca. 1 Sekunde am langsamsten Gerät.
 2. Jeder zweite Faktor hat einen **Slot**, der das zufällige **Faktor-Geheimnis `S`** (256 Bit) verschlüsselt enthält.
-   - FIDO2-Slot: Schlüssel = `HKDF(hmac-secret(Key, slot_salt))`
-   - Schlüsseldatei-Slot: Schlüssel = `HKDF(Geheimnis der Datei)`
+   - FIDO2-Slot: privater X25519-Schlüssel = `HKDF(hmac-secret(Key, slot_salt))`
+   - Schlüsseldatei-Slot: privater X25519-Schlüssel = `HKDF(Geheimnis der Datei)`
+   - Im Slot steht der zugehörige **öffentliche** Schlüssel. Damit kann die App ein neues `S` für jeden Key
+     verschließen, ohne ihn zu berühren (Formatversion 2; Slots älterer Versionen ziehen beim nächsten Entsperren
+     mit diesem Key um).
 3. Je Container: `KEK = HKDF-SHA256(PK ‖ S, info = "ghul/v1/kek" ‖ Container-UUID)`
 4. Der `KEK` entschlüsselt den zufälligen **Container-Hauptschlüssel (VMK)**. Aus dem VMK wird der Inhalts-Schlüssel
    abgeleitet; der Header ist als AAD eingebunden. Exakte Ableitungen: [`docs/FORMAT.md`](FORMAT.md), Abschnitt 4.
@@ -189,6 +191,12 @@ flowchart TB
 - Jeder Container enthält alle Slots in seinem eigenen Header und lässt sich daher **auch einzeln** öffnen,
   z. B. nur `.ghlpss` vom USB-Stick ohne Suite-Container.
 - Passwort ändern geht mit einem einzigen Key. Ein Key oder eine Schlüsseldatei wird hinzugefügt oder entfernt, indem man einen Slot hinzufügt oder löscht. Die App aktualisiert dabei alle Container. Der letzte zweite Faktor lässt sich nicht entfernen.
+- **Erneuern bei jeder Schutzänderung:** Neues Notfallblatt, neues Passwort oder ein entfernter Key geben jedem
+  Container einen neuen VMK; ein entfernter Key erneuert zusätzlich `S` für alle übrigen Keys. So öffnet ein
+  verlorenes Notfallblatt oder ein entfernter Key zusammen mit einer **alten Sicherungskopie** nichts, was danach
+  gespeichert wurde. Die alte Kopie selbst zeigt weiter den Stand von damals.
+- **Dateinamen verraten nichts:** Tresordateien heißen nach ihrer zufälligen Kennung (`3f9a1c2b7d4e5f60.ghlpss`),
+  der Name steht nur verschlüsselt darin.
 - **Der Ordner ist die Suite:** Beim Entsperren öffnet die App jede Tresordatei im Ordner mit Passwort und Faktor.
   Eine Datei, die auf einem anderen Gerät angelegt und in den Ordner kopiert wurde, ist einfach dabei. Gelöscht wird ein
   Tresor, indem seine Datei verschwindet. Eine beschädigte Datei wird als „beschädigt“ angezeigt, der Rest öffnet sich.
@@ -206,7 +214,8 @@ flowchart TB
 
 - **Pflicht** bei jeder Suite. Derselbe Code steckt in **jeder** Datei des Ordners und öffnet sie direkt (ohne Passwort,
   Key oder Schlüsseldatei), auch eine einzelne Tresordatei ohne den Rest. Danach wird ein neues Master-Passwort gesetzt; Keys, Schlüsseldateien und der
-  Code selbst bleiben gültig. Empfohlen wird anschließend ein neuer Code.
+  Code selbst bleiben gültig. Empfohlen wird anschließend ein neuer Code. Ein neuer Code macht das alte Blatt
+  wertlos, auch zusammen mit einer alten Sicherungskopie (für alles, was danach gespeichert wird).
 - Bewusste Abwägung: Wer Notfallblatt **und** Dateien hat, hat Zugriff. Das Blatt ist wie ein Tresorschlüssel aufzubewahren.
 
 - 256 Bit Zufall, dargestellt als 52 Zeichen Base32 in Vierergruppen mit Prüfsumme, zusätzlich als QR-Code.
@@ -234,14 +243,14 @@ Nach einer vollständigen Entsperrung (Passwort und Key) lässt sich die App fü
     nach **5 Fehlversuchen** wird der PIN-Zugang gelöscht.
 - **Gültigkeit** (1 Stunde bis 7 Tage, Standard 24 Stunden) zählt ab dem **letzten vollständigen Entsperren**
   (signierter Zeitstempel, nur mit `S` fälschbar).
-- Passwort und Key sind immer wieder nötig: nach **jedem Neustart**, nach Ablauf, nach einer **Panik-Sperre**, nach
+- Passwort und Key sind immer wieder nötig: nach **jedem Neustart**, nach Ablauf, nach einer **Sofortsperre**, nach
   einem **Passwortwechsel** und wenn Fingerabdrücke geändert wurden.
 - **Ehrlich:** In der Gültigkeitszeit reichen das entsperrte Handy plus Finger bzw. App-PIN. Deshalb optional und
   standardmäßig aus. Ein Angreifer mit Root-Zugriff auf das laufende Gerät könnte den Fehlversuchszähler umgehen;
   die PIN ist aber an den Hardware-Schlüssel des Geräts gebunden, ein Durchprobieren außerhalb des Geräts ist nicht möglich.
 - **Nicht verfügbar in der portablen Windows-Version.**
 
-### 6.6 Panik-Sperre
+### 6.6 Sofortsperre
 
 Ein Fingerabdruck kann erzwungen werden, ein Passwort im Kopf nicht so leicht. Deshalb gibt es eine Sofort-Sperre:
 
@@ -305,6 +314,12 @@ des Inhalts eingebunden.
 ## 8. Speicherorte und Synchronisation
 
 ### 8.1 Zwei getrennte Wege
+
+GhulSuite bringt keine Anbindung an Cloud-Ordner mit (kein Nextcloud-, Dropbox- oder Syncthing-Client). Wer die
+Dateien in einem eigenen Ordner hält, kann ihn mit einem selbst installierten Programm abgleichen; das ist erlaubt,
+aber nicht nötig. Entsteht dabei eine Konfliktkopie derselben Datei, führt die App beide beim Entsperren zusammen.
+Tresordateien werden am Inhalt erkannt (Kennung im verschlüsselten Kopf), nicht am Namen: Umbenennen schadet nicht,
+die App gibt der Datei beim nächsten Entsperren ihren neutralen Namen zurück.
 
 1. **Speicher-Adapter (automatische Synchronisation):** für Tresore, Suite-Container und Drive.
 2. **Export und Import (manuell, überall):** Container-Datei auf USB-Stick, in einen Cloud-Ordner, per Mail an sich selbst
@@ -433,7 +448,7 @@ Datenleck-Prüfung …), bleibt auf dem Gerät. Die Bereichsseiten der Optionen 
 
 **Einrichtungsassistent** in acht Schritten: Master-Passwort, zweiter Faktor, Speicherort, Synchronisation (optional),
 Bereiche (mit Speicherwahl für GhulDrive), Sperren, Entsperren (Schnell entsperren = Fingerabdruck oder App-PIN; gültig
-4 Std., 24 Std., 3 Tage, 7 Tage oder immer, nach Neustart, Panik-Sperre oder Passwortwechsel trotzdem wieder Passwort
+4 Std., 24 Std., 3 Tage, 7 Tage oder immer, nach Neustart, Sofortsperre oder Passwortwechsel trotzdem wieder Passwort
 und Key), Wiederherstellungscode. Die Suite entsteht nach Schritt 3; der Code gilt erst als bestätigt, wenn ein Block
 richtig abgetippt wurde. **Absturzsicher:** Wurde der Code nie bestätigt, verlangt die App nach dem Entsperren einen
 neuen (ohne „später“). Liegen Tresordateien ohne Suite-Datei vor, erkennt die App die unterbrochene Einrichtung, und
@@ -475,11 +490,13 @@ Zugänge an (`rk = false`), der Key speichert nichts.
 - Zugangsdaten und Kontoeinstellungen nur im Suite-Container. Der Mail-Zwischenspeicher liegt verschlüsselt auf dem Gerät.
 - **Benachrichtigungen auch bei gesperrter App** (Entscheidung vom 11.11.2026). Damit der Tresor dafür nicht offen
   bleiben muss, bekommt jedes Mail-Konto einen **eigenen Abruf-Zugang auf dem Gerät**: Die IMAP-Zugangsdaten werden
-  zusätzlich mit einem gerätegebundenen Android-Keystore-Schlüssel gespeichert (ohne Biometrie, nur bei entsperrtem
-  Gerät, StrongBox wenn vorhanden). Der Hintergrunddienst kann damit nur **prüfen, ob neue Mails da sind**: Inhalte
-  und alle anderen Geheimnisse bleiben im gesperrten Tresor.
+  zusätzlich mit einem gerätegebundenen Android-Keystore-Schlüssel gespeichert (ohne Biometrie, im Sicherheitschip
+  **StrongBox**, wo vorhanden, sonst in der geschützten Umgebung des Keystores). Er ist auch bei gesperrtem Gerät
+  nutzbar, sonst kämen bei gesperrtem Handy keine Benachrichtigungen. Der Hintergrunddienst kann damit nur **prüfen,
+  ob neue Mails da sind**: Inhalte und alle anderen Geheimnisse bleiben im gesperrten Tresor.
   - Inhalt der Benachrichtigung einstellbar: neutral („Neue Nachricht“, Standard), Absender, oder Absender und Betreff.
-  - Pro Konto abschaltbar; die Panik-Sperre löscht auch die Abruf-Zugänge.
+  - Standardmäßig an, pro Konto abschaltbar. Die Sofortsperre lässt die Abruf-Zugänge bestehen, damit Mails weiter
+    ankommen; wahlweise löscht sie sie mit („Sofortsperre stoppt auch Mail-Benachrichtigungen“, bis zum nächsten Entsperren).
   - Wo der Anbieter es erlaubt, sollte dafür ein **App-Passwort** genutzt werden, das sich einzeln widerrufen lässt.
   - **Ehrlich:** Wer das entsperrte Handy samt Root-Zugriff hat, kommt an diesen Abruf-Zugang, also an das Postfach,
     nicht an Passwörter, 2FA oder Drive.
@@ -499,10 +516,9 @@ Zugänge an (`rk = false`), der Key speichert nichts.
   senden, Antworten (mit `In-Reply-To`/`References`), Allen antworten, Weiterleiten, Markieren, Ungelesen, Verschieben,
   Löschen über den Papierkorb, Suche, Kopie gesendeter Mails im Ordner „Gesendet“.
 - Kein Zwischenspeicher auf dem Gerät (alles wird bei Bedarf geladen).
-- Benachrichtigungen: Opt-in je Konto. Die Abruf-Daten (nur IMAP) liegen AES-GCM-verschlüsselt mit einem
-  Android-Keystore-Schlüssel; dieser ist **auch bei gesperrtem Gerät** nutzbar, sonst kämen bei gesperrtem Handy keine
-  Benachrichtigungen. Inhalt immer neutral (Kontoname und Anzahl), Prüfung alle 15 Minuten (WorkManager).
-  Absender/Betreff als Option, PGP, gemeinsamer Posteingang und Proton-Import folgen.
+- Benachrichtigungen: siehe oben (Abruf-Zugang je Konto, AES-GCM mit einem Keystore-Schlüssel, StrongBox wo
+  vorhanden). Sofort per IMAP IDLE, zusätzlich alle 15 Minuten (WorkManager). Inhalt wählbar (neutral, Absender,
+  Absender und Betreff); auf dem Sperrbildschirm immer die neutrale Fassung.
 
 **Ehrliche Grenzen:**
 - Mails von außen liegen beim Anbieter im Klartext, sofern nicht mit PGP verschlüsselt.
@@ -612,7 +628,7 @@ Zugänge an (`rk = false`), der Key speichert nichts.
 | Container-Datei gestohlen (Stick, Cloud, Server, Gerät) | wertlos ohne Passwort **und** Key bzw. Schlüsseldatei (oder das Notfallblatt) |
 | Passwort ausgespäht | wertlos ohne Key |
 | Key gestohlen | wertlos ohne Passwort; der Key sperrt sich nach 8 falschen PINs |
-| Entsperren per Fingerabdruck wird erzwungen | Panik-Sperre vorher auslösen (Schütteln); danach nur noch Passwort und Key |
+| Entsperren per Fingerabdruck wird erzwungen | Sofortsperre vorher auslösen (Schütteln); danach nur noch Passwort und Key |
 | Gerät mit aktivem Fingerabdruck-Zugang gestohlen | ohne deinen Finger wertlos; erlischt spätestens nach Neustart oder Ablauf der Frist |
 | SFTP-Geräteschlüssel gestohlen | nur Zugriff auf verschlüsselte Blöcke im eingesperrten Ordner; Schlüssel auf dem Server entfernen |
 | Key **und** Passwort gestohlen | Zugriff, sofort Slot des Keys löschen (von jedem anderen Gerät aus) |
@@ -662,7 +678,7 @@ Zugänge an (`rk = false`), der Key speichert nichts.
 | Anbindung über den Android-Dateidialog als Sync | gestrichen | unzuverlässig; bleibt für Export und Import |
 | FTP-Adapter | gestrichen | unsicher bzw. unzuverlässig; Server-Modul als Alternative |
 | Mail-Abruf im Hintergrund | geplant (v0.5) | mit eigenem Abruf-Zugang, siehe Abschnitt 9.3 |
-| Panik: lokale Daten löschen, Notfall-Passwort, Fernsperre | nicht geplant | Stufe 1 reicht kryptografisch; Täuschung ist schwer überzeugend umzusetzen |
+| Sofortsperre: lokale Daten löschen, Notfall-Passwort, Fernsperre | nicht geplant | Stufe 1 reicht kryptografisch; Täuschung ist schwer überzeugend umzusetzen |
 | OAuth-Mailanbieter (Gmail, Microsoft) | später, vielleicht | Aufwand und Kosten der Google-Prüfung |
 | Windows-Ordner-Synchronisation für Drive | später | aufwendig; zuerst Drive-Ansicht in der App |
 | Browser-Erweiterung für Windows | später | zuerst Auto-Type |
@@ -680,7 +696,7 @@ Zugänge an (`rk = false`), der Key speichert nichts.
 | 0 ✓ | PRF-Test im Browser | Key liefert deterministisch und offline |
 | 0b ✓ | **Android-Prototyp:** CTAP2 per USB-C mit deinem Key (`hmac-secret`, PIN, RP-ID `ghulsuite.invalid`), Rust-Kern per UniFFI in einer Compose-Multiplatform-App | Technische Machbarkeit auf Android bestätigt |
 | 1 ✓ | `docs/FORMAT.md` und `ghul-core`: Schlüssel, Container, Testvektoren, Fuzzing | Geprüfter Kern |
-| 2 | **GhulPass + GhulAuth** für Android: Einrichtung, Notfallblatt, Fingerabdruck, Panik-Sperre, Autofill, QR-Scan, Import, Export | Ersetzt Proton Pass und den Authenticator (lokal und per Export) |
+| 2 | **GhulPass + GhulAuth** für Android: Einrichtung, Notfallblatt, Fingerabdruck, Sofortsperre, Autofill, QR-Scan, Import, Export | Ersetzt Proton Pass und den Authenticator (lokal und per Export) |
 | 3 | **Speicher-Adapter** SFTP (zuerst, gegen deinen Server) und WebDAV, Synchronisation der Container, Spiegel | Automatische Synchronisation und Sicherung |
 | 4 | **GhulDrive** für Android, dazu die Adapter S3 und Server-Modul | Ersetzt Cloud-Speicher von Drittanbietern |
 | 5 | **GhulMail** für Android | Ersetzt Mail-Apps von Drittanbietern |

@@ -35,13 +35,17 @@ Die meisten „sicheren“ Suiten verlangen, dass du einem Unternehmen vertraust
 dessen Zukunft. GhulSuite dreht das um:
 
 - 🔐 **Ende-zu-Ende verschlüsselt, immer.** Alles wird auf deinem Gerät verschlüsselt, bevor es irgendwohin geht.
-  Dein Server sieht nur Datensalat: keine Inhalte, keine Datei- und Ordnernamen deiner Ablage.
+  Dein Server sieht nur Datensalat: keine Inhalte, keine Datei- und Ordnernamen deiner Ablage, nicht einmal die
+  Namen deiner Tresore.
 - 🏠 **Dein Server, deine Regeln.** Ein günstiges Standard-Webhosting mit PHP reicht. Keine Datenbank, kein Docker,
   kein Root-Zugang nötig. Oder jeder Server mit SFTP/FTPS.
 - 🗝️ **Zwei Faktoren, ohne Ausnahme.** Master-Passwort **plus** Security Key (FIDO2) oder Schlüsseldatei.
-  Dazu ein Wiederherstellungscode mit Notfallblatt für den Tag, an dem alles schiefgeht.
+  Dazu ein Wiederherstellungscode mit Notfallblatt für den Tag, an dem alles schiefgeht. Verlierst du einen Key
+  oder das Blatt, entfernst bzw. erneuerst du es: Ab dann öffnet es nichts mehr, auch nicht mit einer alten Sicherung.
 - 📦 **Der Ordner ist die Suite.** Deine Daten sind normale, verschlüsselte Dateien. Kopieren, sichern, auf den
-  USB-Stick legen, ohne Export-Zwang und ohne Anbieterbindung.
+  USB-Stick legen, ohne Export-Zwang und ohne Anbieterbindung. Standard ist der private App-Speicher; unter
+  Optionen → Tresore wechselst du jederzeit in einen eigenen Ordner und zurück (alles wird kopiert und geprüft).
+  Dateinamen sind egal: Umbenannte Tresordateien erkennt die App am Inhalt.
 - 🧩 **Eine App statt fünf.** Ein Entsperren, ein Design, eine Synchronisation.
 - 💯 **Open Source.** Jede Zeile ist hier nachlesbar.
 
@@ -55,7 +59,7 @@ dessen Zukunft. GhulSuite dreht das um:
 | 🟠 | **GhulMail**: E-Mail | Jedes IMAP/SMTP-Postfach · OpenPGP ohne Einrichtung (Autocrypt, WKD): signiert immer, verschlüsselt automatisch · Alle Posteingänge, Unterhaltungen, Labels · Entwürfe, Später senden · Benachrichtigungen mit wählbarem Inhalt · offline lesen · als Standard-Mail-App nutzbar (Android) |
 | 🔴 | **GhulCal**: Kalender | Termine verschlüsselt im Suite-Ordner · Monat, Woche, Tag, Liste · Serien und Erinnerungen · Schnell-Eintragen („Zahnarzt Fr 10 Uhr“) · Feiertage nach Bundesland, Österreich, Schweiz · mehrere Kalender, Geburtstage mit Alter · Import und Export als .ics, Zeitzonen werden umgerechnet · bewusst ohne CalDAV |
 
-Dazu: **Panik-Sperre** (Schütteln oder Schnellkachel), Auto-Sperre, Entsperren per Fingerabdruck oder App-PIN,
+Dazu: **Sofortsperre** (Schütteln oder Schnellkachel), Auto-Sperre, Entsperren per Fingerabdruck oder App-PIN,
 Schutz vor Bildschirmfotos, Komplett-Sicherung als ZIP und Synchronisation zwischen all deinen Geräten.
 
 ## Auch auf dem großen Bildschirm
@@ -105,7 +109,7 @@ Mails brauchen keinen eigenen Server: GhulMail spricht direkt mit deinem Postfac
   unabhängig geprüften Testvektoren.
 - **Kern in Rust**, eine gemeinsame Codebasis für Android und Windows; Fuzzing, Abhängigkeitsprüfung und Tests gegen
   echte SFTP-, FTPS-, IMAP- und SMTP-Server in jeder CI-Runde.
-- Ein offenes [Sicherheits-Audit](docs/AUDIT.md) beschreibt Risiken und was dagegen getan wurde.
+- Der [Sicherheitsbericht](docs/AUDIT.md) fasst alle Audits und Testrunden zusammen: was behoben ist, was offen ist und wogegen GhulSuite schützt.
 
 ## Was geprüft ist und was noch fehlt
 

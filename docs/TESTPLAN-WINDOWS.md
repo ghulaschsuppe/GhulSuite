@@ -49,7 +49,7 @@ Jeder Test hat eine Nummer, die mit **W** beginnt (z. B. **WE3**), damit sie sic
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| WL1 | Optionen → Auto-Sperre & Panik: „Sofort“. Zu einem anderen Programm wechseln, 5 Sekunden warten, zurück. | Gesperrt. |
+| WL1 | Optionen → Sperren: „Sofort“. Zu einem anderen Programm wechseln, 5 Sekunden warten, zurück. | Gesperrt. |
 | WL2 | „Datei wählen“ (z. B. Import) öffnen und wieder schließen. | **Nicht** gesperrt (eigene Dialoge zählen nicht als Hintergrund). |
 | WL3 | Windows mit Win+L sperren und wieder anmelden. | GhulSuite ist gesperrt („Sperren, wenn Windows gesperrt wird“). |
 | WL4 | 15 Minuten nichts in GhulSuite tun (Fenster im Vordergrund). | Gesperrt. |

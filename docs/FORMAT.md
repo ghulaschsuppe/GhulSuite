@@ -1,8 +1,9 @@
-# GhulSuite: Dateiformat, Version 1
+# GhulSuite: Dateiformat, Version 2
 
-**Stand:** 13.11.2026 (ein Bereich, eine Datei: `.ghldrv` und `.ghlmail` neu; zweiter Faktor immer Pflicht; derselbe Wiederherstellungscode in jeder Datei; der Ordner ist die Suite) · gilt für `.ghlpss`, `.ghltotp`, `.ghlcal`, `.ghldrv`, `.ghlmail`, `.ghlsuite` und `.ghlkey`
+**Stand:** 14.11.2026 (Version 2: Keys und Schlüsseldateien mit öffentlichem Schlüssel, innere Schlüssel werden bei jeder Schutzänderung erneuert; Dateinamen ohne Tresornamen. Version 1 wird weiter gelesen) · gilt für `.ghlpss`, `.ghltotp`, `.ghlcal`, `.ghldrv`, `.ghlmail`, `.ghlsuite` und `.ghlkey`
 **Referenzimplementierung:** `core/ghul-core/src/vault/`
-**Testvektoren:** [`docs/testvectors/container-v1.json`](testvectors/container-v1.json), unabhängig geprüft mit
+**Testvektoren:** [`docs/testvectors/container-v2.json`](testvectors/container-v2.json) und für ältere Dateien
+[`container-v1.json`](testvectors/container-v1.json), unabhängig geprüft mit
 [`tools/verify_testvectors.py`](../tools/verify_testvectors.py) (Python, andere Krypto-Bibliotheken)
 
 Diese Spezifikation ist so geschrieben, dass eine zweite Implementierung allein daraus entstehen kann.
@@ -47,7 +48,7 @@ aktualisieren“ statt „beschädigt“ (Fehler `UpdateRequired`).
 ```
 Offset        Länge  Feld
 0             8      magic
-8             2      format_version (u16) = 1
+8             2      format_version (u16) = 2 (1 bei Dateien älterer App-Versionen)
 10            4      header_len H (u32), 1 ≤ H ≤ 65536
 14            H      header (TLV-Records, Abschnitt 3)
 14+H          24     payload_nonce
@@ -55,7 +56,8 @@ Offset        Länge  Feld
 ```
 
 - Maximale Dateigröße: 256 MiB.
-- Leser lehnen `format_version ≠ 1` ab.
+- Leser akzeptieren `format_version` 1 und 2 und lehnen alles andere ab. Version 2 unterscheidet sich nur durch die
+  Slot-Typen 4 und 5 (Abschnitt 3.2); in einer Datei der Version 1 sind sie unzulässig. Geschrieben wird immer Version 2.
 - **AAD des Inhalts** = Bytes `0 … 14+H−1` (Magic, Version, Header-Länge und Header). Damit sind auch Dateityp
   und Version geschützt: Ein `.ghlpss`, dessen Magic auf `GHULTOTP` geändert wurde, lässt sich nicht mehr öffnen.
 
@@ -98,19 +100,30 @@ slot_type (u8) ‖ slot_id[16] ‖ typabhängige Felder
 
 | Typ | Name | liefert | Inhalt |
 |---|---|---|---|
-| 1 | FIDO2 `hmac-secret` | Faktor-Geheimnis `S` | siehe unten |
+| 1 | FIDO2 `hmac-secret` (nur noch gelesen) | Faktor-Geheimnis `S` | siehe unten |
 | 2 | Wiederherstellung | Container-Schlüssel `VMK` | `nonce[24] ‖ wrapped_vmk[48]` |
-| 3 | Schlüsseldatei | Faktor-Geheimnis `S` | `keyfile_id[8] ‖ nonce[24] ‖ wrapped_S[48]` |
+| 3 | Schlüsseldatei (nur noch gelesen) | Faktor-Geheimnis `S` | `keyfile_id[8] ‖ nonce[24] ‖ wrapped_S[48]` |
+| 4 | FIDO2 `hmac-secret` mit öffentlichem Schlüssel | Faktor-Geheimnis `S` | wie Typ 1, vor `nonce` zusätzlich `public_key[32] ‖ ephemeral[32]` |
+| 5 | Schlüsseldatei mit öffentlichem Schlüssel | Faktor-Geheimnis `S` | `keyfile_id[8] ‖ public_key[32] ‖ ephemeral[32] ‖ nonce[24] ‖ wrapped_S[48]` |
 
-**Typ 1, FIDO2 `hmac-secret`:**
+Die Typen 1 und 3 stammen von älteren App-Versionen: Die App liest sie, schreibt aber nur noch die Typen 4 und 5.
+Ein Slot vom Typ 1 oder 3 wird beim nächsten Entsperren mit genau diesem Key oder dieser
+Schlüsseldatei in Typ 4 bzw. 5 umgewandelt (gleiche `slot_id`, Abschnitt 4.2).
+
+**Typ 1 und 4, FIDO2 `hmac-secret`:**
 
 ```
 rp_id_len (u8, 1…255) ‖ rp_id (UTF-8)
 ‖ credential_id_len (u16, 1…1023) ‖ credential_id
 ‖ prf_input[32]
 ‖ options (u8): Bit 0 = PIN-Prüfung erforderlich (muss gesetzt sein), andere Bits 0
+‖ public_key[32] ‖ ephemeral[32]        (nur Typ 4)
 ‖ nonce[24] ‖ wrapped_S[48]
 ```
+
+**Typ 4 und 5, mit öffentlichem Schlüssel:** Der Slot trägt den öffentlichen X25519-Schlüssel, dessen privater
+Schlüssel nur mit dem Key (bzw. der Schlüsseldatei) entsteht. So kann die App ein **neues** `S` für jeden Key
+verpacken, ohne dass er dafür berührt werden muss (Abschnitt 4.6).
 
 **Typ 2, Wiederherstellung mit Vollzugriff:** Der Code öffnet den Container-Schlüssel direkt,
 ohne Passwort, Security Key oder Schlüsseldatei. In GhulSuite trägt **jede Datei** eines Ordners einen solchen Slot
@@ -121,11 +134,11 @@ für **denselben** Code; der Code öffnet also jede Datei auch einzeln.
 
 Regeln:
 - `slot_id` ist innerhalb des Containers eindeutig.
-- Mindestens ein Slot vom Typ 1 oder 3 muss vorhanden sein: Ein zweiter Faktor ist **immer** Pflicht.
-- Slots vom Typ 1 und 3 dürfen beliebig gemischt werden. Jeder davon öffnet dasselbe `S`; Hinzufügen oder Entfernen
-  eines Slots ändert nichts an den anderen.
+- Mindestens ein Slot vom Typ 1, 3, 4 oder 5 muss vorhanden sein: Ein zweiter Faktor ist **immer** Pflicht.
+- Slots vom Typ 1, 3, 4 und 5 dürfen beliebig gemischt werden. Jeder davon öffnet dasselbe `S`; Hinzufügen eines Slots
+  ändert nichts an den anderen, Entfernen erneuert `S` für die übrigen (Abschnitt 4.6).
 - Bezeichnungen der Slots („Key zu Hause“) stehen **nicht** im Header, sondern verschlüsselt im Inhalt (Abschnitt 5).
-- Alle Container einer Suite tragen **identische** Slots vom Typ 1 und 3. So öffnet eine Key-Berührung (oder eine
+- Alle Container einer Suite tragen **identische** Slots vom Typ 1, 3, 4 und 5. So öffnet eine Key-Berührung (oder eine
   Schlüsseldatei) alle Container.
 
 ## 4. Kryptografie
@@ -152,7 +165,7 @@ Leere Passwörter sind unzulässig.
 
 ### 4.2 Zweiter Faktor → Faktor-Geheimnis `S`
 
-**FIDO2-Slot:**
+**FIDO2-Slot (Typ 1, nur noch gelesen; `hmac_salt` und `hmac_output` gelten auch für Typ 4):**
 
 ```
 hmac_salt   = SHA-256("WebAuthn PRF" ‖ 0x00 ‖ prf_input)       (wie WebAuthn-PRF, auch im Browser nutzbar)
@@ -161,10 +174,25 @@ slot_key    = HKDF(hmac_output, "ghul/v1/slot/fido2" ‖ slot_id)
 S           = AEAD-Decrypt(slot_key, nonce, wrapped_S, aad = "ghul/v1/factor" ‖ suite_id ‖ slot_id)
 ```
 
+**Typ 4 und 5 (X25519):**
+
+```
+seed        = HKDF(hmac_output, "ghul/v2/slot/fido2-x25519" ‖ slot_id)      (Typ 4)
+seed        = HKDF(keyfile.secret, "ghul/v2/slot/keyfile-x25519" ‖ slot_id)  (Typ 5)
+private     = X25519-Schlüssel aus seed (geklemmt nach RFC 7748)
+public_key  = X25519(private, 9)                                            muss dem Slot entsprechen
+shared      = X25519(private, ephemeral)                                    darf nicht nur aus Nullen bestehen
+slot_key    = HKDF(shared ‖ ephemeral ‖ public_key, "ghul/v2/slot/x25519-wrap" ‖ slot_id)
+S           = AEAD-Decrypt(slot_key, nonce, wrapped_S, aad = "ghul/v1/factor" ‖ suite_id ‖ slot_id)
+```
+
+Zum Verpacken erzeugt die App einen zufälligen Schlüssel `e`, setzt `ephemeral = X25519(e, 9)` und
+`shared = X25519(e, public_key)`; der Rest ist gleich. Dafür braucht sie nur `public_key` aus dem Slot.
+
 `hmac-secret` liefert mit und ohne PIN-Prüfung verschiedene Werte; GhulSuite verwendet immer den Wert **mit** PIN-Prüfung.
 Die RP-ID ist `ghulsuite.invalid` (reservierte Endung nach RFC 6761, damit keine Webseite das Credential ansprechen kann).
 
-**Schlüsseldatei-Slot:**
+**Schlüsseldatei-Slot (Typ 3, nur noch gelesen):**
 
 ```
 slot_key = HKDF(keyfile.secret, "ghul/v1/slot/keyfile" ‖ slot_id)
@@ -206,15 +234,32 @@ Alle Nonces (24 Byte) werden bei jedem Schreiben zufällig neu erzeugt. Bei 192 
 - **Nur Passwort:** liefert `PK`, ohne zweiten Faktor aber kein `S`. Einen Schutz nur mit Passwort gibt es nicht.
 - **Wiederherstellungscode:** öffnet den Container allein. Wer das Notfallblatt hat, hat Zugriff, es ist wie ein
   Tresorschlüssel aufzubewahren. 256 Bit Zufall sind nicht zu erraten.
-- **Schlüsseldatei gegen Key tauschen:** Key-Slot hinzufügen, Schlüsseldatei-Slot entfernen. `S`, `VMK` und der
-  Wiederherstellungscode bleiben gleich; nichts wird ungültig. (Eine ältere Kopie einer Datei öffnet sich weiterhin
-  mit der damals gültigen Schlüsseldatei, wie bei jedem entfernten Key.)
-- **Passwort ändern:** neuer Salt, neues `PK`, `VMK` neu verpacken. Dafür genügt ein einziger Key, die Daten werden
-  nicht neu verschlüsselt.
-- **Key oder Schlüsseldatei hinzufügen bzw. entfernen:** nur einen Slot hinzufügen oder löschen (nie den letzten).
+- **Key oder Schlüsseldatei hinzufügen:** nur einen Slot hinzufügen; alles andere bleibt gültig.
+- **Passwort ändern, neuer Wiederherstellungscode, Key oder Schlüsseldatei entfernen:** Danach wird erneuert
+  (Abschnitt 4.6). Die übrigen Keys, Schlüsseldateien und der aktuelle Code bleiben gültig.
 - **Container einer Suite sind getrennt:** Jeder hat eine eigene `container_id` und damit eigenen `KEK`, `VMK` und Inhalts-Schlüssel.
 - **Fehlerunterscheidung:** Ein falscher zweiter Faktor wird erkannt (Slot öffnet nicht), eine fremde Schlüsseldatei
   schon an ihrer ID. Schlägt danach nur noch der `KEK` fehl, ist das Passwort falsch.
+
+### 4.6 Erneuern bei jeder Schutzänderung
+
+Eine ältere Kopie einer Datei (Sicherung, `.bak`, ältere Serverversion) öffnet sich mit dem, was damals galt:
+dem alten Code, einem inzwischen entfernten Key, dem alten Passwort. Damit sie nichts öffnet, was danach gespeichert
+wird, gilt:
+
+| Änderung | Neuer `VMK` in jeder Datei | Neues `S` |
+|---|---|---|
+| Neuer Wiederherstellungscode | ja | nein |
+| Passwort ändern (auch nach Wiederherstellung mit dem Code) | ja | nein |
+| Key oder Schlüsseldatei entfernen | ja | ja, für alle übrigen Slots (nur Typ 4 und 5) |
+
+- Neuer `VMK`: 32 Byte Zufall, mit dem `KEK` verpackt; der Wiederherstellungs-Slot wird für den neuen `VMK` neu angelegt.
+- Neues `S`: 32 Byte Zufall, für jeden übrigen Slot mit dessen `public_key` neu verpackt (neues `ephemeral`, gleiche
+  `slot_id`). Alle Dateien der Suite bekommen dieselben neuen Slots.
+- Solange noch ein Slot vom Typ 1 oder 3 übrig ist, kann `S` nicht erneuert werden (dafür bräuchte die App diesen
+  Key). Dann wird nur der `VMK` erneuert; die App zeigt den Slot als „einmal damit entsperren“ an, und die nächste
+  Schutzänderung erneuert auch `S`.
+- Wer eine alte Kopie öffnen kann, kennt danach das alte `S`. Ohne das aktuelle Passwort öffnet das nichts.
 
 ---
 
@@ -246,7 +291,9 @@ Ein CBOR-Map mit Text-Schlüsseln. **Unbekannte Schlüssel müssen beim Zurücks
 
 **Der Ordner ist die Suite:** Alle Tresordateien eines Ordners mit derselben `SUITE_ID` gehören zusammen und tragen
 dieselben Faktor-Slots, dasselbe Passwort und denselben Code. Es gibt keine Liste der Tresore. Der Name eines Tresors
-steht verschlüsselt in `settings.name`. Der Suite-Container (`suite.ghlsuite`) enthält nur Einstellungen und kann aus
+steht verschlüsselt in `settings.name`; der **Dateiname** verrät ihn nicht: die ersten 16 Hex-Zeichen der
+`CONTAINER_ID` und die Endung der Art, z. B. `3f9a1c2b7d4e5f60.ghlpss`. Ältere App-Versionen haben Tresore nach ihrem
+Namen benannt; solche Dateien werden beim Entsperren und beim Synchronisieren umbenannt. Der Suite-Container (`suite.ghlsuite`) enthält nur Einstellungen und kann aus
 jeder Tresordatei neu erzeugt werden.
 
 **Rollback-Erkennung:** Der Suite-Container merkt sich in `settings.revisions` je `container_id` (hex) die höchste
@@ -262,9 +309,15 @@ gesehene `revision`. Taucht eine niedrigere auf, warnt die App, bis der Stand be
 | `revision` | uint | Änderungszähler des Eintrags (zum Zusammenführen) |
 | `modified` | int | Unix-Zeit in Millisekunden |
 | `deleted` | bool | Löschmarker; Felder werden geleert, der Eintrag bleibt für die Synchronisation erhalten |
+| `deleted_from` | uint | nur bei Löschmarkern: die `revision`, die gelöscht wurde (fehlt bei älteren Löschmarkern) |
 | `fields` | map | Feldname → Feld (unten) |
 | `tags` | array of text | Schlagworte |
 | `folder` | text | optional |
+
+**Zusammenführen zweier Stände desselben Eintrags:** Die höhere `revision` gewinnt, bei Gleichstand die spätere
+`modified`. Ausnahme Löschen gegen Ändern: Eine Löschmarke gewinnt nur gegen Stände mit `revision` ≤ `deleted_from`,
+also gegen das, was das löschende Gerät kannte. Eine Änderung, die es nie gesehen hat, bleibt erhalten. Die Uhren der
+Geräte spielen dabei keine Rolle. Löschmarken ohne `deleted_from` folgen der allgemeinen Regel.
 
 **Feld:** `{ "t": Typ, "v": Wert }` mit
 
@@ -358,6 +411,9 @@ verrät sie nichts Verwertbares.
 | Wiederherstellung über den Container-Schlüssel | Hilft auch bei vergessenem Passwort; übersteht Passwortwechsel, weil `VMK` dabei gleich bleibt |
 | Zweiter Faktor immer Pflicht, Schlüsseldatei als eigener Slot-Typ | Einheitlicher Schutz; Schlüsseldatei und Key sind austauschbar, ohne dass etwas neu verschlüsselt oder ein Code ungültig wird |
 | Slot-Bezeichnungen verschlüsselt | Der Header verrät nicht, welche Keys es gibt oder wo sie liegen |
+| Öffentlicher Schlüssel je Key (Version 2) | Ein neues `S` nach dem Entfernen eines Keys erreicht alle übrigen Keys, ohne dass jemand sie holen und berühren muss |
+| Erneuern bei jeder Schutzänderung | Ein verlorenes Notfallblatt oder ein entfernter Key wird zusammen mit einer alten Sicherung nicht zum Generalschlüssel |
+| Dateinamen ohne Tresornamen | Server und Sicherungen verraten nicht, welche Tresore es gibt |
 | Auffüllen auf Zweierpotenzen | Die Dateigröße verrät nur grob die Datenmenge |
 | Unbekannte CBOR-Schlüssel erhalten | Ältere App-Versionen zerstören keine Daten neuerer Versionen |
 | Strenge Reihenfolge der Records | Eindeutige Kodierung, einfachere Prüfung |
@@ -380,7 +436,9 @@ ihre eigenen Dateien (`.ghldrv`, `.ghlmail`).
 | `ssh_key` | privater Ed25519-Schlüssel der Suite (OpenSSH-Format) | ja |
 | `sync` | `server` (ID), `last` (ms) | nein (je Gerät) |
 | `sync_known` | bereits synchronisierte Tresor-IDs (für das Übertragen von Löschungen) | nein (je Gerät) |
+| `protection_before` | Liste (neueste zuerst, höchstens 256): `s` (vorheriges `S`), `code` (vorheriges Code-Geheimnis). Damit liest das Gerät Dateien auf dem Server, die ein anderes Gerät schrieb, bevor es von der Schutzänderung wusste | nein (je Gerät) |
 | `protection_changed` | Zeitpunkt der letzten Schutzänderung (ms) | ja |
+| `removed_slots` | Slot-IDs (hex) absichtlich entfernter Keys und Schlüsseldateien. Werden beim Synchronisieren vereinigt; ein Gerät, das die Entfernung verpasst hat, entfernt sie ebenfalls | ja |
 | `recovery_confirmed` | `{v, at}`: `v` = hex(SHA-256(„ghul/recovery-confirmed/v1“ ‖ Code-Geheimnis)[0..8]) des bestätigten Codes, `at` = Zeit (ms); fehlt bei Suiten von vor 0.5.0 (gilt als bestätigt) | ja |
 | `shares` | Liste der eigenen Freigaben: `id`, `server`, `name`, `size`, `created`, `expires` (ms, 0 = nie), `password`, `max_downloads`, `url` (vollständiger Link mit Schlüssel) | ja |
 | `mail_accounts` | Liste: `id`, `name`, `display_name`, `email`, `username`, `password`, `servers`, `imap_cert`, `smtp_cert`, `signature` | ja |
@@ -389,12 +447,15 @@ ihre eigenen Dateien (`.ghldrv`, `.ghlmail`).
 
 | Schlüssel | Inhalt | Synchronisiert |
 |---|---|---|
-| `drive` | `server` (ID, leer bei `use_sync`), `use_sync` (bool: der Server, mit dem dieses Gerät synchronisiert; nur ein Verweis), `key` (32 Byte, Drive-Schlüssel DK) | ja |
+| `drive` | `server` (ID, leer bei `use_sync`), `use_sync` (bool: der Server, mit dem dieses Gerät synchronisiert; nur ein Verweis), `key` (32 Byte, Drive-Schlüssel DK), `seen` (Server-ID → höchste gesehene Index-Revision; ein älterer Index wird abgelehnt) | ja |
 | `servers` | höchstens ein eigener Server nur für GhulDrive (Aufbau wie im Suite-Container); ein PHP-Modul kann `upload` mit dem FTPS-Zugang für Updates tragen (`host`, `port`, `user`, `password`, `cert`, `dir`, `data_dir`) | ja |
 | `options` | Optionen des Bereichs, je Schlüssel `{v, at}` (Text, Zeit in ms) | ja |
 
 **GhulMail (`.ghlmail`):** `mail_accounts` (wie oben), `mail_keys`, `mail_contacts`, `mail_cache_key`, `mail_drafts`,
 `mail_outbox`, `options`. **GhulPass, GhulAuth, GhulCal:** `options` in ihren Dateien.
+
+**Listen mit `changed`:** Einträge von `servers` und `mail_accounts` tragen `changed` (ms). Beim Zusammenführen gewinnt
+der später geänderte Eintrag derselben `id`; ohne `changed` bleibt der lokale.
 
 **Optionen und Zusammenführen:** Ein Wert `{v, at}` (Map aus genau `v` und ganzzahligem `at`) wird beim Synchronisieren
 als Ganzes übernommen, wenn sein `at` neuer ist, die letzte Änderung gewinnt. Bekannte Optionen: GhulPass

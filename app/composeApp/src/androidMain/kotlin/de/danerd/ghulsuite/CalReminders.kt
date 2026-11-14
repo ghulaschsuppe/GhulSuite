@@ -130,8 +130,10 @@ class CalReminders(private val context: Context) {
         const val ACTION_DONE = "de.danerd.ghulsuite.CAL_DONE"
         const val EXTRA_INDEX = "index"
         const val EXTRA_KEY = "key"
-        const val CHANNEL = "cal"
-        const val CHANNEL_SILENT = "cal_silent"
+        // B4: new IDs, private on the lock screen also with Android's default settings.
+        const val CHANNEL = "cal_private"
+        const val CHANNEL_SILENT = "cal_silent_private"
+        val OLD_CHANNELS = listOf("cal", "cal_silent")
     }
 }
 
@@ -141,18 +143,31 @@ private fun CalAlarmUi.toJson() = JSONObject()
 private fun JSONObject.toAlarm() =
     CalAlarmUi(getString("k"), getLong("at"), getString("t"), getString("x"), getString("pt"), getString("px"), optString("al"))
 
-/** Posts a reminder: full text while unlocked, the chosen detail on the lock screen. */
+/**
+ * B4: whether the device is locked right now (secure lock screen). Android lets only the user decide
+ * whether a channel shows details on the lock screen; with "show all content" it shows the full
+ * notification. So a notification that arrives while locked carries no more than its lock screen
+ * version: nothing private can appear there, whatever the Android setting is.
+ */
+fun deviceLocked(ctx: Context): Boolean =
+    runCatching { ctx.getSystemService(android.app.KeyguardManager::class.java)?.isDeviceLocked == true }.getOrDefault(true)
+
+/** Posts a reminder: full text while unlocked, only the chosen lock screen detail while locked. */
 fun postCalNotification(ctx: Context, a: CalAlarmUi, sound: Boolean, index: Int) {
     val nm = ctx.getSystemService(NotificationManager::class.java)
-    nm.createNotificationChannel(NotificationChannel(CalReminders.CHANNEL, ctx.getString(R.string.cal_channel), NotificationManager.IMPORTANCE_HIGH))
+    CalReminders.OLD_CHANNELS.forEach { nm.deleteNotificationChannel(it) }
     nm.createNotificationChannel(
-        NotificationChannel(CalReminders.CHANNEL_SILENT, ctx.getString(R.string.cal_channel_silent), NotificationManager.IMPORTANCE_LOW),
+        NotificationChannel(CalReminders.CHANNEL, ctx.getString(R.string.cal_channel), NotificationManager.IMPORTANCE_HIGH)
+    )
+    nm.createNotificationChannel(
+        NotificationChannel(CalReminders.CHANNEL_SILENT, ctx.getString(R.string.cal_channel_silent), NotificationManager.IMPORTANCE_LOW)
     )
     val channel = if (sound) CalReminders.CHANNEL else CalReminders.CHANNEL_SILENT
     val id = NOTIFY_BASE + (a.key.hashCode() and 0xffff)
     val open = PendingIntent.getActivity(
         ctx, id,
         Intent(ctx, MainActivity::class.java).setAction(MainActivity.ACTION_OPEN_EVENT).putExtra(CalReminders.EXTRA_KEY, a.key)
+            .putExtra(IntentToken.EXTRA, IntentToken.get(ctx))
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
@@ -166,10 +181,13 @@ fun postCalNotification(ctx: Context, a: CalAlarmUi, sound: Boolean, index: Int)
         .setSmallIcon(R.drawable.ic_event).setColor(color)
         .setContentTitle(a.publicTitle).setContentText(a.publicText)
         .build()
+    val locked = deviceLocked(ctx)
+    val title = if (locked) a.publicTitle else a.title
+    val text = if (locked) a.publicText else a.text
     val n = Notification.Builder(ctx, channel)
         .setSmallIcon(R.drawable.ic_event).setColor(color)
-        .setContentTitle(a.title).setContentText(a.text)
-        .setStyle(Notification.BigTextStyle().bigText(a.text))
+        .setContentTitle(title).setContentText(text)
+        .setStyle(Notification.BigTextStyle().bigText(text))
         .setCategory(Notification.CATEGORY_REMINDER)
         .setContentIntent(open)
         .setAutoCancel(true)

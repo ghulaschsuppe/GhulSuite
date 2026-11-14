@@ -257,6 +257,10 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
 
     /** The server has a suite with a newer master password: ask for it. */
     var passwordChangedElsewhere by mutableStateOf(false)
+    /** B6: a calendar file another app handed over, waiting for the user to confirm the import. */
+    var icsPending by mutableStateOf<ByteArray?>(null)
+    /** A key was removed and the code renewed on another device (see [ProtectionChangedDialog]). */
+    var protectionChangedElsewhere by mutableStateOf(false)
 
     private var syncAgain = false
 
@@ -274,6 +278,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     foundPostponed = false
                     outdatedNotified = false
                     passwordChangedElsewhere = false
+                    protectionChangedElsewhere = false
                     syncing = false
                     mailUnread = 0
                     areasKnown = false
@@ -370,7 +375,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             if (Tab.CAL in tabs) {
                 stack.clear()
                 tab = Tab.CAL
-                importIcs(data)
+                icsPending = data
             }
         }
         val t = AppLaunch.openTab.value ?: return
@@ -491,6 +496,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                 val kind = (e as? VaultException)?.kind
                 when {
                     kind == VaultErrorKind.PASSWORD_CHANGED_ELSEWHERE -> passwordChangedElsewhere = true
+                    kind == VaultErrorKind.PROTECTION_CHANGED_ELSEWHERE -> protectionChangedElsewhere = true
                     kind == VaultErrorKind.LOCKED -> {}
                     // Offline is normal for automatic runs.
                     quiet && kind == VaultErrorKind.NETWORK -> {}
@@ -803,6 +809,10 @@ suspend fun describe(e: Throwable): String {
         VaultErrorKind.CERT_UNTRUSTED -> getString(Res.string.err_cert_untrusted, e.detail)
         VaultErrorKind.SERVER_AUTH -> getString(Res.string.err_server_auth)
         VaultErrorKind.PASSWORD_CHANGED_ELSEWHERE -> getString(Res.string.err_password_elsewhere)
+        VaultErrorKind.PROTECTION_CHANGED_ELSEWHERE -> getString(Res.string.err_protection_elsewhere)
+        VaultErrorKind.DRIVE_ROLLED_BACK -> getString(Res.string.err_drive_rolled_back)
+        VaultErrorKind.SHARE_NOT_DELETED -> getString(Res.string.err_share_not_deleted)
+        VaultErrorKind.PHP_NOT_EXECUTED -> getString(Res.string.err_php_not_executed)
         VaultErrorKind.NOT_CONFIGURED -> getString(Res.string.err_not_configured)
         VaultErrorKind.NOT_FOUND -> getString(Res.string.err_not_found)
         VaultErrorKind.OTHER -> getString(Res.string.err_other, e.detail)

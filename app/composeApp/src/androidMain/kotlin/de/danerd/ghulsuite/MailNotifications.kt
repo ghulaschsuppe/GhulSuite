@@ -144,15 +144,24 @@ class MailNotifications(private val context: Context) {
 
     private fun key(): SecretKey {
         (keyStore.getKey(ALIAS, null) as? SecretKey)?.let { return it }
-        val gen = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
-        gen.init(
-            KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+        // B5: in the phone's security chip (StrongBox) where there is one, else in the Keystore's
+        // trusted environment. The key never leaves it; the mail login is only stored encrypted.
+        fun generate(strongBox: Boolean): SecretKey {
+            val gen = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+            val spec = KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                 .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                 .setKeySize(256)
-                .build(),
-        )
-        return gen.generateKey()
+            if (strongBox && android.os.Build.VERSION.SDK_INT >= 28) spec.setIsStrongBoxBacked(true)
+            gen.init(spec.build())
+            return gen.generateKey()
+        }
+        return try {
+            generate(strongBox = true)
+        } catch (e: Exception) {
+            // No StrongBox (android.security.keystore.StrongBoxUnavailableException) or it refused.
+            generate(strongBox = false)
+        }
     }
 
     /** The periodic check and the instant service (after a restart of the phone, for example). */
@@ -173,7 +182,10 @@ class MailNotifications(private val context: Context) {
         private const val ALIAS = "ghulsuite.mail.notify"
         private const val WORK = "ghulsuite.mail.check"
         private const val DETAIL = "detail"
-        const val CHANNEL = "mail"
+        // B4: new IDs (a channel's lock screen setting is fixed once created), private on the
+        // lock screen also with Android's default "show all content".
+        const val CHANNEL = "mail_private"
+        const val OLD_CHANNEL = "mail"
     }
 }
 
@@ -209,8 +221,9 @@ fun postMailNotification(
     newestUid: Int = 0,
 ) {
     val nm = ctx.getSystemService(NotificationManager::class.java)
+    nm.deleteNotificationChannel(MailNotifications.OLD_CHANNEL)
     nm.createNotificationChannel(
-        NotificationChannel(MailNotifications.CHANNEL, ctx.getString(R.string.mail_channel), NotificationManager.IMPORTANCE_DEFAULT),
+        NotificationChannel(MailNotifications.CHANNEL, ctx.getString(R.string.mail_channel), NotificationManager.IMPORTANCE_DEFAULT)
     )
     // One new mail opens that mail; several open the account's inbox. One request code per
     // account, so the notifications of two accounts do not overwrite each other's target.
@@ -218,6 +231,7 @@ fun postMailNotification(
         ctx, config.accountId.hashCode(),
         Intent(ctx, MainActivity::class.java)
             .setAction(MainActivity.ACTION_OPEN_MAIL)
+            .putExtra(IntentToken.EXTRA, IntentToken.get(ctx))
             .putExtra(MainActivity.EXTRA_MAIL_ACCOUNT, config.accountId)
             .putExtra(MainActivity.EXTRA_MAIL_UID, if (count == 1) newestUid else 0)
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
@@ -237,10 +251,12 @@ fun postMailNotification(
         .setContentTitle(config.accountName)
         .setContentText(neutral)
         .build()
+    // B4: arriving while the device is locked, it carries only the neutral version (see deviceLocked).
+    val locked = deviceLocked(ctx)
     val notification = Notification.Builder(ctx, MailNotifications.CHANNEL)
         .setSmallIcon(R.drawable.ic_mail)
-        .setContentTitle(title)
-        .setContentText(text)
+        .setContentTitle(if (locked) config.accountName else title)
+        .setContentText(if (locked) neutral else text)
         .setContentIntent(open)
         .setAutoCancel(true)
         // Launchers show this as the number on the app icon (with the mail symbol of the notification).

@@ -9,7 +9,10 @@
 //!
 //! Protection (password, keys, key files, recovery code) is taken from the side changed last
 //! (`protection_changed` in the settings). A newer password from another device must be typed
-//! once (`adopt_remote_password`); new keys and codes are taken over without asking.
+//! once (`adopt_remote_password`); new keys and codes are taken over without asking. After a
+//! key was removed elsewhere the factor secret is new (B1): it is taken over with this device's
+//! recovery code, or, if that changed too, with one touch of a remaining key
+//! (`adopt_remote_protection`).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -32,7 +35,7 @@ pub(super) const DELETED_VAULTS_KEY: &str = "deleted_vaults";
 pub(super) const PROTECTION_CHANGED: &str = "protection_changed";
 const DIR: &str = "suite";
 /// Settings that belong to one device and are never merged from another.
-const DEVICE_KEYS: &[&str] = &[SYNC_KEY, KNOWN_KEY];
+const DEVICE_KEYS: &[&str] = &[SYNC_KEY, KNOWN_KEY, super::suite::PREVIOUS_KEY];
 
 #[derive(serde::Serialize, serde::Deserialize, Default, Clone)]
 struct SyncSettings {
@@ -95,7 +98,7 @@ pub(crate) fn merge_entries(local: &[Entry], remote: &[Entry]) -> (Vec<Entry>, b
                 out.push(l.clone());
             }
             Some(r) => {
-                let take_remote = (r.revision, r.modified) > (l.revision, l.modified);
+                let take_remote = r.replaces(l);
                 if take_remote {
                     local_changed = true;
                     out.push((*r).clone());
@@ -116,8 +119,9 @@ pub(crate) fn merge_entries(local: &[Entry], remote: &[Entry]) -> (Vec<Entry>, b
 }
 
 /// Merges settings maps: missing keys are added, maps merge recursively, lists of objects with
-/// an `id` are united by id (local wins), other lists are united, numbers take the maximum,
-/// otherwise the local value stays. Returns whether `local` changed.
+/// an `id` are united by id (the one changed later wins if both carry `changed`, else local),
+/// other lists are united, numbers take the maximum, otherwise the local value stays. Returns
+/// whether `local` changed.
 pub(crate) fn merge_settings(local: &mut BTreeMap<String, Value>, remote: &BTreeMap<String, Value>) -> bool {
     let mut changed = false;
     for (k, rv) in remote {
@@ -205,6 +209,14 @@ pub(crate) fn prune_deleted(settings: &mut BTreeMap<String, Value>) -> bool {
     changed
 }
 
+/// When a list item was last edited (`changed`, Unix ms), if it says so.
+fn changed_time(v: &Value) -> Option<i128> {
+    v.as_map()?.iter().find(|(k, _)| k.as_text() == Some("changed")).and_then(|(_, v)| match v {
+        Value::Integer(i) => Some(i128::from(*i)),
+        _ => None,
+    })
+}
+
 fn value_id(v: &Value) -> Option<Value> {
     v.as_map()?.iter().find(|(k, _)| k.as_text() == Some("id")).map(|(_, v)| v.clone())
 }
@@ -250,13 +262,28 @@ fn merge_value(lv: &mut Value, rv: &Value) -> bool {
         (Value::Array(l), Value::Array(r)) => {
             let mut changed = false;
             for item in r {
-                let present = match value_id(item) {
-                    Some(id) => l.iter().any(|x| value_id(x).as_ref() == Some(&id)),
-                    None => l.contains(item),
-                };
-                if !present {
-                    l.push(item.clone());
-                    changed = true;
+                match value_id(item) {
+                    Some(id) => match l.iter_mut().find(|x| value_id(x).as_ref() == Some(&id)) {
+                        // B13: an item edited on another device (server, mail account) reaches
+                        // this one: the later change wins.
+                        Some(mine) => {
+                            if let (Some(a), Some(b)) = (changed_time(mine), changed_time(item)) {
+                                if b > a {
+                                    *mine = item.clone();
+                                    changed = true;
+                                }
+                            }
+                        }
+                        None => {
+                            l.push(item.clone());
+                            changed = true;
+                        }
+                    },
+                    None if !l.contains(item) => {
+                        l.push(item.clone());
+                        changed = true;
+                    }
+                    None => {}
                 }
             }
             changed
@@ -273,21 +300,78 @@ fn slot_label(c: &UnlockedContainer, s: &Slot) -> (String, i64) {
     c.payload.slots.get(&crate::kdf::hex(s.id())).map(|m| (m.label.clone(), m.created)).unwrap_or_default()
 }
 
-/// Opens a file from the server: with password and factor secret, or with the recovery code.
+/// Opens a file from the server: with password and factor secret, or with the recovery code
+/// (when the password or, after a removed key, the factor secret changed elsewhere).
 fn open_remote(o: &Open, data: &[u8]) -> Option<UnlockedContainer> {
     let locked = LockedContainer::parse(data).ok()?;
     if locked.header().suite_id != o.suite.header().suite_id {
         return None;
     }
-    if locked.header().kdf == o.kdf() {
+    let same_kdf = locked.header().kdf == o.kdf();
+    if same_kdf {
         let s = FactorSecret::from_bytes(*o.suite.factor_secret().expose());
-        if let Ok(c) = locked.unlock(&o.password_key, &s) {
+        if let Ok(c) = LockedContainer::parse(data).ok()?.unlock(&o.password_key, &s) {
             return Some(c);
         }
-        return None;
     }
-    let code = o.suite.recovery_code()?;
-    LockedContainer::parse(data).ok()?.recover(&code).ok()
+    if let Some(code) = o.suite.recovery_code() {
+        if let Ok(c) = LockedContainer::parse(data).ok()?.recover(&code) {
+            return Some(c);
+        }
+    }
+    // Written by a device that had not yet learned of this device's last protection change.
+    for (s, code) in o.previous_protection() {
+        if same_kdf {
+            if let Ok(c) = LockedContainer::parse(data).ok()?.unlock(&o.password_key, &s) {
+                return Some(c);
+            }
+        }
+        if let Some(code) = code {
+            if let Ok(c) = LockedContainer::parse(data).ok()?.recover(&code) {
+                return Some(c);
+            }
+        }
+    }
+    None
+}
+
+/// B11: password parameters from the server are only used if they are not far more expensive
+/// than this suite's own (a forged file must not exhaust the memory of an old phone). Up to
+/// 512 MiB, 8 iterations and 4 lanes are always fine (what other devices may calibrate to).
+fn reasonable_kdf(local: &crate::vault::KdfParams, remote: &crate::vault::KdfParams) -> Result<()> {
+    let ok = remote.memory_kib <= local.memory_kib.max(512 * 1024)
+        && remote.iterations <= local.iterations.max(8)
+        && remote.parallelism <= local.parallelism.max(4);
+    if ok {
+        Ok(())
+    } else {
+        Err(GhulError::InvalidInput {
+            msg: "the server asks for password parameters far more expensive than this suite's; not used".into(),
+        })
+    }
+}
+
+fn same_protection(a: &UnlockedContainer, b: &UnlockedContainer) -> bool {
+    let factors = |c: &UnlockedContainer| {
+        let mut v: Vec<Slot> = c.slots().iter().filter(|s| s.provides_factor()).cloned().collect();
+        v.sort_by_key(|s| *s.id());
+        v
+    };
+    let code = |c: &UnlockedContainer| c.recovery_code().map(|r| *r.expose());
+    factors(a) == factors(b)
+        && a.header().kdf == b.header().kdf
+        && a.factor_secret().expose() == b.factor_secret().expose()
+        && code(a) == code(b)
+}
+
+/// The remote file has other security key or key file slots than this device: its protection
+/// was changed elsewhere (it is not just damaged).
+fn other_factor_slots(o: &Open, remote: &LockedContainer) -> bool {
+    let mut local: Vec<&Slot> = o.suite.slots().iter().filter(|s| s.provides_factor()).collect();
+    let mut theirs: Vec<&Slot> = remote.header().slots.iter().filter(|s| s.provides_factor()).collect();
+    local.sort_by_key(|s| *s.id());
+    theirs.sort_by_key(|s| *s.id());
+    local != theirs
 }
 
 impl GhulSuite {
@@ -321,6 +405,7 @@ impl GhulSuite {
                 return Err(GhulError::InvalidInput { msg: "the server folder belongs to another suite".into() });
             }
             let local_ts: i64 = setting(&o.suite, PROTECTION_CHANGED);
+            let changed_factors = other_factor_slots(o, &locked);
             match open_remote(o, &data) {
                 Some(r) => {
                     let remote_ts: i64 = setting(&r, PROTECTION_CHANGED);
@@ -336,8 +421,16 @@ impl GhulSuite {
                         remote_settings.remove(*k);
                     }
                     merge_settings(&mut o.suite.payload.settings, &remote_settings);
+                    // A key removed elsewhere that this device still has (it changed its own
+                    // protection meanwhile, so it kept it): away here too (B2).
+                    if o.drop_removed_slots(now_ms())? {
+                        self.save_all(o)?;
+                    }
                 }
-                // Unreadable with our password and code: the protection changed elsewhere.
+                // Other keys and a new code (maybe also a new password): one touch of a
+                // remaining key takes it over, the password is asked for when needed.
+                None if changed_factors => return Err(GhulError::ProtectionChangedElsewhere),
+                // Unreadable with our password and code: the password changed elsewhere.
                 None if locked.header().kdf != o.kdf() => return Err(GhulError::PasswordChangedElsewhere),
                 // Same password, but the content does not open: damaged, replaced below.
                 None => {}
@@ -384,6 +477,18 @@ impl GhulSuite {
                 rep.skipped += 1;
                 continue;
             };
+            // F23: a name from an older app version (it contained the vault's name) is replaced
+            // by the neutral one on the server as well; other devices match vaults by their ID.
+            let neutral = VaultKind::from_container(remote.kind()).map(|k| super::suite::file_name(k, &id));
+            let name = match neutral {
+                Some(n) if &n != name => {
+                    fs.write(&format!("{DIR}/{n}"), &data)?;
+                    fs.delete(&format!("{DIR}/{name}"))?;
+                    n
+                }
+                _ => name.clone(),
+            };
+            let name = &name;
             seen_remote.insert(id.clone());
             let local_idx = o.vaults.iter().position(|v| v.reference.id == id && v.container.is_some());
             match local_idx {
@@ -392,11 +497,7 @@ impl GhulSuite {
                     // (with this device's protection). A broken local file of the same name is replaced.
                     let kind = VaultKind::from_container(remote.kind()).ok_or(GhulError::NotFound)?;
                     o.vaults.retain(|v| !(v.container.is_none() && &v.reference.file == name));
-                    let local_name = if o.vaults.iter().any(|v| &v.reference.file == name) {
-                        super::suite::file_name(kind, &vault_name(&remote, name), &id)
-                    } else {
-                        name.clone()
-                    };
+                    let local_name = super::suite::file_name(kind, &id);
                     let reference = VaultRef {
                         id: id.clone(),
                         kind: kind.container().name().into(),
@@ -428,8 +529,10 @@ impl GhulSuite {
                     }
                     // Settings changed only here (e.g. an area option) must reach the server too.
                     let settings_newer_here = local.payload.settings != remote.payload.settings;
-                    let protection_differs =
-                        local.header().slots != remote.header().slots || local.header().kdf != remote.header().kdf;
+                    // What makes the protection: keys and key files, password and code. Every
+                    // device has its own container key (and so its own recovery slot) since the
+                    // last change of the protection; that alone is no reason to upload.
+                    let protection_differs = !same_protection(local, &remote);
                     if local_changed || remote_changed || settings_changed || settings_newer_here || protection_differs
                     {
                         if local_changed && remote_changed {
@@ -504,13 +607,28 @@ impl GhulSuite {
         Ok(rep)
     }
 
-    /// Takes over keys, key files and recovery code of a newer remote suite (same password).
+    /// Takes over keys, key files, factor secret and recovery code of a newer remote suite (same
+    /// password). This device then also renews its container keys, so that it never uploads
+    /// files that an old copy (with an old code or a removed key) would open.
     fn adopt_protection(&self, o: &mut Open, remote: &UnlockedContainer) -> Result<()> {
         if remote.header().kdf != o.kdf() {
             return Err(GhulError::PasswordChangedElsewhere);
         }
         let slots: Vec<Slot> = remote.slots().iter().filter(|s| s.provides_factor()).cloned().collect();
-        let s = FactorSecret::from_bytes(*o.suite.factor_secret().expose());
+        // Keys removed on purpose on any device do not come back with an older protection (B2).
+        let mut removed: Vec<String> = super::suite::setting(&o.suite, super::suite::REMOVED_SLOTS_KEY);
+        for r in super::suite::setting::<Vec<String>>(remote, super::suite::REMOVED_SLOTS_KEY) {
+            if !removed.contains(&r) {
+                removed.push(r);
+            }
+        }
+        let kept: Vec<Slot> = slots.iter().filter(|s| !removed.contains(&crate::kdf::hex(s.id()))).cloned().collect();
+        let dropped = !kept.is_empty() && kept.len() < slots.len();
+        let slots = if dropped { kept } else { slots };
+        put_setting(&mut o.suite, super::suite::REMOVED_SLOTS_KEY, &removed)?;
+        let s = FactorSecret::from_bytes(*remote.factor_secret().expose());
+        let new_secret = s.expose() != o.suite.factor_secret().expose();
+        o.remember_protection()?;
         let pk = PasswordKey::from_bytes(*o.password_key.expose());
         let kdf = o.kdf();
         let suite_id = o.suite.header().suite_id;
@@ -531,8 +649,17 @@ impl GhulSuite {
                 .unwrap_or_default();
             o.suite.set_recovery_code(&code, &label, now_ms(), &mut rand_core::OsRng)?;
         }
-        o.harmonize(now_ms())?;
-        Ok(())
+        // A key dropped above may know the remote factor secret: then it is renewed as well.
+        o.renew_keys(dropped, now_ms())?;
+        if dropped {
+            mark_protection_changed(o)?;
+        }
+        if new_secret || dropped {
+            super::quick::delete_all(&self.local_dir);
+        }
+        // Written now: the sync below only rewrites files whose content or protection differ
+        // from the server's, and this device's files must carry the new protection either way.
+        self.save_all(o)
     }
 }
 
@@ -570,6 +697,25 @@ impl GhulSuite {
         })
     }
 
+    /// After a key was removed and the recovery code renewed on another device
+    /// (`ProtectionChangedElsewhere`): one remaining security key (`transport` + `pin`) or key file
+    /// opens the server's suite file; this device takes over its protection. `password` is only
+    /// needed if the master password was changed there as well (else `PasswordChangedElsewhere`).
+    pub fn adopt_remote_protection(
+        &self,
+        password: Option<String>,
+        transport: Option<std::sync::Arc<dyn crate::HidTransport>>,
+        listener: Option<std::sync::Arc<dyn crate::FidoListener>>,
+        pin: Option<String>,
+        keyfile: Option<Vec<u8>>,
+    ) -> Result<SyncReport> {
+        let fs = self.with_open(|o| {
+            let st: SyncSettings = setting(&o.suite, SYNC_KEY);
+            servers::connect(o, &st.server)
+        })?;
+        self.adopt_protection_via(fs.as_ref(), password, transport, listener, pin, keyfile)
+    }
+
     /// After a password change on another device: checks the new password against the server's
     /// suite file and switches this device to it. Then synchronises.
     pub fn adopt_remote_password(&self, password: String) -> Result<SyncReport> {
@@ -582,15 +728,84 @@ impl GhulSuite {
 }
 
 impl GhulSuite {
+    fn adopt_protection_via(
+        &self,
+        fs: &dyn RemoteFs,
+        password: Option<String>,
+        transport: Option<std::sync::Arc<dyn crate::HidTransport>>,
+        listener: Option<std::sync::Arc<dyn crate::FidoListener>>,
+        pin: Option<String>,
+        keyfile: Option<Vec<u8>>,
+    ) -> Result<SyncReport> {
+        let password = password.map(zeroize::Zeroizing::new);
+        let pin = pin.map(zeroize::Zeroizing::new);
+        let keyfile = super::suite::parse_keyfile(keyfile)?;
+        let data = fs.read(&format!("{DIR}/{SUITE_FILE}"))?.ok_or(GhulError::NotFound)?;
+        let locked = LockedContainer::parse(&data)?;
+        // The key is asked outside the session lock (it waits for a touch).
+        let (s, _) = super::suite::second_factor(
+            &locked,
+            transport.as_ref(),
+            listener.as_ref(),
+            pin.as_deref().map(|p| p.as_str()),
+            keyfile.as_ref(),
+        )?;
+        self.with_open(|o| {
+            if locked.header().suite_id != o.suite.header().suite_id {
+                return Err(GhulError::InvalidInput { msg: "the server folder belongs to another suite".into() });
+            }
+            let kdf = locked.header().kdf.clone();
+            let pk = if kdf == o.kdf() {
+                PasswordKey::from_bytes(*o.password_key.expose())
+            } else {
+                let pw = password.as_ref().ok_or(GhulError::PasswordChangedElsewhere)?;
+                reasonable_kdf(&o.kdf(), &kdf)?;
+                PasswordKey::derive(pw, &kdf)?
+            };
+            let remote = LockedContainer::parse(&data)?.unlock(&pk, &s).map_err(|_| GhulError::WrongPassword)?;
+            if kdf != o.kdf() {
+                for (c, _) in o.containers_mut() {
+                    c.rekey(&pk, kdf.clone(), &mut rand_core::OsRng)?;
+                }
+                o.password_key = pk;
+            }
+            let remote_ts: i64 = setting(&remote, PROTECTION_CHANGED);
+            put_setting(&mut o.suite, PROTECTION_CHANGED, &remote_ts)?;
+            self.adopt_protection(o, &remote)?;
+            super::quick::delete_all(&self.local_dir);
+            self.sync_with(o, fs)
+        })
+    }
+
     fn adopt_password_with(&self, o: &mut Open, fs: &dyn RemoteFs, password: String) -> Result<SyncReport> {
         let password = zeroize::Zeroizing::new(password);
         {
             let data = fs.read(&format!("{DIR}/{SUITE_FILE}"))?.ok_or(GhulError::NotFound)?;
             let locked = LockedContainer::parse(&data)?;
             let kdf = locked.header().kdf.clone();
+            reasonable_kdf(&o.kdf(), &kdf)?;
             let pk = PasswordKey::derive(&password, &kdf)?;
             let sec = FactorSecret::from_bytes(*o.suite.factor_secret().expose());
-            let remote = locked.unlock(&pk, &sec).map_err(|_| GhulError::WrongPassword)?;
+            let changed_factors = other_factor_slots(o, &locked);
+            let remote = match LockedContainer::parse(&data)?.unlock(&pk, &sec) {
+                Ok(r) => r,
+                // A key was removed there as well (new factor secret): it is in the content,
+                // which this device's recovery code opens if that stayed the same.
+                Err(_) => {
+                    let via_code = o
+                        .suite
+                        .recovery_code()
+                        .and_then(|code| LockedContainer::parse(&data).ok()?.recover(&code).ok());
+                    match via_code {
+                        Some(r) => {
+                            let s2 = FactorSecret::from_bytes(*r.factor_secret().expose());
+                            LockedContainer::parse(&data)?.unlock(&pk, &s2).map_err(|_| GhulError::WrongPassword)?
+                        }
+                        None if changed_factors => return Err(GhulError::ProtectionChangedElsewhere),
+                        None => return Err(GhulError::WrongPassword),
+                    }
+                }
+            };
             for (c, _) in o.containers_mut() {
                 c.rekey(&pk, kdf.clone(), &mut rand_core::OsRng)?;
             }
@@ -609,6 +824,15 @@ impl GhulSuite {
 impl GhulSuite {
     pub(crate) fn sync_folder(&self, fs: &dyn RemoteFs) -> Result<SyncReport> {
         self.with_open(|o| self.sync_with(o, fs))
+    }
+
+    pub(crate) fn adopt_protection_folder(
+        &self,
+        fs: &dyn RemoteFs,
+        password: Option<&str>,
+        keyfile: Vec<u8>,
+    ) -> Result<SyncReport> {
+        self.adopt_protection_via(fs, password.map(str::to_owned), None, None, None, Some(keyfile))
     }
 
     pub(crate) fn adopt_password_folder(&self, fs: &dyn RemoteFs, password: &str) -> Result<SyncReport> {

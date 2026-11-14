@@ -189,6 +189,8 @@ abstract class CoreNetBackend(protected val suite: () -> GhulSuite) : NetBackend
 
     override suspend fun driveUseSync() = io { suite().driveUseSync() }
 
+    override suspend fun driveAcceptServerState() = io { suite().driveAcceptServerState() }
+
     override suspend fun driveSaveServer(input: ServerInputUi, confirmed: String?): ServerSavedUi = io {
         when (val r = suite().driveSaveServer(input.toCore(), confirmed)) {
             is ServerSaved.Confirm -> ServerSavedUi.Confirm(r.fingerprint)
@@ -444,7 +446,13 @@ abstract class CoreNetBackend(protected val suite: () -> GhulSuite) : NetBackend
     override suspend fun mailImportKey(data: ByteArray): List<String> = io { suite().mailImportKey(data) }
 
     override suspend fun mailKnownKeys(): List<MailKeyInfoUi> =
-        io { suite().mailKnownKeys().map { MailKeyInfoUi(it.email, it.fingerprint, it.source, it.updated) } }
+        io {
+            suite().mailKnownKeys().map {
+                MailKeyInfoUi(it.email, it.fingerprint, it.source, it.updated, it.verified, it.previous, it.offered)
+            }
+        }
 
     override suspend fun mailForgetKey(email: String) = io { suite().mailForgetKey(email) }
+
+    override suspend fun mailVerifyKey(email: String) = io { suite().mailVerifyKey(email) }
 }

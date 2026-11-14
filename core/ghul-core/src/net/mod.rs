@@ -20,6 +20,8 @@ pub mod tls;
 
 #[cfg(test)]
 pub(crate) mod tests;
+#[cfg(test)]
+mod tests_limbo;
 
 /// Errors of network operations (mapped to `GhulError` at the API boundary).
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]

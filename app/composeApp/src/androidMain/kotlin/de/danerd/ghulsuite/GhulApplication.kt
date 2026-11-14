@@ -76,13 +76,25 @@ class GhulApplication : Application() {
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
                 handler.removeCallbacks(lockRunnable)
+                // B8: the handler's clock stops in deep sleep; the real time away decides.
+                if (lockDueAt > 0 && android.os.SystemClock.elapsedRealtime() >= lockDueAt && backend.unlocked.value) {
+                    backend.lock()
+                }
+                lockDueAt = 0
+                // Back in the app: the grace period of a file picker, share or camera is over.
+                ExternalActivity.finished()
             }
 
             override fun onStop(owner: LifecycleOwner) {
                 if (!backend.unlocked.value) return
                 var delay = backend.settings.autoLockSeconds
                 if (ExternalActivity.active) delay = maxOf(delay, ExternalActivity.GRACE_SECONDS)
-                if (delay <= 0) backend.lock() else handler.postDelayed(lockRunnable, delay * 1000L)
+                if (delay <= 0) {
+                    backend.lock()
+                } else {
+                    lockDueAt = android.os.SystemClock.elapsedRealtime() + delay * 1000L
+                    handler.postDelayed(lockRunnable, delay * 1000L)
+                }
             }
         })
 
@@ -93,6 +105,10 @@ class GhulApplication : Application() {
             }
         }
     }
+
+    /** When the app left the screen plus the auto-lock time (elapsed realtime, counts in deep sleep); 0 = none. */
+    @Volatile
+    private var lockDueAt = 0L
 
     private fun onUnlocked() {
         if (!screenReceiverRegistered) {

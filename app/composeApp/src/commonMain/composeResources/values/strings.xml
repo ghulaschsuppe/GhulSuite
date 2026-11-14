@@ -55,6 +55,10 @@
     <string name="auth_tap_to_show">select to show</string>
     <string name="auth_uri_hint">Paste an otpauth://totp/… link, e.g. from a QR code reader or an export.</string>
     <string name="autofill_for">For: %1$s</string>
+    <string name="autofill_link_title">Link with this app?</string>
+    <string name="autofill_link_text">“%1$s” (%2$s) will be offered the login “%3$s” directly from now on. Only link it if this really is the app of that service.</string>
+    <string name="autofill_link_yes">Link and fill in</string>
+    <string name="autofill_link_once">Fill in this time only</string>
     <string name="autofill_link_hint">If you pick a login by hand, GhulSuite remembers this app and its signature for it. A fake app with the same name does not get it.</string>
     <string name="autofill_matching">Matching or suggested</string>
     <string name="autofill_pick_title">Choose login</string>
@@ -249,16 +253,19 @@
     <string name="set_modules_hint">Switched-off modules disappear from the menu. Their data stays encrypted and unchanged.</string>
     <string name="set_new_code_text">A new recovery code is created. The previous code stops working.</string>
     <string name="set_no_key_hint">Your suite is protected with a key file. A security key is even more secure: it cannot be copied.</string>
-    <string name="set_panic_hint">The lock button and the notification lock normally. Shaking and the quick settings tile "Lock GhulSuite" are a panic lock: they also remove fingerprint and app PIN unlock, afterwards only the master password opens the app. Mail notifications and reminders keep working. A short buzz confirms locking by shaking.</string>
+    <string name="set_panic_mail">Instant lock also stops mail notifications</string>
+    <string name="set_panic_mail_hint">For notifications while the app is locked, the phone keeps its own mail login, protected in the device's security chip. Switched on, the instant lock deletes it too: no mail notifications until the next unlock.</string>
+    <string name="set_panic_hint">The lock button and the notification lock normally. Shaking and the quick settings tile "Lock GhulSuite" are a instant lock: they also remove fingerprint and app PIN unlock, afterwards only the master password opens the app. Mail notifications and reminders keep working. A short buzz confirms locking by shaking.</string>
     <string name="set_password">Master password</string>
     <string name="set_pin_mismatch">The PINs do not match.</string>
-    <string name="set_quick_always_full">Password and second factor (key or key file) are always required after a restart, after the validity ends, after a panic lock, after 5 wrong app PINs and when fingerprints are changed.</string>
+    <string name="set_quick_always_full">Password and second factor (key or key file) are always required after a restart, after the validity ends, after a instant lock, after 5 wrong app PINs and when fingerprints are changed.</string>
     <string name="set_quick_bio">Fingerprint</string>
     <string name="set_quick_bio_unavailable">No secure fingerprint sensor or no fingerprint set up on this device.</string>
     <string name="set_quick_hint">After unlocking with password and second factor, you can open GhulSuite with your fingerprint or an app PIN for a while.</string>
     <string name="set_quick_pin">App PIN</string>
     <string name="set_quick_validity">Valid for</string>
-    <string name="set_remove_text">“%1$s” will no longer open your suite. Everything else stays valid.</string>
+    <string name="set_remove_text">“%1$s” will no longer open anything you save from now on, not even together with an old backup copy. Your other keys, key files and the recovery sheet stay valid.</string>
+    <string name="slot_needs_update">unlock with it once to bring it up to the current protection</string>
     <string name="set_remove_title">Remove access?</string>
     <string name="set_screenshots">Allow screenshots</string>
     <string name="set_screenshots_warning">Screenshots and screen recordings may then contain your passwords and codes, and the app is visible in the app switcher. Only allow this if you really need it.</string>
@@ -267,6 +274,7 @@
     <string name="set_shake_sensitivity">Shake sensitivity</string>
     <string name="set_show_subtitles">GhulPass: show user names in the list</string>
     <string name="set_swap_hint">Every key and key file opens the suite together with your password. Adding or removing one does not affect the others.</string>
+    <string name="set_lost_hint">Lost something (key, key file or recovery sheet)? Removing it, or a new recovery sheet, locks it out of the current suite. An old backup copy still opens with it, though, and shows the state of back then, including the logins of your mail accounts and your server. So afterwards change these passwords with each provider and enter them in GhulSuite again. This also protects your Drive content: without server access nobody gets to the blocks.</string>
     <string name="set_theme">Design</string>
     <string name="set_totp_hide">GhulAuth: hide codes until tapped</string>
     <string name="set_totp_next">GhulAuth: show next code shortly before expiry</string>
@@ -334,6 +342,13 @@
     <string name="start_open_vault_text">A .ghlpss or .ghltotp file. It is copied to your storage location; only this area is switched on.</string>
     <string name="storage_app">App storage</string>
     <string name="storage_current">Location: %1$s</string>
+    <string name="storage_move">Change storage location</string>
+    <string name="storage_move_hint">Copies all vault files to a new place, checks every copy and uses that place from then on. The app storage is the safest choice for most people: other apps cannot reach it. You only need your own folder if you want to back up the files yourself or keep them in step with a program of your own. Syncing with your server works the same in both places.</string>
+    <string name="storage_move_text">Choose the target. All vault files are copied and checked, then the app uses the new place and you unlock once more. The files in the old place stay unchanged until you delete them yourself. A folder that already holds a suite is not overwritten.</string>
+    <string name="storage_move_folder">Choose folder</string>
+    <string name="storage_move_app">To app storage</string>
+    <string name="storage_move_done">%1$d files copied and checked. The app now uses the new place. The old files are still in the old place; you can delete them there when you no longer need them.</string>
+    <string name="storage_move_target_full">The chosen folder already holds a suite. Nothing was copied or overwritten. Choose an empty folder.</string>
     <string name="storage_folder">Choose folder</string>
     <string name="storage_hint">App storage is recommended. A folder of your own (e.g. a USB stick) is useful if you want to carry or back up the files yourself.</string>
     <string name="storage_open_existing">Open this suite</string>
@@ -380,8 +395,9 @@
     <string name="vault_remove_warning">The file is deleted from your folder, with all its entries.</string>
     <string name="vault_remove_tip">Tip: export first what you want to keep.</string>
     <string name="vault_remove_title">Delete “%1$s”?</string>
-    <string name="vault_scan">Search folder for vaults</string>
-    <string name="vault_summary">%1$s · entries: %2$s · %3$s</string>
+    <string name="vault_scan">Search the folder for new vault files</string>
+    <string name="vault_scan_hint">Only needed if you copied vault files into this folder yourself. The app looks anyway when unlocking.</string>
+    <string name="vault_summary">%1$s · entries: %2$s</string>
     <string name="a_attach">Attach file</string>
     <string name="a_check_and_save">Check and save</string>
     <string name="a_connect">Connect</string>
@@ -407,7 +423,22 @@
     <string name="err_host_key_changed">Warning: the server presents a different key (%1$s). Someone may be intercepting the connection. Nothing was transferred.</string>
     <string name="err_cert_untrusted">The server certificate is not trusted (%1$s).</string>
     <string name="err_server_auth">The server rejected the login. Check user name, password or key.</string>
+    <string name="err_drive_rolled_back">The GhulDrive state on the server is older than the one seen last (server reset or an old backup put back). Nothing was changed. If that was on purpose: Options → GhulDrive → “Take older server state”.</string>
+    <string name="err_share_not_deleted">The server of this link is no longer set up, its package could not be deleted. The link works until it expires.</string>
+    <string name="err_php_not_executed">The web server does not run PHP and delivers the server module as text: its access key would be readable. The app deleted the file again. Ask your host whether PHP is active for this folder.</string>
+    <string name="drive_accept_state">Take older server state</string>
+    <string name="drive_accept_state_hint">Only needed if GhulDrive reports that the state on the server is older than seen last, for example after restoring a server backup.</string>
+    <string name="drive_accept_state_text">GhulDrive takes the state that is on the server now. Files added only after it are then no longer listed. Only take it if you reset the server yourself.</string>
+    <string name="mail_key_verified">confirmed</string>
+    <string name="mail_key_changed">The key has changed. Compare the fingerprint with the contact.</string>
+    <string name="mail_key_offered">A mail offered another key. The confirmed one stays; ask whether the contact has a new one.</string>
+    <string name="mail_key_compare">Compare</string>
+    <string name="mail_key_compare_title">Fingerprint of %1$s</string>
+    <string name="mail_key_compare_text">Have the contact show or read out their fingerprint, in person or on the phone. If it matches character by character, it really is their key.</string>
+    <string name="mail_key_offered_was">Offered was: %1$s</string>
+    <string name="mail_key_matches">It matches</string>
     <string name="err_password_elsewhere">The master password was changed on another device.</string>
+    <string name="err_protection_elsewhere">The keys of your suite were changed on another device.</string>
     <string name="err_not_configured">Not set up yet.</string>
     <string name="err_not_found">Not found.</string>
     <string name="server_add_title">Add server</string>
@@ -442,6 +473,9 @@
     <string name="sync_not_set">No server set for synchronisation.</string>
     <string name="sync_pw_title">New master password</string>
     <string name="sync_pw_text">The master password was changed on another device. Enter the new password to take it over on this device as well.</string>
+    <string name="sync_protection_title">Protection changed</string>
+    <string name="sync_protection_text">A key was removed on another device and a new recovery sheet was made. Confirm once with one of your remaining keys or your key file, then this device synchronises again.</string>
+    <string name="sync_protection_password">The master password was changed there as well. Enter the new password.</string>
     <string name="start_fetch">Fetch from my server</string>
     <string name="start_fetch_text">Your suite is already synchronised to your own server: download it to this device.</string>
     <string name="fetch_text">The encrypted suite is downloaded from the server. Afterwards you unlock it as usual with password and security key or key file.</string>
@@ -518,7 +552,7 @@
     <string name="mail_attachment_warning">Only open attachments from senders you trust.</string>
     <string name="mail_sent_msg">Message sent.</string>
     <string name="mail_notify">Notify about new e-mails</string>
-    <string name="mail_notify_hint">New e-mail arrives even when GhulSuite is locked or closed, after a restart of the phone and after the panic lock. For this a copy of the inbox login stays on this device, protected by the Android Keystore. The server reports new mail at once; Android shows a silent permanent notification "GhulMail is ready" for this. By default notifications show only the account name and the number of new messages (changeable above). Only "Force stop" in the Android settings stops reception until you open GhulSuite again.</string>
+    <string name="mail_notify_hint">New e-mail arrives even when GhulSuite is locked or closed, after a restart of the phone and after the instant lock. For this a copy of the inbox login stays on this device, protected by the Android Keystore. The server reports new mail at once; Android shows a silent permanent notification "GhulMail is ready" for this. By default notifications show only the account name and the number of new messages (changeable above). Only "Force stop" in the Android settings stops reception until you open GhulSuite again.</string>
     <string name="mail_remove_title">Remove %1$s?</string>
     <string name="mail_remove_text">The account is removed from GhulSuite. Your e-mails stay on the mail server.</string>
     <string name="set_mail">GhulMail accounts</string>
@@ -590,7 +624,7 @@
     <string name="set_g_servers">Synchronisation</string>
     <string name="set_import_sub">Proton, Bitwarden, Aegis, 2FAS, KeePass …</string>
     <string name="set_lock_hint_short">Removes all keys from memory</string>
-    <string name="set_lock_panic">Lock and panic</string>
+    <string name="set_lock_panic">Locking</string>
     <string name="set_lock_panic_sub">Time, shake, quick tile</string>
     <string name="set_mail_sub">Accounts, notifications</string>
     <string name="set_modules_sub">Set up, hide, remove</string>
@@ -1111,6 +1145,8 @@
     <string name="cal_delete_calendar_text">“%1$s” and all its events will be deleted, also on your other devices.</string>
     <string name="cal_import">Import (.ics)</string>
     <string name="cal_export">Export (.ics)</string>
+    <string name="cal_import_confirm_title">Take over the calendar file?</string>
+    <string name="cal_import_confirm_text">Another app handed GhulSuite a calendar file with %1$s events. They will be added to the calendar “%2$s”.</string>
     <string name="cal_import_done">%1$s events imported</string>
     <string name="cal_closed_hint">Every calendar is stored encrypted in your suite (.ghlcal) and syncs like your passwords via your own storage. Deliberately without CalDAV.</string>
     <string name="cal_start_view">Start view</string>
@@ -1227,8 +1263,8 @@
     <string name="wz_one_area">Choose at least one area.</string>
     <string name="wz_drive_missing">GhulDrive, still open: %1$s. Or choose “Later”.</string>
     <string name="wz_lock_sub">When GhulSuite is in the background or you do nothing.</string>
-    <string name="wz_shake_sub">Shake = panic lock: locks at once and deletes the quick unlock (fingerprint, PIN).</string>
-    <string name="wz_lock_hint">Everything can be changed later in Options → Locking and panic. Applies to this device only.</string>
+    <string name="wz_shake_sub">Shake = instant lock: locks at once and deletes the quick unlock (fingerprint, PIN).</string>
+    <string name="wz_lock_hint">Everything can be changed later in Options → Locking. Applies to this device only.</string>
     <string name="wz_quick_explain">Quick unlock means: with your fingerprint or an app PIN instead of password and second factor (key or key file), for the time between two full unlocks.</string>
     <string name="wz_quick_none">Always password and second factor</string>
     <string name="wz_quick_none_sub">The safest</string>
@@ -1240,7 +1276,7 @@
     <string name="wz_pin_rule">The app PIN needs 6 to 12 digits.</string>
     <string name="wz_quick_valid">Quick unlock is valid</string>
     <string name="wz_quick_valid_sub">Then password and second factor again.</string>
-    <string name="wz_quick_always_note">No expiry. After a restart of the device, a panic lock or a password change you still need password and second factor again.</string>
+    <string name="wz_quick_always_note">No expiry. After a restart of the device, a instant lock or a password change you still need password and second factor again.</string>
     <string name="area_pass_sub">Passwords, notes, cards, Wi-Fi</string>
     <string name="area_auth_sub">2FA codes for your accounts</string>
     <string name="area_drive_sub">Encrypted files on your server</string>

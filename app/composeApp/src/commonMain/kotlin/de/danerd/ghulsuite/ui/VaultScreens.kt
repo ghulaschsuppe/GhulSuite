@@ -37,6 +37,7 @@ import de.danerd.ghulsuite.model.FoundVaultUi
 import de.danerd.ghulsuite.model.PickedFile
 import de.danerd.ghulsuite.model.ProtectionUi
 import de.danerd.ghulsuite.model.VaultErrorKind
+import de.danerd.ghulsuite.model.FolderRef
 import de.danerd.ghulsuite.model.VaultException
 import de.danerd.ghulsuite.model.VaultKindUi
 import de.danerd.ghulsuite.model.VaultSourceUi
@@ -44,6 +45,7 @@ import de.danerd.ghulsuite.model.VaultUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
 import org.jetbrains.compose.resources.stringResource
+import org.jetbrains.compose.resources.getString
 
 fun extensionOf(kind: VaultKindUi) = when (kind) {
     VaultKindUi.PASS -> "ghlpss"
@@ -201,7 +203,7 @@ fun VaultsSection(state: AppState) {
                     when {
                         !v.available -> stringResource(Res.string.vault_missing, v.file)
                         v.outdated -> stringResource(Res.string.vault_outdated)
-                        else -> stringResource(Res.string.vault_summary, stringResource(kindLabel(v.kind)), v.entries.toString(), v.file)
+                        else -> stringResource(Res.string.vault_summary, stringResource(kindLabel(v.kind)), v.entries.toString())
                     },
                     leading = {
                         if (v.available && !v.outdated) IconTile(tabIcon(tab), areaColor(tab)) else IconTile(Icons.Filled.Warning, warnColor())
@@ -242,10 +244,21 @@ fun VaultsSection(state: AppState) {
             OutlinedButton(onClick = addFile, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.vault_add_file)) }
             Hint(stringResource(Res.string.vault_add_file_hint))
         }
-        OutlinedButton(onClick = {
-            state.foundPostponed = false
-            state.scanFound { if (it.isEmpty()) state.message(noneFound) }
-        }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.vault_scan)) }
+        // Where the files are. Searching only makes sense in an own folder (files copied in by
+        // hand); in the app storage nobody can put files, there "Add vault file" is the way.
+        val storage = state.backend.storageName()
+        Hint(stringResource(Res.string.storage_current, storageLabel(storage)))
+        if (storage != "app") {
+            OutlinedButton(onClick = {
+                state.foundPostponed = false
+                state.scanFound { if (it.isEmpty()) state.message(noneFound) }
+            }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.vault_scan)) }
+            Hint(stringResource(Res.string.vault_scan_hint))
+        }
+        var moving by remember { mutableStateOf(false) }
+        OutlinedButton(onClick = { moving = true }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.storage_move)) }
+        Hint(stringResource(Res.string.storage_move_hint))
+        if (moving) MoveStorageDialog(state, inApp = storage == "app", onDone = { moving = false })
     }
 
     foreign?.let { r -> ForeignVaultDialog(state, r, onDone = { foreign = null }) }
@@ -387,5 +400,46 @@ fun ForeignVaultDialog(state: AppState, request: ForeignRequest, onDone: () -> U
             }
         },
         dismissButton = { TextButton(onClick = onDone, enabled = !state.busy) { Text(stringResource(Res.string.a_cancel)) } },
+    )
+}
+
+/**
+ * "Change storage location": copies all suite files to the app storage or a chosen folder, checks
+ * them and uses the new place from then on. The old files stay where they were.
+ */
+@Composable
+private fun MoveStorageDialog(state: AppState, inApp: Boolean, onDone: () -> Unit) {
+    val targetFull = stringResource(Res.string.storage_move_target_full)
+    fun move(folder: FolderRef?) {
+        state.run(block = {
+            try {
+                // Locks afterwards: the unlock screen then shows the result.
+                getString(Res.string.storage_move_done, state.backend.moveStorage(folder))
+            } catch (e: VaultException) {
+                // The target already holds a suite: nothing was overwritten.
+                if (e.kind != VaultErrorKind.ALREADY_EXISTS) throw e
+                null
+            }
+        }) { done ->
+            state.message(done ?: targetFull)
+            if (done != null) onDone()
+        }
+    }
+    val pickFolder = rememberPickFolder { move(it) }
+    AlertDialog(
+        onDismissRequest = onDone,
+        title = { Text(stringResource(Res.string.storage_move)) },
+        text = { Text(stringResource(Res.string.storage_move_text)) },
+        confirmButton = {
+            TextButton(onClick = pickFolder, enabled = !state.busy) { Text(stringResource(Res.string.storage_move_folder)) }
+        },
+        dismissButton = {
+            Row {
+                if (!inApp) {
+                    TextButton(onClick = { move(null) }, enabled = !state.busy) { Text(stringResource(Res.string.storage_move_app)) }
+                }
+                TextButton(onClick = onDone) { Text(stringResource(Res.string.a_cancel)) }
+            }
+        },
     )
 }

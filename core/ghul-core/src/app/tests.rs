@@ -243,7 +243,8 @@ fn vault_management_and_suite_from_vault() {
         s.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
     let work = s.create_vault(VaultKind::Pass, "Arbeit & Co".into()).unwrap();
     let file = s.list_vaults().unwrap().into_iter().find(|v| v.id == work).unwrap().file;
-    assert!(file.starts_with("arbeit-co-") && file.ends_with(".ghlpss"), "{file}");
+    // The file name says nothing about the vault (F23).
+    assert_eq!(file, format!("{}.ghlpss", &work[..16]));
     s.save_entry(work.clone(), login("Jira", "w", "x")).unwrap();
     s.rename_vault(work.clone(), "Firma".into()).unwrap();
     let exported = s.export_vault(work.clone()).unwrap();
@@ -345,10 +346,11 @@ fn quick_unlock_fingerprint_and_pin() {
     std::thread::sleep(std::time::Duration::from_millis(1100));
     s.unlock("pw-1".into(), Some(k.clone()), Some(listener()), Some("1234".into()), None).unwrap();
     s.lock();
-    s.unlock_quick("bio".into(), bio.clone(), None, 1).unwrap();
+    // 3 s of validity: the full unlock above (Argon2) may itself take over a second on a slow runner.
+    s.unlock_quick("bio".into(), bio.clone(), None, 3).unwrap();
     s.lock();
-    std::thread::sleep(std::time::Duration::from_millis(1100));
-    assert!(matches!(s.unlock_quick("bio".into(), bio, None, 1), Err(GhulError::QuickUnlockExpired)));
+    std::thread::sleep(std::time::Duration::from_millis(3100));
+    assert!(matches!(s.unlock_quick("bio".into(), bio, None, 3), Err(GhulError::QuickUnlockExpired)));
     assert!(!s.quick_unlock_exists("bio".into()));
 
     // A password change invalidates all quick unlocks.
@@ -477,16 +479,18 @@ fn foreign_and_outdated_vaults() {
         s.adopt_vault(src.clone(), "".into(), "falsch".into(), None, None, None, Some(okf.clone())),
         Err(GhulError::WrongPassword)
     ));
-    // Taking it over switches it to this suite's protection (same file name).
+    // Taking it over switches it to this suite's protection and gives it a neutral name.
     s.adopt_vault(src, "".into(), "anderes-pw-1".into(), None, None, None, Some(okf.clone())).unwrap();
     assert!(s.find_new_vaults().unwrap().is_empty());
-    assert!(s.list_vaults().unwrap().iter().any(|v| v.name == "Verein" && v.file == "verein.ghltotp"));
+    let verein_file = s.list_vaults().unwrap().into_iter().find(|v| v.name == "Verein").unwrap().file;
+    assert!(verein_file.ends_with(".ghltotp") && !verein_file.contains("verein"), "{verein_file}");
+    assert!(st.read("verein.ghltotp".into()).unwrap().is_none());
     s.lock();
     s.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
     assert_eq!(s.totp_codes(59).unwrap().len(), 1);
     // ... and the suite's recovery code now opens it as well.
     let single = Dirs::new("foreign-single");
-    single.storage().write("verein.ghltotp".into(), st.read("verein.ghltotp".into()).unwrap().unwrap()).unwrap();
+    single.storage().write("verein.ghltotp".into(), st.read(verein_file.clone()).unwrap().unwrap()).unwrap();
     single.suite().unlock_with_recovery_code(code.clone(), "neu-neu-123".into()).unwrap();
 
     // Ignoring: a dismissed file is not offered again.
@@ -517,10 +521,13 @@ fn foreign_and_outdated_vaults() {
     assert_eq!(s.list_vaults().unwrap().iter().filter(|v| v.available).count(), 2);
 
     // Outdated: an older file of a known vault is flagged until accepted.
-    let before = st.read("privat-alt.ghlpss".into()).unwrap().unwrap();
+    // (The taken-over file got a neutral name, F23.)
+    assert!(st.read("privat-alt.ghlpss".into()).unwrap().is_none());
+    let privat_now = vault_file(&s, &privat);
+    let before = st.read(privat_now.clone()).unwrap().unwrap();
     s.save_entry(privat.clone(), login("B", "c", "d")).unwrap();
     s.lock();
-    st.write("privat-alt.ghlpss".into(), before).unwrap();
+    st.write(privat_now, before).unwrap();
     s.unlock("pw-neu-7890".into(), None, None, None, Some(kf.clone())).unwrap();
     assert!(s.list_vaults().unwrap().into_iter().find(|v| v.id == privat).unwrap().outdated);
     s.accept_vault_state(privat.clone()).unwrap();
@@ -1317,6 +1324,14 @@ fn share_via_folder(s: &GhulSuite, server_id: &str, dir: &str, web_root: &std::p
         .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
     assert!(stored.iter().all(|n| !n.contains("Steuer") && !n.contains("Urlaub")), "{stored:?}");
+    // B14: once its server is gone, withdrawing a link says that its package stays.
+    let left = s.share_list().unwrap();
+    if let Some(last) = left.first() {
+        if s.remove_server(server_id.into()).is_ok() {
+            assert!(matches!(s.share_delete(last.id.clone()), Err(GhulError::ShareNotDeleted)));
+            assert!(s.share_list().unwrap().is_empty());
+        }
+    }
 }
 
 #[test]
@@ -1848,6 +1863,9 @@ fn pgp_mail_between_two_users() {
     // attacker could have sent both); shown like an unknown key the first time.
     assert_eq!(m.signature, MailSignatureStatus::UnknownKey);
     assert_eq!(m.signer, alice_mail.to_lowercase());
+    // B12: opened a second time, it is still the mail the key came with: not confirmed either.
+    let (_, again) = newest(&bob, &bob_id);
+    assert_eq!(again.signature, MailSignatureStatus::UnknownKey);
     assert!(m.text.contains("Erste Nachricht.") && m.text.contains("Viele Grüße\nAlice Ä."), "{}", m.text);
     assert!(m.attachments.is_empty(), "the signature is no attachment");
     // Bob learned Alice's key from the Autocrypt header.
@@ -2459,4 +2477,92 @@ mod chaos;
 mod collections;
 mod crazy_user;
 mod everyday;
+mod gnupg;
 mod properties;
+mod rekey;
+mod security;
+
+/// "Change storage location": every file is copied and checked, a target holding a suite is
+/// refused, and the suite opens from the new place with all entries.
+#[test]
+fn copy_to_other_storage() {
+    let from = Dirs::new("copy-from");
+    let to = Dirs::new("copy-to");
+    let kf = generate_keyfile();
+    let s = from.suite();
+    s.create(
+        options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat"), (VaultKind::Totp, "Codes")]),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    let pass = s.list_vaults().unwrap().into_iter().find(|v| v.kind == VaultKind::Pass).unwrap();
+    s.save_entry(pass.id.clone(), login("A", "anna", "geheim-1")).unwrap();
+
+    // Copied while unlocked: settings file plus two vault files.
+    assert_eq!(s.copy_to(to.storage()).unwrap(), 3);
+    let mut a = from.storage().list().unwrap();
+    let mut b = to.storage().list().unwrap();
+    a.retain(|f| !f.ends_with(".bak") && !f.ends_with(".tmp"));
+    b.retain(|f| !f.ends_with(".bak") && !f.ends_with(".tmp"));
+    a.sort();
+    b.sort();
+    assert_eq!(a, b);
+    for f in &a {
+        assert_eq!(from.storage().read(f.clone()).unwrap(), to.storage().read(f.clone()).unwrap(), "{f}");
+    }
+    // The old place keeps its files.
+    assert!(from.suite().exists().unwrap());
+
+    // A second copy into the same place is refused, nothing is overwritten.
+    assert!(matches!(s.copy_to(to.storage()), Err(GhulError::AlreadyExists)));
+
+    // The new place opens on its own.
+    s.lock();
+    let moved = GhulSuite::new(to.storage(), from.local());
+    moved.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    assert_eq!(moved.list_entries(VaultKind::Pass, None).unwrap()[0].title, "A");
+
+    // An empty source has nothing to copy.
+    let empty = Dirs::new("copy-empty");
+    assert!(matches!(empty.suite().copy_to(Dirs::new("copy-empty-to").storage()), Err(GhulError::NoVault)));
+}
+
+/// A vault file renamed by hand (other name, even the extension of another kind) is recognised
+/// by its content and gets its neutral name back at the next unlock. A file renamed to something
+/// that is no vault file at all (`.txt`) is simply not seen, and is back once its name is.
+#[test]
+fn renamed_vault_files_are_found_by_content() {
+    let d = Dirs::new("renamed");
+    let kf = generate_keyfile();
+    let s = d.suite();
+    s.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    let v = s.list_vaults().unwrap().into_iter().find(|v| v.kind == VaultKind::Pass).unwrap();
+    s.save_entry(v.id.clone(), login("A", "b", "c")).unwrap();
+    s.lock();
+    let st = d.storage();
+    let data = st.read(v.file.clone()).unwrap().unwrap();
+
+    for other in ["Urlaub 2026.ghlpss", "x.ghltotp"] {
+        st.delete(v.file.clone()).unwrap();
+        st.write(other.into(), data.clone()).unwrap();
+        s.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
+        let now = s.list_vaults().unwrap().into_iter().find(|x| x.id == v.id).unwrap();
+        assert_eq!(now.file, v.file, "back to its neutral name");
+        assert_eq!(now.kind, VaultKind::Pass, "the kind comes from the content, not the extension");
+        assert_eq!(s.list_entries(VaultKind::Pass, None).unwrap()[0].title, "A");
+        assert!(st.read(other.into()).unwrap().is_none());
+        s.lock();
+    }
+
+    st.delete(v.file.clone()).unwrap();
+    st.write("tresor.txt".into(), data.clone()).unwrap();
+    s.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
+    assert!(s.list_entries(VaultKind::Pass, None).unwrap().is_empty());
+    s.lock();
+    st.delete("tresor.txt".into()).unwrap();
+    st.write("tresor.ghlpss".into(), data).unwrap();
+    s.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    assert_eq!(s.list_entries(VaultKind::Pass, None).unwrap()[0].title, "A");
+}

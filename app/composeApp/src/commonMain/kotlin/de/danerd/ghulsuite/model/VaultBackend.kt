@@ -25,6 +25,13 @@ interface VaultBackend {
     fun storageName(): String
     /** Uses the app's private storage (`null`) or a folder chosen by the user. */
     fun useStorage(folder: FolderRef?)
+    /**
+     * "Change storage location": copies every suite file to the app's private storage (`null`)
+     * or the chosen folder, checks each copy and then uses the new place. The old files stay.
+     * Fails with [VaultErrorKind.ALREADY_EXISTS] if the target already holds a suite. Locks.
+     * Returns the number of files copied.
+     */
+    suspend fun moveStorage(folder: FolderRef?): Int = 0
     /** Protection of the suite (for the unlock screen); null if there is no suite. */
     fun protection(): ProtectionUi?
     /** What a vault file needs to be opened. */
@@ -128,6 +135,12 @@ interface VaultBackend {
     suspend fun newRecoveryCode(label: String): String
     /** Removes a security key or key file (not the last one). */
     suspend fun removeSlot(id: String)
+    /**
+     * A key was removed and the recovery code renewed on another device: a remaining security key
+     * ([pin]) or [keyfile] takes the new protection over, then the sync runs. [password] only if
+     * the master password was changed there as well.
+     */
+    suspend fun adoptRemoteProtection(password: String?, pin: String?, keyfile: ByteArray?, onTouchNeeded: () -> Unit)
     suspend fun changePassword(current: String, new: String)
 
     // --- Import and export
@@ -346,7 +359,8 @@ data class TotpInputUi(
 
 enum class SlotType { SECURITY_KEY, KEYFILE, RECOVERY_CODE }
 
-data class SlotUi(val id: String, val type: SlotType, val label: String, val created: Long)
+/** [needsUpdate]: added with an older app version; it gets the current protection when it is used once. */
+data class SlotUi(val id: String, val type: SlotType, val label: String, val created: Long, val needsUpdate: Boolean = false)
 
 data class PasswordOptionsUi(
     val length: Int = 20,
@@ -445,6 +459,10 @@ enum class VaultErrorKind {
     CERT_UNTRUSTED,
     SERVER_AUTH,
     PASSWORD_CHANGED_ELSEWHERE,
+    PROTECTION_CHANGED_ELSEWHERE,
+    DRIVE_ROLLED_BACK,
+    SHARE_NOT_DELETED,
+    PHP_NOT_EXECUTED,
     NOT_CONFIGURED,
     NOT_FOUND,
     OTHER,

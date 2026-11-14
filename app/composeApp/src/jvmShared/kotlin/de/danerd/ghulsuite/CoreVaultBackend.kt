@@ -33,6 +33,7 @@ import de.danerd.ghulsuite.core.passwordStrength
 import de.danerd.ghulsuite.model.ContainerInfoUi
 import de.danerd.ghulsuite.model.EntrySummaryUi
 import de.danerd.ghulsuite.model.EntryUi
+import de.danerd.ghulsuite.model.FolderRef
 import de.danerd.ghulsuite.model.FoundVaultUi
 import de.danerd.ghulsuite.model.ImportPreviewUi
 import de.danerd.ghulsuite.model.ImportResultUi
@@ -82,6 +83,15 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
 
     /** Where the suite lives (app folder, chosen folder, USB stick …). */
     protected abstract fun storage(): VaultStorage
+
+    /** The storage for the app's private folder (`null`) or a chosen folder. */
+    protected abstract fun storageFor(folder: FolderRef?): VaultStorage
+
+    override suspend fun moveStorage(folder: FolderRef?): Int {
+        val copied = io { suite.copyTo(storageFor(folder)).toInt() }
+        useStorage(folder)
+        return copied
+    }
 
     /** Opens the suite again, e.g. after another storage location was chosen. */
     protected fun reopen() {
@@ -359,6 +369,7 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
                 },
                 it.label,
                 it.created,
+                it.needsUpdate,
             )
         }
     }
@@ -372,6 +383,11 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
 
     override suspend fun removeSlot(id: String) {
         io { suite.removeSlot(id.hexToBytes()) }
+        onProtectionChanged()
+    }
+
+    override suspend fun adoptRemoteProtection(password: String?, pin: String?, keyfile: ByteArray?, onTouchNeeded: () -> Unit) {
+        maybeWithKey(pin) { t -> suite.adoptRemoteProtection(password, t, t?.let { Touch(onTouchNeeded) }, pin, keyfile) }
         onProtectionChanged()
     }
 

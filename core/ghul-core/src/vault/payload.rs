@@ -77,7 +77,54 @@ pub struct Entry {
     pub extra: BTreeMap<String, Value>,
 }
 
+/// B18: the revision a tombstone deleted, kept in its extra fields.
+const DELETED_FROM: &str = "deleted_from";
+
 impl Entry {
+    /// Turns the entry into a tombstone: content gone, deletion synchronised. It remembers which
+    /// revision it deleted, so a change made elsewhere without knowing of the deletion survives
+    /// (see [`Entry::replaces`]).
+    pub fn make_tombstone(&mut self, now: i64) {
+        self.fields.clear();
+        self.tags.clear();
+        self.folder = None;
+        self.extra.clear();
+        self.extra.insert(DELETED_FROM.to_owned(), Value::Integer(self.revision.into()));
+        self.deleted = true;
+        self.revision += 1;
+        self.modified = now;
+    }
+
+    /// The revision a tombstone deleted (`None` for live entries and older tombstones).
+    fn deleted_from(&self) -> Option<u64> {
+        if !self.deleted {
+            return None;
+        }
+        match self.extra.get(DELETED_FROM) {
+            Some(Value::Integer(i)) => u64::try_from(i128::from(*i)).ok(),
+            _ => None,
+        }
+    }
+
+    /// B18, fixed merge rule: whether `self` replaces `other` (same ID, two devices).
+    /// - Deleted on one device, changed on another: the deletion wins only over the state the
+    ///   deleting device knew. A change it never saw wins and brings the entry back, so no edit
+    ///   is lost silently. Nothing here depends on the clocks of the devices.
+    /// - Otherwise the higher revision wins, on a tie the later change.
+    pub fn replaces(&self, other: &Entry) -> bool {
+        match (self.deleted, other.deleted) {
+            (true, false) => match self.deleted_from() {
+                Some(base) => other.revision <= base,
+                None => (self.revision, self.modified) > (other.revision, other.modified),
+            },
+            (false, true) => match other.deleted_from() {
+                Some(base) => self.revision > base,
+                None => (self.revision, self.modified) > (other.revision, other.modified),
+            },
+            _ => (self.revision, self.modified) > (other.revision, other.modified),
+        }
+    }
+
     pub fn new(id: [u8; 16], entry_type: &str, modified: i64) -> Self {
         Entry {
             id: id.to_vec(),

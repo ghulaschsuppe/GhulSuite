@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Binary layout of GhulSuite containers (format version 1). See `docs/FORMAT.md`.
+//! Binary layout of GhulSuite containers (format versions 1 and 2). See `docs/FORMAT.md`.
+//! Version 2 adds the slot types 4 and 5 (security key and key file with an X25519 public key);
+//! the app writes version 2 and still reads version 1.
 //!
 //! ```text
 //! magic[8] | version u16 | header_len u32 | header[header_len] | payload_nonce[24] | payload_ciphertext
@@ -9,7 +11,9 @@
 
 use super::error::{Result, VaultError};
 
-pub const FORMAT_VERSION: u16 = 1;
+pub const FORMAT_VERSION: u16 = 2;
+/// Oldest version still read (its files are rewritten as version 2).
+pub const MIN_FORMAT_VERSION: u16 = 1;
 pub const PREFIX_LEN: usize = 14;
 pub const NONCE_LEN: usize = 24;
 pub const TAG_LEN: usize = 16;
@@ -34,6 +38,8 @@ pub const CIPHER_XCHACHA20_POLY1305: u8 = 1;
 pub const SLOT_FIDO2_HMAC_SECRET: u8 = 1;
 pub const SLOT_RECOVERY_CODE: u8 = 2;
 pub const SLOT_KEYFILE: u8 = 3;
+pub const SLOT_FIDO2_X25519: u8 = 4;
+pub const SLOT_KEYFILE_X25519: u8 = 5;
 pub const SLOT_OPTION_UV_REQUIRED: u8 = 0x01;
 
 const TAG_CONTAINER_ID: u16 = 0x0001;
@@ -141,6 +147,13 @@ pub struct Wrapped {
     pub ciphertext: [u8; 32 + TAG_LEN],
 }
 
+/// The public key of a version-2 slot and the ephemeral key of its current wrapping.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PublicWrap {
+    pub public_key: [u8; 32],
+    pub ephemeral: [u8; 32],
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Fido2Slot {
     pub slot_id: [u8; 16],
@@ -149,6 +162,9 @@ pub struct Fido2Slot {
     /// PRF input; the hmac-secret salt is `SHA-256("WebAuthn PRF" || 0x00 || prf_input)`.
     pub prf_input: [u8; 32],
     pub uv_required: bool,
+    /// Set for slot type 4 (the factor secret is wrapped to this public key); `None` for the
+    /// older type 1.
+    pub public: Option<PublicWrap>,
     pub wrapped: Wrapped,
 }
 
@@ -166,6 +182,8 @@ pub struct RecoverySlot {
 pub struct KeyfileSlot {
     pub slot_id: [u8; 16],
     pub keyfile_id: [u8; 8],
+    /// Set for slot type 5; `None` for the older type 3.
+    pub public: Option<PublicWrap>,
     pub wrapped: Wrapped,
 }
 
@@ -190,10 +208,21 @@ impl Slot {
         !matches!(self, Slot::Recovery(_))
     }
 
+    /// A security key or key file slot of version 1 (no public key): the app cannot give it a
+    /// new factor secret until the key or key file is used once.
+    pub fn is_legacy(&self) -> bool {
+        matches!(self, Slot::Fido2(Fido2Slot { public: None, .. }) | Slot::Keyfile(KeyfileSlot { public: None, .. }))
+    }
+
+    /// Slot types that need format version 2.
+    fn needs_v2(&self) -> bool {
+        self.provides_factor() && !self.is_legacy()
+    }
+
     fn encode(&self, out: &mut Vec<u8>) {
         match self {
             Slot::Fido2(s) => {
-                out.push(SLOT_FIDO2_HMAC_SECRET);
+                out.push(if s.public.is_some() { SLOT_FIDO2_X25519 } else { SLOT_FIDO2_HMAC_SECRET });
                 out.extend_from_slice(&s.slot_id);
                 out.push(s.rp_id.len() as u8);
                 out.extend_from_slice(s.rp_id.as_bytes());
@@ -201,6 +230,7 @@ impl Slot {
                 out.extend_from_slice(&s.credential_id);
                 out.extend_from_slice(&s.prf_input);
                 out.push(if s.uv_required { SLOT_OPTION_UV_REQUIRED } else { 0 });
+                encode_public(&s.public, out);
                 encode_wrapped(&s.wrapped, out);
             }
             Slot::Recovery(s) => {
@@ -209,9 +239,10 @@ impl Slot {
                 encode_wrapped(&s.wrapped, out);
             }
             Slot::Keyfile(s) => {
-                out.push(SLOT_KEYFILE);
+                out.push(if s.public.is_some() { SLOT_KEYFILE_X25519 } else { SLOT_KEYFILE });
                 out.extend_from_slice(&s.slot_id);
                 out.extend_from_slice(&s.keyfile_id);
+                encode_public(&s.public, out);
                 encode_wrapped(&s.wrapped, out);
             }
         }
@@ -220,7 +251,7 @@ impl Slot {
     fn parse(value: &[u8]) -> Result<Slot> {
         let mut r = Reader::new(value);
         let slot = match r.u8()? {
-            SLOT_FIDO2_HMAC_SECRET => {
+            t @ (SLOT_FIDO2_HMAC_SECRET | SLOT_FIDO2_X25519) => {
                 let slot_id = r.array::<16>()?;
                 let rp_len = r.u8()? as usize;
                 if rp_len == 0 {
@@ -242,25 +273,38 @@ impl Slot {
                 if options & SLOT_OPTION_UV_REQUIRED == 0 {
                     return Err(VaultError::format("FIDO2 slots without PIN verification are not allowed"));
                 }
+                let public = if t == SLOT_FIDO2_X25519 { Some(parse_public(&mut r)?) } else { None };
                 let wrapped = parse_wrapped(&mut r)?;
-                Slot::Fido2(Fido2Slot { slot_id, rp_id, credential_id, prf_input, uv_required: true, wrapped })
+                Slot::Fido2(Fido2Slot { slot_id, rp_id, credential_id, prf_input, uv_required: true, public, wrapped })
             }
             SLOT_RECOVERY_CODE => {
                 let slot_id = r.array::<16>()?;
                 let wrapped = parse_wrapped(&mut r)?;
                 Slot::Recovery(RecoverySlot { slot_id, wrapped })
             }
-            SLOT_KEYFILE => {
+            t @ (SLOT_KEYFILE | SLOT_KEYFILE_X25519) => {
                 let slot_id = r.array::<16>()?;
                 let keyfile_id = r.array::<8>()?;
+                let public = if t == SLOT_KEYFILE_X25519 { Some(parse_public(&mut r)?) } else { None };
                 let wrapped = parse_wrapped(&mut r)?;
-                Slot::Keyfile(KeyfileSlot { slot_id, keyfile_id, wrapped })
+                Slot::Keyfile(KeyfileSlot { slot_id, keyfile_id, public, wrapped })
             }
             other => return Err(VaultError::format(format!("unknown slot type {other}"))),
         };
         r.finish()?;
         Ok(slot)
     }
+}
+
+fn encode_public(p: &Option<PublicWrap>, out: &mut Vec<u8>) {
+    if let Some(p) = p {
+        out.extend_from_slice(&p.public_key);
+        out.extend_from_slice(&p.ephemeral);
+    }
+}
+
+fn parse_public(r: &mut Reader<'_>) -> Result<PublicWrap> {
+    Ok(PublicWrap { public_key: r.array()?, ephemeral: r.array()? })
 }
 
 fn encode_wrapped(w: &Wrapped, out: &mut Vec<u8>) {
@@ -308,6 +352,11 @@ impl Header {
             return Err(VaultError::format("no slot provides the factor secret"));
         }
         Ok(())
+    }
+
+    /// Whether the header can be stored in a file of `version` (version 1 knows no public-key slots).
+    pub fn fits_version(&self, version: u16) -> bool {
+        version >= 2 || !self.slots.iter().any(Slot::needs_v2)
     }
 
     /// Encodes the TLV records in canonical order.
@@ -424,6 +473,7 @@ fn fixed<const N: usize>(value: &[u8]) -> Result<[u8; N]> {
 /// The parts of a container file.
 pub struct FileParts<'a> {
     pub kind: ContainerKind,
+    pub version: u16,
     pub header: &'a [u8],
     /// Everything before the payload nonce; used as AAD for the payload.
     pub aad: &'a [u8],
@@ -446,7 +496,7 @@ pub fn split_file(data: &[u8]) -> Result<FileParts<'_>> {
         }
     })?;
     let version = u16::from_le_bytes([data[8], data[9]]);
-    if version != FORMAT_VERSION {
+    if !(MIN_FORMAT_VERSION..=FORMAT_VERSION).contains(&version) {
         return Err(VaultError::UnsupportedVersion(version));
     }
     let header_len = u32::from_le_bytes([data[10], data[11], data[12], data[13]]) as usize;
@@ -461,6 +511,7 @@ pub fn split_file(data: &[u8]) -> Result<FileParts<'_>> {
     nonce.copy_from_slice(&data[header_end..header_end + NONCE_LEN]);
     Ok(FileParts {
         kind,
+        version,
         header: &data[PREFIX_LEN..header_end],
         aad: &data[..header_end],
         nonce,
@@ -469,9 +520,9 @@ pub fn split_file(data: &[u8]) -> Result<FileParts<'_>> {
 }
 
 /// Writes magic, version and header length.
-pub fn encode_prefix(kind: ContainerKind, header_len: usize, out: &mut Vec<u8>) {
+pub fn encode_prefix(kind: ContainerKind, version: u16, header_len: usize, out: &mut Vec<u8>) {
     out.extend_from_slice(kind.magic());
-    out.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
+    out.extend_from_slice(&version.to_le_bytes());
     out.extend_from_slice(&(header_len as u32).to_le_bytes());
 }
 

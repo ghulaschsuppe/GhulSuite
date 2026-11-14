@@ -99,6 +99,31 @@ pub async fn request(
     pinned: Option<&str>,
 ) -> NetResult<Response> {
     let tcp = TcpStream::connect((url.host.as_str(), url.port)).await.map_err(|e| NetError::Connect(e.to_string()))?;
+    request_over(tcp, method, url, headers, body, pinned).await
+}
+
+/// Like [`request`], but connects to `addr`, an address of `url`'s host checked beforehand: the
+/// name is not looked up again between the check and the connection (DNS rebinding). TLS still
+/// verifies the certificate for the host name.
+pub async fn request_at(
+    addr: std::net::SocketAddr,
+    method: &str,
+    url: &Url,
+    headers: &[(&str, String)],
+    body: &[u8],
+) -> NetResult<Response> {
+    let tcp = TcpStream::connect(addr).await.map_err(|e| NetError::Connect(e.to_string()))?;
+    request_over(tcp, method, url, headers, body, None).await
+}
+
+async fn request_over(
+    tcp: TcpStream,
+    method: &str,
+    url: &Url,
+    headers: &[(&str, String)],
+    body: &[u8],
+    pinned: Option<&str>,
+) -> NetResult<Response> {
     if url.tls {
         let s = tls::start(tcp, &url.host, pinned).await?;
         exchange(s, method, url, headers, body).await

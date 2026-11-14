@@ -302,13 +302,7 @@ impl GhulSuite {
             // Only after the copy is safely stored: delete the original (tombstone).
             let (_, c) = o.vault_mut(&vault_id)?;
             let old = find_entry(&mut c.payload.entries, &id)?;
-            old.fields.clear();
-            old.tags.clear();
-            old.folder = None;
-            old.extra.clear();
-            old.deleted = true;
-            old.revision += 1;
-            old.modified = now;
+            old.make_tombstone(now);
             self.save_vault(o, &vault_id)?;
             Ok(new)
         })

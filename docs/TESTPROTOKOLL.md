@@ -1,6 +1,6 @@
 # Testprotokoll und Fehlerbericht
 
-Stand: 13. November 2026 (dritte Runde: Kalender, Zeitzonen, Emulator-Abläufe für alle Bereiche) · Branch `test/chaos` (noch nicht gemergt) · Grundlage: Audit vom selben Tag (`docs/AUDIT-2026-11.md`) und Testkonzept (`docs/TESTKONZEPT.md`).
+Stand: 14. November 2026 (vierte Runde: B1 Schlüssel bei jeder Schutzänderung erneuern, F23 neutrale Dateinamen, Geräte lange offline) · Branch `feat/rekey-neutral-names` · Zusammenfassung aller Audits: Sicherheitsbericht (`docs/AUDIT.md`); Testkonzept: `docs/TESTKONZEPT.md`.
 
 Dieses Protokoll ist die Arbeitsliste für die nächsten Durchgänge: Jeder Fund hat eine Nummer, eine Schwere, den Test, der ihn zeigt, und, wenn behoben, den Commit. Offene Punkte haben einen Vorschlag, wie sie behoben werden, und den Test, der danach grün werden muss.
 
@@ -8,12 +8,12 @@ Dieses Protokoll ist die Arbeitsliste für die nächsten Durchgänge: Jeder Fund
 
 | | |
 |---|---|
-| Testfunktionen im Kern | 219 (215 bei jedem Lauf, 4 lange nur nachts) |
+| Testfunktionen im Kern | 244 (237 bei jedem Lauf, 7 lange oder mit externen Daten nur nachts) |
 | Einzelprüfungen pro Lauf | über 1,1 Millionen (u. a. 777.000 Zeitzonen-Umrechnungen in 446 Zonen, 292.000 Kalendertage, 45.000 Fuzz-Eingaben, 20.000 Base32-Schreibweisen, 12.000 Wiederherstellungscodes, 5.000 HOTP-Fälle, 5.000 Passwortgenerator-Varianten, 3.000 Zusammenführungen, 3.000+ Aktionen „bekloppter Nutzer“, 515 Naughty Strings × 8 Felder) |
 | Davon gegen echte Server | 54 (SFTP, FTPS, IMAP, SMTP, PHP-Modul) |
 | Externe Testsammlungen | Big List of Naughty Strings, Project Wycheproof (5 Algorithmen), Public-Suffix-Liste mit offiziellen Testfällen, RFC 4226/6238, PayloadsAllTheThings (XSS, CRLF), SecLists (XSS), DOMPurify-Testfälle, WHATWG-URL-Testdaten, JSONTestSuite, 304 Kalenderdateien aus den Tests von iCal4j und python-icalendar (auch deren Fuzzing-Funde), Zeitzonen-Regeln aller Zonen der IANA-Datenbank |
-| Gefundene Fehler | 39, davon **36 behoben**, 2 bewusst als Entscheidung offen, 1 als Einzelheit (B12) |
-| Offene Punkte aus dem Audit | 22 (Abschnitt 4) + Bedienung/Texte (Abschnitt 5) |
+| Gefundene Fehler | 43, alle behoben bzw. entschieden (F24 gewollt) |
+| Offene Punkte aus dem Audit | keine mehr (Abschnitt 4: erledigt oder entschieden) + Bedienung/Texte (Abschnitt 5) |
 | Laufzeit | Kern-Tests ca. 95 s, Android/Desktop-Build ca. 10 min, Nachtlauf ca. 2 h |
 
 Alle Tests sind grün (Kern, Netzwerk, Android-Kotlin, Desktop-Tests). Die App-Tests im Emulator (Maestro, Monkey) laufen in der CI.
@@ -103,10 +103,14 @@ Schwere: **K** kritisch (Datenverlust, Geheimnis preisgegeben) · **H** hoch (An
 | F37 | N | Schnell-Eintrag: Das Beispiel, das die App selbst vorschlägt („Run tomorrow 6:30pm-7:30pm #sports“), wurde nicht verstanden, ganztägiger Termin mit der Uhrzeit im Titel | `caltext::tests::quick_examples_of_the_app` (prüft alle Beispiele der App, deutsch und englisch) | behoben: Zeitspannen mit am/pm oder „Uhr“ auf beiden Seiten |
 | F38 | M | Serien aus einer anderen Zeitzone (Einladung aus den USA, Termin in Tokio): Nur der erste Termin wurde umgerechnet. In den Wochen, in denen nur eine Seite die Uhr umstellt, und bei Zonen ohne Sommerzeit das halbe Jahr lang, lagen die Folgetermine eine Stunde daneben | `properties::series_from_other_time_zones_are_right_all_year`, `caltext::zone_tests::a_series_keeps_the_time_zone_it_came_from`, `…::windows_names_of_outlook` | behoben: Die Serie merkt sich ihre Zeitzone (neues Feld `zone`), jedes Vorkommen wird mit dem Versatz seines Tages umgerechnet; auch Anzeige, Erinnerungen, Löschen einzelner Tage und Export |
 | F39 | H | **CI: Tests gegen echte Server liefen ins Leere.** GitHub hat die CI auf Ubuntu 26.04 umgestellt; dessen Dovecot 2.4 lehnte die Testkonfiguration ab. Der Startschritt verschluckte den Fehler (Rohrleitung) und die Prüfung `test -n A && test -n B` hält ein `bash -e`-Skript nicht an. Zwei Läufe meldeten 57 Netzwerk-Tests als grün, obwohl alle übersprungen wurden | CI-Log (`doveconf: Fatal`) | behoben: Konfiguration für Dovecot 2.3 und 2.4, Fehler beim Serverstart und fehlende Server-Variablen machen die CI rot; Netzwerk-Tests laufen wieder echt (31 s, 57 Tests) |
-| F23 | M | **Tresornamen stehen im Dateinamen** (Server, Sicherung): „bank-privat.ghlpss“ verrät, welche Tresore es gibt | `attacks::stolen_device_files…` (bewusst ausgenommen) | **offen, Entscheidung nötig** |
-| F24 | N | Termintitel und Import-Titel werden getrimmt (führender Tab geht verloren); Passwörter bleiben exakt | `attacks::exports_are_safe…` | **offen, vertretbar** |
+| F40 | M | Sync: Ein Gerät, das selbst Key und Notfallblatt geändert hatte, konnte ältere Server-Dateien eines anderen Geräts nicht mehr lesen und hielt sie für „anderswo geändert“ oder beschädigt (Gefahr: Überschreiben von Änderungen eines Geräts, das offline war) | `rekey::many_changes_while_the_other_device_is_offline`, `rekey::other_devices_take_over_the_new_protection` | behoben: Jedes Gerät merkt sich seine vorherigen Schlüssel (bis 256 Änderungen, ohne zeitliche Grenze) und liest damit ältere Dateien; was es nicht lesen kann, überschreibt es nie |
+| F41 | M | Sync: Wurde auf einem anderen Gerät ein Key entfernt **und** das Master-Passwort geändert, konnte die Passwortabfrage nie gelingen | `rekey::a_device_offline_for_a_week_loses_nothing` | behoben: einmal mit einem übrigen Key oder der Schlüsseldatei bestätigen, das neue Passwort wird in derselben Abfrage verlangt |
+| F42 | M | Eigener Ordner mit einem Sync-Programm (Syncthing, Nextcloud): Eine Konfliktkopie derselben Tresordatei wurde nicht zusammengeführt, nur die neuere zählte; Änderungen der anderen gingen beim nächsten Speichern verloren | `security::conflict_copies_of_a_folder_sync_tool_are_merged` | behoben: Kopien desselben Tresors werden Eintrag für Eintrag zusammengeführt, danach wird die Kopie gelöscht |
+| F43 | M | B4 wirkte nicht: Android übernimmt die Sperrbildschirm-Einstellung eines Kanals nicht von der App (`mLockscreenVisibility=-1000` statt „privat“), nur der Nutzer kann sie setzen. Bei „alle Inhalte anzeigen“ standen Termin bzw. Absender und Betreff weiter auf dem Sperrbildschirm | `tools/check-reminders.sh` (gefunden durch die neue Kanal-Prüfung im Emulator) | behoben: Ist das Gerät beim Eintreffen gesperrt, enthält die Benachrichtigung nur die Sperrbildschirm-Fassung; geprüft mit echter PIN-Sperre im Emulator |
+| F23 | M | ~~Tresornamen stehen im Dateinamen~~ (Server, Sicherung): „bank-privat.ghlpss“ verriet, welche Tresore es gibt | `attacks::stolen_device_files_server_and_backup_reveal_nothing` (jetzt auch Datei- und ZIP-Namen), `rekey::vault_files_get_neutral_names_here_and_on_the_server` | behoben: Dateien heißen nach ihrer Kennung (`3f9a1c2b7d4e5f60.ghlpss`), der Name steht nur verschlüsselt darin; alte Namen werden beim Entsperren und beim nächsten Sync ersetzt |
+| F24 | N | Termintitel und Import-Titel werden getrimmt (führender Tab geht verloren); Passwörter bleiben exakt | `attacks::exports_are_safe…` | **gewollt:** Titel ohne Leerraum am Rand sind Absicht (Suche, Sortierung, Anzeige); alles Geheime (Passwörter, Notizen, Schlüssel) bleibt Zeichen für Zeichen erhalten |
 
-Zu F23: Vorschlag, Dateien künftig nach ihrer Kennung benennen (`3f9a….ghlpss`), den Namen nur verschlüsselt führen; alte Dateinamen beim nächsten Sync umbenennen. Nachteil: Im Ordner sieht man nicht mehr, welche Datei welcher Tresor ist. Test danach: Marker im Tresornamen darf auch in Datei- und ZIP-Namen nicht vorkommen.
+Zu F23: Im Ordner sieht man nicht mehr, welche Datei welcher Tresor ist; die App zeigt die Namen, und eine Sicherung stellt alles wieder her. Ein Export einzelner Tresore schlägt weiter den Tresornamen als Dateinamen vor, das entscheidest du beim Speichern selbst.
 
 Zu F17 (Verhalten seit der Behebung): Die erste Mail eines neuen Kontakts mit Autocrypt-Schlüssel zeigt „Schlüssel unbekannt/unbestätigt“; ab der nächsten Mail „gültig“ (Vertrauen beim ersten Kontakt). Öffnet man dieselbe erste Mail erneut, zeigt sie „gültig“, das ist eine kleine Unstimmigkeit (siehe B12).
 
@@ -116,24 +120,24 @@ Zu F17 (Verhalten seit der Behebung): Die erste Mail eines neuen Kontakts mit Au
 
 | Nr. | Schwere | Punkt | Vorschlag | Test, der grün werden muss |
 |---|---|---|---|---|
-| B1 | H | Neuer Wiederherstellungscode / entfernter Key schützt nicht gegen **alte Dateikopien**: der innere Schlüssel wird nicht erneuert | Beim Code-Wechsel und Key-Entfernen VMK und Faktor-Geheimnis neu erzeugen, alles neu verschlüsseln (Formatänderung, mit Umzug) | neu: altes Notfallblatt + alte Kopie öffnet aktuelle Datei **nicht** |
-| B2 | M | Entfernte Keys können per Sync zurückkommen (Gerät war offline und fügt selbst einen Key hinzu) | Löschmarken je Key in der Suite-Datei | neu in `chaos.rs` |
-| B3 | M | Drive-Index ohne Schutz gegen Zurücksetzen (alter Index vom Server) und gleichzeitige Änderungen zweier Geräte | Revision im Drive-Bereich merken, älteren Index ablehnen; vor dem Schreiben vergleichen | neu: Index-Rollback wird erkannt |
-| B4 | M | Sperrbildschirm zeigt Absender/Betreff/Termin, wenn Android „alle Inhalte“ zeigt | Kanäle mit `lockscreenVisibility = PRIVATE` (neue Kanal-IDs) | Emulator-Ablauf |
-| B5 | M | Mail-Zugang für Benachrichtigungen: Keystore ohne StrongBox; Doku (KONZEPT) beschreibt noch „opt-in, Panik löscht“ | Doku angleichen, StrongBox versuchen, optional „harte Panik“ | - |
-| B6 | N | `.ics` aus fremden Apps wird ohne Rückfrage importiert | Vorschau mit Bestätigung | Emulator-Ablauf |
-| B7 | N | Interne Aktionen (`OPEN_MAIL`, `OPEN_EVENT`) über die exportierte MainActivity von fremden Apps auslösbar | Nicht exportierte Ziel-Activity oder Zufallskennung im PendingIntent | - |
-| B8 | N | Auto-Sperre: Timer läuft im Tiefschlaf nicht weiter; nach Teilen/Kamera gilt dauerhaft eine Mindestfrist von 120 s | Zeit beim Verlassen merken und beim Zurückkommen vergleichen; Frist nach Rückkehr zurücksetzen | - |
-| B9 | N | Autofill verknüpft eine App nach einmaliger Auswahl dauerhaft, ohne Rückfrage | Bestätigung mit App-Name und Paket | - |
-| B10 | N | Windows: entschlüsselte Kopien in `%TEMP%` bleiben liegen, wenn ein Programm sie noch offen hat | Löschergebnis prüfen, Hinweis; Ordner im Profil mit Zufallsnamen | - |
-| B11 | N | „Passwort anderswo geändert“: Server kann teure Argon2-Werte erzwingen (bis 2 GiB) | Werte nicht über die eigenen hinaus annehmen oder vorher fragen | `attacks::forged_or_weakened…` erweitern |
-| B12 | N | Erste Autocrypt-Mail: beim zweiten Öffnen „gültig“ statt „unbestätigt“ | Herkunft des Schlüssels (Mail-ID) merken | Netzwerktest erweitern |
-| B13 | N | Geänderte Server-/Kontodaten in der Suite-Datei werden nicht an andere Geräte weitergegeben (gleiche ID gewinnt lokal) | Zeitstempel je Listeneintrag wie bei Bereichs-Optionen | neu in `chaos.rs` |
-| B14 | N | Freigabe zurückziehen meldet Erfolg, auch wenn das Paket auf dem Server bleibt | Paket immer löschen, Fehler melden | - |
-| B15 | N | PHP-Modul: Fehlversuchssperre per IP (hinter Proxy aussperrbar), Endungsliste erfasst `x.php.jpg` nicht, Modul-Datei ohne `chmod` | Sperre an Schlüssel statt IP koppeln; Allowlist der Endungen; `chmod 0600` | PHP-Test |
-| B16 | - | ~~Mail-Bilder zu `localhost`/privaten Adressen~~ | erledigt (F28); Rest: Namensauflösung kann zwischen Prüfung und Verbindung wechseln (DNS-Rebinding), Adresse nach dem Verbinden prüfen | - |
-| B17 | N | CI: Signaturschlüssel und FTP-Zugang stehen bei Pushes auf jeden Branch bereit | Nur `main` (GitHub-Environment mit Freigabe) | - |
-| B18 | N | Zusammenführen bei gleichzeitigem Löschen (Gerät A) und Bearbeiten (Gerät B) desselben Eintrags: Ergebnis hängt von Revision/Zeit ab | Regel festlegen („Bearbeiten gewinnt, Löschung wird gemeldet“) und testen | neu in `crazy_user.rs` |
+| B1 | - | ~~Neuer Wiederherstellungscode / entfernter Key schützt nicht gegen alte Dateikopien~~ | erledigt: Formatversion 2 mit öffentlichem Schlüssel je Key und Schlüsseldatei. Neues Notfallblatt, neues Passwort oder entfernter Key geben jeder Datei einen neuen inneren Schlüssel; ein entfernter Key erneuert zusätzlich das Faktor-Geheimnis für die übrigen Keys, ohne dass sie berührt werden. Key-Plätze älterer Versionen ziehen beim nächsten Entsperren mit diesem Key um (bis dahin markiert die App sie) | `rekey::*` (10 Tests: altes Notfallblatt, entfernte Schlüsseldatei, entfernter Security Key, altes Passwort, Umzug, Schnell-Entsperren, andere Geräte, eine Woche offline, 40 Änderungen offline, Dateinamen) |
+| B2 | - | ~~Entfernte Keys können per Sync zurückkommen (Gerät war offline und fügt selbst einen Key hinzu)~~ | erledigt: Löschmarken je Key in der Suite-Datei; ein entfernter Key kommt nie zurück | `rekey::a_removed_key_does_not_come_back_through_a_device_that_was_offline` |
+| B3 | - | ~~Drive-Index ohne Schutz gegen Zurücksetzen und gleichzeitige Änderungen zweier Geräte~~ | erledigt: Gerät merkt sich die Revision je Server, ein älterer Index wird abgelehnt („Älteren Serverstand übernehmen“ nur nach Rückfrage); Änderungen prüfen vor dem Schreiben, ob sich der Index inzwischen geändert hat, und wiederholen; Blöcke werden erst nach dem Speichern gelöscht | `security::an_old_or_missing_drive_index_is_refused`, `security::two_devices_changing_drive_at_once_lose_nothing` |
+| B4 | - | ~~Sperrbildschirm zeigt Absender/Betreff/Termin, wenn Android „alle Inhalte“ zeigt~~ | erledigt: Trifft eine Benachrichtigung bei gesperrtem Gerät ein, enthält sie nur ihre Sperrbildschirm-Fassung; entsperrt die volle (siehe F43) | `tools/check-reminders.sh` Schritt 5: echte PIN-Sperre, Bildschirm aus, Erinnerung auslösen |
+| B5 | - | ~~Mail-Zugang für Benachrichtigungen ohne StrongBox; Doku veraltet~~ | erledigt: Schlüssel bevorzugt in StrongBox; Schalter „Sofortsperre stoppt auch Mail-Benachrichtigungen“; KONZEPT angeglichen | Testplan R6 |
+| B6 | - | ~~`.ics` aus fremden Apps wird ohne Rückfrage importiert~~ | erledigt: Vorschau mit Bestätigung | Testplan R7 |
+| B7 | - | ~~Interne Aktionen über die exportierte MainActivity von fremden Apps auslösbar~~ | erledigt: zufällige Kennung je Installation in den eigenen Benachrichtigungen; ohne sie wird die Aktion ignoriert | Nachtlauf: Intent-Angriffe im Emulator |
+| B8 | - | ~~Auto-Sperre: Timer läuft im Tiefschlaf nicht weiter; Mindestfrist nach Teilen/Kamera dauerhaft~~ | erledigt: Fälligkeit nach echter vergangener Zeit (auch im Tiefschlaf); die Schonfrist endet beim Zurückkommen | Testplan R8 |
+| B9 | - | ~~Autofill verknüpft eine App nach einmaliger Auswahl dauerhaft~~ | erledigt: Rückfrage mit App-Name und Paket („Nur diesmal ausfüllen“) | Testplan R9 |
+| B10 | - | ~~Windows: entschlüsselte Kopien in `%TEMP%` bleiben liegen, wenn ein Programm sie noch offen hat~~ | erledigt: Kopien werden mit Nullen überschrieben und gelöscht; was ein Programm noch offen hält, wird alle 30 s, beim Beenden und beim nächsten Start erneut versucht. Portabel liegen sie im Datenordner, nicht im Windows-Temp | Testplan R12 |
+| B11 | - | ~~„Passwort anderswo geändert“: Server kann teure Argon2-Werte erzwingen~~ | erledigt: fremde Werte werden auf das begrenzt, was das Gerät selbst wählen würde | `security::a_server_cannot_force_expensive_password_parameters` |
+| B12 | - | ~~Erste Autocrypt-Mail: beim zweiten Öffnen „gültig“ statt „unbestätigt“~~ | erledigt: der Schlüssel merkt sich, aus welcher Mail er stammt | Netzwerktest |
+| B13 | - | ~~Geänderte Server-/Kontodaten in der Suite-Datei erreichen andere Geräte nicht~~ | erledigt: Zeitstempel je Server und Konto, die spätere Änderung gewinnt | `security::edited_accounts_reach_the_other_devices` |
+| B14 | - | ~~Freigabe zurückziehen meldet Erfolg, auch wenn das Paket auf dem Server bleibt~~ | erledigt: Fehler wird gemeldet, die Freigabe bleibt in der Liste | `tests::share_via_folder` |
+| B15 | - | ~~PHP-Modul: Sperre je IP, `x.php.jpg`, Modul ohne `chmod`~~ | erledigt: gültig signierte Anfragen werden nie gesperrt, Doppel-Endungen abgelehnt, Dateien mit 0600 | `tools/attack-php-module.py` (347 Angriffe) |
+| B16 | - | ~~Mail-Bilder: DNS-Rebinding zwischen Prüfung und Verbindung~~ | erledigt: verbunden wird genau mit der geprüften Adresse | Kern-Test |
+| B17 | - | ~~CI: Signaturschlüssel und FTP-Zugang stehen bei Pushes auf jeden Branch bereit~~ | entschieden, siehe L4 (Abschnitt 8) | Nachtlauf `reproducible` |
+| B18 | - | ~~Gleichzeitig auf A gelöscht und auf B bearbeitet: Ergebnis hängt von Revision/Zeit ab~~ | erledigt, feste Regel: Die Löschung gilt nur für den Stand, den das löschende Gerät kannte; eine Änderung, die es nie gesehen hat, bleibt erhalten. Unabhängig von den Uhren der Geräte | `security::delete_against_edit_follows_a_fixed_rule` |
 | B20 | - | ~~Serie aus einer anderen Zeitzone: nur der erste Termin wurde umgerechnet~~ | erledigt (F38): die Serie merkt sich ihre Zeitzone | `properties::series_from_other_time_zones_are_right_all_year` |
 | B21 | N | Emulator: GhulDrive und GhulMail mit echtem Server | Testserver laufen in der CI neben dem Emulator (SFTP mit Passwort, IMAP, SMTP); Abläufe `app/maestro/server/`; danach prüft `tools/check-server-flows.sh`, dass auf den Servern nur Verschlüsseltes liegt | teilweise: GhulDrive läuft verpflichtend durch (Ordner auf dem Server nicht lesbar). Der Mail-Ablauf verbindet sich und bestätigt das Zertifikat, scheitert aber noch an der Anmeldung im Testskript; bis er sicher läuft, ist er nur eine Warnung (`GHUL_MAIL_FLOW_REQUIRED=1` macht ihn verpflichtend). Beide laufen nachts und von Hand (`emulator.yml`) |
 | B22 | N | Windows: Erinnerungen werden nur geplant, solange die App läuft; ein Zeitzonen-Wechsel im laufenden Programm ist ungeprüft | prüfen, bei Bedarf neu planen | Desktop-Test |
@@ -205,8 +209,8 @@ Sobald die Begriffe bereinigt sind: `tools/check-texts.py --strict` in der CI ei
 ## 7. Empfohlene Reihenfolge
 
 1. **Diesen Branch mergen** (alle Funde F01 bis F22 behoben, Nachtlauf aktiv).
-2. **F23** entscheiden (Tresornamen in Dateinamen), betrifft das Format, besser früh.
-3. **B1** (Schlüssel bei Code-Wechsel erneuern), größter Sicherheitspunkt, Formatänderung.
+2. ~~F23~~ und ~~B1~~ erledigt (Formatversion 2).
+3. **B2** (entfernte Keys per Sync zurück) und **B3** (Drive-Index), beide Sync.
 4. **Texte (Abschnitt 5)** in einem Durchgang, danach `--strict` einschalten.
 5. **U1 bis U5** (Rückgängig, Rückfragen, deutsche Fehlermeldungen).
 6. Rest von B und U/K nach Aufwand.
@@ -221,13 +225,13 @@ Was nach beiden Runden **nicht** oder nur teilweise abgedeckt ist, ehrlich aufge
 
 | Nr. | Lücke | Bedeutung | Vorschlag |
 |---|---|---|---|
-| L1 | **Schlüssel werden nie erneuert** (B1) | Altes Notfallblatt oder entfernter Key + alte Dateikopie öffnet die aktuelle Suite | Formatänderung: bei Code-Wechsel/Key-Entfernen alles neu verschlüsseln |
+| L1 | ~~Schlüssel werden nie erneuert~~ (B1) | erledigt. Eine alte Kopie öffnet sich mit dem damals Gültigen weiter und zeigt den Stand von damals; das liegt in der Natur einer Sicherung. Die App sagt unter Optionen → Sicherheit, was nach einem Verlust zu tun ist: Mail- und Server-Passwörter beim Anbieter wechseln (ohne Server-Zugang kommt auch niemand an die Drive-Blöcke) | erledigt |
 | L2 | **Kein unabhängiger Audit** | Eigene Tests finden nur, woran man denkt | Externer Code-Audit und Pentest vor Version 1.0 |
-| L3 | **Abhängigkeiten der App (Gradle) ohne Prüfsummen** | Manipuliertes Paket auf dem Weg vom Server würde eingebaut | `gradle/verification-metadata.xml` (SHA-256 je Paket); `cargo deny` für Quellen und Lizenzen |
-| L4 | **Build nicht nachprüfbar** | Niemand kann prüfen, dass die APK aus diesem Quelltext stammt | Reproduzierbare Builds; signieren nur für `main`/Tags in geschützter Umgebung (B17) |
-| L5 | **PHP-Modul: Schlüssel steht in der PHP-Datei** | Liefert ein falsch eingestellter Server PHP als Text aus, ist der Zugriffsschlüssel lesbar (Daten bleiben verschlüsselt, aber löschbar/überschreibbar) | Schlüssel in eine Datei im gesperrten Datenordner auslagern; Selbsttest „wird PHP ausgeführt?“ beim Einrichten |
-| L6 | **Metadaten auf dem Server** | Server sieht Anzahl, Größe und Änderungszeit der Dateien, Tresornamen (F23), die IP | F23 beheben; Rest dokumentieren (unvermeidbar ohne eigenen Dienst) |
-| L7 | **PGP-Schlüssel von Kontakten nur „Vertrauen beim ersten Kontakt“** | Erster Schlüssel kann untergeschoben sein | Fingerabdruck-Vergleich in der App (QR/vorlesen), Warnung bei Schlüsselwechsel |
+| L3 | ~~Abhängigkeiten der App (Gradle) ohne Prüfsummen~~ | erledigt: `app/gradle/verification-metadata.xml` mit SHA-256 für 607 Pakete (auch Windows-Varianten); jedes veränderte oder neue Paket bricht den Build ab | erledigt |
+| L4 | **Build nicht nachprüfbar** (mit B17) | Kern: Nachtlauf baut zweimal in verschiedenen Ordnern und verlangt byte-gleiche Ergebnisse. Signierung: bewusst auf allen eigenen Branches, damit Entwicklerversionen sich über die installierte App aktualisieren lassen (nie bei Pull Requests oder Forks). Vor 1.0: eigener Release-Schlüssel in geschützter Umgebung, reproduzierbare APK | entschieden |
+| L5 | ~~PHP-Modul: Schlüssel steht in der PHP-Datei~~ | erledigt: Beim Einrichten und Prüfen erkennt die App, ob der Server PHP ausführt; liefert er die Datei als Text aus, wird sie sofort gelöscht und klar gemeldet (`security::a_web_server_without_php_is_detected`) | erledigt |
+| L6 | **Metadaten auf dem Server** | Server sieht Anzahl, Größe und Änderungszeit der Dateien und die IP (Tresornamen nicht mehr, F23) | dokumentieren (unvermeidbar ohne eigenen Dienst) |
+| L7 | ~~PGP-Schlüssel von Kontakten nur „Vertrauen beim ersten Kontakt“~~ | erledigt: Fingerabdruck vergleichen und bestätigen; ein bestätigter Schlüssel wird nicht stillschweigend ersetzt, ein Wechsel wird gemeldet (`security::confirmed_pgp_keys_stay_and_key_changes_are_reported`) | erledigt |
 
 ### Technisch nicht testbar oder außerhalb der App
 
@@ -235,22 +239,24 @@ Was nach beiden Runden **nicht** oder nur teilweise abgedeckt ist, ehrlich aufge
 |---|---|---|
 | L8 | Geheimnisse im Arbeitsspeicher der Oberfläche (Kotlin-Zeichenketten lassen sich nicht sicher löschen), Auslagerungsdatei/Ruhezustand unter Windows | Nur der Rust-Kern löscht sicher. Schutz: Sperren leert den Kern; Geräteverschlüsselung nutzen |
 | L9 | Gerät mit Schadsoftware, Root, fremde Tastatur-App, Bedienungshilfen-Dienste, Bildschirmaufnahme durch das System | Dagegen schützt keine App. Hinweis in der Doku; Passwortfelder ohne Vorschläge sind gesetzt |
-| L10 | Tapjacking (fremde App legt ein Fenster über GhulSuite) | Offen: `filterTouchesWhenObscured` für Entsperren, Löschen und Autofill-Auswahl setzen und im Emulator testen |
+| L10 | ~~Tapjacking~~ | erledigt: Entsperren, Löschen und Autofill-Auswahl nehmen keine Tipps an, solange eine fremde App darüberzeichnet (`filterTouchesWhenObscured`; Testplan R10) |
 | L11 | Zertifikats-Widerruf wird nicht geprüft | Üblich bei Apps (auch Browser prüfen nur eingeschränkt); mit festem Fingerabdruck (eigene Server) ohne Belang |
 | L12 | Zeit-Seitenkanäle | Nicht gemessen; Vergleiche von Geheimnissen laufen in konstanter Zeit, die Kryptobibliotheken sind dafür ausgelegt |
-| L13 | Windows: portable Version auf fremden PCs (Keylogger), DLL-Suchpfad, Rechte des Datenordners | Offen: Rechte beim Anlegen setzen; Hinweis „nur auf eigenen Geräten entsperren“ |
+| L13 | ~~Windows portable: Rechte, DLL-Suchpfad, fremde PCs~~ | erledigt, soweit eine App es kann: Das Arbeitsverzeichnis ist aus dem DLL-Suchpfad genommen; entschlüsselte Kopien liegen portabel im Datenordner statt im Windows-Temp und werden sicher gelöscht (B10). Der installierte Datenordner liegt im Benutzerprofil (lesbar nur für dich und Administratoren); auf einem USB-Stick (FAT/exFAT) gibt es keine Rechte, dort schützt die Verschlüsselung. Auf fremden PCs kann ein Keylogger mitlesen: nur auf eigenen Geräten entsperren (Hinweis in Abschnitt 7 des Sicherheitsberichts) |
 
-### Weitere Sammlungen und Werkzeuge (noch nicht eingebaut)
+### Weitere Sammlungen und Werkzeuge
+
+Seit 14.11.2026 im Nachtlauf: MobSF, Intent-Angriffe (statt drozer), OWASP ZAP, x509-limbo, OpenPGP mit GnuPG (statt der Sequoia-Testsuite, die einen eigenen Dienst braucht) und ein Reproduzierbarkeits-Check des Kerns. Die übrigen Zeilen (auch Semgrep und cargo-mutants) sind Ideen für später; sie betreffen keine offene Sicherheitslücke.
 
 | Was | Wofür | Aufwand |
 |---|---|---|
-| **MobSF** (statisch) nach **OWASP MASVS** | Standard-Prüfliste für Mobil-Apps gegen die fertige APK | klein, Nachtlauf |
-| **drozer** / **QARK** | Angriffe auf von außen erreichbare Android-Komponenten im Emulator (Intents, Provider) | mittel |
+| **MobSF** (statisch) nach **OWASP MASVS** | Standard-Prüfliste für Mobil-Apps gegen die fertige APK | **eingebaut** |
+| **drozer** / **QARK** | Angriffe auf von außen erreichbare Android-Komponenten im Emulator (Intents, Provider) | **eingebaut** als eigene Intent-Angriffe (`tools/intent-attacks.sh`) |
 | **Semgrep** (Regeln für Kotlin, PHP, Geheimnisse) | bekannte Fehlermuster im Quelltext | klein, Nachtlauf |
-| **OWASP ZAP** (Baseline + aktiv) | automatischer Angriffsscan auf PHP-Modul und Empfängerseite | klein, Nachtlauf |
+| **OWASP ZAP** (Baseline + aktiv) | automatischer Angriffsscan auf PHP-Modul und Empfängerseite | **eingebaut** |
 | **cargo-mutants** | prüft, ob die Tests absichtlich eingebaute Fehler bemerken | mittel, wöchentlich |
-| **x509-limbo** (C2SP) | tausende Zertifikatsketten-Fälle | mittel; prüft v. a. die TLS-Bibliothek |
-| **OpenPGP Interoperability Test Suite** (Sequoia) | PGP-Verhalten gegenüber anderen Programmen, bekannte Angriffe (z. B. EFAIL-Muster) | mittel |
+| **x509-limbo** (C2SP) | tausende Zertifikatsketten-Fälle | **eingebaut** |
+| **OpenPGP Interoperability Test Suite** (Sequoia) | PGP-Verhalten gegenüber anderen Programmen, bekannte Angriffe (z. B. EFAIL-Muster) | **eingebaut** als Test gegen GnuPG; die Sequoia-Suite selbst braucht einen eigenen Dienst |
 | **Unicode `confusables.txt`**, **IDNA-Testdaten** | Warnung bei Namen/Domains, die wie andere aussehen | klein |
 | **MIME-Torture-Tests** (jwz), Beispielmails großer Mailprogramme | kaputte und extreme Mails | klein |
 | **Dovecot imaptest** | IMAP-Dauerlast und Protokollfehler | mittel |
@@ -263,7 +269,7 @@ Was nach beiden Runden **nicht** oder nur teilweise abgedeckt ist, ehrlich aufge
 
 | Angriffsfläche | Abdeckung | Rest |
 |---|---|---|
-| Dateien auf Gerät, Server, Sicherung | hoch (Klartextsuche, Manipulation, Fälschung, Namen) | L1, F23 |
+| Dateien auf Gerät, Server, Sicherung | hoch (Klartextsuche, Manipulation, Fälschung, Namen, alte Kopien) | - |
 | Synchronisation | hoch (Chaos, bekloppter Nutzer, Rollback einzelner Dateien) | B2, B3, B13 |
 | Netzwerk-Parser | hoch (Fuzzing schnell und lang) | - |
 | TLS | mittel → hoch mit badssl im Nachtlauf | L11 |

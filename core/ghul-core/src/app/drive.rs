@@ -16,7 +16,7 @@
 //! stored once. Every change reloads the index from the server first, so two devices do not
 //! overwrite each other's changes (the last writer of the same item wins).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use hmac::{Hmac, Mac};
@@ -50,6 +50,10 @@ struct DriveSettings {
     use_sync: bool,
     #[serde(with = "serde_bytes")]
     key: Vec<u8>,
+    /// B3: the highest index revision seen per server (synchronised, the highest wins). A lower
+    /// one, or no index at all, means the server was reset: nothing is written then.
+    #[serde(default)]
+    seen: BTreeMap<String, u64>,
 }
 
 impl Drop for DriveSettings {
@@ -385,18 +389,57 @@ impl GhulSuite {
         self.save_area(o, VaultKind::Drive)
     }
 
-    /// Loads the current index from the server, applies `f`, saves it.
+    /// The server's index, refused if it is older than the newest this suite has seen (B3: a
+    /// server that was reset or a replayed old index must not make files disappear).
+    fn load_checked(&self, o: &mut Open, fs: &dyn RemoteFs, keys: &Keys) -> Result<DriveIndex> {
+        let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
+        let server = drive_server_id(o, &d).unwrap_or_default();
+        let seen = d.seen.get(&server).copied().unwrap_or(0);
+        let present = fs.read(INDEX)?.is_some();
+        let index = load_index(fs, keys)?;
+        if index.revision < seen || (!present && seen > 0) {
+            return Err(GhulError::DriveRolledBack);
+        }
+        if index.revision > seen {
+            self.note_seen(o, index.revision)?;
+        }
+        Ok(index)
+    }
+
+    /// Remembers `revision` as seen on Drive's server (in the Drive file).
+    fn note_seen(&self, o: &mut Open, revision: u64) -> Result<()> {
+        let mut d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
+        let server = drive_server_id(o, &d).unwrap_or_default();
+        let e = d.seen.entry(server).or_insert(0);
+        if revision <= *e {
+            return Ok(());
+        }
+        *e = revision;
+        put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
+        self.save_area(o, VaultKind::Drive)
+    }
+
+    /// Loads the current index from the server, applies `f`, saves it. If another device saved
+    /// the index in between, `f` is applied to that one instead (B3: no change is lost).
     fn drive_change<T>(
         &self,
         o: &mut Open,
-        f: impl FnOnce(&mut DriveIndex, &dyn RemoteFs, &Keys) -> Result<T>,
+        mut f: impl FnMut(&mut DriveIndex, &dyn RemoteFs, &Keys) -> Result<T>,
     ) -> Result<T> {
         let (fs, keys) = self.drive_ctx(o)?;
-        let mut index = load_index(fs.as_ref(), &keys)?;
-        let out = f(&mut index, fs.as_ref(), &keys)?;
-        save_index(fs.as_ref(), &keys, &mut index)?;
-        self.net.lock().unwrap_or_else(|p| p.into_inner()).drive = Some(index);
-        Ok(out)
+        for _ in 0..8 {
+            let mut index = self.load_checked(o, fs.as_ref(), &keys)?;
+            let base = index.revision;
+            let out = f(&mut index, fs.as_ref(), &keys)?;
+            if load_index(fs.as_ref(), &keys)?.revision != base {
+                continue;
+            }
+            save_index(fs.as_ref(), &keys, &mut index)?;
+            self.note_seen(o, index.revision)?;
+            self.net.lock().unwrap_or_else(|p| p.into_inner()).drive = Some(index);
+            return Ok(out);
+        }
+        Err(GhulError::Network { msg: "GhulDrive is being changed on another device, please try again".into() })
     }
 
     fn drive_index(&self, o: &mut Open, refresh: bool) -> Result<DriveIndex> {
@@ -406,7 +449,7 @@ impl GhulSuite {
             }
         }
         let (fs, keys) = self.drive_ctx(o)?;
-        let index = load_index(fs.as_ref(), &keys)?;
+        let index = self.load_checked(o, fs.as_ref(), &keys)?;
         self.net.lock().unwrap_or_else(|p| p.into_inner()).drive = Some(index.clone());
         Ok(index)
     }
@@ -552,7 +595,7 @@ impl GhulSuite {
         let name = check_name(&name)?;
         self.with_open(|o| {
             self.drive_change(o, |index, _, _| {
-                let parent = parent.unwrap_or_default();
+                let parent = parent.clone().unwrap_or_default();
                 if !parent.is_empty() && !index.nodes.iter().any(|n| n.id == parent && n.dir) {
                     return Err(GhulError::NotFound);
                 }
@@ -591,7 +634,7 @@ impl GhulSuite {
     pub fn drive_move(&self, id: String, folder: Option<String>) -> Result<()> {
         self.with_open(|o| {
             self.drive_change(o, |index, _, _| {
-                let target = folder.unwrap_or_default();
+                let target = folder.clone().unwrap_or_default();
                 // A folder must not be moved into itself or below.
                 let mut cur = target.clone();
                 while !cur.is_empty() {
@@ -624,7 +667,7 @@ impl GhulSuite {
     /// Deletes a file or a folder with everything in it for good; unused blocks are removed.
     pub fn drive_delete_forever(&self, id: String) -> Result<()> {
         self.with_open(|o| {
-            self.drive_change(o, |index, fs, _| {
+            let unused = self.drive_change(o, |index, _, _| {
                 let mut remove: BTreeSet<String> = BTreeSet::from([id.clone()]);
                 loop {
                     let more: Vec<String> = index
@@ -659,11 +702,30 @@ impl GhulSuite {
                     .collect();
                 index.nodes.retain(|n| !remove.contains(&n.id));
                 let still = used_blocks(index);
-                for b in freed.iter().filter(|b| !still.contains(b)) {
-                    fs.delete(&block_path(b))?;
-                }
-                Ok(())
-            })
+                Ok(freed.into_iter().filter(|b| !still.contains(b)).collect::<Vec<String>>())
+            })?;
+            // Only once the index without them is saved: a retry must not lose blocks.
+            let (fs, _) = self.drive_ctx(o)?;
+            for b in unused {
+                fs.delete(&block_path(&b))?;
+            }
+            Ok(())
+        })
+    }
+
+    /// After `DriveRolledBack`: takes the server's index as it is (e.g. a server restored from
+    /// a backup on purpose). Files added since that state are then no longer listed.
+    pub fn drive_accept_server_state(&self) -> Result<()> {
+        self.with_open(|o| {
+            let (fs, keys) = self.drive_ctx(o)?;
+            let index = load_index(fs.as_ref(), &keys)?;
+            let mut d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
+            let server = drive_server_id(o, &d).unwrap_or_default();
+            d.seen.insert(server, index.revision);
+            put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
+            self.save_area(o, VaultKind::Drive)?;
+            self.net.lock().unwrap_or_else(|p| p.into_inner()).drive = Some(index);
+            Ok(())
         })
     }
 

@@ -149,6 +149,7 @@ class ScreenshotTest {
         override suspend fun addKeyfile(keyfile: ByteArray, label: String) {}
         override suspend fun newRecoveryCode(label: String) = ""
         override suspend fun removeSlot(id: String) {}
+        override suspend fun adoptRemoteProtection(password: String?, pin: String?, keyfile: ByteArray?, onTouchNeeded: () -> Unit) {}
         override suspend fun changePassword(current: String, new: String) {}
         override fun generatePassword(options: PasswordOptionsUi) = "x7#Kq!9mVw2\$Lp4@Zr8&"
         override fun passwordScore(password: String) = if (password.length > 12) 4 else 1

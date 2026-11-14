@@ -46,7 +46,7 @@ von Schritt 3, danach geht „Zurück“ nur noch bis Schritt 4.
 | E9 | Ordner wählen → „Verbindung testen“ → Weiter. | „Verbunden · host:/ordner“, Haken in der Checkliste; Schritt 5 · Bereiche. |
 | E10 | Alle fünf Bereiche einschalten. Bei GhulDrive „Wie Synchronisation“. Weiter. | Namen für GhulPass, GhulAuth, GhulCal änderbar; „Wie Synchronisation“ nur wählbar, weil Schritt 4 eingerichtet wurde. Schritt 6 · Sperren. |
 | E11 | Sperrzeit wählen, Schalter für Bildschirm aus und Schütteln. Weiter. | Schritt 7 · Entsperren mit Hinweis, dass „Schnell entsperren“ Fingerabdruck und App-PIN meint. |
-| E12 | „Zusätzlich Fingerabdruck“, Gültigkeit „Immer“. Weiter. | Hinweis: ohne Ablauf, aber nach Neustart, Panik-Sperre oder Passwortwechsel wieder Passwort und Key. Fingerabdruck-Abfrage; Schritt 8. |
+| E12 | „Zusätzlich Fingerabdruck“, Gültigkeit „Immer“. Weiter. | Hinweis: ohne Ablauf, aber nach Neustart, Sofortsperre oder Passwortwechsel wieder Passwort und Key. Fingerabdruck-Abfrage; Schritt 8. |
 | E13 | Code ansehen, „Notfallblatt drucken“ → „Als PDF speichern“. | PDF mit Code, QR-Code und Anleitung. PDF danach vom Handy löschen. |
 | E14 | „Ich habe den Code notiert“ → Weiter → falsche Gruppe 3 eingeben. | Meldung „Das ist nicht die dritte Gruppe“. Es gibt kein „Später“. |
 | E15 | Richtige Gruppe 3 eingeben → Abschließen. | Hauptansicht mit allen fünf Bereichen und Optionen; GhulMail zeigt „Noch kein Konto“ mit dem vollständigen Kontoformular. |
@@ -77,7 +77,7 @@ von Schritt 3, danach geht „Zurück“ nur noch bis Schritt 4.
 | U14 | Key abziehen, App sperren, „Entsperren“ tippen und **erst danach** den Key einstecken (innerhalb einer Minute). | Unten erscheint „Steck jetzt deinen Security Key ein“; nach dem Einstecken geht es von selbst weiter (berühren, wenn er blinkt). Ohne Key nach einer Minute: „No security key found“. |
 | U15 | Neue Suite mit Key einrichten (oder Key hinzufügen) und danach mit einem anderen FIDO-Programm prüfen, ob der Key das Credential ohne PIN preisgibt (optional, Fachleute). | Der Key verlangt die PIN (credProtect Stufe 3). |
 
-## 3. Sperren und Panik
+## 3. Sperren
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
@@ -138,6 +138,11 @@ Für T5 bis T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick
 | S4 | Suite mit Schlüsseldatei (E11): Key hinzufügen, dann Datei entfernen. | Key funktioniert, Datei nicht mehr, **alter Wiederherstellungscode funktioniert weiterhin**. |
 | S5 | „Neuer Wiederherstellungscode“. Sperren, alten Code probieren, dann neuen. | Alter Code: ungültig. Neuer: geht. |
 | S6 | Passwort ändern (aktuelles falsch, dann richtig). | Falsch: Meldung. Richtig: neues Passwort gilt, Fingerabdruck/PIN-Zugang ist neu einzurichten. |
+| S7 | Vor S5: den Suite-Ordner kopieren (alte Sicherung). Nach S5 die Kopie in einen leeren Ordner legen und mit dem **alten** Code öffnen; dann die **aktuellen** Dateien mit dem alten Code. | Die alte Kopie öffnet sich (Stand von damals). Die aktuellen Dateien öffnen sich mit dem alten Code nicht. Fingerabdruck/PIN funktionieren nach S5 weiter. |
+| S8 | Zwei Keys (oder Key + Schlüsseldatei). Ordner kopieren, dann einen Key entfernen. Mit dem entfernten Key + Passwort die Kopie öffnen, dann die aktuellen Dateien. | Kopie: öffnet sich. Aktuelle Dateien: „Key nicht eingetragen“. Der verbliebene Key öffnet alles, **ohne** dass er beim Entfernen berührt werden musste. Fingerabdruck/PIN ist neu einzurichten. |
+| S9 | Suite aus einer älteren App-Version (vor Formatversion 2) mit zwei Keys öffnen. Optionen → Keys. | Der benutzte Key ist normal, der andere zeigt „einmal damit entsperren …“. Nach einem Entsperren mit ihm verschwindet der Hinweis. |
+| S10 | Zwei Geräte mit Sync. Gerät B in den Flugmodus, dort Einträge ändern. Auf A einen Key entfernen und einen neuen Code erstellen, Sync. B wieder online, Sync. | B fragt einmal „Schutz geändert“ nach einem übrigen Key oder der Schlüsseldatei (bei neuem Passwort auch danach). Danach sind die Änderungen beider Geräte auf beiden. Auf dem Server wurde nichts überschrieben. |
+| S11 | Suite-Ordner auf dem Gerät und auf dem Server ansehen. | Tresordateien heißen nur nach ihrer Kennung (z. B. `3f9a1c2b7d4e5f60.ghlpss`), kein Tresorname; ältere Namen sind nach dem Entsperren bzw. nächsten Sync verschwunden. Die Tresorliste zeigt keine Dateinamen. |
 
 ## 8. Import
 
@@ -265,7 +270,7 @@ Für T5 bis T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick
 | N2b | Handy neu starten, ohne GhulSuite zu öffnen eine Mail schicken. | „GhulMail ist bereit“ ist wieder da, die Benachrichtigung kommt sofort. |
 | N3 | Benachrichtigung antippen (vorher in GhulMail den Postausgang oder einen anderen Ordner offen lassen). | Nach dem Entsperren öffnet sich **genau diese Mail** im Posteingang des Kontos; zurück führt in den Posteingang. Bei mehreren neuen Mails: der Posteingang. Die Benachrichtigung verschwindet. |
 | N4 | Schalter aus, wieder Mail schicken. | Keine Benachrichtigung mehr; „GhulMail ist bereit“ verschwindet (wenn kein anderes Konto benachrichtigt). |
-| N5 | Schalter an, dann **Panik-Sperre** (Schütteln oder Schnellkachel), danach Mail schicken. | Gesperrt, aber **Benachrichtigungen kommen weiter**; Schalter bleibt an. |
+| N5 | Schalter an, dann **Sofortsperre** (Schütteln oder Schnellkachel), danach Mail schicken. | Gesperrt, aber **Benachrichtigungen kommen weiter**; Schalter bleibt an. |
 | N6 | Konto-Passwort in GhulSuite ändern (M16 mit neuem Passwort), Benachrichtigung an. | Benachrichtigungen kommen weiter. |
 | N7 | Mailpasswort auf dem **anderen** Gerät ändern, hier synchronisieren und einmal entsperren. | Benachrichtigungen kommen weiter (die Kopie für den Empfang wird beim Entsperren erneuert). |
 | N8 | GhulSuite aus der Liste der letzten Apps wischen, Mail schicken. | Benachrichtigung kommt sofort. |
@@ -445,7 +450,7 @@ oder Proton.
 | I9 | In allen fünf Bereichen (Pass, Auth, Drive, Mail, Kalender-Liste) einen Eintrag lange drücken, weitere antippen, „Alle“, Löschen. | Gleicher Auswahlkopf oben überall; Löschen ohne Rückfrage, Meldung mit „Rückgängig“ (ca. 6 s), „Rückgängig“ bringt alle zurück; Zurück beendet die Auswahl. |
 | I10 | GhulAuth (Listenansicht): Konto nach rechts wischen, dann nach links. | Rechts: Bearbeiten (Anbieter, Konto). Links: gelöscht, Meldung mit „Rückgängig“. |
 
-## 25. Mail, Optionen und Panik (zweite Runde)
+## 25. Mail, Optionen und Sofortsperre (zweite Runde)
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
@@ -475,7 +480,7 @@ Ziel: GhulSuite eine Woche wie im echten Leben benutzen, mit echten Konten, aber
 | 2 | Den Tag über nur mit GhulSuite anmelden (Autofill in Apps und Browser). 2FA-Codes aus GhulAuth nutzen. Abends ein Passwort ändern. | Schlägt Autofill passend vor? Kommt die Änderung auf Windows an? |
 | 3 | Mails nur in GhulMail lesen und schreiben, auch mit Anhang und an jemanden mit PGP. Handy zwischendurch neu starten. | Kommt **jede** Mail sofort als Benachrichtigung, auch nach dem Neustart? Öffnet das Antippen die Mail? |
 | 4 | Fotos und Dokumente in GhulDrive (auch Ordner, Umbenennen, Papierkorb), eine Datei teilen. Zwischen WLAN und mobilen Daten wechseln. | Uploads brechen nicht ab oder setzen fort; Freigabelink funktioniert. |
-| 5 | Termine in GhulCal, auch wiederkehrend und mit Erinnerung; einen davon auf Windows ändern. Panik-Sperre durch Schütteln testen (in der App und im Hintergrund). | Erinnerung kommt pünktlich; Schütteln sperrt beim ersten Versuch, Mails und Erinnerungen kommen danach weiter. |
+| 5 | Termine in GhulCal, auch wiederkehrend und mit Erinnerung; einen davon auf Windows ändern. Sofortsperre durch Schütteln testen (in der App und im Hintergrund). | Erinnerung kommt pünktlich; Schütteln sperrt beim ersten Versuch, Mails und Erinnerungen kommen danach weiter. |
 | 6 | Beide Geräte gleichzeitig benutzen: dieselbe Anmeldung auf beiden ändern, offline (Flugmodus) Einträge anlegen, später wieder online. | Nach dem Synchronisieren nichts verloren, nichts doppelt. |
 | 7 | Sicherung erstellen, auf einem zweiten Gerät oder in einem leeren Ordner wiederherstellen. Master-Passwort ändern; das andere Gerät fragt einmal nach dem neuen. | Wiederhergestellt ist alles da; danach weiter ganz normal. |
 
@@ -493,6 +498,26 @@ Ziel: GhulSuite eine Woche wie im echten Leben benutzen, mit echten Konten, aber
 
 Automatisch läuft bei jedem Push der Alltagstest im Kern (zwei Geräte, 30 simulierte Tage mit allen Bereichen) und in einem eigenen Job der Stresstest (5.000 Anmeldungen, 2.000 Termine, 300 Dateien und 64 MB, 20 Sync-Runden, 8 parallele Threads).
 
+## 28. Sicherheitspunkte und Speicherort (Runde 5)
+
+| Nr. | Schritt | Erwartet |
+|---|---|---|
+| R1 | Optionen → Tresore → „Speicherort wechseln“ → „Ordner wählen“, einen leeren Ordner wählen. Danach entsperren. | Meldung „… Dateien kopiert und geprüft“, Entsperren nötig, danach alles da; „Speicherort:“ zeigt den neuen Ordner. Im alten Ort liegen die Dateien noch. |
+| R2 | Dasselbe noch einmal mit einem Ordner, in dem schon eine Suite liegt. | Meldung „Im gewählten Ordner liegt schon eine Suite …“, nichts überschrieben, der alte Ort bleibt aktiv. |
+| R3 | Aus dem eigenen Ordner „In den App-Speicher“ wählen. | Wie R1; „Speicherort: App-Speicher“. |
+| R4 | Im eigenen Ordner eine Tresordatei umbenennen (z. B. in `Urlaub.ghlpss`), dann entsperren. | Tresor ist vollständig da, die Datei heißt wieder nach ihrer Kennung. |
+| R5 | Android-Einstellung „alle Inhalte anzeigen“, Handy mit PIN sperren; Mail und Termin-Erinnerung kommen lassen. Danach entsperren und noch eine Mail kommen lassen. | Gesperrt eingetroffen: nur die in GhulSuite gewählte Sperrbildschirm-Stufe (Mail: Kontoname und Anzahl; Termin: wie in den Kalender-Optionen gewählt), auch nach dem Entsperren in der Leiste. Entsperrt eingetroffen: mit Details (B4, F43). |
+| R6 | Optionen → Sperren → „Sofortsperre stoppt auch Mail-Benachrichtigungen“ an; schütteln; Mail schicken; dann entsperren. | Gesperrt keine Mail-Benachrichtigung; nach dem Entsperren kommen sie wieder (B5). |
+| R7 | Eine `.ics`-Datei aus einer anderen App (z. B. Dateien) mit GhulSuite öffnen. | Vorschau mit Anzahl und ersten Terminen, Import erst nach „Importieren“ (B6). |
+| R8 | App sperren, Handy 20 Minuten in den Standby (Bildschirm aus), dann App wieder öffnen. | Gesperrt, auch wenn das Handy zwischendurch tief geschlafen hat (B8). |
+| R9 | In einer App ohne Verknüpfung über Autofill eine Anmeldung von Hand wählen. | Rückfrage mit App-Name und Paket: „Verknüpfen und ausfüllen“ oder „Nur diesmal ausfüllen“. Nur beim Verknüpfen wird sie beim nächsten Mal direkt angeboten (B9). |
+| R10 | Eine App mit Bildschirm-Overlay (z. B. Blaulichtfilter) einschalten und in GhulSuite entsperren bzw. Autofill wählen. | Tipps werden ignoriert, solange etwas darüberliegt (L10); Overlay aus, dann geht es. |
+| R11 | Zwei Geräte mit Sync: auf A einen Eintrag löschen, auf B (offline) denselben Eintrag ändern; dann beide synchronisieren. | Der geänderte Eintrag ist auf beiden Geräten wieder da (B18). Andersherum (B kannte die Löschung): bleibt gelöscht. |
+| R12 | Windows: eine Drive-Datei öffnen, das Programm offen lassen, GhulSuite sperren; Programm schließen, eine Minute warten. | Der Weitergabe-Ordner ist danach leer (B10). Portabel: der Ordner liegt in `GhulSuite-Daten`, nicht im Windows-Temp. |
+| R13 | Optionen → Sicherheit: Hinweis „Etwas verloren …“ lesen. | Hinweis nennt: entfernen bzw. neues Notfallblatt, alte Sicherungen, Mail- und Server-Passwörter wechseln (L1). |
+| R14 | GhulMail: bei einem Kontakt mit PGP-Schlüssel „Vergleichen“ öffnen. | Fingerabdruck in Vierergruppen; nach dem Bestätigen gilt er als geprüft; ein später geänderter Schlüssel wird gemeldet (L7). |
+| R15 | Drive-Server auf einen alten Stand zurücksetzen (alte Index-Datei zurückkopieren), dann GhulDrive öffnen. | Meldung „Drive auf dem Server ist älter …“, nichts verschwindet; „Älteren Serverstand übernehmen“ (Optionen → GhulDrive) nur nach Rückfrage (B3). |
+
 ## GhulCal (Kalender)
 
 | Nr. | Schritt | Erwartet |
@@ -507,13 +532,13 @@ Automatisch läuft bei jedem Push der Alltagstest im Kern (zwei Geräte, 30 simu
 | K8 | Import einer `.ics` aus Google/Outlook, Export „Alle“ und „Als .ics teilen“. | Termine samt Serien und Erinnerungen übernommen; zweiter Import legt keine Doppelten an; Export öffnet sich in anderen Kalendern. |
 | K9 | Termin mit Erinnerung in 2 Minuten anlegen, App sperren (Android: auch schließen). | Benachrichtigung pünktlich; auf dem Sperrbildschirm nur die gewählte Detailstufe; „In 5 Min. erneut“, „Erledigt“; Tippen öffnet nach dem Entsperren den Termin. |
 | K10 | Optionen → GhulCal: Detailstufe „Nur Hinweis“ → „Test-Erinnerung zeigen“. | Auf dem Sperrbildschirm nur „Termin in 15 Min.“ ohne Titel. |
-| K11 | Panik-Sperre auslösen. | Erinnerungen kommen weiter (die Panik-Sperre sperrt nur die App). |
+| K11 | Sofortsperre auslösen. | Erinnerungen kommen weiter (die Sofortsperre sperrt nur die App). |
 | K12 | Zweites Gerät synchronisieren, dort einen Termin ändern, zurück synchronisieren. | Änderungen beider Seiten kommen an (Zusammenführen pro Termin). |
 | K13 | Mail-Benachrichtigung antippen (gesperrt und entsperrt). | Die neue Mail öffnet sich (nach dem Entsperren); Leiste und App-Symbol zeigen die Zahl ungelesener Mails, vollständig, nicht angeschnitten, ab 100 „99+“. Windows-Taskleiste: Briefumschlag mit Zahl. |
 | K14 | Eine `.ics` importieren, die Zeiten in UTC (`…Z`, z. B. Google-Export) und in einer anderen Zeitzone (`TZID=America/New_York`) enthält, je ein Termin im Sommer und im Winter. | Alle Termine stehen auf der Stunde, zu der sie hier stattfinden (10:00 New York = 16:00 in Deutschland), unabhängig davon, ob gerade Sommer- oder Winterzeit ist. Ganztägige Termine bleiben auf ihrem Tag. |
 | K15 | Termin mit Erinnerung anlegen, App schließen, in den Systemeinstellungen die Zeitzone ändern (z. B. London). | Die Erinnerung kommt zur selben Uhrzeit der neuen Zone (Termin 10:00 → Erinnerung 09:45 Londoner Zeit), ohne dass die App geöffnet wurde. |
 | K16 | Eine Serie aus einer anderen Zeitzone importieren (z. B. Einladung „jeden Dienstag 10:00 New York“ aus Outlook oder Google) und durch das Jahr blättern: Januar, Mitte März, April, Ende Oktober, November. | In Deutschland steht der Termin um 16:00, in den Wochen, in denen nur die USA oder nur Europa Sommerzeit haben, um 15:00. Die Termin-Ansicht zeigt zusätzlich „Ortszeit in New York: 10:00 - 11:00“; beim Bearbeiten steht unter „Zeitzone“ der Ort. „Nur diesen Termin löschen“ entfernt genau den angezeigten Tag. |
-| K17 | Einen einzelnen Eintrag löschen: GhulPass-Eintrag, GhulAuth-Konto, Drive-Datei, Mail, Termin. Einmal „Rückgängig“ tippen, einmal die Meldung ablaufen lassen; einmal löschen und sofort sperren. | Ohne Rückfrage weg, Meldung mit „Rückgängig“. Rückgängig: wieder da, nichts passiert. Abgelaufen: endgültig gelöscht (nach Sperren/Entsperren weiterhin weg). Sofort gesperrt: die Löschung wird vor dem Sperren ausgeführt. Panik-Sperre direkt nach dem Löschen: der Eintrag bleibt. |
+| K17 | Einen einzelnen Eintrag löschen: GhulPass-Eintrag, GhulAuth-Konto, Drive-Datei, Mail, Termin. Einmal „Rückgängig“ tippen, einmal die Meldung ablaufen lassen; einmal löschen und sofort sperren. | Ohne Rückfrage weg, Meldung mit „Rückgängig“. Rückgängig: wieder da, nichts passiert. Abgelaufen: endgültig gelöscht (nach Sperren/Entsperren weiterhin weg). Sofort gesperrt: die Löschung wird vor dem Sperren ausgeführt. Sofortsperre direkt nach dem Löschen: der Eintrag bleibt. |
 | K18 | Ganzes löschen: Tresor, Bereich, Mailkonto, Server, Papierkorb leeren, mehrere endgültig löschen. | Immer eine Rückfrage mit rotem Knopf, Warnung als Hinweisfeld wie bei „Bereich entfernen“. |
 | K19 | Breites Fenster (Windows oder Tablet quer): Termin öffnen, Termin bearbeiten, in GhulAuth „Konto hinzufügen“. | Öffnet rechts in der zweiten Spalte, die Liste bleibt links stehen. Ohne Auswahl rechts „Kein Termin geöffnet“ bzw. „Kein Konto geöffnet“. |
 | K20 | Verschlüsselte Mail in der Liste. | Schloss und „Verschlüsselte Nachricht“ an der Stelle des Betreffs (kein „...“); geöffnet Betreff und Text. |

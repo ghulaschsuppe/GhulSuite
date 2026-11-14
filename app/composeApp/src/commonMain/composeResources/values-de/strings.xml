@@ -55,6 +55,10 @@
     <string name="auth_tap_to_show">zum Anzeigen antippen</string>
     <string name="auth_uri_hint">Füge einen otpauth://totp/…-Link ein, z. B. aus einem QR-Code-Leser oder einem Export.</string>
     <string name="autofill_for">Für: %1$s</string>
+    <string name="autofill_link_title">Mit dieser App verknüpfen?</string>
+    <string name="autofill_link_text">„%1$s“ (%2$s) bekommt den Login „%3$s“ künftig direkt vorgeschlagen. Nur verknüpfen, wenn das wirklich die App dieses Dienstes ist.</string>
+    <string name="autofill_link_yes">Verknüpfen und ausfüllen</string>
+    <string name="autofill_link_once">Nur diesmal ausfüllen</string>
     <string name="autofill_link_hint">Wählst du eine Anmeldung von Hand, merkt sich GhulSuite diese App samt Signatur dafür. Eine gefälschte App mit gleichem Namen bekommt sie nicht.</string>
     <string name="autofill_matching">Passend oder vorgeschlagen</string>
     <string name="autofill_pick_title">Anmeldung wählen</string>
@@ -249,16 +253,19 @@
     <string name="set_modules_hint">Ausgeschaltete Module verschwinden aus dem Menü. Ihre Daten bleiben verschlüsselt und unverändert erhalten.</string>
     <string name="set_new_code_text">Es wird ein neuer Wiederherstellungscode erstellt. Der bisherige Code funktioniert danach nicht mehr.</string>
     <string name="set_no_key_hint">Deine Suite ist mit einer Schlüsseldatei geschützt. Ein Security Key ist noch sicherer: Er lässt sich nicht kopieren.</string>
-    <string name="set_panic_hint">Der Sperr-Knopf und die Benachrichtigung sperren normal. Schütteln und die Kachel „GhulSuite sperren“ in den Schnelleinstellungen sind eine Panik-Sperre: Sie löschen zusätzlich Fingerabdruck- und App-PIN-Entsperren, danach öffnet nur das Master-Passwort. Mail-Benachrichtigungen und Termin-Erinnerungen laufen weiter. Ein kurzes Vibrieren bestätigt das Sperren durch Schütteln.</string>
+    <string name="set_panic_mail">Sofortsperre stoppt auch Mail-Benachrichtigungen</string>
+    <string name="set_panic_mail_hint">Für Benachrichtigungen bei gesperrter App hält das Handy einen eigenen Mail-Zugang, geschützt im Sicherheitschip des Geräts. Eingeschaltet löscht die Sofortsperre auch ihn: Bis zum nächsten Entsperren kommen keine Mail-Benachrichtigungen mehr.</string>
+    <string name="set_panic_hint">Der Sperr-Knopf und die Benachrichtigung sperren normal. Schütteln und die Kachel „GhulSuite sperren“ in den Schnelleinstellungen sind eine Sofortsperre: Sie löschen zusätzlich Fingerabdruck- und App-PIN-Entsperren, danach öffnet nur das Master-Passwort. Mail-Benachrichtigungen und Termin-Erinnerungen laufen weiter. Ein kurzes Vibrieren bestätigt das Sperren durch Schütteln.</string>
     <string name="set_password">Master-Passwort</string>
     <string name="set_pin_mismatch">Die PINs stimmen nicht überein.</string>
-    <string name="set_quick_always_full">Passwort und zweiter Faktor (Key oder Schlüsseldatei) sind immer nötig nach einem Neustart, nach Ablauf der Gültigkeit, nach einer Panik-Sperre, nach 5 falschen App-PINs und wenn Fingerabdrücke geändert werden.</string>
+    <string name="set_quick_always_full">Passwort und zweiter Faktor (Key oder Schlüsseldatei) sind immer nötig nach einem Neustart, nach Ablauf der Gültigkeit, nach einer Sofortsperre, nach 5 falschen App-PINs und wenn Fingerabdrücke geändert werden.</string>
     <string name="set_quick_bio">Fingerabdruck</string>
     <string name="set_quick_bio_unavailable">Kein sicherer Fingerabdrucksensor oder kein Fingerabdruck auf diesem Gerät eingerichtet.</string>
     <string name="set_quick_hint">Nach dem Entsperren mit Passwort und zweitem Faktor kannst du GhulSuite für eine Weile per Fingerabdruck oder App-PIN öffnen.</string>
     <string name="set_quick_pin">App-PIN</string>
     <string name="set_quick_validity">Gültig für</string>
-    <string name="set_remove_text">„%1$s“ kann deine Suite danach nicht mehr öffnen. Alles andere bleibt gültig.</string>
+    <string name="set_remove_text">„%1$s“ öffnet danach nichts mehr, was du ab jetzt speicherst, auch nicht zusammen mit einer alten Sicherungskopie. Deine übrigen Keys, Schlüsseldateien und das Notfallblatt bleiben gültig.</string>
+    <string name="slot_needs_update">einmal damit entsperren, um ihn auf den neuesten Schutz umzustellen</string>
     <string name="set_remove_title">Zugang entfernen?</string>
     <string name="set_screenshots">Bildschirmfotos erlauben</string>
     <string name="set_screenshots_warning">Bildschirmfotos und -aufnahmen können dann deine Passwörter und Codes enthalten, und die App ist in der App-Übersicht sichtbar. Nur erlauben, wenn du es wirklich brauchst.</string>
@@ -267,6 +274,7 @@
     <string name="set_shake_sensitivity">Empfindlichkeit</string>
     <string name="set_show_subtitles">GhulPass: Benutzernamen in der Liste zeigen</string>
     <string name="set_swap_hint">Jeder Key und jede Schlüsseldatei öffnet die Suite zusammen mit deinem Passwort. Hinzufügen oder Entfernen ändert nichts an den anderen.</string>
+    <string name="set_lost_hint">Etwas verloren (Key, Schlüsseldatei oder Notfallblatt)? Entfernen bzw. ein neues Notfallblatt sperrt es für die aktuelle Suite aus. Eine alte Sicherungskopie öffnet sich damit aber weiter und zeigt den Stand von damals, auch die Zugangsdaten deiner Mail-Konten und deines Servers. Ändere deshalb danach diese Passwörter beim jeweiligen Anbieter und trage sie in GhulSuite neu ein. Der Drive-Inhalt ist damit ebenfalls geschützt: Ohne Server-Zugang kommt niemand an die Blöcke.</string>
     <string name="set_theme">Design</string>
     <string name="set_totp_hide">GhulAuth: Codes erst nach Antippen zeigen</string>
     <string name="set_totp_next">GhulAuth: nächsten Code kurz vor Ablauf zeigen</string>
@@ -334,6 +342,13 @@
     <string name="start_open_vault_text">Eine .ghlpss- oder .ghltotp-Datei. Sie wird in deinen Speicherort kopiert; nur dieser Bereich wird eingeschaltet.</string>
     <string name="storage_app">App-Speicher</string>
     <string name="storage_current">Speicherort: %1$s</string>
+    <string name="storage_move">Speicherort wechseln</string>
+    <string name="storage_move_hint">Kopiert alle Tresordateien an einen neuen Ort, prüft jede Kopie und nutzt ab dann diesen Ort. Der App-Speicher ist für die meisten am sichersten: Andere Apps kommen dort nicht heran. Einen eigenen Ordner brauchst du nur, wenn du die Dateien selbst sichern oder mit einem eigenen Programm abgleichen willst. Die Synchronisation mit deinem Server funktioniert an beiden Orten gleich.</string>
+    <string name="storage_move_text">Wähle das Ziel. Alle Tresordateien werden kopiert und geprüft, danach nutzt die App den neuen Ort und du entsperrst einmal neu. Die Dateien am alten Ort bleiben unverändert liegen, bis du sie selbst löschst. Ein Ordner, in dem schon eine Suite liegt, wird nicht überschrieben.</string>
+    <string name="storage_move_folder">Ordner wählen</string>
+    <string name="storage_move_app">In den App-Speicher</string>
+    <string name="storage_move_done">%1$d Dateien kopiert und geprüft. Die App nutzt jetzt den neuen Ort. Die alten Dateien liegen noch am alten Ort; du kannst sie dort löschen, wenn du sie nicht mehr brauchst.</string>
+    <string name="storage_move_target_full">Im gewählten Ordner liegt schon eine Suite. Es wurde nichts kopiert und nichts überschrieben. Wähle einen leeren Ordner.</string>
     <string name="storage_folder">Ordner wählen</string>
     <string name="storage_hint">Empfohlen ist der App-Speicher. Ein eigener Ordner (z. B. USB-Stick) eignet sich, wenn du die Dateien selbst mitnehmen oder sichern willst.</string>
     <string name="storage_open_existing">Diese Suite öffnen</string>
@@ -380,8 +395,9 @@
     <string name="vault_remove_warning">Die Datei wird aus deinem Ordner gelöscht, mit allen Einträgen.</string>
     <string name="vault_remove_tip">Tipp: Exportiere vorher, was du behalten willst.</string>
     <string name="vault_remove_title">„%1$s“ löschen?</string>
-    <string name="vault_scan">Ordner nach Tresoren durchsuchen</string>
-    <string name="vault_summary">%1$s · Einträge: %2$s · %3$s</string>
+    <string name="vault_scan">Ordner nach neuen Tresordateien durchsuchen</string>
+    <string name="vault_scan_hint">Nur nötig, wenn du selbst Tresordateien in diesen Ordner kopiert hast. Beim Entsperren sucht die App ohnehin.</string>
+    <string name="vault_summary">%1$s · Einträge: %2$s</string>
     <string name="a_attach">Datei anhängen</string>
     <string name="a_check_and_save">Prüfen und speichern</string>
     <string name="a_connect">Verbinden</string>
@@ -407,7 +423,22 @@
     <string name="err_host_key_changed">Achtung: Der Server zeigt einen anderen Schlüssel (%1$s). Möglicherweise hört jemand mit. Es wurde nichts übertragen.</string>
     <string name="err_cert_untrusted">Dem Server-Zertifikat wird nicht vertraut (%1$s).</string>
     <string name="err_server_auth">Der Server hat die Anmeldung abgelehnt. Prüfe Benutzername, Passwort oder Schlüssel.</string>
+    <string name="err_drive_rolled_back">Der GhulDrive-Stand auf dem Server ist älter als der zuletzt gesehene (Server zurückgesetzt oder alte Sicherung eingespielt). Es wurde nichts geändert. War das Absicht: Optionen → GhulDrive → „Älteren Serverstand übernehmen“.</string>
+    <string name="err_share_not_deleted">Der Server dieses Links ist nicht mehr eingetragen, das Paket konnte nicht gelöscht werden. Der Link funktioniert bis zu seinem Ablauf.</string>
+    <string name="err_php_not_executed">Der Webserver führt PHP nicht aus und liefert das Server-Modul als Text aus: Sein Zugangsschlüssel wäre lesbar. Die App hat die Datei wieder gelöscht. Prüfe beim Hoster, ob PHP für diesen Ordner aktiv ist.</string>
+    <string name="drive_accept_state">Älteren Serverstand übernehmen</string>
+    <string name="drive_accept_state_hint">Nur nötig, wenn GhulDrive meldet, dass der Stand auf dem Server älter ist als zuletzt gesehen, zum Beispiel nach dem Einspielen einer Server-Sicherung.</string>
+    <string name="drive_accept_state_text">GhulDrive übernimmt den Stand, der jetzt auf dem Server liegt. Dateien, die erst danach hinzugekommen waren, sind dann nicht mehr aufgeführt. Nur übernehmen, wenn du den Server selbst zurückgesetzt hast.</string>
+    <string name="mail_key_verified">bestätigt</string>
+    <string name="mail_key_changed">Der Schlüssel hat sich geändert. Vergleiche den Fingerabdruck mit dem Kontakt.</string>
+    <string name="mail_key_offered">Eine Mail bot einen anderen Schlüssel an. Der bestätigte bleibt; frag nach, ob der Kontakt einen neuen hat.</string>
+    <string name="mail_key_compare">Vergleichen</string>
+    <string name="mail_key_compare_title">Fingerabdruck von %1$s</string>
+    <string name="mail_key_compare_text">Lass dir den Fingerabdruck vom Kontakt zeigen oder vorlesen, persönlich oder am Telefon. Stimmt er Zeichen für Zeichen überein, ist es wirklich der Schlüssel dieses Kontakts.</string>
+    <string name="mail_key_offered_was">Angeboten wurde: %1$s</string>
+    <string name="mail_key_matches">Stimmt überein</string>
     <string name="err_password_elsewhere">Das Master-Passwort wurde auf einem anderen Gerät geändert.</string>
+    <string name="err_protection_elsewhere">Die Schlüssel deiner Suite wurden auf einem anderen Gerät geändert.</string>
     <string name="err_not_configured">Noch nicht eingerichtet.</string>
     <string name="err_not_found">Nicht gefunden.</string>
     <string name="server_add_title">Server hinzufügen</string>
@@ -442,6 +473,9 @@
     <string name="sync_not_set">Kein Server für die Synchronisation gewählt.</string>
     <string name="sync_pw_title">Neues Master-Passwort</string>
     <string name="sync_pw_text">Das Master-Passwort wurde auf einem anderen Gerät geändert. Gib das neue Passwort ein, um es auch auf diesem Gerät zu übernehmen.</string>
+    <string name="sync_protection_title">Schutz geändert</string>
+    <string name="sync_protection_text">Auf einem anderen Gerät wurde ein Key entfernt und ein neues Notfallblatt erstellt. Bestätige einmal mit einem deiner übrigen Keys oder deiner Schlüsseldatei, dann synchronisiert dieses Gerät wieder.</string>
+    <string name="sync_protection_password">Dort wurde auch das Master-Passwort geändert. Gib das neue Passwort ein.</string>
     <string name="start_fetch">Von meinem Server holen</string>
     <string name="start_fetch_text">Deine Suite liegt schon synchronisiert auf deinem eigenen Server: auf dieses Gerät holen.</string>
     <string name="fetch_text">Die verschlüsselte Suite wird vom Server geladen. Danach entsperrst du sie wie gewohnt mit Passwort und Security Key oder Schlüsseldatei.</string>
@@ -518,7 +552,7 @@
     <string name="mail_attachment_warning">Öffne Anhänge nur von Absendern, denen du vertraust.</string>
     <string name="mail_sent_msg">Nachricht gesendet.</string>
     <string name="mail_notify">Bei neuen E-Mails benachrichtigen</string>
-    <string name="mail_notify_hint">Neue E-Mails kommen auch, wenn GhulSuite gesperrt oder geschlossen ist, nach einem Neustart des Handys und nach der Panik-Sperre. Dafür bleibt eine Kopie der Posteingangs-Anmeldung auf diesem Gerät, geschützt durch den Android-Keystore. Der Server meldet neue Mails sofort; dafür zeigt Android eine stille Dauer-Benachrichtigung „GhulMail ist bereit“. Benachrichtigungen zeigen standardmäßig nur den Kontonamen und die Anzahl neuer Nachrichten (oben änderbar). Nur „Beenden erzwingen“ in den Android-Einstellungen stoppt den Empfang, bis du GhulSuite wieder öffnest.</string>
+    <string name="mail_notify_hint">Neue E-Mails kommen auch, wenn GhulSuite gesperrt oder geschlossen ist, nach einem Neustart des Handys und nach der Sofortsperre. Dafür bleibt eine Kopie der Posteingangs-Anmeldung auf diesem Gerät, geschützt durch den Android-Keystore. Der Server meldet neue Mails sofort; dafür zeigt Android eine stille Dauer-Benachrichtigung „GhulMail ist bereit“. Benachrichtigungen zeigen standardmäßig nur den Kontonamen und die Anzahl neuer Nachrichten (oben änderbar). Nur „Beenden erzwingen“ in den Android-Einstellungen stoppt den Empfang, bis du GhulSuite wieder öffnest.</string>
     <string name="mail_remove_title">%1$s entfernen?</string>
     <string name="mail_remove_text">Das Konto wird aus GhulSuite entfernt. Deine E-Mails bleiben auf dem Mailserver.</string>
     <string name="set_mail">GhulMail-Konten</string>
@@ -590,7 +624,7 @@
     <string name="set_g_servers">Synchronisation</string>
     <string name="set_import_sub">Proton, Bitwarden, Aegis, 2FAS, KeePass …</string>
     <string name="set_lock_hint_short">Entfernt alle Schlüssel aus dem Speicher</string>
-    <string name="set_lock_panic">Sperren und Panik</string>
+    <string name="set_lock_panic">Sperren</string>
     <string name="set_lock_panic_sub">Zeit, Schütteln, Schnellkachel</string>
     <string name="set_mail_sub">Konten, Benachrichtigungen</string>
     <string name="set_modules_sub">Einrichten, ausblenden, entfernen</string>
@@ -1111,6 +1145,8 @@
     <string name="cal_delete_calendar_text">„%1$s“ und alle seine Termine werden gelöscht, auch auf deinen anderen Geräten.</string>
     <string name="cal_import">Import (.ics)</string>
     <string name="cal_export">Export (.ics)</string>
+    <string name="cal_import_confirm_title">Kalenderdatei übernehmen?</string>
+    <string name="cal_import_confirm_text">Eine andere App hat GhulSuite eine Kalenderdatei mit %1$s Terminen übergeben. Sie werden in den Kalender „%2$s“ eingetragen.</string>
     <string name="cal_import_done">%1$s Termine importiert</string>
     <string name="cal_closed_hint">Jeder Kalender liegt verschlüsselt in deiner Suite (.ghlcal) und synchronisiert wie deine Passwörter über deinen eigenen Speicher. Bewusst ohne CalDAV.</string>
     <string name="cal_start_view">Startansicht</string>
@@ -1227,8 +1263,8 @@
     <string name="wz_one_area">Mindestens einen Bereich wählen.</string>
     <string name="wz_drive_missing">GhulDrive, noch offen: %1$s. Oder „Später“ wählen.</string>
     <string name="wz_lock_sub">Wenn GhulSuite im Hintergrund ist oder du nichts tust.</string>
-    <string name="wz_shake_sub">Schütteln = Panik-Sperre: sperrt sofort und löscht das Schnell-Entsperren (Fingerabdruck, PIN).</string>
-    <string name="wz_lock_hint">Alles lässt sich später unter Optionen → Sperren und Panik ändern. Gilt nur für dieses Gerät.</string>
+    <string name="wz_shake_sub">Schütteln = Sofortsperre: sperrt sofort und löscht das Schnell-Entsperren (Fingerabdruck, PIN).</string>
+    <string name="wz_lock_hint">Alles lässt sich später unter Optionen → Sperren ändern. Gilt nur für dieses Gerät.</string>
     <string name="wz_quick_explain">Schnell-Entsperren heißt: mit Fingerabdruck oder einer App-PIN statt Passwort und zweitem Faktor (Key oder Schlüsseldatei), für die Zeit zwischen zwei vollständigen Anmeldungen.</string>
     <string name="wz_quick_none">Immer Passwort und zweiter Faktor</string>
     <string name="wz_quick_none_sub">Am sichersten</string>
@@ -1240,7 +1276,7 @@
     <string name="wz_pin_rule">Die App-PIN braucht 6 bis 12 Ziffern.</string>
     <string name="wz_quick_valid">Schnell-Entsperren gilt</string>
     <string name="wz_quick_valid_sub">Danach wieder Passwort und zweiter Faktor.</string>
-    <string name="wz_quick_always_note">Ohne Ablauf. Nach einem Neustart des Geräts, einer Panik-Sperre oder einem Passwortwechsel brauchst du trotzdem wieder Passwort und zweiten Faktor.</string>
+    <string name="wz_quick_always_note">Ohne Ablauf. Nach einem Neustart des Geräts, einer Sofortsperre oder einem Passwortwechsel brauchst du trotzdem wieder Passwort und zweiten Faktor.</string>
     <string name="area_pass_sub">Passwörter, Notizen, Karten, WLAN</string>
     <string name="area_auth_sub">2FA-Codes für deine Konten</string>
     <string name="area_drive_sub">Verschlüsselte Dateien auf deinem Server</string>

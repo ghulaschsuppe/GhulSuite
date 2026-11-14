@@ -12,7 +12,10 @@ use super::container::{Fido2Registration, KdfCost, LockedContainer, SecondFactor
 use super::error::VaultError;
 use super::format::{ContainerKind, Slot};
 use super::keyfile::Keyfile;
-use super::keys::{fido2_slot_key, kek, keyfile_slot_key, payload_key, recovery_slot_key, PasswordKey};
+use super::keys::{
+    fido2_slot_key, hkdf, kek, keyfile_slot_key, payload_key, recovery_slot_key, PasswordKey, INFO_X25519_FIDO2,
+    INFO_X25519_KEYFILE, INFO_X25519_WRAP,
+};
 use super::payload::{Entry, Field, SlotMeta};
 use super::recovery::RecoveryCode;
 use crate::kdf::hex;
@@ -230,9 +233,17 @@ fn rejects_tampered_kind_and_versions() {
     let mut as_totp = file.clone();
     as_totp[..8].copy_from_slice(b"GHULTOTP");
     assert_eq!(open(&as_totp, "pw", &fido_factor(&s)).err(), Some(VaultError::Corrupted));
-    let mut v2 = file.clone();
-    v2[8] = 2;
-    assert_eq!(LockedContainer::parse(&v2).err(), Some(VaultError::UnsupportedVersion(2)));
+    let mut v3 = file.clone();
+    v3[8] = 3;
+    assert_eq!(LockedContainer::parse(&v3).err(), Some(VaultError::UnsupportedVersion(3)));
+    let mut v0 = file.clone();
+    v0[8] = 0;
+    assert_eq!(LockedContainer::parse(&v0).err(), Some(VaultError::UnsupportedVersion(0)));
+    // Public-key slots (types 4 and 5) do not exist in version 1.
+    let mut as_v1 = file.clone();
+    as_v1[8] = 1;
+    assert!(LockedContainer::parse(&as_v1).is_err());
+    assert!(c.seal_version(1, &mut r).is_err());
     assert!(LockedContainer::parse(b"GHULPASS").is_err());
     assert!(LockedContainer::parse(b"").is_err());
 }
@@ -333,16 +344,40 @@ fn end_to_end_with_ctap2_authenticator() {
     assert_eq!(u.payload.entries[0].fields["title"], Field::Text("Mock".into()));
 }
 
-// --- Test vectors (docs/testvectors/container-v1.json) -----------------------------------
+// --- Test vectors (docs/testvectors/container-v1.json and -v2.json) ----------------------
 
-const VECTOR_FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/testvectors/container-v1.json");
+const VECTOR_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/testvectors");
 
 fn unhex(s: &str) -> Vec<u8> {
     (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect()
 }
 
+/// The intermediate values of a public-key slot (type 4 or 5) for the vectors.
+fn public_slot_json(ikm: &[u8; 32], info: &[u8], slot: &Slot) -> Json {
+    let (slot_id, public) = match slot {
+        Slot::Fido2(f) => (f.slot_id, f.public.as_ref().unwrap()),
+        Slot::Keyfile(k) => (k.slot_id, k.public.as_ref().unwrap()),
+        Slot::Recovery(_) => unreachable!(),
+    };
+    let seed = hkdf(ikm, &[info, &slot_id]);
+    let private = x25519_dalek::StaticSecret::from(*seed);
+    let shared = private.diffie_hellman(&x25519_dalek::PublicKey::from(public.ephemeral));
+    let mut wrap_ikm = shared.as_bytes().to_vec();
+    wrap_ikm.extend_from_slice(&public.ephemeral);
+    wrap_ikm.extend_from_slice(&public.public_key);
+    let wrap_key = hkdf(&wrap_ikm, &[INFO_X25519_WRAP, &slot_id]);
+    json!({
+        "private_key": hex(seed.as_ref()),
+        "public_key": hex(&public.public_key),
+        "ephemeral_public_key": hex(&public.ephemeral),
+        "shared_secret": hex(shared.as_bytes()),
+        "slot_key": hex(wrap_key.as_ref()),
+    })
+}
+
+/// `version` 1: slots of type 1 and 3 (files of older app versions, still read); 2: types 4 and 5.
 #[allow(clippy::type_complexity)]
-fn build_vectors() -> Json {
+fn build_vectors(version: u16) -> Json {
     let mut r = rng(2026);
     let password = "Grüße, GhulSuite!";
     let keyfile = Keyfile::generate(&mut r);
@@ -356,12 +391,18 @@ fn build_vectors() -> Json {
     let mut hmac_output = [0u8; 32];
     r.fill_bytes(&mut hmac_output);
     let credential_id: Vec<u8> = (0..48).map(|i| i as u8).collect();
-    let fido = keys.fido2_slot(
-        &Fido2Registration { rp_id: RP, credential_id: &credential_id, prf_input, hmac_output: &hmac_output },
-        &mut r,
-    );
+    let reg = Fido2Registration { rp_id: RP, credential_id: &credential_id, prf_input, hmac_output: &hmac_output };
+    let fido = if version == 1 {
+        super::container::legacy_fido2_slot(&keys.suite_id, &keys.factor_secret, &reg, &mut r)
+    } else {
+        keys.fido2_slot(&reg, &mut r)
+    };
     let keys_kf = SuiteKeys::create(password, COST, &mut r).unwrap();
-    let kf_slot = keys_kf.keyfile_slot(&keyfile, &mut r);
+    let kf_slot = if version == 1 {
+        super::container::legacy_keyfile_slot(&keys_kf.suite_id, &keys_kf.factor_secret, &keyfile, &mut r)
+    } else {
+        keys_kf.keyfile_slot(&keyfile, &mut r)
+    };
 
     let cases: Vec<(&SuiteKeys, ContainerKind, Slot, bool, Option<&Keyfile>, &str)> = vec![
         (&keys, ContainerKind::Suite, fido.clone(), true, None, "suite container: security key slot + recovery slot"),
@@ -421,20 +462,30 @@ fn build_vectors() -> Json {
                 c.payload.entries.push(e);
             }
         }
-        let file = c.seal(&mut r).unwrap();
+        let file = c.seal_version(version, &mut r).unwrap();
         let cid = c.header().container_id;
         let kek_v = kek(&k.password_key, &k.factor_secret, &cid);
         let vmk = *c.vmk();
         let pkey = payload_key(&zeroize::Zeroizing::new(vmk), &cid);
         let factor = match &slot {
-            Slot::Fido2(f) => json!({
+            Slot::Fido2(f) if version == 1 => json!({
                 "type": "fido2", "slot_id": hex(&f.slot_id), "rp_id": f.rp_id, "credential_id": hex(&f.credential_id),
                 "prf_input": hex(&f.prf_input), "hmac_salt": hex(&crate::ctap2::prf_salt(&f.prf_input)),
                 "hmac_output": hex(&hmac_output), "slot_key": hex(fido2_slot_key(&hmac_output, &f.slot_id).as_ref()),
             }),
-            Slot::Keyfile(f) => json!({
+            Slot::Fido2(f) => json!({
+                "type": "fido2-x25519", "slot_id": hex(&f.slot_id), "rp_id": f.rp_id,
+                "credential_id": hex(&f.credential_id), "prf_input": hex(&f.prf_input),
+                "hmac_salt": hex(&crate::ctap2::prf_salt(&f.prf_input)), "hmac_output": hex(&hmac_output),
+                "x25519": public_slot_json(&hmac_output, INFO_X25519_FIDO2, &slot),
+            }),
+            Slot::Keyfile(f) if version == 1 => json!({
                 "type": "keyfile", "slot_id": hex(&f.slot_id), "keyfile_id": hex(&f.keyfile_id),
                 "slot_key": hex(keyfile_slot_key(kf.unwrap().expose(), &f.slot_id).as_ref()),
+            }),
+            Slot::Keyfile(f) => json!({
+                "type": "keyfile-x25519", "slot_id": hex(&f.slot_id), "keyfile_id": hex(&f.keyfile_id),
+                "x25519": public_slot_json(kf.unwrap().expose(), INFO_X25519_KEYFILE, &slot),
             }),
             Slot::Recovery(_) => unreachable!(),
         };
@@ -462,7 +513,7 @@ fn build_vectors() -> Json {
         }));
     }
     json!({
-        "format": "GhulSuite container v1",
+        "format": format!("GhulSuite container v{version}"),
         "note": "Generated by ghul-core (vault::tests::test_vectors). Argon2id: 64 MiB, 3 iterations, 1 lane.",
         "vectors": out,
     })
@@ -470,24 +521,30 @@ fn build_vectors() -> Json {
 
 #[test]
 fn test_vectors() {
-    let generated = build_vectors();
+    for version in [1u16, 2] {
+        check_vectors(version);
+    }
+}
+
+fn check_vectors(version: u16) {
+    let path = format!("{VECTOR_DIR}/container-v{version}.json");
+    let generated = build_vectors(version);
     if std::env::var("GHUL_WRITE_VECTORS").is_ok() {
-        std::fs::create_dir_all(std::path::Path::new(VECTOR_FILE).parent().unwrap()).unwrap();
-        std::fs::write(VECTOR_FILE, serde_json::to_string_pretty(&generated).unwrap() + "\n").unwrap();
+        std::fs::create_dir_all(VECTOR_DIR).unwrap();
+        std::fs::write(&path, serde_json::to_string_pretty(&generated).unwrap() + "\n").unwrap();
     }
     let published: Json = serde_json::from_str(
-        &std::fs::read_to_string(VECTOR_FILE)
-            .expect("docs/testvectors/container-v1.json missing; run with GHUL_WRITE_VECTORS=1"),
+        &std::fs::read_to_string(&path).unwrap_or_else(|_| panic!("{path} missing; run with GHUL_WRITE_VECTORS=1")),
     )
     .unwrap();
-    assert_eq!(generated, published, "implementation no longer matches the published test vectors");
+    assert_eq!(generated, published, "implementation no longer matches the published test vectors v{version}");
 
     // Independent check: open each published file from its inputs only.
     for v in published["vectors"].as_array().unwrap() {
         let file = unhex(v["file"].as_str().unwrap());
         let keyfile = v["keyfile"].as_str().map(|k| Keyfile::parse(&unhex(k)).unwrap());
         let pw = v["password"].as_str().unwrap();
-        let u = if v["factor"]["type"] == "fido2" {
+        let u = if v["factor"]["type"].as_str().unwrap().starts_with("fido2") {
             let out: [u8; 32] = unhex(v["factor"]["hmac_output"].as_str().unwrap()).try_into().unwrap();
             let slot_id: [u8; 16] = unhex(v["factor"]["slot_id"].as_str().unwrap()).try_into().unwrap();
             open(&file, pw, &SecondFactor::Fido2 { slot_id, hmac_output: &out }).unwrap()

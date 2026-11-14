@@ -318,20 +318,21 @@ fn keys_codes_and_containers() {
     fuzz("cbor", &[cbor], 4000, |d| {
         let _ = crate::cbor::decode(d);
     });
-    let vectors: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(format!("{}/../../docs/testvectors/container-v1.json", env!("CARGO_MANIFEST_DIR")))
+    let mut containers: Vec<Vec<u8>> = Vec::new();
+    for version in [1, 2] {
+        let vectors: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(format!(
+                "{}/../../docs/testvectors/container-v{version}.json",
+                env!("CARGO_MANIFEST_DIR")
+            ))
             .unwrap(),
-    )
-    .unwrap();
-    let containers: Vec<Vec<u8>> = vectors["vectors"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| {
+        )
+        .unwrap();
+        containers.extend(vectors["vectors"].as_array().unwrap().iter().map(|v| {
             let h = v["file"].as_str().unwrap();
-            (0..h.len()).step_by(2).map(|i| u8::from_str_radix(&h[i..i + 2], 16).unwrap()).collect()
-        })
-        .collect();
+            (0..h.len()).step_by(2).map(|i| u8::from_str_radix(&h[i..i + 2], 16).unwrap()).collect::<Vec<u8>>()
+        }));
+    }
     fuzz("container", &containers, 3000, |d| {
         if let Ok(c) = crate::vault::LockedContainer::parse(d) {
             let _ = c.fido2_requests();
