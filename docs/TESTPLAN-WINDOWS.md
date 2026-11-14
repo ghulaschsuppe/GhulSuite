@@ -148,6 +148,14 @@ Die Abläufe sind dieselben wie unter Android (Testplan Android, Abschnitte 1 un
 | W11.4 | Optionen → Bereiche verwalten → GhulDrive einrichten → „Eigener Server“ → PHP-Modul. | Modul wird per FTPS hochgeladen, Adresse geprüft; GhulDrive erscheint in der Leiste. |
 | W11.5 | Ordner der Suite im Explorer ansehen. | Je gewähltem Bereich eine Datei (`.ghlpss`, `.ghltotp`, `.ghldrv`, `.ghlmail`, `.ghlcal`) und `suite.ghlsuite`. |
 
+## 12. Runde 6
+
+| Nr. | Schritt | Erwartet |
+|---|---|---|
+| WR1 | Einrichtung bis Schritt 7 (Schnell-Entsperren). | Keine App-PIN zur Auswahl, Hinweis auf Windows Hello später (U8). |
+| WR2 | Termin mit Erinnerung in 10 Minuten, dann in Windows die Zeitzone ändern und GhulSuite offen lassen. | Spätestens nach 5 Minuten wird neu geplant; die Erinnerung kommt zur richtigen Uhrzeit (B22). |
+| WR3 | Optionen → GhulCal. | Hinweis: Erinnerungen kommen nur, solange GhulSuite läuft (B22). |
+
 ## Fehler melden
 
 Bitte je Fehler: **Testnummer**, Windows-Version (Optionen → System → Info), installiert oder portabel, was du
