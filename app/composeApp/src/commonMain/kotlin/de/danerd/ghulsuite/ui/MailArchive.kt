@@ -140,6 +140,9 @@ fun MailArchiveSection(state: AppState) {
                 counts[a.id]?.takeIf { on && it.mails > 0 }?.let { c ->
                     Hint(stringResource(Res.string.archive_count, c.mails.toString(), formatSize(c.bytes)))
                 }
+                state.archiveTooLarge[a.id]?.takeIf { on && it > 0 }?.let { n ->
+                    Hint(stringResource(Res.string.archive_too_large, n.toString()))
+                }
             }
             // After how many days.
             val days = s.options.days
@@ -183,6 +186,8 @@ fun MailArchiveSection(state: AppState) {
                 Spacer(Modifier.width(8.dp))
                 Text(stringResource(if (state.archiveRunning) Res.string.archive_running else Res.string.archive_now))
             }
+            state.archiveProgress?.let { Hint(it) }
+            Hint(stringResource(if (state.backend.isDesktop) Res.string.archive_long_run_desktop else Res.string.archive_long_run))
             for (a in s.options.accounts) {
                 val name = accounts.firstOrNull { it.id == a }?.name ?: continue
                 TextButton(onClick = { trashFor = a }) { Text(stringResource(Res.string.archive_trash_of, name)) }

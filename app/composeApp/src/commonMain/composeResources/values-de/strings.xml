@@ -1545,4 +1545,8 @@
     <string name="core_arc_busy">Das Mail-Archiv wird gerade auf einem anderen Gerät geändert. Bitte versuche es noch einmal.</string>
     <string name="core_arc_move_readback">Der neue Ort hat nicht zurückgegeben, was geschrieben wurde. Das Archiv bleibt am alten Ort.</string>
     <string name="core_arc_days">Die Anzahl der Tage muss zwischen 1 und 36500 liegen.</string>
+    <string name="archive_progress">Mail-Archiv: %1$s archiviert, %2$s übrig.</string>
+    <string name="archive_long_run">Der erste Lauf eines großen Postfachs kann eine Stunde oder länger dauern. Solange er läuft, bleibt GhulSuite entsperrt, auch im Hintergrund (siehe Benachrichtigung); „Sperren“ oder Schütteln sperrt sofort und hält ihn an. Er macht dort weiter, wo er aufgehört hat.</string>
+    <string name="archive_long_run_desktop">Der erste Lauf eines großen Postfachs kann eine Stunde oder länger dauern. Solange er läuft, bleibt GhulSuite entsperrt, auch wenn das Fenster im Hintergrund ist; er macht dort weiter, wo er aufgehört hat.</string>
+    <string name="archive_too_large">%1$s Mails sind größer als 100 MB: Sie bleiben beim Anbieter und werden dort nie gelöscht.</string>
 </resources>

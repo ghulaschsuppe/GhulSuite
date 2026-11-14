@@ -1545,4 +1545,8 @@
     <string name="core_arc_busy">The mail archive is being changed on another device. Please try again.</string>
     <string name="core_arc_move_readback">The new place did not return what was written. The archive stays at its old place.</string>
     <string name="core_arc_days">The number of days must be between 1 and 36500.</string>
+    <string name="archive_progress">Mail archive: %1$s archived, %2$s left.</string>
+    <string name="archive_long_run">The first run of a large mailbox can take an hour or more. GhulSuite stays unlocked while it runs, also in the background (see the notification); “Lock” or shaking locks at once and stops it. It continues where it stopped.</string>
+    <string name="archive_long_run_desktop">The first run of a large mailbox can take an hour or more. GhulSuite stays unlocked while it runs, also when the window is in the background; it continues where it stopped.</string>
+    <string name="archive_too_large">%1$s mails are larger than 100 MB: they stay at the provider and are never deleted there.</string>
 </resources>

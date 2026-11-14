@@ -36,6 +36,7 @@ class UnlockedService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
+        // Also on ACTION_UPDATE: every start of the service sets its notification anew (archive progress).
         startShakeDetection()
         return START_NOT_STICKY
     }
@@ -58,7 +59,7 @@ class UnlockedService : Service() {
         return Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_lock)
             .setContentTitle(getString(R.string.notif_title))
-            .setContentText(getString(R.string.notif_text))
+            .setContentText(ArchiveRun.progress?.let { getString(R.string.notif_archive, it) } ?: getString(R.string.notif_text))
             .setContentIntent(open)
             .setOngoing(true)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
@@ -88,6 +89,7 @@ class UnlockedService : Service() {
 
     companion object {
         const val ACTION_LOCK = "de.danerd.ghulsuite.LOCK"
+        const val ACTION_UPDATE = "de.danerd.ghulsuite.UPDATE"
         private const val CHANNEL = "unlocked"
         private const val NOTIFICATION_ID = 1
     }

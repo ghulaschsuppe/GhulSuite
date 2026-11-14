@@ -136,6 +136,11 @@ interface NetBackend {
     suspend fun mailRaw(accountId: String, folder: String, uid: Long, decrypted: Boolean): ByteArray = ByteArray(0)
 
     // --- Encrypted mail archive (KONZEPT 9.3.1)
+    /**
+     * An archive run is going on ([progress] shown in the notification) or over (null). While it
+     * runs, the auto-lock waits for its end (Android, Windows); an immediate lock stops it at once.
+     */
+    fun archiveRunning(progress: String?) {}
     /** The device is on a network without data limit (Wi-Fi); desktops always. */
     fun unmeteredNetwork(): Boolean = true
     suspend fun archiveStatus(): MailArchiveStatusUi? = null
@@ -537,6 +542,8 @@ data class MailArchiveRunUi(
     val remaining: Int = 0,
     val waitingForConfirmation: Int = 0,
     val renumbered: Int = 0,
+    /** Mails larger than 100 MB: left at the provider, never deleted there. */
+    val tooLarge: Int = 0,
     /** Another device archives this account right now (its name). */
     val busy: String = "",
 )
