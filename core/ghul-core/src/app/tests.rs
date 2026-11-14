@@ -346,10 +346,11 @@ fn quick_unlock_fingerprint_and_pin() {
     std::thread::sleep(std::time::Duration::from_millis(1100));
     s.unlock("pw-1".into(), Some(k.clone()), Some(listener()), Some("1234".into()), None).unwrap();
     s.lock();
-    s.unlock_quick("bio".into(), bio.clone(), None, 1).unwrap();
+    // 3 s of validity: the full unlock above (Argon2) may itself take over a second on a slow runner.
+    s.unlock_quick("bio".into(), bio.clone(), None, 3).unwrap();
     s.lock();
-    std::thread::sleep(std::time::Duration::from_millis(1100));
-    assert!(matches!(s.unlock_quick("bio".into(), bio, None, 1), Err(GhulError::QuickUnlockExpired)));
+    std::thread::sleep(std::time::Duration::from_millis(3100));
+    assert!(matches!(s.unlock_quick("bio".into(), bio, None, 3), Err(GhulError::QuickUnlockExpired)));
     assert!(!s.quick_unlock_exists("bio".into()));
 
     // A password change invalidates all quick unlocks.
