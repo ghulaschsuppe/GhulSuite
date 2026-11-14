@@ -113,6 +113,10 @@ class LayoutCheckTest {
     fun englishScreensFit() = check(Locale.ENGLISH, "en")
 
     private fun check(locale: Locale, tag: String) {
+        // Phones: measured with the fonts of Linux (DejaVu Sans is wider than Android's Roboto, so
+        // this is the strict case). Windows draws with other fonts and is no phone; its narrow
+        // windows are an open point of their own (docs/TESTPROTOKOLL.md).
+        org.junit.Assume.assumeFalse("Handy-Layout wird unter Linux geprüft", System.getProperty("os.name").startsWith("Windows"))
         Locale.setDefault(locale)
         val findings = mutableListOf<String>()
         val allNotes = mutableListOf<String>()

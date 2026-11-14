@@ -187,6 +187,9 @@ Zu F17 (Verhalten seit der Behebung): Die erste Mail eines neuen Kontakts mit Au
 | U14 | ~~Drive-Speicher „Wie Synchronisation“ umschalten wirkt sofort, Drive scheinbar leer~~ | erledigt: Rückfrage mit Erklärung |
 | U15 | ~~Kalender-Import ohne Standardkalender tut nichts; Export nimmt still nur sichtbare Kalender~~ | erledigt: ohne Kalender eine Meldung, bei mehreren die Wahl des Ziels; Export nimmt alle Kalender und sagt es |
 
+
+Offen (Layout): `LayoutCheckTest` prüft die Handy-Darstellung mit den Schriften unter Linux (strenger als Roboto auf Android). Unter Windows fand er mit den dortigen Schriften Funde; ein schmal gezogenes Windows-Fenster ist damit noch nicht geprüft und bekommt eine eigene Prüfung mit Fensterbreiten.
+
 ### Uneinheitliche Bedienung
 
 | Nr. | Punkt |
