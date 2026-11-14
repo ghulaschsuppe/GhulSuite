@@ -29,8 +29,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -637,7 +635,8 @@ fun UpdateDialog(state: AppState) {
         onDismissRequest = { state.update = null },
         title = { Text(stringResource(if (u.version.contains('-')) Res.string.upd_title_dev else Res.string.upd_title, u.version)) },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // The sheet of the dialog scrolls long release notes itself.
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(if (up.installs) Res.string.upd_text else Res.string.upd_text_portable, formatSize(u.size)))
                 if (u.notes.isNotBlank()) {
                     Text(u.notes.take(3000), fontSize = 13.sp, color = g.muted)

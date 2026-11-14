@@ -514,6 +514,9 @@ f3j2T3ZQ17VauB9iOzX7I9V6neeaHdUFnkjcMgaHR5uant+ua9qb79Qfig==
             s[n] ^= 1;
             assert!(!key.verify(SUMS, &s));
         }
+        // As the release workflow builds it in: the key as one line of base64, without PEM lines.
+        let one_line: String = RSA_PUB.lines().filter(|l| !l.starts_with("-----")).collect();
+        assert!(PublicKey::from_pem(&one_line).unwrap().verify(SUMS, &b64(RSA_SIG)));
         // The signature of one key is not valid for the other.
         assert!(!PublicKey::from_pem(EC_PUB).unwrap().verify(SUMS, &b64(RSA_SIG)));
         // Without a key (local builds) there are no updates.

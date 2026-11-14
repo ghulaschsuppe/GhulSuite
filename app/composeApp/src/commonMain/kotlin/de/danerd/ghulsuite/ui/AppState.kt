@@ -324,9 +324,10 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         if (updateBusy) return
         update = null
         updateBusy = true
+        // The note must not hold up the installation.
+        scope.launch { runCatching { message(getString(Res.string.upd_loading)) } }
         scope.launch {
             try {
-                message(getString(Res.string.upd_loading))
                 if (backend.updater.install(u) == UpdateStep.ALLOW_FIRST) {
                     update = u
                     message(getString(Res.string.upd_allow))
