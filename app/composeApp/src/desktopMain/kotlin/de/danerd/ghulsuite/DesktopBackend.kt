@@ -50,8 +50,64 @@ object DesktopPaths {
         else -> File(System.getProperty("user.home"), ".local/share/GhulSuite")
     }.also { it.mkdirs() }
 
-    /** Decrypted copies handed to other programs; emptied when locking and on start. */
-    val shareDir: File = File(System.getProperty("java.io.tmpdir"), "GhulSuite-Weitergabe")
+    /**
+     * Decrypted copies handed to other programs; emptied when locking and on start. Portable:
+     * inside the data folder, so nothing lands on the PC (also not in its temp folder).
+     */
+    val shareDir: File =
+        if (portable) File(dataDir, "Weitergabe") else File(System.getProperty("java.io.tmpdir"), "GhulSuite-Weitergabe")
+}
+
+/**
+ * B10: removes the decrypted copies handed to other programs. Each file is overwritten with
+ * zeros first, then deleted. Windows refuses both while a program still holds the file open:
+ * then it is tried again every 30 seconds, when the app closes and on the next start, until the
+ * folder is empty.
+ */
+object ShareFiles {
+    private val timer = Timer("share-wipe", true)
+    private var retrying = false
+
+    init {
+        Runtime.getRuntime().addShutdownHook(Thread { wipeOnce() })
+    }
+
+    /** Wipes the folder now and keeps retrying in the background for files still in use. */
+    @Synchronized
+    fun wipe() {
+        if (wipeOnce() || retrying) return
+        retrying = true
+        timer.schedule(30_000L, 30_000L) {
+            if (wipeOnce()) {
+                synchronized(this@ShareFiles) { retrying = false }
+                cancel()
+            }
+        }
+    }
+
+    /** True when nothing is left. */
+    private fun wipeOnce(): Boolean {
+        val dir = DesktopPaths.shareDir
+        if (!dir.exists()) return true
+        dir.walkBottomUp().forEach { f ->
+            if (f.isFile) {
+                runCatching {
+                    java.io.RandomAccessFile(f, "rw").use { raf ->
+                        val zeros = ByteArray(64 * 1024)
+                        var left = raf.length()
+                        while (left > 0) {
+                            val n = minOf(left, zeros.size.toLong()).toInt()
+                            raf.write(zeros, 0, n)
+                            left -= n
+                        }
+                        raf.fd.sync()
+                    }
+                }
+            }
+            f.delete()
+        }
+        return !dir.exists()
+    }
 }
 
 /** Settings in a small properties file (written atomically). */
@@ -101,13 +157,13 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
     private val timer = Timer("clipboard", true)
 
     init {
-        DesktopPaths.shareDir.deleteRecursively()
+        ShareFiles.wipe()
     }
 
-    override fun storage(): VaultStorage {
-        val folder = device.getString("folder") ?: File(DesktopPaths.dataDir, "suite").absolutePath
-        return localStorage(folder)
-    }
+    override fun storage(): VaultStorage = storageFor(device.getString("folder")?.let { FolderRef(it, "") })
+
+    override fun storageFor(folder: FolderRef?): VaultStorage =
+        localStorage(folder?.uri ?: File(DesktopPaths.dataDir, "suite").absolutePath)
 
     override fun devicePref(key: String): String? = device.getString(key)
 
@@ -126,7 +182,7 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
     }
 
     override fun lock() {
-        DesktopPaths.shareDir.deleteRecursively()
+        ShareFiles.wipe()
         super.lock()
     }
 

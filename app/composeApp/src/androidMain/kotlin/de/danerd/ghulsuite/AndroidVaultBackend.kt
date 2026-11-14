@@ -68,14 +68,15 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
         File(context.cacheDir, "shared").deleteRecursively()
     }
 
-    override fun storage(): VaultStorage {
-        val uri = prefs.getString("folder_uri", null)
-        return if (uri == null) {
+    override fun storage(): VaultStorage =
+        storageFor(prefs.getString("folder_uri", null)?.let { FolderRef(it, "") })
+
+    override fun storageFor(folder: FolderRef?): VaultStorage =
+        if (folder == null) {
             localStorage(File(context.filesDir, "suite").absolutePath)
         } else {
-            SafStorage(context, Uri.parse(uri))
+            SafStorage(context, Uri.parse(folder.uri))
         }
-    }
 
     override fun devicePref(key: String): String? = prefs.getString(key, null)
 

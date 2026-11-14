@@ -31,6 +31,9 @@ import kotlinx.coroutines.delay
 private const val IDLE_LOCK_MS = 15 * 60 * 1000L
 
 fun main() {
+    WinNative.hardenDllSearch()
+    // B10: decrypted copies a program still held open last time are removed now.
+    ShareFiles.wipe()
     // The core library lies next to the program (installer, portable folder, Gradle run).
     System.getProperty("compose.application.resources.dir")?.let { System.setProperty("jna.library.path", it) }
     Thread.setDefaultUncaughtExceptionHandler { _, e ->

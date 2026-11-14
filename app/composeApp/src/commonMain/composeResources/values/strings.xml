@@ -274,6 +274,7 @@
     <string name="set_shake_sensitivity">Shake sensitivity</string>
     <string name="set_show_subtitles">GhulPass: show user names in the list</string>
     <string name="set_swap_hint">Every key and key file opens the suite together with your password. Adding or removing one does not affect the others.</string>
+    <string name="set_lost_hint">Lost something (key, key file or recovery sheet)? Removing it, or a new recovery sheet, locks it out of the current suite. An old backup copy still opens with it, though, and shows the state of back then, including the logins of your mail accounts and your server. So afterwards change these passwords with each provider and enter them in GhulSuite again. This also protects your Drive content: without server access nobody gets to the blocks.</string>
     <string name="set_theme">Design</string>
     <string name="set_totp_hide">GhulAuth: hide codes until tapped</string>
     <string name="set_totp_next">GhulAuth: show next code shortly before expiry</string>
@@ -341,6 +342,13 @@
     <string name="start_open_vault_text">A .ghlpss or .ghltotp file. It is copied to your storage location; only this area is switched on.</string>
     <string name="storage_app">App storage</string>
     <string name="storage_current">Location: %1$s</string>
+    <string name="storage_move">Change storage location</string>
+    <string name="storage_move_hint">Copies all vault files to a new place, checks every copy and uses that place from then on. The app storage is the safest choice for most people: other apps cannot reach it. You only need your own folder if you want to back up the files yourself or keep them in step with a program of your own. Syncing with your server works the same in both places.</string>
+    <string name="storage_move_text">Choose the target. All vault files are copied and checked, then the app uses the new place and you unlock once more. The files in the old place stay unchanged until you delete them yourself. A folder that already holds a suite is not overwritten.</string>
+    <string name="storage_move_folder">Choose folder</string>
+    <string name="storage_move_app">To app storage</string>
+    <string name="storage_move_done">%1$d files copied and checked. The app now uses the new place. The old files are still in the old place; you can delete them there when you no longer need them.</string>
+    <string name="storage_move_target_full">The chosen folder already holds a suite. Nothing was copied or overwritten. Choose an empty folder.</string>
     <string name="storage_folder">Choose folder</string>
     <string name="storage_hint">App storage is recommended. A folder of your own (e.g. a USB stick) is useful if you want to carry or back up the files yourself.</string>
     <string name="storage_open_existing">Open this suite</string>

@@ -30,6 +30,7 @@ object WinNative {
         fun GlobalLock(mem: Pointer): Pointer?
         fun GlobalUnlock(mem: Pointer): Boolean
         fun GlobalFree(mem: Pointer): Pointer?
+        fun SetDllDirectoryW(path: com.sun.jna.WString?): Boolean
     }
 
     private val user32: User32? by lazy { if (isWindows) runCatching { Native.load("user32", User32::class.java) }.getOrNull() else null }
@@ -40,6 +41,15 @@ object WinNative {
     private const val CF_UNICODETEXT = 13
     private const val GMEM_MOVEABLE = 0x0002
     private const val DESKTOP_SWITCHDESKTOP = 0x0100
+
+    /**
+     * L13: takes the current working directory out of the DLL search order, so a DLL lying in
+     * whatever folder GhulSuite was started from (a download folder, a shared drive) is never
+     * loaded instead of a system one. The program folder and System32 stay as they are.
+     */
+    fun hardenDllSearch() {
+        runCatching { kernel32?.SetDllDirectoryW(com.sun.jna.WString("")) }
+    }
 
     /** Native window handle (HWND) of an AWT window, 0 if unknown. */
     fun hwnd(window: Window?): Long =

@@ -25,6 +25,13 @@ interface VaultBackend {
     fun storageName(): String
     /** Uses the app's private storage (`null`) or a folder chosen by the user. */
     fun useStorage(folder: FolderRef?)
+    /**
+     * "Change storage location": copies every suite file to the app's private storage (`null`)
+     * or the chosen folder, checks each copy and then uses the new place. The old files stay.
+     * Fails with [VaultErrorKind.ALREADY_EXISTS] if the target already holds a suite. Locks.
+     * Returns the number of files copied.
+     */
+    suspend fun moveStorage(folder: FolderRef?): Int = 0
     /** Protection of the suite (for the unlock screen); null if there is no suite. */
     fun protection(): ProtectionUi?
     /** What a vault file needs to be opened. */

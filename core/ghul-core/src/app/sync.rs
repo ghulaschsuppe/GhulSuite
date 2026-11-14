@@ -98,7 +98,7 @@ pub(crate) fn merge_entries(local: &[Entry], remote: &[Entry]) -> (Vec<Entry>, b
                 out.push(l.clone());
             }
             Some(r) => {
-                let take_remote = (r.revision, r.modified) > (l.revision, l.modified);
+                let take_remote = r.replaces(l);
                 if take_remote {
                     local_changed = true;
                     out.push((*r).clone());

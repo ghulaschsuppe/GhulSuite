@@ -274,6 +274,7 @@
     <string name="set_shake_sensitivity">Empfindlichkeit</string>
     <string name="set_show_subtitles">GhulPass: Benutzernamen in der Liste zeigen</string>
     <string name="set_swap_hint">Jeder Key und jede Schlüsseldatei öffnet die Suite zusammen mit deinem Passwort. Hinzufügen oder Entfernen ändert nichts an den anderen.</string>
+    <string name="set_lost_hint">Etwas verloren (Key, Schlüsseldatei oder Notfallblatt)? Entfernen bzw. ein neues Notfallblatt sperrt es für die aktuelle Suite aus. Eine alte Sicherungskopie öffnet sich damit aber weiter und zeigt den Stand von damals, auch die Zugangsdaten deiner Mail-Konten und deines Servers. Ändere deshalb danach diese Passwörter beim jeweiligen Anbieter und trage sie in GhulSuite neu ein. Der Drive-Inhalt ist damit ebenfalls geschützt: Ohne Server-Zugang kommt niemand an die Blöcke.</string>
     <string name="set_theme">Design</string>
     <string name="set_totp_hide">GhulAuth: Codes erst nach Antippen zeigen</string>
     <string name="set_totp_next">GhulAuth: nächsten Code kurz vor Ablauf zeigen</string>
@@ -341,6 +342,13 @@
     <string name="start_open_vault_text">Eine .ghlpss- oder .ghltotp-Datei. Sie wird in deinen Speicherort kopiert; nur dieser Bereich wird eingeschaltet.</string>
     <string name="storage_app">App-Speicher</string>
     <string name="storage_current">Speicherort: %1$s</string>
+    <string name="storage_move">Speicherort wechseln</string>
+    <string name="storage_move_hint">Kopiert alle Tresordateien an einen neuen Ort, prüft jede Kopie und nutzt ab dann diesen Ort. Der App-Speicher ist für die meisten am sichersten: Andere Apps kommen dort nicht heran. Einen eigenen Ordner brauchst du nur, wenn du die Dateien selbst sichern oder mit einem eigenen Programm abgleichen willst. Die Synchronisation mit deinem Server funktioniert an beiden Orten gleich.</string>
+    <string name="storage_move_text">Wähle das Ziel. Alle Tresordateien werden kopiert und geprüft, danach nutzt die App den neuen Ort und du entsperrst einmal neu. Die Dateien am alten Ort bleiben unverändert liegen, bis du sie selbst löschst. Ein Ordner, in dem schon eine Suite liegt, wird nicht überschrieben.</string>
+    <string name="storage_move_folder">Ordner wählen</string>
+    <string name="storage_move_app">In den App-Speicher</string>
+    <string name="storage_move_done">%1$d Dateien kopiert und geprüft. Die App nutzt jetzt den neuen Ort. Die alten Dateien liegen noch am alten Ort; du kannst sie dort löschen, wenn du sie nicht mehr brauchst.</string>
+    <string name="storage_move_target_full">Im gewählten Ordner liegt schon eine Suite. Es wurde nichts kopiert und nichts überschrieben. Wähle einen leeren Ordner.</string>
     <string name="storage_folder">Ordner wählen</string>
     <string name="storage_hint">Empfohlen ist der App-Speicher. Ein eigener Ordner (z. B. USB-Stick) eignet sich, wenn du die Dateien selbst mitnehmen oder sichern willst.</string>
     <string name="storage_open_existing">Diese Suite öffnen</string>

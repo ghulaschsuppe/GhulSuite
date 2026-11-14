@@ -2479,3 +2479,88 @@ mod everyday;
 mod properties;
 mod rekey;
 mod security;
+
+/// "Change storage location": every file is copied and checked, a target holding a suite is
+/// refused, and the suite opens from the new place with all entries.
+#[test]
+fn copy_to_other_storage() {
+    let from = Dirs::new("copy-from");
+    let to = Dirs::new("copy-to");
+    let kf = generate_keyfile();
+    let s = from.suite();
+    s.create(
+        options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat"), (VaultKind::Totp, "Codes")]),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    let pass = s.list_vaults().unwrap().into_iter().find(|v| v.kind == VaultKind::Pass).unwrap();
+    s.save_entry(pass.id.clone(), login("A", "anna", "geheim-1")).unwrap();
+
+    // Copied while unlocked: settings file plus two vault files.
+    assert_eq!(s.copy_to(to.storage()).unwrap(), 3);
+    let mut a = from.storage().list().unwrap();
+    let mut b = to.storage().list().unwrap();
+    a.retain(|f| !f.ends_with(".bak") && !f.ends_with(".tmp"));
+    b.retain(|f| !f.ends_with(".bak") && !f.ends_with(".tmp"));
+    a.sort();
+    b.sort();
+    assert_eq!(a, b);
+    for f in &a {
+        assert_eq!(from.storage().read(f.clone()).unwrap(), to.storage().read(f.clone()).unwrap(), "{f}");
+    }
+    // The old place keeps its files.
+    assert!(from.suite().exists().unwrap());
+
+    // A second copy into the same place is refused, nothing is overwritten.
+    assert!(matches!(s.copy_to(to.storage()), Err(GhulError::AlreadyExists)));
+
+    // The new place opens on its own.
+    s.lock();
+    let moved = GhulSuite::new(to.storage(), from.local());
+    moved.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    assert_eq!(moved.list_entries(VaultKind::Pass, None).unwrap()[0].title, "A");
+
+    // An empty source has nothing to copy.
+    let empty = Dirs::new("copy-empty");
+    assert!(matches!(empty.suite().copy_to(Dirs::new("copy-empty-to").storage()), Err(GhulError::NoVault)));
+}
+
+/// A vault file renamed by hand (other name, even the extension of another kind) is recognised
+/// by its content and gets its neutral name back at the next unlock. A file renamed to something
+/// that is no vault file at all (`.txt`) is simply not seen, and is back once its name is.
+#[test]
+fn renamed_vault_files_are_found_by_content() {
+    let d = Dirs::new("renamed");
+    let kf = generate_keyfile();
+    let s = d.suite();
+    s.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    let v = s.list_vaults().unwrap().into_iter().find(|v| v.kind == VaultKind::Pass).unwrap();
+    s.save_entry(v.id.clone(), login("A", "b", "c")).unwrap();
+    s.lock();
+    let st = d.storage();
+    let data = st.read(v.file.clone()).unwrap().unwrap();
+
+    for other in ["Urlaub 2026.ghlpss", "x.ghltotp"] {
+        st.delete(v.file.clone()).unwrap();
+        st.write(other.into(), data.clone()).unwrap();
+        s.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
+        let now = s.list_vaults().unwrap().into_iter().find(|x| x.id == v.id).unwrap();
+        assert_eq!(now.file, v.file, "back to its neutral name");
+        assert_eq!(now.kind, VaultKind::Pass, "the kind comes from the content, not the extension");
+        assert_eq!(s.list_entries(VaultKind::Pass, None).unwrap()[0].title, "A");
+        assert!(st.read(other.into()).unwrap().is_none());
+        s.lock();
+    }
+
+    st.delete(v.file.clone()).unwrap();
+    st.write("tresor.txt".into(), data.clone()).unwrap();
+    s.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
+    assert!(s.list_entries(VaultKind::Pass, None).unwrap().is_empty());
+    s.lock();
+    st.delete("tresor.txt".into()).unwrap();
+    st.write("tresor.ghlpss".into(), data).unwrap();
+    s.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    assert_eq!(s.list_entries(VaultKind::Pass, None).unwrap()[0].title, "A");
+}

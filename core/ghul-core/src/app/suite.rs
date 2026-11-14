@@ -1279,6 +1279,45 @@ impl GhulSuite {
         self.storage.describe()
     }
 
+    /// "Change storage location": copies the settings file and every vault file to `target` and
+    /// reads each copy back to compare it byte for byte. Refuses a target that already holds a
+    /// suite (nothing is overwritten). The files here stay untouched; the caller switches to the
+    /// new location only after this succeeded. If anything fails, the copies made so far are
+    /// removed again. Returns the number of files copied.
+    pub fn copy_to(&self, target: Arc<dyn VaultStorage>) -> Result<u32> {
+        // No save may run while the files are copied.
+        let _hold = self.guard();
+        if target.read(SUITE_FILE.to_owned())?.is_some() || target.list()?.iter().any(|f| is_vault_file(f)) {
+            return Err(GhulError::AlreadyExists);
+        }
+        let mut names = self.vault_files()?;
+        if self.storage.read(SUITE_FILE.to_owned())?.is_some() {
+            names.insert(0, SUITE_FILE.to_owned());
+        }
+        if names.is_empty() {
+            return Err(GhulError::NoVault);
+        }
+        let mut done: Vec<String> = Vec::new();
+        let result = (|| -> Result<()> {
+            for name in &names {
+                let data = self.storage.read(name.clone())?.ok_or(GhulError::NoVault)?;
+                target.write(name.clone(), data.clone())?;
+                done.push(name.clone());
+                if target.read(name.clone())?.as_deref() != Some(&data[..]) {
+                    return Err(GhulError::Storage { msg: format!("copy of {name} differs") });
+                }
+            }
+            Ok(())
+        })();
+        if let Err(e) = result {
+            for name in &done {
+                let _ = target.delete(name.clone());
+            }
+            return Err(e);
+        }
+        Ok(names.len() as u32)
+    }
+
     pub fn is_unlocked(&self) -> bool {
         self.guard().is_some()
     }
@@ -1853,13 +1892,7 @@ impl GhulSuite {
         self.with_open(|o| {
             let (_, c) = o.vault_mut(&vault_id)?;
             let e = c.payload.entries.iter_mut().find(|e| e.id == id && !e.deleted).ok_or(GhulError::NotFound)?;
-            e.fields.clear();
-            e.tags.clear();
-            e.folder = None;
-            e.extra.clear();
-            e.deleted = true;
-            e.revision += 1;
-            e.modified = now_ms();
+            e.make_tombstone(now_ms());
             self.save_vault(o, &vault_id)
         })
     }

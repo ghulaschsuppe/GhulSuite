@@ -241,6 +241,8 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                 }
                 OutlinedButton(onClick = { newCode = true }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.a_new_code)) }
                 Hint(stringResource(Res.string.set_swap_hint))
+                // L1: old backups still open with what was valid back then.
+                Hint(stringResource(Res.string.set_lost_hint))
                 Hint(stringResource(Res.string.storage_current, storageLabel(backend.storageName())))
             }
 

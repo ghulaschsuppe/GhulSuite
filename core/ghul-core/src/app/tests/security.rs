@@ -270,3 +270,45 @@ fn conflict_copies_of_a_folder_sync_tool_are_merged() {
     assert!(d1.storage().read(conflict).unwrap().is_none(), "the copy is gone");
     assert!(d1.storage().read(file).unwrap().is_some());
 }
+
+/// B18: deleted on one device, changed on another. The deletion wins over what the deleting
+/// device knew; a change it never saw survives. The result is the same on both devices and does
+/// not depend on their clocks.
+#[test]
+fn delete_against_edit_follows_a_fixed_rule() {
+    use crate::vault::{Entry, Field};
+    let mut base = Entry::new([7; 16], "login", 1_000);
+    base.fields.insert("title".into(), Field::Text("Bank".into()));
+    base.revision = 5;
+
+    // A deletes the state it knows (5); B changed it once meanwhile (6), with a clock far behind.
+    let mut deleted = base.clone();
+    deleted.make_tombstone(9_999_999);
+    let mut edited = base.clone();
+    edited.fields.insert("title".into(), Field::Text("Bank neu".into()));
+    edited.revision = 6;
+    edited.modified = 1;
+    for (local, remote) in [(&deleted, &edited), (&edited, &deleted)] {
+        let (merged, _, _) = crate::app::sync::merge_entries(&[local.clone()], &[remote.clone()]);
+        assert!(!merged[0].deleted, "an unseen change survives");
+        assert_eq!(merged[0].fields.get("title"), Some(&Field::Text("Bank neu".into())));
+    }
+
+    // A had already seen B's change (6) and deleted after it: the deletion wins, even with B's
+    // clock far ahead.
+    let mut seen = edited.clone();
+    seen.make_tombstone(2);
+    let mut late = edited.clone();
+    late.modified = i64::MAX / 2;
+    for (local, remote) in [(&seen, &late), (&late, &seen)] {
+        let (merged, _, _) = crate::app::sync::merge_entries(&[local.clone()], &[remote.clone()]);
+        assert!(merged[0].deleted, "a known state is deleted");
+    }
+
+    // Tombstones of older app versions (no record of what they deleted) keep the old rule.
+    let mut old = base.clone();
+    old.deleted = true;
+    old.revision = 7;
+    let (merged, _, _) = crate::app::sync::merge_entries(&[old.clone()], &[edited.clone()]);
+    assert!(merged[0].deleted);
+}
