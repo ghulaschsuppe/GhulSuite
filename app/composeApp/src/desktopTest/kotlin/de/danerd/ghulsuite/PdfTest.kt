@@ -12,7 +12,7 @@ class PdfTest {
     @Test
     fun textAndPhotoPdfs() {
         val out = File("build/pdf-test").apply { mkdirs() }
-        val text = textPdf("Grüße aus GhulMail", "Hallo Erika,\n\nÄpfel, Öl, Übermut – 5 €.\n" + "Lange Zeile ".repeat(40))
+        val text = textPdf("Grüße aus GhulMail", "Hallo Erika,\n\nÄpfel, Öl, Übermut \u2013 5 €.\n" + "Lange Zeile ".repeat(40))
         File(out, "text.pdf").writeBytes(text)
         assertTrue(String(text, Charsets.ISO_8859_1).startsWith("%PDF-1.4"))
         val img = java.awt.image.BufferedImage(300, 400, java.awt.image.BufferedImage.TYPE_INT_RGB)

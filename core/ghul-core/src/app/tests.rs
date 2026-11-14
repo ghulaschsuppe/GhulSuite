@@ -1083,7 +1083,7 @@ fn mail_with_imap_and_smtp() {
     .unwrap();
     let page = s.mail_list(id.clone(), "INBOX".into(), 0, 50).unwrap();
     assert_eq!(page.total, 2);
-    // Both are encrypted: the server only sees "..." – the newest is the reply.
+    // Both are encrypted: the server only sees "...", the newest is the reply.
     let reply = page.messages.iter().map(|x| x.uid).max().unwrap();
     let raw_reply = s.mail_get(id.clone(), "INBOX".into(), reply).unwrap();
     assert_eq!(raw_reply.subject, "Re: Grüße aus GhulMail");
@@ -1610,7 +1610,7 @@ fn drive_file_and_share_link_into_mail() {
     let s = d.suite();
     s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
 
-    // GhulDrive on the PHP module; no mail account exists yet – Drive and sharing work without it.
+    // GhulDrive on the PHP module; no mail account exists yet, Drive and sharing work without it.
     let srv = saved(
         s.save_server(
             ServerInput {
@@ -1844,7 +1844,9 @@ fn pgp_mail_between_two_users() {
     let (list_subject, m) = newest(&bob, &bob_id);
     assert_eq!(list_subject, "Hallo Bob");
     assert!(!m.encrypted);
-    assert_eq!(m.signature, MailSignatureStatus::Valid);
+    // Signed with the key that came with this very mail: correct, but not yet confirmed (an
+    // attacker could have sent both); shown like an unknown key the first time.
+    assert_eq!(m.signature, MailSignatureStatus::UnknownKey);
     assert_eq!(m.signer, alice_mail.to_lowercase());
     assert!(m.text.contains("Erste Nachricht.") && m.text.contains("Viele Grüße\nAlice Ä."), "{}", m.text);
     assert!(m.attachments.is_empty(), "the signature is no attachment");
@@ -1857,7 +1859,7 @@ fn pgp_mail_between_two_users() {
     let contract: Vec<u8> = (0..50_000u32).map(|i| (i % 251) as u8).collect();
     bob.mail_send(mail(
         &alice_mail,
-        "Geheimes Angebot – 5 % Rabatt",
+        "Geheimes Angebot \u{2013} 5 % Rabatt",
         "Hallo Alice, siehe Anhang.",
         vec![OutgoingAttachment { name: "Angebot.pdf".into(), mime: "application/pdf".into(), data: contract.clone() }],
         &bob_id,
@@ -1866,9 +1868,10 @@ fn pgp_mail_between_two_users() {
     let (list_subject, m) = newest(&alice, &alice_id);
     assert_eq!(list_subject, "...", "the server only sees a placeholder subject");
     assert!(m.encrypted);
-    assert_eq!(m.subject, "Geheimes Angebot – 5 % Rabatt");
-    // Alice had no key of Bob before reading: it came with this very mail (Autocrypt).
-    assert_eq!(m.signature, MailSignatureStatus::Valid);
+    assert_eq!(m.subject, "Geheimes Angebot \u{2013} 5 % Rabatt");
+    // Alice had no key of Bob before reading: it came with this very mail (Autocrypt), so the
+    // signature counts as "not yet confirmed".
+    assert_eq!(m.signature, MailSignatureStatus::UnknownKey);
     assert!(m.text.contains("Hallo Alice, siehe Anhang."));
     assert_eq!(m.attachments.len(), 1);
     assert_eq!(m.attachments[0].name, "Angebot.pdf");
@@ -2165,9 +2168,13 @@ fn calendar_vault_events_series_reminders_and_sync() {
     let ics = a.cal_export_ics(vec![]).unwrap();
     assert!(ics.contains("SUMMARY:Zahnarzt Dr. Weber"));
     let fresh = a.cal_save_calendar(cal("Import", 0x0e9f80)).unwrap();
-    let n = a.cal_import_ics(fresh.clone(), ics.clone().into_bytes(), 60).unwrap();
+    let n =
+        a.cal_import_ics(fresh.clone(), ics.clone().into_bytes(), Arc::new(super::caltext::FixedOffset(60))).unwrap();
     assert_eq!(n, 3);
-    assert_eq!(a.cal_import_ics(fresh.clone(), ics.into_bytes(), 60).unwrap(), 0);
+    assert_eq!(
+        a.cal_import_ics(fresh.clone(), ics.into_bytes(), Arc::new(super::caltext::FixedOffset(60))).unwrap(),
+        0
+    );
     a.cal_delete_calendar(fresh).unwrap();
     assert_eq!(a.cal_calendars().unwrap().len(), 2);
 
@@ -2406,7 +2413,7 @@ fn import_keeps_what_it_cannot_convert_and_names_it() {
     assert_eq!((item.name.as_str(), item.reason, item.in_entry), ("Alt", SkipReason::Hotp, false));
 
     let keep = KeepSkipped {
-        folder: "Import – nicht umgewandelt".into(),
+        folder: "Import (nicht umgewandelt)".into(),
         reason_label: "Grund".into(),
         data_label: "Originaldaten".into(),
         reason_hotp: "Zählerbasierter Code (HOTP)".into(),
@@ -2432,8 +2439,12 @@ fn import_keeps_what_it_cannot_convert_and_names_it() {
     let notes = s.list_entries(VaultKind::Pass, Some(pass.clone())).unwrap();
     let note = notes.iter().find(|e| e.title == "Alt").unwrap();
     let full = s.get_entry(pass.clone(), note.id.clone()).unwrap();
-    let field =
-        |n: &str| full.fields.iter().find(|f| f.name == n).map(|f| format!("{:?}", f.value)).unwrap_or_default();
+    let field = |n: &str| match full.fields.iter().find(|f| f.name == n).map(|f| f.value.clone()) {
+        Some(FieldValue::Text { value }) | Some(FieldValue::Secret { value }) | Some(FieldValue::Url { value }) => {
+            value
+        }
+        other => format!("{other:?}"),
+    };
     assert!(field("Originaldaten").contains("otpauth://hotp/Alt:konto"));
     assert!(field("Grund").contains("HOTP"));
     // A second import keeps nothing twice.
@@ -2442,4 +2453,10 @@ fn import_keeps_what_it_cannot_convert_and_names_it() {
     assert_eq!((r.totps, r.kept), (0, 0));
 }
 
+mod absurd;
+mod attacks;
+mod chaos;
+mod collections;
+mod crazy_user;
 mod everyday;
+mod properties;

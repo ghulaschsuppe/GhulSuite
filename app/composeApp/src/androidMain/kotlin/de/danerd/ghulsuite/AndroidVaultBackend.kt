@@ -110,8 +110,9 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
     }
 
     override fun lock() {
-        // Decrypted copies handed to other apps do not outlive the unlocked session.
+        // Decrypted copies handed to other apps and a copied password do not outlive the session.
         File(context.cacheDir, "shared").deleteRecursively()
+        clearOwnClip()
         super.lock()
     }
 
@@ -255,9 +256,23 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
         EmergencySheet.print(act, code, text)
     }
 
+    /** Label of the last copied secret, until it was cleared. */
+    @Volatile private var copiedLabel: String? = null
+
+    /** Clears the clipboard if it still holds what GhulSuite copied (not what the user copied since). */
+    private fun clearOwnClip() {
+        val label = copiedLabel ?: return
+        copiedLabel = null
+        val cm = context.getSystemService(ClipboardManager::class.java)
+        // In the background Android may hide the clipboard: then clear to be safe.
+        val current = runCatching { cm.primaryClipDescription?.label?.toString() }.getOrNull()
+        if (current == null || current == label) runCatching { cm.clearPrimaryClip() }
+    }
+
     override fun copySensitive(label: String, text: String) {
         val cm = context.getSystemService(ClipboardManager::class.java)
-        val clip = ClipData.newPlainText(label, text)
+        val tagged = "$label \u2022 GhulSuite ${System.nanoTime() % 100000}"
+        val clip = ClipData.newPlainText(tagged, text)
         clip.description.extras = PersistableBundle().apply {
             if (Build.VERSION.SDK_INT >= 33) {
                 putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
@@ -266,9 +281,10 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
             }
         }
         cm.setPrimaryClip(clip)
+        copiedLabel = tagged
         val seconds = settings.clipboardClearSeconds
         if (seconds > 0) {
-            main.postDelayed({ runCatching { cm.clearPrimaryClip() } }, seconds * 1000L)
+            main.postDelayed({ if (copiedLabel == tagged) clearOwnClip() }, seconds * 1000L)
         }
     }
 

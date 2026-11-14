@@ -66,7 +66,7 @@ import de.danerd.ghulsuite.model.DriveModeUi
 private const val UPLOAD_CHUNK = 1024 * 1024
 
 /**
- * Servers, sync, GhulDrive, sharing and GhulMail – the same on Android and Windows. Platforms add
+ * Servers, sync, GhulDrive, sharing and GhulMail, the same on Android and Windows. Platforms add
  * handing files to other apps and mail notifications.
  */
 abstract class CoreNetBackend(protected val suite: () -> GhulSuite) : NetBackend {

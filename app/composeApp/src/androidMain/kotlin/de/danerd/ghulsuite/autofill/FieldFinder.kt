@@ -30,7 +30,12 @@ object FieldFinder {
     private val USER_WORDS = listOf("user", "email", "e-mail", "login", "account", "benutzer", "anmelde")
     private val PASS_WORDS = listOf("pass", "pwd", "kennwort")
 
-    fun find(structures: List<AssistStructure>): LoginFields {
+    /**
+     * [trustedBrowser] tells whether the app may name the website it shows. Every app can put a
+     * web domain into its views (own WebView, or simply claimed): only a trusted browser's is
+     * believed; for every other app the app itself counts (package and signing certificate).
+     */
+    fun find(structures: List<AssistStructure>, trustedBrowser: (String) -> Boolean = { true }): LoginFields {
         val last = structures.last()
         var domain: String? = null
         val user = mutableListOf<AutofillId>()
@@ -68,7 +73,8 @@ object FieldFinder {
                 }
             }
         }
-        return LoginFields(last.activityComponent.packageName, domain, user, pass, userValue, passValue)
+        val pkg = last.activityComponent.packageName
+        return LoginFields(pkg, domain?.takeIf { trustedBrowser(pkg) }, user, pass, userValue, passValue)
     }
 
     private fun collect(node: AssistStructure.ViewNode, out: MutableList<AssistStructure.ViewNode>) {

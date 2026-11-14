@@ -125,12 +125,12 @@ fun AreaContext(state: AppState) {
 private fun CtxRow(title: String, subtitle: String? = null, selected: Boolean = false, divider: Boolean = false, leading: @Composable () -> Unit, onClick: () -> Unit) {
     SheetRow(
         title, subtitle, leading = leading, divider = divider,
-        end = { if (selected) Icon(Icons.Filled.Check, null, Modifier.size(20.dp), tint = g.muted) },
+        end = { if (selected) SheetCheck() },
         onClick = onClick,
     )
 }
 
-/** Bottom sheet behind the context line: vault filter, storage, mailbox – the same pattern everywhere. */
+/** Bottom sheet behind the context line: vault filter, storage, mailbox, the same pattern everywhere. */
 @Composable
 fun AreaContextSheet(state: AppState) {
     val close = { state.contextSheet = false }
@@ -153,7 +153,7 @@ private fun VaultSheet(state: AppState, kind: VaultKindUi, close: () -> Unit) {
             for (v in state.vaultsOf(kind)) {
                 CtxRow(v.name, stringResource(Res.string.ctx_entries, v.entries.toString()), selected = selected == v.id, divider = true, leading = { Avatar(v.name) }) { pick(v.id) }
             }
-            CtxRow(stringResource(Res.string.set_vaults), divider = true, leading = { IconTile(Icons.Filled.Add, paletteColor(5)) }) {
+            CtxRow(stringResource(Res.string.set_vaults), divider = true, leading = { IconTile(Icons.Filled.Tune, paletteColor(5)) }) {
                 close(); state.push(Screen.SettingsPage(SetPage.VAULTS))
             }
         }
@@ -178,8 +178,9 @@ private fun DriveSheet(state: AppState, close: () -> Unit) {
             CtxRow(stringResource(Res.string.shares_title), stringResource(Res.string.ctx_shares_sub), divider = srv != null, leading = { IconTile(Icons.Filled.Link, paletteColor(5)) }) {
                 close(); state.push(Screen.Shares)
             }
-            CtxRow(stringResource(Res.string.set_servers_sync_share), divider = true, leading = { IconTile(Icons.Filled.Add, paletteColor(5)) }) {
-                close(); state.push(Screen.SettingsPage(SetPage.SERVERS))
+            // The storage of GhulDrive is set on the Drive page of Options.
+            CtxRow(stringResource(Res.string.drive_storage_title), divider = true, leading = { IconTile(Icons.Filled.Tune, paletteColor(5)) }) {
+                close(); state.push(Screen.SettingsPage(SetPage.DRIVE))
             }
         }
     }
@@ -194,21 +195,20 @@ private fun MailboxSheet(state: AppState, close: () -> Unit) {
         accounts = runCatching { net.mailAccounts() }.getOrDefault(emptyList())
         folders = state.mailAccount?.let { runCatching { net.mailFolders(it) }.getOrDefault(emptyList()) } ?: emptyList()
     }
-    val mail = areaColor(Tab.MAIL)
     val t = g
     GhulSheet(close, stringResource(Res.string.ctx_mailbox)) {
-        // Accounts and folders as pill rows (.mailbox): the chosen one tinted in the mail colour.
+        // Accounts and folders as pill rows (.mailbox): the chosen one in the accent colour, as every choice.
         @Composable
         fun Pill(on: Boolean, leading: @Composable () -> Unit, title: String, sub: String? = null, onClick: () -> Unit) {
             Row(
                 Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(24.dp))
-                    .background(if (on) mail.copy(alpha = 0.16f) else androidx.compose.ui.graphics.Color.Transparent)
+                    .background(if (on) t.accentSoft else androidx.compose.ui.graphics.Color.Transparent)
                     .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 leading()
                 Column(Modifier.weight(1f)) {
-                    Text(title, color = if (on) mail else t.fg, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal)
+                    Text(title, color = if (on) t.accent else t.fg, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal)
                     if (sub != null) Text(sub, fontSize = 14.sp, color = t.muted)
                 }
             }
@@ -222,7 +222,7 @@ private fun MailboxSheet(state: AppState, close: () -> Unit) {
             scheduled = runCatching { net.mailScheduled() }.getOrDefault(emptyList())
         }
         if (accounts.size > 1) {
-            Pill(state.mailAccount == ALL_INBOXES, { Icon(Icons.Filled.Inbox, null, Modifier.size(20.dp), tint = if (state.mailAccount == ALL_INBOXES) mail else t.fg) },
+            Pill(state.mailAccount == ALL_INBOXES, { Icon(Icons.Filled.Inbox, null, Modifier.size(20.dp), tint = if (state.mailAccount == ALL_INBOXES) t.accent else t.fg) },
                 stringResource(Res.string.mail_all_inboxes)) {
                 state.mailAccount = ALL_INBOXES
                 state.mailFolder = "INBOX"
@@ -236,11 +236,10 @@ private fun MailboxSheet(state: AppState, close: () -> Unit) {
             }
         }
         if (folders.isNotEmpty()) {
-            Text(stringResource(Res.string.ctx_folders).uppercase(), fontSize = 12.sp, letterSpacing = 0.7.sp, fontWeight = FontWeight.SemiBold,
-                color = t.muted, modifier = Modifier.padding(start = 14.dp, top = 10.dp))
+            SectionLabel(stringResource(Res.string.ctx_folders), Modifier.padding(start = 10.dp, top = 4.dp))
             for (f in folders) {
                 val on = f.name == state.mailFolder
-                Pill(on, { Icon(folderIcon(f.role), null, Modifier.size(20.dp), tint = if (on) mail else t.fg) }, folderLabelOf(f)) {
+                Pill(on, { Icon(folderIcon(f.role), null, Modifier.size(20.dp), tint = if (on) t.accent else t.fg) }, folderLabelOf(f)) {
                     state.mailFolder = f.name
                     close()
                 }
@@ -252,7 +251,7 @@ private fun MailboxSheet(state: AppState, close: () -> Unit) {
         if (showDrafts) {
             if (drafts.isEmpty()) HintText(stringResource(Res.string.mail_drafts_none), Modifier.padding(start = 14.dp))
             for (d in drafts) {
-                Pill(false, { Avatar(d.to.ifBlank { "?" }, size = 30.dp) }, d.subject.ifBlank { "–" }, d.to.ifBlank { formatDateTime(d.updated) }) {
+                Pill(false, { Avatar(d.to.ifBlank { "?" }, size = 30.dp) }, d.subject.ifBlank { stringResource(Res.string.mail_no_subject) }, d.to.ifBlank { formatDateTime(d.updated) }) {
                     close()
                     state.push(Screen.MailCompose(MailDraft(d.accountId, d.to, d.cc, d.subject, d.text, d.inReplyTo, attachments = d.attachments, draftId = d.id, bcc = d.bcc)))
                 }
@@ -265,7 +264,7 @@ private fun MailboxSheet(state: AppState, close: () -> Unit) {
             for (m in scheduled) {
                 Row(Modifier.fillMaxWidth().padding(start = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(m.subject.ifBlank { "–" }, fontWeight = FontWeight.W500, maxLines = 1)
+                        Text(m.subject.ifBlank { stringResource(Res.string.mail_no_subject) }, fontWeight = FontWeight.W500, maxLines = 1)
                         Text(formatDateTime(m.sendAt) + " · " + m.to.joinToString(", "), fontSize = 13.sp, color = t.muted, maxLines = 1)
                     }
                     BarIcon(Icons.Filled.Close, stringResource(Res.string.a_cancel)) {

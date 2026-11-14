@@ -1,0 +1,143 @@
+# Testplan M1 to M6: a mail account on the IMAP and SMTP test servers (self-signed certificate,
+# so it has to be confirmed), a mail to oneself, and reading it. tools/check-server-flows.sh
+# looks at the mailbox afterwards: the mail must lie there encrypted.
+appId: de.danerd.ghulsuite.dev
+name: GhulMail on a real server
+---
+- runFlow: unlock.yaml
+- tapOn: "GhulMail"
+- extendedWaitUntil:
+    visible: "Add e-mail account"
+    timeout: 20000
+- tapOn:
+    text: "Add e-mail account"
+    index: 0
+- extendedWaitUntil:
+    visible: "E-mail address"
+    timeout: 10000
+- tapOn: "E-mail address"
+- inputText: "ghul@test.example"
+- tapOn: "Password"
+- inputText: "test-pw-123"
+- hideKeyboard
+# Show the password once to see that it arrived completely.
+- tapOn: "Show"
+- assertVisible: "test-pw-123"
+- scrollUntilVisible:
+    element: "Show server settings"
+    direction: DOWN
+- tapOn: "Show server settings"
+# The servers were filled in from the address (imap./smtp. + domain). Tap their values, not the
+# labels ("Server address" and "Port" exist twice); close the keyboard and scroll each one to the
+# middle of the screen: a field cut off at the bottom edge does not take the tap, and the text
+# would go into the password field, which still has the focus. Tap near the right end of each
+# field so the cursor stands behind the old value and eraseText removes all of it. Each value is
+# checked right away.
+- scrollUntilVisible:
+    element: "imap\\.test\\.example"
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    text: "imap\\.test\\.example"
+    point: "95%,50%"
+- eraseText
+- inputText: ${GHUL_SERVER}
+- hideKeyboard
+- assertVisible: ${GHUL_SERVER}
+- assertNotVisible: "imap\\.test\\.example"
+- scrollUntilVisible:
+    element: "993"
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    text: "993"
+    point: "95%,50%"
+- eraseText
+- inputText: "10993"
+- hideKeyboard
+- assertVisible: "10993"
+# The kind of connection first (it sets its usual port 587), then the test server's port.
+- scrollUntilVisible:
+    element: "STARTTLS"
+    direction: DOWN
+    centerElement: true
+- tapOn: "STARTTLS"
+- scrollUntilVisible:
+    element: "smtp\\.test\\.example"
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    text: "smtp\\.test\\.example"
+    point: "95%,50%"
+- eraseText
+- inputText: ${GHUL_SERVER}
+- hideKeyboard
+- assertNotVisible: "smtp\\.test\\.example"
+- scrollUntilVisible:
+    element: "587"
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    text: "587"
+    point: "95%,50%"
+- eraseText
+- inputText: "10587"
+- hideKeyboard
+# The value really is in its field. No upward scroll here: on the bottom sheet that drags
+# the sheet down and closes it.
+- assertVisible: "10587"
+- takeScreenshot: s2-mail-servers
+- scrollUntilVisible:
+    element: "Check and save"
+    direction: DOWN
+- tapOn: "Check and save"
+# Self-signed test certificate: the incoming server asks first; the outgoing server may ask
+# again after the next round to the network.
+- extendedWaitUntil:
+    visible: "Check the certificate"
+    timeout: 60000
+- takeScreenshot: s2-mail-certificate
+- tapOn: "Fingerprint matches"
+- extendedWaitUntil:
+    visible: "Check the certificate"
+    timeout: 30000
+    optional: true
+- tapOn:
+    text: "Fingerprint matches"
+    optional: true
+- extendedWaitUntil:
+    visible: "No messages\\."
+    timeout: 120000
+- takeScreenshot: s2-mail-inbox-empty
+# A mail to oneself: it is encrypted with the key of the own account.
+- tapOn: "Write"
+- extendedWaitUntil:
+    visible: "Name or address"
+    timeout: 10000
+- tapOn: "Name or address"
+- inputText: "ghul@test.example"
+- tapOn: "Subject"
+- inputText: "Hallo vom Emulator"
+- tapOn: "Message"
+- inputText: "Geheimtext-Maestro-4711"
+- hideKeyboard
+- takeScreenshot: s2-mail-compose
+- tapOn: "Send"
+- extendedWaitUntil:
+    visible: "Message sent\\."
+    timeout: 120000
+# It comes back into the inbox (the header button "Refresh" asks the server at once). It is
+# encrypted, so the list knows neither subject nor text: only the app can open it.
+- tapOn:
+    text: "Refresh"
+    optional: true
+- extendedWaitUntil:
+    visible: "Encrypted message"
+    timeout: 120000
+- takeScreenshot: s2-mail-inbox
+- tapOn: "Encrypted message"
+- extendedWaitUntil:
+    visible: "Geheimtext-Maestro-4711"
+    timeout: 60000
+- assertVisible: "Hallo vom Emulator"
+- takeScreenshot: s2-mail-read

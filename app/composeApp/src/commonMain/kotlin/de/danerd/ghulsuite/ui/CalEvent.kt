@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package de.danerd.ghulsuite.ui
 
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -126,15 +129,6 @@ private fun EnsureCalendars(state: AppState) {
     }
 }
 
-/** Small filled button of the header (.btn.primary, 36 dp). */
-@Composable
-private fun HeaderButton(text: String, onClick: () -> Unit) {
-    Box(
-        Modifier.height(36.dp).clip(RoundedCornerShape(18.dp)).background(g.accent).clickable(onClick = onClick).padding(horizontal = 16.dp),
-        contentAlignment = Alignment.Center,
-    ) { Text(text, color = g.onAccent, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1) }
-}
-
 /** A new event on [day] (at [hour], or the next full hour today, else 10:00). */
 fun newEventDraft(state: AppState, day: Day, hour: Int?): CalEventUi {
     val nowMin = minutesOf(localNow())
@@ -154,6 +148,8 @@ fun CalEventScreen(state: AppState, id: String, day: String, padding: PaddingVal
     val cal = state.backend.cal
     var ev by remember { mutableStateOf<CalEventUi?>(null) }
     var next by remember { mutableStateOf<List<CalOccurrenceUi>>(emptyList()) }
+    // A series with its own time zone: when this occurrence takes place on the clock of this device.
+    var here by remember { mutableStateOf<Pair<String, String>?>(null) }
     var gone by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
@@ -163,6 +159,8 @@ fun CalEventScreen(state: AppState, id: String, day: String, padding: PaddingVal
     LaunchedEffect(id, state.liveRevision()) {
         runCatching { cal.event(id) }.onSuccess { e ->
             ev = e
+            here = if (e.zone.isEmpty()) null else runCatching { cal.occurrences(day, day, "", lang) }.getOrDefault(emptyList())
+                .firstOrNull { it.eventId == id }?.let { it.start to it.end }
             next = if (e.repeat != CalRepeatUi.NONE) {
                 val from = (Day.parse(day) ?: today()).plus(1)
                 runCatching { cal.occurrences(from.toString(), from.plus(400).toString(), "", lang) }.getOrDefault(emptyList())
@@ -176,7 +174,7 @@ fun CalEventScreen(state: AppState, id: String, day: String, padding: PaddingVal
     val uri = androidx.compose.ui.platform.LocalUriHandler.current
     androidx.compose.foundation.layout.Column(Modifier.padding(padding)) {
         GhulTopBar(
-            "", onLock = { state.backend.lock() }, onBack = { state.pop() },
+            "", onLock = { state.lockNow() }, onBack = { state.pop() }, backIcon = backIcon(state),
             actions = {
                 if (ev != null) {
                     BarIcon(Icons.Filled.Edit, stringResource(Res.string.a_edit)) { state.push(Screen.CalEdit(ev!!)) }
@@ -193,18 +191,18 @@ fun CalEventScreen(state: AppState, id: String, day: String, padding: PaddingVal
             val c = state.calendars.firstOrNull { it.id == e.calendarId }
             val color = calColor(c?.color ?: 0x2F74E8)
             val d0 = Day.parse(day) ?: Day.parse(e.start) ?: today()
-            val (start, end) = occurrenceTimes(e, d0)
+            val (start, end) = here ?: occurrenceTimes(e, d0)
             // Hero (.ev-hero): colour stripe, calendar tag, title, date and time, repetition.
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).clip(RoundedCornerShape(20.dp)).background(t.surface)) {
                 Box(Modifier.width(6.dp).fillMaxHeight().background(color))
                 Column(Modifier.padding(18.dp)) {
                     CalTag(c?.name ?: "", color)
                     Text(if (e.birthYear > 0) "${e.title} (${d0.y - e.birthYear})" else e.title,
-                        Modifier.padding(top = 10.dp, bottom = 6.dp), fontSize = 24.sp, fontWeight = FontWeight.Bold, lineHeight = 29.sp, color = t.fg)
+                        Modifier.padding(top = 10.dp, bottom = 6.dp), fontSize = 22.sp, fontWeight = FontWeight.Bold, lineHeight = 27.sp, color = t.fg)
                     val days = ((Day.parse(end)?.days ?: d0.days) - d0.days + 1).toInt()
                     if (e.allDay) {
                         if (days > 1) {
-                            Text("${names.short(d0)} – ${names.short(Day.parse(end)!!)} ${Day.parse(end)!!.y}", fontWeight = FontWeight.SemiBold, color = t.fg)
+                            Text("${names.short(d0)} - ${names.short(Day.parse(end)!!)} ${Day.parse(end)!!.y}", fontWeight = FontWeight.SemiBold, color = t.fg)
                             Text(stringResource(Res.string.cal_all_day_days, days.toString()), color = t.muted, modifier = Modifier.padding(top = 2.dp))
                         } else {
                             Text(names.long(d0), fontWeight = FontWeight.SemiBold, color = t.fg)
@@ -212,7 +210,10 @@ fun CalEventScreen(state: AppState, id: String, day: String, padding: PaddingVal
                         }
                     } else {
                         Text(names.long(d0), fontWeight = FontWeight.SemiBold, color = t.fg)
-                        Text("${hm(start)} – ${hm(end)} · ${durationText(absMinutes(end) - absMinutes(start))}", color = t.muted, modifier = Modifier.padding(top = 2.dp))
+                        Text("${hm(start)} - ${hm(end)} · ${durationText(absMinutes(end) - absMinutes(start))}", color = t.muted, modifier = Modifier.padding(top = 2.dp))
+                        if (e.zone.isNotEmpty()) {
+                            Text(stringResource(Res.string.cal_zone_time, zoneLabel(e.zone), "${hm(e.start)} - ${hm(e.end)}"), color = t.muted, modifier = Modifier.padding(top = 2.dp))
+                        }
                     }
                     if (e.repeat != CalRepeatUi.NONE) {
                         Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -227,7 +228,7 @@ fun CalEventScreen(state: AppState, id: String, day: String, padding: PaddingVal
                 var first = true
                 if (e.location.isNotEmpty()) {
                     SheetRow(e.location, stringResource(Res.string.cal_open_map), leading = { IconTile(Icons.Filled.Place, paletteColor(7)) },
-                        end = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = t.faint) }) {
+                        end = { ChevronEnd() }) {
                         val q = urlEncode(e.location)
                         runCatching { uri.openUri(if (state.backend.isDesktop) "https://www.openstreetmap.org/search?query=$q" else "geo:0,0?q=$q") }
                     }
@@ -238,7 +239,7 @@ fun CalEventScreen(state: AppState, id: String, day: String, padding: PaddingVal
                     if (e.reminders.isEmpty()) stringResource(Res.string.cal_no_reminder) else rem,
                     stringResource(if (e.reminders.isEmpty()) Res.string.cal_tap_to_add else Res.string.cal_reminder_sub),
                     leading = { IconTile(Icons.Outlined.Notifications, paletteColor(4)) }, divider = !first,
-                    end = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = t.faint) },
+                    end = { ChevronEnd() },
                 ) { state.push(Screen.CalEdit(e)) }
                 if (e.notes.isNotEmpty()) {
                     Box(Modifier.fillMaxWidth().padding(start = 70.dp, end = 16.dp).height(1.dp).background(t.line))
@@ -254,7 +255,7 @@ fun CalEventScreen(state: AppState, id: String, day: String, padding: PaddingVal
                     e.links.forEachIndexed { i, l ->
                         val (icon, ci, area) = linkLook(l.kind)
                         SheetRow(l.label, stringResource(area), leading = { IconTile(icon, paletteColor(ci)) }, divider = i > 0,
-                            end = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = t.faint) }) { openLink(state, l) }
+                            end = { ChevronEnd() }) { openLink(state, l) }
                     }
                 }
             }
@@ -270,7 +271,7 @@ fun CalEventScreen(state: AppState, id: String, day: String, padding: PaddingVal
                         }
                     }
                 }, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Filled.Upload, null, Modifier.size(18.dp)); Text(stringResource(Res.string.cal_share_ics), Modifier.padding(start = 6.dp), maxLines = 1, softWrap = false)
+                    Icon(Icons.Filled.Upload, null, Modifier.size(18.dp)); Text(stringResource(Res.string.cal_share_ics), maxLines = 1, softWrap = false)
                 }
                 OutlinedButton(onClick = {
                     state.run(block = { cal.eventIcs(id) }) { ics ->
@@ -278,31 +279,49 @@ fun CalEventScreen(state: AppState, id: String, day: String, padding: PaddingVal
                             attachments = listOf(de.danerd.ghulsuite.model.OutgoingAttachmentUi("${safeName(e.title)}.ics", "text/calendar", ics.encodeToByteArray())))))
                     }
                 }, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.AutoMirrored.Filled.Send, null, Modifier.size(18.dp)); Text(stringResource(Res.string.cal_by_mail), Modifier.padding(start = 8.dp), maxLines = 1, softWrap = false)
+                    Icon(Icons.AutoMirrored.Filled.Send, null, Modifier.size(18.dp)); Text(stringResource(Res.string.cal_by_mail), maxLines = 1, softWrap = false)
                 }
             }
             HintText(stringResource(Res.string.cal_invite_hint))
         }
     }
     val e = ev ?: return
+    val msgEvent = stringResource(Res.string.cal_deleted_msg)
+    val msgOne = stringResource(Res.string.cal_deleted_one)
+    val msgSeries = stringResource(Res.string.cal_deleted_series)
+    // Deleting leaves the event: it is gone from the calendar at once, "Undo" brings it back.
+    fun del(mode: CalDeleteModeUi) {
+        val key = when (mode) {
+            CalDeleteModeUi.ONE -> hiddenKey("cal", id, day)
+            CalDeleteModeUi.FOLLOWING -> hiddenKey("cal", "from:$id", day)
+            else -> hiddenKey("cal", "event", id)
+        }
+        val msg = when {
+            e.repeat == CalRepeatUi.NONE -> msgEvent
+            mode == CalDeleteModeUi.ONE -> msgOne
+            else -> msgSeries
+        }
+        state.pop()
+        state.undoable(listOf(key), msg) { cal.deleteEvent(id, day, mode) }
+    }
     if (menu) {
         val close = { menu = false }
         GhulSheet(close, e.title) {
             SheetList {
-                SheetRow(stringResource(Res.string.cal_duplicate)) {
+                SheetRow(stringResource(Res.string.cal_duplicate), leading = { IconTile(Icons.Filled.ContentCopy, paletteColor(1)) }) {
                     close()
                     state.run(block = { cal.saveEvent(e.copy(id = "", title = e.title + " " + getString(Res.string.cal_copy_suffix), exceptions = emptyList())) }) {
                         state.changed(); state.pop(); state.messageRes(Res.string.cal_copied)
                     }
                 }
-                SheetRow(stringResource(Res.string.cal_move), divider = true) { close(); moving = true }
-                SheetRow(stringResource(Res.string.cal_save_ics), divider = true) {
+                SheetRow(stringResource(Res.string.cal_move), leading = { IconTile(Icons.Filled.Folder, paletteColor(5)) }, divider = true) { close(); moving = true }
+                SheetRow(stringResource(Res.string.cal_save_ics), leading = { IconTile(Icons.Filled.Upload, paletteColor(9)) }, divider = true) {
                     close(); state.run(block = { cal.eventIcs(id) }) { shareIcs("${safeName(e.title)}.ics", it.encodeToByteArray()) }
                 }
-                SheetRow(stringResource(Res.string.a_delete), color = t.danger, divider = true) {
+                SheetRow(stringResource(Res.string.a_delete), leading = { IconTile(Icons.Filled.Delete, t.danger) }, color = t.danger, divider = true) {
                     close()
-                    if (e.repeat != CalRepeatUi.NONE) deleting = true
-                    else state.run(block = { cal.deleteEvent(id, day, CalDeleteModeUi.ALL) }) { state.changed(); state.pop(); state.messageRes(Res.string.cal_deleted_msg) }
+                    // A single event goes at once ("Undo"); a series asks which of its days.
+                    if (e.repeat != CalRepeatUi.NONE) deleting = true else del(CalDeleteModeUi.ALL)
                 }
             }
         }
@@ -311,16 +330,9 @@ fun CalEventScreen(state: AppState, id: String, day: String, padding: PaddingVal
         val close = { deleting = false }
         GhulSheet(close, stringResource(Res.string.cal_delete_series)) {
             SheetList {
-                fun del(mode: CalDeleteModeUi) {
-                    close()
-                    state.run(block = { cal.deleteEvent(id, day, mode) }) {
-                        state.changed(); state.pop()
-                        state.messageRes(if (mode == CalDeleteModeUi.ONE) Res.string.cal_deleted_one else Res.string.cal_deleted_series)
-                    }
-                }
-                SheetRow(stringResource(Res.string.cal_delete_one), Day.parse(day)?.let { names.short(it) }) { del(CalDeleteModeUi.ONE) }
-                SheetRow(stringResource(Res.string.cal_delete_following), divider = true) { del(CalDeleteModeUi.FOLLOWING) }
-                SheetRow(stringResource(Res.string.cal_delete_all), color = t.danger, divider = true) { del(CalDeleteModeUi.ALL) }
+                SheetRow(stringResource(Res.string.cal_delete_one), Day.parse(day)?.let { names.short(it) }) { close(); del(CalDeleteModeUi.ONE) }
+                SheetRow(stringResource(Res.string.cal_delete_following), divider = true) { close(); del(CalDeleteModeUi.FOLLOWING) }
+                SheetRow(stringResource(Res.string.cal_delete_all), color = t.danger, divider = true) { close(); del(CalDeleteModeUi.ALL) }
             }
         }
     }
@@ -330,7 +342,7 @@ fun CalEventScreen(state: AppState, id: String, day: String, padding: PaddingVal
             SheetList {
                 state.calendars.forEachIndexed { i, c ->
                     SheetRow(c.name, leading = { ColorDot(calColor(c.color)) }, divider = i > 0,
-                        end = { if (c.id == e.calendarId) Icon(Icons.Filled.Check, null, tint = t.muted) }) {
+                        end = { if (c.id == e.calendarId) SheetCheck() }) {
                         close()
                         state.run(block = { cal.saveEvent(e.copy(calendarId = c.id)) }) {
                             state.changed()
@@ -344,6 +356,9 @@ fun CalEventScreen(state: AppState, id: String, day: String, padding: PaddingVal
 }
 
 /** Start and end of the occurrence on [day] (series keep their time and length). */
+/** "America/New_York" as "New York": the place a time zone is named after. */
+fun zoneLabel(zone: String): String = zone.substringAfterLast('/').replace('_', ' ')
+
 fun occurrenceTimes(e: CalEventUi, day: Day): Pair<String, String> {
     if (e.allDay) {
         val len = (Day.parse(e.end)?.days ?: 0L) - (Day.parse(e.start)?.days ?: 0L)
@@ -447,9 +462,9 @@ fun CalEditScreen(state: AppState, start: CalEventUi, padding: PaddingValues) {
     androidx.compose.foundation.layout.Column(Modifier.padding(padding)) {
         GhulTopBar(
             stringResource(if (start.id.isEmpty()) Res.string.cal_new_event else Res.string.cal_edit_event),
-            onLock = { state.backend.lock() }, onBack = { state.pop() },
+            onLock = { state.lockNow() }, onBack = { state.pop() }, backIcon = Icons.Filled.Close, showLock = false,
             actions = {
-                HeaderButton(stringResource(Res.string.a_save), ::save)
+                HeaderButton(stringResource(Res.string.a_save), onClick = ::save)
             },
         )
         ScreenColumn {
@@ -490,17 +505,17 @@ fun CalEditScreen(state: AppState, start: CalEventUi, padding: PaddingValues) {
                 EditRow(stringResource(Res.string.cal_end)) { DateTimeBoxes(d.end, d.allDay, { datePick = 1 }, { timePick = 1 }) }
                 if (!d.allDay) {
                     Divider16()
-                    val tz = stringResource(Res.string.cal_tz_hint)
+                    val tz = if (d.zone.isEmpty()) stringResource(Res.string.cal_tz_hint) else stringResource(Res.string.cal_tz_event_hint, zoneLabel(d.zone))
                     EditRow(stringResource(Res.string.cal_time_zone), onClick = { state.message(tz) }) {
-                        Text(stringResource(Res.string.cal_tz_device), fontSize = 13.sp, color = t.faint)
-                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp), tint = t.faint)
+                        Text(if (d.zone.isEmpty()) stringResource(Res.string.cal_tz_device) else zoneLabel(d.zone), fontSize = 13.sp, color = t.faint)
+                        ChevronEnd()
                     }
                 }
             }
             CalCard {
                 EditRow(stringResource(Res.string.cal_repeat), sub = if (d.id.isNotEmpty() && d.repeat != CalRepeatUi.NONE) stringResource(Res.string.cal_series_hint) else null, onClick = { repSheet = true }) {
                     Text(stringResource(REPEAT_LABELS.first { it.first == d.repeat }.second), fontSize = 13.sp, color = t.faint)
-                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp), tint = t.faint)
+                    ChevronEnd()
                 }
                 Divider16()
                 Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
@@ -509,7 +524,7 @@ fun CalEditScreen(state: AppState, start: CalEventUi, padding: PaddingValues) {
                         d.reminders.sortedDescending().forEach { m ->
                             SmallChip(reminderText(m, d.allDay), Icons.Outlined.Notifications) { d = d.copy(reminders = d.reminders - m) }
                         }
-                        val cc = areaColor(Tab.CAL)
+                        val cc = g.accent
                         Row(
                             Modifier.height(30.dp).clip(CircleShape).background(cc.copy(alpha = 0.1f)).clickable { remSheet = true }.padding(horizontal = 12.dp),
                             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -526,7 +541,7 @@ fun CalEditScreen(state: AppState, start: CalEventUi, padding: PaddingValues) {
                 InlineField(Icons.Outlined.Description, d.notes, stringResource(Res.string.cal_note), lines = 3) { d = d.copy(notes = it) }
                 Divider16()
                 EditRow(stringResource(Res.string.cal_link_title), icon = Icons.Filled.Link, onClick = { linkSheet = true }) {
-                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp), tint = t.faint)
+                    ChevronEnd()
                 }
                 if (d.links.isNotEmpty()) {
                     FlowRow(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -542,7 +557,7 @@ fun CalEditScreen(state: AppState, start: CalEventUi, padding: PaddingValues) {
         GhulSheet(close, stringResource(Res.string.cal_repeat)) {
             SheetList {
                 REPEAT_LABELS.forEachIndexed { i, (r, label) ->
-                    SheetRow(stringResource(label), divider = i > 0, end = { if (d.repeat == r) Icon(Icons.Filled.Check, null, tint = t.muted) }) {
+                    SheetRow(stringResource(label), divider = i > 0, end = { if (d.repeat == r) SheetCheck() }) {
                         d = d.copy(repeat = r); close()
                     }
                 }
@@ -556,7 +571,7 @@ fun CalEditScreen(state: AppState, start: CalEventUi, padding: PaddingValues) {
         GhulSheet(close, stringResource(Res.string.cal_reminder_add)) {
             SheetList {
                 opts.forEachIndexed { i, m ->
-                    SheetRow(reminderText(m, d.allDay), divider = i > 0, end = { if (m in d.reminders) Icon(Icons.Filled.Check, null, tint = t.muted) }) {
+                    SheetRow(reminderText(m, d.allDay), divider = i > 0, end = { if (m in d.reminders) SheetCheck() }) {
                         if (m !in d.reminders) d = d.copy(reminders = d.reminders + m)
                         close()
                     }
@@ -791,7 +806,7 @@ fun CalQuickSheet(state: AppState, close: () -> Unit) {
                     Text(q.title.ifBlank { stringResource(Res.string.cal_untitled) }, fontWeight = FontWeight.Bold, color = t.fg)
                     Text(names.long(day), fontSize = 13.sp, color = t.muted)
                     Text(
-                        (if (q.allDay) stringResource(Res.string.cal_all_day) else "${q.start} – ${q.end}") +
+                        (if (q.allDay) stringResource(Res.string.cal_all_day) else "${q.start} - ${q.end}") +
                             if (q.repeat != CalRepeatUi.NONE) " · " + stringResource(REPEAT_LABELS.first { it.first == q.repeat }.second) else "",
                         fontSize = 13.sp, color = t.muted,
                     )
@@ -807,7 +822,7 @@ fun CalQuickSheet(state: AppState, close: () -> Unit) {
         ButtonRow {
             OutlinedButton(onClick = { close(); state.push(Screen.CalEdit(draft())) }, modifier = Modifier.weight(1f)) { Text(stringResource(Res.string.cal_more_options)) }
             Button(onClick = { saveNow() }, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Filled.Check, null, Modifier.size(18.dp)); Text(stringResource(Res.string.cal_enter), Modifier.padding(start = 8.dp))
+                Icon(Icons.Filled.Check, null, Modifier.size(18.dp)); Text(stringResource(Res.string.cal_enter))
             }
         }
     }
@@ -835,7 +850,7 @@ fun CalendarsSheet(state: AppState, close: () -> Unit) {
     val doneMsg = stringResource(Res.string.cal_import_done)
     val pick = rememberOpenFile { f ->
         val target = importInto ?: return@rememberOpenFile
-        state.run(block = { cal.importIcs(target, f.bytes, utcOffsetMinutes()) }) { n ->
+        state.run(block = { cal.importIcs(target, f.bytes) }) { n ->
             state.changed(); state.message(doneMsg.replace("%1\$s", n.toString()))
         }
     }
@@ -934,10 +949,11 @@ private fun CalendarEditSheet(state: AppState, start: CalCalendarUi, close: () -
         Button(onClick = {
             val v = c.copy(name = c.name.ifBlank { defaultName })
             state.run(block = { cal.saveCalendar(v) }) { state.changed(); close() }
-        }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.a_done)) }
+        }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.a_save)) }
     }
     if (confirm) {
         AlertDialog(
+            danger = true,
             onDismissRequest = { confirm = false },
             title = { Text(stringResource(Res.string.cal_delete_calendar)) },
             text = { Text(stringResource(Res.string.cal_delete_calendar_text, c.name)) },
@@ -964,13 +980,13 @@ private fun ChoicePickRow(label: String, value: Int, onPick: (Int) -> Unit) {
     var open by remember { mutableStateOf(false) }
     val opts = listOf(-1, 0, 5, 10, 15, 30, 60, 1440)
     SheetRow(label, if (value < 0) stringResource(Res.string.cal_no_reminder) else reminderText(value, false),
-        end = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = g.faint) }) { open = true }
+        end = { ChevronEnd() }) { open = true }
     if (open) {
         GhulSheet({ open = false }, label) {
             SheetList {
                 opts.forEachIndexed { i, m ->
                     SheetRow(if (m < 0) stringResource(Res.string.cal_no_reminder) else reminderText(m, false), divider = i > 0,
-                        end = { if (m == value) Icon(Icons.Filled.Check, null, tint = g.muted) }) { onPick(m); open = false }
+                        end = { if (m == value) SheetCheck() }) { onPick(m); open = false }
                 }
             }
         }
@@ -996,7 +1012,7 @@ fun CalSettingsSection(state: AppState) {
         Row(Modifier.fillMaxWidth().heightIn(min = 40.dp).clickable { regionSheet = true }, verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(Res.string.cal_region), Modifier.weight(1f), fontSize = 15.sp)
             Text(regions.firstOrNull { it.code == settings.calRegion }?.name ?: stringResource(Res.string.cal_region_none), fontSize = 14.sp, color = g.muted)
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp), tint = g.faint)
+            ChevronEnd()
         }
         ChoiceRow(stringResource(Res.string.cal_default_timed),
             listOf(-1 to Res.string.cal_no_reminder, 0 to Res.string.cal_rem_start, 5 to Res.string.cal_rem_5, 10 to Res.string.cal_rem_10, 15 to Res.string.cal_rem_15,
@@ -1037,7 +1053,7 @@ fun CalSettingsSection(state: AppState) {
         GhulSheet(close, stringResource(Res.string.cal_region)) {
             SheetList {
                 (listOf(de.danerd.ghulsuite.model.CalRegionUi("", stringResource(Res.string.cal_region_none))) + regions).forEachIndexed { i, r ->
-                    SheetRow(r.name, divider = i > 0, end = { if (r.code == settings.calRegion) Icon(Icons.Filled.Check, null, tint = g.muted) }) {
+                    SheetRow(r.name, divider = i > 0, end = { if (r.code == settings.calRegion) SheetCheck() }) {
                         settings.calRegion = r.code
                         settings.calHolidays = r.code.isNotEmpty()
                         state.refreshCalendar(); close()

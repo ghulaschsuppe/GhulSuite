@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! OpenPGP for GhulMail, made to need no knowledge from the user.
 //!
-//! - Every account gets its own key (Ed25519 for signing, X25519 for encryption, OpenPGP v4 –
+//! - Every account gets its own key (Ed25519 for signing, X25519 for encryption, OpenPGP v4,
 //!   readable by Thunderbird, GnuPG, Proton and others). It lives only in the encrypted suite.
 //! - Every outgoing mail is signed (PGP/MIME, RFC 3156) and carries the sender's public key in an
 //!   `Autocrypt` header, so replies can be encrypted without any key exchange by hand.

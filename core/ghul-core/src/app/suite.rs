@@ -4,7 +4,7 @@
 //! **The folder is the suite:** every vault file (`*.ghlpss`, `*.ghltotp`) in the storage folder
 //! belongs to it. All containers share the same password, the same factor slots (security keys
 //! and key files, each wrapping the same factor secret) and the same recovery code, so one key
-//! touch – or the recovery code alone – opens everything, and every file can also be opened on
+//! touch, or the recovery code alone, opens everything, and every file can also be opened on
 //! its own. `suite.ghlsuite` only holds settings (last seen revisions, dismissed files, later mail
 //! and storage accounts); it decides nothing about membership and is recreated if missing.
 //! Vault files with another protection are offered and, once opened with their own password,
@@ -99,7 +99,7 @@ impl VaultKind {
 }
 
 /// Field value as shown in the app. Binary fields are never exposed and are preserved on save.
-#[derive(uniffi::Enum, Clone, Debug, PartialEq)]
+#[derive(uniffi::Enum, Clone, PartialEq)]
 pub enum FieldValue {
     Text { value: String },
     Secret { value: String },
@@ -107,6 +107,20 @@ pub enum FieldValue {
     Number { value: i64 },
     Flag { value: bool },
     Items { values: Vec<String> },
+}
+
+/// Secret values (passwords, card numbers, keys) never show up in debug output.
+impl std::fmt::Debug for FieldValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FieldValue::Text { value } => f.debug_struct("Text").field("value", value).finish(),
+            FieldValue::Secret { value } => write!(f, "Secret {{ {} characters }}", value.chars().count()),
+            FieldValue::Url { value } => f.debug_struct("Url").field("value", value).finish(),
+            FieldValue::Number { value } => f.debug_struct("Number").field("value", value).finish(),
+            FieldValue::Flag { value } => f.debug_struct("Flag").field("value", value).finish(),
+            FieldValue::Items { values } => f.debug_struct("Items").field("values", values).finish(),
+        }
+    }
 }
 
 #[derive(uniffi::Record, Clone, Debug, PartialEq)]
@@ -141,7 +155,7 @@ pub struct EntrySummary {
     pub has_totp: bool,
 }
 
-#[derive(uniffi::Record, Clone, Debug, PartialEq)]
+#[derive(uniffi::Record, Clone, PartialEq)]
 pub struct TotpCode {
     pub vault_id: String,
     pub vault_name: String,
@@ -157,6 +171,19 @@ pub struct TotpCode {
     /// Unix milliseconds of the last change (for "newest first").
     pub modified: i64,
 }
+
+super::redact::redacted_debug!(TotpCode {
+    vault_id,
+    vault_name,
+    id,
+    issuer,
+    account,
+    period,
+    remaining,
+    digits,
+    favorite,
+    modified
+});
 
 #[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SlotKind {
@@ -219,7 +246,7 @@ pub struct NewVault {
     pub name: String,
 }
 
-#[derive(uniffi::Record, Clone, Debug)]
+#[derive(uniffi::Record, Clone)]
 pub struct SetupOptions {
     pub password: String,
     /// Key file bytes (from `generate_keyfile`): second factor instead of (or in addition to) a key.
@@ -232,12 +259,23 @@ pub struct SetupOptions {
     pub vaults: Vec<NewVault>,
 }
 
-#[derive(uniffi::Record, Clone, Debug, PartialEq)]
+super::redact::redacted_debug!(SetupOptions {
+    key_label,
+    keyfile_label,
+    recovery_label,
+    memory_kib,
+    iterations,
+    vaults
+});
+
+#[derive(uniffi::Record, Clone, PartialEq)]
 pub struct SetupResult {
     /// New recovery code to show and print once (11 groups of 5 characters); `None` if the
     /// opened vault already carried the suite's code.
     pub recovery_code: Option<String>,
 }
+
+super::redact::redacted_debug!(SetupResult {});
 
 /// Generates a new key file (`.ghlkey`, 46 bytes) for the user to store, e.g. on a USB stick.
 #[uniffi::export]
@@ -278,7 +316,7 @@ pub struct SkippedImport {
 /// nothing of an import is lost. The texts come from the app (its language).
 #[derive(uniffi::Record, Clone, Debug, PartialEq)]
 pub struct KeepSkipped {
-    /// Folder of the notes, e.g. "Import – not converted".
+    /// Folder of the notes, e.g. "Import (not converted)".
     pub folder: String,
     /// Field names of the note.
     pub reason_label: String,
@@ -314,7 +352,7 @@ fn skipped_items(list: &[super::import::Skipped]) -> Vec<SkippedImport> {
 }
 
 /// A login that fits a website or app (for autofill).
-#[derive(uniffi::Record, Clone, Debug, PartialEq)]
+#[derive(uniffi::Record, Clone, PartialEq)]
 pub struct AutofillLogin {
     pub vault_id: String,
     pub id: Vec<u8>,
@@ -325,6 +363,8 @@ pub struct AutofillLogin {
     /// certificate). Otherwise it is only a suggestion for the picker.
     pub direct: bool,
 }
+
+super::redact::redacted_debug!(AutofillLogin { vault_id, id, title, username, direct });
 
 /// What happened to a login offered for saving by autofill.
 #[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -566,6 +606,8 @@ pub struct GhulSuite {
     open: Mutex<Option<Open>>,
     /// Open server connection, Drive index and running uploads (dropped when locking).
     pub(super) net: Mutex<NetCache>,
+    /// The time zone database of the device (see `set_time_zones`).
+    pub(super) zones: Mutex<Option<Arc<dyn super::caltext::TimeZones>>>,
 }
 
 #[derive(Default)]
@@ -780,7 +822,7 @@ impl GhulSuite {
         Ok(files)
     }
 
-    /// The suite file, or – if it is missing – any readable vault file of the folder. All
+    /// The suite file, or, if it is missing, any readable vault file of the folder. All
     /// containers carry the same slots, so each of them can be used to unlock.
     fn anchor(&self) -> Result<LockedContainer> {
         if let Some(l) = self.read_locked(SUITE_FILE)? {
@@ -1042,6 +1084,7 @@ impl GhulSuite {
             local_dir: PathBuf::from(local_dir),
             open: Mutex::new(None),
             net: Mutex::new(NetCache::default()),
+            zones: Mutex::new(None),
         })
     }
 
@@ -1359,6 +1402,13 @@ impl GhulSuite {
             let pos = o.vaults.iter().position(|v| v.reference.id == id).ok_or(GhulError::NotFound)?;
             let v = o.vaults.remove(pos);
             self.storage.delete(v.reference.file.clone())?;
+            // Deleted on purpose: the next synchronisation removes it on the server and the other
+            // devices (and only such a mark does; a missing file is repaired instead).
+            let mut deleted: Vec<String> = setting(&o.suite, super::sync::DELETED_VAULTS_KEY);
+            if !deleted.contains(&v.reference.id) {
+                deleted.push(v.reference.id.clone());
+            }
+            put_setting(&mut o.suite, super::sync::DELETED_VAULTS_KEY, &deleted)?;
             let mut map = revisions(&o.suite);
             map.remove(&v.reference.id);
             put_setting(&mut o.suite, REVISIONS_KEY, &map)?;

@@ -1,0 +1,23 @@
+# Helper: start the app anew, unlock with the app PIN and go to GhulPass, where every other name
+# in the bottom bar is on screen only once.
+appId: de.danerd.ghulsuite.dev
+---
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible: "Unlock with app PIN"
+    timeout: 30000
+- tapOn: "App PIN"
+- inputText: "246813"
+- hideKeyboard
+- tapOn: "Unlock with app PIN"
+# The app opens the tab used last; the lock button shows it is unlocked.
+- extendedWaitUntil:
+    visible: "Lock now"
+    timeout: 30000
+# On another tab "GhulPass" is only in the bar; on GhulPass itself the first match is the title,
+# and tapping it changes nothing.
+- tapOn: "GhulPass"
+- extendedWaitUntil:
+    visible: "Search entries"
+    timeout: 15000

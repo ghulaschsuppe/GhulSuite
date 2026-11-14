@@ -125,8 +125,21 @@ class IntentEntryActivity : Activity() {
             }
         }.getOrNull() ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Anhang"
 
-    /** The content of [uri], or null if it cannot be read or is larger than [limit]. */
-    private fun read(uri: Uri, limit: Int): ByteArray? = runCatching {
+    /**
+     * Only files another app really hands over: `content://` of a provider that does not belong
+     * to GhulSuite. A `file://` path or GhulSuite's own provider would let any app put GhulSuite's
+     * private files (or decrypted Drive copies) into a ready-to-send mail ("confused deputy").
+     */
+    private fun foreign(uri: Uri): Boolean {
+        if (uri.scheme != "content") return false
+        val authority = uri.authority ?: return false
+        if (authority == "$packageName.files") return false
+        val owner = runCatching { packageManager.resolveContentProvider(authority, 0)?.packageName }.getOrNull()
+        return owner != null && owner != packageName
+    }
+
+    /** The content of [uri], or null if it cannot be read, is not foreign or is larger than [limit]. */
+    private fun read(uri: Uri, limit: Int): ByteArray? = if (!foreign(uri)) null else runCatching {
         contentResolver.openInputStream(uri)?.use { input ->
             val out = java.io.ByteArrayOutputStream()
             val buf = ByteArray(64 * 1024)

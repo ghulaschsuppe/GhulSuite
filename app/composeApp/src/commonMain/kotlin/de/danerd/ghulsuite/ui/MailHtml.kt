@@ -48,7 +48,7 @@ import org.jetbrains.compose.resources.decodeToImageBitmap
 import org.jetbrains.compose.resources.stringResource
 
 /**
- * An HTML mail drawn from the safe building blocks of the core – never as HTML. Images inside the
+ * An HTML mail drawn from the safe building blocks of the core, never as HTML. Images inside the
  * mail are shown; images from the internet only after the user asks (once, or always for this sender).
  * Links show their target before they open.
  */

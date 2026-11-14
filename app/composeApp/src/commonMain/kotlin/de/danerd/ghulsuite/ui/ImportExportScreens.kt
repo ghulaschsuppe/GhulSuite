@@ -8,8 +8,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -44,11 +42,17 @@ fun VaultDropdown(label: String, vaults: List<VaultUi>, selected: String?, allow
     val none = stringResource(Res.string.import_none)
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.weight(1f))
-        Box {
-            TextButton(onClick = { open = true }) { Text(vaults.firstOrNull { it.id == selected }?.let { vaultLabel(it, vaults) } ?: none) }
-            DropdownMenu(open, { open = false }) {
-                if (allowNone) DropdownMenuItem(text = { Text(none) }, onClick = { onSelect(null); open = false })
-                for (v in vaults) DropdownMenuItem(text = { Text(vaultLabel(v, vaults)) }, onClick = { onSelect(v.id); open = false })
+        TextButton(onClick = { open = true }) { Text(vaults.firstOrNull { it.id == selected }?.let { vaultLabel(it, vaults) } ?: none) }
+    }
+    // The choice opens as a sheet like every other choice in the app.
+    if (open) {
+        GhulSheet({ open = false }, label) {
+            SheetList {
+                if (allowNone) SheetRow(none, end = { if (selected == null) SheetCheck() }) { onSelect(null); open = false }
+                vaults.forEachIndexed { i, v ->
+                    SheetRow(vaultLabel(v, vaults), leading = { Avatar(v.name) }, divider = allowNone || i > 0,
+                        end = { if (v.id == selected) SheetCheck() }) { onSelect(v.id); open = false }
+                }
             }
         }
     }

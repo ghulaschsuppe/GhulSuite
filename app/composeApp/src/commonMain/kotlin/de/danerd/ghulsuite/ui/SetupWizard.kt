@@ -72,17 +72,17 @@ class AreaInfo(
     val kind: VaultKindUi,
     val title: StringResource,
     val sub: StringResource,
-    val icon: ImageVector,
-    val colorIndex: Int,
+    /** The tab of the area: its colour and icon come from [areaColor] and [tabIcon], like everywhere. */
+    val tab: Tab,
     val ext: String,
 )
 
 val AREAS = listOf(
-    AreaInfo(VaultKindUi.PASS, Res.string.tab_pass, Res.string.area_pass_sub, Icons.Filled.Key, 0, ".ghlpss"),
-    AreaInfo(VaultKindUi.TOTP, Res.string.tab_auth, Res.string.area_auth_sub, Icons.Filled.Security, 2, ".ghltotp"),
-    AreaInfo(VaultKindUi.DRIVE, Res.string.tab_drive, Res.string.area_drive_sub, Icons.Filled.Cloud, 1, ".ghldrv"),
-    AreaInfo(VaultKindUi.MAIL, Res.string.tab_mail, Res.string.area_mail_sub, Icons.Filled.Mail, 4, ".ghlmail"),
-    AreaInfo(VaultKindUi.CAL, Res.string.tab_cal, Res.string.area_cal_sub, Icons.Filled.CalendarMonth, 6, ".ghlcal"),
+    AreaInfo(VaultKindUi.PASS, Res.string.tab_pass, Res.string.area_pass_sub, Tab.PASS, ".ghlpss"),
+    AreaInfo(VaultKindUi.TOTP, Res.string.tab_auth, Res.string.area_auth_sub, Tab.AUTH, ".ghltotp"),
+    AreaInfo(VaultKindUi.DRIVE, Res.string.tab_drive, Res.string.area_drive_sub, Tab.DRIVE, ".ghldrv"),
+    AreaInfo(VaultKindUi.MAIL, Res.string.tab_mail, Res.string.area_mail_sub, Tab.MAIL, ".ghlmail"),
+    AreaInfo(VaultKindUi.CAL, Res.string.tab_cal, Res.string.area_cal_sub, Tab.CAL, ".ghlcal"),
 )
 
 /** Areas with a name the user picks (Drive and Mail have one file without a name of its own). */
@@ -92,8 +92,6 @@ private enum class DriveChoice { SYNC, OWN, LATER }
 
 private enum class QuickChoice { NONE, BIO, PIN }
 
-private val LOCK_CHOICES = listOf(0 to Res.string.lock_immediately, 30 to Res.string.lock_30s, 60 to Res.string.lock_1m, 300 to Res.string.lock_5m, 900 to Res.string.lock_15m)
-private val QUICK_CHOICES = listOf(4 to Res.string.quick_4h, 24 to Res.string.quick_24h, 72 to Res.string.quick_3d, 168 to Res.string.quick_7d, 0 to Res.string.quick_always)
 
 /** Area visibility on this device follows the areas chosen (a file exists = shown). */
 fun showModule(state: AppState, kind: VaultKindUi, on: Boolean) {
@@ -108,7 +106,7 @@ fun showModule(state: AppState, kind: VaultKindUi, on: Boolean) {
 }
 
 /**
- * New setup in eight steps (#24). The suite is created when leaving step 3 (storage) – the steps
+ * New setup in eight steps (#24). The suite is created when leaving step 3 (storage), the steps
  * after it need an open suite (sync server check, area files). Should the app stop later, the suite
  * exists with an unconfirmed recovery code, and GhulSuite asks for a new code after unlocking.
  */
@@ -326,7 +324,8 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                         }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.a_check_key)) }
                         keyStatus?.let { Hint(stringResource(Res.string.setup_key_detected, it.product)) }
                     }
-                    HintText(stringResource(Res.string.wz_key_touch))
+                    // Holding the key to the phone (NFC) only where there is a phone.
+                    HintText(stringResource(if (state.backend.isDesktop) Res.string.wz_key_touch_desktop else Res.string.wz_key_touch))
                 }
                 if (filePickersAvailable) {
                     PickRow(!useKey, Icons.Filled.Description, 9, stringResource(Res.string.setup_use_keyfile), stringResource(Res.string.setup_use_keyfile_text), divider = true, onClick = { useKey = false }) {
@@ -383,7 +382,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                             .heightIn(min = 60.dp).padding(horizontal = 16.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
-                        IconTile(a.icon, paletteColor(a.colorIndex))
+                        IconTile(tabIcon(a.tab), areaColor(a.tab))
                         Column(Modifier.weight(1f)) {
                             Text(stringResource(a.title), fontWeight = FontWeight.W500, fontSize = 15.sp, color = if (on) g.fg else g.muted)
                             Text(stringResource(a.sub), fontSize = 14.sp, color = g.muted)
@@ -436,7 +435,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
         6 -> {
             SectionCard(stringResource(Res.string.set_auto_lock)) {
                 Hint(stringResource(Res.string.wz_lock_sub))
-                FilterChipRow(LOCK_CHOICES.map { it.first.toString() to stringResource(it.second) }, settings.autoLockSeconds.toString(), g.accent,
+                FilterChipRow(AUTO_LOCK_OPTIONS.map { it.first.toString() to stringResource(it.second) }, settings.autoLockSeconds.toString(),
                     { settings.autoLockSeconds = it.toInt() })
             }
             ListCard {
@@ -465,7 +464,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
             if (quick != QuickChoice.NONE) {
                 SectionCard(stringResource(Res.string.wz_quick_valid)) {
                     Hint(stringResource(Res.string.wz_quick_valid_sub))
-                    FilterChipRow(QUICK_CHOICES.map { it.first.toString() to stringResource(it.second) }, settings.quickUnlockHours.toString(), g.accent,
+                    FilterChipRow(QUICK_HOURS_OPTIONS.map { it.first.toString() to stringResource(it.second) }, settings.quickUnlockHours.toString(),
                         { settings.quickUnlockHours = it.toInt() })
                     if (settings.quickUnlockHours == 0) Hint(stringResource(Res.string.wz_quick_always_note))
                 }

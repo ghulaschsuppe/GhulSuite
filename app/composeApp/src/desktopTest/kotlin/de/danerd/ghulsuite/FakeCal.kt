@@ -17,6 +17,8 @@ import de.danerd.ghulsuite.ui.today
 
 /** The sample week of the design preview, relative to today, for screenshots. */
 class FakeCal : CalBackend {
+    /** What the UI asked to change (the UI tests check these). */
+    val calls = java.util.Collections.synchronizedList(mutableListOf<String>())
     private val cals = listOf(
         CalCalendarUi("priv", "c1", "Privat", 0xD6336C, 15, 5),
         CalCalendarUi("work", "c1", "Arbeit", 0x2F74E8, 15, 6),
@@ -66,7 +68,7 @@ class FakeCal : CalBackend {
         )
     }
     override suspend fun saveEvent(event: CalEventUi) = "x"
-    override suspend fun deleteEvent(id: String, date: String, mode: CalDeleteModeUi) {}
+    override suspend fun deleteEvent(id: String, date: String, mode: CalDeleteModeUi) { calls += "deleteEvent:$id:$date:$mode" }
     override suspend fun occurrences(from: String, to: String, holidayRegion: String, lang: String): List<CalOccurrenceUi> {
         val f = Day.parse(from)!!
         val t = Day.parse(to)!!
@@ -86,7 +88,7 @@ class FakeCal : CalBackend {
     override suspend fun reminders(now: String, days: Int) = emptyList<CalReminderUi>()
     override suspend fun exportIcs(calendarIds: List<String>) = ""
     override suspend fun eventIcs(id: String) = ""
-    override suspend fun importIcs(calendarId: String, data: ByteArray, utcOffsetMinutes: Int) = 0
+    override suspend fun importIcs(calendarId: String, data: ByteArray) = 0
     override fun quickParse(text: String, today: String, nowMinutes: Int) =
         CalQuickUi("Friseur", t0.plus(1).toString(), "14:30", "15:30", false, CalRepeatUi.NONE, "privat")
     override fun regions(lang: String) = listOf(CalRegionUi("DE-NW", "Nordrhein-Westfalen"))

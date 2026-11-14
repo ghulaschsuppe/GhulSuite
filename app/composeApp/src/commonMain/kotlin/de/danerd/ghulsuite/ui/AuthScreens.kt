@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package de.danerd.ghulsuite.ui
 
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material.icons.filled.QrCode2
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Check
@@ -14,6 +19,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -62,9 +68,9 @@ private fun grouped(code: String): String = if (code.length >= 6) code.chunked((
 @Composable
 fun AuthListScreen(state: AppState, padding: PaddingValues) {
     var codes by remember { mutableStateOf<List<TotpCodeUi>?>(null) }
-    var menuFor by remember { mutableStateOf<TotpCodeUi?>(null) }
     var renaming by remember { mutableStateOf<TotpCodeUi?>(null) }
-    var deleting by remember { mutableStateOf<TotpCodeUi?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var retry by remember { mutableStateOf(0) }
     var revealed by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
     var sorting by remember { mutableStateOf(false) }
     var exporting by remember { mutableStateOf<Pair<TotpCodeUi, String>?>(null) }
@@ -73,44 +79,77 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
     val settings = state.backend.settings
     val vaults = state.vaultsOf(VaultKindUi.TOTP)
     val filter = state.authVault
-    LaunchedEffect(state.liveRevision()) {
+    LaunchedEffect(state.liveRevision(), retry) {
         while (true) {
-            codes = runCatching { state.backend.totpCodes(nowSeconds()) }.getOrNull() ?: codes
+            runCatching { state.backend.totpCodes(nowSeconds()) }
+                .onSuccess { codes = it; error = null }
+                .onFailure { e -> error = describe(e); if (codes == null) codes = emptyList() }
+            // After an error it waits for "Try again" instead of asking every second.
+            if (error != null) break
             delay(1000)
         }
     }
     var query by remember { mutableStateOf("") }
     val q = query.trim().lowercase()
-    val shown = codes?.filter { (filter == null || it.vaultId == filter) && (q.isEmpty() || (it.issuer + " " + it.account).lowercase().contains(q)) }
+    val shown = codes?.filter {
+        hiddenKey("auth", it.vaultId, it.id) !in state.hidden &&
+            (filter == null || it.vaultId == filter) && (q.isEmpty() || (it.issuer + " " + it.account).lowercase().contains(q))
+    }
     val showVault = vaults.size > 1 && filter == null
     val grid = state.authGrid
     val cols = LocalColumns.current
     // Grid: tiles per row; list: one card per row on phones, two side by side in wide panes.
     val perRow = if (grid) cols else (cols / 2).coerceAtLeast(1)
-    // Long press selects accounts; swipe right edits, swipe left deletes (after asking).
-    val selected = remember { mutableStateListOf<String>() }
+    // Long press selects accounts (as in every list); swipe right edits, swipe left deletes.
+    // Deleting asks nothing: "Undo" in the snackbar brings the accounts back.
+    val selected = rememberListSelection()
     val keyOf = { c: TotpCodeUi -> c.vaultId + "/" + c.id }
-    val selecting = selected.isNotEmpty()
-    var deletingMany by remember { mutableStateOf<List<TotpCodeUi>?>(null) }
-    val toggle = { c: TotpCodeUi -> if (keyOf(c) in selected) selected.remove(keyOf(c)) else selected.add(keyOf(c)) }
-    PlatformBackHandler(enabled = selecting && LocalTabActive.current) { selected.clear() }
+    val selecting = selected.active
+    val toggle = { c: TotpCodeUi -> selected.toggle(keyOf(c)) }
+    val deletedMsg = stringResource(Res.string.msg_deleted_n)
+    fun delete(list: List<TotpCodeUi>) {
+        selected.clear()
+        state.undoable(list.map { hiddenKey("auth", it.vaultId, it.id) }, deletedMsg.replace("%1\$s", list.size.toString())) {
+            for (c in list) state.backend.deleteTotp(c.vaultId, c.id)
+        }
+    }
     Column(Modifier.fillMaxSize().padding(padding)) {
     if (selecting) {
-        val one = codes.orEmpty().filter { keyOf(it) in selected }.singleOrNull()
+        val chosen = shown.orEmpty().filter { keyOf(it) in selected }
+        val one = chosen.singleOrNull()
         SelectionHeader(
-            selected.size,
+            selected.keys.size,
             onClose = { selected.clear() },
-            onAll = { shown.orEmpty().forEach { if (keyOf(it) !in selected) selected.add(keyOf(it)) } },
-            onDelete = { deletingMany = codes.orEmpty().filter { keyOf(it) in selected } },
-            extra = if (one != null) listOf(Triple(Icons.Filled.MoreVert, stringResource(Res.string.a_more)) { menuFor = one }) else emptyList(),
+            onAll = { selected.all(shown.orEmpty().map(keyOf)) },
+            actions = buildList {
+                if (one != null) {
+                    add(SelAction(Icons.Filled.Edit, stringResource(Res.string.a_rename)) { selected.clear(); renaming = one })
+                    add(SelAction(if (one.favorite) Icons.Filled.Star else Icons.Filled.StarBorder,
+                        stringResource(if (one.favorite) Res.string.a_unfavorite else Res.string.a_favorite)) {
+                        selected.clear()
+                        state.run(block = { state.backend.setFavorite(one.vaultId, one.id, !one.favorite) }) { state.changed() }
+                    })
+                    add(SelAction(Icons.Filled.QrCode2, stringResource(Res.string.auth_export_qr)) {
+                        selected.clear()
+                        state.run(block = { state.backend.totpUri(one.vaultId, one.id) }) { exporting = one to it }
+                    })
+                }
+                add(SelAction(Icons.Filled.Delete, stringResource(Res.string.a_delete), danger = true) { delete(chosen) })
+            },
         )
     }
     LazyColumn(
-        Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 120.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        Modifier.align(Alignment.CenterHorizontally).widthIn(max = 672.dp).fillMaxSize(),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 100.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item(key = "search") { SearchField(query, { query = it }, placeholder = stringResource(Res.string.auth_search)) }
+        item(key = "search") {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                SearchField(query, { query = it }, placeholder = stringResource(Res.string.auth_search))
+                LoadError(error) { retry++ }
+                if (codes == null) LoadingHint()
+            }
+        }
         if (shown?.isEmpty() == true) {
             item(key = "empty") { EmptyState(androidx.compose.material.icons.Icons.Filled.Key, stringResource(Res.string.auth_empty), areaColor(Tab.AUTH)) }
         }
@@ -127,7 +166,7 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
                     for (c in row) {
                         val hidden = settings.totpHideCodes && (revealed[c.id] ?: 0L) < nowSeconds()
                         Box(Modifier.weight(1f)) {
-                            EditDeleteSwipe(!grid && !selecting, onEdit = { renaming = c }, onDelete = { deleting = c }) {
+                            EditDeleteSwipe(!grid && !selecting, onEdit = { renaming = c }, onDelete = { delete(listOf(c)) }) {
                                 TotpCard(
                                     c,
                                     vaultName = c.vaultName.takeIf { showVault },
@@ -176,28 +215,11 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
         }
     }
     }
-    deletingMany?.let { list ->
-        AlertDialog(
-            onDismissRequest = { deletingMany = null },
-            title = { Text(stringResource(Res.string.auth_delete_n_title, list.size.toString())) },
-            text = { Text(stringResource(Res.string.auth_delete_n_text, list.size.toString())) },
-            confirmButton = {
-                TextButton(onClick = {
-                    deletingMany = null
-                    state.run(block = { for (c in list) state.backend.deleteTotp(c.vaultId, c.id) }) {
-                        selected.clear()
-                        state.changed()
-                    }
-                }) { Text(stringResource(Res.string.a_delete)) }
-            },
-            dismissButton = { TextButton(onClick = { deletingMany = null }) { Text(stringResource(Res.string.a_cancel)) } },
-        )
-    }
     if (sorting) {
         GhulSheet({ sorting = false }, stringResource(Res.string.auth_sort)) {
             SheetList {
                 listOf(0 to Res.string.auth_sort_name, 1 to Res.string.auth_sort_newest).forEachIndexed { i, (v, label) ->
-                    SheetRow(stringResource(label), divider = i > 0, end = { if (settings.authSort == v) Icon(Icons.Filled.Check, null, Modifier.size(20.dp), tint = g.accent) }) {
+                    SheetRow(stringResource(label), divider = i > 0, end = { if (settings.authSort == v) SheetCheck() }) {
                         settings.authSort = v; sorting = false
                     }
                 }
@@ -210,22 +232,6 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
             Banner(Icons.Filled.Warning, stringResource(Res.string.auth_export_warning))
             QrImage(uri, Modifier.fillMaxWidth())
             HintText(c.issuer.ifBlank { c.account })
-        }
-    }
-    menuFor?.let { c ->
-        GhulSheet({ menuFor = null }, c.issuer.ifBlank { c.account }) {
-            SheetList {
-                SheetRow(stringResource(Res.string.a_rename)) { renaming = c; menuFor = null; selected.clear() }
-                SheetRow(stringResource(if (c.favorite) Res.string.auth_unfavorite else Res.string.auth_favorite), divider = true) {
-                    menuFor = null
-                    state.run(block = { state.backend.setFavorite(c.vaultId, c.id, !c.favorite) }) { state.changed() }
-                }
-                SheetRow(stringResource(Res.string.auth_export_qr), divider = true) {
-                    menuFor = null
-                    state.run(block = { state.backend.totpUri(c.vaultId, c.id) }) { exporting = c to it }
-                }
-                SheetRow(stringResource(Res.string.a_delete), color = g.danger, divider = true) { deleting = c; menuFor = null }
-            }
         }
     }
     renaming?.let { c ->
@@ -247,20 +253,6 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
                 }) { Text(stringResource(Res.string.a_save)) }
             },
             dismissButton = { TextButton(onClick = { renaming = null }) { Text(stringResource(Res.string.a_cancel)) } },
-        )
-    }
-    deleting?.let { c ->
-        AlertDialog(
-            onDismissRequest = { deleting = null },
-            title = { Text(stringResource(Res.string.auth_delete_title)) },
-            text = { Text(stringResource(Res.string.auth_delete_text, c.issuer.ifBlank { c.account })) },
-            confirmButton = {
-                TextButton(onClick = {
-                    deleting = null
-                    state.run(block = { state.backend.deleteTotp(c.vaultId, c.id) }) { selected.clear(); state.changed() }
-                }) { Text(stringResource(Res.string.a_delete)) }
-            },
-            dismissButton = { TextButton(onClick = { deleting = null }) { Text(stringResource(Res.string.a_cancel)) } },
         )
     }
 }
@@ -305,13 +297,12 @@ private fun TotpCard(
     val sub = listOfNotNull(c.account.takeIf { c.issuer.isNotBlank() && it.isNotBlank() }, vaultName).joinToString(" · ")
     Box(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(if (selected) t.accentSoft else t.surface)
-            .then(if (selected) Modifier.border(2.dp, accent, RoundedCornerShape(20.dp)) else Modifier)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick).padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
         if (grid) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Avatar(name)
+                    SelectableTile(selected) { Avatar(name) }
                     Box(Modifier.weight(1f))
                     CodeRing(c.remaining, c.period, accent, t.danger)
                 }
@@ -320,7 +311,7 @@ private fun TotpCard(
             }
         } else {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                Avatar(name)
+                SelectableTile(selected) { Avatar(name) }
                 Column(Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                         Text(name, fontWeight = FontWeight.SemiBold, maxLines = 1)
@@ -412,14 +403,14 @@ fun AddTotpScreen(state: AppState, vaultId: String, padding: PaddingValues, star
                             val parsed = state.backend.parseOtpauth(uri)
                             state.backend.addTotp(vaultId, parsed)
                         }) { done() }
-                    }, enabled = !state.busy && uri.isNotBlank()) { Text(stringResource(Res.string.a_add)) }
+                    }, enabled = !state.busy && uri.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.a_add)) }
                 }
             } else {
                 SectionCard {
                     OutlinedTextField(issuer, { issuer = it }, label = { Text(stringResource(Res.string.f_issuer)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(account, { account = it }, label = { Text(stringResource(Res.string.f_account)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     SecretTextField(secret, { secret = it; error = null }, stringResource(Res.string.f_secret_base32))
-                    Text(stringResource(Res.string.auth_advanced), style = MaterialTheme.typography.labelLarge)
+                    SectionLabel(stringResource(Res.string.auth_advanced))
                     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                         OtpAlgorithmUi.entries.forEachIndexed { i, a ->
                             // Steam Guard: five characters, every 30 seconds.
@@ -436,12 +427,12 @@ fun AddTotpScreen(state: AppState, vaultId: String, padding: PaddingValues, star
                         OutlinedTextField(period, { period = it.filter(Char::isDigit) }, label = { Text(stringResource(Res.string.f_period)) }, singleLine = true, modifier = Modifier.weight(1f))
                     }
                     ErrorText(error)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { state.pop() }) { Text(stringResource(Res.string.a_cancel)) }
+                    ButtonRow {
+                        OutlinedButton(onClick = { state.pop() }, modifier = Modifier.weight(1f)) { Text(stringResource(Res.string.a_cancel)) }
                         Button(onClick = {
                             val input = TotpInputUi(issuer, account, secret, algorithm, digits.toIntOrNull() ?: 0, period.toIntOrNull() ?: 0)
                             state.run(onError = { error = it }, block = { state.backend.addTotp(vaultId, input) }) { done() }
-                        }, enabled = !state.busy && secret.isNotBlank()) { Text(stringResource(Res.string.a_add)) }
+                        }, enabled = !state.busy && secret.isNotBlank(), modifier = Modifier.weight(1f)) { Text(stringResource(Res.string.a_add)) }
                     }
                 }
             }

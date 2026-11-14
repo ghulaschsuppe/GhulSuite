@@ -1,4 +1,4 @@
-# GhulSuite – Projekt- und Entwicklerhinweise
+# GhulSuite: Projekt- und Entwicklerhinweise
 
 Diese Datei ist der Einstieg für alle, die am Code arbeiten (Menschen wie KI-Assistenten).
 Was GhulSuite ist und kann, steht in der [README](README.md), das vollständige Konzept in
@@ -10,6 +10,8 @@ Was GhulSuite ist und kann, steht in der [README](README.md), das vollständige 
   Server sehen nur Chiffretext.
 - **Selbst hostbar, ohne bestimmten Anbieter:** beliebige IMAP/SMTP-Mailserver, eigene Speicher per SFTP, FTPS
   oder das GhulSuite-Server-Modul. Das Server-Modul läuft auf **Standard-Webhosting mit PHP 8.1, ohne Datenbank**.
+- **Fünf Bereiche in einer App:** GhulPass (Passwörter), GhulAuth (2FA), GhulCal (Kalender), GhulDrive (Dateien),
+  GhulMail (E-Mail).
 - **Der Ordner ist die Suite:** `.ghlpss` (Passwörter), `.ghltotp` (2FA) und `.ghlcal` (Kalender) im Ordner gehören dazu, `.ghlsuite`
   hält Einstellungen, Mail-Konten und den Drive-Schlüssel, `.ghlkey` ist eine Schlüsseldatei.
 - **Schutz:** Master-Passwort **plus** zweiter Faktor (Security Key oder Schlüsseldatei); der Wiederherstellungscode
@@ -18,7 +20,7 @@ Was GhulSuite ist und kann, steht in der [README](README.md), das vollständige 
 - **Sprachen:** Deutsch und Englisch (`app/composeApp/src/commonMain/composeResources/values*/strings.xml`).
 - **Lizenz:** AGPL-3.0-or-later mit Zusatzbedingung (Urhebervermerk bleibt sichtbar), siehe [`LICENSE`](LICENSE)
   und [`NOTICE`](NOTICE). Name und Logo: [`TRADEMARKS.md`](TRADEMARKS.md). Beiträge: [`CONTRIBUTING.md`](CONTRIBUTING.md).
-- **Keine Geheimnisse im Repository** – keine Zugangsdaten, keine Signaturschlüssel, keine echten Daten.
+- **Keine Geheimnisse im Repository**: keine Zugangsdaten, keine Signaturschlüssel, keine echten Daten.
 
 ## Aufbau
 
@@ -49,6 +51,8 @@ tools/                 Testserver (SFTP/IMAP/SMTP), Prüfskripte, Emulator-Skrip
   Netzwerk-Tests gegen echte lokale Server: vorher `eval "$(sudo -E tools/test-servers.sh)"`.
 - App: `cd app && ./gradlew :composeApp:desktopTest :composeApp:assembleDebug` (baut Kern und Anbindung mit).
 - Oberfläche im Emulator: `tools/run-maestro.sh <apk>`, unter Windows `maestro test app\maestro`.
+- Weitere Prüfungen: `python3 tools/attack-php-module.py` (Angriffe auf das Server-Modul), `tools/check-texts.py`,
+  `tools/check-android-manifest.py`; nachts läuft `.github/workflows/nightly.yml` (Fuzzing lang, Langläufe, Monkey).
 - Manuelle Tests: [`docs/TESTPLAN.md`](docs/TESTPLAN.md) (Android), [`docs/TESTPLAN-WINDOWS.md`](docs/TESTPLAN-WINDOWS.md).
 
 ## CI und Testserver
@@ -56,9 +60,13 @@ tools/                 Testserver (SFTP/IMAP/SMTP), Prüfskripte, Emulator-Skrip
 - `.github/workflows/android.yml`: Kern (Format, Clippy, Tests, Fuzzing, Audit), Netzwerk-Tests, Browser-Tests,
   Windows-Pakete (MSI und portabel), APK, Emulator-Abläufe. Artefakte: `ghulsuite-dev`, `ghulsuite-windows-dev`,
   `screenshots`, `emulator-tests`.
+- **Emulator-Abläufe** (langsam, weil ein ganzes Android startet) laufen nicht bei jedem Push eines Arbeits-Branches,
+  sondern bei Pull Requests, auf `main` und nachts. Nachts kommen die Abläufe mit echten Testservern (GhulDrive,
+  GhulMail) und die Prüfung dazu, dass dort nur Verschlüsseltes liegt. Von Hand für jeden Branch:
+  `.github/workflows/emulator.yml` („Run workflow“, nutzt die zuletzt gebaute APK des Branches).
 - Uploads auf den Testserver des Inhabers laufen **nur im Original-Repository** und nie bei Pull Requests.
   Ziel ist für `main` der Ordner `ghulsuite/` (Testseiten) bzw. `ghulsuite/download/` (App-Pakete), für jeden
-  anderen Branch `ghulsuite/branches/<branch>/` bzw. `…/download/` – so bleibt `ghulsuite/download/` der stabile Stand.
+  anderen Branch `ghulsuite/branches/<branch>/` bzw. `…/download/`; so bleibt `ghulsuite/download/` der stabile Stand.
 - **Secrets** (vom Inhaber selbst eingetragen, niemals im Repository): `FTP_SERVER`, `FTP_USER`, `FTP_PASSWORD`,
   `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`.
 - **Signatur:** Der Android-Schlüssel kommt nur aus den Secrets (`GHUL_KEYSTORE_FILE`, `GHUL_KEYSTORE_PASSWORD`,
@@ -76,6 +84,15 @@ tools/                 Testserver (SFTP/IMAP/SMTP), Prüfskripte, Emulator-Skrip
 
 - Vor jedem Commit: `cargo fmt`, Clippy (auch `--target x86_64-pc-windows-gnu`), Kern-Tests, Desktop-Tests.
 - Neue Texte immer auf Deutsch **und** Englisch.
+- **Keine langen Striche** (Geviert- und Halbgeviertstrich) in Texten der App und des Projekts: stattdessen Punkt,
+  Komma, Doppelpunkt, Klammern oder „bis“; für Zeitspannen der einfache Bindestrich. `tools/check-texts.py` prüft das.
+- Die Bereiche werden überall in derselben Reihenfolge genannt: Passwörter, 2FA, Dateien, Mail, Kalender.
 - Neue Funktionen bekommen Tests im Kern und einen Eintrag im Testplan.
+- **Die README ist die Hauptseite des Projekts und bleibt aktuell:** Jeder Pull Request, der etwas ändert, das Nutzer
+  oder Mitlesende betrifft (Funktionen, Bereiche, Sicherheit, Server-Varianten, Plattformen, Download, Stand der
+  Prüfungen), passt die README im selben Pull Request an. Vor dem Merge kurz gegenlesen: Stimmt noch, was dort steht?
+  Die README verspricht nichts, was der Code nicht hält; bekannte offene Punkte stehen in
+  [`docs/TESTPROTOKOLL.md`](docs/TESTPROTOKOLL.md).
+- Gefundene Fehler und offene Punkte kommen mit Nummer ins Testprotokoll; Testkonzept: [`docs/TESTKONZEPT.md`](docs/TESTKONZEPT.md).
 - Kommentare und Commit-Nachrichten auf Englisch, Dokumentation auf Deutsch.
 - Neue Quelldateien beginnen mit `// SPDX-License-Identifier: AGPL-3.0-or-later`.

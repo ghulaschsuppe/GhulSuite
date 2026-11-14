@@ -112,7 +112,7 @@ fun UnlockScreen(state: AppState) {
     fun Links(vararg rows: Pair<String, () -> Unit>) {
         ListCard {
             rows.forEachIndexed { i, (label, action) ->
-                ListRow(label, divider = i > 0, trailing = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp), tint = t.faint) }, onClick = action)
+                ListRow(label, divider = i > 0, trailing = { ChevronEnd() }, onClick = action)
             }
         }
     }
@@ -227,6 +227,10 @@ fun UnlockScreen(state: AppState) {
                 StrengthMeter(backend.passwordScore(password))
                 SecretTextField(repeat, { repeat = it; error = null }, stringResource(Res.string.l_repeat_password))
                 ErrorText(error)
+                ButtonRow {
+                OutlinedButton(onClick = { clear(); mode = UnlockMode.FULL }, modifier = Modifier.weight(1f)) {
+                    Text(stringResource(Res.string.a_back))
+                }
                 Button(
                     onClick = {
                         scope.launch {
@@ -240,10 +244,8 @@ fun UnlockScreen(state: AppState) {
                         }
                     },
                     enabled = !state.busy && code.isNotBlank() && password.isNotEmpty(),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.weight(1f),
                 ) { Text(stringResource(Res.string.a_unlock)) }
-                OutlinedButton(onClick = { clear(); mode = UnlockMode.FULL }, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(Res.string.a_back))
                 }
             }
         }

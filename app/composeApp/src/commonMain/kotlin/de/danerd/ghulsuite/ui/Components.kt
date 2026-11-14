@@ -49,6 +49,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Card
@@ -206,7 +207,7 @@ private val AvatarColors = listOf(
     0xFF7B61FF, 0xFF2F74E8, 0xFF0E9F80, 0xFFE0700F, 0xFFD03B7E, 0xFF8E5BD8, 0xFF1E9BB8, 0xFFC0533A, 0xFF4E8A2E, 0xFFB58600,
 )
 
-/** Colour n of the avatar palette (a0–a9 of the design preview). */
+/** Colour n of the avatar palette (a0 to a9 of the design preview). */
 fun paletteColor(i: Int): Color = Color(AvatarColors[i % AvatarColors.size])
 
 /** Stable colour for a name (same name → same colour). */
@@ -373,14 +374,22 @@ fun ListRow(
     bold: Boolean = false,
     divider: Boolean = false,
     dividerStart: Dp? = null,
+    /** Chosen in a selection: accent background (the tile shows the check, see [SelectableTile]). */
     selected: Boolean = false,
+    /** Open in the second pane of a wide window. */
+    highlighted: Boolean = false,
+    /** Inside a card that has its own padding (SectionCard): no side padding, so the row lines up with the text around it. */
+    flush: Boolean = false,
     onLongClick: (() -> Unit)? = null,
     onClick: (() -> Unit)? = null,
 ) {
-    if (divider) RowDivider(dividerStart ?: if (leading != null) 70.dp else 16.dp)
+    if (divider) {
+        if (flush) Box(Modifier.fillMaxWidth().padding(start = dividerStart ?: if (leading != null) 56.dp else 0.dp).height(1.dp).background(g.line))
+        else RowDivider(dividerStart ?: if (leading != null) 70.dp else 16.dp)
+    }
     Row(
         Modifier.fillMaxWidth().heightIn(min = 60.dp)
-            .then(if (selected) Modifier.background(g.surface2) else Modifier)
+            .then(if (selected) Modifier.background(g.accentSoft) else if (highlighted) Modifier.background(g.surface2) else Modifier)
             .then(
                 when {
                     onLongClick != null -> Modifier.combinedClickable(onClick = onClick ?: {}, onLongClick = onLongClick)
@@ -388,7 +397,7 @@ fun ListRow(
                     else -> Modifier
                 },
             )
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = if (flush) 0.dp else 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
@@ -445,7 +454,6 @@ fun SectionLabel(text: String, modifier: Modifier = Modifier, trailing: @Composa
 fun FilterChipRow(
     options: List<Pair<String, String>>,
     selected: String,
-    color: Color,
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
     icons: Map<String, ImageVector> = emptyMap(),
@@ -551,6 +559,37 @@ fun ErrorText(text: String?) {
     Text(text, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
 }
 
+/**
+ * A list could not be loaded: the reason and "Try again", in the same place (under the search
+ * field) in every area.
+ */
+@Composable
+fun LoadError(error: String?, onRetry: () -> Unit) {
+    if (error.isNullOrEmpty()) return
+    val t = g
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(t.danger.copy(alpha = 0.10f))
+            .padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp).heightIn(min = 48.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(Icons.Filled.ErrorOutline, null, Modifier.size(20.dp), tint = t.danger)
+        Text(error, Modifier.weight(1f).padding(vertical = 8.dp), color = t.danger, fontSize = 14.sp)
+        TextButton(onClick = onRetry) { Text(stringResource(Res.string.a_retry)) }
+    }
+}
+
+/** A list is being read for the first time: the same quiet line in every area. */
+@Composable
+fun LoadingHint() {
+    val t = g
+    Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = t.muted)
+        Text(stringResource(Res.string.loading), fontSize = 14.sp, color = t.muted)
+    }
+}
+
 /** zxcvbn score 0..4 as a bar with a label. */
 @Composable
 fun StrengthMeter(score: Int) {
@@ -565,12 +604,11 @@ fun StrengthMeter(score: Int) {
     }
 }
 
+/** The same as [HintText]: one look for every hint. */
 @Composable
-fun Hint(text: String) {
-    Text(text, fontSize = 13.sp, lineHeight = 18.sp, color = g.muted)
-}
+fun Hint(text: String) = HintText(text)
 
-/** App name with a shield tile and the four areas, at the top of start and unlock. */
+/** App name with a shield tile and the five areas, at the top of start and unlock. */
 @Composable
 fun BrandHeader(subtitle: String? = null) {
     Column(Modifier.fillMaxWidth().padding(top = 40.dp, bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally,
@@ -585,7 +623,7 @@ fun BrandHeader(subtitle: String? = null) {
         }
         Text(stringResource(Res.string.app_name), fontSize = 28.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.84).sp, modifier = Modifier.padding(top = 4.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            for (t in listOf(Tab.PASS, Tab.AUTH, Tab.DRIVE, Tab.MAIL)) {
+            for (t in listOf(Tab.PASS, Tab.AUTH, Tab.DRIVE, Tab.MAIL, Tab.CAL)) {
                 Box(Modifier.size(width = 24.dp, height = 4.dp).clip(RoundedCornerShape(2.dp)).background(areaColor(t)))
             }
         }

@@ -1,0 +1,100 @@
+# Testplan B2 and a careless user: GhulDrive and GhulMail are set up with a server that does not
+# exist. The app must say so in plain words and stay usable: no crash, no half-made area.
+appId: de.danerd.ghulsuite.dev
+name: GhulDrive and GhulMail without a server
+---
+- launchApp:
+    stopApp: false
+- tapOn: "Options"
+- scrollUntilVisible:
+    element: "Manage areas"
+    direction: DOWN
+- tapOn: "Manage areas"
+- extendedWaitUntil:
+    visible: "GhulDrive"
+    timeout: 10000
+- takeScreenshot: 07-areas
+# --- GhulDrive on an own server ---
+- tapOn: "GhulDrive"
+- extendedWaitUntil:
+    visible: "Set up GhulDrive"
+    timeout: 10000
+- tapOn: "Set up"
+- extendedWaitUntil:
+    visible: "Own server for GhulDrive"
+    timeout: 10000
+# Too early: nothing is filled in yet.
+# The row sits below the public key box: scroll the sheet down to it first.
+- scrollUntilVisible:
+    element: "Choose folder"
+    direction: DOWN
+- tapOn:
+    text: "Choose folder"
+    index: 0
+- assertVisible: "Enter server, user and password first\\."
+- scrollUntilVisible:
+    element: "Server address"
+    direction: UP
+- tapOn: "Server address"
+- inputText: "nirgendwo.invalid"
+- tapOn: "User name"
+- inputText: "ghul"
+- hideKeyboard
+- takeScreenshot: 07-drive-server
+# The row sits below the public key box: scroll the sheet down to it first.
+- scrollUntilVisible:
+    element: "Choose folder"
+    direction: DOWN
+- tapOn:
+    text: "Choose folder"
+    index: 0
+- extendedWaitUntil:
+    visible: "No connection to the server: .*"
+    timeout: 90000
+- takeScreenshot: 07-drive-no-server
+# Out of the folder list, then out of the server form (that also closes "Set up GhulDrive").
+- back
+- back
+- extendedWaitUntil:
+    visible: "GhulMail"
+    timeout: 10000
+- assertVisible: "not set up"
+# --- GhulMail with an account whose server does not exist ---
+- tapOn: "GhulMail"
+- extendedWaitUntil:
+    visible: "Set up GhulMail"
+    timeout: 10000
+- tapOn: "Set up"
+- extendedWaitUntil:
+    visible: "GhulMail set up"
+    timeout: 15000
+- back
+# Either the new tab or the row under Options: both lead to "Add e-mail account".
+- tapOn:
+    text: "GhulMail"
+    index: 0
+- scrollUntilVisible:
+    element: "Add e-mail account"
+    direction: DOWN
+- tapOn:
+    text: "Add e-mail account"
+    index: 0
+- extendedWaitUntil:
+    visible: "E-mail address"
+    timeout: 10000
+- tapOn: "E-mail address"
+- inputText: "ghul@nirgendwo.invalid"
+- tapOn: "Password"
+- inputText: "falsch-und-geheim"
+- hideKeyboard
+- scrollUntilVisible:
+    element: "Check and save"
+    direction: DOWN
+- takeScreenshot: 07-mail-account
+- tapOn: "Check and save"
+- extendedWaitUntil:
+    visible: "No connection to the server: .*"
+    timeout: 90000
+- takeScreenshot: 07-mail-no-server
+- back
+- assertNotVisible: "Check and save"

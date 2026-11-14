@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package de.danerd.ghulsuite.ui
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -253,7 +256,7 @@ private fun ServerKindRow(kind: ServerKindUi, current: ServerKindUi, title: Stri
     ) {
         RadioButton(kind == current, { onPick(kind) })
         Column(Modifier.weight(1f)) {
-            Text(stringResource(title), style = MaterialTheme.typography.titleSmall)
+            SectionLabel(stringResource(title))
             Hint(stringResource(sub))
         }
     }
@@ -282,7 +285,7 @@ private fun PhpModuleFields(
     val save = rememberSaveFile { ok -> if (ok) state.message(savedMsg) }
 
     Hint(stringResource(Res.string.php_text))
-    Text(stringResource(Res.string.php_step1), style = MaterialTheme.typography.titleSmall)
+    SectionLabel(stringResource(Res.string.php_step1))
     if (module == null) {
         OutlinedButton(onClick = { onModule(net.phpModuleCreate()) }, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(Res.string.php_create))
@@ -300,7 +303,7 @@ private fun PhpModuleFields(
         }
         if (uploaded) Hint(stringResource(Res.string.php_uploaded))
     }
-    Text(stringResource(Res.string.php_step2), style = MaterialTheme.typography.titleSmall)
+    SectionLabel(stringResource(Res.string.php_step2))
     OutlinedTextField(input.name, { onInput(input.copy(name = it)) }, Modifier.fillMaxWidth(),
         label = { Text(stringResource(Res.string.server_name)) }, singleLine = true)
     // Placeholder instead of a pre-filled "https://": emptying the field must not put it back (ST10).
@@ -364,9 +367,14 @@ fun ServersSection(state: AppState) {
     SectionCard(stringResource(Res.string.set_servers)) {
         Hint(stringResource(Res.string.set_servers_hint))
         for (s in servers) {
+            // Like the list of mail accounts: a row with a tile, and removing as a red icon.
+            ListRow(
+                s.name, kindLabel(s.kind), leading = { IconTile(Icons.Filled.Dns, paletteColor(1)) },
+                trailing = { BarIcon(Icons.Filled.Delete, stringResource(Res.string.a_remove), tint = g.danger) { removing = s } },
+                divider = s != servers.first(), flush = true,
+            )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(s.name + " · " + kindLabel(s.kind))
                     if (s.kind == ServerKindUi.PHP) {
                         // One address for storage and links; the module also counts downloads.
                         Hint(stringResource(Res.string.server_address, s.location.ifBlank { s.shareUrl }))
@@ -380,7 +388,6 @@ fun ServersSection(state: AppState) {
                         )
                     }
                 }
-                TextButton(onClick = { removing = s }) { Text(stringResource(Res.string.a_remove)) }
             }
             if (s.kind != ServerKindUi.PHP) {
                 TextButton(onClick = { state.push(Screen.ShareSetup(s.id)) }) {
@@ -399,17 +406,21 @@ fun ServersSection(state: AppState) {
         var open by remember { mutableStateOf(false) }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(Res.string.sync_server), Modifier.weight(1f))
-            androidx.compose.foundation.layout.Box {
-                TextButton(onClick = { open = true }, enabled = servers.isNotEmpty()) {
-                    Text(servers.firstOrNull { it.id == sync.serverId }?.name ?: noSync)
-                }
-                androidx.compose.material3.DropdownMenu(open, { open = false }) {
-                    androidx.compose.material3.DropdownMenuItem(text = { Text(noSync) }, onClick = {
+            TextButton(onClick = { open = true }, enabled = servers.isNotEmpty()) {
+                Text(servers.firstOrNull { it.id == sync.serverId }?.name ?: noSync)
+            }
+        }
+        // The choice opens as a sheet like every other choice in the app.
+        if (open) {
+            GhulSheet({ open = false }, stringResource(Res.string.sync_server)) {
+                SheetList {
+                    SheetRow(noSync, end = { if (sync.serverId == null) SheetCheck() }) {
                         open = false
                         guarded { state.run(block = { net.setSyncServer(null) }) { state.changed() } }
-                    })
-                    for (s in servers) {
-                        androidx.compose.material3.DropdownMenuItem(text = { Text(s.name) }, onClick = {
+                    }
+                    servers.forEach { s ->
+                        SheetRow(s.name, s.location.ifBlank { s.host }, leading = { IconTile(Icons.Filled.Dns, paletteColor(1)) }, divider = true,
+                            end = { if (s.id == sync.serverId) SheetCheck() }) {
                             open = false
                             if (s.id != sync.serverId) guarded {
                                 state.run(block = { net.setSyncServer(s.id) }) {
@@ -417,7 +428,7 @@ fun ServersSection(state: AppState) {
                                     state.sync()
                                 }
                             }
-                        })
+                        }
                     }
                 }
             }
@@ -445,6 +456,7 @@ fun ServersSection(state: AppState) {
     driveAsk?.let { action -> DriveFollowsSyncDialog(state, onProceed = action, onDismiss = { driveAsk = null }) }
     removing?.let { s ->
         AlertDialog(
+            danger = true,
             onDismissRequest = { removing = null },
             title = { Text(stringResource(Res.string.server_remove_title, s.name)) },
             text = { Text(stringResource(Res.string.server_remove_text)) },
@@ -530,13 +542,15 @@ fun FetchFromServer(state: AppState, onCancel: () -> Unit) {
             PublicKeyBox(state, deviceKey)
         }
         ErrorText(error)
-        Button(
-            onClick = { fetch(null) },
-            enabled = !state.busy && input.host.isNotBlank() && input.user.isNotBlank() &&
-                (!usePassword || !input.password.isNullOrEmpty()),
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text(stringResource(Res.string.a_fetch)) }
-        TextButton(onClick = onCancel) { Text(stringResource(Res.string.a_back)) }
+        ButtonRow {
+            OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text(stringResource(Res.string.a_back)) }
+            Button(
+                onClick = { fetch(null) },
+                enabled = !state.busy && input.host.isNotBlank() && input.user.isNotBlank() &&
+                    (!usePassword || !input.password.isNullOrEmpty()),
+                modifier = Modifier.weight(1f),
+            ) { Text(stringResource(Res.string.a_fetch)) }
+        }
     }
     fingerprint?.let { fp ->
         FingerprintDialog(

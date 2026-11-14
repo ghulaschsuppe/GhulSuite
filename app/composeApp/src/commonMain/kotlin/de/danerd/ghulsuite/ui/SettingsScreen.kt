@@ -50,7 +50,8 @@ import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import de.danerd.ghulsuite.model.VaultKindUi
 
-private val AUTO_LOCK_OPTIONS: List<Pair<Int, StringResource>> = listOf(
+/** Times of the automatic lock: the same choice in the setup wizard and in Options. */
+internal val AUTO_LOCK_OPTIONS: List<Pair<Int, StringResource>> = listOf(
     0 to Res.string.lock_immediately,
     30 to Res.string.lock_30s,
     60 to Res.string.lock_1m,
@@ -108,7 +109,7 @@ fun <T> ChoiceRow(label: String, options: List<Pair<T, StringResource>>, selecte
             SheetList {
                 options.forEachIndexed { i, (value, text) ->
                     SheetRow(stringResource(text), divider = i > 0,
-                        end = { if (value == selected) Icon(Icons.Filled.Check, null, Modifier.size(20.dp), tint = t.accent) }) {
+                        end = { if (value == selected) SheetCheck() }) {
                         onSelect(value); open = false
                     }
                 }
@@ -172,7 +173,7 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                 }
                 SetPage.LOCK -> {
             SectionCard(stringResource(Res.string.set_security)) {
-                Button(onClick = { backend.lock() }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.a_lock_now)) }
+                Button(onClick = { state.lockNow() }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.a_lock_now)) }
                 ChoiceRow(stringResource(Res.string.set_auto_lock), AUTO_LOCK_OPTIONS, settings.autoLockSeconds) { settings.autoLockSeconds = it }
                 SwitchRow(
                     stringResource(if (backend.isDesktop) Res.string.set_lock_session else Res.string.set_lock_screen_off),
@@ -185,7 +186,8 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                     }
                     Hint(stringResource(Res.string.set_panic_hint))
                 } else {
-                    Hint(stringResource(Res.string.set_panic_hint_desktop))
+                    // On wide windows the lock is in the sidebar, else in the top bar.
+                    Hint(stringResource(if (LocalWide.current) Res.string.set_panic_hint_sidebar else Res.string.set_panic_hint_desktop))
                 }
             }
                 }
@@ -202,26 +204,25 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
             SectionCard(stringResource(Res.string.set_keys)) {
                 Hint(stringResource(Res.string.set_keys_hint))
                 for (s in slots) {
-                    ListItem(
-                        headlineContent = { Text(s.label.ifBlank { stringResource(typeLabel(s.type)) }) },
-                        supportingContent = {
-                            Text(stringResource(typeLabel(s.type)) + if (s.created > 0) " · " + formatDate(s.created) else "")
-                        },
-                        leadingContent = {
-                            Icon(
+                    ListRow(
+                        s.label.ifBlank { stringResource(typeLabel(s.type)) },
+                        stringResource(typeLabel(s.type)) + if (s.created > 0) " · " + formatDate(s.created) else "",
+                        leading = {
+                            IconTile(
                                 when (s.type) {
                                     SlotType.SECURITY_KEY -> Icons.Filled.Key
                                     SlotType.RECOVERY_CODE -> Icons.Filled.Description
                                     SlotType.KEYFILE -> Icons.Filled.InsertDriveFile
                                 },
-                                null,
+                                paletteColor(0),
                             )
                         },
-                        trailingContent = {
+                        trailing = {
                             if (s.type != SlotType.RECOVERY_CODE && factorCount > 1) {
-                                IconButton(onClick = { removing = s }) { Icon(Icons.Filled.Delete, stringResource(Res.string.a_delete)) }
+                                BarIcon(Icons.Filled.Delete, stringResource(Res.string.a_delete), tint = g.danger) { removing = s }
                             }
                         },
+                        divider = s != slots.first(), flush = true,
                     )
                 }
                 if (keyCount == 0) {
@@ -306,7 +307,7 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                     settings.appLanguage = tag
                     applyAppLanguage(tag)
                 }
-                Hint(stringResource(Res.string.set_language_note))
+                if (backend.isDesktop) Hint(stringResource(Res.string.set_language_note))
             }
                 }
                 SetPage.ABOUT -> {
@@ -351,6 +352,7 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
     }
     removing?.let { s ->
         AlertDialog(
+            danger = true,
             onDismissRequest = { removing = null },
             title = { Text(stringResource(Res.string.set_remove_title)) },
             text = {
@@ -547,7 +549,7 @@ private fun AboutSection(state: AppState) {
         appendLine(backend.coreVersion)
         appendLine(deviceInfo())
         appendLine()
-        append(backend.crashReport() ?: "–")
+        append(backend.crashReport() ?: "-")
     }
     // Author (AGPL-3.0 section 7(b): this notice must stay visible in modified versions too).
     SectionCard {
@@ -555,9 +557,9 @@ private fun AboutSection(state: AppState) {
         Text(stringResource(Res.string.about_made_by_sub), color = g.muted, fontSize = 14.sp)
     }
     ListCard {
-        ListRow(stringResource(Res.string.about_report), stringResource(Res.string.about_report_sub), trailing = { ChevronEnd() }) { sheet = "report" }
-        ListRow(stringResource(Res.string.about_license), "AGPL-3.0-or-later", divider = true, trailing = { ChevronEnd() }) { sheet = "license" }
-        ListRow(stringResource(Res.string.about_libraries), divider = true, trailing = { ChevronEnd() }) { sheet = "libs" }
+        ListRow(stringResource(Res.string.about_report), stringResource(Res.string.about_report_sub), flush = true, trailing = { ChevronEnd() }) { sheet = "report" }
+        ListRow(stringResource(Res.string.about_license), "AGPL-3.0-or-later", divider = true, flush = true, trailing = { ChevronEnd() }) { sheet = "license" }
+        ListRow(stringResource(Res.string.about_libraries), divider = true, flush = true, trailing = { ChevronEnd() }) { sheet = "libs" }
     }
     HintText("GhulSuite ${backend.appVersion} · ${backend.coreVersion}")
     when (sheet) {
@@ -588,11 +590,6 @@ private fun AboutSection(state: AppState) {
 
 @Composable
 private fun stringResource_report(): String = stringResource(Res.string.about_report)
-
-@Composable
-private fun ChevronEnd() {
-    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp), tint = g.faint)
-}
 
 private val LIBRARIES = listOf(
     "Kotlin, Compose Multiplatform" to "Apache-2.0",

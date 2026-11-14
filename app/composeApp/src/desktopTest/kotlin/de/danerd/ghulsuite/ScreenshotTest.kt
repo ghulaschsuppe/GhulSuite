@@ -50,7 +50,9 @@ import de.danerd.ghulsuite.model.KeepSkippedUi
 
 /** Renders the main screens with a fake backend to PNG files (build/screenshots) for review. */
 class ScreenshotTest {
-    private class Fake(exists: Boolean, unlocked: Boolean) : VaultBackend {
+    internal class Fake(exists: Boolean, unlocked: Boolean) : VaultBackend {
+        /** What the UI asked the backend to change (the UI tests check these). */
+        val calls = java.util.Collections.synchronizedList(mutableListOf<String>())
         override val unlocked = MutableStateFlow(unlocked)
         override var net: de.danerd.ghulsuite.model.NetBackend = FakeNet()
         override fun deviceSshKey() = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDeviceKeyExample ghulsuite-device"
@@ -62,6 +64,9 @@ class ScreenshotTest {
             VaultUi("p2", VaultKindUi.PASS, "Arbeit", "arbeit-p2.ghlpss", true, 1),
             VaultUi("t1", VaultKindUi.TOTP, "Persönlich", "personlich-t1.ghltotp", true, 2),
             VaultUi("c1", VaultKindUi.CAL, "Kalender", "kalender-c1.ghlcal", true, 21),
+            // The areas with one file each: without them their tabs would not exist.
+            VaultUi("d1", VaultKindUi.DRIVE, "Drive", "Drive.ghldrv", true, 0),
+            VaultUi("m1", VaultKindUi.MAIL, "Mail", "Mail.ghlmail", true, 0),
             VaultUi("f1", VaultKindUi.PASS, "Verein", "verein.ghlpss", true, 3, outdated = true),
         )
         override val settings = Settings(object : KeyValueStore {
@@ -99,7 +104,7 @@ class ScreenshotTest {
         override suspend fun listVaults() = vaults
         override suspend fun createVault(kind: VaultKindUi, name: String) = "new"
         override suspend fun renameVault(id: String, name: String) {}
-        override suspend fun removeVault(id: String) {}
+        override suspend fun removeVault(id: String) { calls += "removeVault:$id" }
         override suspend fun exportVault(id: String) = ByteArray(0)
         override suspend fun addVaultFile(data: ByteArray, name: String) = "x"
         override suspend fun adoptVault(
@@ -126,7 +131,7 @@ class ScreenshotTest {
             ),
         )
         override suspend fun saveEntry(entry: EntryUi) = "1"
-        override suspend fun deleteEntry(vaultId: String, id: String) {}
+        override suspend fun deleteEntry(vaultId: String, id: String) { calls += "deleteEntry:$vaultId:$id" }
         override suspend fun totpCodes(nowSeconds: Long) = listOf(
             TotpCodeUi("t1", "Persönlich", "a", "Codeberg", "ghul", "492039", "118273", 30, 17),
             TotpCodeUi("t1", "Persönlich", "b", "GitHub", "ghulaschsuppe", "771204", "009812", 30, 4),
@@ -134,7 +139,7 @@ class ScreenshotTest {
         override suspend fun addTotp(vaultId: String, input: TotpInputUi) {}
         override suspend fun parseOtpauth(uri: String) = TotpInputUi("", "", "")
         override suspend fun renameTotp(vaultId: String, id: String, issuer: String, account: String) {}
-        override suspend fun deleteTotp(vaultId: String, id: String) {}
+        override suspend fun deleteTotp(vaultId: String, id: String) { calls += "deleteTotp:$vaultId:$id" }
         override suspend fun slots() = listOf(
             SlotUi("k", SlotType.SECURITY_KEY, "Key am Schlüsselbund", 1_762_800_000_000),
             SlotUi("f", SlotType.KEYFILE, "USB-Stick", 1_762_800_000_000),

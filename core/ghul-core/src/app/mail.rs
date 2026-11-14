@@ -50,7 +50,7 @@ pub struct MailServers {
     pub smtp_security: MailSecurity,
 }
 
-#[derive(uniffi::Record, Clone, Debug)]
+#[derive(uniffi::Record, Clone)]
 pub struct MailAccountInput {
     /// Shown name of the account, e.g. "Privat".
     pub name: String,
@@ -65,6 +65,17 @@ pub struct MailAccountInput {
     pub smtp_cert: Option<String>,
     pub signature: String,
 }
+
+super::redact::redacted_debug!(MailAccountInput {
+    name,
+    display_name,
+    email,
+    username,
+    servers,
+    imap_cert,
+    smtp_cert,
+    signature
+});
 
 #[derive(Serialize, Deserialize, Clone)]
 struct StoredAccount {
@@ -254,7 +265,7 @@ pub struct OutgoingMail {
 }
 
 /// What a notification check needs; the app keeps it device-bound while locked.
-#[derive(uniffi::Record, Clone, Debug)]
+#[derive(uniffi::Record, Clone)]
 pub struct MailPollConfig {
     pub account_id: String,
     pub account_name: String,
@@ -265,6 +276,8 @@ pub struct MailPollConfig {
     pub password: String,
     pub cert: Option<String>,
 }
+
+super::redact::redacted_debug!(MailPollConfig { account_id, account_name, host, port, security, username, cert });
 
 #[derive(uniffi::Record, Clone, Debug, PartialEq)]
 pub struct MailPollResult {
@@ -370,11 +383,17 @@ fn key_for(o: &Open, email: &str) -> Option<(SignedPublicKey, String)> {
 /// Stores a contact key. Keys from a mail (Autocrypt) never replace keys that were looked up
 /// at the provider or imported by hand.
 fn remember_key(o: &mut Open, email: &str, key: &SignedPublicKey, source: &str) -> Result<bool> {
+    remember_key_seen(o, email, key, source, now_secs())
+}
+
+/// Like [`remember_key`]; `seen` is when the key was seen (for Autocrypt: the mail's date). An
+/// Autocrypt key replaces another Autocrypt key only from a newer mail.
+fn remember_key_seen(o: &mut Open, email: &str, key: &SignedPublicKey, source: &str, seen: i64) -> Result<bool> {
     let email = bare(email);
     let fingerprint = mailcrypt::fingerprint(key);
     let mut list = contact_keys(o);
     if let Some(c) = list.iter().find(|c| c.email == email) {
-        if c.fingerprint == fingerprint || (source == "autocrypt" && c.source != "autocrypt") {
+        if c.fingerprint == fingerprint || (source == "autocrypt" && (c.source != "autocrypt" || seen <= c.updated)) {
             return Ok(false);
         }
     }
@@ -384,7 +403,7 @@ fn remember_key(o: &mut Open, email: &str, key: &SignedPublicKey, source: &str) 
         key: base64::engine::general_purpose::STANDARD.encode(mailcrypt::public_bytes(key)?),
         fingerprint,
         source: source.to_owned(),
-        updated: now_secs(),
+        updated: seen,
     });
     put_area_setting(o, VaultKind::Mail, KEYS_KEY, &list)?;
     Ok(true)
@@ -486,19 +505,33 @@ pub(super) fn unwrap_raw(o: &mut Open, account_id: &str, raw: &[u8]) -> Result<Z
 }
 
 fn unwrap_message(o: &mut Open, account_id: &str, raw: &[u8]) -> Result<Unwrapped> {
+    let (mut u, key_from_this_mail) = unwrap_message_inner(o, account_id, raw)?;
+    if key_from_this_mail && u.signature == MailSignatureStatus::Valid {
+        u.signature = MailSignatureStatus::UnknownKey;
+    }
+    Ok(u)
+}
+
+fn unwrap_message_inner(o: &mut Open, account_id: &str, raw: &[u8]) -> Result<(Unwrapped, bool)> {
     let m = mail_parser::MessageParser::default()
         .parse(raw)
         .ok_or_else(|| GhulError::Network { msg: "message cannot be read".into() })?;
     let from = m.from().and_then(|a| a.first()).and_then(|a| a.address()).unwrap_or_default().to_lowercase();
-    // Autocrypt: the sender's key, if the header belongs to the From address.
+    // Autocrypt: the sender's key, if the header belongs to the From address. Never for an own
+    // address (anyone can write "From: me"), and only from a mail newer than the key we have.
+    let own = accounts(o).iter().any(|a| bare(&a.email) == bare(&from));
+    let sent = m.date().map(|d| d.to_timestamp()).unwrap_or_else(now_secs);
     let mut learned = false;
     if let Some(h) = m.header_raw("Autocrypt") {
         if let Some((addr, key)) = mailcrypt::parse_autocrypt(&h.replace(['\r', '\n'], "")) {
-            if addr == from {
-                learned = remember_key(o, &addr, &key, "autocrypt")?;
+            if addr == from && !own {
+                learned = remember_key_seen(o, &addr, &key, "autocrypt", sent)?;
             }
         }
     }
+    // A key that came with this very mail proves nothing about this mail: its signature counts
+    // as "key not confirmed" (shown like an unknown key), not as valid.
+    let key_from_this_mail = learned;
     let signer_keys: Vec<SignedPublicKey> = key_for(o, &from).map(|(k, _)| vec![k]).unwrap_or_default();
     let signer_name = |fp: Option<String>| fp.map(|_| from.clone()).unwrap_or_default();
     let ct = m.content_type();
@@ -602,7 +635,7 @@ fn unwrap_message(o: &mut Open, account_id: &str, raw: &[u8]) -> Result<Unwrappe
             }
         }
     };
-    Ok(Unwrapped { changed: learned || result.changed, ..result })
+    Ok((Unwrapped { changed: learned || result.changed, ..result }, key_from_this_mail))
 }
 
 /// Suggested servers for an e-mail address: known providers, otherwise `imap.`/`smtp.` + domain.
@@ -845,13 +878,56 @@ fn random_boundary() -> String {
     format!("ghul-{}", crate::kdf::hex(&new_id()))
 }
 
+/// One header line: no line breaks or other control characters (they could add headers, e.g.
+/// a hidden Bcc), no surrounding spaces.
+fn header_text(s: &str) -> String {
+    s.chars().map(|c| if c.is_control() { ' ' } else { c }).collect::<String>().trim().to_owned()
+}
+
+/// Values that end up in headers, made safe: subject, reference, attachment names and types.
+fn header_safe(mail: &OutgoingMail) -> OutgoingMail {
+    let mut m = mail.clone();
+    m.subject = header_text(&mail.subject);
+    // A message id has no spaces, brackets or control characters.
+    m.in_reply_to = mail
+        .in_reply_to
+        .trim()
+        .trim_matches(['<', '>'])
+        .chars()
+        .take_while(|c| !c.is_control() && !c.is_whitespace() && *c != '<' && *c != '>')
+        .collect();
+    for a in &mut m.attachments {
+        a.name = header_text(&a.name).replace(['/', '\\'], "_");
+        if a.name.is_empty() {
+            a.name = "Anhang".into();
+        }
+        let simple = a.mime.split_once('/').is_some_and(|(t, st)| {
+            let token =
+                |x: &str| !x.is_empty() && x.chars().all(|c| c.is_ascii_alphanumeric() || "!#$&-^_.+".contains(c));
+            token(t) && token(st)
+        });
+        if !simple {
+            a.mime = "application/octet-stream".into();
+        }
+    }
+    m
+}
+
+#[cfg(test)]
+pub(crate) fn build_for_tests(s: &GhulSuite, mail: &OutgoingMail) -> Result<(Vec<u8>, Vec<String>)> {
+    let acc = s.with_open(|o| account(o, &mail.account_id))?;
+    build(&acc, mail, &Protection::Plain)
+}
+
 fn build(account: &StoredAccount, mail: &OutgoingMail, protection: &Protection) -> Result<(Vec<u8>, Vec<String>)> {
+    let mail = &header_safe(mail);
     use lettre::message::{header::ContentType, Attachment, Body, Mailbox, MultiPart, SinglePart};
     let bad = |e: &dyn std::fmt::Display| GhulError::InvalidInput { msg: e.to_string() };
-    let from: Mailbox = format!("{} <{}>", account.display_name.replace(['<', '>', '"'], ""), account.email)
-        .parse()
-        .or_else(|_| account.email.parse())
-        .map_err(|e| bad(&e))?;
+    let from: Mailbox =
+        format!("{} <{}>", header_text(&account.display_name).replace(['<', '>', '"'], ""), account.email)
+            .parse()
+            .or_else(|_| account.email.parse())
+            .map_err(|e| bad(&e))?;
     let encrypted = matches!(protection, Protection::Encrypted(..));
     // Encrypted mails show "..." outside; the real subject travels inside.
     let outer_subject = if encrypted { "...".to_owned() } else { mail.subject.clone() };
@@ -1117,7 +1193,7 @@ impl GhulSuite {
             Ok(()) => {}
             Err(e) => return check(e, true),
         }
-        // SMTP: connect, TLS, login – without sending (an empty recipient list fails after AUTH).
+        // SMTP: connect, TLS, login, without sending (an empty recipient list fails after AUTH).
         let scfg = smtp_config(&a);
         match block_on(smtp::login_only(&scfg), TIMEOUT) {
             Ok(()) => Ok(MailCheck::Ok),
@@ -1593,12 +1669,47 @@ mod tests {
             to: vec!["Bob <bob@example.org>".into()],
             cc: vec![],
             bcc: vec![],
-            subject: "Grüße – Test".into(),
+            subject: "Grüße \u{2013} Test".into(),
             text: "Zeile 1\nZeile mit Umlauten äöü\n.\nEnde".into(),
             in_reply_to: String::new(),
             attachments,
             pgp: true,
         }
+    }
+
+    /// Received mails can be anything: header, MIME structure, encodings, the preview line.
+    #[test]
+    fn received_mails_never_crash_the_reader() {
+        let seeds = crate::fuzz_tests::seeds(&[
+            "From: =?utf-8?q?M=C3=BCller?= <m@example.org>\r\nTo: a@example.org, \"B, C\" <b@example.org>\r\nSubject: =?utf-8?b?SGFsbG8g8J+Ygg==?=\r\nDate: Fri, 13 Nov 2026 10:00:00 +0100\r\nMessage-ID: <1@x>\r\nContent-Type: multipart/mixed; boundary=\"b1\"\r\n\r\n--b1\r\nContent-Type: text/plain; charset=iso-8859-1\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\nGr=FC=DFe=\r\n weiter\r\n--b1\r\nContent-Type: text/html\r\n\r\n<p>Hallo</p>\r\n--b1\r\nContent-Type: application/pdf; name=\"a.pdf\"\r\nContent-Disposition: attachment; filename=\"../../a.pdf\"\r\nContent-Transfer-Encoding: base64\r\n\r\nJVBERi0xLjQK\r\n--b1--\r\n",
+            "From: x\r\nSubject: kurz\r\n\r\nText",
+            "Content-Type: multipart/signed; boundary=s; protocol=\"application/pgp-signature\"\r\n\r\n--s\r\nContent-Type: text/plain\r\n\r\nsigned\r\n--s\r\nContent-Type: application/pgp-signature\r\n\r\n-----BEGIN PGP SIGNATURE-----\r\nabc\r\n-----END PGP SIGNATURE-----\r\n--s--\r\n",
+        ]);
+        crate::fuzz_tests::fuzz("mail", &seeds, 3000, |d| {
+            let split = body_offset(d);
+            let listed = imap::Listed {
+                uid: 1,
+                seen: false,
+                flagged: false,
+                size: d.len() as u32,
+                header: d[..split.min(d.len())].to_vec(),
+                text: d[split.min(d.len())..].to_vec(),
+                labels: vec!["\u{202e}x".into()],
+            };
+            let _ = summary(&listed);
+            let _ = preview(&listed, false);
+            let _ = mime_parts(d, "b1");
+            let _ = thread_key(&String::from_utf8_lossy(d));
+            let u = Unwrapped {
+                raw: Zeroizing::new(d.to_vec()),
+                encrypted: false,
+                signature: MailSignatureStatus::None,
+                signer: String::new(),
+                subject: None,
+                changed: false,
+            };
+            let _ = message(1, d, &u);
+        });
     }
 
     /// With OpenPGP off for a mail: a normal mail, no signature, no Autocrypt header, readable subject.
@@ -1614,7 +1725,7 @@ mod tests {
             let (raw, rcpt) = build(&account(&sk), &mail, &Protection::Plain).unwrap();
             assert_eq!(rcpt, vec!["bob@example.org".to_string()]);
             let m = mail_parser::MessageParser::default().parse(&raw).unwrap();
-            assert_eq!(m.subject(), Some("Grüße – Test"));
+            assert_eq!(m.subject(), Some("Grüße \u{2013} Test"));
             assert!(m.header_raw("Autocrypt").is_none());
             let text = String::from_utf8_lossy(&raw);
             assert!(!text.contains("pgp-signature") && !text.contains("BEGIN PGP"));
@@ -1644,7 +1755,7 @@ mod tests {
             let ct = m.content_type().unwrap();
             assert_eq!((ct.ctype(), ct.subtype()), ("multipart", Some("signed")));
             let boundary = ct.attribute("boundary").unwrap().to_owned();
-            assert_eq!(m.subject(), Some("Grüße – Test"));
+            assert_eq!(m.subject(), Some("Grüße \u{2013} Test"));
             assert!(m.header_raw("Autocrypt").unwrap().contains("addr=alice@example.org"));
             let body = &raw[body_offset(&raw)..];
             let parts = mime_parts(body, &boundary);
@@ -1682,7 +1793,7 @@ mod tests {
         let opened = mailcrypt::decrypt(parts[1], &bob, &[mailcrypt::public_of(&key)]).unwrap();
         assert!(opened.signer.is_some());
         let inner = mail_parser::MessageParser::default().parse(&opened.plain[..]).unwrap();
-        assert_eq!(inner.subject(), Some("Grüße – Test"));
+        assert_eq!(inner.subject(), Some("Grüße \u{2013} Test"));
         assert!(inner.body_text(0).unwrap().contains("Zeile mit Umlauten äöü"));
     }
 

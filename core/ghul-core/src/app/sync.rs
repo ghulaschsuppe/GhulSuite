@@ -26,6 +26,9 @@ use crate::vault::{Entry, FactorSecret, LockedContainer, PasswordKey, Slot, Slot
 
 const SYNC_KEY: &str = "sync";
 const KNOWN_KEY: &str = "sync_known";
+/// Ids of vaults deleted on purpose (synchronised). Only these are ever deleted by a sync: a
+/// file that is missing, cut off or unreadable on one side is repaired from the other side.
+pub(super) const DELETED_VAULTS_KEY: &str = "deleted_vaults";
 pub(super) const PROTECTION_CHANGED: &str = "protection_changed";
 const DIR: &str = "suite";
 /// Settings that belong to one device and are never merged from another.
@@ -291,12 +294,29 @@ impl GhulSuite {
     fn sync_with(&self, o: &mut Open, fs: &dyn RemoteFs) -> Result<SyncReport> {
         let mut rep = SyncReport::default();
         fs.mkdir_all(DIR)?;
-        let remote_files: Vec<String> =
-            fs.list(DIR)?.into_iter().filter(|e| !e.is_dir).map(|e| e.name).filter(|n| is_vault_file(n)).collect();
+        // Names come from the server: only plain vault file names are ever touched.
+        let remote_files: Vec<String> = fs
+            .list(DIR)?
+            .into_iter()
+            .filter(|e| !e.is_dir)
+            .map(|e| e.name)
+            .filter(|n| is_vault_file(n) && super::storage::plain_file_name(n))
+            .collect();
 
         // 1. Settings and protection from the remote suite file.
-        if let Some(data) = fs.read(&format!("{DIR}/{SUITE_FILE}"))? {
-            let locked = LockedContainer::parse(&data)?;
+        // A damaged suite file (cut off by a dropped upload) is replaced by this device's one at
+        // the end; one from a newer app stops the sync instead of being overwritten.
+        let remote_suite = match fs.read(&format!("{DIR}/{SUITE_FILE}"))? {
+            Some(data) => match LockedContainer::parse(&data) {
+                Ok(locked) => Some((data, locked)),
+                Err(e) => match GhulError::from(e) {
+                    GhulError::UpdateRequired => return Err(GhulError::UpdateRequired),
+                    _ => None,
+                },
+            },
+            None => None,
+        };
+        if let Some((data, locked)) = remote_suite {
             if locked.header().suite_id != o.suite.header().suite_id {
                 return Err(GhulError::InvalidInput { msg: "the server folder belongs to another suite".into() });
             }
@@ -319,35 +339,59 @@ impl GhulSuite {
                 }
                 // Unreadable with our password and code: the protection changed elsewhere.
                 None if locked.header().kdf != o.kdf() => return Err(GhulError::PasswordChangedElsewhere),
-                None => {
-                    return Err(GhulError::InvalidInput { msg: "the suite file on the server cannot be opened".into() })
-                }
+                // Same password, but the content does not open: damaged, replaced below.
+                None => {}
             }
         }
 
         // 2. Vaults.
+        // Deletions travel only as explicit marks (from this device or merged from the server
+        // suite above). A vault missing or unreadable on one side is never taken as deleted.
+        let deleted: BTreeSet<String> = setting::<Vec<String>>(&o.suite, DELETED_VAULTS_KEY).into_iter().collect();
         let mut known: BTreeSet<String> = setting::<Vec<String>>(&o.suite, KNOWN_KEY).into_iter().collect();
         let mut seen_remote: BTreeSet<String> = BTreeSet::new();
+        // Server files this app must not overwrite: from a newer app or from another suite.
+        let mut untouchable: BTreeSet<String> = BTreeSet::new();
         let now = now_ms();
         for name in &remote_files {
             let Some(data) = fs.read(&format!("{DIR}/{name}"))? else { continue };
+            let locked = match LockedContainer::parse(&data) {
+                Ok(l) => l,
+                Err(e) => {
+                    if matches!(GhulError::from(e), GhulError::UpdateRequired) {
+                        untouchable.insert(name.clone());
+                    }
+                    // Otherwise damaged (cut off, broken upload): repaired from a local copy below.
+                    rep.skipped += 1;
+                    continue;
+                }
+            };
+            if locked.header().suite_id != o.suite.header().suite_id {
+                untouchable.insert(name.clone());
+                rep.skipped += 1;
+                continue;
+            }
+            let id = crate::kdf::hex(&locked.header().container_id);
+            if deleted.contains(&id) {
+                // Deleted on purpose on some device: away from the server as well.
+                fs.delete(&format!("{DIR}/{name}"))?;
+                known.remove(&id);
+                rep.deleted += 1;
+                continue;
+            }
             let Some(remote) = open_remote(o, &data) else {
+                // Same suite, but damaged: repaired from a local copy below.
                 rep.skipped += 1;
                 continue;
             };
-            let id = crate::kdf::hex(&remote.container_id());
             seen_remote.insert(id.clone());
             let local_idx = o.vaults.iter().position(|v| v.reference.id == id && v.container.is_some());
             match local_idx {
-                None if known.contains(&id) => {
-                    // Deleted on this device after the last synchronisation.
-                    fs.delete(&format!("{DIR}/{name}"))?;
-                    known.remove(&id);
-                    rep.deleted += 1;
-                }
                 None => {
-                    // New on the server: take it over (with this device's protection).
+                    // New on the server, or this device lost or broke its copy: take it over
+                    // (with this device's protection). A broken local file of the same name is replaced.
                     let kind = VaultKind::from_container(remote.kind()).ok_or(GhulError::NotFound)?;
+                    o.vaults.retain(|v| !(v.container.is_none() && &v.reference.file == name));
                     let local_name = if o.vaults.iter().any(|v| &v.reference.file == name) {
                         super::suite::file_name(kind, &vault_name(&remote, name), &id)
                     } else {
@@ -409,16 +453,19 @@ impl GhulSuite {
                 }
             }
         }
-        // 3. Local vaults the server does not have.
+        // 3. Local vaults the server does not have (or has only damaged): uploaded, unless they
+        // were deleted on purpose. A server file from a newer app is never overwritten.
         let mut gone = Vec::new();
         for (i, v) in o.vaults.iter_mut().enumerate() {
             let Some(c) = v.container.as_mut() else { continue };
             if seen_remote.contains(&v.reference.id) {
                 continue;
             }
-            if known.contains(&v.reference.id) {
-                // Deleted on another device.
+            if deleted.contains(&v.reference.id) {
                 gone.push(i);
+                continue;
+            }
+            if untouchable.contains(&v.reference.file) {
                 continue;
             }
             let bytes = c.seal(&mut rand_core::OsRng)?;

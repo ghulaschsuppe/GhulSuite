@@ -11,12 +11,13 @@ const README: &str = "GhulSuite-Sicherung\r\n\r\nAlle Dateien sind verschluessel
                       Sicherung wiederherstellen, dann mit Passwort + Key oder Wiederherstellungscode entsperren.\r\n";
 const MAX_BACKUP: u64 = 512 * 1024 * 1024;
 
+/// A file of the suite: the suite file or a vault file with a plain name. Anything with folders,
+/// drive letters, streams (`a:b`), control or direction characters is no part of a backup.
 fn suite_file(name: &str) -> bool {
-    !name.ends_with(".tmp")
+    super::storage::plain_file_name(name)
+        && !name.ends_with(".tmp")
         && !name.ends_with(".bak")
-        && !name.contains('/')
-        && !name.contains('\\')
-        && !name.starts_with('.')
+        && (name == super::suite::SUITE_FILE || super::suite::is_vault_file(name))
 }
 
 #[uniffi::export]
@@ -54,6 +55,12 @@ impl GhulSuite {
     /// Writes the files of a backup into the (empty) suite folder. Afterwards unlock as usual.
     /// Returns the number of files restored.
     pub fn restore_backup(&self, data: Vec<u8>) -> Result<u32> {
+        self.restore_backup_limited(data, MAX_BACKUP)
+    }
+}
+
+impl GhulSuite {
+    pub(crate) fn restore_backup_limited(&self, data: Vec<u8>, max: u64) -> Result<u32> {
         if self.exists()? {
             return Err(GhulError::InvalidInput { msg: "the folder already contains a suite".into() });
         }
@@ -67,12 +74,16 @@ impl GhulSuite {
             if name == "LIESMICH.txt" || !suite_file(&name) || f.is_dir() {
                 continue;
             }
-            total += f.size();
-            if total > MAX_BACKUP {
+            // The size in the ZIP may lie (a "bomb" unpacks to far more): count what is really read.
+            let mut buf = Vec::new();
+            (&mut f)
+                .take(max - total + 1)
+                .read_to_end(&mut buf)
+                .map_err(|e| GhulError::Storage { msg: e.to_string() })?;
+            total += buf.len() as u64;
+            if total > max {
                 return Err(GhulError::InvalidInput { msg: "backup too large".into() });
             }
-            let mut buf = Vec::new();
-            f.read_to_end(&mut buf).map_err(|e| GhulError::Storage { msg: e.to_string() })?;
             files.push((name, buf));
         }
         if !files.iter().any(|(n, _)| n == super::suite::SUITE_FILE) {

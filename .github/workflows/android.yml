@@ -5,7 +5,7 @@ on:
   push:
     branches: ['**']
     paths: ['core/**', 'app/**', 'docs/testvectors/**', 'tools/**', '.github/workflows/android.yml', '.github/actions/ftps-upload/**',
-            '!app/maestro/**', '!tools/ci-emulator.sh', '!tools/run-maestro.sh']
+            '!app/maestro/**', '!tools/ci-emulator.sh', '!tools/run-maestro.sh', '!tools/check-reminders.sh', '!tools/check-server-flows.sh']
   # Every pull request: "build" and "Windows-App" are required checks for main. Without changes to
   # the app or the core they are skipped (which counts as passed) instead of missing.
   pull_request:
@@ -37,6 +37,12 @@ jobs:
           python3 -m venv .venv
           .venv/bin/pip install -q argon2-cffi cryptography pynacl cbor2
           .venv/bin/python tools/verify_testvectors.py
+      # Texts: missing translations and differing placeholders fail; terms are listed.
+      - name: Texte prüfen (Übersetzungen, Platzhalter, Begriffe)
+        run: python3 tools/check-texts.py
+      # What other apps can reach and which permissions the app asks for: only as listed.
+      - name: Android-Manifest prüfen (von außen erreichbare Komponenten, Berechtigungen)
+        run: python3 tools/check-android-manifest.py
 
   audit:
     name: Abhängigkeiten auf bekannte Sicherheitslücken prüfen
@@ -188,7 +194,7 @@ jobs:
             ${{ runner.os }}-network-${{ hashFiles('core/Cargo.lock') }}-
             ${{ runner.os }}-network-
 
-      - name: Testserver starten (SFTP, IMAP, SMTP – nur lokal für die Netzwerk-Tests)
+      - name: Testserver starten (SFTP, IMAP, SMTP, nur lokal für die Netzwerk-Tests)
         timeout-minutes: 20
         run: |
           # The package mirror sometimes fails briefly: retry a few times.
@@ -206,7 +212,12 @@ jobs:
             exit 0
           fi
           sudo systemctl stop dovecot vsftpd 2>/dev/null || true
-          sudo bash tools/test-servers.sh | sed 's/^export //' >> "$GITHUB_ENV"
+          # A server that does not start fails the run: the tests would skip and look green.
+          if ! sudo bash tools/test-servers.sh > servers.env; then
+            echo "::error title=Testserver::Die Testserver ließen sich nicht starten (siehe oben)."
+            exit 1
+          fi
+          sed 's/^export //' servers.env >> "$GITHUB_ENV"
 
       - name: Sync, Drive und Mail gegen die Testserver
         if: env.GHUL_NET_SKIP != '1'
@@ -214,7 +225,10 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal
           # The network tests must really run (without servers they skip silently).
-          test -n "$GHUL_TEST_SFTP" && test -n "$GHUL_TEST_MAIL"
+          # ("a && b" does not stop a bash -e script when a fails: each check on its own line.)
+          for v in GHUL_TEST_SFTP GHUL_TEST_MAIL GHUL_TEST_FTPS; do
+            if [ -z "${!v:-}" ]; then echo "::error title=Testserver::$v fehlt: die Netzwerk-Tests würden still übersprungen."; exit 1; fi
+          done
           cargo test --locked -p ghul-core -- sftp ftps mail sync drive share php
 
   browser:
@@ -229,6 +243,10 @@ jobs:
       - name: PHP-Modul mit PHP 8.1 prüfen (Syntax)
         run: |
           docker run --rm -v "$PWD/core/ghul-core/server:/m:ro" php:8.1-cli php -l /m/ghulsuite.php
+      # Forged, stale and replayed requests, paths out of the data folder, planted scripts,
+      # share id tricks, uploads out of order: every case has its expected answer.
+      - name: Angriffe auf das PHP-Modul
+        run: python3 tools/attack-php-module.py
 
       - name: Chromium für Playwright
         run: |
@@ -408,7 +426,7 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
-          if [ -z "$KEYSTORE_B64" ]; then echo "::warning::Secret ANDROID_KEYSTORE_BASE64 fehlt – APK wird nur mit einem Wegwerf-Schlüssel signiert."; exit 0; fi
+          if [ -z "$KEYSTORE_B64" ]; then echo "::warning::Secret ANDROID_KEYSTORE_BASE64 fehlt, APK wird nur mit einem Wegwerf-Schlüssel signiert."; exit 0; fi
           file="$RUNNER_TEMP/ghulsuite-release.jks"
           printf '%s' "$KEYSTORE_B64" | base64 -d > "$file"
           {
@@ -458,11 +476,16 @@ jobs:
           local-dir: ./dist/
           remote-dir: ${{ steps.dest.outputs.dir }}/download/
 
+  # The emulator is slow (it boots a whole Android), so it does not run on every push of a work
+  # branch: it guards pull requests and main. The flows with real servers, the reminders against
+  # servers and Monkey run in the nightly run (nightly.yml, via emulator.yml); emulator.yml can
+  # also be started by hand for any branch.
   emulator:
     name: Emulator-Tests (Maestro-Abläufe aus app/maestro)
     needs: build
+    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 70
     env:
       MAESTRO_VERSION: cli-2.12.1
       MAESTRO_SHA256: 54dbb0716425626604973cbb374c585ca30272375d9ce15177a1152765ddd9d7

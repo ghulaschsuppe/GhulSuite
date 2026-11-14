@@ -91,18 +91,19 @@ async fn expect(c: &mut Ctrl, line: &str, ok: &[u16]) -> NetResult<String> {
 }
 
 /// Port from an EPSV reply `229 Entering Extended Passive Mode (|||6446|)` or a PASV reply.
-fn data_port(code: u16, text: &str) -> Option<u16> {
+pub(crate) fn data_port(code: u16, text: &str) -> Option<u16> {
     if code == 229 {
         let inner = text.split('(').nth(1)?.split(')').next()?;
         return inner.trim_matches('|').parse().ok();
     }
-    let nums: Vec<u16> =
+    let nums: Vec<u8> =
         text.split('(').nth(1)?.split(')').next()?.split(',').filter_map(|n| n.trim().parse().ok()).collect();
-    (nums.len() == 6).then(|| nums[4] * 256 + nums[5])
+    // Each part is one byte; anything else (e.g. 300) is not a valid reply.
+    (nums.len() == 6).then(|| u16::from(nums[4]) * 256 + u16::from(nums[5]))
 }
 
 /// Parses one line of a Unix `LIST` output.
-fn parse_list_line(line: &str) -> Option<RemoteEntry> {
+pub(crate) fn parse_list_line(line: &str) -> Option<RemoteEntry> {
     let fields: Vec<&str> = line.split_whitespace().collect();
     if fields.len() < 9 {
         return None;
@@ -120,7 +121,7 @@ fn parse_list_line(line: &str) -> Option<RemoteEntry> {
 }
 
 /// Parses one line of `MLSD` output (`type=file;size=12; name`).
-fn parse_mlsd_line(line: &str) -> Option<RemoteEntry> {
+pub(crate) fn parse_mlsd_line(line: &str) -> Option<RemoteEntry> {
     let (facts, name) = line.split_once(' ')?;
     let name = name.trim_end_matches(['\r', '\n']).to_owned();
     let mut kind = "";
@@ -228,7 +229,7 @@ impl FtpsFs {
         let mut path = String::new();
         for part in full_dir.split('/').filter(|p| !p.is_empty() && *p != ".") {
             path = if path.is_empty() { part.to_owned() } else { format!("{path}/{part}") };
-            // 550/521: exists already (or not allowed – the following write reports that).
+            // 550/521: exists already (or not allowed, the following write reports that).
             let _ = cmd(c, &format!("MKD {path}")).await?;
         }
         Ok(())
@@ -331,10 +332,15 @@ impl RemoteFs for FtpsFs {
                 d.shutdown().await.map_err(io)?;
                 drop(d);
                 FtpsFs::finish(c).await?;
-                // RNTO does not replace on every server: remove the old file first.
-                let _ = cmd(c, &format!("DELE {full}")).await?;
+                // Replace in one step where the server allows it: the old file stays until the new
+                // one is complete. Only servers that refuse to overwrite get DELE first (then the
+                // file is missing for a moment; synchronisation copes with that).
                 expect(c, &format!("RNFR {tmp}"), &[350]).await?;
-                expect(c, &format!("RNTO {full}"), &[250]).await?;
+                if expect(c, &format!("RNTO {full}"), &[250]).await.is_err() {
+                    let _ = cmd(c, &format!("DELE {full}")).await?;
+                    expect(c, &format!("RNFR {tmp}"), &[350]).await?;
+                    expect(c, &format!("RNTO {full}"), &[250]).await?;
+                }
                 Ok(())
             })
         })

@@ -78,15 +78,18 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
 
     /** The open suite object (created on first use, after the subclass is initialised). */
     protected val suite: GhulSuite
-        get() = current ?: GhulSuite(storage(), localDir).also { current = it }
+        get() = current ?: newSuite().also { current = it }
 
     /** Where the suite lives (app folder, chosen folder, USB stick …). */
     protected abstract fun storage(): VaultStorage
 
     /** Opens the suite again, e.g. after another storage location was chosen. */
     protected fun reopen() {
-        current = GhulSuite(storage(), localDir)
+        current = newSuite()
     }
+
+    /** The core carries no time zone database: it gets the one of this device. */
+    private fun newSuite() = GhulSuite(storage(), localDir).also { it.setTimeZones(DeviceTimeZones) }
 
     /** Runs [block] with a connection to the security key (USB on Android, system API on Windows). */
     protected abstract suspend fun <T> withKey(block: (HidTransport) -> T): T

@@ -156,7 +156,7 @@ async fn exchange<S: AsyncRead + AsyncWrite + Unpin>(
     parse(&raw)
 }
 
-fn parse(raw: &[u8]) -> NetResult<Response> {
+pub(crate) fn parse(raw: &[u8]) -> NetResult<Response> {
     let bad = || NetError::Protocol("invalid HTTP response".into());
     let end = raw.windows(4).position(|w| w == b"\r\n\r\n").ok_or_else(bad)?;
     let head = std::str::from_utf8(&raw[..end]).map_err(|_| bad())?;
@@ -171,18 +171,21 @@ fn parse(raw: &[u8]) -> NetResult<Response> {
         let mut out = Vec::new();
         let mut pos = 0;
         loop {
-            let line_end = rest[pos..].windows(2).position(|w| w == b"\r\n").ok_or_else(bad)? + pos;
+            // Every length and position is checked: a server may send anything here.
+            let line_end =
+                rest.get(pos..).ok_or_else(bad)?.windows(2).position(|w| w == b"\r\n").ok_or_else(bad)? + pos;
             let size_str = std::str::from_utf8(&rest[pos..line_end]).map_err(|_| bad())?;
             let size = usize::from_str_radix(size_str.split(';').next().unwrap_or("").trim(), 16).map_err(|_| bad())?;
             pos = line_end + 2;
             if size == 0 {
                 break;
             }
-            if pos + size > rest.len() || out.len() + size > MAX_BODY {
+            let end = pos.checked_add(size).filter(|&e| e <= rest.len()).ok_or_else(bad)?;
+            if out.len().saturating_add(size) > MAX_BODY {
                 return Err(bad());
             }
-            out.extend_from_slice(&rest[pos..pos + size]);
-            pos += size + 2;
+            out.extend_from_slice(&rest[pos..end]);
+            pos = end.checked_add(2).ok_or_else(bad)?;
         }
         out
     } else if let Some(len) = get("Content-Length") {

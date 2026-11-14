@@ -44,7 +44,7 @@ class GhulAutofillService : AutofillService() {
     }
 
     override fun onFillRequest(request: FillRequest, cancellationSignal: CancellationSignal, callback: FillCallback) {
-        val fields = FieldFinder.find(request.fillContexts.map { it.structure })
+        val fields = FieldFinder.find(request.fillContexts.map { it.structure }) { Browsers.isTrustedBrowser(this, it) }
         if (fields.packageName == packageName || fields.isEmpty) {
             callback.onSuccess(null)
             return
@@ -84,7 +84,7 @@ class GhulAutofillService : AutofillService() {
     }
 
     override fun onSaveRequest(request: SaveRequest, callback: SaveCallback) {
-        val fields = FieldFinder.find(request.fillContexts.map { it.structure })
+        val fields = FieldFinder.find(request.fillContexts.map { it.structure }) { Browsers.isTrustedBrowser(this, it) }
         val password = fields.passwordValue
         val backend = applicationContext.ghul.backend
         if (password.isNullOrEmpty()) {

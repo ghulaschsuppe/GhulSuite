@@ -1,58 +1,32 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-# Fast run of the emulator tests alone when only the flows change: takes the APK of the latest
-# "Android & Kern" run of this branch instead of building it again (that workflow runs them too).
+# Emulator tests alone: by hand for any branch ("Run workflow"), and every night from nightly.yml.
+# Takes the APK of the latest "Android & Kern" run of the branch instead of building it again.
+# With "servers" also the flows against real test servers (app/maestro/server) and the check of
+# what those servers hold.
 name: Emulator-Tests
 
 on:
-  push:
-    branches: ['**']
-    paths: ['app/maestro/**', 'tools/ci-emulator.sh', 'tools/run-maestro.sh', '.github/workflows/emulator.yml']
   workflow_dispatch:
+    inputs:
+      servers:
+        description: Auch die Abläufe mit echten Testservern (SFTP, IMAP, SMTP)
+        type: boolean
+        default: true
+  workflow_call:
+    inputs:
+      servers:
+        type: boolean
+        default: true
 
 permissions:
   contents: read
   actions: read
 
-concurrency:
-  group: emulator-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  # When the same push also changes the app, the core or the tools, "Android & Kern" builds a fresh
-  # APK and runs these flows itself. Running them here against the previous APK would test new
-  # flows with an old app and fail for no reason.
-  changes:
-    name: Nur Abläufe geändert?
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      only_flows: ${{ steps.c.outputs.only_flows }}
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          fetch-depth: 0
-      - id: c
-        env:
-          BASE: ${{ github.event.before }}
-        run: |
-          if [ "${{ github.event_name }}" != push ] || [ -z "$BASE" ] || [ "$BASE" = 0000000000000000000000000000000000000000 ] || ! git cat-file -e "$BASE^{commit}" 2> /dev/null; then
-            echo "only_flows=true" >> "$GITHUB_OUTPUT"; exit 0
-          fi
-          # Same paths as the push trigger of android.yml (without the flows themselves).
-          if git diff --name-only "$BASE" HEAD | grep -vE '^(app/maestro/|tools/ci-emulator\.sh|tools/run-maestro\.sh)' \
-              | grep -qE '^(core/|app/|docs/testvectors/|tools/|\.github/workflows/android\.yml|\.github/actions/ftps-upload/)'; then
-            echo "App oder Kern geändert: die Abläufe laufen in \"Android & Kern\" mit der neuen APK."
-            echo "only_flows=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "only_flows=true" >> "$GITHUB_OUTPUT"
-          fi
-
   emulator:
     name: Maestro-Abläufe im Android-Emulator
-    needs: changes
-    if: needs.changes.outputs.only_flows == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 70
     env:
       MAESTRO_VERSION: cli-2.12.1
       MAESTRO_SHA256: 54dbb0716425626604973cbb374c585ca30272375d9ce15177a1152765ddd9d7
@@ -84,10 +58,40 @@ jobs:
           echo "$MAESTRO_SHA256  /tmp/maestro.zip" | sha256sum -c -
           unzip -q /tmp/maestro.zip -d "$HOME"
           echo "$HOME/maestro/bin" >> "$GITHUB_PATH"
+      - name: Testserver für die Abläufe mit echtem Server (SFTP mit Passwort, IMAP, SMTP)
+        if: inputs.servers
+        timeout-minutes: 12
+        run: |
+          # tools/run-maestro.sh forwards these ports to the emulator (adb reverse). If the package mirror
+          # is down, the flows with a real server are skipped with a warning.
+          ok=0
+          for i in 1 2 3; do
+            timeout 120 sudo apt-get update -qq || true
+            if timeout 240 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o Acquire::Retries=3 openssh-server dovecot-imapd > /dev/null; then ok=1; break; fi
+            sleep 10
+          done
+          if [ "$ok" = 1 ]; then
+            sudo env GHUL_TEST_SFTP_PASSWORD=1 bash tools/test-servers.sh > servers.env
+            echo "GHUL_TEST_SERVERS=1" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Paketserver nicht erreichbar: Abläufe mit echtem Server übersprungen."
+          fi
       - name: Abläufe im Emulator (Android 14)
         run: |
           mkdir -p maestro-out
           tools/ci-emulator.sh dist/ghulsuite-dev.apk maestro-out
+      - name: Logs der Testserver zu den Ergebnissen legen
+        if: always()
+        run: |
+          # Only the logs of the throwaway test servers (no keys); they show why a login failed.
+          if [ -f servers.env ]; then
+            . ./servers.env
+            mkdir -p maestro-out/servers
+            for f in dovecot/dovecot.log smtp.log; do
+              sudo cp "$GHUL_TEST_DIR/$f" maestro-out/servers/ 2>/dev/null || true
+            done
+            sudo chown -R "$(id -u)" maestro-out/servers
+          fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:

@@ -35,7 +35,7 @@ const val DESKTOP_VERSION = "0.5.0-dev"
  * Where GhulSuite keeps its files on this computer.
  *
  * Portable (a file named `portable` next to GhulSuite.exe, as in the ZIP): everything stays in
- * the folder `GhulSuite-Daten` next to the program, e.g. on the USB stick – nothing on the PC.
+ * the folder `GhulSuite-Daten` next to the program, e.g. on the USB stick, nothing on the PC.
  * Installed: `%APPDATA%\GhulSuite` (elsewhere `~/.local/share/GhulSuite`).
  */
 object DesktopPaths {

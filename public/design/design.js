@@ -233,7 +233,7 @@ function brand(sub) {
 function startScreen() {
   const opt = (ic, cls, t, s, act, primary) => `<button class="card row plain" data-act="${act}">
     <span class="avatar ${cls}">${icon(ic)}</span><span class="grow"><span class="t">${t}</span><span class="s">${s}</span></span>${icon('chev', 'chev')}</button>`;
-  return `<div class="screen">${brand('Passwörter, 2FA, Dateien, Mail und Kalender – verschlüsselt auf deinen Geräten und deinem eigenen Server.')}
+  return `<div class="screen">${brand('Passwörter, 2FA, Dateien, Mail und Kalender, verschlüsselt auf deinen Geräten und deinem eigenen Server.')}
     ${opt('plus', 'a0', 'Neu einrichten', 'Master-Passwort + Security Key oder Schlüsseldatei', 'start-new')}
     ${opt('cloud', 'a1', 'Von meinem Server holen', 'Suite liegt schon auf deinem Server', 'start-new')}
     ${opt('folder', 'a2', 'Vorhandene Suite öffnen', 'Ordner auf dem Gerät, USB-Stick, Cloud-Ordner', 'start-new')}
@@ -310,7 +310,7 @@ function entryScreen(id) {
       + fieldRow('Passwort', e.pw, { secret: true, id: 'pw' + e.id, extra: `<div class="strength"><i class="js-w ${st < 2 ? 's-weak' : st < 3 ? 's-ok' : 's-good'}" data-w="${(st + 1) * 20}"></i></div><div class="hint-text" data-u="2">${STRENGTH[st]}${e.reused ? ' · <b>mehrfach verwendet</b>' : ''}</div>` })
       + fieldRow('Website', 'https://' + e.url, { open: true })
       + (e.totp ? `<div class="field"><div class="grow"><label>2FA-Code ${NEW}</label><div class="pw" data-u="3">${totpCode(e.totp).replace(/(\d{3})/, '$1 ')}</div></div>${ringSvg(remaining())}<button class="icon-btn" data-act="copy" data-arg="2FA-Code">${icon('copy')}</button></div>` : '')
-      + (e.no2fa ? `<div class="banner">${icon('alert')}<span>Diese Website unterstützt 2FA – noch nicht eingerichtet.</span><button data-act="tab" data-arg="auth">Einrichten</button></div>` : '');
+      + (e.no2fa ? `<div class="banner">${icon('alert')}<span>Diese Website unterstützt 2FA, noch nicht eingerichtet.</span><button data-act="tab" data-arg="auth">Einrichten</button></div>` : '');
   } else if (e.type === 'card') {
     fields = fieldRow('Karteninhaber', e.holder) + fieldRow('Kartennummer', e.number, { secret: true, id: 'cn' + e.id }) + `<div class="btn-row">${fieldRow('Gültig bis', e.exp)}</div>` + fieldRow('Prüfnummer', e.cvc, { secret: true, id: 'cvc' + e.id });
   } else if (e.type === 'wifi') {
@@ -370,7 +370,7 @@ function authScreen() {
     <div class="section-title">Alle Konten <button data-act="toast" data-arg="Ziehen zum Sortieren">Sortieren</button></div>
     <div class="${S.authGrid ? 'otp-grid' : ''}">${rest.map(card).join('')}</div>
     <p class="hint-text">Antippen kopiert den Code. Lange drücken: umbenennen, Favorit, löschen, als QR exportieren ${NEW}.</p>
-    <div class="banner">${icon('clock')}<span>Geräteuhr geht genau – Codes stimmen. ${NEW}</span></div>
+    <div class="banner">${icon('clock')}<span>Geräteuhr geht genau, Codes stimmen. ${NEW}</span></div>
   </div><button class="fab bg-auth" data-act="sheet-addtotp" aria-label="Konto hinzufügen">${icon('qr')}</button>`;
 }
 
@@ -517,7 +517,7 @@ const SETTINGS = [
     { id: 'password', icon: 'key', cls: 'i-blue', title: 'Master-Passwort', sub: 'Zuletzt geändert vor 3 Tagen',
       page: () => `<div class="card flush">${link('Master-Passwort ändern', 'Gilt sofort für alle Tresore, Synchronisation übernimmt es')}</div>` },
     { id: 'recovery', icon: 'help', cls: 'i-orange', title: 'Wiederherstellungscode', sub: 'Notfallblatt gedruckt',
-      page: () => `<div class="card"><h3>Dein Notfall-Zugang</h3><p>Der Code öffnet allein alles – auch ohne Passwort und Key. Bewahre das Notfallblatt sicher auf.</p></div>
+      page: () => `<div class="card"><h3>Dein Notfall-Zugang</h3><p>Der Code öffnet allein alles, auch ohne Passwort und Key. Bewahre das Notfallblatt sicher auf.</p></div>
         <div class="card flush">${link('Notfallblatt erneut drucken')}${link('Neuen Code erzeugen', 'Der alte Code wird ungültig')}</div>` },
   ]],
   ['Daten', [
@@ -559,7 +559,7 @@ const SETTINGS = [
         <div class="section-title">Teilen ${NEW}</div>
         ${S.shareReady ? `<div class="card flush"><div class="row"><span class="avatar a2">${icon('link')}</span><span class="grow"><span class="t">Teilen ist eingerichtet</span><span class="s">~/${S.shareDir} · https://max.example.org/teilen</span></span><span class="tag ok">${icon('check')} geprüft</span></div>
           <button class="row plain" data-act="share-setup"><span class="grow">Erneut prüfen oder ändern</span>${icon('chev', 'chev')}</button></div>`
-        : `<button class="card row plain" data-act="share-setup"><span class="avatar a5">${icon('link')}</span><span class="grow"><span class="t">Teilen einrichten</span><span class="s">Ordner wählen, den dein Webserver ausliefert – dauert eine Minute</span></span>${icon('chev', 'chev')}</button>`}
+        : `<button class="card row plain" data-act="share-setup"><span class="avatar a5">${icon('link')}</span><span class="grow"><span class="t">Teilen einrichten</span><span class="s">Ordner wählen, den dein Webserver ausliefert, dauert eine Minute</span></span>${icon('chev', 'chev')}</button>`}
         <p class="hint-text">Teilen per Link geht mit SFTP (eigener Server mit Webserver), FTPS (Webhosting) und später dem GhulSuite-Server-Modul.</p>` },
     { id: 'sync', icon: 'sync', cls: 'i-teal', title: 'Synchronisation', sub: 'Automatisch · vor 2 Min.',
       page: () => `<div class="card flush">${choice('Server', 'Heimserver', 'Aus, Heimserver')}${toggle('autosync', 'Automatisch', 'Nach dem Entsperren und bei jeder Änderung')}</div>
@@ -622,7 +622,7 @@ function generatorSheet() {
       <div class="strength"><i class="js-w ${st < 2 ? 's-weak' : st < 3 ? 's-ok' : 's-good'}" data-w="${(st + 1) * 20}"></i></div><div class="hint-text" data-u="2">${STRENGTH[st]} · Ziffern blau, Sonderzeichen rot</div></div>
       <button class="icon-btn" data-act="sheet-gen" aria-label="Neu">${icon('dice')}</button></div>
     ${g.mode === 'chars' ? `<div class="slider"><span>Länge</span><input type="range" min="8" max="64" value="${g.len}" id="gen-len"><b>${g.len}</b></div>
-    ${opt('upper', 'Großbuchstaben (A–Z)')}${opt('lower', 'Kleinbuchstaben (a–z)')}${opt('digits', 'Ziffern (0–9)')}${opt('symbols', 'Sonderzeichen (!#$…)')}` : '<p class="hint-text">Vier zufällige Wörter plus Zahl – leicht zu tippen, schwer zu erraten.</p>'}
+    ${opt('upper', 'Großbuchstaben (A bis Z)')}${opt('lower', 'Kleinbuchstaben (a bis z)')}${opt('digits', 'Ziffern (0 bis 9)')}${opt('symbols', 'Sonderzeichen (!#$…)')}` : '<p class="hint-text">Vier zufällige Wörter plus Zahl, leicht zu tippen, schwer zu erraten.</p>'}
     <div class="btn-row" data-u="33"><button class="btn outline" data-act="copy" data-arg="Passwort">${icon('copy')} Kopieren</button><button class="btn primary" data-act="close-sheet">Übernehmen</button></div>`;
 }
 const SHEETS = {
@@ -655,7 +655,7 @@ const SHEETS = {
 function entryShareSheet() {
   return `<h2>Eintrag sicher teilen ${NEW}</h2><div class="card flush sheet-list">
     <button class="row" data-act="sheet-link"><span class="avatar a5">${icon('link')}</span><span class="grow"><span class="t">Einmal-Link</span><span class="s">Verschlüsselt, löscht sich nach dem ersten Öffnen (Server-Modul) oder nach Ablauf</span></span>${icon('chev', 'chev')}</button>
-    <button class="row" data-act="toast" data-arg="QR-Code angezeigt"><span class="avatar a2">${icon('qr')}</span><span class="grow"><span class="t">QR-Code (WLAN, Zugangsdaten)</span><span class="s">Für Gäste-WLAN oder ein Gerät daneben – nichts geht übers Netz</span></span></button>
+    <button class="row" data-act="toast" data-arg="QR-Code angezeigt"><span class="avatar a2">${icon('qr')}</span><span class="grow"><span class="t">QR-Code (WLAN, Zugangsdaten)</span><span class="s">Für Gäste-WLAN oder ein Gerät daneben, nichts geht übers Netz</span></span></button>
     <button class="row" data-act="toast" data-arg="In geteilten Tresor kopiert"><span class="avatar a1">${icon('layers')}</span><span class="grow"><span class="t">In einen geteilten Tresor</span><span class="s">Später: Tresor mit Familie teilen (eigener Schlüssel je Person)</span></span></button></div>`;
 }
 function mailMenuSheet() {
@@ -699,9 +699,9 @@ function shareSheet() {
   const what = files.length === 1 ? esc(files[0].name) : `${files.length} Dateien`;
   const opt = (ic, cls, t, sub, act, tag) => `<button class="row" data-act="${act}"><span class="avatar ${cls}">${icon(ic)}</span><span class="grow"><span class="t">${t}</span><span class="s">${sub}</span></span>${tag || icon('chev', 'chev')}</button>`;
   return `<h2>Teilen ${NEW}</h2><p class="hint-text">${what}</p><div class="card flush sheet-list">
-    ${opt('phone', 'a2', 'Mit anderer App teilen', 'Entschlüsselt an Messenger, Mail, Galerie … – geht mit jeder Verbindung', 'toast', '<span class="tag ok">immer</span>')}
+    ${opt('phone', 'a2', 'Mit anderer App teilen', 'Entschlüsselt an Messenger, Mail, Galerie …, geht mit jeder Verbindung', 'toast', '<span class="tag ok">immer</span>')}
     ${opt('link', 'a5', 'Freigabelink erstellen', 'Ende-zu-Ende verschlüsselt, Empfänger braucht keine App', 'sheet-link')}
-    ${opt('archive', 'a9', 'Als verschlüsseltes ZIP', 'AES-256 mit Passwort – für E-Mail oder USB-Stick', 'toast')}
+    ${opt('archive', 'a9', 'Als verschlüsseltes ZIP', 'AES-256 mit Passwort, für E-Mail oder USB-Stick', 'toast')}
     ${opt('mail', 'a3', 'Mit GhulMail senden', files.length > 1 ? 'Als Anhänge oder als Link' : 'Als Anhang oder als Link', 'compose')}
     ${opt('qr', 'a1', 'Als QR-Code zeigen', 'Link zum Abscannen am anderen Gerät', 'toast')}
   </div>`;
@@ -714,18 +714,18 @@ function linkSheet() {
     <div class="section-title">Gültig</div>
     <div class="chips">${days.map(([d, l]) => `<button class="chip ${S.linkDays === d ? 'on' : ''}" data-act="link-days" data-arg="${d}">${l}</button>`).join('')}</div>
     <div class="card flush sheet-list">
-      <div class="row plain"><span class="grow"><span class="t">Zusätzlich mit Passwort</span><span class="s">Link allein reicht dann nicht – Passwort getrennt mitteilen</span></span><button class="toggle ${S.linkPw ? 'on' : ''}" data-act="link-pw"></button></div>
-      <div class="row plain disabled"><span class="grow"><span class="t">Höchstens 3 Downloads</span><span class="s">Nur mit dem GhulSuite-Server-Modul (PHP) – ein reiner Datei-Server kann nicht mitzählen</span></span><button class="toggle" disabled></button></div>
+      <div class="row plain"><span class="grow"><span class="t">Zusätzlich mit Passwort</span><span class="s">Link allein reicht dann nicht, Passwort getrennt mitteilen</span></span><button class="toggle ${S.linkPw ? 'on' : ''}" data-act="link-pw"></button></div>
+      <div class="row plain disabled"><span class="grow"><span class="t">Höchstens 3 Downloads</span><span class="s">Nur mit dem GhulSuite-Server-Modul (PHP), ein reiner Datei-Server kann nicht mitzählen</span></span><button class="toggle" disabled></button></div>
     </div>
     <div class="field"><div class="grow"><label>Link</label><div class="value pw">https://max.example.org/teilen/#k3F9xQ.T7v2…Lm9</div></div><button class="icon-btn" data-act="copy" data-arg="Link">${icon('copy')}</button></div>
-    <p class="hint-text">Der Teil nach „#“ ist der Schlüssel. Browser schicken ihn nie an den Server – dort liegt nur Chiffretext. Die Empfängerseite entschlüsselt im Browser.</p>
+    <p class="hint-text">Der Teil nach „#“ ist der Schlüssel. Browser schicken ihn nie an den Server, dort liegt nur Chiffretext. Die Empfängerseite entschlüsselt im Browser.</p>
     <div class="btn-row"><button class="btn outline" data-act="toast" data-arg="QR-Code angezeigt">${icon('qr')} QR-Code</button><button class="btn primary" data-act="copy" data-arg="Link">${icon('link')} Link kopieren</button></div>`;
 }
 function shareSetupSheet() {
   const st = S.shareStep;
   const steps = `<div class="steps">${[1, 2, 3].map((n) => `<i class="${n <= st ? 'on' : ''}"></i>`).join('')}</div>`;
   if (st === 1) {
-    const dirs = [['public_html', 'Typischer Web-Ordner'], ['public_html/teilen', 'Neu anlegen (empfohlen)'], ['www', ''], ['ghulsuite', 'Deine Tresore – nicht zum Teilen geeignet']];
+    const dirs = [['public_html', 'Typischer Web-Ordner'], ['public_html/teilen', 'Neu anlegen (empfohlen)'], ['www', ''], ['ghulsuite', 'Deine Tresore, nicht zum Teilen geeignet']];
     return `<h2>Teilen einrichten</h2>${steps}<p class="hint-text">Schritt 1 von 3: Welchen Ordner auf <b>Heimserver</b> liefert dein Webserver aus? GhulSuite legt dort nur verschlüsselte Kopien ab.</p>
       <div class="card flush sheet-list"><div class="row plain"><span class="grow"><span class="s">/home/max</span></span></div>
       ${dirs.map(([d, h]) => `<button class="row ${S.shareDir === d ? 'selected' : ''} ${d === 'ghulsuite' ? 'disabled' : ''}" data-act="${d === 'ghulsuite' ? 'toast' : 'share-dir'}" data-arg="${d === 'ghulsuite' ? 'Dieser Ordner ist für deine Tresore reserviert' : d}"><span class="avatar a1">${icon('folder')}</span><span class="grow"><span class="t">${d}</span><span class="s">${h}</span></span>${S.shareDir === d ? icon('check') : ''}</button>`).join('')}</div>
@@ -741,16 +741,16 @@ function shareSetupSheet() {
   return `<h2>Teilen einrichten</h2>${steps}<p class="hint-text">Schritt 3 von 3: GhulSuite hat alles selbst geprüft.</p>
     <div class="card flush sheet-list">
       ${check('Ordner beschreibbar', 'Testdatei per SFTP angelegt und wieder gelöscht')}
-      ${check('Im Internet erreichbar', 'Dieselbe Testdatei über https abgerufen – Inhalt stimmt')}
+      ${check('Im Internet erreichbar', 'Dieselbe Testdatei über https abgerufen, Inhalt stimmt')}
       ${check('Sichere Verbindung', 'Gültiges Zertifikat, http wird nicht verwendet')}
       ${check('Kein Verzeichnis-Listing', 'Niemand kann sehen, welche Freigaben es gibt')}
     </div>
-    <button class="btn primary block" data-act="share-done">Fertig – Teilen ist bereit</button>`;
+    <button class="btn primary block" data-act="share-done">Fertig: Teilen ist bereit</button>`;
 }
 function sharesSheet() {
   return `<h2>Aktive Freigaben ${NEW}</h2><div class="card flush sheet-list">
-    <div class="row"><span class="avatar a7">${icon('filetext')}</span><span class="grow"><span class="t">Steuer 2025.pdf</span><span class="s">läuft morgen ab · mit Passwort</span></span><button class="icon-btn" data-act="toast" data-arg="Freigabe beendet – Datei vom Server gelöscht">${icon('x')}</button></div>
-    <div class="row"><span class="avatar a1">${icon('folder')}</span><span class="grow"><span class="t">Urlaub Ostsee (12 Fotos)</span><span class="s">noch 6 Tage</span></span><button class="icon-btn" data-act="toast" data-arg="Freigabe beendet – Datei vom Server gelöscht">${icon('x')}</button></div></div>
+    <div class="row"><span class="avatar a7">${icon('filetext')}</span><span class="grow"><span class="t">Steuer 2025.pdf</span><span class="s">läuft morgen ab · mit Passwort</span></span><button class="icon-btn" data-act="toast" data-arg="Freigabe beendet, Datei vom Server gelöscht">${icon('x')}</button></div>
+    <div class="row"><span class="avatar a1">${icon('folder')}</span><span class="grow"><span class="t">Urlaub Ostsee (12 Fotos)</span><span class="s">noch 6 Tage</span></span><button class="icon-btn" data-act="toast" data-arg="Freigabe beendet, Datei vom Server gelöscht">${icon('x')}</button></div></div>
     <p class="hint-text">Beenden löscht die geteilte Kopie sofort vom Server. Abgelaufene Freigaben räumt die App beim nächsten Verbinden auf.</p>`;
 }
 
@@ -884,7 +884,7 @@ const JUMPS = [
 ];
 $('jump').innerHTML = JUMPS.map(([l, a]) => `<button class="chip" data-act="jump" data-arg="${a}">${l}</button>`).join('');
 const PROPOSALS = [
-  ['GhulCal bauen', 'Kalender als eigener verschlüsselter Tresor (.ghlcal): Monat, Woche, Tag, Liste, Serien, Erinnerungen, Feiertage offline, Schnell-Eintragen, .ics-Austausch – bewusst ohne CalDAV.'],
+  ['GhulCal bauen', 'Kalender als eigener verschlüsselter Tresor (.ghlcal): Monat, Woche, Tag, Liste, Serien, Erinnerungen, Feiertage offline, Schnell-Eintragen, .ics-Austausch, bewusst ohne CalDAV.'],
   ['Dieses Design in die App übernehmen', 'Einheitliche Bausteine, neue Startseiten je Bereich, neu gegliederte Optionen. Danach Screenshots zum Abgleich.'],
   ['GhulPass ausbauen', 'Favoriten, Kategorien, zuletzt verwendet, Sicherheitscheck, Passwortverlauf, Passphrasen, Anhänge, 2FA-Code direkt im Eintrag.'],
   ['GhulMail zu einem echten Mailprogramm machen', 'Gemeinsamer Posteingang, Unterhaltungen, Vorschautext, verschlüsselter Offline-Speicher, Entwürfe, Adressvorschläge, Wischgesten.'],

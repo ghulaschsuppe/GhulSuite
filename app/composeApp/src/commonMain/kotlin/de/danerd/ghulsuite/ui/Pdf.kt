@@ -36,7 +36,7 @@ fun textPdf(title: String, body: String): ByteArray {
                 c.code in 160..255 -> append("\\" + c.code.toString(8).padStart(3, '0'))
                 c == '\t' -> append("    ")
                 c == '€' -> append("\\200")
-                c == '–' || c == '—' -> append('-')
+                c == '\u2013' || c == '\u2014' -> append('-')
                 c == '„' || c == '“' || c == '”' -> append('"')
                 c == '‚' || c == '‘' || c == '’' -> append('\'')
                 c == '…' -> append("...")

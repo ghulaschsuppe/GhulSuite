@@ -1070,9 +1070,15 @@ fn parse_csv(text: &str) -> Result<Parsed> {
     } else {
         "CSV"
     };
+    // GhulSuite's own export: values exactly as stored (spaces kept), with the apostrophe that
+    // protects spreadsheet programs from formulas taken off again.
+    let own = header == OWN_CSV_COLUMNS;
+    let format = if own { "GhulSuite (CSV)" } else { format };
     let mut p = Parsed { format: format.into(), ..Default::default() };
     let get = |row: &Vec<String>, c: Option<usize>| {
-        c.and_then(|i| row.get(i)).map(|s| s.trim().to_owned()).unwrap_or_default()
+        c.and_then(|i| row.get(i))
+            .map(|s| if own { s.strip_prefix('\'').unwrap_or(s).to_owned() } else { s.trim().to_owned() })
+            .unwrap_or_default()
     };
     for row in body {
         let t = get(row, kind).to_lowercase();
@@ -1138,11 +1144,17 @@ fn parse_csv(text: &str) -> Result<Parsed> {
 
 // --- plain export ---------------------------------------------------------------------------
 
+/// Columns of GhulSuite's own CSV export.
+const OWN_CSV_COLUMNS: [&str; 8] = ["type", "title", "username", "password", "url", "notes", "totp", "folder"];
+
 fn csv_field(s: &str) -> String {
+    // Spreadsheet programs run cells starting with = + - @ (or a tab/CR before them) as formulas
+    // ("CSV injection"). A leading apostrophe makes them plain text; the own import removes it.
+    let s = if s.starts_with(['=', '+', '-', '@', '\t', '\r', '\'']) { format!("'{s}") } else { s.to_owned() };
     if s.contains([',', '"', '\n', '\r']) {
         format!("\"{}\"", s.replace('"', "\"\""))
     } else {
-        s.to_owned()
+        s
     }
 }
 
@@ -1159,7 +1171,7 @@ fn field_text(f: &Field) -> String {
 /// GhulPass entries as CSV (`type,title,username,password,url,notes,totp,folder`). Fields of
 /// other entry types are written into `notes` as `name: value` lines.
 pub(crate) fn export_csv(entries: &[Entry]) -> Zeroizing<String> {
-    let mut out = Zeroizing::new(String::from("type,title,username,password,url,notes,totp,folder\n"));
+    let mut out = Zeroizing::new(OWN_CSV_COLUMNS.join(",") + "\n");
     for e in entries.iter().filter(|e| !e.deleted) {
         let get = |k: &str| e.fields.get(k).map(field_text).unwrap_or_default();
         let mut notes = get("notes");

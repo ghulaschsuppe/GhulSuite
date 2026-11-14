@@ -38,6 +38,12 @@ data class CalEventUi(
     val notes: String = "",
     val links: List<CalLinkUi> = emptyList(),
     val birthYear: Int = 0,
+    /**
+     * Time zone of a series that came from another zone (e.g. `America/New_York`), empty: the
+     * clock of this device. With a zone, [start] and [end] are on the clock of that zone; the
+     * calendar shows every occurrence converted.
+     */
+    val zone: String = "",
 )
 
 data class CalOccurrenceUi(
@@ -87,6 +93,8 @@ data class CalAlarmUi(
     val text: String,
     val publicTitle: String,
     val publicText: String,
+    /** Wall-clock time `YYYY-MM-DDTHH:MM` of the reminder: it stays, whatever time zone the device moves to. */
+    val atLocal: String = "",
 )
 
 /** Result of the quick-add parser. */
@@ -114,7 +122,8 @@ interface CalBackend {
     suspend fun reminders(now: String, days: Int): List<CalReminderUi>
     suspend fun exportIcs(calendarIds: List<String>): String
     suspend fun eventIcs(id: String): String
-    suspend fun importIcs(calendarId: String, data: ByteArray, utcOffsetMinutes: Int): Int
+    /** Times in UTC or another time zone become local time of this device. */
+    suspend fun importIcs(calendarId: String, data: ByteArray): Int
     fun quickParse(text: String, today: String, nowMinutes: Int): CalQuickUi
     fun regions(lang: String): List<CalRegionUi>
 
@@ -143,7 +152,7 @@ object NoCalBackend : CalBackend {
     override suspend fun reminders(now: String, days: Int) = emptyList<CalReminderUi>()
     override suspend fun exportIcs(calendarIds: List<String>) = ""
     override suspend fun eventIcs(id: String) = ""
-    override suspend fun importIcs(calendarId: String, data: ByteArray, utcOffsetMinutes: Int) = 0
+    override suspend fun importIcs(calendarId: String, data: ByteArray) = 0
     override fun quickParse(text: String, today: String, nowMinutes: Int) = CalQuickUi(text, today, "", "", true, CalRepeatUi.NONE, "")
     override fun regions(lang: String) = emptyList<CalRegionUi>()
 }

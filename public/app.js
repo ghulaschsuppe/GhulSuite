@@ -83,7 +83,7 @@ async function renderEnv() {
 async function register() {
   $('btn-register').disabled = true;
   try {
-    log('Registrierung gestartet – Key einstecken und berühren …');
+    log('Registrierung gestartet, Key einstecken und berühren …');
     const cred = await navigator.credentials.create({
       publicKey: {
         rp: { name: 'GhulPass PRF-Test' },
@@ -138,7 +138,7 @@ async function testPrf() {
   $('btn-test').disabled = true;
   try {
     const online = navigator.onLine;
-    log(`PRF-Abfrage gestartet (${online ? 'online' : 'OFFLINE'}) – Key berühren …`);
+    log(`PRF-Abfrage gestartet (${online ? 'online' : 'OFFLINE'}), Key berühren …`);
     const assertion = await navigator.credentials.get({
       publicKey: {
         challenge: random(32),
@@ -161,7 +161,7 @@ async function testPrf() {
       showResult('bad', 'Der Key hat sich angemeldet, aber KEIN PRF-Wert geliefert. PRF wird hier nicht unterstützt.');
       return;
     }
-    // hmac-secret liefert mit und ohne PIN-Prüfung (UV) unterschiedliche Werte – getrennt vergleichen.
+    // hmac-secret liefert mit und ohne PIN-Prüfung (UV) unterschiedliche Werte, getrennt vergleichen.
     const slot = uv ? 'mitPIN' : 'ohnePIN';
     const fp = await fingerprint(first);
     const len = first.byteLength;
@@ -177,7 +177,7 @@ async function testPrf() {
       showResult('ok', `PRF funktioniert und ist deterministisch ✓ (${online ? 'online' : 'offline'}). Dieser Key ist geeignet.`);
     } else {
       log(`ABWEICHUNG: vorher ${prev}, jetzt ${fp} ✗`);
-      showResult('bad', 'PRF-Wert hat sich geändert – nicht geeignet. Bitte Bericht kopieren und schicken.');
+      showResult('bad', 'PRF-Wert hat sich geändert, nicht geeignet. Bitte Bericht kopieren und schicken.');
     }
   } catch (e) {
     log(`PRF-Abfrage fehlgeschlagen: ${errText(e)}`);
@@ -198,7 +198,7 @@ async function copyReport() {
     await navigator.clipboard.writeText(text);
     showResult('ok', 'Bericht in die Zwischenablage kopiert.');
   } catch {
-    showResult('warn', 'Kopieren nicht möglich – bitte das Protokoll manuell markieren.');
+    showResult('warn', 'Kopieren nicht möglich, bitte das Protokoll manuell markieren.');
   }
 }
 

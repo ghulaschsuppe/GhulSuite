@@ -19,7 +19,7 @@ Bitte keine echten Passwörter, Tresordateien oder Schlüssel mitschicken.
 - Eingangsbestätigung innerhalb von **7 Tagen**.
 - Einschätzung und Plan innerhalb von **30 Tagen**.
 - Die Korrektur erscheint in einer neuen Version; danach wird die Lücke im Sicherheitsbericht
-  ([`docs/AUDIT.md`](docs/AUDIT.md)) beschrieben – auf Wunsch mit Nennung der meldenden Person.
+  ([`docs/AUDIT.md`](docs/AUDIT.md)) beschrieben, auf Wunsch mit Nennung der meldenden Person.
 - Bitte gib uns Zeit für die Korrektur, bevor du Details veröffentlichst (in der Regel 90 Tage).
 
 ## Unterstützte Versionen

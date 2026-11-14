@@ -11,14 +11,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Password
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -94,13 +96,9 @@ fun VaultPickerDialog(state: AppState, kind: VaultKindUi, onPick: (String) -> Un
             Column {
                 if (vaults.isEmpty()) Hint(stringResource(Res.string.vault_none_yet))
                 for (v in vaults) {
-                    ListItem(headlineContent = { Text(v.name) }, modifier = Modifier.clickable { onPick(v.id) })
+                    ListRow(v.name, leading = { Avatar(v.name) }, divider = v != vaults.first()) { onPick(v.id) }
                 }
-                ListItem(
-                    headlineContent = { Text(stringResource(Res.string.vault_new)) },
-                    leadingContent = { Icon(Icons.Filled.Add, null) },
-                    modifier = Modifier.clickable { create = true },
-                )
+                ListRow(stringResource(Res.string.vault_new), leading = { IconTile(Icons.Filled.Add, paletteColor(0)) }, divider = vaults.isNotEmpty()) { create = true }
             }
         },
         confirmButton = {},
@@ -190,57 +188,52 @@ fun VaultsSection(state: AppState) {
         Hint(stringResource(Res.string.set_vaults_hint))
         for (v in state.vaults) {
             Box {
-                ListItem(
-                    headlineContent = { Text(v.name) },
-                    supportingContent = {
-                        Column {
-                            Text(
-                                if (v.available) {
-                                    stringResource(
-                                        Res.string.vault_summary,
-                                        stringResource(kindLabel(v.kind)),
-                                        v.entries.toString(),
-                                        v.file,
-                                    )
-                                } else {
-                                    stringResource(Res.string.vault_missing, v.file)
-                                },
-                            )
-                            if (v.outdated) Text(stringResource(Res.string.vault_outdated), color = warnColor())
-                        }
+                // The same row as in every list: tile in the colour of the area, name, what it holds.
+                val tab = when (v.kind) {
+                    VaultKindUi.PASS -> Tab.PASS
+                    VaultKindUi.CAL -> Tab.CAL
+                    VaultKindUi.DRIVE -> Tab.DRIVE
+                    VaultKindUi.MAIL -> Tab.MAIL
+                    else -> Tab.AUTH
+                }
+                ListRow(
+                    v.name,
+                    when {
+                        !v.available -> stringResource(Res.string.vault_missing, v.file)
+                        v.outdated -> stringResource(Res.string.vault_outdated)
+                        else -> stringResource(Res.string.vault_summary, stringResource(kindLabel(v.kind)), v.entries.toString(), v.file)
                     },
-                    leadingContent = {
-                        Icon(
-                            when {
-                                !v.available -> Icons.Filled.Warning
-                                v.kind == VaultKindUi.PASS -> Icons.Filled.Password
-                                v.kind == VaultKindUi.CAL -> Icons.Filled.CalendarMonth
-                                else -> Icons.Filled.Key
-                            },
-                            null,
-                        )
+                    leading = {
+                        if (v.available && !v.outdated) IconTile(tabIcon(tab), areaColor(tab)) else IconTile(Icons.Filled.Warning, warnColor())
                     },
-                    trailingContent = {
-                        IconButton(onClick = { menuFor = v.id }) { Icon(Icons.Filled.MoreVert, stringResource(Res.string.a_more)) }
-                    },
+                    trailing = { BarIcon(Icons.Filled.MoreVert, stringResource(Res.string.a_more)) { menuFor = v.id } },
+                    divider = v != state.vaults.first(), flush = true,
                 )
-                DropdownMenu(expanded = menuFor == v.id, onDismissRequest = { menuFor = null }) {
-                    DropdownMenuItem(text = { Text(stringResource(Res.string.a_rename)) }, onClick = { renaming = v; menuFor = null })
-                    if (v.available && filePickersAvailable) {
-                        DropdownMenuItem(text = { Text(stringResource(Res.string.a_export)) }, onClick = {
-                            menuFor = null
-                            state.run(block = { backend.exportVault(v.id) }) { data ->
-                                save("${v.name.ifBlank { "vault" }}.${extensionOf(v.kind)}", data)
+                // The menu of a vault: an action sheet like every other (title = name, tiles, delete last in red).
+                if (menuFor == v.id) {
+                    val close = { menuFor = null }
+                    GhulSheet(close, v.name) {
+                        SheetList {
+                            SheetRow(stringResource(Res.string.a_rename), leading = { IconTile(Icons.Filled.Edit, g.accent) }) { renaming = v; close() }
+                            if (v.available && filePickersAvailable) {
+                                SheetRow(stringResource(Res.string.a_export), leading = { IconTile(Icons.Filled.Upload, g.accent) }, divider = true) {
+                                    close()
+                                    state.run(block = { backend.exportVault(v.id) }) { data ->
+                                        save("${v.name.ifBlank { "vault" }}.${extensionOf(v.kind)}", data)
+                                    }
+                                }
                             }
-                        })
+                            if (v.outdated) {
+                                SheetRow(stringResource(Res.string.a_accept_state), leading = { IconTile(Icons.Filled.Check, g.accent) }, divider = true) {
+                                    close()
+                                    state.run(block = { backend.acceptVaultState(v.id) }) { state.changed() }
+                                }
+                            }
+                            SheetRow(stringResource(Res.string.a_delete), leading = { IconTile(Icons.Filled.Delete, g.danger) }, color = g.danger, divider = true) {
+                                removing = v; close()
+                            }
+                        }
                     }
-                    if (v.outdated) {
-                        DropdownMenuItem(text = { Text(stringResource(Res.string.a_accept_state)) }, onClick = {
-                            menuFor = null
-                            state.run(block = { backend.acceptVaultState(v.id) }) { state.changed() }
-                        })
-                    }
-                    DropdownMenuItem(text = { Text(stringResource(Res.string.a_remove)) }, onClick = { removing = v; menuFor = null })
                 }
             }
         }
@@ -275,9 +268,16 @@ fun VaultsSection(state: AppState) {
     }
     removing?.let { v ->
         AlertDialog(
+            danger = true,
             onDismissRequest = { removing = null },
             title = { Text(stringResource(Res.string.vault_remove_title, v.name)) },
-            text = { Text(stringResource(Res.string.vault_remove_text), color = warnColor()) },
+            // The same look as removing an area: the warning as a banner, the tip below.
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Banner(Icons.Filled.Warning, stringResource(Res.string.vault_remove_warning))
+                    Text(stringResource(Res.string.vault_remove_tip))
+                }
+            },
             confirmButton = {
                 TextButton(onClick = {
                     removing = null

@@ -104,7 +104,8 @@ fun GhulSuiteApp(state: AppState) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 // Wide windows (Windows, tablets in landscape) get side navigation and two panes.
                 val wide = maxWidth >= 840.dp
-                SideEffect { state.wide = wide }
+                val undoLabel = stringResource(Res.string.a_undo)
+                SideEffect { state.wide = wide; state.undoLabel = undoLabel }
                 CompositionLocalProvider(LocalWide provides wide) {
                     // One place for messages: the main screen on phones shows them above its own bar,
                     // everywhere else this outer host shows them (never both, which doubled every message).
@@ -194,7 +195,7 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
                 else if (!ownHeader(top)) ScreenTopBar(state, top)
             },
             bottomBar = {
-                if (top == null && !DriveSelectionBar(state)) {
+                if (top == null) {
                     GhulNavBar(navTabs(state), tabs.indexOf(state.tab)) { state.selectTab(tabs[it]) }
                 }
             },
@@ -207,7 +208,9 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
         }
     } else {
         // Side navigation | list | opened screen.
-        val twoPane = top != null || state.tab == Tab.PASS || state.tab == Tab.MAIL || state.tab == Tab.SETTINGS
+        // Every area with something to open keeps its list on the left and opens it on the right, so
+        // the list never jumps. GhulDrive opens files in a sheet and keeps the whole width.
+        val twoPane = top != null || state.tab != Tab.DRIVE
         val listWidth = if (width >= 1300.dp) 440.dp else 400.dp
         val rest = width - 240.dp - 1.dp
         val listPane = if (twoPane) listWidth else rest
@@ -220,7 +223,6 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
                     Scaffold(
                         containerColor = MaterialTheme.colorScheme.background,
                         topBar = { TabTopBar(state) },
-                        bottomBar = { DriveSelectionBar(state) },
                         floatingActionButton = { MainFab(state, onAdd) },
                     ) { padding -> TabContents(state, visited, true, padding) }
                 }
@@ -312,46 +314,34 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
 }
 
 private fun ownHeader(top: Screen) = top is Screen.MailRead || top is Screen.MailCompose || top is Screen.EntryDetail ||
-    top is Screen.CalEvent || top is Screen.CalEdit
+    top is Screen.EntryEdit || top is Screen.CalEvent || top is Screen.CalEdit
 
 @Composable
 private fun TabTopBar(state: AppState) {
     GhulTopBar(
         title = screenTitle(null, state.tab),
-        onLock = { state.backend.lock() },
+        onLock = { state.lockNow() },
         context = { AreaContext(state) },
         actions = { TabActions(state) },
     )
 }
 
+/**
+ * The icon that leaves a sub-page: a cross for the page that fills the second pane of a wide
+ * window (closing it shows the list alone again), else the arrow back. The same for every screen,
+ * also for those that draw their own header.
+ */
+fun backIcon(state: AppState): androidx.compose.ui.graphics.vector.ImageVector =
+    if (state.wide && state.stack.size == 1) Icons.Filled.Close else Icons.AutoMirrored.Filled.ArrowBack
+
 @Composable
 private fun ScreenTopBar(state: AppState, top: Screen) {
-    val root = state.wide && state.stack.size == 1
     GhulTopBar(
         title = screenTitle(top, state.tab),
-        onLock = { state.backend.lock() },
+        onLock = { state.lockNow() },
         onBack = if (top !is Screen.RecoveryCode) ({ state.pop() }) else null,
-        backIcon = if (root) Icons.Filled.Close else Icons.AutoMirrored.Filled.ArrowBack,
+        backIcon = backIcon(state),
     )
-}
-
-/** Selection bar of GhulDrive while files are being selected; false when there is none. */
-@Composable
-private fun DriveSelectionBar(state: AppState): Boolean {
-    val sel = state.driveSelection
-    if (state.tab != Tab.DRIVE || sel == null) return false
-    SelectionBar(
-        stringResource(Res.string.drive_n_selected, sel.count.toString()),
-        listOf(
-            Triple(Icons.AutoMirrored.Filled.Send, stringResource(Res.string.a_share), sel.onShare),
-            Triple(Icons.Filled.Archive, stringResource(Res.string.drive_as_zip), sel.onZip),
-            Triple(Icons.Filled.DoneAll, stringResource(Res.string.a_select_all), sel.onAll),
-            Triple(Icons.Filled.Delete, stringResource(Res.string.a_delete), sel.onDelete),
-            Triple(Icons.Filled.Close, stringResource(Res.string.a_done), sel.onDone),
-        ),
-        enabled = listOf(sel.count > 0, sel.count > 0, true, sel.count > 0, true),
-    )
-    return true
 }
 
 @Composable
@@ -364,7 +354,8 @@ private fun navTabs(state: AppState): List<NavTab> = state.tabs.map { t ->
     )
 }
 
-private fun tabIcon(t: Tab) = when (t) {
+/** The icon of an area: the same in the navigation, in Options and wherever the area is named. */
+fun tabIcon(t: Tab) = when (t) {
     Tab.PASS -> Icons.Outlined.Key
     Tab.AUTH -> Icons.Outlined.VerifiedUser
     Tab.DRIVE -> Icons.Outlined.Cloud
@@ -380,15 +371,20 @@ private fun MainFab(state: AppState, onAdd: () -> Unit) {
             state.push(Screen.MailCompose(MailDraft(state.mailAccount)))
         }
     }
-    if (state.tab == Tab.DRIVE && state.driveReady && state.driveSelection == null) {
-        GhulFab(areaColor(Tab.DRIVE), Icons.Filled.Add, description = stringResource(Res.string.drive_upload_fab)) { state.driveUploadTick++ }
+    if (state.tab == Tab.DRIVE && state.driveReady) {
+        GhulFab(areaColor(Tab.DRIVE), Icons.Filled.Add, stringResource(Res.string.a_add)) { state.driveUploadTick++ }
     }
     if (state.tab == Tab.CAL) {
         GhulFab(areaColor(Tab.CAL), Icons.Filled.Add, stringResource(Res.string.cal_event_short)) { state.calQuickOpen = true }
     }
     if (state.tab == Tab.PASS || state.tab == Tab.AUTH) {
-        // Always "+": scanning a QR code is one of the choices behind it.
-        GhulFab(areaColor(state.tab), Icons.Filled.Add, description = stringResource(Res.string.a_add), onClick = onAdd)
+        // Always "+": scanning a QR code is one of the choices behind it. Icon and short text, as in
+        // every area; the icon keeps the description "Add".
+        GhulFab(
+            areaColor(state.tab), Icons.Filled.Add,
+            stringResource(if (state.tab == Tab.PASS) Res.string.fab_entry else Res.string.fab_account),
+            description = stringResource(Res.string.a_add), onClick = onAdd,
+        )
     }
 }
 
@@ -465,7 +461,7 @@ private fun SideNav(state: AppState, tabs: List<Tab>) {
             val on = state.tab == area
             Row(
                 Modifier.fillMaxWidth().padding(vertical = 2.dp).clip(RoundedCornerShape(14.dp))
-                    .background(if (on) nav.color.copy(alpha = 0.14f) else Color.Transparent)
+                    .background(if (on) nav.color.copy(alpha = 0.16f) else Color.Transparent)
                     .clickable { state.selectTab(area) }
                     .padding(horizontal = 12.dp, vertical = 11.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -487,7 +483,7 @@ private fun SideNav(state: AppState, tabs: List<Tab>) {
         Spacer(Modifier.weight(1f))
         Row(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(t.surface2)
-                .clickable { state.backend.lock() }.padding(horizontal = 12.dp, vertical = 11.dp),
+                .clickable { state.lockNow() }.padding(horizontal = 12.dp, vertical = 11.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
@@ -512,7 +508,9 @@ private fun EmptyPane(tab: Tab) {
             stringResource(
                 when (tab) {
                     Tab.PASS -> Res.string.pane_pick_entry
+                    Tab.AUTH -> Res.string.pane_pick_account
                     Tab.MAIL -> Res.string.pane_pick_mail
+                    Tab.CAL -> Res.string.pane_pick_event
                     Tab.SETTINGS -> Res.string.pane_pick_setting
                     else -> Res.string.pane_pick_entry
                 },
@@ -520,7 +518,7 @@ private fun EmptyPane(tab: Tab) {
             fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = g.fg,
         )
         Spacer(Modifier.height(6.dp))
-        Text(stringResource(Res.string.pane_pick_hint), color = g.muted, textAlign = TextAlign.Center)
+        Text(stringResource(if (tab == Tab.AUTH) Res.string.pane_pick_hint_auth else Res.string.pane_pick_hint), color = g.muted, textAlign = TextAlign.Center)
     }
 }
 

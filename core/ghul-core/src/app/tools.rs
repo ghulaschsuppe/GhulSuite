@@ -53,7 +53,7 @@ impl OtpAlgo {
 }
 
 /// A TOTP account as entered or scanned by the user.
-#[derive(uniffi::Record, Clone, Debug, PartialEq, Eq)]
+#[derive(uniffi::Record, Clone, PartialEq, Eq)]
 pub struct TotpInput {
     pub issuer: String,
     pub account: String,
@@ -63,6 +63,8 @@ pub struct TotpInput {
     pub digits: u32,
     pub period: u32,
 }
+
+super::redact::redacted_debug!(TotpInput { issuer, account, algorithm, digits, period });
 
 /// Decodes RFC 4648 Base32 (case-insensitive; spaces, dashes and `=` padding ignored).
 pub fn base32_decode(input: &str) -> Option<Zeroizing<Vec<u8>>> {

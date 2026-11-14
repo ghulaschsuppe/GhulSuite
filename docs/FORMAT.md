@@ -1,4 +1,4 @@
-# GhulSuite – Dateiformat, Version 1
+# GhulSuite: Dateiformat, Version 1
 
 **Stand:** 13.11.2026 (ein Bereich, eine Datei: `.ghldrv` und `.ghlmail` neu; zweiter Faktor immer Pflicht; derselbe Wiederherstellungscode in jeder Datei; der Ordner ist die Suite) · gilt für `.ghlpss`, `.ghltotp`, `.ghlcal`, `.ghldrv`, `.ghlmail`, `.ghlsuite` und `.ghlkey`
 **Referenzimplementierung:** `core/ghul-core/src/vault/`
@@ -16,7 +16,7 @@ Alle Zahlen sind **Little-Endian**, sofern nicht anders angegeben. `‖` bedeute
 |---|---|---|
 | `.ghlpss` | `GHULPASS` | Passwort-Tresor (`pass`) |
 | `.ghltotp` | `GHULTOTP` | TOTP/HOTP-Tresor (`totp`) |
-| `.ghlcal` | `GHULCLDR` | Kalender-Tresor (`cal`): Einträge `calendar` (name, color, reminder, order) und `event` (calendar, title, start, end, all_day, repeat, until, exceptions, reminders, location, notes, links, birth_year); Zeiten als Ortszeit `YYYY-MM-DDTHH:MM` |
+| `.ghlcal` | `GHULCLDR` | Kalender-Tresor (`cal`): Einträge `calendar` (name, color, reminder, order) und `event` (calendar, title, start, end, all_day, repeat, until, exceptions, reminders, location, notes, links, birth_year, zone); Zeiten als Ortszeit `YYYY-MM-DDTHH:MM`. `zone` (optional, IANA-Name wie `America/New_York`) trägt eine Serie, die aus einer anderen Zeitzone stammt: `start`, `end`, `until` und `exceptions` stehen dann in der Zeit dieser Zone, und jedes Vorkommen wird für die Anzeige mit dem Versatz seines Tages umgerechnet |
 | `.ghldrv` | `GHULDRIV` | GhulDrive-Bereich (`drive`): keine Einträge; Drive-Schlüssel, Speicher und Optionen in `settings` (Abschnitt 10) |
 | `.ghlmail` | `GHULMAIL` | GhulMail-Bereich (`mail`): keine Einträge; Konten, Schlüssel, Entwürfe, Postausgang und Optionen in `settings` (Abschnitt 10) |
 | `.ghlsuite` | `GHULSUIT` | Suite-Container: Schutz, Sync-Server, Sync-Zustand, Freigaben (`suite`) |
@@ -102,7 +102,7 @@ slot_type (u8) ‖ slot_id[16] ‖ typabhängige Felder
 | 2 | Wiederherstellung | Container-Schlüssel `VMK` | `nonce[24] ‖ wrapped_vmk[48]` |
 | 3 | Schlüsseldatei | Faktor-Geheimnis `S` | `keyfile_id[8] ‖ nonce[24] ‖ wrapped_S[48]` |
 
-**Typ 1 – FIDO2 `hmac-secret`:**
+**Typ 1, FIDO2 `hmac-secret`:**
 
 ```
 rp_id_len (u8, 1…255) ‖ rp_id (UTF-8)
@@ -112,11 +112,11 @@ rp_id_len (u8, 1…255) ‖ rp_id (UTF-8)
 ‖ nonce[24] ‖ wrapped_S[48]
 ```
 
-**Typ 2 – Wiederherstellung mit Vollzugriff:** Der Code öffnet den Container-Schlüssel direkt –
+**Typ 2, Wiederherstellung mit Vollzugriff:** Der Code öffnet den Container-Schlüssel direkt,
 ohne Passwort, Security Key oder Schlüsseldatei. In GhulSuite trägt **jede Datei** eines Ordners einen solchen Slot
 für **denselben** Code; der Code öffnet also jede Datei auch einzeln.
 
-**Typ 3 – Schlüsseldatei:** Die Schlüsseldatei ist ein gleichwertiger zweiter Faktor anstelle eines Security Keys.
+**Typ 3, Schlüsseldatei:** Die Schlüsseldatei ist ein gleichwertiger zweiter Faktor anstelle eines Security Keys.
 `keyfile_id` (Abschnitt 7) sagt nur, welche Datei gemeint ist.
 
 Regeln:
@@ -204,11 +204,11 @@ Alle Nonces (24 Byte) werden bei jedem Schreiben zufällig neu erzeugt. Bei 192 
 
 - **Nur Key oder nur Schlüsseldatei:** liefert `S`, ohne Passwort aber kein `KEK`.
 - **Nur Passwort:** liefert `PK`, ohne zweiten Faktor aber kein `S`. Einen Schutz nur mit Passwort gibt es nicht.
-- **Wiederherstellungscode:** öffnet den Container allein. Wer das Notfallblatt hat, hat Zugriff – es ist wie ein
+- **Wiederherstellungscode:** öffnet den Container allein. Wer das Notfallblatt hat, hat Zugriff, es ist wie ein
   Tresorschlüssel aufzubewahren. 256 Bit Zufall sind nicht zu erraten.
 - **Schlüsseldatei gegen Key tauschen:** Key-Slot hinzufügen, Schlüsseldatei-Slot entfernen. `S`, `VMK` und der
   Wiederherstellungscode bleiben gleich; nichts wird ungültig. (Eine ältere Kopie einer Datei öffnet sich weiterhin
-  mit der damals gültigen Schlüsseldatei – wie bei jedem entfernten Key.)
+  mit der damals gültigen Schlüsseldatei, wie bei jedem entfernten Key.)
 - **Passwort ändern:** neuer Salt, neues `PK`, `VMK` neu verpacken. Dafür genügt ein einziger Key, die Daten werden
   nicht neu verschlüsselt.
 - **Key oder Schlüsseldatei hinzufügen bzw. entfernen:** nur einen Slot hinzufügen oder löschen (nie den letzten).
@@ -236,7 +236,7 @@ Ein CBOR-Map mit Text-Schlüsseln. **Unbekannte Schlüssel müssen beim Zurücks
 | Schlüssel | Typ | Bedeutung |
 |---|---|---|
 | `schema` | uint | `1` |
-| `kind` | text | `pass`, `totp` oder `suite` – muss zur Magic passen |
+| `kind` | text | `pass`, `totp` oder `suite`: muss zur Magic passen |
 | `revision` | uint | Zähler, wird bei jedem Speichern erhöht (Rollback-Erkennung) |
 | `factor_secret` | bytes(32) | Kopie von `S`, damit die Wiederherstellung über den Container-Schlüssel `S` zurückgewinnt |
 | `recovery_secret` | bytes(32) | Der Wiederherstellungscode der Suite, damit neue Tresore denselben Code-Slot bekommen (nur lesbar, wer den Container ohnehin öffnen kann) |
@@ -297,7 +297,7 @@ Weitere, eigene Felder sind erlaubt.
 
 | Typ | Felder |
 |---|---|
-| `totp` | `issuer` (text), `account` (text), `secret` (bytes), `algorithm` (text: `SHA1`/`SHA256`/`SHA512`), `digits` (int, 6–8), `period` (int, Sekunden) |
+| `totp` | `issuer` (text), `account` (text), `secret` (bytes), `algorithm` (text: `SHA1`/`SHA256`/`SHA512`), `digits` (int, 6 bis 8), `period` (int, Sekunden) |
 | `hotp` | wie `totp`, statt `period`: `counter` (int) |
 
 TOTP nach RFC 6238, HOTP nach RFC 4226 (`core/ghul-core/src/totp.rs`, geprüft mit den Testvektoren der RFCs).
@@ -353,7 +353,7 @@ verrät sie nichts Verwertbares.
 |---|---|
 | Nur ein Verfahren je Formatversion | Weniger Optionen, weniger Fehler; neue Verfahren bedeuten neue Formatversion |
 | XChaCha20-Poly1305 | 192-Bit-Zufallsnonces ohne Wiederholungsrisiko, schnell auch ohne AES-Hardware |
-| Header als AAD statt eigenem Header-MAC | Ein Mechanismus statt zwei; jede Header-Änderung macht den Inhalt unentschlüsselbar. Das Konzept v0.1–v0.4 sah noch einen separaten MAC vor; er ist damit überflüssig |
+| Header als AAD statt eigenem Header-MAC | Ein Mechanismus statt zwei; jede Header-Änderung macht den Inhalt unentschlüsselbar. Das Konzept v0.1 bis v0.4 sah noch einen separaten MAC vor; er ist damit überflüssig |
 | Faktor-Geheimnis `S` statt direkter Kombination | Passwortwechsel und Key-Verwaltung ohne alle Keys gleichzeitig |
 | Wiederherstellung über den Container-Schlüssel | Hilft auch bei vergessenem Passwort; übersteht Passwortwechsel, weil `VMK` dabei gleich bleibt |
 | Zweiter Faktor immer Pflicht, Schlüsseldatei als eigener Slot-Typ | Einheitlicher Schutz; Schlüsseldatei und Key sind austauschbar, ohne dass etwas neu verschlüsselt oder ein Code ungültig wird |
@@ -397,7 +397,7 @@ ihre eigenen Dateien (`.ghldrv`, `.ghlmail`).
 `mail_outbox`, `options`. **GhulPass, GhulAuth, GhulCal:** `options` in ihren Dateien.
 
 **Optionen und Zusammenführen:** Ein Wert `{v, at}` (Map aus genau `v` und ganzzahligem `at`) wird beim Synchronisieren
-als Ganzes übernommen, wenn sein `at` neuer ist – die letzte Änderung gewinnt. Bekannte Optionen: GhulPass
+als Ganzes übernommen, wenn sein `at` neuer ist, die letzte Änderung gewinnt. Bekannte Optionen: GhulPass
 `generator_mode`, `generator_length`; GhulDrive `drive_trash_days`; GhulMail `mail_image_senders`; GhulCal
 `cal_holidays`, `cal_region`, `cal_default_reminder`, `cal_allday_reminder`, `cal_default`, `cal_week_start`.
 Unbekannte Optionen bleiben erhalten.
@@ -409,7 +409,7 @@ einem Gerät mit älterer App zurückbringt.
 **Ablage auf dem Server** (`<base>` = gewählter Ordner):
 
 ```text
-<base>/suite/                 Tresore (.ghlpss, .ghltotp, .ghlcal) und suite.ghlsuite – unverändert im Container-Format
+<base>/suite/                 Tresore (.ghlpss, .ghltotp, .ghlcal) und suite.ghlsuite, unverändert im Container-Format
 <base>/drive/index.ghldrv     "GHULDRV1" ‖ nonce[24] ‖ XChaCha20-Poly1305(IK, pad(CBOR-Index), aad = "")
 <base>/drive/blocks/<ab>/<id> "GHULBLK1" ‖ nonce[24] ‖ XChaCha20-Poly1305(BK, Block, aad = "GHULBLK1" ‖ id)
 ```
@@ -440,7 +440,7 @@ Stück 0       AES-256-GCM(Meta-JSON)                      meta_len Byte
 Stück 1..n    AES-256-GCM(chunk_size Byte der Datei)      das letzte kürzer
 
 nonce(i) = nonce_prefix ‖ u32 BE i
-aad(i)   = Kopf ‖ u8 (1 = letztes Stück des Pakets, sonst 0)          – erkennt Abschneiden
+aad(i)   = Kopf ‖ u8 (1 = letztes Stück des Pakets, sonst 0); erkennt Abschneiden
 key      = HKDF-SHA256(ikm = Link-Schlüssel[32] (‖ PBKDF2-SHA256(Passwort NFC, salt, Runden, 32)),
                        salt = leer, info = "ghul/v1/share")
 ```
@@ -451,7 +451,7 @@ key      = HKDF-SHA256(ikm = Link-Schlüssel[32] (‖ PBKDF2-SHA256(Passwort NFC
 - Mehrere Dateien oder ein Ordner werden vorher zu einem ZIP (ohne Kompression) zusammengefasst. Höchstens 1 GiB.
 - Kopf und Ende sind über `aad` an jedes Stück gebunden: Änderungen, Vertauschen und Abschneiden fallen auf.
 
-**Link:** `<Adresse>#<id>.<Schlüssel>` – `id` = 32 Hex-Zeichen, **zufällig und unabhängig vom Schlüssel**;
+**Link:** `<Adresse>#<id>.<Schlüssel>`: `id` = 32 Hex-Zeichen, **zufällig und unabhängig vom Schlüssel**;
 Schlüssel = Base64url ohne Auffüllung (43 Zeichen). Der Teil nach `#` wird von Browsern nie an den Server gesendet;
 die Empfängerseite entfernt ihn nach dem Lesen aus der Adresszeile.
 
@@ -460,7 +460,7 @@ die Empfängerseite entfernt ihn nach dem Lesen aus der Adresszeile.
 ```text
 <share_dir>/index.html, viewer.js, viewer.css   Empfängerseite (keine fremden Inhalte)
 <share_dir>/.htaccess                           strenge CSP, kein Listing, kein Caching, no-referrer
-<share_dir>/s/index.html                        leer – verhindert das Auflisten
+<share_dir>/s/index.html                        leer, verhindert das Auflisten
 <share_dir>/s/<id>                              das Paket
 ```
 
@@ -476,7 +476,7 @@ zufälligem Datenordner `ghul-data-<24 hex>` daneben (`.htaccess` „deny“, `i
 | `GET ?s=<id>` | Paket ausliefern; zählt unter Dateisperre, prüft Ablauf und Höchstzahl; danach 404/410 |
 | `POST ?a=info` | `{version, php, free, limit}`; `limit` = größte Anfrage des Hostings in Byte (`post_max_size`, höchstens ein Drittel von `memory_limit`; 0 = unbekannt) |
 | `POST ?a=list&p=` · `read` · `write` · `delete` · `mkdir` | Speicher wie ein Ordner (`p` = relativer Pfad) |
-| `POST ?a=write_part&p=&n=&u=` · `write_done&p=&u=&size=` | (ab Version 2) große Datei in Teilen in eine temporäre Datei, dann atomar ersetzen; `u` = 16–64 Hex-Zeichen je Upload; unvollständige Teile verfallen nach einem Tag |
+| `POST ?a=write_part&p=&n=&u=` · `write_done&p=&u=&size=` | (ab Version 2) große Datei in Teilen in eine temporäre Datei, dann atomar ersetzen; `u` = 16 bis 64 Hex-Zeichen je Upload; unvollständige Teile verfallen nach einem Tag |
 | `POST ?a=share_part&id=&n=` · `share_done&id=&exp=&max=` | Freigabe in Teilen hochladen, dann veröffentlichen |
 | `POST ?a=share_delete&id=` · `share_list` | Freigabe beenden; Liste `{id, exp, max, count}` |
 

@@ -27,12 +27,14 @@ const MAX_HISTORY: usize = 10;
 pub const MAX_ATTACHMENT: usize = 10 * 1024 * 1024;
 const MAX_ATTACHMENTS: usize = 20;
 
-#[derive(uniffi::Record, Clone, Debug, PartialEq)]
+#[derive(uniffi::Record, Clone, PartialEq)]
 pub struct PasswordHistoryItem {
     pub password: String,
     /// Unix milliseconds: until when this password was in use.
     pub changed: i64,
 }
+
+super::redact::redacted_debug!(PasswordHistoryItem { changed });
 
 #[derive(uniffi::Record, Clone, Debug, PartialEq)]
 pub struct AttachmentInfo {
@@ -78,13 +80,15 @@ pub struct SecurityReport {
     pub issues: Vec<SecurityIssue>,
 }
 
-#[derive(uniffi::Record, Clone, Debug, PartialEq)]
+#[derive(uniffi::Record, Clone, PartialEq)]
 pub struct TotpNow {
     pub code: String,
     pub next_code: String,
     pub remaining: u32,
     pub period: u32,
 }
+
+super::redact::redacted_debug!(TotpNow { remaining, period });
 
 pub(crate) fn is_favorite(e: &Entry) -> bool {
     matches!(e.extra.get(FAVORITE), Some(Value::Bool(true)))

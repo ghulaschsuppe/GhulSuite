@@ -4,6 +4,8 @@
 #   SFTP: OpenSSH on 127.0.0.1:2222 (key login, writes into a temporary folder)
 #   IMAP: Dovecot on 127.0.0.1:10993 (TLS, self-signed) and 10143 (STARTTLS)
 #   SMTP: a small test server on 127.0.0.1:10587 (STARTTLS) that delivers into the Dovecot mailbox
+#   With GHUL_TEST_SFTP_PASSWORD=1 also SFTP with user name and password on 127.0.0.1:2223
+#   (for the emulator flows; tools/run-maestro.sh forwards the ports to the device with adb reverse)
 # Prints the environment variables the tests read; use:  eval "$(tools/test-servers.sh)"
 # Needs: openssh-server, dovecot-imapd, python3, openssl (Debian/Ubuntu packages). Runs as root
 # (CI: sudo). Nothing here is used by the app itself.
@@ -49,6 +51,69 @@ if command -v dovecot >/dev/null; then
   mkdir -p "$D/mail" "$D/dovecot"
   chown "$MAIL_UID:$MAIL_GID" "$D/mail"
   chmod 644 "$D/tls.key"
+  # Dovecot 2.4 (Ubuntu 26.04 and newer) has a new configuration format; 2.3 keeps the old one.
+  case "$(dovecot --version 2>/dev/null)" in
+    2.[0-3].*) DOVECOT_24=0 ;;
+    *) DOVECOT_24=1 ;;
+  esac
+  if [ "$DOVECOT_24" = 1 ]; then
+  cat > "$D/dovecot/dovecot.conf" <<CFG
+dovecot_config_version = 2.4.0
+dovecot_storage_version = 2.4.0
+base_dir = $D/dovecot/run
+state_dir = $D/dovecot/state
+log_path = $D/dovecot/dovecot.log
+protocols {
+  imap = yes
+}
+listen = 127.0.0.1
+ssl = yes
+ssl_server_cert_file = $D/tls.crt
+ssl_server_key_file = $D/tls.key
+auth_allow_cleartext = no
+auth_mechanisms {
+  plain = yes
+  login = yes
+}
+mail_driver = maildir
+mail_path = $D/mail/%{user}
+passdb static {
+  password = test-pw-123
+}
+userdb static {
+  fields {
+    uid = $MAIL_UID
+    gid = $MAIL_GID
+    home = $D/mail/%{user}
+  }
+}
+service imap-login {
+  # (2.4 has no address per listener; "listen" above applies to all of them.)
+  inet_listener imap {
+    port = 10143
+  }
+  inet_listener imaps {
+    port = 10993
+    ssl = yes
+  }
+}
+namespace inbox {
+  inbox = yes
+  mailbox Sent {
+    special_use = \\Sent
+    auto = create
+  }
+  mailbox Trash {
+    special_use = \\Trash
+    auto = create
+  }
+  mailbox Drafts {
+    special_use = \\Drafts
+    auto = create
+  }
+}
+CFG
+  else
   cat > "$D/dovecot/dovecot.conf" <<CFG
 base_dir = $D/dovecot/run
 state_dir = $D/dovecot/state
@@ -96,7 +161,13 @@ namespace inbox {
   }
 }
 CFG
-  dovecot -c "$D/dovecot/dovecot.conf"
+
+  fi
+  if ! dovecot -c "$D/dovecot/dovecot.conf"; then
+    echo "dovecot did not start ($(dovecot --version 2>/dev/null))" >&2
+    cat "$D/dovecot/dovecot.log" 2>/dev/null >&2 || true
+    exit 1
+  fi
   # --- SMTP: delivers into the user's Maildir ---
   # Copy the server next to the mail data: "nobody" may not read the checkout (e.g. CI home).
   install -m 644 "$HERE/test-smtp.py" "$D/test-smtp.py"
@@ -141,8 +212,35 @@ CFG
   echo $! > "$D/vsftpd.pid"
 fi
 
+# --- SFTP with a password (GHUL_TEST_SFTP_PASSWORD=1) ---------------------------------------------
+# For the emulator flows: a person sets up GhulDrive with user name and password, and the app
+# puts its own SSH key on the server. A second sshd, so the key-only server above stays as it is.
+if [ "${GHUL_TEST_SFTP_PASSWORD:-0}" = 1 ]; then
+  id ghulsftp >/dev/null 2>&1 || useradd -M -s /bin/sh ghulsftp
+  echo 'ghulsftp:test-pw-123' | chpasswd
+  mkdir -p "$D/sftp-pw"
+  chown ghulsftp "$D/sftp-pw"
+  usermod -d "$D/sftp-pw" ghulsftp
+  cat > "$D/ssh/sshd_config_pw" <<CFG
+Port 2223
+ListenAddress 127.0.0.1
+HostKey $D/ssh/host_key
+PidFile $D/ssh/sshd_pw.pid
+AllowUsers ghulsftp
+PermitRootLogin no
+PasswordAuthentication yes
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+StrictModes no
+UsePAM no
+Subsystem sftp internal-sftp
+CFG
+  /usr/sbin/sshd -f "$D/ssh/sshd_config_pw" -E "$D/ssh/sshd_pw.log"
+fi
+
 # Wait until every server listens; otherwise stop with its log (tests must not silently miss one).
 PORTS="2222"
+if [ "${GHUL_TEST_SFTP_PASSWORD:-0}" = 1 ]; then PORTS="$PORTS 2223"; fi
 if command -v dovecot >/dev/null; then PORTS="$PORTS 10993 10143 10587"; fi
 if command -v vsftpd >/dev/null; then PORTS="$PORTS 10021"; fi
 for port in $PORTS; do
@@ -160,6 +258,12 @@ echo "export GHUL_TEST_SFTP_USER=$(id -un)"
 echo "export GHUL_TEST_SFTP_ROOT=$D/sftp-root"
 echo "export GHUL_TEST_SFTP_AUTHKEYS=$D/ssh/authorized_keys"
 echo "export GHUL_TEST_SFTP_HOSTKEY=$HOST_FP"
+if [ "${GHUL_TEST_SFTP_PASSWORD:-0}" = 1 ]; then
+  echo "export GHUL_TEST_SFTP_PW=127.0.0.1:2223"
+  echo "export GHUL_TEST_SFTP_PW_USER=ghulsftp"
+  echo "export GHUL_TEST_SFTP_PW_PASSWORD=test-pw-123"
+  echo "export GHUL_TEST_SFTP_PW_ROOT=$D/sftp-pw"
+fi
 if command -v vsftpd >/dev/null; then
   echo "export GHUL_TEST_FTPS=127.0.0.1:10021"
   echo "export GHUL_TEST_FTPS_USER=ghulftp"

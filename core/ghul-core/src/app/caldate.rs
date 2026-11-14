@@ -183,7 +183,8 @@ impl DateTime {
         if s.as_bytes().get(8) != Some(&b'T') || t.len() < 4 {
             return None;
         }
-        DateTime::new(date, t[0..2].parse().ok()?, t[2..4].parse().ok()?)
+        // `get`: a file may carry any characters here, also ones of several bytes.
+        DateTime::new(date, t.get(0..2)?.parse().ok()?, t.get(2..4)?.parse().ok()?)
     }
 
     pub fn compact(self) -> String {
@@ -200,6 +201,15 @@ impl fmt::Display for DateTime {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn odd_characters_are_no_time() {
+        for s in ["20261113Tä000", "20261113T0ä00", "20261113T00ä0", "20261113Tääää", "2026111äT1000", "20261113T😀"]
+        {
+            assert_eq!(DateTime::parse_compact(s), None, "{s}");
+        }
+        assert!(DateTime::parse_compact("20261113T1000").is_some());
+    }
 
     #[test]
     fn round_trips_and_weekdays() {

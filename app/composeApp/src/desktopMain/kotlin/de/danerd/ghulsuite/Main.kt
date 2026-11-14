@@ -65,7 +65,8 @@ fun main() {
             onPreviewKeyEvent = { e ->
                 // Ctrl+L locks at once (like Win+L for Windows).
                 if (e.type == KeyEventType.KeyDown && e.isCtrlPressed && e.key == Key.L) {
-                    backend.lock()
+                    // What waits for "Undo" is carried out first, as with every lock button.
+                    state.lockNow()
                     true
                 } else {
                     false
@@ -105,9 +106,9 @@ fun main() {
                     // A few seconds of grace, so that a short switch (e.g. to a system dialog) does not lock.
                     val autoLock = maxOf(backend.settings.autoLockSeconds * 1000L, 3000L)
                     when {
-                        backend.settings.lockOnScreenOff && WinNative.workstationLocked() -> backend.lock()
-                        !waitingForKey && lostFocusAt != null && away >= autoLock -> backend.lock()
-                        !waitingForKey && now - lastInput >= maxOf(IDLE_LOCK_MS, autoLock) -> backend.lock()
+                        backend.settings.lockOnScreenOff && WinNative.workstationLocked() -> state.lockNow()
+                        !waitingForKey && lostFocusAt != null && away >= autoLock -> state.lockNow()
+                        !waitingForKey && now - lastInput >= maxOf(IDLE_LOCK_MS, autoLock) -> state.lockNow()
                     }
                 }
             }

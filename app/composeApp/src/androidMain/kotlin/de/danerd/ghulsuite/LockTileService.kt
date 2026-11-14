@@ -4,7 +4,7 @@ package de.danerd.ghulsuite
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 
-/** Quick settings tile "Lock GhulSuite": panic lock – locks and destroys fingerprint/PIN unlock. */
+/** Quick settings tile "Lock GhulSuite": panic lock, locks and destroys fingerprint/PIN unlock. */
 class LockTileService : TileService() {
     override fun onStartListening() {
         update()

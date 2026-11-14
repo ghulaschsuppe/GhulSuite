@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package de.danerd.ghulsuite.ui
 
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -58,6 +61,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.text.TextStyle
@@ -100,6 +104,10 @@ val DarkTokens = GhulTokens(
     ok = Color(0xFF4FD8A0), warn = Color(0xFFFFB85C), danger = Color(0xFFFF7A86),
 )
 
+/** The accent on a bar in the text colour (snackbar): the light accent on dark, the dark one on light. */
+val GhulTokens.accentOnFg: Color
+    get() = if (fg.luminance() < 0.5f) DarkTokens.accent else LightTokens.accent
+
 val LocalTokens = staticCompositionLocalOf { LightTokens }
 
 /** Current design tokens. */
@@ -109,7 +117,7 @@ val g: GhulTokens @Composable get() = LocalTokens.current
 val LocalOnCard = compositionLocalOf { false }
 
 /** How a [TextButton] looks: plain text, or as a button of a sheet's button row. */
-enum class ButtonLook { TEXT, OUTLINE, PRIMARY }
+enum class ButtonLook { TEXT, OUTLINE, PRIMARY, DANGER }
 
 val LocalButtonLook = compositionLocalOf { ButtonLook.TEXT }
 
@@ -187,6 +195,16 @@ fun TextButton(
     when (LocalButtonLook.current) {
         ButtonLook.PRIMARY -> CompositionLocalProvider(LocalButtonLook provides ButtonLook.TEXT) {
             Button(onClick, modifier.fillMaxWidth(), enabled, content = content)
+        }
+        ButtonLook.DANGER -> CompositionLocalProvider(LocalButtonLook provides ButtonLook.TEXT) {
+            Button(
+                onClick, modifier.fillMaxWidth(), enabled,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = g.danger, contentColor = if (LocalDark.current) g.bg else Color.White,
+                    disabledContainerColor = g.surface3, disabledContentColor = g.faint,
+                ),
+                content = content,
+            )
         }
         ButtonLook.OUTLINE -> CompositionLocalProvider(LocalButtonLook provides ButtonLook.TEXT) {
             OutlinedButton(onClick, modifier.fillMaxWidth(), enabled, content = content)
@@ -354,7 +372,8 @@ fun SheetList(content: @Composable ColumnScope.() -> Unit) {
 
 /**
  * Dialogs open as bottom sheets, like everywhere in the design preview: title, content, then the
- * actions as a row of buttons (cancel outlined, confirm filled).
+ * actions as a row of buttons (cancel outlined, confirm filled). With [danger] the confirm button
+ * is red: for everything that deletes for good.
  */
 @Composable
 fun AlertDialog(
@@ -365,6 +384,7 @@ fun AlertDialog(
     icon: @Composable (() -> Unit)? = null,
     title: @Composable (() -> Unit)? = null,
     text: @Composable (() -> Unit)? = null,
+    danger: Boolean = false,
 ) {
     GhulSheet(onDismissRequest) {
         if (icon != null) Box(Modifier.padding(bottom = 4.dp)) { icon() }
@@ -381,7 +401,7 @@ fun AlertDialog(
         Layout(
             contents = listOf(
                 { CompositionLocalProvider(LocalButtonLook provides ButtonLook.OUTLINE) { dismissButton?.invoke() } },
-                { CompositionLocalProvider(LocalButtonLook provides ButtonLook.PRIMARY) { confirmButton() } },
+                { CompositionLocalProvider(LocalButtonLook provides if (danger) ButtonLook.DANGER else ButtonLook.PRIMARY) { confirmButton() } },
             ),
             modifier = Modifier.fillMaxWidth(),
         ) { (dismiss, confirm), constraints ->
@@ -476,7 +496,33 @@ fun ButtonRow(content: @Composable RowScope.() -> Unit) {
 /** Small hint text below a section (.hint-text). */
 @Composable
 fun HintText(text: String, modifier: Modifier = Modifier) {
-    Text(text, fontSize = 13.sp, color = g.muted, modifier = modifier.padding(horizontal = 4.dp))
+    Text(text, fontSize = 13.sp, lineHeight = 18.sp, color = g.muted, modifier = modifier.padding(horizontal = 4.dp))
+}
+
+/** Small filled button of the header (.btn.primary, 36 dp): the main action of a full-screen editor. */
+@Composable
+fun HeaderButton(text: String, enabled: Boolean = true, icon: androidx.compose.ui.graphics.vector.ImageVector? = null, onClick: () -> Unit) {
+    Row(
+        Modifier.height(36.dp).clip(RoundedCornerShape(18.dp)).background(if (enabled) g.accent else g.surface3)
+            .clickable(enabled = enabled, onClick = onClick).padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        val fg = if (enabled) g.onAccent else g.faint
+        if (icon != null) androidx.compose.material3.Icon(icon, null, Modifier.size(18.dp), tint = fg)
+        Text(text, color = fg, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1)
+    }
+}
+
+/** Arrow at the end of a row that leads somewhere (18 dp, faint). */
+@Composable
+fun ChevronEnd() {
+    androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp), tint = g.faint)
+}
+
+/** Check mark of the chosen option in a list or sheet (20 dp, accent). */
+@Composable
+fun SheetCheck() {
+    androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.Check, null, Modifier.size(20.dp), tint = g.accent)
 }
 
 @Suppress("unused")
@@ -570,7 +616,7 @@ fun GhulNavBar(tabs: List<NavTab>, selected: Int, onSelect: (Int) -> Unit) {
                                     .heightIn(min = 16.dp).widthIn(min = 16.dp)
                                     .border(1.5.dp, t.surface, RoundedCornerShape(8.dp))
                                     .clip(RoundedCornerShape(8.dp))
-                                    .background(LocalAreaMail.current).padding(horizontal = 4.dp),
+                                    .background(tab.color).padding(horizontal = 4.dp),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
@@ -592,8 +638,6 @@ val LocalWide = compositionLocalOf { false }
 
 /** Columns for tile grids (Drive, Auth): 2 on phones, more in wide panes. */
 val LocalColumns = compositionLocalOf { 2 }
-
-val LocalAreaMail = compositionLocalOf { Color(0xFFE0700F) }
 
 /** Floating action button (.fab): 56 dp, 18 dp corners, white content, optional text. */
 @Composable
@@ -640,11 +684,24 @@ fun GhulSnackbarHost(host: androidx.compose.material3.SnackbarHostState, modifie
     androidx.compose.material3.SnackbarHost(host, modifier) { data ->
         val t = g
         Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
-            Text(
-                data.visuals.message,
-                Modifier.widthIn(max = 560.dp).clip(RoundedCornerShape(14.dp)).background(t.fg).padding(horizontal = 16.dp, vertical = 10.dp),
-                color = t.bg, fontSize = 14.sp, fontWeight = FontWeight.W500,
-            )
+            Row(
+                Modifier.widthIn(max = 560.dp).clip(RoundedCornerShape(14.dp)).background(t.fg)
+                    .padding(start = 16.dp, end = if (data.visuals.actionLabel != null) 6.dp else 16.dp, top = 4.dp, bottom = 4.dp)
+                    .heightIn(min = 36.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(data.visuals.message, Modifier.weight(1f, fill = false).padding(vertical = 6.dp), color = t.bg, fontSize = 14.sp, fontWeight = FontWeight.W500)
+                // "Undo": the light accent reads on the dark bar (light design) and the dark accent
+                // on the light bar (dark design).
+                data.visuals.actionLabel?.let { label ->
+                    Text(
+                        label,
+                        Modifier.clip(RoundedCornerShape(10.dp)).clickable { data.performAction() }.padding(horizontal = 10.dp, vertical = 8.dp),
+                        color = t.accentOnFg, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
         }
     }
 }
@@ -661,33 +718,6 @@ fun SingleChoiceSegmentedButtonRow(modifier: Modifier = Modifier, content: @Comp
 object SegmentedButtonDefaults {
     fun itemShape(index: Int, count: Int): Any? = null
 }
-
-/** Selection bar (.selbar): replaces the navigation while files are selected. */
-@Composable
-fun SelectionBar(count: String, actions: List<Triple<androidx.compose.ui.graphics.vector.ImageVector, String, () -> Unit>>, enabled: List<Boolean>) {
-    val t = g
-    Column(Modifier.fillMaxWidth().background(t.surface)) {
-        Box(Modifier.fillMaxWidth().height(1.dp).background(t.line))
-        Text(count, Modifier.fillMaxWidth().padding(top = 6.dp), fontSize = 12.sp, fontWeight = FontWeight.Bold,
-            color = LocalAreaDrive.current, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-        Row(Modifier.fillMaxWidth().navigationBarsPadding().height(70.dp).padding(start = 4.dp, end = 4.dp, top = 4.dp, bottom = 12.dp)) {
-            actions.forEachIndexed { i, (icon, label, onClick) ->
-                val on = enabled.getOrElse(i) { true }
-                Column(
-                    Modifier.weight(1f).alpha(if (on) 1f else 0.35f).clickable(enabled = on, onClick = onClick),
-                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp),
-                ) {
-                    Box(Modifier.size(56.dp, 30.dp), contentAlignment = Alignment.Center) {
-                        androidx.compose.material3.Icon(icon, null, Modifier.size(22.dp), tint = t.fg)
-                    }
-                    Text(label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = t.fg, maxLines = 1)
-                }
-            }
-        }
-    }
-}
-
-val LocalAreaDrive = compositionLocalOf { Color(0xFF2F74E8) }
 
 /** Chip (.chip): pill, outlined; chosen = soft accent. Replaces Material's filter chip. */
 @Composable
