@@ -124,7 +124,9 @@ else
   keytool -genkeypair -keystore "$key" -storepass precheck -keypass precheck -alias ghulsuite \
     -keyalg RSA -keysize 2048 -validity 2 -dname "CN=precheck" -noprompt > /dev/null 2>&1
   gradle_all() {
-    (cd app && GHUL_KEYSTORE_FILE="$key" GHUL_KEYSTORE_PASSWORD=precheck ./gradlew --console=plain --continue \
+    # Gradle builds the Rust core for Android in its own build folder (removed below), not in a shared
+    # CARGO_TARGET_DIR: the Android builds are large.
+    (cd app && env -u CARGO_TARGET_DIR GHUL_KEYSTORE_FILE="$key" GHUL_KEYSTORE_PASSWORD=precheck ./gradlew --console=plain --continue \
       :composeApp:desktopTest :composeApp:assembleDebug :composeApp:createDistributable)
   }
   step "Gradle: Desktop-Tests, signierte APK mit Lint, Paketierung" gradle_all
