@@ -190,6 +190,8 @@ interface VaultBackend {
     fun crashReport(): String? = null
     /** Breach check (k-anonymity); network. */
     suspend fun pwnedCount(password: String): Int = 0
+    /** Sends an error report with the user's note to the developer (www.ghulsuite.de); network. */
+    suspend fun sendReport(report: String, note: String, contact: String) {}
 
     /** Copies to the clipboard, marked as sensitive and cleared automatically. */
     fun copySensitive(label: String, text: String)

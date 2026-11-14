@@ -113,6 +113,13 @@ private val CORE_TEXTS: Map<String, StringResource> = mapOf(
     "too many redirects" to Res.string.core_upd_redirects,
     "checksums of the update unreadable" to Res.string.core_upd_sums_unreadable,
     "this build has no update key" to Res.string.core_upd_no_key,
+    "the note is too long" to Res.string.core_rep_note_long,
+    "invalid e-mail address for questions" to Res.string.core_rep_contact,
+    "the report is too long" to Res.string.core_rep_too_long,
+    "too many reports from here right now, please try again in an hour" to Res.string.core_rep_busy,
+    "the clock of this device is wrong" to Res.string.core_rep_clock,
+    "the report was refused" to Res.string.core_rep_refused,
+    "the report service is not available right now" to Res.string.core_rep_unavailable,
 )
 
 private val PIN_MIN = Regex("PIN must have at least (\\d+) characters")

@@ -110,6 +110,27 @@ tools/                 Testserver (SFTP/IMAP/SMTP), Prüfskripte, Emulator-Skrip
   baut selbst, ohne `GHUL_UPDATE_KEY`: Der Updater ist dort von selbst aus. Mit reproduzierbaren Builds (Issue #6)
   kann F-Droid unser signiertes APK ausliefern.
 
+## Website (www.ghulsuite.de)
+
+- Quellen in `website/`: `templates/` (Seitenrahmen, Startseite), `i18n/de.json` und `en.json` (Texte der
+  Startseite), `pages/<sprache>/` (Impressum und Datenschutzerklärungen), `static/` (CSS, JavaScript),
+  `htaccess-live`. Gebaut mit `tools/build-website.py`: setzt Sprachen und Seiten zusammen und trägt Versionen,
+  Daten, Dateigrößen (GitHub-Releases) und Kennzahlen (Testprotokoll, Sicherheitsbericht) selbst ein.
+- **Rechtliche Angaben nur aus Secrets:** `IMPRESSUM_NAME`, `IMPRESSUM_ADRESSE` (mehrzeilig), `IMPRESSUM_EMAIL`,
+  `IMPRESSUM_HOSTER` (mehrzeilig: Name, Anschrift). Ohne die ersten drei wird die Live-Seite nicht gebaut.
+- `.github/workflows/website.yml`: `main` → Live-Seite (`WEBSITE_FTP_SERVER`, `WEBSITE_FTP_USER`,
+  `WEBSITE_FTP_PASSWORD`), `dev` und andere Branches → Vorschau auf dem Testserver (`ghulsuite/website/` bzw.
+  `ghulsuite/branches/<branch>/website/`, nicht für Suchmaschinen). Nach jedem Release wird beides neu gebaut.
+- Die Seite setzt keine Cookies und lädt nichts von fremden Servern (keine Schriften, keine Skripte); die
+  Content-Security-Policy in `htaccess-live` verbietet es auch. Neue Funktionen der App kommen mit dem
+  jeweiligen PR in die Texte (wie bei der README). Ändert sich, was die App an Verbindungen aufbaut, wird
+  `pages/*/datenschutz-app.html` bzw. `privacy-app.html` im selben PR angepasst.
+- **Fehlerberichte aus der App:** `website/static/report.php` (PHP 8.1, ohne Datenbank) nimmt Berichte entgegen und
+  schickt sie per E-Mail an `IMPRESSUM_EMAIL` (oder `REPORT_EMAIL`); gespeichert wird nichts. Spamschutz:
+  Proof-of-Work aus `core/ghul-core/src/report.rs` (20 Bit), jeder Beweis nur einmal, 5 je Adresse und Stunde,
+  100 am Tag, Größenlimits. `tools/test-report-php.py` prüft das gegen `php -S` (Precheck und CI).
+- Lokal ansehen: `tools/build-website.py --out /tmp/site --preview` und den Ordner mit einem Webserver öffnen.
+
 ## Arbeitsweise: Branches, Pull Requests, Issues
 
 - `main` ist immer lauffähig und geschützt: Änderungen kommen nur über einen **Pull Request** mit grünen Tests hinein.

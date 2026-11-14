@@ -1584,4 +1584,25 @@
     <string name="upd_open_page">Open release page</string>
     <string name="upd_loading">Loading the update…</string>
     <string name="upd_allow">Allow “Install unknown apps” for GhulSuite once, then tap “Install” again.</string>
+    <string name="about_site">Website</string>
+    <string name="about_site_url">https://www.ghulsuite.de/en/</string>
+    <string name="about_imprint">Legal notice</string>
+    <string name="about_imprint_url">https://www.ghulsuite.de/en/imprint.html</string>
+    <string name="about_privacy">Privacy policy</string>
+    <string name="about_privacy_sub">What the app sends where: nothing to the developer</string>
+    <string name="about_privacy_url">https://www.ghulsuite.de/en/privacy-app.html</string>
+    <string name="report_note">Your note (optional)</string>
+    <string name="report_note_hint">What happened? What did you do just before?</string>
+    <string name="report_contact">E-mail for questions (optional)</string>
+    <string name="report_send_hint">“Send” transfers the report above with your note to www.ghulsuite.de, which forwards it by e-mail to the developer. Nothing is stored there; no vault contents are included.</string>
+    <string name="report_send">Send</string>
+    <string name="report_sending">Sending…</string>
+    <string name="report_sent">Thank you! Your report has arrived.</string>
+    <string name="core_rep_note_long">Your note is too long (at most 4,000 characters).</string>
+    <string name="core_rep_contact">This e-mail address does not look valid.</string>
+    <string name="core_rep_too_long">The report is too long.</string>
+    <string name="core_rep_busy">Too many reports from here right now. Please try again in an hour.</string>
+    <string name="core_rep_clock">The clock of this device is wrong. Please correct date and time.</string>
+    <string name="core_rep_refused">The report was refused.</string>
+    <string name="core_rep_unavailable">Sending reports is not available right now. You can copy or save the report instead.</string>
 </resources>

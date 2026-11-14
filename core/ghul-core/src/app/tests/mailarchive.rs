@@ -185,7 +185,13 @@ impl Place {
     fn store(&self, s: &Settings) -> Store {
         let fs: Arc<dyn RemoteFs> = Arc::new(LocalFs::new(&self.root));
         let second: Arc<dyn RemoteFs> = Arc::new(LocalFs::new(&self.root));
-        Store { fs, fresh: Box::new(move || Ok(second.clone())), keys: Keys::new(s).unwrap(), copy: None }
+        Store {
+            fs,
+            fresh: Box::new(move || Ok(second.clone())),
+            keys: Keys::new(s).unwrap(),
+            copy: None,
+            writing: Default::default(),
+        }
     }
 }
 
@@ -781,7 +787,13 @@ fn a_run_reads_only_what_it_needs() {
     let counting = Arc::new(CountingFs { inner: LocalFs::new(&place.root), read_bytes: Default::default() });
     let fs: Arc<dyn RemoteFs> = counting.clone();
     let second = fs.clone();
-    let store = Store { fs, fresh: Box::new(move || Ok(second.clone())), keys: Keys::new(&s).unwrap(), copy: None };
+    let store = Store {
+        fs,
+        fresh: Box::new(move || Ok(second.clone())),
+        keys: Keys::new(&s).unwrap(),
+        copy: None,
+        writing: Default::default(),
+    };
     let sim = Sim::new();
     // 600 mails over 50 months, each with a 20 KB attachment.
     for n in 0..600u32 {

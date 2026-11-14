@@ -1,0 +1,99 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The website www.ghulsuite.de (website/, built by tools/build-website.py).
+#
+#   main -> live site     (secrets WEBSITE_FTP_SERVER, WEBSITE_FTP_USER, WEBSITE_FTP_PASSWORD)
+#   dev  -> preview       (test server: secrets FTP_SERVER, FTP_USER, FTP_PASSWORD, folder ghulsuite/website/;
+#                          other branches: ghulsuite/branches/<branch>/website/)
+#
+# It is built again whenever its content changes and after every release (new version numbers,
+# dates and file sizes). The legal notice comes from the secrets IMPRESSUM_NAME, IMPRESSUM_ADRESSE,
+# IMPRESSUM_EMAIL and IMPRESSUM_HOSTER; it is never part of the repository.
+name: Website
+
+on:
+  push:
+    branches: ['**']
+    paths: ['website/**', 'tools/build-website.py', 'docs/images/**', 'docs/TESTPROTOKOLL.md', 'docs/AUDIT.md',
+            '.github/workflows/website.yml', '.github/actions/ftps-upload/**']
+  # After a release: the download section shows the new version.
+  workflow_run:
+    workflows: ["Veröffentlichen"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: website-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  live:
+    name: Live-Seite (www.ghulsuite.de)
+    if: >-
+      github.repository_owner == 'ghulaschsuppe' && (
+        (github.event_name != 'workflow_run' && github.ref == 'refs/heads/main') ||
+        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+      - name: Website bauen
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          IMPRESSUM_NAME: ${{ secrets.IMPRESSUM_NAME }}
+          IMPRESSUM_ADRESSE: ${{ secrets.IMPRESSUM_ADRESSE }}
+          IMPRESSUM_EMAIL: ${{ secrets.IMPRESSUM_EMAIL }}
+          IMPRESSUM_HOSTER: ${{ secrets.IMPRESSUM_HOSTER }}
+        run: python3 tools/build-website.py --out dist/site
+      - name: Hochladen nach www.ghulsuite.de
+        uses: ./.github/actions/ftps-upload
+        with:
+          server: ${{ secrets.WEBSITE_FTP_SERVER }}
+          user: ${{ secrets.WEBSITE_FTP_USER }}
+          password: ${{ secrets.WEBSITE_FTP_PASSWORD }}
+          local-dir: ./dist/site/
+          remote-dir: ./
+
+  preview:
+    name: Vorschau (Testserver)
+    if: >-
+      github.repository_owner == 'ghulaschsuppe' && (
+        (github.event_name != 'workflow_run' && github.ref != 'refs/heads/main') ||
+        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && 'dev' || github.ref }}
+      - name: Zielordner auf dem Testserver
+        id: dest
+        shell: bash
+        env:
+          REF: ${{ github.event_name == 'workflow_run' && 'dev' || github.ref_name }}
+        run: |
+          # dev -> ghulsuite/website/, every other branch -> ghulsuite/branches/<branch>/website/
+          if [ "$REF" = "dev" ]; then dir=ghulsuite/website; else
+            b=$(printf '%s' "$REF" | tr -c 'A-Za-z0-9._-' '-'); dir="ghulsuite/branches/$b/website"; fi
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+      - name: Website bauen (Vorschau, nicht für Suchmaschinen)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          IMPRESSUM_NAME: ${{ secrets.IMPRESSUM_NAME }}
+          IMPRESSUM_ADRESSE: ${{ secrets.IMPRESSUM_ADRESSE }}
+          IMPRESSUM_EMAIL: ${{ secrets.IMPRESSUM_EMAIL }}
+          IMPRESSUM_HOSTER: ${{ secrets.IMPRESSUM_HOSTER }}
+        run: python3 tools/build-website.py --out dist/site --preview
+      - name: Hochladen auf den Testserver
+        uses: ./.github/actions/ftps-upload
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          user: ${{ secrets.FTP_USER }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./dist/site/
+          remote-dir: ${{ steps.dest.outputs.dir }}/
