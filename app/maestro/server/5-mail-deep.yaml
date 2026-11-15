@@ -48,7 +48,11 @@ name: GhulMail in depth on a real server
 - extendedWaitUntil:
     visible: "1 selected"
     timeout: 10000
-- tapOn: "Mark unread"
+# The answer arrived unread, so the conversation offers "Mark read"; a read one "Mark unread".
+- tapOn: "Mark (un)?read"
+- extendedWaitUntil:
+    notVisible: "1 selected"
+    timeout: 10000
 - takeScreenshot: s5-04-unread
 # --- Search ---
 - tapOn: "Search mails"
@@ -71,14 +75,18 @@ name: GhulMail in depth on a real server
     visible: "1 selected"
     timeout: 10000
 # One conversation, already selected: "All" would do nothing, so it is not offered.
-- assertNotVisible: "All"
+- assertNotVisible: { id: "sel-all" }
 - tapOn: "Delete"
 - extendedWaitUntil:
     visible: "Undo"
     timeout: 10000
 - takeScreenshot: s5-06-deleted
+# The whole conversation was deleted (no older mail of it is left as a row of its own)…
+- assertNotVisible: "Encrypted message"
 - tapOn: "Undo"
 - extendedWaitUntil:
     visible: "Encrypted message"
     timeout: 60000
+# … and comes back whole.
+- assertVisible: ".*\\(2\\)"
 - takeScreenshot: s5-07-undone

@@ -79,12 +79,12 @@ name: GhulPass in depth
     visible: "1 selected"
     timeout: 10000
 - takeScreenshot: 08-04-one-selected
-- tapOn: "All"
+- tapOn: { id: "sel-all" }
 - extendedWaitUntil:
     visible: "[2-9]\\d* selected"
     timeout: 10000
 # Everything is selected: "All" would do nothing now and is gone.
-- assertNotVisible: "All"
+- assertNotVisible: { id: "sel-all" }
 - takeScreenshot: 08-05-all-selected
 - tapOn: "Delete"
 - extendedWaitUntil:

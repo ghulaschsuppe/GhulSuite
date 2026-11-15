@@ -242,11 +242,16 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
         if (todo.any { targets[it] == null }) state.messageRes(Res.string.mail_no_archive)
         else if (todo.isNotEmpty()) remove(todo, archivedMsg) { net.mailMove(it.accountId, folder, it.m.uid, targets.getValue(it)!!.name) }
     }
+    // A row stands for a whole conversation: what is done to the row is done to all its mails.
+    val threadOf = { item: MailItem -> item.accountId + "|" + item.m.threadKey.ifEmpty { item.m.uid.toString() } }
+    fun mailsOf(item: MailItem) = messages.filter { threadOf(it) == threadOf(item) && hideKey(it) !in state.hidden }.ifEmpty { listOf(item) }
     fun swipe(item: MailItem, left: Boolean) {
-        if (left && swipeLeft == 0) return archive(listOf(item)).let {}
-        if (left && swipeLeft == 1) return delete(listOf(item))
+        val all = mailsOf(item)
+        if (left && swipeLeft == 0) return archive(all).let {}
+        if (left && swipeLeft == 1) return delete(all)
         scope.launch {
-            catching { net.mailSetSeen(item.accountId, folder, item.m.uid, if (left) true else !item.m.seen) }.onFailure { state.message(describe(it)) }
+            val seen = if (left) true else !item.m.seen
+            catching { all.forEach { net.mailSetSeen(it.accountId, folder, it.m.uid, seen) } }.onFailure { state.message(describe(it)) }
             reload++
         }
     }
@@ -254,7 +259,20 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
     val selected = rememberListSelection()
     var moving by remember { mutableStateOf<List<MailItem>?>(null) }
     val listed = messages.filter { hideKey(it) !in state.hidden }
-    val chosen = listed.filter { keyOf(it) in selected }
+    val shownItems = listed.filter {
+        when (filter) {
+            "unread" -> !it.m.seen
+            "flagged" -> it.m.flagged
+            "attachments" -> it.m.hasAttachments
+            else -> true
+        }
+    }
+    // Conversations: the newest message of each subject stands for the others (count in brackets).
+    val threads = shownItems.groupBy(threadOf)
+    val heads = shownItems.filter { item -> threads[threadOf(item)]?.first() === item }
+    // A selected row selects its whole conversation.
+    val chosenThreads = heads.filter { keyOf(it) in selected }.map(threadOf).toSet()
+    val chosen = listed.filter { threadOf(it) in chosenThreads }
     // "All N mails in this folder" (also the ones not loaded yet): one account, plain list only.
     val single = if (all) null else shown.singleOrNull()
     var wholeFolder by remember(key) { mutableStateOf(false) }
@@ -294,8 +312,8 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
         SelectionHeader(
             if (wholeFolder) total else selected.keys.size,
             onClose = { selected.clear() },
-            onAll = { selected.all(listed.map(keyOf)) },
-            total = listed.size,
+            onAll = { selected.all(heads.map(keyOf)) },
+            total = heads.size,
             actions = buildList {
                 add(SelAction(if (anyUnread) Icons.Filled.MarkEmailRead else Icons.Filled.MarkEmailUnread,
                     stringResource(if (anyUnread) Res.string.a_mark_read else Res.string.a_mark_unread)) {
@@ -324,7 +342,7 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
         )
     }
     if (selected.active && single != null && filter.isEmpty() && !searching && total > listed.size &&
-        (wholeFolder || selected.keys.size >= listed.size)
+        (wholeFolder || selected.keys.size >= heads.size)
     ) {
         Box(Modifier.fillMaxWidth().clickable(enabled = !wholeFolder) { wholeFolder = true }.padding(horizontal = 16.dp, vertical = 10.dp)) {
             Text(
@@ -374,18 +392,7 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
             icons = mapOf("flagged" to Icons.Outlined.Flag, "attachments" to Icons.Filled.Attachment),
         )
         if (loading && messages.isEmpty()) LoadingHint()
-        val shownItems = listed.filter {
-            when (filter) {
-                "unread" -> !it.m.seen
-                "flagged" -> it.m.flagged
-                "attachments" -> it.m.hasAttachments
-                else -> true
-            }
-        }
         if (!loading && shownItems.isEmpty() && error == null) EmptyState(tabIcon(Tab.MAIL), stringResource(Res.string.mail_empty), areaColor(Tab.MAIL))
-        // Conversations: the newest message of each subject stands for the others (count in brackets).
-        val threads = shownItems.groupBy { it.accountId + "|" + it.m.threadKey.ifEmpty { it.m.uid.toString() } }
-        val heads = shownItems.filter { item -> threads[item.accountId + "|" + item.m.threadKey.ifEmpty { item.m.uid.toString() }]?.first() === item }
         // Grouped by day: Today, Yesterday, then the date.
         val now = nowSeconds() * 1000
         val today = formatDate(now)
@@ -404,7 +411,7 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
             SectionLabel(day)
             ListCard {
                 list.forEachIndexed { i, item ->
-                    val count = threads[item.accountId + "|" + item.m.threadKey.ifEmpty { item.m.uid.toString() }]?.size ?: 1
+                    val count = threads[threadOf(item)]?.size ?: 1
                     val open = state.wide && state.stack.firstOrNull().let { it is Screen.MailRead && it.uid == item.m.uid && it.accountId == item.accountId }
                     val chosenRow = keyOf(item) in selected
                     SwipeRow(enabled = !selected.active, onLeft = { swipe(item, true) }, onRight = { swipe(item, false) }, leftAction = swipeLeft) {

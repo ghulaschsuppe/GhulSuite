@@ -12,7 +12,7 @@ name: GhulAuth in depth
 - extendedWaitUntil:
     visible: "1 selected"
     timeout: 10000
-- assertNotVisible: "All"
+- assertNotVisible: { id: "sel-all" }
 - takeScreenshot: 09-01-selected
 - tapOn: "Delete"
 - extendedWaitUntil:

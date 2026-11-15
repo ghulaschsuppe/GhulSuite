@@ -181,7 +181,7 @@ name: Sync server and sharing on a real server
     visible: "1 selected"
     timeout: 10000
 # The only item is selected: "All" would do nothing, so it is not offered.
-- assertNotVisible: "All"
+- assertNotVisible: { id: "sel-all" }
 - takeScreenshot: s3-13-drive-selected
 - tapOn: "Cancel"
 - extendedWaitUntil:

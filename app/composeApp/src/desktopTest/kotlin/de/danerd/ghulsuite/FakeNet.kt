@@ -30,7 +30,7 @@ import de.danerd.ghulsuite.model.SyncReportUi
 import de.danerd.ghulsuite.model.SyncStatusUi
 
 /** Sample data for screenshots of the network screens. */
-class FakeNet(private val configured: Boolean = true, private val encryptedMail: Boolean = false) : NetBackend {
+class FakeNet(private val configured: Boolean = true, private val encryptedMail: Boolean = false, private val conversation: Boolean = false) : NetBackend {
     private val now = 1_762_000_000L
     private val server = ServerUi(
         "s1", "Heimserver", "nas.example.org", 22, "max", "ghulsuite", true, "SHA256:abc", "/home/max/ghulsuite",
@@ -141,10 +141,14 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
         MailFolderUi("INBOX", "inbox"), MailFolderUi("Drafts", "drafts"), MailFolderUi("Sent", "sent"), MailFolderUi("Trash", "trash"),
     )
     private val list = listOf(
-        MailSummaryUi(3, "Erika Musterfrau", "erika@example.org", "Treffen am Freitag", now, false, false, false, 2_000),
+        MailSummaryUi(3, "Erika Musterfrau", "erika@example.org", "Treffen am Freitag", now, false, false, false, 2_000,
+            threadKey = if (conversation) "treffen" else ""),
         MailSummaryUi(2, "Stadtwerke", "service@stadtwerke.example", "Ihre Jahresabrechnung", now - 86_400, true, true, true, 120_000),
         MailSummaryUi(1, "Max Mustermann", "max@posteo.de", "Notiz an mich", now - 3 * 86_400, true, false, false, 900),
-    ) + if (encryptedMail) {
+    ) + (if (conversation) {
+        // An earlier mail of the same conversation: the list shows one row with "(2)".
+        listOf(MailSummaryUi(5, "Erika Musterfrau", "erika@example.org", "Re: Treffen am Freitag", now - 600, true, false, false, 1_500, threadKey = "treffen"))
+    } else emptyList()) + if (encryptedMail) {
         // Encrypted with the subject inside (outer subject "..."), as Thunderbird and Proton send it.
         listOf(MailSummaryUi(4, "Jana Beispiel", "jana@example.net", "...", now - 3_600, false, false, false, 5_000, encrypted = true))
     } else emptyList()

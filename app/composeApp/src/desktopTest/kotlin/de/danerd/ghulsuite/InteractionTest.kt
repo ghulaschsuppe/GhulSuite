@@ -220,6 +220,30 @@ class InteractionTest {
         waitUntil(timeoutMillis = 10_000) { "driveEmptyTrash" in net.calls }
     }
 
+    /**
+     * A row of the list stands for a whole conversation: deleting it deletes all its mails (bug: only
+     * the newest one, the older one then came back as its own row), and "Select all" counts rows.
+     */
+    @Test
+    fun mailConversationRowActsOnAllItsMails() = app(setup = { tab = Tab.MAIL }, prepare = { net = FakeNet(conversation = true) }) { state, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Treffen am Freitag")
+        assertTrue(onAllNodesWithText("Re: Treffen am Freitag").fetchSemanticsNodes().isEmpty())
+        state.undoMillis = 300
+        longPress("Treffen am Freitag")
+        waitFor("1 selected")
+        desc("All").performClick()
+        // Three rows (the conversation counts once), not four mails.
+        waitFor("3 selected")
+        desc("Cancel").performClick()
+        waitGone("3 selected")
+        longPress("Treffen am Freitag")
+        waitFor("1 selected")
+        desc("Delete").performClick()
+        waitUntil(timeoutMillis = 10_000) { net.calls.any { it.startsWith("mailDelete:") && it.endsWith(":3") } && net.calls.any { it.startsWith("mailDelete:") && it.endsWith(":5") } }
+        assertTrue(onAllNodesWithText("Re: Treffen am Freitag").fetchSemanticsNodes().isEmpty())
+    }
+
     @Test
     fun mailSelectionReaderAndUndo() = app(setup = { tab = Tab.MAIL }) { state, fake ->
         val net = fake.net as FakeNet
