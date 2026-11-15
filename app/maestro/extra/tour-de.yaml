@@ -24,12 +24,22 @@ name: Rundgang auf Deutsch
 - tapOn: { id: "tab-auth" }
 - waitForAnimationToEnd: { timeout: 3000 }
 - takeScreenshot: ${PREFIX}-02-auth
-- tapOn: { id: "tab-drive" }
-- waitForAnimationToEnd: { timeout: 3000 }
-- takeScreenshot: ${PREFIX}-03-drive
-- tapOn: { id: "tab-mail" }
-- waitForAnimationToEnd: { timeout: 3000 }
-- takeScreenshot: ${PREFIX}-04-mail
+# GhulDrive and GhulMail only where they are set up (in part "base" Drive has no server and
+# therefore no tab; every tab that is there is visited), as in tour.yaml.
+- runFlow:
+    when:
+      visible: { id: "tab-drive" }
+    commands:
+      - tapOn: { id: "tab-drive" }
+      - waitForAnimationToEnd: { timeout: 3000 }
+      - takeScreenshot: ${PREFIX}-03-drive
+- runFlow:
+    when:
+      visible: { id: "tab-mail" }
+    commands:
+      - tapOn: { id: "tab-mail" }
+      - waitForAnimationToEnd: { timeout: 3000 }
+      - takeScreenshot: ${PREFIX}-04-mail
 - tapOn: { id: "tab-cal" }
 - waitForAnimationToEnd: { timeout: 3000 }
 - takeScreenshot: ${PREFIX}-05-cal-monat
