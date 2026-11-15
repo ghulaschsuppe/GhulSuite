@@ -533,7 +533,7 @@ key      = HKDF-SHA256(ikm = Link-Schlüssel[32] (‖ PBKDF2-SHA256(Passwort NFC
 - Die Empfängerseite vergleicht `blocks` mit der Liste des Servers (gleiche Anzahl Dateien, gleiche IDs in gleicher
   Reihenfolge) und bricht sonst vor dem Herunterladen ab; ein Server kann Blöcke so weder weglassen, wiederholen,
   vertauschen noch die einer anderen Datei unterschieben. Mehr Bytes als `size` werden nie geschrieben, am Ende muss
-  die Länge genau stimmen.
+  die Länge genau stimmen; `size` muss eine ganze Zahl ab 0 sein.
 - Kopf und Ende sind über `aad` an jedes Stück gebunden: Änderungen, Vertauschen und Abschneiden fallen auf.
 
 **Link:** `<Adresse des Moduls>#<id>.<Schlüssel>`: `id` = 32 Hex-Zeichen, **zufällig und unabhängig vom Schlüssel**;
@@ -556,7 +556,8 @@ aus GhulPass), wird mit einem neuen `FK` in eigene Blöcke geschrieben, die mit 
 
 **Server-Modul (`ghulsuite.php`, PHP 8.1+, ohne Datenbank, Version 3):** eine Datei ohne Geheimnis, von der App über
 den SFTP- oder FTPS-Zugang des Servers in den Ordner der Website gelegt, mit dem Pfad zum GhulSuite-Ordner
-(`GHUL_BASE`, relativ zur Datei) und eingebetteter Empfängerseite. Es schreibt nichts außer `shares/<id>.state`.
+(`GHUL_BASE`, relativ zur Datei) und eingebetteter Empfängerseite. Es schreibt nichts außer `shares/<id>.state`
+(dazu `shares/<id>.lock` als Sperrdatei und kurz `shares/<id>.state.tmp`).
 
 | Aufruf (nur `GET`) | Bedeutung |
 |---|---|
@@ -569,12 +570,21 @@ den SFTP- oder FTPS-Zugang des Servers in den Ordner der Website gelegt, mit dem
 Kennungen und Nummern werden nur in genau ihrer Form angenommen (Hex fester Länge, Dezimalzahl ohne führende Null);
 alles andere ist 404. Andere Methoden: 405. Ein Block wird nur gelesen, wenn sein Name in der Beschreibung steht und
 64 Hex-Zeichen hat; ein Pfad kann daraus nicht entstehen. Der Zustand `shares/<id>.state` ist JSON
-`{"count": n, "tickets": {"<SHA-256 des Tickets>": <gültig bis, Unix-s>}}`; ist er nicht lesbar, antwortet das Modul
-503 und fängt nie wieder bei null an (ein verbrauchter Einmal-Link bliebe sonst nicht verbraucht).
+`{"count": n, "tickets": {"<SHA-256 des Tickets>": <gültig bis, Unix-s>}}`. Geändert wird er unter der Sperre von
+`<id>.lock`: neu in `<id>.state.tmp` geschrieben und per `rename` ersetzt, sodass ein abgebrochener Schreibvorgang
+oder eine volle Festplatte den alten Zustand stehen lässt; abgewiesene Öffnungen (410, 429) schreiben nichts. Fehlt
+er, hat noch niemand geöffnet; ist er leer oder nicht lesbar, antwortet das Modul 503 und fängt nie wieder bei null
+an (ein verbrauchter Einmal-Link bliebe sonst nicht verbraucht). Die App löscht beim Beenden einer Freigabe
+Beschreibung, Zustand und Sperrdatei.
 
 Beim Installieren prüft die App außerdem, dass der GhulSuite-Ordner selbst nicht aus dem Web erreichbar ist: Sie
-ruft die Prüfdatei unter der Adresse ab, unter der sie läge, wenn der Ordner in der Website liegt. Liefert der
-Webserver sie aus, wird das Modul wieder entfernt und nicht gespeichert (Schritt `private`).
+ruft die Prüfdatei unter den Adressen ab, unter denen sie läge, wenn der Ordner zur Website gehört (neben dem Modul,
+unter den letzten Ordnernamen auf dem Host des Moduls und unter den geratenen Adressen des Servers, höchstens 8,
+Ordnernamen prozentkodiert). Liefert der Webserver sie aus, wird das Modul wieder entfernt und nicht gespeichert
+(Schritt `private`); ein früher gespeichertes Modul an derselben Stelle wird vergessen.
+
+Welche Blöcke Links noch brauchen, liest die App aus allen Beschreibungen so nachsichtig wie das Modul (jede
+64-Hex-Zeichenkette unter `files`, fehlendes `exp`/`max` egal). Ist das nicht möglich, löscht GhulDrive keinen Block.
 
 ## 12. Mail-Archiv (seit 0.7.0 in GhulDrive)
 
@@ -582,8 +592,8 @@ Archivierte Mails sind normale Dateien in GhulDrive (Abschnitt 10): die Mail unv
 (RFC 5322, `.eml`), unter `Mail-Archiv/<Konto>/<Jahr>/<JJJJ-MM-TT> <Absender> - <Betreff> (<Code>).eml`.
 
 - `<Code>` = die ersten 16 Hex-Zeichen von SHA-256(Message-ID), ohne Message-ID von SHA-256(Mail). Liegt im Ordner
-  des Jahres schon eine Datei mit diesem Code **und derselben Größe**, wird die Mail übersprungen. Hat sie nur den
-  Code, aber eine andere Größe (eine andere Mail mit derselben Message-ID), bekommt sie den Code aus SHA-256(Mail);
+  des Jahres schon eine Datei mit diesem Code **und demselben Inhalt**, wird die Mail übersprungen. Hat sie nur den
+  Code, aber einen anderen Inhalt (eine andere Mail mit derselben Message-ID), bekommt sie den Code aus SHA-256(Mail);
   eine gefälschte Message-ID kann das Archivieren der echten Mail so nicht verhindern.
 - Datum aus `Date`, sonst aus dem Empfangsdatum des Servers. Namensteile ohne `/ \ : * ? " < > |`, Steuerzeichen,
   Richtungszeichen und -marken (U+200E, U+200F, U+061C, U+202A bis U+202E, U+2066 bis U+2069), höchstens

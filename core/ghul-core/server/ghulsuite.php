@@ -93,58 +93,50 @@ function ghul_share(string $id): array
     return $m;
 }
 
-/** The state read from an open state file; an empty file is a share nobody opened yet. */
-function ghul_state_of($h): array
+/** The state file's content as an array; missing = nobody opened the share yet. */
+function ghul_state_parse(string|false $raw): array
 {
-    $raw = (string) stream_get_contents($h);
-    if ($raw === '') {
+    if ($raw === false) {
         return ['count' => 0, 'tickets' => []];
     }
     $s = json_decode($raw, true);
     if (!is_array($s)) {
-        // Never start counting from zero again: a broken state would reopen a used-up link.
+        // Empty or broken: never start counting from zero again (a used-up link would reopen).
         ghul_fail(503);
     }
     return $s;
 }
 
 /**
- * Runs $f on the share's state (downloads, tickets) under a lock and stores what it returns.
+ * Runs $f on the share's state (downloads, tickets) under a lock and stores what it returns,
+ * unless it returns null (nothing changed). The new state is written to a temporary file and
+ * renamed over the old one: an interrupted write or a full disk leaves the old state as it was.
  * The state is the only thing this file writes.
  */
-function ghul_state(string $id, callable $f): array
+function ghul_state(string $id, callable $f): void
 {
-    $file = ghul_base() . '/shares/' . $id . '.state';
-    $h = @fopen($file, 'c+');
-    if ($h === false || !flock($h, LOCK_EX)) {
+    $dir = ghul_base() . '/shares/';
+    $lock = @fopen($dir . $id . '.lock', 'c');
+    if ($lock === false || !flock($lock, LOCK_EX)) {
         ghul_fail(503);
     }
-    $s = $f(ghul_state_of($h));
-    ftruncate($h, 0);
-    rewind($h);
-    if (fwrite($h, (string) json_encode($s, JSON_FORCE_OBJECT)) === false) {
-        ghul_fail(503);
+    $s = $f(ghul_state_parse(@file_get_contents($dir . $id . '.state')));
+    if ($s !== null) {
+        $tmp = $dir . $id . '.state.tmp';
+        $json = (string) json_encode($s, JSON_FORCE_OBJECT);
+        if (@file_put_contents($tmp, $json) !== strlen($json) || !@rename($tmp, $dir . $id . '.state')) {
+            @unlink($tmp);
+            ghul_fail(503);
+        }
     }
-    fflush($h);
-    flock($h, LOCK_UN);
-    fclose($h);
-    return $s;
+    flock($lock, LOCK_UN);
+    fclose($lock);
 }
 
-/** The share's state, read under a shared lock without writing. */
+/** The share's state, read without writing (it is only ever replaced as a whole). */
 function ghul_state_read(string $id): array
 {
-    $h = @fopen(ghul_base() . '/shares/' . $id . '.state', 'r');
-    if ($h === false) {
-        return ['count' => 0, 'tickets' => []];
-    }
-    if (!flock($h, LOCK_SH)) {
-        ghul_fail(503);
-    }
-    $s = ghul_state_of($h);
-    flock($h, LOCK_UN);
-    fclose($h);
-    return $s;
+    return ghul_state_parse(@file_get_contents(ghul_base() . '/shares/' . $id . '.state'));
 }
 
 /** GET ?s=ID: counts the download (refused once the limit is reached) and hands out a ticket. */
@@ -154,17 +146,16 @@ function ghul_open_share(string $id): never
     $max = max(0, (int) ($m['max'] ?? 0));
     $ticket = bin2hex(random_bytes(16));
     $refused = 0;
-    ghul_state($id, function (array $s) use ($max, $ticket, &$refused): array {
+    ghul_state($id, function (array $s) use ($max, $ticket, &$refused): ?array {
         if ($max > 0 && (int) ($s['count'] ?? 0) >= $max) {
             $refused = 410;
-            return $s;
+            return null;
         }
         $now = time();
         $tickets = array_filter((array) ($s['tickets'] ?? []), fn($until) => (int) $until > $now);
         if (count($tickets) >= GHUL_MAX_TICKETS) {
             $refused = 429;
-            $s['tickets'] = $tickets;
-            return $s;
+            return null;
         }
         $tickets[hash('sha256', $ticket)] = $now + GHUL_TICKET_SECONDS;
         $s['tickets'] = $tickets;

@@ -399,6 +399,35 @@ pub(super) fn module_urls(host: &str, dir: &str) -> Vec<String> {
     out
 }
 
+/// Where the web could hand out `file` of the GhulSuite folder `base`: next to the module
+/// (`rel` = the folder as seen from the module), and at the addresses the folder itself would
+/// have as a website folder (on the module's host and on the server's), e.g. when the module
+/// answers on a subdomain whose root is another folder. At most 8, without duplicates.
+pub(super) fn folder_addresses(module: &str, host: &str, base: &str, rel: &str, file: &str) -> Vec<String> {
+    let mut out: Vec<String> = crate::net::module::resolve(module, &format!("{rel}/{file}")).into_iter().collect();
+    let origin = module.split_once("://").map(|(scheme, rest)| {
+        let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+        format!("{scheme}://{}", &rest[..end])
+    });
+    let parts: Vec<&str> = base.split('/').filter(|p| !p.is_empty() && *p != ".").collect();
+    if let Some(origin) = origin {
+        for n in 1..=parts.len().min(3) {
+            let tail: Vec<String> =
+                parts[parts.len() - n..].iter().map(|p| crate::net::module::rawurlencode(p)).collect();
+            out.push(format!("{origin}/{}/{file}", tail.join("/")));
+        }
+    }
+    for guess in module_urls(host, base) {
+        if let Some(dir) = guess.strip_suffix(MODULE_FILE) {
+            out.push(format!("{dir}{file}"));
+        }
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    out.retain(|u| !u.contains("/../") && seen.insert(u.clone()));
+    out.truncate(8);
+    out
+}
+
 /// One step of installing the server module.
 #[derive(uniffi::Record, Clone, Debug, PartialEq)]
 pub struct ModuleCheck {
@@ -696,8 +725,9 @@ impl GhulSuite {
             .filter(|c| c.token == token);
         // The GhulSuite folder must not be reachable from the web: try where it would be.
         let exposed = answering.as_ref().and_then(|u| {
-            crate::net::module::resolve(u, &format!("{base_path}/{check_file}"))
-                .filter(|at| crate::net::module::exposes(at, &token))
+            folder_addresses(u, &srv.host, &srv.base, &base_path, &check_file)
+                .into_iter()
+                .find(|at| crate::net::module::exposes(at, &token))
         });
         let _ = base_fs.delete(&check_file);
         let shown = answering.clone().unwrap_or_else(|| tried.first().cloned().unwrap_or_default());
@@ -723,8 +753,16 @@ impl GhulSuite {
             });
         }
         if exposed.is_some() {
-            // Links would work, but anyone could fetch the folder: no module until it is moved.
+            // Links would work, but anyone could fetch the folder: no module until it is moved
+            // (also not one installed earlier there: the app must not offer links any more).
             let _ = web.delete(MODULE_FILE);
+            if srv.module.as_ref().is_some_and(|m| m.dir == dir) {
+                self.with_open(|o| {
+                    let mut srv = srv.clone();
+                    srv.module = None;
+                    self.store_server(o, &srv)
+                })?;
+            }
         }
         if !reads || exposed.is_some() {
             return Ok(ModuleInstalled { url: None, tried, checks });
@@ -820,7 +858,26 @@ impl GhulSuite {
 
 #[cfg(test)]
 mod path_tests {
-    use super::relative_path;
+    use super::{folder_addresses, relative_path};
+
+    #[test]
+    fn the_suite_folder_is_looked_for_where_the_web_could_serve_it() {
+        // Module on a subdomain whose root is public_html/sub; the folder is public_html/gs,
+        // above that root: not next to the module, but on the main site and the module's host.
+        let at = folder_addresses(
+            "https://sub.example.org/ghulsuite.php",
+            "ftp.example.org",
+            "public_html/gs",
+            "../gs",
+            "shares/check-x",
+        );
+        assert!(at.contains(&"https://example.org/gs/shares/check-x".to_owned()), "{at:?}");
+        assert!(at.contains(&"https://sub.example.org/gs/shares/check-x".to_owned()), "{at:?}");
+        assert!(at.len() <= 8 && !at.iter().any(|u| u.contains("..")), "{at:?}");
+        // Next to the module, with odd folder names encoded.
+        let at = folder_addresses("https://example.org/t/ghulsuite.php", "", "/srv/a#b", "a#b", "shares/c");
+        assert_eq!(at[0], "https://example.org/t/a%23b/shares/c");
+    }
 
     #[test]
     fn relative_paths_from_the_module_to_the_suite_folder() {

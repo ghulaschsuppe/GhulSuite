@@ -107,12 +107,14 @@ pub fn exposes(url: &str, token: &str) -> bool {
 }
 
 /// The address `rel` (a relative path like `../ghulsuite/shares/x`) resolves to next to the
-/// file at `url`; `None` if it climbs above the website's root.
+/// file at `url`; `None` if it climbs above the website's root. Parts of `rel` are
+/// percent-encoded (a folder named `a#b` stays one part).
 pub fn resolve(url: &str, rel: &str) -> Option<String> {
     let (scheme, rest) = url.split_once("://")?;
-    let (host, path) = rest.split_once('/').unwrap_or((rest, ""));
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let (host, path) = rest.split_at(end);
     let path = path.split(['?', '#']).next().unwrap_or("");
-    let mut parts: Vec<&str> = path.split('/').collect();
+    let mut parts: Vec<String> = path.split('/').map(str::to_owned).collect();
     parts.pop(); // the file itself
     parts.retain(|p| !p.is_empty());
     for p in rel.split('/') {
@@ -121,7 +123,7 @@ pub fn resolve(url: &str, rel: &str) -> Option<String> {
             ".." => {
                 parts.pop()?;
             }
-            p => parts.push(p),
+            p => parts.push(rawurlencode(p)),
         }
     }
     Some(format!("{scheme}://{host}/{}", parts.join("/")))
@@ -160,6 +162,8 @@ mod tests {
             Some("https://example.org/ghulsuite/shares/a")
         );
         assert_eq!(super::resolve(u, "../../ghulsuite/shares/a"), None, "above the website's root");
+        assert_eq!(super::resolve(u, "a#b/c?d/e%f").as_deref(), Some("https://example.org/tools/a%23b/c%3Fd/e%25f"));
+        assert_eq!(super::resolve("https://example.org?x=/y", "g").as_deref(), Some("https://example.org/g"));
         assert_eq!(
             super::resolve("http://127.0.0.1:8080/ghulsuite.php?x=1", "./g/s").as_deref(),
             Some("http://127.0.0.1:8080/g/s")

@@ -439,7 +439,8 @@ Läuft auf **jedem PHP-Webhosting ab 8.1 ohne Datenbank**, auf demselben Server 
 - Voraussetzung: PHP darf den GhulSuite-Ordner lesen und in `shares/` schreiben (bei manchen Hostern verhindert
   `open_basedir` das). Die App prüft beides beim Installieren und sagt es klar; ohne Modul gibt es keine Freigabelinks.
 - Viele gleichzeitige Öffnungen verdrängen keine laufenden Downloads: ab 1000 gültigen Tickets heißt es „später
-  erneut versuchen“. Ein beschädigter Zähler wird abgewiesen, nie auf null gesetzt.
+  erneut versuchen“. Ein beschädigter Zähler wird abgewiesen, nie auf null gesetzt; geschrieben wird er atomar
+  (Zwischendatei, dann umbenennen).
 
 ---
 

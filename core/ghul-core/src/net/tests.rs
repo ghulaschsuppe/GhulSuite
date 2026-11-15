@@ -315,9 +315,12 @@ fn module_hands_out_only_the_blocks_of_a_share() {
     // A broken state is refused, never read as "nobody opened it yet".
     let state_file = suite.join(format!("shares/{id}.state"));
     let kept = std::fs::read(&state_file).unwrap();
-    std::fs::write(&state_file, b"{broken").unwrap();
-    assert_eq!(get(&format!("{base}?s={id}")).status, 503);
-    assert_eq!(get(&format!("{base}?s={id}&t={ticket}&f=0&b=0")).status, 503);
+    for broken in [&b"{broken"[..], b""] {
+        std::fs::write(&state_file, broken).unwrap();
+        assert_eq!(get(&format!("{base}?s={id}")).status, 503, "{broken:?}");
+        assert_eq!(get(&format!("{base}?s={id}&t={ticket}&f=0&b=0")).status, 503, "{broken:?}");
+        assert_eq!(std::fs::read(&state_file).unwrap(), broken, "left as it was");
+    }
     // Too many open tickets: new openings wait, the tickets of those downloading stay valid.
     let mut full: serde_json::Value = serde_json::from_slice(&kept).unwrap();
     full["count"] = 0.into();
@@ -330,7 +333,21 @@ fn module_hands_out_only_the_blocks_of_a_share() {
     }
     std::fs::write(&state_file, serde_json::to_vec(&full).unwrap()).unwrap();
     std::fs::write(suite.join(format!("shares/{id}.json")), share(0, 0)).unwrap();
+    // A refused opening writes nothing (the state would be replaced by a new file).
+    #[cfg(unix)]
+    let inode = std::os::unix::fs::MetadataExt::ino(&std::fs::metadata(&state_file).unwrap());
     assert_eq!(get(&format!("{base}?s={id}")).status, 429);
+    #[cfg(unix)]
+    assert_eq!(std::os::unix::fs::MetadataExt::ino(&std::fs::metadata(&state_file).unwrap()), inode);
+    // A write that fails (here a folder blocks the temporary file, as a full disk would) leaves
+    // the old state as it was: no used-up link opens again.
+    std::fs::write(&state_file, &kept).unwrap();
+    let tmp = suite.join(format!("shares/{id}.state.tmp"));
+    std::fs::create_dir(&tmp).unwrap();
+    assert_eq!(get(&format!("{base}?s={id}")).status, 503);
+    assert_eq!(std::fs::read(&state_file).unwrap(), kept);
+    std::fs::remove_dir(&tmp).unwrap();
+    assert_eq!(get(&format!("{base}?s={id}")).status, 200);
     assert_eq!(get(&format!("{base}?s={id}&t={ticket}&f=0&b=0")).status, 200);
 
     // Expired: refused at once, also for an open ticket.

@@ -249,21 +249,27 @@ impl GhulSuite {
         let root = self.archive_root_or_new()?;
         let acc = self.drive_folder_named(Some(&root), &self.archive_account_name(&account_id)?)?;
         let year_dir = self.drive_folder_named(Some(&acc), &format!("{year:04}"))?;
-        // Already archived: a file with the mail's code and the same size. Another mail that
-        // only claims the same Message-ID is not taken for it: it gets a code from its content.
+        // Already archived: a file with the mail's code and the same content. Another mail that
+        // only claims the same Message-ID (even padded to the same size) is not taken for it:
+        // it gets a code from its content.
         let files: Vec<_> = self.drive_list(Some(year_dir.clone()), false)?.into_iter().filter(|i| !i.is_dir).collect();
         let size = raw.len() as u64;
-        let has = |code: &str| {
+        let has = |code: &str| -> Result<(bool, bool)> {
             let marker = format!("({code}).eml");
             let named: Vec<_> = files.iter().filter(|i| i.name.ends_with(&marker)).collect();
-            (named.iter().any(|i| i.size == size), !named.is_empty())
+            for f in named.iter().filter(|i| i.size == size) {
+                if *self.drive_read_all(&f.id)? == **raw {
+                    return Ok((true, true));
+                }
+            }
+            Ok((false, !named.is_empty()))
         };
         let mut name = name;
-        match has(&code) {
+        match has(&code)? {
             (true, _) => return Ok(MailArchived::Skipped),
             (false, true) => {
                 let own = code_of(None, &raw);
-                if has(&own).0 {
+                if has(&own)?.0 {
                     return Ok(MailArchived::Skipped);
                 }
                 name = name.replace(&format!("({code}).eml"), &format!("({own}).eml"));

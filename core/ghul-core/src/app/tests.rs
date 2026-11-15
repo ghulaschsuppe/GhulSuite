@@ -935,6 +935,17 @@ fn mail_archive_to_drive_against_imap_and_sftp() {
     let named: Vec<String> = s.drive_list(Some(y2025), false).unwrap().into_iter().map(|i| i.name).collect();
     assert_eq!(named.len(), 3, "{named:?}");
     assert_eq!(named.iter().filter(|n| n.starts_with("2025-03-02 Erika Musterfrau - Archivbetreff 1 (")).count(), 2);
+    // Even with the same size: a forged copy archived first does not stop the real mail.
+    let real = raw(5, "Mon, 3 Mar 2025 11:00:00 +0000");
+    let forged = String::from_utf8(real.clone()).unwrap().replace("Archivtext 5", "Gefaelscht 5").into_bytes();
+    assert_eq!(forged.len(), real.len());
+    put(forged, "03-Mar-2025 11:00:00 +0000");
+    put(real, "03-Mar-2025 11:00:00 +0000");
+    let uids = s.mail_archive_uids(account.clone(), "INBOX".into(), None).unwrap();
+    let (forged_uid, real_uid) = (uids[uids.len() - 2], uids[uids.len() - 1]);
+    assert_eq!(s.mail_archive_to_drive(account.clone(), "INBOX".into(), forged_uid).unwrap(), MailArchived::Saved);
+    assert_eq!(s.mail_archive_to_drive(account.clone(), "INBOX".into(), real_uid).unwrap(), MailArchived::Saved);
+    assert_eq!(s.mail_archive_to_drive(account.clone(), "INBOX".into(), real_uid).unwrap(), MailArchived::Skipped);
 
     // In the trash, it no longer counts: the next mail starts a new archive folder.
     s.drive_delete(root.clone()).unwrap();
@@ -1104,6 +1115,20 @@ fn drive_deletes_nothing_when_the_shares_cannot_be_read() {
     s.drive_empty_trash(0).unwrap();
     s.drive_upload_cancel(up).unwrap();
     assert!(files_under(&server_dir.join("drive/blocks")).is_empty());
+
+    // A description without expiry or limit and with odd entries (the module still serves
+    // it) pins its blocks all the same.
+    let kept = upload(&s, None, "geteilt.txt", b"per Hand geteilt");
+    let block = files_under(&server_dir.join("drive/blocks"))[0].file_name().unwrap().to_string_lossy().into_owned();
+    std::fs::create_dir_all(server_dir.join("shares")).unwrap();
+    std::fs::write(
+        server_dir.join("shares/0123456789abcdef0123456789abcdef.json"),
+        format!(r#"{{"package":"x","files":[["{block}", 7, "../x"]]}}"#),
+    )
+    .unwrap();
+    s.drive_delete(kept).unwrap();
+    s.drive_empty_trash(0).unwrap();
+    assert_eq!(files_under(&server_dir.join("drive/blocks")).len(), 1, "still handed out by the link");
     let _ = std::fs::remove_dir_all(&server_dir);
 }
 
@@ -1702,6 +1727,9 @@ fn share_through_module(
     std::fs::write(&state, r#"{"count":1,"tickets":{}}"#).unwrap();
     assert!(!s.share_list().unwrap().iter().any(|x| x.id == link.id));
     assert!(!base_abs.join(format!("shares/{}.json", link.id)).exists());
+    for leftover in ["state", "lock", "state.tmp"] {
+        assert!(!base_abs.join(format!("shares/{}.{leftover}", link.id)).exists(), "{leftover} left behind");
+    }
 
     // Expired (the module checks the time itself): refused, and cleaned up by the app.
     let mut week = share_opts();
@@ -1785,9 +1813,11 @@ fn share_links_over_sftp_through_the_module() {
     let _ = std::fs::remove_dir_all(root.join(format!("web-{run}")));
     let _ = std::fs::remove_dir_all(root.join(format!("suite-{run}")));
 
-    // A GhulSuite folder inside the website: the web server would hand it out, so the module
-    // is refused (and taken down again) until the folder is moved.
+    // The GhulSuite folder next to the website: fine. Later the web server hands out the
+    // whole folder above it (another site root): updating the module finds the GhulSuite
+    // folder reachable, takes the module down and forgets it, so the app offers no links.
     let site = root.join(format!("site-{run}"));
+    let www = site.join("www");
     let info = s.list_servers().unwrap().into_iter().find(|x| x.id == id).unwrap();
     let open = ServerInput {
         kind: ServerKind::Sftp,
@@ -1800,16 +1830,27 @@ fn share_links_over_sftp_through_the_module() {
     };
     let open_id = saved(s.save_server(open, Some(info.host_key.clone())).unwrap());
     std::fs::create_dir_all(site.join("ghulsuite/drive")).unwrap();
-    if let Some((mut php, port)) = crate::net::tests::spawn_php(&site) {
+    std::fs::create_dir_all(&www).unwrap();
+    let module_of = |s: &GhulSuite| s.list_servers().unwrap().into_iter().find(|x| x.id == open_id).unwrap().module_url;
+    if let Some((mut php, port)) = crate::net::tests::spawn_php(&www) {
         let url = format!("http://127.0.0.1:{port}/ghulsuite.php");
-        let done = s.server_module_install(open_id.clone(), site.display().to_string(), url).unwrap();
+        let done = s.server_module_install(open_id.clone(), www.display().to_string(), url.clone()).unwrap();
+        let _ = php.kill();
+        let _ = php.wait();
+        assert_eq!(done.url.as_deref(), Some(url.as_str()), "{:?}", done.checks);
+        assert!(done.checks.iter().any(|c| c.step == "private" && c.ok), "{:?}", done.checks);
+        assert_eq!(module_of(&s), url);
+    }
+    if let Some((mut php, port)) = crate::net::tests::spawn_php(&site) {
+        let url = format!("http://127.0.0.1:{port}/www/ghulsuite.php");
+        let done = s.server_module_install(open_id.clone(), www.display().to_string(), url).unwrap();
         let _ = php.kill();
         let _ = php.wait();
         assert_eq!(done.url, None, "{:?}", done.checks);
         let private = done.checks.iter().find(|c| c.step == "private").expect("checked");
         assert!(!private.ok && private.detail.contains("/ghulsuite/shares/check-"), "{private:?}");
-        assert!(!site.join("ghulsuite.php").exists(), "the module is taken down again");
-        assert!(s.list_servers().unwrap().into_iter().find(|x| x.id == open_id).unwrap().module_url.is_empty());
+        assert!(!www.join("ghulsuite.php").exists(), "the module is taken down again");
+        assert!(module_of(&s).is_empty(), "and no longer offered");
     }
     let _ = std::fs::remove_dir_all(&site);
 }

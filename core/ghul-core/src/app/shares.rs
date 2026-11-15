@@ -180,19 +180,41 @@ fn state_path(id: &str) -> String {
     format!("shares/{id}.state")
 }
 
+/// The block names a description lists, read as leniently as the module reads it (missing
+/// or odd `exp`/`max` do not matter; entries that are no block name are skipped).
+fn described_blocks(data: &[u8]) -> Vec<String> {
+    let Ok(v) = serde_json::from_slice::<serde_json::Value>(data) else { return Vec::new() };
+    let Some(files) = v.get("files").and_then(serde_json::Value::as_array) else { return Vec::new() };
+    files
+        .iter()
+        .filter_map(serde_json::Value::as_array)
+        .flatten()
+        .filter_map(serde_json::Value::as_str)
+        .filter(|b| b.len() == 64 && b.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)))
+        .map(str::to_owned)
+        .collect()
+}
+
 /// Every block a share on this server still hands out (from the descriptions on the server,
-/// so shares made on other devices count too). An error reading them is an error: nothing may
-/// be deleted then (a transient failure must not break live links). A description that cannot
-/// be parsed pins nothing; the module refuses it as well.
-pub(super) fn pinned_blocks(fs: &dyn RemoteFs) -> Result<BTreeSet<String>> {
+/// so shares made on other devices count too), except those of the share `skip`. An error
+/// reading them is an error: nothing may be deleted then (a transient failure must not break
+/// live links). A description the module could not read either pins nothing.
+pub(super) fn pinned_blocks_except(fs: &dyn RemoteFs, skip: Option<&str>) -> Result<BTreeSet<String>> {
     let mut out = BTreeSet::new();
+    let skip = skip.map(|id| format!("{id}.json"));
     for e in fs.list("shares")?.iter().filter(|e| !e.is_dir && e.name.ends_with(".json")) {
-        let Some(data) = fs.read(&format!("shares/{}", e.name))? else { continue };
-        if let Ok(s) = serde_json::from_slice::<ServerShare>(&data) {
-            out.extend(s.files.into_iter().flatten());
+        if skip.as_deref() == Some(e.name.as_str()) {
+            continue;
         }
+        let Some(data) = fs.read(&format!("shares/{}", e.name))? else { continue };
+        out.extend(described_blocks(&data));
     }
     Ok(out)
+}
+
+/// Every block a share on this server still hands out (see `pinned_blocks_except`).
+pub(super) fn pinned_blocks(fs: &dyn RemoteFs) -> Result<BTreeSet<String>> {
+    pinned_blocks_except(fs, None)
 }
 
 /// What the server says about a share: `None` = gone (ended there, expired, used up),
@@ -293,16 +315,20 @@ impl GhulSuite {
         let fs = self.drive_fs(o)?;
         // Its blocks: those that no file uses any more (deleted or changed since, or content
         // that never was in GhulDrive) go with it, unless another share still hands them out.
+        // Everything that can fail is read first: once the description is gone, its block list
+        // is gone too, and a retry could not clean up any more.
         let mut blocks = s.own_blocks.clone();
-        if let Some(described) =
-            fs.read(&json_path(&s.id))?.and_then(|d| serde_json::from_slice::<ServerShare>(&d).ok())
-        {
-            blocks.extend(described.files.into_iter().flatten());
+        if let Some(described) = fs.read(&json_path(&s.id))? {
+            blocks.extend(described_blocks(&described));
         }
+        let pinned = pinned_blocks_except(fs.as_ref(), Some(&s.id))?;
+        let unused = self.drive_unused(o, &blocks)?;
         fs.delete(&json_path(&s.id))?;
         let _ = fs.delete(&state_path(&s.id));
-        let unused = self.drive_unused(o, &blocks)?;
-        self.drive_delete_loose(fs.as_ref(), &unused)?;
+        let _ = fs.delete(&format!("shares/{}.lock", s.id));
+        for b in unused.iter().filter(|b| !pinned.contains(*b)) {
+            fs.delete(&super::drive::block_path(b))?;
+        }
         Ok(())
     }
 

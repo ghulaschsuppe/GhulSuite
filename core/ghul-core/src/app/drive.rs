@@ -287,7 +287,7 @@ pub struct DriveStorage {
     pub sync_available: bool,
 }
 
-fn block_path(id: &str) -> String {
+pub(super) fn block_path(id: &str) -> String {
     format!("drive/blocks/{}/{}", &id[..2], id)
 }
 
@@ -896,8 +896,12 @@ impl GhulSuite {
                 Ok(freed.into_iter().filter(|b| !still.contains(b)).collect::<Vec<String>>())
             })?;
             // Only once the index without them is saved: a retry must not lose blocks. Blocks a
-            // share link still hands out stay until the link ends.
+            // share link still hands out stay until the link ends; read again, since another
+            // device may have shared the file while the index was being saved.
             let (fs, _) = self.drive_ctx(o)?;
+            // Unreadable now: nothing is deleted (blocks may be orphaned, no live link breaks).
+            let again = super::shares::pinned_blocks(fs.as_ref())?;
+            let pinned: BTreeSet<String> = pinned.into_iter().chain(again).collect();
             for b in unused.iter().filter(|b| !pinned.contains(*b)) {
                 fs.delete(&block_path(b))?;
             }
@@ -1389,6 +1393,15 @@ impl GhulSuite {
             blocks.push(id);
         }
         Ok(SharedFile { path: name.to_owned(), size: data.len() as u64, key, blocks })
+    }
+
+    /// The whole content of a (small) file, decrypted.
+    pub(super) fn drive_read_all(&self, id: &str) -> Result<Zeroizing<Vec<u8>>> {
+        let mut out = Zeroizing::new(Vec::new());
+        for part in 0..self.drive_file_blocks(id.to_owned())? {
+            out.extend_from_slice(&self.drive_download_block(id.to_owned(), part)?);
+        }
+        Ok(out)
     }
 
     /// Of these blocks, those no file of GhulDrive uses (current contents and versions).

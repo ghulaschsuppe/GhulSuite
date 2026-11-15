@@ -145,7 +145,7 @@
       const own = f.blocks;
       if (!Array.isArray(own) || !Array.isArray(blocks[i]) || own.length !== blocks[i].length
         || own.some((b, n) => typeof b !== 'string' || b !== blocks[i][n])
-        || typeof f.size !== 'number' || typeof f.key !== 'string' || typeof f.name !== 'string') throw new Error('bad');
+        || !Number.isSafeInteger(f.size) || f.size < 0 || typeof f.key !== 'string' || typeof f.name !== 'string') throw new Error('bad');
     });
     $('pwform').hidden = true;
     show(meta, list);
