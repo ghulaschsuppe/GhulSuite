@@ -264,7 +264,12 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
         Row(Modifier.fillMaxSize()) {
             SideNav(state, tabs)
             Box(Modifier.fillMaxHeight().width(1.dp).background(g.line))
-            Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.TopCenter) {
+            // F94: the sidebar keeps clear of a camera cut-out on the left; for everything in the
+            // column (lists and pages with their own safe-area padding) that side is done.
+            Box(
+                Modifier.weight(1f).fillMaxHeight().consumeWindowInsets(WindowInsets.safeDrawing.only(WindowInsetsSides.Start)),
+                contentAlignment = Alignment.TopCenter,
+            ) {
                 Box(Modifier.widthIn(max = WIDE_COLUMN).fillMaxSize()) {
                     CompositionLocalProvider(LocalColumns provides cols, LocalContentMax provides Dp.Infinity) {
                         Scaffold(
