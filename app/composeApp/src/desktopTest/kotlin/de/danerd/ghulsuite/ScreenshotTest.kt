@@ -305,7 +305,7 @@ class ScreenshotTest {
         }
     }
 
-    /** Windows window (1280 × 820) and tablets in landscape: side navigation and two panes. */
+    /** Windows window (1280 × 820) and tablets in landscape: the sidebar and one column in the middle. */
     @Test
     fun wideScreens() {
         Locale.setDefault(Locale.GERMAN)

@@ -128,9 +128,9 @@ Zusätzlich:
 |---|---|---|
 | W-N1 | Optionen → Sicherung → automatische Sicherung in einen Ordner, Uhr eine Woche vorstellen (oder Datum in der Einstellung zurücksetzen), entsperren. | Neue Datei `GhulSuite-Backup-JJJJ-MM-TT-HHMM.zip` im Ordner. |
 | W-N3 | App starten. | Fenster im Querformat (ca. 1280 × 820): Seitenleiste links mit GhulPass, GhulAuth, GhulDrive, GhulMail, GhulCal, Optionen und „Sperren (Strg+L)“ unten. |
-| W-N4 | GhulPass: Eintrag anklicken, dann einen anderen. | Eintrag öffnet sich rechts, Liste bleibt links stehen, der geöffnete Eintrag ist markiert; der zweite ersetzt den ersten. |
-| W-N5 | GhulMail: Mail anklicken; „Schreiben“. | Mail bzw. Entwurf rechts neben dem Posteingang. |
-| W-N6 | Optionen: Bereich anklicken. | Einstellungen rechts, Übersicht links. |
+| W-N4 | GhulPass: Eintrag anklicken, „Zurück“, einen anderen anklicken. | Der Eintrag öffnet sich in der Spalte an der Stelle der Liste (links bleibt die Seitenleiste); „Zurück“ zeigt die Liste wieder. |
+| W-N5 | GhulMail: Mail anklicken; „Schreiben“. | Mail bzw. Entwurf in der Spalte an der Stelle des Posteingangs; „Zurück“ führt zum Posteingang. |
+| W-N6 | Optionen: Bereich anklicken; im Editor etwas tippen und in der Seitenleiste einen anderen Bereich wählen. | Die Einstellungsseite öffnet sich in der Spalte; beim Bereichswechsel mit ungespeicherter Eingabe kommt „Änderungen verwerfen?“. |
 | W-N7 | GhulDrive und GhulAuth in Kachelansicht. | Mehrere Kacheln nebeneinander über die ganze Breite. |
 | W-N8 | „+“ in GhulPass, Kontextzeile antippen, Datei-Menü in GhulDrive. | Auswahl erscheint als Dialog in der Fenstermitte (nicht von unten). |
 | W-N9 | Fenster schmal ziehen (unter ca. 840 Pixel). | Wechselt auf das Handy-Layout mit Leiste unten; wieder breit ziehen stellt die Seitenleiste wieder her. |

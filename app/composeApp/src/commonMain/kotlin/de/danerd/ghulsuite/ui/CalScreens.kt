@@ -41,6 +41,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import kotlinx.coroutines.flow.first
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.runtime.LaunchedEffect
@@ -209,6 +212,10 @@ val CalOccurrenceUi.lastDay: Day
 fun List<CalOccurrenceUi>.on(d: Day): List<CalOccurrenceUi> = filter { it.startDay <= d && it.lastDay >= d }
 
 private val HH = 44.dp
+
+/** Below this height the calendar page scrolls as a whole (week and day with [LOW_GRID] of hours). */
+private val LOW_SCREEN = 560.dp
+private val LOW_GRID = 220.dp
 private const val H0 = 6
 private const val H1 = 24
 
@@ -320,7 +327,11 @@ fun CalScreen(state: AppState, padding: PaddingValues) {
     }
     // Week and day: the head (views, dates, all-day events) stays, only the hours scroll, as in
     // other calendars. Scrolling the whole page to an evening event pushed the view switch away.
-    val gridView = state.calView == CalView.WEEK || state.calView == CalView.DAY
+    // On a low screen (a phone lying sideways) the head would leave the hours almost no room:
+    // there the whole page scrolls and the hours get a fixed height.
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+    val screen = maxHeight
+    val gridView = (state.calView == CalView.WEEK || state.calView == CalView.DAY) && screen >= LOW_SCREEN
     Column(
         Modifier.fillMaxSize().then(if (gridView) Modifier else Modifier.verticalScroll(rememberScrollState()))
             .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = if (gridView) 0.dp else 100.dp),
@@ -345,7 +356,7 @@ fun CalScreen(state: AppState, padding: PaddingValues) {
                 CalHead(state, label)
                 DayStrip(state, days, data.occ, names, pick = false, modifier = swipe)
                 AllDayRow(state, days, data.occ)
-                TimeGrid(state, days, data.occ, swipe)
+                TimeGrid(state, days, data.occ, swipe, fill = gridView, screen = screen)
             }
             CalView.DAY -> {
                 val days = (0..6).map { from.plus(it) }
@@ -361,10 +372,11 @@ fun CalScreen(state: AppState, padding: PaddingValues) {
                     Modifier.padding(start = 4.dp, end = 4.dp, bottom = 8.dp), fontSize = 13.sp, color = g.muted, fontWeight = FontWeight.SemiBold,
                 )
                 AllDayRow(state, listOf(sel), data.occ)
-                TimeGrid(state, listOf(sel), data.occ, swipe)
+                TimeGrid(state, listOf(sel), data.occ, swipe, fill = gridView, screen = screen)
             }
             CalView.LIST -> CalList(state, data.occ, query, { query = it }, names, selected)
         }
+    }
     }
     }
     movingTo?.let { list ->
@@ -729,7 +741,7 @@ private fun lanesOf(list: List<CalOccurrenceUi>): List<Placed> {
  * below what it shows, it scrolls there: "1 event" above an empty grid was all one saw.
  */
 @Composable
-private fun ColumnScope.TimeGrid(state: AppState, days: List<Day>, occ: List<CalOccurrenceUi>, swipe: Modifier) {
+private fun ColumnScope.TimeGrid(state: AppState, days: List<Day>, occ: List<CalOccurrenceUi>, swipe: Modifier, fill: Boolean, screen: Dp) {
     val t = g
     val cal = areaColor(Tab.CAL)
     val one = days.size == 1
@@ -741,8 +753,9 @@ private fun ColumnScope.TimeGrid(state: AppState, days: List<Day>, occ: List<Cal
         occ.on(d).filter { !it.allDay }.minOfOrNull { maxOf(absMinutes(it.start) - d.days * 1440L, H0 * 60L) }
     }.minOrNull()
     val target = firstMinute ?: if (today() in days) maxOf(absMinutes(now) - today().days * 1440L, H0 * 60L) else null
-    // Once per shown days and target (not again while one scrolls by hand).
-    LaunchedEffect(days.first(), days.size, target) {
+    // Once per shown days and target (not again while one scrolls by hand), and again when the
+    // hours get another height (a low screen settles it after the head is measured).
+    LaunchedEffect(days.first(), days.size, target, scroll.viewportSize) {
         val minute = target ?: return@LaunchedEffect
         val viewport = androidx.compose.runtime.snapshotFlow { scroll.viewportSize }.first { it > 0 }
         with(density) {
@@ -757,7 +770,13 @@ private fun ColumnScope.TimeGrid(state: AppState, days: List<Day>, occ: List<Cal
             now = localNow()
         }
     }
-    Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(scroll).padding(bottom = 100.dp)) {
+    // Under the head down to the bottom. On a low screen: what is left under the head, but at
+    // least [LOW_GRID] (the page scrolls for the rest).
+    var headHeight by remember { mutableStateOf(0.dp) }
+    val low = if (fill) Modifier.weight(1f)
+    else Modifier.onPlaced { headHeight = with(density) { it.positionInParent().y.toDp() } }
+        .height(maxOf(screen - headHeight - 8.dp, LOW_GRID))
+    Column(low.fillMaxWidth().verticalScroll(scroll).padding(bottom = if (fill) 100.dp else 0.dp)) {
     Row(
         Modifier.fillMaxWidth()
             .clip(RoundedCornerShape(20.dp)).background(t.surface).then(swipe).padding(top = 12.dp, bottom = 12.dp, end = 6.dp),

@@ -449,7 +449,19 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     fun discardAndBack() {
         editorDirty = false
         confirmDiscard = false
-        pop()
+        val tab = pendingTab
+        pendingTab = null
+        // Leaving through the sidebar: the editor goes and the chosen area opens.
+        if (tab != null) selectTab(tab) else pop()
+    }
+
+    /** The area chosen in the sidebar while an editor had unsaved input (opens after "discard"). */
+    private var pendingTab: Tab? = null
+
+    /** "Keep editing" in the question about unsaved input: nothing changes. */
+    fun keepEditing() {
+        confirmDiscard = false
+        pendingTab = null
     }
 
     init {
@@ -460,6 +472,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     editorDirty = false
                     recoveredGuide = false
                     confirmDiscard = false
+                    pendingTab = null
                     dropPending()
                     stack.clear()
                     tab = tabs.first()
@@ -642,6 +655,14 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
      * closes it (on phones the bar at the bottom is hidden then).
      */
     fun selectTab(t: Tab) {
+        // An editor with unsaved input asks first, as "back" does; a new recovery code cannot be
+        // left before it is confirmed (as with "back").
+        if (wide && stack.lastOrNull() is Screen.RecoveryCode) return
+        if (wide && editorDirty && stack.isNotEmpty()) {
+            pendingTab = t
+            confirmDiscard = true
+            return
+        }
         if (wide) stack.clear()
         tab = t
         tabs.indexOf(t).takeIf { it >= 0 }?.let { backend.settings.lastTab = it }

@@ -9,6 +9,8 @@ import androidx.compose.ui.graphics.asSkiaBitmap
 import androidx.compose.ui.test.DesktopComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
+import kotlinx.coroutines.launch
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -70,6 +72,8 @@ class InteractionTest {
         wide: Boolean = false,
         /** Window size in dp instead of the phone or wide window (e.g. a phone lying sideways). */
         size: Pair<Int, Int>? = null,
+        /** Font size of the system (1.3: "large", as many set it on their phone). */
+        fontScale: Float = 1f,
         setup: AppState.() -> Unit = {},
         prepare: ScreenshotTest.Fake.() -> Unit = {},
         block: DesktopComposeUiTest.(AppState, ScreenshotTest.Fake) -> Unit,
@@ -88,7 +92,7 @@ class InteractionTest {
         val state = AppState(fake, scope).apply(setup)
         val (w, h) = size ?: if (wide) 1280 to 820 else 412 to 892
         runDesktopComposeUiTest(w * 2, h * 2) {
-            setContent { CompositionLocalProvider(LocalDensity provides Density(2f)) { GhulSuiteApp(state) } }
+            setContent { CompositionLocalProvider(LocalDensity provides Density(2f, fontScale)) { GhulSuiteApp(state) } }
             waitForIdle()
             block(state, fake)
         }
@@ -577,6 +581,54 @@ class InteractionTest {
         }
     }
 
+    /** Wide window: a message shows once, not in the column and in the window at the same time. */
+    @Test
+    fun wideWindowShowsAMessageOnce() = app(wide = true) { state, _ ->
+        waitFor("GhulAuth")
+        state.scope.launch { state.message("Nachricht für den Test") }
+        waitFor("Nachricht für den Test")
+        waitForIdle()
+        assertEquals(1, onAllNodesWithText("Nachricht für den Test", useUnmergedTree = true).fetchSemanticsNodes().size)
+    }
+
+    /**
+     * Wide window: switching the area in the sidebar while an editor has unsaved input asks first
+     * (as "back" does) instead of dropping the input.
+     */
+    @Test
+    fun sidebarAsksBeforeDroppingUnsavedInput() = app(wide = true, setup = { tab = Tab.CAL; calView = CalView.LIST }) { state, _ ->
+        waitFor("Abendessen mit Jana")
+        text("Abendessen mit Jana").performClick()
+        waitFor("Trattoria Da Luca")
+        desc("Edit").performClick()
+        waitUntil(timeoutMillis = 10_000) { state.stack.lastOrNull() is Screen.CalEdit }
+        onNode(hasSetTextAction() and hasText("Abendessen mit Jana")).performTextInput(" neu")
+        waitUntil(timeoutMillis = 10_000) { state.editorDirty }
+        text("GhulAuth").performClick()
+        waitFor("Discard changes?")
+        text("Keep editing").performClick()
+        waitGone("Discard changes?")
+        assertTrue(state.stack.lastOrNull() is Screen.CalEdit)
+        assertEquals(Tab.CAL, state.tab)
+        text("GhulAuth").performClick()
+        waitFor("Discard changes?")
+        text("Discard").performClick()
+        waitUntil(timeoutMillis = 10_000) { state.tab == Tab.AUTH && state.stack.isEmpty() }
+    }
+
+    /**
+     * A phone lying sideways with large font: the week view keeps hours to look at and shows the
+     * evening event (bug: the head left the hours almost no room); the page scrolls instead.
+     */
+    @Test
+    fun lowLandscapeWeekKeepsItsHours() = app(size = 915 to 412, fontScale = 1.3f, setup = { tab = Tab.CAL; calView = CalView.WEEK; calSel = de.danerd.ghulsuite.ui.today().plus(75) }) { _, _ ->
+        waitFor("Spätvorstellung Kino")
+        text("Day").assertIsDisplayed()
+        // Without scrolling: the hours under the head show the evening event.
+        waitUntil(timeoutMillis = 10_000) { runCatching { text("Spätvorstellung Kino").assertIsDisplayed() }.isSuccess }
+        shot("landscape-phone-week")
+    }
+
     /**
      * A phone lying sideways (915 × 412): the areas in the sidebar on the left, and "Lock" at its
      * end stays reachable although the screen is low (bug: it was cut off).
@@ -603,6 +655,8 @@ class InteractionTest {
             text("Abendessen mit Jana").performClick()
             waitFor("Trattoria Da Luca")
             assertTrue(state.stack.lastOrNull() is Screen.CalEvent)
+            // The list is not beside it any more (kept alive, but not shown).
+            onAllNodesWithText("Kundentermin Müller GmbH", useUnmergedTree = true).onFirst().assertIsNotDisplayed()
             shot("wide-cal-event")
             state.back()
             waitFor("Kundentermin Müller GmbH")

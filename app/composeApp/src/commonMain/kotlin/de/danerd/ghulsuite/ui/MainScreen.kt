@@ -4,6 +4,9 @@ package de.danerd.ghulsuite.ui
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -120,7 +123,7 @@ fun GhulSuiteApp(state: AppState) {
                 CompositionLocalProvider(LocalWide provides wide, LocalBusy provides BusyState(state.busy, state.touchNeeded)) {
                     // One place for messages: the main screen on phones shows them above its own bar,
                     // everywhere else this outer host shows them (never both, which doubled every message).
-                    val mainHasHost = state.vaultExists && !state.showStart && unlocked && !wide
+                    val mainHasHost = state.vaultExists && !state.showStart && unlocked
                     Scaffold(snackbarHost = { if (!mainHasHost) GhulSnackbarHost(state.snackbar) }, containerColor = MaterialTheme.colorScheme.background) { _ ->
                         when {
                             !state.vaultExists || state.showStart -> Centered(wide) { SetupScreen(state) }
@@ -209,11 +212,11 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
     }
     if (state.confirmDiscard) {
         AlertDialog(
-            onDismissRequest = { state.confirmDiscard = false },
+            onDismissRequest = { state.keepEditing() },
             title = { Text(stringResource(Res.string.edit_discard_title)) },
             text = { Text(stringResource(Res.string.edit_discard_text)) },
             confirmButton = { TextButton(onClick = { state.discardAndBack() }) { Text(stringResource(Res.string.edit_discard_yes)) } },
-            dismissButton = { TextButton(onClick = { state.confirmDiscard = false }) { Text(stringResource(Res.string.edit_keep)) } },
+            dismissButton = { TextButton(onClick = { state.keepEditing() }) { Text(stringResource(Res.string.edit_keep)) } },
         )
     }
 
@@ -480,7 +483,11 @@ private fun SideNav(state: AppState, tabs: List<Tab>) {
     val t = g
     // A phone lying sideways is low: the bar scrolls then, so "Lock" is never cut off; on a tall
     // window "Lock" stays at the bottom.
-    BoxWithConstraints(Modifier.width(240.dp).fillMaxHeight().background(t.surface)) {
+    // Clear of the status bar, a camera cut-out and the system bars of a phone lying sideways.
+    BoxWithConstraints(
+        Modifier.width(240.dp).fillMaxHeight().background(t.surface)
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical + WindowInsetsSides.Start)),
+    ) {
     Column(
         Modifier.verticalScroll(rememberScrollState()).heightIn(min = maxHeight)
             .padding(horizontal = 14.dp, vertical = 18.dp),
