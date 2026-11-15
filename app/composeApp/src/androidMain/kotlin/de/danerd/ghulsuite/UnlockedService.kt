@@ -71,11 +71,12 @@ class UnlockedService : Service() {
             }
         }
         scope.launch {
-            JobStatus.finished.collect { text -> if (!AppLaunch.inFront.value) postDone(text) }
+            JobStatus.finished.collect { end -> if (!AppLaunch.inFront.value) postDone(end) }
         }
     }
 
-    private fun postDone(text: String) {
+    private fun postDone(end: de.danerd.ghulsuite.ui.JobEnd) {
+        val text = end.text
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel(JOBS_CHANNEL, getString(R.string.notif_job_channel), NotificationManager.IMPORTANCE_DEFAULT))
         val open = PendingIntent.getActivity(
@@ -86,7 +87,7 @@ class UnlockedService : Service() {
         val public = Notification.Builder(this, JOBS_CHANNEL)
             .setSmallIcon(R.drawable.ic_lock)
             .setContentTitle(getString(R.string.app_name))
-            .setContentText(getString(R.string.notif_job_done))
+            .setContentText(end.publicText)
             .build()
         val n = Notification.Builder(this, JOBS_CHANNEL)
             .setSmallIcon(R.drawable.ic_lock)

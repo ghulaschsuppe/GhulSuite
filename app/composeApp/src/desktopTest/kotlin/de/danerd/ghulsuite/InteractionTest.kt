@@ -39,6 +39,7 @@ import de.danerd.ghulsuite.model.SecurityReportUi
 import de.danerd.ghulsuite.ui.SetPage
 import de.danerd.ghulsuite.ui.Tab
 import de.danerd.ghulsuite.ui.uploadToDrive
+import de.danerd.ghulsuite.ui.runAutoArchive
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -1526,5 +1527,92 @@ class InteractionTest {
         shot("job-strip-wide")
         onAllNodesWithTag(de.danerd.ghulsuite.ui.JOB_CANCEL_TAG).onFirst().performClick()
         waitFor("Upload cancelled: 0 of 2 files done.")
+    }
+
+    /**
+     * Photo backup: two photos added in the same second and "Cancel" between them. The mark stays
+     * one second before, so the next run still takes the second photo (it was skipped for good).
+     */
+    @Test
+    fun photoBackupKeepsPhotosOfTheSameSecond() = app(prepare = {
+        settings.photoBackup = true
+        (net as FakeNet).photos = listOf("a.jpg" to 1_000L, "b.jpg" to 1_000L, "c.jpg" to 1_005L)
+        (net as FakeNet).photoDelayMs = 1_500
+    }) { state, fake ->
+        val net = fake.net as FakeNet
+        waitUntil(timeoutMillis = 10_000) { "photo:a.jpg" in net.calls }
+        val job = state.jobs.list.first { it.kind == de.danerd.ghulsuite.ui.JobKind.PHOTOS }
+        runOnIdle { state.jobs.cancel(job) }
+        waitUntil(timeoutMillis = 10_000) { !job.active }
+        assertFalse("photo:b.jpg" in net.calls)
+        assertEquals(999, state.backend.settings.photoBackupSince, "the mark stays before the second of a.jpg")
+        // The next run takes b.jpg and c.jpg.
+        net.photoDelayMs = 0
+        fake.unlocked.value = false
+        waitForIdle()
+        fake.unlocked.value = true
+        waitUntil(timeoutMillis = 10_000) { "photo:c.jpg" in net.calls }
+        assertTrue("photo:b.jpg" in net.calls, net.calls.toString())
+        waitUntil(timeoutMillis = 5_000) { state.backend.settings.photoBackupSince == 1_005 }
+    }
+
+    /**
+     * The automatic lock that waited for a job follows its end; the job's message (it names the
+     * file) is not shown on the way to the lock screen but after the next unlock.
+     */
+    @Test
+    fun messageOfAJobTheLockWaitedForComesAfterUnlock() = app(setup = { tab = Tab.DRIVE }) { state, fake ->
+        val net = fake.net as FakeNet
+        net.driveUploadMs = 1_500
+        waitUntil(timeoutMillis = 10_000) { part("3 files") }
+        runOnIdle { state.uploadToDrive(null, listOf(fakeSource("secret.txt"))) }
+        waitUntil(timeoutMillis = 5_000) { state.jobs.running }
+        runOnIdle { state.autoLock() }
+        waitUntil(timeoutMillis = 10_000) { fake.locks == 1 }
+        assertTrue("driveUpload::secret.txt" in net.calls)
+        Thread.sleep(800)
+        assertFalse(part("secret.txt uploaded"), "nothing on the way to the lock screen")
+        fake.unlocked.value = false
+        waitForIdle()
+        fake.unlocked.value = true
+        waitFor("secret.txt uploaded.")
+    }
+
+    /** The system notification of a finished job (Windows tray) names no files: only what ended and the counts. */
+    @Test
+    fun jobEndForNotificationsHasNoNames() = app(setup = { tab = Tab.DRIVE }) { state, fake ->
+        val net = fake.net as FakeNet
+        net.driveUploadMs = 300
+        val ends = java.util.Collections.synchronizedList(mutableListOf<de.danerd.ghulsuite.ui.JobEnd>())
+        val collector = CoroutineScope(Dispatchers.Default).launch { de.danerd.ghulsuite.ui.JobStatus.finished.collect { ends += it } }
+        try {
+            Thread.sleep(200)
+            runOnIdle { state.uploadToDrive(null, listOf(fakeSource("secret.txt"))) }
+            waitUntil(timeoutMillis = 10_000) { ends.isNotEmpty() }
+            runOnIdle { state.uploadToDrive(null, listOf(fakeSource("geheim-1.txt"), fakeSource("geheim-2.txt"))) }
+            waitUntil(timeoutMillis = 10_000) { ends.size >= 2 }
+        } finally {
+            collector.cancel()
+        }
+        assertTrue("secret.txt" in ends[0].text, ends[0].text)
+        assertEquals("Upload finished", ends[0].publicText)
+        assertEquals("Upload finished · 2 of 2 done", ends[1].publicText)
+        assertFalse(ends.any { it.publicText.contains("secret") || it.publicText.contains("geheim") })
+    }
+
+    /** Two quick unlocks (or the option and an unlock) start one automatic archive run, not two. */
+    @Test
+    fun twoQuickStartsRunOneAutoArchive() = app { state, fake ->
+        val net = fake.net as FakeNet
+        net.archiveAutoDaysValue = 1
+        net.archiveAutoDaysDelayMs = 400
+        state.backend.settings.archiveAutoLast = "0"
+        runOnIdle {
+            state.runAutoArchive()
+            state.runAutoArchive()
+        }
+        waitUntil(timeoutMillis = 10_000) { "archiveAutoDone:m1:Sent:1:1" in net.calls }
+        Thread.sleep(1_000)
+        assertEquals(1, net.calls.count { it == "archiveAutoUids:m1:INBOX" }, net.calls.toString())
     }
 }

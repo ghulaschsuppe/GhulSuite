@@ -108,9 +108,11 @@ fun main() {
             }
 
             // A background job that ends while the window is not in front: a Windows notification.
+            // Only what ended and the counts: no file or mail names, they would stay in the Action
+            // Center after the suite is locked.
             LaunchedEffect(Unit) {
-                de.danerd.ghulsuite.ui.JobStatus.finished.collect { text ->
-                    if (!window.isFocused) (backend.cal as? DesktopCalBackend)?.note("GhulSuite", text)
+                de.danerd.ghulsuite.ui.JobStatus.finished.collect { end ->
+                    if (!window.isFocused) (backend.cal as? DesktopCalBackend)?.note("GhulSuite", end.publicText)
                 }
             }
 

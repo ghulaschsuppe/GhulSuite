@@ -628,12 +628,14 @@ Lange Arbeiten (Hochladen, Herunterladen, Fotosicherung, Mail-Archiv) laufen im 
 | BG1 | In GhulDrive drei große Dateien hochladen, dann zu GhulMail wechseln und eine Mail öffnen. | Der Streifen „Lade 3 Dateien hoch“ bleibt unter jeder Kopfleiste sichtbar, mit Balken und „1 von 3 fertig“; der Upload läuft weiter. Am Ende „3 Dateien hochgeladen.“, in GhulDrive stehen alle drei. |
 | BG2 | Während BG1 im Streifen „Abbrechen“. | Sofort Schluss; „Hochladen abgebrochen: 1 von 3 Dateien fertig.“; die fertigen Dateien sind da, keine halbe. |
 | BG3 | Upload starten, App in den Hintergrund (Home-Taste), Benachrichtigungen aufziehen. | Die Benachrichtigung „GhulSuite ist entsperrt“ zeigt jetzt den Auftrag mit Balken, „Abbrechen“ und „Sperren“. „Abbrechen“ dort stoppt ihn. Auf dem Sperrbildschirm steht nur „GhulSuite ist entsperrt“ (keine Dateinamen). |
-| BG4 | Upload starten, App in den Hintergrund, länger warten als die Zeit für automatisches Sperren. | Die App sperrt nicht mitten im Upload, sondern erst, wenn er fertig ist. Danach ist sie gesperrt. |
+| BG4 | Upload starten, App in den Hintergrund, länger warten als die Zeit für automatisches Sperren. | Die App sperrt nicht mitten im Upload, sondern erst, wenn er fertig ist; die Meldung „… hochgeladen.“ kommt erst nach dem Entsperren. Kommt zwei Minuten lang kein Fortschritt (z. B. WLAN aus), sperrt sie trotzdem und bricht den Upload ab. |
+| BG4a | Automatisches Mail-Archiv oder Fotosicherung läuft (Streifen), App in den Hintergrund. | Die App sperrt nach der üblichen Zeit; der leise Auftrag stoppt und macht beim nächsten Entsperren an seiner Stelle weiter. |
 | BG5 | Wie BG4, aber vor dem Ende zurück in die App. | Die App bleibt entsperrt; der Upload läuft zu Ende. |
 | BG6 | Upload starten, dann von Hand sperren (Schloss, Schütteln oder „Sperren“ in der Benachrichtigung). | Sofort gesperrt, der Upload ist gestoppt. Nach dem Entsperren: „GhulSuite wurde gesperrt. Hochladen abgebrochen: …“. |
-| BG7 | Auftrag läuft, App im Hintergrund, Auftrag endet. | Eine kurze Benachrichtigung mit dem Ergebnis (Android 13+: nur wenn Benachrichtigungen erlaubt sind). Ist die App vorne, kommt nur die Meldung in der App. |
+| BG7 | Auftrag läuft, App im Hintergrund, Auftrag endet. | Eine kurze Benachrichtigung mit dem Ergebnis (Android 13+: nur wenn Benachrichtigungen erlaubt sind); auf dem Sperrbildschirm nur „Hochladen fertig“ ohne Dateinamen. Ist die App vorne, kommt nur die Meldung in der App. |
 | BG8 | Mehrere Aufträge nacheinander starten (z. B. Upload und Mail-Archiv). | Der zweite zeigt „Wartet auf die Aufgabe davor …“ und startet danach; beide sind im Streifen. |
-| BG9 | Fotosicherung eingeschaltet, neue Fotos aufnehmen, entsperren. | Streifen „Fotos werden gesichert“; am Ende „N Fotos gesichert.“. Abbrechen und erneut entsperren: es geht ab dem letzten fertigen Foto weiter, nichts doppelt. |
+| BG9 | Fotosicherung eingeschaltet, mehrere Fotos schnell hintereinander aufnehmen (Serienbild), entsperren. | Streifen „Fotos werden gesichert“; am Ende „N Fotos gesichert.“. Abbrechen und erneut entsperren: es geht ab dem letzten fertigen Foto weiter, kein Foto fehlt (auch nicht eines aus derselben Sekunde). |
+| BG10 | Autofill benutzen (Anmeldung in einer anderen App über GhulSuite entsperren), während das automatische Mail-Archiv eingeschaltet ist. | Kein zweiter Archiv-Lauf; „Abbrechen“ in der Benachrichtigung wirkt weiter auf die Aufträge der App. |
 
 ## 34. Mail-Archiv in GhulDrive
 

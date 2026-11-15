@@ -137,7 +137,7 @@ class AndroidNetBackend(private val context: Context, suite: () -> GhulSuite) : 
 
     override val photoBackupAvailable: Boolean get() = true
 
-    override suspend fun photoBackup(sinceSeconds: Long, wifiOnly: Boolean, onFile: (String, Long) -> Unit): Long = withContext(Dispatchers.IO) {
+    override suspend fun photoBackup(sinceSeconds: Long, wifiOnly: Boolean, onFile: (String, Long, Long?) -> Unit): Long = withContext(Dispatchers.IO) {
         if (wifiOnly) {
             val cm = context.getSystemService(android.net.ConnectivityManager::class.java)
             val caps = cm.getNetworkCapabilities(cm.activeNetwork)
@@ -152,7 +152,8 @@ class AndroidNetBackend(private val context: Context, suite: () -> GhulSuite) : 
         var sizes = mutableMapOf<Long, Long>()
         context.contentResolver.query(uri, cols, "${android.provider.MediaStore.Images.Media.DATE_ADDED} > ?", arrayOf(sinceSeconds.toString()),
             "${android.provider.MediaStore.Images.Media.DATE_ADDED} ASC")?.use { c ->
-            while (c.moveToNext() && found.size < 200) {
+            // One more than a run takes: the mark needs to know the next photo waiting (photoMark).
+            while (c.moveToNext() && found.size < 201) {
                 found += Triple(c.getLong(0), c.getString(1) ?: "foto.jpg", c.getLong(2))
                 sizes[c.getLong(0)] = c.getLong(3)
             }
@@ -160,7 +161,9 @@ class AndroidNetBackend(private val context: Context, suite: () -> GhulSuite) : 
         if (found.isEmpty()) return@withContext sinceSeconds
         val folder = driveList(null, true).firstOrNull { it.isDir && it.name == PHOTO_FOLDER }?.id ?: driveCreateFolder(null, PHOTO_FOLDER)
         var newest = sinceSeconds
-        for ((id, name, added) in found) {
+        for ((i, photo) in found.take(200).withIndex()) {
+            val (id, name, added) = photo
+            val next = found.getOrNull(i + 1)?.third
             val item = android.content.ContentUris.withAppendedId(uri, id)
             val stream = context.contentResolver.openInputStream(item) ?: continue
             val source = object : de.danerd.ghulsuite.model.ByteSource {
@@ -170,8 +173,9 @@ class AndroidNetBackend(private val context: Context, suite: () -> GhulSuite) : 
                 override fun close() = stream.close()
             }
             driveUpload(folder, source) {}
-            newest = maxOf(newest, added)
-            withContext(Dispatchers.Main) { onFile(name, added) }
+            newest = maxOf(newest, de.danerd.ghulsuite.ui.photoMark(added, next))
+            // Also when "Cancel" came during the upload: the photo is done, its mark must move.
+            withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main) { onFile(name, added, next) }
         }
         newest
     }

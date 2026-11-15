@@ -82,7 +82,8 @@ class AutofillAuthActivity : ComponentActivity() {
         val userIds = ids(EXTRA_USER_IDS)
         val passIds = ids(EXTRA_PASS_IDS)
         val fields = LoginFields(pkg.orEmpty(), domain, userIds, passIds, null, null)
-        val state = AppState(backend, scope)
+        // Not the app's main state: no second archive or photo run, the notification stays the app's.
+        val state = AppState(backend, scope, main = false)
         setResult(Activity.RESULT_CANCELED)
         setContent {
             GhulTheme(backend.settings.theme) {

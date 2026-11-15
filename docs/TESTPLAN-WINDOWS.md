@@ -163,11 +163,11 @@ Wie im Android-Testplan Abschnitte 33 (BG1, BG2, BG6, BG8) und 34 (MA1 bis MA14)
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| WJ1 | Großen Upload starten, ein anderes Fenster in den Vordergrund holen und länger warten als die Zeit für automatisches Sperren. | GhulSuite sperrt nicht mitten im Upload, sondern erst, wenn er fertig ist (sofern das Fenster dann noch im Hintergrund ist). |
+| WJ1 | Großen Upload starten, ein anderes Fenster in den Vordergrund holen und länger warten als die Zeit für automatisches Sperren. | GhulSuite sperrt nicht mitten im Upload, sondern erst, wenn er fertig ist (sofern das Fenster dann noch im Hintergrund ist). Ohne Fortschritt für zwei Minuten (Netz weg) sperrt es trotzdem. Ein leiser Auftrag (automatisches Mail-Archiv) hält die Sperre nicht auf. |
 | WJ2 | Wie WJ1, aber vor dem Ende zurück ins Fenster. | Bleibt entsperrt, der Upload läuft zu Ende. |
 | WJ3 | Upload läuft, Strg+L. | Sofort gesperrt, Upload gestoppt; nach dem Entsperren „GhulSuite wurde gesperrt. Hochladen abgebrochen: …“. |
-| WJ4 | Upload oder Mail-Archiv läuft, anderes Fenster vorne, Auftrag endet. | Windows-Benachrichtigung von GhulSuite mit dem Ergebnis; ein Klick holt GhulSuite nach vorne. Ist GhulSuite vorne, nur die Meldung in der App. |
-| WJ5 | Windows sperren (Win+L), während ein Auftrag läuft (mit „Sperren, wenn Windows gesperrt wird“). | GhulSuite sperrt, sobald der Auftrag fertig ist; die Benachrichtigung auf dem Sperrbildschirm nennt nur „GhulSuite“. |
+| WJ4 | Upload oder Mail-Archiv läuft, anderes Fenster vorne, Auftrag endet. | Windows-Benachrichtigung „Hochladen fertig“ bzw. „Mail-Archiv fertig · 40 von 40 fertig“, ohne Datei- oder Mailnamen; ein Klick holt GhulSuite nach vorne. Ist GhulSuite vorne, nur die Meldung in der App. |
+| WJ5 | Windows sperren (Win+L), während ein Auftrag läuft (mit „Sperren, wenn Windows gesperrt wird“). | GhulSuite sperrt, sobald der Auftrag fertig ist; seine Meldung erscheint erst nach dem Entsperren. |
 
 ## Fehler melden
 

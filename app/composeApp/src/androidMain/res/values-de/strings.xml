@@ -33,5 +33,4 @@
     <string name="notif_job_channel">Aufgaben im Hintergrund</string>
     <string name="notif_job_cancel">Abbrechen</string>
     <string name="notif_job_of">%1$d von %2$d fertig</string>
-    <string name="notif_job_done">Eine Aufgabe ist fertig</string>
 </resources>

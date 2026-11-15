@@ -63,12 +63,14 @@ class DesktopCalBackend(private val window: () -> java.awt.Window?, suite: () ->
         due.forEach { show(it) }
     }
 
-    /** A short Windows notification (a background job is done); a click brings GhulSuite to the front. */
+    /**
+     * A short Windows notification (a background job is done, [text] without names of files or
+     * mails); a click brings GhulSuite to the front.
+     */
     fun note(title: String, text: String) {
         val icon = trayIcon() ?: return
         lastKey = null
-        // While Windows is locked only that something is done (no names on the lock screen).
-        icon.displayMessage(title, if (WinNative.workstationLocked()) "GhulSuite" else text, TrayIcon.MessageType.INFO)
+        icon.displayMessage(title, text, TrayIcon.MessageType.INFO)
     }
 
     private fun trayIcon(): TrayIcon? {

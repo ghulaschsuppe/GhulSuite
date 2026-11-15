@@ -1742,4 +1742,11 @@
     <string name="mail_archive_auto_365">Älter als 365 Tage</string>
     <string name="mail_archive_auto_hint">Kopiert Mails aus Posteingang und Gesendet in GhulDrive, einmal am Tag nach dem Entsperren. Bei deinem Anbieter wird nichts gelöscht. Gilt auf allen deinen Geräten.</string>
     <string name="mail_archive_auto_no_drive">Das Archiv braucht GhulDrive. Richte es ein, um das einzuschalten.</string>
+    <string name="job_kind_upload">Hochladen</string>
+    <string name="job_kind_download">Herunterladen</string>
+    <string name="job_kind_archive">Mail-Archiv</string>
+    <string name="job_kind_photos">Fotosicherung</string>
+    <string name="job_end_done">%1$s fertig</string>
+    <string name="job_end_cancelled">%1$s abgebrochen</string>
+    <string name="job_end_failed">%1$s mit Fehler beendet</string>
 </resources>

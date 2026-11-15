@@ -1742,4 +1742,11 @@
     <string name="mail_archive_auto_365">Older than 365 days</string>
     <string name="mail_archive_auto_hint">Copies mails of the inbox and Sent into GhulDrive, once a day after unlocking. Nothing is deleted at your provider. The same on all your devices.</string>
     <string name="mail_archive_auto_no_drive">The archive needs GhulDrive. Set it up to switch this on.</string>
+    <string name="job_kind_upload">Upload</string>
+    <string name="job_kind_download">Download</string>
+    <string name="job_kind_archive">Mail archive</string>
+    <string name="job_kind_photos">Photo backup</string>
+    <string name="job_end_done">%1$s finished</string>
+    <string name="job_end_cancelled">%1$s cancelled</string>
+    <string name="job_end_failed">%1$s stopped with an error</string>
 </resources>

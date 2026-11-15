@@ -58,7 +58,12 @@ class JobFailed(val text: String) : Exception(text)
  * scope, so leaving a screen does not stop it. The strip in the header shows it with its progress
  * and "Cancel"; when it ends, a message says how it went.
  */
-class BgJob internal constructor(val id: Int, val kind: JobKind, val quiet: Boolean, private val changed: () -> Unit) {
+class BgJob internal constructor(val id: Int, val kind: JobKind, val quiet: Boolean, private val onChange: (BgJob) -> Unit) {
+    /** When it last reported progress (the clock of [Jobs]); a job that stops reporting counts as stalled. */
+    internal var lastProgress = 0L
+
+    private fun changed() = onChange(this)
+
     private var titleState by mutableStateOf("")
     private var doneState by mutableStateOf(0)
     private var totalState by mutableStateOf(0)
@@ -112,19 +117,33 @@ data class JobInfo(
 )
 
 /**
+ * How a job ended, for a system notification: [text] is the full message (it may name files or
+ * mails), [publicText] says only what kind of job ended and the counts (Windows Action Center,
+ * Android lock screen).
+ */
+data class JobEnd(val text: String, val publicText: String)
+
+/**
  * Background jobs as seen from outside the screens: the Android notification shows [current]
- * with "Cancel" ([cancelAll]); the auto-lock of Android waits while [current] is not null; a job
- * that ended is announced in [finished] (a system notification while the app is not in front).
+ * with "Cancel" ([cancelAll]); the automatic lock of Android goes through [autoLock] while
+ * [current] is not null; a job that ended is announced in [finished] (a system notification while
+ * the app is not in front). The hooks belong to the app's main state only (see AppState.main).
  */
 object JobStatus {
     /** The first running job; null while none runs. */
     val current = MutableStateFlow<JobInfo?>(null)
 
-    /** The messages of jobs that ended (not those stopped by locking). */
-    val finished = MutableSharedFlow<String>(extraBufferCapacity = 8)
+    /** Jobs that ended (not those stopped by locking). */
+    val finished = MutableSharedFlow<JobEnd>(extraBufferCapacity = 8)
 
     /** Cancels every running job (the notification's "Cancel"). Set by the app state. */
     var cancelAll: () -> Unit = {}
+
+    /** An automatic lock while jobs run (see AppState.autoLock); null: lock directly. */
+    var autoLock: (() -> Unit)? = null
+
+    /** The user is back: an automatic lock that waits for jobs is dropped. */
+    var keepUnlocked: (() -> Unit)? = null
 }
 
 /** The jobs of the app: running ones and the last few that ended. */
@@ -136,8 +155,50 @@ class Jobs internal constructor(private val state: AppState) {
     /** Whether a job runs or waits. */
     val running: Boolean get() = list.any { it.active }
 
-    /** An automatic lock came while jobs ran: it follows when the last one ends. */
+    /** An automatic lock came while jobs ran: it follows when the last one the user started ends. */
     var lockWhenDone = false
+
+    /** A job the user started that reported no progress for this long counts as stalled. */
+    var stallMillis = 120_000L
+
+    private val started = kotlin.time.TimeSource.Monotonic.markNow()
+
+    /** Milliseconds of a monotonic clock (tests may replace it). */
+    var clock: () -> Long = { started.elapsedNow().inWholeMilliseconds }
+
+    private var watchdog: kotlinx.coroutines.Job? = null
+
+    /** A job the user started is running and reported progress lately. */
+    private fun progressing(): Boolean = list.any { it.active && !it.quiet && clock() - it.lastProgress < stallMillis }
+
+    /**
+     * An automatic lock (time away, idle, screen off). Quiet jobs (automatic archive, photo
+     * backup) stop at once: they continue from their marks next time and never hold the lock
+     * back. Jobs the user started are waited for while they make progress; once none reported
+     * progress for [stallMillis], the suite locks and cancels them.
+     */
+    fun autoLock() {
+        for (j in list.filter { it.active && it.quiet }) {
+            j.byLock = true
+            j.coroutine?.cancel()
+        }
+        if (!progressing()) {
+            lockWhenDone = false
+            state.lockNow()
+            return
+        }
+        lockWhenDone = true
+        if (watchdog?.isActive == true) return
+        watchdog = state.scope.launch {
+            while (lockWhenDone) {
+                kotlinx.coroutines.delay((stallMillis / 4).coerceIn(50L, 1_000L))
+                if (lockWhenDone && !progressing()) {
+                    lockWhenDone = false
+                    state.lockNow()
+                }
+            }
+        }
+    }
 
     /** A job shows in the strip after this long (a job with nothing to do never flashes up). */
     var revealMillis = 500L
@@ -149,6 +210,7 @@ class Jobs internal constructor(private val state: AppState) {
      * "Cancel" (null: none). [onEnd] runs in every case (e.g. closes the files). A [quiet] job is
      * shown in the strip but only says something when its [block] has something to say.
      */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     fun start(
         kind: JobKind,
         title: suspend () -> String,
@@ -158,11 +220,17 @@ class Jobs internal constructor(private val state: AppState) {
         onEnd: () -> Unit = {},
         block: suspend (BgJob) -> String?,
     ): BgJob {
-        val job = BgJob(++nextId, kind, quiet) { publish() }
+        val job = BgJob(++nextId, kind, quiet) { j ->
+            j.lastProgress = clock()
+            publish()
+        }
+        job.lastProgress = clock()
         list.add(job)
         // Older jobs that ended leave the list (only the last few are kept).
         list.filter { !it.active }.dropLast(4).forEach { list.remove(it) }
-        job.coroutine = state.scope.launch {
+        // ATOMIC: a job cancelled before its coroutine had a turn still runs its end (else it
+        // stayed "waiting" for good and held every automatic lock back).
+        job.coroutine = state.scope.launch(start = kotlinx.coroutines.CoroutineStart.ATOMIC) {
             val reveal = launch {
                 kotlinx.coroutines.delay(revealMillis)
                 job.shown = true
@@ -217,21 +285,48 @@ class Jobs internal constructor(private val state: AppState) {
         }
     }
 
-    private fun ended(job: BgJob, message: String?) {
+    private suspend fun ended(job: BgJob, message: String?) = withContext(NonCancellable) {
         publish()
+        // The last job the user started ended while an automatic lock waited for it.
+        val locking = lockWhenDone && list.none { it.active && !it.quiet }
         if (!message.isNullOrEmpty()) {
-            if (job.byLock) {
+            when {
                 // A quiet job that was stopped by locking says nothing (it continues next time).
-                if (!job.quiet) state.noteAfterUnlock(message)
-            } else {
-                state.message(message)
-                JobStatus.finished.tryEmit(message)
+                job.byLock -> if (!job.quiet) state.noteAfterUnlock(message)
+                // The suite locks right now: the message (it may name a file) waits for the next
+                // unlock instead of standing on the lock screen.
+                locking -> state.noteAfterUnlock(message)
+                else -> {
+                    state.message(message)
+                    JobStatus.finished.tryEmit(JobEnd(message, catching { publicText(job) }.getOrDefault("GhulSuite")))
+                }
             }
         }
-        if (!running && lockWhenDone) {
+        if (locking) {
             lockWhenDone = false
             state.lockNow()
         }
+    }
+
+    /** "Upload finished · 3 of 3 done": what ended and the counts, never a file or mail name. */
+    private suspend fun publicText(job: BgJob): String {
+        val what = state.str(
+            when (job.kind) {
+                JobKind.UPLOAD -> Res.string.job_kind_upload
+                JobKind.DOWNLOAD -> Res.string.job_kind_download
+                JobKind.ARCHIVE -> Res.string.job_kind_archive
+                JobKind.PHOTOS -> Res.string.job_kind_photos
+            },
+        )
+        val end = state.str(
+            when (job.state) {
+                JobState.CANCELLED -> Res.string.job_end_cancelled
+                JobState.FAILED -> Res.string.job_end_failed
+                else -> Res.string.job_end_done
+            },
+            what,
+        )
+        return if (job.total > 1) end + " · " + state.str(Res.string.job_of, job.done.toString(), job.total.toString()) else end
     }
 
     /**

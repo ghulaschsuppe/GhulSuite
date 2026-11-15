@@ -184,6 +184,24 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
         driveFiles++
         return "f3"
     }
+    /** Photos for the photo backup (name and the second it was added), and how long each takes. */
+    var photos: List<Pair<String, Long>> = emptyList()
+    var photoDelayMs = 0L
+    override val photoBackupAvailable: Boolean get() = photos.isNotEmpty()
+    /** Like the Android backend: oldest first, the mark of each photo also when cancelled during it. */
+    override suspend fun photoBackup(sinceSeconds: Long, wifiOnly: Boolean, onFile: (String, Long, Long?) -> Unit): Long {
+        val todo = photos.filter { it.second > sinceSeconds }.sortedBy { it.second }
+        var mark = sinceSeconds
+        for ((i, p) in todo.withIndex()) {
+            if (photoDelayMs > 0) kotlinx.coroutines.delay(photoDelayMs)
+            calls += "photo:${p.first}"
+            val next = todo.getOrNull(i + 1)?.second
+            mark = maxOf(mark, de.danerd.ghulsuite.ui.photoMark(p.second, next))
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { onFile(p.first, p.second, next) }
+        }
+        return mark
+    }
+
     override suspend fun driveDownload(id: String, sink: ByteSink, onProgress: (Long) -> Unit) {
         calls += "driveDownload:$id"
         archiveContent[id]?.let { sink.write(it.encodeToByteArray()); onProgress(it.length.toLong()) }
@@ -270,7 +288,12 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
             else -> de.danerd.ghulsuite.model.MailArchivedUi.SAVED
         }
     }
-    override suspend fun archiveAutoDays() = archiveAutoDaysValue
+    /** How long asking for the automatic archive's days takes (two quick unlocks while it is asked). */
+    var archiveAutoDaysDelayMs = 0L
+    override suspend fun archiveAutoDays(): Int {
+        if (archiveAutoDaysDelayMs > 0) kotlinx.coroutines.delay(archiveAutoDaysDelayMs)
+        return archiveAutoDaysValue
+    }
     override suspend fun archiveSetAutoDays(days: Int) { calls += "archiveSetAutoDays:$days"; archiveAutoDaysValue = days }
     override suspend fun archiveAutoUids(accountId: String, folder: String): de.danerd.ghulsuite.model.MailArchiveBatchUi {
         calls += "archiveAutoUids:$accountId:$folder"

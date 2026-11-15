@@ -148,13 +148,28 @@ fun AppState.archiveMails(folder: String, mails: suspend () -> List<Pair<String,
 fun AppState.runAutoArchive() {
     val st = backend.settings
     val net = backend.net
-    if (!st.moduleGhulMail || jobs.list.any { it.active && it.kind == JobKind.ARCHIVE && it.quiet }) return
+    if (!main || !st.moduleGhulMail || autoArchiveStarting || jobs.list.any { it.active && it.kind == JobKind.ARCHIVE && it.quiet }) return
     if (nowSeconds() - (st.archiveAutoLast.toLongOrNull() ?: 0L) < 86_400) return
+    // Set before the first suspension: two quick unlocks start one run, not two.
+    autoArchiveStarting = true
     scope.launch {
+        try {
+            startAutoArchive()
+        } finally {
+            // From here on the running job itself keeps a second run out.
+            autoArchiveStarting = false
+        }
+    }
+}
+
+private suspend fun AppState.startAutoArchive() {
+    val st = backend.settings
+    val net = backend.net
+    run {
         val days = catching { net.archiveAutoDays() }.getOrDefault(0)
-        if (days <= 0) return@launch
+        if (days <= 0) return
         // Without GhulDrive there is nowhere to archive to (the options say so).
-        if (catching { net.driveStatus().serverId }.getOrNull() == null) return@launch
+        if (catching { net.driveStatus().serverId }.getOrNull() == null) return
         val count = ArchiveCount()
         jobs.start(JobKind.ARCHIVE, title = { str(Res.string.mail_archive_auto_running) }, quiet = true) { job ->
             class Batch(val account: String, val folder: String, val validity: Long, val uids: List<Long>)

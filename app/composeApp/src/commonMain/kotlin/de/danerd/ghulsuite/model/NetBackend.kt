@@ -100,10 +100,14 @@ interface NetBackend {
     fun unmeteredNetwork(): Boolean = true
     /**
      * Photo backup (Android): uploads photos added after [sinceSeconds] into "Fotos", oldest first;
-     * [onFile] gets each one done with the time it was added. Returns the newest time done.
+     * [onFile] gets each one done with the time it was added and the time of the next photo
+     * waiting (null: none), also when the run is being cancelled. Returns the mark to continue
+     * from next time (see photoMark).
      */
     val photoBackupAvailable: Boolean get() = false
-    suspend fun photoBackup(sinceSeconds: Long, wifiOnly: Boolean, onFile: (name: String, addedSeconds: Long) -> Unit): Long = sinceSeconds
+    suspend fun photoBackup(
+        sinceSeconds: Long, wifiOnly: Boolean, onFile: (name: String, addedSeconds: Long, nextSeconds: Long?) -> Unit,
+    ): Long = sinceSeconds
     /** Encrypts and uploads [source] block by block; [onProgress] gets the bytes done. */
     suspend fun driveUpload(folder: String?, source: ByteSource, onProgress: (Long) -> Unit): String
     /** Downloads and decrypts a file into [sink]. */
