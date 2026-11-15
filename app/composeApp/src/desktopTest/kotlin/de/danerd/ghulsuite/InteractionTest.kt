@@ -75,6 +75,8 @@ class InteractionTest {
         // As in the development build: dropped follow-up actions and unexpected errors are alarms.
         DevChecks.enabled = true
         DevChecks.alarms.clear()
+        // No "Save" of an earlier test holds the lock back.
+        HeaderGuard.reset()
         val fake = ScreenshotTest.Fake(exists = true, unlocked = true).apply(prepare)
         // Texts that AppState looks up outside of the screen need a display (screen resolution);
         // the tests run without one, so only that failure is let through, every other one counts.
@@ -503,7 +505,7 @@ class InteractionTest {
             desc("Lock now").performClick()
             waitUntil(timeoutMillis = 10_000) { fake.locks == 1 }
         } finally {
-            HeaderGuard.grace = kotlin.time.Duration.parse("500ms")
+            HeaderGuard.reset()
         }
     }
 
@@ -522,7 +524,7 @@ class InteractionTest {
             desc("Lock now").performClick()
             waitUntil(timeoutMillis = 10_000) { fake.locks == 1 }
         } finally {
-            HeaderGuard.grace = kotlin.time.Duration.parse("500ms")
+            HeaderGuard.reset()
         }
     }
 

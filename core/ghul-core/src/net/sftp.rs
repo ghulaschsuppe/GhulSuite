@@ -193,20 +193,6 @@ fn proto(e: russh_sftp::client::error::Error) -> NetError {
     }
 }
 
-#[cfg(test)]
-mod proto_tests {
-    use super::*;
-    use russh_sftp::client::error::Error as E;
-
-    #[test]
-    fn sftp_timeouts_are_timeouts() {
-        assert_eq!(proto(E::Timeout), NetError::Timeout);
-        assert_eq!(proto(E::IO("Timeout".into())), NetError::Timeout);
-        assert_eq!(proto(E::IO("Connection timed out (os error 110)".into())), NetError::Timeout);
-        assert_eq!(proto(E::IO("broken pipe".into())), NetError::Protocol("I/O: broken pipe".into()));
-    }
-}
-
 fn is_missing(e: &russh_sftp::client::error::Error) -> bool {
     matches!(e, russh_sftp::client::error::Error::Status(s) if s.status_code == russh_sftp::protocol::StatusCode::NoSuchFile)
 }
@@ -321,5 +307,19 @@ impl RemoteFs for SftpFs {
             },
             TIMEOUT,
         )
+    }
+}
+
+#[cfg(test)]
+mod proto_tests {
+    use super::*;
+    use russh_sftp::client::error::Error as E;
+
+    #[test]
+    fn sftp_timeouts_are_timeouts() {
+        assert_eq!(proto(E::Timeout), NetError::Timeout);
+        assert_eq!(proto(E::IO("Timeout".into())), NetError::Timeout);
+        assert_eq!(proto(E::IO("Connection timed out (os error 110)".into())), NetError::Timeout);
+        assert_eq!(proto(E::IO("broken pipe".into())), NetError::Protocol("I/O: broken pipe".into()));
     }
 }

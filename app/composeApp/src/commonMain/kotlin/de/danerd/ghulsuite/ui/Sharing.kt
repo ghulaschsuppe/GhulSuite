@@ -64,6 +64,7 @@ import de.danerd.ghulsuite.model.ShareOptionsUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
 import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.rememberResourceEnvironment
 import org.jetbrains.compose.resources.stringResource
 
 private val Blue = Color(0xFF2F74E8)
@@ -409,7 +410,8 @@ fun ShareSetupScreen(state: AppState, serverId: String, padding: PaddingValues) 
                             if (skipped) Hint(stringResource(Res.string.share_check_skipped))
                             else if (!c.ok && c.detail.isNotBlank()) {
                                 // Known causes ("server address not found") in the app's language.
-                                val detail by produceState(c.detail, c.detail) { value = coreText(c.detail) ?: c.detail }
+                                val env = rememberResourceEnvironment()
+                                val detail by produceState(c.detail, c.detail) { value = coreText(env, c.detail) ?: c.detail }
                                 Hint(detail)
                             }
                         }

@@ -783,6 +783,12 @@ object HeaderGuard {
     }
 
     fun lockBlocked(): Boolean = lastAction?.let { it.elapsedNow() < grace } ?: false
+
+    /** Forgets the last "Save" (tests start each from nothing). */
+    fun reset() {
+        lastAction = null
+        grace = kotlin.time.Duration.parse("500ms")
+    }
 }
 
 /** Tag of [GhulFab]: the layout check knows it floats over the list on purpose. */
