@@ -107,6 +107,13 @@ fun main() {
                 }
             }
 
+            // A background job that ends while the window is not in front: a Windows notification.
+            LaunchedEffect(Unit) {
+                de.danerd.ghulsuite.ui.JobStatus.finished.collect { text ->
+                    if (!window.isFocused) (backend.cal as? DesktopCalBackend)?.note("GhulSuite", text)
+                }
+            }
+
             // Auto-lock: window in the background, Windows locked, or idle for long.
             LaunchedEffect(Unit) {
                 var lostFocusAt: Long? = null
@@ -129,10 +136,13 @@ fun main() {
                     val waitingForKey = state.busy
                     // A few seconds of grace, so that a short switch (e.g. to a system dialog) does not lock.
                     val autoLock = maxOf(backend.settings.autoLockSeconds * 1000L, 3000L)
+                    // A running background job (upload, mail archive) is not cut off: the lock
+                    // follows when it ends, unless the user is back by then. Ctrl+L locks at once.
                     when {
-                        backend.settings.lockOnScreenOff && WinNative.workstationLocked() -> state.lockNow()
-                        !waitingForKey && lostFocusAt != null && away >= autoLock -> state.lockNow()
-                        !waitingForKey && now - lastInput >= maxOf(IDLE_LOCK_MS, autoLock) -> state.lockNow()
+                        backend.settings.lockOnScreenOff && WinNative.workstationLocked() -> state.autoLock()
+                        !waitingForKey && lostFocusAt != null && away >= autoLock -> state.autoLock()
+                        !waitingForKey && now - lastInput >= maxOf(IDLE_LOCK_MS, autoLock) -> state.autoLock()
+                        else -> state.keepUnlocked()
                     }
                 }
             }

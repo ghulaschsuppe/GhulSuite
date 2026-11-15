@@ -63,16 +63,28 @@ class DesktopCalBackend(private val window: () -> java.awt.Window?, suite: () ->
         due.forEach { show(it) }
     }
 
-    private fun show(a: CalAlarmUi) {
-        if (!SystemTray.isSupported()) return
-        val icon = tray ?: runCatching {
-            val img = baseIcon ?: return
+    /** A short Windows notification (a background job is done); a click brings GhulSuite to the front. */
+    fun note(title: String, text: String) {
+        val icon = trayIcon() ?: return
+        lastKey = null
+        // While Windows is locked only that something is done (no names on the lock screen).
+        icon.displayMessage(title, if (WinNative.workstationLocked()) "GhulSuite" else text, TrayIcon.MessageType.INFO)
+    }
+
+    private fun trayIcon(): TrayIcon? {
+        if (!SystemTray.isSupported()) return null
+        return tray ?: runCatching {
+            val img = baseIcon ?: return null
             TrayIcon(img, "GhulSuite").apply {
                 isImageAutoSize = true
                 addActionListener { open() }
                 SystemTray.getSystemTray().add(this)
             }
-        }.getOrNull()?.also { tray = it } ?: return
+        }.getOrNull()?.also { tray = it }
+    }
+
+    private fun show(a: CalAlarmUi) {
+        val icon = trayIcon() ?: return
         lastKey = a.key
         val locked = WinNative.workstationLocked()
         val title = if (locked) a.publicTitle else a.title

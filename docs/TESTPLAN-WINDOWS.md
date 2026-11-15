@@ -1,6 +1,6 @@
 # GhulSuite: Testplan Windows (Version 0.5.0-dev)
 
-**Stand:** 13.11.2026 · erste Windows-Version (neu: Abschnitt 11, Assistent und Bereiche), mit neuem Design. Oberfläche und Kern sind dieselben wie unter Android; dieser Plan prüft,
+**Stand:** 15.11.2026 · erste Windows-Version (neu: Abschnitt 13, Aufgaben im Hintergrund und Mail-Archiv; Abschnitt 11, Assistent und Bereiche), mit neuem Design. Oberfläche und Kern sind dieselben wie unter Android; dieser Plan prüft,
 was unter Windows anders ist (Installation, portabler Betrieb, Security Key über Windows, Sperre, Zwischenablage,
 Bildschirmschutz) und dass Android und Windows dieselbe Suite gemeinsam nutzen können. Den Android-Plan gibt es
 getrennt: [`TESTPLAN.md`](TESTPLAN.md).
@@ -89,7 +89,7 @@ Jeder Test hat eine Nummer, die mit **W** beginnt (z. B. **WE3**), damit sie sic
 | Nr. | Schritt | Erwartet |
 |---|---|---|
 | WS1 | Server hinzufügen: SFTP (Schlüssel oder Passwort) oder FTPS; danach in der Serverliste „Modul installieren“. | Wie unter Android (Android-Plan 12 und 17): nur SFTP und FTPS zur Wahl, das Modul wird über dieselbe Anmeldung installiert und geprüft. |
-| WS2 | GhulDrive: große Datei (> 100 MB) hochladen, herunterladen. | Fortschritt, Ergebnis identisch. |
+| WS2 | GhulDrive: große Datei (> 100 MB) hochladen, herunterladen. | Streifen unter der Kopfleiste mit Balken und „Abbrechen“, auch wenn du in einen anderen Bereich wechselst; Ergebnis identisch. |
 | WS3 | Datei → Teilen → „Mit Programm öffnen“. | Öffnet im passenden Programm (PDF-Betrachter usw.). Mehrere Dateien: der Ordner öffnet sich. |
 | WS4 | Danach GhulSuite sperren. | Die entschlüsselten Kopien im Temp-Ordner (`%TEMP%\GhulSuite-Weitergabe`) sind gelöscht. |
 | WS5 | Freigabelink erstellen, im Browser öffnen; ohne Modul auf dem Server von GhulDrive erneut versuchen. | Wie Android-Plan 18: Ablauf und Abrufe wählbar, keine Serverauswahl. Ohne Modul führt „Freigabelink“ zur Modul-Installation. |
@@ -156,6 +156,18 @@ Die Abläufe sind dieselben wie unter Android (Testplan Android, Abschnitte 1 un
 | WR1 | Einrichtung bis Schritt 7 (Schnell-Entsperren). | Keine App-PIN zur Auswahl, Hinweis auf Windows Hello später (U8). |
 | WR2 | Termin mit Erinnerung in 10 Minuten, dann in Windows die Zeitzone ändern und GhulSuite offen lassen. | Spätestens nach 5 Minuten wird neu geplant; die Erinnerung kommt zur richtigen Uhrzeit (B22). |
 | WR3 | Optionen → GhulCal. | Hinweis: Erinnerungen kommen nur, solange GhulSuite läuft (B22). |
+
+## 13. Aufgaben im Hintergrund und Mail-Archiv
+
+Wie im Android-Testplan Abschnitte 33 (BG1, BG2, BG6, BG8) und 34 (MA1 bis MA14). Unter Windows anders:
+
+| Nr. | Schritt | Erwartet |
+|---|---|---|
+| WJ1 | Großen Upload starten, ein anderes Fenster in den Vordergrund holen und länger warten als die Zeit für automatisches Sperren. | GhulSuite sperrt nicht mitten im Upload, sondern erst, wenn er fertig ist (sofern das Fenster dann noch im Hintergrund ist). |
+| WJ2 | Wie WJ1, aber vor dem Ende zurück ins Fenster. | Bleibt entsperrt, der Upload läuft zu Ende. |
+| WJ3 | Upload läuft, Strg+L. | Sofort gesperrt, Upload gestoppt; nach dem Entsperren „GhulSuite wurde gesperrt. Hochladen abgebrochen: …“. |
+| WJ4 | Upload oder Mail-Archiv läuft, anderes Fenster vorne, Auftrag endet. | Windows-Benachrichtigung von GhulSuite mit dem Ergebnis; ein Klick holt GhulSuite nach vorne. Ist GhulSuite vorne, nur die Meldung in der App. |
+| WJ5 | Windows sperren (Win+L), während ein Auftrag läuft (mit „Sperren, wenn Windows gesperrt wird“). | GhulSuite sperrt, sobald der Auftrag fertig ist; die Benachrichtigung auf dem Sperrbildschirm nennt nur „GhulSuite“. |
 
 ## Fehler melden
 

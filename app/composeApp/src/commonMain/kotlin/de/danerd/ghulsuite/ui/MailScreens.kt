@@ -51,6 +51,7 @@ import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.automirrored.filled.Forward
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Inbox
@@ -325,6 +326,8 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
     LaunchedEffect(selected.active, inSearch) { if (!selected.active || inSearch) wholeFolder = false }
     var movingAll by remember { mutableStateOf(false) }
     var deleteAll by remember { mutableStateOf(false) }
+    /** Archiving into GhulDrive waits for its question. */
+    var archiveAsk by remember { mutableStateOf<ArchiveAsk?>(null) }
     var emptying by remember { mutableStateOf(false) }
     // Texts looked up later (after a count is known) use the language of the screen.
     val env = rememberResourceEnvironment()
@@ -343,6 +346,9 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
         }
     }
 
+    val folderName = folderLabel(MailFolderUi(folder, folderRole))
+    val archiveFolderText = stringResource(Res.string.mail_archive_ask_folder, folderName)
+    val archiveSelectedText = pluralStringResource(Res.plurals.mail_archive_ask_selected, chosen.size, chosen.size.toString())
     Column(Modifier.fillMaxSize()) {
     if (selected.active) {
         val anyUnread = chosen.any { !it.m.seen }
@@ -373,6 +379,22 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
                             ?: throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.INVALID_INPUT, "no archive folder")
                         if (target != folder) net.mailMoveMany(a, folder, u, target)
                     } else { val list = chosen; selected.clear(); archive(list) }
+                })
+                // A copy of each mail into GhulDrive; at the provider nothing changes.
+                add(SelAction(Icons.Filled.CloudUpload, stringResource(Res.string.mail_archive_drive)) {
+                    val a = single
+                    archiveAsk = if (wholeFolder && a != null) {
+                        ArchiveAsk(archiveFolderText) {
+                            selected.clear()
+                            state.archiveMails(folder) { net.archiveUids(a.id, folder, null).map { a.id to it } }
+                        }
+                    } else {
+                        val list = chosen.map { it.accountId to it.m.uid }
+                        ArchiveAsk(archiveSelectedText) {
+                            selected.clear()
+                            state.archiveMails(folder) { list }
+                        }
+                    }
                 })
                 // Moving needs the folders of one account.
                 if (chosen.map { it.accountId }.distinct().size == 1) add(SelAction(Icons.Filled.Folder, stringResource(Res.string.a_move)) {
@@ -465,6 +487,10 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
         if (heads.isNotEmpty()) HintText(stringResource(Res.string.mail_swipe_hint))
     }
     }
+    }
+    archiveAsk?.let { a -> ArchiveAskDialog(state, a) { archiveAsk = null } }
+    if (state.mailFolderMenu && single != null && LocalTabActive.current) {
+        MailFolderMenu(state, single.id, folder, folderName) { state.mailFolderMenu = false }
     }
     if (deleteAll) {
         AlertDialog(
@@ -575,7 +601,7 @@ private fun folderLabel(f: MailFolderUi): String = when (f.role) {
 
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
-private fun MailRow(
+internal fun MailRow(
     m: MailSummaryUi, today: String, yesterday: String, divider: Boolean, count: Int = 1, account: String? = null,
     selected: Boolean = false, onLongClick: (() -> Unit)? = null, onClick: () -> Unit,
 ) {
@@ -664,13 +690,8 @@ fun MailReadScreen(state: AppState, accountId: String, folder: String, uid: Long
         catching { net.mailGet(accountId, folder, uid) }.onSuccess { message = it; state.refreshUnread() }.onFailure { error = describe(it) }
         folders = catching { net.mailFolders(accountId) }.getOrDefault(emptyList())
     }
-    val replyPrefix = stringResource(Res.string.mail_re)
-    val forwardPrefix = stringResource(Res.string.mail_fwd)
-    val quoteHead = stringResource(Res.string.mail_quote_head)
-
+    val replies = rememberMailReplies(accountId)
     val m0 = message
-    fun quote(m: MailMessageUi) = "\n\n" + quoteHead.replace("%1\$s", m.from) + "\n" + m.text.lines().joinToString("\n") { "> $it" }
-    fun re(s: String) = if (s.startsWith(replyPrefix, ignoreCase = true) || s.startsWith("Re:", true)) s else "$replyPrefix $s"
     val t = g
     val accountName by produceState("", accountId) { value = catching { net.mailAccounts().firstOrNull { it.id == accountId }?.name }.getOrNull().orEmpty() }
     val archive = folders.firstOrNull { it.role == "archive" }
@@ -696,6 +717,9 @@ fun MailReadScreen(state: AppState, accountId: String, folder: String, uid: Long
     val savedMsg2 = stringResource(Res.string.msg_saved_file)
     val saveFile = rememberSaveFile { ok -> if (ok) state.message(savedMsg2) }
     val driveDone = stringResource(Res.string.mail_to_drive_done)
+    var archiveAsk by remember { mutableStateOf<ArchiveAsk?>(null) }
+    val archiveOneText = pluralStringResource(Res.plurals.mail_archive_ask_selected, 1, "1")
+    archiveAsk?.let { a -> ArchiveAskDialog(state, a) { archiveAsk = null } }
     Column(Modifier.padding(padding)) {
         GhulTopBar("", onLock = { state.lockNow() }, onBack = { state.pop() }, backIcon = backIcon(), actions = {
             if (archive != null && archive.name != folder) {
@@ -715,125 +739,38 @@ fun MailReadScreen(state: AppState, accountId: String, folder: String, uid: Long
             BusyBanner(state)
             ErrorText(error)
             val m = m0 ?: return@Column
-            SelectionContainer {
-                Text(m.subject.ifBlank { stringResource(Res.string.mail_no_subject) }, fontSize = 22.sp, lineHeight = 27.sp, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 6.dp))
-            }
-            FlowRow(Modifier.padding(start = 4.dp, end = 4.dp, bottom = 14.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (accountName.isNotEmpty()) Tag(accountName)
-                if (m.encrypted) Tag(stringResource(Res.string.mail_tag_encrypted), t.ok, Icons.Filled.Lock)
-                when (m.signature) {
-                    de.danerd.ghulsuite.model.MailSignatureUi.VALID -> Tag(stringResource(Res.string.mail_tag_signed), t.ok, Icons.Filled.Verified)
-                    de.danerd.ghulsuite.model.MailSignatureUi.UNKNOWN_KEY -> Tag(stringResource(Res.string.mail_tag_unknown), null, Icons.Filled.HelpOutline)
-                    de.danerd.ghulsuite.model.MailSignatureUi.INVALID -> Tag(stringResource(Res.string.mail_tag_invalid), t.danger, Icons.Filled.GppBad)
-                    de.danerd.ghulsuite.model.MailSignatureUi.NONE -> {}
-                }
-                if (!m.encrypted) Tag("TLS", t.ok, Icons.Filled.Lock)
-                for (l in labels) Tag(l, t.warn, Icons.AutoMirrored.Filled.Label)
-            }
-            // Earlier messages of the same conversation (collapsed; tap to open).
-            for (o in thread) {
-                Row(
-                    Modifier.fillMaxWidth().padding(bottom = 10.dp).clip(RoundedCornerShape(20.dp)).background(t.surface)
-                        .clickable { state.pop(); state.push(Screen.MailRead(o.accountId, folder, o.m.uid)) }.padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Avatar(o.m.from.ifBlank { o.m.fromAddress }, size = 34.dp)
-                    Column(Modifier.weight(1f)) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(o.m.from.ifBlank { o.m.fromAddress }, fontWeight = FontWeight.Bold, maxLines = 1)
-                            if (o.m.date > 0) Text("· " + mailTime(o.m.date), color = t.muted)
-                        }
-                        if (o.m.encrypted) {
-                            // As in the list: one quiet line with the lock, never the "..." subject.
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Icon(Icons.Filled.Lock, null, Modifier.size(14.dp), tint = t.ok)
-                                Text(stringResource(Res.string.mail_preview_encrypted), fontSize = 14.sp, color = t.muted, maxLines = 1)
-                            }
-                        } else {
-                            Text(o.m.preview.ifBlank { o.m.subject }, fontSize = 14.sp, color = t.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                    }
-                }
-            }
-            // The message (.msg): sender, blocked images, text, attachments.
-            Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(t.surface).padding(16.dp),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Avatar(m.from.ifBlank { m.fromAddress })
-                    Column(Modifier.weight(1f)) {
-                        Text(m.from.ifBlank { m.fromAddress }, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        val to = (m.to + m.cc).joinToString(", ")
-                        Text(
-                            listOfNotNull(m.fromAddress.takeIf { it != m.from }, if (to.isNotEmpty()) stringResource(Res.string.mail_to_lower, to) else null).joinToString(" · "),
-                            fontSize = 13.sp, color = t.muted,
-                        )
-                    }
-                    if (m.date > 0) Text(mailTime(m.date), fontSize = 12.sp, color = t.faint)
-                }
-                var asText by remember(m.uid) { mutableStateOf(false) }
-                val formatted = m.blocks.isNotEmpty() && !asText
-                if (m.wasHtml && m.blocks.isEmpty()) Box(Modifier.padding(top = 12.dp)) { Banner(Icons.Filled.Image, stringResource(Res.string.mail_html_hint)) }
-                if (m.signature == de.danerd.ghulsuite.model.MailSignatureUi.INVALID) {
-                    Box(Modifier.padding(top = 12.dp)) { Banner(Icons.Filled.GppBad, stringResource(Res.string.mail_badge_invalid)) }
-                }
-                if (formatted) {
-                    MailHtmlView(state, m)
-                } else {
-                    SelectionContainer { Text(m.text, Modifier.padding(top = 14.dp), fontSize = 15.sp, lineHeight = 22.sp, color = t.fg) }
-                }
-                if (m.blocks.isNotEmpty()) {
-                    Text(
-                        stringResource(if (asText) Res.string.mail_show_formatted else Res.string.mail_show_text),
-                        Modifier.padding(top = 10.dp).clickable { asText = !asText },
-                        color = t.accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                    )
-                }
-                for (a in m.attachments) {
+            MailMessageBody(state, m, accountName, labels, archived = false, before = {
+                // Earlier messages of the same conversation (collapsed; tap to open).
+                for (o in thread) {
                     Row(
-                        Modifier.fillMaxWidth().padding(top = 12.dp).clip(RoundedCornerShape(14.dp))
-                            .border(1.dp, t.line, RoundedCornerShape(14.dp)).padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        Modifier.fillMaxWidth().padding(bottom = 10.dp).clip(RoundedCornerShape(20.dp)).background(t.surface)
+                            .clickable { state.pop(); state.push(Screen.MailRead(o.accountId, folder, o.m.uid)) }.padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        IconTile(Icons.Filled.Description, avatarColor("filetext7"), size = 34.dp)
+                        Avatar(o.m.from.ifBlank { o.m.fromAddress }, size = 34.dp)
                         Column(Modifier.weight(1f)) {
-                            Text(a.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(a.name.substringAfterLast('.', "").uppercase().let { if (it.isEmpty()) "" else "$it · " } + formatSize(a.size), fontSize = 12.sp, color = t.muted)
-                        }
-                        if (filePickersAvailable) {
-                            BarIcon(Icons.Filled.Download, stringResource(Res.string.a_save)) {
-                                state.run(onError = { error = it }, block = { net.mailAttachment(accountId, folder, uid, a.index) }) { data -> save(a.name, data) }
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(o.m.from.ifBlank { o.m.fromAddress }, fontWeight = FontWeight.Bold, maxLines = 1)
+                                if (o.m.date > 0) Text("· " + mailTime(o.m.date), color = t.muted)
+                            }
+                            if (o.m.encrypted) {
+                                // As in the list: one quiet line with the lock, never the "..." subject.
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Icon(Icons.Filled.Lock, null, Modifier.size(14.dp), tint = t.ok)
+                                    Text(stringResource(Res.string.mail_preview_encrypted), fontSize = 14.sp, color = t.muted, maxLines = 1)
+                                }
+                            } else {
+                                Text(o.m.preview.ifBlank { o.m.subject }, fontSize = 14.sp, color = t.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                         }
                     }
                 }
+            }) { a ->
+                state.run(onError = { error = it }, block = { net.mailAttachment(accountId, folder, uid, a.index) }) { data -> save(a.name, data) }
             }
-            if (m.attachments.isNotEmpty()) HintText(stringResource(Res.string.mail_attachment_warning), Modifier.padding(top = 10.dp))
         }
         val m = m0 ?: return@Column
-        // Action bar (.actionbar).
-        Column(Modifier.fillMaxWidth().background(t.surface)) {
-            Box(Modifier.fillMaxWidth().height(1.dp).background(t.line))
-            Row(
-                Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 14.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                FilledTonalButton(onClick = {
-                    state.push(Screen.MailCompose(MailDraft(accountId, to = m.replyTo.ifBlank { m.fromAddress }, subject = re(m.subject), text = quote(m), inReplyTo = m.messageId)))
-                }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 10.dp)) {
-                    Icon(Icons.AutoMirrored.Filled.Reply, null, Modifier.size(18.dp))
-                    Text(stringResource(Res.string.a_reply), maxLines = 1)
-                }
-                // Two clear actions; "reply to all" is in the ⋮ menu when there are other recipients.
-                OutlinedButton(onClick = {
-                    state.push(Screen.MailCompose(MailDraft(accountId, subject = "$forwardPrefix ${m.subject}", text = quote(m))))
-                }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 10.dp)) {
-                    Icon(Icons.AutoMirrored.Filled.Forward, null, Modifier.size(18.dp))
-                    Text(stringResource(Res.string.a_forward), maxLines = 1)
-                }
-            }
-        }
+        MailReplyBar(state, m, replies)
     }
     if (more) {
         GhulSheet({ more = false }, message?.subject?.ifBlank { null } ?: stringResource(Res.string.mail_no_subject)) {
@@ -842,8 +779,7 @@ fun MailReadScreen(state: AppState, accountId: String, folder: String, uid: Long
                 if (rm != null && (rm.to + rm.cc).size > 1) {
                     SheetRow(stringResource(Res.string.a_reply_all), leading = { IconTile(Icons.AutoMirrored.Filled.ReplyAll, paletteColor(1)) }) {
                         more = false
-                        state.push(Screen.MailCompose(MailDraft(accountId, to = rm.replyTo.ifBlank { rm.fromAddress },
-                            cc = (rm.to + rm.cc).joinToString(", "), subject = re(rm.subject), text = quote(rm), inReplyTo = rm.messageId)))
+                        state.push(Screen.MailCompose(replies.replyAll(rm)))
                     }
                 }
                 SheetRow(stringResource(Res.string.a_mark_unread), leading = { IconTile(Icons.Filled.MarkEmailUnread, paletteColor(1)) }, divider = rm != null && (rm.to + rm.cc).size > 1) {
@@ -884,6 +820,10 @@ fun MailReadScreen(state: AppState, accountId: String, folder: String, uid: Long
                         }) { state.message(driveDone); state.changed() }
                     }
                 }
+                SheetRow(stringResource(Res.string.mail_archive_drive), leading = { IconTile(Icons.Filled.CloudUpload, areaColor(Tab.DRIVE)) }, divider = true) {
+                    more = false
+                    archiveAsk = ArchiveAsk(archiveOneText) { state.archiveMails(folder) { listOf(accountId to uid) } }
+                }
                 SheetRow(stringResource(Res.string.mail_show_original), leading = { IconTile(Icons.Filled.Code, paletteColor(8)) }, divider = true) {
                     more = false
                     state.run(onError = { error = it }, block = { net.mailHeaders(accountId, folder, uid) }) { original = it }
@@ -914,6 +854,179 @@ fun MailReadScreen(state: AppState, accountId: String, folder: String, uid: Long
                         leave(movedMsg) { net.mailMove(accountId, folder, uid, f.name) }
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Automatic archiving into GhulDrive (stored in the Mail file, the same on every device): off, or
+ * mails older than 30, 90 or 365 days. Only with GhulDrive; without it, it says how to get there.
+ */
+@Composable
+private fun ArchiveAutoRow(state: AppState) {
+    val net = state.backend.net
+    var days by remember { mutableStateOf<Int?>(null) }
+    var driveReady by remember { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(state.liveRevision()) {
+        days = catching { net.archiveAutoDays() }.getOrDefault(0)
+        driveReady = catching { net.driveStatus().serverId != null }.getOrDefault(true)
+    }
+    val d = days ?: return
+    if (driveReady == false) {
+        Text(stringResource(Res.string.mail_archive_auto), Modifier.padding(top = 8.dp))
+        Hint(stringResource(Res.string.mail_archive_auto_no_drive))
+        TextButton(onClick = { openDriveSetup(state) }) { Text(stringResource(Res.string.mail_archive_setup_drive)) }
+        return
+    }
+    ChoiceRow(
+        stringResource(Res.string.mail_archive_auto),
+        listOf(0 to Res.string.mail_archive_auto_off, 30 to Res.string.mail_archive_auto_30, 90 to Res.string.mail_archive_auto_90, 365 to Res.string.mail_archive_auto_365),
+        d,
+    ) { v ->
+        days = v
+        state.run(onError = { days = d; state.message(it) }, block = { net.archiveSetAutoDays(v) }) {
+            // Switched on (or changed): it runs now, and from then on once a day after unlocking.
+            state.backend.settings.archiveAutoLast = "0"
+            if (v > 0) state.runAutoArchive()
+        }
+    }
+    Hint(stringResource(Res.string.mail_archive_auto_hint))
+}
+
+/** Drafts of a reply, an answer to all and a forward, in the language of the screen. */
+internal class MailReplies(
+    val reply: (MailMessageUi) -> MailDraft,
+    val replyAll: (MailMessageUi) -> MailDraft,
+    val forward: (MailMessageUi) -> MailDraft,
+)
+
+@Composable
+internal fun rememberMailReplies(accountId: String): MailReplies {
+    val replyPrefix = stringResource(Res.string.mail_re)
+    val forwardPrefix = stringResource(Res.string.mail_fwd)
+    val quoteHead = stringResource(Res.string.mail_quote_head)
+    fun quote(m: MailMessageUi) = "\n\n" + quoteHead.replace("%1\$s", m.from) + "\n" + m.text.lines().joinToString("\n") { "> $it" }
+    fun re(s: String) = if (s.startsWith(replyPrefix, ignoreCase = true) || s.startsWith("Re:", true)) s else "$replyPrefix $s"
+    return MailReplies(
+        reply = { m -> MailDraft(accountId, to = m.replyTo.ifBlank { m.fromAddress }, subject = re(m.subject), text = quote(m), inReplyTo = m.messageId) },
+        replyAll = { m ->
+            MailDraft(accountId, to = m.replyTo.ifBlank { m.fromAddress }, cc = (m.to + m.cc).joinToString(", "),
+                subject = re(m.subject), text = quote(m), inReplyTo = m.messageId)
+        },
+        forward = { m -> MailDraft(accountId, subject = "$forwardPrefix ${m.subject}", text = quote(m)) },
+    )
+}
+
+/**
+ * A mail as the reader shows it: subject, tags, [before] (earlier mails of the conversation), the
+ * message with sender, text and attachments. Also for a mail from the archive in GhulDrive
+ * ([archived]: tagged "GhulDrive" instead of the transport).
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun MailMessageBody(
+    state: AppState, m: MailMessageUi, accountName: String, labels: List<String>, archived: Boolean,
+    before: @Composable () -> Unit = {}, onSaveAttachment: (de.danerd.ghulsuite.model.MailAttachmentUi) -> Unit,
+) {
+    val t = g
+    SelectionContainer {
+        Text(m.subject.ifBlank { stringResource(Res.string.mail_no_subject) }, fontSize = 22.sp, lineHeight = 27.sp, fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 6.dp))
+    }
+    FlowRow(Modifier.padding(start = 4.dp, end = 4.dp, bottom = 14.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (accountName.isNotEmpty()) Tag(accountName)
+        if (m.encrypted) Tag(stringResource(Res.string.mail_tag_encrypted), t.ok, Icons.Filled.Lock)
+        when (m.signature) {
+            de.danerd.ghulsuite.model.MailSignatureUi.VALID -> Tag(stringResource(Res.string.mail_tag_signed), t.ok, Icons.Filled.Verified)
+            de.danerd.ghulsuite.model.MailSignatureUi.UNKNOWN_KEY -> Tag(stringResource(Res.string.mail_tag_unknown), null, Icons.Filled.HelpOutline)
+            de.danerd.ghulsuite.model.MailSignatureUi.INVALID -> Tag(stringResource(Res.string.mail_tag_invalid), t.danger, Icons.Filled.GppBad)
+            de.danerd.ghulsuite.model.MailSignatureUi.NONE -> {}
+        }
+        if (archived) Tag("GhulDrive", areaColor(Tab.DRIVE), tabIcon(Tab.DRIVE))
+        else if (!m.encrypted) Tag("TLS", t.ok, Icons.Filled.Lock)
+        for (l in labels) Tag(l, t.warn, Icons.AutoMirrored.Filled.Label)
+    }
+    before()
+    // The message (.msg): sender, blocked images, text, attachments.
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(t.surface).padding(16.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Avatar(m.from.ifBlank { m.fromAddress })
+            Column(Modifier.weight(1f)) {
+                Text(m.from.ifBlank { m.fromAddress }, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val to = (m.to + m.cc).joinToString(", ")
+                Text(
+                    listOfNotNull(m.fromAddress.takeIf { it != m.from }, if (to.isNotEmpty()) stringResource(Res.string.mail_to_lower, to) else null).joinToString(" · "),
+                    fontSize = 13.sp, color = t.muted,
+                )
+            }
+            if (m.date > 0) Text(mailTime(m.date), fontSize = 12.sp, color = t.faint)
+        }
+        var asText by remember(m.uid) { mutableStateOf(false) }
+        val formatted = m.blocks.isNotEmpty() && !asText
+        if (m.wasHtml && m.blocks.isEmpty()) Box(Modifier.padding(top = 12.dp)) { Banner(Icons.Filled.Image, stringResource(Res.string.mail_html_hint)) }
+        if (m.signature == de.danerd.ghulsuite.model.MailSignatureUi.INVALID) {
+            Box(Modifier.padding(top = 12.dp)) { Banner(Icons.Filled.GppBad, stringResource(Res.string.mail_badge_invalid)) }
+        }
+        if (formatted) {
+            MailHtmlView(state, m)
+        } else {
+            SelectionContainer { Text(m.text, Modifier.padding(top = 14.dp), fontSize = 15.sp, lineHeight = 22.sp, color = t.fg) }
+        }
+        if (m.blocks.isNotEmpty()) {
+            Text(
+                stringResource(if (asText) Res.string.mail_show_formatted else Res.string.mail_show_text),
+                Modifier.padding(top = 10.dp).clickable { asText = !asText },
+                color = t.accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+            )
+        }
+        for (a in m.attachments) {
+            Row(
+                Modifier.fillMaxWidth().padding(top = 12.dp).clip(RoundedCornerShape(14.dp))
+                    .border(1.dp, t.line, RoundedCornerShape(14.dp)).padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                IconTile(Icons.Filled.Description, avatarColor("filetext7"), size = 34.dp)
+                Column(Modifier.weight(1f)) {
+                    Text(a.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(a.name.substringAfterLast('.', "").uppercase().let { if (it.isEmpty()) "" else "$it · " } + formatSize(a.size), fontSize = 12.sp, color = t.muted)
+                }
+                if (filePickersAvailable) {
+                    BarIcon(Icons.Filled.Download, stringResource(Res.string.a_save)) {
+                        onSaveAttachment(a)
+                    }
+                }
+            }
+        }
+    }
+    if (m.attachments.isNotEmpty()) HintText(stringResource(Res.string.mail_attachment_warning), Modifier.padding(top = 10.dp))
+}
+
+/** Reply and forward under a mail (.actionbar). */
+@Composable
+internal fun MailReplyBar(state: AppState, m: MailMessageUi, replies: MailReplies) {
+    val t = g
+    // Action bar (.actionbar).
+    Column(Modifier.fillMaxWidth().background(t.surface)) {
+        Box(Modifier.fillMaxWidth().height(1.dp).background(t.line))
+        Row(
+            Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            FilledTonalButton(onClick = {
+                state.push(Screen.MailCompose(replies.reply(m)))
+            }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 10.dp)) {
+                Icon(Icons.AutoMirrored.Filled.Reply, null, Modifier.size(18.dp))
+                Text(stringResource(Res.string.a_reply), maxLines = 1)
+            }
+            // Two clear actions; "reply to all" is in the ⋮ menu when there are other recipients.
+            OutlinedButton(onClick = {
+                state.push(Screen.MailCompose(replies.forward(m)))
+            }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 10.dp)) {
+                Icon(Icons.AutoMirrored.Filled.Forward, null, Modifier.size(18.dp))
+                Text(stringResource(Res.string.a_forward), maxLines = 1)
             }
         }
     }
@@ -1394,6 +1507,7 @@ fun MailAccountsSection(state: AppState) {
                 }
                 if (senders.isNotEmpty()) TextButton(onClick = { settings.mailImageSenders = "" }) { Text(stringResource(Res.string.a_reset)) }
             }
+            ArchiveAutoRow(state)
         }
         MailKeysSection(state, accounts)
         SectionCard(deviceGroupTitle()) {

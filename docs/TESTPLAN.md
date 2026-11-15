@@ -1,6 +1,6 @@
 # GhulSuite: Testplan Android (Version 0.5.0-dev)
 
-**Stand:** 15.11.2026 · neu: ein Server mit optionalem Server-Modul, Freigabelinks nur über das Modul (Abschnitte 17 und 18) · deckt Phase 2 (Etappen 1, 2a, 2b, „Der Ordner ist die Suite“) und Phase 3 ab: eigene Server,
+**Stand:** 15.11.2026 · neu: Aufgaben im Hintergrund und Mail-Archiv in GhulDrive (Abschnitte 33 und 34); ein Server mit optionalem Server-Modul, Freigabelinks nur über das Modul (Abschnitte 17 und 18) · deckt Phase 2 (Etappen 1, 2a, 2b, „Der Ordner ist die Suite“) und Phase 3 ab: eigene Server,
 Synchronisation, GhulDrive und GhulMail (Abschnitte 12 bis 15) sowie 0.5.0: neues Design, Servertypen SFTP und FTPS
 mit dem Server-Modul, Teilen mit Freigabelinks und die Modultrennung (Abschnitte 16 bis 19), verschlüsselte Mails (Abschnitt 20), Korrekturen nach dem ersten Test (Abschnitt 21).
 
@@ -225,12 +225,12 @@ Für T5 bis T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick
 |---|---|---|
 | D1 | Tab GhulDrive (ggf. unter Optionen → Module einschalten). | „GhulDrive einrichten“ mit deinen Servern. |
 | D2 | „<Server> verwenden“. | Leere Liste „Meine Dateien“, unten „Auf dem Server: /home/…/ghulsuite/drive“. Dort entsteht `index.ghldrv`. |
-| D3 | „Hochladen“, ein Foto oder PDF wählen. | Fortschritt, dann „… hochgeladen.“; Datei mit Größe und Datum in der Liste. |
+| D3 | „Hochladen“, ein Foto oder PDF wählen. | Unter der Kopfleiste der Streifen „Lade … hoch“ mit Balken und Größe; danach „… hochgeladen.“; Datei mit Größe und Datum in der Liste. |
 | D4 | Auf dem Server in `ghulsuite/drive/` schauen. | Nur `index.ghldrv` und `blocks/xx/<lange ID>`: **kein** Dateiname, Inhalt unlesbar. |
 | D5 | Große Datei (> 50 MB, z. B. Video) hochladen. | Fortschritt läuft durch; App bleibt bedienbar; Datei erscheint. |
-| D6 | Datei antippen → Speicherort wählen. | Gespeicherte Datei ist identisch (öffnen, ansehen). |
-| D7 | Upload starten und „Abbrechen“. | Bricht ab, keine halbe Datei in der Liste. |
-| D7a | „Hochladen“ und im Auswahlfenster mehrere Dateien markieren (Android: lange drücken; Windows: Strg oder Umschalt). | Nacheinander hochgeladen, im Balken „(2 von 5)“; nach jeder Datei stimmen Liste und „X Dateien“; am Ende „5 Dateien hochgeladen.“. Scheitert eine Datei, laufen die anderen weiter und die Meldung nennt sie; „Abbrechen“ stoppt den Rest. |
+| D6 | Datei antippen → „Speichern“ → Speicherort wählen. | Streifen „Lade … herunter“ mit Fortschritt, dann „… gespeichert.“; die Datei ist identisch (öffnen, ansehen). |
+| D7 | Upload starten und im Streifen „Abbrechen“. | Bricht ab mit „Hochladen von … abgebrochen.“, keine halbe Datei in der Liste. |
+| D7a | „Hochladen“ und im Auswahlfenster mehrere Dateien markieren (Android: lange drücken; Windows: Strg oder Umschalt). | Streifen „Lade 5 Dateien hoch“, darunter „2 von 5 fertig · Name · Größe“; nach jeder Datei stimmen Liste und „X Dateien“; am Ende „5 Dateien hochgeladen.“. Scheitert eine Datei, laufen die anderen weiter und die Meldung nennt sie; „Abbrechen“ stoppt den Rest mit „Hochladen abgebrochen: 2 von 5 Dateien fertig.“. |
 | D7b | In der Galerie mehrere Fotos auswählen → Teilen → „In GhulDrive speichern“ (gesperrt: erst entsperren). | GhulDrive öffnet sich, die Fotos werden nacheinander in „Meine Dateien“ hochgeladen; ohne eingerichtetes GhulDrive kommt der Hinweis, es zuerst einzurichten. Andere Apps können so keine Dateien von GhulSuite selbst hineinschieben. |
 | D8 | „Hinzufügen“ → „Neuer Ordner“ → Name; Ordner öffnen, Datei hineinladen; Zurück-Pfeil. | Ordnerstruktur stimmt, Pfad oben passt. |
 | D9 | Datei umbenennen, in einen anderen Ordner verschieben („Hierher verschieben“). | Name bzw. Ort ändern sich. |
@@ -616,6 +616,43 @@ Diese Punkte prüft auch der Emulator-Ablauf `app/maestro/server/3-sync-share.ya
 | R9 | Handy auf große Schrift stellen (Einstellungen → Anzeige → Schriftgröße, größte Stufe) und alle Bereiche und Optionsseiten durchgehen. | Kein Wort ist mitten im Wort getrennt; zu lange Knopfpaare stehen untereinander, Einstellungswerte unter ihrer Beschriftung; Titel höchstens zweizeilig. |
 | R10 | Auf „Speichern“, „Senden“ oder „Erstellen“ schnell zweimal tippen. | Der Eintrag, die Mail oder der Ordner entsteht genau einmal. |
 | R8 | Etwas Langsames starten (z. B. Server speichern) und währenddessen auf Knöpfe tippen, auch in einem offenen Blatt. | Nach kurzer Zeit liegt „Arbeite …“ mit Kreisel über dem Bildschirm bzw. dem Blatt; Tippen dahinter bewirkt nichts. |
+
+## 33. Aufgaben im Hintergrund
+
+Lange Arbeiten (Hochladen, Herunterladen, Fotosicherung, Mail-Archiv) laufen im Hintergrund weiter, auch wenn du den Bereich verlässt. Ein Streifen unter der Kopfleiste zeigt, was läuft, wie weit es ist, und „Abbrechen“; am Ende sagt eine Meldung, wie es ausging.
+
+| Nr. | Schritt | Erwartet |
+|---|---|---|
+| BG1 | In GhulDrive drei große Dateien hochladen, dann zu GhulMail wechseln und eine Mail öffnen. | Der Streifen „Lade 3 Dateien hoch“ bleibt unter jeder Kopfleiste sichtbar, mit Balken und „1 von 3 fertig“; der Upload läuft weiter. Am Ende „3 Dateien hochgeladen.“, in GhulDrive stehen alle drei. |
+| BG2 | Während BG1 im Streifen „Abbrechen“. | Sofort Schluss; „Hochladen abgebrochen: 1 von 3 Dateien fertig.“; die fertigen Dateien sind da, keine halbe. |
+| BG3 | Upload starten, App in den Hintergrund (Home-Taste), Benachrichtigungen aufziehen. | Die Benachrichtigung „GhulSuite ist entsperrt“ zeigt jetzt den Auftrag mit Balken, „Abbrechen“ und „Sperren“. „Abbrechen“ dort stoppt ihn. Auf dem Sperrbildschirm steht nur „GhulSuite ist entsperrt“ (keine Dateinamen). |
+| BG4 | Upload starten, App in den Hintergrund, länger warten als die Zeit für automatisches Sperren. | Die App sperrt nicht mitten im Upload, sondern erst, wenn er fertig ist. Danach ist sie gesperrt. |
+| BG5 | Wie BG4, aber vor dem Ende zurück in die App. | Die App bleibt entsperrt; der Upload läuft zu Ende. |
+| BG6 | Upload starten, dann von Hand sperren (Schloss, Schütteln oder „Sperren“ in der Benachrichtigung). | Sofort gesperrt, der Upload ist gestoppt. Nach dem Entsperren: „GhulSuite wurde gesperrt. Hochladen abgebrochen: …“. |
+| BG7 | Auftrag läuft, App im Hintergrund, Auftrag endet. | Eine kurze Benachrichtigung mit dem Ergebnis (Android 13+: nur wenn Benachrichtigungen erlaubt sind). Ist die App vorne, kommt nur die Meldung in der App. |
+| BG8 | Mehrere Aufträge nacheinander starten (z. B. Upload und Mail-Archiv). | Der zweite zeigt „Wartet auf die Aufgabe davor …“ und startet danach; beide sind im Streifen. |
+| BG9 | Fotosicherung eingeschaltet, neue Fotos aufnehmen, entsperren. | Streifen „Fotos werden gesichert“; am Ende „N Fotos gesichert.“. Abbrechen und erneut entsperren: es geht ab dem letzten fertigen Foto weiter, nichts doppelt. |
+
+## 34. Mail-Archiv in GhulDrive
+
+Archivieren heißt: Mails werden als .eml-Datei nach GhulDrive kopiert (`Mail-Archiv/<Konto>/<Jahr>/`). Beim Anbieter ändert sich nichts, dort wird nichts gelöscht. Mails, die schon im Archiv sind, werden übersprungen. Diese Punkte prüft zum Teil auch `app/maestro/server/2-mail.yaml` mit echtem IMAP und SFTP.
+
+| Nr. | Schritt | Erwartet |
+|---|---|---|
+| MA1 | GhulMail, eine Mail lange drücken, weitere antippen, „Mehr“ → „In GhulDrive archivieren“. | Frage „In GhulDrive archivieren?“ mit „3 gewählte Mails werden kopiert.“ und dem Hinweis, dass die Mails beim Anbieter bleiben. |
+| MA2 | „Archivieren“. | Streifen „3 Mails werden archiviert“ mit Fortschritt; am Ende „3 Mails in GhulDrive archiviert.“. In GhulDrive: `Mail-Archiv/<Konto>/<Jahr>/` mit Dateien „Datum Absender - Betreff (Code).eml“. Im Webmail sind die Mails unverändert (auch „gelesen“ nicht geändert). |
+| MA3 | Dieselben Mails noch einmal archivieren. | „0 Mails in GhulDrive archiviert. 3 waren schon im Archiv.“; keine doppelten Dateien. |
+| MA4 | Kopfleiste „⋮“ (Ordner-Aktionen) → „Diesen Ordner in GhulDrive archivieren“ bei einem großen Ordner, nach einigen Mails im Streifen „Abbrechen“. | „Archivieren abgebrochen: 12 von 400 Mails fertig.“; das Archiv enthält genau die fertigen. |
+| MA5 | „⋮“ → „Archivieren, was älter ist als …“ → „1 Jahr“. | Frage nennt Ordner und „1 Jahr“; archiviert werden nur Mails, die älter als ein Jahr sind. |
+| MA6 | Ohne eingerichtetes GhulDrive „In GhulDrive archivieren“. | Statt der Frage: „GhulDrive nötig“ mit „GhulDrive einrichten“; das führt zur Einrichtung von GhulDrive. Nichts wird archiviert. |
+| MA7 | Postfach-Auswahl (Zeile unter „GhulMail“) öffnen. | Unter den Ordnern „Archiv (GhulDrive)“, sobald etwas archiviert ist. Antippen: Jahre als Zeilen, darin die Mails mit Datum, Absender und Betreff; andere Dateien im Ordner erscheinen nicht, eigene Unterordner schon. |
+| MA8 | Archivierte Mail antippen. | Sie öffnet sich wie eine normale Mail (Schlagwort „GhulDrive“), auch verschlüsselte Mails sind lesbar. Anhänge speichern, „Antworten“, „Weiterleiten“, „⋮“ → „Allen antworten“, „Als Datei speichern“ und „Als PDF speichern“ funktionieren. |
+| MA9 | In der archivierten Mail „Löschen“. | Frage „In den Papierkorb?“ mit dem Hinweis, dass sie in den Papierkorb von GhulDrive kommt und die Mail beim Anbieter bleibt; danach „Rückgängig“ möglich. |
+| MA10 | In GhulDrive eine beliebige Datei in einen Jahresordner legen und `kaputt.eml` nennen, im Archiv antippen. | „Lässt sich nicht als Mail lesen.“ mit „Als Datei speichern“; die Zeile sagt es danach auch. |
+| MA11 | Optionen → GhulMail → „Automatisch archivieren“ → „Älter als 30 Tage“. | Erklärung: kopiert Posteingang und Gesendet, einmal am Tag nach dem Entsperren, beim Anbieter wird nichts gelöscht. Es startet gleich ein leiser Lauf (Streifen „Automatisches Mail-Archiv“), Meldung nur, wenn etwas archiviert wurde. |
+| MA12 | Sperren und am selben Tag wieder entsperren. | Kein zweiter Lauf. Am nächsten Tag nach dem Entsperren läuft er wieder, nur mit neuen alten Mails. |
+| MA13 | Ohne GhulDrive die Mail-Optionen öffnen. | „Automatisch archivieren“ lässt sich nicht einschalten; Hinweis „Das Archiv braucht GhulDrive“ mit „GhulDrive einrichten“. |
+| MA14 | Zweites Gerät nach Synchronisation. | Die Einstellung „Automatisch archivieren“ ist dort gleich; das Archiv ist in GhulDrive sichtbar. |
 
 ## Fehler melden
 

@@ -38,6 +38,7 @@ import de.danerd.ghulsuite.model.SecurityIssueUi
 import de.danerd.ghulsuite.model.SecurityReportUi
 import de.danerd.ghulsuite.ui.SetPage
 import de.danerd.ghulsuite.ui.Tab
+import de.danerd.ghulsuite.ui.uploadToDrive
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -393,15 +394,16 @@ class InteractionTest {
             }
             override fun close() { closed += name }
         }
-        net.driveUploadMs = 700
+        net.driveUploadMs = 1500
         net.driveUploadFails = setOf("b.txt")
         runOnIdle { state.driveIncoming = listOf(src("a.txt"), src("b.txt"), src("c.txt")) }
-        waitUntil(timeoutMillis = 10_000) { part("(1 of 3)") }
+        // The strip under the header: what runs and how far ("0 of 3 done · a.txt").
+        waitUntil(timeoutMillis = 10_000) { part("Uploading 3 files") && part("0 of 3 done") }
         shot("drive-upload-several")
-        waitUntil(timeoutMillis = 10_000) { part("(3 of 3)") }
+        waitUntil(timeoutMillis = 10_000) { part("2 of 3 done") }
         // a.txt is in, the count follows at once (b fails, c still runs).
         waitUntil(timeoutMillis = 10_000) { part("4 files") }
-        waitUntil(timeoutMillis = 10_000) { part("2 files uploaded") }
+        waitUntil(timeoutMillis = 15_000) { part("2 files uploaded") }
         assertTrue("driveUpload::a.txt" in net.calls && "driveUpload::c.txt" in net.calls)
         assertFalse(net.calls.any { it.endsWith(":b.txt") })
         waitUntil(timeoutMillis = 10_000) { part("5 files") }
@@ -1205,5 +1207,295 @@ class InteractionTest {
             assertFalse(shown("Not set up"))
             shot("drive-own-server")
         }
+    }
+
+    // --- Background jobs and the mail archive in GhulDrive ----------------------------------------
+
+    private fun DesktopComposeUiTest.part(t: String) = onAllNodesWithText(t, substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+
+    /** Selects every mail of the inbox and taps "Archive in GhulDrive" in the selection's sheet. */
+    private fun DesktopComposeUiTest.archiveAllSelected() {
+        longPress("Treffen am Freitag")
+        waitFor("1 selected")
+        onAllNodesWithTag(de.danerd.ghulsuite.ui.SELECT_ALL_TAG).onFirst().performClick()
+        waitFor("3 selected")
+        desc("More").performClick()
+        waitFor("Archive in GhulDrive")
+        text("Archive in GhulDrive").performClick()
+    }
+
+    private fun DesktopComposeUiTest.dialogButton(label: String) =
+        onAllNodes(hasText(label) and hasAnyAncestor(isDialog())).onFirst().performClick()
+
+    /**
+     * Archiving the selected mails asks first (copies, the provider keeps the mails), then runs in
+     * the background with its progress under the header, and ends with how many were archived and
+     * how many were in the archive already.
+     */
+    @Test
+    fun archiveSelectedMailsShowsProgressAndSkipped() = app(setup = { tab = Tab.MAIL }, prepare = {
+        val n = net as FakeNet
+        n.archiveDelayMs = 700
+        // One of them is in the archive already.
+        n.archivedToDrive += "m1/INBOX/2"
+    }) { _, fake ->
+        val net = fake.net as FakeNet
+        archiveAllSelected()
+        waitFor("Archive in GhulDrive?")
+        assertTrue(shown("3 selected mails are copied."))
+        assertTrue(part("The mails stay at your provider"))
+        assertFalse(net.calls.any { it.startsWith("archiveToDrive") }, "nothing before the answer")
+        shot("archive-ask")
+        dialogButton("Archive")
+        waitUntil(timeoutMillis = 10_000) { part("Archiving 3 mails") }
+        waitUntil(timeoutMillis = 10_000) { part("1 of 3 done") }
+        shot("archive-progress")
+        waitFor("2 mails archived in GhulDrive. 1 was already in the archive.")
+        shot("archive-done")
+        for (uid in listOf(1, 2, 3)) assertTrue("archiveToDrive:m1:INBOX:$uid" in net.calls, net.calls.toString())
+        // Nothing changed at the provider.
+        assertFalse(net.calls.any { it.startsWith("mailDelete") || it.startsWith("mailMove") })
+        waitUntil(timeoutMillis = 5_000) { !part("Archiving 3 mails") }
+    }
+
+    /** "Cancel" in the strip stops the archiving; the message says how far it got. */
+    @Test
+    fun archiveCancelSaysHowFar() = app(setup = { tab = Tab.MAIL }, prepare = { (net as FakeNet).archiveDelayMs = 1500 }) { _, fake ->
+        val net = fake.net as FakeNet
+        archiveAllSelected()
+        waitFor("Archive in GhulDrive?")
+        dialogButton("Archive")
+        waitUntil(timeoutMillis = 10_000) { part("1 of 3 done") }
+        onAllNodesWithTag(de.danerd.ghulsuite.ui.JOB_CANCEL_TAG).onFirst().performClick()
+        waitFor("Archiving cancelled: 1 of 3 mails done.")
+        Thread.sleep(2_000)
+        assertEquals(1, net.calls.count { it.startsWith("archiveToDrive") }, net.calls.toString())
+        assertFalse(part("Archiving 3 mails"), "the strip is gone")
+    }
+
+    /** "Archive older than 6 months" in the folder menu hands the right day to the core. */
+    @Test
+    fun archiveOlderThanPassesBeforeDays() = app(setup = { tab = Tab.MAIL }) { _, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Treffen am Freitag")
+        desc("Folder actions").performClick()
+        waitFor("Archive older than …")
+        assertTrue(shown("Archive this folder in GhulDrive"))
+        shot("archive-folder-menu")
+        text("Archive older than …").performClick()
+        waitFor("6 months")
+        assertTrue(shown("1 month") && shown("1 year") && shown("2 years"))
+        shot("archive-older-choices")
+        text("6 months").performClick()
+        waitFor("Archive in GhulDrive?")
+        assertTrue(shown("All mails in “Inbox” older than 6 months are copied."))
+        dialogButton("Archive")
+        val before = de.danerd.ghulsuite.ui.today().plusMonths(-6).days
+        waitUntil(timeoutMillis = 10_000) { "archiveUids:m1:INBOX:$before" in net.calls }
+        waitUntil(timeoutMillis = 10_000) { part("mails archived in GhulDrive.") || part("mail archived in GhulDrive.") }
+    }
+
+    /** Without GhulDrive the archive explains that it needs GhulDrive and leads there; nothing starts. */
+    @Test
+    fun archiveWithoutDriveExplains() = app(setup = { tab = Tab.MAIL }, prepare = { (net as FakeNet).driveMissing = true }) { state, fake ->
+        val net = fake.net as FakeNet
+        longPress("Treffen am Freitag")
+        waitFor("1 selected")
+        desc("More").performClick()
+        waitFor("Archive in GhulDrive")
+        text("Archive in GhulDrive").performClick()
+        waitFor("GhulDrive needed")
+        assertTrue(part("Set up GhulDrive first"))
+        assertFalse(shown("Archive in GhulDrive?"))
+        shot("archive-needs-drive")
+        dialogButton("Set up GhulDrive")
+        waitUntil(timeoutMillis = 10_000) { state.tab == Tab.DRIVE }
+        assertFalse(net.calls.any { it.startsWith("archiveToDrive") || it.startsWith("archiveUids") }, net.calls.toString())
+        assertTrue(state.jobs.list.isEmpty())
+    }
+
+    /**
+     * The archive in the mailbox sheet: years as rows, inside them the mails read from the file
+     * names (other files left out, the user's own folder shown as folder); a mail opens in the
+     * reader through mailParseEml; a file that is no mail says so.
+     */
+    @Test
+    fun archiveViewListsYearsAndOpensMails() = app(setup = { tab = Tab.MAIL }, prepare = { (net as FakeNet).archiveExists = true }) { state, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Privat · Inbox")
+        text("Privat · Inbox").performClick()
+        waitFor("Archive (GhulDrive)")
+        text("Archive (GhulDrive)").performClick()
+        waitFor("2025")
+        assertTrue(shown("2024") && shown("Steuern"))
+        shot("archive-years")
+        text("2025").performClick()
+        waitFor("Steuerbescheid 2024")
+        assertTrue(shown("Finanzamt") && shown("Urlaub im Mai") && shown("Erika Musterfrau"))
+        assertFalse(part("Notizen zum Archiv"), "other files are left out")
+        assertFalse(part("1a2b3c4d"), "the code is not shown")
+        shot("archive-year")
+        text("Steuerbescheid 2024").performClick()
+        waitUntil(timeoutMillis = 10_000) { "mailParseEml:m1" in net.calls }
+        waitFor("Anbei Ihr Bescheid.")
+        assertTrue("driveDownload:e1" in net.calls)
+        assertTrue(shown("Reply") && shown("Forward"))
+        assertTrue(shown("Bescheid.pdf"))
+        shot("archive-read")
+        // Reply works as for a mail at the provider.
+        text("Reply").performClick()
+        waitUntil(timeoutMillis = 10_000) { state.stack.lastOrNull() is Screen.MailCompose }
+        runOnIdle { state.pop() }
+        runOnIdle { state.pop() }
+        waitFor("kaputt")
+        text("kaputt").performClick()
+        waitFor("Cannot be read as a mail.")
+        shot("archive-unreadable")
+        runOnIdle { state.pop() }
+        waitFor("kaputt")
+        assertTrue(shown("Cannot be read as a mail."), "the row says it too")
+    }
+
+    /**
+     * Automatic archiving: the choice in the mail options is stored in the core, and the run after
+     * unlocking archives the inbox and Sent (up to the last mail handled), at most once a day.
+     */
+    @Test
+    fun autoArchiveOptionAndDailyRun() = app(setup = { push(Screen.SettingsPage(SetPage.MAIL)) }) { state, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Automatic archiving")
+        assertTrue(part("once a day after unlocking"))
+        assertEquals(0, net.calls.count { it.startsWith("archiveAutoUids") }, "off: no run")
+        text("Automatic archiving").performClick()
+        waitFor("Older than 90 days")
+        shot("archive-auto-choice")
+        text("Older than 90 days").performClick()
+        waitUntil(timeoutMillis = 10_000) { "archiveSetAutoDays:90" in net.calls }
+        assertEquals(90, net.archiveAutoDaysValue)
+        // Switched on: it runs at once (nothing is old enough in the fake for 90 days).
+        waitUntil(timeoutMillis = 10_000) { "archiveAutoUids:m1:INBOX" in net.calls && "archiveAutoUids:m1:Sent" in net.calls }
+        waitUntil(timeoutMillis = 10_000) { state.backend.settings.archiveAutoLast != "0" }
+        shot("archive-auto-on")
+        // A day later with 1 day: the next unlock runs it and archives the old mail of both folders.
+        net.archiveAutoDaysValue = 1
+        state.backend.settings.archiveAutoLast = (de.danerd.ghulsuite.ui.nowSeconds() - 90_000).toString()
+        net.calls.clear()
+        fake.unlocked.value = false
+        waitForIdle()
+        fake.unlocked.value = true
+        waitUntil(timeoutMillis = 15_000) { "archiveAutoDone:m1:Sent:1:1" in net.calls }
+        val calls = net.calls.toList()
+        assertTrue("archiveToDrive:m1:INBOX:1" in calls && "archiveToDrive:m1:Sent:1" in calls, calls.toString())
+        assertTrue("archiveAutoDone:m1:INBOX:1:1" in calls, calls.toString())
+        assertTrue(calls.indexOf("archiveToDrive:m1:INBOX:1") < calls.indexOf("archiveAutoDone:m1:INBOX:1:1"))
+        waitFor("Automatic archive: 2 mails copied to GhulDrive.")
+        // Unlocked again the same day: no second run.
+        net.calls.clear()
+        fake.unlocked.value = false
+        waitForIdle()
+        fake.unlocked.value = true
+        waitForIdle()
+        Thread.sleep(1_500)
+        assertFalse(net.calls.any { it.startsWith("archiveAutoUids") }, net.calls.toString())
+    }
+
+    /** An automatic run that is cancelled notes only how far it got, so the next one continues there. */
+    @Test
+    fun autoArchiveCancelledKeepsItsPlace() = app(prepare = {
+        val n = net as FakeNet
+        n.archiveAutoDaysValue = 1
+        n.archiveDelayMs = 1500
+    }) { state, fake ->
+        val net = fake.net as FakeNet
+        // The old mail of the inbox and of Sent; the inbox is done, then "Cancel".
+        waitUntil(timeoutMillis = 10_000) { "archiveToDrive:m1:INBOX:1" in net.calls }
+        waitUntil(timeoutMillis = 10_000) { part("1 of 2 done") }
+        shot("archive-auto-running")
+        onAllNodesWithTag(de.danerd.ghulsuite.ui.JOB_CANCEL_TAG).onFirst().performClick()
+        waitUntil(timeoutMillis = 10_000) { !state.jobs.running }
+        val calls = net.calls.toList()
+        assertTrue("archiveAutoDone:m1:INBOX:1:1" in calls, calls.toString())
+        assertFalse(calls.any { it.startsWith("archiveAutoDone:m1:Sent") || it == "archiveToDrive:m1:Sent:1" }, calls.toString())
+        // Not done: the next unlock runs it again (the day is not used up).
+        assertEquals("0", state.backend.settings.archiveAutoLast)
+    }
+
+    /**
+     * An upload runs as a background job: leaving GhulDrive (another area, a page on top) does not
+     * stop it, its strip stays visible everywhere, and "Cancel" there stops it with how far it got.
+     */
+    @Test
+    fun driveUploadSurvivesLeavingAndCancels() = app(setup = { tab = Tab.DRIVE }) { state, fake ->
+        val net = fake.net as FakeNet
+        waitUntil(timeoutMillis = 10_000) { part("3 files") }
+        val closed = java.util.Collections.synchronizedList(mutableListOf<String>())
+        net.driveUploadMs = 1500
+        runOnIdle { state.driveIncoming = listOf(fakeSource("a.txt", closed = closed), fakeSource("b.txt", closed = closed), fakeSource("c.txt", closed = closed)) }
+        waitUntil(timeoutMillis = 10_000) { part("Uploading 3 files") }
+        runOnIdle { state.selectTab(Tab.MAIL) }
+        waitFor("Treffen am Freitag")
+        assertTrue(part("Uploading 3 files"), "the strip is shown in GhulMail too")
+        shot("job-strip-mail")
+        runOnIdle { state.push(Screen.SettingsPage(SetPage.LOOK)) }
+        waitForIdle()
+        waitUntil(timeoutMillis = 10_000) { part("1 of 3 done") }
+        assertTrue(part("Uploading 3 files"), "and on a page on top")
+        onAllNodesWithTag(de.danerd.ghulsuite.ui.JOB_CANCEL_TAG).onFirst().performClick()
+        waitFor("Upload cancelled: 1 of 3 files done.")
+        assertTrue("driveUpload::a.txt" in net.calls)
+        assertFalse(net.calls.any { it.endsWith(":b.txt") || it.endsWith(":c.txt") }, net.calls.toString())
+        waitUntil(timeoutMillis = 5_000) { closed.containsAll(listOf("a.txt", "b.txt", "c.txt")) }
+    }
+
+    /**
+     * The auto-lock waits for a running job and follows when it ends; the user coming back drops
+     * it; a lock by hand stops the job at once, and after the next unlock the message says why.
+     */
+    @Test
+    fun autoLockWaitsForJobsAndManualLockCancels() = app(setup = { tab = Tab.DRIVE }) { state, fake ->
+        val net = fake.net as FakeNet
+        net.driveUploadMs = 1200
+        waitUntil(timeoutMillis = 10_000) { part("3 files") }
+        // 1. The timer fires while two files upload: no lock until they are done.
+        runOnIdle { state.uploadToDrive(null, listOf(fakeSource("a.txt"), fakeSource("b.txt"))) }
+        waitUntil(timeoutMillis = 5_000) { state.jobs.running }
+        runOnIdle { state.autoLock() }
+        Thread.sleep(800)
+        assertEquals(0, fake.locks, "not while the upload runs")
+        waitUntil(timeoutMillis = 10_000) { !state.jobs.running }
+        waitUntil(timeoutMillis = 5_000) { fake.locks == 1 }
+        assertTrue("driveUpload::b.txt" in net.calls)
+        // 2. The user is back before the end: the waiting lock is dropped.
+        runOnIdle { state.uploadToDrive(null, listOf(fakeSource("c.txt"))) }
+        runOnIdle { state.autoLock() }
+        runOnIdle { state.keepUnlocked() }
+        waitUntil(timeoutMillis = 10_000) { "driveUpload::c.txt" in net.calls && !state.jobs.running }
+        Thread.sleep(300)
+        assertEquals(1, fake.locks)
+        // 3. Locked by hand: the job stops at once.
+        runOnIdle { state.uploadToDrive(null, listOf(fakeSource("d.txt"), fakeSource("e.txt"))) }
+        waitUntil(timeoutMillis = 5_000) { state.jobs.running }
+        runOnIdle { state.lockNow() }
+        waitUntil(timeoutMillis = 5_000) { fake.locks == 2 && !state.jobs.running }
+        assertEquals(de.danerd.ghulsuite.ui.JobState.CANCELLED, state.jobs.list.last().state)
+        Thread.sleep(1_500)
+        assertFalse(net.calls.any { it.endsWith(":d.txt") || it.endsWith(":e.txt") }, net.calls.toString())
+        // The fake does not lock by itself: lock and unlock it to see the message after unlocking.
+        fake.unlocked.value = false
+        waitForIdle()
+        assertFalse(part("Upload cancelled"), "not on the lock screen")
+        fake.unlocked.value = true
+        waitFor("GhulSuite was locked. Upload cancelled: 0 of 2 files done.")
+    }
+
+    /** The strip in a wide window (Windows): under the header of the column, with "Cancel". */
+    @Test
+    fun jobStripInWideWindow() = app(wide = true, setup = { tab = Tab.DRIVE }) { state, fake ->
+        (fake.net as FakeNet).driveUploadMs = 2000
+        runOnIdle { state.uploadToDrive(null, listOf(fakeSource("Steuer 2025.pdf", 2_400_000), fakeSource("Urlaub.jpg"))) }
+        waitUntil(timeoutMillis = 10_000) { part("Uploading 2 files") }
+        shot("job-strip-wide")
+        onAllNodesWithTag(de.danerd.ghulsuite.ui.JOB_CANCEL_TAG).onFirst().performClick()
+        waitFor("Upload cancelled: 0 of 2 files done.")
     }
 }

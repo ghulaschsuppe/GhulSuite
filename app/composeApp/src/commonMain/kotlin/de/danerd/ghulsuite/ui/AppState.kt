@@ -21,6 +21,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import org.jetbrains.compose.resources.getPluralString
 import org.jetbrains.compose.resources.getString
 
@@ -94,6 +95,10 @@ sealed interface Screen {
     data object Security : Screen
     data class MailRead(val accountId: String, val folder: String, val uid: Long) : Screen
     data class MailCompose(val draft: MailDraft) : Screen
+    /** The mail archive of an account in GhulDrive. */
+    data class MailArchive(val accountId: String) : Screen
+    /** An archived mail (an .eml file in GhulDrive). */
+    data class MailArchiveRead(val accountId: String, val fileId: String, val name: String) : Screen
     data class CalEvent(val id: String, val day: String) : Screen
     data class CalEdit(val draft: de.danerd.ghulsuite.model.CalEventUi) : Screen
 }
@@ -123,6 +128,48 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     /** Vaults of the open suite. */
     var vaults by mutableStateOf<List<VaultUi>>(emptyList())
         private set
+
+    /** Long work in the background (uploads, downloads, mail archive); declared before init. */
+    val jobs = Jobs(this)
+
+    /**
+     * The language of the screens (set by the root screen). Texts looked up outside of a screen use
+     * it; without a screen the lookup would need the display (and fail where there is none).
+     */
+    val resEnv = kotlinx.coroutines.flow.MutableStateFlow<org.jetbrains.compose.resources.ResourceEnvironment?>(null)
+
+    private suspend fun env(): org.jetbrains.compose.resources.ResourceEnvironment? =
+        resEnv.value ?: kotlinx.coroutines.withTimeoutOrNull(5_000) { resEnv.first { it != null } }
+
+    /** A text in the language of the screens. */
+    suspend fun str(res: org.jetbrains.compose.resources.StringResource, vararg args: Any): String =
+        env()?.let { getString(it, res, *args) } ?: getString(res, *args)
+
+    /** A counted text ("1 file", "3 files") in the language of the screens. */
+    suspend fun plural(res: org.jetbrains.compose.resources.PluralStringResource, count: Int, vararg args: Any): String =
+        env()?.let { getPluralString(it, res, count, *args) } ?: getPluralString(res, count, *args)
+
+    /** Messages of jobs that locking stopped: shown after the next unlock (not on the lock screen). */
+    private val afterUnlock = mutableListOf<String>()
+
+    fun noteAfterUnlock(text: String) {
+        afterUnlock += text
+    }
+
+    /** GhulDrive's content changed in the background (an upload finished): the list reads it again. */
+    var driveTick by mutableStateOf(0)
+
+    /** The mail archive in GhulDrive changed (archived, deleted from it). */
+    var archiveTick by mutableStateOf(0)
+
+    /** Archived mails (GhulDrive file ids) that could not be read as a mail. */
+    var archiveUnreadable by mutableStateOf<Set<String>>(emptySet())
+
+    /** The folder menu of GhulMail (header "⋮") is open. */
+    var mailFolderMenu by mutableStateOf(false)
+
+    /** Folders opened in the mail archive (id and name below the account's folder); kept while a mail is read. */
+    var archivePath by mutableStateOf<List<Pair<String, String>>>(emptyList())
 
     /** The vault list was read since unlocking (until then all areas switched on count as there). */
     private var areasKnown by mutableStateOf(false)
@@ -388,6 +435,12 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         scope.launch {
             backend.unlocked.collect { unlocked ->
                 if (!unlocked) {
+                    // Locked from anywhere (panic, notification, screen off): running jobs stop now.
+                    jobs.cancelAll(byLock = true)
+                    jobs.lockWhenDone = false
+                    mailFolderMenu = false
+                    archivePath = emptyList()
+                    archiveUnreadable = emptySet()
                     if (editorDirty) discardedOnLock = true
                     editorDirty = false
                     recoveredGuide = false
@@ -415,12 +468,14 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                         discardedOnLock = false
                         message(getString(Res.string.edit_dropped_on_lock))
                     }
+                    afterUnlock.toList().also { afterUnlock.clear() }.forEach { message(it) }
                     refreshVaults()
                     scanFound()
                     autoSync()
                     runPhotoBackup()
                     sendDueMail()
                     runAutoBackup()
+                    runAutoArchive()
                     val start = backend.settings.startTab.let { if (it < 0) backend.settings.lastTab else it }
                     tabs.getOrNull(start)?.let { tab = it }
                     applyLaunch()
@@ -433,6 +488,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                 }
             }
         }
+        // The notification's "Cancel" (Android) stops the running jobs.
+        JobStatus.cancelAll = { jobs.cancelAll() }
         // Going to the background carries out what waits for "Undo": the auto lock may come next.
         scope.launch { AppLaunch.inFront.collect { if (!it) catching { settlePending() } } }
         // Area settings go into the area's file (and from there to the other devices).
@@ -862,12 +919,30 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         snackbar.currentSnackbarData?.takeIf { it.visuals.message == p.message }?.dismiss()
     }
 
-    /** Locks the suite after carrying out what waits for "Undo". Every lock button uses this. */
+    /**
+     * Locks the suite after carrying out what waits for "Undo". Every lock button uses this. A
+     * running job stops at once (its message follows after the next unlock).
+     */
     fun lockNow() {
+        jobs.lockWhenDone = false
+        jobs.cancelAll(byLock = true)
         scope.launch {
             catching { settlePending() }
             backend.lock()
         }
+    }
+
+    /**
+     * An automatic lock (time away, idle, screen off): now, or, while a job runs, as soon as the
+     * last one ended. A job is never cut off by the timer; a lock by hand stops it ([lockNow]).
+     */
+    fun autoLock() {
+        if (jobs.running) jobs.lockWhenDone = true else lockNow()
+    }
+
+    /** The user is back before the jobs ended: the waiting automatic lock is dropped. */
+    fun keepUnlocked() {
+        jobs.lockWhenDone = false
     }
 
     /** Weekly backup into the folder chosen in Options (if set). */
@@ -899,29 +974,33 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         }
     }
 
-    private var photoBackupRunning = false
-
-    /** Backs up new photos into GhulDrive (Android, if switched on); runs after unlocking. */
+    /** Backs up new photos into GhulDrive (Android, if switched on); runs after unlocking as a quiet job. */
     fun runPhotoBackup() {
         val st = backend.settings
-        if (!st.photoBackup || photoBackupRunning || !backend.net.photoBackupAvailable) return
-        photoBackupRunning = true
-        scope.launch {
-            var count = 0
+        if (!st.photoBackup || !backend.net.photoBackupAvailable || jobs.list.any { it.active && it.kind == JobKind.PHOTOS }) return
+        jobs.start(
+            JobKind.PHOTOS, title = { str(Res.string.drive_photo_backup_running) }, quiet = true,
+            cancelled = { j -> if (j.done > 0) plural(Res.plurals.drive_photo_backup_done, j.done, j.done.toString()) else null },
+        ) { job ->
             try {
-                if (backend.net.driveStatus().serverId == null) return@launch
-                val newest = backend.net.photoBackup(st.photoBackupSince.toLong(), st.photoBackupWifiOnly) { count++ }
-                st.photoBackupSince = newest.toInt()
-                if (count > 0) {
-                    revision++
-                    message(getPluralString(Res.plurals.drive_photo_backup_done, count, count.toString()))
+                if (backend.net.driveStatus().serverId == null) return@start null
+                // Each photo moves the mark on: a cancelled run continues after the last one done.
+                val newest = backend.net.photoBackup(st.photoBackupSince.toLong(), st.photoBackupWifiOnly) { name, added ->
+                    job.item = name
+                    job.done++
+                    if (added > st.photoBackupSince) st.photoBackupSince = added.toInt()
+                    driveTick++
                 }
+                st.photoBackupSince = newest.toInt()
+                if (job.done > 0) {
+                    revision++
+                    plural(Res.plurals.drive_photo_backup_done, job.done, job.done.toString())
+                } else null
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                if ((e as? VaultException)?.kind != VaultErrorKind.NETWORK) message(describe(e))
-            } finally {
-                photoBackupRunning = false
+                // Without a network it simply waits for the next unlock.
+                if ((e as? VaultException)?.kind == VaultErrorKind.NETWORK) null else describe(e)
             }
         }
     }

@@ -514,7 +514,6 @@
     <string name="drive_uploading">Lade %1$s hoch …</string>
     <string name="drive_downloading">Lade %1$s herunter …</string>
     <string name="drive_uploaded">%1$s hochgeladen.</string>
-    <string name="drive_uploading_n">Lade %1$s hoch (%2$s von %3$s) …</string>
     <plurals name="drive_uploaded_n">
         <item quantity="one">%1$s Datei hochgeladen.</item>
         <item quantity="other">%1$s Dateien hochgeladen.</item>
@@ -1649,4 +1648,95 @@
         <item quantity="one">%1$s aktiver Freigabelink endet.</item>
         <item quantity="other">%1$s aktive Freigabelinks enden.</item>
     </plurals>
+    <string name="job_waiting">Wartet auf die Aufgabe davor …</string>
+    <string name="job_starting">Startet …</string>
+    <string name="job_of">%1$s von %2$s fertig</string>
+    <string name="job_locked">GhulSuite wurde gesperrt. %1$s</string>
+    <plurals name="job_more">
+        <item quantity="one">%1$s weitere Aufgabe</item>
+        <item quantity="other">%1$s weitere Aufgaben</item>
+    </plurals>
+    <plurals name="job_uploading_n">
+        <item quantity="one">Lade %1$s Datei hoch</item>
+        <item quantity="other">Lade %1$s Dateien hoch</item>
+    </plurals>
+    <string name="drive_upload_cancelled_one">Hochladen von %1$s abgebrochen.</string>
+    <plurals name="drive_upload_cancelled_n">
+        <item quantity="one">Hochladen abgebrochen: %1$s von %2$s Datei fertig.</item>
+        <item quantity="other">Hochladen abgebrochen: %1$s von %2$s Dateien fertig.</item>
+    </plurals>
+    <string name="drive_download_cancelled">Herunterladen von %1$s abgebrochen.</string>
+    <string name="drive_photo_backup_running">Fotos werden gesichert</string>
+    <string name="mail_archiving">Mails werden archiviert …</string>
+    <plurals name="mail_archiving_n">
+        <item quantity="one">%1$s Mail wird archiviert</item>
+        <item quantity="other">%1$s Mails werden archiviert</item>
+    </plurals>
+    <string name="mail_archive_cancelled_early">Archivieren abgebrochen.</string>
+    <plurals name="mail_archive_cancelled">
+        <item quantity="one">Archivieren abgebrochen: %1$s von %2$s Mail fertig.</item>
+        <item quantity="other">Archivieren abgebrochen: %1$s von %2$s Mails fertig.</item>
+    </plurals>
+    <plurals name="mail_archive_done">
+        <item quantity="one">%1$s Mail in GhulDrive archiviert.</item>
+        <item quantity="other">%1$s Mails in GhulDrive archiviert.</item>
+    </plurals>
+    <plurals name="mail_archive_skipped">
+        <item quantity="one">%1$s war schon im Archiv.</item>
+        <item quantity="other">%1$s waren schon im Archiv.</item>
+    </plurals>
+    <plurals name="mail_archive_gone">
+        <item quantity="one">%1$s ist beim Anbieter nicht mehr da.</item>
+        <item quantity="other">%1$s sind beim Anbieter nicht mehr da.</item>
+    </plurals>
+    <plurals name="mail_archive_stopped">
+        <item quantity="one">Archivieren nach %1$s von %2$s Mail gestoppt: %3$s</item>
+        <item quantity="other">Archivieren nach %1$s von %2$s Mails gestoppt: %3$s</item>
+    </plurals>
+    <string name="mail_archive_auto_running">Automatisches Mail-Archiv</string>
+    <plurals name="mail_archive_auto_done">
+        <item quantity="one">Automatisches Archiv: %1$s Mail in GhulDrive kopiert.</item>
+        <item quantity="other">Automatisches Archiv: %1$s Mails in GhulDrive kopiert.</item>
+    </plurals>
+    <string name="mail_archive_needs_drive_title">GhulDrive nötig</string>
+    <string name="mail_archive_needs_drive">Das Mail-Archiv legt seine Kopien in GhulDrive ab. Richte zuerst GhulDrive ein, dann archivierst du.</string>
+    <string name="mail_archive_setup_drive">GhulDrive einrichten</string>
+    <string name="mail_archive_ask_title">In GhulDrive archivieren?</string>
+    <string name="mail_archive_ask_text">Die Kopien kommen verschlüsselt in GhulDrive, in den Ordner „Mail-Archiv“. Die Mails bleiben, wie sie sind, bei deinem Anbieter; dort löschst du sie selbst, wenn du willst. Mails, die schon im Archiv sind, werden übersprungen.</string>
+    <string name="mail_archive_go">Archivieren</string>
+    <string name="mail_archive_1m">1 Monat</string>
+    <string name="mail_archive_6m">6 Monate</string>
+    <string name="mail_archive_1y">1 Jahr</string>
+    <string name="mail_archive_2y">2 Jahre</string>
+    <string name="mail_archive_ask_folder">Alle Mails in „%1$s“ werden kopiert.</string>
+    <string name="mail_archive_ask_older">Alle Mails in „%1$s“, die älter als %2$s sind, werden kopiert.</string>
+    <plurals name="mail_archive_ask_selected">
+        <item quantity="one">%1$s gewählte Mail wird kopiert.</item>
+        <item quantity="other">%1$s gewählte Mails werden kopiert.</item>
+    </plurals>
+    <string name="mail_archive_folder_all">Diesen Ordner in GhulDrive archivieren</string>
+    <string name="mail_archive_folder_sub">Kopien aller Mails darin</string>
+    <string name="mail_archive_older">Archivieren, was älter ist als …</string>
+    <string name="mail_archive_open">Archiv öffnen (GhulDrive)</string>
+    <string name="mail_archive_menu_hint">Archivieren kopiert Mails in GhulDrive. Bei deinem Anbieter ändert sich nichts.</string>
+    <string name="mail_archive_entry">Archiv (GhulDrive)</string>
+    <string name="mail_archive_view_hint">Kopien deiner Mails in GhulDrive, nach Jahren. Was du hier tust, betrifft deinen Anbieter nicht.</string>
+    <string name="mail_archive_empty">Hier ist noch nichts archiviert.</string>
+    <string name="mail_archive_unreadable">Lässt sich nicht als Mail lesen.</string>
+    <string name="mail_archive_no_sender">Unbekannter Absender</string>
+    <plurals name="mail_archive_count">
+        <item quantity="one">%1$s Mail</item>
+        <item quantity="other">%1$s Mails</item>
+    </plurals>
+    <string name="mail_archive_delete_extra">Sie kommt in den Papierkorb von GhulDrive. Die Mail bei deinem Anbieter bleibt, wie sie ist.</string>
+    <string name="mail_archive_delete">Aus dem Archiv löschen</string>
+    <string name="mail_archive_drive">In GhulDrive archivieren</string>
+    <string name="mail_folder_menu">Ordner-Aktionen</string>
+    <string name="mail_archive_auto">Automatisch archivieren</string>
+    <string name="mail_archive_auto_off">Aus</string>
+    <string name="mail_archive_auto_30">Älter als 30 Tage</string>
+    <string name="mail_archive_auto_90">Älter als 90 Tage</string>
+    <string name="mail_archive_auto_365">Älter als 365 Tage</string>
+    <string name="mail_archive_auto_hint">Kopiert Mails aus Posteingang und Gesendet in GhulDrive, einmal am Tag nach dem Entsperren. Bei deinem Anbieter wird nichts gelöscht. Gilt auf allen deinen Geräten.</string>
+    <string name="mail_archive_auto_no_drive">Das Archiv braucht GhulDrive. Richte es ein, um das einzuschalten.</string>
 </resources>

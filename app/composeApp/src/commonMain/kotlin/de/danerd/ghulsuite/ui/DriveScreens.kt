@@ -86,8 +86,6 @@ import de.danerd.ghulsuite.model.DriveStatusUi
 import de.danerd.ghulsuite.model.ServerUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import de.danerd.ghulsuite.model.ShareInfoUi
 import org.jetbrains.compose.resources.rememberResourceEnvironment
@@ -97,12 +95,6 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Sync
 import de.danerd.ghulsuite.model.DriveModeUi
 import de.danerd.ghulsuite.model.DriveStorageUi
-
-/** A running upload or download. */
-private class Transfer(val name: String, val total: Long, val upload: Boolean, val index: Int = 1, val count: Int = 1) {
-    var done by mutableStateOf(0L)
-    var job: Job? = null
-}
 
 /** Folder path from the root: (id, name). */
 private data class Crumb(val id: String?, val name: String)
@@ -193,7 +185,6 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
     var reload by remember { mutableStateOf(0) }
     var refresh by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
-    var transfer by remember { mutableStateOf<Transfer?>(null) }
     var newFolder by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf<DriveItemUi?>(null) }
     var moving by remember { mutableStateOf<DriveItemUi?>(null) }
@@ -223,7 +214,7 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
     // path while it loads (it looked like the inside of the folder just opened).
     // (Typing in the search keeps the results of the letters before; leaving the search does not.)
     var itemsOf by remember { mutableStateOf<Triple<String?, String, Boolean>?>(null) }
-    LaunchedEffect(folder, query, reload, view, trashTick, state.liveRevision()) {
+    LaunchedEffect(folder, query, reload, view, trashTick, state.liveRevision(), state.driveTick) {
         val listOf = Triple(folder, view, query.isNotBlank())
         if (itemsOf != listOf) {
             items = emptyList()
@@ -258,95 +249,21 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
         if (days > 0) catching { net.driveEmptyTrash(days) }.onSuccess { if (it > 0) reload++ }
     }
 
-    val uploadedMsg = stringResource(Res.string.drive_uploaded)
-    val downloadedMsg = stringResource(Res.string.drive_downloaded)
-    fun runTransfer(t: Transfer, block: suspend () -> Unit, done: String) {
-        transfer = t
-        t.job = scope.launch {
-            try {
-                block()
-                state.message(done.replace("%1\$s", t.name))
-                reload++
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                error = describe(e)
-            } finally {
-                transfer = null
-            }
-        }
-    }
-    // Looked up here (the upload runs outside the screen, where a lookup would need a display).
-    val uploadedOne = pluralStringResource(Res.plurals.drive_uploaded_n, 1, "%1\$s")
-    val uploadedMany = pluralStringResource(Res.plurals.drive_uploaded_n, 2, "%1\$s")
-    /**
-     * Several files one after the other into the folder open now: the bar shows "2 of 5", the
-     * list and the count follow after each file. A failed file does not stop the others; cancel
-     * stops the rest.
-     */
-    fun uploadAll(sources: List<ByteSource>) {
-        if (sources.isEmpty()) return
-        // One batch at a time; a second pick while one runs is closed again, not left open.
-        if (transfer != null) { sources.forEach { runCatching { it.close() } }; return }
-        if (sources.size == 1) {
-            val s = sources[0]
-            val t = Transfer(s.name, s.size, upload = true)
-            runTransfer(t, { try { net.driveUpload(folder, s) { t.done = it } } finally { s.close() } }, uploadedMsg)
-            return
-        }
-        val target = folder
-        // Set before the coroutine starts: no frame in which a second batch could begin.
-        val first = Transfer(sources[0].name, sources[0].size, upload = true, index = 1, count = sources.size)
-        transfer = first
-        scope.launch {
-            var ok = 0
-            val failed = mutableListOf<String>()
-            var failure: String? = null
-            try {
-                for ((i, s) in sources.withIndex()) {
-                    val t = if (i == 0) first else Transfer(s.name, s.size, upload = true, index = i + 1, count = sources.size)
-                    t.job = coroutineContext[Job]
-                    transfer = t
-                    try {
-                        net.driveUpload(target, s) { t.done = it }
-                        ok++
-                        reload++
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        failed += s.name
-                        failure = describe(e)
-                    } finally {
-                        s.close()
-                    }
-                }
-            } finally {
-                transfer = null
-                sources.forEach { runCatching { it.close() } }
-                reload++
-            }
-            // One message below (the list reloads and would clear an error shown above it).
-            val done = if (ok > 0) (if (ok == 1) uploadedOne else uploadedMany).replace("%1\$s", ok.toString()) else null
-            // Every file that failed is named (with the reason of the last one).
-            val notDone = failure?.let { failed.joinToString(", ") + ": " + it }
-            listOfNotNull(done, notDone).joinToString(" ").takeIf { it.isNotEmpty() }?.let { state.message(it) }
-        }
-    }
-    val upload = rememberOpenStreams { sources -> uploadAll(sources) }
-    // Files shared with GhulSuite from other apps ("Save in GhulDrive").
-    // They wait while another transfer runs (nothing shared is dropped).
-    LaunchedEffect(state.driveIncoming, transfer == null) {
+    // Uploads and downloads run as background jobs: the strip under the header shows them
+    // wherever the user goes, and leaving GhulDrive does not stop them.
+    val upload = rememberOpenStreams { sources -> state.uploadToDrive(folder, sources) }
+    // Files shared with GhulSuite from other apps ("Save in GhulDrive"): into the folder open now.
+    // While another transfer runs they wait in line (nothing shared is dropped).
+    LaunchedEffect(state.driveIncoming) {
         val incoming = state.driveIncoming ?: return@LaunchedEffect
-        if (transfer != null) return@LaunchedEffect
         state.driveIncoming = null
-        uploadAll(incoming)
+        state.uploadToDrive(folder, incoming)
     }
     val download = rememberCreateStream { sink: ByteSink? ->
         val item = downloadItem
         downloadItem = null
         if (sink == null || item == null) return@rememberCreateStream
-        val t = Transfer(item.name, item.size, upload = false)
-        runTransfer(t, { net.driveDownload(item.id, sink) { t.done = it } }, downloadedMsg)
+        state.downloadFromDrive(item, sink)
     }
 
     // The "+" button of the main screen opens the "add" sheet.
@@ -380,8 +297,7 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
             }
             override fun close() {}
         }
-        val t = Transfer(name, pdf.size.toLong(), upload = true)
-        runTransfer(t, { net.driveUpload(folder, src) { t.done = it } }, uploadedMsg)
+        state.uploadToDrive(folder, listOf(src))
     }
     var sharesActive by remember { mutableStateOf(0) }
     // F100: counted again after a link was made or removed (it stayed 0 until GhulDrive was
@@ -547,26 +463,6 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
             // The path only in a subfolder: in "My files" the heading below already says where.
             HintText(path.joinToString(" › ") { it.name })
         }
-        transfer?.let { tr ->
-            Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(t.surface).padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                IconTile(if (tr.upload) Icons.Filled.Upload else Icons.Filled.Download, paletteColor(4))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        if (tr.count > 1) stringResource(Res.string.drive_uploading_n, tr.name, tr.index.toString(), tr.count.toString())
-                        else stringResource(if (tr.upload) Res.string.drive_uploading else Res.string.drive_downloading, tr.name),
-                        fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Box(Modifier.padding(top = 6.dp).fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(t.surface3)) {
-                        val f = if (tr.total > 0) (tr.done.toFloat() / tr.total).coerceIn(0f, 1f) else 0f
-                        Box(Modifier.fillMaxWidth(f).height(6.dp).clip(RoundedCornerShape(3.dp)).background(color))
-                    }
-                    Text(formatSize(tr.done) + if (tr.total > 0) " / " + formatSize(tr.total) else "", fontSize = 12.sp, color = t.muted)
-                }
-                BarIcon(Icons.Filled.Close, stringResource(Res.string.a_cancel)) { tr.job?.cancel(); transfer = null }
-            }
-        }
         SectionLabel(
             when {
                 query.isNotBlank() -> stringResource(Res.string.drive_search_results)
@@ -609,7 +505,7 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
     if (addSheet) {
         GhulSheet({ addSheet = false }, stringResource(Res.string.drive_add_title)) {
             SheetList {
-                SheetRow(stringResource(Res.string.drive_upload_files), leading = { IconTile(Icons.Filled.Upload, paletteColor(1)) }, enabled = filePickersAvailable && transfer == null) {
+                SheetRow(stringResource(Res.string.drive_upload_files), leading = { IconTile(Icons.Filled.Upload, paletteColor(1)) }, enabled = filePickersAvailable) {
                     addSheet = false; upload()
                 }
                 if (cameraPhotoAvailable) {

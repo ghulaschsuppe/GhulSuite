@@ -671,8 +671,10 @@ fun GhulTopBar(
     actions: @Composable RowScope.() -> Unit = {},
     showLock: Boolean = !LocalWide.current,
 ) {
+    // The running background jobs stand under every header (JobStrip), wherever the user is.
+    androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth().background(g.bg)) {
     Row(
-        Modifier.fillMaxWidth().background(g.bg).androidx_statusBarsPadding().heightIn(min = 56.dp).padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 10.dp),
+        Modifier.fillMaxWidth().androidx_statusBarsPadding().heightIn(min = 56.dp).padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -701,6 +703,8 @@ fun GhulTopBar(
                 if (!HeaderGuard.lockBlocked()) onLock()
             }
         }
+    }
+    JobStrip()
     }
 }
 

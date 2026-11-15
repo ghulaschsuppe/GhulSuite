@@ -27,6 +27,7 @@ import de.danerd.ghulsuite.ui.MailDraft
 import de.danerd.ghulsuite.ui.Screen
 import de.danerd.ghulsuite.ui.SetPage
 import de.danerd.ghulsuite.ui.Tab
+import de.danerd.ghulsuite.ui.uploadToDrive
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import org.jetbrains.skia.EncodedImageFormat
@@ -92,6 +93,20 @@ class LayoutCheckTest {
         })
         add("mail" to { state { tab = Tab.MAIL } })
         add("mail-lesen" to { state { push(Screen.MailRead("m1", "INBOX", 2)) } })
+        add("mail-archiv" to {
+            state { (backend.net as FakeNet).archiveExists = true; archivePath = listOf("y2025" to "2025"); push(Screen.MailArchive("m1")) }
+        })
+        add("mail-archiv-lesen" to {
+            state { push(Screen.MailArchiveRead("m1", "e1", "2025-10-30 Finanzamt - Steuerbescheid 2024 (1a2b3c4d5e6f7a8b).eml")) }
+        })
+        add("hintergrund-auftrag" to {
+            state {
+                tab = Tab.MAIL
+                (backend.net as FakeNet).driveUploadMs = 60_000
+                jobs.revealMillis = 0
+                uploadToDrive(null, listOf(fakeSource("Steuerunterlagen 2025 vollständig.pdf", 2_400_000), fakeSource("Urlaub.jpg")))
+            }
+        })
         add("mail-schreiben" to { state { push(Screen.MailCompose(MailDraft("m1", to = "erika@example.org", subject = "AW: Treffen am Freitag"))) } })
         add("kalender-monat" to { state { tab = Tab.CAL } })
         add("kalender-woche" to { state { tab = Tab.CAL; calView = CalView.WEEK } })

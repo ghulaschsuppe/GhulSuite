@@ -125,9 +125,11 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
     var driveStatusGate: java.util.concurrent.CountDownLatch? = null
     /** Files in GhulDrive (as counted by the core). */
     var driveFiles = 3
+    /** GhulDrive is not set up (while the rest, e.g. mail, is). */
+    var driveMissing = false
     override suspend fun driveStatus(): DriveStatusUi {
         driveStatusGate?.let { gate -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { gate.await(30, java.util.concurrent.TimeUnit.SECONDS) } }
-        return DriveStatusUi(driveOwnServer?.id ?: if (configured) "s1" else null, driveFiles, 12_345_678)
+        return DriveStatusUi(if (driveMissing) null else driveOwnServer?.id ?: if (configured) "s1" else null, driveFiles, 12_345_678)
     }
     override suspend fun driveSetup(serverId: String) {}
     /** How long listing a folder takes (a slow server); blocking, as the real core does. */
@@ -135,6 +137,7 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
     /** The server cannot be reached: fetching the index fails, the index already known stays. */
     var driveOffline = false
     override suspend fun driveList(folder: String?, refresh: Boolean): List<DriveItemUi> {
+        archiveFiles[folder]?.let { return it.filter { f -> f.id !in driveTrashed } }
         if (driveOffline && refresh) throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.NETWORK, "Timed out.")
         if (folder != null && driveListDelayMs > 0) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Thread.sleep(driveListDelayMs) }
         return (if (folder == "d1") listOf(DriveItemUi("f5", "d1", "Strand.jpg", false, 3_100_000, now * 1000)) else listOf(
@@ -173,7 +176,40 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
         driveFiles++
         return "f3"
     }
-    override suspend fun driveDownload(id: String, sink: ByteSink, onProgress: (Long) -> Unit) {}
+    override suspend fun driveDownload(id: String, sink: ByteSink, onProgress: (Long) -> Unit) {
+        calls += "driveDownload:$id"
+        archiveContent[id]?.let { sink.write(it.encodeToByteArray()); onProgress(it.length.toLong()) }
+        sink.close()
+    }
+
+    /**
+     * The mail archive in GhulDrive as the core lays it out: year folders below the account's
+     * folder, .eml files named "date sender - subject (code).eml", plus a note and a folder of the
+     * user's own, and one file that is no mail at all.
+     */
+    private val archiveFiles: Map<String?, List<DriveItemUi>> = mapOf(
+        "archive-m1" to listOf(
+            DriveItemUi("y2025", "archive-m1", "2025", true, 0, now * 1000),
+            DriveItemUi("y2024", "archive-m1", "2024", true, 0, now * 1000),
+            DriveItemUi("own", "archive-m1", "Steuern", true, 0, now * 1000),
+        ),
+        "y2025" to listOf(
+            DriveItemUi("e1", "y2025", "2025-10-30 Finanzamt - Steuerbescheid 2024 (1a2b3c4d5e6f7a8b).eml", false, 3_200, now * 1000),
+            DriveItemUi("e2", "y2025", "2025-03-01 Erika Musterfrau - Urlaub im Mai (0f1e2d3c4b5a6978).eml", false, 1_800, now * 1000),
+            DriveItemUi("e3", "y2025", "kaputt.eml", false, 12, now * 1000),
+            DriveItemUi("n1", "y2025", "Notizen zum Archiv.txt", false, 300, now * 1000),
+        ),
+        "y2024" to listOf(
+            DriveItemUi("e4", "y2024", "2024-12-24 Stadtwerke - Ihre Jahresabrechnung (aa11bb22cc33dd44).eml", false, 9_000, now * 1000),
+        ),
+        "own" to emptyList(),
+    )
+    private val archiveContent = mapOf(
+        "e1" to "From: Finanzamt <post@finanzamt.example>\r\nSubject: Steuerbescheid 2024\r\n\r\nAnbei Ihr Bescheid.",
+        "e2" to "From: Erika <erika@example.org>\r\nSubject: Urlaub im Mai\r\n\r\nHallo!",
+        "e3" to "broken",
+        "e4" to "From: Stadtwerke <service@stadtwerke.example>\r\nSubject: Ihre Jahresabrechnung\r\n\r\nGuten Tag",
+    )
 
     override fun mailSuggest(email: String) = servers
     override suspend fun mailCheck(input: MailAccountInputUi) = MailCheckUi.Ok
@@ -206,13 +242,19 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
     val archiveAutoMarks = mutableMapOf<String, Pair<Long, Long>>()
     private fun archiveCandidates(beforeDays: Long?) =
         list.filter { beforeDays == null || it.date < beforeDays * 86_400 }.sortedBy { it.uid }.map { it.uid }
+    /** The archive exists in GhulDrive already (else only after the first mail was archived). */
+    var archiveExists = false
+    /** How long copying one mail takes (to see the progress and to cancel). */
+    var archiveDelayMs = 0L
     override suspend fun archiveFolder(accountId: String?): String? =
-        if (archivedToDrive.isEmpty()) null else if (accountId == null) "archive" else "archive-$accountId"
+        if (archivedToDrive.isEmpty() && !archiveExists) null else if (accountId == null) "archive" else "archive-$accountId"
     override suspend fun archiveUids(accountId: String, folder: String, beforeDays: Long?): List<Long> {
         calls += "archiveUids:$accountId:$folder:${beforeDays ?: ""}"
         return archiveCandidates(beforeDays)
     }
     override suspend fun archiveToDrive(accountId: String, folder: String, uid: Long): de.danerd.ghulsuite.model.MailArchivedUi {
+        if (driveMissing) throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.NOT_CONFIGURED, "")
+        if (archiveDelayMs > 0) kotlinx.coroutines.delay(archiveDelayMs)
         calls += "archiveToDrive:$accountId:$folder:$uid"
         return when {
             list.none { it.uid == uid } -> de.danerd.ghulsuite.model.MailArchivedUi.GONE
@@ -236,6 +278,7 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
     override suspend fun mailParseEml(accountId: String, data: ByteArray): MailMessageUi {
         calls += "mailParseEml:$accountId"
         val text = data.decodeToString()
+        if (!text.contains("Subject:")) throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.INVALID_INPUT, "not a mail")
         val subject = text.lineSequence().firstOrNull { it.startsWith("Subject:", true) }?.substringAfter(':')?.trim().orEmpty()
         return MailMessageUi(
             0, "Finanzamt", "post@finanzamt.example", listOf("Max Mustermann <max@posteo.de>"), emptyList(), "",
@@ -300,4 +343,16 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
     override suspend fun mailForgetKey(email: String) {}
     override fun mailNotificationsOn(accountId: String) = true
     override suspend fun setMailNotifications(accountId: String, on: Boolean) {}
+}
+
+/** A file to upload in the tests: [size] bytes, [closed] notes when it was closed. */
+fun fakeSource(name: String, size: Int = 3000, closed: MutableList<String>? = null) = object : ByteSource {
+    var left = size
+    override val name = name
+    override val size = size.toLong()
+    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+        if (left <= 0) return -1
+        val n = minOf(length, left); left -= n; return n
+    }
+    override fun close() { closed?.add(name) }
 }

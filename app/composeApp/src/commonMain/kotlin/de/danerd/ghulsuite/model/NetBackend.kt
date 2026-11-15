@@ -98,9 +98,12 @@ interface NetBackend {
     suspend fun driveZip(ids: List<String>, password: String): ByteArray = ByteArray(0)
     /** The device is on a network without data limit (Wi-Fi); desktops always. */
     fun unmeteredNetwork(): Boolean = true
-    /** Photo backup (Android): uploads photos added after [sinceSeconds] into "Fotos"; returns the newest time done. */
+    /**
+     * Photo backup (Android): uploads photos added after [sinceSeconds] into "Fotos", oldest first;
+     * [onFile] gets each one done with the time it was added. Returns the newest time done.
+     */
     val photoBackupAvailable: Boolean get() = false
-    suspend fun photoBackup(sinceSeconds: Long, wifiOnly: Boolean, onFile: (String) -> Unit): Long = sinceSeconds
+    suspend fun photoBackup(sinceSeconds: Long, wifiOnly: Boolean, onFile: (name: String, addedSeconds: Long) -> Unit): Long = sinceSeconds
     /** Encrypts and uploads [source] block by block; [onProgress] gets the bytes done. */
     suspend fun driveUpload(folder: String?, source: ByteSource, onProgress: (Long) -> Unit): String
     /** Downloads and decrypts a file into [sink]. */

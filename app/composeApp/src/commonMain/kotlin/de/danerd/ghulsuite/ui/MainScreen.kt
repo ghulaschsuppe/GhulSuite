@@ -65,6 +65,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.VerifiedUser
@@ -119,8 +120,9 @@ fun GhulSuiteApp(state: AppState) {
                 // the left, everything else in the rest of the width.
                 val wide = maxWidth >= 840.dp
                 val undoLabel = stringResource(Res.string.a_undo)
-                SideEffect { state.wide = wide; state.undoLabel = undoLabel }
-                CompositionLocalProvider(LocalWide provides wide, LocalBusy provides BusyState(state.busy, state.touchNeeded)) {
+                val env = org.jetbrains.compose.resources.rememberResourceEnvironment()
+                SideEffect { state.wide = wide; state.undoLabel = undoLabel; state.resEnv.value = env }
+                CompositionLocalProvider(LocalWide provides wide, LocalBusy provides BusyState(state.busy, state.touchNeeded), LocalJobs provides state.jobs) {
                     // One place for messages: the main screen on phones shows them above its own bar,
                     // everywhere else this outer host shows them (never both, which doubled every message).
                     val mainHasHost = state.vaultExists && !state.showStart && unlocked
@@ -388,6 +390,7 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
 }
 
 private fun ownHeader(top: Screen) = top is Screen.MailRead || top is Screen.MailCompose || top is Screen.EntryDetail ||
+    top is Screen.MailArchive || top is Screen.MailArchiveRead ||
     top is Screen.EntryEdit || top is Screen.CalEvent || top is Screen.CalEdit
 
 @Composable
@@ -500,6 +503,8 @@ private fun TopScreen(state: AppState, top: Screen, padding: PaddingValues) {
             Screen.Security -> SecurityScreen(state, padding)
             is Screen.MailRead -> key(top) { MailReadScreen(state, top.accountId, top.folder, top.uid, padding) }
             is Screen.MailCompose -> key(top) { MailComposeScreen(state, top.draft, padding) }
+            is Screen.MailArchive -> key(top) { MailArchiveScreen(state, top.accountId, padding) }
+            is Screen.MailArchiveRead -> key(top) { MailArchiveReadScreen(state, top.accountId, top.fileId, top.name, padding) }
             is Screen.CalEvent -> key(top) { CalEventScreen(state, top.id, top.day, padding) }
             is Screen.CalEdit -> key(top) { CalEditScreen(state, top.draft, padding) }
         }
@@ -593,6 +598,8 @@ private fun screenTitle(top: Screen?, tab: Tab): String = stringResource(
                             Screen.Security -> Res.string.sec_title
                             is Screen.MailRead -> Res.string.mail_read_title
                             is Screen.MailCompose -> Res.string.mail_compose_title
+                            is Screen.MailArchive -> Res.string.mail_archive_entry
+                            is Screen.MailArchiveRead -> Res.string.mail_read_title
                             is Screen.CalEvent -> Res.string.cal_event_title
                             is Screen.CalEdit -> if (top.draft.id.isEmpty()) Res.string.cal_new_event else Res.string.cal_edit_event
                             null -> tabTitle(tab)
@@ -607,7 +614,13 @@ private fun TabActions(state: AppState) {
         Tab.DRIVE -> if (state.driveReady) {
             BarIcon(if (state.driveGrid) Icons.AutoMirrored.Filled.ViewList else Icons.Filled.GridView, null) { state.driveGrid = !state.driveGrid }
         }
-        Tab.MAIL -> if (state.mailReady) BarIcon(Icons.Filled.Refresh, stringResource(Res.string.a_refresh)) { state.mailRefreshTick++ }
+        Tab.MAIL -> if (state.mailReady) {
+            BarIcon(Icons.Filled.Refresh, stringResource(Res.string.a_refresh)) { state.mailRefreshTick++ }
+            // The folder's actions (archive in GhulDrive) need one account, not "all inboxes".
+            if (state.mailAccount != null && state.mailAccount != ALL_INBOXES) {
+                BarIcon(Icons.Filled.MoreVert, stringResource(Res.string.mail_folder_menu)) { state.mailFolderMenu = true }
+            }
+        }
         Tab.CAL -> {
             CalTodayIcon { state.calSel = today(); if (state.calView == CalView.LIST) state.calView = CalView.MONTH }
             BarIcon(Icons.Filled.Search, stringResource(Res.string.cal_search_short)) { state.calView = CalView.LIST; state.calSearchTick++ }

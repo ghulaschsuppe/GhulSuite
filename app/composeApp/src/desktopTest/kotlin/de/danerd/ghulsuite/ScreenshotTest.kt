@@ -292,6 +292,24 @@ class ScreenshotTest {
             GhulSuiteApp(state(true, true) { tab = Tab.CAL; backend.settings.theme = de.danerd.ghulsuite.model.ThemeMode.DARK })
         }
         render("46-mail-html") { GhulSuiteApp(state(true, true) { tab = Tab.MAIL; push(Screen.MailRead("m1", "INBOX", 9)) }) }
+        // The mail archive in GhulDrive: a year with its mails, and an archived mail in the reader.
+        render("70-mail-archive") {
+            GhulSuiteApp(state(true, true) {
+                tab = Tab.MAIL
+                (backend.net as FakeNet).archiveExists = true
+                archivePath = listOf("y2025" to "2025")
+                push(Screen.MailArchive("m1"))
+            })
+        }
+        render("71-mail-archive-years") {
+            GhulSuiteApp(state(true, true) { tab = Tab.MAIL; (backend.net as FakeNet).archiveExists = true; push(Screen.MailArchive("m1")) })
+        }
+        render("72-mail-archive-read") {
+            GhulSuiteApp(state(true, true) {
+                tab = Tab.MAIL
+                push(Screen.MailArchiveRead("m1", "e1", "2025-10-30 Finanzamt - Steuerbescheid 2024 (1a2b3c4d5e6f7a8b).eml"))
+            })
+        }
         render("43-drive-grid") { GhulSuiteApp(state(true, true) { tab = Tab.DRIVE; driveGrid = true }) }
         render("44-auth-grid") { GhulSuiteApp(state(true, true) { tab = Tab.AUTH; authGrid = true }) }
         render("45-pass-dark") {
@@ -339,5 +357,13 @@ class ScreenshotTest {
             GhulSuiteApp(s)
         }
         wide("16-setup") { GhulSuiteApp(state(exists = false, unlocked = false)) }
+        wide("17-mail-archive") {
+            GhulSuiteApp(state(true, true) {
+                tab = Tab.MAIL
+                (backend.net as FakeNet).archiveExists = true
+                archivePath = listOf("y2025" to "2025")
+                push(Screen.MailArchive("m1"))
+            })
+        }
     }
 }

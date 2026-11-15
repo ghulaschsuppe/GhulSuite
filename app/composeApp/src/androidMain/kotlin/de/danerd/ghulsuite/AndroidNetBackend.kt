@@ -137,7 +137,7 @@ class AndroidNetBackend(private val context: Context, suite: () -> GhulSuite) : 
 
     override val photoBackupAvailable: Boolean get() = true
 
-    override suspend fun photoBackup(sinceSeconds: Long, wifiOnly: Boolean, onFile: (String) -> Unit): Long = withContext(Dispatchers.IO) {
+    override suspend fun photoBackup(sinceSeconds: Long, wifiOnly: Boolean, onFile: (String, Long) -> Unit): Long = withContext(Dispatchers.IO) {
         if (wifiOnly) {
             val cm = context.getSystemService(android.net.ConnectivityManager::class.java)
             val caps = cm.getNetworkCapabilities(cm.activeNetwork)
@@ -171,7 +171,7 @@ class AndroidNetBackend(private val context: Context, suite: () -> GhulSuite) : 
             }
             driveUpload(folder, source) {}
             newest = maxOf(newest, added)
-            withContext(Dispatchers.Main) { onFile(name) }
+            withContext(Dispatchers.Main) { onFile(name, added) }
         }
         newest
     }
