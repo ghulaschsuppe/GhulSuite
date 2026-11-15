@@ -39,12 +39,9 @@ import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.SentimentSatisfied
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.foundation.ScrollState
-import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.layout.onPlaced
-import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -321,10 +318,12 @@ fun CalScreen(state: AppState, padding: PaddingValues) {
             ),
         )
     }
-    val scroll = rememberScrollState()
+    // Week and day: the head (views, dates, all-day events) stays, only the hours scroll, as in
+    // other calendars. Scrolling the whole page to an evening event pushed the view switch away.
+    val gridView = state.calView == CalView.WEEK || state.calView == CalView.DAY
     Column(
-        Modifier.fillMaxSize().verticalScroll(scroll)
-            .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 100.dp),
+        Modifier.fillMaxSize().then(if (gridView) Modifier else Modifier.verticalScroll(rememberScrollState()))
+            .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = if (gridView) 0.dp else 100.dp),
     ) {
         LoadError(data.error, data.retry)
         if (!data.loaded) LoadingHint()
@@ -346,7 +345,7 @@ fun CalScreen(state: AppState, padding: PaddingValues) {
                 CalHead(state, label)
                 DayStrip(state, days, data.occ, names, pick = false, modifier = swipe)
                 AllDayRow(state, days, data.occ)
-                TimeGrid(state, days, data.occ, swipe, scroll)
+                TimeGrid(state, days, data.occ, swipe)
             }
             CalView.DAY -> {
                 val days = (0..6).map { from.plus(it) }
@@ -362,7 +361,7 @@ fun CalScreen(state: AppState, padding: PaddingValues) {
                     Modifier.padding(start = 4.dp, end = 4.dp, bottom = 8.dp), fontSize = 13.sp, color = g.muted, fontWeight = FontWeight.SemiBold,
                 )
                 AllDayRow(state, listOf(sel), data.occ)
-                TimeGrid(state, listOf(sel), data.occ, swipe, scroll)
+                TimeGrid(state, listOf(sel), data.occ, swipe)
             }
             CalView.LIST -> CalList(state, data.occ, query, { query = it }, names, selected)
         }
@@ -725,41 +724,42 @@ private fun lanesOf(list: List<CalOccurrenceUi>): List<Placed> {
 }
 
 /**
- * Hours 6 to 24 with the events of one or seven days (.tg). When the first event of these days
- * lies below what the screen shows (an evening event), the page scrolls just far enough to show
- * it: "1 event" above an empty grid was all one saw.
+ * Hours 6 to 24 with the events of one or seven days (.tg), scrolling by itself below the head of
+ * the page. When the first event of these days (or, today without events, the current time) lies
+ * below what it shows, it scrolls there: "1 event" above an empty grid was all one saw.
  */
 @Composable
-private fun TimeGrid(state: AppState, days: List<Day>, occ: List<CalOccurrenceUi>, swipe: Modifier, scroll: ScrollState) {
+private fun ColumnScope.TimeGrid(state: AppState, days: List<Day>, occ: List<CalOccurrenceUi>, swipe: Modifier) {
     val t = g
     val cal = areaColor(Tab.CAL)
     val one = days.size == 1
     val density = LocalDensity.current
-    var gridTop by remember { mutableStateOf<Float?>(null) }
-    // Minute of the day (from H0) where the first timed event of these days starts.
+    val scroll = rememberScrollState()
+    var now by remember { mutableStateOf(localNow()) }
+    // Minute of the day where the first timed event of these days starts (not before H0).
     val firstMinute = days.mapNotNull { d ->
         occ.on(d).filter { !it.allDay }.minOfOrNull { maxOf(absMinutes(it.start) - d.days * 1440L, H0 * 60L) }
     }.minOrNull()
-    // Once per shown days and first event (not again while one scrolls by hand).
-    LaunchedEffect(days.first(), days.size, firstMinute) {
-        val minute = firstMinute ?: return@LaunchedEffect
-        val top = androidx.compose.runtime.snapshotFlow { gridTop }.filterNotNull().first()
-        val want = with(density) {
-            val eventTop = top + (12.dp + HH * ((minute - H0 * 60L) / 60f)).toPx()
-            // Two hours below its start in view; the head of the page stays where it can.
-            (eventTop + (HH * 2).toPx() - scroll.viewportSize).toInt()
+    val target = firstMinute ?: if (today() in days) maxOf(absMinutes(now) - today().days * 1440L, H0 * 60L) else null
+    // Once per shown days and target (not again while one scrolls by hand).
+    LaunchedEffect(days.first(), days.size, target) {
+        val minute = target ?: return@LaunchedEffect
+        val viewport = androidx.compose.runtime.snapshotFlow { scroll.viewportSize }.first { it > 0 }
+        with(density) {
+            val top = (12.dp + HH * ((minute - H0 * 60L) / 60f)).toPx()
+            // Already in view (one hour of it at least): nothing moves.
+            if (top + HH.toPx() > scroll.value + viewport) scroll.animateScrollTo((top - HH.toPx()).toInt().coerceIn(0, scroll.maxValue))
         }
-        if (want > scroll.value) scroll.animateScrollTo(want.coerceAtMost(scroll.maxValue))
     }
-    var now by remember { mutableStateOf(localNow()) }
     LaunchedEffect(Unit) {
         while (true) {
             delay(30_000)
             now = localNow()
         }
     }
+    Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(scroll).padding(bottom = 100.dp)) {
     Row(
-        Modifier.fillMaxWidth().onPlaced { gridTop = it.positionInParent().y }
+        Modifier.fillMaxWidth()
             .clip(RoundedCornerShape(20.dp)).background(t.surface).then(swipe).padding(top = 12.dp, bottom = 12.dp, end = 6.dp),
     ) {
         Column(Modifier.width(38.dp)) {
@@ -829,6 +829,7 @@ private fun TimeGrid(state: AppState, days: List<Day>, occ: List<CalOccurrenceUi
                 }
             }
         }
+    }
     }
 }
 

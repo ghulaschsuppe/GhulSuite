@@ -531,7 +531,8 @@ class InteractionTest {
 
     /**
      * A day whose only event is late in the evening: the day view shows it without scrolling by
-     * hand (bug: "1 event" above an empty grid from 6 to 17 o'clock), also the week view.
+     * hand (bug: "1 event" above an empty grid from 6 to 17 o'clock), also the week view; the
+     * switch between the views stays usable.
      */
     @Test
     fun dayViewShowsAnEveningEvent() = app(setup = { tab = Tab.CAL; calView = CalView.DAY; calSel = de.danerd.ghulsuite.ui.today().plus(75) }) { state, _ ->
@@ -539,11 +540,16 @@ class InteractionTest {
         waitUntil(timeoutMillis = 10_000) {
             runCatching { text("Spätvorstellung Kino").assertIsDisplayed() }.isSuccess
         }
+        // The view switch stays in sight (bug: scrolling the whole page pushed it away).
+        text("Day").assertIsDisplayed()
         shot("cal-day-evening")
         state.calView = CalView.WEEK
         waitUntil(timeoutMillis = 10_000) {
             runCatching { text("Spätvorstellung Kino").assertIsDisplayed() }.isSuccess
         }
+        text("Day").assertIsDisplayed()
+        text("Day").performClick()
+        waitUntil(timeoutMillis = 10_000) { state.calView == CalView.DAY }
     }
 
     /** The strength of a new password shows once something is typed: an empty field is not "very weak". */
