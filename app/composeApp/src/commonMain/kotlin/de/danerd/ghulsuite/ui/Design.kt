@@ -608,9 +608,16 @@ fun HintText(text: String, modifier: Modifier = Modifier) {
 
 /** Small filled button of the header (.btn.primary, 36 dp): the main action of a full-screen editor. */
 @Composable
-fun HeaderButton(text: String, enabled: Boolean = true, icon: androidx.compose.ui.graphics.vector.ImageVector? = null, onClick: () -> Unit) {
+fun HeaderButton(
+    text: String,
+    enabled: Boolean = true,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    // The colour of the area (GhulMail orange, GhulCal pink …), as its "+" button has it.
+    color: Color? = null,
+    onClick: () -> Unit,
+) {
     Row(
-        Modifier.height(36.dp).clip(RoundedCornerShape(18.dp)).background(if (enabled) g.accent else g.surface3)
+        Modifier.height(36.dp).clip(RoundedCornerShape(18.dp)).background(if (enabled) color ?: g.accent else g.surface3)
             .clickable(enabled = enabled, onClick = onClick).padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {

@@ -1,7 +1,7 @@
 # GhulMail in depth on the real (slow) mail servers, after 2-mail.yaml:
 #   - The mail to oneself: mark unread, open again, answer it (reply arrives).
 #   - Search in the list.
-#   - Select all, delete, "Undo": back.
+#   - Select the conversation, delete, "Undo": back.
 appId: de.danerd.ghulsuite.dev
 name: GhulMail in depth on a real server
 ---
@@ -34,15 +34,12 @@ name: GhulMail in depth on a real server
 - tapOn:
     text: "Refresh"
     optional: true
-# The answer arrives, once (Send was tapped twice).
+# The answer arrives, once (Send was tapped twice). GhulMail shows a conversation as one row
+# with the number of its mails: "(2)" is the mail and its answer, "(3)" would be sent twice.
 - extendedWaitUntil:
-    visible:
-      text: "Encrypted message"
-      index: 1
+    visible: ".*\\(2\\)"
     timeout: 120000
-- assertNotVisible:
-    text: "Encrypted message"
-    index: 2
+- assertNotVisible: ".*\\(3\\)"
 - takeScreenshot: s5-03-reply-arrived
 # --- Mark unread ---
 - longPressOn:
@@ -73,10 +70,7 @@ name: GhulMail in depth on a real server
 - extendedWaitUntil:
     visible: "1 selected"
     timeout: 10000
-- tapOn: "All"
-- extendedWaitUntil:
-    visible: "2 selected"
-    timeout: 10000
+# One conversation, already selected: "All" would do nothing, so it is not offered.
 - assertNotVisible: "All"
 - tapOn: "Delete"
 - extendedWaitUntil:

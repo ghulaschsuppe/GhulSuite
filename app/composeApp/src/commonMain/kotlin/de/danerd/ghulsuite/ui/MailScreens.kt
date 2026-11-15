@@ -961,9 +961,12 @@ fun MailComposeScreen(state: AppState, draft: MailDraft, padding: PaddingValues)
 
     val t = g
     val forwardPrefix = stringResource(Res.string.mail_fwd)
+    val replyPrefix = stringResource(Res.string.mail_re)
     val title = stringResource(
         when {
-            draft.inReplyTo.isNotBlank() -> Res.string.mail_reply_title
+            // An answer, also to a mail without a Message-ID (then only its subject tells).
+            draft.inReplyTo.isNotBlank() || draft.subject.startsWith(replyPrefix, ignoreCase = true) ||
+                draft.subject.startsWith("Re:", ignoreCase = true) -> Res.string.mail_reply_title
             draft.subject.startsWith(forwardPrefix) -> Res.string.mail_forward_title
             else -> Res.string.mail_new_title
         },
@@ -991,8 +994,8 @@ fun MailComposeScreen(state: AppState, draft: MailDraft, padding: PaddingValues)
         GhulTopBar(
             title, onLock = { state.lockNow() }, onBack = { state.pop() }, backIcon = Icons.Filled.Close, showLock = false,
             actions = {
-                if (filePickersAvailable) BarIcon(Icons.Filled.Attachment, stringResource(Res.string.a_attach)) { attach() }
-                HeaderButton(stringResource(Res.string.a_send), enabled = canSend, icon = Icons.AutoMirrored.Filled.Send) { send() }
+                // Attaching is in the row below the text (with "later" and PGP), not twice.
+                HeaderButton(stringResource(Res.string.a_send), enabled = canSend, icon = Icons.AutoMirrored.Filled.Send, color = areaColor(Tab.MAIL)) { send() }
             },
         )
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 20.dp)) {

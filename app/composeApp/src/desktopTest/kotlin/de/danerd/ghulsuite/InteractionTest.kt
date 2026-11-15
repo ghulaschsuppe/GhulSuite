@@ -404,6 +404,20 @@ class InteractionTest {
         }
     }
 
+    /**
+     * An answer to a mail without a Message-ID is still titled "Reply" (bug: "New mail"), and
+     * attaching is offered once, not in the header and again below the text.
+     */
+    @Test
+    fun replyWithoutMessageIdIsTitledReply() {
+        app(setup = { push(Screen.MailCompose(de.danerd.ghulsuite.ui.MailDraft("m1", to = "erika@example.org", subject = "Re: Treffen"))) }) { _, _ ->
+            waitFor("Reply")
+            assertTrue(onAllNodesWithText("New mail").fetchSemanticsNodes().isEmpty())
+            // Without a display (CI) there is no file picker and no button at all; never two.
+            assertTrue(onAllNodesWithContentDescription("Attach file").fetchSemanticsNodes().size <= 1)
+        }
+    }
+
     /** Only the sync status cannot be read: the servers are shown, the sync card does not claim "Off". */
     @Test
     fun syncStatusErrorDoesNotSayOff() {

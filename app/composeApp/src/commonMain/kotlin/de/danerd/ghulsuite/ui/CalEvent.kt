@@ -468,7 +468,7 @@ fun CalEditScreen(state: AppState, start: CalEventUi, padding: PaddingValues) {
             stringResource(if (start.id.isEmpty()) Res.string.cal_new_event else Res.string.cal_edit_event),
             onLock = { state.lockNow() }, onBack = { state.back() }, backIcon = Icons.Filled.Close, showLock = false,
             actions = {
-                HeaderButton(stringResource(Res.string.a_save), onClick = ::save)
+                HeaderButton(stringResource(Res.string.a_save), color = areaColor(Tab.CAL), onClick = ::save)
             },
         )
         ScreenColumn {

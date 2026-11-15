@@ -324,6 +324,40 @@ fn backups_with_path_tricks_and_bombs_write_nothing_outside() {
     assert!(s.restore_backup_limited(bomb, 16 * 1024 * 1024).is_err(), "a bomb must be refused");
 }
 
+/// Every mail has its own Message-ID in the sender's domain (bug: none at all, so answers had
+/// no In-Reply-To and other mail programs could not build threads); an answer refers to it.
+#[test]
+fn sent_mail_has_a_message_id_and_answers_refer_to_it() {
+    let (_d, s, server, _kf) = marked_suite("message-id");
+    let acc = s.mail_accounts().unwrap()[0].clone();
+    let mut mail = OutgoingMail {
+        account_id: acc.id.clone(),
+        to: vec!["bob@example.org".into()],
+        cc: vec![],
+        bcc: vec![],
+        subject: "Hallo".into(),
+        text: "Text".into(),
+        in_reply_to: String::new(),
+        attachments: vec![],
+        pgp: false,
+    };
+    let id_of = |raw: &[u8]| {
+        let parsed = mail_parser::MessageParser::default().parse(raw).unwrap();
+        parsed.message_id().unwrap_or_default().to_owned()
+    };
+    let first = id_of(&super::super::mail::build_for_tests(&s, &mail).unwrap().0);
+    let domain = acc.email.rsplit('@').next().unwrap().to_owned();
+    assert!(first.ends_with(&format!("@{domain}")), "{first:?}");
+    assert!(first.len() > domain.len() + 20, "{first:?}");
+    let second = id_of(&super::super::mail::build_for_tests(&s, &mail).unwrap().0);
+    assert_ne!(first, second, "every mail its own id");
+    mail.in_reply_to = first.clone();
+    let (raw, _) = super::super::mail::build_for_tests(&s, &mail).unwrap();
+    let parsed = mail_parser::MessageParser::default().parse(&raw[..]).unwrap();
+    assert_eq!(parsed.in_reply_to().as_text(), Some(first.as_str()));
+    let _ = std::fs::remove_dir_all(&server);
+}
+
 #[test]
 fn mail_headers_cannot_be_injected() {
     let (_d, s, server, _kf) = marked_suite("headers");

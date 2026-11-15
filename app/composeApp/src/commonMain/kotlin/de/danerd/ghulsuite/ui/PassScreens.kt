@@ -781,7 +781,7 @@ fun EntryEditScreen(state: AppState, vaultId: String, id: String?, type: String,
         GhulTopBar(
             stringResource(if (id == null) Res.string.pass_new_entry else Res.string.a_edit),
             onLock = { state.lockNow() }, onBack = { state.back() }, backIcon = Icons.Filled.Close, showLock = false,
-            actions = { HeaderButton(stringResource(Res.string.a_save), enabled = !state.busy) { save() } },
+            actions = { HeaderButton(stringResource(Res.string.a_save), enabled = !state.busy, color = areaColor(Tab.PASS)) { save() } },
         )
         ScreenColumn {
             BusyBanner(state)
