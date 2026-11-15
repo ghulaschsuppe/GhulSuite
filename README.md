@@ -266,7 +266,9 @@ GhulSuite braucht **keinen speziellen Server**. Ein Server in der App ist immer 
 
 **So geht's:**
 1. In der App: **Optionen → Server → Server hinzufügen**, SFTP oder FTPS wählen, den Ordner für GhulSuite aussuchen.
-   Er muss **außerhalb deiner Website** liegen (siehe unten).
+   Er muss **außerhalb deiner Website** liegen (siehe unten). **„Verbindung prüfen“** zeigt Schritt für Schritt, was
+   klappt und was nicht; erst danach erscheint **„Speichern“**. Bei Mail-Konten genauso: Posteingang und
+   Postausgang werden einzeln geprüft, gespeichert wird nur eine Verbindung, die funktioniert.
 2. Synchronisation und GhulDrive wählen ihren Server jeweils selbst; es kann derselbe sein.
 3. Für Freigabelinks: beim Server **„Server-Modul installieren“**, den Ordner deiner Website wählen. Die App legt
    `ghulsuite.php` dorthin und prüft Adresse, PHP, den Zugriff auf den GhulSuite-Ordner und dass dieser Ordner nicht

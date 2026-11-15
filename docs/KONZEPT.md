@@ -355,6 +355,12 @@ die App gibt der Datei beim nächsten Entsperren ihren neutralen Namen zurück.
   Pfad zum GhulSuite-Ordner) und prüft Adresse, ob PHP läuft, ob das Modul den GhulSuite-Ordner lesen und darin
   schreiben kann (Testdatei) und dass der GhulSuite-Ordner selbst nicht aus dem Web abrufbar ist. Eine Checkliste
   nennt den fehlenden Schritt.
+- **Erst prüfen, dann speichern** (Server und Mail-Konten, abgestimmt am 15.11.2026): ein Knopf „Verbindung prüfen“
+  prüft Schritt für Schritt und zeigt jeden Schritt mit Haken oder Grund (Server nicht erreichbar, Anmeldung
+  abgelehnt, Zertifikat bestätigen, Ordner nicht beschreibbar). Erst wenn alles geklappt hat, erscheint „Speichern“;
+  nichts wird automatisch gespeichert. Wer danach an der Verbindung etwas ändert, prüft erneut. Der Kern speichert
+  ein Mail-Konto nur mit Einstellungen, die gerade erfolgreich geprüft wurden, und einen Server nur nach erneuter
+  Anmeldung und Schreibprobe.
 
 ### 8.2.1 SFTP im Detail
 
