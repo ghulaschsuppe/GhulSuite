@@ -198,6 +198,8 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
     var driveServer by remember { mutableStateOf<ServerUi?>(null) }
     /** "" = folders, or one of the quick views: recent, fav, offline, trash. */
     var view by remember { mutableStateOf("") }
+    androidx.compose.runtime.SideEffect { state.driveTrashShown = view == "trash" }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { state.driveTrashShown = false } }
     var usage by remember { mutableStateOf<de.danerd.ghulsuite.model.DriveUsageUi?>(null) }
     var versionsOf by remember { mutableStateOf<DriveItemUi?>(null) }
     var zipping by remember { mutableStateOf<List<DriveItemUi>?>(null) }

@@ -41,6 +41,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.onNodeWithText
 import de.danerd.ghulsuite.model.ShareCheckUi
+import androidx.compose.ui.test.onAllNodesWithTag
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -187,8 +188,11 @@ class InteractionTest {
         // Emptying the trash still asks, with a red button.
         val net = fake.net as FakeNet
         waitFor("Trash")
+        assertEquals(1, onAllNodesWithTag(de.danerd.ghulsuite.ui.FAB_TAG).fetchSemanticsNodes().size)
         text("Trash").performClick()
         waitFor("Alter Entwurf.docx")
+        // Nothing can be added to the trash: no "Add" button there.
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithTag(de.danerd.ghulsuite.ui.FAB_TAG).fetchSemanticsNodes().isEmpty() }
         text("Empty").performClick()
         waitFor("Delete for good")
         shot("drive-empty-trash")

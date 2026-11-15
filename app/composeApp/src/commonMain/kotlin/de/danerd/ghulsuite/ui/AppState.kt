@@ -164,6 +164,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     /** GhulDrive is set up and can take an upload from the "+" button; a tick asks for one. */
     var driveReady by mutableStateOf(false)
     var driveUploadTick by mutableStateOf(0)
+    /** GhulDrive shows its trash: nothing can be added there, so there is no "Add" button. */
+    var driveTrashShown by mutableStateOf(false)
 
     /** Header actions of the tabs: list/grid views, mail refresh, unread count for the badge. */
     var driveGrid by mutableStateOf(false)

@@ -412,7 +412,7 @@ private fun MainFab(state: AppState, onAdd: () -> Unit) {
             state.push(Screen.MailCompose(MailDraft(state.mailAccount)))
         }
     }
-    if (state.tab == Tab.DRIVE && state.driveReady) {
+    if (state.tab == Tab.DRIVE && state.driveReady && !state.driveTrashShown) {
         GhulFab(areaColor(Tab.DRIVE), Icons.Filled.Add, stringResource(Res.string.a_add)) { state.driveUploadTick++ }
     }
     if (state.tab == Tab.CAL) {
