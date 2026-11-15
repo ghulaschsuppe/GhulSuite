@@ -13,6 +13,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -67,5 +68,14 @@ class AppStateRunTest {
         withTimeout(5_000) { while (DevChecks.alarms.isEmpty()) kotlinx.coroutines.delay(20) }
         assertTrue(DevChecks.alarms.any { "IllegalStateException" in it }, DevChecks.alarms.toList().toString())
         DevChecks.alarms.clear()
+    }
+
+    /** Only Compose's "outdated text layout" crash is dropped as a key; anything else stays a crash. */
+    @Test
+    fun staleTextLayoutIsRecognisedExactly() {
+        assertTrue(de.danerd.ghulsuite.ui.isStaleTextLayoutError(IllegalArgumentException("offset(14) is out of bounds [0, 11]")))
+        assertFalse(de.danerd.ghulsuite.ui.isStaleTextLayoutError(IllegalArgumentException("index out of bounds")))
+        assertFalse(de.danerd.ghulsuite.ui.isStaleTextLayoutError(IllegalStateException("offset(14) is out of bounds [0, 11]")))
+        assertFalse(de.danerd.ghulsuite.ui.isStaleTextLayoutError(IllegalArgumentException("wrong offset(14) is out of bounds [0, 11]")))
     }
 }

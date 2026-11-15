@@ -40,6 +40,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 }
 
 class MainActivity : ComponentActivity() {
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean = guardStaleTextKey { super.dispatchKeyEvent(event) }
+
     private val notificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* optional */ }
 
@@ -169,4 +171,13 @@ class MainActivity : ComponentActivity() {
         @Volatile
         var current: java.lang.ref.WeakReference<android.app.Activity>? = null
     }
+}
+
+/** Drops a key that hit a text field with an outdated layout (see [isStaleTextLayoutError]). */
+internal inline fun guardStaleTextKey(dispatch: () -> Boolean): Boolean = try {
+    dispatch()
+} catch (e: IllegalArgumentException) {
+    if (!de.danerd.ghulsuite.ui.isStaleTextLayoutError(e)) throw e
+    android.util.Log.w("GhulSuite", "GHUL-STALE-KEY key dropped: ${e.message}")
+    true
 }

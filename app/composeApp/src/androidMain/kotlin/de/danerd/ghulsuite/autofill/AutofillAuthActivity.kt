@@ -64,6 +64,9 @@ import org.jetbrains.compose.resources.stringResource
  * to that app (`androidapp://` URL), so it is offered directly next time.
  */
 class AutofillAuthActivity : ComponentActivity() {
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean =
+        de.danerd.ghulsuite.guardStaleTextKey { super.dispatchKeyEvent(event) }
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     override fun onCreate(savedInstanceState: Bundle?) {

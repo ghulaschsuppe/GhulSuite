@@ -31,6 +31,11 @@ if grep -q "GHUL-DEV-ALARM" "$log"; then
   while read -r line; do echo "::error::Alarm der Entwicklerversion: $line"; done < "$out/logcat-dev-alarms.txt"
   fail=1
 fi
+# A key Compose could not handle yet (text layout behind the text) was dropped instead of crashing
+# the app (MainActivity.guardStaleTextKey): a note, not a failure.
+if grep -q "GHUL-STALE-KEY" "$log"; then
+  echo "::warning::$(grep -c "GHUL-STALE-KEY" "$log") Tastendruck(e) im Textfeld verworfen, weil das Layout noch nicht nachgezogen war (statt eines Absturzes)"
+fi
 # StrictMode: only violations with a frame of our own code.
 awk '/StrictMode policy violation/ { buf=$0; keep=0; n=0; inv=1; next }
      inv && n < 40 { buf = buf "\n" $0; n++; if ($0 ~ /de\.danerd\.ghulsuite/) keep=1; if (n == 40) { if (keep) print buf "\n---"; inv=0 } }' "$log" \
