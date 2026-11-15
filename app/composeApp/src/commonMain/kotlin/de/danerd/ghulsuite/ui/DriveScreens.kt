@@ -262,7 +262,13 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
     val download = rememberCreateStream { sink: ByteSink? ->
         val item = downloadItem
         downloadItem = null
-        if (sink == null || item == null) return@rememberCreateStream
+        if (sink == null) return@rememberCreateStream
+        if (item == null) {
+            // Nothing to download into the file just created: no empty file is left behind.
+            runCatching { sink.close() }
+            runCatching { sink.discard() }
+            return@rememberCreateStream
+        }
         state.downloadFromDrive(item, sink)
     }
 

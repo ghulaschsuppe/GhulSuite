@@ -160,6 +160,15 @@ fn ftps_against_vsftpd() {
 /// ours binds it (seen on Windows). Then ours exits and the other one answers: the test would talk
 /// to the wrong server. So the server must hand out a token only this folder has; otherwise it is
 /// stopped and another port is tried.
+/// Like `spawn_php`, but `None` only without PHP: in the CI (`CI` set) a PHP that does not
+/// serve the folder fails the test instead of skipping it silently.
+pub(crate) fn spawn_php_ci(dir: &std::path::Path) -> Option<(std::process::Child, u16)> {
+    std::process::Command::new("php").arg("-v").output().ok()?;
+    let served = spawn_php(dir);
+    assert!(served.is_some() || std::env::var_os("CI").is_none(), "php -S could not serve {}", dir.display());
+    served
+}
+
 pub(crate) fn spawn_php(dir: &std::path::Path) -> Option<(std::process::Child, u16)> {
     use rand_core::RngCore;
     let mut t = [0u8; 16];
@@ -226,7 +235,7 @@ pub(crate) fn module_site() -> Option<ModuleSite> {
     std::fs::create_dir_all(dir.join("ghulsuite/shares")).unwrap();
     std::fs::create_dir_all(dir.join("ghulsuite/drive/blocks")).unwrap();
     std::fs::write(dir.join("www/ghulsuite.php"), super::module::module_file("../ghulsuite").unwrap()).unwrap();
-    let (child, port) = spawn_php(&dir.join("www"))?;
+    let (child, port) = spawn_php_ci(&dir.join("www"))?;
     Some(ModuleSite { child, url: format!("http://127.0.0.1:{port}/ghulsuite.php"), dir })
 }
 

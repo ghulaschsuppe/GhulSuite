@@ -84,8 +84,10 @@ fun AppState.downloadFromDrive(item: DriveItemUi, sink: ByteSink) {
         job.item = item.name
         job.bytesTotal = item.size
         backend.net.driveDownload(item.id, sink) { job.bytes = it }
+        // The message first: cancelled while it is looked up, the file goes (and so says the message).
+        val done = str(Res.string.drive_downloaded, item.name)
         complete = true
-        str(Res.string.drive_downloaded, item.name)
+        done
     }
 }
 

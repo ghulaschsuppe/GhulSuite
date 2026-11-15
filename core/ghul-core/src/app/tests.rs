@@ -1594,7 +1594,7 @@ fn serve_module(
 ) -> Option<(std::process::Child, String)> {
     std::process::Command::new("php").arg("-v").output().ok()?;
     std::fs::create_dir_all(web_abs).unwrap();
-    let (child, port) = crate::net::tests::spawn_php(web_abs)?;
+    let (child, port) = crate::net::tests::spawn_php_ci(web_abs)?;
     let url = format!("http://127.0.0.1:{port}/ghulsuite.php");
     let done = s.server_module_install(server_id.into(), web_dir.into(), url.clone()).unwrap();
     assert_eq!(done.url.as_deref(), Some(url.as_str()), "{:?}", done.checks);
@@ -1840,7 +1840,7 @@ fn share_links_over_sftp_through_the_module() {
     std::fs::create_dir_all(site.join("ghulsuite/drive")).unwrap();
     std::fs::create_dir_all(&www).unwrap();
     let module_of = |s: &GhulSuite| s.list_servers().unwrap().into_iter().find(|x| x.id == open_id).unwrap().module_url;
-    if let Some((mut php, port)) = crate::net::tests::spawn_php(&www) {
+    if let Some((mut php, port)) = crate::net::tests::spawn_php_ci(&www) {
         let url = format!("http://127.0.0.1:{port}/ghulsuite.php");
         let done = s.server_module_install(open_id.clone(), www.display().to_string(), url.clone()).unwrap();
         let _ = php.kill();
@@ -1849,7 +1849,7 @@ fn share_links_over_sftp_through_the_module() {
         assert!(done.checks.iter().any(|c| c.step == "private" && c.ok), "{:?}", done.checks);
         assert_eq!(module_of(&s), url);
     }
-    if let Some((mut php, port)) = crate::net::tests::spawn_php(&site) {
+    if let Some((mut php, port)) = crate::net::tests::spawn_php_ci(&site) {
         let url = format!("http://127.0.0.1:{port}/www/ghulsuite.php");
         let done = s.server_module_install(open_id.clone(), www.display().to_string(), url).unwrap();
         let _ = php.kill();

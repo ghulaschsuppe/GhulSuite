@@ -1143,7 +1143,7 @@ class InteractionTest {
         for (p in listOf("public_html", "public_html/ghulsuite", "htdocs/x", "www", "example.org", "kunden/example.org/ghul")) {
             assertTrue(de.danerd.ghulsuite.ui.inWebsite(p), p)
         }
-        for (p in listOf("", "ghulsuite", "daten/ghulsuite", "backup_alt", "websites-alt")) {
+        for (p in listOf("", "ghulsuite", "daten/ghulsuite", "backup_alt", "websites-alt", "logs.old", "node.js", "site.bak", "a/b/c/example.org")) {
             assertFalse(de.danerd.ghulsuite.ui.inWebsite(p), p)
         }
     }

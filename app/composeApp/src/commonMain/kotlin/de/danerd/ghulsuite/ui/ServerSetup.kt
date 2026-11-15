@@ -298,9 +298,19 @@ fun ServerChecklist(form: ServerForm) {
  * Whether [path] (relative to the login folder) lies in a website: a usual web root folder or a
  * folder named like a domain (many hostings deliver `example.org/` as that domain's site).
  */
-internal fun inWebsite(path: String): Boolean = path.split('/').any { p ->
-    p.lowercase() in WEB_ROOTS || Regex("""^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$""").matches(p.lowercase())
+internal fun inWebsite(path: String): Boolean {
+    val parts = path.lowercase().split('/').filter { it.isNotEmpty() }
+    // Domain folders sit at the login folder or one level below (e.g. "kunden/example.org").
+    return parts.any { it in WEB_ROOTS } || parts.take(2).any { p ->
+        DOMAIN.matches(p) && p.substringAfterLast('.') !in NOT_DOMAINS
+    }
 }
+
+private val DOMAIN = Regex("""^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$""")
+
+/** Endings of ordinary folder names that only look like domains ("logs.old", "site.bak"). */
+private val NOT_DOMAINS = setOf("old", "bak", "backup", "db", "js", "ts", "log", "logs", "tmp", "temp", "git",
+    "zip", "tar", "gz", "archiv", "archive", "conf", "cfg", "json", "xml", "txt", "d", "new", "orig", "save")
 
 /** Sheet listing the server's folders: open a folder, go up, create one, choose. */
 @Composable

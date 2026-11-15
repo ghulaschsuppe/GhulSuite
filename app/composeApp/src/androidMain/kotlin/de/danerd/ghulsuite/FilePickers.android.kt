@@ -176,14 +176,18 @@ actual fun rememberCreateStream(onCreated: (ByteSink?) -> Unit): (String, String
         },
     ) { uri: Uri? ->
         ExternalActivity.finished()
-        val out = uri?.let { runCatching { context.contentResolver.openOutputStream(it, "wt") }.getOrNull() }
+        // The application's context: a download may outlive this window.
+        val resolver = context.applicationContext.contentResolver
+        val out = uri?.let { runCatching { resolver.openOutputStream(it, "wt") }.getOrNull() }
+        // Created but cannot be written: no empty file is left behind.
+        if (uri != null && out == null) runCatching { android.provider.DocumentsContract.deleteDocument(resolver, uri) }
         onCreated(
             out?.let {
                 object : ByteSink {
                     override fun write(data: ByteArray) = it.write(data)
                     override fun close() = it.close()
                     override fun discard() {
-                        runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri) }
+                        runCatching { android.provider.DocumentsContract.deleteDocument(resolver, uri) }
                     }
                 }
             },
