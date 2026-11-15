@@ -295,7 +295,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
         1 -> {
             SecretTextField(password, { password = it; error = null }, stringResource(Res.string.l_master_password))
             SecretTextField(repeat, { repeat = it; error = null }, stringResource(Res.string.l_repeat_password))
-            StrengthMeter(backend.passwordScore(password))
+            if (password.isNotEmpty()) StrengthMeter(backend.passwordScore(password))
             FilledTonalButton(onClick = {
                 password = backend.generatePassword(PasswordOptionsUi(length = 24))
                 repeat = ""

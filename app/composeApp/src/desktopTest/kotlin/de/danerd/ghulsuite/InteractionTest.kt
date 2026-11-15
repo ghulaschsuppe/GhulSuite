@@ -8,6 +8,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.asSkiaBitmap
 import androidx.compose.ui.test.DesktopComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -526,6 +527,33 @@ class InteractionTest {
         } finally {
             HeaderGuard.reset()
         }
+    }
+
+    /**
+     * A day whose only event is late in the evening: the day view shows it without scrolling by
+     * hand (bug: "1 event" above an empty grid from 6 to 17 o'clock), also the week view.
+     */
+    @Test
+    fun dayViewShowsAnEveningEvent() = app(setup = { tab = Tab.CAL; calView = CalView.DAY; calSel = de.danerd.ghulsuite.ui.today().plus(75) }) { state, _ ->
+        waitFor("Spätvorstellung Kino")
+        waitUntil(timeoutMillis = 10_000) {
+            runCatching { text("Spätvorstellung Kino").assertIsDisplayed() }.isSuccess
+        }
+        shot("cal-day-evening")
+        state.calView = CalView.WEEK
+        waitUntil(timeoutMillis = 10_000) {
+            runCatching { text("Spätvorstellung Kino").assertIsDisplayed() }.isSuccess
+        }
+    }
+
+    /** The strength of a new password shows once something is typed: an empty field is not "very weak". */
+    @Test
+    fun passwordStrengthOnlyAfterTyping() = app(setup = { tab = Tab.SETTINGS; push(Screen.ChangePassword) }) { _, _ ->
+        waitFor("New master password")
+        assertFalse(shown("very weak"))
+        assertFalse(shown("weak"))
+        onNode(hasSetTextAction() and hasText("New master password")).performTextInput("kurz")
+        waitFor("weak")
     }
 
     @Test

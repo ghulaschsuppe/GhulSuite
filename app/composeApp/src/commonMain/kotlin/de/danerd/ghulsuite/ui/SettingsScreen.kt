@@ -515,7 +515,8 @@ fun ChangePasswordScreen(state: AppState, padding: PaddingValues) {
                 Hint(stringResource(Res.string.set_change_pw_text))
                 SecretTextField(current, { current = it; error = null }, stringResource(Res.string.l_current_password))
                 SecretTextField(new, { new = it; error = null }, stringResource(Res.string.l_new_password))
-                StrengthMeter(state.backend.passwordScore(new))
+                // Only once something is typed: an empty field is not "very weak".
+                if (new.isNotEmpty()) StrengthMeter(state.backend.passwordScore(new))
                 SecretTextField(repeat, { repeat = it; error = null }, stringResource(Res.string.l_repeat_password))
                 ErrorText(error)
                 val done = stringResource(Res.string.msg_password_changed)

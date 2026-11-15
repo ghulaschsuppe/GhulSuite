@@ -39,7 +39,13 @@ import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.SentimentSatisfied
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.foundation.ScrollState
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -315,8 +321,9 @@ fun CalScreen(state: AppState, padding: PaddingValues) {
             ),
         )
     }
+    val scroll = rememberScrollState()
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+        Modifier.fillMaxSize().verticalScroll(scroll)
             .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 100.dp),
     ) {
         LoadError(data.error, data.retry)
@@ -339,7 +346,7 @@ fun CalScreen(state: AppState, padding: PaddingValues) {
                 CalHead(state, label)
                 DayStrip(state, days, data.occ, names, pick = false, modifier = swipe)
                 AllDayRow(state, days, data.occ)
-                TimeGrid(state, days, data.occ, swipe)
+                TimeGrid(state, days, data.occ, swipe, scroll)
             }
             CalView.DAY -> {
                 val days = (0..6).map { from.plus(it) }
@@ -355,7 +362,7 @@ fun CalScreen(state: AppState, padding: PaddingValues) {
                     Modifier.padding(start = 4.dp, end = 4.dp, bottom = 8.dp), fontSize = 13.sp, color = g.muted, fontWeight = FontWeight.SemiBold,
                 )
                 AllDayRow(state, listOf(sel), data.occ)
-                TimeGrid(state, listOf(sel), data.occ, swipe)
+                TimeGrid(state, listOf(sel), data.occ, swipe, scroll)
             }
             CalView.LIST -> CalList(state, data.occ, query, { query = it }, names, selected)
         }
@@ -717,12 +724,33 @@ private fun lanesOf(list: List<CalOccurrenceUi>): List<Placed> {
     return out
 }
 
-/** Hours 6 to 24 with the events of one or seven days (.tg). */
+/**
+ * Hours 6 to 24 with the events of one or seven days (.tg). When the first event of these days
+ * lies below what the screen shows (an evening event), the page scrolls just far enough to show
+ * it: "1 event" above an empty grid was all one saw.
+ */
 @Composable
-private fun TimeGrid(state: AppState, days: List<Day>, occ: List<CalOccurrenceUi>, swipe: Modifier) {
+private fun TimeGrid(state: AppState, days: List<Day>, occ: List<CalOccurrenceUi>, swipe: Modifier, scroll: ScrollState) {
     val t = g
     val cal = areaColor(Tab.CAL)
     val one = days.size == 1
+    val density = LocalDensity.current
+    var gridTop by remember { mutableStateOf<Float?>(null) }
+    // Minute of the day (from H0) where the first timed event of these days starts.
+    val firstMinute = days.mapNotNull { d ->
+        occ.on(d).filter { !it.allDay }.minOfOrNull { maxOf(absMinutes(it.start) - d.days * 1440L, H0 * 60L) }
+    }.minOrNull()
+    // Once per shown days and first event (not again while one scrolls by hand).
+    LaunchedEffect(days.first(), days.size, firstMinute) {
+        val minute = firstMinute ?: return@LaunchedEffect
+        val top = androidx.compose.runtime.snapshotFlow { gridTop }.filterNotNull().first()
+        val want = with(density) {
+            val eventTop = top + (12.dp + HH * ((minute - H0 * 60L) / 60f)).toPx()
+            // Two hours below its start in view; the head of the page stays where it can.
+            (eventTop + (HH * 2).toPx() - scroll.viewportSize).toInt()
+        }
+        if (want > scroll.value) scroll.animateScrollTo(want.coerceAtMost(scroll.maxValue))
+    }
     var now by remember { mutableStateOf(localNow()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -730,7 +758,10 @@ private fun TimeGrid(state: AppState, days: List<Day>, occ: List<CalOccurrenceUi
             now = localNow()
         }
     }
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(t.surface).then(swipe).padding(top = 12.dp, bottom = 12.dp, end = 6.dp)) {
+    Row(
+        Modifier.fillMaxWidth().onPlaced { gridTop = it.positionInParent().y }
+            .clip(RoundedCornerShape(20.dp)).background(t.surface).then(swipe).padding(top = 12.dp, bottom = 12.dp, end = 6.dp),
+    ) {
         Column(Modifier.width(38.dp)) {
             for (h in H0 until H1) {
                 Box(Modifier.height(HH).fillMaxWidth()) {

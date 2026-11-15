@@ -52,6 +52,8 @@ class FakeCal : CalBackend {
         add(Ev("15", "work", "Review Designentwurf", t0, 660, 720))
         add(Ev("16", "work", "Mittag mit dem Team", t0, 735, 795, "Kantine", rem = false))
         add(Ev("17", "priv", "Bürgeramt: Ausweis abholen", t0.plus(5), 560, 580, "Bürgerbüro Mitte", link = true))
+        // A day with only one event, late in the evening (beyond the weekly ones and the list's 60 days).
+        add(Ev("18", "priv", "Spätvorstellung Kino", t0.plus(75), 1290, 1410, "Filmpalast"))
     }
 
     override suspend fun calendars() = cals
