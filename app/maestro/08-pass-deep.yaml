@@ -69,7 +69,12 @@ name: GhulPass in depth
 - back
 
 # --- Select all, delete, undo ---
-- longPressOn: "Codeberg"
+# The row of the list (its user name is only there): "Codeberg" alone would be the tile under
+# "Recently used" at the top, which opens the entry.
+- extendedWaitUntil:
+    visible: "Search entries"
+    timeout: 10000
+- longPressOn: "ghul-neu"
 - extendedWaitUntil:
     visible: "1 selected"
     timeout: 10000

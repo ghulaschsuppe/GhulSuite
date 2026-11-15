@@ -38,6 +38,14 @@ run() {
   # The status of maestro itself: called as `run … || rc=$?`, set -e does not apply in here.
   local rc=0
   timeout "$limit" maestro test "$@" "$file" --format junit --output "$out/report-$name.xml" --test-output-dir "$out" || rc=$?
+  # Maestro's own helper on the device can die (it is installed anew for every flow). That is
+  # not the app: the flow runs once more, and the log says so. Any other failure stays a failure.
+  if [ "$rc" != 0 ] && grep -q "DeviceServerDiedException\|Device server died" "$out/report-$name.xml" 2>/dev/null; then
+    echo "::warning::Ablauf $name: Maestros Gerätedienst ist abgestürzt (nicht die App), der Ablauf läuft noch einmal"
+    mv "$out/report-$name.xml" "$out/report-$name-device-server-died.xml"
+    rc=0
+    timeout "$limit" maestro test "$@" "$file" --format junit --output "$out/report-$name.xml" --test-output-dir "$out" || rc=$?
+  fi
   echo "::endgroup::"
   return "$rc"
 }
