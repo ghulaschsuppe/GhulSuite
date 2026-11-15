@@ -172,6 +172,9 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
     var total by remember(key) { mutableStateOf(0) }
     var query by remember(key) { mutableStateOf("") }
     var searching by remember { mutableStateOf(false) }
+    /** The words the shown results belong to ("" = no search yet). */
+    var searchedFor by remember(key) { mutableStateOf("") }
+    var searchNow by remember { mutableStateOf(0) }
     var filter by remember(key) { mutableStateOf("") }
     var reload by remember { mutableStateOf(0) }
     var loading by remember { mutableStateOf(false) }
@@ -203,6 +206,18 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
         loading = true
         catching { load() }
             .onSuccess { (t, items) -> messages = items; total = t; error = null; searching = false }
+            .onFailure { error = describe(it) }
+        loading = false
+    }
+    // The search runs by itself shortly after typing stops (as in GhulPass and GhulDrive), or at
+    // once with the search key; it asks the mail server, so not on every letter.
+    LaunchedEffect(query, searchNow) {
+        val words = query.trim()
+        if (words.isEmpty()) return@LaunchedEffect
+        kotlinx.coroutines.delay(600)
+        loading = true
+        catching { shown.flatMap { a -> net.mailSearch(a.id, folder, words).map { MailItem(a.id, it) } }.sortedByDescending { it.m.date } }
+            .onSuccess { messages = it; searching = true; searchedFor = words; error = null }
             .onFailure { error = describe(it) }
         loading = false
     }
@@ -245,7 +260,9 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
     // counts ("(2)"), i.e. those of the conversation that the filter chips show.
     val threadOf = { item: MailItem -> item.accountId + "|" + item.m.threadKey.ifEmpty { item.m.uid.toString() } }
     val listed = messages.filter { hideKey(it) !in state.hidden }
-    val shownItems = listed.filter {
+    // Typed words whose results are not there yet: not the old list under the new words.
+    val searchPending = query.isNotBlank() && searchedFor != query.trim()
+    val shownItems = if (searchPending) emptyList() else listed.filter {
         when (filter) {
             "unread" -> !it.m.seen
             "flagged" -> it.m.flagged
@@ -364,17 +381,8 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
         }
         SearchField(query, {
             query = it
-            if (it.isBlank() && searching) reload++
-        }, placeholder = stringResource(Res.string.mail_search), onSearch = {
-            if (query.isNotBlank()) {
-                state.run(onError = { error = it }, block = {
-                    shown.flatMap { a -> net.mailSearch(a.id, folder, query).map { MailItem(a.id, it) } }.sortedByDescending { it.m.date }
-                }) {
-                    messages = it
-                    searching = true
-                }
-            }
-        })
+            if (it.isBlank() && searching) { searchedFor = ""; reload++ }
+        }, placeholder = stringResource(Res.string.mail_search), onSearch = { searchNow++ })
         LoadError(error) { error = null; reload++ }
         state.archiveUnreachable?.let { why ->
             // KONZEPT 9.3.1: the provider's mails and what is kept offline stay usable; nothing is deleted.
@@ -393,8 +401,10 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
             filter, { filter = it },
             icons = mapOf("flagged" to Icons.Outlined.Flag, "attachments" to Icons.Filled.Attachment),
         )
-        if (loading && messages.isEmpty()) LoadingHint()
-        if (!loading && shownItems.isEmpty() && error == null) EmptyState(tabIcon(Tab.MAIL), stringResource(Res.string.mail_empty), areaColor(Tab.MAIL))
+        if ((loading && messages.isEmpty()) || searchPending) LoadingHint()
+        if (!loading && !searchPending && shownItems.isEmpty() && error == null) {
+            EmptyState(tabIcon(Tab.MAIL), stringResource(if (searching && query.isNotBlank()) Res.string.mail_nothing_found else Res.string.mail_empty), areaColor(Tab.MAIL))
+        }
         // Grouped by day: Today, Yesterday, then the date.
         val now = nowSeconds() * 1000
         val today = formatDate(now)

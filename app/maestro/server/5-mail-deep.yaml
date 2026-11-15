@@ -58,6 +58,10 @@ name: GhulMail in depth on a real server
 - tapOn: "Search mails"
 - inputText: "nichts-dergleichen"
 - hideKeyboard
+# The search runs by itself after typing (no search key needed) and asks the mail server.
+- extendedWaitUntil:
+    visible: "No messages found\\."
+    timeout: 60000
 - assertNotVisible: "Encrypted message"
 - assertNotVisible: ".*[Cc]oroutine.*"
 - takeScreenshot: s5-05-search-empty

@@ -189,7 +189,10 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
         calls += "archiveConfirm:$accountId"
         return de.danerd.ghulsuite.model.MailArchiveRunUi(removed = 42)
     }
-    override suspend fun mailSearch(accountId: String, folder: String, query: String) = list
+    override suspend fun mailSearch(accountId: String, folder: String, query: String): List<MailSummaryUi> {
+        calls += "mailSearch:$query"
+        return list.filter { it.subject.contains(query, true) || it.from.contains(query, true) }
+    }
     override suspend fun mailGet(accountId: String, folder: String, uid: Long) = if (uid == 9L) htmlMail() else MailMessageUi(
         uid, "Stadtwerke", "service@stadtwerke.example", listOf("Max Mustermann <max@posteo.de>"), emptyList(), "",
         "Ihre Jahresabrechnung", now - 86_400,

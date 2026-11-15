@@ -45,6 +45,7 @@ import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.onNodeWithText
 import de.danerd.ghulsuite.model.ShareCheckUi
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.performTextInput
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -260,6 +261,20 @@ class InteractionTest {
         desc("Delete").performClick()
         waitUntil(timeoutMillis = 10_000) { net.calls.any { it.startsWith("mailDelete:") && it.endsWith(":3") } }
         assertFalse(net.calls.any { it.startsWith("mailDelete:") && it.endsWith(":5") }, "the read mail was not shown, so it is not deleted")
+    }
+
+    /**
+     * The mail search runs by itself after typing (bug: only with the search key, so after typing
+     * and closing the keyboard the whole inbox stayed, as if nothing matched the words).
+     */
+    @Test
+    fun mailSearchRunsWithoutTheSearchKey() = app(setup = { tab = Tab.MAIL }) { _, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Treffen am Freitag")
+        onNode(hasSetTextAction() and hasText("Search mails", substring = true)).performTextInput("nichts-dergleichen")
+        waitFor("No messages found.")
+        assertTrue(net.calls.contains("mailSearch:nichts-dergleichen"))
+        assertTrue(onAllNodesWithText("Treffen am Freitag").fetchSemanticsNodes().isEmpty())
     }
 
     @Test

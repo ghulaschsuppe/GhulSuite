@@ -541,6 +541,7 @@
     <string name="mail_junk">Spam</string>
     <string name="mail_archive">Archive</string>
     <string name="mail_empty">No messages.</string>
+    <string name="mail_nothing_found">No messages found.</string>
     <string name="mail_more">Load more (%1$s)</string>
     <string name="mail_read_title">Message</string>
     <string name="mail_compose_title">Write</string>
