@@ -77,7 +77,9 @@ fn sftp_folders_created_at_once_from_several_connections() {
                 .map(|_| {
                     let cfg = cfg.clone();
                     let dir = dir.clone();
-                    scope.spawn(move || SftpFs::connect(&cfg).and_then(|fs| fs.mkdir_all(&dir)).err().map(|e| e.to_string()))
+                    scope.spawn(move || {
+                        SftpFs::connect(&cfg).and_then(|fs| fs.mkdir_all(&dir)).err().map(|e| e.to_string())
+                    })
                 })
                 .collect();
             handles.into_iter().filter_map(|h| h.join().unwrap()).collect()
