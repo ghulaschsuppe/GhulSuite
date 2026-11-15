@@ -50,8 +50,7 @@ pub struct ShareMeta {
     pub mime: String,
     pub size: u64,
     pub created: i64,
-    /// Unix ms, 0 = no expiry. Enforced by the server module, by deleting the package, and by
-    /// the viewer (the value is inside the encrypted package and cannot be changed).
+    /// Unix ms, 0 = no expiry (the server module enforces it).
     #[serde(default)]
     pub expires: i64,
 }
@@ -258,32 +257,6 @@ mod tests {
         // Drop the whole data part.
         let meta_end = HEADER_LEN + u32::from_be_bytes(s.data[44..48].try_into().unwrap()) as usize;
         assert!(open(&s.data[..meta_end], &s.link_key, None).is_err());
-    }
-
-    /// Writes packages for the browser test of the share viewer (tools/test-share-viewer.js).
-    #[test]
-    fn viewer_fixture() {
-        let Ok(dir) = std::env::var("GHUL_SHARE_FIXTURE") else { return };
-        let dir = std::path::Path::new(&dir);
-        std::fs::create_dir_all(dir.join("s")).unwrap();
-        let content: Vec<u8> = (0..2_500_000u32).map(|i| (i % 253) as u8).collect();
-        std::fs::write(dir.join("expected.bin"), &content).unwrap();
-        let mut keys = String::new();
-        for (n, pw, expires) in [("plain", None, 0), ("pw", Some("Grüße 123"), 0), ("expired", None, 1000)] {
-            let m = ShareMeta {
-                name: format!("{n}.bin"),
-                mime: "application/octet-stream".into(),
-                size: content.len() as u64,
-                created: 0,
-                expires,
-            };
-            let s = seal_with(&m, &content, pw, 10_000, CHUNK_SIZE);
-            // The id is independent of the key (never derive it from the link key).
-            let id = crate::kdf::hex(&rand_core::RngCore::next_u64(&mut rand_core::OsRng).to_be_bytes()).repeat(2);
-            std::fs::write(dir.join("s").join(&id), &s.data).unwrap();
-            keys.push_str(&format!("{n} {id}.{}\n", b64url(s.link_key.as_ref())));
-        }
-        std::fs::write(dir.join("links.txt"), keys).unwrap();
     }
 
     #[test]

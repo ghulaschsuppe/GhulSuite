@@ -16,3 +16,13 @@ form { margin-top: 16px; text-align: left; }
 label { font-size: 13px; font-weight: 600; color: var(--accent); }
 input { width: 100%; height: 46px; margin-top: 4px; border-radius: 14px; border: 1px solid #c9cad8; padding: 0 14px; font: inherit; background: transparent; color: inherit; }
 .error { color: #d03b4c; }
+.files { list-style: none; margin: 16px 0 0; padding: 0; text-align: left; }
+.files li { padding: 12px 0; border-top: 1px solid rgb(127 127 140 / 25%); }
+.files li:first-child { border-top: 0; }
+.files .fname { font-weight: 600; overflow-wrap: anywhere; }
+.files .row { display: flex; align-items: center; gap: 12px; margin-top: 6px; }
+.files .row .muted { flex: 1; margin: 0; font-size: 14px; }
+.files button { margin: 0; width: auto; height: 36px; padding: 0 18px; border-radius: 18px; }
+.files button.stop { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+progress { width: 100%; height: 6px; margin-top: 8px; accent-color: var(--accent); }
+.hint { font-size: 13px; color: var(--muted); margin-top: 12px; }
