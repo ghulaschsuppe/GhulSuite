@@ -1517,11 +1517,19 @@ private fun stepReason(detail: String): String? {
     val cert = stringResource(Res.string.mail_step_cert)
     val rejected = stringResource(Res.string.mail_step_login_rejected)
     val failed = stringResource(Res.string.mail_step_failed)
+    val notFound = stringResource(Res.string.mail_step_not_found)
+    val refused = stringResource(Res.string.mail_step_refused)
+    val timeout = stringResource(Res.string.mail_step_timeout)
+    val offline = stringResource(Res.string.mail_step_offline)
     val text by produceState<String?>(null, detail) {
         value = when (detail) {
             "" -> null
             de.danerd.ghulsuite.model.STEP_SKIPPED -> skipped
             de.danerd.ghulsuite.model.STEP_CERTIFICATE -> cert
+            de.danerd.ghulsuite.model.STEP_NOT_FOUND -> notFound
+            de.danerd.ghulsuite.model.STEP_REFUSED -> refused
+            de.danerd.ghulsuite.model.STEP_TIMEOUT -> timeout
+            de.danerd.ghulsuite.model.STEP_OFFLINE -> offline
             "login rejected" -> rejected
             else -> {
                 val inner = detail.removePrefix("connection failed: ")

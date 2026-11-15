@@ -268,6 +268,10 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
                 step("imap_server", false, de.danerd.ghulsuite.model.STEP_CERTIFICATE), step("imap_login", false, skipped),
                 step("smtp_server", true), step("smtp_login", true),
             )
+            input.email.endsWith(".invalid") -> listOf(
+                step("imap_server", false, de.danerd.ghulsuite.model.STEP_NOT_FOUND), step("imap_login", false, skipped),
+                step("smtp_server", false, de.danerd.ghulsuite.model.STEP_TIMEOUT), step("smtp_login", false, skipped),
+            )
             input.password == wrongMailPassword -> listOf(
                 step("imap_server", true), step("imap_login", false, "login rejected"),
                 step("smtp_server", true), step("smtp_login", false, "login rejected"),

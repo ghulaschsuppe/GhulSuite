@@ -1687,6 +1687,19 @@ class InteractionTest {
 
     private fun DesktopComposeUiTest.saveShown() = onAllNodes(hasText("Save") and hasClickAction()).fetchSemanticsNodes().isNotEmpty()
 
+    /** A server that does not exist and one that does not answer: said in words, the login not tried. */
+    @Test
+    fun mailServerNotFoundIsSaidInWords() = app(setup = { mailAccountSheet = de.danerd.ghulsuite.ui.MailSheet(null) }) { _, _ ->
+        typeInto("E-mail address", "ghul@nirgendwo.invalid")
+        typeInto("Password", "egal")
+        waitFor("Check connection")
+        text("Check connection").performClick()
+        waitFor("Server not found. Check the server name.")
+        assertTrue(shown("No answer from the server in time. Check server name, port and your internet connection."))
+        assertTrue(onAllNodesWithText("Not checked").fetchSemanticsNodes().size == 2)
+        assertFalse(part("not-found") || part("timeout"), "no internal codes on screen")
+    }
+
     /**
      * A new mail account: no "Save" before the check; a wrong password shows the two logins in
      * red with the reason and still no "Save"; a working check shows "Save"; changing the

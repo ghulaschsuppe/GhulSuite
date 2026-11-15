@@ -1756,6 +1756,10 @@
     <string name="mail_step_smtp_server">Outgoing server reachable</string>
     <string name="mail_step_smtp_login">Login to the outgoing server</string>
     <string name="mail_step_skipped">Not checked</string>
+    <string name="mail_step_not_found">Server not found. Check the server name.</string>
+    <string name="mail_step_refused">The server refused the connection. Check the port and the security setting.</string>
+    <string name="mail_step_timeout">No answer from the server in time. Check server name, port and your internet connection.</string>
+    <string name="mail_step_offline">No network connection.</string>
     <string name="mail_step_cert">Confirm the certificate first</string>
     <string name="mail_step_login_rejected">Login rejected. Check login name and password (some providers need an app password).</string>
     <string name="mail_step_failed">Connection failed: %1$s</string>

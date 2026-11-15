@@ -1756,6 +1756,10 @@
     <string name="mail_step_smtp_server">Postausgangsserver erreichbar</string>
     <string name="mail_step_smtp_login">Anmeldung am Postausgang</string>
     <string name="mail_step_skipped">Nicht geprüft</string>
+    <string name="mail_step_not_found">Server nicht gefunden. Prüfe den Servernamen.</string>
+    <string name="mail_step_refused">Der Server lehnt die Verbindung ab. Prüfe Port und Verschlüsselung.</string>
+    <string name="mail_step_timeout">Keine rechtzeitige Antwort vom Server. Prüfe Servername, Port und deine Internetverbindung.</string>
+    <string name="mail_step_offline">Keine Netzwerkverbindung.</string>
     <string name="mail_step_cert">Erst das Zertifikat bestätigen</string>
     <string name="mail_step_login_rejected">Anmeldung abgelehnt. Prüfe Benutzername und Passwort (manche Anbieter verlangen ein App-Passwort).</string>
     <string name="mail_step_failed">Verbindung fehlgeschlagen: %1$s</string>

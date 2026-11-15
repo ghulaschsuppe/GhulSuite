@@ -1363,7 +1363,11 @@ fn mail_with_imap_and_smtp() {
     nowhere.servers.smtp_port = 1;
     let t = s.mail_test_account(None, nowhere.clone()).unwrap();
     assert!(t.steps[0].ok && t.steps[1].ok && !t.steps[2].ok);
+    assert_eq!(t.steps[2].detail, super::mail::STEP_REFUSED, "said in words, not the system's text");
     assert_eq!(t.steps[3].detail, super::mail::STEP_SKIPPED);
+    let mut unknown = input.clone();
+    unknown.servers.imap_host = "imap.nirgendwo.invalid".into();
+    assert_eq!(s.mail_test_account(None, unknown).unwrap().steps[0].detail, super::mail::STEP_NOT_FOUND);
     // Not checked, or not checked successfully: not saved.
     assert!(matches!(
         s.mail_save_account(None, nowhere),

@@ -343,6 +343,30 @@ pub const MAIL_NOT_TESTED: &str = "check the connection first";
 pub const STEP_SKIPPED: &str = "skipped";
 /// Detail of a server step whose certificate the user has to confirm.
 pub const STEP_CERTIFICATE: &str = "certificate";
+/// Details of a server step that failed for a common reason (the app says it in words).
+pub const STEP_NOT_FOUND: &str = "not-found";
+pub const STEP_REFUSED: &str = "refused";
+pub const STEP_TIMEOUT: &str = "timeout";
+pub const STEP_OFFLINE: &str = "offline";
+
+/// The common reasons a server cannot be reached, from the system's error text (it differs
+/// between Linux, Android and Windows); anything else stays as it is.
+fn reason_of(e: &NetError) -> String {
+    let text = e.to_string();
+    let t = text.to_lowercase();
+    let any = |words: &[&str]| words.iter().any(|w| t.contains(w));
+    if matches!(e, NetError::Timeout) || any(&["timed out", "timeout"]) {
+        STEP_TIMEOUT.into()
+    } else if any(&["lookup address", "no such host", "not known", "no address associated", "nodename nor servname"]) {
+        STEP_NOT_FOUND.into()
+    } else if any(&["connection refused", "actively refused"]) {
+        STEP_REFUSED.into()
+    } else if any(&["network is unreachable", "network unreachable", "no route to host"]) {
+        STEP_OFFLINE.into()
+    } else {
+        text
+    }
+}
 
 /// The two steps of one server (`<what>_server`: reachable with TLS, `<what>_login`).
 fn steps_of(what: &str, r: std::result::Result<(), NetError>) -> (Vec<ConnStep>, Option<String>) {
@@ -355,7 +379,7 @@ fn steps_of(what: &str, r: std::result::Result<(), NetError>) -> (Vec<ConnStep>,
         Err(NetError::CertUntrusted(fp)) => {
             (vec![step("server", false, STEP_CERTIFICATE.into()), step("login", false, STEP_SKIPPED.into())], Some(fp))
         }
-        Err(e) => (vec![step("server", false, e.to_string()), step("login", false, STEP_SKIPPED.into())], None),
+        Err(e) => (vec![step("server", false, reason_of(&e)), step("login", false, STEP_SKIPPED.into())], None),
     }
 }
 

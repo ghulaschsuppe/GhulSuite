@@ -91,7 +91,11 @@ name: GhulDrive and GhulMail without a server
 - extendedWaitUntil:
     visible: "Incoming server reachable"
     timeout: 90000
-- assertVisible: "Not checked"
+# The checklist is below the button: scroll to it.
+- scrollUntilVisible:
+    element: "Not checked"
+    direction: DOWN
+- assertVisible: "Server not found. Check the server name."
 - assertNotVisible: "Save"
 - takeScreenshot: 07-mail-no-server
 - back

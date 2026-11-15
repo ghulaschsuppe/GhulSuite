@@ -419,6 +419,11 @@ data class ConnStepUi(val step: String, val ok: Boolean, val detail: String)
 
 const val STEP_SKIPPED = "skipped"
 const val STEP_CERTIFICATE = "certificate"
+/** Common reasons a server cannot be reached (`STEP_NOT_FOUND` … in the core's mail.rs). */
+const val STEP_NOT_FOUND = "not-found"
+const val STEP_REFUSED = "refused"
+const val STEP_TIMEOUT = "timeout"
+const val STEP_OFFLINE = "offline"
 
 /** Result of checking an account: every step, and a certificate to confirm (then check again). */
 data class MailTestUi(val ok: Boolean, val steps: List<ConnStepUi>, val confirm: MailCheckUi? = null)
