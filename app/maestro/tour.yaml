@@ -24,6 +24,10 @@ appId: de.danerd.ghulsuite.dev
     timeout: 3000
 - takeScreenshot: ${PREFIX}-cal
 - tapOn: { id: "tab-settings" }
+# The tab keeps its place from before (on purpose): start at the top.
+- scrollUntilVisible:
+    element: "Unlocking|Entsperren"
+    direction: UP
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: ${PREFIX}-options

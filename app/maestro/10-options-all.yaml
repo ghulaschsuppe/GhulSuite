@@ -6,6 +6,10 @@ name: All options pages
 ---
 - runFlow: home.yaml
 - tapOn: { id: "tab-settings" }
+# The tab keeps its place from before (on purpose): start at the top.
+- scrollUntilVisible:
+    element: "Unlocking"
+    direction: UP
 - takeScreenshot: 10-00-overview
 - runFlow:
     file: open-option-full.yaml

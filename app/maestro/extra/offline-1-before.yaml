@@ -5,6 +5,10 @@ name: Server weg 1
 ---
 - runFlow: ../server/unlock.yaml
 - tapOn: { id: "tab-settings" }
+# The tab keeps its place from before (on purpose): start at the top.
+- scrollUntilVisible:
+    element: "Unlocking|Entsperren"
+    direction: UP
 - scrollUntilVisible: { element: "Servers, sync & sharing", direction: DOWN }
 - tapOn: "Servers, sync & sharing"
 # Right after unlocking the automatic synchronisation may still run on the slow server; the page

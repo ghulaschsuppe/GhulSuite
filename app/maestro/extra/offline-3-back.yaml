@@ -14,6 +14,10 @@ name: Server weg 3
 - extendedWaitUntil: { visible: "Urlaub-Maestro", timeout: 180000 }
 - takeScreenshot: x1-05-drive-back
 - tapOn: { id: "tab-settings" }
+# The tab keeps its place from before (on purpose): start at the top.
+- scrollUntilVisible:
+    element: "Unlocking|Entsperren"
+    direction: UP
 - scrollUntilVisible: { element: "Servers, sync & sharing", direction: DOWN }
 - tapOn: "Servers, sync & sharing"
 # Right after unlocking the automatic synchronisation may still run on the slow server; the page

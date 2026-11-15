@@ -14,6 +14,10 @@ name: Sync server and sharing on a real server
 ---
 - runFlow: unlock.yaml
 - tapOn: { id: "tab-settings" }
+# The tab keeps its place from before (on purpose): start at the top.
+- scrollUntilVisible:
+    element: "Unlocking|Entsperren"
+    direction: UP
 - scrollUntilVisible:
     element: "Servers, sync & sharing"
     direction: DOWN

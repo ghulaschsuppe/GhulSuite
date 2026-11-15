@@ -44,6 +44,10 @@ name: Rundgang auf Deutsch
 - assertNotVisible: "GHUL-DEV-ALARM.*"
 # --- Every options page ---
 - tapOn: { id: "tab-settings" }
+# The tab keeps its place from before (on purpose): start at the top.
+- scrollUntilVisible:
+    element: "Unlocking|Entsperren"
+    direction: UP
 - takeScreenshot: ${PREFIX}-10-optionen
 - runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Entsperren", SHOT: "${PREFIX}-11-entsperren" } }
 - runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Sperren", SHOT: "${PREFIX}-12-sperren" } }

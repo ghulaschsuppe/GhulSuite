@@ -8,6 +8,10 @@ name: Design, landscape and background
 ---
 - runFlow: home.yaml
 - tapOn: { id: "tab-settings" }
+# The tab keeps its place from before (on purpose): start at the top.
+- scrollUntilVisible:
+    element: "Unlocking|Entsperren"
+    direction: UP
 - scrollUntilVisible:
     element: "Theme, language"
     direction: DOWN
@@ -54,6 +58,10 @@ name: Design, landscape and background
 - takeScreenshot: 11-20-back-from-background
 # --- Light again ---
 - tapOn: { id: "tab-settings" }
+# The tab keeps its place from before (on purpose): start at the top.
+- scrollUntilVisible:
+    element: "Unlocking|Entsperren"
+    direction: UP
 - scrollUntilVisible:
     element: "Theme, language"
     direction: DOWN

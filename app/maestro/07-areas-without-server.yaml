@@ -6,6 +6,10 @@ name: GhulDrive and GhulMail without a server
 - launchApp:
     stopApp: false
 - tapOn: { id: "tab-settings" }
+# The tab keeps its place from before (on purpose): start at the top.
+- scrollUntilVisible:
+    element: "Unlocking|Entsperren"
+    direction: UP
 - scrollUntilVisible:
     element: "Manage areas"
     direction: DOWN
