@@ -212,7 +212,10 @@ impl GhulSuite {
         Ok(MailArchiveBatch { validity, uids: uids.into_iter().filter(|u| *u > after).collect() })
     }
 
-    /// After an automatic run: everything up to `last_uid` is in the archive.
+    /// After an automatic run: everything up to `last_uid` is in the archive. The mark never
+    /// passes a mail that is not old enough yet: UIDs do not follow dates (a mail moved into the
+    /// folder keeps its old date but gets a new, high UID), so it stays below the lowest UID
+    /// received since the cut-off (one day earlier, to be safe across midnight).
     pub fn mail_archive_auto_done(
         &self,
         account_id: String,
@@ -220,6 +223,21 @@ impl GhulSuite {
         validity: u32,
         last_uid: u32,
     ) -> Result<()> {
+        let days = self.mail_archive_auto_days()?;
+        let mut last_uid = last_uid;
+        if days > 0 {
+            let since = super::suite::now_ms() / 86_400_000 - i64::from(days) - 1;
+            let f = folder.clone();
+            let (v, newer) = self.with_imap(&account_id, move |s| {
+                let f = f.clone();
+                Box::pin(async move { imap::uids_since(s, &f, since).await })
+            })?;
+            if v == validity {
+                if let Some(lowest) = newer.into_iter().min() {
+                    last_uid = last_uid.min(lowest.saturating_sub(1));
+                }
+            }
+        }
         self.with_open(|o| {
             let mut a: AutoArchive = area_setting(o, VaultKind::Mail, AUTO_KEY);
             let key = format!("{account_id}/{folder}");

@@ -453,7 +453,8 @@ ihre eigenen Dateien (`.ghldrv`, `.ghlmail`).
 
 **GhulMail (`.ghlmail`):** `mail_accounts` (wie oben), `mail_keys`, `mail_contacts`, `mail_cache_key`, `mail_drafts`,
 `mail_outbox`, `options`, `drive_archive` (Knoten-ID des Archivordners in GhulDrive), `archive_auto` (`days`, 0 = aus;
-`marks`: je „Konto/Ordner“ `[UIDVALIDITY, höchste UID]` der automatischen Läufe), siehe Abschnitt 12. **GhulPass, GhulAuth, GhulCal:** `options` in ihren Dateien.
+`marks`: je „Konto/Ordner“ `[UIDVALIDITY, höchste UID]` der automatischen Läufe; nie über der niedrigsten UID, die seit
+dem Stichtag (einen Tag früher) eingegangen ist, weil UIDs nicht der Datumsfolge entsprechen), siehe Abschnitt 12. **GhulPass, GhulAuth, GhulCal:** `options` in ihren Dateien.
 
 **Listen mit `changed`:** Einträge von `servers` und `mail_accounts` tragen `changed` (ms). Beim Zusammenführen gewinnt
 der später geänderte Eintrag derselben `id`; ohne `changed` bleibt der lokale.

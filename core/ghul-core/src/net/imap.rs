@@ -426,6 +426,18 @@ pub async fn uids_before(s: &mut ImapSession, folder: &str, before: Option<i64>)
     Ok((validity, uids))
 }
 
+/// The UIDs of a folder received on or after the day `since` (days since 1970-01-01), with
+/// the folder's UIDVALIDITY; read-only (EXAMINE).
+pub async fn uids_since(s: &mut ImapSession, folder: &str, since: i64) -> NetResult<(u32, Vec<u32>)> {
+    let mb = s.examine(folder).await.map_err(proto)?;
+    let validity = mb.uid_validity.unwrap_or(0);
+    if mb.exists == 0 {
+        return Ok((validity, Vec::new()));
+    }
+    let uids = s.uid_search(format!("SINCE {}", search_date(since))).await.map_err(proto)?;
+    Ok((validity, uids.into_iter().collect()))
+}
+
 /// One complete message without changing its flags (EXAMINE, BODY.PEEK) and when the server
 /// received it (Unix seconds, 0 if unknown). `None` if it is gone.
 pub async fn peek(s: &mut ImapSession, folder: &str, uid: u32) -> NetResult<Option<(Vec<u8>, i64)>> {

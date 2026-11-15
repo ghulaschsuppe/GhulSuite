@@ -912,6 +912,14 @@ fn mail_archive_to_drive_against_imap_and_sftp() {
     assert!(s.mail_archive_auto_uids(account.clone(), "INBOX".into()).unwrap().uids.is_empty());
     s.mail_archive_auto_done(account.clone(), "INBOX".into(), batch.validity + 1, 9_999).unwrap();
     assert_eq!(s.mail_archive_auto_uids(account.clone(), "INBOX".into()).unwrap().uids, old);
+    s.mail_archive_auto_done(account.clone(), "INBOX".into(), batch.validity, *old.last().unwrap()).unwrap();
+    // A mail moved in later keeps its old date but gets a higher UID than today's mail: after
+    // archiving it, the mark stays below today's mail, which is archived once it is old enough.
+    put(raw(6, "Sun, 2 Mar 2025 12:00:00 +0000"), "02-Mar-2025 12:00:00 +0000");
+    let moved = s.mail_archive_auto_uids(account.clone(), "INBOX".into()).unwrap();
+    assert_eq!(moved.uids.len(), 1);
+    s.mail_archive_auto_done(account.clone(), "INBOX".into(), moved.validity, moved.uids[0]).unwrap();
+    assert_eq!(s.mail_archive_auto_uids(account.clone(), "INBOX".into()).unwrap().uids, moved.uids, "mark held back");
     s.mail_archive_set_auto_days(0).unwrap();
     assert!(s.mail_archive_auto_uids(account.clone(), "INBOX".into()).unwrap().uids.is_empty());
 
