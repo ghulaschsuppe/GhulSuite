@@ -26,13 +26,28 @@ class IntentEntryActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val intent = intent ?: return finish()
+        // "Save in GhulDrive": the files stay where they are until they are uploaded; the right
+        // to read them goes along to GhulSuite's own window (it ends with this one otherwise).
+        val toDrive = intent.component?.className?.endsWith(".ShareToDriveActivity") == true
+        val driveUris = if (toDrive) streams(intent).filter { foreign(it) } else emptyList()
         Thread {
-            runCatching { handle(intent) }
+            runCatching {
+                if (toDrive) {
+                    if (driveUris.isNotEmpty()) AppLaunch.driveFiles.value = driveUris.map { de.danerd.ghulsuite.ui.contentSource(applicationContext, it) }
+                } else {
+                    handle(intent)
+                }
+            }
             runOnUiThread {
-                startActivity(
-                    Intent(this, MainActivity::class.java)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
-                )
+                val next = Intent(this, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                if (driveUris.isNotEmpty()) {
+                    val clip = android.content.ClipData.newRawUri("", driveUris[0])
+                    driveUris.drop(1).forEach { clip.addItem(android.content.ClipData.Item(it)) }
+                    next.clipData = clip
+                    next.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                startActivity(next)
                 finish()
             }
         }.start()
@@ -75,15 +90,7 @@ class IntentEntryActivity : Activity() {
         intent.getStringArrayExtra(Intent.EXTRA_EMAIL)?.let { to += it }
         intent.getStringArrayExtra(Intent.EXTRA_CC)?.let { cc += it }
         intent.getStringArrayExtra(Intent.EXTRA_BCC)?.let { bcc += it }
-        val streams = buildList {
-            if (intent.action == Intent.ACTION_SEND_MULTIPLE) {
-                @Suppress("DEPRECATION")
-                intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)?.let { addAll(it) }
-            } else {
-                @Suppress("DEPRECATION")
-                (intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM))?.let { add(it) }
-            }
-        }
+        val streams = streams(intent)
         var left = MAX_ATTACHMENT_BYTES
         val attachments = streams.mapNotNull { uri ->
             val bytes = read(uri, left) ?: return@mapNotNull null
@@ -116,6 +123,17 @@ class IntentEntryActivity : Activity() {
             location = intent.getStringExtra("eventLocation").orEmpty(),
             notes = intent.getStringExtra("description").orEmpty(),
         )
+    }
+
+    /** The files handed over with "send" (one or several). */
+    private fun streams(intent: Intent): List<Uri> = buildList {
+        if (intent.action == Intent.ACTION_SEND_MULTIPLE) {
+            @Suppress("DEPRECATION")
+            intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)?.let { addAll(it) }
+        } else if (intent.action == Intent.ACTION_SEND) {
+            @Suppress("DEPRECATION")
+            (intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM))?.let { add(it) }
+        }
     }
 
     private fun name(uri: Uri): String =

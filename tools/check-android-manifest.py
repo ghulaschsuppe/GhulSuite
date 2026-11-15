@@ -21,6 +21,7 @@ A = "{http://schemas.android.com/apk/res/android}"
 EXPORTED = {
     ".MainActivity": None,  # launcher
     ".IntentEntryActivity": None,  # mailto, share, .ics, add to calendar (takes only foreign content)
+    ".ShareToDriveActivity": None,  # "Save in GhulDrive" (alias of IntentEntryActivity, only foreign content)
     ".LockTileService": "android.permission.BIND_QUICK_SETTINGS_TILE",
     ".autofill.GhulAutofillService": "android.permission.BIND_AUTOFILL_SERVICE",
 }

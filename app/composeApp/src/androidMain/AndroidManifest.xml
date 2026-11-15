@@ -115,6 +115,23 @@
             </intent-filter>
         </activity>
 
+        <!--
+          "Save in GhulDrive" in the share menu of other apps: the same invisible entry, under its
+          own name; the files are uploaded encrypted into GhulDrive after unlocking.
+        -->
+        <activity-alias
+            android:name=".ShareToDriveActivity"
+            android:exported="true"
+            android:label="@string/share_to_drive"
+            android:targetActivity=".IntentEntryActivity">
+            <intent-filter android:label="@string/share_to_drive">
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+        </activity-alias>
+
         <service
             android:name=".UnlockedService"
             android:exported="false"

@@ -219,6 +219,26 @@ actual fun rememberOpenStream(onPicked: (ByteSource) -> Unit): () -> Unit = {
 }
 
 @Composable
+actual fun rememberOpenStreams(onPicked: (List<ByteSource>) -> Unit): () -> Unit = {
+    val d = FileDialog(null as Frame?, "", FileDialog.LOAD)
+    d.isMultipleMode = true
+    d.isVisible = true
+    val files = d.files.orEmpty().filter { it.isFile }
+    if (files.isNotEmpty()) {
+        onPicked(files.map { f ->
+            object : ByteSource {
+                private var raf: RandomAccessFile? = null
+                override val name: String = f.name
+                override val size: Long = f.length()
+                override fun read(buffer: ByteArray, offset: Int, length: Int): Int =
+                    (raf ?: RandomAccessFile(f, "r").also { raf = it }).read(buffer, offset, length)
+                override fun close() { raf?.close(); raf = null }
+            }
+        })
+    }
+}
+
+@Composable
 actual fun rememberCreateStream(onCreated: (ByteSink?) -> Unit): (String, String) -> Unit = { name, _ ->
     val f = chooseSave(name)
     if (f == null) {

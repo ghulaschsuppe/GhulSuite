@@ -503,6 +503,12 @@
     <string name="drive_uploading">Lade %1$s hoch …</string>
     <string name="drive_downloading">Lade %1$s herunter …</string>
     <string name="drive_uploaded">%1$s hochgeladen.</string>
+    <string name="drive_uploading_n">Lade %1$s hoch (%2$s von %3$s) …</string>
+    <plurals name="drive_uploaded_n">
+        <item quantity="one">%1$s Datei hochgeladen.</item>
+        <item quantity="other">%1$s Dateien hochgeladen.</item>
+    </plurals>
+    <string name="drive_upload_not_set_up">Dateien für GhulDrive: richte zuerst GhulDrive ein.</string>
     <string name="drive_downloaded">%1$s gespeichert.</string>
     <string name="drive_empty">Dieser Ordner ist leer.</string>
     <string name="drive_nothing_found">Nichts gefunden.</string>

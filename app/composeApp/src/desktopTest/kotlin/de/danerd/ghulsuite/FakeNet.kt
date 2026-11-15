@@ -146,7 +146,19 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
     override suspend fun driveTrash() = listOf(DriveItemUi("f9", null, "Alter Entwurf.docx", false, 48_000, now * 1000, trashed = now * 1000))
     override suspend fun driveDeleteForever(id: String) { calls += "driveDeleteForever:$id" }
     override suspend fun driveEmptyTrash(days: Int): Int { if (days == 0) calls += "driveEmptyTrash"; return 0 }
-    override suspend fun driveUpload(folder: String?, source: ByteSource, onProgress: (Long) -> Unit) = "f3"
+    /** How long each upload takes (to see the bar); the names that fail. */
+    var driveUploadMs = 0L
+    var driveUploadFails: Set<String> = emptySet()
+    override suspend fun driveUpload(folder: String?, source: ByteSource, onProgress: (Long) -> Unit): String {
+        if (driveUploadMs > 0) kotlinx.coroutines.delay(driveUploadMs)
+        if (source.name in driveUploadFails) throw java.io.IOException("connection reset")
+        val buf = ByteArray(1024)
+        var n = 0L
+        while (true) { val r = source.read(buf, 0, buf.size); if (r < 0) break; n += r; onProgress(n) }
+        calls += "driveUpload:${folder ?: ""}:${source.name}"
+        driveFiles++
+        return "f3"
+    }
     override suspend fun driveDownload(id: String, sink: ByteSink, onProgress: (Long) -> Unit) {}
 
     override fun mailSuggest(email: String) = servers

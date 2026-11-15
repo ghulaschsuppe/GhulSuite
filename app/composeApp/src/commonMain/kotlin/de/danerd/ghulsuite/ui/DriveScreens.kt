@@ -97,7 +97,7 @@ import de.danerd.ghulsuite.model.DriveModeUi
 import de.danerd.ghulsuite.model.DriveStorageUi
 
 /** A running upload or download. */
-private class Transfer(val name: String, val total: Long, val upload: Boolean) {
+private class Transfer(val name: String, val total: Long, val upload: Boolean, val index: Int = 1, val count: Int = 1) {
     var done by mutableStateOf(0L)
     var job: Job? = null
 }
@@ -275,9 +275,59 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
             }
         }
     }
-    val upload = rememberOpenStream { source: ByteSource ->
-        val t = Transfer(source.name, source.size, upload = true)
-        runTransfer(t, { net.driveUpload(folder, source) { t.done = it } }, uploadedMsg)
+    // Looked up here (the upload runs outside the screen, where a lookup would need a display).
+    val uploadedOne = pluralStringResource(Res.plurals.drive_uploaded_n, 1, "%1\$s")
+    val uploadedMany = pluralStringResource(Res.plurals.drive_uploaded_n, 2, "%1\$s")
+    /**
+     * Several files one after the other into the folder open now: the bar shows "2 of 5", the
+     * list and the count follow after each file. A failed file does not stop the others; cancel
+     * stops the rest.
+     */
+    fun uploadAll(sources: List<ByteSource>) {
+        if (sources.isEmpty() || transfer != null) return
+        if (sources.size == 1) {
+            val s = sources[0]
+            val t = Transfer(s.name, s.size, upload = true)
+            runTransfer(t, { try { net.driveUpload(folder, s) { t.done = it } } finally { s.close() } }, uploadedMsg)
+            return
+        }
+        val target = folder
+        scope.launch {
+            var ok = 0
+            var failure: String? = null
+            try {
+                for ((i, s) in sources.withIndex()) {
+                    val t = Transfer(s.name, s.size, upload = true, index = i + 1, count = sources.size)
+                    t.job = coroutineContext[Job]
+                    transfer = t
+                    try {
+                        net.driveUpload(target, s) { t.done = it }
+                        ok++
+                        reload++
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        failure = s.name + ": " + describe(e)
+                    } finally {
+                        s.close()
+                    }
+                }
+            } finally {
+                transfer = null
+                sources.forEach { runCatching { it.close() } }
+                reload++
+            }
+            // One message below (the list reloads and would clear an error shown above it).
+            val done = if (ok > 0) (if (ok == 1) uploadedOne else uploadedMany).replace("%1\$s", ok.toString()) else null
+            listOfNotNull(done, failure).joinToString(" ").takeIf { it.isNotEmpty() }?.let { state.message(it) }
+        }
+    }
+    val upload = rememberOpenStreams { sources -> uploadAll(sources) }
+    // Files shared with GhulSuite from other apps ("Save in GhulDrive").
+    LaunchedEffect(state.driveIncoming) {
+        val incoming = state.driveIncoming ?: return@LaunchedEffect
+        state.driveIncoming = null
+        uploadAll(incoming)
     }
     val download = rememberCreateStream { sink: ByteSink? ->
         val item = downloadItem
@@ -472,7 +522,9 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
             ) {
                 IconTile(if (tr.upload) Icons.Filled.Upload else Icons.Filled.Download, paletteColor(4))
                 Column(Modifier.weight(1f)) {
-                    Text(stringResource(if (tr.upload) Res.string.drive_uploading else Res.string.drive_downloading, tr.name),
+                    Text(
+                        if (tr.count > 1) stringResource(Res.string.drive_uploading_n, tr.name, tr.index.toString(), tr.count.toString())
+                        else stringResource(if (tr.upload) Res.string.drive_uploading else Res.string.drive_downloading, tr.name),
                         fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Box(Modifier.padding(top = 6.dp).fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(t.surface3)) {
                         val f = if (tr.total > 0) (tr.done.toFloat() / tr.total).coerceIn(0f, 1f) else 0f

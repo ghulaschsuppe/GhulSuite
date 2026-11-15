@@ -46,6 +46,13 @@ expect fun rememberPickFolder(onPicked: (de.danerd.ghulsuite.model.FolderRef) ->
 expect fun rememberOpenStream(onPicked: (de.danerd.ghulsuite.model.ByteSource) -> Unit): () -> Unit
 
 /**
+ * The same for several files at once (GhulDrive). Each file is only opened when it is read, so
+ * choosing many files keeps nothing open.
+ */
+@Composable
+expect fun rememberOpenStreams(onPicked: (List<de.danerd.ghulsuite.model.ByteSource>) -> Unit): () -> Unit
+
+/**
  * Returns a launcher that asks the user where to save a file (suggested name and MIME type);
  * [onCreated] receives a stream to write to, or null if cancelled.
  */

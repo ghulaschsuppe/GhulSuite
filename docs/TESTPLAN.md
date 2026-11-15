@@ -230,6 +230,8 @@ Für T5 bis T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick
 | D5 | Große Datei (> 50 MB, z. B. Video) hochladen. | Fortschritt läuft durch; App bleibt bedienbar; Datei erscheint. |
 | D6 | Datei antippen → Speicherort wählen. | Gespeicherte Datei ist identisch (öffnen, ansehen). |
 | D7 | Upload starten und „Abbrechen“. | Bricht ab, keine halbe Datei in der Liste. |
+| D7a | „Hochladen“ und im Auswahlfenster mehrere Dateien markieren (Android: lange drücken; Windows: Strg oder Umschalt). | Nacheinander hochgeladen, im Balken „(2 von 5)“; nach jeder Datei stimmen Liste und „X Dateien“; am Ende „5 Dateien hochgeladen.“. Scheitert eine Datei, laufen die anderen weiter und die Meldung nennt sie; „Abbrechen“ stoppt den Rest. |
+| D7b | In der Galerie mehrere Fotos auswählen → Teilen → „In GhulDrive speichern“ (gesperrt: erst entsperren). | GhulDrive öffnet sich, die Fotos werden nacheinander in „Meine Dateien“ hochgeladen; ohne eingerichtetes GhulDrive kommt der Hinweis, es zuerst einzurichten. Andere Apps können so keine Dateien von GhulSuite selbst hineinschieben. |
 | D8 | „Hinzufügen“ → „Neuer Ordner“ → Name; Ordner öffnen, Datei hineinladen; Zurück-Pfeil. | Ordnerstruktur stimmt, Pfad oben passt. |
 | D9 | Datei umbenennen, in einen anderen Ordner verschieben („Hierher verschieben“). | Name bzw. Ort ändern sich. |
 | D10 | Suche nach einem Teil des Dateinamens. | Treffer aus allen Ordnern. |

@@ -261,6 +261,43 @@ class InteractionTest {
         assertTrue("driveDelete:f2" in (fake.net as FakeNet).calls)
     }
 
+    /**
+     * F99: several files at once (picked together or shared from another app): one after the
+     * other with "2 of 3" in the bar, the count follows each file, a failed file does not stop the
+     * others, every file is closed again.
+     */
+    @Test
+    fun driveUploadsSeveralFilesInARow() = app(setup = { tab = Tab.DRIVE }) { state, fake ->
+        val net = fake.net as FakeNet
+        val part = { t: String -> onAllNodesWithText(t, substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        waitUntil(timeoutMillis = 10_000) { part("3 files") }
+        val closed = java.util.Collections.synchronizedList(mutableListOf<String>())
+        fun src(name: String) = object : de.danerd.ghulsuite.model.ByteSource {
+            var left = 3000
+            override val name = name
+            override val size = 3000L
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                if (left <= 0) return -1
+                val n = minOf(length, left); left -= n; return n
+            }
+            override fun close() { closed += name }
+        }
+        net.driveUploadMs = 700
+        net.driveUploadFails = setOf("b.txt")
+        runOnIdle { state.driveIncoming = listOf(src("a.txt"), src("b.txt"), src("c.txt")) }
+        waitUntil(timeoutMillis = 10_000) { part("(1 of 3)") }
+        shot("drive-upload-several")
+        waitUntil(timeoutMillis = 10_000) { part("(3 of 3)") }
+        // a.txt is in, the count follows at once (b fails, c still runs).
+        waitUntil(timeoutMillis = 10_000) { part("4 files") }
+        waitUntil(timeoutMillis = 10_000) { part("2 files uploaded") }
+        assertTrue("driveUpload::a.txt" in net.calls && "driveUpload::c.txt" in net.calls)
+        assertFalse(net.calls.any { it.endsWith(":b.txt") })
+        waitUntil(timeoutMillis = 10_000) { part("5 files") }
+        assertTrue(part("b.txt: "), "the failed file is named")
+        assertTrue(closed.containsAll(listOf("a.txt", "b.txt", "c.txt")))
+    }
+
     /** F96: the server goes away while several files go to the trash: what moved shows as moved. */
     @Test
     fun driveTrashFailingHalfwayShowsWhatIsTrue() = app(setup = { tab = Tab.DRIVE }) { _, fake ->

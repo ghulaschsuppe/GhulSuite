@@ -123,6 +123,48 @@ actual fun rememberOpenStream(onPicked: (ByteSource) -> Unit): () -> Unit {
     }
 }
 
+/**
+ * A file another app or the system picker hands over, opened only when it is read (GhulDrive
+ * uploads one after the other).
+ */
+fun contentSource(context: android.content.Context, uri: Uri): ByteSource {
+    var name: String? = null
+    var size = -1L
+    runCatching {
+        context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME, android.provider.OpenableColumns.SIZE), null, null, null)?.use { c ->
+            if (c.moveToFirst()) {
+                name = c.getString(0)
+                if (!c.isNull(1)) size = c.getLong(1)
+            }
+        }
+    }
+    return object : ByteSource {
+        private var input: java.io.InputStream? = null
+        override val name = name ?: uri.lastPathSegment?.substringAfterLast('/') ?: "file"
+        override val size = size
+        override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+            val i = input ?: (context.contentResolver.openInputStream(uri) ?: throw java.io.IOException("cannot open $name")).also { input = it }
+            return i.read(buffer, offset, length)
+        }
+        override fun close() { input?.close(); input = null }
+    }
+}
+
+@Composable
+actual fun rememberOpenStreams(onPicked: (List<ByteSource>) -> Unit): () -> Unit {
+    val context = LocalContext.current
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
+        ExternalActivity.finished()
+        if (uris.isNotEmpty()) onPicked(uris.map { contentSource(context.applicationContext, it) })
+    }
+    return remember(launcher) {
+        {
+            ExternalActivity.started()
+            launcher.launch(arrayOf("*/*"))
+        }
+    }
+}
+
 @Composable
 actual fun rememberCreateStream(onCreated: (ByteSink?) -> Unit): (String, String) -> Unit {
     val context = LocalContext.current

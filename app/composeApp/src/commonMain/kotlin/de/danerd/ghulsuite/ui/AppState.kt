@@ -63,6 +63,9 @@ object AppLaunch {
     /** A calendar file (.ics) opened with GhulSuite: imported into the default calendar. */
     val icsFile = kotlinx.coroutines.flow.MutableStateFlow<ByteArray?>(null)
 
+    /** Files shared from another app with "Save in GhulDrive" (opened only when uploaded). */
+    val driveFiles = kotlinx.coroutines.flow.MutableStateFlow<List<de.danerd.ghulsuite.model.ByteSource>?>(null)
+
     /** A tapped mail notification: the new mail, or the account's inbox. */
     val openMail = kotlinx.coroutines.flow.MutableStateFlow<MailTarget?>(null)
 }
@@ -165,6 +168,9 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     /** GhulDrive is set up and can take an upload from the "+" button; a tick asks for one. */
     var driveReady by mutableStateOf(false)
     var driveUploadTick by mutableStateOf(0)
+
+    /** Files shared from another app into GhulDrive ("Save in GhulDrive"), waiting for GhulDrive. */
+    var driveIncoming by mutableStateOf<List<de.danerd.ghulsuite.model.ByteSource>?>(null)
     /** GhulDrive shows its trash: nothing can be added there, so there is no "Add" button. */
     var driveTrashShown by mutableStateOf(false)
 
@@ -473,6 +479,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     recoveredGuide = false
                     confirmDiscard = false
                     pendingTab = null
+                    driveIncoming = null
                     dropPending()
                     stack.clear()
                     tab = tabs.first()
@@ -532,6 +539,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         scope.launch { AppLaunch.compose.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
         scope.launch { AppLaunch.newEvent.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
         scope.launch { AppLaunch.icsFile.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
+        scope.launch { AppLaunch.driveFiles.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
         scope.launch {
             AppLaunch.newMail.collect {
                 if (it > 0 && backend.unlocked.value) {
@@ -583,6 +591,20 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                 stack.clear()
                 tab = Tab.CAL
                 stack.add(Screen.CalEdit(ev.copy(calendarId = ev.calendarId.ifEmpty { calDefaultCalendar })))
+            }
+        }
+        AppLaunch.driveFiles.value?.let { files ->
+            AppLaunch.driveFiles.value = null
+            if (Tab.DRIVE in tabs) {
+                stack.clear()
+                tab = Tab.DRIVE
+                driveIncoming = files
+                scope.launch {
+                    // GhulDrive without storage: the files wait; say what to do.
+                    if (catching { backend.net.driveStatus() }.getOrNull()?.serverId == null) message(getString(Res.string.drive_upload_not_set_up))
+                }
+            } else {
+                scope.launch { message(getString(Res.string.drive_upload_not_set_up)) }
             }
         }
         AppLaunch.icsFile.value?.let { data ->
