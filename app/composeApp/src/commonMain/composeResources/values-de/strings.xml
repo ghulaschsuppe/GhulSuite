@@ -1526,7 +1526,6 @@
     <string name="a_unfavorite">Aus Favoriten entfernen</string>
     <string name="msg_deleted">Gelöscht</string>
     <string name="msg_moved_to_trash">In den Papierkorb verschoben</string>
-    <string name="drive_delete_forever_title">Endgültig löschen?</string>
     <string name="set_panic_hint_sidebar">Schnell sperren: das Schloss unten in der Seitenleiste oder Strg+L.</string>
     <string name="wz_key_touch_desktop">Key einstecken und berühren, wenn GhulSuite darum bittet (nach der Wahl des Speicherorts).</string>
     <string name="a_undo">Rückgängig</string>
@@ -1537,10 +1536,6 @@
     <string name="mail_archived_n">%1$s archiviert</string>
     <string name="mail_moved_n">%1$s verschoben</string>
     <string name="mail_no_archive">Dieses Postfach hat keinen Archivordner.</string>
-    <plurals name="delete_n_for_good_text">
-        <item quantity="one">%1$s Eintrag wird endgültig gelöscht.</item>
-        <item quantity="other">%1$s Einträge werden endgültig gelöscht.</item>
-    </plurals>
     <!-- U5: error details from the core, translated (tools/check-texts.py checks every one is here) -->
     <string name="core_share_big">Zu groß zum Teilen.</string>
     <string name="core_name_req">Bitte einen Namen eingeben.</string>

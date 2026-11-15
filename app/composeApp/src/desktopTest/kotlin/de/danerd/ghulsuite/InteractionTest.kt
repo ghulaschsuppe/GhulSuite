@@ -243,6 +243,12 @@ class InteractionTest {
         assertTrue(shown("Valid until you withdraw it"))
         assertFalse(shown("No expiry") || shown("1 day"), "no expiry offered without the module")
         shot("share-form-static")
+        // "1 day" chosen on the module, then back to the SFTP server: no expiry goes with it.
+        text("Webspace").performClick()
+        waitFor("1 day")
+        text("1 day").performClick()
+        text("Heimserver").performClick()
+        waitFor("Valid until you withdraw it")
         text("Create link").performClick()
         waitUntil(timeoutMillis = 10_000) { net.calls.any { it.startsWith("shareDrive:") } }
         assertTrue(net.calls.last { it.startsWith("shareDrive:") }.endsWith(":s1:0:0:false"), net.calls.toString())
@@ -691,14 +697,53 @@ class InteractionTest {
     fun mailAreaOpensTheAccountSheet() = app(
         setup = { push(Screen.SettingsPage(SetPage.MODULES)) },
         prepare = { vaults = vaults.filter { it.kind != VaultKindUi.MAIL }; net = FakeNet(configured = false) },
-    ) { _, _ ->
+    ) { state, _ ->
         waitFor("GhulMail")
         text("GhulMail").performClick()
         waitFor("Set up GhulMail")
         assertFalse(shown("Add e-mail account"))
         onAllNodes(hasText("Set up") and hasClickAction()).onFirst().performClick()
         waitFor("Add e-mail account")
+        assertTrue(state.mailAccountSheet != null)
         shot("mail-area-account-sheet")
+    }
+
+    /** F105: showing GhulMail again while it has no account opens the account sheet as well. */
+    @Test
+    fun mailShownAgainOpensTheAccountSheet() = app(
+        setup = { backend.settings.moduleGhulMail = false; push(Screen.SettingsPage(SetPage.MODULES)) },
+        prepare = { net = FakeNet(configured = false) },
+    ) { state, _ ->
+        waitFor("GhulMail")
+        text("GhulMail").performClick()
+        waitFor("Show on this device")
+        assertTrue(state.mailAccountSheet == null)
+        text("Show on this device").performClick()
+        waitFor("Add e-mail account")
+        assertTrue(state.mailAccountSheet != null)
+    }
+
+    /**
+     * F103: "Delete" in an open mail asks first; "Cancel" keeps the mail open and deletes nothing
+     * (bug: it went to the trash at once).
+     */
+    @Test
+    fun mailReaderDeleteAsks() = app(setup = { tab = Tab.MAIL }) { state, fake ->
+        val net = fake.net as FakeNet
+        state.undoMillis = 300
+        waitFor("Treffen am Freitag")
+        text("Treffen am Freitag").performClick()
+        waitFor("Reply")
+        desc("Delete").performClick()
+        waitFor("Move to the trash?")
+        onAllNodes(hasText("Cancel") and hasAnyAncestor(isDialog())).onFirst().performClick()
+        waitGone("Move to the trash?")
+        assertTrue(shown("Reply"), "Cancel keeps the mail open")
+        Thread.sleep(600)
+        assertFalse(net.calls.any { it.startsWith("mailDelete:") }, net.calls.toString())
+        desc("Delete").performClick()
+        confirm()
+        waitUntil(timeoutMillis = 10_000) { net.calls.any { it.startsWith("mailDelete:") && it.endsWith(":3") } }
     }
 
     @Test

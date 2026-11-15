@@ -71,23 +71,12 @@ name: GhulDrive and GhulMail without a server
     visible: "Set up GhulMail"
     timeout: 10000
 - tapOn: "Set up"
-- extendedWaitUntil:
-    visible: "GhulMail set up"
-    timeout: 15000
-- back
-# Either the new tab or the row under Options: both lead to "Add e-mail account".
-- tapOn:
-    text: "GhulMail"
-    index: 0
-- scrollUntilVisible:
-    element: "Add e-mail account"
-    direction: DOWN
-- tapOn:
-    text: "Add e-mail account"
-    index: 0
+# F105: the sheet for the account follows at once, no detour through GhulMail.
 - extendedWaitUntil:
     visible: "E-mail address"
-    timeout: 10000
+    timeout: 15000
+- assertVisible: "Add e-mail account"
+- takeScreenshot: 07-mail-account-sheet-at-once
 - tapOn: "E-mail address"
 - inputText: "ghul@nirgendwo.invalid"
 - tapOn: "Password"

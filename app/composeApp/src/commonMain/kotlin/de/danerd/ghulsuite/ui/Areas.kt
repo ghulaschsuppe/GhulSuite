@@ -34,6 +34,7 @@ import de.danerd.ghulsuite.model.ServerKindUi
 import de.danerd.ghulsuite.model.VaultKindUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
+import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
@@ -182,8 +183,9 @@ private fun AreaSheet(state: AppState, kind: VaultKindUi, onDismiss: () -> Unit)
         var error by remember { mutableStateOf<String?>(null) }
         var storage by remember { mutableStateOf<DriveStorageUi?>(null) }
         var own by remember { mutableStateOf(false) }
+        val defaultName = stringResource(when (kind) { VaultKindUi.PASS -> Res.string.area_pass_default; VaultKindUi.TOTP -> Res.string.area_auth_default; else -> Res.string.area_cal_default })
         LaunchedEffect(kind) {
-            name = getString(when (kind) { VaultKindUi.PASS -> Res.string.area_pass_default; VaultKindUi.TOTP -> Res.string.area_auth_default; else -> Res.string.area_cal_default })
+            name = defaultName
             if (kind == VaultKindUi.DRIVE) storage = catching { state.backend.net.driveStorage() }.getOrNull()
         }
         val syncOn = storage?.syncAvailable == true
@@ -241,7 +243,10 @@ private fun AreaSheet(state: AppState, kind: VaultKindUi, onDismiss: () -> Unit)
                 onDismiss()
                 // F105: showing GhulMail again without an account opens the account sheet as well.
                 if (kind == VaultKindUi.MAIL && !shown) {
-                    state.run(block = { state.backend.net.mailAccounts() }) { if (it.isEmpty()) state.mailAccountSheet = MailSheet(null) }
+                    // The app's scope: this sheet is already closed.
+                    state.scope.launch {
+                        catching { state.backend.net.mailAccounts() }.onSuccess { if (it.isEmpty()) state.mailAccountSheet = MailSheet(null) }
+                    }
                 }
             }
             SheetRow(stringResource(Res.string.area_remove), stringResource(Res.string.area_remove_everywhere), divider = true,

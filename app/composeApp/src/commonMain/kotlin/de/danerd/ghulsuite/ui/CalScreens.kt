@@ -319,8 +319,8 @@ fun CalScreen(state: AppState, padding: PaddingValues) {
                 SelAction(Icons.Filled.Folder, stringResource(Res.string.cal_move)) { movingTo = chosen },
                 SelAction(Icons.Filled.Delete, stringResource(Res.string.a_delete), danger = true) {
                     val list = chosen
-                    selected.clear()
-                    deleteOccurrences(state, list, if (list.size == 1) deletedOne else deletedN.replace("%1\$s", list.size.toString()))
+                    // The selection stays until the question is answered with "Delete".
+                    deleteOccurrences(state, list, if (list.size == 1) deletedOne else deletedN.replace("%1\$s", list.size.toString())) { selected.clear() }
                 },
             ),
         )
@@ -404,9 +404,10 @@ fun CalScreen(state: AppState, padding: PaddingValues) {
  * Deletes occurrences with "Undo": a single event as a whole, of a series only the chosen day.
  * Used by the selection of the lists.
  */
-fun deleteOccurrences(state: AppState, list: List<CalOccurrenceUi>, msg: String) {
+fun deleteOccurrences(state: AppState, list: List<CalOccurrenceUi>, msg: String, before: () -> Unit = {}) {
     val keys = list.map { o -> if (o.repeating) hiddenKey("cal", o.eventId, o.startDay.toString()) else hiddenKey("cal", "event", o.eventId) }
     state.askDelete(list.map { it.title }) {
+        before()
         state.undoable(keys, msg) {
             for (o in list) {
                 state.backend.cal.deleteEvent(o.eventId, o.startDay.toString(), if (o.repeating) CalDeleteModeUi.ONE else CalDeleteModeUi.ALL)

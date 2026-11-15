@@ -195,7 +195,6 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
     var newFolder by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf<DriveItemUi?>(null) }
     var moving by remember { mutableStateOf<DriveItemUi?>(null) }
-    var foreverMany by remember { mutableStateOf<List<DriveItemUi>?>(null) }
     var downloadItem by remember { mutableStateOf<DriveItemUi?>(null) }
     var loaded by remember { mutableStateOf(false) }
     var sharing by remember { mutableStateOf<List<DriveItemUi>?>(null) }
@@ -284,7 +283,9 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
      * stops the rest.
      */
     fun uploadAll(sources: List<ByteSource>) {
-        if (sources.isEmpty() || transfer != null) return
+        if (sources.isEmpty()) return
+        // One batch at a time; a second pick while one runs is closed again, not left open.
+        if (transfer != null) { sources.forEach { runCatching { it.close() } }; return }
         if (sources.size == 1) {
             val s = sources[0]
             val t = Transfer(s.name, s.size, upload = true)
@@ -292,13 +293,16 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
             return
         }
         val target = folder
+        // Set before the coroutine starts: no frame in which a second batch could begin.
+        val first = Transfer(sources[0].name, sources[0].size, upload = true, index = 1, count = sources.size)
+        transfer = first
         scope.launch {
             var ok = 0
             val failed = mutableListOf<String>()
             var failure: String? = null
             try {
                 for ((i, s) in sources.withIndex()) {
-                    val t = Transfer(s.name, s.size, upload = true, index = i + 1, count = sources.size)
+                    val t = if (i == 0) first else Transfer(s.name, s.size, upload = true, index = i + 1, count = sources.size)
                     t.job = coroutineContext[Job]
                     transfer = t
                     try {
@@ -724,24 +728,6 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
             moving = null
             state.run(onError = { error = it }, block = { net.driveMove(item.id, target) }) { reload++ }
         }
-    }
-    foreverMany?.let { list ->
-        AlertDialog(
-            danger = true,
-            onDismissRequest = { foreverMany = null },
-            title = { Text(stringResource(Res.string.drive_delete_forever_title)) },
-            text = { Text(pluralStringResource(Res.plurals.delete_n_for_good_text, list.size, list.size.toString())) },
-            confirmButton = {
-                TextButton(onClick = {
-                    foreverMany = null
-                    selected.clear()
-                    state.run(onError = { error = it }, block = { list.forEach { net.driveDeleteForever(it.id) } }) {
-                        trashTick++; state.changed(); state.message(deletedMsg.replace("%1\$s", list.size.toString()))
-                    }
-                }) { Text(stringResource(Res.string.drive_delete_forever)) }
-            },
-            dismissButton = { TextButton(onClick = { foreverMany = null }) { Text(stringResource(Res.string.a_cancel)) } },
-        )
     }
 }
 

@@ -258,15 +258,25 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
     }
     val swipeLeft = state.backend.settings.mailSwipeLeft
     fun hideKey(item: MailItem) = hiddenKey("mail", item.accountId + "/" + folder, item.m.uid.toString())
+    // "All N mails in this folder" (also the ones not loaded yet): one account, plain list only.
+    val single = if (all) null else shown.singleOrNull()
+    val folderRole by produceState("", key) {
+        value = single?.let { a -> catching { net.mailFolders(a.id) }.getOrNull()?.firstOrNull { it.name == folder }?.role } ?: ""
+    }
     val trashMsg = stringResource(Res.string.msg_moved_to_trash)
+    val deletedNMsg = stringResource(Res.string.msg_deleted_n)
     val archivedMsg = stringResource(Res.string.mail_archived_n)
     val movedMsg = stringResource(Res.string.mail_moved_n)
     // Removing mails from this list (trash, archive, another folder) goes through "Undo".
     fun remove(list: List<MailItem>, message: String, action: suspend (MailItem) -> Unit) {
         state.undoable(list.map(::hideKey), message.replace("%1\$s", list.size.toString()), after = { reload++ }) { list.forEach { action(it) } }
     }
-    fun delete(list: List<MailItem>) = state.askDelete(list.map { it.m.subject }, trash = true) {
-        remove(list, trashMsg) { net.mailDelete(it.accountId, folder, it.m.uid) }
+    // Inside the trash deleting is for good: the question and the message say so.
+    fun delete(list: List<MailItem>, before: () -> Unit = {}) = (folderRole != "trash").let { trash ->
+        state.askDelete(list.map { it.m.subject }, trash = trash) {
+            before()
+            remove(list, if (trash) trashMsg else deletedNMsg) { net.mailDelete(it.accountId, folder, it.m.uid) }
+        }
     }
     fun archive(list: List<MailItem>) = scope.launch {
         // Without an archive folder there is nothing to archive into: it says so, nothing happens.
@@ -312,8 +322,6 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
     var moving by remember { mutableStateOf<List<MailItem>?>(null) }
     val chosenThreads = heads.map(threadOf).filter { it in selected }.toSet()
     val chosen = shownItems.filter { threadOf(it) in chosenThreads }
-    // "All N mails in this folder" (also the ones not loaded yet): one account, plain list only.
-    val single = if (all) null else shown.singleOrNull()
     var wholeFolder by remember(key) { mutableStateOf(false) }
     LaunchedEffect(selected.active, inSearch) { if (!selected.active || inSearch) wholeFolder = false }
     var movingAll by remember { mutableStateOf(false) }
@@ -321,9 +329,6 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
     var emptying by remember { mutableStateOf(false) }
     // Texts looked up later (after a count is known) use the language of the screen.
     val env = rememberResourceEnvironment()
-    val folderRole by produceState("", key) {
-        value = single?.let { a -> catching { net.mailFolders(a.id) }.getOrNull()?.firstOrNull { it.name == folder }?.role } ?: ""
-    }
     // Runs an action on every mail of the folder, then leaves the selection.
     fun bulk(block: suspend (String, List<Long>) -> Unit) {
         val a = single ?: return
@@ -375,7 +380,7 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
                     if (wholeFolder) movingAll = true else moving = chosen
                 })
                 add(SelAction(Icons.Filled.Delete, stringResource(Res.string.a_delete), danger = true) {
-                    if (wholeFolder) deleteAll = true else { val list = chosen; selected.clear(); delete(list) }
+                    if (wholeFolder) deleteAll = true else { val list = chosen; delete(list) { selected.clear() } }
                 })
             },
         )
@@ -709,8 +714,10 @@ fun MailReadScreen(state: AppState, accountId: String, folder: String, uid: Long
                 }
             }
             BarIcon(Icons.Filled.Delete, stringResource(Res.string.a_delete), tint = g.danger) {
-                // Into the trash of the mailbox (inside the trash: for good). No question, "Undo".
-                leave(if (inTrash) deletedMsg else trashMsg) { net.mailDelete(accountId, folder, uid) }
+                // Into the trash of the mailbox (inside the trash: for good). Asks first (F103), then "Undo".
+                state.askDelete(listOf(m0?.subject.orEmpty()), trash = !inTrash) {
+                    leave(if (inTrash) deletedMsg else trashMsg) { net.mailDelete(accountId, folder, uid) }
+                }
             }
             BarIcon(Icons.Filled.MoreVert, stringResource(Res.string.entry_more)) { more = true }
         })

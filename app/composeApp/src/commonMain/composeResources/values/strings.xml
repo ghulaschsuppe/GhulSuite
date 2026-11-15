@@ -1526,7 +1526,6 @@
     <string name="a_unfavorite">Remove from favourites</string>
     <string name="msg_deleted">Deleted</string>
     <string name="msg_moved_to_trash">Moved to trash</string>
-    <string name="drive_delete_forever_title">Delete for good?</string>
     <string name="set_panic_hint_sidebar">Quick lock: the lock at the bottom of the sidebar, or Ctrl+L.</string>
     <string name="wz_key_touch_desktop">Plug in the key and touch it when GhulSuite asks (after choosing the storage location).</string>
     <string name="a_undo">Undo</string>
@@ -1537,10 +1536,6 @@
     <string name="mail_archived_n">%1$s archived</string>
     <string name="mail_moved_n">%1$s moved</string>
     <string name="mail_no_archive">This mailbox has no archive folder.</string>
-    <plurals name="delete_n_for_good_text">
-        <item quantity="one">%1$s item will be deleted for good.</item>
-        <item quantity="other">%1$s items will be deleted for good.</item>
-    </plurals>
     <!-- U5: error details from the core, translated (tools/check-texts.py checks every one is here) -->
     <string name="core_share_big">Too large to share.</string>
     <string name="core_name_req">Please enter a name.</string>
