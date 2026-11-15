@@ -177,7 +177,7 @@ fun CalEventScreen(state: AppState, id: String, day: String, padding: PaddingVal
     val uri = androidx.compose.ui.platform.LocalUriHandler.current
     androidx.compose.foundation.layout.Column(Modifier.padding(padding)) {
         GhulTopBar(
-            "", onLock = { state.lockNow() }, onBack = { state.pop() }, backIcon = backIcon(state),
+            "", onLock = { state.lockNow() }, onBack = { state.pop() }, backIcon = backIcon(),
             actions = {
                 if (ev != null) {
                     BarIcon(Icons.Filled.Edit, stringResource(Res.string.a_edit)) { state.push(Screen.CalEdit(ev!!)) }

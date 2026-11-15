@@ -99,7 +99,7 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
     val showVault = vaults.size > 1 && filter == null
     val grid = state.authGrid
     val cols = LocalColumns.current
-    // Grid: tiles per row; list: one card per row on phones, two side by side in wide panes.
+    // Grid: tiles per row; list: one card per row on phones, more side by side in wide windows.
     val perRow = if (grid) cols else (cols / 2).coerceAtLeast(1)
     // Long press selects accounts (as in every list); swipe right edits, swipe left deletes.
     // Deleting asks nothing: "Undo" in the snackbar brings the accounts back.
@@ -141,7 +141,7 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
         )
     }
     LazyColumn(
-        Modifier.align(Alignment.CenterHorizontally).widthIn(max = 672.dp).fillMaxSize(),
+        Modifier.align(Alignment.CenterHorizontally).widthIn(max = LocalContentMax.current).fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 100.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {

@@ -759,11 +759,17 @@ fun GhulNavBar(tabs: List<NavTab>, selected: Int, onSelect: (Int) -> Unit) {
     }
 }
 
-/** True in wide windows (Windows, tablets in landscape): side navigation and two panes. */
+/** True in wide windows (Windows, phones and tablets lying sideways): the areas in a sidebar on the left. */
 val LocalWide = compositionLocalOf { false }
 
-/** Columns for tile grids (Drive, Auth): 2 on phones, more in wide panes. */
+/** Columns for tile grids (Drive, Auth): 2 on phones, more in wide windows. */
 val LocalColumns = compositionLocalOf { 2 }
+
+/**
+ * The widest a page's column gets: a readable width on its own (setup, a phone on a table), the
+ * whole width beside the sidebar of a wide window, where the area itself sets the width.
+ */
+val LocalContentMax = compositionLocalOf { 640.dp }
 
 /** Tag of the title of a screen: the layout check reports it when it is shortened with "…". */
 const val TITLE_TAG = "ghul-title"

@@ -439,10 +439,9 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
             ListCard {
                 list.forEachIndexed { i, item ->
                     val count = threads[threadOf(item)]?.size ?: 1
-                    val open = state.wide && state.stack.firstOrNull().let { it is Screen.MailRead && it.uid == item.m.uid && it.accountId == item.accountId }
                     val chosenRow = threadOf(item) in chosenThreads
                     SwipeRow(enabled = !selected.active, onLeft = { swipe(item, true) }, onRight = { swipe(item, false) }, leftAction = swipeLeft) {
-                        Box(if (chosenRow) Modifier.background(g.accentSoft) else if (open) Modifier.background(g.surface2) else Modifier) {
+                        Box(if (chosenRow) Modifier.background(g.accentSoft) else Modifier) {
                         MailRow(item.m, today, yesterdayLabel, divider = i > 0, count = count, account = if (all) names[item.accountId] else null,
                             selected = chosenRow, onLongClick = { selected.toggle(threadOf(item)) }) {
                             if (selected.active) selected.toggle(threadOf(item)) else state.push(Screen.MailRead(item.accountId, folder, item.m.uid))
@@ -701,7 +700,7 @@ fun MailReadScreen(state: AppState, accountId: String, folder: String, uid: Long
     val saveFile = rememberSaveFile { ok -> if (ok) state.message(savedMsg2) }
     val driveDone = stringResource(Res.string.mail_to_drive_done)
     Column(Modifier.padding(padding)) {
-        GhulTopBar("", onLock = { state.lockNow() }, onBack = { state.pop() }, backIcon = backIcon(state), actions = {
+        GhulTopBar("", onLock = { state.lockNow() }, onBack = { state.pop() }, backIcon = backIcon(), actions = {
             if (archive != null && archive.name != folder) {
                 BarIcon(Icons.Filled.Archive, stringResource(Res.string.mail_archive)) {
                     leave(archivedMsg) { net.mailMove(accountId, folder, uid, archive.name) }

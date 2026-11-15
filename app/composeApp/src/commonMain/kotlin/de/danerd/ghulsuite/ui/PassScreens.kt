@@ -250,7 +250,6 @@ fun PassListScreen(state: AppState, padding: PaddingValues) {
                     }) else null,
                     divider = i > 0,
                     selected = keyOf(e) in selected,
-                    highlighted = state.wide && state.stack.firstOrNull().let { it is Screen.EntryDetail && it.id == e.id && it.vaultId == e.vaultId },
                     onLongClick = { toggle(e) },
                     onClick = { if (selecting) toggle(e) else state.push(Screen.EntryDetail(e.vaultId, e.id)) },
                 )
@@ -354,7 +353,7 @@ fun EntryDetailScreen(state: AppState, vaultId: String, id: String, padding: Pad
     Column(Modifier.padding(padding)) {
         // Detail screens: no title in the bar (the name stands below), edit as a pencil, then the menu.
         GhulTopBar(
-            "", onLock = { state.lockNow() }, onBack = { state.pop() }, backIcon = backIcon(state),
+            "", onLock = { state.lockNow() }, onBack = { state.pop() }, backIcon = backIcon(),
             actions = {
                 BarIcon(if (fav) Icons.Filled.Star else Icons.Filled.StarBorder, stringResource(Res.string.chip_favorites),
                     tint = if (fav) areaColor(Tab.MAIL) else Color.Unspecified) {

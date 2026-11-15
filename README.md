@@ -240,7 +240,7 @@ die Schnellkachel und löscht den Schnellzugang, bis du wieder mit beiden Faktor
 
 ## Auch auf dem großen Bildschirm
 
-Unter Windows (und auf Tablets im Querformat) mit Seitenleiste und zwei Spalten, als Installer oder portabel vom USB-Stick.
+Unter Windows (und im Querformat) mit den Bereichen links in einer Seitenleiste und allem anderen in einer gut lesbaren Spalte daneben, als Installer oder portabel vom USB-Stick.
 
 <div align="center">
 <img src="docs/images/windows-pass.png" width="780" alt="GhulSuite unter Windows">

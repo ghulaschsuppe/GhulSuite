@@ -996,10 +996,6 @@
     <string name="drive_scan_sub">Photo as PDF, encrypted right away</string>
     <string name="drive_scan_failed">The photo could not be read.</string>
     <string name="side_lock_key">Ctrl+L</string>
-    <string name="pane_pick_entry">No entry open</string>
-    <string name="pane_pick_mail">No mail open</string>
-    <string name="pane_pick_setting">No page open</string>
-    <string name="pane_pick_hint">Pick something on the left and it opens here.</string>
     <string name="gen_separator">Separator</string>
     <string name="about_made_by">Made by Daniel Erdmann · 2026</string>
     <string name="about_made_by_sub">Self-hosted passwords, 2FA, files, mail and calendar. Open source under AGPL-3.0.</string>
@@ -1525,9 +1521,6 @@
         <item quantity="one">%1$s item will be deleted for good.</item>
         <item quantity="other">%1$s items will be deleted for good.</item>
     </plurals>
-    <string name="pane_pick_account">No account open</string>
-    <string name="pane_pick_event">No event open</string>
-    <string name="pane_pick_hint_auth">Adding an account opens here.</string>
     <!-- U5: error details from the core, translated (tools/check-texts.py checks every one is here) -->
     <string name="core_share_big">Too large to share.</string>
     <string name="core_name_req">Please enter a name.</string>

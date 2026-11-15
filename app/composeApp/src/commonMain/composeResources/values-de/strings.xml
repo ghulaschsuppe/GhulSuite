@@ -996,10 +996,6 @@
     <string name="drive_scan_sub">Foto als PDF, direkt verschlüsselt</string>
     <string name="drive_scan_failed">Das Foto konnte nicht gelesen werden.</string>
     <string name="side_lock_key">Strg+L</string>
-    <string name="pane_pick_entry">Kein Eintrag geöffnet</string>
-    <string name="pane_pick_mail">Keine Mail geöffnet</string>
-    <string name="pane_pick_setting">Keine Seite geöffnet</string>
-    <string name="pane_pick_hint">Wähle links etwas aus, es öffnet sich hier.</string>
     <string name="gen_separator">Trennzeichen</string>
     <string name="about_made_by">Made by Daniel Erdmann · 2026</string>
     <string name="about_made_by_sub">Selbst gehostete Passwörter, 2FA, Dateien, Mail und Kalender. Open Source unter AGPL-3.0.</string>
@@ -1525,9 +1521,6 @@
         <item quantity="one">%1$s Eintrag wird endgültig gelöscht.</item>
         <item quantity="other">%1$s Einträge werden endgültig gelöscht.</item>
     </plurals>
-    <string name="pane_pick_account">Kein Konto geöffnet</string>
-    <string name="pane_pick_event">Kein Termin geöffnet</string>
-    <string name="pane_pick_hint_auth">Ein neues Konto wird hier hinzugefügt.</string>
     <!-- U5: error details from the core, translated (tools/check-texts.py checks every one is here) -->
     <string name="core_share_big">Zu groß zum Teilen.</string>
     <string name="core_name_req">Bitte einen Namen eingeben.</string>

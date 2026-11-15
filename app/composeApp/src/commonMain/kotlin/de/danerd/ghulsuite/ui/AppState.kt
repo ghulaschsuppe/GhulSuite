@@ -630,21 +630,17 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         }
     }
 
-    /** Wide window: side navigation, list on the left and the opened screen on the right. */
+    /** Wide window: the areas in a sidebar on the left, everything else in the rest of the width. */
     var wide by mutableStateOf(false)
 
     fun push(screen: Screen) {
-        // In two panes, opening another entry, mail or settings page from the list replaces the
-        // right side instead of piling up screens behind it.
-        if (wide && (screen is Screen.EntryDetail || screen is Screen.MailRead || screen is Screen.MailArchiveRead || screen is Screen.SettingsPage || screen == Screen.Security ||
-                screen == Screen.Shares || screen is Screen.CalEvent || screen is Screen.AddTotp ||
-                (screen is Screen.CalEdit && stack.lastOrNull() !is Screen.CalEvent))) {
-            stack.clear()
-        }
         stack.add(screen)
     }
 
-    /** Switches the area; in two panes the right side is closed at the same time. */
+    /**
+     * Switches the area. With the sidebar the areas stay in reach while a page is open: switching
+     * closes it (on phones the bar at the bottom is hidden then).
+     */
     fun selectTab(t: Tab) {
         if (wide) stack.clear()
         tab = t

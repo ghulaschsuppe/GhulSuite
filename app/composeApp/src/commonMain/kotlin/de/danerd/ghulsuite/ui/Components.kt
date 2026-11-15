@@ -377,8 +377,6 @@ fun ListRow(
     dividerStart: Dp? = null,
     /** Chosen in a selection: accent background (the tile shows the check, see [SelectableTile]). */
     selected: Boolean = false,
-    /** Open in the second pane of a wide window. */
-    highlighted: Boolean = false,
     /** Inside a card that has its own padding (SectionCard): no side padding, so the row lines up with the text around it. */
     flush: Boolean = false,
     onLongClick: (() -> Unit)? = null,
@@ -390,7 +388,7 @@ fun ListRow(
     }
     Row(
         Modifier.fillMaxWidth().heightIn(min = 60.dp)
-            .then(if (selected) Modifier.background(g.accentSoft) else if (highlighted) Modifier.background(g.surface2) else Modifier)
+            .then(if (selected) Modifier.background(g.accentSoft) else Modifier)
             .then(
                 when {
                     onLongClick != null -> Modifier.combinedClickable(onClick = onClick ?: {}, onLongClick = onLongClick)

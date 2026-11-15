@@ -451,7 +451,7 @@ fun MailArchiveReadScreen(state: AppState, accountId: String, folder: String, ke
     val deleted = stringResource(Res.string.archive_deleted)
     val t = g
     Column(Modifier.padding(padding)) {
-        GhulTopBar("", onLock = { state.lockNow() }, onBack = { state.pop() }, backIcon = backIcon(state), actions = {
+        GhulTopBar("", onLock = { state.lockNow() }, onBack = { state.pop() }, backIcon = backIcon(), actions = {
             if (filePickersAvailable) {
                 BarIcon(Icons.Filled.Download, stringResource(Res.string.mail_save_eml)) {
                     state.run(onError = { error = it }, block = { net.archiveRaw(accountId, folder, key) }) {

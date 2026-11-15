@@ -68,6 +68,8 @@ class InteractionTest {
     /** The app in English on a phone (412 × 892) or a wide window (1280 × 820), unlocked. */
     private fun app(
         wide: Boolean = false,
+        /** Window size in dp instead of the phone or wide window (e.g. a phone lying sideways). */
+        size: Pair<Int, Int>? = null,
         setup: AppState.() -> Unit = {},
         prepare: ScreenshotTest.Fake.() -> Unit = {},
         block: DesktopComposeUiTest.(AppState, ScreenshotTest.Fake) -> Unit,
@@ -84,7 +86,7 @@ class InteractionTest {
         val errors = java.util.Collections.synchronizedList(mutableListOf<Throwable>())
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined + CoroutineExceptionHandler { _, e -> if (e !is HeadlessException) errors += e })
         val state = AppState(fake, scope).apply(setup)
-        val (w, h) = if (wide) 1280 to 820 else 412 to 892
+        val (w, h) = size ?: if (wide) 1280 to 820 else 412 to 892
         runDesktopComposeUiTest(w * 2, h * 2) {
             setContent { CompositionLocalProvider(LocalDensity provides Density(2f)) { GhulSuiteApp(state) } }
             waitForIdle()
@@ -563,20 +565,53 @@ class InteractionTest {
         waitFor("weak")
     }
 
+    /** The sidebar names the key for locking (Ctrl+L) on Windows only; a phone lying sideways has no keyboard. */
     @Test
-    fun wideWindowOpensEventsAndAccountsOnTheRight() {
+    fun sidebarNamesTheLockKeyOnlyOnWindows() {
+        app(wide = true) { _, _ ->
+            waitFor("Lock")
+            assertFalse(shown("Ctrl+L"))
+        }
+        app(wide = true, prepare = { desktop = true }) { _, _ ->
+            waitFor("Ctrl+L")
+        }
+    }
+
+    /**
+     * A phone lying sideways (915 × 412): the areas in the sidebar on the left, and "Lock" at its
+     * end stays reachable although the screen is low (bug: it was cut off).
+     */
+    @Test
+    fun lowLandscapeSidebarKeepsLockReachable() = app(size = 915 to 412) { _, fake ->
+        waitFor("GhulAuth")
+        assertFalse(shown("Ctrl+L"))
+        text("Lock").performScrollTo().assertIsDisplayed().performClick()
+        waitUntil(timeoutMillis = 10_000) { fake.locks == 1 }
+        shot("landscape-phone")
+    }
+
+    /**
+     * A wide window: the areas in the sidebar, an opened event takes the place of the list (no
+     * third column that mostly stood empty) and "back" returns to the list.
+     */
+    @Test
+    fun wideWindowOpensEventsInPlaceOfTheList() {
         app(wide = true, setup = { tab = Tab.CAL; calView = CalView.LIST }) { state, _ ->
-            waitFor("No event open")
-            shot("wide-cal-empty")
+            waitFor("Abendessen mit Jana")
+            assertFalse(shown("No event open"))
+            shot("wide-cal-list")
             text("Abendessen mit Jana").performClick()
             waitFor("Trattoria Da Luca")
-            // The list stays on the left: the event opens next to it.
-            assertTrue(shown("Kundentermin Müller GmbH"))
             assertTrue(state.stack.lastOrNull() is Screen.CalEvent)
             shot("wide-cal-event")
-        }
-        app(wide = true, setup = { tab = Tab.AUTH }) { _, _ ->
-            waitFor("No account open")
+            state.back()
+            waitFor("Kundentermin Müller GmbH")
+            // The sidebar switches the area and closes what was open.
+            text("Abendessen mit Jana").performClick()
+            waitFor("Trattoria Da Luca")
+            text("GhulAuth").performClick()
+            waitUntil(timeoutMillis = 10_000) { state.tab == Tab.AUTH && state.stack.isEmpty() }
+            assertFalse(shown("No account open"))
             shot("wide-auth")
         }
     }

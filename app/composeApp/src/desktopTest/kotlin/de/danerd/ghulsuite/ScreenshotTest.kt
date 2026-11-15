@@ -92,6 +92,9 @@ class ScreenshotTest {
         override suspend fun unlock(password: String, pin: String?, keyfile: ByteArray?, onTouchNeeded: () -> Unit) {}
         override suspend fun unlockWithRecoveryCode(code: String, newPassword: String) {}
         var locks = 0
+        /** Windows (true) or a phone (false): what only one of them has (keyboard keys …). */
+        var desktop = false
+        override val isDesktop get() = desktop
         override fun lock() { locks++ }
         override fun panicLock() {}
         override fun biometricAvailable() = true

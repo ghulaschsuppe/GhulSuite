@@ -69,7 +69,7 @@ fun ScreenColumn(content: @Composable () -> Unit) {
             .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 100.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.widthIn(max = LocalContentMax.current).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             content()
         }
     }

@@ -9,6 +9,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material.icons.filled.Usb
 import androidx.compose.ui.draw.alpha
@@ -110,7 +112,8 @@ fun GhulSuiteApp(state: AppState) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             val unlocked by state.backend.unlocked.collectAsState()
             BoxWithConstraints(Modifier.fillMaxSize()) {
-                // Wide windows (Windows, tablets in landscape) get side navigation and two panes.
+                // Wide windows (Windows, phones and tablets lying sideways): areas in a sidebar on
+                // the left, everything else in the rest of the width.
                 val wide = maxWidth >= 840.dp
                 val undoLabel = stringResource(Res.string.a_undo)
                 SideEffect { state.wide = wide; state.undoLabel = undoLabel }
@@ -157,6 +160,9 @@ private fun KeyWaitingBanner(modifier: Modifier) {
         }
     }
 }
+
+/** Width of the column beside the sidebar of a wide window. */
+private val WIDE_COLUMN = 760.dp
 
 /** Start and unlock: a phone-wide column in the middle of a wide window. */
 @Composable
@@ -247,37 +253,30 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
             }
         }
     } else {
-        // Side navigation | list | opened screen.
-        // Every area with something to open keeps its list on the left and opens it on the right, so
-        // the list never jumps. GhulDrive opens files in a sheet and keeps the whole width.
-        val twoPane = top != null || state.tab != Tab.DRIVE
-        val listWidth = if (width >= 1300.dp) 440.dp else 400.dp
-        val rest = width - 240.dp - 1.dp
-        val listPane = if (twoPane) listWidth else rest
-        val cols = ((listPane - 32.dp) / 220.dp).toInt().coerceIn(2, 6)
+        // Sidebar | one column in the middle of the rest, in a readable width (as on a phone, only
+        // with the areas on the left). An opened entry, mail or page takes the place of the list
+        // and "back" returns to it; there is no third column that mostly stood empty.
+        val column = minOf(width - 240.dp - 1.dp, WIDE_COLUMN)
+        val cols = ((column - 32.dp) / 220.dp).toInt().coerceIn(2, 6)
         Row(Modifier.fillMaxSize()) {
             SideNav(state, tabs)
             Box(Modifier.fillMaxHeight().width(1.dp).background(g.line))
-            Box(Modifier.width(listPane).fillMaxHeight()) {
-                CompositionLocalProvider(LocalColumns provides cols) {
-                    Scaffold(
-                        containerColor = MaterialTheme.colorScheme.background,
-                        topBar = { TabTopBar(state) },
-                        floatingActionButton = { MainFab(state, onAdd) },
-                    ) { padding -> Box(Modifier.consumeWindowInsets(padding)) { TabContents(state, visited, true, padding) } }
-                }
-            }
-            if (twoPane) {
-                Box(Modifier.fillMaxHeight().width(1.dp).background(g.line))
-                Box(Modifier.weight(1f).fillMaxHeight().background(g.surface.copy(alpha = 0.35f)), contentAlignment = Alignment.TopCenter) {
-                    if (top == null) {
-                        EmptyPane(state.tab)
-                    } else {
-                        Box(Modifier.widthIn(max = 820.dp).fillMaxSize()) {
-                            Scaffold(
-                                containerColor = Color.Transparent,
-                                topBar = { if (!ownHeader(top)) ScreenTopBar(state, top) },
-                            ) { padding -> Box(Modifier.consumeWindowInsets(padding)) { TopScreen(state, top, padding) } }
+            Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.TopCenter) {
+                Box(Modifier.widthIn(max = WIDE_COLUMN).fillMaxSize()) {
+                    CompositionLocalProvider(LocalColumns provides cols, LocalContentMax provides Dp.Infinity) {
+                        Scaffold(
+                            containerColor = MaterialTheme.colorScheme.background,
+                            snackbarHost = { GhulSnackbarHost(state.snackbar) },
+                            topBar = {
+                                if (top == null) TabTopBar(state)
+                                else if (!ownHeader(top)) ScreenTopBar(state, top)
+                            },
+                            floatingActionButton = { if (top == null) MainFab(state, onAdd) },
+                        ) { padding ->
+                            Box(Modifier.fillMaxSize().consumeWindowInsets(padding)) {
+                                TabContents(state, visited, top == null, padding)
+                                if (top != null) TopScreen(state, top, padding)
+                            }
                         }
                     }
                 }
@@ -368,13 +367,8 @@ private fun TabTopBar(state: AppState) {
     )
 }
 
-/**
- * The icon that leaves a sub-page: a cross for the page that fills the second pane of a wide
- * window (closing it shows the list alone again), else the arrow back. The same for every screen,
- * also for those that draw their own header.
- */
-fun backIcon(state: AppState): androidx.compose.ui.graphics.vector.ImageVector =
-    if (state.wide && state.stack.size == 1) Icons.Filled.Close else Icons.AutoMirrored.Filled.ArrowBack
+/** The icon that leaves a sub-page, the same for every screen (also those with their own header). */
+fun backIcon(): androidx.compose.ui.graphics.vector.ImageVector = Icons.AutoMirrored.Filled.ArrowBack
 
 @Composable
 private fun ScreenTopBar(state: AppState, top: Screen) {
@@ -382,7 +376,7 @@ private fun ScreenTopBar(state: AppState, top: Screen) {
         title = screenTitle(top, state.tab),
         onLock = { state.lockNow() },
         onBack = if (top !is Screen.RecoveryCode) ({ state.pop() }) else null,
-        backIcon = backIcon(state),
+        backIcon = backIcon(),
     )
 }
 
@@ -484,7 +478,13 @@ private fun TopScreen(state: AppState, top: Screen, padding: PaddingValues) {
 @Composable
 private fun SideNav(state: AppState, tabs: List<Tab>) {
     val t = g
-    Column(Modifier.width(240.dp).fillMaxHeight().background(t.surface).padding(horizontal = 14.dp, vertical = 18.dp)) {
+    // A phone lying sideways is low: the bar scrolls then, so "Lock" is never cut off; on a tall
+    // window "Lock" stays at the bottom.
+    BoxWithConstraints(Modifier.width(240.dp).fillMaxHeight().background(t.surface)) {
+    Column(
+        Modifier.verticalScroll(rememberScrollState()).heightIn(min = maxHeight)
+            .padding(horizontal = 14.dp, vertical = 18.dp),
+    ) {
         Row(Modifier.padding(start = 6.dp, bottom = 22.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Box(
                 Modifier.size(38.dp).clip(RoundedCornerShape(12.dp))
@@ -533,36 +533,10 @@ private fun SideNav(state: AppState, tabs: List<Tab>) {
         ) {
             Icon(Icons.Filled.Lock, null, Modifier.size(20.dp), tint = t.fg)
             Text(stringResource(Res.string.a_lock), Modifier.weight(1f), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = t.fg)
-            Text(stringResource(Res.string.side_lock_key), fontSize = 12.sp, color = t.muted)
+            // The key only where there is a keyboard for it (Windows), not on a phone lying sideways.
+            if (state.backend.isDesktop) Text(stringResource(Res.string.side_lock_key), fontSize = 12.sp, color = t.muted)
         }
     }
-}
-
-/** Right side while nothing is open. */
-@Composable
-private fun EmptyPane(tab: Tab) {
-    Column(
-        Modifier.fillMaxSize().padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        IconTile(tabIcon(tab), areaColor(tab), size = 72.dp)
-        Spacer(Modifier.height(18.dp))
-        Text(
-            stringResource(
-                when (tab) {
-                    Tab.PASS -> Res.string.pane_pick_entry
-                    Tab.AUTH -> Res.string.pane_pick_account
-                    Tab.MAIL -> Res.string.pane_pick_mail
-                    Tab.CAL -> Res.string.pane_pick_event
-                    Tab.SETTINGS -> Res.string.pane_pick_setting
-                    else -> Res.string.pane_pick_entry
-                },
-            ),
-            fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = g.fg,
-        )
-        Spacer(Modifier.height(6.dp))
-        Text(stringResource(if (tab == Tab.AUTH) Res.string.pane_pick_hint_auth else Res.string.pane_pick_hint), color = g.muted, textAlign = TextAlign.Center)
     }
 }
 
