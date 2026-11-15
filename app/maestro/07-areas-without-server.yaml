@@ -83,13 +83,16 @@ name: GhulDrive and GhulMail without a server
 - inputText: "falsch-und-geheim"
 - hideKeyboard
 - scrollUntilVisible:
-    element: "Check and save"
+    element: "Check connection"
     direction: DOWN
 - takeScreenshot: 07-mail-account
-- tapOn: "Check and save"
+- tapOn: "Check connection"
+# The checklist says that the incoming server cannot be reached; nothing can be saved.
 - extendedWaitUntil:
-    visible: "No connection to the server: .*"
+    visible: "Incoming server reachable"
     timeout: 90000
+- assertVisible: "Not checked"
+- assertNotVisible: "Save"
 - takeScreenshot: 07-mail-no-server
 - back
-- assertNotVisible: "Check and save"
+- assertNotVisible: "Check connection"

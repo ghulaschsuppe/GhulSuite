@@ -70,7 +70,17 @@ name: GhulDrive on a real server
     timeout: 10000
 - assertVisible: "ghulsuite/"
 - takeScreenshot: s1-drive-connected
-# Step 3: save.
+# Step 3: check the connection (login and a writable folder); only then "Save server" appears.
+- assertNotVisible: "Save server"
+- scrollUntilVisible:
+    element: "Check connection"
+    direction: DOWN
+- tapOn: "Check connection"
+- extendedWaitUntil:
+    visible: "Connection works, the folder can be written\\..*"
+    timeout: 120000
+- takeScreenshot: s1-drive-checked
+# Step 4: save.
 - scrollUntilVisible:
     element: "Save server"
     direction: DOWN

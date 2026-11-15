@@ -53,8 +53,17 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
         if (serversFailures > 0) { serversFailures--; throw java.io.IOException("connection reset") }
         return if (configured) listOf(server, web) else emptyList()
     }
+    /** The folder the fake server cannot write. */
+    var readOnlyFolder = "readonly"
+    override suspend fun serverTest(input: ServerInputUi, confirmed: String?): de.danerd.ghulsuite.model.ServerTestUi {
+        calls += "serverTest:${input.host}:${input.base}:${confirmed ?: ""}"
+        if (confirmed == null) return de.danerd.ghulsuite.model.ServerTestUi.Confirm("SHA256:7beJP+X7anXY96H6FlO+I7u8z2xP1gJsp7GiBGawac4")
+        if (input.base == readOnlyFolder) throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.STORAGE, "permission denied")
+        return de.danerd.ghulsuite.model.ServerTestUi.Ok
+    }
     override suspend fun saveServer(input: ServerInputUi, confirmed: String?): ServerSavedUi =
-        if (confirmed == null) ServerSavedUi.Confirm("SHA256:7beJP+X7anXY96H6FlO+I7u8z2xP1gJsp7GiBGawac4") else ServerSavedUi.Saved("s3")
+        if (confirmed == null) ServerSavedUi.Confirm("SHA256:7beJP+X7anXY96H6FlO+I7u8z2xP1gJsp7GiBGawac4")
+        else { calls += "saveServer:${input.host}:${input.base}"; ServerSavedUi.Saved("s3") }
     override suspend fun removeServer(id: String) {}
     override suspend fun installSshKey(input: ServerInputUi, hostKey: String?) = hostKey?.let { "" } ?: "SHA256:fp"
     override suspend fun sshPublicKey() = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGhulSuiteBeispielSchluessel0123456789abcdef ghulsuite"
@@ -244,8 +253,43 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
     )
 
     override fun mailSuggest(email: String) = servers
-    override suspend fun mailCheck(input: MailAccountInputUi) = MailCheckUi.Ok
-    override suspend fun mailSaveAccount(id: String?, input: MailAccountInputUi) = "m1"
+    /** The password the fake servers reject (both logins fail with it). */
+    var wrongMailPassword = "wrong"
+    /** The incoming server has a certificate that is not publicly trusted: confirm, then check again. */
+    var mailSelfSigned = false
+    private var mailTested: List<Any?>? = null
+    private fun mailKey(id: String?, i: MailAccountInputUi) = listOf(id, i.email, i.username, i.password, i.servers, i.imapCert, i.smtpCert)
+    override suspend fun mailTest(id: String?, input: MailAccountInputUi): de.danerd.ghulsuite.model.MailTestUi {
+        calls += "mailTest:${input.email}:${input.password}"
+        fun step(name: String, ok: Boolean, detail: String = "") = de.danerd.ghulsuite.model.ConnStepUi(name, ok, detail)
+        val skipped = de.danerd.ghulsuite.model.STEP_SKIPPED
+        val steps = when {
+            mailSelfSigned && input.imapCert == null -> listOf(
+                step("imap_server", false, de.danerd.ghulsuite.model.STEP_CERTIFICATE), step("imap_login", false, skipped),
+                step("smtp_server", true), step("smtp_login", true),
+            )
+            input.password == wrongMailPassword -> listOf(
+                step("imap_server", true), step("imap_login", false, "login rejected"),
+                step("smtp_server", true), step("smtp_login", false, "login rejected"),
+            )
+            else -> listOf(step("imap_server", true), step("imap_login", true), step("smtp_server", true), step("smtp_login", true))
+        }
+        val ok = steps.all { it.ok }
+        mailTested = if (ok) mailKey(id, input) else null
+        val confirm = if (mailSelfSigned && input.imapCert == null) MailCheckUi.ImapCertificate("SHA256:selbstsigniert") else null
+        return de.danerd.ghulsuite.model.MailTestUi(ok, steps, confirm)
+    }
+    /** Like the core: only settings that just passed the check, or an unchanged connection of a stored account. */
+    override suspend fun mailSaveAccount(id: String?, input: MailAccountInputUi): String {
+        val stored = mailAccounts().firstOrNull { it.id == id }
+        val unchanged = stored != null && input.password.isEmpty() && input.email == stored.email && input.username == stored.username &&
+            input.servers == stored.servers && input.imapCert == null && input.smtpCert == null
+        if (!unchanged && mailTested != mailKey(id, input)) {
+            throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.INVALID_INPUT, "check the connection first")
+        }
+        calls += "mailSaveAccount:${id ?: ""}:${input.name}:${input.email}"
+        return id ?: "m1"
+    }
     override suspend fun mailAccounts() =
         if (configured) listOf(MailAccountUi("m1", "Privat", "Max Mustermann", "max@posteo.de", "max@posteo.de", servers, "Viele Grüße\nMax", "1A2B 3C4D 5E6F 7081 92A3 B4C5 D6E7 F809 1A2B 3C4D")) else emptyList()
     override suspend fun mailRemoveAccount(id: String) {}

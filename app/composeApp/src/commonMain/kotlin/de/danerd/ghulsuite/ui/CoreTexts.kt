@@ -26,6 +26,7 @@ private val CORE_TEXTS: Map<String, StringResource> = mapOf(
     "hmac-secret output too short" to Res.string.core_key_bad_answer,
     "message cannot be read" to Res.string.core_msg_unreadable,
     "timeout" to Res.string.core_timeout,
+    "check the connection first" to Res.string.core_mail_not_tested,
     "server address not found" to Res.string.core_host_not_found,
     "connection refused" to Res.string.core_refused,
     "image not available" to Res.string.core_image_na,

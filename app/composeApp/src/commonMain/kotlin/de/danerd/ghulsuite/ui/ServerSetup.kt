@@ -33,6 +33,7 @@ import de.danerd.ghulsuite.model.ServerFoldersUi
 import de.danerd.ghulsuite.model.ServerInputUi
 import de.danerd.ghulsuite.model.ServerKindUi
 import de.danerd.ghulsuite.model.ServerSavedUi
+import de.danerd.ghulsuite.model.ServerTestUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
 import org.jetbrains.compose.resources.StringResource
@@ -61,8 +62,18 @@ class ServerForm {
     var connected by mutableStateOf(false)
     /** The last "Test connection" failed: the checklist says so instead of "still to do". */
     var connectFailed by mutableStateOf(false)
-    /** Chosen folder, relative to the login folder ("" = none chosen yet). */
-    var folder by mutableStateOf("")
+    /** Chosen folder, relative to the login folder ("" = none chosen yet). Choosing another one checks again. */
+    private var folderState by mutableStateOf("")
+    var folder: String
+        get() = folderState
+        set(v) {
+            if (v != folderState) { tested = false; testFailed = false }
+            folderState = v
+        }
+    /** "Check connection" passed: login works and the folder can be written (only then "Save"). */
+    var tested by mutableStateOf(false)
+    /** The last "Check connection" failed: the checklist says so. */
+    var testFailed by mutableStateOf(false)
     /** Set once the server is checked and stored. */
     var savedId by mutableStateOf<String?>(null)
     var savedWhere by mutableStateOf("")
@@ -77,6 +88,7 @@ class ServerForm {
         !loginReady -> Res.string.srvf_step_login
         !connected -> Res.string.srvf_step_connect
         folder.isBlank() -> Res.string.srvf_step_folder
+        !tested -> Res.string.srvf_step_writable
         else -> Res.string.srvf_step_test
     }
 
@@ -87,6 +99,7 @@ class ServerForm {
         confirmed = null
         connected = false
         folder = ""
+        tested = false
         savedId = null
     }
 
@@ -95,6 +108,8 @@ class ServerForm {
         connected = false
         connectFailed = false
         folder = ""
+        tested = false
+        testFailed = false
     }
 
     /** The login as typed. */
@@ -109,8 +124,9 @@ fun rememberServerForm(): ServerForm = remember { ServerForm() }
 
 /**
  * One server form for the setup wizard, GhulDrive and the options. First the login is tested
- * ("Test connection"); only a working login gets to pick a folder from the server's own list,
- * then the server is saved. A numbered checklist below names what is still missing. The server
+ * ("Test connection"); only a working login gets to pick a folder from the server's own list.
+ * Then "Check connection" logs in and checks the folder can be written; only after that "Save"
+ * appears (nothing is saved by itself). A numbered checklist below names what is still missing. The server
  * module for share links is installed later from the list of servers, over the same login.
  *
  * [save] stores the checked server (suite list for synchronisation, Drive file for GhulDrive).
@@ -167,13 +183,32 @@ fun ServerSetup(
         }
     }
 
-    fun test() {
+    /** Saves the checked server (SFTP with password and "install key": with the key from then on). */
+    fun saveChecked() {
         val login = form.login()
         val input = when (form.kind) {
             ServerKindUi.SFTP -> (if (form.usePassword && form.installKey) login.copy(password = null) else login).copy(base = form.folder)
             ServerKindUi.FTPS -> login.copy(base = form.folder)
         }
         store(input.copy(name = input.name.ifBlank { input.host }), form.confirmed)
+    }
+
+    /** "Check connection": login and a writable folder, nothing stored. Only then "Save". */
+    fun check() {
+        val input = form.login().copy(base = form.folder)
+        state.run(onError = { error = it; form.testFailed = true; form.tested = false }, block = { net.serverTest(input, form.confirmed) }) { r ->
+            when (r) {
+                is ServerTestUi.Confirm -> {
+                    fingerprint = r.fingerprint
+                    afterConfirm = { check() }
+                }
+                ServerTestUi.Ok -> {
+                    error = null
+                    form.testFailed = false
+                    form.tested = true
+                }
+            }
+        }
     }
 
     val loginFirst = stringResource(Res.string.srvf_login_first)
@@ -242,8 +277,15 @@ fun ServerSetup(
     }
 
     if (form.connected && form.folder.isNotBlank()) {
-        Button(onClick = { test() }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
-            Text(stringResource(if (state.busy) Res.string.srvf_saving else Res.string.srvf_save))
+        if (!form.tested) {
+            Button(onClick = { check() }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(if (state.busy) Res.string.srvf_checking else Res.string.a_check_connection))
+            }
+        } else {
+            Banner(Icons.Filled.CheckCircle, stringResource(Res.string.srvf_check_ok))
+            Button(onClick = { saveChecked() }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(if (state.busy) Res.string.srvf_saving else Res.string.srvf_save))
+            }
         }
     }
     ErrorText(error)
@@ -277,12 +319,13 @@ fun ServerChecklist(form: ServerForm) {
         add(Res.string.srvf_step_login to form.loginReady)
         add(Res.string.srvf_step_connect to form.connected)
         add(Res.string.srvf_step_folder to form.folder.isNotBlank())
+        add(Res.string.srvf_step_writable to form.tested)
         add(Res.string.srvf_step_test to (form.savedId != null))
     }
     // One step per line: side by side, long names do not fit on a phone.
     Column(Modifier.fillMaxWidth().padding(start = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         steps.forEachIndexed { i, (label, done) ->
-            val failed = !done && label == Res.string.srvf_step_connect && form.connectFailed
+            val failed = !done && (label == Res.string.srvf_step_connect && form.connectFailed || label == Res.string.srvf_step_writable && form.testFailed)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Icon(
                     when { done -> Icons.Filled.CheckCircle; failed -> Icons.Filled.Error; else -> Icons.Filled.Schedule }, null, Modifier.size(16.dp),

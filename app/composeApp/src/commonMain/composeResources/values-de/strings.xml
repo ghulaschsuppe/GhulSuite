@@ -428,7 +428,6 @@
     <string name="vault_scan_hint">Nur nötig, wenn du selbst Tresordateien in diesen Ordner kopiert hast. Beim Entsperren sucht die App ohnehin.</string>
     <string name="vault_summary">%1$s · Einträge: %2$s</string>
     <string name="a_attach">Datei anhängen</string>
-    <string name="a_check_and_save">Prüfen und speichern</string>
     <string name="a_fetch">Suite holen</string>
     <string name="a_flag">Markieren</string>
     <string name="a_unflag">Markierung entfernen</string>
@@ -1750,4 +1749,18 @@
     <string name="job_end_done">%1$s fertig</string>
     <string name="job_end_cancelled">%1$s abgebrochen</string>
     <string name="job_end_failed">%1$s mit Fehler beendet</string>
+    <string name="a_check_connection">Verbindung prüfen</string>
+    <string name="mail_check_ok">Verbindung klappt. Jetzt kannst du das Konto speichern.</string>
+    <string name="mail_step_imap_server">Posteingangsserver erreichbar</string>
+    <string name="mail_step_imap_login">Anmeldung am Posteingang</string>
+    <string name="mail_step_smtp_server">Postausgangsserver erreichbar</string>
+    <string name="mail_step_smtp_login">Anmeldung am Postausgang</string>
+    <string name="mail_step_skipped">Nicht geprüft</string>
+    <string name="mail_step_cert">Erst das Zertifikat bestätigen</string>
+    <string name="mail_step_login_rejected">Anmeldung abgelehnt. Prüfe Benutzername und Passwort (manche Anbieter verlangen ein App-Passwort).</string>
+    <string name="mail_step_failed">Verbindung fehlgeschlagen: %1$s</string>
+    <string name="srvf_step_writable">Ordner beschreibbar</string>
+    <string name="srvf_checking">Wird geprüft…</string>
+    <string name="srvf_check_ok">Verbindung klappt, der Ordner ist beschreibbar. Jetzt kannst du den Server speichern.</string>
+    <string name="core_mail_not_tested">Prüfe zuerst die Verbindung.</string>
 </resources>

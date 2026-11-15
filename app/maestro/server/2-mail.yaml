@@ -87,24 +87,36 @@ name: GhulMail on a real server
 # the sheet down and closes it.
 - assertVisible: "10587"
 - takeScreenshot: s2-mail-servers
+# First "Check connection": a checklist of both servers; nothing is saved yet, there is no
+# "Save" before the check passed.
+- assertNotVisible: "Save"
 - scrollUntilVisible:
-    element: "Check and save"
+    element: "Check connection"
     direction: DOWN
-- tapOn: "Check and save"
-# Self-signed test certificate: the incoming server asks first; the outgoing server may ask
-# again after the next round to the network.
+- tapOn: "Check connection"
+# Self-signed test certificate: the incoming server asks first; after "Fingerprint matches" the
+# check runs again by itself and the outgoing server may ask too.
 - extendedWaitUntil:
     visible: "Check the certificate"
     timeout: 60000
 - takeScreenshot: s2-mail-certificate
 - tapOn: "Fingerprint matches"
 - extendedWaitUntil:
-    visible: "Check the certificate"
-    timeout: 30000
-    optional: true
-- tapOn:
-    text: "Fingerprint matches"
-    optional: true
+    visible: "Check the certificate|Connection works\\. You can save the account now\\."
+    timeout: 60000
+- runFlow:
+    when:
+      visible: "Check the certificate"
+    commands:
+      - tapOn: "Fingerprint matches"
+- extendedWaitUntil:
+    visible: "Connection works\\. You can save the account now\\."
+    timeout: 60000
+- takeScreenshot: s2-mail-checked
+- scrollUntilVisible:
+    element: "Save"
+    direction: DOWN
+- tapOn: "Save"
 # With the first account Android asks to let the app run in the background (mail notifications);
 # the system dialog covers the app until it is answered.
 - extendedWaitUntil:

@@ -146,7 +146,7 @@ Die Abläufe sind dieselben wie unter Android (Testplan Android, Abschnitte 1 un
 | W11.1 | „Neu einrichten“ mit Security Key: Schritt 2 → Schritt 3 „Key registrieren“. | Der Windows-Dialog fragt PIN und Berührung ab; danach Schritt 4 · Synchronisation. |
 | W11.2 | Schritt 7 · Entsperren. | „Zusätzlich Fingerabdruck“ ist ausgegraut (unter Windows nicht verfügbar); App-PIN geht. |
 | W11.3 | Schritt 4 „Eigener Server“ → FTPS → „Ordner wählen“. | Zertifikats-Fingerabdruck bestätigen, dann Ordnerliste im Dialog in der Fenstermitte. |
-| W11.4 | Optionen → Bereiche verwalten → GhulDrive einrichten → „Eigener Server“ → FTPS. | Nur SFTP und FTPS zur Wahl; nach „Server speichern“ erscheint GhulDrive in der Leiste. Das Server-Modul für Freigabelinks kommt über die Serverliste. |
+| W11.4 | Optionen → Bereiche verwalten → GhulDrive einrichten → „Eigener Server“ → FTPS. | Nur SFTP und FTPS zur Wahl; erst nach „Verbindung prüfen“ erscheint „Server speichern“, danach steht GhulDrive in der Leiste. Mailkonten ebenso: erst „Verbindung prüfen“ (Checkliste), dann „Speichern“. Das Server-Modul für Freigabelinks kommt über die Serverliste. |
 | W11.5 | Ordner der Suite im Explorer ansehen. | Je gewähltem Bereich eine Datei (`.ghlpss`, `.ghltotp`, `.ghldrv`, `.ghlmail`, `.ghlcal`) und `suite.ghlsuite`. |
 
 ## 12. Runde 6

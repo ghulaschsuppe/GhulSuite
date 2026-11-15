@@ -1658,4 +1658,139 @@ class InteractionTest {
         Thread.sleep(1_000)
         assertEquals(1, net.calls.count { it == "archiveAutoUids:m1:INBOX" }, net.calls.toString())
     }
+
+    // --- Check the connection first, then save (mail accounts and servers) --------------------------
+
+    /** The text field under the label [label] (the label stands next to the field, in its card). */
+    private fun DesktopComposeUiTest.field(label: String) =
+        onAllNodes(hasSetTextAction() and androidx.compose.ui.test.hasParent(androidx.compose.ui.test.hasAnyDescendant(hasText(label, substring = true, ignoreCase = true))), useUnmergedTree = true)
+
+    private fun DesktopComposeUiTest.typeInto(label: String, text: String) {
+        waitUntil(timeoutMillis = 10_000) { field(label).fetchSemanticsNodes().isNotEmpty() }
+        field(label).onFirst().performTextReplacement(text)
+        waitForIdle()
+    }
+
+    private fun DesktopComposeUiTest.saveShown() = onAllNodes(hasText("Save") and hasClickAction()).fetchSemanticsNodes().isNotEmpty()
+
+    /**
+     * A new mail account: no "Save" before the check; a wrong password shows the two logins in
+     * red with the reason and still no "Save"; a working check shows "Save"; changing the
+     * password afterwards takes it away again. Nothing is saved by checking.
+     */
+    @Test
+    fun mailAccountIsCheckedBeforeSaving() = app(setup = { mailAccountSheet = de.danerd.ghulsuite.ui.MailSheet(null) }) { state, fake ->
+        val net = fake.net as FakeNet
+        typeInto("E-mail address", "anna@example.org")
+        typeInto("Password", "wrong")
+        waitFor("Check connection")
+        assertFalse(saveShown(), "no Save before the check")
+        text("Check connection").performClick()
+        waitFor("Login to the incoming server")
+        assertTrue(part("Login rejected. Check login name and password"))
+        assertTrue(shown("Incoming server reachable") && shown("Outgoing server reachable") && shown("Login to the outgoing server"))
+        assertFalse(saveShown(), "no Save after a failed check")
+        shot("mail-check-failed")
+        // The right password: the result of the wrong one is gone at once.
+        typeInto("Password", "richtig")
+        assertFalse(part("Login rejected"), "a change clears the result")
+        text("Check connection").performClick()
+        waitFor("Connection works. You can save the account now.")
+        assertTrue(saveShown())
+        shot("mail-check-ok")
+        assertFalse(net.calls.any { it.startsWith("mailSaveAccount") }, "checking saves nothing")
+        // Changing the password again: "Save" is gone until the next check.
+        typeInto("Password", "richtig2")
+        assertFalse(saveShown(), "a change of the password needs a new check")
+        assertFalse(part("Connection works."))
+        // Changing only the name keeps a working check.
+        text("Check connection").performClick()
+        waitFor("Connection works. You can save the account now.")
+        typeInto("Account name", "Anna")
+        assertTrue(saveShown(), "the name is not part of the connection")
+        onAllNodes(hasText("Save") and hasClickAction()).onFirst().apply { performScrollTo() }.performClick()
+        waitUntil(timeoutMillis = 10_000) { net.calls.any { it.startsWith("mailSaveAccount") } }
+        assertTrue("mailSaveAccount::Anna:anna@example.org" in net.calls, net.calls.toString())
+        waitUntil(timeoutMillis = 10_000) { state.mailAccountSheet == null }
+    }
+
+    /** Editing an account: a new name or signature saves without a check; a new password needs one. */
+    @Test
+    fun mailAccountNameChangeSavesWithoutCheck() = app(setup = { mailAccountSheet = de.danerd.ghulsuite.ui.MailSheet("m1") }) { state, fake ->
+        val net = fake.net as FakeNet
+        waitUntil(timeoutMillis = 10_000) { onAllNodes(hasSetTextAction() and hasText("max@posteo.de"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        assertTrue(saveShown(), "unchanged connection: Save without a check")
+        typeInto("Password", "neu-123")
+        assertFalse(saveShown(), "a new password needs a check")
+        typeInto("Password", "")
+        typeInto("Account name", "Privat neu")
+        assertTrue(saveShown())
+        onAllNodes(hasText("Save") and hasClickAction()).onFirst().apply { performScrollTo() }.performClick()
+        waitUntil(timeoutMillis = 10_000) { "mailSaveAccount:m1:Privat neu:max@posteo.de" in net.calls }
+        assertFalse(net.calls.any { it.startsWith("mailTest") }, net.calls.toString())
+        waitUntil(timeoutMillis = 10_000) { state.mailAccountSheet == null }
+    }
+
+    /** A self-signed certificate: the fingerprint question, then the check runs again by itself. */
+    @Test
+    fun mailCertificateIsConfirmedThenCheckedAgain() = app(
+        setup = { mailAccountSheet = de.danerd.ghulsuite.ui.MailSheet(null) },
+        prepare = { (net as FakeNet).mailSelfSigned = true },
+    ) { _, fake ->
+        val net = fake.net as FakeNet
+        typeInto("E-mail address", "anna@example.org")
+        typeInto("Password", "richtig")
+        text("Check connection").performClick()
+        waitFor("Check the certificate")
+        assertTrue(part("SHA256:selbstsigniert"))
+        assertFalse(saveShown())
+        dialogButton("Fingerprint matches")
+        waitFor("Connection works. You can save the account now.")
+        assertEquals(2, net.calls.count { it.startsWith("mailTest:") }, net.calls.toString())
+        assertTrue(saveShown())
+    }
+
+    /**
+     * A server: after the folder is chosen, "Check connection" (key fingerprint, writable folder)
+     * comes before "Save server"; choosing another folder takes "Save server" away again.
+     */
+    @Test
+    fun serverIsCheckedBeforeSaving() = app(setup = { push(Screen.AddServer) }) { state, fake ->
+        val net = fake.net as FakeNet
+        typeInto("Server address", "nas.example.org")
+        typeInto("User name", "max")
+        text("Test connection").performClick()
+        waitFor("Create new (recommended)")
+        text("ghulsuite").performClick()
+        waitFor("Check connection")
+        assertFalse(shown("Save server"), "no Save before the check")
+        text("Check connection").performClick()
+        waitFor("Check the server key")
+        dialogButton("Fingerprint matches")
+        waitFor("Save server")
+        assertTrue(part("the folder can be written"))
+        assertTrue("serverTest:nas.example.org:ghulsuite:SHA256:7beJP+X7anXY96H6FlO+I7u8z2xP1gJsp7GiBGawac4" in net.calls, net.calls.toString())
+        assertFalse(net.calls.any { it.startsWith("saveServer") }, "checking saves nothing")
+        shot("server-check-ok")
+        // Another folder: check again.
+        text("ghulsuite/").performClick()
+        waitFor("New folder …")
+        text("New folder …").performClick()
+        typeInto("Name of the new folder", "readonly")
+        text("Use readonly (created when testing)").performClick()
+        waitFor("Check connection")
+        assertFalse(shown("Save server"), "a new folder needs a new check")
+        text("Check connection").performClick()
+        waitUntil(timeoutMillis = 10_000) { part("Folder writable") && !state.busy }
+        assertFalse(shown("Save server"), "a folder that cannot be written is not saved")
+        shot("server-check-failed")
+        // Back to the writable folder: check, then save.
+        text("readonly/").performClick()
+        waitFor("Create new (recommended)")
+        text("ghulsuite").performClick()
+        text("Check connection").performClick()
+        waitFor("Save server")
+        text("Save server").performScrollTo().performClick()
+        waitUntil(timeoutMillis = 10_000) { "saveServer:nas.example.org:ghulsuite" in net.calls }
+    }
 }

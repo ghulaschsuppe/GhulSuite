@@ -428,7 +428,6 @@
     <string name="vault_scan_hint">Only needed if you copied vault files into this folder yourself. The app looks anyway when unlocking.</string>
     <string name="vault_summary">%1$s · entries: %2$s</string>
     <string name="a_attach">Attach file</string>
-    <string name="a_check_and_save">Check and save</string>
     <string name="a_fetch">Fetch suite</string>
     <string name="a_flag">Flag</string>
     <string name="a_unflag">Remove flag</string>
@@ -1750,4 +1749,18 @@
     <string name="job_end_done">%1$s finished</string>
     <string name="job_end_cancelled">%1$s cancelled</string>
     <string name="job_end_failed">%1$s stopped with an error</string>
+    <string name="a_check_connection">Check connection</string>
+    <string name="mail_check_ok">Connection works. You can save the account now.</string>
+    <string name="mail_step_imap_server">Incoming server reachable</string>
+    <string name="mail_step_imap_login">Login to the incoming server</string>
+    <string name="mail_step_smtp_server">Outgoing server reachable</string>
+    <string name="mail_step_smtp_login">Login to the outgoing server</string>
+    <string name="mail_step_skipped">Not checked</string>
+    <string name="mail_step_cert">Confirm the certificate first</string>
+    <string name="mail_step_login_rejected">Login rejected. Check login name and password (some providers need an app password).</string>
+    <string name="mail_step_failed">Connection failed: %1$s</string>
+    <string name="srvf_step_writable">Folder writable</string>
+    <string name="srvf_checking">Checking…</string>
+    <string name="srvf_check_ok">Connection works, the folder can be written. You can save the server now.</string>
+    <string name="core_mail_not_tested">Check the connection first.</string>
 </resources>

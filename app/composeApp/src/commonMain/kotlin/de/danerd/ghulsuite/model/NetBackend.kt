@@ -13,6 +13,11 @@ interface NetBackend {
      * user to compare (nothing is stored); with the confirmed fingerprint it returns the server id.
      */
     suspend fun saveServer(input: ServerInputUi, confirmed: String?): ServerSavedUi
+    /**
+     * "Check connection": logs in and checks that the folder can be written, stores nothing. On
+     * first contact it returns the fingerprint to confirm (then check again with it).
+     */
+    suspend fun serverTest(input: ServerInputUi, confirmed: String?): ServerTestUi
     suspend fun removeServer(id: String)
     /**
      * Logs in once with the password in [input] and adds the suite's SSH key to the server's
@@ -115,7 +120,12 @@ interface NetBackend {
 
     // --- GhulMail
     fun mailSuggest(email: String): MailServersUi
-    suspend fun mailCheck(input: MailAccountInputUi): MailCheckUi
+    /**
+     * "Check connection" of an account as entered (stores nothing): both servers step by step.
+     * Editing ([id] set) with an empty password checks with the stored one.
+     */
+    suspend fun mailTest(id: String?, input: MailAccountInputUi): MailTestUi
+    /** Stores an account; only settings that just passed [mailTest] (or a change of names and signature only). */
     suspend fun mailSaveAccount(id: String?, input: MailAccountInputUi): String
     suspend fun mailAccounts(): List<MailAccountUi>
     /** Unread messages in the inbox of [accountId] (asks the server). */
@@ -235,6 +245,11 @@ interface ByteSink {
 }
 
 enum class ServerKindUi { SFTP, FTPS }
+
+sealed interface ServerTestUi {
+    data class Confirm(val fingerprint: String) : ServerTestUi
+    data object Ok : ServerTestUi
+}
 
 sealed interface ServerSavedUi {
     data class Confirm(val fingerprint: String) : ServerSavedUi
@@ -394,6 +409,19 @@ sealed interface MailCheckUi {
     data class ImapCertificate(val fingerprint: String) : MailCheckUi
     data class SmtpCertificate(val fingerprint: String) : MailCheckUi
 }
+
+/**
+ * One step of checking a connection: imap_server, imap_login, smtp_server, smtp_login. [detail]:
+ * empty when ok, [STEP_SKIPPED] when not reached, [STEP_CERTIFICATE] when a certificate is to be
+ * confirmed, else the error.
+ */
+data class ConnStepUi(val step: String, val ok: Boolean, val detail: String)
+
+const val STEP_SKIPPED = "skipped"
+const val STEP_CERTIFICATE = "certificate"
+
+/** Result of checking an account: every step, and a certificate to confirm (then check again). */
+data class MailTestUi(val ok: Boolean, val steps: List<ConnStepUi>, val confirm: MailCheckUi? = null)
 
 /** `role`: inbox, sent, trash, drafts, junk, archive or empty. */
 data class MailFolderUi(val name: String, val role: String)

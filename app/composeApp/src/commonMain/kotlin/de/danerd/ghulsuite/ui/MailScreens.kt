@@ -13,6 +13,8 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MarkEmailRead
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.material.icons.automirrored.filled.Label
@@ -1352,29 +1354,43 @@ private fun MailAccountForm(state: AppState, id: String?, onSaved: (String) -> U
     val defaultSignature = stringResource(Res.string.mail_signature_default)
     var certToConfirm by remember { mutableStateOf<MailCheckUi?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    /** The account as stored (editing): saving without a check is fine while its connection stays. */
+    var stored by remember { mutableStateOf<MailAccountInputUi?>(null) }
+    /** The last "Check connection" and the connection settings it checked. */
+    var test by remember { mutableStateOf<de.danerd.ghulsuite.model.MailTestUi?>(null) }
+    var testedKey by remember { mutableStateOf<List<Any?>?>(null) }
     LaunchedEffect(id) {
         if (id != null) {
             net.mailAccounts().firstOrNull { it.id == id }?.let { a ->
                 input = MailAccountInputUi(a.name, a.displayName, a.email, a.username, "", a.servers, signature = a.signature)
+                stored = input
             }
         }
     }
+    // The result belongs to the connection settings it checked: any change of address, login,
+    // password, servers, ports, security or a trusted certificate takes it (and "Save") away.
+    // Name, sender name and signature are not part of it.
+    val key = connectionKey(input)
+    val shownTest = test?.takeIf { testedKey == key }
+    val unchanged = id != null && stored?.let { connectionKey(it) == key } == true
+    val canSave = shownTest?.ok == true || unchanged
 
-    fun checkAndSave(i: MailAccountInputUi) {
-        // Check and save in one step: a second state.run inside onSuccess would be dropped
-        // because the first one still counts as running.
-        state.run(onError = { error = it }, block = {
-            // Editing without a new password keeps the stored one; the check then is skipped.
-            val check = if (id != null && i.password.isEmpty()) MailCheckUi.Ok else net.mailCheck(i)
-            if (check is MailCheckUi.Ok) check to net.mailSaveAccount(id, i) else check to null
-        }) { (check, newId) ->
-            if (newId != null) {
-                state.mailAccount = newId
-                state.changed()
-                onSaved(newId)
-            } else {
-                certToConfirm = check
-            }
+    fun check(i: MailAccountInputUi) {
+        state.run(onError = { error = it }, block = { net.mailTest(id, i) }) { t ->
+            error = null
+            test = t
+            testedKey = connectionKey(i)
+            // A certificate to confirm: the fingerprint question, then the check runs again.
+            if (t.confirm != null && t.confirm != MailCheckUi.Ok) certToConfirm = t.confirm
+        }
+    }
+
+    fun save() {
+        val i = input
+        state.run(onError = { error = it }, block = { net.mailSaveAccount(id, i) }) { newId ->
+            state.mailAccount = newId
+            state.changed()
+            onSaved(newId)
         }
     }
 
@@ -1420,12 +1436,23 @@ private fun MailAccountForm(state: AppState, id: String?, onSaved: (String) -> U
                     Hint(stringResource(Res.string.mail_servers_auto, input.servers.imapHost.ifBlank { "-" }, input.servers.smtpHost.ifBlank { "-" }))
                 }
                 ErrorText(error)
-                Button(
-                    onClick = { checkAndSave(input) },
-                    enabled = !state.busy && input.email.contains('@') && (id != null || input.password.isNotEmpty()) &&
-                        input.servers.imapHost.isNotBlank() && input.servers.smtpHost.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text(stringResource(Res.string.a_check_and_save)) }
+                val ready = input.email.contains('@') && (id != null || input.password.isNotEmpty()) &&
+                    input.servers.imapHost.isNotBlank() && input.servers.smtpHost.isNotBlank()
+                // First check the connection (a checklist says what works); only then "Save".
+                // Nothing is saved by checking, and nothing is saved by itself.
+                if (shownTest?.ok == true) {
+                    Banner(Icons.Filled.CheckCircle, stringResource(Res.string.mail_check_ok))
+                } else {
+                    val label = stringResource(Res.string.a_check_connection)
+                    if (canSave) OutlinedButton(onClick = { check(input) }, enabled = !state.busy && ready, modifier = Modifier.fillMaxWidth()) { Text(label) }
+                    else Button(onClick = { check(input) }, enabled = !state.busy && ready, modifier = Modifier.fillMaxWidth()) { Text(label) }
+                }
+                shownTest?.let { MailChecklist(it) }
+                if (canSave) {
+                    Button(onClick = { save() }, enabled = !state.busy && ready, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(Res.string.a_save))
+                    }
+                }
         }
     }
     certToConfirm?.let { c ->
@@ -1441,11 +1468,68 @@ private fun MailAccountForm(state: AppState, id: String?, onSaved: (String) -> U
             onTrust = {
                 certToConfirm = null
                 input = if (c is MailCheckUi.ImapCertificate) input.copy(imapCert = fp) else input.copy(smtpCert = fp)
-                checkAndSave(input)
+                // Trusted: the same check again, now with the certificate.
+                check(input)
             },
             onDismiss = { certToConfirm = null },
         )
     }
+}
+
+/** What makes the connection of an account: a change here needs a new check before saving. */
+private fun connectionKey(i: MailAccountInputUi): List<Any?> =
+    listOf(i.email.trim(), i.username.trim(), i.password, i.servers, i.imapCert, i.smtpCert)
+
+/** The steps of "Check connection": green check, red with the reason, grey when not reached. */
+@Composable
+private fun MailChecklist(t: de.danerd.ghulsuite.model.MailTestUi) {
+    Column(Modifier.fillMaxWidth().padding(start = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        for (step in t.steps) {
+            val skipped = step.detail == de.danerd.ghulsuite.model.STEP_SKIPPED
+            val color = when { step.ok -> g.fg; skipped -> g.muted; else -> g.danger }
+            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(
+                    when { step.ok -> Icons.Filled.CheckCircle; skipped -> Icons.Filled.Schedule; else -> Icons.Filled.Error }, null,
+                    Modifier.padding(top = 2.dp).size(16.dp),
+                    tint = when { step.ok -> okColor(); skipped -> g.faint; else -> g.danger },
+                )
+                Column {
+                    Text(stringResource(mailStepLabel(step.step)), fontSize = 13.sp, color = color)
+                    if (!step.ok) stepReason(step.detail)?.let { Text(it, fontSize = 12.sp, color = if (skipped) g.muted else g.danger) }
+                }
+            }
+        }
+    }
+}
+
+private fun mailStepLabel(step: String) = when (step) {
+    "imap_server" -> Res.string.mail_step_imap_server
+    "imap_login" -> Res.string.mail_step_imap_login
+    "smtp_server" -> Res.string.mail_step_smtp_server
+    else -> Res.string.mail_step_smtp_login
+}
+
+/** Why a step failed, in the app's language (known errors of the core get a friendly text). */
+@Composable
+private fun stepReason(detail: String): String? {
+    val env = rememberResourceEnvironment()
+    val skipped = stringResource(Res.string.mail_step_skipped)
+    val cert = stringResource(Res.string.mail_step_cert)
+    val rejected = stringResource(Res.string.mail_step_login_rejected)
+    val failed = stringResource(Res.string.mail_step_failed)
+    val text by produceState<String?>(null, detail) {
+        value = when (detail) {
+            "" -> null
+            de.danerd.ghulsuite.model.STEP_SKIPPED -> skipped
+            de.danerd.ghulsuite.model.STEP_CERTIFICATE -> cert
+            "login rejected" -> rejected
+            else -> {
+                val inner = detail.removePrefix("connection failed: ")
+                coreText(env, inner) ?: coreText(env, detail) ?: failed.replace("%1\$s", inner)
+            }
+        }
+    }
+    return text
 }
 
 @Composable

@@ -87,6 +87,15 @@ name: Sync server and sharing on a real server
 - assertVisible: "sync-maestro/"
 - assertNotVisible: ".*composition.*"
 - takeScreenshot: s3-05-connected
+# Check first (login, folder writable); only then "Save server".
+- assertNotVisible: "Save server"
+- scrollUntilVisible:
+    element: "Check connection"
+    direction: DOWN
+- tapOn: "Check connection"
+- extendedWaitUntil:
+    visible: "Connection works, the folder can be written\\..*"
+    timeout: 120000
 - scrollUntilVisible:
     element: "Save server"
     direction: DOWN

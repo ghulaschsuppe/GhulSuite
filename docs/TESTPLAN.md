@@ -41,9 +41,9 @@ von Schritt 3, danach geht „Zurück“ nur noch bis Schritt 4.
 | E4 | „Passwort vorschlagen“ antippen, Wiederholung eingeben, Weiter. | Langes Zufallspasswort, Stärkebalken voll; Schritt 2 · Zweiter Faktor. |
 | E5 | „Security Key“ gewählt lassen, Name des Keys, Key-PIN eingeben (Android: „Key prüfen“ zeigt „Erkannt: …“). Weiter. | Schritt 3 · Speicherort. |
 | E6 | App-Speicher lassen, „Key registrieren“, Key **zweimal** berühren. | Schritt 4 · Synchronisation; kein „Zurück“ zu den Schritten 1 bis 3 mehr. |
-| E7 | „Eigener Server“ wählen, ohne Angaben „Weiter“. | Meldung „Noch offen: Anmeldung“ (bzw. der fehlende Schritt). Checkliste unter dem Formular zeigt Anmeldung, Ordner, Verbindung testen. |
+| E7 | „Eigener Server“ wählen, ohne Angaben „Weiter“. | Meldung „Noch offen: Anmeldung“ (bzw. der fehlende Schritt). Checkliste unter dem Formular zeigt Anmeldung, Verbindung testen, Ordner wählen, Ordner beschreibbar, Speichern. |
 | E8 | SFTP-Server eintragen (siehe Abschnitt 12), „Ordner wählen“. | Fingerabdruck bestätigen, dann die Ordner des Servers; „ghulsuite, Neu anlegen (empfohlen)“, Unterordner öffnen, „Eine Ebene höher“, „Neuer Ordner …“. |
-| E9 | Ordner wählen → „Verbindung testen“ → Weiter. | „Verbunden · host:/ordner“, Haken in der Checkliste; Schritt 5 · Bereiche. |
+| E9 | Ordner wählen → „Verbindung prüfen“ → „Server speichern“ → Weiter. | Vor der Prüfung gibt es kein „Server speichern“. Nach der Prüfung „Verbindung klappt, der Ordner ist beschreibbar …“, dann nach dem Speichern „Verbunden · host:/ordner“, Haken in der Checkliste; Schritt 5 · Bereiche. |
 | E10 | Alle fünf Bereiche einschalten. Bei GhulDrive „Wie Synchronisation“. Weiter. | Namen für GhulPass, GhulAuth, GhulCal änderbar; „Wie Synchronisation“ nur wählbar, weil Schritt 4 eingerichtet wurde. Schritt 6 · Sperren. |
 | E11 | Sperrzeit wählen, Schalter für Bildschirm aus und Schütteln. Weiter. | Schritt 7 · Entsperren mit Hinweis, dass „Schnell entsperren“ Fingerabdruck und App-PIN meint. |
 | E12 | „Zusätzlich Fingerabdruck“, Gültigkeit „Immer“. Weiter. | Hinweis: ohne Ablauf, aber nach Neustart, Sofortsperre oder Passwortwechsel wieder Passwort und Key. Fingerabdruck-Abfrage; Schritt 8. |
@@ -51,7 +51,7 @@ von Schritt 3, danach geht „Zurück“ nur noch bis Schritt 4.
 | E14 | „Ich habe den Code notiert“ → Weiter → falsche Gruppe 3 eingeben. | Meldung „Das ist nicht die dritte Gruppe“. Es gibt kein „Später“. |
 | E15 | Richtige Gruppe 3 eingeben → Abschließen. | Hauptansicht mit allen fünf Bereichen und Optionen; GhulMail zeigt „Noch kein Konto“ mit dem vollständigen Kontoformular. |
 | E16 | Zweite Einrichtung: in Schritt 4 „Später“, in Schritt 5 GhulDrive einschalten. | „Wie Synchronisation“ ist ausgegraut („Erst Synchronisation einrichten (Schritt 4)“); „Eigener Server“ klappt das Formular direkt auf. |
-| E17 | GhulDrive „Eigener Server“ → FTPS: Daten des Webhostings, „Verbindung testen“, Ordner wählen (nicht `public_html`), „Server speichern“. | Zur Wahl stehen nur SFTP und FTPS. Der Server ist gespeichert; das Server-Modul für Freigabelinks kommt später über die Serverliste (ST6). |
+| E17 | GhulDrive „Eigener Server“ → FTPS: Daten des Webhostings, „Verbindung testen“, Ordner wählen (nicht `public_html`), „Verbindung prüfen“, „Server speichern“. | Zur Wahl stehen nur SFTP und FTPS. Der Server ist gespeichert; das Server-Modul für Freigabelinks kommt später über die Serverliste (ST6). |
 | E18 | Einrichtung mit „Schlüsseldatei“ statt Key: Datei erstellen und z. B. auf den USB-Stick speichern. | Ohne gespeicherte Datei geht es nicht weiter. Danach wie E6 bis E15 (ohne Key-Berührung). |
 | E19 | In Schritt 3 einen eigenen Ordner wählen, in dem schon GhulSuite-Dateien liegen. | Hinweis „Hier liegen bereits GhulSuite-Dateien“ und „Diese Suite öffnen“. |
 | E20 | Nur GhulAuth wählen und einrichten. | In der Leiste nur GhulAuth und Optionen; keine weiteren Dateien im Ordner. |
@@ -203,9 +203,9 @@ Für T5 bis T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick
 |---|---|---|
 | SY1 | Optionen → Server, Sync & Teilen → „Server hinzufügen“ → Verbindungsart **SFTP (SSH)**. Adresse, Port und Benutzer eingeben, „SSH-Schlüssel“ gewählt lassen. | Ein öffentlicher Schlüssel `ssh-ed25519 …` wird angezeigt; „Kopieren“ legt ihn in die Zwischenablage. Es gibt noch **keine** Ordnerwahl, nur „Verbindung testen“; darunter die Schritte 1. bis 4. untereinander. |
 | SY2 | Schlüssel auf dem Server in `~/.ssh/authorized_keys` eintragen, dann „Verbindung testen“. | Dialog „Server-Schlüssel prüfen“ mit `SHA256:…`. Er stimmt mit dem Fingerabdruck aus V6 überein. |
-| SY3 | „Fingerabdruck stimmt“, in der Ordnerliste „ghulsuite (Neu anlegen, empfohlen)“ wählen, „Server speichern“. | Nach dem Fingerabdruck: „Verbindung klappt. Wähle jetzt den Ordner …“ und die Ordnerliste öffnet sich von selbst. Nach dem Speichern erscheint der Server in der Liste. Auf dem Server gibt es den Ordner `ghulsuite/suite/` (leer). |
+| SY3 | „Fingerabdruck stimmt“, in der Ordnerliste „ghulsuite (Neu anlegen, empfohlen)“ wählen, „Verbindung prüfen“, „Server speichern“. | Nach dem Fingerabdruck: „Verbindung klappt. Wähle jetzt den Ordner …“ und die Ordnerliste öffnet sich von selbst. Nach dem Speichern erscheint der Server in der Liste. Auf dem Server gibt es den Ordner `ghulsuite/suite/` (leer). |
 | SY4 | Server mit falschem Fingerabdruck-Abgleich: „Abbrechen“ im Dialog. | Nichts wird gespeichert. |
-| SY4b | Einfachster Weg: „Server hinzufügen“ → „Passwort“ → SSH-Passwort eingeben, „SSH-Schlüssel automatisch einrichten“ eingeschaltet lassen → „Verbindung testen“ → Fingerabdruck bestätigen → Ordner wählen → „Server speichern“. | Server erscheint mit „Ordner: /home/…/ghulsuite“. Auf dem Server steht in `~/.ssh/authorized_keys` eine neue Zeile `ssh-ed25519 … GhulSuite`, alte Zeilen sind unverändert. Das Passwort ist nicht gespeichert (Server funktioniert auch nach Passwortänderung weiter). |
+| SY4b | Einfachster Weg: „Server hinzufügen“ → „Passwort“ → SSH-Passwort eingeben, „SSH-Schlüssel automatisch einrichten“ eingeschaltet lassen → „Verbindung testen“ → Fingerabdruck bestätigen → Ordner wählen → „Verbindung prüfen“ → „Server speichern“. | Server erscheint mit „Ordner: /home/…/ghulsuite“. Auf dem Server steht in `~/.ssh/authorized_keys` eine neue Zeile `ssh-ed25519 … GhulSuite`, alte Zeilen sind unverändert. Das Passwort ist nicht gespeichert (Server funktioniert auch nach Passwortänderung weiter). |
 | SY5 | Variante Passwort: zweiten Server-Eintrag mit „Passwort“ anlegen (falls der Server Passwort-Anmeldung erlaubt). | Funktioniert wie SY2 bis SY3. Falsches Passwort → „Der Server hat die Anmeldung abgelehnt …“. |
 | SY6 | Synchronisation → „Aus“ antippen → Server wählen. | Statt „Aus“ steht der Servername da; synchronisiert sofort; „Zuletzt synchronisiert: …“. Auf dem Server liegen jetzt `suite.ghlsuite` und die Tresordateien, alle verschlüsselt (Inhalt unlesbar). |
 | SY7 | **Zweites Gerät:** Startbildschirm → „Von meinem Server holen“. Adresse usw. eingeben; den angezeigten **Geräteschlüssel** zusätzlich in `authorized_keys` eintragen; „Suite holen“, Fingerabdruck bestätigen. | „Suite geladen. Jetzt entsperren.“ → Entsperren mit Passwort und Key/Schlüsseldatei klappt, alle Einträge sind da. |
@@ -244,10 +244,12 @@ Für T5 bis T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick
 | Nr. | Schritt | Erwartet |
 |---|---|---|
 | M1 | Tab GhulMail → „E-Mail-Konto hinzufügen“. E-Mail-Adresse eingeben. | Unter „Eingang/Ausgang“ werden passende Server vorgeschlagen (bei bekannten Anbietern genau, sonst `imap.`/`smtp.` + Domain). |
-| M2 | Passwort (bzw. App-Passwort), Name eingeben, „Prüfen und speichern“. | Signatur ist mit „Viele Grüße“ und deinem Namen vorbelegt. Konto wird gespeichert, Posteingang erscheint. |
-| M3 | Falsches Passwort. | „Der Server hat die Anmeldung abgelehnt …“, nichts gespeichert. |
+| M2 | Passwort (bzw. App-Passwort), Name eingeben. Erst „Verbindung prüfen“, dann „Speichern“. | Vor der Prüfung gibt es kein „Speichern“. Die Prüfung zeigt vier Haken: Posteingangsserver erreichbar, Anmeldung am Posteingang, Postausgangsserver erreichbar, Anmeldung am Postausgang, und „Verbindung klappt …“; erst dann erscheint „Speichern“. Durch die Prüfung wird nichts gespeichert. Signatur ist mit „Viele Grüße“ und deinem Namen vorbelegt. Nach „Speichern“ erscheint der Posteingang. |
+| M2a | Nach erfolgreicher Prüfung Passwort, Adresse, Benutzername, Server oder Port ändern. | Ergebnis und „Speichern“ verschwinden sofort; erst eine neue Prüfung bringt sie zurück. Nur Name, Absendername oder Signatur ändern: „Speichern“ bleibt. |
+| M2b | Bestehendes Konto bearbeiten, nur den Namen oder die Signatur ändern. | „Speichern“ ist ohne Prüfung möglich. Ein neues Passwort verlangt erst „Verbindung prüfen“. |
+| M3 | Falsches Passwort, „Verbindung prüfen“. | Server erreichbar (grün), beide Anmeldungen rot mit „Anmeldung abgelehnt. Prüfe Benutzername und Passwort …“; kein „Speichern“, nichts gespeichert. Falsche Serveradresse: „Posteingangsserver erreichbar“ rot mit dem Grund, die Anmeldung grau „Nicht geprüft“. |
 | M4 | „Server-Einstellungen anzeigen“: Ports ändern, falscher Server. | Für IMAP gibt es nur SSL/TLS (keine Wahl), für den Ausgang SSL/TLS oder STARTTLS. Falscher Server: klare Meldung „Keine Verbindung …“. |
-| M5 | Eigener Mailserver mit selbst signiertem Zertifikat (falls vorhanden). | Dialog „Zertifikat prüfen“ mit Fingerabdruck; nach Bestätigung funktioniert es. |
+| M5 | Eigener Mailserver mit selbst signiertem Zertifikat (falls vorhanden), „Verbindung prüfen“. | Dialog „Zertifikat prüfen“ mit Fingerabdruck; nach „Fingerabdruck stimmt“ läuft die Prüfung von selbst noch einmal und zeigt die Haken; dann „Speichern“. |
 | M6 | Liste: ungelesene fett, Stern, Büroklammer bei Anhängen, Datum. „Weitere laden“ bei mehr als 50. | Stimmt mit dem Postfach im Webmail überein. |
 | M7 | Ordner wechseln (Gesendet, Papierkorb …), Aktualisieren. | Richtige Inhalte. |
 | M8 | Mail öffnen. | Text lesbar, Absender/Empfänger/Datum; bei HTML-Mails Hinweis „Als Text angezeigt …“; **keine** Bilder aus dem Internet. Im Webmail ist sie jetzt gelesen. |
@@ -300,7 +302,7 @@ Ein Server in der App ist ein Webspace bzw. Server: seine SFTP- oder FTPS-Anmeld
 | Nr. | Schritt | Erwartet |
 |---|---|---|
 | ST1 | Optionen → Server, Sync & Teilen → „Server hinzufügen“. | Auswahl SFTP oder FTPS, kein PHP-Modul als eigene Verbindungsart. |
-| ST2 | **FTPS**: Adresse, Port 21, Benutzer, Passwort → „Verbindung testen“ → Ordner `ghulsuite` → „Server speichern“. | Dialog mit Zertifikat-Fingerabdruck (bei gültigem Zertifikat ggf. direkt gespeichert). Danach steht der Server in der Liste mit „FTPS“, Anmeldung und „Ordner: /ghulsuite“. |
+| ST2 | **FTPS**: Adresse, Port 21, Benutzer, Passwort → „Verbindung testen“ → Ordner `ghulsuite` → „Verbindung prüfen“ → „Server speichern“. | Dialog mit Zertifikat-Fingerabdruck (bei gültigem Zertifikat ohne Dialog). Danach steht der Server in der Liste mit „FTPS“, Anmeldung und „Ordner: /ghulsuite“. |
 | ST3 | FTPS mit falschem Passwort. | Fehlermeldung „Anmeldung abgelehnt“, nichts gespeichert. |
 | ST4 | Synchronisation und GhulDrive mit dem FTPS-Server (wie SY6, D2 bis D6). | Funktioniert; auf dem Webhosting nur verschlüsselte Dateien. |
 | ST4a | Server hinzufügen, beim GhulSuite-Ordner „Ordner wählen“ und in `public_html` (oder `htdocs`, einen Ordner mit Domainnamen) wechseln. | Der Ordner ist in der Liste als „Ordner der Website, nicht für GhulSuite“ markiert; darin steht rot, den GhulSuite-Ordner besser daneben anzulegen. Der Hinweis unter dem Feld sagt, dass der Ordner nicht in der Website liegen soll. |
@@ -609,7 +611,7 @@ Diese Punkte prüft auch der Emulator-Ablauf `app/maestro/server/3-sync-share.ya
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| R1 | Server hinzufügen (SFTP oder FTPS): Zugangsdaten eingeben, ohne zu testen nach einem Ordner suchen. | Es gibt keine Ordnerwahl. Erst „Verbindung testen“; nach Erfolg „Verbindung klappt …“ und die Ordnerliste öffnet sich. Eine geänderte Adresse, ein geänderter Benutzer oder ein geändertes Passwort verlangen einen neuen Test. |
+| R1 | Server hinzufügen (SFTP oder FTPS): Zugangsdaten eingeben, ohne zu testen nach einem Ordner suchen. | Es gibt keine Ordnerwahl. Erst „Verbindung testen“; nach Erfolg „Verbindung klappt …“ und die Ordnerliste öffnet sich. Nach der Ordnerwahl „Verbindung prüfen“ (Anmeldung und Ordner beschreibbar); erst danach „Server speichern“. Eine geänderte Adresse, ein geänderter Benutzer, ein geändertes Passwort oder ein anderer Ordner verlangen eine neue Prüfung; nichts wird von selbst gespeichert. |
 | R2 | Server mit nicht erreichbarer Adresse, „Verbindung testen“. | Die Fehlermeldung steht im Formular; keine Ordnerliste öffnet sich. |
 | R3 | Reiter „FTPS“ im Formular, Liste der Schritte unten ansehen. | Schritte 1. bis 4. untereinander, jeder in einer Zeile, nichts zerhackt. |
 | R4 | Synchronisation: „Aus“ antippen, Server wählen. | Der Servername steht statt „Aus“; „Jetzt synchronisieren“ erscheint. |

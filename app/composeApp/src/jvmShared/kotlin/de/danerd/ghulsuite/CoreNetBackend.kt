@@ -102,6 +102,13 @@ abstract class CoreNetBackend(protected val suite: () -> GhulSuite) : NetBackend
         }
     }
 
+    override suspend fun serverTest(input: ServerInputUi, confirmed: String?): de.danerd.ghulsuite.model.ServerTestUi = io {
+        when (val r = suite().serverTest(input.toCore(), confirmed)) {
+            is de.danerd.ghulsuite.core.ServerTest.Confirm -> de.danerd.ghulsuite.model.ServerTestUi.Confirm(r.fingerprint)
+            is de.danerd.ghulsuite.core.ServerTest.Ok -> de.danerd.ghulsuite.model.ServerTestUi.Ok
+        }
+    }
+
     override suspend fun serverBrowse(serverId: String, path: String): List<String> = io { suite().serverBrowse(serverId, path) }
 
     override suspend fun serverModuleInstall(serverId: String, dir: String, url: String): ModuleInstalledUi = io {
@@ -278,12 +285,18 @@ abstract class CoreNetBackend(protected val suite: () -> GhulSuite) : NetBackend
 
     override fun mailSuggest(email: String): MailServersUi = mailSuggestServers(email).toUi()
 
-    override suspend fun mailCheck(input: MailAccountInputUi): MailCheckUi = io {
-        when (val c = suite().mailCheckAccount(input.toCore())) {
-            is MailCheck.Ok -> MailCheckUi.Ok
-            is MailCheck.ImapCertificate -> MailCheckUi.ImapCertificate(c.fingerprint)
-            is MailCheck.SmtpCertificate -> MailCheckUi.SmtpCertificate(c.fingerprint)
-        }
+    override suspend fun mailTest(id: String?, input: MailAccountInputUi): de.danerd.ghulsuite.model.MailTestUi = io {
+        val t = suite().mailTestAccount(id, input.toCore())
+        de.danerd.ghulsuite.model.MailTestUi(
+            t.ok,
+            t.steps.map { de.danerd.ghulsuite.model.ConnStepUi(it.step, it.ok, it.detail) },
+            when (val c = t.confirm) {
+                null -> null
+                is MailCheck.Ok -> MailCheckUi.Ok
+                is MailCheck.ImapCertificate -> MailCheckUi.ImapCertificate(c.fingerprint)
+                is MailCheck.SmtpCertificate -> MailCheckUi.SmtpCertificate(c.fingerprint)
+            },
+        )
     }
 
     override suspend fun mailSaveAccount(id: String?, input: MailAccountInputUi): String {
