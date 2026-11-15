@@ -812,8 +812,8 @@
     <string name="mail_attachment_tag">Anhang</string>
     <string name="drive_current">Aktuell</string>
     <plurals name="drive_n_files">
-        <item quantity="one">%1$s Datei</item>
-        <item quantity="other">%1$s Dateien</item>
+        <item quantity="one">%1$s Element</item>
+        <item quantity="other">%1$s Elemente</item>
     </plurals>
     <string name="drive_add_title">Zu GhulDrive hinzufügen</string>
     <string name="drive_upload_files">Dateien hochladen</string>

@@ -109,12 +109,17 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
     }
     override suspend fun driveStatus() = DriveStatusUi(driveOwnServer?.id ?: if (configured) "s1" else null, 3, 12_345_678)
     override suspend fun driveSetup(serverId: String) {}
-    override suspend fun driveList(folder: String?, refresh: Boolean) = listOf(
-        DriveItemUi("d1", null, "Fotos", true, 0, now * 1000),
-        DriveItemUi("d2", null, "Verträge", true, 0, now * 1000),
-        DriveItemUi("f1", null, "Steuer 2025.pdf", false, 2_400_000, now * 1000),
-        DriveItemUi("f2", null, "Notizen.txt", false, 1_234, now * 1000),
-    )
+    /** How long listing a folder takes (a slow server); blocking, as the real core does. */
+    var driveListDelayMs = 0L
+    override suspend fun driveList(folder: String?, refresh: Boolean): List<DriveItemUi> {
+        if (folder != null && driveListDelayMs > 0) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Thread.sleep(driveListDelayMs) }
+        return if (folder == "d1") listOf(DriveItemUi("f5", "d1", "Strand.jpg", false, 3_100_000, now * 1000)) else listOf(
+            DriveItemUi("d1", null, "Fotos", true, 0, now * 1000),
+            DriveItemUi("d2", null, "Verträge", true, 0, now * 1000),
+            DriveItemUi("f1", null, "Steuer 2025.pdf", false, 2_400_000, now * 1000),
+            DriveItemUi("f2", null, "Notizen.txt", false, 1_234, now * 1000),
+        )
+    }
     override suspend fun driveSearch(query: String) = driveList(null, false).filter { it.name.contains(query, true) }
     override suspend fun driveCreateFolder(parent: String?, name: String) = "d3"
     override suspend fun driveRename(id: String, name: String) {}

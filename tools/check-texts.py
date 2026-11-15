@@ -49,13 +49,19 @@ PLURAL_NOUNS = {
            "recipients", "attachments", "shares", "years", "months", "times", "errors", "notes", "logins"],
     "de": ["Einträge", "Einträgen", "Dateien", "Elemente", "Elementen", "Mails", "Nachrichten", "Termine", "Terminen",
            "Konten", "Tresore", "Tresoren", "Tage", "Tagen", "Wochen", "Stunden", "Minuten", "Sekunden", "Abrufe",
-           "Abrufen", "Links", "Keys", "Ordner", "Ordnern", "Ergebnisse", "Codes", "Fotos", "Bilder", "Bildern",
-           "Kalender", "Kalendern", "Versuche", "Geräte", "Kontakte", "Empfänger", "Anhänge", "Freigaben", "Jahre",
-           "Monate", "Fehler", "Notizen", "Anmeldungen"],
+           "Abrufen", "Links", "Keys", "Ordnern", "Ergebnisse", "Codes", "Fotos", "Bilder", "Bildern",
+           "Kalendern", "Versuche", "Geräte", "Kontakte", "Anhänge", "Freigaben", "Jahre",
+           "Monate", "Notizen", "Anmeldungen"],
 }
+# Words that end the phrase of the number ("Server %1$s has no files" names a server, it does not
+# count files). German nouns that are the same in both forms (Ordner, Fehler, Kalender,
+# Empfänger) are not in the list: "1 Ordner" is right.
+_NOT_BETWEEN = (r"(?!(?:has|have|had|is|are|was|were|with|and|or|of|in|on|to|for|from|at|by|hat|haben|ist|sind|"
+                r"war|waren|mit|und|oder|von|im|auf|für|zu|aus|bei)\b)")
 NUMBER_PLURAL = {
     # Also "image(s)", "Bild(er)": the reader sees a makeshift, a <plurals> text says it properly.
-    lang: re.compile(r"%\d+\$[sd] (?:2FA[- ]?)?(?:[\w-]+ ){0,2}?(?:(?:" + "|".join(nouns) + r")\b|\w+\((?:s|e|n|en|er)\))")
+    lang: re.compile(r"%\d+\$[sd][ \u00a0](?:2FA[- ]?)?(?:" + _NOT_BETWEEN + r"[\w-]+[ \u00a0]){0,2}?(?:(?:"
+                     + "|".join(nouns) + r")\b|\w+\((?:s|e|n|en|er)\))")
     for lang, nouns in PLURAL_NOUNS.items()
 }
 

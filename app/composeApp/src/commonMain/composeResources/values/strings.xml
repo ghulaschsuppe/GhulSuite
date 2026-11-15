@@ -812,8 +812,8 @@
     <string name="mail_attachment_tag">Attachment</string>
     <string name="drive_current">Up to date</string>
     <plurals name="drive_n_files">
-        <item quantity="one">%1$s file</item>
-        <item quantity="other">%1$s files</item>
+        <item quantity="one">%1$s item</item>
+        <item quantity="other">%1$s items</item>
     </plurals>
     <string name="drive_add_title">Add to GhulDrive</string>
     <string name="drive_upload_files">Upload files</string>

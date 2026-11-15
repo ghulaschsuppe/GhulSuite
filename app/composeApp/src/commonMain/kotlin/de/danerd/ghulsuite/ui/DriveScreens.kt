@@ -215,7 +215,15 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
     // Long press selects (as in every list); the bar on top acts on the chosen files.
     val selected = rememberListSelection()
     val selecting = selected.active
+    // Which folder or view the loaded list belongs to: another one is not shown under the new
+    // path while it loads (it looked like the inside of the folder just opened).
+    var itemsOf by remember { mutableStateOf<Pair<String?, String>?>(null) }
     LaunchedEffect(folder, query, reload, view, trashTick, state.liveRevision()) {
+        val listOf = folder to view
+        if (itemsOf != listOf) {
+            items = emptyList()
+            loaded = false
+        }
         catching {
             when {
                 query.isNotBlank() -> net.driveSearch(query)
@@ -225,7 +233,7 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
                 view == "trash" -> net.driveTrash()
                 else -> net.driveList(folder, refresh)
             }
-        }.onSuccess { items = it; error = null }.onFailure { error = describe(it) }
+        }.onSuccess { items = it; itemsOf = listOf; error = null }.onFailure { error = describe(it) }
         loaded = true
         refresh = false
         usage = catching { net.driveUsage() }.getOrNull()

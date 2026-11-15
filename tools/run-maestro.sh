@@ -50,6 +50,18 @@ run() {
   return "$rc"
 }
 
+# The flows of app/maestro one by one, in the order of its config.yaml (each depends on the ones
+# before it, so the first failure ends the part). One by one, so that a flow whose run Maestro's
+# own device helper ended is run once more (see run).
+base_flows() {
+  local name file
+  while read -r name; do
+    file=$(grep -l -x "name: $name" "$flows"/[01][0-9]-*.yaml | head -n 1)
+    [ -n "$file" ] || { echo "::error::Kein Ablauf mit dem Namen „$name“ (app/maestro/config.yaml)"; return 1; }
+    run "$file" 900 || return $?
+  done < <(sed -n '/flowsOrder:/,$p' "$flows/config.yaml" | sed -n 's/^ *- //p')
+}
+
 # Which address does the device reach the test servers at? The SSH server greets with "SSH-": the
 # device's own 127.0.0.1 (adb reverse) or the emulator's alias of the host. The servers only
 # listen on this computer's 127.0.0.1, never on its other interfaces.
@@ -115,7 +127,7 @@ hard_conditions() {
 servers="${GHUL_TEST_SERVERS:-0}"
 case "$shard" in
   base)
-    timeout 2400 maestro test "$flows" --format junit --output "$out/report.xml" --test-output-dir "$out"
+    base_flows
     tour_de
     ;;
   server)
@@ -138,7 +150,7 @@ case "$shard" in
     run "$flows/server/5-mail-deep.yaml" 900 -e GHUL_SERVER="$addr"
     ;;
   all)
-    timeout 2400 maestro test "$flows" --format junit --output "$out/report.xml" --test-output-dir "$out"
+    base_flows
     tour_de
     # With test servers: GhulDrive, GhulMail, servers and sharing against a real server. They
     # continue where the flows above ended.

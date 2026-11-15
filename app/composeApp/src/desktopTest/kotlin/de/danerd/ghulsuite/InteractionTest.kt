@@ -186,6 +186,23 @@ class InteractionTest {
         shot("drive-file-sheet")
     }
 
+    /**
+     * Opening a folder on a slow server: the list of the folder before is not shown under the new
+     * path while the new one loads (it looked like the inside of the folder just opened).
+     */
+    @Test
+    fun driveFolderDoesNotShowTheOldListWhileLoading() = app(setup = { tab = Tab.DRIVE }) { _, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Fotos")
+        net.driveListDelayMs = 1500
+        text("Fotos").performClick()
+        waitFor("Loading …")
+        assertTrue(onAllNodesWithText("Notizen.txt").fetchSemanticsNodes().isEmpty())
+        assertTrue(onAllNodesWithText("Verträge").fetchSemanticsNodes().isEmpty())
+        waitUntil(timeoutMillis = 10_000) { onAllNodesWithText("Strand.jpg").fetchSemanticsNodes().isNotEmpty() }
+        net.driveListDelayMs = 0
+    }
+
     @Test
     fun driveEmptyTrashAsks() = app(setup = { tab = Tab.DRIVE }) { _, fake ->
         // Emptying the trash still asks, with a red button.

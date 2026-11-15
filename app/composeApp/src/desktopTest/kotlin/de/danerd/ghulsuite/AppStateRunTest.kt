@@ -74,6 +74,7 @@ class AppStateRunTest {
     @Test
     fun staleTextLayoutIsRecognisedExactly() {
         assertTrue(de.danerd.ghulsuite.ui.isStaleTextLayoutError(IllegalArgumentException("offset(14) is out of bounds [0, 11]")))
+        assertTrue(de.danerd.ghulsuite.ui.isStaleTextLayoutError(IllegalArgumentException("offset(14) is out of bounds [0, 11)")))
         assertFalse(de.danerd.ghulsuite.ui.isStaleTextLayoutError(IllegalArgumentException("index out of bounds")))
         assertFalse(de.danerd.ghulsuite.ui.isStaleTextLayoutError(IllegalStateException("offset(14) is out of bounds [0, 11]")))
         assertFalse(de.danerd.ghulsuite.ui.isStaleTextLayoutError(IllegalArgumentException("wrong offset(14) is out of bounds [0, 11]")))

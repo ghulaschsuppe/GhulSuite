@@ -40,4 +40,4 @@ inline fun <T, R> T.catching(block: T.() -> R): Result<R> =
 fun isStaleTextLayoutError(e: Throwable): Boolean =
     e is IllegalArgumentException && e.message?.let { STALE_TEXT_LAYOUT.containsMatchIn(it) } == true
 
-private val STALE_TEXT_LAYOUT = Regex("""^offset\(-?\d+\) is out of bounds \[0, \d+]""")
+private val STALE_TEXT_LAYOUT = Regex("""^offset\(-?\d+\) is out of bounds \[0, \d+[\])]""")
