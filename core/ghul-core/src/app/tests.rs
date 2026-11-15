@@ -1553,7 +1553,12 @@ fn share_via_folder(s: &GhulSuite, server_id: &str, dir: &str, web_root: &std::p
     upload(s, Some(folder.clone()), "Strand.jpg", &[9u8; 300_000]);
     upload(s, Some(folder.clone()), "Möwe.jpg", &[8u8; 1000]);
 
+    // A recipient page from an older version is replaced when the next link is made.
+    let page_file = web_root.join(rel).join("index.html");
+    assert!(page_file.exists(), "{page_file:?}");
+    std::fs::write(&page_file, "<!doctype html><div class=\"logo\"></div>").unwrap();
     let one = s.share_drive(vec![a.clone()], None, share_opts(server_id)).unwrap();
+    assert_eq!(std::fs::read_to_string(&page_file).unwrap(), include_str!("../../share-viewer/index.html"));
     assert!(one.url.starts_with(&format!("{public}/#")), "{}", one.url);
     assert_eq!(one.downloads, -1);
     let (meta, data) = open_link(&one.url, None).unwrap();

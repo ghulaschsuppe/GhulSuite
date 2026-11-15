@@ -294,6 +294,7 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
         val target = folder
         scope.launch {
             var ok = 0
+            val failed = mutableListOf<String>()
             var failure: String? = null
             try {
                 for ((i, s) in sources.withIndex()) {
@@ -307,7 +308,8 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
-                        failure = s.name + ": " + describe(e)
+                        failed += s.name
+                        failure = describe(e)
                     } finally {
                         s.close()
                     }
@@ -319,13 +321,17 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
             }
             // One message below (the list reloads and would clear an error shown above it).
             val done = if (ok > 0) (if (ok == 1) uploadedOne else uploadedMany).replace("%1\$s", ok.toString()) else null
-            listOfNotNull(done, failure).joinToString(" ").takeIf { it.isNotEmpty() }?.let { state.message(it) }
+            // Every file that failed is named (with the reason of the last one).
+            val notDone = failure?.let { failed.joinToString(", ") + ": " + it }
+            listOfNotNull(done, notDone).joinToString(" ").takeIf { it.isNotEmpty() }?.let { state.message(it) }
         }
     }
     val upload = rememberOpenStreams { sources -> uploadAll(sources) }
     // Files shared with GhulSuite from other apps ("Save in GhulDrive").
-    LaunchedEffect(state.driveIncoming) {
+    // They wait while another transfer runs (nothing shared is dropped).
+    LaunchedEffect(state.driveIncoming, transfer == null) {
         val incoming = state.driveIncoming ?: return@LaunchedEffect
+        if (transfer != null) return@LaunchedEffect
         state.driveIncoming = null
         uploadAll(incoming)
     }
@@ -372,7 +378,9 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
         runTransfer(t, { net.driveUpload(folder, src) { t.done = it } }, uploadedMsg)
     }
     var sharesActive by remember { mutableStateOf(0) }
-    LaunchedEffect(state.liveRevision()) {
+    // F100: counted again after a link was made or removed (it stayed 0 until GhulDrive was
+    // opened anew).
+    LaunchedEffect(state.liveRevision(), reload) {
         sharesActive = catching { net.shareList().size }.getOrDefault(0)
     }
     // What waits for "Undo" is gone from the list already. A file in the trash is another key

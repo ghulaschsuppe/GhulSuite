@@ -57,6 +57,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         if (current?.get() === this) current = null
+        // Files shared into GhulDrive may only be read while this window lives (Android's rule for
+        // shared files): once it is closed for good, they cannot be uploaded any more.
+        if (isFinishing) de.danerd.ghulsuite.ui.AppLaunch.driveFiles.value = null
         super.onDestroy()
     }
 

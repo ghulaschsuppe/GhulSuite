@@ -694,7 +694,7 @@
     <string name="share_mail_attach_sub">Öffnet GhulMail mit den Dateien im Anhang</string>
     <string name="share_mail_text">Hallo,\n\nhier ist %1$s für dich:\n%2$s\n\nDie Datei ist Ende-zu-Ende-verschlüsselt und öffnet sich im Browser.</string>
     <string name="share_max">Abrufe</string>
-    <string name="share_max_php_only">Abrufe begrenzen geht nur mit dem PHP-Server-Modul.</string>
+    <string name="share_max_php_only">Einmal-Links und eine begrenzte Zahl von Abrufen gehen nur mit dem PHP-Server-Modul: Dieser Server liefert die Datei direkt aus und zählt nicht mit. Ein abgelaufener Link wird beim nächsten Öffnen von GhulDrive entfernt.</string>
     <plurals name="share_n_items">
         <item quantity="one">%1$s Element</item>
         <item quantity="other">%1$s Elemente</item>

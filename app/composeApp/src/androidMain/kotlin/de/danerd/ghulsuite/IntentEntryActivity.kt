@@ -29,7 +29,12 @@ class IntentEntryActivity : Activity() {
         // "Save in GhulDrive": the files stay where they are until they are uploaded; the right
         // to read them goes along to GhulSuite's own window (it ends with this one otherwise).
         val toDrive = intent.component?.className?.endsWith(".ShareToDriveActivity") == true
-        val driveUris = if (toDrive) streams(intent).filter { foreign(it) } else emptyList()
+        // Only files GhulSuite was really allowed to read: passing on a right it does not hold
+        // would make Android end GhulSuite (any app could crash it this way).
+        val driveUris = if (!toDrive) emptyList() else streams(intent).filter {
+            foreign(it) && checkUriPermission(it, android.os.Process.myPid(), android.os.Process.myUid(), Intent.FLAG_GRANT_READ_URI_PERMISSION) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
         Thread {
             runCatching {
                 if (toDrive) {
@@ -47,7 +52,15 @@ class IntentEntryActivity : Activity() {
                     next.clipData = clip
                     next.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
-                startActivity(next)
+                try {
+                    startActivity(next)
+                } catch (e: SecurityException) {
+                    // The right could not be passed on after all: GhulSuite opens, the files stay out.
+                    AppLaunch.driveFiles.value = null
+                    next.clipData = null
+                    next.flags = next.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION.inv()
+                    startActivity(next)
+                }
                 finish()
             }
         }.start()

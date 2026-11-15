@@ -601,7 +601,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                 driveIncoming = files
                 scope.launch {
                     // GhulDrive without storage: the files wait; say what to do.
-                    if (catching { backend.net.driveStatus() }.getOrNull()?.serverId == null) message(getString(Res.string.drive_upload_not_set_up))
+                    // Only when GhulDrive surely has none (not when the server is just unreachable).
+                    catching { backend.net.driveStatus() }.onSuccess { if (it.serverId == null) message(getString(Res.string.drive_upload_not_set_up)) }
                 }
             } else {
                 scope.launch { message(getString(Res.string.drive_upload_not_set_up)) }

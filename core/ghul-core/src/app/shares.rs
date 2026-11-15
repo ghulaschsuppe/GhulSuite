@@ -139,6 +139,15 @@ fn install_viewer(fs: &dyn RemoteFs) -> Result<()> {
     Ok(())
 }
 
+/// A recipient page from an older app version is replaced (three small reads when it is current). Best
+/// effort: the link works with the older page as well.
+fn refresh_viewer(fs: &dyn RemoteFs) {
+    let current = VIEWER.iter().all(|(name, content)| matches!(fs.read(name), Ok(Some(have)) if have == content.as_bytes()));
+    if !current {
+        let _ = install_viewer(fs);
+    }
+}
+
 /// Packs several files into one ZIP (stored, the content is encrypted anyway).
 fn zip(files: &[(String, Zeroizing<Vec<u8>>)]) -> Result<Zeroizing<Vec<u8>>> {
     let mut out = std::io::Cursor::new(Vec::new());
@@ -196,6 +205,7 @@ impl GhulSuite {
         } else {
             let fs = servers::open_fs(o, &srv, Some(&srv.share_dir))?;
             fs.write(&format!("s/{id}"), &sealed.data)?;
+            refresh_viewer(fs.as_ref());
             format!("{}/#{fragment}", srv.share_url.trim_end_matches('/'))
         };
         let stored = StoredShare {
