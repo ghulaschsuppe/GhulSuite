@@ -107,7 +107,12 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
         configured && syncServer != null -> de.danerd.ghulsuite.model.DriveStorageUi(de.danerd.ghulsuite.model.DriveModeUi.SYNC, server, true)
         else -> de.danerd.ghulsuite.model.DriveStorageUi(de.danerd.ghulsuite.model.DriveModeUi.NONE, null, false)
     }
-    override suspend fun driveStatus() = DriveStatusUi(driveOwnServer?.id ?: if (configured) "s1" else null, 3, 12_345_678)
+    /** Holds driveStatus() back (Drive's index still coming from a slow server) until released. */
+    var driveStatusGate: java.util.concurrent.CountDownLatch? = null
+    override suspend fun driveStatus(): DriveStatusUi {
+        driveStatusGate?.let { gate -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { gate.await(30, java.util.concurrent.TimeUnit.SECONDS) } }
+        return DriveStatusUi(driveOwnServer?.id ?: if (configured) "s1" else null, 3, 12_345_678)
+    }
     override suspend fun driveSetup(serverId: String) {}
     /** How long listing a folder takes (a slow server); blocking, as the real core does. */
     var driveListDelayMs = 0L

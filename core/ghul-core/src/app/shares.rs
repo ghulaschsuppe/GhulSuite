@@ -110,8 +110,16 @@ fn info(s: &StoredShare, downloads: i64) -> ShareInfo {
     }
 }
 
+/// A GET for the checks of the share setup; a misspelt address or a wrong port give the same
+/// fixed texts as elsewhere ("server address not found"), which the app translates.
 fn get(url: &Url) -> std::result::Result<http::Response, String> {
-    block_on(http::request("GET", url, &[], b"", None), TIMEOUT).map_err(|e| e.to_string())
+    block_on(http::request("GET", url, &[], b"", None), TIMEOUT).map_err(|e| match e {
+        crate::net::NetError::Connect(_) => match GhulError::from(e) {
+            GhulError::Network { msg } => msg,
+            other => other.to_string(),
+        },
+        e => e.to_string(),
+    })
 }
 
 fn random_hex(n: usize) -> String {

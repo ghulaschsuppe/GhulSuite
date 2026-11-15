@@ -23,7 +23,7 @@ import de.danerd.ghulsuite.ui.DevChecks
 import de.danerd.ghulsuite.ui.AppState
 import de.danerd.ghulsuite.ui.CalView
 import de.danerd.ghulsuite.ui.GhulSuiteApp
-import de.danerd.ghulsuite.ui.LOCK_GRACE
+import de.danerd.ghulsuite.ui.HeaderGuard
 import de.danerd.ghulsuite.ui.Screen
 import de.danerd.ghulsuite.model.NetBackend
 import de.danerd.ghulsuite.model.SecurityIssueKindUi
@@ -203,6 +203,24 @@ class InteractionTest {
         assertTrue(onAllNodesWithText("Verträge").fetchSemanticsNodes().isEmpty())
         waitUntil(timeoutMillis = 10_000) { onAllNodesWithText("Strand.jpg").fetchSemanticsNodes().isNotEmpty() }
         net.driveListDelayMs = 0
+    }
+
+    /**
+     * The line under "GhulDrive" names the server at once, also while Drive's index still comes
+     * from a slow server (bug: after a restart it stayed empty until the index had arrived).
+     */
+    @Test
+    fun driveHeaderNamesTheServerWhileTheIndexLoads() {
+        val gate = java.util.concurrent.CountDownLatch(1)
+        try {
+            app(setup = { tab = Tab.DRIVE }, prepare = { (net as FakeNet).driveStatusGate = gate }) { _, _ ->
+                waitUntil(timeoutMillis = 10_000) { onAllNodesWithText("· My files", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+                assertEquals(1L, gate.count, "the index was still loading")
+                gate.countDown()
+            }
+        } finally {
+            gate.countDown()
+        }
     }
 
     @Test
@@ -459,25 +477,53 @@ class InteractionTest {
         }
     }
 
-    /** A double tap on "Save" in an editor must not lock the app with the lock that is behind "Save". */
+    /**
+     * A double tap on "Save" in an editor must not lock the app with the lock that is behind "Save";
+     * a tap on the lock after "Back" (no Save) locks at once. The grace is set long and then off,
+     * so the test does not depend on how fast the machine is.
+     */
     @Test
     fun lockRightAfterSavingIsIgnored() = app(setup = { tab = Tab.CAL; calView = CalView.LIST }) { state, fake ->
-        waitFor("Abendessen mit Jana")
-        text("Abendessen mit Jana").performClick()
-        waitFor("Trattoria Da Luca")
-        desc("Edit").performClick()
-        waitUntil(timeoutMillis = 10_000) { state.stack.lastOrNull() is Screen.CalEdit }
-        text("Save").performClick()
-        waitUntil(timeoutMillis = 10_000) { state.stack.lastOrNull() is Screen.CalEvent }
-        // The second tap of the double tap lands on the lock of the event screen.
-        desc("Lock now").performClick()
-        waitForIdle()
-        assertEquals(0, fake.locks, "the lock took the second tap on Save")
-        assertTrue(state.stack.lastOrNull() is Screen.CalEvent)
-        // Once the screen is open for a moment, the lock works as before.
-        Thread.sleep(LOCK_GRACE.inWholeMilliseconds + 100)
-        desc("Lock now").performClick()
-        waitUntil(timeoutMillis = 10_000) { fake.locks == 1 }
+        try {
+            HeaderGuard.grace = kotlin.time.Duration.parse("60s")
+            waitFor("Abendessen mit Jana")
+            text("Abendessen mit Jana").performClick()
+            waitFor("Trattoria Da Luca")
+            desc("Edit").performClick()
+            waitUntil(timeoutMillis = 10_000) { state.stack.lastOrNull() is Screen.CalEdit }
+            text("Save").performClick()
+            waitUntil(timeoutMillis = 10_000) { state.stack.lastOrNull() is Screen.CalEvent }
+            // The second tap of the double tap lands on the lock of the event screen.
+            desc("Lock now").performClick()
+            waitForIdle()
+            assertEquals(0, fake.locks, "the lock took the second tap on Save")
+            assertTrue(state.stack.lastOrNull() is Screen.CalEvent)
+            // Once the grace is over, the lock works as before.
+            HeaderGuard.grace = kotlin.time.Duration.ZERO
+            desc("Lock now").performClick()
+            waitUntil(timeoutMillis = 10_000) { fake.locks == 1 }
+        } finally {
+            HeaderGuard.grace = kotlin.time.Duration.parse("500ms")
+        }
+    }
+
+    /** Without "Save" before it, the lock locks at once, also right after going back. */
+    @Test
+    fun lockAfterBackLocksAtOnce() = app(setup = { tab = Tab.CAL; calView = CalView.LIST }) { state, fake ->
+        try {
+            HeaderGuard.grace = kotlin.time.Duration.parse("60s")
+            waitFor("Abendessen mit Jana")
+            text("Abendessen mit Jana").performClick()
+            waitFor("Trattoria Da Luca")
+            desc("Edit").performClick()
+            waitUntil(timeoutMillis = 10_000) { state.stack.lastOrNull() is Screen.CalEdit }
+            state.back()
+            waitUntil(timeoutMillis = 10_000) { state.stack.lastOrNull() is Screen.CalEvent }
+            desc("Lock now").performClick()
+            waitUntil(timeoutMillis = 10_000) { fake.locks == 1 }
+        } finally {
+            HeaderGuard.grace = kotlin.time.Duration.parse("500ms")
+        }
     }
 
     @Test
@@ -649,13 +695,15 @@ class InteractionTest {
         app(setup = { push(Screen.ShareSetup("s1")) }) { _, fake ->
             val net = fake.net as FakeNet
             net.shareChecks = listOf(
-                ShareCheckUi("write", true, ""), ShareCheckUi("https", false, "connection failed"),
+                ShareCheckUi("write", true, ""), ShareCheckUi("https", false, "server address not found"),
                 ShareCheckUi("listing", false, "skipped"), ShareCheckUi("page", false, "skipped"),
             )
             waitFor("blog")
             onNode(hasSetTextAction() and hasText("https://", substring = true)).performTextReplacement("https://example.invalid/teilen")
             onNodeWithText("Set up and check").performScrollTo().performClick()
-            waitFor("connection failed")
+            // The core's fixed text in the app's words.
+            waitFor("The server address was not found. Check its spelling and the internet connection.")
+            assertFalse(shown("server address not found"))
             assertEquals(2, onAllNodesWithText("Not checked, because the HTTPS step failed").fetchSemanticsNodes().size)
             assertTrue(onAllNodesWithText("skipped").fetchSemanticsNodes().isEmpty())
             shot("share-check-not-checked")

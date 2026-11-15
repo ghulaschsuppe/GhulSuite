@@ -618,7 +618,7 @@ fun HeaderButton(
 ) {
     Row(
         Modifier.height(36.dp).clip(RoundedCornerShape(18.dp)).background(if (enabled) color ?: g.accent else g.surface3)
-            .clickable(enabled = enabled, onClick = onClick).padding(horizontal = 16.dp),
+            .clickable(enabled = enabled) { HeaderGuard.noteAction(); onClick() }.padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         val fg = if (enabled) g.onAccent else g.faint
@@ -695,11 +695,8 @@ fun GhulTopBar(
         }
         actions()
         if (showLock) {
-            // Right after a screen opens, the lock takes no tap: in the editors "Save" sits where the
-            // lock of the screen behind them is, and a double tap on "Save" locked the app.
-            val shownAt = remember { kotlin.time.TimeSource.Monotonic.markNow() }
             BarIcon(androidx.compose.material.icons.Icons.Outlined.Lock, org.jetbrains.compose.resources.stringResource(Res.string.a_lock_now)) {
-                if (shownAt.elapsedNow() >= LOCK_GRACE) onLock()
+                if (!HeaderGuard.lockBlocked()) onLock()
             }
         }
     }
@@ -771,8 +768,22 @@ val LocalColumns = compositionLocalOf { 2 }
 /** Tag of the title of a screen: the layout check reports it when it is shortened with "…". */
 const val TITLE_TAG = "ghul-title"
 
-/** How long the lock in the header ignores taps after its screen opened. */
-val LOCK_GRACE = kotlin.time.Duration.parse("500ms")
+/**
+ * The lock in the header ignores taps for a moment after an editor's "Save" or "Send": the editor
+ * closes on the first tap and the screen behind it has its lock where "Save" was, so the second
+ * tap of a double tap locked the app. Other taps on the lock (after "Back", on any screen) count.
+ */
+object HeaderGuard {
+    /** How long after "Save" or "Send" the lock takes no tap (tests set it). */
+    var grace: kotlin.time.Duration = kotlin.time.Duration.parse("500ms")
+    private var lastAction: kotlin.time.TimeSource.Monotonic.ValueTimeMark? = null
+
+    fun noteAction() {
+        lastAction = kotlin.time.TimeSource.Monotonic.markNow()
+    }
+
+    fun lockBlocked(): Boolean = lastAction?.let { it.elapsedNow() < grace } ?: false
+}
 
 /** Tag of [GhulFab]: the layout check knows it floats over the list on purpose. */
 const val FAB_TAG = "ghul-fab"

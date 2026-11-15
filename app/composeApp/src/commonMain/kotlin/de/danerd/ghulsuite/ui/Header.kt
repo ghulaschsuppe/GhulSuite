@@ -86,9 +86,10 @@ fun AreaContext(state: AppState) {
                 (state.vaults.firstOrNull { it.id == state.authVault }?.name ?: allAccounts) + " · " + countText(env, Res.plurals.auth_count, n, n.toString())
             }
             Tab.DRIVE -> {
-                val st = catching { net.driveStatus() }.getOrNull()
+                // From the settings on this device only: driveStatus() reads Drive's index, after a
+                // restart from the server, and the line stayed empty that long (slow network).
                 // Drive's own server is not in the suite's list (only the sync servers are).
-                val srv = if (st?.serverId == null) null else catching { net.driveStorage().server }.getOrNull()
+                val srv = catching { net.driveStorage().server }.getOrNull()
                 if (srv == null) notSet else "${srv.name} · $myFiles"
             }
             Tab.MAIL -> {

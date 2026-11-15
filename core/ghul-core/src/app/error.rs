@@ -154,28 +154,33 @@ impl From<crate::net::NetError> for GhulError {
             N::AuthFailed => GhulError::ServerAuthFailed,
             N::CertUntrusted(fingerprint) => GhulError::CertUntrusted { fingerprint },
             N::Timeout => GhulError::Network { msg: "timeout".into() },
-            N::Connect(m) if host_not_found(&m) => GhulError::Network { msg: HOST_NOT_FOUND.into() },
-            N::Connect(m) if refused(&m) => GhulError::Network { msg: CONNECTION_REFUSED.into() },
+            N::Connect(m) if host_not_found(&m) => GhulError::Network { msg: "server address not found".into() },
+            N::Connect(m) if refused(&m) => GhulError::Network { msg: "connection refused".into() },
             other => GhulError::Network { msg: other.to_string() },
         }
     }
 }
 
-/// The server name does not resolve (a typo or no network): a fixed text the app translates
-/// instead of the system's message.
-pub const HOST_NOT_FOUND: &str = "server address not found";
-/// Nothing listens on the port at that address.
-pub const CONNECTION_REFUSED: &str = "connection refused";
-
-/// The message of a failed name lookup: on Unix and Android from `getaddrinfo`, on Windows
-/// WSAHOST_NOT_FOUND (11001) or WSANO_DATA (11004).
+/// The message of a failed name lookup (a misspelt server name or no network), so the app shows
+/// a translated text instead of the system's: on Unix and Android `getaddrinfo` ("failed to
+/// lookup address information: ..."), on Windows WSAHOST_NOT_FOUND (11001), WSATRY_AGAIN (11002)
+/// and WSANO_DATA (11004).
 fn host_not_found(m: &str) -> bool {
-    m.contains("failed to lookup address information") || m.contains("os error 11001") || m.contains("os error 11004")
+    m.contains("failed to lookup address information")
+        || (cfg!(windows) && ["os error 11001)", "os error 11002)", "os error 11004)"].iter().any(|c| m.contains(c)))
 }
 
-/// ECONNREFUSED on Linux and Android (111), macOS (61), Windows (10061).
+/// ECONNREFUSED: nothing listens on the port. The number differs per system (and 61 means
+/// something else on Linux), so only this system's number counts.
 fn refused(m: &str) -> bool {
-    ["os error 111)", "os error 61)", "os error 10061)"].iter().any(|c| m.contains(c))
+    let code = if cfg!(windows) {
+        "os error 10061)"
+    } else if cfg!(any(target_os = "macos", target_os = "ios")) {
+        "os error 61)"
+    } else {
+        "os error 111)"
+    };
+    m.contains(code)
 }
 
 impl From<std::io::Error> for GhulError {

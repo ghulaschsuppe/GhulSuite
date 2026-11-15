@@ -45,6 +45,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -406,7 +407,11 @@ fun ShareSetupScreen(state: AppState, serverId: String, padding: PaddingValues) 
                         Column(Modifier.weight(1f)) {
                             Text(checkLabel(c.step), color = if (skipped) g.muted else Color.Unspecified)
                             if (skipped) Hint(stringResource(Res.string.share_check_skipped))
-                            else if (!c.ok && c.detail.isNotBlank()) Hint(c.detail)
+                            else if (!c.ok && c.detail.isNotBlank()) {
+                                // Known causes ("server address not found") in the app's language.
+                                val detail by produceState(c.detail, c.detail) { value = coreText(c.detail) ?: c.detail }
+                                Hint(detail)
+                            }
                         }
                     }
                 }

@@ -1491,6 +1491,9 @@ fn share_via_folder(s: &GhulSuite, server_id: &str, dir: &str, web_root: &std::p
     // A wrong address fails the https check and stores nothing.
     let bad = s.share_setup(server_id.into(), dir.into(), format!("http://127.0.0.1:{}/falsch", web.port)).unwrap();
     assert!(!bad.iter().find(|c| c.step == "https").unwrap().ok, "{bad:?}");
+    // A misspelt address gives the fixed text the app translates, not the system's message.
+    let typo = s.share_setup(server_id.into(), dir.into(), "https://nirgendwo.invalid/teilen".into()).unwrap();
+    assert_eq!(typo.iter().find(|c| c.step == "https").unwrap().detail, "server address not found", "{typo:?}");
     // What depends on the address is "not checked", never a result nobody saw.
     let page = bad.iter().find(|c| c.step == "page").unwrap();
     assert!(!page.ok && page.detail == crate::app::shares::SHARE_CHECK_SKIPPED, "{bad:?}");
@@ -2813,18 +2816,17 @@ fn renamed_vault_files_are_found_by_content() {
 /// translates, not the system's message ("failed to lookup address information: ...").
 #[test]
 fn unknown_server_name_and_refused_port_have_fixed_texts() {
-    use super::error::{CONNECTION_REFUSED, HOST_NOT_FOUND};
     use crate::net::NetError;
     let msg = |e: std::io::Error| match GhulError::from(NetError::Connect(e.to_string())) {
         GhulError::Network { msg } => msg,
         other => panic!("{other:?}"),
     };
     let lookup = std::net::TcpStream::connect(("nirgendwo.invalid", 22)).unwrap_err();
-    assert_eq!(msg(lookup), HOST_NOT_FOUND);
+    assert_eq!(msg(lookup), "server address not found");
     // A port that was just free on this machine: nobody listens there.
     let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
     let refused = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap_err();
-    assert_eq!(msg(refused), CONNECTION_REFUSED);
+    assert_eq!(msg(refused), "connection refused");
     // Other failures keep their text.
     let other = GhulError::from(NetError::Connect("connection closed".into()));
     assert!(matches!(other, GhulError::Network { msg } if msg == "connection failed: connection closed"));
