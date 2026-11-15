@@ -1540,6 +1540,8 @@
     <string name="core_key_bad_answer">The key gave an unexpected answer.</string>
     <string name="core_msg_unreadable">The message cannot be read.</string>
     <string name="core_timeout">Timed out.</string>
+    <string name="core_host_not_found">The server address was not found. Check its spelling and the internet connection.</string>
+    <string name="core_refused">The server refused the connection. Check the port.</string>
     <string name="core_image_na">Image not available.</string>
     <string name="core_drive_busy">GhulDrive is being changed on another device. Please try again in a moment.</string>
     <string name="core_php_no_folder">The server module needs no folder.</string>

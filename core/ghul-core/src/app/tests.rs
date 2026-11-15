@@ -2808,3 +2808,24 @@ fn renamed_vault_files_are_found_by_content() {
     s.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
     assert_eq!(s.list_entries(VaultKind::Pass, None).unwrap()[0].title, "A");
 }
+
+/// A server name that does not resolve and a port nobody listens on give fixed texts the app
+/// translates, not the system's message ("failed to lookup address information: ...").
+#[test]
+fn unknown_server_name_and_refused_port_have_fixed_texts() {
+    use super::error::{CONNECTION_REFUSED, HOST_NOT_FOUND};
+    use crate::net::NetError;
+    let msg = |e: std::io::Error| match GhulError::from(NetError::Connect(e.to_string())) {
+        GhulError::Network { msg } => msg,
+        other => panic!("{other:?}"),
+    };
+    let lookup = std::net::TcpStream::connect(("nirgendwo.invalid", 22)).unwrap_err();
+    assert_eq!(msg(lookup), HOST_NOT_FOUND);
+    // A port that was just free on this machine: nobody listens there.
+    let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    let refused = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap_err();
+    assert_eq!(msg(refused), CONNECTION_REFUSED);
+    // Other failures keep their text.
+    let other = GhulError::from(NetError::Connect("connection closed".into()));
+    assert!(matches!(other, GhulError::Network { msg } if msg == "connection failed: connection closed"));
+}

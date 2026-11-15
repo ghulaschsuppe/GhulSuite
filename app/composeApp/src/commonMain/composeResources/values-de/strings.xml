@@ -1540,6 +1540,8 @@
     <string name="core_key_bad_answer">Der Key hat eine unerwartete Antwort geliefert.</string>
     <string name="core_msg_unreadable">Die Nachricht lässt sich nicht lesen.</string>
     <string name="core_timeout">Zeitüberschreitung.</string>
+    <string name="core_host_not_found">Die Serveradresse wurde nicht gefunden. Bitte Schreibweise und Internetverbindung prüfen.</string>
+    <string name="core_refused">Der Server hat die Verbindung abgelehnt. Bitte den Port prüfen.</string>
     <string name="core_image_na">Bild nicht verfügbar.</string>
     <string name="core_drive_busy">GhulDrive wird gerade auf einem anderen Gerät geändert. Bitte gleich noch einmal versuchen.</string>
     <string name="core_php_no_folder">Für das Server-Modul ist kein Ordner nötig.</string>

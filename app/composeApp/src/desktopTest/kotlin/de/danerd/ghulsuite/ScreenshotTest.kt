@@ -91,7 +91,8 @@ class ScreenshotTest {
         override suspend fun createFromVault(open: OpenVaultUi, onTouchNeeded: () -> Unit): String? = null
         override suspend fun unlock(password: String, pin: String?, keyfile: ByteArray?, onTouchNeeded: () -> Unit) {}
         override suspend fun unlockWithRecoveryCode(code: String, newPassword: String) {}
-        override fun lock() {}
+        var locks = 0
+        override fun lock() { locks++ }
         override fun panicLock() {}
         override fun biometricAvailable() = true
         override fun quickUnlockReady() = QuickUnlockReady(biometric = quickReady, pin = quickReady)

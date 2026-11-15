@@ -24,6 +24,8 @@ private val CORE_TEXTS: Map<String, StringResource> = mapOf(
     "hmac-secret output too short" to Res.string.core_key_bad_answer,
     "message cannot be read" to Res.string.core_msg_unreadable,
     "timeout" to Res.string.core_timeout,
+    "server address not found" to Res.string.core_host_not_found,
+    "connection refused" to Res.string.core_refused,
     "image not available" to Res.string.core_image_na,
     "GhulDrive is being changed on another device, please try again" to Res.string.core_drive_busy,
     "the server module needs no folder" to Res.string.core_php_no_folder,

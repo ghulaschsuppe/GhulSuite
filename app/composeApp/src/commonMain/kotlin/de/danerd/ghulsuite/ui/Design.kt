@@ -694,7 +694,14 @@ fun GhulTopBar(
             context?.invoke()
         }
         actions()
-        if (showLock) BarIcon(androidx.compose.material.icons.Icons.Outlined.Lock, org.jetbrains.compose.resources.stringResource(Res.string.a_lock_now), onClick = onLock)
+        if (showLock) {
+            // Right after a screen opens, the lock takes no tap: in the editors "Save" sits where the
+            // lock of the screen behind them is, and a double tap on "Save" locked the app.
+            val shownAt = remember { kotlin.time.TimeSource.Monotonic.markNow() }
+            BarIcon(androidx.compose.material.icons.Icons.Outlined.Lock, org.jetbrains.compose.resources.stringResource(Res.string.a_lock_now)) {
+                if (shownAt.elapsedNow() >= LOCK_GRACE) onLock()
+            }
+        }
     }
 }
 
@@ -763,6 +770,9 @@ val LocalColumns = compositionLocalOf { 2 }
 
 /** Tag of the title of a screen: the layout check reports it when it is shortened with "…". */
 const val TITLE_TAG = "ghul-title"
+
+/** How long the lock in the header ignores taps after its screen opened. */
+val LOCK_GRACE = kotlin.time.Duration.parse("500ms")
 
 /** Tag of [GhulFab]: the layout check knows it floats over the list on purpose. */
 const val FAB_TAG = "ghul-fab"

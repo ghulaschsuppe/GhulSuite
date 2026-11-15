@@ -466,7 +466,7 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
         }
         // The archived mails of this folder, below the provider's (KONZEPT 9.3.1).
         if (!inSearch && !all && filter.isEmpty() && shown.isNotEmpty()) ArchivedMails(state, shown.first().id, folder, offline = error != null)
-        if (messages.isNotEmpty()) HintText(stringResource(Res.string.mail_swipe_hint))
+        if (heads.isNotEmpty()) HintText(stringResource(Res.string.mail_swipe_hint))
     }
     }
     }

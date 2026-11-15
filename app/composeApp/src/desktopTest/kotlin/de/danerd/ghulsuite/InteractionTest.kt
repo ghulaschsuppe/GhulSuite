@@ -23,6 +23,7 @@ import de.danerd.ghulsuite.ui.DevChecks
 import de.danerd.ghulsuite.ui.AppState
 import de.danerd.ghulsuite.ui.CalView
 import de.danerd.ghulsuite.ui.GhulSuiteApp
+import de.danerd.ghulsuite.ui.LOCK_GRACE
 import de.danerd.ghulsuite.ui.Screen
 import de.danerd.ghulsuite.model.NetBackend
 import de.danerd.ghulsuite.model.SecurityIssueKindUi
@@ -245,6 +246,23 @@ class InteractionTest {
         assertTrue(onAllNodesWithText("Re: Treffen am Freitag").fetchSemanticsNodes().isEmpty())
     }
 
+    /** With every row deleted the list says "No messages." and no longer explains swiping rows. */
+    @Test
+    fun mailSwipeHintOnlyWithRows() = app(setup = { tab = Tab.MAIL }, prepare = { net = FakeNet(conversation = true) }) { state, _ ->
+        val hint = "Swipe: right toggles read, left does the action from Options (archive, delete or read)."
+        waitFor("Treffen am Freitag")
+        assertTrue(shown(hint))
+        state.undoMillis = 10_000
+        longPress("Treffen am Freitag")
+        waitFor("1 selected")
+        desc("All").performClick()
+        waitFor("3 selected")
+        desc("Delete").performClick()
+        waitFor("No messages.")
+        assertFalse(shown(hint), "swipe hint below an empty list")
+        shot("mail-all-deleted")
+    }
+
     /**
      * The selection holds the conversation: after switching to "Unread" the row stays selected and
      * acts on what the row now shows (the unread mail), not on nothing and not on hidden mails.
@@ -439,6 +457,27 @@ class InteractionTest {
             waitFor("5 ENTRIES")
             waitFor("2 entries need attention")
         }
+    }
+
+    /** A double tap on "Save" in an editor must not lock the app with the lock that is behind "Save". */
+    @Test
+    fun lockRightAfterSavingIsIgnored() = app(setup = { tab = Tab.CAL; calView = CalView.LIST }) { state, fake ->
+        waitFor("Abendessen mit Jana")
+        text("Abendessen mit Jana").performClick()
+        waitFor("Trattoria Da Luca")
+        desc("Edit").performClick()
+        waitUntil(timeoutMillis = 10_000) { state.stack.lastOrNull() is Screen.CalEdit }
+        text("Save").performClick()
+        waitUntil(timeoutMillis = 10_000) { state.stack.lastOrNull() is Screen.CalEvent }
+        // The second tap of the double tap lands on the lock of the event screen.
+        desc("Lock now").performClick()
+        waitForIdle()
+        assertEquals(0, fake.locks, "the lock took the second tap on Save")
+        assertTrue(state.stack.lastOrNull() is Screen.CalEvent)
+        // Once the screen is open for a moment, the lock works as before.
+        Thread.sleep(LOCK_GRACE.inWholeMilliseconds + 100)
+        desc("Lock now").performClick()
+        waitUntil(timeoutMillis = 10_000) { fake.locks == 1 }
     }
 
     @Test

@@ -154,9 +154,28 @@ impl From<crate::net::NetError> for GhulError {
             N::AuthFailed => GhulError::ServerAuthFailed,
             N::CertUntrusted(fingerprint) => GhulError::CertUntrusted { fingerprint },
             N::Timeout => GhulError::Network { msg: "timeout".into() },
+            N::Connect(m) if host_not_found(&m) => GhulError::Network { msg: HOST_NOT_FOUND.into() },
+            N::Connect(m) if refused(&m) => GhulError::Network { msg: CONNECTION_REFUSED.into() },
             other => GhulError::Network { msg: other.to_string() },
         }
     }
+}
+
+/// The server name does not resolve (a typo or no network): a fixed text the app translates
+/// instead of the system's message.
+pub const HOST_NOT_FOUND: &str = "server address not found";
+/// Nothing listens on the port at that address.
+pub const CONNECTION_REFUSED: &str = "connection refused";
+
+/// The message of a failed name lookup: on Unix and Android from `getaddrinfo`, on Windows
+/// WSAHOST_NOT_FOUND (11001) or WSANO_DATA (11004).
+fn host_not_found(m: &str) -> bool {
+    m.contains("failed to lookup address information") || m.contains("os error 11001") || m.contains("os error 11004")
+}
+
+/// ECONNREFUSED on Linux and Android (111), macOS (61), Windows (10061).
+fn refused(m: &str) -> bool {
+    ["os error 111)", "os error 61)", "os error 10061)"].iter().any(|c| m.contains(c))
 }
 
 impl From<std::io::Error> for GhulError {
