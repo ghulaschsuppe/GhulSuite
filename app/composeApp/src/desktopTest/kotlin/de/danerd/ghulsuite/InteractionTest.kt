@@ -1108,6 +1108,34 @@ class InteractionTest {
     }
 
     /**
+     * The module answers, but PHP may not write in the GhulSuite folder, or the web server hands
+     * out the GhulSuite folder itself: each says what is wrong and what to do; nothing is done.
+     */
+    @Test
+    fun moduleInstallExplainsNoWriteAndPublicFolder() {
+        app(setup = { push(Screen.ModuleInstall("s2")) }, prepare = {
+            (net as FakeNet).moduleAnswersWithoutAddress = true
+            (net as FakeNet).moduleFailure = "no-write"
+        }) { _, fake ->
+            val net = fake.net as FakeNet
+            waitFor("public_html")
+            text("public_html").performClick()
+            waitFor("/public_html")
+            onNodeWithText("Install and check").performScrollTo().performClick()
+            waitFor("PHP may read the GhulSuite folder but not write in its shares folder. Then downloads cannot be counted. Allow the web server to write there (file permissions), then check again.")
+            assertFalse(shown("Done"))
+            assertFalse(shown("PHP may not read the GhulSuite folder on this hosting (e.g. because of open_basedir). Share links are not possible there."))
+            shot("module-no-write")
+            net.moduleFailure = "private"
+            onNodeWithText("Install and check").performScrollTo().performClick()
+            waitFor("GhulSuite folder not reachable from the web")
+            assertTrue(shown("The web server hands out the GhulSuite folder itself (https://example.org/ghulsuite/shares/check-1). The app removed the module again. Move the GhulSuite folder out of the website, then install again."))
+            assertFalse(shown("Done"))
+            shot("module-private-failed")
+        }
+    }
+
+    /**
      * The list of servers: per server its login, what it is used for and its module. The module is
      * installed from there (happy path: it answers at the usual address), updated, and removed
      * only after asking.
@@ -1133,6 +1161,7 @@ class InteractionTest {
             waitFor("The server module runs at https://example.org/ghulsuite.php. You can now create share links.")
             assertTrue("moduleInstall:s2:public_html:" in net.calls, net.calls.toString())
             assertTrue(shown("Answers over HTTPS") && shown("Reads the GhulSuite folder"))
+            assertTrue(shown("GhulSuite folder not reachable from the web"))
             assertFalse(shown("Not checked, because the HTTPS step failed"))
             text("Done").performScrollTo().performClick()
             waitFor("Webspace")

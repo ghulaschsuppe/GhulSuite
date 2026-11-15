@@ -77,8 +77,16 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
         if (url.isEmpty() && !moduleAnswersWithoutAddress) {
             return ModuleInstalledUi(null, tried, listOf(upload, ModuleCheckUi("https", false, tried[0]), ModuleCheckUi("folder", false, "skipped")))
         }
-        return ModuleInstalledUi(tried[0], tried, listOf(upload, ModuleCheckUi("https", true, tried[0]), ModuleCheckUi("folder", true, "")))
+        val https = ModuleCheckUi("https", true, tried[0])
+        return when (moduleFailure) {
+            "no-write" -> ModuleInstalledUi(null, tried, listOf(upload, https, ModuleCheckUi("folder", false, "no-write")))
+            "private" -> ModuleInstalledUi(null, tried, listOf(upload, https, ModuleCheckUi("folder", true, ""),
+                ModuleCheckUi("private", false, "https://example.org/ghulsuite/shares/check-1")))
+            else -> ModuleInstalledUi(tried[0], tried, listOf(upload, https, ModuleCheckUi("folder", true, ""), ModuleCheckUi("private", true, "")))
+        }
     }
+    /** How the module installation fails after HTTPS: "no-write", "private" or null (it works). */
+    var moduleFailure: String? = null
     override suspend fun serverModuleUpdate(serverId: String): Int { calls += "moduleUpdate:$serverId"; return 2 }
     override suspend fun serverModuleRemove(serverId: String) { calls += "moduleRemove:$serverId" }
     /** What share links still need (null: nothing; "": GhulDrive; else the server for the module). */

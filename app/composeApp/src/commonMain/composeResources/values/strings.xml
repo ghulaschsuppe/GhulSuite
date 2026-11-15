@@ -1620,8 +1620,11 @@
     <string name="module_check_https">Answers over HTTPS</string>
     <string name="module_check_php">PHP runs</string>
     <string name="module_check_folder">Reads the GhulSuite folder</string>
+    <string name="module_check_private">GhulSuite folder not reachable from the web</string>
     <string name="module_https_failed">No answer at %1$s. Enter the address of the module above and try again.</string>
     <string name="module_php_failed">PHP does not run there: the web server delivered the file as text. The app removed it again. The module cannot work on this web hosting.</string>
+    <string name="module_folder_no_write">PHP may read the GhulSuite folder but not write in its shares folder. Then downloads cannot be counted. Allow the web server to write there (file permissions), then check again.</string>
+    <string name="module_private_failed">The web server hands out the GhulSuite folder itself (%1$s). The app removed the module again. Move the GhulSuite folder out of the website, then install again.</string>
     <string name="module_folder_failed">PHP may not read the GhulSuite folder on this hosting (e.g. because of open_basedir). Share links are not possible there.</string>
     <string name="module_install">Install module</string>
     <string name="module_update">Update module</string>

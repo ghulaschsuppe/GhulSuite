@@ -1620,8 +1620,11 @@
     <string name="module_check_https">Antwortet über HTTPS</string>
     <string name="module_check_php">PHP läuft</string>
     <string name="module_check_folder">Liest den GhulSuite-Ordner</string>
+    <string name="module_check_private">GhulSuite-Ordner aus dem Web nicht abrufbar</string>
     <string name="module_https_failed">Keine Antwort unter %1$s. Trag oben die Adresse des Moduls ein und versuch es noch einmal.</string>
     <string name="module_php_failed">Dort läuft kein PHP: Der Webserver hat die Datei als Text ausgeliefert. Die App hat sie wieder gelöscht. Auf diesem Webhosting kann das Modul nicht laufen.</string>
+    <string name="module_folder_no_write">PHP darf den GhulSuite-Ordner lesen, aber in seinem Ordner „shares“ nicht schreiben. Dann können Abrufe nicht gezählt werden. Erlaube dem Webserver dort zu schreiben (Dateirechte) und prüfe erneut.</string>
+    <string name="module_private_failed">Der Webserver gibt den GhulSuite-Ordner selbst heraus (%1$s). Die App hat das Modul wieder entfernt. Verschiebe den GhulSuite-Ordner aus der Website heraus und installiere dann erneut.</string>
     <string name="module_folder_failed">PHP darf auf diesem Webhosting den GhulSuite-Ordner nicht lesen (z. B. wegen open_basedir). Freigabelinks sind dort nicht möglich.</string>
     <string name="module_install">Modul installieren</string>
     <string name="module_update">Modul aktualisieren</string>

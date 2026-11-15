@@ -479,7 +479,11 @@ private fun ModuleCheckRow(c: ModuleCheckUi, tried: List<String>) {
                 c.ok -> {}
                 c.step == "https" -> Hint(stringResource(Res.string.module_https_failed, tried.ifEmpty { listOf(c.detail) }.joinToString(", ")))
                 c.step == "php" -> Hint(stringResource(Res.string.module_php_failed))
+                // "no-write" (MODULE_NO_WRITE in the core's servers.rs): reads, may not write.
+                c.step == "folder" && c.detail == "no-write" -> Hint(stringResource(Res.string.module_folder_no_write))
                 c.step == "folder" -> Hint(stringResource(Res.string.module_folder_failed))
+                // The address where the web server hands out the GhulSuite folder itself.
+                c.step == "private" -> Hint(stringResource(Res.string.module_private_failed, c.detail))
                 c.detail.isNotBlank() -> {
                     // Known causes ("server address not found") in the app's language.
                     val env = rememberResourceEnvironment()
@@ -497,6 +501,7 @@ private fun moduleCheckLabel(step: String): String = when (step) {
     "https" -> stringResource(Res.string.module_check_https)
     "php" -> stringResource(Res.string.module_check_php)
     "folder" -> stringResource(Res.string.module_check_folder)
+    "private" -> stringResource(Res.string.module_check_private)
     else -> step
 }
 
