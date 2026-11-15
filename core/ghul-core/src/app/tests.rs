@@ -2116,7 +2116,7 @@ fn drive_file_and_share_link_into_mail() {
         .mail_save_account(
             None,
             mail_checked(
-                &s,
+                s,
                 MailAccountInput {
                     name: "Test".into(),
                     display_name: "Drive".into(),
