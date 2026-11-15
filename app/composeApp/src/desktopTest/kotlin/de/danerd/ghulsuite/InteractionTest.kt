@@ -404,6 +404,20 @@ class InteractionTest {
         }
     }
 
+    /** Only the sync status cannot be read: the servers are shown, the sync card does not claim "Off". */
+    @Test
+    fun syncStatusErrorDoesNotSayOff() {
+        app(setup = { push(Screen.SettingsPage(SetPage.SERVERS)) }, prepare = { (net as FakeNet).syncStatusFails = true }) { _, fake ->
+            waitFor("Heimserver")
+            waitFor("Try again")
+            assertTrue(onAllNodesWithText("Off").fetchSemanticsNodes().isEmpty())
+            (fake.net as FakeNet).syncStatusFails = false
+            text("Try again").performClick()
+            waitFor("Synchronise now")
+            waitGone("Try again")
+        }
+    }
+
     /** Choosing the sync server must stick: it is saved and shown (bug: it stayed "Off"). */
     @Test
     fun choosingTheSyncServerSticks() {

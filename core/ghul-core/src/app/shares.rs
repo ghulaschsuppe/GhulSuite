@@ -289,6 +289,9 @@ impl GhulSuite {
                     String::new()
                 } else if let Err(e) = &installed {
                     e.to_string()
+                } else if let Err(e) = &listed {
+                    // The folder could not be fetched at all: nothing was seen, so no claim.
+                    e.clone()
                 } else {
                     "the folder content is visible".into()
                 },

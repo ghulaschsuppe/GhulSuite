@@ -367,6 +367,8 @@ fun ServersSection(state: AppState) {
     var loaded by remember { mutableStateOf(false) }
     var loadError by remember { mutableStateOf<String?>(null) }
     var reload by remember { mutableStateOf(0) }
+    var syncLoaded by remember { mutableStateOf(false) }
+    var syncError by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(state.liveRevision(), state.syncing, reload) {
         // While a synchronisation runs the core answers only after it (it holds the suite);
         // until then the page says it is loading instead of showing an empty list and "Off".
@@ -375,9 +377,12 @@ fun ServersSection(state: AppState) {
         servers = list
         loaded = true
         loadError = null
-        catching { net.syncStatus() }.onSuccess { sync = it }.onFailure { loadError = describe(it) }
+        // The sync status on its own: if it cannot be read, its card says so instead of "Off".
+        catching { net.syncStatus() }
+            .onSuccess { sync = it; syncLoaded = true; syncError = null }
+            .onFailure { syncError = describe(it) }
     }
-    val retry: () -> Unit = { loadError = null; reload++ }
+    val retry: () -> Unit = { loadError = null; syncError = null; reload++ }
 
     if (!loaded) {
         SectionCard(stringResource(Res.string.set_servers)) {
@@ -424,6 +429,11 @@ fun ServersSection(state: AppState) {
 
     SectionCard(stringResource(Res.string.set_sync)) {
         Hint(stringResource(Res.string.set_sync_hint))
+        if (!syncLoaded) {
+            if (syncError != null) LoadError(syncError, retry) else Hint(stringResource(Res.string.loading))
+            return@SectionCard
+        }
+        LoadError(syncError, retry)
         val noSync = stringResource(Res.string.sync_off)
         var open by remember { mutableStateOf(false) }
         Row(verticalAlignment = Alignment.CenterVertically) {

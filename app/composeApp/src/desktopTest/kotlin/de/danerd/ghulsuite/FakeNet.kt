@@ -87,7 +87,12 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
         files.filter { !it.isDir }.map { OutgoingAttachmentUi(it.name, "application/octet-stream", ByteArray(3)) }
     /** The sync server as set through the screens (the fake starts with s1 when configured). */
     var syncServer: String? = if (configured) "s1" else null
-    override suspend fun syncStatus() = SyncStatusUi(syncServer, now * 1000)
+    /** While true, syncStatus() fails (a core that cannot answer). */
+    var syncStatusFails = false
+    override suspend fun syncStatus(): SyncStatusUi {
+        if (syncStatusFails) throw java.io.IOException("timeout")
+        return SyncStatusUi(syncServer, now * 1000)
+    }
     override suspend fun setSyncServer(id: String?) {
         calls += "setSyncServer:$id"
         syncServer = id

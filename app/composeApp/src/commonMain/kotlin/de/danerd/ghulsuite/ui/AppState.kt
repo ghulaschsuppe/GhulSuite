@@ -1011,7 +1011,8 @@ suspend fun describe(e: Throwable): String = try {
 } catch (c: CancellationException) {
     throw c
 } catch (_: Exception) {
-    // describeText has already told DevChecks about it.
+    // describeText has already told DevChecks about errors that are not a VaultException
+    // (a VaultException is an expected error of the core, nothing to report).
     e.message ?: e.toString()
 }
 
