@@ -33,6 +33,8 @@ import de.danerd.ghulsuite.model.MailArchiveStatusUi
 import de.danerd.ghulsuite.model.MailMessageUi
 import de.danerd.ghulsuite.resources.*
 import de.danerd.ghulsuite.resources.Res
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.rememberResourceEnvironment
 import org.jetbrains.compose.resources.stringResource
 
 /** Choices for the deadline (days); anything else is "own value". */
@@ -60,20 +62,20 @@ fun MailArchiveSection(state: AppState) {
     var clearCopy by remember { mutableStateOf(false) }
     var trashFor by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(reload, state.liveRevision()) {
-        status = runCatching { net.archiveStatus() }.onFailure { error = describe(it) }.getOrNull()
-        accounts = runCatching { net.mailAccounts() }.getOrDefault(emptyList())
+        status = catching { net.archiveStatus() }.onFailure { error = describe(it) }.getOrNull()
+        accounts = catching { net.mailAccounts() }.getOrDefault(emptyList())
         val s = status
         counts = if (s != null && s.mode != ArchiveModeUi.NONE) {
-            s.options.accounts.associateWith { a -> runCatching { net.archiveCount(a) }.getOrNull() ?: MailArchiveCountUi(0, 0, 0) }
+            s.options.accounts.associateWith { a -> catching { net.archiveCount(a) }.getOrNull() ?: MailArchiveCountUi(0, 0, 0) }
         } else {
             emptyMap()
         }
     }
-    val doneMsg = stringResource(Res.string.archive_done)
+    // Texts looked up later (after a count is known) use the language of the screen.
+    val env = rememberResourceEnvironment()
     val foreignMsg = stringResource(Res.string.archive_foreign)
     val connectedMsg = stringResource(Res.string.archive_connected)
     val createdMsg = stringResource(Res.string.archive_created)
-    val restoredMsg = stringResource(Res.string.archive_restored)
     val busyMsg = stringResource(Res.string.archive_busy)
 
     /** Handles the answer of "put the archive there". */
@@ -138,11 +140,11 @@ fun MailArchiveSection(state: AppState) {
                     setOptions { o -> o.copy(accounts = if (v) o.accounts + a.id else o.accounts - a.id) }
                 }
                 counts[a.id]?.takeIf { on && it.mails > 0 }?.let { c ->
-                    Hint(stringResource(Res.string.archive_count, c.mails.toString(), formatSize(c.bytes)))
+                    Hint(pluralStringResource(Res.plurals.archive_count, c.mails.pluralCount(), c.mails.toString(), formatSize(c.bytes)))
                 }
                 if (on && a.id in s.deleteBlocked) Hint(stringResource(Res.string.archive_gmail))
                 state.archiveTooLarge[a.id]?.takeIf { on && it > 0 }?.let { n ->
-                    Hint(stringResource(Res.string.archive_too_large, n.toString()))
+                    Hint(pluralStringResource(Res.plurals.archive_too_large, n, n.toString()))
                 }
             }
             // After how many days.
@@ -152,7 +154,7 @@ fun MailArchiveSection(state: AppState) {
                 ARCHIVE_DAYS.map { it to dayLabel(it) } + listOf(-1 to Res.string.archive_days_own),
                 if (days in ARCHIVE_DAYS) days else -1,
             ) { d -> if (d < 0) customDays = true else setOptions { it.copy(days = d) } }
-            if (days !in ARCHIVE_DAYS) Hint(stringResource(Res.string.archive_days_custom, days.toString()))
+            if (days !in ARCHIVE_DAYS) Hint(pluralStringResource(Res.plurals.archive_days_custom, days, days.toString()))
             SwitchRow(stringResource(Res.string.archive_sent), s.options.sent) { v -> setOptions { it.copy(sent = v) } }
             val rules = listOf(
                 ArchiveRuleUi.LEAVE to Res.string.archive_rule_leave,
@@ -174,13 +176,16 @@ fun MailArchiveSection(state: AppState) {
                 SwitchRow(stringResource(Res.string.archive_wifi), state.backend.settings.archiveWifiOnly) { state.backend.settings.archiveWifiOnly = it }
             }
             Button(onClick = {
-                state.run(onError = { error = it }, block = { state.runArchiveOnce(manual = true) }) { r ->
-                    reload++
-                    when {
-                        r == null -> {}
-                        r.busy.isNotEmpty() -> state.message(busyMsg.replace("%1\$s", r.busy))
-                        else -> state.message(doneMsg.replace("%1\$s", r.archived.toString()).replace("%2\$s", r.removed.toString()))
+                state.run(onError = { error = it }, block = {
+                    state.runArchiveOnce(manual = true)?.let { r ->
+                        when {
+                            r.busy.isNotEmpty() -> busyMsg.replace("%1\$s", r.busy)
+                            else -> countText(env, Res.plurals.archive_done, r.archived, r.archived.toString(), r.removed.toString())
+                        }
                     }
+                }) { msg ->
+                    reload++
+                    if (msg != null) state.message(msg)
                 }
             }, enabled = !state.archiveRunning && s.options.accounts.isNotEmpty(), modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Filled.Archive, null, Modifier.size(18.dp))
@@ -209,13 +214,16 @@ fun MailArchiveSection(state: AppState) {
             }
             val others = s.copies.filter { !it.thisDevice && it.mails > 0 }
             for (c in others) {
-                Hint(stringResource(Res.string.archive_copy_on, c.name.ifBlank { "?" }, c.mails.toString(), formatDate(c.at)))
+                Hint(pluralStringResource(Res.plurals.archive_copy_on, c.mails.pluralCount(), c.name.ifBlank { "?" }, c.mails.toString(), formatDate(c.at)))
             }
             if (s.fullCopy) {
                 OutlinedButton(onClick = {
-                    state.run(onError = { error = it }, block = { net.archiveRestoreFromCopy() }) { n ->
+                    state.run(onError = { error = it }, block = {
+                        val n = net.archiveRestoreFromCopy()
+                        countText(env, Res.plurals.archive_restored, n, n.toString())
+                    }) { msg ->
                         reload++
-                        state.message(restoredMsg.replace("%1\$s", n.toString()))
+                        state.message(msg)
                     }
                 }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.archive_restore_copy)) }
                 Hint(stringResource(Res.string.archive_restore_copy_hint))
@@ -287,7 +295,7 @@ fun MailArchiveSection(state: AppState) {
             danger = true,
             onDismissRequest = { askRule = null },
             title = { Text(stringResource(if (spam) Res.string.archive_spam else Res.string.archive_trash)) },
-            text = { Text(stringResource(Res.string.archive_rule_delete_text, s0(status?.options?.days ?: 30))) },
+            text = { Text(pluralStringResource(Res.plurals.archive_rule_delete_text, status?.options?.days ?: 30, s0(status?.options?.days ?: 30))) },
             confirmButton = {
                 TextButton(onClick = {
                     askRule = null
@@ -325,7 +333,7 @@ fun MailArchiveSection(state: AppState) {
 @Composable
 private fun ClearCopyDialog(state: AppState, onDismiss: () -> Unit, onDone: () -> Unit) {
     val net = state.backend.net
-    val only by produceState<Boolean?>(null) { value = runCatching { net.archiveOnlyCopy() }.getOrDefault(true) }
+    val only by produceState<Boolean?>(null) { value = catching { net.archiveOnlyCopy() }.getOrDefault(true) }
     var typed by remember { mutableStateOf("") }
     val word = stringResource(Res.string.archive_clear_word)
     AlertDialog(
@@ -354,7 +362,7 @@ private fun ArchiveTrashSheet(state: AppState, accountId: String, onDismiss: () 
     val net = state.backend.net
     var list by remember { mutableStateOf<List<ArchivedMailUi>?>(null) }
     var reload by remember { mutableStateOf(0) }
-    LaunchedEffect(reload) { list = runCatching { net.archiveTrash(accountId) }.getOrDefault(emptyList()) }
+    LaunchedEffect(reload) { list = catching { net.archiveTrash(accountId) }.getOrDefault(emptyList()) }
     GhulSheet(onDismiss, stringResource(Res.string.archive_trash_title)) {
         Hint(stringResource(Res.string.archive_trash_hint))
         val l = list
@@ -388,11 +396,11 @@ fun ArchivedMails(state: AppState, accountId: String, folder: String, offline: B
     var page by remember(accountId, folder) { mutableStateOf<List<ArchivedMailUi>>(emptyList()) }
     var total by remember(accountId, folder) { mutableStateOf(0) }
     LaunchedEffect(accountId, folder, offline, state.liveRevision()) {
-        val st = runCatching { net.archiveStatus() }.getOrNull()
+        val st = catching { net.archiveStatus() }.getOrNull()
         if (st == null || st.mode == ArchiveModeUi.NONE || accountId !in st.options.accounts) {
             page = emptyList(); total = 0; return@LaunchedEffect
         }
-        runCatching { net.archiveList(accountId, folder, 0, 50, offline) }.onSuccess { page = it.mails; total = it.total }
+        catching { net.archiveList(accountId, folder, 0, 50, offline) }.onSuccess { page = it.mails; total = it.total }
     }
     if (page.isEmpty()) return
     SectionLabel(stringResource(Res.string.archive_section, total.toString()))
@@ -433,8 +441,8 @@ fun MailArchiveReadScreen(state: AppState, accountId: String, folder: String, ke
     val save = rememberSaveFile { ok -> if (ok) state.message(savedMsg) }
     val ref = ArchiveRefUi(key, folder)
     LaunchedEffect(key) {
-        runCatching { net.archiveGet(accountId, folder, key) }.onSuccess { message = it }.onFailure { error = describe(it) }
-        runCatching { net.archiveSetSeen(accountId, listOf(ref), true) }
+        catching { net.archiveGet(accountId, folder, key) }.onSuccess { message = it }.onFailure { error = describe(it) }
+        catching { net.archiveSetSeen(accountId, listOf(ref), true) }
     }
     val replyPrefix = stringResource(Res.string.mail_re)
     val forwardPrefix = stringResource(Res.string.mail_fwd)
@@ -443,7 +451,7 @@ fun MailArchiveReadScreen(state: AppState, accountId: String, folder: String, ke
     val deleted = stringResource(Res.string.archive_deleted)
     val t = g
     Column(Modifier.padding(padding)) {
-        GhulTopBar("", onLock = { state.lockNow() }, onBack = { state.pop() }, backIcon = backIcon(state), actions = {
+        GhulTopBar("", onLock = { state.lockNow() }, onBack = { state.pop() }, backIcon = backIcon(), actions = {
             if (filePickersAvailable) {
                 BarIcon(Icons.Filled.Download, stringResource(Res.string.mail_save_eml)) {
                     state.run(onError = { error = it }, block = { net.archiveRaw(accountId, folder, key) }) {
@@ -524,20 +532,24 @@ fun MailArchiveReadScreen(state: AppState, accountId: String, folder: String, ke
 fun MailArchiveDialogs(state: AppState) {
     val net = state.backend.net
     val ask = state.archiveAsk ?: return
-    val removedMsg = stringResource(Res.string.archive_removed)
+    // Texts looked up later (after a count is known) use the language of the screen.
+    val env = rememberResourceEnvironment()
     AlertDialog(
         // Tapping beside it is "later": nothing is deleted.
         onDismissRequest = { state.archiveAsk = null },
         title = { Text(stringResource(Res.string.archive_first_title)) },
-        text = { Text(stringResource(Res.string.archive_first_text, ask.second.toString())) },
+        text = { Text(pluralStringResource(Res.plurals.archive_first_text, ask.second, ask.second.toString())) },
         confirmButton = {
             TextButton(onClick = {
                 state.archiveAsk = null
-                state.run(block = { net.archiveConfirmRemoval(ask.first) }) { r ->
-                    state.message(removedMsg.replace("%1\$s", r.removed.toString()))
+                state.run(block = {
+                    val r = net.archiveConfirmRemoval(ask.first)
+                    countText(env, Res.plurals.archive_removed, r.removed, r.removed.toString())
+                }) { msg ->
+                    state.message(msg)
                     state.changed()
                 }
-            }) { Text(stringResource(Res.string.archive_first_yes, ask.second.toString())) }
+            }) { Text(pluralStringResource(Res.plurals.archive_first_yes, ask.second, ask.second.toString())) }
         },
         dismissButton = { TextButton(onClick = { state.archiveAsk = null }) { Text(stringResource(Res.string.a_later)) } },
     )

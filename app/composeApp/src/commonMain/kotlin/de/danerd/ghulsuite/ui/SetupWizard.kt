@@ -153,7 +153,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
     var quickPin by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
-        kdf = runCatching { backend.calibrateKdf() }.getOrElse { KdfChoice(64 * 1024, 3, 0) }
+        kdf = catching { backend.calibrateKdf() }.getOrElse { KdfChoice(64 * 1024, 3, 0) }
         keyLabel = getString(Res.string.setup_default_key_label)
         areaName[VaultKindUi.PASS] = getString(Res.string.area_pass_default)
         areaName[VaultKindUi.TOTP] = getString(Res.string.area_auth_default)
@@ -295,7 +295,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
         1 -> {
             SecretTextField(password, { password = it; error = null }, stringResource(Res.string.l_master_password))
             SecretTextField(repeat, { repeat = it; error = null }, stringResource(Res.string.l_repeat_password))
-            StrengthMeter(backend.passwordScore(password))
+            if (password.isNotEmpty()) StrengthMeter(backend.passwordScore(password))
             FilledTonalButton(onClick = {
                 password = backend.generatePassword(PasswordOptionsUi(length = 24))
                 repeat = ""

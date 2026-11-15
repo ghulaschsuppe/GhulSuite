@@ -1,0 +1,222 @@
+# The way a user takes on a real server, step by step with a screenshot after each one:
+#   1. Options > Servers: add the SFTP test server. First "Test connection", only then the folder
+#      (a new one, "sync-maestro"), then save.
+#   2. Choose it for the synchronisation: the choice sticks (bug: it stayed "Off") and the first
+#      synchronisation runs.
+#   3. Set up sharing on it: browse the folders, enter an address, check. No internal error text
+#      may appear (bug: "The coroutine scope left the composition"). The address does not exist,
+#      so the HTTPS step fails; writing the folder works.
+#   4. GhulDrive (own server from 1-drive.yaml): the card names the server (bug: "…" and
+#      "Not set up" next to the files).
+#   5. Selection bar with everything selected: no "All" button that does nothing.
+appId: de.danerd.ghulsuite.dev
+name: Sync server and sharing on a real server
+---
+- runFlow: unlock.yaml
+- tapOn: { id: "tab-settings" }
+# The tab keeps its place from before (on purpose): start at the top.
+- scrollUntilVisible:
+    element: "Unlocking|Entsperren"
+    direction: UP
+- scrollUntilVisible:
+    element: "Servers, sync & sharing"
+    direction: DOWN
+- tapOn: "Servers, sync & sharing"
+- extendedWaitUntil:
+    visible: "Add server"
+    timeout: 10000
+# No server for the synchronisation yet.
+- assertVisible: "Off"
+- takeScreenshot: s3-01-servers-empty
+
+# --- 1. Add the server ---------------------------------------------------------------------
+- tapOn: "Add server"
+- extendedWaitUntil:
+    visible: "Server address"
+    timeout: 10000
+- tapOn: "Server address"
+- inputText: ${GHUL_SERVER}
+- tapOn: "22"
+- eraseText
+- inputText: "2223"
+- tapOn: "User name"
+- inputText: "ghulsftp"
+- hideKeyboard
+- tapOn: "Password"
+- scrollUntilVisible:
+    element: "Server password"
+    direction: DOWN
+- tapOn: "Server password"
+- inputText: "test-pw-123"
+- hideKeyboard
+- assertNotVisible: "Choose folder"
+- takeScreenshot: s3-02-server-form
+- scrollUntilVisible:
+    element: "Test connection"
+    direction: DOWN
+- tapOn:
+    text: "Test connection"
+    index: 0
+# A new server: its key has to be confirmed (unless the app knows it already).
+- extendedWaitUntil:
+    visible: "Check the server key|New folder …"
+    timeout: 60000
+- runFlow:
+    when:
+      visible: "Check the server key"
+    commands:
+      - takeScreenshot: s3-03-server-key
+      - tapOn: "Fingerprint matches"
+# The folder list opens by itself; GhulDrive already uses "ghulsuite", so a folder of its own.
+- extendedWaitUntil:
+    visible: "New folder …"
+    timeout: 60000
+- takeScreenshot: s3-04-folders
+- tapOn: "New folder …"
+- tapOn: "Name of the new folder"
+- inputText: "sync-maestro"
+- hideKeyboard
+- tapOn: "Use sync-maestro \\(created when testing\\)"
+- extendedWaitUntil:
+    visible: "Connection works, folder chosen\\."
+    timeout: 10000
+# The old hint ("Now choose the folder") is gone once the folder is chosen.
+- assertNotVisible: ".*Now choose the folder.*"
+- assertVisible: "sync-maestro/"
+- assertNotVisible: ".*composition.*"
+- takeScreenshot: s3-05-connected
+- scrollUntilVisible:
+    element: "Save server"
+    direction: DOWN
+- tapOn: "Save server"
+# Saved: back on the page of the servers, the server is listed with its sharing button.
+- extendedWaitUntil:
+    visible: "Set up sharing"
+    timeout: 120000
+- takeScreenshot: s3-06-server-saved
+
+# --- 2. Synchronisation ----------------------------------------------------------------------
+- scrollUntilVisible:
+    element: "Off"
+    direction: DOWN
+- tapOn: "Off"
+- extendedWaitUntil:
+    visible: "[/~].*sync-maestro/?"
+    timeout: 10000
+- takeScreenshot: s3-07-sync-choice
+- tapOn: "[/~].*sync-maestro/?"
+# The choice sticks: the controls of the synchronisation appear and the first run is done.
+- extendedWaitUntil:
+    visible: "Synchronise now"
+    timeout: 120000
+- extendedWaitUntil:
+    visible: "Last synchronised: .*"
+    timeout: 120000
+- assertNotVisible: "Off"
+- assertNotVisible: "Synchronisation failed: .*"
+- takeScreenshot: s3-08-sync-chosen
+
+# --- 3. Sharing --------------------------------------------------------------------------------
+- scrollUntilVisible:
+    element: "Set up sharing"
+    direction: UP
+- tapOn: "Set up sharing"
+- extendedWaitUntil:
+    visible: "1\\. Share folder on the server"
+    timeout: 10000
+- extendedWaitUntil:
+    visible: "sync-maestro"
+    timeout: 30000
+- takeScreenshot: s3-09-share-setup
+# Into folders and back out again, without waiting in between.
+- tapOn: "sync-maestro"
+- tapOn: "\\.\\."
+- tapOn: "ghulsuite"
+- tapOn: "\\.\\."
+- extendedWaitUntil:
+    visible: "sync-maestro"
+    timeout: 30000
+- assertNotVisible: ".*composition.*"
+- assertNotVisible: ".*[Cc]oroutine.*"
+- tapOn: "New folder"
+- tapOn: "Name"
+- inputText: "teilen-maestro"
+- hideKeyboard
+- tapOn: "Create"
+- extendedWaitUntil:
+    visible: "/teilen-maestro"
+    timeout: 10000
+- tapOn: "https://"
+- inputText: "example.invalid/teilen"
+- hideKeyboard
+- takeScreenshot: s3-10-share-filled
+- scrollUntilVisible:
+    element: "Set up and check"
+    direction: DOWN
+- tapOn: "Set up and check"
+- extendedWaitUntil:
+    visible: "Folder writable"
+    timeout: 120000
+- assertNotVisible: ".*composition.*"
+- assertNotVisible: ".*[Cc]oroutine.*"
+# The address does not answer: what depends on it is "not checked", not a result nobody saw.
+- scrollUntilVisible:
+    element: "Not checked, because the HTTPS step failed"
+    direction: DOWN
+- assertNotVisible: "the folder content is visible"
+- takeScreenshot: s3-11-share-checked
+- back
+- back
+
+# --- 4. GhulDrive card -----------------------------------------------------------------------
+- tapOn: { id: "tab-drive" }
+- extendedWaitUntil:
+    visible: "Urlaub-Maestro"
+    timeout: 60000
+- assertNotVisible: "No server yet"
+- assertNotVisible: "Not set up"
+# The card names the server of GhulDrive (its name is the address).
+- assertVisible: ${GHUL_SERVER}
+- takeScreenshot: s3-12-drive
+
+# --- 5. Selection bar --------------------------------------------------------------------------
+- longPressOn: "Urlaub-Maestro"
+- extendedWaitUntil:
+    visible: "1 selected"
+    timeout: 10000
+# The only item is selected: "All" would do nothing, so it is not offered.
+- assertNotVisible: { id: "sel-all" }
+- takeScreenshot: s3-13-drive-selected
+- tapOn: "Cancel"
+- extendedWaitUntil:
+    notVisible: "1 selected"
+    timeout: 10000
+
+# --- 6. Background and back, and a fresh start (the card must be right at once) -------------
+- pressKey: Home
+- launchApp:
+    stopApp: false
+- runFlow:
+    when:
+      visible: "Unlock with app PIN"
+    commands:
+      - tapOn: "App PIN"
+      - inputText: "246813"
+      - hideKeyboard
+      - tapOn: "Unlock with app PIN"
+- extendedWaitUntil:
+    visible: "Urlaub-Maestro"
+    timeout: 60000
+- assertVisible: ${GHUL_SERVER}
+- assertNotVisible: "Not set up"
+- assertNotVisible: "No server yet"
+- takeScreenshot: s3-14-drive-after-background
+- runFlow: unlock.yaml
+- tapOn: { id: "tab-drive" }
+- extendedWaitUntil:
+    visible: "Urlaub-Maestro"
+    timeout: 60000
+- assertVisible: ${GHUL_SERVER}
+- assertNotVisible: "Not set up"
+- assertNotVisible: "No server yet"
+- takeScreenshot: s3-15-drive-after-restart

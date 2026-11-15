@@ -4,7 +4,11 @@ name: Options pages
 ---
 - launchApp:
     stopApp: false
-- tapOn: "Options"
+- tapOn: { id: "tab-settings" }
+# The tab keeps its place from before (on purpose): start at the top.
+- scrollUntilVisible:
+    element: "Unlocking|Entsperren"
+    direction: UP
 - runFlow:
     file: open-option.yaml
     env: { PAGE: "Unlocking", SHOT: "05-unlocking" }

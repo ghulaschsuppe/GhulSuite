@@ -109,6 +109,8 @@ import de.danerd.ghulsuite.model.OutgoingAttachmentUi
 import de.danerd.ghulsuite.model.OutgoingMailUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.rememberResourceEnvironment
 import org.jetbrains.compose.resources.stringResource
 import de.danerd.ghulsuite.model.VaultKindUi
 
@@ -123,7 +125,7 @@ fun MailScreen(state: AppState, padding: PaddingValues) {
     val net = state.backend.net
     var accounts by remember { mutableStateOf<List<MailAccountUi>?>(null) }
     LaunchedEffect(state.liveRevision()) {
-        accounts = runCatching { net.mailAccounts() }.getOrDefault(emptyList())
+        accounts = catching { net.mailAccounts() }.getOrDefault(emptyList())
         val list = accounts.orEmpty()
         if (state.mailAccount == null || (state.mailAccount != ALL_INBOXES && list.none { it.id == state.mailAccount })) {
             state.mailAccount = list.firstOrNull()?.id
@@ -169,11 +171,15 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
     var messages by remember(key) { mutableStateOf<List<MailItem>>(emptyList()) }
     var total by remember(key) { mutableStateOf(0) }
     var query by remember(key) { mutableStateOf("") }
-    var searching by remember { mutableStateOf(false) }
+    var searching by remember(key) { mutableStateOf(false) }
+    /** The words the shown results belong to ("" = the folder itself). */
+    var searchedFor by remember(key) { mutableStateOf("") }
+    /** The words to search for: set shortly after typing stops, or at once with the search key. */
+    var activeQuery by remember(key) { mutableStateOf("") }
     var filter by remember(key) { mutableStateOf("") }
     var reload by remember { mutableStateOf(0) }
     var loading by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var error by remember(key) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     suspend fun load(): Pair<Int, List<MailItem>> {
@@ -197,12 +203,40 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
         if (folder.equals("INBOX", true) && !searching) state.refreshUnread()
         state.mailLoaded = messages
     }
-    LaunchedEffect(key, reload, filter == "flagged", state.liveRevision(), state.mailRefreshTick) {
+    // The search runs by itself shortly after typing stops (as in GhulPass and GhulDrive); it asks
+    // the mail server, so not on every letter. An empty field shows the folder again at once.
+    LaunchedEffect(query) {
+        val words = query.trim()
+        if (words.isNotEmpty()) kotlinx.coroutines.delay(600)
+        activeQuery = words
+    }
+    // One way to fill the list: the folder, or the search for the active words. A reload (new
+    // mail, Refresh, an action on a result) repeats whichever it is, so the folder never replaces
+    // results under the words, nor the other way round.
+    // Words in the field (typed, searching or found): the list is not the folder, so nothing that
+    // acts on the folder (load more, the whole folder, archived mails) is offered.
+    val inSearch = query.isNotBlank() || activeQuery.isNotEmpty() || searching
+    LaunchedEffect(key, reload, activeQuery.isEmpty() && filter == "flagged", state.liveRevision(), state.mailRefreshTick, activeQuery) {
+        val words = activeQuery
         loading = true
-        runCatching { load() }
-            .onSuccess { (t, items) -> messages = items; total = t; error = null; searching = false }
-            .onFailure { error = describe(it) }
-        loading = false
+        try {
+            if (words.isEmpty()) {
+                catching { load() }
+                    .onSuccess { (t, items) -> messages = items; total = t; error = null; searching = false }
+                    // Search results must not stay as if they were the folder.
+                    .onFailure { error = describe(it); if (searching) { messages = emptyList(); searching = false } }
+                searchedFor = ""
+            } else {
+                catching { shown.flatMap { a -> net.mailSearch(a.id, folder, words).map { MailItem(a.id, it) } }.sortedByDescending { it.m.date } }
+                    .onSuccess { messages = it; searching = true; error = null }
+                    // Not the folder (or other words' results) under these words: the error alone.
+                    .onFailure { error = describe(it); messages = emptyList(); searching = true }
+                // Also after a failure: the error shows, not an endless "Loading".
+                searchedFor = words
+            }
+        } finally {
+            loading = false
+        }
     }
     // While the list is visible, new mail shows up by itself (quietly, without the loading bar).
     val visible = LocalTabActive.current
@@ -214,7 +248,7 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
         if (!visible || query.isNotBlank()) return@LaunchedEffect
         while (true) {
             kotlinx.coroutines.delay(MAIL_REFRESH_MS)
-            runCatching { load() }.onSuccess { (t, items) ->
+            catching { load() }.onSuccess { (t, items) ->
                 if (!searching && (t != total || items.firstOrNull()?.m?.uid != messages.firstOrNull()?.m?.uid)) {
                     messages = items
                     total = t
@@ -223,7 +257,6 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
         }
     }
     val swipeLeft = state.backend.settings.mailSwipeLeft
-    val keyOf = { item: MailItem -> item.accountId + "|" + item.m.uid }
     fun hideKey(item: MailItem) = hiddenKey("mail", item.accountId + "/" + folder, item.m.uid.toString())
     val trashMsg = stringResource(Res.string.msg_moved_to_trash)
     val archivedMsg = stringResource(Res.string.mail_archived_n)
@@ -235,43 +268,72 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
     fun delete(list: List<MailItem>) = remove(list, trashMsg) { net.mailDelete(it.accountId, folder, it.m.uid) }
     fun archive(list: List<MailItem>) = scope.launch {
         // Without an archive folder there is nothing to archive into: it says so, nothing happens.
-        val targets = list.associateWith { net.runCatching { mailFolders(it.accountId) }.getOrDefault(emptyList()).firstOrNull { f -> f.role == "archive" } }
+        val targets = list.associateWith { net.catching { mailFolders(it.accountId) }.getOrDefault(emptyList()).firstOrNull { f -> f.role == "archive" } }
         val todo = list.filter { targets[it]?.name != folder }
         if (todo.any { targets[it] == null }) state.messageRes(Res.string.mail_no_archive)
         else if (todo.isNotEmpty()) remove(todo, archivedMsg) { net.mailMove(it.accountId, folder, it.m.uid, targets.getValue(it)!!.name) }
     }
+    // A row stands for a whole conversation: what is done to the row is done to the mails the row
+    // counts ("(2)"), i.e. those of the conversation that the filter chips show.
+    val threadOf = { item: MailItem -> item.accountId + "|" + item.m.threadKey.ifEmpty { item.m.uid.toString() } }
+    val listed = messages.filter { hideKey(it) !in state.hidden }
+    // Typed words whose results are not there yet: not the old list under the new words.
+    // (Also after emptying the field: not the results under no words while the folder loads.)
+    val searchPending = query.trim() != searchedFor
+    val shownItems = if (searchPending) emptyList() else listed.filter {
+        when (filter) {
+            "unread" -> !it.m.seen
+            "flagged" -> it.m.flagged
+            "attachments" -> it.m.hasAttachments
+            else -> true
+        }
+    }
+    val threads = shownItems.groupBy(threadOf)
+    // The newest message of each conversation stands for the others (count in brackets).
+    val heads = shownItems.filter { item -> threads[threadOf(item)]?.first() === item }
+    fun mailsOf(item: MailItem) = threads[threadOf(item)] ?: listOf(item)
     fun swipe(item: MailItem, left: Boolean) {
-        if (left && swipeLeft == 0) return archive(listOf(item)).let {}
-        if (left && swipeLeft == 1) return delete(listOf(item))
+        val all = mailsOf(item)
+        if (left && swipeLeft == 0) return archive(all).let {}
+        if (left && swipeLeft == 1) return delete(all)
         scope.launch {
-            runCatching { net.mailSetSeen(item.accountId, folder, item.m.uid, if (left) true else !item.m.seen) }.onFailure { state.message(describe(it)) }
+            // Read as soon as one is unread (as the bar offers it), else all unread.
+            val seen = if (left) true else all.any { !it.m.seen }
+            catching { all.forEach { net.mailSetSeen(it.accountId, folder, it.m.uid, seen) } }.onFailure { state.message(describe(it)) }
             reload++
         }
     }
-    // Long press selects mails (as in every list); the bar on top acts on them.
+    // Long press selects conversations (as in every list); the bar on top acts on their mails.
+    // The selection holds conversations, not single mails: a new answer or another filter chip
+    // does not leave a selected row behind that nothing acts on.
     val selected = rememberListSelection()
     var moving by remember { mutableStateOf<List<MailItem>?>(null) }
-    val listed = messages.filter { hideKey(it) !in state.hidden }
-    val chosen = listed.filter { keyOf(it) in selected }
+    val chosenThreads = heads.map(threadOf).filter { it in selected }.toSet()
+    val chosen = shownItems.filter { threadOf(it) in chosenThreads }
     // "All N mails in this folder" (also the ones not loaded yet): one account, plain list only.
     val single = if (all) null else shown.singleOrNull()
     var wholeFolder by remember(key) { mutableStateOf(false) }
-    LaunchedEffect(selected.active) { if (!selected.active) wholeFolder = false }
+    LaunchedEffect(selected.active, inSearch) { if (!selected.active || inSearch) wholeFolder = false }
     var movingAll by remember { mutableStateOf(false) }
     var deleteAll by remember { mutableStateOf(false) }
     var emptying by remember { mutableStateOf(false) }
+    // Texts looked up later (after a count is known) use the language of the screen.
+    val env = rememberResourceEnvironment()
     val folderRole by produceState("", key) {
-        value = single?.let { a -> runCatching { net.mailFolders(a.id) }.getOrNull()?.firstOrNull { it.name == folder }?.role } ?: ""
+        value = single?.let { a -> catching { net.mailFolders(a.id) }.getOrNull()?.firstOrNull { it.name == folder }?.role } ?: ""
     }
-    val doneMsg = stringResource(Res.string.mail_bulk_done)
     // Runs an action on every mail of the folder, then leaves the selection.
     fun bulk(block: suspend (String, List<Long>) -> Unit) {
         val a = single ?: return
-        state.run(onError = { error = it }, block = { val uids = net.mailFolderUids(a.id, folder); block(a.id, uids); uids.size }) { n ->
+        state.run(onError = { error = it }, block = {
+            val uids = net.mailFolderUids(a.id, folder)
+            block(a.id, uids)
+            countText(env, Res.plurals.mail_bulk_done, uids.size, uids.size.toString())
+        }) { msg ->
             selected.clear()
             wholeFolder = false
             reload++
-            state.message(doneMsg.replace("%1\$s", n.toString()))
+            state.message(msg)
         }
     }
 
@@ -285,9 +347,10 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
             state.run(onError = { error = it }, block = { list.forEach { block(it) } }) { reload++ }
         }
         SelectionHeader(
-            if (wholeFolder) total else selected.keys.size,
+            if (wholeFolder) total else chosenThreads.size,
             onClose = { selected.clear() },
-            onAll = { selected.all(listed.map(keyOf)) },
+            onAll = { selected.all(heads.map(threadOf)) },
+            total = heads.size,
             actions = buildList {
                 add(SelAction(if (anyUnread) Icons.Filled.MarkEmailRead else Icons.Filled.MarkEmailUnread,
                     stringResource(if (anyUnread) Res.string.a_mark_read else Res.string.a_mark_unread)) {
@@ -315,12 +378,12 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
             },
         )
     }
-    if (selected.active && single != null && filter.isEmpty() && !searching && total > listed.size &&
-        (wholeFolder || selected.keys.size >= listed.size)
+    if (selected.active && single != null && filter.isEmpty() && !inSearch && total > listed.size &&
+        (wholeFolder || chosenThreads.size >= heads.size)
     ) {
         Box(Modifier.fillMaxWidth().clickable(enabled = !wholeFolder) { wholeFolder = true }.padding(horizontal = 16.dp, vertical = 10.dp)) {
             Text(
-                stringResource(if (wholeFolder) Res.string.mail_whole_folder_on else Res.string.mail_whole_folder, total.toString()),
+                pluralStringResource(if (wholeFolder) Res.plurals.mail_whole_folder_on else Res.plurals.mail_whole_folder, total, total.toString()),
                 color = areaColor(Tab.MAIL), fontWeight = FontWeight.SemiBold,
             )
         }
@@ -334,19 +397,7 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
                 Text(stringResource(Res.string.mail_empty_folder))
             }
         }
-        SearchField(query, {
-            query = it
-            if (it.isBlank() && searching) reload++
-        }, placeholder = stringResource(Res.string.mail_search), onSearch = {
-            if (query.isNotBlank()) {
-                state.run(onError = { error = it }, block = {
-                    shown.flatMap { a -> net.mailSearch(a.id, folder, query).map { MailItem(a.id, it) } }.sortedByDescending { it.m.date }
-                }) {
-                    messages = it
-                    searching = true
-                }
-            }
-        })
+        SearchField(query, { query = it }, placeholder = stringResource(Res.string.mail_search), onSearch = { activeQuery = query.trim() })
         LoadError(error) { error = null; reload++ }
         state.archiveUnreachable?.let { why ->
             // KONZEPT 9.3.1: the provider's mails and what is kept offline stay usable; nothing is deleted.
@@ -365,19 +416,10 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
             filter, { filter = it },
             icons = mapOf("flagged" to Icons.Outlined.Flag, "attachments" to Icons.Filled.Attachment),
         )
-        if (loading && messages.isEmpty()) LoadingHint()
-        val shownItems = listed.filter {
-            when (filter) {
-                "unread" -> !it.m.seen
-                "flagged" -> it.m.flagged
-                "attachments" -> it.m.hasAttachments
-                else -> true
-            }
+        if ((loading && messages.isEmpty()) || searchPending) LoadingHint()
+        if (!loading && !searchPending && shownItems.isEmpty() && error == null) {
+            EmptyState(tabIcon(Tab.MAIL), stringResource(if (searching && query.isNotBlank()) Res.string.mail_nothing_found else Res.string.mail_empty), areaColor(Tab.MAIL))
         }
-        if (!loading && shownItems.isEmpty() && error == null) EmptyState(tabIcon(Tab.MAIL), stringResource(Res.string.mail_empty), areaColor(Tab.MAIL))
-        // Conversations: the newest message of each subject stands for the others (count in brackets).
-        val threads = shownItems.groupBy { it.accountId + "|" + it.m.threadKey.ifEmpty { it.m.uid.toString() } }
-        val heads = shownItems.filter { item -> threads[item.accountId + "|" + item.m.threadKey.ifEmpty { item.m.uid.toString() }]?.first() === item }
         // Grouped by day: Today, Yesterday, then the date.
         val now = nowSeconds() * 1000
         val today = formatDate(now)
@@ -396,32 +438,34 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
             SectionLabel(day)
             ListCard {
                 list.forEachIndexed { i, item ->
-                    val count = threads[item.accountId + "|" + item.m.threadKey.ifEmpty { item.m.uid.toString() }]?.size ?: 1
-                    val open = state.wide && state.stack.firstOrNull().let { it is Screen.MailRead && it.uid == item.m.uid && it.accountId == item.accountId }
-                    val chosenRow = keyOf(item) in selected
+                    val count = threads[threadOf(item)]?.size ?: 1
+                    val chosenRow = threadOf(item) in chosenThreads
                     SwipeRow(enabled = !selected.active, onLeft = { swipe(item, true) }, onRight = { swipe(item, false) }, leftAction = swipeLeft) {
-                        Box(if (chosenRow) Modifier.background(g.accentSoft) else if (open) Modifier.background(g.surface2) else Modifier) {
+                        Box(if (chosenRow) Modifier.background(g.accentSoft) else Modifier) {
                         MailRow(item.m, today, yesterdayLabel, divider = i > 0, count = count, account = if (all) names[item.accountId] else null,
-                            selected = chosenRow, onLongClick = { selected.toggle(keyOf(item)) }) {
-                            if (selected.active) selected.toggle(keyOf(item)) else state.push(Screen.MailRead(item.accountId, folder, item.m.uid))
+                            selected = chosenRow, onLongClick = { selected.toggle(threadOf(item)) }) {
+                            if (selected.active) selected.toggle(threadOf(item)) else state.push(Screen.MailRead(item.accountId, folder, item.m.uid))
                         }
                         }
                     }
                 }
             }
         }
-        if (!searching && !all && filter != "flagged" && messages.size < total) {
+        if (!inSearch && !all && filter != "flagged" && messages.size < total) {
             OutlinedButton(onClick = {
                 val a = shown.first()
                 state.run(onError = { error = it }, block = { net.mailList(a.id, folder, messages.size, PAGE) }) { p ->
-                    messages = messages + p.messages.map { MailItem(a.id, it) }
-                    total = p.total
+                    // A search started meanwhile: its results are not mixed with folder pages.
+                    if (!searching && activeQuery.isEmpty()) {
+                        messages = messages + p.messages.map { MailItem(a.id, it) }
+                        total = p.total
+                    }
                 }
             }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.mail_more, (total - messages.size).toString())) }
         }
         // The archived mails of this folder, below the provider's (KONZEPT 9.3.1).
-        if (!searching && !all && filter.isEmpty() && shown.isNotEmpty()) ArchivedMails(state, shown.first().id, folder, offline = error != null)
-        if (messages.isNotEmpty()) HintText(stringResource(Res.string.mail_swipe_hint))
+        if (!inSearch && !all && filter.isEmpty() && shown.isNotEmpty()) ArchivedMails(state, shown.first().id, folder, offline = error != null)
+        if (heads.isNotEmpty()) HintText(stringResource(Res.string.mail_swipe_hint))
     }
     }
     }
@@ -429,7 +473,7 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
         AlertDialog(
             danger = true,
             onDismissRequest = { deleteAll = false },
-            title = { Text(stringResource(Res.string.mail_delete_all_title, total.toString())) },
+            title = { Text(pluralStringResource(Res.plurals.mail_delete_all_title, total, total.toString())) },
             text = { Text(stringResource(if (folderRole == "trash") Res.string.mail_delete_all_final else Res.string.mail_delete_all_text)) },
             confirmButton = {
                 TextButton(onClick = { deleteAll = false; bulk { a, u -> net.mailDeleteMany(a, folder, u) } }) { Text(stringResource(Res.string.a_delete)) }
@@ -438,19 +482,21 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
         )
     }
     if (emptying) {
-        val emptied = stringResource(Res.string.mail_emptied)
         AlertDialog(
             danger = true,
             onDismissRequest = { emptying = false },
-            title = { Text(stringResource(Res.string.mail_empty_title, total.toString())) },
+            title = { Text(pluralStringResource(Res.plurals.mail_empty_title, total, total.toString())) },
             text = { Text(stringResource(Res.string.mail_empty_text)) },
             confirmButton = {
                 TextButton(onClick = {
                     emptying = false
                     val a = single ?: return@TextButton
-                    state.run(onError = { error = it }, block = { net.mailEmptyFolder(a.id, folder) }) { n ->
+                    state.run(onError = { error = it }, block = {
+                        val n = net.mailEmptyFolder(a.id, folder)
+                        countText(env, Res.plurals.mail_emptied, n, n.toString())
+                    }) { msg ->
                         reload++
-                        state.message(emptied.replace("%1\$s", n.toString()))
+                        state.message(msg)
                     }
                 }) { Text(stringResource(Res.string.mail_empty_yes)) }
             },
@@ -458,7 +504,7 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
         )
     }
     if (movingAll && single != null) {
-        val folders by produceState(emptyList<MailFolderUi>(), single.id) { value = runCatching { net.mailFolders(single.id) }.getOrDefault(emptyList()) }
+        val folders by produceState(emptyList<MailFolderUi>(), single.id) { value = catching { net.mailFolders(single.id) }.getOrDefault(emptyList()) }
         GhulSheet({ movingAll = false }, stringResource(Res.string.a_move)) {
             SheetList {
                 folders.filter { it.name != folder }.forEachIndexed { i, f ->
@@ -472,7 +518,7 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
     }
     moving?.let { list ->
         val account = list.first().accountId
-        val folders by produceState(emptyList<MailFolderUi>(), account) { value = runCatching { net.mailFolders(account) }.getOrDefault(emptyList()) }
+        val folders by produceState(emptyList<MailFolderUi>(), account) { value = catching { net.mailFolders(account) }.getOrDefault(emptyList()) }
         GhulSheet({ moving = null }, stringResource(Res.string.a_move)) {
             SheetList {
                 folders.filter { it.name != folder }.forEachIndexed { i, f ->
@@ -618,8 +664,8 @@ fun MailReadScreen(state: AppState, accountId: String, folder: String, uid: Long
     val savedMsg = stringResource(Res.string.msg_saved_file)
     val save = rememberSaveFile { ok -> if (ok) state.message(savedMsg) }
     LaunchedEffect(uid) {
-        runCatching { net.mailGet(accountId, folder, uid) }.onSuccess { message = it; state.refreshUnread() }.onFailure { error = describe(it) }
-        folders = runCatching { net.mailFolders(accountId) }.getOrDefault(emptyList())
+        catching { net.mailGet(accountId, folder, uid) }.onSuccess { message = it; state.refreshUnread() }.onFailure { error = describe(it) }
+        folders = catching { net.mailFolders(accountId) }.getOrDefault(emptyList())
     }
     val replyPrefix = stringResource(Res.string.mail_re)
     val forwardPrefix = stringResource(Res.string.mail_fwd)
@@ -629,7 +675,7 @@ fun MailReadScreen(state: AppState, accountId: String, folder: String, uid: Long
     fun quote(m: MailMessageUi) = "\n\n" + quoteHead.replace("%1\$s", m.from) + "\n" + m.text.lines().joinToString("\n") { "> $it" }
     fun re(s: String) = if (s.startsWith(replyPrefix, ignoreCase = true) || s.startsWith("Re:", true)) s else "$replyPrefix $s"
     val t = g
-    val accountName by produceState("", accountId) { value = runCatching { net.mailAccounts().firstOrNull { it.id == accountId }?.name }.getOrNull().orEmpty() }
+    val accountName by produceState("", accountId) { value = catching { net.mailAccounts().firstOrNull { it.id == accountId }?.name }.getOrNull().orEmpty() }
     val archive = folders.firstOrNull { it.role == "archive" }
     val inTrash = folders.any { it.role == "trash" && it.name == folder }
     val readKey = listOf(hiddenKey("mail", "$accountId/$folder", uid.toString()))
@@ -654,7 +700,7 @@ fun MailReadScreen(state: AppState, accountId: String, folder: String, uid: Long
     val saveFile = rememberSaveFile { ok -> if (ok) state.message(savedMsg2) }
     val driveDone = stringResource(Res.string.mail_to_drive_done)
     Column(Modifier.padding(padding)) {
-        GhulTopBar("", onLock = { state.lockNow() }, onBack = { state.pop() }, backIcon = backIcon(state), actions = {
+        GhulTopBar("", onLock = { state.lockNow() }, onBack = { state.pop() }, backIcon = backIcon(), actions = {
             if (archive != null && archive.name != folder) {
                 BarIcon(Icons.Filled.Archive, stringResource(Res.string.mail_archive)) {
                     leave(archivedMsg) { net.mailMove(accountId, folder, uid, archive.name) }
@@ -925,7 +971,7 @@ fun MailComposeScreen(state: AppState, draft: MailDraft, padding: PaddingValues)
     val attachments = remember { mutableStateListOf<OutgoingAttachmentUi>().apply { addAll(draft.attachments) } }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
-        accounts = runCatching { net.mailAccounts() }.getOrDefault(emptyList())
+        accounts = catching { net.mailAccounts() }.getOrDefault(emptyList())
         if (accountId == null) accountId = accounts.firstOrNull()?.id
     }
     val attach = rememberOpenFile { f -> attachments.add(OutgoingAttachmentUi(f.name, mimeOf(f.name), f.bytes)) }
@@ -935,7 +981,7 @@ fun MailComposeScreen(state: AppState, draft: MailDraft, padding: PaddingValues)
         if (to.isBlank() && subject.isBlank() && text.isBlank()) return@LaunchedEffect
         if (to == draft.to && subject == draft.subject && text == draft.text && attachments.size == draft.attachments.size && draftId.isEmpty()) return@LaunchedEffect
         kotlinx.coroutines.delay(1500)
-        draftId = runCatching {
+        draftId = catching {
             net.mailSaveDraft(de.danerd.ghulsuite.model.MailDraftUi(draftId, acc, to, cc, bcc, subject, text, draft.inReplyTo, attachments = attachments.toList()))
         }.getOrDefault(draftId)
     }
@@ -943,7 +989,7 @@ fun MailComposeScreen(state: AppState, draft: MailDraft, padding: PaddingValues)
     LaunchedEffect(to) {
         val last = to.substringAfterLast(',').trim()
         suggestions = if (last.length < 2 || last.contains('@') && last.substringAfter('@').contains('.')) emptyList()
-        else runCatching { net.mailContacts(last) }.getOrDefault(emptyList())
+        else catching { net.mailContacts(last) }.getOrDefault(emptyList())
     }
     val sentMsg = stringResource(Res.string.mail_sent_msg)
     // Encryption preview: looked up a moment after the recipients stop changing.
@@ -955,14 +1001,17 @@ fun MailComposeScreen(state: AppState, draft: MailDraft, padding: PaddingValues)
             return@LaunchedEffect
         }
         kotlinx.coroutines.delay(700)
-        keys = runCatching { net.mailRecipientKeys(all) }.getOrNull()
+        keys = catching { net.mailRecipientKeys(all) }.getOrNull()
     }
 
     val t = g
     val forwardPrefix = stringResource(Res.string.mail_fwd)
+    val replyPrefix = stringResource(Res.string.mail_re)
     val title = stringResource(
         when {
-            draft.inReplyTo.isNotBlank() -> Res.string.mail_reply_title
+            // An answer, also to a mail without a Message-ID (then only its subject tells).
+            draft.inReplyTo.isNotBlank() || draft.subject.startsWith(replyPrefix, ignoreCase = true) ||
+                draft.subject.startsWith("Re:", ignoreCase = true) -> Res.string.mail_reply_title
             draft.subject.startsWith(forwardPrefix) -> Res.string.mail_forward_title
             else -> Res.string.mail_new_title
         },
@@ -971,7 +1020,7 @@ fun MailComposeScreen(state: AppState, draft: MailDraft, padding: PaddingValues)
     fun send() {
         val acc = accountId ?: return
         val mail = OutgoingMailUi(acc, splitAddresses(to), splitAddresses(cc), splitAddresses(bcc), subject, text, draft.inReplyTo, attachments.toList(), pgp = pgp)
-        state.run(onError = { error = it }, block = { net.mailSend(mail); if (draftId.isNotEmpty()) runCatching { net.mailDeleteDraft(draftId) } }) {
+        state.run(onError = { error = it }, block = { net.mailSend(mail); if (draftId.isNotEmpty()) catching { net.mailDeleteDraft(draftId) } }) {
             state.message(sentMsg)
             state.pop()
         }
@@ -980,7 +1029,7 @@ fun MailComposeScreen(state: AppState, draft: MailDraft, padding: PaddingValues)
     fun sendLater(atMillis: Long) {
         val acc = accountId ?: return
         val mail = OutgoingMailUi(acc, splitAddresses(to), splitAddresses(cc), splitAddresses(bcc), subject, text, draft.inReplyTo, attachments.toList(), pgp = pgp)
-        state.run(onError = { error = it }, block = { net.mailSchedule(mail, atMillis); if (draftId.isNotEmpty()) runCatching { net.mailDeleteDraft(draftId) } }) {
+        state.run(onError = { error = it }, block = { net.mailSchedule(mail, atMillis); if (draftId.isNotEmpty()) catching { net.mailDeleteDraft(draftId) } }) {
             state.message(scheduledMsg.replace("%1\$s", formatDateTime(atMillis)))
             state.pop()
         }
@@ -990,8 +1039,8 @@ fun MailComposeScreen(state: AppState, draft: MailDraft, padding: PaddingValues)
         GhulTopBar(
             title, onLock = { state.lockNow() }, onBack = { state.pop() }, backIcon = Icons.Filled.Close, showLock = false,
             actions = {
-                if (filePickersAvailable) BarIcon(Icons.Filled.Attachment, stringResource(Res.string.a_attach)) { attach() }
-                HeaderButton(stringResource(Res.string.a_send), enabled = canSend, icon = Icons.AutoMirrored.Filled.Send) { send() }
+                // Attaching is in the row below the text (with "later" and PGP), not twice.
+                HeaderButton(stringResource(Res.string.a_send), enabled = canSend, icon = Icons.AutoMirrored.Filled.Send, color = areaColor(Tab.MAIL)) { send() }
             },
         )
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 20.dp)) {
@@ -1127,7 +1176,7 @@ private fun ComposeLine(label: String, focus: androidx.compose.ui.focus.FocusReq
         // Tapping the label (or anywhere in the line) puts the cursor into the field.
         val tap = if (focus == null) Modifier else Modifier.clickable(
             interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null,
-        ) { runCatching { focus.requestFocus() } }
+        ) { catching { focus.requestFocus() } }
         Row(
             Modifier.fillMaxWidth().heightIn(min = 48.dp).then(tap).padding(vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -1308,7 +1357,7 @@ private fun ServerRow(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
     }
     if (startTlsPort != null) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ChipRow {
             FilterChip(security == MailSecurityUi.TLS, { onChange(host, tlsPort, MailSecurityUi.TLS) }, label = { Text("SSL/TLS") })
             FilterChip(security == MailSecurityUi.STARTTLS, { onChange(host, startTlsPort, MailSecurityUi.STARTTLS) }, label = { Text("STARTTLS") })
         }
@@ -1322,7 +1371,7 @@ fun MailAccountsSection(state: AppState) {
     var accounts by remember { mutableStateOf<List<MailAccountUi>>(emptyList()) }
     var removing by remember { mutableStateOf<MailAccountUi?>(null) }
     var notifyTick by remember { mutableStateOf(0) }
-    LaunchedEffect(state.liveRevision()) { accounts = runCatching { net.mailAccounts() }.getOrDefault(emptyList()) }
+    LaunchedEffect(state.liveRevision()) { accounts = catching { net.mailAccounts() }.getOrDefault(emptyList()) }
     // Accounts with logins, signatures and keys live in the GhulMail file (all devices).
     // Like GhulDrive's storage: rows that open the form in a sheet, the page stays where it is.
     SectionCard(stringResource(Res.string.mail_accounts_all)) {
@@ -1343,7 +1392,7 @@ fun MailAccountsSection(state: AppState) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(stringResource(Res.string.mail_images_always))
-                    Hint(stringResource(Res.string.mail_images_always_sub, senders.size.toString()))
+                    Hint(pluralStringResource(Res.plurals.mail_images_always_sub, senders.size, senders.size.toString()))
                 }
                 if (senders.isNotEmpty()) TextButton(onClick = { settings.mailImageSenders = "" }) { Text(stringResource(Res.string.a_reset)) }
             }
@@ -1445,7 +1494,7 @@ private fun MailKeysSection(state: AppState, accounts: List<MailAccountUi>) {
     var forgetting by remember { mutableStateOf<de.danerd.ghulsuite.model.MailKeyInfoUi?>(null) }
     var comparing by remember { mutableStateOf<de.danerd.ghulsuite.model.MailKeyInfoUi?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(state.liveRevision()) { known = runCatching { net.mailKnownKeys() }.getOrDefault(emptyList()) }
+    LaunchedEffect(state.liveRevision()) { known = catching { net.mailKnownKeys() }.getOrDefault(emptyList()) }
     val savedMsg = stringResource(Res.string.msg_saved_file)
     val save = rememberSaveFile { ok -> if (ok) state.message(savedMsg) }
     val importedMsg = stringResource(Res.string.mail_key_imported)
@@ -1475,19 +1524,21 @@ private fun MailKeysSection(state: AppState, accounts: List<MailAccountUi>) {
         SectionLabel(stringResource(Res.string.mail_contact_keys))
         if (known.isEmpty()) Hint(stringResource(Res.string.mail_contact_keys_none))
         for (k in known) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(k.email)
-                    Hint(
-                        stringResource(keySourceLabel(k.source)) + " · " + k.fingerprint.takeLast(19) +
-                            if (k.verified) " · " + stringResource(Res.string.mail_key_verified) else "",
-                    )
-                    // L7: a changed or a refused key is a warning until the user compared it.
-                    if (k.previous.isNotEmpty()) Text(stringResource(Res.string.mail_key_changed), color = warnColor(), style = MaterialTheme.typography.bodySmall)
-                    if (k.offered.isNotEmpty()) Text(stringResource(Res.string.mail_key_offered), color = warnColor(), style = MaterialTheme.typography.bodySmall)
+            // The actions below the key, not beside it: beside it they squeezed the fingerprint
+            // until words broke (F57).
+            Column(Modifier.fillMaxWidth()) {
+                Text(k.email)
+                Hint(
+                    stringResource(keySourceLabel(k.source)) + " · " + k.fingerprint.takeLast(19) +
+                        if (k.verified) " · " + stringResource(Res.string.mail_key_verified) else "",
+                )
+                // L7: a changed or a refused key is a warning until the user compared it.
+                if (k.previous.isNotEmpty()) Text(stringResource(Res.string.mail_key_changed), color = warnColor(), style = MaterialTheme.typography.bodySmall)
+                if (k.offered.isNotEmpty()) Text(stringResource(Res.string.mail_key_offered), color = warnColor(), style = MaterialTheme.typography.bodySmall)
+                Row {
+                    TextButton(onClick = { comparing = k }) { Text(stringResource(Res.string.mail_key_compare)) }
+                    TextButton(onClick = { forgetting = k }) { Text(stringResource(Res.string.mail_key_forget)) }
                 }
-                TextButton(onClick = { comparing = k }) { Text(stringResource(Res.string.mail_key_compare)) }
-                TextButton(onClick = { forgetting = k }) { Text(stringResource(Res.string.mail_key_forget)) }
             }
         }
         if (filePickersAvailable) {

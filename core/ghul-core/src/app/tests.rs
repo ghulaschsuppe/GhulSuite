@@ -364,6 +364,48 @@ fn quick_unlock_fingerprint_and_pin() {
     ));
 }
 
+/// F92: locking never waits for a call that still holds the open suite (a slow or unreachable
+/// server). The app locks on its main thread; waiting there froze it (ANR in the emulator).
+#[test]
+fn lock_does_not_wait_for_a_running_call() {
+    let d = Dirs::new("lockwait");
+    let s = d.suite();
+    let kf = generate_keyfile();
+    s.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    let privat = vault_id(&s, "Privat");
+    let (started_tx, started_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+    let busy = {
+        let s = s.clone();
+        std::thread::spawn(move || {
+            s.with_open(|_| {
+                started_tx.send(()).unwrap();
+                // A server answering slowly: the call holds the open suite until released.
+                release_rx.recv_timeout(std::time::Duration::from_secs(20)).ok();
+                Ok(())
+            })
+        })
+    };
+    started_rx.recv().unwrap();
+    let t = std::time::Instant::now();
+    s.lock();
+    assert!(!s.is_unlocked(), "locked at once for the app");
+    assert!(t.elapsed() < std::time::Duration::from_secs(1), "lock waited {:?}", t.elapsed());
+    release_tx.send(()).unwrap();
+    busy.join().unwrap().unwrap();
+    s.finish_lock();
+    // The keys are gone: nothing opens without unlocking again.
+    assert!(!s.is_unlocked());
+    assert!(matches!(s.save_entry(privat.clone(), login("A", "b", "c")), Err(GhulError::Locked)));
+    assert!(matches!(s.list_vaults(), Err(GhulError::Locked)));
+
+    // Unlocking again works, and a late finish_lock (from an earlier lock) leaves it open.
+    s.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    s.finish_lock();
+    assert!(s.is_unlocked());
+    s.save_entry(privat, login("A", "b", "c")).unwrap();
+}
+
 #[test]
 fn the_folder_is_the_suite() {
     let d = Dirs::new("folder");
@@ -1491,6 +1533,16 @@ fn share_via_folder(s: &GhulSuite, server_id: &str, dir: &str, web_root: &std::p
     // A wrong address fails the https check and stores nothing.
     let bad = s.share_setup(server_id.into(), dir.into(), format!("http://127.0.0.1:{}/falsch", web.port)).unwrap();
     assert!(!bad.iter().find(|c| c.step == "https").unwrap().ok, "{bad:?}");
+    // A misspelt address gives the fixed text the app translates, not the system's message.
+    let typo = s.share_setup(server_id.into(), dir.into(), "https://nirgendwo.invalid/teilen".into()).unwrap();
+    assert_eq!(typo.iter().find(|c| c.step == "https").unwrap().detail, "server address not found", "{typo:?}");
+    // What depends on the address is "not checked", never a result nobody saw.
+    let page = bad.iter().find(|c| c.step == "page").unwrap();
+    assert!(!page.ok && page.detail == crate::app::shares::SHARE_CHECK_SKIPPED, "{bad:?}");
+    let listing = bad.iter().find(|c| c.step == "listing").unwrap();
+    assert!(!listing.ok && listing.detail == crate::app::shares::SHARE_CHECK_SKIPPED, "{bad:?}");
+    // The app shows the grey "not checked" for exactly this text (Sharing.kt).
+    assert_eq!(crate::app::shares::SHARE_CHECK_SKIPPED, "skipped");
     assert!(s.list_servers().unwrap().iter().find(|x| x.id == server_id).unwrap().share_url.is_empty());
     let checks = s.share_setup(server_id.into(), dir.into(), public.clone()).unwrap();
     assert!(checks.iter().all(|c| c.ok), "{checks:?}");
@@ -2800,4 +2852,24 @@ fn renamed_vault_files_are_found_by_content() {
     st.write("tresor.ghlpss".into(), data).unwrap();
     s.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
     assert_eq!(s.list_entries(VaultKind::Pass, None).unwrap()[0].title, "A");
+}
+
+/// A server name that does not resolve and a port nobody listens on give fixed texts the app
+/// translates, not the system's message ("failed to lookup address information: ...").
+#[test]
+fn unknown_server_name_and_refused_port_have_fixed_texts() {
+    use crate::net::NetError;
+    let msg = |e: std::io::Error| match GhulError::from(NetError::Connect(e.to_string())) {
+        GhulError::Network { msg } => msg,
+        other => panic!("{other:?}"),
+    };
+    let lookup = std::net::TcpStream::connect(("nirgendwo.invalid", 22)).unwrap_err();
+    assert_eq!(msg(lookup), "server address not found");
+    // A port that was just free on this machine: nobody listens there.
+    let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    let refused = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap_err();
+    assert_eq!(msg(refused), "connection refused");
+    // Other failures keep their text.
+    let other = GhulError::from(NetError::Connect("connection closed".into()));
+    assert!(matches!(other, GhulError::Network { msg } if msg == "connection failed: connection closed"));
 }

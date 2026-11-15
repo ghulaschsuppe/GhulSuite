@@ -46,6 +46,8 @@ import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
 import org.jetbrains.compose.resources.stringResource
 import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.getPluralString
+import org.jetbrains.compose.resources.pluralStringResource
 
 fun extensionOf(kind: VaultKindUi) = when (kind) {
     VaultKindUi.PASS -> "ghlpss"
@@ -123,7 +125,7 @@ fun CreateVaultDialog(state: AppState, kind: VaultKindUi?, onCreated: (String) -
                     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                         VaultKindUi.entries.forEachIndexed { i, k ->
                             SegmentedButton(chosen == k, { chosen = k }, SegmentedButtonDefaults.itemShape(i, 3)) {
-                                Text(stringResource(kindLabel(k)))
+                                SegLabel(stringResource(kindLabel(k)))
                             }
                         }
                     }
@@ -290,7 +292,7 @@ fun VaultsSection(state: AppState) {
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Banner(Icons.Filled.Warning, stringResource(Res.string.vault_remove_warning))
-                    if (v.entries > 0) Text(stringResource(Res.string.remove_count, v.entries.toString()))
+                    if (v.entries > 0) Text(pluralStringResource(Res.plurals.remove_count, v.entries, v.entries.toString()))
                     Text(stringResource(Res.string.vault_remove_tip))
                     OutlinedButton(onClick = { removing = null; state.push(Screen.Export) }, modifier = Modifier.fillMaxWidth()) {
                         Text(stringResource(Res.string.remove_export_first))
@@ -421,7 +423,8 @@ private fun MoveStorageDialog(state: AppState, inApp: Boolean, onDone: () -> Uni
         state.run(block = {
             try {
                 // Locks afterwards: the unlock screen then shows the result.
-                getString(Res.string.storage_move_done, state.backend.moveStorage(folder))
+                val copied = state.backend.moveStorage(folder)
+                getPluralString(Res.plurals.storage_move_done, copied, copied)
             } catch (e: VaultException) {
                 // The target already holds a suite: nothing was overwritten.
                 if (e.kind != VaultErrorKind.ALREADY_EXISTS) throw e

@@ -4,7 +4,11 @@ name: App PIN, lock and unlock
 ---
 - launchApp:
     stopApp: false
-- tapOn: "Options"
+- tapOn: { id: "tab-settings" }
+# The tab keeps its place from before (on purpose): start at the top.
+- scrollUntilVisible:
+    element: "Unlocking|Entsperren"
+    direction: UP
 - tapOn: "Unlocking"
 - tapOn: "App PIN"
 # In the sheet: the field right above "Repeat app PIN" (the sheet title is also "App PIN").

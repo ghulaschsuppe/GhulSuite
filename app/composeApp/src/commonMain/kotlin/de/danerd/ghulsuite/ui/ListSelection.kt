@@ -32,6 +32,7 @@ import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -53,8 +54,11 @@ class SelAction(val icon: ImageVector, val label: String, val danger: Boolean = 
  * with more, the first and the one that deletes stay icons and the rest is in a sheet ("More")
  * in the style of all action sheets.
  */
+/** The "select all" button of the selection bar (its label "All" is also a filter chip). */
+const val SELECT_ALL_TAG = "sel-all"
+
 @Composable
-fun SelectionHeader(count: Int, onClose: () -> Unit, onAll: () -> Unit, actions: List<SelAction>) {
+fun SelectionHeader(count: Int, onClose: () -> Unit, onAll: () -> Unit, actions: List<SelAction>, total: Int = -1) {
     val t = g
     var more by remember { mutableStateOf(false) }
     val ordered = actions.filter { !it.danger } + actions.filter { it.danger }
@@ -68,7 +72,10 @@ fun SelectionHeader(count: Int, onClose: () -> Unit, onAll: () -> Unit, actions:
     ) {
         IconButton(onClick = onClose) { Icon(Icons.Filled.Close, stringResource(Res.string.a_cancel), tint = t.fg) }
         Text(title, Modifier.weight(1f), fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = t.fg, maxLines = 1)
-        IconButton(onClick = onAll) { Icon(Icons.Filled.SelectAll, stringResource(Res.string.a_select_all), tint = t.fg) }
+        // "Select all" only while there is something left to select (else the tap would show nothing).
+        if (total < 0 || count < total) {
+            IconButton(onClick = onAll, modifier = Modifier.testTag(SELECT_ALL_TAG)) { Icon(Icons.Filled.SelectAll, stringResource(Res.string.a_select_all), tint = t.fg) }
+        }
         for (a in icons) {
             IconButton(onClick = a.onClick, enabled = count > 0) { Icon(a.icon, a.label, tint = if (a.danger) t.danger else t.fg) }
         }

@@ -45,6 +45,7 @@ import de.danerd.ghulsuite.model.MailBlockUi
 import de.danerd.ghulsuite.model.MailMessageUi
 import de.danerd.ghulsuite.resources.*
 import org.jetbrains.compose.resources.decodeToImageBitmap
+import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -66,7 +67,7 @@ fun MailHtmlView(state: AppState, m: MailMessageUi) {
         for (b in m.blocks) {
             val src = b.imageSrc
             if (b.kind != MailBlockKindUi.IMAGE || src.startsWith("cid:", ignoreCase = true) || src in remote) continue
-            remote[src] = runCatching { net.mailFetchImage(src).decodeToImageBitmap() }.getOrNull()
+            remote[src] = catching { net.mailFetchImage(src).decodeToImageBitmap() }.getOrNull()
         }
     }
     Column(Modifier.padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -75,7 +76,7 @@ fun MailHtmlView(state: AppState, m: MailMessageUi) {
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(t.surface2).padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Text(stringResource(Res.string.mail_images_blocked, m.remoteImages.toString()), fontSize = 13.sp, color = t.muted)
+                Text(pluralStringResource(Res.plurals.mail_images_blocked, m.remoteImages, m.remoteImages.toString()), fontSize = 13.sp, color = t.muted)
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text(stringResource(Res.string.mail_images_load), color = t.accent, fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
                         modifier = Modifier.clickable { loadRemote = true })
@@ -103,7 +104,7 @@ fun MailHtmlView(state: AppState, m: MailMessageUi) {
                     Text(link, fontSize = 13.sp, color = t.muted)
                 }
             },
-            confirmButton = { TextButton(onClick = { linkToOpen = null; runCatching { uri.openUri(link) } }) { Text(stringResource(Res.string.mail_link_open)) } },
+            confirmButton = { TextButton(onClick = { linkToOpen = null; catching { uri.openUri(link) } }) { Text(stringResource(Res.string.mail_link_open)) } },
             dismissButton = { TextButton(onClick = { linkToOpen = null }) { Text(stringResource(Res.string.a_cancel)) } },
         )
     }
@@ -117,7 +118,7 @@ private fun HtmlBlock(b: MailBlockUi, m: MailMessageUi, remote: Map<String, Imag
         MailBlockKindUi.IMAGE -> {
             val cid = b.imageSrc.takeIf { it.startsWith("cid:", ignoreCase = true) }?.substring(4)
             val bitmap = if (cid != null) {
-                remember(m.uid, cid) { m.inlineImages[cid]?.let { runCatching { it.decodeToImageBitmap() }.getOrNull() } }
+                remember(m.uid, cid) { m.inlineImages[cid]?.let { catching { it.decodeToImageBitmap() }.getOrNull() } }
             } else {
                 remote[b.imageSrc]
             }

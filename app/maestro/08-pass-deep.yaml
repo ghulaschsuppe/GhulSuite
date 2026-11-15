@@ -1,0 +1,113 @@
+# GhulPass in depth, as a hurried user does it:
+#   - Save tapped twice in a row: one entry, not two.
+#   - Edit an entry: the change is shown.
+#   - Long press, "All", delete, "Undo": everything is back.
+#   - Search without a hit.
+appId: de.danerd.ghulsuite.dev
+name: GhulPass in depth
+---
+- runFlow: home.yaml
+- tapOn: { id: "tab-pass" }
+- extendedWaitUntil:
+    visible: "Codeberg"
+    timeout: 15000
+# --- Save twice ---
+- tapOn: "Add"
+- extendedWaitUntil:
+    visible: "New entry"
+    timeout: 10000
+- tapOn: "Login"
+- tapOn: "Title"
+- inputText: "Doppelt-Tipp"
+- tapOn: "Password"
+- inputText: "Zweimal-gespeichert-1"
+- hideKeyboard
+- scrollUntilVisible:
+    element: "Save"
+    direction: DOWN
+- tapOn:
+    text: "Save"
+    repeat: 2
+    delay: 80
+- extendedWaitUntil:
+    visible: "Doppelt-Tipp"
+    timeout: 15000
+- takeScreenshot: 08-01-saved-once
+- back
+- extendedWaitUntil:
+    visible: "Search entries"
+    timeout: 10000
+- assertVisible: "Doppelt-Tipp"
+# Saved once: Codeberg and Doppelt-Tipp. (The name is there twice on purpose: once under
+# "Recently used", once in the list; so the count of the list is what tells.)
+- assertVisible: "2 ENTRIES"
+- assertNotVisible: "3 ENTRIES"
+- assertNotVisible: ".*[Cc]oroutine.*"
+- takeScreenshot: 08-02-list
+
+# --- Edit ---
+- tapOn: "Codeberg"
+- extendedWaitUntil:
+    visible: "ghul"
+    timeout: 10000
+- tapOn: "Edit"
+- extendedWaitUntil:
+    visible: "Username"
+    timeout: 10000
+- tapOn: "ghul"
+- eraseText
+- inputText: "ghul-neu"
+- hideKeyboard
+- scrollUntilVisible:
+    element: "Save"
+    direction: DOWN
+- tapOn: "Save"
+- extendedWaitUntil:
+    visible: "ghul-neu"
+    timeout: 15000
+- takeScreenshot: 08-03-edited
+- back
+
+# --- Select all, delete, undo ---
+# The row of the list (its user name is only there): "Codeberg" alone would be the tile under
+# "Recently used" at the top, which opens the entry.
+- extendedWaitUntil:
+    visible: "Search entries"
+    timeout: 10000
+- longPressOn: "ghul-neu"
+- extendedWaitUntil:
+    visible: "1 selected"
+    timeout: 10000
+- takeScreenshot: 08-04-one-selected
+- tapOn: { id: "sel-all" }
+- extendedWaitUntil:
+    visible: "[2-9]\\d* selected"
+    timeout: 10000
+# Everything is selected: "All" would do nothing now and is gone.
+- assertNotVisible: { id: "sel-all" }
+- takeScreenshot: 08-05-all-selected
+- tapOn: "Delete"
+- extendedWaitUntil:
+    visible: "[2-9]\\d* deleted"
+    timeout: 10000
+- assertNotVisible: "Codeberg"
+- takeScreenshot: 08-06-deleted
+- tapOn: "Undo"
+- extendedWaitUntil:
+    visible: "Codeberg"
+    timeout: 10000
+- assertVisible: "Doppelt-Tipp"
+- takeScreenshot: 08-07-undone
+
+# --- Search without a hit ---
+- tapOn: "Search entries"
+- inputText: "gibt-es-nicht-xyz"
+- hideKeyboard
+- assertNotVisible: "Codeberg"
+- takeScreenshot: 08-08-search-empty
+- tapOn: "gibt-es-nicht-xyz"
+- eraseText
+- hideKeyboard
+- extendedWaitUntil:
+    visible: "Codeberg"
+    timeout: 10000

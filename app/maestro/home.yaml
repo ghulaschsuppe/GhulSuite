@@ -1,0 +1,26 @@
+# Helper: back to the main view with the bar at the bottom (its items have ids: tab-pass …), wherever the last flow ended (a page,
+# a sheet, the lock screen), unlocked with the app PIN of 04-app-pin-lock-unlock.yaml.
+appId: de.danerd.ghulsuite.dev
+---
+- launchApp:
+    stopApp: false
+- runFlow:
+    when:
+      visible: "Unlock with app PIN"
+    commands:
+      - tapOn: "App PIN"
+      - inputText: "246813"
+      - hideKeyboard
+      - tapOn: "Unlock with app PIN"
+      - extendedWaitUntil: { visible: "Lock now", timeout: 30000 }
+- repeat:
+    while:
+      notVisible: { id: "tab-pass" }
+    times: 5
+    commands:
+      - back
+      - launchApp:
+          stopApp: false
+- extendedWaitUntil:
+    visible: { id: "tab-pass" }
+    timeout: 15000

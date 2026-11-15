@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.Color
 import de.danerd.ghulsuite.model.EntryExtrasUi
 import de.danerd.ghulsuite.model.SecurityReportUi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -93,6 +94,7 @@ import de.danerd.ghulsuite.model.PasswordOptionsUi
 import de.danerd.ghulsuite.model.VaultKindUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
+import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.material.icons.filled.Person
@@ -108,9 +110,9 @@ fun PassListScreen(state: AppState, padding: PaddingValues) {
     var retry by remember { mutableStateOf(0) }
     val vaults = state.vaultsOf(VaultKindUi.PASS)
     LaunchedEffect(state.liveRevision(), state.passVault, retry) {
-        runCatching { state.backend.listEntries(state.passVault) }
+        catching { state.backend.listEntries(state.passVault) }
             .onSuccess { entries = it; error = null }.onFailure { error = describe(it); if (entries == null) entries = emptyList() }
-        report = runCatching { state.backend.securityReport() }.getOrNull()
+        report = catching { state.backend.securityReport() }.getOrNull()
     }
     val showVault = vaults.size > 1 && state.passVault == null
     val q = query.trim().lowercase()
@@ -157,6 +159,7 @@ fun PassListScreen(state: AppState, padding: PaddingValues) {
             selected.keys.size,
             onClose = { selected.clear() },
             onAll = { selected.all(shown.map(keyOf)) },
+            total = shown.size,
             actions = buildList {
                 if (one != null) {
                     add(SelAction(Icons.Filled.Person, stringResource(Res.string.pass_copy_username)) { selected.clear(); copyField(one, "username", userLabel) })
@@ -192,7 +195,7 @@ fun PassListScreen(state: AppState, padding: PaddingValues) {
                     ListCard(Modifier.padding(horizontal = 16.dp)) {
                         ListRow(
                             stringResource(Res.string.sec_title),
-                            if (count == 0) stringResource(Res.string.sec_all_good) else stringResource(Res.string.sec_n_need_attention, count.toString()),
+                            if (count == 0) stringResource(Res.string.sec_all_good) else pluralStringResource(Res.plurals.sec_n_need_attention, count, count.toString()),
                             leading = { IconTile(Icons.Filled.VerifiedUser, if (count == 0) t.ok else paletteColor(3)) },
                             trailing = { ChevronEnd() },
                         ) { state.push(Screen.Security) }
@@ -226,7 +229,7 @@ fun PassListScreen(state: AppState, padding: PaddingValues) {
         }
         if (shown.isNotEmpty()) {
             item(key = "label") {
-                SectionLabel(stringResource(Res.string.pass_count, shown.size.toString()), Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp))
+                SectionLabel(pluralStringResource(Res.plurals.pass_count, shown.size, shown.size.toString()), Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp))
             }
         }
         itemsIndexed(shown, key = { _, e -> e.vaultId + e.id }) { i, e ->
@@ -247,7 +250,6 @@ fun PassListScreen(state: AppState, padding: PaddingValues) {
                     }) else null,
                     divider = i > 0,
                     selected = keyOf(e) in selected,
-                    highlighted = state.wide && state.stack.firstOrNull().let { it is Screen.EntryDetail && it.id == e.id && it.vaultId == e.vaultId },
                     onLongClick = { toggle(e) },
                     onClick = { if (selecting) toggle(e) else state.push(Screen.EntryDetail(e.vaultId, e.id)) },
                 )
@@ -323,8 +325,8 @@ fun EntryDetailScreen(state: AppState, vaultId: String, id: String, padding: Pad
     var sharing by remember { mutableStateOf(false) }
     var shareServers by remember { mutableStateOf<List<de.danerd.ghulsuite.model.ServerUi>>(emptyList()) }
     LaunchedEffect(id, state.liveRevision()) {
-        entry = runCatching { state.backend.getEntry(vaultId, id) }.getOrElse { state.message(describe(it)); state.pop(); null }
-        shareServers = runCatching { state.backend.net.servers() }.getOrDefault(emptyList()).filter { it.canShare }
+        entry = catching { state.backend.getEntry(vaultId, id) }.getOrElse { state.message(describe(it)); state.pop(); null }
+        shareServers = catching { state.backend.net.servers() }.getOrDefault(emptyList()).filter { it.canShare }
     }
     val e = entry ?: return
     val def = entryType(e.type)
@@ -344,14 +346,14 @@ fun EntryDetailScreen(state: AppState, vaultId: String, id: String, padding: Pad
     var sheet by remember { mutableStateOf("") }
     val extrasTick = state.liveRevision()
     var reloadExtras by remember { mutableStateOf(0) }
-    LaunchedEffect(id, extrasTick, reloadExtras) { extras = runCatching { state.backend.entryExtras(vaultId, id) }.getOrNull() }
+    LaunchedEffect(id, extrasTick, reloadExtras) { extras = catching { state.backend.entryExtras(vaultId, id) }.getOrNull() }
     LaunchedEffect(id) { state.backend.settings.markRecent(vaultId, id) }
     val fav = extras?.favorite == true
     val t = g
     Column(Modifier.padding(padding)) {
         // Detail screens: no title in the bar (the name stands below), edit as a pencil, then the menu.
         GhulTopBar(
-            "", onLock = { state.lockNow() }, onBack = { state.pop() }, backIcon = backIcon(state),
+            "", onLock = { state.lockNow() }, onBack = { state.pop() }, backIcon = backIcon(),
             actions = {
                 BarIcon(if (fav) Icons.Filled.Star else Icons.Filled.StarBorder, stringResource(Res.string.chip_favorites),
                     tint = if (fav) areaColor(Tab.MAIL) else Color.Unspecified) {
@@ -592,8 +594,8 @@ fun SecurityScreen(state: AppState, padding: PaddingValues) {
     var checking by remember { mutableStateOf(false) }
     val settings = state.backend.settings
     LaunchedEffect(state.liveRevision()) {
-        report = runCatching { state.backend.securityReport() }.getOrNull()
-        entries = runCatching { state.backend.listEntries(null) }.getOrDefault(emptyList())
+        report = catching { state.backend.securityReport() }.getOrNull()
+        entries = catching { state.backend.listEntries(null) }.getOrDefault(emptyList())
     }
     val t = g
     val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -602,9 +604,9 @@ fun SecurityScreen(state: AppState, padding: PaddingValues) {
         scope.launch {
             val found = mutableMapOf<String, Int>()
             for (e in entries.filter { it.type == "login" }) {
-                val pw = runCatching { state.backend.getEntry(e.vaultId, e.id).value("password") }.getOrDefault("")
+                val pw = catching { state.backend.getEntry(e.vaultId, e.id).value("password") }.getOrDefault("")
                 if (pw.isEmpty()) continue
-                val n = runCatching { state.backend.pwnedCount(pw) }.getOrElse { state.message(describe(it)); checking = false; return@launch }
+                val n = catching { state.backend.pwnedCount(pw) }.getOrElse { state.message(describe(it)); checking = false; return@launch }
                 if (n > 0) found[e.vaultId + "/" + e.id] = n
             }
             breached = found
@@ -724,7 +726,7 @@ private fun FieldCard(state: AppState, label: String, value: String, secret: Boo
         }
         if (secret) BarIcon(if (visible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility, stringResource(Res.string.a_show)) { visible = !visible }
         val link = value.lineSequence().firstOrNull { it.startsWith("https://") || it.startsWith("http://") }
-        if (url && link != null) BarIcon(Icons.Filled.Link, link) { runCatching { uri.openUri(link) } }
+        if (url && link != null) BarIcon(Icons.Filled.Link, link) { catching { uri.openUri(link) } }
         BarIcon(Icons.Filled.ContentCopy, stringResource(Res.string.a_copy)) { state.copy(label, value) }
     }
 }
@@ -742,7 +744,7 @@ fun EntryEditScreen(state: AppState, vaultId: String, id: String?, type: String,
     var addField by remember { mutableStateOf(false) }
     LaunchedEffect(id) {
         if (id != null) {
-            runCatching { state.backend.getEntry(vaultId, id) }
+            catching { state.backend.getEntry(vaultId, id) }
                 .onSuccess { e ->
                     original = e
                     e.fields.forEach { values[it.name] = it.value }
@@ -779,7 +781,7 @@ fun EntryEditScreen(state: AppState, vaultId: String, id: String?, type: String,
         GhulTopBar(
             stringResource(if (id == null) Res.string.pass_new_entry else Res.string.a_edit),
             onLock = { state.lockNow() }, onBack = { state.back() }, backIcon = Icons.Filled.Close, showLock = false,
-            actions = { HeaderButton(stringResource(Res.string.a_save), enabled = !state.busy) { save() } },
+            actions = { HeaderButton(stringResource(Res.string.a_save), enabled = !state.busy, color = areaColor(Tab.PASS)) { save() } },
         )
         ScreenColumn {
             BusyBanner(state)
@@ -843,7 +845,7 @@ fun GeneratorDialog(state: AppState, onUse: (String) -> Unit, onDismiss: () -> U
     var separator by remember { mutableStateOf("-") }
     val passphrase = settings.generatorMode == 1
     LaunchedEffect(options, round, passphrase, words, separator) {
-        password = runCatching {
+        password = catching {
             if (passphrase) state.backend.generatePassphrase(words, separator, true, true) else state.backend.generatePassword(options)
         }.getOrDefault("")
     }
@@ -851,8 +853,8 @@ fun GeneratorDialog(state: AppState, onUse: (String) -> Unit, onDismiss: () -> U
     val pwLabel = stringResource(Res.string.f_password)
     GhulSheet(onDismiss, stringResource(Res.string.gen_title)) {
         SingleChoiceSegmentedButtonRow {
-            SegmentedButton(!passphrase, { settings.generatorMode = 0 }) { Text(stringResource(Res.string.gen_chars)) }
-            SegmentedButton(passphrase, { settings.generatorMode = 1 }) { Text(stringResource(Res.string.gen_passphrase)) }
+            SegmentedButton(!passphrase, { settings.generatorMode = 0 }) { SegLabel(stringResource(Res.string.gen_chars)) }
+            SegmentedButton(passphrase, { settings.generatorMode = 1 }) { SegLabel(stringResource(Res.string.gen_passphrase)) }
         }
         val score = state.backend.passwordScore(password).coerceIn(0, 4)
         Row(
@@ -912,10 +914,15 @@ private fun stringResource_password(): String = stringResource(Res.string.f_pass
 
 @Composable
 fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    // The whole line switches, not only the small switch.
-    Row(Modifier.fillMaxWidth().heightIn(min = 40.dp).clickable { onChange(!checked) }, verticalAlignment = Alignment.CenterVertically) {
-        Text(label, Modifier.weight(1f), fontSize = 15.sp)
-        Switch(checked, onChange)
+    // The whole line switches, as one control (the switch itself is not a second, smaller target
+    // of 52 x 32 dp; F59), and a screen reader reads it as a switch with its label.
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            .toggleable(value = checked, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = onChange),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, Modifier.weight(1f).padding(end = 12.dp), fontSize = 15.sp)
+        Switch(checked, null)
     }
 }
 

@@ -1,0 +1,28 @@
+# GhulAuth in depth: the only account selected offers no "All"; delete and "Undo" bring it back
+# with a running code.
+appId: de.danerd.ghulsuite.dev
+name: GhulAuth in depth
+---
+- runFlow: home.yaml
+- tapOn: { id: "tab-auth" }
+- extendedWaitUntil:
+    visible: "\\d{3} \\d{3}"
+    timeout: 15000
+- longPressOn: "Codeberg"
+- extendedWaitUntil:
+    visible: "1 selected"
+    timeout: 10000
+- assertNotVisible: { id: "sel-all" }
+- takeScreenshot: 09-01-selected
+- tapOn: "Delete"
+- extendedWaitUntil:
+    visible: "1 deleted"
+    timeout: 10000
+- assertNotVisible: "\\d{3} \\d{3}"
+- takeScreenshot: 09-02-deleted
+- tapOn: "Undo"
+- extendedWaitUntil:
+    visible: "\\d{3} \\d{3}"
+    timeout: 10000
+- assertVisible: "Codeberg"
+- takeScreenshot: 09-03-undone

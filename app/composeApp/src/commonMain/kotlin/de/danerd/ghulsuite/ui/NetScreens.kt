@@ -69,7 +69,7 @@ fun ServerFields(
         label = { Text(stringResource(Res.string.server_base)) }, singleLine = true)
     Hint(stringResource(Res.string.server_base_hint))
     if (!passwordOnly) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ChipRow {
             FilterChip(!usePassword, { onUsePassword(false) }, label = { Text(stringResource(Res.string.server_auth_key)) })
             FilterChip(usePassword, { onUsePassword(true) }, label = { Text(stringResource(Res.string.server_auth_password)) })
         }
@@ -149,7 +149,7 @@ private fun ManualServerScreen(state: AppState, padding: PaddingValues) {
     var module by remember { mutableStateOf<PhpModuleUi?>(null) }
     // With a password: set up the SSH key automatically and do not store the password (default).
     var installKey by remember { mutableStateOf(true) }
-    LaunchedEffect(Unit) { publicKey = runCatching { net.sshPublicKey() }.getOrNull() }
+    LaunchedEffect(Unit) { publicKey = catching { net.sshPublicKey() }.getOrNull() }
     val effective = when (kind) {
         ServerKindUi.SFTP -> if (usePassword && !installKey) input else input.copy(password = null)
         else -> input
@@ -284,7 +284,7 @@ private fun PhpModuleFields(
     var uploadDir by remember { mutableStateOf("") }
     var uploaded by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(Unit) { servers = runCatching { net.servers() }.getOrDefault(emptyList()).filter { it.kind != ServerKindUi.PHP } }
+    LaunchedEffect(Unit) { servers = catching { net.servers() }.getOrDefault(emptyList()).filter { it.kind != ServerKindUi.PHP } }
     val savedMsg = stringResource(Res.string.php_saved)
     val save = rememberSaveFile { ok -> if (ok) state.message(savedMsg) }
 
@@ -328,7 +328,7 @@ private fun PhpModuleFields(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Hint(stringResource(Res.string.php_upload_hint))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ChipRow {
                         for (s in servers) FilterChip(s.id == via.id, { uploadVia = s }, label = { Text(s.name) })
                     }
                     OutlinedTextField(uploadDir, { uploadDir = it.trim() }, Modifier.fillMaxWidth(), singleLine = true,
@@ -363,13 +363,36 @@ fun ServersSection(state: AppState) {
             if (d.mode == de.danerd.ghulsuite.model.DriveModeUi.SYNC && d.server != null) driveAsk = action else action()
         }
     }
-    LaunchedEffect(state.liveRevision(), state.syncing) {
-        servers = runCatching { net.servers() }.getOrDefault(emptyList())
-        sync = runCatching { net.syncStatus() }.getOrDefault(SyncStatusUi(null, 0))
+    /** Loaded once (until then: "Loading …", not "no servers" and "Off"), and why it failed. */
+    var loaded by remember { mutableStateOf(false) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+    var reload by remember { mutableStateOf(0) }
+    var syncLoaded by remember { mutableStateOf(false) }
+    var syncError by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(state.liveRevision(), state.syncing, reload) {
+        // While a synchronisation runs the core answers only after it (it holds the suite);
+        // until then the page says it is loading instead of showing an empty list and "Off".
+        // The servers come first: without them the page cannot show anything.
+        val list = catching { net.servers() }.getOrElse { loadError = describe(it); return@LaunchedEffect }
+        servers = list
+        loaded = true
+        loadError = null
+        // The sync status on its own: if it cannot be read, its card says so instead of "Off".
+        catching { net.syncStatus() }
+            .onSuccess { sync = it; syncLoaded = true; syncError = null }
+            .onFailure { syncError = describe(it) }
     }
+    val retry: () -> Unit = { loadError = null; syncError = null; reload++ }
 
+    if (!loaded) {
+        SectionCard(stringResource(Res.string.set_servers)) {
+            if (loadError != null) LoadError(loadError, retry) else Hint(stringResource(Res.string.loading))
+        }
+        return
+    }
     SectionCard(stringResource(Res.string.set_servers)) {
         Hint(stringResource(Res.string.set_servers_hint))
+        LoadError(loadError, retry)
         for (s in servers) {
             // Like the list of mail accounts: a row with a tile, and removing as a red icon.
             ListRow(
@@ -406,6 +429,11 @@ fun ServersSection(state: AppState) {
 
     SectionCard(stringResource(Res.string.set_sync)) {
         Hint(stringResource(Res.string.set_sync_hint))
+        if (!syncLoaded) {
+            if (syncError != null) LoadError(syncError, retry) else Hint(stringResource(Res.string.loading))
+            return@SectionCard
+        }
+        LoadError(syncError, retry)
         val noSync = stringResource(Res.string.sync_off)
         var open by remember { mutableStateOf(false) }
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -584,7 +612,7 @@ fun FetchFromServer(state: AppState, onCancel: () -> Unit) {
     var usePassword by remember { mutableStateOf(false) }
     var fingerprint by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    val deviceKey = remember { runCatching { backend.deviceSshKey() }.getOrNull() }
+    val deviceKey = remember { catching { backend.deviceSshKey() }.getOrNull() }
     // U7: SFTP (key or password), FTPS (password) or the PHP module (address and access key).
     val effective = when (input.kind) {
         ServerKindUi.SFTP -> if (usePassword) input else input.copy(password = null)
@@ -615,7 +643,7 @@ fun FetchFromServer(state: AppState, onCancel: () -> Unit) {
     SectionCard(stringResource(Res.string.start_fetch)) {
         Hint(stringResource(Res.string.fetch_text))
         StorageChooser(state)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ChipRow {
             for (k in listOf(ServerKindUi.SFTP, ServerKindUi.FTPS, ServerKindUi.PHP)) {
                 FilterChip(input.kind == k, {
                     input = input.copy(kind = k, port = when (k) { ServerKindUi.SFTP -> 22; ServerKindUi.FTPS -> 21; else -> 0 }, password = null)
@@ -679,6 +707,26 @@ fun kindLabel(kind: ServerKindUi): String = when (kind) {
 fun formatDateTime(time: Long): String {
     val millis = if (time < 100_000_000_000L) time * 1000 else time
     return formatDate(millis) + " " + formatTime(millis)
+}
+
+/** A Long count as the Int that picks the plural form of a text (very large counts stay "other"). */
+fun Long.pluralCount(): Int = coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong()).toInt()
+
+/**
+ * The text for a count, looked up after an action is done. It never fails: if the text cannot be
+ * read, the numbers alone are shown, so a finished action is never reported as failed.
+ */
+suspend fun countText(
+    env: org.jetbrains.compose.resources.ResourceEnvironment,
+    res: org.jetbrains.compose.resources.PluralStringResource,
+    count: Int,
+    vararg args: Any,
+): String = try {
+    org.jetbrains.compose.resources.getPluralString(env, res, count, *args)
+} catch (c: kotlinx.coroutines.CancellationException) {
+    throw c
+} catch (_: Exception) {
+    args.joinToString(" ")
 }
 
 /** Human-readable size: 1.2 MB. */

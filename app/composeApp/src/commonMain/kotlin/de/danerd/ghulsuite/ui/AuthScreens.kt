@@ -57,6 +57,7 @@ import de.danerd.ghulsuite.model.VaultKindUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
 import kotlinx.coroutines.delay
+import org.jetbrains.compose.resources.getPluralString
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import androidx.compose.runtime.mutableStateListOf
@@ -75,13 +76,13 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
     var sorting by remember { mutableStateOf(false) }
     var exporting by remember { mutableStateOf<Pair<TotpCodeUi, String>?>(null) }
     var clock by remember { mutableStateOf<Long?>(null) }
-    LaunchedEffect(Unit) { clock = runCatching { state.backend.clockOffset(nowSeconds()) }.getOrNull() }
+    LaunchedEffect(Unit) { clock = catching { state.backend.clockOffset(nowSeconds()) }.getOrNull() }
     val settings = state.backend.settings
     val vaults = state.vaultsOf(VaultKindUi.TOTP)
     val filter = state.authVault
     LaunchedEffect(state.liveRevision(), retry) {
         while (true) {
-            runCatching { state.backend.totpCodes(nowSeconds()) }
+            catching { state.backend.totpCodes(nowSeconds()) }
                 .onSuccess { codes = it; error = null }
                 .onFailure { e -> error = describe(e); if (codes == null) codes = emptyList() }
             // After an error it waits for "Try again" instead of asking every second.
@@ -98,7 +99,7 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
     val showVault = vaults.size > 1 && filter == null
     val grid = state.authGrid
     val cols = LocalColumns.current
-    // Grid: tiles per row; list: one card per row on phones, two side by side in wide panes.
+    // Grid: tiles per row; list: one card per row on phones, more side by side in wide windows.
     val perRow = if (grid) cols else (cols / 2).coerceAtLeast(1)
     // Long press selects accounts (as in every list); swipe right edits, swipe left deletes.
     // Deleting asks nothing: "Undo" in the snackbar brings the accounts back.
@@ -121,6 +122,7 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
             selected.keys.size,
             onClose = { selected.clear() },
             onAll = { selected.all(shown.orEmpty().map(keyOf)) },
+            total = shown.orEmpty().size,
             actions = buildList {
                 if (one != null) {
                     add(SelAction(Icons.Filled.Edit, stringResource(Res.string.a_rename)) { selected.clear(); renaming = one })
@@ -139,7 +141,7 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
         )
     }
     LazyColumn(
-        Modifier.align(Alignment.CenterHorizontally).widthIn(max = 672.dp).fillMaxSize(),
+        Modifier.align(Alignment.CenterHorizontally).widthIn(max = LocalContentMax.current).fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 100.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -360,7 +362,7 @@ fun AddTotpScreen(state: AppState, vaultId: String, padding: PaddingValues, star
                 )
                 modes.forEachIndexed { i, (m, label) ->
                     SegmentedButton(selected = mode == m, onClick = { mode = m; error = null }, shape = SegmentedButtonDefaults.itemShape(i, modes.size)) {
-                        Text(stringResource(label))
+                        SegLabel(stringResource(label))
                     }
                 }
             }
@@ -373,7 +375,7 @@ fun AddTotpScreen(state: AppState, vaultId: String, padding: PaddingValues, star
                             // Google Authenticator export: all accounts at once.
                             state.run(onError = { error = it; scanAttempt++ }, block = {
                                 val r = state.backend.importData(text.encodeToByteArray(), "google-authenticator", null, vaultId, false)
-                                getString(Res.string.msg_migration_done, r.totps.toString(), r.duplicates.toString())
+                                getPluralString(Res.plurals.msg_migration_done, r.duplicates, getPluralString(Res.plurals.n_accounts, r.totps, r.totps.toString()), r.duplicates.toString())
                             }) { msg ->
                                 state.message(msg)
                                 done()
@@ -418,7 +420,7 @@ fun AddTotpScreen(state: AppState, vaultId: String, padding: PaddingValues, star
                                 algorithm = a
                                 if (a == OtpAlgorithmUi.STEAM) { digits = "5"; period = "30" } else if (digits == "5") digits = "6"
                             }, shape = SegmentedButtonDefaults.itemShape(i, OtpAlgorithmUi.entries.size)) {
-                                Text(if (a == OtpAlgorithmUi.STEAM) "Steam" else a.name)
+                                SegLabel(if (a == OtpAlgorithmUi.STEAM) "Steam" else a.name)
                             }
                         }
                     }

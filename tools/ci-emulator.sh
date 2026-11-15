@@ -22,6 +22,7 @@ finish() {
   timeout 20 adb exec-out screencap -p > "$out/last-screen.png" 2>/dev/null || true
   timeout 30 adb logcat -d > "$out/logcat.txt" 2>/dev/null || true
   timeout 10 adb emu kill > /dev/null 2>&1 || true
+  [ -z "${logcat_pid:-}" ] || kill "$logcat_pid" 2> /dev/null || true
 }
 trap finish EXIT
 
@@ -55,9 +56,17 @@ for i in $(seq 1 90); do
 done
 [ -n "$booted" ] || { log "::error::Emulator nicht hochgefahren"; exit 1; }
 log "System bereit"
+# The whole system log of the run (the device keeps only the last few hundred kilobytes), for
+# tools/check-logcat.sh: crashes, hangs and alarms of the development build fail the run.
+adb logcat -c || true
+nohup adb logcat -v threadtime > "$out/logcat-full.txt" 2> /dev/null &
+logcat_pid=$!
 for k in window_animation_scale transition_animation_scale animator_duration_scale; do
   timeout 10 adb shell settings put global "$k" 0 || true
 done
+# The development build may be photographed on this device (otherwise every screenshot of the
+# flows is black: the app forbids screenshots by default; TestDevice.kt).
+timeout 10 adb shell setprop debug.ghulsuite.screenshots 1 || true
 # A freshly booted emulator is busy for a while; system "isn't responding" dialogs would cover the app.
 timeout 10 adb shell settings put global hide_error_dialogs 1 || true
 sleep 30
@@ -65,13 +74,37 @@ timeout 10 adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS 
 timeout 10 adb shell input keyevent 82 || true
 if [ "${SKIP_MAESTRO:-0}" != 1 ]; then
   log "Maestro-Abläufe starten"
-  timeout 2400 "$(dirname "$0")/run-maestro.sh" "$apk" "$out"
-  log "Maestro fertig"
+  maestro_rc=0
+  timeout 3600 "$(dirname "$0")/run-maestro.sh" "$apk" "$out" || maestro_rc=$?
+  log "Maestro fertig (Status $maestro_rc)"
+  # Also after a failed flow: a crash in the log is most likely why it failed, and says so.
+  # (The log keeps recording for the monkey below and is checked again after it.)
+  logcat_rc=0
+  "$(dirname "$0")/check-logcat.sh" "$out/logcat-full.txt" "$out" || logcat_rc=$?
+  # Every step leaves a picture to be looked at. A picture of a black screen (the app forbids
+  # screenshots, see TestDevice.kt) is a few kilobytes as PNG, a real screen many times that.
+  python3 -c "import PIL" 2> /dev/null || pip install --quiet pillow > /dev/null 2>&1 || true
+  if ! python3 "$(dirname "$0")/check-black-screenshots.py" "$out"; then
+    logcat_rc=1
+  fi
+  [ "$maestro_rc" = 0 ] || exit "$maestro_rc"
+  [ "$logcat_rc" = 0 ] || exit "$logcat_rc"
+  shard="${MAESTRO_SHARD:-all}"
   # What no flow can see: the reminder of the calendar flow as an alarm of the system.
-  timeout 300 "$(dirname "$0")/check-reminders.sh" "$out"
+  if [ "$shard" = all ] || [ "$shard" = base ]; then
+    timeout 300 "$(dirname "$0")/check-reminders.sh" "$out"
+  fi
   # And what the servers of the flows with a real server hold now: only ciphertext.
   if [ "${GHUL_TEST_SERVERS:-0}" = 1 ] && [ -f servers.env ]; then
-    timeout 120 "$(dirname "$0")/check-server-flows.sh" servers.env "$out"
+    case "$shard" in
+      all) parts="drive mail" ;;
+      server) parts="drive" ;;
+      mail) parts="mail" ;;
+      *) parts="" ;;
+    esac
+    if [ -n "$parts" ]; then
+      CHECK_PARTS="$parts" timeout 120 "$(dirname "$0")/check-server-flows.sh" servers.env "$out"
+    fi
   fi
 else
   timeout 120 adb install -r "$apk" > /dev/null
@@ -97,10 +130,14 @@ if [ "${MONKEY_EVENTS:-0}" -gt 0 ]; then
     if grep -qE "// CRASH|// NOT RESPONDING|ANR in $pkg" "$out/monkey-$seed.txt"; then
       log "::error::Monkey: Absturz oder Hänger mit Seed $seed (siehe monkey-$seed.txt)"
       grep -A 25 -E "// CRASH|// NOT RESPONDING" "$out/monkey-$seed.txt" | head -60 || true
+      # The threads of the hanging app (main thread first): the system keeps them in its dropbox.
+      timeout 60 adb shell dumpsys dropbox --print data_app_anr > "$out/anr-traces-$seed.txt" 2>&1 || true
       failed=1
     fi
     timeout 20 adb shell am force-stop "$pkg" || true
   done
+  # Alarms of the development build during the monkey count as well.
+  "$(dirname "$0")/check-logcat.sh" "$out/logcat-full.txt" "$out" || failed=1
   [ -z "$failed" ] || exit 1
   log "Monkey ohne Absturz"
 fi

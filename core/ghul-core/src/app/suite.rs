@@ -15,7 +15,8 @@
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, TryLockError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ciborium::value::Value;
@@ -690,6 +691,9 @@ pub struct GhulSuite {
     /// Device-local directory for quick unlock (never inside a shared folder).
     pub(super) local_dir: PathBuf,
     open: Mutex<Option<Open>>,
+    /// A lock was asked for while a call (e.g. a slow server) still held the open suite: the
+    /// suite counts as locked at once and is dropped as soon as that call ends (F92).
+    lock_pending: AtomicBool,
     /// Open server connection, Drive index and running uploads (dropped when locking).
     pub(super) net: Mutex<NetCache>,
     /// The time zone database of the device (see `set_time_zones`).
@@ -901,8 +905,57 @@ impl GhulSuite {
         self.open.lock().unwrap_or_else(|p| p.into_inner())
     }
 
+    /// Unlocked: a lock asked for before is done with.
+    fn set_open(&self, open: Open) {
+        let mut guard = self.guard();
+        self.lock_pending.store(false, Ordering::SeqCst);
+        *guard = Some(open);
+    }
+
+    /// Drops the open suite (if a lock is still pending) and the network cache. With `wait`
+    /// false it gives up at once if a call holds either (returns false; the call drops the
+    /// suite when it ends, `finish_lock` the rest).
+    fn drop_open(&self, wait: bool) -> bool {
+        let mut guard = match self.open.try_lock() {
+            Ok(g) => g,
+            Err(TryLockError::Poisoned(p)) => p.into_inner(),
+            Err(TryLockError::WouldBlock) if wait => self.guard(),
+            Err(TryLockError::WouldBlock) => return false,
+        };
+        if self.lock_pending.swap(false, Ordering::SeqCst) {
+            *guard = None;
+        }
+        if guard.is_some() {
+            // Unlocked again since: its connection and running uploads stay.
+            return true;
+        }
+        // The connection, the Drive index and mail sessions go as well (same lock order as
+        // the calls: open suite first, then the network cache).
+        let mut net = match self.net.try_lock() {
+            Ok(n) => n,
+            Err(TryLockError::Poisoned(p)) => p.into_inner(),
+            Err(TryLockError::WouldBlock) if wait => self.net.lock().unwrap_or_else(|p| p.into_inner()),
+            // The suite is dropped already; only the cache waits for the call using it.
+            Err(TryLockError::WouldBlock) => return false,
+        };
+        *net = NetCache::default();
+        true
+    }
+
     pub(super) fn with_open<T>(&self, f: impl FnOnce(&mut Open) -> Result<T>) -> Result<T> {
         let mut guard = self.guard();
+        if self.lock_pending.swap(false, Ordering::SeqCst) {
+            *guard = None;
+        }
+        let result = self.run_open(&mut guard, f);
+        // A lock asked for while this call ran drops the suite now, not at the next call.
+        if self.lock_pending.swap(false, Ordering::SeqCst) {
+            *guard = None;
+        }
+        result
+    }
+
+    fn run_open<T>(&self, guard: &mut Option<Open>, f: impl FnOnce(&mut Open) -> Result<T>) -> Result<T> {
         let open = guard.as_mut().ok_or(GhulError::Locked)?;
         // Settings of older suites (or synced from a device with an older app) move into the area files.
         if super::areas::DRIVE_KEYS
@@ -1178,7 +1231,7 @@ impl GhulSuite {
         // Files named after their vaults by older app versions get neutral names. Not being
         // able to rename now is no reason to refuse the unlock: it is tried again next time.
         let _ = self.neutral_file_names(&mut open);
-        *self.guard() = Some(open);
+        self.set_open(open);
         Ok(())
     }
 
@@ -1267,6 +1320,7 @@ impl GhulSuite {
             storage,
             local_dir: PathBuf::from(local_dir),
             open: Mutex::new(None),
+            lock_pending: AtomicBool::new(false),
             net: Mutex::new(NetCache::default()),
             zones: Mutex::new(None),
         })
@@ -1321,7 +1375,15 @@ impl GhulSuite {
     }
 
     pub fn is_unlocked(&self) -> bool {
-        self.guard().is_some()
+        if self.lock_pending.load(Ordering::SeqCst) {
+            return false;
+        }
+        match self.open.try_lock() {
+            Ok(g) => g.is_some(),
+            Err(TryLockError::Poisoned(p)) => p.into_inner().is_some(),
+            // A call works with the open suite right now (F92: never wait for it here).
+            Err(TryLockError::WouldBlock) => true,
+        }
     }
 
     /// Which factors the unlock screen has to ask for.
@@ -1387,7 +1449,7 @@ impl GhulSuite {
             self.add_vault(&mut open, v.kind, &v.name)?;
         }
         self.save_all(&mut open)?;
-        *self.guard() = Some(open);
+        self.set_open(open);
         Ok(SetupResult { recovery_code: Some(code.to_display().to_string()) })
     }
 
@@ -1444,7 +1506,7 @@ impl GhulSuite {
             found: Vec::new(),
         };
         self.save_all(&mut open)?;
-        *self.guard() = Some(open);
+        self.set_open(open);
         Ok(SetupResult { recovery_code: new_code })
     }
 
@@ -1505,14 +1567,25 @@ impl GhulSuite {
         self.remove_copies(&mut open, copies)?;
         super::quick::delete_all(&self.local_dir);
         super::quick::refresh_stamps(&self.local_dir, open.password_key.expose(), now_ms());
-        *self.guard() = Some(open);
+        self.set_open(open);
         Ok(())
     }
 
     /// Locks immediately; all secrets are wiped from memory.
+    /// Locks at once, also while another call (e.g. a slow or unreachable server) still works
+    /// with the open suite: the caller (the app's main thread) never waits for it (F92). The
+    /// suite counts as locked immediately; its keys and decrypted data are dropped right away
+    /// or, if that call still holds them, as soon as it ends. Callers then run `finish_lock`
+    /// on a background thread: it covers a call ending in the same moment and the network cache.
     pub fn lock(&self) {
-        *self.guard() = None;
-        *self.net.lock().unwrap_or_else(|p| p.into_inner()) = NetCache::default();
+        self.lock_pending.store(true, Ordering::SeqCst);
+        self.drop_open(false);
+    }
+
+    /// After `lock`, on a background thread: waits until a call still holding the open suite or
+    /// the network cache has ended, and makes sure both are gone (unless unlocked again since).
+    pub fn finish_lock(&self) {
+        self.drop_open(true);
     }
 
     // --- quick unlock ------------------------------------------------------------------------

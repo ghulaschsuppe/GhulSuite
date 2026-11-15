@@ -121,8 +121,7 @@ impl SftpFs {
                 }
                 let channel = session.channel_open_session().await.map_err(|e| NetError::Connect(e.to_string()))?;
                 channel.request_subsystem(true, "sftp").await.map_err(|e| NetError::Connect(e.to_string()))?;
-                let sftp =
-                    SftpSession::new(channel.into_stream()).await.map_err(|e| NetError::Protocol(e.to_string()))?;
+                let sftp = SftpSession::new(channel.into_stream()).await.map_err(proto)?;
                 sftp.set_timeout(TIMEOUT.as_secs());
                 let base = config.base.trim_end_matches('/').to_owned();
                 Ok(SftpFs { sftp, _session: session, base })
@@ -183,8 +182,15 @@ impl SftpFs {
     }
 }
 
+/// An SFTP failure. A request without answer in time (no network) is a timeout like everywhere
+/// else, not "server error: I/O: Timeout" (which the app could not translate).
 fn proto(e: russh_sftp::client::error::Error) -> NetError {
-    NetError::Protocol(e.to_string())
+    use russh_sftp::client::error::Error as E;
+    match &e {
+        E::Timeout => NetError::Timeout,
+        E::IO(m) if m.eq_ignore_ascii_case("timeout") || m.contains("timed out") => NetError::Timeout,
+        _ => NetError::Protocol(e.to_string()),
+    }
 }
 
 fn is_missing(e: &russh_sftp::client::error::Error) -> bool {
@@ -287,12 +293,33 @@ impl RemoteFs for SftpFs {
             async {
                 for p in todo {
                     if !self.sftp.try_exists(p.clone()).await.map_err(proto)? {
-                        self.sftp.create_dir(p).await.map_err(proto)?;
+                        // Another upload (the mail archive writes in parallel) may create the same
+                        // folder in between: SFTP then only says "Failure". A folder that exists
+                        // now is what was wanted.
+                        if let Err(e) = self.sftp.create_dir(p.clone()).await {
+                            if !self.sftp.try_exists(p).await.map_err(proto)? {
+                                return Err(proto(e));
+                            }
+                        }
                     }
                 }
                 Ok(())
             },
             TIMEOUT,
         )
+    }
+}
+
+#[cfg(test)]
+mod proto_tests {
+    use super::*;
+    use russh_sftp::client::error::Error as E;
+
+    #[test]
+    fn sftp_timeouts_are_timeouts() {
+        assert_eq!(proto(E::Timeout), NetError::Timeout);
+        assert_eq!(proto(E::IO("Timeout".into())), NetError::Timeout);
+        assert_eq!(proto(E::IO("Connection timed out (os error 110)".into())), NetError::Timeout);
+        assert_eq!(proto(E::IO("broken pipe".into())), NetError::Protocol("I/O: broken pipe".into()));
     }
 }

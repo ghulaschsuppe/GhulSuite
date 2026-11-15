@@ -6,7 +6,11 @@ appId: de.danerd.ghulsuite.dev
 name: GhulDrive on a real server
 ---
 - runFlow: unlock.yaml
-- tapOn: "Options"
+- tapOn: { id: "tab-settings" }
+# The tab keeps its place from before (on purpose): start at the top.
+- scrollUntilVisible:
+    element: "Unlocking|Entsperren"
+    direction: UP
 - scrollUntilVisible:
     element: "Manage areas"
     direction: DOWN
@@ -40,12 +44,14 @@ name: GhulDrive on a real server
 - inputText: "test-pw-123"
 - hideKeyboard
 - takeScreenshot: s1-drive-server
-# The row sits below the password and key options: scroll the sheet down to it first.
+# Step 1: test the login. Before that there is no folder to choose (only "3. Choose folder" in
+# the checklist below the form).
+- assertNotVisible: "Choose folder"
 - scrollUntilVisible:
-    element: "Choose folder"
+    element: "Test connection"
     direction: DOWN
 - tapOn:
-    text: "Choose folder"
+    text: "Test connection"
     index: 0
 # First connection: the key of the server has to be confirmed.
 - extendedWaitUntil:
@@ -53,20 +59,29 @@ name: GhulDrive on a real server
     timeout: 60000
 - takeScreenshot: s1-drive-server-key
 - tapOn: "Fingerprint matches"
+# Step 2: the login works, the folder list opens by itself.
 - extendedWaitUntil:
     visible: "Create new \\(recommended\\)"
     timeout: 60000
+- takeScreenshot: s1-drive-folders
 - tapOn: "ghulsuite"
-- tapOn:
-    text: "Test connection"
-    index: 0
+- extendedWaitUntil:
+    visible: "Connection works, folder chosen\\."
+    timeout: 10000
+- assertVisible: "ghulsuite/"
+- takeScreenshot: s1-drive-connected
+# Step 3: save.
+- scrollUntilVisible:
+    element: "Save server"
+    direction: DOWN
+- tapOn: "Save server"
 - extendedWaitUntil:
     visible: "GhulDrive set up"
     timeout: 120000
 - takeScreenshot: s1-drive-set-up
 # The new tab, from a fresh start.
 - runFlow: unlock.yaml
-- tapOn: "GhulDrive"
+- tapOn: { id: "tab-drive" }
 - extendedWaitUntil:
     visible: "This folder is empty\\."
     timeout: 60000

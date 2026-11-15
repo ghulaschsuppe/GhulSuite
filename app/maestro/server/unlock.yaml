@@ -1,5 +1,5 @@
-# Helper: start the app anew, unlock with the app PIN and go to GhulPass, where every other name
-# in the bottom bar is on screen only once.
+# Helper: start the app anew, unlock with the app PIN and go to GhulPass. Areas are reached by the
+# ids of the bottom bar (tab-pass, tab-auth, tab-drive, tab-mail, tab-cal, tab-settings).
 appId: de.danerd.ghulsuite.dev
 ---
 - launchApp:
@@ -15,9 +15,9 @@ appId: de.danerd.ghulsuite.dev
 - extendedWaitUntil:
     visible: "Lock now"
     timeout: 30000
-# On another tab "GhulPass" is only in the bar; on GhulPass itself the first match is the title,
-# and tapping it changes nothing.
-- tapOn: "GhulPass"
+# To GhulPass by the bar (id tab-pass): the name "GhulPass" is also the title, and tapping that
+# opens the choice of vaults over the list.
+- tapOn: { id: "tab-pass" }
 - extendedWaitUntil:
     visible: "Search entries"
     timeout: 15000

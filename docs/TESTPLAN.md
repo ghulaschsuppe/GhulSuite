@@ -201,13 +201,13 @@ Für T5 bis T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| SY1 | Optionen → Server, Sync & Teilen → „Server hinzufügen“ → Verbindungsart **SFTP (SSH)**. Adresse, Port, Benutzer, Ordner (z. B. `ghulsuite`) eingeben, „SSH-Schlüssel“ gewählt lassen. | Ein öffentlicher Schlüssel `ssh-ed25519 …` wird angezeigt; „Kopieren“ legt ihn in die Zwischenablage. |
-| SY2 | Schlüssel auf dem Server in `~/.ssh/authorized_keys` eintragen, dann „Verbinden“. | Dialog „Server-Schlüssel prüfen“ mit `SHA256:…`. Er stimmt mit dem Fingerabdruck aus V6 überein. |
-| SY3 | „Fingerabdruck stimmt“. | Server erscheint in der Liste. Auf dem Server gibt es den Ordner `ghulsuite/suite/` (leer). |
+| SY1 | Optionen → Server, Sync & Teilen → „Server hinzufügen“ → Verbindungsart **SFTP (SSH)**. Adresse, Port und Benutzer eingeben, „SSH-Schlüssel“ gewählt lassen. | Ein öffentlicher Schlüssel `ssh-ed25519 …` wird angezeigt; „Kopieren“ legt ihn in die Zwischenablage. Es gibt noch **keine** Ordnerwahl, nur „Verbindung testen“; darunter die Schritte 1. bis 4. untereinander. |
+| SY2 | Schlüssel auf dem Server in `~/.ssh/authorized_keys` eintragen, dann „Verbindung testen“. | Dialog „Server-Schlüssel prüfen“ mit `SHA256:…`. Er stimmt mit dem Fingerabdruck aus V6 überein. |
+| SY3 | „Fingerabdruck stimmt“, in der Ordnerliste „ghulsuite (Neu anlegen, empfohlen)“ wählen, „Server speichern“. | Nach dem Fingerabdruck: „Verbindung klappt. Wähle jetzt den Ordner …“ und die Ordnerliste öffnet sich von selbst. Nach dem Speichern erscheint der Server in der Liste. Auf dem Server gibt es den Ordner `ghulsuite/suite/` (leer). |
 | SY4 | Server mit falschem Fingerabdruck-Abgleich: „Abbrechen“ im Dialog. | Nichts wird gespeichert. |
-| SY4b | Einfachster Weg: „Server hinzufügen“ → „Passwort“ → SSH-Passwort eingeben, „SSH-Schlüssel automatisch einrichten“ eingeschaltet lassen → „Verbinden“ → Fingerabdruck bestätigen. | Server erscheint mit „Ordner: /home/…/ghulsuite“. Auf dem Server steht in `~/.ssh/authorized_keys` eine neue Zeile `ssh-ed25519 … GhulSuite`, alte Zeilen sind unverändert. Das Passwort ist nicht gespeichert (Server funktioniert auch nach Passwortänderung weiter). |
+| SY4b | Einfachster Weg: „Server hinzufügen“ → „Passwort“ → SSH-Passwort eingeben, „SSH-Schlüssel automatisch einrichten“ eingeschaltet lassen → „Verbindung testen“ → Fingerabdruck bestätigen → Ordner wählen → „Server speichern“. | Server erscheint mit „Ordner: /home/…/ghulsuite“. Auf dem Server steht in `~/.ssh/authorized_keys` eine neue Zeile `ssh-ed25519 … GhulSuite`, alte Zeilen sind unverändert. Das Passwort ist nicht gespeichert (Server funktioniert auch nach Passwortänderung weiter). |
 | SY5 | Variante Passwort: zweiten Server-Eintrag mit „Passwort“ anlegen (falls der Server Passwort-Anmeldung erlaubt). | Funktioniert wie SY2 bis SY3. Falsches Passwort → „Der Server hat die Anmeldung abgelehnt …“. |
-| SY6 | Synchronisation → Server wählen. | Synchronisiert sofort; „Zuletzt synchronisiert: …“. Auf dem Server liegen jetzt `suite.ghlsuite` und die Tresordateien, alle verschlüsselt (Inhalt unlesbar). |
+| SY6 | Synchronisation → „Aus“ antippen → Server wählen. | Statt „Aus“ steht der Servername da; synchronisiert sofort; „Zuletzt synchronisiert: …“. Auf dem Server liegen jetzt `suite.ghlsuite` und die Tresordateien, alle verschlüsselt (Inhalt unlesbar). |
 | SY7 | **Zweites Gerät:** Startbildschirm → „Von meinem Server holen“. Adresse usw. eingeben; den angezeigten **Geräteschlüssel** zusätzlich in `authorized_keys` eintragen; „Suite holen“, Fingerabdruck bestätigen. | „Suite geladen. Jetzt entsperren.“ → Entsperren mit Passwort und Key/Schlüsseldatei klappt, alle Einträge sind da. |
 | SY8 | Gerät 1: Eintrag A anlegen. Gerät 2: Eintrag B anlegen (beide mit „Automatisch“). Danach auf beiden „Jetzt synchronisieren“. | Beide Geräte zeigen A **und** B. Nichts geht verloren. |
 | SY9 | Denselben Eintrag auf beiden Geräten unterschiedlich ändern, nacheinander synchronisieren. | Die später gespeicherte Änderung gewinnt auf beiden Geräten. |
@@ -315,6 +315,7 @@ Für T5 bis T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick
 | SH2 | Optionen → Server, Sync & Teilen → beim SFTP- oder FTPS-Server „Teilen einrichten“. | Assistent: 1. Ordner auf dem Server durchblättern (Ordner antippen, „..“ zurück, „Neuer Ordner“), 2. Webadresse, 3. Prüfung. |
 | SH3 | Ordner im Webbereich wählen (z. B. `public_html/teilen`), passende https-Adresse → „Einrichten und prüfen“. | Vier grüne Haken: Ordner beschreibbar, über HTTPS erreichbar, Ordnerinhalt wird nicht aufgelistet, Abrufseite funktioniert. „Alles funktioniert …“. |
 | SH4 | Falsche Adresse (passt nicht zum Ordner) prüfen. | Mindestens ein roter Punkt mit Erklärung; nichts wird gespeichert. |
+| SH4b | Eine Adresse prüfen, die es nicht gibt (z. B. `https://example.invalid/teilen`). | „Ordner beschreibbar“ grün, „Über HTTPS erreichbar“ rot mit Grund; „Ordnerinhalt“ und „Abrufseite“ grau mit „Nicht geprüft, weil der HTTPS-Schritt fehlschlug“, kein rotes Ergebnis, das nie geprüft wurde. |
 | SH5 | Den Suite-Ordner (`ghulsuite`) als Teilen-Ordner wählen. | Abgelehnt. |
 | SH6 | GhulDrive → Datei → Teilen → Freigabelink → Gültig „7 Tage“ → „Link erstellen“. | „Link erstellt“ mit Link, Größe, „bis …“. „Kopieren“ legt ihn in die Zwischenablage. |
 | SH7 | Link auf einem anderen Gerät/PC im Browser öffnen. | Seite zeigt Dateiname und Größe, „Herunterladen“ liefert die identische Datei. Der Teil nach # verschwindet aus der Adresszeile. |
@@ -558,7 +559,7 @@ Automatisch läuft bei jedem Push der Alltagstest im Kern (zwei Geräte, 30 simu
 | K16 | Eine Serie aus einer anderen Zeitzone importieren (z. B. Einladung „jeden Dienstag 10:00 New York“ aus Outlook oder Google) und durch das Jahr blättern: Januar, Mitte März, April, Ende Oktober, November. | In Deutschland steht der Termin um 16:00, in den Wochen, in denen nur die USA oder nur Europa Sommerzeit haben, um 15:00. Die Termin-Ansicht zeigt zusätzlich „Ortszeit in New York: 10:00 - 11:00“; beim Bearbeiten steht unter „Zeitzone“ der Ort. „Nur diesen Termin löschen“ entfernt genau den angezeigten Tag. |
 | K17 | Einen einzelnen Eintrag löschen: GhulPass-Eintrag, GhulAuth-Konto, Drive-Datei, Mail, Termin. Einmal „Rückgängig“ tippen, einmal die Meldung ablaufen lassen; einmal löschen und sofort sperren. | Ohne Rückfrage weg, Meldung mit „Rückgängig“. Rückgängig: wieder da, nichts passiert. Abgelaufen: endgültig gelöscht (nach Sperren/Entsperren weiterhin weg). Sofort gesperrt: die Löschung wird vor dem Sperren ausgeführt. Sofortsperre direkt nach dem Löschen: der Eintrag bleibt. |
 | K18 | Ganzes löschen: Tresor, Bereich, Mailkonto, Server, Papierkorb leeren, mehrere endgültig löschen. | Immer eine Rückfrage mit rotem Knopf, Warnung als Hinweisfeld wie bei „Bereich entfernen“. |
-| K19 | Breites Fenster (Windows oder Tablet quer): Termin öffnen, Termin bearbeiten, in GhulAuth „Konto hinzufügen“. | Öffnet rechts in der zweiten Spalte, die Liste bleibt links stehen. Ohne Auswahl rechts „Kein Termin geöffnet“ bzw. „Kein Konto geöffnet“. |
+| K19 | Breites Fenster (Windows oder Handy/Tablet quer): Termin öffnen, Termin bearbeiten, in GhulAuth „Konto hinzufügen“. | Links die Seitenleiste mit den Bereichen, daneben eine Spalte in der Mitte; Geöffnetes steht an der Stelle der Liste, „Zurück“ führt zur Liste. Keine leere dritte Spalte. |
 | K20 | Verschlüsselte Mail in der Liste. | Schloss und „Verschlüsselte Nachricht“ an der Stelle des Betreffs (kein „...“); geöffnet Betreff und Text. |
 
 ## 30. Mail-Archiv
@@ -611,6 +612,23 @@ Vorher: eine Version aus den Releases (nicht die Testversion aus den Artefakten)
 | W4 | Flugmodus, „Senden“. | Verständliche Fehlermeldung; „Kopieren“ und „Speichern“ funktionieren weiter. |
 | W5 | Sechs Berichte hintereinander senden. | Der sechste innerhalb einer Stunde wird mit „Gerade zu viele Berichte von hier“ abgelehnt. |
 | W6 | Optionen und eine Unterseite (z. B. Über) öffnen. | Zwischen Kopfleiste und Inhalt kein zusätzlicher leerer Streifen. |
+
+## 33. Server, Teilen und Anzeige (Runde 7)
+
+Diese Punkte prüft auch der Emulator-Ablauf `app/maestro/server/3-sync-share.yaml` mit echtem SFTP-Server, mit einem Bild nach jedem Schritt.
+
+| Nr. | Schritt | Erwartet |
+|---|---|---|
+| R1 | Server hinzufügen (SFTP oder FTPS): Zugangsdaten eingeben, ohne zu testen nach einem Ordner suchen. | Es gibt keine Ordnerwahl. Erst „Verbindung testen“; nach Erfolg „Verbindung klappt …“ und die Ordnerliste öffnet sich. Eine geänderte Adresse, ein geänderter Benutzer oder ein geändertes Passwort verlangen einen neuen Test. |
+| R2 | Server mit nicht erreichbarer Adresse, „Verbindung testen“. | Die Fehlermeldung steht im Formular; keine Ordnerliste öffnet sich. |
+| R3 | Reiter „PHP-Modul“ im Formular, Liste der Schritte unten ansehen. | Schritte 1. bis 6. untereinander, jeder in einer Zeile, nichts zerhackt. |
+| R4 | Synchronisation: „Aus“ antippen, Server wählen. | Der Servername steht statt „Aus“; „Jetzt synchronisieren“ erscheint. |
+| R5 | Teilen einrichten: im Ordner-Browser schnell hintereinander mehrere Ordner antippen (auch „..“). | Nie eine Meldung wie „The coroutine scope left the composition“; die Liste zeigt den zuletzt gewählten Ordner. |
+| R6 | GhulDrive mit eigenem Server (ohne Synchronisation): Reiter GhulDrive. | Die Karte oben nennt den Server mit Ordner und „verschlüsselt“, dazu Dateien und Größe; kein „…“ und kein „Nicht eingerichtet“. Ohne Server: „Noch kein Server“ und „Server wählen“. |
+| R7 | In einer Liste alles auswählen (oder das einzige Element). | Das Symbol „Alle“ verschwindet, sobald alles ausgewählt ist. |
+| R9 | Handy auf große Schrift stellen (Einstellungen → Anzeige → Schriftgröße, größte Stufe) und alle Bereiche und Optionsseiten durchgehen. | Kein Wort ist mitten im Wort getrennt; zu lange Knopfpaare stehen untereinander, Einstellungswerte unter ihrer Beschriftung; Titel höchstens zweizeilig. |
+| R10 | Auf „Speichern“, „Senden“ oder „Erstellen“ schnell zweimal tippen. | Der Eintrag, die Mail oder der Ordner entsteht genau einmal. |
+| R8 | Etwas Langsames starten (z. B. Server speichern) und währenddessen auf Knöpfe tippen, auch in einem offenen Blatt. | Nach kurzer Zeit liegt „Arbeite …“ mit Kreisel über dem Bildschirm bzw. dem Blatt; Tippen dahinter bewirkt nichts. |
 
 ## Fehler melden
 

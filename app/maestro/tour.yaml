@@ -1,0 +1,44 @@
+# Helper: every area once, photographed (${PREFIX}-<area>), no technical error text anywhere.
+appId: de.danerd.ghulsuite.dev
+---
+- tapOn: { id: "tab-pass" }
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: ${PREFIX}-pass
+- assertNotVisible: ".*[Cc]oroutine.*"
+- tapOn: { id: "tab-auth" }
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: ${PREFIX}-auth
+# GhulDrive and GhulMail only where they are set up (in part "base" Drive has no server and
+# therefore no tab; every tab that is there is visited).
+- runFlow:
+    when:
+      visible: { id: "tab-drive" }
+    commands:
+      - tapOn: { id: "tab-drive" }
+      - waitForAnimationToEnd:
+          timeout: 3000
+      - takeScreenshot: ${PREFIX}-drive
+      - assertNotVisible: ".*[Cc]oroutine.*"
+- runFlow:
+    when:
+      visible: { id: "tab-mail" }
+    commands:
+      - tapOn: { id: "tab-mail" }
+      - waitForAnimationToEnd:
+          timeout: 3000
+      - takeScreenshot: ${PREFIX}-mail
+- tapOn: { id: "tab-cal" }
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: ${PREFIX}-cal
+- tapOn: { id: "tab-settings" }
+# The tab keeps its place from before (on purpose): start at the top.
+- scrollUntilVisible:
+    element: "Unlocking|Entsperren"
+    direction: UP
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: ${PREFIX}-options
+- assertNotVisible: ".*[Cc]oroutine.*"

@@ -69,7 +69,7 @@ fun ScreenColumn(content: @Composable () -> Unit) {
             .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 100.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.widthIn(max = LocalContentMax.current).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             content()
         }
     }
@@ -98,7 +98,7 @@ fun SetupScreen(state: AppState) {
     }
     val openFile = rememberOpenFile { file ->
         scope.launch {
-            runCatching { backend.inspectFile(file.bytes) }
+            catching { backend.inspectFile(file.bytes) }
                 .onSuccess { info ->
                     if (info.kind == "suite") {
                         error = isSuiteFile
@@ -352,7 +352,7 @@ fun ChoiceCard(selected: Boolean, title: String, text: String, onSelect: () -> U
 /** Security key or key file, when the suite has both. */
 @Composable
 fun FactorChoice(withKey: Boolean, onChange: (Boolean) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    ChipRow {
         FilterChip(withKey, { onChange(true) }, label = { Text(stringResource(Res.string.factor_key)) })
         FilterChip(!withKey, { onChange(false) }, label = { Text(stringResource(Res.string.factor_keyfile)) })
     }

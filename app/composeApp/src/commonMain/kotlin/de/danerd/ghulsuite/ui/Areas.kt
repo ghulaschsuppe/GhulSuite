@@ -35,6 +35,7 @@ import de.danerd.ghulsuite.model.VaultKindUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
 import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 
 fun areaInfo(kind: VaultKindUi): AreaInfo = AREAS.first { it.kind == kind }
@@ -116,7 +117,7 @@ fun RemoveAreaDialog(state: AppState, kind: VaultKindUi, onDone: () -> Unit, onD
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Banner(Icons.Filled.Warning, stringResource(Res.string.area_remove_warning, areaInfo(kind).ext))
-                if (entries > 0) Text(stringResource(Res.string.remove_count, entries.toString()))
+                if (entries > 0) Text(pluralStringResource(Res.plurals.remove_count, entries, entries.toString()))
                 Text(stringResource(Res.string.area_remove_tip))
                 OutlinedButton(onClick = { onDismiss(); state.push(Screen.Export) }, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(Res.string.remove_export_first))
@@ -183,7 +184,7 @@ private fun AreaSheet(state: AppState, kind: VaultKindUi, onDismiss: () -> Unit)
         var own by remember { mutableStateOf(false) }
         LaunchedEffect(kind) {
             name = getString(when (kind) { VaultKindUi.PASS -> Res.string.area_pass_default; VaultKindUi.TOTP -> Res.string.area_auth_default; else -> Res.string.area_cal_default })
-            if (kind == VaultKindUi.DRIVE) storage = runCatching { state.backend.net.driveStorage() }.getOrNull()
+            if (kind == VaultKindUi.DRIVE) storage = catching { state.backend.net.driveStorage() }.getOrNull()
         }
         val syncOn = storage?.syncAvailable == true
         var useSync by remember(syncOn) { mutableStateOf(syncOn) }
@@ -282,7 +283,7 @@ fun DriveStorageRow(state: AppState) {
     var confirmSync by remember { mutableStateOf(false) }
     var own by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(state.liveRevision()) { storage = runCatching { net.driveStorage() }.getOrNull() }
+    LaunchedEffect(state.liveRevision()) { storage = catching { net.driveStorage() }.getOrNull() }
     val s = storage ?: return
     val server = s.server
     val sub = when (s.mode) {

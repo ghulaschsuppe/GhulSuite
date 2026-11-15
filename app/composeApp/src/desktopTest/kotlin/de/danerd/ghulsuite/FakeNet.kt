@@ -30,7 +30,7 @@ import de.danerd.ghulsuite.model.SyncReportUi
 import de.danerd.ghulsuite.model.SyncStatusUi
 
 /** Sample data for screenshots of the network screens. */
-class FakeNet(private val configured: Boolean = true, private val encryptedMail: Boolean = false) : NetBackend {
+class FakeNet(private val configured: Boolean = true, private val encryptedMail: Boolean = false, private val conversation: Boolean = false) : NetBackend {
     private val now = 1_762_000_000L
     private val server = ServerUi(
         "s1", "Heimserver", "nas.example.org", 22, "max", "ghulsuite", true, "SHA256:abc", "/home/max/ghulsuite",
@@ -45,19 +45,33 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
         "https://example.org/ghulsuite.php#a1b2c3.k3yk3yk3y")
     private val servers = MailServersUi("posteo.de", 993, MailSecurityUi.TLS, "posteo.de", 587, MailSecurityUi.STARTTLS)
 
-    override suspend fun servers() = if (configured) listOf(server, php) else emptyList()
+    /** The next calls of servers() that fail (a core that is busy or gone). */
+    var serversFailures = 0
+    override suspend fun servers(): List<ServerUi> {
+        if (serversFailures > 0) { serversFailures--; throw java.io.IOException("connection reset") }
+        return if (configured) listOf(server, php) else emptyList()
+    }
     override suspend fun saveServer(input: ServerInputUi, confirmed: String?): ServerSavedUi =
         if (confirmed == null) ServerSavedUi.Confirm("SHA256:7beJP+X7anXY96H6FlO+I7u8z2xP1gJsp7GiBGawac4") else ServerSavedUi.Saved("s3")
     override suspend fun removeServer(id: String) {}
     override suspend fun installSshKey(input: ServerInputUi, hostKey: String?) = hostKey?.let { "" } ?: "SHA256:fp"
     override suspend fun sshPublicKey() = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGhulSuiteBeispielSchluessel0123456789abcdef ghulsuite"
-    override suspend fun serverBrowse(serverId: String, path: String) =
-        if (path.isEmpty()) listOf("ghulsuite", "public_html") else listOf("teilen", "blog")
+    /** How long listing a folder takes (to tap on before it is done). */
+    var browseDelayMs = 0L
+    @Volatile var slowBrowsesDone = 0
+    override suspend fun serverBrowse(serverId: String, path: String): List<String> {
+        // Like the real backend: a blocking call on another thread, which is not interrupted by a
+        // cancellation; the cancellation arrives only when it is done.
+        val wait = browseDelayMs
+        if (wait > 0) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Thread.sleep(wait); slowBrowsesDone++ }
+        return if (path.isEmpty()) listOf("ghulsuite", "public_html") else listOf("teilen", "blog")
+    }
     override fun phpModuleCreate() = PhpModuleUi("ghulsuite-1a2b3c4d.php", "<?php // module", "00".repeat(32))
     override suspend fun phpModuleUpload(viaServerId: String, dir: String, module: PhpModuleUi) { calls += "phpUpload:$viaServerId:$dir" }
-    override suspend fun shareSetup(serverId: String, dir: String, publicUrl: String) = listOf(
+    var shareChecks = listOf(
         ShareCheckUi("write", true, ""), ShareCheckUi("https", true, ""), ShareCheckUi("listing", true, ""), ShareCheckUi("page", true, ""),
     )
+    override suspend fun shareSetup(serverId: String, dir: String, publicUrl: String) = shareChecks
     override suspend fun shareDrive(ids: List<String>, name: String?, options: ShareOptionsUi): ShareInfoUi {
         calls += "shareDrive:${ids.joinToString(",")}:${options.serverId}:${options.expiresDays}:${options.maxDownloads}:${options.password != null}"
         return share
@@ -71,19 +85,49 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
     override suspend fun shareDriveToApps(files: List<DriveItemUi>) { calls += "toApps:${files.size}" }
     override suspend fun driveFilesForMail(files: List<DriveItemUi>) =
         files.filter { !it.isDir }.map { OutgoingAttachmentUi(it.name, "application/octet-stream", ByteArray(3)) }
-    override suspend fun syncStatus() = SyncStatusUi(if (configured) "s1" else null, now * 1000)
-    override suspend fun setSyncServer(id: String?) {}
+    /** The sync server as set through the screens (the fake starts with s1 when configured). */
+    var syncServer: String? = if (configured) "s1" else null
+    /** While true, syncStatus() fails (a core that cannot answer). */
+    var syncStatusFails = false
+    override suspend fun syncStatus(): SyncStatusUi {
+        if (syncStatusFails) throw java.io.IOException("timeout")
+        return SyncStatusUi(syncServer, now * 1000)
+    }
+    override suspend fun setSyncServer(id: String?) {
+        calls += "setSyncServer:$id"
+        syncServer = id
+    }
     override suspend fun syncNow() = SyncReportUi(1, 2, 0, 0, 0)
     override suspend fun adoptRemotePassword(password: String) = SyncReportUi(0, 0, 0, 0, 0)
 
-    override suspend fun driveStatus() = DriveStatusUi(if (configured) "s1" else null, 3, 12_345_678)
+    /** GhulDrive's storage; tests can give Drive a server of its own (not in the suite's list). */
+    var driveOwnServer: ServerUi? = null
+    override suspend fun driveStorage() = when {
+        driveOwnServer != null -> de.danerd.ghulsuite.model.DriveStorageUi(de.danerd.ghulsuite.model.DriveModeUi.OWN, driveOwnServer, syncServer != null)
+        configured && syncServer != null -> de.danerd.ghulsuite.model.DriveStorageUi(de.danerd.ghulsuite.model.DriveModeUi.SYNC, server, true)
+        else -> de.danerd.ghulsuite.model.DriveStorageUi(de.danerd.ghulsuite.model.DriveModeUi.NONE, null, false)
+    }
+    /** Holds driveStatus() back (Drive's index still coming from a slow server) until released. */
+    var driveStatusGate: java.util.concurrent.CountDownLatch? = null
+    override suspend fun driveStatus(): DriveStatusUi {
+        driveStatusGate?.let { gate -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { gate.await(30, java.util.concurrent.TimeUnit.SECONDS) } }
+        return DriveStatusUi(driveOwnServer?.id ?: if (configured) "s1" else null, 3, 12_345_678)
+    }
     override suspend fun driveSetup(serverId: String) {}
-    override suspend fun driveList(folder: String?, refresh: Boolean) = listOf(
-        DriveItemUi("d1", null, "Fotos", true, 0, now * 1000),
-        DriveItemUi("d2", null, "Verträge", true, 0, now * 1000),
-        DriveItemUi("f1", null, "Steuer 2025.pdf", false, 2_400_000, now * 1000),
-        DriveItemUi("f2", null, "Notizen.txt", false, 1_234, now * 1000),
-    )
+    /** How long listing a folder takes (a slow server); blocking, as the real core does. */
+    var driveListDelayMs = 0L
+    /** The server cannot be reached: fetching the index fails, the index already known stays. */
+    var driveOffline = false
+    override suspend fun driveList(folder: String?, refresh: Boolean): List<DriveItemUi> {
+        if (driveOffline && refresh) throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.NETWORK, "Timed out.")
+        if (folder != null && driveListDelayMs > 0) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Thread.sleep(driveListDelayMs) }
+        return if (folder == "d1") listOf(DriveItemUi("f5", "d1", "Strand.jpg", false, 3_100_000, now * 1000)) else listOf(
+            DriveItemUi("d1", null, "Fotos", true, 0, now * 1000),
+            DriveItemUi("d2", null, "Verträge", true, 0, now * 1000),
+            DriveItemUi("f1", null, "Steuer 2025.pdf", false, 2_400_000, now * 1000),
+            DriveItemUi("f2", null, "Notizen.txt", false, 1_234, now * 1000),
+        )
+    }
     override suspend fun driveSearch(query: String) = driveList(null, false).filter { it.name.contains(query, true) }
     override suspend fun driveCreateFolder(parent: String?, name: String) = "d3"
     override suspend fun driveRename(id: String, name: String) {}
@@ -105,10 +149,14 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
         MailFolderUi("INBOX", "inbox"), MailFolderUi("Drafts", "drafts"), MailFolderUi("Sent", "sent"), MailFolderUi("Trash", "trash"),
     )
     private val list = listOf(
-        MailSummaryUi(3, "Erika Musterfrau", "erika@example.org", "Treffen am Freitag", now, false, false, false, 2_000),
+        MailSummaryUi(3, "Erika Musterfrau", "erika@example.org", "Treffen am Freitag", now, false, false, false, 2_000,
+            threadKey = if (conversation) "treffen" else ""),
         MailSummaryUi(2, "Stadtwerke", "service@stadtwerke.example", "Ihre Jahresabrechnung", now - 86_400, true, true, true, 120_000),
         MailSummaryUi(1, "Max Mustermann", "max@posteo.de", "Notiz an mich", now - 3 * 86_400, true, false, false, 900),
-    ) + if (encryptedMail) {
+    ) + (if (conversation) {
+        // An earlier mail of the same conversation: the list shows one row with "(2)".
+        listOf(MailSummaryUi(5, "Erika Musterfrau", "erika@example.org", "Re: Treffen am Freitag", now - 600, true, false, false, 1_500, threadKey = "treffen"))
+    } else emptyList()) + if (encryptedMail) {
         // Encrypted with the subject inside (outer subject "..."), as Thunderbird and Proton send it.
         listOf(MailSummaryUi(4, "Jana Beispiel", "jana@example.net", "...", now - 3_600, false, false, false, 5_000, encrypted = true))
     } else emptyList()
@@ -149,7 +197,13 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
         calls += "archiveConfirm:$accountId"
         return de.danerd.ghulsuite.model.MailArchiveRunUi(removed = 42)
     }
-    override suspend fun mailSearch(accountId: String, folder: String, query: String) = list
+    /** While true, the mail search fails (the server does not answer). */
+    var mailSearchFails = false
+    override suspend fun mailSearch(accountId: String, folder: String, query: String): List<MailSummaryUi> {
+        calls += "mailSearch:$query"
+        if (mailSearchFails) throw java.io.IOException("connection reset")
+        return list.filter { it.subject.contains(query, true) || it.from.contains(query, true) }
+    }
     override suspend fun mailGet(accountId: String, folder: String, uid: Long) = if (uid == 9L) htmlMail() else MailMessageUi(
         uid, "Stadtwerke", "service@stadtwerke.example", listOf("Max Mustermann <max@posteo.de>"), emptyList(), "",
         "Ihre Jahresabrechnung", now - 86_400,

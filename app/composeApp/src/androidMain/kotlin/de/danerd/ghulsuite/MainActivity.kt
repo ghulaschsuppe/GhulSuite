@@ -8,6 +8,8 @@ import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
+import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.compose.ui.semantics.semantics
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -38,6 +40,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 }
 
 class MainActivity : ComponentActivity() {
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean = guardStaleTextKey { super.dispatchKeyEvent(event) }
+
     private val notificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* optional */ }
 
@@ -68,7 +72,8 @@ class MainActivity : ComponentActivity() {
         // L10: no taps while another app draws over GhulSuite (tapjacking).
         window.decorView.filterTouchesWhenObscured = true
         lifecycleScope.launch {
-            snapshotFlow { ghul.backend.settings.allowScreenshots }.collect { allowed ->
+            val testRun = TestDevice.screenshotsAllowed(this@MainActivity)
+            snapshotFlow { ghul.backend.settings.allowScreenshots || testRun }.collect { allowed ->
                 // Newer Android versions show a live preview in the app switcher despite FLAG_SECURE
                 // unless the recents screenshot is switched off as well (P7).
                 if (android.os.Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(allowed)
@@ -81,7 +86,13 @@ class MainActivity : ComponentActivity() {
         }
         enableEdgeToEdge()
         val vm = ViewModelProvider(this)[MainViewModel::class.java]
-        setContent { GhulSuiteApp(vm.state) }
+        setContent {
+            // Test tags (e.g. "tab-pass" of the bottom bar) are visible to the emulator flows as ids.
+            @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+            androidx.compose.foundation.layout.Box(
+                androidx.compose.ui.Modifier.semantics { testTagsAsResourceId = true },
+            ) { GhulSuiteApp(vm.state) }
+        }
         handleLaunch(intent)
 
         // Ask once for notifications so that the "Lock" notification is visible while unlocked.
@@ -160,4 +171,13 @@ class MainActivity : ComponentActivity() {
         @Volatile
         var current: java.lang.ref.WeakReference<android.app.Activity>? = null
     }
+}
+
+/** Drops a key that hit a text field with an outdated layout (see [isStaleTextLayoutError]). */
+internal inline fun guardStaleTextKey(dispatch: () -> Boolean): Boolean = try {
+    dispatch()
+} catch (e: IllegalArgumentException) {
+    if (!de.danerd.ghulsuite.ui.isStaleTextLayoutError(e)) throw e
+    android.util.Log.w("GhulSuite", "GHUL-STALE-KEY key dropped: ${e.message}")
+    true
 }

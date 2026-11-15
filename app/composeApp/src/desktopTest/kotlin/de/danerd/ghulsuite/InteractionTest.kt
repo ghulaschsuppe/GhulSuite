@@ -2,25 +2,36 @@
 package de.danerd.ghulsuite
 
 import androidx.compose.runtime.CompositionLocalProvider
+import de.danerd.ghulsuite.model.ServerKindUi
+import de.danerd.ghulsuite.model.ServerUi
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.asSkiaBitmap
 import androidx.compose.ui.test.DesktopComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertIsDisplayed
+import kotlinx.coroutines.launch
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.runDesktopComposeUiTest
 import androidx.compose.ui.unit.Density
+import de.danerd.ghulsuite.ui.DevChecks
 import de.danerd.ghulsuite.ui.AppState
 import de.danerd.ghulsuite.ui.CalView
 import de.danerd.ghulsuite.ui.GhulSuiteApp
+import de.danerd.ghulsuite.ui.HeaderGuard
 import de.danerd.ghulsuite.ui.Screen
 import de.danerd.ghulsuite.model.NetBackend
+import de.danerd.ghulsuite.model.SecurityIssueKindUi
+import de.danerd.ghulsuite.model.SecurityIssueUi
+import de.danerd.ghulsuite.model.SecurityReportUi
 import de.danerd.ghulsuite.ui.SetPage
 import de.danerd.ghulsuite.ui.Tab
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -32,6 +43,13 @@ import org.jetbrains.skia.Image
 import java.awt.HeadlessException
 import java.io.File
 import java.util.Locale
+import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.onNodeWithText
+import de.danerd.ghulsuite.model.ShareCheckUi
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.performTextInput
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -52,24 +70,34 @@ class InteractionTest {
     /** The app in English on a phone (412 × 892) or a wide window (1280 × 820), unlocked. */
     private fun app(
         wide: Boolean = false,
+        /** Window size in dp instead of the phone or wide window (e.g. a phone lying sideways). */
+        size: Pair<Int, Int>? = null,
+        /** Font size of the system (1.3: "large", as many set it on their phone). */
+        fontScale: Float = 1f,
         setup: AppState.() -> Unit = {},
         prepare: ScreenshotTest.Fake.() -> Unit = {},
         block: DesktopComposeUiTest.(AppState, ScreenshotTest.Fake) -> Unit,
     ) {
         Locale.setDefault(Locale.ENGLISH)
+        // As in the development build: dropped follow-up actions and unexpected errors are alarms.
+        DevChecks.enabled = true
+        DevChecks.alarms.clear()
+        // No "Save" of an earlier test holds the lock back.
+        HeaderGuard.reset()
         val fake = ScreenshotTest.Fake(exists = true, unlocked = true).apply(prepare)
         // Texts that AppState looks up outside of the screen need a display (screen resolution);
         // the tests run without one, so only that failure is let through, every other one counts.
         val errors = java.util.Collections.synchronizedList(mutableListOf<Throwable>())
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined + CoroutineExceptionHandler { _, e -> if (e !is HeadlessException) errors += e })
         val state = AppState(fake, scope).apply(setup)
-        val (w, h) = if (wide) 1280 to 820 else 412 to 892
+        val (w, h) = size ?: if (wide) 1280 to 820 else 412 to 892
         runDesktopComposeUiTest(w * 2, h * 2) {
-            setContent { CompositionLocalProvider(LocalDensity provides Density(2f)) { GhulSuiteApp(state) } }
+            setContent { CompositionLocalProvider(LocalDensity provides Density(2f, fontScale)) { GhulSuiteApp(state) } }
             waitForIdle()
             block(state, fake)
         }
         assertTrue(errors.isEmpty(), "errors in the app: $errors")
+        assertTrue(DevChecks.alarms.isEmpty(), "alarms of the development build: ${DevChecks.alarms.toList()}")
     }
 
     private fun DesktopComposeUiTest.shot(name: String) {
@@ -155,6 +183,8 @@ class InteractionTest {
         val net = fake.net as FakeNet
         longPress("Notizen.txt")
         waitFor("1 selected")
+        // In "My files" the heading says where; no path line with the same words above it.
+        assertEquals(1, onAllNodesWithText("My files", ignoreCase = true).fetchSemanticsNodes().size)
         // Three actions: all of them icons in the header.
         assertTrue(onAllNodesWithContentDescription("Share").fetchSemanticsNodes().isNotEmpty())
         desc("Cancel").performClick()
@@ -167,18 +197,163 @@ class InteractionTest {
         shot("drive-file-sheet")
     }
 
+    /**
+     * Opening a folder on a slow server: the list of the folder before is not shown under the new
+     * path while the new one loads (it looked like the inside of the folder just opened).
+     */
+    @Test
+    fun driveFolderDoesNotShowTheOldListWhileLoading() = app(setup = { tab = Tab.DRIVE }) { _, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Fotos")
+        net.driveListDelayMs = 1500
+        text("Fotos").performClick()
+        waitFor("Loading …")
+        assertTrue(onAllNodesWithText("Notizen.txt").fetchSemanticsNodes().isEmpty())
+        assertTrue(onAllNodesWithText("Verträge").fetchSemanticsNodes().isEmpty())
+        waitUntil(timeoutMillis = 10_000) { onAllNodesWithText("Strand.jpg").fetchSemanticsNodes().isNotEmpty() }
+        net.driveListDelayMs = 0
+    }
+
+    /**
+     * The line under "GhulDrive" names the server at once, also while Drive's index still comes
+     * from a slow server (bug: after a restart it stayed empty until the index had arrived).
+     */
+    @Test
+    fun driveHeaderNamesTheServerWhileTheIndexLoads() {
+        val gate = java.util.concurrent.CountDownLatch(1)
+        try {
+            app(setup = { tab = Tab.DRIVE }, prepare = { (net as FakeNet).driveStatusGate = gate }) { _, _ ->
+                waitUntil(timeoutMillis = 10_000) { onAllNodesWithText("· My files", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+                assertEquals(1L, gate.count, "the index was still loading")
+                gate.countDown()
+            }
+        } finally {
+            gate.countDown()
+        }
+    }
+
+    /** F91: without a connection GhulDrive says so and still lists the folders it already knows. */
+    @Test
+    fun driveOfflineKeepsTheKnownFolders() = app(setup = { tab = Tab.DRIVE }, prepare = { (net as FakeNet).driveOffline = true }) { _, _ ->
+        waitUntil(timeoutMillis = 10_000) { onAllNodesWithText("Timed out.", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        waitFor("Try again")
+        waitFor("Fotos")
+        waitFor("Steuer 2025.pdf")
+    }
+
     @Test
     fun driveEmptyTrashAsks() = app(setup = { tab = Tab.DRIVE }) { _, fake ->
         // Emptying the trash still asks, with a red button.
         val net = fake.net as FakeNet
         waitFor("Trash")
+        assertEquals(1, onAllNodesWithTag(de.danerd.ghulsuite.ui.FAB_TAG).fetchSemanticsNodes().size)
         text("Trash").performClick()
         waitFor("Alter Entwurf.docx")
+        // Nothing can be added to the trash: no "Add" button there.
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithTag(de.danerd.ghulsuite.ui.FAB_TAG).fetchSemanticsNodes().isEmpty() }
         text("Empty").performClick()
         waitFor("Delete for good")
         shot("drive-empty-trash")
         text("Delete for good").performClick()
         waitUntil(timeoutMillis = 10_000) { "driveEmptyTrash" in net.calls }
+    }
+
+    /**
+     * A row of the list stands for a whole conversation: deleting it deletes all its mails (bug: only
+     * the newest one, the older one then came back as its own row), and "Select all" counts rows.
+     */
+    @Test
+    fun mailConversationRowActsOnAllItsMails() = app(setup = { tab = Tab.MAIL }, prepare = { net = FakeNet(conversation = true) }) { state, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Treffen am Freitag")
+        assertTrue(onAllNodesWithText("Re: Treffen am Freitag").fetchSemanticsNodes().isEmpty())
+        state.undoMillis = 300
+        longPress("Treffen am Freitag")
+        waitFor("1 selected")
+        desc("All").performClick()
+        // Three rows (the conversation counts once), not four mails.
+        waitFor("3 selected")
+        desc("Cancel").performClick()
+        waitGone("3 selected")
+        longPress("Treffen am Freitag")
+        waitFor("1 selected")
+        desc("Delete").performClick()
+        waitUntil(timeoutMillis = 10_000) { net.calls.any { it.startsWith("mailDelete:") && it.endsWith(":3") } && net.calls.any { it.startsWith("mailDelete:") && it.endsWith(":5") } }
+        assertTrue(onAllNodesWithText("Re: Treffen am Freitag").fetchSemanticsNodes().isEmpty())
+    }
+
+    /** With every row deleted the list says "No messages." and no longer explains swiping rows. */
+    @Test
+    fun mailSwipeHintOnlyWithRows() = app(setup = { tab = Tab.MAIL }, prepare = { net = FakeNet(conversation = true) }) { state, _ ->
+        val hint = "Swipe: right toggles read, left does the action from Options (archive, delete or read)."
+        waitFor("Treffen am Freitag")
+        assertTrue(shown(hint))
+        state.undoMillis = 10_000
+        longPress("Treffen am Freitag")
+        waitFor("1 selected")
+        desc("All").performClick()
+        waitFor("3 selected")
+        desc("Delete").performClick()
+        waitFor("No messages.")
+        assertFalse(shown(hint), "swipe hint below an empty list")
+        shot("mail-all-deleted")
+    }
+
+    /**
+     * The selection holds the conversation: after switching to "Unread" the row stays selected and
+     * acts on what the row now shows (the unread mail), not on nothing and not on hidden mails.
+     */
+    @Test
+    fun mailSelectionFollowsTheFilterChips() = app(setup = { tab = Tab.MAIL }, prepare = { net = FakeNet(conversation = true) }) { state, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Treffen am Freitag")
+        state.undoMillis = 300
+        longPress("Treffen am Freitag")
+        waitFor("1 selected")
+        text("Unread").performClick()
+        waitFor("1 selected")
+        desc("Delete").performClick()
+        waitUntil(timeoutMillis = 10_000) { net.calls.any { it.startsWith("mailDelete:") && it.endsWith(":3") } }
+        assertFalse(net.calls.any { it.startsWith("mailDelete:") && it.endsWith(":5") }, "the read mail was not shown, so it is not deleted")
+    }
+
+    /**
+     * The mail search runs by itself after typing (bug: only with the search key, so after typing
+     * and closing the keyboard the whole inbox stayed, as if nothing matched the words).
+     */
+    @Test
+    fun mailSearchRunsWithoutTheSearchKey() = app(setup = { tab = Tab.MAIL }) { _, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Treffen am Freitag")
+        onNode(hasSetTextAction() and hasText("Search mails", substring = true)).performTextInput("nichts-dergleichen")
+        waitFor("No messages found.")
+        assertTrue(net.calls.contains("mailSearch:nichts-dergleichen"))
+        assertTrue(onAllNodesWithText("Treffen am Freitag").fetchSemanticsNodes().isEmpty())
+        // A refresh (new mail, the button) repeats the search, it does not bring the folder back
+        // under the words.
+        desc("Refresh").performClick()
+        waitUntil(timeoutMillis = 10_000) { net.calls.count { it == "mailSearch:nichts-dergleichen" } >= 2 }
+        waitFor("No messages found.")
+        assertTrue(onAllNodesWithText("Treffen am Freitag").fetchSemanticsNodes().isEmpty())
+        // Emptying the field shows the folder again.
+        onNode(hasSetTextAction() and hasText("nichts-dergleichen", substring = true)).performTextReplacement("")
+        waitFor("Treffen am Freitag")
+    }
+
+    /** A failed search shows its error alone: not the folder under the words, no endless loading. */
+    @Test
+    fun mailSearchFailureShowsTheErrorNotTheFolder() = app(setup = { tab = Tab.MAIL }) { _, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Treffen am Freitag")
+        net.mailSearchFails = true
+        onNode(hasSetTextAction() and hasText("Search mails", substring = true)).performTextInput("Treffen")
+        waitFor("Try again")
+        assertTrue(onAllNodesWithText("Treffen am Freitag").fetchSemanticsNodes().isEmpty())
+        assertTrue(onAllNodesWithText("Loading …").fetchSemanticsNodes().isEmpty())
+        // Try again repeats the search, which now finds the mail.
+        net.mailSearchFails = false
+        text("Try again").performClick()
+        waitFor("Treffen am Freitag")
     }
 
     @Test
@@ -302,20 +477,221 @@ class InteractionTest {
         shot("area-remove")
     }
 
+    /** A count before a noun reads "1 entry" for one and "2 entries" otherwise (plural texts). */
     @Test
-    fun wideWindowOpensEventsAndAccountsOnTheRight() {
-        app(wide = true, setup = { tab = Tab.CAL; calView = CalView.LIST }) { state, _ ->
-            waitFor("No event open")
-            shot("wide-cal-empty")
+    fun countsUseTheSingularForOne() {
+        fun weak(vaultId: String, id: String, title: String) =
+            SecurityIssueUi(vaultId, "Arbeit", id, title, SecurityIssueKindUi.WEAK)
+        app(setup = { passVault = "p2" }, prepare = { report = SecurityReportUi(80, 1, listOf(weak("p2", "2", "Jira"))) }) { _, _ ->
+            // The section label is upper-cased.
+            waitFor("1 ENTRY")
+            waitFor("1 entry needs attention")
+            assertFalse(shown("1 ENTRIES"))
+            shot("pass-one-entry")
+        }
+        app(prepare = { report = SecurityReportUi(60, 5, listOf(weak("p2", "2", "Jira"), weak("p1", "1", "Codeberg"))) }) { _, _ ->
+            waitFor("5 ENTRIES")
+            waitFor("2 entries need attention")
+        }
+    }
+
+    /**
+     * A double tap on "Save" in an editor must not lock the app with the lock that is behind "Save";
+     * a tap on the lock after "Back" (no Save) locks at once. The grace is set long and then off,
+     * so the test does not depend on how fast the machine is.
+     */
+    @Test
+    fun lockRightAfterSavingIsIgnored() = app(setup = { tab = Tab.CAL; calView = CalView.LIST }) { state, fake ->
+        try {
+            HeaderGuard.grace = kotlin.time.Duration.parse("60s")
+            waitFor("Abendessen mit Jana")
             text("Abendessen mit Jana").performClick()
             waitFor("Trattoria Da Luca")
-            // The list stays on the left: the event opens next to it.
-            assertTrue(shown("Kundentermin Müller GmbH"))
+            desc("Edit").performClick()
+            waitUntil(timeoutMillis = 10_000) { state.stack.lastOrNull() is Screen.CalEdit }
+            text("Save").performClick()
+            waitUntil(timeoutMillis = 10_000) { state.stack.lastOrNull() is Screen.CalEvent }
+            // The second tap of the double tap lands on the lock of the event screen.
+            desc("Lock now").performClick()
+            waitForIdle()
+            assertEquals(0, fake.locks, "the lock took the second tap on Save")
             assertTrue(state.stack.lastOrNull() is Screen.CalEvent)
-            shot("wide-cal-event")
+            // Once the grace is over, the lock works as before.
+            HeaderGuard.grace = kotlin.time.Duration.ZERO
+            desc("Lock now").performClick()
+            waitUntil(timeoutMillis = 10_000) { fake.locks == 1 }
+        } finally {
+            HeaderGuard.reset()
         }
-        app(wide = true, setup = { tab = Tab.AUTH }) { _, _ ->
-            waitFor("No account open")
+    }
+
+    /** Without "Save" before it, the lock locks at once, also right after going back. */
+    @Test
+    fun lockAfterBackLocksAtOnce() = app(setup = { tab = Tab.CAL; calView = CalView.LIST }) { state, fake ->
+        try {
+            HeaderGuard.grace = kotlin.time.Duration.parse("60s")
+            waitFor("Abendessen mit Jana")
+            text("Abendessen mit Jana").performClick()
+            waitFor("Trattoria Da Luca")
+            desc("Edit").performClick()
+            waitUntil(timeoutMillis = 10_000) { state.stack.lastOrNull() is Screen.CalEdit }
+            state.back()
+            waitUntil(timeoutMillis = 10_000) { state.stack.lastOrNull() is Screen.CalEvent }
+            desc("Lock now").performClick()
+            waitUntil(timeoutMillis = 10_000) { fake.locks == 1 }
+        } finally {
+            HeaderGuard.reset()
+        }
+    }
+
+    /**
+     * A day whose only event is late in the evening: the day view shows it without scrolling by
+     * hand (bug: "1 event" above an empty grid from 6 to 17 o'clock), also the week view; the
+     * switch between the views stays usable.
+     */
+    @Test
+    fun dayViewShowsAnEveningEvent() = app(setup = { tab = Tab.CAL; calView = CalView.DAY; calSel = de.danerd.ghulsuite.ui.today().plus(75) }) { state, _ ->
+        waitFor("Spätvorstellung Kino")
+        waitUntil(timeoutMillis = 10_000) {
+            runCatching { text("Spätvorstellung Kino").assertIsDisplayed() }.isSuccess
+        }
+        // The view switch stays in sight (bug: scrolling the whole page pushed it away).
+        text("Day").assertIsDisplayed()
+        shot("cal-day-evening")
+        state.calView = CalView.WEEK
+        waitUntil(timeoutMillis = 10_000) {
+            runCatching { text("Spätvorstellung Kino").assertIsDisplayed() }.isSuccess
+        }
+        text("Day").assertIsDisplayed()
+        text("Day").performClick()
+        waitUntil(timeoutMillis = 10_000) { state.calView == CalView.DAY }
+    }
+
+    /** The strength of a new password shows once something is typed: an empty field is not "very weak". */
+    @Test
+    fun passwordStrengthOnlyAfterTyping() = app(setup = { tab = Tab.SETTINGS; push(Screen.ChangePassword) }) { _, _ ->
+        waitFor("New master password")
+        assertFalse(shown("very weak"))
+        assertFalse(shown("weak"))
+        // Current, new, repeat: the second field is the new password.
+        onAllNodes(hasSetTextAction())[1].performTextInput("kurz")
+        waitFor("weak")
+    }
+
+    /** F90: the start-area hint names the areas, not the internal tab codes. */
+    @Test
+    fun startHintNamesTheAreas() = app(setup = { tab = Tab.SETTINGS; push(Screen.SettingsPage(SetPage.LOOK)) }) { _, _ ->
+        val part = { t: String -> onAllNodesWithText(t, substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        waitUntil(timeoutMillis = 10_000) { part("Order: GhulPass, GhulAuth") }
+        assertFalse(part("PASS, AUTH"))
+    }
+
+    /** The sidebar names the key for locking (Ctrl+L) on Windows only; a phone lying sideways has no keyboard. */
+    @Test
+    fun sidebarNamesTheLockKeyOnlyOnWindows() {
+        app(wide = true) { _, _ ->
+            waitFor("Lock")
+            assertFalse(shown("Ctrl+L"))
+        }
+        app(wide = true, prepare = { desktop = true }) { _, _ ->
+            waitFor("Ctrl+L")
+        }
+    }
+
+    /** Wide window: a message shows once, not in the column and in the window at the same time. */
+    @Test
+    fun wideWindowShowsAMessageOnce() = app(wide = true) { state, _ ->
+        waitFor("GhulAuth")
+        state.scope.launch { state.message("Nachricht für den Test") }
+        waitFor("Nachricht für den Test")
+        waitForIdle()
+        assertEquals(1, onAllNodesWithText("Nachricht für den Test", useUnmergedTree = true).fetchSemanticsNodes().size)
+    }
+
+    /**
+     * Wide window: switching the area in the sidebar while an editor has unsaved input asks first
+     * (as "back" does) instead of dropping the input.
+     */
+    @Test
+    fun sidebarAsksBeforeDroppingUnsavedInput() = app(wide = true, setup = { tab = Tab.CAL; calView = CalView.LIST }) { state, _ ->
+        waitFor("Abendessen mit Jana")
+        text("Abendessen mit Jana").performClick()
+        waitFor("Trattoria Da Luca")
+        desc("Edit").performClick()
+        waitUntil(timeoutMillis = 10_000) { state.stack.lastOrNull() is Screen.CalEdit }
+        onNode(hasSetTextAction() and hasText("Abendessen mit Jana")).performTextInput(" neu")
+        waitUntil(timeoutMillis = 10_000) { state.editorDirty }
+        text("GhulAuth").performClick()
+        waitFor("Discard changes?")
+        text("Keep editing").performClick()
+        waitGone("Discard changes?")
+        assertTrue(state.stack.lastOrNull() is Screen.CalEdit)
+        assertEquals(Tab.CAL, state.tab)
+        text("GhulAuth").performClick()
+        waitFor("Discard changes?")
+        text("Discard").performClick()
+        waitUntil(timeoutMillis = 10_000) { state.tab == Tab.AUTH && state.stack.isEmpty() }
+    }
+
+    /**
+     * A phone lying sideways with large font: the week view keeps hours to look at and shows the
+     * evening event (bug: the head left the hours almost no room); the page scrolls instead.
+     */
+    @Test
+    fun lowLandscapeWeekKeepsItsHours() = app(size = 915 to 412, fontScale = 1.3f, setup = { tab = Tab.CAL; calView = CalView.WEEK; calSel = de.danerd.ghulsuite.ui.today().plus(75) }) { _, _ ->
+        waitFor("Spätvorstellung Kino")
+        text("Day").assertIsDisplayed()
+        // Without scrolling: the hours under the head show the evening event.
+        waitUntil(timeoutMillis = 10_000) { runCatching { text("Spätvorstellung Kino").assertIsDisplayed() }.isSuccess }
+        shot("landscape-phone-week")
+    }
+
+    /** F93: with large text "all day" stays on one line in the event list (it broke into two). */
+    @Test
+    fun largeTextKeepsAllDayOnOneLine() = app(fontScale = 1.4f, setup = { tab = Tab.CAL; calView = CalView.LIST }) { _, _ ->
+        waitFor("all day")
+        val node = onAllNodesWithText("all day", useUnmergedTree = true).fetchSemanticsNodes().first()
+        val lineHeightPx = 17f * 1.4f * node.layoutInfo.density.density
+        assertTrue(node.size.height < lineHeightPx * 1.5f, "one line, was ${node.size.height} px for a line of $lineHeightPx px")
+    }
+
+    /**
+     * A phone lying sideways (915 × 412): the areas in the sidebar on the left, and "Lock" at its
+     * end stays reachable although the screen is low (bug: it was cut off).
+     */
+    @Test
+    fun lowLandscapeSidebarKeepsLockReachable() = app(size = 915 to 412) { _, fake ->
+        waitFor("GhulAuth")
+        assertFalse(shown("Ctrl+L"))
+        text("Lock").performScrollTo().assertIsDisplayed().performClick()
+        waitUntil(timeoutMillis = 10_000) { fake.locks == 1 }
+        shot("landscape-phone")
+    }
+
+    /**
+     * A wide window: the areas in the sidebar, an opened event takes the place of the list (no
+     * third column that mostly stood empty) and "back" returns to the list.
+     */
+    @Test
+    fun wideWindowOpensEventsInPlaceOfTheList() {
+        app(wide = true, setup = { tab = Tab.CAL; calView = CalView.LIST }) { state, _ ->
+            waitFor("Abendessen mit Jana")
+            assertFalse(shown("No event open"))
+            shot("wide-cal-list")
+            text("Abendessen mit Jana").performClick()
+            waitFor("Trattoria Da Luca")
+            assertTrue(state.stack.lastOrNull() is Screen.CalEvent)
+            // The list is not beside it any more (kept alive, but not shown).
+            onAllNodesWithText("Kundentermin Müller GmbH", useUnmergedTree = true).onFirst().assertIsNotDisplayed()
+            shot("wide-cal-event")
+            state.back()
+            waitFor("Kundentermin Müller GmbH")
+            // The sidebar switches the area and closes what was open.
+            text("Abendessen mit Jana").performClick()
+            waitFor("Trattoria Da Luca")
+            text("GhulAuth").performClick()
+            waitUntil(timeoutMillis = 10_000) { state.tab == Tab.AUTH && state.stack.isEmpty() }
+            assertFalse(shown("No account open"))
             shot("wide-auth")
         }
     }
@@ -370,6 +746,135 @@ class InteractionTest {
         // Without an updater (test versions, store installs): only the hint.
         app(setup = { push(Screen.SettingsPage(SetPage.ABOUT)) }) { _, _ ->
             waitFor("This version does not update itself: it is a test version, an own build or was installed from a store, which then brings the updates.")
+        }
+    }
+
+    /**
+     * The servers cannot be read: the page says why and offers to try again, instead of an empty
+     * list and "Off" (looked as if the server was gone) or an error with no way out.
+     */
+    @Test
+    fun serversPageLoadErrorOffersRetry() {
+        app(setup = { push(Screen.SettingsPage(SetPage.SERVERS)) }, prepare = { (net as FakeNet).serversFailures = 1 }) { _, _ ->
+            waitFor("Try again")
+            assertTrue(onAllNodesWithText("Off").fetchSemanticsNodes().isEmpty())
+            assertTrue(onAllNodesWithText("Add server").fetchSemanticsNodes().isEmpty())
+            text("Try again").performClick()
+            waitFor("Heimserver")
+            waitGone("Try again")
+        }
+    }
+
+    /**
+     * An answer to a mail without a Message-ID is still titled "Reply" (bug: "New mail"), and
+     * attaching is offered once, not in the header and again below the text.
+     */
+    @Test
+    fun replyWithoutMessageIdIsTitledReply() {
+        app(setup = { push(Screen.MailCompose(de.danerd.ghulsuite.ui.MailDraft("m1", to = "erika@example.org", subject = "Re: Treffen"))) }) { _, _ ->
+            waitFor("Reply")
+            assertTrue(onAllNodesWithText("New mail").fetchSemanticsNodes().isEmpty())
+            // Without a display (CI) there is no file picker and no button at all; never two.
+            assertTrue(onAllNodesWithContentDescription("Attach file").fetchSemanticsNodes().size <= 1)
+        }
+    }
+
+    /** Only the sync status cannot be read: the servers are shown, the sync card does not claim "Off". */
+    @Test
+    fun syncStatusErrorDoesNotSayOff() {
+        app(setup = { push(Screen.SettingsPage(SetPage.SERVERS)) }, prepare = { (net as FakeNet).syncStatusFails = true }) { _, fake ->
+            waitFor("Heimserver")
+            waitFor("Try again")
+            assertTrue(onAllNodesWithText("Off").fetchSemanticsNodes().isEmpty())
+            (fake.net as FakeNet).syncStatusFails = false
+            text("Try again").performClick()
+            waitFor("Synchronise now")
+            waitGone("Try again")
+        }
+    }
+
+    /** Choosing the sync server must stick: it is saved and shown (bug: it stayed "Off"). */
+    @Test
+    fun choosingTheSyncServerSticks() {
+        app(setup = { push(Screen.SettingsPage(SetPage.SERVERS)) }, prepare = { (net as FakeNet).syncServer = null }) { _, fake ->
+            val net = fake.net as FakeNet
+            waitFor("Off")
+            text("Off").performScrollTo().performClick()
+            waitFor("Heimserver")
+            onAllNodesWithText("Heimserver", useUnmergedTree = true).onLast().performClick()
+            waitUntil(timeoutMillis = 10_000) { net.calls.contains("setSyncServer:s1") }
+            assertEquals("s1", net.syncServer)
+            // The row now names the server, not "Off".
+            waitUntil(timeoutMillis = 10_000) { !shown("Off") }
+            shot("sync-server-chosen")
+            // With a server, the controls of the synchronisation appear.
+            waitFor("Synchronise now")
+        }
+    }
+
+    /**
+     * Tapping the next folder while the last one is still loading: the loading is cancelled, and
+     * that is not an error (bug: "The coroutine scope left the composition" under the button).
+     */
+    @Test
+    fun browsingFoldersQuicklyShowsNoError() {
+        app(setup = { push(Screen.ShareSetup("s1")) }) { _, fake ->
+            val net = fake.net as FakeNet
+            // The server's share folder is public_html/teilen: its subfolders are listed.
+            waitFor("blog")
+            net.browseDelayMs = 1500
+            text("teilen").performClick()
+            // The old list is still shown while the folder loads: on to the next one at once.
+            text("blog").performClick()
+            waitFor("/public_html/teilen/teilen/blog")
+            // Both slow listings are done (the first one answers only now with its cancellation).
+            waitUntil(timeoutMillis = 10_000) { net.slowBrowsesDone >= 2 }
+            net.browseDelayMs = 0
+            waitFor("blog")
+            Thread.sleep(200)
+            waitForIdle()
+            assertTrue(onAllNodesWithText("composition", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isEmpty())
+            shot("share-setup-quick-browse")
+        }
+    }
+
+    /**
+     * The address does not answer: the steps that depend on it say "not checked" in grey, not a
+     * red result nobody saw (bug: "the folder content is visible" for an address that is not there).
+     */
+    @Test
+    fun shareCheckWithoutAnswerSaysNotChecked() {
+        app(setup = { push(Screen.ShareSetup("s1")) }) { _, fake ->
+            val net = fake.net as FakeNet
+            net.shareChecks = listOf(
+                ShareCheckUi("write", true, ""), ShareCheckUi("https", false, "server address not found"),
+                ShareCheckUi("listing", false, "skipped"), ShareCheckUi("page", false, "skipped"),
+            )
+            waitFor("blog")
+            onNode(hasSetTextAction() and hasText("https://", substring = true)).performTextReplacement("https://example.invalid/teilen")
+            onNodeWithText("Set up and check").performScrollTo().performClick()
+            // The core's fixed text in the app's words.
+            waitFor("The server address was not found. Check its spelling and the internet connection.")
+            assertFalse(shown("server address not found"))
+            assertEquals(2, onAllNodesWithText("Not checked, because the HTTPS step failed").fetchSemanticsNodes().size)
+            assertTrue(onAllNodesWithText("skipped").fetchSemanticsNodes().isEmpty())
+            shot("share-check-not-checked")
+        }
+    }
+
+    /** GhulDrive with a server of its own (no synchronisation): the card and the header name it. */
+    @Test
+    fun driveWithItsOwnServerShowsIt() {
+        app(setup = { tab = Tab.DRIVE }, prepare = {
+            val n = net as FakeNet
+            n.syncServer = null
+            n.driveOwnServer = ServerUi("d1", "Drive-NAS", "nas.example.org", 22, "max", "drive", true, "SHA256:x", "/srv/drive",
+                ServerKindUi.SFTP, "", "")
+        }) { _, _ ->
+            waitFor("Drive-NAS")
+            assertFalse(shown("No server yet"))
+            assertFalse(shown("Not set up"))
+            shot("drive-own-server")
         }
     }
 }

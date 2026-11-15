@@ -1,11 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package de.danerd.ghulsuite.ui
 
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material.icons.filled.Usb
 import androidx.compose.ui.draw.alpha
@@ -92,9 +100,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import de.danerd.ghulsuite.model.VaultKindUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
+import org.jetbrains.compose.resources.getPluralString
+import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 
 /** Root of the app: setup, unlock or the main screens. */
@@ -104,14 +115,15 @@ fun GhulSuiteApp(state: AppState) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             val unlocked by state.backend.unlocked.collectAsState()
             BoxWithConstraints(Modifier.fillMaxSize()) {
-                // Wide windows (Windows, tablets in landscape) get side navigation and two panes.
+                // Wide windows (Windows, phones and tablets lying sideways): areas in a sidebar on
+                // the left, everything else in the rest of the width.
                 val wide = maxWidth >= 840.dp
                 val undoLabel = stringResource(Res.string.a_undo)
                 SideEffect { state.wide = wide; state.undoLabel = undoLabel }
-                CompositionLocalProvider(LocalWide provides wide) {
+                CompositionLocalProvider(LocalWide provides wide, LocalBusy provides BusyState(state.busy, state.touchNeeded)) {
                     // One place for messages: the main screen on phones shows them above its own bar,
                     // everywhere else this outer host shows them (never both, which doubled every message).
-                    val mainHasHost = state.vaultExists && !state.showStart && unlocked && !wide
+                    val mainHasHost = state.vaultExists && !state.showStart && unlocked
                     Scaffold(snackbarHost = { if (!mainHasHost) GhulSnackbarHost(state.snackbar) }, containerColor = MaterialTheme.colorScheme.background) { _ ->
                         when {
                             !state.vaultExists || state.showStart -> Centered(wide) { SetupScreen(state) }
@@ -119,6 +131,10 @@ fun GhulSuiteApp(state: AppState) {
                             else -> MainScreen(state, wide, maxWidth)
                         }
                     }
+                    // A running action, in front of the screens (sheets show it themselves).
+                    BusyOverlay()
+                    // Development build only: alarms of DevChecks, in every screenshot.
+                    DevAlarmBar(Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.statusBars))
                     // While unlocking waits for the security key to be plugged in.
                     val waiting by state.backend.waitingForKey.collectAsState()
                     if (waiting) KeyWaitingBanner(Modifier.align(Alignment.BottomCenter))
@@ -147,6 +163,9 @@ private fun KeyWaitingBanner(modifier: Modifier) {
         }
     }
 }
+
+/** Width of the column beside the sidebar of a wide window. */
+private val WIDE_COLUMN = 760.dp
 
 /** Start and unlock: a phone-wide column in the middle of a wide window. */
 @Composable
@@ -193,11 +212,11 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
     }
     if (state.confirmDiscard) {
         AlertDialog(
-            onDismissRequest = { state.confirmDiscard = false },
+            onDismissRequest = { state.keepEditing() },
             title = { Text(stringResource(Res.string.edit_discard_title)) },
             text = { Text(stringResource(Res.string.edit_discard_text)) },
             confirmButton = { TextButton(onClick = { state.discardAndBack() }) { Text(stringResource(Res.string.edit_discard_yes)) } },
-            dismissButton = { TextButton(onClick = { state.confirmDiscard = false }) { Text(stringResource(Res.string.edit_keep)) } },
+            dismissButton = { TextButton(onClick = { state.keepEditing() }) { Text(stringResource(Res.string.edit_keep)) } },
         )
     }
 
@@ -237,37 +256,34 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
             }
         }
     } else {
-        // Side navigation | list | opened screen.
-        // Every area with something to open keeps its list on the left and opens it on the right, so
-        // the list never jumps. GhulDrive opens files in a sheet and keeps the whole width.
-        val twoPane = top != null || state.tab != Tab.DRIVE
-        val listWidth = if (width >= 1300.dp) 440.dp else 400.dp
-        val rest = width - 240.dp - 1.dp
-        val listPane = if (twoPane) listWidth else rest
-        val cols = ((listPane - 32.dp) / 220.dp).toInt().coerceIn(2, 6)
+        // Sidebar | one column in the middle of the rest, in a readable width (as on a phone, only
+        // with the areas on the left). An opened entry, mail or page takes the place of the list
+        // and "back" returns to it; there is no third column that mostly stood empty.
+        val column = minOf(width - 240.dp - 1.dp, WIDE_COLUMN)
+        val cols = ((column - 32.dp) / 220.dp).toInt().coerceIn(2, 6)
         Row(Modifier.fillMaxSize()) {
             SideNav(state, tabs)
             Box(Modifier.fillMaxHeight().width(1.dp).background(g.line))
-            Box(Modifier.width(listPane).fillMaxHeight()) {
-                CompositionLocalProvider(LocalColumns provides cols) {
-                    Scaffold(
-                        containerColor = MaterialTheme.colorScheme.background,
-                        topBar = { TabTopBar(state) },
-                        floatingActionButton = { MainFab(state, onAdd) },
-                    ) { padding -> Box(Modifier.consumeWindowInsets(padding)) { TabContents(state, visited, true, padding) } }
-                }
-            }
-            if (twoPane) {
-                Box(Modifier.fillMaxHeight().width(1.dp).background(g.line))
-                Box(Modifier.weight(1f).fillMaxHeight().background(g.surface.copy(alpha = 0.35f)), contentAlignment = Alignment.TopCenter) {
-                    if (top == null) {
-                        EmptyPane(state.tab)
-                    } else {
-                        Box(Modifier.widthIn(max = 820.dp).fillMaxSize()) {
-                            Scaffold(
-                                containerColor = Color.Transparent,
-                                topBar = { if (!ownHeader(top)) ScreenTopBar(state, top) },
-                            ) { padding -> Box(Modifier.consumeWindowInsets(padding)) { TopScreen(state, top, padding) } }
+            Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.TopCenter) {
+                Box(Modifier.widthIn(max = WIDE_COLUMN).fillMaxSize()) {
+                    CompositionLocalProvider(LocalColumns provides cols, LocalContentMax provides Dp.Infinity) {
+                        Scaffold(
+                            containerColor = MaterialTheme.colorScheme.background,
+                            // F94: the sidebar already keeps clear of a camera cut-out on the left;
+                            // the column next to it must not indent its content a second time.
+                            contentWindowInsets = androidx.compose.material3.ScaffoldDefaults.contentWindowInsets
+                                .only(WindowInsetsSides.Vertical + WindowInsetsSides.End),
+                            snackbarHost = { GhulSnackbarHost(state.snackbar) },
+                            topBar = {
+                                if (top == null) TabTopBar(state)
+                                else if (!ownHeader(top)) ScreenTopBar(state, top)
+                            },
+                            floatingActionButton = { if (top == null) MainFab(state, onAdd) },
+                        ) { padding ->
+                            Box(Modifier.fillMaxSize().consumeWindowInsets(padding)) {
+                                TabContents(state, visited, top == null, padding)
+                                if (top != null) TopScreen(state, top, padding)
+                            }
                         }
                     }
                 }
@@ -292,7 +308,7 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
             text == null -> state.message(noQr)
             text.startsWith("otpauth-migration://") -> state.run(block = {
                 val r = state.backend.importData(text.encodeToByteArray(), "google-authenticator", null, vaultId, false)
-                org.jetbrains.compose.resources.getString(Res.string.msg_migration_done, r.totps.toString(), r.duplicates.toString())
+                getPluralString(Res.plurals.msg_migration_done, r.duplicates, getPluralString(Res.plurals.n_accounts, r.totps, r.totps.toString()), r.duplicates.toString())
             }) { msg -> state.message(msg); state.changed() }
             else -> state.run(block = { state.backend.addTotp(vaultId, state.backend.parseOtpauth(text)) }) { state.message(addedMsg); state.changed() }
         }
@@ -358,13 +374,8 @@ private fun TabTopBar(state: AppState) {
     )
 }
 
-/**
- * The icon that leaves a sub-page: a cross for the page that fills the second pane of a wide
- * window (closing it shows the list alone again), else the arrow back. The same for every screen,
- * also for those that draw their own header.
- */
-fun backIcon(state: AppState): androidx.compose.ui.graphics.vector.ImageVector =
-    if (state.wide && state.stack.size == 1) Icons.Filled.Close else Icons.AutoMirrored.Filled.ArrowBack
+/** The icon that leaves a sub-page, the same for every screen (also those with their own header). */
+fun backIcon(): androidx.compose.ui.graphics.vector.ImageVector = Icons.AutoMirrored.Filled.ArrowBack
 
 @Composable
 private fun ScreenTopBar(state: AppState, top: Screen) {
@@ -372,7 +383,7 @@ private fun ScreenTopBar(state: AppState, top: Screen) {
         title = screenTitle(top, state.tab),
         onLock = { state.lockNow() },
         onBack = if (top !is Screen.RecoveryCode) ({ state.pop() }) else null,
-        backIcon = backIcon(state),
+        backIcon = backIcon(),
     )
 }
 
@@ -383,6 +394,7 @@ private fun navTabs(state: AppState): List<NavTab> = state.tabs.map { t ->
         tabIcon(t),
         areaColor(t),
         badge = if (t == Tab.MAIL) state.mailUnread else 0,
+        tag = "tab-" + t.name.lowercase(),
     )
 }
 
@@ -403,7 +415,7 @@ private fun MainFab(state: AppState, onAdd: () -> Unit) {
             state.push(Screen.MailCompose(MailDraft(state.mailAccount)))
         }
     }
-    if (state.tab == Tab.DRIVE && state.driveReady) {
+    if (state.tab == Tab.DRIVE && state.driveReady && !state.driveTrashShown) {
         GhulFab(areaColor(Tab.DRIVE), Icons.Filled.Add, stringResource(Res.string.a_add)) { state.driveUploadTick++ }
     }
     if (state.tab == Tab.CAL) {
@@ -473,7 +485,17 @@ private fun TopScreen(state: AppState, top: Screen, padding: PaddingValues) {
 @Composable
 private fun SideNav(state: AppState, tabs: List<Tab>) {
     val t = g
-    Column(Modifier.width(240.dp).fillMaxHeight().background(t.surface).padding(horizontal = 14.dp, vertical = 18.dp)) {
+    // A phone lying sideways is low: the bar scrolls then, so "Lock" is never cut off; on a tall
+    // window "Lock" stays at the bottom.
+    // Clear of the status bar, a camera cut-out and the system bars of a phone lying sideways.
+    BoxWithConstraints(
+        Modifier.width(240.dp).fillMaxHeight().background(t.surface)
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical + WindowInsetsSides.Start)),
+    ) {
+    Column(
+        Modifier.verticalScroll(rememberScrollState()).heightIn(min = maxHeight)
+            .padding(horizontal = 14.dp, vertical = 18.dp),
+    ) {
         Row(Modifier.padding(start = 6.dp, bottom = 22.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Box(
                 Modifier.size(38.dp).clip(RoundedCornerShape(12.dp))
@@ -493,7 +515,7 @@ private fun SideNav(state: AppState, tabs: List<Tab>) {
             val (nav, area) = tab
             val on = state.tab == area
             Row(
-                Modifier.fillMaxWidth().padding(vertical = 2.dp).clip(RoundedCornerShape(14.dp))
+                Modifier.fillMaxWidth().testTag(nav.tag).padding(vertical = 2.dp).clip(RoundedCornerShape(14.dp))
                     .background(if (on) nav.color.copy(alpha = 0.16f) else Color.Transparent)
                     .clickable { state.selectTab(area) }
                     .padding(horizontal = 12.dp, vertical = 11.dp),
@@ -522,36 +544,10 @@ private fun SideNav(state: AppState, tabs: List<Tab>) {
         ) {
             Icon(Icons.Filled.Lock, null, Modifier.size(20.dp), tint = t.fg)
             Text(stringResource(Res.string.a_lock), Modifier.weight(1f), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = t.fg)
-            Text(stringResource(Res.string.side_lock_key), fontSize = 12.sp, color = t.muted)
+            // The key only where there is a keyboard for it (Windows), not on a phone lying sideways.
+            if (state.backend.isDesktop) Text(stringResource(Res.string.side_lock_key), fontSize = 12.sp, color = t.muted)
         }
     }
-}
-
-/** Right side while nothing is open. */
-@Composable
-private fun EmptyPane(tab: Tab) {
-    Column(
-        Modifier.fillMaxSize().padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        IconTile(tabIcon(tab), areaColor(tab), size = 72.dp)
-        Spacer(Modifier.height(18.dp))
-        Text(
-            stringResource(
-                when (tab) {
-                    Tab.PASS -> Res.string.pane_pick_entry
-                    Tab.AUTH -> Res.string.pane_pick_account
-                    Tab.MAIL -> Res.string.pane_pick_mail
-                    Tab.CAL -> Res.string.pane_pick_event
-                    Tab.SETTINGS -> Res.string.pane_pick_setting
-                    else -> Res.string.pane_pick_entry
-                },
-            ),
-            fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = g.fg,
-        )
-        Spacer(Modifier.height(6.dp))
-        Text(stringResource(if (tab == Tab.AUTH) Res.string.pane_pick_hint_auth else Res.string.pane_pick_hint), color = g.muted, textAlign = TextAlign.Center)
     }
 }
 
@@ -621,7 +617,7 @@ private fun KeepAlive(visible: Boolean, content: @Composable () -> Unit) {
     }
 }
 
-private fun tabTitle(t: Tab) = when (t) {
+internal fun tabTitle(t: Tab) = when (t) {
     Tab.PASS -> Res.string.tab_pass
     Tab.AUTH -> Res.string.tab_auth
     Tab.DRIVE -> Res.string.tab_drive
@@ -641,7 +637,7 @@ private fun IcsImportDialog(state: AppState, data: ByteArray) {
     AlertDialog(
         onDismissRequest = { state.icsPending = null },
         title = { Text(stringResource(Res.string.cal_import_confirm_title)) },
-        text = { Text(stringResource(Res.string.cal_import_confirm_text, events.toString(), target)) },
+        text = { Text(pluralStringResource(Res.plurals.cal_import_confirm_text, events, events.toString(), target)) },
         confirmButton = {
             TextButton(onClick = {
                 state.icsPending = null

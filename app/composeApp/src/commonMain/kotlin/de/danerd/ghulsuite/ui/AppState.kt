@@ -19,7 +19,9 @@ import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.getPluralString
 import org.jetbrains.compose.resources.getString
 
 enum class Tab { PASS, AUTH, DRIVE, MAIL, CAL, SETTINGS }
@@ -163,6 +165,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     /** GhulDrive is set up and can take an upload from the "+" button; a tick asks for one. */
     var driveReady by mutableStateOf(false)
     var driveUploadTick by mutableStateOf(0)
+    /** GhulDrive shows its trash: nothing can be added there, so there is no "Add" button. */
+    var driveTrashShown by mutableStateOf(false)
 
     /** Header actions of the tabs: list/grid views, mail refresh, unread count for the badge. */
     var driveGrid by mutableStateOf(false)
@@ -202,10 +206,10 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             val target = calDefaultCalendar
             // U15: without any calendar the import says so instead of doing nothing.
             if (target.isEmpty()) return@launch message(getString(Res.string.cal_import_no_calendar))
-            runCatching { backend.cal.importIcs(target, data) }
+            catching { backend.cal.importIcs(target, data) }
                 .onSuccess { n ->
                     changed()
-                    message(getString(Res.string.cal_import_done).replace("%1\$s", n.toString()))
+                    message(getPluralString(Res.plurals.cal_import_done, n, n.toString()))
                 }
                 .onFailure { message(describe(it)) }
         }
@@ -244,10 +248,10 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             return
         }
         scope.launch {
-            calendars = runCatching { backend.cal.calendars() }.getOrDefault(emptyList())
+            calendars = catching { backend.cal.calendars() }.getOrDefault(emptyList())
             val lang = getString(Res.string.cal_lang)
-            calRegionName = runCatching { backend.cal.regions(lang) }.getOrDefault(emptyList()).firstOrNull { it.code == st.calRegion }?.name ?: ""
-            val rem = runCatching { backend.cal.reminders(localNow(), 30) }.getOrDefault(emptyList())
+            calRegionName = catching { backend.cal.regions(lang) }.getOrDefault(emptyList()).firstOrNull { it.code == st.calRegion }?.name ?: ""
+            val rem = catching { backend.cal.reminders(localNow(), 30) }.getOrDefault(emptyList())
             val names = loadCalNames()
             backend.cal.scheduleReminders(rem.take(400).map { calAlarm(it, st.calNotifyDetail, names) }, st.calSound)
         }
@@ -325,7 +329,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         update = null
         updateBusy = true
         // The note must not hold up the installation.
-        scope.launch { runCatching { message(getString(Res.string.upd_loading)) } }
+        scope.launch { catching { message(getString(Res.string.upd_loading)) } }
         scope.launch {
             try {
                 if (backend.updater.install(u) == UpdateStep.ALLOW_FIRST) {
@@ -356,7 +360,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
 
     fun askArchiveWhere() {
         scope.launch {
-            val st = runCatching { backend.net.archiveStatus() }.getOrNull()
+            val st = catching { backend.net.archiveStatus() }.getOrNull()
             if (st != null && st.mode == de.danerd.ghulsuite.model.ArchiveModeUi.NONE) archiveWhereAsk = true
         }
     }
@@ -376,7 +380,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     /** One pass over every archived account. [manual]: "Archive now" (also outside Wi-Fi). */
     suspend fun runArchiveOnce(manual: Boolean): de.danerd.ghulsuite.model.MailArchiveRunUi? {
         val net = backend.net
-        val st = runCatching { net.archiveStatus() }.getOrNull() ?: return null
+        val st = catching { net.archiveStatus() }.getOrNull() ?: return null
         if (st.mode == de.danerd.ghulsuite.model.ArchiveModeUi.NONE || st.options.accounts.isEmpty()) return null
         if (!manual && backend.settings.archiveWifiOnly && !net.unmeteredNetwork()) return null
         if (archiveRunning) return null
@@ -419,7 +423,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     }
                 }
             }
-            if (st.fullCopy) runCatching { net.archiveDownload(500, archiveDeviceName()) }
+            if (st.fullCopy) catching { net.archiveDownload(500, archiveDeviceName()) }
         } finally {
             archiveRunning = false
             archiveProgress = null
@@ -445,7 +449,19 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     fun discardAndBack() {
         editorDirty = false
         confirmDiscard = false
-        pop()
+        val tab = pendingTab
+        pendingTab = null
+        // Leaving through the sidebar: the editor goes and the chosen area opens.
+        if (tab != null) selectTab(tab) else pop()
+    }
+
+    /** The area chosen in the sidebar while an editor had unsaved input (opens after "discard"). */
+    private var pendingTab: Tab? = null
+
+    /** "Keep editing" in the question about unsaved input: nothing changes. */
+    fun keepEditing() {
+        confirmDiscard = false
+        pendingTab = null
     }
 
     init {
@@ -456,6 +472,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     editorDirty = false
                     recoveredGuide = false
                     confirmDiscard = false
+                    pendingTab = null
                     dropPending()
                     stack.clear()
                     tab = tabs.first()
@@ -490,7 +507,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     applyLaunch()
                     refreshUnread()
                     if (backend.settings.moduleGhulMail && hasArea(VaultKindUi.MAIL)) {
-                        scope.launch { runCatching { backend.net.refreshMailNotifications() } }
+                        scope.launch { catching { backend.net.refreshMailNotifications() } }
                     }
                     refreshCalendar()
                     startArchive()
@@ -499,12 +516,12 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             }
         }
         // Going to the background carries out what waits for "Undo": the auto lock may come next.
-        scope.launch { AppLaunch.inFront.collect { if (!it) runCatching { settlePending() } } }
+        scope.launch { AppLaunch.inFront.collect { if (!it) catching { settlePending() } } }
         // Area settings go into the area's file (and from there to the other devices).
         backend.settings.onAreaChange = { kind, key, value ->
             if (backend.unlocked.value && vaults.any { it.kind == kind }) {
                 scope.launch {
-                    runCatching { backend.setAreaOptions(kind, mapOf(key to value)) }.onSuccess { autoSync() }
+                    catching { backend.setAreaOptions(kind, mapOf(key to value)) }.onSuccess { autoSync() }
                 }
             }
         }
@@ -587,9 +604,9 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     fun refreshUnread() {
         if (!backend.settings.moduleGhulMail) return
         scope.launch {
-            val accounts = runCatching { backend.net.mailAccounts() }.getOrNull() ?: return@launch
+            val accounts = catching { backend.net.mailAccounts() }.getOrNull() ?: return@launch
             var sum = 0
-            for (a in accounts) sum += runCatching { backend.net.mailUnseen(a.id) }.getOrElse { return@launch }
+            for (a in accounts) sum += catching { backend.net.mailUnseen(a.id) }.getOrElse { return@launch }
             mailUnread = sum
         }
     }
@@ -622,26 +639,30 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                 ),
                 warning = getString(Res.string.sheet_warning),
             )
-            runCatching { backend.printEmergencySheet(code, text) }.onFailure { message(describe(it)) }
+            catching { backend.printEmergencySheet(code, text) }.onFailure { message(describe(it)) }
         }
     }
 
-    /** Wide window: side navigation, list on the left and the opened screen on the right. */
+    /** Wide window: the areas in a sidebar on the left, everything else in the rest of the width. */
     var wide by mutableStateOf(false)
 
     fun push(screen: Screen) {
-        // In two panes, opening another entry, mail or settings page from the list replaces the
-        // right side instead of piling up screens behind it.
-        if (wide && (screen is Screen.EntryDetail || screen is Screen.MailRead || screen is Screen.MailArchiveRead || screen is Screen.SettingsPage || screen == Screen.Security ||
-                screen == Screen.Shares || screen is Screen.CalEvent || screen is Screen.AddTotp ||
-                (screen is Screen.CalEdit && stack.lastOrNull() !is Screen.CalEvent))) {
-            stack.clear()
-        }
         stack.add(screen)
     }
 
-    /** Switches the area; in two panes the right side is closed at the same time. */
+    /**
+     * Switches the area. With the sidebar the areas stay in reach while a page is open: switching
+     * closes it (on phones the bar at the bottom is hidden then).
+     */
     fun selectTab(t: Tab) {
+        // An editor with unsaved input asks first, as "back" does; a new recovery code cannot be
+        // left before it is confirmed (as with "back").
+        if (wide && stack.lastOrNull() is Screen.RecoveryCode) return
+        if (wide && editorDirty && stack.isNotEmpty()) {
+            pendingTab = t
+            confirmDiscard = true
+            return
+        }
         if (wide) stack.clear()
         tab = t
         tabs.indexOf(t).takeIf { it >= 0 }?.let { backend.settings.lastTab = it }
@@ -675,7 +696,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             try {
                 do {
                     syncAgain = false
-                    val status = runCatching { backend.net.syncStatus() }.getOrNull()
+                    val status = catching { backend.net.syncStatus() }.getOrNull()
                     if (status?.serverId == null) {
                         if (!quiet) message(getString(Res.string.sync_not_set))
                         return@launch
@@ -709,7 +730,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
 
     fun refreshVaults() {
         scope.launch {
-            vaults = runCatching { backend.listVaults() }.getOrDefault(vaults)
+            vaults = catching { backend.listVaults() }.getOrDefault(vaults)
             if (backend.unlocked.value) {
                 areasKnown = true
                 if (openFirstArea) {
@@ -717,7 +738,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     stack.clear()
                     tab = tabs.first()
                 }
-                codeUnconfirmed = runCatching { !backend.recoveryConfirmed() }.getOrDefault(false)
+                codeUnconfirmed = catching { !backend.recoveryConfirmed() }.getOrDefault(false)
                 loadAreaOptions()
             }
             val old = vaults.filter { it.outdated }
@@ -737,17 +758,17 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     private suspend fun loadAreaOptions() {
         val st = backend.settings
         for (kind in vaults.map { it.kind }.distinct()) {
-            val stored = runCatching { backend.areaOptions(kind) }.getOrNull() ?: continue
+            val stored = catching { backend.areaOptions(kind) }.getOrNull() ?: continue
             st.applyArea(stored)
             val missing = st.deviceValues(kind).filterKeys { it !in stored }
-            if (missing.isNotEmpty()) runCatching { backend.setAreaOptions(kind, missing) }
+            if (missing.isNotEmpty()) catching { backend.setAreaOptions(kind, missing) }
         }
     }
 
     /** Looks for vault files in the folder that are not part of the suite. */
     fun scanFound(onDone: (List<FoundVaultUi>) -> Unit = {}) {
         scope.launch {
-            found = runCatching { backend.findNewVaults() }.getOrDefault(emptyList())
+            found = catching { backend.findNewVaults() }.getOrDefault(emptyList())
             onDone(found)
         }
     }
@@ -867,7 +888,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     /** Locks the suite after carrying out what waits for "Undo". Every lock button uses this. */
     fun lockNow() {
         scope.launch {
-            runCatching { settlePending() }
+            catching { settlePending() }
             backend.lock()
         }
     }
@@ -878,7 +899,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         val folder = st.autoBackupFolder
         if (folder.isEmpty() || nowSeconds() - st.lastAutoBackup < 7 * 86_400) return
         scope.launch {
-            runCatching {
+            catching {
                 val data = backend.suiteBackup()
                 backend.writeToFolder(FolderRef(folder.substringBefore('|'), folder.substringAfter('|')), backupName(), data, keep = 4)
             }.onSuccess { st.lastAutoBackup = nowSeconds().toInt() }
@@ -894,7 +915,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         dueJob = scope.launch {
             while (backend.unlocked.value) {
                 if (backend.settings.moduleGhulMail) {
-                    runCatching { backend.net.mailSendDue(nowSeconds() * 1000) }.onSuccess { if (it > 0) revision++ }
+                    catching { backend.net.mailSendDue(nowSeconds() * 1000) }.onSuccess { if (it > 0) revision++ }
                 }
                 kotlinx.coroutines.delay(60_000)
             }
@@ -916,7 +937,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                 st.photoBackupSince = newest.toInt()
                 if (count > 0) {
                     revision++
-                    message(getString(Res.string.drive_photo_backup_done, count.toString()))
+                    message(getPluralString(Res.plurals.drive_photo_backup_done, count, count.toString()))
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -946,26 +967,80 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         block: suspend () -> T,
         onSuccess: (T) -> Unit = {},
     ) {
-        if (busy) return
-        scope.launch {
-            busy = true
-            touchNeeded = false
-            try {
-                onSuccess(block())
+        if (busy) {
+            // A second tap while the first one still runs is meant to be dropped. An action the app
+            // starts itself while another one is running would be lost without a word (F49).
+            if (inCallback > 0) DevChecks.alarm("Folgeaktion verworfen, die App war noch beschäftigt")
+            return
+        }
+        // Busy at once, in the same tap: a second tap right after it must find the app busy, also
+        // before the coroutine had its first turn (else Save tapped twice saved twice).
+        busy = true
+        touchNeeded = false
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            var failure: String? = null
+            val result = try {
+                block()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                onError(describe(e))
+                failure = describe(e)
+                null
             } finally {
                 busy = false
                 touchNeeded = false
             }
+            // Only once the action is done: a follow-up action started here (run inside onSuccess,
+            // e.g. "check GhulDrive first, then set the sync server") must not find the app busy,
+            // or it would be dropped without a word. The same for onError.
+            failure?.let { text ->
+                callback { onError(text) }
+                return@launch
+            }
+            try {
+                @Suppress("UNCHECKED_CAST")
+                callback { onSuccess(result as T) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                onError(describe(e))
+            }
+        }
+    }
+
+    /** Depth of onSuccess/onError calls of [run] running now (for [DevChecks]). */
+    private var inCallback = 0
+
+    private inline fun callback(f: () -> Unit) {
+        inCallback++
+        try {
+            f()
+        } finally {
+            inCallback--
         }
     }
 }
 
-suspend fun describe(e: Throwable): String {
-    if (e !is VaultException) return getString(Res.string.err_other, e.message ?: e.toString())
+/**
+ * The text shown for an error. Never throws itself: if even the translated text cannot be read
+ * (e.g. the resources need a display that is not there), the raw message is shown, so a failure
+ * while loading a page still ends as a message and not as a crash.
+ */
+suspend fun describe(e: Throwable): String = try {
+    describeText(e)
+} catch (c: CancellationException) {
+    throw c
+} catch (_: Exception) {
+    // describeText has already told DevChecks about errors that are not a VaultException
+    // (a VaultException is an expected error of the core, nothing to report).
+    e.message ?: e.toString()
+}
+
+private suspend fun describeText(e: Throwable): String {
+    if (e !is VaultException) {
+        DevChecks.shown(e)
+        return getString(Res.string.err_other, e.message ?: e.toString())
+    }
     return when (e.kind) {
         VaultErrorKind.UPDATE_REQUIRED -> getString(Res.string.err_update_required)
         VaultErrorKind.NO_KEY -> getString(Res.string.err_no_key)
@@ -974,13 +1049,13 @@ suspend fun describe(e: Throwable): String {
         VaultErrorKind.TRANSPORT -> getString(Res.string.err_transport, coreText(e.detail) ?: e.detail)
         VaultErrorKind.TIMEOUT -> getString(Res.string.err_timeout)
         VaultErrorKind.PIN_NOT_SET -> getString(Res.string.err_pin_not_set)
-        VaultErrorKind.PIN_INVALID -> getString(Res.string.err_pin_invalid, (e.retries ?: 0).toString())
+        VaultErrorKind.PIN_INVALID -> getPluralString(Res.plurals.err_pin_invalid, e.retries ?: 0, (e.retries ?: 0).toString())
         VaultErrorKind.PIN_BLOCKED -> getString(Res.string.err_pin_blocked)
         VaultErrorKind.PIN_AUTH_BLOCKED -> getString(Res.string.err_pin_auth_blocked)
         VaultErrorKind.PIN_POLICY -> getString(Res.string.err_pin_policy)
         VaultErrorKind.QUICK_UNAVAILABLE -> getString(Res.string.err_quick_unavailable)
         VaultErrorKind.QUICK_EXPIRED -> getString(Res.string.err_quick_expired)
-        VaultErrorKind.QUICK_INVALID -> getString(Res.string.err_quick_invalid, (e.retries ?: 0).toString())
+        VaultErrorKind.QUICK_INVALID -> getPluralString(Res.plurals.err_quick_invalid, e.retries ?: 0, (e.retries ?: 0).toString())
         VaultErrorKind.BIOMETRIC_CANCELLED -> getString(Res.string.err_bio_cancelled)
         VaultErrorKind.BIOMETRIC_CHANGED -> getString(Res.string.err_bio_changed)
         VaultErrorKind.HMAC_UNSUPPORTED -> getString(Res.string.err_hmac)
@@ -1026,7 +1101,7 @@ object PasswordPolicy {
 
     /** Returns the error text or null if the password is acceptable. */
     suspend fun check(backend: VaultBackend, password: String, repeat: String): String? = when {
-        password.length < MIN_LENGTH -> getString(Res.string.setup_pw_too_short, MIN_LENGTH.toString())
+        password.length < MIN_LENGTH -> getPluralString(Res.plurals.setup_pw_too_short, MIN_LENGTH, MIN_LENGTH.toString())
         backend.passwordScore(password) < MIN_SCORE -> getString(Res.string.setup_pw_too_weak)
         password != repeat -> getString(Res.string.setup_pw_mismatch)
         else -> null

@@ -110,8 +110,16 @@ fn info(s: &StoredShare, downloads: i64) -> ShareInfo {
     }
 }
 
+/// A GET for the checks of the share setup; a misspelt address or a wrong port give the same
+/// fixed texts as elsewhere ("server address not found"), which the app translates.
 fn get(url: &Url) -> std::result::Result<http::Response, String> {
-    block_on(http::request("GET", url, &[], b"", None), TIMEOUT).map_err(|e| e.to_string())
+    block_on(http::request("GET", url, &[], b"", None), TIMEOUT).map_err(|e| match e {
+        crate::net::NetError::Connect(_) => match GhulError::from(e) {
+            GhulError::Network { msg } => msg,
+            other => other.to_string(),
+        },
+        e => e.to_string(),
+    })
 }
 
 fn random_hex(n: usize) -> String {
@@ -223,6 +231,10 @@ impl GhulSuite {
     }
 }
 
+/// Detail of a step of [`GhulSuite::share_setup`] that could not be checked because the https
+/// step failed. The app compares this text (`Sharing.kt`); a test pins it.
+pub const SHARE_CHECK_SKIPPED: &str = "skipped";
+
 #[uniffi::export]
 impl GhulSuite {
     /// Sets up sharing on an SFTP or FTPS server: `dir` (relative to the login folder) must be
@@ -273,10 +285,24 @@ impl GhulSuite {
             let name = listing_probe.trim_start_matches("s/");
             let listing_ok =
                 installed.is_ok() && matches!(&listed, Ok(r) if !String::from_utf8_lossy(&r.body).contains(name));
+            // When the address does not deliver the folder over https (no answer, a wrong folder,
+            // an error page), nothing about the listing or the page is known: those steps say
+            // "not checked" instead of a result that was never seen (also not a green one).
             checks.push(ShareCheck {
                 step: "listing".into(),
-                ok: listing_ok,
-                detail: if listing_ok { String::new() } else { "the folder content is visible".into() },
+                ok: https_ok && listing_ok,
+                detail: if !https_ok {
+                    SHARE_CHECK_SKIPPED.into()
+                } else if listing_ok {
+                    String::new()
+                } else if let Err(e) = &installed {
+                    e.to_string()
+                } else if let Err(e) = &listed {
+                    // The folder could not be fetched at all: nothing was seen, so no claim.
+                    e.clone()
+                } else {
+                    "the folder content is visible".into()
+                },
             });
             let _ = fs.delete(&listing_probe);
             let page = get(&public.join(""));
@@ -284,8 +310,16 @@ impl GhulSuite {
                 matches!(&page, Ok(r) if r.status == 200 && String::from_utf8_lossy(&r.body).contains("viewer.js"));
             checks.push(ShareCheck {
                 step: "page".into(),
-                ok: page_ok,
-                detail: installed.err().map(|e| e.to_string()).unwrap_or_default(),
+                ok: https_ok && page_ok,
+                detail: match installed {
+                    Err(e) => e.to_string(),
+                    Ok(_) if !https_ok => SHARE_CHECK_SKIPPED.into(),
+                    Ok(_) if !page_ok => match &page {
+                        Ok(r) => format!("HTTP {}", r.status),
+                        Err(e) => e.clone(),
+                    },
+                    Ok(_) => String::new(),
+                },
             });
             if checks.iter().all(|c| c.ok) {
                 srv.share_dir = dir.clone();

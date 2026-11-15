@@ -1011,7 +1011,11 @@ fn build(account: &StoredAccount, mail: &OutgoingMail, protection: &Protection) 
     let encrypted = matches!(protection, Protection::Encrypted(..));
     // Encrypted mails show "..." outside; the real subject travels inside.
     let outer_subject = if encrypted { "...".to_owned() } else { mail.subject.clone() };
-    let mut b = lettre::Message::builder().from(from).subject(outer_subject);
+    // Every mail needs its own Message-ID (answers point to it, threads are built from it, and
+    // a mail without one looks like spam). lettre does not add it by itself; the domain is the
+    // sender's own, never the name of this computer.
+    let message_id = format!("<{}@{}>", crate::kdf::hex(&new_id()), from.email.domain());
+    let mut b = lettre::Message::builder().from(from).subject(outer_subject).message_id(Some(message_id));
     let mut rcpt = Vec::new();
     for (list, kind) in [(&mail.to, 0), (&mail.cc, 1), (&mail.bcc, 2)] {
         for addr in list.iter().map(|a| a.trim()).filter(|a| !a.is_empty()) {

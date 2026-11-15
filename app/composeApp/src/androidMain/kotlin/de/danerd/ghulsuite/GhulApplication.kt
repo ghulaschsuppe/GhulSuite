@@ -66,6 +66,15 @@ class GhulApplication : Application() {
     }
 
     private fun start() {
+        if (packageName.endsWith(".dev")) {
+            // Development build: mistakes become loud (red bar, log lines the emulator runs fail on).
+            de.danerd.ghulsuite.ui.DevChecks.enabled = true
+            // Disk and network on the main thread make the app stutter: logged ("StrictMode"),
+            // tools/check-logcat.sh reports the ones in our own code.
+            android.os.StrictMode.setThreadPolicy(
+                android.os.StrictMode.ThreadPolicy.Builder().detectDiskReads().detectDiskWrites().detectNetwork().penaltyLog().build(),
+            )
+        }
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityResumed(activity: Activity) { current = WeakReference(activity) }
             override fun onActivityPaused(activity: Activity) {}

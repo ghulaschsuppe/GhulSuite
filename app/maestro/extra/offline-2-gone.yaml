@@ -1,0 +1,27 @@
+# Servers gone, part 2: no packet reaches them. Synchronising and GhulDrive say so in plain words,
+# nothing hangs for good, nothing technical is shown, the app stays usable.
+appId: de.danerd.ghulsuite.dev
+name: Server weg 2
+---
+- tapOn: "Synchronise now"
+- extendedWaitUntil:
+    visible: "Synchronisation failed: .*|Sync not possible right now.*|No connection to the server.*"
+    timeout: 180000
+- assertNotVisible: ".*[Cc]oroutine.*"
+- assertNotVisible: "GHUL-DEV-ALARM.*"
+- takeScreenshot: x1-02-sync-offline
+- extendedWaitUntil:
+    visible: "Synchronise now"
+    timeout: 60000
+- back
+- tapOn: { id: "tab-drive" }
+- extendedWaitUntil:
+    visible: "No connection to the server.*|.*offline.*|.*Offline.*|Urlaub-Maestro"
+    timeout: 180000
+- assertNotVisible: ".*[Cc]oroutine.*"
+- assertNotVisible: "GHUL-DEV-ALARM.*"
+- takeScreenshot: x1-03-drive-offline
+# Still usable: the other areas open.
+- tapOn: { id: "tab-pass" }
+- extendedWaitUntil: { visible: "Search entries", timeout: 15000 }
+- takeScreenshot: x1-04-pass-offline

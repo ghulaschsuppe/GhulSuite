@@ -58,6 +58,8 @@ import de.danerd.ghulsuite.model.ServerUi
 import de.danerd.ghulsuite.model.VaultKindUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.rememberResourceEnvironment
 import org.jetbrains.compose.resources.stringResource
 
 /** The line under the area title: what is shown right now, in the area's colour; tap to switch. */
@@ -71,25 +73,27 @@ fun AreaContext(state: AppState) {
     val suite = stringResource(Res.string.set_my_suite)
     val inbox = stringResource(Res.string.mail_inbox)
     val allVaults = stringResource(Res.string.vault_all_vaults)
-    val accountsWord = stringResource(Res.string.auth_count)
     val myFiles = stringResource(Res.string.drive_my_files)
     val allInboxes = stringResource(Res.string.mail_all_inboxes)
     val allCalendars = stringResource(Res.string.cal_all_calendars)
-    val someCalendars = stringResource(Res.string.cal_some_calendars)
+    // Texts looked up later (after a count is known) use the language of the screen.
+    val env = rememberResourceEnvironment()
     LaunchedEffect(state.tab, state.revision, state.passVault, state.authVault, state.mailAccount, state.mailFolder, state.calendars, state.backend.settings.calHidden) {
         label = when (state.tab) {
             Tab.PASS -> state.vaults.firstOrNull { it.id == state.passVault }?.name ?: allVaults
             Tab.AUTH -> {
-                val n = runCatching { state.backend.totpCodes(nowSeconds()) }.getOrDefault(emptyList()).count { state.authVault == null || it.vaultId == state.authVault }
-                (state.vaults.firstOrNull { it.id == state.authVault }?.name ?: allAccounts) + " · " + accountsWord.replace("%1\$s", n.toString())
+                val n = catching { state.backend.totpCodes(nowSeconds()) }.getOrDefault(emptyList()).count { state.authVault == null || it.vaultId == state.authVault }
+                (state.vaults.firstOrNull { it.id == state.authVault }?.name ?: allAccounts) + " · " + countText(env, Res.plurals.auth_count, n, n.toString())
             }
             Tab.DRIVE -> {
-                val st = runCatching { net.driveStatus() }.getOrNull()
-                val srv = runCatching { net.servers() }.getOrDefault(emptyList()).firstOrNull { it.id == st?.serverId }
+                // From the settings on this device only: driveStatus() reads Drive's index, after a
+                // restart from the server, and the line stayed empty that long (slow network).
+                // Drive's own server is not in the suite's list (only the sync servers are).
+                val srv = catching { net.driveStorage().server }.getOrNull()
                 if (srv == null) notSet else "${srv.name} · $myFiles"
             }
             Tab.MAIL -> {
-                val acc = runCatching { net.mailAccounts() }.getOrDefault(emptyList()).firstOrNull { it.id == state.mailAccount }
+                val acc = catching { net.mailAccounts() }.getOrDefault(emptyList()).firstOrNull { it.id == state.mailAccount }
                 when {
                     state.mailAccount == ALL_INBOXES -> allInboxes
                     acc == null -> notSet
@@ -100,7 +104,7 @@ fun AreaContext(state: AppState) {
                 val cals = state.calendars
                 val hidden = state.backend.settings.calHiddenSet()
                 val visible = cals.count { it.id !in hidden }
-                if (visible == cals.size) allCalendars else someCalendars.replace("%1\$s", visible.toString()).replace("%2\$s", cals.size.toString())
+                if (visible == cals.size) allCalendars else countText(env, Res.plurals.cal_some_calendars, cals.size, visible.toString(), cals.size.toString())
             }
             Tab.SETTINGS -> "$suite · Version " + state.backend.appVersion.substringBefore("-").split('.').take(2).joinToString(".")
         }
@@ -151,7 +155,7 @@ private fun VaultSheet(state: AppState, kind: VaultKindUi, close: () -> Unit) {
         SheetList {
             CtxRow(stringResource(Res.string.vault_all_vaults), selected = selected == null, leading = { IconTile(Icons.Filled.Layers, paletteColor(0)) }) { pick(null) }
             for (v in state.vaultsOf(kind)) {
-                CtxRow(v.name, stringResource(Res.string.ctx_entries, v.entries.toString()), selected = selected == v.id, divider = true, leading = { Avatar(v.name) }) { pick(v.id) }
+                CtxRow(v.name, pluralStringResource(Res.plurals.ctx_entries, v.entries, v.entries.toString()), selected = selected == v.id, divider = true, leading = { Avatar(v.name) }) { pick(v.id) }
             }
             CtxRow(stringResource(Res.string.set_vaults), divider = true, leading = { IconTile(Icons.Filled.Tune, paletteColor(5)) }) {
                 close(); state.push(Screen.SettingsPage(SetPage.VAULTS))
@@ -166,10 +170,10 @@ private fun DriveSheet(state: AppState, close: () -> Unit) {
     var status by remember { mutableStateOf<DriveStatusUi?>(null) }
     var servers by remember { mutableStateOf<List<ServerUi>>(emptyList()) }
     LaunchedEffect(Unit) {
-        status = runCatching { net.driveStatus() }.getOrNull()
-        servers = runCatching { net.servers() }.getOrDefault(emptyList())
+        status = catching { net.driveStatus() }.getOrNull()
+        servers = listOfNotNull(catching { net.driveStorage().server }.getOrNull())
     }
-    val srv = servers.firstOrNull { it.id == status?.serverId }
+    val srv = servers.firstOrNull()
     GhulSheet(close, stringResource(Res.string.ctx_storage)) {
         SheetList {
             if (srv != null) {
@@ -192,8 +196,8 @@ private fun MailboxSheet(state: AppState, close: () -> Unit) {
     var accounts by remember { mutableStateOf<List<MailAccountUi>>(emptyList()) }
     var folders by remember { mutableStateOf<List<MailFolderUi>>(emptyList()) }
     LaunchedEffect(state.mailAccount) {
-        accounts = runCatching { net.mailAccounts() }.getOrDefault(emptyList())
-        folders = state.mailAccount?.let { runCatching { net.mailFolders(it) }.getOrDefault(emptyList()) } ?: emptyList()
+        accounts = catching { net.mailAccounts() }.getOrDefault(emptyList())
+        folders = state.mailAccount?.let { catching { net.mailFolders(it) }.getOrDefault(emptyList()) } ?: emptyList()
     }
     val t = g
     GhulSheet(close, stringResource(Res.string.ctx_mailbox)) {
@@ -218,8 +222,8 @@ private fun MailboxSheet(state: AppState, close: () -> Unit) {
         var showDrafts by remember { mutableStateOf(false) }
         var showScheduled by remember { mutableStateOf(false) }
         LaunchedEffect(Unit) {
-            drafts = runCatching { net.mailDrafts() }.getOrDefault(emptyList())
-            scheduled = runCatching { net.mailScheduled() }.getOrDefault(emptyList())
+            drafts = catching { net.mailDrafts() }.getOrDefault(emptyList())
+            scheduled = catching { net.mailScheduled() }.getOrDefault(emptyList())
         }
         if (accounts.size > 1) {
             Pill(state.mailAccount == ALL_INBOXES, { Icon(Icons.Filled.Inbox, null, Modifier.size(20.dp), tint = if (state.mailAccount == ALL_INBOXES) t.accent else t.fg) },

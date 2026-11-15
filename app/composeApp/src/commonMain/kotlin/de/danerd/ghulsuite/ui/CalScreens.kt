@@ -39,7 +39,13 @@ import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.SentimentSatisfied
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import kotlinx.coroutines.flow.first
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -71,7 +77,9 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.ui.focus.focusRequester
+import org.jetbrains.compose.resources.getPluralString
 import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 
 /** Views of GhulCal (the segmented control at the top). */
@@ -184,8 +192,8 @@ suspend fun calAlarm(r: de.danerd.ghulsuite.model.CalReminderUi, detail: Int, na
 private suspend fun durationLabel(m: Int): String = when {
     m < 60 -> getString(Res.string.cal_dur_min, m.toString())
     m < 1440 -> getString(Res.string.cal_dur_hours, (m / 60).toString())
-    m < 10080 -> getString(Res.string.cal_dur_days, (m / 1440).toString())
-    else -> getString(Res.string.cal_dur_weeks, (m / 10080).toString())
+    m < 10080 -> getPluralString(Res.plurals.cal_dur_days, m / 1440, (m / 1440).toString())
+    else -> getPluralString(Res.plurals.cal_dur_weeks, m / 10080, (m / 10080).toString())
 }
 
 /** First day of the week containing [d] (setting: Monday or Sunday). */
@@ -204,6 +212,10 @@ val CalOccurrenceUi.lastDay: Day
 fun List<CalOccurrenceUi>.on(d: Day): List<CalOccurrenceUi> = filter { it.startDay <= d && it.lastDay >= d }
 
 private val HH = 44.dp
+
+/** Below this height the calendar page scrolls as a whole (week and day with [LOW_GRID] of hours). */
+private val LOW_SCREEN = 560.dp
+private val LOW_GRID = 220.dp
 private const val H0 = 6
 private const val H1 = 24
 
@@ -244,7 +256,7 @@ private fun rememberCalData(state: AppState, from: Day, to: Day, extraQuery: Str
     )
     val rev = state.liveRevision()
     LaunchedEffect(rev, from, to, settings.calHidden, settings.calHolidays, settings.calRegion, extraQuery, retry) {
-        val cals = runCatching { cal.calendars() }.getOrElse { e ->
+        val cals = catching { cal.calendars() }.getOrElse { e ->
             data = CalData(data.calendars, data.occ, describe(e), retry = { retry++ })
             return@LaunchedEffect
         }
@@ -253,13 +265,13 @@ private fun rememberCalData(state: AppState, from: Day, to: Day, extraQuery: Str
         val calVault = state.vaultsOf(VaultKindUi.CAL).firstOrNull { it.available }
         if (cals.isEmpty() && calVault != null && !state.calSetupDone) {
             state.calSetupDone = true
-            runCatching { for ((n, c) in defaults) cal.saveCalendar(CalCalendarUi("", calVault.id, n, c, 15, 0)) }
+            catching { for ((n, c) in defaults) cal.saveCalendar(CalCalendarUi("", calVault.id, n, c, 15, 0)) }
             state.changed()
             return@LaunchedEffect
         }
         val hidden = settings.calHiddenSet()
         val region = if (settings.calHolidays && CalOccurrenceUi.HOLIDAYS !in hidden) settings.calRegion else ""
-        val occ = runCatching { cal.occurrences(from.toString(), to.toString(), region, lang) }.getOrElse { e ->
+        val occ = catching { cal.occurrences(from.toString(), to.toString(), region, lang) }.getOrElse { e ->
             data = CalData(cals, data.occ, describe(e), retry = { retry++ })
             return@LaunchedEffect
         }.filter { it.calendarId !in hidden }
@@ -313,15 +325,22 @@ fun CalScreen(state: AppState, padding: PaddingValues) {
             ),
         )
     }
+    // Week and day: the head (views, dates, all-day events) stays, only the hours scroll, as in
+    // other calendars. Scrolling the whole page to an evening event pushed the view switch away.
+    // On a low screen (a phone lying sideways) the head would leave the hours almost no room:
+    // there the whole page scrolls and the hours get a fixed height.
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+    val screen = maxHeight
+    val gridView = (state.calView == CalView.WEEK || state.calView == CalView.DAY) && screen >= LOW_SCREEN
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 100.dp),
+        Modifier.fillMaxSize().then(if (gridView) Modifier else Modifier.verticalScroll(rememberScrollState()))
+            .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = if (gridView) 0.dp else 100.dp),
     ) {
         LoadError(data.error, data.retry)
         if (!data.loaded) LoadingHint()
         SingleChoiceSegmentedButtonRow(Modifier.padding(bottom = 10.dp)) {
             listOf(CalView.MONTH to Res.string.cal_view_month, CalView.WEEK to Res.string.cal_view_week, CalView.DAY to Res.string.cal_view_day, CalView.LIST to Res.string.cal_view_list)
-                .forEach { (v, label) -> SegmentedButton(state.calView == v, { state.calView = v }) { Text(stringResource(label)) } }
+                .forEach { (v, label) -> SegmentedButton(state.calView == v, { state.calView = v }) { SegLabel(stringResource(label)) } }
         }
         when (state.calView) {
             CalView.MONTH -> {
@@ -337,7 +356,7 @@ fun CalScreen(state: AppState, padding: PaddingValues) {
                 CalHead(state, label)
                 DayStrip(state, days, data.occ, names, pick = false, modifier = swipe)
                 AllDayRow(state, days, data.occ)
-                TimeGrid(state, days, data.occ, swipe)
+                TimeGrid(state, days, data.occ, swipe, fill = gridView, screen = screen)
             }
             CalView.DAY -> {
                 val days = (0..6).map { from.plus(it) }
@@ -347,16 +366,17 @@ fun CalScreen(state: AppState, padding: PaddingValues) {
                 Text(
                     when {
                         n == 0 -> stringResource(Res.string.cal_none)
-                        sel == today() -> stringResource(if (n == 1) Res.string.cal_one_today else Res.string.cal_n_today, n.toString())
-                        else -> stringResource(if (n == 1) Res.string.cal_one else Res.string.cal_n, n.toString())
+                        sel == today() -> pluralStringResource(Res.plurals.cal_n_today, n, n.toString())
+                        else -> pluralStringResource(Res.plurals.cal_n, n, n.toString())
                     },
                     Modifier.padding(start = 4.dp, end = 4.dp, bottom = 8.dp), fontSize = 13.sp, color = g.muted, fontWeight = FontWeight.SemiBold,
                 )
                 AllDayRow(state, listOf(sel), data.occ)
-                TimeGrid(state, listOf(sel), data.occ, swipe)
+                TimeGrid(state, listOf(sel), data.occ, swipe, fill = gridView, screen = screen)
             }
             CalView.LIST -> CalList(state, data.occ, query, { query = it }, names, selected)
         }
+    }
     }
     }
     movingTo?.let { list ->
@@ -572,6 +592,16 @@ fun EvRow(state: AppState, o: CalOccurrenceUi, day: Day?, divider: Boolean, sel:
     val selectable = sel != null && o.eventId.isNotEmpty()
     val chosen = selectable && occKey(o) in sel!!
     if (divider) Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(1.dp).background(t.line))
+    // F93: the time column is as wide as its widest text ("all day", a time), so it never breaks
+    // into two lines with large text, and it is the same in every row.
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val allDayShort = stringResource(Res.string.cal_all_day_short)
+    val density = LocalDensity.current
+    val timeCol = remember(allDayShort, density) {
+        val style = androidx.compose.ui.text.TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        val px = maxOf(measurer.measure(allDayShort, style).size.width, measurer.measure("00:00", style).size.width)
+        maxOf(with(density) { px.toDp() } + 2.dp, 44.dp)
+    }
     Row(
         Modifier.fillMaxWidth().background(if (chosen) t.accentSoft else androidx.compose.ui.graphics.Color.Transparent)
             .combinedClickable(
@@ -581,9 +611,9 @@ fun EvRow(state: AppState, o: CalOccurrenceUi, day: Day?, divider: Boolean, sel:
             .padding(horizontal = 16.dp, vertical = 10.dp).height(androidx.compose.foundation.layout.IntrinsicSize.Min),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Column(Modifier.width(44.dp)) {
+        Column(Modifier.width(timeCol)) {
             if (o.allDay) {
-                Text(stringResource(Res.string.cal_all_day_short), fontSize = 13.sp, fontWeight = FontWeight.Bold, lineHeight = 17.sp)
+                Text(allDayShort, fontSize = 13.sp, fontWeight = FontWeight.Bold, lineHeight = 17.sp, maxLines = 1, softWrap = false)
                 val days = (o.lastDay.days - o.startDay.days + 1).toInt()
                 if (days > 1) {
                     val n = ((day ?: o.startDay).days - o.startDay.days + 1).toInt()
@@ -715,20 +745,52 @@ private fun lanesOf(list: List<CalOccurrenceUi>): List<Placed> {
     return out
 }
 
-/** Hours 6 to 24 with the events of one or seven days (.tg). */
+/**
+ * Hours 6 to 24 with the events of one or seven days (.tg), scrolling by itself below the head of
+ * the page. When the first event of these days (or, today without events, the current time) lies
+ * below what it shows, it scrolls there: "1 event" above an empty grid was all one saw.
+ */
 @Composable
-private fun TimeGrid(state: AppState, days: List<Day>, occ: List<CalOccurrenceUi>, swipe: Modifier) {
+private fun ColumnScope.TimeGrid(state: AppState, days: List<Day>, occ: List<CalOccurrenceUi>, swipe: Modifier, fill: Boolean, screen: Dp) {
     val t = g
     val cal = areaColor(Tab.CAL)
     val one = days.size == 1
+    val density = LocalDensity.current
+    val scroll = rememberScrollState()
     var now by remember { mutableStateOf(localNow()) }
+    // Minute of the day where the first timed event of these days starts (not before H0).
+    val firstMinute = days.mapNotNull { d ->
+        occ.on(d).filter { !it.allDay }.minOfOrNull { maxOf(absMinutes(it.start) - d.days * 1440L, H0 * 60L) }
+    }.minOrNull()
+    val target = firstMinute ?: if (today() in days) maxOf(absMinutes(now) - today().days * 1440L, H0 * 60L) else null
+    // Once per shown days and target (not again while one scrolls by hand), and again when the
+    // hours get another height (a low screen settles it after the head is measured).
+    LaunchedEffect(days.first(), days.size, target, scroll.viewportSize) {
+        val minute = target ?: return@LaunchedEffect
+        val viewport = androidx.compose.runtime.snapshotFlow { scroll.viewportSize }.first { it > 0 }
+        with(density) {
+            val top = (12.dp + HH * ((minute - H0 * 60L) / 60f)).toPx()
+            // Already in view (one hour of it at least): nothing moves.
+            if (top + HH.toPx() > scroll.value + viewport) scroll.animateScrollTo((top - HH.toPx()).toInt().coerceIn(0, scroll.maxValue))
+        }
+    }
     LaunchedEffect(Unit) {
         while (true) {
             delay(30_000)
             now = localNow()
         }
     }
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(t.surface).then(swipe).padding(top = 12.dp, bottom = 12.dp, end = 6.dp)) {
+    // Under the head down to the bottom. On a low screen: what is left under the head, but at
+    // least [LOW_GRID] (the page scrolls for the rest).
+    var headHeight by remember { mutableStateOf(0.dp) }
+    val low = if (fill) Modifier.weight(1f)
+    else Modifier.onPlaced { headHeight = with(density) { it.positionInParent().y.toDp() } }
+        .height(maxOf(screen - headHeight - 8.dp, LOW_GRID))
+    Column(low.fillMaxWidth().verticalScroll(scroll).padding(bottom = if (fill) 100.dp else 0.dp)) {
+    Row(
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp)).background(t.surface).then(swipe).padding(top = 12.dp, bottom = 12.dp, end = 6.dp),
+    ) {
         Column(Modifier.width(38.dp)) {
             for (h in H0 until H1) {
                 Box(Modifier.height(HH).fillMaxWidth()) {
@@ -778,10 +840,13 @@ private fun TimeGrid(state: AppState, days: List<Day>, occ: List<CalOccurrenceUi
                     ) {
                         Row(Modifier.fillMaxSize()) {
                             Box(Modifier.width(3.dp).fillMaxHeight().background(c))
-                            Column(Modifier.padding(horizontal = if (one) 9.dp else 4.dp, vertical = if (h < 30.dp) 1.dp else if (one) 5.dp else 2.dp)) {
+                            val vPad = if (h < 30.dp) 1.dp else if (one) 5.dp else 2.dp
+                            // F93: the time line only where both lines fit, also with large text.
+                            val twoLines = ((if (one) 16f else 13f) * 2 * density.fontScale).dp + vPad * 2
+                            Column(Modifier.padding(horizontal = if (one) 9.dp else 4.dp, vertical = vPad)) {
                                 Text(p.o.label, fontSize = if (one) 13.sp else 10.5.sp, lineHeight = if (one) 16.sp else 13.sp, fontWeight = FontWeight.Bold,
                                     color = t.fg, maxLines = 1, softWrap = false, overflow = if (one) TextOverflow.Ellipsis else TextOverflow.Clip)
-                                if (h > 34.dp) {
+                                if (h >= twoLines) {
                                     val meta = "${hm(p.o.start)}-${hm(p.o.end)}" + if (one && p.o.location.isNotEmpty()) " · ${p.o.location}" else ""
                                     Text(meta, fontSize = if (one) 13.sp else 10.5.sp, lineHeight = if (one) 16.sp else 13.sp, color = t.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
@@ -797,6 +862,7 @@ private fun TimeGrid(state: AppState, days: List<Day>, occ: List<CalOccurrenceUi
             }
         }
     }
+    }
 }
 
 // --- list ----------------------------------------------------------------------------------------
@@ -809,7 +875,7 @@ private fun CalList(state: AppState, occ: List<CalOccurrenceUi>, query: String, 
         listOf(it.title, it.location, state.calNames[it.calendarId] ?: "").joinToString(" ").lowercase().contains(q)
     }
     val focus = remember { androidx.compose.ui.focus.FocusRequester() }
-    LaunchedEffect(state.calSearchTick) { if (state.calSearchTick > 0) runCatching { focus.requestFocus() } }
+    LaunchedEffect(state.calSearchTick) { if (state.calSearchTick > 0) catching { focus.requestFocus() } }
     SearchField(query, onQuery, Modifier.padding(bottom = 12.dp).focusRequester(focus), placeholder = stringResource(Res.string.cal_search))
     val groups = list.groupBy { if (it.startDay < from) from else it.startDay }.toSortedMap()
     if (groups.isEmpty()) {

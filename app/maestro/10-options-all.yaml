@@ -1,0 +1,60 @@
+# Every page under Options opens, shows no technical error text and goes back; the long ones
+# are also photographed at their end. Area pages are reached by their subtitle (the area names
+# are also in the bottom bar).
+appId: de.danerd.ghulsuite.dev
+name: All options pages
+---
+- runFlow: home.yaml
+- tapOn: { id: "tab-settings" }
+# The tab keeps its place from before (on purpose): start at the top.
+- scrollUntilVisible:
+    element: "Unlocking"
+    direction: UP
+- takeScreenshot: 10-00-overview
+- runFlow:
+    file: open-option-full.yaml
+    env: { PAGE: "Unlocking", SHOT: "10-01-unlocking" }
+- runFlow:
+    file: open-option-full.yaml
+    env: { PAGE: "Locking", SHOT: "10-02-locking" }
+- runFlow:
+    file: open-option-full.yaml
+    env: { PAGE: "Privacy", SHOT: "10-03-privacy" }
+- runFlow:
+    file: open-option-full.yaml
+    env: { PAGE: "Keys & key files", SHOT: "10-04-keys" }
+- runFlow:
+    file: open-option-full.yaml
+    env: { PAGE: "Vaults", SHOT: "10-05-vaults" }
+- runFlow:
+    file: open-option-full.yaml
+    env: { PAGE: "Import, export and backup", SHOT: "10-06-import" }
+- runFlow:
+    file: open-option-full.yaml
+    env: { PAGE: "Servers, sync & sharing", SHOT: "10-07-servers" }
+- runFlow:
+    file: open-option-full.yaml
+    env: { PAGE: "Manage areas", SHOT: "10-08-areas" }
+- runFlow:
+    file: open-option-full.yaml
+    env: { PAGE: "Display, autofill", SHOT: "10-09-pass" }
+- runFlow:
+    file: open-option-full.yaml
+    env: { PAGE: "Code display", SHOT: "10-10-auth" }
+- runFlow:
+    file: open-option-full.yaml
+    env: { PAGE: "Reminders.*", SHOT: "10-11-cal" }
+- runFlow:
+    file: open-option-full.yaml
+    env: { PAGE: "Theme, language", SHOT: "10-12-display" }
+- runFlow:
+    file: open-option-full.yaml
+    env: { PAGE: "About and help", SHOT: "10-13-about" }
+# Master password: its own screen.
+- scrollUntilVisible:
+    element: "Change master password"
+    direction: DOWN
+- tapOn: "Change master password"
+- takeScreenshot: 10-14-password
+- assertNotVisible: ".*[Cc]oroutine.*"
+- back

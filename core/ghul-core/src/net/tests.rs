@@ -65,6 +65,30 @@ fn local_fs() {
 }
 
 #[test]
+fn sftp_folders_created_at_once_from_several_connections() {
+    // The mail archive uploads in parallel: several connections create the same new folder at
+    // the same moment. Each must succeed (bug: "Failure" for all but the first, which ended the
+    // archive run).
+    let Some(cfg) = sftp_test_config("sftp-mkdir-race") else { return };
+    for round in 0..5 {
+        let dir = format!("race-{round}/a/b/c");
+        let errors: Vec<String> = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..8)
+                .map(|_| {
+                    let cfg = cfg.clone();
+                    let dir = dir.clone();
+                    scope.spawn(move || {
+                        SftpFs::connect(&cfg).and_then(|fs| fs.mkdir_all(&dir)).err().map(|e| e.to_string())
+                    })
+                })
+                .collect();
+            handles.into_iter().filter_map(|h| h.join().unwrap()).collect()
+        });
+        assert!(errors.is_empty(), "round {round}: {errors:?}");
+    }
+}
+
+#[test]
 fn sftp_against_openssh() {
     let Some(mut cfg) = sftp_test_config("sftp-basic") else { return };
     // First contact: the key must be confirmed.

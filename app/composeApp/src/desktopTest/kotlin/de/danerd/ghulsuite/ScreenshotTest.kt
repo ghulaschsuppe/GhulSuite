@@ -91,7 +91,11 @@ class ScreenshotTest {
         override suspend fun createFromVault(open: OpenVaultUi, onTouchNeeded: () -> Unit): String? = null
         override suspend fun unlock(password: String, pin: String?, keyfile: ByteArray?, onTouchNeeded: () -> Unit) {}
         override suspend fun unlockWithRecoveryCode(code: String, newPassword: String) {}
-        override fun lock() {}
+        var locks = 0
+        /** Windows (true) or a phone (false): what only one of them has (keyboard keys …). */
+        var desktop = false
+        override val isDesktop get() = desktop
+        override fun lock() { locks++ }
         override fun panicLock() {}
         override fun biometricAvailable() = true
         override fun quickUnlockReady() = QuickUnlockReady(biometric = quickReady, pin = quickReady)
@@ -133,6 +137,9 @@ class ScreenshotTest {
         )
         override suspend fun saveEntry(entry: EntryUi) = "1"
         override suspend fun deleteEntry(vaultId: String, id: String) { calls += "deleteEntry:$vaultId:$id" }
+        /** The security check; nothing checked by default, so the list shows no security card. */
+        var report = de.danerd.ghulsuite.model.SecurityReportUi(100, 0, emptyList())
+        override suspend fun securityReport() = report
         override suspend fun totpCodes(nowSeconds: Long) = listOf(
             TotpCodeUi("t1", "Persönlich", "a", "Codeberg", "ghul", "492039", "118273", 30, 17),
             TotpCodeUi("t1", "Persönlich", "b", "GitHub", "ghulaschsuppe", "771204", "009812", 30, 4),
@@ -298,7 +305,7 @@ class ScreenshotTest {
         }
     }
 
-    /** Windows window (1280 × 820) and tablets in landscape: side navigation and two panes. */
+    /** Windows window (1280 × 820) and tablets in landscape: the sidebar and one column in the middle. */
     @Test
     fun wideScreens() {
         Locale.setDefault(Locale.GERMAN)

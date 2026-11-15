@@ -1,0 +1,71 @@
+# The whole app in the dark design and lying sideways, then in the background and back:
+#   - Display > Design > dark: every area photographed.
+#   - Landscape: every area photographed (nothing cut off, nothing on top of each other).
+#   - Home button, back into the app: same screen, unlocked again if the app locked itself.
+# Back to "like system" and portrait at the end.
+appId: de.danerd.ghulsuite.dev
+name: Design, landscape and background
+---
+- runFlow: home.yaml
+- tapOn: { id: "tab-settings" }
+# The tab keeps its place from before (on purpose): start at the top.
+- scrollUntilVisible:
+    element: "Unlocking|Entsperren"
+    direction: UP
+- scrollUntilVisible:
+    element: "Theme, language"
+    direction: DOWN
+- tapOn: "Theme, language"
+- tapOn: "Design"
+- tapOn: "dark"
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 11-01-display-dark
+- back
+- runFlow:
+    file: tour.yaml
+    env: { PREFIX: "11-dark" }
+# --- Landscape ---
+- setOrientation: LANDSCAPE_LEFT
+- waitForAnimationToEnd:
+    timeout: 3000
+- runFlow:
+    file: tour.yaml
+    env: { PREFIX: "11-landscape" }
+- setOrientation: PORTRAIT
+- waitForAnimationToEnd:
+    timeout: 3000
+# --- Background and back ---
+- tapOn: { id: "tab-cal" }
+- extendedWaitUntil:
+    visible: "Month"
+    timeout: 15000
+- pressKey: Home
+- launchApp:
+    stopApp: false
+- runFlow:
+    when:
+      visible: "Unlock with app PIN"
+    commands:
+      - tapOn: "App PIN"
+      - inputText: "246813"
+      - hideKeyboard
+      - tapOn: "Unlock with app PIN"
+- extendedWaitUntil:
+    visible: "Month"
+    timeout: 30000
+- assertNotVisible: ".*[Cc]oroutine.*"
+- takeScreenshot: 11-20-back-from-background
+# --- Light again ---
+- tapOn: { id: "tab-settings" }
+# The tab keeps its place from before (on purpose): start at the top.
+- scrollUntilVisible:
+    element: "Unlocking|Entsperren"
+    direction: UP
+- scrollUntilVisible:
+    element: "Theme, language"
+    direction: DOWN
+- tapOn: "Theme, language"
+- tapOn: "Design"
+- tapOn: "like system"
+- back

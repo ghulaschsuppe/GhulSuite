@@ -1,0 +1,102 @@
+# GhulMail in depth on the real (slow) mail servers, after 2-mail.yaml:
+#   - The mail to oneself: mark unread, open again, answer it (reply arrives).
+#   - Search in the list.
+#   - Select the conversation, delete, "Undo": back.
+appId: de.danerd.ghulsuite.dev
+name: GhulMail in depth on a real server
+---
+- runFlow: unlock.yaml
+- tapOn: { id: "tab-mail" }
+- extendedWaitUntil:
+    visible: "Encrypted message"
+    timeout: 120000
+- takeScreenshot: s5-01-inbox
+# --- Reply ---
+- tapOn: "Encrypted message"
+- extendedWaitUntil:
+    visible: "Geheimtext-Maestro-4711"
+    timeout: 60000
+- tapOn: "Reply"
+# The reply opens with the quoted mail in its text (so the field shows no "Message" label).
+- extendedWaitUntil:
+    visible: "Send"
+    timeout: 10000
+- assertVisible: "Re: Hallo vom Emulator|RE: Hallo vom Emulator|AW: Hallo vom Emulator"
+- takeScreenshot: s5-02-reply
+- tapOn:
+    text: "Send"
+    repeat: 2
+    delay: 80
+- extendedWaitUntil:
+    visible: "Message sent\\."
+    timeout: 120000
+- back
+- tapOn:
+    text: "Refresh"
+    optional: true
+# The answer arrives, once (Send was tapped twice). GhulMail shows a conversation as one row
+# with the number of its mails: "(2)" is the mail and its answer, "(3)" would be sent twice.
+- extendedWaitUntil:
+    visible: ".*\\(2\\)"
+    timeout: 120000
+- assertNotVisible: ".*\\(3\\)"
+- takeScreenshot: s5-03-reply-arrived
+# --- Mark unread ---
+- longPressOn:
+    text: "Encrypted message"
+    index: 0
+- extendedWaitUntil:
+    visible: "1 selected"
+    timeout: 10000
+# The answer arrived unread, so the conversation offers "Mark read"; a read one "Mark unread".
+- tapOn: "Mark (un)?read"
+- extendedWaitUntil:
+    notVisible: "1 selected"
+    timeout: 10000
+- takeScreenshot: s5-04-unread
+# The change goes to the mail server first ("Working ..." blocks taps meanwhile, on purpose): a
+# tap on the search field before it is done goes nowhere, and "hide keyboard" then acted as
+# "back" and closed the app.
+- extendedWaitUntil:
+    notVisible: "Working.*"
+    timeout: 60000
+# --- Search ---
+- tapOn: "Search mails"
+- inputText: "nichts-dergleichen"
+- hideKeyboard
+# The search runs by itself after typing (no search key needed) and asks the mail server.
+- extendedWaitUntil:
+    visible: "No messages found\\."
+    timeout: 60000
+- assertNotVisible: "Encrypted message"
+- assertNotVisible: ".*[Cc]oroutine.*"
+- takeScreenshot: s5-05-search-empty
+- tapOn: "nichts-dergleichen"
+- eraseText
+- hideKeyboard
+- extendedWaitUntil:
+    visible: "Encrypted message"
+    timeout: 60000
+# --- Select all, delete, undo ---
+- longPressOn:
+    text: "Encrypted message"
+    index: 0
+- extendedWaitUntil:
+    visible: "1 selected"
+    timeout: 10000
+# One conversation, already selected: "All" would do nothing, so it is not offered.
+- assertNotVisible: { id: "sel-all" }
+- tapOn: "Delete"
+- extendedWaitUntil:
+    visible: "Undo"
+    timeout: 10000
+- takeScreenshot: s5-06-deleted
+# The whole conversation was deleted (no older mail of it is left as a row of its own)…
+- assertNotVisible: "Encrypted message"
+- tapOn: "Undo"
+- extendedWaitUntil:
+    visible: "Encrypted message"
+    timeout: 60000
+# … and comes back whole.
+- assertVisible: ".*\\(2\\)"
+- takeScreenshot: s5-07-undone

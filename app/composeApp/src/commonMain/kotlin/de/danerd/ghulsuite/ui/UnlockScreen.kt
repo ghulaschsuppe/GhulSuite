@@ -224,7 +224,7 @@ fun UnlockScreen(state: AppState) {
                 )
                 Hint(stringResource(Res.string.unlock_code_new_password))
                 SecretTextField(password, { password = it; error = null }, stringResource(Res.string.l_new_password))
-                StrengthMeter(backend.passwordScore(password))
+                if (password.isNotEmpty()) StrengthMeter(backend.passwordScore(password))
                 SecretTextField(repeat, { repeat = it; error = null }, stringResource(Res.string.l_repeat_password))
                 ErrorText(error)
                 ButtonRow {

@@ -26,6 +26,7 @@ import de.danerd.ghulsuite.model.VaultUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
 import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 import de.danerd.ghulsuite.model.ImportResultUi
 import de.danerd.ghulsuite.model.SkippedImportUi
@@ -99,9 +100,9 @@ fun ImportScreen(state: AppState, padding: PaddingValues) {
                 // Items whose data would otherwise be lost (not counting 2FA codes that stay in their login).
                 val lost = p.skippedItems.count { !it.inEntry }
                 SectionCard(stringResource(Res.string.import_found, p.format)) {
-                    if (p.entries > 0) Hint(stringResource(Res.string.import_count_entries, p.entries.toString()))
-                    if (p.totps > 0) Hint(stringResource(Res.string.import_count_totps, p.totps.toString()))
-                    if (p.totpsInLogins > 0) Hint(stringResource(Res.string.import_count_login_totps, p.totpsInLogins.toString()))
+                    if (p.entries > 0) Hint(pluralStringResource(Res.plurals.import_count_entries, p.entries, p.entries.toString()))
+                    if (p.totps > 0) Hint(pluralStringResource(Res.plurals.import_count_totps, p.totps, p.totps.toString()))
+                    if (p.totpsInLogins > 0) Hint(pluralStringResource(Res.plurals.import_count_login_totps, p.totpsInLogins, p.totpsInLogins.toString()))
                     if (p.entries > 0 || (keep && lost > 0)) {
                         VaultDropdown(stringResource(Res.string.import_target_pass), passVaults, passTarget, true) { passTarget = it }
                         if (passVaults.isEmpty()) Hint(stringResource(Res.string.import_no_vault))
@@ -190,8 +191,15 @@ private fun SkippedList(items: List<SkippedImportUi>) {
 @Composable
 private fun ImportResultCard(r: ImportResultUi, onDone: () -> Unit) {
     SectionCard(stringResource(Res.string.import_result_title)) {
-        Hint(stringResource(Res.string.import_done, r.entries.toString(), r.totps.toString(), r.duplicates.toString()))
-        if (r.kept > 0) Text(stringResource(Res.string.import_result_kept, r.kept.toString()), color = okColor())
+        Hint(
+            pluralStringResource(
+                Res.plurals.import_done, r.duplicates,
+                pluralStringResource(Res.plurals.n_entries, r.entries, r.entries.toString()),
+                pluralStringResource(Res.plurals.n_2fa_accounts, r.totps, r.totps.toString()),
+                r.duplicates.toString(),
+            ),
+        )
+        if (r.kept > 0) Text(pluralStringResource(Res.plurals.import_result_kept, r.kept, r.kept.toString()), color = okColor())
     }
     if (r.skippedItems.isNotEmpty()) SkippedList(r.skippedItems)
     Button(onClick = onDone, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.a_finish)) }

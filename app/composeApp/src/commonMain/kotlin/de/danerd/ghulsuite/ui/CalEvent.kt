@@ -80,7 +80,10 @@ import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
 import org.jetbrains.compose.resources.StringResource
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.getPluralString
 import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.rememberResourceEnvironment
 import org.jetbrains.compose.resources.stringResource
 
 val REPEAT_LABELS: List<Pair<CalRepeatUi, StringResource>> = listOf(
@@ -98,13 +101,13 @@ suspend fun reminderLabel(m: Int, allDay: Boolean): String = when {
     allDay && m == 0 -> getString(Res.string.cal_rem_day_9)
     allDay && m == 1440 -> getString(Res.string.cal_rem_daybefore_9)
     allDay && m == 10080 -> getString(Res.string.cal_rem_week)
-    allDay -> getString(Res.string.cal_rem_days, (m / 1440).toString())
+    allDay -> getPluralString(Res.plurals.cal_rem_days, m / 1440, (m / 1440).toString())
     m == 0 -> getString(Res.string.cal_rem_start)
     m < 60 -> getString(Res.string.cal_rem_min, m.toString())
     m < 1440 -> getString(Res.string.cal_rem_hours, (m / 60).toString())
     m == 1440 -> getString(Res.string.cal_rem_day)
     m == 10080 -> getString(Res.string.cal_rem_week)
-    else -> getString(Res.string.cal_rem_days, (m / 1440).toString())
+    else -> getPluralString(Res.plurals.cal_rem_days, m / 1440, (m / 1440).toString())
 }
 
 @Composable
@@ -112,20 +115,20 @@ fun reminderText(m: Int, allDay: Boolean): String = when {
     allDay && m == 0 -> stringResource(Res.string.cal_rem_day_9)
     allDay && m == 1440 -> stringResource(Res.string.cal_rem_daybefore_9)
     allDay && m == 10080 -> stringResource(Res.string.cal_rem_week)
-    allDay -> stringResource(Res.string.cal_rem_days, (m / 1440).toString())
+    allDay -> pluralStringResource(Res.plurals.cal_rem_days, m / 1440, (m / 1440).toString())
     m == 0 -> stringResource(Res.string.cal_rem_start)
     m < 60 -> stringResource(Res.string.cal_rem_min, m.toString())
     m < 1440 -> stringResource(Res.string.cal_rem_hours, (m / 60).toString())
     m == 1440 -> stringResource(Res.string.cal_rem_day)
     m == 10080 -> stringResource(Res.string.cal_rem_week)
-    else -> stringResource(Res.string.cal_rem_days, (m / 1440).toString())
+    else -> pluralStringResource(Res.plurals.cal_rem_days, m / 1440, (m / 1440).toString())
 }
 
 /** Loads the calendars if a screen opens before the tab did (e.g. from a reminder). */
 @Composable
 private fun EnsureCalendars(state: AppState) {
     LaunchedEffect(Unit) {
-        if (state.calendars.isEmpty()) state.calendars = runCatching { state.backend.cal.calendars() }.getOrDefault(emptyList())
+        if (state.calendars.isEmpty()) state.calendars = catching { state.backend.cal.calendars() }.getOrDefault(emptyList())
     }
 }
 
@@ -157,13 +160,13 @@ fun CalEventScreen(state: AppState, id: String, day: String, padding: PaddingVal
     val names = rememberCalNames()
     val lang = stringResource(Res.string.cal_lang)
     LaunchedEffect(id, state.liveRevision()) {
-        runCatching { cal.event(id) }.onSuccess { e ->
+        catching { cal.event(id) }.onSuccess { e ->
             ev = e
-            here = if (e.zone.isEmpty()) null else runCatching { cal.occurrences(day, day, "", lang) }.getOrDefault(emptyList())
+            here = if (e.zone.isEmpty()) null else catching { cal.occurrences(day, day, "", lang) }.getOrDefault(emptyList())
                 .firstOrNull { it.eventId == id }?.let { it.start to it.end }
             next = if (e.repeat != CalRepeatUi.NONE) {
                 val from = (Day.parse(day) ?: today()).plus(1)
-                runCatching { cal.occurrences(from.toString(), from.plus(400).toString(), "", lang) }.getOrDefault(emptyList())
+                catching { cal.occurrences(from.toString(), from.plus(400).toString(), "", lang) }.getOrDefault(emptyList())
                     .filter { it.eventId == id }.take(3)
             } else emptyList()
         }.onFailure { gone = true }
@@ -174,7 +177,7 @@ fun CalEventScreen(state: AppState, id: String, day: String, padding: PaddingVal
     val uri = androidx.compose.ui.platform.LocalUriHandler.current
     androidx.compose.foundation.layout.Column(Modifier.padding(padding)) {
         GhulTopBar(
-            "", onLock = { state.lockNow() }, onBack = { state.pop() }, backIcon = backIcon(state),
+            "", onLock = { state.lockNow() }, onBack = { state.pop() }, backIcon = backIcon(),
             actions = {
                 if (ev != null) {
                     BarIcon(Icons.Filled.Edit, stringResource(Res.string.a_edit)) { state.push(Screen.CalEdit(ev!!)) }
@@ -203,7 +206,7 @@ fun CalEventScreen(state: AppState, id: String, day: String, padding: PaddingVal
                     if (e.allDay) {
                         if (days > 1) {
                             Text("${names.short(d0)} - ${names.short(Day.parse(end)!!)} ${Day.parse(end)!!.y}", fontWeight = FontWeight.SemiBold, color = t.fg)
-                            Text(stringResource(Res.string.cal_all_day_days, days.toString()), color = t.muted, modifier = Modifier.padding(top = 2.dp))
+                            Text(pluralStringResource(Res.plurals.cal_all_day_days, days, days.toString()), color = t.muted, modifier = Modifier.padding(top = 2.dp))
                         } else {
                             Text(names.long(d0), fontWeight = FontWeight.SemiBold, color = t.fg)
                             Text(stringResource(Res.string.cal_all_day), color = t.muted, modifier = Modifier.padding(top = 2.dp))
@@ -230,7 +233,7 @@ fun CalEventScreen(state: AppState, id: String, day: String, padding: PaddingVal
                     SheetRow(e.location, stringResource(Res.string.cal_open_map), leading = { IconTile(Icons.Filled.Place, paletteColor(7)) },
                         end = { ChevronEnd() }) {
                         val q = urlEncode(e.location)
-                        runCatching { uri.openUri(if (state.backend.isDesktop) "https://www.openstreetmap.org/search?query=$q" else "geo:0,0?q=$q") }
+                        catching { uri.openUri(if (state.backend.isDesktop) "https://www.openstreetmap.org/search?query=$q" else "geo:0,0?q=$q") }
                     }
                     first = false
                 }
@@ -468,7 +471,7 @@ fun CalEditScreen(state: AppState, start: CalEventUi, padding: PaddingValues) {
             stringResource(if (start.id.isEmpty()) Res.string.cal_new_event else Res.string.cal_edit_event),
             onLock = { state.lockNow() }, onBack = { state.back() }, backIcon = Icons.Filled.Close, showLock = false,
             actions = {
-                HeaderButton(stringResource(Res.string.a_save), onClick = ::save)
+                HeaderButton(stringResource(Res.string.a_save), enabled = !state.busy, color = areaColor(Tab.CAL), onClick = ::save)
             },
         )
         ScreenColumn {
@@ -713,9 +716,9 @@ private fun LinkSheet(state: AppState, close: () -> Unit, onPick: (CalLinkUi) ->
     var query by remember { mutableStateOf("") }
     LaunchedEffect(kind) {
         items = when (kind) {
-            "pass" -> runCatching { state.backend.listEntries(null) }.getOrDefault(emptyList())
+            "pass" -> catching { state.backend.listEntries(null) }.getOrDefault(emptyList())
                 .map { CalLinkUi("pass", it.title, "${it.vaultId}|${it.id}") }
-            "drive" -> runCatching { state.backend.net.driveRecent(60) }.getOrDefault(emptyList()).filter { !it.isDir }
+            "drive" -> catching { state.backend.net.driveRecent(60) }.getOrDefault(emptyList()).filter { !it.isDir }
                 .map { CalLinkUi("drive", it.name, it.id) }
             "mail" -> state.mailLoaded.map { CalLinkUi("mail", it.m.subject.ifBlank { it.m.from }, "${it.accountId}|${state.mailFolder}|${it.m.uid}") }
             else -> emptyList()
@@ -752,7 +755,7 @@ fun CalQuickSheet(state: AppState, close: () -> Unit) {
     val names = rememberCalNames()
     var text by remember { mutableStateOf("") }
     val focus = remember { androidx.compose.ui.focus.FocusRequester() }
-    LaunchedEffect(Unit) { kotlinx.coroutines.delay(250); runCatching { focus.requestFocus() } }
+    LaunchedEffect(Unit) { kotlinx.coroutines.delay(250); catching { focus.requestFocus() } }
     val q = if (text.isBlank()) null else cal.quickParse(text, today().toString(), minutesOf(localNow()))
     val target = q?.let { calendarFor(state, it.calendarHint) }
     val calName = state.calendars.firstOrNull { it.id == target }
@@ -852,12 +855,16 @@ fun CalendarsSheet(state: AppState, close: () -> Unit) {
     var importInto by remember { mutableStateOf<String?>(null) }
     var chooseImport by remember { mutableStateOf(false) }
     val noCalendar = stringResource(Res.string.cal_import_no_calendar)
+    // Texts looked up later (after a count is known) use the language of the screen.
+    val env = rememberResourceEnvironment()
     val save = rememberSaveFile { }
-    val doneMsg = stringResource(Res.string.cal_import_done)
     val pick = rememberOpenFile { f ->
         val target = importInto ?: return@rememberOpenFile
-        state.run(block = { cal.importIcs(target, f.bytes) }) { n ->
-            state.changed(); state.message(doneMsg.replace("%1\$s", n.toString()))
+        state.run(block = {
+            val n = cal.importIcs(target, f.bytes)
+            countText(env, Res.plurals.cal_import_done, n, n.toString())
+        }) { msg ->
+            state.changed(); state.message(msg)
         }
     }
     val e = editing
@@ -870,13 +877,13 @@ fun CalendarsSheet(state: AppState, close: () -> Unit) {
         val year = remember(state.revision) { mutableStateOf<Map<String, Int>>(emptyMap()) }
         val lang = stringResource(Res.string.cal_lang)
         LaunchedEffect(state.revision) {
-            year.value = runCatching { cal.occurrences(today().toString(), today().plus(365).toString(), "", lang) }.getOrDefault(emptyList())
+            year.value = catching { cal.occurrences(today().toString(), today().plus(365).toString(), "", lang) }.getOrDefault(emptyList())
                 .groupingBy { it.calendarId }.eachCount()
         }
         SheetList {
-            val nEvents = stringResource(Res.string.cal_n_events_year)
             state.calendars.forEachIndexed { i, c ->
-                CalVisRow(c.name, nEvents.replace("%1\$s", (year.value[c.id] ?: 0).toString()), calColor(c.color), c.id !in hidden, i > 0,
+                val n = year.value[c.id] ?: 0
+                CalVisRow(c.name, pluralStringResource(Res.plurals.cal_n_events_year, n, n.toString()), calColor(c.color), c.id !in hidden, i > 0,
                     onToggle = { settings.toggleCalHidden(c.id) }, onMore = { editing = c })
             }
             if (state.backend.settings.calRegion.isNotEmpty()) {
@@ -1026,7 +1033,7 @@ fun CalSettingsSection(state: AppState) {
     val settings = state.backend.settings
     val cal = state.backend.cal
     val lang = stringResource(Res.string.cal_lang)
-    val regions = remember(lang) { runCatching { cal.regions(lang) }.getOrDefault(emptyList()) }
+    val regions = remember(lang) { catching { cal.regions(lang) }.getOrDefault(emptyList()) }
     var regionSheet by remember { mutableStateOf(false) }
     var calSheet by remember { mutableStateOf(false) }
     val testText = stringResource(Res.string.cal_test_title)
@@ -1034,11 +1041,10 @@ fun CalSettingsSection(state: AppState) {
     SectionCard(areaGroupTitle(de.danerd.ghulsuite.model.VaultKindUi.CAL)) {
         SwitchRow(stringResource(Res.string.cal_show_holidays), settings.calHolidays) { settings.calHolidays = it; state.refreshCalendar() }
         Hint(stringResource(Res.string.cal_holidays_offline))
-        Row(Modifier.fillMaxWidth().heightIn(min = 40.dp).clickable { regionSheet = true }, verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(Res.string.cal_region), Modifier.weight(1f), fontSize = 15.sp)
-            Text(regions.firstOrNull { it.code == settings.calRegion }?.name ?: stringResource(Res.string.cal_region_none), fontSize = 14.sp, color = g.muted)
-            ChevronEnd()
-        }
+        LabelValueRow(
+            stringResource(Res.string.cal_region),
+            regions.firstOrNull { it.code == settings.calRegion }?.name ?: stringResource(Res.string.cal_region_none),
+        ) { regionSheet = true }
         ChoiceRow(stringResource(Res.string.cal_default_timed),
             listOf(-1 to Res.string.cal_no_reminder, 0 to Res.string.cal_rem_start, 5 to Res.string.cal_rem_5, 10 to Res.string.cal_rem_10, 15 to Res.string.cal_rem_15,
                 30 to Res.string.cal_rem_30, 60 to Res.string.cal_rem_60, 1440 to Res.string.cal_rem_day), settings.calDefaultReminder) { settings.calDefaultReminder = it }
@@ -1061,7 +1067,7 @@ fun CalSettingsSection(state: AppState) {
             fontSize = 14.sp, color = g.muted)
         SingleChoiceSegmentedButtonRow {
             listOf(Res.string.cal_lock_min, Res.string.cal_lock_title, Res.string.cal_lock_full).forEachIndexed { i, r ->
-                SegmentedButton(settings.calNotifyDetail == i, { settings.calNotifyDetail = i; state.refreshCalendar() }) { Text(stringResource(r)) }
+                SegmentedButton(settings.calNotifyDetail == i, { settings.calNotifyDetail = i; state.refreshCalendar() }) { SegLabel(stringResource(r)) }
             }
         }
         OutlinedButton(onClick = { state.calTestReminder(testText) }, modifier = Modifier.fillMaxWidth()) {

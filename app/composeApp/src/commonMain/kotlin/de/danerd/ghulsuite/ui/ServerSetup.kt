@@ -5,12 +5,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Icon
@@ -56,6 +58,10 @@ class ServerForm {
     var installKey by mutableStateOf(true)
     /** Fingerprint of the SSH host key or TLS certificate the user confirmed. */
     var confirmed by mutableStateOf<String?>(null)
+    /** The login was tried and works (only then the folder can be chosen). */
+    var connected by mutableStateOf(false)
+    /** The last "Test connection" failed: the checklist says so instead of "still to do". */
+    var connectFailed by mutableStateOf(false)
     /** Chosen folder, relative to the login folder ("" = none chosen yet). */
     var folder by mutableStateOf("")
     var installed by mutableStateOf<PhpInstalledUi?>(null)
@@ -74,6 +80,7 @@ class ServerForm {
     fun missing(): StringResource? = when {
         savedId != null -> null
         !loginReady -> Res.string.srvf_step_login
+        !connected -> Res.string.srvf_step_connect
         folder.isBlank() -> Res.string.srvf_step_folder
         kind == ServerKindUi.PHP && installed?.key.isNullOrEmpty() -> Res.string.srvf_step_upload
         kind == ServerKindUi.PHP -> Res.string.srvf_step_check
@@ -85,10 +92,19 @@ class ServerForm {
         input = input.copy(port = if (k == ServerKindUi.SFTP) 22 else 21, password = if (k == ServerKindUi.SFTP) null else "")
         usePassword = k != ServerKindUi.SFTP
         confirmed = null
+        connected = false
         folder = ""
         installed = null
         address = ""
         savedId = null
+    }
+
+    /** The login changed: test it again, then choose the folder again. */
+    fun relogin() {
+        connected = false
+        connectFailed = false
+        folder = ""
+        installed = null
     }
 
     /** The login as typed: SFTP/FTPS directly, for the PHP module its FTPS upload login. */
@@ -102,10 +118,11 @@ class ServerForm {
 fun rememberServerForm(): ServerForm = remember { ServerForm() }
 
 /**
- * One server form for the setup wizard, GhulDrive and the options: SFTP and FTPS log in and pick
- * a folder from the server's own list, then test the connection (which stores the server). The
- * PHP module logs in to the web hosting once with FTPS, picks a folder, uploads the module and
- * checks the address the app suggests. A checklist below names what is still missing.
+ * One server form for the setup wizard, GhulDrive and the options. First the login is tested
+ * ("Test connection"); only a working login gets to pick a folder from the server's own list,
+ * then the server is saved. The PHP module logs in to the web hosting once with FTPS the same
+ * way, picks a folder, uploads the module and checks the address the app suggests. A numbered
+ * checklist below names what is still missing.
  *
  * [save] stores the checked server (suite list for synchronisation, Drive file for GhulDrive).
  */
@@ -123,11 +140,11 @@ fun ServerSetup(
     var afterConfirm by remember { mutableStateOf<(() -> Unit)?>(null) }
     var picking by remember { mutableStateOf(false) }
     var publicKey by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(Unit) { publicKey = runCatching { net.sshPublicKey() }.getOrNull() }
+    LaunchedEffect(Unit) { publicKey = catching { net.sshPublicKey() }.getOrNull() }
 
     SingleChoiceSegmentedButtonRow {
         for ((k, label) in listOf(ServerKindUi.SFTP to "SFTP", ServerKindUi.FTPS to "FTPS", ServerKindUi.PHP to stringResource(Res.string.srvf_kind_php))) {
-            SegmentedButton(form.kind == k, { if (form.kind != k) { form.switchKind(k); error = null } }) { Text(label) }
+            SegmentedButton(form.kind == k, { if (form.kind != k) { form.switchKind(k); error = null } }) { SegLabel(label) }
         }
     }
 
@@ -177,25 +194,25 @@ fun ServerSetup(
     if (form.kind == ServerKindUi.PHP) HintText(stringResource(Res.string.srvf_php_intro))
     // Login (for the PHP module: the FTPS login of the web hosting).
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedTextField(form.input.host, { form.input = form.input.copy(host = it.trim()); form.folder = ""; error = null }, Modifier.weight(3f),
+        OutlinedTextField(form.input.host, { form.input = form.input.copy(host = it.trim()); form.relogin(); error = null }, Modifier.weight(3f),
             label = { Text(stringResource(if (form.kind == ServerKindUi.PHP) Res.string.srvf_host_php else Res.string.server_host)) }, singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
         OutlinedTextField(if (form.input.port == 0) "" else form.input.port.toString(),
-            { v -> form.input = form.input.copy(port = v.filter(Char::isDigit).take(5).toIntOrNull() ?: 0) }, Modifier.weight(1f),
+            { v -> form.input = form.input.copy(port = v.filter(Char::isDigit).take(5).toIntOrNull() ?: 0); form.relogin() }, Modifier.weight(1f),
             label = { Text(stringResource(Res.string.server_port)) }, singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
     }
-    OutlinedTextField(form.input.user, { form.input = form.input.copy(user = it.trim()); error = null }, Modifier.fillMaxWidth(),
+    OutlinedTextField(form.input.user, { form.input = form.input.copy(user = it.trim()); form.relogin(); error = null }, Modifier.fillMaxWidth(),
         label = { Text(stringResource(Res.string.server_user)) }, singleLine = true)
     if (form.kind == ServerKindUi.SFTP) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(!form.usePassword, { form.usePassword = false }, label = { Text(stringResource(Res.string.server_auth_key)) })
-            FilterChip(form.usePassword, { form.usePassword = true; if (form.input.password == null) form.input = form.input.copy(password = "") },
+        ChipRow {
+            FilterChip(!form.usePassword, { form.usePassword = false; form.relogin() }, label = { Text(stringResource(Res.string.server_auth_key)) })
+            FilterChip(form.usePassword, { form.usePassword = true; form.relogin(); if (form.input.password == null) form.input = form.input.copy(password = "") },
                 label = { Text(stringResource(Res.string.server_auth_password)) })
         }
     }
     if (form.kind != ServerKindUi.SFTP || form.usePassword) {
-        SecretTextField(form.input.password.orEmpty(), { form.input = form.input.copy(password = it); error = null }, stringResource(Res.string.server_password))
+        SecretTextField(form.input.password.orEmpty(), { form.input = form.input.copy(password = it); form.relogin(); error = null }, stringResource(Res.string.server_password))
     }
     if (form.kind == ServerKindUi.SFTP && form.usePassword) {
         SwitchRow(stringResource(Res.string.server_install_key), form.installKey) { form.installKey = it }
@@ -204,14 +221,39 @@ fun ServerSetup(
         publicKey?.let { PublicKeyBox(state, it) }
     }
 
-    // Folder from the server's own list.
-    ListCard {
-        ListRow(
-            if (form.folder.isBlank()) stringResource(Res.string.srvf_folder_choose) else form.folder.trimEnd('/') + "/",
-            stringResource(if (form.folder.isBlank()) Res.string.srvf_folder_choose_sub else Res.string.srvf_folder_change),
-            leading = { IconTile(Icons.Filled.Folder, paletteColor(9)) },
-            onClick = { if (form.loginReady) picking = true else error = loginFirst },
-        )
+    // Step 1: test the login. Only a working login gets to choose a folder.
+    fun connect() {
+        state.run(onError = { error = it; form.connectFailed = true }, block = { net.serverBrowseInput(form.login(), form.confirmed, "") }) { r ->
+            when (r) {
+                is ServerFoldersUi.Confirm -> {
+                    fingerprint = r.fingerprint
+                    afterConfirm = { connect() }
+                }
+                is ServerFoldersUi.Folders -> {
+                    error = null
+                    form.connectFailed = false
+                    form.connected = true
+                    // Straight on to step 2.
+                    picking = true
+                }
+            }
+        }
+    }
+    if (!form.connected) {
+        Button(onClick = { if (form.loginReady) connect() else error = loginFirst }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(if (state.busy) Res.string.srvf_connecting else Res.string.srvf_test))
+        }
+    } else {
+        Banner(Icons.Filled.CheckCircle, stringResource(if (form.folder.isBlank()) Res.string.srvf_connect_ok else Res.string.srvf_connect_folder))
+        // Step 2: folder from the server's own list.
+        ListCard {
+            ListRow(
+                if (form.folder.isBlank()) stringResource(Res.string.srvf_folder_choose) else form.folder.trimEnd('/') + "/",
+                stringResource(if (form.folder.isBlank()) Res.string.srvf_folder_choose_sub else Res.string.srvf_folder_change),
+                leading = { IconTile(Icons.Filled.Folder, paletteColor(9)) },
+                onClick = { picking = true },
+            )
+        }
     }
 
     val installed = form.installed
@@ -237,7 +279,7 @@ fun ServerSetup(
         }, enabled = !state.busy && form.address.startsWith("https://"), modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(Res.string.srvf_check_address))
         }
-    } else if (form.folder.isNotBlank()) {
+    } else if (form.connected && form.folder.isNotBlank()) {
         if (form.kind == ServerKindUi.PHP) {
             FilledTonalButton(onClick = {
                 fun install(confirmed: String?) {
@@ -255,8 +297,8 @@ fun ServerSetup(
                 install(form.confirmed)
             }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.srvf_upload)) }
         } else {
-            FilledTonalButton(onClick = { test() }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(Res.string.srvf_test))
+            Button(onClick = { test() }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(if (state.busy) Res.string.srvf_saving else Res.string.srvf_save))
             }
         }
     }
@@ -290,15 +332,21 @@ fun ServerSetup(
 fun ServerChecklist(form: ServerForm) {
     val steps = buildList {
         add(Res.string.srvf_step_login to form.loginReady)
+        add(Res.string.srvf_step_connect to form.connected)
         add(Res.string.srvf_step_folder to form.folder.isNotBlank())
         if (form.kind == ServerKindUi.PHP) add(Res.string.srvf_step_upload to !form.installed?.key.isNullOrEmpty())
         add((if (form.kind == ServerKindUi.PHP) Res.string.srvf_step_check else Res.string.srvf_step_test) to (form.savedId != null))
     }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        for ((label, done) in steps) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Icon(if (done) Icons.Filled.CheckCircle else Icons.Filled.Schedule, null, Modifier.size(14.dp), tint = if (done) okColor() else g.faint)
-                Text(stringResource(label), fontSize = 12.sp, color = if (done) g.fg else g.muted)
+    // One step per line: side by side, long names (and five steps) do not fit on a phone.
+    Column(Modifier.fillMaxWidth().padding(start = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        steps.forEachIndexed { i, (label, done) ->
+            val failed = !done && label == Res.string.srvf_step_connect && form.connectFailed
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(
+                    when { done -> Icons.Filled.CheckCircle; failed -> Icons.Filled.Error; else -> Icons.Filled.Schedule }, null, Modifier.size(16.dp),
+                    tint = when { done -> okColor(); failed -> g.danger; else -> g.faint },
+                )
+                Text("${i + 1}. " + stringResource(label), fontSize = 13.sp, color = when { done -> g.fg; failed -> g.danger; else -> g.muted })
             }
         }
     }
@@ -320,14 +368,20 @@ private fun FolderPicker(
     var newName by remember { mutableStateOf<String?>(null) }
     var reload by remember { mutableStateOf(0) }
 
+    // Read directly, not through state.run: that runs one action at a time and would drop this
+    // listing while another one is still busy (the list would then stay at "Reading folders").
+    // Tapping on to the next folder cancels the listing of the last one.
     LaunchedEffect(path, reload, form.confirmed) {
         folders = null
-        state.run(onError = { error = it }, block = { net.serverBrowseInput(form.login(), form.confirmed, path) }) { r ->
-            when (r) {
-                is ServerFoldersUi.Confirm -> onFingerprint(r.fingerprint) { reload++ }
-                is ServerFoldersUi.Folders -> { folders = r.folders; error = null }
+        error = null
+        catching { net.serverBrowseInput(form.login(), form.confirmed, path) }
+            .onSuccess { r ->
+                when (r) {
+                    is ServerFoldersUi.Confirm -> onFingerprint(r.fingerprint) { reload++ }
+                    is ServerFoldersUi.Folders -> folders = r.folders
+                }
             }
-        }
+            .onFailure { error = describe(it) }
     }
     val join = { name: String -> if (path.isEmpty()) name else "$path/$name" }
 

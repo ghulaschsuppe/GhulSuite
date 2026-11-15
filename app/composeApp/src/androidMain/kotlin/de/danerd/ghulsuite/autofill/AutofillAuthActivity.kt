@@ -64,6 +64,9 @@ import org.jetbrains.compose.resources.stringResource
  * to that app (`androidapp://` URL), so it is offered directly next time.
  */
 class AutofillAuthActivity : ComponentActivity() {
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean =
+        de.danerd.ghulsuite.guardStaleTextKey { super.dispatchKeyEvent(event) }
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -71,7 +74,7 @@ class AutofillAuthActivity : ComponentActivity() {
         val backend = ghul.backend
         // L10: no taps while another app draws over the login choice (tapjacking).
         window.decorView.filterTouchesWhenObscured = true
-        if (!backend.settings.allowScreenshots) {
+        if (!backend.settings.allowScreenshots && !de.danerd.ghulsuite.TestDevice.screenshotsAllowed(this)) {
             window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         }
         val domain = intent.getStringExtra(EXTRA_DOMAIN)

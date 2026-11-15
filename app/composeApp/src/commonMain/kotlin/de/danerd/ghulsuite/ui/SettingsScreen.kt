@@ -95,15 +95,7 @@ private val THEME_OPTIONS: List<Pair<ThemeMode, StringResource>> = listOf(
 @Composable
 fun <T> ChoiceRow(label: String, options: List<Pair<T, StringResource>>, selected: T, onSelect: (T) -> Unit) {
     var open by remember { mutableStateOf(false) }
-    val t = g
-    Row(
-        Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { open = true },
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(label, Modifier.weight(1f), fontSize = 15.sp)
-        Text(stringResource(options.firstOrNull { it.first == selected }?.second ?: options.first().second), fontSize = 13.sp, color = t.faint)
-        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.padding(start = 6.dp).size(18.dp), tint = t.faint)
-    }
+    LabelValueRow(label, stringResource(options.firstOrNull { it.first == selected }?.second ?: options.first().second)) { open = true }
     if (open) {
         GhulSheet({ open = false }, label) {
             SheetList {
@@ -135,7 +127,7 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
     var keyfileDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.liveRevision()) {
-        slots = runCatching { backend.slots() }.getOrDefault(emptyList())
+        slots = catching { backend.slots() }.getOrDefault(emptyList())
         ready = backend.quickUnlockReady()
     }
     val keyCount = slots.count { it.type == SlotType.SECURITY_KEY }
@@ -303,7 +295,9 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                         .filter { it.first < state.tabs.size - 1 },
                     settings.startTab,
                 ) { settings.startTab = it }
-                Hint(stringResource(Res.string.set_start_hint, state.tabs.dropLast(1).joinToString(", ")))
+                // F90: name the areas, not the internal tab codes.
+                val order = state.tabs.dropLast(1).map { stringResource(tabTitle(it)) }
+                Hint(stringResource(Res.string.set_start_hint, order.joinToString(", ")))
                 OutlinedButton(onClick = { state.push(Screen.SettingsPage(SetPage.MODULES)) }, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(Res.string.set_areas_in_bar))
                 }
@@ -523,7 +517,8 @@ fun ChangePasswordScreen(state: AppState, padding: PaddingValues) {
                 Hint(stringResource(Res.string.set_change_pw_text))
                 SecretTextField(current, { current = it; error = null }, stringResource(Res.string.l_current_password))
                 SecretTextField(new, { new = it; error = null }, stringResource(Res.string.l_new_password))
-                StrengthMeter(state.backend.passwordScore(new))
+                // Only once something is typed: an empty field is not "very weak".
+                if (new.isNotEmpty()) StrengthMeter(state.backend.passwordScore(new))
                 SecretTextField(repeat, { repeat = it; error = null }, stringResource(Res.string.l_repeat_password))
                 ErrorText(error)
                 val done = stringResource(Res.string.msg_password_changed)
@@ -571,9 +566,9 @@ private fun AboutSection(state: AppState) {
     val imprintUrl = stringResource(Res.string.about_imprint_url)
     val privacyUrl = stringResource(Res.string.about_privacy_url)
     ListCard {
-        ListRow(stringResource(Res.string.about_site), "www.ghulsuite.de", trailing = { ChevronEnd() }) { runCatching { uri.openUri(siteUrl) } }
-        ListRow(stringResource(Res.string.about_imprint), divider = true, trailing = { ChevronEnd() }) { runCatching { uri.openUri(imprintUrl) } }
-        ListRow(stringResource(Res.string.about_privacy), stringResource(Res.string.about_privacy_sub), divider = true, trailing = { ChevronEnd() }) { runCatching { uri.openUri(privacyUrl) } }
+        ListRow(stringResource(Res.string.about_site), "www.ghulsuite.de", trailing = { ChevronEnd() }) { catching { uri.openUri(siteUrl) } }
+        ListRow(stringResource(Res.string.about_imprint), divider = true, trailing = { ChevronEnd() }) { catching { uri.openUri(imprintUrl) } }
+        ListRow(stringResource(Res.string.about_privacy), stringResource(Res.string.about_privacy_sub), divider = true, trailing = { ChevronEnd() }) { catching { uri.openUri(privacyUrl) } }
     }
     ListCard {
         ListRow(stringResource(Res.string.about_report), stringResource(Res.string.about_report_sub), trailing = { ChevronEnd() }) { sheet = "report" }

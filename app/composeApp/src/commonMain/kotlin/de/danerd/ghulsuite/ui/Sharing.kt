@@ -29,6 +29,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Attachment
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Folder
@@ -44,6 +45,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -61,6 +63,8 @@ import de.danerd.ghulsuite.model.ShareInfoUi
 import de.danerd.ghulsuite.model.ShareOptionsUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.rememberResourceEnvironment
 import org.jetbrains.compose.resources.stringResource
 
 private val Blue = Color(0xFF2F74E8)
@@ -79,7 +83,7 @@ fun rememberMailAvailable(state: AppState): Boolean {
     var available by remember { mutableStateOf(false) }
     val enabled = state.backend.settings.moduleGhulMail
     LaunchedEffect(enabled, state.liveRevision()) {
-        available = enabled && runCatching { state.backend.net.mailAccounts() }.getOrDefault(emptyList()).isNotEmpty()
+        available = enabled && catching { state.backend.net.mailAccounts() }.getOrDefault(emptyList()).isNotEmpty()
     }
     return available && enabled
 }
@@ -100,9 +104,9 @@ fun ShareSheet(state: AppState, files: List<DriveItemUi>, onDismiss: () -> Unit,
     var result by remember { mutableStateOf<ShareInfoUi?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     val mail = rememberMailAvailable(state)
-    LaunchedEffect(Unit) { servers = runCatching { net.servers() }.getOrDefault(emptyList()).filter { it.canShare } }
+    LaunchedEffect(Unit) { servers = catching { net.servers() }.getOrDefault(emptyList()).filter { it.canShare } }
     val onlyFiles = files.none { it.isDir }
-    val title = if (files.size == 1) files[0].name else stringResource(Res.string.share_n_items, files.size.toString())
+    val title = if (files.size == 1) files[0].name else pluralStringResource(Res.plurals.share_n_items, files.size, files.size.toString())
 
     result?.let { info ->
         ShareResultDialog(state, info, mail, onDismiss = { result = null; onDone() })
@@ -234,7 +238,7 @@ fun ShareOptionsForm(
 private fun expiryLabel(days: Int): String = when (days) {
     0 -> stringResource(Res.string.share_never)
     1 -> stringResource(Res.string.share_1_day)
-    else -> stringResource(Res.string.share_days, days.toString())
+    else -> pluralStringResource(Res.plurals.share_days, days, days.toString())
 }
 
 /** The finished link: copy it, or hand it to GhulMail when that module is available. */
@@ -280,8 +284,8 @@ private fun shareSummary(info: ShareInfoUi): String {
     val expiry = if (info.expires == 0L) stringResource(Res.string.share_never) else stringResource(Res.string.share_until, formatDateTime(info.expires))
     val count = when {
         info.downloads < 0 -> ""
-        info.maxDownloads > 0 -> " · " + stringResource(Res.string.share_count_of, info.downloads.toString(), info.maxDownloads.toString())
-        else -> " · " + stringResource(Res.string.share_count, info.downloads.toString())
+        info.maxDownloads > 0 -> " · " + pluralStringResource(Res.plurals.share_count_of, info.maxDownloads, info.downloads.toString(), info.maxDownloads.toString())
+        else -> " · " + pluralStringResource(Res.plurals.share_count, info.downloads.pluralCount(), info.downloads.toString())
     }
     return expiry + count
 }
@@ -297,8 +301,8 @@ fun SharesScreen(state: AppState, padding: PaddingValues) {
     var retry by remember { mutableStateOf(0) }
     val mail = rememberMailAvailable(state)
     LaunchedEffect(state.liveRevision(), retry) {
-        servers = runCatching { net.servers() }.getOrDefault(emptyList())
-        runCatching { net.shareList() }.onSuccess { shares = it; error = null }.onFailure { error = describe(it); if (shares == null) shares = emptyList() }
+        servers = catching { net.servers() }.getOrDefault(emptyList())
+        catching { net.shareList() }.onSuccess { shares = it; error = null }.onFailure { error = describe(it); if (shares == null) shares = emptyList() }
     }
     val withdrawnMsg = stringResource(Res.string.share_withdrawn)
     // Withdrawing asks nothing: the link is gone from the list at once, "Undo" brings it back.
@@ -350,7 +354,7 @@ fun ShareSetupScreen(state: AppState, serverId: String, padding: PaddingValues) 
     var error by remember { mutableStateOf<String?>(null) }
     var newDir by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        server = runCatching { net.servers() }.getOrDefault(emptyList()).firstOrNull { it.id == serverId }
+        server = catching { net.servers() }.getOrDefault(emptyList()).firstOrNull { it.id == serverId }
         server?.let { s ->
             if (s.shareDir.isNotEmpty()) path = s.shareDir
             if (s.shareUrl.isNotEmpty()) url = s.shareUrl
@@ -358,10 +362,8 @@ fun ShareSetupScreen(state: AppState, serverId: String, padding: PaddingValues) 
     }
     LaunchedEffect(path) {
         error = null
-        dirs = try {
-            net.serverBrowse(serverId, path)
-        } catch (e: Exception) {
-            error = e.message
+        dirs = catching { net.serverBrowse(serverId, path) }.getOrElse {
+            error = describe(it)
             emptyList()
         }
     }
@@ -395,11 +397,23 @@ fun ShareSetupScreen(state: AppState, serverId: String, padding: PaddingValues) 
             }
             SectionCard(stringResource(Res.string.share_setup_step3)) {
                 for (c in checks) {
+                    // "skipped" (SHARE_CHECK_SKIPPED in the core's shares.rs): the https step
+                    // failed, so this step could not be checked.
+                    val skipped = !c.ok && c.detail == "skipped"
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(if (c.ok) Icons.Filled.CheckCircle else Icons.Filled.Error, null, tint = if (c.ok) g.ok else g.danger)
+                        Icon(
+                            when { c.ok -> Icons.Filled.CheckCircle; skipped -> Icons.Filled.RadioButtonUnchecked; else -> Icons.Filled.Error },
+                            null, tint = when { c.ok -> g.ok; skipped -> g.faint; else -> g.danger },
+                        )
                         Column(Modifier.weight(1f)) {
-                            Text(checkLabel(c.step))
-                            if (!c.ok && c.detail.isNotBlank()) Hint(c.detail)
+                            Text(checkLabel(c.step), color = if (skipped) g.muted else Color.Unspecified)
+                            if (skipped) Hint(stringResource(Res.string.share_check_skipped))
+                            else if (!c.ok && c.detail.isNotBlank()) {
+                                // Known causes ("server address not found") in the app's language.
+                                val env = rememberResourceEnvironment()
+                                val detail by produceState(c.detail, c.detail) { value = coreText(env, c.detail) ?: c.detail }
+                                Hint(detail)
+                            }
                         }
                     }
                 }
@@ -442,10 +456,10 @@ fun DriveSettingsSection(state: AppState) {
     val net = state.backend.net
     val settings = state.backend.settings
     var status by remember { mutableStateOf<DriveStatusUi?>(null) }
-    LaunchedEffect(state.liveRevision()) { status = runCatching { net.driveStatus() }.getOrNull() }
+    LaunchedEffect(state.liveRevision()) { status = catching { net.driveStatus() }.getOrNull() }
     SectionCard(areaGroupTitle(de.danerd.ghulsuite.model.VaultKindUi.DRIVE)) {
         DriveStorageRow(state)
-        status?.takeIf { it.serverId != null }?.let { Hint(stringResource(Res.string.drive_status, it.files.toString(), formatSize(it.bytes))) }
+        status?.takeIf { it.serverId != null }?.let { Hint(pluralStringResource(Res.plurals.drive_status, it.files, it.files.toString(), formatSize(it.bytes))) }
         ChoiceRow(
             stringResource(Res.string.drive_trash_days),
             listOf(7 to Res.string.drive_days_7, 30 to Res.string.drive_days_30, 90 to Res.string.drive_days_90, 0 to Res.string.drive_days_never),
