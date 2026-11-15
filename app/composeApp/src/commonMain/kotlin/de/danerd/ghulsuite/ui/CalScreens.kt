@@ -406,9 +406,11 @@ fun CalScreen(state: AppState, padding: PaddingValues) {
  */
 fun deleteOccurrences(state: AppState, list: List<CalOccurrenceUi>, msg: String) {
     val keys = list.map { o -> if (o.repeating) hiddenKey("cal", o.eventId, o.startDay.toString()) else hiddenKey("cal", "event", o.eventId) }
-    state.undoable(keys, msg) {
-        for (o in list) {
-            state.backend.cal.deleteEvent(o.eventId, o.startDay.toString(), if (o.repeating) CalDeleteModeUi.ONE else CalDeleteModeUi.ALL)
+    state.askDelete(list.map { it.title }) {
+        state.undoable(keys, msg) {
+            for (o in list) {
+                state.backend.cal.deleteEvent(o.eventId, o.startDay.toString(), if (o.repeating) CalDeleteModeUi.ONE else CalDeleteModeUi.ALL)
+            }
         }
     }
 }

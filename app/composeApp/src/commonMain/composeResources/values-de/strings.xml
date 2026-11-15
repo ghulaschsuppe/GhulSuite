@@ -15,6 +15,19 @@
     <string name="a_copy">Kopieren</string>
     <string name="a_create">Erstellen</string>
     <string name="a_delete">Löschen</string>
+    <string name="ask_delete_title">Löschen?</string>
+    <string name="ask_trash_title">In den Papierkorb verschieben?</string>
+    <string name="ask_delete_named">„%1$s“ wird gelöscht.</string>
+    <string name="ask_trash_named">„%1$s“ kommt in den Papierkorb.</string>
+    <plurals name="ask_delete_n">
+        <item quantity="one">%1$s Element wird gelöscht.</item>
+        <item quantity="other">%1$s Elemente werden gelöscht.</item>
+    </plurals>
+    <plurals name="ask_trash_n">
+        <item quantity="one">%1$s Element kommt in den Papierkorb.</item>
+        <item quantity="other">%1$s Elemente kommen in den Papierkorb.</item>
+    </plurals>
+    <string name="a_to_trash">In den Papierkorb</string>
     <string name="a_edit">Bearbeiten</string>
     <string name="a_export">Exportieren</string>
     <string name="a_export_plain">Unverschlüsselt exportieren</string>

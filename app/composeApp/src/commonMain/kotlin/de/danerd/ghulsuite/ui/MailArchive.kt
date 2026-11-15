@@ -460,10 +460,12 @@ fun MailArchiveReadScreen(state: AppState, accountId: String, folder: String, ke
                 }
             }
             BarIcon(Icons.Filled.Delete, stringResource(Res.string.a_delete), tint = g.danger) {
-                state.pop()
-                state.undoable(listOf(hiddenKey("archive", "$accountId/$folder", key)), deleted, action = {
-                    net.archiveDelete(accountId, listOf(ref))
-                })
+                state.askDelete(listOf(message?.subject ?: "")) {
+                    state.pop()
+                    state.undoable(listOf(hiddenKey("archive", "$accountId/$folder", key)), deleted, action = {
+                        net.archiveDelete(accountId, listOf(ref))
+                    })
+                }
             }
         })
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 20.dp)) {

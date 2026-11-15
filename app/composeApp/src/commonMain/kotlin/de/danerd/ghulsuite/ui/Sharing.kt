@@ -305,8 +305,10 @@ fun SharesScreen(state: AppState, padding: PaddingValues) {
         catching { net.shareList() }.onSuccess { shares = it; error = null }.onFailure { error = describe(it); if (shares == null) shares = emptyList() }
     }
     val withdrawnMsg = stringResource(Res.string.share_withdrawn)
-    // Withdrawing asks nothing: the link is gone from the list at once, "Undo" brings it back.
-    fun withdraw(s: ShareInfoUi) = state.undoable(listOf(hiddenKey("share", "", s.id)), withdrawnMsg) { net.shareDelete(s.id) }
+    // F103: withdrawing asks first; the link is then gone from the list, "Undo" brings it back.
+    fun withdraw(s: ShareInfoUi) = state.askDelete(listOf(s.name)) {
+        state.undoable(listOf(hiddenKey("share", "", s.id)), withdrawnMsg) { net.shareDelete(s.id) }
+    }
     Column(Modifier.padding(padding)) {
         ScreenColumn {
             BusyBanner(state)

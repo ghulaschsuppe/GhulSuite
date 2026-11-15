@@ -265,7 +265,9 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
     fun remove(list: List<MailItem>, message: String, action: suspend (MailItem) -> Unit) {
         state.undoable(list.map(::hideKey), message.replace("%1\$s", list.size.toString()), after = { reload++ }) { list.forEach { action(it) } }
     }
-    fun delete(list: List<MailItem>) = remove(list, trashMsg) { net.mailDelete(it.accountId, folder, it.m.uid) }
+    fun delete(list: List<MailItem>) = state.askDelete(list.map { it.m.subject }, trash = true) {
+        remove(list, trashMsg) { net.mailDelete(it.accountId, folder, it.m.uid) }
+    }
     fun archive(list: List<MailItem>) = scope.launch {
         // Without an archive folder there is nothing to archive into: it says so, nothing happens.
         val targets = list.associateWith { net.catching { mailFolders(it.accountId) }.getOrDefault(emptyList()).firstOrNull { f -> f.role == "archive" } }

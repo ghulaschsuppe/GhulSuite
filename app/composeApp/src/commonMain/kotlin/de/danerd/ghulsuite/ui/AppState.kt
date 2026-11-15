@@ -480,6 +480,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     confirmDiscard = false
                     pendingTab = null
                     driveIncoming = null
+                    deleteAsk = null
                     dropPending()
                     stack.clear()
                     tab = tabs.first()
@@ -894,6 +895,20 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
 
     /** The message of [doneWithUndo] (a lock takes it away: "Undo" cannot work after it). */
     private var doneUndoMessage: String? = null
+
+    /** A deletion waiting for "Delete?" to be answered (F103: every deletion asks first). */
+    class DeleteAsk(val names: List<String>, val trash: Boolean, val action: () -> Unit)
+
+    var deleteAsk by mutableStateOf<DeleteAsk?>(null)
+
+    /**
+     * Asks before deleting (or moving to a trash) [names]; [action] runs only after "Delete".
+     * Every area deletes through this; "Undo" afterwards stays as it was.
+     */
+    fun askDelete(names: List<String>, trash: Boolean = false, action: () -> Unit) {
+        if (names.isEmpty()) return
+        deleteAsk = DeleteAsk(names, trash, action)
+    }
 
     /** Carries out the action that waits for "Undo" now (before the next one, before locking). */
     suspend fun settlePending() {

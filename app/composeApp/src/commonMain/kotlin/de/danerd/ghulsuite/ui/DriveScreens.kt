@@ -390,9 +390,9 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
     val chosen = visible.filter { it.id in selected }
     val trashMsg = stringResource(Res.string.msg_moved_to_trash)
     val deletedMsg = stringResource(Res.string.msg_deleted_n)
-    fun toTrash(list: List<DriveItemUi>) {
+    fun moveToTrash(list: List<DriveItemUi>) {
         selected.clear()
-        // Into the trash: no question, "Undo" brings it back (and the trash keeps it for days).
+        // Into the trash after "Move to the trash?" (F103); "Undo" brings it back, the trash keeps it for days.
         // F96: moved at once, so the number of files and the storage are right at once. Not
         // through state.run: a tap while the app is busy must not be dropped.
         scope.launch {
@@ -411,7 +411,8 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
             }
         }
     }
-    fun deleteForever(list: List<DriveItemUi>) {
+    fun toTrash(list: List<DriveItemUi>) = state.askDelete(list.map { it.name }, trash = true) { moveToTrash(list) }
+    fun deleteForever(list: List<DriveItemUi>) = state.askDelete(list.map { it.name }) {
         selected.clear()
         state.undoable(list.map { hiddenKey("drive", "trash", it.id) }, deletedMsg.replace("%1\$s", list.size.toString()), after = { trashTick++ }) {
             list.forEach { net.driveDeleteForever(it.id) }
@@ -444,7 +445,7 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
                 },
                 // One file goes with "Undo"; several at once for good ask first.
                 SelAction(Icons.Filled.DeleteForever, stringResource(Res.string.drive_delete_forever), danger = true) {
-                    if (chosen.size == 1) deleteForever(chosen) else foreverMany = chosen
+                    deleteForever(chosen)
                 },
             ) else listOf(
                 SelAction(Icons.AutoMirrored.Filled.Send, stringResource(Res.string.a_share)) { sharing = chosen },

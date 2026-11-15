@@ -210,6 +210,26 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
             dismissButton = { TextButton(onClick = { state.recoveredGuide = false }) { Text(stringResource(Res.string.a_later)) } },
         )
     }
+    state.deleteAsk?.let { ask ->
+        val one = ask.names.singleOrNull()
+        AlertDialog(
+            danger = true,
+            onDismissRequest = { state.deleteAsk = null },
+            title = { Text(stringResource(if (ask.trash) Res.string.ask_trash_title else Res.string.ask_delete_title)) },
+            text = {
+                Text(
+                    if (one != null) stringResource(if (ask.trash) Res.string.ask_trash_named else Res.string.ask_delete_named, one)
+                    else pluralStringResource(if (ask.trash) Res.plurals.ask_trash_n else Res.plurals.ask_delete_n, ask.names.size, ask.names.size.toString()),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { state.deleteAsk = null; ask.action() }) {
+                    Text(stringResource(if (ask.trash) Res.string.a_to_trash else Res.string.a_delete))
+                }
+            },
+            dismissButton = { TextButton(onClick = { state.deleteAsk = null }) { Text(stringResource(Res.string.a_cancel)) } },
+        )
+    }
     if (state.confirmDiscard) {
         AlertDialog(
             onDismissRequest = { state.keepEditing() },

@@ -46,6 +46,8 @@ import java.io.File
 import java.util.Locale
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.onNodeWithText
 import de.danerd.ghulsuite.model.ShareCheckUi
@@ -112,6 +114,13 @@ class InteractionTest {
     private fun DesktopComposeUiTest.shown(t: String) = onAllNodesWithText(t, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
     private fun DesktopComposeUiTest.waitFor(t: String) = waitUntil(timeoutMillis = 10_000) { shown(t) }
     private fun DesktopComposeUiTest.waitGone(t: String) = waitUntil(timeoutMillis = 10_000) { !shown(t) }
+    /** F103: every deletion asks first; answers the question with [button]. */
+    private fun DesktopComposeUiTest.confirm(button: String = "Delete") {
+        waitUntil(timeoutMillis = 10_000) { shown("Delete?") || shown("Move to the trash?") }
+        onAllNodes(hasText(button) and hasAnyAncestor(isDialog())).onFirst().performClick()
+        waitUntil(timeoutMillis = 10_000) { !shown("Delete?") && !shown("Move to the trash?") }
+    }
+
     private fun DesktopComposeUiTest.longPress(t: String) {
         waitFor(t)
         text(t).performTouchInput { longClick() }
@@ -131,6 +140,16 @@ class InteractionTest {
         waitFor("1 selected")
         shot("$name-selected")
         desc(delete).performClick()
+        // F103: nothing happens before the question is answered; "Cancel" keeps everything.
+        waitUntil(timeoutMillis = 10_000) { shown("Delete?") || shown("Move to the trash?") }
+        assertFalse(shown("Undo"))
+        onAllNodes(hasText("Cancel") and hasAnyAncestor(isDialog())).onFirst().performClick()
+        waitForIdle()
+        assertTrue(shown(item), "$name: Cancel keeps it")
+        assertFalse(called(), "$name: Cancel must not reach the backend")
+        longPress(item)
+        desc(delete).performClick()
+        confirm()
         waitFor("Undo")
         assertTrue(shown(message), "message \"$message\" after deleting in $name")
         waitGone(item)
@@ -142,6 +161,7 @@ class InteractionTest {
         state.undoMillis = 300
         longPress(item)
         desc(delete).performClick()
+        confirm()
         waitUntil(timeoutMillis = 10_000) { called() }
     }
 
@@ -194,6 +214,7 @@ class InteractionTest {
         state.undoMillis = 60_000
         longPress("Notizen.txt")
         desc("Move to trash").performClick()
+        confirm("Move to trash")
         waitFor("Undo")
         assertTrue(shown("Moved to trash"))
         waitGone("Notizen.txt")
@@ -257,6 +278,7 @@ class InteractionTest {
         text("Notizen.txt").performTouchInput { longClick() }
         waitFor("1 selected")
         desc("Move to trash").performClick()
+        confirm("Move to trash")
         waitUntil(timeoutMillis = 2_000) { part("3 files") }
         assertTrue("driveDelete:f2" in (fake.net as FakeNet).calls)
     }
@@ -309,6 +331,7 @@ class InteractionTest {
         text("Notizen.txt").performClick()
         waitFor("2 selected")
         desc("Move to trash").performClick()
+        confirm("Move to trash")
         // Steuer went to the trash, Notizen did not: the list and the count say so at once (not
         // only when the time for "Undo" is over), the error too.
         waitGone("Steuer 2025.pdf")

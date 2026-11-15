@@ -15,6 +15,19 @@
     <string name="a_copy">Copy</string>
     <string name="a_create">Create</string>
     <string name="a_delete">Delete</string>
+    <string name="ask_delete_title">Delete?</string>
+    <string name="ask_trash_title">Move to the trash?</string>
+    <string name="ask_delete_named">“%1$s” will be deleted.</string>
+    <string name="ask_trash_named">“%1$s” goes to the trash.</string>
+    <plurals name="ask_delete_n">
+        <item quantity="one">%1$s item will be deleted.</item>
+        <item quantity="other">%1$s items will be deleted.</item>
+    </plurals>
+    <plurals name="ask_trash_n">
+        <item quantity="one">%1$s item goes to the trash.</item>
+        <item quantity="other">%1$s items go to the trash.</item>
+    </plurals>
+    <string name="a_to_trash">Move to trash</string>
     <string name="a_edit">Edit</string>
     <string name="a_export">Export</string>
     <string name="a_export_plain">Export unencrypted</string>

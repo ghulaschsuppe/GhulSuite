@@ -145,7 +145,7 @@ fun PassListScreen(state: AppState, padding: PaddingValues) {
         }
     }
     val deletedMsg = stringResource(Res.string.msg_deleted_n)
-    fun delete(list: List<EntrySummaryUi>) {
+    fun delete(list: List<EntrySummaryUi>) = state.askDelete(list.map { it.title }) {
         selected.clear()
         state.undoable(list.map { hiddenKey("pass", it.vaultId, it.id) }, deletedMsg.replace("%1\$s", list.size.toString())) {
             for (x in list) state.backend.deleteEntry(x.vaultId, x.id)
@@ -461,8 +461,10 @@ fun EntryDetailScreen(state: AppState, vaultId: String, id: String, padding: Pad
                 }
                 SheetRow(stringResource(Res.string.a_delete), leading = { IconTile(Icons.Filled.Delete, g.danger) }, color = g.danger, divider = true) {
                     menu = false
-                    state.pop()
-                    state.undoable(listOf(hiddenKey("pass", vaultId, id)), deletedMsg.replace("%1\$s", "1")) { state.backend.deleteEntry(vaultId, id) }
+                    state.askDelete(listOf(e.value("title"))) {
+                        state.pop()
+                        state.undoable(listOf(hiddenKey("pass", vaultId, id)), deletedMsg.replace("%1\$s", "1")) { state.backend.deleteEntry(vaultId, id) }
+                    }
                 }
             }
         }
@@ -556,9 +558,11 @@ private fun AttachmentsSheet(state: AppState, vaultId: String, id: String, list:
     val save = rememberSaveFile { ok -> if (ok) state.message(savedMsg) }
     val add = rememberOpenFile { f -> state.run(block = { state.backend.addAttachment(vaultId, id, f.name, f.bytes) }) { onChanged(); state.changed() } }
     val removedMsg = stringResource(Res.string.msg_deleted)
-    // Removing a file asks nothing: it disappears, and "Undo" in the snackbar brings it back.
-    fun remove(name: String) = state.undoable(listOf(hiddenKey("att", "$vaultId/$id", name)), "$removedMsg: $name", after = onChanged) {
-        state.backend.removeAttachment(vaultId, id, name)
+    // F103: removing a file asks first; "Undo" in the snackbar brings it back as well.
+    fun remove(name: String) = state.askDelete(listOf(name)) {
+        state.undoable(listOf(hiddenKey("att", "$vaultId/$id", name)), "$removedMsg: $name", after = onChanged) {
+            state.backend.removeAttachment(vaultId, id, name)
+        }
     }
     val files = list.filter { hiddenKey("att", "$vaultId/$id", it.name) !in state.hidden }
     GhulSheet(onDismiss, stringResource(Res.string.pass_attachments)) {
