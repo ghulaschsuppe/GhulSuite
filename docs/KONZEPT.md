@@ -40,7 +40,7 @@ verschlüsselten Dateien, die man überall ablegen kann. Speicher und Mailserver
 | Module | Jeder Bereich (GhulPass, GhulAuth, später GhulMail, GhulDrive) ist in den Einstellungen **abschaltbar**; er verschwindet dann aus dem Menü, die Daten bleiben erhalten |
 | Sofortsperre | **Sofort sperren** (Stufe 1), auch durch **Schütteln**; kein Löschen, kein Notfall-Passwort (Abschnitt 6.6) |
 | Erster Speicher-Adapter | **SFTP**: eigener Server mit SSH/SFTP ist vorhanden |
-| Drive-Speicher | **Eigene Server bzw. vServer** (SFTP, WebDAV, S3, Server-Modul); lokale Datenträger nur als verschlüsseltes Sicherungsziel |
+| Drive-Speicher | **Eigene Server** per SFTP oder FTPS (auch Webhosting); Freigabelinks über das Server-Modul (PHP) auf demselben Server; lokale Datenträger nur als verschlüsseltes Sicherungsziel |
 | Plattformen | **Zuerst nur Android.** Windows folgt später; die Architektur ist von Anfang an darauf ausgelegt (Abschnitt 4.1) |
 | Schutz | **Master-Passwort plus zweiter Faktor, immer.** Zweiter Faktor: Security Key (empfohlen) oder Schlüsseldatei; beliebig viele, jederzeit austauschbar, ohne dass etwas ungültig wird. Einen Schutz nur mit Passwort gibt es nicht (geändert am 11.11.2026) |
 | Wiederherstellungscode | **Pflicht** bei jeder Suite; öffnet alles allein, auch ohne Passwort, Key und Schlüsseldatei; danach wird ein neues Passwort gesetzt |
@@ -69,7 +69,7 @@ Was sich gegenüber v0.1 geändert hat und warum:
 | 7 | HTML-Mails sind der größte Angriffsweg. Eine Browser-Engine zur Anzeige ist zudem unter Compose Desktop schwierig. | **Standard: native, vereinfachte Darstellung** (Text, Formatierung, Links, Bilder nach Klick) **ohne Browser-Engine**. Original-HTML nur auf Wunsch in einer abgeschotteten Ansicht ohne Skripte. |
 | 8 | Gmail und Microsoft-Konten verlangen inzwischen OAuth2. Für Gmail braucht eine öffentliche App dazu eine kostenpflichtige Sicherheitsprüfung durch Google. | GhulMail unterstützt **Standard-IMAP/SMTP** (eigener Server, Posteo, mailbox.org, GMX, Web.de, die meisten Hoster). Gmail nur über App-Passwort, OAuth-Anbieter frühestens später. |
 | 9 | Ein lokaler Ordner als Drive-Speicher wirkte unsicher. | Jeder Adapter speichert **ausschließlich verschlüsselte Blöcke**, auch ein lokaler Datenträger. Er bleibt als **Sicherungsziel** (z. B. externe Festplatte) erhalten, nicht als Hauptspeicher. |
-| 10 | FTP ist auf vServern unnötig und war schon beim Deployment unzuverlässig. | **Kein FTP-Adapter.** Für reines Webhosting ohne SSH gibt es das PHP-Server-Modul. |
+| 10 | Unverschlüsseltes FTP ist unsicher. | **Kein FTP ohne TLS.** Webhosting ohne SSH geht über FTPS (seit 0.5.0); das PHP-Modul dient seit 0.7.0 nur noch Freigabelinks. |
 | 11 | Mail-Abruf im Hintergrund braucht Zugangsdaten bei gesperrter App. | Seit v0.5 gewünscht: eigener, gerätegebundener Mail-Zugang nur für den Abruf (Abschnitt 9.3). |
 | 12 | Die Drive-Schlüssel liegen nur im Suite-Container. Geht er verloren, sind die Drive-Daten weg. | Der Suite-Container wird **automatisch auf jeden eingerichteten Speicher mitgesichert**, mit Versionen. Die Sicherheitszentrale warnt, wenn es keine aktuelle Kopie gibt. |
 
@@ -91,7 +91,7 @@ flowchart TB
   end
   UI --> Core
   PF --> Core
-  C4 -- "nur Chiffretext" --> S1[(SFTP)] & S2[(WebDAV)] & S3[(S3)] & S4[(Server-Modul PHP)] & S5[(Sicherung auf<br/>lokalem Datenträger)]
+  C4 -- "nur Chiffretext" --> S1[(SFTP)] & S2[(FTPS)] & S5[(Sicherung auf<br/>lokalem Datenträger)]
   C6 -- "TLS" --> M[(Mailserver deiner Wahl)]
 ```
 
@@ -332,7 +332,7 @@ die App gibt der Datei beim nächsten Entsperren ihren neutralen Namen zurück.
 | **SFTP** | Jeder vServer oder Root-Server, NAS, Raspberry Pi, Storage-Box-Angebote | SSH-Schlüssel, Server-Fingerabdruck wird beim ersten Verbinden fest gespeichert | **1**: Testserver vorhanden |
 | **WebDAV** | Nextcloud, ownCloud, viele NAS, Webserver mit WebDAV | HTTPS mit Zertifikats-Pinning | 2 |
 | **S3-kompatibel** | MinIO oder Garage auf dem eigenen Server, S3-Anbieter | HTTPS, Upload in Teilen mit Fortsetzen | 3 |
-| **GhulSuite-Server-Modul** | Webhosting mit PHP, aber ohne SSH | HTTPS, signierte Anfragen | 3 |
+| **FTPS** | Webhosting ohne SSH | FTP mit TLS, Zertifikat per Fingerabdruck bestätigt | **1** |
 | **Lokaler Datenträger** | Externe Festplatte, USB-Stick | keine (Inhalte trotzdem verschlüsselt) | nur als **Sicherungsziel** |
 
 - **Mehrere Speicher gleichzeitig:** Ein Hauptspeicher plus Spiegel, z. B. vServer plus NAS. Fällt einer aus, ist der andere noch da.
@@ -343,10 +343,14 @@ die App gibt der Datei beim nächsten Entsperren ihren neutralen Namen zurück.
   „wie Synchronisation“ (nur ein Verweis auf den Sync-Server dieses Geräts, keine Kopie der Zugangsdaten) oder einen
   eigenen Server, auch mit anderer Methode. Wird der Sync-Server entfernt oder gewechselt, fragt die App vorher:
   Zugang für GhulDrive behalten (Kopie in die Drive-Datei) oder GhulDrive später neu einrichten.
+- **Ein Server ist ein Webspace** (abgestimmt am 15.11.2026, 0.7.0): sein SFTP- oder FTPS-Zugang und, nur für
+  Freigabelinks, optional das GhulSuite-Server-Modul, das die App über **denselben** Zugang installiert. Ein weiterer
+  Server ist völlig getrennt (eigener Zugang, eigenes Modul, eigene Links). Synchronisation und GhulDrive wählen
+  ihren Server frei; es kann derselbe sein.
 - **Ein Server-Formular** für Assistent, GhulDrive und Optionen: SFTP/FTPS anmelden, **Ordner aus der Liste des
-  Servers wählen**, Verbindung testen. PHP-Modul: einmal per FTPS anmelden, Ordner wählen, die App lädt das Modul mit
-  eigenem Schlüssel hoch, leitet die Adresse aus Domain und Ordner ab und prüft sie; der FTPS-Zugang kann für
-  Modul-Updates behalten werden. Eine Checkliste nennt den fehlenden Schritt.
+  Servers wählen**, Verbindung testen. Modul: Ordner der Website wählen, die App legt `ghulsuite.php` hinein (mit dem
+  Pfad zum GhulSuite-Ordner) und prüft Adresse, ob PHP läuft und ob das Modul den GhulSuite-Ordner lesen kann
+  (Testdatei). Eine Checkliste nennt den fehlenden Schritt.
 
 ### 8.2.1 SFTP im Detail
 
@@ -419,19 +423,18 @@ ein entfernter Server oder ein entferntes Mail-Konto kann durch ein anderes Ger�
 folgen. Der Drive-Index wird vor jeder Änderung neu geladen (kein eigenes Protokoll je Gerät); bei gleichzeitiger Änderung
 desselben Eintrags gewinnt die letzte. Eine Konfliktansicht folgt.
 
-### 8.5 Server-Modul (PHP)
+### 8.5 Server-Modul (PHP, nur für Freigabelinks)
 
-Für Webhosting ohne SSH, läuft auf **jedem PHP-Webhosting ab 8.1 ohne Datenbank**.
-- **Grenzen des Webhostings:** Das Modul meldet das Upload-Limit des Hostings. Die App teilt große Dateien, auch
-  Tresordateien mit großen Anhängen, in passende Teile (höchstens 4 MiB) und ersetzt die Datei erst nach dem letzten
-  Teil atomar. Liegt das Limit unter 4 MiB, zeigt die App das an. GhulDrive zerlegt ohnehin in 4-MiB-Blöcke;
-  Freigaben bis 1 GiB, „Als ZIP“ bis 200 MB.
-- Speichert nur verschlüsselte Dateien und Blöcke, mit Versionen. Schreibt atomar (temporäre Datei, dann `rename`, mit `flock`).
-- **Anfragen werden signiert**, mit einem Zugangsschlüssel, der verschlüsselt im Suite-Container liegt.
-  Zeitstempel und Einmal-Werte verhindern Wiederholungen. Es gibt keine Sitzungen und keine Cookies.
-- Rate-Limiting, Zugriffsprotokoll (in der App einsehbar). Der Datenordner liegt außerhalb des Web-Verzeichnisses
-  oder wird zusätzlich per Serverkonfiguration gesperrt.
-- Zugang wechseln bei Verdacht: ein Knopf in der App erzeugt einen neuen Zugangsschlüssel.
+Läuft auf **jedem PHP-Webhosting ab 8.1 ohne Datenbank**, auf demselben Server wie GhulDrive (seit 0.7.0).
+- **Kein Speicher, kein Geheimnis, kein Schreiben übers Web.** Die App schreibt Freigaben über SFTP/FTPS als
+  Beschreibung in den GhulSuite-Ordner; das Modul liest sie und gibt genau die verschlüsselten Blöcke dieser Freigabe
+  heraus. Es schreibt nur Abrufzähler und Tickets (`shares/<id>.state`).
+- **Setzt Ablauf, Einmal-Links und Abrufzähler selbst durch**, unter Dateisperre, auch wenn kein Gerät läuft.
+- Blöcke nur mit einem Ticket, das beim Öffnen der Freigabe ausgegeben wird (24 Stunden, gehasht gespeichert); so
+  läuft ein Download Block für Block (kurze Anfragen, kein Zeitlimit des Hostings) und lässt sich fortsetzen.
+- Liegt der GhulSuite-Ordner innerhalb der Website, sperrt eine `.htaccess` ihn für den Webserver.
+- Voraussetzung: PHP darf den GhulSuite-Ordner lesen (bei manchen Hostern verhindert `open_basedir` das). Die App
+  prüft das beim Installieren und sagt es klar; ohne Modul gibt es keine Freigabelinks.
 
 ---
 
@@ -532,130 +535,26 @@ Zugänge an (`rk = false`), der Key speichert nichts.
   wirken dann auf den ganzen Ordner. Löschen heißt wie überall: in den Papierkorb.
 - **„Ordner leeren“** nur in Papierkorb und Spam: Rückfrage mit Anzahl, danach beim Anbieter endgültig gelöscht.
 
-#### 9.3.1 Verschlüsseltes Mail-Archiv (abgestimmt am 14.11.2026, umgesetzt in 0.6.0-dev)
+#### 9.3.1 Mails in GhulDrive archivieren (abgestimmt am 15.11.2026, umgesetzt in 0.7.0-dev)
 
-**Ziel:** Beim Anbieter liegt nur noch Neues im Klartext; alles Ältere liegt verschlüsselt auf dem eigenen Server
-(oder im Suite-Ordner), auf allen Geräten sichtbar, durchsuchbar, offline lesbar. Kein POP3-Prinzip: Ein einzelnes
-Gerät ist nie der einzige Aufbewahrungsort.
+Ersetzt das eigene verschlüsselte Archiv aus 0.6.0 (eigenes Format, Fristen, Abgleich, Löschen beim Anbieter nach
+Gegenlesen, Geräte-Kopien), das für Nutzer und Technik zu verwickelt war.
 
-**Grundgesetz:** Zu keinem Zeitpunkt darf eine Mail weder beim Anbieter noch geprüft im Archiv liegen. Löschen gibt es
-nur bewusst, nie als Nebenwirkung einer Frage. Jede Rückfrage hat eine harmlose Antwort, und Wegtippen ist „Später“.
-
-**Einstellungen**
-- *Frist* bis zum Archivieren: frei wählbar, Auswahl 1, 7, 30 (vorausgewählt), 90, 365 Tage oder eigener Wert.
-- *Löschen beim Anbieter* nach dem Archivieren: **aus**, muss von Hand eingeschaltet und bestätigt werden.
-- *Gesendete Mails* werden mit archiviert.
-- *Spam und Papierkorb* je Ordner wählbar: archivieren, nach der Frist beim Anbieter löschen, oder in Ruhe lassen.
-- *Ort:* „wie Synchronisation“, eigener Server (wie GhulDrive) oder der Suite-Ordner (nur dieses Gerät).
-- *Offline:* standardmäßig alle Texte, Anhänge bis 10 MB je Anhang und nur im WLAN, alles Geöffnete; Speicherbalken und
-  „Offline-Speicher leeren“ wie bei GhulDrive. Je Gerät „Vollständige Archivkopie auf diesem Gerät“ (Windows: an,
-  Android: aus).
-
-**Einrichtung** (Assistent beim Hinzufügen eines Kontos, später in den Mail-Optionen änderbar):
-„Wo sollen deine Mails liegen?“ Beim Anbieter lassen / Verschlüsselt archivieren (empfohlen, nur mit eigenem Server,
-sonst ausgegraut mit Begründung) / Archivieren, beim Anbieter aber behalten.
-
-**Anzeige:** keine eigene Archiv-Ansicht. Die Ordner zeigen die neuen Mails vom Anbieter und darunter nahtlos die
-archivierten (kleines Symbol). Suche über alles, auch offline (Suchindex verschlüsselt auf dem Gerät). Gelesen,
-Markieren, Verschieben, Löschen, Antworten wie gewohnt; Änderungen werden wie Tresoreinträge zusammengeführt.
-Löschen im Archiv: 30 Tage im Archiv-Papierkorb. Export als `.eml`/`.mbox` jederzeit.
-
-**Ablage und Format**
-- In der Mail-Datei (`.ghlmail`): Archiv-Kennung, Archiv-Schlüssel (je Epoche), Verweis auf den Ort, Einstellungen,
-  je Gerät eine kurze Angabe, wie viel es offline hat und von wann (keine Inhalte). Die Suite-Datei ändert sich nicht.
-- Auf dem Server ein eigener Ordner: verschlüsselte Kopfdatei mit der Archiv-Kennung, Index je Konto und Monat,
-  Mails und Anhänge als verschlüsselte Blöcke wie bei GhulDrive. Doppelte Anhänge nur einmal (geheime Prüfsumme, die
-  der Server nicht zuordnen kann). Der Server sieht nur Anzahl und ungefähre Größe.
-- Mail-Datei plus Archiv-Ordner sind ein eigenständiges Postfach: öffnet mit Master-Passwort und Key, ohne Anbieter,
-  ohne Internet; lässt sich wie ein Tresor zu einer Suite hinzufügen.
-- *Schlüssel-Epochen:* Ein Archiv mit Gigabytes wird bei einer Schutzänderung nicht neu verschlüsselt. Nach neuem
-  Notfallblatt oder entferntem Key bekommen neue Mails einen neuen Archiv-Schlüssel; eine alte Sicherung samt altem
-  Faktor öffnet nur, was bis dahin archiviert war.
-
-**Archivieren**
-1. Vorab zählen und anzeigen (Anzahl, Größe, freier Platz auf dem Server, geschätzte Dauer); reicht der Platz nicht,
-   fragen oder ein Teilarchiv wählen (z. B. die letzten 5 Jahre).
-2. Im Hintergrund in Paketen von etwa 200 Mails, die neuesten zuerst; jedes Paket einzeln abgeschlossen, nach Abbruch
-   geht es genau dort weiter. Standardmäßig nur im WLAN, der große erste Lauf nur beim Laden. Fortschritt in den
-   Mail-Optionen, auf Android als stille Benachrichtigung.
-3. Eine Mail gilt erst als archiviert, wenn sie über eine neue Verbindung zurückgelesen wurde und Byte für Byte
-   übereinstimmt.
-4. Beim Anbieter gelöscht wird nur, wenn das eingeschaltet ist, nur geprüft Archiviertes und nur genau diese Mail (per
-   UID, nie „alles Markierte“). Der erste große Lauf löscht gar nichts; am Ende fragt die App einmal: „Alles sicher
-   archiviert. Jetzt N Mails beim Anbieter entfernen?“
-5. Neu nummerierter Ordner beim Anbieter (UIDVALIDITY): sofort anhalten und neu abgleichen, nichts zuordnen.
-6. Je Konto archiviert immer nur ein Gerät (Sperre im Archiv), die anderen warten.
-7. Liegt das Archiv nur im Suite-Ordner (ohne Server), wird beim Anbieter nur gelöscht, wenn eine Sicherung des
-   Archivs jünger ist als die zu löschenden Mails. Gibt es weder Server noch vollständige Kopie noch frische
-   Sicherung, pausiert das Löschen und die Mail-Optionen warnen („Letzte Archiv-Sicherung: vor 34 Tagen“).
-
-**Archiv nicht erreichbar** (Server gewechselt, Ordner verschoben, offline)
-- Die Suite öffnet normal, Mails beim Anbieter und alles Offline-Gespeicherte bleiben nutzbar. In GhulMail oben:
-  „Mail-Archiv nicht erreichbar“ mit „Erneut versuchen“ und „Archiv-Ort ändern“. Das Archivieren pausiert, beim
-  Anbieter wird nichts gelöscht.
-- „Archiv-Ort ändern“: Server-Formular, Ordner aus der Liste wählen. Liegt dort dasselbe Archiv (gleiche Kennung):
-  verbinden. Leer: „Archiv hierher umziehen?“ (vom alten Ort kopieren, prüfen, umschalten). Ein fremdes Archiv: ablehnen.
-  Der neue Ort wird über die Mail-Datei synchronisiert, die anderen Geräte ziehen nach.
-- Wechsel des Sync-Servers in den Optionen: Rückfrage „Dein Mail-Archiv liegt auf diesem Server. Mitnehmen?“ (wie bei
-  GhulDrive).
-
-**Wiederherstellen aus Geräte-Kopien** (alter Server weg, keine Sicherung)
-- Der Neuaufbau läuft auf dem Gerät mit der Kopie; Geräte sprechen nie direkt miteinander. Andere Geräte zeigen:
-  „Eine Kopie des Archivs hat: Windows-PC (34.512 Mails, Stand 12.11.). Öffne GhulSuite dort.“
-- Das Gerät mit der Kopie fragt einmal und lädt dann in den neuen Ort hoch, in Paketen, geprüft wie beim Archivieren.
-  Mehrere Geräte mit Teilkopien tragen bei, was sie haben (Zusammenführen über die Kennung jeder Mail).
-- Wiederherstellen fügt nur hinzu, löscht nie etwas. „Später“ oder Wegtippen ändert nichts; die Frage kommt beim
-  nächsten Entsperren wieder, dauerhaft gibt es „Archiv aus dieser Kopie wiederherstellen“ in den Mail-Optionen.
-- Solange das Archiv fehlt oder ein Gerät die einzige vollständige Kopie hat, räumt dessen Offline-Speicher nichts
-  auf. Diese Kopie zu löschen („Offline-Speicher leeren“, „Bereich entfernen“, „Hier neu anfangen“) verlangt das
-  Abtippen eines Worts.
-- Alternativ: verschlüsselte Archiv-Sicherung auf einen USB-Stick und am anderen Gerät einlesen.
-
-**Tests (vor jeder Nutzung)**
-- Abbruch nach jedem einzelnen Schritt (hochgeladen, geprüft, gelöscht): danach ist jede Mail an mindestens einem Ort
-  vollständig. Zählregel nach jedem Schritt: Anbieter plus Archiv ist nie weniger als vorher.
-- Chaos-IMAP-Server: abbrechende Verbindungen, doppelt gemeldete Mails, neu nummerierte Ordner, volles Postfach,
-  kaputte Mails. Großes Postfach (30.000 Mails, Hunderte Anhänge) gegen echte Testserver, einmal hin und zurück
-  (Export, Import, Vergleich).
-- Zwei Geräte gleichzeitig, eines tagelang offline; Server umgezogen, leerer Ordner, fremdes Archiv, Server weg;
-  Kopie nur auf einem anderen Gerät; Teilkopien zweier Geräte; jede Antwort jeder Rückfrage und das Wegtippen.
-- Im Nachtlauf lang und mit Zufallsfehlern.
-
-**Stand der Umsetzung (0.6.0-dev), Format in [`FORMAT.md`, Abschnitt 12](FORMAT.md#12-mail-archiv-seit-060):**
-- Umgesetzt: Frist (1, 7, 30, 90, 365 Tage oder eigener Wert, 30 vorausgewählt), Löschen beim Anbieter von Hand
-  einschalten und einmal bestätigen, gesendete Mails, Spam und Papierkorb je Regel, Ort „wie Synchronisation“ oder eigener
-  Server, Schlüssel-Epochen, Sperre je Konto, Prüfen über eine zweite Verbindung, Löschen nur per UID bei unveränderter
-  UIDVALIDITY, neu nummerierte Ordner über den Inhalt neu zugeordnet, Archiv-Ort ändern und umziehen, fremdes Archiv
-  ablehnen, vollständige Kopie auf dem Gerät, Wiederherstellen aus dieser Kopie (nur hinzufügen), Löschen der Kopie mit
-  getipptem Wort, solange sie die einzige sein könnte, Archiv-Papierkorb (30 Tage), archivierte Mails unter den Mails
-  des Anbieters, Lesen, Antworten, Weiterleiten, Anhänge und `.eml`, Suche.
-- **Abweichungen:**
-  - Kein Ort „Suite-Ordner (nur dieses Gerät)“: Das Archiv braucht immer einen Server. Damit entfällt die Sonderregel
-    für Sicherungen; die vollständige Kopie auf dem Gerät ist die zusätzliche Absicherung.
-  - Doppeltes wird je gleicher Mail und je gleichem Block (bis 4 MiB) einmal gespeichert, nicht je einzelnem Anhang.
-  - Die Suche läuft über Betreff, Absender und Textanfang aus dem Archiv-Verzeichnis (auch offline, weil die
-    Verzeichnisse auf dem Gerät mitgeführt werden), nicht über den ganzen Text.
-  - Archiviert wird, solange die Suite entsperrt ist (beim Entsperren und alle 30 Minuten, auf Android standardmäßig nur
-    im WLAN, „Jetzt archivieren“ jederzeit). Gesperrt fehlen die Schlüssel. Während eines Laufs wartet die Auto-Sperre
-    (Zeit im Hintergrund, Bildschirm aus, Windows-Sperre), damit der lange erste Lauf nicht bei jedem App-Wechsel
-    abbricht; die Benachrichtigung der entsperrten Suite zeigt den Fortschritt, „Sperren“, Schütteln und die Kachel
-    sperren weiterhin sofort.
-  - Mails über 100 MB werden nicht archiviert: Sie bleiben beim Anbieter und werden dort nie gelöscht; die Mail-Optionen
-    nennen ihre Anzahl. (Eine solche Mail müsste sonst auf einmal in den Speicher, auf einem Handy zu viel.)
-  - Die Frage „Wo sollen deine Mails liegen?“ kommt nach dem ersten hinzugefügten Konto, nicht im Einrichtungsassistenten.
-  - **Gmail: vorerst kein Löschen beim Anbieter.** Gmail bildet Labels als IMAP-Ordner ab; ob eine Mail beim Löschen
-    aus einem Ordner nur ein Label verliert oder ganz verschwindet, hängt von den IMAP-Einstellungen des Kontos ab. Bis
-    das mit echten Konten erprobt ist, archiviert GhulSuite Gmail-Konten (`imap.gmail.com`, `imap.googlemail.com`)
-    nur: Löschen beim Anbieter und die Regel „nach der Frist löschen“ wirken dort nicht, die Rückfrage entfällt, die
-    Mail-Optionen sagen das beim Konto.
-  - Die Mail-Datei enthält Schlüssel und Ort des Archivs; ein eigener Server liegt mit in ihr. Das Öffnen nur der
-    Mail-Datei mit dem Archiv ist damit möglich, aber noch nicht eigens getestet.
-- **Tests:** `app::mailarchive::tests` (simulierter Anbieter): Abbruch nach jedem einzelnen Schritt, Verbindungsabbruch
-  beim Abholen, kleine Schritte, neu nummerierte Ordner (auch zwischen Prüfen und Löschen), doppelt gemeldete und
-  doppelte Mails, kaputte, leere und große Mails, beschädigte, fehlende und vertauschte Archivdateien, Spam- und
-  Papierkorb-Regeln, Sperre, Schlüssel-Epochen, Umzug, der Server sieht keine Inhalte und Namen; nach jedem Schritt die
-  Zählregel. Im Nachtlauf 30.000 Mails mit Zufallsabbrüchen. `app::tests::mail_archive_against_imap_and_sftp` geht den
-  ganzen Weg über die App-Schnittstelle gegen Dovecot und SFTP.
+- **Archivieren heißt kopieren:** Mails werden als `.eml` (unverändert, wie beim Anbieter) in GhulDrive abgelegt,
+  unter `Mail-Archiv/<Konto>/<Jahr>/`. Beim Anbieter ändert sich nichts, auch „gelesen“ nicht. Aufräumen ist eine
+  eigene, sichtbare Entscheidung: archivieren, dann selbst löschen (mit der üblichen Rückfrage).
+- **Kein Gegenlesen:** Blöcke werden vollständig unter einem Ersatznamen geschrieben und erst dann umbenannt; die
+  Verschlüsselung erkennt jede spätere Veränderung. Archivieren dauert so lange wie einmal laden und hochladen.
+- **Auswahl, ganzer Ordner oder „älter als …“**, als Vorgang im Hintergrund mit Fortschritt; am Ende eine Meldung
+  wie „40 Mails archiviert, 3 waren schon im Archiv“.
+- **Doppeltes wird erkannt** am Code aus der Message-ID im Dateinamen; eine umbenannte Datei ergibt höchstens eine
+  zweite Kopie, verloren geht nichts.
+- **Automatisch** (Mail-Optionen, aus/30/90/365 Tage): nach dem Entsperren, höchstens einmal am Tag, Posteingang und
+  Gesendet aller Konten. Die App merkt sich je Ordner, bis zu welcher Mail sie gekommen ist, und lädt nicht alles neu.
+- **Der Ordner gehört dem Nutzer:** eigene Dateien und Unterordner darin stören nicht; GhulMail zeigt im Eintrag
+  „Archiv“ nur `.eml`-Dateien als Mails. Gefunden wird der Ordner über seine Kennung, Umbenennen und Verschieben
+  ändern nichts. Format: [`FORMAT.md`, Abschnitt 12](FORMAT.md#12-mail-archiv-seit-070-in-ghuldrive).
+- **Voraussetzung:** GhulDrive ist eingerichtet; sonst sagt die App, dass das Archiv GhulDrive braucht.
 
 ### 9.4 GhulDrive
 
@@ -669,44 +568,38 @@ Löschen im Archiv: 30 Tage im Archiv-Papierkorb. Export als `.eml`/`.mbox` jede
   GhulDrive erscheint im Dateiauswahl-Dialog jeder App, Offline-Dateien.
 - **Windows:** Drive-Ansicht in der App mit Drag & Drop. Ordner-Synchronisation kommt in einer späteren Ausbaustufe (siehe Abschnitt 14).
 
-**Teilen (abgestimmt am 11.11.2026, umgesetzt in 0.5.0-dev):**
+**Teilen (abgestimmt am 15.11.2026, umgesetzt in 0.7.0-dev; ersetzt das Teilen per Kopie aus 0.5.0):**
 - *An eine andere App:* immer möglich, entschlüsselt auf dem Gerät, über das Android-Teilen-Menü.
-- *Freigabelink:* nur mit Verbindungen, die Dateien im Web ausliefern können: **SFTP** (eigener Server mit Webserver),
-  **FTPS** (Webhosting) und das **GhulSuite-Server-Modul (PHP 8.1, ohne Datenbank)**. Kein Nextcloud, kein lokaler Ordner.
-- *Einrichtung einmalig per Assistent:* Ordner auf dem Server wählen (der Tresor-Ordner ist gesperrt), Adresse bestätigen
-  (Vorschlag aus dem Servernamen), dann prüft die App selbst: Testdatei per SFTP/FTPS schreiben, über https abrufen und
-  vergleichen, Zertifikat gültig, kein Verzeichnis-Listing (legt `index.html` und `.htaccess` an). Nur https.
-- *Kryptografie:* Jede Freigabe ist eine eigene Kopie mit neuem, zufälligem 256-Bit-Schlüssel (AES-256-GCM in Stücken,
-  damit Browser große Dateien entschlüsseln können; Dateiname und Typ ebenfalls verschlüsselt). Zufälliger, nicht
-  erratbarer Dateiname. Der Schlüssel steht nur im Teil nach `#`: Browser schicken ihn nie an den Server.
-  Optionales Passwort: Schlüssel = HKDF(Link-Schlüssel ‖ PBKDF2-SHA256(Passwort, 600 000 Runden)); Link allein reicht dann nicht.
-- *Empfängerseite:* eine kleine, statische Seite ohne fremde Inhalte (strenge CSP), entschlüsselt im Browser.
-- *Ablauf und Widerruf:* Beenden löscht die Kopie sofort. Ablaufdatum, Download-Limit und Einmal-Link gibt es nur mit
-  dem Server-Modul, das sie auf dem Server durchsetzt, auch wenn kein Gerät läuft (F104). Ein reiner Webserver liefert
-  die Datei selbst aus und kann einen Link weder zu einer Zeit noch nach n Abrufen beenden; dort gilt ein Link, bis er
-  zurückgezogen wird, und das Formular sagt das so. Der Kern lehnt Ablauf und Limit für solche Server ab. Ältere Links mit
-  Ablaufdatum auf einem reinen Webserver löscht die App weiter beim Öffnen von GhulDrive.
-- *Mehrfachauswahl:* mehrere Dateien oder Ordner werden zu einer Freigabe (verschlüsseltes Archiv) zusammengefasst.
-- *GhulPass:* einzelne Einträge als Einmal-Link (Text, mit Server-Modul standardmäßig 1 Tag und 1 Abruf; ohne Modul
-  gilt der Link, bis er zurückgezogen wird).
-- *Strikt modular:* Teilen hängt nur an einem Server mit eingerichtetem Teilen-Ordner, nicht an einem Modul.
-  „Als Mail-Anhang“ und „Mit GhulMail senden“ erscheinen nur, wenn GhulMail eingeschaltet ist **und** ein Konto hat;
-  sonst bleiben Link kopieren und „An App senden“. GhulMail selbst kennt GhulDrive nicht, es bekommt nur einen fertigen
-  Entwurf (Text, Anhänge). Anhänge über 20 MB werden nicht angeboten (Mailserver lehnen sie meist ab), dann als Link.
-- *Server-Modul:* eine einzelne PHP-Datei mit eigenem 256-Bit-Zugangsschlüssel, von der App erzeugt; speichern oder über
-  einen schon eingerichteten Server (z. B. FTPS desselben Webspace) hochladen. Anfragen sind mit HMAC-SHA256 signiert
-  (Zeitfenster ±5 min, Einmal-Nonce, Sperre nach 20 Fehlversuchen in 10 min). Es speichert Drive-Daten wie ein Ordner und
-  liefert Freigaben mit Ablauf, Abrufzähler und Einmal-Links aus. Ausführbare Dateien und Server-Konfiguration können
-  auch mit dem Schlüssel nicht abgelegt werden. Format und API: [`FORMAT.md`, Abschnitt 11](FORMAT.md#11-freigaben-seit-050).
+- *Freigabelink:* **nur über das Server-Modul** auf dem Server, auf dem GhulDrive liegt. Ohne PHP (z. B. ein NAS nur mit
+  SFTP) gibt es keine Links; „An App senden“ und „Als Mail-Anhang“ gehen weiter. Fehlt das Modul, bietet die App beim
+  Teilen direkt die Installation an.
+- *Ohne Kopie:* Jeder Inhalt einer Datei hat seinen eigenen Schlüssel (siehe Stand der Umsetzung). Ein Link enthält
+  ein kleines Paket mit Namen, Größen und diesen Dateischlüsseln, verschlüsselt mit einem neuen, zufälligen
+  256-Bit-Link-Schlüssel (AES-256-GCM). Nichts wird heruntergeladen oder hochgeladen; der Link steht in Sekunden,
+  auch für viele Gigabyte. Der Link-Schlüssel steht nur im Teil nach `#`: Browser schicken ihn nie an den Server.
+  Optionales Passwort: Schlüssel = HKDF(Link-Schlüssel ‖ PBKDF2-SHA256(Passwort, 600 000 Runden)).
+- *Empfängerseite:* vom Modul ausgeliefert, ohne fremde Inhalte (strenge CSP). Jede Datei einzeln (auch bei Ordnern),
+  Block für Block entschlüsselt und direkt auf die Festplatte geschrieben, wo der Browser das kann (Chrome, Edge),
+  sonst über den Arbeitsspeicher mit Hinweis bei sehr großen Dateien. Abbrechen und Fortsetzen.
+- *Ablauf und Widerruf:* Ablaufdatum, Einmal-Link und Abrufzähler setzt das Modul durch. Zurückziehen löscht die
+  Beschreibung sofort. Ein Link zeigt die Fassung, die geteilt wurde: ihre Blöcke bleiben, solange ein Link sie braucht,
+  auch wenn die Datei geändert oder gelöscht wird. Löschen einer geteilten Datei fragt vorher und beendet die Links.
+- *Mehrfachauswahl und Ordner:* eine Freigabe mit allen Dateien (Momentaufnahme), keine Größengrenze.
+- *GhulPass:* einzelne Einträge als Einmal-Link (Text, standardmäßig 1 Tag und 1 Abruf); der Text wird mit eigenem
+  Schlüssel in eigene Blöcke auf GhulDrives Server geschrieben und mit dem Link gelöscht.
+- *Strikt modular:* „Als Mail-Anhang“ und „Mit GhulMail senden“ erscheinen nur, wenn GhulMail eingeschaltet ist **und**
+  ein Konto hat; sonst bleiben Link kopieren und „An App senden“. GhulMail selbst kennt GhulDrive nicht, es bekommt nur
+  einen fertigen Entwurf (Text, Anhänge). Anhänge über 20 MB werden nicht angeboten (Mailserver lehnen sie meist ab),
+  dann als Link. Format und Modul: [`FORMAT.md`, Abschnitt 11](FORMAT.md#11-freigaben-seit-070-nur-über-das-server-modul).
 
-**Stand der Umsetzung (0.4.0-dev), Format in [`FORMAT.md`](FORMAT.md#drive):**
-- Ein zufälliger Drive-Schlüssel (in den verschlüsselten Suite-Einstellungen, synchronisiert). Daraus per HKDF ein
-  Index-Schlüssel und ein Block-Schlüssel; jeder Block ist mit XChaCha20-Poly1305 verschlüsselt und über die
-  zusätzlichen Daten an seine ID gebunden. Dateien werden in Blöcke bis 4 MiB zerlegt, die Reihenfolge steht im
-  verschlüsselten Index.
-- **Abweichung von oben:** Block-IDs sind ein **geheimer** HMAC über den Klartext (Schlüssel aus dem Drive-Schlüssel),
-  keine Zufalls-IDs. Ohne den Schlüssel kann niemand prüfen, ob du eine bestimmte Datei besitzt; gleiche Blöcke werden
-  nur einmal gespeichert, der Server sieht also, wenn dieselben Daten mehrfach vorkommen.
+**Stand der Umsetzung (0.7.0-dev), Format in [`FORMAT.md`](FORMAT.md#drive):**
+- Ein zufälliger Drive-Schlüssel (in der Drive-Datei, synchronisiert) verschlüsselt den Index. **Jeder Inhalt einer
+  Datei hat einen eigenen, zufälligen Dateischlüssel** im Index (eine neue Fassung bekommt einen neuen); seine Blöcke
+  sind mit AES-256-GCM verschlüsselt und über die zusätzlichen Daten an ihre ID gebunden. Dateien werden in Blöcke
+  bis 4 MiB zerlegt, die Reihenfolge steht im verschlüsselten Index.
+- Block-IDs sind ein **geheimer** HMAC über den Klartext mit einem Schlüssel aus dem Dateischlüssel: Ohne ihn kann
+  niemand prüfen, ob du eine bestimmte Datei besitzt, und dass zwei Dateien gleich sind, ist auf dem Server nicht zu
+  sehen (gleiche Blöcke werden nur innerhalb einer Datei einmal gespeichert).
 - Ordner, Hoch- und Herunterladen (gestreamt), Umbenennen, Verschieben, Löschen (nicht mehr genutzte Blöcke werden
   entfernt), Suche nach Namen. Papierkorb, Versionen, Vorschau, Fortsetzen, Foto-Sicherung, Teilen-Menü und
   Dateiauswahl-Anbieter folgen.
@@ -821,7 +714,7 @@ Löschen im Archiv: 30 Tage im Archiv-Papierkorb. Export als `.eml`/`.mbox` jede
 |---|---|---|
 | Web-Client | gestrichen | schwächstes Glied; ersetzt durch die portable Windows-Version |
 | Anbindung über den Android-Dateidialog als Sync | gestrichen | unzuverlässig; bleibt für Export und Import |
-| FTP-Adapter | gestrichen | unsicher bzw. unzuverlässig; Server-Modul als Alternative |
+| FTP ohne TLS | gestrichen | unsicher; FTPS stattdessen |
 | Mail-Abruf im Hintergrund | geplant (v0.5) | mit eigenem Abruf-Zugang, siehe Abschnitt 9.3 |
 | Sofortsperre: lokale Daten löschen, Notfall-Passwort, Fernsperre | nicht geplant | Stufe 1 reicht kryptografisch; Täuschung ist schwer überzeugend umzusetzen |
 | OAuth-Mailanbieter (Gmail, Microsoft) | später, vielleicht | Aufwand und Kosten der Google-Prüfung |

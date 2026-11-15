@@ -365,3 +365,8 @@ footer .made { grid-column: 1 / -1; border-top: 1px solid var(--line); padding-t
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
   .rv { opacity: 1; transform: none; }
 }
+
+/* Work in progress: always visible above the header. */
+.wip { position: relative; z-index: 60; padding: 10px 16px; text-align: center; font-size: 14px; line-height: 1.45;
+  background: rgba(240, 90, 60, 0.16); color: var(--fg); border-bottom: 1px solid rgba(240, 90, 60, 0.45); }
+.wip b { color: #f05a3c; }

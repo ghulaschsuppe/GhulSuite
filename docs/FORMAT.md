@@ -432,7 +432,7 @@ ihre eigenen Dateien (`.ghldrv`, `.ghlmail`).
 
 | Schlüssel | Inhalt | Synchronisiert |
 |---|---|---|
-| `servers` | Liste: `id`, `name`, `kind` (`sftp`, `ftps`, `php`; leer = `sftp`), `host`, `port`, `user`, `password` (SFTP: leer = Schlüssel; FTPS: Passwort; PHP: Zugangsschlüssel hex), `base`, `host_key` (SSH-Schlüssel- bzw. Zertifikat-Fingerabdruck SHA256), `url` (PHP-Modul), `location`, `share_dir`, `share_url` (Teilen-Ordner und seine https-Adresse; leer = Teilen nicht eingerichtet) | ja |
+| `servers` | Liste: `id`, `name`, `kind` (`sftp` oder `ftps`; leer = `sftp`), `host`, `port`, `user`, `password` (SFTP: leer = Schlüssel; FTPS: Passwort), `base`, `host_key` (SSH-Schlüssel- bzw. Zertifikat-Fingerabdruck SHA256), `location`, `module` (Server-Modul für Freigabelinks, fehlt = keins: `url` der `ghulsuite.php`, `dir` = ihr Ordner relativ zum Login-Ordner, `version`). Einträge mit `kind` = `php` (ältere Apps) werden nicht mehr gelesen | ja |
 | `ssh_key` | privater Ed25519-Schlüssel der Suite (OpenSSH-Format) | ja |
 | `sync` | `server` (ID), `last` (ms) | nein (je Gerät) |
 | `sync_known` | bereits synchronisierte Tresor-IDs (für das Übertragen von Löschungen) | nein (je Gerät) |
@@ -440,7 +440,7 @@ ihre eigenen Dateien (`.ghldrv`, `.ghlmail`).
 | `protection_changed` | Zeitpunkt der letzten Schutzänderung (ms) | ja |
 | `removed_slots` | Slot-IDs (hex) absichtlich entfernter Keys und Schlüsseldateien. Werden beim Synchronisieren vereinigt; ein Gerät, das die Entfernung verpasst hat, entfernt sie ebenfalls | ja |
 | `recovery_confirmed` | `{v, at}`: `v` = hex(SHA-256(„ghul/recovery-confirmed/v1“ ‖ Code-Geheimnis)[0..8]) des bestätigten Codes, `at` = Zeit (ms); fehlt bei Suiten von vor 0.5.0 (gilt als bestätigt) | ja |
-| `shares` | Liste der eigenen Freigaben: `id`, `server`, `name`, `size`, `created`, `expires` (ms, 0 = nie), `password`, `max_downloads`, `url` (vollständiger Link mit Schlüssel) | ja |
+| `shares` | Liste der eigenen Freigaben: `id`, `server`, `name`, `size`, `created`, `expires` (ms, 0 = nie), `password`, `max_downloads`, `url` (vollständiger Link mit Schlüssel), `items` (die geteilten Drive-Knoten), `own_blocks` (Blöcke nur dieser Freigabe, für Inhalt außerhalb von GhulDrive) | ja |
 | `mail_accounts` | Liste: `id`, `name`, `display_name`, `email`, `username`, `password`, `servers`, `imap_cert`, `smtp_cert`, `signature` | ja |
 
 **GhulDrive (`.ghldrv`):**
@@ -448,11 +448,12 @@ ihre eigenen Dateien (`.ghldrv`, `.ghlmail`).
 | Schlüssel | Inhalt | Synchronisiert |
 |---|---|---|
 | `drive` | `server` (ID, leer bei `use_sync`), `use_sync` (bool: der Server, mit dem dieses Gerät synchronisiert; nur ein Verweis), `key` (32 Byte, Drive-Schlüssel DK), `seen` (Server-ID → höchste gesehene Index-Revision; ein älterer Index wird abgelehnt) | ja |
-| `servers` | höchstens ein eigener Server nur für GhulDrive (Aufbau wie im Suite-Container); ein PHP-Modul kann `upload` mit dem FTPS-Zugang für Updates tragen (`host`, `port`, `user`, `password`, `cert`, `dir`, `data_dir`) | ja |
+| `servers` | höchstens ein eigener Server nur für GhulDrive (Aufbau wie im Suite-Container, auch mit `module`) | ja |
 | `options` | Optionen des Bereichs, je Schlüssel `{v, at}` (Text, Zeit in ms) | ja |
 
 **GhulMail (`.ghlmail`):** `mail_accounts` (wie oben), `mail_keys`, `mail_contacts`, `mail_cache_key`, `mail_drafts`,
-`mail_outbox`, `options`. **GhulPass, GhulAuth, GhulCal:** `options` in ihren Dateien.
+`mail_outbox`, `options`, `drive_archive` (Knoten-ID des Archivordners in GhulDrive), `archive_auto` (`days`, 0 = aus;
+`marks`: je „Konto/Ordner“ `[UIDVALIDITY, höchste UID]` der automatischen Läufe), siehe Abschnitt 12. **GhulPass, GhulAuth, GhulCal:** `options` in ihren Dateien.
 
 **Listen mit `changed`:** Einträge von `servers` und `mail_accounts` tragen `changed` (ms). Beim Zusammenführen gewinnt
 der später geänderte Eintrag derselben `id`; ohne `changed` bleibt der lokale.
@@ -472,33 +473,50 @@ einem Gerät mit älterer App zurückbringt.
 ```text
 <base>/suite/                 Tresore (.ghlpss, .ghltotp, .ghlcal) und suite.ghlsuite, unverändert im Container-Format
 <base>/drive/index.ghldrv     "GHULDRV1" ‖ nonce[24] ‖ XChaCha20-Poly1305(IK, pad(CBOR-Index), aad = "")
-<base>/drive/blocks/<ab>/<id> "GHULBLK1" ‖ nonce[24] ‖ XChaCha20-Poly1305(BK, Block, aad = "GHULBLK1" ‖ id)
+<base>/drive/blocks/<ab>/<id> "GHULBLK2" ‖ nonce[12] ‖ AES-256-GCM(BK_f, Block, aad = "GHULBLK2" ‖ id)
+<base>/shares/<id>.json       Beschreibung einer Freigabe (Abschnitt 11), von der App geschrieben
+<base>/shares/<id>.state      Abrufe und Tickets einer Freigabe, vom Server-Modul geschrieben
 ```
 
 ```text
-IK  = HKDF-SHA256(DK, info = "ghul/v1/drive/index")
-BK  = HKDF-SHA256(DK, info = "ghul/v1/drive/block")
-BIK = HKDF-SHA256(DK, info = "ghul/v1/drive/block-id")
-id  = hex(HMAC-SHA256(BIK, Klartext-Block))      <ab> = die ersten zwei Zeichen von id
+IK    = HKDF-SHA256(DK, info = "ghul/v1/drive/index")
+FK    = zufällig 32 Byte je Inhalt einer Datei (Dateischlüssel, steht im Index)
+BK_f  = HKDF-SHA256(FK, info = "ghul/v2/drive/block")
+BIK_f = HKDF-SHA256(FK, info = "ghul/v2/drive/block-id")
+id    = hex(HMAC-SHA256(BIK_f, Klartext-Block))      <ab> = die ersten zwei Zeichen von id
 ```
 
-- Blöcke: höchstens 4 MiB Klartext. Gleiche Blöcke werden einmal gespeichert.
+- **Seit 0.7.0 hat jeder Inhalt einer Datei seinen eigenen Schlüssel** `FK`. Eine neue Fassung (gleicher Name erneut
+  hochgeladen) bekommt einen neuen. Ein Freigabelink enthält nur `FK`, nie `DK`; deshalb muss beim Teilen nichts
+  kopiert werden. AES-256-GCM, damit ein Browser die Blöcke mit WebCrypto öffnen kann.
+- Blöcke: höchstens 4 MiB Klartext. Gleiche Blöcke werden nur innerhalb eines Inhalts einmal gespeichert; dass zwei
+  Dateien gleich sind, ist auf dem Server nicht zu erkennen.
 - Index (CBOR): `revision` (u64) und `nodes`: je Knoten `id`, `parent` (leer = oberste Ebene), `name`, `dir`,
-  `size`, `modified` (ms), `blocks` (Liste der Block-IDs in Reihenfolge). Aufgefüllt wie der Tresor-Inhalt (Abschnitt 5.1).
+  `size`, `modified` (ms), `blocks` (Liste der Block-IDs in Reihenfolge), `key` (`FK`), `versions` (je `size`,
+  `modified`, `blocks`, `key`). Aufgefüllt wie der Tresor-Inhalt (Abschnitt 5.1).
 - Schreiben immer atomar (temporäre Datei, dann Umbenennen). Vor jeder Änderung wird der Index neu geladen.
-  Nicht mehr referenzierte Blöcke werden nach dem Löschen entfernt.
+  Nicht mehr referenzierte Blöcke werden nach dem Löschen entfernt, außer eine Freigabe liefert sie noch aus
+  (`shares/*.json`); sie gehen, wenn der letzte Link endet, der sie braucht.
+- Unterbrochenes Hochladen: Das Gerät merkt sich `FK` je „Ordner/Name“ höchstens 7 Tage in `drive-pending`
+  (lokal, `"GHULPND1" ‖ nonce[24] ‖ XChaCha20-Poly1305(HKDF-SHA256(DK, "ghul/v2/drive/pending"), CBOR)`). Ein erneutes
+  Hochladen derselben Datei überspringt die Blöcke, die schon da sind.
+- Blöcke des Formats `GHULBLK1` (gemeinsamer Blockschlüssel aus `DK`, vor 0.7.0) werden nicht mehr gelesen.
 
-## 11. Freigaben (seit 0.5.0)
+## 11. Freigaben (seit 0.7.0 nur über das Server-Modul)
 
-Eine Freigabe ist ein eigenständiges Paket, das ein Browser allein mit WebCrypto entschlüsseln kann. Jede Freigabe hat
-einen neuen, zufälligen 256-Bit-**Link-Schlüssel**; sie verrät nichts über Tresore, Drive-Schlüssel oder andere Freigaben.
+Ein Freigabelink verweist auf ein kleines **Paket** mit den Namen, Größen und Dateischlüsseln (`FK`, Abschnitt 10)
+der geteilten Dateien. Das Paket hat einen neuen, zufälligen 256-Bit-**Link-Schlüssel**; es verrät nichts über
+Tresore, den Drive-Schlüssel oder andere Freigaben. Die Dateien selbst werden nicht kopiert: Das Server-Modul gibt
+ihre vorhandenen Blöcke heraus.
+
+**Paket** (ein Browser entschlüsselt es allein mit WebCrypto):
 
 ```text
 Kopf (48 Byte)
   "GHSHARE1" | Version u8 = 1 | Flags u8 (Bit 0: Passwort) | reserviert u16 = 0
   chunk_size u32 BE | PBKDF2-Runden u32 BE | salt[16] | nonce_prefix[8] | meta_len u32 BE
 Stück 0       AES-256-GCM(Meta-JSON)                      meta_len Byte
-Stück 1..n    AES-256-GCM(chunk_size Byte der Datei)      das letzte kürzer
+Stück 1..n    AES-256-GCM(chunk_size Byte des Inhalts)    das letzte kürzer
 
 nonce(i) = nonce_prefix ‖ u32 BE i
 aad(i)   = Kopf ‖ u8 (1 = letztes Stück des Pakets, sonst 0); erkennt Abschneiden
@@ -508,106 +526,53 @@ key      = HKDF-SHA256(ikm = Link-Schlüssel[32] (‖ PBKDF2-SHA256(Passwort NFC
 
 - `chunk_size` = 1 MiB, PBKDF2 mit 600 000 Runden (ohne Passwort steht 0 im Kopf). Beim Öffnen werden höchstens
   10 000 000 Runden akzeptiert, damit ein manipuliertes Paket den Empfänger nicht lahmlegt.
-- Meta-JSON: `name`, `type` (MIME), `size`, `created`, `expires` (Unix-ms, 0 = nie). Der Empfänger prüft `expires` selbst.
-- Mehrere Dateien oder ein Ordner werden vorher zu einem ZIP (ohne Kompression) zusammengefasst. Höchstens 1 GiB.
+- Meta-JSON: `name` (Titel der Freigabe), `type` = `application/x-ghulsuite-share`, `size` (Summe), `created`, `expires`.
+- Inhalt: JSON `{"files": [{"name", "size", "type", "key"}]}`; `name` mit Unterordnern (`Urlaub/Strand.jpg`),
+  `key` = `FK` als Base64url. Mehrere Dateien und Ordner bleiben einzelne Dateien (kein ZIP), ohne Größengrenze.
 - Kopf und Ende sind über `aad` an jedes Stück gebunden: Änderungen, Vertauschen und Abschneiden fallen auf.
 
-**Link:** `<Adresse>#<id>.<Schlüssel>`: `id` = 32 Hex-Zeichen, **zufällig und unabhängig vom Schlüssel**;
+**Link:** `<Adresse des Moduls>#<id>.<Schlüssel>`: `id` = 32 Hex-Zeichen, **zufällig und unabhängig vom Schlüssel**;
 Schlüssel = Base64url ohne Auffüllung (43 Zeichen). Der Teil nach `#` wird von Browsern nie an den Server gesendet;
 die Empfängerseite entfernt ihn nach dem Lesen aus der Adresszeile.
 
-**Teilen-Ordner (SFTP/FTPS + Webserver):**
+**Beschreibung auf dem Server** `<base>/shares/<id>.json` (von der App über SFTP/FTPS geschrieben):
 
-```text
-<share_dir>/index.html, viewer.js, viewer.css   Empfängerseite (keine fremden Inhalte)
-<share_dir>/.htaccess                           strenge CSP, kein Listing, kein Caching, no-referrer
-<share_dir>/s/index.html                        leer, verhindert das Auflisten
-<share_dir>/s/<id>                              das Paket
+```json
+{"package": "<Paket, Base64>", "files": [["<Block-ID>", ...], ...], "exp": 0, "max": 0}
 ```
 
-Adresse = `share_url` (nur https). Ablauf: die Empfängerseite verweigert abgelaufene Pakete, die App löscht sie beim
-nächsten Verbinden. Abrufzähler und Einmal-Links gibt es hier nicht.
+`files` nennt die Blöcke jeder Datei in Reihenfolge, damit das Modul genau diese und keine anderen herausgibt; der
+Server sieht so, welche Blöcke zusammen geteilt sind, aber keinen Namen und keinen Schlüssel. `exp` (Unix-ms, 0 = nie)
+und `max` (0 = unbegrenzt, 1 = Einmal-Link) setzt das Modul durch. Text, der nicht in GhulDrive liegt (etwa ein Login
+aus GhulPass), wird mit einem neuen `FK` in eigene Blöcke geschrieben, die mit der Freigabe gelöscht werden.
 
-**Server-Modul (`ghulsuite.php`, PHP 8.1+, ohne Datenbank):** eine Datei mit eingebautem Zugangsschlüssel `K` (32 Byte),
-zufälligem Datenordner `ghul-data-<24 hex>` daneben (`.htaccess` „deny“, `index.html`) und eingebetteter Empfängerseite.
+**Server-Modul (`ghulsuite.php`, PHP 8.1+, ohne Datenbank, Version 3):** eine Datei ohne Geheimnis, von der App über
+den SFTP- oder FTPS-Zugang des Servers in den Ordner der Website gelegt, mit dem Pfad zum GhulSuite-Ordner
+(`GHUL_BASE`, relativ zur Datei) und eingebetteter Empfängerseite. Es schreibt nichts außer `shares/<id>.state`.
 
-| Aufruf | Bedeutung |
+| Aufruf (nur `GET`) | Bedeutung |
 |---|---|
-| `GET` ohne Parameter | Empfängerseite (CSP `default-src 'none'; script-src 'self'; …`); `?v=js`, `?v=css` |
-| `GET ?s=<id>` | Paket ausliefern; zählt unter Dateisperre, prüft Ablauf und Höchstzahl; danach 404/410 |
-| `POST ?a=info` | `{version, php, free, limit}`; `limit` = größte Anfrage des Hostings in Byte (`post_max_size`, höchstens ein Drittel von `memory_limit`; 0 = unbekannt) |
-| `POST ?a=list&p=` · `read` · `write` · `delete` · `mkdir` | Speicher wie ein Ordner (`p` = relativer Pfad) |
-| `POST ?a=write_part&p=&n=&u=` · `write_done&p=&u=&size=` | (ab Version 2) große Datei in Teilen in eine temporäre Datei, dann atomar ersetzen; `u` = 16 bis 64 Hex-Zeichen je Upload; unvollständige Teile verfallen nach einem Tag |
-| `POST ?a=share_part&id=&n=` · `share_done&id=&exp=&max=` | Freigabe in Teilen hochladen, dann veröffentlichen |
-| `POST ?a=share_delete&id=` · `share_list` | Freigabe beenden; Liste `{id, exp, max, count}` |
+| ohne Parameter | Empfängerseite (CSP `default-src 'none'; script-src 'self'; …`); `?asset=js`, `?asset=css` |
+| `?v` | `{version, folder}`: Version und ob der GhulSuite-Ordner lesbar ist |
+| `?check=<32 hex>` | Inhalt von `shares/check-<name>`: so prüft die App beim Installieren, dass das Modul den Ordner liest |
+| `?s=<id>` | öffnet die Freigabe: prüft Ablauf (410) und Höchstzahl (410), zählt unter Dateisperre und antwortet `{package, blocks, ticket}`; das Ticket (32 Hex) gilt 24 Stunden und steht nur als SHA-256 im Zustand |
+| `?s=<id>&t=<Ticket>&f=<Datei>&b=<Block>` | der Block Nummer `b` der Datei `f` dieser Freigabe; ohne gültiges Ticket 403, Ablauf 410 |
 
-Jeder `POST` ist signiert:
+Kennungen und Nummern werden nur in genau ihrer Form angenommen (Hex fester Länge, Dezimalzahl ohne führende Null);
+alles andere ist 404. Andere Methoden: 405. Ein Block wird nur gelesen, wenn sein Name in der Beschreibung steht und
+64 Hex-Zeichen hat; ein Pfad kann daraus nicht entstehen.
 
-```text
-X-Ghul-Time  = Unix-Sekunden (±300 s)          X-Ghul-Nonce = 32 Hex-Zeichen, jede nur einmal
-X-Ghul-Sig   = hex(HMAC-SHA256(K, "ghul/v1\n" ‖ Methode ‖ "\n" ‖ kanonisch ‖ "\n" ‖ Zeit ‖ "\n" ‖ Nonce ‖ "\n" ‖ hex(SHA-256(Body))))
-kanonisch    = die vorhandenen Parameter in der Reihenfolge a, p, id, exp, max, n, u, size als k=rawurlencode(v), mit & verbunden
-```
+## 12. Mail-Archiv (seit 0.7.0 in GhulDrive)
 
-**Teilgröße:** Die App fragt `info` einmal je Verbindung und teilt Uploads in Teile von `limit` − 64 KiB, mindestens
-256 KiB und höchstens 4 MiB. Dateien bis 256 KiB (und alles bei Modul-Version 1) gehen in einem Stück.
+Archivierte Mails sind normale Dateien in GhulDrive (Abschnitt 10): die Mail unverändert, wie sie beim Anbieter liegt
+(RFC 5322, `.eml`), unter `Mail-Archiv/<Konto>/<Jahr>/<JJJJ-MM-TT> <Absender> - <Betreff> (<Code>).eml`.
 
-Pfade: keine `.`/`..`-Teile, keine Steuerzeichen, kein `\`; Dateien mit ausführbarer Endung (`.php`, `.phtml`, `.phar`,
-`.cgi`, …) sowie `.htaccess`, `.htpasswd`, `.user.ini` werden abgelehnt. Nach 20 Fehlversuchen in 10 Minuten
-antwortet das Modul der Adresse mit 429.
+- `<Code>` = die ersten 8 Hex-Zeichen von SHA-256(Message-ID), ohne Message-ID von SHA-256(Mail). Liegt im Ordner
+  des Jahres schon eine Datei mit diesem Code, wird die Mail übersprungen.
+- Datum aus `Date`, sonst aus dem Empfangsdatum des Servers. Namensteile ohne `/ \ : * ? " < > |`, Steuerzeichen und
+  Richtungszeichen, höchstens 120 Zeichen vor dem Code.
+- Der Archivordner wird über seine Knoten-ID gefunden (`drive_archive` in der Mail-Datei); Umbenennen und Verschieben
+  ändern nichts. Liegt er im Papierkorb, legt das nächste Archivieren einen neuen an.
+- Beim Anbieter ändert sich nichts (`EXAMINE`, `BODY.PEEK[]`, auch „gelesen“ bleibt).
 
-
-## 12. Mail-Archiv (seit 0.6.0)
-
-Das verschlüsselte Mail-Archiv (Konzept, Abschnitt 9.3.1) liegt in einem eigenen Ordner `mailarchive/` auf dem Server
-der Synchronisation oder einem eigenen Server. Der Server sieht nur Anzahl und ungefähre Größe der Dateien: keine
-Adressen, keine Ordnernamen, keine Monate, keine Inhalte.
-
-```text
-mailarchive/head.ghlarc            "GHULARH1" | Epoche u32 = 0 | nonce[24] | AEAD(Kopf-Schlüssel, CBOR {id, created})
-mailarchive/a/<konto>/m/<monat>    "GHULARM1" | Epoche u32 | nonce[24] | AEAD(Index-Schlüssel(e), aufgefülltes CBOR)
-mailarchive/a/<konto>/state        "GHULARS1" | ...  UIDVALIDITY je Ordner, UID-Verzeichnis (UID → Monat, gelöscht, zu groß)
-mailarchive/a/<konto>/lock         "GHULARL1" | ...  {Gerät, gültig bis}: archiviert gerade
-mailarchive/b/<ab>/<block-id>      "GHULARB1" | Epoche u32 | nonce[24] | AEAD(Block-Schlüssel(e), Block bis 4 MiB)
-mailarchive/gc                     "GHULARG1" | ...  Blöcke, die beim letzten Aufräumen unbenutzt waren
-```
-
-- **Schlüssel-Epochen:** Je Epoche ein zufälliger 256-Bit-Schlüssel `K_e`, gespeichert in den verschlüsselten
-  Einstellungen der Mail-Datei (`.ghlmail`). Index-Schlüssel = HKDF(`K_e`, `ghul/v1/mailarchive/index`),
-  Block-Schlüssel = HKDF(`K_e`, `ghul/v1/mailarchive/block`). Nach jeder Schutzänderung der Suite beginnt beim nächsten
-  Archivieren eine neue Epoche; vorhandene Blöcke werden nicht neu verschlüsselt. Eine alte Sicherung mit altem Faktor
-  öffnet nur Blöcke früherer Epochen.
-- **Namen und Block-IDs** nutzen Schlüssel aus der ersten Epoche, damit sie sich nie ändern:
-  `<konto>` = HMAC(HKDF(`K_0`, `.../name`), `account:` ‖ Adresse in Kleinbuchstaben)[..32 Hex],
-  `<monat>` = HMAC(Namens-Schlüssel, `<konto>` ‖ `/` ‖ `JJJJ-MM`)[..32 Hex],
-  Block-ID = HMAC(HKDF(`K_0`, `.../block-id`), Block). Der Schlüssel einer Mail ist derselbe HMAC über `mail:` ‖ die
-  ganze Mail; gleiche Mails im selben Ordner werden einmal abgelegt.
-- **Zusätzliche Daten** jeder AEAD-Verschlüsselung: Magic ‖ Epoche ‖ Pfad der Datei. Eine Datei lässt sich deshalb nicht
-  als eine andere ausgeben (etwa ein alter Monat an Stelle eines neuen).
-- **Monat:** CBOR `{month, revision, items}`; je Mail `key`, Ordner, Rolle, UIDs und UIDVALIDITY beim Anbieter, Datum,
-  Größe, Block-IDs, die für die Liste nötigen Kopfzeilen (bis 8 KiB) und Textanfang (1 KiB) für Liste, Vorschau und Suche, gelesen, markiert,
-  Schlagwörter, archiviert/geändert, im Archiv-Papierkorb seit, `removed` (beim Anbieter gelöscht). Änderungen laden den
-  Monat neu und schreiben nur, wenn sich die Revision dazwischen nicht geändert hat.
-
-**UID-Verzeichnis im `state`:** je Ordner die archivierten UIDs mit ihrem Monat, die beim Anbieter gelöschten und die zu
-großen. Ein Lauf liest dadurch nur die Monate, die er ändert. Es ist nur eine Abkürzung: Fehlt es, wird es aus den
-Monaten neu aufgebaut; vor dem Löschen beim Anbieter wird weiterhin jede Mail aus dem Monat und ihren Blöcken geprüft.
-
-**Ablauf je Konto** (ein Gerät zugleich: Sperre je Aufruf mit höchstens 1.000 Mails, gilt 15 Minuten, am Ende freigegeben):
-1. Ordner des Anbieters lesen (Entwürfe nie, Spam und Papierkorb nach Einstellung), UIDVALIDITY und die UIDs der Mails
-   vor der Frist (`UID SEARCH BEFORE`) holen. Hat sich UIDVALIDITY geändert, wird über den Inhalt neu zugeordnet.
-2. Größen vorab (`RFC822.SIZE`): Mails über **100 MB** werden nicht geholt, bleiben beim Anbieter und werden dort nie
-   gelöscht. In Schritten zu 100 Mails, die neuesten zuerst: bis zu 10 Mails bzw. 20 MB mit einem `BODY.PEEK[]`-Befehl
-   holen (ändert keine Markierung), Blöcke von vier Mails gleichzeitig schreiben, **über eine zweite Verbindung zurücklesen und Byte für Byte vergleichen**, dann den Monat schreiben und
-   ebenfalls zurücklesen.
-3. Nur wenn „beim Anbieter löschen“ eingeschaltet **und** einmal bestätigt ist: jede Mail noch einmal vollständig aus
-   dem Archiv lesen und prüfen, dann genau ihre UIDs löschen (`UID EXPUNGE`, ohne UIDPLUS nur genau diese), und nur,
-   solange der Ordner dieselbe UIDVALIDITY hat. Danach `removed` setzen.
-
-**Aufräumen:** Gelöschte Mails bleiben 30 Tage im Archiv-Papierkorb. Blöcke, die keine Mail mehr nutzt, werden erst
-gelöscht, wenn sie auch beim vorigen Aufräumen mindestens einen Tag zuvor schon unbenutzt waren (ein anderes Gerät
-könnte gerade Blöcke geschrieben, aber seinen Monat noch nicht).
-
-**Kopie auf dem Gerät:** dieselben verschlüsselten Dateien unter dem lokalen App-Ordner (`mail-archive/<id>/`).
-„Aus dieser Kopie wiederherstellen“ lädt fehlende Blöcke hoch und führt die Monate Eintrag für Eintrag zusammen; es
-fügt nur hinzu.
+Das eigene Archivformat der Version 0.6.0 (`mailarchive/`, Epochen-Schlüssel) wird nicht mehr gelesen.

@@ -11,11 +11,22 @@
 Die selbst gehostete Alternative zu den bekannten Privacy-Suiten: gleicher Komfort, aber ohne Abo,
 ohne Konto bei einem Anbieter und ohne Vertrauensvorschuss. Die Daten liegen da, wo **du** sie hinlegst.
 
+</div>
+
+> [!WARNING]
+> **Work in Progress: noch nicht für den produktiven Einsatz geeignet.**
+> GhulSuite befindet sich nach wie vor in Entwicklung. Ganze Teile der App, das Dateiformat und die Art, wie Daten
+> auf dem Server liegen, können sich jederzeit ändern, auch ohne Umzug älterer Daten. Verlass dich nicht darauf,
+> dass heute gespeicherte Daten mit der nächsten Version noch lesbar sind, und lege nichts hinein, was du nicht
+> zusätzlich woanders hast.
+
+<div align="center">
+
 [![Lizenz: AGPL-3.0](https://img.shields.io/badge/Lizenz-AGPL--3.0-6A4DF5)](LICENSE)
 ![Android](https://img.shields.io/badge/Android-10%2B-0E9F80)
 ![Windows](https://img.shields.io/badge/Windows-10%2F11%20%C2%B7%20portabel-2F74E8)
-![Server](https://img.shields.io/badge/Server-SFTP%20%C2%B7%20FTPS%20%C2%B7%20PHP%208.1-E0700F)
-![Status](https://img.shields.io/badge/Status-Entwicklungsversion-lightgrey)
+![Server](https://img.shields.io/badge/Server-SFTP%20%C2%B7%20FTPS%20%C2%B7%20optional%20PHP%208.1-E0700F)
+![Status](https://img.shields.io/badge/Status-Work%20in%20Progress-red)
 [![Website](https://img.shields.io/badge/Website-www.ghulsuite.de-A996FF)](https://www.ghulsuite.de)
 
 <br>
@@ -30,7 +41,8 @@ ohne Konto bei einem Anbieter und ohne Vertrauensvorschuss. Die Daten liegen da,
 
 [Warum?](#warum-ghulsuite) ·
 [Die fünf Bereiche](#die-fünf-bereiche) ·
-[Mail-Archiv](#das-verschlüsselte-mail-archiv) ·
+[Teilen](#teilen-per-link) ·
+[Mails archivieren](#mails-in-ghuldrive-archivieren) ·
 [Einrichten](#einrichten-und-entsperren) ·
 [Synchronisation](#synchronisation-zwischen-deinen-geräten) ·
 [Selbst hosten](#selbst-hosten-in-fünf-minuten) ·
@@ -49,7 +61,8 @@ ohne Konto bei einem Anbieter und ohne Vertrauensvorschuss. Die Daten liegen da,
 | **Eine App, fünf Bereiche** | Passwörter, 2FA-Codes, Dateien, Mail und Kalender, einzeln ein- und ausschaltbar |
 | **Zwei Faktoren, immer** | Master-Passwort **plus** Security Key (FIDO2) oder Schlüsseldatei, dazu ein Notfallblatt |
 | **Dein Speicher** | Ein Ordner mit verschlüsselten Dateien: App-Speicher, eigener Ordner, USB-Stick oder Sync-Programm |
-| **Dein Server** | SFTP, FTPS oder ein einfacher Webspace mit PHP 8.1, ganz ohne Datenbank |
+| **Dein Server** | Jeder Server mit SFTP oder FTPS, auch ein einfacher Webspace; ganz ohne Datenbank |
+| **Teilen per Link** | Mit dem kleinen GhulSuite-Server-Modul (PHP 8.1) auf demselben Server, ohne Kopie |
 | **Was der Server sieht** | Nur verschlüsselte Blöcke mit Zufallsnamen: keine Inhalte, keine Namen, keine Ordner |
 | **Plattformen** | Android 10+ und Windows 10/11 (Installer oder portabel vom USB-Stick) |
 | **Offen** | Freie Software (AGPL-3.0), Dateiformat dokumentiert, Tests öffentlich |
@@ -62,8 +75,8 @@ dessen Zukunft. GhulSuite dreht das um:
 - 🔐 **Ende-zu-Ende verschlüsselt, immer.** Alles wird auf deinem Gerät verschlüsselt, bevor es irgendwohin geht.
   Dein Server sieht nur Datensalat: keine Inhalte, keine Datei- und Ordnernamen deiner Ablage, nicht einmal die
   Namen deiner Tresore.
-- 🏠 **Dein Server, deine Regeln.** Ein günstiges Standard-Webhosting mit PHP reicht. Keine Datenbank, kein Docker,
-  kein Root-Zugang nötig. Oder jeder Server mit SFTP/FTPS.
+- 🏠 **Dein Server, deine Regeln.** Jeder Server mit SFTP oder FTPS reicht, auch ein günstiges Webhosting. Keine
+  Datenbank, kein Docker, kein Root-Zugang nötig. Für Freigabelinks legt die App ein kleines PHP-Modul dazu.
 - 🗝️ **Zwei Faktoren, ohne Ausnahme.** Master-Passwort **plus** Security Key (FIDO2) oder Schlüsseldatei.
   Dazu ein Wiederherstellungscode mit Notfallblatt für den Tag, an dem alles schiefgeht. Verlierst du einen Key
   oder das Blatt, entfernst bzw. erneuerst du es: Ab dann öffnet es nichts mehr, auch nicht mit einer alten Sicherung.
@@ -122,8 +135,8 @@ Leiste, seine Datei bleibt unberührt.
   Ordner und Größen kennt nur dein Gerät.
 - **Ordner, Suche, Favoriten, Zuletzt**, Liste oder Raster mit Vorschaubildern, Speicherbalken nach Dateiart.
 - **Offline verfügbar** für ausgewählte Dateien, **Versionen** (die letzten fünf) und **Papierkorb**.
-- **Teilen per Link** mit Passwort und (mit dem Server-Modul) Ablaufdatum, Abrufzähler und Einmal-Link. Der
-  Schlüssel steht nur im Link hinter dem `#`, den Browser nie an den Server schicken.
+- **Teilen per Link ohne Kopie:** Jede Datei hat ihren eigenen Schlüssel, der Link enthält nur diesen. Ablaufdatum,
+  Einmal-Link, Abrufzähler und Passwort; auch große Dateien und ganze Ordner, siehe [unten](#teilen-per-link).
 - **Foto-Sicherung** (Android, auf Wunsch nur im WLAN), **Dokumente scannen**, verschlüsselte ZIPs.
 
 </td></tr></table>
@@ -142,7 +155,8 @@ Leiste, seine Datei bleibt unberührt.
 - **Alles, was man erwartet:** alle Posteingänge, Unterhaltungen, Schlagwörter, markierte Mails, Entwürfe,
   „Später senden“, Wischgesten, Mehrfachauswahl bis zum ganzen Ordner, Papierkorb und Spam leeren, `.eml` und PDF.
 - **Benachrichtigungen** mit wählbarem Inhalt; auf dem Sperrbildschirm immer nur „Neue Nachricht“.
-- **Verschlüsseltes Archiv** für ältere Mails auf deinem eigenen Server, siehe [unten](#das-verschlüsselte-mail-archiv).
+- **Archivieren in GhulDrive:** einzelne Mails, ganze Ordner oder automatisch alles Ältere, als `.eml` verschlüsselt
+  in GhulDrive, siehe [unten](#mails-in-ghuldrive-archivieren).
 
 </td></tr></table>
 
@@ -165,48 +179,37 @@ Leiste, seine Datei bleibt unberührt.
 App-PIN, Schutz vor Bildschirmfotos und vor Apps, die sich über GhulSuite legen, Komplett-Sicherung als ZIP,
 „Rückgängig“ nach dem Löschen, dunkles Design und Deutsch oder Englisch.
 
-## Das verschlüsselte Mail-Archiv
+## Teilen per Link
 
-<table><tr>
-<td width="200" valign="top"><img src="docs/images/phone-mail-archive.png" width="190" alt="Archivierte Mails unter dem Posteingang"></td>
-<td valign="top">
+Jede Datei in GhulDrive ist mit ihrem **eigenen Schlüssel** verschlüsselt. Ein Freigabelink enthält nur diesen
+Schlüssel (hinter dem `#`, den Browser nie an den Server schicken), nie den Schlüssel deines ganzen Drive. Deshalb
+wird beim Teilen **nichts kopiert, heruntergeladen oder hochgeladen**: Der Link steht in Sekunden, auch für mehrere
+Gigabyte oder ganze Ordner.
 
-Beim Mail-Anbieter liegen Mails meist lesbar, oft über viele Jahre. Das Archiv ändert das: **Mails, die älter als
-eine Frist sind, zieht GhulSuite verschlüsselt auf deinen eigenen Server.** Sie bleiben auf allen Geräten sichtbar,
-durchsuchbar und mit einer Kopie auf dem Gerät auch offline lesbar. Beim Anbieter bleibt nur Neues.
+- **Das GhulSuite-Server-Modul** (eine PHP-Datei) liefert die verschlüsselten Blöcke aus. Die App installiert es über
+  deinen SFTP- oder FTPS-Zugang auf demselben Server, auf dem GhulDrive liegt, und prüft, dass es funktioniert.
+- **Es setzt alles selbst durch:** Ablaufdatum, Einmal-Links und Abrufzähler gelten auf die Minute, auch wenn keins
+  deiner Geräte an ist. Zurückziehen beendet den Link sofort.
+- **Es kennt kein Geheimnis und kann nichts schreiben:** Es liefert nur die Blöcke der geteilten Dateien aus, nichts
+  sonst aus deinem Drive.
+- **Beim Empfänger** entschlüsselt der Browser Stück für Stück und schreibt direkt auf die Festplatte (Chrome, Edge);
+  bei mehreren Dateien gibt es jede einzeln.
+- **Der Link zeigt die geteilte Fassung**, auch wenn du die Datei danach änderst. Löschst du eine geteilte Datei,
+  fragt die App vorher und beendet die Links.
 
-- **Frist frei wählbar:** 1, 7, 30 (vorausgewählt), 90 oder 365 Tage oder ein eigener Wert.
-- **Gesendete Mails** mit archivieren; **Spam und Papierkorb** in Ruhe lassen, archivieren oder nach der Frist löschen.
-- **Keine eigene Ansicht:** Archivierte Mails stehen unter denen des Anbieters, mit einem kleinen Symbol.
-- **Ein Server, nie nur ein Gerät:** Das Archiv liegt immer auf einem Server, eine vollständige Kopie auf einem
-  Gerät ist die zusätzliche Absicherung.
+Ohne PHP auf dem Server (etwa ein NAS nur mit SFTP) gibt es keine Freigabelinks; „An App senden“ und „Als
+Mail-Anhang“ gehen weiterhin.
 
-</td></tr></table>
+## Mails in GhulDrive archivieren
 
-<div align="center">
-<img src="docs/images/phone-archive-options.png" width="230" alt="Die Optionen des Mail-Archivs">&nbsp;&nbsp;
-<img src="docs/images/phone-archive-read.png" width="230" alt="Eine archivierte Mail">
-</div>
+Ältere Mails liegen beim Anbieter oft jahrelang lesbar. GhulMail kopiert sie auf Wunsch als normale `.eml`-Dateien in
+GhulDrive, verschlüsselt auf deinem Server: `Mail-Archiv/<Konto>/<Jahr>/2024-05-03 Absender - Betreff.eml`.
 
-**Damit keine Mail verloren geht**, gelten feste Regeln, und jede ist mit Tests abgesichert:
-
-1. Eine Mail gilt erst als archiviert, wenn die App sie **über eine zweite Verbindung zurückgelesen und Byte für
-   Byte verglichen** hat.
-2. **Löschen beim Anbieter ist aus**, bis du es einschaltest. Nach dem ersten vollständigen Lauf fragt die App noch
-   einmal: „Alles sicher archiviert. Jetzt N Mails beim Anbieter entfernen?“ Danebentippen heißt „Später“.
-3. Gelöscht werden **genau die geprüften Mails**, einzeln über ihre Nummer, und nur, solange der Anbieter seinen Ordner
-   nicht neu nummeriert hat. Unmittelbar vorher wird jede Mail noch einmal aus dem Archiv gelesen.
-4. **Zählregel:** Mails beim Anbieter plus Mails im Archiv sind nach jedem einzelnen Schritt nie weniger als vorher.
-   Die Tests brechen nach jedem Schritt ab (hochgeladen, geprüft, verzeichnet, gelöscht) und prüfen das, nachts mit
-   30.000 Mails und zufälligen Abbrüchen.
-5. **Ein Gerät zur Zeit** archiviert ein Konto; die anderen warten. Mails über 100 MB bleiben beim Anbieter und werden
-   dort nie gelöscht.
-6. **Server weg?** Das Archiv zieht auf einen neuen Server um (kopieren, prüfen, umschalten), oder ein Gerät mit
-   vollständiger Kopie baut es dort wieder auf. Wiederherstellen fügt nur hinzu, es löscht nie.
-7. **Schlüssel-Epochen:** Nach einer Schutzänderung (neues Notfallblatt, Key entfernt) bekommt Neues einen neuen
-   Schlüssel. Eine alte Sicherung mit dem alten Faktor öffnet nur, was bis dahin archiviert war.
-
-Details: [Konzept, Abschnitt 9.3.1](docs/KONZEPT.md) und [Dateiformat, Abschnitt 12](docs/FORMAT.md#12-mail-archiv-seit-060).
+- **Einzelne Mails, ganze Ordner oder alles Ältere** auf einmal; große Mengen laufen im Hintergrund mit Fortschritt
+  und Meldung am Ende („40 Mails archiviert, 3 waren schon im Archiv“).
+- **Automatisch**, wenn du willst: Mails älter als 30, 90 oder 365 Tage aus Posteingang und Gesendet, einmal am Tag.
+- **Beim Anbieter bleibt alles**, wie es ist. Aufräumen ist deine Entscheidung: archivieren, dann selbst löschen.
+- **Im Archiv lesen:** in GhulMail unter „Archiv“ oder direkt in GhulDrive; die Dateien öffnet jedes Mailprogramm.
 
 ## Einrichten und entsperren
 
@@ -253,23 +256,23 @@ Unter Windows (und im Querformat) mit den Bereichen links in einer Seitenleiste 
 
 ## Selbst hosten in fünf Minuten
 
-GhulSuite braucht **keinen speziellen Server**. Du hast drei Möglichkeiten:
+GhulSuite braucht **keinen speziellen Server**. Ein Server in der App ist immer ein Zugang per SFTP oder FTPS:
 
-| Variante | Was du brauchst | Ideal für |
+| Zugang | Was du brauchst | Ideal für |
 |---|---|---|
-| **GhulSuite-Server-Modul** | Webspace mit **PHP 8.1** (oder neuer), ohne Datenbank | Günstiges Webhosting, zusätzlich mit Ablaufdatum, Abrufzähler und Einmal-Links beim Teilen |
-| **SFTP** | Einen Server mit SSH-Zugang | Eigener Server, NAS, Raspberry Pi |
+| **SFTP** | Einen Server mit SSH-Zugang | Eigener Server, NAS, Raspberry Pi, Webhosting mit SSH |
 | **FTPS** | FTP mit TLS-Verschlüsselung | Webhosting ohne SSH |
+| **+ Server-Modul** (optional) | **PHP 8.1** oder neuer auf demselben Server, ohne Datenbank | Freigabelinks |
 
-**So geht's mit dem Server-Modul:**
-1. In der App: **Optionen → Server, Sync und Teilen → Server hinzufügen → GhulSuite-Server-Modul**.
-2. Die App erzeugt die Datei `ghulsuite.php` mit einem eigenen Zugangsschlüssel.
-3. Lade sie auf deinen Webspace (oder lass die App das per FTPS/SFTP erledigen) und trage die Adresse ein.
-4. Fertig: Synchronisation, GhulDrive, das Mail-Archiv und Freigabelinks laufen über deinen Server.
+**So geht's:**
+1. In der App: **Optionen → Server → Server hinzufügen**, SFTP oder FTPS wählen, den Ordner für GhulSuite aussuchen.
+2. Synchronisation und GhulDrive wählen ihren Server jeweils selbst; es kann derselbe sein.
+3. Für Freigabelinks: beim Server **„Server-Modul installieren“**, den Ordner deiner Website wählen. Die App legt
+   `ghulsuite.php` dorthin und prüft Adresse, PHP und den Zugriff auf den GhulSuite-Ordner.
 
-Das Modul nimmt nur Anfragen an, die mit seinem Schlüssel signiert sind (mit Zeitfenster und Einmal-Nummer), und
-sperrt Absender nach Fehlversuchen. Ausführbare Dateien kann es nicht ablegen, auch nicht mit dem Schlüssel.
-Für normale Mails brauchst du keinen eigenen Server: GhulMail spricht direkt mit deinem Postfach.
+Das Modul hat keinen Schlüssel und keinen Schreibzugriff übers Web. Es liest nur, was die App für einen Link in den
+GhulSuite-Ordner legt, und gibt genau diese verschlüsselten Blöcke heraus. Für normale Mails brauchst du keinen
+eigenen Server: GhulMail spricht direkt mit deinem Postfach.
 
 ## So schützt GhulSuite deine Daten
 
@@ -291,7 +294,8 @@ Für normale Mails brauchst du keinen eigenen Server: GhulMail spricht direkt mi
 | Dein Server bzw. Hoster | Anzahl und ungefähre Größe verschlüsselter Dateien, wann sie sich ändern | Inhalte, Namen von Tresoren, Dateien, Ordnern, Mail-Konten oder Monaten |
 | Jemand mit deinen Dateien (gestohlene Sicherung) | Datensalat | ohne Passwort **und** zweiten Faktor nichts |
 | Jemand mit deinem gesperrten Handy | Benachrichtigungen ohne Inhalt | Einträge, Codes, Dateien, Mails |
-| Dein Mail-Anbieter | neue Mails (bei PGP nur verschlüsselt) | was im Archiv liegt |
+| Dein Mail-Anbieter | die Mails, die bei ihm liegen (bei PGP nur verschlüsselt) | Kopien im Archiv in GhulDrive |
+| Wer einen Freigabelink hat | genau die geteilten Dateien, solange der Link gilt | alles andere in deinem Drive |
 | Ein verlorener Key oder ein altes Notfallblatt | nach dem Entfernen bzw. Erneuern nichts mehr, auch nicht mit alten Sicherungen | |
 
 - **Schlüssel:** Argon2id für das Passwort, FIDO2 `hmac-secret`/PRF für den Security Key; beide sind nötig.
@@ -305,12 +309,13 @@ Für normale Mails brauchst du keinen eigenen Server: GhulMail spricht direkt mi
 GhulSuite ist ein Soloprojekt ohne bezahlten externen Audit. Umso wichtiger ist, dass jeder nachprüfen kann, was
 getestet wird und was nicht:
 
-- **Bei jeder Änderung** laufen über eine Million Einzelprüfungen in 275 Testfunktionen: Angriffe auf Dateien,
+- **Bei jeder Änderung** laufen über eine Million Einzelprüfungen in über 250 Testfunktionen: Angriffe auf Dateien,
   Server und Synchronisation, ein „bekloppter Nutzer“ auf drei Geräten, kaputte und böswillige Eingaben in jeden
   Parser, Tests gegen echte SFTP-, FTPS-, IMAP- und SMTP-Server. Dazu kommen öffentliche Sammlungen wie Project
   Wycheproof (Kryptografie), die Big List of Naughty Strings, XSS- und CRLF-Sammlungen für Mails, die URL-Testdaten
   der Browser, JSONTestSuite, Kalenderdateien anderer Programme und die Zeitzonen-Regeln der ganzen Welt. Das
-  Server-Modul muss 335 gezielte Angriffe abwehren.
+  Server-Modul muss gezielte Angriffe abwehren (Tickets, Pfade, Einmal-Links im Wettlauf), und Freigabelinks werden
+  im echten Browser geöffnet.
 - **Im Emulator** werden die wichtigsten Abläufe durchgeklickt, auch gegen echte Testserver; danach wird geprüft,
   dass dort nur Verschlüsseltes liegt.
 - **Jede Nacht** zusätzlich: langes Fuzzing, Dauerläufe, zufällige Bedienung im Emulator, Server mit kaputtem TLS,
@@ -385,9 +390,13 @@ Datenschutzerklärung der App.
 
 **GhulSuite** is a self-hosted, end-to-end encrypted suite for **passwords, 2FA codes, files, mail and calendar**: one app for
 Android and Windows. Everything is encrypted on your device (master password **plus** FIDO2 security key or key
-file); your own server only ever stores ciphertext. Any SFTP/FTPS server or plain PHP 8.1 web hosting without a
-database is enough. Older mail can move into an encrypted archive on your own server, deleted at the provider only
-after it was read back and checked. Free software under the AGPL-3.0, see [`LICENSE`](LICENSE).
+file); your own server only ever stores ciphertext. Any SFTP/FTPS server is enough, plain web hosting included;
+share links come from a small PHP 8.1 module the app installs on the same server, without copying anything (every
+file has its own key). Mail can be archived as encrypted `.eml` files in GhulDrive. Free software under the
+AGPL-3.0, see [`LICENSE`](LICENSE).
+
+> **Work in progress, not for production use.** GhulSuite is still under development; whole parts of the app, the
+> file format and the server layout may change at any time, without migrating older data.
 Website: [www.ghulsuite.de/en](https://www.ghulsuite.de/en/) · [legal notice](https://www.ghulsuite.de/en/imprint.html) ·
 [privacy policy of the app](https://www.ghulsuite.de/en/privacy-app.html).
 
