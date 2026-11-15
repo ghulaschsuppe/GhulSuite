@@ -851,8 +851,6 @@ fn mail_archive_to_drive_against_imap_and_sftp() {
         user: suser,
         password: None,
         base: format!("{sroot}/archive-drive-{run}"),
-        url: String::new(),
-        upload: None,
     };
     let id = saved(s.save_server(input, Some(hostkey)).unwrap());
     s.drive_setup(id).unwrap();
@@ -958,8 +956,6 @@ fn sync_over_sftp() {
         user: user.clone(),
         password: None,
         base: base.clone(),
-        url: String::new(),
-        upload: None,
     };
     // First the fingerprint is shown; then the server is stored with the confirmed fingerprint.
     assert_eq!(a.save_server(input.clone(), None).unwrap(), ServerSaved::Confirm { fingerprint: hostkey.clone() });
@@ -1184,8 +1180,6 @@ fn drive_over_sftp_two_devices() {
         user,
         password: None,
         base: format!("{root}/drive-{run}"),
-        url: String::new(),
-        upload: None,
     };
     let id = saved(a.save_server(input.clone(), Some(hostkey.clone())).unwrap());
     a.drive_setup(id.clone()).unwrap();
@@ -1634,8 +1628,6 @@ fn share_over_sftp_with_web_folder() {
         user,
         password: None,
         base: format!("{root}/suite-{run}"),
-        url: String::new(),
-        upload: None,
     };
     let id = saved(s.save_server(input, Some(hostkey)).unwrap());
     s.drive_setup(id.clone()).unwrap();
@@ -1662,8 +1654,6 @@ fn ftps_storage_drive_and_sharing() {
         user: cfg.user.clone(),
         password: Some(cfg.password.to_string()),
         base: cfg.base.clone(),
-        url: String::new(),
-        upload: None,
     };
     // Self-signed certificate: confirm its fingerprint first.
     let fp = match s.save_server(input.clone(), None).unwrap() {
@@ -1702,7 +1692,6 @@ fn php_module_storage_drive_and_limited_shares() {
         password: Some(crate::kdf::hex(&[3u8; 32])),
         base: String::new(),
         url: php.url.clone(),
-        upload: None,
     };
     // A wrong key is refused before anything is stored.
     assert!(matches!(s.save_server(input.clone(), None), Err(GhulError::ServerAuthFailed)));
@@ -1764,8 +1753,6 @@ fn drive_storage_follows_sync_or_uses_its_own_server() {
         user: cfg.user.clone(),
         password: Some(cfg.password.to_string()),
         base: base.to_owned(),
-        url: String::new(),
-        upload: None,
     };
     // Folder picker before anything is stored: confirm the certificate, then list.
     let fp = match s.server_browse_input(input(""), None, String::new()).unwrap() {
@@ -1834,8 +1821,6 @@ fn php_module_is_installed_over_ftps_and_takes_large_files_in_parts() {
         user: cfg.user.clone(),
         password: Some(cfg.password.to_string()),
         base: String::new(),
-        url: String::new(),
-        upload: None,
     };
     let dir = format!("{}/www", cfg.base);
     let url = format!("http://127.0.0.1:{port}/ghulsuite.php");
@@ -1930,7 +1915,6 @@ fn drive_file_and_share_link_into_mail() {
                 password: Some(crate::kdf::hex(&php.key)),
                 base: String::new(),
                 url: php.url.clone(),
-                upload: None,
             },
             None,
         )
@@ -2028,7 +2012,6 @@ fn php_browser_fixture() {
                 password: Some(crate::kdf::hex(&php.key)),
                 base: String::new(),
                 url: php.url.clone(),
-                upload: None,
             },
             None,
         )

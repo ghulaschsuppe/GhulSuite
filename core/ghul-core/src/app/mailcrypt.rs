@@ -285,7 +285,7 @@ pub(crate) fn wkd_urls(email: &str) -> Option<[String; 2]> {
         return None;
     }
     let hash = wkd_hash(local);
-    let l = crate::net::phpfs::rawurlencode(local);
+    let l = crate::net::module::rawurlencode(local);
     Some([
         format!("https://openpgpkey.{domain}/.well-known/openpgpkey/{domain}/hu/{hash}?l={l}"),
         format!("https://{domain}/.well-known/openpgpkey/hu/{hash}?l={l}"),

@@ -583,7 +583,7 @@ fn a_server_cannot_plant_files_through_names() {
 #[test]
 fn secrets_never_show_up_in_debug_output_or_errors() {
     use super::super::mail::{MailAccountInput, MailPollConfig, MailSecurity};
-    use super::super::servers::{ServerInput, ServerKind, UploadAccess};
+    use super::super::servers::{ServerInput, ServerKind};
     const M: &str = "DebugGeheimX7";
     let servers = super::super::mail::mail_suggest_servers("a@example.org".into());
     let shown = [
@@ -624,16 +624,6 @@ fn secrets_never_show_up_in_debug_output_or_errors() {
                 user: "u".into(),
                 password: Some(M.into()),
                 base: "b".into(),
-                url: String::new(),
-                upload: Some(UploadAccess {
-                    host: "h".into(),
-                    port: 21,
-                    user: "u".into(),
-                    password: M.into(),
-                    cert: String::new(),
-                    dir: "d".into(),
-                    data_dir: String::new()
-                })
             }
         ),
         format!("{:?}", options(M, Some(M.as_bytes().to_vec()), &[(VaultKind::Pass, "P")])),
@@ -642,7 +632,6 @@ fn secrets_never_show_up_in_debug_output_or_errors() {
         format!(
             "{:?}",
             super::super::shares::ShareOptions {
-                server_id: "s".into(),
                 password: Some(M.into()),
                 expires_days: 0,
                 max_downloads: 0

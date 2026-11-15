@@ -248,6 +248,14 @@ impl FileKey {
     }
 }
 
+/// A file of a share: its path in the share, size, key and blocks (see `app::shares`).
+pub(super) struct SharedFile {
+    pub path: String,
+    pub size: u64,
+    pub key: FileKey,
+    pub blocks: Vec<String>,
+}
+
 /// The server Drive uses on this device.
 fn drive_server_id(o: &Open, d: &DriveSettings) -> Option<String> {
     if d.use_sync {
@@ -697,8 +705,7 @@ impl GhulSuite {
             let sync = super::sync::sync_server(o).ok_or(GhulError::NotConfigured)?;
             let mut copy = servers::server(o, &sync)?;
             copy.id = crate::kdf::hex(&new_id()[..8]);
-            copy.share_dir.clear();
-            copy.share_url.clear();
+            // Same server, same folder: an installed module keeps working for GhulDrive.
             let id = copy.id.clone();
             put_area_setting(o, VaultKind::Drive, servers::SERVERS_KEY, &vec![copy])?;
             let mut d = d;
@@ -871,10 +878,12 @@ impl GhulSuite {
                 let still = used_blocks(index);
                 Ok(freed.into_iter().filter(|b| !still.contains(b)).collect::<Vec<String>>())
             })?;
-            // Only once the index without them is saved: a retry must not lose blocks.
+            // Only once the index without them is saved: a retry must not lose blocks. Blocks a
+            // share link still hands out stay until the link ends.
             let (fs, _) = self.drive_ctx(o)?;
-            for b in unused {
-                fs.delete(&block_path(&b))?;
+            let pinned = super::shares::pinned_blocks(fs.as_ref());
+            for b in unused.iter().filter(|b| !pinned.contains(*b)) {
+                fs.delete(&block_path(b))?;
             }
             Ok(())
         })
@@ -1309,6 +1318,81 @@ impl GhulSuite {
 }
 
 impl GhulSuite {
+    /// The server GhulDrive uses on this device.
+    pub(super) fn drive_server(&self, o: &Open) -> Option<String> {
+        let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
+        drive_server_id(o, &d)
+    }
+
+    /// The connection to GhulDrive's server (rooted at its GhulSuite folder).
+    pub(super) fn drive_fs(&self, o: &mut Open) -> Result<Arc<dyn RemoteFs>> {
+        Ok(self.drive_ctx(o)?.0)
+    }
+
+    /// The files of these items as they are now (folders with everything in them, not what is
+    /// in the trash): path, size, file key and blocks. Nothing is downloaded.
+    pub(super) fn drive_snapshot(&self, o: &mut Open, ids: &[String]) -> Result<Vec<SharedFile>> {
+        let index = self.drive_index(o, true)?;
+        let mut out = Vec::new();
+        for id in ids {
+            let root = index.nodes.iter().find(|n| n.id == *id && !in_trash(&index, n)).ok_or(GhulError::NotFound)?;
+            let mut todo = vec![(root.name.clone(), root)];
+            while let Some((path, n)) = todo.pop() {
+                if n.dir {
+                    for c in index.nodes.iter().filter(|c| c.parent == n.id && c.trashed == 0) {
+                        todo.push((format!("{path}/{}", c.name), c));
+                    }
+                } else {
+                    out.push(SharedFile { path, size: n.size, key: FileKey::of(&n.key)?, blocks: n.blocks.clone() });
+                }
+            }
+        }
+        out.sort_by(|a, b| a.path.cmp(&b.path));
+        Ok(out)
+    }
+
+    /// Encrypts content that is not in GhulDrive (e.g. a login shared as text) into blocks on
+    /// GhulDrive's server, under a new file key; the blocks belong to no file.
+    pub(super) fn drive_put_loose(&self, o: &mut Open, name: &str, data: &[u8]) -> Result<SharedFile> {
+        let (fs, _) = self.drive_ctx(o)?;
+        let key = FileKey::random();
+        let mut blocks = Vec::new();
+        for part in data.chunks(BLOCK_SIZE as usize) {
+            let id = key.block_id(part);
+            fs.write(&block_path(&id), &key.seal_block(&id, part))?;
+            blocks.push(id);
+        }
+        Ok(SharedFile { path: name.to_owned(), size: data.len() as u64, key, blocks })
+    }
+
+    /// Deletes blocks that belong to no file (those of `drive_put_loose`), unless a share
+    /// still hands them out.
+    pub(super) fn drive_delete_loose(&self, fs: &dyn RemoteFs, blocks: &[String]) -> Result<()> {
+        let pinned = super::shares::pinned_blocks(fs);
+        for b in blocks.iter().filter(|b| !pinned.contains(*b)) {
+            fs.delete(&block_path(b))?;
+        }
+        Ok(())
+    }
+
+    /// Whether `item` is one of `roots` or lies inside one of them.
+    pub(super) fn drive_within(&self, o: &mut Open, item: &str, roots: &[String]) -> Result<bool> {
+        let index = self.drive_index(o, false)?;
+        let mut cur = Some(item.to_owned());
+        let mut steps = 0;
+        while let Some(id) = cur {
+            if roots.contains(&id) {
+                return Ok(true);
+            }
+            steps += 1;
+            if steps > 1000 {
+                break;
+            }
+            cur = index.nodes.iter().find(|n| n.id == id).map(|n| n.parent.clone()).filter(|p| !p.is_empty());
+        }
+        Ok(false)
+    }
+
     /// Name and content of a Drive file, or all files of a folder with their paths (for shares).
     /// Refuses more than `limit` bytes in total.
     pub(super) fn drive_collect(
