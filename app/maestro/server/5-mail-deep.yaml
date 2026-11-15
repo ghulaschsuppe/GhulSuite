@@ -88,6 +88,10 @@ name: GhulMail in depth on a real server
 - assertNotVisible: { id: "sel-all" }
 - tapOn: "Delete"
 - extendedWaitUntil:
+    visible: { id: "ask-confirm" }
+    timeout: 10000
+- tapOn: { id: "ask-confirm" }
+- extendedWaitUntil:
     visible: "Undo"
     timeout: 10000
 - takeScreenshot: s5-06-deleted

@@ -16,6 +16,11 @@ name: GhulAuth in depth
 - takeScreenshot: 09-01-selected
 - tapOn: "Delete"
 - extendedWaitUntil:
+    visible: { id: "ask-confirm" }
+    timeout: 10000
+- takeScreenshot: 09-01b-ask
+- tapOn: { id: "ask-confirm" }
+- extendedWaitUntil:
     visible: "1 deleted"
     timeout: 10000
 - assertNotVisible: "\\d{3} \\d{3}"

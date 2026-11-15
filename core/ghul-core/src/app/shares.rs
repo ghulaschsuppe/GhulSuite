@@ -179,8 +179,11 @@ impl GhulSuite {
     fn share_upload(&self, o: &mut Open, opts: &ShareOptions, name: String, content: &[u8]) -> Result<ShareInfo> {
         let srv = servers::server(o, &opts.server_id)?;
         let kind = ServerKind::of(&srv);
-        if opts.max_downloads > 0 && kind != ServerKind::Php {
-            return Err(GhulError::InvalidInput { msg: "download limits need the server module".into() });
+        // F104: without the server module nobody on the server can stop a link at a time or
+        // after n downloads; the app could only delete it the next time it runs. So a static
+        // server offers links that work until they are withdrawn, and nothing else.
+        if (opts.max_downloads > 0 || opts.expires_days > 0) && kind != ServerKind::Php {
+            return Err(GhulError::InvalidInput { msg: "expiry and download limits need the server module".into() });
         }
         if kind != ServerKind::Php && srv.share_url.is_empty() {
             return Err(GhulError::NotConfigured);

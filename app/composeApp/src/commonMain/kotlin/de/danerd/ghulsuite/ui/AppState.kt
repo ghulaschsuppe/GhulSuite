@@ -169,6 +169,12 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     var driveReady by mutableStateOf(false)
     var driveUploadTick by mutableStateOf(0)
 
+    /** A deletion waiting for "Delete?" to be answered (F103: every deletion asks first). */
+    class DeleteAsk(val names: List<String>, val trash: Boolean, val action: () -> Unit)
+
+    // Declared before init (the lock listener there clears it).
+    var deleteAsk by mutableStateOf<DeleteAsk?>(null)
+
     /** Files shared from another app into GhulDrive ("Save in GhulDrive"), waiting for GhulDrive. */
     var driveIncoming by mutableStateOf<List<de.danerd.ghulsuite.model.ByteSource>?>(null)
     /** GhulDrive shows its trash: nothing can be added there, so there is no "Add" button. */
@@ -896,10 +902,6 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     /** The message of [doneWithUndo] (a lock takes it away: "Undo" cannot work after it). */
     private var doneUndoMessage: String? = null
 
-    /** A deletion waiting for "Delete?" to be answered (F103: every deletion asks first). */
-    class DeleteAsk(val names: List<String>, val trash: Boolean, val action: () -> Unit)
-
-    var deleteAsk by mutableStateOf<DeleteAsk?>(null)
 
     /**
      * Asks before deleting (or moving to a trash) [names]; [action] runs only after "Delete".

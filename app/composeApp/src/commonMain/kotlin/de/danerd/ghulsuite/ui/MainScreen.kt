@@ -223,7 +223,7 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
                 )
             },
             confirmButton = {
-                TextButton(onClick = { state.deleteAsk = null; ask.action() }) {
+                TextButton(onClick = { state.deleteAsk = null; ask.action() }, modifier = Modifier.testTag("ask-confirm")) {
                     Text(stringResource(if (ask.trash) Res.string.a_to_trash else Res.string.a_delete))
                 }
             },

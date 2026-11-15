@@ -33,7 +33,7 @@ private val CORE_TEXTS: Map<String, StringResource> = mapOf(
     "the server folder belongs to another suite" to Res.string.core_folder_other_suite,
     "the server module shares without setup" to Res.string.core_php_shares,
     "the module is uploaded with FTPS" to Res.string.core_php_ftps,
-    "download limits need the server module" to Res.string.core_dl_limit_php,
+    "expiry and download limits need the server module" to Res.string.core_dl_limit_php,
     "not a GhulSuite backup" to Res.string.core_not_backup,
     "backup too large" to Res.string.core_backup_big,
     "the folder already contains a suite" to Res.string.core_folder_has_suite,

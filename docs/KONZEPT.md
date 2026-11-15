@@ -680,14 +680,15 @@ Löschen im Archiv: 30 Tage im Archiv-Papierkorb. Export als `.eml`/`.mbox` jede
   damit Browser große Dateien entschlüsseln können; Dateiname und Typ ebenfalls verschlüsselt). Zufälliger, nicht
   erratbarer Dateiname. Der Schlüssel steht nur im Teil nach `#`: Browser schicken ihn nie an den Server.
   Optionales Passwort: Schlüssel = HKDF(Link-Schlüssel ‖ PBKDF2-SHA256(Passwort, 600 000 Runden)); Link allein reicht dann nicht.
-- *Empfängerseite:* eine kleine, statische Seite ohne fremde Inhalte (strenge CSP), entschlüsselt im Browser. Sie prüft
-  das verschlüsselte Ablaufdatum selbst, so gilt der Ablauf auch auf reinen Webservern sofort, nicht erst beim nächsten
-  Aufräumen durch die App.
-- *Ablauf und Widerruf:* Beenden löscht die Kopie sofort. Abgelaufene Freigaben löscht die App beim nächsten Verbinden
-  (auf Wunsch täglich im Hintergrund). Ein reiner Webserver kann Downloads nicht zählen, Download-Limit und Einmal-Link
-  gibt es nur mit dem Server-Modul, das auch Ablauf serverseitig erzwingt.
+- *Empfängerseite:* eine kleine, statische Seite ohne fremde Inhalte (strenge CSP), entschlüsselt im Browser.
+- *Ablauf und Widerruf:* Beenden löscht die Kopie sofort. Ablaufdatum, Download-Limit und Einmal-Link gibt es nur mit
+  dem Server-Modul, das sie auf dem Server durchsetzt, auch wenn kein Gerät läuft (F104). Ein reiner Webserver liefert
+  die Datei selbst aus und kann einen Link weder zu einer Zeit noch nach n Abrufen beenden; dort gilt ein Link, bis er
+  zurückgezogen wird, und das Formular sagt das so. Der Kern lehnt Ablauf und Limit für solche Server ab. Ältere Links mit
+  Ablaufdatum auf einem reinen Webserver löscht die App weiter beim Öffnen von GhulDrive.
 - *Mehrfachauswahl:* mehrere Dateien oder Ordner werden zu einer Freigabe (verschlüsseltes Archiv) zusammengefasst.
-- *GhulPass:* einzelne Einträge als Einmal-Link (Text, standardmäßig 1 Tag und, mit Server-Modul, 1 Abruf).
+- *GhulPass:* einzelne Einträge als Einmal-Link (Text, mit Server-Modul standardmäßig 1 Tag und 1 Abruf; ohne Modul
+  gilt der Link, bis er zurückgezogen wird).
 - *Strikt modular:* Teilen hängt nur an einem Server mit eingerichtetem Teilen-Ordner, nicht an einem Modul.
   „Als Mail-Anhang“ und „Mit GhulMail senden“ erscheinen nur, wenn GhulMail eingeschaltet ist **und** ein Konto hat;
   sonst bleiben Link kopieren und „An App senden“. GhulMail selbst kennt GhulDrive nicht, es bekommt nur einen fertigen

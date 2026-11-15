@@ -1522,7 +1522,7 @@ fn open_link(link: &str, password: Option<&str>) -> Option<(crate::share::ShareM
 }
 
 fn share_opts(server: &str) -> super::shares::ShareOptions {
-    super::shares::ShareOptions { server_id: server.into(), password: None, expires_days: 7, max_downloads: 0 }
+    super::shares::ShareOptions { server_id: server.into(), password: None, expires_days: 0, max_downloads: 0 }
 }
 
 /// Shares through a share folder: set up with self-check, single file, several files as ZIP,
@@ -1575,13 +1575,20 @@ fn share_via_folder(s: &GhulSuite, server_id: &str, dir: &str, web_root: &std::p
     names.sort();
     assert_eq!(names, vec!["Steuer 2025.pdf", "Urlaub/Möwe.jpg", "Urlaub/Strand.jpg"]);
 
-    // Download limits need the server module.
-    let mut limited = share_opts(server_id);
-    limited.max_downloads = 1;
-    assert!(matches!(
-        s.share_drive(vec![one.id.clone()], None, limited),
-        Err(GhulError::InvalidInput { .. }) | Err(GhulError::NotFound)
-    ));
+    // F104: expiry and download limits need the server module; nothing is stored or uploaded.
+    let before = std::fs::read_dir(web_root.join(rel).join("s")).unwrap().count();
+    for (days, max) in [(0, 1), (1, 0), (7, 3)] {
+        let mut limited = share_opts(server_id);
+        limited.expires_days = days;
+        limited.max_downloads = max;
+        let r = s.share_bytes("x.txt".into(), b"x".to_vec(), limited);
+        assert!(
+            matches!(&r, Err(GhulError::InvalidInput { msg }) if msg == "expiry and download limits need the server module"),
+            "{days}/{max}: {:?}",
+            r.err()
+        );
+    }
+    assert_eq!(std::fs::read_dir(web_root.join(rel).join("s")).unwrap().count(), before);
 
     assert_eq!(s.share_list().unwrap().len(), 2);
     // With sync: the server copy still lists both shares when one is withdrawn.
@@ -1739,6 +1746,7 @@ fn php_module_storage_drive_and_limited_shares() {
     // Text share (e.g. a login), counted downloads, ended by the owner.
     let mut three = share_opts(&id);
     three.max_downloads = 3;
+    three.expires_days = 7; // F104: with the module expiry is still offered
     let text = s.share_bytes("Zugang WLAN.txt".into(), b"SSID: Gast\nPasswort: x".to_vec(), three).unwrap();
     open_link(&text.url, None).unwrap();
     assert_eq!(s.share_list().unwrap()[0].downloads, 1);

@@ -219,6 +219,8 @@ private fun AreaSheet(state: AppState, kind: VaultKindUi, onDismiss: () -> Unit)
                     state.message(done)
                     state.changed()
                     onDismiss()
+                    // F105: GhulMail without an account is of no use; its account sheet follows at once.
+                    if (kind == VaultKindUi.MAIL) state.mailAccountSheet = MailSheet(null)
                 }
             }, enabled = !state.busy && (kind !in NAMED_AREAS || name.isNotBlank()), modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(Res.string.area_set_up))
@@ -237,6 +239,10 @@ private fun AreaSheet(state: AppState, kind: VaultKindUi, onDismiss: () -> Unit)
                 end = { Icon(if (shown) Icons.Filled.VisibilityOff else Icons.Filled.Visibility, null, tint = g.muted) }) {
                 showModule(state, kind, !shown)
                 onDismiss()
+                // F105: showing GhulMail again without an account opens the account sheet as well.
+                if (kind == VaultKindUi.MAIL && !shown) {
+                    state.run(block = { state.backend.net.mailAccounts() }) { if (it.isEmpty()) state.mailAccountSheet = MailSheet(null) }
+                }
             }
             SheetRow(stringResource(Res.string.area_remove), stringResource(Res.string.area_remove_everywhere), divider = true,
                 end = { Icon(Icons.Filled.Delete, null, tint = dangerColor()) }) { removing = true }

@@ -178,7 +178,7 @@ fun ShareSheet(state: AppState, files: List<DriveItemUi>, onDismiss: () -> Unit,
     }
 }
 
-/** Server, expiry, password and (PHP module only) download limit of a new share link. */
+/** Server, password and (PHP module only, F104) expiry and download limit of a new share link. */
 @Composable
 fun ShareOptionsForm(
     state: AppState,
@@ -205,10 +205,10 @@ fun ShareOptionsForm(
         }
     }
     SectionLabel(stringResource(Res.string.share_expires))
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        for (d in EXPIRY) FilterChip(days == d, { days = d }, label = { Text(expiryLabel(d)) })
-    }
     if (counts) {
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            for (d in EXPIRY) FilterChip(days == d, { days = d }, label = { Text(expiryLabel(d)) })
+        }
         SectionLabel(stringResource(Res.string.share_max))
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             for (m in MAX_DOWNLOADS) {
@@ -216,6 +216,9 @@ fun ShareOptionsForm(
             }
         }
     } else {
+        // F104: without the server module nothing on the server ends a link by itself, so no
+        // expiry is offered: the link works until it is withdrawn, and the form says so.
+        Text(stringResource(Res.string.share_until_withdrawn), style = MaterialTheme.typography.bodyLarge)
         Hint(stringResource(Res.string.share_max_php_only))
     }
     SwitchRow(stringResource(Res.string.share_password), usePassword) { usePassword = it }
@@ -225,7 +228,7 @@ fun ShareOptionsForm(
     }
     Hint(stringResource(Res.string.share_e2e_hint))
     Button(
-        onClick = { serverId?.let { onCreate(ShareOptionsUi(it, password.takeIf { usePassword && it.isNotEmpty() }, days, max)) } },
+        onClick = { serverId?.let { onCreate(ShareOptionsUi(it, password.takeIf { usePassword && it.isNotEmpty() }, if (counts) days else 0, if (counts) max else 0)) } },
         enabled = !state.busy && serverId != null && (!usePassword || password.length >= 4),
         modifier = Modifier.fillMaxWidth(),
     ) {

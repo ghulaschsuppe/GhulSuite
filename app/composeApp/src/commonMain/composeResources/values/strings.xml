@@ -707,7 +707,8 @@
     <string name="share_mail_attach_sub">Opens GhulMail with the files attached</string>
     <string name="share_mail_text">Hello,\n\nhere is %1$s for you:\n%2$s\n\nThe file is end-to-end encrypted and opens in the browser.</string>
     <string name="share_max">Downloads</string>
-    <string name="share_max_php_only">One-time links and a limited number of downloads need the PHP server module: this server hands the file out directly and counts nothing. An expired link is removed the next time you open GhulDrive.</string>
+    <string name="share_until_withdrawn">Valid until you withdraw it</string>
+    <string name="share_max_php_only">Expiry dates and one-time links need the PHP server module: only the module can end a link on the server by itself, even when none of your devices is on.</string>
     <plurals name="share_n_items">
         <item quantity="one">%1$s item</item>
         <item quantity="other">%1$s items</item>
@@ -1450,7 +1451,7 @@
     <string name="area_set_up">Set up</string>
     <string name="area_set_up_msg">%1$s set up</string>
     <string name="area_settings">Options</string>
-    <string name="area_mail_next">GhulMail then asks for your account.</string>
+    <string name="area_mail_next">Next you set up your mail account right away.</string>
     <string name="area_auth_nothing">Accounts and favourites live in the vault, so there is nothing else to set here.</string>
     <string name="code_unconfirmed">Your recovery code was never confirmed.</string>
     <string name="code_unconfirmed_text">The setup was not finished, or a new code was not confirmed. GhulSuite now makes a new code: write it down and confirm it by typing one group back.</string>
@@ -1560,7 +1561,7 @@
     <string name="core_folder_other_suite">This folder on the server belongs to another suite.</string>
     <string name="core_php_shares">The server module shares without further setup.</string>
     <string name="core_php_ftps">The module is uploaded with FTPS.</string>
-    <string name="core_dl_limit_php">Download limits need the server module.</string>
+    <string name="core_dl_limit_php">Expiry dates and download limits need the server module.</string>
     <string name="core_not_backup">This is not a GhulSuite backup.</string>
     <string name="core_backup_big">The backup is too large.</string>
     <string name="core_folder_has_suite">This folder already holds a suite. Choose an empty folder.</string>

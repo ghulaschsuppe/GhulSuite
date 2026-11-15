@@ -4,6 +4,7 @@ package de.danerd.ghulsuite
 import androidx.compose.runtime.CompositionLocalProvider
 import de.danerd.ghulsuite.model.ServerKindUi
 import de.danerd.ghulsuite.model.ServerUi
+import de.danerd.ghulsuite.model.VaultKindUi
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.asSkiaBitmap
 import androidx.compose.ui.test.DesktopComposeUiTest
@@ -13,6 +14,8 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
@@ -115,9 +118,10 @@ class InteractionTest {
     private fun DesktopComposeUiTest.waitFor(t: String) = waitUntil(timeoutMillis = 10_000) { shown(t) }
     private fun DesktopComposeUiTest.waitGone(t: String) = waitUntil(timeoutMillis = 10_000) { !shown(t) }
     /** F103: every deletion asks first; answers the question with [button]. */
-    private fun DesktopComposeUiTest.confirm(button: String = "Delete") {
+    private fun DesktopComposeUiTest.confirm(button: String? = null) {
         waitUntil(timeoutMillis = 10_000) { shown("Delete?") || shown("Move to the trash?") }
-        onAllNodes(hasText(button) and hasAnyAncestor(isDialog())).onFirst().performClick()
+        val b = button ?: if (shown("Move to the trash?")) "Move to trash" else "Delete"
+        onAllNodes(hasText(b) and hasAnyAncestor(isDialog())).onFirst().performClick()
         waitUntil(timeoutMillis = 10_000) { !shown("Delete?") && !shown("Move to the trash?") }
     }
 
@@ -147,7 +151,7 @@ class InteractionTest {
         waitForIdle()
         assertTrue(shown(item), "$name: Cancel keeps it")
         assertFalse(called(), "$name: Cancel must not reach the backend")
-        longPress(item)
+        // The selection is still there: delete again and answer "Delete".
         desc(delete).performClick()
         confirm()
         waitFor("Undo")
@@ -186,6 +190,28 @@ class InteractionTest {
         shot("pass-detail-sheet")
     }
 
+    /**
+     * F103: swiping a row to the left only asks; the account stays until "Delete" is tapped
+     * (bug: the swipe deleted it at once, without a question).
+     */
+    @Test
+    fun authSwipeAsksFirst() = app(setup = { tab = Tab.AUTH }) { state, fake ->
+        state.undoMillis = 60_000
+        waitFor("GitHub")
+        text("GitHub").performTouchInput { swipeLeft() }
+        waitFor("Delete?")
+        assertFalse(shown("Undo"), "nothing deleted before the answer")
+        shot("auth-swipe-ask")
+        onAllNodes(hasText("Cancel") and hasAnyAncestor(isDialog())).onFirst().performClick()
+        waitGone("Delete?")
+        assertTrue(shown("GitHub"), "Cancel keeps the account")
+        text("GitHub").performTouchInput { swipeLeft() }
+        confirm()
+        waitFor("Undo")
+        waitGone("GitHub")
+        assertFalse("deleteTotp:t1:b" in fake.calls, "Undo is still possible")
+    }
+
     @Test
     fun authSelectionMenuAndUndo() = app(setup = { tab = Tab.AUTH }) { state, fake ->
         longPress("GitHub")
@@ -197,6 +223,47 @@ class InteractionTest {
         text("Add to favourites").performClick()
         waitGone("1 selected")
         deleteUndoDelete(state, "GitHub", "Delete", "1 deleted", "auth") { "deleteTotp:t1:b" in fake.calls }
+    }
+
+    /**
+     * F104: a link on a server without the PHP module offers no expiry and no download limit
+     * (nothing on such a server ends a link by itself) and says it works until withdrawn; the
+     * server with the module still offers both.
+     */
+    @Test
+    fun shareExpiryOnlyWithTheModule() = app(setup = { tab = Tab.DRIVE }) { _, fake ->
+        val net = fake.net as FakeNet
+        longPress("Notizen.txt")
+        waitFor("1 selected")
+        desc("Share").performClick()
+        waitFor("Share link")
+        text("Share link").performClick()
+        waitFor("Create link")
+        // The SFTP server comes first.
+        assertTrue(shown("Valid until you withdraw it"))
+        assertFalse(shown("No expiry") || shown("1 day"), "no expiry offered without the module")
+        shot("share-form-static")
+        text("Create link").performClick()
+        waitUntil(timeoutMillis = 10_000) { net.calls.any { it.startsWith("shareDrive:") } }
+        assertTrue(net.calls.last { it.startsWith("shareDrive:") }.endsWith(":s1:0:0:false"), net.calls.toString())
+    }
+
+    @Test
+    fun shareExpiryWithTheModule() = app(setup = { tab = Tab.DRIVE }) { _, fake ->
+        val net = fake.net as FakeNet
+        longPress("Notizen.txt")
+        waitFor("1 selected")
+        desc("Share").performClick()
+        waitFor("Share link")
+        text("Share link").performClick()
+        waitFor("Create link")
+        text("Webspace").performClick()
+        waitFor("No expiry")
+        assertFalse(shown("Valid until you withdraw it"))
+        text("1 day").performClick()
+        text("Create link").performClick()
+        waitUntil(timeoutMillis = 10_000) { net.calls.any { it.startsWith("shareDrive:") } }
+        assertTrue(net.calls.last { it.startsWith("shareDrive:") }.endsWith(":s2:1:0:false"), net.calls.toString())
     }
 
     @Test
@@ -424,6 +491,7 @@ class InteractionTest {
         longPress("Treffen am Freitag")
         waitFor("1 selected")
         desc("Delete").performClick()
+        confirm()
         waitUntil(timeoutMillis = 10_000) { net.calls.any { it.startsWith("mailDelete:") && it.endsWith(":3") } && net.calls.any { it.startsWith("mailDelete:") && it.endsWith(":5") } }
         assertTrue(onAllNodesWithText("Re: Treffen am Freitag").fetchSemanticsNodes().isEmpty())
     }
@@ -440,6 +508,7 @@ class InteractionTest {
         desc("All").performClick()
         waitFor("3 selected")
         desc("Delete").performClick()
+        confirm()
         waitFor("No messages.")
         assertFalse(shown(hint), "swipe hint below an empty list")
         shot("mail-all-deleted")
@@ -459,6 +528,7 @@ class InteractionTest {
         text("Unread").performClick()
         waitFor("1 selected")
         desc("Delete").performClick()
+        confirm()
         waitUntil(timeoutMillis = 10_000) { net.calls.any { it.startsWith("mailDelete:") && it.endsWith(":3") } }
         assertFalse(net.calls.any { it.startsWith("mailDelete:") && it.endsWith(":5") }, "the read mail was not shown, so it is not deleted")
     }
@@ -542,6 +612,7 @@ class InteractionTest {
         shot("mail-archive-read")
         state.undoMillis = 300
         desc("Delete").performClick()
+        confirm()
         waitUntil(timeoutMillis = 10_000) { net.calls.any { it == "archiveDelete:k1" } }
         // The first removal at the provider: tapping beside it is "later".
         state.archiveAsk = "m1" to 42
@@ -613,6 +684,21 @@ class InteractionTest {
         waitFor("Delete “Privat”?")
         shot("vault-delete")
         assertFalse(fake.calls.any { it.startsWith("removeVault") }, "a vault is only deleted after confirming")
+    }
+
+    /** F105: setting up GhulMail under "Areas" opens the sheet for the mail account at once. */
+    @Test
+    fun mailAreaOpensTheAccountSheet() = app(
+        setup = { push(Screen.SettingsPage(SetPage.MODULES)) },
+        prepare = { vaults = vaults.filter { it.kind != VaultKindUi.MAIL }; net = FakeNet(configured = false) },
+    ) { _, _ ->
+        waitFor("GhulMail")
+        text("GhulMail").performClick()
+        waitFor("Set up GhulMail")
+        assertFalse(shown("Add e-mail account"))
+        onAllNodes(hasText("Set up") and hasClickAction()).onFirst().performClick()
+        waitFor("Add e-mail account")
+        shot("mail-area-account-sheet")
     }
 
     @Test

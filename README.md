@@ -122,7 +122,7 @@ Leiste, seine Datei bleibt unberührt.
   Ordner und Größen kennt nur dein Gerät.
 - **Ordner, Suche, Favoriten, Zuletzt**, Liste oder Raster mit Vorschaubildern, Speicherbalken nach Dateiart.
 - **Offline verfügbar** für ausgewählte Dateien, **Versionen** (die letzten fünf) und **Papierkorb**.
-- **Teilen per Link** mit Ablaufdatum, Passwort und (mit dem Server-Modul) Abrufzähler und Einmal-Link. Der
+- **Teilen per Link** mit Passwort und (mit dem Server-Modul) Ablaufdatum, Abrufzähler und Einmal-Link. Der
   Schlüssel steht nur im Link hinter dem `#`, den Browser nie an den Server schicken.
 - **Foto-Sicherung** (Android, auf Wunsch nur im WLAN), **Dokumente scannen**, verschlüsselte ZIPs.
 
@@ -257,7 +257,7 @@ GhulSuite braucht **keinen speziellen Server**. Du hast drei Möglichkeiten:
 
 | Variante | Was du brauchst | Ideal für |
 |---|---|---|
-| **GhulSuite-Server-Modul** | Webspace mit **PHP 8.1** (oder neuer), ohne Datenbank | Günstiges Webhosting, zusätzlich mit Abrufzähler und Einmal-Links beim Teilen |
+| **GhulSuite-Server-Modul** | Webspace mit **PHP 8.1** (oder neuer), ohne Datenbank | Günstiges Webhosting, zusätzlich mit Ablaufdatum, Abrufzähler und Einmal-Links beim Teilen |
 | **SFTP** | Einen Server mit SSH-Zugang | Eigener Server, NAS, Raspberry Pi |
 | **FTPS** | FTP mit TLS-Verschlüsselung | Webhosting ohne SSH |
 

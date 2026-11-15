@@ -319,21 +319,21 @@ Für T5 bis T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick
 | SH4 | Falsche Adresse (passt nicht zum Ordner) prüfen. | Mindestens ein roter Punkt mit Erklärung; nichts wird gespeichert. |
 | SH4b | Eine Adresse prüfen, die es nicht gibt (z. B. `https://example.invalid/teilen`). | „Ordner beschreibbar“ grün, „Über HTTPS erreichbar“ rot mit Grund; „Ordnerinhalt“ und „Abrufseite“ grau mit „Nicht geprüft, weil der HTTPS-Schritt fehlschlug“, kein rotes Ergebnis, das nie geprüft wurde. |
 | SH5 | Den Suite-Ordner (`ghulsuite`) als Teilen-Ordner wählen. | Abgelehnt. |
-| SH6 | GhulDrive → Datei → Teilen → Freigabelink → Gültig „7 Tage“ → „Link erstellen“. | „Link erstellt“ mit Link, Größe, „bis …“. „Kopieren“ legt ihn in die Zwischenablage. |
+| SH6 | GhulDrive → Datei → Teilen → Freigabelink (SFTP/FTPS-Teilen-Ordner) → „Link erstellen“. | Unter „Gültig für“ steht „Gilt, bis du ihn zurückziehst“, keine Auswahl. „Link erstellt“ mit Link, Größe, „unbegrenzt“. „Kopieren“ legt ihn in die Zwischenablage. |
 | SH7 | Link auf einem anderen Gerät/PC im Browser öffnen. | Seite zeigt Dateiname und Größe, „Herunterladen“ liefert die identische Datei. Der Teil nach # verschwindet aus der Adresszeile. |
 | SH8 | Link mit „Zusätzliches Passwort“ erstellen, im Browser öffnen. | Passwortfeld; falsches Passwort → Fehlermeldung; richtiges → Download. |
 | SH9 | Link um ein Zeichen kürzen oder ändern und öffnen. | „Der Link ist unvollständig …“ bzw. „Falsches Passwort oder der Link ist beschädigt“. Kein Download. |
 | SH10 | Mit dem **PHP-Modul**: „Abrufe“ auf „1×“ → Link erstellen, zweimal öffnen. | Erster Abruf klappt, zweiter: „Diese Freigabe gibt es nicht mehr …“. |
 | SH11 | Mit dem PHP-Modul „5×“ → zweimal öffnen → GhulDrive → Kontextzeile → Freigabelinks. | Eintrag zeigt „2 von 5 Abrufen“. |
-| SH12 | Mit SFTP/FTPS-Teilen-Ordner. | Abrufbegrenzung nicht wählbar, Hinweis „geht nur mit dem PHP-Server-Modul“. |
+| SH12 | Mit SFTP/FTPS-Teilen-Ordner. | Weder Ablaufdatum noch Abrufbegrenzung wählbar; Hinweis, dass beides nur mit dem PHP-Server-Modul geht, weil nur das Modul einen Link auf dem Server selbst beendet. Mit dem PHP-Modul: „1 Tag“, „7 Tage“, „30 Tage“, „Kein Ablauf“ und die Abrufe sind wählbar. |
 | SH13 | Freigabelinks → Eintrag „Zurückziehen“ → Link im Browser neu laden. | Eintrag verschwindet sofort, Meldung „Link zurückgezogen“. Im Browser: „Diese Freigabe gibt es nicht mehr …“. Die Datei bleibt in GhulDrive. Mit eingeschalteter Synchronisation: einige Sekunden warten, Freigabelinks erneut öffnen, der Eintrag bleibt weg. |
 | SH14 | In GhulDrive lange drücken, zwei Dateien und einen Ordner dazu antippen → Teilen → Freigabelink. | Ein Link; im Browser kommt ein ZIP mit allen Dateien in ihrer Ordnerstruktur. |
-| SH15 | Mehrfachauswahl → „In den Papierkorb“. | Ohne Rückfrage weg, Meldung „Rückgängig“; „Rückgängig“ bringt alle zurück. |
+| SH15 | Mehrfachauswahl → „In den Papierkorb“. | Rückfrage „In den Papierkorb?“ mit der Anzahl; „Abbrechen“ lässt alles da. Bestätigt: weg, Meldung „Rückgängig“; „Rückgängig“ bringt alle zurück. |
 | SH16 | Datei → Teilen → „An App senden“ → z. B. Messenger oder Dateien-App. | Android-Teilen-Menü; die Ziel-App erhält die **entschlüsselte** Datei mit richtigem Namen. |
 | SH17 | Nach SH16 GhulSuite sperren. | Die entschlüsselte Kopie im App-Cache wird gelöscht (ein erneutes Öffnen aus der Ziel-App kann fehlschlagen, gewollt). |
-| SH18 | GhulPass → Eintrag öffnen → „Sicher teilen (Einmal-Link)“. | Formular: 1 Tag, bei PHP-Modul 1 Abruf vorgewählt. Link erstellen und im Browser öffnen: Textdatei mit Titel und Feldern (Benutzer, Passwort, …). |
+| SH18 | GhulPass → Eintrag öffnen → „Sicher teilen (Einmal-Link)“. | Formular: mit PHP-Modul 1 Tag und 1 Abruf vorgewählt, ohne Modul „Gilt, bis du ihn zurückziehst“. Link erstellen und im Browser öffnen: Textdatei mit Titel und Feldern (Benutzer, Passwort, …). |
 | SH19 | Ohne Server mit Teilen-Ordner einen GhulPass-Eintrag öffnen. | Kein „Sicher teilen“-Knopf. |
-| SH20 | Abgelaufenen Link testen: Freigabe mit „1 Tag“ erstellen, am nächsten Tag öffnen. | „Diese Freigabe gibt es nicht mehr …“, auch beim SFTP/FTPS-Teilen-Ordner. |
+| SH20 | Abgelaufenen Link testen (PHP-Modul): Freigabe mit „1 Tag“ erstellen, am nächsten Tag öffnen, ohne GhulSuite vorher zu öffnen. | „Diese Freigabe gibt es nicht mehr …“: das Modul beendet den Link selbst. |
 
 ## 19. Modultrennung und GhulMail-Anbindung
 
@@ -428,6 +428,7 @@ oder Proton.
 |---|---|---|
 | B1 | Optionen → Bereiche verwalten. | Alle fünf Bereiche mit „aktiv“, „hier ausgeblendet“ oder „nicht eingerichtet“ und dem Dateinamen. |
 | B2 | Nicht eingerichteten Bereich antippen (z. B. GhulCal) → Einrichten. | Name abgefragt; Datei `….ghlcal` entsteht, Bereich erscheint in der Leiste. Bei GhulDrive: Speicherwahl (wie Synchronisation / eigener Server). |
+| B2a | Bereiche verwalten → GhulMail (nicht eingerichtet) → Einrichten. Danach GhulMail ausblenden und wieder einblenden, solange es kein Konto hat. | Gleich danach öffnet sich „E-Mail-Konto hinzufügen“, ohne Umweg über GhulMail; beim Wieder-Einblenden ohne Konto ebenso. |
 | B3 | Bereich → „Auf diesem Gerät ausblenden“. | Verschwindet nur hier aus der Leiste; zweites Gerät zeigt ihn weiter. Wieder einblenden geht. |
 | B4 | Bereich → „Bereich entfernen“. | Rückfrage mit Warnung; danach ist die Datei weg, nach dem Synchronisieren auch auf dem zweiten Gerät und dem Server. |
 | B5 | Optionen → GhulCal: Bundesland ändern, synchronisieren, zweites Gerät synchronisieren. | Oben „Für GhulCal · alle Geräte“, unten „Nur auf diesem Gerät“. Das Bundesland ist auf dem zweiten Gerät übernommen, die Startansicht nicht. |
@@ -559,7 +560,7 @@ Automatisch läuft bei jedem Push der Alltagstest im Kern (zwei Geräte, 30 simu
 | K14 | Eine `.ics` importieren, die Zeiten in UTC (`…Z`, z. B. Google-Export) und in einer anderen Zeitzone (`TZID=America/New_York`) enthält, je ein Termin im Sommer und im Winter. | Alle Termine stehen auf der Stunde, zu der sie hier stattfinden (10:00 New York = 16:00 in Deutschland), unabhängig davon, ob gerade Sommer- oder Winterzeit ist. Ganztägige Termine bleiben auf ihrem Tag. |
 | K15 | Termin mit Erinnerung anlegen, App schließen, in den Systemeinstellungen die Zeitzone ändern (z. B. London). | Die Erinnerung kommt zur selben Uhrzeit der neuen Zone (Termin 10:00 → Erinnerung 09:45 Londoner Zeit), ohne dass die App geöffnet wurde. |
 | K16 | Eine Serie aus einer anderen Zeitzone importieren (z. B. Einladung „jeden Dienstag 10:00 New York“ aus Outlook oder Google) und durch das Jahr blättern: Januar, Mitte März, April, Ende Oktober, November. | In Deutschland steht der Termin um 16:00, in den Wochen, in denen nur die USA oder nur Europa Sommerzeit haben, um 15:00. Die Termin-Ansicht zeigt zusätzlich „Ortszeit in New York: 10:00 - 11:00“; beim Bearbeiten steht unter „Zeitzone“ der Ort. „Nur diesen Termin löschen“ entfernt genau den angezeigten Tag. |
-| K17 | Einen einzelnen Eintrag löschen: GhulPass-Eintrag, GhulAuth-Konto, Drive-Datei, Mail, Termin. Einmal „Rückgängig“ tippen, einmal die Meldung ablaufen lassen; einmal löschen und sofort sperren. | Ohne Rückfrage weg, Meldung mit „Rückgängig“. Rückgängig: wieder da, nichts passiert. Abgelaufen: endgültig gelöscht (nach Sperren/Entsperren weiterhin weg). Sofort gesperrt: die Löschung wird vor dem Sperren ausgeführt. Sofortsperre direkt nach dem Löschen: der Eintrag bleibt. |
+| K17 | Einen einzelnen Eintrag löschen: GhulPass-Eintrag, GhulAuth-Konto, Drive-Datei, Mail, Termin. Einmal „Rückgängig“ tippen, einmal die Meldung ablaufen lassen; einmal löschen und sofort sperren. | Erst eine Rückfrage mit dem Namen („‚Codeberg‘ wird gelöscht.“); „Abbrechen“ ändert nichts. Bestätigt: weg, Meldung mit „Rückgängig“; auch ein Wisch nach links fragt erst. Rückgängig: wieder da, nichts passiert. Abgelaufen: endgültig gelöscht (nach Sperren/Entsperren weiterhin weg). Sofort gesperrt: die Löschung wird vor dem Sperren ausgeführt. Sofortsperre direkt nach dem Löschen: der Eintrag bleibt. |
 | K18 | Ganzes löschen: Tresor, Bereich, Mailkonto, Server, Papierkorb leeren, mehrere endgültig löschen. | Immer eine Rückfrage mit rotem Knopf, Warnung als Hinweisfeld wie bei „Bereich entfernen“. |
 | K19 | Breites Fenster (Windows oder Handy/Tablet quer): Termin öffnen, Termin bearbeiten, in GhulAuth „Konto hinzufügen“. | Links die Seitenleiste mit den Bereichen, daneben eine Spalte in der Mitte; Geöffnetes steht an der Stelle der Liste, „Zurück“ führt zur Liste. Keine leere dritte Spalte. |
 | K20 | Verschlüsselte Mail in der Liste. | Schloss und „Verschlüsselte Nachricht“ an der Stelle des Betreffs (kein „...“); geöffnet Betreff und Text. |

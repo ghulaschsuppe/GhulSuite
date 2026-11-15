@@ -707,7 +707,8 @@
     <string name="share_mail_attach_sub">Öffnet GhulMail mit den Dateien im Anhang</string>
     <string name="share_mail_text">Hallo,\n\nhier ist %1$s für dich:\n%2$s\n\nDie Datei ist Ende-zu-Ende-verschlüsselt und öffnet sich im Browser.</string>
     <string name="share_max">Abrufe</string>
-    <string name="share_max_php_only">Einmal-Links und eine begrenzte Zahl von Abrufen gehen nur mit dem PHP-Server-Modul: Dieser Server liefert die Datei direkt aus und zählt nicht mit. Ein abgelaufener Link wird beim nächsten Öffnen von GhulDrive entfernt.</string>
+    <string name="share_until_withdrawn">Gilt, bis du ihn zurückziehst</string>
+    <string name="share_max_php_only">Ablaufdatum und Einmal-Links gibt es nur mit dem PHP-Server-Modul: Nur das Modul kann einen Link auf dem Server selbst beenden, auch wenn keins deiner Geräte an ist.</string>
     <plurals name="share_n_items">
         <item quantity="one">%1$s Element</item>
         <item quantity="other">%1$s Elemente</item>
@@ -1450,7 +1451,7 @@
     <string name="area_set_up">Einrichten</string>
     <string name="area_set_up_msg">%1$s eingerichtet</string>
     <string name="area_settings">Optionen</string>
-    <string name="area_mail_next">Danach fragt GhulMail nach deinem Konto.</string>
+    <string name="area_mail_next">Danach richtest du gleich dein Mail-Konto ein.</string>
     <string name="area_auth_nothing">Konten und Favoriten liegen im Tresor, hier gibt es nichts weiter einzustellen.</string>
     <string name="code_unconfirmed">Dein Wiederherstellungscode wurde nie bestätigt.</string>
     <string name="code_unconfirmed_text">Die Einrichtung wurde nicht abgeschlossen oder ein neuer Code nicht bestätigt. GhulSuite erzeugt jetzt einen neuen Code: Schreib ihn auf und bestätige ihn, indem du einen Block abtippst.</string>
@@ -1560,7 +1561,7 @@
     <string name="core_folder_other_suite">Dieser Ordner auf dem Server gehört zu einer anderen Suite.</string>
     <string name="core_php_shares">Das Server-Modul teilt ohne weitere Einrichtung.</string>
     <string name="core_php_ftps">Das Modul wird per FTPS hochgeladen.</string>
-    <string name="core_dl_limit_php">Ein Download-Limit gibt es nur mit dem Server-Modul.</string>
+    <string name="core_dl_limit_php">Ablaufdatum und Download-Limit gibt es nur mit dem Server-Modul.</string>
     <string name="core_not_backup">Das ist keine GhulSuite-Sicherung.</string>
     <string name="core_backup_big">Die Sicherung ist zu groß.</string>
     <string name="core_folder_has_suite">In diesem Ordner liegt schon eine Suite. Wähle einen leeren Ordner.</string>
