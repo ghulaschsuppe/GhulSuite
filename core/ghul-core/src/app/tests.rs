@@ -858,7 +858,8 @@ fn mail_archive_to_drive_against_imap_and_sftp() {
     s.drive_setup(id).unwrap();
 
     // "Older than a week": the three old ones (received in 2024 and 2025), not today's.
-    let week_ago = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64 / 86_400 - 7;
+    let week_ago =
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64 / 86_400 - 7;
     let old = s.mail_archive_uids(account.clone(), "INBOX".into(), Some(week_ago)).unwrap();
     assert_eq!(old.len(), 3, "{old:?}");
     for uid in &old {
@@ -889,7 +890,10 @@ fn mail_archive_to_drive_against_imap_and_sftp() {
     let m = s.mail_parse_eml(account.clone(), eml).unwrap();
     assert_eq!(m.subject, "Archivbetreff 1");
     assert!(m.text.contains("Archivtext 1"));
-    assert!(matches!(s.mail_parse_eml(account.clone(), b"\x00\x01kein Mail".to_vec()), Err(GhulError::InvalidInput { .. }) | Ok(_)));
+    assert!(matches!(
+        s.mail_parse_eml(account.clone(), b"\x00\x01kein Mail".to_vec()),
+        Err(GhulError::InvalidInput { .. }) | Ok(_)
+    ));
 
     // At the provider nothing changed: all four there, the archived ones still unread.
     let page = s.mail_list(account.clone(), "INBOX".into(), 0, 50).unwrap();
@@ -1008,6 +1012,48 @@ fn files_under(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
     out
 }
 
+/// An upload that stopped half-way continues with the same file key: the blocks already on the
+/// server are not written again, and a finished upload forgets its key (the next content of the
+/// same file gets a new one). The device's note of unfinished uploads is encrypted.
+#[test]
+fn drive_upload_continues_with_its_key() {
+    use crate::net::remote::LocalFs;
+    let server_dir = std::env::temp_dir().join(format!("ghul-drive-resume-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&server_dir);
+    let d = Dirs::new("drive-resume");
+    let s = d.suite();
+    s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "P")]), None, None, None).unwrap();
+    let fs: std::sync::Arc<dyn crate::net::remote::RemoteFs> = std::sync::Arc::new(LocalFs::new(&server_dir));
+    s.drive_use_folder(fs).unwrap();
+    let block = super::drive::BLOCK_SIZE as usize;
+    let data: Vec<u8> = (0..3 * block as u32).map(|i| (i.wrapping_mul(2654435761) >> 24) as u8).collect();
+    // Two of three parts, then the app is gone (no finish, no cancel).
+    let up = s.drive_upload_begin(None, "Film Geheimname.mp4".into()).unwrap();
+    s.drive_upload_chunk(up.clone(), data[..block].to_vec()).unwrap();
+    s.drive_upload_chunk(up, data[block..2 * block].to_vec()).unwrap();
+    let written: Vec<_> = files_under(&server_dir.join("drive/blocks"))
+        .iter()
+        .map(|p| (p.clone(), std::fs::metadata(p).unwrap().modified().unwrap()))
+        .collect();
+    assert_eq!(written.len(), 2);
+    let note = std::fs::read(std::path::Path::new(&d.local()).join("drive-pending")).expect("unfinished upload noted");
+    assert!(!note.windows(11).any(|w| w == b"Geheimname."), "the note is encrypted");
+    // The same file again: the first two blocks are there and stay untouched.
+    let id = upload(&s, None, "Film Geheimname.mp4", &data);
+    for (p, at) in &written {
+        assert_eq!(std::fs::metadata(p).unwrap().modified().unwrap(), *at, "{p:?} written again");
+    }
+    assert_eq!(files_under(&server_dir.join("drive/blocks")).len(), 3);
+    assert_eq!(download(&s, &id), data);
+    assert!(!std::path::Path::new(&d.local()).join("drive-pending").exists(), "nothing unfinished any more");
+    // New content under the same name: a new key, so all of its blocks are new.
+    let mut edited = data.clone();
+    edited[0] ^= 1;
+    upload(&s, None, "Film Geheimname.mp4", &edited);
+    assert_eq!(files_under(&server_dir.join("drive/blocks")).len(), 6, "3 for the version, 3 new");
+    let _ = std::fs::remove_dir_all(&server_dir);
+}
+
 #[test]
 fn drive_files_and_folders() {
     use crate::net::remote::LocalFs;
@@ -1025,10 +1071,17 @@ fn drive_files_and_folders() {
     let id = upload(&s, Some(photos.clone()), "urlaub.jpg", &big);
     assert_eq!(s.drive_file_blocks(id.clone()).unwrap(), 3);
     assert_eq!(download(&s, &id), big);
-    // Same content again under another name: blocks are stored once.
-    let blocks_before = files_under(&server_dir.join("drive/blocks")).len();
+    // Same content again under another name: its own key and its own blocks, so the server
+    // cannot see that two files are equal (and a share of one reveals nothing of the other).
+    let first_blocks = files_under(&server_dir.join("drive/blocks"));
     let copy = upload(&s, Some(photos.clone()), "urlaub kopie.jpg", &big);
-    assert_eq!(files_under(&server_dir.join("drive/blocks")).len(), blocks_before);
+    let blocks_after = files_under(&server_dir.join("drive/blocks"));
+    assert_eq!(blocks_after.len(), first_blocks.len() + 3);
+    assert!(first_blocks.iter().all(|b| blocks_after.contains(b)));
+    assert_eq!(download(&s, &copy), big);
+    // Blocks are AES-256-GCM (browsers can open them with the file's key alone).
+    let first = std::fs::read(&blocks_after[0]).unwrap();
+    assert_eq!(&first[..8], b"GHULBLK2");
     // Same name again with new content: a new version, the old one is kept.
     let edited: Vec<u8> = big.iter().rev().copied().collect();
     assert_eq!(upload(&s, Some(photos.clone()), "urlaub.jpg", &edited), id);
@@ -1064,11 +1117,10 @@ fn drive_files_and_folders() {
     s.drive_delete(copy.clone()).unwrap();
     assert_eq!(s.drive_empty_trash(30).unwrap(), 0, "younger than 30 days stays");
     assert_eq!(s.drive_empty_trash(0).unwrap(), 1);
-    assert_eq!(
-        files_under(&server_dir.join("drive/blocks")).len(),
-        blocks_before + 1,
-        "blocks still used by the original and its version (+ the note)"
-    );
+    let left = files_under(&server_dir.join("drive/blocks"));
+    assert_eq!(left.len(), blocks_before - 3 + 1, "the original, its version and the note; the copy's blocks are gone");
+    let copy_blocks: Vec<&std::path::PathBuf> = blocks_after.iter().filter(|b| !first_blocks.contains(b)).collect();
+    assert!(copy_blocks.iter().all(|b| !left.contains(b)), "the copy's own blocks are deleted");
     // Favourites and usage.
     s.drive_set_favorite(note.clone(), true).unwrap();
     assert_eq!(s.drive_favorites().unwrap()[0].id, note);

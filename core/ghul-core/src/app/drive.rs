@@ -36,7 +36,14 @@ use crate::vault::payload::{pad, unpad};
 const DRIVE_KEY: &str = "drive";
 const INDEX: &str = "drive/index.ghldrv";
 const INDEX_MAGIC: &[u8; 8] = b"GHULDRV1";
-const BLOCK_MAGIC: &[u8; 8] = b"GHULBLK1";
+const BLOCK_MAGIC: &[u8; 8] = b"GHULBLK2";
+/// Keys of uploads that did not finish, on this device, so a repeated upload continues.
+const PENDING_FILE: &str = "drive-pending";
+const PENDING_MAGIC: &[u8; 8] = b"GHULPND1";
+/// Unfinished uploads by "folder/name": file key and when it was made.
+type Pending = BTreeMap<String, (Vec<u8>, i64)>;
+/// A pending upload's key is reused for this long.
+const PENDING_MS: i64 = 7 * 86_400_000;
 /// Largest block (the app reads files in chunks of this size).
 pub const BLOCK_SIZE: u32 = 4 * 1024 * 1024;
 
@@ -68,6 +75,9 @@ struct Version {
     size: u64,
     modified: i64,
     blocks: Vec<String>,
+    /// The key of this content (see [`FileKey`]).
+    #[serde(default, with = "serde_bytes")]
+    key: Vec<u8>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
@@ -89,6 +99,9 @@ struct Node {
     /// Older contents, newest first.
     #[serde(default)]
     versions: Vec<Version>,
+    /// The key of the current content: each content has its own (see [`FileKey`]).
+    #[serde(default, with = "serde_bytes")]
+    key: Vec<u8>,
 }
 
 /// Older versions kept per file.
@@ -106,6 +119,7 @@ pub(super) struct Upload {
     name: String,
     blocks: Vec<String>,
     size: u64,
+    key: FileKey,
 }
 
 #[derive(uniffi::Record, Clone, Debug, PartialEq)]
@@ -154,23 +168,83 @@ pub struct DriveStatus {
 
 struct Keys {
     index: Zeroizing<[u8; 32]>,
-    block: Zeroizing<[u8; 32]>,
-    block_id: Zeroizing<[u8; 32]>,
+    /// Seals the keys of uploads that did not finish, on this device.
+    pending: Zeroizing<[u8; 32]>,
 }
 
 impl Keys {
     fn new(dk: &[u8]) -> Keys {
-        Keys {
-            index: hkdf(dk, &[b"ghul/v1/drive/index"]),
-            block: hkdf(dk, &[b"ghul/v1/drive/block"]),
-            block_id: hkdf(dk, &[b"ghul/v1/drive/block-id"]),
-        }
+        Keys { index: hkdf(dk, &[b"ghul/v1/drive/index"]), pending: hkdf(dk, &[b"ghul/v2/drive/pending"]) }
+    }
+}
+
+/// The key of one content of a file (random, in the encrypted index). Its blocks are encrypted
+/// with AES-256-GCM, which browsers can decrypt: a share link only needs this key, never the
+/// Drive key, and nothing is copied. Block names come from this key as well, so equal content
+/// in two files cannot be recognised on the server.
+#[derive(Clone)]
+pub(super) struct FileKey(Zeroizing<[u8; 32]>);
+
+impl FileKey {
+    fn random() -> FileKey {
+        let mut k = Zeroizing::new([0u8; 32]);
+        OsRng.fill_bytes(k.as_mut());
+        FileKey(k)
+    }
+
+    pub(super) fn of(bytes: &[u8]) -> Result<FileKey> {
+        let k: [u8; 32] =
+            bytes.try_into().map_err(|_| GhulError::Corrupted { msg: "Drive file key missing".into() })?;
+        Ok(FileKey(Zeroizing::new(k)))
+    }
+
+    pub(super) fn bytes(&self) -> &[u8; 32] {
+        &self.0
     }
 
     fn block_id(&self, data: &[u8]) -> String {
-        let mut m = <Hmac<Sha256> as Mac>::new_from_slice(self.block_id.as_ref()).expect("any key size");
+        let idk = crate::kdf::hkdf32(self.0.as_ref(), b"ghul/v2/drive/block-id");
+        let mut m = <Hmac<Sha256> as Mac>::new_from_slice(idk.as_ref()).expect("any key size");
         m.update(data);
         crate::kdf::hex(&m.finalize().into_bytes())
+    }
+
+    fn cipher(&self) -> aes_gcm::Aes256Gcm {
+        use aes_gcm::KeyInit;
+        let bk = crate::kdf::hkdf32(self.0.as_ref(), b"ghul/v2/drive/block");
+        aes_gcm::Aes256Gcm::new_from_slice(bk.as_ref()).expect("32 bytes")
+    }
+
+    /// `"GHULBLK2" ‖ nonce[12] ‖ AES-256-GCM(block key, data, aad = "GHULBLK2" ‖ id)`.
+    fn seal_block(&self, id: &str, data: &[u8]) -> Vec<u8> {
+        use aes_gcm::aead::{Aead, Payload};
+        let mut nonce = [0u8; 12];
+        OsRng.fill_bytes(&mut nonce);
+        let aad = [BLOCK_MAGIC.as_slice(), id.as_bytes()].concat();
+        let sealed = self
+            .cipher()
+            .encrypt(aes_gcm::Nonce::from_slice(&nonce), Payload { msg: data, aad: &aad })
+            .expect("AES-GCM encryption of a block");
+        [BLOCK_MAGIC.as_slice(), &nonce, &sealed].concat()
+    }
+
+    /// Opens a block and checks that it is the block `id` of this content.
+    pub(super) fn open_block(&self, id: &str, data: &[u8]) -> Result<Zeroizing<Vec<u8>>> {
+        use aes_gcm::aead::{Aead, Payload};
+        let bad = || GhulError::Corrupted { msg: "Drive data damaged or from another key".into() };
+        if data.len() < 8 + 12 + 16 || &data[..8] != BLOCK_MAGIC {
+            return Err(bad());
+        }
+        let aad = [BLOCK_MAGIC.as_slice(), id.as_bytes()].concat();
+        let plain = self
+            .cipher()
+            .decrypt(aes_gcm::Nonce::from_slice(&data[8..20]), Payload { msg: &data[20..], aad: &aad })
+            .map_err(|_| bad())?;
+        let plain = Zeroizing::new(plain);
+        if self.block_id(&plain) != id {
+            return Err(GhulError::Corrupted { msg: "Drive block does not match".into() });
+        }
+        Ok(plain)
     }
 }
 
@@ -454,13 +528,70 @@ impl GhulSuite {
         Ok(index)
     }
 
+    fn pending_keys(&self, o: &Open) -> Option<(Zeroizing<[u8; 32]>, Pending)> {
+        let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
+        if d.key.is_empty() {
+            return None;
+        }
+        let key = Keys::new(&d.key).pending;
+        let map = std::fs::read(self.local_dir.join(PENDING_FILE))
+            .ok()
+            .and_then(|data| decrypt(PENDING_MAGIC, &key, &data, b"").ok())
+            .and_then(|plain| ciborium::de::from_reader::<Pending, _>(&plain[..]).ok())
+            .unwrap_or_default();
+        Some((key, map))
+    }
+
+    fn save_pending(&self, key: &[u8; 32], map: &Pending) {
+        let path = self.local_dir.join(PENDING_FILE);
+        if map.is_empty() {
+            let _ = std::fs::remove_file(path);
+            return;
+        }
+        let mut cbor = Zeroizing::new(Vec::new());
+        if ciborium::ser::into_writer(map, &mut *cbor).is_ok() {
+            let _ = std::fs::create_dir_all(&self.local_dir);
+            let _ = std::fs::write(path, encrypt(PENDING_MAGIC, key, &cbor, b""));
+        }
+    }
+
+    /// The key for an upload: the one of an unfinished upload of the same file (its blocks are
+    /// there already and are skipped), else a new one, remembered until the upload finishes.
+    fn pending_key(&self, o: &Open, parent: &str, name: &str) -> Result<FileKey> {
+        let Some((key, mut map)) = self.pending_keys(o) else { return Ok(FileKey::random()) };
+        let now = now_ms();
+        map.retain(|_, (_, at)| now - *at < PENDING_MS);
+        let slot = format!("{parent}/{name}");
+        if let Some((k, _)) = map.get(&slot) {
+            if let Ok(fk) = FileKey::of(k) {
+                return Ok(fk);
+            }
+        }
+        let fk = FileKey::random();
+        map.insert(slot, (fk.bytes().to_vec(), now));
+        self.save_pending(&key, &map);
+        Ok(fk)
+    }
+
+    fn forget_pending(&self, o: &Open, parent: &str, name: &str) {
+        if let Some((key, mut map)) = self.pending_keys(o) {
+            if map.remove(&format!("{parent}/{name}")).is_some() {
+                self.save_pending(&key, &map);
+            }
+        }
+    }
+
     /// The folder `name` below `parent` (not in the trash), created when there is none.
     pub(super) fn drive_folder_named(&self, parent: Option<&str>, name: &str) -> Result<String> {
         let name = check_name(name)?;
         let found = self.with_open(|o| {
             let index = self.drive_index(o, false)?;
             let p = parent.unwrap_or_default();
-            Ok(index.nodes.iter().find(|n| n.dir && n.parent == p && n.name == name && !in_trash(&index, n)).map(|n| n.id.clone()))
+            Ok(index
+                .nodes
+                .iter()
+                .find(|n| n.dir && n.parent == p && n.name == name && !in_trash(&index, n))
+                .map(|n| n.id.clone()))
         })?;
         match found {
             Some(id) => Ok(id),
@@ -479,7 +610,8 @@ impl GhulSuite {
     /// Stores `data` as a file in `folder` (in parts, like an upload from the app).
     pub(super) fn drive_put_file(&self, folder: Option<String>, name: String, data: &[u8]) -> Result<String> {
         let upload = self.drive_upload_begin(folder, name)?;
-        let parts = data.chunks(BLOCK_SIZE as usize).try_for_each(|c| self.drive_upload_chunk(upload.clone(), c.to_vec()));
+        let parts =
+            data.chunks(BLOCK_SIZE as usize).try_for_each(|c| self.drive_upload_chunk(upload.clone(), c.to_vec()));
         match parts.and_then(|()| self.drive_upload_finish(upload.clone())) {
             Ok(id) => Ok(id),
             Err(e) => {
@@ -770,7 +902,9 @@ impl GhulSuite {
         self.with_open(|o| {
             self.drive_ctx(o)?;
             let id = crate::kdf::hex(&new_id());
-            let up = Upload { parent: folder.unwrap_or_default(), name, blocks: vec![], size: 0 };
+            let parent = folder.unwrap_or_default();
+            let key = self.pending_key(o, &parent, &name)?;
+            let up = Upload { parent, name, blocks: vec![], size: 0, key };
             self.net.lock().unwrap_or_else(|p| p.into_inner()).uploads.insert(id.clone(), up);
             Ok(id)
         })
@@ -783,8 +917,12 @@ impl GhulSuite {
             return Err(GhulError::InvalidInput { msg: "chunk too large".into() });
         }
         self.with_open(|o| {
-            let (fs, keys) = self.drive_ctx(o)?;
-            let id = keys.block_id(&data);
+            let (fs, _) = self.drive_ctx(o)?;
+            let key = {
+                let cache = self.net.lock().unwrap_or_else(|p| p.into_inner());
+                cache.uploads.get(&upload).ok_or(GhulError::NotFound)?.key.clone()
+            };
+            let id = key.block_id(&data);
             let known = self
                 .net
                 .lock()
@@ -800,7 +938,7 @@ impl GhulSuite {
                 fs.list(dir).map(|l| l.iter().any(|e| e.name == name)).unwrap_or(false)
             };
             if !known && !there {
-                fs.write(&path, &encrypt(BLOCK_MAGIC, &keys.block, &data, id.as_bytes()))?;
+                fs.write(&path, &key.seal_block(&id, &data))?;
             }
             let mut cache = self.net.lock().unwrap_or_else(|p| p.into_inner());
             let up = cache.uploads.get_mut(&upload).ok_or(GhulError::NotFound)?;
@@ -828,11 +966,17 @@ impl GhulSuite {
                     .find(|n| n.parent == up.parent && n.name == up.name && !n.dir && n.trashed == 0)
                 {
                     if n.blocks != up.blocks {
-                        let old = Version { size: n.size, modified: n.modified, blocks: std::mem::take(&mut n.blocks) };
+                        let old = Version {
+                            size: n.size,
+                            modified: n.modified,
+                            blocks: std::mem::take(&mut n.blocks),
+                            key: std::mem::take(&mut n.key),
+                        };
                         n.versions.insert(0, old);
                         n.versions.truncate(MAX_VERSIONS);
                     }
                     n.blocks = up.blocks.clone();
+                    n.key = up.key.bytes().to_vec();
                     n.size = up.size;
                     n.modified = now_ms();
                     return Ok(n.id.clone());
@@ -847,10 +991,12 @@ impl GhulSuite {
                     size: up.size,
                     modified: now_ms(),
                     blocks: up.blocks.clone(),
+                    key: up.key.bytes().to_vec(),
                     ..Default::default()
                 });
                 Ok(id)
             })
+            .inspect(|_| self.forget_pending(o, &up.parent, &up.name))
         })
     }
 
@@ -859,6 +1005,7 @@ impl GhulSuite {
         self.with_open(|o| {
             let up = self.net.lock().unwrap_or_else(|p| p.into_inner()).uploads.remove(&upload);
             let Some(up) = up else { return Ok(()) };
+            self.forget_pending(o, &up.parent, &up.name);
             let (fs, keys) = self.drive_ctx(o)?;
             let index = load_index(fs.as_ref(), &keys)?;
             let used = used_blocks(&index);
@@ -884,18 +1031,15 @@ impl GhulSuite {
             let index = self.drive_index(o, false)?;
             let n = index.nodes.iter().find(|n| n.id == id && !n.dir).ok_or(GhulError::NotFound)?;
             let block = n.blocks.get(part as usize).ok_or(GhulError::NotFound)?.clone();
-            let (fs, keys) = self.drive_ctx(o)?;
+            let key = FileKey::of(&n.key)?;
+            let (fs, _) = self.drive_ctx(o)?;
             let data = match std::fs::read(self.offline_dir().join(&block)) {
                 Ok(d) => d,
                 Err(_) => fs
                     .read(&block_path(&block))?
                     .ok_or_else(|| GhulError::Corrupted { msg: "Drive block missing".into() })?,
             };
-            let plain = decrypt(BLOCK_MAGIC, &keys.block, &data, block.as_bytes())?;
-            if keys.block_id(&plain) != block {
-                return Err(GhulError::Corrupted { msg: "Drive block does not match".into() });
-            }
-            Ok(plain.to_vec())
+            Ok(key.open_block(&block, &data)?.to_vec())
         })
     }
 }
@@ -1072,9 +1216,15 @@ impl GhulSuite {
                     return Err(GhulError::NotFound);
                 }
                 let v = n.versions.remove(index_no as usize);
-                let cur = Version { size: n.size, modified: n.modified, blocks: std::mem::take(&mut n.blocks) };
+                let cur = Version {
+                    size: n.size,
+                    modified: n.modified,
+                    blocks: std::mem::take(&mut n.blocks),
+                    key: std::mem::take(&mut n.key),
+                };
                 n.versions.insert(0, cur);
                 n.blocks = v.blocks;
+                n.key = v.key;
                 n.size = v.size;
                 n.modified = now_ms();
                 Ok(())
@@ -1168,7 +1318,7 @@ impl GhulSuite {
         limit: u64,
     ) -> Result<Vec<(String, Zeroizing<Vec<u8>>)>> {
         let index = self.drive_index(o, false)?;
-        let (fs, keys) = self.drive_ctx(o)?;
+        let (fs, _) = self.drive_ctx(o)?;
         let root = index.nodes.iter().find(|n| n.id == id).ok_or(GhulError::NotFound)?;
         let mut files: Vec<(String, &Node)> = Vec::new();
         let mut todo = vec![(root.name.clone(), root)];
@@ -1187,15 +1337,12 @@ impl GhulSuite {
         let mut out = Vec::new();
         for (path, n) in files {
             let mut data = Zeroizing::new(Vec::with_capacity(n.size as usize));
+            let key = FileKey::of(&n.key)?;
             for block in &n.blocks {
                 let enc = fs
                     .read(&block_path(block))?
                     .ok_or_else(|| GhulError::Corrupted { msg: "Drive block missing".into() })?;
-                let plain = decrypt(BLOCK_MAGIC, &keys.block, &enc, block.as_bytes())?;
-                if keys.block_id(&plain) != *block {
-                    return Err(GhulError::Corrupted { msg: "Drive block does not match".into() });
-                }
-                data.extend_from_slice(&plain);
+                data.extend_from_slice(&key.open_block(block, &enc)?);
             }
             out.push((path, data));
         }

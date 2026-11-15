@@ -71,7 +71,11 @@ fn clean(s: &str) -> String {
             let reserved = matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|');
             // Direction overrides could disguise the name ("…\u{202e}fdp.exe").
             let direction = matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}');
-            if c.is_control() || reserved || direction { ' ' } else { c }
+            if c.is_control() || reserved || direction {
+                ' '
+            } else {
+                c
+            }
         })
         .collect();
     let mut out = mapped.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -199,14 +203,21 @@ impl GhulSuite {
         let today = super::suite::now_ms() / 86_400_000;
         let (validity, uids) = self.archive_candidates(&account_id, &folder, Some(today - i64::from(days)))?;
         let key = format!("{account_id}/{folder}");
-        let done = self.with_open(|o| Ok(area_setting::<AutoArchive>(o, VaultKind::Mail, AUTO_KEY).marks.get(&key).copied()))?;
+        let done =
+            self.with_open(|o| Ok(area_setting::<AutoArchive>(o, VaultKind::Mail, AUTO_KEY).marks.get(&key).copied()))?;
         // Another UIDVALIDITY: the old mark names other mails now, start over (duplicates are skipped).
         let after = done.filter(|(v, _)| *v == validity).map_or(0, |(_, u)| u);
         Ok(MailArchiveBatch { validity, uids: uids.into_iter().filter(|u| *u > after).collect() })
     }
 
     /// After an automatic run: everything up to `last_uid` is in the archive.
-    pub fn mail_archive_auto_done(&self, account_id: String, folder: String, validity: u32, last_uid: u32) -> Result<()> {
+    pub fn mail_archive_auto_done(
+        &self,
+        account_id: String,
+        folder: String,
+        validity: u32,
+        last_uid: u32,
+    ) -> Result<()> {
         self.with_open(|o| {
             let mut a: AutoArchive = area_setting(o, VaultKind::Mail, AUTO_KEY);
             let key = format!("{account_id}/{folder}");
