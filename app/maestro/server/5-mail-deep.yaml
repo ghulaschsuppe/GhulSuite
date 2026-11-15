@@ -54,6 +54,12 @@ name: GhulMail in depth on a real server
     notVisible: "1 selected"
     timeout: 10000
 - takeScreenshot: s5-04-unread
+# The change goes to the mail server first ("Working ..." blocks taps meanwhile, on purpose): a
+# tap on the search field before it is done goes nowhere, and "hide keyboard" then acted as
+# "back" and closed the app.
+- extendedWaitUntil:
+    notVisible: "Working.*"
+    timeout: 60000
 # --- Search ---
 - tapOn: "Search mails"
 - inputText: "nichts-dergleichen"
