@@ -287,7 +287,14 @@ impl RemoteFs for SftpFs {
             async {
                 for p in todo {
                     if !self.sftp.try_exists(p.clone()).await.map_err(proto)? {
-                        self.sftp.create_dir(p).await.map_err(proto)?;
+                        // Another upload (the mail archive writes in parallel) may create the same
+                        // folder in between: SFTP then only says "Failure". A folder that exists
+                        // now is what was wanted.
+                        if let Err(e) = self.sftp.create_dir(p.clone()).await {
+                            if !self.sftp.try_exists(p).await.map_err(proto)? {
+                                return Err(proto(e));
+                            }
+                        }
                     }
                 }
                 Ok(())
