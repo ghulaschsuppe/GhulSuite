@@ -137,7 +137,12 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
     override suspend fun driveRename(id: String, name: String) {}
     override suspend fun driveMove(id: String, folder: String?) {}
     override suspend fun driveRestore(id: String) { calls += "driveRestore:$id"; driveTrashed -= id; if (id.startsWith("f")) driveFiles++ }
-    override suspend fun driveDelete(id: String) { calls += "driveDelete:$id"; driveTrashed += id; if (id.startsWith("f")) driveFiles-- }
+    /** Moving this item to the trash fails (the server went away in the middle). */
+    var driveDeleteFails: String? = null
+    override suspend fun driveDelete(id: String) {
+        if (id == driveDeleteFails) throw java.io.IOException("connection reset")
+        calls += "driveDelete:$id"; driveTrashed += id; if (id.startsWith("f")) driveFiles--
+    }
     override suspend fun driveTrash() = listOf(DriveItemUi("f9", null, "Alter Entwurf.docx", false, 48_000, now * 1000, trashed = now * 1000))
     override suspend fun driveDeleteForever(id: String) { calls += "driveDeleteForever:$id" }
     override suspend fun driveEmptyTrash(days: Int): Int { if (days == 0) calls += "driveEmptyTrash"; return 0 }

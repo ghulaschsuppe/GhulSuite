@@ -261,6 +261,25 @@ class InteractionTest {
         assertTrue("driveDelete:f2" in (fake.net as FakeNet).calls)
     }
 
+    /** F96: the server goes away while several files go to the trash: what moved shows as moved. */
+    @Test
+    fun driveTrashFailingHalfwayShowsWhatIsTrue() = app(setup = { tab = Tab.DRIVE }) { _, fake ->
+        val net = fake.net as FakeNet
+        val part = { t: String -> onAllNodesWithText(t, substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        waitUntil(timeoutMillis = 10_000) { part("3 files") }
+        net.driveDeleteFails = "f2"
+        longPress("Steuer 2025.pdf")
+        text("Notizen.txt").performClick()
+        waitFor("2 selected")
+        desc("Move to trash").performClick()
+        // Steuer went to the trash, Notizen did not: the list and the count say so at once (not
+        // only when the time for "Undo" is over), the error too.
+        waitGone("Steuer 2025.pdf")
+        waitUntil(timeoutMillis = 2_000) { part("2 files") }
+        assertTrue(shown("Notizen.txt"))
+        waitUntil(timeoutMillis = 10_000) { part("connection reset") || part("No connection") || part("Connection") }
+    }
+
     /** Windows: Esc, Alt+Left and the mouse's back button go back one step (bug: they did nothing). */
     @Test
     fun windowsBackGoesBackOneStep() = app(wide = true, setup = { tab = Tab.CAL; calView = CalView.LIST }) { state, _ ->
@@ -282,6 +301,17 @@ class InteractionTest {
         assertTrue(DesktopBack.isBackKey(androidx.compose.ui.input.key.Key.Escape, alt = false))
         assertTrue(DesktopBack.isBackKey(androidx.compose.ui.input.key.Key.DirectionLeft, alt = true))
         assertFalse(DesktopBack.isBackKey(androidx.compose.ui.input.key.Key.DirectionLeft, alt = false))
+        // Esc held down repeats "pressed": still only one step back.
+        text("Abendessen mit Jana").performClick()
+        waitFor("Trattoria Da Luca")
+        val esc = androidx.compose.ui.input.key.Key.Escape
+        runOnIdle {
+            assertTrue(DesktopBack.onKey(esc, false, androidx.compose.ui.input.key.KeyEventType.KeyDown))
+            DesktopBack.onKey(esc, false, androidx.compose.ui.input.key.KeyEventType.KeyDown)
+            DesktopBack.onKey(esc, false, androidx.compose.ui.input.key.KeyEventType.KeyUp)
+        }
+        waitUntil(timeoutMillis = 10_000) { state.stack.isEmpty() }
+        assertEquals(Tab.CAL, state.tab)
         val released = java.awt.event.MouseEvent.MOUSE_RELEASED
         assertTrue(DesktopBack.isBackButton(released, 4))
         assertFalse(DesktopBack.isBackButton(released, 1))

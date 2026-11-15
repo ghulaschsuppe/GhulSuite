@@ -78,6 +78,9 @@ name: GhulDrive in depth on a real server
 - takeScreenshot: s4-04-trashed
 - tapOn: "Undo"
 - extendedWaitUntil:
+    notVisible: "Moved to trash"
+    timeout: 30000
+- extendedWaitUntil:
     visible: "Steuer-2026"
     timeout: 60000
 - takeScreenshot: s4-05-undone

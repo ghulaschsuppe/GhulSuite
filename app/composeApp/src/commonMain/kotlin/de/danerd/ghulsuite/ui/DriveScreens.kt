@@ -335,11 +335,22 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
     fun toTrash(list: List<DriveItemUi>) {
         selected.clear()
         // Into the trash: no question, "Undo" brings it back (and the trash keeps it for days).
-        // F96: moved at once, so the number of files and the storage are right at once.
-        state.run(onError = { error = it }, block = { list.forEach { net.driveDelete(it.id) } }) {
+        // F96: moved at once, so the number of files and the storage are right at once. Not
+        // through state.run: a tap while the app is busy must not be dropped.
+        scope.launch {
+            val done = mutableListOf<DriveItemUi>()
+            val failure = catching { list.forEach { net.driveDelete(it.id); done += it } }.exceptionOrNull()
+            // Also after a failure part of the list may be in the trash: show what is true.
             trashTick++
             state.changed()
-            state.doneWithUndo(trashMsg, undo = { list.forEach { net.driveRestore(it.id) } }) { trashTick++; state.changed() }
+            // The list reloads now (and would clear an error shown above it): say it below. What
+            // did move is in the trash and can be taken back from there.
+            if (failure != null) { state.message(describe(failure)); return@launch }
+            if (done.isEmpty()) return@launch
+            // Folders first: a file restored before its folder would land at the top level.
+            state.doneWithUndo(trashMsg, undo = { done.sortedByDescending { it.isDir }.forEach { net.driveRestore(it.id) } }) {
+                trashTick++; state.changed()
+            }
         }
     }
     fun deleteForever(list: List<DriveItemUi>) {

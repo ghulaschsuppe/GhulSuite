@@ -861,9 +861,16 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                 r == androidx.compose.material3.SnackbarResult.ActionPerformed
             }
             if (!undone || !backend.unlocked.value) return@launch
-            catching { undo() }.onSuccess { afterUndo() }.onFailure { message(describe(it)) }
+            // Also after a failure part of it may be back: show what is true.
+            val failure = catching { undo() }.exceptionOrNull()
+            afterUndo()
+            failure?.let { message(describe(it)) }
         }
+        doneUndoMessage = message
     }
+
+    /** The message of [doneWithUndo] (a lock takes it away: "Undo" cannot work after it). */
+    private var doneUndoMessage: String? = null
 
     /** Carries out the action that waits for "Undo" now (before the next one, before locking). */
     suspend fun settlePending() {
@@ -902,6 +909,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
 
     /** Drops what waits for "Undo" (the suite was locked from outside): the items stay. */
     private fun dropPending() {
+        doneUndoMessage?.let { m -> snackbar.currentSnackbarData?.takeIf { it.visuals.message == m }?.dismiss() }
+        doneUndoMessage = null
         val p = pending ?: return
         pending = null
         hidden = hidden - p.keys

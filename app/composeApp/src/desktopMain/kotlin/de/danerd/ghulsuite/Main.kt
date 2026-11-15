@@ -53,9 +53,21 @@ fun main() {
         { lastInput = System.currentTimeMillis() },
         AWTEvent.KEY_EVENT_MASK or AWTEvent.MOUSE_EVENT_MASK or AWTEvent.MOUSE_WHEEL_EVENT_MASK,
     )
-    // The back button of the mouse goes back one step (it arrives as an AWT event only).
+    // The back button of the mouse in GhulSuite's window acts as Esc there: an open dialog, sheet
+    // or menu closes first, as with the back key on Android; then a page. (It arrives as an AWT
+    // event only; in other windows, e.g. choosing a file, it does nothing here.)
     Toolkit.getDefaultToolkit().addAWTEventListener(
-        { e -> if (e is java.awt.event.MouseEvent && DesktopBack.isBackButton(e)) DesktopBack.dispatch() },
+        { e ->
+            if (e is java.awt.event.MouseEvent && DesktopBack.isBackButton(e)) {
+                val w = awtWindow
+                if (w != null && (e.component === w || javax.swing.SwingUtilities.getWindowAncestor(e.component) === w)) {
+                    val target = w.mostRecentFocusOwner ?: w
+                    for (id in intArrayOf(java.awt.event.KeyEvent.KEY_PRESSED, java.awt.event.KeyEvent.KEY_RELEASED)) {
+                        target.dispatchEvent(java.awt.event.KeyEvent(target, id, System.currentTimeMillis(), 0, java.awt.event.KeyEvent.VK_ESCAPE, java.awt.event.KeyEvent.CHAR_UNDEFINED))
+                    }
+                }
+            }
+        },
         AWTEvent.MOUSE_EVENT_MASK,
     )
 
@@ -73,7 +85,7 @@ fun main() {
             state = rememberWindowState(size = DpSize(1280.dp, 820.dp)),
             // Esc and Alt+Left go back one step, as the back key on Android (after a text field,
             // menu or dialog had the chance to use Esc itself).
-            onKeyEvent = { e -> DesktopBack.isBackKey(e) && DesktopBack.dispatch() },
+            onKeyEvent = { e -> DesktopBack.onKey(e) },
             onPreviewKeyEvent = { e ->
                 // Ctrl+L locks at once (like Win+L for Windows).
                 if (e.type == KeyEventType.KeyDown && e.isCtrlPressed && e.key == Key.L) {

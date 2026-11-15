@@ -67,6 +67,23 @@ object DesktopBack {
     fun isBackKey(e: androidx.compose.ui.input.key.KeyEvent): Boolean =
         e.type == androidx.compose.ui.input.key.KeyEventType.KeyDown && isBackKey(e.key, e.isAltPressed)
 
+    private var held = false
+
+    /**
+     * The window's key handler: goes back once per press (a held key repeats "pressed", which
+     * must not go back several steps).
+     */
+    fun onKey(e: androidx.compose.ui.input.key.KeyEvent): Boolean = onKey(e.key, e.isAltPressed, e.type)
+
+    fun onKey(key: androidx.compose.ui.input.key.Key, alt: Boolean, type: androidx.compose.ui.input.key.KeyEventType): Boolean {
+        if (!isBackKey(key, alt)) return false
+        return when (type) {
+            androidx.compose.ui.input.key.KeyEventType.KeyUp -> { held = false; false }
+            androidx.compose.ui.input.key.KeyEventType.KeyDown -> if (held) true else { held = true; dispatch() }
+            else -> false
+        }
+    }
+
     fun isBackKey(key: androidx.compose.ui.input.key.Key, alt: Boolean): Boolean =
         key == androidx.compose.ui.input.key.Key.Escape || (alt && key == androidx.compose.ui.input.key.Key.DirectionLeft)
 
