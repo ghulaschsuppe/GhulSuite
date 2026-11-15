@@ -179,7 +179,7 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
     var filter by remember(key) { mutableStateOf("") }
     var reload by remember { mutableStateOf(0) }
     var loading by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var error by remember(key) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     suspend fun load(): Pair<Int, List<MailItem>> {
@@ -213,19 +213,24 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
     // One way to fill the list: the folder, or the search for the active words. A reload (new
     // mail, Refresh, an action on a result) repeats whichever it is, so the folder never replaces
     // results under the words, nor the other way round.
-    LaunchedEffect(key, reload, filter == "flagged", state.liveRevision(), state.mailRefreshTick, activeQuery) {
+    // Words in the field (typed, searching or found): the list is not the folder, so nothing that
+    // acts on the folder (load more, the whole folder, archived mails) is offered.
+    val inSearch = query.isNotBlank() || activeQuery.isNotEmpty() || searching
+    LaunchedEffect(key, reload, activeQuery.isEmpty() && filter == "flagged", state.liveRevision(), state.mailRefreshTick, activeQuery) {
         val words = activeQuery
         loading = true
         try {
             if (words.isEmpty()) {
                 catching { load() }
                     .onSuccess { (t, items) -> messages = items; total = t; error = null; searching = false }
-                    .onFailure { error = describe(it) }
+                    // Search results must not stay as if they were the folder.
+                    .onFailure { error = describe(it); if (searching) { messages = emptyList(); searching = false } }
                 searchedFor = ""
             } else {
                 catching { shown.flatMap { a -> net.mailSearch(a.id, folder, words).map { MailItem(a.id, it) } }.sortedByDescending { it.m.date } }
                     .onSuccess { messages = it; searching = true; error = null }
-                    .onFailure { error = describe(it) }
+                    // Not the folder (or other words' results) under these words: the error alone.
+                    .onFailure { error = describe(it); messages = emptyList(); searching = true }
                 // Also after a failure: the error shows, not an endless "Loading".
                 searchedFor = words
             }
@@ -308,7 +313,7 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
     // "All N mails in this folder" (also the ones not loaded yet): one account, plain list only.
     val single = if (all) null else shown.singleOrNull()
     var wholeFolder by remember(key) { mutableStateOf(false) }
-    LaunchedEffect(selected.active, activeQuery) { if (!selected.active || activeQuery.isNotEmpty()) wholeFolder = false }
+    LaunchedEffect(selected.active, inSearch) { if (!selected.active || inSearch) wholeFolder = false }
     var movingAll by remember { mutableStateOf(false) }
     var deleteAll by remember { mutableStateOf(false) }
     var emptying by remember { mutableStateOf(false) }
@@ -373,7 +378,7 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
             },
         )
     }
-    if (selected.active && single != null && filter.isEmpty() && !searching && total > listed.size &&
+    if (selected.active && single != null && filter.isEmpty() && !inSearch && total > listed.size &&
         (wholeFolder || chosenThreads.size >= heads.size)
     ) {
         Box(Modifier.fillMaxWidth().clickable(enabled = !wholeFolder) { wholeFolder = true }.padding(horizontal = 16.dp, vertical = 10.dp)) {
@@ -447,17 +452,20 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
                 }
             }
         }
-        if (!searching && !all && filter != "flagged" && messages.size < total) {
+        if (!inSearch && !all && filter != "flagged" && messages.size < total) {
             OutlinedButton(onClick = {
                 val a = shown.first()
                 state.run(onError = { error = it }, block = { net.mailList(a.id, folder, messages.size, PAGE) }) { p ->
-                    messages = messages + p.messages.map { MailItem(a.id, it) }
-                    total = p.total
+                    // A search started meanwhile: its results are not mixed with folder pages.
+                    if (!searching && activeQuery.isEmpty()) {
+                        messages = messages + p.messages.map { MailItem(a.id, it) }
+                        total = p.total
+                    }
                 }
             }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.mail_more, (total - messages.size).toString())) }
         }
         // The archived mails of this folder, below the provider's (KONZEPT 9.3.1).
-        if (!searching && !all && filter.isEmpty() && shown.isNotEmpty()) ArchivedMails(state, shown.first().id, folder, offline = error != null)
+        if (!inSearch && !all && filter.isEmpty() && shown.isNotEmpty()) ArchivedMails(state, shown.first().id, folder, offline = error != null)
         if (messages.isNotEmpty()) HintText(stringResource(Res.string.mail_swipe_hint))
     }
     }

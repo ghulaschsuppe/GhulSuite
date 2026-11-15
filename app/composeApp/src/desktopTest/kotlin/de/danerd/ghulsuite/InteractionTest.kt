@@ -286,6 +286,22 @@ class InteractionTest {
         waitFor("Treffen am Freitag")
     }
 
+    /** A failed search shows its error alone: not the folder under the words, no endless loading. */
+    @Test
+    fun mailSearchFailureShowsTheErrorNotTheFolder() = app(setup = { tab = Tab.MAIL }) { _, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Treffen am Freitag")
+        net.mailSearchFails = true
+        onNode(hasSetTextAction() and hasText("Search mails", substring = true)).performTextInput("Treffen")
+        waitFor("Try again")
+        assertTrue(onAllNodesWithText("Treffen am Freitag").fetchSemanticsNodes().isEmpty())
+        assertTrue(onAllNodesWithText("Loading …").fetchSemanticsNodes().isEmpty())
+        // Try again repeats the search, which now finds the mail.
+        net.mailSearchFails = false
+        text("Try again").performClick()
+        waitFor("Treffen am Freitag")
+    }
+
     @Test
     fun mailSelectionReaderAndUndo() = app(setup = { tab = Tab.MAIL }) { state, fake ->
         val net = fake.net as FakeNet
