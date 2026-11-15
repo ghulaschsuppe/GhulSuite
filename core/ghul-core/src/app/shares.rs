@@ -142,7 +142,8 @@ fn install_viewer(fs: &dyn RemoteFs) -> Result<()> {
 /// A recipient page from an older app version is replaced (three small reads when it is current). Best
 /// effort: the link works with the older page as well.
 fn refresh_viewer(fs: &dyn RemoteFs) {
-    let current = VIEWER.iter().all(|(name, content)| matches!(fs.read(name), Ok(Some(have)) if have == content.as_bytes()));
+    let current =
+        VIEWER.iter().all(|(name, content)| matches!(fs.read(name), Ok(Some(have)) if have == content.as_bytes()));
     if !current {
         let _ = install_viewer(fs);
     }
