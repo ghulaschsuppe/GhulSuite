@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Icon
@@ -59,6 +60,8 @@ class ServerForm {
     var confirmed by mutableStateOf<String?>(null)
     /** The login was tried and works (only then the folder can be chosen). */
     var connected by mutableStateOf(false)
+    /** The last "Test connection" failed: the checklist says so instead of "still to do". */
+    var connectFailed by mutableStateOf(false)
     /** Chosen folder, relative to the login folder ("" = none chosen yet). */
     var folder by mutableStateOf("")
     var installed by mutableStateOf<PhpInstalledUi?>(null)
@@ -99,6 +102,7 @@ class ServerForm {
     /** The login changed: test it again, then choose the folder again. */
     fun relogin() {
         connected = false
+        connectFailed = false
         folder = ""
         installed = null
     }
@@ -219,7 +223,7 @@ fun ServerSetup(
 
     // Step 1: test the login. Only a working login gets to choose a folder.
     fun connect() {
-        state.run(onError = { error = it }, block = { net.serverBrowseInput(form.login(), form.confirmed, "") }) { r ->
+        state.run(onError = { error = it; form.connectFailed = true }, block = { net.serverBrowseInput(form.login(), form.confirmed, "") }) { r ->
             when (r) {
                 is ServerFoldersUi.Confirm -> {
                     fingerprint = r.fingerprint
@@ -227,6 +231,7 @@ fun ServerSetup(
                 }
                 is ServerFoldersUi.Folders -> {
                     error = null
+                    form.connectFailed = false
                     form.connected = true
                     // Straight on to step 2.
                     picking = true
@@ -335,9 +340,13 @@ fun ServerChecklist(form: ServerForm) {
     // One step per line: side by side, long names (and five steps) do not fit on a phone.
     Column(Modifier.fillMaxWidth().padding(start = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         steps.forEachIndexed { i, (label, done) ->
+            val failed = !done && label == Res.string.srvf_step_connect && form.connectFailed
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(if (done) Icons.Filled.CheckCircle else Icons.Filled.Schedule, null, Modifier.size(16.dp), tint = if (done) okColor() else g.faint)
-                Text("${i + 1}. " + stringResource(label), fontSize = 13.sp, color = if (done) g.fg else g.muted)
+                Icon(
+                    when { done -> Icons.Filled.CheckCircle; failed -> Icons.Filled.Error; else -> Icons.Filled.Schedule }, null, Modifier.size(16.dp),
+                    tint = when { done -> okColor(); failed -> g.danger; else -> g.faint },
+                )
+                Text("${i + 1}. " + stringResource(label), fontSize = 13.sp, color = when { done -> g.fg; failed -> g.danger; else -> g.muted })
             }
         }
     }
