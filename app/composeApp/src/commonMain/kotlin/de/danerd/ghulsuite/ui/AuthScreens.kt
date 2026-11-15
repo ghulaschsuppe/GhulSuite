@@ -57,6 +57,7 @@ import de.danerd.ghulsuite.model.VaultKindUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
 import kotlinx.coroutines.delay
+import org.jetbrains.compose.resources.getPluralString
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import androidx.compose.runtime.mutableStateListOf
@@ -374,7 +375,7 @@ fun AddTotpScreen(state: AppState, vaultId: String, padding: PaddingValues, star
                             // Google Authenticator export: all accounts at once.
                             state.run(onError = { error = it; scanAttempt++ }, block = {
                                 val r = state.backend.importData(text.encodeToByteArray(), "google-authenticator", null, vaultId, false)
-                                getString(Res.string.msg_migration_done, r.totps.toString(), r.duplicates.toString())
+                                getPluralString(Res.plurals.msg_migration_done, r.duplicates, getPluralString(Res.plurals.n_accounts, r.totps, r.totps.toString()), r.duplicates.toString())
                             }) { msg ->
                                 state.message(msg)
                                 done()

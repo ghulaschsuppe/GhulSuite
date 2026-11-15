@@ -62,6 +62,7 @@ import de.danerd.ghulsuite.model.ShareInfoUi
 import de.danerd.ghulsuite.model.ShareOptionsUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
+import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 
 private val Blue = Color(0xFF2F74E8)
@@ -103,7 +104,7 @@ fun ShareSheet(state: AppState, files: List<DriveItemUi>, onDismiss: () -> Unit,
     val mail = rememberMailAvailable(state)
     LaunchedEffect(Unit) { servers = catching { net.servers() }.getOrDefault(emptyList()).filter { it.canShare } }
     val onlyFiles = files.none { it.isDir }
-    val title = if (files.size == 1) files[0].name else stringResource(Res.string.share_n_items, files.size.toString())
+    val title = if (files.size == 1) files[0].name else pluralStringResource(Res.plurals.share_n_items, files.size, files.size.toString())
 
     result?.let { info ->
         ShareResultDialog(state, info, mail, onDismiss = { result = null; onDone() })
@@ -235,7 +236,7 @@ fun ShareOptionsForm(
 private fun expiryLabel(days: Int): String = when (days) {
     0 -> stringResource(Res.string.share_never)
     1 -> stringResource(Res.string.share_1_day)
-    else -> stringResource(Res.string.share_days, days.toString())
+    else -> pluralStringResource(Res.plurals.share_days, days, days.toString())
 }
 
 /** The finished link: copy it, or hand it to GhulMail when that module is available. */
@@ -281,8 +282,8 @@ private fun shareSummary(info: ShareInfoUi): String {
     val expiry = if (info.expires == 0L) stringResource(Res.string.share_never) else stringResource(Res.string.share_until, formatDateTime(info.expires))
     val count = when {
         info.downloads < 0 -> ""
-        info.maxDownloads > 0 -> " · " + stringResource(Res.string.share_count_of, info.downloads.toString(), info.maxDownloads.toString())
-        else -> " · " + stringResource(Res.string.share_count, info.downloads.toString())
+        info.maxDownloads > 0 -> " · " + pluralStringResource(Res.plurals.share_count_of, info.maxDownloads, info.downloads.toString(), info.maxDownloads.toString())
+        else -> " · " + pluralStringResource(Res.plurals.share_count, info.downloads.pluralCount(), info.downloads.toString())
     }
     return expiry + count
 }
@@ -451,7 +452,7 @@ fun DriveSettingsSection(state: AppState) {
     LaunchedEffect(state.liveRevision()) { status = catching { net.driveStatus() }.getOrNull() }
     SectionCard(areaGroupTitle(de.danerd.ghulsuite.model.VaultKindUi.DRIVE)) {
         DriveStorageRow(state)
-        status?.takeIf { it.serverId != null }?.let { Hint(stringResource(Res.string.drive_status, it.files.toString(), formatSize(it.bytes))) }
+        status?.takeIf { it.serverId != null }?.let { Hint(pluralStringResource(Res.plurals.drive_status, it.files, it.files.toString(), formatSize(it.bytes))) }
         ChoiceRow(
             stringResource(Res.string.drive_trash_days),
             listOf(7 to Res.string.drive_days_7, 30 to Res.string.drive_days_30, 90 to Res.string.drive_days_90, 0 to Res.string.drive_days_never),

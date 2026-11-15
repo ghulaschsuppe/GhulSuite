@@ -71,7 +71,9 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.ui.focus.focusRequester
+import org.jetbrains.compose.resources.getPluralString
 import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 
 /** Views of GhulCal (the segmented control at the top). */
@@ -184,8 +186,8 @@ suspend fun calAlarm(r: de.danerd.ghulsuite.model.CalReminderUi, detail: Int, na
 private suspend fun durationLabel(m: Int): String = when {
     m < 60 -> getString(Res.string.cal_dur_min, m.toString())
     m < 1440 -> getString(Res.string.cal_dur_hours, (m / 60).toString())
-    m < 10080 -> getString(Res.string.cal_dur_days, (m / 1440).toString())
-    else -> getString(Res.string.cal_dur_weeks, (m / 10080).toString())
+    m < 10080 -> getPluralString(Res.plurals.cal_dur_days, m / 1440, (m / 1440).toString())
+    else -> getPluralString(Res.plurals.cal_dur_weeks, m / 10080, (m / 10080).toString())
 }
 
 /** First day of the week containing [d] (setting: Monday or Sunday). */
@@ -347,8 +349,8 @@ fun CalScreen(state: AppState, padding: PaddingValues) {
                 Text(
                     when {
                         n == 0 -> stringResource(Res.string.cal_none)
-                        sel == today() -> stringResource(if (n == 1) Res.string.cal_one_today else Res.string.cal_n_today, n.toString())
-                        else -> stringResource(if (n == 1) Res.string.cal_one else Res.string.cal_n, n.toString())
+                        sel == today() -> pluralStringResource(Res.plurals.cal_n_today, n, n.toString())
+                        else -> pluralStringResource(Res.plurals.cal_n, n, n.toString())
                     },
                     Modifier.padding(start = 4.dp, end = 4.dp, bottom = 8.dp), fontSize = 13.sp, color = g.muted, fontWeight = FontWeight.SemiBold,
                 )

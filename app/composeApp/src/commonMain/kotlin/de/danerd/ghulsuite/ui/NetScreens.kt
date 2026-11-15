@@ -709,6 +709,9 @@ fun formatDateTime(time: Long): String {
     return formatDate(millis) + " " + formatTime(millis)
 }
 
+/** A Long count as the Int that picks the plural form of a text (very large counts stay "other"). */
+fun Long.pluralCount(): Int = coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong()).toInt()
+
 /** Human-readable size: 1.2 MB. */
 fun formatSize(bytes: Long): String = when {
     bytes < 1024 -> "$bytes B"

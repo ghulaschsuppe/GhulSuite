@@ -21,6 +21,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.getPluralString
 import org.jetbrains.compose.resources.getString
 
 enum class Tab { PASS, AUTH, DRIVE, MAIL, CAL, SETTINGS }
@@ -208,7 +209,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             catching { backend.cal.importIcs(target, data) }
                 .onSuccess { n ->
                     changed()
-                    message(getString(Res.string.cal_import_done).replace("%1\$s", n.toString()))
+                    message(getPluralString(Res.plurals.cal_import_done, n, n.toString()))
                 }
                 .onFailure { message(describe(it)) }
         }
@@ -919,7 +920,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                 st.photoBackupSince = newest.toInt()
                 if (count > 0) {
                     revision++
-                    message(getString(Res.string.drive_photo_backup_done, count.toString()))
+                    message(getPluralString(Res.plurals.drive_photo_backup_done, count, count.toString()))
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -1031,13 +1032,13 @@ private suspend fun describeText(e: Throwable): String {
         VaultErrorKind.TRANSPORT -> getString(Res.string.err_transport, coreText(e.detail) ?: e.detail)
         VaultErrorKind.TIMEOUT -> getString(Res.string.err_timeout)
         VaultErrorKind.PIN_NOT_SET -> getString(Res.string.err_pin_not_set)
-        VaultErrorKind.PIN_INVALID -> getString(Res.string.err_pin_invalid, (e.retries ?: 0).toString())
+        VaultErrorKind.PIN_INVALID -> getPluralString(Res.plurals.err_pin_invalid, e.retries ?: 0, (e.retries ?: 0).toString())
         VaultErrorKind.PIN_BLOCKED -> getString(Res.string.err_pin_blocked)
         VaultErrorKind.PIN_AUTH_BLOCKED -> getString(Res.string.err_pin_auth_blocked)
         VaultErrorKind.PIN_POLICY -> getString(Res.string.err_pin_policy)
         VaultErrorKind.QUICK_UNAVAILABLE -> getString(Res.string.err_quick_unavailable)
         VaultErrorKind.QUICK_EXPIRED -> getString(Res.string.err_quick_expired)
-        VaultErrorKind.QUICK_INVALID -> getString(Res.string.err_quick_invalid, (e.retries ?: 0).toString())
+        VaultErrorKind.QUICK_INVALID -> getPluralString(Res.plurals.err_quick_invalid, e.retries ?: 0, (e.retries ?: 0).toString())
         VaultErrorKind.BIOMETRIC_CANCELLED -> getString(Res.string.err_bio_cancelled)
         VaultErrorKind.BIOMETRIC_CHANGED -> getString(Res.string.err_bio_changed)
         VaultErrorKind.HMAC_UNSUPPORTED -> getString(Res.string.err_hmac)
@@ -1083,7 +1084,7 @@ object PasswordPolicy {
 
     /** Returns the error text or null if the password is acceptable. */
     suspend fun check(backend: VaultBackend, password: String, repeat: String): String? = when {
-        password.length < MIN_LENGTH -> getString(Res.string.setup_pw_too_short, MIN_LENGTH.toString())
+        password.length < MIN_LENGTH -> getPluralString(Res.plurals.setup_pw_too_short, MIN_LENGTH, MIN_LENGTH.toString())
         backend.passwordScore(password) < MIN_SCORE -> getString(Res.string.setup_pw_too_weak)
         password != repeat -> getString(Res.string.setup_pw_mismatch)
         else -> null

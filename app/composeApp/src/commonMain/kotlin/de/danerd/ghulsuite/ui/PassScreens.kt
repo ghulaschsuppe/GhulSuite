@@ -94,6 +94,7 @@ import de.danerd.ghulsuite.model.PasswordOptionsUi
 import de.danerd.ghulsuite.model.VaultKindUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
+import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.material.icons.filled.Person
@@ -194,7 +195,7 @@ fun PassListScreen(state: AppState, padding: PaddingValues) {
                     ListCard(Modifier.padding(horizontal = 16.dp)) {
                         ListRow(
                             stringResource(Res.string.sec_title),
-                            if (count == 0) stringResource(Res.string.sec_all_good) else stringResource(Res.string.sec_n_need_attention, count.toString()),
+                            if (count == 0) stringResource(Res.string.sec_all_good) else pluralStringResource(Res.plurals.sec_n_need_attention, count, count.toString()),
                             leading = { IconTile(Icons.Filled.VerifiedUser, if (count == 0) t.ok else paletteColor(3)) },
                             trailing = { ChevronEnd() },
                         ) { state.push(Screen.Security) }
@@ -228,7 +229,7 @@ fun PassListScreen(state: AppState, padding: PaddingValues) {
         }
         if (shown.isNotEmpty()) {
             item(key = "label") {
-                SectionLabel(stringResource(Res.string.pass_count, shown.size.toString()), Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp))
+                SectionLabel(pluralStringResource(Res.plurals.pass_count, shown.size, shown.size.toString()), Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp))
             }
         }
         itemsIndexed(shown, key = { _, e -> e.vaultId + e.id }) { i, e ->

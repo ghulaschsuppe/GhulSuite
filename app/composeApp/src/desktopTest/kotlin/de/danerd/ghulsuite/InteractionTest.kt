@@ -25,6 +25,9 @@ import de.danerd.ghulsuite.ui.CalView
 import de.danerd.ghulsuite.ui.GhulSuiteApp
 import de.danerd.ghulsuite.ui.Screen
 import de.danerd.ghulsuite.model.NetBackend
+import de.danerd.ghulsuite.model.SecurityIssueKindUi
+import de.danerd.ghulsuite.model.SecurityIssueUi
+import de.danerd.ghulsuite.model.SecurityReportUi
 import de.danerd.ghulsuite.ui.SetPage
 import de.danerd.ghulsuite.ui.Tab
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -319,6 +322,24 @@ class InteractionTest {
         text("Remove area").performScrollTo().performClick()
         waitFor("Remove GhulCal?")
         shot("area-remove")
+    }
+
+    /** A count before a noun reads "1 entry" for one and "2 entries" otherwise (plural texts). */
+    @Test
+    fun countsUseTheSingularForOne() {
+        fun weak(vaultId: String, id: String, title: String) =
+            SecurityIssueUi(vaultId, "Arbeit", id, title, SecurityIssueKindUi.WEAK)
+        app(setup = { passVault = "p2" }, prepare = { report = SecurityReportUi(80, 1, listOf(weak("p2", "2", "Jira"))) }) { _, _ ->
+            // The section label is upper-cased.
+            waitFor("1 ENTRY")
+            waitFor("1 entry needs attention")
+            assertFalse(shown("1 ENTRIES"))
+            shot("pass-one-entry")
+        }
+        app(prepare = { report = SecurityReportUi(60, 5, listOf(weak("p2", "2", "Jira"), weak("p1", "1", "Codeberg"))) }) { _, _ ->
+            waitFor("5 ENTRIES")
+            waitFor("2 entries need attention")
+        }
     }
 
     @Test

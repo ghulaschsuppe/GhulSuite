@@ -133,6 +133,9 @@ class ScreenshotTest {
         )
         override suspend fun saveEntry(entry: EntryUi) = "1"
         override suspend fun deleteEntry(vaultId: String, id: String) { calls += "deleteEntry:$vaultId:$id" }
+        /** The security check; nothing checked by default, so the list shows no security card. */
+        var report = de.danerd.ghulsuite.model.SecurityReportUi(100, 0, emptyList())
+        override suspend fun securityReport() = report
         override suspend fun totpCodes(nowSeconds: Long) = listOf(
             TotpCodeUi("t1", "Persönlich", "a", "Codeberg", "ghul", "492039", "118273", 30, 17),
             TotpCodeUi("t1", "Persönlich", "b", "GitHub", "ghulaschsuppe", "771204", "009812", 30, 4),

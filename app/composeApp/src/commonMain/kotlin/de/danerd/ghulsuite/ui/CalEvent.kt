@@ -80,7 +80,10 @@ import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
 import org.jetbrains.compose.resources.StringResource
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.getPluralString
 import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.rememberResourceEnvironment
 import org.jetbrains.compose.resources.stringResource
 
 val REPEAT_LABELS: List<Pair<CalRepeatUi, StringResource>> = listOf(
@@ -98,13 +101,13 @@ suspend fun reminderLabel(m: Int, allDay: Boolean): String = when {
     allDay && m == 0 -> getString(Res.string.cal_rem_day_9)
     allDay && m == 1440 -> getString(Res.string.cal_rem_daybefore_9)
     allDay && m == 10080 -> getString(Res.string.cal_rem_week)
-    allDay -> getString(Res.string.cal_rem_days, (m / 1440).toString())
+    allDay -> getPluralString(Res.plurals.cal_rem_days, m / 1440, (m / 1440).toString())
     m == 0 -> getString(Res.string.cal_rem_start)
     m < 60 -> getString(Res.string.cal_rem_min, m.toString())
     m < 1440 -> getString(Res.string.cal_rem_hours, (m / 60).toString())
     m == 1440 -> getString(Res.string.cal_rem_day)
     m == 10080 -> getString(Res.string.cal_rem_week)
-    else -> getString(Res.string.cal_rem_days, (m / 1440).toString())
+    else -> getPluralString(Res.plurals.cal_rem_days, m / 1440, (m / 1440).toString())
 }
 
 @Composable
@@ -112,13 +115,13 @@ fun reminderText(m: Int, allDay: Boolean): String = when {
     allDay && m == 0 -> stringResource(Res.string.cal_rem_day_9)
     allDay && m == 1440 -> stringResource(Res.string.cal_rem_daybefore_9)
     allDay && m == 10080 -> stringResource(Res.string.cal_rem_week)
-    allDay -> stringResource(Res.string.cal_rem_days, (m / 1440).toString())
+    allDay -> pluralStringResource(Res.plurals.cal_rem_days, m / 1440, (m / 1440).toString())
     m == 0 -> stringResource(Res.string.cal_rem_start)
     m < 60 -> stringResource(Res.string.cal_rem_min, m.toString())
     m < 1440 -> stringResource(Res.string.cal_rem_hours, (m / 60).toString())
     m == 1440 -> stringResource(Res.string.cal_rem_day)
     m == 10080 -> stringResource(Res.string.cal_rem_week)
-    else -> stringResource(Res.string.cal_rem_days, (m / 1440).toString())
+    else -> pluralStringResource(Res.plurals.cal_rem_days, m / 1440, (m / 1440).toString())
 }
 
 /** Loads the calendars if a screen opens before the tab did (e.g. from a reminder). */
@@ -203,7 +206,7 @@ fun CalEventScreen(state: AppState, id: String, day: String, padding: PaddingVal
                     if (e.allDay) {
                         if (days > 1) {
                             Text("${names.short(d0)} - ${names.short(Day.parse(end)!!)} ${Day.parse(end)!!.y}", fontWeight = FontWeight.SemiBold, color = t.fg)
-                            Text(stringResource(Res.string.cal_all_day_days, days.toString()), color = t.muted, modifier = Modifier.padding(top = 2.dp))
+                            Text(pluralStringResource(Res.plurals.cal_all_day_days, days, days.toString()), color = t.muted, modifier = Modifier.padding(top = 2.dp))
                         } else {
                             Text(names.long(d0), fontWeight = FontWeight.SemiBold, color = t.fg)
                             Text(stringResource(Res.string.cal_all_day), color = t.muted, modifier = Modifier.padding(top = 2.dp))
@@ -852,12 +855,16 @@ fun CalendarsSheet(state: AppState, close: () -> Unit) {
     var importInto by remember { mutableStateOf<String?>(null) }
     var chooseImport by remember { mutableStateOf(false) }
     val noCalendar = stringResource(Res.string.cal_import_no_calendar)
+    // Texts looked up later (after a count is known) use the language of the screen.
+    val env = rememberResourceEnvironment()
     val save = rememberSaveFile { }
-    val doneMsg = stringResource(Res.string.cal_import_done)
     val pick = rememberOpenFile { f ->
         val target = importInto ?: return@rememberOpenFile
-        state.run(block = { cal.importIcs(target, f.bytes) }) { n ->
-            state.changed(); state.message(doneMsg.replace("%1\$s", n.toString()))
+        state.run(block = {
+            val n = cal.importIcs(target, f.bytes)
+            getPluralString(env, Res.plurals.cal_import_done, n, n.toString())
+        }) { msg ->
+            state.changed(); state.message(msg)
         }
     }
     val e = editing
@@ -874,9 +881,9 @@ fun CalendarsSheet(state: AppState, close: () -> Unit) {
                 .groupingBy { it.calendarId }.eachCount()
         }
         SheetList {
-            val nEvents = stringResource(Res.string.cal_n_events_year)
             state.calendars.forEachIndexed { i, c ->
-                CalVisRow(c.name, nEvents.replace("%1\$s", (year.value[c.id] ?: 0).toString()), calColor(c.color), c.id !in hidden, i > 0,
+                val n = year.value[c.id] ?: 0
+                CalVisRow(c.name, pluralStringResource(Res.plurals.cal_n_events_year, n, n.toString()), calColor(c.color), c.id !in hidden, i > 0,
                     onToggle = { settings.toggleCalHidden(c.id) }, onMore = { editing = c })
             }
             if (state.backend.settings.calRegion.isNotEmpty()) {

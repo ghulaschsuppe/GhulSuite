@@ -88,11 +88,17 @@
     <string name="err_permission">USB access to the key was not allowed.</string>
     <string name="err_pin_auth_blocked">Too many wrong PINs in a row. Unplug the key and plug it in again.</string>
     <string name="err_pin_blocked">The PIN of the key is blocked. Use your backup key or recovery code.</string>
-    <string name="err_pin_invalid">Wrong key PIN. Attempts left: %1$s.</string>
+    <plurals name="err_pin_invalid">
+        <item quantity="one">Wrong key PIN. Attempts left: %1$s.</item>
+        <item quantity="other">Wrong key PIN. Attempts left: %1$s.</item>
+    </plurals>
     <string name="err_pin_not_set">No PIN is set on the key.</string>
     <string name="err_pin_policy">The PIN does not meet the requirements of the key.</string>
     <string name="err_quick_expired">Quick unlock has expired. Please unlock with password and second factor once.</string>
-    <string name="err_quick_invalid">Wrong app PIN. Attempts left: %1$s.</string>
+    <plurals name="err_quick_invalid">
+        <item quantity="one">Wrong app PIN. Attempts left: %1$s.</item>
+        <item quantity="other">Wrong app PIN. Attempts left: %1$s.</item>
+    </plurals>
     <string name="err_quick_unavailable">Quick unlock is not available. Unlock with password and second factor.</string>
     <string name="err_storage">Could not save: %1$s</string>
     <string name="err_timeout">Timeout: the key was not touched in time.</string>
@@ -149,11 +155,35 @@
     <string name="gen_upper">Upper case</string>
     <string name="hint_one_per_line">One per line</string>
     <string name="import_choose">Choose file</string>
-    <string name="import_count_entries">%1$s entries for GhulPass</string>
-    <string name="import_count_login_totps">%1$s 2FA codes inside logins</string>
-    <string name="import_count_totps">%1$s 2FA accounts for GhulAuth</string>
+    <plurals name="import_count_entries">
+        <item quantity="one">%1$s entry for GhulPass</item>
+        <item quantity="other">%1$s entries for GhulPass</item>
+    </plurals>
+    <plurals name="import_count_login_totps">
+        <item quantity="one">%1$s 2FA code inside a login</item>
+        <item quantity="other">%1$s 2FA codes inside logins</item>
+    </plurals>
+    <plurals name="import_count_totps">
+        <item quantity="one">%1$s 2FA account for GhulAuth</item>
+        <item quantity="other">%1$s 2FA accounts for GhulAuth</item>
+    </plurals>
     <string name="import_delete_hint">Delete the export file afterwards. It is not encrypted.</string>
-    <string name="import_done">Imported: %1$s entries, %2$s 2FA accounts. %3$s were already there.</string>
+    <plurals name="n_entries">
+        <item quantity="one">%1$s entry</item>
+        <item quantity="other">%1$s entries</item>
+    </plurals>
+    <plurals name="n_2fa_accounts">
+        <item quantity="one">%1$s 2FA account</item>
+        <item quantity="other">%1$s 2FA accounts</item>
+    </plurals>
+    <plurals name="n_accounts">
+        <item quantity="one">%1$s account</item>
+        <item quantity="other">%1$s accounts</item>
+    </plurals>
+    <plurals name="import_done">
+        <item quantity="one">Imported: %1$s, %2$s. %3$s was already there.</item>
+        <item quantity="other">Imported: %1$s, %2$s. %3$s were already there.</item>
+    </plurals>
     <string name="import_file">File: %1$s</string>
     <string name="import_formats">Supported: Proton Pass (ZIP, JSON, CSV), Bitwarden (JSON, CSV), KeePass/KeePassXC and other CSV files, Proton Authenticator, Aegis, 2FAS, otpauth links. Google Authenticator: scan the export QR code in GhulAuth.</string>
     <string name="import_found">Recognised: %1$s</string>
@@ -200,7 +230,10 @@
     <string name="msg_exported_plain">Unencrypted file saved. Remember to delete it after the move.</string>
     <string name="msg_key_added">Security key added.</string>
     <string name="msg_keyfile_added">Key file added.</string>
-    <string name="msg_migration_done">%1$s accounts taken over from Google Authenticator, %2$s were already there.</string>
+    <plurals name="msg_migration_done">
+        <item quantity="one">%1$s taken over from Google Authenticator, %2$s was already there.</item>
+        <item quantity="other">%1$s taken over from Google Authenticator, %2$s were already there.</item>
+    </plurals>
     <string name="msg_no_new_vaults">No new vaults in the folder.</string>
     <string name="msg_outdated">Warning: %1$s is older than last seen. Details in the options.</string>
     <string name="msg_password_changed">Master password changed.</string>
@@ -289,7 +322,10 @@
     <string name="setup_key_no_pin">Your key has no PIN yet. GhulSuite requires one. Choose it now.</string>
     <string name="setup_pw_mismatch">The passwords do not match.</string>
     <string name="setup_pw_suggest">Suggest a password</string>
-    <string name="setup_pw_too_short">At least %1$s characters.</string>
+    <plurals name="setup_pw_too_short">
+        <item quantity="one">At least %1$s character.</item>
+        <item quantity="other">At least %1$s characters.</item>
+    </plurals>
     <string name="setup_pw_too_weak">This password is too easy to guess. Use a longer one or several words.</string>
     <string name="setup_recovery_label">Recovery code</string>
     <string name="setup_use_key">Security key (recommended)</string>
@@ -328,7 +364,10 @@
     <string name="storage_move_text">Choose the target. All vault files are copied and checked, then the app uses the new place and you unlock once more. The files in the old place stay unchanged until you delete them yourself. A folder that already holds a suite is not overwritten.</string>
     <string name="storage_move_folder">Choose folder</string>
     <string name="storage_move_app">To app storage</string>
-    <string name="storage_move_done">%1$d files copied and checked. The app now uses the new place. The old files are still in the old place; you can delete them there when you no longer need them.</string>
+    <plurals name="storage_move_done">
+        <item quantity="one">%1$d file copied and checked. The app now uses the new place. The old file is still in the old place; you can delete it there when you no longer need it.</item>
+        <item quantity="other">%1$d files copied and checked. The app now uses the new place. The old files are still in the old place; you can delete them there when you no longer need them.</item>
+    </plurals>
     <string name="storage_move_target_full">The chosen folder already holds a suite. Nothing was copied or overwritten. Choose an empty folder.</string>
     <string name="storage_folder">Choose folder</string>
     <string name="storage_hint">App storage is recommended. A folder of your own (e.g. a USB stick) is useful if you want to carry or back up the files yourself.</string>
@@ -467,7 +506,10 @@
     <string name="drive_downloaded">%1$s saved.</string>
     <string name="drive_empty">This folder is empty.</string>
     <string name="drive_nothing_found">Nothing found.</string>
-    <string name="drive_status">%1$s files, %2$s</string>
+    <plurals name="drive_status">
+        <item quantity="one">%1$s file, %2$s</item>
+        <item quantity="other">%1$s files, %2$s</item>
+    </plurals>
     <string name="drive_privacy">Files are encrypted on this device before upload.</string>
     <string name="drive_move_title">Move %1$s</string>
     <string name="drive_move_here">Move here</string>
@@ -532,7 +574,10 @@
     <string name="loading">Loading …</string>
     <string name="ctx_all_codes">All codes</string>
     <string name="ctx_choose_vault">Choose vault</string>
-    <string name="ctx_entries">Entries: %1$s</string>
+    <plurals name="ctx_entries">
+        <item quantity="one">%1$s entry</item>
+        <item quantity="other">%1$s entries</item>
+    </plurals>
     <string name="ctx_folders">Folders</string>
     <string name="ctx_mailbox">Mailbox</string>
     <string name="ctx_not_set_up">Not set up</string>
@@ -592,15 +637,24 @@
     <string name="set_privacy">Privacy</string>
     <string name="set_privacy_sub">Screenshots, clipboard</string>
     <string name="set_servers_none">No server yet</string>
-    <string name="set_servers_sub">%1$s servers · %2$s · %3$s</string>
+    <plurals name="set_servers_sub">
+        <item quantity="one">%1$s server · %2$s · %3$s</item>
+        <item quantity="other">%1$s servers · %2$s · %3$s</item>
+    </plurals>
     <string name="set_servers_sync_share">Servers, sync &amp; sharing</string>
     <string name="set_share_off">sharing off</string>
     <string name="set_share_on">sharing on</string>
-    <string name="set_suite_summary">%1$s vaults · %2$s</string>
+    <plurals name="set_suite_summary">
+        <item quantity="one">%1$s vault · %2$s</item>
+        <item quantity="other">%1$s vaults · %2$s</item>
+    </plurals>
     <string name="set_sync_off_short">sync off</string>
     <string name="set_sync_on">sync on</string>
     <string name="set_unlock_sub_off">Password only</string>
-    <string name="set_vaults_sub">%1$s vaults</string>
+    <plurals name="set_vaults_sub">
+        <item quantity="one">%1$s vault</item>
+        <item quantity="other">%1$s vaults</item>
+    </plurals>
     <string name="set_view_sub">Theme, language</string>
     <string name="share_1_day">1 day</string>
     <string name="share_apps">Send to app</string>
@@ -611,10 +665,19 @@
     <string name="share_check_page">Download page works</string>
     <string name="share_check_write">Folder writable</string>
     <string name="share_check_skipped">Not checked, because the HTTPS step failed</string>
-    <string name="share_count">%1$s downloads</string>
-    <string name="share_count_of">%1$s of %2$s downloads</string>
+    <plurals name="share_count">
+        <item quantity="one">%1$s download</item>
+        <item quantity="other">%1$s downloads</item>
+    </plurals>
+    <plurals name="share_count_of">
+        <item quantity="one">%1$s of %2$s download</item>
+        <item quantity="other">%1$s of %2$s downloads</item>
+    </plurals>
     <string name="share_create">Create link</string>
-    <string name="share_days">%1$s days</string>
+    <plurals name="share_days">
+        <item quantity="one">%1$s day</item>
+        <item quantity="other">%1$s days</item>
+    </plurals>
     <string name="share_e2e_hint">End-to-end encrypted: the key is in the part of the link after #, which browsers never send to the server.</string>
     <string name="share_expires">Valid for</string>
     <string name="share_link">Share link</string>
@@ -625,7 +688,10 @@
     <string name="share_mail_text">Hello,\n\nhere is %1$s for you:\n%2$s\n\nThe file is end-to-end encrypted and opens in the browser.</string>
     <string name="share_max">Downloads</string>
     <string name="share_max_php_only">Limiting downloads needs the PHP server module.</string>
-    <string name="share_n_items">%1$s items</string>
+    <plurals name="share_n_items">
+        <item quantity="one">%1$s item</item>
+        <item quantity="other">%1$s items</item>
+    </plurals>
     <string name="share_never">No expiry</string>
     <string name="share_password">Additional password</string>
     <string name="share_password_hint">At least 4 characters. Tell the password in another way, e.g. by phone.</string>
@@ -686,7 +752,10 @@
     <string name="mail_key_from_provider">from their provider</string>
     <string name="mail_key_from_import">imported</string>
     <string name="filter_all">All</string>
-    <string name="pass_count">%1$s entries</string>
+    <plurals name="pass_count">
+        <item quantity="one">%1$s entry</item>
+        <item quantity="other">%1$s entries</item>
+    </plurals>
     <string name="mail_filter_unread">Unread</string>
     <string name="mail_filter_flagged">Flagged</string>
     <string name="mail_filter_attachments">Attachments</string>
@@ -699,7 +768,10 @@
     <string name="entry_changed">Changed on %1$s</string>
     <string name="set_suite_protected">Protected with %1$s</string>
     <string name="lock_now_shake">Or shake the phone</string>
-    <string name="auth_count">%1$s accounts</string>
+    <plurals name="auth_count">
+        <item quantity="one">%1$s account</item>
+        <item quantity="other">%1$s accounts</item>
+    </plurals>
     <string name="drive_new_folder_short">New folder</string>
     <string name="drive_shares_active">Active links: %1$s</string>
     <string name="prot_pw_key">password + key</string>
@@ -739,7 +811,10 @@
     <string name="mail_to_lower">to %1$s</string>
     <string name="mail_attachment_tag">Attachment</string>
     <string name="drive_current">Up to date</string>
-    <string name="drive_n_files">%1$s files</string>
+    <plurals name="drive_n_files">
+        <item quantity="one">%1$s file</item>
+        <item quantity="other">%1$s files</item>
+    </plurals>
     <string name="drive_add_title">Add to GhulDrive</string>
     <string name="drive_upload_files">Upload files</string>
     <string name="drive_changed">changed %1$s</string>
@@ -766,7 +841,10 @@
     <string name="pass_recent">Recently used</string>
     <string name="sec_title">Security check</string>
     <string name="sec_all_good">All fine</string>
-    <string name="sec_n_need_attention">%1$s entries need attention</string>
+    <plurals name="sec_n_need_attention">
+        <item quantity="one">%1$s entry needs attention</item>
+        <item quantity="other">%1$s entries need attention</item>
+    </plurals>
     <string name="pass_wifi_qr">Share as QR code</string>
     <string name="pass_wifi_qr_hint">Scan with another device’s camera to join the Wi-Fi without typing. Nothing goes over the network.</string>
     <string name="pass_history">Password history</string>
@@ -826,7 +904,10 @@
     <string name="drive_view_offline">Offline</string>
     <string name="drive_view_trash">Trash</string>
     <string name="drive_empty_trash">Empty</string>
-    <string name="drive_trash_hint">Deleted items stay here for %1$s days and can be restored (Options → GhulDrive).</string>
+    <plurals name="drive_trash_hint">
+        <item quantity="one">Deleted items stay here for %1$s day and can be restored (Options → GhulDrive).</item>
+        <item quantity="other">Deleted items stay here for %1$s days and can be restored (Options → GhulDrive).</item>
+    </plurals>
     <string name="drive_offline_hint">These files are also kept encrypted on this device and open without network.</string>
     <string name="drive_restore">Restore</string>
     <string name="drive_delete_forever">Delete for good</string>
@@ -849,7 +930,10 @@
     <string name="drive_photo_backup">Photo backup</string>
     <string name="drive_photo_backup_sub">After unlocking, new photos are backed up encrypted into the folder “Fotos”.</string>
     <string name="drive_wifi_only">Only over Wi-Fi</string>
-    <string name="drive_photo_backup_done">%1$s photos backed up.</string>
+    <plurals name="drive_photo_backup_done">
+        <item quantity="one">%1$s photo backed up.</item>
+        <item quantity="other">%1$s photos backed up.</item>
+    </plurals>
     <string name="drive_as_zip">As ZIP</string>
     <string name="mail_swipe_hint">Swipe: right toggles read, left does the action from Options (archive, delete or read).</string>
     <string name="mail_preview_encrypted">Encrypted message</string>
@@ -927,7 +1011,10 @@
     <string name="set_language_de">Deutsch</string>
     <string name="set_language_en">English</string>
     <string name="set_language_note">On Windows the new language applies after restarting the app.</string>
-    <string name="mail_images_blocked">%1$s image(s) from the internet blocked. They could tell the sender that you read the mail.</string>
+    <plurals name="mail_images_blocked">
+        <item quantity="one">%1$s image from the internet blocked. It could tell the sender that you read the mail.</item>
+        <item quantity="other">%1$s images from the internet blocked. They could tell the sender that you read the mail.</item>
+    </plurals>
     <string name="mail_images_load">Load images</string>
     <string name="mail_images_always">Always load images</string>
     <string name="mail_link_title">Open link?</string>
@@ -967,10 +1054,14 @@
     <string name="cal_week_label">Week %1$s · %2$s to %3$s</string>
     <string name="cal_kw">Wk</string>
     <string name="cal_none">No events</string>
-    <string name="cal_one">1 event</string>
-    <string name="cal_n">%1$s events</string>
-    <string name="cal_one_today">1 event today</string>
-    <string name="cal_n_today">%1$s events today</string>
+    <plurals name="cal_n">
+        <item quantity="one">%1$s event</item>
+        <item quantity="other">%1$s events</item>
+    </plurals>
+    <plurals name="cal_n_today">
+        <item quantity="one">%1$s event today</item>
+        <item quantity="other">%1$s events today</item>
+    </plurals>
     <string name="cal_prev">Previous</string>
     <string name="cal_next">Next</string>
     <string name="cal_jump_to">Jump to</string>
@@ -990,13 +1081,19 @@
     <string name="cal_list_hint">Shows the next 60 days.</string>
     <string name="cal_search_hint">Searches one year back and ahead, only on the device, in the unlocked calendar.</string>
     <string name="cal_all_calendars">All calendars</string>
-    <string name="cal_some_calendars">%1$s of %2$s calendars</string>
+    <plurals name="cal_some_calendars">
+        <item quantity="one">%1$s of %2$s calendar</item>
+        <item quantity="other">%1$s of %2$s calendars</item>
+    </plurals>
     <string name="cal_event_title">Event</string>
     <string name="cal_new_event">New event</string>
     <string name="cal_edit_event">Edit event</string>
     <string name="cal_deleted">This event was deleted.</string>
     <string name="cal_all_day">All day</string>
-    <string name="cal_all_day_days">All day · %1$s days</string>
+    <plurals name="cal_all_day_days">
+        <item quantity="one">All day · %1$s day</item>
+        <item quantity="other">All day · %1$s days</item>
+    </plurals>
     <string name="cal_until">until %1$s</string>
     <string name="cal_open_map">Open in maps</string>
     <string name="cal_no_reminder">No reminder</string>
@@ -1056,7 +1153,10 @@
     <string name="cal_rem_min">%1$s min before</string>
     <string name="cal_rem_hours">%1$s h before</string>
     <string name="cal_rem_day">1 day before</string>
-    <string name="cal_rem_days">%1$s days before</string>
+    <plurals name="cal_rem_days">
+        <item quantity="one">%1$s day before</item>
+        <item quantity="other">%1$s days before</item>
+    </plurals>
     <string name="cal_rem_week">1 week before</string>
     <string name="cal_rem_day_9">On the day at 9:00</string>
     <string name="cal_rem_daybefore_9">The day before at 9:00</string>
@@ -1079,7 +1179,10 @@
     <string name="cal_enter">Add</string>
     <string name="cal_added">Added: %1$s</string>
     <string name="cal_calendars">Calendars</string>
-    <string name="cal_n_events_year">%1$s events in the next year · encrypted</string>
+    <plurals name="cal_n_events_year">
+        <item quantity="one">%1$s event in the next year · encrypted</item>
+        <item quantity="other">%1$s events in the next year · encrypted</item>
+    </plurals>
     <string name="cal_new_calendar">New calendar</string>
     <string name="cal_edit_calendar">Edit calendar</string>
     <string name="cal_name">Name</string>
@@ -1090,20 +1193,44 @@
     <string name="cal_import">Import (.ics)</string>
     <string name="cal_export">Export (.ics)</string>
     <string name="cal_import_confirm_title">Take over the calendar file?</string>
-    <string name="cal_import_confirm_text">Another app handed GhulSuite a calendar file with %1$s events. They will be added to the calendar “%2$s”.</string>
-    <string name="cal_import_done">%1$s events imported</string>
+    <plurals name="cal_import_confirm_text">
+        <item quantity="one">Another app handed GhulSuite a calendar file with %1$s event. It will be added to the calendar “%2$s”.</item>
+        <item quantity="other">Another app handed GhulSuite a calendar file with %1$s events. They will be added to the calendar “%2$s”.</item>
+    </plurals>
+    <plurals name="cal_import_done">
+        <item quantity="one">%1$s event imported</item>
+        <item quantity="other">%1$s events imported</item>
+    </plurals>
     <string name="cal_desktop_running">On Windows, reminders come while GhulSuite runs, also locked or in the notification area. When the program is closed, they do not come. On the phone they always come.</string>
-    <string name="mail_whole_folder">Select all %1$s mails in this folder</string>
-    <string name="mail_whole_folder_on">All %1$s mails in this folder are selected.</string>
-    <string name="mail_bulk_done">Done for %1$s mails.</string>
-    <string name="mail_delete_all_title">Delete %1$s mails?</string>
+    <plurals name="mail_whole_folder">
+        <item quantity="one">Select the %1$s mail in this folder</item>
+        <item quantity="other">Select all %1$s mails in this folder</item>
+    </plurals>
+    <plurals name="mail_whole_folder_on">
+        <item quantity="one">The %1$s mail in this folder is selected.</item>
+        <item quantity="other">All %1$s mails in this folder are selected.</item>
+    </plurals>
+    <plurals name="mail_bulk_done">
+        <item quantity="one">Done for %1$s mail.</item>
+        <item quantity="other">Done for %1$s mails.</item>
+    </plurals>
+    <plurals name="mail_delete_all_title">
+        <item quantity="one">Delete %1$s mail?</item>
+        <item quantity="other">Delete %1$s mails?</item>
+    </plurals>
     <string name="mail_delete_all_text">They go to the trash. There they can be brought back until it is emptied.</string>
     <string name="mail_delete_all_final">They are in the trash and are deleted for good at the provider.</string>
     <string name="mail_empty_folder">Empty folder</string>
-    <string name="mail_empty_title">Delete %1$s mails for good?</string>
+    <plurals name="mail_empty_title">
+        <item quantity="one">Delete %1$s mail for good?</item>
+        <item quantity="other">Delete %1$s mails for good?</item>
+    </plurals>
     <string name="mail_empty_text">All mails in this folder are deleted for good at the provider. This cannot be undone.</string>
     <string name="mail_empty_yes">Delete for good</string>
-    <string name="mail_emptied">%1$s mails deleted for good.</string>
+    <plurals name="mail_emptied">
+        <item quantity="one">%1$s mail deleted for good.</item>
+        <item quantity="other">%1$s mails deleted for good.</item>
+    </plurals>
     <string name="restore_exists_title">A suite is already here</string>
     <string name="restore_exists_text">A backup never overwrites an existing suite. Choose an empty folder: the backup is restored there and the app uses that folder from then on. The existing suite stays as it is.</string>
     <string name="restore_choose_folder">Choose empty folder</string>
@@ -1119,7 +1246,10 @@
     <string name="edit_discard_yes">Discard</string>
     <string name="edit_keep">Keep editing</string>
     <string name="edit_dropped_on_lock">An edit was not saved when the app locked. It was discarded.</string>
-    <string name="remove_count">It holds %1$s entries.</string>
+    <plurals name="remove_count">
+        <item quantity="one">It holds %1$s entry.</item>
+        <item quantity="other">It holds %1$s entries.</item>
+    </plurals>
     <string name="remove_export_first">Export first</string>
     <string name="remove_type_name">Type "%1$s" to confirm</string>
     <string name="cal_import_no_calendar">Create a calendar first, then you can import events.</string>
@@ -1164,8 +1294,14 @@
     <string name="cal_notify_today">Event today</string>
     <string name="cal_notify_tomorrow">Event tomorrow</string>
     <string name="cal_notify_on">Event on %1$s</string>
-    <string name="cal_dur_days">%1$s days</string>
-    <string name="cal_dur_weeks">%1$s weeks</string>
+    <plurals name="cal_dur_days">
+        <item quantity="one">%1$s day</item>
+        <item quantity="other">%1$s days</item>
+    </plurals>
+    <plurals name="cal_dur_weeks">
+        <item quantity="one">%1$s week</item>
+        <item quantity="other">%1$s weeks</item>
+    </plurals>
     <string name="cal_test_place">Market Street Clinic</string>
     <string name="export_format_ics">As an .ics file, readable by any calendar program.</string>
     <string name="err_update_required">This file was made by a newer GhulSuite. Please update the app.</string>
@@ -1267,7 +1403,10 @@
     <string name="drive_own_sub">SFTP, FTPS (web hosting) or GhulSuite PHP module</string>
     <string name="a_reset">Reset</string>
     <string name="mail_accounts_all">Accounts · all devices</string>
-    <string name="mail_images_always_sub">%1$s senders</string>
+    <plurals name="mail_images_always_sub">
+        <item quantity="one">%1$s sender</item>
+        <item quantity="other">%1$s senders</item>
+    </plurals>
     <string name="mail_notify_for">Notifications · %1$s</string>
     <string name="mail_setup_inline">Use your existing mail address. The login is stored encrypted in the mail file of your suite.</string>
     <string name="area_group_all">For %1$s · all devices</string>
@@ -1337,7 +1476,10 @@
     <string name="import_keep_data_label">Original data</string>
     <string name="import_keep_needs_vault">Choose a GhulPass vault to keep them as notes.</string>
     <string name="import_result_title">Import finished</string>
-    <string name="import_result_kept">%1$s not converted items kept as notes in GhulPass.</string>
+    <plurals name="import_result_kept">
+        <item quantity="one">%1$s not converted item kept as a note in GhulPass.</item>
+        <item quantity="other">%1$s not converted items kept as notes in GhulPass.</item>
+    </plurals>
     <string name="pass_add_import">Import from another app</string>
     <string name="pass_add_import_sub">Proton Pass, Bitwarden, KeePass, 1Password …</string>
     <string name="pass_no_value">%1$s is empty in this entry.</string>
@@ -1378,7 +1520,10 @@
     <string name="mail_archived_n">%1$s archived</string>
     <string name="mail_moved_n">%1$s moved</string>
     <string name="mail_no_archive">This mailbox has no archive folder.</string>
-    <string name="delete_n_for_good_text">%1$s items will be deleted for good.</string>
+    <plurals name="delete_n_for_good_text">
+        <item quantity="one">%1$s item will be deleted for good.</item>
+        <item quantity="other">%1$s items will be deleted for good.</item>
+    </plurals>
     <string name="pane_pick_account">No account open</string>
     <string name="pane_pick_event">No event open</string>
     <string name="pane_pick_hint_auth">Adding an account opens here.</string>
@@ -1459,7 +1604,10 @@
     <string name="core_kdf_expensive">The server asks for far more expensive password parameters than this suite. They are not used.</string>
     <string name="core_empty_only_trash">Only the trash and the spam folder can be emptied.</string>
     <string name="core_move_self">A folder cannot be moved into itself.</string>
-    <string name="core_pin_min">The PIN needs at least %1$s characters.</string>
+    <plurals name="core_pin_min">
+        <item quantity="one">The PIN needs at least %1$s character.</item>
+        <item quantity="other">The PIN needs at least %1$s characters.</item>
+    </plurals>
     <string name="archive_title">Mail archive</string>
     <string name="archive_intro">Older mails move encrypted to your own server: visible on every device, searchable, readable offline. At the provider only new mail stays readable. A mail counts as archived only after the app has read it back from your server and compared it byte for byte.</string>
     <string name="archive_where">Where should the archive live?</string>
@@ -1473,7 +1621,10 @@
     <string name="archive_place_change_hint">The same archive there: connected. An empty place: the app offers to move the archive there (copy, check, switch). Another archive: refused.</string>
     <string name="archive_unreachable">Mail archive not reachable: %1$s. Mails at the provider and everything kept on this device stay usable; nothing is deleted at the provider.</string>
     <string name="archive_accounts">Archived accounts</string>
-    <string name="archive_count">%1$s mails in the archive, %2$s</string>
+    <plurals name="archive_count">
+        <item quantity="one">%1$s mail in the archive, %2$s</item>
+        <item quantity="other">%1$s mails in the archive, %2$s</item>
+    </plurals>
     <string name="archive_days">Archive after</string>
     <string name="archive_days_1">1 day</string>
     <string name="archive_days_7">7 days</string>
@@ -1481,14 +1632,20 @@
     <string name="archive_days_90">90 days</string>
     <string name="archive_days_365">1 year</string>
     <string name="archive_days_own">Own value</string>
-    <string name="archive_days_custom">After %1$s days</string>
+    <plurals name="archive_days_custom">
+        <item quantity="one">After %1$s day</item>
+        <item quantity="other">After %1$s days</item>
+    </plurals>
     <string name="archive_sent">Archive sent mails too</string>
     <string name="archive_spam">Spam folder</string>
     <string name="archive_trash">Trash</string>
     <string name="archive_rule_leave">Leave alone</string>
     <string name="archive_rule_archive">Archive</string>
     <string name="archive_rule_delete">Delete at the provider after the deadline</string>
-    <string name="archive_rule_delete_text">Mails in this folder older than %1$s days will be deleted at the provider without being archived. This cannot be undone.</string>
+    <plurals name="archive_rule_delete_text">
+        <item quantity="one">Mails in this folder older than %1$s day will be deleted at the provider without being archived. This cannot be undone.</item>
+        <item quantity="other">Mails in this folder older than %1$s days will be deleted at the provider without being archived. This cannot be undone.</item>
+    </plurals>
     <string name="archive_delete">Delete at the provider after archiving</string>
     <string name="archive_delete_off">Off: the provider keeps every mail, the archive is an encrypted second copy.</string>
     <string name="archive_delete_on">On: only mails that were archived and checked are deleted, exactly these and nothing else. The first time, the app asks once before.</string>
@@ -1498,7 +1655,10 @@
     <string name="archive_wifi">Archive only in Wi-Fi</string>
     <string name="archive_now">Archive now</string>
     <string name="archive_running">Archiving ...</string>
-    <string name="archive_done">%1$s mails archived, %2$s removed at the provider.</string>
+    <plurals name="archive_done">
+        <item quantity="one">%1$s mail archived, %2$s removed at the provider.</item>
+        <item quantity="other">%1$s mails archived, %2$s removed at the provider.</item>
+    </plurals>
     <string name="archive_busy">Another device is archiving this account right now (%1$s).</string>
     <string name="archive_trash_of">Archive trash of %1$s</string>
     <string name="archive_offline">On this device</string>
@@ -1509,10 +1669,16 @@
     <string name="archive_clear_text">The copy on this device is deleted. The archive on your server stays.</string>
     <string name="archive_clear_only">This may be the only complete copy of your archive: the server cannot be reached or no other device has a full copy. If you delete it, mails can be lost for good.</string>
     <string name="archive_clear_word">delete</string>
-    <string name="archive_copy_on">A copy of the archive has: %1$s (%2$s mails, as of %3$s)</string>
+    <plurals name="archive_copy_on">
+        <item quantity="one">A copy of the archive has: %1$s (%2$s mail, as of %3$s)</item>
+        <item quantity="other">A copy of the archive has: %1$s (%2$s mails, as of %3$s)</item>
+    </plurals>
     <string name="archive_restore_copy">Restore the archive from this copy</string>
     <string name="archive_restore_copy_hint">Uploads what this device keeps and the archive lacks. It only adds, it never deletes.</string>
-    <string name="archive_restored">%1$s mails restored into the archive.</string>
+    <plurals name="archive_restored">
+        <item quantity="one">%1$s mail restored into the archive.</item>
+        <item quantity="other">%1$s mails restored into the archive.</item>
+    </plurals>
     <string name="archive_move_title">Move the archive here?</string>
     <string name="archive_move_text">The new place is empty and your archive is still reachable at the old one. The app copies everything, reads it back and only then switches. The old place keeps its copy until you delete it there.</string>
     <string name="archive_move_yes">Move</string>
@@ -1526,10 +1692,19 @@
     <string name="archive_section">Archive · %1$s</string>
     <string name="archive_tag">Archived</string>
     <string name="archive_deleted">Moved to the archive trash.</string>
-    <string name="archive_removed">%1$s mails removed at the provider.</string>
+    <plurals name="archive_removed">
+        <item quantity="one">%1$s mail removed at the provider.</item>
+        <item quantity="other">%1$s mails removed at the provider.</item>
+    </plurals>
     <string name="archive_first_title">Everything safely archived</string>
-    <string name="archive_first_text">%1$s mails are archived and checked on your server. Remove them at the provider now? Only exactly these mails are deleted there.</string>
-    <string name="archive_first_yes">Remove %1$s mails</string>
+    <plurals name="archive_first_text">
+        <item quantity="one">%1$s mail is archived and checked on your server. Remove it at the provider now? Only exactly this mail is deleted there.</item>
+        <item quantity="other">%1$s mails are archived and checked on your server. Remove them at the provider now? Only exactly these mails are deleted there.</item>
+    </plurals>
+    <plurals name="archive_first_yes">
+        <item quantity="one">Remove %1$s mail</item>
+        <item quantity="other">Remove %1$s mails</item>
+    </plurals>
     <string name="archive_where_title">Where should your mails live?</string>
     <string name="archive_where_text">Mails usually stay at your provider, readable there. GhulSuite can move older mails encrypted to your own server.</string>
     <string name="archive_where_keep">Leave them at the provider</string>
@@ -1549,7 +1724,10 @@
     <string name="archive_progress">Mail archive: %1$s archived, %2$s left.</string>
     <string name="archive_long_run">The first run of a large mailbox can take an hour or more. GhulSuite stays unlocked while it runs, also in the background (see the notification); “Lock” or shaking locks at once and stops it. It continues where it stopped.</string>
     <string name="archive_long_run_desktop">The first run of a large mailbox can take an hour or more. GhulSuite stays unlocked while it runs, also when the window is in the background; it continues where it stopped.</string>
-    <string name="archive_too_large">%1$s mails are larger than 100 MB: they stay at the provider and are never deleted there.</string>
+    <plurals name="archive_too_large">
+        <item quantity="one">%1$s mail is larger than 100 MB: it stays at the provider and is never deleted there.</item>
+        <item quantity="other">%1$s mails are larger than 100 MB: they stay at the provider and are never deleted there.</item>
+    </plurals>
     <string name="archive_gmail">Gmail: archived, but nothing is deleted at Gmail for now. Gmail uses labels instead of folders; deleting over IMAP often only removes a label.</string>
     <string name="core_arc_gmail">Nothing is deleted at Gmail for now.</string>
     <string name="core_upd_repo">Invalid repository name.</string>

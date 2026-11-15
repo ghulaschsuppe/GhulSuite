@@ -89,6 +89,7 @@ import de.danerd.ghulsuite.resources.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Sync
@@ -394,7 +395,7 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
                     }
                     Text(
                         listOfNotNull(
-                            stringResource(Res.string.drive_status, status.files.toString(), formatSize(status.bytes)),
+                            pluralStringResource(Res.plurals.drive_status, status.files, status.files.toString(), formatSize(status.bytes)),
                             if (u.images > 0) stringResource(Res.string.drive_use_images, formatSize(u.images)) else null,
                             if (u.videos > 0) stringResource(Res.string.drive_use_videos, formatSize(u.videos)) else null,
                             if (u.documents > 0) stringResource(Res.string.drive_use_docs, formatSize(u.documents)) else null,
@@ -402,7 +403,7 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
                         ).joinToString(" · "),
                         fontSize = 13.sp, color = t.muted,
                     )
-                } ?: Text(stringResource(Res.string.drive_status, status.files.toString(), formatSize(status.bytes)), fontSize = 13.sp, color = t.muted)
+                } ?: Text(pluralStringResource(Res.plurals.drive_status, status.files, status.files.toString(), formatSize(status.bytes)), fontSize = 13.sp, color = t.muted)
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -451,13 +452,13 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
                 view == "offline" -> stringResource(Res.string.drive_view_offline)
                 view == "trash" -> stringResource(Res.string.drive_view_trash)
                 path.size == 1 -> stringResource(Res.string.drive_my_files)
-                else -> stringResource(Res.string.drive_n_files, visible.size.toString())
+                else -> pluralStringResource(Res.plurals.drive_n_files, visible.size, visible.size.toString())
             },
             trailing = {
                 if (view == "trash" && visible.isNotEmpty()) Text(stringResource(Res.string.drive_empty_trash), Modifier.clickable { emptyTrash = true })
             },
         )
-        if (view == "trash") HintText(stringResource(Res.string.drive_trash_hint, state.backend.settings.driveTrashDays.toString()))
+        if (view == "trash") HintText(pluralStringResource(Res.plurals.drive_trash_hint, state.backend.settings.driveTrashDays, state.backend.settings.driveTrashDays.toString()))
         if (view == "offline") HintText(stringResource(Res.string.drive_offline_hint))
         if (loaded && visible.isEmpty() && error == null) {
             EmptyState(Icons.Filled.Cloud, stringResource(if (query.isBlank()) Res.string.drive_empty else Res.string.drive_nothing_found), color)
@@ -629,7 +630,7 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
             danger = true,
             onDismissRequest = { foreverMany = null },
             title = { Text(stringResource(Res.string.drive_delete_forever_title)) },
-            text = { Text(stringResource(Res.string.delete_n_for_good_text, list.size.toString())) },
+            text = { Text(pluralStringResource(Res.plurals.delete_n_for_good_text, list.size, list.size.toString())) },
             confirmButton = {
                 TextButton(onClick = {
                     foreverMany = null

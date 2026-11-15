@@ -109,6 +109,9 @@ import de.danerd.ghulsuite.model.OutgoingAttachmentUi
 import de.danerd.ghulsuite.model.OutgoingMailUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
+import org.jetbrains.compose.resources.getPluralString
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.rememberResourceEnvironment
 import org.jetbrains.compose.resources.stringResource
 import de.danerd.ghulsuite.model.VaultKindUi
 
@@ -260,18 +263,23 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
     var movingAll by remember { mutableStateOf(false) }
     var deleteAll by remember { mutableStateOf(false) }
     var emptying by remember { mutableStateOf(false) }
+    // Texts looked up later (after a count is known) use the language of the screen.
+    val env = rememberResourceEnvironment()
     val folderRole by produceState("", key) {
         value = single?.let { a -> catching { net.mailFolders(a.id) }.getOrNull()?.firstOrNull { it.name == folder }?.role } ?: ""
     }
-    val doneMsg = stringResource(Res.string.mail_bulk_done)
     // Runs an action on every mail of the folder, then leaves the selection.
     fun bulk(block: suspend (String, List<Long>) -> Unit) {
         val a = single ?: return
-        state.run(onError = { error = it }, block = { val uids = net.mailFolderUids(a.id, folder); block(a.id, uids); uids.size }) { n ->
+        state.run(onError = { error = it }, block = {
+            val uids = net.mailFolderUids(a.id, folder)
+            block(a.id, uids)
+            getPluralString(env, Res.plurals.mail_bulk_done, uids.size, uids.size.toString())
+        }) { msg ->
             selected.clear()
             wholeFolder = false
             reload++
-            state.message(doneMsg.replace("%1\$s", n.toString()))
+            state.message(msg)
         }
     }
 
@@ -321,7 +329,7 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
     ) {
         Box(Modifier.fillMaxWidth().clickable(enabled = !wholeFolder) { wholeFolder = true }.padding(horizontal = 16.dp, vertical = 10.dp)) {
             Text(
-                stringResource(if (wholeFolder) Res.string.mail_whole_folder_on else Res.string.mail_whole_folder, total.toString()),
+                pluralStringResource(if (wholeFolder) Res.plurals.mail_whole_folder_on else Res.plurals.mail_whole_folder, total, total.toString()),
                 color = areaColor(Tab.MAIL), fontWeight = FontWeight.SemiBold,
             )
         }
@@ -430,7 +438,7 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
         AlertDialog(
             danger = true,
             onDismissRequest = { deleteAll = false },
-            title = { Text(stringResource(Res.string.mail_delete_all_title, total.toString())) },
+            title = { Text(pluralStringResource(Res.plurals.mail_delete_all_title, total, total.toString())) },
             text = { Text(stringResource(if (folderRole == "trash") Res.string.mail_delete_all_final else Res.string.mail_delete_all_text)) },
             confirmButton = {
                 TextButton(onClick = { deleteAll = false; bulk { a, u -> net.mailDeleteMany(a, folder, u) } }) { Text(stringResource(Res.string.a_delete)) }
@@ -439,19 +447,21 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
         )
     }
     if (emptying) {
-        val emptied = stringResource(Res.string.mail_emptied)
         AlertDialog(
             danger = true,
             onDismissRequest = { emptying = false },
-            title = { Text(stringResource(Res.string.mail_empty_title, total.toString())) },
+            title = { Text(pluralStringResource(Res.plurals.mail_empty_title, total, total.toString())) },
             text = { Text(stringResource(Res.string.mail_empty_text)) },
             confirmButton = {
                 TextButton(onClick = {
                     emptying = false
                     val a = single ?: return@TextButton
-                    state.run(onError = { error = it }, block = { net.mailEmptyFolder(a.id, folder) }) { n ->
+                    state.run(onError = { error = it }, block = {
+                        val n = net.mailEmptyFolder(a.id, folder)
+                        getPluralString(env, Res.plurals.mail_emptied, n, n.toString())
+                    }) { msg ->
                         reload++
-                        state.message(emptied.replace("%1\$s", n.toString()))
+                        state.message(msg)
                     }
                 }) { Text(stringResource(Res.string.mail_empty_yes)) }
             },
@@ -1347,7 +1357,7 @@ fun MailAccountsSection(state: AppState) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(stringResource(Res.string.mail_images_always))
-                    Hint(stringResource(Res.string.mail_images_always_sub, senders.size.toString()))
+                    Hint(pluralStringResource(Res.plurals.mail_images_always_sub, senders.size, senders.size.toString()))
                 }
                 if (senders.isNotEmpty()) TextButton(onClick = { settings.mailImageSenders = "" }) { Text(stringResource(Res.string.a_reset)) }
             }

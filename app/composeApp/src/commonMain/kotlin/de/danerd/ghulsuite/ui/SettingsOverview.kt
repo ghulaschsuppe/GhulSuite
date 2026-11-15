@@ -51,6 +51,7 @@ import de.danerd.ghulsuite.model.SyncStatusUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
 import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 import de.danerd.ghulsuite.model.VaultKindUi
 
@@ -123,7 +124,7 @@ fun SettingsScreen(state: AppState, padding: PaddingValues) {
                     IconTile(Icons.Outlined.Shield, paletteColor(0), size = 64.dp)
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(stringResource(Res.string.set_my_suite), style = MaterialTheme.typography.titleMedium)
-                        Hint(stringResource(Res.string.set_suite_summary, state.vaults.size.toString(), storageLabel(backend.storageName())))
+                        Hint(pluralStringResource(Res.plurals.set_suite_summary, state.vaults.size, state.vaults.size.toString(), storageLabel(backend.storageName())))
                         val how = stringResource(
                             when {
                                 keys > 0 -> Res.string.prot_pw_key
@@ -187,14 +188,15 @@ fun SettingsScreen(state: AppState, padding: PaddingValues) {
             }
             Group(stringResource(Res.string.set_g_data)) {
                 SetRow(Icons.Filled.Layers, Teal, stringResource(Res.string.set_vaults),
-                    stringResource(Res.string.set_vaults_sub, state.vaults.size.toString()), first = true) { open(SetPage.VAULTS) }
+                    pluralStringResource(Res.plurals.set_vaults_sub, state.vaults.size, state.vaults.size.toString()), first = true) { open(SetPage.VAULTS) }
                 SetRow(Icons.Filled.Download, Cyan, stringResource(Res.string.set_import_export), stringResource(Res.string.set_import_sub)) { open(SetPage.IMPORT) }
             }
             Group(stringResource(Res.string.set_g_servers)) {
                 val sub = when {
                     servers.isEmpty() -> stringResource(Res.string.set_servers_none)
-                    else -> stringResource(
-                        Res.string.set_servers_sub,
+                    else -> pluralStringResource(
+                        Res.plurals.set_servers_sub,
+                        servers.size,
                         servers.size.toString(),
                         stringResource(if (sync.serverId != null) Res.string.set_sync_on else Res.string.set_sync_off_short),
                         stringResource(if (servers.any { it.canShare }) Res.string.set_share_on else Res.string.set_share_off),

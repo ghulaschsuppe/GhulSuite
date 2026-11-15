@@ -35,6 +35,7 @@ import de.danerd.ghulsuite.model.VaultKindUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
 import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 
 fun areaInfo(kind: VaultKindUi): AreaInfo = AREAS.first { it.kind == kind }
@@ -116,7 +117,7 @@ fun RemoveAreaDialog(state: AppState, kind: VaultKindUi, onDone: () -> Unit, onD
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Banner(Icons.Filled.Warning, stringResource(Res.string.area_remove_warning, areaInfo(kind).ext))
-                if (entries > 0) Text(stringResource(Res.string.remove_count, entries.toString()))
+                if (entries > 0) Text(pluralStringResource(Res.plurals.remove_count, entries, entries.toString()))
                 Text(stringResource(Res.string.area_remove_tip))
                 OutlinedButton(onClick = { onDismiss(); state.push(Screen.Export) }, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(Res.string.remove_export_first))

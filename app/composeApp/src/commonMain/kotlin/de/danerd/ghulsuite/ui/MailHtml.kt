@@ -45,6 +45,7 @@ import de.danerd.ghulsuite.model.MailBlockUi
 import de.danerd.ghulsuite.model.MailMessageUi
 import de.danerd.ghulsuite.resources.*
 import org.jetbrains.compose.resources.decodeToImageBitmap
+import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -75,7 +76,7 @@ fun MailHtmlView(state: AppState, m: MailMessageUi) {
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(t.surface2).padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Text(stringResource(Res.string.mail_images_blocked, m.remoteImages.toString()), fontSize = 13.sp, color = t.muted)
+                Text(pluralStringResource(Res.plurals.mail_images_blocked, m.remoteImages, m.remoteImages.toString()), fontSize = 13.sp, color = t.muted)
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text(stringResource(Res.string.mail_images_load), color = t.accent, fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
                         modifier = Modifier.clickable { loadRemote = true })

@@ -99,6 +99,8 @@ import androidx.compose.ui.platform.testTag
 import de.danerd.ghulsuite.model.VaultKindUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
+import org.jetbrains.compose.resources.getPluralString
+import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 
 /** Root of the app: setup, unlock or the main screens. */
@@ -300,7 +302,7 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
             text == null -> state.message(noQr)
             text.startsWith("otpauth-migration://") -> state.run(block = {
                 val r = state.backend.importData(text.encodeToByteArray(), "google-authenticator", null, vaultId, false)
-                org.jetbrains.compose.resources.getString(Res.string.msg_migration_done, r.totps.toString(), r.duplicates.toString())
+                getPluralString(Res.plurals.msg_migration_done, r.duplicates, getPluralString(Res.plurals.n_accounts, r.totps, r.totps.toString()), r.duplicates.toString())
             }) { msg -> state.message(msg); state.changed() }
             else -> state.run(block = { state.backend.addTotp(vaultId, state.backend.parseOtpauth(text)) }) { state.message(addedMsg); state.changed() }
         }
@@ -650,7 +652,7 @@ private fun IcsImportDialog(state: AppState, data: ByteArray) {
     AlertDialog(
         onDismissRequest = { state.icsPending = null },
         title = { Text(stringResource(Res.string.cal_import_confirm_title)) },
-        text = { Text(stringResource(Res.string.cal_import_confirm_text, events.toString(), target)) },
+        text = { Text(pluralStringResource(Res.plurals.cal_import_confirm_text, events, events.toString(), target)) },
         confirmButton = {
             TextButton(onClick = {
                 state.icsPending = null

@@ -4,6 +4,7 @@ package de.danerd.ghulsuite.ui
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
 import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.getPluralString
 import org.jetbrains.compose.resources.getString
 
 /**
@@ -127,6 +128,6 @@ private val PIN_MIN = Regex("PIN must have at least (\\d+) characters")
 /** The detail in the app's language, or null if it is not one of the core's known texts. */
 suspend fun coreText(detail: String): String? {
     CORE_TEXTS[detail.trim()]?.let { return getString(it) }
-    PIN_MIN.matchEntire(detail.trim())?.let { return getString(Res.string.core_pin_min, it.groupValues[1]) }
+    PIN_MIN.matchEntire(detail.trim())?.let { return getPluralString(Res.plurals.core_pin_min, it.groupValues[1].toIntOrNull() ?: 0, it.groupValues[1]) }
     return null
 }
