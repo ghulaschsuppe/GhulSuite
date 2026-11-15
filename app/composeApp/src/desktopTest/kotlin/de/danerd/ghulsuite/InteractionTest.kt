@@ -552,7 +552,8 @@ class InteractionTest {
         waitFor("New master password")
         assertFalse(shown("very weak"))
         assertFalse(shown("weak"))
-        onNode(hasSetTextAction() and hasText("New master password")).performTextInput("kurz")
+        // Current, new, repeat: the second field is the new password.
+        onAllNodes(hasSetTextAction())[1].performTextInput("kurz")
         waitFor("weak")
     }
 
