@@ -80,7 +80,7 @@ super::redact::redacted_debug!(MailAccountInput {
 #[derive(Serialize, Deserialize, Clone)]
 pub(super) struct StoredAccount {
     pub(super) id: String,
-    name: String,
+    pub(super) name: String,
     display_name: String,
     pub(super) email: String,
     username: String,

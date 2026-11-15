@@ -770,33 +770,27 @@ fn sync_between_two_devices() {
     let _ = std::fs::remove_dir_all(&server_dir);
 }
 
-/// The mail archive through the app's API, against Dovecot (IMAP) and the SFTP test server:
-/// set up, archive, read, search, delete at the provider only after confirming, trash, a full
-/// copy on the device, moving to another server, a lost server rebuilt from the device's copy.
+/// Archiving in GhulDrive against Dovecot (IMAP) and the SFTP test server: old mails become
+/// `.eml` files in `Mail-Archiv/<account>/<year>`, unchanged at the provider (also unread), a
+/// second run skips them, an archived mail reads like the original, a renamed archive folder is
+/// still found, and without GhulDrive nothing is fetched.
 #[test]
-fn mail_archive_against_imap_and_sftp() {
+fn mail_archive_to_drive_against_imap_and_sftp() {
     use super::mail::{MailAccountInput, MailSecurity, MailServers};
-    use super::mailarchive::{ArchiveFolderRule, MailArchiveOptions, MailArchivePlace, MailArchiveRef};
-    use super::servers::ServerInput;
+    use super::maildrive::MailArchived;
+    use super::servers::{ServerInput, ServerKind};
     let (Ok(host), Ok(fp)) = (std::env::var("GHUL_TEST_MAIL"), std::env::var("GHUL_TEST_MAIL_TLSFP")) else { return };
     let Some((shost, sport, suser, sroot, authkeys, hostkey)) = crate::net::tests::sftp_env() else { return };
-    let authorize = |public: &str| {
-        let mut keys = std::fs::read_to_string(&authkeys).unwrap_or_default();
-        keys.push_str(public);
-        keys.push('\n');
-        std::fs::write(&authkeys, keys).unwrap();
-    };
-    let d = Dirs::new("archive");
+    let d = Dirs::new("archive-drive");
     let s = d.suite();
-    let kf = generate_keyfile();
-    s.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
     let run = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
     let email = format!("archiv{run}@test.local");
     let account = s
         .mail_save_account(
             None,
             MailAccountInput {
-                name: "Test".into(),
+                name: "Privat".into(),
                 display_name: "Archiv".into(),
                 email: email.clone(),
                 username: String::new(),
@@ -815,176 +809,123 @@ fn mail_archive_against_imap_and_sftp() {
             },
         )
         .unwrap();
-    // Three old mails in the inbox, one old in "Sent", one new one.
-    let raw = |n: u32, word: &str| {
+    let raw = |n: u32, date: &str| {
         format!(
-            "From: Erika <erika@example.net>\r\nTo: {email}\r\nSubject: Archivbetreff {n}\r\nDate: Sun, 2 Mar 2025 10:00:00 +0000\r\n\
-             Message-ID: <a{n}.{run}@example.net>\r\n\r\nArchivtext {word} {n}\r\n"
+            "From: Erika Musterfrau <erika@example.net>\r\nTo: {email}\r\nSubject: Archivbetreff {n}\r\nDate: {date}\r\n\
+             Message-ID: <a{n}.{run}@example.net>\r\n\r\nArchivtext {n}\r\n"
         )
         .into_bytes()
     };
-    let put = |folder: &str, m: Vec<u8>, date: &str| {
-        let (folder, date) = (folder.to_owned(), date.to_owned());
+    let put = |m: Vec<u8>, date: &str| {
+        let date = date.to_owned();
         s.with_imap(&account, move |sess| {
-            let (folder, date, m) = (folder.clone(), date.clone(), m.clone());
-            Box::pin(async move { crate::net::imap::append_dated(sess, &folder, &m, &date).await })
+            let (date, m) = (date.clone(), m.clone());
+            Box::pin(async move { crate::net::imap::append_dated(sess, "INBOX", &m, &date).await })
         })
         .unwrap();
     };
-    for n in 1..=3 {
-        put("INBOX", raw(n, "alt"), "02-Mar-2025 10:00:00 +0000");
-    }
-    put("Sent", raw(4, "gesendet"), "03-Mar-2025 10:00:00 +0000");
+    put(raw(1, "Sun, 2 Mar 2025 10:00:00 +0000"), "02-Mar-2025 10:00:00 +0000");
+    put(raw(2, "Mon, 3 Mar 2025 10:00:00 +0000"), "03-Mar-2025 10:00:00 +0000");
+    put(raw(3, "Tue, 7 May 2024 10:00:00 +0000"), "07-May-2024 10:00:00 +0000");
     let today = crate::net::imap::search_date(
         std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64 / 86_400,
     );
     let today = if today.find('-') == Some(1) { format!("0{today}") } else { today };
-    put("INBOX", raw(5, "neu"), &format!("{today} 08:00:00 +0000"));
+    put(raw(4, "Wed, 1 Jan 2025 10:00:00 +0000"), &format!("{today} 08:00:00 +0000"));
 
-    // Two places on the SFTP server.
-    authorize(&s.ssh_public_key().unwrap());
-    let place = |name: &str| {
-        let input = ServerInput {
-            kind: super::servers::ServerKind::Sftp,
-            name: name.into(),
-            host: shost.clone(),
-            port: sport,
-            user: suser.clone(),
-            password: None,
-            base: format!("{sroot}/archive-{name}-{run}"),
-            url: String::new(),
-            upload: None,
-        };
-        saved(s.mail_archive_save_server(input, Some(hostkey.clone())).unwrap())
-    };
-    let first = place("eins");
-    assert_eq!(s.mail_archive_setup(Some(first.clone())).unwrap(), MailArchivePlace::Created);
-    assert_eq!(s.mail_archive_setup(Some(first.clone())).unwrap(), MailArchivePlace::Connected);
-    let mut opts = MailArchiveOptions {
-        days: 30,
-        delete_at_provider: false,
-        sent: true,
-        spam: ArchiveFolderRule::Leave,
-        trash: ArchiveFolderRule::Leave,
-        accounts: vec![account.clone()],
-    };
-    s.mail_archive_set_options(opts.clone()).unwrap();
-    let r = s.mail_archive_run(account.clone(), 1000).unwrap();
-    assert_eq!((r.archived, r.removed, r.waiting_for_confirmation), (4, 0, 4));
-    assert_eq!(s.mail_list(account.clone(), "INBOX".into(), 0, 50).unwrap().total, 4, "the provider keeps them");
+    // Without GhulDrive: nothing is fetched, the app says what is missing.
+    let all = s.mail_archive_uids(account.clone(), "INBOX".into(), None).unwrap();
+    assert_eq!(all.len(), 4);
+    assert!(matches!(s.mail_archive_to_drive(account.clone(), "INBOX".into(), all[0]), Err(GhulError::NotConfigured)));
+    assert_eq!(s.mail_archive_folder(None).unwrap(), None);
 
-    // Seen in the archive (with those still at the provider), read and found.
-    let inbox = s.mail_archive_list(account.clone(), "INBOX".into(), 0, 50, true).unwrap();
-    assert_eq!(inbox.total, 3);
-    assert_eq!(s.mail_archive_list(account.clone(), "INBOX".into(), 0, 50, false).unwrap().total, 0);
-    let first_mail = &inbox.mails[0];
-    let r1 = MailArchiveRef { key: first_mail.key.clone(), folder: "INBOX".into() };
-    let m = s.mail_archive_get(account.clone(), r1.clone()).unwrap();
-    assert!(m.subject.starts_with("Archivbetreff"));
-    assert!(m.text.contains("Archivtext alt"));
-    assert_eq!(s.mail_archive_search(account.clone(), "gesendet".into(), 10).unwrap().len(), 1);
-    assert!(String::from_utf8(s.mail_archive_raw(account.clone(), r1.clone()).unwrap())
-        .unwrap()
-        .contains("Archivtext"));
-
-    // The server holds nothing readable, read over SFTP as the server hands it out (the test may not
-    // read the server's files directly: in CI they belong to another user).
-    let over_sftp = |name: &str| {
-        let mut cfg = crate::net::tests::sftp_test_config("archive-check").unwrap();
-        cfg.base = format!("{sroot}/archive-{name}-{run}");
-        crate::net::sftp::SftpFs::connect(&cfg).unwrap()
-    };
-    let server = over_sftp("eins");
-    let mut files = Vec::new();
-    let mut dirs = vec![String::new()];
-    while let Some(d) = dirs.pop() {
-        for e in crate::net::remote::RemoteFs::list(&server, &d).unwrap() {
-            let p = if d.is_empty() { e.name.clone() } else { format!("{d}/{}", e.name) };
-            if e.is_dir {
-                dirs.push(p);
-            } else {
-                files.push(p);
-            }
-        }
-    }
-    assert!(files.len() > 4);
-    let local_part = format!("archiv{run}");
-    for rel in files {
-        let data = crate::net::remote::RemoteFs::read(&server, &rel).unwrap().unwrap();
-        for secret in ["Archivtext", "Archivbetreff", "erika", "INBOX", "Sent", local_part.as_str()] {
-            assert!(!data.windows(secret.len()).any(|w| w == secret.as_bytes()), "{secret} in {rel}");
-            assert!(!rel.contains(secret), "{secret} in the name {rel}");
-        }
-    }
-
-    // Deleting at the provider: switched on, then confirmed once; the new mail stays.
-    opts.delete_at_provider = true;
-    s.mail_archive_set_options(opts.clone()).unwrap();
-    let r = s.mail_archive_run(account.clone(), 1000).unwrap();
-    assert_eq!((r.removed, r.waiting_for_confirmation), (0, 4));
-    let r = s.mail_archive_confirm_removal(account.clone()).unwrap();
-    assert_eq!(r.removed, 4);
-    assert_eq!(s.mail_list(account.clone(), "INBOX".into(), 0, 50).unwrap().total, 1);
-    assert_eq!(s.mail_list(account.clone(), "Sent".into(), 0, 50).unwrap().total, 0);
-    assert_eq!(s.mail_archive_list(account.clone(), "INBOX".into(), 0, 50, false).unwrap().total, 3);
-
-    // The archive's trash.
-    s.mail_archive_delete(account.clone(), vec![r1.clone()]).unwrap();
-    assert_eq!(s.mail_archive_trash(account.clone()).unwrap().len(), 1);
-    assert_eq!(s.mail_archive_list(account.clone(), "INBOX".into(), 0, 50, true).unwrap().total, 2);
-    s.mail_archive_restore(account.clone(), vec![r1.clone()]).unwrap();
-    assert_eq!(s.mail_archive_count(account.clone()).unwrap().mails, 4);
-
-    // Another suite cannot use this place.
-    let other_dir = Dirs::new("archive-other");
-    let other = other_dir.suite();
-    other.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "P")]), None, None, None).unwrap();
-    authorize(&other.ssh_public_key().unwrap());
+    let mut keys = std::fs::read_to_string(&authkeys).unwrap_or_default();
+    keys.push_str(&s.ssh_public_key().unwrap());
+    keys.push('\n');
+    std::fs::write(&authkeys, keys).unwrap();
     let input = ServerInput {
-        kind: super::servers::ServerKind::Sftp,
-        name: "fremd".into(),
-        host: shost.clone(),
+        kind: ServerKind::Sftp,
+        name: "Heimserver".into(),
+        host: shost,
         port: sport,
-        user: suser.clone(),
+        user: suser,
         password: None,
-        base: format!("{sroot}/archive-eins-{run}"),
+        base: format!("{sroot}/archive-drive-{run}"),
         url: String::new(),
         upload: None,
     };
-    let foreign = saved(other.mail_archive_save_server(input, Some(hostkey.clone())).unwrap());
-    assert_eq!(other.mail_archive_setup(Some(foreign)).unwrap(), MailArchivePlace::Foreign);
+    let id = saved(s.save_server(input, Some(hostkey)).unwrap());
+    s.drive_setup(id).unwrap();
 
-    // A full copy on this device.
-    s.mail_archive_set_full_copy(true, "Test-PC".into()).unwrap();
-    assert_eq!(s.mail_archive_download(1000, "Test-PC".into()).unwrap(), 0);
-    let st = s.mail_archive_status().unwrap();
-    assert!(st.full_copy && st.offline_bytes > 0);
-    assert!(st.copies.iter().any(|c| c.this_device && c.full && c.mails == 4 && c.name == "Test-PC"));
-    assert!(s.mail_archive_only_copy().unwrap(), "no other device has a full copy");
-
-    // Moving to another place: offered, then copied and checked.
-    let second = place("zwei");
-    assert_eq!(s.mail_archive_setup(Some(second.clone())).unwrap(), MailArchivePlace::MoveOffered);
-    assert_eq!(s.mail_archive_move(Some(second.clone())).unwrap(), MailArchivePlace::Created);
-    assert_eq!(s.mail_archive_count(account.clone()).unwrap().mails, 4);
-
-    // The server is lost; a new, empty place is filled from the device's copy (adds only).
-    crate::net::remote::RemoteFs::delete(&over_sftp("zwei"), "mailarchive/head.ghlarc").unwrap();
-    let third = place("drei");
-    assert_eq!(s.mail_archive_setup(Some(third)).unwrap(), MailArchivePlace::Created);
-    assert_eq!(s.mail_archive_restore_from_copy().unwrap(), 4);
-    assert_eq!(s.mail_archive_restore_from_copy().unwrap(), 0, "adds only what is missing");
-    let back = s.mail_archive_list(account.clone(), "INBOX".into(), 0, 50, false).unwrap();
-    assert_eq!(back.total, 3);
-    let m = s.mail_archive_get(account.clone(), r1).unwrap();
-    assert!(m.text.contains("Archivtext alt"));
-
-    // The device's copy is deleted only on request.
-    s.mail_archive_clear_copy().unwrap();
-    assert_eq!(s.mail_archive_status().unwrap().offline_bytes, 0);
-    for name in ["eins", "drei"] {
-        let _ = std::fs::remove_dir_all(format!("{sroot}/archive-{name}-{run}"));
+    // "Older than a week": the three old ones (received in 2024 and 2025), not today's.
+    let week_ago = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64 / 86_400 - 7;
+    let old = s.mail_archive_uids(account.clone(), "INBOX".into(), Some(week_ago)).unwrap();
+    assert_eq!(old.len(), 3, "{old:?}");
+    for uid in &old {
+        assert_eq!(s.mail_archive_to_drive(account.clone(), "INBOX".into(), *uid).unwrap(), MailArchived::Saved);
     }
+    // A second run stores nothing twice.
+    for uid in &old {
+        assert_eq!(s.mail_archive_to_drive(account.clone(), "INBOX".into(), *uid).unwrap(), MailArchived::Skipped);
+    }
+    assert_eq!(s.mail_archive_to_drive(account.clone(), "INBOX".into(), 999_999).unwrap(), MailArchived::Gone);
+
+    // Mail-Archiv/Privat/2024 and /2025, the files named by date, sender and subject.
+    let root = s.mail_archive_folder(None).unwrap().expect("archive folder");
+    let top = s.drive_list(None, true).unwrap();
+    assert!(top.iter().any(|i| i.id == root && i.name == "Mail-Archiv"), "{top:?}");
+    let acc = s.mail_archive_folder(Some(account.clone())).unwrap().expect("account folder");
+    let years: Vec<String> = s.drive_list(Some(acc.clone()), false).unwrap().into_iter().map(|i| i.name).collect();
+    assert_eq!(years, vec!["2024", "2025"]);
+    let y2025 = s.drive_list(Some(acc.clone()), false).unwrap().into_iter().find(|i| i.name == "2025").unwrap().id;
+    let files = s.drive_list(Some(y2025), false).unwrap();
+    assert_eq!(files.len(), 2);
+    assert!(files[0].name.starts_with("2025-03-02 Erika Musterfrau - Archivbetreff 1 ("), "{}", files[0].name);
+    assert!(files[0].name.ends_with(").eml"));
+
+    // The copy is the mail as it was at the provider, and reads like it.
+    let eml = download(&s, &files[0].id);
+    assert_eq!(eml, s.mail_raw(account.clone(), "INBOX".into(), old[0], false).unwrap());
+    let m = s.mail_parse_eml(account.clone(), eml).unwrap();
+    assert_eq!(m.subject, "Archivbetreff 1");
+    assert!(m.text.contains("Archivtext 1"));
+    assert!(matches!(s.mail_parse_eml(account.clone(), b"\x00\x01kein Mail".to_vec()), Err(GhulError::InvalidInput { .. }) | Ok(_)));
+
+    // At the provider nothing changed: all four there, the archived ones still unread.
+    let page = s.mail_list(account.clone(), "INBOX".into(), 0, 50).unwrap();
+    assert_eq!(page.total, 4);
+    assert!(page.messages.iter().all(|m| !m.seen), "archiving must not mark mails as read");
+
+    // Automatic archiving: off by default; on, a run gets the old mails once, the next run
+    // (after "done") nothing more, until a newer mail is old enough.
+    assert_eq!(s.mail_archive_auto_days().unwrap(), 0);
+    assert!(s.mail_archive_auto_uids(account.clone(), "INBOX".into()).unwrap().uids.is_empty());
+    s.mail_archive_set_auto_days(7).unwrap();
+    let batch = s.mail_archive_auto_uids(account.clone(), "INBOX".into()).unwrap();
+    assert_eq!(batch.uids, old);
+    s.mail_archive_auto_done(account.clone(), "INBOX".into(), batch.validity, *old.last().unwrap()).unwrap();
+    assert!(s.mail_archive_auto_uids(account.clone(), "INBOX".into()).unwrap().uids.is_empty());
+    // An older mark does not move it back; another UIDVALIDITY starts over.
+    s.mail_archive_auto_done(account.clone(), "INBOX".into(), batch.validity, old[0]).unwrap();
+    assert!(s.mail_archive_auto_uids(account.clone(), "INBOX".into()).unwrap().uids.is_empty());
+    s.mail_archive_auto_done(account.clone(), "INBOX".into(), batch.validity + 1, 9_999).unwrap();
+    assert_eq!(s.mail_archive_auto_uids(account.clone(), "INBOX".into()).unwrap().uids, old);
+    s.mail_archive_set_auto_days(0).unwrap();
+    assert!(s.mail_archive_auto_uids(account.clone(), "INBOX".into()).unwrap().uids.is_empty());
+
+    // Renamed and moved, the archive is still the archive: nothing is stored twice.
+    s.drive_rename(root.clone(), "Alte Mails".into()).unwrap();
+    let elsewhere = s.drive_create_folder(None, "Ablage".into()).unwrap();
+    s.drive_move(root.clone(), Some(elsewhere)).unwrap();
+    assert_eq!(s.mail_archive_folder(None).unwrap(), Some(root.clone()));
+    assert_eq!(s.mail_archive_to_drive(account.clone(), "INBOX".into(), old[0]).unwrap(), MailArchived::Skipped);
+
+    // In the trash, it no longer counts: the next mail starts a new archive folder.
+    s.drive_delete(root.clone()).unwrap();
+    assert_eq!(s.mail_archive_folder(None).unwrap(), None);
+    assert_eq!(s.mail_archive_to_drive(account.clone(), "INBOX".into(), old[0]).unwrap(), MailArchived::Saved);
+    assert_ne!(s.mail_archive_folder(None).unwrap(), Some(root));
+    let _ = std::fs::remove_dir_all(format!("{sroot}/archive-drive-{run}"));
 }
 
 #[test]

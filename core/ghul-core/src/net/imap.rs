@@ -403,20 +403,6 @@ pub async fn flagged(s: &mut ImapSession, folder: &str, limit: u32) -> NetResult
     Ok(out)
 }
 
-/// Bytes fetched with one command for the archive at most (a single larger mail goes alone).
-const FETCH_BYTES: u64 = 20 * 1024 * 1024;
-
-/// A message as the archive takes it: complete and unchanged, with its flags.
-pub struct Archivable {
-    pub uid: u32,
-    pub raw: Vec<u8>,
-    pub seen: bool,
-    pub flagged: bool,
-    pub labels: Vec<String>,
-    /// When the server received it (Unix seconds, 0 if unknown).
-    pub received: i64,
-}
-
 /// IMAP date for SEARCH (`7-Mar-2026`) of a day given as days since 1970-01-01.
 pub fn search_date(days: i64) -> String {
     const M: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -424,36 +410,28 @@ pub fn search_date(days: i64) -> String {
     format!("{}-{}-{}", d.d, M[(d.m - 1) as usize], d.y)
 }
 
-/// UIDVALIDITY of a folder (0 if the server sends none) and the UIDs of the messages the server
-/// received before the day `before` (days since 1970-01-01). Read-only (EXAMINE).
-pub async fn old_uids(s: &mut ImapSession, folder: &str, before: i64) -> NetResult<(u32, Vec<u32>)> {
+/// UIDVALIDITY of the folder (0 if the server sends none) and the UIDs of the messages the
+/// server received before the day `before` (days since 1970-01-01), or all of them. Read-only
+/// (EXAMINE), oldest first.
+pub async fn uids_before(s: &mut ImapSession, folder: &str, before: Option<i64>) -> NetResult<(u32, Vec<u32>)> {
     let mb = s.examine(folder).await.map_err(proto)?;
     let validity = mb.uid_validity.unwrap_or(0);
     if mb.exists == 0 {
         return Ok((validity, Vec::new()));
     }
-    let mut uids: Vec<u32> =
-        s.uid_search(format!("BEFORE {}", search_date(before))).await.map_err(proto)?.into_iter().collect();
+    let query = before.map_or_else(|| "ALL".to_string(), |d| format!("BEFORE {}", search_date(d)));
+    let mut uids: Vec<u32> = s.uid_search(query).await.map_err(proto)?.into_iter().collect();
     uids.sort_unstable();
     uids.dedup();
     Ok((validity, uids))
 }
 
-/// One complete message for the archive, without changing its flags (EXAMINE, BODY.PEEK).
-/// `None` if the folder has another UIDVALIDITY now or the message is gone.
-pub async fn fetch_archivable(
-    s: &mut ImapSession,
-    folder: &str,
-    validity: u32,
-    uid: u32,
-) -> NetResult<Option<Archivable>> {
-    use async_imap::types::Flag;
-    let mb = s.examine(folder).await.map_err(proto)?;
-    if mb.uid_validity.unwrap_or(0) != validity {
-        return Ok(None);
-    }
+/// One complete message without changing its flags (EXAMINE, BODY.PEEK) and when the server
+/// received it (Unix seconds, 0 if unknown). `None` if it is gone.
+pub async fn peek(s: &mut ImapSession, folder: &str, uid: u32) -> NetResult<Option<(Vec<u8>, i64)>> {
+    s.examine(folder).await.map_err(proto)?;
     let fetches: Vec<async_imap::types::Fetch> = s
-        .uid_fetch(uid.to_string(), "(UID FLAGS INTERNALDATE BODY.PEEK[])")
+        .uid_fetch(uid.to_string(), "(UID INTERNALDATE BODY.PEEK[])")
         .await
         .map_err(proto)?
         .try_collect()
@@ -461,121 +439,7 @@ pub async fn fetch_archivable(
         .map_err(proto)?;
     let Some(f) = fetches.iter().find(|f| f.uid == Some(uid)) else { return Ok(None) };
     let Some(raw) = f.body() else { return Ok(None) };
-    let flags: Vec<Flag<'_>> = f.flags().collect();
-    Ok(Some(Archivable {
-        uid,
-        raw: raw.to_vec(),
-        seen: flags.iter().any(|x| matches!(x, Flag::Seen)),
-        flagged: flags.iter().any(|x| matches!(x, Flag::Flagged)),
-        labels: listed(f).map(|l| l.labels).unwrap_or_default(),
-        received: f.internal_date().map(|d| d.timestamp()).unwrap_or(0),
-    }))
-}
-
-/// Sizes (RFC822.SIZE) of these messages, without fetching them. Nothing if the folder has
-/// another UIDVALIDITY now.
-pub async fn sizes(
-    s: &mut ImapSession,
-    folder: &str,
-    validity: u32,
-    uids: &[u32],
-) -> NetResult<std::collections::BTreeMap<u32, u64>> {
-    let mb = s.examine(folder).await.map_err(proto)?;
-    let mut out = std::collections::BTreeMap::new();
-    if mb.uid_validity.unwrap_or(0) != validity {
-        return Ok(out);
-    }
-    for set in uid_sets(uids) {
-        let fetches: Vec<async_imap::types::Fetch> =
-            s.uid_fetch(set, "(UID RFC822.SIZE)").await.map_err(proto)?.try_collect().await.map_err(proto)?;
-        for f in &fetches {
-            if let Some(uid) = f.uid {
-                out.insert(uid, u64::from(f.size.unwrap_or(0)));
-            }
-        }
-    }
-    Ok(out)
-}
-
-/// Several complete messages for the archive with one command (EXAMINE, BODY.PEEK), in the order
-/// of `uids`; missing ones are left out. Nothing if the folder has another UIDVALIDITY now.
-pub async fn fetch_archivable_many(
-    s: &mut ImapSession,
-    folder: &str,
-    validity: u32,
-    uids: &[u32],
-) -> NetResult<Vec<Archivable>> {
-    use async_imap::types::Flag;
-    let mb = s.examine(folder).await.map_err(proto)?;
-    if mb.uid_validity.unwrap_or(0) != validity || uids.is_empty() {
-        return Ok(Vec::new());
-    }
-    // Sizes first: one command fetches at most about 20 MB (a single larger mail goes alone).
-    let mut sizes = std::collections::HashMap::new();
-    for set in uid_sets(uids) {
-        let fetches: Vec<async_imap::types::Fetch> =
-            s.uid_fetch(set, "(UID RFC822.SIZE)").await.map_err(proto)?.try_collect().await.map_err(proto)?;
-        for f in &fetches {
-            if let Some(uid) = f.uid {
-                sizes.insert(uid, u64::from(f.size.unwrap_or(0)));
-            }
-        }
-    }
-    let mut groups: Vec<Vec<u32>> = Vec::new();
-    let mut size = 0u64;
-    for uid in uids.iter().copied().filter(|u| sizes.contains_key(u)) {
-        let this = sizes[&uid];
-        match groups.last_mut() {
-            Some(g) if !g.is_empty() && size + this <= FETCH_BYTES => {
-                g.push(uid);
-                size += this;
-            }
-            _ => {
-                groups.push(vec![uid]);
-                size = this;
-            }
-        }
-    }
-    let mut found = std::collections::HashMap::new();
-    for set in groups.iter().flat_map(|g| uid_sets(g)) {
-        let fetches: Vec<async_imap::types::Fetch> = s
-            .uid_fetch(set, "(UID FLAGS INTERNALDATE BODY.PEEK[])")
-            .await
-            .map_err(proto)?
-            .try_collect()
-            .await
-            .map_err(proto)?;
-        for f in &fetches {
-            let (Some(uid), Some(raw)) = (f.uid, f.body()) else { continue };
-            let flags: Vec<Flag<'_>> = f.flags().collect();
-            found.insert(
-                uid,
-                Archivable {
-                    uid,
-                    raw: raw.to_vec(),
-                    seen: flags.iter().any(|x| matches!(x, Flag::Seen)),
-                    flagged: flags.iter().any(|x| matches!(x, Flag::Flagged)),
-                    labels: listed(f).map(|l| l.labels).unwrap_or_default(),
-                    received: f.internal_date().map(|d| d.timestamp()).unwrap_or(0),
-                },
-            );
-        }
-    }
-    let mut seen = std::collections::HashSet::new();
-    Ok(uids.iter().filter(|u| seen.insert(**u)).filter_map(|u| found.remove(u)).collect())
-}
-
-/// Deletes exactly these messages for good, but only while the folder still has UIDVALIDITY
-/// `validity` (otherwise the UIDs could name other messages now). Returns whether it deleted.
-pub async fn delete_if_valid(s: &mut ImapSession, folder: &str, validity: u32, uids: &[u32]) -> NetResult<bool> {
-    let mb = s.select(folder).await.map_err(proto)?;
-    if validity == 0 || mb.uid_validity.unwrap_or(0) != validity {
-        return Ok(false);
-    }
-    for set in uid_sets(uids) {
-        expunge_set(s, &set).await?;
-    }
-    Ok(true)
+    Ok(Some((raw.to_vec(), f.internal_date().map(|d| d.timestamp()).unwrap_or(0))))
 }
 
 #[cfg(test)]

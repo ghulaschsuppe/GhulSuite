@@ -453,6 +453,41 @@ impl GhulSuite {
         self.net.lock().unwrap_or_else(|p| p.into_inner()).drive = Some(index.clone());
         Ok(index)
     }
+
+    /// The folder `name` below `parent` (not in the trash), created when there is none.
+    pub(super) fn drive_folder_named(&self, parent: Option<&str>, name: &str) -> Result<String> {
+        let name = check_name(name)?;
+        let found = self.with_open(|o| {
+            let index = self.drive_index(o, false)?;
+            let p = parent.unwrap_or_default();
+            Ok(index.nodes.iter().find(|n| n.dir && n.parent == p && n.name == name && !in_trash(&index, n)).map(|n| n.id.clone()))
+        })?;
+        match found {
+            Some(id) => Ok(id),
+            None => self.drive_create_folder(parent.map(str::to_owned), name),
+        }
+    }
+
+    /// Whether `id` is a folder that is not in the trash.
+    pub(super) fn drive_folder_alive(&self, id: &str) -> Result<bool> {
+        self.with_open(|o| {
+            let index = self.drive_index(o, false)?;
+            Ok(index.nodes.iter().any(|n| n.id == id && n.dir && !in_trash(&index, n)))
+        })
+    }
+
+    /// Stores `data` as a file in `folder` (in parts, like an upload from the app).
+    pub(super) fn drive_put_file(&self, folder: Option<String>, name: String, data: &[u8]) -> Result<String> {
+        let upload = self.drive_upload_begin(folder, name)?;
+        let parts = data.chunks(BLOCK_SIZE as usize).try_for_each(|c| self.drive_upload_chunk(upload.clone(), c.to_vec()));
+        match parts.and_then(|()| self.drive_upload_finish(upload.clone())) {
+            Ok(id) => Ok(id),
+            Err(e) => {
+                let _ = self.drive_upload_cancel(upload);
+                Err(e)
+            }
+        }
+    }
 }
 
 #[uniffi::export]

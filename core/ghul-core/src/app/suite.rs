@@ -706,8 +706,6 @@ pub(super) struct NetCache {
     pub(super) drive: Option<super::drive::DriveIndex>,
     pub(super) uploads: BTreeMap<String, super::drive::Upload>,
     pub(super) imap: BTreeMap<String, crate::net::imap::ImapSession>,
-    /// Month files of the mail archive, by account folder and file name.
-    pub(super) archive: BTreeMap<String, BTreeMap<String, super::mailarchive::Month>>,
 }
 
 /// How containers of the folder are opened.

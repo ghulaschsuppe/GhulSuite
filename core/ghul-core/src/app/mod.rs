@@ -12,7 +12,7 @@ pub mod drive;
 pub mod error;
 pub mod import;
 pub mod mail;
-pub mod mailarchive;
+pub mod maildrive;
 pub(crate) mod mailcrypt;
 pub mod mailhtml;
 pub mod mailx;
