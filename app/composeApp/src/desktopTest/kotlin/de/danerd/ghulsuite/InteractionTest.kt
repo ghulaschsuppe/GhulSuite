@@ -275,6 +275,15 @@ class InteractionTest {
         waitFor("No messages found.")
         assertTrue(net.calls.contains("mailSearch:nichts-dergleichen"))
         assertTrue(onAllNodesWithText("Treffen am Freitag").fetchSemanticsNodes().isEmpty())
+        // A refresh (new mail, the button) repeats the search, it does not bring the folder back
+        // under the words.
+        desc("Refresh").performClick()
+        waitUntil(timeoutMillis = 10_000) { net.calls.count { it == "mailSearch:nichts-dergleichen" } >= 2 }
+        waitFor("No messages found.")
+        assertTrue(onAllNodesWithText("Treffen am Freitag").fetchSemanticsNodes().isEmpty())
+        // Emptying the field shows the folder again.
+        onNode(hasSetTextAction() and hasText("nichts-dergleichen", substring = true)).performTextReplacement("")
+        waitFor("Treffen am Freitag")
     }
 
     @Test

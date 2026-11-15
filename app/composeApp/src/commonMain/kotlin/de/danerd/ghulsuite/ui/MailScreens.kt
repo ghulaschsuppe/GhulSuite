@@ -171,10 +171,11 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
     var messages by remember(key) { mutableStateOf<List<MailItem>>(emptyList()) }
     var total by remember(key) { mutableStateOf(0) }
     var query by remember(key) { mutableStateOf("") }
-    var searching by remember { mutableStateOf(false) }
-    /** The words the shown results belong to ("" = no search yet). */
+    var searching by remember(key) { mutableStateOf(false) }
+    /** The words the shown results belong to ("" = the folder itself). */
     var searchedFor by remember(key) { mutableStateOf("") }
-    var searchNow by remember { mutableStateOf(0) }
+    /** The words to search for: set shortly after typing stops, or at once with the search key. */
+    var activeQuery by remember(key) { mutableStateOf("") }
     var filter by remember(key) { mutableStateOf("") }
     var reload by remember { mutableStateOf(0) }
     var loading by remember { mutableStateOf(false) }
@@ -202,24 +203,35 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
         if (folder.equals("INBOX", true) && !searching) state.refreshUnread()
         state.mailLoaded = messages
     }
-    LaunchedEffect(key, reload, filter == "flagged", state.liveRevision(), state.mailRefreshTick) {
-        loading = true
-        catching { load() }
-            .onSuccess { (t, items) -> messages = items; total = t; error = null; searching = false }
-            .onFailure { error = describe(it) }
-        loading = false
-    }
-    // The search runs by itself shortly after typing stops (as in GhulPass and GhulDrive), or at
-    // once with the search key; it asks the mail server, so not on every letter.
-    LaunchedEffect(query, searchNow) {
+    // The search runs by itself shortly after typing stops (as in GhulPass and GhulDrive); it asks
+    // the mail server, so not on every letter. An empty field shows the folder again at once.
+    LaunchedEffect(query) {
         val words = query.trim()
-        if (words.isEmpty()) return@LaunchedEffect
-        kotlinx.coroutines.delay(600)
+        if (words.isNotEmpty()) kotlinx.coroutines.delay(600)
+        activeQuery = words
+    }
+    // One way to fill the list: the folder, or the search for the active words. A reload (new
+    // mail, Refresh, an action on a result) repeats whichever it is, so the folder never replaces
+    // results under the words, nor the other way round.
+    LaunchedEffect(key, reload, filter == "flagged", state.liveRevision(), state.mailRefreshTick, activeQuery) {
+        val words = activeQuery
         loading = true
-        catching { shown.flatMap { a -> net.mailSearch(a.id, folder, words).map { MailItem(a.id, it) } }.sortedByDescending { it.m.date } }
-            .onSuccess { messages = it; searching = true; searchedFor = words; error = null }
-            .onFailure { error = describe(it) }
-        loading = false
+        try {
+            if (words.isEmpty()) {
+                catching { load() }
+                    .onSuccess { (t, items) -> messages = items; total = t; error = null; searching = false }
+                    .onFailure { error = describe(it) }
+                searchedFor = ""
+            } else {
+                catching { shown.flatMap { a -> net.mailSearch(a.id, folder, words).map { MailItem(a.id, it) } }.sortedByDescending { it.m.date } }
+                    .onSuccess { messages = it; searching = true; error = null }
+                    .onFailure { error = describe(it) }
+                // Also after a failure: the error shows, not an endless "Loading".
+                searchedFor = words
+            }
+        } finally {
+            loading = false
+        }
     }
     // While the list is visible, new mail shows up by itself (quietly, without the loading bar).
     val visible = LocalTabActive.current
@@ -261,7 +273,8 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
     val threadOf = { item: MailItem -> item.accountId + "|" + item.m.threadKey.ifEmpty { item.m.uid.toString() } }
     val listed = messages.filter { hideKey(it) !in state.hidden }
     // Typed words whose results are not there yet: not the old list under the new words.
-    val searchPending = query.isNotBlank() && searchedFor != query.trim()
+    // (Also after emptying the field: not the results under no words while the folder loads.)
+    val searchPending = query.trim() != searchedFor
     val shownItems = if (searchPending) emptyList() else listed.filter {
         when (filter) {
             "unread" -> !it.m.seen
@@ -295,7 +308,7 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
     // "All N mails in this folder" (also the ones not loaded yet): one account, plain list only.
     val single = if (all) null else shown.singleOrNull()
     var wholeFolder by remember(key) { mutableStateOf(false) }
-    LaunchedEffect(selected.active) { if (!selected.active) wholeFolder = false }
+    LaunchedEffect(selected.active, activeQuery) { if (!selected.active || activeQuery.isNotEmpty()) wholeFolder = false }
     var movingAll by remember { mutableStateOf(false) }
     var deleteAll by remember { mutableStateOf(false) }
     var emptying by remember { mutableStateOf(false) }
@@ -379,10 +392,7 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
                 Text(stringResource(Res.string.mail_empty_folder))
             }
         }
-        SearchField(query, {
-            query = it
-            if (it.isBlank() && searching) { searchedFor = ""; reload++ }
-        }, placeholder = stringResource(Res.string.mail_search), onSearch = { searchNow++ })
+        SearchField(query, { query = it }, placeholder = stringResource(Res.string.mail_search), onSearch = { activeQuery = query.trim() })
         LoadError(error) { error = null; reload++ }
         state.archiveUnreachable?.let { why ->
             // KONZEPT 9.3.1: the provider's mails and what is kept offline stay usable; nothing is deleted.
