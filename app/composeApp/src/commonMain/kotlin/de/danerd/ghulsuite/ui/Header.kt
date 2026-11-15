@@ -58,7 +58,6 @@ import de.danerd.ghulsuite.model.ServerUi
 import de.danerd.ghulsuite.model.VaultKindUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
-import org.jetbrains.compose.resources.getPluralString
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.rememberResourceEnvironment
 import org.jetbrains.compose.resources.stringResource
@@ -84,7 +83,7 @@ fun AreaContext(state: AppState) {
             Tab.PASS -> state.vaults.firstOrNull { it.id == state.passVault }?.name ?: allVaults
             Tab.AUTH -> {
                 val n = catching { state.backend.totpCodes(nowSeconds()) }.getOrDefault(emptyList()).count { state.authVault == null || it.vaultId == state.authVault }
-                (state.vaults.firstOrNull { it.id == state.authVault }?.name ?: allAccounts) + " · " + getPluralString(env, Res.plurals.auth_count, n, n.toString())
+                (state.vaults.firstOrNull { it.id == state.authVault }?.name ?: allAccounts) + " · " + countText(env, Res.plurals.auth_count, n, n.toString())
             }
             Tab.DRIVE -> {
                 val st = catching { net.driveStatus() }.getOrNull()
@@ -104,7 +103,7 @@ fun AreaContext(state: AppState) {
                 val cals = state.calendars
                 val hidden = state.backend.settings.calHiddenSet()
                 val visible = cals.count { it.id !in hidden }
-                if (visible == cals.size) allCalendars else getPluralString(env, Res.plurals.cal_some_calendars, cals.size, visible.toString(), cals.size.toString())
+                if (visible == cals.size) allCalendars else countText(env, Res.plurals.cal_some_calendars, cals.size, visible.toString(), cals.size.toString())
             }
             Tab.SETTINGS -> "$suite · Version " + state.backend.appVersion.substringBefore("-").split('.').take(2).joinToString(".")
         }

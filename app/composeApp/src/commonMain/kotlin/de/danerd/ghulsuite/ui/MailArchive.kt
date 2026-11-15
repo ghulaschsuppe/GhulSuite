@@ -33,7 +33,6 @@ import de.danerd.ghulsuite.model.MailArchiveStatusUi
 import de.danerd.ghulsuite.model.MailMessageUi
 import de.danerd.ghulsuite.resources.*
 import de.danerd.ghulsuite.resources.Res
-import org.jetbrains.compose.resources.getPluralString
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.rememberResourceEnvironment
 import org.jetbrains.compose.resources.stringResource
@@ -181,7 +180,7 @@ fun MailArchiveSection(state: AppState) {
                     state.runArchiveOnce(manual = true)?.let { r ->
                         when {
                             r.busy.isNotEmpty() -> busyMsg.replace("%1\$s", r.busy)
-                            else -> getPluralString(env, Res.plurals.archive_done, r.archived, r.archived.toString(), r.removed.toString())
+                            else -> countText(env, Res.plurals.archive_done, r.archived, r.archived.toString(), r.removed.toString())
                         }
                     }
                 }) { msg ->
@@ -221,7 +220,7 @@ fun MailArchiveSection(state: AppState) {
                 OutlinedButton(onClick = {
                     state.run(onError = { error = it }, block = {
                         val n = net.archiveRestoreFromCopy()
-                        getPluralString(env, Res.plurals.archive_restored, n, n.toString())
+                        countText(env, Res.plurals.archive_restored, n, n.toString())
                     }) { msg ->
                         reload++
                         state.message(msg)
@@ -545,7 +544,7 @@ fun MailArchiveDialogs(state: AppState) {
                 state.archiveAsk = null
                 state.run(block = {
                     val r = net.archiveConfirmRemoval(ask.first)
-                    getPluralString(env, Res.plurals.archive_removed, r.removed, r.removed.toString())
+                    countText(env, Res.plurals.archive_removed, r.removed, r.removed.toString())
                 }) { msg ->
                     state.message(msg)
                     state.changed()

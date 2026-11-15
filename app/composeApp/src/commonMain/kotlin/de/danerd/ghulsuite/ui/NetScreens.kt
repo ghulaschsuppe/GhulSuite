@@ -712,6 +712,23 @@ fun formatDateTime(time: Long): String {
 /** A Long count as the Int that picks the plural form of a text (very large counts stay "other"). */
 fun Long.pluralCount(): Int = coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong()).toInt()
 
+/**
+ * The text for a count, looked up after an action is done. It never fails: if the text cannot be
+ * read, the numbers alone are shown, so a finished action is never reported as failed.
+ */
+suspend fun countText(
+    env: org.jetbrains.compose.resources.ResourceEnvironment,
+    res: org.jetbrains.compose.resources.PluralStringResource,
+    count: Int,
+    vararg args: Any,
+): String = try {
+    org.jetbrains.compose.resources.getPluralString(env, res, count, *args)
+} catch (c: kotlinx.coroutines.CancellationException) {
+    throw c
+} catch (_: Exception) {
+    args.joinToString(" ")
+}
+
 /** Human-readable size: 1.2 MB. */
 fun formatSize(bytes: Long): String = when {
     bytes < 1024 -> "$bytes B"

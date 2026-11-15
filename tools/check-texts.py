@@ -39,10 +39,25 @@ TERMS = [
 ]
 
 
-# Plural nouns in the English texts that must not follow a number in a plain <string>.
-PLURAL_NOUNS = ["entries", "files", "items", "mails", "messages", "events", "accounts", "vaults", "days", "weeks",
-                "hours", "minutes", "servers", "downloads", "senders", "links", "keys", "folders", "results"]
-NUMBER_PLURAL = re.compile(r"%\d+\$[sd] (?:2FA )?(?:" + "|".join(PLURAL_NOUNS) + r")\b")
+# Plural nouns that must not follow a number in a plain <string> (it would read "1 entries",
+# "1 Einträge"): a <plurals> text is needed. Up to two words may stand between ("%1$s new mails",
+# "%1$s not converted items", "%1$s neue Mails").
+PLURAL_NOUNS = {
+    "en": ["entries", "files", "items", "mails", "messages", "events", "accounts", "vaults", "days", "weeks",
+           "hours", "minutes", "seconds", "servers", "downloads", "senders", "links", "keys", "folders", "results",
+           "codes", "characters", "photos", "images", "calendars", "attempts", "tries", "devices", "contacts",
+           "recipients", "attachments", "shares", "years", "months", "times", "errors", "notes", "logins"],
+    "de": ["Einträge", "Einträgen", "Dateien", "Elemente", "Elementen", "Mails", "Nachrichten", "Termine", "Terminen",
+           "Konten", "Tresore", "Tresoren", "Tage", "Tagen", "Wochen", "Stunden", "Minuten", "Sekunden", "Abrufe",
+           "Abrufen", "Links", "Keys", "Ordner", "Ordnern", "Ergebnisse", "Codes", "Fotos", "Bilder", "Bildern",
+           "Kalender", "Kalendern", "Versuche", "Geräte", "Kontakte", "Empfänger", "Anhänge", "Freigaben", "Jahre",
+           "Monate", "Fehler", "Notizen", "Anmeldungen"],
+}
+NUMBER_PLURAL = {
+    # Also "image(s)", "Bild(er)": the reader sees a makeshift, a <plurals> text says it properly.
+    lang: re.compile(r"%\d+\$[sd] (?:2FA[- ]?)?(?:[\w-]+ ){0,2}?(?:(?:" + "|".join(nouns) + r")\b|\w+\((?:s|e|n|en|er)\))")
+    for lang, nouns in PLURAL_NOUNS.items()
+}
 
 
 def load(lang):
@@ -120,9 +135,10 @@ def main():
         found = {f"{lang}/{q}": placeholders(text) for lang, items in forms.items() for q, text in sorted(items.items())}
         if len({tuple(p) for p in found.values()}) > 1:
             errors.append(f"Platzhalter unterschiedlich: {name}: " + ", ".join(f"{k} {v}" for k, v in found.items()))
-    for name, text in sorted(en.items()):
-        if NUMBER_PLURAL.search(text):
-            errors.append(f"Zahl mit Mehrzahl ohne <plurals>: {name}: {text[:90]}")
+    for lang, texts in (("en", en), ("de", de)):
+        for name, text in sorted(texts.items()):
+            if NUMBER_PLURAL[lang].search(text):
+                errors.append(f"Zahl mit Mehrzahl ohne <plurals>: {name} ({lang}): {text[:90]}")
     for place in long_dashes():
         errors.append(f"langer Strich (stattdessen Punkt, Komma, Doppelpunkt oder „bis“): {place}")
     for place in untranslated_core_texts():

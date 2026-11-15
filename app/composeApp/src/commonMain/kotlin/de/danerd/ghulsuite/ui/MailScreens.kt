@@ -109,7 +109,6 @@ import de.danerd.ghulsuite.model.OutgoingAttachmentUi
 import de.danerd.ghulsuite.model.OutgoingMailUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
-import org.jetbrains.compose.resources.getPluralString
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.rememberResourceEnvironment
 import org.jetbrains.compose.resources.stringResource
@@ -274,7 +273,7 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
         state.run(onError = { error = it }, block = {
             val uids = net.mailFolderUids(a.id, folder)
             block(a.id, uids)
-            getPluralString(env, Res.plurals.mail_bulk_done, uids.size, uids.size.toString())
+            countText(env, Res.plurals.mail_bulk_done, uids.size, uids.size.toString())
         }) { msg ->
             selected.clear()
             wholeFolder = false
@@ -458,7 +457,7 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
                     val a = single ?: return@TextButton
                     state.run(onError = { error = it }, block = {
                         val n = net.mailEmptyFolder(a.id, folder)
-                        getPluralString(env, Res.plurals.mail_emptied, n, n.toString())
+                        countText(env, Res.plurals.mail_emptied, n, n.toString())
                     }) { msg ->
                         reload++
                         state.message(msg)

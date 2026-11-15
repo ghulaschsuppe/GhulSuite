@@ -862,7 +862,7 @@ fun CalendarsSheet(state: AppState, close: () -> Unit) {
         val target = importInto ?: return@rememberOpenFile
         state.run(block = {
             val n = cal.importIcs(target, f.bytes)
-            getPluralString(env, Res.plurals.cal_import_done, n, n.toString())
+            countText(env, Res.plurals.cal_import_done, n, n.toString())
         }) { msg ->
             state.changed(); state.message(msg)
         }
