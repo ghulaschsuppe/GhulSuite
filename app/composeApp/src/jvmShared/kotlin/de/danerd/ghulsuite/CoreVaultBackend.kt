@@ -143,8 +143,12 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
     }
 
     override fun lock() {
-        suite.lock()
+        // F92: returns at once, also while a slow server still holds the open suite (the main
+        // thread must not wait for it); the rest is dropped in the background when that ends.
+        val s = suite
+        s.lock()
         unlockedState.value = false
+        Thread({ runCatching { s.finishLock() } }, "ghul-lock").apply { isDaemon = true }.start()
     }
 
     override fun deviceSshKey(): String {

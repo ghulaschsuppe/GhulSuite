@@ -420,7 +420,11 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
                         ).joinToString(" · "),
                         fontSize = 13.sp, color = t.muted,
                     )
-                } ?: Text(pluralStringResource(Res.plurals.drive_status, status.files, status.files.toString(), formatSize(status.bytes)), fontSize = 13.sp, color = t.muted)
+                } ?: run {
+                    // F95: the bar stands there while the usage is still counted, nothing jumps.
+                    Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(t.surface3))
+                    Text(pluralStringResource(Res.plurals.drive_status, status.files, status.files.toString(), formatSize(status.bytes)), fontSize = 13.sp, color = t.muted)
+                }
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

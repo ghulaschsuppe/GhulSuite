@@ -592,6 +592,16 @@ fun EvRow(state: AppState, o: CalOccurrenceUi, day: Day?, divider: Boolean, sel:
     val selectable = sel != null && o.eventId.isNotEmpty()
     val chosen = selectable && occKey(o) in sel!!
     if (divider) Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(1.dp).background(t.line))
+    // F93: the time column is as wide as its widest text ("all day", a time), so it never breaks
+    // into two lines with large text, and it is the same in every row.
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val allDayShort = stringResource(Res.string.cal_all_day_short)
+    val density = LocalDensity.current
+    val timeCol = remember(allDayShort, density) {
+        val style = androidx.compose.ui.text.TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        val px = maxOf(measurer.measure(allDayShort, style).size.width, measurer.measure("00:00", style).size.width)
+        maxOf(with(density) { px.toDp() } + 2.dp, 44.dp)
+    }
     Row(
         Modifier.fillMaxWidth().background(if (chosen) t.accentSoft else androidx.compose.ui.graphics.Color.Transparent)
             .combinedClickable(
@@ -601,9 +611,9 @@ fun EvRow(state: AppState, o: CalOccurrenceUi, day: Day?, divider: Boolean, sel:
             .padding(horizontal = 16.dp, vertical = 10.dp).height(androidx.compose.foundation.layout.IntrinsicSize.Min),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Column(Modifier.width(44.dp)) {
+        Column(Modifier.width(timeCol)) {
             if (o.allDay) {
-                Text(stringResource(Res.string.cal_all_day_short), fontSize = 13.sp, fontWeight = FontWeight.Bold, lineHeight = 17.sp)
+                Text(allDayShort, fontSize = 13.sp, fontWeight = FontWeight.Bold, lineHeight = 17.sp, maxLines = 1, softWrap = false)
                 val days = (o.lastDay.days - o.startDay.days + 1).toInt()
                 if (days > 1) {
                     val n = ((day ?: o.startDay).days - o.startDay.days + 1).toInt()
@@ -830,10 +840,13 @@ private fun ColumnScope.TimeGrid(state: AppState, days: List<Day>, occ: List<Cal
                     ) {
                         Row(Modifier.fillMaxSize()) {
                             Box(Modifier.width(3.dp).fillMaxHeight().background(c))
-                            Column(Modifier.padding(horizontal = if (one) 9.dp else 4.dp, vertical = if (h < 30.dp) 1.dp else if (one) 5.dp else 2.dp)) {
+                            val vPad = if (h < 30.dp) 1.dp else if (one) 5.dp else 2.dp
+                            // F93: the time line only where both lines fit, also with large text.
+                            val twoLines = ((if (one) 16f else 13f) * 2 * density.fontScale).dp + vPad * 2
+                            Column(Modifier.padding(horizontal = if (one) 9.dp else 4.dp, vertical = vPad)) {
                                 Text(p.o.label, fontSize = if (one) 13.sp else 10.5.sp, lineHeight = if (one) 16.sp else 13.sp, fontWeight = FontWeight.Bold,
                                     color = t.fg, maxLines = 1, softWrap = false, overflow = if (one) TextOverflow.Ellipsis else TextOverflow.Clip)
-                                if (h > 34.dp) {
+                                if (h >= twoLines) {
                                     val meta = "${hm(p.o.start)}-${hm(p.o.end)}" + if (one && p.o.location.isNotEmpty()) " · ${p.o.location}" else ""
                                     Text(meta, fontSize = if (one) 13.sp else 10.5.sp, lineHeight = if (one) 16.sp else 13.sp, color = t.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }

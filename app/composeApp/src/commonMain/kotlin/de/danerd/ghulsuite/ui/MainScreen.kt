@@ -269,6 +269,10 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
                     CompositionLocalProvider(LocalColumns provides cols, LocalContentMax provides Dp.Infinity) {
                         Scaffold(
                             containerColor = MaterialTheme.colorScheme.background,
+                            // F94: the sidebar already keeps clear of a camera cut-out on the left;
+                            // the column next to it must not indent its content a second time.
+                            contentWindowInsets = androidx.compose.material3.ScaffoldDefaults.contentWindowInsets
+                                .only(WindowInsetsSides.Vertical + WindowInsetsSides.End),
                             snackbarHost = { GhulSnackbarHost(state.snackbar) },
                             topBar = {
                                 if (top == null) TabTopBar(state)

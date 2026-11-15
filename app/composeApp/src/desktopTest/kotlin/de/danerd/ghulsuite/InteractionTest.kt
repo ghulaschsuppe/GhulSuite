@@ -646,6 +646,15 @@ class InteractionTest {
         shot("landscape-phone-week")
     }
 
+    /** F93: with large text "all day" stays on one line in the event list (it broke into two). */
+    @Test
+    fun largeTextKeepsAllDayOnOneLine() = app(fontScale = 1.4f, setup = { tab = Tab.CAL; calView = CalView.LIST }) { _, _ ->
+        waitFor("all day")
+        val node = onAllNodesWithText("all day", useUnmergedTree = true).fetchSemanticsNodes().first()
+        val lineHeightPx = 17f * 1.4f * node.layoutInfo.density.density
+        assertTrue(node.size.height < lineHeightPx * 1.5f, "one line, was ${node.size.height} px for a line of $lineHeightPx px")
+    }
+
     /**
      * A phone lying sideways (915 × 412): the areas in the sidebar on the left, and "Lock" at its
      * end stays reachable although the screen is low (bug: it was cut off).

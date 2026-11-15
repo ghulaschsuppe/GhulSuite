@@ -23,6 +23,10 @@ if [ -n "$crashes" ]; then
 fi
 if grep -q "ANR in $pkg" "$log"; then
   grep -A 12 "ANR in $pkg" "$log" > "$out/logcat-anr.txt" || true
+  # The threads of the hanging app (main thread first), while the emulator still runs.
+  if command -v adb > /dev/null 2>&1; then
+    timeout 60 adb shell dumpsys dropbox --print data_app_anr > "$out/anr-traces.txt" 2>&1 || true
+  fi
   echo "::error::Die App hat nicht mehr reagiert (ANR, siehe logcat-anr.txt)"
   fail=1
 fi

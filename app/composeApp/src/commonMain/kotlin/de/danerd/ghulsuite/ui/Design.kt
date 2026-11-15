@@ -74,6 +74,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -129,8 +130,9 @@ enum class ButtonLook { TEXT, OUTLINE, PRIMARY, DANGER }
 
 val LocalButtonLook = compositionLocalOf { ButtonLook.TEXT }
 
-private val ButtonText @Composable get() = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-private val ButtonPadding = PaddingValues(horizontal = 20.dp)
+// F93: a label that wraps (large text) stays centred and keeps room above and below.
+private val ButtonText @Composable get() = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+private val ButtonPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp)
 
 // --- Buttons (.btn: 46 dp high, pill, semibold) -------------------------------------------------
 

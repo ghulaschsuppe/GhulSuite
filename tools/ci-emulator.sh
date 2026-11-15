@@ -130,6 +130,8 @@ if [ "${MONKEY_EVENTS:-0}" -gt 0 ]; then
     if grep -qE "// CRASH|// NOT RESPONDING|ANR in $pkg" "$out/monkey-$seed.txt"; then
       log "::error::Monkey: Absturz oder Hänger mit Seed $seed (siehe monkey-$seed.txt)"
       grep -A 25 -E "// CRASH|// NOT RESPONDING" "$out/monkey-$seed.txt" | head -60 || true
+      # The threads of the hanging app (main thread first): the system keeps them in its dropbox.
+      timeout 60 adb shell dumpsys dropbox --print data_app_anr > "$out/anr-traces-$seed.txt" 2>&1 || true
       failed=1
     fi
     timeout 20 adb shell am force-stop "$pkg" || true
