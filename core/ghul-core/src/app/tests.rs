@@ -1382,6 +1382,16 @@ fn mail_with_imap_and_smtp() {
     no_login.username = String::new();
     no_login.email = format!(" {email} ");
     assert!(s.mail_test_account(None, no_login).unwrap().ok);
+    // A fingerprint confirmed for another server does not count: asked again for the real one.
+    let mut other_pin = input.clone();
+    other_pin.imap_cert = Some("00".repeat(32));
+    let t = s.mail_test_account(None, other_pin).unwrap();
+    assert_eq!(t.confirm, Some(MailCheck::ImapCertificate { fingerprint: fp.clone() }));
+    // A check does not outlive locking.
+    assert!(s.mail_test_account(None, input.clone()).unwrap().ok);
+    s.lock();
+    s.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
+    assert!(s.mail_save_account(None, input.clone()).is_err(), "checked before locking");
     // Checked successfully, then changed: the change is not checked, so not saved.
     assert!(s.mail_test_account(None, input.clone()).unwrap().ok);
     let mut changed = input.clone();

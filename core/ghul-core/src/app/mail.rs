@@ -359,6 +359,23 @@ fn steps_of(what: &str, r: std::result::Result<(), NetError>) -> (Vec<ConnStep>,
     }
 }
 
+/// Runs a connection check (`run` with the certificate to accept) so that a confirmed
+/// fingerprint (`pin`) only counts for a server that presents exactly that certificate and is
+/// not trusted publicly; returns the result and the fingerprint to keep. A fingerprint confirmed
+/// for one server never carries over to another (e.g. after correcting a mistyped host).
+pub(super) fn pinned_check(
+    pin: Option<String>,
+    run: impl Fn(Option<String>) -> std::result::Result<(), NetError>,
+) -> (std::result::Result<(), NetError>, Option<String>) {
+    match run(None) {
+        Err(NetError::CertUntrusted(fp)) if pin.as_deref().is_some_and(|p| p.eq_ignore_ascii_case(&fp)) => {
+            (run(Some(fp.clone())), Some(fp))
+        }
+        // Trusted publicly (no fingerprint needed), another certificate (to confirm), or no answer.
+        other => (other, None),
+    }
+}
+
 /// What makes a connection: only an account saved with exactly these settings has been checked.
 fn connection_hash(id: Option<&str>, a: &StoredAccount) -> [u8; 32] {
     let mut h = Sha256::new();
@@ -1305,7 +1322,7 @@ impl GhulSuite {
     #[cfg(test)]
     pub(crate) fn mail_trust_for_test(&self, id: Option<&str>, input: &MailAccountInput) {
         let a = self.candidate(id, input).unwrap();
-        self.net.lock().unwrap_or_else(|p| p.into_inner()).mail_tested = Some(connection_hash(id, &a));
+        self.net.lock().unwrap_or_else(|p| p.into_inner()).mail_tested = Some((connection_hash(id, &a), None, None));
     }
 
     /// Runs `f` on the account's IMAP session (reused; reconnects once if it broke).
@@ -1377,18 +1394,26 @@ impl GhulSuite {
         }
         require_secure(&input.servers)?;
         let a = self.candidate(id.as_deref(), &input)?;
-        let cfg = imap_config(&a);
-        let imap = block_on(
-            async {
-                let mut session = imap::connect(&cfg).await?;
-                // Some servers close the connection right after BYE; that is fine.
-                let _ = session.logout().await;
-                Ok(())
-            },
-            TIMEOUT,
-        );
+        let (imap, imap_cert) = pinned_check(a.imap_cert.clone(), |cert| {
+            let mut acc = a.clone();
+            acc.imap_cert = cert;
+            let cfg = imap_config(&acc);
+            block_on(
+                async {
+                    let mut session = imap::connect(&cfg).await?;
+                    // Some servers close the connection right after BYE; that is fine.
+                    let _ = session.logout().await;
+                    Ok(())
+                },
+                TIMEOUT,
+            )
+        });
         // SMTP: connect, TLS, login, without sending.
-        let smtp = block_on(smtp::login_only(&smtp_config(&a)), TIMEOUT);
+        let (smtp, smtp_cert) = pinned_check(a.smtp_cert.clone(), |cert| {
+            let mut acc = a.clone();
+            acc.smtp_cert = cert;
+            block_on(smtp::login_only(&smtp_config(&acc)), TIMEOUT)
+        });
         let (mut steps, imap_fp) = steps_of("imap", imap);
         let (smtp_steps, smtp_fp) = steps_of("smtp", smtp);
         steps.extend(smtp_steps);
@@ -1396,7 +1421,8 @@ impl GhulSuite {
             .map(|fingerprint| MailCheck::ImapCertificate { fingerprint })
             .or(smtp_fp.map(|fingerprint| MailCheck::SmtpCertificate { fingerprint }));
         let ok = steps.iter().all(|s| s.ok);
-        self.net.lock().unwrap_or_else(|p| p.into_inner()).mail_tested = ok.then(|| connection_hash(id.as_deref(), &a));
+        self.net.lock().unwrap_or_else(|p| p.into_inner()).mail_tested =
+            ok.then(|| (connection_hash(id.as_deref(), &a), imap_cert, smtp_cert));
         Ok(MailTest { ok, steps, confirm })
     }
 
@@ -1411,11 +1437,24 @@ impl GhulSuite {
         let a = self.candidate(id.as_deref(), &input)?;
         let wanted = connection_hash(id.as_deref(), &a);
         let unchanged = id.as_deref().is_some_and(|id| {
-            self.with_open(|o| account(o, id)).is_ok_and(|old| connection_hash(Some(id), &old) == wanted)
+            self.with_open(|o| account(o, id)).is_ok_and(|mut old| {
+                // Saved before the login name was filled in: it means the address (as for the check).
+                if old.username.is_empty() {
+                    old.username = old.email.clone();
+                }
+                connection_hash(Some(id), &old) == wanted
+            })
         });
-        let tested = self.net.lock().unwrap_or_else(|p| p.into_inner()).mail_tested == Some(wanted);
-        if !unchanged && !tested {
+        let tested = self.net.lock().unwrap_or_else(|p| p.into_inner()).mail_tested.clone().filter(|t| t.0 == wanted);
+        if !unchanged && tested.is_none() {
             return Err(GhulError::InvalidInput { msg: MAIL_NOT_TESTED.into() });
+        }
+        // Certificates as the check found them: a confirmed fingerprint only where the server
+        // really presents that certificate and is not trusted publicly.
+        let mut a = a;
+        if let Some((_, imap_cert, smtp_cert)) = tested {
+            a.imap_cert = imap_cert;
+            a.smtp_cert = smtp_cert;
         }
         let id = self.with_open(|o| {
             self.ensure_area(o, VaultKind::Mail)?;
@@ -2102,5 +2141,36 @@ mod tests {
         assert!(require_secure(&s).is_ok());
         s.imap_security = MailSecurity::StartTls;
         assert!(require_secure(&s).is_err());
+    }
+}
+
+#[cfg(test)]
+mod pin_tests {
+    use super::pinned_check;
+    use crate::net::NetError;
+
+    #[test]
+    fn a_confirmed_fingerprint_counts_only_for_its_own_certificate() {
+        let presents = |cert: &'static str, public: bool| {
+            move |accepted: Option<String>| -> Result<(), NetError> {
+                if public || accepted.as_deref() == Some(cert) {
+                    Ok(())
+                } else {
+                    Err(NetError::CertUntrusted(cert.into()))
+                }
+            }
+        };
+        // Self-signed and confirmed: kept.
+        let (r, keep) = pinned_check(Some("AB".into()), presents("ab", false));
+        assert!(r.is_ok());
+        assert_eq!(keep.as_deref(), Some("ab"));
+        // Another certificate than confirmed: asked again, nothing kept.
+        let (r, keep) = pinned_check(Some("cd".into()), presents("ab", false));
+        assert!(matches!(r, Err(NetError::CertUntrusted(f)) if f == "ab"));
+        assert_eq!(keep, None);
+        // A publicly trusted server (e.g. after correcting a mistyped host): no fingerprint kept.
+        let (r, keep) = pinned_check(Some("cd".into()), presents("ab", true));
+        assert!(r.is_ok());
+        assert_eq!(keep, None);
     }
 }

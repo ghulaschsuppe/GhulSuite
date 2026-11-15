@@ -708,7 +708,7 @@ pub(super) struct NetCache {
     pub(super) imap: BTreeMap<String, crate::net::imap::ImapSession>,
     /// The mail account settings that passed "check connection" last (a hash): only those may
     /// be saved.
-    pub(super) mail_tested: Option<[u8; 32]>,
+    pub(super) mail_tested: Option<([u8; 32], Option<String>, Option<String>)>,
 }
 
 /// How containers of the folder are opened.
@@ -1580,6 +1580,8 @@ impl GhulSuite {
     /// on a background thread: it covers a call ending in the same moment and the network cache.
     pub fn lock(&self) {
         self.lock_pending.store(true, Ordering::SeqCst);
+        // A checked mail connection (with its password's hash) is not kept past locking.
+        self.net.lock().unwrap_or_else(|p| p.into_inner()).mail_tested = None;
         self.drop_open(false);
     }
 

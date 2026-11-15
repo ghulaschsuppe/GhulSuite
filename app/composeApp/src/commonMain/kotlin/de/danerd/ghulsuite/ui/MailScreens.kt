@@ -1400,7 +1400,7 @@ private fun MailAccountForm(state: AppState, id: String?, onSaved: (String) -> U
                 Hint(stringResource(Res.string.mail_account_text))
                 OutlinedTextField(input.email, { v ->
                     input = input.copy(email = v.trim())
-                    if (!serversTouched && v.contains('@')) input = input.copy(servers = net.mailSuggest(v.trim()))
+                    if (!serversTouched && v.contains('@')) input = input.withServers(net.mailSuggest(v.trim()))
                     error = null
                 }, Modifier.fillMaxWidth(), singleLine = true, label = { Text(stringResource(Res.string.mail_email)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email))
@@ -1423,7 +1423,7 @@ private fun MailAccountForm(state: AppState, id: String?, onSaved: (String) -> U
                 }
                 if (advanced) {
                     val s = input.servers
-                    fun upd(n: MailServersUi) { serversTouched = true; input = input.copy(servers = n) }
+                    fun upd(n: MailServersUi) { serversTouched = true; input = input.withServers(n) }
                     OutlinedTextField(input.username, { input = input.copy(username = it.trim()) }, Modifier.fillMaxWidth(), singleLine = true,
                         label = { Text(stringResource(Res.string.mail_username)) })
                     Hint(stringResource(Res.string.mail_username_hint))
@@ -1791,3 +1791,13 @@ private fun keySourceLabel(source: String) = when (source) {
 }
 
 private fun splitAddresses(s: String) = s.split(',', ';', '\n').map { it.trim() }.filter { it.isNotEmpty() }
+
+/**
+ * Other servers: a fingerprint confirmed for the old incoming or outgoing server is dropped
+ * (it must never carry over to another server, e.g. after correcting a mistyped host).
+ */
+internal fun MailAccountInputUi.withServers(n: MailServersUi): MailAccountInputUi = copy(
+    servers = n,
+    imapCert = imapCert.takeIf { servers.imapHost == n.imapHost && servers.imapPort == n.imapPort },
+    smtpCert = smtpCert.takeIf { servers.smtpHost == n.smtpHost && servers.smtpPort == n.smtpPort },
+)

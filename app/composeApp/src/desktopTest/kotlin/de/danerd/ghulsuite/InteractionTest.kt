@@ -26,6 +26,7 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.runDesktopComposeUiTest
 import androidx.compose.ui.unit.Density
 import de.danerd.ghulsuite.ui.downloadFromDrive
+import de.danerd.ghulsuite.ui.withServers
 import de.danerd.ghulsuite.ui.DevChecks
 import de.danerd.ghulsuite.ui.AppState
 import de.danerd.ghulsuite.ui.CalView
@@ -1135,6 +1136,19 @@ class InteractionTest {
             assertFalse(shown("Done"))
             shot("module-private-failed")
         }
+    }
+
+    /** A confirmed certificate fingerprint stays only with its own server and port. */
+    @Test
+    fun confirmedCertificateDoesNotMoveToAnotherServer() {
+        val s = de.danerd.ghulsuite.model.MailServersUi("imap.typo.org", 993, de.danerd.ghulsuite.model.MailSecurityUi.TLS,
+            "smtp.typo.org", 465, de.danerd.ghulsuite.model.MailSecurityUi.TLS)
+        val i = de.danerd.ghulsuite.model.MailAccountInputUi("", "", "a@b.org", "", "pw", s, imapCert = "aa", smtpCert = "bb")
+        val fixed = i.withServers(s.copy(imapHost = "imap.real.org"))
+        assertEquals(null, fixed.imapCert)
+        assertEquals("bb", fixed.smtpCert, "the other server keeps its own")
+        assertEquals(null, i.withServers(s.copy(smtpPort = 587)).smtpCert)
+        assertEquals("aa", i.withServers(s.copy(smtpPort = 587)).imapCert)
     }
 
     /** The folder picker for the GhulSuite folder warns inside a website's folder, not next to it. */
