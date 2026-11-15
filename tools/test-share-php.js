@@ -58,7 +58,12 @@ const linksFile = path.join(dir, 'links.txt');
   }
   async function viaDisk(page, n) {
     await page.click('#dl' + n);
-    await page.waitForFunction(() => window.__closed === true, null, { timeout: 60000 });
+    // Polled with evaluate: waitForFunction may run its predicate through eval, which the page's
+    // CSP (rightly) refuses in some Playwright versions.
+    for (let i = 0; !(await page.evaluate(() => window.__closed === true)); i++) {
+      if (i > 600) throw new Error('the page did not finish writing');
+      await page.waitForTimeout(100);
+    }
     return Buffer.from((await page.evaluate(() => window.__written)).flat());
   }
 
