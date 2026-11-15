@@ -244,6 +244,24 @@ class InteractionTest {
         assertTrue(onAllNodesWithText("Re: Treffen am Freitag").fetchSemanticsNodes().isEmpty())
     }
 
+    /**
+     * The selection holds the conversation: after switching to "Unread" the row stays selected and
+     * acts on what the row now shows (the unread mail), not on nothing and not on hidden mails.
+     */
+    @Test
+    fun mailSelectionFollowsTheFilterChips() = app(setup = { tab = Tab.MAIL }, prepare = { net = FakeNet(conversation = true) }) { state, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Treffen am Freitag")
+        state.undoMillis = 300
+        longPress("Treffen am Freitag")
+        waitFor("1 selected")
+        text("Unread").performClick()
+        waitFor("1 selected")
+        desc("Delete").performClick()
+        waitUntil(timeoutMillis = 10_000) { net.calls.any { it.startsWith("mailDelete:") && it.endsWith(":3") } }
+        assertFalse(net.calls.any { it.startsWith("mailDelete:") && it.endsWith(":5") }, "the read mail was not shown, so it is not deleted")
+    }
+
     @Test
     fun mailSelectionReaderAndUndo() = app(setup = { tab = Tab.MAIL }) { state, fake ->
         val net = fake.net as FakeNet

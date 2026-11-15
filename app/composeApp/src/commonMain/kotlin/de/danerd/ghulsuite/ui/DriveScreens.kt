@@ -217,12 +217,14 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
     val selecting = selected.active
     // Which folder or view the loaded list belongs to: another one is not shown under the new
     // path while it loads (it looked like the inside of the folder just opened).
-    var itemsOf by remember { mutableStateOf<Pair<String?, String>?>(null) }
+    // (Typing in the search keeps the results of the letters before; leaving the search does not.)
+    var itemsOf by remember { mutableStateOf<Triple<String?, String, Boolean>?>(null) }
     LaunchedEffect(folder, query, reload, view, trashTick, state.liveRevision()) {
-        val listOf = folder to view
+        val listOf = Triple(folder, view, query.isNotBlank())
         if (itemsOf != listOf) {
             items = emptyList()
             loaded = false
+            error = null
         }
         catching {
             when {

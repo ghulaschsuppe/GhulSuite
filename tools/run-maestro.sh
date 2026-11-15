@@ -37,14 +37,14 @@ run() {
   echo "::group::Ablauf $name"
   # The status of maestro itself: called as `run … || rc=$?`, set -e does not apply in here.
   local rc=0
-  timeout "$limit" maestro test "$@" "$file" --format junit --output "$out/report-$name.xml" --test-output-dir "$out" || rc=$?
+  timeout "$limit" maestro test "$@" "$file" --format junit --output "$out/report-$name.xml" --test-output-dir "$out" < /dev/null || rc=$?
   # Maestro's own helper on the device can die (it is installed anew for every flow). That is
   # not the app: the flow runs once more, and the log says so. Any other failure stays a failure.
   if [ "$rc" != 0 ] && grep -q "DeviceServerDiedException\|Device server died" "$out/report-$name.xml" 2>/dev/null; then
     echo "::warning::Ablauf $name: Maestros Gerätedienst ist abgestürzt (nicht die App), der Ablauf läuft noch einmal"
     mv "$out/report-$name.xml" "$out/report-$name-device-server-died.xml"
     rc=0
-    timeout "$limit" maestro test "$@" "$file" --format junit --output "$out/report-$name.xml" --test-output-dir "$out" || rc=$?
+    timeout "$limit" maestro test "$@" "$file" --format junit --output "$out/report-$name.xml" --test-output-dir "$out" < /dev/null || rc=$?
   fi
   echo "::endgroup::"
   return "$rc"
@@ -56,7 +56,8 @@ run() {
 base_flows() {
   local name file
   while read -r name; do
-    file=$(grep -l -x "name: $name" "$flows"/[01][0-9]-*.yaml | head -n 1)
+    name="${name%\"}"; name="${name#\"}"
+    file=$(grep -l -F -x "name: $name" "$flows"/[01][0-9]-*.yaml | head -n 1)
     [ -n "$file" ] || { echo "::error::Kein Ablauf mit dem Namen „$name“ (app/maestro/config.yaml)"; return 1; }
     run "$file" 900 || return $?
   done < <(sed -n '/flowsOrder:/,$p' "$flows/config.yaml" | sed -n 's/^ *- //p')

@@ -225,7 +225,6 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
         }
     }
     val swipeLeft = state.backend.settings.mailSwipeLeft
-    val keyOf = { item: MailItem -> item.accountId + "|" + item.m.uid }
     fun hideKey(item: MailItem) = hiddenKey("mail", item.accountId + "/" + folder, item.m.uid.toString())
     val trashMsg = stringResource(Res.string.msg_moved_to_trash)
     val archivedMsg = stringResource(Res.string.mail_archived_n)
@@ -242,22 +241,9 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
         if (todo.any { targets[it] == null }) state.messageRes(Res.string.mail_no_archive)
         else if (todo.isNotEmpty()) remove(todo, archivedMsg) { net.mailMove(it.accountId, folder, it.m.uid, targets.getValue(it)!!.name) }
     }
-    // A row stands for a whole conversation: what is done to the row is done to all its mails.
+    // A row stands for a whole conversation: what is done to the row is done to the mails the row
+    // counts ("(2)"), i.e. those of the conversation that the filter chips show.
     val threadOf = { item: MailItem -> item.accountId + "|" + item.m.threadKey.ifEmpty { item.m.uid.toString() } }
-    fun mailsOf(item: MailItem) = messages.filter { threadOf(it) == threadOf(item) && hideKey(it) !in state.hidden }.ifEmpty { listOf(item) }
-    fun swipe(item: MailItem, left: Boolean) {
-        val all = mailsOf(item)
-        if (left && swipeLeft == 0) return archive(all).let {}
-        if (left && swipeLeft == 1) return delete(all)
-        scope.launch {
-            val seen = if (left) true else !item.m.seen
-            catching { all.forEach { net.mailSetSeen(it.accountId, folder, it.m.uid, seen) } }.onFailure { state.message(describe(it)) }
-            reload++
-        }
-    }
-    // Long press selects mails (as in every list); the bar on top acts on them.
-    val selected = rememberListSelection()
-    var moving by remember { mutableStateOf<List<MailItem>?>(null) }
     val listed = messages.filter { hideKey(it) !in state.hidden }
     val shownItems = listed.filter {
         when (filter) {
@@ -267,12 +253,28 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
             else -> true
         }
     }
-    // Conversations: the newest message of each subject stands for the others (count in brackets).
     val threads = shownItems.groupBy(threadOf)
+    // The newest message of each conversation stands for the others (count in brackets).
     val heads = shownItems.filter { item -> threads[threadOf(item)]?.first() === item }
-    // A selected row selects its whole conversation.
-    val chosenThreads = heads.filter { keyOf(it) in selected }.map(threadOf).toSet()
-    val chosen = listed.filter { threadOf(it) in chosenThreads }
+    fun mailsOf(item: MailItem) = threads[threadOf(item)] ?: listOf(item)
+    fun swipe(item: MailItem, left: Boolean) {
+        val all = mailsOf(item)
+        if (left && swipeLeft == 0) return archive(all).let {}
+        if (left && swipeLeft == 1) return delete(all)
+        scope.launch {
+            // Read as soon as one is unread (as the bar offers it), else all unread.
+            val seen = if (left) true else all.any { !it.m.seen }
+            catching { all.forEach { net.mailSetSeen(it.accountId, folder, it.m.uid, seen) } }.onFailure { state.message(describe(it)) }
+            reload++
+        }
+    }
+    // Long press selects conversations (as in every list); the bar on top acts on their mails.
+    // The selection holds conversations, not single mails: a new answer or another filter chip
+    // does not leave a selected row behind that nothing acts on.
+    val selected = rememberListSelection()
+    var moving by remember { mutableStateOf<List<MailItem>?>(null) }
+    val chosenThreads = heads.map(threadOf).filter { it in selected }.toSet()
+    val chosen = shownItems.filter { threadOf(it) in chosenThreads }
     // "All N mails in this folder" (also the ones not loaded yet): one account, plain list only.
     val single = if (all) null else shown.singleOrNull()
     var wholeFolder by remember(key) { mutableStateOf(false) }
@@ -310,9 +312,9 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
             state.run(onError = { error = it }, block = { list.forEach { block(it) } }) { reload++ }
         }
         SelectionHeader(
-            if (wholeFolder) total else selected.keys.size,
+            if (wholeFolder) total else chosenThreads.size,
             onClose = { selected.clear() },
-            onAll = { selected.all(heads.map(keyOf)) },
+            onAll = { selected.all(heads.map(threadOf)) },
             total = heads.size,
             actions = buildList {
                 add(SelAction(if (anyUnread) Icons.Filled.MarkEmailRead else Icons.Filled.MarkEmailUnread,
@@ -342,7 +344,7 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
         )
     }
     if (selected.active && single != null && filter.isEmpty() && !searching && total > listed.size &&
-        (wholeFolder || selected.keys.size >= heads.size)
+        (wholeFolder || chosenThreads.size >= heads.size)
     ) {
         Box(Modifier.fillMaxWidth().clickable(enabled = !wholeFolder) { wholeFolder = true }.padding(horizontal = 16.dp, vertical = 10.dp)) {
             Text(
@@ -413,12 +415,12 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
                 list.forEachIndexed { i, item ->
                     val count = threads[threadOf(item)]?.size ?: 1
                     val open = state.wide && state.stack.firstOrNull().let { it is Screen.MailRead && it.uid == item.m.uid && it.accountId == item.accountId }
-                    val chosenRow = keyOf(item) in selected
+                    val chosenRow = threadOf(item) in chosenThreads
                     SwipeRow(enabled = !selected.active, onLeft = { swipe(item, true) }, onRight = { swipe(item, false) }, leftAction = swipeLeft) {
                         Box(if (chosenRow) Modifier.background(g.accentSoft) else if (open) Modifier.background(g.surface2) else Modifier) {
                         MailRow(item.m, today, yesterdayLabel, divider = i > 0, count = count, account = if (all) names[item.accountId] else null,
-                            selected = chosenRow, onLongClick = { selected.toggle(keyOf(item)) }) {
-                            if (selected.active) selected.toggle(keyOf(item)) else state.push(Screen.MailRead(item.accountId, folder, item.m.uid))
+                            selected = chosenRow, onLongClick = { selected.toggle(threadOf(item)) }) {
+                            if (selected.active) selected.toggle(threadOf(item)) else state.push(Screen.MailRead(item.accountId, folder, item.m.uid))
                         }
                         }
                     }
