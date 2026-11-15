@@ -87,22 +87,19 @@ fn crlf_collection_through_every_mail_header() {
     let d = Dirs::new("crlf");
     let s = d.suite();
     s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "P")]), None, None, None).unwrap();
-    let acc = s
-        .mail_save_account(
-            None,
-            super::super::mail::MailAccountInput {
-                name: "P".into(),
-                display_name: "Max".into(),
-                email: "max@example.org".into(),
-                username: "max@example.org".into(),
-                password: "x".into(),
-                servers: super::super::mail::mail_suggest_servers("max@example.org".into()),
-                imap_cert: None,
-                smtp_cert: None,
-                signature: String::new(),
-            },
-        )
-        .unwrap();
+    let account = super::super::mail::MailAccountInput {
+        name: "P".into(),
+        display_name: "Max".into(),
+        email: "max@example.org".into(),
+        username: "max@example.org".into(),
+        password: "x".into(),
+        servers: super::super::mail::mail_suggest_servers("max@example.org".into()),
+        imap_cert: None,
+        smtp_cert: None,
+        signature: String::new(),
+    };
+    s.mail_trust_for_test(None, &account);
+    let acc = s.mail_save_account(None, account).unwrap();
     let mut payloads = lines("payloads_crlf.txt");
     payloads.extend([
         "\r\nBcc: spy@evil.example".into(),

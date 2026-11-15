@@ -86,6 +86,15 @@ impl ServerKind {
     }
 }
 
+/// Result of "check connection" for a server: nothing is stored.
+#[derive(uniffi::Enum, Clone, Debug, PartialEq)]
+pub enum ServerTest {
+    /// First contact: the user compares this fingerprint and checks again with it confirmed.
+    Confirm { fingerprint: String },
+    /// Login works and the folder can be written: the server may be saved.
+    Ok,
+}
+
 /// Result of checking a server.
 #[derive(uniffi::Enum, Clone, Debug, PartialEq)]
 pub enum ServerSaved {
@@ -607,6 +616,17 @@ impl GhulSuite {
                 self.save_container(&mut o.suite, super::suite::SUITE_FILE)?;
             }
             Ok(public_key_of(&private)?)
+        })
+    }
+
+    /// "Check connection": logs in and checks that the folder can be written, without storing
+    /// anything. On first contact it returns the fingerprint to confirm.
+    pub fn server_test(&self, input: ServerInput, confirmed: Option<String>) -> Result<ServerTest> {
+        self.with_open(|o| {
+            Ok(match check_server(o, &input, confirmed.as_deref())? {
+                Ok(_) => ServerTest::Ok,
+                Err(fingerprint) => ServerTest::Confirm { fingerprint },
+            })
         })
     }
 

@@ -789,24 +789,27 @@ fn mail_archive_to_drive_against_imap_and_sftp() {
     let account = s
         .mail_save_account(
             None,
-            MailAccountInput {
-                name: "Privat".into(),
-                display_name: "Archiv".into(),
-                email: email.clone(),
-                username: String::new(),
-                password: "test-pw-123".into(),
-                servers: MailServers {
-                    imap_host: host.clone(),
-                    imap_port: 10993,
-                    imap_security: MailSecurity::Tls,
-                    smtp_host: host.clone(),
-                    smtp_port: 10587,
-                    smtp_security: MailSecurity::StartTls,
+            mail_checked(
+                &s,
+                MailAccountInput {
+                    name: "Privat".into(),
+                    display_name: "Archiv".into(),
+                    email: email.clone(),
+                    username: String::new(),
+                    password: "test-pw-123".into(),
+                    servers: MailServers {
+                        imap_host: host.clone(),
+                        imap_port: 10993,
+                        imap_security: MailSecurity::Tls,
+                        smtp_host: host.clone(),
+                        smtp_port: 10587,
+                        smtp_security: MailSecurity::StartTls,
+                    },
+                    imap_cert: Some(fp.clone()),
+                    smtp_cert: Some(fp.clone()),
+                    signature: String::new(),
                 },
-                imap_cert: Some(fp.clone()),
-                smtp_cert: Some(fp.clone()),
-                signature: String::new(),
-            },
+            ),
         )
         .unwrap();
     let raw = |n: u32, date: &str| {
@@ -990,6 +993,14 @@ fn sync_over_sftp() {
         password: None,
         base: base.clone(),
     };
+    // "Check connection" stores nothing: first the fingerprint, then (confirmed) it works.
+    use super::servers::ServerTest;
+    assert_eq!(a.server_test(input.clone(), None).unwrap(), ServerTest::Confirm { fingerprint: hostkey.clone() });
+    assert_eq!(a.server_test(input.clone(), Some(hostkey.clone())).unwrap(), ServerTest::Ok);
+    assert!(a.list_servers().unwrap().is_empty(), "checking stores nothing");
+    let mut wrong_user = input.clone();
+    wrong_user.user = "niemand-hier".into();
+    assert!(a.server_test(wrong_user, Some(hostkey.clone())).is_err());
     // First the fingerprint is shown; then the server is stored with the confirmed fingerprint.
     assert_eq!(a.save_server(input.clone(), None).unwrap(), ServerSaved::Confirm { fingerprint: hostkey.clone() });
     let id = saved(a.save_server(input.clone(), Some(hostkey.clone())).unwrap());
@@ -1321,27 +1332,61 @@ fn mail_with_imap_and_smtp() {
         smtp_cert: None,
         signature: "Gruß, Alice".into(),
     };
-    // Self-signed certificates are shown with their fingerprint until confirmed.
-    assert_eq!(s.mail_check_account(input.clone()).unwrap(), MailCheck::ImapCertificate { fingerprint: fp.clone() });
+    // "Check connection", step by step. Self-signed certificates are shown with their
+    // fingerprint until confirmed; nothing is saved by checking.
+    let steps = |t: &super::mail::MailTest| -> Vec<(String, bool, String)> {
+        t.steps.iter().map(|s| (s.step.clone(), s.ok, s.detail.clone())).collect()
+    };
+    let t = s.mail_test_account(None, input.clone()).unwrap();
+    assert!(!t.ok);
+    assert_eq!(t.confirm, Some(MailCheck::ImapCertificate { fingerprint: fp.clone() }));
+    assert_eq!(steps(&t)[0], ("imap_server".into(), false, super::mail::STEP_CERTIFICATE.into()));
+    assert_eq!(steps(&t)[1], ("imap_login".into(), false, super::mail::STEP_SKIPPED.into()));
+    assert_eq!(
+        steps(&t)[2],
+        ("smtp_server".into(), false, super::mail::STEP_CERTIFICATE.into()),
+        "SMTP is checked too"
+    );
     input.imap_cert = Some(fp.clone());
-    assert_eq!(s.mail_check_account(input.clone()).unwrap(), MailCheck::SmtpCertificate { fingerprint: fp.clone() });
+    let t = s.mail_test_account(None, input.clone()).unwrap();
+    assert_eq!(t.confirm, Some(MailCheck::SmtpCertificate { fingerprint: fp.clone() }));
+    assert!(t.steps[0].ok && t.steps[1].ok && !t.steps[2].ok);
     input.smtp_cert = Some(fp.clone());
+    // A wrong password: both servers answer, both logins fail, and it says so.
     let mut wrong = input.clone();
     wrong.password = "falsch".into();
-    assert!(matches!(s.mail_check_account(wrong), Err(GhulError::ServerAuthFailed)));
+    let t = s.mail_test_account(None, wrong.clone()).unwrap();
+    assert_eq!(t.steps.iter().map(|s| s.ok).collect::<Vec<_>>(), vec![true, false, true, false], "{:?}", t.steps);
+    assert!(t.steps[1].detail.contains("login rejected"));
+    // A server that is not there: its login is not tried.
+    let mut nowhere = input.clone();
+    nowhere.servers.smtp_port = 1;
+    let t = s.mail_test_account(None, nowhere.clone()).unwrap();
+    assert!(t.steps[0].ok && t.steps[1].ok && !t.steps[2].ok);
+    assert_eq!(t.steps[3].detail, super::mail::STEP_SKIPPED);
+    // Not checked, or not checked successfully: not saved.
+    assert!(matches!(
+        s.mail_save_account(None, nowhere),
+        Err(GhulError::InvalidInput { msg }) if msg == super::mail::MAIL_NOT_TESTED
+    ));
+    assert!(s.mail_save_account(None, wrong).is_err());
     // IMAP only with TLS from the start: STARTTLS is refused before connecting.
     let mut starttls = input.clone();
     starttls.servers.imap_port = 10143;
     starttls.servers.imap_security = MailSecurity::StartTls;
-    assert!(matches!(s.mail_check_account(starttls.clone()), Err(GhulError::InvalidInput { .. })));
+    assert!(matches!(s.mail_test_account(None, starttls.clone()), Err(GhulError::InvalidInput { .. })));
     assert!(s.mail_save_account(None, starttls).is_err());
-    assert_eq!(s.mail_check_account(input.clone()).unwrap(), MailCheck::Ok);
     // B21: the field "Login name" usually stays empty; the check then logs in with the address,
     // like the saved account does (before, it logged in with an empty name and always failed).
     let mut no_login = input.clone();
     no_login.username = String::new();
     no_login.email = format!(" {email} ");
-    assert_eq!(s.mail_check_account(no_login).unwrap(), MailCheck::Ok);
+    assert!(s.mail_test_account(None, no_login).unwrap().ok);
+    // Checked successfully, then changed: the change is not checked, so not saved.
+    assert!(s.mail_test_account(None, input.clone()).unwrap().ok);
+    let mut changed = input.clone();
+    changed.servers.imap_port = 10994;
+    assert!(s.mail_save_account(None, changed).is_err());
 
     let id = s.mail_save_account(None, input.clone()).unwrap();
     assert_eq!(s.mail_accounts().unwrap()[0].email, email);
@@ -1543,14 +1588,33 @@ fn mail_with_imap_and_smtp() {
     s.lock();
     assert!(s.mail_accounts().is_err());
     s.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
-    let mut edit = input;
+    // Only the name changes (the form carries neither password nor certificates): no new check
+    // needed, and the confirmed certificates stay.
+    let mut edit = input.clone();
     edit.password = String::new();
     edit.name = "Umbenannt".into();
-    s.mail_save_account(Some(id.clone()), edit).unwrap();
+    edit.imap_cert = None;
+    edit.smtp_cert = None;
+    s.mail_save_account(Some(id.clone()), edit.clone()).unwrap();
     assert_eq!(s.mail_accounts().unwrap()[0].name, "Umbenannt");
     assert_eq!(s.mail_folders(id.clone()).unwrap()[0].role, "inbox");
+    // Another server needs a check; with the stored password it works and can be saved.
+    let mut moved = edit;
+    moved.servers.smtp_port = 1;
+    assert!(s.mail_save_account(Some(id.clone()), moved.clone()).is_err());
+    moved.servers.smtp_port = 10587;
+    moved.servers.imap_host = "localhost".into();
+    let t = s.mail_test_account(Some(id.clone()), moved.clone()).unwrap();
+    assert!(t.confirm.is_some() || t.ok, "{:?}", t.steps);
     s.mail_remove_account(id).unwrap();
     assert!(s.mail_accounts().unwrap().is_empty());
+}
+
+/// `input` after "check connection" passed for it (an account is saved only then).
+fn mail_checked(s: &GhulSuite, input: super::mail::MailAccountInput) -> super::mail::MailAccountInput {
+    let t = s.mail_test_account(None, input.clone()).unwrap();
+    assert!(t.ok, "{:?}", t.steps);
+    input
 }
 
 /// A plain local web server for a folder (stands in for Apache/Nginx in share tests).
@@ -2041,24 +2105,27 @@ fn drive_file_and_share_link_into_mail() {
     let account = s
         .mail_save_account(
             None,
-            MailAccountInput {
-                name: "Test".into(),
-                display_name: "Drive".into(),
-                email: email.clone(),
-                username: email.clone(),
-                password: "test-pw-123".into(),
-                servers: MailServers {
-                    imap_host: host.clone(),
-                    imap_port: 10993,
-                    imap_security: MailSecurity::Tls,
-                    smtp_host: host,
-                    smtp_port: 10587,
-                    smtp_security: MailSecurity::StartTls,
+            mail_checked(
+                &s,
+                MailAccountInput {
+                    name: "Test".into(),
+                    display_name: "Drive".into(),
+                    email: email.clone(),
+                    username: email.clone(),
+                    password: "test-pw-123".into(),
+                    servers: MailServers {
+                        imap_host: host.clone(),
+                        imap_port: 10993,
+                        imap_security: MailSecurity::Tls,
+                        smtp_host: host,
+                        smtp_port: 10587,
+                        smtp_security: MailSecurity::StartTls,
+                    },
+                    imap_cert: Some(fp.clone()),
+                    smtp_cert: Some(fp),
+                    signature: String::new(),
                 },
-                imap_cert: Some(fp.clone()),
-                smtp_cert: Some(fp),
-                signature: String::new(),
-            },
+            ),
         )
         .unwrap();
     // Same as the app: decrypt the Drive file on the device, attach it, put the link in the text.
@@ -2166,24 +2233,27 @@ fn pgp_mail_between_two_users() {
         let id = s
             .mail_save_account(
                 None,
-                MailAccountInput {
-                    name: who.into(),
-                    display_name: name.into(),
-                    email: email.clone(),
-                    username: email.clone(),
-                    password: "test-pw-123".into(),
-                    servers: MailServers {
-                        imap_host: host.clone(),
-                        imap_port: 10993,
-                        imap_security: MailSecurity::Tls,
-                        smtp_host: host.clone(),
-                        smtp_port: 10587,
-                        smtp_security: MailSecurity::StartTls,
+                mail_checked(
+                    &s,
+                    MailAccountInput {
+                        name: who.into(),
+                        display_name: name.into(),
+                        email: email.clone(),
+                        username: email.clone(),
+                        password: "test-pw-123".into(),
+                        servers: MailServers {
+                            imap_host: host.clone(),
+                            imap_port: 10993,
+                            imap_security: MailSecurity::Tls,
+                            smtp_host: host.clone(),
+                            smtp_port: 10587,
+                            smtp_security: MailSecurity::StartTls,
+                        },
+                        imap_cert: Some(fp.clone()),
+                        smtp_cert: Some(fp.clone()),
+                        signature: format!("Viele Grüße\n{name}"),
                     },
-                    imap_cert: Some(fp.clone()),
-                    smtp_cert: Some(fp.clone()),
-                    signature: format!("Viele Grüße\n{name}"),
-                },
+                ),
             )
             .unwrap();
         (d, s, id, email)

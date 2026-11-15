@@ -178,6 +178,7 @@ fn edited_accounts_reach_the_other_devices() {
         smtp_cert: None,
         signature: String::new(),
     };
+    a.mail_trust_for_test(None, &input("Privat"));
     let id = a.mail_save_account(None, input("Privat")).unwrap();
     a.sync_folder(&server).unwrap();
     copy_suite(&server_dir, &db);

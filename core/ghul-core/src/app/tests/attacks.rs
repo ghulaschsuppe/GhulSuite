@@ -105,21 +105,19 @@ fn marked_suite(name: &str) -> (Dirs, Arc<GhulSuite>, std::path::PathBuf, Vec<u8
     .unwrap();
     let folder = s.drive_create_folder(None, "KlauOrdnerX9".into()).unwrap();
     upload(&s, Some(folder), "KlauDateiNameX9.txt", b"KlauDateiInhaltX9 und mehr");
-    s.mail_save_account(
-        None,
-        MailAccountInput {
-            name: "Privat".into(),
-            display_name: "Max".into(),
-            email: "max@example.org".into(),
-            username: "max@example.org".into(),
-            password: "KlauMailPassX9".into(),
-            servers: super::super::mail::mail_suggest_servers("max@example.org".into()),
-            imap_cert: None,
-            smtp_cert: None,
-            signature: String::new(),
-        },
-    )
-    .unwrap();
+    let account = MailAccountInput {
+        name: "Privat".into(),
+        display_name: "Max".into(),
+        email: "max@example.org".into(),
+        username: "max@example.org".into(),
+        password: "KlauMailPassX9".into(),
+        servers: super::super::mail::mail_suggest_servers("max@example.org".into()),
+        imap_cert: None,
+        smtp_cert: None,
+        signature: String::new(),
+    };
+    s.mail_trust_for_test(None, &account);
+    s.mail_save_account(None, account).unwrap();
     s.sync_folder(&LocalFs::new(server.join("sync"))).unwrap();
     (d, s, server, kf)
 }

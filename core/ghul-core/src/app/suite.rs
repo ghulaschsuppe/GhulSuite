@@ -706,6 +706,9 @@ pub(super) struct NetCache {
     pub(super) drive: Option<super::drive::DriveIndex>,
     pub(super) uploads: BTreeMap<String, super::drive::Upload>,
     pub(super) imap: BTreeMap<String, crate::net::imap::ImapSession>,
+    /// The mail account settings that passed "check connection" last (a hash): only those may
+    /// be saved.
+    pub(super) mail_tested: Option<[u8; 32]>,
 }
 
 /// How containers of the folder are opened.
