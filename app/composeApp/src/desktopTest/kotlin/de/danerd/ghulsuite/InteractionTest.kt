@@ -232,6 +232,15 @@ class InteractionTest {
         }
     }
 
+    /** F91: without a connection GhulDrive says so and still lists the folders it already knows. */
+    @Test
+    fun driveOfflineKeepsTheKnownFolders() = app(setup = { tab = Tab.DRIVE }, prepare = { (net as FakeNet).driveOffline = true }) { _, _ ->
+        waitUntil(timeoutMillis = 10_000) { onAllNodesWithText("Timed out.", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        waitFor("Try again")
+        waitFor("Fotos")
+        waitFor("Steuer 2025.pdf")
+    }
+
     @Test
     fun driveEmptyTrashAsks() = app(setup = { tab = Tab.DRIVE }) { _, fake ->
         // Emptying the trash still asks, with a red button.
@@ -567,6 +576,14 @@ class InteractionTest {
         // Current, new, repeat: the second field is the new password.
         onAllNodes(hasSetTextAction())[1].performTextInput("kurz")
         waitFor("weak")
+    }
+
+    /** F90: the start-area hint names the areas, not the internal tab codes. */
+    @Test
+    fun startHintNamesTheAreas() = app(setup = { tab = Tab.SETTINGS; push(Screen.SettingsPage(SetPage.LOOK)) }) { _, _ ->
+        val part = { t: String -> onAllNodesWithText(t, substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        waitUntil(timeoutMillis = 10_000) { part("Order: GhulPass, GhulAuth") }
+        assertFalse(part("PASS, AUTH"))
     }
 
     /** The sidebar names the key for locking (Ctrl+L) on Windows only; a phone lying sideways has no keyboard. */

@@ -235,7 +235,14 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
                 view == "trash" -> net.driveTrash()
                 else -> net.driveList(folder, refresh)
             }
-        }.onSuccess { items = it; itemsOf = listOf; error = null }.onFailure { error = describe(it) }
+        }.onSuccess { items = it; itemsOf = listOf; error = null }.onFailure { e ->
+            error = describe(e)
+            // F91: without a connection the folder keeps what this session already knows (the
+            // core's last index); the message above still says that the server is not reachable.
+            if (refresh && items.isEmpty() && query.isBlank() && view == "") {
+                catching { net.driveList(folder, false) }.onSuccess { items = it; itemsOf = listOf }
+            }
+        }
         loaded = true
         refresh = false
         usage = catching { net.driveUsage() }.getOrNull()

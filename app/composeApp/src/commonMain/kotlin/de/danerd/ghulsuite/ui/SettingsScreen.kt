@@ -295,7 +295,9 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                         .filter { it.first < state.tabs.size - 1 },
                     settings.startTab,
                 ) { settings.startTab = it }
-                Hint(stringResource(Res.string.set_start_hint, state.tabs.dropLast(1).joinToString(", ")))
+                // F90: name the areas, not the internal tab codes.
+                val order = state.tabs.dropLast(1).map { stringResource(tabTitle(it)) }
+                Hint(stringResource(Res.string.set_start_hint, order.joinToString(", ")))
                 OutlinedButton(onClick = { state.push(Screen.SettingsPage(SetPage.MODULES)) }, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(Res.string.set_areas_in_bar))
                 }

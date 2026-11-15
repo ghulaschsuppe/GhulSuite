@@ -613,7 +613,7 @@ private fun KeepAlive(visible: Boolean, content: @Composable () -> Unit) {
     }
 }
 
-private fun tabTitle(t: Tab) = when (t) {
+internal fun tabTitle(t: Tab) = when (t) {
     Tab.PASS -> Res.string.tab_pass
     Tab.AUTH -> Res.string.tab_auth
     Tab.DRIVE -> Res.string.tab_drive

@@ -629,7 +629,7 @@
     <string name="set_g_servers">Synchronisation</string>
     <string name="set_import_sub">Proton, Bitwarden, Aegis, 2FAS, KeePass …</string>
     <string name="set_lock_hint_short">Entfernt alle Schlüssel aus dem Speicher</string>
-    <string name="set_lock_panic">Sperren</string>
+    <string name="set_lock_panic">Sperre</string>
     <string name="set_lock_panic_sub">Zeit, Schütteln, Schnellkachel</string>
     <string name="set_mail_sub">Konten, Benachrichtigungen</string>
     <string name="set_modules_sub">Einrichten, ausblenden, entfernen</string>

@@ -1,18 +1,8 @@
-# Servers back, part 3: synchronising works again by itself or with one tap, GhulDrive lists
-# its folders, no error is left over.
+# Servers back, part 3: synchronising works again with one tap, then GhulDrive lists its
+# folders and no error is left over.
 appId: de.danerd.ghulsuite.dev
 name: Server weg 3
 ---
-- tapOn: { id: "tab-drive" }
-- runFlow:
-    when:
-      notVisible: "Urlaub-Maestro"
-    commands:
-      - tapOn:
-          text: "Try again|Retry|Refresh"
-          optional: true
-- extendedWaitUntil: { visible: "Urlaub-Maestro", timeout: 180000 }
-- takeScreenshot: x1-05-drive-back
 - tapOn: { id: "tab-settings" }
 # The tab keeps its place from before (on purpose): start at the top.
 - scrollUntilVisible:
@@ -29,5 +19,16 @@ name: Server weg 3
     timeout: 180000
 - assertNotVisible: "Synchronisation failed: .*"
 - assertNotVisible: "GHUL-DEV-ALARM.*"
-- takeScreenshot: x1-06-sync-back
+- takeScreenshot: x1-05-sync-back
 - back
+# Synchronising went through, so the server answers again. Only now GhulDrive: since F91 the
+# known folders stay listed while offline and "Try again" hides the message at once, so the
+# check is only meaningful once the server is known to be back.
+- tapOn: { id: "tab-drive" }
+- tapOn:
+    text: "Try again|Retry|Refresh"
+    optional: true
+- extendedWaitUntil: { visible: "Urlaub-Maestro", timeout: 180000 }
+- extendedWaitUntil: { notVisible: "No connection to the server.*", timeout: 180000 }
+- assertNotVisible: "GHUL-DEV-ALARM.*"
+- takeScreenshot: x1-06-drive-back

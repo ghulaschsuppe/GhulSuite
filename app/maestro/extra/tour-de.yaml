@@ -60,7 +60,7 @@ name: Rundgang auf Deutsch
     direction: UP
 - takeScreenshot: ${PREFIX}-10-optionen
 - runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Entsperren", SHOT: "${PREFIX}-11-entsperren" } }
-- runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Sperren", SHOT: "${PREFIX}-12-sperren" } }
+- runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Sperre", SHOT: "${PREFIX}-12-sperre" } }
 - runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Privatsphäre", SHOT: "${PREFIX}-13-privatsphaere" } }
 - runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Keys und Schlüsseldateien", SHOT: "${PREFIX}-14-keys" } }
 - runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Tresore", SHOT: "${PREFIX}-15-tresore" } }

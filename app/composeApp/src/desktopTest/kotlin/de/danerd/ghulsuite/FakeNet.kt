@@ -116,7 +116,10 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
     override suspend fun driveSetup(serverId: String) {}
     /** How long listing a folder takes (a slow server); blocking, as the real core does. */
     var driveListDelayMs = 0L
+    /** The server cannot be reached: fetching the index fails, the index already known stays. */
+    var driveOffline = false
     override suspend fun driveList(folder: String?, refresh: Boolean): List<DriveItemUi> {
+        if (driveOffline && refresh) throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.NETWORK, "Timed out.")
         if (folder != null && driveListDelayMs > 0) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Thread.sleep(driveListDelayMs) }
         return if (folder == "d1") listOf(DriveItemUi("f5", "d1", "Strand.jpg", false, 3_100_000, now * 1000)) else listOf(
             DriveItemUi("d1", null, "Fotos", true, 0, now * 1000),
