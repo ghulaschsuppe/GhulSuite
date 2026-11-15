@@ -38,10 +38,10 @@ name: GhulPass in depth
     visible: "Search entries"
     timeout: 10000
 - assertVisible: "Doppelt-Tipp"
-# A second "Doppelt-Tipp" in the list would be the entry saved twice.
-- assertNotVisible:
-    text: "Doppelt-Tipp"
-    index: 1
+# Saved once: Codeberg and Doppelt-Tipp. (The name is there twice on purpose: once under
+# "Recently used", once in the list; so the count of the list is what tells.)
+- assertVisible: "2 ENTRIES"
+- assertNotVisible: "3 ENTRIES"
 - assertNotVisible: ".*[Cc]oroutine.*"
 - takeScreenshot: 08-02-list
 
