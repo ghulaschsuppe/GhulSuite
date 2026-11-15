@@ -27,6 +27,7 @@ import de.danerd.ghulsuite.ui.AppState
 import de.danerd.ghulsuite.ui.CalView
 import de.danerd.ghulsuite.ui.GhulSuiteApp
 import de.danerd.ghulsuite.ui.HeaderGuard
+import de.danerd.ghulsuite.ui.DesktopBack
 import de.danerd.ghulsuite.ui.Screen
 import de.danerd.ghulsuite.model.NetBackend
 import de.danerd.ghulsuite.model.SecurityIssueKindUi
@@ -189,7 +190,18 @@ class InteractionTest {
         assertTrue(onAllNodesWithContentDescription("Share").fetchSemanticsNodes().isNotEmpty())
         desc("Cancel").performClick()
         waitGone("1 selected")
-        deleteUndoDelete(state, "Notizen.txt", "Move to trash", "Moved to trash", "drive") { "driveDelete:f2" in net.calls }
+        // Into the trash at once (F96: the count follows at once); "Undo" takes it out again.
+        state.undoMillis = 60_000
+        longPress("Notizen.txt")
+        desc("Move to trash").performClick()
+        waitFor("Undo")
+        assertTrue(shown("Moved to trash"))
+        waitGone("Notizen.txt")
+        assertTrue("driveDelete:f2" in net.calls)
+        shot("drive-undo")
+        text("Undo").performClick()
+        waitFor("Notizen.txt")
+        assertTrue("driveRestore:f2" in net.calls)
         // The sheet of a file.
         waitFor("Steuer 2025.pdf")
         text("Steuer 2025.pdf").performClick()
@@ -230,6 +242,50 @@ class InteractionTest {
         } finally {
             gate.countDown()
         }
+    }
+
+    /** F96: the number of files follows a change at once (bug: only after leaving and opening the app). */
+    @Test
+    fun driveFileCountFollowsChanges() = app(setup = { tab = Tab.DRIVE }) { _, fake ->
+        val part = { t: String -> onAllNodesWithText(t, substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        waitUntil(timeoutMillis = 10_000) { part("3 files") }
+        (fake.net as FakeNet).driveFiles = 4
+        // Refreshing the list (as after an upload) also counts again.
+        text("Up to date").performClick()
+        waitUntil(timeoutMillis = 10_000) { part("4 files") }
+        // Into the trash: the number drops at once, not only when "Undo" is gone.
+        text("Notizen.txt").performTouchInput { longClick() }
+        waitFor("1 selected")
+        desc("Move to trash").performClick()
+        waitUntil(timeoutMillis = 2_000) { part("3 files") }
+        assertTrue("driveDelete:f2" in (fake.net as FakeNet).calls)
+    }
+
+    /** Windows: Esc, Alt+Left and the mouse's back button go back one step (bug: they did nothing). */
+    @Test
+    fun windowsBackGoesBackOneStep() = app(wide = true, setup = { tab = Tab.CAL; calView = CalView.LIST }) { state, _ ->
+        waitFor("Abendessen mit Jana")
+        // Nothing to go back to: nothing happens (the window does not close).
+        assertFalse(runOnIdle { DesktopBack.dispatch() })
+        text("Abendessen mit Jana").performClick()
+        waitFor("Trattoria Da Luca")
+        assertTrue(runOnIdle { DesktopBack.dispatch() })
+        waitUntil(timeoutMillis = 10_000) { state.stack.isEmpty() }
+        waitFor("Kundentermin Müller GmbH")
+        // A selection is left first, the page stays.
+        text("Abendessen mit Jana").performTouchInput { longClick() }
+        waitFor("1 selected")
+        assertTrue(runOnIdle { DesktopBack.dispatch() })
+        waitGone("1 selected")
+        assertTrue(state.stack.isEmpty())
+        // The keys and the mouse button that mean "back".
+        assertTrue(DesktopBack.isBackKey(androidx.compose.ui.input.key.Key.Escape, alt = false))
+        assertTrue(DesktopBack.isBackKey(androidx.compose.ui.input.key.Key.DirectionLeft, alt = true))
+        assertFalse(DesktopBack.isBackKey(androidx.compose.ui.input.key.Key.DirectionLeft, alt = false))
+        val released = java.awt.event.MouseEvent.MOUSE_RELEASED
+        assertTrue(DesktopBack.isBackButton(released, 4))
+        assertFalse(DesktopBack.isBackButton(released, 1))
+        assertFalse(DesktopBack.isBackButton(java.awt.event.MouseEvent.MOUSE_PRESSED, 4))
     }
 
     /** F91: without a connection GhulDrive says so and still lists the folders it already knows. */

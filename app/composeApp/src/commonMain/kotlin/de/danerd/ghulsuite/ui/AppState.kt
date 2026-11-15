@@ -842,6 +842,29 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         }
     }
 
+    /**
+     * Something already done that "Undo" takes back (F96: moving to GhulDrive's trash, so the
+     * number of files is right at once; the trash keeps the file anyway). The snackbar shows
+     * [message] with "Undo" for a few seconds; Undo runs [undo], then [afterUndo].
+     */
+    fun doneWithUndo(message: String, undo: suspend () -> Unit, afterUndo: () -> Unit = {}) {
+        scope.launch {
+            settlePending()
+            snackbar.currentSnackbarData?.dismiss()
+            val undone = kotlinx.coroutines.coroutineScope {
+                val timer = launch {
+                    kotlinx.coroutines.delay(undoMillis)
+                    snackbar.currentSnackbarData?.takeIf { it.visuals.message == message && it.visuals.actionLabel != null }?.dismiss()
+                }
+                val r = snackbar.showSnackbar(message, undoLabel.ifEmpty { getString(Res.string.a_undo) }, duration = androidx.compose.material3.SnackbarDuration.Indefinite)
+                timer.cancel()
+                r == androidx.compose.material3.SnackbarResult.ActionPerformed
+            }
+            if (!undone || !backend.unlocked.value) return@launch
+            catching { undo() }.onSuccess { afterUndo() }.onFailure { message(describe(it)) }
+        }
+    }
+
     /** Carries out the action that waits for "Undo" now (before the next one, before locking). */
     suspend fun settlePending() {
         val p = pending ?: return

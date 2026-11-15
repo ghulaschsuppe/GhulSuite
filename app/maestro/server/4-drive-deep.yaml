@@ -69,10 +69,12 @@ name: GhulDrive in depth on a real server
 - extendedWaitUntil:
     visible: "1 selected"
     timeout: 10000
+# F96: the file goes to the trash on the server at once (the count is right at once), then the
+# message with "Undo" appears; on the slow server that takes a moment.
 - tapOn: "Move to trash"
 - extendedWaitUntil:
     visible: "Moved to trash"
-    timeout: 10000
+    timeout: 60000
 - takeScreenshot: s4-04-trashed
 - tapOn: "Undo"
 - extendedWaitUntil:
@@ -81,6 +83,9 @@ name: GhulDrive in depth on a real server
 - takeScreenshot: s4-05-undone
 - longPressOn: "Steuer-2026"
 - tapOn: "Move to trash"
+- extendedWaitUntil:
+    visible: "Moved to trash"
+    timeout: 60000
 - extendedWaitUntil:
     notVisible: "Moved to trash"
     timeout: 30000

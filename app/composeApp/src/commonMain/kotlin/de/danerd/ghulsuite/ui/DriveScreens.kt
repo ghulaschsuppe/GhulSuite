@@ -175,8 +175,11 @@ fun DriveServerSheet(state: AppState, onDone: () -> Unit) {
 }
 
 @Composable
-private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
+private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
     val net = state.backend.net
+    // F96: the number of files and their size follow every change (upload, delete, refresh);
+    // before, they stayed as they were when GhulDrive was opened.
+    var status by remember(opened) { mutableStateOf(opened) }
     val scope = rememberCoroutineScope()
     val root = stringResource(Res.string.drive_root)
     var path by remember { mutableStateOf(listOf(Crumb(null, root))) }
@@ -246,6 +249,7 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
         loaded = true
         refresh = false
         usage = catching { net.driveUsage() }.getOrNull()
+        catching { net.driveStatus() }.onSuccess { if (it.serverId == status.serverId) status = it }
     }
     // Empties the trash of old items once per session (setting: after 30 days).
     LaunchedEffect(Unit) {
@@ -331,8 +335,11 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
     fun toTrash(list: List<DriveItemUi>) {
         selected.clear()
         // Into the trash: no question, "Undo" brings it back (and the trash keeps it for days).
-        state.undoable(list.map { hiddenKey("drive", "files", it.id) }, trashMsg, after = { trashTick++ }) {
-            list.forEach { net.driveDelete(it.id) }
+        // F96: moved at once, so the number of files and the storage are right at once.
+        state.run(onError = { error = it }, block = { list.forEach { net.driveDelete(it.id) } }) {
+            trashTick++
+            state.changed()
+            state.doneWithUndo(trashMsg, undo = { list.forEach { net.driveRestore(it.id) } }) { trashTick++; state.changed() }
         }
     }
     fun deleteForever(list: List<DriveItemUi>) {

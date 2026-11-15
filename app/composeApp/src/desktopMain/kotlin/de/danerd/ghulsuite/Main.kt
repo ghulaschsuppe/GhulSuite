@@ -16,6 +16,7 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import de.danerd.ghulsuite.ui.AppState
+import de.danerd.ghulsuite.ui.DesktopBack
 import de.danerd.ghulsuite.ui.GhulSuiteApp
 import java.awt.AWTEvent
 import java.awt.Toolkit
@@ -52,6 +53,11 @@ fun main() {
         { lastInput = System.currentTimeMillis() },
         AWTEvent.KEY_EVENT_MASK or AWTEvent.MOUSE_EVENT_MASK or AWTEvent.MOUSE_WHEEL_EVENT_MASK,
     )
+    // The back button of the mouse goes back one step (it arrives as an AWT event only).
+    Toolkit.getDefaultToolkit().addAWTEventListener(
+        { e -> if (e is java.awt.event.MouseEvent && DesktopBack.isBackButton(e)) DesktopBack.dispatch() },
+        AWTEvent.MOUSE_EVENT_MASK,
+    )
 
     application {
         // Unread mails appear as a number on a small envelope in the taskbar icon (only while unlocked).
@@ -65,6 +71,9 @@ fun main() {
             title = "GhulSuite",
             icon = icon,
             state = rememberWindowState(size = DpSize(1280.dp, 820.dp)),
+            // Esc and Alt+Left go back one step, as the back key on Android (after a text field,
+            // menu or dialog had the chance to use Esc itself).
+            onKeyEvent = { e -> DesktopBack.isBackKey(e) && DesktopBack.dispatch() },
             onPreviewKeyEvent = { e ->
                 // Ctrl+L locks at once (like Win+L for Windows).
                 if (e.type == KeyEventType.KeyDown && e.isCtrlPressed && e.key == Key.L) {

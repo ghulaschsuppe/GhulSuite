@@ -38,10 +38,56 @@ import java.io.RandomAccessFile
 import java.text.DateFormat
 import java.util.Date
 import javax.swing.JFileChooser
+import androidx.compose.ui.input.key.isAltPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
 import org.jetbrains.compose.resources.stringResource
 
+/**
+ * "Back" on Windows: Esc, Alt+Left and the back button of the mouse do what the back key does on
+ * Android (bug: they did nothing). As with Android, the handler registered last that is switched
+ * on gets it: an open page before the list, a selection before the page.
+ */
+object DesktopBack {
+    class Handler(var enabled: Boolean, var onBack: () -> Unit)
+
+    private val handlers = mutableListOf<Handler>()
+
+    fun add(h: Handler) { handlers += h }
+    fun remove(h: Handler) { handlers -= h }
+
+    /** Goes back one step; false when there is nothing to go back to. */
+    fun dispatch(): Boolean {
+        val h = handlers.lastOrNull { it.enabled } ?: return false
+        h.onBack()
+        return true
+    }
+
+    /** Esc or Alt+Left, pressed. */
+    fun isBackKey(e: androidx.compose.ui.input.key.KeyEvent): Boolean =
+        e.type == androidx.compose.ui.input.key.KeyEventType.KeyDown && isBackKey(e.key, e.isAltPressed)
+
+    fun isBackKey(key: androidx.compose.ui.input.key.Key, alt: Boolean): Boolean =
+        key == androidx.compose.ui.input.key.Key.Escape || (alt && key == androidx.compose.ui.input.key.Key.DirectionLeft)
+
+    /** The back button of a mouse (button 4 in Java on Windows). */
+    fun isBackButton(e: java.awt.event.MouseEvent): Boolean = isBackButton(e.id, e.button)
+
+    fun isBackButton(id: Int, button: Int): Boolean = id == java.awt.event.MouseEvent.MOUSE_RELEASED && button == 4
+}
+
 @Composable
-actual fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit) {}
+actual fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit) {
+    val handler = androidx.compose.runtime.remember { DesktopBack.Handler(enabled, onBack) }
+    androidx.compose.runtime.SideEffect {
+        handler.enabled = enabled
+        handler.onBack = onBack
+    }
+    androidx.compose.runtime.DisposableEffect(handler) {
+        DesktopBack.add(handler)
+        onDispose { DesktopBack.remove(handler) }
+    }
+}
 
 actual fun nowSeconds(): Long = System.currentTimeMillis() / 1000
 
