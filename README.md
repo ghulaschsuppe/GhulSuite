@@ -266,9 +266,28 @@ GhulSuite braucht **keinen speziellen Server**. Ein Server in der App ist immer 
 
 **So geht's:**
 1. In der App: **Optionen → Server → Server hinzufügen**, SFTP oder FTPS wählen, den Ordner für GhulSuite aussuchen.
+   Er muss **außerhalb deiner Website** liegen (siehe unten).
 2. Synchronisation und GhulDrive wählen ihren Server jeweils selbst; es kann derselbe sein.
 3. Für Freigabelinks: beim Server **„Server-Modul installieren“**, den Ordner deiner Website wählen. Die App legt
-   `ghulsuite.php` dorthin und prüft Adresse, PHP und den Zugriff auf den GhulSuite-Ordner.
+   `ghulsuite.php` dorthin und prüft Adresse, PHP, den Zugriff auf den GhulSuite-Ordner und dass dieser Ordner nicht
+   aus dem Web abrufbar ist.
+
+**Wo liegt was?** Zwei Ordner mit zwei Aufgaben:
+
+```
+dein Zugang (SFTP/FTPS)
+├── ghulsuite/          ← GhulSuite-Ordner: Tresore, GhulDrive, Freigaben. NICHT aus dem Web erreichbar
+└── public_html/        ← Ordner deiner Website (auch htdocs, www oder ein Ordner mit Domainnamen)
+    └── ghulsuite.php   ← nur das Server-Modul, per https erreichbar
+```
+
+- Der **GhulSuite-Ordner** gehört neben die Website, nicht hinein. Zwar ist darin alles verschlüsselt, aber niemand
+  soll die Dateien überhaupt abrufen können.
+- Das **Modul** muss in der Website liegen, damit Empfänger es per https erreichen. Es liest den GhulSuite-Ordner
+  über den Dateipfad auf dem Server, nicht über das Web.
+- Geht es nicht anders und der GhulSuite-Ordner liegt in der Website, sperrt die App ihn mit einer `.htaccess` (wirkt
+  bei Apache). Beim Installieren des Moduls prüft sie, ob er trotzdem abrufbar ist (etwa bei nginx, das `.htaccess`
+  nicht kennt); dann richtet sie das Modul nicht ein und sagt dir, was zu tun ist.
 
 Das Modul hat keinen Schlüssel und keinen Schreibzugriff übers Web. Es liest nur, was die App für einen Link in den
 GhulSuite-Ordner legt, und gibt genau diese verschlüsselten Blöcke heraus. Für normale Mails brauchst du keinen

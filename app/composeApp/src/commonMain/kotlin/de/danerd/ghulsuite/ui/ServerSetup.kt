@@ -294,6 +294,14 @@ fun ServerChecklist(form: ServerForm) {
     }
 }
 
+/**
+ * Whether [path] (relative to the login folder) lies in a website: a usual web root folder or a
+ * folder named like a domain (many hostings deliver `example.org/` as that domain's site).
+ */
+internal fun inWebsite(path: String): Boolean = path.split('/').any { p ->
+    p.lowercase() in WEB_ROOTS || Regex("""^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$""").matches(p.lowercase())
+}
+
 /** Sheet listing the server's folders: open a folder, go up, create one, choose. */
 @Composable
 private fun FolderPicker(
@@ -329,6 +337,9 @@ private fun FolderPicker(
 
     GhulSheet(onDismiss, stringResource(Res.string.srvf_folders_title)) {
         HintText(stringResource(Res.string.srvf_folders_hint))
+        if (inWebsite(path)) {
+            Text(stringResource(Res.string.srvf_folder_in_website), color = g.danger, fontSize = 13.sp)
+        }
         SheetList {
             SheetRow(if (path.isEmpty()) "/" else "/$path/")
             if (path.isNotEmpty()) {

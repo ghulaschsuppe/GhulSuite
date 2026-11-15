@@ -182,6 +182,9 @@ actual fun rememberCreateStream(onCreated: (ByteSink?) -> Unit): (String, String
                 object : ByteSink {
                     override fun write(data: ByteArray) = it.write(data)
                     override fun close() = it.close()
+                    override fun discard() {
+                        runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri) }
+                    }
                 }
             },
         )

@@ -63,6 +63,12 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    private val rootBackKeepsJobs = object : androidx.activity.OnBackPressedCallback(false) {
+        override fun handleOnBackPressed() {
+            moveTaskToBack(true)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         current = java.lang.ref.WeakReference(this)
@@ -88,6 +94,14 @@ class MainActivity : ComponentActivity() {
             }
         }
         enableEdgeToEdge()
+        // "Back" on the first screen while a job runs: up to Android 11 that would close the
+        // window for good and end the job with it (its scope is this window's). Send the app to
+        // the background instead, as Android 12 and newer do anyway. Registered first, so every
+        // back step inside the app (dialogs, sub pages) still comes before it.
+        onBackPressedDispatcher.addCallback(this, rootBackKeepsJobs)
+        lifecycleScope.launch {
+            de.danerd.ghulsuite.ui.JobStatus.current.collect { rootBackKeepsJobs.isEnabled = de.danerd.ghulsuite.ui.backKeepsJobs(it != null, android.os.Build.VERSION.SDK_INT) }
+        }
         val vm = ViewModelProvider(this)[MainViewModel::class.java]
         setContent {
             // Test tags (e.g. "tab-pass" of the bottom bar) are visible to the emulator flows as ids.

@@ -230,6 +230,8 @@ interface ByteSource {
 interface ByteSink {
     fun write(data: ByteArray)
     fun close()
+    /** Removes what was written (a cancelled or failed download leaves no half file). */
+    fun discard() {}
 }
 
 enum class ServerKindUi { SFTP, FTPS }

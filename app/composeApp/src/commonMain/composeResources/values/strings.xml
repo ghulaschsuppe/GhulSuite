@@ -472,7 +472,7 @@
     <string name="server_port">Port</string>
     <string name="server_user">User name</string>
     <string name="server_base">Folder on the server</string>
-    <string name="server_base_hint">Relative to your home folder, e.g. "ghulsuite". It is created if needed.</string>
+    <string name="server_base_hint">Relative to your home folder, e.g. "ghulsuite". It is created if needed. Not inside your website's folder (such as public_html or htdocs): nobody should be able to fetch it from the web.</string>
     <string name="server_auth_key">SSH key (recommended)</string>
     <string name="server_auth_password">Password</string>
     <string name="server_password">Server password</string>
@@ -1278,7 +1278,8 @@
     <string name="srvf_step_test">Save</string>
     <string name="srvf_connected">Connected · %1$s</string>
     <string name="srvf_folders_title">Choose folder</string>
-    <string name="srvf_folders_hint">On the server · only encrypted files will be stored here.</string>
+    <string name="srvf_folders_hint">On the server · only encrypted files will be stored here. Choose a folder outside your website.</string>
+    <string name="srvf_folder_in_website">This looks like your website's folder. Better create the GhulSuite folder next to it, not inside: what is in the website can be fetched from the web.</string>
     <string name="srvf_folder_new">New folder …</string>
     <string name="srvf_folder_new_name">Name of the new folder</string>
     <string name="srvf_folder_use_new">Use %1$s (created when testing)</string>
@@ -1287,7 +1288,7 @@
     <string name="srvf_folder_up">One level up</string>
     <string name="srvf_folder_empty">No sub-folders</string>
     <string name="srvf_folder_loading">Reading folders …</string>
-    <string name="srvf_folder_public">Delivered on the internet, not for vaults</string>
+    <string name="srvf_folder_public">Website folder, not for GhulSuite</string>
     <string name="srvf_login_first">Enter server, user and password first.</string>
     <string name="srvf_missing">Still open: %1$s</string>
     <string name="quick_4h">4 hours</string>
@@ -1609,7 +1610,7 @@
     <string name="module_title">Server module</string>
     <string name="module_intro">The GhulSuite server module is one PHP file on your website. It is only needed for share links: it hands them out and ends them after the expiry or the last download. The app installs it over this server’s login.</string>
     <string name="module_step1">1. Folder of your website</string>
-    <string name="module_step1_hint">Choose the folder your website is delivered from, e.g. public_html. The module goes in there as ghulsuite.php.</string>
+    <string name="module_step1_hint">Choose the folder your website is delivered from, e.g. public_html. Only the module goes in there, as ghulsuite.php; your GhulSuite folder stays outside the website, and the module reads it on the server.</string>
     <string name="module_step2">2. Address (optional)</string>
     <string name="module_url">Address of the module</string>
     <string name="module_url_hint">Leave it empty: the app tries the usual addresses.</string>

@@ -79,7 +79,7 @@
   "host_1": "Jeder Linux-Server oder jedes NAS mit SSH. Anmeldung per Schlüssel, Fingerabdruck des Servers wird geprüft.",
   "host_2": "Klassischer Webspace mit verschlüsseltem FTP-Zugang. Nur TLS, keine unverschlüsselte Verbindung.",
   "host_3_title": "PHP-Modul fürs Teilen",
-  "host_3": "Optional auf demselben Server: eine PHP-Datei (ab PHP 8.1, ohne Datenbank), die die App selbst installiert. Sie liefert Freigabelinks ohne Kopie aus und setzt Ablaufdatum und Einmal-Links durch.",
+  "host_3": "Optional auf demselben Server: eine PHP-Datei (ab PHP 8.1, ohne Datenbank), die die App selbst installiert. Sie liefert Freigabelinks ohne Kopie aus und setzt Ablaufdatum und Einmal-Links durch. Die Daten liegen im GhulSuite-Ordner außerhalb der Website, nur das Modul liegt darin; die App prüft beim Installieren, dass der GhulSuite-Ordner nicht aus dem Web abrufbar ist.",
   "gallery_eyebrow": "Einblicke",
   "gallery_title": "So sieht GhulSuite aus.",
   "gallery_sub": "Auf dem Handy und unter Windows, hell und dunkel, mit einem klaren Aufbau in allen fünf Bereichen.",

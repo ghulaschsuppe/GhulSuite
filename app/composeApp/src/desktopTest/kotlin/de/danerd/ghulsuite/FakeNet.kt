@@ -202,8 +202,14 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
         return mark
     }
 
+    /** A download writes a first part, then hangs (cancel it) or fails ("fail"); null: normal. */
+    var downloadStops: String? = null
     override suspend fun driveDownload(id: String, sink: ByteSink, onProgress: (Long) -> Unit) {
         calls += "driveDownload:$id"
+        when (downloadStops) {
+            "hang" -> { sink.write(byteArrayOf(1, 2, 3)); onProgress(3); kotlinx.coroutines.awaitCancellation() }
+            "fail" -> { sink.write(byteArrayOf(1, 2, 3)); onProgress(3); throw java.io.IOException("connection lost") }
+        }
         archiveContent[id]?.let { sink.write(it.encodeToByteArray()); onProgress(it.length.toLong()) }
         sink.close()
     }

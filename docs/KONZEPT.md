@@ -347,6 +347,9 @@ die App gibt der Datei beim nächsten Entsperren ihren neutralen Namen zurück.
   Freigabelinks, optional das GhulSuite-Server-Modul, das die App über **denselben** Zugang installiert. Ein weiterer
   Server ist völlig getrennt (eigener Zugang, eigenes Modul, eigene Links). Synchronisation und GhulDrive wählen
   ihren Server frei; es kann derselbe sein.
+- **Zwei Ordner, zwei Aufgaben:** Der GhulSuite-Ordner (Tresore, GhulDrive, Freigaben) liegt außerhalb der Website,
+  das Modul (`ghulsuite.php`) im Ordner der Website. Die Ordnerauswahl markiert Website-Ordner und warnt darin; die
+  Installation des Moduls prüft, dass der GhulSuite-Ordner nicht aus dem Web abrufbar ist.
 - **Ein Server-Formular** für Assistent, GhulDrive und Optionen: SFTP/FTPS anmelden, **Ordner aus der Liste des
   Servers wählen**, Verbindung testen. Modul: Ordner der Website wählen, die App legt `ghulsuite.php` hinein (mit dem
   Pfad zum GhulSuite-Ordner) und prüft Adresse, ob PHP läuft, ob das Modul den GhulSuite-Ordner lesen und darin

@@ -66,17 +66,25 @@ fun AppState.uploadToDrive(folder: String?, sources: List<ByteSource>) {
     }
 }
 
-/** Downloads a GhulDrive file into [sink] (a file the user chose). */
+/**
+ * Downloads a GhulDrive file into [sink] (a file the user chose). Cancelled or failed, the half
+ * written file is removed again.
+ */
 fun AppState.downloadFromDrive(item: DriveItemUi, sink: ByteSink) {
+    var complete = false
     jobs.start(
         JobKind.DOWNLOAD,
         title = { str(Res.string.drive_downloading, item.name) },
         cancelled = { str(Res.string.drive_download_cancelled, item.name) },
-        onEnd = { runCatching { sink.close() } },
+        onEnd = {
+            runCatching { sink.close() }
+            if (!complete) runCatching { sink.discard() }
+        },
     ) { job ->
         job.item = item.name
         job.bytesTotal = item.size
         backend.net.driveDownload(item.id, sink) { job.bytes = it }
+        complete = true
         str(Res.string.drive_downloaded, item.name)
     }
 }

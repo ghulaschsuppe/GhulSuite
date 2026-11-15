@@ -79,7 +79,7 @@
   "host_1": "Any Linux server or NAS with SSH. Key login, the server's fingerprint is checked.",
   "host_2": "Classic web hosting with encrypted FTP access. TLS only, never an unencrypted connection.",
   "host_3_title": "PHP module for sharing",
-  "host_3": "Optional, on the same server: one PHP file (PHP 8.1 or newer, no database) the app installs itself. It hands out share links without copies and enforces expiry and one-time links.",
+  "host_3": "Optional, on the same server: one PHP file (PHP 8.1 or newer, no database) the app installs itself. It hands out share links without copies and enforces expiry and one-time links. Your data stays in the GhulSuite folder outside the website, only the module goes inside; when installing, the app checks that the GhulSuite folder cannot be fetched from the web.",
   "gallery_eyebrow": "A look inside",
   "gallery_title": "This is GhulSuite.",
   "gallery_sub": "On the phone and on Windows, light and dark, with one clear layout in all five areas.",

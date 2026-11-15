@@ -248,6 +248,7 @@ actual fun rememberCreateStream(onCreated: (ByteSink?) -> Unit): (String, String
         onCreated(object : ByteSink {
             override fun write(data: ByteArray) = out.write(data)
             override fun close() = out.close()
+            override fun discard() { f.delete() }
         })
     }
 }

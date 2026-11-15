@@ -25,6 +25,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.runDesktopComposeUiTest
 import androidx.compose.ui.unit.Density
+import de.danerd.ghulsuite.ui.downloadFromDrive
 import de.danerd.ghulsuite.ui.DevChecks
 import de.danerd.ghulsuite.ui.AppState
 import de.danerd.ghulsuite.ui.CalView
@@ -1133,6 +1134,48 @@ class InteractionTest {
             assertTrue(shown("The web server hands out the GhulSuite folder itself (https://example.org/ghulsuite/shares/check-1). The app removed the module again. Move the GhulSuite folder out of the website, then install again."))
             assertFalse(shown("Done"))
             shot("module-private-failed")
+        }
+    }
+
+    /** The folder picker for the GhulSuite folder warns inside a website's folder, not next to it. */
+    @Test
+    fun folderPickerWarnsInsideTheWebsite() {
+        for (p in listOf("public_html", "public_html/ghulsuite", "htdocs/x", "www", "example.org", "kunden/example.org/ghul")) {
+            assertTrue(de.danerd.ghulsuite.ui.inWebsite(p), p)
+        }
+        for (p in listOf("", "ghulsuite", "daten/ghulsuite", "backup_alt", "websites-alt")) {
+            assertFalse(de.danerd.ghulsuite.ui.inWebsite(p), p)
+        }
+    }
+
+    /** A download that is cancelled or fails leaves no half file behind; a complete one stays. */
+    @Test
+    fun cancelledOrFailedDownloadLeavesNoHalfFile() {
+        app { state, fake ->
+            val net = fake.net as FakeNet
+            class Sink : de.danerd.ghulsuite.model.ByteSink {
+                @Volatile var discarded = false
+                @Volatile var closed = false
+                override fun write(data: ByteArray) {}
+                override fun close() { closed = true }
+                override fun discard() { discarded = true }
+            }
+            val item = de.danerd.ghulsuite.model.DriveItemUi("f1", null, "Film.mp4", false, 10, 0)
+            net.downloadStops = "hang"
+            val cancelled = Sink()
+            runOnIdle { state.downloadFromDrive(item, cancelled) }
+            waitFor("Cancel")
+            onAllNodesWithText("Cancel").onFirst().performClick()
+            waitUntil(timeoutMillis = 10_000) { cancelled.discarded && cancelled.closed }
+            net.downloadStops = "fail"
+            val failed = Sink()
+            runOnIdle { state.downloadFromDrive(item, failed) }
+            waitUntil(timeoutMillis = 10_000) { failed.discarded && failed.closed }
+            net.downloadStops = null
+            val complete = Sink()
+            runOnIdle { state.downloadFromDrive(item, complete) }
+            waitUntil(timeoutMillis = 10_000) { complete.closed && state.jobs.list.none { it.active } }
+            assertFalse(complete.discarded, "a complete download stays")
         }
     }
 
