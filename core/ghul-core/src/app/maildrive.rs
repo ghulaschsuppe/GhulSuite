@@ -69,8 +69,9 @@ fn clean(s: &str) -> String {
         .chars()
         .map(|c| {
             let reserved = matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|');
-            // Direction overrides could disguise the name ("…\u{202e}fdp.exe").
-            let direction = matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}');
+            // Direction marks and overrides could disguise the name ("…\u{202e}fdp.exe").
+            let direction =
+                matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}' | '\u{200e}' | '\u{200f}' | '\u{061c}');
             if c.is_control() || reserved || direction {
                 ' '
             } else {
@@ -90,10 +91,11 @@ fn code_of(id: Option<&str>, raw: &[u8]) -> String {
         Some(i) => Sha256::digest(i.as_bytes()),
         None => Sha256::digest(raw),
     };
-    crate::kdf::hex(&digest[..4])
+    crate::kdf::hex(&digest[..8])
 }
 
-/// File name, year and code of a mail: `2024-05-03 Erika Musterfrau - Treffen (1a2b3c4d).eml`.
+/// File name, year and code of a mail:
+/// `2024-05-03 Erika Musterfrau - Treffen (1a2b3c4d5e6f7a8b).eml`.
 pub(super) fn eml_name(raw: &[u8], received: i64, now: i64) -> (String, i32, String) {
     let parsed = mail_parser::MessageParser::default().parse_headers(raw);
     let date = parsed.as_ref().and_then(|m| m.date()).map(|d| d.to_timestamp()).filter(|t| *t > 0);
@@ -247,9 +249,26 @@ impl GhulSuite {
         let root = self.archive_root_or_new()?;
         let acc = self.drive_folder_named(Some(&root), &self.archive_account_name(&account_id)?)?;
         let year_dir = self.drive_folder_named(Some(&acc), &format!("{year:04}"))?;
-        let marker = format!("({code}).eml");
-        if self.drive_list(Some(year_dir.clone()), false)?.iter().any(|i| !i.is_dir && i.name.ends_with(&marker)) {
-            return Ok(MailArchived::Skipped);
+        // Already archived: a file with the mail's code and the same size. Another mail that
+        // only claims the same Message-ID is not taken for it: it gets a code from its content.
+        let files: Vec<_> = self.drive_list(Some(year_dir.clone()), false)?.into_iter().filter(|i| !i.is_dir).collect();
+        let size = raw.len() as u64;
+        let has = |code: &str| {
+            let marker = format!("({code}).eml");
+            let named: Vec<_> = files.iter().filter(|i| i.name.ends_with(&marker)).collect();
+            (named.iter().any(|i| i.size == size), !named.is_empty())
+        };
+        let mut name = name;
+        match has(&code) {
+            (true, _) => return Ok(MailArchived::Skipped),
+            (false, true) => {
+                let own = code_of(None, &raw);
+                if has(&own).0 {
+                    return Ok(MailArchived::Skipped);
+                }
+                name = name.replace(&format!("({code}).eml"), &format!("({own}).eml"));
+            }
+            (false, false) => {}
         }
         self.drive_put_file(Some(year_dir), name, &raw)?;
         Ok(MailArchived::Saved)
@@ -286,7 +305,7 @@ mod tests {
                     Date: Sat, 3 May 2024 10:00:00 +0000\r\nMessage-ID: <a1@example.net>\r\n\r\nHallo\r\n";
         let (name, year, code) = eml_name(raw, 0, 0);
         assert_eq!(year, 2024);
-        assert_eq!(code.len(), 8);
+        assert_eq!(code.len(), 16);
         assert_eq!(name, format!("2024-05-03 Erika Musterfrau - Treffen am Freitag ({code}).eml"));
         // The same Message-ID gives the same code (a second run skips it).
         let again = b"From: x@y\r\nSubject: anders\r\nMessage-ID: <a1@example.net>\r\n\r\n";
@@ -301,6 +320,9 @@ mod tests {
         assert!(!name.contains('/') && !name.contains('\\') && !name.contains(':') && !name.contains('|'));
         assert!(!name.chars().any(char::is_control));
         assert!(!name.contains('\u{202e}'), "no direction override");
+        let marks = "From: a@b\r\nSubject: Rechnung\u{200f}\u{061c}\u{200e}gpj.exe\r\n\r\n";
+        let marked = eml_name(marks.as_bytes(), 0, 0).0;
+        assert!(!marked.contains(['\u{200e}', '\u{200f}', '\u{061c}']), "no direction marks: {marked:?}");
         let long = format!("From: a@b\r\nSubject: {}\r\n\r\n", "x".repeat(1000));
         assert!(eml_name(long.as_bytes(), 0, 0).0.chars().count() < 150);
         // Without any header: the time given as now, no sender, no subject.

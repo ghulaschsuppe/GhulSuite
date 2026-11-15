@@ -5,11 +5,13 @@
 //   D=$(mktemp -d); GHUL_PHP_FIXTURE=$D cargo test -p ghul-core php_browser_fixture &
 //   node tools/test-share-php.js $D; wait
 //
-// Checks the share page (CSP header, key removed from the address bar), decryption block by
-// block in the browser both straight to disk (save dialog of Chromium, stood in for here) and
-// through memory (browsers without it), a folder as single files, the extra password, one-time
-// links, expired links, and that the module refuses what it must. Writes `done` so the Rust side
-// can check the counters.
+// Checks the share page (CSP header, key removed from the address bar), that the link is only
+// opened on a click (a scanner loading the page does not use up a one-time link), decryption
+// block by block in the browser both straight to disk (save dialog of Chromium, stood in for
+// here) and through memory (browsers without it), a folder as single files, the extra
+// password, one-time links, expired links, a server that swaps the blocks of files, broken
+// links, and that the module refuses what it must. Writes `done` so the Rust side can check
+// the counters.
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -45,6 +47,11 @@ const linksFile = path.join(dir, 'links.txt');
     const res = await page.goto(link);
     return [page, res];
   }
+  // What a person does: click "open share".
+  async function click(page) {
+    await page.waitForSelector('#open:not([hidden])');
+    await page.click('#open');
+  }
   async function viaMemory(page, n) {
     const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.click('#dl' + n)]);
     return [dl.suggestedFilename(), fs.readFileSync(await dl.path())];
@@ -60,6 +67,7 @@ const linksFile = path.join(dir, 'links.txt');
     const csp = res.headers()['content-security-policy'] || '';
     check('share page has strict CSP', /default-src 'none'/.test(csp) && /frame-ancestors 'none'/.test(csp));
     check('share page: no referrer', (res.headers()['referrer-policy'] || '') === 'no-referrer');
+    await click(page);
     await page.waitForSelector('#dl0');
     check('key removed from address bar', !(await page.evaluate(() => location.hash)));
     let data = await viaDisk(page, 0);
@@ -67,6 +75,7 @@ const linksFile = path.join(dir, 'links.txt');
     check('to disk: button says done', /Fertig|Done/.test(await page.textContent('#dl0')));
 
     [page] = await open(links.plain, false);
+    await click(page);
     await page.waitForSelector('#dl0');
     let name;
     [name, data] = await viaMemory(page, 0);
@@ -74,6 +83,7 @@ const linksFile = path.join(dir, 'links.txt');
     check('through memory: content identical', Buffer.compare(data, expected) === 0);
 
     [page] = await open(links.folder, false);
+    await click(page);
     await page.waitForSelector('#dl1');
     check('folder: every file on its own', (await page.textContent('#files')).includes('Fotos/a.txt'));
     check('folder: "download all" offered', await page.isVisible('#all'));
@@ -81,6 +91,7 @@ const linksFile = path.join(dir, 'links.txt');
     check('folder: second file ' + name, name === 'b.txt' && data.toString() === 'Datei B');
 
     [page] = await open(links.pw, false);
+    await click(page);
     await page.waitForSelector('#pwform:not([hidden])');
     await page.fill('#pw', 'falsch');
     await page.click('#pwbtn');
@@ -92,17 +103,48 @@ const linksFile = path.join(dir, 'links.txt');
     [name, data] = await viaMemory(page, 0);
     check('password: content identical', Buffer.compare(data, expected) === 0);
 
+    // A scanner or preview loads the page (and runs it) but does not click: nothing is used up.
     [page] = await open(links.once, false);
+    await page.waitForSelector('#open:not([hidden])');
+    await page.waitForTimeout(1500);
+    check('one-time: loading the page alone does not open it', !(await page.$('#dl0')));
+    await page.close();
+    [page] = await open(links.once, false);
+    await click(page);
     await page.waitForSelector('#dl0');
     [name, data] = await viaMemory(page, 0);
     check('one-time: first download works', data.toString() === 'WLAN: geheim');
     [page] = await open(links.once, false);
+    await click(page);
     await page.waitForSelector('#msg.error');
     check('one-time: second call refused', /nicht mehr|no longer/.test(await page.textContent('#msg')));
 
     [page] = await open(links.expired, false);
+    await click(page);
     await page.waitForSelector('#msg.error');
     check('expired: refused', !(await page.$('#dl0')));
+
+    // A server that swaps the blocks of two files (or drops one): the page notices before
+    // anything is downloaded, because the block names are sealed in the package.
+    for (const [what, change] of [['swapped', (b) => b.reverse()], ['dropped', (b) => [b[0]]]]) {
+      [page] = await open(links.folder, false);
+      await page.route(/\?s=[0-9a-f]{32}$/, async (route) => {
+        const r = await route.fetch();
+        const j = await r.json();
+        j.blocks = change(j.blocks);
+        await route.fulfill({ response: r, body: JSON.stringify(j) });
+      });
+      await click(page);
+      await page.waitForSelector('#msg.error');
+      check('server ' + what + ' blocks: refused', !(await page.$('#dl0')));
+    }
+
+    // Broken links: a clear message, no script error.
+    for (const frag of ['%E0%A4%A', 'abc', '0'.repeat(32) + '.' + 'A'.repeat(42)]) {
+      [page] = await open(moduleUrl + '#' + frag, false);
+      await page.waitForSelector('#msg.error');
+      check('broken link ' + frag.slice(0, 12) + ': message, no button', !(await page.isVisible('#open')));
+    }
 
     // The module writes nothing and hands out nothing without a ticket.
     const post = await fetch(moduleUrl + '?s=' + '0'.repeat(32), { method: 'POST' });

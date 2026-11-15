@@ -10,6 +10,8 @@
     loading: 'Wird geladen …', gone: 'Diese Freigabe gibt es nicht mehr. Sie ist abgelaufen, wurde beendet oder schon abgerufen.',
     bad: 'Der Link ist unvollständig. Bitte den ganzen Link kopieren.', wrong: 'Falsches Passwort oder der Link ist beschädigt.',
     pw: 'Diese Freigabe ist zusätzlich mit einem Passwort geschützt.', ready: 'Bereit zum Herunterladen.',
+    open: 'Freigabe öffnen', ask: 'Jemand hat Dateien mit dir geteilt. Ein Einmal-Link gilt ab dem Öffnen als abgerufen.',
+    busy: 'Gerade öffnen sehr viele diese Freigabe. Bitte später erneut versuchen.',
     dl: 'Herunterladen', all: 'Alle herunterladen', stop: 'Abbrechen', again: 'Erneut versuchen', done: 'Fertig',
     stopped: 'Abgebrochen', failed: 'Unterbrochen. Erneut versuchen setzt fort.',
     old: 'Dieser Browser ist zu alt für verschlüsselte Freigaben.', net: 'Die Freigabe konnte nicht geladen werden.',
@@ -19,6 +21,8 @@
     loading: 'Loading …', gone: 'This share no longer exists. It expired, was ended or was already downloaded.',
     bad: 'The link is incomplete. Please copy the whole link.', wrong: 'Wrong password, or the link is damaged.',
     pw: 'This share is additionally protected with a password.', ready: 'Ready to download.',
+    open: 'Open share', ask: 'Someone shared files with you. A one-time link counts as used once it is opened.',
+    busy: 'Very many people are opening this share right now. Please try again later.',
     dl: 'Download', all: 'Download all', stop: 'Cancel', again: 'Try again', done: 'Done',
     stopped: 'Cancelled', failed: 'Interrupted. Try again continues.',
     old: 'This browser is too old for encrypted shares.', net: 'The share could not be loaded.',
@@ -38,7 +42,8 @@
   msg(T.loading);
   if (!window.crypto || !crypto.subtle) { msg(T.old, true); return; }
 
-  const frag = decodeURIComponent(location.hash.slice(1));
+  let frag = '';
+  try { frag = decodeURIComponent(location.hash.slice(1)); } catch (e) { /* a broken link, see below */ }
   const m = /^([0-9a-f]{32})\.([A-Za-z0-9_-]{43})$/.exec(frag);
   if (!m) { msg(T.bad, true); return; }
   const id = m[1];
@@ -48,19 +53,35 @@
 
   const opts = { cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer' };
   let data, blocks, ticket;
-  fetch('?s=' + id, opts)
-    .then((r) => {
-      if (r.status === 404 || r.status === 410) throw new Error('gone');
-      if (!r.ok) throw new Error('net');
-      return r.json();
-    })
-    .then((j) => {
-      data = b64(j.package);
-      blocks = j.blocks;
-      ticket = j.ticket;
-      return start();
-    })
-    .catch((e) => msg(e.message === 'gone' ? T.gone : T.net, true));
+  // Opening counts as a download on the server: only when a person asks for it, so a link
+  // scanner or a preview that runs this page does not use up a one-time link.
+  msg(T.ask);
+  $('open').textContent = T.open;
+  $('open').hidden = false;
+  $('open').onclick = () => {
+    $('open').disabled = true;
+    msg(T.loading);
+    fetch('?s=' + id, opts)
+      .then((r) => {
+        if (r.status === 404 || r.status === 410) throw new Error('gone');
+        if (r.status === 429) throw new Error('busy');
+        if (!r.ok) throw new Error('net');
+        return r.json();
+      })
+      .then((j) => {
+        if (typeof j.package !== 'string' || !Array.isArray(j.blocks) || typeof j.ticket !== 'string') throw new Error('net');
+        $('open').hidden = true;
+        data = b64(j.package);
+        blocks = j.blocks;
+        ticket = j.ticket;
+        return start();
+      })
+      .catch((e) => {
+        $('open').disabled = false;
+        msg(e.message === 'gone' ? T.gone : e.message === 'busy' ? T.busy : T.net, true);
+        if (e.message === 'gone') $('open').hidden = true;
+      });
+  };
 
   function b64url(s) {
     const bin = atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4));
@@ -117,6 +138,15 @@
     }
     if (meta.type !== 'application/x-ghulsuite-share') throw new Error('bad');
     const list = JSON.parse(new TextDecoder().decode(concat(parts))).files;
+    // The block names are sealed in the package: the server's list must say exactly the same,
+    // so it cannot drop, repeat or reorder blocks or hand out those of another file.
+    if (!Array.isArray(list) || blocks.length !== list.length) throw new Error('bad');
+    list.forEach((f, i) => {
+      const own = f.blocks;
+      if (!Array.isArray(own) || !Array.isArray(blocks[i]) || own.length !== blocks[i].length
+        || own.some((b, n) => typeof b !== 'string' || b !== blocks[i][n])
+        || typeof f.size !== 'number' || typeof f.key !== 'string' || typeof f.name !== 'string') throw new Error('bad');
+    });
     $('pwform').hidden = true;
     show(meta, list);
   }
@@ -165,7 +195,7 @@
       btn.textContent = T.dl;
       btn.id = 'dl' + i;
       const bar = document.createElement('progress');
-      bar.max = Math.max(1, blocks[i].length);
+      bar.max = Math.max(1, f.blocks.length);
       bar.value = 0;
       bar.hidden = true;
       row.append(info, btn);
@@ -174,6 +204,7 @@
       f.ui = { btn, bar, info };
       f.index = i;
       f.next = 0;
+      f.got = 0;
       btn.onclick = () => (f.running ? (f.stop = true) : download(f));
     });
     if (list.length > 1) {
@@ -193,7 +224,7 @@
     return f.bk;
   }
   async function block(f, n) {
-    const ids = blocks[f.index];
+    const ids = f.blocks;
     for (let attempt = 0; ; attempt++) {
       try {
         const r = await fetch('?s=' + id + '&t=' + ticket + '&f=' + f.index + '&b=' + n, opts);
@@ -229,14 +260,18 @@
         }
         f.sink = sink;
       }
-      const ids = blocks[f.index];
+      const ids = f.blocks;
       for (; f.next < ids.length; f.next++) {
         if (f.stop) throw new Error('stopped');
         const plain = await block(f, f.next);
+        // More than the package says: something is wrong, nothing more is written.
+        if (f.got + plain.length > f.size) throw new Error('bad');
         if (sink.writable) await sink.writable.write(plain); else sink.parts.push(plain);
+        f.got += plain.length;
         ui.bar.value = f.next + 1;
-        ui.info.textContent = size(Math.min(f.size, (f.next + 1) * 4194304)) + ' / ' + size(f.size);
+        ui.info.textContent = size(f.got) + ' / ' + size(f.size);
       }
+      if (f.got !== f.size) throw new Error('bad');
       if (sink.writable) {
         await sink.writable.close();
       } else {
@@ -267,6 +302,9 @@
         msg(T.gone, true);
       } else if (e && (e.message === 'bad' || e.name === 'OperationError')) {
         ui.btn.disabled = true;
+        // Do not leave a damaged file behind.
+        if (sink && sink.writable) { try { await sink.writable.abort(); } catch (x) { /* ignore */ } }
+        if (sink) sink.parts = [];
         msg(T.wrong, true);
       } else {
         ui.btn.textContent = T.again;

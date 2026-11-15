@@ -17,6 +17,7 @@
 //   GET ?s=ID&t=T&f=F&b=N     block N of file F of the share, with the ticket
 //   GET ?v                    version and whether the GhulSuite folder can be read (for the app)
 //   GET ?check=NAME           content of a test file the app wrote (proves the folder is right)
+//                             and whether PHP may write the state of shares there
 
 declare(strict_types=1);
 
@@ -27,8 +28,9 @@ const GHUL_VIEWER_JS = '__GHUL_VIEWER_JS__';
 const GHUL_VIEWER_CSS = '__GHUL_VIEWER_CSS__';
 /// A ticket for the blocks of a share is valid this long (seconds) after opening it.
 const GHUL_TICKET_SECONDS = 86400;
-/// Tickets kept per share at most (the oldest go first).
-const GHUL_MAX_TICKETS = 200;
+/// Valid tickets per share at most; further openings are refused until some run out, so a
+/// flood of openings cannot push out the tickets of people already downloading.
+const GHUL_MAX_TICKETS = 1000;
 
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: no-referrer');
@@ -91,6 +93,21 @@ function ghul_share(string $id): array
     return $m;
 }
 
+/** The state read from an open state file; an empty file is a share nobody opened yet. */
+function ghul_state_of($h): array
+{
+    $raw = (string) stream_get_contents($h);
+    if ($raw === '') {
+        return ['count' => 0, 'tickets' => []];
+    }
+    $s = json_decode($raw, true);
+    if (!is_array($s)) {
+        // Never start counting from zero again: a broken state would reopen a used-up link.
+        ghul_fail(503);
+    }
+    return $s;
+}
+
 /**
  * Runs $f on the share's state (downloads, tickets) under a lock and stores what it returns.
  * The state is the only thing this file writes.
@@ -99,19 +116,32 @@ function ghul_state(string $id, callable $f): array
 {
     $file = ghul_base() . '/shares/' . $id . '.state';
     $h = @fopen($file, 'c+');
-    if ($h === false) {
-        ghul_fail(500);
+    if ($h === false || !flock($h, LOCK_EX)) {
+        ghul_fail(503);
     }
-    flock($h, LOCK_EX);
-    $s = json_decode((string) stream_get_contents($h), true);
-    if (!is_array($s)) {
-        $s = ['count' => 0, 'tickets' => []];
-    }
-    $s = $f($s);
+    $s = $f(ghul_state_of($h));
     ftruncate($h, 0);
     rewind($h);
-    fwrite($h, (string) json_encode($s));
+    if (fwrite($h, (string) json_encode($s, JSON_FORCE_OBJECT)) === false) {
+        ghul_fail(503);
+    }
     fflush($h);
+    flock($h, LOCK_UN);
+    fclose($h);
+    return $s;
+}
+
+/** The share's state, read under a shared lock without writing. */
+function ghul_state_read(string $id): array
+{
+    $h = @fopen(ghul_base() . '/shares/' . $id . '.state', 'r');
+    if ($h === false) {
+        return ['count' => 0, 'tickets' => []];
+    }
+    if (!flock($h, LOCK_SH)) {
+        ghul_fail(503);
+    }
+    $s = ghul_state_of($h);
     flock($h, LOCK_UN);
     fclose($h);
     return $s;
@@ -123,25 +153,26 @@ function ghul_open_share(string $id): never
     $m = ghul_share($id);
     $max = max(0, (int) ($m['max'] ?? 0));
     $ticket = bin2hex(random_bytes(16));
-    $refused = false;
+    $refused = 0;
     ghul_state($id, function (array $s) use ($max, $ticket, &$refused): array {
         if ($max > 0 && (int) ($s['count'] ?? 0) >= $max) {
-            $refused = true;
+            $refused = 410;
             return $s;
         }
         $now = time();
         $tickets = array_filter((array) ($s['tickets'] ?? []), fn($until) => (int) $until > $now);
-        $tickets[hash('sha256', $ticket)] = $now + GHUL_TICKET_SECONDS;
-        if (count($tickets) > GHUL_MAX_TICKETS) {
-            asort($tickets);
-            $tickets = array_slice($tickets, -GHUL_MAX_TICKETS, null, true);
+        if (count($tickets) >= GHUL_MAX_TICKETS) {
+            $refused = 429;
+            $s['tickets'] = $tickets;
+            return $s;
         }
+        $tickets[hash('sha256', $ticket)] = $now + GHUL_TICKET_SECONDS;
         $s['tickets'] = $tickets;
         $s['count'] = (int) ($s['count'] ?? 0) + 1;
         return $s;
     });
-    if ($refused) {
-        ghul_fail(410);
+    if ($refused !== 0) {
+        ghul_fail($refused);
     }
     $blocks = [];
     foreach ($m['files'] as $f) {
@@ -157,7 +188,7 @@ function ghul_block(string $id): never
     $ticket = ghul_hex($_GET['t'] ?? null, 32);
     $f = ghul_index($_GET['f'] ?? null);
     $n = ghul_index($_GET['b'] ?? null);
-    $s = ghul_state($id, fn(array $s): array => $s);
+    $s = ghul_state_read($id);
     $until = (int) (($s['tickets'] ?? [])[hash('sha256', $ticket)] ?? 0);
     if ($until < time()) {
         ghul_fail(403);
@@ -211,9 +242,10 @@ if (isset($_GET['check'])) {
     if ($raw === false) {
         ghul_fail(404);
     }
-    header('Content-Type: text/plain; charset=utf-8');
-    echo $raw;
-    exit;
+    // Opening a share writes its state next to the descriptions: PHP must be allowed to.
+    $probe = ghul_base() . '/shares/write-' . $name;
+    $writes = @file_put_contents($probe, 'x') === 1 && @unlink($probe);
+    ghul_json(['token' => $raw, 'write' => $writes]);
 }
 if (isset($_GET['s'])) {
     $id = ghul_hex($_GET['s'], 32);

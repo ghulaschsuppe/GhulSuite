@@ -262,10 +262,13 @@ fn module_hands_out_only_the_blocks_of_a_share() {
     assert_eq!(super::module::probe(&base).unwrap().version, super::module::MODULE_VERSION);
     // Only check files of the shares folder, by exact name.
     std::fs::write(suite.join("shares/check-00112233445566778899aabbccddeeff"), "token").unwrap();
-    assert_eq!(
-        super::module::check(&base, "00112233445566778899aabbccddeeff").unwrap().as_deref(),
-        Some(&b"token"[..])
-    );
+    let checked = super::module::check(&base, "00112233445566778899aabbccddeeff").unwrap().unwrap();
+    assert_eq!((checked.token.as_str(), checked.writes), ("token", true));
+    assert!(!suite.join("shares/write-00112233445566778899aabbccddeeff").exists(), "the write test is removed");
+    // Where PHP cannot write, the check says so (here: a folder blocks the test file).
+    std::fs::create_dir(suite.join("shares/write-00112233445566778899aabbccddeeff")).unwrap();
+    assert!(!super::module::check(&base, "00112233445566778899aabbccddeeff").unwrap().unwrap().writes);
+    std::fs::remove_dir(suite.join("shares/write-00112233445566778899aabbccddeeff")).unwrap();
     assert_eq!(super::module::check(&base, "ffffffffffffffffffffffffffffffff").unwrap(), None);
     assert_eq!(get(&format!("{base}?check=../../etc/passwd")).status, 404);
 
@@ -303,10 +306,32 @@ fn module_hands_out_only_the_blocks_of_a_share() {
     let state: serde_json::Value =
         serde_json::from_slice(&std::fs::read(suite.join(format!("shares/{id}.state"))).unwrap()).unwrap();
     assert_eq!(state["count"], 2);
+    assert!(state["tickets"].is_object());
     assert!(
         !String::from_utf8_lossy(&std::fs::read(suite.join(format!("shares/{id}.state"))).unwrap()).contains(&ticket),
         "tickets are stored hashed"
     );
+
+    // A broken state is refused, never read as "nobody opened it yet".
+    let state_file = suite.join(format!("shares/{id}.state"));
+    let kept = std::fs::read(&state_file).unwrap();
+    std::fs::write(&state_file, b"{broken").unwrap();
+    assert_eq!(get(&format!("{base}?s={id}")).status, 503);
+    assert_eq!(get(&format!("{base}?s={id}&t={ticket}&f=0&b=0")).status, 503);
+    // Too many open tickets: new openings wait, the tickets of those downloading stay valid.
+    let mut full: serde_json::Value = serde_json::from_slice(&kept).unwrap();
+    full["count"] = 0.into();
+    let until = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() + 3600;
+    for i in 0..1000 {
+        if full["tickets"].as_object().unwrap().len() >= 1000 {
+            break;
+        }
+        full["tickets"][format!("{i:064x}")] = until.into();
+    }
+    std::fs::write(&state_file, serde_json::to_vec(&full).unwrap()).unwrap();
+    std::fs::write(suite.join(format!("shares/{id}.json")), share(0, 0)).unwrap();
+    assert_eq!(get(&format!("{base}?s={id}")).status, 429);
+    assert_eq!(get(&format!("{base}?s={id}&t={ticket}&f=0&b=0")).status, 200);
 
     // Expired: refused at once, also for an open ticket.
     std::fs::write(suite.join(format!("shares/{id}.json")), share(1000, 0)).unwrap();

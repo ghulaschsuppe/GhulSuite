@@ -30,6 +30,9 @@ const SHARES_KEY: &str = "shares";
 /// The package of a share holds a list of files, not a file (the recipient page checks this).
 pub(crate) const ENVELOPE_TYPE: &str = "application/x-ghulsuite-share";
 
+/// How long after its expiry the app removes a share (see `server_state`).
+const CLEANUP_GRACE_MS: i64 = 86_400_000;
+
 /// Detail of a check that could not be made because an earlier step failed. The app compares
 /// this text (`ServerSetup.kt`); a test pins it.
 pub const SHARE_CHECK_SKIPPED: &str = "skipped";
@@ -92,6 +95,10 @@ pub(crate) struct EnvelopeFile {
     pub mime: String,
     /// The file key, URL-safe Base64.
     pub key: String,
+    /// Its blocks in order: sealed with the package, so a server cannot reorder, drop or
+    /// repeat blocks without the recipient noticing.
+    #[serde(default)]
+    pub blocks: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -174,15 +181,18 @@ fn state_path(id: &str) -> String {
 }
 
 /// Every block a share on this server still hands out (from the descriptions on the server,
-/// so shares made on other devices count too). Unreadable descriptions pin nothing.
-pub(super) fn pinned_blocks(fs: &dyn RemoteFs) -> BTreeSet<String> {
-    let Ok(list) = fs.list("shares") else { return BTreeSet::new() };
-    list.iter()
-        .filter(|e| !e.is_dir && e.name.ends_with(".json"))
-        .filter_map(|e| fs.read(&format!("shares/{}", e.name)).ok().flatten())
-        .filter_map(|data| serde_json::from_slice::<ServerShare>(&data).ok())
-        .flat_map(|s| s.files.into_iter().flatten())
-        .collect()
+/// so shares made on other devices count too). An error reading them is an error: nothing may
+/// be deleted then (a transient failure must not break live links). A description that cannot
+/// be parsed pins nothing; the module refuses it as well.
+pub(super) fn pinned_blocks(fs: &dyn RemoteFs) -> Result<BTreeSet<String>> {
+    let mut out = BTreeSet::new();
+    for e in fs.list("shares")?.iter().filter(|e| !e.is_dir && e.name.ends_with(".json")) {
+        let Some(data) = fs.read(&format!("shares/{}", e.name))? else { continue };
+        if let Ok(s) = serde_json::from_slice::<ServerShare>(&data) {
+            out.extend(s.files.into_iter().flatten());
+        }
+    }
+    Ok(out)
 }
 
 /// What the server says about a share: `None` = gone (ended there, expired, used up),
@@ -192,7 +202,10 @@ fn server_state(fs: &dyn RemoteFs, s: &StoredShare, now: i64) -> Result<Option<i
     let Some(described) = fs.read(&json_path(&s.id))? else { return Ok(None) };
     let described: ServerShare = serde_json::from_slice(&described).unwrap_or_default();
     let (exp, max) = (described.exp.max(0), described.max);
-    if (exp > 0 && exp < now) || (s.expires > 0 && s.expires < now) {
+    // The module ends the link on time by the server's clock; the app only cleans up, a day
+    // later, so a device clock running ahead never deletes a link that still works.
+    let late = now - CLEANUP_GRACE_MS;
+    if (exp > 0 && exp < late) || (s.expires > 0 && s.expires < late) {
         return Ok(None);
     }
     let state: ServerState =
@@ -232,6 +245,7 @@ impl GhulSuite {
                     size: f.size,
                     mime: mime_of(&f.path).into(),
                     key: b64url(f.key.bytes()),
+                    blocks: f.blocks.clone(),
                 })
                 .collect(),
         };

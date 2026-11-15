@@ -403,7 +403,9 @@ pub(super) fn module_urls(host: &str, dir: &str) -> Vec<String> {
 #[derive(uniffi::Record, Clone, Debug, PartialEq)]
 pub struct ModuleCheck {
     /// `upload` (file written), `https` (the module answers at the address), `php` (PHP runs
-    /// there), `folder` (it reads the GhulSuite folder of this server).
+    /// there), `folder` (it reads the GhulSuite folder of this server and may write there;
+    /// detail `no-write` if it may not), `private` (the web server does not hand out the
+    /// GhulSuite folder itself; detail: the address where it does).
     pub step: String,
     pub ok: bool,
     pub detail: String,
@@ -421,6 +423,8 @@ pub struct ModuleInstalled {
 }
 
 const MODULE_FILE: &str = "ghulsuite.php";
+/// Detail of the `folder` step when PHP can read the GhulSuite folder but not write there.
+pub const MODULE_NO_WRITE: &str = "no-write";
 
 /// Folder path without empty parts and without "." (".." stays as it is).
 fn parts(path: &str) -> Vec<&str> {
@@ -686,9 +690,15 @@ impl GhulSuite {
                 .filter(|i| i.version == crate::net::module::MODULE_VERSION)
                 .map(|_| u.clone())
         });
-        let reads = answering
+        let checked = answering
             .as_ref()
-            .is_some_and(|u| crate::net::module::check(u, &name).ok().flatten().as_deref() == Some(token.as_bytes()));
+            .and_then(|u| crate::net::module::check(u, &name).ok().flatten())
+            .filter(|c| c.token == token);
+        // The GhulSuite folder must not be reachable from the web: try where it would be.
+        let exposed = answering.as_ref().and_then(|u| {
+            crate::net::module::resolve(u, &format!("{base_path}/{check_file}"))
+                .filter(|at| crate::net::module::exposes(at, &token))
+        });
         let _ = base_fs.delete(&check_file);
         let shown = answering.clone().unwrap_or_else(|| tried.first().cloned().unwrap_or_default());
         if answering.is_none() && tried.iter().any(|u| crate::net::module::reveals_source(u)) {
@@ -698,10 +708,25 @@ impl GhulSuite {
             return Ok(ModuleInstalled { url: None, tried, checks });
         }
         checks.push(ModuleCheck { step: "https".into(), ok: answering.is_some(), detail: shown.clone() });
-        let folder_detail =
-            if answering.is_some() { String::new() } else { super::shares::SHARE_CHECK_SKIPPED.to_owned() };
+        let folder_detail = match &checked {
+            _ if answering.is_none() => super::shares::SHARE_CHECK_SKIPPED.to_owned(),
+            Some(c) if !c.writes => MODULE_NO_WRITE.to_owned(),
+            _ => String::new(),
+        };
+        let reads = checked.as_ref().is_some_and(|c| c.writes);
         checks.push(ModuleCheck { step: "folder".into(), ok: reads, detail: folder_detail });
-        if !reads {
+        if reads {
+            checks.push(ModuleCheck {
+                step: "private".into(),
+                ok: exposed.is_none(),
+                detail: exposed.clone().unwrap_or_default(),
+            });
+        }
+        if exposed.is_some() {
+            // Links would work, but anyone could fetch the folder: no module until it is moved.
+            let _ = web.delete(MODULE_FILE);
+        }
+        if !reads || exposed.is_some() {
             return Ok(ModuleInstalled { url: None, tried, checks });
         }
         let url = answering.expect("checked");

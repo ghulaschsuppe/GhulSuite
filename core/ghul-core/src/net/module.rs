@@ -75,10 +75,56 @@ pub fn probe(url: &str) -> NetResult<ModuleInfo> {
     })
 }
 
-/// The content the module reads from the test file `shares/check-<name>` of its folder.
-pub fn check(url: &str, name: &str) -> NetResult<Option<Vec<u8>>> {
+/// What the module finds of the test file `shares/check-<name>` of its folder.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Checked {
+    /// The file's content.
+    pub token: String,
+    /// PHP may write in `shares/` (the state of opened shares goes there).
+    pub writes: bool,
+}
+
+/// Asks the module to read the test file `shares/check-<name>`; `None` if it cannot.
+pub fn check(url: &str, name: &str) -> NetResult<Option<Checked>> {
     let r = get(url, &format!("check={name}"))?;
-    Ok((r.status == 200).then_some(r.body))
+    if r.status != 200 {
+        return Ok(None);
+    }
+    let v: serde_json::Value =
+        serde_json::from_slice(&r.body).map_err(|_| NetError::Protocol("not the GhulSuite module".into()))?;
+    Ok(v.get("token").and_then(serde_json::Value::as_str).map(|t| Checked {
+        token: t.to_owned(),
+        writes: v.get("write").and_then(serde_json::Value::as_bool).unwrap_or(false),
+    }))
+}
+
+/// Whether the web server hands out `token` at `url` (a file of the GhulSuite folder that
+/// must not be reachable from the web).
+pub fn exposes(url: &str, token: &str) -> bool {
+    let Ok(u) = Url::parse(url) else { return false };
+    let r = block_on(http::request("GET", &u, &[], b"", None), std::time::Duration::from_secs(15));
+    matches!(r, Ok(r) if r.status == 200 && String::from_utf8_lossy(&r.body).contains(token))
+}
+
+/// The address `rel` (a relative path like `../ghulsuite/shares/x`) resolves to next to the
+/// file at `url`; `None` if it climbs above the website's root.
+pub fn resolve(url: &str, rel: &str) -> Option<String> {
+    let (scheme, rest) = url.split_once("://")?;
+    let (host, path) = rest.split_once('/').unwrap_or((rest, ""));
+    let path = path.split(['?', '#']).next().unwrap_or("");
+    let mut parts: Vec<&str> = path.split('/').collect();
+    parts.pop(); // the file itself
+    parts.retain(|p| !p.is_empty());
+    for p in rel.split('/') {
+        match p {
+            "" | "." => {}
+            ".." => {
+                parts.pop()?;
+            }
+            p => parts.push(p),
+        }
+    }
+    Some(format!("{scheme}://{host}/{}", parts.join("/")))
 }
 
 /// Whether `url` delivers the module's PHP source instead of running it (PHP not active there).
@@ -100,5 +146,23 @@ mod tests {
             assert!(super::module_file(bad).is_none(), "{bad:?}");
         }
         assert!(!super::module_file("x").unwrap().contains("__GHUL_"), "every placeholder is filled in");
+    }
+
+    #[test]
+    fn resolves_folders_next_to_the_module() {
+        let u = "https://example.org/tools/ghulsuite.php";
+        assert_eq!(
+            super::resolve(u, "ghulsuite/shares/a").as_deref(),
+            Some("https://example.org/tools/ghulsuite/shares/a")
+        );
+        assert_eq!(
+            super::resolve(u, "../ghulsuite/shares/a").as_deref(),
+            Some("https://example.org/ghulsuite/shares/a")
+        );
+        assert_eq!(super::resolve(u, "../../ghulsuite/shares/a"), None, "above the website's root");
+        assert_eq!(
+            super::resolve("http://127.0.0.1:8080/ghulsuite.php?x=1", "./g/s").as_deref(),
+            Some("http://127.0.0.1:8080/g/s")
+        );
     }
 }

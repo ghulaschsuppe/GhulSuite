@@ -570,9 +570,20 @@ impl GhulSuite {
         let now = now_ms();
         map.retain(|_, (_, at)| now - *at < PENDING_MS);
         let slot = format!("{parent}/{name}");
+        // A key some content already has is never used for another one (a link to that content
+        // would open the new one as well), e.g. after an upload finished but was not forgotten.
+        let in_use = |k: &[u8]| {
+            let cache = self.net.lock().unwrap_or_else(|p| p.into_inner());
+            cache
+                .drive
+                .as_ref()
+                .map_or(true, |i| i.nodes.iter().any(|n| n.key == k || n.versions.iter().any(|v| v.key == k)))
+        };
         if let Some((k, _)) = map.get(&slot) {
             if let Ok(fk) = FileKey::of(k) {
-                return Ok(fk);
+                if !in_use(k) {
+                    return Ok(fk);
+                }
             }
         }
         let fk = FileKey::random();
@@ -841,6 +852,12 @@ impl GhulSuite {
     /// Deletes a file or a folder with everything in it for good; unused blocks are removed.
     pub fn drive_delete_forever(&self, id: String) -> Result<()> {
         self.with_open(|o| {
+            // Which blocks share links still hand out, before anything changes: if that cannot
+            // be read, nothing is deleted (and the index stays as it is, no block is orphaned).
+            let pinned = {
+                let (fs, _) = self.drive_ctx(o)?;
+                super::shares::pinned_blocks(fs.as_ref())?
+            };
             let unused = self.drive_change(o, |index, _, _| {
                 let mut remove: BTreeSet<String> = BTreeSet::from([id.clone()]);
                 loop {
@@ -881,7 +898,6 @@ impl GhulSuite {
             // Only once the index without them is saved: a retry must not lose blocks. Blocks a
             // share link still hands out stay until the link ends.
             let (fs, _) = self.drive_ctx(o)?;
-            let pinned = super::shares::pinned_blocks(fs.as_ref());
             for b in unused.iter().filter(|b| !pinned.contains(*b)) {
                 fs.delete(&block_path(b))?;
             }
@@ -912,6 +928,7 @@ impl GhulSuite {
             self.drive_ctx(o)?;
             let id = crate::kdf::hex(&new_id());
             let parent = folder.unwrap_or_default();
+            self.drive_index(o, false)?;
             let key = self.pending_key(o, &parent, &name)?;
             let up = Upload { parent, name, blocks: vec![], size: 0, key };
             self.net.lock().unwrap_or_else(|p| p.into_inner()).uploads.insert(id.clone(), up);
@@ -1012,15 +1029,24 @@ impl GhulSuite {
     /// Cancels an upload (blocks already written are removed when unused).
     pub fn drive_upload_cancel(&self, upload: String) -> Result<()> {
         self.with_open(|o| {
-            let up = self.net.lock().unwrap_or_else(|p| p.into_inner()).uploads.remove(&upload);
-            let Some(up) = up else { return Ok(()) };
-            self.forget_pending(o, &up.parent, &up.name);
+            // Kept until its blocks are gone, so a failed cancel can be repeated.
+            let up = self
+                .net
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .uploads
+                .get(&upload)
+                .map(|u| (u.parent.clone(), u.name.clone(), u.blocks.clone()));
+            let Some((parent, name, blocks)) = up else { return Ok(()) };
             let (fs, keys) = self.drive_ctx(o)?;
             let index = load_index(fs.as_ref(), &keys)?;
             let used = used_blocks(&index);
-            for b in up.blocks.iter().filter(|b| !used.contains(b)) {
+            let pinned = super::shares::pinned_blocks(fs.as_ref())?;
+            for b in blocks.iter().filter(|b| !used.contains(b) && !pinned.contains(*b)) {
                 fs.delete(&block_path(b))?;
             }
+            self.net.lock().unwrap_or_else(|p| p.into_inner()).uploads.remove(&upload);
+            self.forget_pending(o, &parent, &name);
             Ok(())
         })
     }
@@ -1375,7 +1401,7 @@ impl GhulSuite {
     /// Deletes blocks that belong to no file (those of `drive_put_loose`), unless a share
     /// still hands them out.
     pub(super) fn drive_delete_loose(&self, fs: &dyn RemoteFs, blocks: &[String]) -> Result<()> {
-        let pinned = super::shares::pinned_blocks(fs);
+        let pinned = super::shares::pinned_blocks(fs)?;
         for b in blocks.iter().filter(|b| !pinned.contains(*b)) {
             fs.delete(&block_path(b))?;
         }

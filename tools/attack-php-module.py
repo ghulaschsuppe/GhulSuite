@@ -7,8 +7,8 @@ with GhulDrive blocks and share descriptions), starts PHP's built-in web server 
 and tries what an attacker on the internet can do: other methods, share ids, tickets, file and
 block numbers with tricks, descriptions that name paths instead of blocks, broken descriptions,
 expired and used-up shares (also many openings at the same moment), check files, oversized
-requests. Every case names the expected answer; any other answer fails. Error answers must not
-leak paths or PHP messages. Needs `php` (8.1+).
+requests, broken states, a flood of openings. Every case names the expected answer; any other
+answer fails. Error answers must not leak paths or PHP messages. Needs `php` (8.1+).
 
 Usage: tools/attack-php-module.py
 """
@@ -172,6 +172,23 @@ def main():
         # Oversized request: refused or ignored, never answered with an error message.
         st = get("s=" + "a" * 60000)[0]
         expect("oversized query", (st, {}, b""), (404, 414, 431, 400))
+
+        # A broken state is refused (never read as "nobody opened it yet"), and a flood of
+        # openings cannot push out the tickets of those already downloading.
+        limited = share([[a]], mx=1)
+        (base / "shares" / f"{limited}.state").write_text('{"count": 1, "tick')
+        expect("broken state, opening", get(f"s={limited}"), 503)
+        expect("broken state, block", get(f"s={limited}&t={ticket}&f=0&b=0"), 503)
+        crowded = share([[a]])
+        st, _, body = get(f"s={crowded}")
+        first = json.loads(body)["ticket"]
+        state = json.loads((base / "shares" / f"{crowded}.state").read_text())
+        until = int(time.time()) + 3600
+        while len(state["tickets"]) < 1000:
+            state["tickets"][secrets.token_hex(32)] = until
+        (base / "shares" / f"{crowded}.state").write_text(json.dumps(state))
+        expect("opening with 1000 open tickets", get(f"s={crowded}"), 429)
+        expect("ticket of an earlier opening still works", get(f"s={crowded}&t={first}&f=0&b=0"), 200)
 
         # The state the module writes holds no ticket in clear.
         state = (base / "shares" / f"{good}.state").read_text()

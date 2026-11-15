@@ -349,8 +349,9 @@ die App gibt der Datei beim nächsten Entsperren ihren neutralen Namen zurück.
   ihren Server frei; es kann derselbe sein.
 - **Ein Server-Formular** für Assistent, GhulDrive und Optionen: SFTP/FTPS anmelden, **Ordner aus der Liste des
   Servers wählen**, Verbindung testen. Modul: Ordner der Website wählen, die App legt `ghulsuite.php` hinein (mit dem
-  Pfad zum GhulSuite-Ordner) und prüft Adresse, ob PHP läuft und ob das Modul den GhulSuite-Ordner lesen kann
-  (Testdatei). Eine Checkliste nennt den fehlenden Schritt.
+  Pfad zum GhulSuite-Ordner) und prüft Adresse, ob PHP läuft, ob das Modul den GhulSuite-Ordner lesen und darin
+  schreiben kann (Testdatei) und dass der GhulSuite-Ordner selbst nicht aus dem Web abrufbar ist. Eine Checkliste
+  nennt den fehlenden Schritt.
 
 ### 8.2.1 SFTP im Detail
 
@@ -432,9 +433,13 @@ Läuft auf **jedem PHP-Webhosting ab 8.1 ohne Datenbank**, auf demselben Server 
 - **Setzt Ablauf, Einmal-Links und Abrufzähler selbst durch**, unter Dateisperre, auch wenn kein Gerät läuft.
 - Blöcke nur mit einem Ticket, das beim Öffnen der Freigabe ausgegeben wird (24 Stunden, gehasht gespeichert); so
   läuft ein Download Block für Block (kurze Anfragen, kein Zeitlimit des Hostings) und lässt sich fortsetzen.
-- Liegt der GhulSuite-Ordner innerhalb der Website, sperrt eine `.htaccess` ihn für den Webserver.
-- Voraussetzung: PHP darf den GhulSuite-Ordner lesen (bei manchen Hostern verhindert `open_basedir` das). Die App
-  prüft das beim Installieren und sagt es klar; ohne Modul gibt es keine Freigabelinks.
+- Liegt der GhulSuite-Ordner innerhalb der Website, sperrt eine `.htaccess` ihn für den Webserver. Die App prüft beim
+  Installieren, dass er wirklich nicht abrufbar ist (nicht jeder Webserver beachtet `.htaccess`); sonst wird das
+  Modul nicht eingerichtet, bis der Ordner außerhalb der Website liegt.
+- Voraussetzung: PHP darf den GhulSuite-Ordner lesen und in `shares/` schreiben (bei manchen Hostern verhindert
+  `open_basedir` das). Die App prüft beides beim Installieren und sagt es klar; ohne Modul gibt es keine Freigabelinks.
+- Viele gleichzeitige Öffnungen verdrängen keine laufenden Downloads: ab 1000 gültigen Tickets heißt es „später
+  erneut versuchen“. Ein beschädigter Zähler wird abgewiesen, nie auf null gesetzt.
 
 ---
 
@@ -580,7 +585,9 @@ Gegenlesen, Geräte-Kopien), das für Nutzer und Technik zu verwickelt war.
   Optionales Passwort: Schlüssel = HKDF(Link-Schlüssel ‖ PBKDF2-SHA256(Passwort, 600 000 Runden)).
 - *Empfängerseite:* vom Modul ausgeliefert, ohne fremde Inhalte (strenge CSP). Jede Datei einzeln (auch bei Ordnern),
   Block für Block entschlüsselt und direkt auf die Festplatte geschrieben, wo der Browser das kann (Chrome, Edge),
-  sonst über den Arbeitsspeicher mit Hinweis bei sehr großen Dateien. Abbrechen und Fortsetzen.
+  sonst über den Arbeitsspeicher mit Hinweis bei sehr großen Dateien. Abbrechen und Fortsetzen. Geöffnet (und
+  gezählt) wird erst nach einem Klick auf „Freigabe öffnen“, damit Link-Scanner keinen Einmal-Link verbrauchen. Die
+  Blockliste steht verschlüsselt im Paket; weicht die des Servers ab, bricht die Seite ab.
 - *Ablauf und Widerruf:* Ablaufdatum, Einmal-Link und Abrufzähler setzt das Modul durch. Zurückziehen löscht die
   Beschreibung sofort. Ein Link zeigt die Fassung, die geteilt wurde: ihre Blöcke bleiben, solange ein Link sie braucht,
   auch wenn die Datei geändert oder gelöscht wird. Löschen einer geteilten Datei fragt vorher und beendet die Links.

@@ -922,6 +922,20 @@ fn mail_archive_to_drive_against_imap_and_sftp() {
     assert_eq!(s.mail_archive_folder(None).unwrap(), Some(root.clone()));
     assert_eq!(s.mail_archive_to_drive(account.clone(), "INBOX".into(), old[0]).unwrap(), MailArchived::Skipped);
 
+    // Another mail that only claims the Message-ID of an archived one is not taken for it:
+    // it is stored under a code of its own content (once).
+    let fake = String::from_utf8(raw(1, "Sun, 2 Mar 2025 10:00:00 +0000"))
+        .unwrap()
+        .replace("Archivtext 1", "Bitte sofort hier klicken und bezahlen");
+    put(fake.into_bytes(), "02-Mar-2025 10:00:00 +0000");
+    let fake_uid = *s.mail_archive_uids(account.clone(), "INBOX".into(), None).unwrap().last().unwrap();
+    assert_eq!(s.mail_archive_to_drive(account.clone(), "INBOX".into(), fake_uid).unwrap(), MailArchived::Saved);
+    assert_eq!(s.mail_archive_to_drive(account.clone(), "INBOX".into(), fake_uid).unwrap(), MailArchived::Skipped);
+    let y2025 = s.drive_list(Some(acc.clone()), false).unwrap().into_iter().find(|i| i.name == "2025").unwrap().id;
+    let named: Vec<String> = s.drive_list(Some(y2025), false).unwrap().into_iter().map(|i| i.name).collect();
+    assert_eq!(named.len(), 3, "{named:?}");
+    assert_eq!(named.iter().filter(|n| n.starts_with("2025-03-02 Erika Musterfrau - Archivbetreff 1 (")).count(), 2);
+
     // In the trash, it no longer counts: the next mail starts a new archive folder.
     s.drive_delete(root.clone()).unwrap();
     assert_eq!(s.mail_archive_folder(None).unwrap(), None);
@@ -1047,6 +1061,49 @@ fn drive_upload_continues_with_its_key() {
     edited[0] ^= 1;
     upload(&s, None, "Film Geheimname.mp4", &edited);
     assert_eq!(files_under(&server_dir.join("drive/blocks")).len(), 6, "3 for the version, 3 new");
+
+    // A finished upload whose note stayed behind (the app was gone right after finishing): its
+    // key belongs to that content now and is not used for the next upload of the same name.
+    let pending = std::path::Path::new(&d.local()).join("drive-pending");
+    let up = s.drive_upload_begin(None, "Notiz.txt".into()).unwrap();
+    s.drive_upload_chunk(up.clone(), b"erste Fassung".to_vec()).unwrap();
+    let stale = std::fs::read(&pending).unwrap();
+    s.drive_upload_finish(up).unwrap();
+    std::fs::write(&pending, stale).unwrap();
+    let before = files_under(&server_dir.join("drive/blocks")).len();
+    upload(&s, None, "Notiz.txt", b"erste Fassung");
+    assert_eq!(files_under(&server_dir.join("drive/blocks")).len(), before + 1, "a key of its own: a new block");
+    let _ = std::fs::remove_dir_all(&server_dir);
+}
+
+/// When the list of shares on the server cannot be read, GhulDrive deletes no block at all
+/// (it cannot know which ones a link still hands out).
+#[test]
+fn drive_deletes_nothing_when_the_shares_cannot_be_read() {
+    use crate::net::remote::LocalFs;
+    let server_dir = std::env::temp_dir().join(format!("ghul-drive-pinned-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&server_dir);
+    let d = Dirs::new("drive-pinned");
+    let s = d.suite();
+    s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "P")]), None, None, None).unwrap();
+    let fs: std::sync::Arc<dyn crate::net::remote::RemoteFs> = std::sync::Arc::new(LocalFs::new(&server_dir));
+    s.drive_use_folder(fs).unwrap();
+    let id = upload(&s, None, "weg.txt", b"bald geloescht");
+    s.drive_delete(id).unwrap();
+    // `shares` is not a folder that can be listed: emptying the trash fails, the block stays.
+    std::fs::write(server_dir.join("shares"), b"kein Ordner").unwrap();
+    assert!(s.drive_empty_trash(0).is_err());
+    assert_eq!(files_under(&server_dir.join("drive/blocks")).len(), 1);
+    // A cancelled upload keeps its blocks as well while that is so.
+    let up = s.drive_upload_begin(None, "abbruch.bin".into()).unwrap();
+    s.drive_upload_chunk(up.clone(), vec![1, 2, 3]).unwrap();
+    assert!(s.drive_upload_cancel(up.clone()).is_err());
+    assert_eq!(files_under(&server_dir.join("drive/blocks")).len(), 2);
+    // Readable again: everything is cleaned up.
+    std::fs::remove_file(server_dir.join("shares")).unwrap();
+    s.drive_empty_trash(0).unwrap();
+    s.drive_upload_cancel(up).unwrap();
+    assert!(files_under(&server_dir.join("drive/blocks")).is_empty());
     let _ = std::fs::remove_dir_all(&server_dir);
 }
 
@@ -1542,12 +1599,15 @@ fn open_link(link: &str, password: Option<&str>) -> Option<Opened> {
     for (i, f) in env.files.iter().enumerate() {
         let fk = super::drive::FileKey::of(&crate::share::b64url_decode(&f.key).unwrap()).unwrap();
         let mut data = Vec::new();
-        for (n, block) in v["blocks"][i].as_array().unwrap().iter().enumerate() {
+        // The block names come sealed in the package; the server's list must say the same.
+        let served: Vec<&str> = v["blocks"][i].as_array().unwrap().iter().map(|b| b.as_str().unwrap()).collect();
+        assert_eq!(served, f.blocks.iter().map(String::as_str).collect::<Vec<_>>());
+        for (n, block) in f.blocks.iter().enumerate() {
             let r = http_get(&format!("{page}?s={id}&t={ticket}&f={i}&b={n}"));
             if r.status != 200 {
                 return None;
             }
-            data.extend_from_slice(&fk.open_block(block.as_str().unwrap(), &r.body).unwrap());
+            data.extend_from_slice(&fk.open_block(block, &r.body).unwrap());
         }
         assert_eq!(data.len() as u64, f.size);
         files.push((f.name.clone(), data));
@@ -1724,6 +1784,34 @@ fn share_links_over_sftp_through_the_module() {
     share_through_module(&s, &id, &web, std::path::Path::new(&web), &root.join(format!("suite-{run}")));
     let _ = std::fs::remove_dir_all(root.join(format!("web-{run}")));
     let _ = std::fs::remove_dir_all(root.join(format!("suite-{run}")));
+
+    // A GhulSuite folder inside the website: the web server would hand it out, so the module
+    // is refused (and taken down again) until the folder is moved.
+    let site = root.join(format!("site-{run}"));
+    let info = s.list_servers().unwrap().into_iter().find(|x| x.id == id).unwrap();
+    let open = ServerInput {
+        kind: ServerKind::Sftp,
+        name: "Offen".into(),
+        host: info.host.clone(),
+        port,
+        user: info.user.clone(),
+        password: None,
+        base: format!("{}/ghulsuite", site.display()),
+    };
+    let open_id = saved(s.save_server(open, Some(info.host_key.clone())).unwrap());
+    std::fs::create_dir_all(site.join("ghulsuite/drive")).unwrap();
+    if let Some((mut php, port)) = crate::net::tests::spawn_php(&site) {
+        let url = format!("http://127.0.0.1:{port}/ghulsuite.php");
+        let done = s.server_module_install(open_id.clone(), site.display().to_string(), url).unwrap();
+        let _ = php.kill();
+        let _ = php.wait();
+        assert_eq!(done.url, None, "{:?}", done.checks);
+        let private = done.checks.iter().find(|c| c.step == "private").expect("checked");
+        assert!(!private.ok && private.detail.contains("/ghulsuite/shares/check-"), "{private:?}");
+        assert!(!site.join("ghulsuite.php").exists(), "the module is taken down again");
+        assert!(s.list_servers().unwrap().into_iter().find(|x| x.id == open_id).unwrap().module_url.is_empty());
+    }
+    let _ = std::fs::remove_dir_all(&site);
 }
 
 #[test]
