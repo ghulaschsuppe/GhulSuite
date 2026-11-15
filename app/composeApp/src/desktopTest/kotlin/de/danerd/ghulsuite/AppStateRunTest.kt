@@ -23,7 +23,11 @@ import kotlin.test.assertTrue
 class AppStateRunTest {
     private fun state(): AppState {
         val ui = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
-        return AppState(ScreenshotTest.Fake(exists = true, unlocked = true), CoroutineScope(SupervisorJob() + ui))
+        // Texts AppState looks up in the background need a display, which the tests do not have:
+        // only that failure is let through (as in the other UI tests). Without this handler it
+        // reached the next test class and failed it there.
+        val headlessOnly = kotlinx.coroutines.CoroutineExceptionHandler { _, e -> if (e !is java.awt.HeadlessException) throw e }
+        return AppState(ScreenshotTest.Fake(exists = true, unlocked = true), CoroutineScope(SupervisorJob() + ui + headlessOnly))
     }
 
     /** Save tapped twice in a row: the action runs once (it ran twice: busy was set too late). */
