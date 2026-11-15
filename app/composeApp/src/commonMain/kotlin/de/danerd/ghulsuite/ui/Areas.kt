@@ -30,7 +30,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import de.danerd.ghulsuite.model.DriveModeUi
 import de.danerd.ghulsuite.model.DriveStorageUi
-import de.danerd.ghulsuite.model.ServerKindUi
 import de.danerd.ghulsuite.model.VaultKindUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
@@ -304,13 +303,6 @@ fun DriveStorageRow(state: AppState) {
     }
     ListRow(stringResource(Res.string.drive_storage), sub,
         leading = { IconTile(if (s.mode == DriveModeUi.SYNC) Icons.Filled.Sync else Icons.Filled.Dns, paletteColor(if (s.mode == DriveModeUi.SYNC) 2 else 1)) }) { sheet = true }
-    if (server?.kind == ServerKindUi.PHP) {
-        // The module can be brought up to date through the FTPS login kept with it.
-        val updated = stringResource(Res.string.php_module_updated)
-        TextButton(onClick = {
-            state.run(onError = { error = it }, block = { net.phpModuleUpdate(server.id) }) { v -> state.message(updated.replace("%1\$s", v.toString())) }
-        }) { Text(stringResource(Res.string.php_module_update)) }
-    }
     ErrorText(error)
     if (confirmSync) {
         AlertDialog(

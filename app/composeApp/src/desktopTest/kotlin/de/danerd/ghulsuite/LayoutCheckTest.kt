@@ -100,7 +100,7 @@ class LayoutCheckTest {
         add("optionen" to { state { tab = Tab.SETTINGS } })
         for (p in SetPage.entries) add("optionen-${p.name.lowercase()}" to { state { push(Screen.SettingsPage(p)) } })
         add("server-hinzufuegen" to { state { push(Screen.AddServer) } })
-        add("teilen-einrichten" to { state { push(Screen.ShareSetup("s1")) } })
+        add("server-modul" to { state { push(Screen.ModuleInstall("s2")) } })
         add("freigaben" to { state { push(Screen.Shares) } })
         add("import" to { state { push(Screen.Import) } })
         add("export" to { state { push(Screen.Export) } })

@@ -89,6 +89,8 @@ import de.danerd.ghulsuite.resources.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import de.danerd.ghulsuite.model.ShareInfoUi
+import org.jetbrains.compose.resources.rememberResourceEnvironment
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 import androidx.compose.material.icons.filled.Info
@@ -394,14 +396,18 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
     val chosen = visible.filter { it.id in selected }
     val trashMsg = stringResource(Res.string.msg_moved_to_trash)
     val deletedMsg = stringResource(Res.string.msg_deleted_n)
-    fun moveToTrash(list: List<DriveItemUi>) {
+    fun moveToTrash(list: List<DriveItemUi>, links: List<ShareInfoUi>) {
         selected.clear()
         // Into the trash after "Move to the trash?" (F103); "Undo" brings it back, the trash keeps it for days.
         // F96: moved at once, so the number of files and the storage are right at once. Not
         // through state.run: a tap while the app is busy must not be dropped.
         scope.launch {
             val done = mutableListOf<DriveItemUi>()
-            val failure = catching { list.forEach { net.driveDelete(it.id); done += it } }.exceptionOrNull()
+            // The share links of these files end first (the user was told in the question).
+            val failure = catching {
+                links.forEach { net.shareDelete(it.id) }
+                list.forEach { net.driveDelete(it.id); done += it }
+            }.exceptionOrNull()
             // Also after a failure part of the list may be in the trash: show what is true.
             trashTick++
             state.changed()
@@ -415,10 +421,23 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
             }
         }
     }
-    fun toTrash(list: List<DriveItemUi>) = state.askDelete(list.map { it.name }, trash = true) { moveToTrash(list) }
-    fun deleteForever(list: List<DriveItemUi>) = state.askDelete(list.map { it.name }) {
+    val env = rememberResourceEnvironment()
+    /**
+     * Asks before deleting (F103). Share links that contain the items end with them: the
+     * question says how many, and on "Delete" they end first ([then] gets them).
+     */
+    fun askWithLinks(list: List<DriveItemUi>, trash: Boolean, then: (List<ShareInfoUi>) -> Unit) {
+        scope.launch {
+            val links = catching { net.shareLinksOf(list.map { it.id }) }.getOrDefault(emptyList())
+            val extra = if (links.isEmpty()) null else countText(env, Res.plurals.drive_links_end, links.size, links.size.toString())
+            state.askDelete(list.map { it.name }, trash = trash, extra = extra) { then(links) }
+        }
+    }
+    fun toTrash(list: List<DriveItemUi>) = askWithLinks(list, trash = true) { links -> moveToTrash(list, links) }
+    fun deleteForever(list: List<DriveItemUi>) = askWithLinks(list, trash = false) { links ->
         selected.clear()
         state.undoable(list.map { hiddenKey("drive", "trash", it.id) }, deletedMsg.replace("%1\$s", list.size.toString()), after = { trashTick++ }) {
+            links.forEach { net.shareDelete(it.id) }
             list.forEach { net.driveDeleteForever(it.id) }
         }
     }

@@ -88,7 +88,8 @@ sealed interface Screen {
     data class RecoveryCode(val code: String) : Screen
     data object AddServer : Screen
     data class SettingsPage(val page: SetPage) : Screen
-    data class ShareSetup(val serverId: String) : Screen
+    /** Installing the server module (share links) on a server. */
+    data class ModuleInstall(val serverId: String) : Screen
     data object Shares : Screen
     data object Security : Screen
     data class MailRead(val accountId: String, val folder: String, val uid: Long) : Screen
@@ -168,8 +169,11 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     var driveReady by mutableStateOf(false)
     var driveUploadTick by mutableStateOf(0)
 
-    /** A deletion waiting for "Delete?" to be answered (F103: every deletion asks first). */
-    class DeleteAsk(val names: List<String>, val trash: Boolean, val action: () -> Unit)
+    /**
+     * A deletion waiting for "Delete?" to be answered (F103: every deletion asks first). [extra]:
+     * one more line under the question (e.g. which share links end with it).
+     */
+    class DeleteAsk(val names: List<String>, val trash: Boolean, val action: () -> Unit, val extra: String? = null)
 
     // Declared before init (the lock listener there clears it).
     var deleteAsk by mutableStateOf<DeleteAsk?>(null)
@@ -805,11 +809,12 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
 
     /**
      * Asks before deleting (or moving to a trash) [names]; [action] runs only after "Delete".
-     * Every area deletes through this; "Undo" afterwards stays as it was.
+     * Every area deletes through this; "Undo" afterwards stays as it was. [extra] adds a line to
+     * the question.
      */
-    fun askDelete(names: List<String>, trash: Boolean = false, action: () -> Unit) {
+    fun askDelete(names: List<String>, trash: Boolean = false, extra: String? = null, action: () -> Unit) {
         if (names.isEmpty()) return
-        deleteAsk = DeleteAsk(names, trash, action)
+        deleteAsk = DeleteAsk(names, trash, action, extra)
     }
 
     /** Carries out the action that waits for "Undo" now (before the next one, before locking). */

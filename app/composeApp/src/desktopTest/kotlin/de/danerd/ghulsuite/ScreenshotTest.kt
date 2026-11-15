@@ -232,7 +232,7 @@ class ScreenshotTest {
         render("25-add-server") { GhulSuiteApp(state(true, true) { push(Screen.AddServer) }) }
         render("26-settings-servers") { GhulSuiteApp(state(true, true) { tab = Tab.SETTINGS }) }
         render("27-shares") { GhulSuiteApp(state(true, true) { push(Screen.Shares) }) }
-        render("28-share-setup") { GhulSuiteApp(state(true, true) { push(Screen.ShareSetup("s1")) }) }
+        render("28-module-install") { GhulSuiteApp(state(true, true) { push(Screen.ModuleInstall("s2")) }) }
         render("29-settings-servers") { GhulSuiteApp(state(true, true) { push(Screen.SettingsPage(de.danerd.ghulsuite.ui.SetPage.SERVERS)) }) }
         render("30-settings-drive") { GhulSuiteApp(state(true, true) { push(Screen.SettingsPage(de.danerd.ghulsuite.ui.SetPage.DRIVE)) }) }
         render("31-mail-compose-attachment") {
@@ -258,7 +258,12 @@ class ScreenshotTest {
             GhulSuiteApp(s)
             de.danerd.ghulsuite.ui.ShareResultDialog(s, kotlinx.coroutines.runBlocking { s.backend.net.shareList().first() }, true) {}
         }
-        render("35-add-server-php") { GhulSuiteApp(state(true, true) { push(Screen.AddServer) }) }
+        render("35-share-sheet-no-module") {
+            val s = state(true, true) { tab = Tab.DRIVE }
+            (s.backend.net as FakeNet).missingModule = "s2"
+            GhulSuiteApp(s)
+            de.danerd.ghulsuite.ui.ShareSheet(s, files, {}, {})
+        }
         render("36-settings-mail") { GhulSuiteApp(state(true, true) { push(Screen.SettingsPage(de.danerd.ghulsuite.ui.SetPage.MAIL)) }) }
         render("37-mail-compose-unknown") {
             GhulSuiteApp(state(true, true) { push(Screen.MailCompose(de.danerd.ghulsuite.ui.MailDraft("m1", to = "neu@example.org", subject = "Hallo"))) })

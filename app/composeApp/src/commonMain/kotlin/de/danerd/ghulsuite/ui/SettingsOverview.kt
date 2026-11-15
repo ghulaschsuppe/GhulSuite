@@ -108,6 +108,8 @@ fun SettingsScreen(state: AppState, padding: PaddingValues) {
     var slots by remember { mutableStateOf<List<SlotUi>>(emptyList()) }
     var servers by remember { mutableStateOf<List<ServerUi>>(emptyList()) }
     var sync by remember { mutableStateOf(SyncStatusUi(null, 0)) }
+    // "sharing on": links can be made (GhulDrive's server has the server module).
+    val shareNeed = rememberShareNeed(state)
     LaunchedEffect(state.liveRevision()) {
         slots = catching { backend.slots() }.getOrDefault(emptyList())
         servers = catching { backend.net.servers() }.getOrDefault(emptyList())
@@ -199,7 +201,7 @@ fun SettingsScreen(state: AppState, padding: PaddingValues) {
                         servers.size,
                         servers.size.toString(),
                         stringResource(if (sync.serverId != null) Res.string.set_sync_on else Res.string.set_sync_off_short),
-                        stringResource(if (servers.any { it.canShare }) Res.string.set_share_on else Res.string.set_share_off),
+                        stringResource(if (shareNeed == ShareNeed.Ready) Res.string.set_share_on else Res.string.set_share_off),
                     )
                 }
                 SetRow(Icons.Filled.Dns, Blue, stringResource(Res.string.set_servers_sync_share), sub, first = true) { open(SetPage.SERVERS) }

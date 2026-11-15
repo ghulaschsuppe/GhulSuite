@@ -88,11 +88,11 @@ Jeder Test hat eine Nummer, die mit **W** beginnt (z. B. **WE3**), damit sie sic
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| WS1 | Server hinzufügen: SFTP (Schlüssel oder Passwort), FTPS oder PHP-Modul. | Wie unter Android (Android-Plan 12 und 17). |
+| WS1 | Server hinzufügen: SFTP (Schlüssel oder Passwort) oder FTPS; danach in der Serverliste „Modul installieren“. | Wie unter Android (Android-Plan 12 und 17): nur SFTP und FTPS zur Wahl, das Modul wird über dieselbe Anmeldung installiert und geprüft. |
 | WS2 | GhulDrive: große Datei (> 100 MB) hochladen, herunterladen. | Fortschritt, Ergebnis identisch. |
 | WS3 | Datei → Teilen → „Mit Programm öffnen“. | Öffnet im passenden Programm (PDF-Betrachter usw.). Mehrere Dateien: der Ordner öffnet sich. |
 | WS4 | Danach GhulSuite sperren. | Die entschlüsselten Kopien im Temp-Ordner (`%TEMP%\GhulSuite-Weitergabe`) sind gelöscht. |
-| WS5 | Freigabelink erstellen, im Browser öffnen. | Wie Android-Plan 18. |
+| WS5 | Freigabelink erstellen, im Browser öffnen; ohne Modul auf dem Server von GhulDrive erneut versuchen. | Wie Android-Plan 18: Ablauf und Abrufe wählbar, keine Serverauswahl. Ohne Modul führt „Freigabelink“ zur Modul-Installation. |
 | WS6 | Freigabelink zurückziehen, synchronisieren, Freigabelinks erneut öffnen. | Bleibt weg (auch auf dem Handy nach dessen Sync). |
 
 ## 8. GhulMail mit Verschlüsselung
@@ -146,7 +146,7 @@ Die Abläufe sind dieselben wie unter Android (Testplan Android, Abschnitte 1 un
 | W11.1 | „Neu einrichten“ mit Security Key: Schritt 2 → Schritt 3 „Key registrieren“. | Der Windows-Dialog fragt PIN und Berührung ab; danach Schritt 4 · Synchronisation. |
 | W11.2 | Schritt 7 · Entsperren. | „Zusätzlich Fingerabdruck“ ist ausgegraut (unter Windows nicht verfügbar); App-PIN geht. |
 | W11.3 | Schritt 4 „Eigener Server“ → FTPS → „Ordner wählen“. | Zertifikats-Fingerabdruck bestätigen, dann Ordnerliste im Dialog in der Fenstermitte. |
-| W11.4 | Optionen → Bereiche verwalten → GhulDrive einrichten → „Eigener Server“ → PHP-Modul. | Modul wird per FTPS hochgeladen, Adresse geprüft; GhulDrive erscheint in der Leiste. |
+| W11.4 | Optionen → Bereiche verwalten → GhulDrive einrichten → „Eigener Server“ → FTPS. | Nur SFTP und FTPS zur Wahl; nach „Server speichern“ erscheint GhulDrive in der Leiste. Das Server-Modul für Freigabelinks kommt über die Serverliste. |
 | W11.5 | Ordner der Suite im Explorer ansehen. | Je gewähltem Bereich eine Datei (`.ghlpss`, `.ghltotp`, `.ghldrv`, `.ghlmail`, `.ghlcal`) und `suite.ghlsuite`. |
 
 ## 12. Runde 6

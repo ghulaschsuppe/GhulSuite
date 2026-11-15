@@ -3,12 +3,14 @@
 #      (a new one, "sync-maestro"), then save.
 #   2. Choose it for the synchronisation: the choice sticks (bug: it stayed "Off") and the first
 #      synchronisation runs.
-#   3. Set up sharing on it: browse the folders, enter an address, check. No internal error text
-#      may appear (bug: "The coroutine scope left the composition"). The address does not exist,
-#      so the HTTPS step fails; writing the folder works.
+#   3. Install the server module (share links) on it: browse the folders, enter an address,
+#      "Install and check". No internal error text may appear (bug: "The coroutine scope left the
+#      composition"). The CI has no web server with PHP: the address does not exist, so the
+#      upload works, HTTPS fails, and the folder step is "not checked".
 #   4. GhulDrive (own server from 1-drive.yaml): the card names the server (bug: "…" and
 #      "Not set up" next to the files).
-#   5. Selection bar with everything selected: no "All" button that does nothing.
+#   5. Selection bar with everything selected: no "All" button that does nothing. Sharing it:
+#      "Share link" says that links need the server module (GhulDrive's server has none).
 appId: de.danerd.ghulsuite.dev
 name: Sync server and sharing on a real server
 ---
@@ -89,10 +91,13 @@ name: Sync server and sharing on a real server
     element: "Save server"
     direction: DOWN
 - tapOn: "Save server"
-# Saved: back on the page of the servers, the server is listed with its sharing button.
+# Saved: back on the page of the servers, the server is listed with its folder and without the
+# server module (GhulDrive's own server from 1-drive.yaml is listed as well).
 - extendedWaitUntil:
-    visible: "Set up sharing"
+    visible: "Folder: .*sync-maestro.*"
     timeout: 120000
+- assertVisible: "Server module: not installed.*"
+- assertVisible: "Install module"
 - takeScreenshot: s3-06-server-saved
 
 # --- 2. Synchronisation ----------------------------------------------------------------------
@@ -116,18 +121,20 @@ name: Sync server and sharing on a real server
 - assertNotVisible: "Synchronisation failed: .*"
 - takeScreenshot: s3-08-sync-chosen
 
-# --- 3. Sharing --------------------------------------------------------------------------------
+# --- 3. Server module ------------------------------------------------------------------------
 - scrollUntilVisible:
-    element: "Set up sharing"
+    element: "Install module"
     direction: UP
-- tapOn: "Set up sharing"
+- tapOn:
+    text: "Install module"
+    index: 0
 - extendedWaitUntil:
-    visible: "1\\. Share folder on the server"
+    visible: "Choose the folder your website is delivered from.*"
     timeout: 10000
 - extendedWaitUntil:
     visible: "sync-maestro"
     timeout: 30000
-- takeScreenshot: s3-09-share-setup
+- takeScreenshot: s3-09-module-install
 # Into folders and back out again, without waiting in between.
 - tapOn: "sync-maestro"
 - tapOn: "\\.\\."
@@ -140,31 +147,32 @@ name: Sync server and sharing on a real server
 - assertNotVisible: ".*[Cc]oroutine.*"
 - tapOn: "New folder"
 - tapOn: "Name"
-- inputText: "teilen-maestro"
+- inputText: "web-maestro"
 - hideKeyboard
 - tapOn: "Create"
 - extendedWaitUntil:
-    visible: "/teilen-maestro"
+    visible: "/web-maestro"
     timeout: 10000
-- tapOn: "https://"
-- inputText: "example.invalid/teilen"
+- tapOn: "Address of the module"
+- inputText: "https://example.invalid/ghulsuite.php"
 - hideKeyboard
-- takeScreenshot: s3-10-share-filled
+- takeScreenshot: s3-10-module-filled
 - scrollUntilVisible:
-    element: "Set up and check"
+    element: "Install and check"
     direction: DOWN
-- tapOn: "Set up and check"
+- tapOn: "Install and check"
 - extendedWaitUntil:
-    visible: "Folder writable"
+    visible: "Module file uploaded"
     timeout: 120000
 - assertNotVisible: ".*composition.*"
 - assertNotVisible: ".*[Cc]oroutine.*"
-# The address does not answer: what depends on it is "not checked", not a result nobody saw.
+# No web server answers: HTTPS is red, the folder step is "not checked", not a result nobody saw.
 - scrollUntilVisible:
     element: "Not checked, because the HTTPS step failed"
     direction: DOWN
-- assertNotVisible: "the folder content is visible"
-- takeScreenshot: s3-11-share-checked
+- assertVisible: "No answer at https://example.invalid/ghulsuite.php.*"
+- assertNotVisible: "Done"
+- takeScreenshot: s3-11-module-checked
 - back
 - back
 
@@ -187,6 +195,21 @@ name: Sync server and sharing on a real server
 # The only item is selected: "All" would do nothing, so it is not offered.
 - assertNotVisible: { id: "sel-all" }
 - takeScreenshot: s3-13-drive-selected
+# Share links need the server module on GhulDrive's server: the row says so.
+- tapOn: "Share"
+- extendedWaitUntil:
+    visible: "Needs the GhulSuite server module.*"
+    timeout: 10000
+- takeScreenshot: s3-13b-share-needs-module
+- back
+- extendedWaitUntil:
+    notVisible: "Needs the GhulSuite server module.*"
+    timeout: 10000
+- runFlow:
+    when:
+      notVisible: "1 selected"
+    commands:
+      - longPressOn: "Urlaub-Maestro"
 - tapOn: "Cancel"
 - extendedWaitUntil:
     notVisible: "1 selected"

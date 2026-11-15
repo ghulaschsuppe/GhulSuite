@@ -53,7 +53,6 @@ import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.onNodeWithText
-import de.danerd.ghulsuite.model.ShareCheckUi
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.performTextInput
 import kotlin.test.Test
@@ -225,50 +224,68 @@ class InteractionTest {
     }
 
     /**
-     * F104: a link on a server without the PHP module offers no expiry and no download limit
-     * (nothing on such a server ends a link by itself) and says it works until withdrawn; the
-     * server with the module still offers both.
+     * Share links always come from GhulDrive's server through its module: the form offers expiry
+     * and download limits, and no choice of server.
      */
     @Test
-    fun shareExpiryOnlyWithTheModule() = app(setup = { tab = Tab.DRIVE }) { _, fake ->
+    fun shareFormHasExpiryAndLimitsWithoutServerChips() = app(setup = { tab = Tab.DRIVE }) { _, fake ->
         val net = fake.net as FakeNet
         longPress("Notizen.txt")
         waitFor("1 selected")
         desc("Share").performClick()
         waitFor("Share link")
+        waitFor("Encrypted link with expiry, download limit and password")
         text("Share link").performClick()
         waitFor("Create link")
-        // The SFTP server comes first.
-        assertTrue(shown("Valid until you withdraw it"))
-        assertFalse(shown("No expiry") || shown("1 day"), "no expiry offered without the module")
-        shot("share-form-static")
-        // "1 day" chosen on the module, then back to the SFTP server: no expiry goes with it.
-        text("Webspace").performClick()
-        waitFor("1 day")
+        for (chip in listOf("1 day", "7 days", "30 days", "No expiry", "Unlimited", "1× (one-time)", "3×", "5×")) {
+            assertTrue(shown(chip), "missing: $chip")
+        }
+        // No server chips, no "until withdrawn" of the old share folders.
+        for (name in listOf("Heimserver", "Webspace", "Server")) {
+            assertTrue(onAllNodes(hasText(name) and hasAnyAncestor(isDialog())).fetchSemanticsNodes().isEmpty(), "no choice of server: $name")
+        }
+        assertFalse(shown("Valid until you withdraw it"))
+        // One file: its name is the title, no title field.
+        assertFalse(shown("Title of the link"))
+        shot("share-form")
         text("1 day").performClick()
-        text("Heimserver").performClick()
-        waitFor("Valid until you withdraw it")
+        text("3×").performClick()
         text("Create link").performClick()
         waitUntil(timeoutMillis = 10_000) { net.calls.any { it.startsWith("shareDrive:") } }
-        assertTrue(net.calls.last { it.startsWith("shareDrive:") }.endsWith(":s1:0:0:false"), net.calls.toString())
+        assertEquals("shareDrive:f2::1:3:false", net.calls.last { it.startsWith("shareDrive:") })
     }
 
+    /** Several files: the link gets a title, and the recipient gets every file on its own. */
     @Test
-    fun shareExpiryWithTheModule() = app(setup = { tab = Tab.DRIVE }) { _, fake ->
+    fun shareOfSeveralFilesHasATitle() = app(setup = { tab = Tab.DRIVE }) { _, fake ->
         val net = fake.net as FakeNet
         longPress("Notizen.txt")
         waitFor("1 selected")
+        text("Steuer 2025.pdf").performClick()
+        waitFor("2 selected")
         desc("Share").performClick()
         waitFor("Share link")
         text("Share link").performClick()
-        waitFor("Create link")
-        text("Webspace").performClick()
-        waitFor("No expiry")
-        assertFalse(shown("Valid until you withdraw it"))
-        text("1 day").performClick()
-        text("Create link").performClick()
+        waitFor("Title of the link")
+        assertTrue(shown("The recipient gets every file on its own."))
+        onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog())).onFirst().performTextReplacement("Unterlagen")
+        text("Create link").performScrollTo().performClick()
         waitUntil(timeoutMillis = 10_000) { net.calls.any { it.startsWith("shareDrive:") } }
-        assertTrue(net.calls.last { it.startsWith("shareDrive:") }.endsWith(":s2:1:0:false"), net.calls.toString())
+        assertTrue(net.calls.last { it.startsWith("shareDrive:") }.contains(":Unterlagen:7:0:false"), net.calls.toString())
+    }
+
+    /** Without the module on GhulDrive's server, "Share link" says so and opens its installation. */
+    @Test
+    fun shareSheetWithoutModuleOffersInstallation() = app(setup = { tab = Tab.DRIVE }, prepare = { (net as FakeNet).missingModule = "s2" }) { state, _ ->
+        longPress("Notizen.txt")
+        waitFor("1 selected")
+        desc("Share").performClick()
+        waitFor("Needs the GhulSuite server module. Tap to install it.")
+        shot("share-sheet-no-module")
+        text("Share link").performClick()
+        waitFor("Install and check")
+        assertEquals(Screen.ModuleInstall("s2"), state.stack.lastOrNull())
+        assertFalse(shown("Create link"))
     }
 
     @Test
@@ -1008,7 +1025,7 @@ class InteractionTest {
             waitFor("Try again")
             assertTrue(onAllNodesWithText("Off").fetchSemanticsNodes().isEmpty())
             (fake.net as FakeNet).syncStatusFails = false
-            text("Try again").performClick()
+            text("Try again").performScrollTo().performClick()
             waitFor("Synchronise now")
             waitGone("Try again")
         }
@@ -1039,15 +1056,14 @@ class InteractionTest {
      */
     @Test
     fun browsingFoldersQuicklyShowsNoError() {
-        app(setup = { push(Screen.ShareSetup("s1")) }) { _, fake ->
+        app(setup = { push(Screen.ModuleInstall("s2")) }) { _, fake ->
             val net = fake.net as FakeNet
-            // The server's share folder is public_html/teilen: its subfolders are listed.
-            waitFor("blog")
+            waitFor("public_html")
             net.browseDelayMs = 1500
-            text("teilen").performClick()
+            text("public_html").performClick()
             // The old list is still shown while the folder loads: on to the next one at once.
-            text("blog").performClick()
-            waitFor("/public_html/teilen/teilen/blog")
+            text("ghulsuite").performClick()
+            waitFor("/public_html/ghulsuite")
             // Both slow listings are done (the first one answers only now with its cancellation).
             waitUntil(timeoutMillis = 10_000) { net.slowBrowsesDone >= 2 }
             net.browseDelayMs = 0
@@ -1055,32 +1071,124 @@ class InteractionTest {
             Thread.sleep(200)
             waitForIdle()
             assertTrue(onAllNodesWithText("composition", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isEmpty())
-            shot("share-setup-quick-browse")
+            shot("module-quick-browse")
         }
     }
 
     /**
-     * The address does not answer: the steps that depend on it say "not checked" in grey, not a
-     * red result nobody saw (bug: "the folder content is visible" for an address that is not there).
+     * The module does not answer at the usual addresses: HTTPS is red with the addresses tried,
+     * the folder step grey "not checked" (not a red result nobody saw). With the address typed
+     * in, the next try works.
      */
     @Test
-    fun shareCheckWithoutAnswerSaysNotChecked() {
-        app(setup = { push(Screen.ShareSetup("s1")) }) { _, fake ->
+    fun moduleInstallHttpsFailsThenWorksWithAddress() {
+        app(setup = { push(Screen.ModuleInstall("s2")) }) { _, fake ->
             val net = fake.net as FakeNet
-            net.shareChecks = listOf(
-                ShareCheckUi("write", true, ""), ShareCheckUi("https", false, "server address not found"),
-                ShareCheckUi("listing", false, "skipped"), ShareCheckUi("page", false, "skipped"),
-            )
-            waitFor("blog")
-            onNode(hasSetTextAction() and hasText("https://", substring = true)).performTextReplacement("https://example.invalid/teilen")
-            onNodeWithText("Set up and check").performScrollTo().performClick()
-            // The core's fixed text in the app's words.
-            waitFor("The server address was not found. Check its spelling and the internet connection.")
-            assertFalse(shown("server address not found"))
-            assertEquals(2, onAllNodesWithText("Not checked, because the HTTPS step failed").fetchSemanticsNodes().size)
+            waitFor("public_html")
+            text("public_html").performClick()
+            waitFor("/public_html")
+            onNodeWithText("Install and check").performScrollTo().performClick()
+            waitFor("Not checked, because the HTTPS step failed")
+            assertTrue(shown("Module file uploaded"))
+            assertTrue(shown("public_html/ghulsuite.php"))
+            assertTrue(shown("No answer at https://example.org/ghulsuite.php, https://www.example.org/ghulsuite.php. Enter the address of the module above and try again."))
             assertTrue(onAllNodesWithText("skipped").fetchSemanticsNodes().isEmpty())
-            shot("share-check-not-checked")
+            assertFalse(shown("Done"))
+            assertTrue("moduleInstall:s2:public_html:" in net.calls, net.calls.toString())
+            shot("module-https-failed")
+            onAllNodes(hasSetTextAction()).onFirst().performTextReplacement("https://example.org/web/ghulsuite.php")
+            onNodeWithText("Install and check").performScrollTo().performClick()
+            waitFor("The server module runs at https://example.org/web/ghulsuite.php. You can now create share links.")
+            assertTrue("moduleInstall:s2:public_html:https://example.org/web/ghulsuite.php" in net.calls, net.calls.toString())
+            assertFalse(shown("Not checked, because the HTTPS step failed"))
+            shot("module-installed")
         }
+    }
+
+    /**
+     * The list of servers: per server its login, what it is used for and its module. The module is
+     * installed from there (happy path: it answers at the usual address), updated, and removed
+     * only after asking.
+     */
+    @Test
+    fun serverListInstallsUpdatesAndRemovesTheModule() {
+        app(setup = { push(Screen.SettingsPage(SetPage.SERVERS)) }, prepare = { (net as FakeNet).moduleAnswersWithoutAddress = true }) { state, fake ->
+            val net = fake.net as FakeNet
+            waitFor("Webspace")
+            assertTrue(shown("Server module: version 1, version 2 is available"))
+            assertTrue(shown("Server module: not installed (only needed for share links)"))
+            assertTrue(shown("Used for: Synchronisation, GhulDrive"))
+            assertTrue(shown("Not used yet"))
+            shot("servers-modules")
+            // Install on the web hosting: the folder, then "Install and check" (address left empty).
+            text("Install module").performScrollTo().performClick()
+            waitFor("Install and check")
+            assertEquals(Screen.ModuleInstall("s2"), state.stack.lastOrNull())
+            waitFor("public_html")
+            text("public_html").performClick()
+            waitFor("/public_html")
+            onNodeWithText("Install and check").performScrollTo().performClick()
+            waitFor("The server module runs at https://example.org/ghulsuite.php. You can now create share links.")
+            assertTrue("moduleInstall:s2:public_html:" in net.calls, net.calls.toString())
+            assertTrue(shown("Answers over HTTPS") && shown("Reads the GhulSuite folder"))
+            assertFalse(shown("Not checked, because the HTTPS step failed"))
+            text("Done").performScrollTo().performClick()
+            waitFor("Webspace")
+            assertTrue(state.stack.lastOrNull() is Screen.SettingsPage)
+            // Removing asks first; "Cancel" removes nothing.
+            text("Remove module").performScrollTo().performClick()
+            waitFor("Remove the server module from Heimserver?")
+            assertTrue(shown("Share links of this server stop working at once. Your files stay."))
+            onAllNodes(hasText("Cancel") and hasAnyAncestor(isDialog())).onFirst().performClick()
+            waitGone("Remove the server module from Heimserver?")
+            assertFalse(net.calls.any { it.startsWith("moduleRemove:") })
+            text("Remove module").performScrollTo().performClick()
+            waitFor("Remove the server module from Heimserver?")
+            onAllNodes(hasText("Remove") and hasAnyAncestor(isDialog())).onFirst().performClick()
+            waitUntil(timeoutMillis = 10_000) { "moduleRemove:s1" in net.calls }
+            // Update the older module (last: its message stays at the bottom for a while).
+            text("Update module").performScrollTo().performClick()
+            waitUntil(timeoutMillis = 10_000) { "moduleUpdate:s1" in net.calls }
+            waitFor("Server module updated (version 2)")
+        }
+    }
+
+    /**
+     * Deleting a shared file in GhulDrive: the question says that its link ends; "Cancel" ends
+     * nothing, "Move to trash" ends the link first and then moves the file.
+     */
+    @Test
+    fun driveDeleteOfSharedFileEndsItsLinks() = app(setup = { tab = Tab.DRIVE }) { _, fake ->
+        val net = fake.net as FakeNet
+        // A file without a link: the question has no extra line.
+        longPress("Notizen.txt")
+        waitFor("1 selected")
+        desc("Move to trash").performClick()
+        waitFor("Move to the trash?")
+        assertFalse(shown("1 active share link will end."))
+        onAllNodes(hasText("Cancel") and hasAnyAncestor(isDialog())).onFirst().performClick()
+        waitGone("Move to the trash?")
+        if (shown("1 selected")) desc("Cancel").performClick()
+        waitGone("1 selected")
+        // The shared file.
+        longPress("Steuer 2025.pdf")
+        waitFor("1 selected")
+        desc("Move to trash").performClick()
+        waitFor("1 active share link will end.")
+        shot("drive-delete-shared")
+        onAllNodes(hasText("Cancel") and hasAnyAncestor(isDialog())).onFirst().performClick()
+        waitGone("Move to the trash?")
+        assertFalse(net.calls.any { it.startsWith("shareDelete:") }, net.calls.toString())
+        assertFalse("driveDelete:f1" in net.calls)
+        if (!shown("1 selected")) longPress("Steuer 2025.pdf")
+        waitFor("1 selected")
+        desc("Move to trash").performClick()
+        waitFor("1 active share link will end.")
+        confirm("Move to trash")
+        waitUntil(timeoutMillis = 10_000) { "driveDelete:f1" in net.calls }
+        val calls = net.calls.toList()
+        assertTrue("shareDelete:a1" in calls, calls.toString())
+        assertTrue(calls.indexOf("shareDelete:a1") < calls.indexOf("driveDelete:f1"), "the link ends first: $calls")
     }
 
     /** GhulDrive with a server of its own (no synchronisation): the card and the header name it. */
@@ -1090,7 +1198,7 @@ class InteractionTest {
             val n = net as FakeNet
             n.syncServer = null
             n.driveOwnServer = ServerUi("d1", "Drive-NAS", "nas.example.org", 22, "max", "drive", true, "SHA256:x", "/srv/drive",
-                ServerKindUi.SFTP, "", "")
+                ServerKindUi.SFTP)
         }) { _, _ ->
             waitFor("Drive-NAS")
             assertFalse(shown("No server yet"))

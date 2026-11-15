@@ -16,16 +16,13 @@ import de.danerd.ghulsuite.core.OutgoingMail
 import de.danerd.ghulsuite.core.ServerInput
 import de.danerd.ghulsuite.core.ServerKind
 import de.danerd.ghulsuite.core.ServerSaved
-import de.danerd.ghulsuite.core.PhpModule
 import de.danerd.ghulsuite.core.ShareInfo
 import de.danerd.ghulsuite.core.ShareOptions
-import de.danerd.ghulsuite.core.phpModuleCreate as phpModuleCreateCore
-import de.danerd.ghulsuite.core.phpModuleProbe as phpModuleProbeCore
 import de.danerd.ghulsuite.model.ServerKindUi
 import de.danerd.ghulsuite.model.ServerSavedUi
-import de.danerd.ghulsuite.model.PhpModuleUi
-import de.danerd.ghulsuite.model.ShareCheckUi
 import de.danerd.ghulsuite.model.ShareInfoUi
+import de.danerd.ghulsuite.model.ModuleCheckUi
+import de.danerd.ghulsuite.model.ModuleInstalledUi
 import de.danerd.ghulsuite.model.ShareOptionsUi
 import de.danerd.ghulsuite.model.OutgoingAttachmentUi
 import de.danerd.ghulsuite.core.SyncReport
@@ -60,8 +57,6 @@ import kotlin.coroutines.coroutineContext
 import de.danerd.ghulsuite.core.ServerFolders
 import de.danerd.ghulsuite.core.DriveMode
 import de.danerd.ghulsuite.model.ServerFoldersUi
-import de.danerd.ghulsuite.model.PhpInstalledUi
-import de.danerd.ghulsuite.model.PhpModuleInfoUi
 import de.danerd.ghulsuite.model.DriveStorageUi
 import de.danerd.ghulsuite.model.DriveModeUi
 
@@ -100,18 +95,6 @@ abstract class CoreNetBackend(protected val suite: () -> GhulSuite) : NetBackend
         }
     }
 
-    override suspend fun phpModuleInstall(ftps: ServerInputUi, confirmed: String?, dir: String, url: String): PhpInstalledUi = io {
-        val r = suite().phpModuleInstall(ftps.toCore(), confirmed, dir, url)
-        PhpInstalledUi(r.confirm, r.url, r.tried, r.key, r.limit.toLong(), r.upload?.toUi())
-    }
-
-    override suspend fun phpModuleProbe(url: String, key: String): PhpModuleInfoUi = io {
-        val i = phpModuleProbeCore(url, key)
-        PhpModuleInfoUi(i.version.toInt(), i.current.toInt(), i.limit.toLong(), i.free.toLong())
-    }
-
-    override suspend fun phpModuleUpdate(serverId: String): Int = io { suite().phpModuleUpdate(serverId).toInt() }
-
     override suspend fun saveServer(input: ServerInputUi, confirmed: String?): ServerSavedUi = io {
         when (val r = suite().saveServer(input.toCore(), confirmed)) {
             is ServerSaved.Confirm -> ServerSavedUi.Confirm(r.fingerprint)
@@ -121,13 +104,18 @@ abstract class CoreNetBackend(protected val suite: () -> GhulSuite) : NetBackend
 
     override suspend fun serverBrowse(serverId: String, path: String): List<String> = io { suite().serverBrowse(serverId, path) }
 
-    override fun phpModuleCreate(): PhpModuleUi = phpModuleCreateCore().let { PhpModuleUi(it.fileName, it.content, it.key) }
+    override suspend fun serverModuleInstall(serverId: String, dir: String, url: String): ModuleInstalledUi = io {
+        val r = suite().serverModuleInstall(serverId, dir, url)
+        ModuleInstalledUi(r.url, r.tried, r.checks.map { ModuleCheckUi(it.step, it.ok, it.detail) })
+    }
 
-    override suspend fun phpModuleUpload(viaServerId: String, dir: String, module: PhpModuleUi) =
-        io { suite().phpModuleUpload(viaServerId, dir, PhpModule(module.fileName, module.content, module.key)) }
+    override suspend fun serverModuleUpdate(serverId: String): Int = io { suite().serverModuleUpdate(serverId).toInt() }
 
-    override suspend fun shareSetup(serverId: String, dir: String, publicUrl: String): List<ShareCheckUi> =
-        io { suite().shareSetup(serverId, dir, publicUrl).map { ShareCheckUi(it.step, it.ok, it.detail) } }
+    override suspend fun serverModuleRemove(serverId: String) = io { suite().serverModuleRemove(serverId) }
+
+    override suspend fun shareMissingModule(): String? = io { suite().shareMissingModule() }
+
+    override suspend fun shareLinksOf(ids: List<String>): List<ShareInfoUi> = io { suite().shareLinksOf(ids).map { it.toUi() } }
 
     override suspend fun shareDrive(ids: List<String>, name: String?, options: ShareOptionsUi): ShareInfoUi =
         io { suite().shareDrive(ids, name, options.toCore()).toUi() }

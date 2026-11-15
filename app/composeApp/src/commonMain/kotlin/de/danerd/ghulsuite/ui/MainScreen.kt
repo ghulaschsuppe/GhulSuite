@@ -215,10 +215,13 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
             onDismissRequest = { state.deleteAsk = null },
             title = { Text(stringResource(if (ask.trash) Res.string.ask_trash_title else Res.string.ask_delete_title)) },
             text = {
-                Text(
-                    if (one != null) stringResource(if (ask.trash) Res.string.ask_trash_named else Res.string.ask_delete_named, one)
-                    else pluralStringResource(if (ask.trash) Res.plurals.ask_trash_n else Res.plurals.ask_delete_n, ask.names.size, ask.names.size.toString()),
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        if (one != null) stringResource(if (ask.trash) Res.string.ask_trash_named else Res.string.ask_delete_named, one)
+                        else pluralStringResource(if (ask.trash) Res.plurals.ask_trash_n else Res.plurals.ask_delete_n, ask.names.size, ask.names.size.toString()),
+                    )
+                    ask.extra?.let { Text(it) }
+                }
             },
             confirmButton = {
                 TextButton(onClick = { state.deleteAsk = null; ask.action() }, modifier = Modifier.testTag("ask-confirm")) {
@@ -492,7 +495,7 @@ private fun TopScreen(state: AppState, top: Screen, padding: PaddingValues) {
             is Screen.RecoveryCode -> RecoveryCodeScreen(state, top.code, padding)
             Screen.AddServer -> AddServerScreen(state, padding)
             is Screen.SettingsPage -> key(top) { SettingsPageScreen(state, top.page, padding) }
-            is Screen.ShareSetup -> ShareSetupScreen(state, top.serverId, padding)
+            is Screen.ModuleInstall -> key(top) { ModuleInstallScreen(state, top.serverId, padding) }
             Screen.Shares -> SharesScreen(state, padding)
             Screen.Security -> SecurityScreen(state, padding)
             is Screen.MailRead -> key(top) { MailReadScreen(state, top.accountId, top.folder, top.uid, padding) }
@@ -585,7 +588,7 @@ private fun screenTitle(top: Screen?, tab: Tab): String = stringResource(
                             is Screen.RecoveryCode -> Res.string.setup_code_title
                             Screen.AddServer -> Res.string.server_add_title
                             is Screen.SettingsPage -> top.page.title()
-                            is Screen.ShareSetup -> Res.string.share_setup_title
+                            is Screen.ModuleInstall -> Res.string.module_title
                             Screen.Shares -> Res.string.shares_title
                             Screen.Security -> Res.string.sec_title
                             is Screen.MailRead -> Res.string.mail_read_title

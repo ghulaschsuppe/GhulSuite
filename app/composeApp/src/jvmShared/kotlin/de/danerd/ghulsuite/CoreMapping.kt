@@ -36,9 +36,7 @@ import de.danerd.ghulsuite.model.VaultErrorKind
 import de.danerd.ghulsuite.model.VaultException
 import de.danerd.ghulsuite.model.VaultKindUi
 import de.danerd.ghulsuite.model.VaultSourceUi
-import de.danerd.ghulsuite.core.UploadAccess
 import de.danerd.ghulsuite.core.ServerInfo
-import de.danerd.ghulsuite.model.UploadAccessUi
 import de.danerd.ghulsuite.model.ServerUi
 
 private const val HEX = "0123456789abcdef"
@@ -173,28 +171,24 @@ internal fun FidoException.toVault(): VaultException {
     }
 }
 
-fun ServerInputUi.toCore() = ServerInput(kind.toCore(), name, host, port.toUShort(), user, password, base, url, upload?.toCore())
+fun ServerInputUi.toCore() = ServerInput(kind.toCore(), name, host, port.toUShort(), user, password, base)
 
-internal fun UploadAccessUi.toCore() = UploadAccess(host, port.toUShort(), user, password, cert, dir, dataDir)
-
-internal fun UploadAccess.toUi() = UploadAccessUi(host, port.toInt(), user, password, cert, dir, dataDir)
-
-internal fun ServerInfo.toUi() =
-    ServerUi(id, name, host, port.toInt(), user, base, usesKey, hostKey, location, kind.toUi(), shareUrl, shareDir)
+internal fun ServerInfo.toUi() = ServerUi(
+    id, name, host, port.toInt(), user, base, usesKey, hostKey, location, kind.toUi(),
+    moduleUrl, moduleVersion.toInt(), moduleCurrent.toInt(),
+)
 
 internal fun ServerKindUi.toCore() = when (this) {
     ServerKindUi.SFTP -> ServerKind.SFTP
     ServerKindUi.FTPS -> ServerKind.FTPS
-    ServerKindUi.PHP -> ServerKind.PHP
 }
 
 internal fun ServerKind.toUi() = when (this) {
     ServerKind.SFTP -> ServerKindUi.SFTP
     ServerKind.FTPS -> ServerKindUi.FTPS
-    ServerKind.PHP -> ServerKindUi.PHP
 }
 
-internal fun ShareOptionsUi.toCore() = ShareOptions(serverId, password, expiresDays.toUInt(), maxDownloads.toUInt())
+internal fun ShareOptionsUi.toCore() = ShareOptions(password, expiresDays.toUInt(), maxDownloads.toUInt())
 
 internal fun ShareInfo.toUi() =
     ShareInfoUi(id, serverId, name, size.toLong(), created, expires, password, maxDownloads.toInt(), downloads, url)

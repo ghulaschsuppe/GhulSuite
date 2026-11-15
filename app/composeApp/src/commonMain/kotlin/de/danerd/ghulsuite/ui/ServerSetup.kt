@@ -29,7 +29,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import de.danerd.ghulsuite.model.PhpInstalledUi
 import de.danerd.ghulsuite.model.ServerFoldersUi
 import de.danerd.ghulsuite.model.ServerInputUi
 import de.danerd.ghulsuite.model.ServerKindUi
@@ -64,13 +63,9 @@ class ServerForm {
     var connectFailed by mutableStateOf(false)
     /** Chosen folder, relative to the login folder ("" = none chosen yet). */
     var folder by mutableStateOf("")
-    var installed by mutableStateOf<PhpInstalledUi?>(null)
-    var address by mutableStateOf("")
-    var keepFtps by mutableStateOf(true)
     /** Set once the server is checked and stored. */
     var savedId by mutableStateOf<String?>(null)
     var savedWhere by mutableStateOf("")
-    var limit by mutableStateOf(0L)
 
     val loginReady: Boolean
         get() = input.host.isNotBlank() && input.user.isNotBlank() &&
@@ -82,8 +77,6 @@ class ServerForm {
         !loginReady -> Res.string.srvf_step_login
         !connected -> Res.string.srvf_step_connect
         folder.isBlank() -> Res.string.srvf_step_folder
-        kind == ServerKindUi.PHP && installed?.key.isNullOrEmpty() -> Res.string.srvf_step_upload
-        kind == ServerKindUi.PHP -> Res.string.srvf_step_check
         else -> Res.string.srvf_step_test
     }
 
@@ -94,8 +87,6 @@ class ServerForm {
         confirmed = null
         connected = false
         folder = ""
-        installed = null
-        address = ""
         savedId = null
     }
 
@@ -104,13 +95,12 @@ class ServerForm {
         connected = false
         connectFailed = false
         folder = ""
-        installed = null
     }
 
-    /** The login as typed: SFTP/FTPS directly, for the PHP module its FTPS upload login. */
+    /** The login as typed. */
     fun login(): ServerInputUi = when (kind) {
         ServerKindUi.SFTP -> input.copy(kind = ServerKindUi.SFTP, password = if (usePassword) input.password else null)
-        else -> input.copy(kind = ServerKindUi.FTPS)
+        ServerKindUi.FTPS -> input.copy(kind = ServerKindUi.FTPS)
     }
 }
 
@@ -120,9 +110,8 @@ fun rememberServerForm(): ServerForm = remember { ServerForm() }
 /**
  * One server form for the setup wizard, GhulDrive and the options. First the login is tested
  * ("Test connection"); only a working login gets to pick a folder from the server's own list,
- * then the server is saved. The PHP module logs in to the web hosting once with FTPS the same
- * way, picks a folder, uploads the module and checks the address the app suggests. A numbered
- * checklist below names what is still missing.
+ * then the server is saved. A numbered checklist below names what is still missing. The server
+ * module for share links is installed later from the list of servers, over the same login.
  *
  * [save] stores the checked server (suite list for synchronisation, Drive file for GhulDrive).
  */
@@ -143,17 +132,14 @@ fun ServerSetup(
     LaunchedEffect(Unit) { publicKey = catching { net.sshPublicKey() }.getOrNull() }
 
     SingleChoiceSegmentedButtonRow {
-        for ((k, label) in listOf(ServerKindUi.SFTP to "SFTP", ServerKindUi.FTPS to "FTPS", ServerKindUi.PHP to stringResource(Res.string.srvf_kind_php))) {
-            SegmentedButton(form.kind == k, { if (form.kind != k) { form.switchKind(k); error = null } }) { SegLabel(label) }
+        for (k in ServerKindUi.entries) {
+            SegmentedButton(form.kind == k, { if (form.kind != k) { form.switchKind(k); error = null } }) { SegLabel(kindLabel(k)) }
         }
     }
 
     val saved = form.savedId
     if (saved != null) {
-        Banner(Icons.Filled.CheckCircle, stringResource(if (form.kind == ServerKindUi.PHP) Res.string.srvf_module_runs else Res.string.srvf_connected, form.savedWhere))
-        if (form.kind == ServerKindUi.PHP && form.limit in 1 until 4L * 1024 * 1024) {
-            HintText(stringResource(Res.string.srvf_limit_small, formatSize(form.limit)))
-        }
+        Banner(Icons.Filled.CheckCircle, stringResource(Res.string.srvf_connected, form.savedWhere))
         return
     }
 
@@ -173,7 +159,7 @@ fun ServerSetup(
                 }
                 is ServerSavedUi.Saved -> {
                     form.confirmed = confirmed
-                    form.savedWhere = if (form.kind == ServerKindUi.PHP) input.url else "${input.host}:/${form.folder}"
+                    form.savedWhere = "${input.host}:/${form.folder}"
                     form.savedId = r.id
                     onSaved(r.id)
                 }
@@ -185,17 +171,16 @@ fun ServerSetup(
         val login = form.login()
         val input = when (form.kind) {
             ServerKindUi.SFTP -> (if (form.usePassword && form.installKey) login.copy(password = null) else login).copy(base = form.folder)
-            else -> login.copy(base = form.folder)
+            ServerKindUi.FTPS -> login.copy(base = form.folder)
         }
         store(input.copy(name = input.name.ifBlank { input.host }), form.confirmed)
     }
 
     val loginFirst = stringResource(Res.string.srvf_login_first)
-    if (form.kind == ServerKindUi.PHP) HintText(stringResource(Res.string.srvf_php_intro))
-    // Login (for the PHP module: the FTPS login of the web hosting).
+    // Login.
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedTextField(form.input.host, { form.input = form.input.copy(host = it.trim()); form.relogin(); error = null }, Modifier.weight(3f),
-            label = { Text(stringResource(if (form.kind == ServerKindUi.PHP) Res.string.srvf_host_php else Res.string.server_host)) }, singleLine = true,
+            label = { Text(stringResource(Res.string.server_host)) }, singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
         OutlinedTextField(if (form.input.port == 0) "" else form.input.port.toString(),
             { v -> form.input = form.input.copy(port = v.filter(Char::isDigit).take(5).toIntOrNull() ?: 0); form.relogin() }, Modifier.weight(1f),
@@ -256,50 +241,9 @@ fun ServerSetup(
         }
     }
 
-    val installed = form.installed
-    if (form.kind == ServerKindUi.PHP && installed != null && installed.key.isNotEmpty()) {
-        Banner(Icons.Filled.CheckCircle, stringResource(Res.string.srvf_uploaded, form.folder.trimEnd('/')))
-        OutlinedTextField(form.address, { form.address = it.trim(); error = null }, Modifier.fillMaxWidth(),
-            label = { Text(stringResource(Res.string.srvf_address_label)) }, singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
-        Hint(stringResource(if (installed.url == null) Res.string.srvf_address_not_found else Res.string.srvf_address_hint))
-        SwitchRow(stringResource(Res.string.srvf_keep_ftps), form.keepFtps) { form.keepFtps = it }
-        Hint(stringResource(Res.string.srvf_keep_ftps_sub))
-        FilledTonalButton(onClick = {
-            state.run(onError = { error = it }, block = { net.phpModuleProbe(form.address, installed.key) }) { info ->
-                form.limit = info.limit
-                store(
-                    ServerInputUi(
-                        kind = ServerKindUi.PHP, name = "", host = "", port = 0, user = "", password = installed.key, base = "",
-                        url = form.address, upload = if (form.keepFtps) installed.upload else null,
-                    ),
-                    null,
-                )
-            }
-        }, enabled = !state.busy && form.address.startsWith("https://"), modifier = Modifier.fillMaxWidth()) {
-            Text(stringResource(Res.string.srvf_check_address))
-        }
-    } else if (form.connected && form.folder.isNotBlank()) {
-        if (form.kind == ServerKindUi.PHP) {
-            FilledTonalButton(onClick = {
-                fun install(confirmed: String?) {
-                    state.run(onError = { error = it }, block = { net.phpModuleInstall(form.login(), confirmed, form.folder, "") }) { r ->
-                        if (r.confirm != null) {
-                            fingerprint = r.confirm
-                            afterConfirm = { form.confirmed = r.confirm; install(r.confirm) }
-                        } else {
-                            form.installed = r
-                            form.limit = r.limit
-                            form.address = r.url ?: r.tried.firstOrNull().orEmpty()
-                        }
-                    }
-                }
-                install(form.confirmed)
-            }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.srvf_upload)) }
-        } else {
-            Button(onClick = { test() }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(if (state.busy) Res.string.srvf_saving else Res.string.srvf_save))
-            }
+    if (form.connected && form.folder.isNotBlank()) {
+        Button(onClick = { test() }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(if (state.busy) Res.string.srvf_saving else Res.string.srvf_save))
         }
     }
     ErrorText(error)
@@ -308,7 +252,6 @@ fun ServerSetup(
     if (picking) {
         FolderPicker(state, form, onFingerprint = { fp, retry -> fingerprint = fp; afterConfirm = retry }, onDismiss = { picking = false }) {
             form.folder = it
-            form.installed = null
             picking = false
         }
     }
@@ -327,17 +270,16 @@ fun ServerSetup(
     }
 }
 
-/** Checklist under a server form: login, folder, (upload), test. */
+/** Checklist under a server form: login, connection, folder, save. */
 @Composable
 fun ServerChecklist(form: ServerForm) {
     val steps = buildList {
         add(Res.string.srvf_step_login to form.loginReady)
         add(Res.string.srvf_step_connect to form.connected)
         add(Res.string.srvf_step_folder to form.folder.isNotBlank())
-        if (form.kind == ServerKindUi.PHP) add(Res.string.srvf_step_upload to !form.installed?.key.isNullOrEmpty())
-        add((if (form.kind == ServerKindUi.PHP) Res.string.srvf_step_check else Res.string.srvf_step_test) to (form.savedId != null))
+        add(Res.string.srvf_step_test to (form.savedId != null))
     }
-    // One step per line: side by side, long names (and five steps) do not fit on a phone.
+    // One step per line: side by side, long names do not fit on a phone.
     Column(Modifier.fillMaxWidth().padding(start = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         steps.forEachIndexed { i, (label, done) ->
             val failed = !done && label == Res.string.srvf_step_connect && form.connectFailed
@@ -386,7 +328,7 @@ private fun FolderPicker(
     val join = { name: String -> if (path.isEmpty()) name else "$path/$name" }
 
     GhulSheet(onDismiss, stringResource(Res.string.srvf_folders_title)) {
-        HintText(stringResource(if (form.kind == ServerKindUi.PHP) Res.string.srvf_folders_hint_php else Res.string.srvf_folders_hint))
+        HintText(stringResource(Res.string.srvf_folders_hint))
         SheetList {
             SheetRow(if (path.isEmpty()) "/" else "/$path/")
             if (path.isNotEmpty()) {
@@ -395,17 +337,14 @@ private fun FolderPicker(
                 }
             }
             val list = folders.orEmpty()
-            val suggest = form.kind != ServerKindUi.PHP && path.isEmpty() && SUGGESTED_FOLDER !in list
+            val suggest = path.isEmpty() && SUGGESTED_FOLDER !in list
             if (suggest) {
                 SheetRow(SUGGESTED_FOLDER, stringResource(Res.string.srvf_folder_recommended), leading = { IconTile(Icons.Filled.Add, paletteColor(1)) }, divider = true) {
                     onPick(SUGGESTED_FOLDER)
                 }
             }
             for (f in list) {
-                val hint = when {
-                    form.kind != ServerKindUi.PHP && f in WEB_ROOTS -> stringResource(Res.string.srvf_folder_public)
-                    else -> null
-                }
+                val hint = if (f in WEB_ROOTS) stringResource(Res.string.srvf_folder_public) else null
                 SheetRow(f, hint, leading = { IconTile(Icons.Filled.Folder, paletteColor(1)) }, divider = true) { path = join(f) }
             }
             if (folders != null && list.isEmpty()) SheetRow(stringResource(Res.string.srvf_folder_empty), divider = true)

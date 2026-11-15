@@ -22,26 +22,28 @@ interface NetBackend {
     suspend fun installSshKey(input: ServerInputUi, hostKey: String?): String
     /** The suite's SSH public key for `authorized_keys` on the server. */
     suspend fun sshPublicKey(): String
-    /** Folders below the login folder of a server (for choosing the share folder). */
+    /** Folders below the login folder of a server (for choosing the website folder of the module). */
     suspend fun serverBrowse(serverId: String, path: String): List<String>
-    /** A new PHP server module with its own access key. */
-    fun phpModuleCreate(): PhpModuleUi
-    /** Uploads a server module through another stored server (e.g. FTPS of the same hosting). */
-    suspend fun phpModuleUpload(viaServerId: String, dir: String, module: PhpModuleUi)
     /** Folders of a server as entered, before it is stored (folder picker). SFTP and FTPS. */
     suspend fun serverBrowseInput(input: ServerInputUi, confirmed: String?, path: String): ServerFoldersUi =
         ServerFoldersUi.Folders(emptyList())
-    /** Uploads a new PHP module over FTPS into [dir] and looks for its address ([url] empty: guess). */
-    suspend fun phpModuleInstall(ftps: ServerInputUi, confirmed: String?, dir: String, url: String): PhpInstalledUi =
+    /**
+     * Installs the GhulSuite server module (share links) over the server's own login into the
+     * website folder [dir] and checks it at [url] (empty: the usual addresses are tried). Only
+     * when every check passes is it kept for the server.
+     */
+    suspend fun serverModuleInstall(serverId: String, dir: String, url: String): ModuleInstalledUi =
         throw UnsupportedOperationException()
-    /** Checks that a PHP module answers at [url] with access key [key]. */
-    suspend fun phpModuleProbe(url: String, key: String): PhpModuleInfoUi = throw UnsupportedOperationException()
-    /** Uploads a new version of a module through the FTPS login kept with it; returns its version. */
-    suspend fun phpModuleUpdate(serverId: String): Int = 0
+    /** Writes the module of this app's version over an older one; returns its version. */
+    suspend fun serverModuleUpdate(serverId: String): Int = 0
+    /** Removes the module from the server: share links of this server stop working. */
+    suspend fun serverModuleRemove(serverId: String) {}
 
-    // --- Sharing (needs a server that can share; independent of the modules)
-    /** Sets up the share folder of an SFTP/FTPS server and checks it; stores it only if all checks pass. */
-    suspend fun shareSetup(serverId: String, dir: String, publicUrl: String): List<ShareCheckUi>
+    // --- Sharing (always from GhulDrive's server, through its server module)
+    /** Null: links can be made. "": GhulDrive is not set up. Else the server that needs the module. */
+    suspend fun shareMissingModule(): String? = ""
+    /** The share links that contain one of these GhulDrive items (asked before deleting them). */
+    suspend fun shareLinksOf(ids: List<String>): List<ShareInfoUi> = emptyList()
     suspend fun shareDrive(ids: List<String>, name: String?, options: ShareOptionsUi): ShareInfoUi
     suspend fun shareBytes(name: String, data: ByteArray, options: ShareOptionsUi): ShareInfoUi
     suspend fun shareList(): List<ShareInfoUi>
@@ -223,7 +225,7 @@ interface ByteSink {
     fun close()
 }
 
-enum class ServerKindUi { SFTP, FTPS, PHP }
+enum class ServerKindUi { SFTP, FTPS }
 
 sealed interface ServerSavedUi {
     data class Confirm(val fingerprint: String) : ServerSavedUi
@@ -236,24 +238,9 @@ data class ServerInputUi(
     val host: String,
     val port: Int,
     val user: String,
-    /** SFTP: null = log in with the suite's SSH key. FTPS: password. PHP module: access key. */
+    /** SFTP: null = log in with the suite's SSH key. FTPS: password. */
     val password: String?,
     val base: String,
-    /** PHP module: address of ghulsuite.php. */
-    val url: String = "",
-    /** PHP module: the FTPS login it was installed with, kept for updates (null: not kept). */
-    val upload: UploadAccessUi? = null,
-)
-
-/** FTPS login a PHP module was installed with. */
-data class UploadAccessUi(
-    val host: String,
-    val port: Int,
-    val user: String,
-    val password: String,
-    val cert: String,
-    val dir: String,
-    val dataDir: String,
 )
 
 sealed interface ServerFoldersUi {
@@ -261,30 +248,22 @@ sealed interface ServerFoldersUi {
     data class Folders(val folders: List<String>) : ServerFoldersUi
 }
 
-/** Result of installing a PHP module. */
-data class PhpInstalledUi(
-    /** Set: confirm this certificate first; nothing was uploaded. */
-    val confirm: String?,
-    /** Address the module answered at; null: ask for it and check with phpModuleProbe. */
-    val url: String?,
-    val tried: List<String>,
-    val key: String,
-    /** Largest request of the hosting in bytes (0 = not reported). */
-    val limit: Long,
-    val upload: UploadAccessUi?,
-)
-
-data class PhpModuleInfoUi(val version: Int, val current: Int, val limit: Long, val free: Long)
-
 enum class DriveModeUi { NONE, SYNC, OWN, SUITE }
 
 data class DriveStorageUi(val mode: DriveModeUi, val server: ServerUi?, val syncAvailable: Boolean)
 
-class PhpModuleUi(val fileName: String, val content: String, val key: String)
+/**
+ * One step of installing the server module: `upload` (file written, detail = its path), `https`
+ * (it answers, detail = the address), `php` (only when PHP does not run there; the file was
+ * removed again), `folder` (it reads the GhulSuite folder; detail "skipped" = not checked).
+ */
+data class ModuleCheckUi(val step: String, val ok: Boolean, val detail: String)
 
-data class ShareCheckUi(val step: String, val ok: Boolean, val detail: String)
+/** Result of installing the server module: [url] null = it does not work yet (see [checks]). */
+data class ModuleInstalledUi(val url: String?, val tried: List<String>, val checks: List<ModuleCheckUi>)
 
-data class ShareOptionsUi(val serverId: String, val password: String?, val expiresDays: Int, val maxDownloads: Int)
+/** Share links always come from GhulDrive's server: 0 days = no expiry, 0 downloads = unlimited. */
+data class ShareOptionsUi(val password: String?, val expiresDays: Int, val maxDownloads: Int)
 
 data class ShareInfoUi(
     val id: String,
@@ -312,11 +291,15 @@ data class ServerUi(
     /** Absolute folder on the server, e.g. /home/max/ghulsuite. */
     val location: String = "",
     val kind: ServerKindUi = ServerKindUi.SFTP,
-    /** Public address for share links; empty = sharing not set up. */
-    val shareUrl: String = "",
-    val shareDir: String = "",
+    /** Address of the server module (share links); empty = not installed. */
+    val moduleUrl: String = "",
+    /** Version of the installed module (0 = none). */
+    val moduleVersion: Int = 0,
+    /** The version this app brings: an older module can be updated. */
+    val moduleCurrent: Int = 0,
 ) {
-    val canShare: Boolean get() = shareUrl.isNotEmpty()
+    val hasModule: Boolean get() = moduleUrl.isNotEmpty()
+    val moduleOutdated: Boolean get() = hasModule && moduleVersion < moduleCurrent
 }
 
 data class SyncStatusUi(val serverId: String?, val lastSync: Long)

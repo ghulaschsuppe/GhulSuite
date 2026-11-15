@@ -71,16 +71,13 @@ name: Rundgang auf Deutsch
 - runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Code-Anzeige", SHOT: "${PREFIX}-20-auth" } }
 - runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Design, Sprache", SHOT: "${PREFIX}-21-darstellung" } }
 - runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Über und Hilfe", SHOT: "${PREFIX}-22-ueber" } }
-# --- Server form (the checklist of the PHP module) ---
+# --- Server form (SFTP and FTPS, each with its checklist) ---
 - scrollUntilVisible: { element: "Server, Sync & Teilen", direction: DOWN }
 - tapOn: "Server, Sync & Teilen"
 - tapOn: "Server hinzufügen"
 - takeScreenshot: ${PREFIX}-23-server-sftp
 - tapOn: "FTPS"
 - takeScreenshot: ${PREFIX}-24-server-ftps
-- tapOn: "PHP-Modul"
-- scrollUntilVisible: { element: "Speichern|.*Adresse prüfen", direction: DOWN }
-- takeScreenshot: ${PREFIX}-25-server-php
 - back
 - back
 - assertNotVisible: "GHUL-DEV-ALARM.*"

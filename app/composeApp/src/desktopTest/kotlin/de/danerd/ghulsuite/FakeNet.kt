@@ -18,11 +18,11 @@ import de.danerd.ghulsuite.model.MailSummaryUi
 import de.danerd.ghulsuite.model.NetBackend
 import de.danerd.ghulsuite.model.OutgoingMailUi
 import de.danerd.ghulsuite.model.OutgoingAttachmentUi
-import de.danerd.ghulsuite.model.PhpModuleUi
+import de.danerd.ghulsuite.model.ModuleCheckUi
+import de.danerd.ghulsuite.model.ModuleInstalledUi
 import de.danerd.ghulsuite.model.ServerInputUi
 import de.danerd.ghulsuite.model.ServerKindUi
 import de.danerd.ghulsuite.model.ServerSavedUi
-import de.danerd.ghulsuite.model.ShareCheckUi
 import de.danerd.ghulsuite.model.ShareInfoUi
 import de.danerd.ghulsuite.model.ShareOptionsUi
 import de.danerd.ghulsuite.model.ServerUi
@@ -32,12 +32,14 @@ import de.danerd.ghulsuite.model.SyncStatusUi
 /** Sample data for screenshots of the network screens. */
 class FakeNet(private val configured: Boolean = true, private val encryptedMail: Boolean = false, private val conversation: Boolean = false) : NetBackend {
     private val now = 1_762_000_000L
+    /** The sync and GhulDrive server, with an older server module (it can be updated). */
     private val server = ServerUi(
         "s1", "Heimserver", "nas.example.org", 22, "max", "ghulsuite", true, "SHA256:abc", "/home/max/ghulsuite",
-        ServerKindUi.SFTP, "https://example.org/teilen", "public_html/teilen",
+        ServerKindUi.SFTP, "https://nas.example.org/ghulsuite.php", 1, 2,
     )
-    private val php = ServerUi(
-        "s2", "Webspace", "", 0, "", "", false, "", "https://example.org/ghulsuite.php", ServerKindUi.PHP, "https://example.org/ghulsuite.php", "",
+    /** A web hosting over FTPS without the server module. */
+    private val web = ServerUi(
+        "s2", "Webspace", "example.org", 21, "web123", "ghulsuite", false, "SHA256:def", "/ghulsuite", ServerKindUi.FTPS, "", 0, 2,
     )
     /** Calls the screens made, for tests. */
     val calls: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf<String>())
@@ -49,7 +51,7 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
     var serversFailures = 0
     override suspend fun servers(): List<ServerUi> {
         if (serversFailures > 0) { serversFailures--; throw java.io.IOException("connection reset") }
-        return if (configured) listOf(server, php) else emptyList()
+        return if (configured) listOf(server, web) else emptyList()
     }
     override suspend fun saveServer(input: ServerInputUi, confirmed: String?): ServerSavedUi =
         if (confirmed == null) ServerSavedUi.Confirm("SHA256:7beJP+X7anXY96H6FlO+I7u8z2xP1gJsp7GiBGawac4") else ServerSavedUi.Saved("s3")
@@ -66,14 +68,26 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
         if (wait > 0) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Thread.sleep(wait); slowBrowsesDone++ }
         return if (path.isEmpty()) listOf("ghulsuite", "public_html") else listOf("teilen", "blog")
     }
-    override fun phpModuleCreate() = PhpModuleUi("ghulsuite-1a2b3c4d.php", "<?php // module", "00".repeat(32))
-    override suspend fun phpModuleUpload(viaServerId: String, dir: String, module: PhpModuleUi) { calls += "phpUpload:$viaServerId:$dir" }
-    var shareChecks = listOf(
-        ShareCheckUi("write", true, ""), ShareCheckUi("https", true, ""), ShareCheckUi("listing", true, ""), ShareCheckUi("page", true, ""),
-    )
-    override suspend fun shareSetup(serverId: String, dir: String, publicUrl: String) = shareChecks
+    /** The module answers at the usual address (else only at an address typed by the user). */
+    var moduleAnswersWithoutAddress = false
+    override suspend fun serverModuleInstall(serverId: String, dir: String, url: String): ModuleInstalledUi {
+        calls += "moduleInstall:$serverId:$dir:$url"
+        val tried = if (url.isEmpty()) listOf("https://example.org/ghulsuite.php", "https://www.example.org/ghulsuite.php") else listOf(url)
+        val upload = ModuleCheckUi("upload", true, (if (dir.isEmpty()) "" else "$dir/") + "ghulsuite.php")
+        if (url.isEmpty() && !moduleAnswersWithoutAddress) {
+            return ModuleInstalledUi(null, tried, listOf(upload, ModuleCheckUi("https", false, tried[0]), ModuleCheckUi("folder", false, "skipped")))
+        }
+        return ModuleInstalledUi(tried[0], tried, listOf(upload, ModuleCheckUi("https", true, tried[0]), ModuleCheckUi("folder", true, "")))
+    }
+    override suspend fun serverModuleUpdate(serverId: String): Int { calls += "moduleUpdate:$serverId"; return 2 }
+    override suspend fun serverModuleRemove(serverId: String) { calls += "moduleRemove:$serverId" }
+    /** What share links still need (null: nothing; "": GhulDrive; else the server for the module). */
+    var missingModule: String? = if (configured) null else ""
+    override suspend fun shareMissingModule() = missingModule
+    /** The links containing GhulDrive items: "Steuer 2025.pdf" (f1) is shared. */
+    override suspend fun shareLinksOf(ids: List<String>) = if (configured && "f1" in ids) listOf(share) else emptyList()
     override suspend fun shareDrive(ids: List<String>, name: String?, options: ShareOptionsUi): ShareInfoUi {
-        calls += "shareDrive:${ids.joinToString(",")}:${options.serverId}:${options.expiresDays}:${options.maxDownloads}:${options.password != null}"
+        calls += "shareDrive:${ids.joinToString(",")}:${name ?: ""}:${options.expiresDays}:${options.maxDownloads}:${options.password != null}"
         return share
     }
     override suspend fun shareBytes(name: String, data: ByteArray, options: ShareOptionsUi): ShareInfoUi {
