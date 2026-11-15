@@ -154,23 +154,6 @@ fn ftps_against_vsftpd() {
     assert_eq!(names, vec!["Grüße.txt"]);
 }
 
-/// A running `php -S` with a freshly generated server module (stopped when dropped).
-pub(crate) struct PhpServer {
-    child: std::process::Child,
-    pub url: String,
-    pub key: [u8; 32],
-    pub dir: std::path::PathBuf,
-}
-
-impl Drop for PhpServer {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-        let _ = std::fs::remove_dir_all(&self.dir);
-    }
-}
-
-/// Starts the server module under `php -S`; `None` if PHP is not installed.
 /// Starts PHP's built-in web server for `dir` on a free port and returns it once it answers.
 ///
 /// Tests run in parallel, and a port found free can be taken by another test's server before
@@ -217,17 +200,34 @@ pub(crate) fn spawn_php(dir: &std::path::Path) -> Option<(std::process::Child, u
     None
 }
 
-pub(crate) fn php_server() -> Option<PhpServer> {
-    use rand_core::RngCore;
+/// A GhulSuite folder with a share in it and the module next to it, under `php -S`: the module
+/// must hand out the package and exactly the blocks of the share, with a ticket, and refuse
+/// everything else.
+pub(crate) struct ModuleSite {
+    pub child: std::process::Child,
+    pub url: String,
+    pub dir: std::path::PathBuf,
+}
+
+impl Drop for ModuleSite {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+/// `dir/www/ghulsuite.php` pointing at `dir/ghulsuite`, served by `php -S` from `dir/www`.
+pub(crate) fn module_site() -> Option<ModuleSite> {
     std::process::Command::new("php").arg("-v").output().ok()?;
-    let mut key = [0u8; 32];
-    rand_core::OsRng.fill_bytes(&mut key);
     let run = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
-    let dir = std::env::temp_dir().join(format!("ghul-php-{run}"));
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("ghulsuite.php"), super::phpfs::server_file(&key, "ghul-data-test")).unwrap();
-    let (child, port) = spawn_php(&dir)?;
-    Some(PhpServer { child, url: format!("http://127.0.0.1:{port}/ghulsuite.php"), key, dir })
+    let dir = std::env::temp_dir().join(format!("ghul-module-{run}"));
+    std::fs::create_dir_all(dir.join("www")).unwrap();
+    std::fs::create_dir_all(dir.join("ghulsuite/shares")).unwrap();
+    std::fs::create_dir_all(dir.join("ghulsuite/drive/blocks")).unwrap();
+    std::fs::write(dir.join("www/ghulsuite.php"), super::module::module_file("../ghulsuite").unwrap()).unwrap();
+    let (child, port) = spawn_php(&dir.join("www"))?;
+    Some(ModuleSite { child, url: format!("http://127.0.0.1:{port}/ghulsuite.php"), dir })
 }
 
 fn get(url: &str) -> super::http::Response {
@@ -236,89 +236,99 @@ fn get(url: &str) -> super::http::Response {
 }
 
 #[test]
-fn php_server_module() {
-    use super::phpfs::{PhpConfig, PhpFs};
-    let Some(server) = php_server() else { return };
-    let cfg = PhpConfig {
-        url: server.url.clone(),
-        key: zeroize::Zeroizing::new(server.key),
-        base: String::new(),
-        cert: None,
+fn module_hands_out_only_the_blocks_of_a_share() {
+    let Some(site) = module_site() else { return };
+    let base = site.url.clone();
+    let suite = site.dir.join("ghulsuite");
+    let block = |name: &str, data: &[u8]| {
+        let d = suite.join("drive/blocks").join(&name[..2]);
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(d.join(name), data).unwrap();
     };
-    let fs = PhpFs::new(&cfg).unwrap();
-    let info = fs.info().unwrap();
-    assert_eq!(info.version, 2);
-    assert!(info.limit > 0, "the module reports the hosting's upload limit");
-    exercise(&fs);
-    // Large files go up in parts and replace the old file only when complete.
-    let big: Vec<u8> = (0..9 * 1024 * 1024 + 13).map(|i| (i % 251) as u8).collect();
-    fs.write("big/vault.bin", b"old").unwrap();
-    fs.write("big/vault.bin", &big).unwrap();
-    assert_eq!(fs.read("big/vault.bin").unwrap().as_deref(), Some(&big[..]));
-    assert!(fs.list("big").unwrap().iter().all(|e| e.name == "vault.bin"), "no parts left behind");
-    // A wrong key is refused.
-    let bad = PhpFs::new(&PhpConfig { key: zeroize::Zeroizing::new([1u8; 32]), ..cfg.clone() }).unwrap();
-    assert_eq!(bad.info().err(), Some(NetError::AuthFailed));
-    // Unsigned requests and other methods are refused; the data folder is not listed.
-    let base = server.url.clone();
-    assert_eq!(get(&format!("{base}?a=list")).status, 405);
-    // Paths cannot leave the storage.
-    assert!(fs.read("../ghulsuite.php").is_err());
-    // Even with the key nothing executable or server configuration can be stored.
-    for name in ["shell.php", "x.PHTML", "a/.htaccess", ".user.ini", "run.phar"] {
-        assert!(fs.write(name, b"<?php echo 1;").is_err(), "{name}");
-    }
-    fs.write(".ghulsuite-check", b"ok").unwrap();
-
-    // Shares: download limit, one-time, expiry.
-    let data = vec![42u8; 5 * 1024 * 1024 + 7];
+    let (a, b, other) = ("a".repeat(64), "b".repeat(64), "c".repeat(64));
+    block(&a, b"block A");
+    block(&b, b"block B");
+    block(&other, b"not shared");
     let id = "0123456789abcdef0123456789abcdef";
-    fs.share_put(id, &data, 0, 2).unwrap();
-    assert_eq!(fs.share_list().unwrap()[0].count, 0);
-    let first = get(&format!("{base}?s={id}"));
-    assert_eq!((first.status, first.body.len()), (200, data.len()));
-    assert_eq!(fs.share_list().unwrap()[0].count, 1);
-    assert_eq!(get(&format!("{base}?s={id}")).body, data);
-    assert_eq!(get(&format!("{base}?s={id}")).status, 404);
-    assert!(fs.share_list().unwrap().is_empty());
-    let expired = "ffffffffffffffffffffffffffffffff";
-    fs.share_put(expired, b"x", 1, 0).unwrap();
-    assert_eq!(get(&format!("{base}?s={expired}")).status, 410);
-    let revoked = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
-    fs.share_put(revoked, b"x", 0, 0).unwrap();
-    fs.share_delete(revoked).unwrap();
-    assert_eq!(get(&format!("{base}?s={revoked}")).status, 404);
-    assert_eq!(get(&format!("{base}?s=../../etc/passwd")).status, 404);
+    let share = |exp: i64, max: u32| {
+        format!(r#"{{"package":"UEFDS0FHRQ==","files":[["{a}"],["{b}"]],"exp":{exp},"max":{max}}}"#)
+    };
+    std::fs::write(suite.join(format!("shares/{id}.json")), share(0, 2)).unwrap();
 
-    // The share page is served with a strict content security policy.
+    // The version answers, and the module can read its folder.
+    let v: serde_json::Value = serde_json::from_slice(&get(&format!("{base}?v")).body).unwrap();
+    assert_eq!(v["version"], super::module::MODULE_VERSION);
+    assert_eq!(v["folder"], true);
+    assert_eq!(super::module::probe(&base).unwrap().version, super::module::MODULE_VERSION);
+    // Only check files of the shares folder, by exact name.
+    std::fs::write(suite.join("shares/check-00112233445566778899aabbccddeeff"), "token").unwrap();
+    assert_eq!(
+        super::module::check(&base, "00112233445566778899aabbccddeeff").unwrap().as_deref(),
+        Some(&b"token"[..])
+    );
+    assert_eq!(super::module::check(&base, "ffffffffffffffffffffffffffffffff").unwrap(), None);
+    assert_eq!(get(&format!("{base}?check=../../etc/passwd")).status, 404);
+
+    // Opening the share: the package, the block names and a ticket.
+    let open = get(&format!("{base}?s={id}"));
+    assert_eq!(open.status, 200);
+    let o: serde_json::Value = serde_json::from_slice(&open.body).unwrap();
+    assert_eq!(o["package"], "UEFDS0FHRQ==");
+    assert_eq!(o["blocks"][1][0], b.as_str());
+    let ticket = o["ticket"].as_str().unwrap().to_owned();
+    assert_eq!(ticket.len(), 32);
+    // Blocks only with the ticket, only of this share, only by index.
+    assert_eq!(get(&format!("{base}?s={id}&t={ticket}&f=0&b=0")).body, b"block A");
+    assert_eq!(get(&format!("{base}?s={id}&t={ticket}&f=1&b=0")).body, b"block B");
+    assert_eq!(get(&format!("{base}?s={id}&t={}&f=0&b=0", "0".repeat(32))).status, 403);
+    assert_eq!(get(&format!("{base}?s={id}&f=0&b=0")).status, 404);
+    for bad in ["f=2&b=0", "f=0&b=1", "f=-1&b=0", "f=0&b=00", "f=0x0&b=0", "f=0&b=0.5", &format!("f={other}&b=0")] {
+        assert_eq!(get(&format!("{base}?s={id}&t={ticket}&{bad}")).status, 404, "{bad}");
+    }
+    // A share whose description names a path instead of a block cannot reach other files.
+    let evil = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+    std::fs::write(
+        suite.join(format!("shares/{evil}.json")),
+        r#"{"package":"x","files":[["../../www/ghulsuite.php"]],"exp":0,"max":0}"#,
+    )
+    .unwrap();
+    let t2: serde_json::Value = serde_json::from_slice(&get(&format!("{base}?s={evil}")).body).unwrap();
+    assert_eq!(get(&format!("{base}?s={evil}&t={}&f=0&b=0", t2["ticket"].as_str().unwrap())).status, 404);
+
+    // Two downloads allowed: the second opening works, the third is refused; the open tickets
+    // keep working (a download in progress is not cut off).
+    assert_eq!(get(&format!("{base}?s={id}")).status, 200);
+    assert_eq!(get(&format!("{base}?s={id}")).status, 410);
+    assert_eq!(get(&format!("{base}?s={id}&t={ticket}&f=0&b=0")).status, 200);
+    let state: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(suite.join(format!("shares/{id}.state"))).unwrap()).unwrap();
+    assert_eq!(state["count"], 2);
+    assert!(
+        !String::from_utf8_lossy(&std::fs::read(suite.join(format!("shares/{id}.state"))).unwrap()).contains(&ticket),
+        "tickets are stored hashed"
+    );
+
+    // Expired: refused at once, also for an open ticket.
+    std::fs::write(suite.join(format!("shares/{id}.json")), share(1000, 0)).unwrap();
+    assert_eq!(get(&format!("{base}?s={id}")).status, 410);
+    assert_eq!(get(&format!("{base}?s={id}&t={ticket}&f=0&b=0")).status, 410);
+    // Withdrawn (description gone): nothing.
+    std::fs::remove_file(suite.join(format!("shares/{id}.json"))).unwrap();
+    assert_eq!(get(&format!("{base}?s={id}")).status, 404);
+    for bad in ["../../etc/passwd", "0123", &"A".repeat(32)] {
+        assert_eq!(get(&format!("{base}?s={bad}")).status, 404, "{bad}");
+    }
+    // Nothing can be written over the web.
+    let post = super::http::Url::parse(&format!("{base}?s={id}")).unwrap();
+    let r = super::block_on(super::http::request("POST", &post, &[], b"x", None), super::TIMEOUT).unwrap();
+    assert_eq!(r.status, 405);
+
+    // The page that opens shares, with a strict content security policy.
     let page = get(&base);
     assert_eq!(page.status, 200);
     assert!(page.header("Content-Security-Policy").unwrap().contains("default-src 'none'"));
-    assert!(String::from_utf8_lossy(&page.body).contains("ghulsuite.php?v=js"));
-    assert!(String::from_utf8_lossy(&get(&format!("{base}?v=js")).body).contains("GHSHARE1"));
-    // The data folder is protected (Apache) and its files are encrypted anyway; with php -S we
-    // at least check that nothing outside the module answers with its content.
-    assert!(server.dir.join("ghul-data-test/.htaccess").exists());
-}
-
-#[test]
-fn php_replay_is_refused() {
-    let Some(server) = php_server() else { return };
-    // Same signed request twice: the second is rejected.
-    use hmac::{Hmac, Mac};
-    use sha2::{Digest, Sha256};
-    let time = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs().to_string();
-    let nonce = "00112233445566778899aabbccddeeff";
-    let msg = format!("ghul/v1\nPOST\na=info\n{time}\n{nonce}\n{}", crate::kdf::hex(&Sha256::digest(b"")));
-    let mut mac = Hmac::<Sha256>::new_from_slice(&server.key).unwrap();
-    mac.update(msg.as_bytes());
-    let sig = crate::kdf::hex(&mac.finalize().into_bytes());
-    let url = super::http::Url::parse(&format!("{}?a=info", server.url)).unwrap();
-    let headers = [("X-Ghul-Time", time.clone()), ("X-Ghul-Nonce", nonce.to_string()), ("X-Ghul-Sig", sig)];
-    let send =
-        || super::block_on(super::http::request("POST", &url, &headers, b"", None), super::TIMEOUT).unwrap().status;
-    assert_eq!(send(), 200);
-    assert_eq!(send(), 401);
+    assert!(String::from_utf8_lossy(&page.body).contains("ghulsuite.php?asset=js"));
+    assert!(String::from_utf8_lossy(&get(&format!("{base}?asset=js")).body).contains("GHSHARE1"));
 }
 
 /// Real servers with broken TLS (badssl.com): GhulSuite must refuse every one of them. Runs at

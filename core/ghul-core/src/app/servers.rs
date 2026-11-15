@@ -659,7 +659,8 @@ impl GhulSuite {
                 }
                 ServerKind::Ftps => "/".to_owned(),
             };
-            let abs = |p: &str| if p.starts_with('/') { p.to_owned() } else { format!("{}/{p}", home.trim_end_matches('/')) };
+            let abs =
+                |p: &str| if p.starts_with('/') { p.to_owned() } else { format!("{}/{p}", home.trim_end_matches('/')) };
             let base_path = relative_path(&abs(&dir), &abs(&srv.base))
                 .ok_or_else(|| GhulError::InvalidInput { msg: "invalid folder".into() })?;
             Ok((srv, web, base_fs, base_path))
@@ -680,7 +681,10 @@ impl GhulSuite {
         base_fs.write(&check_file, token.as_bytes())?;
         let tried = if url.is_empty() { module_urls(&srv.host, &dir) } else { vec![url] };
         let answering = tried.iter().find_map(|u| {
-            crate::net::module::probe(u).ok().filter(|i| i.version == crate::net::module::MODULE_VERSION).map(|_| u.clone())
+            crate::net::module::probe(u)
+                .ok()
+                .filter(|i| i.version == crate::net::module::MODULE_VERSION)
+                .map(|_| u.clone())
         });
         let reads = answering
             .as_ref()
@@ -694,7 +698,8 @@ impl GhulSuite {
             return Ok(ModuleInstalled { url: None, tried, checks });
         }
         checks.push(ModuleCheck { step: "https".into(), ok: answering.is_some(), detail: shown.clone() });
-        let folder_detail = if answering.is_some() { String::new() } else { super::shares::SHARE_CHECK_SKIPPED.to_owned() };
+        let folder_detail =
+            if answering.is_some() { String::new() } else { super::shares::SHARE_CHECK_SKIPPED.to_owned() };
         checks.push(ModuleCheck { step: "folder".into(), ok: reads, detail: folder_detail });
         if !reads {
             return Ok(ModuleInstalled { url: None, tried, checks });
@@ -702,7 +707,8 @@ impl GhulSuite {
         let url = answering.expect("checked");
         self.with_open(|o| {
             let mut srv = srv.clone();
-            srv.module = Some(StoredModule { url: url.clone(), dir: dir.clone(), version: crate::net::module::MODULE_VERSION });
+            srv.module =
+                Some(StoredModule { url: url.clone(), dir: dir.clone(), version: crate::net::module::MODULE_VERSION });
             self.store_server(o, &srv)
         })?;
         Ok(ModuleInstalled { url: Some(url), tried, checks })

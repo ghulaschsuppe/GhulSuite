@@ -188,14 +188,18 @@ pub(super) fn pinned_blocks(fs: &dyn RemoteFs) -> BTreeSet<String> {
 /// What the server says about a share: `None` = gone (ended there, expired, used up),
 /// otherwise the downloads so far.
 fn server_state(fs: &dyn RemoteFs, s: &StoredShare, now: i64) -> Result<Option<i64>> {
-    if fs.read(&json_path(&s.id))?.is_none() || (s.expires > 0 && s.expires < now) {
+    // The description on the server counts (the module enforces it), not the app's copy.
+    let Some(described) = fs.read(&json_path(&s.id))? else { return Ok(None) };
+    let described: ServerShare = serde_json::from_slice(&described).unwrap_or_default();
+    let (exp, max) = (described.exp.max(0), described.max);
+    if (exp > 0 && exp < now) || (s.expires > 0 && s.expires < now) {
         return Ok(None);
     }
     let state: ServerState =
         fs.read(&state_path(&s.id))?.and_then(|d| serde_json::from_slice(&d).ok()).unwrap_or_default();
     // Used up: gone once the last download had time to finish.
     let open_ticket = state.tickets.values().any(|until| until * 1000 > now);
-    if s.max_downloads > 0 && state.count >= i64::from(s.max_downloads) && !open_ticket {
+    if max > 0 && state.count >= i64::from(max) && !open_ticket {
         return Ok(None);
     }
     Ok(Some(state.count))
@@ -273,9 +277,18 @@ impl GhulSuite {
             return Err(GhulError::ShareNotDeleted);
         }
         let fs = self.drive_fs(o)?;
+        // Its blocks: those that no file uses any more (deleted or changed since, or content
+        // that never was in GhulDrive) go with it, unless another share still hands them out.
+        let mut blocks = s.own_blocks.clone();
+        if let Some(described) =
+            fs.read(&json_path(&s.id))?.and_then(|d| serde_json::from_slice::<ServerShare>(&d).ok())
+        {
+            blocks.extend(described.files.into_iter().flatten());
+        }
         fs.delete(&json_path(&s.id))?;
         let _ = fs.delete(&state_path(&s.id));
-        self.drive_delete_loose(fs.as_ref(), &s.own_blocks)?;
+        let unused = self.drive_unused(o, &blocks)?;
+        self.drive_delete_loose(fs.as_ref(), &unused)?;
         Ok(())
     }
 

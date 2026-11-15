@@ -65,8 +65,14 @@ pub fn probe(url: &str) -> NetResult<ModuleInfo> {
     }
     let v: serde_json::Value =
         serde_json::from_slice(&r.body).map_err(|_| NetError::Protocol("not the GhulSuite module".into()))?;
-    let version = v.get("version").and_then(serde_json::Value::as_u64).ok_or_else(|| NetError::Protocol("not the GhulSuite module".into()))?;
-    Ok(ModuleInfo { version: version as u32, folder: v.get("folder").and_then(serde_json::Value::as_bool).unwrap_or(false) })
+    let version = v
+        .get("version")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| NetError::Protocol("not the GhulSuite module".into()))?;
+    Ok(ModuleInfo {
+        version: version as u32,
+        folder: v.get("folder").and_then(serde_json::Value::as_bool).unwrap_or(false),
+    })
 }
 
 /// The content the module reads from the test file `shares/check-<name>` of its folder.

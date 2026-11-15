@@ -631,11 +631,7 @@ fn secrets_never_show_up_in_debug_output_or_errors() {
         format!("{:?}", TotpInput { secret_base32: M.into(), ..totp_input() }),
         format!(
             "{:?}",
-            super::super::shares::ShareOptions {
-                password: Some(M.into()),
-                expires_days: 0,
-                max_downloads: 0
-            }
+            super::super::shares::ShareOptions { password: Some(M.into()), expires_days: 0, max_downloads: 0 }
         ),
     ];
     for s in &shown {

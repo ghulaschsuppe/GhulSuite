@@ -1365,6 +1365,13 @@ impl GhulSuite {
         Ok(SharedFile { path: name.to_owned(), size: data.len() as u64, key, blocks })
     }
 
+    /// Of these blocks, those no file of GhulDrive uses (current contents and versions).
+    pub(super) fn drive_unused(&self, o: &mut Open, blocks: &[String]) -> Result<Vec<String>> {
+        let index = self.drive_index(o, true)?;
+        let used = used_blocks(&index);
+        Ok(blocks.iter().filter(|b| !used.contains(b)).cloned().collect())
+    }
+
     /// Deletes blocks that belong to no file (those of `drive_put_loose`), unless a share
     /// still hands them out.
     pub(super) fn drive_delete_loose(&self, fs: &dyn RemoteFs, blocks: &[String]) -> Result<()> {
