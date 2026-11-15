@@ -25,7 +25,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -214,7 +213,7 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
     // mail, Refresh, an action on a result) repeats whichever it is, so the folder never replaces
     // results under the words, nor the other way round.
     // Words in the field (typed, searching or found): the list is not the folder, so nothing that
-    // acts on the folder (load more, the whole folder, archived mails) is offered.
+    // acts on the folder (load more, the whole folder) is offered.
     val inSearch = query.isNotBlank() || activeQuery.isNotEmpty() || searching
     LaunchedEffect(key, reload, activeQuery.isEmpty() && filter == "flagged", state.liveRevision(), state.mailRefreshTick, activeQuery) {
         val words = activeQuery
@@ -406,13 +405,6 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
         }
         SearchField(query, { query = it }, placeholder = stringResource(Res.string.mail_search), onSearch = { activeQuery = query.trim() })
         LoadError(error) { error = null; reload++ }
-        state.archiveUnreachable?.let { why ->
-            // KONZEPT 9.3.1: the provider's mails and what is kept offline stay usable; nothing is deleted.
-            Banner(Icons.Filled.CloudOff, stringResource(Res.string.archive_unreachable, why)) {
-                TextButton(onClick = { scope.launch { state.runArchiveOnce(manual = true) } }) { Text(stringResource(Res.string.a_retry)) }
-            }
-            TextButton(onClick = { state.push(Screen.SettingsPage(SetPage.MAIL)) }) { Text(stringResource(Res.string.archive_place_change)) }
-        }
         FilterChipRow(
             listOf(
                 "" to stringResource(Res.string.filter_all),
@@ -470,8 +462,6 @@ private fun Mailbox(state: AppState, accounts: List<MailAccountUi>, shown: List<
                 }
             }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.mail_more, (total - messages.size).toString())) }
         }
-        // The archived mails of this folder, below the provider's (KONZEPT 9.3.1).
-        if (!inSearch && !all && filter.isEmpty() && shown.isNotEmpty()) ArchivedMails(state, shown.first().id, folder, offline = error != null)
         if (heads.isNotEmpty()) HintText(stringResource(Res.string.mail_swipe_hint))
     }
     }
@@ -1268,7 +1258,6 @@ private fun MailAccountForm(state: AppState, id: String?, onSaved: (String) -> U
             if (newId != null) {
                 state.mailAccount = newId
                 state.changed()
-                if (id == null) state.askArchiveWhere()
                 onSaved(newId)
             } else {
                 certToConfirm = check

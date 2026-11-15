@@ -92,7 +92,6 @@ sealed interface Screen {
     data object Shares : Screen
     data object Security : Screen
     data class MailRead(val accountId: String, val folder: String, val uid: Long) : Screen
-    data class MailArchiveRead(val accountId: String, val folder: String, val key: String) : Screen
     data class MailCompose(val draft: MailDraft) : Screen
     data class CalEvent(val id: String, val day: String) : Screen
     data class CalEdit(val draft: de.danerd.ghulsuite.model.CalEventUi) : Screen
@@ -299,9 +298,6 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     /** U13: the last automatic sync found no connection; shown on the area pages until a sync works. */
     var syncOffline by mutableStateOf(false)
 
-    // --- Mail archive (KONZEPT 9.3.1): runs while the suite is unlocked, every 30 minutes.
-    /** The archive could not be reached (the reason), shown at the top of GhulMail. */
-    var archiveUnreachable by mutableStateOf<String?>(null)
     /** A newer version was found: the update dialog shows it. */
     var update by mutableStateOf<UpdateUi?>(null)
     /** Looking for or loading an update. */
@@ -358,98 +354,6 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         }
     }
 
-    /** First run of an account done: "remove N mails at the provider now?" (account id, N). */
-    var archiveAsk by mutableStateOf<Pair<String, Int>?>(null)
-    /** An archive run is going on. */
-    var archiveRunning by mutableStateOf(false)
-    /** Mails too large for the archive (per account), from the last run. */
-    var archiveTooLarge by mutableStateOf<Map<String, Int>>(emptyMap())
-    /** Progress of the run going on ("1.200 archived, 28.800 left"), null otherwise. */
-    var archiveProgress by mutableStateOf<String?>(null)
-    private var archiveJob: kotlinx.coroutines.Job? = null
-    /** "Where should your mails live?" after the first account, while no archive is set up. */
-    var archiveWhereAsk by mutableStateOf(false)
-
-    fun askArchiveWhere() {
-        scope.launch {
-            val st = catching { backend.net.archiveStatus() }.getOrNull()
-            if (st != null && st.mode == de.danerd.ghulsuite.model.ArchiveModeUi.NONE) archiveWhereAsk = true
-        }
-    }
-    private val archiveAsked = mutableSetOf<String>()
-
-    fun startArchive() {
-        archiveJob?.cancel()
-        if (!backend.settings.moduleGhulMail || !hasArea(VaultKindUi.MAIL)) return
-        archiveJob = scope.launch {
-            while (backend.unlocked.value) {
-                runArchiveOnce(manual = false)
-                kotlinx.coroutines.delay(30 * 60_000L)
-            }
-        }
-    }
-
-    /** One pass over every archived account. [manual]: "Archive now" (also outside Wi-Fi). */
-    suspend fun runArchiveOnce(manual: Boolean): de.danerd.ghulsuite.model.MailArchiveRunUi? {
-        val net = backend.net
-        val st = catching { net.archiveStatus() }.getOrNull() ?: return null
-        if (st.mode == de.danerd.ghulsuite.model.ArchiveModeUi.NONE || st.options.accounts.isEmpty()) return null
-        if (!manual && backend.settings.archiveWifiOnly && !net.unmeteredNetwork()) return null
-        if (archiveRunning) return null
-        archiveRunning = true
-        var total = de.danerd.ghulsuite.model.MailArchiveRunUi()
-        suspend fun progress(left: Int) {
-            val text = getString(Res.string.archive_progress, total.archived.toString(), left.toString())
-            archiveProgress = text
-            net.archiveRunning(text)
-        }
-        try {
-            progress(0)
-            for (a in st.options.accounts) {
-                var rounds = 0
-                while (backend.unlocked.value && rounds < 500) {
-                    rounds++
-                    val r = try {
-                        net.archiveRun(a, ARCHIVE_BATCH)
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Throwable) {
-                        archiveUnreachable = describe(e)
-                        return null
-                    }
-                    archiveUnreachable = null
-                    archiveTooLarge = archiveTooLarge + (a to r.tooLarge)
-                    total = total.copy(
-                        archived = total.archived + r.archived, removed = total.removed + r.removed,
-                        deletedByRule = total.deletedByRule + r.deletedByRule, remaining = r.remaining,
-                        waitingForConfirmation = r.waitingForConfirmation, renumbered = total.renumbered + r.renumbered, busy = r.busy,
-                    )
-                    progress(r.remaining)
-                    if (r.busy.isNotEmpty() || r.remaining == 0) {
-                        if (r.remaining == 0 && r.waitingForConfirmation > 0 && st.options.deleteAtProvider &&
-                            a !in st.confirmed && archiveAsked.add(a)
-                        ) {
-                            archiveAsk = a to r.waitingForConfirmation
-                        }
-                        break
-                    }
-                }
-            }
-            if (st.fullCopy) catching { net.archiveDownload(500, archiveDeviceName()) }
-        } finally {
-            archiveRunning = false
-            archiveProgress = null
-            net.archiveRunning(null)
-        }
-        if (total.archived > 0 || total.removed > 0) changed()
-        return total
-    }
-
-    /** Mails per call of the core (each call ends with everything checked; the progress follows it). */
-    private val ARCHIVE_BATCH = 1000
-
-    /** How this device is called in "a copy of the archive has: ...". */
-    fun archiveDeviceName(): String = if (backend.isDesktop) "Windows-PC" else "Android"
     var confirmDiscard by mutableStateOf(false)
     private var discardedOnLock = false
 
@@ -502,9 +406,6 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     mailUnread = 0
                     areasKnown = false
                     codeUnconfirmed = false
-                    archiveJob?.cancel()
-                    archiveAsk = null
-                    archiveUnreachable = null
                 } else {
                     if (discardedOnLock) {
                         discardedOnLock = false
@@ -524,7 +425,6 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                         scope.launch { catching { backend.net.refreshMailNotifications() } }
                     }
                     refreshCalendar()
-                    startArchive()
                     checkUpdate(manual = false)
                 }
             }

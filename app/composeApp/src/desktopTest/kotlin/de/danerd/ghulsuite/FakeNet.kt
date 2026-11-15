@@ -184,40 +184,54 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
     } else emptyList()
     override suspend fun mailList(accountId: String, folder: String, offset: Int, limit: Int) = MailPageUi(list.size, list)
 
-    // --- Mail archive: set up on the home server, three old mails no longer at the provider.
-    private val archived = listOf(
-        de.danerd.ghulsuite.model.ArchivedMailUi("k1", "INBOX", "inbox",
-            MailSummaryUi(0, "Finanzamt", "post@finanzamt.example", "Steuerbescheid 2024", now - 400 * 86_400, true, false, true, 300_000), false, 0),
-        de.danerd.ghulsuite.model.ArchivedMailUi("k2", "INBOX", "inbox",
-            MailSummaryUi(0, "Erika Musterfrau", "erika@example.org", "Urlaubsfotos Ostsee", now - 200 * 86_400, true, true, true, 4_000_000), false, 0),
-        de.danerd.ghulsuite.model.ArchivedMailUi("k3", "INBOX", "inbox",
-            MailSummaryUi(0, "Vermieter", "verwaltung@wohnen.example", "Nebenkostenabrechnung", now - 90 * 86_400, false, false, false, 20_000), false, 0),
-    )
-    override suspend fun archiveStatus() = if (!configured) null else de.danerd.ghulsuite.model.MailArchiveStatusUi(
-        de.danerd.ghulsuite.model.ArchiveModeUi.OWN, server, true,
-        de.danerd.ghulsuite.model.MailArchiveOptionsUi(30, true, true, de.danerd.ghulsuite.model.ArchiveRuleUi.LEAVE, de.danerd.ghulsuite.model.ArchiveRuleUi.ARCHIVE, listOf("m1")),
-        listOf(de.danerd.ghulsuite.model.MailArchiveCopyUi("d2", "Windows-PC", 12_480, now * 1000 - 86_400_000, true, false)),
-        false, 48_000_000, listOf("m1"),
-    )
-    override suspend fun archiveList(accountId: String, folder: String, offset: Int, limit: Int, withProvider: Boolean) =
-        if (configured && folder == "INBOX") de.danerd.ghulsuite.model.ArchivePageUi(archived.size, archived) else de.danerd.ghulsuite.model.ArchivePageUi(0, emptyList())
-    override suspend fun archiveCount(accountId: String) = de.danerd.ghulsuite.model.MailArchiveCountUi(12_480, 3_400_000_000, 4)
-    override suspend fun archiveGet(accountId: String, folder: String, key: String) = MailMessageUi(
-        0, "Finanzamt", "post@finanzamt.example", listOf("Max Mustermann <max@posteo.de>"), emptyList(), "",
-        "Steuerbescheid 2024", now - 400 * 86_400, "Sehr geehrter Herr Mustermann,\n\nanbei Ihr Steuerbescheid.",
-        false, "bescheid@finanzamt.example", listOf(MailAttachmentUi(0, "Bescheid.pdf", "application/pdf", 280_000)),
-    )
-    override suspend fun archiveDelete(accountId: String, items: List<de.danerd.ghulsuite.model.ArchiveRefUi>) {
-        calls += "archiveDelete:" + items.joinToString { it.key }
+    // --- Mail archive in GhulDrive: the mails of [list] copied as .eml files, kept in memory.
+    /** "account/folder/uid" of every mail copied into GhulDrive. */
+    val archivedToDrive: MutableSet<String> = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    var archiveAutoDaysValue = 0
+    /** Per "account/folder": UIDVALIDITY and the highest UID an automatic run handled. */
+    val archiveAutoMarks = mutableMapOf<String, Pair<Long, Long>>()
+    private fun archiveCandidates(beforeDays: Long?) =
+        list.filter { beforeDays == null || it.date < beforeDays * 86_400 }.sortedBy { it.uid }.map { it.uid }
+    override suspend fun archiveFolder(accountId: String?): String? =
+        if (archivedToDrive.isEmpty()) null else if (accountId == null) "archive" else "archive-$accountId"
+    override suspend fun archiveUids(accountId: String, folder: String, beforeDays: Long?): List<Long> {
+        calls += "archiveUids:$accountId:$folder:${beforeDays ?: ""}"
+        return archiveCandidates(beforeDays)
     }
-    override suspend fun archiveSetOptions(options: de.danerd.ghulsuite.model.MailArchiveOptionsUi) { calls += "archiveOptions:${options.days}:${options.deleteAtProvider}" }
-    override suspend fun archiveRun(accountId: String, max: Int): de.danerd.ghulsuite.model.MailArchiveRunUi {
-        calls += "archiveRun:$accountId"
-        return de.danerd.ghulsuite.model.MailArchiveRunUi(archived = 42, removed = 0, waitingForConfirmation = 42)
+    override suspend fun archiveToDrive(accountId: String, folder: String, uid: Long): de.danerd.ghulsuite.model.MailArchivedUi {
+        calls += "archiveToDrive:$accountId:$folder:$uid"
+        return when {
+            list.none { it.uid == uid } -> de.danerd.ghulsuite.model.MailArchivedUi.GONE
+            !archivedToDrive.add("$accountId/$folder/$uid") -> de.danerd.ghulsuite.model.MailArchivedUi.SKIPPED
+            else -> de.danerd.ghulsuite.model.MailArchivedUi.SAVED
+        }
     }
-    override suspend fun archiveConfirmRemoval(accountId: String): de.danerd.ghulsuite.model.MailArchiveRunUi {
-        calls += "archiveConfirm:$accountId"
-        return de.danerd.ghulsuite.model.MailArchiveRunUi(removed = 42)
+    override suspend fun archiveAutoDays() = archiveAutoDaysValue
+    override suspend fun archiveSetAutoDays(days: Int) { calls += "archiveSetAutoDays:$days"; archiveAutoDaysValue = days }
+    override suspend fun archiveAutoUids(accountId: String, folder: String): de.danerd.ghulsuite.model.MailArchiveBatchUi {
+        calls += "archiveAutoUids:$accountId:$folder"
+        if (archiveAutoDaysValue == 0) return de.danerd.ghulsuite.model.MailArchiveBatchUi(0, emptyList())
+        val after = archiveAutoMarks["$accountId/$folder"]?.takeIf { it.first == 1L }?.second ?: 0L
+        val uids = archiveCandidates(now / 86_400 - archiveAutoDaysValue).filter { it > after }
+        return de.danerd.ghulsuite.model.MailArchiveBatchUi(1, uids)
+    }
+    override suspend fun archiveAutoDone(accountId: String, folder: String, validity: Long, lastUid: Long) {
+        calls += "archiveAutoDone:$accountId:$folder:$validity:$lastUid"
+        archiveAutoMarks["$accountId/$folder"] = validity to lastUid
+    }
+    override suspend fun mailParseEml(accountId: String, data: ByteArray): MailMessageUi {
+        calls += "mailParseEml:$accountId"
+        val text = data.decodeToString()
+        val subject = text.lineSequence().firstOrNull { it.startsWith("Subject:", true) }?.substringAfter(':')?.trim().orEmpty()
+        return MailMessageUi(
+            0, "Finanzamt", "post@finanzamt.example", listOf("Max Mustermann <max@posteo.de>"), emptyList(), "",
+            subject, now - 400 * 86_400, text.substringAfter("\r\n\r\n", text), false, "bescheid@finanzamt.example",
+            listOf(MailAttachmentUi(0, "Bescheid.pdf", "application/pdf", 280_000)),
+        )
+    }
+    override suspend fun mailEmlAttachment(accountId: String, data: ByteArray, index: Int): ByteArray {
+        calls += "mailEmlAttachment:$accountId:$index"
+        return "%PDF-1.4".encodeToByteArray()
     }
     /** While true, the mail search fails (the server does not answer). */
     var mailSearchFails = false

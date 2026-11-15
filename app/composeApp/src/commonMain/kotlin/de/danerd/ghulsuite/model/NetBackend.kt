@@ -94,6 +94,8 @@ interface NetBackend {
     suspend fun driveRestoreVersion(id: String, index: Int) {}
     suspend fun driveUsage(): DriveUsageUi? = null
     suspend fun driveZip(ids: List<String>, password: String): ByteArray = ByteArray(0)
+    /** The device is on a network without data limit (Wi-Fi); desktops always. */
+    fun unmeteredNetwork(): Boolean = true
     /** Photo backup (Android): uploads photos added after [sinceSeconds] into "Fotos"; returns the newest time done. */
     val photoBackupAvailable: Boolean get() = false
     suspend fun photoBackup(sinceSeconds: Long, wifiOnly: Boolean, onFile: (String) -> Unit): Long = sinceSeconds
@@ -135,41 +137,24 @@ interface NetBackend {
     suspend fun mailSetLabel(accountId: String, folder: String, uid: Long, label: String, on: Boolean) {}
     suspend fun mailRaw(accountId: String, folder: String, uid: Long, decrypted: Boolean): ByteArray = ByteArray(0)
 
-    // --- Encrypted mail archive (KONZEPT 9.3.1)
-    /**
-     * An archive run is going on ([progress] shown in the notification) or over (null). While it
-     * runs, the auto-lock waits for its end (Android, Windows); an immediate lock stops it at once.
-     */
-    fun archiveRunning(progress: String?) {}
-    /** The device is on a network without data limit (Wi-Fi); desktops always. */
-    fun unmeteredNetwork(): Boolean = true
-    suspend fun archiveStatus(): MailArchiveStatusUi? = null
-    suspend fun archiveSetOptions(options: MailArchiveOptionsUi) {}
-    /** [serverId] null: the server this device synchronises with. */
-    suspend fun archiveSetup(serverId: String?): ArchivePlaceUi = ArchivePlaceUi.FOREIGN
-    suspend fun archiveSaveServer(input: ServerInputUi, confirmed: String?): ServerSavedUi = ServerSavedUi.Saved("")
-    suspend fun archiveMove(serverId: String?): ArchivePlaceUi = ArchivePlaceUi.FOREIGN
-    suspend fun archiveRun(accountId: String, max: Int): MailArchiveRunUi = MailArchiveRunUi()
-    suspend fun archiveConfirmRemoval(accountId: String): MailArchiveRunUi = MailArchiveRunUi()
-    suspend fun archiveList(accountId: String, folder: String, offset: Int, limit: Int, withProvider: Boolean): ArchivePageUi = ArchivePageUi(0, emptyList())
-    suspend fun archiveSearch(accountId: String, query: String): List<ArchivedMailUi> = emptyList()
-    suspend fun archiveGet(accountId: String, folder: String, key: String): MailMessageUi = throw UnsupportedOperationException()
-    suspend fun archiveRaw(accountId: String, folder: String, key: String): ByteArray = ByteArray(0)
-    suspend fun archiveAttachment(accountId: String, folder: String, key: String, index: Int): ByteArray = ByteArray(0)
-    suspend fun archiveSetSeen(accountId: String, items: List<ArchiveRefUi>, seen: Boolean) {}
-    suspend fun archiveSetFlagged(accountId: String, items: List<ArchiveRefUi>, flagged: Boolean) {}
-    suspend fun archiveDelete(accountId: String, items: List<ArchiveRefUi>) {}
-    suspend fun archiveRestore(accountId: String, items: List<ArchiveRefUi>) {}
-    suspend fun archiveTrash(accountId: String): List<ArchivedMailUi> = emptyList()
-    suspend fun archiveEmptyTrash(accountId: String, days: Int): Int = 0
-    suspend fun archiveCount(accountId: String): MailArchiveCountUi = MailArchiveCountUi(0, 0, 0)
-    suspend fun archiveSetFullCopy(on: Boolean, deviceName: String) {}
-    /** Loads up to [max] mails onto this device; returns how many are still missing. */
-    suspend fun archiveDownload(max: Int, deviceName: String): Int = 0
-    suspend fun archiveClearCopy() {}
-    suspend fun archiveOnlyCopy(): Boolean = false
-    /** Uploads what this device keeps and the archive lacks; returns how many mails it added. */
-    suspend fun archiveRestoreFromCopy(): Int = 0
+    // --- Mail archive in GhulDrive: each mail as an .eml file in Mail-Archiv/<account>/<year>
+    /** The archive's folder in GhulDrive: the account's (with [accountId]) or the top one; null while nothing was archived. */
+    suspend fun archiveFolder(accountId: String?): String? = null
+    /** UIDs of the mails at the provider to archive: received before the day [beforeDays] (days since 1970-01-01), or all. Oldest first. */
+    suspend fun archiveUids(accountId: String, folder: String, beforeDays: Long?): List<Long> = emptyList()
+    /** Copies one mail into GhulDrive; it stays at the provider unchanged. Fails with NOT_CONFIGURED without GhulDrive. */
+    suspend fun archiveToDrive(accountId: String, folder: String, uid: Long): MailArchivedUi = MailArchivedUi.SKIPPED
+    /** Automatic archiving: mails older than this many days are copied (0 = off); the same on every device. */
+    suspend fun archiveAutoDays(): Int = 0
+    suspend fun archiveSetAutoDays(days: Int) {}
+    /** For an automatic run: the mails of a folder old enough that came after the last automatic run. */
+    suspend fun archiveAutoUids(accountId: String, folder: String): MailArchiveBatchUi = MailArchiveBatchUi(0, emptyList())
+    /** After an automatic run: everything up to [lastUid] is in the archive. */
+    suspend fun archiveAutoDone(accountId: String, folder: String, validity: Long, lastUid: Long) {}
+    /** Reads an archived mail (.eml), decrypted with the account's key if it is encrypted. */
+    suspend fun mailParseEml(accountId: String, data: ByteArray): MailMessageUi = throw UnsupportedOperationException()
+    /** Attachment [index] of an archived mail (.eml). */
+    suspend fun mailEmlAttachment(accountId: String, data: ByteArray, index: Int): ByteArray = ByteArray(0)
     suspend fun mailHeaders(accountId: String, folder: String, uid: Long): String = ""
     suspend fun mailSaveDraft(draft: MailDraftUi): String = draft.id
     suspend fun mailDrafts(): List<MailDraftUi> = emptyList()
@@ -506,64 +491,8 @@ data class OutgoingMailUi(
     val pgp: Boolean = true,
 )
 
-enum class ArchiveRuleUi { LEAVE, ARCHIVE, DELETE }
+/** What archiving one mail did: stored, already in the archive, or no longer at the provider. */
+enum class MailArchivedUi { SAVED, SKIPPED, GONE }
 
-enum class ArchiveModeUi { NONE, SYNC, OWN, SUITE }
-
-enum class ArchivePlaceUi { CREATED, CONNECTED, MOVE_OFFERED, FOREIGN }
-
-data class MailArchiveOptionsUi(
-    val days: Int,
-    val deleteAtProvider: Boolean,
-    val sent: Boolean,
-    val spam: ArchiveRuleUi,
-    val trash: ArchiveRuleUi,
-    val accounts: List<String>,
-)
-
-data class MailArchiveCopyUi(val device: String, val name: String, val mails: Long, val at: Long, val full: Boolean, val thisDevice: Boolean)
-
-data class MailArchiveStatusUi(
-    val mode: ArchiveModeUi,
-    val server: ServerUi?,
-    val syncAvailable: Boolean,
-    val options: MailArchiveOptionsUi,
-    val copies: List<MailArchiveCopyUi>,
-    val fullCopy: Boolean,
-    val offlineBytes: Long,
-    /** Accounts whose first removal at the provider the user confirmed. */
-    val confirmed: List<String>,
-    /** Accounts at which nothing is deleted, whatever the options say (Gmail, for now). */
-    val deleteBlocked: List<String> = emptyList(),
-)
-
-data class MailArchiveRunUi(
-    val archived: Int = 0,
-    val removed: Int = 0,
-    val deletedByRule: Int = 0,
-    val remaining: Int = 0,
-    val waitingForConfirmation: Int = 0,
-    val renumbered: Int = 0,
-    /** Mails larger than 100 MB: left at the provider, never deleted there. */
-    val tooLarge: Int = 0,
-    /** Another device archives this account right now (its name). */
-    val busy: String = "",
-)
-
-data class ArchivedMailUi(
-    val key: String,
-    val folder: String,
-    val role: String,
-    val summary: MailSummaryUi,
-    val atProvider: Boolean,
-    val trashed: Long,
-) {
-    val ref: ArchiveRefUi get() = ArchiveRefUi(key, folder)
-}
-
-/** An archived mail: its key in the archive and its folder. */
-data class ArchiveRefUi(val key: String, val folder: String)
-
-data class ArchivePageUi(val total: Int, val mails: List<ArchivedMailUi>)
-
-data class MailArchiveCountUi(val mails: Long, val bytes: Long, val inTrash: Long)
+/** Mails of a folder for an automatic run: the folder's UIDVALIDITY and the UIDs, oldest first. */
+data class MailArchiveBatchUi(val validity: Long, val uids: List<Long>)

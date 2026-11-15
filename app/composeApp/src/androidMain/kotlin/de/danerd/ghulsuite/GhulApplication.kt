@@ -38,18 +38,14 @@ class GhulApplication : Application() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val handler = Handler(Looper.getMainLooper())
-    /** An auto-lock that waits for the end of an archive run. */
-    @Volatile
-    private var lockAfterArchive = false
-
-    private val lockRunnable = Runnable { if (ArchiveRun.progress != null) lockAfterArchive = true else backend.lock() }
+    private val lockRunnable = Runnable { backend.lock() }
     private var screenReceiverRegistered = false
     private var current: WeakReference<Activity>? = null
 
     private val screenOffReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == Intent.ACTION_SCREEN_OFF && backend.settings.lockOnScreenOff) {
-                if (ArchiveRun.progress != null) lockAfterArchive = true else backend.lock()
+                backend.lock()
             }
         }
     }
@@ -88,16 +84,9 @@ class GhulApplication : Application() {
         // Instant mail notifications, if switched on (also after the app was closed by Android).
         MailPushService.start(this)
 
-        ArchiveRun.onEnded = {
-            if (lockAfterArchive) {
-                lockAfterArchive = false
-                handler.post { if (backend.unlocked.value) backend.lock() }
-            }
-        }
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
                 handler.removeCallbacks(lockRunnable)
-                lockAfterArchive = false
                 // B8: the handler's clock stops in deep sleep; the real time away decides.
                 if (lockDueAt > 0 && android.os.SystemClock.elapsedRealtime() >= lockDueAt && backend.unlocked.value) {
                     backend.lock()
