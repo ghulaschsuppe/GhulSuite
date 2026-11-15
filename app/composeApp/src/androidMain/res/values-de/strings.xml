@@ -4,6 +4,7 @@
     <string name="notif_channel">Entsperrt</string>
     <string name="notif_title">GhulSuite ist entsperrt</string>
     <string name="notif_text">Tippen zum Öffnen. Schütteln oder „Sperren“ sperrt sofort.</string>
+    <string name="notif_text_no_shake">Tippen zum Öffnen. „Sperren“ sperrt sofort.</string>
     <string name="notif_lock">Sperren</string>
     <string name="bio_title">GhulSuite entsperren</string>
     <string name="bio_subtitle">Mit Fingerabdruck bestätigen</string>

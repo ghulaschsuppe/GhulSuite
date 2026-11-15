@@ -5,6 +5,7 @@
     <string name="notif_channel">Unlocked</string>
     <string name="notif_title">GhulSuite is unlocked</string>
     <string name="notif_text">Tap to open. Shake or “Lock” locks immediately.</string>
+    <string name="notif_text_no_shake">Tap to open. “Lock” locks immediately.</string>
     <string name="notif_lock">Lock</string>
     <string name="bio_title">Unlock GhulSuite</string>
     <string name="bio_subtitle">Confirm with your fingerprint</string>

@@ -88,6 +88,8 @@ von Schritt 3, danach geht „Zurück“ nur noch bis Schritt 4.
 | P5 | Schnelleinstellungs-Kachel „GhulSuite sperren“ hinzufügen und antippen. | Gesperrt, Fingerabdruck/PIN-Zugang gelöscht. |
 | P6 | „Schütteln zum Sperren“ an, Handy eine halbe Sekunde deutlich hin und her schütteln, in der App, mit der App im Hintergrund und mit gesperrtem Startbildschirm-Wechsel. Jede Empfindlichkeit ausprobieren. | Gesperrt, kurzes Vibrieren, Fingerabdruck/PIN-Zugang gelöscht. Gehen, Treppensteigen, Handy auf den Tisch legen sperren **nicht**. |
 | P7 | Bildschirmfoto in der App versuchen; App-Übersicht öffnen. | Bildschirmfoto blockiert, Vorschau schwarz (solange „Bildschirmfotos erlauben“ aus ist). |
+| P7a | Benachrichtigungen aufziehen, während GhulSuite entsperrt ist (und mit eingerichtetem Mail-Konto). | Die dauerhaften Benachrichtigungen („GhulSuite entsperrt“, Mail-Empfang) zeigen das **Schutzschild**; ein Briefumschlag erscheint nur bei einer neu eingegangenen Mail. Text: „Tippen zum Öffnen. Schütteln oder „Sperren“ sperrt sofort.“ |
+| P7b | Optionen → Sperren → „Schütteln zum Sperren“ aus, Benachrichtigungen erneut aufziehen. | Der Text ändert sich sofort zu „Tippen zum Öffnen. „Sperren“ sperrt sofort.“ (kein Schütteln mehr erwähnt). Wieder an: Schütteln steht wieder da. |
 
 ## 4. GhulPass
 

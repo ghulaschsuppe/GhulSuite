@@ -18,6 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 
 /**
@@ -73,6 +74,12 @@ class UnlockedService : Service() {
         scope.launch {
             JobStatus.finished.collect { end -> if (!AppLaunch.inFront.value) postDone(end) }
         }
+        // "Shake to lock" switched on or off: the text says so at once.
+        scope.launch {
+            androidx.compose.runtime.snapshotFlow { ghul.backend.settings.shakeToLock }.drop(1).collect {
+                if (ghul.backend.unlocked.value) runCatching { nm.notify(NOTIFICATION_ID, buildNotification(JobStatus.current.value)) }
+            }
+        }
     }
 
     private fun postDone(end: de.danerd.ghulsuite.ui.JobEnd) {
@@ -85,12 +92,12 @@ class UnlockedService : Service() {
         )
         // On the lock screen only that something is done (names of files stay private).
         val public = Notification.Builder(this, JOBS_CHANNEL)
-            .setSmallIcon(R.drawable.ic_lock)
+            .setSmallIcon(R.drawable.ic_shield)
             .setContentTitle(getString(R.string.app_name))
             .setContentText(end.publicText)
             .build()
         val n = Notification.Builder(this, JOBS_CHANNEL)
-            .setSmallIcon(R.drawable.ic_lock)
+            .setSmallIcon(R.drawable.ic_shield)
             .setContentTitle(getString(R.string.app_name))
             .setContentText(text)
             .setStyle(Notification.BigTextStyle().bigText(text))
@@ -119,9 +126,10 @@ class UnlockedService : Service() {
             this, 1, Intent(this, UnlockedService::class.java).setAction(ACTION_LOCK), PendingIntent.FLAG_IMMUTABLE,
         )
         val plain = Notification.Builder(this, CHANNEL)
-            .setSmallIcon(R.drawable.ic_lock)
+            .setSmallIcon(R.drawable.ic_shield)
             .setContentTitle(getString(R.string.notif_title))
-            .setContentText(getString(R.string.notif_text))
+            // Shaking is only mentioned while it is switched on.
+            .setContentText(getString(if (ghul.backend.settings.shakeToLock) R.string.notif_text else R.string.notif_text_no_shake))
             .setContentIntent(open)
             .setOngoing(true)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
@@ -137,7 +145,7 @@ class UnlockedService : Service() {
         ).joinToString(" · ")
         val p = job.progress
         return Notification.Builder(this, CHANNEL)
-            .setSmallIcon(R.drawable.ic_lock)
+            .setSmallIcon(R.drawable.ic_shield)
             .setContentTitle(job.title)
             .setContentText(detail)
             .setProgress(100, ((p ?: 0f) * 100).toInt(), p == null)

@@ -140,7 +140,8 @@ class MailPushService : Service() {
             this, 3, Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE,
         )
         return Notification.Builder(this, CHANNEL)
-            .setSmallIcon(R.drawable.ic_mail)
+            // The envelope is for mails that came in; this one only says that GhulSuite listens.
+            .setSmallIcon(R.drawable.ic_shield)
             .setContentTitle(getString(R.string.mail_push_title))
             .setContentText(getString(R.string.mail_push_text))
             .setContentIntent(open)
