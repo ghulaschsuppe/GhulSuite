@@ -678,10 +678,11 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope, val main: B
         if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex)
     }
 
-    fun changed() {
+    /** Something changed: reload, and synchronise automatically unless the caller syncs itself. */
+    fun changed(sync: Boolean = true) {
         revision++
         refreshVaults()
-        autoSync()
+        if (sync) autoSync()
         refreshCalendar()
     }
 
@@ -697,8 +698,11 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope, val main: B
             syncAgain = true
             return
         }
-        scope.launch {
-            syncing = true
+        // Set before the start: a second call before the coroutine runs (Android's main
+        // dispatcher starts it later) joins this run instead of starting one of its own. ATOMIC:
+        // the body (and with it the reset below) always runs.
+        syncing = true
+        scope.launch(start = CoroutineStart.ATOMIC) {
             try {
                 do {
                     syncAgain = false

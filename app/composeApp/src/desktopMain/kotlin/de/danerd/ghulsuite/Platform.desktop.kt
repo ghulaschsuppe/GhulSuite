@@ -93,6 +93,8 @@ object DesktopBack {
     fun isBackButton(id: Int, button: Int): Boolean = id == java.awt.event.MouseEvent.MOUSE_RELEASED && button == 4
 }
 
+actual fun androidx.compose.ui.Modifier.testTagsAsIds(): androidx.compose.ui.Modifier = this
+
 @Composable
 actual fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit) {
     val handler = androidx.compose.runtime.remember { DesktopBack.Handler(enabled, onBack) }

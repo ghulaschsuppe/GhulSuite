@@ -376,7 +376,7 @@ fun GhulSheet(onDismissRequest: () -> Unit, title: String? = null, content: @Com
             properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
         ) {
             Box(
-                Modifier.padding(24.dp).widthIn(max = 520.dp).fillMaxWidth().heightIn(max = 760.dp)
+                Modifier.testTagsAsIds().padding(24.dp).widthIn(max = 520.dp).fillMaxWidth().heightIn(max = 760.dp)
                     .shadow(24.dp, RoundedCornerShape(28.dp)).clip(RoundedCornerShape(28.dp)).background(t.surface),
             ) {
                 CompositionLocalProvider(LocalOnCard provides true) {
@@ -404,7 +404,8 @@ fun GhulSheet(onDismissRequest: () -> Unit, title: String? = null, content: @Com
             Box(Modifier.padding(top = 10.dp, bottom = 14.dp).size(36.dp, 4.dp).clip(RoundedCornerShape(2.dp)).background(t.line))
         },
     ) {
-        Box {
+        // A window of its own: test tags (e.g. "ask-confirm") as ids here as well.
+        Box(Modifier.testTagsAsIds()) {
             CompositionLocalProvider(LocalOnCard provides true) {
                 Column(
                     Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 28.dp).navigationBarsPadding(),

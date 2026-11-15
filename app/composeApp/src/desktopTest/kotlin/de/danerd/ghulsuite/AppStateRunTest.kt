@@ -21,13 +21,13 @@ import kotlin.test.assertTrue
  * work is posted, not run at once; the UI tests use Unconfined, where these mistakes do not show).
  */
 class AppStateRunTest {
-    private fun state(): AppState {
+    private fun state(prepare: ScreenshotTest.Fake.() -> Unit = {}): AppState {
         val ui = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
         // Texts AppState looks up in the background need a display, which the tests do not have:
         // only that failure is let through (as in the other UI tests). Without this handler it
         // reached the next test class and failed it there.
         val headlessOnly = kotlinx.coroutines.CoroutineExceptionHandler { _, e -> if (e !is java.awt.HeadlessException) throw e }
-        return AppState(ScreenshotTest.Fake(exists = true, unlocked = true), CoroutineScope(SupervisorJob() + ui + headlessOnly))
+        return AppState(ScreenshotTest.Fake(exists = true, unlocked = true).apply(prepare), CoroutineScope(SupervisorJob() + ui + headlessOnly))
     }
 
     /** Save tapped twice in a row: the action runs once (it ran twice: busy was set too late). */
@@ -47,6 +47,27 @@ class AppStateRunTest {
         assertEquals(1, runs.get())
         // A second tap is no mistake of the app: no alarm.
         assertTrue(DevChecks.alarms.isEmpty(), DevChecks.alarms.toList().toString())
+    }
+
+    /**
+     * Two calls of sync before the posted work had a turn (choosing the sync server did that):
+     * one run covers both, never two runs at the same time ("syncing" was set only once the
+     * coroutine ran, so the second call started a run of its own).
+     */
+    @Test
+    fun twoSyncCallsNeverRunAtTheSameTime() = runBlocking {
+        // No automatic run after unlocking in between: only the two calls below count.
+        val s = state { settings.autoSync = false }
+        val net = s.backend.net as FakeNet
+        net.syncDelayMs = 300
+        s.sync(quiet = true)
+        s.sync(quiet = true)
+        withTimeout(5_000) { while (net.syncRuns < 1 || s.syncing) kotlinx.coroutines.delay(20) }
+        // Time for a second run, if one had been started.
+        kotlinx.coroutines.delay(500)
+        assertEquals(1, net.syncMaxAtOnce)
+        assertEquals(1, net.syncRuns)
+        assertFalse(s.syncing)
     }
 
     /** A follow-up action started when the first one is done runs (F49: it was dropped). */

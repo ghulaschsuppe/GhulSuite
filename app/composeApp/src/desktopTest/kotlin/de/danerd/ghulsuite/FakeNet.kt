@@ -128,7 +128,23 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
         calls += "setSyncServer:$id"
         syncServer = id
     }
-    override suspend fun syncNow() = SyncReportUi(1, 2, 0, 0, 0)
+    /** How many synchronisations ran, and the most that ran at the same time. */
+    @Volatile var syncRuns = 0
+    @Volatile var syncMaxAtOnce = 0
+    private val syncActive = java.util.concurrent.atomic.AtomicInteger()
+    /** A synchronisation takes this long (it suspends, like the real one). */
+    var syncDelayMs = 0L
+    override suspend fun syncNow(): SyncReportUi {
+        val now = syncActive.incrementAndGet()
+        syncMaxAtOnce = maxOf(syncMaxAtOnce, now)
+        try {
+            syncRuns++
+            if (syncDelayMs > 0) kotlinx.coroutines.delay(syncDelayMs)
+            return SyncReportUi(1, 2, 0, 0, 0)
+        } finally {
+            syncActive.decrementAndGet()
+        }
+    }
     override suspend fun adoptRemotePassword(password: String) = SyncReportUi(0, 0, 0, 0, 0)
 
     /** GhulDrive's storage; tests can give Drive a server of its own (not in the suite's list). */

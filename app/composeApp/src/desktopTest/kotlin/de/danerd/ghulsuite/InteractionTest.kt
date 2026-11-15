@@ -1052,6 +1052,12 @@ class InteractionTest {
             shot("sync-server-chosen")
             // With a server, the controls of the synchronisation appear.
             waitFor("Synchronise now")
+            // One synchronisation for the choice, not one automatic and then one more (bug: the
+            // emulator waited for the second full run).
+            assertTrue(fake.settings.autoSync)
+            Thread.sleep(500)
+            waitForIdle()
+            assertEquals(1, net.syncRuns)
         }
     }
 

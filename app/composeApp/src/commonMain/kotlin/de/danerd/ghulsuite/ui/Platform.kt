@@ -7,6 +7,13 @@ import androidx.compose.runtime.Composable
 @Composable
 expect fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit)
 
+/**
+ * Test tags as ids for the emulator flows (Android). The main window sets this once; a sheet or
+ * dialog is a window of its own and needs it again (bug: "ask-confirm" in the delete question
+ * was not found). No-op on desktop.
+ */
+expect fun androidx.compose.ui.Modifier.testTagsAsIds(): androidx.compose.ui.Modifier
+
 /** Current Unix time in seconds. */
 expect fun nowSeconds(): Long
 

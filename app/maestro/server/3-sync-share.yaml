@@ -120,13 +120,17 @@ name: Sync server and sharing on a real server
 - takeScreenshot: s3-07-sync-choice
 - tapOn: "[/~].*sync-maestro/?"
 # The choice sticks: the first run is done and the controls of the synchronisation appear
-# (the button may be below the screen's edge: scroll to it).
+# (the button may be below the screen's edge: scroll to it, running or not, then wait for the
+# end of the run; one run, not an automatic one and then a second full one).
 - extendedWaitUntil:
     visible: "Last synchronised: .*"
     timeout: 120000
 - scrollUntilVisible:
-    element: "Synchronise now"
+    element: "Synchronise now|Synchronising …"
     direction: DOWN
+- extendedWaitUntil:
+    visible: "Synchronise now"
+    timeout: 120000
 - assertNotVisible: "Off"
 - assertNotVisible: "Synchronisation failed: .*"
 - takeScreenshot: s3-08-sync-chosen

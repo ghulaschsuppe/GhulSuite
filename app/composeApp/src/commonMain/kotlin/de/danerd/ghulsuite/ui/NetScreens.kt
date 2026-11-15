@@ -263,7 +263,9 @@ fun ServersSection(state: AppState) {
                             open = false
                             if (s.id != sync.serverId) guarded {
                                 state.run(block = { net.setSyncServer(s.id) }) {
-                                    state.changed()
+                                    // One run for the choice (with its errors shown), not an
+                                    // automatic one and then a second full one.
+                                    state.changed(sync = false)
                                     state.sync()
                                 }
                             }
