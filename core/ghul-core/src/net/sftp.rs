@@ -317,14 +317,27 @@ impl RemoteFs for SftpFs {
                     let mut req = Vec::new();
                     ssh_string(&mut req, &tmp);
                     ssh_string(&mut req, &full);
-                    match raw.extended(POSIX_RENAME, req).await {
+                    let answer = raw.extended(POSIX_RENAME, req).await;
+                    // Tests: the server did it, but its answer is lost.
+                    let answer = if cfg!(test) && full.ends_with("/lost-answer") {
+                        Err(russh_sftp::client::error::Error::Timeout)
+                    } else {
+                        answer
+                    };
+                    match answer {
                         Ok(russh_sftp::protocol::Packet::Status(st))
                             if st.status_code == russh_sftp::protocol::StatusCode::Ok =>
                         {
                             return Ok(());
                         }
-                        // The second channel is gone (closed by the server): the two steps below.
-                        Err(_) => {}
+                        // No answer (lost or late): the server may have done it all the same.
+                        // Never fall back to removing the file: done if the new file is in
+                        // place, else an error with the old file untouched.
+                        Err(e) => {
+                            let moved = matches!(self.sftp.metadata(tmp.clone()).await, Err(ref m) if is_missing(m));
+                            let there = self.sftp.metadata(full.clone()).await.is_ok();
+                            return if moved && there { Ok(()) } else { Err(proto(e)) };
+                        }
                         Ok(other) => return Err(NetError::Protocol(format!("posix-rename: {other:?}"))),
                     }
                 }

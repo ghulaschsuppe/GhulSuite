@@ -1428,7 +1428,6 @@
     <string name="core_image_na">Bild nicht verfügbar.</string>
     <string name="core_drive_busy">GhulDrive wird gerade auf einem anderen Gerät geändert. Bitte gleich noch einmal versuchen.</string>
     <string name="core_drive_index_missing">Das Verzeichnis von GhulDrive fehlt auf dem Server. Es wurde nichts geändert. Wird der Server gerade wiederhergestellt, später noch einmal versuchen; dann sind die Dateien wieder da.</string>
-    <string name="core_protection_revoked">Der Schutz auf dem Server nutzt einen Wiederherstellungscode oder Schlüssel, der bewusst ersetzt wurde. Er wird nicht übernommen. Bitte von einem Gerät mit dem aktuellen Schutz synchronisieren.</string>
     <string name="core_folder_other_suite">Dieser Ordner auf dem Server gehört zu einer anderen Suite.</string>
     <string name="core_not_backup">Das ist keine GhulSuite-Sicherung.</string>
     <string name="core_backup_big">Die Sicherung ist zu groß.</string>

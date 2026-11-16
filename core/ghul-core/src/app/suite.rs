@@ -461,6 +461,20 @@ fn open_with_before(
     None
 }
 
+/// Which of `c`'s factor secret and recovery code this suite replaced on purpose.
+pub(super) struct Revoked {
+    pub secret: bool,
+    pub code: bool,
+}
+
+pub(super) fn revoked_parts(o: &Open, c: &UnlockedContainer) -> Revoked {
+    let list: Vec<String> = setting(&o.suite, REVOKED_KEY);
+    Revoked {
+        secret: list.contains(&revoked_fingerprint(c.factor_secret().expose())),
+        code: c.recovery_code().is_some_and(|code| list.contains(&revoked_fingerprint(code.expose()))),
+    }
+}
+
 fn revoked_fingerprint(secret: &[u8]) -> String {
     use sha2::Digest;
     let mut h = sha2::Sha256::new();
@@ -596,7 +610,6 @@ impl Open {
         put_setting(&mut self.suite, REVISIONS_KEY, &map)
     }
 
-    /// The current factor secret and recovery code (to see afterwards which ones were replaced).
     /// A digest of everything that protects the open files (keys, slots, password parameters):
     /// tells whether a change of the protection that failed had already changed anything here.
     fn protection_digest(&self) -> [u8; 32] {
@@ -612,9 +625,14 @@ impl Open {
             }
             h.update(format!("{:?}{:?}", c.slots(), c.header().kdf).as_bytes());
         }
+        // And what the suite keeps about changes of the protection.
+        for key in [REMOVED_SLOTS_KEY, REVOKED_KEY, PREVIOUS_KEY, super::sync::PROTECTION_CHANGED] {
+            h.update(format!("{:?}", self.suite.payload.settings.get(key)).as_bytes());
+        }
         h.finalize().into()
     }
 
+    /// The current factor secret and recovery code (to see afterwards which ones were replaced).
     pub(super) fn current_secrets(&self) -> (Vec<u8>, Option<Vec<u8>>) {
         (self.suite.factor_secret().expose().to_vec(), self.suite.recovery_code().map(|c| c.expose().to_vec()))
     }
@@ -643,13 +661,6 @@ impl Open {
             put_setting(c, REVOKED_KEY, &list)?;
         }
         Ok(())
-    }
-
-    /// Whether `c` carries a factor secret or recovery code this suite replaced on purpose.
-    pub(super) fn brings_back_revoked(&self, c: &UnlockedContainer) -> bool {
-        let list: Vec<String> = setting(&self.suite, REVOKED_KEY);
-        list.contains(&revoked_fingerprint(c.factor_secret().expose()))
-            || c.recovery_code().is_some_and(|code| list.contains(&revoked_fingerprint(code.expose())))
     }
 
     /// Keeps the current factor secret and recovery code before they change (see [`PREVIOUS_KEY`]).

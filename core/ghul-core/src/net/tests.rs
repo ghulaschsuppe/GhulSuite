@@ -123,6 +123,11 @@ fn sftp_replacing_a_file_never_loses_it() {
     fs.write("drive/index.ghldrv", b"A").unwrap();
     fs.write("drive/index.ghldrv", b"B").unwrap();
     assert_eq!(fs.read("drive/index.ghldrv").unwrap().unwrap(), b"B");
+    // The answer to the one-step replace is lost: done all the same, nothing removed.
+    fs.write("drive/lost-answer", b"old").unwrap();
+    fs.write("drive/lost-answer", b"new").unwrap();
+    assert_eq!(fs.read("drive/lost-answer").unwrap().unwrap(), b"new");
+    fs.delete("drive/lost-answer").unwrap();
     // A write without posix-rename that stopped after removing the old file: only the
     // finished ".ghltmp" is there.
     fs.delete("drive/index.ghldrv").unwrap();

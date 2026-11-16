@@ -332,7 +332,20 @@ impl RemoteFs for FtpsFs {
                 let old = format!("{full}.ghlold");
                 // A replacement that stopped half way (see below) left the file missing: put
                 // its newest copy back first, so the new ".ghltmp" never overwrites the only one.
-                if cmd(c, &format!("SIZE {full}")).await?.0 == 550 {
+                let missing = match cmd(c, &format!("SIZE {full}")).await?.0 {
+                    213 => false,
+                    550 => true,
+                    // A server without SIZE: try to fetch it.
+                    _ => match me.data(c, &format!("RETR {full}")).await? {
+                        Some(mut d) => {
+                            FtpsFs::read_all(&mut d).await?;
+                            FtpsFs::finish(c).await?;
+                            false
+                        }
+                        None => true,
+                    },
+                };
+                if missing {
                     for from in [&tmp, &old] {
                         if cmd(c, &format!("RNFR {from}")).await?.0 == 350
                             && expect(c, &format!("RNTO {full}"), &[250]).await.is_ok()

@@ -425,7 +425,7 @@ impl GhulSuite {
         pending: &mut SyncReport,
     ) -> Result<SyncReport> {
         let snap = Snapshot::read(fs)?;
-        let rep = self.with_open(|o| {
+        let rep = self.changing_protection(|o| {
             if target.is_some() && sync_target(o) != target {
                 return Ok(None);
             }
@@ -493,7 +493,7 @@ impl GhulSuite {
         pending: &mut SyncReport,
     ) -> Result<SyncReport> {
         let snap = Snapshot::read(fs)?;
-        let rep = self.with_open(|o| self.adopt_password_with(o, &snap, password))?;
+        let rep = self.changing_protection(|o| self.adopt_password_with(o, &snap, password))?;
         self.upload(snap, fs, rep, target, pending)
     }
 
@@ -536,14 +536,15 @@ impl GhulSuite {
                     // any time and take over the protection, H1).
                     // Nor one that brings back a code or key replaced on purpose (whoever knows
                     // it could have made the file from an old copy).
-                    let revoked = o.brings_back_revoked(&r);
-                    if remote_ts > local_ts && !older_protection && !revoked {
+                    // A code or secret replaced here is not taken back (see `adopt_protection`).
+                    if remote_ts > local_ts && !older_protection {
                         if r.header().kdf != o.kdf() {
                             return Err(GhulError::PasswordChangedElsewhere);
                         }
-                        self.adopt_protection(o, &r)?;
-                        // Taken over once: the next run compares against this time again.
+                        // Taken over once: the next run compares against this time again (set
+                        // first: taking it over may make a newer change of its own).
                         put_setting(&mut o.suite, PROTECTION_CHANGED, &remote_ts)?;
+                        self.adopt_protection(o, &r)?;
                     }
                     // What this device has synchronised (and with which server) stays its own.
                     let mut remote_settings = r.payload.settings.clone();
@@ -744,10 +745,20 @@ impl GhulSuite {
         if remote.header().kdf != o.kdf() {
             return Err(GhulError::PasswordChangedElsewhere);
         }
-        // A code or key replaced on purpose never comes back, whichever way it is offered.
-        if o.brings_back_revoked(remote) {
-            return Err(revoked_protection());
-        }
+        // A code or factor secret replaced on purpose never comes back, whichever way it is
+        // offered. The rest of a newer protection (its keys, removed keys) is still taken over,
+        // so two devices that changed their protection at the same time agree (refusing it would
+        // leave each device uploading its own protection forever): this device keeps its own
+        // code, renews the factor secret, and its result counts as the newest change.
+        let revoked = super::suite::revoked_parts(o, remote);
+        let own_code = o.suite.recovery_code();
+        let own_code_label = o
+            .suite
+            .slots()
+            .iter()
+            .find(|s| matches!(s, Slot::Recovery(_)))
+            .map(|s| slot_label(&o.suite, s).0)
+            .unwrap_or_default();
         let slots: Vec<Slot> = remote.slots().iter().filter(|s| s.provides_factor()).cloned().collect();
         // Keys removed on purpose on any device do not come back with an older protection (B2).
         let mut removed: Vec<String> = super::suite::setting(&o.suite, super::suite::REMOVED_SLOTS_KEY);
@@ -774,7 +785,11 @@ impl GhulSuite {
                 .slots
                 .insert(crate::kdf::hex(sl.id()), SlotMeta { label, created, extra: Default::default() });
         }
-        if let Some(code) = remote.recovery_code() {
+        if revoked.code {
+            if let Some(code) = &own_code {
+                o.suite.set_recovery_code(code, &own_code_label, now_ms(), &mut rand_core::OsRng)?;
+            }
+        } else if let Some(code) = remote.recovery_code() {
             let label = remote
                 .slots()
                 .iter()
@@ -784,11 +799,12 @@ impl GhulSuite {
             o.suite.set_recovery_code(&code, &label, now_ms(), &mut rand_core::OsRng)?;
         }
         // A key dropped above may know the remote factor secret: then it is renewed as well.
-        o.renew_keys(dropped, now_ms())?;
-        if dropped {
+        // A replaced factor secret is renewed too.
+        o.renew_keys(dropped || revoked.secret, now_ms())?;
+        if dropped || revoked.secret || revoked.code {
             mark_protection_changed(o)?;
         }
-        if new_secret || dropped {
+        if new_secret || dropped || revoked.secret {
             super::quick::delete_all(&self.local_dir);
         }
         // Written now: the sync below only rewrites files whose content or protection differ
@@ -855,11 +871,6 @@ impl GhulSuite {
     }
 }
 
-/// The server's suite file carries a code or key this suite replaced on purpose.
-fn revoked_protection() -> GhulError {
-    GhulError::InvalidInput { msg: "the server's protection uses a replaced code or key".into() }
-}
-
 impl GhulSuite {
     #[allow(clippy::too_many_arguments)]
     fn adopt_protection_via(
@@ -902,10 +913,6 @@ impl GhulSuite {
                 PasswordKey::derive(pw, &kdf)?
             };
             let remote = LockedContainer::parse(&data)?.unlock(&pk, &s).map_err(|_| GhulError::WrongPassword)?;
-            // Checked before anything here changes.
-            if o.brings_back_revoked(&remote) {
-                return Err(revoked_protection());
-            }
             if kdf != o.kdf() {
                 for (c, _) in o.containers_mut() {
                     c.rekey(&pk, kdf.clone(), &mut rand_core::OsRng)?;
@@ -950,10 +957,6 @@ impl GhulSuite {
                     }
                 }
             };
-            // Checked before anything here changes.
-            if o.brings_back_revoked(&remote) {
-                return Err(revoked_protection());
-            }
             for (c, _) in o.containers_mut() {
                 c.rekey(&pk, kdf.clone(), &mut rand_core::OsRng)?;
             }

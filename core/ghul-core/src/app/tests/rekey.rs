@@ -570,12 +570,13 @@ fn a_file_made_with_a_revoked_code_never_takes_over_the_protection() {
     let _ = a.sync_folder(&server);
     assert!(!opens_with_old_code(&a));
     // 3. Nor when the device is asked to take the server's protection over (one touch of a key
-    //    or the key file, or the new password): the revoked code is refused before anything
-    //    changes here.
+    //    or the key file, or the new password): this device keeps its own code.
     std::fs::write(&suite_path, forged()).unwrap();
-    let err = a.adopt_protection_folder(&server, None, kf.clone()).unwrap_err();
-    assert!(err.to_string().contains("replaced code or key"), "{err}");
+    let _ = a.adopt_protection_folder(&server, None, kf.clone());
     assert!(!opens_with_old_code(&a));
+    for (name, data) in files(&d) {
+        assert!(LockedContainer::parse(&data).unwrap().recover(&new_code).is_ok(), "{name}: the new code stays");
+    }
     a.lock();
     a.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
     assert!(!opens_with_old_code(&a));
@@ -854,4 +855,49 @@ fn a_change_of_the_protection_that_fails_half_way_locks() {
     assert!(!s.is_unlocked(), "a half-changed protection must not stay open");
     s.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
     assert_eq!(s.list_vaults().unwrap().len(), 1);
+}
+
+/// Review of H1: two devices change the protection at the same time. A makes a new code (the
+/// old one is replaced on purpose), B adds a key file with the old code still in place and
+/// syncs first. Both agree after a few runs: A takes B's key file over but keeps its new code,
+/// B takes the new code; the replaced code opens nothing.
+#[test]
+fn two_changes_of_the_protection_at_the_same_time_agree() {
+    let server_dir = std::env::temp_dir().join(format!("ghul-both-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&server_dir);
+    let server = LocalFs::new(&server_dir);
+    let (kf, kf_b) = (generate_keyfile(), generate_keyfile());
+    let (da, db) = (Dirs::new("both-a"), Dirs::new("both-b"));
+    let a = da.suite();
+    let res =
+        a.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    let old_code = RecoveryCode::parse(&res.recovery_code.unwrap()).unwrap();
+    a.sync_folder(&server).unwrap();
+    copy_suite(&server_dir, &db);
+    let b = db.suite();
+    b.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
+    let new_code = RecoveryCode::parse(&a.new_recovery_code("Neu".into()).unwrap()).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    b.add_keyfile(kf_b.clone(), "Von B".into()).unwrap();
+    for _ in 0..3 {
+        b.sync_folder(&server).unwrap();
+        a.sync_folder(&server).unwrap();
+    }
+    let server_files: Vec<Vec<u8>> = std::fs::read_dir(server_dir.join("suite"))
+        .unwrap()
+        .flatten()
+        .filter(|e| EXTENSIONS.iter().any(|x| e.file_name().to_string_lossy().ends_with(x)))
+        .map(|e| std::fs::read(e.path()).unwrap())
+        .collect();
+    assert!(!server_files.is_empty());
+    for data in server_files.iter().chain(files(&da).iter().map(|(_, d)| d)).chain(files(&db).iter().map(|(_, d)| d)) {
+        let l = || LockedContainer::parse(data).unwrap();
+        assert!(l().recover(&old_code).is_err(), "the replaced code opens nothing");
+        assert!(l().recover(&new_code).is_ok(), "the new code opens everything");
+    }
+    a.lock();
+    a.unlock("pw-123456".into(), None, None, None, Some(kf_b.clone())).unwrap();
+    b.lock();
+    b.unlock("pw-123456".into(), None, None, None, Some(kf_b)).unwrap();
+    let _ = std::fs::remove_dir_all(&server_dir);
 }
