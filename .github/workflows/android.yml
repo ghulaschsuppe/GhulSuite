@@ -93,13 +93,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EVENT: ${{ github.event_name }}
         run: |
-          # A push to a working branch with an open pull request: the run of the pull request
-          # checks the same commits and uploads them (see below), so this run does nothing. Before,
-          # every push ran everything twice side by side. main and dev always run on push.
+          # A push to a working branch with an open, mergeable pull request: the run of the pull
+          # request checks the same commits and uploads them (see below), so this run does nothing.
+          # Before, every push ran everything twice side by side. main and dev always run on push.
+          # When asking fails, or the pull request has conflicts (GitHub then starts no run for
+          # it), this run does everything as before.
           if [ "$EVENT" = push ] && [ "$GITHUB_REF_NAME" != main ] && [ "$GITHUB_REF_NAME" != dev ]; then
-            open=$(gh api -X GET "repos/$GITHUB_REPOSITORY/pulls" -f state=open -f head="$GITHUB_REPOSITORY_OWNER:$GITHUB_REF_NAME" -q 'length' 2> /dev/null || echo 0)
-            if [ "${open:-0}" != 0 ]; then
-              echo "Offener Pull Request für $GITHUB_REF_NAME: dessen Lauf prüft und lädt hoch, dieser Lauf entfällt."
+            pr=$(gh api -X GET "repos/$GITHUB_REPOSITORY/pulls" -f state=open -f head="$GITHUB_REPOSITORY_OWNER:$GITHUB_REF_NAME" -q '.[0].number // empty' 2> /dev/null) || pr=""
+            mergeable=""
+            if [[ "$pr" =~ ^[1-9][0-9]*$ ]]; then
+              mergeable=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr" -q '.mergeable' 2> /dev/null) || mergeable=""
+            fi
+            if [ "$mergeable" = true ]; then
+              echo "Offener Pull Request #$pr für $GITHUB_REF_NAME: dessen Lauf prüft und lädt hoch, dieser Lauf entfällt."
               echo "core=false" >> "$GITHUB_OUTPUT"; echo "code=false" >> "$GITHUB_OUTPUT"; exit 0
             fi
           fi
@@ -304,7 +310,10 @@ jobs:
           wait $!
 
   windows:
-    name: Windows-App (Installer und portable Version)
+    # In the push run of a working branch under another name: the required checks of a pull
+    # request ("build", "Windows-App ...") come only from its own run, never from a push run that
+    # skipped itself on the same commit.
+    name: ${{ (github.event_name == 'push' && github.ref_name != 'main' && github.ref_name != 'dev') && 'Windows-App (Push)' || 'Windows-App (Installer und portable Version)' }}
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: windows-latest
@@ -380,7 +389,7 @@ jobs:
   windows-upload:
     name: Windows-Pakete nach dev hochladen
     # Also for pull requests from this repository (same trust as a push), never from forks.
-    if: github.repository_owner == 'ghulaschsuppe' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    if: github.repository_owner == 'ghulaschsuppe' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.head_ref != 'main' && github.head_ref != 'dev'))
     needs: windows
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -411,6 +420,7 @@ jobs:
           remote-dir: ${{ steps.dest.outputs.dir }}/download/
 
   build:
+    name: ${{ (github.event_name == 'push' && github.ref_name != 'main' && github.ref_name != 'dev') && 'build (Push)' || 'build' }}
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
@@ -470,7 +480,7 @@ jobs:
       # The signing key only exists as a secret; the file lives in the runner's temp folder for
       # this job only. Without the secret (pull requests from forks) the APK gets a throwaway key.
       - name: Signaturschlüssel aus den Secrets
-        if: ${{ !cancelled() && github.repository_owner == 'ghulaschsuppe' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        if: ${{ !cancelled() && github.repository_owner == 'ghulaschsuppe' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.head_ref != 'main' && github.head_ref != 'dev')) }}
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -544,7 +554,7 @@ jobs:
           echo "dir=$dir" >> "$GITHUB_OUTPUT"
 
       - name: Upload auf den eigenen Testserver (Ordner ghulsuite/download bzw. Branch-Ordner)
-        if: github.repository_owner == 'ghulaschsuppe' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        if: github.repository_owner == 'ghulaschsuppe' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.head_ref != 'main' && github.head_ref != 'dev'))
         uses: ./.github/actions/ftps-upload
         with:
           server: ${{ secrets.FTP_SERVER }}
