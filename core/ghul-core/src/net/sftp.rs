@@ -272,6 +272,9 @@ impl RemoteFs for SftpFs {
                     // Missing, but a finished replacement is there (a write without posix-rename
                     // stopped between removing the old file and renaming the new one): that is
                     // the file's newest content. See `write`.
+                    // With one-step replacing the file is never missing while a replacement
+                    // runs: a ".ghltmp" there is an unfinished first write, not the content.
+                    Err(e) if is_missing(&e) && self.posix.is_some() => Ok(None),
                     Err(e) if is_missing(&e) => match self.sftp.read(format!("{full}.ghltmp")).await {
                         Ok(d) => Ok(Some(d)),
                         Err(e) if is_missing(&e) => Ok(None),
@@ -314,14 +317,16 @@ impl RemoteFs for SftpFs {
                     let mut req = Vec::new();
                     ssh_string(&mut req, &tmp);
                     ssh_string(&mut req, &full);
-                    return match raw.extended(POSIX_RENAME, req).await.map_err(proto)? {
-                        russh_sftp::protocol::Packet::Status(st)
+                    match raw.extended(POSIX_RENAME, req).await {
+                        Ok(russh_sftp::protocol::Packet::Status(st))
                             if st.status_code == russh_sftp::protocol::StatusCode::Ok =>
                         {
-                            Ok(())
+                            return Ok(());
                         }
-                        other => Err(NetError::Protocol(format!("posix-rename: {other:?}"))),
-                    };
+                        // The second channel is gone (closed by the server): the two steps below.
+                        Err(_) => {}
+                        Ok(other) => return Err(NetError::Protocol(format!("posix-rename: {other:?}"))),
+                    }
                 }
                 // SFTP v3 rename does not replace: remove the old file first. Between the two
                 // steps only the finished ".ghltmp" exists; `read` and the next `write` use it.
@@ -340,11 +345,15 @@ impl RemoteFs for SftpFs {
         let full = self.full(path)?;
         block_on(
             async {
-                match self.sftp.remove_file(full).await {
-                    Ok(()) => Ok(()),
-                    Err(e) if is_missing(&e) => Ok(()),
-                    Err(e) => Err(proto(e)),
+                // A finished replacement waiting for its rename goes too: `read` would serve it.
+                for name in [format!("{full}.ghltmp"), full] {
+                    match self.sftp.remove_file(name).await {
+                        Ok(()) => {}
+                        Err(e) if is_missing(&e) => {}
+                        Err(e) => return Err(proto(e)),
+                    }
                 }
+                Ok(())
             },
             TIMEOUT,
         )

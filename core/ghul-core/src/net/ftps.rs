@@ -329,7 +329,26 @@ impl RemoteFs for FtpsFs {
             Box::pin(async move {
                 me.mkdirs(c, &dir).await?;
                 let tmp = format!("{full}.ghltmp");
+                let old = format!("{full}.ghlold");
+                // A replacement that stopped half way (see below) left the file missing: put
+                // its newest copy back first, so the new ".ghltmp" never overwrites the only one.
+                if cmd(c, &format!("SIZE {full}")).await?.0 == 550 {
+                    for from in [&tmp, &old] {
+                        if cmd(c, &format!("RNFR {from}")).await?.0 == 350 {
+                            if expect(c, &format!("RNTO {full}"), &[250]).await.is_ok() {
+                                break;
+                            }
+                        }
+                    }
+                }
                 let mut d = me.data(c, &format!("STOR {tmp}")).await?.ok_or_else(|| proto("cannot write"))?;
+                // Tests: a connection cut off half way through the upload.
+                if cfg!(test) && full.ends_with("/cut-off") {
+                    d.write_all(&data[..data.len() / 2]).await.map_err(io)?;
+                    drop(d);
+                    let _ = FtpsFs::finish(c).await;
+                    return Err(NetError::Timeout);
+                }
                 d.write_all(&data).await.map_err(io)?;
                 d.shutdown().await.map_err(io)?;
                 drop(d);
@@ -339,7 +358,6 @@ impl RemoteFs for FtpsFs {
                 // first, never deleted before the new one is in place; `read` finds either.
                 expect(c, &format!("RNFR {tmp}"), &[350]).await?;
                 if expect(c, &format!("RNTO {full}"), &[250]).await.is_err() {
-                    let old = format!("{full}.ghlold");
                     let _ = cmd(c, &format!("DELE {old}")).await?;
                     if expect(c, &format!("RNFR {full}"), &[350]).await.is_ok() {
                         expect(c, &format!("RNTO {old}"), &[250]).await?;
@@ -358,12 +376,15 @@ impl RemoteFs for FtpsFs {
         self.with(TIMEOUT, |c, _| {
             let full = full.clone();
             Box::pin(async move {
-                let (code, text) = cmd(c, &format!("DELE {full}")).await?;
-                if code == 250 || code == 550 || code == 450 {
-                    Ok(())
-                } else {
-                    Err(proto(&text))
+                // The copies of a replacement that stopped half way go too: `read` would serve
+                // them, and the file would come back.
+                for name in [format!("{full}.ghltmp"), format!("{full}.ghlold"), full.clone()] {
+                    let (code, text) = cmd(c, &format!("DELE {name}")).await?;
+                    if code != 250 && code != 550 && code != 450 {
+                        return Err(proto(&text));
+                    }
                 }
+                Ok(())
             })
         })
     }

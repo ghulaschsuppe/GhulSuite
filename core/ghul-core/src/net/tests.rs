@@ -123,20 +123,28 @@ fn sftp_replacing_a_file_never_loses_it() {
     fs.write("drive/index.ghldrv", b"A").unwrap();
     fs.write("drive/index.ghldrv", b"B").unwrap();
     assert_eq!(fs.read("drive/index.ghldrv").unwrap().unwrap(), b"B");
-    // A write that stopped after removing the old file: only the finished ".ghltmp" is there.
-    fs.write("drive/index.ghldrv.ghltmp", b"C").unwrap();
+    // A write without posix-rename that stopped after removing the old file: only the
+    // finished ".ghltmp" is there.
     fs.delete("drive/index.ghldrv").unwrap();
-    assert_eq!(fs.read("drive/index.ghldrv").unwrap().unwrap(), b"C", "the finished new content is read");
-    // A server without posix-rename: the next write puts that file in place first, then replaces it.
+    fs.write("drive/index.ghldrv.ghltmp", b"C").unwrap();
+    // With one-step replacing that is an unfinished first write, never read as the content.
+    assert_eq!(fs.read("drive/index.ghldrv").unwrap(), None);
+    // A server without posix-rename reads it; the next write puts it in place first, then replaces it.
     super::sftp::NO_POSIX_RENAME.store(true, std::sync::atomic::Ordering::SeqCst);
     let plain = SftpFs::connect(&cfg);
     super::sftp::NO_POSIX_RENAME.store(false, std::sync::atomic::Ordering::SeqCst);
     let plain = plain.unwrap();
     assert!(!plain.replaces_atomically());
+    assert_eq!(plain.read("drive/index.ghldrv").unwrap().unwrap(), b"C", "the finished new content is read");
     plain.write("drive/index.ghldrv", b"D").unwrap();
     assert_eq!(plain.read("drive/index.ghldrv").unwrap().unwrap(), b"D");
     let names: Vec<String> = plain.list("drive").unwrap().into_iter().map(|e| e.name).collect();
     assert_eq!(names, vec!["index.ghldrv"], "nothing left behind");
+    // Deleting takes the waiting replacement too: the file does not come back.
+    plain.write("drive/gone.ghltmp", b"E").unwrap();
+    assert_eq!(plain.read("drive/gone").unwrap().unwrap(), b"E");
+    plain.delete("drive/gone").unwrap();
+    assert_eq!(plain.read("drive/gone").unwrap(), None, "deleted stays deleted");
 }
 
 #[test]
@@ -203,6 +211,26 @@ fn ftps_against_vsftpd() {
     fs.write("Ordner mit Leerzeichen/Grüße.txt", b"hallo").unwrap();
     let names: Vec<String> = fs.list("Ordner mit Leerzeichen").unwrap().into_iter().map(|e| e.name).collect();
     assert_eq!(names, vec!["Grüße.txt"]);
+    // A replacement that stopped half way left only its new copy: it is read, the next write
+    // puts it in place before writing, and nothing is left behind.
+    fs.write("h/x.ghltmp", b"E").unwrap();
+    assert_eq!(fs.read("h/x").unwrap().unwrap(), b"E");
+    fs.write("h/x", b"F").unwrap();
+    assert_eq!(fs.read("h/x").unwrap().unwrap(), b"F");
+    let names: Vec<String> = fs.list("h").unwrap().into_iter().map(|e| e.name).collect();
+    assert_eq!(names, vec!["x"]);
+    // Cut off while the next write uploads: the copy that was there is still read.
+    fs.write("h/cut-off.ghltmp", b"old content").unwrap();
+    assert!(fs.write("h/cut-off", b"the new content").is_err());
+    assert_eq!(fs.read("h/cut-off").unwrap().unwrap(), b"old content");
+    // Deleting takes such copies too: the file does not come back.
+    fs.write("h/y.ghlold", b"G").unwrap();
+    fs.write("h/z.ghltmp", b"H").unwrap();
+    assert_eq!(fs.read("h/y").unwrap().unwrap(), b"G");
+    fs.delete("h/y").unwrap();
+    fs.delete("h/z").unwrap();
+    assert_eq!(fs.read("h/y").unwrap(), None, "deleted stays deleted");
+    assert_eq!(fs.read("h/z").unwrap(), None, "deleted stays deleted");
 }
 
 /// Starts PHP's built-in web server for `dir` on a free port and returns it once it answers.
