@@ -361,6 +361,11 @@ die App gibt der Datei beim nächsten Entsperren ihren neutralen Namen zurück.
   nichts wird automatisch gespeichert. Wer danach an der Verbindung etwas ändert, prüft erneut. Der Kern speichert
   ein Mail-Konto nur mit Einstellungen, die gerade erfolgreich geprüft wurden, und einen Server nur nach erneuter
   Anmeldung und Schreibprobe.
+- **Synchronisation ohne Warten der App** (16.11.2026): Ein Lauf hält die entsperrte Suite nur, während er die
+  Dateien des Servers zusammenführt und lokal speichert. Verbinden, Lesen vom Server und Hochladen laufen ohne sie, in
+  derselben Reihenfolge wie zuvor (die Einstellungsdatei zuletzt). So warten die anderen Funktionen der App nicht auf
+  einen langsamen Server; was währenddessen gespeichert wird, geht mit dem nächsten Lauf hoch. Es läuft immer nur ein
+  Lauf zugleich.
 
 ### 8.2.1 SFTP im Detail
 

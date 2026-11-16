@@ -696,6 +696,8 @@ pub struct GhulSuite {
     lock_pending: AtomicBool,
     /// Open server connection, Drive index and running uploads (dropped when locking).
     pub(super) net: Mutex<NetCache>,
+    /// One synchronisation at a time: it no longer holds `open` while it waits for the server.
+    pub(super) syncing: Mutex<()>,
     /// The time zone database of the device (see `set_time_zones`).
     pub(super) zones: Mutex<Option<Arc<dyn super::caltext::TimeZones>>>,
 }
@@ -1323,6 +1325,7 @@ impl GhulSuite {
             open: Mutex::new(None),
             lock_pending: AtomicBool::new(false),
             net: Mutex::new(NetCache::default()),
+            syncing: Mutex::new(()),
             zones: Mutex::new(None),
         })
     }

@@ -692,6 +692,78 @@ fn copy_suite(server: &std::path::Path, device: &Dirs) {
     }
 }
 
+/// A server that answers slowly (every call waits), like a weak connection.
+struct SlowFs {
+    inner: crate::net::remote::LocalFs,
+    delay: std::time::Duration,
+}
+
+impl crate::net::remote::RemoteFs for SlowFs {
+    fn list(&self, dir: &str) -> crate::net::NetResult<Vec<crate::net::remote::RemoteEntry>> {
+        std::thread::sleep(self.delay);
+        self.inner.list(dir)
+    }
+    fn read(&self, path: &str) -> crate::net::NetResult<Option<Vec<u8>>> {
+        std::thread::sleep(self.delay);
+        self.inner.read(path)
+    }
+    fn write(&self, path: &str, data: &[u8]) -> crate::net::NetResult<()> {
+        std::thread::sleep(self.delay);
+        self.inner.write(path, data)
+    }
+    fn delete(&self, path: &str) -> crate::net::NetResult<()> {
+        std::thread::sleep(self.delay);
+        self.inner.delete(path)
+    }
+    fn mkdir_all(&self, dir: &str) -> crate::net::NetResult<()> {
+        self.inner.mkdir_all(dir)
+    }
+}
+
+/// F147: a synchronisation with a slow server does not hold the suite while it waits for the
+/// server: reading and saving entries meanwhile answer at once, and nothing saved meanwhile is
+/// lost (it goes up with the next synchronisation).
+#[test]
+fn a_slow_server_does_not_hold_the_suite() {
+    use crate::net::remote::LocalFs;
+    let server_dir = std::env::temp_dir().join(format!("ghul-sync-slow-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&server_dir);
+    let kf = generate_keyfile();
+    let (da, db) = (Dirs::new("sync-slow-a"), Dirs::new("sync-slow-b"));
+    let a = da.suite();
+    a.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    let privat = vault_id(&a, "Privat");
+    a.save_entry(privat.clone(), login("Vorher", "u", "1")).unwrap();
+    a.sync_folder(&LocalFs::new(&server_dir)).unwrap();
+    a.save_entry(privat.clone(), login("Vor dem Lauf", "u", "2")).unwrap();
+
+    let slow = SlowFs { inner: LocalFs::new(&server_dir), delay: std::time::Duration::from_millis(700) };
+    let (a2, done) = (a.clone(), std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)));
+    let done2 = done.clone();
+    let run = std::thread::spawn(move || {
+        let r = a2.sync_folder(&slow);
+        done2.store(true, std::sync::atomic::Ordering::SeqCst);
+        r
+    });
+    // The synchronisation is reading the server now (each call takes 0.7 s).
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let t = std::time::Instant::now();
+    assert!(titles(&a).contains(&"Vorher".to_owned()));
+    a.save_entry(privat.clone(), login("Während des Laufs", "u", "3")).unwrap();
+    let waited = t.elapsed();
+    assert!(!done.load(std::sync::atomic::Ordering::SeqCst), "the synchronisation still runs");
+    assert!(waited < std::time::Duration::from_millis(500), "the app waited {waited:?} for the server");
+    run.join().unwrap().unwrap();
+
+    // Nothing is lost: the entry saved meanwhile goes up with the next synchronisation.
+    a.sync_folder(&LocalFs::new(&server_dir)).unwrap();
+    copy_suite(&server_dir, &db);
+    let b = db.suite();
+    b.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    assert_eq!(titles(&b), vec!["Vor dem Lauf", "Vorher", "Während des Laufs"]);
+    let _ = std::fs::remove_dir_all(&server_dir);
+}
+
 #[test]
 fn sync_between_two_devices() {
     use crate::net::remote::LocalFs;
