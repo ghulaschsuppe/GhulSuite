@@ -421,28 +421,33 @@ fn dedup_key(entry_type: &str, fields: &BTreeMap<String, Field>) -> String {
 }
 
 /// Opens a vault that still has the protection from before a change: with an earlier factor
-/// secret (same password parameters), else with the suite's code or an earlier one.
+/// secret (same password parameters), else with the suite's code or an earlier one. Never with a
+/// secret or code replaced on purpose (see [`REVOKED_KEY`]): whoever still knows one could have
+/// made the file.
 fn open_with_before(
-    parse: impl Fn() -> Option<LockedContainer>,
+    data: &[u8],
     suite: &UnlockedContainer,
     pk: &PasswordKey,
     same_kdf: bool,
 ) -> Option<UnlockedContainer> {
     let list: Vec<PreviousProtection> = setting(suite, PREVIOUS_KEY);
+    let revoked: Vec<String> = setting(suite, REVOKED_KEY);
+    let allowed = |secret: &[u8]| !revoked.contains(&revoked_fingerprint(secret));
     if same_kdf {
-        for p in &list {
+        for p in list.iter().filter(|p| allowed(&p.s)) {
             let Ok(s) = <[u8; 32]>::try_from(p.s.as_slice()) else { continue };
-            if let Ok(c) = parse()?.unlock(pk, &FactorSecret::from_bytes(s)) {
+            if let Ok(c) = LockedContainer::parse(data).ok()?.unlock(pk, &FactorSecret::from_bytes(s)) {
                 return Some(c);
             }
         }
     }
-    let codes = suite
-        .recovery_code()
-        .into_iter()
-        .chain(list.iter().filter_map(|p| <[u8; 32]>::try_from(p.code.as_slice()).ok().map(RecoveryCode::from_bytes)));
+    let codes = suite.recovery_code().into_iter().chain(
+        list.iter()
+            .filter(|p| allowed(&p.code))
+            .filter_map(|p| <[u8; 32]>::try_from(p.code.as_slice()).ok().map(RecoveryCode::from_bytes)),
+    );
     for code in codes {
-        if let Ok(c) = parse()?.recover(&code) {
+        if let Ok(c) = LockedContainer::parse(data).ok()?.recover(&code) {
             return Some(c);
         }
     }
@@ -720,6 +725,7 @@ impl Open {
             .map(|s| slot_label(&self.suite, s).0)
             .unwrap_or_default();
         let s = *self.suite.factor_secret().expose();
+        let removed: Vec<String> = setting(&self.suite, REMOVED_SLOTS_KEY);
         let mut changed = false;
         let mut want = slots.clone();
         want.sort_by_key(|x| *x.id());
@@ -743,6 +749,19 @@ impl Open {
             if revoked.contains(&revoked_fingerprint(&s))
                 || code.as_ref().is_some_and(|k| revoked.contains(&revoked_fingerprint(k.expose())))
             {
+                // A key removed on purpose still goes (its removal may be newer than the vault).
+                let mut gone: Vec<String> = setting(c, REMOVED_SLOTS_KEY);
+                gone.extend(removed.iter().cloned());
+                let ids: Vec<[u8; 16]> =
+                    c.slots().iter().filter(|x| gone.contains(&crate::kdf::hex(x.id()))).map(|x| *x.id()).collect();
+                for id in &ids {
+                    match c.remove_slot(id) {
+                        Ok(()) => changed = true,
+                        // Never the last way in.
+                        Err(crate::vault::VaultError::LastSlot) => {}
+                        Err(e) => return Err(e.into()),
+                    }
+                }
                 continue;
             }
             c.reprotect(
@@ -1184,8 +1203,8 @@ impl GhulSuite {
             // kept of it, and is brought in line after unlocking (`harmonize`).
             let (opened, ours) = match (opened, opener) {
                 (None, Opener::Factors { pk, suite_id, kdf, .. }) if &header_suite == suite_id => {
-                    let again = || self.read_locked(&file).ok().flatten();
-                    match open_with_before(again, suite, pk, &header_kdf == *kdf) {
+                    let data = self.storage.read(file.clone()).ok().flatten();
+                    match data.and_then(|d| open_with_before(&d, suite, pk, &header_kdf == *kdf)) {
                         Some(c) => (Some(c), true),
                         None => (None, ours),
                     }

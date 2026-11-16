@@ -1428,6 +1428,7 @@
     <string name="core_image_na">Image not available.</string>
     <string name="core_drive_busy">GhulDrive is being changed on another device. Please try again in a moment.</string>
     <string name="core_drive_index_missing">GhulDrive’s index is missing on the server. Nothing was changed. If the server is being restored, try again once it is back; your files are listed again then.</string>
+    <string name="core_protection_revoked">The protection on the server uses a recovery code or key that was replaced on purpose. It is not taken over. Sync from a device with the current protection.</string>
     <string name="core_folder_other_suite">This folder on the server belongs to another suite.</string>
     <string name="core_not_backup">This is not a GhulSuite backup.</string>
     <string name="core_backup_big">The backup is too large.</string>

@@ -569,9 +569,54 @@ fn a_file_made_with_a_revoked_code_never_takes_over_the_protection() {
     std::fs::write(&suite_path, forged()).unwrap();
     let _ = a.sync_folder(&server);
     assert!(!opens_with_old_code(&a));
+    // 3. Nor when the device is asked to take the server's protection over (one touch of a key
+    //    or the key file, or the new password): the revoked code is refused before anything
+    //    changes here.
+    std::fs::write(&suite_path, forged()).unwrap();
+    let err = a.adopt_protection_folder(&server, None, kf.clone()).unwrap_err();
+    assert!(err.to_string().contains("replaced code or key"), "{err}");
+    assert!(!opens_with_old_code(&a));
     a.lock();
     a.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
     assert!(!opens_with_old_code(&a));
+    let _ = std::fs::remove_dir_all(&server_dir);
+}
+
+/// Review of H1: a protection taken over in a sync is taken over once. The device notes the
+/// time of the change it took, so the next run does not take it again (which would reopen the
+/// way for older protections every time).
+#[test]
+fn a_protection_taken_over_is_taken_over_once() {
+    let server_dir = std::env::temp_dir().join(format!("ghul-once-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&server_dir);
+    let server = LocalFs::new(&server_dir);
+    let kf = generate_keyfile();
+    let (da, db) = (Dirs::new("once-a"), Dirs::new("once-b"));
+    let a = da.suite();
+    a.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    a.sync_folder(&server).unwrap();
+    copy_suite(&server_dir, &db);
+    let b = db.suite();
+    b.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
+    b.sync_folder(&server).unwrap();
+    a.new_recovery_code("Neu".into()).unwrap();
+    a.sync_folder(&server).unwrap();
+    let state = |s: &GhulSuite| {
+        s.with_open(|o| {
+            let ts: i64 = crate::app::suite::setting(&o.suite, crate::app::sync::PROTECTION_CHANGED);
+            let before: Vec<ciborium::Value> = crate::app::suite::setting(&o.suite, crate::app::suite::PREVIOUS_KEY);
+            Ok((ts, before.len()))
+        })
+        .unwrap()
+    };
+    b.sync_folder(&server).unwrap();
+    let (ts_a, _) = state(&a);
+    let (ts_b, kept) = state(&b);
+    assert_eq!(ts_b, ts_a, "B notes the time of the change it took over");
+    for _ in 0..2 {
+        b.sync_folder(&server).unwrap();
+        assert_eq!(state(&b), (ts_a, kept), "taken over again");
+    }
     let _ = std::fs::remove_dir_all(&server_dir);
 }
 
@@ -731,4 +776,61 @@ fn a_change_of_the_password_that_stops_half_way_is_one_step() {
     s.lock();
     s.unlock("pw-neu-789".into(), None, None, None, Some(kf)).unwrap();
     assert!(all_open(&s));
+}
+
+/// Review of S1: a vault file made from an old copy with a key removed on purpose and the
+/// recovery code replaced since does not open as one of the suite's own on the next unlock. Only
+/// what is still valid opens old copies (a change that stopped half way).
+#[test]
+fn an_old_vault_copy_with_replaced_secrets_is_not_taken_in() {
+    let d = Dirs::new("s1-scan");
+    let (kf1, kf2) = (generate_keyfile(), generate_keyfile());
+    let s = d.suite();
+    s.create(options("pw-123456", Some(kf1.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    s.add_keyfile(kf2.clone(), "Verloren".into()).unwrap();
+    s.save_entry(vault_id(&s, "Privat"), login("Bank", "u", "1")).unwrap();
+    let (old_name, old_data) = files(&d).into_iter().find(|(n, _)| n.ends_with(".ghlpss")).unwrap();
+    s.remove_slot(slot_id(&s, "Verloren")).unwrap();
+    s.new_recovery_code("Neu".into()).unwrap();
+    let copy = d.root.join("vault").join(format!("x{old_name}"));
+    std::fs::write(&copy, &old_data).unwrap();
+    s.lock();
+    s.unlock("pw-123456".into(), None, None, None, Some(kf1)).unwrap();
+    // It is the suite's (same suite and password parameters) but does not open: listed as not
+    // readable, never merged into the vault.
+    let copy_name = format!("x{old_name}");
+    let vaults = s.list_vaults().unwrap();
+    let listed = vaults.iter().find(|v| v.file == copy_name).expect("the old copy is listed");
+    assert!(!listed.available, "the old copy must not open with replaced secrets");
+    assert_eq!(vaults.iter().filter(|v| v.available).count(), 1);
+    assert_eq!(titles(&s), vec!["Bank"]);
+}
+
+/// Review of S1: a vault that keeps its protection because the suite file is older (it still
+/// has a code the vault knows as replaced) still loses a key that was removed on purpose.
+#[test]
+fn a_vault_kept_from_an_older_suite_file_still_loses_a_removed_key() {
+    let d = Dirs::new("s1-removed");
+    let (kf1, kf2) = (generate_keyfile(), generate_keyfile());
+    let s = d.suite();
+    s.create(options("pw-123456", Some(kf1.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    s.add_keyfile(kf2.clone(), "Zwei".into()).unwrap();
+    let gone = crate::kdf::hex(&slot_id(&s, "Zwei"));
+    let suite_path = d.root.join("vault").join("suite.ghlsuite");
+    let old_suite = std::fs::read(&suite_path).unwrap();
+    s.new_recovery_code("Neu".into()).unwrap();
+    s.lock();
+    std::fs::write(&suite_path, &old_suite).unwrap();
+    let s = d.suite();
+    s.unlock("pw-123456".into(), None, None, None, Some(kf1)).unwrap();
+    // The removal reaches this device's suite (e.g. merged from another device).
+    let vault_slots = s
+        .with_open(|o| {
+            crate::app::suite::put_setting(&mut o.suite, crate::app::suite::REMOVED_SLOTS_KEY, &vec![gone.clone()])?;
+            o.harmonize(crate::app::suite::now_ms())?;
+            let v = o.vaults.iter().find_map(|v| v.container.as_ref()).unwrap();
+            Ok(v.slots().iter().map(|x| crate::kdf::hex(x.id())).collect::<Vec<_>>())
+        })
+        .unwrap();
+    assert!(!vault_slots.contains(&gone), "the removed key stays out of the vault");
 }
