@@ -398,18 +398,25 @@ pub fn preview_import(data: Vec<u8>, file_name: String) -> Result<ImportPreview>
 /// address and password made two different notes or cards with the same title "the same", and
 /// the second was dropped without a word). Title, user name and addresses ignore case and
 /// surrounding spaces, so importing the same export again still adds nothing twice.
-fn dedup_key(entry_type: &str, fields: &BTreeMap<String, Field>) -> String {
-    let mut key = String::from(entry_type);
+fn dedup_key(entry_type: &str, folder: Option<&str>, fields: &BTreeMap<String, Field>) -> Zeroizing<String> {
+    // Built from secrets too: wiped when dropped.
+    let mut key = Zeroizing::new(String::from(entry_type));
+    // The same entry in two folders is kept twice (as in the export).
+    if let Some(f) = folder.map(str::trim).filter(|f| !f.is_empty()) {
+        key.push('\u{1f}');
+        key.push_str("folder=");
+        key.push_str(&f.to_lowercase());
+    }
     for (name, value) in fields {
         let loose = matches!(name.as_str(), "title" | "username" | "urls");
         let norm = |s: &str| if loose { s.trim().to_lowercase() } else { s.trim().to_owned() };
-        let text = match value {
+        let text = Zeroizing::new(match value {
             Field::Text(s) | Field::Secret(s) | Field::Url(s) => norm(s),
             Field::List(l) => l.iter().map(|x| norm(x)).collect::<Vec<_>>().join("\u{1e}"),
             Field::Bytes(b) => crate::kdf::hex(b),
             Field::Int(i) => i.to_string(),
             Field::Bool(b) => b.to_string(),
-        };
+        });
         if !text.is_empty() {
             key.push('\u{1f}');
             key.push_str(name);
@@ -1318,7 +1325,6 @@ impl GhulSuite {
         self.save_container(&mut o.suite, SUITE_FILE)
     }
 
-    /// Saves all vaults first and the suite last.
     /// Saves a change of the protection as one step (M18, H6): the suite file first, the vaults
     /// after it. Until the suite file is written nothing has changed on disk; if that fails, the
     /// suite is locked, so the changed state in memory is never saved later by an ordinary save
@@ -1347,6 +1353,7 @@ impl GhulSuite {
         Ok(())
     }
 
+    /// Saves all vaults first and the suite last.
     pub(super) fn save_all(&self, o: &mut Open) -> Result<()> {
         for v in &mut o.vaults {
             if let Some(c) = v.container.as_mut() {
@@ -2268,15 +2275,15 @@ impl GhulSuite {
                 if r.kind != "pass" {
                     return Err(GhulError::InvalidInput { msg: "not a GhulPass vault".into() });
                 }
-                let mut seen: Vec<String> = c
+                let mut seen: Vec<Zeroizing<String>> = c
                     .payload
                     .entries
                     .iter()
                     .filter(|e| !e.deleted)
-                    .map(|e| dedup_key(&e.entry_type, &e.fields))
+                    .map(|e| dedup_key(&e.entry_type, e.folder.as_deref(), &e.fields))
                     .collect();
                 for d in &parsed.entries {
-                    let key = dedup_key(&d.entry_type, &d.fields);
+                    let key = dedup_key(&d.entry_type, d.folder.as_deref(), &d.fields);
                     if seen.contains(&key) {
                         result.duplicates += 1;
                         continue;

@@ -330,12 +330,12 @@ pub struct DriveLocation {
     pub archive: bool,
 }
 
-/// Deletes a file; one that is not there is fine.
 /// GhulDrive's index is gone from a location that had one.
 fn index_missing() -> GhulError {
     GhulError::InvalidInput { msg: "GhulDrive's index is missing on the server".into() }
 }
 
+/// Deletes a file; one that is not there is fine.
 fn delete_quiet(fs: &dyn RemoteFs, path: &str) -> Result<()> {
     match fs.delete(path) {
         Ok(()) | Err(crate::net::NetError::NotFound(_)) => Ok(()),
@@ -1709,7 +1709,6 @@ impl GhulSuite {
         })
     }
 
-    /// Turns Drive back into the state an older app left: `use_sync`, no locations of its own.
     /// The Drive file's settings, as another device would have them (tests).
     #[cfg(test)]
     pub(crate) fn drive_settings_for_tests(&self) -> BTreeMap<String, ciborium::Value> {
@@ -1731,6 +1730,7 @@ impl GhulSuite {
         self.net.lock().unwrap_or_else(|p| p.into_inner()).drive = None;
     }
 
+    /// Turns Drive back into the state an older app left: `use_sync`, no locations of its own.
     #[cfg(test)]
     pub(super) fn drive_back_to_use_sync_for_tests(&self) {
         self.with_open(|o| {
