@@ -66,6 +66,12 @@ import de.danerd.ghulsuite.resources.*
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.rememberResourceEnvironment
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.platform.testTag
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Dns
 
 private val Blue = Color(0xFF2F74E8)
 
@@ -505,30 +511,41 @@ private fun moduleCheckLabel(step: String): String = when (step) {
     else -> step
 }
 
-/** The suite's servers and GhulDrive's own server (kept in the Drive file, not in the list). */
+/** The suite's servers and GhulDrive's storage locations (kept in the Drive file, not in the list). */
 suspend fun de.danerd.ghulsuite.model.NetBackend.knownServers(): List<ServerUi> {
     val list = servers()
-    val drive = catching { driveStorage() }.getOrNull()?.server
-    return if (drive == null || list.any { it.id == drive.id }) list else list + drive
+    val drive = catching { driveLocations() }.getOrNull().orEmpty().map { it.server }
+    return list + drive.filter { d -> list.none { it.id == d.id } }
 }
 
-/** Settings → GhulDrive: storage, trash and shares. */
+/**
+ * Settings → GhulDrive: what applies to all of it, then one block per storage location (its
+ * server, its module, its links, removing it), and adding another one.
+ */
 @Composable
 fun DriveSettingsSection(state: AppState) {
     val net = state.backend.net
     val settings = state.backend.settings
     var status by remember { mutableStateOf<DriveStatusUi?>(null) }
-    LaunchedEffect(state.liveRevision()) { status = catching { net.driveStatus() }.getOrNull() }
+    var locations by remember { mutableStateOf<List<de.danerd.ghulsuite.model.DriveLocationUi>?>(null) }
+    var links by remember { mutableStateOf<List<de.danerd.ghulsuite.model.ShareInfoUi>>(emptyList()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var retry by remember { mutableStateOf(0) }
+    var adding by remember { mutableStateOf(false) }
+    var removing by remember { mutableStateOf<ServerUi?>(null) }
+    var removingModule by remember { mutableStateOf<ServerUi?>(null) }
+    LaunchedEffect(state.liveRevision(), retry) {
+        catching { net.driveLocations() }.onSuccess { locations = it; error = null }.onFailure { error = describe(it) }
+        status = catching { net.driveStatus() }.getOrNull()
+        links = catching { net.shareList() }.getOrNull().orEmpty()
+    }
     SectionCard(areaGroupTitle(de.danerd.ghulsuite.model.VaultKindUi.DRIVE)) {
-        DriveStorageRow(state)
         status?.takeIf { it.serverId != null }?.let { Hint(pluralStringResource(Res.plurals.drive_status, it.files, it.files.toString(), formatSize(it.bytes))) }
         ChoiceRow(
             stringResource(Res.string.drive_trash_days),
             listOf(7 to Res.string.drive_days_7, 30 to Res.string.drive_days_30, 90 to Res.string.drive_days_90, 0 to Res.string.drive_days_never),
             settings.driveTrashDays,
         ) { settings.driveTrashDays = it }
-        Hint(stringResource(Res.string.ctx_shares_sub))
-        OutlinedButton(onClick = { state.push(Screen.Shares) }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.shares_title)) }
         Hint(stringResource(Res.string.drive_crypto_hint))
         // B3: after a reset of the server (old GhulDrive put back) GhulDrive refuses to write.
         var accept by remember { mutableStateOf(false) }
@@ -550,4 +567,126 @@ fun DriveSettingsSection(state: AppState) {
             )
         }
     }
+
+    SectionLabel(stringResource(Res.string.drive_locations_title))
+    Hint(stringResource(Res.string.drive_locations_hint))
+    LoadError(error) { retry++ }
+    val moduleUpdated = stringResource(Res.string.module_updated)
+    val switched = stringResource(Res.string.drive_switched)
+    locations.orEmpty().forEach { loc ->
+        val s = loc.server
+        SectionCard {
+            ListRow(
+                s.name, kindLabel(s.kind), leading = { IconTile(Icons.Filled.Dns, paletteColor(1)) },
+                trailing = {
+                    // Tagged by its folder for the emulator flows (two locations can share a name).
+                    Box(Modifier.testTag("location-remove-" + s.base.trimEnd('/').substringAfterLast('/'))) {
+                        BarIcon(Icons.Filled.Delete, stringResource(Res.string.drive_location_remove), tint = g.danger) { removing = s }
+                    }
+                },
+                flush = true,
+            )
+            Column(Modifier.fillMaxWidth().padding(start = 56.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                if (loc.active || loc.archive) {
+                    ChipRow {
+                        if (loc.active) Tag(stringResource(Res.string.drive_location_active), areaColor(Tab.DRIVE))
+                        if (loc.archive) Tag(stringResource(Res.string.drive_location_archive), areaColor(Tab.MAIL))
+                    }
+                }
+                Hint("${s.user}@${s.host}:${s.port}")
+                Hint(stringResource(Res.string.server_location, s.location.ifBlank { "~/" + s.base }))
+                Hint(
+                    when {
+                        !s.hasModule -> stringResource(Res.string.server_module_none)
+                        s.moduleOutdated -> stringResource(Res.string.server_module_old, s.moduleVersion.toString(), s.moduleCurrent.toString())
+                        else -> stringResource(Res.string.server_module_on, s.moduleVersion.toString())
+                    },
+                )
+                val count = links.count { it.serverId == s.id }
+                if (s.hasModule) Hint(pluralStringResource(Res.plurals.drive_location_links, count, count))
+                // The text buttons' own padding: their words line up with the lines above.
+                Box(Modifier.offset(x = (-12).dp)) {
+                    ChipRow {
+                        if (!loc.active) {
+                            TextButton(onClick = {
+                                state.run(onError = { error = it }, block = { net.driveSwitchLocation(s.id) }) {
+                                    state.message(switched.replace("%1\$s", s.name))
+                                    state.changed()
+                                }
+                            }) { Text(stringResource(Res.string.drive_location_use)) }
+                        }
+                        if (!s.hasModule) {
+                            TextButton(onClick = { state.push(Screen.ModuleInstall(s.id)) }) { Text(stringResource(Res.string.module_install)) }
+                        } else {
+                            if (count > 0) TextButton(onClick = { state.push(Screen.Shares) }) { Text(stringResource(Res.string.shares_title)) }
+                            if (s.moduleOutdated) {
+                                TextButton(onClick = {
+                                    state.run(onError = { error = it }, block = { net.serverModuleUpdate(s.id) }) { v ->
+                                        state.message(moduleUpdated.replace("%1\$s", v.toString()))
+                                        state.changed()
+                                    }
+                                }) { Text(stringResource(Res.string.module_update)) }
+                            }
+                            TextButton(onClick = { removingModule = s }, colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = g.danger)) {
+                                Text(stringResource(Res.string.module_remove))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (locations?.isEmpty() == true) Hint(stringResource(Res.string.drive_locations_none))
+    OutlinedButton(onClick = { adding = true }, modifier = Modifier.fillMaxWidth(), enabled = locations != null) {
+        Text(stringResource(Res.string.drive_location_add))
+    }
+    if (adding) DriveServerSheet(state, adding = !locations.isNullOrEmpty()) { adding = false }
+    removing?.let { s -> RemoveLocationDialog(state, s, onError = { error = it }) { removing = null } }
+    removingModule?.let { s ->
+        AlertDialog(
+            danger = true,
+            onDismissRequest = { removingModule = null },
+            title = { Text(stringResource(Res.string.module_remove_title, s.name)) },
+            text = { Text(stringResource(Res.string.module_remove_text)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    removingModule = null
+                    state.run(onError = { error = it }, block = { net.serverModuleRemove(s.id) }) { state.changed() }
+                }) { Text(stringResource(Res.string.module_remove)) }
+            },
+            dismissButton = { TextButton(onClick = { removingModule = null }) { Text(stringResource(Res.string.a_cancel)) } },
+        )
+    }
+}
+
+/**
+ * Removing a storage location asks what happens to its files: they stay on the server (encrypted,
+ * can be added again later) unless the box is ticked. Its share links end either way.
+ */
+@Composable
+private fun RemoveLocationDialog(state: AppState, s: ServerUi, onError: (String) -> Unit, onDone: () -> Unit) {
+    var files by remember { mutableStateOf(false) }
+    val removed = stringResource(Res.string.drive_location_removed, s.name)
+    AlertDialog(
+        danger = true,
+        onDismissRequest = onDone,
+        title = { Text(stringResource(Res.string.drive_location_remove_title, s.name)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(Res.string.drive_location_remove_text))
+                SwitchRow(stringResource(Res.string.drive_location_remove_files), files) { files = it }
+                Text(stringResource(if (files) Res.string.drive_location_remove_files_on else Res.string.drive_location_remove_files_off))
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                onDone()
+                state.run(onError = onError, block = { state.backend.net.driveRemoveLocation(s.id, files) }) {
+                    state.message(removed)
+                    state.changed()
+                }
+            }) { Text(stringResource(Res.string.a_remove)) }
+        },
+        dismissButton = { TextButton(onClick = onDone) { Text(stringResource(Res.string.a_cancel)) } },
+    )
 }

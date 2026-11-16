@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Password
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Icon
@@ -108,8 +109,6 @@ fun SettingsScreen(state: AppState, padding: PaddingValues) {
     var slots by remember { mutableStateOf<List<SlotUi>>(emptyList()) }
     var servers by remember { mutableStateOf<List<ServerUi>>(emptyList()) }
     var sync by remember { mutableStateOf(SyncStatusUi(null, 0)) }
-    // "sharing on": links can be made (GhulDrive's server has the server module).
-    val shareNeed = rememberShareNeed(state)
     LaunchedEffect(state.liveRevision()) {
         slots = catching { backend.slots() }.getOrDefault(emptyList())
         servers = catching { backend.net.servers() }.getOrDefault(emptyList())
@@ -192,19 +191,10 @@ fun SettingsScreen(state: AppState, padding: PaddingValues) {
                 SetRow(Icons.Filled.Layers, Teal, stringResource(Res.string.set_vaults),
                     pluralStringResource(Res.plurals.set_vaults_sub, state.vaults.size, state.vaults.size.toString()), first = true) { open(SetPage.VAULTS) }
                 SetRow(Icons.Filled.Download, Cyan, stringResource(Res.string.set_import_export), stringResource(Res.string.set_import_sub)) { open(SetPage.IMPORT) }
-            }
-            Group(stringResource(Res.string.set_g_servers)) {
-                val sub = when {
-                    servers.isEmpty() -> stringResource(Res.string.set_servers_none)
-                    else -> pluralStringResource(
-                        Res.plurals.set_servers_sub,
-                        servers.size,
-                        servers.size.toString(),
-                        stringResource(if (sync.serverId != null) Res.string.set_sync_on else Res.string.set_sync_off_short),
-                        stringResource(if (shareNeed == ShareNeed.Ready) Res.string.set_share_on else Res.string.set_share_off),
-                    )
-                }
-                SetRow(Icons.Filled.Dns, Blue, stringResource(Res.string.set_servers_sync_share), sub, first = true) { open(SetPage.SERVERS) }
+                // Only the synchronisation (GhulDrive's storage locations are in GhulDrive's settings).
+                val syncName = servers.firstOrNull { it.id == sync.serverId }?.name
+                SetRow(Icons.Filled.Sync, Blue, stringResource(Res.string.set_servers_sync_share),
+                    if (syncName == null) stringResource(Res.string.set_sync_sub_off) else stringResource(Res.string.set_sync_sub_on, syncName)) { open(SetPage.SERVERS) }
             }
             Group(stringResource(Res.string.set_g_areas)) {
                 SetRow(Icons.Filled.Apps, Gray, stringResource(Res.string.set_modules), stringResource(Res.string.set_modules_sub), first = true) { open(SetPage.MODULES) }

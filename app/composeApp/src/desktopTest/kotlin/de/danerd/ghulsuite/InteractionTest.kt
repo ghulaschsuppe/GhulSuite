@@ -1389,12 +1389,12 @@ class InteractionTest {
      */
     @Test
     fun driveCardKeepsItsServerWhileTheCoreIsBusy() {
-        app(setup = { tab = Tab.DRIVE }, prepare = { (net as FakeNet).driveStorageFails = 1_000 }) { state, fake ->
+        app(setup = { tab = Tab.DRIVE }, prepare = { (net as FakeNet).driveLocationsFails = 1_000 }) { state, fake ->
             waitFor("Steuer 2025.pdf")
             assertFalse(shown("No server yet"))
             assertFalse(shown("Choose server"))
             // The synchronisation is done: the core answers again.
-            (fake.net as FakeNet).driveStorageFails = 0
+            (fake.net as FakeNet).driveLocationsFails = 0
             state.sync()
             waitFor("Heimserver")
             assertFalse(shown("No server yet"))
@@ -1404,12 +1404,142 @@ class InteractionTest {
     /** Drive's server was removed from the list (older setup): the card says so, not "Loading …". */
     @Test
     fun driveCardSaysNoServerWhenTheCoreHasNone() {
-        app(setup = { tab = Tab.DRIVE }, prepare = { (net as FakeNet).syncServer = null }) { _, _ ->
+        app(setup = { tab = Tab.DRIVE }, prepare = { (net as FakeNet).apply { driveStatusServer = "s1"; driveOwnServer = null } }) { _, _ ->
             waitFor("Steuer 2025.pdf")
             waitFor("No server yet")
             assertTrue(shown("Choose server"))
             assertFalse(shown("Loading …"))
         }
+    }
+
+    // --- GhulDrive's storage locations -------------------------------------------------------------
+
+    /**
+     * Options > GhulDrive: one block per storage location with its server, its tags, its module
+     * and a trash icon; the one that is not active can be switched to.
+     */
+    @Test
+    fun driveSettingsShowOneBlockPerLocation() = app(setup = { push(Screen.SettingsPage(SetPage.DRIVE)) }, prepare = { (net as FakeNet).addSecondDriveLocation() }) { _, fake ->
+        val net = fake.net as FakeNet
+        waitFor("STORAGE LOCATIONS")
+        waitFor("Heimserver")
+        assertTrue(shown("Webspace"))
+        assertTrue(shown("Active"))
+        assertTrue(shown("Mail archive"))
+        assertTrue(shown("Folder: /drive-b"))
+        // Module of the first one (outdated: update offered), none on the second (install offered).
+        assertTrue(shown("Install module"))
+        assertTrue(shown("Update module"))
+        assertTrue(shown("Add storage location"))
+        assertEquals(2, onAllNodesWithContentDescription("Remove storage location").fetchSemanticsNodes().size)
+        shot("drive-locations")
+        text("Switch to this one").performScrollTo().performClick()
+        waitUntil(timeoutMillis = 10_000) { net.driveLocationCalls.contains("switch:d2") }
+        waitFor("GhulDrive now shows Webspace")
+        // Now the first one can be switched to.
+        waitFor("Switch to this one")
+        assertTrue(net.driveLocs.first { it.server.id == "d2" }.active)
+    }
+
+    /** The trash icon asks first; the files on the server are only deleted when the box is ticked. */
+    @Test
+    fun removingALocationAsksAboutItsFiles() = app(setup = { push(Screen.SettingsPage(SetPage.DRIVE)) }, prepare = { (net as FakeNet).addSecondDriveLocation() }) { _, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Webspace")
+        onAllNodesWithContentDescription("Remove storage location")[1].performScrollTo().performClick()
+        waitFor("Remove Webspace?")
+        assertTrue(shown("Also delete the files on the server"))
+        assertTrue(shown("The encrypted files stay on the server. If you add the same folder again later, GhulDrive starts anew there."))
+        // Nothing happens before "Remove".
+        assertTrue(net.driveLocationCalls.isEmpty())
+        text("Also delete the files on the server").performClick()
+        waitFor("GhulDrive deletes its files in this folder on the server, the server module as well. This cannot be undone.")
+        shot("drive-location-remove")
+        text("Remove").performClick()
+        waitUntil(timeoutMillis = 10_000) { net.driveLocationCalls.contains("remove:d2:true") }
+        waitGone("Webspace")
+        assertEquals(1, onAllNodesWithContentDescription("Remove storage location").fetchSemanticsNodes().size)
+    }
+
+    /** Cancelling the question removes nothing; without ticking the box the files stay. */
+    @Test
+    fun removingALocationKeepsTheFilesUnlessAsked() = app(setup = { push(Screen.SettingsPage(SetPage.DRIVE)) }, prepare = { (net as FakeNet).addSecondDriveLocation() }) { _, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Webspace")
+        onAllNodesWithContentDescription("Remove storage location")[1].performScrollTo().performClick()
+        waitFor("Remove Webspace?")
+        text("Cancel").performClick()
+        waitGone("Remove Webspace?")
+        assertTrue(net.driveLocationCalls.isEmpty())
+        onAllNodesWithContentDescription("Remove storage location")[1].performScrollTo().performClick()
+        waitFor("Remove Webspace?")
+        text("Remove").performClick()
+        waitUntil(timeoutMillis = 10_000) { net.driveLocationCalls.contains("remove:d2:false") }
+    }
+
+    /** One location: no switch button in GhulDrive. Two: the button shows them and switches. */
+    @Test
+    fun driveOffersToSwitchOnlyWithSeveralLocations() {
+        app(setup = { tab = Tab.DRIVE }) { _, _ ->
+            waitFor("Steuer 2025.pdf")
+            waitFor("Heimserver")
+            assertFalse(shown("Switch storage location"))
+        }
+    }
+
+    @Test
+    fun driveSwitchesItsLocationFromTheCard() = app(setup = { tab = Tab.DRIVE }, prepare = { (net as FakeNet).addSecondDriveLocation() }) { _, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Steuer 2025.pdf")
+        waitFor("Switch storage location")
+        text("Switch storage location").performClick()
+        waitFor("/drive-b/drive")
+        shot("drive-switch-sheet")
+        text("Webspace").performClick()
+        waitUntil(timeoutMillis = 10_000) { net.driveLocationCalls == listOf("switch:d2") }
+        waitFor("GhulDrive now shows Webspace")
+        // The card names the location now shown.
+        waitFor("/drive-b/drive · encrypted")
+    }
+
+    /** Options > GhulMail: the archive's location is fixed and can be changed there. */
+    @Test
+    fun mailArchiveLocationCanBeChanged() = app(setup = { push(Screen.SettingsPage(SetPage.MAIL)) }, prepare = { (net as FakeNet).addSecondDriveLocation() }) { _, fake ->
+        val net = fake.net as FakeNet
+        waitFor("ARCHIVE LOCATION")
+        text("ARCHIVE LOCATION").performScrollTo()
+        waitFor("Heimserver")
+        text("Heimserver").performScrollTo().performClick()
+        waitFor("Webspace")
+        text("Webspace").performClick()
+        waitUntil(timeoutMillis = 10_000) { net.driveLocationCalls == listOf("archive:d2") }
+        // GhulDrive's active location stays.
+        assertTrue(net.driveLocs.first { it.server.id == "s1" }.active)
+    }
+
+    /** The archive lies on a location GhulDrive does not show: the archive view says so and offers to switch. */
+    @Test
+    fun mailArchiveOnAnotherLocationOffersToSwitch() = app(setup = { tab = Tab.MAIL }, prepare = {
+        (net as FakeNet).apply { addSecondDriveLocation(); driveLocs.replaceAll { it.copy(archive = it.server.id == "d2") } }
+    }) { state, fake ->
+        val net = fake.net as FakeNet
+        runOnIdle { state.push(Screen.MailArchive("m1")) }
+        waitFor("Switch to Webspace")
+        assertTrue(shown("The archive is on the storage location Webspace. GhulDrive shows another one right now. Switch to Webspace to see the archive."))
+        text("Switch to Webspace").performClick()
+        waitUntil(timeoutMillis = 10_000) { net.driveLocationCalls == listOf("switch:d2") }
+        waitGone("Switch to Webspace")
+    }
+
+    /** Options > Synchronisation is about the synchronisation only: no module, nothing of GhulDrive. */
+    @Test
+    fun syncPageHasNothingOfGhulDrive() = app(setup = { push(Screen.SettingsPage(SetPage.SERVERS)) }) { _, _ ->
+        waitFor("Synchronise now")
+        assertFalse(shown("Install module"))
+        assertFalse(shown("Update module"))
+        assertFalse(onAllNodesWithText("Server module", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        assertFalse(onAllNodesWithText("GhulDrive", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        shot("sync-page")
     }
 
     // --- Background jobs and the mail archive in GhulDrive ----------------------------------------

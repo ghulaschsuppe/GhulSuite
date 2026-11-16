@@ -88,7 +88,7 @@ val AREAS = listOf(
 /** Areas with a name the user picks (Drive and Mail have one file without a name of its own). */
 val NAMED_AREAS = setOf(VaultKindUi.PASS, VaultKindUi.TOTP, VaultKindUi.CAL)
 
-private enum class DriveChoice { SYNC, OWN, LATER }
+private enum class DriveChoice { OWN, LATER }
 
 private enum class QuickChoice { NONE, BIO, PIN }
 
@@ -213,7 +213,6 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                     made[a.kind] = false
                 }
             }
-            if (areaOn[VaultKindUi.DRIVE] == true && drive == DriveChoice.SYNC) net.driveUseSync()
         }) {
             for (a in AREAS) showModule(state, a.kind, areaOn[a.kind] == true)
             step = 6
@@ -377,12 +376,11 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
         }
 
         5 -> {
-            val syncReady = syncOn && syncId != null
             for (a in AREAS) {
                 val on = areaOn[a.kind] == true
                 ListCard {
                     Row(
-                        Modifier.fillMaxWidth().clickable { areaOn[a.kind] = !on; if (a.kind == VaultKindUi.DRIVE && !on) drive = if (syncReady) DriveChoice.SYNC else DriveChoice.LATER }
+                        Modifier.fillMaxWidth().clickable { areaOn[a.kind] = !on; if (a.kind == VaultKindUi.DRIVE && !on) drive = DriveChoice.LATER }
                             .heightIn(min = 60.dp).padding(horizontal = 16.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
@@ -391,7 +389,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                             Text(stringResource(a.title), fontWeight = FontWeight.W500, fontSize = 15.sp, color = if (on) g.fg else g.muted)
                             Text(stringResource(a.sub), fontSize = 14.sp, color = g.muted)
                         }
-                        Switch(on, { areaOn[a.kind] = it; if (a.kind == VaultKindUi.DRIVE && it) drive = if (syncReady) DriveChoice.SYNC else DriveChoice.LATER })
+                        Switch(on, { areaOn[a.kind] = it; if (a.kind == VaultKindUi.DRIVE && it) drive = DriveChoice.LATER })
                     }
                     if (on) {
                         Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -403,11 +401,8 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                                 VaultKindUi.DRIVE -> {
                                     Hint(stringResource(Res.string.wz_drive_where))
                                     SheetList {
-                                        PickRow(drive == DriveChoice.SYNC, Icons.Filled.Sync, 2, stringResource(Res.string.drive_like_sync),
-                                            stringResource(if (syncReady) Res.string.drive_like_sync_sub else Res.string.wz_drive_sync_first),
-                                            enabled = syncReady, onClick = { drive = DriveChoice.SYNC })
                                         PickRow(drive == DriveChoice.OWN, Icons.Filled.Dns, 1, stringResource(Res.string.wz_own_server), stringResource(Res.string.drive_own_sub),
-                                            divider = true, onClick = { drive = DriveChoice.OWN }) {
+                                            onClick = { drive = DriveChoice.OWN }) {
                                             ServerSetup(state, driveForm, { input, fp -> net.driveSaveServer(input, fp) }) { made[VaultKindUi.DRIVE] = true }
                                         }
                                         PickRow(drive == DriveChoice.LATER, Icons.Filled.Schedule, 5, stringResource(Res.string.wz_later), stringResource(Res.string.wz_drive_later_sub),

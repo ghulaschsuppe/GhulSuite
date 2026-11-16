@@ -69,17 +69,21 @@ interface NetBackend {
 
     // --- GhulDrive
     suspend fun driveStatus(): DriveStatusUi
-    suspend fun driveSetup(serverId: String)
-    /** Where GhulDrive stores its files. */
-    suspend fun driveStorage(): DriveStorageUi = DriveStorageUi(DriveModeUi.NONE, null, false)
-    /** GhulDrive uses the server this device synchronises with ("wie Synchronisation"). */
-    suspend fun driveUseSync() {}
     /** After "server state older than seen": takes the server's GhulDrive as it is. */
     suspend fun driveAcceptServerState() {}
-    /** Checks a server for GhulDrive alone and stores it in the Drive file. */
+    /** Checks a server and adds it to GhulDrive's storage locations (in the Drive file). */
     suspend fun driveSaveServer(input: ServerInputUi, confirmed: String?): ServerSavedUi = ServerSavedUi.Saved("")
-    /** Before the sync server is removed or changed: GhulDrive keeps that server as its own. */
-    suspend fun driveDetachFromSync() {}
+    /** GhulDrive's storage locations: each its own server with its own files, one active. */
+    suspend fun driveLocations(): List<DriveLocationUi> = emptyList()
+    /** Shows the files of another storage location from now on. */
+    suspend fun driveSwitchLocation(id: String) {}
+    /**
+     * Removes a storage location; its share links end first. With [deleteFiles] its GhulDrive
+     * files, share data and server module are deleted on the server too.
+     */
+    suspend fun driveRemoveLocation(id: String, deleteFiles: Boolean) {}
+    /** The storage location the mail archive writes into. */
+    suspend fun driveSetArchiveLocation(id: String) {}
     suspend fun driveList(folder: String?, refresh: Boolean): List<DriveItemUi>
     suspend fun driveSearch(query: String): List<DriveItemUi>
     suspend fun driveCreateFolder(parent: String?, name: String): String
@@ -262,9 +266,8 @@ sealed interface ServerFoldersUi {
     data class Folders(val folders: List<String>) : ServerFoldersUi
 }
 
-enum class DriveModeUi { NONE, SYNC, OWN, SUITE }
-
-data class DriveStorageUi(val mode: DriveModeUi, val server: ServerUi?, val syncAvailable: Boolean)
+/** One of GhulDrive's storage locations; [archive]: the mail archive writes into it. */
+data class DriveLocationUi(val server: ServerUi, val active: Boolean, val archive: Boolean)
 
 /**
  * One step of installing the server module: `upload` (file written, detail = its path), `https`

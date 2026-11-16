@@ -8,8 +8,8 @@ name: Server weg 3
 - scrollUntilVisible:
     element: "Unlocking|Entsperren"
     direction: UP
-- scrollUntilVisible: { element: "Servers, sync & sharing", direction: DOWN }
-- tapOn: "Servers, sync & sharing"
+- scrollUntilVisible: { element: "Synchronisation", direction: DOWN }
+- tapOn: "Synchronisation"
 # Right after unlocking the automatic synchronisation may still run on the slow server; the page
 # says "Loading …" until it is done.
 - scrollUntilVisible: { element: "Synchronise now", direction: DOWN, timeout: 180000 }

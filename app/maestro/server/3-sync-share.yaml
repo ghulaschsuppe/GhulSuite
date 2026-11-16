@@ -1,14 +1,16 @@
 # The way a user takes on a real server, step by step with a screenshot after each one:
-#   1. Options > Servers: add the SFTP test server. First "Test connection", only then the folder
+#   1. Options > Synchronisation: add the SFTP test server. First "Test connection", only then the folder
 #      (a new one, "sync-maestro"), then save.
 #   2. Choose it for the synchronisation: the choice sticks (bug: it stayed "Off") and the first
 #      synchronisation runs.
-#   3. Install the server module (share links) on it: browse the folders, enter an address,
-#      "Install and check". No internal error text may appear (bug: "The coroutine scope left the
+#   3. Options > GhulDrive: one block per storage location. A second location is added (its own
+#      folder), then the server module (share links) is installed on the first one: browse the
+#      folders, enter an address, "Install and check". No internal error text may appear (bug: "The coroutine scope left the
 #      composition"). The CI has no web server with PHP: the address does not exist, so the
 #      upload works, HTTPS fails, and the folder step is "not checked".
-#   4. GhulDrive (own server from 1-drive.yaml): the card names the server (bug: "…" and
-#      "Not set up" next to the files).
+#   4. GhulDrive (its location from 1-drive.yaml): "Switch storage location" shows the second
+#      location (empty) and back again; the card names the server (bug: "…" and "Not set up"
+#      next to the files). Then the second location is removed again (files kept).
 #   5. Selection bar with everything selected: no "All" button that does nothing. Sharing it:
 #      "Share link" says that links need the server module (GhulDrive's server has none).
 appId: de.danerd.ghulsuite.dev
@@ -21,9 +23,9 @@ name: Sync server and sharing on a real server
     element: "Unlocking|Entsperren"
     direction: UP
 - scrollUntilVisible:
-    element: "Servers, sync & sharing"
+    element: "Synchronisation"
     direction: DOWN
-- tapOn: "Servers, sync & sharing"
+- tapOn: "Synchronisation"
 - extendedWaitUntil:
     visible: "Add server"
     timeout: 10000
@@ -100,13 +102,13 @@ name: Sync server and sharing on a real server
     element: "Save server"
     direction: DOWN
 - tapOn: "Save server"
-# Saved: back on the page of the servers, the server is listed with its folder and without the
-# server module (GhulDrive's own server from 1-drive.yaml is listed as well).
+# Saved: back on the page of the synchronisation, the server is listed with its folder. The page
+# is about the synchronisation only: no server module, nothing of GhulDrive.
 - extendedWaitUntil:
     visible: "Folder: .*sync-maestro.*"
     timeout: 120000
-- assertVisible: "Server module: not installed.*"
-- assertVisible: "Install module"
+- assertNotVisible: "Install module"
+- assertNotVisible: "Server module: .*"
 - takeScreenshot: s3-06-server-saved
 
 # --- 2. Synchronisation ----------------------------------------------------------------------
@@ -135,7 +137,87 @@ name: Sync server and sharing on a real server
 - assertNotVisible: "Synchronisation failed: .*"
 - takeScreenshot: s3-08-sync-chosen
 
-# --- 3. Server module ------------------------------------------------------------------------
+# --- 3. GhulDrive's storage locations ---------------------------------------------------------
+- back
+- scrollUntilVisible:
+    element: "GhulDrive"
+    direction: DOWN
+- tapOn: "GhulDrive"
+- scrollUntilVisible:
+    element: "Storage locations"
+    direction: DOWN
+- assertVisible: "Active"
+- assertVisible: "Server module: not installed.*"
+- takeScreenshot: s3-08b-drive-locations
+- scrollUntilVisible:
+    element: "Add storage location"
+    direction: DOWN
+- tapOn: "Add storage location"
+- extendedWaitUntil:
+    visible: "Server address"
+    timeout: 10000
+- tapOn: "Server address"
+- inputText: ${GHUL_SERVER}
+- tapOn: "22"
+- eraseText
+- inputText: "2223"
+- tapOn: "User name"
+- inputText: "ghulsftp"
+- hideKeyboard
+- tapOn: "Password"
+- scrollUntilVisible:
+    element: "Server password"
+    direction: DOWN
+- tapOn: "Server password"
+- inputText: "test-pw-123"
+- hideKeyboard
+- scrollUntilVisible:
+    element: "Test connection"
+    direction: DOWN
+- tapOn:
+    text: "Test connection"
+    index: 0
+- extendedWaitUntil:
+    visible: "Check the server key|New folder …"
+    timeout: 60000
+- runFlow:
+    when:
+      visible: "Check the server key"
+    commands:
+      - tapOn: "Fingerprint matches"
+- extendedWaitUntil:
+    visible: "New folder …"
+    timeout: 60000
+- tapOn: "New folder …"
+- tapOn: "Name of the new folder"
+- inputText: "drive-b-maestro"
+- hideKeyboard
+- tapOn: "Use drive-b-maestro \\(created when testing\\)"
+- extendedWaitUntil:
+    visible: "Connection works, folder chosen\\."
+    timeout: 10000
+- scrollUntilVisible:
+    element: "Check connection"
+    direction: DOWN
+- tapOn: "Check connection"
+- extendedWaitUntil:
+    visible: "Connection works, the folder can be written\\..*"
+    timeout: 120000
+- scrollUntilVisible:
+    element: "Save server"
+    direction: DOWN
+- tapOn: "Save server"
+# Added next to the first one; the active location stays.
+- extendedWaitUntil:
+    visible: "Storage location added.*"
+    timeout: 120000
+- extendedWaitUntil:
+    visible: "Folder: .*drive-b-maestro.*"
+    timeout: 30000
+- assertVisible: "Switch to this one"
+- takeScreenshot: s3-08c-two-locations
+
+# --- 3b. Server module on the first location --------------------------------------------------
 - scrollUntilVisible:
     element: "Install module"
     direction: UP
@@ -190,8 +272,34 @@ name: Sync server and sharing on a real server
 - back
 - back
 
-# --- 4. GhulDrive card -----------------------------------------------------------------------
+# --- 4. GhulDrive card, switching the location -------------------------------------------------
 - tapOn: { id: "tab-drive" }
+- extendedWaitUntil:
+    visible: "Urlaub-Maestro"
+    timeout: 60000
+- scrollUntilVisible:
+    element: "Switch storage location"
+    direction: DOWN
+- tapOn: "Switch storage location"
+- extendedWaitUntil:
+    visible: ".*drive-b-maestro/drive"
+    timeout: 10000
+- takeScreenshot: s3-12a-switch-sheet
+- tapOn: ".*drive-b-maestro/drive"
+# The other location has files of its own: none yet.
+- extendedWaitUntil:
+    visible: "This folder is empty\\."
+    timeout: 60000
+- assertNotVisible: "Urlaub-Maestro"
+- takeScreenshot: s3-12b-second-location
+- scrollUntilVisible:
+    element: "Switch storage location"
+    direction: DOWN
+- tapOn: "Switch storage location"
+- extendedWaitUntil:
+    visible: ".*/ghulsuite/drive"
+    timeout: 10000
+- tapOn: ".*/ghulsuite/drive"
 - extendedWaitUntil:
     visible: "Urlaub-Maestro"
     timeout: 60000
@@ -257,3 +365,30 @@ name: Sync server and sharing on a real server
 - assertNotVisible: "Not set up"
 - assertNotVisible: "No server yet"
 - takeScreenshot: s3-15-drive-after-restart
+
+# --- 7. Remove the second location again (its files stay on the server) ---------------------
+- tapOn: { id: "tab-settings" }
+- scrollUntilVisible:
+    element: "Unlocking|Entsperren"
+    direction: UP
+- scrollUntilVisible:
+    element: "GhulDrive"
+    direction: DOWN
+- tapOn: "GhulDrive"
+- scrollUntilVisible:
+    element: "Folder: .*drive-b-maestro.*"
+    direction: DOWN
+- tapOn:
+    id: "location-remove-drive-b-maestro"
+- extendedWaitUntil:
+    visible: "Remove .*\\?"
+    timeout: 10000
+- assertVisible: "Also delete the files on the server"
+- takeScreenshot: s3-16-remove-location
+- tapOn: "Remove"
+- extendedWaitUntil:
+    notVisible: "Folder: .*drive-b-maestro.*"
+    timeout: 60000
+- assertVisible: "Folder: .*ghulsuite.*"
+- assertNotVisible: "Switch to this one"
+- takeScreenshot: s3-17-one-location

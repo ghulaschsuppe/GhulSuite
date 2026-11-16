@@ -163,29 +163,62 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
     }
     override suspend fun adoptRemotePassword(password: String) = SyncReportUi(0, 0, 0, 0, 0)
 
-    /** GhulDrive's storage; tests can give Drive a server of its own (not in the suite's list). */
-    var driveOwnServer: ServerUi? = null
-    /** So many calls of driveStorage() fail first (the core is busy with a synchronisation). */
-    var driveStorageFails = 0
-    override suspend fun driveStorage() = if (driveStorageFails > 0) {
-        driveStorageFails--
-        throw java.io.IOException("busy")
-    } else when {
-        driveOwnServer != null -> de.danerd.ghulsuite.model.DriveStorageUi(de.danerd.ghulsuite.model.DriveModeUi.OWN, driveOwnServer, syncServer != null)
-        configured && syncServer != null -> de.danerd.ghulsuite.model.DriveStorageUi(de.danerd.ghulsuite.model.DriveModeUi.SYNC, server, true)
-        else -> de.danerd.ghulsuite.model.DriveStorageUi(de.danerd.ghulsuite.model.DriveModeUi.NONE, null, false)
+    /** GhulDrive's storage locations (not in the suite's list); the fake starts with s1 when configured. */
+    val driveLocs: MutableList<de.danerd.ghulsuite.model.DriveLocationUi> =
+        if (configured) mutableListOf(de.danerd.ghulsuite.model.DriveLocationUi(server, active = true, archive = true)) else mutableListOf()
+    /** Gives Drive one location of its own instead of the ones it has. */
+    var driveOwnServer: ServerUi?
+        get() = driveLocs.firstOrNull { it.active }?.server
+        set(v) {
+            driveLocs.clear()
+            if (v != null) driveLocs += de.danerd.ghulsuite.model.DriveLocationUi(v, active = true, archive = true)
+        }
+    /** A second storage location (the FTPS web hosting, folder "drive-b"), not active. */
+    fun addSecondDriveLocation() {
+        driveLocs += de.danerd.ghulsuite.model.DriveLocationUi(web.copy(id = "d2", base = "drive-b", location = "/drive-b"), active = false, archive = false)
+    }
+    /** What was asked of the locations, in order ("switch:id", "remove:id:files", "archive:id", "add:host"). */
+    val driveLocationCalls = java.util.Collections.synchronizedList(mutableListOf<String>())
+    /** So many calls of driveLocations() fail first (the core is busy with a synchronisation). */
+    var driveLocationsFails = 0
+    override suspend fun driveLocations(): List<de.danerd.ghulsuite.model.DriveLocationUi> {
+        if (driveLocationsFails > 0) {
+            driveLocationsFails--
+            throw java.io.IOException("busy")
+        }
+        return if (driveMissing) emptyList() else driveLocs.toList()
+    }
+    override suspend fun driveSwitchLocation(id: String) {
+        driveLocationCalls += "switch:$id"
+        check(driveLocs.any { it.server.id == id })
+        driveLocs.replaceAll { it.copy(active = it.server.id == id) }
+    }
+    override suspend fun driveRemoveLocation(id: String, deleteFiles: Boolean) {
+        driveLocationCalls += "remove:$id:$deleteFiles"
+        val gone = driveLocs.firstOrNull { it.server.id == id } ?: return
+        driveLocs.remove(gone)
+        if (gone.active && driveLocs.isNotEmpty()) driveLocs[0] = driveLocs[0].copy(active = true)
+        if (gone.archive && driveLocs.none { it.archive } && driveLocs.isNotEmpty()) {
+            val i = driveLocs.indexOfFirst { it.active }
+            driveLocs[i] = driveLocs[i].copy(archive = true)
+        }
+    }
+    override suspend fun driveSetArchiveLocation(id: String) {
+        driveLocationCalls += "archive:$id"
+        driveLocs.replaceAll { it.copy(archive = it.server.id == id) }
     }
     /** Holds driveStatus() back (Drive's index still coming from a slow server) until released. */
     var driveStatusGate: java.util.concurrent.CountDownLatch? = null
+    /** The server id driveStatus() names, when it differs from the locations (an older setup). */
+    var driveStatusServer: String? = null
     /** Files in GhulDrive (as counted by the core). */
     var driveFiles = 3
     /** GhulDrive is not set up (while the rest, e.g. mail, is). */
     var driveMissing = false
     override suspend fun driveStatus(): DriveStatusUi {
         driveStatusGate?.let { gate -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { gate.await(30, java.util.concurrent.TimeUnit.SECONDS) } }
-        return DriveStatusUi(if (driveMissing) null else driveOwnServer?.id ?: if (configured) "s1" else null, driveFiles, 12_345_678)
+        return DriveStatusUi(if (driveMissing) null else driveStatusServer ?: driveOwnServer?.id, driveFiles, 12_345_678)
     }
-    override suspend fun driveSetup(serverId: String) {}
     /** How long listing a folder takes (a slow server); blocking, as the real core does. */
     var driveListDelayMs = 0L
     @Volatile var driveListGate: java.util.concurrent.CountDownLatch? = null

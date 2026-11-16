@@ -339,10 +339,17 @@ die App gibt der Datei beim nächsten Entsperren ihren neutralen Namen zurück.
 - Alle Zugangsdaten (Host, Benutzer, SSH-Schlüssel, Passwörter) liegen **nur verschlüsselt**: der Sync-Server im
   Suite-Container, ein eigener Server nur für GhulDrive in der Drive-Datei. Ohne Entsperren ist nicht erkennbar,
   welche Server eingerichtet sind.
-- **Synchronisation und GhulDrive sind unabhängig** (abgestimmt am 13.11.2026, #24): GhulDrive nutzt entweder
-  „wie Synchronisation“ (nur ein Verweis auf den Sync-Server dieses Geräts, keine Kopie der Zugangsdaten) oder einen
-  eigenen Server, auch mit anderer Methode. Wird der Sync-Server entfernt oder gewechselt, fragt die App vorher:
-  Zugang für GhulDrive behalten (Kopie in die Drive-Datei) oder GhulDrive später neu einrichten.
+- **Synchronisation und GhulDrive sind getrennt** (abgestimmt am 13.11.2026, #24, erweitert am 16.11.2026): die
+  Synchronisation hat ihre Server im Suite-Container, GhulDrive seine **Speicherorte** in der Drive-Datei. Es gibt
+  keinen Verweis mehr von einem auf das andere; die Seite „Synchronisation“ in den Optionen kennt GhulDrive nicht.
+- **Mehrere Speicherorte für GhulDrive** (abgestimmt am 16.11.2026): beliebig viele Server, jeder mit eigenem Ordner,
+  eigenen Dateien, eigenem Server-Modul und eigenen Freigabelinks. **Einer ist aktiv**; GhulDrive zeigt nur ihn,
+  „Speicherort wechseln“ schaltet um, ohne etwas zu kopieren. Hinzufügen prüft den Server und lässt den aktiven
+  Speicherort, wie er ist. Entfernen fragt, ob auch die Dateien auf dem Server gelöscht werden sollen (sonst bleiben
+  sie verschlüsselt liegen); die Freigabelinks des Speicherorts enden in beiden Fällen. Das Mail-Archiv schreibt in
+  einen **fest eingestellten** Speicherort (Optionen → GhulMail, änderbar), auch wenn GhulDrive gerade einen anderen
+  zeigt. Ein älteres GhulDrive, das den Sync-Server mitnutzte, wird beim ersten Öffnen zu einem eigenen Speicherort
+  (Kopie der Zugangsdaten in die Drive-Datei, auf allen Geräten dieselbe Kennung).
 - **Ein Server ist ein Webspace** (abgestimmt am 15.11.2026, 0.7.0): sein SFTP- oder FTPS-Zugang und, nur für
   Freigabelinks, optional das GhulSuite-Server-Modul, das die App über **denselben** Zugang installiert. Ein weiterer
   Server ist völlig getrennt (eigener Zugang, eigenes Modul, eigene Links). Synchronisation und GhulDrive wählen

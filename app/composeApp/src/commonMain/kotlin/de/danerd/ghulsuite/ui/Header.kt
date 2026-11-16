@@ -91,8 +91,8 @@ fun AreaContext(state: AppState) {
             Tab.DRIVE -> {
                 // From the settings on this device only: driveStatus() reads Drive's index, after a
                 // restart from the server, and the line stayed empty that long (slow network).
-                // Drive's own server is not in the suite's list (only the sync servers are).
-                val srv = catching { net.driveStorage().server }.getOrNull()
+                // Drive's locations are not in the suite's list (only the sync servers are).
+                val srv = catching { net.driveLocations() }.getOrNull()?.firstOrNull { it.active }?.server
                 if (srv == null) notSet else "${srv.name} · $myFiles"
             }
             Tab.MAIL -> {
@@ -170,23 +170,30 @@ private fun VaultSheet(state: AppState, kind: VaultKindUi, close: () -> Unit) {
 @Composable
 private fun DriveSheet(state: AppState, close: () -> Unit) {
     val net = state.backend.net
-    var status by remember { mutableStateOf<DriveStatusUi?>(null) }
-    var servers by remember { mutableStateOf<List<ServerUi>>(emptyList()) }
-    LaunchedEffect(Unit) {
-        status = catching { net.driveStatus() }.getOrNull()
-        servers = listOfNotNull(catching { net.driveStorage().server }.getOrNull())
-    }
-    val srv = servers.firstOrNull()
+    var locations by remember { mutableStateOf<List<de.danerd.ghulsuite.model.DriveLocationUi>>(emptyList()) }
+    LaunchedEffect(Unit) { locations = catching { net.driveLocations() }.getOrNull().orEmpty() }
+    val switched = stringResource(Res.string.drive_switched)
     GhulSheet(close, stringResource(Res.string.ctx_storage)) {
         SheetList {
-            if (srv != null) {
-                CtxRow(srv.name, srv.location.ifBlank { srv.host } + "/drive", selected = true, leading = { IconTile(Icons.Filled.Dns, paletteColor(1)) }) { close() }
+            // Every storage location; tapping another one switches GhulDrive to it.
+            locations.forEachIndexed { i, l ->
+                val srv = l.server
+                CtxRow(srv.name, srv.location.ifBlank { srv.host } + "/drive", selected = l.active, divider = i > 0,
+                    leading = { IconTile(Icons.Filled.Dns, paletteColor(1)) }) {
+                    close()
+                    if (!l.active) {
+                        state.run(block = { net.driveSwitchLocation(srv.id) }) {
+                            state.message(switched.replace("%1\$s", srv.name))
+                            state.changed()
+                        }
+                    }
+                }
             }
-            CtxRow(stringResource(Res.string.shares_title), stringResource(Res.string.ctx_shares_sub), divider = srv != null, leading = { IconTile(Icons.Filled.Link, paletteColor(5)) }) {
+            CtxRow(stringResource(Res.string.shares_title), stringResource(Res.string.ctx_shares_sub), divider = locations.isNotEmpty(), leading = { IconTile(Icons.Filled.Link, paletteColor(5)) }) {
                 close(); state.push(Screen.Shares)
             }
-            // The storage of GhulDrive is set on the Drive page of Options.
-            CtxRow(stringResource(Res.string.drive_storage_title), divider = true, leading = { IconTile(Icons.Filled.Tune, paletteColor(5)) }) {
+            // Adding, removing and the server modules: on the Drive page of Options.
+            CtxRow(stringResource(Res.string.drive_locations_manage), divider = true, leading = { IconTile(Icons.Filled.Tune, paletteColor(5)) }) {
                 close(); state.push(Screen.SettingsPage(SetPage.DRIVE))
             }
         }

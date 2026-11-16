@@ -31,7 +31,7 @@ name: All options pages
     env: { PAGE: "Import, export and backup", SHOT: "10-06-import" }
 - runFlow:
     file: open-option-full.yaml
-    env: { PAGE: "Servers, sync & sharing", SHOT: "10-07-servers" }
+    env: { PAGE: "Synchronisation", SHOT: "10-07-sync" }
 - runFlow:
     file: open-option-full.yaml
     env: { PAGE: "Manage areas", SHOT: "10-08-areas" }

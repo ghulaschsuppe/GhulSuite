@@ -43,6 +43,7 @@ import de.danerd.ghulsuite.resources.*
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.material3.OutlinedButton
 
 // The mail archive in GhulDrive: copies of mails as .eml files (Mail-Archiv/<account>/<year>/).
 // Archiving changes nothing at the provider; the user deletes there with the normal delete.
@@ -185,8 +186,13 @@ fun MailArchiveScreen(state: AppState, accountId: String, padding: PaddingValues
     var fetched by remember { mutableStateOf(false) }
     val here = path.lastOrNull()?.first
     val accountName by produceState("", accountId) { value = catching { net.mailAccounts().firstOrNull { it.id == accountId }?.name }.getOrNull().orEmpty() }
-    LaunchedEffect(here, retry, state.archiveTick, state.driveTick) {
+    /** The archive lies on another storage location than the one GhulDrive shows now. */
+    var elsewhere by remember { mutableStateOf<de.danerd.ghulsuite.model.ServerUi?>(null) }
+    LaunchedEffect(here, retry, state.archiveTick, state.driveTick, state.liveRevision()) {
         error = null
+        val locs = catching { net.driveLocations() }.getOrNull().orEmpty()
+        elsewhere = locs.firstOrNull { it.archive && !it.active }?.server
+        if (elsewhere != null) { items = emptyList(); return@LaunchedEffect }
         catching {
             val top = root ?: net.archiveFolder(accountId).also { root = it }
             if (top == null) emptyList() else net.driveList(here ?: top, !fetched).also { fetched = true }
@@ -205,6 +211,20 @@ fun MailArchiveScreen(state: AppState, accountId: String, padding: PaddingValues
         )
         ScreenColumn {
             LoadError(error) { retry++ }
+            elsewhere?.let { srv ->
+                // One location is shown at a time (GhulDrive's active one); the archive is read where it is.
+                HintText(stringResource(Res.string.mail_archive_elsewhere, srv.name))
+                val switched = stringResource(Res.string.drive_switched, srv.name)
+                OutlinedButton(onClick = {
+                    state.run(onError = { error = it }, block = { net.driveSwitchLocation(srv.id) }) {
+                        root = null
+                        path = emptyList()
+                        state.message(switched)
+                        state.changed()
+                    }
+                }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.drive_location_use_named, srv.name)) }
+                return@ScreenColumn
+            }
             val list = items
             if (list == null && error == null) LoadingHint()
             if (list != null) {
@@ -355,6 +375,44 @@ fun MailArchiveReadScreen(state: AppState, accountId: String, fileId: String, na
                     leading = { IconTile(Icons.Filled.Delete, g.danger) }) {
                     more = false
                     delete()
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Settings → GhulMail: the GhulDrive storage location the mail archive goes to. Fixed until it
+ * is changed here, also while GhulDrive shows another location.
+ */
+@Composable
+fun MailArchiveLocationSection(state: AppState) {
+    val net = state.backend.net
+    var locations by remember { mutableStateOf<List<de.danerd.ghulsuite.model.DriveLocationUi>>(emptyList()) }
+    var choosing by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(state.liveRevision()) { locations = catching { net.driveLocations() }.getOrNull().orEmpty() }
+    if (locations.isEmpty()) return
+    val current = locations.firstOrNull { it.archive } ?: locations.firstOrNull { it.active }
+    SectionCard(stringResource(Res.string.mail_archive_location)) {
+        ListRow(
+            current?.server?.name.orEmpty(), current?.server?.let { it.location.ifBlank { "~/" + it.base } + "/drive" },
+            leading = { IconTile(Icons.Filled.Inventory2, areaColor(Tab.DRIVE)) },
+            trailing = if (locations.size > 1) ({ ChevronEnd() }) else null,
+            flush = true,
+        ) { if (locations.size > 1) choosing = true }
+        Hint(stringResource(Res.string.mail_archive_location_hint))
+        ErrorText(error)
+    }
+    if (choosing) {
+        GhulSheet({ choosing = false }, stringResource(Res.string.mail_archive_location)) {
+            SheetList {
+                locations.forEachIndexed { i, l ->
+                    val srv = l.server
+                    PickRow(l.server.id == current?.server?.id, Icons.Filled.Inventory2, 1, srv.name, srv.location.ifBlank { "~/" + srv.base } + "/drive", divider = i > 0, onClick = {
+                        choosing = false
+                        state.run(onError = { error = it }, block = { net.driveSetArchiveLocation(srv.id) }) { state.changed() }
+                    })
                 }
             }
         }

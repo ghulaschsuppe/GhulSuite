@@ -44,13 +44,13 @@ von Schritt 3, danach geht „Zurück“ nur noch bis Schritt 4.
 | E7 | „Eigener Server“ wählen, ohne Angaben „Weiter“. | Meldung „Noch offen: Anmeldung“ (bzw. der fehlende Schritt). Checkliste unter dem Formular zeigt Anmeldung, Verbindung testen, Ordner wählen, Ordner beschreibbar, Speichern. |
 | E8 | SFTP-Server eintragen (siehe Abschnitt 12), „Ordner wählen“. | Fingerabdruck bestätigen, dann die Ordner des Servers; „ghulsuite, Neu anlegen (empfohlen)“, Unterordner öffnen, „Eine Ebene höher“, „Neuer Ordner …“. |
 | E9 | Ordner wählen → „Verbindung prüfen“ → „Server speichern“ → Weiter. | Vor der Prüfung gibt es kein „Server speichern“. Nach der Prüfung „Verbindung klappt, der Ordner ist beschreibbar …“, dann nach dem Speichern „Verbunden · host:/ordner“, Haken in der Checkliste; Schritt 5 · Bereiche. |
-| E10 | Alle fünf Bereiche einschalten. Bei GhulDrive „Wie Synchronisation“. Weiter. | Namen für GhulPass, GhulAuth, GhulCal änderbar; „Wie Synchronisation“ nur wählbar, weil Schritt 4 eingerichtet wurde. Schritt 6 · Sperren. |
+| E10 | Alle fünf Bereiche einschalten. Bei GhulDrive „Eigener Server“. Weiter. | Namen für GhulPass, GhulAuth, GhulCal änderbar; GhulDrive bietet nur einen eigenen Speicherort an (kein „Wie Synchronisation“). Schritt 6 · Sperren. |
 | E11 | Sperrzeit wählen, Schalter für Bildschirm aus und Schütteln. Weiter. | Schritt 7 · Entsperren mit Hinweis, dass „Schnell entsperren“ Fingerabdruck und App-PIN meint. |
 | E12 | „Zusätzlich Fingerabdruck“, Gültigkeit „Immer“. Weiter. | Hinweis: ohne Ablauf, aber nach Neustart, Sofortsperre oder Passwortwechsel wieder Passwort und Key. Fingerabdruck-Abfrage; Schritt 8. |
 | E13 | Code ansehen, „Notfallblatt drucken“ → „Als PDF speichern“. | PDF mit Code, QR-Code und Anleitung. PDF danach vom Handy löschen. |
 | E14 | „Ich habe den Code notiert“ → Weiter → falsche Gruppe 3 eingeben. | Meldung „Das ist nicht die dritte Gruppe“. Es gibt kein „Später“. |
 | E15 | Richtige Gruppe 3 eingeben → Abschließen. | Hauptansicht mit allen fünf Bereichen und Optionen; GhulMail zeigt „Noch kein Konto“ mit dem vollständigen Kontoformular. |
-| E16 | Zweite Einrichtung: in Schritt 4 „Später“, in Schritt 5 GhulDrive einschalten. | „Wie Synchronisation“ ist ausgegraut („Erst Synchronisation einrichten (Schritt 4)“); „Eigener Server“ klappt das Formular direkt auf. |
+| E16 | Zweite Einrichtung: in Schritt 4 „Später“, in Schritt 5 GhulDrive einschalten. | „Eigener Server“ klappt das Formular direkt auf; ohne Synchronisation geht GhulDrive genauso. |
 | E17 | GhulDrive „Eigener Server“ → FTPS: Daten des Webhostings, „Verbindung testen“, Ordner wählen (nicht `public_html`), „Verbindung prüfen“, „Server speichern“. | Zur Wahl stehen nur SFTP und FTPS. Der Server ist gespeichert; das Server-Modul für Freigabelinks kommt später über die Serverliste (ST6). |
 | E18 | Einrichtung mit „Schlüsseldatei“ statt Key: Datei erstellen und z. B. auf den USB-Stick speichern. | Ohne gespeicherte Datei geht es nicht weiter. Danach wie E6 bis E15 (ohne Key-Berührung). |
 | E19 | In Schritt 3 einen eigenen Ordner wählen, in dem schon GhulSuite-Dateien liegen. | Hinweis „Hier liegen bereits GhulSuite-Dateien“ und „Diese Suite öffnen“. |
@@ -186,7 +186,7 @@ Entfällt: Autofill wurde entfernt, weil es nicht zuverlässig funktionierte (Te
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| SY1 | Optionen → Server, Sync & Teilen → „Server hinzufügen“ → Verbindungsart **SFTP (SSH)**. Adresse, Port und Benutzer eingeben, „SSH-Schlüssel“ gewählt lassen. | Ein öffentlicher Schlüssel `ssh-ed25519 …` wird angezeigt; „Kopieren“ legt ihn in die Zwischenablage. Es gibt noch **keine** Ordnerwahl, nur „Verbindung testen“; darunter die Schritte 1. bis 4. untereinander. |
+| SY1 | Optionen → Daten → Synchronisation → „Server hinzufügen“ → Verbindungsart **SFTP (SSH)**. Adresse, Port und Benutzer eingeben, „SSH-Schlüssel“ gewählt lassen. | Ein öffentlicher Schlüssel `ssh-ed25519 …` wird angezeigt; „Kopieren“ legt ihn in die Zwischenablage. Es gibt noch **keine** Ordnerwahl, nur „Verbindung testen“; darunter die Schritte 1. bis 4. untereinander. |
 | SY2 | Schlüssel auf dem Server in `~/.ssh/authorized_keys` eintragen, dann „Verbindung testen“. | Dialog „Server-Schlüssel prüfen“ mit `SHA256:…`. Er stimmt mit dem Fingerabdruck aus V6 überein. |
 | SY3 | „Fingerabdruck stimmt“, in der Ordnerliste „ghulsuite (Neu anlegen, empfohlen)“ wählen, „Verbindung prüfen“, „Server speichern“. | Nach dem Fingerabdruck: „Verbindung klappt. Wähle jetzt den Ordner …“ und die Ordnerliste öffnet sich von selbst. Nach dem Speichern erscheint der Server in der Liste. Auf dem Server gibt es den Ordner `ghulsuite/suite/` (leer). |
 | SY4 | Server mit falschem Fingerabdruck-Abgleich: „Abbrechen“ im Dialog. | Nichts wird gespeichert. |
@@ -275,7 +275,7 @@ Entfällt: Autofill wurde entfernt, weil es nicht zuverlässig funktionierte (Te
 |---|---|---|
 | DS1 | Durch alle Tabs blättern. | Überall dieselbe Kopfzeile: Bereichsname, darunter farbige Kontextzeile (Tresor, Speicherort bzw. „Konto · Ordner“) mit Pfeil; rechts das Schloss. |
 | DS2 | Kontextzeile in GhulPass antippen. | Auswahl „Tresor wählen“ (Alle / einzelne Tresore mit Anzahl Einträgen, „Tresore verwalten“). Wahl wirkt sofort. |
-| DS3 | Kontextzeile in GhulDrive und GhulMail antippen. | Drive: Speicherort, „Freigabelinks“, „Server, Sync & Teilen“. Mail: Konten, Ordner mit Symbolen, „Neues Konto“. |
+| DS3 | Kontextzeile in GhulDrive und GhulMail antippen. | Drive: alle Speicherorte (der aktive markiert, ein anderer schaltet um), „Freigabelinks“, „Speicherorte verwalten“. Mail: Konten, Ordner mit Symbolen, „Neues Konto“. |
 | DS4 | Passwort eines Eintrags anzeigen lassen. | Ziffern und Sonderzeichen sind farbig, Buchstaben normal. |
 | DS5 | Tab Einstellungen. | Karte „Meine Suite“ mit „Sperren“, darunter Gruppen Sicherheit, Schutz, Daten, Server, Bereiche, Allgemein; jede Zeile mit kurzem Status (z. B. „1 Schlüssel, 1 Schlüsseldateien“, „2 Server · Sync an · Teilen an“). |
 | DS6 | Jede Zeile öffnen, Zurück. | Eigene Seite mit Titel; Zurück führt zur Übersicht. Abgeschaltete Module erscheinen nicht unter „Bereiche“. |
@@ -287,7 +287,7 @@ Ein Server in der App ist ein Webspace bzw. Server: seine SFTP- oder FTPS-Anmeld
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| ST1 | Optionen → Server, Sync & Teilen → „Server hinzufügen“. | Auswahl SFTP oder FTPS, kein PHP-Modul als eigene Verbindungsart. |
+| ST1 | Optionen → Synchronisation → „Server hinzufügen“, ebenso Optionen → GhulDrive → „Speicherort hinzufügen“. | Auswahl SFTP oder FTPS, kein PHP-Modul als eigene Verbindungsart. |
 | ST2 | **FTPS**: Adresse, Port 21, Benutzer, Passwort → „Verbindung testen“ → Ordner `ghulsuite` → „Verbindung prüfen“ → „Server speichern“. | Dialog mit Zertifikat-Fingerabdruck (bei gültigem Zertifikat ohne Dialog). Danach steht der Server in der Liste mit „FTPS“, Anmeldung und „Ordner: /ghulsuite“. |
 | ST3 | FTPS mit falschem Passwort. | Fehlermeldung „Anmeldung abgelehnt“, nichts gespeichert. |
 | ST4 | Synchronisation und GhulDrive mit dem FTPS-Server (wie SY6, D2 bis D6). | Funktioniert; auf dem Webhosting nur verschlüsselte Dateien. |
@@ -346,7 +346,7 @@ Freigabelinks gibt es nur über das Server-Modul auf dem Server von GhulDrive (A
 | MO5 | Optionen → Module → GhulMail **aus**. Dann MO1 und SH6 wiederholen. | Kein „Als Mail-Anhang“, im Link-Dialog kein „Mit GhulMail senden“, nur „Kopieren“. Freigabelinks und „An App senden“ funktionieren normal. |
 | MO6 | GhulMail ein, aber **kein** Konto (alle entfernt). | Wie MO5: keine Mail-Optionen. |
 | MO7 | GhulDrive **aus**, GhulMail ein. | GhulMail funktioniert vollständig (Lesen, Schreiben, Anhänge aus Dateien). Der GhulPass-Einmal-Link funktioniert weiter, solange GhulDrive eingerichtet ist und sein Server das Server-Modul hat. |
-| MO8 | Alle Module außer GhulPass aus. | App läuft normal; Einstellungen zeigen unter „Bereiche“ nur GhulPass. Das Server-Modul bleibt unter „Server, Sync & Teilen“ erreichbar. |
+| MO8 | Alle Module außer GhulPass aus. | App läuft normal; Einstellungen zeigen unter „Bereiche“ nur GhulPass. Das Server-Modul gehört zu GhulDrive (Speicherort-Block) und ist mit GhulDrive aus nicht zu sehen. |
 
 ## 20. Verschlüsselte Mails (PGP): läuft automatisch
 
@@ -425,14 +425,17 @@ oder Proton.
 | Nr. | Schritt | Erwartet |
 |---|---|---|
 | B1 | Optionen → Bereiche verwalten. | Alle fünf Bereiche mit „aktiv“, „hier ausgeblendet“ oder „nicht eingerichtet“ und dem Dateinamen. |
-| B2 | Nicht eingerichteten Bereich antippen (z. B. GhulCal) → Einrichten. | Name abgefragt; Datei `….ghlcal` entsteht, Bereich erscheint in der Leiste. Bei GhulDrive: Speicherwahl (wie Synchronisation / eigener Server). |
+| B2 | Nicht eingerichteten Bereich antippen (z. B. GhulCal) → Einrichten. | Name abgefragt; Datei `….ghlcal` entsteht, Bereich erscheint in der Leiste. Bei GhulDrive: „Einrichten“ öffnet direkt das Server-Formular für den ersten Speicherort. |
 | B2a | Bereiche verwalten → GhulMail (nicht eingerichtet) → Einrichten. Danach GhulMail ausblenden und wieder einblenden, solange es kein Konto hat. | Gleich danach öffnet sich „E-Mail-Konto hinzufügen“, ohne Umweg über GhulMail; beim Wieder-Einblenden ohne Konto ebenso. |
 | B3 | Bereich → „Auf diesem Gerät ausblenden“. | Verschwindet nur hier aus der Leiste; zweites Gerät zeigt ihn weiter. Wieder einblenden geht. |
 | B4 | Bereich → „Bereich entfernen“. | Rückfrage mit Warnung; danach ist die Datei weg, nach dem Synchronisieren auch auf dem zweiten Gerät und dem Server. |
 | B5 | Optionen → GhulCal: Bundesland ändern, synchronisieren, zweites Gerät synchronisieren. | Oben „Für GhulCal · alle Geräte“, unten „Nur auf diesem Gerät“. Das Bundesland ist auf dem zweiten Gerät übernommen, die Startansicht nicht. |
-| B6 | Optionen → GhulDrive → Speicher. | „Wie Synchronisation“ (nur mit Sync) oder „Eigener Server“; der eigene Server erscheint nicht unter Optionen → Synchronisation. |
-| B7 | GhulDrive nutzt „Wie Synchronisation“. Optionen → Synchronisation → Sync-Server entfernen oder wechseln. | Rückfrage: „Zugang für GhulDrive behalten“ oder „GhulDrive später neu einrichten“. Mit „behalten“ funktioniert GhulDrive weiter. |
-| B8 | GhulDrive ohne Speicher öffnen. | „Noch nicht eingerichtet“ mit der Speicherwahl direkt im Bereich. |
+| B6 | Optionen → GhulDrive. | Ein Block je Speicherort: Name, Art, Benutzer@Server:Port, Ordner, „Aktiv“/„Mail-Archiv“, Server-Modul mit Installieren/Aktualisieren/Entfernen, Zahl der Links, roter Papierkorb. Darunter „Speicherort hinzufügen“. Kein Speicherort erscheint unter Optionen → Synchronisation. |
+| B7 | Optionen → Synchronisation → Sync-Server entfernen oder wechseln. | Keine Rückfrage zu GhulDrive; GhulDrive arbeitet unverändert weiter (eigene Speicherorte). Ein älteres GhulDrive auf dem Sync-Server wurde schon beim Öffnen zu einem eigenen Speicherort. |
+| B7a | Zwei Speicherorte. GhulDrive öffnen. | In der Speicher-Karte steht der Knopf „Speicherort wechseln“; er listet beide (der aktive markiert). Der andere zeigt seine eigenen Dateien, zurück wieder die ersten. Mit nur einem Speicherort gibt es den Knopf nicht. |
+| B7b | Optionen → GhulDrive → Papierkorb an einem Speicherort. | Rückfrage „… entfernen?“ mit Schalter „Auch die Dateien auf dem Server löschen“ und Erklärung, was jeweils passiert. Abbrechen ändert nichts. Ohne Schalter bleiben die Dateien auf dem Server, mit Schalter sind GhulDrive-Ordner, Freigaben und Modul dort weg. Die Freigabelinks des Speicherorts enden in beiden Fällen; war er aktiv, wird der nächste aktiv. |
+| B7c | Optionen → GhulMail → Archiv-Speicherort auf einen anderen Speicherort stellen, Mails archivieren. | Die Mails landen im eingestellten Speicherort, auch wenn GhulDrive einen anderen zeigt. „Archiv“ in GhulMail sagt dann, wo das Archiv liegt, und bietet „Zu … wechseln“ an. |
+| B8 | GhulDrive ohne Speicher öffnen. | „Noch nicht eingerichtet“ mit „Eigener Server“ direkt im Bereich. |
 | B9 | GhulMail ohne Konto öffnen, Anbieter mit eigenem Benutzernamen einrichten. | Vollständiges Formular: Mailadresse, Passwort, Benutzername, IMAP und SMTP getrennt; bekannte Anbieter vorgeschlagen, alles änderbar. |
 | B10 | Alte Suite (Version vor diesem Stand) mit Drive und Mail öffnen. | Drive und Mail funktionieren weiter; im Ordner liegen danach `Drive.ghldrv` und `Mail.ghlmail`. |
 | B11 | Optionen → Entsperren → Gültigkeit „Immer“, App neu starten, Gerät neu starten. | Nach App-Neustart Fingerabdruck reicht; nach Geräte-Neustart wieder Passwort und Key. |
@@ -532,7 +535,7 @@ Automatisch läuft bei jedem Push der Alltagstest im Kern (zwei Geräte, 30 simu
 | V7 | „Mit Wiederherstellungscode öffnen“. | Danach Dialog mit den drei Schritten; „Jetzt erledigen“ öffnet die Keys (U11). |
 | V8 | Anmeldung bearbeiten, etwas ändern, Zurück; danach etwas ändern und die App sperren lassen. | Zurück fragt „Änderungen verwerfen?“; nach dem Entsperren die Meldung, dass eine Bearbeitung verworfen wurde (U12). Ebenso im Termin-Editor. |
 | V9 | Flugmodus, Synchronisation automatisch an, App entsperren. | Auf den Bereichsseiten der Hinweis „Synchronisation gerade nicht möglich …“; Tippen versucht es erneut; mit Netz verschwindet er (U13). |
-| V10 | Optionen → GhulDrive → Speicher von eigenem Server auf „wie Synchronisation“. | Rückfrage mit Erklärung, erst dann umgestellt (U14). |
+| V10 | Optionen → GhulDrive → zweiten Speicherort hinzufügen. | Meldung „Speicherort hinzugefügt …“; der aktive bleibt aktiv, GhulDrive zeigt weiter dieselben Dateien. |
 | V11 | Kalender ohne Kalender: Import; dann mit zwei Kalendern: Import; Export mit einem ausgeblendeten Kalender. | Meldung „Lege zuerst einen Kalender an“; Wahl des Ziels; Export enthält alle Kalender, Hinweis darunter (U15). |
 | V12 | Mail-Ordner mit mehr als 50 Mails: eine lang drücken, „Alle“, dann „Alle N Mails in diesem Ordner auswählen“, „Als gelesen“. | Alle Mails des Ordners gelesen, Meldung mit Anzahl. Ebenso Verschieben, Archivieren, Löschen (Löschen fragt vorher). |
 | V13 | Papierkorb bzw. Spam: „Ordner leeren“. | Rückfrage mit Anzahl, danach beim Anbieter leer; in anderen Ordnern gibt es den Knopf nicht. |
