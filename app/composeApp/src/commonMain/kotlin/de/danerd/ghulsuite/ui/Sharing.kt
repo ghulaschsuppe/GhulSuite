@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import de.danerd.ghulsuite.model.DriveItemUi
 import de.danerd.ghulsuite.model.DriveStatusUi
 import de.danerd.ghulsuite.model.ServerUi
+import kotlinx.coroutines.launch
 import de.danerd.ghulsuite.model.VaultErrorKind
 import de.danerd.ghulsuite.model.VaultException
 import de.danerd.ghulsuite.model.ModuleCheckUi
@@ -537,6 +538,16 @@ fun DriveSettingsSection(state: AppState) {
     var removing by remember { mutableStateOf<ServerUi?>(null) }
     var removingModule by remember { mutableStateOf<ServerUi?>(null) }
     var forcing by remember { mutableStateOf<Pair<ServerUi, String>?>(null) }
+    // After a change here: the locations are read first, then the change is announced. The
+    // synchronisation that follows holds the core, and on a slow server the page showed the old
+    // state until it was done (F145, also for removing and switching).
+    val changedHere: () -> Unit = {
+        state.scope.launch {
+            catching { net.driveLocations() }.onSuccess { locations = it }
+            catching { net.shareList() }.onSuccess { links = it }
+            state.changed()
+        }
+    }
     LaunchedEffect(state.liveRevision(), retry) {
         catching { net.driveLocations() }.onSuccess { locations = it; error = null }.onFailure { error = describe(it) }
         status = catching { net.driveStatus() }.getOrNull()
@@ -614,7 +625,7 @@ fun DriveSettingsSection(state: AppState) {
                             TextButton(onClick = {
                                 state.run(onError = { error = it }, block = { net.driveSwitchLocation(s.id) }) {
                                     state.message(switched.replace("%1\$s", s.name))
-                                    state.changed()
+                                    changedHere()
                                 }
                             }) { Text(stringResource(Res.string.drive_location_use)) }
                         }
@@ -628,7 +639,7 @@ fun DriveSettingsSection(state: AppState) {
                                 TextButton(onClick = {
                                     state.run(onError = { error = it }, block = { net.serverModuleUpdate(s.id) }) { v ->
                                         state.message(moduleUpdated.replace("%1\$s", v.toString()))
-                                        state.changed()
+                                        changedHere()
                                     }
                                 }) { Text(stringResource(Res.string.module_update)) }
                             }
@@ -650,8 +661,8 @@ fun DriveSettingsSection(state: AppState) {
             catching { net.driveLocations() }.onSuccess { locations = it }
         }) { adding = false }
     }
-    removing?.let { s -> RemoveLocationDialog(state, s, onError = { error = it }, onUnreachable = { why -> forcing = s to why }) { removing = null } }
-    forcing?.let { (s, why) -> RemoveLocationAnywayDialog(state, s, why, onError = { error = it }) { forcing = null } }
+    removing?.let { s -> RemoveLocationDialog(state, s, onError = { error = it }, onUnreachable = { why -> forcing = s to why }, onRemoved = changedHere) { removing = null } }
+    forcing?.let { (s, why) -> RemoveLocationAnywayDialog(state, s, why, onError = { error = it }, onRemoved = changedHere) { forcing = null } }
     removingModule?.let { s ->
         AlertDialog(
             danger = true,
@@ -661,7 +672,7 @@ fun DriveSettingsSection(state: AppState) {
             confirmButton = {
                 TextButton(onClick = {
                     removingModule = null
-                    state.run(onError = { error = it }, block = { net.serverModuleRemove(s.id) }) { state.changed() }
+                    state.run(onError = { error = it }, block = { net.serverModuleRemove(s.id) }) { changedHere() }
                 }) { Text(stringResource(Res.string.a_remove)) }
             },
             dismissButton = { TextButton(onClick = { removingModule = null }) { Text(stringResource(Res.string.a_cancel)) } },
@@ -678,7 +689,7 @@ private fun folderTag(s: ServerUi) = s.base.trimEnd('/').substringAfterLast('/')
  * either way. When its server cannot be reached, a second question offers to remove it anyway.
  */
 @Composable
-private fun RemoveLocationDialog(state: AppState, s: ServerUi, onError: (String) -> Unit, onUnreachable: (String) -> Unit, onDone: () -> Unit) {
+private fun RemoveLocationDialog(state: AppState, s: ServerUi, onError: (String) -> Unit, onUnreachable: (String) -> Unit, onRemoved: () -> Unit, onDone: () -> Unit) {
     var files by remember { mutableStateOf(false) }
     val removed = stringResource(Res.string.drive_location_removed, s.name)
     val shared = stringResource(Res.string.drive_location_folder_shared)
@@ -712,7 +723,7 @@ private fun RemoveLocationDialog(state: AppState, s: ServerUi, onError: (String)
                 }) { done ->
                     if (done) {
                         state.message(removed)
-                        state.changed()
+                        onRemoved()
                     }
                 }
             }) { Text(stringResource(Res.string.a_remove)) }
@@ -732,7 +743,7 @@ private val UNREACHABLE = setOf(
  * (they may keep working while the server hands them out) and nothing is deleted there.
  */
 @Composable
-private fun RemoveLocationAnywayDialog(state: AppState, s: ServerUi, why: String, onError: (String) -> Unit, onDone: () -> Unit) {
+private fun RemoveLocationAnywayDialog(state: AppState, s: ServerUi, why: String, onError: (String) -> Unit, onRemoved: () -> Unit, onDone: () -> Unit) {
     val removed = stringResource(Res.string.drive_location_removed, s.name)
     AlertDialog(
         danger = true,
@@ -749,7 +760,7 @@ private fun RemoveLocationAnywayDialog(state: AppState, s: ServerUi, why: String
                 onDone()
                 state.run(onError = onError, block = { state.backend.net.driveRemoveLocation(s.id, false, force = true) }) {
                     state.message(removed)
-                    state.changed()
+                    onRemoved()
                 }
             }) { Text(stringResource(Res.string.drive_location_force_yes)) }
         },

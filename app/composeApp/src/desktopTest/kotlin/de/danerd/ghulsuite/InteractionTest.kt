@@ -1543,6 +1543,35 @@ class InteractionTest {
         assertEquals(2, onAllNodesWithContentDescription("Remove storage location").fetchSemanticsNodes().size)
     }
 
+    /** Removing a location: the block goes at once, also while the synchronisation that follows holds the core. */
+    @Test
+    fun aRemovedLocationGoesBeforeTheSynchronisation() = app(setup = { push(Screen.SettingsPage(SetPage.DRIVE)) }, prepare = { (net as FakeNet).addSecondDriveLocation() }) { _, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Webspace")
+        net.syncDelayMs = 20_000
+        net.driveLocationsWaitForSync = true
+        onAllNodesWithContentDescription("Remove storage location")[1].performScrollTo().performClick()
+        waitFor("Remove Webspace?")
+        text("Remove").performClick()
+        waitUntil(timeoutMillis = 10_000) { net.driveLocationCalls.contains("remove:d2:false") }
+        // Within the 10 s of waitGone, while the synchronisation takes 20 s.
+        waitGone("Webspace")
+    }
+
+    /** Switching in GhulDrive's card: the other location shows at once, also while a synchronisation holds the core. */
+    @Test
+    fun switchingShowsTheOtherLocationBeforeTheSynchronisation() = app(setup = { tab = Tab.DRIVE }, prepare = { (net as FakeNet).addSecondDriveLocation() }) { _, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Switch storage location")
+        net.syncDelayMs = 20_000
+        net.driveLocationsWaitForSync = true
+        text("Switch storage location").performClick()
+        waitFor("/drive-b/drive")
+        text("Webspace").performClick()
+        waitUntil(timeoutMillis = 10_000) { net.driveLocationCalls == listOf("switch:d2") }
+        waitFor("/drive-b/drive · encrypted")
+    }
+
     /** One location: no switch button in GhulDrive. Two: the button shows them and switches. */
     @Test
     fun driveOffersToSwitchOnlyWithSeveralLocations() {

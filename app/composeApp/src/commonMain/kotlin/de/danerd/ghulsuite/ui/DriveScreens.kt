@@ -700,7 +700,16 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
                                 view = ""
                                 selected.clear()
                                 state.message(switched.replace("%1\$s", srv.name))
-                                state.changed()
+                                // The other location's files first, then the change is announced: the
+                                // synchronisation that follows holds the core (F145).
+                                state.scope.launch {
+                                    catching { net.driveLocations() }.onSuccess { l ->
+                                        locations = l
+                                        driveServer = l.firstOrNull { it.active }?.server
+                                    }
+                                    catching { net.driveList(null, true) }.onSuccess { items = it; itemsOf = Triple(null, "", false); loaded = true }
+                                    state.changed()
+                                }
                             }
                         }
                     })
