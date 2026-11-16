@@ -196,30 +196,48 @@ pub(super) fn sftp_config(o: &mut Open, s: &StoredServer) -> Result<SftpConfig> 
     })
 }
 
-/// Opens a stored server with its own folder, or with `base` instead (e.g. the login folder).
-pub(super) fn open_fs(o: &mut Open, s: &StoredServer, base: Option<&str>) -> Result<Arc<dyn RemoteFs>> {
+/// Connecting to a server, prepared with what the open suite knows (login, keys) and done later,
+/// e.g. without holding the suite (the handshake waits for the network).
+pub(super) type Connect = Box<dyn FnOnce() -> Result<Arc<dyn RemoteFs>> + Send>;
+
+/// Prepares connecting to a stored server with its own folder, or with `base` instead.
+pub(super) fn connector(o: &mut Open, s: &StoredServer, base: Option<&str>) -> Result<Connect> {
     let base = base.map(str::to_owned).unwrap_or_else(|| s.base.clone());
     Ok(match ServerKind::of(s) {
         ServerKind::Sftp => {
             let mut cfg = sftp_config(o, s)?;
             cfg.base = base;
-            Arc::new(SftpFs::connect(&cfg)?)
+            Box::new(move || Ok(Arc::new(SftpFs::connect(&cfg)?) as Arc<dyn RemoteFs>))
         }
-        ServerKind::Ftps => Arc::new(FtpsFs::connect(&FtpsConfig {
-            host: s.host.clone(),
-            port: s.port,
-            user: s.user.clone(),
-            password: Zeroizing::new(s.password.clone()),
-            base,
-            cert: (!s.host_key.is_empty()).then(|| s.host_key.clone()),
-        })?),
+        ServerKind::Ftps => {
+            let cfg = FtpsConfig {
+                host: s.host.clone(),
+                port: s.port,
+                user: s.user.clone(),
+                password: Zeroizing::new(s.password.clone()),
+                base,
+                cert: (!s.host_key.is_empty()).then(|| s.host_key.clone()),
+            };
+            Box::new(move || Ok(Arc::new(FtpsFs::connect(&cfg)?) as Arc<dyn RemoteFs>))
+        }
     })
+}
+
+/// Opens a stored server with its own folder, or with `base` instead (e.g. the login folder).
+pub(super) fn open_fs(o: &mut Open, s: &StoredServer, base: Option<&str>) -> Result<Arc<dyn RemoteFs>> {
+    connector(o, s, base)?()
 }
 
 /// Connects to a stored server.
 pub(super) fn connect(o: &mut Open, server_id: &str) -> Result<Arc<dyn RemoteFs>> {
     let s = all_servers(o).into_iter().find(|s| s.id == server_id).ok_or(GhulError::NotConfigured)?;
     open_fs(o, &s, None)
+}
+
+/// Prepares connecting to a stored server (see [`Connect`]).
+pub(super) fn connect_later(o: &mut Open, server_id: &str) -> Result<Connect> {
+    let s = all_servers(o).into_iter().find(|s| s.id == server_id).ok_or(GhulError::NotConfigured)?;
+    connector(o, &s, None)
 }
 
 pub(super) fn server(o: &Open, server_id: &str) -> Result<StoredServer> {

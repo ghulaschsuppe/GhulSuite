@@ -56,6 +56,32 @@ pub struct SyncReport {
     pub skipped: u32,
 }
 
+impl SyncReport {
+    fn add(&mut self, o: &SyncReport) {
+        self.uploaded += o.uploaded;
+        self.downloaded += o.downloaded;
+        self.merged += o.merged;
+        self.deleted += o.deleted;
+        self.skipped += o.skipped;
+    }
+}
+
+/// A fingerprint of the server a run synchronises with ([`sync_target`]).
+type Target = [u8; 32];
+
+/// What a run synchronises with: the configured server and its settings (`None`: off). A run
+/// whose server was changed or removed after it connected neither merges nor uploads.
+fn sync_target(o: &Open) -> Option<Target> {
+    use sha2::Digest;
+    let s: SyncSettings = setting(&o.suite, SYNC_KEY);
+    if s.server.is_empty() {
+        return None;
+    }
+    let srv = servers::server(o, &s.server).ok()?;
+    let bytes = serde_json::to_vec(&(&s.server, &srv)).ok()?;
+    Some(sha2::Sha256::digest(&bytes).into())
+}
+
 #[derive(uniffi::Record, Clone, Debug, PartialEq)]
 pub struct SyncStatus {
     /// `None`: synchronisation is off.
@@ -375,6 +401,84 @@ fn other_factor_slots(o: &Open, remote: &LockedContainer) -> bool {
 }
 
 impl GhulSuite {
+    /// Reads the server's suite folder, merges it while holding the suite, then writes what
+    /// changed, in the order the merge wrote it (the settings file last). `target`: the server
+    /// the run connected to ([`sync_target`]); `None` skips that check (a plain folder).
+    /// `pending`: what an earlier run merged but could not upload, reported now.
+    pub(super) fn sync_unlocked(
+        &self,
+        fs: &dyn RemoteFs,
+        target: Option<Target>,
+        pending: &mut SyncReport,
+    ) -> Result<SyncReport> {
+        let snap = Snapshot::read(fs)?;
+        let rep = self.with_open(|o| {
+            if target.is_some() && sync_target(o) != target {
+                return Ok(None);
+            }
+            self.sync_with(o, &snap).map(Some)
+        })?;
+        // The server was changed meanwhile: the next run uses the new one.
+        let Some(rep) = rep else { return Ok(SyncReport::default()) };
+        self.upload(snap, fs, rep, target, pending)
+    }
+
+    /// The end of every run: writes on the server what the merge changed. Merged here but not
+    /// everything reached the server: the app hears about the changes with the next run (its
+    /// lists may show the merge only then; uploads can then count twice). All there: the run
+    /// counts as the last synchronisation, if its server is still the configured one.
+    fn upload(
+        &self,
+        snap: Snapshot,
+        fs: &dyn RemoteFs,
+        mut rep: SyncReport,
+        target: Option<Target>,
+        pending: &mut SyncReport,
+    ) -> Result<SyncReport> {
+        if let Err(e) = snap.replay(fs, || self.is_unlocked()) {
+            pending.add(&rep);
+            return Err(e);
+        }
+        rep.add(pending);
+        *pending = SyncReport::default();
+        let _ = self.with_open(|o| {
+            if target.is_some() && sync_target(o) != target {
+                return Ok(());
+            }
+            let mut s: SyncSettings = setting(&o.suite, SYNC_KEY);
+            s.last = now_ms();
+            put_setting(&mut o.suite, SYNC_KEY, &s)?;
+            self.save_container(&mut o.suite, SUITE_FILE)
+        });
+        Ok(rep)
+    }
+
+    /// Connects to the configured server (the network part without holding the suite).
+    fn connect_sync_server(&self) -> Result<(std::sync::Arc<dyn RemoteFs>, Option<Target>)> {
+        let (connect, target) = self.with_open(|o| {
+            let s: SyncSettings = setting(&o.suite, SYNC_KEY);
+            if s.server.is_empty() {
+                return Err(GhulError::NotConfigured);
+            }
+            Ok((servers::connect_later(o, &s.server)?, sync_target(o)))
+        })?;
+        Ok((connect()?, target))
+    }
+
+    /// Takes over the password changed on another device (see `adopt_remote_password`), then
+    /// synchronises, like [`Self::sync_unlocked`] (`pending`: held by the caller, `syncing`).
+    fn adopt_password_via(
+        &self,
+        fs: &dyn RemoteFs,
+        password: String,
+        target: Option<Target>,
+        pending: &mut SyncReport,
+    ) -> Result<SyncReport> {
+        let snap = Snapshot::read(fs)?;
+        let rep = self.with_open(|o| self.adopt_password_with(o, &snap, password))?;
+        self.upload(snap, fs, rep, target, pending)
+    }
+
     fn sync_with(&self, o: &mut Open, fs: &dyn RemoteFs) -> Result<SyncReport> {
         let mut rep = SyncReport::default();
         fs.mkdir_all(DIR)?;
@@ -597,9 +701,6 @@ impl GhulSuite {
 
         // 4. Settings file last.
         put_setting(&mut o.suite, KNOWN_KEY, &known.into_iter().collect::<Vec<_>>())?;
-        let mut sync: SyncSettings = setting(&o.suite, SYNC_KEY);
-        sync.last = now_ms();
-        put_setting(&mut o.suite, SYNC_KEY, &sync)?;
         o.record_revisions()?;
         let bytes = o.suite.seal(&mut rand_core::OsRng)?;
         self.storage.write(SUITE_FILE.to_owned(), bytes.clone())?;
@@ -687,16 +788,13 @@ impl GhulSuite {
         })
     }
 
-    /// Synchronises with the configured server now.
+    /// Synchronises with the configured server now. The suite is held only while the server's
+    /// files are merged (no network then): connecting, reading the server and uploading happen
+    /// without it, so the app's other calls do not wait for a slow server (F147).
     pub fn sync_now(&self) -> Result<SyncReport> {
-        self.with_open(|o| {
-            let s: SyncSettings = setting(&o.suite, SYNC_KEY);
-            if s.server.is_empty() {
-                return Err(GhulError::NotConfigured);
-            }
-            let fs = servers::connect(o, &s.server)?;
-            self.sync_with(o, fs.as_ref())
-        })
+        let mut pending = self.syncing.lock().unwrap_or_else(|p| p.into_inner());
+        let (fs, target) = self.connect_sync_server()?;
+        self.sync_unlocked(fs.as_ref(), target, &mut pending)
     }
 
     /// After a key was removed and the recovery code renewed on another device
@@ -711,28 +809,25 @@ impl GhulSuite {
         pin: Option<String>,
         keyfile: Option<Vec<u8>>,
     ) -> Result<SyncReport> {
-        let fs = self.with_open(|o| {
-            let st: SyncSettings = setting(&o.suite, SYNC_KEY);
-            servers::connect(o, &st.server)
-        })?;
-        self.adopt_protection_via(fs.as_ref(), password, transport, listener, pin, keyfile)
+        let (fs, target) = self.connect_sync_server()?;
+        self.adopt_protection_via(fs.as_ref(), target, password, transport, listener, pin, keyfile)
     }
 
     /// After a password change on another device: checks the new password against the server's
     /// suite file and switches this device to it. Then synchronises.
     pub fn adopt_remote_password(&self, password: String) -> Result<SyncReport> {
-        self.with_open(|o| {
-            let s: SyncSettings = setting(&o.suite, SYNC_KEY);
-            let fs = servers::connect(o, &s.server)?;
-            self.adopt_password_with(o, fs.as_ref(), password)
-        })
+        let mut pending = self.syncing.lock().unwrap_or_else(|p| p.into_inner());
+        let (fs, target) = self.connect_sync_server()?;
+        self.adopt_password_via(fs.as_ref(), password, target, &mut pending)
     }
 }
 
 impl GhulSuite {
+    #[allow(clippy::too_many_arguments)]
     fn adopt_protection_via(
         &self,
         fs: &dyn RemoteFs,
+        target: Option<Target>,
         password: Option<String>,
         transport: Option<std::sync::Arc<dyn crate::HidTransport>>,
         listener: Option<std::sync::Arc<dyn crate::FidoListener>>,
@@ -752,7 +847,11 @@ impl GhulSuite {
             pin.as_deref().map(|p| p.as_str()),
             keyfile.as_ref(),
         )?;
-        self.with_open(|o| {
+        // Like a synchronisation from here on: one at a time, the server read before and
+        // written after the merge (the suite is not held meanwhile).
+        let mut pending = self.syncing.lock().unwrap_or_else(|p| p.into_inner());
+        let snap = Snapshot::read(fs)?;
+        let rep = self.with_open(|o| {
             if locked.header().suite_id != o.suite.header().suite_id {
                 return Err(GhulError::InvalidInput { msg: "the server folder belongs to another suite".into() });
             }
@@ -775,8 +874,9 @@ impl GhulSuite {
             put_setting(&mut o.suite, PROTECTION_CHANGED, &remote_ts)?;
             self.adopt_protection(o, &remote)?;
             super::quick::delete_all(&self.local_dir);
-            self.sync_with(o, fs)
-        })
+            self.sync_with(o, &snap)
+        })?;
+        self.upload(snap, fs, rep, target, &mut pending)
     }
 
     fn adopt_password_with(&self, o: &mut Open, fs: &dyn RemoteFs, password: String) -> Result<SyncReport> {
@@ -825,7 +925,8 @@ impl GhulSuite {
 #[cfg(test)]
 impl GhulSuite {
     pub(crate) fn sync_folder(&self, fs: &dyn RemoteFs) -> Result<SyncReport> {
-        self.with_open(|o| self.sync_with(o, fs))
+        let mut pending = self.syncing.lock().unwrap_or_else(|p| p.into_inner());
+        self.sync_unlocked(fs, None, &mut pending)
     }
 
     pub(crate) fn adopt_protection_folder(
@@ -834,11 +935,100 @@ impl GhulSuite {
         password: Option<&str>,
         keyfile: Vec<u8>,
     ) -> Result<SyncReport> {
-        self.adopt_protection_via(fs, password.map(str::to_owned), None, None, None, Some(keyfile))
+        self.adopt_protection_via(fs, None, password.map(str::to_owned), None, None, None, Some(keyfile))
     }
 
     pub(crate) fn adopt_password_folder(&self, fs: &dyn RemoteFs, password: &str) -> Result<SyncReport> {
-        self.with_open(|o| self.adopt_password_with(o, fs, password.to_owned()))
+        let mut pending = self.syncing.lock().unwrap_or_else(|p| p.into_inner());
+        self.adopt_password_via(fs, password.to_owned(), None, &mut pending)
+    }
+}
+
+/// The server's suite folder, read once without holding the suite. The merge (`sync_with`) runs
+/// against it instead of the network; what it writes or deletes is kept, in order, and done on
+/// the server afterwards ([`Snapshot::replay`]), again without holding the suite.
+struct Snapshot {
+    files: std::sync::Mutex<BTreeMap<String, Vec<u8>>>,
+    ops: std::sync::Mutex<Vec<(String, Option<Vec<u8>>)>>,
+}
+
+impl Snapshot {
+    /// Reads the files the merge looks at: the vault files and the settings file in [`DIR`]. The
+    /// settings file is read by name, as before: a listing may miss it (odd FTP listings), and
+    /// without it the merge would not notice a password changed elsewhere.
+    fn read(fs: &dyn RemoteFs) -> Result<Snapshot> {
+        fs.mkdir_all(DIR)?;
+        let mut files = BTreeMap::new();
+        let suite = format!("{DIR}/{SUITE_FILE}");
+        if let Some(data) = fs.read(&suite)? {
+            files.insert(suite, data);
+        }
+        for e in fs.list(DIR)?.into_iter().filter(|e| !e.is_dir) {
+            if !(is_vault_file(&e.name) && super::storage::plain_file_name(&e.name)) {
+                continue;
+            }
+            let path = format!("{DIR}/{}", e.name);
+            if let Some(data) = fs.read(&path)? {
+                files.insert(path, data);
+            }
+        }
+        Ok(Snapshot { files: std::sync::Mutex::new(files), ops: std::sync::Mutex::new(Vec::new()) })
+    }
+
+    /// Writes and deletes on the server what the merge wrote and deleted, in the same order.
+    /// Stops when the suite is locked meanwhile (`open`: still unlocked?); what is missing goes
+    /// up with the next run.
+    fn replay(self, fs: &dyn RemoteFs, open: impl Fn() -> bool) -> Result<()> {
+        for (path, data) in self.ops.into_inner().unwrap_or_else(|p| p.into_inner()) {
+            if !open() {
+                return Err(GhulError::Locked);
+            }
+            match data {
+                Some(d) => fs.write(&path, &d)?,
+                None => fs.delete(&path)?,
+            }
+        }
+        Ok(())
+    }
+}
+
+impl RemoteFs for Snapshot {
+    fn list(&self, dir: &str) -> crate::net::NetResult<Vec<crate::net::remote::RemoteEntry>> {
+        let prefix = format!("{dir}/");
+        let files = self.files.lock().unwrap_or_else(|p| p.into_inner());
+        Ok(files
+            .iter()
+            .filter_map(|(p, d)| {
+                let name = p.strip_prefix(&prefix)?;
+                (!name.contains('/')).then(|| crate::net::remote::RemoteEntry {
+                    name: name.to_owned(),
+                    is_dir: false,
+                    size: d.len() as u64,
+                })
+            })
+            .collect())
+    }
+
+    fn read(&self, path: &str) -> crate::net::NetResult<Option<Vec<u8>>> {
+        Ok(self.files.lock().unwrap_or_else(|p| p.into_inner()).get(path).cloned())
+    }
+
+    fn write(&self, path: &str, data: &[u8]) -> crate::net::NetResult<()> {
+        crate::net::remote::check_path(path)?;
+        self.files.lock().unwrap_or_else(|p| p.into_inner()).insert(path.to_owned(), data.to_vec());
+        self.ops.lock().unwrap_or_else(|p| p.into_inner()).push((path.to_owned(), Some(data.to_vec())));
+        Ok(())
+    }
+
+    fn delete(&self, path: &str) -> crate::net::NetResult<()> {
+        crate::net::remote::check_path(path)?;
+        self.files.lock().unwrap_or_else(|p| p.into_inner()).remove(path);
+        self.ops.lock().unwrap_or_else(|p| p.into_inner()).push((path.to_owned(), None));
+        Ok(())
+    }
+
+    fn mkdir_all(&self, _dir: &str) -> crate::net::NetResult<()> {
+        Ok(())
     }
 }
 
