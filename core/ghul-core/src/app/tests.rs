@@ -842,10 +842,7 @@ fn mail_archive_to_drive_against_imap_and_sftp() {
     assert!(matches!(s.mail_archive_to_drive(account.clone(), "INBOX".into(), all[0]), Err(GhulError::NotConfigured)));
     assert_eq!(s.mail_archive_folder(None).unwrap(), None);
 
-    let mut keys = std::fs::read_to_string(&authkeys).unwrap_or_default();
-    keys.push_str(&s.ssh_public_key().unwrap());
-    keys.push('\n');
-    std::fs::write(&authkeys, keys).unwrap();
+    crate::net::tests::authorize_test_key(&authkeys, &s.ssh_public_key().unwrap());
     let input = ServerInput {
         kind: ServerKind::Sftp,
         name: "Heimserver".into(),
@@ -971,10 +968,7 @@ fn sync_over_sftp() {
     use super::servers::ServerInput;
     let Some((host, port, user, root, authkeys, hostkey)) = crate::net::tests::sftp_env() else { return };
     let authorize = |public: &str| {
-        let mut keys = std::fs::read_to_string(&authkeys).unwrap_or_default();
-        keys.push_str(public);
-        keys.push('\n');
-        std::fs::write(&authkeys, keys).unwrap();
+        crate::net::tests::authorize_test_key(&authkeys, public);
     };
     let kf = generate_keyfile();
     let (da, db) = (Dirs::new("sftp-a"), Dirs::new("sftp-b"));
@@ -1262,10 +1256,7 @@ fn drive_over_sftp_two_devices() {
     use super::servers::ServerInput;
     let Some((host, port, user, root, authkeys, hostkey)) = crate::net::tests::sftp_env() else { return };
     let authorize = |public: &str| {
-        let mut keys = std::fs::read_to_string(&authkeys).unwrap_or_default();
-        keys.push_str(public);
-        keys.push('\n');
-        std::fs::write(&authkeys, keys).unwrap();
+        crate::net::tests::authorize_test_key(&authkeys, public);
     };
     let kf = generate_keyfile();
     let (da, db) = (Dirs::new("drive-a"), Dirs::new("drive-b"));
@@ -1876,10 +1867,7 @@ fn share_links_over_sftp_through_the_module() {
     let d = Dirs::new("share-sftp");
     let s = d.suite();
     s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
-    let mut keys = std::fs::read_to_string(&authkeys).unwrap_or_default();
-    keys.push_str(&s.ssh_public_key().unwrap());
-    keys.push('\n');
-    std::fs::write(&authkeys, keys).unwrap();
+    crate::net::tests::authorize_test_key(&authkeys, &s.ssh_public_key().unwrap());
     let run = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
     let input = ServerInput {
         kind: ServerKind::Sftp,
@@ -2076,10 +2064,7 @@ fn module_suite(name: &str) -> Option<ModuleSuite> {
     let d = Dirs::new(name);
     let s = d.suite();
     s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
-    let mut keys = std::fs::read_to_string(&authkeys).unwrap_or_default();
-    keys.push_str(&s.ssh_public_key().unwrap());
-    keys.push('\n');
-    std::fs::write(&authkeys, keys).unwrap();
+    crate::net::tests::authorize_test_key(&authkeys, &s.ssh_public_key().unwrap());
     let run = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
     let base = format!("{root}/{name}-suite-{run}");
     let input = ServerInput {
