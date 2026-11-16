@@ -729,6 +729,9 @@ impl Open {
             if let Some(code) = &code {
                 c.set_recovery_code(code, &code_label, now, &mut OsRng)?;
             }
+            // An old copy also had its old container key (B1, M1): whoever has that copy and
+            // what opened it back then (an old code) must not open what is written from now on.
+            c.renew_container_key(&PasswordKey::from_bytes(*self.password_key.expose()), &mut OsRng)?;
             changed = true;
         }
         Ok(changed)
@@ -1856,7 +1859,13 @@ impl GhulSuite {
                 return Err(GhulError::DifferentProtection);
             }
             let s = FactorSecret::from_bytes(*o.suite.factor_secret().expose());
-            let c = locked.unlock(&o.password_key, &s).map_err(|_| GhulError::DifferentProtection)?;
+            let mut c = locked.unlock(&o.password_key, &s).map_err(|_| GhulError::DifferentProtection)?;
+            // The file may be an old copy: this suite's current code (not the one it had), and
+            // a new container key, so its old protection opens nothing written from now on (M1).
+            if let Some(code) = o.suite.recovery_code() {
+                c.set_recovery_code(&code, "", now_ms(), &mut OsRng)?;
+            }
+            c.renew_container_key(&o.password_key, &mut OsRng)?;
             self.insert_vault(o, c, &name, None)
         })
     }

@@ -602,3 +602,58 @@ fn an_older_suite_file_does_not_bring_back_a_replaced_code() {
     s.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
     assert!(!vaults_open_with_old_code(), "the replaced code must not open the vaults again");
 }
+
+/// M1: an older copy of a vault put back into the folder is brought in line with the suite's
+/// protection when unlocking, and it also gets a new container key: what is written from then
+/// on does not open with the container key of the old copy.
+#[test]
+fn an_old_vault_copy_gets_a_new_container_key() {
+    let d = Dirs::new("m1-old-copy");
+    let kf = generate_keyfile();
+    let s = d.suite();
+    let res =
+        s.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    let old_code = RecoveryCode::parse(&res.recovery_code.unwrap()).unwrap();
+    let (vname, vdata) = files(&d).into_iter().find(|(n, _)| n.ends_with(".ghlpss")).unwrap();
+    let old_vmk = *LockedContainer::parse(&vdata).unwrap().recover(&old_code).unwrap().vmk();
+    s.new_recovery_code("Neu".into()).unwrap();
+    s.lock();
+    std::fs::write(d.root.join("vault").join(&vname), &vdata).unwrap();
+    let s = d.suite();
+    s.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    s.save_entry(vault_id(&s, "Privat"), login("Neu", "u", "geheim")).unwrap();
+    let (_, now) = files(&d).into_iter().find(|(n, _)| n.ends_with(".ghlpss")).unwrap();
+    assert!(
+        LockedContainer::parse(&now).unwrap().unlock_with_vmk(&old_vmk).is_err(),
+        "the old copy's key opens nothing new"
+    );
+}
+
+/// M1: a vault file added from an old export takes the suite's current code and a new
+/// container key; the code it had back then opens nothing afterwards.
+#[test]
+fn an_added_old_vault_file_takes_the_current_protection() {
+    let d = Dirs::new("m1-add");
+    let kf = generate_keyfile();
+    let s = d.suite();
+    let res = s
+        .create(
+            options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "P"), (VaultKind::Pass, "Firma")]),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+    let old_code = RecoveryCode::parse(&res.recovery_code.unwrap()).unwrap();
+    let work = vault_id(&s, "Firma");
+    let exported = s.export_vault(work.clone()).unwrap();
+    s.new_recovery_code("Neu".into()).unwrap();
+    s.remove_vault(work).unwrap();
+    s.add_vault_file(exported, "".into()).unwrap();
+    for (name, data) in files(&d) {
+        assert!(
+            LockedContainer::parse(&data).unwrap().recover(&old_code).is_err(),
+            "{name}: the old code opens nothing"
+        );
+    }
+}
