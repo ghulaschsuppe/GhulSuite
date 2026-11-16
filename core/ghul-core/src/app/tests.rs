@@ -602,6 +602,25 @@ fn foreign_and_outdated_vaults() {
     assert!(!s.list_vaults().unwrap().into_iter().find(|v| v.id == privat).unwrap().outdated);
 }
 
+/// H4: two notes or cards with the same title but different content are both imported;
+/// importing the same export again still adds nothing twice.
+#[test]
+fn import_keeps_different_entries_with_the_same_title() {
+    let d = Dirs::new("import-same-title");
+    let s = d.suite();
+    s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    let pass = vault_id(&s, "Privat");
+    let bw = r#"{"encrypted":false,"items":[
+      {"type":2,"name":"Wiederherstellungscodes","notes":"Konto A: 1111"},
+      {"type":2,"name":"Wiederherstellungscodes","notes":"Konto B: 2222"},
+      {"type":3,"name":"Visa","card":{"cardholderName":"A","number":"4111111111111111"}},
+      {"type":3,"name":"Visa","card":{"cardholderName":"B","number":"4000056655665556"}}]}"#;
+    let r = s.import_data(bw.as_bytes().to_vec(), "bw.json".into(), Some(pass.clone()), None, false, None).unwrap();
+    assert_eq!((r.entries, r.duplicates), (4, 0), "all four are different");
+    let r = s.import_data(bw.as_bytes().to_vec(), "bw.json".into(), Some(pass.clone()), None, false, None).unwrap();
+    assert_eq!((r.entries, r.duplicates), (0, 4), "the same export again adds nothing");
+}
+
 #[test]
 fn import_and_export() {
     let d = Dirs::new("import");

@@ -387,13 +387,30 @@ pub fn preview_import(data: Vec<u8>, file_name: String) -> Result<ImportPreview>
     })
 }
 
+/// What makes two entries the same for the import: every field (H4: only title, user name,
+/// address and password made two different notes or cards with the same title "the same", and
+/// the second was dropped without a word). Title, user name and addresses ignore case and
+/// surrounding spaces, so importing the same export again still adds nothing twice.
 fn dedup_key(entry_type: &str, fields: &BTreeMap<String, Field>) -> String {
-    let get = |k: &str| match fields.get(k) {
-        Some(Field::Text(s)) | Some(Field::Secret(s)) | Some(Field::Url(s)) => s.trim().to_lowercase(),
-        Some(Field::List(l)) => l.first().map(|x| x.trim().to_lowercase()).unwrap_or_default(),
-        _ => String::new(),
-    };
-    format!("{entry_type}\u{1f}{}\u{1f}{}\u{1f}{}\u{1f}{}", get("title"), get("username"), get("urls"), get("password"))
+    let mut key = String::from(entry_type);
+    for (name, value) in fields {
+        let loose = matches!(name.as_str(), "title" | "username" | "urls");
+        let norm = |s: &str| if loose { s.trim().to_lowercase() } else { s.trim().to_owned() };
+        let text = match value {
+            Field::Text(s) | Field::Secret(s) | Field::Url(s) => norm(s),
+            Field::List(l) => l.iter().map(|x| norm(x)).collect::<Vec<_>>().join("\u{1e}"),
+            Field::Bytes(b) => crate::kdf::hex(b),
+            Field::Int(i) => i.to_string(),
+            Field::Bool(b) => b.to_string(),
+        };
+        if !text.is_empty() {
+            key.push('\u{1f}');
+            key.push_str(name);
+            key.push('=');
+            key.push_str(&text);
+        }
+    }
+    key
 }
 
 // --- files and names --------------------------------------------------------------------------
