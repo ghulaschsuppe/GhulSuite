@@ -5,7 +5,6 @@ import de.danerd.ghulsuite.ui.AppState
 import de.danerd.ghulsuite.ui.JobKind
 import de.danerd.ghulsuite.ui.JobState
 import de.danerd.ghulsuite.ui.JobStatus
-import de.danerd.ghulsuite.ui.runAutoArchive
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -19,20 +18,18 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotSame
 import kotlin.test.assertNull
-import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
-/** The background jobs without screens: automatic locks, a job cancelled at once, the autofill state. */
+/** The background jobs without screens: automatic locks, a job cancelled at once, the hooks. */
 class JobsTest {
     private fun state(
         dispatcher: CoroutineDispatcher = Dispatchers.Unconfined,
-        main: Boolean = true,
         prepare: ScreenshotTest.Fake.() -> Unit = {},
     ): Pair<AppState, ScreenshotTest.Fake> {
         val fake = ScreenshotTest.Fake(exists = true, unlocked = true).apply(prepare)
         // Texts AppState looks up need a display, which the tests do not have: only that failure is let through.
         val headlessOnly = CoroutineExceptionHandler { _, e -> if (e !is java.awt.HeadlessException) throw e }
-        return AppState(fake, CoroutineScope(SupervisorJob() + dispatcher + headlessOnly), main) to fake
+        return AppState(fake, CoroutineScope(SupervisorJob() + dispatcher + headlessOnly)) to fake
     }
 
     private fun waitUntil(millis: Long = 5_000, what: String = "", cond: () -> Boolean) {
@@ -51,11 +48,11 @@ class JobsTest {
         assertTrue(!de.danerd.ghulsuite.ui.backKeepsJobs(jobRunning = true, sdk = 31), "Android 12+ keeps it anyway")
     }
 
-    /** A quiet job (automatic archive, photo backup) never holds the automatic lock back: it stops. */
+    /** A quiet job (automatic archive) never holds the automatic lock back: it stops. */
     @Test
     fun quietJobDoesNotDelayTheAutoLock() {
         val (s, fake) = state()
-        val job = s.jobs.start(JobKind.PHOTOS, title = { "photos" }, quiet = true) { awaitCancellation() }
+        val job = s.jobs.start(JobKind.ARCHIVE, title = { "archive" }, quiet = true) { awaitCancellation() }
         assertTrue(job.active)
         s.autoLock()
         waitUntil(2_000, "locked at once") { fake.locks == 1 }
@@ -115,32 +112,13 @@ class JobsTest {
         }
     }
 
-    /**
-     * A second state (the autofill window) starts no background work after unlocking and leaves
-     * the hooks of the notification to the app's own state.
-     */
+    /** Unlocking starts the automatic archive and takes the hooks of the notification. */
     @Test
-    fun secondStateStartsNoBackgroundWork() {
-        val prepare: ScreenshotTest.Fake.() -> Unit = {
-            (net as FakeNet).archiveAutoDaysValue = 1
-            (net as FakeNet).photos = listOf("a.jpg" to 100L)
-            settings.photoBackup = true
-        }
+    fun unlockingStartsTheArchiveAndTakesTheHooks() {
         val cancel = {}
         JobStatus.cancelAll = cancel
-        JobStatus.autoLock = null
-        val (other, _) = state(main = false, prepare = prepare)
-        other.runAutoArchive()
-        other.runPhotoBackup()
-        Thread.sleep(500)
-        assertTrue(other.jobs.list.isEmpty(), other.jobs.list.map { it.kind }.toString())
-        assertSame(cancel, JobStatus.cancelAll)
-        assertNull(JobStatus.autoLock)
-        // The app's own state does both and takes the hooks.
-        val (app, _) = state(prepare = prepare)
-        waitUntil(what = "archive and photo jobs") {
-            app.jobs.list.any { it.kind == JobKind.ARCHIVE } && app.jobs.list.any { it.kind == JobKind.PHOTOS }
-        }
+        val (app, _) = state(prepare = { (net as FakeNet).archiveAutoDaysValue = 1 })
+        waitUntil(what = "archive job") { app.jobs.list.any { it.kind == JobKind.ARCHIVE } }
         assertNotSame(cancel, JobStatus.cancelAll)
         app.jobs.cancelAll()
     }

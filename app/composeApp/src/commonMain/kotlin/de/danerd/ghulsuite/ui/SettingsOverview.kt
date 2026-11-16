@@ -210,7 +210,7 @@ fun SettingsScreen(state: AppState, padding: PaddingValues) {
                 SetRow(Icons.Filled.Apps, Gray, stringResource(Res.string.set_modules), stringResource(Res.string.set_modules_sub), first = true) { open(SetPage.MODULES) }
                 if (state.vaults.any { it.kind == VaultKindUi.PASS }) {
                     SetRow(tabIcon(Tab.PASS), areaColor(Tab.PASS), stringResource(Res.string.tab_pass),
-                        stringResource(if (backend.isDesktop) Res.string.set_pass_sub_desktop else Res.string.set_pass_sub)) { open(SetPage.PASS) }
+                        stringResource(Res.string.set_pass_sub)) { open(SetPage.PASS) }
                 }
                 if (state.vaults.any { it.kind == VaultKindUi.TOTP }) {
                     SetRow(tabIcon(Tab.AUTH), areaColor(Tab.AUTH), stringResource(Res.string.tab_auth), stringResource(Res.string.set_auth_sub)) { open(SetPage.AUTH) }

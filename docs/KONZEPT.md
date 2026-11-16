@@ -81,7 +81,7 @@ Was sich gegenüber v0.1 geändert hat und warum:
 flowchart TB
   subgraph App["GhulSuite (Kotlin + Compose Multiplatform)"]
     UI[Oberfläche: GhulPass · GhulAuth · GhulDrive · GhulMail · GhulCal]
-    PF[Plattform-Anbindung<br/>Android: Autofill, USB/NFC, Keystore<br/>Windows: WebAuthn-API, Hotkeys, Zwischenablage]
+    PF[Plattform-Anbindung<br/>Android: USB/NFC, Keystore<br/>Windows: WebAuthn-API, Hotkeys, Zwischenablage]
   end
   subgraph Core["ghul-core (Rust, per UniFFI)"]
     C1[Krypto & Schlüssel] --- C2[Container-Formate]
@@ -98,7 +98,7 @@ flowchart TB
 | Baustein | Technik | Begründung |
 |---|---|---|
 | Kern | **Rust** | Speichersicher, Schlüssel im RAM werden überschrieben (`zeroize`), eine Implementierung für beide Plattformen |
-| Oberfläche | **Kotlin + Compose Multiplatform** | Eine Oberfläche für Android und Windows; auf Android echt nativ (Autofill, Credential-Provider, Kamera) |
+| Oberfläche | **Kotlin + Compose Multiplatform** | Eine Oberfläche für Android und Windows; auf Android echt nativ (Credential-Provider, Kamera) |
 | Anbindung | **UniFFI** | Erzeugt sichere Kotlin-Anbindungen an den Rust-Kern für Android und Windows |
 | Windows-Paket | Installer **und** portable Version (Ordner mit Programm und Laufzeit, startet vom Stick) | Die Java-Laufzeit wird mitgeliefert, auf dem PC muss nichts installiert sein |
 
@@ -109,7 +109,7 @@ Windows später nachzuziehen ist **kein großer Mehraufwand, wenn das Projekt vo
 - **Gemeinsamer Code (`commonMain`):** Oberfläche, Abläufe, Texte (Deutsch/Englisch) und die gesamte Logik im Rust-Kern.
   Erfahrungsgemäß sind das deutlich mehr als drei Viertel des Codes.
 - **Plattform-Code nur hinter klaren Schnittstellen:** FIDO2-Zugriff, Fingerabdruck, Zwischenablage, Dateiauswahl,
-  Autofill bzw. Auto-Type, Hintergrundaufgaben, Bewegungssensor. Für Windows wird später nur dieser Teil neu geschrieben.
+  Auto-Type, Hintergrundaufgaben, Bewegungssensor. Für Windows wird später nur dieser Teil neu geschrieben.
 - Der Windows-Build bleibt bis dahin abgeschaltet, das Projekt kompiliert aber gegen beide Ziele, damit sich keine
   Android-Abhängigkeiten in den gemeinsamen Code einschleichen.
 
@@ -376,7 +376,7 @@ die App gibt der Datei beim nächsten Entsperren ihren neutralen Namen zurück.
   fest gespeichert. Ändert er sich, verbindet die App nicht und warnt.
 - Passwort-Anmeldung wird nur angeboten, um einmalig den Schlüssel einzurichten, und danach nicht gespeichert.
 - **Option „Hochsicher“:** Der SSH-Schlüssel liegt auf dem FIDO2-Key selbst (`ed25519-sk`, ab OpenSSH 8.2).
-  Jede Verbindung braucht dann eine Key-Berührung. Für die automatische Foto-Sicherung ungeeignet, daher nur optional.
+  Jede Verbindung braucht dann eine Key-Berührung. Für automatische Abläufe im Hintergrund ungeeignet, daher nur optional.
 
 **Stabilität**
 - Abgebrochene Uploads setzen an der letzten geschriebenen Stelle wieder an (SFTP erlaubt Schreiben ab einer Position).
@@ -457,7 +457,7 @@ Läuft auf **jedem PHP-Webhosting ab 8.1 ohne Datenbank**, auf demselben Server 
 
 **Ein Bereich, eine Datei** (abgestimmt am 13.11.2026, #24): GhulPass `.ghlpss`, GhulAuth `.ghltotp`, GhulDrive
 `.ghldrv`, GhulMail `.ghlmail`, GhulCal `.ghlcal`. Jede Datei trägt die Einstellungen ihres Bereichs, die auf allen
-Geräten gelten; was nur dieses Gerät betrifft (Sperren, Schnell-Entsperren, Thema, Benachrichtigungen, Foto-Sicherung,
+Geräten gelten; was nur dieses Gerät betrifft (Sperren, Schnell-Entsperren, Thema, Benachrichtigungen,
 Datenleck-Prüfung …), bleibt auf dem Gerät. Die Bereichsseiten der Optionen zeigen beides getrennt.
 - **Bereich entfernen** löscht die Datei auf allen Geräten (mit Rückfrage). **Auf diesem Gerät ausblenden** ändert nur
   die Anzeige. Ein später eingeschalteter Bereich fragt sofort nach seiner Einrichtung; nichts wird still angelegt.
@@ -478,12 +478,6 @@ Zugänge an (`rk = false`), der Key speichert nichts.
 - Eintragstypen: Login, sichere Notiz, Karte, Identität, SSH-Schlüssel, WLAN. Dazu eigene Felder, Tags, Ordner,
   kleine Anhänge und die Passwort-Historie.
 - Passwort-Generator (Zeichen oder gut merkbare Passphrase in Deutsch bzw. Englisch).
-- **Android:** Autofill-Dienst (umgesetzt in Etappe 2b), später Credential-Provider (ab Android 14). Webseiten werden über
-  die Basis-Domain erkannt und direkt angeboten. Apps werden nur direkt angeboten, wenn sie einer Anmeldung mit
-  **Paketname plus Signaturzertifikat** zugeordnet sind (`androidapp://paket?cert=sha256`); diese Zuordnung entsteht,
-  wenn man die Anmeldung einmal von Hand auswählt. Ein bloß passender Paketname ist nur ein Vorschlag, eine Zuordnung
-  mit anderem Zertifikat schließt den Eintrag aus. Gesperrt erscheint nur „GhulSuite entsperren“. Neue Anmeldungen
-  und geänderte Passwörter werden auf Wunsch gespeichert.
 - **Windows:** Kopieren mit automatischem Leeren der Zwischenablage, ohne Eintrag im Zwischenablage-Verlauf.
   **Auto-Type** per Tastenkürzel: Benutzername, Tab, Passwort und Enter werden ins aktive Fenster getippt.
 - Nach dem Ausfüllen eines Logins bietet die App den passenden **TOTP-Code aus GhulAuth** an.
@@ -618,7 +612,7 @@ Gegenlesen, Geräte-Kopien), das für Nutzer und Technik zu verwickelt war.
   niemand prüfen, ob du eine bestimmte Datei besitzt, und dass zwei Dateien gleich sind, ist auf dem Server nicht zu
   sehen (gleiche Blöcke werden nur innerhalb einer Datei einmal gespeichert).
 - Ordner, Hoch- und Herunterladen (gestreamt), Umbenennen, Verschieben, Löschen (nicht mehr genutzte Blöcke werden
-  entfernt), Suche nach Namen. Papierkorb, Versionen, Vorschau, Fortsetzen, Foto-Sicherung, Teilen-Menü und
+  entfernt), Suche nach Namen. Papierkorb, Versionen, Vorschau, Fortsetzen, Teilen-Menü und
   Dateiauswahl-Anbieter folgen.
 
 ---
@@ -680,7 +674,6 @@ Gegenlesen, Geräte-Kopien), das für Nutzer und Technik zu verwickelt war.
 | Speicher liefert alte Version | Rollback-Warnung |
 | Angreifer im Netzwerk | TLS bzw. SSH plus gespeicherte Fingerabdrücke, Inhalte ohnehin verschlüsselt |
 | Präparierte Webseite will den Key-Wert abfragen | unmöglich durch die RP-ID `ghulsuite.invalid` |
-| Gefälschte Android-App will Autofill-Daten | Zuordnung über das Signaturzertifikat |
 | Präparierte HTML-Mail | native, vereinfachte Darstellung ohne Browser-Engine und ohne Skripte |
 | Manipuliertes Update | Release-Signaturen, die die App vor dem Update prüft |
 | GitHub-Konto übernommen | 2FA mit FIDO2 auf GitHub, Branch-Schutz, signierte Releases |
@@ -732,6 +725,8 @@ Gegenlesen, Geräte-Kopien), das für Nutzer und Technik zu verwickelt war.
 | Web-Client | gestrichen | schwächstes Glied; ersetzt durch die portable Windows-Version |
 | Anbindung über den Android-Dateidialog als Sync | gestrichen | unzuverlässig; bleibt für Export und Import |
 | FTP ohne TLS | gestrichen | unsicher; FTPS stattdessen |
+| Autofill unter Android (Anmeldungen in anderen Apps und Browsern ausfüllen) | gestrichen (16.11.2026) | funktionierte nicht zuverlässig (F136) |
+| Foto-Sicherung in GhulDrive | gestrichen (16.11.2026) | funktionierte nicht zuverlässig (F136) |
 | Mail-Abruf im Hintergrund | geplant (v0.5) | mit eigenem Abruf-Zugang, siehe Abschnitt 9.3 |
 | Sofortsperre: lokale Daten löschen, Notfall-Passwort, Fernsperre | nicht geplant | Stufe 1 reicht kryptografisch; Täuschung ist schwer überzeugend umzusetzen |
 | OAuth-Mailanbieter (Gmail, Microsoft) | später, vielleicht | Aufwand und Kosten der Google-Prüfung |
@@ -751,7 +746,7 @@ Gegenlesen, Geräte-Kopien), das für Nutzer und Technik zu verwickelt war.
 | 0 ✓ | PRF-Test im Browser | Key liefert deterministisch und offline |
 | 0b ✓ | **Android-Prototyp:** CTAP2 per USB-C mit deinem Key (`hmac-secret`, PIN, RP-ID `ghulsuite.invalid`), Rust-Kern per UniFFI in einer Compose-Multiplatform-App | Technische Machbarkeit auf Android bestätigt |
 | 1 ✓ | `docs/FORMAT.md` und `ghul-core`: Schlüssel, Container, Testvektoren, Fuzzing | Geprüfter Kern |
-| 2 | **GhulPass + GhulAuth** für Android: Einrichtung, Notfallblatt, Fingerabdruck, Sofortsperre, Autofill, QR-Scan, Import, Export | Ersetzt Proton Pass und den Authenticator (lokal und per Export) |
+| 2 | **GhulPass + GhulAuth** für Android: Einrichtung, Notfallblatt, Fingerabdruck, Sofortsperre, QR-Scan, Import, Export | Ersetzt Proton Pass und den Authenticator (lokal und per Export) |
 | 3 | **Speicher-Adapter** SFTP (zuerst, gegen deinen Server) und WebDAV, Synchronisation der Container, Spiegel | Automatische Synchronisation und Sicherung |
 | 4 | **GhulDrive** für Android, dazu die Adapter S3 und Server-Modul | Ersetzt Cloud-Speicher von Drittanbietern |
 | 5 | **GhulMail** für Android | Ersetzt Mail-Apps von Drittanbietern |

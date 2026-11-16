@@ -35,7 +35,7 @@ Alle Tests sind grün (Kern, Netzwerk, Android-Kotlin, Desktop-Tests). Die App-T
 | `core/ghul-core/src/app/caltext.rs` `zone_tests` | Zeitzonen: UTC-Zeiten mit dem Versatz ihres Tages, Termine aus anderen Zonen, Zonen, die nur die Datei kennt (Outlook), Serien-Ausnahmen; dazu die Regeln **aller 446 Zeitzonen** gegen die Zeitzonendatenbank, 2000 bis 2023 (Vergleichswerte: `tools/make-zone-oracle.py`) | Z8 |
 | `app/…/desktopTest/VaultFfiTest.kt` | Kalender-Import über die echte Anbindung mit der Zeitzonendatenbank des Geräts | Z8 |
 | `core/ghul-core/src/wycheproof_tests.rs` | Wycheproof-Vektoren für XChaCha20-Poly1305, AES-GCM, HKDF, HMAC, P-256 | Z2 |
-| `core/ghul-core/src/app/autofill.rs` (Tests) | Public-Suffix-Testfälle, Phishing-Matrix | Z4 |
+| `core/ghul-core/src/app/domain.rs` (Tests) | Public-Suffix-Testfälle, Phishing-Matrix (gleiche Website für Mail-Links) | Z4 |
 | `core/fuzz/` | libFuzzer-Ziele `parsers`, `container_parse`, `ctap_responses` (nachts 15 min je Ziel) | Z3 |
 | `tools/attack-php-module.py` | 64 Angriffe auf das PHP-Modul (seit 0.7.0 ohne Schreibzugriff übers Web): falsche Methoden, Tricks mit Freigabe-Kennung, Ticket, Datei- und Blocknummer, Beschreibungen mit Pfaden statt Blöcken, kaputte Beschreibungen, Ablauf, 16 gleichzeitige Aufrufe eines Einmal-Links, Prüfdateien, übergroße Anfragen, beschädigter Zustand, Flut von Öffnungen; keine Fehlerantwort verrät Pfade oder PHP-Meldungen | Z2, Z4 |
 | `tools/check-android-manifest.py` | Von außen erreichbare Komponenten und Berechtigungen nur wie in einer festen Liste; verbotene Berechtigungen | Z7 |
@@ -205,6 +205,7 @@ Schwere: **K** kritisch (Datenverlust, Geheimnis preisgegeben) · **H** hoch (An
 | F133 | N | GhulAuth: oben stand „2 Konten“, während die Liste nach dem Löschen (mit „Rückgängig“ noch offen) nur eins zeigte | Emulator-Lauf zu PR #40 (Foto) | behoben: die Zeile zählt wie die Liste, gelöschte Konten mit offenem „Rückgängig“ zählen nicht. Desktop-Test `authSwipeAsksFirst` (Zeile unter dem Titel) mit Gegenprobe |
 | F134 | N | Synchronisation: nach schnellem Sperren und Entsperren während eines Laufs konnte das Ende des alten Laufs „synchronisiert nicht“ melden, während der neue noch lief (Knopf wieder aktiv, zweiter Lauf möglich) | Unabhängige Durchsicht zu PR #40 | behoben: Sperren beginnt eine neue Zählung; ein alter Lauf beendet weder einen neueren noch startet er eine weitere Runde. Desktop-Test `anOldRunDoesNotEndTheNewOne` mit Gegenprobe |
 | F135 | N | Synchronisation: ein Wunsch, der kam, während ein Lauf gerade „kein Server“ las (Server eben gewählt), ging verloren | Unabhängige Durchsicht zu PR #40 | behoben: der Lauf sieht dann noch einmal nach. Desktop-Test `aRequestDuringARunWithoutServerIsNotLost` mit Gegenprobe |
+| F136 | N | Autofill (GhulPass füllt Anmeldungen in anderen Apps und Browsern aus) und Foto-Sicherung (neue Fotos nach dem Entsperren verschlüsselt in den GhulDrive-Ordner „Fotos“) funktionierten nicht zuverlässig | Rückmeldung des Nutzers | entfernt: beide Funktionen ersatzlos gestrichen, mit Einstellungen, Texten, Berechtigungen (Autofill-Dienst, Zugriff auf Fotos), der Autofill-Schnittstelle des Kerns, Tests und Testplan-Zeilen; die Prüfung, ob ein Mail-Link zur angezeigten Website gehört, bleibt (`domain.rs`) |
 | F85 | N | Querformat auf dem Handy (Seitenleiste): neben „Sperren“ stand das Windows-Tastenkürzel „Strg+L“, das es am Handy nicht gibt; „Sperren“ selbst war am unteren Rand abgeschnitten | Emulator-Bild (base, 11-landscape-*) | behoben: das Kürzel steht nur unter Windows; die Seitenleiste scrollt, wenn der Bildschirm niedrig ist, „Sperren“ bleibt erreichbar; `InteractionTest` (Handy quer 915 × 412) |
 | F23 | M | ~~Tresornamen stehen im Dateinamen~~ (Server, Sicherung): „bank-privat.ghlpss“ verriet, welche Tresore es gibt | `attacks::stolen_device_files_server_and_backup_reveal_nothing` (jetzt auch Datei- und ZIP-Namen), `rekey::vault_files_get_neutral_names_here_and_on_the_server` | behoben: Dateien heißen nach ihrer Kennung (`3f9a1c2b7d4e5f60.ghlpss`), der Name steht nur verschlüsselt darin; alte Namen werden beim Entsperren und beim nächsten Sync ersetzt |
 | F24 | N | Termintitel und Import-Titel werden getrimmt (führender Tab geht verloren); Passwörter bleiben exakt | `attacks::exports_are_safe…` | **gewollt:** Titel ohne Leerraum am Rand sind Absicht (Suche, Sortierung, Anzeige); alles Geheime (Passwörter, Notizen, Schlüssel) bleibt Zeichen für Zeichen erhalten |
@@ -367,7 +368,7 @@ Seit 14.11.2026 im Nachtlauf: MobSF, Intent-Angriffe (statt drozer), OWASP ZAP, 
 | **NIST CAVP** (AES-GCM, HMAC, SHA) | weitere Krypto-Vektoren | klein |
 | **RFC 8949 Anhang A** (CBOR), **RFC 9106** (Argon2) | Format-Vektoren | klein |
 | **csv-spectrum**, **fuzzdb**, **IntruderPayloads** | weitere Eingabe-Sammlungen | klein |
-| Geräte-Matrix (Samsung, Pixel, Xiaomi; Android 10 bis 16) | Hersteller-Eigenheiten bei Hintergrunddiensten, Autofill, Keystore | groß, braucht Testgeräte oder einen Gerätedienst |
+| Geräte-Matrix (Samsung, Pixel, Xiaomi; Android 10 bis 16) | Hersteller-Eigenheiten bei Hintergrunddiensten, Keystore | groß, braucht Testgeräte oder einen Gerätedienst |
 
 ### Stand der Abdeckung nach Angriffsfläche
 
@@ -379,7 +380,6 @@ Seit 14.11.2026 im Nachtlauf: MobSF, Intent-Angriffe (statt drozer), OWASP ZAP, 
 | TLS | mittel → hoch mit badssl im Nachtlauf | L11 |
 | PHP-Modul | hoch (335 Angriffe, PHPStan nachts) | L5, ZAP |
 | Mail (HTML, Kopfzeilen, PGP) | hoch (≈500 XSS-Muster, CRLF, Autocrypt) | L7, Interop-Suite |
-| Autofill | hoch (Suffix-Liste, Browser-URL-Daten, vertrauenswürdige Browser) | Geräte-Matrix, B9 |
 | Andere Apps (Intents) | mittel (Manifest-Liste, nur fremde Inhalte) | drozer, B6, B7, L10 |
 | Entsperren (Fingerabdruck, PIN) | mittel (Zähler, Bindung an Neustart) | Test im Emulator, L10 |
 | Lieferkette | niedrig bis mittel (cargo audit, gepinnte Actions) | L3, L4 |

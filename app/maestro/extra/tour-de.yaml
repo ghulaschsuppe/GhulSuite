@@ -67,7 +67,7 @@ name: Rundgang auf Deutsch
 - runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Import, Export und Sicherung", SHOT: "${PREFIX}-16-import" } }
 - runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Server, Sync & Teilen", SHOT: "${PREFIX}-17-server" } }
 - runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Bereiche verwalten", SHOT: "${PREFIX}-18-bereiche" } }
-- runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Anzeige, Autofill", SHOT: "${PREFIX}-19-pass" } }
+- runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Anzeige, Generator", SHOT: "${PREFIX}-19-pass" } }
 - runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Code-Anzeige", SHOT: "${PREFIX}-20-auth" } }
 - runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Design, Sprache", SHOT: "${PREFIX}-21-darstellung" } }
 - runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Über und Hilfe", SHOT: "${PREFIX}-22-ueber" } }

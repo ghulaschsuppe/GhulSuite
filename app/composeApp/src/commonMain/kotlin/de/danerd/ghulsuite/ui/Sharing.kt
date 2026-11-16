@@ -512,7 +512,7 @@ suspend fun de.danerd.ghulsuite.model.NetBackend.knownServers(): List<ServerUi> 
     return if (drive == null || list.any { it.id == drive.id }) list else list + drive
 }
 
-/** Settings → GhulDrive: storage, trash and shares (all devices), photo backup (this device). */
+/** Settings → GhulDrive: storage, trash and shares. */
 @Composable
 fun DriveSettingsSection(state: AppState) {
     val net = state.backend.net
@@ -548,14 +548,6 @@ fun DriveSettingsSection(state: AppState) {
                 },
                 dismissButton = { TextButton(onClick = { accept = false }) { Text(stringResource(Res.string.a_cancel)) } },
             )
-        }
-    }
-    if (net.photoBackupAvailable) {
-        SectionCard(deviceGroupTitle()) {
-            val ask = rememberPhotoPermission { granted -> settings.photoBackup = granted; if (granted) state.runPhotoBackup() }
-            SwitchRow(stringResource(Res.string.drive_photo_backup), settings.photoBackup) { on -> if (on) ask() else settings.photoBackup = false }
-            Hint(stringResource(Res.string.drive_photo_backup_sub))
-            SwitchRow(stringResource(Res.string.drive_wifi_only), settings.photoBackupWifiOnly) { settings.photoBackupWifiOnly = it }
         }
     }
 }

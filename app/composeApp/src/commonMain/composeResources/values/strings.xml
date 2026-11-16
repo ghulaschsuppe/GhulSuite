@@ -6,8 +6,6 @@
     <string name="a_add_key">Add security key</string>
     <string name="a_add_keyfile">Add key file</string>
     <string name="a_allow">Allow</string>
-    <string name="a_autofill_change">Open autofill settings</string>
-    <string name="a_autofill_enable">Set as autofill service</string>
     <string name="a_back">Back</string>
     <string name="a_cancel">Cancel</string>
     <string name="a_change_password">Change master password</string>
@@ -67,14 +65,6 @@
     <string name="auth_qr_hint">Point the camera at the website's QR code. The export QR code of Google Authenticator works too. Then all accounts are taken over at once.</string>
     <string name="auth_tap_to_show">select to show</string>
     <string name="auth_uri_hint">Paste an otpauth://totp/… link, e.g. from a QR code reader or an export.</string>
-    <string name="autofill_for">For: %1$s</string>
-    <string name="autofill_link_title">Link with this app?</string>
-    <string name="autofill_link_text">“%1$s” (%2$s) will be offered the login “%3$s” directly from now on. Only link it if this really is the app of that service.</string>
-    <string name="autofill_link_yes">Link and fill in</string>
-    <string name="autofill_link_once">Fill in this time only</string>
-    <string name="autofill_link_hint">If you pick a login by hand, GhulSuite remembers this app and its signature for it. A fake app with the same name does not get it.</string>
-    <string name="autofill_matching">Matching or suggested</string>
-    <string name="autofill_pick_title">Choose login</string>
     <string name="clip_15s">after 15 seconds</string>
     <string name="clip_45s">after 45 seconds</string>
     <string name="clip_never">never</string>
@@ -275,11 +265,6 @@
     <string name="set_add_key_text">Plug in the key. You touch it twice. Afterwards it opens the suite just like your other keys and key files. They stay unchanged.</string>
     <string name="set_app_pin_text">Choose an app PIN with 6 to 12 digits. It only works on this device and only for quick unlock. After 5 wrong attempts it is deleted.</string>
     <string name="set_auto_lock">Lock in the background</string>
-    <string name="set_autofill">Autofill</string>
-    <string name="set_autofill_hint">While GhulSuite is locked, only “Unlock GhulSuite” appears. The other app only gets the password after you pick it. Websites are recognised by their domain, so look-alike sites get nothing.</string>
-    <string name="set_autofill_off">GhulSuite is not set as autofill service.</string>
-    <string name="set_autofill_on">GhulSuite is the active autofill service.</string>
-    <string name="set_autofill_text">GhulSuite fills logins in other apps and in the browser and offers to save new logins.</string>
     <string name="set_backup_key_hint">Recommendation: add a backup (second key or key file). If your only one gets lost, only the recovery code gets you back in.</string>
     <string name="set_change_pw_text">Applies to the suite and all vaults. Keys, key files and the recovery code stay valid.</string>
     <string name="set_clipboard">Clear clipboard</string>
@@ -620,7 +605,7 @@
     <string name="set_mail_sub">Accounts, notifications</string>
     <string name="set_modules_sub">Set up, hide, remove</string>
     <string name="set_my_suite">My suite</string>
-    <string name="set_pass_sub">Display, autofill</string>
+    <string name="set_pass_sub">Display, generator</string>
     <string name="set_privacy">Privacy</string>
     <string name="set_privacy_sub">Screenshots, clipboard</string>
     <string name="set_servers_none">No server yet</string>
@@ -690,7 +675,6 @@
     <string name="set_lock_session">Lock when Windows is locked</string>
     <string name="set_panic_hint_desktop">Quick lock: the lock symbol, or Ctrl+L.</string>
     <string name="set_lock_panic_sub_desktop">Time, Windows lock, Ctrl+L</string>
-    <string name="set_pass_sub_desktop">Display</string>
     <string name="qr_desktop_hint">Show the QR code on the screen (e.g. in the browser), then scan. Or copy a picture of it.</string>
     <string name="qr_scan_screen">Scan screen</string>
     <string name="qr_scan_clipboard">Picture from clipboard</string>
@@ -894,13 +878,6 @@
     <string name="drive_days_30">after 30 days</string>
     <string name="drive_days_90">after 90 days</string>
     <string name="drive_days_never">never</string>
-    <string name="drive_photo_backup">Photo backup</string>
-    <string name="drive_photo_backup_sub">After unlocking, new photos are backed up encrypted into the folder “Fotos”.</string>
-    <string name="drive_wifi_only">Only over Wi-Fi</string>
-    <plurals name="drive_photo_backup_done">
-        <item quantity="one">%1$s photo backed up.</item>
-        <item quantity="other">%1$s photos backed up.</item>
-    </plurals>
     <string name="drive_as_zip">As ZIP</string>
     <string name="mail_swipe_hint">Swipe: right toggles read, left does the action from Options (archive, delete or read).</string>
     <string name="mail_preview_encrypted">Encrypted message</string>
@@ -1443,11 +1420,6 @@
     <string name="mail_bg_ok">Mail may run in the background: new mail arrives at once.</string>
     <string name="mail_bg_limited">Android slows GhulSuite down in the background (battery optimisation). New mail may arrive late or only every 15 minutes.</string>
     <string name="mail_bg_allow">Allow in the background</string>
-    <string name="set_autofill_how">Where suggestions appear</string>
-    <string name="set_autofill_how_field">Tap a login field. Suggestions appear below the field or in the keyboard\'s suggestion bar.</string>
-    <string name="set_autofill_how_apps">In an app GhulSuite first offers “Choose another login …”. After that it remembers the app and suggests the login directly.</string>
-    <string name="set_autofill_how_chrome">Chrome: Settings → Autofill services → “Autofill using another service”, then restart Chrome. Firefox and browsers such as Vivaldi, Brave or Edge need no setting.</string>
-    <string name="set_autofill_how_manual">Nothing shows up? Long-press the field and choose “Autofill”.</string>
     <string name="fab_entry">Entry</string>
     <string name="fab_account">Account</string>
     <string name="a_favorite">Add to favourites</string>
@@ -1670,7 +1642,6 @@
         <item quantity="other">Upload cancelled: %1$s of %2$s files done.</item>
     </plurals>
     <string name="drive_download_cancelled">Download of %1$s cancelled.</string>
-    <string name="drive_photo_backup_running">Backing up photos</string>
     <string name="mail_archiving">Archiving mails …</string>
     <plurals name="mail_archiving_n">
         <item quantity="one">Archiving %1$s mail</item>
@@ -1746,7 +1717,6 @@
     <string name="job_kind_upload">Upload</string>
     <string name="job_kind_download">Download</string>
     <string name="job_kind_archive">Mail archive</string>
-    <string name="job_kind_photos">Photo backup</string>
     <string name="job_end_done">%1$s finished</string>
     <string name="job_end_cancelled">%1$s cancelled</string>
     <string name="job_end_failed">%1$s stopped with an error</string>

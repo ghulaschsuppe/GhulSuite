@@ -36,7 +36,7 @@ PHP-Modul, Nachtlauf mit langem Fuzzing, Monkey im Emulator und Server mit kaput
 | **Finder eines Keys oder des Notfallblatts** | Key entfernen bzw. neues Blatt erstellen: Danach öffnet es nichts mehr, was gespeichert wird, auch nicht zusammen mit einer alten Sicherung (B1) |
 | **Netzwerk** (WLAN, Provider) | TLS mit Zertifikatsprüfung oder bestätigtem Fingerabdruck, SFTP mit festem Host-Schlüssel, IMAP/SMTP nie unverschlüsselt |
 | **Absender böswilliger Mails** | HTML ohne Skripte und ohne Zugriff aufs eigene Netz, echte Link-Ziele sichtbar, keine eingeschleusten Kopfzeilen, Autocrypt-Regeln gegen untergeschobene Schlüssel |
-| **Andere Apps auf dem Gerät** | Autofill nur auf der echten Seite und nur aus vertrauenswürdigen Browsern, keine privaten Dateien in fremde Mail-Entwürfe, keine Backups, Bildschirmschutz |
+| **Andere Apps auf dem Gerät** | Keine privaten Dateien in fremde Mail-Entwürfe, keine Backups, Bildschirmschutz |
 | **Präparierte Dateien und Antworten** | Alle Parser gefuzzt; kein Absturz, keine Datei außerhalb des Ordners, keine Zip-Bombe |
 
 Nicht im Bedrohungsmodell: ein bereits kompromittiertes, entsperrtes Gerät (Schadsoftware mit Root, fremde

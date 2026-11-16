@@ -37,7 +37,7 @@ name: All options pages
     env: { PAGE: "Manage areas", SHOT: "10-08-areas" }
 - runFlow:
     file: open-option-full.yaml
-    env: { PAGE: "Display, autofill", SHOT: "10-09-pass" }
+    env: { PAGE: "Display, generator", SHOT: "10-09-pass" }
 - runFlow:
     file: open-option-full.yaml
     env: { PAGE: "Code display", SHOT: "10-10-auth" }

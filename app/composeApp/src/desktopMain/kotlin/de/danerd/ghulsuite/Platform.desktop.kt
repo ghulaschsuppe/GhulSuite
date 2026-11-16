@@ -268,9 +268,6 @@ actual fun decodeQrImage(bytes: ByteArray): String? = runCatching {
     com.google.zxing.MultiFormatReader().decode(bitmap, mapOf(com.google.zxing.DecodeHintType.TRY_HARDER to true)).text
 }.getOrNull()
 
-@androidx.compose.runtime.Composable
-actual fun rememberPhotoPermission(onResult: (Boolean) -> Unit): () -> Unit = { onResult(false) }
-
 actual val cameraPhotoAvailable: Boolean = false
 
 @androidx.compose.runtime.Composable

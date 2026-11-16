@@ -463,7 +463,7 @@ fn exports_are_safe_to_open_in_a_spreadsheet() {
     let s = d.suite();
     s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "P")]), None, None, None).unwrap();
     let pass = vault_id(&s, "P");
-    // A website stored a "user name" that is a spreadsheet formula (via autofill save, import ...).
+    // A website stored a "user name" that is a spreadsheet formula (via import ...).
     let formulas = ["=HYPERLINK(\"https://evil\",\"x\")", "+cmd|' /C calc'!A0", "-2+3", "@SUM(1)", "\t=1", "'=quoted"];
     for f in formulas {
         s.save_entry(pass.clone(), login(f, f, f)).unwrap();

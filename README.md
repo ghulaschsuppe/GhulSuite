@@ -100,9 +100,6 @@ Leiste, seine Datei bleibt unberührt.
 
 - **Alles an einem Ort:** Anmeldungen, Notizen, Kreditkarten, WLAN (mit QR zum Teilen), Identitäten, SSH-Schlüssel;
   eigene Felder, Anhänge, Passwortverlauf, Favoriten und „Zuletzt“.
-- **Autofill** in Apps und Browsern (Android): GhulPass füllt nur auf der echten Seite aus. Ähnlich aussehende
-  Adressen (`paypa1.com`, fremde Subdomains) bekommen nichts. Verknüpft eine App sich zum ersten Mal mit einem
-  Login, fragt GhulPass mit ihrem Namen nach.
 - **Generator** für Passwörter und Passphrasen.
 - **Sicherheitscheck:** schwache und doppelte Passwörter, Konten ohne 2FA; auf Wunsch der Abgleich mit bekannten
   Datenlecks, ohne dass dein Passwort das Gerät verlässt (k-Anonymität: nur der Anfang eines Hashes geht hinaus).
@@ -137,7 +134,7 @@ Leiste, seine Datei bleibt unberührt.
 - **Offline verfügbar** für ausgewählte Dateien, **Versionen** (die letzten fünf) und **Papierkorb**.
 - **Teilen per Link ohne Kopie:** Jede Datei hat ihren eigenen Schlüssel, der Link enthält nur diesen. Ablaufdatum,
   Einmal-Link, Abrufzähler und Passwort; auch große Dateien und ganze Ordner, siehe [unten](#teilen-per-link).
-- **Foto-Sicherung** (Android, auf Wunsch nur im WLAN), **Dokumente scannen**, verschlüsselte ZIPs.
+- **Dokumente scannen** (Android) und verschlüsselte ZIPs.
 
 </td></tr></table>
 

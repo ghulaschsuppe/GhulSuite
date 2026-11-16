@@ -545,7 +545,7 @@ fn stress_parallel_access_from_several_threads() {
     }
     s.add_totp(totp.clone(), totp_input()).unwrap();
 
-    // Like the app: lists, codes, autofill and sync from several threads at once while two
+    // Like the app: lists, codes and sync from several threads at once while two
     // threads keep writing. Nothing may hang, panic or get lost.
     timed("8 Threads gleichzeitig (Lesen, Schreiben, Sync)", 300.0, || {
         let mut handles = Vec::new();
@@ -563,7 +563,7 @@ fn stress_parallel_access_from_several_threads() {
                             s.sync_folder(sync.as_ref()).unwrap();
                         }
                         3 => {
-                            let _ = s.autofill_logins(Some("example.org".into()), None, None).unwrap();
+                            let _ = s.list_entries(VaultKind::Pass, None).unwrap();
                         }
                         4 => {
                             assert_eq!(s.totp_codes(1_800_000_000).unwrap().len(), 1);

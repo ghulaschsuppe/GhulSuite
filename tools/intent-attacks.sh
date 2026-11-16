@@ -272,7 +272,7 @@ if [ "$caller" != 0 ]; then
     comp="$pkg/$name"
     case $kind in
       activity|activity-alias)
-        attack "nicht exportiert: $name" am start -W -n "$comp" --es de.danerd.ghulsuite.autofill.DOMAIN example.org
+        attack "nicht exportiert: $name" am start -W -n "$comp"
         denied "$last" || error "nicht exportierte Activity $name ließ sich starten: $last" ;;
       service)
         attack "nicht exportiert: $name" am startservice -n "$comp" -a de.danerd.ghulsuite.LOCK
