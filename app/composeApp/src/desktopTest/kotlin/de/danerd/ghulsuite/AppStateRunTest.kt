@@ -70,6 +70,56 @@ class AppStateRunTest {
         assertFalse(s.syncing)
     }
 
+    /**
+     * A request that came while the run found no sync server yet (the server was chosen just then)
+     * is not lost: the run looks again (it ended at once and dropped the request).
+     */
+    @Test
+    fun aRequestDuringARunWithoutServerIsNotLost() = runBlocking {
+        val s = state { settings.autoSync = false }
+        val net = s.backend.net as FakeNet
+        net.syncServer = null
+        val gate = java.util.concurrent.CountDownLatch(1)
+        net.syncStatusGate = gate
+        s.sync(quiet = true)
+        // The run has read "no server" and waits; now a server is chosen and a sync asked for.
+        withTimeout(5_000) { while (net.syncStatusWaiting < 1) kotlinx.coroutines.delay(10) }
+        net.syncServer = "s1"
+        s.sync(quiet = true)
+        net.syncStatusGate = null
+        gate.countDown()
+        withTimeout(5_000) { while (net.syncRuns < 1 || s.syncing) kotlinx.coroutines.delay(20) }
+        assertEquals(1, net.syncRuns)
+    }
+
+    /**
+     * Locked and unlocked again while a synchronisation runs: the run after unlocking stays
+     * "syncing" until it ends (the old run's end said "not syncing" in the middle of it).
+     */
+    @Test
+    fun anOldRunDoesNotEndTheNewOne() = runBlocking {
+        val s = state { settings.autoSync = false }
+        val net = s.backend.net as FakeNet
+        val unlocked = (s.backend as ScreenshotTest.Fake).unlocked
+        net.syncDelayMs = 1_500
+        s.sync(quiet = true)
+        withTimeout(5_000) { while (net.syncRuns < 1) kotlinx.coroutines.delay(10) }
+        unlocked.value = false
+        withTimeout(5_000) { while (s.syncing) kotlinx.coroutines.delay(10) }
+        // Unlocked again a while later: the new run ends well after the old one.
+        kotlinx.coroutines.delay(700)
+        unlocked.value = true
+        s.sync(quiet = true)
+        withTimeout(5_000) { while (net.syncRuns < 2) kotlinx.coroutines.delay(10) }
+        // The old run ends; the new one still runs.
+        withTimeout(5_000) { while (net.syncDone < 1) kotlinx.coroutines.delay(10) }
+        kotlinx.coroutines.delay(100)
+        assertEquals(1, net.syncDone)
+        assertTrue(s.syncing, "the new run is still running")
+        withTimeout(5_000) { while (s.syncing) kotlinx.coroutines.delay(20) }
+        assertEquals(2, net.syncDone)
+    }
+
     /** A follow-up action started when the first one is done runs (F49: it was dropped). */
     @Test
     fun aFollowUpActionRuns() = runBlocking {

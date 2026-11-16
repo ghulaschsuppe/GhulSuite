@@ -126,9 +126,16 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
     var syncServer: String? = if (configured) "s1" else null
     /** While true, syncStatus() fails (a core that cannot answer). */
     var syncStatusFails = false
+    /** Holds the answer of syncStatus() back (read before waiting) until released. */
+    @Volatile var syncStatusGate: java.util.concurrent.CountDownLatch? = null
+    /** Calls of syncStatus() that have read their answer. */
+    @Volatile var syncStatusWaiting = 0
     override suspend fun syncStatus(): SyncStatusUi {
         if (syncStatusFails) throw java.io.IOException("timeout")
-        return SyncStatusUi(syncServer, now * 1000)
+        val answer = SyncStatusUi(syncServer, now * 1000)
+        syncStatusWaiting++
+        syncStatusGate?.let { gate -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { gate.await(30, java.util.concurrent.TimeUnit.SECONDS) } }
+        return answer
     }
     override suspend fun setSyncServer(id: String?) {
         calls += "setSyncServer:$id"
@@ -137,6 +144,8 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
     /** How many synchronisations ran, and the most that ran at the same time. */
     @Volatile var syncRuns = 0
     @Volatile var syncMaxAtOnce = 0
+    /** Synchronisations that have ended. */
+    @Volatile var syncDone = 0
     private val syncActive = java.util.concurrent.atomic.AtomicInteger()
     /** A synchronisation takes this long (it suspends, like the real one). */
     var syncDelayMs = 0L
@@ -149,6 +158,7 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
             return SyncReportUi(1, 2, 0, 0, 0)
         } finally {
             syncActive.decrementAndGet()
+            syncDone++
         }
     }
     override suspend fun adoptRemotePassword(password: String) = SyncReportUi(0, 0, 0, 0, 0)

@@ -202,6 +202,7 @@ class InteractionTest {
     fun authSwipeAsksFirst() = app(setup = { tab = Tab.AUTH }) { state, fake ->
         state.undoMillis = 60_000
         waitFor("GitHub")
+        waitFor("All codes · 2 accounts")
         text("GitHub").performTouchInput { swipeLeft() }
         waitFor("Delete?")
         assertFalse(shown("Undo"), "nothing deleted before the answer")
@@ -214,6 +215,9 @@ class InteractionTest {
         waitFor("Undo")
         waitGone("GitHub")
         assertFalse("deleteTotp:t1:b" in fake.calls, "Undo is still possible")
+        // The line under the title counts what the list shows (bug: "2 accounts" above one).
+        waitFor("All codes · 1 account")
+        assertFalse(shown("All codes · 2 accounts"))
     }
 
     @Test

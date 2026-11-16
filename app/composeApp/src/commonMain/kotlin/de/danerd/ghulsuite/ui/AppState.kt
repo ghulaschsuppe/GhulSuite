@@ -345,6 +345,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope, val main: B
     var protectionChangedElsewhere by mutableStateOf(false)
 
     private var syncAgain = false
+    /** Count of synchronisation runs; locking moves it on (see [sync]). */
+    private var syncRun = 0
 
     /**
      * U12: an editor (login, event) holds input that is not saved. "Back" then asks first. Locking
@@ -469,6 +471,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope, val main: B
                     passwordChangedElsewhere = false
                     protectionChangedElsewhere = false
                     syncing = false
+                    syncAgain = false
+                    syncRun++
                     mailUnread = 0
                     areasKnown = false
                     codeUnconfirmed = false
@@ -703,6 +707,9 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope, val main: B
         // dispatcher starts it later) joins this run instead of starting one of its own. ATOMIC:
         // the body (and with it the reset below) always runs.
         syncing = true
+        // Which run this is: locking starts a new count, and an old run then neither ends a newer
+        // one ("not syncing" in the middle of it) nor starts another pass.
+        val run = ++syncRun
         scope.launch(start = CoroutineStart.ATOMIC) {
             try {
                 do {
@@ -710,7 +717,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope, val main: B
                     val status = catching { backend.net.syncStatus() }.getOrNull()
                     if (status?.serverId == null) {
                         if (!quiet) message(getString(Res.string.sync_not_set))
-                        return@launch
+                        // A request in the meantime (a server chosen just now) looks again.
+                        continue
                     }
                     val r = backend.net.syncNow()
                     syncOffline = false
@@ -720,7 +728,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope, val main: B
                         refreshCalendar()
                     }
                     onDone(r)
-                } while (syncAgain)
+                } while (syncAgain && run == syncRun)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -734,7 +742,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope, val main: B
                     else -> message(getString(Res.string.sync_failed, describe(e)))
                 }
             } finally {
-                syncing = false
+                if (run == syncRun) syncing = false
             }
         }
     }

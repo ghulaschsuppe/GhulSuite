@@ -79,11 +79,13 @@ fun AreaContext(state: AppState) {
     val allCalendars = stringResource(Res.string.cal_all_calendars)
     // Texts looked up later (after a count is known) use the language of the screen.
     val env = rememberResourceEnvironment()
-    LaunchedEffect(state.tab, state.revision, state.passVault, state.authVault, state.mailAccount, state.mailFolder, state.calendars, state.backend.settings.calHidden) {
+    LaunchedEffect(state.tab, state.revision, state.passVault, state.authVault, state.mailAccount, state.mailFolder, state.calendars, state.backend.settings.calHidden, state.hidden) {
         label = when (state.tab) {
             Tab.PASS -> state.vaults.firstOrNull { it.id == state.passVault }?.name ?: allVaults
             Tab.AUTH -> {
-                val n = catching { state.backend.totpCodes(nowSeconds()) }.getOrDefault(emptyList()).count { state.authVault == null || it.vaultId == state.authVault }
+                // Accounts deleted with "Undo" still open are not counted (the list hides them too).
+                val n = catching { state.backend.totpCodes(nowSeconds()) }.getOrDefault(emptyList())
+                    .count { (state.authVault == null || it.vaultId == state.authVault) && hiddenKey("auth", it.vaultId, it.id) !in state.hidden }
                 (state.vaults.firstOrNull { it.id == state.authVault }?.name ?: allAccounts) + " · " + countText(env, Res.plurals.auth_count, n, n.toString())
             }
             Tab.DRIVE -> {
