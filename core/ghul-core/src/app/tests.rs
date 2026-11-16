@@ -2424,8 +2424,14 @@ fn drive_locations_are_separate_from_the_synchronisation() {
 
     // Removing the active one without the files: Drive has no location any more, the files
     // stay on the server and come back when the location is added again.
+    let other_device = s.drive_settings_for_tests();
     s.drive_remove_location(first_id.clone(), false, false).unwrap();
     assert!(s.drive_locations().unwrap().is_empty());
+    assert_eq!(s.drive_storage().unwrap().mode, DriveMode::None);
+    // S4: another device's Drive file from before the removal (newer, so its active location
+    // wins the merge) does not bring the location back.
+    s.drive_merge_newer_settings_for_tests(&other_device);
+    assert!(s.drive_locations().unwrap().is_empty(), "removed stays removed");
     assert_eq!(s.drive_storage().unwrap().mode, DriveMode::None);
     assert!(home.join(&cfg.base).join("drive/index.ghldrv").exists(), "files stay on the server");
     let again = saved(s.drive_save_server(input(&cfg.base), Some(cfg.cert.clone().unwrap())).unwrap());

@@ -265,8 +265,14 @@ pub(super) struct SharedFile {
 fn drive_server_id(o: &Open, d: &DriveSettings) -> Option<String> {
     if d.use_sync {
         super::sync::sync_server(o)
+    } else if d.server.is_empty() {
+        None
+    } else if servers::server(o, &d.server).is_ok() {
+        Some(d.server.clone())
     } else {
-        (!d.server.is_empty()).then(|| d.server.clone())
+        // A location removed on another device (its list entry is gone after merging, the
+        // active id may still come with a newer Drive file): the first remaining one.
+        servers::drive_servers(o).first().map(|s| s.id.clone())
     }
 }
 
@@ -883,8 +889,8 @@ impl GhulSuite {
         self.with_open(|o| {
             self.drive_move_to_locations(o)?;
             let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
-            let mode = if d.server.is_empty() || d.key.len() != 32 { DriveMode::None } else { DriveMode::Own };
             let server = drive_server_id(o, &d).and_then(|id| servers::server(o, &id).ok()).map(|s| servers::info(&s));
+            let mode = if server.is_none() || d.key.len() != 32 { DriveMode::None } else { DriveMode::Own };
             Ok(DriveStorage { mode, server, sync_available: super::sync::sync_server(o).is_some() })
         })
     }
@@ -965,6 +971,9 @@ impl GhulSuite {
             })?;
             let own: Vec<StoredServer> = servers::drive_servers(o).into_iter().filter(|s| s.id != id).collect();
             put_area_setting(o, VaultKind::Drive, servers::SERVERS_KEY, &own)?;
+            // Gone on every device: without the mark, merging another device's Drive file
+            // would unite it back into the list (S4).
+            super::areas::mark_area_deleted(o, VaultKind::Drive, servers::SERVERS_KEY, &id)?;
             let mut d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
             d.seen.remove(&id);
             if d.archive == id {
@@ -1689,6 +1698,27 @@ impl GhulSuite {
     }
 
     /// Turns Drive back into the state an older app left: `use_sync`, no locations of its own.
+    /// The Drive file's settings, as another device would have them (tests).
+    #[cfg(test)]
+    pub(crate) fn drive_settings_for_tests(&self) -> BTreeMap<String, ciborium::Value> {
+        self.with_open(|o| Ok(o.area_mut(VaultKind::Drive)?.payload.settings.clone())).unwrap()
+    }
+
+    /// Merges another device's Drive settings as the synchronisation does when that file is
+    /// newer (tests).
+    #[cfg(test)]
+    pub(crate) fn drive_merge_newer_settings_for_tests(&self, remote: &BTreeMap<String, ciborium::Value>) {
+        self.with_open(|o| {
+            let local = &mut o.area_mut(VaultKind::Drive)?.payload.settings;
+            let mut merged = remote.clone();
+            super::sync::merge_settings(&mut merged, local);
+            *local = merged;
+            Ok(())
+        })
+        .unwrap();
+        self.net.lock().unwrap_or_else(|p| p.into_inner()).drive = None;
+    }
+
     #[cfg(test)]
     pub(super) fn drive_back_to_use_sync_for_tests(&self) {
         self.with_open(|o| {
