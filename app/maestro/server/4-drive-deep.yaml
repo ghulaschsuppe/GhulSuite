@@ -101,9 +101,8 @@ name: GhulDrive in depth on a real server
 - extendedWaitUntil:
     visible: "Moved to trash"
     timeout: 60000
-- extendedWaitUntil:
-    notVisible: "Moved to trash"
-    timeout: 30000
+# The file is in the trash at once (F96); the message with "Undo" may stay a while and does not
+# cover the "Trash" tile. (A wait for it to go away failed at once on the slow server.)
 - tapOn: "Trash"
 - extendedWaitUntil:
     visible: "Steuer-2026"

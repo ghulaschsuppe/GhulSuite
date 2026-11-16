@@ -1279,6 +1279,35 @@ class InteractionTest {
     }
 
     /**
+     * Moved to the trash while the list cannot be reloaded yet (the core busy with the
+     * synchronisation that follows): the file leaves the list at once (bug: "Moved to trash"
+     * next to the file still in the list), and "Undo" brings it back at once.
+     */
+    @Test
+    fun driveTrashedFileLeavesTheListAtOnce() = app(setup = { tab = Tab.DRIVE }) { _, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Notizen.txt")
+        val gate = java.util.concurrent.CountDownLatch(1)
+        net.driveListGate = gate
+        try {
+            longPress("Notizen.txt")
+            waitFor("1 selected")
+            desc("Move to trash").performClick()
+            confirm("Move to trash")
+            waitFor("Moved to trash")
+            assertFalse(shown("Notizen.txt"), "the file is still in the list")
+            assertTrue(shown("Steuer 2025.pdf"))
+            // "Undo" brings it back at once, also while the list cannot be reloaded yet.
+            text("Undo").performClick()
+            waitFor("Notizen.txt")
+            assertTrue("driveRestore:f2" in net.calls)
+        } finally {
+            gate.countDown()
+            net.driveListGate = null
+        }
+    }
+
+    /**
      * Deleting a shared file in GhulDrive: the question says that its link ends; "Cancel" ends
      * nothing, "Move to trash" ends the link first and then moves the file.
      */

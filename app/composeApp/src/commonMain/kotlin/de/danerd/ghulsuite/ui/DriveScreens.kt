@@ -339,7 +339,12 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
                 links.forEach { net.shareDelete(it.id) }
                 list.forEach { net.driveDelete(it.id); done += it }
             }.exceptionOrNull()
-            // Also after a failure part of the list may be in the trash: show what is true.
+            // Also after a failure part of the list may be in the trash: show what is true. What
+            // moved leaves the list at once; the reload may wait for a synchronisation.
+            val moved = done.map { it.id }.toSet()
+            val removed = items.filter { it.id in moved }
+            val shownFor = itemsOf
+            items = items.filterNot { it.id in moved }
             trashTick++
             state.changed()
             // The list reloads now (and would clear an error shown above it): say it below. What
@@ -347,7 +352,10 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
             if (failure != null) { state.message(describe(failure)); return@launch }
             if (done.isEmpty()) return@launch
             // Folders first: a file restored before its folder would land at the top level.
-            state.doneWithUndo(trashMsg, undo = { done.sortedByDescending { it.isDir }.forEach { net.driveRestore(it.id) } }) {
+            val restored = mutableSetOf<String>()
+            state.doneWithUndo(trashMsg, undo = { done.sortedByDescending { it.isDir }.forEach { net.driveRestore(it.id); restored += it.id } }) {
+                // Back in the list at once (still the same folder or view); the reload follows.
+                if (itemsOf == shownFor) items = items + removed.filter { r -> r.id in restored && items.none { it.id == r.id } }
                 trashTick++; state.changed()
             }
         }
