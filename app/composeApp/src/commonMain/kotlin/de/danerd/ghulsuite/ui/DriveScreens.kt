@@ -86,7 +86,9 @@ import de.danerd.ghulsuite.model.DriveStatusUi
 import de.danerd.ghulsuite.model.ServerUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import de.danerd.ghulsuite.model.ShareInfoUi
 import org.jetbrains.compose.resources.rememberResourceEnvironment
 import org.jetbrains.compose.resources.pluralStringResource
@@ -351,15 +353,28 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
         }
     }
     val env = rememberResourceEnvironment()
+    val linksChecking = stringResource(Res.string.drive_links_checking)
+    // The question waiting for the share links belongs to this screen's coroutine: if the screen
+    // goes (e.g. the window turns wide), the question goes too instead of staying unconfirmable.
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { if (state.deleteAsk?.ready == false) state.deleteAsk = null } }
     /**
      * Asks before deleting (F103). Share links that contain the items end with them: the
      * question says how many, and on "Delete" they end first ([then] gets them).
      */
     fun askWithLinks(list: List<DriveItemUi>, trash: Boolean, then: (List<ShareInfoUi>) -> Unit) {
+        val names = list.map { it.name }
         scope.launch {
-            val links = catching { net.shareLinksOf(list.map { it.id }) }.getOrDefault(emptyList())
+            // Looking up the links waits while the core is busy (a synchronisation on a slow
+            // server): the question comes at once and says so; it can be confirmed once the
+            // answer is there (bug: nothing happened for many seconds after the tap).
+            val lookup = async { catching { net.shareLinksOf(list.map { it.id }) }.getOrDefault(emptyList()) }
+            val quick = withTimeoutOrNull(300) { lookup.await() }
+            val waiting = if (quick == null) AppState.DeleteAsk(names, trash, {}, linksChecking, ready = false).also { state.deleteAsk = it } else null
+            val links = quick ?: lookup.await()
+            // Answered "Cancel" in the meantime (or another question came): nothing more to ask.
+            if (waiting != null && state.deleteAsk !== waiting) return@launch
             val extra = if (links.isEmpty()) null else countText(env, Res.plurals.drive_links_end, links.size, links.size.toString())
-            state.askDelete(list.map { it.name }, trash = trash, extra = extra) { then(links) }
+            state.askDelete(names, trash = trash, extra = extra) { then(links) }
         }
     }
     fun toTrash(list: List<DriveItemUi>) = askWithLinks(list, trash = true) { links -> moveToTrash(list, links) }

@@ -1647,6 +1647,7 @@
     <string name="core_bad_folder">Invalid folder.</string>
     <string name="core_module_no_answer">The server module does not answer.</string>
     <string name="core_share_needs_module">Share links need the GhulSuite server module.</string>
+    <string name="drive_links_checking">Checking the share links …</string>
     <plurals name="drive_links_end">
         <item quantity="one">%1$s active share link will end.</item>
         <item quantity="other">%1$s active share links will end.</item>

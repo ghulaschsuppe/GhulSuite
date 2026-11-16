@@ -1647,6 +1647,7 @@
     <string name="core_bad_folder">Ungültiger Ordner.</string>
     <string name="core_module_no_answer">Das Server-Modul antwortet nicht.</string>
     <string name="core_share_needs_module">Freigabelinks brauchen das GhulSuite-Server-Modul.</string>
+    <string name="drive_links_checking">Freigabelinks werden geprüft …</string>
     <plurals name="drive_links_end">
         <item quantity="one">%1$s aktiver Freigabelink endet.</item>
         <item quantity="other">%1$s aktive Freigabelinks enden.</item>

@@ -102,7 +102,13 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
     var missingModule: String? = if (configured) null else ""
     override suspend fun shareMissingModule() = missingModule
     /** The links containing GhulDrive items: "Steuer 2025.pdf" (f1) is shared. */
-    override suspend fun shareLinksOf(ids: List<String>) = if (configured && "f1" in ids) listOf(share) else emptyList()
+    /** Holds the lookup of share links back (the core busy with a synchronisation) until released. */
+    var shareLinksGate: java.util.concurrent.CountDownLatch? = null
+    override suspend fun shareLinksOf(ids: List<String>): List<ShareInfoUi> {
+        // Blocks a thread like the core does (not the test clock that skips idle waits).
+        shareLinksGate?.let { gate -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { gate.await(30, java.util.concurrent.TimeUnit.SECONDS) } }
+        return if (configured && "f1" in ids) listOf(share) else emptyList()
+    }
     override suspend fun shareDrive(ids: List<String>, name: String?, options: ShareOptionsUi): ShareInfoUi {
         calls += "shareDrive:${ids.joinToString(",")}:${name ?: ""}:${options.expiresDays}:${options.maxDownloads}:${options.password != null}"
         return share

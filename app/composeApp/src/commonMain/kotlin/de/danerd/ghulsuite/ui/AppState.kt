@@ -228,7 +228,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope, val main: B
      * A deletion waiting for "Delete?" to be answered (F103: every deletion asks first). [extra]:
      * one more line under the question (e.g. which share links end with it).
      */
-    class DeleteAsk(val names: List<String>, val trash: Boolean, val action: () -> Unit, val extra: String? = null)
+    /** A question before deleting; while not [ready] (still checking, e.g. share links) it cannot be confirmed. */
+    class DeleteAsk(val names: List<String>, val trash: Boolean, val action: () -> Unit, val extra: String? = null, val ready: Boolean = true)
 
     // Declared before init (the lock listener there clears it).
     var deleteAsk by mutableStateOf<DeleteAsk?>(null)

@@ -72,9 +72,11 @@ name: GhulDrive in depth on a real server
 # F96: the file goes to the trash on the server at once (the count is right at once), then the
 # message with "Undo" appears; on the slow server that takes a moment.
 - tapOn: "Move to trash"
+# The question comes at once; while the share links are checked (the core may still be busy
+# with the synchronisation on the slow server) its button waits.
 - extendedWaitUntil:
-    visible: { id: "ask-confirm" }
-    timeout: 10000
+    visible: { id: "ask-confirm", enabled: true }
+    timeout: 60000
 - tapOn: { id: "ask-confirm" }
 - extendedWaitUntil:
     visible: "Moved to trash"
@@ -90,9 +92,11 @@ name: GhulDrive in depth on a real server
 - takeScreenshot: s4-05-undone
 - longPressOn: "Steuer-2026"
 - tapOn: "Move to trash"
+# The question comes at once; while the share links are checked (the core may still be busy
+# with the synchronisation on the slow server) its button waits.
 - extendedWaitUntil:
-    visible: { id: "ask-confirm" }
-    timeout: 10000
+    visible: { id: "ask-confirm", enabled: true }
+    timeout: 60000
 - tapOn: { id: "ask-confirm" }
 - extendedWaitUntil:
     visible: "Moved to trash"

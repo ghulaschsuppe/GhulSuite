@@ -10,6 +10,8 @@ import androidx.compose.ui.graphics.asSkiaBitmap
 import androidx.compose.ui.test.DesktopComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsEnabled
 import kotlinx.coroutines.launch
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.SemanticsNodeInteraction
@@ -1245,6 +1247,34 @@ class InteractionTest {
             text("Update module").performScrollTo().performClick()
             waitUntil(timeoutMillis = 10_000) { "moduleUpdate:s1" in net.calls }
             waitFor("Server module updated (version 2)")
+        }
+    }
+
+    /**
+     * The core is busy (a synchronisation on a slow server) while the share links are looked up:
+     * the question comes at once and says that the links are being checked; "Move to trash" waits
+     * for the answer (bug: nothing happened for many seconds after the tap).
+     */
+    @Test
+    fun driveDeleteAsksAtOnceWhileTheLinksAreChecked() {
+        val gate = java.util.concurrent.CountDownLatch(1)
+        app(setup = { tab = Tab.DRIVE }, prepare = { (net as FakeNet).shareLinksGate = gate }) { _, _ ->
+        longPress("Steuer 2025.pdf")
+        waitFor("1 selected")
+        desc("Move to trash").performClick()
+        val started = System.currentTimeMillis()
+        waitFor("Move to the trash?")
+        // While the lookup still waits.
+        assertTrue(System.currentTimeMillis() - started < 5_000, "the question came late")
+        assertTrue(shown("Checking the share links …"))
+        val confirm = { onAllNodes(hasText("Move to trash") and hasAnyAncestor(isDialog())).onFirst() }
+        confirm().assertIsNotEnabled()
+        gate.countDown()
+        waitFor("1 active share link will end.")
+        assertFalse(shown("Checking the share links …"))
+        confirm().assertIsEnabled()
+        onAllNodes(hasText("Cancel") and hasAnyAncestor(isDialog())).onFirst().performClick()
+        waitGone("Move to the trash?")
         }
     }
 
