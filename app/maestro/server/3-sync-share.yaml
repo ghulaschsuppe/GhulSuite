@@ -325,11 +325,12 @@ name: Sync server and sharing on a real server
 # The only item is selected: "All" would do nothing, so it is not offered.
 - assertNotVisible: { id: "sel-all" }
 - takeScreenshot: s3-13-drive-selected
-# Share links need the server module on GhulDrive's server: the row says so.
+# Share links need the server module on GhulDrive's server: the row says so. Until the core
+# answers (it can still be synchronising after the switch above), the row says it is checking.
 - tapOn: "Share"
 - extendedWaitUntil:
     visible: "Needs the GhulSuite server module.*"
-    timeout: 10000
+    timeout: 120000
 - takeScreenshot: s3-13b-share-needs-module
 - back
 - extendedWaitUntil:

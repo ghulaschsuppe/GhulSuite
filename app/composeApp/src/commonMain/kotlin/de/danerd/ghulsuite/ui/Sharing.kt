@@ -130,7 +130,10 @@ fun rememberShareNeed(state: AppState): ShareNeed? {
 fun shareLinkSub(need: ShareNeed?): String = when (need) {
     is ShareNeed.Module -> stringResource(Res.string.share_link_needs_module)
     ShareNeed.Drive -> stringResource(Res.string.share_link_needs_drive)
-    else -> stringResource(Res.string.share_link_sub)
+    ShareNeed.Ready -> stringResource(Res.string.share_link_sub)
+    // Still asked (the core can be busy with a synchronisation): not a ready-looking row whose
+    // tap does nothing.
+    null -> stringResource(Res.string.share_link_checking)
 }
 
 /** Share Drive files: to another app, as a link, or as mail attachment. */
@@ -174,7 +177,7 @@ fun ShareSheet(state: AppState, files: List<DriveItemUi>, onDismiss: () -> Unit,
                     leading = { IconTile(Icons.Filled.Link, paletteColor(5)) },
                     end = { ChevronEnd() },
                     divider = onlyFiles,
-                    enabled = need != ShareNeed.Drive,
+                    enabled = need != null && need != ShareNeed.Drive,
                 ) {
                     when (need) {
                         ShareNeed.Ready -> linkMode = true

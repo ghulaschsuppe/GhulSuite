@@ -1584,6 +1584,7 @@
     <string name="server_module_old">Server module: version %1$s, version %2$s is available</string>
     <string name="share_link_needs_module">Needs the GhulSuite server module. Tap to install it.</string>
     <string name="share_link_needs_drive">Share links come from GhulDrive’s server. Set up GhulDrive first.</string>
+    <string name="share_link_checking">Checking GhulDrive’s server …</string>
     <string name="share_once">1× (one-time)</string>
     <string name="share_title_label">Title of the link</string>
     <string name="share_each_file">The recipient gets every file on its own.</string>

@@ -24,7 +24,7 @@ Dieser Bericht fasst alle bisherigen Runden zusammen und sagt ehrlich, was offen
 | 15.11.2026 | Runde 9: Teilen ohne Kopie (Schlüssel je Datei, Server-Modul ohne Geheimnis und ohne Schreibzugriff übers Web), Mail-Archiv als Kopie in GhulDrive, Löschen nur mit Rückfrage | 30 Funde (F106 bis F135), behoben; F110 bis F117 aus eigenen, unabhängigen Durchsichten der Runde |
 | 16.11.2026 | Runde 10: Autofill und Foto-Sicherung gestrichen, mehrere Speicherorte für GhulDrive (getrennt von der Synchronisation, Entfernen beendet die Freigabelinks, Löschen der Dateien nur auf ausdrückliche Wahl) | 11 Funde (F136 bis F146), erledigt; F138 bis F144 aus der unabhängigen Durchsicht, F145 und F146 aus den Emulator-Läufen |
 
-**In Zahlen:** 146 Funde aus den Testrunden (F01 bis F146), alle behoben bzw. entschieden (F24 ist gewollt). Alle Punkte des Audits
+**In Zahlen:** 147 Funde aus den Testrunden (F01 bis F146 und F149), alle behoben bzw. entschieden (F24 ist gewollt). Alle Punkte des Audits
 vom 13.11.2026 sind erledigt (B1 bis B18, L1, L3, L5, L7, L10, L13) oder begründet entschieden (L4/B17). 263 Testfunktionen im Kern mit über einer Million Einzelprüfungen je Lauf, 64 Angriffe auf das
 PHP-Modul, Nachtlauf mit langem Fuzzing, Monkey im Emulator und Server mit kaputtem TLS.
 

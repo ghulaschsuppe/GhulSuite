@@ -284,6 +284,34 @@ class InteractionTest {
         assertTrue(net.calls.last { it.startsWith("shareDrive:") }.contains(":Unterlagen:7:0:false"), net.calls.toString())
     }
 
+    /**
+     * F149: while the core has not yet said whether the server module is there (busy with a
+     * synchronisation), "Share link" says it is checking and cannot be tapped; then it says what
+     * is missing.
+     */
+    @Test
+    fun shareSheetWaitsForTheModuleCheck() = app(setup = { tab = Tab.DRIVE }, prepare = {
+        (net as FakeNet).missingModule = "s2"
+        (net as FakeNet).missingModuleGate = java.util.concurrent.CountDownLatch(1)
+    }) { state, fake ->
+        val net = fake.net as FakeNet
+        longPress("Notizen.txt")
+        waitFor("1 selected")
+        desc("Share").performClick()
+        waitFor("Checking GhulDrive’s server …")
+        assertFalse(shown("Needs the GhulSuite server module. Tap to install it."))
+        assertFalse(shown("Encrypted link with expiry, download limit and password"))
+        // A disabled row has no click action.
+        assertTrue(onAllNodes(hasText("Share link") and hasClickAction()).fetchSemanticsNodes().isEmpty())
+        shot("share-sheet-checking")
+        net.missingModuleGate?.countDown()
+        waitFor("Needs the GhulSuite server module. Tap to install it.")
+        assertFalse(shown("Checking GhulDrive’s server …"))
+        text("Share link").performClick()
+        waitFor("Install and check")
+        assertEquals(Screen.ModuleInstall("s2"), state.stack.lastOrNull())
+    }
+
     /** Without the module on GhulDrive's server, "Share link" says so and opens its installation. */
     @Test
     fun shareSheetWithoutModuleOffersInstallation() = app(setup = { tab = Tab.DRIVE }, prepare = { (net as FakeNet).missingModule = "s2" }) { state, _ ->

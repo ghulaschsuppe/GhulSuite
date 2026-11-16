@@ -100,7 +100,12 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
     override suspend fun serverModuleRemove(serverId: String) { calls += "moduleRemove:$serverId" }
     /** What share links still need (null: nothing; "": GhulDrive; else the server for the module). */
     var missingModule: String? = if (configured) null else ""
-    override suspend fun shareMissingModule() = missingModule
+    /** Holds back the answer to "is the server module there?" (a core busy with a synchronisation). */
+    @Volatile var missingModuleGate: java.util.concurrent.CountDownLatch? = null
+    override suspend fun shareMissingModule(): String? {
+        missingModuleGate?.let { gate -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { gate.await(30, java.util.concurrent.TimeUnit.SECONDS) } }
+        return missingModule
+    }
     /** The links containing GhulDrive items: "Steuer 2025.pdf" (f1) is shared. */
     /** Holds the lookup of share links back (the core busy with a synchronisation) until released. */
     var shareLinksGate: java.util.concurrent.CountDownLatch? = null
