@@ -855,7 +855,7 @@ fn mail_archive_to_drive_against_imap_and_sftp() {
         password: None,
         base: format!("{sroot}/archive-drive-{run}"),
     };
-    let id = saved(s.save_server(input, Some(hostkey)).unwrap());
+    let id = saved(s.save_server(input.clone(), Some(hostkey.clone())).unwrap());
     s.drive_setup(id).unwrap();
 
     // "Older than a week": the three old ones (received in 2024 and 2025), not today's.
@@ -963,7 +963,24 @@ fn mail_archive_to_drive_against_imap_and_sftp() {
     assert_eq!(s.mail_archive_folder(None).unwrap(), None);
     assert_eq!(s.mail_archive_to_drive(account.clone(), "INBOX".into(), old[0]).unwrap(), MailArchived::Saved);
     assert_ne!(s.mail_archive_folder(None).unwrap(), Some(root));
+
+    // The archive's own storage location: mails go there while another one is shown.
+    let second = saved(
+        s.drive_save_server(ServerInput { base: format!("{sroot}/archive-drive-{run}-b"), ..input }, Some(hostkey))
+            .unwrap(),
+    );
+    let first = s.drive_storage().unwrap().server.unwrap().id;
+    s.drive_set_archive_location(second.clone()).unwrap();
+    let before = s.drive_list(None, true).unwrap();
+    assert_eq!(s.mail_archive_to_drive(account.clone(), "INBOX".into(), old[1]).unwrap(), MailArchived::Saved);
+    assert_eq!(s.drive_storage().unwrap().server.unwrap().id, first, "the shown location stays");
+    assert_eq!(s.drive_list(None, true).unwrap(), before, "nothing new where the archive does not go");
+    assert!(s.mail_archive_folder(None).unwrap().is_some(), "the archive is found in its location");
+    s.drive_switch_location(second).unwrap();
+    let top: Vec<String> = s.drive_list(None, true).unwrap().into_iter().map(|i| i.name).collect();
+    assert_eq!(top, vec!["Mail-Archiv"]);
     let _ = std::fs::remove_dir_all(format!("{sroot}/archive-drive-{run}"));
+    let _ = std::fs::remove_dir_all(format!("{sroot}/archive-drive-{run}-b"));
 }
 
 #[test]
@@ -1893,9 +1910,10 @@ fn share_links_over_sftp_through_the_module() {
     let id = saved(s.save_server(input, Some(hostkey)).unwrap());
     s.drive_setup(id.clone()).unwrap();
     s.set_sync_server(Some(id.clone())).unwrap();
+    let loc = s.drive_locations().unwrap()[0].server.id.clone();
     let root = std::path::PathBuf::from(&root);
     let web = format!("{}/web-{run}/public_html", root.display());
-    share_through_module(&s, &id, &web, std::path::Path::new(&web), &root.join(format!("suite-{run}")));
+    share_through_module(&s, &loc, &web, std::path::Path::new(&web), &root.join(format!("suite-{run}")));
     let _ = std::fs::remove_dir_all(root.join(format!("web-{run}")));
     let _ = std::fs::remove_dir_all(root.join(format!("suite-{run}")));
 
@@ -1975,14 +1993,16 @@ fn ftps_storage_drive_and_share_links() {
     // Folder browsing for the module's folder; the module over FTPS, then share links.
     assert!(s.server_browse(id.clone(), String::new()).unwrap().contains(&cfg.base));
     let rel = format!("{}-web", cfg.base);
-    share_through_module(&s, &id, &rel, &home.join(&rel), &home.join(&cfg.base));
+    let loc = s.drive_locations().unwrap()[0].server.id.clone();
+    share_through_module(&s, &loc, &rel, &home.join(&rel), &home.join(&cfg.base));
 }
 
 #[test]
-fn drive_storage_follows_sync_or_uses_its_own_server() {
+fn drive_locations_are_separate_from_the_synchronisation() {
     use super::drive::DriveMode;
     use super::servers::{ServerFolders, ServerInput, ServerKind};
     let Some(cfg) = crate::net::tests::ftps_test_config("drive-modes") else { return };
+    let home = std::env::var("GHUL_TEST_DIR").map(|d| std::path::PathBuf::from(d).join("ftp-home")).unwrap();
     let d = Dirs::new("drive-modes");
     let s = d.suite();
     let kf = generate_keyfile();
@@ -2006,35 +2026,71 @@ fn drive_storage_follows_sync_or_uses_its_own_server() {
         ServerFolders::Folders { folders } => assert!(folders.contains(&cfg.base)),
         other => panic!("{other:?}"),
     }
-    // "Like synchronisation" needs synchronisation.
     let st = s.drive_storage().unwrap();
     assert_eq!((st.mode, st.sync_available), (DriveMode::None, false));
     assert!(matches!(s.drive_use_sync(), Err(GhulError::NotConfigured)));
+
+    // An older Drive that used the synchronisation's server: that server becomes a storage
+    // location of Drive's own (a copy in the Drive file). The synchronisation keeps its server
+    // and can drop it; Drive keeps working.
     s.set_sync_server(Some(sync_id.clone())).unwrap();
     s.drive_use_sync().unwrap();
-    let st = s.drive_storage().unwrap();
-    assert_eq!((st.mode, st.server.map(|x| x.id)), (DriveMode::Sync, Some(sync_id.clone())));
-    let f = upload(&s, None, "Plan.txt", b"Plan A");
-
-    // Before the sync server goes: Drive keeps that server as its own, in the Drive file.
-    s.drive_detach_from_sync().unwrap();
+    let first = s.drive_locations().unwrap();
+    assert_eq!(first.len(), 1);
+    assert!(first[0].active && first[0].archive);
+    let first_id = first[0].server.id.clone();
+    assert_ne!(first_id, sync_id);
+    assert_eq!(s.drive_storage().unwrap().mode, DriveMode::Own);
+    let plan = upload(&s, None, "Plan.txt", b"Plan A");
     s.remove_server(sync_id.clone()).unwrap();
-    let st = s.drive_storage().unwrap();
-    assert_eq!(st.mode, DriveMode::Own);
-    let own = st.server.unwrap().id;
-    assert_ne!(own, sync_id);
-    assert_eq!(download(&s, &f), b"Plan A");
-    assert!(s.list_servers().unwrap().is_empty(), "Drive's server is not offered for synchronisation");
-    assert!(s.remove_server(own.clone()).is_err(), "Drive's server is changed in GhulDrive");
+    assert!(s.list_servers().unwrap().is_empty(), "Drive's locations are not offered for synchronisation");
+    assert!(s.remove_server(first_id.clone()).is_err(), "a location is removed in GhulDrive");
+    assert_eq!(download(&s, &plan), b"Plan A");
 
-    // A different own server replaces the earlier one; it survives locking.
+    // A second location is added next to it; the active one stays.
     let other = format!("{}-b", cfg.base);
-    let new_id = saved(s.drive_save_server(input(&other), Some(fp)).unwrap());
-    s.lock();
-    s.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
-    let st = s.drive_storage().unwrap();
-    assert_eq!((st.mode, st.server.map(|x| x.id)), (DriveMode::Own, Some(new_id)));
+    let second_id = saved(s.drive_save_server(input(&other), Some(fp)).unwrap());
+    let locs = s.drive_locations().unwrap();
+    assert_eq!(
+        locs.iter().map(|l| (l.server.id.clone(), l.active)).collect::<Vec<_>>(),
+        vec![(first_id.clone(), true), (second_id.clone(), false)]
+    );
+    assert!(home.join(&other).join("drive/index.ghldrv").exists(), "checked when added");
+
+    // Switching shows the other location's files; switching back the first ones.
+    s.drive_switch_location(second_id.clone()).unwrap();
     assert!(s.drive_list(None, true).unwrap().is_empty(), "a fresh Drive on the other folder");
+    let memo = upload(&s, None, "Notiz.txt", b"Zweiter Ort");
+    s.lock();
+    s.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
+    assert_eq!(s.drive_storage().unwrap().server.map(|x| x.id), Some(second_id.clone()), "survives locking");
+    s.drive_switch_location(first_id.clone()).unwrap();
+    let names: Vec<String> = s.drive_list(None, true).unwrap().into_iter().map(|i| i.name).collect();
+    assert_eq!(names, vec!["Plan.txt"]);
+    assert!(s.drive_switch_location("unbekannt".into()).is_err());
+
+    // The mail archive's location is chosen on its own.
+    s.drive_set_archive_location(second_id.clone()).unwrap();
+    let archive: Vec<bool> = s.drive_locations().unwrap().iter().map(|l| l.archive).collect();
+    assert_eq!(archive, vec![false, true]);
+
+    // Removing with the files: everything of GhulDrive on that server goes.
+    s.drive_remove_location(second_id.clone(), true).unwrap();
+    assert!(files_under(&home.join(&other).join("drive")).is_empty());
+    assert_eq!(s.drive_locations().unwrap().len(), 1);
+    assert!(s.drive_locations().unwrap()[0].archive, "the archive moves to the remaining location");
+    let _ = memo;
+
+    // Removing the active one without the files: Drive has no location any more, the files
+    // stay on the server and come back when the location is added again.
+    s.drive_remove_location(first_id.clone(), false).unwrap();
+    assert!(s.drive_locations().unwrap().is_empty());
+    assert_eq!(s.drive_storage().unwrap().mode, DriveMode::None);
+    assert!(home.join(&cfg.base).join("drive/index.ghldrv").exists(), "files stay on the server");
+    let again = saved(s.drive_save_server(input(&cfg.base), Some(cfg.cert.clone().unwrap())).unwrap());
+    assert_eq!(s.drive_storage().unwrap().server.map(|x| x.id), Some(again));
+    let names: Vec<String> = s.drive_list(None, true).unwrap().into_iter().map(|i| i.name).collect();
+    assert_eq!(names, vec!["Plan.txt"]);
 }
 
 #[test]
@@ -2093,9 +2149,28 @@ fn module_suite(name: &str) -> Option<ModuleSuite> {
     };
     let id = saved(s.save_server(input, Some(hostkey)).unwrap());
     s.drive_setup(id.clone()).unwrap();
+    // GhulDrive works on a storage location of its own (a copy of that server): the module there.
+    let id = s.drive_locations().unwrap()[0].server.id.clone();
     let web = format!("{root}/{name}-web-{run}");
     let (php, _) = serve_module(&s, &id, &web, std::path::Path::new(&web))?;
     Some(ModuleSuite { _dirs: d, s, php, places: vec![base.into(), web.into()] })
+}
+
+/// Removing a storage location ends its share links first (also without deleting its files).
+#[test]
+fn removing_a_location_ends_its_share_links() {
+    let Some(m) = module_suite("remove-location") else { return };
+    let s = &m.s;
+    let file = upload(s, None, "Vertrag.pdf", b"%PDF-1.7 Vertrag");
+    let link = s.share_drive(vec![file], None, share_opts()).unwrap();
+    assert!(open_link(&link.url, None).is_some());
+    let loc = s.drive_locations().unwrap()[0].server.id.clone();
+    s.drive_remove_location(loc, false).unwrap();
+    assert!(s.share_list().unwrap().is_empty());
+    assert!(open_link(&link.url, None).is_none(), "the link has ended");
+    let base = &m.places[0];
+    assert!(base.join("drive/index.ghldrv").exists(), "the files stay on the server");
+    assert!(!base.join(format!("shares/{}.json", link.id)).exists());
 }
 
 /// The way the app puts Drive files into a mail: decrypted file as attachment and a share link in

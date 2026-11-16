@@ -15,6 +15,7 @@
 //! login shared as text) gets blocks of its own, deleted with the share.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
@@ -309,9 +310,15 @@ impl GhulSuite {
     /// `ShareNotDeleted` if its server is no longer GhulDrive's (B14: never report a link as
     /// gone while it may still work).
     fn share_remove(&self, o: &mut Open, s: &StoredShare) -> Result<()> {
-        if self.drive_server(o).as_deref() != Some(s.server.as_str()) {
+        // On the storage location it was made on (also while another one is active).
+        let loc = self.drive_location_of(o, &s.server);
+        if !servers::drive_servers(o).iter().any(|x| x.id == loc) {
             return Err(GhulError::ShareNotDeleted);
         }
+        super::drive::at_location(Some(loc), || self.share_remove_here(o, s))
+    }
+
+    fn share_remove_here(&self, o: &mut Open, s: &StoredShare) -> Result<()> {
         let fs = self.drive_fs(o)?;
         // Its blocks: those that no file uses any more (deleted or changed since, or content
         // that never was in GhulDrive) go with it, unless another share still hands them out.
@@ -330,6 +337,19 @@ impl GhulSuite {
             fs.delete(&super::drive::block_path(b))?;
         }
         Ok(())
+    }
+
+    /// Ends every share made on the storage location `id` (before it is removed). When its
+    /// server cannot be reached, nothing is ended and the error says so.
+    pub(super) fn shares_end_on_location(&self, o: &mut Open, id: &str) -> Result<()> {
+        let mine: Vec<StoredShare> =
+            shares(o).into_iter().filter(|s| self.drive_location_of(o, &s.server) == id).collect();
+        let mut gone = Vec::new();
+        for s in &mine {
+            self.share_remove(o, s)?;
+            gone.push(s.id.clone());
+        }
+        self.forget_shares(o, &gone)
     }
 
     /// Removes shares from the list (and marks them deleted for the other devices).
@@ -409,24 +429,39 @@ impl GhulSuite {
         self.with_open(|o| {
             let now = now_ms();
             let list = shares(o);
-            let drive = self.drive_server(o);
-            let ours = |s: &StoredShare| drive.as_deref() == Some(s.server.as_str());
-            let fs = if list.iter().any(ours) { self.drive_fs(o).ok() } else { None };
+            let own: Vec<String> = servers::drive_servers(o).into_iter().map(|x| x.id.clone()).collect();
+            // One connection per storage location (a location that cannot be reached: -1).
+            let mut conns: BTreeMap<String, Option<Arc<dyn RemoteFs>>> = BTreeMap::new();
             let mut out = Vec::new();
             let mut gone = Vec::new();
             for s in &list {
-                let state = match &fs {
-                    Some(fs) if ours(s) => server_state(fs.as_ref(), s, now).ok(),
-                    _ => None,
+                let loc = self.drive_location_of(o, &s.server);
+                // The app shows a share with the location it belongs to.
+                let with_loc = |mut i: ShareInfo| {
+                    i.server_id = loc.clone();
+                    i
                 };
+                if !own.contains(&loc) {
+                    out.push(with_loc(info(s, -1)));
+                    continue;
+                }
+                let fs = match conns.get(&loc) {
+                    Some(fs) => fs.clone(),
+                    None => {
+                        let fs = super::drive::at_location(Some(loc.clone()), || self.drive_fs(o)).ok();
+                        conns.insert(loc.clone(), fs.clone());
+                        fs
+                    }
+                };
+                let state = fs.and_then(|fs| server_state(fs.as_ref(), s, now).ok());
                 match state {
                     Some(None) => {
                         if self.share_remove(o, s).is_ok() {
                             gone.push(s.id.clone());
                         }
                     }
-                    Some(Some(count)) => out.push(info(s, count)),
-                    None => out.push(info(s, -1)),
+                    Some(Some(count)) => out.push(with_loc(info(s, count))),
+                    None => out.push(with_loc(info(s, -1))),
                 }
             }
             self.forget_shares(o, &gone)?;

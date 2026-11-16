@@ -460,7 +460,7 @@ pub struct ModuleInstalled {
     pub checks: Vec<ModuleCheck>,
 }
 
-const MODULE_FILE: &str = "ghulsuite.php";
+pub(super) const MODULE_FILE: &str = "ghulsuite.php";
 /// Detail of the `folder` step when PHP can read the GhulSuite folder but not write there.
 pub const MODULE_NO_WRITE: &str = "no-write";
 
