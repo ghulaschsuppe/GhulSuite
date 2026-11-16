@@ -74,9 +74,14 @@ tools/                 Testserver (SFTP/IMAP/SMTP), Prüfskripte, Emulator-Skrip
   `server` und `mail` laufen gegen echte Testserver, die absichtlich langsam antworten (`tools/slow-servers.sh`);
   danach wird geprüft, dass dort nur Verschlüsseltes liegt. Von Hand für jeden Branch:
   `.github/workflows/emulator.yml` („Run workflow“, nutzt die zuletzt gebaute APK des Branches).
-- Uploads auf den Testserver des Inhabers laufen **nur im Original-Repository** und nie bei Pull Requests.
+- **Kein doppelter Lauf:** Ein Push auf einen Arbeits-Branch mit offenem Pull Request startet in `android.yml`
+  keine Jobs; der Lauf des Pull Requests prüft dieselben Commits und lädt sie hoch. Ohne Pull Request sowie auf
+  `main` und `dev` läuft der Push wie gewohnt.
+- Uploads auf den Testserver des Inhabers laufen **nur im Original-Repository**: bei Pushes und bei Pull Requests
+  aus diesem Repository (dieselbe Vertrauensstufe wie ein Push), **nie bei Pull Requests aus Forks**.
   Ziel ist für `main` der Ordner `ghulsuite/` (Testseiten) bzw. `ghulsuite/download/` (App-Pakete), für jeden
-  anderen Branch `ghulsuite/branches/<branch>/` bzw. `…/download/`; so bleibt `ghulsuite/download/` der stabile Stand.
+  anderen Branch `ghulsuite/branches/<branch>/` bzw. `…/download/` (im Lauf eines Pull Requests der Ordner seines
+  Branches); so bleibt `ghulsuite/download/` der stabile Stand.
 - **Secrets** (vom Inhaber selbst eingetragen, niemals im Repository): `FTP_SERVER`, `FTP_USER`, `FTP_PASSWORD`,
   `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`.
 - **Signatur:** Der Android-Schlüssel kommt nur aus den Secrets (`GHUL_KEYSTORE_FILE`, `GHUL_KEYSTORE_PASSWORD`,

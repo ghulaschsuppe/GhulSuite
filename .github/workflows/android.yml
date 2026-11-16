@@ -13,6 +13,8 @@ on:
 
 permissions:
   contents: read
+  # Only to ask whether a pushed branch has an open pull request (job "changes").
+  pull-requests: read
 
 concurrency:
   group: android-${{ github.ref }}
@@ -88,7 +90,19 @@ jobs:
       - id: c
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
         run: |
+          # A push to a working branch with an open pull request: the run of the pull request
+          # checks the same commits and uploads them (see below), so this run does nothing. Before,
+          # every push ran everything twice side by side. main and dev always run on push.
+          if [ "$EVENT" = push ] && [ "$GITHUB_REF_NAME" != main ] && [ "$GITHUB_REF_NAME" != dev ]; then
+            open=$(gh api -X GET "repos/$GITHUB_REPOSITORY/pulls" -f state=open -f head="$GITHUB_REPOSITORY_OWNER:$GITHUB_REF_NAME" -q 'length' 2> /dev/null || echo 0)
+            if [ "${open:-0}" != 0 ]; then
+              echo "Offener Pull Request für $GITHUB_REF_NAME: dessen Lauf prüft und lädt hoch, dieser Lauf entfällt."
+              echo "core=false" >> "$GITHUB_OUTPUT"; echo "code=false" >> "$GITHUB_OUTPUT"; exit 0
+            fi
+          fi
           if [ -z "$BASE" ] || [ "$BASE" = 0000000000000000000000000000000000000000 ] || ! git cat-file -e "$BASE^{commit}" 2> /dev/null; then
             echo "core=true" >> "$GITHUB_OUTPUT"; echo "code=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
@@ -365,7 +379,8 @@ jobs:
 
   windows-upload:
     name: Windows-Pakete nach dev hochladen
-    if: github.event_name != 'pull_request' && github.repository_owner == 'ghulaschsuppe'
+    # Also for pull requests from this repository (same trust as a push), never from forks.
+    if: github.repository_owner == 'ghulaschsuppe' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     needs: windows
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -379,9 +394,11 @@ jobs:
         id: dest
         shell: bash
         run: |
-          # main -> ghulsuite/, every other branch -> ghulsuite/branches/<branch>/
-          if [ "$GITHUB_REF_NAME" = "main" ]; then dir=ghulsuite; else
-            b=$(printf '%s' "$GITHUB_REF_NAME" | tr -c 'A-Za-z0-9._-' '-'); dir="ghulsuite/branches/$b"; fi
+          # main -> ghulsuite/, every other branch -> ghulsuite/branches/<branch>/ (in the run of a
+          # pull request: the folder of its branch, as in the run of a push).
+          branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          if [ "$branch" = "main" ]; then dir=ghulsuite; else
+            b=$(printf '%s' "$branch" | tr -c 'A-Za-z0-9._-' '-'); dir="ghulsuite/branches/$b"; fi
           echo "dir=$dir" >> "$GITHUB_OUTPUT"
 
       - name: Upload auf den eigenen Testserver (Ordner ghulsuite/download bzw. Branch-Ordner)
@@ -451,9 +468,9 @@ jobs:
           exit $rc
 
       # The signing key only exists as a secret; the file lives in the runner's temp folder for
-      # this job only. Without the secret (forks, pull requests) the APK gets a throwaway key.
+      # this job only. Without the secret (pull requests from forks) the APK gets a throwaway key.
       - name: Signaturschlüssel aus den Secrets
-        if: ${{ !cancelled() && github.event_name != 'pull_request' && github.repository_owner == 'ghulaschsuppe' }}
+        if: ${{ !cancelled() && github.repository_owner == 'ghulaschsuppe' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -519,13 +536,15 @@ jobs:
         id: dest
         shell: bash
         run: |
-          # main -> ghulsuite/, every other branch -> ghulsuite/branches/<branch>/
-          if [ "$GITHUB_REF_NAME" = "main" ]; then dir=ghulsuite; else
-            b=$(printf '%s' "$GITHUB_REF_NAME" | tr -c 'A-Za-z0-9._-' '-'); dir="ghulsuite/branches/$b"; fi
+          # main -> ghulsuite/, every other branch -> ghulsuite/branches/<branch>/ (in the run of a
+          # pull request: the folder of its branch, as in the run of a push).
+          branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          if [ "$branch" = "main" ]; then dir=ghulsuite; else
+            b=$(printf '%s' "$branch" | tr -c 'A-Za-z0-9._-' '-'); dir="ghulsuite/branches/$b"; fi
           echo "dir=$dir" >> "$GITHUB_OUTPUT"
 
       - name: Upload auf den eigenen Testserver (Ordner ghulsuite/download bzw. Branch-Ordner)
-        if: github.event_name != 'pull_request' && github.repository_owner == 'ghulaschsuppe'
+        if: github.repository_owner == 'ghulaschsuppe' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         uses: ./.github/actions/ftps-upload
         with:
           server: ${{ secrets.FTP_SERVER }}
