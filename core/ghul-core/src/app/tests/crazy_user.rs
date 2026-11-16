@@ -359,7 +359,6 @@ fn run(seed: u64, steps: usize) -> Stats {
             }
             28 => {
                 st.note("search", s.drive_search(rng.pick(SILLY).unwrap().to_string()));
-                st.note("autofill", s.autofill_logins(Some(rng.pick(SILLY).unwrap().to_string()), None, None));
                 st.note(
                     "occurrences",
                     s.cal_occurrences("2026-01-01".into(), "2028-01-01".into(), "DE-BY".into(), "de".into()),

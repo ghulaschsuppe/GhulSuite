@@ -7,9 +7,6 @@
 
     <!-- Only for scanning 2FA QR codes; asked when the scanner is opened. -->
     <uses-permission android:name="android.permission.CAMERA" />
-    <!-- Only for the photo backup of GhulDrive (asked when it is switched on). -->
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <!-- Own servers (SFTP), GhulDrive and GhulMail. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -30,14 +27,6 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- App updates from the project's signed releases (AndroidUpdater); not used by store installs. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-
-    <!-- Autofill: read the signing certificate of the app asking for a login (fake apps must not get it). -->
-    <queries>
-        <intent>
-            <action android:name="android.intent.action.MAIN" />
-            <category android:name="android.intent.category.LAUNCHER" />
-        </intent>
-    </queries>
 
     <application
         android:name=".GhulApplication"
@@ -178,23 +167,6 @@
             </intent-filter>
             <meta-data android:name="android.service.quicksettings.TOGGLEABLE_TILE" android:value="false" />
         </service>
-        <!-- Autofill: offers logins in other apps and browsers; unlocking and picking happen in our own window. -->
-        <service
-            android:name=".autofill.GhulAutofillService"
-            android:exported="true"
-            android:label="@string/app_name"
-            android:permission="android.permission.BIND_AUTOFILL_SERVICE">
-            <intent-filter>
-                <action android:name="android.service.autofill.AutofillService" />
-            </intent-filter>
-            <meta-data android:name="android.autofill" android:resource="@xml/autofill_service" />
-        </service>
-
-        <activity
-            android:name=".autofill.AutofillAuthActivity"
-            android:excludeFromRecents="true"
-            android:exported="false"
-            android:windowSoftInputMode="adjustResize" />
         <!-- Decrypted copies of GhulDrive files handed to other apps (deleted on lock). -->
         <provider
             android:name="androidx.core.content.FileProvider"

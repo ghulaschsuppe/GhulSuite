@@ -95,8 +95,11 @@ import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Sync
-import de.danerd.ghulsuite.model.DriveModeUi
-import de.danerd.ghulsuite.model.DriveStorageUi
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.ui.platform.testTag
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material.icons.filled.SwapHoriz
 
 /** Folder path from the root: (id, name). */
 private data class Crumb(val id: String?, val name: String)
@@ -125,47 +128,41 @@ fun DriveScreen(state: AppState, padding: PaddingValues) {
     }
 }
 
-/** GhulDrive without storage yet: where the files go, set up right here (#24). */
+/** GhulDrive without storage yet: its first storage location, set up right here (#24). */
 @Composable
 private fun DriveSetup(state: AppState) {
-    val net = state.backend.net
-    var storage by remember { mutableStateOf<DriveStorageUi?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
     var own by remember { mutableStateOf(false) }
-    LaunchedEffect(state.liveRevision()) { storage = catching { net.driveStorage() }.getOrNull() }
-    val syncOn = storage?.syncAvailable == true
     ScreenColumn {
         BusyBanner(state)
         AreaSetupCard(Tab.DRIVE, stringResource(Res.string.drive_setup_title), stringResource(Res.string.drive_setup_text))
-        if (storage?.mode == DriveModeUi.SYNC) Banner(Icons.Filled.Info, stringResource(Res.string.drive_sync_gone))
         SectionLabel(stringResource(Res.string.wz_drive_where))
         ListCard {
-            if (syncOn) {
-                ListRow(stringResource(Res.string.drive_like_sync), stringResource(Res.string.drive_like_sync_sub),
-                    leading = { IconTile(Icons.Filled.Sync, areaColor(Tab.DRIVE)) }) {
-                    state.run(onError = { error = it }, block = { net.driveUseSync() }) { state.changed() }
-                }
-            }
             ListRow(stringResource(Res.string.wz_own_server), stringResource(Res.string.drive_own_sub),
-                leading = { IconTile(Icons.Filled.Dns, areaColor(Tab.DRIVE)) }, divider = syncOn) { own = true }
+                leading = { IconTile(Icons.Filled.Dns, areaColor(Tab.DRIVE)) }) { own = true }
         }
-        if (!syncOn) HintText(stringResource(Res.string.drive_sync_tip))
-        ErrorText(error)
     }
     if (own) DriveServerSheet(state) { own = false }
 }
 
-/** Sheet with the server form for GhulDrive's own server (stored in the Drive file). */
+/**
+ * Sheet with the server form for one of GhulDrive's storage locations (stored in the Drive
+ * file). The first one becomes the active location; a later one is added next to it.
+ */
 @Composable
-fun DriveServerSheet(state: AppState, onDone: () -> Unit) {
+fun DriveServerSheet(state: AppState, adding: Boolean = false, afterSave: (suspend () -> Unit)? = null, onDone: () -> Unit) {
     val net = state.backend.net
     val form = rememberServerForm()
-    val done = stringResource(Res.string.drive_set_up)
-    GhulSheet(onDone, stringResource(Res.string.drive_own_title)) {
+    val done = stringResource(if (adding) Res.string.drive_location_added else Res.string.drive_set_up)
+    GhulSheet(onDone, stringResource(if (adding) Res.string.drive_location_add else Res.string.drive_own_title)) {
         ServerSetup(state, form, { input, fp -> net.driveSaveServer(input, fp) }) {
             state.message(done)
-            state.changed()
             onDone()
+            // What the page shows is read first: the synchronisation that follows holds the core,
+            // and on a slow server the new location only appeared after it (emulator run of PR #41).
+            state.scope.launch {
+                afterSave?.invoke()
+                state.changed()
+            }
         }
     }
 }
@@ -194,6 +191,9 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
     var loaded by remember { mutableStateOf(false) }
     var sharing by remember { mutableStateOf<List<DriveItemUi>?>(null) }
     var driveServer by remember { mutableStateOf<ServerUi?>(null) }
+    /** All of GhulDrive's storage locations; with more than one, the card offers to switch. */
+    var locations by remember { mutableStateOf<List<de.danerd.ghulsuite.model.DriveLocationUi>>(emptyList()) }
+    var choosing by remember { mutableStateOf(false) }
     /** The core answered and Drive's storage names no server. */
     var storageWithout by remember { mutableStateOf(false) }
     /** "" = folders, or one of the quick views: recent, fav, offline, trash. */
@@ -206,18 +206,30 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
     var trashTick by remember { mutableStateOf(0) }
     var emptyTrash by remember { mutableStateOf(false) }
     PlatformBackHandler(enabled = LocalTabActive.current && view.isNotEmpty() && path.size == 1) { view = "" }
+    // Long press selects (as in every list); the bar on top acts on the chosen files.
+    val selected = rememberListSelection()
     LaunchedEffect(status.serverId, state.syncing, state.liveRevision()) {
         // Drive's own server is not in the suite's list: the storage of Drive names it in every case.
         // Read again after every synchronisation and change; a failed read keeps what is known
         // (bug: "No server yet" next to the files after a restart, until the app restarted again).
-        catching { net.driveStorage() }.onSuccess { driveServer = it.server; storageWithout = it.server == null }
+        catching { net.driveLocations() }.onSuccess { l ->
+            locations = l
+            val now = l.firstOrNull { it.active }?.server
+            // Switched elsewhere (header, Options): the folders of the old location mean nothing here.
+            if (driveServer != null && now?.id != driveServer?.id) {
+                path = listOf(Crumb(null, root))
+                view = ""
+                selected.clear()
+                reload++
+            }
+            driveServer = now
+            storageWithout = driveServer == null
+        }
     }
     // Drive is set up (it has a server id) and only its name may still be loading, unless the core
     // said that Drive's server is gone (e.g. removed from the list): then "No server yet".
     val noServer = status.serverId == null || storageWithout
 
-    // Long press selects (as in every list); the bar on top acts on the chosen files.
-    val selected = rememberListSelection()
     val selecting = selected.active
     // Which folder or view the loaded list belongs to: another one is not shown under the new
     // path while it loads (it looked like the inside of the folder just opened).
@@ -455,7 +467,7 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
                 }
                 // Without a server the numbers would say "0 files" next to the files in the list.
                 if (noServer) {
-                    TextButton(onClick = { state.push(Screen.SettingsPage(SetPage.SERVERS)) }) { Text(stringResource(Res.string.drive_choose_server)) }
+                    TextButton(onClick = { state.push(Screen.SettingsPage(SetPage.DRIVE)) }) { Text(stringResource(Res.string.drive_choose_server)) }
                 } else {
                 usage?.let { u ->
                     val total = (u.images + u.videos + u.audio + u.documents + u.other + u.trash + u.versions).coerceAtLeast(1)
@@ -480,6 +492,15 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
                     Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(t.surface3))
                     Text(pluralStringResource(Res.plurals.drive_status, status.files, status.files.toString(), formatSize(status.bytes)), fontSize = 13.sp, color = t.muted)
                 }
+                }
+                // Several locations: a plain button says that there is more than this one (the header's
+                // menu alone was not seen as one).
+                if (locations.size > 1) {
+                    OutlinedButton(onClick = { choosing = true }, modifier = Modifier.fillMaxWidth().testTag("drive_switch_location")) {
+                        Icon(Icons.Filled.SwapHoriz, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(Res.string.drive_switch_location))
+                    }
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -664,6 +685,38 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
             },
             dismissButton = { TextButton(onClick = { emptyTrash = false }) { Text(stringResource(Res.string.a_cancel)) } },
         )
+    }
+    if (choosing) {
+        val switched = stringResource(Res.string.drive_switched)
+        GhulSheet({ choosing = false }, stringResource(Res.string.drive_switch_location)) {
+            SheetList {
+                locations.forEachIndexed { i, l ->
+                    val srv = l.server
+                    PickRow(l.active, Icons.Filled.Dns, 1, srv.name, srv.location.ifBlank { "~/" + srv.base } + "/drive", divider = i > 0, onClick = {
+                        choosing = false
+                        if (!l.active) {
+                            state.run(onError = { error = it }, block = { net.driveSwitchLocation(srv.id) }) {
+                                path = listOf(Crumb(null, root))
+                                view = ""
+                                selected.clear()
+                                state.message(switched.replace("%1\$s", srv.name))
+                                // The other location's files first, then the change is announced: the
+                                // synchronisation that follows holds the core (F145).
+                                state.scope.launch {
+                                    catching { net.driveLocations() }.onSuccess { l ->
+                                        locations = l
+                                        driveServer = l.firstOrNull { it.active }?.server
+                                    }
+                                    catching { net.driveList(null, true) }.onSuccess { items = it; itemsOf = Triple(null, "", false); loaded = true }
+                                    state.changed()
+                                }
+                            }
+                        }
+                    })
+                }
+            }
+            HintText(stringResource(Res.string.drive_switch_hint))
+        }
     }
     if (newFolder) {
         NameDialog(stringResource(Res.string.drive_new_folder), "", onDismiss = { newFolder = false }) { name ->

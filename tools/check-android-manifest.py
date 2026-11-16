@@ -23,12 +23,9 @@ EXPORTED = {
     ".IntentEntryActivity": None,  # mailto, share, .ics, add to calendar (takes only foreign content)
     ".ShareToDriveActivity": None,  # "Save in GhulDrive" (alias of IntentEntryActivity, only foreign content)
     ".LockTileService": "android.permission.BIND_QUICK_SETTINGS_TILE",
-    ".autofill.GhulAutofillService": "android.permission.BIND_AUTOFILL_SERVICE",
 }
 PERMISSIONS = {
     "android.permission.CAMERA",
-    "android.permission.READ_MEDIA_IMAGES",
-    "android.permission.READ_EXTERNAL_STORAGE",
     "android.permission.INTERNET",
     "android.permission.ACCESS_NETWORK_STATE",
     "android.permission.USE_BIOMETRIC",

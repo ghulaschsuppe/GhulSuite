@@ -447,12 +447,13 @@ ihre eigenen Dateien (`.ghldrv`, `.ghlmail`).
 
 | Schlüssel | Inhalt | Synchronisiert |
 |---|---|---|
-| `drive` | `server` (ID, leer bei `use_sync`), `use_sync` (bool: der Server, mit dem dieses Gerät synchronisiert; nur ein Verweis), `key` (32 Byte, Drive-Schlüssel DK), `seen` (Server-ID → höchste gesehene Index-Revision; ein älterer Index wird abgelehnt) | ja |
-| `servers` | höchstens ein eigener Server nur für GhulDrive (Aufbau wie im Suite-Container, auch mit `module`) | ja |
+| `drive` | `server` (ID des **aktiven** Speicherorts), `key` (32 Byte, Drive-Schlüssel DK), `seen` (Speicherort-ID → höchste gesehene Index-Revision; ein älterer Index wird abgelehnt), `archive` (ID des Speicherorts für das Mail-Archiv, leer = der aktive). Früher auch `use_sync` (Verweis auf den Sync-Server dieses Geräts); ein solches GhulDrive wird beim ersten Öffnen zu einem eigenen Speicherort mit der ID hex(HKDF(alte ID, „ghul/v1/drive/location“)[0..8]), auf jedem Gerät dieselbe | ja |
+| `servers` | die Speicherorte von GhulDrive (beliebig viele, Aufbau wie im Suite-Container, auch mit `module`); jeder hat eigene Dateien unter `drive/` und eigene Freigaben unter `shares/` in seinem Ordner | ja |
 | `options` | Optionen des Bereichs, je Schlüssel `{v, at}` (Text, Zeit in ms) | ja |
 
 **GhulMail (`.ghlmail`):** `mail_accounts` (wie oben), `mail_keys`, `mail_contacts`, `mail_cache_key`, `mail_drafts`,
-`mail_outbox`, `options`, `drive_archive` (Knoten-ID des Archivordners in GhulDrive), `archive_auto` (`days`, 0 = aus;
+`mail_outbox`, `options`, `archive_roots` (Speicherort-ID → Knoten-ID des Archivordners dort; davor
+`drive_archive`, eine Knoten-ID, die für den bisherigen Speicherort weiter gelesen wird), `archive_auto` (`days`, 0 = aus;
 `marks`: je „Konto/Ordner“ `[UIDVALIDITY, höchste UID]` der automatischen Läufe; nie über der niedrigsten UID, die seit
 dem Stichtag (einen Tag früher) eingegangen ist, weil UIDs nicht der Datumsfolge entsprechen), siehe Abschnitt 12. **GhulPass, GhulAuth, GhulCal:** `options` in ihren Dateien.
 

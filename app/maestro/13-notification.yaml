@@ -5,10 +5,15 @@ name: Unlocked notification
 ---
 - runFlow: home.yaml
 # Pull down the notification shade.
-- swipe: { start: "50%, 1%", end: "50%, 70%", duration: 400 }
-- extendedWaitUntil:
-    visible: "Tap to open\\. Shake or .Lock. locks immediately\\."
-    timeout: 10000
+# One pull down does not always open the shade on the emulator (right after the app came to the
+# front): pull again while it is not open.
+- retry:
+    maxRetries: 2
+    commands:
+      - swipe: { start: "50%, 1%", end: "50%, 70%", duration: 400 }
+      - extendedWaitUntil:
+          visible: "Tap to open\\. Shake or .Lock. locks immediately\\."
+          timeout: 10000
 - takeScreenshot: 13-notification-shake-on
 - pressKey: back
 - tapOn: { id: "tab-settings" }
@@ -23,10 +28,15 @@ name: Unlocked notification
     element: "Lock by shaking"
     direction: DOWN
 - tapOn: "Lock by shaking"
-- swipe: { start: "50%, 1%", end: "50%, 70%", duration: 400 }
-- extendedWaitUntil:
-    visible: "Tap to open\\. .Lock. locks immediately\\."
-    timeout: 10000
+# One pull down does not always open the shade on the emulator (right after the app came to the
+# front): pull again while it is not open.
+- retry:
+    maxRetries: 2
+    commands:
+      - swipe: { start: "50%, 1%", end: "50%, 70%", duration: 400 }
+      - extendedWaitUntil:
+          visible: "Tap to open\\. .Lock. locks immediately\\."
+          timeout: 10000
 - assertNotVisible: "Tap to open\\. Shake.*"
 - takeScreenshot: 13-notification-shake-off
 - pressKey: back

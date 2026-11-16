@@ -21,10 +21,11 @@ Dieser Bericht fasst alle bisherigen Runden zusammen und sagt ehrlich, was offen
 | 14.11.2026 | Runde 6: Bedienung (U4 bis U15), Mail-Ablauf mit echten Servern im Emulator (B21), neues verschlüsseltes Mail-Archiv mit Prüfung jeder Mail vor dem Löschen beim Anbieter | 4 weitere Funde (F44 bis F47), behoben; nichts offen |
 | 14.11.2026 | Runde 7: Updates aus der App (signierte Prüfsummen, nur GitHub, Kanäle Stabil und Vorab), Gmail vorerst ohne Löschen beim Anbieter | keine Funde; Schutz des Updaters in 4.2 |
 | 14.11.2026 | Runde 8: Website www.ghulsuite.de (keine Cookies, nichts von fremden Servern, Content-Security-Policy), Fehlerberichte aus der App über `report.php` mit Spamschutz (Proof-of-Work, einmalige Beweise, Begrenzung je Adresse und Tag, 20 Angriffsfälle in `tools/test-report-php.py`) | 1 Fund (F48, Wettlauf beim Schreiben gleicher Archiv-Blöcke), behoben |
-| 15.11.2026 | Runde 9: Teilen ohne Kopie (Schlüssel je Datei, Server-Modul ohne Geheimnis und ohne Schreibzugriff übers Web), Mail-Archiv als Kopie in GhulDrive, Löschen nur mit Rückfrage | 27 Funde (F106 bis F132), behoben; F110 bis F117 aus eigenen, unabhängigen Durchsichten der Runde |
+| 15.11.2026 | Runde 9: Teilen ohne Kopie (Schlüssel je Datei, Server-Modul ohne Geheimnis und ohne Schreibzugriff übers Web), Mail-Archiv als Kopie in GhulDrive, Löschen nur mit Rückfrage | 30 Funde (F106 bis F135), behoben; F110 bis F117 aus eigenen, unabhängigen Durchsichten der Runde |
+| 16.11.2026 | Runde 10: Autofill und Foto-Sicherung gestrichen, mehrere Speicherorte für GhulDrive (getrennt von der Synchronisation, Entfernen beendet die Freigabelinks, Löschen der Dateien nur auf ausdrückliche Wahl) | 12 Funde (F136 bis F146, F149), erledigt; F138 bis F144 aus der unabhängigen Durchsicht, F145, F146 und F149 aus den Emulator-Läufen (F148 in einer eigenen Änderung: Testschlüssel der CI); F147: die Synchronisation hält den Kern nicht mehr während der Netzwerkarbeit |
 
-**In Zahlen:** 132 Funde aus den Testrunden (F01 bis F132), alle behoben bzw. entschieden (F24 ist gewollt). Alle Punkte des Audits
-vom 13.11.2026 sind erledigt (B1 bis B18, L1, L3, L5, L7, L10, L13) oder begründet entschieden (L4/B17). 260 Testfunktionen im Kern mit über einer Million Einzelprüfungen je Lauf, 64 Angriffe auf das
+**In Zahlen:** 148 Funde aus den Testrunden (F01 bis F147 und F149), alle behoben bzw. entschieden (F24 ist gewollt). Alle Punkte des Audits
+vom 13.11.2026 sind erledigt (B1 bis B18, L1, L3, L5, L7, L10, L13) oder begründet entschieden (L4/B17). 268 Testfunktionen im Kern mit über einer Million Einzelprüfungen je Lauf, 64 Angriffe auf das
 PHP-Modul, Nachtlauf mit langem Fuzzing, Monkey im Emulator und Server mit kaputtem TLS.
 
 ## 2. Wogegen GhulSuite schützt
@@ -36,7 +37,7 @@ PHP-Modul, Nachtlauf mit langem Fuzzing, Monkey im Emulator und Server mit kaput
 | **Finder eines Keys oder des Notfallblatts** | Key entfernen bzw. neues Blatt erstellen: Danach öffnet es nichts mehr, was gespeichert wird, auch nicht zusammen mit einer alten Sicherung (B1) |
 | **Netzwerk** (WLAN, Provider) | TLS mit Zertifikatsprüfung oder bestätigtem Fingerabdruck, SFTP mit festem Host-Schlüssel, IMAP/SMTP nie unverschlüsselt |
 | **Absender böswilliger Mails** | HTML ohne Skripte und ohne Zugriff aufs eigene Netz, echte Link-Ziele sichtbar, keine eingeschleusten Kopfzeilen, Autocrypt-Regeln gegen untergeschobene Schlüssel |
-| **Andere Apps auf dem Gerät** | Autofill nur auf der echten Seite und nur aus vertrauenswürdigen Browsern, keine privaten Dateien in fremde Mail-Entwürfe, keine Backups, Bildschirmschutz |
+| **Andere Apps auf dem Gerät** | Keine privaten Dateien in fremde Mail-Entwürfe, keine Backups, Bildschirmschutz |
 | **Präparierte Dateien und Antworten** | Alle Parser gefuzzt; kein Absturz, keine Datei außerhalb des Ordners, keine Zip-Bombe |
 
 Nicht im Bedrohungsmodell: ein bereits kompromittiertes, entsperrtes Gerät (Schadsoftware mit Root, fremde

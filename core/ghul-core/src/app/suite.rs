@@ -372,31 +372,6 @@ fn skipped_items(list: &[super::import::Skipped]) -> Vec<SkippedImport> {
         .collect()
 }
 
-/// A login that fits a website or app (for autofill).
-#[derive(uniffi::Record, Clone, PartialEq)]
-pub struct AutofillLogin {
-    pub vault_id: String,
-    pub id: Vec<u8>,
-    pub title: String,
-    pub username: String,
-    pub password: String,
-    /// May be filled directly (website with the same domain, or app linked with its signing
-    /// certificate). Otherwise it is only a suggestion for the picker.
-    pub direct: bool,
-}
-
-super::redact::redacted_debug!(AutofillLogin { vault_id, id, title, username, direct });
-
-/// What happened to a login offered for saving by autofill.
-#[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AutofillSaved {
-    Created,
-    /// An existing login with the same user name got the new password.
-    Updated,
-    /// Already stored like this.
-    Unchanged,
-}
-
 /// Reads an import file and tells what it contains.
 #[uniffi::export]
 pub fn preview_import(data: Vec<u8>, file_name: String) -> Result<ImportPreview> {
@@ -2054,7 +2029,7 @@ impl GhulSuite {
         })
     }
 
-    // --- import, export, autofill ---------------------------------------------------------------
+    // --- import and export ---------------------------------------------------------------------
 
     /// Imports a file into the given vaults (GhulPass entries into `pass_vault`, 2FA accounts into
     /// `totp_vault`; `None` skips that part). With `totps_from_logins`, 2FA codes stored in logins
@@ -2231,144 +2206,6 @@ impl GhulSuite {
                 super::import::export_otpauth(&picked)
             };
             Ok(text.as_bytes().to_vec())
-        })
-    }
-
-    /// Logins that fit a website (`web_domain`) or an app (`package` with the SHA-256 of its
-    /// signing certificate `cert`), for autofill. Without website and app, all logins are returned
-    /// (for the picker), none of them as `direct`.
-    pub fn autofill_logins(
-        &self,
-        web_domain: Option<String>,
-        package: Option<String>,
-        cert: Option<String>,
-    ) -> Result<Vec<AutofillLogin>> {
-        let everything = web_domain.is_none() && package.is_none();
-        self.with_open(|o| {
-            let mut out: Vec<(bool, AutofillLogin)> = Vec::new();
-            for v in o.vaults.iter().filter(|v| v.reference.kind == "pass") {
-                let Some(c) = &v.container else { continue };
-                for e in c.payload.entries.iter().filter(|e| !e.deleted && e.entry_type == "login") {
-                    let urls: Vec<String> = match e.fields.get("urls") {
-                        Some(Field::List(l)) => l.clone(),
-                        Some(Field::Text(t)) | Some(Field::Url(t)) => vec![t.clone()],
-                        _ => Vec::new(),
-                    };
-                    let m =
-                        super::autofill::match_entry(&urls, web_domain.as_deref(), package.as_deref(), cert.as_deref());
-                    if m == super::autofill::Match::None && !everything {
-                        continue;
-                    }
-                    out.push((
-                        super::passx::is_favorite(e),
-                        AutofillLogin {
-                            vault_id: v.reference.id.clone(),
-                            id: e.id.clone(),
-                            title: text_field(e, "title"),
-                            username: text_field(e, "username"),
-                            password: match e.fields.get("password") {
-                                Some(Field::Secret(s)) | Some(Field::Text(s)) => s.clone(),
-                                _ => String::new(),
-                            },
-                            direct: m == super::autofill::Match::Direct,
-                        },
-                    ));
-                }
-            }
-            // Favourites first ("pinned" for autofill), then alphabetically.
-            out.sort_by_key(|(fav, l)| (!*fav, l.title.to_lowercase(), l.username.to_lowercase()));
-            Ok(out.into_iter().map(|(_, l)| l).collect())
-        })
-    }
-
-    /// Saves a login typed into a website or app (autofill save request): updates the password of
-    /// a matching login with the same user name, or creates a new login in the first GhulPass vault.
-    pub fn autofill_save(
-        &self,
-        web_domain: Option<String>,
-        package: Option<String>,
-        cert: Option<String>,
-        username: String,
-        password: String,
-    ) -> Result<AutofillSaved> {
-        let password = Zeroizing::new(password);
-        if password.is_empty() {
-            return Err(GhulError::InvalidInput { msg: "no password".into() });
-        }
-        let existing = self
-            .autofill_logins(web_domain.clone(), package.clone(), cert.clone())?
-            .into_iter()
-            .find(|l| l.direct && l.username.trim().eq_ignore_ascii_case(username.trim()));
-        self.with_open(|o| {
-            let now = now_ms();
-            if let Some(l) = existing {
-                if l.password == *password {
-                    return Ok(AutofillSaved::Unchanged);
-                }
-                let (_, c) = o.vault_mut(&l.vault_id)?;
-                let e = c.payload.entries.iter_mut().find(|e| e.id == l.id).ok_or(GhulError::NotFound)?;
-                e.fields.insert("password".into(), Field::Secret(password.to_string()));
-                e.revision += 1;
-                e.modified = now;
-                self.save_vault(o, &l.vault_id)?;
-                return Ok(AutofillSaved::Updated);
-            }
-            let vid = o
-                .vaults
-                .iter()
-                .find(|v| v.reference.kind == "pass" && v.container.is_some())
-                .map(|v| v.reference.id.clone())
-                .ok_or(GhulError::NotFound)?;
-            let host = web_domain.as_deref().and_then(super::autofill::host_of);
-            let (title, url) = match (host, package) {
-                (Some(h), _) => (super::autofill::base_domain(&h), format!("https://{h}")),
-                (None, Some(p)) => {
-                    let title = super::autofill::domain_of_package(&p).unwrap_or_else(|| p.clone());
-                    (title, super::autofill::app_link(&p, cert.as_deref()))
-                }
-                (None, None) => return Err(GhulError::InvalidInput { msg: "no website or app".into() }),
-            };
-            let mut e = Entry::new(new_id(), "login", now);
-            e.fields.insert("title".into(), Field::Text(title));
-            if !username.trim().is_empty() {
-                e.fields.insert("username".into(), Field::Text(username.trim().to_owned()));
-            }
-            e.fields.insert("password".into(), Field::Secret(password.to_string()));
-            e.fields.insert("urls".into(), Field::List(vec![url]));
-            let (_, c) = o.vault_mut(&vid)?;
-            c.payload.entries.push(e);
-            self.save_vault(o, &vid)?;
-            Ok(AutofillSaved::Created)
-        })
-    }
-
-    /// Links an app (package plus signing certificate) to a login, so that it is filled directly
-    /// next time. Replaces older links of the same package.
-    pub fn link_app_to_login(
-        &self,
-        vault_id: String,
-        id: Vec<u8>,
-        package: String,
-        cert: Option<String>,
-    ) -> Result<()> {
-        self.with_open(|o| {
-            let (_, c) = o.vault_mut(&vault_id)?;
-            let e = c.payload.entries.iter_mut().find(|e| e.id == id && !e.deleted).ok_or(GhulError::NotFound)?;
-            let link = super::autofill::app_link(&package, cert.as_deref());
-            let mut urls = match e.fields.get("urls") {
-                Some(Field::List(l)) => l.clone(),
-                _ => Vec::new(),
-            };
-            if urls.contains(&link) {
-                return Ok(());
-            }
-            let prefix = format!("androidapp://{}", package.trim());
-            urls.retain(|u| u != &prefix && !u.starts_with(&format!("{prefix}?")));
-            urls.push(link);
-            e.fields.insert("urls".into(), Field::List(urls));
-            e.revision += 1;
-            e.modified = now_ms();
-            self.save_vault(o, &vault_id)
         })
     }
 

@@ -60,8 +60,8 @@ pub mod fuzzing {
             _ => {
                 drop(crate::cbor::decode(rest));
                 drop(crate::app::mailcrypt::parse_autocrypt(&text));
-                if let Some(h) = crate::app::autofill::host_of(&text) {
-                    drop(crate::app::autofill::base_domain(&h));
+                if let Some(h) = crate::app::domain::host_of(&text) {
+                    drop(crate::app::domain::base_domain(&h));
                 }
             }
         }

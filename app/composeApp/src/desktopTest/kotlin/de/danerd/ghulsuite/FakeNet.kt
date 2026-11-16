@@ -100,7 +100,15 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
     override suspend fun serverModuleRemove(serverId: String) { calls += "moduleRemove:$serverId" }
     /** What share links still need (null: nothing; "": GhulDrive; else the server for the module). */
     var missingModule: String? = if (configured) null else ""
-    override suspend fun shareMissingModule() = missingModule
+    /** Holds back the answer to "is the server module there?" (a core busy with a synchronisation). */
+    @Volatile var missingModuleGate: java.util.concurrent.CountDownLatch? = null
+    /** The core cannot answer (e.g. GhulDrive's server was removed meanwhile). */
+    var missingModuleFails = false
+    override suspend fun shareMissingModule(): String? {
+        missingModuleGate?.let { gate -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { gate.await(30, java.util.concurrent.TimeUnit.SECONDS) } }
+        if (missingModuleFails) throw IllegalStateException("not found")
+        return missingModule
+    }
     /** The links containing GhulDrive items: "Steuer 2025.pdf" (f1) is shared. */
     /** Holds the lookup of share links back (the core busy with a synchronisation) until released. */
     var shareLinksGate: java.util.concurrent.CountDownLatch? = null
@@ -126,9 +134,16 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
     var syncServer: String? = if (configured) "s1" else null
     /** While true, syncStatus() fails (a core that cannot answer). */
     var syncStatusFails = false
+    /** Holds the answer of syncStatus() back (read before waiting) until released. */
+    @Volatile var syncStatusGate: java.util.concurrent.CountDownLatch? = null
+    /** Calls of syncStatus() that have read their answer. */
+    @Volatile var syncStatusWaiting = 0
     override suspend fun syncStatus(): SyncStatusUi {
         if (syncStatusFails) throw java.io.IOException("timeout")
-        return SyncStatusUi(syncServer, now * 1000)
+        val answer = SyncStatusUi(syncServer, now * 1000)
+        syncStatusWaiting++
+        syncStatusGate?.let { gate -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { gate.await(30, java.util.concurrent.TimeUnit.SECONDS) } }
+        return answer
     }
     override suspend fun setSyncServer(id: String?) {
         calls += "setSyncServer:$id"
@@ -137,6 +152,8 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
     /** How many synchronisations ran, and the most that ran at the same time. */
     @Volatile var syncRuns = 0
     @Volatile var syncMaxAtOnce = 0
+    /** Synchronisations that have ended. */
+    @Volatile var syncDone = 0
     private val syncActive = java.util.concurrent.atomic.AtomicInteger()
     /** A synchronisation takes this long (it suspends, like the real one). */
     var syncDelayMs = 0L
@@ -149,33 +166,82 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
             return SyncReportUi(1, 2, 0, 0, 0)
         } finally {
             syncActive.decrementAndGet()
+            syncDone++
         }
     }
     override suspend fun adoptRemotePassword(password: String) = SyncReportUi(0, 0, 0, 0, 0)
 
-    /** GhulDrive's storage; tests can give Drive a server of its own (not in the suite's list). */
-    var driveOwnServer: ServerUi? = null
-    /** So many calls of driveStorage() fail first (the core is busy with a synchronisation). */
-    var driveStorageFails = 0
-    override suspend fun driveStorage() = if (driveStorageFails > 0) {
-        driveStorageFails--
-        throw java.io.IOException("busy")
-    } else when {
-        driveOwnServer != null -> de.danerd.ghulsuite.model.DriveStorageUi(de.danerd.ghulsuite.model.DriveModeUi.OWN, driveOwnServer, syncServer != null)
-        configured && syncServer != null -> de.danerd.ghulsuite.model.DriveStorageUi(de.danerd.ghulsuite.model.DriveModeUi.SYNC, server, true)
-        else -> de.danerd.ghulsuite.model.DriveStorageUi(de.danerd.ghulsuite.model.DriveModeUi.NONE, null, false)
+    /** GhulDrive's storage locations (not in the suite's list); the fake starts with s1 when configured. */
+    val driveLocs: MutableList<de.danerd.ghulsuite.model.DriveLocationUi> =
+        if (configured) mutableListOf(de.danerd.ghulsuite.model.DriveLocationUi(server, active = true, archive = true)) else mutableListOf()
+    /** Gives Drive one location of its own instead of the ones it has. */
+    var driveOwnServer: ServerUi?
+        get() = driveLocs.firstOrNull { it.active }?.server
+        set(v) {
+            driveLocs.clear()
+            if (v != null) driveLocs += de.danerd.ghulsuite.model.DriveLocationUi(v, active = true, archive = true)
+        }
+    /** A second storage location (the FTPS web hosting, folder "drive-b"), not active. */
+    fun addSecondDriveLocation() {
+        driveLocs += de.danerd.ghulsuite.model.DriveLocationUi(web.copy(id = "d2", base = "drive-b", location = "/drive-b"), active = false, archive = false)
+    }
+    /** Saving a location adds it (the FTPS web hosting with the folder that was entered). */
+    override suspend fun driveSaveServer(input: ServerInputUi, confirmed: String?): ServerSavedUi {
+        if (confirmed == null) return ServerSavedUi.Confirm("SHA256:7beJP+X7anXY96H6FlO+I7u8z2xP1gJsp7GiBGawac4")
+        driveLocationCalls += "add:${input.base}"
+        driveLocs += de.danerd.ghulsuite.model.DriveLocationUi(web.copy(id = "d3", base = input.base, location = "/" + input.base), active = driveLocs.isEmpty(), archive = driveLocs.isEmpty())
+        return ServerSavedUi.Saved("d3")
+    }
+    /** What was asked of the locations, in order ("switch:id", "remove:id:files", "archive:id", "add:host"). */
+    val driveLocationCalls = java.util.Collections.synchronizedList(mutableListOf<String>())
+    /** So many calls of driveLocations() fail first (the core is busy with a synchronisation). */
+    var driveLocationsFails = 0
+    /** Like the real core: reading the locations waits while a synchronisation holds it. */
+    var driveLocationsWaitForSync = false
+    override suspend fun driveLocations(): List<de.danerd.ghulsuite.model.DriveLocationUi> {
+        if (driveLocationsWaitForSync) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { while (syncActive.get() > 0) Thread.sleep(20) }
+        }
+        if (driveLocationsFails > 0) {
+            driveLocationsFails--
+            throw java.io.IOException("busy")
+        }
+        return if (driveMissing) emptyList() else driveLocs.toList()
+    }
+    override suspend fun driveSwitchLocation(id: String) {
+        driveLocationCalls += "switch:$id"
+        check(driveLocs.any { it.server.id == id })
+        driveLocs.replaceAll { it.copy(active = it.server.id == id) }
+    }
+    /** Removing a location fails like an unreachable server (unless forced). */
+    var driveRemoveUnreachable = false
+    override suspend fun driveRemoveLocation(id: String, deleteFiles: Boolean, force: Boolean) {
+        driveLocationCalls += "remove:$id:$deleteFiles" + if (force) ":force" else ""
+        if (driveRemoveUnreachable && !force) throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.NETWORK, "Timed out.")
+        val gone = driveLocs.firstOrNull { it.server.id == id } ?: return
+        driveLocs.remove(gone)
+        if (gone.active && driveLocs.isNotEmpty()) driveLocs[0] = driveLocs[0].copy(active = true)
+        if (gone.archive && driveLocs.none { it.archive } && driveLocs.isNotEmpty()) {
+            val i = driveLocs.indexOfFirst { it.active }
+            driveLocs[i] = driveLocs[i].copy(archive = true)
+        }
+    }
+    override suspend fun driveSetArchiveLocation(id: String) {
+        driveLocationCalls += "archive:$id"
+        driveLocs.replaceAll { it.copy(archive = it.server.id == id) }
     }
     /** Holds driveStatus() back (Drive's index still coming from a slow server) until released. */
     var driveStatusGate: java.util.concurrent.CountDownLatch? = null
+    /** The server id driveStatus() names, when it differs from the locations (an older setup). */
+    var driveStatusServer: String? = null
     /** Files in GhulDrive (as counted by the core). */
     var driveFiles = 3
     /** GhulDrive is not set up (while the rest, e.g. mail, is). */
     var driveMissing = false
     override suspend fun driveStatus(): DriveStatusUi {
         driveStatusGate?.let { gate -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { gate.await(30, java.util.concurrent.TimeUnit.SECONDS) } }
-        return DriveStatusUi(if (driveMissing) null else driveOwnServer?.id ?: if (configured) "s1" else null, driveFiles, 12_345_678)
+        return DriveStatusUi(if (driveMissing) null else driveStatusServer ?: driveOwnServer?.id, driveFiles, 12_345_678)
     }
-    override suspend fun driveSetup(serverId: String) {}
     /** How long listing a folder takes (a slow server); blocking, as the real core does. */
     var driveListDelayMs = 0L
     @Volatile var driveListGate: java.util.concurrent.CountDownLatch? = null
@@ -222,23 +288,6 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
         calls += "driveUpload:${folder ?: ""}:${source.name}"
         driveFiles++
         return "f3"
-    }
-    /** Photos for the photo backup (name and the second it was added), and how long each takes. */
-    var photos: List<Pair<String, Long>> = emptyList()
-    var photoDelayMs = 0L
-    override val photoBackupAvailable: Boolean get() = photos.isNotEmpty()
-    /** Like the Android backend: oldest first, the mark of each photo also when cancelled during it. */
-    override suspend fun photoBackup(sinceSeconds: Long, wifiOnly: Boolean, onFile: (String, Long, Long?) -> Unit): Long {
-        val todo = photos.filter { it.second > sinceSeconds }.sortedBy { it.second }
-        var mark = sinceSeconds
-        for ((i, p) in todo.withIndex()) {
-            if (photoDelayMs > 0) kotlinx.coroutines.delay(photoDelayMs)
-            calls += "photo:${p.first}"
-            val next = todo.getOrNull(i + 1)?.second
-            mark = maxOf(mark, de.danerd.ghulsuite.ui.photoMark(p.second, next))
-            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { onFile(p.first, p.second, next) }
-        }
-        return mark
     }
 
     /** A download writes a first part, then hangs (cancel it) or fails ("fail"); null: normal. */

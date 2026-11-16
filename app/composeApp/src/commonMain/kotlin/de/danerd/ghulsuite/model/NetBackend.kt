@@ -69,17 +69,22 @@ interface NetBackend {
 
     // --- GhulDrive
     suspend fun driveStatus(): DriveStatusUi
-    suspend fun driveSetup(serverId: String)
-    /** Where GhulDrive stores its files. */
-    suspend fun driveStorage(): DriveStorageUi = DriveStorageUi(DriveModeUi.NONE, null, false)
-    /** GhulDrive uses the server this device synchronises with ("wie Synchronisation"). */
-    suspend fun driveUseSync() {}
     /** After "server state older than seen": takes the server's GhulDrive as it is. */
     suspend fun driveAcceptServerState() {}
-    /** Checks a server for GhulDrive alone and stores it in the Drive file. */
+    /** Checks a server and adds it to GhulDrive's storage locations (in the Drive file). */
     suspend fun driveSaveServer(input: ServerInputUi, confirmed: String?): ServerSavedUi = ServerSavedUi.Saved("")
-    /** Before the sync server is removed or changed: GhulDrive keeps that server as its own. */
-    suspend fun driveDetachFromSync() {}
+    /** GhulDrive's storage locations: each its own server with its own files, one active. */
+    suspend fun driveLocations(): List<DriveLocationUi> = emptyList()
+    /** Shows the files of another storage location from now on. */
+    suspend fun driveSwitchLocation(id: String) {}
+    /**
+     * Removes a storage location; its share links end first. With [deleteFiles] GhulDrive's own
+     * files, share data and server module are deleted on the server too. With [force] (its server
+     * is unreachable) the links are only forgotten here and nothing is deleted.
+     */
+    suspend fun driveRemoveLocation(id: String, deleteFiles: Boolean, force: Boolean = false) {}
+    /** The storage location the mail archive writes into. */
+    suspend fun driveSetArchiveLocation(id: String) {}
     suspend fun driveList(folder: String?, refresh: Boolean): List<DriveItemUi>
     suspend fun driveSearch(query: String): List<DriveItemUi>
     suspend fun driveCreateFolder(parent: String?, name: String): String
@@ -103,16 +108,6 @@ interface NetBackend {
     suspend fun driveZip(ids: List<String>, password: String): ByteArray = ByteArray(0)
     /** The device is on a network without data limit (Wi-Fi); desktops always. */
     fun unmeteredNetwork(): Boolean = true
-    /**
-     * Photo backup (Android): uploads photos added after [sinceSeconds] into "Fotos", oldest first;
-     * [onFile] gets each one done with the time it was added and the time of the next photo
-     * waiting (null: none), also when the run is being cancelled. Returns the mark to continue
-     * from next time (see photoMark).
-     */
-    val photoBackupAvailable: Boolean get() = false
-    suspend fun photoBackup(
-        sinceSeconds: Long, wifiOnly: Boolean, onFile: (name: String, addedSeconds: Long, nextSeconds: Long?) -> Unit,
-    ): Long = sinceSeconds
     /** Encrypts and uploads [source] block by block; [onProgress] gets the bytes done. */
     suspend fun driveUpload(folder: String?, source: ByteSource, onProgress: (Long) -> Unit): String
     /** Downloads and decrypts a file into [sink]. */
@@ -272,9 +267,8 @@ sealed interface ServerFoldersUi {
     data class Folders(val folders: List<String>) : ServerFoldersUi
 }
 
-enum class DriveModeUi { NONE, SYNC, OWN, SUITE }
-
-data class DriveStorageUi(val mode: DriveModeUi, val server: ServerUi?, val syncAvailable: Boolean)
+/** One of GhulDrive's storage locations; [archive]: the mail archive writes into it. */
+data class DriveLocationUi(val server: ServerUi, val active: Boolean, val archive: Boolean)
 
 /**
  * One step of installing the server module: `upload` (file written, detail = its path), `https`

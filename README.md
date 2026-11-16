@@ -100,9 +100,6 @@ Leiste, seine Datei bleibt unberührt.
 
 - **Alles an einem Ort:** Anmeldungen, Notizen, Kreditkarten, WLAN (mit QR zum Teilen), Identitäten, SSH-Schlüssel;
   eigene Felder, Anhänge, Passwortverlauf, Favoriten und „Zuletzt“.
-- **Autofill** in Apps und Browsern (Android): GhulPass füllt nur auf der echten Seite aus. Ähnlich aussehende
-  Adressen (`paypa1.com`, fremde Subdomains) bekommen nichts. Verknüpft eine App sich zum ersten Mal mit einem
-  Login, fragt GhulPass mit ihrem Namen nach.
 - **Generator** für Passwörter und Passphrasen.
 - **Sicherheitscheck:** schwache und doppelte Passwörter, Konten ohne 2FA; auf Wunsch der Abgleich mit bekannten
   Datenlecks, ohne dass dein Passwort das Gerät verlässt (k-Anonymität: nur der Anfang eines Hashes geht hinaus).
@@ -133,11 +130,13 @@ Leiste, seine Datei bleibt unberührt.
 
 - **Verschlüsselte Ablage** auf deinem Server: Dateien werden in Blöcke zerlegt und einzeln verschlüsselt; Namen,
   Ordner und Größen kennt nur dein Gerät.
+- **Mehrere Speicherorte:** beliebig viele eigene Server, jeder mit eigenen Dateien und Links; einer ist aktiv,
+  „Speicherort wechseln“ schaltet um. Unabhängig von der Synchronisation.
 - **Ordner, Suche, Favoriten, Zuletzt**, Liste oder Raster mit Vorschaubildern, Speicherbalken nach Dateiart.
 - **Offline verfügbar** für ausgewählte Dateien, **Versionen** (die letzten fünf) und **Papierkorb**.
 - **Teilen per Link ohne Kopie:** Jede Datei hat ihren eigenen Schlüssel, der Link enthält nur diesen. Ablaufdatum,
   Einmal-Link, Abrufzähler und Passwort; auch große Dateien und ganze Ordner, siehe [unten](#teilen-per-link).
-- **Foto-Sicherung** (Android, auf Wunsch nur im WLAN), **Dokumente scannen**, verschlüsselte ZIPs.
+- **Dokumente scannen** (Android) und verschlüsselte ZIPs.
 
 </td></tr></table>
 
@@ -265,14 +264,15 @@ GhulSuite braucht **keinen speziellen Server**. Ein Server in der App ist immer 
 | **+ Server-Modul** (optional) | **PHP 8.1** oder neuer auf demselben Server, ohne Datenbank | Freigabelinks |
 
 **So geht's:**
-1. In der App: **Optionen → Server → Server hinzufügen**, SFTP oder FTPS wählen, den Ordner für GhulSuite aussuchen.
-   Er muss **außerhalb deiner Website** liegen (siehe unten). **„Verbindung prüfen“** zeigt Schritt für Schritt, was
-   klappt und was nicht; erst danach erscheint **„Speichern“**. Bei Mail-Konten genauso: Posteingang und
+1. In der App: **Optionen → Synchronisation → Server hinzufügen**, SFTP oder FTPS wählen, den Ordner für GhulSuite
+   aussuchen. Er muss **außerhalb deiner Website** liegen (siehe unten). **„Verbindung prüfen“** zeigt Schritt für
+   Schritt, was klappt und was nicht; erst danach erscheint **„Speichern“**. Bei Mail-Konten genauso: Posteingang und
    Postausgang werden einzeln geprüft, gespeichert wird nur eine Verbindung, die funktioniert.
-2. Synchronisation und GhulDrive wählen ihren Server jeweils selbst; es kann derselbe sein.
-3. Für Freigabelinks: beim Server **„Server-Modul installieren“**, den Ordner deiner Website wählen. Die App legt
-   `ghulsuite.php` dorthin und prüft Adresse, PHP, den Zugriff auf den GhulSuite-Ordner und dass dieser Ordner nicht
-   aus dem Web abrufbar ist.
+2. GhulDrive hat seine eigenen Speicherorte: **Optionen → GhulDrive → Speicherort hinzufügen**, mit demselben
+   Formular. Es kann derselbe Server sein wie für die Synchronisation, mit einem eigenen Ordner.
+3. Für Freigabelinks: im Block des Speicherorts **„Modul installieren“**, den Ordner deiner Website wählen. Die App
+   legt `ghulsuite.php` dorthin und prüft Adresse, PHP, den Zugriff auf den GhulSuite-Ordner und dass dieser Ordner
+   nicht aus dem Web abrufbar ist.
 
 **Wo liegt was?** Zwei Ordner mit zwei Aufgaben:
 

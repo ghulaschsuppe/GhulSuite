@@ -13,12 +13,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import de.danerd.ghulsuite.model.AutofillStatus
 import de.danerd.ghulsuite.model.ImportPreviewUi
 import de.danerd.ghulsuite.model.PickedFile
 import de.danerd.ghulsuite.model.VaultKindUi
@@ -254,7 +252,7 @@ fun ExportScreen(state: AppState, padding: PaddingValues) {
     }
 }
 
-/** Settings section: import, export and autofill. */
+/** Settings section: backup, import and export. */
 @Composable
 fun ImportExportSection(state: AppState) {
     val settings = state.backend.settings
@@ -290,34 +288,6 @@ fun ImportExportSection(state: AppState) {
             Text(stringResource(Res.string.a_export_plain))
         }
         Hint(stringResource(Res.string.set_import_hint))
-    }
-}
-
-@Composable
-fun AutofillSection(state: AppState) {
-    // Re-read while visible: the user comes back from the system settings without any event (F1).
-    var tick by remember { mutableStateOf(0) }
-    LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(1500); tick++ } }
-    val status = remember(state.revision, tick) { state.backend.autofillStatus() }
-    if (status == AutofillStatus.UNSUPPORTED) return
-    SectionCard(stringResource(Res.string.set_autofill)) {
-        Hint(stringResource(Res.string.set_autofill_text))
-        if (status == AutofillStatus.ON) {
-            Text(stringResource(Res.string.set_autofill_on), color = okColor())
-        } else {
-            Text(stringResource(Res.string.set_autofill_off), color = warnColor())
-        }
-        OutlinedButton(onClick = { state.backend.openAutofillSettings() }, modifier = Modifier.fillMaxWidth()) {
-            Text(stringResource(if (status == AutofillStatus.ON) Res.string.a_autofill_change else Res.string.a_autofill_enable))
-        }
-        Hint(stringResource(Res.string.set_autofill_hint))
-        if (status == AutofillStatus.ON) {
-            Text(stringResource(Res.string.set_autofill_how), style = MaterialTheme.typography.labelLarge)
-            Hint(stringResource(Res.string.set_autofill_how_field))
-            Hint(stringResource(Res.string.set_autofill_how_apps))
-            Hint(stringResource(Res.string.set_autofill_how_chrome))
-            Hint(stringResource(Res.string.set_autofill_how_manual))
-        }
     }
 }
 

@@ -72,10 +72,6 @@ expect fun qrModules(text: String): List<BooleanArray>
 /** Finds a QR code in an image file (PNG, JPEG, …); null if there is none. */
 expect fun decodeQrImage(bytes: ByteArray): String?
 
-/** Asks for access to the photos (photo backup); the callback gets whether it was granted. */
-@androidx.compose.runtime.Composable
-expect fun rememberPhotoPermission(onResult: (Boolean) -> Unit): () -> Unit
-
 /** Takes a photo with the camera (document scan); null if cancelled or not available. */
 expect val cameraPhotoAvailable: Boolean
 
