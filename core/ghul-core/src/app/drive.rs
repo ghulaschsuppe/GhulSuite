@@ -267,7 +267,7 @@ fn drive_server_id(o: &Open, d: &DriveSettings) -> Option<String> {
         super::sync::sync_server(o)
     } else if d.server.is_empty() {
         None
-    } else if servers::server(o, &d.server).is_ok() {
+    } else if !super::areas::area_marked_deleted(o, VaultKind::Drive, servers::SERVERS_KEY, &d.server) {
         Some(d.server.clone())
     } else {
         // A location removed on another device (its list entry is gone after merging, the
@@ -889,8 +889,9 @@ impl GhulSuite {
         self.with_open(|o| {
             self.drive_move_to_locations(o)?;
             let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
-            let server = drive_server_id(o, &d).and_then(|id| servers::server(o, &id).ok()).map(|s| servers::info(&s));
-            let mode = if server.is_none() || d.key.len() != 32 { DriveMode::None } else { DriveMode::Own };
+            let active = drive_server_id(o, &d);
+            let mode = if active.is_none() || d.key.len() != 32 { DriveMode::None } else { DriveMode::Own };
+            let server = active.and_then(|id| servers::server(o, &id).ok()).map(|s| servers::info(&s));
             Ok(DriveStorage { mode, server, sync_available: super::sync::sync_server(o).is_some() })
         })
     }

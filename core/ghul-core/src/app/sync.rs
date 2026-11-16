@@ -329,6 +329,15 @@ fn slot_label(c: &UnlockedContainer, s: &Slot) -> (String, i64) {
 /// Opens a file from the server: with password and factor secret, or with the recovery code
 /// (when the password or, after a removed key, the factor secret changed elsewhere).
 fn open_remote(o: &Open, data: &[u8]) -> Option<UnlockedContainer> {
+    open_remote_how(o, data).map(|(c, _)| c)
+}
+
+/// Like [`open_remote`]; also says whether only a protection from before opened the file (then
+/// it is older than this device's protection and never a protection to take over, H1). The
+/// protections from before are kept only until the first run after the change has uploaded
+/// (see `upload`): after that no device writes with them any more, and someone who knows a
+/// revoked code or key could otherwise still write files that open with it.
+fn open_remote_how(o: &Open, data: &[u8]) -> Option<(UnlockedContainer, bool)> {
     let locked = LockedContainer::parse(data).ok()?;
     if locked.header().suite_id != o.suite.header().suite_id {
         return None;
@@ -337,24 +346,24 @@ fn open_remote(o: &Open, data: &[u8]) -> Option<UnlockedContainer> {
     if same_kdf {
         let s = FactorSecret::from_bytes(*o.suite.factor_secret().expose());
         if let Ok(c) = LockedContainer::parse(data).ok()?.unlock(&o.password_key, &s) {
-            return Some(c);
+            return Some((c, false));
         }
     }
     if let Some(code) = o.suite.recovery_code() {
         if let Ok(c) = LockedContainer::parse(data).ok()?.recover(&code) {
-            return Some(c);
+            return Some((c, false));
         }
     }
     // Written by a device that had not yet learned of this device's last protection change.
     for (s, code) in o.previous_protection() {
         if same_kdf {
             if let Ok(c) = LockedContainer::parse(data).ok()?.unlock(&o.password_key, &s) {
-                return Some(c);
+                return Some((c, true));
             }
         }
         if let Some(code) = code {
             if let Ok(c) = LockedContainer::parse(data).ok()?.recover(&code) {
-                return Some(c);
+                return Some((c, true));
             }
         }
     }
@@ -442,12 +451,17 @@ impl GhulSuite {
         rep.add(pending);
         *pending = SyncReport::default();
         let _ = self.with_open(|o| {
-            if target.is_some() && sync_target(o) != target {
-                return Ok(());
+            // Everything is on the server in this device's protection now: the protections
+            // from before have done their job (H1, see `open_remote_how`).
+            let before: Vec<super::suite::PreviousProtection> = setting(&o.suite, super::suite::PREVIOUS_KEY);
+            if !before.is_empty() {
+                put_setting(&mut o.suite, super::suite::PREVIOUS_KEY, &Vec::<super::suite::PreviousProtection>::new())?;
             }
-            let mut s: SyncSettings = setting(&o.suite, SYNC_KEY);
-            s.last = now_ms();
-            put_setting(&mut o.suite, SYNC_KEY, &s)?;
+            if target.is_none() || sync_target(o) == target {
+                let mut s: SyncSettings = setting(&o.suite, SYNC_KEY);
+                s.last = now_ms();
+                put_setting(&mut o.suite, SYNC_KEY, &s)?;
+            }
             self.save_container(&mut o.suite, SUITE_FILE)
         });
         Ok(rep)
@@ -510,10 +524,16 @@ impl GhulSuite {
             }
             let local_ts: i64 = setting(&o.suite, PROTECTION_CHANGED);
             let changed_factors = other_factor_slots(o, &locked);
-            match open_remote(o, &data) {
-                Some(r) => {
+            match open_remote_how(o, &data) {
+                Some((r, older_protection)) => {
                     let remote_ts: i64 = setting(&r, PROTECTION_CHANGED);
-                    if remote_ts > local_ts {
+                    // Opened only with a protection this device left behind: never newer than
+                    // it, whatever the file says (a file made with a revoked secret could claim
+                    // any time and take over the protection, H1).
+                    // Nor one that brings back a code or key replaced on purpose (whoever knows
+                    // it could have made the file from an old copy).
+                    let revoked = o.brings_back_revoked(&r);
+                    if remote_ts > local_ts && !older_protection && !revoked {
                         if r.header().kdf != o.kdf() {
                             return Err(GhulError::PasswordChangedElsewhere);
                         }
@@ -524,6 +544,9 @@ impl GhulSuite {
                     for k in DEVICE_KEYS {
                         remote_settings.remove(*k);
                     }
+                    // Only a protection taken over sets this; merged as a number it would take
+                    // the highest time any file claims and block every later real change.
+                    remote_settings.remove(PROTECTION_CHANGED);
                     merge_settings(&mut o.suite.payload.settings, &remote_settings);
                     // A key removed elsewhere that this device still has (it changed its own
                     // protection meanwhile, so it kept it): away here too (B2).

@@ -50,9 +50,13 @@ const MAX_PREVIOUS: usize = 256;
 /// Slot IDs (hex) of keys and key files removed on purpose (B2). Synchronised and united, so a
 /// device that missed the removal (and changed its own protection meanwhile) drops them too.
 pub(super) const REMOVED_SLOTS_KEY: &str = "removed_slots";
+/// Fingerprints (SHA-256) of factor secrets and recovery codes replaced on purpose (a lost key
+/// removed, a new code made). Synchronised; a protection that brings one back is never taken
+/// over from the server (H1).
+pub(super) const REVOKED_KEY: &str = "revoked_secrets";
 
 #[derive(Serialize, serde::Deserialize, Default, Clone, PartialEq)]
-struct PreviousProtection {
+pub(super) struct PreviousProtection {
     #[serde(with = "serde_bytes")]
     s: Vec<u8>,
     #[serde(with = "serde_bytes", default)]
@@ -413,6 +417,14 @@ fn dedup_key(entry_type: &str, fields: &BTreeMap<String, Field>) -> String {
     key
 }
 
+fn revoked_fingerprint(secret: &[u8]) -> String {
+    use sha2::Digest;
+    let mut h = sha2::Sha256::new();
+    h.update(b"ghul/v1/revoked");
+    h.update(secret);
+    crate::kdf::hex(&h.finalize())
+}
+
 // --- files and names --------------------------------------------------------------------------
 
 pub(super) fn is_vault_file(name: &str) -> bool {
@@ -540,6 +552,44 @@ impl Open {
         put_setting(&mut self.suite, REVISIONS_KEY, &map)
     }
 
+    /// The current factor secret and recovery code (to see afterwards which ones were replaced).
+    pub(super) fn current_secrets(&self) -> (Vec<u8>, Option<Vec<u8>>) {
+        (self.suite.factor_secret().expose().to_vec(), self.suite.recovery_code().map(|c| c.expose().to_vec()))
+    }
+
+    /// Notes which of `before` (from [`Self::current_secrets`]) are replaced now: on purpose,
+    /// never to come back (see [`REVOKED_KEY`]).
+    pub(super) fn revoke_replaced(&mut self, before: (Vec<u8>, Option<Vec<u8>>)) -> Result<()> {
+        let now = self.current_secrets();
+        let mut list: Vec<String> = setting(&self.suite, REVOKED_KEY);
+        let mut add = |secret: &[u8]| {
+            let h = revoked_fingerprint(secret);
+            if !list.contains(&h) {
+                list.push(h);
+            }
+        };
+        if before.0 != now.0 {
+            add(&before.0);
+        }
+        if let Some(code) = &before.1 {
+            if Some(code) != now.1.as_ref() {
+                add(code);
+            }
+        }
+        // In every file: an older suite file must not bring them back into the vaults (S1).
+        for (c, _) in self.containers_mut() {
+            put_setting(c, REVOKED_KEY, &list)?;
+        }
+        Ok(())
+    }
+
+    /// Whether `c` carries a factor secret or recovery code this suite replaced on purpose.
+    pub(super) fn brings_back_revoked(&self, c: &UnlockedContainer) -> bool {
+        let list: Vec<String> = setting(&self.suite, REVOKED_KEY);
+        list.contains(&revoked_fingerprint(c.factor_secret().expose()))
+            || c.recovery_code().is_some_and(|code| list.contains(&revoked_fingerprint(code.expose())))
+    }
+
     /// Keeps the current factor secret and recovery code before they change (see [`PREVIOUS_KEY`]).
     pub(super) fn remember_protection(&mut self) -> Result<()> {
         let mut list: Vec<PreviousProtection> = setting(&self.suite, PREVIOUS_KEY);
@@ -652,6 +702,14 @@ impl Open {
                 _ => false,
             };
             if have == want && same_secret && c.header().kdf == kdf && c.header().suite_id == suite_id && code_ok {
+                continue;
+            }
+            // S1: the suite file is older than this vault (it still has a code or key the vault
+            // knows as replaced, e.g. an old copy put back): never write that into the vault.
+            let revoked: Vec<String> = setting(c, REVOKED_KEY);
+            if revoked.contains(&revoked_fingerprint(&s))
+                || code.as_ref().is_some_and(|k| revoked.contains(&revoked_fingerprint(k.expose())))
+            {
                 continue;
             }
             c.reprotect(
@@ -2292,6 +2350,7 @@ impl GhulSuite {
     pub fn new_recovery_code(&self, label: String) -> Result<String> {
         self.with_open(|o| {
             o.remember_protection()?;
+            let before = o.current_secrets();
             let code = RecoveryCode::generate(&mut OsRng);
             let now = now_ms();
             for (c, _) in o.containers_mut() {
@@ -2299,6 +2358,7 @@ impl GhulSuite {
             }
             // The old code with an old copy of a file must not open what is written now.
             o.renew_keys(false, now)?;
+            o.revoke_replaced(before)?;
             super::sync::mark_protection_changed(o)?;
             self.save_all(o)?;
             Ok(code.to_display().to_string())
@@ -2319,6 +2379,7 @@ impl GhulSuite {
                 return Err(GhulError::LastFactor);
             }
             o.remember_protection()?;
+            let before = o.current_secrets();
             let mut removed: Vec<String> = setting(&o.suite, REMOVED_SLOTS_KEY);
             removed.push(crate::kdf::hex(&id));
             put_setting(&mut o.suite, REMOVED_SLOTS_KEY, &removed)?;
@@ -2331,6 +2392,7 @@ impl GhulSuite {
             // The removed key with an old copy of a file must not open what is written now:
             // new factor secret for the remaining keys and key files, new container keys.
             o.renew_keys(true, now_ms())?;
+            o.revoke_replaced(before)?;
             super::sync::mark_protection_changed(o)?;
             self.save_all(o)?;
             super::quick::delete_all(&self.local_dir);

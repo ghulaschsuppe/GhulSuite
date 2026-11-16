@@ -87,6 +87,15 @@ pub(super) fn mark_area_deleted(o: &mut Open, kind: VaultKind, list: &str, id: &
     Ok(())
 }
 
+/// Whether a list item of an area's settings carries a deletion mark.
+pub(super) fn area_marked_deleted(o: &Open, kind: VaultKind, list: &str, id: &str) -> bool {
+    let key = format!("{list}/{id}");
+    match o.area(kind).and_then(|c| c.payload.settings.get(super::sync::DELETED_KEY)) {
+        Some(ciborium::Value::Map(m)) => m.iter().any(|(k, _)| k.as_text() == Some(key.as_str())),
+        _ => false,
+    }
+}
+
 /// Moves `keys` (and their deletion marks) from `from` into `to`. Returns whether anything moved.
 fn move_settings(from: &mut BTreeMap<String, Value>, to: &mut BTreeMap<String, Value>, keys: &[&str]) -> bool {
     let mut moved = BTreeMap::new();

@@ -518,3 +518,87 @@ fn a_removed_key_does_not_come_back_through_a_device_that_was_offline() {
     a.unlock("pw-123456".into(), None, None, None, Some(kf3)).unwrap();
     let _ = std::fs::remove_dir_all(&server_dir);
 }
+
+/// H1: someone who knows a revoked recovery code can build a suite file that opens with it and
+/// claims a newer protection. The synchronisation never takes that protection over: neither
+/// before the first run after the new code (the old code is still accepted for files written by
+/// devices that had not learned of it) nor after it (then the old code opens nothing).
+#[test]
+fn a_file_made_with_a_revoked_code_never_takes_over_the_protection() {
+    let server_dir = std::env::temp_dir().join(format!("ghul-h1-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&server_dir);
+    let server = LocalFs::new(&server_dir);
+    let kf = generate_keyfile();
+    let d = Dirs::new("h1");
+    let a = d.suite();
+    a.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    let old_code = RecoveryCode::parse(&a.new_recovery_code("Alt".into()).unwrap()).unwrap();
+    a.sync_folder(&server).unwrap();
+    let suite_path = server_dir.join("suite").join("suite.ghlsuite");
+    let old_file = std::fs::read(&suite_path).unwrap();
+    // What the attacker builds from the old file with the old code: "protection changed" far in
+    // the future, so a device that believes it takes over its slots, secret and code.
+    let forged = || {
+        let mut c = LockedContainer::parse(&old_file).unwrap().recover(&old_code).unwrap();
+        crate::app::suite::put_setting(&mut c, crate::app::sync::PROTECTION_CHANGED, &i64::MAX).unwrap();
+        c.seal(&mut rand_core::OsRng).unwrap()
+    };
+    let opens_with_old_code = |s: &GhulSuite| {
+        let _ = s;
+        let open: Vec<String> = files(&d)
+            .into_iter()
+            .filter(|(_, data)| LockedContainer::parse(data).unwrap().recover(&old_code).is_ok())
+            .map(|(n, _)| n)
+            .collect();
+        if !open.is_empty() {
+            eprintln!("open with the old code: {open:?}");
+        }
+        !open.is_empty()
+    };
+
+    // 1. A new code, the forged file lands before the next run: still not taken over.
+    let new_code = RecoveryCode::parse(&a.new_recovery_code("Neu".into()).unwrap()).unwrap();
+    assert!(!opens_with_old_code(&a), "a new code closes the old one");
+    std::fs::write(&suite_path, forged()).unwrap();
+    a.sync_folder(&server).unwrap();
+    assert!(!opens_with_old_code(&a), "the revoked code must not open this device's files again");
+    for (name, data) in files(&d) {
+        assert!(LockedContainer::parse(&data).unwrap().recover(&new_code).is_ok(), "{name}: the new code stays");
+    }
+    // 2. After that run the forged file does not even open any more.
+    std::fs::write(&suite_path, forged()).unwrap();
+    let _ = a.sync_folder(&server);
+    assert!(!opens_with_old_code(&a));
+    a.lock();
+    a.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    assert!(!opens_with_old_code(&a));
+    let _ = std::fs::remove_dir_all(&server_dir);
+}
+
+/// S1: an older suite file put back into the folder (a sync tool's conflict, a backup, someone
+/// with write access) still opens with the password and key, but unlocking must not write its
+/// old, replaced recovery code into the newer vaults again.
+#[test]
+fn an_older_suite_file_does_not_bring_back_a_replaced_code() {
+    let d = Dirs::new("s1-rollback");
+    let kf = generate_keyfile();
+    let s = d.suite();
+    let res =
+        s.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    let old_code = RecoveryCode::parse(&res.recovery_code.unwrap()).unwrap();
+    let suite_path = d.root.join("vault").join("suite.ghlsuite");
+    let old_suite = std::fs::read(&suite_path).unwrap();
+    s.new_recovery_code("Neu".into()).unwrap();
+    s.lock();
+    let vaults_open_with_old_code = || {
+        files(&d)
+            .iter()
+            .filter(|(n, _)| !n.ends_with(".ghlsuite"))
+            .any(|(_, data)| LockedContainer::parse(data).unwrap().recover(&old_code).is_ok())
+    };
+    assert!(!vaults_open_with_old_code(), "before the old suite file is put back");
+    std::fs::write(&suite_path, &old_suite).unwrap();
+    let s = d.suite();
+    s.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    assert!(!vaults_open_with_old_code(), "the replaced code must not open the vaults again");
+}
