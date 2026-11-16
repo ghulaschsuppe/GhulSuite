@@ -149,7 +149,12 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
 
     /** GhulDrive's storage; tests can give Drive a server of its own (not in the suite's list). */
     var driveOwnServer: ServerUi? = null
-    override suspend fun driveStorage() = when {
+    /** So many calls of driveStorage() fail first (the core is busy with a synchronisation). */
+    var driveStorageFails = 0
+    override suspend fun driveStorage() = if (driveStorageFails > 0) {
+        driveStorageFails--
+        throw java.io.IOException("busy")
+    } else when {
         driveOwnServer != null -> de.danerd.ghulsuite.model.DriveStorageUi(de.danerd.ghulsuite.model.DriveModeUi.OWN, driveOwnServer, syncServer != null)
         configured && syncServer != null -> de.danerd.ghulsuite.model.DriveStorageUi(de.danerd.ghulsuite.model.DriveModeUi.SYNC, server, true)
         else -> de.danerd.ghulsuite.model.DriveStorageUi(de.danerd.ghulsuite.model.DriveModeUi.NONE, null, false)

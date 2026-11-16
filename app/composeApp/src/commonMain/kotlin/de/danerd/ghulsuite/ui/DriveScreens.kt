@@ -192,6 +192,8 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
     var loaded by remember { mutableStateOf(false) }
     var sharing by remember { mutableStateOf<List<DriveItemUi>?>(null) }
     var driveServer by remember { mutableStateOf<ServerUi?>(null) }
+    /** The core answered and Drive's storage names no server. */
+    var storageWithout by remember { mutableStateOf(false) }
     /** "" = folders, or one of the quick views: recent, fav, offline, trash. */
     var view by remember { mutableStateOf("") }
     androidx.compose.runtime.SideEffect { state.driveTrashShown = view == "trash" }
@@ -202,10 +204,15 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
     var trashTick by remember { mutableStateOf(0) }
     var emptyTrash by remember { mutableStateOf(false) }
     PlatformBackHandler(enabled = LocalTabActive.current && view.isNotEmpty() && path.size == 1) { view = "" }
-    LaunchedEffect(status.serverId) {
+    LaunchedEffect(status.serverId, state.syncing, state.liveRevision()) {
         // Drive's own server is not in the suite's list: the storage of Drive names it in every case.
-        driveServer = catching { net.driveStorage().server }.getOrNull()
+        // Read again after every synchronisation and change; a failed read keeps what is known
+        // (bug: "No server yet" next to the files after a restart, until the app restarted again).
+        catching { net.driveStorage() }.onSuccess { driveServer = it.server; storageWithout = it.server == null }
     }
+    // Drive is set up (it has a server id) and only its name may still be loading, unless the core
+    // said that Drive's server is gone (e.g. removed from the list): then "No server yet".
+    val noServer = status.serverId == null || storageWithout
 
     // Long press selects (as in every list); the bar on top acts on the chosen files.
     val selected = rememberListSelection()
@@ -411,9 +418,12 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     IconTile(Icons.Filled.Dns, paletteColor(1))
                     Column(Modifier.weight(1f)) {
-                        Text(driveServer?.name ?: stringResource(Res.string.drive_no_server), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
-                            if (driveServer == null) stringResource(Res.string.drive_no_server_sub)
+                            driveServer?.name ?: stringResource(if (noServer) Res.string.drive_no_server else Res.string.loading),
+                            fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            if (noServer) stringResource(Res.string.drive_no_server_sub)
                             else listOfNotNull(driveServer?.let { it.location.ifBlank { "~/" + it.base } + "/drive" }, stringResource(Res.string.drive_encrypted)).joinToString(" · "),
                             fontSize = 13.sp, color = t.muted,
                         )
@@ -421,7 +431,7 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
                     if (error == null && driveServer != null) Box(Modifier.clickable { refresh = true; reload++ }) { Tag(stringResource(Res.string.drive_current), t.ok, Icons.Filled.Check) }
                 }
                 // Without a server the numbers would say "0 files" next to the files in the list.
-                if (driveServer == null) {
+                if (noServer) {
                     TextButton(onClick = { state.push(Screen.SettingsPage(SetPage.SERVERS)) }) { Text(stringResource(Res.string.drive_choose_server)) }
                 } else {
                 usage?.let { u ->

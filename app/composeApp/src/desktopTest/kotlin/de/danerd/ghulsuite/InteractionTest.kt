@@ -1302,6 +1302,53 @@ class InteractionTest {
         }
     }
 
+    /**
+     * Leaving an area with its search focused: the hidden search keeps no focus (bug: Android
+     * brought the keyboard back for it in GhulAuth when the delete question closed).
+     */
+    @Test
+    fun leavingAnAreaClearsTheFocusOfItsSearch() {
+        app { state, _ ->
+            waitFor("Search entries")
+            val focusedFields = { onAllNodes(androidx.compose.ui.test.hasSetTextAction() and androidx.compose.ui.test.isFocused(), useUnmergedTree = true).fetchSemanticsNodes().size }
+            onAllNodes(androidx.compose.ui.test.hasSetTextAction(), useUnmergedTree = true)[0].performClick()
+            waitUntil(timeoutMillis = 5_000) { focusedFields() == 1 }
+            runOnIdle { state.tab = Tab.AUTH }
+            waitForIdle()
+            assertEquals(0, focusedFields())
+        }
+    }
+
+    /**
+     * Right after unlocking a synchronisation holds the core and reading GhulDrive's storage fails
+     * once: the card does not claim "No server yet" (Drive is set up), and it names the server
+     * once the synchronisation is done (bug: it stayed "No server yet" until the app restarted).
+     */
+    @Test
+    fun driveCardKeepsItsServerWhileTheCoreIsBusy() {
+        app(setup = { tab = Tab.DRIVE }, prepare = { (net as FakeNet).driveStorageFails = 1_000 }) { state, fake ->
+            waitFor("Steuer 2025.pdf")
+            assertFalse(shown("No server yet"))
+            assertFalse(shown("Choose server"))
+            // The synchronisation is done: the core answers again.
+            (fake.net as FakeNet).driveStorageFails = 0
+            state.sync()
+            waitFor("Heimserver")
+            assertFalse(shown("No server yet"))
+        }
+    }
+
+    /** Drive's server was removed from the list (older setup): the card says so, not "Loading …". */
+    @Test
+    fun driveCardSaysNoServerWhenTheCoreHasNone() {
+        app(setup = { tab = Tab.DRIVE }, prepare = { (net as FakeNet).syncServer = null }) { _, _ ->
+            waitFor("Steuer 2025.pdf")
+            waitFor("No server yet")
+            assertTrue(shown("Choose server"))
+            assertFalse(shown("Loading …"))
+        }
+    }
+
     // --- Background jobs and the mail archive in GhulDrive ----------------------------------------
 
     private fun DesktopComposeUiTest.part(t: String) = onAllNodesWithText(t, substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()

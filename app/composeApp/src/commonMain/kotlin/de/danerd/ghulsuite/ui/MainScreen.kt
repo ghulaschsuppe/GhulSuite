@@ -191,6 +191,10 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
     // Tabs opened since unlocking; a plain set, read together with state.tab.
     val visited = remember { LinkedHashSet<Tab>() }
     visited.add(state.tab)
+    // A field of the area left behind (e.g. its search) keeps no focus: hidden areas stay composed,
+    // and Android brought the keyboard back for it when a sheet closed (bug: keyboard in GhulAuth).
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    LaunchedEffect(state.tab) { focusManager.clearFocus(force = true) }
     if (state.codeUnconfirmed && top !is Screen.RecoveryCode) CodeReminderDialog(state)
     state.mailAccountSheet?.let { sheet -> MailAccountSheet(state, sheet.id) { state.mailAccountSheet = null } }
     // A new recovery code cannot be skipped: it must be confirmed first.
