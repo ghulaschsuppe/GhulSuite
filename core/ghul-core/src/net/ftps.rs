@@ -305,14 +305,16 @@ impl RemoteFs for FtpsFs {
         self.with(TIMEOUT * 20, |c, me| {
             let full = full.clone();
             Box::pin(async move {
-                match me.data(c, &format!("RETR {full}")).await? {
-                    Some(mut d) => {
+                // Missing, but a write on a server that does not overwrite stopped half-way (see
+                // `write`): the finished new file, else the old one moved aside.
+                for name in [full.clone(), format!("{full}.ghltmp"), format!("{full}.ghlold")] {
+                    if let Some(mut d) = me.data(c, &format!("RETR {name}")).await? {
                         let data = FtpsFs::read_all(&mut d).await?;
                         FtpsFs::finish(c).await?;
-                        Ok(Some(data))
+                        return Ok(Some(data));
                     }
-                    None => Ok(None),
                 }
+                Ok(None)
             })
         })
     }
@@ -333,13 +335,18 @@ impl RemoteFs for FtpsFs {
                 drop(d);
                 FtpsFs::finish(c).await?;
                 // Replace in one step where the server allows it: the old file stays until the new
-                // one is complete. Only servers that refuse to overwrite get DELE first (then the
-                // file is missing for a moment; synchronisation copes with that).
+                // one is complete. Servers that refuse to overwrite get the old file moved aside
+                // first, never deleted before the new one is in place; `read` finds either.
                 expect(c, &format!("RNFR {tmp}"), &[350]).await?;
                 if expect(c, &format!("RNTO {full}"), &[250]).await.is_err() {
-                    let _ = cmd(c, &format!("DELE {full}")).await?;
+                    let old = format!("{full}.ghlold");
+                    let _ = cmd(c, &format!("DELE {old}")).await?;
+                    if expect(c, &format!("RNFR {full}"), &[350]).await.is_ok() {
+                        expect(c, &format!("RNTO {old}"), &[250]).await?;
+                    }
                     expect(c, &format!("RNFR {tmp}"), &[350]).await?;
                     expect(c, &format!("RNTO {full}"), &[250]).await?;
+                    let _ = cmd(c, &format!("DELE {old}")).await?;
                 }
                 Ok(())
             })

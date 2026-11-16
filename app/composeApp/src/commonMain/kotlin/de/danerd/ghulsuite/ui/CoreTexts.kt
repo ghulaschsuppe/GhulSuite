@@ -31,6 +31,7 @@ private val CORE_TEXTS: Map<String, StringResource> = mapOf(
     "connection refused" to Res.string.core_refused,
     "image not available" to Res.string.core_image_na,
     "GhulDrive is being changed on another device, please try again" to Res.string.core_drive_busy,
+    "GhulDrive's index is missing on the server" to Res.string.core_drive_index_missing,
     "the server folder belongs to another suite" to Res.string.core_folder_other_suite,
     "not a GhulSuite backup" to Res.string.core_not_backup,
     "backup too large" to Res.string.core_backup_big,

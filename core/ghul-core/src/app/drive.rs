@@ -325,6 +325,11 @@ pub struct DriveLocation {
 }
 
 /// Deletes a file; one that is not there is fine.
+/// GhulDrive's index is gone from a location that had one.
+fn index_missing() -> GhulError {
+    GhulError::InvalidInput { msg: "GhulDrive's index is missing on the server".into() }
+}
+
 fn delete_quiet(fs: &dyn RemoteFs, path: &str) -> Result<()> {
     match fs.delete(path) {
         Ok(()) | Err(crate::net::NetError::NotFound(_)) => Ok(()),
@@ -549,6 +554,12 @@ impl GhulSuite {
         let (fs, keys) = self.drive_ctx(o)?;
         let mut index = load_index(fs.as_ref(), &keys)?;
         if fs.read(INDEX)?.is_none() {
+            // A location this device has seen an index on: the index is gone (e.g. a write that
+            // broke off), not new. An empty one would hide every file for good.
+            let seen = d.seen.get(&self.drive_location(o).unwrap_or_default()).copied().unwrap_or(0);
+            if seen > 0 {
+                return Err(index_missing());
+            }
             save_index(fs.as_ref(), &keys, &mut index)?;
         }
         Ok(())
@@ -1188,6 +1199,11 @@ impl GhulSuite {
     pub fn drive_accept_server_state(&self) -> Result<()> {
         self.with_open(|o| {
             let (fs, keys) = self.drive_ctx(o)?;
+            // Only an older index is taken over; a missing one is not a state to accept (the
+            // file keys are only in the index: an empty one would lose every file for good).
+            if fs.read(INDEX)?.is_none() {
+                return Err(index_missing());
+            }
             let index = load_index(fs.as_ref(), &keys)?;
             let mut d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
             let server = self.drive_location(o).unwrap_or_default();

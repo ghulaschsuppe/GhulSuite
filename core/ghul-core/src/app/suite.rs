@@ -1647,6 +1647,7 @@ impl GhulSuite {
         if p.exists() {
             super::quick::wipe(&p)?;
         }
+        super::quick::wipe_leftovers(&self.local_dir, &name);
         let _ = std::fs::remove_file(self.local_dir.join(format!("quick-{name}.stamp")));
         Ok(())
     }

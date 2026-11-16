@@ -42,7 +42,9 @@ pub trait VaultStorage: Send + Sync {
     fn describe(&self) -> String;
 }
 
-/// Writes atomically: temporary file, fsync, keep the previous version as `.bak`, rename.
+/// Writes atomically: temporary file, fsync, keep a copy of the previous version as `.bak`,
+/// then rename over the file in one step (rename replaces on every system Rust supports), so
+/// the file never goes missing in between.
 pub(crate) fn write_atomic(dir: &Path, name: &str, data: &[u8]) -> Result<()> {
     let tmp = dir.join(format!("{name}.tmp"));
     let target = dir.join(name);
@@ -52,7 +54,11 @@ pub(crate) fn write_atomic(dir: &Path, name: &str, data: &[u8]) -> Result<()> {
         f.sync_all()?;
     }
     if target.exists() {
-        fs::rename(&target, dir.join(format!("{name}.bak")))?;
+        let bak = dir.join(format!("{name}.bak"));
+        let _ = fs::remove_file(&bak);
+        if fs::hard_link(&target, &bak).is_err() {
+            fs::copy(&target, &bak)?;
+        }
     }
     fs::rename(&tmp, &target)?;
     if let Ok(d) = fs::File::open(dir) {

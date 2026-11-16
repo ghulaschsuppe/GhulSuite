@@ -314,6 +314,30 @@ fn vault_management_and_suite_from_vault() {
     assert_eq!(f.list_entries(VaultKind::Pass, None).unwrap()[0].title, "Jira");
 }
 
+/// N1: switching quick unlock on again (a new key) and then off leaves nothing of it on the
+/// device, also not the previous version that writing keeps as ".bak".
+#[test]
+fn quick_unlock_off_leaves_no_copy_behind() {
+    let d = Dirs::new("quick-bak");
+    let s = d.suite();
+    s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "P")]), None, None, None).unwrap();
+    s.quick_unlock_enable("bio".into(), None).unwrap();
+    s.quick_unlock_enable("bio".into(), None).unwrap();
+    let quick_files = || -> Vec<String> {
+        std::fs::read_dir(d.local())
+            .map(|r| {
+                r.flatten()
+                    .map(|e| e.file_name().to_string_lossy().into_owned())
+                    .filter(|n| n.contains(".ghlq"))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    assert_eq!(quick_files(), vec!["quick-bio.ghlq".to_owned()], "no older copy next to the file");
+    s.quick_unlock_disable("bio".into()).unwrap();
+    assert!(quick_files().is_empty(), "{:?}", quick_files());
+}
+
 #[test]
 fn quick_unlock_fingerprint_and_pin() {
     let d = Dirs::new("quick");

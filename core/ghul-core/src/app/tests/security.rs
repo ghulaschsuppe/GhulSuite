@@ -43,6 +43,13 @@ fn an_old_or_missing_drive_index_is_refused() {
     std::fs::remove_file(&index).unwrap();
     assert!(matches!(drive_names(&s), Err(GhulError::DriveRolledBack)));
     assert!(std::fs::read(&index).is_err());
+    // A missing index is not a state to take over (the file keys are only in the index): no
+    // empty index is written by "take the server's state".
+    assert!(
+        matches!(s.drive_accept_server_state(), Err(GhulError::InvalidInput { msg }) if msg.contains("index is missing"))
+    );
+    assert!(std::fs::read(&index).is_err());
+    assert!(matches!(drive_names(&s), Err(GhulError::DriveRolledBack)));
     // Put back on purpose: the owner takes that state.
     std::fs::write(&index, &old).unwrap();
     s.drive_accept_server_state().unwrap();

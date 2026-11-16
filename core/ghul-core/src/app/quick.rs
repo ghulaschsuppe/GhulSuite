@@ -123,7 +123,19 @@ pub fn create(
     out.extend_from_slice(&ct);
     fs::create_dir_all(dir)?;
     super::storage::write_atomic(dir, &format!("quick-{name}.ghlq"), &out)?;
+    // The previous version (with the old key) must not stay behind.
+    wipe_leftovers(dir, name);
     Ok(qk)
+}
+
+/// Overwrites and deletes what writing leaves next to `quick-<name>.ghlq` (`.bak`, `.tmp`).
+pub fn wipe_leftovers(dir: &Path, name: &str) {
+    for ext in ["ghlq.bak", "ghlq.tmp"] {
+        let p = dir.join(format!("quick-{name}.{ext}"));
+        if p.exists() {
+            let _ = wipe(&p);
+        }
+    }
 }
 
 /// Opens the quick unlock file. Expired files are deleted.
@@ -166,6 +178,7 @@ pub fn open_file(
         read_stamp(dir, name, &pk, old_version.then_some(&*secret)).map_or(created, |t| t.max(created));
     if now_ms < last_full_unlock || now_ms - last_full_unlock > max_age_ms {
         let _ = wipe(&p);
+        wipe_leftovers(dir, name);
         let _ = fs::remove_file(stamp_path(dir, name));
         return Err(GhulError::QuickUnlockExpired);
     }
