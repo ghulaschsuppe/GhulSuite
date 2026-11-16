@@ -217,6 +217,12 @@ flowchart TB
   Code selbst bleiben gültig. Empfohlen wird anschließend ein neuer Code. Ein neuer Code macht das alte Blatt
   wertlos, auch zusammen mit einer alten Sicherungskopie (für alles, was danach gespeichert wird).
 - Bewusste Abwägung: Wer Notfallblatt **und** Dateien hat, hat Zugriff. Das Blatt ist wie ein Tresorschlüssel aufzubewahren.
+- Ein ersetzter Code (und ein Schlüssel, der entfernt wurde) bleibt ersetzt: Suite und Tresore merken ihn als
+  Fingerabdruck, auch über die Synchronisation. Eine Datei, die ihn zurückbringen würde (eine ältere Suite-Datei im
+  Ordner, eine mit dem alten Code gebaute Datei auf dem Server), ändert den Schutz nicht.
+- Schutzänderungen sind ein Schritt: die Suite-Datei wird zuerst geschrieben. Scheitert das, ist nichts geändert und
+  die Suite wird gesperrt. Bleibt danach ein Tresor im alten Schutz liegen, öffnet das Entsperren ihn damit und
+  gleicht ihn an.
 
 - 256 Bit Zufall, dargestellt als 52 Zeichen Base32 in Vierergruppen mit Prüfsumme, zusätzlich als QR-Code.
 - Das Notfallblatt wird **lokal** als PDF erzeugt. Es enthält Suite-Name, ID, Datum, den Code und eine Anleitung,
@@ -399,7 +405,9 @@ die App gibt der Datei beim nächsten Entsperren ihren neutralen Namen zurück.
 
 **Stabilität**
 - Abgebrochene Uploads setzen an der letzten geschriebenen Stelle wieder an (SFTP erlaubt Schreiben ab einer Position).
-- Hochladen unter temporärem Namen, danach **atomares Umbenennen** (`posix-rename@openssh.com`), nie halbe Dateien.
+- Hochladen unter temporärem Namen, danach **atomares Umbenennen** (`posix-rename@openssh.com`, auf einem zweiten
+  SFTP-Kanal), nie halbe Dateien. Bietet ein Server das nicht an, fehlt die Datei zwischen Löschen und Umbenennen
+  kurz: das Lesen nimmt dann die fertige `.ghltmp`, und der nächste Schreibvorgang setzt sie zuerst an ihren Platz.
 - Eine Verbindung für mehrere Übertragungen, Keep-Alive, automatischer Wiederaufbau bei Netzwechsel (WLAN ↔ Mobilfunk).
 - Implementierung im Rust-Kern (reine Rust-SSH-Bibliothek), damit Android und Windows identisch arbeiten.
 
