@@ -267,8 +267,8 @@ fn password_generator_rules_for_every_option() {
 }
 
 #[test]
-fn autofill_never_fills_a_lookalike() {
-    use super::super::autofill::{match_entry, Match};
+fn lookalikes_are_never_the_same_site() {
+    use super::super::domain::{base_domain, host_of};
     let sites = [
         "bank.de",
         "sparkasse.de",
@@ -317,24 +317,24 @@ fn autofill_never_fills_a_lookalike() {
             format!("{site}.com"),
             format!("{}.{}", site.split('.').next().unwrap(), "evil"),
         ];
-        v.retain(|a| a != site && super::super::autofill::host_of(a).is_some());
+        v.retain(|a| a != site && host_of(a).is_some());
         v
     };
+    let site_of = |url: &str| base_domain(&host_of(url).unwrap());
     let mut checked = 0;
     for site in sites {
-        let urls = vec![format!("https://{site}/login")];
-        assert_eq!(match_entry(&urls, Some(site), None, None), Match::Direct, "{site}");
+        let base = base_domain(site);
+        assert_eq!(site_of(&format!("https://{site}/login")), base, "{site}");
         // ("www." in front of an IP address is no valid host for a browser either.)
         if !site.chars().next().unwrap().is_ascii_digit() {
-            assert_eq!(match_entry(&urls, Some(&format!("www.{site}")), None, None), Match::Direct, "www.{site}");
+            assert_eq!(site_of(&format!("https://www.{site}/")), base, "www.{site}");
         }
         for a in attacks(site) {
-            let same = super::super::autofill::base_domain(&super::super::autofill::host_of(&a).unwrap())
-                == super::super::autofill::base_domain(site);
-            // Only another name under the very same registrable domain may fill.
-            assert_eq!(match_entry(&urls, Some(&a), None, None) == Match::Direct, same, "{site} vs {a}");
-            // (A name under the same registrable domain, e.g. evil-nextcloud.example.org next to
-            // nextcloud.example.org, belongs to the same owner and may fill, that is the rule.)
+            let host = host_of(&a).unwrap();
+            // Only another name under the very same registrable domain is the same site (e.g.
+            // evil-nextcloud.example.org next to nextcloud.example.org: same owner).
+            let under = host == base || host.ends_with(&format!(".{base}"));
+            assert_eq!(site_of(&a) == base, under, "{site} vs {a}");
             checked += 1;
         }
     }

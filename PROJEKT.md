@@ -32,7 +32,7 @@ core/fuzz/             Fuzzing-Ziele (cargo-fuzz)
 app/                   Kotlin + Compose Multiplatform (Android und Windows), Anbindung per UniFFI
   composeApp/src/commonMain   gemeinsame Oberfläche und Texte
   composeApp/src/jvmShared    gemeinsamer Code Android/Windows (Kern-Anbindung)
-  composeApp/src/androidMain  Android (USB/NFC-Key, Autofill, Benachrichtigungen)
+  composeApp/src/androidMain  Android (USB/NFC-Key, Benachrichtigungen)
   composeApp/src/desktopMain  Windows (WebAuthn, Fenster, Pakete)
   composeApp/src/desktopTest  FFI-, PDF- und Screenshot-Tests
 app/maestro/           Oberflächen-Abläufe für Emulator oder Gerät (Maestro)

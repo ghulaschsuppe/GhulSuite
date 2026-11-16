@@ -202,6 +202,7 @@ class InteractionTest {
     fun authSwipeAsksFirst() = app(setup = { tab = Tab.AUTH }) { state, fake ->
         state.undoMillis = 60_000
         waitFor("GitHub")
+        waitFor("All codes · 2 accounts")
         text("GitHub").performTouchInput { swipeLeft() }
         waitFor("Delete?")
         assertFalse(shown("Undo"), "nothing deleted before the answer")
@@ -214,6 +215,9 @@ class InteractionTest {
         waitFor("Undo")
         waitGone("GitHub")
         assertFalse("deleteTotp:t1:b" in fake.calls, "Undo is still possible")
+        // The line under the title counts what the list shows (bug: "2 accounts" above one).
+        waitFor("All codes · 1 account")
+        assertFalse(shown("All codes · 2 accounts"))
     }
 
     @Test
@@ -270,7 +274,7 @@ class InteractionTest {
         text("Steuer 2025.pdf").performClick()
         waitFor("2 selected")
         desc("Share").performClick()
-        waitFor("Share link")
+        waitFor("Encrypted link with expiry, download limit and password")
         text("Share link").performClick()
         waitFor("Title of the link")
         assertTrue(shown("The recipient gets every file on its own."))
@@ -278,6 +282,46 @@ class InteractionTest {
         text("Create link").performScrollTo().performClick()
         waitUntil(timeoutMillis = 10_000) { net.calls.any { it.startsWith("shareDrive:") } }
         assertTrue(net.calls.last { it.startsWith("shareDrive:") }.contains(":Unterlagen:7:0:false"), net.calls.toString())
+    }
+
+    /**
+     * F149: while the core has not yet said whether the server module is there (busy with a
+     * synchronisation), "Share link" says it is checking and cannot be tapped; then it says what
+     * is missing.
+     */
+    @Test
+    fun shareSheetWaitsForTheModuleCheck() = app(setup = { tab = Tab.DRIVE }, prepare = {
+        (net as FakeNet).missingModule = "s2"
+        (net as FakeNet).missingModuleGate = java.util.concurrent.CountDownLatch(1)
+    }) { state, fake ->
+        val net = fake.net as FakeNet
+        longPress("Notizen.txt")
+        waitFor("1 selected")
+        desc("Share").performClick()
+        waitFor("Checking GhulDrive’s server …")
+        assertFalse(shown("Needs the GhulSuite server module. Tap to install it."))
+        assertFalse(shown("Encrypted link with expiry, download limit and password"))
+        // A disabled row has no click action.
+        assertTrue(onAllNodes(hasText("Share link") and hasClickAction()).fetchSemanticsNodes().isEmpty())
+        shot("share-sheet-checking")
+        net.missingModuleGate?.countDown()
+        waitFor("Needs the GhulSuite server module. Tap to install it.")
+        assertFalse(shown("Checking GhulDrive’s server …"))
+        text("Share link").performClick()
+        waitFor("Install and check")
+        assertEquals(Screen.ModuleInstall("s2"), state.stack.lastOrNull())
+    }
+
+    /** F149: if the core cannot say whether the module is there, the row does not stay "checking". */
+    @Test
+    fun shareSheetDoesNotStayCheckingWhenTheCoreFails() = app(setup = { tab = Tab.DRIVE }, prepare = { (net as FakeNet).missingModuleFails = true }) { _, _ ->
+        longPress("Notizen.txt")
+        waitFor("1 selected")
+        desc("Share").performClick()
+        waitFor("Encrypted link with expiry, download limit and password")
+        assertFalse(shown("Checking GhulDrive’s server …"))
+        text("Share link").performClick()
+        waitFor("Create link")
     }
 
     /** Without the module on GhulDrive's server, "Share link" says so and opens its installation. */
@@ -1093,6 +1137,15 @@ class InteractionTest {
      * the folder step grey "not checked" (not a red result nobody saw). With the address typed
      * in, the next try works.
      */
+    /** While the server's folders are still being read, the module page says so (not an empty list). */
+    @Test
+    fun moduleFolderListSaysWhileItLoads() = app(setup = { push(Screen.ModuleInstall("s2")) }, prepare = { (net as FakeNet).browseDelayMs = 3_000 }) { _, _ ->
+        waitFor("Loading …")
+        assertFalse(shown("public_html"))
+        waitUntil(timeoutMillis = 10_000) { shown("public_html") }
+        assertFalse(shown("Loading …"))
+    }
+
     @Test
     fun moduleInstallHttpsFailsThenWorksWithAddress() {
         app(setup = { push(Screen.ModuleInstall("s2")) }) { _, fake ->
@@ -1202,30 +1255,31 @@ class InteractionTest {
     }
 
     /**
-     * The list of servers: per server its login, what it is used for and its module. The module is
+     * GhulDrive's storage locations: per location its login and its module. The module is
      * installed from there (happy path: it answers at the usual address), updated, and removed
      * only after asking.
      */
     @Test
     fun serverListInstallsUpdatesAndRemovesTheModule() {
-        app(setup = { push(Screen.SettingsPage(SetPage.SERVERS)) }, prepare = { (net as FakeNet).moduleAnswersWithoutAddress = true }) { state, fake ->
+        // The module belongs to a storage location of GhulDrive (Options > GhulDrive), one block each.
+        app(setup = { push(Screen.SettingsPage(SetPage.DRIVE)) }, prepare = {
+            (net as FakeNet).apply { moduleAnswersWithoutAddress = true; addSecondDriveLocation() }
+        }) { state, fake ->
             val net = fake.net as FakeNet
             waitFor("Webspace")
             assertTrue(shown("Server module: version 1, version 2 is available"))
             assertTrue(shown("Server module: not installed (only needed for share links)"))
-            assertTrue(shown("Used for: Synchronisation, GhulDrive"))
-            assertTrue(shown("Not used yet"))
             shot("servers-modules")
             // Install on the web hosting: the folder, then "Install and check" (address left empty).
             text("Install module").performScrollTo().performClick()
             waitFor("Install and check")
-            assertEquals(Screen.ModuleInstall("s2"), state.stack.lastOrNull())
+            assertEquals(Screen.ModuleInstall("d2"), state.stack.lastOrNull())
             waitFor("public_html")
             text("public_html").performClick()
             waitFor("/public_html")
             onNodeWithText("Install and check").performScrollTo().performClick()
             waitFor("The server module runs at https://example.org/ghulsuite.php. You can now create share links.")
-            assertTrue("moduleInstall:s2:public_html:" in net.calls, net.calls.toString())
+            assertTrue("moduleInstall:d2:public_html:" in net.calls, net.calls.toString())
             assertTrue(shown("Answers over HTTPS") && shown("Reads the GhulSuite folder"))
             assertTrue(shown("GhulSuite folder not reachable from the web"))
             assertFalse(shown("Not checked, because the HTTPS step failed"))
@@ -1385,12 +1439,12 @@ class InteractionTest {
      */
     @Test
     fun driveCardKeepsItsServerWhileTheCoreIsBusy() {
-        app(setup = { tab = Tab.DRIVE }, prepare = { (net as FakeNet).driveStorageFails = 1_000 }) { state, fake ->
+        app(setup = { tab = Tab.DRIVE }, prepare = { (net as FakeNet).driveLocationsFails = 1_000 }) { state, fake ->
             waitFor("Steuer 2025.pdf")
             assertFalse(shown("No server yet"))
             assertFalse(shown("Choose server"))
             // The synchronisation is done: the core answers again.
-            (fake.net as FakeNet).driveStorageFails = 0
+            (fake.net as FakeNet).driveLocationsFails = 0
             state.sync()
             waitFor("Heimserver")
             assertFalse(shown("No server yet"))
@@ -1400,12 +1454,236 @@ class InteractionTest {
     /** Drive's server was removed from the list (older setup): the card says so, not "Loading …". */
     @Test
     fun driveCardSaysNoServerWhenTheCoreHasNone() {
-        app(setup = { tab = Tab.DRIVE }, prepare = { (net as FakeNet).syncServer = null }) { _, _ ->
+        app(setup = { tab = Tab.DRIVE }, prepare = { (net as FakeNet).apply { driveStatusServer = "s1"; driveOwnServer = null } }) { _, _ ->
             waitFor("Steuer 2025.pdf")
             waitFor("No server yet")
             assertTrue(shown("Choose server"))
             assertFalse(shown("Loading …"))
         }
+    }
+
+    // --- GhulDrive's storage locations -------------------------------------------------------------
+
+    /**
+     * Options > GhulDrive: one block per storage location with its server, its tags, its module
+     * and a trash icon; the one that is not active can be switched to.
+     */
+    @Test
+    fun driveSettingsShowOneBlockPerLocation() = app(setup = { push(Screen.SettingsPage(SetPage.DRIVE)) }, prepare = { (net as FakeNet).addSecondDriveLocation() }) { _, fake ->
+        val net = fake.net as FakeNet
+        waitFor("STORAGE LOCATIONS")
+        waitFor("Heimserver")
+        assertTrue(shown("Webspace"))
+        assertTrue(shown("Active"))
+        assertTrue(shown("Mail archive"))
+        assertTrue(shown("Folder: /drive-b"))
+        // Module of the first one (outdated: update offered), none on the second (install offered).
+        assertTrue(shown("Install module"))
+        assertTrue(shown("Update module"))
+        assertTrue(shown("Add storage location"))
+        assertEquals(2, onAllNodesWithContentDescription("Remove storage location").fetchSemanticsNodes().size)
+        shot("drive-locations")
+        text("Switch to this one").performScrollTo().performClick()
+        waitUntil(timeoutMillis = 10_000) { net.driveLocationCalls.contains("switch:d2") }
+        waitFor("GhulDrive now shows Webspace")
+        // Now the first one can be switched to.
+        waitFor("Switch to this one")
+        assertTrue(net.driveLocs.first { it.server.id == "d2" }.active)
+    }
+
+    /** The trash icon asks first; the files on the server are only deleted when the box is ticked. */
+    @Test
+    fun removingALocationAsksAboutItsFiles() = app(setup = { push(Screen.SettingsPage(SetPage.DRIVE)) }, prepare = { (net as FakeNet).addSecondDriveLocation() }) { _, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Webspace")
+        onAllNodesWithContentDescription("Remove storage location")[1].performScrollTo().performClick()
+        waitFor("Remove Webspace?")
+        assertTrue(shown("Also delete the files on the server"))
+        assertTrue(shown("The encrypted files stay on the server. If you add the same folder again later, they are back."))
+        // Nothing happens before "Remove".
+        assertTrue(net.driveLocationCalls.isEmpty())
+        text("Also delete the files on the server").performClick()
+        waitFor("GhulDrive deletes its files in this folder on the server, the server module as well. This cannot be undone.")
+        shot("drive-location-remove")
+        text("Remove").performClick()
+        waitUntil(timeoutMillis = 10_000) { net.driveLocationCalls.contains("remove:d2:true") }
+        waitGone("Webspace")
+        assertEquals(1, onAllNodesWithContentDescription("Remove storage location").fetchSemanticsNodes().size)
+    }
+
+    /** Cancelling the question removes nothing; without ticking the box the files stay. */
+    @Test
+    fun removingALocationKeepsTheFilesUnlessAsked() = app(setup = { push(Screen.SettingsPage(SetPage.DRIVE)) }, prepare = { (net as FakeNet).addSecondDriveLocation() }) { _, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Webspace")
+        onAllNodesWithContentDescription("Remove storage location")[1].performScrollTo().performClick()
+        waitFor("Remove Webspace?")
+        text("Cancel").performClick()
+        waitGone("Remove Webspace?")
+        assertTrue(net.driveLocationCalls.isEmpty())
+        onAllNodesWithContentDescription("Remove storage location")[1].performScrollTo().performClick()
+        waitFor("Remove Webspace?")
+        text("Remove").performClick()
+        waitUntil(timeoutMillis = 10_000) { net.driveLocationCalls.contains("remove:d2:false") }
+    }
+
+    /** The server does not answer: the location can be removed anyway, its links only forgotten here. */
+    @Test
+    fun removingAnUnreachableLocationOffersToRemoveItAnyway() = app(setup = { push(Screen.SettingsPage(SetPage.DRIVE)) }, prepare = {
+        (net as FakeNet).apply { addSecondDriveLocation(); driveRemoveUnreachable = true }
+    }) { _, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Webspace")
+        onAllNodesWithContentDescription("Remove storage location")[1].performScrollTo().performClick()
+        waitFor("Remove Webspace?")
+        text("Remove").performClick()
+        waitFor("Remove Webspace anyway?")
+        assertTrue(onAllNodesWithText("could not be ended", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        assertEquals(listOf("remove:d2:false"), net.driveLocationCalls.toList())
+        shot("drive-location-remove-anyway")
+        text("Remove anyway").performClick()
+        waitUntil(timeoutMillis = 10_000) { net.driveLocationCalls.contains("remove:d2:false:force") }
+        waitGone("Webspace")
+    }
+
+    /** Switched somewhere else (header menu, Options) while a folder is open: GhulDrive starts at the top. */
+    @Test
+    fun switchingElsewhereLeavesTheOpenFolder() = app(setup = { tab = Tab.DRIVE }, prepare = { (net as FakeNet).addSecondDriveLocation() }) { state, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Fotos")
+        text("Fotos").performClick()
+        waitFor("Strand.jpg")
+        runOnIdle {
+            state.scope.launch {
+                net.driveSwitchLocation("d2")
+                state.changed()
+            }
+        }
+        waitGone("Strand.jpg")
+        waitFor("Steuer 2025.pdf")
+    }
+
+    /**
+     * Adding a location: the new block appears at once, also when the synchronisation that
+     * follows holds the core for a long time (bug: in the emulator it only appeared afterwards).
+     */
+    @Test
+    fun anAddedLocationAppearsBeforeTheSynchronisation() = app(setup = { push(Screen.SettingsPage(SetPage.DRIVE)) }) { _, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Heimserver")
+        // From now on a synchronisation takes 20 s and holds the core meanwhile.
+        net.syncDelayMs = 20_000
+        net.driveLocationsWaitForSync = true
+        text("Add storage location").performScrollTo().performClick()
+        typeInto("Server address", "example.org")
+        typeInto("User name", "web123")
+        text("Test connection").performClick()
+        waitFor("Create new (recommended)")
+        text("ghulsuite").performClick()
+        text("Check connection").performClick()
+        waitFor("Check the server key")
+        dialogButton("Fingerprint matches")
+        waitFor("Save server")
+        text("Save server").performScrollTo().performClick()
+        waitUntil(timeoutMillis = 10_000) { net.driveLocationCalls.contains("add:ghulsuite") }
+        waitFor("Storage location added. The active one stays; switch in GhulDrive with \"Switch storage location\".")
+        // Within the 10 s of waitFor, while the synchronisation takes 20 s.
+        waitFor("Folder: /ghulsuite")
+        assertEquals(2, onAllNodesWithContentDescription("Remove storage location").fetchSemanticsNodes().size)
+    }
+
+    /** Removing a location: the block goes at once, also while the synchronisation that follows holds the core. */
+    @Test
+    fun aRemovedLocationGoesBeforeTheSynchronisation() = app(setup = { push(Screen.SettingsPage(SetPage.DRIVE)) }, prepare = { (net as FakeNet).addSecondDriveLocation() }) { _, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Webspace")
+        net.syncDelayMs = 20_000
+        net.driveLocationsWaitForSync = true
+        onAllNodesWithContentDescription("Remove storage location")[1].performScrollTo().performClick()
+        waitFor("Remove Webspace?")
+        text("Remove").performClick()
+        waitUntil(timeoutMillis = 10_000) { net.driveLocationCalls.contains("remove:d2:false") }
+        // Within the 10 s of waitGone, while the synchronisation takes 20 s.
+        waitGone("Webspace")
+    }
+
+    /** Switching in GhulDrive's card: the other location shows at once, also while a synchronisation holds the core. */
+    @Test
+    fun switchingShowsTheOtherLocationBeforeTheSynchronisation() = app(setup = { tab = Tab.DRIVE }, prepare = { (net as FakeNet).addSecondDriveLocation() }) { _, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Switch storage location")
+        net.syncDelayMs = 20_000
+        net.driveLocationsWaitForSync = true
+        text("Switch storage location").performClick()
+        waitFor("/drive-b/drive")
+        text("Webspace").performClick()
+        waitUntil(timeoutMillis = 10_000) { net.driveLocationCalls == listOf("switch:d2") }
+        waitFor("/drive-b/drive · encrypted")
+    }
+
+    /** One location: no switch button in GhulDrive. Two: the button shows them and switches. */
+    @Test
+    fun driveOffersToSwitchOnlyWithSeveralLocations() {
+        app(setup = { tab = Tab.DRIVE }) { _, _ ->
+            waitFor("Steuer 2025.pdf")
+            waitFor("Heimserver")
+            assertFalse(shown("Switch storage location"))
+        }
+    }
+
+    @Test
+    fun driveSwitchesItsLocationFromTheCard() = app(setup = { tab = Tab.DRIVE }, prepare = { (net as FakeNet).addSecondDriveLocation() }) { _, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Steuer 2025.pdf")
+        waitFor("Switch storage location")
+        text("Switch storage location").performClick()
+        waitFor("/drive-b/drive")
+        shot("drive-switch-sheet")
+        text("Webspace").performClick()
+        waitUntil(timeoutMillis = 10_000) { net.driveLocationCalls == listOf("switch:d2") }
+        waitFor("GhulDrive now shows Webspace")
+        // The card names the location now shown.
+        waitFor("/drive-b/drive · encrypted")
+    }
+
+    /** Options > GhulMail: the archive's location is fixed and can be changed there. */
+    @Test
+    fun mailArchiveLocationCanBeChanged() = app(setup = { push(Screen.SettingsPage(SetPage.MAIL)) }, prepare = { (net as FakeNet).addSecondDriveLocation() }) { _, fake ->
+        val net = fake.net as FakeNet
+        waitFor("ARCHIVE LOCATION")
+        text("ARCHIVE LOCATION").performScrollTo()
+        waitFor("Heimserver")
+        text("Heimserver").performScrollTo().performClick()
+        waitFor("Webspace")
+        text("Webspace").performClick()
+        waitUntil(timeoutMillis = 10_000) { net.driveLocationCalls == listOf("archive:d2") }
+        // GhulDrive's active location stays.
+        assertTrue(net.driveLocs.first { it.server.id == "s1" }.active)
+    }
+
+    /** The archive lies on a location GhulDrive does not show: the archive view says so and offers to switch. */
+    @Test
+    fun mailArchiveOnAnotherLocationOffersToSwitch() = app(setup = { tab = Tab.MAIL }, prepare = {
+        (net as FakeNet).apply { addSecondDriveLocation(); driveLocs.replaceAll { it.copy(archive = it.server.id == "d2") } }
+    }) { state, fake ->
+        val net = fake.net as FakeNet
+        runOnIdle { state.push(Screen.MailArchive("m1")) }
+        waitFor("Switch to Webspace")
+        assertTrue(shown("The archive is on the storage location Webspace. GhulDrive shows another one right now. Switch to Webspace to see the archive."))
+        text("Switch to Webspace").performClick()
+        waitUntil(timeoutMillis = 10_000) { net.driveLocationCalls == listOf("switch:d2") }
+        waitGone("Switch to Webspace")
+    }
+
+    /** Options > Synchronisation is about the synchronisation only: no module, nothing of GhulDrive. */
+    @Test
+    fun syncPageHasNothingOfGhulDrive() = app(setup = { push(Screen.SettingsPage(SetPage.SERVERS)) }) { _, _ ->
+        waitFor("Synchronise now")
+        assertFalse(shown("Install module"))
+        assertFalse(shown("Update module"))
+        assertFalse(onAllNodesWithText("Server module", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        assertFalse(onAllNodesWithText("GhulDrive", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        shot("sync-page")
     }
 
     // --- Background jobs and the mail archive in GhulDrive ----------------------------------------
@@ -1696,33 +1974,6 @@ class InteractionTest {
         shot("job-strip-wide")
         onAllNodesWithTag(de.danerd.ghulsuite.ui.JOB_CANCEL_TAG).onFirst().performClick()
         waitFor("Upload cancelled: 0 of 2 files done.")
-    }
-
-    /**
-     * Photo backup: two photos added in the same second and "Cancel" between them. The mark stays
-     * one second before, so the next run still takes the second photo (it was skipped for good).
-     */
-    @Test
-    fun photoBackupKeepsPhotosOfTheSameSecond() = app(prepare = {
-        settings.photoBackup = true
-        (net as FakeNet).photos = listOf("a.jpg" to 1_000L, "b.jpg" to 1_000L, "c.jpg" to 1_005L)
-        (net as FakeNet).photoDelayMs = 1_500
-    }) { state, fake ->
-        val net = fake.net as FakeNet
-        waitUntil(timeoutMillis = 10_000) { "photo:a.jpg" in net.calls }
-        val job = state.jobs.list.first { it.kind == de.danerd.ghulsuite.ui.JobKind.PHOTOS }
-        runOnIdle { state.jobs.cancel(job) }
-        waitUntil(timeoutMillis = 10_000) { !job.active }
-        assertFalse("photo:b.jpg" in net.calls)
-        assertEquals(999, state.backend.settings.photoBackupSince, "the mark stays before the second of a.jpg")
-        // The next run takes b.jpg and c.jpg.
-        net.photoDelayMs = 0
-        fake.unlocked.value = false
-        waitForIdle()
-        fake.unlocked.value = true
-        waitUntil(timeoutMillis = 10_000) { "photo:c.jpg" in net.calls }
-        assertTrue("photo:b.jpg" in net.calls, net.calls.toString())
-        waitUntil(timeoutMillis = 5_000) { state.backend.settings.photoBackupSince == 1_005 }
     }
 
     /**

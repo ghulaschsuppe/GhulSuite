@@ -61,6 +61,7 @@ private val CORE_TEXTS: Map<String, StringResource> = mapOf(
     "the server module does not answer" to Res.string.core_module_no_answer,
     "share links need the server module" to Res.string.core_share_needs_module,
     "GhulDrive's server is changed in GhulDrive" to Res.string.core_drive_server_here,
+    "another storage location or server uses this folder" to Res.string.drive_location_folder_shared,
     "nothing to share" to Res.string.core_nothing_share,
     "no website or app" to Res.string.core_no_site,
     "no such group" to Res.string.core_no_group,

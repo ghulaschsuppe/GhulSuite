@@ -29,7 +29,6 @@ import de.danerd.ghulsuite.model.ProtectionUi
 import de.danerd.ghulsuite.model.SetupUi
 import de.danerd.ghulsuite.model.VaultKindUi
 import de.danerd.ghulsuite.model.VaultUi
-import de.danerd.ghulsuite.model.AutofillStatus
 import de.danerd.ghulsuite.model.ImportPreviewUi
 import de.danerd.ghulsuite.model.ImportResultUi
 import de.danerd.ghulsuite.model.VaultSourceUi
@@ -167,8 +166,6 @@ class ScreenshotTest {
             data: ByteArray, fileName: String, passVault: String?, totpVault: String?, totpsFromLogins: Boolean, keep: KeepSkippedUi?,
         ) = ImportResultUi(42, 5, 0, 1)
         override suspend fun exportPlain(vaultId: String, password: String) = ByteArray(0)
-        override fun autofillStatus() = AutofillStatus.OFF
-        override fun openAutofillSettings() {}
         override fun printEmergencySheet(code: String, text: EmergencySheetText) {}
         override val appVersion = "0.5.0-dev"
         override val coreVersion = "ghul-core 0.5.0 (RP-ID ghulsuite.invalid)"

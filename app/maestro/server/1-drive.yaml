@@ -21,7 +21,7 @@ name: GhulDrive on a real server
     timeout: 10000
 - tapOn: "Set up"
 - extendedWaitUntil:
-    visible: "Own server for GhulDrive"
+    visible: "Storage location for GhulDrive"
     timeout: 10000
 - tapOn: "Server address"
 - inputText: ${GHUL_SERVER}

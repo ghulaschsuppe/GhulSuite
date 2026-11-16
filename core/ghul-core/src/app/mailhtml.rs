@@ -433,10 +433,10 @@ fn reveal_deceptive_links(mail: &mut HtmlMail) {
             if !looks_like_address {
                 continue;
             }
-            let target = super::autofill::host_of(&span.link);
-            let claimed = super::autofill::host_of(shown);
+            let target = super::domain::host_of(&span.link);
+            let claimed = super::domain::host_of(shown);
             if let (Some(t), Some(c)) = (target, claimed) {
-                if super::autofill::base_domain(&t) != super::autofill::base_domain(&c) {
+                if super::domain::base_domain(&t) != super::domain::base_domain(&c) {
                     span.text = format!("{shown} \u{2192} {t}");
                 }
             }

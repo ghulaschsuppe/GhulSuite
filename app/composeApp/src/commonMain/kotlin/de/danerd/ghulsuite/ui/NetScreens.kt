@@ -129,7 +129,10 @@ fun AddServerScreen(state: AppState, padding: PaddingValues) {
     }
 }
 
-/** Settings: own servers and synchronisation. */
+/**
+ * Settings → Synchronisation: the servers the suite synchronises with, which one, and how. Only
+ * the synchronisation: GhulDrive has storage locations of its own (Settings → GhulDrive).
+ */
 @Composable
 fun ServersSection(state: AppState) {
     val net = state.backend.net
@@ -137,16 +140,6 @@ fun ServersSection(state: AppState) {
     var servers by remember { mutableStateOf<List<ServerUi>>(emptyList()) }
     var sync by remember { mutableStateOf(SyncStatusUi(null, 0)) }
     var removing by remember { mutableStateOf<ServerUi?>(null) }
-    var removingModule by remember { mutableStateOf<ServerUi?>(null) }
-    /** GhulDrive's server (one of the list, or its own one kept in the Drive file). */
-    var driveServer by remember { mutableStateOf<ServerUi?>(null) }
-    /** Removing or switching the sync server while GhulDrive uses it: ask first (#24). */
-    var driveAsk by remember { mutableStateOf<(() -> Unit)?>(null) }
-    fun guarded(action: () -> Unit) {
-        state.run(block = { net.driveStorage() }) { d ->
-            if (d.mode == de.danerd.ghulsuite.model.DriveModeUi.SYNC && d.server != null) driveAsk = action else action()
-        }
-    }
     /** Loaded once (until then: "Loading …", not "no servers" and "Off"), and why it failed. */
     var loaded by remember { mutableStateOf(false) }
     var loadError by remember { mutableStateOf<String?>(null) }
@@ -156,9 +149,7 @@ fun ServersSection(state: AppState) {
     LaunchedEffect(state.liveRevision(), state.syncing, reload) {
         // While a synchronisation runs the core answers only after it (it holds the suite);
         // until then the page says it is loading instead of showing an empty list and "Off".
-        // The servers come first: without them the page cannot show anything.
         val list = catching { net.servers() }.getOrElse { loadError = describe(it); return@LaunchedEffect }
-        driveServer = catching { net.driveStorage() }.getOrNull()?.server
         servers = list
         loaded = true
         loadError = null
@@ -169,64 +160,27 @@ fun ServersSection(state: AppState) {
     }
     val retry: () -> Unit = { loadError = null; syncError = null; reload++ }
 
+    Hint(stringResource(Res.string.sync_page_hint))
     if (!loaded) {
-        SectionCard(stringResource(Res.string.set_servers)) {
+        SectionCard(stringResource(Res.string.sync_servers_title)) {
             if (loadError != null) LoadError(loadError, retry) else Hint(stringResource(Res.string.loading))
         }
         return
     }
-    SectionCard(stringResource(Res.string.set_servers)) {
+    SectionCard(stringResource(Res.string.sync_servers_title)) {
         Hint(stringResource(Res.string.set_servers_hint))
         LoadError(loadError, retry)
-        // GhulDrive's own server is not in the suite's list: shown as well (its module, its links).
-        val drive = driveServer
-        val shown = if (drive != null && servers.none { it.id == drive.id }) servers + drive else servers
-        val moduleUpdated = stringResource(Res.string.module_updated)
-        shown.forEachIndexed { i, s ->
-            val ownDrive = s.id == drive?.id && servers.none { it.id == s.id }
+        servers.forEachIndexed { i, s ->
             // Like the list of mail accounts: a row with a tile, and removing as a red icon.
             ListRow(
                 s.name, kindLabel(s.kind), leading = { IconTile(Icons.Filled.Dns, paletteColor(1)) },
-                trailing = if (ownDrive) null else ({ BarIcon(Icons.Filled.Delete, stringResource(Res.string.a_remove), tint = g.danger) { removing = s } }),
+                trailing = { BarIcon(Icons.Filled.Delete, stringResource(Res.string.a_remove), tint = g.danger) { removing = s } },
                 divider = i > 0, flush = true,
             )
-            // Below the name, in line with it: where, what for, and the server module.
             Column(Modifier.fillMaxWidth().padding(start = 56.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Hint("${s.user}@${s.host}:${s.port}")
                 Hint(stringResource(Res.string.server_location, s.location.ifBlank { "~/" + s.base }))
-                val uses = listOfNotNull(
-                    stringResource(Res.string.set_sync).takeIf { s.id == sync.serverId },
-                    stringResource(Res.string.tab_drive).takeIf { s.id == drive?.id },
-                )
-                Hint(if (uses.isEmpty()) stringResource(Res.string.server_used_none) else stringResource(Res.string.server_used_for, uses.joinToString(", ")))
-                if (ownDrive) Hint(stringResource(Res.string.server_drive_own))
-                Hint(
-                    when {
-                        !s.hasModule -> stringResource(Res.string.server_module_none)
-                        s.moduleOutdated -> stringResource(Res.string.server_module_old, s.moduleVersion.toString(), s.moduleCurrent.toString())
-                        else -> stringResource(Res.string.server_module_on, s.moduleVersion.toString())
-                    },
-                )
-                // The text buttons' own padding: their words line up with the lines above.
-                Box(Modifier.offset(x = (-12).dp)) {
-                    ChipRow {
-                        if (!s.hasModule) {
-                            TextButton(onClick = { state.push(Screen.ModuleInstall(s.id)) }) { Text(stringResource(Res.string.module_install)) }
-                        } else {
-                            if (s.moduleOutdated) {
-                                TextButton(onClick = {
-                                    state.run(onError = { loadError = it }, block = { net.serverModuleUpdate(s.id) }) { v ->
-                                        state.message(moduleUpdated.replace("%1\$s", v.toString()))
-                                        state.changed()
-                                    }
-                                }) { Text(stringResource(Res.string.module_update)) }
-                            }
-                            TextButton(onClick = { removingModule = s }, colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = g.danger)) {
-                                Text(stringResource(Res.string.module_remove))
-                            }
-                        }
-                    }
-                }
+                if (s.id == sync.serverId) Hint(stringResource(Res.string.sync_server_in_use))
             }
         }
         OutlinedButton(onClick = { state.push(Screen.AddServer) }, modifier = Modifier.fillMaxWidth()) {
@@ -255,13 +209,13 @@ fun ServersSection(state: AppState) {
                 SheetList {
                     SheetRow(noSync, end = { if (sync.serverId == null) SheetCheck() }) {
                         open = false
-                        guarded { state.run(block = { net.setSyncServer(null) }) { state.changed() } }
+                        state.run(block = { net.setSyncServer(null) }) { state.changed() }
                     }
                     servers.forEach { s ->
                         SheetRow(s.name, s.location.ifBlank { s.host }, leading = { IconTile(Icons.Filled.Dns, paletteColor(1)) }, divider = true,
                             end = { if (s.id == sync.serverId) SheetCheck() }) {
                             open = false
-                            if (s.id != sync.serverId) guarded {
+                            if (s.id != sync.serverId) {
                                 state.run(block = { net.setSyncServer(s.id) }) {
                                     // One run for the choice (with its errors shown), not an
                                     // automatic one and then a second full one.
@@ -294,24 +248,8 @@ fun ServersSection(state: AppState) {
         }
     }
 
-    driveAsk?.let { action -> DriveFollowsSyncDialog(state, onProceed = action, onDismiss = { driveAsk = null }) }
-    removingModule?.let { s ->
-        // Like every deletion: ask first (F103).
-        AlertDialog(
-            danger = true,
-            onDismissRequest = { removingModule = null },
-            title = { Text(stringResource(Res.string.module_remove_title, s.name)) },
-            text = { Text(stringResource(Res.string.module_remove_text)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    removingModule = null
-                    state.run(onError = { loadError = it }, block = { net.serverModuleRemove(s.id) }) { state.changed() }
-                }) { Text(stringResource(Res.string.a_remove)) }
-            },
-            dismissButton = { TextButton(onClick = { removingModule = null }) { Text(stringResource(Res.string.a_cancel)) } },
-        )
-    }
     removing?.let { s ->
+        // Like every deletion: ask first (F103).
         AlertDialog(
             danger = true,
             onDismissRequest = { removing = null },
@@ -320,8 +258,7 @@ fun ServersSection(state: AppState) {
             confirmButton = {
                 TextButton(onClick = {
                     removing = null
-                    val remove = { state.run(block = { net.removeServer(s.id) }) { state.changed() } }
-                    if (s.id == sync.serverId) guarded(remove) else remove()
+                    state.run(onError = { loadError = it }, block = { net.removeServer(s.id) }) { state.changed() }
                 }) { Text(stringResource(Res.string.a_remove)) }
             },
             dismissButton = { TextButton(onClick = { removing = null }) { Text(stringResource(Res.string.a_cancel)) } },

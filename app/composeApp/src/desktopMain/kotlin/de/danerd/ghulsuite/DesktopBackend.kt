@@ -8,7 +8,6 @@ import de.danerd.ghulsuite.core.VaultStorage
 import de.danerd.ghulsuite.core.localStorage
 import de.danerd.ghulsuite.core.platformSecurityKey
 import de.danerd.ghulsuite.core.platformSecurityKeyAvailable
-import de.danerd.ghulsuite.model.AutofillStatus
 import de.danerd.ghulsuite.model.DriveItemUi
 import de.danerd.ghulsuite.model.EmergencySheetText
 import de.danerd.ghulsuite.model.FolderRef
@@ -220,7 +219,7 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
         throw VaultException(VaultErrorKind.INVALID_INPUT, "Set the PIN in the Windows settings (Sign-in options → Security key).")
     }
 
-    // --- not on the desktop (yet): quick unlock, autofill ---------------------------------------
+    // --- not on the desktop (yet): quick unlock -----------------------------------------------
 
     override fun biometricAvailable(): Boolean = false
     override fun quickUnlockReady(): QuickUnlockReady = QuickUnlockReady(false, false)
@@ -230,8 +229,6 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
     override fun disableQuickUnlockMethod(bio: Boolean) {}
     override suspend fun unlockWithBiometric() = throw VaultException(VaultErrorKind.QUICK_UNAVAILABLE)
     override suspend fun unlockWithPin(pin: String) = throw VaultException(VaultErrorKind.QUICK_UNAVAILABLE)
-    override fun autofillStatus(): AutofillStatus = AutofillStatus.UNSUPPORTED
-    override fun openAutofillSettings() {}
 
     // --- tools --------------------------------------------------------------------------------
 

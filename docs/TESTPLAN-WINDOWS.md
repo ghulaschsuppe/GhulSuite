@@ -121,7 +121,7 @@ Jeder Test hat eine Nummer, die mit **W** beginnt (z. B. **WE3**), damit sie sic
 
 ## 10. Neue Funktionen aus der Vorschau
 
-Wie im Android-Testplan Abschnitt 22 (N2 bis N13, N16 bis N24). Nicht unter Windows: Dokument scannen (N14) und Foto-Sicherung (N15).
+Wie im Android-Testplan Abschnitt 22 (N2 bis N13, N16 bis N24). Nicht unter Windows: Dokument scannen (N14).
 Zusätzlich:
 
 | Nr. | Schritt | Erwartet |

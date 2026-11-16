@@ -13,7 +13,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Inventory2
-import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
@@ -48,7 +47,7 @@ import org.jetbrains.compose.resources.stringResource
 enum class JobState { WAITING, RUNNING, DONE, FAILED, CANCELLED }
 
 /** What a job does (its picture in the strip and the notification). */
-enum class JobKind { UPLOAD, DOWNLOAD, ARCHIVE, PHOTOS }
+enum class JobKind { UPLOAD, DOWNLOAD, ARCHIVE }
 
 /** A job ends with this text (the message) as failed, e.g. "stopped after 12 of 40 mails: …". */
 class JobFailed(val text: String) : Exception(text)
@@ -127,7 +126,7 @@ data class JobEnd(val text: String, val publicText: String)
  * Background jobs as seen from outside the screens: the Android notification shows [current]
  * with "Cancel" ([cancelAll]); the automatic lock of Android goes through [autoLock] while
  * [current] is not null; a job that ended is announced in [finished] (a system notification while
- * the app is not in front). The hooks belong to the app's main state only (see AppState.main).
+ * the app is not in front).
  */
 /**
  * Whether "back" on the first screen sends the app to the background instead of closing it: while
@@ -179,10 +178,10 @@ class Jobs internal constructor(private val state: AppState) {
     private fun progressing(): Boolean = list.any { it.active && !it.quiet && clock() - it.lastProgress < stallMillis }
 
     /**
-     * An automatic lock (time away, idle, screen off). Quiet jobs (automatic archive, photo
-     * backup) stop at once: they continue from their marks next time and never hold the lock
-     * back. Jobs the user started are waited for while they make progress; once none reported
-     * progress for [stallMillis], the suite locks and cancels them.
+     * An automatic lock (time away, idle, screen off). Quiet jobs (automatic archive) stop at
+     * once: they continue from their marks next time and never hold the lock back. Jobs the user
+     * started are waited for while they make progress; once none reported progress for
+     * [stallMillis], the suite locks and cancels them.
      */
     fun autoLock() {
         for (j in list.filter { it.active && it.quiet }) {
@@ -322,7 +321,6 @@ class Jobs internal constructor(private val state: AppState) {
                 JobKind.UPLOAD -> Res.string.job_kind_upload
                 JobKind.DOWNLOAD -> Res.string.job_kind_download
                 JobKind.ARCHIVE -> Res.string.job_kind_archive
-                JobKind.PHOTOS -> Res.string.job_kind_photos
             },
         )
         val end = state.str(
@@ -380,7 +378,6 @@ private fun JobRow(jobs: Jobs, job: BgJob) {
         JobKind.UPLOAD -> Icons.Filled.Upload to areaColor(Tab.DRIVE)
         JobKind.DOWNLOAD -> Icons.Filled.Download to areaColor(Tab.DRIVE)
         JobKind.ARCHIVE -> Icons.Filled.Inventory2 to areaColor(Tab.MAIL)
-        JobKind.PHOTOS -> Icons.Filled.PhotoLibrary to areaColor(Tab.DRIVE)
     }
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(t.surface)

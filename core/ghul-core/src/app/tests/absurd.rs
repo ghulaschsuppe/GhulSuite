@@ -319,7 +319,6 @@ fn locked_suite_answers_every_call_with_an_error() {
     assert!(s.drive_list(None, false).is_err());
     assert!(s.cal_calendars().is_err());
     assert!(s.suite_backup().is_err());
-    assert!(s.autofill_logins(Some("example.org".into()), None, None).is_err());
     // Locking twice, unlocking with nothing.
     s.lock();
     assert!(s.unlock(String::new(), None, None, None, None).is_err());

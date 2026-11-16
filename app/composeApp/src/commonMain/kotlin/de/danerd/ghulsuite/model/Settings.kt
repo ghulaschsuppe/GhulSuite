@@ -190,10 +190,6 @@ class Settings(private val store: KeyValueStore) {
     // --- GhulDrive
     /** Days until trashed files are deleted for good (0 = never). */
     var driveTrashDays by int("drive_trash_days", 30)
-    var photoBackup by bool("photo_backup", false)
-    var photoBackupWifiOnly by bool("photo_backup_wifi", true)
-    /** Newest photo already backed up (Unix ms of its date taken/added). */
-    var photoBackupSince by int("photo_backup_since_s", 0)
 
     // --- Backup and start
     /** Folder for the weekly automatic backup ("uri|name"), empty = off. */
