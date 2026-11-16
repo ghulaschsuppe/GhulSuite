@@ -159,10 +159,6 @@ interface VaultBackend {
     /** Some entries as unencrypted CSV (or otpauth links), only with the master password. */
     suspend fun exportEntries(vaultId: String, ids: List<String>, password: String): ByteArray = throw UnsupportedOperationException()
 
-    // --- Autofill (Android)
-    fun autofillStatus(): AutofillStatus
-    fun openAutofillSettings()
-
     // --- Tools
     fun generatePassword(options: PasswordOptionsUi): String
     fun passwordScore(password: String): Int
@@ -207,7 +203,7 @@ interface VaultBackend {
     /** false where the system asks for the key PIN in its own dialog (Windows). */
     val keyPinInApp: Boolean get() = true
 
-    /** Windows: no shake, quick tile, fingerprint unlock or Android autofill. */
+    /** Windows: no shake, quick tile or fingerprint unlock. */
     val isDesktop: Boolean get() = false
     val coreVersion: String
 }
@@ -418,8 +414,6 @@ data class KeepSkippedUi(
     val reasonUnsupported: String,
     val reasonInvalid: String,
 )
-
-enum class AutofillStatus { UNSUPPORTED, OFF, ON }
 
 enum class VaultErrorKind {
     /** A file from a newer GhulSuite: update the app. */

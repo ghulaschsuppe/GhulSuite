@@ -168,26 +168,9 @@ Für T5 bis T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick
 | X3 | GhulAuth-Tresor exportieren. | Textdatei mit `otpauth://`-Zeilen. |
 | X4 | Die CSV in einen neuen Tresor zurück importieren (oder in eine andere App). | Gleiche Einträge. Danach Dateien löschen. |
 
-## 10. Autofill
+## 10. Autofill (entfernt)
 
-| Nr. | Schritt | Erwartet |
-|---|---|---|
-| F1 | Optionen → GhulPass → Autofill → „Als Autofill-Dienst einstellen“, GhulSuite wählen. | Zurück in der App steht „aktiv“. |
-| F2 | GhulSuite **sperren**. Im Browser (z. B. Chrome) eine Login-Seite öffnen, für die ein Eintrag existiert, ins Benutzerfeld tippen. | Vorschlag „GhulSuite entsperren“, **kein** Benutzername sichtbar. |
-| F3 | Antippen, entsperren, Anmeldung wählen. | Benutzer und Passwort werden eingefügt. |
-| F4 | Entsperrt erneut ins Feld tippen. | Passende Anmeldung direkt vorgeschlagen, plus „Andere Anmeldung wählen …“. |
-| F5 | Eine Seite mit ähnlicher, aber anderer Domain (z. B. `github.com.example.org`). | **Keine** direkte Anmeldung angeboten. |
-| F6 | Eine App mit Login (z. B. eine Test-App) beim ersten Mal. | Kein direkter Vorschlag; über „Andere Anmeldung wählen …“ auswählen. |
-| F7 | Dieselbe App beim zweiten Mal. | Jetzt wird die gewählte Anmeldung direkt angeboten. |
-| F8 | Neue Anmeldung auf einer Website/in einer App eingeben und absenden. | Android fragt „In GhulSuite speichern?“ → gespeichert, Meldung. |
-| F9 | Passwort einer bestehenden Anmeldung ändern und absenden. | „Passwort in GhulSuite aktualisiert“. |
-| F10 | GhulSuite gesperrt, neue Anmeldung absenden. | „GhulSuite ist gesperrt, Anmeldung nicht gespeichert“. |
-| F11 | Tastatur mit Vorschlagsleiste (z. B. Gboard), Android 11 oder neuer: in ein Anmeldefeld tippen. | Die Vorschläge erscheinen als Chips oben in der Tastatur, mit Schloss-Symbol. |
-| F12 | Vivaldi, Brave, Edge oder Samsung Internet: Login-Seite öffnen, ins Feld tippen. | Vorschlag „GhulSuite entsperren“ bzw. die passende Anmeldung. |
-| F13 | Chrome: Einstellungen → Autofill-Dienste → „Autofill über einen anderen Dienst“, Chrome neu starten, F2 bis F4 wiederholen. | Wie F2 bis F4. |
-| F14 | In einem Browser, dessen Seite Android nicht erkennt, „Andere Anmeldung wählen …“ benutzen. | Ausfüllen klappt; die Anmeldung wird **nicht** mit dem Browser verknüpft (in anderen Seiten kein direkter Vorschlag). Kein Angebot zum Speichern. |
-| F15 | Es erscheint nichts: lange auf das Feld drücken → „Automatisch ausfüllen“. | GhulSuite-Vorschläge erscheinen. |
-| F16 | Optionen → GhulPass → Autofill bei aktivem Dienst. | Abschnitt „So erscheinen die Vorschläge“ mit Hinweisen zu Tastatur, Apps, Chrome und langem Drücken. |
+Entfällt: Autofill wurde entfernt, weil es nicht zuverlässig funktionierte (Testprotokoll F136).
 
 ## 11. Einstellungen und Allgemeines
 
@@ -417,7 +400,6 @@ oder Proton.
 | N12 | Datei als Favorit und „Offline verfügbar“; Flugmodus; Ansichten Favoriten/Zuletzt/Offline. | Offline-Datei öffnet sich ohne Netz; Speicherbalken zeigt die Belegung. |
 | N13 | Mehrere Dateien wählen → „Als ZIP“ mit Passwort. | ZIP öffnet sich (z. B. 7-Zip) nur mit Passwort. |
 | N14 | Drive → „+“ → „Dokument scannen“. Seite fotografieren. | PDF „Scan …“ im aktuellen Ordner, Seite lesbar. *(Nur Android.)* |
-| N15 | Optionen → GhulDrive → Foto-Sicherung an (nur WLAN). Foto machen, App entsperren. | Foto landet im Ordner „Fotos“. *Läuft nur, solange die App entsperrt ist.* |
 | N16 | GhulMail: Postfach-Blatt → „Alle Posteingänge“; Liste zeigt Vorschautext; Unterhaltung mit Antworten. | Mails aller Konten gemischt; Antworten unter einem Eintrag gruppiert. |
 | N17 | Mail markieren (Stern), Label vergeben, nach links wischen. | Stern auch im Webmail; Label sichtbar; Wischen führt die gewählte Aktion aus (Optionen → GhulMail). |
 | N18 | Neue Mail anfangen, zurück. Postfach → „Entwürfe“. | Entwurf ist da und lässt sich fortsetzen. Adressvorschläge beim Tippen. |
@@ -435,7 +417,6 @@ oder Proton.
 | N30 | Optionen → Darstellung → Sprache: „English“, dann „Wie das System“. | Die App wechselt sofort die Sprache (Android); zurück auf Systemsprache. |
 | N31 | Import einer 1Password-Datei (.1pux oder CSV) bzw. LastPass-CSV. | Anmeldungen, Notizen, Karten und 2FA-Codes übernommen; archivierte Einträge nicht. |
 | N32 | Eintrag → Menü → „Eintrag exportieren“ mit Master-Passwort. | CSV nur mit diesem Eintrag; falsches Passwort wird abgelehnt. |
-| N33 | Eintrag als Favorit markieren, dann in einer App das Autofill öffnen. | Favoriten stehen in der Auswahl ganz oben. |
 
 ---
 
@@ -498,7 +479,7 @@ Ziel: GhulSuite eine Woche wie im echten Leben benutzen, mit echten Konten, aber
 | Tag | Was du tust | Worauf du achtest |
 |---|---|---|
 | 1 | Neue Suite mit Assistent: Sync-Server, alle Bereiche, Mailkonto im Assistenten, Fingerabdruck. Passwörter aus deinem alten Manager importieren. Windows: Suite vom Server holen. | Alles importiert oder als Notiz behalten? Beide Geräte zeigen dasselbe? |
-| 2 | Den Tag über nur mit GhulSuite anmelden (Autofill in Apps und Browser). 2FA-Codes aus GhulAuth nutzen. Abends ein Passwort ändern. | Schlägt Autofill passend vor? Kommt die Änderung auf Windows an? |
+| 2 | Den Tag über Anmeldedaten aus GhulPass nutzen (kopieren). 2FA-Codes aus GhulAuth nutzen. Abends ein Passwort ändern. | Kommt die Änderung auf Windows an? |
 | 3 | Mails nur in GhulMail lesen und schreiben, auch mit Anhang und an jemanden mit PGP. Handy zwischendurch neu starten. | Kommt **jede** Mail sofort als Benachrichtigung, auch nach dem Neustart? Öffnet das Antippen die Mail? |
 | 4 | Fotos und Dokumente in GhulDrive (auch Ordner, Umbenennen, Papierkorb), eine Datei teilen. Zwischen WLAN und mobilen Daten wechseln. | Uploads brechen nicht ab oder setzen fort; Freigabelink funktioniert. |
 | 5 | Termine in GhulCal, auch wiederkehrend und mit Erinnerung; einen davon auf Windows ändern. Sofortsperre durch Schütteln testen (in der App und im Hintergrund). | Erinnerung kommt pünktlich; Schütteln sperrt beim ersten Versuch, Mails und Erinnerungen kommen danach weiter. |
@@ -531,8 +512,7 @@ Automatisch läuft bei jedem Push der Alltagstest im Kern (zwei Geräte, 30 simu
 | R6 | Optionen → Sperren → „Sofortsperre stoppt auch Mail-Benachrichtigungen“ an; schütteln; Mail schicken; dann entsperren. | Gesperrt keine Mail-Benachrichtigung; nach dem Entsperren kommen sie wieder (B5). |
 | R7 | Eine `.ics`-Datei aus einer anderen App (z. B. Dateien) mit GhulSuite öffnen. | Vorschau mit Anzahl und ersten Terminen, Import erst nach „Importieren“ (B6). |
 | R8 | App sperren, Handy 20 Minuten in den Standby (Bildschirm aus), dann App wieder öffnen. | Gesperrt, auch wenn das Handy zwischendurch tief geschlafen hat (B8). |
-| R9 | In einer App ohne Verknüpfung über Autofill eine Anmeldung von Hand wählen. | Rückfrage mit App-Name und Paket: „Verknüpfen und ausfüllen“ oder „Nur diesmal ausfüllen“. Nur beim Verknüpfen wird sie beim nächsten Mal direkt angeboten (B9). |
-| R10 | Eine App mit Bildschirm-Overlay (z. B. Blaulichtfilter) einschalten und in GhulSuite entsperren bzw. Autofill wählen. | Tipps werden ignoriert, solange etwas darüberliegt (L10); Overlay aus, dann geht es. |
+| R10 | Eine App mit Bildschirm-Overlay (z. B. Blaulichtfilter) einschalten und GhulSuite entsperren. | Tipps werden ignoriert, solange etwas darüberliegt (L10); Overlay aus, dann geht es. |
 | R11 | Zwei Geräte mit Sync: auf A einen Eintrag löschen, auf B (offline) denselben Eintrag ändern; dann beide synchronisieren. | Der geänderte Eintrag ist auf beiden Geräten wieder da (B18). Andersherum (B kannte die Löschung): bleibt gelöscht. |
 | R12 | Windows: eine Drive-Datei öffnen, das Programm offen lassen, GhulSuite sperren; Programm schließen, eine Minute warten. | Der Weitergabe-Ordner ist danach leer (B10). Portabel: der Ordner liegt in `GhulSuite-Daten`, nicht im Windows-Temp. |
 | R13 | Optionen → Sicherheit: Hinweis „Etwas verloren …“ lesen. | Hinweis nennt: entfernen bzw. neues Notfallblatt, alte Sicherungen, Mail- und Server-Passwörter wechseln (L1). |
@@ -629,7 +609,7 @@ Diese Punkte prüft auch der Emulator-Ablauf `app/maestro/server/3-sync-share.ya
 
 ## 33. Aufgaben im Hintergrund
 
-Lange Arbeiten (Hochladen, Herunterladen, Fotosicherung, Mail-Archiv) laufen im Hintergrund weiter, auch wenn du den Bereich verlässt. Ein Streifen unter der Kopfleiste zeigt, was läuft, wie weit es ist, und „Abbrechen“; am Ende sagt eine Meldung, wie es ausging.
+Lange Arbeiten (Hochladen, Herunterladen, Mail-Archiv) laufen im Hintergrund weiter, auch wenn du den Bereich verlässt. Ein Streifen unter der Kopfleiste zeigt, was läuft, wie weit es ist, und „Abbrechen“; am Ende sagt eine Meldung, wie es ausging.
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
@@ -637,13 +617,11 @@ Lange Arbeiten (Hochladen, Herunterladen, Fotosicherung, Mail-Archiv) laufen im 
 | BG2 | Während BG1 im Streifen „Abbrechen“. | Sofort Schluss; „Hochladen abgebrochen: 1 von 3 Dateien fertig.“; die fertigen Dateien sind da, keine halbe. |
 | BG3 | Upload starten, App in den Hintergrund (Home-Taste), Benachrichtigungen aufziehen. | Die Benachrichtigung „GhulSuite ist entsperrt“ zeigt jetzt den Auftrag mit Balken, „Abbrechen“ und „Sperren“. „Abbrechen“ dort stoppt ihn. Auf dem Sperrbildschirm steht nur „GhulSuite ist entsperrt“ (keine Dateinamen). |
 | BG4 | Upload starten, App in den Hintergrund, länger warten als die Zeit für automatisches Sperren. | Die App sperrt nicht mitten im Upload, sondern erst, wenn er fertig ist; die Meldung „… hochgeladen.“ kommt erst nach dem Entsperren. Kommt zwei Minuten lang kein Fortschritt (z. B. WLAN aus), sperrt sie trotzdem und bricht den Upload ab. |
-| BG4a | Automatisches Mail-Archiv oder Fotosicherung läuft (Streifen), App in den Hintergrund. | Die App sperrt nach der üblichen Zeit; der leise Auftrag stoppt und macht beim nächsten Entsperren an seiner Stelle weiter. |
+| BG4a | Automatisches Mail-Archiv läuft (Streifen), App in den Hintergrund. | Die App sperrt nach der üblichen Zeit; der leise Auftrag stoppt und macht beim nächsten Entsperren an seiner Stelle weiter. |
 | BG5 | Wie BG4, aber vor dem Ende zurück in die App. | Die App bleibt entsperrt; der Upload läuft zu Ende. |
 | BG6 | Upload starten, dann von Hand sperren (Schloss, Schütteln oder „Sperren“ in der Benachrichtigung). | Sofort gesperrt, der Upload ist gestoppt. Nach dem Entsperren: „GhulSuite wurde gesperrt. Hochladen abgebrochen: …“. |
 | BG7 | Auftrag läuft, App im Hintergrund, Auftrag endet. | Eine kurze Benachrichtigung mit dem Ergebnis (Android 13+: nur wenn Benachrichtigungen erlaubt sind); auf dem Sperrbildschirm nur „Hochladen fertig“ ohne Dateinamen. Ist die App vorne, kommt nur die Meldung in der App. |
 | BG8 | Mehrere Aufträge nacheinander starten (z. B. Upload und Mail-Archiv). | Der zweite zeigt „Wartet auf die Aufgabe davor …“ und startet danach; beide sind im Streifen. |
-| BG9 | Fotosicherung eingeschaltet, mehrere Fotos schnell hintereinander aufnehmen (Serienbild), entsperren. | Streifen „Fotos werden gesichert“; am Ende „N Fotos gesichert.“. Abbrechen und erneut entsperren: es geht ab dem letzten fertigen Foto weiter, kein Foto fehlt (auch nicht eines aus derselben Sekunde). |
-| BG10 | Autofill benutzen (Anmeldung in einer anderen App über GhulSuite entsperren), während das automatische Mail-Archiv eingeschaltet ist. | Kein zweiter Archiv-Lauf; „Abbrechen“ in der Benachrichtigung wirkt weiter auf die Aufträge der App. |
 | BG11 | Eine große Datei aus GhulDrive herunterladen (Speicherort wählen), im Streifen „Abbrechen“; dasselbe mit abgeschaltetem WLAN mitten im Download. | Beide Male bleibt keine halbe Datei am gewählten Ort liegen; ein vollständiger Download bleibt. |
 | BG12 | Nur Android 11 oder älter: Upload starten, auf der Startseite „Zurück“. | Die App geht in den Hintergrund, der Upload läuft weiter (Streifen und Benachrichtigung). Ohne laufenden Auftrag schließt „Zurück“ die App wie gewohnt. |
 

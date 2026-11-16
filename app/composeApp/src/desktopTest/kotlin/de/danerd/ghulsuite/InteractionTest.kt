@@ -1703,33 +1703,6 @@ class InteractionTest {
     }
 
     /**
-     * Photo backup: two photos added in the same second and "Cancel" between them. The mark stays
-     * one second before, so the next run still takes the second photo (it was skipped for good).
-     */
-    @Test
-    fun photoBackupKeepsPhotosOfTheSameSecond() = app(prepare = {
-        settings.photoBackup = true
-        (net as FakeNet).photos = listOf("a.jpg" to 1_000L, "b.jpg" to 1_000L, "c.jpg" to 1_005L)
-        (net as FakeNet).photoDelayMs = 1_500
-    }) { state, fake ->
-        val net = fake.net as FakeNet
-        waitUntil(timeoutMillis = 10_000) { "photo:a.jpg" in net.calls }
-        val job = state.jobs.list.first { it.kind == de.danerd.ghulsuite.ui.JobKind.PHOTOS }
-        runOnIdle { state.jobs.cancel(job) }
-        waitUntil(timeoutMillis = 10_000) { !job.active }
-        assertFalse("photo:b.jpg" in net.calls)
-        assertEquals(999, state.backend.settings.photoBackupSince, "the mark stays before the second of a.jpg")
-        // The next run takes b.jpg and c.jpg.
-        net.photoDelayMs = 0
-        fake.unlocked.value = false
-        waitForIdle()
-        fake.unlocked.value = true
-        waitUntil(timeoutMillis = 10_000) { "photo:c.jpg" in net.calls }
-        assertTrue("photo:b.jpg" in net.calls, net.calls.toString())
-        waitUntil(timeoutMillis = 5_000) { state.backend.settings.photoBackupSince == 1_005 }
-    }
-
-    /**
      * The automatic lock that waited for a job follows its end; the job's message (it names the
      * file) is not shown on the way to the lock screen but after the next unlock.
      */

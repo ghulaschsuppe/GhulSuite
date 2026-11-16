@@ -11,10 +11,10 @@ Jeder Test prüft eine oder mehrere dieser Zusagen. Ein Test, der keine davon pr
 | Z1 | **Kein Datenverlust.** Was gespeichert wurde, ist nach jedem Fehler (Netz, Server, Absturz, volle Platte, kaputte Datei) noch da, auf mindestens einem Gerät und nach dem nächsten Sync überall. Gelöscht wird nur, was jemand ausdrücklich löscht. |
 | Z2 | **Kein Klartext außerhalb.** Auf Server, in Sicherungen, Freigaben, temporären Dateien, Logs und Benachrichtigungen (Sperrbildschirm) steht nichts Geheimes. |
 | Z3 | **Kein Absturz durch fremde Daten.** Antworten von Servern, Mails, Dateien, Importe, Links, andere Apps: alles darf kaputt, riesig oder bösartig sein, die App meldet einen Fehler und läuft weiter. |
-| Z4 | **Richtiger Empfänger.** Passwörter gehen nur an die richtige Website/App (Autofill), Mails nur an gewollte Empfänger, Freigaben nur an Linkinhaber. |
+| Z4 | **Richtiger Empfänger.** Mail-Links zeigen ihr echtes Ziel, Mails gehen nur an gewollte Empfänger, Freigaben nur an Linkinhaber. |
 | Z5 | **Geräte werden gleich.** Nach Synchronisieren zeigen alle Geräte dasselbe, egal in welcher Reihenfolge, wie oft und mit welchen Unterbrechungen synchronisiert wurde (Kommutativität, Idempotenz). |
 | Z6 | **Nichts geht still schief.** Jeder Fehler wird verständlich gemeldet (deutsch, mit nächstem Schritt), keine Sackgasse, keine Endlosschleife. |
-| Z7 | **Sperre hält.** Gesperrt heißt: keine Daten lesbar, kein Weg vorbei (Intents, Autofill, Benachrichtigungen, Zwischenablage, Bildschirmfotos). |
+| Z7 | **Sperre hält.** Gesperrt heißt: keine Daten lesbar, kein Weg vorbei (Intents, Benachrichtigungen, Zwischenablage, Bildschirmfotos). |
 | Z8 | **Zeit ist kein Feind.** Zeitzonen, Sommerzeit, Schaltjahre, Uhr falsch gestellt, Jahr 0001/9999, nichts verrutscht, nichts stürzt ab. |
 
 ## 2. Ebenen
@@ -55,7 +55,7 @@ Zufällig erzeugte, aber gültige Daten; geprüft wird eine Eigenschaft statt ei
 Parallele Threads (vorhanden), dazu: Sperren während Sync/Upload/Import, Entsperren und Sperren gleichzeitig, zwei Syncs gleichzeitig.
 
 ### E8: Angriffe (Sicherheit)
-- **Autofill-Phishing-Matrix:** Public-Suffix-Liste und deren offizielle Testdatei `test_psl.txt` (MPL-2.0), IP-Adressen, Punycode/IDN-Verwechslungen, Ports, Groß/Klein, Punkt am Ende, Benutzer@Host, gefälschte Webadressen aus Apps.
+- **Domain-Phishing-Matrix (Mail-Links):** Public-Suffix-Liste und deren offizielle Testdatei `test_psl.txt` (MPL-2.0), IP-Adressen, Punycode/IDN-Verwechslungen, Ports, Groß/Klein, Punkt am Ende, Benutzer@Host.
 - **Andere Apps:** Intents mit eigenen privaten Dateien, `file://`, fremde Content-Provider, riesige oder endlose Streams, gefälschte Benachrichtigungs-Aktionen.
 - **Mail:** Header-Injection (CR/LF), gefälschter Absender mit Autocrypt, HTML-Mails mit Skript-, Event-, CSS- und Link-Tricks (Vektoren nach dem OWASP-XSS-Cheat-Sheet, selbst formuliert), Tracking-Pixel, Weiterleitungen auf `localhost`.
 - **PHP-Modul:** Pfad-Tricks, Wiederholungsangriffe, falsche Signaturen, Zeitfenster, Teil-Uploads außer der Reihe, Endungs-Tricks (`x.php.jpg`).
@@ -86,7 +86,7 @@ Stresstest (vorhanden), dazu: 50.000 Mails im Postfach (Fake-IMAP), 100.000 Eint
 |---|---|---|
 | Big List of Naughty Strings | MIT | E3: alle Textfelder |
 | Project Wycheproof (C2SP) | Apache-2.0 | E1: Krypto-Bausteine |
-| Public Suffix List + `test_psl.txt` | MPL-2.0 | E8: Autofill-Domains |
+| Public Suffix List + `test_psl.txt` | MPL-2.0 | E8: Domains von Mail-Links |
 | RFC-Testvektoren (6238, 4226, 5869, 9106, 4648) | frei | E1 |
 | PayloadsAllTheThings (XSS, CRLF) | MIT | E8: HTML-Mails, Mail-Kopfzeilen |
 | SecLists (XSS) | MIT | E8: HTML-Mails |
@@ -120,7 +120,7 @@ Jeder gefundene Fehler wird zuerst als Test festgehalten (rot), dann behoben (gr
 1. **Chaos-Sync (E5)**: erledigt: Datenverlust bei kaputten/fehlenden Dateien gefunden und behoben.
 2. **Fuzz-Kurzläufe aller Parser (E4)**: Abstürze beheben (Audit A4).
 3. **Naughty Strings und Grenzwerte (E3)** durch alle Kern-APIs.
-4. **Angriffs-Matrix (E8):** Autofill mit Public-Suffix-Liste (A2, A3), Intents (A6), Mail-Header und HTML.
+4. **Angriffs-Matrix (E8):** Domains mit Public-Suffix-Liste (A2, A3), Intents (A6), Mail-Header und HTML.
 5. **Wycheproof und RFC-Vektoren (E1).**
 6. **Android Monkey und Desktop-UI-Tests (E10), Dev-APK nicht debuggbar (A5).**
 7. **Geplanter Nachtlauf (E4 lang, E11, E12).**

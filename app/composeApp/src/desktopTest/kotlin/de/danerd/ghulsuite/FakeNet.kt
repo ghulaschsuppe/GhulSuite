@@ -233,23 +233,6 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
         driveFiles++
         return "f3"
     }
-    /** Photos for the photo backup (name and the second it was added), and how long each takes. */
-    var photos: List<Pair<String, Long>> = emptyList()
-    var photoDelayMs = 0L
-    override val photoBackupAvailable: Boolean get() = photos.isNotEmpty()
-    /** Like the Android backend: oldest first, the mark of each photo also when cancelled during it. */
-    override suspend fun photoBackup(sinceSeconds: Long, wifiOnly: Boolean, onFile: (String, Long, Long?) -> Unit): Long {
-        val todo = photos.filter { it.second > sinceSeconds }.sortedBy { it.second }
-        var mark = sinceSeconds
-        for ((i, p) in todo.withIndex()) {
-            if (photoDelayMs > 0) kotlinx.coroutines.delay(photoDelayMs)
-            calls += "photo:${p.first}"
-            val next = todo.getOrNull(i + 1)?.second
-            mark = maxOf(mark, de.danerd.ghulsuite.ui.photoMark(p.second, next))
-            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { onFile(p.first, p.second, next) }
-        }
-        return mark
-    }
 
     /** A download writes a first part, then hangs (cancel it) or fails ("fail"); null: normal. */
     var downloadStops: String? = null

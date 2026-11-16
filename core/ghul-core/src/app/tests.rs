@@ -579,7 +579,7 @@ fn foreign_and_outdated_vaults() {
 }
 
 #[test]
-fn import_export_and_autofill() {
+fn import_and_export() {
     let d = Dirs::new("import");
     let kf = generate_keyfile();
     let s = d.suite();
@@ -625,38 +625,6 @@ fn import_export_and_autofill() {
         Err(GhulError::ImportUnknownFormat)
     ));
 
-    // Autofill: websites by base domain; apps only directly when linked with their certificate.
-    let web = s.autofill_logins(Some("gist.github.com".into()), None, None).unwrap();
-    assert_eq!((web.len(), web[0].password.as_str(), web[0].direct), (1, "pw1", true));
-    assert!(s.autofill_logins(Some("github.com.evil.net".into()), None, None).unwrap().is_empty());
-    let app = s.autofill_logins(None, Some("com.github.android".into()), Some("c1".into())).unwrap();
-    assert!(app.len() == 1 && !app[0].direct, "a package name alone is only a suggestion");
-    let bank = s.autofill_logins(None, Some("de.bank.app".into()), Some("c2".into())).unwrap();
-    assert!(bank[0].title == "Bank" && !bank[0].direct, "imported link without certificate");
-    assert!(s.autofill_logins(None, Some("org.other.app".into()), None).unwrap().is_empty());
-    let gh = &web[0];
-    s.link_app_to_login(gh.vault_id.clone(), gh.id.clone(), "org.other.app".into(), Some("C3".into())).unwrap();
-    assert!(s.autofill_logins(None, Some("org.other.app".into()), Some("c3".into())).unwrap()[0].direct);
-    assert!(
-        s.autofill_logins(None, Some("org.other.app".into()), Some("ff".into())).unwrap().is_empty(),
-        "other certificate"
-    );
-    assert_eq!(s.autofill_logins(None, None, None).unwrap().len(), 2);
-
-    // Saving from autofill: new login, then a password change of the same login.
-    use super::suite::AutofillSaved;
-    let save = |d: Option<&str>, p: Option<&str>, u: &str, pw: &str| {
-        s.autofill_save(d.map(str::to_owned), p.map(str::to_owned), Some("c9".into()), u.into(), pw.into()).unwrap()
-    };
-    assert_eq!(save(Some("shop.example.org"), None, "kunde", "a1"), AutofillSaved::Created);
-    assert_eq!(save(Some("www.example.org"), None, "kunde", "a1"), AutofillSaved::Unchanged);
-    assert_eq!(save(Some("example.org"), None, "kunde", "a2"), AutofillSaved::Updated);
-    assert_eq!(s.autofill_logins(Some("example.org".into()), None, None).unwrap()[0].password, "a2");
-    assert_eq!(save(None, Some("com.chat.app"), "", "x"), AutofillSaved::Created);
-    let chat = s.autofill_logins(None, Some("com.chat.app".into()), Some("c9".into())).unwrap();
-    assert!(chat[0].title == "chat.com" && chat[0].direct);
-    assert_eq!(save(None, Some("com.chat.app"), "", "y"), AutofillSaved::Updated);
-
     // Plain export needs the password and can be imported again.
     assert!(matches!(s.export_plain(pass.clone(), "falsch".into()), Err(GhulError::WrongPassword)));
     let csv = s.export_plain(pass.clone(), "pw-123456".into()).unwrap();
@@ -665,7 +633,7 @@ fn import_export_and_autofill() {
     assert!(String::from_utf8(links.clone()).unwrap().starts_with("otpauth://totp/GitHub:ghul?"));
     let other = s.create_vault(VaultKind::Pass, "Kopie".into()).unwrap();
     let r = s.import_data(csv, "export.csv".into(), Some(other.clone()), None, false, None).unwrap();
-    assert_eq!(r.entries, 5);
+    assert_eq!(r.entries, 3);
 }
 
 use super::servers::ServerSaved;

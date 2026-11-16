@@ -34,13 +34,6 @@ actual fun decodeQrImage(bytes: ByteArray): String? = runCatching {
     com.google.zxing.MultiFormatReader().decode(bitmap, mapOf(com.google.zxing.DecodeHintType.TRY_HARDER to true)).text
 }.getOrNull()
 
-@androidx.compose.runtime.Composable
-actual fun rememberPhotoPermission(onResult: (Boolean) -> Unit): () -> Unit {
-    val launcher = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { onResult(it) }
-    val perm = if (android.os.Build.VERSION.SDK_INT >= 33) android.Manifest.permission.READ_MEDIA_IMAGES else android.Manifest.permission.READ_EXTERNAL_STORAGE
-    return { de.danerd.ghulsuite.ExternalActivity.started(); launcher.launch(perm) }
-}
-
 actual val cameraPhotoAvailable: Boolean = true
 
 @androidx.compose.runtime.Composable

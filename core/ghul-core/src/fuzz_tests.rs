@@ -366,21 +366,17 @@ fn shares_and_mail_keys() {
 }
 
 #[test]
-fn autofill_domains() {
+fn url_hosts_and_domains() {
     let seeds = seeds(&[
         "https://user:pw@www.Example.co.uk:8443/login?x=1#y",
         "192.168.1.1",
         "[::1]:8080",
         "xn--bcher-kva.example",
-        "androidapp://de.bank.app?cert=AABB",
     ]);
-    fuzz("autofill", &seeds, 4000, |d| {
+    fuzz("domains", &seeds, 4000, |d| {
         let t = s(d);
-        if let Some(h) = crate::app::autofill::host_of(&t) {
-            let _ = crate::app::autofill::base_domain(&h);
+        if let Some(h) = crate::app::domain::host_of(&t) {
+            let _ = crate::app::domain::base_domain(&h);
         }
-        let urls = vec![t.clone(), "https://example.org".into()];
-        let _ = crate::app::autofill::match_entry(&urls, Some(&t), None, None);
-        let _ = crate::app::autofill::match_entry(&urls, None, Some(&t), Some(&t));
     });
 }

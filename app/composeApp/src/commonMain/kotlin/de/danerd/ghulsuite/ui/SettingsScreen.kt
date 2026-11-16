@@ -253,7 +253,6 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                 SwitchRow(stringResource(Res.string.sec_pwned), settings.pwnedCheck) { settings.pwnedCheck = it }
                 Hint(stringResource(Res.string.sec_pwned_sub))
             }
-            if (!backend.isDesktop) AutofillSection(state)
             AreaFileNote(VaultKindUi.PASS)
             AreaFooter(state, VaultKindUi.PASS)
                 }

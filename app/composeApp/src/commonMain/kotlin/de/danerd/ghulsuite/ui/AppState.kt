@@ -119,12 +119,10 @@ data class MailDraft(
 
 
 /**
- * UI state and navigation of the whole app. [main]: the app's own state, which runs the
- * background work after unlocking (automatic archive, photo backup, scheduled mail, backups,
- * update check) and owns the hooks of [JobStatus]. A second state (the autofill window) passes
- * false: it neither starts that work a second time nor takes the notification's "Cancel" away.
+ * UI state and navigation of the whole app. Runs the background work after unlocking (automatic
+ * archive, scheduled mail, backups, update check) and owns the hooks of [JobStatus].
  */
-class AppState(val backend: VaultBackend, val scope: CoroutineScope, val main: Boolean = true) {
+class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     var vaultExists by mutableStateOf(backend.exists())
 
     /** Shows the start screen (open another suite or vault) although a suite exists. */
@@ -485,12 +483,9 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope, val main: B
                     refreshVaults()
                     scanFound()
                     autoSync()
-                    if (main) runPhotoBackup()
-                    if (main) {
-                        sendDueMail()
-                        runAutoBackup()
-                        runAutoArchive()
-                    }
+                    sendDueMail()
+                    runAutoBackup()
+                    runAutoArchive()
                     val start = backend.settings.startTab.let { if (it < 0) backend.settings.lastTab else it }
                     tabs.getOrNull(start)?.let { tab = it }
                     applyLaunch()
@@ -499,17 +494,15 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope, val main: B
                         scope.launch { catching { backend.net.refreshMailNotifications() } }
                     }
                     refreshCalendar()
-                    if (main) checkUpdate(manual = false)
+                    checkUpdate(manual = false)
                 }
             }
         }
         // The notification's "Cancel" (Android) stops the running jobs; the automatic lock of
-        // Android asks the jobs first. Only the app's own state.
-        if (main) {
-            JobStatus.cancelAll = { jobs.cancelAll() }
-            JobStatus.autoLock = { autoLock() }
-            JobStatus.keepUnlocked = { keepUnlocked() }
-        }
+        // Android asks the jobs first.
+        JobStatus.cancelAll = { jobs.cancelAll() }
+        JobStatus.autoLock = { autoLock() }
+        JobStatus.keepUnlocked = { keepUnlocked() }
         // Going to the background carries out what waits for "Undo": the auto lock may come next.
         scope.launch { AppLaunch.inFront.collect { if (!it) catching { settlePending() } } }
         // Area settings go into the area's file (and from there to the other devices).
@@ -1006,38 +999,6 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope, val main: B
         }
     }
 
-    /** Backs up new photos into GhulDrive (Android, if switched on); runs after unlocking as a quiet job. */
-    fun runPhotoBackup() {
-        val st = backend.settings
-        if (!main || !st.photoBackup || !backend.net.photoBackupAvailable || jobs.list.any { it.active && it.kind == JobKind.PHOTOS }) return
-        jobs.start(
-            JobKind.PHOTOS, title = { str(Res.string.drive_photo_backup_running) }, quiet = true,
-            cancelled = { j -> if (j.done > 0) plural(Res.plurals.drive_photo_backup_done, j.done, j.done.toString()) else null },
-        ) { job ->
-            try {
-                if (backend.net.driveStatus().serverId == null) return@start null
-                // Each photo moves the mark on: a cancelled run continues after the last one done.
-                val newest = backend.net.photoBackup(st.photoBackupSince.toLong(), st.photoBackupWifiOnly) { name, added, next ->
-                    job.item = name
-                    job.done++
-                    val mark = photoMark(added, next)
-                    if (mark > st.photoBackupSince) st.photoBackupSince = mark.toInt()
-                    driveTick++
-                }
-                st.photoBackupSince = newest.toInt()
-                if (job.done > 0) {
-                    revision++
-                    plural(Res.plurals.drive_photo_backup_done, job.done, job.done.toString())
-                } else null
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                // Without a network it simply waits for the next unlock.
-                if ((e as? VaultException)?.kind == VaultErrorKind.NETWORK) null else describe(e)
-            }
-        }
-    }
-
     fun messageRes(res: org.jetbrains.compose.resources.StringResource) {
         scope.launch { snackbar.showSnackbar(getString(res)) }
     }
@@ -1196,10 +1157,3 @@ object PasswordPolicy {
         else -> null
     }
 }
-
-/**
- * The photo backup's mark after a photo added at [added] (whole seconds): the next run takes the
- * photos added after the mark. If the next photo waiting has the same second ([next]), the mark
- * stays one second before, so a run stopped between the two does not skip the second one.
- */
-fun photoMark(added: Long, next: Long?): Long = if (next == null || next > added) added else added - 1
