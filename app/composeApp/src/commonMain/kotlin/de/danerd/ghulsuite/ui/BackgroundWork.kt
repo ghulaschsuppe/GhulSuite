@@ -158,7 +158,7 @@ fun AppState.archiveMails(folder: String, mails: suspend () -> List<Pair<String,
 fun AppState.runAutoArchive() {
     val st = backend.settings
     val net = backend.net
-    if (!main || !st.moduleGhulMail || autoArchiveStarting || jobs.list.any { it.active && it.kind == JobKind.ARCHIVE && it.quiet }) return
+    if (!st.moduleGhulMail || autoArchiveStarting || jobs.list.any { it.active && it.kind == JobKind.ARCHIVE && it.quiet }) return
     if (nowSeconds() - (st.archiveAutoLast.toLongOrNull() ?: 0L) < 86_400) return
     // Set before the first suspension: two quick unlocks start one run, not two.
     autoArchiveStarting = true

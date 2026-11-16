@@ -28,8 +28,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import de.danerd.ghulsuite.model.DriveModeUi
-import de.danerd.ghulsuite.model.DriveStorageUi
 import de.danerd.ghulsuite.model.VaultKindUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
@@ -180,15 +178,9 @@ private fun AreaSheet(state: AppState, kind: VaultKindUi, onDismiss: () -> Unit)
     if (!exists) {
         var name by remember { mutableStateOf("") }
         var error by remember { mutableStateOf<String?>(null) }
-        var storage by remember { mutableStateOf<DriveStorageUi?>(null) }
         var own by remember { mutableStateOf(false) }
         val defaultName = stringResource(when (kind) { VaultKindUi.PASS -> Res.string.area_pass_default; VaultKindUi.TOTP -> Res.string.area_auth_default; else -> Res.string.area_cal_default })
-        LaunchedEffect(kind) {
-            name = defaultName
-            if (kind == VaultKindUi.DRIVE) storage = catching { state.backend.net.driveStorage() }.getOrNull()
-        }
-        val syncOn = storage?.syncAvailable == true
-        var useSync by remember(syncOn) { mutableStateOf(syncOn) }
+        LaunchedEffect(kind) { name = defaultName }
         val done = stringResource(Res.string.area_set_up_msg, title)
         if (own) {
             DriveServerSheet(state) { own = false; showModule(state, kind, true); onDismiss() }
@@ -202,20 +194,13 @@ private fun AreaSheet(state: AppState, kind: VaultKindUi, onDismiss: () -> Unit)
             if (kind in NAMED_AREAS) {
                 OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text(stringResource(Res.string.l_vault_name)) }, singleLine = true)
             }
-            if (kind == VaultKindUi.DRIVE) {
-                SheetList {
-                    if (syncOn) PickRow(useSync, Icons.Filled.Sync, 2, stringResource(Res.string.drive_like_sync), stringResource(Res.string.drive_like_sync_sub), onClick = { useSync = true })
-                    PickRow(!useSync, Icons.Filled.Dns, 1, stringResource(Res.string.wz_own_server), stringResource(Res.string.drive_own_sub), divider = syncOn, onClick = { useSync = false })
-                }
-            }
+            // GhulDrive needs a storage location: the button goes on to its server form.
+            if (kind == VaultKindUi.DRIVE) HintText(stringResource(Res.string.drive_own_sub))
             if (kind == VaultKindUi.MAIL) HintText(stringResource(Res.string.area_mail_next))
             ErrorText(error)
             Button(onClick = {
-                if (kind == VaultKindUi.DRIVE && !useSync) { own = true; return@Button }
-                state.run(onError = { error = it }, block = {
-                    state.backend.addArea(kind, if (kind in NAMED_AREAS) name else "")
-                    if (kind == VaultKindUi.DRIVE && useSync) state.backend.net.driveUseSync()
-                }) {
+                if (kind == VaultKindUi.DRIVE) { own = true; return@Button }
+                state.run(onError = { error = it }, block = { state.backend.addArea(kind, if (kind in NAMED_AREAS) name else "") }) {
                     showModule(state, kind, true)
                     state.message(done)
                     state.changed()
@@ -281,84 +266,5 @@ fun CodeReminderDialog(state: AppState) {
                 }
             }, enabled = !state.busy) { Text(stringResource(Res.string.code_do_now)) }
         },
-    )
-}
-
-/** GhulDrive's storage on its settings page: like sync or its own server, changeable. */
-@Composable
-fun DriveStorageRow(state: AppState) {
-    val net = state.backend.net
-    var storage by remember { mutableStateOf<DriveStorageUi?>(null) }
-    var sheet by remember { mutableStateOf(false) }
-    var confirmSync by remember { mutableStateOf(false) }
-    var own by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(state.liveRevision()) { storage = catching { net.driveStorage() }.getOrNull() }
-    val s = storage ?: return
-    val server = s.server
-    val sub = when (s.mode) {
-        DriveModeUi.NONE -> stringResource(Res.string.ctx_not_set_up)
-        DriveModeUi.SYNC -> if (server == null) stringResource(Res.string.drive_sync_gone_short) else stringResource(Res.string.drive_mode_sync, server.name)
-        DriveModeUi.OWN, DriveModeUi.SUITE -> stringResource(Res.string.drive_mode_own, server?.name.orEmpty(), server?.let { kindLabel(it.kind) }.orEmpty())
-    }
-    ListRow(stringResource(Res.string.drive_storage), sub,
-        leading = { IconTile(if (s.mode == DriveModeUi.SYNC) Icons.Filled.Sync else Icons.Filled.Dns, paletteColor(if (s.mode == DriveModeUi.SYNC) 2 else 1)) }) { sheet = true }
-    ErrorText(error)
-    if (confirmSync) {
-        AlertDialog(
-            onDismissRequest = { confirmSync = false },
-            title = { Text(stringResource(Res.string.drive_to_sync_title)) },
-            text = { Text(stringResource(Res.string.drive_to_sync_text)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmSync = false
-                    state.run(onError = { error = it }, block = { net.driveUseSync() }) { state.changed() }
-                }) { Text(stringResource(Res.string.drive_to_sync_yes)) }
-            },
-            dismissButton = { TextButton(onClick = { confirmSync = false }) { Text(stringResource(Res.string.a_cancel)) } },
-        )
-    }
-    if (own) DriveServerSheet(state) { own = false }
-    if (sheet) {
-        GhulSheet({ sheet = false }, stringResource(Res.string.drive_storage_title)) {
-            SheetList {
-                PickRow(s.mode == DriveModeUi.SYNC, Icons.Filled.Sync, 2, stringResource(Res.string.drive_like_sync),
-                    stringResource(if (s.syncAvailable) Res.string.drive_like_sync_ref else Res.string.wz_drive_sync_first), enabled = s.syncAvailable,
-                    onClick = {
-                        sheet = false
-                        // U14: switching away from a server that holds files asks first (Drive looks empty).
-                        if (s.mode != DriveModeUi.SYNC) confirmSync = true
-                    })
-                PickRow(s.mode == DriveModeUi.OWN || s.mode == DriveModeUi.SUITE, Icons.Filled.Dns, 1, stringResource(Res.string.wz_own_server),
-                    stringResource(Res.string.drive_own_in_file), divider = true, onClick = { sheet = false; own = true })
-            }
-            HintText(stringResource(Res.string.drive_storage_hint))
-        }
-    }
-}
-
-/**
- * Before the sync server is removed or changed while GhulDrive uses it: keep it for GhulDrive
- * (copy of the login into the Drive file) or set GhulDrive up again later. Never silently nowhere.
- */
-@Composable
-fun DriveFollowsSyncDialog(state: AppState, onProceed: () -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(Res.string.drive_follow_title)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(stringResource(Res.string.drive_follow_text))
-                TextButton(onClick = { onDismiss(); onProceed() }, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
-                    Text(stringResource(Res.string.drive_follow_later))
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                state.run(block = { state.backend.net.driveDetachFromSync() }) { onDismiss(); onProceed() }
-            }) { Text(stringResource(Res.string.drive_follow_keep)) }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(Res.string.a_cancel)) } },
     )
 }

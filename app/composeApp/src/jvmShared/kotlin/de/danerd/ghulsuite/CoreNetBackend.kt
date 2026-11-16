@@ -55,10 +55,8 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.coroutineContext
 import de.danerd.ghulsuite.core.ServerFolders
-import de.danerd.ghulsuite.core.DriveMode
 import de.danerd.ghulsuite.model.ServerFoldersUi
-import de.danerd.ghulsuite.model.DriveStorageUi
-import de.danerd.ghulsuite.model.DriveModeUi
+import de.danerd.ghulsuite.model.DriveLocationUi
 
 /** Size of the pieces handed to the core when uploading (the core encrypts 4 MiB blocks). */
 private const val UPLOAD_CHUNK = 1024 * 1024
@@ -172,21 +170,6 @@ abstract class CoreNetBackend(protected val suite: () -> GhulSuite) : NetBackend
         DriveStatusUi(s.serverId, s.files.toInt(), s.bytes.toLong())
     }
 
-    override suspend fun driveSetup(serverId: String) = io { suite().driveSetup(serverId) }
-
-    override suspend fun driveStorage(): DriveStorageUi = io {
-        val s = suite().driveStorage()
-        val mode = when (s.mode) {
-            DriveMode.NONE -> DriveModeUi.NONE
-            DriveMode.SYNC -> DriveModeUi.SYNC
-            DriveMode.OWN -> DriveModeUi.OWN
-            DriveMode.SUITE -> DriveModeUi.SUITE
-        }
-        DriveStorageUi(mode, s.server?.toUi(), s.syncAvailable)
-    }
-
-    override suspend fun driveUseSync() = io { suite().driveUseSync() }
-
     override suspend fun driveAcceptServerState() = io { suite().driveAcceptServerState() }
 
     override suspend fun driveSaveServer(input: ServerInputUi, confirmed: String?): ServerSavedUi = io {
@@ -196,7 +179,14 @@ abstract class CoreNetBackend(protected val suite: () -> GhulSuite) : NetBackend
         }
     }
 
-    override suspend fun driveDetachFromSync() = io { suite().driveDetachFromSync() }
+    override suspend fun driveLocations(): List<DriveLocationUi> =
+        io { suite().driveLocations().map { DriveLocationUi(it.server.toUi(), it.active, it.archive) } }
+
+    override suspend fun driveSwitchLocation(id: String) = io { suite().driveSwitchLocation(id) }
+
+    override suspend fun driveRemoveLocation(id: String, deleteFiles: Boolean, force: Boolean) = io { suite().driveRemoveLocation(id, deleteFiles, force) }
+
+    override suspend fun driveSetArchiveLocation(id: String) = io { suite().driveSetArchiveLocation(id) }
 
     override suspend fun driveList(folder: String?, refresh: Boolean): List<DriveItemUi> =
         io { suite().driveList(folder, refresh).map { it.toUi() } }

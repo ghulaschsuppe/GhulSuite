@@ -25,7 +25,7 @@ name: GhulDrive and GhulMail without a server
     timeout: 10000
 - tapOn: "Set up"
 - extendedWaitUntil:
-    visible: "Own server for GhulDrive"
+    visible: "Storage location for GhulDrive"
     timeout: 10000
 # Too early: nothing is filled in yet. The first step is testing the login; there is no folder
 # to choose before that.

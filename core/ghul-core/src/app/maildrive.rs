@@ -9,6 +9,8 @@
 //! folder is skipped, even if the rest of its name was changed.
 
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
+
 use zeroize::Zeroizing;
 
 use super::areas::{area_setting, put_area_setting};
@@ -19,6 +21,8 @@ use crate::net::imap;
 
 /// The id of the archive's top folder in GhulDrive (in the Mail file).
 const ARCHIVE_KEY: &str = "drive_archive";
+/// The archive's top folder per storage location of GhulDrive.
+const ARCHIVE_ROOTS_KEY: &str = "archive_roots";
 /// Name of the top folder when it is created.
 const ARCHIVE_NAME: &str = "Mail-Archiv";
 /// Longest file name (without the code and `.eml`); names stay readable on every system.
@@ -126,11 +130,18 @@ pub(super) fn eml_name(raw: &[u8], received: i64, now: i64) -> (String, i32, Str
 impl GhulSuite {
     /// The archive's folder in GhulDrive for an account (`None`: the top folder), if it exists.
     fn archive_root(&self) -> Result<Option<String>> {
-        let id: String = self.with_open(|o| Ok(area_setting(o, VaultKind::Mail, ARCHIVE_KEY)))?;
-        if id.is_empty() || !self.drive_folder_alive(&id)? {
-            return Ok(None);
+        // Each storage location has its own archive folder (older suites: one, without location).
+        let (roots, legacy, loc) = self.with_open(|o| {
+            let roots: BTreeMap<String, String> = area_setting(o, VaultKind::Mail, ARCHIVE_ROOTS_KEY);
+            let legacy: String = area_setting(o, VaultKind::Mail, ARCHIVE_KEY);
+            Ok((roots, legacy, self.drive_server(o).unwrap_or_default()))
+        })?;
+        for id in [roots.get(&loc).cloned().unwrap_or_default(), legacy] {
+            if !id.is_empty() && self.drive_folder_alive(&id)? {
+                return Ok(Some(id));
+            }
         }
-        Ok(Some(id))
+        Ok(None)
     }
 
     /// The archive's top folder, created (and remembered) when it is missing or in the trash.
@@ -140,10 +151,65 @@ impl GhulSuite {
         }
         let id = self.drive_create_folder(None, ARCHIVE_NAME.into())?;
         self.with_open(|o| {
-            put_area_setting(o, VaultKind::Mail, ARCHIVE_KEY, &id)?;
+            let loc = self.drive_server(o).unwrap_or_default();
+            let mut roots: BTreeMap<String, String> = area_setting(o, VaultKind::Mail, ARCHIVE_ROOTS_KEY);
+            roots.insert(loc, id.clone());
+            put_area_setting(o, VaultKind::Mail, ARCHIVE_ROOTS_KEY, &roots)?;
             self.save_area(o, VaultKind::Mail)
         })?;
         Ok(id)
+    }
+
+    /// `mail_archive_to_drive` on the location Drive's calls work on.
+    fn archive_one(&self, account_id: String, folder: String, uid: u32) -> Result<MailArchived> {
+        let got = self.with_imap(&account_id, move |s| {
+            let folder = folder.clone();
+            Box::pin(async move { imap::peek(s, &folder, uid).await })
+        })?;
+        let Some((raw, received)) = got else { return Ok(MailArchived::Gone) };
+        let raw = Zeroizing::new(raw);
+        let (name, year, code) = eml_name(&raw, received, super::suite::now_ms() / 1000);
+        let root = self.archive_root_or_new()?;
+        let acc = self.drive_folder_named(Some(&root), &self.archive_account_name(&account_id)?)?;
+        let year_dir = self.drive_folder_named(Some(&acc), &format!("{year:04}"))?;
+        // Already archived: a file with the mail's code and the same content. Another mail that
+        // only claims the same Message-ID (even padded to the same size) is not taken for it:
+        // it gets a code from its content.
+        let files: Vec<_> = self.drive_list(Some(year_dir.clone()), false)?.into_iter().filter(|i| !i.is_dir).collect();
+        let size = raw.len() as u64;
+        let has = |code: &str| -> Result<(bool, bool)> {
+            let marker = format!("({code}).eml");
+            let named: Vec<_> = files.iter().filter(|i| i.name.ends_with(&marker)).collect();
+            for f in named.iter().filter(|i| i.size == size) {
+                if *self.drive_read_all(&f.id)? == **raw {
+                    return Ok((true, true));
+                }
+            }
+            Ok((false, !named.is_empty()))
+        };
+        let mut name = name;
+        match has(&code)? {
+            (true, _) => return Ok(MailArchived::Skipped),
+            (false, true) => {
+                let own = code_of(None, &raw);
+                if has(&own)?.0 {
+                    return Ok(MailArchived::Skipped);
+                }
+                name = name.replace(&format!("({code}).eml"), &format!("({own}).eml"));
+            }
+            (false, false) => {}
+        }
+        self.drive_put_file(Some(year_dir), name, &raw)?;
+        Ok(MailArchived::Saved)
+    }
+
+    /// `mail_archive_folder` on the location Drive's calls work on.
+    fn archive_folder_here(&self, account_id: Option<String>) -> Result<Option<String>> {
+        let Some(root) = self.archive_root()? else { return Ok(None) };
+        let Some(account_id) = account_id else { return Ok(Some(root)) };
+        let name = self.archive_account_name(&account_id)?;
+        let found = self.drive_list(Some(root), false)?.into_iter().find(|i| i.is_dir && i.name == name);
+        Ok(found.map(|i| i.id))
     }
 
     fn archive_candidates(&self, account_id: &str, folder: &str, before: Option<i64>) -> Result<(u32, Vec<u32>)> {
@@ -167,11 +233,8 @@ impl GhulSuite {
     /// The mail archive's folder in GhulDrive: the account's (with `account_id`) or the top one.
     /// `None` while nothing was archived yet.
     pub fn mail_archive_folder(&self, account_id: Option<String>) -> Result<Option<String>> {
-        let Some(root) = self.archive_root()? else { return Ok(None) };
-        let Some(account_id) = account_id else { return Ok(Some(root)) };
-        let name = self.archive_account_name(&account_id)?;
-        let found = self.drive_list(Some(root), false)?.into_iter().find(|i| i.is_dir && i.name == name);
-        Ok(found.map(|i| i.id))
+        let Some(loc) = self.drive_archive_location()? else { return Ok(None) };
+        super::drive::at_location(Some(loc), || self.archive_folder_here(account_id))
     }
 
     /// The mails of a folder at the provider to archive: those received before the day
@@ -254,48 +317,9 @@ impl GhulSuite {
     /// Copies one mail as `.eml` into GhulDrive (`Mail-Archiv/<account>/<year>/`). The mail stays
     /// at the provider unchanged (also its "read" mark). A mail already archived is skipped.
     pub fn mail_archive_to_drive(&self, account_id: String, folder: String, uid: u32) -> Result<MailArchived> {
-        if self.drive_status()?.server_id.is_none() {
-            return Err(GhulError::NotConfigured);
-        }
-        let got = self.with_imap(&account_id, move |s| {
-            let folder = folder.clone();
-            Box::pin(async move { imap::peek(s, &folder, uid).await })
-        })?;
-        let Some((raw, received)) = got else { return Ok(MailArchived::Gone) };
-        let raw = Zeroizing::new(raw);
-        let (name, year, code) = eml_name(&raw, received, super::suite::now_ms() / 1000);
-        let root = self.archive_root_or_new()?;
-        let acc = self.drive_folder_named(Some(&root), &self.archive_account_name(&account_id)?)?;
-        let year_dir = self.drive_folder_named(Some(&acc), &format!("{year:04}"))?;
-        // Already archived: a file with the mail's code and the same content. Another mail that
-        // only claims the same Message-ID (even padded to the same size) is not taken for it:
-        // it gets a code from its content.
-        let files: Vec<_> = self.drive_list(Some(year_dir.clone()), false)?.into_iter().filter(|i| !i.is_dir).collect();
-        let size = raw.len() as u64;
-        let has = |code: &str| -> Result<(bool, bool)> {
-            let marker = format!("({code}).eml");
-            let named: Vec<_> = files.iter().filter(|i| i.name.ends_with(&marker)).collect();
-            for f in named.iter().filter(|i| i.size == size) {
-                if *self.drive_read_all(&f.id)? == **raw {
-                    return Ok((true, true));
-                }
-            }
-            Ok((false, !named.is_empty()))
-        };
-        let mut name = name;
-        match has(&code)? {
-            (true, _) => return Ok(MailArchived::Skipped),
-            (false, true) => {
-                let own = code_of(None, &raw);
-                if has(&own)?.0 {
-                    return Ok(MailArchived::Skipped);
-                }
-                name = name.replace(&format!("({code}).eml"), &format!("({own}).eml"));
-            }
-            (false, false) => {}
-        }
-        self.drive_put_file(Some(year_dir), name, &raw)?;
-        Ok(MailArchived::Saved)
+        // Into the storage location chosen for the archive (also while another one is shown).
+        let loc = self.drive_archive_location()?.ok_or(GhulError::NotConfigured)?;
+        super::drive::at_location(Some(loc), || self.archive_one(account_id, folder, uid))
     }
 
     /// Reads an archived mail (`.eml`): decrypted with the account's key if it is encrypted.

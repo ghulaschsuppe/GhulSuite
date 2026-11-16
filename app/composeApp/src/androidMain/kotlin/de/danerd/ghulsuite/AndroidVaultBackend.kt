@@ -14,14 +14,11 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PersistableBundle
-import android.provider.Settings as AndroidSettings
-import android.view.autofill.AutofillManager
 import de.danerd.ghulsuite.core.HidTransport
 import de.danerd.ghulsuite.core.VaultStorage
 import de.danerd.ghulsuite.core.fidoGetInfo
 import de.danerd.ghulsuite.core.fidoSetPin
 import de.danerd.ghulsuite.core.localStorage
-import de.danerd.ghulsuite.model.AutofillStatus
 import de.danerd.ghulsuite.model.EmergencySheetText
 import de.danerd.ghulsuite.model.FolderRef
 import de.danerd.ghulsuite.model.KeyStatus
@@ -45,7 +42,7 @@ class PrefsStore(context: Context) : KeyValueStore {
     override fun putString(key: String, value: String) = prefs.edit().putString(key, value).apply()
 }
 
-/** Android: storage via SAF, security key via USB, quick unlock via Keystore, autofill. */
+/** Android: storage via SAF, security key via USB, quick unlock via Keystore. */
 /** How long unlocking waits for a security key to be plugged in. */
 private const val KEY_WAIT_MS = 60_000L
 
@@ -228,33 +225,6 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
         quick.unlockPin(pin)
         unlockedState.value = true
     }
-
-    // --- autofill ------------------------------------------------------------------------------
-
-    override fun autofillStatus(): AutofillStatus {
-        val am = context.getSystemService(AutofillManager::class.java) ?: return AutofillStatus.UNSUPPORTED
-        if (!am.isAutofillSupported) return AutofillStatus.UNSUPPORTED
-        return if (am.hasEnabledAutofillServices()) AutofillStatus.ON else AutofillStatus.OFF
-    }
-
-    override fun openAutofillSettings() {
-        val intent = Intent(AndroidSettings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)
-            .setData(Uri.parse("package:${context.packageName}"))
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        ExternalActivity.started()
-        runCatching { (activity() ?: context).startActivity(intent) }.onFailure { ExternalActivity.finished() }
-    }
-
-    /** Logins for a website or app (with its signing certificate) for the autofill service. */
-    suspend fun autofillLogins(domain: String?, pkg: String?, cert: String?) = io { suite.autofillLogins(domain, pkg, cert) }
-
-    suspend fun allLogins() = io { suite.autofillLogins(null, null, null) }
-
-    suspend fun linkAppToLogin(vaultId: String, id: ByteArray, pkg: String, cert: String?) =
-        io { suite.linkAppToLogin(vaultId, id, pkg, cert) }
-
-    suspend fun autofillSave(domain: String?, pkg: String?, cert: String?, username: String, password: String) =
-        io { suite.autofillSave(domain, pkg, cert, username, password) }
 
     // --- tools --------------------------------------------------------------------------------
 

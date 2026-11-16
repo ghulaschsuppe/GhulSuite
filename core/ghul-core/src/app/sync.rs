@@ -668,6 +668,8 @@ impl GhulSuite {
     /// Turns synchronisation with a stored server on (`Some`) or off (`None`).
     pub fn set_sync_server(&self, server_id: Option<String>) -> Result<()> {
         self.with_open(|o| {
+            // An older Drive on the sync server keeps that server before it changes.
+            self.drive_move_to_locations(o)?;
             if let Some(id) = &server_id {
                 if !servers::servers(o).iter().any(|s| &s.id == id) {
                     return Err(GhulError::NotFound);

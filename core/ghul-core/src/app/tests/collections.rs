@@ -3,7 +3,7 @@
 //! - XSS payloads (PayloadsAllTheThings, SecLists, DOMPurify's test fixtures) through the HTML
 //!   mail filter;
 //! - CRLF injection payloads (PayloadsAllTheThings) through every mail header value;
-//! - the URL test data of the web platform tests (WHATWG) through the autofill host parser, a
+//! - the URL test data of the web platform tests (WHATWG) through the host parser, a
 //!   browser and GhulSuite must agree on which site a URL belongs to;
 //! - JSONTestSuite (318 valid, invalid and pathological JSON files) through every JSON import;
 //! - the calendar files ical4j and python-icalendar test themselves with (valid, invalid and
@@ -159,7 +159,7 @@ fn urls_belong_to_the_same_site_as_in_a_browser() {
     for c in cases.iter().filter(|c| c.is_object()) {
         let input = c["input"].as_str().unwrap_or("");
         // Never a crash, whatever the input.
-        let ours = super::super::autofill::host_of(input);
+        let ours = super::super::domain::host_of(input);
         if c["failure"].as_bool() == Some(true)
             || c["base"].as_str().is_some_and(|b| b != "about:blank" && !b.is_empty())
         {
@@ -182,11 +182,7 @@ fn urls_belong_to_the_same_site_as_in_a_browser() {
         }
         // Where GhulSuite finds a host, it must be the one a browser goes to.
         if let Some(h) = ours {
-            assert_eq!(
-                super::super::autofill::base_domain(&h),
-                super::super::autofill::base_domain(&browser),
-                "{input:?}"
-            );
+            assert_eq!(super::super::domain::base_domain(&h), super::super::domain::base_domain(&browser), "{input:?}");
             checked += 1;
         }
     }
