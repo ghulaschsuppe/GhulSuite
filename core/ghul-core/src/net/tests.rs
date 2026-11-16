@@ -128,6 +128,11 @@ fn sftp_replacing_a_file_never_loses_it() {
     fs.write("drive/lost-answer", b"new").unwrap();
     assert_eq!(fs.read("drive/lost-answer").unwrap().unwrap(), b"new");
     fs.delete("drive/lost-answer").unwrap();
+    // The second channel was closed by the server: opened again, the write goes through.
+    fs.write("drive/channel-gone", b"old").unwrap();
+    fs.write("drive/channel-gone", b"new").unwrap();
+    assert_eq!(fs.read("drive/channel-gone").unwrap().unwrap(), b"new");
+    fs.delete("drive/channel-gone").unwrap();
     // A write without posix-rename that stopped after removing the old file: only the
     // finished ".ghltmp" is there.
     fs.delete("drive/index.ghldrv").unwrap();

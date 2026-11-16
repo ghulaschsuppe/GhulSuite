@@ -92,8 +92,14 @@ pub struct SyncStatus {
 
 /// Marks a change of the protection (password, keys, code) for the synchronisation.
 pub(super) fn mark_protection_changed(o: &mut Open) -> Result<()> {
-    put_setting(&mut o.suite, PROTECTION_CHANGED, &now_ms())
+    // Always later than the change it follows (that device's clock may be ahead of this one).
+    let before: i64 = setting(&o.suite, PROTECTION_CHANGED);
+    put_setting(&mut o.suite, PROTECTION_CHANGED, &now_ms().max(before.saturating_add(1)))
 }
+
+/// How far a protection change may lie in the future (clocks differ a little); a file that
+/// claims more is not taken as newer (made up, to take over the protection for good).
+const FUTURE_TOLERANCE_MS: i64 = 24 * 60 * 60 * 1000;
 
 /// The server this device synchronises with, if any.
 pub(super) fn sync_server(o: &Open) -> Option<String> {
@@ -425,7 +431,7 @@ impl GhulSuite {
         pending: &mut SyncReport,
     ) -> Result<SyncReport> {
         let snap = Snapshot::read(fs)?;
-        let rep = self.changing_protection(|o| {
+        let rep = self.changing_keys(|o| {
             if target.is_some() && sync_target(o) != target {
                 return Ok(None);
             }
@@ -537,7 +543,8 @@ impl GhulSuite {
                     // Nor one that brings back a code or key replaced on purpose (whoever knows
                     // it could have made the file from an old copy).
                     // A code or secret replaced here is not taken back (see `adopt_protection`).
-                    if remote_ts > local_ts && !older_protection {
+                    let plausible = remote_ts <= now_ms().saturating_add(FUTURE_TOLERANCE_MS);
+                    if remote_ts > local_ts && !older_protection && plausible {
                         if r.header().kdf != o.kdf() {
                             return Err(GhulError::PasswordChangedElsewhere);
                         }
@@ -760,6 +767,12 @@ impl GhulSuite {
             .map(|s| slot_label(&o.suite, s).0)
             .unwrap_or_default();
         let slots: Vec<Slot> = remote.slots().iter().filter(|s| s.provides_factor()).cloned().collect();
+        // A replaced factor secret that cannot be renewed here (a key of an older app needs a
+        // touch first): nothing is taken over; this device's protection counts as the newest.
+        if revoked.secret && slots.iter().any(|s| s.is_legacy()) {
+            mark_protection_changed(o)?;
+            return self.save_all(o);
+        }
         // Keys removed on purpose on any device do not come back with an older protection (B2).
         let mut removed: Vec<String> = super::suite::setting(&o.suite, super::suite::REMOVED_SLOTS_KEY);
         for r in super::suite::setting::<Vec<String>>(remote, super::suite::REMOVED_SLOTS_KEY) {

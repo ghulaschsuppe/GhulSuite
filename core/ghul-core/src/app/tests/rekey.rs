@@ -901,3 +901,78 @@ fn two_changes_of_the_protection_at_the_same_time_agree() {
     b.unlock("pw-123456".into(), None, None, None, Some(kf_b)).unwrap();
     let _ = std::fs::remove_dir_all(&server_dir);
 }
+
+/// Review of H1: a protection change that claims a time far in the future is not taken over
+/// (made up, it would win every later comparison).
+#[test]
+fn implausible_protection_changes_are_not_taken_over() {
+    let server_dir = std::env::temp_dir().join(format!("ghul-future-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&server_dir);
+    let server = LocalFs::new(&server_dir);
+    let (kf, kf_b) = (generate_keyfile(), generate_keyfile());
+    let (da, db) = (Dirs::new("future-a"), Dirs::new("future-b"));
+    let a = da.suite();
+    a.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    a.sync_folder(&server).unwrap();
+    copy_suite(&server_dir, &db);
+    let b = db.suite();
+    b.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
+    // B adds a key file and claims its change happened in two days.
+    b.add_keyfile(kf_b.clone(), "Von B".into()).unwrap();
+    let in_two_days = crate::app::suite::now_ms() + 2 * 24 * 60 * 60 * 1000;
+    let set_time = |s: &GhulSuite, t: i64| {
+        s.with_open(|o| {
+            crate::app::suite::put_setting(&mut o.suite, crate::app::sync::PROTECTION_CHANGED, &t)?;
+            s.save_all(o)
+        })
+        .unwrap()
+    };
+    set_time(&b, in_two_days);
+    b.sync_folder(&server).unwrap();
+    a.sync_folder(&server).unwrap();
+    a.lock();
+    assert!(a.unlock("pw-123456".into(), None, None, None, Some(kf_b.clone())).is_err(), "not taken over");
+    a.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    let _ = std::fs::remove_dir_all(&server_dir);
+}
+
+/// Review of H1: a newer protection from another device that brings back a factor secret
+/// replaced here, with a key of an older app among its keys (its secret cannot be renewed
+/// without a touch): not taken over; this device's protection becomes the newest and the other
+/// device takes it. The replaced secret opens nothing current afterwards.
+#[test]
+fn a_replaced_secret_does_not_come_back_with_a_key_of_an_older_app() {
+    let server_dir = std::env::temp_dir().join(format!("ghul-legacy-back-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&server_dir);
+    let server = LocalFs::new(&server_dir);
+    let (kf1, kf2) = (generate_keyfile(), generate_keyfile());
+    let (da, db) = (Dirs::new("legacy-back-a"), Dirs::new("legacy-back-b"));
+    let a = da.suite();
+    a.create(options("pw-123456", Some(kf1.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    a.add_keyfile(kf2.clone(), "Zwei".into()).unwrap();
+    a.sync_folder(&server).unwrap();
+    copy_suite(&server_dir, &db);
+    let b = db.suite();
+    b.unlock("pw-123456".into(), None, None, None, Some(kf1.clone())).unwrap();
+    let before = files(&db);
+    // A removes "Zwei": a new factor secret, the old one is replaced on purpose.
+    a.remove_slot(slot_id(&a, "Zwei")).unwrap();
+    a.sync_folder(&server).unwrap();
+    // B, meanwhile, gets a key file of an older app (no public key) and is newer.
+    let old_kf = Keyfile::generate(&mut rand_core::OsRng);
+    b.with_open(|o| {
+        let slot =
+            legacy_keyfile_slot(&o.suite.header().suite_id, o.suite.factor_secret(), &old_kf, &mut rand_core::OsRng);
+        o.suite.insert_slot(slot, "Alt", crate::app::suite::now_ms())?;
+        crate::app::sync::mark_protection_changed(o)?;
+        b.save_all(o)
+    })
+    .unwrap();
+    for _ in 0..3 {
+        let _ = b.sync_folder(&server);
+        let _ = a.sync_folder(&server);
+    }
+    let loot = loot_with_keyfile(&before, "pw-123456", &kf2);
+    assert_nothing_opens(&files(&da), &loot, Some("pw-123456"), "device A");
+    let _ = std::fs::remove_dir_all(&server_dir);
+}

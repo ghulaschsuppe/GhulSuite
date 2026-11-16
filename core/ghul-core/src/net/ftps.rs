@@ -335,14 +335,15 @@ impl RemoteFs for FtpsFs {
                 let missing = match cmd(c, &format!("SIZE {full}")).await?.0 {
                     213 => false,
                     550 => true,
-                    // A server without SIZE: try to fetch it.
-                    _ => match me.data(c, &format!("RETR {full}")).await? {
-                        Some(mut d) => {
-                            FtpsFs::read_all(&mut d).await?;
-                            FtpsFs::finish(c).await?;
+                    // A server without SIZE: "rename from" answers 350 for a file that is
+                    // there (then renamed to itself), 550 for none. Anything else (busy): no
+                    // healing, nothing is moved.
+                    _ => match cmd(c, &format!("RNFR {full}")).await?.0 {
+                        350 => {
+                            let _ = cmd(c, &format!("RNTO {full}")).await?;
                             false
                         }
-                        None => true,
+                        code => code == 550,
                     },
                 };
                 if missing {

@@ -612,7 +612,7 @@ impl Open {
 
     /// A digest of everything that protects the open files (keys, slots, password parameters):
     /// tells whether a change of the protection that failed had already changed anything here.
-    fn protection_digest(&self) -> [u8; 32] {
+    fn protection_digest(&self, with_settings: bool) -> [u8; 32] {
         use sha2::Digest;
         let mut h = sha2::Sha256::new();
         h.update(self.password_key.expose());
@@ -626,8 +626,12 @@ impl Open {
             h.update(format!("{:?}{:?}", c.slots(), c.header().kdf).as_bytes());
         }
         // And what the suite keeps about changes of the protection.
-        for key in [REMOVED_SLOTS_KEY, REVOKED_KEY, PREVIOUS_KEY, super::sync::PROTECTION_CHANGED] {
-            h.update(format!("{:?}", self.suite.payload.settings.get(key)).as_bytes());
+        for key in if !with_settings {
+            &[][..]
+        } else {
+            &[REMOVED_SLOTS_KEY, REVOKED_KEY, PREVIOUS_KEY, super::sync::PROTECTION_CHANGED][..]
+        } {
+            h.update(format!("{:?}", self.suite.payload.settings.get(*key)).as_bytes());
         }
         h.finalize().into()
     }
@@ -1104,10 +1108,21 @@ impl GhulSuite {
     /// suite is dropped (locked): what is in memory would no longer match the files, and a later
     /// save would write a half-changed protection. Unlocking again reads what was written.
     pub(super) fn changing_protection<T>(&self, f: impl FnOnce(&mut Open) -> Result<T>) -> Result<T> {
+        self.guarded(true, f)
+    }
+
+    /// Like [`Self::changing_protection`], but only keys, slots and password parameters count
+    /// (the synchronisation merges settings about the protection in every run; an error after
+    /// that alone does not lock the suite, the next run merges them again).
+    pub(super) fn changing_keys<T>(&self, f: impl FnOnce(&mut Open) -> Result<T>) -> Result<T> {
+        self.guarded(false, f)
+    }
+
+    fn guarded<T>(&self, with_settings: bool, f: impl FnOnce(&mut Open) -> Result<T>) -> Result<T> {
         self.with_open(|o| {
-            let before = o.protection_digest();
+            let before = o.protection_digest(with_settings);
             let result = f(o);
-            if result.is_err() && o.protection_digest() != before {
+            if result.is_err() && o.protection_digest(with_settings) != before {
                 self.lock_pending.store(true, Ordering::SeqCst);
             }
             result

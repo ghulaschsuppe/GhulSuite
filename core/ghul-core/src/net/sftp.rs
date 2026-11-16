@@ -79,7 +79,9 @@ pub struct SftpFs {
     sftp: SftpSession,
     /// A second SFTP channel for `posix-rename@openssh.com` (replaces a file in one step); `None`
     /// when the server does not offer it.
-    posix: Option<russh_sftp::client::RawSftpSession>,
+    posix: tokio::sync::Mutex<Option<russh_sftp::client::RawSftpSession>>,
+    /// The server offers `posix-rename@openssh.com` (the channel may have to be opened again).
+    has_posix: bool,
     _session: russh::client::Handle<Client>,
     base: String,
 }
@@ -136,7 +138,8 @@ impl SftpFs {
                 sftp.set_timeout(TIMEOUT.as_secs());
                 let posix = open_posix(&session).await;
                 let base = config.base.trim_end_matches('/').to_owned();
-                Ok(SftpFs { sftp, posix, _session: session, base })
+                let has_posix = posix.is_some();
+                Ok(SftpFs { sftp, posix: tokio::sync::Mutex::new(posix), has_posix, _session: session, base })
             },
             TIMEOUT,
         )
@@ -145,7 +148,7 @@ impl SftpFs {
     /// Whether files are replaced in one step (`posix-rename@openssh.com`).
     #[cfg(test)]
     pub(crate) fn replaces_atomically(&self) -> bool {
-        self.posix.is_some()
+        self.has_posix
     }
 
     fn full(&self, path: &str) -> NetResult<String> {
@@ -274,7 +277,7 @@ impl RemoteFs for SftpFs {
                     // the file's newest content. See `write`.
                     // With one-step replacing the file is never missing while a replacement
                     // runs: a ".ghltmp" there is an unfinished first write, not the content.
-                    Err(e) if is_missing(&e) && self.posix.is_some() => Ok(None),
+                    Err(e) if is_missing(&e) && self.has_posix => Ok(None),
                     Err(e) if is_missing(&e) => match self.sftp.read(format!("{full}.ghltmp")).await {
                         Ok(d) => Ok(Some(d)),
                         Err(e) if is_missing(&e) => Ok(None),
@@ -293,7 +296,7 @@ impl RemoteFs for SftpFs {
         let tmp = format!("{full}.ghltmp");
         block_on(
             async {
-                if self.posix.is_none() {
+                if !self.has_posix {
                     // Without one-step replacing, a missing file with a ".ghltmp" next to it is
                     // a finished write that stopped before its rename (`read` serves it): put it
                     // in place first, so the new ".ghltmp" never overwrites the only copy.
@@ -312,34 +315,59 @@ impl RemoteFs for SftpFs {
                 f.write_all(data).await.map_err(|e| NetError::Protocol(e.to_string()))?;
                 f.shutdown().await.map_err(|e| NetError::Protocol(e.to_string()))?;
                 drop(f);
-                if let Some(raw) = &self.posix {
+                if self.has_posix {
                     // One step: the old file stays until the new one replaces it.
                     let mut req = Vec::new();
                     ssh_string(&mut req, &tmp);
                     ssh_string(&mut req, &full);
-                    let answer = raw.extended(POSIX_RENAME, req).await;
-                    // Tests: the server did it, but its answer is lost.
-                    let answer = if cfg!(test) && full.ends_with("/lost-answer") {
-                        Err(russh_sftp::client::error::Error::Timeout)
-                    } else {
-                        answer
+                    let done = || async {
+                        matches!(self.sftp.metadata(tmp.clone()).await, Err(ref m) if is_missing(m))
+                            && self.sftp.metadata(full.clone()).await.is_ok()
                     };
-                    match answer {
-                        Ok(russh_sftp::protocol::Packet::Status(st))
-                            if st.status_code == russh_sftp::protocol::StatusCode::Ok =>
-                        {
-                            return Ok(());
+                    let mut posix = self.posix.lock().await;
+                    let mut last = None;
+                    for attempt in 0..2 {
+                        if posix.is_none() {
+                            *posix = open_posix(&self._session).await;
                         }
-                        // No answer (lost or late): the server may have done it all the same.
-                        // Never fall back to removing the file: done if the new file is in
-                        // place, else an error with the old file untouched.
-                        Err(e) => {
-                            let moved = matches!(self.sftp.metadata(tmp.clone()).await, Err(ref m) if is_missing(m));
-                            let there = self.sftp.metadata(full.clone()).await.is_ok();
-                            return if moved && there { Ok(()) } else { Err(proto(e)) };
+                        let Some(raw) = posix.as_ref() else { break };
+                        // Tests: the server closed the channel before the request went out.
+                        let answer = if cfg!(test) && attempt == 0 && full.ends_with("/channel-gone") {
+                            Err(russh_sftp::client::error::Error::IO("session closed".into()))
+                        } else {
+                            raw.extended(POSIX_RENAME, req.clone()).await
+                        };
+                        // Tests: the server did it, but its answer is lost.
+                        let answer = if cfg!(test) && full.ends_with("/lost-answer") {
+                            Err(russh_sftp::client::error::Error::Timeout)
+                        } else {
+                            answer
+                        };
+                        match answer {
+                            Ok(russh_sftp::protocol::Packet::Status(st))
+                                if st.status_code == russh_sftp::protocol::StatusCode::Ok =>
+                            {
+                                return Ok(());
+                            }
+                            Ok(other) => return Err(NetError::Protocol(format!("posix-rename: {other:?}"))),
+                            // No answer (lost or late): the server may have done it all the
+                            // same. Never fall back to removing the file.
+                            Err(e) => {
+                                if done().await {
+                                    return Ok(());
+                                }
+                                let timeout = matches!(e, russh_sftp::client::error::Error::Timeout);
+                                last = Some(e);
+                                // A closed channel is opened again once; after a timeout the
+                                // request may still be running: an error, the old file stays.
+                                if timeout || attempt == 1 {
+                                    break;
+                                }
+                                *posix = None;
+                            }
                         }
-                        Ok(other) => return Err(NetError::Protocol(format!("posix-rename: {other:?}"))),
                     }
+                    return Err(last.map_or_else(|| NetError::Protocol("posix-rename unavailable".into()), proto));
                 }
                 // SFTP v3 rename does not replace: remove the old file first. Between the two
                 // steps only the finished ".ghltmp" exists; `read` and the next `write` use it.
