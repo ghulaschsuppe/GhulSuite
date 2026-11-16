@@ -645,7 +645,11 @@ fun DriveSettingsSection(state: AppState) {
     OutlinedButton(onClick = { adding = true }, modifier = Modifier.fillMaxWidth(), enabled = locations != null) {
         Text(stringResource(Res.string.drive_location_add))
     }
-    if (adding) DriveServerSheet(state, adding = !locations.isNullOrEmpty()) { adding = false }
+    if (adding) {
+        DriveServerSheet(state, adding = !locations.isNullOrEmpty(), afterSave = {
+            catching { net.driveLocations() }.onSuccess { locations = it }
+        }) { adding = false }
+    }
     removing?.let { s -> RemoveLocationDialog(state, s, onError = { error = it }, onUnreachable = { why -> forcing = s to why }) { removing = null } }
     forcing?.let { (s, why) -> RemoveLocationAnywayDialog(state, s, why, onError = { error = it }) { forcing = null } }
     removingModule?.let { s ->

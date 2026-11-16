@@ -1283,6 +1283,44 @@ fn drive_over_sftp_two_devices() {
     assert_eq!(download(&b, &file), b"%PDF-1.7 test");
 }
 
+/// The order of the emulator flow: GhulDrive on its own location, then the synchronisation is
+/// set up and runs, then a second location is added and the synchronisation runs again. The
+/// new location must still be there (bug: it vanished after the next synchronisation).
+#[test]
+fn a_location_added_after_the_first_sync_stays() {
+    use super::servers::ServerInput;
+    let Some((host, port, user, root, authkeys, hostkey)) = crate::net::tests::sftp_env() else { return };
+    let d = Dirs::new("location-after-sync");
+    let s = d.suite();
+    s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "P")]), None, None, None).unwrap();
+    let mut keys = std::fs::read_to_string(&authkeys).unwrap_or_default();
+    keys.push_str(&s.ssh_public_key().unwrap());
+    keys.push('\n');
+    std::fs::write(&authkeys, keys).unwrap();
+    let run = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+    let input = |base: String| ServerInput {
+        kind: super::servers::ServerKind::Sftp,
+        name: String::new(),
+        host: host.clone(),
+        port,
+        user: user.clone(),
+        password: None,
+        base,
+    };
+    let first = saved(s.drive_save_server(input(format!("{root}/loc-a-{run}")), Some(hostkey.clone())).unwrap());
+    upload(&s, None, "a.txt", b"A");
+    let sync = saved(s.save_server(input(format!("{root}/loc-sync-{run}")), Some(hostkey.clone())).unwrap());
+    s.set_sync_server(Some(sync)).unwrap();
+    s.sync_now().unwrap();
+    let second = saved(s.drive_save_server(input(format!("{root}/loc-b-{run}")), Some(hostkey.clone())).unwrap());
+    let ids = |s: &GhulSuite| s.drive_locations().unwrap().into_iter().map(|l| l.server.id).collect::<Vec<_>>();
+    assert_eq!(ids(&s), vec![first.clone(), second.clone()]);
+    s.sync_now().unwrap();
+    assert_eq!(ids(&s), vec![first.clone(), second.clone()], "kept after the synchronisation");
+    s.sync_now().unwrap();
+    assert_eq!(ids(&s), vec![first, second], "and after the next one");
+}
+
 #[test]
 fn mail_with_imap_and_smtp() {
     use super::mail::{

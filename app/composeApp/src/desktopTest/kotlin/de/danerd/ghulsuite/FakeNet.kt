@@ -177,11 +177,23 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
     fun addSecondDriveLocation() {
         driveLocs += de.danerd.ghulsuite.model.DriveLocationUi(web.copy(id = "d2", base = "drive-b", location = "/drive-b"), active = false, archive = false)
     }
+    /** Saving a location adds it (the FTPS web hosting with the folder that was entered). */
+    override suspend fun driveSaveServer(input: ServerInputUi, confirmed: String?): ServerSavedUi {
+        if (confirmed == null) return ServerSavedUi.Confirm("SHA256:7beJP+X7anXY96H6FlO+I7u8z2xP1gJsp7GiBGawac4")
+        driveLocationCalls += "add:${input.base}"
+        driveLocs += de.danerd.ghulsuite.model.DriveLocationUi(web.copy(id = "d3", base = input.base, location = "/" + input.base), active = driveLocs.isEmpty(), archive = driveLocs.isEmpty())
+        return ServerSavedUi.Saved("d3")
+    }
     /** What was asked of the locations, in order ("switch:id", "remove:id:files", "archive:id", "add:host"). */
     val driveLocationCalls = java.util.Collections.synchronizedList(mutableListOf<String>())
     /** So many calls of driveLocations() fail first (the core is busy with a synchronisation). */
     var driveLocationsFails = 0
+    /** Like the real core: reading the locations waits while a synchronisation holds it. */
+    var driveLocationsWaitForSync = false
     override suspend fun driveLocations(): List<de.danerd.ghulsuite.model.DriveLocationUi> {
+        if (driveLocationsWaitForSync) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { while (syncActive.get() > 0) Thread.sleep(20) }
+        }
         if (driveLocationsFails > 0) {
             driveLocationsFails--
             throw java.io.IOException("busy")

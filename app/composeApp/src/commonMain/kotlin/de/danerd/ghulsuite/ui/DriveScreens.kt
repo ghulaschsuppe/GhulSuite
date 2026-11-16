@@ -149,15 +149,20 @@ private fun DriveSetup(state: AppState) {
  * file). The first one becomes the active location; a later one is added next to it.
  */
 @Composable
-fun DriveServerSheet(state: AppState, adding: Boolean = false, onDone: () -> Unit) {
+fun DriveServerSheet(state: AppState, adding: Boolean = false, afterSave: (suspend () -> Unit)? = null, onDone: () -> Unit) {
     val net = state.backend.net
     val form = rememberServerForm()
     val done = stringResource(if (adding) Res.string.drive_location_added else Res.string.drive_set_up)
     GhulSheet(onDone, stringResource(if (adding) Res.string.drive_location_add else Res.string.drive_own_title)) {
         ServerSetup(state, form, { input, fp -> net.driveSaveServer(input, fp) }) {
             state.message(done)
-            state.changed()
             onDone()
+            // What the page shows is read first: the synchronisation that follows holds the core,
+            // and on a slow server the new location only appeared after it (emulator run of PR #41).
+            state.scope.launch {
+                afterSave?.invoke()
+                state.changed()
+            }
         }
     }
 }

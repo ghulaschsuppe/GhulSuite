@@ -1514,6 +1514,35 @@ class InteractionTest {
         waitFor("Steuer 2025.pdf")
     }
 
+    /**
+     * Adding a location: the new block appears at once, also when the synchronisation that
+     * follows holds the core for a long time (bug: in the emulator it only appeared afterwards).
+     */
+    @Test
+    fun anAddedLocationAppearsBeforeTheSynchronisation() = app(setup = { push(Screen.SettingsPage(SetPage.DRIVE)) }) { _, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Heimserver")
+        // From now on a synchronisation takes 20 s and holds the core meanwhile.
+        net.syncDelayMs = 20_000
+        net.driveLocationsWaitForSync = true
+        text("Add storage location").performScrollTo().performClick()
+        typeInto("Server address", "example.org")
+        typeInto("User name", "web123")
+        text("Test connection").performClick()
+        waitFor("Create new (recommended)")
+        text("ghulsuite").performClick()
+        text("Check connection").performClick()
+        waitFor("Check the server key")
+        dialogButton("Fingerprint matches")
+        waitFor("Save server")
+        text("Save server").performScrollTo().performClick()
+        waitUntil(timeoutMillis = 10_000) { net.driveLocationCalls.contains("add:ghulsuite") }
+        waitFor("Storage location added. The active one stays; switch in GhulDrive with \"Switch storage location\".")
+        // Within the 10 s of waitFor, while the synchronisation takes 20 s.
+        waitFor("Folder: /ghulsuite")
+        assertEquals(2, onAllNodesWithContentDescription("Remove storage location").fetchSemanticsNodes().size)
+    }
+
     /** One location: no switch button in GhulDrive. Two: the button shows them and switches. */
     @Test
     fun driveOffersToSwitchOnlyWithSeveralLocations() {
