@@ -720,9 +720,8 @@ impl crate::net::remote::RemoteFs for SlowFs {
     }
 }
 
-/// F147: a synchronisation with a slow server does not hold the suite while it waits for the
-/// server: reading and saving entries meanwhile answer at once, and nothing saved meanwhile is
-/// lost (it goes up with the next synchronisation).
+/// F147: a synchronisation with a slow server does not hold the suite while it reads the
+/// server: reading and saving entries meanwhile answer at once.
 #[test]
 fn a_slow_server_does_not_hold_the_suite() {
     use crate::net::remote::LocalFs;
@@ -761,6 +760,212 @@ fn a_slow_server_does_not_hold_the_suite() {
     let b = db.suite();
     b.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
     assert_eq!(titles(&b), vec!["Vor dem Lauf", "Vorher", "Während des Laufs"]);
+    let _ = std::fs::remove_dir_all(&server_dir);
+}
+
+/// A server that stops at its first write until the test lets it go on (the upload phase).
+struct GateFs {
+    inner: crate::net::remote::LocalFs,
+    armed: std::sync::atomic::AtomicBool,
+    entered: std::sync::mpsc::Sender<()>,
+    go_on: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
+}
+
+impl GateFs {
+    fn new(dir: &std::path::Path) -> (GateFs, std::sync::mpsc::Receiver<()>, std::sync::mpsc::Sender<()>) {
+        let (entered, at_gate) = std::sync::mpsc::channel();
+        let (release, go_on) = std::sync::mpsc::channel();
+        let fs = GateFs {
+            inner: crate::net::remote::LocalFs::new(dir),
+            armed: std::sync::atomic::AtomicBool::new(true),
+            entered,
+            go_on: std::sync::Mutex::new(go_on),
+        };
+        (fs, at_gate, release)
+    }
+}
+
+impl crate::net::remote::RemoteFs for GateFs {
+    fn list(&self, dir: &str) -> crate::net::NetResult<Vec<crate::net::remote::RemoteEntry>> {
+        self.inner.list(dir)
+    }
+    fn read(&self, path: &str) -> crate::net::NetResult<Option<Vec<u8>>> {
+        self.inner.read(path)
+    }
+    fn write(&self, path: &str, data: &[u8]) -> crate::net::NetResult<()> {
+        if self.armed.swap(false, std::sync::atomic::Ordering::SeqCst) {
+            self.entered.send(()).unwrap();
+            self.go_on.lock().unwrap().recv().unwrap();
+        }
+        self.inner.write(path, data)
+    }
+    fn delete(&self, path: &str) -> crate::net::NetResult<()> {
+        self.inner.delete(path)
+    }
+    fn mkdir_all(&self, dir: &str) -> crate::net::NetResult<()> {
+        self.inner.mkdir_all(dir)
+    }
+}
+
+/// F147: while a synchronisation uploads, the app's calls answer at once, and an entry saved
+/// meanwhile goes up with the next run.
+#[test]
+fn uploading_does_not_hold_the_suite() {
+    use crate::net::remote::LocalFs;
+    let server_dir = std::env::temp_dir().join(format!("ghul-sync-gate-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&server_dir);
+    let kf = generate_keyfile();
+    let (da, db) = (Dirs::new("sync-gate-a"), Dirs::new("sync-gate-b"));
+    let a = da.suite();
+    a.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    let privat = vault_id(&a, "Privat");
+    a.save_entry(privat.clone(), login("Vorher", "u", "1")).unwrap();
+    a.sync_folder(&LocalFs::new(&server_dir)).unwrap();
+    a.save_entry(privat.clone(), login("Vor dem Lauf", "u", "2")).unwrap();
+
+    let (gate, at_gate, release) = GateFs::new(&server_dir);
+    let a2 = a.clone();
+    let run = std::thread::spawn(move || a2.sync_folder(&gate));
+    at_gate.recv_timeout(std::time::Duration::from_secs(20)).expect("the run reaches its upload");
+    // The app's calls in a thread of their own: if they waited for the upload, the test would
+    // otherwise wait forever (the upload goes on only when the test lets it).
+    let (a3, p3) = (a.clone(), privat.clone());
+    let (answered, answer) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let seen = titles(&a3).contains(&"Vor dem Lauf".to_owned());
+        a3.save_entry(p3, login("Während des Hochladens", "u", "3")).unwrap();
+        let _ = answered.send(seen);
+    });
+    let calls = answer.recv_timeout(std::time::Duration::from_millis(500));
+    release.send(()).unwrap();
+    assert_eq!(calls, Ok(true), "the app's calls waited for the upload");
+    run.join().unwrap().unwrap();
+
+    a.sync_folder(&LocalFs::new(&server_dir)).unwrap();
+    copy_suite(&server_dir, &db);
+    let b = db.suite();
+    b.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    assert_eq!(titles(&b), vec!["Vor dem Lauf", "Vorher", "Während des Hochladens"]);
+    let _ = std::fs::remove_dir_all(&server_dir);
+}
+
+/// F147: locking during the upload stops it. That run does not count as the last
+/// synchronisation, and the next run still reports what it took over (so the app reloads).
+#[test]
+fn locking_stops_an_upload_and_the_next_run_reports_it() {
+    use crate::net::remote::LocalFs;
+    let server_dir = std::env::temp_dir().join(format!("ghul-sync-gate-lock-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&server_dir);
+    let kf = generate_keyfile();
+    let (da, db) = (Dirs::new("sync-lock-a"), Dirs::new("sync-lock-b"));
+    let a = da.suite();
+    a.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    let privat = vault_id(&a, "Privat");
+    a.save_entry(privat.clone(), login("Von A", "u", "1")).unwrap();
+    a.sync_folder(&LocalFs::new(&server_dir)).unwrap();
+    let last = a.sync_status().unwrap().last_sync;
+    assert!(last > 0);
+    // B adds an entry on the server; A changes one too, so A's run merges and uploads.
+    copy_suite(&server_dir, &db);
+    let b = db.suite();
+    b.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
+    b.save_entry(vault_id(&b, "Privat"), login("Von B", "u", "2")).unwrap();
+    b.sync_folder(&LocalFs::new(&server_dir)).unwrap();
+    a.save_entry(privat.clone(), login("Noch von A", "u", "3")).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(5));
+
+    let (gate, at_gate, release) = GateFs::new(&server_dir);
+    let a2 = a.clone();
+    let run = std::thread::spawn(move || a2.sync_folder(&gate));
+    at_gate.recv_timeout(std::time::Duration::from_secs(20)).expect("the run reaches its upload");
+    a.lock();
+    release.send(()).unwrap();
+    assert!(matches!(run.join().unwrap(), Err(GhulError::Locked)));
+
+    a.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    assert_eq!(a.sync_status().unwrap().last_sync, last, "the stopped run is not the last synchronisation");
+    assert!(titles(&a).contains(&"Von B".to_owned()), "merged here before the upload");
+    let rep = a.sync_folder(&LocalFs::new(&server_dir)).unwrap();
+    assert!(rep.downloaded + rep.merged > 0, "the next run reports what the stopped one took over: {rep:?}");
+    assert!(a.sync_status().unwrap().last_sync > last);
+    b.sync_folder(&LocalFs::new(&server_dir)).unwrap();
+    assert_eq!(titles(&b), vec!["Noch von A", "Von A", "Von B"]);
+    let _ = std::fs::remove_dir_all(&server_dir);
+}
+
+/// F147: a run whose server was changed or removed after it connected neither merges nor
+/// uploads (the next run uses the new server).
+#[test]
+fn a_run_whose_server_changed_meanwhile_does_nothing() {
+    use crate::net::remote::LocalFs;
+    let server_dir = std::env::temp_dir().join(format!("ghul-sync-changed-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&server_dir);
+    let kf = generate_keyfile();
+    let (da, db) = (Dirs::new("sync-changed-a"), Dirs::new("sync-changed-b"));
+    let a = da.suite();
+    a.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    a.sync_folder(&LocalFs::new(&server_dir)).unwrap();
+    copy_suite(&server_dir, &db);
+    let b = db.suite();
+    b.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    b.save_entry(vault_id(&b, "Privat"), login("Von B", "u", "1")).unwrap();
+    b.sync_folder(&LocalFs::new(&server_dir)).unwrap();
+    a.save_entry(vault_id(&a, "Privat"), login("Von A", "u", "2")).unwrap();
+    let before = std::fs::read(server_dir.join("suite").join(super::suite::SUITE_FILE)).unwrap();
+
+    // Connected to a server that is no longer the configured one (synchronisation is off here).
+    let mut pending = super::sync::SyncReport::default();
+    let rep = a.sync_unlocked(&LocalFs::new(&server_dir), Some([7; 32]), &mut pending).unwrap();
+    assert_eq!(rep, super::sync::SyncReport::default());
+    assert_eq!(titles(&a), vec!["Von A"], "nothing merged");
+    assert_eq!(
+        std::fs::read(server_dir.join("suite").join(super::suite::SUITE_FILE)).unwrap(),
+        before,
+        "nothing uploaded"
+    );
+    let _ = std::fs::remove_dir_all(&server_dir);
+}
+
+/// A server whose folder listing leaves out the settings file (some FTP listings do).
+struct HidingFs(crate::net::remote::LocalFs);
+
+impl crate::net::remote::RemoteFs for HidingFs {
+    fn list(&self, dir: &str) -> crate::net::NetResult<Vec<crate::net::remote::RemoteEntry>> {
+        Ok(self.0.list(dir)?.into_iter().filter(|e| e.name != super::suite::SUITE_FILE).collect())
+    }
+    fn read(&self, path: &str) -> crate::net::NetResult<Option<Vec<u8>>> {
+        self.0.read(path)
+    }
+    fn write(&self, path: &str, data: &[u8]) -> crate::net::NetResult<()> {
+        self.0.write(path, data)
+    }
+    fn delete(&self, path: &str) -> crate::net::NetResult<()> {
+        self.0.delete(path)
+    }
+    fn mkdir_all(&self, dir: &str) -> crate::net::NetResult<()> {
+        self.0.mkdir_all(dir)
+    }
+}
+
+/// F147: the settings file is read by name, not only when the listing shows it; else a
+/// password changed on another device would go unnoticed and be overwritten.
+#[test]
+fn a_listing_without_the_settings_file_still_notices_a_new_password() {
+    use crate::net::remote::LocalFs;
+    let server_dir = std::env::temp_dir().join(format!("ghul-sync-hiding-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&server_dir);
+    let kf = generate_keyfile();
+    let (da, db) = (Dirs::new("sync-hiding-a"), Dirs::new("sync-hiding-b"));
+    let a = da.suite();
+    a.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    a.sync_folder(&LocalFs::new(&server_dir)).unwrap();
+    copy_suite(&server_dir, &db);
+    let b = db.suite();
+    b.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    a.change_password("pw-123456".into(), "neues-pw-789".into()).unwrap();
+    a.sync_folder(&LocalFs::new(&server_dir)).unwrap();
+    let hiding = HidingFs(LocalFs::new(&server_dir));
+    assert!(matches!(b.sync_folder(&hiding), Err(GhulError::PasswordChangedElsewhere)));
     let _ = std::fs::remove_dir_all(&server_dir);
 }
 
