@@ -201,13 +201,23 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
     var trashTick by remember { mutableStateOf(0) }
     var emptyTrash by remember { mutableStateOf(false) }
     PlatformBackHandler(enabled = LocalTabActive.current && view.isNotEmpty() && path.size == 1) { view = "" }
+    // Long press selects (as in every list); the bar on top acts on the chosen files.
+    val selected = rememberListSelection()
     LaunchedEffect(status.serverId, state.syncing, state.liveRevision()) {
         // Drive's own server is not in the suite's list: the storage of Drive names it in every case.
         // Read again after every synchronisation and change; a failed read keeps what is known
         // (bug: "No server yet" next to the files after a restart, until the app restarted again).
         catching { net.driveLocations() }.onSuccess { l ->
             locations = l
-            driveServer = l.firstOrNull { it.active }?.server
+            val now = l.firstOrNull { it.active }?.server
+            // Switched elsewhere (header, Options): the folders of the old location mean nothing here.
+            if (driveServer != null && now?.id != driveServer?.id) {
+                path = listOf(Crumb(null, root))
+                view = ""
+                selected.clear()
+                reload++
+            }
+            driveServer = now
             storageWithout = driveServer == null
         }
     }
@@ -215,8 +225,6 @@ private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
     // said that Drive's server is gone (e.g. removed from the list): then "No server yet".
     val noServer = status.serverId == null || storageWithout
 
-    // Long press selects (as in every list); the bar on top acts on the chosen files.
-    val selected = rememberListSelection()
     val selecting = selected.active
     // Which folder or view the loaded list belongs to: another one is not shown under the new
     // path while it loads (it looked like the inside of the folder just opened).

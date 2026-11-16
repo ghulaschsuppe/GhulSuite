@@ -340,14 +340,22 @@ impl GhulSuite {
     }
 
     /// Ends every share made on the storage location `id` (before it is removed). When its
-    /// server cannot be reached, nothing is ended and the error says so.
-    pub(super) fn shares_end_on_location(&self, o: &mut Open, id: &str) -> Result<()> {
+    /// server cannot be reached, the error says so.
+    /// With `force` a share that cannot be ended is forgotten here all the same (its server is
+    /// gone for good). Shares ended before an error are forgotten in any case.
+    pub(super) fn shares_end_on_location(&self, o: &mut Open, id: &str, force: bool) -> Result<()> {
         let mine: Vec<StoredShare> =
             shares(o).into_iter().filter(|s| self.drive_location_of(o, &s.server) == id).collect();
         let mut gone = Vec::new();
         for s in &mine {
-            self.share_remove(o, s)?;
-            gone.push(s.id.clone());
+            match self.share_remove(o, s) {
+                Ok(()) => gone.push(s.id.clone()),
+                Err(_) if force => gone.push(s.id.clone()),
+                Err(e) => {
+                    self.forget_shares(o, &gone)?;
+                    return Err(e);
+                }
+            }
         }
         self.forget_shares(o, &gone)
     }

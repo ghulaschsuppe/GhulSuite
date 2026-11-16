@@ -863,6 +863,8 @@ impl GhulSuite {
     pub fn remove_server(&self, id: String) -> Result<()> {
         self.net.lock().unwrap_or_else(|p| p.into_inner()).conn = None;
         self.with_open(|o| {
+            // An older Drive on this server keeps it (as a location of its own) first.
+            self.drive_move_to_locations(o)?;
             if drive_servers(o).iter().any(|s| s.id == id) {
                 return Err(GhulError::InvalidInput { msg: "GhulDrive's server is changed in GhulDrive".into() });
             }

@@ -193,8 +193,11 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
         check(driveLocs.any { it.server.id == id })
         driveLocs.replaceAll { it.copy(active = it.server.id == id) }
     }
-    override suspend fun driveRemoveLocation(id: String, deleteFiles: Boolean) {
-        driveLocationCalls += "remove:$id:$deleteFiles"
+    /** Removing a location fails like an unreachable server (unless forced). */
+    var driveRemoveUnreachable = false
+    override suspend fun driveRemoveLocation(id: String, deleteFiles: Boolean, force: Boolean) {
+        driveLocationCalls += "remove:$id:$deleteFiles" + if (force) ":force" else ""
+        if (driveRemoveUnreachable && !force) throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.NETWORK, "Timed out.")
         val gone = driveLocs.firstOrNull { it.server.id == id } ?: return
         driveLocs.remove(gone)
         if (gone.active && driveLocs.isNotEmpty()) driveLocs[0] = driveLocs[0].copy(active = true)

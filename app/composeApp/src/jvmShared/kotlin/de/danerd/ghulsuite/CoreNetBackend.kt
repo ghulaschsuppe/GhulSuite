@@ -184,7 +184,7 @@ abstract class CoreNetBackend(protected val suite: () -> GhulSuite) : NetBackend
 
     override suspend fun driveSwitchLocation(id: String) = io { suite().driveSwitchLocation(id) }
 
-    override suspend fun driveRemoveLocation(id: String, deleteFiles: Boolean) = io { suite().driveRemoveLocation(id, deleteFiles) }
+    override suspend fun driveRemoveLocation(id: String, deleteFiles: Boolean, force: Boolean) = io { suite().driveRemoveLocation(id, deleteFiles, force) }
 
     override suspend fun driveSetArchiveLocation(id: String) = io { suite().driveSetArchiveLocation(id) }
 

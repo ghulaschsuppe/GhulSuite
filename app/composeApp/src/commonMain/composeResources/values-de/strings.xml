@@ -1724,7 +1724,7 @@
     <string name="drive_location_remove_title">%1$s entfernen?</string>
     <string name="drive_location_remove_text">Der Speicherort verschwindet aus GhulDrive auf allen Geräten. Alle geteilten Links dieses Speicherorts werden beendet.</string>
     <string name="drive_location_remove_files">Auch die Dateien auf dem Server löschen</string>
-    <string name="drive_location_remove_files_off">Die verschlüsselten Dateien bleiben auf dem Server liegen. Fügst du denselben Ordner später wieder hinzu, beginnt GhulDrive dort neu.</string>
+    <string name="drive_location_remove_files_off">Die verschlüsselten Dateien bleiben auf dem Server liegen. Fügst du denselben Ordner später wieder hinzu, sind sie wieder da.</string>
     <string name="drive_location_remove_files_on">GhulDrive löscht seine Dateien in diesem Ordner auf dem Server, auch das Server-Modul. Das lässt sich nicht rückgängig machen.</string>
     <string name="drive_location_removed">%1$s entfernt</string>
     <string name="drive_switch_location">Speicherort wechseln</string>
@@ -1737,4 +1737,8 @@
         <item quantity="one">%1$d geteilter Link</item>
         <item quantity="other">%1$d geteilte Links</item>
     </plurals>
+    <string name="drive_location_folder_shared">Diesen Ordner nutzt noch ein anderer Speicherort oder die Synchronisation. Seine Dateien werden deshalb nicht gelöscht; entferne den Speicherort ohne den Haken.</string>
+    <string name="drive_location_force_title">%1$s trotzdem entfernen?</string>
+    <string name="drive_location_force_text">Die geteilten Links dieses Speicherorts konnten nicht beendet werden. Entfernst du ihn trotzdem, vergisst GhulSuite die Links nur; solange der Server sie ausliefert, funktionieren sie weiter. Auf dem Server wird nichts gelöscht.</string>
+    <string name="drive_location_force_yes">Trotzdem entfernen</string>
 </resources>

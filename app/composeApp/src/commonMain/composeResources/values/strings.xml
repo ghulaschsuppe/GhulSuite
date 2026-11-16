@@ -1724,7 +1724,7 @@
     <string name="drive_location_remove_title">Remove %1$s?</string>
     <string name="drive_location_remove_text">The storage location disappears from GhulDrive on all devices. All share links of this location end.</string>
     <string name="drive_location_remove_files">Also delete the files on the server</string>
-    <string name="drive_location_remove_files_off">The encrypted files stay on the server. If you add the same folder again later, GhulDrive starts anew there.</string>
+    <string name="drive_location_remove_files_off">The encrypted files stay on the server. If you add the same folder again later, they are back.</string>
     <string name="drive_location_remove_files_on">GhulDrive deletes its files in this folder on the server, the server module as well. This cannot be undone.</string>
     <string name="drive_location_removed">%1$s removed</string>
     <string name="drive_switch_location">Switch storage location</string>
@@ -1737,4 +1737,8 @@
         <item quantity="one">%1$d share link</item>
         <item quantity="other">%1$d share links</item>
     </plurals>
+    <string name="drive_location_folder_shared">Another storage location or the synchronisation still uses this folder. Its files are therefore not deleted; remove the location without the tick.</string>
+    <string name="drive_location_force_title">Remove %1$s anyway?</string>
+    <string name="drive_location_force_text">The share links of this location could not be ended. If you remove it anyway, GhulSuite only forgets the links; they keep working as long as the server hands them out. Nothing is deleted on the server.</string>
+    <string name="drive_location_force_yes">Remove anyway</string>
 </resources>

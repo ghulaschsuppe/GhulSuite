@@ -57,6 +57,8 @@ import androidx.compose.ui.unit.dp
 import de.danerd.ghulsuite.model.DriveItemUi
 import de.danerd.ghulsuite.model.DriveStatusUi
 import de.danerd.ghulsuite.model.ServerUi
+import de.danerd.ghulsuite.model.VaultErrorKind
+import de.danerd.ghulsuite.model.VaultException
 import de.danerd.ghulsuite.model.ModuleCheckUi
 import de.danerd.ghulsuite.model.ModuleInstalledUi
 import de.danerd.ghulsuite.model.ShareInfoUi
@@ -534,6 +536,7 @@ fun DriveSettingsSection(state: AppState) {
     var adding by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<ServerUi?>(null) }
     var removingModule by remember { mutableStateOf<ServerUi?>(null) }
+    var forcing by remember { mutableStateOf<Pair<ServerUi, String>?>(null) }
     LaunchedEffect(state.liveRevision(), retry) {
         catching { net.driveLocations() }.onSuccess { locations = it; error = null }.onFailure { error = describe(it) }
         status = catching { net.driveStatus() }.getOrNull()
@@ -580,7 +583,7 @@ fun DriveSettingsSection(state: AppState) {
                 s.name, kindLabel(s.kind), leading = { IconTile(Icons.Filled.Dns, paletteColor(1)) },
                 trailing = {
                     // Tagged by its folder for the emulator flows (two locations can share a name).
-                    Box(Modifier.testTag("location-remove-" + s.base.trimEnd('/').substringAfterLast('/'))) {
+                    Box(Modifier.testTag("location-remove-" + folderTag(s))) {
                         BarIcon(Icons.Filled.Delete, stringResource(Res.string.drive_location_remove), tint = g.danger) { removing = s }
                     }
                 },
@@ -616,7 +619,9 @@ fun DriveSettingsSection(state: AppState) {
                             }) { Text(stringResource(Res.string.drive_location_use)) }
                         }
                         if (!s.hasModule) {
-                            TextButton(onClick = { state.push(Screen.ModuleInstall(s.id)) }) { Text(stringResource(Res.string.module_install)) }
+                            TextButton(onClick = { state.push(Screen.ModuleInstall(s.id)) }, modifier = Modifier.testTag("location-module-install-" + folderTag(s))) {
+                                Text(stringResource(Res.string.module_install))
+                            }
                         } else {
                             if (count > 0) TextButton(onClick = { state.push(Screen.Shares) }) { Text(stringResource(Res.string.shares_title)) }
                             if (s.moduleOutdated) {
@@ -641,7 +646,8 @@ fun DriveSettingsSection(state: AppState) {
         Text(stringResource(Res.string.drive_location_add))
     }
     if (adding) DriveServerSheet(state, adding = !locations.isNullOrEmpty()) { adding = false }
-    removing?.let { s -> RemoveLocationDialog(state, s, onError = { error = it }) { removing = null } }
+    removing?.let { s -> RemoveLocationDialog(state, s, onError = { error = it }, onUnreachable = { why -> forcing = s to why }) { removing = null } }
+    forcing?.let { (s, why) -> RemoveLocationAnywayDialog(state, s, why, onError = { error = it }) { forcing = null } }
     removingModule?.let { s ->
         AlertDialog(
             danger = true,
@@ -652,21 +658,26 @@ fun DriveSettingsSection(state: AppState) {
                 TextButton(onClick = {
                     removingModule = null
                     state.run(onError = { error = it }, block = { net.serverModuleRemove(s.id) }) { state.changed() }
-                }) { Text(stringResource(Res.string.module_remove)) }
+                }) { Text(stringResource(Res.string.a_remove)) }
             },
             dismissButton = { TextButton(onClick = { removingModule = null }) { Text(stringResource(Res.string.a_cancel)) } },
         )
     }
 }
 
+/** The last part of a location's folder, for the emulator flows' ids. */
+private fun folderTag(s: ServerUi) = s.base.trimEnd('/').substringAfterLast('/')
+
 /**
  * Removing a storage location asks what happens to its files: they stay on the server (encrypted,
- * can be added again later) unless the box is ticked. Its share links end either way.
+ * they come back when the folder is added again) unless the box is ticked. Its share links end
+ * either way. When its server cannot be reached, a second question offers to remove it anyway.
  */
 @Composable
-private fun RemoveLocationDialog(state: AppState, s: ServerUi, onError: (String) -> Unit, onDone: () -> Unit) {
+private fun RemoveLocationDialog(state: AppState, s: ServerUi, onError: (String) -> Unit, onUnreachable: (String) -> Unit, onDone: () -> Unit) {
     var files by remember { mutableStateOf(false) }
     val removed = stringResource(Res.string.drive_location_removed, s.name)
+    val shared = stringResource(Res.string.drive_location_folder_shared)
     AlertDialog(
         danger = true,
         onDismissRequest = onDone,
@@ -681,11 +692,62 @@ private fun RemoveLocationDialog(state: AppState, s: ServerUi, onError: (String)
         confirmButton = {
             TextButton(onClick = {
                 onDone()
-                state.run(onError = onError, block = { state.backend.net.driveRemoveLocation(s.id, files) }) {
+                val withFiles = files
+                state.run(onError = onError, block = {
+                    try {
+                        state.backend.net.driveRemoveLocation(s.id, withFiles, force = false)
+                        true
+                    } catch (e: VaultException) {
+                        when {
+                            // Another location or the synchronisation uses the folder: its files stay.
+                            e.kind == VaultErrorKind.INVALID_INPUT && withFiles -> { onError(shared); false }
+                            e.kind in UNREACHABLE -> { onUnreachable(describe(e)); false }
+                            else -> throw e
+                        }
+                    }
+                }) { done ->
+                    if (done) {
+                        state.message(removed)
+                        state.changed()
+                    }
+                }
+            }) { Text(stringResource(Res.string.a_remove)) }
+        },
+        dismissButton = { TextButton(onClick = onDone) { Text(stringResource(Res.string.a_cancel)) } },
+    )
+}
+
+/** Errors that mean the location's server cannot do it now (or at all): removing anyway is offered. */
+private val UNREACHABLE = setOf(
+    VaultErrorKind.NETWORK, VaultErrorKind.TIMEOUT, VaultErrorKind.STORAGE, VaultErrorKind.SERVER_AUTH,
+    VaultErrorKind.HOST_KEY_CHANGED, VaultErrorKind.CERT_UNTRUSTED, VaultErrorKind.CORRUPTED, VaultErrorKind.SHARE_NOT_DELETED,
+)
+
+/**
+ * The server of a location does not answer: remove it anyway. Its links are only forgotten here
+ * (they may keep working while the server hands them out) and nothing is deleted there.
+ */
+@Composable
+private fun RemoveLocationAnywayDialog(state: AppState, s: ServerUi, why: String, onError: (String) -> Unit, onDone: () -> Unit) {
+    val removed = stringResource(Res.string.drive_location_removed, s.name)
+    AlertDialog(
+        danger = true,
+        onDismissRequest = onDone,
+        title = { Text(stringResource(Res.string.drive_location_force_title, s.name)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(why)
+                Text(stringResource(Res.string.drive_location_force_text))
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                onDone()
+                state.run(onError = onError, block = { state.backend.net.driveRemoveLocation(s.id, false, force = true) }) {
                     state.message(removed)
                     state.changed()
                 }
-            }) { Text(stringResource(Res.string.a_remove)) }
+            }) { Text(stringResource(Res.string.drive_location_force_yes)) }
         },
         dismissButton = { TextButton(onClick = onDone) { Text(stringResource(Res.string.a_cancel)) } },
     )

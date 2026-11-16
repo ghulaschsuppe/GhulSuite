@@ -188,10 +188,17 @@ fun MailArchiveScreen(state: AppState, accountId: String, padding: PaddingValues
     val accountName by produceState("", accountId) { value = catching { net.mailAccounts().firstOrNull { it.id == accountId }?.name }.getOrNull().orEmpty() }
     /** The archive lies on another storage location than the one GhulDrive shows now. */
     var elsewhere by remember { mutableStateOf<de.danerd.ghulsuite.model.ServerUi?>(null) }
+    var archiveAt by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(here, retry, state.archiveTick, state.driveTick, state.liveRevision()) {
         error = null
         val locs = catching { net.driveLocations() }.getOrNull().orEmpty()
         elsewhere = locs.firstOrNull { it.archive && !it.active }?.server
+        // The archive's location changed: its folders are other ones.
+        val at = locs.firstOrNull { it.archive }?.server?.id
+        if (at != archiveAt) {
+            if (archiveAt != null) { root = null; path = emptyList() }
+            archiveAt = at
+        }
         if (elsewhere != null) { items = emptyList(); return@LaunchedEffect }
         catching {
             val top = root ?: net.archiveFolder(accountId).also { root = it }

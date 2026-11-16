@@ -349,7 +349,12 @@ die App gibt der Datei beim nächsten Entsperren ihren neutralen Namen zurück.
   sie verschlüsselt liegen); die Freigabelinks des Speicherorts enden in beiden Fällen. Das Mail-Archiv schreibt in
   einen **fest eingestellten** Speicherort (Optionen → GhulMail, änderbar), auch wenn GhulDrive gerade einen anderen
   zeigt. Ein älteres GhulDrive, das den Sync-Server mitnutzte, wird beim ersten Öffnen zu einem eigenen Speicherort
-  (Kopie der Zugangsdaten in die Drive-Datei, auf allen Geräten dieselbe Kennung).
+  (Kopie der Zugangsdaten in die Drive-Datei, auf allen Geräten dieselbe Kennung). Ältere App-Versionen kennen nur
+  einen Speicherort und können die Liste beim Speichern verkürzen: alle Geräte sollten auf dieselbe Version
+  aktualisiert werden. Entfernen löscht auf Wunsch nur GhulDrives eigene Dateien und nie in einem Ordner, den ein
+  anderer Speicherort oder die Synchronisation nutzt; ist der Server nicht erreichbar, kann der Speicherort trotzdem
+  entfernt werden (die Links werden dann nur vergessen). Ein laufendes Hochladen endet in seinem Speicherort, auch
+  nach einem Wechsel.
 - **Ein Server ist ein Webspace** (abgestimmt am 15.11.2026, 0.7.0): sein SFTP- oder FTPS-Zugang und, nur für
   Freigabelinks, optional das GhulSuite-Server-Modul, das die App über **denselben** Zugang installiert. Ein weiterer
   Server ist völlig getrennt (eigener Zugang, eigenes Modul, eigene Links). Synchronisation und GhulDrive wählen

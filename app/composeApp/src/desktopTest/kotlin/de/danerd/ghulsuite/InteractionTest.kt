@@ -1111,7 +1111,7 @@ class InteractionTest {
             assertTrue(shown("No answer at https://example.org/ghulsuite.php, https://www.example.org/ghulsuite.php. Enter the address of the module above and try again."))
             assertTrue(onAllNodesWithText("skipped").fetchSemanticsNodes().isEmpty())
             assertFalse(shown("Done"))
-            assertTrue("moduleInstall:s2:public_html:" in net.calls, net.calls.toString())
+            assertTrue("moduleInstall:d2:public_html:" in net.calls, net.calls.toString())
             shot("module-https-failed")
             onAllNodes(hasSetTextAction()).onFirst().performTextReplacement("https://example.org/web/ghulsuite.php")
             onNodeWithText("Install and check").performScrollTo().performClick()
@@ -1206,30 +1206,31 @@ class InteractionTest {
     }
 
     /**
-     * The list of servers: per server its login, what it is used for and its module. The module is
+     * GhulDrive's storage locations: per location its login and its module. The module is
      * installed from there (happy path: it answers at the usual address), updated, and removed
      * only after asking.
      */
     @Test
     fun serverListInstallsUpdatesAndRemovesTheModule() {
-        app(setup = { push(Screen.SettingsPage(SetPage.SERVERS)) }, prepare = { (net as FakeNet).moduleAnswersWithoutAddress = true }) { state, fake ->
+        // The module belongs to a storage location of GhulDrive (Options > GhulDrive), one block each.
+        app(setup = { push(Screen.SettingsPage(SetPage.DRIVE)) }, prepare = {
+            (net as FakeNet).apply { moduleAnswersWithoutAddress = true; addSecondDriveLocation() }
+        }) { state, fake ->
             val net = fake.net as FakeNet
             waitFor("Webspace")
             assertTrue(shown("Server module: version 1, version 2 is available"))
             assertTrue(shown("Server module: not installed (only needed for share links)"))
-            assertTrue(shown("Used for: Synchronisation, GhulDrive"))
-            assertTrue(shown("Not used yet"))
             shot("servers-modules")
             // Install on the web hosting: the folder, then "Install and check" (address left empty).
             text("Install module").performScrollTo().performClick()
             waitFor("Install and check")
-            assertEquals(Screen.ModuleInstall("s2"), state.stack.lastOrNull())
+            assertEquals(Screen.ModuleInstall("d2"), state.stack.lastOrNull())
             waitFor("public_html")
             text("public_html").performClick()
             waitFor("/public_html")
             onNodeWithText("Install and check").performScrollTo().performClick()
             waitFor("The server module runs at https://example.org/ghulsuite.php. You can now create share links.")
-            assertTrue("moduleInstall:s2:public_html:" in net.calls, net.calls.toString())
+            assertTrue("moduleInstall:d2:public_html:" in net.calls, net.calls.toString())
             assertTrue(shown("Answers over HTTPS") && shown("Reads the GhulSuite folder"))
             assertTrue(shown("GhulSuite folder not reachable from the web"))
             assertFalse(shown("Not checked, because the HTTPS step failed"))
@@ -1449,7 +1450,7 @@ class InteractionTest {
         onAllNodesWithContentDescription("Remove storage location")[1].performScrollTo().performClick()
         waitFor("Remove Webspace?")
         assertTrue(shown("Also delete the files on the server"))
-        assertTrue(shown("The encrypted files stay on the server. If you add the same folder again later, GhulDrive starts anew there."))
+        assertTrue(shown("The encrypted files stay on the server. If you add the same folder again later, they are back."))
         // Nothing happens before "Remove".
         assertTrue(net.driveLocationCalls.isEmpty())
         text("Also delete the files on the server").performClick()
@@ -1475,6 +1476,42 @@ class InteractionTest {
         waitFor("Remove Webspace?")
         text("Remove").performClick()
         waitUntil(timeoutMillis = 10_000) { net.driveLocationCalls.contains("remove:d2:false") }
+    }
+
+    /** The server does not answer: the location can be removed anyway, its links only forgotten here. */
+    @Test
+    fun removingAnUnreachableLocationOffersToRemoveItAnyway() = app(setup = { push(Screen.SettingsPage(SetPage.DRIVE)) }, prepare = {
+        (net as FakeNet).apply { addSecondDriveLocation(); driveRemoveUnreachable = true }
+    }) { _, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Webspace")
+        onAllNodesWithContentDescription("Remove storage location")[1].performScrollTo().performClick()
+        waitFor("Remove Webspace?")
+        text("Remove").performClick()
+        waitFor("Remove Webspace anyway?")
+        assertTrue(onAllNodesWithText("could not be ended", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        assertEquals(listOf("remove:d2:false"), net.driveLocationCalls.toList())
+        shot("drive-location-remove-anyway")
+        text("Remove anyway").performClick()
+        waitUntil(timeoutMillis = 10_000) { net.driveLocationCalls.contains("remove:d2:false:force") }
+        waitGone("Webspace")
+    }
+
+    /** Switched somewhere else (header menu, Options) while a folder is open: GhulDrive starts at the top. */
+    @Test
+    fun switchingElsewhereLeavesTheOpenFolder() = app(setup = { tab = Tab.DRIVE }, prepare = { (net as FakeNet).addSecondDriveLocation() }) { state, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Fotos")
+        text("Fotos").performClick()
+        waitFor("Strand.jpg")
+        runOnIdle {
+            state.scope.launch {
+                net.driveSwitchLocation("d2")
+                state.changed()
+            }
+        }
+        waitGone("Strand.jpg")
+        waitFor("Steuer 2025.pdf")
     }
 
     /** One location: no switch button in GhulDrive. Two: the button shows them and switches. */

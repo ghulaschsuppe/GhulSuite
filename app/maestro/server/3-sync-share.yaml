@@ -144,10 +144,12 @@ name: Sync server and sharing on a real server
     direction: DOWN
 - tapOn: "GhulDrive"
 - scrollUntilVisible:
-    element: "Storage locations"
+    element: "STORAGE LOCATIONS"
+    direction: DOWN
+- scrollUntilVisible:
+    element: "Server module: not installed.*"
     direction: DOWN
 - assertVisible: "Active"
-- assertVisible: "Server module: not installed.*"
 - takeScreenshot: s3-08b-drive-locations
 - scrollUntilVisible:
     element: "Add storage location"
@@ -217,13 +219,13 @@ name: Sync server and sharing on a real server
 - assertVisible: "Switch to this one"
 - takeScreenshot: s3-08c-two-locations
 
-# --- 3b. Server module on the first location --------------------------------------------------
+# --- 3b. Server module on the first location (GhulDrive's folder "ghulsuite") -----------------
 - scrollUntilVisible:
-    element: "Install module"
+    element:
+      id: "location-module-install-ghulsuite"
     direction: UP
 - tapOn:
-    text: "Install module"
-    index: 0
+    id: "location-module-install-ghulsuite"
 - extendedWaitUntil:
     visible: "Choose the folder your website is delivered from.*"
     timeout: 10000

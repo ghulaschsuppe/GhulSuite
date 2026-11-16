@@ -118,6 +118,8 @@ pub(super) struct DriveIndex {
 
 /// A running upload: blocks written so far.
 pub(super) struct Upload {
+    /// The storage location it was started on: it is finished there, also after a switch.
+    loc: Option<String>,
     parent: String,
     name: String,
     blocks: Vec<String>,
@@ -322,22 +324,64 @@ pub struct DriveLocation {
     pub archive: bool,
 }
 
-/// Deletes a folder on the server with everything in it (missing: nothing to do).
-fn delete_tree(fs: &dyn RemoteFs, dir: &str) -> Result<()> {
-    let entries = match fs.list(dir) {
-        Ok(e) => e,
-        Err(crate::net::NetError::NotFound(_)) => return Ok(()),
-        Err(e) => return Err(e.into()),
-    };
-    for e in entries {
-        let path = format!("{dir}/{}", e.name);
-        if e.is_dir {
-            delete_tree(fs, &path)?;
-        } else {
-            fs.delete(&path)?;
+/// Deletes a file; one that is not there is fine.
+fn delete_quiet(fs: &dyn RemoteFs, path: &str) -> Result<()> {
+    match fs.delete(path) {
+        Ok(()) | Err(crate::net::NetError::NotFound(_)) => Ok(()),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// Lists a folder; one that is not there is empty.
+fn list_quiet(fs: &dyn RemoteFs, dir: &str) -> Result<Vec<crate::net::remote::RemoteEntry>> {
+    match fs.list(dir) {
+        Ok(e) => Ok(e),
+        Err(crate::net::NetError::NotFound(_)) => Ok(vec![]),
+        Err(e) => Err(e.into()),
+    }
+}
+
+fn is_hex(s: &str) -> bool {
+    !s.is_empty() && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// Deletes GhulDrive's own files in a location's folder: its index, its blocks and its share
+/// files. Nothing else, also not when the folder holds other files (e.g. an empty base folder:
+/// the home directory).
+fn delete_drive_files(fs: &dyn RemoteFs) -> Result<()> {
+    for dir in list_quiet(fs, "drive/blocks")? {
+        if !dir.is_dir || dir.name.len() != 2 || !is_hex(&dir.name) {
+            continue;
+        }
+        let path = format!("drive/blocks/{}", dir.name);
+        for f in list_quiet(fs, &path)? {
+            if !f.is_dir && is_hex(&f.name) && f.name.starts_with(&dir.name) {
+                delete_quiet(fs, &format!("{path}/{}", f.name))?;
+            }
+        }
+    }
+    delete_quiet(fs, INDEX)?;
+    for f in list_quiet(fs, "shares")? {
+        let ours = match f.name.rsplit_once('.') {
+            _ if f.name.starts_with("check-") => true,
+            Some((id, "json" | "state" | "lock")) => is_hex(id),
+            _ => false,
+        };
+        if !f.is_dir && ours {
+            delete_quiet(fs, &format!("shares/{}", f.name))?;
         }
     }
     Ok(())
+}
+
+/// Two servers with the same folder (the same files): host, port, user and folder (the path
+/// the server reported, else the one entered).
+fn same_folder(a: &StoredServer, b: &StoredServer) -> bool {
+    let folder = |s: &StoredServer| {
+        let f = if s.location.is_empty() { &s.base } else { &s.location };
+        f.trim_end_matches('/').to_owned()
+    };
+    a.host.eq_ignore_ascii_case(&b.host) && a.port == b.port && a.user == b.user && folder(a) == folder(b)
 }
 
 pub(super) fn block_path(id: &str) -> String {
@@ -618,7 +662,7 @@ impl GhulSuite {
     /// Drive used the synchronisation's server, or one of the suite's (older apps): that server
     /// becomes a storage location of Drive's own (a copy of the login in the Drive file), so the
     /// synchronisation and Drive are independent. What was seen and the share links go along.
-    fn drive_move_to_locations(&self, o: &mut Open) -> Result<()> {
+    pub(super) fn drive_move_to_locations(&self, o: &mut Open) -> Result<()> {
         let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
         let own = servers::drive_servers(o);
         let old = if d.use_sync {
@@ -791,6 +835,11 @@ impl GhulSuite {
             };
             let id = stored.id.clone();
             let mut own = servers::drive_servers(o);
+            // The same folder twice would be two locations with one set of files: removing one
+            // with its files would take the other one's as well.
+            if own.iter().any(|s| same_folder(s, &stored)) {
+                return Err(GhulError::AlreadyExists);
+            }
             own.push(stored);
             put_area_setting(o, VaultKind::Drive, servers::SERVERS_KEY, &own)?;
             self.net.lock().unwrap_or_else(|p| p.into_inner()).conn = None;
@@ -807,6 +856,11 @@ impl GhulSuite {
                 own.retain(|s| s.id != id);
                 put_area_setting(o, VaultKind::Drive, servers::SERVERS_KEY, &own)?;
                 return Err(e);
+            }
+            // From the second location on, the mail archive stays where it is (it does not
+            // follow a later switch).
+            if !first {
+                self.drive_pin_archive(o)?;
             }
             self.save_area(o, VaultKind::Drive)?;
             Ok(ServerSaved::Saved { id })
@@ -846,6 +900,7 @@ impl GhulSuite {
             if !servers::drive_servers(o).iter().any(|s| s.id == id) {
                 return Err(GhulError::NotFound);
             }
+            self.drive_pin_archive(o)?;
             self.drive_attach(o, id, false)
         })
     }
@@ -865,22 +920,34 @@ impl GhulSuite {
     }
 
     /// Removes a storage location. Its share links end first (on its server; when that cannot
-    /// be reached nothing is removed). With `delete_files` its GhulDrive files, its share data
-    /// and its server module are deleted on the server as well; otherwise they stay there and
-    /// the location can be added again later. Another location becomes active if this one was.
-    pub fn drive_remove_location(&self, id: String, delete_files: bool) -> Result<()> {
+    /// be reached nothing is removed, unless `force`: then the links are only forgotten here
+    /// and nothing is deleted on the server). With `delete_files` GhulDrive's own files there
+    /// (index, blocks, share files) and its server module are deleted as well, never in a folder
+    /// another location or a server of the suite uses; otherwise they stay and come back when
+    /// the folder is added again. Another location becomes active if this one was.
+    pub fn drive_remove_location(&self, id: String, delete_files: bool, force: bool) -> Result<()> {
         self.with_open(|o| {
             self.drive_move_to_locations(o)?;
             let srv = servers::drive_servers(o).into_iter().find(|s| s.id == id).ok_or(GhulError::NotFound)?;
+            let delete_files = delete_files && !force;
+            if delete_files {
+                let shared = servers::servers(o)
+                    .iter()
+                    .chain(servers::drive_servers(o).iter())
+                    .any(|s| s.id != id && same_folder(s, &srv));
+                if shared {
+                    return Err(GhulError::InvalidInput {
+                        msg: "another storage location or server uses this folder".into(),
+                    });
+                }
+            }
             at_location(Some(id.clone()), || -> Result<()> {
-                self.shares_end_on_location(o, &id)?;
+                self.shares_end_on_location(o, &id, force)?;
                 if delete_files {
                     let fs = self.remote(o, &id)?;
-                    for dir in ["drive", "shares"] {
-                        delete_tree(fs.as_ref(), dir)?;
-                    }
+                    delete_drive_files(fs.as_ref())?;
                     if let Some(m) = &srv.module {
-                        servers::open_fs(o, &srv, Some(&m.dir))?.delete(servers::MODULE_FILE)?;
+                        delete_quiet(servers::open_fs(o, &srv, Some(&m.dir))?.as_ref(), servers::MODULE_FILE)?;
                     }
                 }
                 Ok(())
@@ -895,6 +962,9 @@ impl GhulSuite {
             let was_active = d.server == id;
             if was_active {
                 d.server = own.first().map(|s| s.id.clone()).unwrap_or_default();
+            }
+            if d.archive.is_empty() && own.len() > 1 {
+                d.archive = d.server.clone();
             }
             put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
             {
@@ -1138,7 +1208,7 @@ impl GhulSuite {
             let parent = folder.unwrap_or_default();
             self.drive_index(o, false)?;
             let key = self.pending_key(o, &parent, &name)?;
-            let up = Upload { parent, name, blocks: vec![], size: 0, key };
+            let up = Upload { loc: self.drive_location(o), parent, name, blocks: vec![], size: 0, key };
             self.net.lock().unwrap_or_else(|p| p.into_inner()).uploads.insert(id.clone(), up);
             Ok(id)
         })
@@ -1150,112 +1220,127 @@ impl GhulSuite {
         if data.len() > BLOCK_SIZE as usize {
             return Err(GhulError::InvalidInput { msg: "chunk too large".into() });
         }
-        self.with_open(|o| {
-            let (fs, _) = self.drive_ctx(o)?;
-            let key = {
-                let cache = self.net.lock().unwrap_or_else(|p| p.into_inner());
-                cache.uploads.get(&upload).ok_or(GhulError::NotFound)?.key.clone()
-            };
-            let id = key.block_id(&data);
-            let known = self
-                .net
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .drive
-                .as_ref()
-                .is_some_and(|i| i.nodes.iter().any(|n| n.blocks.contains(&id)));
-            // After an interrupted upload the same blocks may already be there: skip them
-            // (blocks are named by their content, so the upload continues where it stopped).
-            let path = block_path(&id);
-            let there = !known && {
-                let (dir, name) = path.rsplit_once('/').unwrap_or(("", path.as_str()));
-                fs.list(dir).map(|l| l.iter().any(|e| e.name == name)).unwrap_or(false)
-            };
-            if !known && !there {
-                fs.write(&path, &key.seal_block(&id, &data))?;
-            }
-            let mut cache = self.net.lock().unwrap_or_else(|p| p.into_inner());
-            let up = cache.uploads.get_mut(&upload).ok_or(GhulError::NotFound)?;
-            up.blocks.push(id);
-            up.size += data.len() as u64;
-            Ok(())
+        let loc = self.upload_location(&upload).ok_or(GhulError::NotFound)?;
+        at_location(loc, || {
+            self.with_open(|o| {
+                let (fs, _) = self.drive_ctx(o)?;
+                let key = {
+                    let cache = self.net.lock().unwrap_or_else(|p| p.into_inner());
+                    cache.uploads.get(&upload).ok_or(GhulError::NotFound)?.key.clone()
+                };
+                let id = key.block_id(&data);
+                let known = self.drive_on_active(o)
+                    && self
+                        .net
+                        .lock()
+                        .unwrap_or_else(|p| p.into_inner())
+                        .drive
+                        .as_ref()
+                        .is_some_and(|i| i.nodes.iter().any(|n| n.blocks.contains(&id)));
+                // After an interrupted upload the same blocks may already be there: skip them
+                // (blocks are named by their content, so the upload continues where it stopped).
+                let path = block_path(&id);
+                let there = !known && {
+                    let (dir, name) = path.rsplit_once('/').unwrap_or(("", path.as_str()));
+                    fs.list(dir).map(|l| l.iter().any(|e| e.name == name)).unwrap_or(false)
+                };
+                if !known && !there {
+                    fs.write(&path, &key.seal_block(&id, &data))?;
+                }
+                let mut cache = self.net.lock().unwrap_or_else(|p| p.into_inner());
+                let up = cache.uploads.get_mut(&upload).ok_or(GhulError::NotFound)?;
+                up.blocks.push(id);
+                up.size += data.len() as u64;
+                Ok(())
+            })
         })
+    }
+
+    /// The location an upload writes into (`None` inside: the active one at its start).
+    fn upload_location(&self, upload: &str) -> Option<Option<String>> {
+        self.net.lock().unwrap_or_else(|p| p.into_inner()).uploads.get(upload).map(|u| u.loc.clone())
     }
 
     /// Finishes an upload: the file appears in the folder. Returns its id.
     pub fn drive_upload_finish(&self, upload: String) -> Result<String> {
-        self.with_open(|o| {
-            let up = self
-                .net
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .uploads
-                .remove(&upload)
-                .ok_or(GhulError::NotFound)?;
-            self.drive_change(o, |index, _, _| {
-                // Same name in the same folder: the old content becomes a version.
-                if let Some(n) = index
-                    .nodes
-                    .iter_mut()
-                    .find(|n| n.parent == up.parent && n.name == up.name && !n.dir && n.trashed == 0)
-                {
-                    if n.blocks != up.blocks {
-                        let old = Version {
-                            size: n.size,
-                            modified: n.modified,
-                            blocks: std::mem::take(&mut n.blocks),
-                            key: std::mem::take(&mut n.key),
-                        };
-                        n.versions.insert(0, old);
-                        n.versions.truncate(MAX_VERSIONS);
+        let loc = self.upload_location(&upload).ok_or(GhulError::NotFound)?;
+        at_location(loc, || {
+            self.with_open(|o| {
+                let up = self
+                    .net
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .uploads
+                    .remove(&upload)
+                    .ok_or(GhulError::NotFound)?;
+                self.drive_change(o, |index, _, _| {
+                    // Same name in the same folder: the old content becomes a version.
+                    if let Some(n) = index
+                        .nodes
+                        .iter_mut()
+                        .find(|n| n.parent == up.parent && n.name == up.name && !n.dir && n.trashed == 0)
+                    {
+                        if n.blocks != up.blocks {
+                            let old = Version {
+                                size: n.size,
+                                modified: n.modified,
+                                blocks: std::mem::take(&mut n.blocks),
+                                key: std::mem::take(&mut n.key),
+                            };
+                            n.versions.insert(0, old);
+                            n.versions.truncate(MAX_VERSIONS);
+                        }
+                        n.blocks = up.blocks.clone();
+                        n.key = up.key.bytes().to_vec();
+                        n.size = up.size;
+                        n.modified = now_ms();
+                        return Ok(n.id.clone());
                     }
-                    n.blocks = up.blocks.clone();
-                    n.key = up.key.bytes().to_vec();
-                    n.size = up.size;
-                    n.modified = now_ms();
-                    return Ok(n.id.clone());
-                }
-                let id = crate::kdf::hex(&new_id());
-                let name = free_name(index, &up.parent, &up.name, None);
-                index.nodes.push(Node {
-                    id: id.clone(),
-                    parent: up.parent.clone(),
-                    name,
-                    dir: false,
-                    size: up.size,
-                    modified: now_ms(),
-                    blocks: up.blocks.clone(),
-                    key: up.key.bytes().to_vec(),
-                    ..Default::default()
-                });
-                Ok(id)
+                    let id = crate::kdf::hex(&new_id());
+                    let name = free_name(index, &up.parent, &up.name, None);
+                    index.nodes.push(Node {
+                        id: id.clone(),
+                        parent: up.parent.clone(),
+                        name,
+                        dir: false,
+                        size: up.size,
+                        modified: now_ms(),
+                        blocks: up.blocks.clone(),
+                        key: up.key.bytes().to_vec(),
+                        ..Default::default()
+                    });
+                    Ok(id)
+                })
+                .inspect(|_| self.forget_pending(o, &up.parent, &up.name))
             })
-            .inspect(|_| self.forget_pending(o, &up.parent, &up.name))
         })
     }
 
     /// Cancels an upload (blocks already written are removed when unused).
     pub fn drive_upload_cancel(&self, upload: String) -> Result<()> {
-        self.with_open(|o| {
-            // Kept until its blocks are gone, so a failed cancel can be repeated.
-            let up = self
-                .net
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .uploads
-                .get(&upload)
-                .map(|u| (u.parent.clone(), u.name.clone(), u.blocks.clone()));
-            let Some((parent, name, blocks)) = up else { return Ok(()) };
-            let (fs, keys) = self.drive_ctx(o)?;
-            let index = load_index(fs.as_ref(), &keys)?;
-            let used = used_blocks(&index);
-            let pinned = super::shares::pinned_blocks(fs.as_ref())?;
-            for b in blocks.iter().filter(|b| !used.contains(b) && !pinned.contains(*b)) {
-                fs.delete(&block_path(b))?;
-            }
-            self.net.lock().unwrap_or_else(|p| p.into_inner()).uploads.remove(&upload);
-            self.forget_pending(o, &parent, &name);
-            Ok(())
+        let Some(loc) = self.upload_location(&upload) else { return Ok(()) };
+        at_location(loc, || {
+            self.with_open(|o| {
+                // Kept until its blocks are gone, so a failed cancel can be repeated.
+                let up = self
+                    .net
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .uploads
+                    .get(&upload)
+                    .map(|u| (u.parent.clone(), u.name.clone(), u.blocks.clone()));
+                let Some((parent, name, blocks)) = up else { return Ok(()) };
+                let (fs, keys) = self.drive_ctx(o)?;
+                let index = load_index(fs.as_ref(), &keys)?;
+                let used = used_blocks(&index);
+                let pinned = super::shares::pinned_blocks(fs.as_ref())?;
+                for b in blocks.iter().filter(|b| !used.contains(b) && !pinned.contains(*b)) {
+                    fs.delete(&block_path(b))?;
+                }
+                self.net.lock().unwrap_or_else(|p| p.into_inner()).uploads.remove(&upload);
+                self.forget_pending(o, &parent, &name);
+                Ok(())
+            })
         })
     }
 
@@ -1572,10 +1657,12 @@ impl GhulSuite {
         }
     }
 
-    /// The location the mail archive writes into: the chosen one, else the active one.
+    /// The location the mail archive writes into: the chosen one, else the active one, which
+    /// is then kept (the archive does not follow a later switch).
     pub(super) fn drive_archive_location(&self) -> Result<Option<String>> {
         self.with_open(|o| {
             self.drive_move_to_locations(o)?;
+            self.drive_pin_archive(o)?;
             let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
             let own = servers::drive_servers(o);
             if own.iter().any(|s| s.id == d.archive) {
@@ -1583,6 +1670,34 @@ impl GhulSuite {
             }
             Ok(drive_server_id(o, &d))
         })
+    }
+
+    /// Turns Drive back into the state an older app left: `use_sync`, no locations of its own.
+    #[cfg(test)]
+    pub(super) fn drive_back_to_use_sync_for_tests(&self) {
+        self.with_open(|o| {
+            let mut d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
+            d.use_sync = true;
+            d.server.clear();
+            d.archive.clear();
+            put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
+            put_area_setting(o, VaultKind::Drive, servers::SERVERS_KEY, &Vec::<StoredServer>::new())?;
+            self.net.lock().unwrap_or_else(|p| p.into_inner()).drive = None;
+            self.save_area(o, VaultKind::Drive)
+        })
+        .unwrap();
+    }
+
+    /// Without a chosen archive location: the active one becomes it (stored).
+    fn drive_pin_archive(&self, o: &mut Open) -> Result<()> {
+        let mut d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
+        if servers::drive_servers(o).iter().any(|s| s.id == d.archive) {
+            return Ok(());
+        }
+        let Some(active) = drive_server_id(o, &d) else { return Ok(()) };
+        d.archive = active;
+        put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
+        self.save_area(o, VaultKind::Drive)
     }
 
     /// The connection to GhulDrive's server (rooted at its GhulSuite folder).

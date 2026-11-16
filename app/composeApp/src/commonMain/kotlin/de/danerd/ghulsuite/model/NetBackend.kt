@@ -78,10 +78,11 @@ interface NetBackend {
     /** Shows the files of another storage location from now on. */
     suspend fun driveSwitchLocation(id: String) {}
     /**
-     * Removes a storage location; its share links end first. With [deleteFiles] its GhulDrive
-     * files, share data and server module are deleted on the server too.
+     * Removes a storage location; its share links end first. With [deleteFiles] GhulDrive's own
+     * files, share data and server module are deleted on the server too. With [force] (its server
+     * is unreachable) the links are only forgotten here and nothing is deleted.
      */
-    suspend fun driveRemoveLocation(id: String, deleteFiles: Boolean) {}
+    suspend fun driveRemoveLocation(id: String, deleteFiles: Boolean, force: Boolean = false) {}
     /** The storage location the mail archive writes into. */
     suspend fun driveSetArchiveLocation(id: String) {}
     suspend fun driveList(folder: String?, refresh: Boolean): List<DriveItemUi>

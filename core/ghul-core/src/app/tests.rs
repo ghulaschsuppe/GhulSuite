@@ -2003,6 +2003,11 @@ fn drive_locations_are_separate_from_the_synchronisation() {
     // and can drop it; Drive keeps working.
     s.set_sync_server(Some(sync_id.clone())).unwrap();
     s.drive_use_sync().unwrap();
+    // As an older app left it: only a reference to the synchronisation, no location yet.
+    s.drive_back_to_use_sync_for_tests();
+    // The synchronisation is switched off before Drive is opened again: Drive keeps its server
+    // all the same (it becomes a location before the synchronisation changes).
+    s.set_sync_server(None).unwrap();
     let first = s.drive_locations().unwrap();
     assert_eq!(first.len(), 1);
     assert!(first[0].active && first[0].archive);
@@ -2017,13 +2022,36 @@ fn drive_locations_are_separate_from_the_synchronisation() {
 
     // A second location is added next to it; the active one stays.
     let other = format!("{}-b", cfg.base);
-    let second_id = saved(s.drive_save_server(input(&other), Some(fp)).unwrap());
+    let second_id = saved(s.drive_save_server(input(&other), Some(fp.clone())).unwrap());
     let locs = s.drive_locations().unwrap();
     assert_eq!(
         locs.iter().map(|l| (l.server.id.clone(), l.active)).collect::<Vec<_>>(),
         vec![(first_id.clone(), true), (second_id.clone(), false)]
     );
     assert!(home.join(&other).join("drive/index.ghldrv").exists(), "checked when added");
+    // The same folder twice would share its files between two locations.
+    assert!(matches!(s.drive_save_server(input(&other), Some(fp.clone())), Err(GhulError::AlreadyExists)));
+    assert!(matches!(
+        s.drive_save_server(input(&format!("{other}/")), Some(fp.clone())),
+        Err(GhulError::AlreadyExists)
+    ));
+    assert_eq!(s.drive_locations().unwrap().len(), 2);
+    // With a second location the archive stays on the first one, also after a switch.
+    let archive: Vec<bool> = s.drive_locations().unwrap().iter().map(|l| l.archive).collect();
+    assert_eq!(archive, vec![true, false]);
+
+    // An upload started on the first location ends there, also when the user switches meanwhile.
+    let up = s.drive_upload_begin(None, "Lang.bin".into()).unwrap();
+    s.drive_upload_chunk(up.clone(), b"Teil 1 ".to_vec()).unwrap();
+    s.drive_switch_location(second_id.clone()).unwrap();
+    s.drive_upload_chunk(up.clone(), b"Teil 2".to_vec()).unwrap();
+    let long = s.drive_upload_finish(up).unwrap();
+    assert!(s.drive_list(None, true).unwrap().is_empty(), "nothing of it on the second location");
+    let archive: Vec<bool> = s.drive_locations().unwrap().iter().map(|l| l.archive).collect();
+    assert_eq!(archive, vec![true, false], "the archive did not follow the switch");
+    s.drive_switch_location(first_id.clone()).unwrap();
+    assert_eq!(download(&s, &long), b"Teil 1 Teil 2");
+    s.drive_delete(long).unwrap();
 
     // Switching shows the other location's files; switching back the first ones.
     s.drive_switch_location(second_id.clone()).unwrap();
@@ -2042,23 +2070,46 @@ fn drive_locations_are_separate_from_the_synchronisation() {
     let archive: Vec<bool> = s.drive_locations().unwrap().iter().map(|l| l.archive).collect();
     assert_eq!(archive, vec![false, true]);
 
-    // Removing with the files: everything of GhulDrive on that server goes.
-    s.drive_remove_location(second_id.clone(), true).unwrap();
-    assert!(files_under(&home.join(&other).join("drive")).is_empty());
+    // Removing with the files: everything of GhulDrive on that server goes, nothing else.
+    std::fs::write(home.join(&other).join("drive/eigene-notiz.txt"), b"mine").unwrap();
+    std::fs::create_dir_all(home.join(&other).join("shares")).unwrap();
+    // Writable for the FTP user, as GhulDrive's own share folder would be.
+    std::fs::set_permissions(home.join(&other).join("shares"), std::os::unix::fs::PermissionsExt::from_mode(0o777))
+        .unwrap();
+    std::fs::write(home.join(&other).join("shares/0a1b.json"), b"{}").unwrap();
+    std::fs::write(home.join(&other).join("shares/liste.txt"), b"mine").unwrap();
+    s.drive_remove_location(second_id.clone(), true, false).unwrap();
+    assert_eq!(
+        files_under(&home.join(&other).join("drive")).len(),
+        1,
+        "only the user's own file is left: {:?}",
+        files_under(&home.join(&other).join("drive"))
+    );
+    assert!(home.join(&other).join("drive/eigene-notiz.txt").exists());
+    assert!(home.join(&other).join("shares/liste.txt").exists());
+    assert!(!home.join(&other).join("shares/0a1b.json").exists(), "GhulDrive's share files go");
+    assert!(!home.join(&other).join("drive/index.ghldrv").exists());
     assert_eq!(s.drive_locations().unwrap().len(), 1);
     assert!(s.drive_locations().unwrap()[0].archive, "the archive moves to the remaining location");
     let _ = memo;
 
     // Removing the active one without the files: Drive has no location any more, the files
     // stay on the server and come back when the location is added again.
-    s.drive_remove_location(first_id.clone(), false).unwrap();
+    s.drive_remove_location(first_id.clone(), false, false).unwrap();
     assert!(s.drive_locations().unwrap().is_empty());
     assert_eq!(s.drive_storage().unwrap().mode, DriveMode::None);
     assert!(home.join(&cfg.base).join("drive/index.ghldrv").exists(), "files stay on the server");
     let again = saved(s.drive_save_server(input(&cfg.base), Some(cfg.cert.clone().unwrap())).unwrap());
-    assert_eq!(s.drive_storage().unwrap().server.map(|x| x.id), Some(again));
+    assert_eq!(s.drive_storage().unwrap().server.map(|x| x.id), Some(again.clone()));
     let names: Vec<String> = s.drive_list(None, true).unwrap().into_iter().map(|i| i.name).collect();
     assert_eq!(names, vec!["Plan.txt"]);
+
+    // A location in the folder the synchronisation uses: removing it never deletes files there.
+    let sync_again = saved(s.save_server(input(&cfg.base), Some(fp.clone())).unwrap());
+    assert!(s.drive_remove_location(again.clone(), true, false).is_err());
+    assert_eq!(s.drive_locations().unwrap().len(), 1, "nothing removed");
+    assert!(home.join(&cfg.base).join("drive/index.ghldrv").exists());
+    s.remove_server(sync_again).unwrap();
 }
 
 #[test]
@@ -2133,12 +2184,34 @@ fn removing_a_location_ends_its_share_links() {
     let link = s.share_drive(vec![file], None, share_opts()).unwrap();
     assert!(open_link(&link.url, None).is_some());
     let loc = s.drive_locations().unwrap()[0].server.id.clone();
-    s.drive_remove_location(loc, false).unwrap();
+    s.drive_remove_location(loc, false, false).unwrap();
     assert!(s.share_list().unwrap().is_empty());
     assert!(open_link(&link.url, None).is_none(), "the link has ended");
     let base = &m.places[0];
     assert!(base.join("drive/index.ghldrv").exists(), "the files stay on the server");
     assert!(!base.join(format!("shares/{}.json", link.id)).exists());
+}
+
+/// A link that cannot be ended (its server fails) keeps the location, unless the user removes
+/// it anyway: then the link is only forgotten here and nothing is deleted on the server.
+#[test]
+fn removing_a_location_anyway_forgets_links_it_cannot_end() {
+    let Some(m) = module_suite("remove-location-anyway") else { return };
+    let s = &m.s;
+    let file = upload(s, None, "Vertrag.pdf", b"%PDF-1.7 Vertrag");
+    let link = s.share_drive(vec![file], None, share_opts()).unwrap();
+    let loc = s.drive_locations().unwrap()[0].server.id.clone();
+    // The share's description cannot be read any more (a folder where the file was).
+    let json = m.places[0].join(format!("shares/{}.json", link.id));
+    std::fs::remove_file(&json).unwrap();
+    std::fs::create_dir(&json).unwrap();
+    assert!(s.drive_remove_location(loc.clone(), true, false).is_err());
+    assert_eq!(s.drive_locations().unwrap().len(), 1, "nothing removed");
+    assert_eq!(s.share_list().unwrap().len(), 1, "the link is still listed");
+    s.drive_remove_location(loc, true, true).unwrap();
+    assert!(s.drive_locations().unwrap().is_empty());
+    assert!(s.share_list().unwrap().is_empty(), "forgotten here");
+    assert!(m.places[0].join("drive/index.ghldrv").exists(), "nothing deleted on the server");
 }
 
 /// The way the app puts Drive files into a mail: decrypted file as attachment and a share link in
