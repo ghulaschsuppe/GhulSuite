@@ -38,18 +38,24 @@ class GhulApplication : Application() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val handler = Handler(Looper.getMainLooper())
-    /** An auto-lock that waits for the end of an archive run. */
-    @Volatile
-    private var lockAfterArchive = false
+    /**
+     * An automatic lock: while background jobs run, the app's state decides (quiet jobs stop, a
+     * job the user started is waited for while it makes progress); else it locks at once.
+     */
+    private fun autoLock() {
+        val jobs = de.danerd.ghulsuite.ui.JobStatus
+        val hook = jobs.autoLock
+        if (hook != null && jobs.current.value != null) hook() else backend.lock()
+    }
 
-    private val lockRunnable = Runnable { if (ArchiveRun.progress != null) lockAfterArchive = true else backend.lock() }
+    private val lockRunnable = Runnable { autoLock() }
     private var screenReceiverRegistered = false
     private var current: WeakReference<Activity>? = null
 
     private val screenOffReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == Intent.ACTION_SCREEN_OFF && backend.settings.lockOnScreenOff) {
-                if (ArchiveRun.progress != null) lockAfterArchive = true else backend.lock()
+                autoLock()
             }
         }
     }
@@ -88,20 +94,15 @@ class GhulApplication : Application() {
         // Instant mail notifications, if switched on (also after the app was closed by Android).
         MailPushService.start(this)
 
-        ArchiveRun.onEnded = {
-            if (lockAfterArchive) {
-                lockAfterArchive = false
-                handler.post { if (backend.unlocked.value) backend.lock() }
-            }
-        }
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
                 handler.removeCallbacks(lockRunnable)
-                lockAfterArchive = false
-                // B8: the handler's clock stops in deep sleep; the real time away decides.
+                // B8: the handler's clock stops in deep sleep; the real time away decides. A job
+                // the user started that still makes progress keeps the suite open (the user is back).
                 if (lockDueAt > 0 && android.os.SystemClock.elapsedRealtime() >= lockDueAt && backend.unlocked.value) {
-                    backend.lock()
+                    autoLock()
                 }
+                de.danerd.ghulsuite.ui.JobStatus.keepUnlocked?.invoke()
                 lockDueAt = 0
                 // Back in the app: the grace period of a file picker, share or camera is over.
                 ExternalActivity.finished()
@@ -112,7 +113,7 @@ class GhulApplication : Application() {
                 var delay = backend.settings.autoLockSeconds
                 if (ExternalActivity.active) delay = maxOf(delay, ExternalActivity.GRACE_SECONDS)
                 if (delay <= 0) {
-                    backend.lock()
+                    autoLock()
                 } else {
                     lockDueAt = android.os.SystemClock.elapsedRealtime() + delay * 1000L
                     handler.postDelayed(lockRunnable, delay * 1000L)

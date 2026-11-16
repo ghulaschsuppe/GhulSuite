@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Check
@@ -195,9 +196,11 @@ private fun MailboxSheet(state: AppState, close: () -> Unit) {
     val net = state.backend.net
     var accounts by remember { mutableStateOf<List<MailAccountUi>>(emptyList()) }
     var folders by remember { mutableStateOf<List<MailFolderUi>>(emptyList()) }
+    var archiveFolder by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(state.mailAccount) {
         accounts = catching { net.mailAccounts() }.getOrDefault(emptyList())
         folders = state.mailAccount?.let { catching { net.mailFolders(it) }.getOrDefault(emptyList()) } ?: emptyList()
+        archiveFolder = state.mailAccount?.takeIf { it != ALL_INBOXES }?.let { catching { net.archiveFolder(it) }.getOrNull() }
     }
     val t = g
     GhulSheet(close, stringResource(Res.string.ctx_mailbox)) {
@@ -246,6 +249,16 @@ private fun MailboxSheet(state: AppState, close: () -> Unit) {
                 Pill(on, { Icon(folderIcon(f.role), null, Modifier.size(20.dp), tint = if (on) t.accent else t.fg) }, folderLabelOf(f)) {
                     state.mailFolder = f.name
                     close()
+                }
+            }
+            // The copies in GhulDrive, once something was archived.
+            val archive = archiveFolder
+            if (archive != null) {
+                Pill(false, { Icon(Icons.Filled.Inventory2, null, Modifier.size(20.dp), tint = t.fg) }, stringResource(Res.string.mail_archive_entry)) {
+                    val account = state.mailAccount ?: return@Pill
+                    close()
+                    state.archivePath = emptyList()
+                    state.push(Screen.MailArchive(account))
                 }
             }
         }

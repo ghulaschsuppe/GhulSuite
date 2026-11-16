@@ -1,36 +1,41 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Sharing with people outside the suite: end-to-end encrypted share links.
+//! Share links: end-to-end encrypted, handed out by the GhulSuite server module (PHP) on the
+//! server that holds GhulDrive. Nothing is copied.
 //!
-//! A share is a separate package (`crate::share`) with its own random key, uploaded to a place
-//! the web can reach: the share folder of an SFTP or FTPS server (set up and checked once with
-//! `share_setup`) or the GhulSuite server module (PHP). The key is only in the link after `#`.
-//! The suite remembers its shares (with their links) in its encrypted settings, so they can be
-//! copied again, ended, and cleaned up after expiry.
+//! Every file content in GhulDrive has its own key (`drive::FileKey`). A share is a small
+//! encrypted package (`crate::share`) with the names, sizes and keys of its files, sealed with
+//! a new random link key (and, optionally, a password). The app writes it over SFTP/FTPS as
+//! `shares/<id>.json` into the GhulSuite folder, together with the list of the files' block
+//! names. The module answers the package and then only those blocks, and enforces expiry,
+//! download limit and one-time links; the recipient's browser decrypts block by block. The
+//! link key is only in the link after `#`.
+//!
+//! A share shows the content as it was when it was made: its blocks stay on the server until
+//! the link ends, even if the file changes or is deleted. Content that is not in GhulDrive (a
+//! login shared as text) gets blocks of its own, deleted with the share.
 
-use std::io::Write;
+use std::collections::{BTreeMap, BTreeSet};
 
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
-use zeroize::Zeroizing;
 
+use super::drive::SharedFile;
 use super::error::{GhulError, Result};
-use super::servers::{self, ServerKind};
+use super::servers;
 use super::suite::{now_ms, put_setting, setting, GhulSuite, Open, SUITE_FILE};
-use crate::net::http::{self, Url};
 use crate::net::remote::RemoteFs;
-use crate::net::{block_on, TIMEOUT};
 use crate::share::{b64url, seal, ShareMeta};
 
 const SHARES_KEY: &str = "shares";
-/// Largest share (the recipient's browser decrypts it in memory).
-const MAX_SHARE: u64 = 1024 * 1024 * 1024;
-const VIEWER: [(&str, &str); 3] = [
-    ("index.html", include_str!("../../share-viewer/index.html")),
-    ("viewer.js", include_str!("../../share-viewer/viewer.js")),
-    ("viewer.css", include_str!("../../share-viewer/viewer.css")),
-];
-const HTACCESS: &str = include_str!("../../share-viewer/htaccess.txt");
-const S_HTACCESS: &str = include_str!("../../share-viewer/s-htaccess.txt");
+/// The package of a share holds a list of files, not a file (the recipient page checks this).
+pub(crate) const ENVELOPE_TYPE: &str = "application/x-ghulsuite-share";
+
+/// How long after its expiry the app removes a share (see `server_state`).
+const CLEANUP_GRACE_MS: i64 = 86_400_000;
+
+/// Detail of a check that could not be made because an earlier step failed. The app compares
+/// this text (`ServerSetup.kt`); a test pins it.
+pub const SHARE_CHECK_SKIPPED: &str = "skipped";
 
 #[derive(Serialize, Deserialize, Clone)]
 struct StoredShare {
@@ -44,12 +49,61 @@ struct StoredShare {
     password: bool,
     max_downloads: u32,
     url: String,
+    /// The GhulDrive items it was made of (to ask before they are deleted).
+    #[serde(default)]
+    items: Vec<String>,
+    /// Blocks that belong only to this share (content that is not in GhulDrive).
+    #[serde(default)]
+    own_blocks: Vec<String>,
 }
 
 impl Drop for StoredShare {
     fn drop(&mut self) {
         zeroize::Zeroize::zeroize(&mut self.url);
     }
+}
+
+/// `shares/<id>.json` on the server: what the module needs to hand out a share.
+#[derive(Serialize, Deserialize, Default)]
+pub(crate) struct ServerShare {
+    /// The sealed package (Base64): names, sizes and keys of the files.
+    pub package: String,
+    /// Block names of each file, in order.
+    pub files: Vec<Vec<String>>,
+    /// Unix ms, 0 = no expiry.
+    pub exp: i64,
+    /// 0 = unlimited.
+    pub max: u32,
+}
+
+/// `shares/<id>.state`, written by the module: downloads so far and open tickets.
+#[derive(Deserialize, Default)]
+struct ServerState {
+    #[serde(default)]
+    count: i64,
+    /// Ticket hash → valid until (Unix seconds).
+    #[serde(default)]
+    tickets: BTreeMap<String, i64>,
+}
+
+/// One file in the package.
+#[derive(Serialize, Deserialize)]
+pub(crate) struct EnvelopeFile {
+    pub name: String,
+    pub size: u64,
+    #[serde(rename = "type")]
+    pub mime: String,
+    /// The file key, URL-safe Base64.
+    pub key: String,
+    /// Its blocks in order: sealed with the package, so a server cannot reorder, drop or
+    /// repeat blocks without the recipient noticing.
+    #[serde(default)]
+    pub blocks: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub(crate) struct Envelope {
+    pub files: Vec<EnvelopeFile>,
 }
 
 #[derive(uniffi::Record, Clone, Debug, PartialEq)]
@@ -61,35 +115,25 @@ pub struct ShareInfo {
     pub created: i64,
     pub expires: i64,
     pub password: bool,
-    /// 0 = unlimited (only the server module can limit).
+    /// 0 = unlimited.
     pub max_downloads: u32,
-    /// Downloads so far; -1 if the server cannot count (plain web folder).
+    /// Downloads so far; -1 while the server cannot be reached.
     pub downloads: i64,
     /// The complete link including the key.
     pub url: String,
 }
 
-/// One step of the share folder check.
-#[derive(uniffi::Record, Clone, Debug, PartialEq)]
-pub struct ShareCheck {
-    /// `write`, `https`, `listing`, `page`
-    pub step: String,
-    pub ok: bool,
-    pub detail: String,
-}
-
 #[derive(uniffi::Record, Clone)]
 pub struct ShareOptions {
-    pub server_id: String,
     /// Optional second secret; recipients must enter it besides opening the link.
     pub password: Option<String>,
     /// 0 = no expiry.
     pub expires_days: u32,
-    /// 0 = unlimited; 1 = one-time link. Only with the server module.
+    /// 0 = unlimited; 1 = one-time link.
     pub max_downloads: u32,
 }
 
-super::redact::redacted_debug!(ShareOptions { server_id, expires_days, max_downloads });
+super::redact::redacted_debug!(ShareOptions { expires_days, max_downloads });
 
 fn shares(o: &Open) -> Vec<StoredShare> {
     setting(&o.suite, SHARES_KEY)
@@ -110,51 +154,13 @@ fn info(s: &StoredShare, downloads: i64) -> ShareInfo {
     }
 }
 
-/// A GET for the checks of the share setup; a misspelt address or a wrong port give the same
-/// fixed texts as elsewhere ("server address not found"), which the app translates.
-fn get(url: &Url) -> std::result::Result<http::Response, String> {
-    block_on(http::request("GET", url, &[], b"", None), TIMEOUT).map_err(|e| match e {
-        crate::net::NetError::Connect(_) => match GhulError::from(e) {
-            GhulError::Network { msg } => msg,
-            other => other.to_string(),
-        },
-        e => e.to_string(),
-    })
-}
-
 fn random_hex(n: usize) -> String {
     let mut b = vec![0u8; n];
     OsRng.fill_bytes(&mut b);
     crate::kdf::hex(&b)
 }
 
-/// Writes the recipient page and the folder protection into a share folder.
-fn install_viewer(fs: &dyn RemoteFs) -> Result<()> {
-    for (name, content) in VIEWER {
-        fs.write(name, content.as_bytes())?;
-    }
-    fs.write(".htaccess", HTACCESS.as_bytes())?;
-    fs.write("s/.htaccess", S_HTACCESS.as_bytes())?;
-    fs.write("s/index.html", b"")?;
-    Ok(())
-}
-
-/// Packs several files into one ZIP (stored, the content is encrypted anyway).
-fn zip(files: &[(String, Zeroizing<Vec<u8>>)]) -> Result<Zeroizing<Vec<u8>>> {
-    let mut out = std::io::Cursor::new(Vec::new());
-    {
-        let mut z = zip::ZipWriter::new(&mut out);
-        let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        for (name, data) in files {
-            z.start_file(name.as_str(), opts).map_err(|e| GhulError::Storage { msg: e.to_string() })?;
-            z.write_all(data).map_err(|e| GhulError::Storage { msg: e.to_string() })?;
-        }
-        z.finish().map_err(|e| GhulError::Storage { msg: e.to_string() })?;
-    }
-    Ok(Zeroizing::new(out.into_inner()))
-}
-
-fn mime_of(name: &str) -> &'static str {
+pub(super) fn mime_of(name: &str) -> &'static str {
     match name.rsplit('.').next().unwrap_or("").to_lowercase().as_str() {
         "pdf" => "application/pdf",
         "jpg" | "jpeg" => "image/jpeg",
@@ -166,298 +172,305 @@ fn mime_of(name: &str) -> &'static str {
     }
 }
 
+fn json_path(id: &str) -> String {
+    format!("shares/{id}.json")
+}
+
+fn state_path(id: &str) -> String {
+    format!("shares/{id}.state")
+}
+
+/// The block names a description lists, read as leniently as the module reads it (missing
+/// or odd `exp`/`max` do not matter; entries that are no block name are skipped).
+fn described_blocks(data: &[u8]) -> Vec<String> {
+    let Ok(v) = serde_json::from_slice::<serde_json::Value>(data) else { return Vec::new() };
+    let Some(files) = v.get("files").and_then(serde_json::Value::as_array) else { return Vec::new() };
+    files
+        .iter()
+        .filter_map(serde_json::Value::as_array)
+        .flatten()
+        .filter_map(serde_json::Value::as_str)
+        .filter(|b| b.len() == 64 && b.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Every block a share on this server still hands out (from the descriptions on the server,
+/// so shares made on other devices count too), except those of the share `skip`. An error
+/// reading them is an error: nothing may be deleted then (a transient failure must not break
+/// live links). A description the module could not read either pins nothing.
+pub(super) fn pinned_blocks_except(fs: &dyn RemoteFs, skip: Option<&str>) -> Result<BTreeSet<String>> {
+    let mut out = BTreeSet::new();
+    let skip = skip.map(|id| format!("{id}.json"));
+    for e in fs.list("shares")?.iter().filter(|e| !e.is_dir && e.name.ends_with(".json")) {
+        if skip.as_deref() == Some(e.name.as_str()) {
+            continue;
+        }
+        let Some(data) = fs.read(&format!("shares/{}", e.name))? else { continue };
+        out.extend(described_blocks(&data));
+    }
+    Ok(out)
+}
+
+/// Every block a share on this server still hands out (see `pinned_blocks_except`).
+pub(super) fn pinned_blocks(fs: &dyn RemoteFs) -> Result<BTreeSet<String>> {
+    pinned_blocks_except(fs, None)
+}
+
+/// What the server says about a share: `None` = gone (ended there, expired, used up),
+/// otherwise the downloads so far.
+fn server_state(fs: &dyn RemoteFs, s: &StoredShare, now: i64) -> Result<Option<i64>> {
+    // The description on the server counts (the module enforces it), not the app's copy.
+    let Some(described) = fs.read(&json_path(&s.id))? else { return Ok(None) };
+    let described: ServerShare = serde_json::from_slice(&described).unwrap_or_default();
+    let (exp, max) = (described.exp.max(0), described.max);
+    // The module ends the link on time by the server's clock; the app only cleans up, a day
+    // later, so a device clock running ahead never deletes a link that still works.
+    let late = now - CLEANUP_GRACE_MS;
+    if (exp > 0 && exp < late) || (s.expires > 0 && s.expires < late) {
+        return Ok(None);
+    }
+    let state: ServerState =
+        fs.read(&state_path(&s.id))?.and_then(|d| serde_json::from_slice(&d).ok()).unwrap_or_default();
+    // Used up: gone once the last download had time to finish.
+    let open_ticket = state.tickets.values().any(|until| until * 1000 > now);
+    if max > 0 && state.count >= i64::from(max) && !open_ticket {
+        return Ok(None);
+    }
+    Ok(Some(state.count))
+}
+
 impl GhulSuite {
-    fn share_upload(&self, o: &mut Open, opts: &ShareOptions, name: String, content: &[u8]) -> Result<ShareInfo> {
-        let srv = servers::server(o, &opts.server_id)?;
-        let kind = ServerKind::of(&srv);
-        if opts.max_downloads > 0 && kind != ServerKind::Php {
-            return Err(GhulError::InvalidInput { msg: "download limits need the server module".into() });
-        }
-        if kind != ServerKind::Php && srv.share_url.is_empty() {
-            return Err(GhulError::NotConfigured);
-        }
+    /// Writes a share for `files` to GhulDrive's server and remembers it.
+    fn publish(
+        &self,
+        o: &mut Open,
+        title: String,
+        files: Vec<SharedFile>,
+        items: Vec<String>,
+        own_blocks: Vec<String>,
+        opts: &ShareOptions,
+    ) -> Result<ShareInfo> {
+        let server_id = self.drive_server(o).ok_or(GhulError::NotConfigured)?;
+        let srv = servers::server(o, &server_id)?;
+        let module = srv
+            .module
+            .clone()
+            .ok_or_else(|| GhulError::InvalidInput { msg: "share links need the server module".into() })?;
         let now = now_ms();
         let expires = if opts.expires_days == 0 { 0 } else { now + i64::from(opts.expires_days) * 86_400_000 };
-        let meta = ShareMeta {
-            name: name.clone(),
-            mime: mime_of(&name).into(),
-            size: content.len() as u64,
-            created: now,
-            expires,
+        let envelope = Envelope {
+            files: files
+                .iter()
+                .map(|f| EnvelopeFile {
+                    name: f.path.clone(),
+                    size: f.size,
+                    mime: mime_of(&f.path).into(),
+                    key: b64url(f.key.bytes()),
+                    blocks: f.blocks.clone(),
+                })
+                .collect(),
         };
+        let content = zeroize::Zeroizing::new(serde_json::to_vec(&envelope).expect("serializes"));
+        let size = files.iter().map(|f| f.size).sum();
+        let meta = ShareMeta { name: title.clone(), mime: ENVELOPE_TYPE.into(), size, created: now, expires };
         let password = opts.password.as_deref().filter(|p| !p.is_empty());
-        let sealed = seal(&meta, content, password);
+        let sealed = seal(&meta, &content, password);
         let id = random_hex(16);
-        let fragment = format!("{id}.{}", b64url(sealed.link_key.as_ref()));
-        let url = if kind == ServerKind::Php {
-            let fs = servers::php_fs(&srv, "")?;
-            fs.share_put(&id, &sealed.data, expires, opts.max_downloads)?;
-            format!("{}#{fragment}", fs.public_url())
-        } else {
-            let fs = servers::open_fs(o, &srv, Some(&srv.share_dir))?;
-            fs.write(&format!("s/{id}"), &sealed.data)?;
-            format!("{}/#{fragment}", srv.share_url.trim_end_matches('/'))
+        let described = ServerShare {
+            package: crate::net::tls::base64(&sealed.data),
+            files: files.iter().map(|f| f.blocks.clone()).collect(),
+            exp: expires,
+            max: opts.max_downloads,
         };
+        let fs = self.drive_fs(o)?;
+        fs.write(&json_path(&id), &serde_json::to_vec(&described).expect("serializes"))?;
         let stored = StoredShare {
+            url: format!("{}#{id}.{}", module.url, b64url(sealed.link_key.as_ref())),
             id,
             server: srv.id.clone(),
-            name,
-            size: content.len() as u64,
+            name: title,
+            size,
             created: now,
             expires,
             password: password.is_some(),
             max_downloads: opts.max_downloads,
-            url,
+            items,
+            own_blocks,
         };
         let mut list = shares(o);
         list.push(stored.clone());
         put_setting(&mut o.suite, SHARES_KEY, &list)?;
         self.save_container(&mut o.suite, SUITE_FILE)?;
-        Ok(info(&stored, if kind == ServerKind::Php { 0 } else { -1 }))
+        Ok(info(&stored, 0))
     }
 
-    /// Deletes the package from its server. `ShareNotDeleted` if that server is no longer set
-    /// up (B14: never report a link as gone while its package is still there).
-    fn share_remove(o: &mut Open, s: &StoredShare) -> Result<()> {
-        let srv = servers::server(o, &s.server).map_err(|_| GhulError::ShareNotDeleted)?;
-        if ServerKind::of(&srv) == ServerKind::Php {
-            servers::php_fs(&srv, "")?.share_delete(&s.id)?;
-        } else if !srv.share_dir.is_empty() {
-            servers::open_fs(o, &srv, Some(&srv.share_dir))?.delete(&format!("s/{}", s.id))?;
-        } else {
+    /// Deletes a share from its server: its description, its state and its own blocks.
+    /// `ShareNotDeleted` if its server is no longer GhulDrive's (B14: never report a link as
+    /// gone while it may still work).
+    fn share_remove(&self, o: &mut Open, s: &StoredShare) -> Result<()> {
+        if self.drive_server(o).as_deref() != Some(s.server.as_str()) {
             return Err(GhulError::ShareNotDeleted);
+        }
+        let fs = self.drive_fs(o)?;
+        // Its blocks: those that no file uses any more (deleted or changed since, or content
+        // that never was in GhulDrive) go with it, unless another share still hands them out.
+        // Everything that can fail is read first: once the description is gone, its block list
+        // is gone too, and a retry could not clean up any more.
+        let mut blocks = s.own_blocks.clone();
+        if let Some(described) = fs.read(&json_path(&s.id))? {
+            blocks.extend(described_blocks(&described));
+        }
+        let pinned = pinned_blocks_except(fs.as_ref(), Some(&s.id))?;
+        let unused = self.drive_unused(o, &blocks)?;
+        fs.delete(&json_path(&s.id))?;
+        let _ = fs.delete(&state_path(&s.id));
+        let _ = fs.delete(&format!("shares/{}.lock", s.id));
+        for b in unused.iter().filter(|b| !pinned.contains(*b)) {
+            fs.delete(&super::drive::block_path(b))?;
         }
         Ok(())
     }
-}
 
-/// Detail of a step of [`GhulSuite::share_setup`] that could not be checked because the https
-/// step failed. The app compares this text (`Sharing.kt`); a test pins it.
-pub const SHARE_CHECK_SKIPPED: &str = "skipped";
+    /// Removes shares from the list (and marks them deleted for the other devices).
+    fn forget_shares(&self, o: &mut Open, gone: &[String]) -> Result<()> {
+        if gone.is_empty() {
+            return Ok(());
+        }
+        let keep: Vec<StoredShare> = shares(o).into_iter().filter(|s| !gone.contains(&s.id)).collect();
+        put_setting(&mut o.suite, SHARES_KEY, &keep)?;
+        for id in gone {
+            super::sync::mark_deleted(&mut o.suite.payload.settings, SHARES_KEY, id);
+        }
+        self.save_container(&mut o.suite, SUITE_FILE)
+    }
+}
 
 #[uniffi::export]
 impl GhulSuite {
-    /// Sets up sharing on an SFTP or FTPS server: `dir` (relative to the login folder) must be
-    /// delivered by a web server under `public_url`. Writes a test file, fetches it over https,
-    /// checks that the folder cannot be listed and installs the recipient page. Stores the
-    /// settings only if every step passed.
-    pub fn share_setup(&self, server_id: String, dir: String, public_url: String) -> Result<Vec<ShareCheck>> {
-        let dir = dir.trim().trim_end_matches('/').to_owned();
-        let public = Url::parse(public_url.trim().trim_end_matches('/'))?;
-        // Tests use a plain local web server; the app always needs https.
-        if !public.tls && !cfg!(test) {
-            return Err(GhulError::InvalidInput { msg: "the address must start with https://".into() });
-        }
+    /// Whether share links can be made: GhulDrive is set up and its server has the server
+    /// module. `None` = yes; otherwise the server to install the module on (empty: GhulDrive
+    /// is not set up).
+    pub fn share_missing_module(&self) -> Result<Option<String>> {
         self.with_open(|o| {
-            let mut srv = servers::server(o, &server_id)?;
-            if ServerKind::of(&srv) == ServerKind::Php {
-                return Err(GhulError::InvalidInput { msg: "the server module shares without setup".into() });
-            }
-            if dir.is_empty() || dir == srv.base || dir.starts_with(&format!("{}/", srv.base)) && !srv.base.is_empty() {
-                return Err(GhulError::InvalidInput { msg: "choose a folder outside the suite folder".into() });
-            }
-            let mut checks = Vec::new();
-            let fs = servers::open_fs(o, &srv, Some(&dir))?;
-            let token = random_hex(16);
-            let probe = format!("ghul-check-{}.txt", random_hex(8));
-            let wrote = fs.write(&probe, token.as_bytes());
-            checks.push(ShareCheck {
-                step: "write".into(),
-                ok: wrote.is_ok(),
-                detail: wrote.err().map(|e| e.to_string()).unwrap_or_default(),
-            });
-            let fetched = get(&public.join(&probe));
-            let https_ok = matches!(&fetched, Ok(r) if r.status == 200 && r.body == token.as_bytes());
-            checks.push(ShareCheck {
-                step: "https".into(),
-                ok: https_ok,
-                detail: match &fetched {
-                    Ok(r) if !https_ok => format!("HTTP {}", r.status),
-                    Err(e) => e.clone(),
-                    _ => String::new(),
-                },
-            });
-            let _ = fs.delete(&probe);
-            let installed = install_viewer(fs.as_ref());
-            let listing_probe = format!("s/ghul-probe-{}", random_hex(8));
-            let _ = fs.write(&listing_probe, b"x");
-            let listed = get(&public.join("s/"));
-            let name = listing_probe.trim_start_matches("s/");
-            let listing_ok =
-                installed.is_ok() && matches!(&listed, Ok(r) if !String::from_utf8_lossy(&r.body).contains(name));
-            // When the address does not deliver the folder over https (no answer, a wrong folder,
-            // an error page), nothing about the listing or the page is known: those steps say
-            // "not checked" instead of a result that was never seen (also not a green one).
-            checks.push(ShareCheck {
-                step: "listing".into(),
-                ok: https_ok && listing_ok,
-                detail: if !https_ok {
-                    SHARE_CHECK_SKIPPED.into()
-                } else if listing_ok {
-                    String::new()
-                } else if let Err(e) = &installed {
-                    e.to_string()
-                } else if let Err(e) = &listed {
-                    // The folder could not be fetched at all: nothing was seen, so no claim.
-                    e.clone()
-                } else {
-                    "the folder content is visible".into()
-                },
-            });
-            let _ = fs.delete(&listing_probe);
-            let page = get(&public.join(""));
-            let page_ok =
-                matches!(&page, Ok(r) if r.status == 200 && String::from_utf8_lossy(&r.body).contains("viewer.js"));
-            checks.push(ShareCheck {
-                step: "page".into(),
-                ok: https_ok && page_ok,
-                detail: match installed {
-                    Err(e) => e.to_string(),
-                    Ok(_) if !https_ok => SHARE_CHECK_SKIPPED.into(),
-                    Ok(_) if !page_ok => match &page {
-                        Ok(r) => format!("HTTP {}", r.status),
-                        Err(e) => e.clone(),
-                    },
-                    Ok(_) => String::new(),
-                },
-            });
-            if checks.iter().all(|c| c.ok) {
-                srv.share_dir = dir.clone();
-                srv.share_url = public.to_string();
-                match servers::update_server(o, &srv)? {
-                    servers::ServerHome::Suite => self.save_container(&mut o.suite, SUITE_FILE)?,
-                    servers::ServerHome::Drive => self.save_area(o, super::suite::VaultKind::Drive)?,
-                }
-            }
-            Ok(checks)
+            let Some(id) = self.drive_server(o) else { return Ok(Some(String::new())) };
+            let srv = servers::server(o, &id)?;
+            Ok(srv.module.is_none().then_some(id))
         })
     }
 
-    /// Shares GhulDrive files or folders. Several items (or a folder) become one ZIP file.
+    /// Shares GhulDrive files or folders as one link; the recipient gets every file on its own
+    /// (a folder with its sub-folders). Nothing is copied, so any size works.
     pub fn share_drive(&self, ids: Vec<String>, name: Option<String>, options: ShareOptions) -> Result<ShareInfo> {
         if ids.is_empty() {
             return Err(GhulError::InvalidInput { msg: "nothing to share".into() });
         }
         self.with_open(|o| {
-            let mut files = Vec::new();
-            let mut folder = false;
-            for id in &ids {
-                let got = self.drive_collect(o, id, MAX_SHARE)?;
-                folder |= got.len() != 1 || got.first().is_some_and(|(p, _)| p.contains('/'));
-                files.extend(got);
+            let files = self.drive_snapshot(o, &ids)?;
+            if files.is_empty() {
+                return Err(GhulError::InvalidInput { msg: "nothing to share".into() });
             }
-            if files.iter().map(|(_, d)| d.len() as u64).sum::<u64>() > MAX_SHARE {
-                return Err(GhulError::InvalidInput { msg: "too large to share".into() });
-            }
-            let (name, content) = if files.len() == 1 && !folder {
-                let (n, d) = files.pop().expect("one file");
-                (n, d)
-            } else {
-                let n = name.clone().filter(|n| !n.trim().is_empty()).unwrap_or_else(|| "GhulSuite-Freigabe".into());
-                (format!("{}.zip", n.trim().trim_end_matches(".zip")), zip(&files)?)
+            let title = match (&files[..], name.filter(|n| !n.trim().is_empty())) {
+                ([one], _) if ids.len() == 1 && !one.path.contains('/') => one.path.clone(),
+                (_, Some(n)) => n.trim().to_owned(),
+                (all, None) => all[0].path.split('/').next().unwrap_or("GhulSuite").to_owned(),
             };
-            self.share_upload(o, &options, name, &content)
+            self.publish(o, title, files, ids.clone(), Vec::new(), &options)
         })
     }
 
-    /// Shares any content, e.g. a file from the device or a login as text.
+    /// Shares content that is not in GhulDrive (e.g. a login as text, a file from the device).
+    /// It is encrypted into blocks of its own on GhulDrive's server, deleted with the share.
     pub fn share_bytes(&self, name: String, data: Vec<u8>, options: ShareOptions) -> Result<ShareInfo> {
-        let data = Zeroizing::new(data);
-        if data.len() as u64 > MAX_SHARE {
-            return Err(GhulError::InvalidInput { msg: "too large to share".into() });
-        }
-        self.with_open(|o| self.share_upload(o, &options, name.clone(), &data))
-    }
-
-    /// Active shares; expired ones are removed first. Download counts come from the server
-    /// module where available.
-    pub fn share_list(&self) -> Result<Vec<ShareInfo>> {
-        self.share_cleanup()?;
+        let data = zeroize::Zeroizing::new(data);
         self.with_open(|o| {
-            let list = shares(o);
-            let mut counts = std::collections::BTreeMap::new();
-            let mut gone = Vec::new();
-            for srv in servers::servers(o).iter().filter(|s| ServerKind::of(s) == ServerKind::Php) {
-                if !list.iter().any(|s| s.server == srv.id) {
-                    continue;
-                }
-                if let Ok(remote) = servers::php_fs(srv, "").and_then(|f| Ok(f.share_list()?)) {
-                    let ids: std::collections::BTreeSet<&str> = remote.iter().map(|r| r.id.as_str()).collect();
-                    for s in list.iter().filter(|s| s.server == srv.id && !ids.contains(s.id.as_str())) {
-                        gone.push(s.id.clone()); // used up or expired on the server
-                    }
-                    for r in remote {
-                        counts.insert(r.id, i64::from(r.count));
-                    }
+            // The module first: nothing is written to the server without it.
+            let server_id = self.drive_server(o).ok_or(GhulError::NotConfigured)?;
+            if servers::server(o, &server_id)?.module.is_none() {
+                return Err(GhulError::InvalidInput { msg: "share links need the server module".into() });
+            }
+            let file = self.drive_put_loose(o, &name, &data)?;
+            let own = file.blocks.clone();
+            match self.publish(o, name.clone(), vec![file], Vec::new(), own.clone(), &options) {
+                Ok(i) => Ok(i),
+                Err(e) => {
+                    let fs = self.drive_fs(o)?;
+                    let _ = self.drive_delete_loose(fs.as_ref(), &own);
+                    Err(e)
                 }
             }
-            if !gone.is_empty() {
-                let keep: Vec<StoredShare> = list.iter().filter(|s| !gone.contains(&s.id)).cloned().collect();
-                put_setting(&mut o.suite, SHARES_KEY, &keep)?;
-                for id in &gone {
-                    super::sync::mark_deleted(&mut o.suite.payload.settings, SHARES_KEY, id);
-                }
-                self.save_container(&mut o.suite, SUITE_FILE)?;
-            }
-            Ok(list
-                .iter()
-                .filter(|s| !gone.contains(&s.id))
-                .map(|s| info(s, counts.get(&s.id).copied().unwrap_or(-1)))
-                .collect())
         })
     }
 
-    /// Ends a share: the package is deleted from the server at once. If the server cannot be
-    /// reached, nothing changes (try again). If its server is no longer set up, the entry goes
-    /// but `ShareNotDeleted` says that the link keeps working until it expires.
+    /// Active shares with their downloads. Shares that ended on the server (expired, used up)
+    /// are removed here, together with what they left on the server. While the server cannot
+    /// be reached, everything stays and downloads are -1.
+    pub fn share_list(&self) -> Result<Vec<ShareInfo>> {
+        self.with_open(|o| {
+            let now = now_ms();
+            let list = shares(o);
+            let drive = self.drive_server(o);
+            let ours = |s: &StoredShare| drive.as_deref() == Some(s.server.as_str());
+            let fs = if list.iter().any(ours) { self.drive_fs(o).ok() } else { None };
+            let mut out = Vec::new();
+            let mut gone = Vec::new();
+            for s in &list {
+                let state = match &fs {
+                    Some(fs) if ours(s) => server_state(fs.as_ref(), s, now).ok(),
+                    _ => None,
+                };
+                match state {
+                    Some(None) => {
+                        if self.share_remove(o, s).is_ok() {
+                            gone.push(s.id.clone());
+                        }
+                    }
+                    Some(Some(count)) => out.push(info(s, count)),
+                    None => out.push(info(s, -1)),
+                }
+            }
+            self.forget_shares(o, &gone)?;
+            Ok(out)
+        })
+    }
+
+    /// Ends a share: its link stops working at once. If the server cannot be reached, nothing
+    /// changes (try again). If GhulDrive moved to another server, the entry goes but
+    /// `ShareNotDeleted` says that the link may keep working on the old one.
     pub fn share_delete(&self, id: String) -> Result<()> {
         self.with_open(|o| {
-            let mut list = shares(o);
-            let removed = match list.iter().find(|s| s.id == id).cloned() {
-                Some(s) => match Self::share_remove(o, &s) {
+            let found = shares(o).into_iter().find(|s| s.id == id);
+            let removed = match found {
+                Some(s) => match self.share_remove(o, &s) {
                     Err(GhulError::ShareNotDeleted) => Err(GhulError::ShareNotDeleted),
                     Err(e) => return Err(e),
                     Ok(()) => Ok(()),
                 },
                 None => Ok(()),
             };
-            list.retain(|s| s.id != id);
-            put_setting(&mut o.suite, SHARES_KEY, &list)?;
-            super::sync::mark_deleted(&mut o.suite.payload.settings, SHARES_KEY, &id);
-            self.save_container(&mut o.suite, SUITE_FILE)?;
+            self.forget_shares(o, std::slice::from_ref(&id))?;
             removed
         })
     }
 
-    /// Deletes expired shares from their servers; returns how many. Unreachable servers are
-    /// retried next time.
-    pub fn share_cleanup(&self) -> Result<u32> {
+    /// The shares that contain one of these GhulDrive items (or something inside them): the app
+    /// asks before deleting such items, and ends the links.
+    pub fn share_links_of(&self, ids: Vec<String>) -> Result<Vec<ShareInfo>> {
         self.with_open(|o| {
-            let now = now_ms();
-            let list = shares(o);
-            let mut keep = Vec::new();
-            let mut removed = 0;
-            for s in list {
-                // Expired: also gone when its server is no longer set up (the page refuses it anyway).
-                if s.expires > 0
-                    && s.expires < now
-                    && matches!(Self::share_remove(o, &s), Ok(()) | Err(GhulError::ShareNotDeleted))
-                {
-                    removed += 1;
-                } else {
-                    keep.push(s);
+            let mut out = Vec::new();
+            for s in shares(o) {
+                let mut hit = false;
+                for item in &s.items {
+                    if self.drive_within(o, item, &ids)? {
+                        hit = true;
+                        break;
+                    }
+                }
+                if hit {
+                    out.push(info(&s, -1));
                 }
             }
-            if removed > 0 {
-                let gone: Vec<String> =
-                    shares(o).iter().filter(|s| !keep.iter().any(|k| k.id == s.id)).map(|s| s.id.clone()).collect();
-                put_setting(&mut o.suite, SHARES_KEY, &keep)?;
-                for id in gone {
-                    super::sync::mark_deleted(&mut o.suite.payload.settings, SHARES_KEY, &id);
-                }
-                self.save_container(&mut o.suite, SUITE_FILE)?;
-            }
-            Ok(removed)
+            Ok(out)
         })
     }
 }

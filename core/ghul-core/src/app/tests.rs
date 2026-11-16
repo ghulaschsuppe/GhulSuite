@@ -770,221 +770,200 @@ fn sync_between_two_devices() {
     let _ = std::fs::remove_dir_all(&server_dir);
 }
 
-/// The mail archive through the app's API, against Dovecot (IMAP) and the SFTP test server:
-/// set up, archive, read, search, delete at the provider only after confirming, trash, a full
-/// copy on the device, moving to another server, a lost server rebuilt from the device's copy.
+/// Archiving in GhulDrive against Dovecot (IMAP) and the SFTP test server: old mails become
+/// `.eml` files in `Mail-Archiv/<account>/<year>`, unchanged at the provider (also unread), a
+/// second run skips them, an archived mail reads like the original, a renamed archive folder is
+/// still found, and without GhulDrive nothing is fetched.
 #[test]
-fn mail_archive_against_imap_and_sftp() {
+fn mail_archive_to_drive_against_imap_and_sftp() {
     use super::mail::{MailAccountInput, MailSecurity, MailServers};
-    use super::mailarchive::{ArchiveFolderRule, MailArchiveOptions, MailArchivePlace, MailArchiveRef};
-    use super::servers::ServerInput;
+    use super::maildrive::MailArchived;
+    use super::servers::{ServerInput, ServerKind};
     let (Ok(host), Ok(fp)) = (std::env::var("GHUL_TEST_MAIL"), std::env::var("GHUL_TEST_MAIL_TLSFP")) else { return };
     let Some((shost, sport, suser, sroot, authkeys, hostkey)) = crate::net::tests::sftp_env() else { return };
-    let authorize = |public: &str| {
-        let mut keys = std::fs::read_to_string(&authkeys).unwrap_or_default();
-        keys.push_str(public);
-        keys.push('\n');
-        std::fs::write(&authkeys, keys).unwrap();
-    };
-    let d = Dirs::new("archive");
+    let d = Dirs::new("archive-drive");
     let s = d.suite();
-    let kf = generate_keyfile();
-    s.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
     let run = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
     let email = format!("archiv{run}@test.local");
     let account = s
         .mail_save_account(
             None,
-            MailAccountInput {
-                name: "Test".into(),
-                display_name: "Archiv".into(),
-                email: email.clone(),
-                username: String::new(),
-                password: "test-pw-123".into(),
-                servers: MailServers {
-                    imap_host: host.clone(),
-                    imap_port: 10993,
-                    imap_security: MailSecurity::Tls,
-                    smtp_host: host.clone(),
-                    smtp_port: 10587,
-                    smtp_security: MailSecurity::StartTls,
+            mail_checked(
+                &s,
+                MailAccountInput {
+                    name: "Privat".into(),
+                    display_name: "Archiv".into(),
+                    email: email.clone(),
+                    username: String::new(),
+                    password: "test-pw-123".into(),
+                    servers: MailServers {
+                        imap_host: host.clone(),
+                        imap_port: 10993,
+                        imap_security: MailSecurity::Tls,
+                        smtp_host: host.clone(),
+                        smtp_port: 10587,
+                        smtp_security: MailSecurity::StartTls,
+                    },
+                    imap_cert: Some(fp.clone()),
+                    smtp_cert: Some(fp.clone()),
+                    signature: String::new(),
                 },
-                imap_cert: Some(fp.clone()),
-                smtp_cert: Some(fp.clone()),
-                signature: String::new(),
-            },
+            ),
         )
         .unwrap();
-    // Three old mails in the inbox, one old in "Sent", one new one.
-    let raw = |n: u32, word: &str| {
+    let raw = |n: u32, date: &str| {
         format!(
-            "From: Erika <erika@example.net>\r\nTo: {email}\r\nSubject: Archivbetreff {n}\r\nDate: Sun, 2 Mar 2025 10:00:00 +0000\r\n\
-             Message-ID: <a{n}.{run}@example.net>\r\n\r\nArchivtext {word} {n}\r\n"
+            "From: Erika Musterfrau <erika@example.net>\r\nTo: {email}\r\nSubject: Archivbetreff {n}\r\nDate: {date}\r\n\
+             Message-ID: <a{n}.{run}@example.net>\r\n\r\nArchivtext {n}\r\n"
         )
         .into_bytes()
     };
-    let put = |folder: &str, m: Vec<u8>, date: &str| {
-        let (folder, date) = (folder.to_owned(), date.to_owned());
+    let put = |m: Vec<u8>, date: &str| {
+        let date = date.to_owned();
         s.with_imap(&account, move |sess| {
-            let (folder, date, m) = (folder.clone(), date.clone(), m.clone());
-            Box::pin(async move { crate::net::imap::append_dated(sess, &folder, &m, &date).await })
+            let (date, m) = (date.clone(), m.clone());
+            Box::pin(async move { crate::net::imap::append_dated(sess, "INBOX", &m, &date).await })
         })
         .unwrap();
     };
-    for n in 1..=3 {
-        put("INBOX", raw(n, "alt"), "02-Mar-2025 10:00:00 +0000");
-    }
-    put("Sent", raw(4, "gesendet"), "03-Mar-2025 10:00:00 +0000");
+    put(raw(1, "Sun, 2 Mar 2025 10:00:00 +0000"), "02-Mar-2025 10:00:00 +0000");
+    put(raw(2, "Mon, 3 Mar 2025 10:00:00 +0000"), "03-Mar-2025 10:00:00 +0000");
+    put(raw(3, "Tue, 7 May 2024 10:00:00 +0000"), "07-May-2024 10:00:00 +0000");
     let today = crate::net::imap::search_date(
         std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64 / 86_400,
     );
     let today = if today.find('-') == Some(1) { format!("0{today}") } else { today };
-    put("INBOX", raw(5, "neu"), &format!("{today} 08:00:00 +0000"));
+    put(raw(4, "Wed, 1 Jan 2025 10:00:00 +0000"), &format!("{today} 08:00:00 +0000"));
 
-    // Two places on the SFTP server.
-    authorize(&s.ssh_public_key().unwrap());
-    let place = |name: &str| {
-        let input = ServerInput {
-            kind: super::servers::ServerKind::Sftp,
-            name: name.into(),
-            host: shost.clone(),
-            port: sport,
-            user: suser.clone(),
-            password: None,
-            base: format!("{sroot}/archive-{name}-{run}"),
-            url: String::new(),
-            upload: None,
-        };
-        saved(s.mail_archive_save_server(input, Some(hostkey.clone())).unwrap())
-    };
-    let first = place("eins");
-    assert_eq!(s.mail_archive_setup(Some(first.clone())).unwrap(), MailArchivePlace::Created);
-    assert_eq!(s.mail_archive_setup(Some(first.clone())).unwrap(), MailArchivePlace::Connected);
-    let mut opts = MailArchiveOptions {
-        days: 30,
-        delete_at_provider: false,
-        sent: true,
-        spam: ArchiveFolderRule::Leave,
-        trash: ArchiveFolderRule::Leave,
-        accounts: vec![account.clone()],
-    };
-    s.mail_archive_set_options(opts.clone()).unwrap();
-    let r = s.mail_archive_run(account.clone(), 1000).unwrap();
-    assert_eq!((r.archived, r.removed, r.waiting_for_confirmation), (4, 0, 4));
-    assert_eq!(s.mail_list(account.clone(), "INBOX".into(), 0, 50).unwrap().total, 4, "the provider keeps them");
+    // Without GhulDrive: nothing is fetched, the app says what is missing.
+    let all = s.mail_archive_uids(account.clone(), "INBOX".into(), None).unwrap();
+    assert_eq!(all.len(), 4);
+    assert!(matches!(s.mail_archive_to_drive(account.clone(), "INBOX".into(), all[0]), Err(GhulError::NotConfigured)));
+    assert_eq!(s.mail_archive_folder(None).unwrap(), None);
 
-    // Seen in the archive (with those still at the provider), read and found.
-    let inbox = s.mail_archive_list(account.clone(), "INBOX".into(), 0, 50, true).unwrap();
-    assert_eq!(inbox.total, 3);
-    assert_eq!(s.mail_archive_list(account.clone(), "INBOX".into(), 0, 50, false).unwrap().total, 0);
-    let first_mail = &inbox.mails[0];
-    let r1 = MailArchiveRef { key: first_mail.key.clone(), folder: "INBOX".into() };
-    let m = s.mail_archive_get(account.clone(), r1.clone()).unwrap();
-    assert!(m.subject.starts_with("Archivbetreff"));
-    assert!(m.text.contains("Archivtext alt"));
-    assert_eq!(s.mail_archive_search(account.clone(), "gesendet".into(), 10).unwrap().len(), 1);
-    assert!(String::from_utf8(s.mail_archive_raw(account.clone(), r1.clone()).unwrap())
-        .unwrap()
-        .contains("Archivtext"));
-
-    // The server holds nothing readable, read over SFTP as the server hands it out (the test may not
-    // read the server's files directly: in CI they belong to another user).
-    let over_sftp = |name: &str| {
-        let mut cfg = crate::net::tests::sftp_test_config("archive-check").unwrap();
-        cfg.base = format!("{sroot}/archive-{name}-{run}");
-        crate::net::sftp::SftpFs::connect(&cfg).unwrap()
-    };
-    let server = over_sftp("eins");
-    let mut files = Vec::new();
-    let mut dirs = vec![String::new()];
-    while let Some(d) = dirs.pop() {
-        for e in crate::net::remote::RemoteFs::list(&server, &d).unwrap() {
-            let p = if d.is_empty() { e.name.clone() } else { format!("{d}/{}", e.name) };
-            if e.is_dir {
-                dirs.push(p);
-            } else {
-                files.push(p);
-            }
-        }
-    }
-    assert!(files.len() > 4);
-    let local_part = format!("archiv{run}");
-    for rel in files {
-        let data = crate::net::remote::RemoteFs::read(&server, &rel).unwrap().unwrap();
-        for secret in ["Archivtext", "Archivbetreff", "erika", "INBOX", "Sent", local_part.as_str()] {
-            assert!(!data.windows(secret.len()).any(|w| w == secret.as_bytes()), "{secret} in {rel}");
-            assert!(!rel.contains(secret), "{secret} in the name {rel}");
-        }
-    }
-
-    // Deleting at the provider: switched on, then confirmed once; the new mail stays.
-    opts.delete_at_provider = true;
-    s.mail_archive_set_options(opts.clone()).unwrap();
-    let r = s.mail_archive_run(account.clone(), 1000).unwrap();
-    assert_eq!((r.removed, r.waiting_for_confirmation), (0, 4));
-    let r = s.mail_archive_confirm_removal(account.clone()).unwrap();
-    assert_eq!(r.removed, 4);
-    assert_eq!(s.mail_list(account.clone(), "INBOX".into(), 0, 50).unwrap().total, 1);
-    assert_eq!(s.mail_list(account.clone(), "Sent".into(), 0, 50).unwrap().total, 0);
-    assert_eq!(s.mail_archive_list(account.clone(), "INBOX".into(), 0, 50, false).unwrap().total, 3);
-
-    // The archive's trash.
-    s.mail_archive_delete(account.clone(), vec![r1.clone()]).unwrap();
-    assert_eq!(s.mail_archive_trash(account.clone()).unwrap().len(), 1);
-    assert_eq!(s.mail_archive_list(account.clone(), "INBOX".into(), 0, 50, true).unwrap().total, 2);
-    s.mail_archive_restore(account.clone(), vec![r1.clone()]).unwrap();
-    assert_eq!(s.mail_archive_count(account.clone()).unwrap().mails, 4);
-
-    // Another suite cannot use this place.
-    let other_dir = Dirs::new("archive-other");
-    let other = other_dir.suite();
-    other.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "P")]), None, None, None).unwrap();
-    authorize(&other.ssh_public_key().unwrap());
+    let mut keys = std::fs::read_to_string(&authkeys).unwrap_or_default();
+    keys.push_str(&s.ssh_public_key().unwrap());
+    keys.push('\n');
+    std::fs::write(&authkeys, keys).unwrap();
     let input = ServerInput {
-        kind: super::servers::ServerKind::Sftp,
-        name: "fremd".into(),
-        host: shost.clone(),
+        kind: ServerKind::Sftp,
+        name: "Heimserver".into(),
+        host: shost,
         port: sport,
-        user: suser.clone(),
+        user: suser,
         password: None,
-        base: format!("{sroot}/archive-eins-{run}"),
-        url: String::new(),
-        upload: None,
+        base: format!("{sroot}/archive-drive-{run}"),
     };
-    let foreign = saved(other.mail_archive_save_server(input, Some(hostkey.clone())).unwrap());
-    assert_eq!(other.mail_archive_setup(Some(foreign)).unwrap(), MailArchivePlace::Foreign);
+    let id = saved(s.save_server(input, Some(hostkey)).unwrap());
+    s.drive_setup(id).unwrap();
 
-    // A full copy on this device.
-    s.mail_archive_set_full_copy(true, "Test-PC".into()).unwrap();
-    assert_eq!(s.mail_archive_download(1000, "Test-PC".into()).unwrap(), 0);
-    let st = s.mail_archive_status().unwrap();
-    assert!(st.full_copy && st.offline_bytes > 0);
-    assert!(st.copies.iter().any(|c| c.this_device && c.full && c.mails == 4 && c.name == "Test-PC"));
-    assert!(s.mail_archive_only_copy().unwrap(), "no other device has a full copy");
-
-    // Moving to another place: offered, then copied and checked.
-    let second = place("zwei");
-    assert_eq!(s.mail_archive_setup(Some(second.clone())).unwrap(), MailArchivePlace::MoveOffered);
-    assert_eq!(s.mail_archive_move(Some(second.clone())).unwrap(), MailArchivePlace::Created);
-    assert_eq!(s.mail_archive_count(account.clone()).unwrap().mails, 4);
-
-    // The server is lost; a new, empty place is filled from the device's copy (adds only).
-    crate::net::remote::RemoteFs::delete(&over_sftp("zwei"), "mailarchive/head.ghlarc").unwrap();
-    let third = place("drei");
-    assert_eq!(s.mail_archive_setup(Some(third)).unwrap(), MailArchivePlace::Created);
-    assert_eq!(s.mail_archive_restore_from_copy().unwrap(), 4);
-    assert_eq!(s.mail_archive_restore_from_copy().unwrap(), 0, "adds only what is missing");
-    let back = s.mail_archive_list(account.clone(), "INBOX".into(), 0, 50, false).unwrap();
-    assert_eq!(back.total, 3);
-    let m = s.mail_archive_get(account.clone(), r1).unwrap();
-    assert!(m.text.contains("Archivtext alt"));
-
-    // The device's copy is deleted only on request.
-    s.mail_archive_clear_copy().unwrap();
-    assert_eq!(s.mail_archive_status().unwrap().offline_bytes, 0);
-    for name in ["eins", "drei"] {
-        let _ = std::fs::remove_dir_all(format!("{sroot}/archive-{name}-{run}"));
+    // "Older than a week": the three old ones (received in 2024 and 2025), not today's.
+    let week_ago =
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64 / 86_400 - 7;
+    let old = s.mail_archive_uids(account.clone(), "INBOX".into(), Some(week_ago)).unwrap();
+    assert_eq!(old.len(), 3, "{old:?}");
+    for uid in &old {
+        assert_eq!(s.mail_archive_to_drive(account.clone(), "INBOX".into(), *uid).unwrap(), MailArchived::Saved);
     }
+    // A second run stores nothing twice.
+    for uid in &old {
+        assert_eq!(s.mail_archive_to_drive(account.clone(), "INBOX".into(), *uid).unwrap(), MailArchived::Skipped);
+    }
+    assert_eq!(s.mail_archive_to_drive(account.clone(), "INBOX".into(), 999_999).unwrap(), MailArchived::Gone);
+
+    // Mail-Archiv/Privat/2024 and /2025, the files named by date, sender and subject.
+    let root = s.mail_archive_folder(None).unwrap().expect("archive folder");
+    let top = s.drive_list(None, true).unwrap();
+    assert!(top.iter().any(|i| i.id == root && i.name == "Mail-Archiv"), "{top:?}");
+    let acc = s.mail_archive_folder(Some(account.clone())).unwrap().expect("account folder");
+    let years: Vec<String> = s.drive_list(Some(acc.clone()), false).unwrap().into_iter().map(|i| i.name).collect();
+    assert_eq!(years, vec!["2024", "2025"]);
+    let y2025 = s.drive_list(Some(acc.clone()), false).unwrap().into_iter().find(|i| i.name == "2025").unwrap().id;
+    let files = s.drive_list(Some(y2025), false).unwrap();
+    assert_eq!(files.len(), 2);
+    assert!(files[0].name.starts_with("2025-03-02 Erika Musterfrau - Archivbetreff 1 ("), "{}", files[0].name);
+    assert!(files[0].name.ends_with(").eml"));
+
+    // The copy is the mail as it was at the provider, and reads like it.
+    let eml = download(&s, &files[0].id);
+    assert_eq!(eml, s.mail_raw(account.clone(), "INBOX".into(), old[0], false).unwrap());
+    let m = s.mail_parse_eml(account.clone(), eml).unwrap();
+    assert_eq!(m.subject, "Archivbetreff 1");
+    assert!(m.text.contains("Archivtext 1"));
+    assert!(matches!(
+        s.mail_parse_eml(account.clone(), b"\x00\x01kein Mail".to_vec()),
+        Err(GhulError::InvalidInput { .. }) | Ok(_)
+    ));
+
+    // At the provider nothing changed: all four there, the archived ones still unread.
+    let page = s.mail_list(account.clone(), "INBOX".into(), 0, 50).unwrap();
+    assert_eq!(page.total, 4);
+    assert!(page.messages.iter().all(|m| !m.seen), "archiving must not mark mails as read");
+
+    // Automatic archiving: off by default; on, a run gets the old mails once, the next run
+    // (after "done") nothing more, until a newer mail is old enough.
+    assert_eq!(s.mail_archive_auto_days().unwrap(), 0);
+    assert!(s.mail_archive_auto_uids(account.clone(), "INBOX".into()).unwrap().uids.is_empty());
+    s.mail_archive_set_auto_days(7).unwrap();
+    let batch = s.mail_archive_auto_uids(account.clone(), "INBOX".into()).unwrap();
+    assert_eq!(batch.uids, old);
+    s.mail_archive_auto_done(account.clone(), "INBOX".into(), batch.validity, *old.last().unwrap()).unwrap();
+    assert!(s.mail_archive_auto_uids(account.clone(), "INBOX".into()).unwrap().uids.is_empty());
+    // An older mark does not move it back; another UIDVALIDITY starts over.
+    s.mail_archive_auto_done(account.clone(), "INBOX".into(), batch.validity, old[0]).unwrap();
+    assert!(s.mail_archive_auto_uids(account.clone(), "INBOX".into()).unwrap().uids.is_empty());
+    s.mail_archive_auto_done(account.clone(), "INBOX".into(), batch.validity + 1, 9_999).unwrap();
+    assert_eq!(s.mail_archive_auto_uids(account.clone(), "INBOX".into()).unwrap().uids, old);
+    s.mail_archive_auto_done(account.clone(), "INBOX".into(), batch.validity, *old.last().unwrap()).unwrap();
+    // A mail moved in later keeps its old date but gets a higher UID than today's mail: after
+    // archiving it, the mark stays below today's mail, which is archived once it is old enough.
+    put(raw(6, "Sun, 2 Mar 2025 12:00:00 +0000"), "02-Mar-2025 12:00:00 +0000");
+    let moved = s.mail_archive_auto_uids(account.clone(), "INBOX".into()).unwrap();
+    assert_eq!(moved.uids.len(), 1);
+    s.mail_archive_auto_done(account.clone(), "INBOX".into(), moved.validity, moved.uids[0]).unwrap();
+    assert_eq!(s.mail_archive_auto_uids(account.clone(), "INBOX".into()).unwrap().uids, moved.uids, "mark held back");
+    s.mail_archive_set_auto_days(0).unwrap();
+    assert!(s.mail_archive_auto_uids(account.clone(), "INBOX".into()).unwrap().uids.is_empty());
+
+    // Renamed and moved, the archive is still the archive: nothing is stored twice.
+    s.drive_rename(root.clone(), "Alte Mails".into()).unwrap();
+    let elsewhere = s.drive_create_folder(None, "Ablage".into()).unwrap();
+    s.drive_move(root.clone(), Some(elsewhere)).unwrap();
+    assert_eq!(s.mail_archive_folder(None).unwrap(), Some(root.clone()));
+    assert_eq!(s.mail_archive_to_drive(account.clone(), "INBOX".into(), old[0]).unwrap(), MailArchived::Skipped);
+
+    // Another mail that only claims the Message-ID of an archived one is not taken for it:
+    // it is stored under a code of its own content (once).
+    let fake = String::from_utf8(raw(1, "Sun, 2 Mar 2025 10:00:00 +0000"))
+        .unwrap()
+        .replace("Archivtext 1", "Bitte sofort hier klicken und bezahlen");
+    put(fake.into_bytes(), "02-Mar-2025 10:00:00 +0000");
+    let fake_uid = *s.mail_archive_uids(account.clone(), "INBOX".into(), None).unwrap().last().unwrap();
+    assert_eq!(s.mail_archive_to_drive(account.clone(), "INBOX".into(), fake_uid).unwrap(), MailArchived::Saved);
+    assert_eq!(s.mail_archive_to_drive(account.clone(), "INBOX".into(), fake_uid).unwrap(), MailArchived::Skipped);
+    let y2025 = s.drive_list(Some(acc.clone()), false).unwrap().into_iter().find(|i| i.name == "2025").unwrap().id;
+    let named: Vec<String> = s.drive_list(Some(y2025), false).unwrap().into_iter().map(|i| i.name).collect();
+    assert_eq!(named.len(), 3, "{named:?}");
+    assert_eq!(named.iter().filter(|n| n.starts_with("2025-03-02 Erika Musterfrau - Archivbetreff 1 (")).count(), 2);
+    // Even with the same size: a forged copy archived first does not stop the real mail.
+    let real = raw(5, "Mon, 3 Mar 2025 11:00:00 +0000");
+    let forged = String::from_utf8(real.clone()).unwrap().replace("Archivtext 5", "Gefaelscht 5").into_bytes();
+    assert_eq!(forged.len(), real.len());
+    put(forged, "03-Mar-2025 11:00:00 +0000");
+    put(real, "03-Mar-2025 11:00:00 +0000");
+    let uids = s.mail_archive_uids(account.clone(), "INBOX".into(), None).unwrap();
+    let (forged_uid, real_uid) = (uids[uids.len() - 2], uids[uids.len() - 1]);
+    assert_eq!(s.mail_archive_to_drive(account.clone(), "INBOX".into(), forged_uid).unwrap(), MailArchived::Saved);
+    assert_eq!(s.mail_archive_to_drive(account.clone(), "INBOX".into(), real_uid).unwrap(), MailArchived::Saved);
+    assert_eq!(s.mail_archive_to_drive(account.clone(), "INBOX".into(), real_uid).unwrap(), MailArchived::Skipped);
+
+    // In the trash, it no longer counts: the next mail starts a new archive folder.
+    s.drive_delete(root.clone()).unwrap();
+    assert_eq!(s.mail_archive_folder(None).unwrap(), None);
+    assert_eq!(s.mail_archive_to_drive(account.clone(), "INBOX".into(), old[0]).unwrap(), MailArchived::Saved);
+    assert_ne!(s.mail_archive_folder(None).unwrap(), Some(root));
+    let _ = std::fs::remove_dir_all(format!("{sroot}/archive-drive-{run}"));
 }
 
 #[test]
@@ -1013,9 +992,15 @@ fn sync_over_sftp() {
         user: user.clone(),
         password: None,
         base: base.clone(),
-        url: String::new(),
-        upload: None,
     };
+    // "Check connection" stores nothing: first the fingerprint, then (confirmed) it works.
+    use super::servers::ServerTest;
+    assert_eq!(a.server_test(input.clone(), None).unwrap(), ServerTest::Confirm { fingerprint: hostkey.clone() });
+    assert_eq!(a.server_test(input.clone(), Some(hostkey.clone())).unwrap(), ServerTest::Ok);
+    assert!(a.list_servers().unwrap().is_empty(), "checking stores nothing");
+    let mut wrong_user = input.clone();
+    wrong_user.user = "niemand-hier".into();
+    assert!(a.server_test(wrong_user, Some(hostkey.clone())).is_err());
     // First the fingerprint is shown; then the server is stored with the confirmed fingerprint.
     assert_eq!(a.save_server(input.clone(), None).unwrap(), ServerSaved::Confirm { fingerprint: hostkey.clone() });
     let id = saved(a.save_server(input.clone(), Some(hostkey.clone())).unwrap());
@@ -1067,6 +1052,105 @@ fn files_under(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
     out
 }
 
+/// An upload that stopped half-way continues with the same file key: the blocks already on the
+/// server are not written again, and a finished upload forgets its key (the next content of the
+/// same file gets a new one). The device's note of unfinished uploads is encrypted.
+#[test]
+fn drive_upload_continues_with_its_key() {
+    use crate::net::remote::LocalFs;
+    let server_dir = std::env::temp_dir().join(format!("ghul-drive-resume-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&server_dir);
+    let d = Dirs::new("drive-resume");
+    let s = d.suite();
+    s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "P")]), None, None, None).unwrap();
+    let fs: std::sync::Arc<dyn crate::net::remote::RemoteFs> = std::sync::Arc::new(LocalFs::new(&server_dir));
+    s.drive_use_folder(fs).unwrap();
+    let block = super::drive::BLOCK_SIZE as usize;
+    let data: Vec<u8> = (0..3 * block as u32).map(|i| (i.wrapping_mul(2654435761) >> 24) as u8).collect();
+    // Two of three parts, then the app is gone (no finish, no cancel).
+    let up = s.drive_upload_begin(None, "Film Geheimname.mp4".into()).unwrap();
+    s.drive_upload_chunk(up.clone(), data[..block].to_vec()).unwrap();
+    s.drive_upload_chunk(up, data[block..2 * block].to_vec()).unwrap();
+    let written: Vec<_> = files_under(&server_dir.join("drive/blocks"))
+        .iter()
+        .map(|p| (p.clone(), std::fs::metadata(p).unwrap().modified().unwrap()))
+        .collect();
+    assert_eq!(written.len(), 2);
+    let note = std::fs::read(std::path::Path::new(&d.local()).join("drive-pending")).expect("unfinished upload noted");
+    assert!(!note.windows(11).any(|w| w == b"Geheimname."), "the note is encrypted");
+    // The same file again: the first two blocks are there and stay untouched.
+    let id = upload(&s, None, "Film Geheimname.mp4", &data);
+    for (p, at) in &written {
+        assert_eq!(std::fs::metadata(p).unwrap().modified().unwrap(), *at, "{p:?} written again");
+    }
+    assert_eq!(files_under(&server_dir.join("drive/blocks")).len(), 3);
+    assert_eq!(download(&s, &id), data);
+    assert!(!std::path::Path::new(&d.local()).join("drive-pending").exists(), "nothing unfinished any more");
+    // New content under the same name: a new key, so all of its blocks are new.
+    let mut edited = data.clone();
+    edited[0] ^= 1;
+    upload(&s, None, "Film Geheimname.mp4", &edited);
+    assert_eq!(files_under(&server_dir.join("drive/blocks")).len(), 6, "3 for the version, 3 new");
+
+    // A finished upload whose note stayed behind (the app was gone right after finishing): its
+    // key belongs to that content now and is not used for the next upload of the same name.
+    let pending = std::path::Path::new(&d.local()).join("drive-pending");
+    let up = s.drive_upload_begin(None, "Notiz.txt".into()).unwrap();
+    s.drive_upload_chunk(up.clone(), b"erste Fassung".to_vec()).unwrap();
+    let stale = std::fs::read(&pending).unwrap();
+    s.drive_upload_finish(up).unwrap();
+    std::fs::write(&pending, stale).unwrap();
+    let before = files_under(&server_dir.join("drive/blocks")).len();
+    upload(&s, None, "Notiz.txt", b"erste Fassung");
+    assert_eq!(files_under(&server_dir.join("drive/blocks")).len(), before + 1, "a key of its own: a new block");
+    let _ = std::fs::remove_dir_all(&server_dir);
+}
+
+/// When the list of shares on the server cannot be read, GhulDrive deletes no block at all
+/// (it cannot know which ones a link still hands out).
+#[test]
+fn drive_deletes_nothing_when_the_shares_cannot_be_read() {
+    use crate::net::remote::LocalFs;
+    let server_dir = std::env::temp_dir().join(format!("ghul-drive-pinned-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&server_dir);
+    let d = Dirs::new("drive-pinned");
+    let s = d.suite();
+    s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "P")]), None, None, None).unwrap();
+    let fs: std::sync::Arc<dyn crate::net::remote::RemoteFs> = std::sync::Arc::new(LocalFs::new(&server_dir));
+    s.drive_use_folder(fs).unwrap();
+    let id = upload(&s, None, "weg.txt", b"bald geloescht");
+    s.drive_delete(id).unwrap();
+    // `shares` is not a folder that can be listed: emptying the trash fails, the block stays.
+    std::fs::write(server_dir.join("shares"), b"kein Ordner").unwrap();
+    assert!(s.drive_empty_trash(0).is_err());
+    assert_eq!(files_under(&server_dir.join("drive/blocks")).len(), 1);
+    // A cancelled upload keeps its blocks as well while that is so.
+    let up = s.drive_upload_begin(None, "abbruch.bin".into()).unwrap();
+    s.drive_upload_chunk(up.clone(), vec![1, 2, 3]).unwrap();
+    assert!(s.drive_upload_cancel(up.clone()).is_err());
+    assert_eq!(files_under(&server_dir.join("drive/blocks")).len(), 2);
+    // Readable again: everything is cleaned up.
+    std::fs::remove_file(server_dir.join("shares")).unwrap();
+    s.drive_empty_trash(0).unwrap();
+    s.drive_upload_cancel(up).unwrap();
+    assert!(files_under(&server_dir.join("drive/blocks")).is_empty());
+
+    // A description without expiry or limit and with odd entries (the module still serves
+    // it) pins its blocks all the same.
+    let kept = upload(&s, None, "geteilt.txt", b"per Hand geteilt");
+    let block = files_under(&server_dir.join("drive/blocks"))[0].file_name().unwrap().to_string_lossy().into_owned();
+    std::fs::create_dir_all(server_dir.join("shares")).unwrap();
+    std::fs::write(
+        server_dir.join("shares/0123456789abcdef0123456789abcdef.json"),
+        format!(r#"{{"package":"x","files":[["{block}", 7, "../x"]]}}"#),
+    )
+    .unwrap();
+    s.drive_delete(kept).unwrap();
+    s.drive_empty_trash(0).unwrap();
+    assert_eq!(files_under(&server_dir.join("drive/blocks")).len(), 1, "still handed out by the link");
+    let _ = std::fs::remove_dir_all(&server_dir);
+}
+
 #[test]
 fn drive_files_and_folders() {
     use crate::net::remote::LocalFs;
@@ -1084,10 +1168,17 @@ fn drive_files_and_folders() {
     let id = upload(&s, Some(photos.clone()), "urlaub.jpg", &big);
     assert_eq!(s.drive_file_blocks(id.clone()).unwrap(), 3);
     assert_eq!(download(&s, &id), big);
-    // Same content again under another name: blocks are stored once.
-    let blocks_before = files_under(&server_dir.join("drive/blocks")).len();
+    // Same content again under another name: its own key and its own blocks, so the server
+    // cannot see that two files are equal (and a share of one reveals nothing of the other).
+    let first_blocks = files_under(&server_dir.join("drive/blocks"));
     let copy = upload(&s, Some(photos.clone()), "urlaub kopie.jpg", &big);
-    assert_eq!(files_under(&server_dir.join("drive/blocks")).len(), blocks_before);
+    let blocks_after = files_under(&server_dir.join("drive/blocks"));
+    assert_eq!(blocks_after.len(), first_blocks.len() + 3);
+    assert!(first_blocks.iter().all(|b| blocks_after.contains(b)));
+    assert_eq!(download(&s, &copy), big);
+    // Blocks are AES-256-GCM (browsers can open them with the file's key alone).
+    let first = std::fs::read(&blocks_after[0]).unwrap();
+    assert_eq!(&first[..8], b"GHULBLK2");
     // Same name again with new content: a new version, the old one is kept.
     let edited: Vec<u8> = big.iter().rev().copied().collect();
     assert_eq!(upload(&s, Some(photos.clone()), "urlaub.jpg", &edited), id);
@@ -1123,11 +1214,10 @@ fn drive_files_and_folders() {
     s.drive_delete(copy.clone()).unwrap();
     assert_eq!(s.drive_empty_trash(30).unwrap(), 0, "younger than 30 days stays");
     assert_eq!(s.drive_empty_trash(0).unwrap(), 1);
-    assert_eq!(
-        files_under(&server_dir.join("drive/blocks")).len(),
-        blocks_before + 1,
-        "blocks still used by the original and its version (+ the note)"
-    );
+    let left = files_under(&server_dir.join("drive/blocks"));
+    assert_eq!(left.len(), blocks_before - 3 + 1, "the original, its version and the note; the copy's blocks are gone");
+    let copy_blocks: Vec<&std::path::PathBuf> = blocks_after.iter().filter(|b| !first_blocks.contains(b)).collect();
+    assert!(copy_blocks.iter().all(|b| !left.contains(b)), "the copy's own blocks are deleted");
     // Favourites and usage.
     s.drive_set_favorite(note.clone(), true).unwrap();
     assert_eq!(s.drive_favorites().unwrap()[0].id, note);
@@ -1191,8 +1281,6 @@ fn drive_over_sftp_two_devices() {
         user,
         password: None,
         base: format!("{root}/drive-{run}"),
-        url: String::new(),
-        upload: None,
     };
     let id = saved(a.save_server(input.clone(), Some(hostkey.clone())).unwrap());
     a.drive_setup(id.clone()).unwrap();
@@ -1244,27 +1332,75 @@ fn mail_with_imap_and_smtp() {
         smtp_cert: None,
         signature: "Gruß, Alice".into(),
     };
-    // Self-signed certificates are shown with their fingerprint until confirmed.
-    assert_eq!(s.mail_check_account(input.clone()).unwrap(), MailCheck::ImapCertificate { fingerprint: fp.clone() });
+    // "Check connection", step by step. Self-signed certificates are shown with their
+    // fingerprint until confirmed; nothing is saved by checking.
+    let steps = |t: &super::mail::MailTest| -> Vec<(String, bool, String)> {
+        t.steps.iter().map(|s| (s.step.clone(), s.ok, s.detail.clone())).collect()
+    };
+    let t = s.mail_test_account(None, input.clone()).unwrap();
+    assert!(!t.ok);
+    assert_eq!(t.confirm, Some(MailCheck::ImapCertificate { fingerprint: fp.clone() }));
+    assert_eq!(steps(&t)[0], ("imap_server".into(), false, super::mail::STEP_CERTIFICATE.into()));
+    assert_eq!(steps(&t)[1], ("imap_login".into(), false, super::mail::STEP_SKIPPED.into()));
+    assert_eq!(
+        steps(&t)[2],
+        ("smtp_server".into(), false, super::mail::STEP_CERTIFICATE.into()),
+        "SMTP is checked too"
+    );
     input.imap_cert = Some(fp.clone());
-    assert_eq!(s.mail_check_account(input.clone()).unwrap(), MailCheck::SmtpCertificate { fingerprint: fp.clone() });
+    let t = s.mail_test_account(None, input.clone()).unwrap();
+    assert_eq!(t.confirm, Some(MailCheck::SmtpCertificate { fingerprint: fp.clone() }));
+    assert!(t.steps[0].ok && t.steps[1].ok && !t.steps[2].ok);
     input.smtp_cert = Some(fp.clone());
+    // A wrong password: both servers answer, both logins fail, and it says so.
     let mut wrong = input.clone();
     wrong.password = "falsch".into();
-    assert!(matches!(s.mail_check_account(wrong), Err(GhulError::ServerAuthFailed)));
+    let t = s.mail_test_account(None, wrong.clone()).unwrap();
+    assert_eq!(t.steps.iter().map(|s| s.ok).collect::<Vec<_>>(), vec![true, false, true, false], "{:?}", t.steps);
+    assert!(t.steps[1].detail.contains("login rejected"));
+    // A server that is not there: its login is not tried.
+    let mut nowhere = input.clone();
+    nowhere.servers.smtp_port = 1;
+    let t = s.mail_test_account(None, nowhere.clone()).unwrap();
+    assert!(t.steps[0].ok && t.steps[1].ok && !t.steps[2].ok);
+    assert_eq!(t.steps[2].detail, super::mail::STEP_REFUSED, "said in words, not the system's text");
+    assert_eq!(t.steps[3].detail, super::mail::STEP_SKIPPED);
+    let mut unknown = input.clone();
+    unknown.servers.imap_host = "imap.nirgendwo.invalid".into();
+    assert_eq!(s.mail_test_account(None, unknown).unwrap().steps[0].detail, super::mail::STEP_NOT_FOUND);
+    // Not checked, or not checked successfully: not saved.
+    assert!(matches!(
+        s.mail_save_account(None, nowhere),
+        Err(GhulError::InvalidInput { msg }) if msg == super::mail::MAIL_NOT_TESTED
+    ));
+    assert!(s.mail_save_account(None, wrong).is_err());
     // IMAP only with TLS from the start: STARTTLS is refused before connecting.
     let mut starttls = input.clone();
     starttls.servers.imap_port = 10143;
     starttls.servers.imap_security = MailSecurity::StartTls;
-    assert!(matches!(s.mail_check_account(starttls.clone()), Err(GhulError::InvalidInput { .. })));
+    assert!(matches!(s.mail_test_account(None, starttls.clone()), Err(GhulError::InvalidInput { .. })));
     assert!(s.mail_save_account(None, starttls).is_err());
-    assert_eq!(s.mail_check_account(input.clone()).unwrap(), MailCheck::Ok);
     // B21: the field "Login name" usually stays empty; the check then logs in with the address,
     // like the saved account does (before, it logged in with an empty name and always failed).
     let mut no_login = input.clone();
     no_login.username = String::new();
     no_login.email = format!(" {email} ");
-    assert_eq!(s.mail_check_account(no_login).unwrap(), MailCheck::Ok);
+    assert!(s.mail_test_account(None, no_login).unwrap().ok);
+    // A fingerprint confirmed for another server does not count: asked again for the real one.
+    let mut other_pin = input.clone();
+    other_pin.imap_cert = Some("00".repeat(32));
+    let t = s.mail_test_account(None, other_pin).unwrap();
+    assert_eq!(t.confirm, Some(MailCheck::ImapCertificate { fingerprint: fp.clone() }));
+    // A check does not outlive locking.
+    assert!(s.mail_test_account(None, input.clone()).unwrap().ok);
+    s.lock();
+    s.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
+    assert!(s.mail_save_account(None, input.clone()).is_err(), "checked before locking");
+    // Checked successfully, then changed: the change is not checked, so not saved.
+    assert!(s.mail_test_account(None, input.clone()).unwrap().ok);
+    let mut changed = input.clone();
+    changed.servers.imap_port = 10994;
+    assert!(s.mail_save_account(None, changed).is_err());
 
     let id = s.mail_save_account(None, input.clone()).unwrap();
     assert_eq!(s.mail_accounts().unwrap()[0].email, email);
@@ -1466,14 +1602,33 @@ fn mail_with_imap_and_smtp() {
     s.lock();
     assert!(s.mail_accounts().is_err());
     s.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
-    let mut edit = input;
+    // Only the name changes (the form carries neither password nor certificates): no new check
+    // needed, and the confirmed certificates stay.
+    let mut edit = input.clone();
     edit.password = String::new();
     edit.name = "Umbenannt".into();
-    s.mail_save_account(Some(id.clone()), edit).unwrap();
+    edit.imap_cert = None;
+    edit.smtp_cert = None;
+    s.mail_save_account(Some(id.clone()), edit.clone()).unwrap();
     assert_eq!(s.mail_accounts().unwrap()[0].name, "Umbenannt");
     assert_eq!(s.mail_folders(id.clone()).unwrap()[0].role, "inbox");
+    // Another server needs a check; with the stored password it works and can be saved.
+    let mut moved = edit;
+    moved.servers.smtp_port = 1;
+    assert!(s.mail_save_account(Some(id.clone()), moved.clone()).is_err());
+    moved.servers.smtp_port = 10587;
+    moved.servers.imap_host = "localhost".into();
+    let t = s.mail_test_account(Some(id.clone()), moved.clone()).unwrap();
+    assert!(t.confirm.is_some() || t.ok, "{:?}", t.steps);
     s.mail_remove_account(id).unwrap();
     assert!(s.mail_accounts().unwrap().is_empty());
+}
+
+/// `input` after "check connection" passed for it (an account is saved only then).
+fn mail_checked(s: &GhulSuite, input: super::mail::MailAccountInput) -> super::mail::MailAccountInput {
+    let t = s.mail_test_account(None, input.clone()).unwrap();
+    assert!(t.ok, "{:?}", t.steps);
+    input
 }
 
 /// A plain local web server for a folder (stands in for Apache/Nginx in share tests).
@@ -1507,110 +1662,215 @@ fn web_server(dir: &std::path::Path) -> WebServer {
     WebServer { child, port }
 }
 
-/// Fetches a share link like the recipient's browser and decrypts it.
-fn open_link(link: &str, password: Option<&str>) -> Option<(crate::share::ShareMeta, Vec<u8>)> {
+/// The server module installed over the server's own login into `web_dir` (as the app does)
+/// and served from `web_abs` (the same folder on this machine) by `php -S`. `None` without PHP.
+fn serve_module(
+    s: &GhulSuite,
+    server_id: &str,
+    web_dir: &str,
+    web_abs: &std::path::Path,
+) -> Option<(std::process::Child, String)> {
+    std::process::Command::new("php").arg("-v").output().ok()?;
+    std::fs::create_dir_all(web_abs).unwrap();
+    let (child, port) = crate::net::tests::spawn_php_ci(web_abs)?;
+    let url = format!("http://127.0.0.1:{port}/ghulsuite.php");
+    let done = s.server_module_install(server_id.into(), web_dir.into(), url.clone()).unwrap();
+    assert_eq!(done.url.as_deref(), Some(url.as_str()), "{:?}", done.checks);
+    assert!(done.checks.iter().all(|c| c.ok), "{:?}", done.checks);
+    Some((child, url))
+}
+
+fn http_get(url: &str) -> crate::net::http::Response {
+    let u = crate::net::http::Url::parse(url).unwrap();
+    crate::net::block_on(crate::net::http::request("GET", &u, &[], b"", None), crate::net::TIMEOUT).unwrap()
+}
+
+/// Opens a share link like the recipient's browser: the package from the module, then every
+/// block of every file with the ticket, decrypted with the file keys from the package. `None`
+/// when the module refuses the link.
+/// What a recipient gets: the share's description and its files (path, content).
+type Opened = (crate::share::ShareMeta, Vec<(String, Vec<u8>)>);
+
+fn open_link(link: &str, password: Option<&str>) -> Option<Opened> {
     let (page, fragment) = link.split_once('#').unwrap();
     let (id, key) = fragment.split_once('.').unwrap();
     let key: [u8; 32] = crate::share::b64url_decode(key).unwrap().try_into().unwrap();
-    let data_url = if page.ends_with(".php") { format!("{page}?s={id}") } else { format!("{page}s/{id}") };
-    let url = crate::net::http::Url::parse(&data_url).unwrap();
-    let r = crate::net::block_on(crate::net::http::request("GET", &url, &[], b"", None), crate::net::TIMEOUT).unwrap();
+    let r = http_get(&format!("{page}?s={id}"));
     if r.status != 200 {
         return None;
     }
-    crate::share::open(&r.body, &key, password).ok()
+    let v: serde_json::Value = serde_json::from_slice(&r.body).unwrap();
+    let b64 = v["package"].as_str().unwrap().replace('+', "-").replace('/', "_").replace('=', "");
+    let package = crate::share::b64url_decode(&b64).unwrap();
+    let (meta, content) = crate::share::open(&package, &key, password).ok()?;
+    assert_eq!(meta.mime, super::shares::ENVELOPE_TYPE);
+    let env: super::shares::Envelope = serde_json::from_slice(&content).unwrap();
+    let ticket = v["ticket"].as_str().unwrap();
+    let mut files = Vec::new();
+    for (i, f) in env.files.iter().enumerate() {
+        let fk = super::drive::FileKey::of(&crate::share::b64url_decode(&f.key).unwrap()).unwrap();
+        let mut data = Vec::new();
+        // The block names come sealed in the package; the server's list must say the same.
+        let served: Vec<&str> = v["blocks"][i].as_array().unwrap().iter().map(|b| b.as_str().unwrap()).collect();
+        assert_eq!(served, f.blocks.iter().map(String::as_str).collect::<Vec<_>>());
+        for (n, block) in f.blocks.iter().enumerate() {
+            let r = http_get(&format!("{page}?s={id}&t={ticket}&f={i}&b={n}"));
+            if r.status != 200 {
+                return None;
+            }
+            data.extend_from_slice(&fk.open_block(block, &r.body).unwrap());
+        }
+        assert_eq!(data.len() as u64, f.size);
+        files.push((f.name.clone(), data));
+    }
+    Some((meta, files))
 }
 
-fn share_opts(server: &str) -> super::shares::ShareOptions {
-    super::shares::ShareOptions { server_id: server.into(), password: None, expires_days: 7, max_downloads: 0 }
+fn share_opts() -> super::shares::ShareOptions {
+    super::shares::ShareOptions { password: None, expires_days: 0, max_downloads: 0 }
 }
 
-/// Shares through a share folder: set up with self-check, single file, several files as ZIP,
-/// password, end. Works the same for SFTP and FTPS.
-fn share_via_folder(s: &GhulSuite, server_id: &str, dir: &str, web_root: &std::path::Path, rel: &str) {
-    let web = web_server(web_root);
-    let public = format!("http://127.0.0.1:{}/{rel}", web.port);
-    // A wrong address fails the https check and stores nothing.
-    let bad = s.share_setup(server_id.into(), dir.into(), format!("http://127.0.0.1:{}/falsch", web.port)).unwrap();
-    assert!(!bad.iter().find(|c| c.step == "https").unwrap().ok, "{bad:?}");
-    // A misspelt address gives the fixed text the app translates, not the system's message.
-    let typo = s.share_setup(server_id.into(), dir.into(), "https://nirgendwo.invalid/teilen".into()).unwrap();
-    assert_eq!(typo.iter().find(|c| c.step == "https").unwrap().detail, "server address not found", "{typo:?}");
-    // What depends on the address is "not checked", never a result nobody saw.
-    let page = bad.iter().find(|c| c.step == "page").unwrap();
-    assert!(!page.ok && page.detail == crate::app::shares::SHARE_CHECK_SKIPPED, "{bad:?}");
-    let listing = bad.iter().find(|c| c.step == "listing").unwrap();
-    assert!(!listing.ok && listing.detail == crate::app::shares::SHARE_CHECK_SKIPPED, "{bad:?}");
-    // The app shows the grey "not checked" for exactly this text (Sharing.kt).
-    assert_eq!(crate::app::shares::SHARE_CHECK_SKIPPED, "skipped");
-    assert!(s.list_servers().unwrap().iter().find(|x| x.id == server_id).unwrap().share_url.is_empty());
-    let checks = s.share_setup(server_id.into(), dir.into(), public.clone()).unwrap();
-    assert!(checks.iter().all(|c| c.ok), "{checks:?}");
-    assert_eq!(s.list_servers().unwrap().iter().find(|x| x.id == server_id).unwrap().share_url, public);
-
+/// Share links through the server module, the whole way: without the module nothing is
+/// written; installed over SFTP it is checked; a file, a folder (every file on its own), a
+/// password, a one-time link, an expired link, content that is not in GhulDrive, a withdrawn
+/// link; a shared file that is deleted keeps its link working (the content as shared); nothing
+/// is copied.
+fn share_through_module(
+    s: &GhulSuite,
+    server_id: &str,
+    web_dir: &str,
+    web_abs: &std::path::Path,
+    base_abs: &std::path::Path,
+) {
     let a = upload(s, None, "Steuer 2025.pdf", b"%PDF-1.7 Steuer");
     let folder = s.drive_create_folder(None, "Urlaub".into()).unwrap();
-    upload(s, Some(folder.clone()), "Strand.jpg", &[9u8; 300_000]);
+    let beach: Vec<u8> = (0..9_000_000u32).map(|i| (i % 249) as u8).collect();
+    upload(s, Some(folder.clone()), "Strand.jpg", &beach);
     upload(s, Some(folder.clone()), "Möwe.jpg", &[8u8; 1000]);
 
-    let one = s.share_drive(vec![a.clone()], None, share_opts(server_id)).unwrap();
-    assert!(one.url.starts_with(&format!("{public}/#")), "{}", one.url);
-    assert_eq!(one.downloads, -1);
-    let (meta, data) = open_link(&one.url, None).unwrap();
-    assert_eq!((meta.name.as_str(), data.as_slice()), ("Steuer 2025.pdf", &b"%PDF-1.7 Steuer"[..]));
+    // Without the module: refused, nothing on the server.
+    assert_eq!(s.share_missing_module().unwrap(), Some(server_id.to_owned()));
+    let r = s.share_drive(vec![a.clone()], None, share_opts());
+    assert!(
+        matches!(&r, Err(GhulError::InvalidInput { msg }) if msg == "share links need the server module"),
+        "{:?}",
+        r.err()
+    );
+    assert!(matches!(s.share_bytes("x.txt".into(), b"x".to_vec(), share_opts()), Err(GhulError::InvalidInput { .. })));
+    assert!(!base_abs.join("shares").exists() || std::fs::read_dir(base_abs.join("shares")).unwrap().count() == 0);
 
-    let mut opts = share_opts(server_id);
+    // A wrong address: the module is written but not remembered; the right one works.
+    let wrong =
+        s.server_module_install(server_id.into(), web_dir.into(), "http://127.0.0.1:1/ghulsuite.php".into()).unwrap();
+    assert_eq!(wrong.url, None);
+    assert!(!wrong.checks.iter().find(|c| c.step == "https").unwrap().ok);
+    assert_eq!(wrong.checks.iter().find(|c| c.step == "folder").unwrap().detail, super::shares::SHARE_CHECK_SKIPPED);
+    assert!(s.server_module_install(server_id.into(), web_dir.into(), "ftp://example.org/x".into()).is_err());
+    let Some((mut php, url)) = serve_module(s, server_id, web_dir, web_abs) else { return };
+    assert_eq!(s.share_missing_module().unwrap(), None);
+    let info = s.list_servers().unwrap().into_iter().chain(std::iter::empty()).find(|x| x.id == server_id);
+    if let Some(info) = info {
+        assert_eq!((info.module_url.as_str(), info.module_version), (url.as_str(), crate::net::module::MODULE_VERSION));
+    }
+    let blocks_before = files_under(&base_abs.join("drive/blocks")).len();
+
+    // One file: its name, its content.
+    let one = s.share_drive(vec![a.clone()], None, share_opts()).unwrap();
+    assert!(one.url.starts_with(&format!("{url}#")), "{}", one.url);
+    assert_eq!(one.name, "Steuer 2025.pdf");
+    let (meta, files) = open_link(&one.url, None).unwrap();
+    assert_eq!(meta.name, "Steuer 2025.pdf");
+    assert_eq!(files, vec![("Steuer 2025.pdf".to_owned(), b"%PDF-1.7 Steuer".to_vec())]);
+    // Nothing was copied: no new blocks, and the server never saw a key or a name in clear.
+    assert_eq!(files_under(&base_abs.join("drive/blocks")).len(), blocks_before);
+    for f in files_under(&base_abs.join("shares")) {
+        let raw = std::fs::read(&f).unwrap();
+        assert!(!raw.windows(6).any(|w| w == b"Steuer"), "{f:?} names a file");
+    }
+
+    // A folder and a file with a password: every file on its own, with its path.
+    let mut opts = share_opts();
     opts.password = Some("Geheim 42".into());
-    let several = s.share_drive(vec![folder, a], Some("Urlaub und Steuer".into()), opts).unwrap();
+    let several = s.share_drive(vec![folder.clone(), a.clone()], Some("Urlaub und Steuer".into()), opts).unwrap();
+    assert!(several.password);
     assert!(open_link(&several.url, Some("falsch")).is_none());
-    let (meta, zipped) = open_link(&several.url, Some("Geheim 42")).unwrap();
-    assert_eq!(meta.name, "Urlaub und Steuer.zip");
-    let mut z = zip::ZipArchive::new(std::io::Cursor::new(zipped)).unwrap();
-    let mut names: Vec<String> = (0..z.len()).map(|i| z.by_index(i).unwrap().name().unwrap().into_owned()).collect();
-    names.sort();
+    let (meta, files) = open_link(&several.url, Some("Geheim 42")).unwrap();
+    assert_eq!(meta.name, "Urlaub und Steuer");
+    let names: Vec<&str> = files.iter().map(|(n, _)| n.as_str()).collect();
     assert_eq!(names, vec!["Steuer 2025.pdf", "Urlaub/Möwe.jpg", "Urlaub/Strand.jpg"]);
+    assert_eq!(files[2].1, beach, "a large file over several blocks");
 
-    // Download limits need the server module.
-    let mut limited = share_opts(server_id);
-    limited.max_downloads = 1;
-    assert!(matches!(
-        s.share_drive(vec![one.id.clone()], None, limited),
-        Err(GhulError::InvalidInput { .. }) | Err(GhulError::NotFound)
-    ));
-
-    assert_eq!(s.share_list().unwrap().len(), 2);
-    // With sync: the server copy still lists both shares when one is withdrawn.
-    let syncing = s.sync_status().unwrap().server_id.is_some();
-    if syncing {
-        s.sync_now().unwrap();
+    // One-time link: the second opening is refused; once its download had time to finish,
+    // the share is gone from the list and from the server.
+    let mut once = share_opts();
+    once.max_downloads = 1;
+    let link = s.share_drive(vec![a.clone()], None, once).unwrap();
+    assert!(open_link(&link.url, None).is_some());
+    assert!(open_link(&link.url, None).is_none());
+    let listed = s.share_list().unwrap();
+    assert_eq!(listed.iter().find(|x| x.id == link.id).unwrap().downloads, 1, "still finishing");
+    let state = base_abs.join(format!("shares/{}.state", link.id));
+    std::fs::write(&state, r#"{"count":1,"tickets":{}}"#).unwrap();
+    assert!(!s.share_list().unwrap().iter().any(|x| x.id == link.id));
+    assert!(!base_abs.join(format!("shares/{}.json", link.id)).exists());
+    for leftover in ["state", "lock", "state.tmp"] {
+        assert!(!base_abs.join(format!("shares/{}.{leftover}", link.id)).exists(), "{leftover} left behind");
     }
+
+    // Expired (the module checks the time itself): refused, and cleaned up by the app.
+    let mut week = share_opts();
+    week.expires_days = 7;
+    let soon = s.share_drive(vec![a.clone()], None, week).unwrap();
+    assert!(soon.expires > 0);
+    assert!(open_link(&soon.url, None).is_some());
+    let described = base_abs.join(format!("shares/{}.json", soon.id));
+    let mut d: serde_json::Value = serde_json::from_slice(&std::fs::read(&described).unwrap()).unwrap();
+    d["exp"] = serde_json::json!(1000);
+    std::fs::write(&described, serde_json::to_vec(&d).unwrap()).unwrap();
+    assert!(open_link(&soon.url, None).is_none());
+    assert!(!s.share_list().unwrap().iter().any(|x| x.id == soon.id), "an expired link leaves the list");
+    assert!(!described.exists(), "and the server");
+
+    // Text that is not in GhulDrive (e.g. a login): blocks of its own, gone with the share.
+    let blocks_now = files_under(&base_abs.join("drive/blocks")).len();
+    let text = s.share_bytes("Zugang WLAN.txt".into(), b"SSID: Gast\nPasswort: x".to_vec(), share_opts()).unwrap();
+    assert_eq!(files_under(&base_abs.join("drive/blocks")).len(), blocks_now + 1);
+    assert_eq!(open_link(&text.url, None).unwrap().1[0].1, b"SSID: Gast\nPasswort: x");
+    assert_eq!(s.share_list().unwrap().iter().find(|x| x.id == text.id).unwrap().downloads, 1);
+    s.share_delete(text.id.clone()).unwrap();
+    assert!(open_link(&text.url, None).is_none());
+    assert_eq!(files_under(&base_abs.join("drive/blocks")).len(), blocks_now);
+
+    // Which links contain an item (the app asks before deleting it).
+    assert_eq!(s.share_links_of(vec![folder.clone()]).unwrap().len(), 1);
+    let whole: Vec<String> = s.share_links_of(vec![a.clone()]).unwrap().into_iter().map(|x| x.id).collect();
+    assert!(whole.contains(&one.id) && whole.contains(&several.id));
+
+    // Deleted for good, the shared file still opens through its link (its blocks are kept);
+    // ending the link removes them.
+    s.drive_delete(a.clone()).unwrap();
+    s.drive_empty_trash(0).unwrap();
+    assert_eq!(open_link(&one.url, None).unwrap().1[0].1, b"%PDF-1.7 Steuer");
     s.share_delete(one.id.clone()).unwrap();
+    s.share_delete(several.id.clone()).unwrap();
     assert!(open_link(&one.url, None).is_none());
-    assert_eq!(s.share_list().unwrap().len(), 1);
-    if syncing {
-        // A withdrawn share must not come back through the older server copy.
-        s.sync_now().unwrap();
-        s.sync_now().unwrap();
-        assert_eq!(s.share_list().unwrap().len(), 1);
-    }
-    // The share folder holds no plain names.
-    let stored: Vec<String> = std::fs::read_dir(web_root.join(rel).join("s"))
-        .unwrap()
-        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
-        .collect();
-    assert!(stored.iter().all(|n| !n.contains("Steuer") && !n.contains("Urlaub")), "{stored:?}");
-    // B14: once its server is gone, withdrawing a link says that its package stays.
-    let left = s.share_list().unwrap();
-    if let Some(last) = left.first() {
-        if s.remove_server(server_id.into()).is_ok() {
-            assert!(matches!(s.share_delete(last.id.clone()), Err(GhulError::ShareNotDeleted)));
-            assert!(s.share_list().unwrap().is_empty());
-        }
-    }
+    assert!(s.share_list().unwrap().iter().all(|x| x.id != one.id && x.id != several.id));
+    assert_eq!(
+        files_under(&base_abs.join("drive/blocks")).len(),
+        blocks_before - 1,
+        "the deleted file's block went with its last link"
+    );
+
+    // The module can be taken off the server again.
+    s.server_module_remove(server_id.into()).unwrap();
+    assert!(!web_abs.join("ghulsuite.php").exists());
+    assert_eq!(s.share_missing_module().unwrap(), Some(server_id.to_owned()));
+    let _ = php.kill();
+    let _ = php.wait();
 }
 
 #[test]
-fn share_over_sftp_with_web_folder() {
+fn share_links_over_sftp_through_the_module() {
     use super::servers::{ServerInput, ServerKind};
     let Some((host, port, user, root, authkeys, hostkey)) = crate::net::tests::sftp_env() else { return };
     let d = Dirs::new("share-sftp");
@@ -1629,20 +1889,60 @@ fn share_over_sftp_with_web_folder() {
         user,
         password: None,
         base: format!("{root}/suite-{run}"),
-        url: String::new(),
-        upload: None,
     };
     let id = saved(s.save_server(input, Some(hostkey)).unwrap());
     s.drive_setup(id.clone()).unwrap();
     s.set_sync_server(Some(id.clone())).unwrap();
-    // The suite folder itself cannot become the share folder.
-    assert!(s.share_setup(id.clone(), format!("{root}/suite-{run}"), "http://127.0.0.1:1/x".into()).is_err());
-    let web_rel = format!("web-{run}/teilen");
-    share_via_folder(&s, &id, &format!("{root}/{web_rel}"), std::path::Path::new(&root), &web_rel);
+    let root = std::path::PathBuf::from(&root);
+    let web = format!("{}/web-{run}/public_html", root.display());
+    share_through_module(&s, &id, &web, std::path::Path::new(&web), &root.join(format!("suite-{run}")));
+    let _ = std::fs::remove_dir_all(root.join(format!("web-{run}")));
+    let _ = std::fs::remove_dir_all(root.join(format!("suite-{run}")));
+
+    // The GhulSuite folder next to the website: fine. Later the web server hands out the
+    // whole folder above it (another site root): updating the module finds the GhulSuite
+    // folder reachable, takes the module down and forgets it, so the app offers no links.
+    let site = root.join(format!("site-{run}"));
+    let www = site.join("www");
+    let info = s.list_servers().unwrap().into_iter().find(|x| x.id == id).unwrap();
+    let open = ServerInput {
+        kind: ServerKind::Sftp,
+        name: "Offen".into(),
+        host: info.host.clone(),
+        port,
+        user: info.user.clone(),
+        password: None,
+        base: format!("{}/ghulsuite", site.display()),
+    };
+    let open_id = saved(s.save_server(open, Some(info.host_key.clone())).unwrap());
+    std::fs::create_dir_all(site.join("ghulsuite/drive")).unwrap();
+    std::fs::create_dir_all(&www).unwrap();
+    let module_of = |s: &GhulSuite| s.list_servers().unwrap().into_iter().find(|x| x.id == open_id).unwrap().module_url;
+    if let Some((mut php, port)) = crate::net::tests::spawn_php_ci(&www) {
+        let url = format!("http://127.0.0.1:{port}/ghulsuite.php");
+        let done = s.server_module_install(open_id.clone(), www.display().to_string(), url.clone()).unwrap();
+        let _ = php.kill();
+        let _ = php.wait();
+        assert_eq!(done.url.as_deref(), Some(url.as_str()), "{:?}", done.checks);
+        assert!(done.checks.iter().any(|c| c.step == "private" && c.ok), "{:?}", done.checks);
+        assert_eq!(module_of(&s), url);
+    }
+    if let Some((mut php, port)) = crate::net::tests::spawn_php_ci(&site) {
+        let url = format!("http://127.0.0.1:{port}/www/ghulsuite.php");
+        let done = s.server_module_install(open_id.clone(), www.display().to_string(), url).unwrap();
+        let _ = php.kill();
+        let _ = php.wait();
+        assert_eq!(done.url, None, "{:?}", done.checks);
+        let private = done.checks.iter().find(|c| c.step == "private").expect("checked");
+        assert!(!private.ok && private.detail.contains("/ghulsuite/shares/check-"), "{private:?}");
+        assert!(!www.join("ghulsuite.php").exists(), "the module is taken down again");
+        assert!(module_of(&s).is_empty(), "and no longer offered");
+    }
+    let _ = std::fs::remove_dir_all(&site);
 }
 
 #[test]
-fn ftps_storage_drive_and_sharing() {
+fn ftps_storage_drive_and_share_links() {
     use super::servers::{ServerInput, ServerKind};
     let Some(cfg) = crate::net::tests::ftps_test_config("app") else { return };
     let home = std::env::var("GHUL_TEST_DIR").map(|d| std::path::PathBuf::from(d).join("ftp-home")).unwrap();
@@ -1657,8 +1957,6 @@ fn ftps_storage_drive_and_sharing() {
         user: cfg.user.clone(),
         password: Some(cfg.password.to_string()),
         base: cfg.base.clone(),
-        url: String::new(),
-        upload: None,
     };
     // Self-signed certificate: confirm its fingerprint first.
     let fp = match s.save_server(input.clone(), None).unwrap() {
@@ -1674,71 +1972,10 @@ fn ftps_storage_drive_and_sharing() {
     let big: Vec<u8> = (0..5_000_000u32).map(|i| (i % 251) as u8).collect();
     let f = upload(&s, None, "Video.mp4", &big);
     assert_eq!(download(&s, &f), big);
-    // Folder browsing for the share setup.
+    // Folder browsing for the module's folder; the module over FTPS, then share links.
     assert!(s.server_browse(id.clone(), String::new()).unwrap().contains(&cfg.base));
     let rel = format!("{}-web", cfg.base);
-    share_via_folder(&s, &id, &rel, &home, &rel);
-}
-
-#[test]
-fn php_module_storage_drive_and_limited_shares() {
-    use super::servers::{ServerInput, ServerKind};
-    let Some(php) = crate::net::tests::php_server() else { return };
-    let d = Dirs::new("php");
-    let s = d.suite();
-    let kf = generate_keyfile();
-    s.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
-    let mut input = ServerInput {
-        kind: ServerKind::Php,
-        name: String::new(),
-        host: String::new(),
-        port: 0,
-        user: String::new(),
-        password: Some(crate::kdf::hex(&[3u8; 32])),
-        base: String::new(),
-        url: php.url.clone(),
-        upload: None,
-    };
-    // A wrong key is refused before anything is stored.
-    assert!(matches!(s.save_server(input.clone(), None), Err(GhulError::ServerAuthFailed)));
-    input.password = Some(crate::kdf::hex(&php.key));
-    let fetch_input = input.clone();
-    let id = saved(s.save_server(input, None).unwrap());
-    let info = s.list_servers().unwrap().into_iter().find(|x| x.id == id).unwrap();
-    assert_eq!((info.kind, info.share_url.as_str()), (ServerKind::Php, php.url.as_str()));
-    s.set_sync_server(Some(id.clone())).unwrap();
-    s.sync_now().unwrap();
-    // U7: a new device fetches the suite through the module (not only over SFTP).
-    let new_device = Dirs::new("php-fetch");
-    let b = new_device.suite();
-    assert_eq!(b.fetch_from_server(fetch_input, None, None).unwrap(), "");
-    b.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
-    assert_eq!(b.list_vaults().unwrap().len(), s.list_vaults().unwrap().len());
-    s.drive_setup(id.clone()).unwrap();
-    let f = upload(&s, None, "Vertrag.pdf", b"%PDF Vertrag");
-    assert_eq!(download(&s, &f), b"%PDF Vertrag");
-    // B19: after locking and unlocking, Drive connects again by itself (from the stored server).
-    s.lock();
-    s.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
-    assert_eq!(download(&s, &f), b"%PDF Vertrag");
-
-    // One-time link: the second download fails, and the share disappears from the list.
-    let mut once = share_opts(&id);
-    once.max_downloads = 1;
-    let link = s.share_drive(vec![f.clone()], None, once).unwrap();
-    assert!(link.url.starts_with(&format!("{}#", php.url)));
-    assert_eq!(s.share_list().unwrap()[0].downloads, 0);
-    assert_eq!(open_link(&link.url, None).unwrap().1, b"%PDF Vertrag");
-    assert!(open_link(&link.url, None).is_none());
-    assert!(s.share_list().unwrap().is_empty());
-    // Text share (e.g. a login), counted downloads, ended by the owner.
-    let mut three = share_opts(&id);
-    three.max_downloads = 3;
-    let text = s.share_bytes("Zugang WLAN.txt".into(), b"SSID: Gast\nPasswort: x".to_vec(), three).unwrap();
-    open_link(&text.url, None).unwrap();
-    assert_eq!(s.share_list().unwrap()[0].downloads, 1);
-    s.share_delete(text.id).unwrap();
-    assert!(open_link(&text.url, None).is_none());
+    share_through_module(&s, &id, &rel, &home.join(&rel), &home.join(&cfg.base));
 }
 
 #[test]
@@ -1758,8 +1995,6 @@ fn drive_storage_follows_sync_or_uses_its_own_server() {
         user: cfg.user.clone(),
         password: Some(cfg.password.to_string()),
         base: base.to_owned(),
-        url: String::new(),
-        upload: None,
     };
     // Folder picker before anything is stored: confirm the certificate, then list.
     let fp = match s.server_browse_input(input(""), None, String::new()).unwrap() {
@@ -1803,84 +2038,7 @@ fn drive_storage_follows_sync_or_uses_its_own_server() {
 }
 
 #[test]
-fn php_module_is_installed_over_ftps_and_takes_large_files_in_parts() {
-    use super::drive::DriveMode;
-    use super::servers::{ServerInput, ServerKind};
-    let Some(cfg) = crate::net::tests::ftps_test_config("php-install") else { return };
-    if std::process::Command::new("php").arg("-v").output().is_err() {
-        return;
-    }
-    // The module goes to the FTP server's folder; a copy of it is served from a folder this test
-    // owns (the web server must be able to create the module's data folder next to it).
-    let home = std::env::var("GHUL_TEST_DIR").map(|d| std::path::PathBuf::from(d).join("ftp-home")).unwrap();
-    let web = home.join(&cfg.base).join("www");
-    let served = std::env::temp_dir().join(format!("ghul-php-served-{}", cfg.base));
-    std::fs::create_dir_all(&served).unwrap();
-    let (mut php, port) = crate::net::tests::spawn_php(&served).unwrap();
-    let d = Dirs::new("php-install");
-    let s = d.suite();
-    s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
-    let ftps = ServerInput {
-        kind: ServerKind::Ftps,
-        name: String::new(),
-        host: cfg.host.clone(),
-        port: cfg.port,
-        user: cfg.user.clone(),
-        password: Some(cfg.password.to_string()),
-        base: String::new(),
-        url: String::new(),
-        upload: None,
-    };
-    let dir = format!("{}/www", cfg.base);
-    let url = format!("http://127.0.0.1:{port}/ghulsuite.php");
-    // Unknown certificate: nothing is uploaded until it is confirmed.
-    let first = s.php_module_install(ftps.clone(), None, dir.clone(), url.clone()).unwrap();
-    assert_eq!(first.confirm, cfg.cert);
-    assert!(!web.join("ghulsuite.php").exists());
-    let done = s.php_module_install(ftps, cfg.cert.clone(), dir, url.clone()).unwrap();
-    // Uploaded over FTPS; the address does not answer yet (the copy is not served yet).
-    let uploaded = std::fs::read_to_string(web.join("ghulsuite.php")).unwrap();
-    assert!(uploaded.contains(&done.key));
-    assert_eq!((done.url.as_deref(), done.tried.clone()), (None, vec![url.clone()]));
-    std::fs::write(served.join("ghulsuite.php"), &uploaded).unwrap();
-    let info = super::servers::php_module_probe(url.clone(), done.key.clone()).unwrap();
-    assert_eq!(info.version, info.current);
-    assert!(info.limit > 0);
-
-    // Drive on the module, keeping the FTPS login for later updates.
-    let id = saved(
-        s.drive_save_server(
-            ServerInput {
-                kind: ServerKind::Php,
-                name: String::new(),
-                host: String::new(),
-                port: 0,
-                user: String::new(),
-                password: Some(done.key.clone()),
-                base: String::new(),
-                url,
-                upload: done.upload.clone(),
-            },
-            None,
-        )
-        .unwrap(),
-    );
-    assert_eq!(s.drive_storage().unwrap().mode, DriveMode::Own);
-    // Drive blocks are larger than one part: they go up in parts.
-    let big: Vec<u8> = (0..9_000_000u32).map(|i| (i % 253) as u8).collect();
-    let f = upload(&s, None, "Film.mp4", &big);
-    assert_eq!(download(&s, &f), big);
-    // Updating the module uploads it again over the kept FTPS login, with the same key and data folder.
-    assert_eq!(s.php_module_update(id).unwrap(), info.current);
-    assert_eq!(std::fs::read_to_string(web.join("ghulsuite.php")).unwrap(), uploaded);
-    assert_eq!(download(&s, &f), big);
-    let _ = php.kill();
-    let _ = php.wait();
-    let _ = std::fs::remove_dir_all(&served);
-}
-
-#[test]
-fn module_addresses_are_guessed_from_the_ftps_folder() {
+fn module_addresses_are_guessed_from_the_folder() {
     let urls = super::servers::module_urls;
     assert_eq!(urls("ftp.example.org", "public_html/ghul")[0], "https://example.org/ghul/ghulsuite.php");
     assert_eq!(urls("w0123.webhost.test", "example.org/tools")[0], "https://example.org/tools/ghulsuite.php");
@@ -1889,15 +2047,55 @@ fn module_addresses_are_guessed_from_the_ftps_folder() {
         urls("ftp.example.org", ""),
         vec!["https://example.org/ghulsuite.php", "https://www.example.org/ghulsuite.php"]
     );
+    assert_eq!(urls("sftp.example.org", "public_html")[0], "https://example.org/ghulsuite.php");
 }
 
-#[test]
-fn php_module_file_is_generated_and_uploaded() {
-    let m = super::servers::php_module_create();
-    assert_eq!(m.file_name, "ghulsuite.php");
-    assert_eq!(m.key.len(), 64);
-    assert!(m.content.contains(&m.key) && !m.content.contains("__GHUL_"));
-    assert_ne!(m.key, super::servers::php_module_create().key);
+/// A suite with GhulDrive on the SFTP test server and the server module installed there,
+/// served by `php -S`. `None` without the test server or PHP.
+struct ModuleSuite {
+    _dirs: Dirs,
+    s: Arc<GhulSuite>,
+    php: std::process::Child,
+    places: Vec<std::path::PathBuf>,
+}
+
+impl Drop for ModuleSuite {
+    fn drop(&mut self) {
+        let _ = self.php.kill();
+        let _ = self.php.wait();
+        for p in &self.places {
+            let _ = std::fs::remove_dir_all(p);
+        }
+    }
+}
+
+fn module_suite(name: &str) -> Option<ModuleSuite> {
+    use super::servers::{ServerInput, ServerKind};
+    let (host, port, user, root, authkeys, hostkey) = crate::net::tests::sftp_env()?;
+    std::process::Command::new("php").arg("-v").output().ok()?;
+    let d = Dirs::new(name);
+    let s = d.suite();
+    s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    let mut keys = std::fs::read_to_string(&authkeys).unwrap_or_default();
+    keys.push_str(&s.ssh_public_key().unwrap());
+    keys.push('\n');
+    std::fs::write(&authkeys, keys).unwrap();
+    let run = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+    let base = format!("{root}/{name}-suite-{run}");
+    let input = ServerInput {
+        kind: ServerKind::Sftp,
+        name: String::new(),
+        host,
+        port,
+        user,
+        password: None,
+        base: base.clone(),
+    };
+    let id = saved(s.save_server(input, Some(hostkey)).unwrap());
+    s.drive_setup(id.clone()).unwrap();
+    let web = format!("{root}/{name}-web-{run}");
+    let (php, _) = serve_module(&s, &id, &web, std::path::Path::new(&web))?;
+    Some(ModuleSuite { _dirs: d, s, php, places: vec![base.into(), web.into()] })
 }
 
 /// The way the app puts Drive files into a mail: decrypted file as attachment and a share link in
@@ -1905,35 +2103,14 @@ fn php_module_file_is_generated_and_uploaded() {
 #[test]
 fn drive_file_and_share_link_into_mail() {
     use super::mail::{MailAccountInput, MailSecurity, MailServers, OutgoingAttachment, OutgoingMail};
-    use super::servers::{ServerInput, ServerKind};
-    let (Ok(host), Ok(fp)) = (std::env::var("GHUL_TEST_MAIL"), std::env::var("GHUL_TEST_MAIL_TLSFP")) else { return };
-    let Some(php) = crate::net::tests::php_server() else { return };
-    let d = Dirs::new("drive-mail");
-    let s = d.suite();
-    s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
 
-    // GhulDrive on the PHP module; no mail account exists yet, Drive and sharing work without it.
-    let srv = saved(
-        s.save_server(
-            ServerInput {
-                kind: ServerKind::Php,
-                name: String::new(),
-                host: String::new(),
-                port: 0,
-                user: String::new(),
-                password: Some(crate::kdf::hex(&php.key)),
-                base: String::new(),
-                url: php.url.clone(),
-                upload: None,
-            },
-            None,
-        )
-        .unwrap(),
-    );
-    s.drive_setup(srv.clone()).unwrap();
+    let (Ok(host), Ok(fp)) = (std::env::var("GHUL_TEST_MAIL"), std::env::var("GHUL_TEST_MAIL_TLSFP")) else { return };
+    // GhulDrive with share links; no mail account exists yet, Drive and sharing work without it.
+    let Some(m) = module_suite("drive-mail") else { return };
+    let s = &m.s;
     let content: Vec<u8> = (0..300_000u32).map(|i| (i * 7 % 251) as u8).collect();
-    let file = upload(&s, None, "Rechnung März.pdf", &content);
-    let link = s.share_drive(vec![file.clone()], None, share_opts(&srv)).unwrap();
+    let file = upload(s, None, "Rechnung März.pdf", &content);
+    let link = s.share_drive(vec![file.clone()], None, share_opts()).unwrap();
     assert!(s.mail_accounts().unwrap().is_empty());
 
     // Now the mail module gets an account.
@@ -1942,28 +2119,31 @@ fn drive_file_and_share_link_into_mail() {
     let account = s
         .mail_save_account(
             None,
-            MailAccountInput {
-                name: "Test".into(),
-                display_name: "Drive".into(),
-                email: email.clone(),
-                username: email.clone(),
-                password: "test-pw-123".into(),
-                servers: MailServers {
-                    imap_host: host.clone(),
-                    imap_port: 10993,
-                    imap_security: MailSecurity::Tls,
-                    smtp_host: host,
-                    smtp_port: 10587,
-                    smtp_security: MailSecurity::StartTls,
+            mail_checked(
+                s,
+                MailAccountInput {
+                    name: "Test".into(),
+                    display_name: "Drive".into(),
+                    email: email.clone(),
+                    username: email.clone(),
+                    password: "test-pw-123".into(),
+                    servers: MailServers {
+                        imap_host: host.clone(),
+                        imap_port: 10993,
+                        imap_security: MailSecurity::Tls,
+                        smtp_host: host,
+                        smtp_port: 10587,
+                        smtp_security: MailSecurity::StartTls,
+                    },
+                    imap_cert: Some(fp.clone()),
+                    smtp_cert: Some(fp),
+                    signature: String::new(),
                 },
-                imap_cert: Some(fp.clone()),
-                smtp_cert: Some(fp),
-                signature: String::new(),
-            },
+            ),
         )
         .unwrap();
     // Same as the app: decrypt the Drive file on the device, attach it, put the link in the text.
-    let attachment = download(&s, &file);
+    let attachment = download(s, &file);
     assert_eq!(attachment, content);
     s.mail_send(OutgoingMail {
         account_id: account.clone(),
@@ -1991,9 +2171,9 @@ fn drive_file_and_share_link_into_mail() {
     // The link survives the mail transport unchanged (no line breaks, no encoding) and opens.
     let received = got.text.lines().find(|l| l.starts_with("http")).unwrap().trim().to_string();
     assert_eq!(received, link.url);
-    let (meta, data) = open_link(&received, None).unwrap();
+    let (meta, files) = open_link(&received, None).unwrap();
     assert_eq!(meta.name, "Rechnung März.pdf");
-    assert_eq!(data, content);
+    assert_eq!(files[0].1, content);
 }
 
 /// Fixture for the browser test of the PHP server module (tools/test-share-php.js): runs the
@@ -2003,60 +2183,35 @@ fn drive_file_and_share_link_into_mail() {
 ///   GHUL_PHP_FIXTURE=/tmp/x cargo test -p ghul-core php_browser_fixture & node tools/test-share-php.js /tmp/x
 #[test]
 fn php_browser_fixture() {
-    use super::servers::{ServerInput, ServerKind};
     let Ok(dir) = std::env::var("GHUL_PHP_FIXTURE") else { return };
     let dir = std::path::Path::new(&dir);
     std::fs::create_dir_all(dir).unwrap();
-    let Some(php) = crate::net::tests::php_server() else { panic!("php missing") };
-    let d = Dirs::new("php-browser");
-    let s = d.suite();
-    s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
-    let id = saved(
-        s.save_server(
-            ServerInput {
-                kind: ServerKind::Php,
-                name: String::new(),
-                host: String::new(),
-                port: 0,
-                user: String::new(),
-                password: Some(crate::kdf::hex(&php.key)),
-                base: String::new(),
-                url: php.url.clone(),
-                upload: None,
-            },
-            None,
-        )
-        .unwrap(),
-    );
-    let content: Vec<u8> = (0..2_500_000u32).map(|i| (i % 251) as u8).collect();
+    let m = module_suite("php-browser").expect("SFTP test server and php needed");
+    let s = &m.s;
+    let content: Vec<u8> = (0..9_500_000u32).map(|i| (i % 251) as u8).collect();
     std::fs::write(dir.join("expected.bin"), &content).unwrap();
+    let report = upload(s, None, "Bericht.pdf", &content);
+    let folder = s.drive_create_folder(None, "Fotos".into()).unwrap();
+    upload(s, Some(folder.clone()), "a.txt", b"Datei A");
+    upload(s, Some(folder.clone()), "b.txt", b"Datei B");
     let mut links = String::new();
-    let mut opts = share_opts(&id);
-    links += &format!("plain {}\n", s.share_bytes("Bericht.pdf".into(), content.clone(), opts.clone()).unwrap().url);
+    let mut opts = share_opts();
+    links += &format!("plain {}\n", s.share_drive(vec![report.clone()], None, opts.clone()).unwrap().url);
+    links += &format!("folder {}\n", s.share_drive(vec![folder], None, opts.clone()).unwrap().url);
     opts.password = Some("Grüße 123".into());
-    links += &format!("pw {}\n", s.share_bytes("Geheim.pdf".into(), content.clone(), opts.clone()).unwrap().url);
+    links += &format!("pw {}\n", s.share_drive(vec![report.clone()], None, opts.clone()).unwrap().url);
     opts.password = None;
     opts.max_downloads = 1;
     links += &format!("once {}\n", s.share_bytes("Einmal.txt".into(), b"WLAN: geheim".to_vec(), opts).unwrap().url);
-    // Already expired: the module must refuse it although the package exists.
-    let fs = crate::net::phpfs::PhpFs::new(&crate::net::phpfs::PhpConfig {
-        url: php.url.clone(),
-        key: zeroize::Zeroizing::new(php.key),
-        base: String::new(),
-        cert: None,
-    })
-    .unwrap();
-    let meta = crate::share::ShareMeta {
-        name: "alt.txt".into(),
-        mime: "text/plain".into(),
-        size: 3,
-        created: 0,
-        expires: 1000,
-    };
-    let sealed = crate::share::seal_with(&meta, b"alt", None, 10_000, crate::share::CHUNK_SIZE);
-    let sid = crate::kdf::hex(&rand_core::RngCore::next_u64(&mut rand_core::OsRng).to_be_bytes()).repeat(2);
-    fs.share_put(&sid, &sealed.data, 1000, 0).unwrap();
-    links += &format!("expired {}#{sid}.{}\n", php.url, crate::share::b64url(sealed.link_key.as_ref()));
+    // Expired: the module refuses it although the description is still there.
+    let mut week = share_opts();
+    week.expires_days = 7;
+    let soon = s.share_drive(vec![report], None, week).unwrap();
+    let described = m.places[0].join(format!("shares/{}.json", soon.id));
+    let mut d: serde_json::Value = serde_json::from_slice(&std::fs::read(&described).unwrap()).unwrap();
+    d["exp"] = serde_json::json!(1000);
+    std::fs::write(&described, serde_json::to_vec(&d).unwrap()).unwrap();
+    links += &format!("expired {}\n", soon.url);
     std::fs::write(dir.join("links.txt"), links).unwrap();
 
     let done = dir.join("done");
@@ -2067,10 +2222,10 @@ fn php_browser_fixture() {
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
     assert!(done.exists(), "browser test did not finish");
-    // The one-time link is gone from the list after its download; the others were counted.
+    // The downloads were counted.
     let list = s.share_list().unwrap();
-    assert!(!list.iter().any(|x| x.name == "Einmal.txt"), "{list:?}");
-    assert!(list.iter().find(|x| x.name == "Bericht.pdf").unwrap().downloads >= 1);
+    assert!(list.iter().find(|x| x.name == "Bericht.pdf" && !x.password).unwrap().downloads >= 1, "{list:?}");
+    assert_eq!(list.iter().find(|x| x.name == "Einmal.txt").map(|x| x.downloads), Some(1));
 }
 
 /// OpenPGP between two GhulSuite users with separate suites, over real IMAP/SMTP servers:
@@ -2092,24 +2247,27 @@ fn pgp_mail_between_two_users() {
         let id = s
             .mail_save_account(
                 None,
-                MailAccountInput {
-                    name: who.into(),
-                    display_name: name.into(),
-                    email: email.clone(),
-                    username: email.clone(),
-                    password: "test-pw-123".into(),
-                    servers: MailServers {
-                        imap_host: host.clone(),
-                        imap_port: 10993,
-                        imap_security: MailSecurity::Tls,
-                        smtp_host: host.clone(),
-                        smtp_port: 10587,
-                        smtp_security: MailSecurity::StartTls,
+                mail_checked(
+                    &s,
+                    MailAccountInput {
+                        name: who.into(),
+                        display_name: name.into(),
+                        email: email.clone(),
+                        username: email.clone(),
+                        password: "test-pw-123".into(),
+                        servers: MailServers {
+                            imap_host: host.clone(),
+                            imap_port: 10993,
+                            imap_security: MailSecurity::Tls,
+                            smtp_host: host.clone(),
+                            smtp_port: 10587,
+                            smtp_security: MailSecurity::StartTls,
+                        },
+                        imap_cert: Some(fp.clone()),
+                        smtp_cert: Some(fp.clone()),
+                        signature: format!("Viele Grüße\n{name}"),
                     },
-                    imap_cert: Some(fp.clone()),
-                    smtp_cert: Some(fp.clone()),
-                    signature: format!("Viele Grüße\n{name}"),
-                },
+                ),
             )
             .unwrap();
         (d, s, id, email)

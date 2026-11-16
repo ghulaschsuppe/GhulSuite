@@ -4,6 +4,7 @@
     <string name="notif_channel">Entsperrt</string>
     <string name="notif_title">GhulSuite ist entsperrt</string>
     <string name="notif_text">Tippen zum Öffnen. Schütteln oder „Sperren“ sperrt sofort.</string>
+    <string name="notif_text_no_shake">Tippen zum Öffnen. „Sperren“ sperrt sofort.</string>
     <string name="notif_lock">Sperren</string>
     <string name="bio_title">GhulSuite entsperren</string>
     <string name="bio_subtitle">Mit Fingerabdruck bestätigen</string>
@@ -28,6 +29,9 @@
     <string name="cal_snooze">In 5 Min. erneut</string>
     <string name="cal_done">Erledigt</string>
     <string name="share_as_mail">Per E-Mail senden (GhulMail)</string>
-    <string name="notif_archive">%1$s Bleibt entsperrt, bis es fertig ist. Schütteln oder „Sperren“ sperrt sofort.</string>
+    <string name="share_to_drive">In GhulDrive speichern</string>
     <string name="update_failed">Das Update konnte nicht installiert werden. Lade es stattdessen von der Release-Seite.</string>
+    <string name="notif_job_channel">Aufgaben im Hintergrund</string>
+    <string name="notif_job_cancel">Abbrechen</string>
+    <string name="notif_job_of">%1$d von %2$d fertig</string>
 </resources>

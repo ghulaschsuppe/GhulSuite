@@ -30,10 +30,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import de.danerd.ghulsuite.model.DriveModeUi
 import de.danerd.ghulsuite.model.DriveStorageUi
-import de.danerd.ghulsuite.model.ServerKindUi
 import de.danerd.ghulsuite.model.VaultKindUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
+import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
@@ -182,8 +182,9 @@ private fun AreaSheet(state: AppState, kind: VaultKindUi, onDismiss: () -> Unit)
         var error by remember { mutableStateOf<String?>(null) }
         var storage by remember { mutableStateOf<DriveStorageUi?>(null) }
         var own by remember { mutableStateOf(false) }
+        val defaultName = stringResource(when (kind) { VaultKindUi.PASS -> Res.string.area_pass_default; VaultKindUi.TOTP -> Res.string.area_auth_default; else -> Res.string.area_cal_default })
         LaunchedEffect(kind) {
-            name = getString(when (kind) { VaultKindUi.PASS -> Res.string.area_pass_default; VaultKindUi.TOTP -> Res.string.area_auth_default; else -> Res.string.area_cal_default })
+            name = defaultName
             if (kind == VaultKindUi.DRIVE) storage = catching { state.backend.net.driveStorage() }.getOrNull()
         }
         val syncOn = storage?.syncAvailable == true
@@ -219,6 +220,8 @@ private fun AreaSheet(state: AppState, kind: VaultKindUi, onDismiss: () -> Unit)
                     state.message(done)
                     state.changed()
                     onDismiss()
+                    // F105: GhulMail without an account is of no use; its account sheet follows at once.
+                    if (kind == VaultKindUi.MAIL) state.mailAccountSheet = MailSheet(null)
                 }
             }, enabled = !state.busy && (kind !in NAMED_AREAS || name.isNotBlank()), modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(Res.string.area_set_up))
@@ -237,6 +240,13 @@ private fun AreaSheet(state: AppState, kind: VaultKindUi, onDismiss: () -> Unit)
                 end = { Icon(if (shown) Icons.Filled.VisibilityOff else Icons.Filled.Visibility, null, tint = g.muted) }) {
                 showModule(state, kind, !shown)
                 onDismiss()
+                // F105: showing GhulMail again without an account opens the account sheet as well.
+                if (kind == VaultKindUi.MAIL && !shown) {
+                    // The app's scope: this sheet is already closed.
+                    state.scope.launch {
+                        catching { state.backend.net.mailAccounts() }.onSuccess { if (it.isEmpty()) state.mailAccountSheet = MailSheet(null) }
+                    }
+                }
             }
             SheetRow(stringResource(Res.string.area_remove), stringResource(Res.string.area_remove_everywhere), divider = true,
                 end = { Icon(Icons.Filled.Delete, null, tint = dangerColor()) }) { removing = true }
@@ -293,13 +303,6 @@ fun DriveStorageRow(state: AppState) {
     }
     ListRow(stringResource(Res.string.drive_storage), sub,
         leading = { IconTile(if (s.mode == DriveModeUi.SYNC) Icons.Filled.Sync else Icons.Filled.Dns, paletteColor(if (s.mode == DriveModeUi.SYNC) 2 else 1)) }) { sheet = true }
-    if (server?.kind == ServerKindUi.PHP) {
-        // The module can be brought up to date through the FTPS login kept with it.
-        val updated = stringResource(Res.string.php_module_updated)
-        TextButton(onClick = {
-            state.run(onError = { error = it }, block = { net.phpModuleUpdate(server.id) }) { v -> state.message(updated.replace("%1\$s", v.toString())) }
-        }) { Text(stringResource(Res.string.php_module_update)) }
-    }
     ErrorText(error)
     if (confirmSync) {
         AlertDialog(

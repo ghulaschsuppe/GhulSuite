@@ -102,13 +102,13 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
     // Grid: tiles per row; list: one card per row on phones, more side by side in wide windows.
     val perRow = if (grid) cols else (cols / 2).coerceAtLeast(1)
     // Long press selects accounts (as in every list); swipe right edits, swipe left deletes.
-    // Deleting asks nothing: "Undo" in the snackbar brings the accounts back.
+    // F103: deleting asks first; "Undo" in the snackbar brings the accounts back as well.
     val selected = rememberListSelection()
     val keyOf = { c: TotpCodeUi -> c.vaultId + "/" + c.id }
     val selecting = selected.active
     val toggle = { c: TotpCodeUi -> selected.toggle(keyOf(c)) }
     val deletedMsg = stringResource(Res.string.msg_deleted_n)
-    fun delete(list: List<TotpCodeUi>) {
+    fun delete(list: List<TotpCodeUi>) = state.askDelete(list.map { it.issuer.ifBlank { it.account } }) {
         selected.clear()
         state.undoable(list.map { hiddenKey("auth", it.vaultId, it.id) }, deletedMsg.replace("%1\$s", list.size.toString())) {
             for (c in list) state.backend.deleteTotp(c.vaultId, c.id)

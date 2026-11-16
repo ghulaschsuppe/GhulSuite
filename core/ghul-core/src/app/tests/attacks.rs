@@ -105,21 +105,19 @@ fn marked_suite(name: &str) -> (Dirs, Arc<GhulSuite>, std::path::PathBuf, Vec<u8
     .unwrap();
     let folder = s.drive_create_folder(None, "KlauOrdnerX9".into()).unwrap();
     upload(&s, Some(folder), "KlauDateiNameX9.txt", b"KlauDateiInhaltX9 und mehr");
-    s.mail_save_account(
-        None,
-        MailAccountInput {
-            name: "Privat".into(),
-            display_name: "Max".into(),
-            email: "max@example.org".into(),
-            username: "max@example.org".into(),
-            password: "KlauMailPassX9".into(),
-            servers: super::super::mail::mail_suggest_servers("max@example.org".into()),
-            imap_cert: None,
-            smtp_cert: None,
-            signature: String::new(),
-        },
-    )
-    .unwrap();
+    let account = MailAccountInput {
+        name: "Privat".into(),
+        display_name: "Max".into(),
+        email: "max@example.org".into(),
+        username: "max@example.org".into(),
+        password: "KlauMailPassX9".into(),
+        servers: super::super::mail::mail_suggest_servers("max@example.org".into()),
+        imap_cert: None,
+        smtp_cert: None,
+        signature: String::new(),
+    };
+    s.mail_trust_for_test(None, &account);
+    s.mail_save_account(None, account).unwrap();
     s.sync_folder(&LocalFs::new(server.join("sync"))).unwrap();
     (d, s, server, kf)
 }
@@ -583,7 +581,7 @@ fn a_server_cannot_plant_files_through_names() {
 #[test]
 fn secrets_never_show_up_in_debug_output_or_errors() {
     use super::super::mail::{MailAccountInput, MailPollConfig, MailSecurity};
-    use super::super::servers::{ServerInput, ServerKind, UploadAccess};
+    use super::super::servers::{ServerInput, ServerKind};
     const M: &str = "DebugGeheimX7";
     let servers = super::super::mail::mail_suggest_servers("a@example.org".into());
     let shown = [
@@ -624,16 +622,6 @@ fn secrets_never_show_up_in_debug_output_or_errors() {
                 user: "u".into(),
                 password: Some(M.into()),
                 base: "b".into(),
-                url: String::new(),
-                upload: Some(UploadAccess {
-                    host: "h".into(),
-                    port: 21,
-                    user: "u".into(),
-                    password: M.into(),
-                    cert: String::new(),
-                    dir: "d".into(),
-                    data_dir: String::new()
-                })
             }
         ),
         format!("{:?}", options(M, Some(M.as_bytes().to_vec()), &[(VaultKind::Pass, "P")])),
@@ -641,12 +629,7 @@ fn secrets_never_show_up_in_debug_output_or_errors() {
         format!("{:?}", TotpInput { secret_base32: M.into(), ..totp_input() }),
         format!(
             "{:?}",
-            super::super::shares::ShareOptions {
-                server_id: "s".into(),
-                password: Some(M.into()),
-                expires_days: 0,
-                max_downloads: 0
-            }
+            super::super::shares::ShareOptions { password: Some(M.into()), expires_days: 0, max_downloads: 0 }
         ),
     ];
     for s in &shown {

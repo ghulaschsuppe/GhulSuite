@@ -304,8 +304,10 @@ fun CalEventScreen(state: AppState, id: String, day: String, padding: PaddingVal
             mode == CalDeleteModeUi.ONE -> msgOne
             else -> msgSeries
         }
-        state.pop()
-        state.undoable(listOf(key), msg) { cal.deleteEvent(id, day, mode) }
+        state.askDelete(listOf(e.title)) {
+            state.pop()
+            state.undoable(listOf(key), msg) { cal.deleteEvent(id, day, mode) }
+        }
     }
     if (menu) {
         val close = { menu = false }

@@ -88,6 +88,10 @@ name: GhulPass in depth
 - takeScreenshot: 08-05-all-selected
 - tapOn: "Delete"
 - extendedWaitUntil:
+    visible: { id: "ask-confirm" }
+    timeout: 10000
+- tapOn: { id: "ask-confirm" }
+- extendedWaitUntil:
     visible: "[2-9]\\d* deleted"
     timeout: 10000
 - assertNotVisible: "Codeberg"

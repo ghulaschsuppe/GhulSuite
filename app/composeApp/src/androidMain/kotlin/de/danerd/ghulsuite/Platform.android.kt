@@ -3,11 +3,17 @@ package de.danerd.ghulsuite.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import java.text.DateFormat
 import java.util.Date
 
 @Composable
 actual fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit) = BackHandler(enabled, onBack)
+
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+actual fun androidx.compose.ui.Modifier.testTagsAsIds(): androidx.compose.ui.Modifier =
+    this.then(androidx.compose.ui.Modifier.semantics { testTagsAsResourceId = true })
 
 actual fun nowSeconds(): Long = System.currentTimeMillis() / 1000
 

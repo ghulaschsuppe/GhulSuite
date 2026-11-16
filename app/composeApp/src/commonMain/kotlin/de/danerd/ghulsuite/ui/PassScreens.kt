@@ -145,7 +145,7 @@ fun PassListScreen(state: AppState, padding: PaddingValues) {
         }
     }
     val deletedMsg = stringResource(Res.string.msg_deleted_n)
-    fun delete(list: List<EntrySummaryUi>) {
+    fun delete(list: List<EntrySummaryUi>) = state.askDelete(list.map { it.title }) {
         selected.clear()
         state.undoable(list.map { hiddenKey("pass", it.vaultId, it.id) }, deletedMsg.replace("%1\$s", list.size.toString())) {
             for (x in list) state.backend.deleteEntry(x.vaultId, x.id)
@@ -323,10 +323,10 @@ fun EntryDetailScreen(state: AppState, vaultId: String, id: String, padding: Pad
     var entry by remember { mutableStateOf<EntryUi?>(null) }
     val deletedMsg = stringResource(Res.string.msg_deleted_n)
     var sharing by remember { mutableStateOf(false) }
-    var shareServers by remember { mutableStateOf<List<de.danerd.ghulsuite.model.ServerUi>>(emptyList()) }
+    // One-time links come from GhulDrive's server like every share link.
+    val shareNeed = rememberShareNeed(state)
     LaunchedEffect(id, state.liveRevision()) {
         entry = catching { state.backend.getEntry(vaultId, id) }.getOrElse { state.message(describe(it)); state.pop(); null }
-        shareServers = catching { state.backend.net.servers() }.getOrDefault(emptyList()).filter { it.canShare }
     }
     val e = entry ?: return
     val def = entryType(e.type)
@@ -444,11 +444,20 @@ fun EntryDetailScreen(state: AppState, vaultId: String, id: String, padding: Pad
         val copySuffix = stringResource(Res.string.pass_copy_suffix)
         GhulSheet({ menu = false }, e.value("title").ifBlank { stringResource(Res.string.untitled) }) {
             SheetList {
-                if (shareServers.isNotEmpty()) {
-                    SheetRow(stringResource(Res.string.pass_share_short), stringResource(Res.string.pass_share_hint),
-                        leading = { IconTile(Icons.Filled.Link, paletteColor(2)) }) { menu = false; sharing = true }
+                SheetRow(
+                    stringResource(Res.string.pass_share_short),
+                    if (shareNeed == ShareNeed.Ready) stringResource(Res.string.pass_share_hint) else shareLinkSub(shareNeed),
+                    leading = { IconTile(Icons.Filled.Link, paletteColor(2)) },
+                    enabled = shareNeed != null && shareNeed != ShareNeed.Drive,
+                ) {
+                    menu = false
+                    when (val need = shareNeed) {
+                        ShareNeed.Ready -> sharing = true
+                        is ShareNeed.Module -> state.push(Screen.ModuleInstall(need.serverId))
+                        else -> {}
+                    }
                 }
-                SheetRow(stringResource(Res.string.pass_duplicate), leading = { IconTile(Icons.Filled.ContentCopy, paletteColor(1)) }, divider = shareServers.isNotEmpty()) {
+                SheetRow(stringResource(Res.string.pass_duplicate), leading = { IconTile(Icons.Filled.ContentCopy, paletteColor(1)) }, divider = true) {
                     menu = false
                     state.run(block = { state.backend.duplicateEntry(vaultId, id, copySuffix) }) { nid ->
                         state.changed(); state.pop(); state.push(Screen.EntryDetail(vaultId, nid))
@@ -461,8 +470,10 @@ fun EntryDetailScreen(state: AppState, vaultId: String, id: String, padding: Pad
                 }
                 SheetRow(stringResource(Res.string.a_delete), leading = { IconTile(Icons.Filled.Delete, g.danger) }, color = g.danger, divider = true) {
                     menu = false
-                    state.pop()
-                    state.undoable(listOf(hiddenKey("pass", vaultId, id)), deletedMsg.replace("%1\$s", "1")) { state.backend.deleteEntry(vaultId, id) }
+                    state.askDelete(listOf(e.value("title"))) {
+                        state.pop()
+                        state.undoable(listOf(hiddenKey("pass", vaultId, id)), deletedMsg.replace("%1\$s", "1")) { state.backend.deleteEntry(vaultId, id) }
+                    }
                 }
             }
         }
@@ -511,7 +522,7 @@ fun EntryDetailScreen(state: AppState, vaultId: String, id: String, padding: Pad
         }
     }
     if (sharing) {
-        PassShareDialog(state, shareServers, e.value("title").ifBlank { "GhulPass" }, shareText) { sharing = false }
+        PassShareDialog(state, e.value("title").ifBlank { "GhulPass" }, shareText) { sharing = false }
     }
 }
 
@@ -556,9 +567,11 @@ private fun AttachmentsSheet(state: AppState, vaultId: String, id: String, list:
     val save = rememberSaveFile { ok -> if (ok) state.message(savedMsg) }
     val add = rememberOpenFile { f -> state.run(block = { state.backend.addAttachment(vaultId, id, f.name, f.bytes) }) { onChanged(); state.changed() } }
     val removedMsg = stringResource(Res.string.msg_deleted)
-    // Removing a file asks nothing: it disappears, and "Undo" in the snackbar brings it back.
-    fun remove(name: String) = state.undoable(listOf(hiddenKey("att", "$vaultId/$id", name)), "$removedMsg: $name", after = onChanged) {
-        state.backend.removeAttachment(vaultId, id, name)
+    // F103: removing a file asks first; "Undo" in the snackbar brings it back as well.
+    fun remove(name: String) = state.askDelete(listOf(name)) {
+        state.undoable(listOf(hiddenKey("att", "$vaultId/$id", name)), "$removedMsg: $name", after = onChanged) {
+            state.backend.removeAttachment(vaultId, id, name)
+        }
     }
     val files = list.filter { hiddenKey("att", "$vaultId/$id", it.name) !in state.hidden }
     GhulSheet(onDismiss, stringResource(Res.string.pass_attachments)) {
@@ -672,7 +685,7 @@ fun SecurityScreen(state: AppState, padding: PaddingValues) {
 
 /** One-time link for an entry: encrypted on the device, the key stays in the link. */
 @Composable
-private fun PassShareDialog(state: AppState, servers: List<de.danerd.ghulsuite.model.ServerUi>, title: String, text: String, onDismiss: () -> Unit) {
+private fun PassShareDialog(state: AppState, title: String, text: String, onDismiss: () -> Unit) {
     var result by remember { mutableStateOf<de.danerd.ghulsuite.model.ShareInfoUi?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     val mail = rememberMailAvailable(state)
@@ -682,7 +695,7 @@ private fun PassShareDialog(state: AppState, servers: List<de.danerd.ghulsuite.m
         title = { Text(stringResource(Res.string.pass_share)) },
         text = {
             Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                ShareOptionsForm(state, servers, onError = { error = it }, defaultDays = 1, defaultMax = 1) { options ->
+                ShareOptionsForm(state, onError = { error = it }, defaultDays = 1, defaultMax = 1) { options ->
                     val name = title.filter { it.isLetterOrDigit() || it in " -_." }.trim().ifEmpty { "GhulPass" } + ".txt"
                     state.run(onError = { error = it }, block = { state.backend.net.shareBytes(name, text.encodeToByteArray(), options) }) {
                         result = it

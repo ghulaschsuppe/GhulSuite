@@ -40,7 +40,7 @@ PAGES = {
     "privacy_app": ("datenschutz-app.html", "en/privacy-app.html", "datenschutz-app|privacy-app", "privacy_app_title"),
 }
 IMAGES = [
-    "phone-pass-dark", "phone-mail", "phone-mail-archive", "phone-unlock", "phone-pass", "phone-auth-grid",
+    "phone-pass-dark", "phone-mail", "phone-unlock", "phone-pass", "phone-auth-grid",
     "phone-drive-grid", "phone-mail-read", "phone-cal-week", "phone-setup", "windows-dark",
 ]
 IMPORTS = ["Proton Pass", "Bitwarden", "KeePass", "KeePassXC", "1Password", "LastPass", "Proton Authenticator",

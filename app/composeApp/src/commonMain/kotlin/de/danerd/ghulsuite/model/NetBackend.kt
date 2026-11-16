@@ -13,6 +13,11 @@ interface NetBackend {
      * user to compare (nothing is stored); with the confirmed fingerprint it returns the server id.
      */
     suspend fun saveServer(input: ServerInputUi, confirmed: String?): ServerSavedUi
+    /**
+     * "Check connection": logs in and checks that the folder can be written, stores nothing. On
+     * first contact it returns the fingerprint to confirm (then check again with it).
+     */
+    suspend fun serverTest(input: ServerInputUi, confirmed: String?): ServerTestUi
     suspend fun removeServer(id: String)
     /**
      * Logs in once with the password in [input] and adds the suite's SSH key to the server's
@@ -22,26 +27,28 @@ interface NetBackend {
     suspend fun installSshKey(input: ServerInputUi, hostKey: String?): String
     /** The suite's SSH public key for `authorized_keys` on the server. */
     suspend fun sshPublicKey(): String
-    /** Folders below the login folder of a server (for choosing the share folder). */
+    /** Folders below the login folder of a server (for choosing the website folder of the module). */
     suspend fun serverBrowse(serverId: String, path: String): List<String>
-    /** A new PHP server module with its own access key. */
-    fun phpModuleCreate(): PhpModuleUi
-    /** Uploads a server module through another stored server (e.g. FTPS of the same hosting). */
-    suspend fun phpModuleUpload(viaServerId: String, dir: String, module: PhpModuleUi)
     /** Folders of a server as entered, before it is stored (folder picker). SFTP and FTPS. */
     suspend fun serverBrowseInput(input: ServerInputUi, confirmed: String?, path: String): ServerFoldersUi =
         ServerFoldersUi.Folders(emptyList())
-    /** Uploads a new PHP module over FTPS into [dir] and looks for its address ([url] empty: guess). */
-    suspend fun phpModuleInstall(ftps: ServerInputUi, confirmed: String?, dir: String, url: String): PhpInstalledUi =
+    /**
+     * Installs the GhulSuite server module (share links) over the server's own login into the
+     * website folder [dir] and checks it at [url] (empty: the usual addresses are tried). Only
+     * when every check passes is it kept for the server.
+     */
+    suspend fun serverModuleInstall(serverId: String, dir: String, url: String): ModuleInstalledUi =
         throw UnsupportedOperationException()
-    /** Checks that a PHP module answers at [url] with access key [key]. */
-    suspend fun phpModuleProbe(url: String, key: String): PhpModuleInfoUi = throw UnsupportedOperationException()
-    /** Uploads a new version of a module through the FTPS login kept with it; returns its version. */
-    suspend fun phpModuleUpdate(serverId: String): Int = 0
+    /** Writes the module of this app's version over an older one; returns its version. */
+    suspend fun serverModuleUpdate(serverId: String): Int = 0
+    /** Removes the module from the server: share links of this server stop working. */
+    suspend fun serverModuleRemove(serverId: String) {}
 
-    // --- Sharing (needs a server that can share; independent of the modules)
-    /** Sets up the share folder of an SFTP/FTPS server and checks it; stores it only if all checks pass. */
-    suspend fun shareSetup(serverId: String, dir: String, publicUrl: String): List<ShareCheckUi>
+    // --- Sharing (always from GhulDrive's server, through its server module)
+    /** Null: links can be made. "": GhulDrive is not set up. Else the server that needs the module. */
+    suspend fun shareMissingModule(): String? = ""
+    /** The share links that contain one of these GhulDrive items (asked before deleting them). */
+    suspend fun shareLinksOf(ids: List<String>): List<ShareInfoUi> = emptyList()
     suspend fun shareDrive(ids: List<String>, name: String?, options: ShareOptionsUi): ShareInfoUi
     suspend fun shareBytes(name: String, data: ByteArray, options: ShareOptionsUi): ShareInfoUi
     suspend fun shareList(): List<ShareInfoUi>
@@ -94,9 +101,18 @@ interface NetBackend {
     suspend fun driveRestoreVersion(id: String, index: Int) {}
     suspend fun driveUsage(): DriveUsageUi? = null
     suspend fun driveZip(ids: List<String>, password: String): ByteArray = ByteArray(0)
-    /** Photo backup (Android): uploads photos added after [sinceSeconds] into "Fotos"; returns the newest time done. */
+    /** The device is on a network without data limit (Wi-Fi); desktops always. */
+    fun unmeteredNetwork(): Boolean = true
+    /**
+     * Photo backup (Android): uploads photos added after [sinceSeconds] into "Fotos", oldest first;
+     * [onFile] gets each one done with the time it was added and the time of the next photo
+     * waiting (null: none), also when the run is being cancelled. Returns the mark to continue
+     * from next time (see photoMark).
+     */
     val photoBackupAvailable: Boolean get() = false
-    suspend fun photoBackup(sinceSeconds: Long, wifiOnly: Boolean, onFile: (String) -> Unit): Long = sinceSeconds
+    suspend fun photoBackup(
+        sinceSeconds: Long, wifiOnly: Boolean, onFile: (name: String, addedSeconds: Long, nextSeconds: Long?) -> Unit,
+    ): Long = sinceSeconds
     /** Encrypts and uploads [source] block by block; [onProgress] gets the bytes done. */
     suspend fun driveUpload(folder: String?, source: ByteSource, onProgress: (Long) -> Unit): String
     /** Downloads and decrypts a file into [sink]. */
@@ -104,7 +120,12 @@ interface NetBackend {
 
     // --- GhulMail
     fun mailSuggest(email: String): MailServersUi
-    suspend fun mailCheck(input: MailAccountInputUi): MailCheckUi
+    /**
+     * "Check connection" of an account as entered (stores nothing): both servers step by step.
+     * Editing ([id] set) with an empty password checks with the stored one.
+     */
+    suspend fun mailTest(id: String?, input: MailAccountInputUi): MailTestUi
+    /** Stores an account; only settings that just passed [mailTest] (or a change of names and signature only). */
     suspend fun mailSaveAccount(id: String?, input: MailAccountInputUi): String
     suspend fun mailAccounts(): List<MailAccountUi>
     /** Unread messages in the inbox of [accountId] (asks the server). */
@@ -135,41 +156,24 @@ interface NetBackend {
     suspend fun mailSetLabel(accountId: String, folder: String, uid: Long, label: String, on: Boolean) {}
     suspend fun mailRaw(accountId: String, folder: String, uid: Long, decrypted: Boolean): ByteArray = ByteArray(0)
 
-    // --- Encrypted mail archive (KONZEPT 9.3.1)
-    /**
-     * An archive run is going on ([progress] shown in the notification) or over (null). While it
-     * runs, the auto-lock waits for its end (Android, Windows); an immediate lock stops it at once.
-     */
-    fun archiveRunning(progress: String?) {}
-    /** The device is on a network without data limit (Wi-Fi); desktops always. */
-    fun unmeteredNetwork(): Boolean = true
-    suspend fun archiveStatus(): MailArchiveStatusUi? = null
-    suspend fun archiveSetOptions(options: MailArchiveOptionsUi) {}
-    /** [serverId] null: the server this device synchronises with. */
-    suspend fun archiveSetup(serverId: String?): ArchivePlaceUi = ArchivePlaceUi.FOREIGN
-    suspend fun archiveSaveServer(input: ServerInputUi, confirmed: String?): ServerSavedUi = ServerSavedUi.Saved("")
-    suspend fun archiveMove(serverId: String?): ArchivePlaceUi = ArchivePlaceUi.FOREIGN
-    suspend fun archiveRun(accountId: String, max: Int): MailArchiveRunUi = MailArchiveRunUi()
-    suspend fun archiveConfirmRemoval(accountId: String): MailArchiveRunUi = MailArchiveRunUi()
-    suspend fun archiveList(accountId: String, folder: String, offset: Int, limit: Int, withProvider: Boolean): ArchivePageUi = ArchivePageUi(0, emptyList())
-    suspend fun archiveSearch(accountId: String, query: String): List<ArchivedMailUi> = emptyList()
-    suspend fun archiveGet(accountId: String, folder: String, key: String): MailMessageUi = throw UnsupportedOperationException()
-    suspend fun archiveRaw(accountId: String, folder: String, key: String): ByteArray = ByteArray(0)
-    suspend fun archiveAttachment(accountId: String, folder: String, key: String, index: Int): ByteArray = ByteArray(0)
-    suspend fun archiveSetSeen(accountId: String, items: List<ArchiveRefUi>, seen: Boolean) {}
-    suspend fun archiveSetFlagged(accountId: String, items: List<ArchiveRefUi>, flagged: Boolean) {}
-    suspend fun archiveDelete(accountId: String, items: List<ArchiveRefUi>) {}
-    suspend fun archiveRestore(accountId: String, items: List<ArchiveRefUi>) {}
-    suspend fun archiveTrash(accountId: String): List<ArchivedMailUi> = emptyList()
-    suspend fun archiveEmptyTrash(accountId: String, days: Int): Int = 0
-    suspend fun archiveCount(accountId: String): MailArchiveCountUi = MailArchiveCountUi(0, 0, 0)
-    suspend fun archiveSetFullCopy(on: Boolean, deviceName: String) {}
-    /** Loads up to [max] mails onto this device; returns how many are still missing. */
-    suspend fun archiveDownload(max: Int, deviceName: String): Int = 0
-    suspend fun archiveClearCopy() {}
-    suspend fun archiveOnlyCopy(): Boolean = false
-    /** Uploads what this device keeps and the archive lacks; returns how many mails it added. */
-    suspend fun archiveRestoreFromCopy(): Int = 0
+    // --- Mail archive in GhulDrive: each mail as an .eml file in Mail-Archiv/<account>/<year>
+    /** The archive's folder in GhulDrive: the account's (with [accountId]) or the top one; null while nothing was archived. */
+    suspend fun archiveFolder(accountId: String?): String? = null
+    /** UIDs of the mails at the provider to archive: received before the day [beforeDays] (days since 1970-01-01), or all. Oldest first. */
+    suspend fun archiveUids(accountId: String, folder: String, beforeDays: Long?): List<Long> = emptyList()
+    /** Copies one mail into GhulDrive; it stays at the provider unchanged. Fails with NOT_CONFIGURED without GhulDrive. */
+    suspend fun archiveToDrive(accountId: String, folder: String, uid: Long): MailArchivedUi = MailArchivedUi.SKIPPED
+    /** Automatic archiving: mails older than this many days are copied (0 = off); the same on every device. */
+    suspend fun archiveAutoDays(): Int = 0
+    suspend fun archiveSetAutoDays(days: Int) {}
+    /** For an automatic run: the mails of a folder old enough that came after the last automatic run. */
+    suspend fun archiveAutoUids(accountId: String, folder: String): MailArchiveBatchUi = MailArchiveBatchUi(0, emptyList())
+    /** After an automatic run: everything up to [lastUid] is in the archive. */
+    suspend fun archiveAutoDone(accountId: String, folder: String, validity: Long, lastUid: Long) {}
+    /** Reads an archived mail (.eml), decrypted with the account's key if it is encrypted. */
+    suspend fun mailParseEml(accountId: String, data: ByteArray): MailMessageUi = throw UnsupportedOperationException()
+    /** Attachment [index] of an archived mail (.eml). */
+    suspend fun mailEmlAttachment(accountId: String, data: ByteArray, index: Int): ByteArray = ByteArray(0)
     suspend fun mailHeaders(accountId: String, folder: String, uid: Long): String = ""
     suspend fun mailSaveDraft(draft: MailDraftUi): String = draft.id
     suspend fun mailDrafts(): List<MailDraftUi> = emptyList()
@@ -236,9 +240,16 @@ interface ByteSource {
 interface ByteSink {
     fun write(data: ByteArray)
     fun close()
+    /** Removes what was written (a cancelled or failed download leaves no half file). */
+    fun discard() {}
 }
 
-enum class ServerKindUi { SFTP, FTPS, PHP }
+enum class ServerKindUi { SFTP, FTPS }
+
+sealed interface ServerTestUi {
+    data class Confirm(val fingerprint: String) : ServerTestUi
+    data object Ok : ServerTestUi
+}
 
 sealed interface ServerSavedUi {
     data class Confirm(val fingerprint: String) : ServerSavedUi
@@ -251,24 +262,9 @@ data class ServerInputUi(
     val host: String,
     val port: Int,
     val user: String,
-    /** SFTP: null = log in with the suite's SSH key. FTPS: password. PHP module: access key. */
+    /** SFTP: null = log in with the suite's SSH key. FTPS: password. */
     val password: String?,
     val base: String,
-    /** PHP module: address of ghulsuite.php. */
-    val url: String = "",
-    /** PHP module: the FTPS login it was installed with, kept for updates (null: not kept). */
-    val upload: UploadAccessUi? = null,
-)
-
-/** FTPS login a PHP module was installed with. */
-data class UploadAccessUi(
-    val host: String,
-    val port: Int,
-    val user: String,
-    val password: String,
-    val cert: String,
-    val dir: String,
-    val dataDir: String,
 )
 
 sealed interface ServerFoldersUi {
@@ -276,30 +272,22 @@ sealed interface ServerFoldersUi {
     data class Folders(val folders: List<String>) : ServerFoldersUi
 }
 
-/** Result of installing a PHP module. */
-data class PhpInstalledUi(
-    /** Set: confirm this certificate first; nothing was uploaded. */
-    val confirm: String?,
-    /** Address the module answered at; null: ask for it and check with phpModuleProbe. */
-    val url: String?,
-    val tried: List<String>,
-    val key: String,
-    /** Largest request of the hosting in bytes (0 = not reported). */
-    val limit: Long,
-    val upload: UploadAccessUi?,
-)
-
-data class PhpModuleInfoUi(val version: Int, val current: Int, val limit: Long, val free: Long)
-
 enum class DriveModeUi { NONE, SYNC, OWN, SUITE }
 
 data class DriveStorageUi(val mode: DriveModeUi, val server: ServerUi?, val syncAvailable: Boolean)
 
-class PhpModuleUi(val fileName: String, val content: String, val key: String)
+/**
+ * One step of installing the server module: `upload` (file written, detail = its path), `https`
+ * (it answers, detail = the address), `php` (only when PHP does not run there; the file was
+ * removed again), `folder` (it reads the GhulSuite folder; detail "skipped" = not checked).
+ */
+data class ModuleCheckUi(val step: String, val ok: Boolean, val detail: String)
 
-data class ShareCheckUi(val step: String, val ok: Boolean, val detail: String)
+/** Result of installing the server module: [url] null = it does not work yet (see [checks]). */
+data class ModuleInstalledUi(val url: String?, val tried: List<String>, val checks: List<ModuleCheckUi>)
 
-data class ShareOptionsUi(val serverId: String, val password: String?, val expiresDays: Int, val maxDownloads: Int)
+/** Share links always come from GhulDrive's server: 0 days = no expiry, 0 downloads = unlimited. */
+data class ShareOptionsUi(val password: String?, val expiresDays: Int, val maxDownloads: Int)
 
 data class ShareInfoUi(
     val id: String,
@@ -327,11 +315,15 @@ data class ServerUi(
     /** Absolute folder on the server, e.g. /home/max/ghulsuite. */
     val location: String = "",
     val kind: ServerKindUi = ServerKindUi.SFTP,
-    /** Public address for share links; empty = sharing not set up. */
-    val shareUrl: String = "",
-    val shareDir: String = "",
+    /** Address of the server module (share links); empty = not installed. */
+    val moduleUrl: String = "",
+    /** Version of the installed module (0 = none). */
+    val moduleVersion: Int = 0,
+    /** The version this app brings: an older module can be updated. */
+    val moduleCurrent: Int = 0,
 ) {
-    val canShare: Boolean get() = shareUrl.isNotEmpty()
+    val hasModule: Boolean get() = moduleUrl.isNotEmpty()
+    val moduleOutdated: Boolean get() = hasModule && moduleVersion < moduleCurrent
 }
 
 data class SyncStatusUi(val serverId: String?, val lastSync: Long)
@@ -417,6 +409,24 @@ sealed interface MailCheckUi {
     data class ImapCertificate(val fingerprint: String) : MailCheckUi
     data class SmtpCertificate(val fingerprint: String) : MailCheckUi
 }
+
+/**
+ * One step of checking a connection: imap_server, imap_login, smtp_server, smtp_login. [detail]:
+ * empty when ok, [STEP_SKIPPED] when not reached, [STEP_CERTIFICATE] when a certificate is to be
+ * confirmed, else the error.
+ */
+data class ConnStepUi(val step: String, val ok: Boolean, val detail: String)
+
+const val STEP_SKIPPED = "skipped"
+const val STEP_CERTIFICATE = "certificate"
+/** Common reasons a server cannot be reached (`STEP_NOT_FOUND` … in the core's mail.rs). */
+const val STEP_NOT_FOUND = "not-found"
+const val STEP_REFUSED = "refused"
+const val STEP_TIMEOUT = "timeout"
+const val STEP_OFFLINE = "offline"
+
+/** Result of checking an account: every step, and a certificate to confirm (then check again). */
+data class MailTestUi(val ok: Boolean, val steps: List<ConnStepUi>, val confirm: MailCheckUi? = null)
 
 /** `role`: inbox, sent, trash, drafts, junk, archive or empty. */
 data class MailFolderUi(val name: String, val role: String)
@@ -506,64 +516,8 @@ data class OutgoingMailUi(
     val pgp: Boolean = true,
 )
 
-enum class ArchiveRuleUi { LEAVE, ARCHIVE, DELETE }
+/** What archiving one mail did: stored, already in the archive, or no longer at the provider. */
+enum class MailArchivedUi { SAVED, SKIPPED, GONE }
 
-enum class ArchiveModeUi { NONE, SYNC, OWN, SUITE }
-
-enum class ArchivePlaceUi { CREATED, CONNECTED, MOVE_OFFERED, FOREIGN }
-
-data class MailArchiveOptionsUi(
-    val days: Int,
-    val deleteAtProvider: Boolean,
-    val sent: Boolean,
-    val spam: ArchiveRuleUi,
-    val trash: ArchiveRuleUi,
-    val accounts: List<String>,
-)
-
-data class MailArchiveCopyUi(val device: String, val name: String, val mails: Long, val at: Long, val full: Boolean, val thisDevice: Boolean)
-
-data class MailArchiveStatusUi(
-    val mode: ArchiveModeUi,
-    val server: ServerUi?,
-    val syncAvailable: Boolean,
-    val options: MailArchiveOptionsUi,
-    val copies: List<MailArchiveCopyUi>,
-    val fullCopy: Boolean,
-    val offlineBytes: Long,
-    /** Accounts whose first removal at the provider the user confirmed. */
-    val confirmed: List<String>,
-    /** Accounts at which nothing is deleted, whatever the options say (Gmail, for now). */
-    val deleteBlocked: List<String> = emptyList(),
-)
-
-data class MailArchiveRunUi(
-    val archived: Int = 0,
-    val removed: Int = 0,
-    val deletedByRule: Int = 0,
-    val remaining: Int = 0,
-    val waitingForConfirmation: Int = 0,
-    val renumbered: Int = 0,
-    /** Mails larger than 100 MB: left at the provider, never deleted there. */
-    val tooLarge: Int = 0,
-    /** Another device archives this account right now (its name). */
-    val busy: String = "",
-)
-
-data class ArchivedMailUi(
-    val key: String,
-    val folder: String,
-    val role: String,
-    val summary: MailSummaryUi,
-    val atProvider: Boolean,
-    val trashed: Long,
-) {
-    val ref: ArchiveRefUi get() = ArchiveRefUi(key, folder)
-}
-
-/** An archived mail: its key in the archive and its folder. */
-data class ArchiveRefUi(val key: String, val folder: String)
-
-data class ArchivePageUi(val total: Int, val mails: List<ArchivedMailUi>)
-
-data class MailArchiveCountUi(val mails: Long, val bytes: Long, val inTrash: Long)
+/** Mails of a folder for an automatic run: the folder's UIDVALIDITY and the UIDs, oldest first. */
+data class MailArchiveBatchUi(val validity: Long, val uids: List<Long>)

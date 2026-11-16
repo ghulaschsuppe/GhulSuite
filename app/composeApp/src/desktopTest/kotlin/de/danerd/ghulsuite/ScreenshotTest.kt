@@ -232,7 +232,7 @@ class ScreenshotTest {
         render("25-add-server") { GhulSuiteApp(state(true, true) { push(Screen.AddServer) }) }
         render("26-settings-servers") { GhulSuiteApp(state(true, true) { tab = Tab.SETTINGS }) }
         render("27-shares") { GhulSuiteApp(state(true, true) { push(Screen.Shares) }) }
-        render("28-share-setup") { GhulSuiteApp(state(true, true) { push(Screen.ShareSetup("s1")) }) }
+        render("28-module-install") { GhulSuiteApp(state(true, true) { push(Screen.ModuleInstall("s2")) }) }
         render("29-settings-servers") { GhulSuiteApp(state(true, true) { push(Screen.SettingsPage(de.danerd.ghulsuite.ui.SetPage.SERVERS)) }) }
         render("30-settings-drive") { GhulSuiteApp(state(true, true) { push(Screen.SettingsPage(de.danerd.ghulsuite.ui.SetPage.DRIVE)) }) }
         render("31-mail-compose-attachment") {
@@ -258,7 +258,12 @@ class ScreenshotTest {
             GhulSuiteApp(s)
             de.danerd.ghulsuite.ui.ShareResultDialog(s, kotlinx.coroutines.runBlocking { s.backend.net.shareList().first() }, true) {}
         }
-        render("35-add-server-php") { GhulSuiteApp(state(true, true) { push(Screen.AddServer) }) }
+        render("35-share-sheet-no-module") {
+            val s = state(true, true) { tab = Tab.DRIVE }
+            (s.backend.net as FakeNet).missingModule = "s2"
+            GhulSuiteApp(s)
+            de.danerd.ghulsuite.ui.ShareSheet(s, files, {}, {})
+        }
         render("36-settings-mail") { GhulSuiteApp(state(true, true) { push(Screen.SettingsPage(de.danerd.ghulsuite.ui.SetPage.MAIL)) }) }
         render("37-mail-compose-unknown") {
             GhulSuiteApp(state(true, true) { push(Screen.MailCompose(de.danerd.ghulsuite.ui.MailDraft("m1", to = "neu@example.org", subject = "Hallo"))) })
@@ -287,9 +292,24 @@ class ScreenshotTest {
             GhulSuiteApp(state(true, true) { tab = Tab.CAL; backend.settings.theme = de.danerd.ghulsuite.model.ThemeMode.DARK })
         }
         render("46-mail-html") { GhulSuiteApp(state(true, true) { tab = Tab.MAIL; push(Screen.MailRead("m1", "INBOX", 9)) }) }
-        render("68-mail-archive-read") { GhulSuiteApp(state(true, true) { tab = Tab.MAIL; push(Screen.MailArchiveRead("m1", "INBOX", "k1")) }) }
-        // The whole page, for the picture of the archive options at its end.
-        render("69-set-mail-long", h = 2900) { GhulSuiteApp(state(true, true) { push(Screen.SettingsPage(de.danerd.ghulsuite.ui.SetPage.MAIL)) }) }
+        // The mail archive in GhulDrive: a year with its mails, and an archived mail in the reader.
+        render("70-mail-archive") {
+            GhulSuiteApp(state(true, true) {
+                tab = Tab.MAIL
+                (backend.net as FakeNet).archiveExists = true
+                archivePath = listOf("y2025" to "2025")
+                push(Screen.MailArchive("m1"))
+            })
+        }
+        render("71-mail-archive-years") {
+            GhulSuiteApp(state(true, true) { tab = Tab.MAIL; (backend.net as FakeNet).archiveExists = true; push(Screen.MailArchive("m1")) })
+        }
+        render("72-mail-archive-read") {
+            GhulSuiteApp(state(true, true) {
+                tab = Tab.MAIL
+                push(Screen.MailArchiveRead("m1", "e1", "2025-10-30 Finanzamt - Steuerbescheid 2024 (1a2b3c4d5e6f7a8b).eml"))
+            })
+        }
         render("43-drive-grid") { GhulSuiteApp(state(true, true) { tab = Tab.DRIVE; driveGrid = true }) }
         render("44-auth-grid") { GhulSuiteApp(state(true, true) { tab = Tab.AUTH; authGrid = true }) }
         render("45-pass-dark") {
@@ -337,5 +357,13 @@ class ScreenshotTest {
             GhulSuiteApp(s)
         }
         wide("16-setup") { GhulSuiteApp(state(exists = false, unlocked = false)) }
+        wide("17-mail-archive") {
+            GhulSuiteApp(state(true, true) {
+                tab = Tab.MAIL
+                (backend.net as FakeNet).archiveExists = true
+                archivePath = listOf("y2025" to "2025")
+                push(Screen.MailArchive("m1"))
+            })
+        }
     }
 }

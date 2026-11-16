@@ -275,7 +275,9 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
             else -> step--
         }
     }
-    PlatformBackHandler(enabled = !(created && step <= 4)) { back() }
+    // Always on: from step 4 on "back" does nothing, but it must not reach the screen behind the
+    // wizard either (that would drop the new suite's recovery code before it was shown).
+    PlatformBackHandler(enabled = true) { back() }
 
     // Header: title, "Step n of 8 · name", progress bar.
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

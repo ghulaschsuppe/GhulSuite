@@ -99,7 +99,7 @@ impl GhulSuite {
         let url = self.with_open(|o| {
             Ok(super::servers::all_servers(o)
                 .into_iter()
-                .map(|s| if !s.url.is_empty() { s.url.clone() } else { s.share_url.clone() })
+                .filter_map(|s| s.module.as_ref().map(|m| m.url.clone()))
                 .find(|u| u.starts_with("https://")))
         })?;
         let Some(url) = url else { return Ok(None) };

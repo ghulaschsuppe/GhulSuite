@@ -138,7 +138,7 @@ fun EditDeleteSwipe(enabled: Boolean, onEdit: () -> Unit, onDelete: () -> Unit, 
             SwipeToDismissBoxValue.StartToEnd -> onEdit()
             else -> {}
         }
-        // The row springs back; editing opens on top, a deleted row disappears (Undo brings it back).
+        // The row springs back; editing opens on top, deleting asks first (F103), Undo brings it back.
         false
     })
     val t = g

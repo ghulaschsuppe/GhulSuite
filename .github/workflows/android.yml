@@ -229,10 +229,10 @@ jobs:
           for v in GHUL_TEST_SFTP GHUL_TEST_MAIL GHUL_TEST_FTPS; do
             if [ -z "${!v:-}" ]; then echo "::error title=Testserver::$v fehlt: die Netzwerk-Tests würden still übersprungen."; exit 1; fi
           done
-          cargo test --locked -p ghul-core -- sftp ftps mail sync drive share php
+          cargo test --locked -p ghul-core -- sftp ftps mail sync drive share module
 
   browser:
-    name: Browser-Tests (Empfängerseite, PHP-Server-Modul)
+    name: Browser-Tests (Freigabelinks über das PHP-Server-Modul)
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
@@ -244,8 +244,8 @@ jobs:
         run: |
           docker run --rm -v "$PWD/core/ghul-core/server:/m:ro" php:8.1-cli php -l /m/ghulsuite.php
           docker run --rm -v "$PWD/website/static:/w:ro" php:8.1-cli php -l /w/report.php
-      # Forged, stale and replayed requests, paths out of the data folder, planted scripts,
-      # share id tricks, uploads out of order: every case has its expected answer.
+      # Other methods, share id, ticket and index tricks, descriptions naming paths, broken
+      # descriptions, expiry, one-time links opened at once: every case has its expected answer.
       - name: Angriffe auf das PHP-Modul
         run: python3 tools/attack-php-module.py
       # Error reports from the app (website/static/report.php): spam, replays, injection, limits.
@@ -257,16 +257,33 @@ jobs:
           mkdir -p /tmp/pw && cd /tmp/pw && npm init -y > /dev/null && npm install --silent playwright@1.49.1
           npx --prefix /tmp/pw playwright install chromium
 
-      - name: Empfängerseite und PHP-Modul im Browser
+      # The shares come from the suite with GhulDrive on the SFTP test server (as on web hosting).
+      - name: SFTP-Testserver starten (nur lokal)
+        timeout-minutes: 20
+        run: |
+          ok=0
+          for i in 1 2 3; do
+            timeout 120 sudo apt-get update -qq || true
+            if timeout 240 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o Acquire::Retries=3 openssh-server dovecot-imapd vsftpd > /dev/null; then ok=1; break; fi
+            sleep $((i * 15))
+          done
+          if [ "$ok" != 1 ]; then
+            echo "::error title=Testserver::Ubuntu-Paketspiegel nicht erreichbar; der Browser-Test braucht den SFTP-Testserver."
+            exit 1
+          fi
+          sudo systemctl stop dovecot vsftpd 2>/dev/null || true
+          if ! sudo bash tools/test-servers.sh > servers.env; then
+            echo "::error title=Testserver::Die Testserver ließen sich nicht starten (siehe oben)."
+            exit 1
+          fi
+          sed 's/^export //' servers.env >> "$GITHUB_ENV"
+
+      - name: Freigabelinks über das PHP-Modul im Browser
         env:
           NODE_PATH: /tmp/pw/node_modules
         run: |
           rustup toolchain install stable --profile minimal
           cd core && cargo test --locked -p ghul-core --no-run
-          D=$(mktemp -d)
-          GHUL_SHARE_FIXTURE=$D cargo test --locked -p ghul-core viewer_fixture
-          cp ghul-core/share-viewer/index.html ghul-core/share-viewer/viewer.js ghul-core/share-viewer/viewer.css "$D/"
-          node ../tools/test-share-viewer.js "$D"
           P=$(mktemp -d)
           GHUL_PHP_FIXTURE=$P cargo test --locked -p ghul-core php_browser_fixture &
           node ../tools/test-share-php.js "$P"

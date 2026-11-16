@@ -18,11 +18,11 @@ import de.danerd.ghulsuite.model.MailSummaryUi
 import de.danerd.ghulsuite.model.NetBackend
 import de.danerd.ghulsuite.model.OutgoingMailUi
 import de.danerd.ghulsuite.model.OutgoingAttachmentUi
-import de.danerd.ghulsuite.model.PhpModuleUi
+import de.danerd.ghulsuite.model.ModuleCheckUi
+import de.danerd.ghulsuite.model.ModuleInstalledUi
 import de.danerd.ghulsuite.model.ServerInputUi
 import de.danerd.ghulsuite.model.ServerKindUi
 import de.danerd.ghulsuite.model.ServerSavedUi
-import de.danerd.ghulsuite.model.ShareCheckUi
 import de.danerd.ghulsuite.model.ShareInfoUi
 import de.danerd.ghulsuite.model.ShareOptionsUi
 import de.danerd.ghulsuite.model.ServerUi
@@ -32,12 +32,14 @@ import de.danerd.ghulsuite.model.SyncStatusUi
 /** Sample data for screenshots of the network screens. */
 class FakeNet(private val configured: Boolean = true, private val encryptedMail: Boolean = false, private val conversation: Boolean = false) : NetBackend {
     private val now = 1_762_000_000L
+    /** The sync and GhulDrive server, with an older server module (it can be updated). */
     private val server = ServerUi(
         "s1", "Heimserver", "nas.example.org", 22, "max", "ghulsuite", true, "SHA256:abc", "/home/max/ghulsuite",
-        ServerKindUi.SFTP, "https://example.org/teilen", "public_html/teilen",
+        ServerKindUi.SFTP, "https://nas.example.org/ghulsuite.php", 1, 2,
     )
-    private val php = ServerUi(
-        "s2", "Webspace", "", 0, "", "", false, "", "https://example.org/ghulsuite.php", ServerKindUi.PHP, "https://example.org/ghulsuite.php", "",
+    /** A web hosting over FTPS without the server module. */
+    private val web = ServerUi(
+        "s2", "Webspace", "example.org", 21, "web123", "ghulsuite", false, "SHA256:def", "/ghulsuite", ServerKindUi.FTPS, "", 0, 2,
     )
     /** Calls the screens made, for tests. */
     val calls: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf<String>())
@@ -49,10 +51,19 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
     var serversFailures = 0
     override suspend fun servers(): List<ServerUi> {
         if (serversFailures > 0) { serversFailures--; throw java.io.IOException("connection reset") }
-        return if (configured) listOf(server, php) else emptyList()
+        return if (configured) listOf(server, web) else emptyList()
+    }
+    /** The folder the fake server cannot write. */
+    var readOnlyFolder = "readonly"
+    override suspend fun serverTest(input: ServerInputUi, confirmed: String?): de.danerd.ghulsuite.model.ServerTestUi {
+        calls += "serverTest:${input.host}:${input.base}:${confirmed ?: ""}"
+        if (confirmed == null) return de.danerd.ghulsuite.model.ServerTestUi.Confirm("SHA256:7beJP+X7anXY96H6FlO+I7u8z2xP1gJsp7GiBGawac4")
+        if (input.base == readOnlyFolder) throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.STORAGE, "permission denied")
+        return de.danerd.ghulsuite.model.ServerTestUi.Ok
     }
     override suspend fun saveServer(input: ServerInputUi, confirmed: String?): ServerSavedUi =
-        if (confirmed == null) ServerSavedUi.Confirm("SHA256:7beJP+X7anXY96H6FlO+I7u8z2xP1gJsp7GiBGawac4") else ServerSavedUi.Saved("s3")
+        if (confirmed == null) ServerSavedUi.Confirm("SHA256:7beJP+X7anXY96H6FlO+I7u8z2xP1gJsp7GiBGawac4")
+        else { calls += "saveServer:${input.host}:${input.base}"; ServerSavedUi.Saved("s3") }
     override suspend fun removeServer(id: String) {}
     override suspend fun installSshKey(input: ServerInputUi, hostKey: String?) = hostKey?.let { "" } ?: "SHA256:fp"
     override suspend fun sshPublicKey() = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGhulSuiteBeispielSchluessel0123456789abcdef ghulsuite"
@@ -66,14 +77,40 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
         if (wait > 0) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Thread.sleep(wait); slowBrowsesDone++ }
         return if (path.isEmpty()) listOf("ghulsuite", "public_html") else listOf("teilen", "blog")
     }
-    override fun phpModuleCreate() = PhpModuleUi("ghulsuite-1a2b3c4d.php", "<?php // module", "00".repeat(32))
-    override suspend fun phpModuleUpload(viaServerId: String, dir: String, module: PhpModuleUi) { calls += "phpUpload:$viaServerId:$dir" }
-    var shareChecks = listOf(
-        ShareCheckUi("write", true, ""), ShareCheckUi("https", true, ""), ShareCheckUi("listing", true, ""), ShareCheckUi("page", true, ""),
-    )
-    override suspend fun shareSetup(serverId: String, dir: String, publicUrl: String) = shareChecks
+    /** The module answers at the usual address (else only at an address typed by the user). */
+    var moduleAnswersWithoutAddress = false
+    override suspend fun serverModuleInstall(serverId: String, dir: String, url: String): ModuleInstalledUi {
+        calls += "moduleInstall:$serverId:$dir:$url"
+        val tried = if (url.isEmpty()) listOf("https://example.org/ghulsuite.php", "https://www.example.org/ghulsuite.php") else listOf(url)
+        val upload = ModuleCheckUi("upload", true, (if (dir.isEmpty()) "" else "$dir/") + "ghulsuite.php")
+        if (url.isEmpty() && !moduleAnswersWithoutAddress) {
+            return ModuleInstalledUi(null, tried, listOf(upload, ModuleCheckUi("https", false, tried[0]), ModuleCheckUi("folder", false, "skipped")))
+        }
+        val https = ModuleCheckUi("https", true, tried[0])
+        return when (moduleFailure) {
+            "no-write" -> ModuleInstalledUi(null, tried, listOf(upload, https, ModuleCheckUi("folder", false, "no-write")))
+            "private" -> ModuleInstalledUi(null, tried, listOf(upload, https, ModuleCheckUi("folder", true, ""),
+                ModuleCheckUi("private", false, "https://example.org/ghulsuite/shares/check-1")))
+            else -> ModuleInstalledUi(tried[0], tried, listOf(upload, https, ModuleCheckUi("folder", true, ""), ModuleCheckUi("private", true, "")))
+        }
+    }
+    /** How the module installation fails after HTTPS: "no-write", "private" or null (it works). */
+    var moduleFailure: String? = null
+    override suspend fun serverModuleUpdate(serverId: String): Int { calls += "moduleUpdate:$serverId"; return 2 }
+    override suspend fun serverModuleRemove(serverId: String) { calls += "moduleRemove:$serverId" }
+    /** What share links still need (null: nothing; "": GhulDrive; else the server for the module). */
+    var missingModule: String? = if (configured) null else ""
+    override suspend fun shareMissingModule() = missingModule
+    /** The links containing GhulDrive items: "Steuer 2025.pdf" (f1) is shared. */
+    /** Holds the lookup of share links back (the core busy with a synchronisation) until released. */
+    var shareLinksGate: java.util.concurrent.CountDownLatch? = null
+    override suspend fun shareLinksOf(ids: List<String>): List<ShareInfoUi> {
+        // Blocks a thread like the core does (not the test clock that skips idle waits).
+        shareLinksGate?.let { gate -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { gate.await(30, java.util.concurrent.TimeUnit.SECONDS) } }
+        return if (configured && "f1" in ids) listOf(share) else emptyList()
+    }
     override suspend fun shareDrive(ids: List<String>, name: String?, options: ShareOptionsUi): ShareInfoUi {
-        calls += "shareDrive:${ids.joinToString(",")}:${options.serverId}:${options.expiresDays}:${options.maxDownloads}:${options.password != null}"
+        calls += "shareDrive:${ids.joinToString(",")}:${name ?: ""}:${options.expiresDays}:${options.maxDownloads}:${options.password != null}"
         return share
     }
     override suspend fun shareBytes(name: String, data: ByteArray, options: ShareOptionsUi): ShareInfoUi {
@@ -97,51 +134,196 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
         calls += "setSyncServer:$id"
         syncServer = id
     }
-    override suspend fun syncNow() = SyncReportUi(1, 2, 0, 0, 0)
+    /** How many synchronisations ran, and the most that ran at the same time. */
+    @Volatile var syncRuns = 0
+    @Volatile var syncMaxAtOnce = 0
+    private val syncActive = java.util.concurrent.atomic.AtomicInteger()
+    /** A synchronisation takes this long (it suspends, like the real one). */
+    var syncDelayMs = 0L
+    override suspend fun syncNow(): SyncReportUi {
+        val now = syncActive.incrementAndGet()
+        syncMaxAtOnce = maxOf(syncMaxAtOnce, now)
+        try {
+            syncRuns++
+            if (syncDelayMs > 0) kotlinx.coroutines.delay(syncDelayMs)
+            return SyncReportUi(1, 2, 0, 0, 0)
+        } finally {
+            syncActive.decrementAndGet()
+        }
+    }
     override suspend fun adoptRemotePassword(password: String) = SyncReportUi(0, 0, 0, 0, 0)
 
     /** GhulDrive's storage; tests can give Drive a server of its own (not in the suite's list). */
     var driveOwnServer: ServerUi? = null
-    override suspend fun driveStorage() = when {
+    /** So many calls of driveStorage() fail first (the core is busy with a synchronisation). */
+    var driveStorageFails = 0
+    override suspend fun driveStorage() = if (driveStorageFails > 0) {
+        driveStorageFails--
+        throw java.io.IOException("busy")
+    } else when {
         driveOwnServer != null -> de.danerd.ghulsuite.model.DriveStorageUi(de.danerd.ghulsuite.model.DriveModeUi.OWN, driveOwnServer, syncServer != null)
         configured && syncServer != null -> de.danerd.ghulsuite.model.DriveStorageUi(de.danerd.ghulsuite.model.DriveModeUi.SYNC, server, true)
         else -> de.danerd.ghulsuite.model.DriveStorageUi(de.danerd.ghulsuite.model.DriveModeUi.NONE, null, false)
     }
     /** Holds driveStatus() back (Drive's index still coming from a slow server) until released. */
     var driveStatusGate: java.util.concurrent.CountDownLatch? = null
+    /** Files in GhulDrive (as counted by the core). */
+    var driveFiles = 3
+    /** GhulDrive is not set up (while the rest, e.g. mail, is). */
+    var driveMissing = false
     override suspend fun driveStatus(): DriveStatusUi {
         driveStatusGate?.let { gate -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { gate.await(30, java.util.concurrent.TimeUnit.SECONDS) } }
-        return DriveStatusUi(driveOwnServer?.id ?: if (configured) "s1" else null, 3, 12_345_678)
+        return DriveStatusUi(if (driveMissing) null else driveOwnServer?.id ?: if (configured) "s1" else null, driveFiles, 12_345_678)
     }
     override suspend fun driveSetup(serverId: String) {}
     /** How long listing a folder takes (a slow server); blocking, as the real core does. */
     var driveListDelayMs = 0L
+    @Volatile var driveListGate: java.util.concurrent.CountDownLatch? = null
     /** The server cannot be reached: fetching the index fails, the index already known stays. */
     var driveOffline = false
     override suspend fun driveList(folder: String?, refresh: Boolean): List<DriveItemUi> {
+        archiveFiles[folder]?.let { return it.filter { f -> f.id !in driveTrashed } }
         if (driveOffline && refresh) throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.NETWORK, "Timed out.")
         if (folder != null && driveListDelayMs > 0) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Thread.sleep(driveListDelayMs) }
-        return if (folder == "d1") listOf(DriveItemUi("f5", "d1", "Strand.jpg", false, 3_100_000, now * 1000)) else listOf(
+        // Every listing waits (the core busy with a synchronisation) until the gate opens.
+        driveListGate?.let { gate -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { gate.await(30, java.util.concurrent.TimeUnit.SECONDS) } }
+        return (if (folder == "d1") listOf(DriveItemUi("f5", "d1", "Strand.jpg", false, 3_100_000, now * 1000)) else listOf(
             DriveItemUi("d1", null, "Fotos", true, 0, now * 1000),
             DriveItemUi("d2", null, "Verträge", true, 0, now * 1000),
             DriveItemUi("f1", null, "Steuer 2025.pdf", false, 2_400_000, now * 1000),
             DriveItemUi("f2", null, "Notizen.txt", false, 1_234, now * 1000),
-        )
+        )).filter { it.id !in driveTrashed }
     }
+    /** Items moved to the trash (left out of the folders). */
+    val driveTrashed: MutableSet<String> = java.util.Collections.synchronizedSet(mutableSetOf<String>())
     override suspend fun driveSearch(query: String) = driveList(null, false).filter { it.name.contains(query, true) }
     override suspend fun driveCreateFolder(parent: String?, name: String) = "d3"
     override suspend fun driveRename(id: String, name: String) {}
     override suspend fun driveMove(id: String, folder: String?) {}
-    override suspend fun driveDelete(id: String) { calls += "driveDelete:$id" }
+    override suspend fun driveRestore(id: String) { calls += "driveRestore:$id"; driveTrashed -= id; if (id.startsWith("f")) driveFiles++ }
+    /** Moving this item to the trash fails (the server went away in the middle). */
+    var driveDeleteFails: String? = null
+    override suspend fun driveDelete(id: String) {
+        if (id == driveDeleteFails) throw java.io.IOException("connection reset")
+        calls += "driveDelete:$id"; driveTrashed += id; if (id.startsWith("f")) driveFiles--
+    }
     override suspend fun driveTrash() = listOf(DriveItemUi("f9", null, "Alter Entwurf.docx", false, 48_000, now * 1000, trashed = now * 1000))
     override suspend fun driveDeleteForever(id: String) { calls += "driveDeleteForever:$id" }
     override suspend fun driveEmptyTrash(days: Int): Int { if (days == 0) calls += "driveEmptyTrash"; return 0 }
-    override suspend fun driveUpload(folder: String?, source: ByteSource, onProgress: (Long) -> Unit) = "f3"
-    override suspend fun driveDownload(id: String, sink: ByteSink, onProgress: (Long) -> Unit) {}
+    /** How long each upload takes (to see the bar); the names that fail. */
+    var driveUploadMs = 0L
+    var driveUploadFails: Set<String> = emptySet()
+    override suspend fun driveUpload(folder: String?, source: ByteSource, onProgress: (Long) -> Unit): String {
+        if (driveUploadMs > 0) kotlinx.coroutines.delay(driveUploadMs)
+        if (source.name in driveUploadFails) throw java.io.IOException("connection reset")
+        val buf = ByteArray(1024)
+        var n = 0L
+        while (true) { val r = source.read(buf, 0, buf.size); if (r < 0) break; n += r; onProgress(n) }
+        calls += "driveUpload:${folder ?: ""}:${source.name}"
+        driveFiles++
+        return "f3"
+    }
+    /** Photos for the photo backup (name and the second it was added), and how long each takes. */
+    var photos: List<Pair<String, Long>> = emptyList()
+    var photoDelayMs = 0L
+    override val photoBackupAvailable: Boolean get() = photos.isNotEmpty()
+    /** Like the Android backend: oldest first, the mark of each photo also when cancelled during it. */
+    override suspend fun photoBackup(sinceSeconds: Long, wifiOnly: Boolean, onFile: (String, Long, Long?) -> Unit): Long {
+        val todo = photos.filter { it.second > sinceSeconds }.sortedBy { it.second }
+        var mark = sinceSeconds
+        for ((i, p) in todo.withIndex()) {
+            if (photoDelayMs > 0) kotlinx.coroutines.delay(photoDelayMs)
+            calls += "photo:${p.first}"
+            val next = todo.getOrNull(i + 1)?.second
+            mark = maxOf(mark, de.danerd.ghulsuite.ui.photoMark(p.second, next))
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { onFile(p.first, p.second, next) }
+        }
+        return mark
+    }
+
+    /** A download writes a first part, then hangs (cancel it) or fails ("fail"); null: normal. */
+    var downloadStops: String? = null
+    override suspend fun driveDownload(id: String, sink: ByteSink, onProgress: (Long) -> Unit) {
+        calls += "driveDownload:$id"
+        when (downloadStops) {
+            "hang" -> { sink.write(byteArrayOf(1, 2, 3)); onProgress(3); kotlinx.coroutines.awaitCancellation() }
+            "fail" -> { sink.write(byteArrayOf(1, 2, 3)); onProgress(3); throw java.io.IOException("connection lost") }
+        }
+        archiveContent[id]?.let { sink.write(it.encodeToByteArray()); onProgress(it.length.toLong()) }
+        sink.close()
+    }
+
+    /**
+     * The mail archive in GhulDrive as the core lays it out: year folders below the account's
+     * folder, .eml files named "date sender - subject (code).eml", plus a note and a folder of the
+     * user's own, and one file that is no mail at all.
+     */
+    private val archiveFiles: Map<String?, List<DriveItemUi>> = mapOf(
+        "archive-m1" to listOf(
+            DriveItemUi("y2025", "archive-m1", "2025", true, 0, now * 1000),
+            DriveItemUi("y2024", "archive-m1", "2024", true, 0, now * 1000),
+            DriveItemUi("own", "archive-m1", "Steuern", true, 0, now * 1000),
+        ),
+        "y2025" to listOf(
+            DriveItemUi("e1", "y2025", "2025-10-30 Finanzamt - Steuerbescheid 2024 (1a2b3c4d5e6f7a8b).eml", false, 3_200, now * 1000),
+            DriveItemUi("e2", "y2025", "2025-03-01 Erika Musterfrau - Urlaub im Mai (0f1e2d3c4b5a6978).eml", false, 1_800, now * 1000),
+            DriveItemUi("e3", "y2025", "kaputt.eml", false, 12, now * 1000),
+            DriveItemUi("n1", "y2025", "Notizen zum Archiv.txt", false, 300, now * 1000),
+        ),
+        "y2024" to listOf(
+            DriveItemUi("e4", "y2024", "2024-12-24 Stadtwerke - Ihre Jahresabrechnung (aa11bb22cc33dd44).eml", false, 9_000, now * 1000),
+        ),
+        "own" to emptyList(),
+    )
+    private val archiveContent = mapOf(
+        "e1" to "From: Finanzamt <post@finanzamt.example>\r\nSubject: Steuerbescheid 2024\r\n\r\nAnbei Ihr Bescheid.",
+        "e2" to "From: Erika <erika@example.org>\r\nSubject: Urlaub im Mai\r\n\r\nHallo!",
+        "e3" to "broken",
+        "e4" to "From: Stadtwerke <service@stadtwerke.example>\r\nSubject: Ihre Jahresabrechnung\r\n\r\nGuten Tag",
+    )
 
     override fun mailSuggest(email: String) = servers
-    override suspend fun mailCheck(input: MailAccountInputUi) = MailCheckUi.Ok
-    override suspend fun mailSaveAccount(id: String?, input: MailAccountInputUi) = "m1"
+    /** The password the fake servers reject (both logins fail with it). */
+    var wrongMailPassword = "wrong"
+    /** The incoming server has a certificate that is not publicly trusted: confirm, then check again. */
+    var mailSelfSigned = false
+    private var mailTested: List<Any?>? = null
+    private fun mailKey(id: String?, i: MailAccountInputUi) = listOf(id, i.email, i.username, i.password, i.servers, i.imapCert, i.smtpCert)
+    override suspend fun mailTest(id: String?, input: MailAccountInputUi): de.danerd.ghulsuite.model.MailTestUi {
+        calls += "mailTest:${input.email}:${input.password}"
+        fun step(name: String, ok: Boolean, detail: String = "") = de.danerd.ghulsuite.model.ConnStepUi(name, ok, detail)
+        val skipped = de.danerd.ghulsuite.model.STEP_SKIPPED
+        val steps = when {
+            mailSelfSigned && input.imapCert == null -> listOf(
+                step("imap_server", false, de.danerd.ghulsuite.model.STEP_CERTIFICATE), step("imap_login", false, skipped),
+                step("smtp_server", true), step("smtp_login", true),
+            )
+            input.email.endsWith(".invalid") -> listOf(
+                step("imap_server", false, de.danerd.ghulsuite.model.STEP_NOT_FOUND), step("imap_login", false, skipped),
+                step("smtp_server", false, de.danerd.ghulsuite.model.STEP_TIMEOUT), step("smtp_login", false, skipped),
+            )
+            input.password == wrongMailPassword -> listOf(
+                step("imap_server", true), step("imap_login", false, "login rejected"),
+                step("smtp_server", true), step("smtp_login", false, "login rejected"),
+            )
+            else -> listOf(step("imap_server", true), step("imap_login", true), step("smtp_server", true), step("smtp_login", true))
+        }
+        val ok = steps.all { it.ok }
+        mailTested = if (ok) mailKey(id, input) else null
+        val confirm = if (mailSelfSigned && input.imapCert == null) MailCheckUi.ImapCertificate("SHA256:selbstsigniert") else null
+        return de.danerd.ghulsuite.model.MailTestUi(ok, steps, confirm)
+    }
+    /** Like the core: only settings that just passed the check, or an unchanged connection of a stored account. */
+    override suspend fun mailSaveAccount(id: String?, input: MailAccountInputUi): String {
+        val stored = mailAccounts().firstOrNull { it.id == id }
+        val unchanged = stored != null && input.password.isEmpty() && input.email == stored.email && input.username == stored.username &&
+            input.servers == stored.servers && input.imapCert == null && input.smtpCert == null
+        if (!unchanged && mailTested != mailKey(id, input)) {
+            throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.INVALID_INPUT, "check the connection first")
+        }
+        calls += "mailSaveAccount:${id ?: ""}:${input.name}:${input.email}"
+        return id ?: "m1"
+    }
     override suspend fun mailAccounts() =
         if (configured) listOf(MailAccountUi("m1", "Privat", "Max Mustermann", "max@posteo.de", "max@posteo.de", servers, "Viele Grüße\nMax", "1A2B 3C4D 5E6F 7081 92A3 B4C5 D6E7 F809 1A2B 3C4D")) else emptyList()
     override suspend fun mailRemoveAccount(id: String) {}
@@ -162,40 +344,66 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
     } else emptyList()
     override suspend fun mailList(accountId: String, folder: String, offset: Int, limit: Int) = MailPageUi(list.size, list)
 
-    // --- Mail archive: set up on the home server, three old mails no longer at the provider.
-    private val archived = listOf(
-        de.danerd.ghulsuite.model.ArchivedMailUi("k1", "INBOX", "inbox",
-            MailSummaryUi(0, "Finanzamt", "post@finanzamt.example", "Steuerbescheid 2024", now - 400 * 86_400, true, false, true, 300_000), false, 0),
-        de.danerd.ghulsuite.model.ArchivedMailUi("k2", "INBOX", "inbox",
-            MailSummaryUi(0, "Erika Musterfrau", "erika@example.org", "Urlaubsfotos Ostsee", now - 200 * 86_400, true, true, true, 4_000_000), false, 0),
-        de.danerd.ghulsuite.model.ArchivedMailUi("k3", "INBOX", "inbox",
-            MailSummaryUi(0, "Vermieter", "verwaltung@wohnen.example", "Nebenkostenabrechnung", now - 90 * 86_400, false, false, false, 20_000), false, 0),
-    )
-    override suspend fun archiveStatus() = if (!configured) null else de.danerd.ghulsuite.model.MailArchiveStatusUi(
-        de.danerd.ghulsuite.model.ArchiveModeUi.OWN, server, true,
-        de.danerd.ghulsuite.model.MailArchiveOptionsUi(30, true, true, de.danerd.ghulsuite.model.ArchiveRuleUi.LEAVE, de.danerd.ghulsuite.model.ArchiveRuleUi.ARCHIVE, listOf("m1")),
-        listOf(de.danerd.ghulsuite.model.MailArchiveCopyUi("d2", "Windows-PC", 12_480, now * 1000 - 86_400_000, true, false)),
-        false, 48_000_000, listOf("m1"),
-    )
-    override suspend fun archiveList(accountId: String, folder: String, offset: Int, limit: Int, withProvider: Boolean) =
-        if (configured && folder == "INBOX") de.danerd.ghulsuite.model.ArchivePageUi(archived.size, archived) else de.danerd.ghulsuite.model.ArchivePageUi(0, emptyList())
-    override suspend fun archiveCount(accountId: String) = de.danerd.ghulsuite.model.MailArchiveCountUi(12_480, 3_400_000_000, 4)
-    override suspend fun archiveGet(accountId: String, folder: String, key: String) = MailMessageUi(
-        0, "Finanzamt", "post@finanzamt.example", listOf("Max Mustermann <max@posteo.de>"), emptyList(), "",
-        "Steuerbescheid 2024", now - 400 * 86_400, "Sehr geehrter Herr Mustermann,\n\nanbei Ihr Steuerbescheid.",
-        false, "bescheid@finanzamt.example", listOf(MailAttachmentUi(0, "Bescheid.pdf", "application/pdf", 280_000)),
-    )
-    override suspend fun archiveDelete(accountId: String, items: List<de.danerd.ghulsuite.model.ArchiveRefUi>) {
-        calls += "archiveDelete:" + items.joinToString { it.key }
+    // --- Mail archive in GhulDrive: the mails of [list] copied as .eml files, kept in memory.
+    /** "account/folder/uid" of every mail copied into GhulDrive. */
+    val archivedToDrive: MutableSet<String> = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    var archiveAutoDaysValue = 0
+    /** Per "account/folder": UIDVALIDITY and the highest UID an automatic run handled. */
+    val archiveAutoMarks = mutableMapOf<String, Pair<Long, Long>>()
+    private fun archiveCandidates(beforeDays: Long?) =
+        list.filter { beforeDays == null || it.date < beforeDays * 86_400 }.sortedBy { it.uid }.map { it.uid }
+    /** The archive exists in GhulDrive already (else only after the first mail was archived). */
+    var archiveExists = false
+    /** How long copying one mail takes (to see the progress and to cancel). */
+    var archiveDelayMs = 0L
+    override suspend fun archiveFolder(accountId: String?): String? =
+        if (archivedToDrive.isEmpty() && !archiveExists) null else if (accountId == null) "archive" else "archive-$accountId"
+    override suspend fun archiveUids(accountId: String, folder: String, beforeDays: Long?): List<Long> {
+        calls += "archiveUids:$accountId:$folder:${beforeDays ?: ""}"
+        return archiveCandidates(beforeDays)
     }
-    override suspend fun archiveSetOptions(options: de.danerd.ghulsuite.model.MailArchiveOptionsUi) { calls += "archiveOptions:${options.days}:${options.deleteAtProvider}" }
-    override suspend fun archiveRun(accountId: String, max: Int): de.danerd.ghulsuite.model.MailArchiveRunUi {
-        calls += "archiveRun:$accountId"
-        return de.danerd.ghulsuite.model.MailArchiveRunUi(archived = 42, removed = 0, waitingForConfirmation = 42)
+    override suspend fun archiveToDrive(accountId: String, folder: String, uid: Long): de.danerd.ghulsuite.model.MailArchivedUi {
+        if (driveMissing) throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.NOT_CONFIGURED, "")
+        if (archiveDelayMs > 0) kotlinx.coroutines.delay(archiveDelayMs)
+        calls += "archiveToDrive:$accountId:$folder:$uid"
+        return when {
+            list.none { it.uid == uid } -> de.danerd.ghulsuite.model.MailArchivedUi.GONE
+            !archivedToDrive.add("$accountId/$folder/$uid") -> de.danerd.ghulsuite.model.MailArchivedUi.SKIPPED
+            else -> de.danerd.ghulsuite.model.MailArchivedUi.SAVED
+        }
     }
-    override suspend fun archiveConfirmRemoval(accountId: String): de.danerd.ghulsuite.model.MailArchiveRunUi {
-        calls += "archiveConfirm:$accountId"
-        return de.danerd.ghulsuite.model.MailArchiveRunUi(removed = 42)
+    /** How long asking for the automatic archive's days takes (two quick unlocks while it is asked). */
+    var archiveAutoDaysDelayMs = 0L
+    override suspend fun archiveAutoDays(): Int {
+        if (archiveAutoDaysDelayMs > 0) kotlinx.coroutines.delay(archiveAutoDaysDelayMs)
+        return archiveAutoDaysValue
+    }
+    override suspend fun archiveSetAutoDays(days: Int) { calls += "archiveSetAutoDays:$days"; archiveAutoDaysValue = days }
+    override suspend fun archiveAutoUids(accountId: String, folder: String): de.danerd.ghulsuite.model.MailArchiveBatchUi {
+        calls += "archiveAutoUids:$accountId:$folder"
+        if (archiveAutoDaysValue == 0) return de.danerd.ghulsuite.model.MailArchiveBatchUi(0, emptyList())
+        val after = archiveAutoMarks["$accountId/$folder"]?.takeIf { it.first == 1L }?.second ?: 0L
+        val uids = archiveCandidates(now / 86_400 - archiveAutoDaysValue).filter { it > after }
+        return de.danerd.ghulsuite.model.MailArchiveBatchUi(1, uids)
+    }
+    override suspend fun archiveAutoDone(accountId: String, folder: String, validity: Long, lastUid: Long) {
+        calls += "archiveAutoDone:$accountId:$folder:$validity:$lastUid"
+        archiveAutoMarks["$accountId/$folder"] = validity to lastUid
+    }
+    override suspend fun mailParseEml(accountId: String, data: ByteArray): MailMessageUi {
+        calls += "mailParseEml:$accountId"
+        val text = data.decodeToString()
+        if (!text.contains("Subject:")) throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.INVALID_INPUT, "not a mail")
+        val subject = text.lineSequence().firstOrNull { it.startsWith("Subject:", true) }?.substringAfter(':')?.trim().orEmpty()
+        return MailMessageUi(
+            0, "Finanzamt", "post@finanzamt.example", listOf("Max Mustermann <max@posteo.de>"), emptyList(), "",
+            subject, now - 400 * 86_400, text.substringAfter("\r\n\r\n", text), false, "bescheid@finanzamt.example",
+            listOf(MailAttachmentUi(0, "Bescheid.pdf", "application/pdf", 280_000)),
+        )
+    }
+    override suspend fun mailEmlAttachment(accountId: String, data: ByteArray, index: Int): ByteArray {
+        calls += "mailEmlAttachment:$accountId:$index"
+        return "%PDF-1.4".encodeToByteArray()
     }
     /** While true, the mail search fails (the server does not answer). */
     var mailSearchFails = false
@@ -250,4 +458,16 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
     override suspend fun mailForgetKey(email: String) {}
     override fun mailNotificationsOn(accountId: String) = true
     override suspend fun setMailNotifications(accountId: String, on: Boolean) {}
+}
+
+/** A file to upload in the tests: [size] bytes, [closed] notes when it was closed. */
+fun fakeSource(name: String, size: Int = 3000, closed: MutableList<String>? = null) = object : ByteSource {
+    var left = size
+    override val name = name
+    override val size = size.toLong()
+    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+        if (left <= 0) return -1
+        val n = minOf(length, left); left -= n; return n
+    }
+    override fun close() { closed?.add(name) }
 }

@@ -178,6 +178,7 @@ fn edited_accounts_reach_the_other_devices() {
         smtp_cert: None,
         signature: String::new(),
     };
+    a.mail_trust_for_test(None, &input("Privat"));
     let id = a.mail_save_account(None, input("Privat")).unwrap();
     a.sync_folder(&server).unwrap();
     copy_suite(&server_dir, &db);
@@ -192,17 +193,19 @@ fn edited_accounts_reach_the_other_devices() {
     let _ = std::fs::remove_dir_all(&server_dir);
 }
 
-/// L5: a web server that delivers the module as text (PHP not running) is detected.
+/// L5: a web server that delivers the module as text (PHP not running) is detected: it does not
+/// answer as the module, and the app sees its source.
 #[test]
 fn a_web_server_without_php_is_detected() {
-    let module = super::super::servers::php_module_create();
+    let file = crate::net::module::module_file("../ghulsuite").unwrap();
     let dir = std::env::temp_dir().join(format!("ghul-l5-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("ghulsuite.php"), &module.content).unwrap();
+    std::fs::write(dir.join("ghulsuite.php"), &file).unwrap();
     let web = web_server(&dir);
     let url = format!("http://127.0.0.1:{}/ghulsuite.php", web.port);
-    assert!(matches!(super::super::servers::php_module_probe(url, module.key.clone()), Err(GhulError::PhpNotExecuted)));
+    assert!(crate::net::module::probe(&url).is_err());
+    assert!(crate::net::module::reveals_source(&url));
     let _ = std::fs::remove_dir_all(&dir);
 }
 

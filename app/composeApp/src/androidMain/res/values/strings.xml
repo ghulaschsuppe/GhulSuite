@@ -5,6 +5,7 @@
     <string name="notif_channel">Unlocked</string>
     <string name="notif_title">GhulSuite is unlocked</string>
     <string name="notif_text">Tap to open. Shake or “Lock” locks immediately.</string>
+    <string name="notif_text_no_shake">Tap to open. “Lock” locks immediately.</string>
     <string name="notif_lock">Lock</string>
     <string name="bio_title">Unlock GhulSuite</string>
     <string name="bio_subtitle">Confirm with your fingerprint</string>
@@ -29,6 +30,9 @@
     <string name="cal_snooze">Again in 5 min</string>
     <string name="cal_done">Done</string>
     <string name="share_as_mail">Send by e-mail (GhulMail)</string>
-    <string name="notif_archive">%1$s Stays unlocked until done. Shake or “Lock” locks at once.</string>
+    <string name="share_to_drive">Save in GhulDrive</string>
     <string name="update_failed">Update could not be installed. Download it from the release page instead.</string>
+    <string name="notif_job_channel">Tasks in the background</string>
+    <string name="notif_job_cancel">Cancel</string>
+    <string name="notif_job_of">%1$d of %2$d done</string>
 </resources>

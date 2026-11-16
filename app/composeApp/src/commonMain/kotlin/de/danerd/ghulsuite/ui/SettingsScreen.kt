@@ -275,7 +275,6 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                 }
                 SetPage.MAIL -> {
                     MailAccountsSection(state)
-                    MailArchiveSection(state)
                     AreaFileNote(VaultKindUi.MAIL)
                     AreaFooter(state, VaultKindUi.MAIL)
                 }

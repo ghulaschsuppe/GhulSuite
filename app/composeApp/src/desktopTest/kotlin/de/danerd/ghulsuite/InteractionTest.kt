@@ -4,15 +4,20 @@ package de.danerd.ghulsuite
 import androidx.compose.runtime.CompositionLocalProvider
 import de.danerd.ghulsuite.model.ServerKindUi
 import de.danerd.ghulsuite.model.ServerUi
+import de.danerd.ghulsuite.model.VaultKindUi
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.asSkiaBitmap
 import androidx.compose.ui.test.DesktopComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsEnabled
 import kotlinx.coroutines.launch
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
@@ -22,11 +27,14 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.runDesktopComposeUiTest
 import androidx.compose.ui.unit.Density
+import de.danerd.ghulsuite.ui.downloadFromDrive
+import de.danerd.ghulsuite.ui.withServers
 import de.danerd.ghulsuite.ui.DevChecks
 import de.danerd.ghulsuite.ui.AppState
 import de.danerd.ghulsuite.ui.CalView
 import de.danerd.ghulsuite.ui.GhulSuiteApp
 import de.danerd.ghulsuite.ui.HeaderGuard
+import de.danerd.ghulsuite.ui.DesktopBack
 import de.danerd.ghulsuite.ui.Screen
 import de.danerd.ghulsuite.model.NetBackend
 import de.danerd.ghulsuite.model.SecurityIssueKindUi
@@ -34,6 +42,8 @@ import de.danerd.ghulsuite.model.SecurityIssueUi
 import de.danerd.ghulsuite.model.SecurityReportUi
 import de.danerd.ghulsuite.ui.SetPage
 import de.danerd.ghulsuite.ui.Tab
+import de.danerd.ghulsuite.ui.uploadToDrive
+import de.danerd.ghulsuite.ui.runAutoArchive
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -45,9 +55,10 @@ import java.io.File
 import java.util.Locale
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.onNodeWithText
-import de.danerd.ghulsuite.model.ShareCheckUi
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.performTextInput
 import kotlin.test.Test
@@ -65,7 +76,6 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalTestApi::class)
 class InteractionTest {
     private val out = File("build/screenshots").apply { mkdirs() }
-    private val optionsSet = java.util.Collections.synchronizedList(mutableListOf<de.danerd.ghulsuite.model.MailArchiveOptionsUi>())
 
     /** The app in English on a phone (412 × 892) or a wide window (1280 × 820), unlocked. */
     private fun app(
@@ -111,6 +121,14 @@ class InteractionTest {
     private fun DesktopComposeUiTest.shown(t: String) = onAllNodesWithText(t, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
     private fun DesktopComposeUiTest.waitFor(t: String) = waitUntil(timeoutMillis = 10_000) { shown(t) }
     private fun DesktopComposeUiTest.waitGone(t: String) = waitUntil(timeoutMillis = 10_000) { !shown(t) }
+    /** F103: every deletion asks first; answers the question with [button]. */
+    private fun DesktopComposeUiTest.confirm(button: String? = null) {
+        waitUntil(timeoutMillis = 10_000) { shown("Delete?") || shown("Move to the trash?") }
+        val b = button ?: if (shown("Move to the trash?")) "Move to trash" else "Delete"
+        onAllNodes(hasText(b) and hasAnyAncestor(isDialog())).onFirst().performClick()
+        waitUntil(timeoutMillis = 10_000) { !shown("Delete?") && !shown("Move to the trash?") }
+    }
+
     private fun DesktopComposeUiTest.longPress(t: String) {
         waitFor(t)
         text(t).performTouchInput { longClick() }
@@ -130,6 +148,16 @@ class InteractionTest {
         waitFor("1 selected")
         shot("$name-selected")
         desc(delete).performClick()
+        // F103: nothing happens before the question is answered; "Cancel" keeps everything.
+        waitUntil(timeoutMillis = 10_000) { shown("Delete?") || shown("Move to the trash?") }
+        assertFalse(shown("Undo"))
+        onAllNodes(hasText("Cancel") and hasAnyAncestor(isDialog())).onFirst().performClick()
+        waitForIdle()
+        assertTrue(shown(item), "$name: Cancel keeps it")
+        assertFalse(called(), "$name: Cancel must not reach the backend")
+        // The selection is still there: delete again and answer "Delete".
+        desc(delete).performClick()
+        confirm()
         waitFor("Undo")
         assertTrue(shown(message), "message \"$message\" after deleting in $name")
         waitGone(item)
@@ -141,6 +169,7 @@ class InteractionTest {
         state.undoMillis = 300
         longPress(item)
         desc(delete).performClick()
+        confirm()
         waitUntil(timeoutMillis = 10_000) { called() }
     }
 
@@ -165,6 +194,28 @@ class InteractionTest {
         shot("pass-detail-sheet")
     }
 
+    /**
+     * F103: swiping a row to the left only asks; the account stays until "Delete" is tapped
+     * (bug: the swipe deleted it at once, without a question).
+     */
+    @Test
+    fun authSwipeAsksFirst() = app(setup = { tab = Tab.AUTH }) { state, fake ->
+        state.undoMillis = 60_000
+        waitFor("GitHub")
+        text("GitHub").performTouchInput { swipeLeft() }
+        waitFor("Delete?")
+        assertFalse(shown("Undo"), "nothing deleted before the answer")
+        shot("auth-swipe-ask")
+        onAllNodes(hasText("Cancel") and hasAnyAncestor(isDialog())).onFirst().performClick()
+        waitGone("Delete?")
+        assertTrue(shown("GitHub"), "Cancel keeps the account")
+        text("GitHub").performTouchInput { swipeLeft() }
+        confirm()
+        waitFor("Undo")
+        waitGone("GitHub")
+        assertFalse("deleteTotp:t1:b" in fake.calls, "Undo is still possible")
+    }
+
     @Test
     fun authSelectionMenuAndUndo() = app(setup = { tab = Tab.AUTH }) { state, fake ->
         longPress("GitHub")
@@ -178,6 +229,71 @@ class InteractionTest {
         deleteUndoDelete(state, "GitHub", "Delete", "1 deleted", "auth") { "deleteTotp:t1:b" in fake.calls }
     }
 
+    /**
+     * Share links always come from GhulDrive's server through its module: the form offers expiry
+     * and download limits, and no choice of server.
+     */
+    @Test
+    fun shareFormHasExpiryAndLimitsWithoutServerChips() = app(setup = { tab = Tab.DRIVE }) { _, fake ->
+        val net = fake.net as FakeNet
+        longPress("Notizen.txt")
+        waitFor("1 selected")
+        desc("Share").performClick()
+        waitFor("Share link")
+        waitFor("Encrypted link with expiry, download limit and password")
+        text("Share link").performClick()
+        waitFor("Create link")
+        for (chip in listOf("1 day", "7 days", "30 days", "No expiry", "Unlimited", "1× (one-time)", "3×", "5×")) {
+            assertTrue(shown(chip), "missing: $chip")
+        }
+        // No server chips, no "until withdrawn" of the old share folders.
+        for (name in listOf("Heimserver", "Webspace", "Server")) {
+            assertTrue(onAllNodes(hasText(name) and hasAnyAncestor(isDialog())).fetchSemanticsNodes().isEmpty(), "no choice of server: $name")
+        }
+        assertFalse(shown("Valid until you withdraw it"))
+        // One file: its name is the title, no title field.
+        assertFalse(shown("Title of the link"))
+        shot("share-form")
+        text("1 day").performClick()
+        text("3×").performClick()
+        text("Create link").performClick()
+        waitUntil(timeoutMillis = 10_000) { net.calls.any { it.startsWith("shareDrive:") } }
+        assertEquals("shareDrive:f2::1:3:false", net.calls.last { it.startsWith("shareDrive:") })
+    }
+
+    /** Several files: the link gets a title, and the recipient gets every file on its own. */
+    @Test
+    fun shareOfSeveralFilesHasATitle() = app(setup = { tab = Tab.DRIVE }) { _, fake ->
+        val net = fake.net as FakeNet
+        longPress("Notizen.txt")
+        waitFor("1 selected")
+        text("Steuer 2025.pdf").performClick()
+        waitFor("2 selected")
+        desc("Share").performClick()
+        waitFor("Share link")
+        text("Share link").performClick()
+        waitFor("Title of the link")
+        assertTrue(shown("The recipient gets every file on its own."))
+        onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog())).onFirst().performTextReplacement("Unterlagen")
+        text("Create link").performScrollTo().performClick()
+        waitUntil(timeoutMillis = 10_000) { net.calls.any { it.startsWith("shareDrive:") } }
+        assertTrue(net.calls.last { it.startsWith("shareDrive:") }.contains(":Unterlagen:7:0:false"), net.calls.toString())
+    }
+
+    /** Without the module on GhulDrive's server, "Share link" says so and opens its installation. */
+    @Test
+    fun shareSheetWithoutModuleOffersInstallation() = app(setup = { tab = Tab.DRIVE }, prepare = { (net as FakeNet).missingModule = "s2" }) { state, _ ->
+        longPress("Notizen.txt")
+        waitFor("1 selected")
+        desc("Share").performClick()
+        waitFor("Needs the GhulSuite server module. Tap to install it.")
+        shot("share-sheet-no-module")
+        text("Share link").performClick()
+        waitFor("Install and check")
+        assertEquals(Screen.ModuleInstall("s2"), state.stack.lastOrNull())
+        assertFalse(shown("Create link"))
+    }
+
     @Test
     fun driveSelectionSheetsAndTrash() = app(setup = { tab = Tab.DRIVE }) { state, fake ->
         val net = fake.net as FakeNet
@@ -189,7 +305,19 @@ class InteractionTest {
         assertTrue(onAllNodesWithContentDescription("Share").fetchSemanticsNodes().isNotEmpty())
         desc("Cancel").performClick()
         waitGone("1 selected")
-        deleteUndoDelete(state, "Notizen.txt", "Move to trash", "Moved to trash", "drive") { "driveDelete:f2" in net.calls }
+        // Into the trash at once (F96: the count follows at once); "Undo" takes it out again.
+        state.undoMillis = 60_000
+        longPress("Notizen.txt")
+        desc("Move to trash").performClick()
+        confirm("Move to trash")
+        waitFor("Undo")
+        assertTrue(shown("Moved to trash"))
+        waitGone("Notizen.txt")
+        assertTrue("driveDelete:f2" in net.calls)
+        shot("drive-undo")
+        text("Undo").performClick()
+        waitFor("Notizen.txt")
+        assertTrue("driveRestore:f2" in net.calls)
         // The sheet of a file.
         waitFor("Steuer 2025.pdf")
         text("Steuer 2025.pdf").performClick()
@@ -230,6 +358,120 @@ class InteractionTest {
         } finally {
             gate.countDown()
         }
+    }
+
+    /** F96: the number of files follows a change at once (bug: only after leaving and opening the app). */
+    @Test
+    fun driveFileCountFollowsChanges() = app(setup = { tab = Tab.DRIVE }) { _, fake ->
+        val part = { t: String -> onAllNodesWithText(t, substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        waitUntil(timeoutMillis = 10_000) { part("3 files") }
+        (fake.net as FakeNet).driveFiles = 4
+        // Refreshing the list (as after an upload) also counts again.
+        text("Up to date").performClick()
+        waitUntil(timeoutMillis = 10_000) { part("4 files") }
+        // Into the trash: the number drops at once, not only when "Undo" is gone.
+        text("Notizen.txt").performTouchInput { longClick() }
+        waitFor("1 selected")
+        desc("Move to trash").performClick()
+        confirm("Move to trash")
+        waitUntil(timeoutMillis = 2_000) { part("3 files") }
+        assertTrue("driveDelete:f2" in (fake.net as FakeNet).calls)
+    }
+
+    /**
+     * F99: several files at once (picked together or shared from another app): one after the
+     * other with "2 of 3" in the bar, the count follows each file, a failed file does not stop the
+     * others, every file is closed again.
+     */
+    @Test
+    fun driveUploadsSeveralFilesInARow() = app(setup = { tab = Tab.DRIVE }) { state, fake ->
+        val net = fake.net as FakeNet
+        val part = { t: String -> onAllNodesWithText(t, substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        waitUntil(timeoutMillis = 10_000) { part("3 files") }
+        val closed = java.util.Collections.synchronizedList(mutableListOf<String>())
+        fun src(name: String) = object : de.danerd.ghulsuite.model.ByteSource {
+            var left = 3000
+            override val name = name
+            override val size = 3000L
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                if (left <= 0) return -1
+                val n = minOf(length, left); left -= n; return n
+            }
+            override fun close() { closed += name }
+        }
+        net.driveUploadMs = 1500
+        net.driveUploadFails = setOf("b.txt")
+        runOnIdle { state.driveIncoming = listOf(src("a.txt"), src("b.txt"), src("c.txt")) }
+        // The strip under the header: what runs and how far ("0 of 3 done · a.txt").
+        waitUntil(timeoutMillis = 10_000) { part("Uploading 3 files") && part("0 of 3 done") }
+        shot("drive-upload-several")
+        waitUntil(timeoutMillis = 10_000) { part("2 of 3 done") }
+        // a.txt is in, the count follows at once (b fails, c still runs).
+        waitUntil(timeoutMillis = 10_000) { part("4 files") }
+        waitUntil(timeoutMillis = 15_000) { part("2 files uploaded") }
+        assertTrue("driveUpload::a.txt" in net.calls && "driveUpload::c.txt" in net.calls)
+        assertFalse(net.calls.any { it.endsWith(":b.txt") })
+        waitUntil(timeoutMillis = 10_000) { part("5 files") }
+        assertTrue(part("b.txt: "), "the failed file is named")
+        assertTrue(closed.containsAll(listOf("a.txt", "b.txt", "c.txt")))
+    }
+
+    /** F96: the server goes away while several files go to the trash: what moved shows as moved. */
+    @Test
+    fun driveTrashFailingHalfwayShowsWhatIsTrue() = app(setup = { tab = Tab.DRIVE }) { _, fake ->
+        val net = fake.net as FakeNet
+        val part = { t: String -> onAllNodesWithText(t, substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        waitUntil(timeoutMillis = 10_000) { part("3 files") }
+        net.driveDeleteFails = "f2"
+        longPress("Steuer 2025.pdf")
+        text("Notizen.txt").performClick()
+        waitFor("2 selected")
+        desc("Move to trash").performClick()
+        confirm("Move to trash")
+        // Steuer went to the trash, Notizen did not: the list and the count say so at once (not
+        // only when the time for "Undo" is over), the error too.
+        waitGone("Steuer 2025.pdf")
+        waitUntil(timeoutMillis = 2_000) { part("2 files") }
+        assertTrue(shown("Notizen.txt"))
+        waitUntil(timeoutMillis = 10_000) { part("connection reset") || part("No connection") || part("Connection") }
+    }
+
+    /** Windows: Esc, Alt+Left and the mouse's back button go back one step (bug: they did nothing). */
+    @Test
+    fun windowsBackGoesBackOneStep() = app(wide = true, setup = { tab = Tab.CAL; calView = CalView.LIST }) { state, _ ->
+        waitFor("Abendessen mit Jana")
+        // Nothing to go back to: nothing happens (the window does not close).
+        assertFalse(runOnIdle { DesktopBack.dispatch() })
+        text("Abendessen mit Jana").performClick()
+        waitFor("Trattoria Da Luca")
+        assertTrue(runOnIdle { DesktopBack.dispatch() })
+        waitUntil(timeoutMillis = 10_000) { state.stack.isEmpty() }
+        waitFor("Kundentermin Müller GmbH")
+        // A selection is left first, the page stays.
+        text("Abendessen mit Jana").performTouchInput { longClick() }
+        waitFor("1 selected")
+        assertTrue(runOnIdle { DesktopBack.dispatch() })
+        waitGone("1 selected")
+        assertTrue(state.stack.isEmpty())
+        // The keys and the mouse button that mean "back".
+        assertTrue(DesktopBack.isBackKey(androidx.compose.ui.input.key.Key.Escape, alt = false))
+        assertTrue(DesktopBack.isBackKey(androidx.compose.ui.input.key.Key.DirectionLeft, alt = true))
+        assertFalse(DesktopBack.isBackKey(androidx.compose.ui.input.key.Key.DirectionLeft, alt = false))
+        // Esc held down repeats "pressed": still only one step back.
+        text("Abendessen mit Jana").performClick()
+        waitFor("Trattoria Da Luca")
+        val esc = androidx.compose.ui.input.key.Key.Escape
+        runOnIdle {
+            assertTrue(DesktopBack.onKey(esc, false, androidx.compose.ui.input.key.KeyEventType.KeyDown))
+            DesktopBack.onKey(esc, false, androidx.compose.ui.input.key.KeyEventType.KeyDown)
+            DesktopBack.onKey(esc, false, androidx.compose.ui.input.key.KeyEventType.KeyUp)
+        }
+        waitUntil(timeoutMillis = 10_000) { state.stack.isEmpty() }
+        assertEquals(Tab.CAL, state.tab)
+        val released = java.awt.event.MouseEvent.MOUSE_RELEASED
+        assertTrue(DesktopBack.isBackButton(released, 4))
+        assertFalse(DesktopBack.isBackButton(released, 1))
+        assertFalse(DesktopBack.isBackButton(java.awt.event.MouseEvent.MOUSE_PRESSED, 4))
     }
 
     /** F91: without a connection GhulDrive says so and still lists the folders it already knows. */
@@ -278,6 +520,7 @@ class InteractionTest {
         longPress("Treffen am Freitag")
         waitFor("1 selected")
         desc("Delete").performClick()
+        confirm()
         waitUntil(timeoutMillis = 10_000) { net.calls.any { it.startsWith("mailDelete:") && it.endsWith(":3") } && net.calls.any { it.startsWith("mailDelete:") && it.endsWith(":5") } }
         assertTrue(onAllNodesWithText("Re: Treffen am Freitag").fetchSemanticsNodes().isEmpty())
     }
@@ -294,6 +537,7 @@ class InteractionTest {
         desc("All").performClick()
         waitFor("3 selected")
         desc("Delete").performClick()
+        confirm()
         waitFor("No messages.")
         assertFalse(shown(hint), "swipe hint below an empty list")
         shot("mail-all-deleted")
@@ -313,6 +557,7 @@ class InteractionTest {
         text("Unread").performClick()
         waitFor("1 selected")
         desc("Delete").performClick()
+        confirm()
         waitUntil(timeoutMillis = 10_000) { net.calls.any { it.startsWith("mailDelete:") && it.endsWith(":3") } }
         assertFalse(net.calls.any { it.startsWith("mailDelete:") && it.endsWith(":5") }, "the read mail was not shown, so it is not deleted")
     }
@@ -379,60 +624,6 @@ class InteractionTest {
         shot("mail-reader-sheet")
     }
 
-    /**
-     * Mail archive: archived mails appear below the provider's, open in their own reader and go into
-     * the archive's trash with Undo. The first removal at the provider waits for "Remove";
-     * tapping beside the question removes nothing.
-     */
-    @Test
-    fun mailArchiveListReaderAndFirstRemoval() = app(setup = { tab = Tab.MAIL }) { state, fake ->
-        val net = fake.net as FakeNet
-        waitFor("ARCHIVE · 3")
-        assertTrue(shown("Steuerbescheid 2024"))
-        shot("mail-archive-list")
-        text("Steuerbescheid 2024").performClick()
-        waitFor("Bescheid.pdf")
-        assertTrue(shown("Archived"))
-        shot("mail-archive-read")
-        state.undoMillis = 300
-        desc("Delete").performClick()
-        waitUntil(timeoutMillis = 10_000) { net.calls.any { it == "archiveDelete:k1" } }
-        // The first removal at the provider: tapping beside it is "later".
-        state.archiveAsk = "m1" to 42
-        waitFor("Everything safely archived")
-        shot("mail-archive-first-removal")
-        text("Later").performClick()
-        waitGone("Everything safely archived")
-        assertFalse(net.calls.any { it.startsWith("archiveConfirm") }, "nothing removed without the answer")
-        state.archiveAsk = "m1" to 42
-        waitFor("Remove 42 mails")
-        text("Remove 42 mails").performClick()
-        waitUntil(timeoutMillis = 10_000) { net.calls.contains("archiveConfirm:m1") }
-    }
-
-    /** The archive options: switching deleting on asks first; "Cancel" changes nothing. */
-    @Test
-    fun mailArchiveOptionsAskBeforeDeleting() = app(setup = { push(Screen.SettingsPage(SetPage.MAIL)) }, prepare = {
-        net = object : NetBackend by FakeNet() {
-            override suspend fun archiveStatus() = FakeNet().archiveStatus()?.let { it.copy(options = it.options.copy(deleteAtProvider = false), confirmed = emptyList()) }
-            override suspend fun archiveSetOptions(options: de.danerd.ghulsuite.model.MailArchiveOptionsUi) { optionsSet += options }
-        }
-    }) { _, _ ->
-        waitFor("MAIL ARCHIVE")
-        waitFor("Delete at the provider after archiving")
-        text("Archive now").performScrollTo()
-        shot("mail-archive-options")
-        text("Delete at the provider after archiving").performScrollTo().performClick()
-        waitFor("Delete archived mails at the provider?")
-        text("Cancel").performClick()
-        waitGone("Delete archived mails at the provider?")
-        assertTrue(optionsSet.isEmpty(), "Cancel changes nothing")
-        text("Delete at the provider after archiving").performScrollTo().performClick()
-        waitFor("Switch on")
-        text("Switch on").performClick()
-        waitUntil(timeoutMillis = 10_000) { optionsSet.any { it.deleteAtProvider } }
-    }
-
     @Test
     fun mailEncryptedSubject() = app(setup = { tab = Tab.MAIL }, prepare = { net = FakeNet(encryptedMail = true) }) { _, _ ->
         // An encrypted mail keeps its subject inside: the list says "Encrypted message" once, never "...".
@@ -467,6 +658,60 @@ class InteractionTest {
         waitFor("Delete “Privat”?")
         shot("vault-delete")
         assertFalse(fake.calls.any { it.startsWith("removeVault") }, "a vault is only deleted after confirming")
+    }
+
+    /** F105: setting up GhulMail under "Areas" opens the sheet for the mail account at once. */
+    @Test
+    fun mailAreaOpensTheAccountSheet() = app(
+        setup = { push(Screen.SettingsPage(SetPage.MODULES)) },
+        prepare = { vaults = vaults.filter { it.kind != VaultKindUi.MAIL }; net = FakeNet(configured = false) },
+    ) { state, _ ->
+        waitFor("GhulMail")
+        text("GhulMail").performClick()
+        waitFor("Set up GhulMail")
+        assertFalse(shown("Add e-mail account"))
+        onAllNodes(hasText("Set up") and hasClickAction()).onFirst().performClick()
+        waitFor("Add e-mail account")
+        assertTrue(state.mailAccountSheet != null)
+        shot("mail-area-account-sheet")
+    }
+
+    /** F105: showing GhulMail again while it has no account opens the account sheet as well. */
+    @Test
+    fun mailShownAgainOpensTheAccountSheet() = app(
+        setup = { backend.settings.moduleGhulMail = false; push(Screen.SettingsPage(SetPage.MODULES)) },
+        prepare = { net = FakeNet(configured = false) },
+    ) { state, _ ->
+        waitFor("GhulMail")
+        text("GhulMail").performClick()
+        waitFor("Show on this device")
+        assertTrue(state.mailAccountSheet == null)
+        text("Show on this device").performClick()
+        waitFor("Add e-mail account")
+        assertTrue(state.mailAccountSheet != null)
+    }
+
+    /**
+     * F103: "Delete" in an open mail asks first; "Cancel" keeps the mail open and deletes nothing
+     * (bug: it went to the trash at once).
+     */
+    @Test
+    fun mailReaderDeleteAsks() = app(setup = { tab = Tab.MAIL }) { state, fake ->
+        val net = fake.net as FakeNet
+        state.undoMillis = 300
+        waitFor("Treffen am Freitag")
+        text("Treffen am Freitag").performClick()
+        waitFor("Reply")
+        desc("Delete").performClick()
+        waitFor("Move to the trash?")
+        onAllNodes(hasText("Cancel") and hasAnyAncestor(isDialog())).onFirst().performClick()
+        waitGone("Move to the trash?")
+        assertTrue(shown("Reply"), "Cancel keeps the mail open")
+        Thread.sleep(600)
+        assertFalse(net.calls.any { it.startsWith("mailDelete:") }, net.calls.toString())
+        desc("Delete").performClick()
+        confirm()
+        waitUntil(timeoutMillis = 10_000) { net.calls.any { it.startsWith("mailDelete:") && it.endsWith(":3") } }
     }
 
     @Test
@@ -787,7 +1032,7 @@ class InteractionTest {
             waitFor("Try again")
             assertTrue(onAllNodesWithText("Off").fetchSemanticsNodes().isEmpty())
             (fake.net as FakeNet).syncStatusFails = false
-            text("Try again").performClick()
+            text("Try again").performScrollTo().performClick()
             waitFor("Synchronise now")
             waitGone("Try again")
         }
@@ -809,6 +1054,12 @@ class InteractionTest {
             shot("sync-server-chosen")
             // With a server, the controls of the synchronisation appear.
             waitFor("Synchronise now")
+            // One synchronisation for the choice, not one automatic and then one more (bug: the
+            // emulator waited for the second full run).
+            assertTrue(fake.settings.autoSync)
+            Thread.sleep(500)
+            waitForIdle()
+            assertEquals(1, net.syncRuns)
         }
     }
 
@@ -818,15 +1069,14 @@ class InteractionTest {
      */
     @Test
     fun browsingFoldersQuicklyShowsNoError() {
-        app(setup = { push(Screen.ShareSetup("s1")) }) { _, fake ->
+        app(setup = { push(Screen.ModuleInstall("s2")) }) { _, fake ->
             val net = fake.net as FakeNet
-            // The server's share folder is public_html/teilen: its subfolders are listed.
-            waitFor("blog")
+            waitFor("public_html")
             net.browseDelayMs = 1500
-            text("teilen").performClick()
+            text("public_html").performClick()
             // The old list is still shown while the folder loads: on to the next one at once.
-            text("blog").performClick()
-            waitFor("/public_html/teilen/teilen/blog")
+            text("ghulsuite").performClick()
+            waitFor("/public_html/ghulsuite")
             // Both slow listings are done (the first one answers only now with its cancellation).
             waitUntil(timeoutMillis = 10_000) { net.slowBrowsesDone >= 2 }
             net.browseDelayMs = 0
@@ -834,32 +1084,265 @@ class InteractionTest {
             Thread.sleep(200)
             waitForIdle()
             assertTrue(onAllNodesWithText("composition", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isEmpty())
-            shot("share-setup-quick-browse")
+            shot("module-quick-browse")
         }
     }
 
     /**
-     * The address does not answer: the steps that depend on it say "not checked" in grey, not a
-     * red result nobody saw (bug: "the folder content is visible" for an address that is not there).
+     * The module does not answer at the usual addresses: HTTPS is red with the addresses tried,
+     * the folder step grey "not checked" (not a red result nobody saw). With the address typed
+     * in, the next try works.
      */
     @Test
-    fun shareCheckWithoutAnswerSaysNotChecked() {
-        app(setup = { push(Screen.ShareSetup("s1")) }) { _, fake ->
+    fun moduleInstallHttpsFailsThenWorksWithAddress() {
+        app(setup = { push(Screen.ModuleInstall("s2")) }) { _, fake ->
             val net = fake.net as FakeNet
-            net.shareChecks = listOf(
-                ShareCheckUi("write", true, ""), ShareCheckUi("https", false, "server address not found"),
-                ShareCheckUi("listing", false, "skipped"), ShareCheckUi("page", false, "skipped"),
-            )
-            waitFor("blog")
-            onNode(hasSetTextAction() and hasText("https://", substring = true)).performTextReplacement("https://example.invalid/teilen")
-            onNodeWithText("Set up and check").performScrollTo().performClick()
-            // The core's fixed text in the app's words.
-            waitFor("The server address was not found. Check its spelling and the internet connection.")
-            assertFalse(shown("server address not found"))
-            assertEquals(2, onAllNodesWithText("Not checked, because the HTTPS step failed").fetchSemanticsNodes().size)
+            waitFor("public_html")
+            text("public_html").performClick()
+            waitFor("/public_html")
+            onNodeWithText("Install and check").performScrollTo().performClick()
+            waitFor("Not checked, because the HTTPS step failed")
+            assertTrue(shown("Module file uploaded"))
+            assertTrue(shown("public_html/ghulsuite.php"))
+            assertTrue(shown("No answer at https://example.org/ghulsuite.php, https://www.example.org/ghulsuite.php. Enter the address of the module above and try again."))
             assertTrue(onAllNodesWithText("skipped").fetchSemanticsNodes().isEmpty())
-            shot("share-check-not-checked")
+            assertFalse(shown("Done"))
+            assertTrue("moduleInstall:s2:public_html:" in net.calls, net.calls.toString())
+            shot("module-https-failed")
+            onAllNodes(hasSetTextAction()).onFirst().performTextReplacement("https://example.org/web/ghulsuite.php")
+            onNodeWithText("Install and check").performScrollTo().performClick()
+            waitFor("The server module runs at https://example.org/web/ghulsuite.php. You can now create share links.")
+            assertTrue("moduleInstall:s2:public_html:https://example.org/web/ghulsuite.php" in net.calls, net.calls.toString())
+            assertFalse(shown("Not checked, because the HTTPS step failed"))
+            shot("module-installed")
         }
+    }
+
+    /**
+     * The module answers, but PHP may not write in the GhulSuite folder, or the web server hands
+     * out the GhulSuite folder itself: each says what is wrong and what to do; nothing is done.
+     */
+    @Test
+    fun moduleInstallExplainsNoWriteAndPublicFolder() {
+        app(setup = { push(Screen.ModuleInstall("s2")) }, prepare = {
+            (net as FakeNet).moduleAnswersWithoutAddress = true
+            (net as FakeNet).moduleFailure = "no-write"
+        }) { _, fake ->
+            val net = fake.net as FakeNet
+            waitFor("public_html")
+            text("public_html").performClick()
+            waitFor("/public_html")
+            onNodeWithText("Install and check").performScrollTo().performClick()
+            waitFor("PHP may read the GhulSuite folder but not write in its shares folder. Then downloads cannot be counted. Allow the web server to write there (file permissions), then check again.")
+            assertFalse(shown("Done"))
+            assertFalse(shown("PHP may not read the GhulSuite folder on this hosting (e.g. because of open_basedir). Share links are not possible there."))
+            shot("module-no-write")
+            net.moduleFailure = "private"
+            onNodeWithText("Install and check").performScrollTo().performClick()
+            waitFor("GhulSuite folder not reachable from the web")
+            assertTrue(shown("The web server hands out the GhulSuite folder itself (https://example.org/ghulsuite/shares/check-1). The app removed the module again. Move the GhulSuite folder out of the website, then install again."))
+            assertFalse(shown("Done"))
+            shot("module-private-failed")
+        }
+    }
+
+    /** A confirmed certificate fingerprint stays only with its own server and port. */
+    @Test
+    fun confirmedCertificateDoesNotMoveToAnotherServer() {
+        val s = de.danerd.ghulsuite.model.MailServersUi("imap.typo.org", 993, de.danerd.ghulsuite.model.MailSecurityUi.TLS,
+            "smtp.typo.org", 465, de.danerd.ghulsuite.model.MailSecurityUi.TLS)
+        val i = de.danerd.ghulsuite.model.MailAccountInputUi("", "", "a@b.org", "", "pw", s, imapCert = "aa", smtpCert = "bb")
+        val fixed = i.withServers(s.copy(imapHost = "imap.real.org"))
+        assertEquals(null, fixed.imapCert)
+        assertEquals("bb", fixed.smtpCert, "the other server keeps its own")
+        assertEquals(null, i.withServers(s.copy(smtpPort = 587)).smtpCert)
+        assertEquals("aa", i.withServers(s.copy(smtpPort = 587)).imapCert)
+    }
+
+    /** The folder picker for the GhulSuite folder warns inside a website's folder, not next to it. */
+    @Test
+    fun folderPickerWarnsInsideTheWebsite() {
+        for (p in listOf("public_html", "public_html/ghulsuite", "htdocs/x", "www", "example.org", "kunden/example.org/ghul")) {
+            assertTrue(de.danerd.ghulsuite.ui.inWebsite(p), p)
+        }
+        for (p in listOf("", "ghulsuite", "daten/ghulsuite", "backup_alt", "websites-alt", "logs.old", "node.js", "site.bak", "a/b/c/example.org")) {
+            assertFalse(de.danerd.ghulsuite.ui.inWebsite(p), p)
+        }
+    }
+
+    /** A download that is cancelled or fails leaves no half file behind; a complete one stays. */
+    @Test
+    fun cancelledOrFailedDownloadLeavesNoHalfFile() {
+        app { state, fake ->
+            val net = fake.net as FakeNet
+            class Sink : de.danerd.ghulsuite.model.ByteSink {
+                @Volatile var discarded = false
+                @Volatile var closed = false
+                override fun write(data: ByteArray) {}
+                override fun close() { closed = true }
+                override fun discard() { discarded = true }
+            }
+            val item = de.danerd.ghulsuite.model.DriveItemUi("f1", null, "Film.mp4", false, 10, 0)
+            net.downloadStops = "hang"
+            val cancelled = Sink()
+            runOnIdle { state.downloadFromDrive(item, cancelled) }
+            waitFor("Cancel")
+            onAllNodesWithText("Cancel").onFirst().performClick()
+            waitUntil(timeoutMillis = 10_000) { cancelled.discarded && cancelled.closed }
+            net.downloadStops = "fail"
+            val failed = Sink()
+            runOnIdle { state.downloadFromDrive(item, failed) }
+            waitUntil(timeoutMillis = 10_000) { failed.discarded && failed.closed }
+            net.downloadStops = null
+            val complete = Sink()
+            runOnIdle { state.downloadFromDrive(item, complete) }
+            waitUntil(timeoutMillis = 10_000) { complete.closed && state.jobs.list.none { it.active } }
+            assertFalse(complete.discarded, "a complete download stays")
+        }
+    }
+
+    /**
+     * The list of servers: per server its login, what it is used for and its module. The module is
+     * installed from there (happy path: it answers at the usual address), updated, and removed
+     * only after asking.
+     */
+    @Test
+    fun serverListInstallsUpdatesAndRemovesTheModule() {
+        app(setup = { push(Screen.SettingsPage(SetPage.SERVERS)) }, prepare = { (net as FakeNet).moduleAnswersWithoutAddress = true }) { state, fake ->
+            val net = fake.net as FakeNet
+            waitFor("Webspace")
+            assertTrue(shown("Server module: version 1, version 2 is available"))
+            assertTrue(shown("Server module: not installed (only needed for share links)"))
+            assertTrue(shown("Used for: Synchronisation, GhulDrive"))
+            assertTrue(shown("Not used yet"))
+            shot("servers-modules")
+            // Install on the web hosting: the folder, then "Install and check" (address left empty).
+            text("Install module").performScrollTo().performClick()
+            waitFor("Install and check")
+            assertEquals(Screen.ModuleInstall("s2"), state.stack.lastOrNull())
+            waitFor("public_html")
+            text("public_html").performClick()
+            waitFor("/public_html")
+            onNodeWithText("Install and check").performScrollTo().performClick()
+            waitFor("The server module runs at https://example.org/ghulsuite.php. You can now create share links.")
+            assertTrue("moduleInstall:s2:public_html:" in net.calls, net.calls.toString())
+            assertTrue(shown("Answers over HTTPS") && shown("Reads the GhulSuite folder"))
+            assertTrue(shown("GhulSuite folder not reachable from the web"))
+            assertFalse(shown("Not checked, because the HTTPS step failed"))
+            text("Done").performScrollTo().performClick()
+            waitFor("Webspace")
+            assertTrue(state.stack.lastOrNull() is Screen.SettingsPage)
+            // Removing asks first; "Cancel" removes nothing.
+            text("Remove module").performScrollTo().performClick()
+            waitFor("Remove the server module from Heimserver?")
+            assertTrue(shown("Share links of this server stop working at once. Your files stay."))
+            onAllNodes(hasText("Cancel") and hasAnyAncestor(isDialog())).onFirst().performClick()
+            waitGone("Remove the server module from Heimserver?")
+            assertFalse(net.calls.any { it.startsWith("moduleRemove:") })
+            text("Remove module").performScrollTo().performClick()
+            waitFor("Remove the server module from Heimserver?")
+            onAllNodes(hasText("Remove") and hasAnyAncestor(isDialog())).onFirst().performClick()
+            waitUntil(timeoutMillis = 10_000) { "moduleRemove:s1" in net.calls }
+            // Update the older module (last: its message stays at the bottom for a while).
+            text("Update module").performScrollTo().performClick()
+            waitUntil(timeoutMillis = 10_000) { "moduleUpdate:s1" in net.calls }
+            waitFor("Server module updated (version 2)")
+        }
+    }
+
+    /**
+     * The core is busy (a synchronisation on a slow server) while the share links are looked up:
+     * the question comes at once and says that the links are being checked; "Move to trash" waits
+     * for the answer (bug: nothing happened for many seconds after the tap).
+     */
+    @Test
+    fun driveDeleteAsksAtOnceWhileTheLinksAreChecked() {
+        val gate = java.util.concurrent.CountDownLatch(1)
+        app(setup = { tab = Tab.DRIVE }, prepare = { (net as FakeNet).shareLinksGate = gate }) { _, _ ->
+        longPress("Steuer 2025.pdf")
+        waitFor("1 selected")
+        desc("Move to trash").performClick()
+        val started = System.currentTimeMillis()
+        waitFor("Move to the trash?")
+        // While the lookup still waits.
+        assertTrue(System.currentTimeMillis() - started < 5_000, "the question came late")
+        assertTrue(shown("Checking the share links …"))
+        val confirm = { onAllNodes(hasText("Move to trash") and hasAnyAncestor(isDialog())).onFirst() }
+        confirm().assertIsNotEnabled()
+        gate.countDown()
+        waitFor("1 active share link will end.")
+        assertFalse(shown("Checking the share links …"))
+        confirm().assertIsEnabled()
+        onAllNodes(hasText("Cancel") and hasAnyAncestor(isDialog())).onFirst().performClick()
+        waitGone("Move to the trash?")
+        }
+    }
+
+    /**
+     * Moved to the trash while the list cannot be reloaded yet (the core busy with the
+     * synchronisation that follows): the file leaves the list at once (bug: "Moved to trash"
+     * next to the file still in the list), and "Undo" brings it back at once.
+     */
+    @Test
+    fun driveTrashedFileLeavesTheListAtOnce() = app(setup = { tab = Tab.DRIVE }) { _, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Notizen.txt")
+        val gate = java.util.concurrent.CountDownLatch(1)
+        net.driveListGate = gate
+        try {
+            longPress("Notizen.txt")
+            waitFor("1 selected")
+            desc("Move to trash").performClick()
+            confirm("Move to trash")
+            waitFor("Moved to trash")
+            assertFalse(shown("Notizen.txt"), "the file is still in the list")
+            assertTrue(shown("Steuer 2025.pdf"))
+            // "Undo" brings it back at once, also while the list cannot be reloaded yet.
+            text("Undo").performClick()
+            waitFor("Notizen.txt")
+            assertTrue("driveRestore:f2" in net.calls)
+        } finally {
+            gate.countDown()
+            net.driveListGate = null
+        }
+    }
+
+    /**
+     * Deleting a shared file in GhulDrive: the question says that its link ends; "Cancel" ends
+     * nothing, "Move to trash" ends the link first and then moves the file.
+     */
+    @Test
+    fun driveDeleteOfSharedFileEndsItsLinks() = app(setup = { tab = Tab.DRIVE }) { _, fake ->
+        val net = fake.net as FakeNet
+        // A file without a link: the question has no extra line.
+        longPress("Notizen.txt")
+        waitFor("1 selected")
+        desc("Move to trash").performClick()
+        waitFor("Move to the trash?")
+        assertFalse(shown("1 active share link will end."))
+        onAllNodes(hasText("Cancel") and hasAnyAncestor(isDialog())).onFirst().performClick()
+        waitGone("Move to the trash?")
+        if (shown("1 selected")) desc("Cancel").performClick()
+        waitGone("1 selected")
+        // The shared file.
+        longPress("Steuer 2025.pdf")
+        waitFor("1 selected")
+        desc("Move to trash").performClick()
+        waitFor("1 active share link will end.")
+        shot("drive-delete-shared")
+        onAllNodes(hasText("Cancel") and hasAnyAncestor(isDialog())).onFirst().performClick()
+        waitGone("Move to the trash?")
+        assertFalse(net.calls.any { it.startsWith("shareDelete:") }, net.calls.toString())
+        assertFalse("driveDelete:f1" in net.calls)
+        if (!shown("1 selected")) longPress("Steuer 2025.pdf")
+        waitFor("1 selected")
+        desc("Move to trash").performClick()
+        waitFor("1 active share link will end.")
+        confirm("Move to trash")
+        waitUntil(timeoutMillis = 10_000) { "driveDelete:f1" in net.calls }
+        val calls = net.calls.toList()
+        assertTrue("shareDelete:a1" in calls, calls.toString())
+        assertTrue(calls.indexOf("shareDelete:a1") < calls.indexOf("driveDelete:f1"), "the link ends first: $calls")
     }
 
     /** GhulDrive with a server of its own (no synchronisation): the card and the header name it. */
@@ -869,12 +1352,584 @@ class InteractionTest {
             val n = net as FakeNet
             n.syncServer = null
             n.driveOwnServer = ServerUi("d1", "Drive-NAS", "nas.example.org", 22, "max", "drive", true, "SHA256:x", "/srv/drive",
-                ServerKindUi.SFTP, "", "")
+                ServerKindUi.SFTP)
         }) { _, _ ->
             waitFor("Drive-NAS")
             assertFalse(shown("No server yet"))
             assertFalse(shown("Not set up"))
             shot("drive-own-server")
         }
+    }
+
+    /**
+     * Leaving an area with its search focused: the hidden search keeps no focus (bug: Android
+     * brought the keyboard back for it in GhulAuth when the delete question closed).
+     */
+    @Test
+    fun leavingAnAreaClearsTheFocusOfItsSearch() {
+        app { state, _ ->
+            waitFor("Search entries")
+            val focusedFields = { onAllNodes(androidx.compose.ui.test.hasSetTextAction() and androidx.compose.ui.test.isFocused(), useUnmergedTree = true).fetchSemanticsNodes().size }
+            onAllNodes(androidx.compose.ui.test.hasSetTextAction(), useUnmergedTree = true)[0].performClick()
+            waitUntil(timeoutMillis = 5_000) { focusedFields() == 1 }
+            runOnIdle { state.tab = Tab.AUTH }
+            waitForIdle()
+            assertEquals(0, focusedFields())
+        }
+    }
+
+    /**
+     * Right after unlocking a synchronisation holds the core and reading GhulDrive's storage fails
+     * once: the card does not claim "No server yet" (Drive is set up), and it names the server
+     * once the synchronisation is done (bug: it stayed "No server yet" until the app restarted).
+     */
+    @Test
+    fun driveCardKeepsItsServerWhileTheCoreIsBusy() {
+        app(setup = { tab = Tab.DRIVE }, prepare = { (net as FakeNet).driveStorageFails = 1_000 }) { state, fake ->
+            waitFor("Steuer 2025.pdf")
+            assertFalse(shown("No server yet"))
+            assertFalse(shown("Choose server"))
+            // The synchronisation is done: the core answers again.
+            (fake.net as FakeNet).driveStorageFails = 0
+            state.sync()
+            waitFor("Heimserver")
+            assertFalse(shown("No server yet"))
+        }
+    }
+
+    /** Drive's server was removed from the list (older setup): the card says so, not "Loading …". */
+    @Test
+    fun driveCardSaysNoServerWhenTheCoreHasNone() {
+        app(setup = { tab = Tab.DRIVE }, prepare = { (net as FakeNet).syncServer = null }) { _, _ ->
+            waitFor("Steuer 2025.pdf")
+            waitFor("No server yet")
+            assertTrue(shown("Choose server"))
+            assertFalse(shown("Loading …"))
+        }
+    }
+
+    // --- Background jobs and the mail archive in GhulDrive ----------------------------------------
+
+    private fun DesktopComposeUiTest.part(t: String) = onAllNodesWithText(t, substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+
+    /** Selects every mail of the inbox and taps "Archive in GhulDrive" in the selection's sheet. */
+    private fun DesktopComposeUiTest.archiveAllSelected() {
+        longPress("Treffen am Freitag")
+        waitFor("1 selected")
+        onAllNodesWithTag(de.danerd.ghulsuite.ui.SELECT_ALL_TAG).onFirst().performClick()
+        waitFor("3 selected")
+        desc("More").performClick()
+        waitFor("Archive in GhulDrive")
+        text("Archive in GhulDrive").performClick()
+    }
+
+    private fun DesktopComposeUiTest.dialogButton(label: String) =
+        onAllNodes(hasText(label) and hasAnyAncestor(isDialog())).onFirst().performClick()
+
+    /**
+     * Archiving the selected mails asks first (copies, the provider keeps the mails), then runs in
+     * the background with its progress under the header, and ends with how many were archived and
+     * how many were in the archive already.
+     */
+    @Test
+    fun archiveSelectedMailsShowsProgressAndSkipped() = app(setup = { tab = Tab.MAIL }, prepare = {
+        val n = net as FakeNet
+        n.archiveDelayMs = 700
+        // One of them is in the archive already.
+        n.archivedToDrive += "m1/INBOX/2"
+    }) { _, fake ->
+        val net = fake.net as FakeNet
+        archiveAllSelected()
+        waitFor("Archive in GhulDrive?")
+        assertTrue(shown("3 selected mails are copied."))
+        assertTrue(part("The mails stay at your provider"))
+        assertFalse(net.calls.any { it.startsWith("archiveToDrive") }, "nothing before the answer")
+        shot("archive-ask")
+        dialogButton("Archive")
+        waitUntil(timeoutMillis = 10_000) { part("Archiving 3 mails") }
+        waitUntil(timeoutMillis = 10_000) { part("1 of 3 done") }
+        shot("archive-progress")
+        waitFor("2 mails archived in GhulDrive. 1 was already in the archive.")
+        shot("archive-done")
+        for (uid in listOf(1, 2, 3)) assertTrue("archiveToDrive:m1:INBOX:$uid" in net.calls, net.calls.toString())
+        // Nothing changed at the provider.
+        assertFalse(net.calls.any { it.startsWith("mailDelete") || it.startsWith("mailMove") })
+        waitUntil(timeoutMillis = 5_000) { !part("Archiving 3 mails") }
+    }
+
+    /** "Cancel" in the strip stops the archiving; the message says how far it got. */
+    @Test
+    fun archiveCancelSaysHowFar() = app(setup = { tab = Tab.MAIL }, prepare = { (net as FakeNet).archiveDelayMs = 1500 }) { _, fake ->
+        val net = fake.net as FakeNet
+        archiveAllSelected()
+        waitFor("Archive in GhulDrive?")
+        dialogButton("Archive")
+        waitUntil(timeoutMillis = 10_000) { part("1 of 3 done") }
+        onAllNodesWithTag(de.danerd.ghulsuite.ui.JOB_CANCEL_TAG).onFirst().performClick()
+        waitFor("Archiving cancelled: 1 of 3 mails done.")
+        Thread.sleep(2_000)
+        assertEquals(1, net.calls.count { it.startsWith("archiveToDrive") }, net.calls.toString())
+        assertFalse(part("Archiving 3 mails"), "the strip is gone")
+    }
+
+    /** "Archive older than 6 months" in the folder menu hands the right day to the core. */
+    @Test
+    fun archiveOlderThanPassesBeforeDays() = app(setup = { tab = Tab.MAIL }) { _, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Treffen am Freitag")
+        desc("Folder actions").performClick()
+        waitFor("Archive older than …")
+        assertTrue(shown("Archive this folder in GhulDrive"))
+        shot("archive-folder-menu")
+        text("Archive older than …").performClick()
+        waitFor("6 months")
+        assertTrue(shown("1 month") && shown("1 year") && shown("2 years"))
+        shot("archive-older-choices")
+        text("6 months").performClick()
+        waitFor("Archive in GhulDrive?")
+        assertTrue(shown("All mails in “Inbox” older than 6 months are copied."))
+        dialogButton("Archive")
+        val before = de.danerd.ghulsuite.ui.today().plusMonths(-6).days
+        waitUntil(timeoutMillis = 10_000) { "archiveUids:m1:INBOX:$before" in net.calls }
+        waitUntil(timeoutMillis = 10_000) { part("mails archived in GhulDrive.") || part("mail archived in GhulDrive.") }
+    }
+
+    /** Without GhulDrive the archive explains that it needs GhulDrive and leads there; nothing starts. */
+    @Test
+    fun archiveWithoutDriveExplains() = app(setup = { tab = Tab.MAIL }, prepare = { (net as FakeNet).driveMissing = true }) { state, fake ->
+        val net = fake.net as FakeNet
+        longPress("Treffen am Freitag")
+        waitFor("1 selected")
+        desc("More").performClick()
+        waitFor("Archive in GhulDrive")
+        text("Archive in GhulDrive").performClick()
+        waitFor("GhulDrive needed")
+        assertTrue(part("Set up GhulDrive first"))
+        assertFalse(shown("Archive in GhulDrive?"))
+        shot("archive-needs-drive")
+        dialogButton("Set up GhulDrive")
+        waitUntil(timeoutMillis = 10_000) { state.tab == Tab.DRIVE }
+        assertFalse(net.calls.any { it.startsWith("archiveToDrive") || it.startsWith("archiveUids") }, net.calls.toString())
+        assertTrue(state.jobs.list.isEmpty())
+    }
+
+    /**
+     * The archive in the mailbox sheet: years as rows, inside them the mails read from the file
+     * names (other files left out, the user's own folder shown as folder); a mail opens in the
+     * reader through mailParseEml; a file that is no mail says so.
+     */
+    @Test
+    fun archiveViewListsYearsAndOpensMails() = app(setup = { tab = Tab.MAIL }, prepare = { (net as FakeNet).archiveExists = true }) { state, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Privat · Inbox")
+        text("Privat · Inbox").performClick()
+        waitFor("Archive (GhulDrive)")
+        text("Archive (GhulDrive)").performClick()
+        waitFor("2025")
+        assertTrue(shown("2024") && shown("Steuern"))
+        shot("archive-years")
+        text("2025").performClick()
+        waitFor("Steuerbescheid 2024")
+        assertTrue(shown("Finanzamt") && shown("Urlaub im Mai") && shown("Erika Musterfrau"))
+        assertFalse(part("Notizen zum Archiv"), "other files are left out")
+        assertFalse(part("1a2b3c4d"), "the code is not shown")
+        shot("archive-year")
+        text("Steuerbescheid 2024").performClick()
+        waitUntil(timeoutMillis = 10_000) { "mailParseEml:m1" in net.calls }
+        waitFor("Anbei Ihr Bescheid.")
+        assertTrue("driveDownload:e1" in net.calls)
+        assertTrue(shown("Reply") && shown("Forward"))
+        assertTrue(shown("Bescheid.pdf"))
+        shot("archive-read")
+        // Reply works as for a mail at the provider.
+        text("Reply").performClick()
+        waitUntil(timeoutMillis = 10_000) { state.stack.lastOrNull() is Screen.MailCompose }
+        runOnIdle { state.pop() }
+        runOnIdle { state.pop() }
+        waitFor("kaputt")
+        text("kaputt").performClick()
+        waitFor("Cannot be read as a mail.")
+        shot("archive-unreadable")
+        runOnIdle { state.pop() }
+        waitFor("kaputt")
+        assertTrue(shown("Cannot be read as a mail."), "the row says it too")
+    }
+
+    /**
+     * Automatic archiving: the choice in the mail options is stored in the core, and the run after
+     * unlocking archives the inbox and Sent (up to the last mail handled), at most once a day.
+     */
+    @Test
+    fun autoArchiveOptionAndDailyRun() = app(setup = { push(Screen.SettingsPage(SetPage.MAIL)) }) { state, fake ->
+        val net = fake.net as FakeNet
+        waitFor("Automatic archiving")
+        assertTrue(part("once a day after unlocking"))
+        assertEquals(0, net.calls.count { it.startsWith("archiveAutoUids") }, "off: no run")
+        text("Automatic archiving").performClick()
+        waitFor("Older than 90 days")
+        shot("archive-auto-choice")
+        text("Older than 90 days").performClick()
+        waitUntil(timeoutMillis = 10_000) { "archiveSetAutoDays:90" in net.calls }
+        assertEquals(90, net.archiveAutoDaysValue)
+        // Switched on: it runs at once (nothing is old enough in the fake for 90 days).
+        waitUntil(timeoutMillis = 10_000) { "archiveAutoUids:m1:INBOX" in net.calls && "archiveAutoUids:m1:Sent" in net.calls }
+        waitUntil(timeoutMillis = 10_000) { state.backend.settings.archiveAutoLast != "0" }
+        shot("archive-auto-on")
+        // A day later with 1 day: the next unlock runs it and archives the old mail of both folders.
+        net.archiveAutoDaysValue = 1
+        state.backend.settings.archiveAutoLast = (de.danerd.ghulsuite.ui.nowSeconds() - 90_000).toString()
+        net.calls.clear()
+        fake.unlocked.value = false
+        waitForIdle()
+        fake.unlocked.value = true
+        waitUntil(timeoutMillis = 15_000) { "archiveAutoDone:m1:Sent:1:1" in net.calls }
+        val calls = net.calls.toList()
+        assertTrue("archiveToDrive:m1:INBOX:1" in calls && "archiveToDrive:m1:Sent:1" in calls, calls.toString())
+        assertTrue("archiveAutoDone:m1:INBOX:1:1" in calls, calls.toString())
+        assertTrue(calls.indexOf("archiveToDrive:m1:INBOX:1") < calls.indexOf("archiveAutoDone:m1:INBOX:1:1"))
+        waitFor("Automatic archive: 2 mails copied to GhulDrive.")
+        // Unlocked again the same day: no second run.
+        net.calls.clear()
+        fake.unlocked.value = false
+        waitForIdle()
+        fake.unlocked.value = true
+        waitForIdle()
+        Thread.sleep(1_500)
+        assertFalse(net.calls.any { it.startsWith("archiveAutoUids") }, net.calls.toString())
+    }
+
+    /** An automatic run that is cancelled notes only how far it got, so the next one continues there. */
+    @Test
+    fun autoArchiveCancelledKeepsItsPlace() = app(prepare = {
+        val n = net as FakeNet
+        n.archiveAutoDaysValue = 1
+        n.archiveDelayMs = 1500
+    }) { state, fake ->
+        val net = fake.net as FakeNet
+        // The old mail of the inbox and of Sent; the inbox is done, then "Cancel".
+        waitUntil(timeoutMillis = 10_000) { "archiveToDrive:m1:INBOX:1" in net.calls }
+        waitUntil(timeoutMillis = 10_000) { part("1 of 2 done") }
+        shot("archive-auto-running")
+        onAllNodesWithTag(de.danerd.ghulsuite.ui.JOB_CANCEL_TAG).onFirst().performClick()
+        waitUntil(timeoutMillis = 10_000) { !state.jobs.running }
+        val calls = net.calls.toList()
+        assertTrue("archiveAutoDone:m1:INBOX:1:1" in calls, calls.toString())
+        assertFalse(calls.any { it.startsWith("archiveAutoDone:m1:Sent") || it == "archiveToDrive:m1:Sent:1" }, calls.toString())
+        // Not done: the next unlock runs it again (the day is not used up).
+        assertEquals("0", state.backend.settings.archiveAutoLast)
+    }
+
+    /**
+     * An upload runs as a background job: leaving GhulDrive (another area, a page on top) does not
+     * stop it, its strip stays visible everywhere, and "Cancel" there stops it with how far it got.
+     */
+    @Test
+    fun driveUploadSurvivesLeavingAndCancels() = app(setup = { tab = Tab.DRIVE }) { state, fake ->
+        val net = fake.net as FakeNet
+        waitUntil(timeoutMillis = 10_000) { part("3 files") }
+        val closed = java.util.Collections.synchronizedList(mutableListOf<String>())
+        net.driveUploadMs = 1500
+        runOnIdle { state.driveIncoming = listOf(fakeSource("a.txt", closed = closed), fakeSource("b.txt", closed = closed), fakeSource("c.txt", closed = closed)) }
+        waitUntil(timeoutMillis = 10_000) { part("Uploading 3 files") }
+        runOnIdle { state.selectTab(Tab.MAIL) }
+        waitFor("Treffen am Freitag")
+        assertTrue(part("Uploading 3 files"), "the strip is shown in GhulMail too")
+        shot("job-strip-mail")
+        runOnIdle { state.push(Screen.SettingsPage(SetPage.LOOK)) }
+        waitForIdle()
+        waitUntil(timeoutMillis = 10_000) { part("1 of 3 done") }
+        assertTrue(part("Uploading 3 files"), "and on a page on top")
+        onAllNodesWithTag(de.danerd.ghulsuite.ui.JOB_CANCEL_TAG).onFirst().performClick()
+        waitFor("Upload cancelled: 1 of 3 files done.")
+        assertTrue("driveUpload::a.txt" in net.calls)
+        assertFalse(net.calls.any { it.endsWith(":b.txt") || it.endsWith(":c.txt") }, net.calls.toString())
+        waitUntil(timeoutMillis = 5_000) { closed.containsAll(listOf("a.txt", "b.txt", "c.txt")) }
+    }
+
+    /**
+     * The auto-lock waits for a running job and follows when it ends; the user coming back drops
+     * it; a lock by hand stops the job at once, and after the next unlock the message says why.
+     */
+    @Test
+    fun autoLockWaitsForJobsAndManualLockCancels() = app(setup = { tab = Tab.DRIVE }) { state, fake ->
+        val net = fake.net as FakeNet
+        net.driveUploadMs = 1200
+        waitUntil(timeoutMillis = 10_000) { part("3 files") }
+        // 1. The timer fires while two files upload: no lock until they are done.
+        runOnIdle { state.uploadToDrive(null, listOf(fakeSource("a.txt"), fakeSource("b.txt"))) }
+        waitUntil(timeoutMillis = 5_000) { state.jobs.running }
+        runOnIdle { state.autoLock() }
+        Thread.sleep(800)
+        assertEquals(0, fake.locks, "not while the upload runs")
+        waitUntil(timeoutMillis = 10_000) { !state.jobs.running }
+        waitUntil(timeoutMillis = 5_000) { fake.locks == 1 }
+        assertTrue("driveUpload::b.txt" in net.calls)
+        // 2. The user is back before the end: the waiting lock is dropped.
+        runOnIdle { state.uploadToDrive(null, listOf(fakeSource("c.txt"))) }
+        runOnIdle { state.autoLock() }
+        runOnIdle { state.keepUnlocked() }
+        waitUntil(timeoutMillis = 10_000) { "driveUpload::c.txt" in net.calls && !state.jobs.running }
+        Thread.sleep(300)
+        assertEquals(1, fake.locks)
+        // 3. Locked by hand: the job stops at once.
+        runOnIdle { state.uploadToDrive(null, listOf(fakeSource("d.txt"), fakeSource("e.txt"))) }
+        waitUntil(timeoutMillis = 5_000) { state.jobs.running }
+        runOnIdle { state.lockNow() }
+        waitUntil(timeoutMillis = 5_000) { fake.locks == 2 && !state.jobs.running }
+        assertEquals(de.danerd.ghulsuite.ui.JobState.CANCELLED, state.jobs.list.last().state)
+        Thread.sleep(1_500)
+        assertFalse(net.calls.any { it.endsWith(":d.txt") || it.endsWith(":e.txt") }, net.calls.toString())
+        // The fake does not lock by itself: lock and unlock it to see the message after unlocking.
+        fake.unlocked.value = false
+        waitForIdle()
+        assertFalse(part("Upload cancelled"), "not on the lock screen")
+        fake.unlocked.value = true
+        waitFor("GhulSuite was locked. Upload cancelled: 0 of 2 files done.")
+    }
+
+    /** The strip in a wide window (Windows): under the header of the column, with "Cancel". */
+    @Test
+    fun jobStripInWideWindow() = app(wide = true, setup = { tab = Tab.DRIVE }) { state, fake ->
+        (fake.net as FakeNet).driveUploadMs = 2000
+        runOnIdle { state.uploadToDrive(null, listOf(fakeSource("Steuer 2025.pdf", 2_400_000), fakeSource("Urlaub.jpg"))) }
+        waitUntil(timeoutMillis = 10_000) { part("Uploading 2 files") }
+        shot("job-strip-wide")
+        onAllNodesWithTag(de.danerd.ghulsuite.ui.JOB_CANCEL_TAG).onFirst().performClick()
+        waitFor("Upload cancelled: 0 of 2 files done.")
+    }
+
+    /**
+     * Photo backup: two photos added in the same second and "Cancel" between them. The mark stays
+     * one second before, so the next run still takes the second photo (it was skipped for good).
+     */
+    @Test
+    fun photoBackupKeepsPhotosOfTheSameSecond() = app(prepare = {
+        settings.photoBackup = true
+        (net as FakeNet).photos = listOf("a.jpg" to 1_000L, "b.jpg" to 1_000L, "c.jpg" to 1_005L)
+        (net as FakeNet).photoDelayMs = 1_500
+    }) { state, fake ->
+        val net = fake.net as FakeNet
+        waitUntil(timeoutMillis = 10_000) { "photo:a.jpg" in net.calls }
+        val job = state.jobs.list.first { it.kind == de.danerd.ghulsuite.ui.JobKind.PHOTOS }
+        runOnIdle { state.jobs.cancel(job) }
+        waitUntil(timeoutMillis = 10_000) { !job.active }
+        assertFalse("photo:b.jpg" in net.calls)
+        assertEquals(999, state.backend.settings.photoBackupSince, "the mark stays before the second of a.jpg")
+        // The next run takes b.jpg and c.jpg.
+        net.photoDelayMs = 0
+        fake.unlocked.value = false
+        waitForIdle()
+        fake.unlocked.value = true
+        waitUntil(timeoutMillis = 10_000) { "photo:c.jpg" in net.calls }
+        assertTrue("photo:b.jpg" in net.calls, net.calls.toString())
+        waitUntil(timeoutMillis = 5_000) { state.backend.settings.photoBackupSince == 1_005 }
+    }
+
+    /**
+     * The automatic lock that waited for a job follows its end; the job's message (it names the
+     * file) is not shown on the way to the lock screen but after the next unlock.
+     */
+    @Test
+    fun messageOfAJobTheLockWaitedForComesAfterUnlock() = app(setup = { tab = Tab.DRIVE }) { state, fake ->
+        val net = fake.net as FakeNet
+        net.driveUploadMs = 1_500
+        waitUntil(timeoutMillis = 10_000) { part("3 files") }
+        runOnIdle { state.uploadToDrive(null, listOf(fakeSource("secret.txt"))) }
+        waitUntil(timeoutMillis = 5_000) { state.jobs.running }
+        runOnIdle { state.autoLock() }
+        waitUntil(timeoutMillis = 10_000) { fake.locks == 1 }
+        assertTrue("driveUpload::secret.txt" in net.calls)
+        Thread.sleep(800)
+        assertFalse(part("secret.txt uploaded"), "nothing on the way to the lock screen")
+        fake.unlocked.value = false
+        waitForIdle()
+        fake.unlocked.value = true
+        waitFor("secret.txt uploaded.")
+    }
+
+    /** The system notification of a finished job (Windows tray) names no files: only what ended and the counts. */
+    @Test
+    fun jobEndForNotificationsHasNoNames() = app(setup = { tab = Tab.DRIVE }) { state, fake ->
+        val net = fake.net as FakeNet
+        net.driveUploadMs = 300
+        val ends = java.util.Collections.synchronizedList(mutableListOf<de.danerd.ghulsuite.ui.JobEnd>())
+        val collector = CoroutineScope(Dispatchers.Default).launch { de.danerd.ghulsuite.ui.JobStatus.finished.collect { ends += it } }
+        try {
+            Thread.sleep(200)
+            runOnIdle { state.uploadToDrive(null, listOf(fakeSource("secret.txt"))) }
+            waitUntil(timeoutMillis = 10_000) { ends.isNotEmpty() }
+            runOnIdle { state.uploadToDrive(null, listOf(fakeSource("geheim-1.txt"), fakeSource("geheim-2.txt"))) }
+            waitUntil(timeoutMillis = 10_000) { ends.size >= 2 }
+        } finally {
+            collector.cancel()
+        }
+        assertTrue("secret.txt" in ends[0].text, ends[0].text)
+        assertEquals("Upload finished", ends[0].publicText)
+        assertEquals("Upload finished · 2 of 2 done", ends[1].publicText)
+        assertFalse(ends.any { it.publicText.contains("secret") || it.publicText.contains("geheim") })
+    }
+
+    /** Two quick unlocks (or the option and an unlock) start one automatic archive run, not two. */
+    @Test
+    fun twoQuickStartsRunOneAutoArchive() = app { state, fake ->
+        val net = fake.net as FakeNet
+        net.archiveAutoDaysValue = 1
+        net.archiveAutoDaysDelayMs = 400
+        state.backend.settings.archiveAutoLast = "0"
+        runOnIdle {
+            state.runAutoArchive()
+            state.runAutoArchive()
+        }
+        waitUntil(timeoutMillis = 10_000) { "archiveAutoDone:m1:Sent:1:1" in net.calls }
+        Thread.sleep(1_000)
+        assertEquals(1, net.calls.count { it == "archiveAutoUids:m1:INBOX" }, net.calls.toString())
+    }
+
+    // --- Check the connection first, then save (mail accounts and servers) --------------------------
+
+    /** The text field under the label [label] (the label stands next to the field, in its card). */
+    private fun DesktopComposeUiTest.field(label: String) =
+        onAllNodes(hasSetTextAction() and androidx.compose.ui.test.hasParent(androidx.compose.ui.test.hasAnyDescendant(hasText(label, substring = true, ignoreCase = true))), useUnmergedTree = true)
+
+    private fun DesktopComposeUiTest.typeInto(label: String, text: String) {
+        waitUntil(timeoutMillis = 10_000) { field(label).fetchSemanticsNodes().isNotEmpty() }
+        field(label).onFirst().performTextReplacement(text)
+        waitForIdle()
+    }
+
+    private fun DesktopComposeUiTest.saveShown() = onAllNodes(hasText("Save") and hasClickAction()).fetchSemanticsNodes().isNotEmpty()
+
+    /** A server that does not exist and one that does not answer: said in words, the login not tried. */
+    @Test
+    fun mailServerNotFoundIsSaidInWords() = app(setup = { mailAccountSheet = de.danerd.ghulsuite.ui.MailSheet(null) }) { _, _ ->
+        typeInto("E-mail address", "ghul@nirgendwo.invalid")
+        typeInto("Password", "egal")
+        waitFor("Check connection")
+        text("Check connection").performClick()
+        waitFor("Server not found. Check the server name.")
+        assertTrue(shown("No answer from the server in time. Check server name, port and your internet connection."))
+        assertTrue(onAllNodesWithText("Not checked").fetchSemanticsNodes().size == 2)
+        assertFalse(part("not-found") || part("timeout"), "no internal codes on screen")
+    }
+
+    /**
+     * A new mail account: no "Save" before the check; a wrong password shows the two logins in
+     * red with the reason and still no "Save"; a working check shows "Save"; changing the
+     * password afterwards takes it away again. Nothing is saved by checking.
+     */
+    @Test
+    fun mailAccountIsCheckedBeforeSaving() = app(setup = { mailAccountSheet = de.danerd.ghulsuite.ui.MailSheet(null) }) { state, fake ->
+        val net = fake.net as FakeNet
+        typeInto("E-mail address", "anna@example.org")
+        typeInto("Password", "wrong")
+        waitFor("Check connection")
+        assertFalse(saveShown(), "no Save before the check")
+        text("Check connection").performClick()
+        waitFor("Login to the incoming server")
+        assertTrue(part("Login rejected. Check login name and password"))
+        assertTrue(shown("Incoming server reachable") && shown("Outgoing server reachable") && shown("Login to the outgoing server"))
+        assertFalse(saveShown(), "no Save after a failed check")
+        shot("mail-check-failed")
+        // The right password: the result of the wrong one is gone at once.
+        typeInto("Password", "richtig")
+        assertFalse(part("Login rejected"), "a change clears the result")
+        text("Check connection").performClick()
+        waitFor("Connection works. You can save the account now.")
+        assertTrue(saveShown())
+        shot("mail-check-ok")
+        assertFalse(net.calls.any { it.startsWith("mailSaveAccount") }, "checking saves nothing")
+        // Changing the password again: "Save" is gone until the next check.
+        typeInto("Password", "richtig2")
+        assertFalse(saveShown(), "a change of the password needs a new check")
+        assertFalse(part("Connection works."))
+        // Changing only the name keeps a working check.
+        text("Check connection").performClick()
+        waitFor("Connection works. You can save the account now.")
+        typeInto("Account name", "Anna")
+        assertTrue(saveShown(), "the name is not part of the connection")
+        onAllNodes(hasText("Save") and hasClickAction()).onFirst().apply { performScrollTo() }.performClick()
+        waitUntil(timeoutMillis = 10_000) { net.calls.any { it.startsWith("mailSaveAccount") } }
+        assertTrue("mailSaveAccount::Anna:anna@example.org" in net.calls, net.calls.toString())
+        waitUntil(timeoutMillis = 10_000) { state.mailAccountSheet == null }
+    }
+
+    /** Editing an account: a new name or signature saves without a check; a new password needs one. */
+    @Test
+    fun mailAccountNameChangeSavesWithoutCheck() = app(setup = { mailAccountSheet = de.danerd.ghulsuite.ui.MailSheet("m1") }) { state, fake ->
+        val net = fake.net as FakeNet
+        waitUntil(timeoutMillis = 10_000) { onAllNodes(hasSetTextAction() and hasText("max@posteo.de"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        assertTrue(saveShown(), "unchanged connection: Save without a check")
+        typeInto("Password", "neu-123")
+        assertFalse(saveShown(), "a new password needs a check")
+        typeInto("Password", "")
+        typeInto("Account name", "Privat neu")
+        assertTrue(saveShown())
+        onAllNodes(hasText("Save") and hasClickAction()).onFirst().apply { performScrollTo() }.performClick()
+        waitUntil(timeoutMillis = 10_000) { "mailSaveAccount:m1:Privat neu:max@posteo.de" in net.calls }
+        assertFalse(net.calls.any { it.startsWith("mailTest") }, net.calls.toString())
+        waitUntil(timeoutMillis = 10_000) { state.mailAccountSheet == null }
+    }
+
+    /** A self-signed certificate: the fingerprint question, then the check runs again by itself. */
+    @Test
+    fun mailCertificateIsConfirmedThenCheckedAgain() = app(
+        setup = { mailAccountSheet = de.danerd.ghulsuite.ui.MailSheet(null) },
+        prepare = { (net as FakeNet).mailSelfSigned = true },
+    ) { _, fake ->
+        val net = fake.net as FakeNet
+        typeInto("E-mail address", "anna@example.org")
+        typeInto("Password", "richtig")
+        text("Check connection").performClick()
+        waitFor("Check the certificate")
+        assertTrue(part("SHA256:selbstsigniert"))
+        assertFalse(saveShown())
+        dialogButton("Fingerprint matches")
+        waitFor("Connection works. You can save the account now.")
+        assertEquals(2, net.calls.count { it.startsWith("mailTest:") }, net.calls.toString())
+        assertTrue(saveShown())
+    }
+
+    /**
+     * A server: after the folder is chosen, "Check connection" (key fingerprint, writable folder)
+     * comes before "Save server"; choosing another folder takes "Save server" away again.
+     */
+    @Test
+    fun serverIsCheckedBeforeSaving() = app(setup = { push(Screen.AddServer) }) { state, fake ->
+        val net = fake.net as FakeNet
+        typeInto("Server address", "nas.example.org")
+        typeInto("User name", "max")
+        text("Test connection").performClick()
+        waitFor("Create new (recommended)")
+        text("ghulsuite").performClick()
+        waitFor("Check connection")
+        assertFalse(shown("Save server"), "no Save before the check")
+        text("Check connection").performClick()
+        waitFor("Check the server key")
+        dialogButton("Fingerprint matches")
+        waitFor("Save server")
+        assertTrue(part("the folder can be written"))
+        assertTrue("serverTest:nas.example.org:ghulsuite:SHA256:7beJP+X7anXY96H6FlO+I7u8z2xP1gJsp7GiBGawac4" in net.calls, net.calls.toString())
+        assertFalse(net.calls.any { it.startsWith("saveServer") }, "checking saves nothing")
+        shot("server-check-ok")
+        // Another folder: check again.
+        text("ghulsuite/").performClick()
+        waitFor("New folder …")
+        text("New folder …").performClick()
+        typeInto("Name of the new folder", "readonly")
+        text("Use readonly (created when testing)").performClick()
+        waitFor("Check connection")
+        assertFalse(shown("Save server"), "a new folder needs a new check")
+        text("Check connection").performClick()
+        waitUntil(timeoutMillis = 10_000) { part("Folder writable") && !state.busy }
+        assertFalse(shown("Save server"), "a folder that cannot be written is not saved")
+        shot("server-check-failed")
+        // Back to the writable folder: check, then save.
+        text("readonly/").performClick()
+        waitFor("Create new (recommended)")
+        text("ghulsuite").performClick()
+        text("Check connection").performClick()
+        waitFor("Save server")
+        text("Save server").performScrollTo().performClick()
+        waitUntil(timeoutMillis = 10_000) { "saveServer:nas.example.org:ghulsuite" in net.calls }
     }
 }

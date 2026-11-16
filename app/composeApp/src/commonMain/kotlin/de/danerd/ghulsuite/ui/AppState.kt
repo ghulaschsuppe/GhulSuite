@@ -21,6 +21,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import org.jetbrains.compose.resources.getPluralString
 import org.jetbrains.compose.resources.getString
 
@@ -63,6 +64,9 @@ object AppLaunch {
     /** A calendar file (.ics) opened with GhulSuite: imported into the default calendar. */
     val icsFile = kotlinx.coroutines.flow.MutableStateFlow<ByteArray?>(null)
 
+    /** Files shared from another app with "Save in GhulDrive" (opened only when uploaded). */
+    val driveFiles = kotlinx.coroutines.flow.MutableStateFlow<List<de.danerd.ghulsuite.model.ByteSource>?>(null)
+
     /** A tapped mail notification: the new mail, or the account's inbox. */
     val openMail = kotlinx.coroutines.flow.MutableStateFlow<MailTarget?>(null)
 }
@@ -85,12 +89,16 @@ sealed interface Screen {
     data class RecoveryCode(val code: String) : Screen
     data object AddServer : Screen
     data class SettingsPage(val page: SetPage) : Screen
-    data class ShareSetup(val serverId: String) : Screen
+    /** Installing the server module (share links) on a server. */
+    data class ModuleInstall(val serverId: String) : Screen
     data object Shares : Screen
     data object Security : Screen
     data class MailRead(val accountId: String, val folder: String, val uid: Long) : Screen
-    data class MailArchiveRead(val accountId: String, val folder: String, val key: String) : Screen
     data class MailCompose(val draft: MailDraft) : Screen
+    /** The mail archive of an account in GhulDrive. */
+    data class MailArchive(val accountId: String) : Screen
+    /** An archived mail (an .eml file in GhulDrive). */
+    data class MailArchiveRead(val accountId: String, val fileId: String, val name: String) : Screen
     data class CalEvent(val id: String, val day: String) : Screen
     data class CalEdit(val draft: de.danerd.ghulsuite.model.CalEventUi) : Screen
 }
@@ -110,8 +118,13 @@ data class MailDraft(
 )
 
 
-/** UI state and navigation of the whole app. */
-class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
+/**
+ * UI state and navigation of the whole app. [main]: the app's own state, which runs the
+ * background work after unlocking (automatic archive, photo backup, scheduled mail, backups,
+ * update check) and owns the hooks of [JobStatus]. A second state (the autofill window) passes
+ * false: it neither starts that work a second time nor takes the notification's "Cancel" away.
+ */
+class AppState(val backend: VaultBackend, val scope: CoroutineScope, val main: Boolean = true) {
     var vaultExists by mutableStateOf(backend.exists())
 
     /** Shows the start screen (open another suite or vault) although a suite exists. */
@@ -120,6 +133,51 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     /** Vaults of the open suite. */
     var vaults by mutableStateOf<List<VaultUi>>(emptyList())
         private set
+
+    /** Long work in the background (uploads, downloads, mail archive); declared before init. */
+    val jobs = Jobs(this)
+
+    /**
+     * The language of the screens (set by the root screen). Texts looked up outside of a screen use
+     * it; without a screen the lookup would need the display (and fail where there is none).
+     */
+    val resEnv = kotlinx.coroutines.flow.MutableStateFlow<org.jetbrains.compose.resources.ResourceEnvironment?>(null)
+
+    private suspend fun env(): org.jetbrains.compose.resources.ResourceEnvironment? =
+        resEnv.value ?: kotlinx.coroutines.withTimeoutOrNull(5_000) { resEnv.first { it != null } }
+
+    /** A text in the language of the screens. */
+    suspend fun str(res: org.jetbrains.compose.resources.StringResource, vararg args: Any): String =
+        env()?.let { getString(it, res, *args) } ?: getString(res, *args)
+
+    /** A counted text ("1 file", "3 files") in the language of the screens. */
+    suspend fun plural(res: org.jetbrains.compose.resources.PluralStringResource, count: Int, vararg args: Any): String =
+        env()?.let { getPluralString(it, res, count, *args) } ?: getPluralString(res, count, *args)
+
+    /** Messages of jobs that locking stopped: shown after the next unlock (not on the lock screen). */
+    private val afterUnlock = mutableListOf<String>()
+
+    fun noteAfterUnlock(text: String) {
+        afterUnlock += text
+    }
+
+    /** An automatic archive run is being started (set before its first suspension: one run at a time). */
+    internal var autoArchiveStarting = false
+
+    /** GhulDrive's content changed in the background (an upload finished): the list reads it again. */
+    var driveTick by mutableStateOf(0)
+
+    /** The mail archive in GhulDrive changed (archived, deleted from it). */
+    var archiveTick by mutableStateOf(0)
+
+    /** Archived mails (GhulDrive file ids) that could not be read as a mail. */
+    var archiveUnreadable by mutableStateOf<Set<String>>(emptySet())
+
+    /** The folder menu of GhulMail (header "⋮") is open. */
+    var mailFolderMenu by mutableStateOf(false)
+
+    /** Folders opened in the mail archive (id and name below the account's folder); kept while a mail is read. */
+    var archivePath by mutableStateOf<List<Pair<String, String>>>(emptyList())
 
     /** The vault list was read since unlocking (until then all areas switched on count as there). */
     private var areasKnown by mutableStateOf(false)
@@ -165,6 +223,19 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     /** GhulDrive is set up and can take an upload from the "+" button; a tick asks for one. */
     var driveReady by mutableStateOf(false)
     var driveUploadTick by mutableStateOf(0)
+
+    /**
+     * A deletion waiting for "Delete?" to be answered (F103: every deletion asks first). [extra]:
+     * one more line under the question (e.g. which share links end with it).
+     */
+    /** A question before deleting; while not [ready] (still checking, e.g. share links) it cannot be confirmed. */
+    class DeleteAsk(val names: List<String>, val trash: Boolean, val action: () -> Unit, val extra: String? = null, val ready: Boolean = true)
+
+    // Declared before init (the lock listener there clears it).
+    var deleteAsk by mutableStateOf<DeleteAsk?>(null)
+
+    /** Files shared from another app into GhulDrive ("Save in GhulDrive"), waiting for GhulDrive. */
+    var driveIncoming by mutableStateOf<List<de.danerd.ghulsuite.model.ByteSource>?>(null)
     /** GhulDrive shows its trash: nothing can be added there, so there is no "Add" button. */
     var driveTrashShown by mutableStateOf(false)
 
@@ -287,9 +358,6 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     /** U13: the last automatic sync found no connection; shown on the area pages until a sync works. */
     var syncOffline by mutableStateOf(false)
 
-    // --- Mail archive (KONZEPT 9.3.1): runs while the suite is unlocked, every 30 minutes.
-    /** The archive could not be reached (the reason), shown at the top of GhulMail. */
-    var archiveUnreachable by mutableStateOf<String?>(null)
     /** A newer version was found: the update dialog shows it. */
     var update by mutableStateOf<UpdateUi?>(null)
     /** Looking for or loading an update. */
@@ -346,98 +414,6 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         }
     }
 
-    /** First run of an account done: "remove N mails at the provider now?" (account id, N). */
-    var archiveAsk by mutableStateOf<Pair<String, Int>?>(null)
-    /** An archive run is going on. */
-    var archiveRunning by mutableStateOf(false)
-    /** Mails too large for the archive (per account), from the last run. */
-    var archiveTooLarge by mutableStateOf<Map<String, Int>>(emptyMap())
-    /** Progress of the run going on ("1.200 archived, 28.800 left"), null otherwise. */
-    var archiveProgress by mutableStateOf<String?>(null)
-    private var archiveJob: kotlinx.coroutines.Job? = null
-    /** "Where should your mails live?" after the first account, while no archive is set up. */
-    var archiveWhereAsk by mutableStateOf(false)
-
-    fun askArchiveWhere() {
-        scope.launch {
-            val st = catching { backend.net.archiveStatus() }.getOrNull()
-            if (st != null && st.mode == de.danerd.ghulsuite.model.ArchiveModeUi.NONE) archiveWhereAsk = true
-        }
-    }
-    private val archiveAsked = mutableSetOf<String>()
-
-    fun startArchive() {
-        archiveJob?.cancel()
-        if (!backend.settings.moduleGhulMail || !hasArea(VaultKindUi.MAIL)) return
-        archiveJob = scope.launch {
-            while (backend.unlocked.value) {
-                runArchiveOnce(manual = false)
-                kotlinx.coroutines.delay(30 * 60_000L)
-            }
-        }
-    }
-
-    /** One pass over every archived account. [manual]: "Archive now" (also outside Wi-Fi). */
-    suspend fun runArchiveOnce(manual: Boolean): de.danerd.ghulsuite.model.MailArchiveRunUi? {
-        val net = backend.net
-        val st = catching { net.archiveStatus() }.getOrNull() ?: return null
-        if (st.mode == de.danerd.ghulsuite.model.ArchiveModeUi.NONE || st.options.accounts.isEmpty()) return null
-        if (!manual && backend.settings.archiveWifiOnly && !net.unmeteredNetwork()) return null
-        if (archiveRunning) return null
-        archiveRunning = true
-        var total = de.danerd.ghulsuite.model.MailArchiveRunUi()
-        suspend fun progress(left: Int) {
-            val text = getString(Res.string.archive_progress, total.archived.toString(), left.toString())
-            archiveProgress = text
-            net.archiveRunning(text)
-        }
-        try {
-            progress(0)
-            for (a in st.options.accounts) {
-                var rounds = 0
-                while (backend.unlocked.value && rounds < 500) {
-                    rounds++
-                    val r = try {
-                        net.archiveRun(a, ARCHIVE_BATCH)
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Throwable) {
-                        archiveUnreachable = describe(e)
-                        return null
-                    }
-                    archiveUnreachable = null
-                    archiveTooLarge = archiveTooLarge + (a to r.tooLarge)
-                    total = total.copy(
-                        archived = total.archived + r.archived, removed = total.removed + r.removed,
-                        deletedByRule = total.deletedByRule + r.deletedByRule, remaining = r.remaining,
-                        waitingForConfirmation = r.waitingForConfirmation, renumbered = total.renumbered + r.renumbered, busy = r.busy,
-                    )
-                    progress(r.remaining)
-                    if (r.busy.isNotEmpty() || r.remaining == 0) {
-                        if (r.remaining == 0 && r.waitingForConfirmation > 0 && st.options.deleteAtProvider &&
-                            a !in st.confirmed && archiveAsked.add(a)
-                        ) {
-                            archiveAsk = a to r.waitingForConfirmation
-                        }
-                        break
-                    }
-                }
-            }
-            if (st.fullCopy) catching { net.archiveDownload(500, archiveDeviceName()) }
-        } finally {
-            archiveRunning = false
-            archiveProgress = null
-            net.archiveRunning(null)
-        }
-        if (total.archived > 0 || total.removed > 0) changed()
-        return total
-    }
-
-    /** Mails per call of the core (each call ends with everything checked; the progress follows it). */
-    private val ARCHIVE_BATCH = 1000
-
-    /** How this device is called in "a copy of the archive has: ...". */
-    fun archiveDeviceName(): String = if (backend.isDesktop) "Windows-PC" else "Android"
     var confirmDiscard by mutableStateOf(false)
     private var discardedOnLock = false
 
@@ -468,11 +444,19 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         scope.launch {
             backend.unlocked.collect { unlocked ->
                 if (!unlocked) {
+                    // Locked from anywhere (panic, notification, screen off): running jobs stop now.
+                    jobs.cancelAll(byLock = true)
+                    jobs.lockWhenDone = false
+                    mailFolderMenu = false
+                    archivePath = emptyList()
+                    archiveUnreadable = emptySet()
                     if (editorDirty) discardedOnLock = true
                     editorDirty = false
                     recoveredGuide = false
                     confirmDiscard = false
                     pendingTab = null
+                    driveIncoming = null
+                    deleteAsk = null
                     dropPending()
                     stack.clear()
                     tab = tabs.first()
@@ -488,20 +472,21 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     mailUnread = 0
                     areasKnown = false
                     codeUnconfirmed = false
-                    archiveJob?.cancel()
-                    archiveAsk = null
-                    archiveUnreachable = null
                 } else {
                     if (discardedOnLock) {
                         discardedOnLock = false
                         message(getString(Res.string.edit_dropped_on_lock))
                     }
+                    afterUnlock.toList().also { afterUnlock.clear() }.forEach { message(it) }
                     refreshVaults()
                     scanFound()
                     autoSync()
-                    runPhotoBackup()
-                    sendDueMail()
-                    runAutoBackup()
+                    if (main) runPhotoBackup()
+                    if (main) {
+                        sendDueMail()
+                        runAutoBackup()
+                        runAutoArchive()
+                    }
                     val start = backend.settings.startTab.let { if (it < 0) backend.settings.lastTab else it }
                     tabs.getOrNull(start)?.let { tab = it }
                     applyLaunch()
@@ -510,10 +495,16 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                         scope.launch { catching { backend.net.refreshMailNotifications() } }
                     }
                     refreshCalendar()
-                    startArchive()
-                    checkUpdate(manual = false)
+                    if (main) checkUpdate(manual = false)
                 }
             }
+        }
+        // The notification's "Cancel" (Android) stops the running jobs; the automatic lock of
+        // Android asks the jobs first. Only the app's own state.
+        if (main) {
+            JobStatus.cancelAll = { jobs.cancelAll() }
+            JobStatus.autoLock = { autoLock() }
+            JobStatus.keepUnlocked = { keepUnlocked() }
         }
         // Going to the background carries out what waits for "Undo": the auto lock may come next.
         scope.launch { AppLaunch.inFront.collect { if (!it) catching { settlePending() } } }
@@ -532,6 +523,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         scope.launch { AppLaunch.compose.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
         scope.launch { AppLaunch.newEvent.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
         scope.launch { AppLaunch.icsFile.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
+        scope.launch { AppLaunch.driveFiles.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
         scope.launch {
             AppLaunch.newMail.collect {
                 if (it > 0 && backend.unlocked.value) {
@@ -583,6 +575,21 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                 stack.clear()
                 tab = Tab.CAL
                 stack.add(Screen.CalEdit(ev.copy(calendarId = ev.calendarId.ifEmpty { calDefaultCalendar })))
+            }
+        }
+        AppLaunch.driveFiles.value?.let { files ->
+            AppLaunch.driveFiles.value = null
+            if (Tab.DRIVE in tabs) {
+                stack.clear()
+                tab = Tab.DRIVE
+                driveIncoming = files
+                scope.launch {
+                    // GhulDrive without storage: the files wait; say what to do.
+                    // Only when GhulDrive surely has none (not when the server is just unreachable).
+                    catching { backend.net.driveStatus() }.onSuccess { if (it.serverId == null) message(getString(Res.string.drive_upload_not_set_up)) }
+                }
+            } else {
+                scope.launch { message(getString(Res.string.drive_upload_not_set_up)) }
             }
         }
         AppLaunch.icsFile.value?.let { data ->
@@ -672,10 +679,11 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex)
     }
 
-    fun changed() {
+    /** Something changed: reload, and synchronise automatically unless the caller syncs itself. */
+    fun changed(sync: Boolean = true) {
         revision++
         refreshVaults()
-        autoSync()
+        if (sync) autoSync()
         refreshCalendar()
     }
 
@@ -691,8 +699,11 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             syncAgain = true
             return
         }
-        scope.launch {
-            syncing = true
+        // Set before the start: a second call before the coroutine runs (Android's main
+        // dispatcher starts it later) joins this run instead of starting one of its own. ATOMIC:
+        // the body (and with it the reset below) always runs.
+        syncing = true
+        scope.launch(start = CoroutineStart.ATOMIC) {
             try {
                 do {
                     syncAgain = false
@@ -842,6 +853,47 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         }
     }
 
+    /**
+     * Something already done that "Undo" takes back (F96: moving to GhulDrive's trash, so the
+     * number of files is right at once; the trash keeps the file anyway). The snackbar shows
+     * [message] with "Undo" for a few seconds; Undo runs [undo], then [afterUndo].
+     */
+    fun doneWithUndo(message: String, undo: suspend () -> Unit, afterUndo: () -> Unit = {}) {
+        scope.launch {
+            settlePending()
+            snackbar.currentSnackbarData?.dismiss()
+            val undone = kotlinx.coroutines.coroutineScope {
+                val timer = launch {
+                    kotlinx.coroutines.delay(undoMillis)
+                    snackbar.currentSnackbarData?.takeIf { it.visuals.message == message && it.visuals.actionLabel != null }?.dismiss()
+                }
+                val r = snackbar.showSnackbar(message, undoLabel.ifEmpty { getString(Res.string.a_undo) }, duration = androidx.compose.material3.SnackbarDuration.Indefinite)
+                timer.cancel()
+                r == androidx.compose.material3.SnackbarResult.ActionPerformed
+            }
+            if (!undone || !backend.unlocked.value) return@launch
+            // Also after a failure part of it may be back: show what is true.
+            val failure = catching { undo() }.exceptionOrNull()
+            afterUndo()
+            failure?.let { message(describe(it)) }
+        }
+        doneUndoMessage = message
+    }
+
+    /** The message of [doneWithUndo] (a lock takes it away: "Undo" cannot work after it). */
+    private var doneUndoMessage: String? = null
+
+
+    /**
+     * Asks before deleting (or moving to a trash) [names]; [action] runs only after "Delete".
+     * Every area deletes through this; "Undo" afterwards stays as it was. [extra] adds a line to
+     * the question.
+     */
+    fun askDelete(names: List<String>, trash: Boolean = false, extra: String? = null, action: () -> Unit) {
+        if (names.isEmpty()) return
+        deleteAsk = DeleteAsk(names, trash, action, extra)
+    }
+
     /** Carries out the action that waits for "Undo" now (before the next one, before locking). */
     suspend fun settlePending() {
         val p = pending ?: return
@@ -879,18 +931,42 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
 
     /** Drops what waits for "Undo" (the suite was locked from outside): the items stay. */
     private fun dropPending() {
+        doneUndoMessage?.let { m -> snackbar.currentSnackbarData?.takeIf { it.visuals.message == m }?.dismiss() }
+        doneUndoMessage = null
         val p = pending ?: return
         pending = null
         hidden = hidden - p.keys
         snackbar.currentSnackbarData?.takeIf { it.visuals.message == p.message }?.dismiss()
     }
 
-    /** Locks the suite after carrying out what waits for "Undo". Every lock button uses this. */
+    /**
+     * Locks the suite after carrying out what waits for "Undo". Every lock button uses this. A
+     * running job stops at once (its message follows after the next unlock).
+     */
     fun lockNow() {
+        jobs.lockWhenDone = false
+        jobs.cancelAll(byLock = true)
+        // A state whose screens are gone (its scope ended) still locks.
+        if (!scope.coroutineContext[kotlinx.coroutines.Job].let { it == null || it.isActive }) {
+            backend.lock()
+            return
+        }
         scope.launch {
             catching { settlePending() }
             backend.lock()
         }
+    }
+
+    /**
+     * An automatic lock (time away, idle, screen off, Windows locked): quiet jobs stop at once;
+     * jobs the user started are waited for while they make progress (see [Jobs.autoLock]). A lock
+     * by hand stops every job at once ([lockNow]).
+     */
+    fun autoLock() = jobs.autoLock()
+
+    /** The user is back before the jobs ended: the waiting automatic lock is dropped. */
+    fun keepUnlocked() {
+        jobs.lockWhenDone = false
     }
 
     /** Weekly backup into the folder chosen in Options (if set). */
@@ -922,29 +998,34 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         }
     }
 
-    private var photoBackupRunning = false
-
-    /** Backs up new photos into GhulDrive (Android, if switched on); runs after unlocking. */
+    /** Backs up new photos into GhulDrive (Android, if switched on); runs after unlocking as a quiet job. */
     fun runPhotoBackup() {
         val st = backend.settings
-        if (!st.photoBackup || photoBackupRunning || !backend.net.photoBackupAvailable) return
-        photoBackupRunning = true
-        scope.launch {
-            var count = 0
+        if (!main || !st.photoBackup || !backend.net.photoBackupAvailable || jobs.list.any { it.active && it.kind == JobKind.PHOTOS }) return
+        jobs.start(
+            JobKind.PHOTOS, title = { str(Res.string.drive_photo_backup_running) }, quiet = true,
+            cancelled = { j -> if (j.done > 0) plural(Res.plurals.drive_photo_backup_done, j.done, j.done.toString()) else null },
+        ) { job ->
             try {
-                if (backend.net.driveStatus().serverId == null) return@launch
-                val newest = backend.net.photoBackup(st.photoBackupSince.toLong(), st.photoBackupWifiOnly) { count++ }
-                st.photoBackupSince = newest.toInt()
-                if (count > 0) {
-                    revision++
-                    message(getPluralString(Res.plurals.drive_photo_backup_done, count, count.toString()))
+                if (backend.net.driveStatus().serverId == null) return@start null
+                // Each photo moves the mark on: a cancelled run continues after the last one done.
+                val newest = backend.net.photoBackup(st.photoBackupSince.toLong(), st.photoBackupWifiOnly) { name, added, next ->
+                    job.item = name
+                    job.done++
+                    val mark = photoMark(added, next)
+                    if (mark > st.photoBackupSince) st.photoBackupSince = mark.toInt()
+                    driveTick++
                 }
+                st.photoBackupSince = newest.toInt()
+                if (job.done > 0) {
+                    revision++
+                    plural(Res.plurals.drive_photo_backup_done, job.done, job.done.toString())
+                } else null
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                if ((e as? VaultException)?.kind != VaultErrorKind.NETWORK) message(describe(e))
-            } finally {
-                photoBackupRunning = false
+                // Without a network it simply waits for the next unlock.
+                if ((e as? VaultException)?.kind == VaultErrorKind.NETWORK) null else describe(e)
             }
         }
     }
@@ -1107,3 +1188,10 @@ object PasswordPolicy {
         else -> null
     }
 }
+
+/**
+ * The photo backup's mark after a photo added at [added] (whole seconds): the next run takes the
+ * photos added after the mark. If the next photo waiting has the same second ([next]), the mark
+ * stays one second before, so a run stopped between the two does not skip the second one.
+ */
+fun photoMark(added: Long, next: Long?): Long = if (next == null || next > added) added else added - 1

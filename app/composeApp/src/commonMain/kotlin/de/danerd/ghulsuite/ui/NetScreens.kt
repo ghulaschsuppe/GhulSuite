@@ -6,7 +6,9 @@ import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -26,7 +28,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import de.danerd.ghulsuite.model.PhpModuleUi
 import de.danerd.ghulsuite.model.PickedFile
 import de.danerd.ghulsuite.model.ServerInputUi
 import de.danerd.ghulsuite.model.ServerKindUi
@@ -109,16 +110,11 @@ fun FingerprintDialog(title: String, text: String, fingerprint: String, onTrust:
 
 private fun defaultServer() = ServerInputUi(name = "", host = "", port = 22, user = "", password = null, base = "ghulsuite")
 
-/** Options → add a server: the shared server form (#24); the module file by hand as fallback. */
+/** Options → add a server: the shared server form (#24). */
 @Composable
 fun AddServerScreen(state: AppState, padding: PaddingValues) {
     val net = state.backend.net
     val form = rememberServerForm()
-    var manual by remember { mutableStateOf(false) }
-    if (manual) {
-        ManualServerScreen(state, padding)
-        return
-    }
     Column(Modifier.padding(padding)) {
         ScreenColumn {
             BusyBanner(state)
@@ -128,223 +124,8 @@ fun AddServerScreen(state: AppState, padding: PaddingValues) {
                     state.changed()
                     state.pop()
                 }
-                if (form.kind == ServerKindUi.PHP) {
-                    TextButton(onClick = { manual = true }) { Text(stringResource(Res.string.php_manual)) }
-                }
             }
         }
-    }
-}
-
-/** Server input of earlier versions: also creates a PHP module file to upload by hand. */
-@Composable
-private fun ManualServerScreen(state: AppState, padding: PaddingValues) {
-    val net = state.backend.net
-    var kind by remember { mutableStateOf(ServerKindUi.SFTP) }
-    var input by remember { mutableStateOf(defaultServer()) }
-    var usePassword by remember { mutableStateOf(false) }
-    var publicKey by remember { mutableStateOf<String?>(null) }
-    var fingerprint by remember { mutableStateOf<String?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var module by remember { mutableStateOf<PhpModuleUi?>(null) }
-    // With a password: set up the SSH key automatically and do not store the password (default).
-    var installKey by remember { mutableStateOf(true) }
-    LaunchedEffect(Unit) { publicKey = catching { net.sshPublicKey() }.getOrNull() }
-    val effective = when (kind) {
-        ServerKindUi.SFTP -> if (usePassword && !installKey) input else input.copy(password = null)
-        else -> input
-    }.copy(kind = kind)
-    val setupKey = kind == ServerKindUi.SFTP && usePassword && installKey
-
-    /** Install the key if wanted, then check and store the server (all in one busy step). */
-    fun connect(confirmed: String?) {
-        state.run(onError = { error = it }, block = {
-            if (setupKey) {
-                val fp = net.installSshKey(input, confirmed)
-                if (fp.isNotEmpty()) return@run ServerSavedUi.Confirm(fp)
-            }
-            net.saveServer(effective, confirmed)
-        }) { result ->
-            when (result) {
-                is ServerSavedUi.Confirm -> fingerprint = result.fingerprint
-                is ServerSavedUi.Saved -> {
-                    state.changed()
-                    state.pop()
-                }
-            }
-        }
-    }
-
-    Column(Modifier.padding(padding)) {
-        ScreenColumn {
-            BusyBanner(state)
-            SectionCard(stringResource(Res.string.server_kind)) {
-                ServerKindRow(ServerKindUi.SFTP, kind, Res.string.server_kind_sftp, Res.string.server_kind_sftp_sub) {
-                    kind = it; input = input.copy(port = 22, password = null); error = null
-                }
-                ServerKindRow(ServerKindUi.FTPS, kind, Res.string.server_kind_ftps, Res.string.server_kind_ftps_sub) {
-                    kind = it; input = input.copy(port = 21, password = ""); error = null
-                }
-                ServerKindRow(ServerKindUi.PHP, kind, Res.string.server_kind_php, Res.string.server_kind_php_sub) {
-                    kind = it; input = input.copy(password = module?.key ?: ""); error = null
-                }
-            }
-            SectionCard(stringResource(Res.string.server_add_title)) {
-                when (kind) {
-                    ServerKindUi.SFTP -> {
-                        Hint(stringResource(Res.string.server_add_text))
-                        ServerFields(input, usePassword, { input = it; error = null }, { usePassword = it })
-                        if (usePassword) {
-                            SwitchRow(stringResource(Res.string.server_install_key), installKey) { installKey = it }
-                            Hint(stringResource(if (installKey) Res.string.server_install_key_hint else Res.string.server_password_stored_hint))
-                        } else {
-                            publicKey?.let { PublicKeyBox(state, it) }
-                        }
-                    }
-                    ServerKindUi.FTPS -> {
-                        Hint(stringResource(Res.string.server_ftps_text))
-                        OutlinedTextField(input.name, { input = input.copy(name = it) }, Modifier.fillMaxWidth(),
-                            label = { Text(stringResource(Res.string.server_name)) }, singleLine = true)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(input.host, { input = input.copy(host = it.trim()) }, Modifier.weight(3f),
-                                label = { Text(stringResource(Res.string.server_host)) }, singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
-                            OutlinedTextField(if (input.port == 0) "" else input.port.toString(),
-                                { v -> input = input.copy(port = v.filter(Char::isDigit).take(5).toIntOrNull() ?: 0) }, Modifier.weight(1f),
-                                label = { Text(stringResource(Res.string.server_port)) }, singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-                        }
-                        OutlinedTextField(input.user, { input = input.copy(user = it.trim()) }, Modifier.fillMaxWidth(),
-                            label = { Text(stringResource(Res.string.server_user)) }, singleLine = true)
-                        SecretTextField(input.password.orEmpty(), { input = input.copy(password = it) }, stringResource(Res.string.server_password))
-                        OutlinedTextField(input.base, { input = input.copy(base = it.trim()) }, Modifier.fillMaxWidth(),
-                            label = { Text(stringResource(Res.string.server_base)) }, singleLine = true)
-                        Hint(stringResource(Res.string.server_ftps_hint))
-                    }
-                    ServerKindUi.PHP -> PhpModuleFields(state, input, module, { input = it; error = null }) { m ->
-                        module = m
-                        input = input.copy(password = m.key)
-                    }
-                }
-                ErrorText(error)
-                val ready = when (kind) {
-                    ServerKindUi.SFTP -> input.host.isNotBlank() && input.user.isNotBlank() && (!usePassword || !input.password.isNullOrEmpty())
-                    ServerKindUi.FTPS -> input.host.isNotBlank() && input.user.isNotBlank() && !input.password.isNullOrEmpty()
-                    ServerKindUi.PHP -> input.url.startsWith("https://") && !input.password.isNullOrEmpty()
-                }
-                Button(onClick = { connect(null) }, enabled = !state.busy && ready, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(Res.string.a_connect))
-                }
-            }
-        }
-    }
-    fingerprint?.let { fp ->
-        FingerprintDialog(
-            stringResource(Res.string.server_fp_title),
-            stringResource(if (kind == ServerKindUi.SFTP) Res.string.server_fp_text else Res.string.server_cert_text), fp,
-            onTrust = {
-                fingerprint = null
-                connect(fp)
-            },
-            onDismiss = { fingerprint = null },
-        )
-    }
-}
-
-@Composable
-private fun ServerKindRow(kind: ServerKindUi, current: ServerKindUi, title: StringResource, sub: StringResource, onPick: (ServerKindUi) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clickable { onPick(kind) }.padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        RadioButton(kind == current, { onPick(kind) })
-        Column(Modifier.weight(1f)) {
-            SectionLabel(stringResource(title))
-            Hint(stringResource(sub))
-        }
-    }
-}
-
-/**
- * PHP server module: create a module with its own key, save it or upload it through an already
- * stored server, then connect with its address.
- */
-@Composable
-private fun PhpModuleFields(
-    state: AppState,
-    input: ServerInputUi,
-    module: PhpModuleUi?,
-    onInput: (ServerInputUi) -> Unit,
-    onModule: (PhpModuleUi) -> Unit,
-) {
-    val net = state.backend.net
-    var servers by remember { mutableStateOf<List<ServerUi>>(emptyList()) }
-    var uploadVia by remember { mutableStateOf<ServerUi?>(null) }
-    var uploadDir by remember { mutableStateOf("") }
-    var uploaded by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(Unit) { servers = catching { net.servers() }.getOrDefault(emptyList()).filter { it.kind != ServerKindUi.PHP } }
-    val savedMsg = stringResource(Res.string.php_saved)
-    val save = rememberSaveFile { ok -> if (ok) state.message(savedMsg) }
-
-    Hint(stringResource(Res.string.php_text))
-    SectionLabel(stringResource(Res.string.php_step1))
-    if (module == null) {
-        OutlinedButton(onClick = { onModule(net.phpModuleCreate()) }, modifier = Modifier.fillMaxWidth()) {
-            Text(stringResource(Res.string.php_create))
-        }
-        Hint(stringResource(Res.string.php_have_key))
-    } else {
-        Hint(stringResource(Res.string.php_created, module.fileName))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { save(module.fileName, module.content.encodeToByteArray()) }, enabled = filePickersAvailable) {
-                Text(stringResource(Res.string.php_save))
-            }
-            if (servers.isNotEmpty()) {
-                OutlinedButton(onClick = { uploadVia = servers.first() }) { Text(stringResource(Res.string.php_upload)) }
-            }
-        }
-        if (uploaded) Hint(stringResource(Res.string.php_uploaded))
-    }
-    SectionLabel(stringResource(Res.string.php_step2))
-    OutlinedTextField(input.name, { onInput(input.copy(name = it)) }, Modifier.fillMaxWidth(),
-        label = { Text(stringResource(Res.string.server_name)) }, singleLine = true)
-    // Placeholder instead of a pre-filled "https://": emptying the field must not put it back (ST10).
-    OutlinedTextField(input.url, { onInput(input.copy(url = it.trim())) }, Modifier.fillMaxWidth(),
-        label = { Text(stringResource(Res.string.php_url)) }, singleLine = true,
-        placeholder = { Text("https://example.org/ghulsuite.php") },
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
-    Hint(stringResource(Res.string.php_url_hint, module?.fileName ?: "ghulsuite.php"))
-    if (module == null) {
-        SecretTextField(input.password.orEmpty(), { onInput(input.copy(password = it.trim())) }, stringResource(Res.string.php_key))
-    }
-    ErrorText(error)
-
-    uploadVia?.let { via ->
-        AlertDialog(
-            onDismissRequest = { uploadVia = null },
-            title = { Text(stringResource(Res.string.php_upload)) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Hint(stringResource(Res.string.php_upload_hint))
-                    ChipRow {
-                        for (s in servers) FilterChip(s.id == via.id, { uploadVia = s }, label = { Text(s.name) })
-                    }
-                    OutlinedTextField(uploadDir, { uploadDir = it.trim() }, Modifier.fillMaxWidth(), singleLine = true,
-                        label = { Text(stringResource(Res.string.php_upload_dir)) })
-                    Hint(stringResource(Res.string.php_upload_dir_hint))
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    val m = module ?: return@TextButton
-                    uploadVia = null
-                    state.run(onError = { error = it }, block = { net.phpModuleUpload(via.id, uploadDir, m) }) { uploaded = true }
-                }, enabled = uploadDir.isNotBlank()) { Text(stringResource(Res.string.php_upload)) }
-            },
-            dismissButton = { TextButton(onClick = { uploadVia = null }) { Text(stringResource(Res.string.a_cancel)) } },
-        )
     }
 }
 
@@ -356,6 +137,9 @@ fun ServersSection(state: AppState) {
     var servers by remember { mutableStateOf<List<ServerUi>>(emptyList()) }
     var sync by remember { mutableStateOf(SyncStatusUi(null, 0)) }
     var removing by remember { mutableStateOf<ServerUi?>(null) }
+    var removingModule by remember { mutableStateOf<ServerUi?>(null) }
+    /** GhulDrive's server (one of the list, or its own one kept in the Drive file). */
+    var driveServer by remember { mutableStateOf<ServerUi?>(null) }
     /** Removing or switching the sync server while GhulDrive uses it: ask first (#24). */
     var driveAsk by remember { mutableStateOf<(() -> Unit)?>(null) }
     fun guarded(action: () -> Unit) {
@@ -374,6 +158,7 @@ fun ServersSection(state: AppState) {
         // until then the page says it is loading instead of showing an empty list and "Off".
         // The servers come first: without them the page cannot show anything.
         val list = catching { net.servers() }.getOrElse { loadError = describe(it); return@LaunchedEffect }
+        driveServer = catching { net.driveStorage() }.getOrNull()?.server
         servers = list
         loaded = true
         loadError = null
@@ -393,32 +178,54 @@ fun ServersSection(state: AppState) {
     SectionCard(stringResource(Res.string.set_servers)) {
         Hint(stringResource(Res.string.set_servers_hint))
         LoadError(loadError, retry)
-        for (s in servers) {
+        // GhulDrive's own server is not in the suite's list: shown as well (its module, its links).
+        val drive = driveServer
+        val shown = if (drive != null && servers.none { it.id == drive.id }) servers + drive else servers
+        val moduleUpdated = stringResource(Res.string.module_updated)
+        shown.forEachIndexed { i, s ->
+            val ownDrive = s.id == drive?.id && servers.none { it.id == s.id }
             // Like the list of mail accounts: a row with a tile, and removing as a red icon.
             ListRow(
                 s.name, kindLabel(s.kind), leading = { IconTile(Icons.Filled.Dns, paletteColor(1)) },
-                trailing = { BarIcon(Icons.Filled.Delete, stringResource(Res.string.a_remove), tint = g.danger) { removing = s } },
-                divider = s != servers.first(), flush = true,
+                trailing = if (ownDrive) null else ({ BarIcon(Icons.Filled.Delete, stringResource(Res.string.a_remove), tint = g.danger) { removing = s } }),
+                divider = i > 0, flush = true,
             )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    if (s.kind == ServerKindUi.PHP) {
-                        // One address for storage and links; the module also counts downloads.
-                        Hint(stringResource(Res.string.server_address, s.location.ifBlank { s.shareUrl }))
-                        Hint(stringResource(Res.string.server_share_php))
-                    } else {
-                        Hint("${s.user}@${s.host}:${s.port}")
-                        Hint(stringResource(Res.string.server_location, s.location.ifBlank { "~/" + s.base }))
-                        Hint(
-                            if (s.canShare) stringResource(Res.string.server_share_on, s.shareUrl)
-                            else stringResource(Res.string.server_share_off),
-                        )
+            // Below the name, in line with it: where, what for, and the server module.
+            Column(Modifier.fillMaxWidth().padding(start = 56.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Hint("${s.user}@${s.host}:${s.port}")
+                Hint(stringResource(Res.string.server_location, s.location.ifBlank { "~/" + s.base }))
+                val uses = listOfNotNull(
+                    stringResource(Res.string.set_sync).takeIf { s.id == sync.serverId },
+                    stringResource(Res.string.tab_drive).takeIf { s.id == drive?.id },
+                )
+                Hint(if (uses.isEmpty()) stringResource(Res.string.server_used_none) else stringResource(Res.string.server_used_for, uses.joinToString(", ")))
+                if (ownDrive) Hint(stringResource(Res.string.server_drive_own))
+                Hint(
+                    when {
+                        !s.hasModule -> stringResource(Res.string.server_module_none)
+                        s.moduleOutdated -> stringResource(Res.string.server_module_old, s.moduleVersion.toString(), s.moduleCurrent.toString())
+                        else -> stringResource(Res.string.server_module_on, s.moduleVersion.toString())
+                    },
+                )
+                // The text buttons' own padding: their words line up with the lines above.
+                Box(Modifier.offset(x = (-12).dp)) {
+                    ChipRow {
+                        if (!s.hasModule) {
+                            TextButton(onClick = { state.push(Screen.ModuleInstall(s.id)) }) { Text(stringResource(Res.string.module_install)) }
+                        } else {
+                            if (s.moduleOutdated) {
+                                TextButton(onClick = {
+                                    state.run(onError = { loadError = it }, block = { net.serverModuleUpdate(s.id) }) { v ->
+                                        state.message(moduleUpdated.replace("%1\$s", v.toString()))
+                                        state.changed()
+                                    }
+                                }) { Text(stringResource(Res.string.module_update)) }
+                            }
+                            TextButton(onClick = { removingModule = s }, colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = g.danger)) {
+                                Text(stringResource(Res.string.module_remove))
+                            }
+                        }
                     }
-                }
-            }
-            if (s.kind != ServerKindUi.PHP) {
-                TextButton(onClick = { state.push(Screen.ShareSetup(s.id)) }) {
-                    Text(stringResource(if (s.canShare) Res.string.server_share_change else Res.string.share_setup_title))
                 }
             }
         }
@@ -456,7 +263,9 @@ fun ServersSection(state: AppState) {
                             open = false
                             if (s.id != sync.serverId) guarded {
                                 state.run(block = { net.setSyncServer(s.id) }) {
-                                    state.changed()
+                                    // One run for the choice (with its errors shown), not an
+                                    // automatic one and then a second full one.
+                                    state.changed(sync = false)
                                     state.sync()
                                 }
                             }
@@ -486,6 +295,22 @@ fun ServersSection(state: AppState) {
     }
 
     driveAsk?.let { action -> DriveFollowsSyncDialog(state, onProceed = action, onDismiss = { driveAsk = null }) }
+    removingModule?.let { s ->
+        // Like every deletion: ask first (F103).
+        AlertDialog(
+            danger = true,
+            onDismissRequest = { removingModule = null },
+            title = { Text(stringResource(Res.string.module_remove_title, s.name)) },
+            text = { Text(stringResource(Res.string.module_remove_text)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    removingModule = null
+                    state.run(onError = { loadError = it }, block = { net.serverModuleRemove(s.id) }) { state.changed() }
+                }) { Text(stringResource(Res.string.a_remove)) }
+            },
+            dismissButton = { TextButton(onClick = { removingModule = null }) { Text(stringResource(Res.string.a_cancel)) } },
+        )
+    }
     removing?.let { s ->
         AlertDialog(
             danger = true,
@@ -613,10 +438,10 @@ fun FetchFromServer(state: AppState, onCancel: () -> Unit) {
     var fingerprint by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     val deviceKey = remember { catching { backend.deviceSshKey() }.getOrNull() }
-    // U7: SFTP (key or password), FTPS (password) or the PHP module (address and access key).
+    // U7: SFTP (key or password) or FTPS (password).
     val effective = when (input.kind) {
         ServerKindUi.SFTP -> if (usePassword) input else input.copy(password = null)
-        else -> input
+        ServerKindUi.FTPS -> input
     }
     val notFound = stringResource(Res.string.fetch_nothing)
     val doneMsg = stringResource(Res.string.fetch_done)
@@ -644,9 +469,9 @@ fun FetchFromServer(state: AppState, onCancel: () -> Unit) {
         Hint(stringResource(Res.string.fetch_text))
         StorageChooser(state)
         ChipRow {
-            for (k in listOf(ServerKindUi.SFTP, ServerKindUi.FTPS, ServerKindUi.PHP)) {
+            for (k in ServerKindUi.entries) {
                 FilterChip(input.kind == k, {
-                    input = input.copy(kind = k, port = when (k) { ServerKindUi.SFTP -> 22; ServerKindUi.FTPS -> 21; else -> 0 }, password = null)
+                    input = input.copy(kind = k, port = if (k == ServerKindUi.SFTP) 22 else 21, password = null)
                     error = null
                 }, label = { Text(kindLabel(k)) })
             }
@@ -662,13 +487,6 @@ fun FetchFromServer(state: AppState, onCancel: () -> Unit) {
             ServerKindUi.FTPS -> {
                 ServerFields(input, true, { input = it; error = null }, {}, showName = false, passwordOnly = true)
             }
-            ServerKindUi.PHP -> {
-                OutlinedTextField(input.url, { input = input.copy(url = it.trim()); error = null }, Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(Res.string.php_url)) }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
-                Hint(stringResource(Res.string.php_url_hint, "ghulsuite.php"))
-                SecretTextField(input.password.orEmpty(), { input = input.copy(password = it.trim()); error = null }, stringResource(Res.string.php_key))
-            }
         }
         ErrorText(error)
         ButtonRow {
@@ -678,7 +496,6 @@ fun FetchFromServer(state: AppState, onCancel: () -> Unit) {
                 enabled = !state.busy && when (input.kind) {
                     ServerKindUi.SFTP -> input.host.isNotBlank() && input.user.isNotBlank() && (!usePassword || !input.password.isNullOrEmpty())
                     ServerKindUi.FTPS -> input.host.isNotBlank() && input.user.isNotBlank() && !input.password.isNullOrEmpty()
-                    ServerKindUi.PHP -> input.url.startsWith("https://") && !input.password.isNullOrEmpty()
                 },
                 modifier = Modifier.weight(1f),
             ) { Text(stringResource(Res.string.a_fetch)) }
@@ -696,11 +513,9 @@ fun FetchFromServer(state: AppState, onCancel: () -> Unit) {
     }
 }
 
-@Composable
 fun kindLabel(kind: ServerKindUi): String = when (kind) {
     ServerKindUi.SFTP -> "SFTP"
     ServerKindUi.FTPS -> "FTPS"
-    ServerKindUi.PHP -> stringResource(Res.string.server_kind_php_short)
 }
 
 /** Unix seconds or milliseconds → local date and time. */

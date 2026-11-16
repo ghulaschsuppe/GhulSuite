@@ -56,6 +56,10 @@ name: GhulCal in depth
 - tapOn: "More"
 - tapOn: "Delete"
 - extendedWaitUntil:
+    visible: { id: "ask-confirm" }
+    timeout: 10000
+- tapOn: { id: "ask-confirm" }
+- extendedWaitUntil:
     visible: "Event deleted"
     timeout: 10000
 - takeScreenshot: 12-04-deleted

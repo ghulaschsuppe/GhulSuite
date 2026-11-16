@@ -12,7 +12,7 @@ use std::time::Duration;
 pub mod ftps;
 pub mod http;
 pub mod imap;
-pub mod phpfs;
+pub mod module;
 pub mod remote;
 pub mod sftp;
 pub mod smtp;

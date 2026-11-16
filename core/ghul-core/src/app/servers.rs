@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Own servers (SFTP, FTPS, PHP module) for synchronisation and GhulDrive.
+//! Own servers (SFTP or FTPS) for synchronisation and GhulDrive, each optionally with the
+//! GhulSuite server module (PHP) for share links, installed over the same login.
 //!
 //! The servers for synchronisation and the SSH login key live in the suite's encrypted settings,
 //! so nobody can see which servers are set up without unlocking. A server that only GhulDrive
@@ -15,7 +16,6 @@ use super::suite::{new_id, put_setting, setting, GhulSuite, Open, VaultKind};
 use std::sync::Arc;
 
 use crate::net::ftps::{FtpsConfig, FtpsFs};
-use crate::net::phpfs::{PhpConfig, PhpFs};
 use crate::net::remote::RemoteFs;
 use crate::net::sftp::{generate_key, public_key_of, SftpConfig, SftpFs, SshAuth};
 use crate::net::NetError;
@@ -40,46 +40,25 @@ pub(super) struct StoredServer {
     /// Absolute path of `base` on the server, as reported by the server (for display).
     #[serde(default)]
     pub location: String,
-    /// "sftp" (also when empty), "ftps" or "php".
+    /// "sftp" (also when empty) or "ftps".
     #[serde(default)]
     pub kind: String,
-    /// PHP server module: address of `ghulsuite.php`.
-    #[serde(default)]
-    pub url: String,
-    /// Sharing: folder (relative to the login folder) that the web server delivers, and its
-    /// public address. Empty = sharing not set up. The PHP module needs neither.
-    #[serde(default)]
-    pub share_dir: String,
-    #[serde(default)]
-    pub share_url: String,
-    /// PHP module: the FTPS login it was uploaded with, kept to update it later (optional).
+    /// The server module for share links on this server, if installed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub upload: Option<StoredUpload>,
+    pub module: Option<StoredModule>,
     /// Last edit (Unix ms): the later edit wins when devices synchronise (B13).
     #[serde(default)]
     pub changed: i64,
 }
 
-/// FTPS login that a PHP module was uploaded with.
-#[derive(Serialize, Deserialize, Clone, Default)]
-pub(super) struct StoredUpload {
-    pub host: String,
-    pub port: u16,
-    pub user: String,
-    pub password: String,
-    /// TLS certificate fingerprint confirmed by the user (not publicly trusted certificates).
-    #[serde(default)]
-    pub cert: String,
-    /// Folder of the PHP file, relative to the FTPS login folder.
+/// The server module of a server: where its PHP file is and the address it answers at.
+#[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq)]
+pub(super) struct StoredModule {
+    /// Address of `ghulsuite.php`, e.g. `https://example.org/ghulsuite.php`.
+    pub url: String,
+    /// Folder of the PHP file, relative to the login folder.
     pub dir: String,
-    /// Name of the module's data folder (kept when the module is updated).
-    pub data_dir: String,
-}
-
-impl Drop for StoredUpload {
-    fn drop(&mut self) {
-        zeroize::Zeroize::zeroize(&mut self.password);
-    }
+    pub version: u32,
 }
 
 /// How GhulSuite reaches a server.
@@ -89,8 +68,6 @@ pub enum ServerKind {
     Sftp,
     /// FTP with TLS (explicit, port 21): typical web hosting.
     Ftps,
-    /// The GhulSuite server module (one PHP file) on web hosting without SSH.
-    Php,
 }
 
 impl ServerKind {
@@ -98,17 +75,24 @@ impl ServerKind {
         match self {
             ServerKind::Sftp => "sftp",
             ServerKind::Ftps => "ftps",
-            ServerKind::Php => "php",
         }
     }
 
     pub(super) fn of(s: &StoredServer) -> ServerKind {
         match s.kind.as_str() {
             "ftps" => ServerKind::Ftps,
-            "php" => ServerKind::Php,
             _ => ServerKind::Sftp,
         }
     }
+}
+
+/// Result of "check connection" for a server: nothing is stored.
+#[derive(uniffi::Enum, Clone, Debug, PartialEq)]
+pub enum ServerTest {
+    /// First contact: the user compares this fingerprint and checks again with it confirmed.
+    Confirm { fingerprint: String },
+    /// Login works and the folder can be written: the server may be saved.
+    Ok,
 }
 
 /// Result of checking a server.
@@ -133,32 +117,11 @@ pub struct ServerInput {
     pub port: u16,
     pub user: String,
     /// SFTP: `None` = log in with the suite's SSH key (recommended). FTPS: the password.
-    /// PHP module: the access key (hex) from `php_module_create`.
     pub password: Option<String>,
     pub base: String,
-    /// PHP module: address of `ghulsuite.php` (host, port and user are not used).
-    pub url: String,
-    /// PHP module: the FTPS login it was uploaded with, to keep for later updates
-    /// (`PhpInstalled.upload`). `None`: the login is not kept.
-    #[uniffi(default = None)]
-    pub upload: Option<UploadAccess>,
 }
 
-super::redact::redacted_debug!(ServerInput { kind, name, host, port, user, base, url, upload });
-
-/// FTPS login that a PHP module was uploaded with (from `php_module_install`).
-#[derive(uniffi::Record, Clone)]
-pub struct UploadAccess {
-    pub host: String,
-    pub port: u16,
-    pub user: String,
-    pub password: String,
-    pub cert: String,
-    pub dir: String,
-    pub data_dir: String,
-}
-
-super::redact::redacted_debug!(UploadAccess { host, port, user, cert, dir, data_dir });
+super::redact::redacted_debug!(ServerInput { kind, name, host, port, user, base });
 
 #[derive(uniffi::Record, Clone, Debug, PartialEq)]
 pub struct ServerInfo {
@@ -173,9 +136,12 @@ pub struct ServerInfo {
     /// Where GhulSuite's folder is on the server, e.g. `/home/max/ghulsuite`.
     pub location: String,
     pub kind: ServerKind,
-    /// Public address for share links; empty = sharing not set up.
-    pub share_url: String,
-    pub share_dir: String,
+    /// Address of the server module (share links); empty = not installed.
+    pub module_url: String,
+    /// Version of the installed module (0 = none).
+    pub module_version: u32,
+    /// The version this app brings: an older module can be updated.
+    pub module_current: u32,
 }
 
 impl Drop for StoredServer {
@@ -186,26 +152,21 @@ impl Drop for StoredServer {
 
 /// Servers in the suite file (offered for synchronisation).
 pub(super) fn servers(o: &Open) -> Vec<StoredServer> {
-    setting(&o.suite, SERVERS_KEY)
+    let list: Vec<StoredServer> = setting(&o.suite, SERVERS_KEY);
+    // Older apps also stored the server module alone as a server: no longer a server of its own.
+    list.into_iter().filter(|s| s.kind != "php").collect()
 }
 
 /// GhulDrive's own server (in the Drive file); at most one.
 pub(super) fn drive_servers(o: &Open) -> Vec<StoredServer> {
-    area_setting(o, VaultKind::Drive, SERVERS_KEY)
+    let list: Vec<StoredServer> = area_setting(o, VaultKind::Drive, SERVERS_KEY);
+    list.into_iter().filter(|s| s.kind != "php").collect()
 }
 
-/// The mail archive's own server (in the Mail file); at most one.
-pub(super) fn archive_servers(o: &Open) -> Vec<StoredServer> {
-    area_setting(o, VaultKind::Mail, ARCHIVE_SERVERS_KEY)
-}
-
-pub(super) const ARCHIVE_SERVERS_KEY: &str = "archive_servers";
-
-/// Every server this suite knows: the suite's, the Drive file's and the mail archive's.
+/// Every server this suite knows: the suite's and the Drive file's.
 pub(super) fn all_servers(o: &Open) -> Vec<StoredServer> {
     let mut list = servers(o);
     list.extend(drive_servers(o));
-    list.extend(archive_servers(o));
     list
 }
 
@@ -235,16 +196,7 @@ pub(super) fn sftp_config(o: &mut Open, s: &StoredServer) -> Result<SftpConfig> 
     })
 }
 
-fn php_key(hex: &str) -> Result<Zeroizing<[u8; 32]>> {
-    let bytes = (0..hex.len() / 2)
-        .map(|i| u8::from_str_radix(hex.get(2 * i..2 * i + 2).unwrap_or("x"), 16))
-        .collect::<std::result::Result<Vec<u8>, _>>()
-        .map_err(|_| GhulError::InvalidInput { msg: "invalid access key".into() })?;
-    let key: [u8; 32] = bytes.try_into().map_err(|_| GhulError::InvalidInput { msg: "invalid access key".into() })?;
-    Ok(Zeroizing::new(key))
-}
-
-/// Opens a stored server with its own folder, or with `base` instead (e.g. the share folder).
+/// Opens a stored server with its own folder, or with `base` instead (e.g. the login folder).
 pub(super) fn open_fs(o: &mut Open, s: &StoredServer, base: Option<&str>) -> Result<Arc<dyn RemoteFs>> {
     let base = base.map(str::to_owned).unwrap_or_else(|| s.base.clone());
     Ok(match ServerKind::of(s) {
@@ -261,12 +213,7 @@ pub(super) fn open_fs(o: &mut Open, s: &StoredServer, base: Option<&str>) -> Res
             base,
             cert: (!s.host_key.is_empty()).then(|| s.host_key.clone()),
         })?),
-        ServerKind::Php => Arc::new(php_fs(s, &base)?),
     })
-}
-
-pub(super) fn php_fs(s: &StoredServer, base: &str) -> Result<PhpFs> {
-    Ok(PhpFs::new(&PhpConfig { url: s.url.clone(), key: php_key(&s.password)?, base: base.to_owned(), cert: None })?)
 }
 
 /// Connects to a stored server.
@@ -312,13 +259,8 @@ fn stored_from(input: &ServerInput, confirmed: Option<&str>) -> StoredServer {
     let default_port = match kind {
         ServerKind::Sftp => 22,
         ServerKind::Ftps => 21,
-        ServerKind::Php => 443,
     };
-    let host = if kind == ServerKind::Php {
-        crate::net::http::Url::parse(&input.url).map(|u| u.host).unwrap_or_default()
-    } else {
-        input.host.trim().to_owned()
-    };
+    let host = input.host.trim().to_owned();
     StoredServer {
         id: crate::kdf::hex(&new_id()[..8]),
         name: if input.name.trim().is_empty() { host.clone() } else { input.name.trim().to_owned() },
@@ -330,18 +272,7 @@ fn stored_from(input: &ServerInput, confirmed: Option<&str>) -> StoredServer {
         host_key: confirmed.unwrap_or_default().to_owned(),
         location: String::new(),
         kind: kind.as_str().to_owned(),
-        url: input.url.trim().to_owned(),
-        share_dir: String::new(),
-        share_url: String::new(),
-        upload: input.upload.as_ref().filter(|_| kind == ServerKind::Php).map(|u| StoredUpload {
-            host: u.host.clone(),
-            port: u.port,
-            user: u.user.clone(),
-            password: u.password.clone(),
-            cert: u.cert.clone(),
-            dir: u.dir.clone(),
-            data_dir: u.data_dir.clone(),
-        }),
+        module: None,
         changed: 0,
     }
 }
@@ -364,6 +295,14 @@ fn open_input(
 }
 
 impl GhulSuite {
+    /// Stores a changed server in the file it lives in and saves that file.
+    pub(super) fn store_server(&self, o: &mut Open, srv: &StoredServer) -> Result<()> {
+        match update_server(o, srv)? {
+            ServerHome::Suite => self.save_container(&mut o.suite, super::suite::SUITE_FILE),
+            ServerHome::Drive => self.save_area(o, VaultKind::Drive),
+        }
+    }
+
     /// A connection to a stored server, reused while it works.
     pub(super) fn remote(
         &self,
@@ -394,104 +333,11 @@ pub(super) fn info(s: &StoredServer) -> ServerInfo {
         host_key: s.host_key.clone(),
         location: if s.location.is_empty() { s.base.clone() } else { s.location.clone() },
         kind: ServerKind::of(s),
-        share_url: if ServerKind::of(s) == ServerKind::Php { s.url.clone() } else { s.share_url.clone() },
-        share_dir: s.share_dir.clone(),
+        module_url: s.module.as_ref().map(|m| m.url.clone()).unwrap_or_default(),
+        module_version: s.module.as_ref().map_or(0, |m| m.version),
+        module_current: crate::net::module::MODULE_VERSION,
     }
 }
-
-/// A new server module: the PHP file to upload and the access key it contains.
-#[derive(uniffi::Record, Clone)]
-pub struct PhpModule {
-    pub file_name: String,
-    pub content: String,
-    /// Access key (hex); goes into `ServerInput.password` when saving the server.
-    pub key: String,
-}
-
-/// Creates a server module with a new random access key and data folder name.
-#[uniffi::export]
-pub fn php_module_create() -> PhpModule {
-    let (key, data_dir) = php_module_key();
-    php_module_file(&key, &data_dir)
-}
-
-/// A new access key and data folder name for a server module.
-fn php_module_key() -> (Zeroizing<[u8; 32]>, String) {
-    use rand_core::RngCore;
-    let mut key = Zeroizing::new([0u8; 32]);
-    rand_core::OsRng.fill_bytes(key.as_mut());
-    let mut dir = [0u8; 12];
-    rand_core::OsRng.fill_bytes(&mut dir);
-    (key, format!("ghul-data-{}", crate::kdf::hex(&dir)))
-}
-
-fn php_module_file(key: &[u8; 32], data_dir: &str) -> PhpModule {
-    PhpModule {
-        file_name: "ghulsuite.php".into(),
-        content: crate::net::phpfs::server_file(key, data_dir),
-        key: crate::kdf::hex(key),
-    }
-}
-
-/// What a server module reports.
-#[derive(uniffi::Record, Clone, Debug, PartialEq)]
-pub struct PhpModuleInfo {
-    pub version: u32,
-    /// The newest version this app brings along (older modules can be updated).
-    pub current: u32,
-    /// Largest request the hosting accepts in bytes (0 = not reported); larger files go in parts.
-    pub limit: u64,
-    pub free: u64,
-}
-
-/// Checks that a server module answers at `url` with access key `key` (hex). If the web server
-/// delivers the file as text instead of running it (its access key would be readable), the
-/// answer is `PhpNotExecuted` (L5).
-#[uniffi::export]
-pub fn php_module_probe(url: String, key: String) -> Result<PhpModuleInfo> {
-    let fs =
-        PhpFs::new(&PhpConfig { url: url.trim().to_owned(), key: php_key(&key)?, base: String::new(), cert: None })?;
-    match fs.info() {
-        Ok(i) => Ok(PhpModuleInfo {
-            version: i.version,
-            current: crate::net::phpfs::MODULE_VERSION,
-            limit: i.limit,
-            free: i.free,
-        }),
-        Err(_) if reveals_source(url.trim()) => Err(GhulError::PhpNotExecuted),
-        Err(e) => Err(e.into()),
-    }
-}
-
-/// Whether `url` delivers the module's PHP source (with its key) instead of running it.
-fn reveals_source(url: &str) -> bool {
-    let Ok(u) = crate::net::http::Url::parse(url) else { return false };
-    let r =
-        crate::net::block_on(crate::net::http::request("GET", &u, &[], b"", None), std::time::Duration::from_secs(15));
-    matches!(r, Ok(r) if {
-        let body = String::from_utf8_lossy(&r.body);
-        body.contains("<?php") || body.contains("GHUL_KEY")
-    })
-}
-
-/// Result of installing a server module.
-#[derive(uniffi::Record, Clone)]
-pub struct PhpInstalled {
-    /// Set: confirm this certificate fingerprint first and call again; nothing was uploaded.
-    pub confirm: Option<String>,
-    /// The address the module answered at; `None` when none of `tried` worked (ask the user
-    /// for the address and check it with `php_module_probe`).
-    pub url: Option<String>,
-    /// The addresses that were tried, the most likely first.
-    pub tried: Vec<String>,
-    /// Access key (hex); goes into `ServerInput.password`.
-    pub key: String,
-    pub limit: u64,
-    /// The FTPS login, for `ServerInput.upload` if the user keeps it for later updates.
-    pub upload: Option<UploadAccess>,
-}
-
-super::redact::redacted_debug!(PhpInstalled { confirm, url, tried, limit, upload });
 
 /// Folders of a server as entered.
 #[derive(uniffi::Enum, Clone, Debug, PartialEq)]
@@ -520,11 +366,11 @@ fn folders(fs: &dyn RemoteFs, path: &str) -> Result<Vec<String>> {
 /// Folders web hostings deliver as the website's root.
 const WEB_ROOTS: &[&str] = &["public_html", "htdocs", "httpdocs", "html", "www", "web", "public"];
 
-/// Likely web addresses of a PHP file uploaded by FTPS into `dir`, the most likely first.
-/// A folder named like a domain is the website's root on many hostings
-/// (`example.org/tools` → `https://example.org/tools/`); otherwise the FTPS host without `ftp.`
+/// Likely web addresses of the module uploaded into `dir`, the most likely first. A folder
+/// named like a domain is the website's root on many hostings (`example.org/tools` →
+/// `https://example.org/tools/`); otherwise the server's host without `ftp.`/`sftp.`/`ssh.`
 /// with the usual root folders left out.
-pub(super) fn module_urls(ftps_host: &str, dir: &str) -> Vec<String> {
+pub(super) fn module_urls(host: &str, dir: &str) -> Vec<String> {
     let parts: Vec<&str> = dir.split('/').filter(|p| !p.is_empty()).collect();
     let file = "ghulsuite.php";
     let join = |host: &str, rest: &[&str]| {
@@ -548,8 +394,8 @@ pub(super) fn module_urls(ftps_host: &str, dir: &str) -> Vec<String> {
             out.push(join(p, &rest));
         }
     }
-    let host = ftps_host.trim();
-    let host = host.strip_prefix("ftp.").unwrap_or(host);
+    let host = host.trim();
+    let host = ["ftp.", "sftp.", "ssh."].iter().find_map(|p| host.strip_prefix(p)).unwrap_or(host);
     if !host.is_empty() {
         let rest: Vec<&str> = parts.iter().copied().skip_while(|r| WEB_ROOTS.contains(r)).collect();
         out.push(join(host, &rest));
@@ -562,17 +408,90 @@ pub(super) fn module_urls(ftps_host: &str, dir: &str) -> Vec<String> {
     out
 }
 
+/// Where the web could hand out `file` of the GhulSuite folder `base`: next to the module
+/// (`rel` = the folder as seen from the module), and at the addresses the folder itself would
+/// have as a website folder (on the module's host and on the server's), e.g. when the module
+/// answers on a subdomain whose root is another folder. At most 8, without duplicates.
+pub(super) fn folder_addresses(module: &str, host: &str, base: &str, rel: &str, file: &str) -> Vec<String> {
+    let mut out: Vec<String> = crate::net::module::resolve(module, &format!("{rel}/{file}")).into_iter().collect();
+    let origin = module.split_once("://").map(|(scheme, rest)| {
+        let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+        format!("{scheme}://{}", &rest[..end])
+    });
+    let parts: Vec<&str> = base.split('/').filter(|p| !p.is_empty() && *p != ".").collect();
+    if let Some(origin) = origin {
+        for n in 1..=parts.len().min(3) {
+            let tail: Vec<String> =
+                parts[parts.len() - n..].iter().map(|p| crate::net::module::rawurlencode(p)).collect();
+            out.push(format!("{origin}/{}/{file}", tail.join("/")));
+        }
+    }
+    for guess in module_urls(host, base) {
+        if let Some(dir) = guess.strip_suffix(MODULE_FILE) {
+            out.push(format!("{dir}{file}"));
+        }
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    out.retain(|u| !u.contains("/../") && seen.insert(u.clone()));
+    out.truncate(8);
+    out
+}
+
+/// One step of installing the server module.
+#[derive(uniffi::Record, Clone, Debug, PartialEq)]
+pub struct ModuleCheck {
+    /// `upload` (file written), `https` (the module answers at the address), `php` (PHP runs
+    /// there), `folder` (it reads the GhulSuite folder of this server and may write there;
+    /// detail `no-write` if it may not), `private` (the web server does not hand out the
+    /// GhulSuite folder itself; detail: the address where it does).
+    pub step: String,
+    pub ok: bool,
+    pub detail: String,
+}
+
+/// Result of installing the server module.
+#[derive(uniffi::Record, Clone, Debug, PartialEq)]
+pub struct ModuleInstalled {
+    /// The address it answers at; `None` when it does not work yet (see `checks`; with another
+    /// address, call again).
+    pub url: Option<String>,
+    /// The addresses that were tried, the most likely first.
+    pub tried: Vec<String>,
+    pub checks: Vec<ModuleCheck>,
+}
+
+const MODULE_FILE: &str = "ghulsuite.php";
+/// Detail of the `folder` step when PHP can read the GhulSuite folder but not write there.
+pub const MODULE_NO_WRITE: &str = "no-write";
+
+/// Folder path without empty parts and without "." (".." stays as it is).
+fn parts(path: &str) -> Vec<&str> {
+    path.split('/').filter(|p| !p.is_empty() && *p != ".").collect()
+}
+
+/// The path of `to` as seen from the folder `from` (both absolute): `../ghulsuite`.
+pub(super) fn relative_path(from: &str, to: &str) -> Option<String> {
+    let (f, t) = (parts(from), parts(to));
+    if f.contains(&"..") || t.contains(&"..") {
+        return None;
+    }
+    let common = f.iter().zip(&t).take_while(|(a, b)| a == b).count();
+    let mut out: Vec<&str> = std::iter::repeat("..").take(f.len() - common).collect();
+    out.extend(&t[common..]);
+    Some(if out.is_empty() { ".".into() } else { out.join("/") })
+}
+
+/// An address the module may be installed at: https, or a local test server.
+fn module_address_ok(url: &str) -> bool {
+    url.starts_with("https://") || url.starts_with("http://127.0.0.1:") || url.starts_with("http://localhost:")
+}
+
 /// Checks the required fields of a server as entered.
 fn check_input(input: &ServerInput) -> Result<()> {
-    match input.kind {
-        ServerKind::Php if input.url.trim().is_empty() => {
-            Err(GhulError::InvalidInput { msg: "address required".into() })
-        }
-        ServerKind::Sftp | ServerKind::Ftps if input.host.trim().is_empty() || input.user.trim().is_empty() => {
-            Err(GhulError::InvalidInput { msg: "host and user required".into() })
-        }
-        _ => Ok(()),
+    if input.host.trim().is_empty() || input.user.trim().is_empty() {
+        return Err(GhulError::InvalidInput { msg: "host and user required".into() });
     }
+    Ok(())
 }
 
 /// Checks a server as entered: logs in, checks that its folder is writable and fills in where
@@ -584,9 +503,6 @@ pub(super) fn check_server(
 ) -> Result<std::result::Result<StoredServer, String>> {
     check_input(input)?;
     let mut stored = stored_from(input, confirmed);
-    if stored.kind == "php" {
-        php_fs(&stored, "")?.info()?;
-    }
     let fs = match open_input(o, &stored, confirmed.is_some())? {
         Ok(fs) => fs,
         Err(fingerprint) => return Ok(Err(fingerprint)),
@@ -599,7 +515,6 @@ pub(super) fn check_server(
             SftpFs::connect(&cfg).ok().and_then(|f| f.absolute("").ok()).unwrap_or_default()
         }
         ServerKind::Ftps => format!("/{}", stored.base),
-        ServerKind::Php => stored.url.clone(),
     };
     Ok(Ok(stored))
 }
@@ -621,8 +536,7 @@ pub fn generate_ssh_key() -> Result<SshKeyPair> {
 impl GhulSuite {
     /// New device: downloads the suite files from `<base>/suite/` on the server into the
     /// (empty) local folder. SFTP logs in with `input.password` or the given `private_key` (from
-    /// `generate_ssh_key`), FTPS with `input.password`, the PHP module with its access key in
-    /// `input.password` and `input.url` (U7). Without `host_key` an unknown SFTP host key or an
+    /// `generate_ssh_key`), FTPS with `input.password` (U7). Without `host_key` an unknown SFTP host key or an
     /// untrusted FTPS certificate is returned as fingerprint to confirm and nothing is downloaded;
     /// otherwise it returns an empty string. Then unlock as usual.
     pub fn fetch_from_server(
@@ -674,10 +588,6 @@ impl GhulSuite {
                     other => Arc::new(other?),
                 }
             }
-            ServerKind::Php => {
-                let s = stored_from(&input, None);
-                Arc::new(php_fs(&s, &s.base)?)
-            }
         };
         let files: Vec<String> = fs
             .list("suite")?
@@ -709,6 +619,17 @@ impl GhulSuite {
         })
     }
 
+    /// "Check connection": logs in and checks that the folder can be written, without storing
+    /// anything. On first contact it returns the fingerprint to confirm.
+    pub fn server_test(&self, input: ServerInput, confirmed: Option<String>) -> Result<ServerTest> {
+        self.with_open(|o| {
+            Ok(match check_server(o, &input, confirmed.as_deref())? {
+                Ok(_) => ServerTest::Ok,
+                Err(fingerprint) => ServerTest::Confirm { fingerprint },
+            })
+        })
+    }
+
     /// Checks a server and stores it. On first contact it returns the fingerprint of the SSH host
     /// key (SFTP) or of a not publicly trusted TLS certificate (FTPS) for the user to compare;
     /// call again with it in `confirmed`. Then it logs in, checks that the folder is writable and
@@ -725,8 +646,7 @@ impl GhulSuite {
                     && s.host == stored.host
                     && s.port == stored.port
                     && s.user == stored.user
-                    && s.base == stored.base
-                    && s.url == stored.url)
+                    && s.base == stored.base)
             });
             let id = stored.id.clone();
             let mut stored = stored;
@@ -747,9 +667,6 @@ impl GhulSuite {
         confirmed: Option<String>,
         path: String,
     ) -> Result<ServerFolders> {
-        if input.kind == ServerKind::Php {
-            return Err(GhulError::InvalidInput { msg: "the server module needs no folder".into() });
-        }
         check_input(&input)?;
         self.with_open(|o| {
             let mut stored = stored_from(&input, confirmed.as_deref());
@@ -762,128 +679,143 @@ impl GhulSuite {
         })
     }
 
-    /// Installs the server module through FTPS on the same web hosting: creates the PHP file with
-    /// a new access key, uploads it into `dir` (relative to the FTPS login folder) and looks for
-    /// the address it answers at. `url`: the address the user entered (empty: try the usual
-    /// ones). On first contact with a certificate that is not publicly trusted it returns the
-    /// fingerprint to confirm, without uploading anything.
-    pub fn php_module_install(
-        &self,
-        ftps: ServerInput,
-        confirmed: Option<String>,
-        dir: String,
-        url: String,
-    ) -> Result<PhpInstalled> {
-        if ftps.kind != ServerKind::Ftps {
-            return Err(GhulError::InvalidInput { msg: "the module is uploaded with FTPS".into() });
-        }
-        check_input(&ftps)?;
-        let dir = dir.trim().trim_matches('/').to_owned();
-        let (key, data_dir) = php_module_key();
-        let module = php_module_file(&key, &data_dir);
-        let upload = self.with_open(|o| {
-            let mut stored = stored_from(&ftps, confirmed.as_deref());
-            stored.base = String::new();
-            let fs = match open_input(o, &stored, confirmed.is_some())? {
-                Ok(fs) => fs,
-                Err(fingerprint) => return Ok(Err(fingerprint)),
-            };
-            let path = if dir.is_empty() { module.file_name.clone() } else { format!("{dir}/{}", module.file_name) };
-            fs.write(&path, module.content.as_bytes())?;
-            Ok(Ok(UploadAccess {
-                host: stored.host.clone(),
-                port: stored.port,
-                user: stored.user.clone(),
-                password: stored.password.clone(),
-                cert: stored.host_key.clone(),
-                dir: dir.clone(),
-                data_dir: data_dir.clone(),
-            }))
-        })?;
-        let upload = match upload {
-            Ok(u) => u,
-            Err(fingerprint) => {
-                return Ok(PhpInstalled {
-                    confirm: Some(fingerprint),
-                    url: None,
-                    tried: vec![],
-                    key: String::new(),
-                    limit: 0,
-                    upload: None,
-                })
-            }
-        };
-        let tried = if url.trim().is_empty() { module_urls(&upload.host, &dir) } else { vec![url.trim().to_owned()] };
-        let found = tried.iter().find_map(|u| php_module_probe(u.clone(), module.key.clone()).ok().map(|i| (u, i)));
-        // L5: delivered as text, the key is readable: take the file down again at once.
-        if found.is_none() && tried.iter().any(|u| reveals_source(u)) {
-            self.with_open(|o| {
-                let mut stored = stored_from(&ftps, confirmed.as_deref());
-                stored.base = String::new();
-                if let Ok(fs) = open_input(o, &stored, true)? {
-                    let path =
-                        if dir.is_empty() { module.file_name.clone() } else { format!("{dir}/{}", module.file_name) };
-                    fs.delete(&path)?;
-                }
-                Ok(())
-            })?;
-            return Err(GhulError::PhpNotExecuted);
-        }
-        Ok(PhpInstalled {
-            confirm: None,
-            url: found.as_ref().map(|(u, _)| (*u).clone()),
-            limit: found.map(|(_, i)| i.limit).unwrap_or(0),
-            tried,
-            key: module.key,
-            upload: Some(upload),
-        })
-    }
-
-    /// Uploads a new version of a server module through the FTPS login it was installed with;
-    /// the access key and the stored files stay. Returns the module's version afterwards.
-    pub fn php_module_update(&self, server_id: String) -> Result<u32> {
-        let (srv, fs) = self.with_open(|o| {
-            let srv = server(o, &server_id)?;
-            let u = srv.upload.clone().ok_or(GhulError::NotConfigured)?;
-            let mut ftps = StoredServer::default();
-            ftps.host = u.host.clone();
-            ftps.port = u.port;
-            ftps.user = u.user.clone();
-            ftps.password = u.password.clone();
-            ftps.host_key = u.cert.clone();
-            ftps.kind = "ftps".into();
-            Ok((srv, open_fs(o, &ftps, Some(""))?))
-        })?;
-        let u = srv.upload.as_ref().ok_or(GhulError::NotConfigured)?;
-        let module = php_module_file(&*php_key(&srv.password)?, &u.data_dir);
-        let path = if u.dir.is_empty() { module.file_name.clone() } else { format!("{}/{}", u.dir, module.file_name) };
-        fs.write(&path, module.content.as_bytes())?;
-        self.net.lock().unwrap_or_else(|p| p.into_inner()).conn = None;
-        Ok(php_fs(&srv, "")?.info()?.version)
-    }
-
-    /// Folders on a stored server below its login folder (for choosing the share folder).
+    /// Folders on a stored server below its login folder (for choosing the module's folder).
     pub fn server_browse(&self, server_id: String, path: String) -> Result<Vec<String>> {
         self.with_open(|o| {
             let s = server(o, &server_id)?;
-            if ServerKind::of(&s) == ServerKind::Php {
-                return Err(GhulError::InvalidInput { msg: "the server module needs no folder".into() });
-            }
             let fs = open_fs(o, &s, Some(""))?;
             folders(fs.as_ref(), &path)
         })
     }
 
-    /// Uploads a new server module (from `php_module_create`) through another stored server,
-    /// e.g. FTPS on the same web hosting, into `dir` (relative to its login folder).
-    pub fn php_module_upload(&self, via_server_id: String, dir: String, module: PhpModule) -> Result<()> {
+    /// Installs the server module (share links) on a stored server over its own login: writes
+    /// `ghulsuite.php` into `dir` (relative to the login folder, inside the website) with the
+    /// path to this server's GhulSuite folder, and checks that it answers at `url` (empty: the
+    /// usual addresses are tried), that PHP runs there and that it can read the GhulSuite
+    /// folder. Only when everything works is it remembered for the server.
+    pub fn server_module_install(&self, server_id: String, dir: String, url: String) -> Result<ModuleInstalled> {
+        // Relative to the login folder, or absolute (SFTP).
+        let dir = dir.trim().trim_end_matches('/').to_owned();
+        let url = url.trim().to_owned();
+        if !url.is_empty() && !module_address_ok(&url) {
+            return Err(GhulError::InvalidInput { msg: "the address must start with https://".into() });
+        }
+        let (srv, web, base_fs, base_path) = self.with_open(|o| {
+            let srv = server(o, &server_id)?;
+            let web = open_fs(o, &srv, Some(&dir))?;
+            let base_fs = open_fs(o, &srv, None)?;
+            // Where the login folder is: SFTP knows it, FTPS starts at "/".
+            let home = match ServerKind::of(&srv) {
+                ServerKind::Sftp => {
+                    let cfg = SftpConfig { base: String::new(), ..sftp_config(o, &srv)? };
+                    SftpFs::connect(&cfg)?.absolute("")?
+                }
+                ServerKind::Ftps => "/".to_owned(),
+            };
+            let abs =
+                |p: &str| if p.starts_with('/') { p.to_owned() } else { format!("{}/{p}", home.trim_end_matches('/')) };
+            let base_path = relative_path(&abs(&dir), &abs(&srv.base))
+                .ok_or_else(|| GhulError::InvalidInput { msg: "invalid folder".into() })?;
+            Ok((srv, web, base_fs, base_path))
+        })?;
+        let file = crate::net::module::module_file(&base_path)
+            .ok_or_else(|| GhulError::InvalidInput { msg: "invalid folder".into() })?;
+        let path = if dir.is_empty() { MODULE_FILE.to_owned() } else { format!("{dir}/{MODULE_FILE}") };
+        web.write(MODULE_FILE, file.as_bytes())?;
+        // Should the GhulSuite folder be inside the website, the web server must not deliver it.
+        let _ = base_fs.write(".htaccess", b"Require all denied\nDeny from all\n");
+        let mut checks = vec![ModuleCheck { step: "upload".into(), ok: true, detail: path.clone() }];
+        let mut name = [0u8; 16];
+        let mut token = [0u8; 16];
+        rand_core::RngCore::fill_bytes(&mut rand_core::OsRng, &mut name);
+        rand_core::RngCore::fill_bytes(&mut rand_core::OsRng, &mut token);
+        let (name, token) = (crate::kdf::hex(&name), crate::kdf::hex(&token));
+        let check_file = format!("shares/check-{name}");
+        base_fs.write(&check_file, token.as_bytes())?;
+        let tried = if url.is_empty() { module_urls(&srv.host, &dir) } else { vec![url] };
+        let answering = tried.iter().find_map(|u| {
+            crate::net::module::probe(u)
+                .ok()
+                .filter(|i| i.version == crate::net::module::MODULE_VERSION)
+                .map(|_| u.clone())
+        });
+        let checked = answering
+            .as_ref()
+            .and_then(|u| crate::net::module::check(u, &name).ok().flatten())
+            .filter(|c| c.token == token);
+        // The GhulSuite folder must not be reachable from the web: try where it would be.
+        let exposed = answering.as_ref().and_then(|u| {
+            folder_addresses(u, &srv.host, &srv.base, &base_path, &check_file)
+                .into_iter()
+                .find(|at| crate::net::module::exposes(at, &token))
+        });
+        let _ = base_fs.delete(&check_file);
+        let shown = answering.clone().unwrap_or_else(|| tried.first().cloned().unwrap_or_default());
+        if answering.is_none() && tried.iter().any(|u| crate::net::module::reveals_source(u)) {
+            // L5: delivered as text instead of run: take the file down again.
+            let _ = web.delete(MODULE_FILE);
+            checks.push(ModuleCheck { step: "php".into(), ok: false, detail: shown });
+            return Ok(ModuleInstalled { url: None, tried, checks });
+        }
+        checks.push(ModuleCheck { step: "https".into(), ok: answering.is_some(), detail: shown.clone() });
+        let folder_detail = match &checked {
+            _ if answering.is_none() => super::shares::SHARE_CHECK_SKIPPED.to_owned(),
+            Some(c) if !c.writes => MODULE_NO_WRITE.to_owned(),
+            _ => String::new(),
+        };
+        let reads = checked.as_ref().is_some_and(|c| c.writes);
+        checks.push(ModuleCheck { step: "folder".into(), ok: reads, detail: folder_detail });
+        if reads {
+            checks.push(ModuleCheck {
+                step: "private".into(),
+                ok: exposed.is_none(),
+                detail: exposed.clone().unwrap_or_default(),
+            });
+        }
+        if exposed.is_some() {
+            // Links would work, but anyone could fetch the folder: no module until it is moved
+            // (also not one installed earlier there: the app must not offer links any more).
+            let _ = web.delete(MODULE_FILE);
+            if srv.module.as_ref().is_some_and(|m| m.dir == dir) {
+                self.with_open(|o| {
+                    let mut srv = srv.clone();
+                    srv.module = None;
+                    self.store_server(o, &srv)
+                })?;
+            }
+        }
+        if !reads || exposed.is_some() {
+            return Ok(ModuleInstalled { url: None, tried, checks });
+        }
+        let url = answering.expect("checked");
         self.with_open(|o| {
-            let s = server(o, &via_server_id)?;
-            let fs = open_fs(o, &s, Some(""))?;
-            let dir = dir.trim_matches('/');
-            let path = if dir.is_empty() { module.file_name.clone() } else { format!("{dir}/{}", module.file_name) };
-            fs.write(&path, module.content.as_bytes())?;
-            Ok(())
+            let mut srv = srv.clone();
+            srv.module =
+                Some(StoredModule { url: url.clone(), dir: dir.clone(), version: crate::net::module::MODULE_VERSION });
+            self.store_server(o, &srv)
+        })?;
+        Ok(ModuleInstalled { url: Some(url), tried, checks })
+    }
+
+    /// Writes the module of this app's version over an older one (same place, same folder).
+    /// Returns the version it answers with afterwards.
+    pub fn server_module_update(&self, server_id: String) -> Result<u32> {
+        let m = self.with_open(|o| server(o, &server_id)?.module.clone().ok_or(GhulError::NotConfigured))?;
+        let done = self.server_module_install(server_id, m.dir.clone(), m.url.clone())?;
+        if done.url.is_none() {
+            return Err(GhulError::Network { msg: "the server module does not answer".into() });
+        }
+        Ok(crate::net::module::MODULE_VERSION)
+    }
+
+    /// Removes the server module from the server (links of this server stop working).
+    pub fn server_module_remove(&self, server_id: String) -> Result<()> {
+        self.with_open(|o| {
+            let mut srv = server(o, &server_id)?;
+            if let Some(m) = srv.module.take() {
+                open_fs(o, &srv, Some(&m.dir))?.delete(MODULE_FILE)?;
+            }
+            self.store_server(o, &srv)
         })
     }
 
@@ -941,5 +873,39 @@ impl GhulSuite {
             super::sync::forget_server(o, &id)?;
             self.save_container(&mut o.suite, super::suite::SUITE_FILE)
         })
+    }
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::{folder_addresses, relative_path};
+
+    #[test]
+    fn the_suite_folder_is_looked_for_where_the_web_could_serve_it() {
+        // Module on a subdomain whose root is public_html/sub; the folder is public_html/gs,
+        // above that root: not next to the module, but on the main site and the module's host.
+        let at = folder_addresses(
+            "https://sub.example.org/ghulsuite.php",
+            "ftp.example.org",
+            "public_html/gs",
+            "../gs",
+            "shares/check-x",
+        );
+        assert!(at.contains(&"https://example.org/gs/shares/check-x".to_owned()), "{at:?}");
+        assert!(at.contains(&"https://sub.example.org/gs/shares/check-x".to_owned()), "{at:?}");
+        assert!(at.len() <= 8 && !at.iter().any(|u| u.contains("..")), "{at:?}");
+        // Next to the module, with odd folder names encoded.
+        let at = folder_addresses("https://example.org/t/ghulsuite.php", "", "/srv/a#b", "a#b", "shares/c");
+        assert_eq!(at[0], "https://example.org/t/a%23b/shares/c");
+    }
+
+    #[test]
+    fn relative_paths_from_the_module_to_the_suite_folder() {
+        assert_eq!(relative_path("/home/u/public_html", "/home/u/ghulsuite").as_deref(), Some("../ghulsuite"));
+        assert_eq!(relative_path("/home/u/public_html/tools", "/home/u/ghulsuite").as_deref(), Some("../../ghulsuite"));
+        assert_eq!(relative_path("/", "/ghulsuite").as_deref(), Some("ghulsuite"));
+        assert_eq!(relative_path("/a/b/", "/a/b").as_deref(), Some("."));
+        assert_eq!(relative_path("/www", "/www/data/gs").as_deref(), Some("data/gs"));
+        assert_eq!(relative_path("/a/../b", "/c"), None);
     }
 }

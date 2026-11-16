@@ -56,9 +56,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import de.danerd.ghulsuite.model.DriveItemUi
 import de.danerd.ghulsuite.model.DriveStatusUi
-import de.danerd.ghulsuite.model.ServerKindUi
 import de.danerd.ghulsuite.model.ServerUi
-import de.danerd.ghulsuite.model.ShareCheckUi
+import de.danerd.ghulsuite.model.ModuleCheckUi
+import de.danerd.ghulsuite.model.ModuleInstalledUi
 import de.danerd.ghulsuite.model.ShareInfoUi
 import de.danerd.ghulsuite.model.ShareOptionsUi
 import de.danerd.ghulsuite.resources.Res
@@ -71,7 +71,7 @@ private val Blue = Color(0xFF2F74E8)
 
 /** Expiry choices in days; 0 = never. */
 private val EXPIRY = listOf(1, 7, 30, 0)
-private val MAX_DOWNLOADS = listOf(0, 1, 5, 10)
+private val MAX_DOWNLOADS = listOf(0, 1, 3, 5, 10)
 private const val MAIL_ATTACH_LIMIT = 20L * 1024 * 1024
 
 /**
@@ -93,19 +93,51 @@ fun AppState.composeMail(subject: String = "", text: String = "", attachments: L
     push(Screen.MailCompose(MailDraft(mailAccount, subject = subject, text = text, attachments = attachments)))
 }
 
+/** What share links still need: nothing, GhulDrive, or the server module on GhulDrive's server. */
+sealed interface ShareNeed {
+    data object Ready : ShareNeed
+    data object Drive : ShareNeed
+    data class Module(val serverId: String) : ShareNeed
+}
+
+/** Whether share links can be made (null while the core is asked). */
+@Composable
+fun rememberShareNeed(state: AppState): ShareNeed? {
+    var need by remember { mutableStateOf<ShareNeed?>(null) }
+    LaunchedEffect(state.liveRevision()) {
+        catching { state.backend.net.shareMissingModule() }.onSuccess { missing ->
+            need = when {
+                missing == null -> ShareNeed.Ready
+                missing.isEmpty() -> ShareNeed.Drive
+                else -> ShareNeed.Module(missing)
+            }
+        }
+    }
+    return need
+}
+
+/** Subtitle of a "Share link" row: what it does, or what is still missing for it. */
+@Composable
+fun shareLinkSub(need: ShareNeed?): String = when (need) {
+    is ShareNeed.Module -> stringResource(Res.string.share_link_needs_module)
+    ShareNeed.Drive -> stringResource(Res.string.share_link_needs_drive)
+    else -> stringResource(Res.string.share_link_sub)
+}
+
 /** Share Drive files: to another app, as a link, or as mail attachment. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ShareSheet(state: AppState, files: List<DriveItemUi>, onDismiss: () -> Unit, onDone: () -> Unit, onZip: (() -> Unit)? = null) {
     val net = state.backend.net
-    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var servers by remember { mutableStateOf<List<ServerUi>>(emptyList()) }
+    val need = rememberShareNeed(state)
     var linkMode by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<ShareInfoUi?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     val mail = rememberMailAvailable(state)
-    LaunchedEffect(Unit) { servers = catching { net.servers() }.getOrDefault(emptyList()).filter { it.canShare } }
     val onlyFiles = files.none { it.isDir }
+    // One file: its name is the link's title. Several or a folder: the user can name the link.
+    val single = files.size == 1 && onlyFiles
+    var linkTitle by remember { mutableStateOf(if (files.size == 1) files[0].name else "GhulDrive") }
     val title = if (files.size == 1) files[0].name else pluralStringResource(Res.plurals.share_n_items, files.size, files.size.toString())
 
     result?.let { info ->
@@ -129,15 +161,16 @@ fun ShareSheet(state: AppState, files: List<DriveItemUi>, onDismiss: () -> Unit,
                 }
                 SheetRow(
                     stringResource(Res.string.share_link),
-                    stringResource(if (servers.isEmpty()) Res.string.share_link_setup else Res.string.share_link_sub),
+                    shareLinkSub(need),
                     leading = { IconTile(Icons.Filled.Link, paletteColor(5)) },
                     end = { ChevronEnd() },
                     divider = onlyFiles,
+                    enabled = need != ShareNeed.Drive,
                 ) {
-                    if (servers.isEmpty()) {
-                        onDismiss(); state.push(Screen.SettingsPage(SetPage.SERVERS))
-                    } else {
-                        linkMode = true
+                    when (need) {
+                        ShareNeed.Ready -> linkMode = true
+                        is ShareNeed.Module -> { onDismiss(); state.push(Screen.ModuleInstall(need.serverId)) }
+                        else -> {}
                     }
                 }
                 if (onZip != null) {
@@ -167,9 +200,14 @@ fun ShareSheet(state: AppState, files: List<DriveItemUi>, onDismiss: () -> Unit,
             }
             ErrorText(error)
         } else {
-            ShareOptionsForm(state, servers, onError = { error = it }) { options ->
+            if (!single) {
+                OutlinedTextField(linkTitle, { linkTitle = it }, Modifier.fillMaxWidth(), singleLine = true,
+                    label = { Text(stringResource(Res.string.share_title_label)) })
+                Hint(stringResource(Res.string.share_each_file))
+            }
+            ShareOptionsForm(state, onError = { error = it }) { options ->
                 state.run(onError = { error = it }, block = {
-                    net.shareDrive(files.map { it.id }, if (files.size == 1) null else "GhulDrive", options)
+                    net.shareDrive(files.map { it.id }, if (single) null else linkTitle.trim().ifEmpty { "GhulDrive" }, options)
                 }) { result = it }
             }
             ErrorText(error)
@@ -178,45 +216,34 @@ fun ShareSheet(state: AppState, files: List<DriveItemUi>, onDismiss: () -> Unit,
     }
 }
 
-/** Server, expiry, password and (PHP module only) download limit of a new share link. */
+/** Expiry, download limit and password of a new share link (the server module ends it by itself). */
 @Composable
 fun ShareOptionsForm(
     state: AppState,
-    servers: List<ServerUi>,
     onError: (String?) -> Unit,
     defaultDays: Int = 7,
     defaultMax: Int = 0,
     onCreate: (ShareOptionsUi) -> Unit,
 ) {
-    // A server that can count downloads first: one-time links need it.
-    val ordered = remember(servers, defaultMax) { if (defaultMax > 0) servers.sortedBy { it.kind != ServerKindUi.PHP } else servers }
-    var serverId by remember(ordered) { mutableStateOf(ordered.firstOrNull()?.id) }
     var days by remember { mutableStateOf(defaultDays) }
+    var max by remember { mutableStateOf(defaultMax) }
     var usePassword by remember { mutableStateOf(false) }
     var password by remember { mutableStateOf("") }
-    var max by remember(serverId) { mutableStateOf(if (ordered.firstOrNull { it.id == serverId }?.kind == ServerKindUi.PHP) defaultMax else 0) }
-    val server = ordered.firstOrNull { it.id == serverId }
-    val counts = server?.kind == ServerKindUi.PHP
 
-    if (servers.size > 1) {
-        SectionLabel(stringResource(Res.string.share_server))
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            for (s in ordered) FilterChip(s.id == serverId, { serverId = s.id }, label = { Text(s.name) })
-        }
-    }
     SectionLabel(stringResource(Res.string.share_expires))
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         for (d in EXPIRY) FilterChip(days == d, { days = d }, label = { Text(expiryLabel(d)) })
     }
-    if (counts) {
-        SectionLabel(stringResource(Res.string.share_max))
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            for (m in MAX_DOWNLOADS) {
-                FilterChip(max == m, { max = m }, label = { Text(if (m == 0) stringResource(Res.string.share_unlimited) else m.toString() + "×") })
+    SectionLabel(stringResource(Res.string.share_max))
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        for (m in MAX_DOWNLOADS) {
+            val label = when (m) {
+                0 -> stringResource(Res.string.share_unlimited)
+                1 -> stringResource(Res.string.share_once)
+                else -> m.toString() + "×"
             }
+            FilterChip(max == m, { max = m }, label = { Text(label) })
         }
-    } else {
-        Hint(stringResource(Res.string.share_max_php_only))
     }
     SwitchRow(stringResource(Res.string.share_password), usePassword) { usePassword = it }
     if (usePassword) {
@@ -225,8 +252,8 @@ fun ShareOptionsForm(
     }
     Hint(stringResource(Res.string.share_e2e_hint))
     Button(
-        onClick = { serverId?.let { onCreate(ShareOptionsUi(it, password.takeIf { usePassword && it.isNotEmpty() }, days, max)) } },
-        enabled = !state.busy && serverId != null && (!usePassword || password.length >= 4),
+        onClick = { onCreate(ShareOptionsUi(password.takeIf { usePassword && it.isNotEmpty() }, days, max)) },
+        enabled = !state.busy && (!usePassword || password.length >= 4),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Icon(Icons.Filled.Link, null, Modifier.size(18.dp))
@@ -295,18 +322,19 @@ private fun shareSummary(info: ShareInfoUi): String {
 fun SharesScreen(state: AppState, padding: PaddingValues) {
     val net = state.backend.net
     var shares by remember { mutableStateOf<List<ShareInfoUi>?>(null) }
-    var servers by remember { mutableStateOf<List<ServerUi>>(emptyList()) }
     var showing by remember { mutableStateOf<ShareInfoUi?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var retry by remember { mutableStateOf(0) }
     val mail = rememberMailAvailable(state)
+    val need = rememberShareNeed(state)
     LaunchedEffect(state.liveRevision(), retry) {
-        servers = catching { net.servers() }.getOrDefault(emptyList())
         catching { net.shareList() }.onSuccess { shares = it; error = null }.onFailure { error = describe(it); if (shares == null) shares = emptyList() }
     }
     val withdrawnMsg = stringResource(Res.string.share_withdrawn)
-    // Withdrawing asks nothing: the link is gone from the list at once, "Undo" brings it back.
-    fun withdraw(s: ShareInfoUi) = state.undoable(listOf(hiddenKey("share", "", s.id)), withdrawnMsg) { net.shareDelete(s.id) }
+    // F103: withdrawing asks first; the link is then gone from the list, "Undo" brings it back.
+    fun withdraw(s: ShareInfoUi) = state.askDelete(listOf(s.name)) {
+        state.undoable(listOf(hiddenKey("share", "", s.id)), withdrawnMsg) { net.shareDelete(s.id) }
+    }
     Column(Modifier.padding(padding)) {
         ScreenColumn {
             BusyBanner(state)
@@ -316,18 +344,22 @@ fun SharesScreen(state: AppState, padding: PaddingValues) {
                 list == null -> LoadingHint()
                 list.isEmpty() -> {
                     EmptyState(Icons.Filled.Link, stringResource(Res.string.shares_empty), g.ok)
-                    if (servers.none { it.canShare }) {
-                        OutlinedButton(onClick = { state.push(Screen.SettingsPage(SetPage.SERVERS)) }, modifier = Modifier.fillMaxWidth()) {
-                            Text(stringResource(Res.string.share_setup_title))
+                    when (need) {
+                        is ShareNeed.Module -> {
+                            Hint(stringResource(Res.string.share_link_needs_module))
+                            OutlinedButton(onClick = { state.push(Screen.ModuleInstall(need.serverId)) }, modifier = Modifier.fillMaxWidth()) {
+                                Text(stringResource(Res.string.module_install))
+                            }
                         }
+                        ShareNeed.Drive -> Hint(stringResource(Res.string.share_link_needs_drive))
+                        else -> {}
                     }
                 }
                 else -> ListCard {
                     list.forEachIndexed { i, s ->
-                        val server = servers.firstOrNull { it.id == s.serverId }?.name.orEmpty()
                         ListRow(
                             s.name,
-                            listOf(formatSize(s.size), server, shareSummary(s)).filter { it.isNotBlank() }.joinToString(" · "),
+                            listOf(formatSize(s.size), shareSummary(s)).filter { it.isNotBlank() }.joinToString(" · "),
                             leading = { IconTile(if (s.password) Icons.Filled.Lock else Icons.Filled.Link, g.ok) },
                             trailing = { TextButton(onClick = { withdraw(s) }) { Text(stringResource(Res.string.share_withdraw)) } },
                             divider = i > 0,
@@ -342,24 +374,21 @@ fun SharesScreen(state: AppState, padding: PaddingValues) {
     showing?.let { ShareResultDialog(state, it, mail) { showing = null } }
 }
 
-/** Assistant: choose the share folder on the server, enter its web address, check everything. */
+/**
+ * Installs the GhulSuite server module on a server over its own login: choose the website
+ * folder, optionally its address, then "Install and check" shows each step.
+ */
 @Composable
-fun ShareSetupScreen(state: AppState, serverId: String, padding: PaddingValues) {
+fun ModuleInstallScreen(state: AppState, serverId: String, padding: PaddingValues) {
     val net = state.backend.net
     var server by remember { mutableStateOf<ServerUi?>(null) }
     var path by remember { mutableStateOf("") }
     var dirs by remember { mutableStateOf<List<String>>(emptyList()) }
-    var url by remember { mutableStateOf("https://") }
-    var checks by remember { mutableStateOf<List<ShareCheckUi>>(emptyList()) }
+    var url by remember { mutableStateOf("") }
+    var result by remember { mutableStateOf<ModuleInstalledUi?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var newDir by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        server = catching { net.servers() }.getOrDefault(emptyList()).firstOrNull { it.id == serverId }
-        server?.let { s ->
-            if (s.shareDir.isNotEmpty()) path = s.shareDir
-            if (s.shareUrl.isNotEmpty()) url = s.shareUrl
-        }
-    }
+    LaunchedEffect(Unit) { server = catching { net.knownServers() }.getOrDefault(emptyList()).firstOrNull { it.id == serverId } }
     LaunchedEffect(path) {
         error = null
         dirs = catching { net.serverBrowse(serverId, path) }.getOrElse {
@@ -367,69 +396,59 @@ fun ShareSetupScreen(state: AppState, serverId: String, padding: PaddingValues) 
             emptyList()
         }
     }
-    val ok = checks.isNotEmpty() && checks.all { it.ok }
+    val r = result
+    val done = r?.url != null
+    val urlOk = url.isEmpty() || url.startsWith("https://") && url.length > 10
     Column(Modifier.padding(padding)) {
         ScreenColumn {
             BusyBanner(state)
-            SectionCard(stringResource(Res.string.share_setup_step1)) {
-                Hint(stringResource(Res.string.share_setup_step1_hint))
+            SectionCard(server?.let { "${it.name} · ${kindLabel(it.kind)}" }) {
+                Hint(stringResource(Res.string.module_intro))
+            }
+            SectionCard(stringResource(Res.string.module_step1)) {
+                Hint(stringResource(Res.string.module_step1_hint))
                 Text("/" + path, fontFamily = FontFamily.Monospace, color = g.ok)
                 ListCard {
                     if (path.isNotEmpty()) {
                         ListRow("..", leading = { IconTile(Icons.Filled.Folder, MaterialTheme.colorScheme.onSurfaceVariant, size = 34.dp) }) {
                             path = path.substringBeforeLast('/', "")
+                            result = null
                         }
                     }
                     for (d in dirs) {
-                        ListRow(d, leading = { IconTile(Icons.Filled.Folder, areaColor(Tab.DRIVE), size = 34.dp) }) {
+                        ListRow(d, leading = { IconTile(Icons.Filled.Folder, areaColor(Tab.DRIVE), size = 34.dp) }, divider = path.isNotEmpty() || d != dirs.first()) {
                             path = if (path.isEmpty()) d else "$path/$d"
+                            result = null
                         }
                     }
                 }
                 OutlinedButton(onClick = { newDir = true }) { Text(stringResource(Res.string.drive_new_folder)) }
             }
-            SectionCard(stringResource(Res.string.share_setup_step2)) {
-                Hint(stringResource(Res.string.share_setup_step2_hint, "/" + path))
-                OutlinedTextField(url, { url = it.trim(); checks = emptyList() }, Modifier.fillMaxWidth(), singleLine = true,
-                    label = { Text(stringResource(Res.string.share_setup_url)) },
+            SectionCard(stringResource(Res.string.module_step2)) {
+                OutlinedTextField(url, { url = it.trim(); result = result?.takeIf { it.url != null } }, Modifier.fillMaxWidth(), singleLine = true,
+                    label = { Text(stringResource(Res.string.module_url)) },
+                    placeholder = { Text("https://example.org/ghulsuite.php") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
-                Hint(stringResource(Res.string.share_setup_url_example))
+                Hint(stringResource(if (urlOk) Res.string.module_url_hint else Res.string.core_https_only))
             }
-            SectionCard(stringResource(Res.string.share_setup_step3)) {
-                for (c in checks) {
-                    // "skipped" (SHARE_CHECK_SKIPPED in the core's shares.rs): the https step
-                    // failed, so this step could not be checked.
-                    val skipped = !c.ok && c.detail == "skipped"
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(
-                            when { c.ok -> Icons.Filled.CheckCircle; skipped -> Icons.Filled.RadioButtonUnchecked; else -> Icons.Filled.Error },
-                            null, tint = when { c.ok -> g.ok; skipped -> g.faint; else -> g.danger },
-                        )
-                        Column(Modifier.weight(1f)) {
-                            Text(checkLabel(c.step), color = if (skipped) g.muted else Color.Unspecified)
-                            if (skipped) Hint(stringResource(Res.string.share_check_skipped))
-                            else if (!c.ok && c.detail.isNotBlank()) {
-                                // Known causes ("server address not found") in the app's language.
-                                val env = rememberResourceEnvironment()
-                                val detail by produceState(c.detail, c.detail) { value = coreText(env, c.detail) ?: c.detail }
-                                Hint(detail)
-                            }
-                        }
-                    }
-                }
-                if (ok) Hint(stringResource(Res.string.share_setup_ok))
+            SectionCard(stringResource(Res.string.module_step3)) {
+                r?.checks?.forEach { c -> ModuleCheckRow(c, r.tried) }
+                if (done) Banner(Icons.Filled.CheckCircle, stringResource(Res.string.module_ok, r?.url.orEmpty()))
                 ErrorText(error)
-                Button(
-                    onClick = {
-                        state.run(onError = { error = it }, block = { net.shareSetup(serverId, path, url) }) {
-                            checks = it
-                            if (it.all { c -> c.ok }) state.changed()
-                        }
-                    },
-                    enabled = !state.busy && path.isNotEmpty() && url.startsWith("https://") && url.length > 10,
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text(stringResource(if (ok) Res.string.share_setup_again else Res.string.share_setup_check)) }
-                if (ok) TextButton(onClick = { state.pop() }) { Text(stringResource(Res.string.a_done)) }
+                if (done) {
+                    Button(onClick = { state.pop() }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.a_done)) }
+                } else {
+                    Button(
+                        onClick = {
+                            state.run(onError = { error = it }, block = { net.serverModuleInstall(serverId, path, url) }) {
+                                result = it
+                                if (it.url != null) state.changed()
+                            }
+                        },
+                        enabled = !state.busy && urlOk,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(stringResource(Res.string.module_install_check)) }
+                }
             }
         }
     }
@@ -441,13 +460,56 @@ fun ShareSetupScreen(state: AppState, serverId: String, padding: PaddingValues) 
     }
 }
 
+/** One step of the module installation: green done, red failed (with why), grey not checked. */
 @Composable
-private fun checkLabel(step: String): String = when (step) {
-    "write" -> stringResource(Res.string.share_check_write)
-    "https" -> stringResource(Res.string.share_check_https)
-    "listing" -> stringResource(Res.string.share_check_listing)
-    "page" -> stringResource(Res.string.share_check_page)
+private fun ModuleCheckRow(c: ModuleCheckUi, tried: List<String>) {
+    // "skipped" (SHARE_CHECK_SKIPPED in the core's shares.rs): the https step failed, so this
+    // step could not be checked.
+    val skipped = !c.ok && c.detail == "skipped"
+    Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Icon(
+            when { c.ok -> Icons.Filled.CheckCircle; skipped -> Icons.Filled.RadioButtonUnchecked; else -> Icons.Filled.Error },
+            null, tint = when { c.ok -> g.ok; skipped -> g.faint; else -> g.danger },
+        )
+        Column(Modifier.weight(1f)) {
+            Text(moduleCheckLabel(c.step), color = if (skipped) g.muted else Color.Unspecified)
+            when {
+                skipped -> Hint(stringResource(Res.string.share_check_skipped))
+                c.ok && c.detail.isNotBlank() -> Hint(c.detail)
+                c.ok -> {}
+                c.step == "https" -> Hint(stringResource(Res.string.module_https_failed, tried.ifEmpty { listOf(c.detail) }.joinToString(", ")))
+                c.step == "php" -> Hint(stringResource(Res.string.module_php_failed))
+                // "no-write" (MODULE_NO_WRITE in the core's servers.rs): reads, may not write.
+                c.step == "folder" && c.detail == "no-write" -> Hint(stringResource(Res.string.module_folder_no_write))
+                c.step == "folder" -> Hint(stringResource(Res.string.module_folder_failed))
+                // The address where the web server hands out the GhulSuite folder itself.
+                c.step == "private" -> Hint(stringResource(Res.string.module_private_failed, c.detail))
+                c.detail.isNotBlank() -> {
+                    // Known causes ("server address not found") in the app's language.
+                    val env = rememberResourceEnvironment()
+                    val detail by produceState(c.detail, c.detail) { value = coreText(env, c.detail) ?: c.detail }
+                    Hint(detail)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun moduleCheckLabel(step: String): String = when (step) {
+    "upload" -> stringResource(Res.string.module_check_upload)
+    "https" -> stringResource(Res.string.module_check_https)
+    "php" -> stringResource(Res.string.module_check_php)
+    "folder" -> stringResource(Res.string.module_check_folder)
+    "private" -> stringResource(Res.string.module_check_private)
     else -> step
+}
+
+/** The suite's servers and GhulDrive's own server (kept in the Drive file, not in the list). */
+suspend fun de.danerd.ghulsuite.model.NetBackend.knownServers(): List<ServerUi> {
+    val list = servers()
+    val drive = catching { driveStorage() }.getOrNull()?.server
+    return if (drive == null || list.any { it.id == drive.id }) list else list + drive
 }
 
 /** Settings → GhulDrive: storage, trash and shares (all devices), photo backup (this device). */

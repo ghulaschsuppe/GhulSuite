@@ -192,8 +192,6 @@ class Settings(private val store: KeyValueStore) {
     var driveTrashDays by int("drive_trash_days", 30)
     var photoBackup by bool("photo_backup", false)
     var photoBackupWifiOnly by bool("photo_backup_wifi", true)
-    /** Mail archive: archive only in Wi-Fi (this device). */
-    var archiveWifiOnly by bool("archive_wifi", true)
     /** Newest photo already backed up (Unix ms of its date taken/added). */
     var photoBackupSince by int("photo_backup_since_s", 0)
 
@@ -210,6 +208,8 @@ class Settings(private val store: KeyValueStore) {
     var mailSwipeLeft by int("mail_swipe_left", 0)
     /** App language: "" follows the system, otherwise a language tag ("de", "en"). */
     var appLanguage by str("app_language", "")
+    /** Last automatic run of the mail archive on this device (seconds since 1970, as text): at most once a day. */
+    var archiveAutoLast by str("archive_auto_last_s", "0")
     /** Senders whose HTML mails load images from the internet without asking (lower case, newline separated). */
     var mailImageSenders by str("mail_image_senders", "")
 

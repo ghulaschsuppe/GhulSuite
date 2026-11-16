@@ -109,10 +109,17 @@ else
 fi
 if [ "$mode" = "full" ]; then
   if have node && [ -n "${NODE_PATH:-}" ]; then
-    browser() { (cd core && cargo test --locked -p ghul-core --no-run) && node tools/test-share-php.js && node tools/test-share-viewer.js; }
-    step "Browser: Empfängerseite und PHP-Modul" browser
+    browser() {
+      (cd core && cargo test --locked -p ghul-core --no-run) || return 1
+      local d; d=$(mktemp -d)
+      (cd core && GHUL_PHP_FIXTURE="$d" cargo test --locked -q -p ghul-core php_browser_fixture) &
+      node tools/test-share-php.js "$d"; local rc=$?
+      wait $! || rc=1
+      return $rc
+    }
+    step "Browser: Freigabelinks über das PHP-Modul" browser
   else
-    skip "Browser: Empfängerseite und PHP-Modul" "node und NODE_PATH mit playwright nötig"
+    skip "Browser: Freigabelinks über das PHP-Modul" "node und NODE_PATH mit playwright nötig"
   fi
 fi
 

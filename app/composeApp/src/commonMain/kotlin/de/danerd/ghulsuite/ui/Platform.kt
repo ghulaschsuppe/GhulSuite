@@ -7,6 +7,13 @@ import androidx.compose.runtime.Composable
 @Composable
 expect fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit)
 
+/**
+ * Test tags as ids for the emulator flows (Android). The main window sets this once; a sheet or
+ * dialog is a window of its own and needs it again (bug: "ask-confirm" in the delete question
+ * was not found). No-op on desktop.
+ */
+expect fun androidx.compose.ui.Modifier.testTagsAsIds(): androidx.compose.ui.Modifier
+
 /** Current Unix time in seconds. */
 expect fun nowSeconds(): Long
 
@@ -44,6 +51,13 @@ expect fun rememberPickFolder(onPicked: (de.danerd.ghulsuite.model.FolderRef) ->
 /** Returns a launcher that opens the system file picker for a file of any size (read as a stream). */
 @Composable
 expect fun rememberOpenStream(onPicked: (de.danerd.ghulsuite.model.ByteSource) -> Unit): () -> Unit
+
+/**
+ * The same for several files at once (GhulDrive). Each file is only opened when it is read, so
+ * choosing many files keeps nothing open.
+ */
+@Composable
+expect fun rememberOpenStreams(onPicked: (List<de.danerd.ghulsuite.model.ByteSource>) -> Unit): () -> Unit
 
 /**
  * Returns a launcher that asks the user where to save a file (suggested name and MIME type);

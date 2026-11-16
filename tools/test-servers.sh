@@ -19,8 +19,16 @@ mkdir -p "$D/ssh" "$D/sftp-root" /run/sshd
 ssh-keygen -q -t ed25519 -N "" -f "$D/ssh/host_key"
 touch "$D/ssh/authorized_keys"
 chmod 600 "$D/ssh/authorized_keys"
-# The tests (run without sudo) add their keys to this file.
-if [ -n "${SUDO_USER:-}" ]; then chown "$SUDO_USER" "$D/ssh/authorized_keys"; fi
+# The tests (run without sudo) add their keys to this file. They log in as that same user, so
+# what they write over SFTP belongs to them and they can also lay out files there directly
+# (web folders for the PHP module, files for the chaos tests).
+SFTP_LOGIN=$(id -un)
+if [ -n "${SUDO_USER:-}" ]; then
+  chown "$SUDO_USER" "$D/ssh/authorized_keys" "$D/sftp-root"
+  SFTP_LOGIN=$SUDO_USER
+  # sshd refuses accounts locked with "!" even for key logins; "*" still allows no password.
+  if getent shadow "$SUDO_USER" | cut -d: -f2 | grep -q '^!'; then usermod -p '*' "$SUDO_USER"; fi
+fi
 cat > "$D/ssh/sshd_config" <<CFG
 Port 2222
 ListenAddress 127.0.0.1
@@ -183,6 +191,8 @@ if command -v vsftpd >/dev/null; then
   grep -qx /usr/sbin/nologin /etc/shells || echo /usr/sbin/nologin >> /etc/shells
   mkdir -p "$D/ftp-home" "$D/vsftpd-empty"
   chown ghulftp "$D/ftp-home"
+  # The tests (run without sudo) lay out web folders in there and run PHP on them.
+  chmod 777 "$D/ftp-home"
   usermod -d "$D/ftp-home" ghulftp
   cat > "$D/vsftpd.conf" <<CFG
 listen=YES
@@ -191,7 +201,7 @@ listen_port=10021
 anonymous_enable=NO
 local_enable=YES
 write_enable=YES
-local_umask=022
+local_umask=000
 ssl_enable=YES
 rsa_cert_file=$D/tls.crt
 rsa_private_key_file=$D/tls.key
@@ -254,7 +264,7 @@ for port in $PORTS; do
 done
 echo "export GHUL_TEST_DIR=$D"
 echo "export GHUL_TEST_SFTP=127.0.0.1:2222"
-echo "export GHUL_TEST_SFTP_USER=$(id -un)"
+echo "export GHUL_TEST_SFTP_USER=$SFTP_LOGIN"
 echo "export GHUL_TEST_SFTP_ROOT=$D/sftp-root"
 echo "export GHUL_TEST_SFTP_AUTHKEYS=$D/ssh/authorized_keys"
 echo "export GHUL_TEST_SFTP_HOSTKEY=$HOST_FP"

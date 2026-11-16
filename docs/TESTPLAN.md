@@ -1,8 +1,8 @@
 # GhulSuite: Testplan Android (Version 0.5.0-dev)
 
-**Stand:** 13.11.2026 · neu: Assistent in acht Schritten und „Ein Bereich, eine Datei“ (Abschnitte 1 und 23) · deckt Phase 2 (Etappen 1, 2a, 2b, „Der Ordner ist die Suite“) und Phase 3 ab: eigene Server,
-Synchronisation, GhulDrive und GhulMail (Abschnitte 12 bis 15) sowie 0.5.0: neues Design, Servertypen FTPS und
-PHP-Server-Modul, Teilen mit Freigabelinks und die Modultrennung (Abschnitte 16 bis 19), verschlüsselte Mails (Abschnitt 20), Korrekturen nach dem ersten Test (Abschnitt 21).
+**Stand:** 15.11.2026 · neu: Aufgaben im Hintergrund und Mail-Archiv in GhulDrive (Abschnitte 33 und 34); ein Server mit optionalem Server-Modul, Freigabelinks nur über das Modul (Abschnitte 17 und 18) · deckt Phase 2 (Etappen 1, 2a, 2b, „Der Ordner ist die Suite“) und Phase 3 ab: eigene Server,
+Synchronisation, GhulDrive und GhulMail (Abschnitte 12 bis 15) sowie 0.5.0: neues Design, Servertypen SFTP und FTPS
+mit dem Server-Modul, Teilen mit Freigabelinks und die Modultrennung (Abschnitte 16 bis 19), verschlüsselte Mails (Abschnitt 20), Korrekturen nach dem ersten Test (Abschnitt 21).
 
 **Neu in 0.5.0:** Die Einstellungen sind jetzt eine Übersicht mit Unterseiten. Pfade wie „Optionen → Tresore“
 meinen: Tab **Optionen** → Zeile **Tresore**. Den Testplan für Windows gibt es getrennt:
@@ -24,7 +24,7 @@ soll; weicht etwas ab, notiere die Nummer, was du gemacht hast und was stattdess
 | V5 | Wichtig: Diese Entwicklerversion ist mit einem öffentlichen Testschlüssel signiert. Keine echten Passwörter speichern. |
 | V6 | Für Abschnitt 12 bis 13: deinen Server mit SSH/SFTP (Adresse, Port, Benutzer) und Zugriff auf `~/.ssh/authorized_keys`. Fingerabdruck des Servers bereithalten: auf dem Server `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`. Ein zweites Android-Gerät (oder eine zweite Installation nach Deinstallation) für die Synchronisation. |
 | V7 | Für Abschnitt 14 bis 15: ein **Test**-Mailkonto mit IMAP/SMTP (Server, Benutzer, Passwort bzw. App-Passwort) und eine zweite Adresse, von der du Mails schicken kannst. |
-| V8 | Für Abschnitt 17 bis 18: ein **Webspace** mit FTP-Zugang (FTPS) und PHP 8.1 oder neuer, darin ein öffentlich erreichbarer Ordner (z. B. `public_html/teilen`) mit https-Adresse. Optional: dein SFTP-Server mit Webserver. |
+| V8 | Für Abschnitt 17 bis 18: ein **Webhosting** mit FTP-Zugang (FTPS) oder SFTP und PHP 8.1 oder neuer, dessen Website über https erreichbar ist (z. B. Ordner `public_html`). Optional: ein Webhosting ohne PHP und eines mit `open_basedir`, für ST9 und ST10. |
 
 ---
 
@@ -41,9 +41,9 @@ von Schritt 3, danach geht „Zurück“ nur noch bis Schritt 4.
 | E4 | „Passwort vorschlagen“ antippen, Wiederholung eingeben, Weiter. | Langes Zufallspasswort, Stärkebalken voll; Schritt 2 · Zweiter Faktor. |
 | E5 | „Security Key“ gewählt lassen, Name des Keys, Key-PIN eingeben (Android: „Key prüfen“ zeigt „Erkannt: …“). Weiter. | Schritt 3 · Speicherort. |
 | E6 | App-Speicher lassen, „Key registrieren“, Key **zweimal** berühren. | Schritt 4 · Synchronisation; kein „Zurück“ zu den Schritten 1 bis 3 mehr. |
-| E7 | „Eigener Server“ wählen, ohne Angaben „Weiter“. | Meldung „Noch offen: Anmeldung“ (bzw. der fehlende Schritt). Checkliste unter dem Formular zeigt Anmeldung, Ordner, Verbindung testen. |
+| E7 | „Eigener Server“ wählen, ohne Angaben „Weiter“. | Meldung „Noch offen: Anmeldung“ (bzw. der fehlende Schritt). Checkliste unter dem Formular zeigt Anmeldung, Verbindung testen, Ordner wählen, Ordner beschreibbar, Speichern. |
 | E8 | SFTP-Server eintragen (siehe Abschnitt 12), „Ordner wählen“. | Fingerabdruck bestätigen, dann die Ordner des Servers; „ghulsuite, Neu anlegen (empfohlen)“, Unterordner öffnen, „Eine Ebene höher“, „Neuer Ordner …“. |
-| E9 | Ordner wählen → „Verbindung testen“ → Weiter. | „Verbunden · host:/ordner“, Haken in der Checkliste; Schritt 5 · Bereiche. |
+| E9 | Ordner wählen → „Verbindung prüfen“ → „Server speichern“ → Weiter. | Vor der Prüfung gibt es kein „Server speichern“. Nach der Prüfung „Verbindung klappt, der Ordner ist beschreibbar …“, dann nach dem Speichern „Verbunden · host:/ordner“, Haken in der Checkliste; Schritt 5 · Bereiche. |
 | E10 | Alle fünf Bereiche einschalten. Bei GhulDrive „Wie Synchronisation“. Weiter. | Namen für GhulPass, GhulAuth, GhulCal änderbar; „Wie Synchronisation“ nur wählbar, weil Schritt 4 eingerichtet wurde. Schritt 6 · Sperren. |
 | E11 | Sperrzeit wählen, Schalter für Bildschirm aus und Schütteln. Weiter. | Schritt 7 · Entsperren mit Hinweis, dass „Schnell entsperren“ Fingerabdruck und App-PIN meint. |
 | E12 | „Zusätzlich Fingerabdruck“, Gültigkeit „Immer“. Weiter. | Hinweis: ohne Ablauf, aber nach Neustart, Sofortsperre oder Passwortwechsel wieder Passwort und Key. Fingerabdruck-Abfrage; Schritt 8. |
@@ -51,7 +51,7 @@ von Schritt 3, danach geht „Zurück“ nur noch bis Schritt 4.
 | E14 | „Ich habe den Code notiert“ → Weiter → falsche Gruppe 3 eingeben. | Meldung „Das ist nicht die dritte Gruppe“. Es gibt kein „Später“. |
 | E15 | Richtige Gruppe 3 eingeben → Abschließen. | Hauptansicht mit allen fünf Bereichen und Optionen; GhulMail zeigt „Noch kein Konto“ mit dem vollständigen Kontoformular. |
 | E16 | Zweite Einrichtung: in Schritt 4 „Später“, in Schritt 5 GhulDrive einschalten. | „Wie Synchronisation“ ist ausgegraut („Erst Synchronisation einrichten (Schritt 4)“); „Eigener Server“ klappt das Formular direkt auf. |
-| E17 | GhulDrive „Eigener Server“ → PHP-Modul: FTPS-Daten des Webhostings, Ordner wählen (z. B. `public_html/ghulsuite`), „Modul hochladen“, vorgeschlagene Adresse „Adresse prüfen“. | Modul liegt im Ordner, Adresse wird aus Domain und Ordner abgeleitet und geprüft; „FTPS-Zugang behalten“ wählbar. Bei kleinem Upload-Limit ein Hinweis auf kleinere Teile. |
+| E17 | GhulDrive „Eigener Server“ → FTPS: Daten des Webhostings, „Verbindung testen“, Ordner wählen (nicht `public_html`), „Verbindung prüfen“, „Server speichern“. | Zur Wahl stehen nur SFTP und FTPS. Der Server ist gespeichert; das Server-Modul für Freigabelinks kommt später über die Serverliste (ST6). |
 | E18 | Einrichtung mit „Schlüsseldatei“ statt Key: Datei erstellen und z. B. auf den USB-Stick speichern. | Ohne gespeicherte Datei geht es nicht weiter. Danach wie E6 bis E15 (ohne Key-Berührung). |
 | E19 | In Schritt 3 einen eigenen Ordner wählen, in dem schon GhulSuite-Dateien liegen. | Hinweis „Hier liegen bereits GhulSuite-Dateien“ und „Diese Suite öffnen“. |
 | E20 | Nur GhulAuth wählen und einrichten. | In der Leiste nur GhulAuth und Optionen; keine weiteren Dateien im Ordner. |
@@ -88,6 +88,8 @@ von Schritt 3, danach geht „Zurück“ nur noch bis Schritt 4.
 | P5 | Schnelleinstellungs-Kachel „GhulSuite sperren“ hinzufügen und antippen. | Gesperrt, Fingerabdruck/PIN-Zugang gelöscht. |
 | P6 | „Schütteln zum Sperren“ an, Handy eine halbe Sekunde deutlich hin und her schütteln, in der App, mit der App im Hintergrund und mit gesperrtem Startbildschirm-Wechsel. Jede Empfindlichkeit ausprobieren. | Gesperrt, kurzes Vibrieren, Fingerabdruck/PIN-Zugang gelöscht. Gehen, Treppensteigen, Handy auf den Tisch legen sperren **nicht**. |
 | P7 | Bildschirmfoto in der App versuchen; App-Übersicht öffnen. | Bildschirmfoto blockiert, Vorschau schwarz (solange „Bildschirmfotos erlauben“ aus ist). |
+| P7a | Benachrichtigungen aufziehen, während GhulSuite entsperrt ist (und mit eingerichtetem Mail-Konto). | Die dauerhaften Benachrichtigungen („GhulSuite entsperrt“, Mail-Empfang) zeigen das **Schutzschild**; ein Briefumschlag erscheint nur bei einer neu eingegangenen Mail. Text: „Tippen zum Öffnen. Schütteln oder „Sperren“ sperrt sofort.“ |
+| P7b | Optionen → Sperren → „Schütteln zum Sperren“ aus, Benachrichtigungen erneut aufziehen. | Der Text ändert sich sofort zu „Tippen zum Öffnen. „Sperren“ sperrt sofort.“ (kein Schütteln mehr erwähnt). Wieder an: Schütteln steht wieder da. |
 
 ## 4. GhulPass
 
@@ -203,11 +205,11 @@ Für T5 bis T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick
 |---|---|---|
 | SY1 | Optionen → Server, Sync & Teilen → „Server hinzufügen“ → Verbindungsart **SFTP (SSH)**. Adresse, Port und Benutzer eingeben, „SSH-Schlüssel“ gewählt lassen. | Ein öffentlicher Schlüssel `ssh-ed25519 …` wird angezeigt; „Kopieren“ legt ihn in die Zwischenablage. Es gibt noch **keine** Ordnerwahl, nur „Verbindung testen“; darunter die Schritte 1. bis 4. untereinander. |
 | SY2 | Schlüssel auf dem Server in `~/.ssh/authorized_keys` eintragen, dann „Verbindung testen“. | Dialog „Server-Schlüssel prüfen“ mit `SHA256:…`. Er stimmt mit dem Fingerabdruck aus V6 überein. |
-| SY3 | „Fingerabdruck stimmt“, in der Ordnerliste „ghulsuite (Neu anlegen, empfohlen)“ wählen, „Server speichern“. | Nach dem Fingerabdruck: „Verbindung klappt. Wähle jetzt den Ordner …“ und die Ordnerliste öffnet sich von selbst. Nach dem Speichern erscheint der Server in der Liste. Auf dem Server gibt es den Ordner `ghulsuite/suite/` (leer). |
+| SY3 | „Fingerabdruck stimmt“, in der Ordnerliste „ghulsuite (Neu anlegen, empfohlen)“ wählen, „Verbindung prüfen“, „Server speichern“. | Nach dem Fingerabdruck: „Verbindung klappt. Wähle jetzt den Ordner …“ und die Ordnerliste öffnet sich von selbst. Nach dem Speichern erscheint der Server in der Liste. Auf dem Server gibt es den Ordner `ghulsuite/suite/` (leer). |
 | SY4 | Server mit falschem Fingerabdruck-Abgleich: „Abbrechen“ im Dialog. | Nichts wird gespeichert. |
-| SY4b | Einfachster Weg: „Server hinzufügen“ → „Passwort“ → SSH-Passwort eingeben, „SSH-Schlüssel automatisch einrichten“ eingeschaltet lassen → „Verbindung testen“ → Fingerabdruck bestätigen → Ordner wählen → „Server speichern“. | Server erscheint mit „Ordner: /home/…/ghulsuite“. Auf dem Server steht in `~/.ssh/authorized_keys` eine neue Zeile `ssh-ed25519 … GhulSuite`, alte Zeilen sind unverändert. Das Passwort ist nicht gespeichert (Server funktioniert auch nach Passwortänderung weiter). |
+| SY4b | Einfachster Weg: „Server hinzufügen“ → „Passwort“ → SSH-Passwort eingeben, „SSH-Schlüssel automatisch einrichten“ eingeschaltet lassen → „Verbindung testen“ → Fingerabdruck bestätigen → Ordner wählen → „Verbindung prüfen“ → „Server speichern“. | Server erscheint mit „Ordner: /home/…/ghulsuite“. Auf dem Server steht in `~/.ssh/authorized_keys` eine neue Zeile `ssh-ed25519 … GhulSuite`, alte Zeilen sind unverändert. Das Passwort ist nicht gespeichert (Server funktioniert auch nach Passwortänderung weiter). |
 | SY5 | Variante Passwort: zweiten Server-Eintrag mit „Passwort“ anlegen (falls der Server Passwort-Anmeldung erlaubt). | Funktioniert wie SY2 bis SY3. Falsches Passwort → „Der Server hat die Anmeldung abgelehnt …“. |
-| SY6 | Synchronisation → „Aus“ antippen → Server wählen. | Statt „Aus“ steht der Servername da; synchronisiert sofort; „Zuletzt synchronisiert: …“. Auf dem Server liegen jetzt `suite.ghlsuite` und die Tresordateien, alle verschlüsselt (Inhalt unlesbar). |
+| SY6 | Synchronisation → „Aus“ antippen → Server wählen. | Statt „Aus“ steht der Servername da; synchronisiert sofort, genau **einmal** (danach steht gleich wieder „Jetzt synchronisieren“, kein zweiter Lauf mit „Synchronisiere …“); „Zuletzt synchronisiert: …“. Auf dem Server liegen jetzt `suite.ghlsuite` und die Tresordateien, alle verschlüsselt (Inhalt unlesbar). |
 | SY7 | **Zweites Gerät:** Startbildschirm → „Von meinem Server holen“. Adresse usw. eingeben; den angezeigten **Geräteschlüssel** zusätzlich in `authorized_keys` eintragen; „Suite holen“, Fingerabdruck bestätigen. | „Suite geladen. Jetzt entsperren.“ → Entsperren mit Passwort und Key/Schlüsseldatei klappt, alle Einträge sind da. |
 | SY8 | Gerät 1: Eintrag A anlegen. Gerät 2: Eintrag B anlegen (beide mit „Automatisch“). Danach auf beiden „Jetzt synchronisieren“. | Beide Geräte zeigen A **und** B. Nichts geht verloren. |
 | SY9 | Denselben Eintrag auf beiden Geräten unterschiedlich ändern, nacheinander synchronisieren. | Die später gespeicherte Änderung gewinnt auf beiden Geräten. |
@@ -225,11 +227,14 @@ Für T5 bis T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick
 |---|---|---|
 | D1 | Tab GhulDrive (ggf. unter Optionen → Module einschalten). | „GhulDrive einrichten“ mit deinen Servern. |
 | D2 | „<Server> verwenden“. | Leere Liste „Meine Dateien“, unten „Auf dem Server: /home/…/ghulsuite/drive“. Dort entsteht `index.ghldrv`. |
-| D3 | „Hochladen“, ein Foto oder PDF wählen. | Fortschritt, dann „… hochgeladen.“; Datei mit Größe und Datum in der Liste. |
+| D3 | „Hochladen“, ein Foto oder PDF wählen. | Unter der Kopfleiste der Streifen „Lade … hoch“ mit Balken und Größe; danach „… hochgeladen.“; Datei mit Größe und Datum in der Liste. |
 | D4 | Auf dem Server in `ghulsuite/drive/` schauen. | Nur `index.ghldrv` und `blocks/xx/<lange ID>`: **kein** Dateiname, Inhalt unlesbar. |
 | D5 | Große Datei (> 50 MB, z. B. Video) hochladen. | Fortschritt läuft durch; App bleibt bedienbar; Datei erscheint. |
-| D6 | Datei antippen → Speicherort wählen. | Gespeicherte Datei ist identisch (öffnen, ansehen). |
-| D7 | Upload starten und „Abbrechen“. | Bricht ab, keine halbe Datei in der Liste. |
+| D5a | App ganz schließen, neu starten, entsperren und sofort GhulDrive öffnen (während die Synchronisation nach dem Entsperren läuft). | Die Karte oben zeigt nie „Noch kein Server“; höchstens kurz „Wird geladen …“, dann den Servernamen. |
+| D6 | Datei antippen → „Speichern“ → Speicherort wählen. | Streifen „Lade … herunter“ mit Fortschritt, dann „… gespeichert.“; die Datei ist identisch (öffnen, ansehen). |
+| D7 | Upload starten und im Streifen „Abbrechen“. | Bricht ab mit „Hochladen von … abgebrochen.“, keine halbe Datei in der Liste. |
+| D7a | „Hochladen“ und im Auswahlfenster mehrere Dateien markieren (Android: lange drücken; Windows: Strg oder Umschalt). | Streifen „Lade 5 Dateien hoch“, darunter „2 von 5 fertig · Name · Größe“; nach jeder Datei stimmen Liste und „X Dateien“; am Ende „5 Dateien hochgeladen.“. Scheitert eine Datei, laufen die anderen weiter und die Meldung nennt sie; „Abbrechen“ stoppt den Rest mit „Hochladen abgebrochen: 2 von 5 Dateien fertig.“. |
+| D7b | In der Galerie mehrere Fotos auswählen → Teilen → „In GhulDrive speichern“ (gesperrt: erst entsperren). | GhulDrive öffnet sich, die Fotos werden nacheinander in „Meine Dateien“ hochgeladen; ohne eingerichtetes GhulDrive kommt der Hinweis, es zuerst einzurichten. Andere Apps können so keine Dateien von GhulSuite selbst hineinschieben. |
 | D8 | „Hinzufügen“ → „Neuer Ordner“ → Name; Ordner öffnen, Datei hineinladen; Zurück-Pfeil. | Ordnerstruktur stimmt, Pfad oben passt. |
 | D9 | Datei umbenennen, in einen anderen Ordner verschieben („Hierher verschieben“). | Name bzw. Ort ändern sich. |
 | D10 | Suche nach einem Teil des Dateinamens. | Treffer aus allen Ordnern. |
@@ -242,10 +247,12 @@ Für T5 bis T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick
 | Nr. | Schritt | Erwartet |
 |---|---|---|
 | M1 | Tab GhulMail → „E-Mail-Konto hinzufügen“. E-Mail-Adresse eingeben. | Unter „Eingang/Ausgang“ werden passende Server vorgeschlagen (bei bekannten Anbietern genau, sonst `imap.`/`smtp.` + Domain). |
-| M2 | Passwort (bzw. App-Passwort), Name eingeben, „Prüfen und speichern“. | Signatur ist mit „Viele Grüße“ und deinem Namen vorbelegt. Konto wird gespeichert, Posteingang erscheint. |
-| M3 | Falsches Passwort. | „Der Server hat die Anmeldung abgelehnt …“, nichts gespeichert. |
+| M2 | Passwort (bzw. App-Passwort), Name eingeben. Erst „Verbindung prüfen“, dann „Speichern“. | Vor der Prüfung gibt es kein „Speichern“. Die Prüfung zeigt vier Haken: Posteingangsserver erreichbar, Anmeldung am Posteingang, Postausgangsserver erreichbar, Anmeldung am Postausgang, und „Verbindung klappt …“; erst dann erscheint „Speichern“. Durch die Prüfung wird nichts gespeichert. Signatur ist mit „Viele Grüße“ und deinem Namen vorbelegt. Nach „Speichern“ erscheint der Posteingang. |
+| M2a | Nach erfolgreicher Prüfung Passwort, Adresse, Benutzername, Server oder Port ändern. | Ergebnis und „Speichern“ verschwinden sofort; erst eine neue Prüfung bringt sie zurück. Nur Name, Absendername oder Signatur ändern: „Speichern“ bleibt. |
+| M2b | Bestehendes Konto bearbeiten, nur den Namen oder die Signatur ändern. | „Speichern“ ist ohne Prüfung möglich. Ein neues Passwort verlangt erst „Verbindung prüfen“. |
+| M3 | Falsches Passwort, „Verbindung prüfen“. | Server erreichbar (grün), beide Anmeldungen rot mit „Anmeldung abgelehnt. Prüfe Benutzername und Passwort …“; kein „Speichern“, nichts gespeichert. Falsche Serveradresse: „Posteingangsserver erreichbar“ rot mit dem Grund, die Anmeldung grau „Nicht geprüft“. |
 | M4 | „Server-Einstellungen anzeigen“: Ports ändern, falscher Server. | Für IMAP gibt es nur SSL/TLS (keine Wahl), für den Ausgang SSL/TLS oder STARTTLS. Falscher Server: klare Meldung „Keine Verbindung …“. |
-| M5 | Eigener Mailserver mit selbst signiertem Zertifikat (falls vorhanden). | Dialog „Zertifikat prüfen“ mit Fingerabdruck; nach Bestätigung funktioniert es. |
+| M5 | Eigener Mailserver mit selbst signiertem Zertifikat (falls vorhanden), „Verbindung prüfen“. | Dialog „Zertifikat prüfen“ mit Fingerabdruck; nach „Fingerabdruck stimmt“ läuft die Prüfung von selbst noch einmal und zeigt die Haken; dann „Speichern“. |
 | M6 | Liste: ungelesene fett, Stern, Büroklammer bei Anhängen, Datum. „Weitere laden“ bei mehr als 50. | Stimmt mit dem Postfach im Webmail überein. |
 | M7 | Ordner wechseln (Gesendet, Papierkorb …), Aktualisieren. | Richtige Inhalte. |
 | M8 | Mail öffnen. | Text lesbar, Absender/Empfänger/Datum; bei HTML-Mails Hinweis „Als Text angezeigt …“; **keine** Bilder aus dem Internet. Im Webmail ist sie jetzt gelesen. |
@@ -291,47 +298,59 @@ Für T5 bis T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick
 | DS6 | Jede Zeile öffnen, Zurück. | Eigene Seite mit Titel; Zurück führt zur Übersicht. Abgeschaltete Module erscheinen nicht unter „Bereiche“. |
 | DS7 | Dunkles Design (Optionen → Ansicht). | Alle Seiten gut lesbar. |
 
-## 17. Servertypen: FTPS und PHP-Server-Modul
+## 17. Servertypen und Server-Modul
+
+Ein Server in der App ist ein Webspace bzw. Server: seine SFTP- oder FTPS-Anmeldung und, wenn gewünscht, das GhulSuite-Server-Modul (eine PHP-Datei), das die App über dieselbe Anmeldung installiert. Das Modul wird nur für Freigabelinks gebraucht. Synchronisation und GhulDrive wählen ihren Server frei (auch denselben).
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| ST1 | Optionen → Server, Sync & Teilen → „Server hinzufügen“. | Auswahl Verbindungsart: SFTP (SSH), FTPS, PHP-Server-Modul, jeweils mit Erklärung. |
-| ST2 | **FTPS**: Adresse, Port 21, Benutzer, Passwort, Ordner `ghulsuite` → Verbinden. | Dialog mit Zertifikat-Fingerabdruck (bei gültigem Zertifikat ggf. direkt gespeichert). Nach Bestätigung: Server in der Liste „Name · FTPS“, „Ordner: /ghulsuite“. |
+| ST1 | Optionen → Server, Sync & Teilen → „Server hinzufügen“. | Auswahl SFTP oder FTPS, kein PHP-Modul als eigene Verbindungsart. |
+| ST2 | **FTPS**: Adresse, Port 21, Benutzer, Passwort → „Verbindung testen“ → Ordner `ghulsuite` → „Verbindung prüfen“ → „Server speichern“. | Dialog mit Zertifikat-Fingerabdruck (bei gültigem Zertifikat ohne Dialog). Danach steht der Server in der Liste mit „FTPS“, Anmeldung und „Ordner: /ghulsuite“. |
 | ST3 | FTPS mit falschem Passwort. | Fehlermeldung „Anmeldung abgelehnt“, nichts gespeichert. |
-| ST4 | Synchronisation und GhulDrive mit dem FTPS-Server (wie SY6, D2 bis D6). | Funktioniert; auf dem Webspace nur verschlüsselte Dateien. |
-| ST5 | **PHP-Modul**: Verbindungsart „PHP-Server-Modul“ → „Server-Modul erstellen“. | „Modul ghulsuite.php mit eigenem Zugangsschlüssel erstellt.“ Knöpfe „Datei speichern“ und (wenn ein FTPS/SFTP-Server existiert) „Über Server hochladen“. |
-| ST6 | „Über Server hochladen“ → FTPS-Server wählen, Webordner (z. B. `public_html`) → Hochladen. | „Modul hochgeladen.“ Auf dem Webspace liegt `ghulsuite.php`. *(Alternativ: „Datei speichern“ und selbst per FTP hochladen.)* |
-| ST7 | Adresse `https://deine-domain/ghulsuite.php` eintragen → Verbinden. | Server „Webspace · PHP-Modul“ in der Liste, „Teilen: https://…/ghulsuite.php“. Neben der PHP-Datei entsteht ein Ordner `ghul-data-…`. |
-| ST8 | Im Browser `https://deine-domain/ghul-data-…/` öffnen. | Zugriff verweigert (403) bzw. leere Seite, kein Inhalt. |
-| ST9 | Im Browser `https://deine-domain/ghulsuite.php` öffnen. | Seite „Geteilte Datei“ mit Meldung „Der Link ist unvollständig“ (es fehlt der Teil nach #). |
-| ST10 | Adresse mit `http://` statt `https://`. | „Verbinden“ bleibt gesperrt. |
-| ST11 | GhulDrive auf dem PHP-Modul einrichten (anderes Gerät oder nach Entfernen des Drive-Servers) und eine Datei hoch- und herunterladen. | Funktioniert. |
+| ST4 | Synchronisation und GhulDrive mit dem FTPS-Server (wie SY6, D2 bis D6). | Funktioniert; auf dem Webhosting nur verschlüsselte Dateien. |
+| ST4a | Server hinzufügen, beim GhulSuite-Ordner „Ordner wählen“ und in `public_html` (oder `htdocs`, einen Ordner mit Domainnamen) wechseln. | Der Ordner ist in der Liste als „Ordner der Website, nicht für GhulSuite“ markiert; darin steht rot, den GhulSuite-Ordner besser daneben anzulegen. Der Hinweis unter dem Feld sagt, dass der Ordner nicht in der Website liegen soll. |
+| ST5 | Serverliste ansehen. | Je Server: Name mit SFTP oder FTPS, Anmeldung (Benutzer@Adresse:Port), Ordner, „Genutzt für: Synchronisation, GhulDrive“ bzw. „Noch nicht genutzt“ und „Server-Modul: nicht installiert (nur für Freigabelinks nötig)“ mit „Modul installieren“. Ein eigener Server von GhulDrive steht auch da, ohne Entfernen-Knopf („Du änderst ihn in GhulDrive“). |
+| ST6 | Beim Server des Webhostings „Modul installieren“ → im Ordner-Browser den Ordner der Website wählen (z. B. `public_html`), Adresse leer lassen → „Installieren und prüfen“. | Vier grüne Haken: „Moduldatei hochgeladen“ (mit Pfad), „Antwortet über HTTPS“ (mit Adresse), „Liest den GhulSuite-Ordner“, „GhulSuite-Ordner aus dem Web nicht abrufbar“. „Das Server-Modul läuft unter …“, „Fertig“ führt zurück; die Liste zeigt „Server-Modul: Version …“. |
+| ST7 | Wie ST6, aber die Website hat eine andere Adresse als die üblichen (z. B. eigene Domain auf einem Unterordner). | „Antwortet über HTTPS“ rot: „Keine Antwort unter … Trag oben die Adresse des Moduls ein …“ mit den probierten Adressen; „Liest den GhulSuite-Ordner“ grau mit „Nicht geprüft, weil der HTTPS-Schritt fehlschlug“. Richtige Adresse eintragen, erneut „Installieren und prüfen“: alles grün. |
+| ST8 | Adresse mit `http://` eintragen. | Hinweis „Die Adresse muss mit https:// beginnen.“, „Installieren und prüfen“ bleibt gesperrt. |
+| ST9 | Webhosting ohne PHP (oder ein Ordner, in dem PHP nicht läuft). | „PHP läuft“ rot: „Dort läuft kein PHP … Die App hat sie wieder gelöscht. Auf diesem Webhosting kann das Modul nicht laufen.“ `ghulsuite.php` liegt nicht mehr auf dem Server; die Liste zeigt weiter „nicht installiert“. |
+| ST10 | Webhosting, dessen PHP den GhulSuite-Ordner nicht lesen darf (z. B. `open_basedir`). | „Liest den GhulSuite-Ordner“ rot mit Erklärung, dass Freigabelinks dort nicht möglich sind. Nichts wird gespeichert. |
+| ST10a | Webhosting, dessen PHP im GhulSuite-Ordner nicht schreiben darf (Rechte von `shares/` z. B. auf 555). | „Liest den GhulSuite-Ordner“ rot: „PHP darf den GhulSuite-Ordner lesen, aber in seinem Ordner „shares“ nicht schreiben …“. Nichts wird gespeichert; Rechte korrigieren, erneut prüfen: grün. |
+| ST10b | GhulSuite-Ordner innerhalb der Website anlegen (z. B. `public_html/ghulsuite`) auf einem Webserver, der `.htaccess` nicht beachtet (z. B. nginx). | „GhulSuite-Ordner aus dem Web nicht abrufbar“ rot mit der Adresse, unter der er abrufbar war; das Modul ist wieder entfernt und nicht gespeichert. Mit Apache (`.htaccess` wirkt) bleibt der Schritt grün. |
+| ST11 | Im Browser `https://deine-domain/ghulsuite.php` öffnen. | Seite „Geteilte Datei“ mit „Der Link ist unvollständig“ (es fehlt der Teil nach #). |
+| ST12 | Liegt der GhulSuite-Ordner innerhalb der Website: ihn im Browser öffnen. | Zugriff verweigert (403), kein Inhalt. |
+| ST13 | Server mit älterer Modulversion (mit einer älteren App installiert). | Liste: „Server-Modul: Version x, Version y ist verfügbar“ und „Modul aktualisieren“; danach „Server-Modul aktualisiert (Version y)“. |
+| ST14 | „Modul entfernen“. | Rückfrage „Server-Modul von … entfernen?“: „Abbrechen“ lässt alles, wie es ist. „Entfernen“: Datei weg, Links dieses Servers funktionieren nicht mehr, Liste „nicht installiert“. |
+| ST15 | Einen zweiten Server (anderes Webhosting) hinzufügen und dort ebenfalls das Modul installieren. | Beide Server haben ihre eigene Anmeldung und ihr eigenes Modul. Freigabelinks kommen immer vom Server von GhulDrive. |
+| ST16 | Neues Gerät: „Von meinem Server holen“. | Zur Wahl stehen SFTP und FTPS (kein PHP-Modul mehr). |
 
 ## 18. Teilen
 
+Freigabelinks gibt es nur über das Server-Modul auf dem Server von GhulDrive (Abschnitt 17). Einen statischen Teilen-Ordner gibt es nicht mehr.
+
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| SH1 | Ohne eingerichteten Teilen-Ordner in GhulDrive eine Datei → ⋮ → Teilen. | Teilen-Menü: „Freigabelink, Zuerst einen Teilen-Ordner einrichten“, „An App senden“, ggf. „Als Mail-Anhang“. |
-| SH2 | Optionen → Server, Sync & Teilen → beim SFTP- oder FTPS-Server „Teilen einrichten“. | Assistent: 1. Ordner auf dem Server durchblättern (Ordner antippen, „..“ zurück, „Neuer Ordner“), 2. Webadresse, 3. Prüfung. |
-| SH3 | Ordner im Webbereich wählen (z. B. `public_html/teilen`), passende https-Adresse → „Einrichten und prüfen“. | Vier grüne Haken: Ordner beschreibbar, über HTTPS erreichbar, Ordnerinhalt wird nicht aufgelistet, Abrufseite funktioniert. „Alles funktioniert …“. |
-| SH4 | Falsche Adresse (passt nicht zum Ordner) prüfen. | Mindestens ein roter Punkt mit Erklärung; nichts wird gespeichert. |
-| SH4b | Eine Adresse prüfen, die es nicht gibt (z. B. `https://example.invalid/teilen`). | „Ordner beschreibbar“ grün, „Über HTTPS erreichbar“ rot mit Grund; „Ordnerinhalt“ und „Abrufseite“ grau mit „Nicht geprüft, weil der HTTPS-Schritt fehlschlug“, kein rotes Ergebnis, das nie geprüft wurde. |
-| SH5 | Den Suite-Ordner (`ghulsuite`) als Teilen-Ordner wählen. | Abgelehnt. |
-| SH6 | GhulDrive → Datei → Teilen → Freigabelink → Gültig „7 Tage“ → „Link erstellen“. | „Link erstellt“ mit Link, Größe, „bis …“. „Kopieren“ legt ihn in die Zwischenablage. |
-| SH7 | Link auf einem anderen Gerät/PC im Browser öffnen. | Seite zeigt Dateiname und Größe, „Herunterladen“ liefert die identische Datei. Der Teil nach # verschwindet aus der Adresszeile. |
-| SH8 | Link mit „Zusätzliches Passwort“ erstellen, im Browser öffnen. | Passwortfeld; falsches Passwort → Fehlermeldung; richtiges → Download. |
-| SH9 | Link um ein Zeichen kürzen oder ändern und öffnen. | „Der Link ist unvollständig …“ bzw. „Falsches Passwort oder der Link ist beschädigt“. Kein Download. |
-| SH10 | Mit dem **PHP-Modul**: „Abrufe“ auf „1×“ → Link erstellen, zweimal öffnen. | Erster Abruf klappt, zweiter: „Diese Freigabe gibt es nicht mehr …“. |
-| SH11 | Mit dem PHP-Modul „5×“ → zweimal öffnen → GhulDrive → Kontextzeile → Freigabelinks. | Eintrag zeigt „2 von 5 Abrufen“. |
-| SH12 | Mit SFTP/FTPS-Teilen-Ordner. | Abrufbegrenzung nicht wählbar, Hinweis „geht nur mit dem PHP-Server-Modul“. |
-| SH13 | Freigabelinks → Eintrag „Zurückziehen“ → Link im Browser neu laden. | Eintrag verschwindet sofort, Meldung „Link zurückgezogen“. Im Browser: „Diese Freigabe gibt es nicht mehr …“. Die Datei bleibt in GhulDrive. Mit eingeschalteter Synchronisation: einige Sekunden warten, Freigabelinks erneut öffnen, der Eintrag bleibt weg. |
-| SH14 | In GhulDrive lange drücken, zwei Dateien und einen Ordner dazu antippen → Teilen → Freigabelink. | Ein Link; im Browser kommt ein ZIP mit allen Dateien in ihrer Ordnerstruktur. |
-| SH15 | Mehrfachauswahl → „In den Papierkorb“. | Ohne Rückfrage weg, Meldung „Rückgängig“; „Rückgängig“ bringt alle zurück. |
-| SH16 | Datei → Teilen → „An App senden“ → z. B. Messenger oder Dateien-App. | Android-Teilen-Menü; die Ziel-App erhält die **entschlüsselte** Datei mit richtigem Namen. |
-| SH17 | Nach SH16 GhulSuite sperren. | Die entschlüsselte Kopie im App-Cache wird gelöscht (ein erneutes Öffnen aus der Ziel-App kann fehlschlagen, gewollt). |
-| SH18 | GhulPass → Eintrag öffnen → „Sicher teilen (Einmal-Link)“. | Formular: 1 Tag, bei PHP-Modul 1 Abruf vorgewählt. Link erstellen und im Browser öffnen: Textdatei mit Titel und Feldern (Benutzer, Passwort, …). |
-| SH19 | Ohne Server mit Teilen-Ordner einen GhulPass-Eintrag öffnen. | Kein „Sicher teilen“-Knopf. |
-| SH20 | Abgelaufenen Link testen: Freigabe mit „1 Tag“ erstellen, am nächsten Tag öffnen. | „Diese Freigabe gibt es nicht mehr …“, auch beim SFTP/FTPS-Teilen-Ordner. |
+| SH1 | GhulDrive auf einem Server **ohne** Modul: Datei → Teilen. | Zeile „Freigabelink“ mit „Braucht das GhulSuite-Server-Modul. Zum Installieren antippen.“ Antippen öffnet die Modul-Installation genau dieses Servers. |
+| SH2 | Ohne eingerichtetes GhulDrive: GhulPass-Eintrag → ⋮; Optionen → GhulDrive → Freigabelinks. | „Sicher teilen …“ ist ausgegraut mit „Freigabelinks kommen vom Server von GhulDrive. Richte zuerst GhulDrive ein.“; die leere Liste der Freigabelinks sagt dasselbe. |
+| SH3 | Mit Modul: Datei → Teilen → Freigabelink. | Keine Serverauswahl. „Gültig für“: 1 Tag, 7 Tage (vorgewählt), 30 Tage, Unbegrenzt. „Abrufe“: Unbegrenzt, 1× (einmalig), 3×, 5×, 10×. Schalter „Zusätzliches Passwort“. |
+| SH4 | „Link erstellen“. | „Link bereit“ mit Link, Größe und Ablauf; „Link kopieren“ legt ihn in die Zwischenablage, QR-Code zeigt ihn. |
+| SH5 | Link auf einem anderen Gerät/PC im Browser öffnen. | Seite zeigt Dateiname und Größe, „Herunterladen“ liefert die identische Datei. Der Teil nach # verschwindet aus der Adresszeile. |
+| SH6 | Link mit „Zusätzliches Passwort“ erstellen, im Browser öffnen. | Passwortfeld; falsches Passwort → Fehlermeldung; richtiges → Download. |
+| SH7 | Link um ein Zeichen kürzen oder ändern und öffnen. | „Der Link ist unvollständig …“ bzw. „Falsches Passwort oder der Link ist beschädigt“. Kein Download. |
+| SH8 | „Abrufe“ auf „1× (einmalig)“ → Link erstellen, zweimal öffnen. | Erster Abruf klappt, zweiter: „Diese Freigabe gibt es nicht mehr …“. |
+| SH9 | „5×“ → zweimal öffnen → GhulDrive → Kontextzeile → Freigabelinks. | Eintrag zeigt Ablauf und „2 von 5 Abrufen“. |
+| SH10 | Freigabe mit „1 Tag“ erstellen, am nächsten Tag öffnen, ohne GhulSuite vorher zu öffnen. | „Diese Freigabe gibt es nicht mehr …“: das Modul beendet den Link selbst. |
+| SH11 | Freigabelinks → Eintrag „Zurückziehen“ → Rückfrage bestätigen → Link im Browser neu laden. | Eintrag verschwindet sofort, Meldung „Link zurückgezogen“. Im Browser: „Diese Freigabe gibt es nicht mehr …“. Die Datei bleibt in GhulDrive. Mit Synchronisation: Freigabelinks erneut öffnen, der Eintrag bleibt weg. |
+| SH12 | Freigabelinks im Flugmodus öffnen. | Einträge mit Größe und Ablauf, ohne Abrufzahl (nie „-1“). |
+| SH13 | In GhulDrive lange drücken, zwei Dateien und einen Ordner dazu antippen → Teilen → Freigabelink. | Feld „Titel des Links“ (vorbelegt „GhulDrive“) und Hinweis „Der Empfänger bekommt jede Datei einzeln.“ Im Browser: jede Datei einzeln zum Herunterladen, auch große Dateien (kein ZIP, keine Größengrenze). |
+| SH14 | Eine geteilte Datei in GhulDrive in den Papierkorb (einzeln über das Datei-Blatt und mit Mehrfachauswahl). | Die Rückfrage sagt zusätzlich „1 aktiver Freigabelink endet.“ „Abbrechen“: Datei und Link bleiben. Bestätigt: Der Link endet zuerst (Browser: „Diese Freigabe gibt es nicht mehr …“, Freigabelinks ohne den Eintrag), dann liegt die Datei im Papierkorb. |
+| SH15 | Eine Datei in einem geteilten Ordner im Papierkorb „Endgültig löschen“, bzw. den geteilten Ordner selbst in den Papierkorb. | Wie SH14: die Rückfrage nennt die Links, die enden; nach Bestätigung sind sie beendet. |
+| SH16 | Eine geteilte Datei ändern (neue Version hochladen), dann den Link öffnen. | Der Link funktioniert weiter. |
+| SH17 | Mehrfachauswahl ohne geteilte Dateien → „In den Papierkorb“. | Rückfrage „In den Papierkorb?“ mit der Anzahl, ohne Zeile zu Links; „Abbrechen“ lässt alles da. Bestätigt: weg, Meldung „Rückgängig“; „Rückgängig“ bringt alle zurück. |
+| SH17a | Gleich nach „Rückgängig“ (oder während einer Synchronisation) eine geteilte Datei wieder „In den Papierkorb“. | Die Rückfrage kommt sofort; solange „Freigabelinks werden geprüft …“ dasteht, ist „In den Papierkorb“ grau, danach steht die Zeile zu den endenden Links da und der Knopf geht. |
+| SH18 | Datei → Teilen → „An App senden“ → z. B. Messenger oder Dateien-App. | Android-Teilen-Menü; die Ziel-App erhält die **entschlüsselte** Datei mit richtigem Namen. |
+| SH19 | Nach SH18 GhulSuite sperren. | Die entschlüsselte Kopie im App-Cache wird gelöscht (ein erneutes Öffnen aus der Ziel-App kann fehlschlagen, gewollt). |
+| SH20 | GhulPass → Eintrag öffnen → „Sicher teilen (Einmal-Link)“. | Formular mit „1 Tag“ und „1× (einmalig)“ vorgewählt, keine Serverauswahl. Link erstellen und im Browser öffnen: Textdatei mit Titel und Feldern (Benutzer, Passwort, …). Ohne Modul auf dem Server von GhulDrive führt „Sicher teilen …“ zur Modul-Installation. |
 
 ## 19. Modultrennung und GhulMail-Anbindung
 
@@ -343,8 +362,8 @@ Für T5 bis T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick
 | MO4 | Datei über 20 MB → Teilen. | „Als Mail-Anhang“: „Zu groß für eine Mail, bitte als Link teilen“, nicht antippbar. |
 | MO5 | Optionen → Module → GhulMail **aus**. Dann MO1 und SH6 wiederholen. | Kein „Als Mail-Anhang“, im Link-Dialog kein „Mit GhulMail senden“, nur „Kopieren“. Freigabelinks und „An App senden“ funktionieren normal. |
 | MO6 | GhulMail ein, aber **kein** Konto (alle entfernt). | Wie MO5: keine Mail-Optionen. |
-| MO7 | GhulDrive **aus**, GhulMail ein. | GhulMail funktioniert vollständig (Lesen, Schreiben, Anhänge aus Dateien). GhulPass-Einmal-Link funktioniert weiter, wenn ein Teilen-Server existiert. |
-| MO8 | Alle Module außer GhulPass aus. | App läuft normal; Einstellungen zeigen unter „Bereiche“ nur GhulPass. Teilen-Einrichtung bleibt unter „Server, Sync & Teilen“ erreichbar. |
+| MO7 | GhulDrive **aus**, GhulMail ein. | GhulMail funktioniert vollständig (Lesen, Schreiben, Anhänge aus Dateien). Der GhulPass-Einmal-Link funktioniert weiter, solange GhulDrive eingerichtet ist und sein Server das Server-Modul hat. |
+| MO8 | Alle Module außer GhulPass aus. | App läuft normal; Einstellungen zeigen unter „Bereiche“ nur GhulPass. Das Server-Modul bleibt unter „Server, Sync & Teilen“ erreichbar. |
 
 ## 20. Verschlüsselte Mails (PGP): läuft automatisch
 
@@ -426,6 +445,7 @@ oder Proton.
 |---|---|---|
 | B1 | Optionen → Bereiche verwalten. | Alle fünf Bereiche mit „aktiv“, „hier ausgeblendet“ oder „nicht eingerichtet“ und dem Dateinamen. |
 | B2 | Nicht eingerichteten Bereich antippen (z. B. GhulCal) → Einrichten. | Name abgefragt; Datei `….ghlcal` entsteht, Bereich erscheint in der Leiste. Bei GhulDrive: Speicherwahl (wie Synchronisation / eigener Server). |
+| B2a | Bereiche verwalten → GhulMail (nicht eingerichtet) → Einrichten. Danach GhulMail ausblenden und wieder einblenden, solange es kein Konto hat. | Gleich danach öffnet sich „E-Mail-Konto hinzufügen“, ohne Umweg über GhulMail; beim Wieder-Einblenden ohne Konto ebenso. |
 | B3 | Bereich → „Auf diesem Gerät ausblenden“. | Verschwindet nur hier aus der Leiste; zweites Gerät zeigt ihn weiter. Wieder einblenden geht. |
 | B4 | Bereich → „Bereich entfernen“. | Rückfrage mit Warnung; danach ist die Datei weg, nach dem Synchronisieren auch auf dem zweiten Gerät und dem Server. |
 | B5 | Optionen → GhulCal: Bundesland ändern, synchronisieren, zweites Gerät synchronisieren. | Oben „Für GhulCal · alle Geräte“, unten „Nur auf diesem Gerät“. Das Bundesland ist auf dem zweiten Gerät übernommen, die Startansicht nicht. |
@@ -526,7 +546,7 @@ Automatisch läuft bei jedem Push der Alltagstest im Kern (zwei Geräte, 30 simu
 | V1 | Optionen → Bereiche → einen Bereich entfernen; ebenso Optionen → Tresore → einen Tresor löschen. | Dialog nennt die Anzahl der Einträge, bietet „Vorher exportieren“; „Entfernen“ bzw. „Löschen“ geht erst, wenn der Name eingetippt ist (U4). |
 | V2 | Etwas Falsches eingeben, das der Kern ablehnt (z. B. beim Server-Abruf FTPS ohne Passwort, oder IMAP mit Port 143). | Meldung auf Deutsch, kein englischer Rest (U5). |
 | V3 | Startbildschirm, obwohl schon eine Suite da ist: „Sicherung wiederherstellen“. | Frage „Hier liegt schon eine Suite“, dann einen leeren Ordner wählen; vorhandene Suite bleibt unverändert (U6). |
-| V4 | Neues Gerät: „Von meinem Server holen“ mit FTPS, dann mit dem PHP-Modul (Adresse und Zugangsschlüssel). | Suite wird geladen, danach normal entsperren (U7). |
+| V4 | Neues Gerät: „Von meinem Server holen“ mit FTPS. | Suite wird geladen, danach normal entsperren (U7). |
 | V5 | Einrichtung: Key wählen, keine PIN eingeben, „Weiter“. | Meldung „Bitte gib die PIN deines Keys ein …“ (U9). |
 | V6 | Startbildschirm: „Einzelne Tresordatei öffnen“ mit einer `.ghlcal`-Datei. | Wird als Kalender erkannt, GhulCal ist danach eingeschaltet (U10). |
 | V7 | „Mit Wiederherstellungscode öffnen“. | Danach Dialog mit den drei Schritten; „Jetzt erledigen“ öffnet die Keys (U11). |
@@ -557,36 +577,13 @@ Automatisch läuft bei jedem Push der Alltagstest im Kern (zwei Geräte, 30 simu
 | K14 | Eine `.ics` importieren, die Zeiten in UTC (`…Z`, z. B. Google-Export) und in einer anderen Zeitzone (`TZID=America/New_York`) enthält, je ein Termin im Sommer und im Winter. | Alle Termine stehen auf der Stunde, zu der sie hier stattfinden (10:00 New York = 16:00 in Deutschland), unabhängig davon, ob gerade Sommer- oder Winterzeit ist. Ganztägige Termine bleiben auf ihrem Tag. |
 | K15 | Termin mit Erinnerung anlegen, App schließen, in den Systemeinstellungen die Zeitzone ändern (z. B. London). | Die Erinnerung kommt zur selben Uhrzeit der neuen Zone (Termin 10:00 → Erinnerung 09:45 Londoner Zeit), ohne dass die App geöffnet wurde. |
 | K16 | Eine Serie aus einer anderen Zeitzone importieren (z. B. Einladung „jeden Dienstag 10:00 New York“ aus Outlook oder Google) und durch das Jahr blättern: Januar, Mitte März, April, Ende Oktober, November. | In Deutschland steht der Termin um 16:00, in den Wochen, in denen nur die USA oder nur Europa Sommerzeit haben, um 15:00. Die Termin-Ansicht zeigt zusätzlich „Ortszeit in New York: 10:00 - 11:00“; beim Bearbeiten steht unter „Zeitzone“ der Ort. „Nur diesen Termin löschen“ entfernt genau den angezeigten Tag. |
-| K17 | Einen einzelnen Eintrag löschen: GhulPass-Eintrag, GhulAuth-Konto, Drive-Datei, Mail, Termin. Einmal „Rückgängig“ tippen, einmal die Meldung ablaufen lassen; einmal löschen und sofort sperren. | Ohne Rückfrage weg, Meldung mit „Rückgängig“. Rückgängig: wieder da, nichts passiert. Abgelaufen: endgültig gelöscht (nach Sperren/Entsperren weiterhin weg). Sofort gesperrt: die Löschung wird vor dem Sperren ausgeführt. Sofortsperre direkt nach dem Löschen: der Eintrag bleibt. |
+| K17 | Einen einzelnen Eintrag löschen: GhulPass-Eintrag, GhulAuth-Konto, Drive-Datei, Mail, Termin. Einmal „Rückgängig“ tippen, einmal die Meldung ablaufen lassen; einmal löschen und sofort sperren. | Erst eine Rückfrage mit dem Namen („‚Codeberg‘ wird gelöscht.“); „Abbrechen“ ändert nichts. Bestätigt: weg, Meldung mit „Rückgängig“; auch ein Wisch nach links fragt erst. Rückgängig: wieder da, nichts passiert. Abgelaufen: endgültig gelöscht (nach Sperren/Entsperren weiterhin weg). Sofort gesperrt: die Löschung wird vor dem Sperren ausgeführt. Sofortsperre direkt nach dem Löschen: der Eintrag bleibt. |
+| K17a | In GhulPass ins Suchfeld tippen (Tastatur auf), Tastatur schließen, zu GhulAuth wechseln, ein Konto löschen und die Rückfrage bestätigen. | Die Tastatur bleibt zu; „1 gelöscht“ mit „Rückgängig“ ist sichtbar. |
 | K18 | Ganzes löschen: Tresor, Bereich, Mailkonto, Server, Papierkorb leeren, mehrere endgültig löschen. | Immer eine Rückfrage mit rotem Knopf, Warnung als Hinweisfeld wie bei „Bereich entfernen“. |
 | K19 | Breites Fenster (Windows oder Handy/Tablet quer): Termin öffnen, Termin bearbeiten, in GhulAuth „Konto hinzufügen“. | Links die Seitenleiste mit den Bereichen, daneben eine Spalte in der Mitte; Geöffnetes steht an der Stelle der Liste, „Zurück“ führt zur Liste. Keine leere dritte Spalte. |
 | K20 | Verschlüsselte Mail in der Liste. | Schloss und „Verschlüsselte Nachricht“ an der Stelle des Betreffs (kein „...“); geöffnet Betreff und Text. |
 
-## 30. Mail-Archiv
-
-Vorher: ein Mail-Konto mit einigen Mails, die älter als 30 Tage sind (am besten ein Testkonto), und ein eigener Server
-oder die Synchronisation. **Bitte nicht mit dem einzigen Postfach eines wichtigen Kontos beginnen.**
-
-| Nr. | Schritt | Erwartet |
-|---|---|---|
-| A1 | Ein neues Mail-Konto hinzufügen, solange kein Archiv eingerichtet ist. | Frage „Wo sollen deine Mails liegen?“; „Beim Anbieter lassen“ ändert nichts, „Verschlüsselt archivieren“ öffnet die Mail-Optionen. |
-| A2 | Optionen → GhulMail → Mail-Archiv: „Wie Synchronisation“ oder „Eigener Server“ wählen. | „Mail-Archiv eingerichtet.“; Ort wird angezeigt. Auf dem Server liegt ein Ordner `mailarchive` mit unlesbaren Dateinamen. |
-| A3 | Das Konto einschalten, Frist 30 Tage, „Jetzt archivieren“. | Meldung „N Mails archiviert, 0 beim Anbieter entfernt.“; beim Anbieter (Webmail) sind alle Mails noch da. |
-| A4 | Optionen: „Nach dem Archivieren beim Anbieter löschen“ einschalten. | Erst eine Warnung mit „Einschalten“; danach beim nächsten Lauf die Frage „Alles sicher archiviert … N Mails entfernen?“. Danebentippen = Später: nichts wird gelöscht. |
-| A5 | Die Frage mit „N Mails entfernen“ bestätigen. | Beim Anbieter fehlen genau die alten Mails; neue bleiben. In GhulMail erscheinen sie unter „Archiv · N“ unterhalb der Mails des Anbieters. |
-| A6 | Eine archivierte Mail öffnen, Anhang speichern, antworten, als `.eml` speichern, löschen. | Alles wie bei normalen Mails; Löschen legt sie in den Archiv-Papierkorb (Rückgängig möglich), dort wiederherstellbar. |
-| A7 | Zweites Gerät mit derselben Suite: GhulMail öffnen. | Dieselben archivierten Mails sind dort zu sehen und zu lesen. |
-| A8 | „Vollständige Archivkopie auf diesem Gerät“ einschalten, dann Flugmodus, eine archivierte Mail öffnen. | Öffnet ohne Netz. |
-| A9 | Den Ordner `mailarchive` auf dem Server umbenennen, „Jetzt archivieren“. | Hinweis „Mail-Archiv nicht erreichbar“ mit „Erneut versuchen“ und „Archiv-Ort ändern“; beim Anbieter wird nichts gelöscht. |
-| A10 | „Archiv-Ort ändern“ auf einen leeren Ordner, während das alte Archiv noch erreichbar ist. | Frage „Archiv hierher umziehen?“; nach „Umziehen“ ist alles am neuen Ort. |
-| A11 | Archiv-Ort auf einen leeren Ordner, das alte ist weg; auf dem Gerät mit vollständiger Kopie „Archiv aus dieser Kopie wiederherstellen“. | Meldung „N Mails ins Archiv wiederhergestellt.“; die anderen Geräte sehen sie wieder. |
-| A12 | „Kopie auf diesem Gerät löschen“, während kein anderes Gerät eine vollständige Kopie hat. | Warnung, dass es die einzige Kopie sein könnte; Löschen erst nach Eintippen von „löschen“. |
-| A13 | Spam-Ordner auf „Nach der Frist beim Anbieter löschen“. | Erst eine Warnung; danach sind alte Spam-Mails beim Anbieter weg, neue bleiben. |
-| A14 | Auf zwei Geräten gleichzeitig „Jetzt archivieren“. | Eines meldet „Ein anderes Gerät archiviert dieses Konto gerade“; nichts doppelt. |
-| A15 | Großes Postfach: „Jetzt archivieren“, dann in eine andere App wechseln und den Bildschirm ausschalten. | Die Benachrichtigung zeigt „Mail-Archiv: N archiviert, M übrig“; der Lauf geht weiter. Nach dem Ende sperrt die Suite wie eingestellt. „Sperren“ in der Benachrichtigung sperrt sofort und hält den Lauf an; nach dem Entsperren geht es weiter. |
-| A16 | Eine Mail mit einem Anhang über 100 MB im Postfach (z. B. selbst über Webmail in den Ordner gelegt, falls der Anbieter das zulässt). | Wird nicht archiviert, bleibt beim Anbieter; die Mail-Optionen nennen „1 Mails sind größer als 100 MB …“. Alle anderen werden archiviert. |
-
-## 31. Updates
+## 30. Updates
 
 Vorher: eine Version aus den Releases (nicht die Testversion aus den Artefakten), installiert per APK-Datei.
 
@@ -602,7 +599,7 @@ Vorher: eine Version aus den Releases (nicht die Testversion aus den Artefakten)
 | U8 | Windows, installierte Version (MSI): Update installieren. | App schließt sich, der Installer läuft ohne Fragen, GhulSuite startet neu in der neuen Version; Daten bleiben. |
 | U9 | Windows portabel: Update. | Es öffnet sich nur die Release-Seite; auf dem Stick wird nichts verändert. |
 
-## 32. Über, Website und Fehlerbericht
+## 31. Über, Website und Fehlerbericht
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
@@ -613,22 +610,63 @@ Vorher: eine Version aus den Releases (nicht die Testversion aus den Artefakten)
 | W5 | Sechs Berichte hintereinander senden. | Der sechste innerhalb einer Stunde wird mit „Gerade zu viele Berichte von hier“ abgelehnt. |
 | W6 | Optionen und eine Unterseite (z. B. Über) öffnen. | Zwischen Kopfleiste und Inhalt kein zusätzlicher leerer Streifen. |
 
-## 33. Server, Teilen und Anzeige (Runde 7)
+## 32. Server, Teilen und Anzeige (Runde 7)
 
 Diese Punkte prüft auch der Emulator-Ablauf `app/maestro/server/3-sync-share.yaml` mit echtem SFTP-Server, mit einem Bild nach jedem Schritt.
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| R1 | Server hinzufügen (SFTP oder FTPS): Zugangsdaten eingeben, ohne zu testen nach einem Ordner suchen. | Es gibt keine Ordnerwahl. Erst „Verbindung testen“; nach Erfolg „Verbindung klappt …“ und die Ordnerliste öffnet sich. Eine geänderte Adresse, ein geänderter Benutzer oder ein geändertes Passwort verlangen einen neuen Test. |
+| R1 | Server hinzufügen (SFTP oder FTPS): Zugangsdaten eingeben, ohne zu testen nach einem Ordner suchen. | Es gibt keine Ordnerwahl. Erst „Verbindung testen“; nach Erfolg „Verbindung klappt …“ und die Ordnerliste öffnet sich. Nach der Ordnerwahl „Verbindung prüfen“ (Anmeldung und Ordner beschreibbar); erst danach „Server speichern“. Eine geänderte Adresse, ein geänderter Benutzer, ein geändertes Passwort oder ein anderer Ordner verlangen eine neue Prüfung; nichts wird von selbst gespeichert. |
 | R2 | Server mit nicht erreichbarer Adresse, „Verbindung testen“. | Die Fehlermeldung steht im Formular; keine Ordnerliste öffnet sich. |
-| R3 | Reiter „PHP-Modul“ im Formular, Liste der Schritte unten ansehen. | Schritte 1. bis 6. untereinander, jeder in einer Zeile, nichts zerhackt. |
+| R3 | Reiter „FTPS“ im Formular, Liste der Schritte unten ansehen. | Schritte 1. bis 4. untereinander, jeder in einer Zeile, nichts zerhackt. |
 | R4 | Synchronisation: „Aus“ antippen, Server wählen. | Der Servername steht statt „Aus“; „Jetzt synchronisieren“ erscheint. |
-| R5 | Teilen einrichten: im Ordner-Browser schnell hintereinander mehrere Ordner antippen (auch „..“). | Nie eine Meldung wie „The coroutine scope left the composition“; die Liste zeigt den zuletzt gewählten Ordner. |
+| R5 | Server-Modul installieren: im Ordner-Browser schnell hintereinander mehrere Ordner antippen (auch „..“). | Nie eine Meldung wie „The coroutine scope left the composition“; die Liste zeigt den zuletzt gewählten Ordner. |
 | R6 | GhulDrive mit eigenem Server (ohne Synchronisation): Reiter GhulDrive. | Die Karte oben nennt den Server mit Ordner und „verschlüsselt“, dazu Dateien und Größe; kein „…“ und kein „Nicht eingerichtet“. Ohne Server: „Noch kein Server“ und „Server wählen“. |
 | R7 | In einer Liste alles auswählen (oder das einzige Element). | Das Symbol „Alle“ verschwindet, sobald alles ausgewählt ist. |
 | R9 | Handy auf große Schrift stellen (Einstellungen → Anzeige → Schriftgröße, größte Stufe) und alle Bereiche und Optionsseiten durchgehen. | Kein Wort ist mitten im Wort getrennt; zu lange Knopfpaare stehen untereinander, Einstellungswerte unter ihrer Beschriftung; Titel höchstens zweizeilig. |
 | R10 | Auf „Speichern“, „Senden“ oder „Erstellen“ schnell zweimal tippen. | Der Eintrag, die Mail oder der Ordner entsteht genau einmal. |
 | R8 | Etwas Langsames starten (z. B. Server speichern) und währenddessen auf Knöpfe tippen, auch in einem offenen Blatt. | Nach kurzer Zeit liegt „Arbeite …“ mit Kreisel über dem Bildschirm bzw. dem Blatt; Tippen dahinter bewirkt nichts. |
+
+## 33. Aufgaben im Hintergrund
+
+Lange Arbeiten (Hochladen, Herunterladen, Fotosicherung, Mail-Archiv) laufen im Hintergrund weiter, auch wenn du den Bereich verlässt. Ein Streifen unter der Kopfleiste zeigt, was läuft, wie weit es ist, und „Abbrechen“; am Ende sagt eine Meldung, wie es ausging.
+
+| Nr. | Schritt | Erwartet |
+|---|---|---|
+| BG1 | In GhulDrive drei große Dateien hochladen, dann zu GhulMail wechseln und eine Mail öffnen. | Der Streifen „Lade 3 Dateien hoch“ bleibt unter jeder Kopfleiste sichtbar, mit Balken und „1 von 3 fertig“; der Upload läuft weiter. Am Ende „3 Dateien hochgeladen.“, in GhulDrive stehen alle drei. |
+| BG2 | Während BG1 im Streifen „Abbrechen“. | Sofort Schluss; „Hochladen abgebrochen: 1 von 3 Dateien fertig.“; die fertigen Dateien sind da, keine halbe. |
+| BG3 | Upload starten, App in den Hintergrund (Home-Taste), Benachrichtigungen aufziehen. | Die Benachrichtigung „GhulSuite ist entsperrt“ zeigt jetzt den Auftrag mit Balken, „Abbrechen“ und „Sperren“. „Abbrechen“ dort stoppt ihn. Auf dem Sperrbildschirm steht nur „GhulSuite ist entsperrt“ (keine Dateinamen). |
+| BG4 | Upload starten, App in den Hintergrund, länger warten als die Zeit für automatisches Sperren. | Die App sperrt nicht mitten im Upload, sondern erst, wenn er fertig ist; die Meldung „… hochgeladen.“ kommt erst nach dem Entsperren. Kommt zwei Minuten lang kein Fortschritt (z. B. WLAN aus), sperrt sie trotzdem und bricht den Upload ab. |
+| BG4a | Automatisches Mail-Archiv oder Fotosicherung läuft (Streifen), App in den Hintergrund. | Die App sperrt nach der üblichen Zeit; der leise Auftrag stoppt und macht beim nächsten Entsperren an seiner Stelle weiter. |
+| BG5 | Wie BG4, aber vor dem Ende zurück in die App. | Die App bleibt entsperrt; der Upload läuft zu Ende. |
+| BG6 | Upload starten, dann von Hand sperren (Schloss, Schütteln oder „Sperren“ in der Benachrichtigung). | Sofort gesperrt, der Upload ist gestoppt. Nach dem Entsperren: „GhulSuite wurde gesperrt. Hochladen abgebrochen: …“. |
+| BG7 | Auftrag läuft, App im Hintergrund, Auftrag endet. | Eine kurze Benachrichtigung mit dem Ergebnis (Android 13+: nur wenn Benachrichtigungen erlaubt sind); auf dem Sperrbildschirm nur „Hochladen fertig“ ohne Dateinamen. Ist die App vorne, kommt nur die Meldung in der App. |
+| BG8 | Mehrere Aufträge nacheinander starten (z. B. Upload und Mail-Archiv). | Der zweite zeigt „Wartet auf die Aufgabe davor …“ und startet danach; beide sind im Streifen. |
+| BG9 | Fotosicherung eingeschaltet, mehrere Fotos schnell hintereinander aufnehmen (Serienbild), entsperren. | Streifen „Fotos werden gesichert“; am Ende „N Fotos gesichert.“. Abbrechen und erneut entsperren: es geht ab dem letzten fertigen Foto weiter, kein Foto fehlt (auch nicht eines aus derselben Sekunde). |
+| BG10 | Autofill benutzen (Anmeldung in einer anderen App über GhulSuite entsperren), während das automatische Mail-Archiv eingeschaltet ist. | Kein zweiter Archiv-Lauf; „Abbrechen“ in der Benachrichtigung wirkt weiter auf die Aufträge der App. |
+| BG11 | Eine große Datei aus GhulDrive herunterladen (Speicherort wählen), im Streifen „Abbrechen“; dasselbe mit abgeschaltetem WLAN mitten im Download. | Beide Male bleibt keine halbe Datei am gewählten Ort liegen; ein vollständiger Download bleibt. |
+| BG12 | Nur Android 11 oder älter: Upload starten, auf der Startseite „Zurück“. | Die App geht in den Hintergrund, der Upload läuft weiter (Streifen und Benachrichtigung). Ohne laufenden Auftrag schließt „Zurück“ die App wie gewohnt. |
+
+## 34. Mail-Archiv in GhulDrive
+
+Archivieren heißt: Mails werden als .eml-Datei nach GhulDrive kopiert (`Mail-Archiv/<Konto>/<Jahr>/`). Beim Anbieter ändert sich nichts, dort wird nichts gelöscht. Mails, die schon im Archiv sind, werden übersprungen. Diese Punkte prüft zum Teil auch `app/maestro/server/2-mail.yaml` mit echtem IMAP und SFTP.
+
+| Nr. | Schritt | Erwartet |
+|---|---|---|
+| MA1 | GhulMail, eine Mail lange drücken, weitere antippen, „Mehr“ → „In GhulDrive archivieren“. | Frage „In GhulDrive archivieren?“ mit „3 gewählte Mails werden kopiert.“ und dem Hinweis, dass die Mails beim Anbieter bleiben. |
+| MA2 | „Archivieren“. | Streifen „3 Mails werden archiviert“ mit Fortschritt; am Ende „3 Mails in GhulDrive archiviert.“. In GhulDrive: `Mail-Archiv/<Konto>/<Jahr>/` mit Dateien „Datum Absender - Betreff (Code).eml“. Im Webmail sind die Mails unverändert (auch „gelesen“ nicht geändert). |
+| MA3 | Dieselben Mails noch einmal archivieren. | „0 Mails in GhulDrive archiviert. 3 waren schon im Archiv.“; keine doppelten Dateien. |
+| MA4 | Kopfleiste „⋮“ (Ordner-Aktionen) → „Diesen Ordner in GhulDrive archivieren“ bei einem großen Ordner, nach einigen Mails im Streifen „Abbrechen“. | „Archivieren abgebrochen: 12 von 400 Mails fertig.“; das Archiv enthält genau die fertigen. |
+| MA5 | „⋮“ → „Archivieren, was älter ist als …“ → „1 Jahr“. | Frage nennt Ordner und „1 Jahr“; archiviert werden nur Mails, die älter als ein Jahr sind. |
+| MA6 | Ohne eingerichtetes GhulDrive „In GhulDrive archivieren“. | Statt der Frage: „GhulDrive nötig“ mit „GhulDrive einrichten“; das führt zur Einrichtung von GhulDrive. Nichts wird archiviert. |
+| MA7 | Postfach-Auswahl (Zeile unter „GhulMail“) öffnen. | Unter den Ordnern „Archiv (GhulDrive)“, sobald etwas archiviert ist. Antippen: Jahre als Zeilen, darin die Mails mit Datum, Absender und Betreff; andere Dateien im Ordner erscheinen nicht, eigene Unterordner schon. |
+| MA8 | Archivierte Mail antippen. | Sie öffnet sich wie eine normale Mail (Schlagwort „GhulDrive“), auch verschlüsselte Mails sind lesbar. Anhänge speichern, „Antworten“, „Weiterleiten“, „⋮“ → „Allen antworten“, „Als Datei speichern“ und „Als PDF speichern“ funktionieren. |
+| MA9 | In der archivierten Mail „Löschen“. | Frage „In den Papierkorb?“ mit dem Hinweis, dass sie in den Papierkorb von GhulDrive kommt und die Mail beim Anbieter bleibt; danach „Rückgängig“ möglich. |
+| MA10 | In GhulDrive eine beliebige Datei in einen Jahresordner legen und `kaputt.eml` nennen, im Archiv antippen. | „Lässt sich nicht als Mail lesen.“ mit „Als Datei speichern“; die Zeile sagt es danach auch. |
+| MA11 | Optionen → GhulMail → „Automatisch archivieren“ → „Älter als 30 Tage“. | Erklärung: kopiert Posteingang und Gesendet, einmal am Tag nach dem Entsperren, beim Anbieter wird nichts gelöscht. Es startet gleich ein leiser Lauf (Streifen „Automatisches Mail-Archiv“), Meldung nur, wenn etwas archiviert wurde. |
+| MA12 | Sperren und am selben Tag wieder entsperren. | Kein zweiter Lauf. Am nächsten Tag nach dem Entsperren läuft er wieder, nur mit neuen alten Mails. |
+| MA13 | Ohne GhulDrive die Mail-Optionen öffnen. | „Automatisch archivieren“ lässt sich nicht einschalten; Hinweis „Das Archiv braucht GhulDrive“ mit „GhulDrive einrichten“. |
+| MA14 | Zweites Gerät nach Synchronisation. | Die Einstellung „Automatisch archivieren“ ist dort gleich; das Archiv ist in GhulDrive sichtbar. |
 
 ## Fehler melden
 

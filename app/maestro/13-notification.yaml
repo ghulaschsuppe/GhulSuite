@@ -1,0 +1,35 @@
+# The notification while GhulSuite is unlocked: it names shaking only while "Lock by shaking"
+# is on (the shield icon itself is in the photos). Testplan P7a, P7b.
+appId: de.danerd.ghulsuite.dev
+name: Unlocked notification
+---
+- runFlow: home.yaml
+# Pull down the notification shade.
+- swipe: { start: "50%, 1%", end: "50%, 70%", duration: 400 }
+- extendedWaitUntil:
+    visible: "Tap to open\\. Shake or .Lock. locks immediately\\."
+    timeout: 10000
+- takeScreenshot: 13-notification-shake-on
+- pressKey: back
+- tapOn: { id: "tab-settings" }
+- scrollUntilVisible:
+    element: "Unlocking"
+    direction: UP
+- scrollUntilVisible:
+    element: "Locking"
+    direction: DOWN
+- tapOn: "Locking"
+- scrollUntilVisible:
+    element: "Lock by shaking"
+    direction: DOWN
+- tapOn: "Lock by shaking"
+- swipe: { start: "50%, 1%", end: "50%, 70%", duration: 400 }
+- extendedWaitUntil:
+    visible: "Tap to open\\. .Lock. locks immediately\\."
+    timeout: 10000
+- assertNotVisible: "Tap to open\\. Shake.*"
+- takeScreenshot: 13-notification-shake-off
+- pressKey: back
+# Back as it was for the flows after this one.
+- tapOn: "Lock by shaking"
+- back

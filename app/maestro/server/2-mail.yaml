@@ -87,24 +87,36 @@ name: GhulMail on a real server
 # the sheet down and closes it.
 - assertVisible: "10587"
 - takeScreenshot: s2-mail-servers
+# First "Check connection": a checklist of both servers; nothing is saved yet, there is no
+# "Save" before the check passed.
+- assertNotVisible: "Save"
 - scrollUntilVisible:
-    element: "Check and save"
+    element: "Check connection"
     direction: DOWN
-- tapOn: "Check and save"
-# Self-signed test certificate: the incoming server asks first; the outgoing server may ask
-# again after the next round to the network.
+- tapOn: "Check connection"
+# Self-signed test certificate: the incoming server asks first; after "Fingerprint matches" the
+# check runs again by itself and the outgoing server may ask too.
 - extendedWaitUntil:
     visible: "Check the certificate"
     timeout: 60000
 - takeScreenshot: s2-mail-certificate
 - tapOn: "Fingerprint matches"
 - extendedWaitUntil:
-    visible: "Check the certificate"
-    timeout: 30000
-    optional: true
-- tapOn:
-    text: "Fingerprint matches"
-    optional: true
+    visible: "Check the certificate|Connection works\\. You can save the account now\\."
+    timeout: 60000
+- runFlow:
+    when:
+      visible: "Check the certificate"
+    commands:
+      - tapOn: "Fingerprint matches"
+- extendedWaitUntil:
+    visible: "Connection works\\. You can save the account now\\."
+    timeout: 60000
+- takeScreenshot: s2-mail-checked
+- scrollUntilVisible:
+    element: "Save"
+    direction: DOWN
+- tapOn: "Save"
 # With the first account Android asks to let the app run in the background (mail notifications);
 # the system dialog covers the app until it is answered.
 - extendedWaitUntil:
@@ -113,14 +125,6 @@ name: GhulMail on a real server
     optional: true
 - tapOn:
     text: "Allow"
-    optional: true
-# After the first account GhulSuite asks where the mails should live (mail archive): stay at the provider.
-- extendedWaitUntil:
-    visible: "Where should your mails live\\?"
-    timeout: 20000
-    optional: true
-- tapOn:
-    text: "Leave them at the provider"
     optional: true
 - extendedWaitUntil:
     visible: "No messages\\."
@@ -158,3 +162,47 @@ name: GhulMail on a real server
     timeout: 60000
 - assertVisible: "Hallo vom Emulator"
 - takeScreenshot: s2-mail-read
+# Mail archive in GhulDrive: the mail is copied as an .eml file into GhulDrive, nothing changes
+# at the provider. The selection's sheet starts it after a question; a background job copies it
+# and says how it went. GhulDrive is set up when server/1-drive.yaml ran before (shard "all");
+# in the shard "mail" it is not, and the archive says that it needs GhulDrive instead.
+- back
+- extendedWaitUntil:
+    visible: "Encrypted message"
+    timeout: 30000
+- longPressOn: "Encrypted message"
+- extendedWaitUntil:
+    visible: "1 selected"
+    timeout: 10000
+- tapOn: "More"
+- extendedWaitUntil:
+    visible: "Archive in GhulDrive"
+    timeout: 10000
+- tapOn: "Archive in GhulDrive"
+- extendedWaitUntil:
+    visible: "Archive in GhulDrive\\?|GhulDrive needed"
+    timeout: 30000
+- runFlow:
+    when:
+      visible: "GhulDrive needed"
+    commands:
+      - takeScreenshot: s2-mail-archive-needs-drive
+      # Closes the question, then leaves the selection.
+      - back
+      - back
+- runFlow:
+    when:
+      visible: "Archive in GhulDrive\\?"
+    commands:
+      - assertVisible: "1 selected mail is copied\\."
+      - takeScreenshot: s2-mail-archive-ask
+      - tapOn: "Archive"
+      - extendedWaitUntil:
+          visible: "1 mail archived in GhulDrive\\."
+          timeout: 120000
+      - takeScreenshot: s2-mail-archived
+# Either way the mail is still in the inbox (copied, not moved) and nothing is selected.
+- extendedWaitUntil:
+    notVisible: "1 selected"
+    timeout: 10000
+- assertVisible: "Encrypted message"

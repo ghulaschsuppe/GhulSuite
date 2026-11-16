@@ -3,6 +3,9 @@
 appId: de.danerd.ghulsuite.dev
 name: Server weg 2
 ---
+- scrollUntilVisible:
+    element: "Synchronise now"
+    direction: DOWN
 - tapOn: "Synchronise now"
 - extendedWaitUntil:
     visible: "Synchronisation failed: .*|Sync not possible right now.*|No connection to the server.*"

@@ -16,6 +16,7 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import de.danerd.ghulsuite.ui.AppState
+import de.danerd.ghulsuite.ui.DesktopBack
 import de.danerd.ghulsuite.ui.GhulSuiteApp
 import java.awt.AWTEvent
 import java.awt.Toolkit
@@ -52,6 +53,23 @@ fun main() {
         { lastInput = System.currentTimeMillis() },
         AWTEvent.KEY_EVENT_MASK or AWTEvent.MOUSE_EVENT_MASK or AWTEvent.MOUSE_WHEEL_EVENT_MASK,
     )
+    // The back button of the mouse in GhulSuite's window acts as Esc there: an open dialog, sheet
+    // or menu closes first, as with the back key on Android; then a page. (It arrives as an AWT
+    // event only; in other windows, e.g. choosing a file, it does nothing here.)
+    Toolkit.getDefaultToolkit().addAWTEventListener(
+        { e ->
+            if (e is java.awt.event.MouseEvent && DesktopBack.isBackButton(e)) {
+                val w = awtWindow
+                if (w != null && (e.component === w || javax.swing.SwingUtilities.getWindowAncestor(e.component) === w)) {
+                    val target = w.mostRecentFocusOwner ?: w
+                    for (id in intArrayOf(java.awt.event.KeyEvent.KEY_PRESSED, java.awt.event.KeyEvent.KEY_RELEASED)) {
+                        target.dispatchEvent(java.awt.event.KeyEvent(target, id, System.currentTimeMillis(), 0, java.awt.event.KeyEvent.VK_ESCAPE, java.awt.event.KeyEvent.CHAR_UNDEFINED))
+                    }
+                }
+            }
+        },
+        AWTEvent.MOUSE_EVENT_MASK,
+    )
 
     application {
         // Unread mails appear as a number on a small envelope in the taskbar icon (only while unlocked).
@@ -65,6 +83,9 @@ fun main() {
             title = "GhulSuite",
             icon = icon,
             state = rememberWindowState(size = DpSize(1280.dp, 820.dp)),
+            // Esc and Alt+Left go back one step, as the back key on Android (after a text field,
+            // menu or dialog had the chance to use Esc itself).
+            onKeyEvent = { e -> DesktopBack.onKey(e) },
             onPreviewKeyEvent = { e ->
                 // Ctrl+L locks at once (like Win+L for Windows).
                 if (e.type == KeyEventType.KeyDown && e.isCtrlPressed && e.key == Key.L) {
@@ -83,6 +104,15 @@ fun main() {
             LaunchedEffect(Unit) {
                 snapshotFlow { backend.settings.allowScreenshots }.collect { allowed ->
                     WinNative.setCaptureProtection(window, !allowed)
+                }
+            }
+
+            // A background job that ends while the window is not in front: a Windows notification.
+            // Only what ended and the counts: no file or mail names, they would stay in the Action
+            // Center after the suite is locked.
+            LaunchedEffect(Unit) {
+                de.danerd.ghulsuite.ui.JobStatus.finished.collect { end ->
+                    if (!window.isFocused) (backend.cal as? DesktopCalBackend)?.note("GhulSuite", end.publicText)
                 }
             }
 
@@ -105,14 +135,16 @@ fun main() {
                     val now = System.currentTimeMillis()
                     val away = lostFocusAt?.let { now - it } ?: 0L
                     // A system dialog (e.g. Windows asking for the key PIN) must not lock.
-                    // A mail archive run waits for its end (the long first run), then the lock follows.
-                    val waitingForKey = state.busy || state.archiveRunning
+                    val waitingForKey = state.busy
                     // A few seconds of grace, so that a short switch (e.g. to a system dialog) does not lock.
                     val autoLock = maxOf(backend.settings.autoLockSeconds * 1000L, 3000L)
+                    // A running background job (upload, mail archive) is not cut off: the lock
+                    // follows when it ends, unless the user is back by then. Ctrl+L locks at once.
                     when {
-                        backend.settings.lockOnScreenOff && WinNative.workstationLocked() -> state.lockNow()
-                        !waitingForKey && lostFocusAt != null && away >= autoLock -> state.lockNow()
-                        !waitingForKey && now - lastInput >= maxOf(IDLE_LOCK_MS, autoLock) -> state.lockNow()
+                        backend.settings.lockOnScreenOff && WinNative.workstationLocked() -> state.autoLock()
+                        !waitingForKey && lostFocusAt != null && away >= autoLock -> state.autoLock()
+                        !waitingForKey && now - lastInput >= maxOf(IDLE_LOCK_MS, autoLock) -> state.autoLock()
+                        else -> state.keepUnlocked()
                     }
                 }
             }

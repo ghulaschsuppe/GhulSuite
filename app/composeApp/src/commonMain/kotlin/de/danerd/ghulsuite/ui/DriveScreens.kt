@@ -86,21 +86,17 @@ import de.danerd.ghulsuite.model.DriveStatusUi
 import de.danerd.ghulsuite.model.ServerUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import de.danerd.ghulsuite.model.ShareInfoUi
+import org.jetbrains.compose.resources.rememberResourceEnvironment
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Sync
 import de.danerd.ghulsuite.model.DriveModeUi
 import de.danerd.ghulsuite.model.DriveStorageUi
-
-/** A running upload or download. */
-private class Transfer(val name: String, val total: Long, val upload: Boolean) {
-    var done by mutableStateOf(0L)
-    var job: Job? = null
-}
 
 /** Folder path from the root: (id, name). */
 private data class Crumb(val id: String?, val name: String)
@@ -175,8 +171,11 @@ fun DriveServerSheet(state: AppState, onDone: () -> Unit) {
 }
 
 @Composable
-private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
+private fun DriveBrowser(state: AppState, opened: DriveStatusUi) {
     val net = state.backend.net
+    // F96: the number of files and their size follow every change (upload, delete, refresh);
+    // before, they stayed as they were when GhulDrive was opened.
+    var status by remember(opened) { mutableStateOf(opened) }
     val scope = rememberCoroutineScope()
     val root = stringResource(Res.string.drive_root)
     var path by remember { mutableStateOf(listOf(Crumb(null, root))) }
@@ -188,15 +187,15 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
     var reload by remember { mutableStateOf(0) }
     var refresh by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
-    var transfer by remember { mutableStateOf<Transfer?>(null) }
     var newFolder by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf<DriveItemUi?>(null) }
     var moving by remember { mutableStateOf<DriveItemUi?>(null) }
-    var foreverMany by remember { mutableStateOf<List<DriveItemUi>?>(null) }
     var downloadItem by remember { mutableStateOf<DriveItemUi?>(null) }
     var loaded by remember { mutableStateOf(false) }
     var sharing by remember { mutableStateOf<List<DriveItemUi>?>(null) }
     var driveServer by remember { mutableStateOf<ServerUi?>(null) }
+    /** The core answered and Drive's storage names no server. */
+    var storageWithout by remember { mutableStateOf(false) }
     /** "" = folders, or one of the quick views: recent, fav, offline, trash. */
     var view by remember { mutableStateOf("") }
     androidx.compose.runtime.SideEffect { state.driveTrashShown = view == "trash" }
@@ -207,10 +206,15 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
     var trashTick by remember { mutableStateOf(0) }
     var emptyTrash by remember { mutableStateOf(false) }
     PlatformBackHandler(enabled = LocalTabActive.current && view.isNotEmpty() && path.size == 1) { view = "" }
-    LaunchedEffect(status.serverId) {
+    LaunchedEffect(status.serverId, state.syncing, state.liveRevision()) {
         // Drive's own server is not in the suite's list: the storage of Drive names it in every case.
-        driveServer = catching { net.driveStorage().server }.getOrNull()
+        // Read again after every synchronisation and change; a failed read keeps what is known
+        // (bug: "No server yet" next to the files after a restart, until the app restarted again).
+        catching { net.driveStorage() }.onSuccess { driveServer = it.server; storageWithout = it.server == null }
     }
+    // Drive is set up (it has a server id) and only its name may still be loading, unless the core
+    // said that Drive's server is gone (e.g. removed from the list): then "No server yet".
+    val noServer = status.serverId == null || storageWithout
 
     // Long press selects (as in every list); the bar on top acts on the chosen files.
     val selected = rememberListSelection()
@@ -219,7 +223,7 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
     // path while it loads (it looked like the inside of the folder just opened).
     // (Typing in the search keeps the results of the letters before; leaving the search does not.)
     var itemsOf by remember { mutableStateOf<Triple<String?, String, Boolean>?>(null) }
-    LaunchedEffect(folder, query, reload, view, trashTick, state.liveRevision()) {
+    LaunchedEffect(folder, query, reload, view, trashTick, state.liveRevision(), state.driveTick) {
         val listOf = Triple(folder, view, query.isNotBlank())
         if (itemsOf != listOf) {
             items = emptyList()
@@ -246,6 +250,7 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
         loaded = true
         refresh = false
         usage = catching { net.driveUsage() }.getOrNull()
+        catching { net.driveStatus() }.onSuccess { if (it.serverId == status.serverId) status = it }
     }
     // Empties the trash of old items once per session (setting: after 30 days).
     LaunchedEffect(Unit) {
@@ -253,34 +258,27 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
         if (days > 0) catching { net.driveEmptyTrash(days) }.onSuccess { if (it > 0) reload++ }
     }
 
-    val uploadedMsg = stringResource(Res.string.drive_uploaded)
-    val downloadedMsg = stringResource(Res.string.drive_downloaded)
-    fun runTransfer(t: Transfer, block: suspend () -> Unit, done: String) {
-        transfer = t
-        t.job = scope.launch {
-            try {
-                block()
-                state.message(done.replace("%1\$s", t.name))
-                reload++
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                error = describe(e)
-            } finally {
-                transfer = null
-            }
-        }
-    }
-    val upload = rememberOpenStream { source: ByteSource ->
-        val t = Transfer(source.name, source.size, upload = true)
-        runTransfer(t, { net.driveUpload(folder, source) { t.done = it } }, uploadedMsg)
+    // Uploads and downloads run as background jobs: the strip under the header shows them
+    // wherever the user goes, and leaving GhulDrive does not stop them.
+    val upload = rememberOpenStreams { sources -> state.uploadToDrive(folder, sources) }
+    // Files shared with GhulSuite from other apps ("Save in GhulDrive"): into the folder open now.
+    // While another transfer runs they wait in line (nothing shared is dropped).
+    LaunchedEffect(state.driveIncoming) {
+        val incoming = state.driveIncoming ?: return@LaunchedEffect
+        state.driveIncoming = null
+        state.uploadToDrive(folder, incoming)
     }
     val download = rememberCreateStream { sink: ByteSink? ->
         val item = downloadItem
         downloadItem = null
-        if (sink == null || item == null) return@rememberCreateStream
-        val t = Transfer(item.name, item.size, upload = false)
-        runTransfer(t, { net.driveDownload(item.id, sink) { t.done = it } }, downloadedMsg)
+        if (sink == null) return@rememberCreateStream
+        if (item == null) {
+            // Nothing to download into the file just created: no empty file is left behind.
+            runCatching { sink.close() }
+            runCatching { sink.discard() }
+            return@rememberCreateStream
+        }
+        state.downloadFromDrive(item, sink)
     }
 
     // The "+" button of the main screen opens the "add" sheet.
@@ -314,11 +312,12 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
             }
             override fun close() {}
         }
-        val t = Transfer(name, pdf.size.toLong(), upload = true)
-        runTransfer(t, { net.driveUpload(folder, src) { t.done = it } }, uploadedMsg)
+        state.uploadToDrive(folder, listOf(src))
     }
     var sharesActive by remember { mutableStateOf(0) }
-    LaunchedEffect(state.liveRevision()) {
+    // F100: counted again after a link was made or removed (it stayed 0 until GhulDrive was
+    // opened anew).
+    LaunchedEffect(state.liveRevision(), reload) {
         sharesActive = catching { net.shareList().size }.getOrDefault(0)
     }
     // What waits for "Undo" is gone from the list already. A file in the trash is another key
@@ -328,16 +327,69 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
     val chosen = visible.filter { it.id in selected }
     val trashMsg = stringResource(Res.string.msg_moved_to_trash)
     val deletedMsg = stringResource(Res.string.msg_deleted_n)
-    fun toTrash(list: List<DriveItemUi>) {
+    fun moveToTrash(list: List<DriveItemUi>, links: List<ShareInfoUi>) {
         selected.clear()
-        // Into the trash: no question, "Undo" brings it back (and the trash keeps it for days).
-        state.undoable(list.map { hiddenKey("drive", "files", it.id) }, trashMsg, after = { trashTick++ }) {
-            list.forEach { net.driveDelete(it.id) }
+        // Into the trash after "Move to the trash?" (F103); "Undo" brings it back, the trash keeps it for days.
+        // F96: moved at once, so the number of files and the storage are right at once. Not
+        // through state.run: a tap while the app is busy must not be dropped.
+        scope.launch {
+            val done = mutableListOf<DriveItemUi>()
+            // The share links of these files end first (the user was told in the question).
+            val failure = catching {
+                links.forEach { net.shareDelete(it.id) }
+                list.forEach { net.driveDelete(it.id); done += it }
+            }.exceptionOrNull()
+            // Also after a failure part of the list may be in the trash: show what is true. What
+            // moved leaves the list at once; the reload may wait for a synchronisation.
+            val moved = done.map { it.id }.toSet()
+            val removed = items.filter { it.id in moved }
+            val shownFor = itemsOf
+            items = items.filterNot { it.id in moved }
+            trashTick++
+            state.changed()
+            // The list reloads now (and would clear an error shown above it): say it below. What
+            // did move is in the trash and can be taken back from there.
+            if (failure != null) { state.message(describe(failure)); return@launch }
+            if (done.isEmpty()) return@launch
+            // Folders first: a file restored before its folder would land at the top level.
+            val restored = mutableSetOf<String>()
+            state.doneWithUndo(trashMsg, undo = { done.sortedByDescending { it.isDir }.forEach { net.driveRestore(it.id); restored += it.id } }) {
+                // Back in the list at once (still the same folder or view); the reload follows.
+                if (itemsOf == shownFor) items = items + removed.filter { r -> r.id in restored && items.none { it.id == r.id } }
+                trashTick++; state.changed()
+            }
         }
     }
-    fun deleteForever(list: List<DriveItemUi>) {
+    val env = rememberResourceEnvironment()
+    val linksChecking = stringResource(Res.string.drive_links_checking)
+    // The question waiting for the share links belongs to this screen's coroutine: if the screen
+    // goes (e.g. the window turns wide), the question goes too instead of staying unconfirmable.
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { if (state.deleteAsk?.ready == false) state.deleteAsk = null } }
+    /**
+     * Asks before deleting (F103). Share links that contain the items end with them: the
+     * question says how many, and on "Delete" they end first ([then] gets them).
+     */
+    fun askWithLinks(list: List<DriveItemUi>, trash: Boolean, then: (List<ShareInfoUi>) -> Unit) {
+        val names = list.map { it.name }
+        scope.launch {
+            // Looking up the links waits while the core is busy (a synchronisation on a slow
+            // server): the question comes at once and says so; it can be confirmed once the
+            // answer is there (bug: nothing happened for many seconds after the tap).
+            val lookup = async { catching { net.shareLinksOf(list.map { it.id }) }.getOrDefault(emptyList()) }
+            val quick = withTimeoutOrNull(300) { lookup.await() }
+            val waiting = if (quick == null) AppState.DeleteAsk(names, trash, {}, linksChecking, ready = false).also { state.deleteAsk = it } else null
+            val links = quick ?: lookup.await()
+            // Answered "Cancel" in the meantime (or another question came): nothing more to ask.
+            if (waiting != null && state.deleteAsk !== waiting) return@launch
+            val extra = if (links.isEmpty()) null else countText(env, Res.plurals.drive_links_end, links.size, links.size.toString())
+            state.askDelete(names, trash = trash, extra = extra) { then(links) }
+        }
+    }
+    fun toTrash(list: List<DriveItemUi>) = askWithLinks(list, trash = true) { links -> moveToTrash(list, links) }
+    fun deleteForever(list: List<DriveItemUi>) = askWithLinks(list, trash = false) { links ->
         selected.clear()
         state.undoable(list.map { hiddenKey("drive", "trash", it.id) }, deletedMsg.replace("%1\$s", list.size.toString()), after = { trashTick++ }) {
+            links.forEach { net.shareDelete(it.id) }
             list.forEach { net.driveDeleteForever(it.id) }
         }
     }
@@ -368,7 +420,7 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
                 },
                 // One file goes with "Undo"; several at once for good ask first.
                 SelAction(Icons.Filled.DeleteForever, stringResource(Res.string.drive_delete_forever), danger = true) {
-                    if (chosen.size == 1) deleteForever(chosen) else foreverMany = chosen
+                    deleteForever(chosen)
                 },
             ) else listOf(
                 SelAction(Icons.AutoMirrored.Filled.Send, stringResource(Res.string.a_share)) { sharing = chosen },
@@ -389,9 +441,12 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     IconTile(Icons.Filled.Dns, paletteColor(1))
                     Column(Modifier.weight(1f)) {
-                        Text(driveServer?.name ?: stringResource(Res.string.drive_no_server), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
-                            if (driveServer == null) stringResource(Res.string.drive_no_server_sub)
+                            driveServer?.name ?: stringResource(if (noServer) Res.string.drive_no_server else Res.string.loading),
+                            fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            if (noServer) stringResource(Res.string.drive_no_server_sub)
                             else listOfNotNull(driveServer?.let { it.location.ifBlank { "~/" + it.base } + "/drive" }, stringResource(Res.string.drive_encrypted)).joinToString(" · "),
                             fontSize = 13.sp, color = t.muted,
                         )
@@ -399,7 +454,7 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
                     if (error == null && driveServer != null) Box(Modifier.clickable { refresh = true; reload++ }) { Tag(stringResource(Res.string.drive_current), t.ok, Icons.Filled.Check) }
                 }
                 // Without a server the numbers would say "0 files" next to the files in the list.
-                if (driveServer == null) {
+                if (noServer) {
                     TextButton(onClick = { state.push(Screen.SettingsPage(SetPage.SERVERS)) }) { Text(stringResource(Res.string.drive_choose_server)) }
                 } else {
                 usage?.let { u ->
@@ -447,24 +502,6 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
             // The path only in a subfolder: in "My files" the heading below already says where.
             HintText(path.joinToString(" › ") { it.name })
         }
-        transfer?.let { tr ->
-            Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(t.surface).padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                IconTile(if (tr.upload) Icons.Filled.Upload else Icons.Filled.Download, paletteColor(4))
-                Column(Modifier.weight(1f)) {
-                    Text(stringResource(if (tr.upload) Res.string.drive_uploading else Res.string.drive_downloading, tr.name),
-                        fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Box(Modifier.padding(top = 6.dp).fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(t.surface3)) {
-                        val f = if (tr.total > 0) (tr.done.toFloat() / tr.total).coerceIn(0f, 1f) else 0f
-                        Box(Modifier.fillMaxWidth(f).height(6.dp).clip(RoundedCornerShape(3.dp)).background(color))
-                    }
-                    Text(formatSize(tr.done) + if (tr.total > 0) " / " + formatSize(tr.total) else "", fontSize = 12.sp, color = t.muted)
-                }
-                BarIcon(Icons.Filled.Close, stringResource(Res.string.a_cancel)) { tr.job?.cancel(); transfer = null }
-            }
-        }
         SectionLabel(
             when {
                 query.isNotBlank() -> stringResource(Res.string.drive_search_results)
@@ -507,7 +544,7 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
     if (addSheet) {
         GhulSheet({ addSheet = false }, stringResource(Res.string.drive_add_title)) {
             SheetList {
-                SheetRow(stringResource(Res.string.drive_upload_files), leading = { IconTile(Icons.Filled.Upload, paletteColor(1)) }, enabled = filePickersAvailable && transfer == null) {
+                SheetRow(stringResource(Res.string.drive_upload_files), leading = { IconTile(Icons.Filled.Upload, paletteColor(1)) }, enabled = filePickersAvailable) {
                     addSheet = false; upload()
                 }
                 if (cameraPhotoAvailable) {
@@ -645,24 +682,6 @@ private fun DriveBrowser(state: AppState, status: DriveStatusUi) {
             moving = null
             state.run(onError = { error = it }, block = { net.driveMove(item.id, target) }) { reload++ }
         }
-    }
-    foreverMany?.let { list ->
-        AlertDialog(
-            danger = true,
-            onDismissRequest = { foreverMany = null },
-            title = { Text(stringResource(Res.string.drive_delete_forever_title)) },
-            text = { Text(pluralStringResource(Res.plurals.delete_n_for_good_text, list.size, list.size.toString())) },
-            confirmButton = {
-                TextButton(onClick = {
-                    foreverMany = null
-                    selected.clear()
-                    state.run(onError = { error = it }, block = { list.forEach { net.driveDeleteForever(it.id) } }) {
-                        trashTick++; state.changed(); state.message(deletedMsg.replace("%1\$s", list.size.toString()))
-                    }
-                }) { Text(stringResource(Res.string.drive_delete_forever)) }
-            },
-            dismissButton = { TextButton(onClick = { foreverMany = null }) { Text(stringResource(Res.string.a_cancel)) } },
-        )
     }
 }
 
