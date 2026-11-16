@@ -118,8 +118,10 @@ hard_conditions() {
   pid=$(adb shell pidof "$pkg" | tr -d '\r' || true)
   [ -n "$pid" ] || { echo "::error::Die App läuft nicht, es gibt keinen Prozess zu beenden"; return 1; }
   echo "Prozess $pkg ($pid) wird beendet wie bei Speichermangel"
-  # The development build may end its own process (run-as); kill -9 is what Android does.
-  adb shell run-as "$pkg" kill -9 "$pid" || adb shell am kill "$pkg"
+  # kill -9 is what Android does. A debuggable build may end its own process (run-as); the
+  # test version signed with the real key is not debuggable, so then as root (the emulator's
+  # google_apis image has su). "am kill" last: it spares a process with a foreground service.
+  adb shell run-as "$pkg" kill -9 "$pid" 2>/dev/null || adb shell su 0 kill -9 "$pid" || adb shell am kill "$pkg"
   sleep 3
   if [ -n "$(adb shell pidof "$pkg" | tr -d '\r' || true)" ]; then echo "::error::Der Prozess der App läuft noch"; return 1; fi
   run "$flows/extra/killed-2-after.yaml" 600 -e GHUL_SERVER="$addr"

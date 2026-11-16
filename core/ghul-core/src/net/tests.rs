@@ -19,14 +19,38 @@ pub(crate) fn sftp_env() -> Option<(String, u16, String, String, String, String)
     ))
 }
 
+/// Adds `public` to the test server's authorized_keys. Tests run in parallel: reading the file,
+/// adding a line and writing it back lost keys of other tests (ServerAuthFailed in CI), so this
+/// appends under a lock.
+pub(crate) fn authorize_test_key(authkeys: &str, public: &str) {
+    use std::io::Write;
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _one = LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let mut f = std::fs::OpenOptions::new().create(true).append(true).open(authkeys).unwrap();
+    f.write_all(format!("{public}\n").as_bytes()).unwrap();
+}
+
+#[test]
+fn test_keys_added_at_once_are_all_kept() {
+    let file = std::env::temp_dir().join(format!("ghul-authkeys-{}", std::process::id()));
+    let _ = std::fs::remove_file(&file);
+    let path = file.to_str().unwrap().to_string();
+    std::thread::scope(|t| {
+        for n in 0..16 {
+            let path = &path;
+            t.spawn(move || (0..20).for_each(|i| authorize_test_key(path, &format!("ssh-ed25519 K{n}-{i}"))));
+        }
+    });
+    let keys = std::fs::read_to_string(&file).unwrap();
+    let _ = std::fs::remove_file(&file);
+    assert_eq!(keys.lines().count(), 320);
+}
+
 /// A fresh key authorised on the test server and a config for a fresh base folder.
 pub(crate) fn sftp_test_config(sub: &str) -> Option<SftpConfig> {
     let (host, port, user, root, authkeys, hostkey) = sftp_env()?;
     let (private, public) = generate_key("ghulsuite-test").unwrap();
-    let mut keys = std::fs::read_to_string(&authkeys).unwrap_or_default();
-    keys.push_str(&public);
-    keys.push('\n');
-    std::fs::write(&authkeys, keys).unwrap();
+    authorize_test_key(&authkeys, &public);
     let run = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
     Some(SftpConfig {
         host,
