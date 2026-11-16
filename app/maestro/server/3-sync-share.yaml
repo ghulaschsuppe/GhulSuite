@@ -214,10 +214,14 @@ name: Sync server and sharing on a real server
 - extendedWaitUntil:
     visible: "Storage location added.*"
     timeout: 120000
-- extendedWaitUntil:
-    visible: "Folder: .*drive-b-maestro.*"
+# The new block is below the first one: scroll to it.
+- scrollUntilVisible:
+    element: "Folder: .*drive-b-maestro.*"
+    direction: DOWN
     timeout: 30000
-- assertVisible: "Switch to this one"
+- scrollUntilVisible:
+    element: "Switch to this one"
+    direction: DOWN
 - takeScreenshot: s3-08c-two-locations
 
 # --- 3b. Server module on the first location (GhulDrive's folder "ghulsuite") -----------------
@@ -393,6 +397,8 @@ name: Sync server and sharing on a real server
 - extendedWaitUntil:
     notVisible: "Folder: .*drive-b-maestro.*"
     timeout: 60000
-- assertVisible: "Folder: .*ghulsuite.*"
+- scrollUntilVisible:
+    element: "Folder: .*ghulsuite.*"
+    direction: UP
 - assertNotVisible: "Switch to this one"
 - takeScreenshot: s3-17-one-location
