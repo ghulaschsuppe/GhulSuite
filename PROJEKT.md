@@ -79,6 +79,8 @@ tools/                 Testserver (SFTP/IMAP/SMTP), Prüfskripte, Emulator-Skrip
   und lädt sie hoch. Ohne Pull Request, bei Konflikten, wenn die Abfrage scheitert sowie auf `main` und `dev` läuft
   der Push wie gewohnt. Im Push-Lauf eines Arbeits-Branches heißen die Jobs `build (Push)` und `Windows-App (Push)`:
   die Pflicht-Checks `build` und `Windows-App (…)` kommen so nur aus dem Lauf des Pull Requests.
+  Dessen APK ist darum mit dem echten Schlüssel signiert und nicht debuggable: der Emulator-Schritt „vom System
+  beendet“ beendet den Prozess dann als root (`su` im google_apis-Abbild) statt über `run-as`.
 - Uploads auf den Testserver des Inhabers laufen **nur im Original-Repository**: bei Pushes und bei Pull Requests
   aus diesem Repository (dieselbe Vertrauensstufe wie ein Push), **nie bei Pull Requests aus Forks**.
   Ziel ist für `main` der Ordner `ghulsuite/` (Testseiten) bzw. `ghulsuite/download/` (App-Pakete), für jeden
