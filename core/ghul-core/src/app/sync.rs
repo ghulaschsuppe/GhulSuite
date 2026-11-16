@@ -66,9 +66,12 @@ impl SyncReport {
     }
 }
 
+/// A fingerprint of the server a run synchronises with ([`sync_target`]).
+type Target = [u8; 32];
+
 /// What a run synchronises with: the configured server and its settings (`None`: off). A run
 /// whose server was changed or removed after it connected neither merges nor uploads.
-fn sync_target(o: &Open) -> Option<[u8; 32]> {
+fn sync_target(o: &Open) -> Option<Target> {
     use sha2::Digest;
     let s: SyncSettings = setting(&o.suite, SYNC_KEY);
     if s.server.is_empty() {
@@ -405,7 +408,7 @@ impl GhulSuite {
     pub(super) fn sync_unlocked(
         &self,
         fs: &dyn RemoteFs,
-        target: Option<[u8; 32]>,
+        target: Option<Target>,
         pending: &mut SyncReport,
     ) -> Result<SyncReport> {
         let snap = Snapshot::read(fs)?;
@@ -440,7 +443,7 @@ impl GhulSuite {
     }
 
     /// Connects to the configured server (the network part without holding the suite).
-    fn connect_sync_server(&self) -> Result<(std::sync::Arc<dyn RemoteFs>, Option<[u8; 32]>)> {
+    fn connect_sync_server(&self) -> Result<(std::sync::Arc<dyn RemoteFs>, Option<Target>)> {
         let (connect, target) = self.with_open(|o| {
             let s: SyncSettings = setting(&o.suite, SYNC_KEY);
             if s.server.is_empty() {
