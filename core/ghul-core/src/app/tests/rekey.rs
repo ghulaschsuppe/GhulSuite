@@ -834,3 +834,24 @@ fn a_vault_kept_from_an_older_suite_file_still_loses_a_removed_key() {
         .unwrap();
     assert!(!vault_slots.contains(&gone), "the removed key stays out of the vault");
 }
+
+/// Review of M18: a change of the protection that fails after it changed keys in memory (before
+/// anything was written) locks the suite, so nothing half-changed is saved later. One that fails
+/// before it changed anything (a wrong password) leaves the suite open.
+#[test]
+fn a_change_of_the_protection_that_fails_half_way_locks() {
+    let d = Dirs::new("m18-lock");
+    let kf = generate_keyfile();
+    let s = d.suite();
+    s.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    assert!(matches!(s.change_password("falsch".into(), "pw-neu-789".into()), Err(GhulError::WrongPassword)));
+    assert!(s.is_unlocked(), "nothing changed: still open");
+    let err = s.changing_protection(|o| {
+        o.suite.set_recovery_code(&RecoveryCode::generate(&mut rand_core::OsRng), "x", 1, &mut rand_core::OsRng)?;
+        Err::<(), _>(GhulError::Timeout)
+    });
+    assert!(err.is_err());
+    assert!(!s.is_unlocked(), "a half-changed protection must not stay open");
+    s.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    assert_eq!(s.list_vaults().unwrap().len(), 1);
+}

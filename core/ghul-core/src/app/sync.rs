@@ -889,7 +889,7 @@ impl GhulSuite {
         // written after the merge (the suite is not held meanwhile).
         let mut pending = self.syncing.lock().unwrap_or_else(|p| p.into_inner());
         let snap = Snapshot::read(fs)?;
-        let rep = self.with_open(|o| {
+        let rep = self.changing_protection(|o| {
             if locked.header().suite_id != o.suite.header().suite_id {
                 return Err(GhulError::InvalidInput { msg: "the server folder belongs to another suite".into() });
             }

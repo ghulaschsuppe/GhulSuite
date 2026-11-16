@@ -590,6 +590,24 @@ impl Open {
     }
 
     /// The current factor secret and recovery code (to see afterwards which ones were replaced).
+    /// A digest of everything that protects the open files (keys, slots, password parameters):
+    /// tells whether a change of the protection that failed had already changed anything here.
+    fn protection_digest(&self) -> [u8; 32] {
+        use sha2::Digest;
+        let mut h = sha2::Sha256::new();
+        h.update(self.password_key.expose());
+        let all = std::iter::once(&self.suite).chain(self.vaults.iter().filter_map(|v| v.container.as_ref()));
+        for c in all {
+            h.update(c.vmk());
+            h.update(c.factor_secret().expose());
+            if let Some(code) = c.recovery_code() {
+                h.update(code.expose());
+            }
+            h.update(format!("{:?}{:?}", c.slots(), c.header().kdf).as_bytes());
+        }
+        h.finalize().into()
+    }
+
     pub(super) fn current_secrets(&self) -> (Vec<u8>, Option<Vec<u8>>) {
         (self.suite.factor_secret().expose().to_vec(), self.suite.recovery_code().map(|c| c.expose().to_vec()))
     }
@@ -1064,6 +1082,20 @@ impl GhulSuite {
         result
     }
 
+    /// Runs a change of the protection. If it fails after it changed anything here, the open
+    /// suite is dropped (locked): what is in memory would no longer match the files, and a later
+    /// save would write a half-changed protection. Unlocking again reads what was written.
+    pub(super) fn changing_protection<T>(&self, f: impl FnOnce(&mut Open) -> Result<T>) -> Result<T> {
+        self.with_open(|o| {
+            let before = o.protection_digest();
+            let result = f(o);
+            if result.is_err() && o.protection_digest() != before {
+                self.lock_pending.store(true, Ordering::SeqCst);
+            }
+            result
+        })
+    }
+
     fn run_open<T>(&self, guard: &mut Option<Open>, f: impl FnOnce(&mut Open) -> Result<T>) -> Result<T> {
         let open = guard.as_mut().ok_or(GhulError::Locked)?;
         // Settings of older suites (or synced from a device with an older app) move into the area files.
@@ -1329,7 +1361,7 @@ impl GhulSuite {
     /// Gives the slot of the key (or key file) just used a public key in every file, so that
     /// later protection changes can renew the factor secret for it without a touch (B1).
     pub(super) fn upgrade_slot(&self, factor: &SecondFactor<'_>) -> Result<()> {
-        self.with_open(|o| {
+        self.changing_protection(|o| {
             let Some(slot) = o.suite.upgraded_slot(factor, &mut OsRng) else { return Ok(()) };
             for (c, _) in o.containers_mut() {
                 match c.replace_slot(slot.clone()) {
@@ -2428,7 +2460,7 @@ impl GhulSuite {
             return Err(GhulError::Locked);
         }
         let (cred_id, prf_input, output) = with_authenticator(&transport, Some(&listener), |a| register_key(a, &pin))?;
-        self.with_open(|o| {
+        self.changing_protection(|o| {
             let reg = Fido2Registration { rp_id: RP_ID, credential_id: &cred_id, prf_input, hmac_output: &output };
             let now = now_ms();
             let slot = o.suite.add_fido2_slot(&reg, &label, now, &mut OsRng)?;
@@ -2439,7 +2471,7 @@ impl GhulSuite {
     /// Adds a key file (from `generate_keyfile`) as second factor for all files.
     pub fn add_keyfile(&self, keyfile: Vec<u8>, label: String) -> Result<()> {
         let keyfile = Keyfile::parse(&Zeroizing::new(keyfile))?;
-        self.with_open(|o| {
+        self.changing_protection(|o| {
             let id = keyfile.id();
             if o.suite.slots().iter().any(|s| matches!(s, Slot::Keyfile(k) if k.keyfile_id == id)) {
                 return Err(GhulError::AlreadyExists);
@@ -2452,7 +2484,7 @@ impl GhulSuite {
 
     /// Creates a new recovery code for all files; the previous code stops working.
     pub fn new_recovery_code(&self, label: String) -> Result<String> {
-        self.with_open(|o| {
+        self.changing_protection(|o| {
             o.remember_protection()?;
             let before = o.current_secrets();
             let code = RecoveryCode::generate(&mut OsRng);
@@ -2474,7 +2506,7 @@ impl GhulSuite {
     pub fn remove_slot(&self, slot_id: Vec<u8>) -> Result<()> {
         let id: [u8; 16] =
             slot_id.as_slice().try_into().map_err(|_| GhulError::InvalidInput { msg: "invalid slot id".into() })?;
-        self.with_open(|o| {
+        self.changing_protection(|o| {
             let slot = o.suite.slots().iter().find(|s| *s.id() == id).cloned().ok_or(GhulError::NotFound)?;
             if !slot.provides_factor() {
                 return Err(GhulError::InvalidInput { msg: "recovery codes are replaced, not removed".into() });
@@ -2508,7 +2540,7 @@ impl GhulSuite {
     pub fn change_password(&self, current: String, new_password: String) -> Result<()> {
         let current = Zeroizing::new(current);
         let new_password = Zeroizing::new(new_password);
-        self.with_open(|o| {
+        self.changing_protection(|o| {
             let kdf = o.kdf();
             let old_pk = PasswordKey::derive(&current, &kdf)?;
             if !o.suite.verify_password_key(&old_pk) {
