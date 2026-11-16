@@ -1097,6 +1097,15 @@ class InteractionTest {
      * the folder step grey "not checked" (not a red result nobody saw). With the address typed
      * in, the next try works.
      */
+    /** While the server's folders are still being read, the module page says so (not an empty list). */
+    @Test
+    fun moduleFolderListSaysWhileItLoads() = app(setup = { push(Screen.ModuleInstall("s2")) }, prepare = { (net as FakeNet).browseDelayMs = 3_000 }) { _, _ ->
+        waitFor("Loading …")
+        assertFalse(shown("public_html"))
+        waitUntil(timeoutMillis = 10_000) { shown("public_html") }
+        assertFalse(shown("Loading …"))
+    }
+
     @Test
     fun moduleInstallHttpsFailsThenWorksWithAddress() {
         app(setup = { push(Screen.ModuleInstall("s2")) }) { _, fake ->

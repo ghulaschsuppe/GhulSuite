@@ -398,12 +398,16 @@ fun ModuleInstallScreen(state: AppState, serverId: String, padding: PaddingValue
     var error by remember { mutableStateOf<String?>(null) }
     var newDir by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { server = catching { net.knownServers() }.getOrDefault(emptyList()).firstOrNull { it.id == serverId } }
+    /** The folder list is being read (the core may be busy with a synchronisation first). */
+    var listing by remember { mutableStateOf(true) }
     LaunchedEffect(path) {
         error = null
+        listing = true
         dirs = catching { net.serverBrowse(serverId, path) }.getOrElse {
             error = describe(it)
             emptyList()
         }
+        listing = false
     }
     val r = result
     val done = r?.url != null
@@ -417,6 +421,8 @@ fun ModuleInstallScreen(state: AppState, serverId: String, padding: PaddingValue
             SectionCard(stringResource(Res.string.module_step1)) {
                 Hint(stringResource(Res.string.module_step1_hint))
                 Text("/" + path, fontFamily = FontFamily.Monospace, color = g.ok)
+                // Not an empty list while the server is still asked (it looked like a folder without folders).
+                if (listing) LoadingHint()
                 ListCard {
                     if (path.isNotEmpty()) {
                         ListRow("..", leading = { IconTile(Icons.Filled.Folder, MaterialTheme.colorScheme.onSurfaceVariant, size = 34.dp) }) {

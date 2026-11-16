@@ -234,9 +234,10 @@ name: Sync server and sharing on a real server
 - extendedWaitUntil:
     visible: "Choose the folder your website is delivered from.*"
     timeout: 10000
+# The folder list can wait for the synchronisation that follows adding a location.
 - extendedWaitUntil:
     visible: "sync-maestro"
-    timeout: 30000
+    timeout: 120000
 - takeScreenshot: s3-09-module-install
 # Into folders and back out again, without waiting in between.
 - tapOn: "sync-maestro"
@@ -245,7 +246,7 @@ name: Sync server and sharing on a real server
 - tapOn: "\\.\\."
 - extendedWaitUntil:
     visible: "sync-maestro"
-    timeout: 30000
+    timeout: 120000
 - assertNotVisible: ".*composition.*"
 - assertNotVisible: ".*[Cc]oroutine.*"
 - tapOn: "New folder"
