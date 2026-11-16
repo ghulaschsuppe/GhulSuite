@@ -567,14 +567,12 @@ fn foreign_and_outdated_vaults() {
     assert!(s.find_new_vaults().unwrap().is_empty());
     st.delete("fremd2.ghltotp".into()).unwrap();
 
-    // Password change: an old copy (old salt) needs the old password once and is brought up to date.
+    // Password change: an old copy of this suite's own file (old salt) opens with the suite's
+    // recovery code, no old password needed, and is brought up to date (M18).
     s.change_password("pw-123456".into(), "pw-neu-7890".into()).unwrap();
     st.delete(privat_file.clone()).unwrap();
     st.write("privat-alt.ghlpss".into(), old_privat.clone()).unwrap();
-    let f = s.find_new_vaults().unwrap();
-    assert_eq!(f.len(), 1);
-    let src = VaultSource::InFolder { file: "privat-alt.ghlpss".into() };
-    s.adopt_vault(src, "".into(), "pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
+    assert!(s.find_new_vaults().unwrap().is_empty(), "not a foreign file");
     s.lock();
     s.unlock("pw-neu-7890".into(), None, None, None, Some(kf.clone())).unwrap();
     assert_eq!(s.list_entries(VaultKind::Pass, None).unwrap().len(), 1);

@@ -50,6 +50,9 @@ const MAX_PREVIOUS: usize = 256;
 /// Slot IDs (hex) of keys and key files removed on purpose (B2). Synchronised and united, so a
 /// device that missed the removal (and changed its own protection meanwhile) drops them too.
 pub(super) const REMOVED_SLOTS_KEY: &str = "removed_slots";
+/// Whether this device has uploaded in its current protection since the last change (then the
+/// protections from before no longer open server files, H1).
+pub(super) const PREVIOUS_UPLOADED_KEY: &str = "protection_before_uploaded";
 /// Fingerprints (SHA-256) of factor secrets and recovery codes replaced on purpose (a lost key
 /// removed, a new code made). Synchronised; a protection that brings one back is never taken
 /// over from the server (H1).
@@ -417,6 +420,35 @@ fn dedup_key(entry_type: &str, fields: &BTreeMap<String, Field>) -> String {
     key
 }
 
+/// Opens a vault that still has the protection from before a change: with an earlier factor
+/// secret (same password parameters), else with the suite's code or an earlier one.
+fn open_with_before(
+    parse: impl Fn() -> Option<LockedContainer>,
+    suite: &UnlockedContainer,
+    pk: &PasswordKey,
+    same_kdf: bool,
+) -> Option<UnlockedContainer> {
+    let list: Vec<PreviousProtection> = setting(suite, PREVIOUS_KEY);
+    if same_kdf {
+        for p in &list {
+            let Ok(s) = <[u8; 32]>::try_from(p.s.as_slice()) else { continue };
+            if let Ok(c) = parse()?.unlock(pk, &FactorSecret::from_bytes(s)) {
+                return Some(c);
+            }
+        }
+    }
+    let codes = suite
+        .recovery_code()
+        .into_iter()
+        .chain(list.iter().filter_map(|p| <[u8; 32]>::try_from(p.code.as_slice()).ok().map(RecoveryCode::from_bytes)));
+    for code in codes {
+        if let Ok(c) = parse()?.recover(&code) {
+            return Some(c);
+        }
+    }
+    None
+}
+
 fn revoked_fingerprint(secret: &[u8]) -> String {
     use sha2::Digest;
     let mut h = sha2::Sha256::new();
@@ -600,6 +632,7 @@ impl Open {
         list.retain(|p| p != &now);
         list.insert(0, now);
         list.truncate(MAX_PREVIOUS);
+        put_setting(&mut self.suite, PREVIOUS_UPLOADED_KEY, &false)?;
         put_setting(&mut self.suite, PREVIOUS_KEY, &list)
     }
 
@@ -1139,10 +1172,25 @@ impl GhulSuite {
                 Opener::Code(_) => locked.has_recovery(),
             };
             let protection = protection_of(&locked);
+            let header_suite = locked.header().suite_id;
+            let header_kdf = locked.header().kdf.clone();
             let opened = match opener {
                 Opener::Factors { pk, s, .. } if ours => locked.unlock(pk, s).ok(),
                 Opener::Code(code) => locked.recover(code).ok(),
                 _ => None,
+            };
+            // A vault of this suite still in the protection from before (a change of the
+            // protection stopped after the suite file, M18/H6): opens with what the suite file
+            // kept of it, and is brought in line after unlocking (`harmonize`).
+            let (opened, ours) = match (opened, opener) {
+                (None, Opener::Factors { pk, suite_id, kdf, .. }) if &header_suite == suite_id => {
+                    let again = || self.read_locked(&file).ok().flatten();
+                    match open_with_before(again, suite, pk, &header_kdf == *kdf) {
+                        Some(c) => (Some(c), true),
+                        None => (None, ours),
+                    }
+                }
+                (o, _) => (o, ours),
             };
             let c = match (opened, ours) {
                 (Some(c), _) => c,
@@ -1220,6 +1268,34 @@ impl GhulSuite {
     }
 
     /// Saves all vaults first and the suite last.
+    /// Saves a change of the protection as one step (M18, H6): the suite file first, the vaults
+    /// after it. Until the suite file is written nothing has changed on disk; if that fails, the
+    /// suite is locked, so the changed state in memory is never saved later by an ordinary save
+    /// (the old password and keys still open everything). After it, a vault that could not be
+    /// written still has the old protection, which the suite file keeps (`protection_before`, the
+    /// code): unlocking opens it with that and brings it in line.
+    pub(super) fn save_protection(&self, o: &mut Open) -> Result<()> {
+        let mut sealed = Vec::new();
+        let result = (|| -> Result<()> {
+            for v in &mut o.vaults {
+                if let Some(c) = v.container.as_mut() {
+                    sealed.push((v.reference.file.clone(), c.seal(&mut OsRng)?));
+                }
+            }
+            o.record_revisions()?;
+            self.save_container(&mut o.suite, SUITE_FILE)
+        })();
+        if let Err(e) = result {
+            self.lock_pending.store(true, Ordering::SeqCst);
+            return Err(e);
+        }
+        for (file, data) in sealed {
+            // Not undone: the next save writes it again, unlocking opens it meanwhile.
+            let _ = self.storage.write(file, data);
+        }
+        Ok(())
+    }
+
     pub(super) fn save_all(&self, o: &mut Open) -> Result<()> {
         for v in &mut o.vaults {
             if let Some(c) = v.container.as_mut() {
@@ -1243,7 +1319,7 @@ impl GhulSuite {
                 }
             }
             super::sync::mark_protection_changed(o)?;
-            self.save_all(o)
+            self.save_protection(o)
         })
     }
 
@@ -1353,7 +1429,7 @@ impl GhulSuite {
             }
         }
         super::sync::mark_protection_changed(o)?;
-        self.save_all(o)
+        self.save_protection(o)
     }
 
     fn source_bytes(&self, source: &VaultSource) -> Result<(Zeroizing<Vec<u8>>, Option<String>)> {
@@ -2369,7 +2445,7 @@ impl GhulSuite {
             o.renew_keys(false, now)?;
             o.revoke_replaced(before)?;
             super::sync::mark_protection_changed(o)?;
-            self.save_all(o)?;
+            self.save_protection(o)?;
             Ok(code.to_display().to_string())
         })
     }
@@ -2403,7 +2479,7 @@ impl GhulSuite {
             o.renew_keys(true, now_ms())?;
             o.revoke_replaced(before)?;
             super::sync::mark_protection_changed(o)?;
-            self.save_all(o)?;
+            self.save_protection(o)?;
             super::quick::delete_all(&self.local_dir);
             Ok(())
         })
@@ -2429,7 +2505,7 @@ impl GhulSuite {
             // The old password with an old copy of a file must not open what is written now.
             o.renew_keys(false, now_ms())?;
             super::sync::mark_protection_changed(o)?;
-            self.save_all(o)?;
+            self.save_protection(o)?;
             super::quick::delete_all(&self.local_dir);
             Ok(())
         })

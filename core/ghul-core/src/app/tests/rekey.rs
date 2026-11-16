@@ -657,3 +657,78 @@ fn an_added_old_vault_file_takes_the_current_protection() {
         );
     }
 }
+
+/// Storage that refuses the next write of a file whose name ends with the given suffix (a full
+/// disk, a removed SD card, the app ended at that moment).
+struct FailingWrite {
+    inner: Arc<dyn VaultStorage>,
+    fail: std::sync::Mutex<Option<String>>,
+}
+
+impl VaultStorage for FailingWrite {
+    fn read(&self, name: String) -> Result<Option<Vec<u8>>, crate::app::storage::StorageError> {
+        self.inner.read(name)
+    }
+    fn write(&self, name: String, data: Vec<u8>) -> Result<(), crate::app::storage::StorageError> {
+        let mut fail = self.fail.lock().unwrap();
+        if fail.as_ref().is_some_and(|s| name.ends_with(s.as_str())) {
+            *fail = None;
+            return Err(crate::app::storage::StorageError::Io { msg: "disk full".into() });
+        }
+        self.inner.write(name, data)
+    }
+    fn delete(&self, name: String) -> Result<(), crate::app::storage::StorageError> {
+        self.inner.delete(name)
+    }
+    fn list(&self) -> Result<Vec<String>, crate::app::storage::StorageError> {
+        self.inner.list()
+    }
+    fn describe(&self) -> String {
+        self.inner.describe()
+    }
+}
+
+/// M18, H6: a change of the password that stops half-way is one step. If a vault cannot be
+/// written, the change still counts (the suite file is written first): the vault opens with what
+/// the suite file kept of the old protection and is brought in line, it is not "damaged" (which
+/// let the synchronisation replace it with an older copy). If the suite file cannot be written,
+/// nothing changed: the old password still opens everything, also after further saving.
+#[test]
+fn a_change_of_the_password_that_stops_half_way_is_one_step() {
+    let d = Dirs::new("m18");
+    let kf = generate_keyfile();
+    let storage = Arc::new(FailingWrite { inner: d.storage(), fail: std::sync::Mutex::new(None) });
+    let s = GhulSuite::new(storage.clone(), d.local());
+    s.create(
+        options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "P"), (VaultKind::Totp, "2FA")]),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    s.save_entry(vault_id(&s, "P"), login("Bank", "u", "1")).unwrap();
+    let all_open =
+        |s: &GhulSuite| s.list_vaults().unwrap().iter().all(|v| v.available) && s.list_vaults().unwrap().len() == 2;
+
+    // A vault cannot be written: the change counts, nothing is lost.
+    *storage.fail.lock().unwrap() = Some(".ghltotp".into());
+    s.change_password("pw-123456".into(), "pw-neu-789".into()).unwrap();
+    s.lock();
+    assert!(s.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).is_err());
+    s.unlock("pw-neu-789".into(), None, None, None, Some(kf.clone())).unwrap();
+    assert!(all_open(&s), "the vault still in the old protection opens and is brought in line");
+    s.lock();
+    s.unlock("pw-neu-789".into(), None, None, None, Some(kf.clone())).unwrap();
+    assert!(all_open(&s));
+
+    // The suite file cannot be written: nothing changed, also not by saving afterwards.
+    *storage.fail.lock().unwrap() = Some(".ghlsuite".into());
+    assert!(s.change_password("pw-neu-789".into(), "pw-dritt-321".into()).is_err());
+    assert!(!s.is_unlocked(), "the changed state in memory is dropped");
+    assert!(s.unlock("pw-dritt-321".into(), None, None, None, Some(kf.clone())).is_err());
+    s.unlock("pw-neu-789".into(), None, None, None, Some(kf.clone())).unwrap();
+    s.save_entry(vault_id(&s, "P"), login("Danach", "u", "2")).unwrap();
+    s.lock();
+    s.unlock("pw-neu-789".into(), None, None, None, Some(kf)).unwrap();
+    assert!(all_open(&s));
+}

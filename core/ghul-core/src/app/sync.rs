@@ -35,7 +35,7 @@ pub(super) const DELETED_VAULTS_KEY: &str = "deleted_vaults";
 pub(super) const PROTECTION_CHANGED: &str = "protection_changed";
 const DIR: &str = "suite";
 /// Settings that belong to one device and are never merged from another.
-const DEVICE_KEYS: &[&str] = &[SYNC_KEY, KNOWN_KEY, super::suite::PREVIOUS_KEY];
+const DEVICE_KEYS: &[&str] = &[SYNC_KEY, KNOWN_KEY, super::suite::PREVIOUS_KEY, super::suite::PREVIOUS_UPLOADED_KEY];
 
 #[derive(serde::Serialize, serde::Deserialize, Default, Clone)]
 struct SyncSettings {
@@ -354,7 +354,11 @@ fn open_remote_how(o: &Open, data: &[u8]) -> Option<(UnlockedContainer, bool)> {
             return Some((c, false));
         }
     }
-    // Written by a device that had not yet learned of this device's last protection change.
+    // Written by a device that had not yet learned of this device's last protection change
+    // (only until this device's first upload after it, see `upload`).
+    if setting::<bool>(&o.suite, super::suite::PREVIOUS_UPLOADED_KEY) {
+        return None;
+    }
     for (s, code) in o.previous_protection() {
         if same_kdf {
             if let Ok(c) = LockedContainer::parse(data).ok()?.unlock(&o.password_key, &s) {
@@ -452,10 +456,10 @@ impl GhulSuite {
         *pending = SyncReport::default();
         let _ = self.with_open(|o| {
             // Everything is on the server in this device's protection now: the protections
-            // from before have done their job (H1, see `open_remote_how`).
-            let before: Vec<super::suite::PreviousProtection> = setting(&o.suite, super::suite::PREVIOUS_KEY);
-            if !before.is_empty() {
-                put_setting(&mut o.suite, super::suite::PREVIOUS_KEY, &Vec::<super::suite::PreviousProtection>::new())?;
+            // from before no longer open server files (H1, see `open_remote_how`). They stay
+            // for this device's own files (a change that stopped half-way, see `scan`).
+            if !setting::<bool>(&o.suite, super::suite::PREVIOUS_UPLOADED_KEY) {
+                put_setting(&mut o.suite, super::suite::PREVIOUS_UPLOADED_KEY, &true)?;
             }
             if target.is_none() || sync_target(o) == target {
                 let mut s: SyncSettings = setting(&o.suite, SYNC_KEY);
