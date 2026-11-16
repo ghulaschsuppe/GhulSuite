@@ -274,7 +274,7 @@ class InteractionTest {
         text("Steuer 2025.pdf").performClick()
         waitFor("2 selected")
         desc("Share").performClick()
-        waitFor("Share link")
+        waitFor("Encrypted link with expiry, download limit and password")
         text("Share link").performClick()
         waitFor("Title of the link")
         assertTrue(shown("The recipient gets every file on its own."))
@@ -310,6 +310,18 @@ class InteractionTest {
         text("Share link").performClick()
         waitFor("Install and check")
         assertEquals(Screen.ModuleInstall("s2"), state.stack.lastOrNull())
+    }
+
+    /** F149: if the core cannot say whether the module is there, the row does not stay "checking". */
+    @Test
+    fun shareSheetDoesNotStayCheckingWhenTheCoreFails() = app(setup = { tab = Tab.DRIVE }, prepare = { (net as FakeNet).missingModuleFails = true }) { _, _ ->
+        longPress("Notizen.txt")
+        waitFor("1 selected")
+        desc("Share").performClick()
+        waitFor("Encrypted link with expiry, download limit and password")
+        assertFalse(shown("Checking GhulDrive’s server …"))
+        text("Share link").performClick()
+        waitFor("Create link")
     }
 
     /** Without the module on GhulDrive's server, "Share link" says so and opens its installation. */

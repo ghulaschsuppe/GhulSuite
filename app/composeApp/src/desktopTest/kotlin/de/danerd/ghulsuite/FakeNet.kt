@@ -102,8 +102,11 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
     var missingModule: String? = if (configured) null else ""
     /** Holds back the answer to "is the server module there?" (a core busy with a synchronisation). */
     @Volatile var missingModuleGate: java.util.concurrent.CountDownLatch? = null
+    /** The core cannot answer (e.g. GhulDrive's server was removed meanwhile). */
+    var missingModuleFails = false
     override suspend fun shareMissingModule(): String? {
         missingModuleGate?.let { gate -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { gate.await(30, java.util.concurrent.TimeUnit.SECONDS) } }
+        if (missingModuleFails) throw IllegalStateException("not found")
         return missingModule
     }
     /** The links containing GhulDrive items: "Steuer 2025.pdf" (f1) is shared. */

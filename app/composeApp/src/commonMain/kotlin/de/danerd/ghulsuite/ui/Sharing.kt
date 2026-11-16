@@ -109,7 +109,7 @@ sealed interface ShareNeed {
     data class Module(val serverId: String) : ShareNeed
 }
 
-/** Whether share links can be made (null while the core is asked). */
+/** Whether share links can be made (null while the core is asked; if that fails: [ShareNeed.Ready]). */
 @Composable
 fun rememberShareNeed(state: AppState): ShareNeed? {
     var need by remember { mutableStateOf<ShareNeed?>(null) }
@@ -120,6 +120,10 @@ fun rememberShareNeed(state: AppState): ShareNeed? {
                 missing.isEmpty() -> ShareNeed.Drive
                 else -> ShareNeed.Module(missing)
             }
+        }.onFailure {
+            // Not "checking" for good: the link form opens, and making the link checks GhulDrive's
+            // server and the module again and says what is wrong.
+            if (need == null) need = ShareNeed.Ready
         }
     }
     return need
