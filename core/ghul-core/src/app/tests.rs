@@ -622,7 +622,8 @@ fn import_keeps_different_entries_with_the_same_title() {
       "items":[
       {"type":1,"name":"Mail","folderId":"f1","login":{"username":"ich","password":"pw"}},
       {"type":1,"name":"Mail","folderId":"f2","login":{"username":"ich","password":"pw"}}]}"#;
-    let r = s.import_data(folders.as_bytes().to_vec(), "bw.json".into(), Some(pass.clone()), None, false, None).unwrap();
+    let r =
+        s.import_data(folders.as_bytes().to_vec(), "bw.json".into(), Some(pass.clone()), None, false, None).unwrap();
     assert_eq!((r.entries, r.duplicates), (2, 0), "one in each folder");
     let r = s.import_data(folders.as_bytes().to_vec(), "bw.json".into(), Some(pass), None, false, None).unwrap();
     assert_eq!((r.entries, r.duplicates), (0, 2));

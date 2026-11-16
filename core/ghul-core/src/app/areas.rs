@@ -98,8 +98,7 @@ pub(super) fn area_marked_deleted(o: &Open, kind: VaultKind, list: &str, id: &st
     };
     let listed = match c.payload.settings.get(list) {
         Some(Value::Array(items)) => items.iter().any(|item| {
-            item.as_map()
-                .is_some_and(|m| m.iter().any(|(k, v)| k.as_text() == Some("id") && v.as_text() == Some(id)))
+            item.as_map().is_some_and(|m| m.iter().any(|(k, v)| k.as_text() == Some("id") && v.as_text() == Some(id)))
         }),
         _ => false,
     };

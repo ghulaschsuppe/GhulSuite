@@ -334,10 +334,10 @@ impl RemoteFs for FtpsFs {
                 // its newest copy back first, so the new ".ghltmp" never overwrites the only one.
                 if cmd(c, &format!("SIZE {full}")).await?.0 == 550 {
                     for from in [&tmp, &old] {
-                        if cmd(c, &format!("RNFR {from}")).await?.0 == 350 {
-                            if expect(c, &format!("RNTO {full}"), &[250]).await.is_ok() {
-                                break;
-                            }
+                        if cmd(c, &format!("RNFR {from}")).await?.0 == 350
+                            && expect(c, &format!("RNTO {full}"), &[250]).await.is_ok()
+                        {
+                            break;
                         }
                     }
                 }
