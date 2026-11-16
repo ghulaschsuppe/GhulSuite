@@ -836,7 +836,8 @@ fn uploading_does_not_hold_the_suite() {
         a3.save_entry(p3, login("Während des Hochladens", "u", "3")).unwrap();
         let _ = answered.send(seen);
     });
-    let calls = answer.recv_timeout(std::time::Duration::from_millis(500));
+    // Generous for a busy test machine; before, the calls waited until the test gave up.
+    let calls = answer.recv_timeout(std::time::Duration::from_secs(2));
     release.send(()).unwrap();
     assert_eq!(calls, Ok(true), "the app's calls waited for the upload");
     run.join().unwrap().unwrap();

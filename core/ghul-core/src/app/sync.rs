@@ -419,27 +419,38 @@ impl GhulSuite {
             self.sync_with(o, &snap).map(Some)
         })?;
         // The server was changed meanwhile: the next run uses the new one.
-        let Some(mut rep) = rep else { return Ok(SyncReport::default()) };
+        let Some(rep) = rep else { return Ok(SyncReport::default()) };
+        self.upload(snap, fs, rep, target, pending)
+    }
+
+    /// The end of every run: writes on the server what the merge changed. Merged here but not
+    /// everything reached the server: the app hears about the changes with the next run (its
+    /// lists may show the merge only then; uploads can then count twice). All there: the run
+    /// counts as the last synchronisation, if its server is still the configured one.
+    fn upload(
+        &self,
+        snap: Snapshot,
+        fs: &dyn RemoteFs,
+        mut rep: SyncReport,
+        target: Option<Target>,
+        pending: &mut SyncReport,
+    ) -> Result<SyncReport> {
         if let Err(e) = snap.replay(fs, || self.is_unlocked()) {
-            // Merged here, but not everything reached the server: the app hears about the
-            // changes with the next run (its lists may show the merge only then).
             pending.add(&rep);
             return Err(e);
         }
         rep.add(pending);
         *pending = SyncReport::default();
-        self.synced_now();
-        Ok(rep)
-    }
-
-    /// Notes the end of a run whose uploads all reached the server (`last_sync`).
-    fn synced_now(&self) {
         let _ = self.with_open(|o| {
+            if target.is_some() && sync_target(o) != target {
+                return Ok(());
+            }
             let mut s: SyncSettings = setting(&o.suite, SYNC_KEY);
             s.last = now_ms();
             put_setting(&mut o.suite, SYNC_KEY, &s)?;
             self.save_container(&mut o.suite, SUITE_FILE)
         });
+        Ok(rep)
     }
 
     /// Connects to the configured server (the network part without holding the suite).
@@ -455,13 +466,17 @@ impl GhulSuite {
     }
 
     /// Takes over the password changed on another device (see `adopt_remote_password`), then
-    /// synchronises, like [`Self::sync_unlocked`]. The caller holds `syncing`.
-    fn adopt_password_via(&self, fs: &dyn RemoteFs, password: String) -> Result<SyncReport> {
+    /// synchronises, like [`Self::sync_unlocked`] (`pending`: held by the caller, `syncing`).
+    fn adopt_password_via(
+        &self,
+        fs: &dyn RemoteFs,
+        password: String,
+        target: Option<Target>,
+        pending: &mut SyncReport,
+    ) -> Result<SyncReport> {
         let snap = Snapshot::read(fs)?;
         let rep = self.with_open(|o| self.adopt_password_with(o, &snap, password))?;
-        snap.replay(fs, || self.is_unlocked())?;
-        self.synced_now();
-        Ok(rep)
+        self.upload(snap, fs, rep, target, pending)
     }
 
     fn sync_with(&self, o: &mut Open, fs: &dyn RemoteFs) -> Result<SyncReport> {
@@ -792,23 +807,25 @@ impl GhulSuite {
         pin: Option<String>,
         keyfile: Option<Vec<u8>>,
     ) -> Result<SyncReport> {
-        let (fs, _) = self.connect_sync_server()?;
-        self.adopt_protection_via(fs.as_ref(), password, transport, listener, pin, keyfile)
+        let (fs, target) = self.connect_sync_server()?;
+        self.adopt_protection_via(fs.as_ref(), target, password, transport, listener, pin, keyfile)
     }
 
     /// After a password change on another device: checks the new password against the server's
     /// suite file and switches this device to it. Then synchronises.
     pub fn adopt_remote_password(&self, password: String) -> Result<SyncReport> {
-        let _one = self.syncing.lock().unwrap_or_else(|p| p.into_inner());
-        let (fs, _) = self.connect_sync_server()?;
-        self.adopt_password_via(fs.as_ref(), password)
+        let mut pending = self.syncing.lock().unwrap_or_else(|p| p.into_inner());
+        let (fs, target) = self.connect_sync_server()?;
+        self.adopt_password_via(fs.as_ref(), password, target, &mut pending)
     }
 }
 
 impl GhulSuite {
+    #[allow(clippy::too_many_arguments)]
     fn adopt_protection_via(
         &self,
         fs: &dyn RemoteFs,
+        target: Option<Target>,
         password: Option<String>,
         transport: Option<std::sync::Arc<dyn crate::HidTransport>>,
         listener: Option<std::sync::Arc<dyn crate::FidoListener>>,
@@ -830,7 +847,7 @@ impl GhulSuite {
         )?;
         // Like a synchronisation from here on: one at a time, the server read before and
         // written after the merge (the suite is not held meanwhile).
-        let _one = self.syncing.lock().unwrap_or_else(|p| p.into_inner());
+        let mut pending = self.syncing.lock().unwrap_or_else(|p| p.into_inner());
         let snap = Snapshot::read(fs)?;
         let rep = self.with_open(|o| {
             if locked.header().suite_id != o.suite.header().suite_id {
@@ -857,9 +874,7 @@ impl GhulSuite {
             super::quick::delete_all(&self.local_dir);
             self.sync_with(o, &snap)
         })?;
-        snap.replay(fs, || self.is_unlocked())?;
-        self.synced_now();
-        Ok(rep)
+        self.upload(snap, fs, rep, target, &mut pending)
     }
 
     fn adopt_password_with(&self, o: &mut Open, fs: &dyn RemoteFs, password: String) -> Result<SyncReport> {
@@ -918,12 +933,12 @@ impl GhulSuite {
         password: Option<&str>,
         keyfile: Vec<u8>,
     ) -> Result<SyncReport> {
-        self.adopt_protection_via(fs, password.map(str::to_owned), None, None, None, Some(keyfile))
+        self.adopt_protection_via(fs, None, password.map(str::to_owned), None, None, None, Some(keyfile))
     }
 
     pub(crate) fn adopt_password_folder(&self, fs: &dyn RemoteFs, password: &str) -> Result<SyncReport> {
-        let _one = self.syncing.lock().unwrap_or_else(|p| p.into_inner());
-        self.adopt_password_via(fs, password.to_owned())
+        let mut pending = self.syncing.lock().unwrap_or_else(|p| p.into_inner());
+        self.adopt_password_via(fs, password.to_owned(), None, &mut pending)
     }
 }
 
