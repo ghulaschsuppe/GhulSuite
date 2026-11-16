@@ -695,6 +695,17 @@ impl GhulSuite {
         let mut d = d;
         let mut own = own;
         let id = moved_location_id(&old);
+        if super::areas::area_marked_deleted(o, VaultKind::Drive, servers::SERVERS_KEY, &id) {
+            // That location was made once and removed on purpose (the same id on every
+            // device): it does not come back with an older Drive file. Drive has no location
+            // until one is chosen.
+            let mut d = d;
+            d.use_sync = false;
+            d.server = String::new();
+            put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
+            self.net.lock().unwrap_or_else(|p| p.into_inner()).drive = None;
+            return self.save_area(o, VaultKind::Drive);
+        }
         copy.id = id.clone();
         if !own.iter().any(|s| s.id == id) {
             own.push(copy);

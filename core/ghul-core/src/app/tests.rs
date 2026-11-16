@@ -2360,6 +2360,9 @@ fn drive_locations_are_separate_from_the_synchronisation() {
     assert_ne!(first_id, sync_id);
     assert_eq!(s.drive_storage().unwrap().mode, DriveMode::Own);
     let plan = upload(&s, None, "Plan.txt", b"Plan A");
+    // What another device still has of the synchronisation's server (used again below).
+    let sync_servers: Vec<ciborium::Value> =
+        s.with_open(|o| Ok(super::suite::setting(&o.suite, super::servers::SERVERS_KEY))).unwrap();
     s.remove_server(sync_id.clone()).unwrap();
     assert!(s.list_servers().unwrap().is_empty(), "Drive's locations are not offered for synchronisation");
     assert!(s.remove_server(first_id.clone()).is_err(), "a location is removed in GhulDrive");
@@ -2450,6 +2453,15 @@ fn drive_locations_are_separate_from_the_synchronisation() {
     s.drive_merge_newer_settings_for_tests(&other_device);
     assert!(s.drive_locations().unwrap().is_empty(), "removed stays removed");
     assert_eq!(s.drive_storage().unwrap().mode, DriveMode::None);
+    // Nor a Drive file of an older app that still uses the synchronisation's server: the
+    // location made from it has the same id on every device and was removed on purpose.
+    s.with_open(|o| super::suite::put_setting(&mut o.suite, super::servers::SERVERS_KEY, &sync_servers)).unwrap();
+    s.set_sync_server(Some(sync_id.clone())).unwrap();
+    s.drive_back_to_use_sync_for_tests();
+    assert!(s.drive_locations().unwrap().is_empty(), "the moved location does not come back");
+    assert_eq!(s.drive_storage().unwrap().mode, DriveMode::None);
+    s.set_sync_server(None).unwrap();
+    s.remove_server(sync_id.clone()).unwrap();
     assert!(home.join(&cfg.base).join("drive/index.ghldrv").exists(), "files stay on the server");
     let again = saved(s.drive_save_server(input(&cfg.base), Some(cfg.cert.clone().unwrap())).unwrap());
     assert_eq!(s.drive_storage().unwrap().server.map(|x| x.id), Some(again.clone()));
@@ -3495,4 +3507,28 @@ fn unknown_server_name_and_refused_port_have_fixed_texts() {
     // Other failures keep their text.
     let other = GhulError::from(NetError::Connect("connection closed".into()));
     assert!(matches!(other, GhulError::Network { msg } if msg == "connection failed: connection closed"));
+}
+
+/// Review of S4: an item counts as deleted only while it is gone from its list. One renewed
+/// after its deletion mark (it stays in the list) is not.
+#[test]
+fn an_item_renewed_after_its_deletion_mark_is_not_deleted() {
+    use ciborium::Value;
+    let d = Dirs::new("marked-renewed");
+    let s = d.suite();
+    s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    s.add_area(VaultKind::Drive, String::new()).unwrap();
+    let state = s
+        .with_open(|o| {
+            super::areas::mark_area_deleted(o, VaultKind::Drive, "servers", "x")?;
+            let deleted = super::areas::area_marked_deleted(o, VaultKind::Drive, "servers", "x");
+            let item = Value::Map(vec![
+                (Value::Text("id".into()), Value::Text("x".into())),
+                (Value::Text("updated".into()), Value::Integer(i64::MAX.into())),
+            ]);
+            super::areas::put_area_setting(o, VaultKind::Drive, "servers", &vec![item])?;
+            Ok((deleted, super::areas::area_marked_deleted(o, VaultKind::Drive, "servers", "x")))
+        })
+        .unwrap();
+    assert_eq!(state, (true, false));
 }

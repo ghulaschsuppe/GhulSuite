@@ -87,13 +87,23 @@ pub(super) fn mark_area_deleted(o: &mut Open, kind: VaultKind, list: &str, id: &
     Ok(())
 }
 
-/// Whether a list item of an area's settings carries a deletion mark.
+/// Whether a list item of an area's settings was deleted: it carries a deletion mark and is not
+/// in the list (an item renewed after the mark stays in the list, see `prune_deleted`).
 pub(super) fn area_marked_deleted(o: &Open, kind: VaultKind, list: &str, id: &str) -> bool {
+    let Some(c) = o.area(kind) else { return false };
     let key = format!("{list}/{id}");
-    match o.area(kind).and_then(|c| c.payload.settings.get(super::sync::DELETED_KEY)) {
-        Some(ciborium::Value::Map(m)) => m.iter().any(|(k, _)| k.as_text() == Some(key.as_str())),
+    let marked = match c.payload.settings.get(super::sync::DELETED_KEY) {
+        Some(Value::Map(m)) => m.iter().any(|(k, _)| k.as_text() == Some(key.as_str())),
         _ => false,
-    }
+    };
+    let listed = match c.payload.settings.get(list) {
+        Some(Value::Array(items)) => items.iter().any(|item| {
+            item.as_map()
+                .is_some_and(|m| m.iter().any(|(k, v)| k.as_text() == Some("id") && v.as_text() == Some(id)))
+        }),
+        _ => false,
+    };
+    marked && !listed
 }
 
 /// Moves `keys` (and their deletion marks) from `from` into `to`. Returns whether anything moved.
