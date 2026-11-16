@@ -1111,7 +1111,7 @@ class InteractionTest {
             assertTrue(shown("No answer at https://example.org/ghulsuite.php, https://www.example.org/ghulsuite.php. Enter the address of the module above and try again."))
             assertTrue(onAllNodesWithText("skipped").fetchSemanticsNodes().isEmpty())
             assertFalse(shown("Done"))
-            assertTrue("moduleInstall:d2:public_html:" in net.calls, net.calls.toString())
+            assertTrue("moduleInstall:s2:public_html:" in net.calls, net.calls.toString())
             shot("module-https-failed")
             onAllNodes(hasSetTextAction()).onFirst().performTextReplacement("https://example.org/web/ghulsuite.php")
             onNodeWithText("Install and check").performScrollTo().performClick()

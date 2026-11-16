@@ -2074,6 +2074,7 @@ fn drive_locations_are_separate_from_the_synchronisation() {
     std::fs::write(home.join(&other).join("drive/eigene-notiz.txt"), b"mine").unwrap();
     std::fs::create_dir_all(home.join(&other).join("shares")).unwrap();
     // Writable for the FTP user, as GhulDrive's own share folder would be.
+    #[cfg(unix)]
     std::fs::set_permissions(home.join(&other).join("shares"), std::os::unix::fs::PermissionsExt::from_mode(0o777))
         .unwrap();
     std::fs::write(home.join(&other).join("shares/0a1b.json"), b"{}").unwrap();
