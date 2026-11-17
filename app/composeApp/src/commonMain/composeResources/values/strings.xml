@@ -68,6 +68,7 @@
     <string name="err_already_exists">That is already there, nothing was added.</string>
     <string name="err_bio_cancelled">Fingerprint not confirmed.</string>
     <string name="err_bio_changed">The fingerprints on this device have changed. For your security, please unlock with password and second factor and switch fingerprint unlock on again.</string>
+    <string name="err_tampered">A file of the suite was changed without the master password. It is not used.</string>
     <string name="err_corrupted">The vault files are damaged or were modified (%1$s).</string>
     <string name="err_different_protection">This vault is protected with a different password or keys/key files than your suite. Open it as a separate suite.</string>
     <string name="err_hmac">This key does not support hmac-secret and cannot be used.</string>

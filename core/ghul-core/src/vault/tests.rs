@@ -13,8 +13,8 @@ use super::error::VaultError;
 use super::format::{ContainerKind, Slot};
 use super::keyfile::Keyfile;
 use super::keys::{
-    fido2_slot_key, hkdf, kek, keyfile_slot_key, payload_key, recovery_slot_key, PasswordKey, INFO_X25519_FIDO2,
-    INFO_X25519_KEYFILE, INFO_X25519_WRAP,
+    auth_key, hkdf, kek, payload_key, recovery_slot_key, PasswordKey, INFO_X25519_FIDO2, INFO_X25519_KEYFILE,
+    INFO_X25519_WRAP,
 };
 use super::payload::{Entry, Field, SlotMeta};
 use super::recovery::RecoveryCode;
@@ -86,7 +86,7 @@ fn suite_lifecycle_with_security_key() {
     let pass_file = pass.seal(&mut r).unwrap();
     let totp_file = totp.seal(&mut r).unwrap();
     assert_eq!(&pass_file[..8], b"GHULPASS");
-    assert_eq!(pass_file.len(), 14 + pass.header().encode().unwrap().len() + 24 + 4096 + 16);
+    assert_eq!(pass_file.len(), 14 + pass.header().encode().unwrap().len() + 24 + 4096 + 16 + 32);
 
     // One key touch and one Argon2 run open all containers.
     let lp = LockedContainer::parse(&pass_file).unwrap();
@@ -232,18 +232,25 @@ fn rejects_tampered_kind_and_versions() {
 
     let mut as_totp = file.clone();
     as_totp[..8].copy_from_slice(b"GHULTOTP");
+    // Content that no longer decrypts (the magic is part of its AAD) is damaged, not tampered.
     assert_eq!(open(&as_totp, "pw", &fido_factor(&s)).err(), Some(VaultError::Corrupted));
-    let mut v3 = file.clone();
-    v3[8] = 3;
-    assert_eq!(LockedContainer::parse(&v3).err(), Some(VaultError::UnsupportedVersion(3)));
-    let mut v0 = file.clone();
-    v0[8] = 0;
-    assert_eq!(LockedContainer::parse(&v0).err(), Some(VaultError::UnsupportedVersion(0)));
-    // Public-key slots (types 4 and 5) do not exist in version 1.
-    let mut as_v1 = file.clone();
-    as_v1[8] = 1;
-    assert!(LockedContainer::parse(&as_v1).is_err());
-    assert!(c.seal_version(1, &mut r).is_err());
+    // Only the current version is read (older ones carry no write tag).
+    for v in [0u8, 1, 2, 4] {
+        let mut other = file.clone();
+        other[8] = v;
+        assert_eq!(LockedContainer::parse(&other).err(), Some(VaultError::UnsupportedVersion(v.into())));
+    }
+    // H0: a changed write tag, or a file cut before it: never opened with the password.
+    let mut tag = file.clone();
+    *tag.last_mut().unwrap() ^= 1;
+    assert_eq!(open(&tag, "pw", &fido_factor(&s)).err(), Some(VaultError::Tampered));
+    // A broken upload (a changed byte in the content) is damaged, never reported as tampered.
+    let mut broken = file.clone();
+    let mid = broken.len() - 100;
+    broken[mid] ^= 1;
+    assert_eq!(open(&broken, "pw", &fido_factor(&s)).err(), Some(VaultError::Corrupted));
+    assert!(open(&file[..file.len() - 32], "pw", &fido_factor(&s)).is_err());
+    assert!(c.seal(&mut r).is_ok());
     assert!(LockedContainer::parse(b"GHULPASS").is_err());
     assert!(LockedContainer::parse(b"").is_err());
 }
@@ -286,8 +293,20 @@ fn mutation_fuzzing() {
         }
         let Ok(locked) = LockedContainer::parse(&data) else { continue };
         let _ = locked.fido2_requests();
-        assert!(LockedContainer::parse(&data).unwrap().recover(&code).is_err(), "mutation {i} accepted via code");
-        assert!(LockedContainer::parse(&data).unwrap().unlock_with_vmk(&vmk).is_err(), "mutation {i} accepted via vmk");
+        // Reading with the code or the container key alone does not check the write tag (that
+        // needs the password); everything before it is still protected by the payload AEAD.
+        let only_tag = data.len() == file.len() && data[..data.len() - 32] == file[..file.len() - 32];
+        if !only_tag {
+            assert!(LockedContainer::parse(&data).unwrap().recover(&code).is_err(), "mutation {i} accepted via code");
+            assert!(
+                LockedContainer::parse(&data).unwrap().unlock_with_vmk(&vmk).is_err(),
+                "mutation {i} accepted via vmk"
+            );
+        }
+        assert!(
+            LockedContainer::parse(&data).unwrap().recover_with_password(&code, &pk).is_err(),
+            "mutation {i} accepted via code and password"
+        );
         if locked.header().kdf != original.header().kdf {
             continue;
         }
@@ -344,7 +363,7 @@ fn end_to_end_with_ctap2_authenticator() {
     assert_eq!(u.payload.entries[0].fields["title"], Field::Text("Mock".into()));
 }
 
-// --- Test vectors (docs/testvectors/container-v1.json and -v2.json) ----------------------
+// --- Test vectors (docs/testvectors/container-v3.json) --------------------------------------
 
 const VECTOR_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/testvectors");
 
@@ -375,7 +394,7 @@ fn public_slot_json(ikm: &[u8; 32], info: &[u8], slot: &Slot) -> Json {
     })
 }
 
-/// `version` 1: slots of type 1 and 3 (files of older app versions, still read); 2: types 4 and 5.
+/// The published test vectors of the current format (security key and key file slots with public keys).
 #[allow(clippy::type_complexity)]
 fn build_vectors(version: u16) -> Json {
     let mut r = rng(2026);
@@ -392,17 +411,9 @@ fn build_vectors(version: u16) -> Json {
     r.fill_bytes(&mut hmac_output);
     let credential_id: Vec<u8> = (0..48).map(|i| i as u8).collect();
     let reg = Fido2Registration { rp_id: RP, credential_id: &credential_id, prf_input, hmac_output: &hmac_output };
-    let fido = if version == 1 {
-        super::container::legacy_fido2_slot(&keys.suite_id, &keys.factor_secret, &reg, &mut r)
-    } else {
-        keys.fido2_slot(&reg, &mut r)
-    };
+    let fido = keys.fido2_slot(&reg, &mut r);
     let keys_kf = SuiteKeys::create(password, COST, &mut r).unwrap();
-    let kf_slot = if version == 1 {
-        super::container::legacy_keyfile_slot(&keys_kf.suite_id, &keys_kf.factor_secret, &keyfile, &mut r)
-    } else {
-        keys_kf.keyfile_slot(&keyfile, &mut r)
-    };
+    let kf_slot = keys_kf.keyfile_slot(&keyfile, &mut r);
 
     let cases: Vec<(&SuiteKeys, ContainerKind, Slot, bool, Option<&Keyfile>, &str)> = vec![
         (&keys, ContainerKind::Suite, fido.clone(), true, None, "suite container: security key slot + recovery slot"),
@@ -462,26 +473,17 @@ fn build_vectors(version: u16) -> Json {
                 c.payload.entries.push(e);
             }
         }
-        let file = c.seal_version(version, &mut r).unwrap();
+        let file = c.seal(&mut r).unwrap();
         let cid = c.header().container_id;
         let kek_v = kek(&k.password_key, &k.factor_secret, &cid);
         let vmk = *c.vmk();
         let pkey = payload_key(&zeroize::Zeroizing::new(vmk), &cid);
         let factor = match &slot {
-            Slot::Fido2(f) if version == 1 => json!({
-                "type": "fido2", "slot_id": hex(&f.slot_id), "rp_id": f.rp_id, "credential_id": hex(&f.credential_id),
-                "prf_input": hex(&f.prf_input), "hmac_salt": hex(&crate::ctap2::prf_salt(&f.prf_input)),
-                "hmac_output": hex(&hmac_output), "slot_key": hex(fido2_slot_key(&hmac_output, &f.slot_id).as_ref()),
-            }),
             Slot::Fido2(f) => json!({
                 "type": "fido2-x25519", "slot_id": hex(&f.slot_id), "rp_id": f.rp_id,
                 "credential_id": hex(&f.credential_id), "prf_input": hex(&f.prf_input),
                 "hmac_salt": hex(&crate::ctap2::prf_salt(&f.prf_input)), "hmac_output": hex(&hmac_output),
                 "x25519": public_slot_json(&hmac_output, INFO_X25519_FIDO2, &slot),
-            }),
-            Slot::Keyfile(f) if version == 1 => json!({
-                "type": "keyfile", "slot_id": hex(&f.slot_id), "keyfile_id": hex(&f.keyfile_id),
-                "slot_key": hex(keyfile_slot_key(kf.unwrap().expose(), &f.slot_id).as_ref()),
             }),
             Slot::Keyfile(f) => json!({
                 "type": "keyfile-x25519", "slot_id": hex(&f.slot_id), "keyfile_id": hex(&f.keyfile_id),
@@ -506,6 +508,7 @@ fn build_vectors(version: u16) -> Json {
             })),
             "container_id": hex(&cid),
             "kek": hex(kek_v.as_ref()),
+            "auth_key": hex(auth_key(&k.password_key, &k.factor_secret, &cid).as_ref()),
             "vmk": hex(&vmk),
             "payload_key": hex(pkey.as_ref()),
             "payload_cbor": hex(&c.payload.to_cbor().unwrap()),
@@ -521,9 +524,7 @@ fn build_vectors(version: u16) -> Json {
 
 #[test]
 fn test_vectors() {
-    for version in [1u16, 2] {
-        check_vectors(version);
-    }
+    check_vectors(super::format::FORMAT_VERSION);
 }
 
 fn check_vectors(version: u16) {
@@ -561,5 +562,9 @@ fn check_vectors(version: u16) {
         }
         let vmk: [u8; 32] = unhex(v["vmk"].as_str().unwrap()).try_into().unwrap();
         assert!(LockedContainer::parse(&file).unwrap().unlock_with_vmk(&vmk).is_ok());
+        // The write tag: HMAC-SHA256 with the write key over everything before it.
+        let ak: [u8; 32] = unhex(v["auth_key"].as_str().unwrap()).try_into().unwrap();
+        let (signed, tag) = file.split_at(file.len() - 32);
+        assert_eq!(super::keys::file_tag(&ak, signed).as_slice(), tag);
     }
 }

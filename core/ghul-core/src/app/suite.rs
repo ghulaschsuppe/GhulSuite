@@ -615,19 +615,13 @@ fn register_key(auth: &dyn KeyDevice, pin: &str) -> Result<NewKey> {
     Ok((cred.id, prf_input, out.output))
 }
 
-/// The security key that opened a container (to give its slot a public key, see `upgrade_slot`).
-pub(super) struct UsedKey {
-    slot_id: [u8; 16],
-    hmac_output: Zeroizing<[u8; 32]>,
-}
-
 /// Asks the key for the factor secret of one of the container's FIDO2 slots.
 fn key_factor(
     locked: &LockedContainer,
     transport: &Arc<dyn HidTransport>,
     listener: Option<&Arc<dyn FidoListener>>,
     pin: &str,
-) -> Result<(FactorSecret, UsedKey)> {
+) -> Result<FactorSecret> {
     let requests = locked.fido2_requests();
     if requests.is_empty() {
         return Err(GhulError::InvalidInput { msg: "this vault has no security key".into() });
@@ -653,7 +647,7 @@ fn key_factor(
             }
             let req = &requests[out.index];
             match locked.factor_secret(&SecondFactor::Fido2 { slot_id: req.slot_id, hmac_output: &out.output }) {
-                Ok(s) => return Ok((s, UsedKey { slot_id: req.slot_id, hmac_output: out.output })),
+                Ok(s) => return Ok(s),
                 // The system API may have treated the salt differently: ask once more the other way.
                 Err(_) if auth.switch_salt_mode() => continue,
                 Err(e) => return Err(e.into()),
@@ -662,35 +656,23 @@ fn key_factor(
     })
 }
 
-/// The second factor that was presented, for [`GhulSuite::upgrade_slot`].
-pub(super) fn used_factor<'a>(key: &'a Option<UsedKey>, keyfile: &'a Option<Keyfile>) -> Option<SecondFactor<'a>> {
-    match (key, keyfile) {
-        (Some(k), _) => Some(SecondFactor::Fido2 { slot_id: k.slot_id, hmac_output: &k.hmac_output }),
-        (None, Some(kf)) => Some(SecondFactor::Keyfile(kf)),
-        _ => None,
-    }
-}
-
 pub(super) fn parse_keyfile(data: Option<Vec<u8>>) -> Result<Option<Keyfile>> {
     data.map(|d| Keyfile::parse(&Zeroizing::new(d)).map_err(GhulError::from)).transpose()
 }
 
-/// Gets the factor secret with a key file or a security key, whichever is given; also returns
-/// the key that was used (none for a key file: the caller has it).
+/// Gets the factor secret with a key file or a security key, whichever is given.
 pub(super) fn second_factor(
     locked: &LockedContainer,
     transport: Option<&Arc<dyn HidTransport>>,
     listener: Option<&Arc<dyn FidoListener>>,
     pin: Option<&str>,
     keyfile: Option<&Keyfile>,
-) -> Result<(FactorSecret, Option<UsedKey>)> {
+) -> Result<FactorSecret> {
     if let Some(kf) = keyfile {
-        return Ok((locked.factor_secret(&SecondFactor::Keyfile(kf))?, None));
+        return Ok(locked.factor_secret(&SecondFactor::Keyfile(kf))?);
     }
     match (transport, pin) {
-        (Some(t), Some(pin)) if !locked.fido2_requests().is_empty() => {
-            key_factor(locked, t, listener, pin).map(|(s, k)| (s, Some(k)))
-        }
+        (Some(t), Some(pin)) if !locked.fido2_requests().is_empty() => key_factor(locked, t, listener, pin),
         _ if locked.fido2_requests().is_empty() => Err(GhulError::KeyfileRequired),
         _ => Err(GhulError::SecurityKeyRequired),
     }
@@ -975,21 +957,6 @@ impl GhulSuite {
         self.save_container(&mut o.suite, SUITE_FILE)
     }
 
-    /// Gives the slot of the key (or key file) just used a public key in every file, so that
-    /// later protection changes can renew the factor secret for it without a touch (B1).
-    pub(super) fn upgrade_slot(&self, factor: &SecondFactor<'_>) -> Result<()> {
-        self.with_open(|o| {
-            let Some(slot) = o.suite.upgraded_slot(factor, &mut OsRng) else { return Ok(()) };
-            for (c, _) in o.containers_mut() {
-                match c.replace_slot(slot.clone()) {
-                    Ok(()) | Err(crate::vault::VaultError::SlotNotFound) => {}
-                    Err(e) => return Err(e.into()),
-                }
-            }
-            self.save_all(o)
-        })
-    }
-
     /// Opens the folder's vaults with the suite's password and factor secret and keeps the session.
     fn finish_unlock(&self, password_key: PasswordKey, suite: UnlockedContainer, full: bool) -> Result<()> {
         let s = FactorSecret::from_bytes(*suite.factor_secret().expose());
@@ -1231,7 +1198,7 @@ impl GhulSuite {
         let kind = VaultKind::from_container(locked.kind())
             .ok_or_else(|| GhulError::InvalidInput { msg: "this is a suite file, open its folder instead".into() })?;
         let keyfile = parse_keyfile(keyfile)?;
-        let (s, _) = second_factor(
+        let s = second_factor(
             &locked,
             transport.as_ref(),
             listener.as_ref(),
@@ -1273,7 +1240,7 @@ impl GhulSuite {
         let pin = pin.map(Zeroizing::new);
         let locked = self.anchor()?;
         let keyfile = parse_keyfile(keyfile)?;
-        let (s, key) = second_factor(
+        let s = second_factor(
             &locked,
             transport.as_ref(),
             listener.as_ref(),
@@ -1284,11 +1251,6 @@ impl GhulSuite {
         let anchor = locked.unlock(&pk, &s)?;
         let suite = self.suite_from_anchor(anchor, &pk)?;
         self.finish_unlock(pk, suite, true)?;
-        if let Some(factor) = used_factor(&key, &keyfile) {
-            // Not being able to rewrite the files now is no reason to refuse the unlock: the
-            // slot gets its public key at the next unlock with this key.
-            let _ = self.upgrade_slot(&factor);
-        }
         Ok(())
     }
 
@@ -1533,7 +1495,7 @@ impl GhulSuite {
             return Err(GhulError::Locked);
         }
         let keyfile = parse_keyfile(keyfile)?;
-        let (s, _) = second_factor(
+        let s = second_factor(
             &locked,
             transport.as_ref(),
             listener.as_ref(),

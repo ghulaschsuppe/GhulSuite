@@ -68,6 +68,7 @@
     <string name="err_already_exists">Das ist schon vorhanden, es wurde nichts hinzugefügt.</string>
     <string name="err_bio_cancelled">Fingerabdruck nicht bestätigt.</string>
     <string name="err_bio_changed">Die Fingerabdrücke auf diesem Gerät wurden geändert. Zu deiner Sicherheit bitte mit Passwort und zweitem Faktor entsperren und Fingerabdruck-Entsperren neu einschalten.</string>
+    <string name="err_tampered">Eine Datei der Suite wurde ohne das Master-Passwort verändert. Sie wird nicht verwendet.</string>
     <string name="err_corrupted">Die Tresor-Dateien sind beschädigt oder wurden verändert (%1$s).</string>
     <string name="err_different_protection">Dieser Tresor ist mit einem anderen Passwort oder anderen Keys/Schlüsseldateien geschützt als deine Suite. Öffne ihn als eigene Suite.</string>
     <string name="err_hmac">Dieser Key unterstützt kein hmac-secret und ist nicht geeignet.</string>

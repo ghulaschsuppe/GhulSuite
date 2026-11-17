@@ -111,6 +111,7 @@ internal fun GhulException.toVault(): VaultException {
         is GhulException.InvalidRecoveryCode -> VaultException(VaultErrorKind.INVALID_RECOVERY_CODE, d)
         is GhulException.Locked -> VaultException(VaultErrorKind.LOCKED, d)
         is GhulException.Corrupted -> VaultException(VaultErrorKind.CORRUPTED, msg)
+        is GhulException.Tampered -> VaultException(VaultErrorKind.TAMPERED, d)
         is GhulException.Storage -> VaultException(VaultErrorKind.STORAGE, msg)
         is GhulException.InvalidInput -> VaultException(VaultErrorKind.INVALID_INPUT, msg)
         is GhulException.SecurityKeyRequired -> VaultException(VaultErrorKind.SECURITY_KEY_REQUIRED, d)

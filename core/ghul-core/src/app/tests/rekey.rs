@@ -8,11 +8,7 @@
 //! the remaining keys and key files (their slots carry public keys, so no touch is needed).
 
 use super::*;
-use crate::vault::container::legacy_keyfile_slot;
-use crate::vault::{
-    ContainerKind, FactorSecret, KdfCost, Keyfile, LockedContainer, PasswordKey, RecoveryCode, SecondFactor, Slot,
-    SlotMeta, SuiteKeys,
-};
+use crate::vault::{FactorSecret, Keyfile, LockedContainer, PasswordKey, RecoveryCode, SecondFactor};
 
 const EXTENSIONS: &[&str] = &[".ghlsuite", ".ghlpss", ".ghltotp", ".ghlcal", ".ghldrv", ".ghlmail"];
 
@@ -211,74 +207,6 @@ fn an_old_copy_and_the_old_password_do_not_open_the_current_files() {
     assert_nothing_opens(&now, &loot, Some("pw-alt-123"), "old password");
 }
 
-/// A suite as an app before format version 2 wrote it: three key files in slots of type 3.
-fn legacy_suite(d: &Dirs, password: &str, keyfiles: &[(&Keyfile, &str)]) -> RecoveryCode {
-    let mut rng = rand_core::OsRng;
-    let keys = SuiteKeys::create(password, KdfCost { memory_kib: 64 * 1024, iterations: 3, parallelism: 1 }, &mut rng)
-        .unwrap();
-    let slots: Vec<Slot> =
-        keyfiles.iter().map(|(kf, _)| legacy_keyfile_slot(&keys.suite_id, &keys.factor_secret, kf, &mut rng)).collect();
-    let code = RecoveryCode::generate(&mut rng);
-    let st = d.storage();
-    for (kind, file) in [(ContainerKind::Suite, "suite.ghlsuite"), (ContainerKind::Pass, "privat-0123abcd.ghlpss")] {
-        let mut c = keys.create_container(kind, slots.clone(), &mut rng).unwrap();
-        for (slot, (_, label)) in slots.iter().zip(keyfiles) {
-            c.payload.slots.insert(
-                crate::kdf::hex(slot.id()),
-                SlotMeta { label: (*label).into(), created: 1, extra: Default::default() },
-            );
-        }
-        c.set_recovery_code(&code, "Notfallblatt", 1, &mut rng).unwrap();
-        if kind == ContainerKind::Pass {
-            c.payload.settings.insert("name".into(), ciborium::value::Value::Text("Privat".into()));
-        }
-        st.write(file.into(), c.seal_version(1, &mut rng).unwrap()).unwrap();
-    }
-    code
-}
-
-#[test]
-fn slots_of_older_apps_get_a_public_key_when_they_are_used() {
-    let d = Dirs::new("rekey-legacy");
-    let (kf1, kf2, kf3) = (Keyfile::generate(&mut rand_core::OsRng), Keyfile::generate(&mut rand_core::OsRng), {
-        Keyfile::generate(&mut rand_core::OsRng)
-    });
-    let code = legacy_suite(&d, "pw-123456", &[(&kf1, "Eins"), (&kf2, "Zwei"), (&kf3, "Drei")]);
-    for (_, data) in files(&d) {
-        assert_eq!(u16::from_le_bytes([data[8], data[9]]), 1);
-    }
-    let s = d.suite();
-    s.unlock("pw-123456".into(), None, None, None, Some(kf1.encode().to_vec())).unwrap();
-    s.save_entry(vault_id(&s, "Privat"), login("Bank", "u", "alt")).unwrap();
-    // The key file just used now has a public key (in every file); the others still wait.
-    let need: Vec<(String, bool)> = s.slots().unwrap().into_iter().map(|x| (x.label, x.needs_update)).collect();
-    assert!(need.contains(&("Eins".into(), false)) && need.contains(&("Zwei".into(), true)), "{need:?}");
-    for (name, data) in files(&d) {
-        assert_eq!(u16::from_le_bytes([data[8], data[9]]), 2, "{name} written as version 2");
-        let l = LockedContainer::parse(&data).unwrap();
-        assert_eq!(l.header().slots.iter().filter(|x| x.is_legacy()).count(), 2, "{name}");
-        assert!(l.recover(&code).is_ok(), "{name}: the code stays valid");
-    }
-    let old = files(&d);
-
-    // Removing "Drei" while "Zwei" has no public key yet: new container keys, but the factor
-    // secret stays (it cannot be given to "Zwei" without the key file).
-    s.remove_slot(slot_id(&s, "Drei")).unwrap();
-    // "Zwei" is used once: its slot gets a public key too.
-    s.lock();
-    s.unlock("pw-123456".into(), None, None, None, Some(kf2.encode().to_vec())).unwrap();
-    assert!(s.slots().unwrap().iter().all(|x| !x.needs_update));
-    // The next change renews the factor secret: from now on "Drei" opens nothing current.
-    let kf4 = generate_keyfile();
-    s.add_keyfile(kf4, "Vier".into()).unwrap();
-    s.remove_slot(slot_id(&s, "Vier")).unwrap();
-    let loot = loot_with_keyfile(&old, "pw-123456", &kf3.encode());
-    assert_nothing_opens(&files(&d), &loot, Some("pw-123456"), "key file of an older app");
-    s.lock();
-    s.unlock("pw-123456".into(), None, None, None, Some(kf1.encode().to_vec())).unwrap();
-    assert_eq!(titles(&s), vec!["Bank"]);
-}
-
 #[test]
 fn quick_unlock_survives_a_new_code_but_not_a_removed_key() {
     let d = Dirs::new("rekey-quick");
@@ -292,4 +220,82 @@ fn quick_unlock_survives_a_new_code_but_not_a_removed_key() {
     s.unlock_quick("bio".into(), bio.clone(), None, 3600).unwrap();
     s.remove_slot(slot_id(&s, "Zwei")).unwrap();
     assert!(!s.quick_unlock_exists("bio".into()));
+}
+
+/// H0: with an old copy of the files and the old recovery code, an attacker can decrypt and
+/// change them, but not write the seal (it needs the password). Forged files are not taken: a
+/// forged vault is listed as damaged and shows none of the attacker's entries, a forged suite
+/// file opens neither with the attacker's key file nor with the user's.
+#[test]
+fn files_forged_with_an_old_code_are_rejected() {
+    let kf = generate_keyfile();
+    let d = Dirs::new("h0");
+    let a = d.suite();
+    let res =
+        a.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    let old_code = RecoveryCode::parse(&res.recovery_code.unwrap()).unwrap();
+    let privat = vault_id(&a, "Privat");
+    a.save_entry(privat.clone(), login("Bank", "u", "1")).unwrap();
+    // The old copy the attacker has.
+    let old = files(&d);
+    a.new_recovery_code("Neu".into()).unwrap();
+    a.lock();
+
+    // A vault with an entry of the attacker's, sealed without the password.
+    let st = d.storage();
+    let vault = vault_file(&a_unlocked(&d, &kf), &privat);
+    let (_, data) = old.iter().find(|(f, _)| f == &vault).unwrap();
+    let mut c = LockedContainer::parse(data).unwrap().recover(&old_code).unwrap();
+    let mut e = crate::vault::payload::Entry::new([9; 16], "login", 1);
+    e.fields.insert("title".into(), crate::vault::payload::Field::Text("Angreifer".into()));
+    c.payload.entries.push(e);
+    st.write(vault.clone(), c.seal_without_password(&mut rand_core::OsRng)).unwrap();
+    a.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
+    assert!(titles(&a).is_empty(), "no injected entry");
+    assert!(a.list_vaults().unwrap().iter().any(|v| !v.available), "the forged vault is not used");
+    a.lock();
+
+    // A suite file with the attacker's key file instead of the user's.
+    let evil = Keyfile::parse(&generate_keyfile()).unwrap();
+    let (_, data) = old.iter().find(|(f, _)| f == "suite.ghlsuite").unwrap();
+    let mut c = LockedContainer::parse(data).unwrap().recover(&old_code).unwrap();
+    let user: Vec<[u8; 16]> = c.slots().iter().filter(|s| s.provides_factor()).map(|s| *s.id()).collect();
+    c.add_keyfile_slot(&evil, "Angreifer", 1, &mut rand_core::OsRng).unwrap();
+    for id in user {
+        c.remove_slot(&id).unwrap();
+    }
+    st.write("suite.ghlsuite".into(), c.seal_without_password(&mut rand_core::OsRng)).unwrap();
+    assert!(a.unlock("pw-123456".into(), None, None, None, Some(evil.encode().to_vec())).is_err(), "no injected key");
+    assert!(a.unlock("pw-123456".into(), None, None, None, Some(kf)).is_err());
+}
+
+/// Opens a second instance of the suite in `d` (for reading file names).
+fn a_unlocked(d: &Dirs, kf: &[u8]) -> Arc<GhulSuite> {
+    let s = d.suite();
+    s.unlock("pw-123456".into(), None, None, None, Some(kf.to_vec())).unwrap();
+    s
+}
+
+/// H0: the recovery code opens the suite file's content, so neither the password key nor a
+/// replaced code may be in it.
+#[test]
+fn the_recovery_code_does_not_reveal_a_password_key() {
+    let kf = generate_keyfile();
+    let d = Dirs::new("nopk");
+    let s = d.suite();
+    let res =
+        s.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    let first_code = RecoveryCode::parse(&res.recovery_code.unwrap()).unwrap();
+    let suite = |code: &RecoveryCode| {
+        let data = d.storage().read("suite.ghlsuite".into()).unwrap().unwrap();
+        LockedContainer::parse(&data).unwrap().recover(code).unwrap().payload.to_cbor().unwrap()
+    };
+    let code = RecoveryCode::parse(&s.new_recovery_code("Neu".into()).unwrap()).unwrap();
+    let pk: Vec<u8> = s.with_open(|o| Ok(o.password_key.expose().to_vec())).unwrap();
+    let cbor = suite(&code);
+    assert!(!cbor.windows(32).any(|w| w == pk.as_slice()), "the password key is readable with the code");
+    assert!(!cbor.windows(32).any(|w| w == first_code.expose().as_slice()), "the old code is readable");
+    s.change_password("pw-123456".into(), "pw-neu-789".into()).unwrap();
+    let cbor = suite(&code);
+    assert!(!cbor.windows(32).any(|w| w == pk.as_slice()), "the old password key is readable");
 }

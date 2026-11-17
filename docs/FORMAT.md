@@ -1,9 +1,8 @@
-# GhulSuite: Dateiformat, Version 2
+# GhulSuite: Dateiformat, Version 3
 
-**Stand:** 14.11.2026 (Version 2: Keys und Schlüsseldateien mit öffentlichem Schlüssel, innere Schlüssel werden bei jeder Schutzänderung erneuert; Dateinamen ohne Tresornamen. Version 1 wird weiter gelesen) · gilt für `.ghlpss`, `.ghltotp`, `.ghlcal`, `.ghldrv`, `.ghlmail`, `.ghlsuite` und `.ghlkey`
+**Stand:** 17.11.2026 (Version 3: jede Datei trägt ein Schreibsiegel, das nur mit dem Passwort entsteht; nur noch Keys und Schlüsseldateien mit öffentlichem Schlüssel. Ältere Versionen werden nicht mehr gelesen) · gilt für `.ghlpss`, `.ghltotp`, `.ghlcal`, `.ghldrv`, `.ghlmail`, `.ghlsuite` und `.ghlkey`
 **Referenzimplementierung:** `core/ghul-core/src/vault/`
-**Testvektoren:** [`docs/testvectors/container-v2.json`](testvectors/container-v2.json) und für ältere Dateien
-[`container-v1.json`](testvectors/container-v1.json), unabhängig geprüft mit
+**Testvektoren:** [`docs/testvectors/container-v3.json`](testvectors/container-v3.json), unabhängig geprüft mit
 [`tools/verify_testvectors.py`](../tools/verify_testvectors.py) (Python, andere Krypto-Bibliotheken)
 
 Diese Spezifikation ist so geschrieben, dass eine zweite Implementierung allein daraus entstehen kann.
@@ -31,7 +30,7 @@ Jede Änderung an irgendeinem Byte macht die Datei unbrauchbar.
 am Anfang, aber unbekannter Art oder höherer Formatversion stammt von einer neueren App: Leser melden dann „bitte
 aktualisieren“ statt „beschädigt“ (Fehler `UpdateRequired`).
 
-### Verwendete Verfahren (keine Alternativen in Version 1)
+### Verwendete Verfahren (keine Alternativen)
 
 | Zweck | Verfahren |
 |---|---|
@@ -48,16 +47,16 @@ aktualisieren“ statt „beschädigt“ (Fehler `UpdateRequired`).
 ```
 Offset        Länge  Feld
 0             8      magic
-8             2      format_version (u16) = 2 (1 bei Dateien älterer App-Versionen)
+8             2      format_version (u16) = 3
 10            4      header_len H (u32), 1 ≤ H ≤ 65536
 14            H      header (TLV-Records, Abschnitt 3)
 14+H          24     payload_nonce
 38+H          n      payload_ciphertext (inkl. 16-Byte-Tag), n ≥ 16
+38+H+n        32     auth: Schreibsiegel (Abschnitt 4.7)
 ```
 
 - Maximale Dateigröße: 256 MiB.
-- Leser akzeptieren `format_version` 1 und 2 und lehnen alles andere ab. Version 2 unterscheidet sich nur durch die
-  Slot-Typen 4 und 5 (Abschnitt 3.2); in einer Datei der Version 1 sind sie unzulässig. Geschrieben wird immer Version 2.
+- Leser akzeptieren nur `format_version` 3 und lehnen alles andere ab (ältere Versionen tragen kein Schreibsiegel).
 - **AAD des Inhalts** = Bytes `0 … 14+H−1` (Magic, Version, Header-Länge und Header). Damit sind auch Dateityp
   und Version geschützt: Ein `.ghlpss`, dessen Magic auf `GHULTOTP` geändert wurde, lässt sich nicht mehr öffnen.
 
@@ -100,24 +99,21 @@ slot_type (u8) ‖ slot_id[16] ‖ typabhängige Felder
 
 | Typ | Name | liefert | Inhalt |
 |---|---|---|---|
-| 1 | FIDO2 `hmac-secret` (nur noch gelesen) | Faktor-Geheimnis `S` | siehe unten |
 | 2 | Wiederherstellung | Container-Schlüssel `VMK` | `nonce[24] ‖ wrapped_vmk[48]` |
-| 3 | Schlüsseldatei (nur noch gelesen) | Faktor-Geheimnis `S` | `keyfile_id[8] ‖ nonce[24] ‖ wrapped_S[48]` |
-| 4 | FIDO2 `hmac-secret` mit öffentlichem Schlüssel | Faktor-Geheimnis `S` | wie Typ 1, vor `nonce` zusätzlich `public_key[32] ‖ ephemeral[32]` |
+| 4 | FIDO2 `hmac-secret` mit öffentlichem Schlüssel | Faktor-Geheimnis `S` | siehe unten |
 | 5 | Schlüsseldatei mit öffentlichem Schlüssel | Faktor-Geheimnis `S` | `keyfile_id[8] ‖ public_key[32] ‖ ephemeral[32] ‖ nonce[24] ‖ wrapped_S[48]` |
 
-Die Typen 1 und 3 stammen von älteren App-Versionen: Die App liest sie, schreibt aber nur noch die Typen 4 und 5.
-Ein Slot vom Typ 1 oder 3 wird beim nächsten Entsperren mit genau diesem Key oder dieser
-Schlüsseldatei in Typ 4 bzw. 5 umgewandelt (gleiche `slot_id`, Abschnitt 4.2).
+Die Typen 1 und 3 (Key und Schlüsseldatei ohne öffentlichen Schlüssel) gab es in älteren Versionen; eine Datei mit
+ihnen wird abgelehnt.
 
-**Typ 1 und 4, FIDO2 `hmac-secret`:**
+**Typ 4, FIDO2 `hmac-secret`:**
 
 ```
 rp_id_len (u8, 1…255) ‖ rp_id (UTF-8)
 ‖ credential_id_len (u16, 1…1023) ‖ credential_id
 ‖ prf_input[32]
 ‖ options (u8): Bit 0 = PIN-Prüfung erforderlich (muss gesetzt sein), andere Bits 0
-‖ public_key[32] ‖ ephemeral[32]        (nur Typ 4)
+‖ public_key[32] ‖ ephemeral[32]
 ‖ nonce[24] ‖ wrapped_S[48]
 ```
 
@@ -129,16 +125,16 @@ verpacken, ohne dass er dafür berührt werden muss (Abschnitt 4.6).
 ohne Passwort, Security Key oder Schlüsseldatei. In GhulSuite trägt **jede Datei** eines Ordners einen solchen Slot
 für **denselben** Code; der Code öffnet also jede Datei auch einzeln.
 
-**Typ 3, Schlüsseldatei:** Die Schlüsseldatei ist ein gleichwertiger zweiter Faktor anstelle eines Security Keys.
+**Typ 5, Schlüsseldatei:** Die Schlüsseldatei ist ein gleichwertiger zweiter Faktor anstelle eines Security Keys.
 `keyfile_id` (Abschnitt 7) sagt nur, welche Datei gemeint ist.
 
 Regeln:
 - `slot_id` ist innerhalb des Containers eindeutig.
-- Mindestens ein Slot vom Typ 1, 3, 4 oder 5 muss vorhanden sein: Ein zweiter Faktor ist **immer** Pflicht.
-- Slots vom Typ 1, 3, 4 und 5 dürfen beliebig gemischt werden. Jeder davon öffnet dasselbe `S`; Hinzufügen eines Slots
+- Mindestens ein Slot vom Typ 4 oder 5 muss vorhanden sein: Ein zweiter Faktor ist **immer** Pflicht.
+- Slots vom Typ 4 und 5 dürfen beliebig gemischt werden. Jeder davon öffnet dasselbe `S`; Hinzufügen eines Slots
   ändert nichts an den anderen, Entfernen erneuert `S` für die übrigen (Abschnitt 4.6).
 - Bezeichnungen der Slots („Key zu Hause“) stehen **nicht** im Header, sondern verschlüsselt im Inhalt (Abschnitt 5).
-- Alle Container einer Suite tragen **identische** Slots vom Typ 1, 3, 4 und 5. So öffnet eine Key-Berührung (oder eine
+- Alle Container einer Suite tragen **identische** Slots vom Typ 4 und 5. So öffnet eine Key-Berührung (oder eine
   Schlüsseldatei) alle Container.
 
 ## 4. Kryptografie
@@ -165,13 +161,11 @@ Leere Passwörter sind unzulässig.
 
 ### 4.2 Zweiter Faktor → Faktor-Geheimnis `S`
 
-**FIDO2-Slot (Typ 1, nur noch gelesen; `hmac_salt` und `hmac_output` gelten auch für Typ 4):**
+**FIDO2-Slot (Typ 4):**
 
 ```
 hmac_salt   = SHA-256("WebAuthn PRF" ‖ 0x00 ‖ prf_input)       (wie WebAuthn-PRF, auch im Browser nutzbar)
 hmac_output = hmac-secret(credential_id, rp_id, hmac_salt) mit PIN-Prüfung (UV), erste 32 Byte
-slot_key    = HKDF(hmac_output, "ghul/v1/slot/fido2" ‖ slot_id)
-S           = AEAD-Decrypt(slot_key, nonce, wrapped_S, aad = "ghul/v1/factor" ‖ suite_id ‖ slot_id)
 ```
 
 **Typ 4 und 5 (X25519):**
@@ -191,13 +185,6 @@ Zum Verpacken erzeugt die App einen zufälligen Schlüssel `e`, setzt `ephemeral
 
 `hmac-secret` liefert mit und ohne PIN-Prüfung verschiedene Werte; GhulSuite verwendet immer den Wert **mit** PIN-Prüfung.
 Die RP-ID ist `ghulsuite.invalid` (reservierte Endung nach RFC 6761, damit keine Webseite das Credential ansprechen kann).
-
-**Schlüsseldatei-Slot (Typ 3, nur noch gelesen):**
-
-```
-slot_key = HKDF(keyfile.secret, "ghul/v1/slot/keyfile" ‖ slot_id)
-S        = AEAD-Decrypt(slot_key, nonce, wrapped_S, aad = "ghul/v1/factor" ‖ suite_id ‖ slot_id)
-```
 
 Passt die `keyfile_id` keines Slots, wird die Datei mit klarer Meldung abgelehnt.
 
@@ -251,15 +238,37 @@ wird, gilt:
 |---|---|---|
 | Neuer Wiederherstellungscode | ja | nein |
 | Passwort ändern (auch nach Wiederherstellung mit dem Code) | ja | nein |
-| Key oder Schlüsseldatei entfernen | ja | ja, für alle übrigen Slots (nur Typ 4 und 5) |
+| Key oder Schlüsseldatei entfernen | ja | ja, für alle übrigen Slots |
 
 - Neuer `VMK`: 32 Byte Zufall, mit dem `KEK` verpackt; der Wiederherstellungs-Slot wird für den neuen `VMK` neu angelegt.
 - Neues `S`: 32 Byte Zufall, für jeden übrigen Slot mit dessen `public_key` neu verpackt (neues `ephemeral`, gleiche
   `slot_id`). Alle Dateien der Suite bekommen dieselben neuen Slots.
-- Solange noch ein Slot vom Typ 1 oder 3 übrig ist, kann `S` nicht erneuert werden (dafür bräuchte die App diesen
-  Key). Dann wird nur der `VMK` erneuert; die App zeigt den Slot als „einmal damit entsperren“ an, und die nächste
-  Schutzänderung erneuert auch `S`.
-- Wer eine alte Kopie öffnen kann, kennt danach das alte `S`. Ohne das aktuelle Passwort öffnet das nichts.
+- Wer eine alte Kopie öffnen kann, kennt danach das alte `S`. Ohne das aktuelle Passwort öffnet das nichts, und ohne
+  das Passwort entsteht auch keine Datei, die ein Gerät annimmt (Abschnitt 4.7).
+
+### 4.7 Schreibsiegel
+
+Der Wiederherstellungscode öffnet den `VMK` allein (Lesen ohne Passwort ist gewollt). Wer aber einen alten Code und
+eine alte Kopie hat, kennt damit den alten `VMK` und `S`: Ohne Siegel könnte er eine Datei bauen, die mit dem aktuellen
+Passwort und `S` aufgeht (der alte `VMK`-Eintrag passt noch, wenn sich nur der Code geändert hat), und darin eigene
+Keys, Einstellungen oder Einträge unterbringen. Darum endet jede Datei mit einem Siegel, das nur mit dem Passwort
+entsteht:
+
+```
+AK   = HKDF(PK ‖ S, "ghul/v3/auth" ‖ container_id)       (S der Datei, also das S in ihrem Inhalt)
+auth = HMAC-SHA256(AK, alle Bytes vor auth)
+```
+
+- **Öffnen mit Passwort und `S`:** erst `VMK` entpacken (sonst „falsches Passwort“), dann das Siegel prüfen (sonst
+  „verändert“, nie „falsches Passwort“), erst danach den Inhalt entschlüsseln.
+- **Öffnen mit dem Code:** liefert `S` aus dem Inhalt; das Siegel lässt sich ohne Passwort nicht prüfen. Das ist die
+  Notfall-Ausnahme: Es wird nur gelesen, danach schreibt die App alles mit dem neuen Passwort neu.
+- **Schreiben:** nur ein Container mit Passwort-Schlüssel wird versiegelt, und nur wenn sein `VMK`-Eintrag zu
+  `PK` und `S` passt.
+- Eine Datei, die mit Passwort und `S` aufgeht und deren Inhalt sich entschlüsseln lässt, deren Siegel aber nicht
+  stimmt, gilt als verändert (Fehler `Tampered`) und wird nicht verwendet. Lässt sich auch der Inhalt nicht
+  entschlüsseln, ist die Datei nur beschädigt.
+- Der Inhalt der Suite-Datei, den auch der Code öffnet, enthält keinen Passwort-Schlüssel und keinen früheren Code.
 
 ---
 
@@ -378,7 +387,7 @@ check = SHA-256(Bytes 0 … 41)[0..4]
 ```
 
 ```
-KEYFILE_ID = SHA-256("ghul/v1/keyfile-id" ‖ secret)[0..8]     (steht im Slot vom Typ 3)
+KEYFILE_ID = SHA-256("ghul/v1/keyfile-id" ‖ secret)[0..8]     (steht im Slot vom Typ 5)
 ```
 
 `secret` verpackt `S` wie in Abschnitt 4.2 beschrieben. Wer die Datei hat, hat damit einen zweiten Faktor, aber ohne
@@ -411,7 +420,7 @@ verrät sie nichts Verwertbares.
 | Wiederherstellung über den Container-Schlüssel | Hilft auch bei vergessenem Passwort; übersteht Passwortwechsel, weil `VMK` dabei gleich bleibt |
 | Zweiter Faktor immer Pflicht, Schlüsseldatei als eigener Slot-Typ | Einheitlicher Schutz; Schlüsseldatei und Key sind austauschbar, ohne dass etwas neu verschlüsselt oder ein Code ungültig wird |
 | Slot-Bezeichnungen verschlüsselt | Der Header verrät nicht, welche Keys es gibt oder wo sie liegen |
-| Öffentlicher Schlüssel je Key (Version 2) | Ein neues `S` nach dem Entfernen eines Keys erreicht alle übrigen Keys, ohne dass jemand sie holen und berühren muss |
+| Öffentlicher Schlüssel je Key | Ein neues `S` nach dem Entfernen eines Keys erreicht alle übrigen Keys, ohne dass jemand sie holen und berühren muss |
 | Erneuern bei jeder Schutzänderung | Ein verlorenes Notfallblatt oder ein entfernter Key wird zusammen mit einer alten Sicherung nicht zum Generalschlüssel |
 | Dateinamen ohne Tresornamen | Server und Sicherungen verraten nicht, welche Tresore es gibt |
 | Auffüllen auf Zweierpotenzen | Die Dateigröße verrät nur grob die Datenmenge |

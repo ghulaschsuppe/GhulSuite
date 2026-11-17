@@ -112,6 +112,51 @@ fn sftp_folders_created_at_once_from_several_connections() {
     }
 }
 
+/// H3: replacing a file over SFTP never leaves it missing. OpenSSH replaces in one step
+/// (posix-rename); without that, a write that stopped between removing the old file and renaming
+/// the new one is still read (and put in place by the next write).
+#[test]
+fn sftp_replacing_a_file_never_loses_it() {
+    let Some(cfg) = sftp_test_config("sftp-replace") else { return };
+    let fs = SftpFs::connect(&cfg).unwrap();
+    assert!(fs.replaces_atomically(), "OpenSSH offers posix-rename");
+    fs.write("drive/index.ghldrv", b"A").unwrap();
+    fs.write("drive/index.ghldrv", b"B").unwrap();
+    assert_eq!(fs.read("drive/index.ghldrv").unwrap().unwrap(), b"B");
+    // The answer to the one-step replace is lost: done all the same, nothing removed.
+    fs.write("drive/lost-answer", b"old").unwrap();
+    fs.write("drive/lost-answer", b"new").unwrap();
+    assert_eq!(fs.read("drive/lost-answer").unwrap().unwrap(), b"new");
+    fs.delete("drive/lost-answer").unwrap();
+    // The second channel was closed by the server: opened again, the write goes through.
+    fs.write("drive/channel-gone", b"old").unwrap();
+    fs.write("drive/channel-gone", b"new").unwrap();
+    assert_eq!(fs.read("drive/channel-gone").unwrap().unwrap(), b"new");
+    fs.delete("drive/channel-gone").unwrap();
+    // A write without posix-rename that stopped after removing the old file: only the
+    // finished ".ghltmp" is there.
+    fs.delete("drive/index.ghldrv").unwrap();
+    fs.write("drive/index.ghldrv.ghltmp", b"C").unwrap();
+    // With one-step replacing that is an unfinished first write, never read as the content.
+    assert_eq!(fs.read("drive/index.ghldrv").unwrap(), None);
+    // A server without posix-rename reads it; the next write puts it in place first, then replaces it.
+    super::sftp::NO_POSIX_RENAME.store(true, std::sync::atomic::Ordering::SeqCst);
+    let plain = SftpFs::connect(&cfg);
+    super::sftp::NO_POSIX_RENAME.store(false, std::sync::atomic::Ordering::SeqCst);
+    let plain = plain.unwrap();
+    assert!(!plain.replaces_atomically());
+    assert_eq!(plain.read("drive/index.ghldrv").unwrap().unwrap(), b"C", "the finished new content is read");
+    plain.write("drive/index.ghldrv", b"D").unwrap();
+    assert_eq!(plain.read("drive/index.ghldrv").unwrap().unwrap(), b"D");
+    let names: Vec<String> = plain.list("drive").unwrap().into_iter().map(|e| e.name).collect();
+    assert_eq!(names, vec!["index.ghldrv"], "nothing left behind");
+    // Deleting takes the waiting replacement too: the file does not come back.
+    plain.write("drive/gone.ghltmp", b"E").unwrap();
+    assert_eq!(plain.read("drive/gone").unwrap().unwrap(), b"E");
+    plain.delete("drive/gone").unwrap();
+    assert_eq!(plain.read("drive/gone").unwrap(), None, "deleted stays deleted");
+}
+
 #[test]
 fn sftp_against_openssh() {
     let Some(mut cfg) = sftp_test_config("sftp-basic") else { return };

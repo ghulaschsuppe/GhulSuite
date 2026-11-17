@@ -421,6 +421,8 @@ enum class VaultErrorKind {
     INVALID_RECOVERY_CODE,
     LOCKED,
     CORRUPTED,
+    /** A file opens with the password, but its seal is wrong: it was changed without the password. */
+    TAMPERED,
     STORAGE,
     INVALID_INPUT,
     NETWORK,

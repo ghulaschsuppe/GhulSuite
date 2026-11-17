@@ -481,10 +481,15 @@ fn the_folder_is_the_suite() {
     one.unlock_with_recovery_code(code.clone(), "ganz-neu-123".into()).unwrap();
     assert_eq!(one.list_entries(VaultKind::Pass, None).unwrap()[0].title, "A");
 
-    // A damaged settings file is reported.
-    let mut suite = st.read("suite.ghlsuite".into()).unwrap().unwrap();
+    // A damaged settings file is reported: its seal (the last bytes) or its content.
+    let good = st.read("suite.ghlsuite".into()).unwrap().unwrap();
+    let mut suite = good.clone();
     let n = suite.len();
     suite[n - 1] ^= 1;
+    st.write("suite.ghlsuite".into(), suite).unwrap();
+    assert!(matches!(s.unlock("pw-123456".into(), None, None, None, Some(kf.clone())), Err(GhulError::Tampered)));
+    let mut suite = good;
+    suite[n - 40] ^= 1;
     st.write("suite.ghlsuite".into(), suite).unwrap();
     assert!(matches!(s.unlock("pw-123456".into(), None, None, None, Some(kf)), Err(GhulError::Corrupted { .. })));
 }

@@ -72,6 +72,11 @@ pub enum GhulError {
     CertUntrusted { fingerprint: String },
     #[error("the server rejected the login")]
     ServerAuthFailed,
+    /// A file opens with the password and the second factor, but its write seal is wrong: it was
+    /// made or changed by someone without the password (e.g. from an old copy and an old
+    /// recovery code). It is not used.
+    #[error("the file was changed without the password")]
+    Tampered,
     /// B3: the Drive index on the server is older than the one this suite saw last (server
     /// reset or an old copy put back). Nothing is written; `drive_accept_server_state` takes it.
     #[error("the GhulDrive index on the server is older than the one seen last")]
@@ -133,6 +138,7 @@ impl From<VaultError> for GhulError {
             VaultError::InvalidInput(msg) => GhulError::InvalidInput { msg },
             VaultError::LastSlot => GhulError::LastFactor,
             VaultError::NewerKind => GhulError::UpdateRequired,
+            VaultError::Tampered => GhulError::Tampered,
             VaultError::UnsupportedVersion(v) if v > crate::vault::format::FORMAT_VERSION => GhulError::UpdateRequired,
             other => GhulError::Corrupted { msg: other.to_string() },
         }
