@@ -87,7 +87,7 @@ Nach Bereich zusammengefasst; die Nummern führen ins [Testprotokoll](TESTPROTOK
 | **Freigaben ohne Kopie** (Runde 9) | Einmal-Links durch Link-Scanner verbraucht, Blockliste des Servers ungeprüft, beschädigter Zähler als „nie geöffnet“ gelesen, Ticket-Flut verdrängte laufende Downloads, fehlende Prüfung von Schreibrecht und Web-Erreichbarkeit des GhulSuite-Ordners, verwaiste oder gelöschte Blöcke bei unlesbarer Freigabenliste | F110 bis F113, F115 |
 | **Mail-Archiv** (Runde 9) | Gefälschte Message-ID verhinderte das Archivieren der echten Mail, Richtungsmarken im Dateinamen | F114 |
 | **Android-Teilen und Anhänge** (Audit 0.5.0) | Dateinamen wie `..`, Anhänge beliebiger Größe | A6, A7 |
-| **Sync, Runde 5** (**obsolet** bis auf F42: Die Argon2-Grenzen gelten weiter für jede Datei) | Ein entfernter Key kommt nie per Sync zurück (Löschmarken je Key). Geänderte Server- und Kontodaten erreichen andere Geräte. Gelöscht auf A, geändert auf B: feste Regel, eine nie gesehene Änderung bleibt. Konfliktkopien fremder Sync-Programme werden zusammengeführt. Ein Server kann keine übermäßig teuren Argon2-Werte erzwingen | B2, B11, B13, B18, F42 |
+| **Sync, Runde 5** (**obsolet**, Synchronisation und „Passwort anderswo geändert“ entfernt; die Grenzen für Argon2-Werte aus Dateien gelten weiter, siehe Abschnitt 5) | Ein entfernter Key kommt nie per Sync zurück (Löschmarken je Key). Geänderte Server- und Kontodaten erreichen andere Geräte. Gelöscht auf A, geändert auf B: feste Regel, eine nie gesehene Änderung bleibt. Konfliktkopien fremder Sync-Programme werden zusammengeführt. Ein Server kann keine übermäßig teuren Argon2-Werte erzwingen | B2, B11, B13, B18, F42 |
 | **Drive** | Ein zurückgesetzter Index auf dem Server wird abgelehnt (nichts verschwindet); zwei Geräte, die gleichzeitig ändern, verlieren nichts. Seit dem Umbau unter `index.lock` (exklusiv angelegt, verwaist nach zwei Minuten), mit `index.bak` bei beschädigtem Index und automatischem Aufräumen | B3 |
 | **Umbau ohne Synchronisation** (17.11.2026) | Ungeprüfte Ladewege (Sicherung, „Von meinem Server holen“, Übernahme fremder Dateien aus dem Ordner) ersetzt durch die geprüfte `.ghlzip`; Schreibsiegel gegen untergeschobene Dateien mit altem Code; ältere, abgezweigte und fremde Suite-Dateien nur nach Rückfrage, ein älterer Schutz gar nicht; Gerätedaten des alten Stands (Schnell-Entsperren, Mail-Zwischenspeicher, Drive-Offline-Kopien, unfertige Uploads) werden beim Öffnen gelöscht; alte Suite-Dateien kommen nach dem Schlüsselwechsel nicht mehr an GhulDrive und die Server; kein Server-Passwort mehr in der Suite | Umbau, Pakete 2 bis 7 |
 | **Android** | Benachrichtigungen, die bei gesperrtem Gerät eintreffen, enthalten nur ihre Sperrbildschirm-Fassung (Android lässt Apps die Kanal-Einstellung nicht vorgeben, daher entscheidet die App beim Eintreffen); Mail-Zugang für Benachrichtigungen bevorzugt in StrongBox, wahlweise löscht ihn die Sofortsperre; `.ics` von fremden Apps nur nach Vorschau; interne Aktionen nur aus eigenen Benachrichtigungen; Auto-Sperre zählt die echte Zeit; Autofill fragt vor dem Verknüpfen; kein Tippen durch darübergelegte Fenster | B4 bis B9, L10, F43 |
@@ -99,8 +99,10 @@ Nach Bereich zusammengefasst; die Nummern führen ins [Testprotokoll](TESTPROTOK
 
 ## 4. Offen
 
-Aus den Testrunden und Audits ist **nichts mehr offen**. Was bleibt, sind zwei bewusste Entscheidungen und die
-Grenzen, die keine App lösen kann (4.3). Nichts davon gibt einem Angreifer ohne Passwort **und** zweiten Faktor
+Aus den Testrunden und Audits bis 16.11.2026 ist **nichts mehr offen**. Die Punkte der letzten Durchsichten, die
+nicht mit der Synchronisation entfallen sind, werden nach dem Umbau neu gesichtet (Paket 9 in
+[`UMBAU-OHNE-SYNC.md`](UMBAU-OHNE-SYNC.md)). Was sonst bleibt, sind zwei bewusste Entscheidungen und die Grenzen,
+die keine App lösen kann (4.3). Nichts davon gibt einem Angreifer ohne Passwort **und** zweiten Faktor
 Zugriff auf Tresorinhalte.
 
 ### 4.1 Bewusst entschieden
@@ -135,6 +137,10 @@ Zugriff auf Tresorinhalte.
 |---|---|
 | L2 | Kein unabhängiger Audit: Eigene Tests finden nur, woran man denkt |
 | L6 | Der Server sieht Anzahl, Größe und Änderungszeit der Dateien und die IP-Adresse |
+| - | Verliert der Server Daten (Hoster setzt zurück, Datenträger kaputt), merkt die App es (Revision, fehlende Blöcke), retten kann sie es nicht. Dagegen hilft nur eine Sicherung beim Hoster von **nach** der letzten Schutzänderung; ältere sind mit einem Drive-Schlüssel verschlüsselt, den die Suite nicht mehr hat |
+| - | Wer den Stick hat, kann die Suite-Datei löschen oder durch eine ältere ersetzen. Die App erkennt das beim Öffnen, gegen den Verlust helfen nur Kopien an einem zweiten Ort |
+| - | Das Schreibsiegel beweist, wer eine Datei geschrieben hat, nicht dass sie aktuell ist. Ein Gerät, das den neueren Stand nie gesehen hat, öffnet auch eine ältere Datei (ohne Rückfrage, es kennt nichts Neueres); nach dem Schlüsselwechsel kommt sie aber nicht mehr an den Server |
+| - | Ein Hoster, der SSH-Schlüssel nur im Webpanel verwaltet: Den Tausch nach einer Schutzänderung macht der Nutzer dort selbst, die App prüft ihn. Bis dahin funktioniert auf diesem Server auch der alte Schlüssel |
 | L8 | Geheimnisse im Arbeitsspeicher der Oberfläche (Kotlin-Zeichenketten lassen sich nicht sicher löschen), Auslagerungsdatei und Ruhezustand unter Windows. Nur der Rust-Kern löscht sicher; Geräteverschlüsselung nutzen |
 | L9 | Schadsoftware mit Root, fremde Tastatur-Apps, Bedienungshilfen-Dienste |
 | L11 | Zertifikats-Widerruf wird nicht geprüft (wie bei den meisten Apps; mit festem Fingerabdruck ohne Belang) |
@@ -161,16 +167,29 @@ Geräte oder einen bezahlten Gerätedienst; bis dahin deckt der Testplan die Her
 
 - **Dateiformat:** strenge Prüfung aller Längen, Versionen und Arten; Header als AAD (jede Änderung macht die Datei
   unbrauchbar); Argon2id-Grenzen gegen geschwächte Werte; neuere Dateien werden als „bitte aktualisieren“ erkannt.
-  Testvektoren für beide Formatversionen, unabhängig nachgerechnet in Python mit anderen Krypto-Bibliotheken.
+  Formatversion 3: Schreibsiegel (HMAC-SHA256 mit einem Schlüssel aus Passwort-Schlüssel und `S`) über jede Datei;
+  ein falsches Siegel heißt „verändert“, nie „falsches Passwort“. Ältere Formatversionen werden nicht mehr gelesen.
+  Testvektoren für Version 3, unabhängig nachgerechnet in Python mit anderen Krypto-Bibliotheken.
+- **Suite-Datei (`.ghlzip`):** nur genau die erwarteten Einträge (keine Ordner, keine doppelten oder zusätzlichen),
+  Größen beim Lesen gezählt; jede Datei in der versiegelten Kopfdatei mit Art, `container_id` und SHA-256; alles
+  gehört zu derselben Suite; geprüft wird alles, bevor etwas ersetzt wird. Getestet mit fehlenden, vertauschten,
+  alten, fremden und abgezweigten Teilen, falschem Siegel, Code ohne Passwort und ZIP-Tricks.
 - **Kryptografie:** XChaCha20-Poly1305, HKDF-SHA256, Argon2id, X25519; alle Bausteine bestehen die Wycheproof-Fälle.
   Frische Nonces bei jedem Schreiben, Geheimnisse werden im Kern genullt, Vergleiche in konstanter Zeit.
 - **FIDO2:** nur mit PIN-Prüfung, eigene RP-ID, die keine Webseite ansprechen kann.
 - **Schnell-Entsperren:** Android-Keystore, Fingerabdruck „stark“, ungültig bei neuem Fingerabdruck, Fehlversuche
   begrenzt, an den Neustart gebunden; Sofortsperre löscht es.
-- **Dateien:** kein Klartext auf Gerät, Server, in Sicherung oder Export (gesucht auch als UTF-16, Hex, Base64),
-  auch nicht in Datei- und ZIP-Namen. Gestohlene Dateien öffnen sich nur mit beiden Faktoren.
+- **Dateien:** kein Klartext auf Gerät, Server, in der Suite-Datei oder im Export (gesucht auch als UTF-16, Hex,
+  Base64), auch nicht in Datei- und ZIP-Namen. Gestohlene Dateien öffnen sich nur mit beiden Faktoren.
 - **Drive:** gekippte Bits, vertauschte oder gelöschte Blöcke, gefälschter Index: immer eine Fehlermeldung, nie
-  falsche Daten.
+  falsche Daten. Index an die Suite gebunden; älterer, beschädigter oder fehlender Index wird nicht still übernommen;
+  Änderungen nur unter `index.lock`, auch mit zwei Geräten gleichzeitig ohne Verlust. Schlüsselwechsel fortsetzbar
+  nach Abbruch an jeder Stelle; danach öffnet ein Index unter dem alten Schlüssel nicht mehr. Unfertige Uploads auf
+  dem Gerät mit eigenem Geräteschlüssel versiegelt.
+- **Schlüsselwechsel am Server:** Der neue SSH-Schlüssel wird nur übernommen, wenn er sich anmeldet; aus
+  `~/.ssh/authorized_keys` werden nur die Zeilen der früheren Schlüssel entfernt (alle anderen bleiben Byte für
+  Byte); danach wird geprüft, dass der neue weiter funktioniert und der alte abgewiesen wird. Nur eine abgewiesene
+  Anmeldung zählt, ein Verbindungsabbruch heißt „später wieder versuchen“.
 - **Mail-Archiv (seit 0.7.0):** Kopien als `.eml` in GhulDrive, also mit dessen Schutz (Dateischlüssel, verschlüsselte
   Namen); beim Anbieter ändert das Archivieren nichts und löscht nichts. Doppelte werden am Code der Message-ID
   erkannt; Dateinamen ohne Pfad-, Steuer- und Richtungszeichen.
@@ -179,12 +198,14 @@ Geräte oder einen bezahlten Gerätedienst; bis dahin deckt der Testplan die Her
   Nonces, Abschneiden und Vertauschen werden erkannt; optional Passwort (PBKDF2, 600 000 Runden). Empfängerseite mit
   strenger CSP, ohne fremde Inhalte, ohne Referrer.
 - **PHP-Modul (seit 0.7.0 nur für Freigabelinks):** kein Geheimnis, kein Schreibzugriff übers Web, nur `GET`. Es
-  liest die Beschreibungen, die die App über SFTP/FTPS ablegt, und gibt nur deren Blöcke heraus, nur mit einem
+  liest die Beschreibungen, die die App über SFTP ablegt, und gibt nur deren Blöcke heraus, nur mit einem
   Ticket (24 Stunden, gehasht gespeichert); Kennungen und Nummern nur in genau ihrer Form, keine Pfade aus Eingaben;
   Ablauf und Einmal-Links unter Dateisperre; keine Fehlerdetails. 64 gezielte Angriffe, PHPStan im Nachtlauf,
   PHP-8.1-Syntax in der CI.
-- **Netz:** SFTP mit festem Host-Schlüssel (Host-Zertifikate abgelehnt), TLS mit webpki oder bestätigtem
-  Fingerabdruck, `http://` nur für `localhost`, FTPS nur mit TLS und `PROT P`, kein „FTP bounce“.
+- **Netz:** SFTP mit festem Host-Schlüssel (Host-Zertifikate abgelehnt), Anmeldung nur mit dem SSH-Schlüssel der
+  Suite (ein Passwort nur einmal zum Eintragen des Schlüssels, nie gespeichert), TLS mit webpki oder bestätigtem
+  Fingerabdruck, `http://` nur für `localhost`. (FTPS mit `PROT P` und Schutz gegen „FTP bounce“ war geprüft und ist
+  **obsolet**, FTP/FTPS ist entfernt.)
 - **OpenPGP (rPGP 0.21):** eigene Schlüssel Ed25519/X25519 mit SHA-512/256 und AES-256; gegen GnuPG 2.4 in beide
   Richtungen getestet; PGP/MIME byte-genau; Betreff geschützt; Anhänge nur innerhalb der Verschlüsselung.
 - **Android:** keine Backups, FileProvider und interne Dienste nicht exportiert, PendingIntents unveränderlich,
@@ -205,15 +226,21 @@ Geräte oder einen bezahlten Gerätedienst; bis dahin deckt der Testplan die Her
 
 ## 7. Hinweise für Nutzer
 
-- **Key oder Notfallblatt verloren:** Key entfernen bzw. neues Notfallblatt erstellen. Danach öffnet das Verlorene
-  nichts mehr, was gespeichert wird. Alte Sicherungen zeigen weiter den Stand von damals, auch die Zugänge von damals:
-  Mail- und Server-Passwörter beim Anbieter wechseln (die App erinnert unter Optionen → Sicherheit daran).
+- **Key oder Notfallblatt verloren:** Key entfernen bzw. neues Notfallblatt erstellen, dann die Suite-Datei speichern
+  (die App fordert dazu auf) und ältere Kopien ersetzen. Danach öffnet das Verlorene nichts mehr, was gespeichert wird,
+  und der Schlüsselwechsel sperrt alte Kopien von GhulDrive und den Servern aus. Alte Kopien zeigen weiter den Stand
+  von damals, auch die Mail-Zugänge von damals: Mail-Passwörter beim Anbieter wechseln (die App erinnert unter
+  Optionen → Sicherheit daran).
+- **Nach einer Schutzänderung:** Bis der Schlüsselwechsel auf allen Servern durch ist, zeigt die App, welche Server
+  noch warten. Wo der Hoster SSH-Schlüssel im Webpanel verwaltet, den neuen dort eintragen und den alten entfernen.
+  Andere Geräte öffnen zuerst die neue Suite-Datei.
 - **Freigabelinks:** Wer den Link hat, kann die Datei öffnen. Für Sensibles ein Passwort setzen und getrennt
   mitteilen. Ein Einmal-Link gilt als verbraucht, sobald der Abruf beginnt.
 - **Webserver ohne `.htaccess`** (z. B. nginx): Dort schützt nur der zufällige Name den Datenordner bzw. die
   zufällige ID das Paket; Inhalte bleiben verschlüsselt.
-- **Speicherort:** Der App-Speicher ist für die meisten am sichersten. Einen eigenen Ordner (Optionen → Tresore →
-  „Speicherort wechseln“) brauchst du nur, wenn du die Dateien selbst sichern oder mit einem eigenen Programm abgleichen
-  willst. Dateien in einem gemeinsamen Ordner können andere Apps sehen, aber nicht öffnen.
+- **Suite-Datei:** Die Arbeitskopie liegt im App-Speicher. Die Suite-Datei (`.ghlzip`) liegt, wo du sie speicherst;
+  andere Apps und wer den Stick hat, können sie sehen, kopieren oder löschen, aber nicht öffnen. Bewahre eine Kopie an
+  einem zweiten Ort auf. **GhulDrive und Freigabelinks** brauchen einen Server mit SSH-Zugang (SFTP); reiner
+  FTP-Webspace reicht nicht.
 - **Windows portable:** nur auf eigenen Geräten entsperren; auf einem fremden PC kann ein Keylogger mitlesen.
-- GhulSuite ist eine **Entwicklungsversion**: mit regelmäßiger Sicherung nutzen.
+- GhulSuite ist eine **Entwicklungsversion**: die Suite-Datei regelmäßig speichern und eine Kopie aufbewahren.

@@ -1,5 +1,9 @@
 # Testprotokoll und Fehlerbericht
 
+> **Hinweis (17.11.2026):** Dieses Protokoll stammt aus der Zeit **vor dem Umbau ohne Synchronisation** und bleibt als
+> Geschichte unverändert. Damals gab es noch Synchronisation, FTPS sowie Sicherung und Wiederherstellung; Funde dazu
+> sind seitdem obsolet. Den aktuellen Stand beschreiben [`UMBAU-OHNE-SYNC.md`](UMBAU-OHNE-SYNC.md) und [`AUDIT.md`](AUDIT.md).
+
 Stand: 14. November 2026 (vierte Runde: B1 Schlüssel bei jeder Schutzänderung erneuern, F23 neutrale Dateinamen, Geräte lange offline) · Branch `feat/rekey-neutral-names` · Zusammenfassung aller Audits: Sicherheitsbericht (`docs/AUDIT.md`); Testkonzept: `docs/TESTKONZEPT.md`.
 
 Dieses Protokoll ist die Arbeitsliste für die nächsten Durchgänge: Jeder Fund hat eine Nummer, eine Schwere, den Test, der ihn zeigt, und, wenn behoben, den Commit. Offene Punkte haben einen Vorschlag, wie sie behoben werden, und den Test, der danach grün werden muss.

@@ -1,8 +1,11 @@
 # GhulSuite: Testplan Windows (Version 0.5.0-dev)
 
-**Stand:** 15.11.2026 · erste Windows-Version (neu: Abschnitt 13, Aufgaben im Hintergrund und Mail-Archiv; Abschnitt 11, Assistent und Bereiche), mit neuem Design. Oberfläche und Kern sind dieselben wie unter Android; dieser Plan prüft,
-was unter Windows anders ist (Installation, portabler Betrieb, Security Key über Windows, Sperre, Zwischenablage,
-Bildschirmschutz) und dass Android und Windows dieselbe Suite gemeinsam nutzen können. Den Android-Plan gibt es
+**Stand:** 17.11.2026 · **neu: Umbau ohne Synchronisation** ([`UMBAU-OHNE-SYNC.md`](UMBAU-OHNE-SYNC.md)): Die Suite
+wandert als eine Datei (`.ghlzip`) zwischen Android und Windows, z. B. auf dem USB-Stick (Abschnitt 6); Server nur per
+SFTP (Abschnitt 7); Schlüsselwechsel nach einer Schutzänderung. Tests zu Synchronisation, FTPS, Sicherung und
+„Speicherort wählen“ sind entfallen. Oberfläche und Kern sind dieselben wie unter Android; dieser Plan prüft, was
+unter Windows anders ist (Installation, portabler Betrieb, Security Key über Windows, Sperre, Zwischenablage,
+Bildschirmschutz, Dateipfade) und dass Android und Windows dieselbe Suite-Datei gemeinsam nutzen können. Den Android-Plan gibt es
 getrennt: [`TESTPLAN.md`](TESTPLAN.md).
 
 Jeder Test hat eine Nummer, die mit **W** beginnt (z. B. **WE3**), damit sie sich nicht mit Android-Tests vermischt.
@@ -15,7 +18,7 @@ Jeder Test hat eine Nummer, die mit **W** beginnt (z. B. **WE3**), damit sie sic
 |---|---|
 | WV1 | Windows 10 (ab 22H2) oder Windows 11, 64 Bit. |
 | WV2 | Download-Seite auf dem Testserver (Ordner `ghulsuite/download/`) öffnen oder das Artefakt „ghulsuite-windows-dev“ im Actions-Tab herunterladen. |
-| WV3 | Security Key mit PIN (z. B. YubiKey), ein USB-Stick, das Android-Handy mit GhulSuite (für die Abschnitte 7 und 8). |
+| WV3 | Security Key mit PIN (z. B. YubiKey), ein USB-Stick, das Android-Handy mit GhulSuite (für die Abschnitte 6 bis 8), ein Server mit SSH/SFTP (für Abschnitt 7). |
 | WV4 | Wichtig: Entwicklerversion, nicht signiert. **Keine echten Passwörter speichern.** |
 
 ## 1. Installation und portabler Betrieb
@@ -26,23 +29,23 @@ Jeder Test hat eine Nummer, die mit **W** beginnt (z. B. **WE3**), damit sie sic
 | WI2 | Startmenü → GhulSuite. | Fenster „GhulSuite“ mit lila Schild-Symbol, deutsche Oberfläche, Willkommensseite. |
 | WI3 | Prüfsumme: PowerShell `Get-FileHash ghulsuite-dev.msi` und mit `ghulsuite-dev.msi.sha256` vergleichen. | Stimmt überein. |
 | WI4 | „Portable Version (ZIP)“ auf den USB-Stick entpacken, dort `GhulSuite\GhulSuite.exe` starten. | Startet ohne Installation. Optionen → Über GhulSuite zeigt „0.5.0-dev (portabel)“. |
-| WI5 | Portabel eine Suite einrichten (Abschnitt 2), dann den Stick ansehen. | Neben dem Programm entsteht `GhulSuite-Daten` mit der Suite. In `%APPDATA%\GhulSuite` entsteht **nichts**. |
-| WI6 | Stick an einem anderen Windows-PC einstecken und starten. | Dieselbe Suite, Entsperren klappt. |
+| WI5 | Portabel eine Suite einrichten (Abschnitt 2), dann den Stick ansehen. | Neben dem Programm entsteht `GhulSuite-Daten` mit der Arbeitskopie der Suite. In `%APPDATA%\GhulSuite` entsteht **nichts**. |
+| WI6 | Stick an einem anderen Windows-PC einstecken und starten. | Dieselbe Suite (die Arbeitskopie reist im Ordner `GhulSuite-Daten` mit), Entsperren klappt. |
 | WI7 | Installierte Version: Optionen → Apps → GhulSuite deinstallieren. | Programm weg; die Daten in `%APPDATA%\GhulSuite` bleiben (bewusst). |
 
 ## 2. Einrichtung und Entsperren
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| WE1 | „Neu einrichten“ → „Security Key (empfohlen)“ → Passwort → Tresore → „Einrichten“. | Statt eines PIN-Felds der Hinweis, dass Windows nach PIN und Berührung fragt. |
-| WE2 | Key einstecken, weiter. | Windows-Sicherheitsfenster: PIN eingeben, Key berühren, **zweimal** (Registrieren und Schlüssel ableiten). Danach Wiederherstellungscode. |
+| WE1 | „Neu einrichten“ → Passwort → „Security Key (empfohlen)“ → Schritt 3 · Anlegen. | Statt eines PIN-Felds der Hinweis, dass Windows nach PIN und Berührung fragt. |
+| WE2 | Key einstecken, „Anlegen“, die übrigen Schritte durchgehen. | Windows-Sicherheitsfenster: PIN eingeben, Key berühren, **zweimal** (Registrieren und Schlüssel ableiten). Am Ende der Wiederherstellungscode. |
 | WE3 | „Notfallblatt drucken / als PDF speichern“ → Drucker „Microsoft Print to PDF“. | PDF mit Code, QR-Code und Anleitung. Danach das PDF vom PC löschen. |
 | WE4 | Code bestätigen (Gruppe 3). | Hauptansicht GhulPass. |
 | WE5 | Strg+L drücken. | Sofort gesperrt (Entsperren-Seite). |
 | WE6 | Passwort eingeben → „Entsperren“. | Windows-Fenster für PIN und Berührung; danach offen. |
 | WE7 | Entsperren, im Windows-Fenster „Abbrechen“. | Verständliche Meldung, App bleibt gesperrt und bedienbar. |
 | WE8 | Mit einem **anderen**, nicht registrierten Key entsperren. | Windows bzw. GhulSuite meldet, dass dieser Key nicht passt. |
-| WE9 | Variante Schlüsseldatei: neue Suite (portabel oder anderer Ordner) mit „Schlüsseldatei“ einrichten, speichern (Windows-Speichern-Dialog), sperren, mit Passwort und Datei entsperren. | Klappt. |
+| WE9 | Variante Schlüsseldatei: neue Suite (z. B. portabel auf einem zweiten Stick) mit „Schlüsseldatei“ einrichten, speichern (Windows-Speichern-Dialog), sperren, mit Passwort und Datei entsperren. | Klappt. |
 | WE10 | „Mit Wiederherstellungscode öffnen“. | Mit Code und neuem Passwort wieder offen. |
 
 ## 3. Sperre und Privatsphäre
@@ -68,32 +71,43 @@ Jeder Test hat eine Nummer, die mit **W** beginnt (z. B. **WE3**), damit sie sic
 | WP4 | Ohne QR-Code auf dem Bildschirm scannen. | „Kein QR-Code gefunden.“ |
 | WP5 | Codes mit dem Handy vergleichen (gleiches Konto, gleiche Zeit). | Identisch. |
 
-## 5. Tresore, Speicherort, Import und Export
+## 5. Tresore, Import und Export
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| WT1 | Einrichtung mit „Ordner wählen“ (z. B. ein Ordner in OneDrive oder auf dem Stick). | Suite liegt dort; Speicherort wird als Pfad angezeigt. |
+| WT1 | Optionen → Suite-Datei → „Speichern unter …“ (Windows-Speichern-Dialog), z. B. auf den Stick. | Datei `GhulSuite.ghlzip` entsteht; die Seite zeigt den Pfad („Suite-Datei: …“). „Speichern“ schreibt danach ohne Dialog an denselben Pfad. |
 | WT2 | Import: Proton-Pass- oder Bitwarden-Export wählen (Windows-Dateidialog). | Wie unter Android (Anzahl, Ziel, Import). |
 | WT3 | Export eines Tresors (verschlüsselt) speichern; unverschlüsselt exportieren. | Dateien entstehen am gewählten Ort; unverschlüsselt nur mit Master-Passwort. |
+| WT4 | „Einzelnen Tresor öffnen“ mit einer `.ghlpss` → „Nur diesen Tresor öffnen“; etwas ändern; „Tresor schließen“. | Wie Android-Plan T6 und T7: Änderungen gehen direkt in die Datei am selben Pfad zurück; die eigene Suite bleibt gesperrt. |
+| WT5 | GhulPass: Einträge auswählen → „Als Tresor weitergeben“ mit neuer Schlüsseldatei. | Wie Android-Plan T13: Schlüsseldatei und Tresordatei über den Windows-Speichern-Dialog, Code wird einmal gezeigt. |
 
-## 6. Android und Windows gemeinsam
+## 6. Android und Windows gemeinsam (Suite-Datei)
 
-| Nr. | Schritt | Erwartet |
-|---|---|---|
-| WX1 | Den Suite-Ordner vom Handy auf den PC bringen (Synchronisation über eigenen Server, Abschnitt 7, oder den Ordner kopieren) und unter Windows „Vorhandene Suite öffnen“. | Entsperren mit **demselben** Security Key klappt unter Windows (Windows-Fenster). |
-| WX2 | Unter Windows einen zweiten Key hinzufügen (Optionen → Keys & Schlüsseldateien → Security Key hinzufügen), synchronisieren, am Handy sperren und mit diesem Key entsperren. | Klappt, Keys sind zwischen Android und Windows austauschbar. |
-| WX3 | Auf beiden Geräten Einträge ändern, synchronisieren. | Beide zeigen alle Änderungen. |
-
-## 7. Server, Sync, Drive und Teilen
+Die Suite wandert als **eine Datei** (`.ghlzip`). Abgeglichen wird nichts: Aktuell ist der Stand, der zuletzt
+gespeichert wurde. Alle Rückfragen sind dieselben wie im Android-Plan, Abschnitt 35.
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| WS1 | Server hinzufügen: SFTP (Schlüssel oder Passwort) oder FTPS; danach in der Serverliste „Modul installieren“. | Wie unter Android (Android-Plan 12 und 17): nur SFTP und FTPS zur Wahl, das Modul wird über dieselbe Anmeldung installiert und geprüft. |
+| WX1 | Am Handy die Suite-Datei auf den USB-Stick speichern. Unter Windows (ohne Suite) „Suite-Datei öffnen“ → die Datei auf dem Stick. | Entsperren mit **demselben** Security Key klappt unter Windows (Windows-Fenster). Alle Einträge, Server und Einstellungen sind da; GhulDrive zeigt dieselben Dateien wie am Handy. |
+| WX2 | Unter Windows einen zweiten Key hinzufügen (Optionen → Keys & Schlüsseldateien → Security Key hinzufügen), speichern, am Handy die Datei öffnen, sperren und mit diesem Key entsperren. | Klappt, Keys sind zwischen Android und Windows austauschbar. |
+| WX3 | Unter Windows etwas ändern, nicht speichern. | Hinweis „Nicht gespeicherte Änderungen. Tippen zum Speichern.“ auf den Bereichsseiten. Nach „Speichern“ verschwindet er. |
+| WX4 | Am Handy etwas ändern und speichern, unter Windows dieselbe Datei öffnen (Windows hat selbst nichts Ungespeichertes). | Öffnet ohne Rückfrage; die Änderung vom Handy ist da. |
+| WX5 | Unter Windows etwas ändern (nicht speichern), dann die Datei vom Handy öffnen. | Rückfrage nennt die nicht gespeicherten Änderungen, die verloren gehen; „Abbrechen“ lässt alles, wie es ist. |
+| WX6 | Handy und Windows öffnen denselben Stand; beide ändern; das Handy speichert; Windows tippt „Speichern“ auf dieselbe Datei. | „Die Datei wurde inzwischen anderswo gespeichert. Überschreiben … oder unter neuem Namen speichern?“ |
+| WX7 | Stick während „Speichern“ abziehen bzw. vorher abziehen. | „Die Suite-Datei ist gerade nicht erreichbar …“ oder „… konnte nicht geschrieben werden. Die bisherige Datei ist unverändert.“; die Änderungen bleiben als nicht gespeichert markiert. |
+| WX8 | Unter Windows das Passwort ändern. | Dialog „Suite-Datei jetzt speichern“; danach Schlüsselwechsel wie Android-Plan KW1. Eine ältere Kopie der Datei öffnet sich unter Windows nicht mehr (älterer Schutz), und am Handy mit der alten Datei kommt GhulDrive nicht mehr an den Server, bis die neue Datei geöffnet ist. |
+
+## 7. Server, Drive und Teilen
+
+| Nr. | Schritt | Erwartet |
+|---|---|---|
+| WS1 | Server hinzufügen: SFTP (Schlüssel, oder einmal mit dem SSH-Passwort, das den Schlüssel einträgt); danach in der Serverliste „Modul installieren“. | Wie unter Android (Android-Plan 12 und 17): nur SFTP zur Wahl, das Passwort wird nicht gespeichert, das Modul wird über dieselbe Anmeldung installiert und geprüft. |
 | WS2 | GhulDrive: große Datei (> 100 MB) hochladen, herunterladen. | Streifen unter der Kopfleiste mit Balken und „Abbrechen“, auch wenn du in einen anderen Bereich wechselst; Ergebnis identisch. |
 | WS3 | Datei → Teilen → „Mit Programm öffnen“. | Öffnet im passenden Programm (PDF-Betrachter usw.). Mehrere Dateien: der Ordner öffnet sich. |
 | WS4 | Danach GhulSuite sperren. | Die entschlüsselten Kopien im Temp-Ordner (`%TEMP%\GhulSuite-Weitergabe`) sind gelöscht. |
 | WS5 | Freigabelink erstellen, im Browser öffnen; ohne Modul auf dem Server von GhulDrive erneut versuchen. | Wie Android-Plan 18: Ablauf und Abrufe wählbar, keine Serverauswahl. Ohne Modul führt „Freigabelink“ zur Modul-Installation. |
-| WS6 | Freigabelink zurückziehen, synchronisieren, Freigabelinks erneut öffnen. | Bleibt weg (auch auf dem Handy nach dessen Sync). |
+| WS6 | Freigabelink unter Windows zurückziehen, am Handy (mit derselben Suite-Datei) die Freigabelinks öffnen. | Der Link ist auch dort weg (die Freigaben liegen auf dem Server). |
+| WS7 | Handy und Windows laden gleichzeitig Dateien in denselben GhulDrive-Ordner hoch. | Wie Android-Plan DX2: am Ende sind alle Dateien beider Geräte da. |
 
 ## 8. GhulMail mit Verschlüsselung
 
@@ -121,12 +135,11 @@ Jeder Test hat eine Nummer, die mit **W** beginnt (z. B. **WE3**), damit sie sic
 
 ## 10. Neue Funktionen aus der Vorschau
 
-Wie im Android-Testplan Abschnitt 22 (N2 bis N13, N16 bis N24). Nicht unter Windows: Dokument scannen (N14).
+Wie im Android-Testplan Abschnitt 22 (N2 bis N13, N16 bis N21, N23, N24). Nicht unter Windows: Dokument scannen (N14).
 Zusätzlich:
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| W-N1 | Optionen → Sicherung → automatische Sicherung in einen Ordner, Uhr eine Woche vorstellen (oder Datum in der Einstellung zurücksetzen), entsperren. | Neue Datei `GhulSuite-Backup-JJJJ-MM-TT-HHMM.zip` im Ordner. |
 | W-N3 | App starten. | Fenster im Querformat (ca. 1280 × 820): Seitenleiste links mit GhulPass, GhulAuth, GhulDrive, GhulMail, GhulCal, Optionen und „Sperren (Strg+L)“ unten. |
 | W-N4 | GhulPass: Eintrag anklicken, „Zurück“, einen anderen anklicken. | Der Eintrag öffnet sich in der Spalte an der Stelle der Liste (links bleibt die Seitenleiste); „Zurück“ zeigt die Liste wieder. |
 | W-N5 | GhulMail: Mail anklicken; „Schreiben“. | Mail bzw. Entwurf in der Spalte an der Stelle des Posteingangs; „Zurück“ führt zum Posteingang. |
@@ -137,23 +150,23 @@ Zusätzlich:
 | W-N9 | Fenster schmal ziehen (unter ca. 840 Pixel). | Wechselt auf das Handy-Layout mit Leiste unten; wieder breit ziehen stellt die Seitenleiste wieder her. |
 | W-N2 | Optionen → Über → „Fehlerbericht“. | Datei `absturz.txt` neben der App bzw. Text in der Zwischenablage, ohne Passwörter. |
 
-## 11. Assistent in acht Schritten und „Ein Bereich, eine Datei“ (#24)
+## 11. Assistent in sieben Schritten und „Ein Bereich, eine Datei“ (#24)
 
 Die Abläufe sind dieselben wie unter Android (Testplan Android, Abschnitte 1 und 23). Unter Windows zusätzlich:
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| W11.1 | „Neu einrichten“ mit Security Key: Schritt 2 → Schritt 3 „Key registrieren“. | Der Windows-Dialog fragt PIN und Berührung ab; danach Schritt 4 · Synchronisation. |
-| W11.2 | Schritt 7 · Entsperren. | „Zusätzlich Fingerabdruck“ ist ausgegraut (unter Windows nicht verfügbar); App-PIN geht. |
-| W11.3 | Schritt 4 „Eigener Server“ → FTPS → „Ordner wählen“. | Zertifikats-Fingerabdruck bestätigen, dann Ordnerliste im Dialog in der Fenstermitte. |
-| W11.4 | Optionen → Bereiche verwalten → GhulDrive einrichten → „Eigener Server“ → FTPS. | Nur SFTP und FTPS zur Wahl; erst nach „Verbindung prüfen“ erscheint „Server speichern“, danach steht GhulDrive in der Leiste. Mailkonten ebenso: erst „Verbindung prüfen“ (Checkliste), dann „Speichern“. Das Server-Modul für Freigabelinks kommt über die Serverliste. |
-| W11.5 | Ordner der Suite im Explorer ansehen. | Je gewähltem Bereich eine Datei (`.ghlpss`, `.ghltotp`, `.ghldrv`, `.ghlmail`, `.ghlcal`) und `suite.ghlsuite`. |
+| W11.1 | „Neu einrichten“ mit Security Key: Schritt 2 → Schritt 3 „Anlegen“. | Der Windows-Dialog fragt PIN und Berührung ab; danach Schritt 4 · Bereiche. |
+| W11.2 | Schritt 6 · Entsperren. | „Zusätzlich Fingerabdruck“ ist ausgegraut (unter Windows nicht verfügbar); App-PIN geht. |
+| W11.3 | Schritt 4: GhulDrive „Eigener Server“ → SFTP → „Ordner wählen“. | Server-Fingerabdruck bestätigen, dann Ordnerliste im Dialog in der Fenstermitte. |
+| W11.4 | Optionen → Bereiche verwalten → GhulDrive einrichten → „Eigener Server“. | Nur SFTP zur Wahl; erst nach „Verbindung prüfen“ erscheint „Server speichern“, danach steht GhulDrive in der Leiste. Mailkonten ebenso: erst „Verbindung prüfen“ (Checkliste), dann „Speichern“. Das Server-Modul für Freigabelinks kommt über die Serverliste. |
+| W11.5 | Optionen → Suite-Datei → „Speichern unter …“, die `.ghlzip` mit 7-Zip oder dem Explorer öffnen. | Darin je gewähltem Bereich eine Datei (`.ghlpss`, `.ghltotp`, `.ghldrv`, `.ghlmail`, `.ghlcal`, Namen nach der Kennung), `suite.ghlsuite` und `export.ghlexp`; nichts lesbar. |
 
 ## 12. Runde 6
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| WR1 | Einrichtung bis Schritt 7 (Schnell-Entsperren). | Keine App-PIN zur Auswahl, Hinweis auf Windows Hello später (U8). |
+| WR1 | Einrichtung bis Schritt 6 (Schnell-Entsperren). | Keine App-PIN zur Auswahl, Hinweis auf Windows Hello später (U8). |
 | WR2 | Termin mit Erinnerung in 10 Minuten, dann in Windows die Zeitzone ändern und GhulSuite offen lassen. | Spätestens nach 5 Minuten wird neu geplant; die Erinnerung kommt zur richtigen Uhrzeit (B22). |
 | WR3 | Optionen → GhulCal. | Hinweis: Erinnerungen kommen nur, solange GhulSuite läuft (B22). |
 
