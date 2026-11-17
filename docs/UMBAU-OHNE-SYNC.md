@@ -64,9 +64,9 @@ Wieder auf dem Handy: öffnen.
    - **Älterer Stand** (kleinerer Zähler als hier zuletzt gesehen) oder **Abzweig** (gleicher Zähler mit anderer
      Stand-ID, oder die Vorgänger-ID ist hier unbekannt, obwohl der Zähler kleiner ist): „Diese Datei ist älter als
      dein Stand hier“ bzw. „Diese Datei wurde von einem anderen Stand aus weiterbearbeitet.“
-   - **Älterer Schutz** (kleinere Schutz-Epoche als hier zuletzt gesehen): „Diese Datei hat einen älteren Schutz: ein
-     früheres Passwort, entfernte Keys oder ein ersetzter Code gelten darin noch.“ Wird sie trotzdem geöffnet, erneuert
-     die App den Schutz sofort (entfernte Keys raus, neuer Code, neues Passwort).
+   - **Älterer Schutz** (kleinere Schutz-Epoche als hier zuletzt gesehen): **wird nicht geöffnet.** „Diese Datei ist
+     durch eine neuere mit geändertem Schutz ersetzt und ungültig.“ Auf einem Gerät, das den neueren Stand nie gesehen
+     hat, öffnet sie sich zwar, kommt aber nach dem Schlüsselwechsel nicht mehr an den Server (Abschnitt 6.4).
    - **Nicht gespeicherte Änderungen** auf dem Gerät: „Sie gehen verloren.“ Mit dem Angebot, vorher zu speichern. Die
      Warnung nennt, was auf Servern daran hängt: seit dem letzten Speichern hochgeladene Drive-Dateien, neue
      Freigabelinks, Mails im Postausgang.
@@ -88,29 +88,77 @@ Wieder auf dem Handy: öffnen.
   nächsten Speichern mit; sie erneuern die inneren Schlüssel wie bisher und erhöhen die Schutz-Epoche.
 - **Keys und Schlüsseldateien** funktionieren auf jedem Gerät; Schnell-Entsperren bleibt je Gerät.
 - **GhulMail:** Der Mail-Server ist die Wahrheit für Mails; Konten, Schlüssel und Entwürfe stehen im Mail-Tresor.
-- **Freigabelinks** über das PHP-Modul bleiben. Modul und „Speicher aufräumen“ richten sich nach den
-  Freigabebeschreibungen auf dem Server (`shares/*.json`). Ein Gerät kann Freigaben auch dann auflisten und beenden,
-  wenn sie in seinem Stand fehlen (z. B. nach dem Öffnen einer älteren Datei).
-- **SFTP/FTPS** bleibt, nur noch als Speicher für GhulDrive-Blöcke und Freigaben.
+- **Freigabelinks** über das PHP-Modul bleiben (das Modul liest nur, es schreibt nichts übers Web). Die
+  Freigabebeschreibungen liegen auf dem Server (`shares/*.json`); jedes Gerät mit der aktuellen Datei sieht und beendet
+  alle Freigaben.
+- **Server nur noch per SFTP** (Abschnitt 6.1). Ohne SSH-Zugang beim Hoster gibt es kein GhulDrive und keine
+  Freigabelinks; GhulPass, GhulAuth, GhulCal und GhulMail brauchen keinen Server.
 
-## 6. GhulDrive
+## 6. Server und GhulDrive
 
-- Der **Index** jedes Speicherorts (Ordner, Namen, Größen, Dateischlüssel, Blocklisten) liegt **im Drive-Tresor**,
-  nicht mehr auf dem Server. Er reist mit der Datei. Auf dem Server liegen nur noch die verschlüsselten **Blöcke**
-  (je Dateiinhalt ein eigener, zufälliger Schlüssel; die Blocknamen leiten sich davon ab, zwei Geräte erzeugen nie
-  denselben Namen).
-- Wer einen älteren Stand öffnet, sieht dessen Index: Dateien aus neueren Ständen fehlen dort. So gewollt: nicht
-  bequem, aber es gibt keinen gemeinsamen Index mehr, den jemand fälschen oder zwei Geräte zugleich ändern könnten.
-- **Löschen nimmt nur den Eintrag aus dem Index**, auch „endgültig löschen“. Blöcke bleiben auf dem Server, damit
-  ältere Stände und die Sicherung vor dem Öffnen weiter funktionieren.
-- **„Speicher aufräumen“** (ausdrücklich, mit Warnung) löscht Blöcke, die im aktuellen Index nicht vorkommen und von
-  keiner Freigabe gebraucht werden. Die Warnung sagt, dass Dateien älterer oder anderer Stände dabei verloren gehen.
-- Beim Öffnen prüft die App stichprobenweise bzw. beim ersten Zugriff, ob die Blöcke einer Datei da sind, und zeigt
-  fehlende als beschädigt.
-- Unfertige Uploads werden auf dem Gerät mit einem eigenen Geräteschlüssel versiegelt (bisher aus dem Drive-Schlüssel).
-- Größe: Der Index macht den Drive-Tresor größer und wird bei jeder Änderung neu geschrieben (auch beim automatischen
-  Archivieren von Mails). Das Mail-Archiv schreibt deshalb gesammelt, nicht je Mail; die Grenze von 256 MiB je
-  Container wird beobachtet.
+### 6.1 Nur SFTP
+
+- FTP/FTPS entfällt vollständig. In der Datei steht als Server-Zugang nur ein **SSH-Schlüssel**, nie ein Passwort.
+  Nur so kann die App den Zugang bei einer Schutzänderung selbst tauschen (6.4).
+- Das PHP-Modul für Freigabelinks lädt die App ebenfalls per SFTP hoch.
+- Die Server-Kennung (Host-Key) wird wie bisher beim ersten Verbinden bestätigt und danach geprüft.
+
+### 6.2 Was wo liegt
+
+- **Auf dem Server, im Drive-Ordner:**
+  - `index.ghldrv`: der eine Index (Ordner, Namen, Größen, Dateischlüssel, Blocklisten, Papierkorb, Versionen),
+    verschlüsselt mit dem Drive-Schlüssel und versiegelt (das Siegel braucht das Passwort);
+  - `index.bak`: der vorige Stand (falls der Index beschädigt wird);
+  - die **Blöcke**: Dateiinhalte, je Dateifassung mit eigenem, zufälligem Schlüssel; Blöcke werden nie überschrieben.
+- **In der Suite-Datei** (Drive-Tresor): Drive-Schlüssel, SSH-Schlüssel, Serveradresse, Host-Key und die höchste
+  gesehene Index-Revision. Kein Index, keine Dateiliste.
+- Drive ist damit nicht Teil des Speicherns: Änderungen liegen sofort auf dem Server, und jede aktuelle Suite-Datei
+  sieht denselben Stand, egal auf welchem Gerät sie geöffnet ist.
+
+### 6.3 Im Alltag
+
+- **Lesen:** Index laden, Siegel prüfen, entschlüsseln. Ist die Revision kleiner als die gemerkte, hat der Server
+  einen alten Stand zurückgespielt: Die App warnt und schreibt nichts.
+- **Ändern** (Hochladen, Umbenennen, Verschieben, Löschen) unter einer Sperre:
+  1. `index.lock` exklusiv anlegen (SFTP legt sie nur an, wenn es sie noch nicht gibt); eine Sperre, die älter als
+     zwei Minuten ist, gilt als verwaist;
+  2. Index neu laden, ändern, als neue Datei schreiben und in einem Schritt ersetzen; der bisherige wird `index.bak`;
+  3. Sperre löschen.
+  So ändert immer nur ein Gerät zur Zeit, nichts geht verloren, auch wenn zwei Geräte gleichzeitig arbeiten.
+- **Hochladen:** erst alle Blöcke, dann der Eintrag im Index. Bricht es ab, fehlt nur der Eintrag, nie ein Block.
+- **Löschen:** erst in den Papierkorb (Markierung im Index). Endgültig löschen: erst den Index schreiben, dann die
+  Blöcke löschen.
+- **Aufräumen** (automatisch): Der Index ist der vollständige Stand. Blöcke, die in keinem Eintrag und keinem
+  Freigabelink vorkommen und älter als einen Tag sind (Schutz für laufende Uploads), werden gelöscht. Es bleiben
+  keine Leichen.
+
+### 6.4 Schlüsselwechsel
+
+Bei jeder Schutzänderung (neues Passwort, neuer Code, Key oder Schlüsseldatei entfernt):
+
+1. **Lokal vormerken:** Die Arbeitskopie bekommt einen neuen Drive-Schlüssel und einen neuen SSH-Schlüssel, zusätzlich
+   zu den alten, mit dem Vermerk „Wechsel läuft“. Bricht etwas ab, setzt die App beim nächsten Start dort fort.
+2. **Index umschlüsseln** (unter der Sperre): mit dem alten Schlüssel lesen, mit dem neuen Schlüssel und neuem Siegel
+   schreiben, `index.bak` (alter Schlüssel) löschen. Ein Schreibvorgang; die Blöcke bleiben unverändert, denn ihre
+   Schlüssel stehen nur im Index.
+3. **SSH-Zugang tauschen:** neuen öffentlichen Schlüssel auf dem Server eintragen, damit anmelden und prüfen, dann den
+   alten entfernen.
+4. **Abschließen:** alte Schlüssel aus der Arbeitskopie entfernen; die App fordert auf, die Suite-Datei zu speichern.
+
+Danach:
+- Eine **alte Datei** (z. B. auf einem verlorenen Stick) kann sich nicht mehr am Server anmelden und den Index nicht
+  öffnen. Selbst mit einer früher gezogenen Kopie des Index sieht sie nur die Dateien von damals.
+- Ein **anderes Gerät mit der vorigen Datei** wird abgewiesen („Der Zugang wurde geändert, öffne die aktuelle
+  Suite-Datei.“). Es kann nichts zerstören; seine Drive-Änderungen liegen bereits auf dem Server.
+- Regel: Nach einer Schutzänderung arbeitet nur das Gerät weiter, das sie gemacht hat; alle anderen öffnen zuerst die
+  neue Datei.
+
+### 6.5 Grenzen
+
+- Verliert der Server Daten (Hoster setzt zurück, Datenträger kaputt), merkt die App es (Revision, fehlende Blöcke),
+  retten kann sie es nicht. Dagegen hilft nur eine Sicherung beim Hoster.
+- Wer die aktuelle Datei mit Passwort und Key öffnen kann, hat Zugriff auf Drive. So ist es gedacht.
+- Unfertige Uploads werden auf dem Gerät mit einem eigenen Geräteschlüssel versiegelt.
 
 ## 7. Was wegfällt
 
@@ -121,11 +169,12 @@ Wieder auf dem Handy: öffnen.
   in Servern, Freigaben und Bereichen; `REMOVED_SLOTS`, `revisions`, `ignored_files`.
 - **„Ordner ist die Suite“:** Konfliktkopien fremder Sync-Programme, das Übernehmen gefundener Tresore aus dem Ordner
   und das Zusammenführen doppelter Kopien. Der Ordner ist nur noch die Arbeitskopie.
-- **Drive:** Index auf dem Server, Drive-Schlüssel des Index samt Erneuern und Siegel, „älterer Index“ (`seen`),
-  `use_sync` und das Umziehen vom Sync-Server.
+- **FTP/FTPS:** Adapter, Zertifikatsprüfung für FTP, die Sonderfälle beim Ersetzen (`.ghlold`, `SIZE`/`MDTM`).
+- **Drive:** `use_sync` und das Umziehen vom Sync-Server; mehrere Schlüssel-Generationen des Index (es gibt nur den
+  aktuellen, beim Wechsel wird umgeschlüsselt).
 - **Ungeprüfte Ladewege:** die bisherige Sicherung/Wiederherstellung (`backup.rs`, ZIP ohne Kopfdatei und Prüfung) und
   „Von meinem Server holen“ (`fetch_from_server`, Server-Ordner `suite/`). Beide werden durch Öffnen/Speichern einer
-  `.ghlzip` ersetzt; die Sicherung bleibt nur bis Paket 4 (Übergang).
+  `.ghlzip` ersetzt; die Sicherung bleibt nur bis Paket 5 (Übergang).
 - **App:** Sync-Einstellungen, „Jetzt synchronisieren“, die Dialoge „Passwort / Schutz auf anderem Gerät geändert“,
   die Warnung über veränderte Server-Dateien.
 - **Befunde:** Was nur die Synchronisation betraf (u. a. H1, S1, M18 und Teile vieler M- und N-Punkte), erledigt sich.
@@ -135,10 +184,11 @@ Wieder auf dem Handy: öffnen.
 
 | Wer | Kann | Kann nicht |
 |---|---|---|
-| Hat den Stick, sonst nichts | Datei kopieren, löschen, durch eine ältere ersetzen | lesen; etwas unterschieben (Siegel); eine ältere Datei unbemerkt unterschieben (Zähler, Rückfrage) |
-| Hat Stick und einen alten Code | lesen, was im alten Stand galt | etwas unterschieben; den aktuellen Stand lesen, wenn der Code ersetzt wurde |
-| Hat Stick, alten Code und altes Passwort | einen alten Stand mit altem Schutz anbieten | ihn unbemerkt öffnen lassen (Schutz-Epoche, Rückfrage, sofortiges Erneuern) |
-| Hat den Server | Blöcke löschen oder vertauschen, Freigaben stören | Dateien lesen; einen Index fälschen (es gibt keinen auf dem Server) |
+| Hat den Stick, sonst nichts | Datei kopieren, löschen, durch eine ältere ersetzen | lesen; etwas unterschieben (Siegel); eine ältere Datei unbemerkt öffnen lassen (Zähler, Rückfrage) |
+| Hat Stick und einen alten Code | lesen, was im alten Stand galt | etwas unterschieben; den aktuellen Stand lesen; nach dem Schlüsselwechsel an den Server |
+| Hat Stick, alten Code und altes Passwort | einen alten Stand mit altem Schutz anbieten | ihn auf einem Gerät mit neuerem Stand öffnen lassen (Schutz-Epoche, Sperre); an den Server |
+| Hat eine alte Suite-Datei (vor einer Schutzänderung) | die damaligen Inhalte lesen | sich am Server anmelden; den aktuellen Drive-Index öffnen; neue Drive-Dateien lesen |
+| Betreibt den Server | Blöcke löschen, einen alten Index zurückspielen, Freigaben stören | Dateien lesen; einen Index fälschen (Siegel); einen alten Index unbemerkt unterschieben (Revision) |
 
 ## 9. Umsetzung in Paketen (je ein Pull Request, Doku jeweils mit)
 
@@ -146,15 +196,19 @@ Wieder auf dem Handy: öffnen.
 2. **Kern und App: Sync raus.** `sync.rs`, Zusammenführen, Ordner-Abgleich, „Von meinem Server holen“ und alles
    Zugehörige entfernen; die Sync-Oberfläche der App im selben PR, damit Android und Windows bauen. Die bisherige
    Sicherung bleibt als Übergang.
-3. **Kern: Format 3.** Schreibsiegel, Formatversion 3, Testvektoren, SFTP/FTPS-Fixes (aus
-   `fix/review-core-protection` übernommen, ohne Sync-Teile); FORMAT.md.
-4. **Kern und App: `.ghlzip`.** Öffnen und Speichern mit allen Prüfungen aus Abschnitt 4, Zähler, Stand-ID,
+3. **Kern und App: nur SFTP.** FTP/FTPS entfernen (Kern, Server-Formular, Einrichtung, Tests, CI-Testserver).
+4. **Kern: Format 3.** Schreibsiegel, Formatversion 3, Testvektoren, SFTP-Fixes (aus `fix/review-core-protection`
+   übernommen, ohne Sync-Teile); FORMAT.md.
+5. **Kern und App: `.ghlzip`.** Öffnen und Speichern mit allen Prüfungen aus Abschnitt 4, Zähler, Stand-ID,
    Schutz-Epoche, Rückfragen, Gerätedaten löschen; Sicherung/Wiederherstellung entfernen; Dateizuordnung; FORMAT.md;
    Tests auch für Angriffe auf die Datei (fehlende, vertauschte, alte, fremde, abgezweigte Teile; falsches Siegel; Code
    ohne Passwort; ZIP-Tricks).
-5. **Kern und App: Drive-Index in den Tresor.** Index je Speicherort im Drive-Tresor, nur Blöcke auf dem Server,
-   Löschen nur im Index, „Speicher aufräumen“, eigener Schlüssel für unfertige Uploads, gesammeltes Mail-Archiv;
-   FORMAT.md.
-6. **App:** Hinweis „nicht gespeicherte Änderungen“, Rückfragen, Emulator-Abläufe für Öffnen/Speichern.
-7. **Doku, README, Website:** KONZEPT, AUDIT (Bedrohungsmodell), Testplan.
-8. **Restliche Befunde** (Paket 2, M, N) neu sichten.
+6. **Kern und App: Drive nach Abschnitt 6.** Versiegelter Index mit Sperre und `index.bak`, Revision, automatisches
+   Aufräumen, Schlüsselwechsel mit Umschlüsseln des Index und SSH-Tausch (fortsetzbar), Geräteschlüssel für unfertige
+   Uploads; FORMAT.md; Tests für gleichzeitige Änderungen, Abbrüche an jeder Stelle des Wechsels, alte Datei nach dem
+   Wechsel, zurückgespielten und beschädigten Index.
+7. **App:** Hinweis „nicht gespeicherte Änderungen“, Rückfragen, Aufforderung zum Speichern nach einer Schutzänderung,
+   Emulator-Abläufe für Öffnen/Speichern und Drive.
+8. **Doku, README, Website:** KONZEPT, AUDIT (Bedrohungsmodell), Testplan, Hinweis „SSH-Zugang nötig für Drive und
+   Freigaben“.
+9. **Restliche Befunde** (Paket 2, M, N) neu sichten.
