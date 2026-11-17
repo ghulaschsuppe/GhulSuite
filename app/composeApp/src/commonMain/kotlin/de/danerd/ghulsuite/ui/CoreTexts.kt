@@ -16,6 +16,11 @@ import org.jetbrains.compose.resources.getString
 private val CORE_TEXTS: Map<String, StringResource> = mapOf(
     "too large to share" to Res.string.core_share_big,
     "name required" to Res.string.core_name_req,
+    "either a key file or a security key" to Res.string.core_single_one_factor,
+    "no vault is open on its own" to Res.string.core_single_none,
+    "only GhulPass and GhulAuth entries can be handed on" to Res.string.core_single_kinds,
+    "password too short" to Res.string.core_pw_short,
+    "this vault can only be added to a suite" to Res.string.core_single_only_add,
     "a suite file cannot be added as a vault" to Res.string.core_suite_not_vault,
     "this is a suite file, open its folder instead" to Res.string.core_suite_file,
     "Drive block missing" to Res.string.core_drive_block_missing,

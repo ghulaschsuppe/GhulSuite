@@ -50,6 +50,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -534,6 +535,15 @@ fun SectionCard(title: String? = null, content: @Composable ColumnScope.() -> Un
 @Composable
 fun BusyBanner(state: AppState) {
     // On the area pages: changes that are not in the suite file yet. Tap: save.
+    if (state.single != null) {
+        // A vault opened on its own: only when writing it back failed.
+        if (state.singleNotSaved && state.stack.isEmpty() && !state.busy) {
+            Box(Modifier.fillMaxWidth().clickable { state.push(Screen.SettingsPage(SetPage.FILE)) }) {
+                Banner(Icons.Filled.Warning, stringResource(Res.string.single_not_saved))
+            }
+        }
+        return
+    }
     if (state.unsaved && state.stack.isEmpty() && !state.busy) {
         Box(Modifier.fillMaxWidth().clickable { state.push(Screen.SettingsPage(SetPage.FILE)) }) {
             Banner(Icons.Filled.Save, stringResource(Res.string.file_unsaved_banner))

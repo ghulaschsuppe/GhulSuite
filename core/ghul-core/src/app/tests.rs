@@ -2709,6 +2709,7 @@ mod gnupg;
 mod properties;
 mod rekey;
 mod security;
+mod single;
 
 /// A server name that does not resolve and a port nobody listens on give fixed texts the app
 /// translates, not the system's message ("failed to lookup address information: ...").

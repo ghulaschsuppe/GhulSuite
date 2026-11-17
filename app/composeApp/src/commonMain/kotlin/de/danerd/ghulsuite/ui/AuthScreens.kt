@@ -6,6 +6,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Check
@@ -105,6 +106,9 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
     // F103: deleting asks first; "Undo" in the snackbar brings the accounts back as well.
     val selected = rememberListSelection()
     val keyOf = { c: TotpCodeUi -> c.vaultId + "/" + c.id }
+    /** "Hand on as a vault": the vault and the picked entries. */
+    var sharing by remember { mutableStateOf<Pair<String, List<String>>?>(null) }
+    sharing?.let { (v, ids) -> ShareAsVaultDialog(state, v, ids) { sharing = null } }
     val selecting = selected.active
     val toggle = { c: TotpCodeUi -> selected.toggle(keyOf(c)) }
     val deletedMsg = stringResource(Res.string.msg_deleted_n)
@@ -134,6 +138,13 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
                     add(SelAction(Icons.Filled.QrCode2, stringResource(Res.string.auth_export_qr)) {
                         selected.clear()
                         state.run(block = { state.backend.totpUri(one.vaultId, one.id) }) { exporting = one to it }
+                    })
+                }
+                // Picked entries of one vault: into a vault file of their own.
+                chosen.map { it.vaultId }.distinct().singleOrNull()?.let { v ->
+                    add(SelAction(Icons.Filled.Share, stringResource(Res.string.share_vault_action)) {
+                        selected.clear()
+                        sharing = v to chosen.map { it.id }
                     })
                 }
                 add(SelAction(Icons.Filled.Delete, stringResource(Res.string.a_delete), danger = true) { delete(chosen) })

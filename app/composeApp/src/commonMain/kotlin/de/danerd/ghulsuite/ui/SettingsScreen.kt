@@ -240,7 +240,7 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
 
                 }
                 SetPage.VAULTS -> VaultsSection(state)
-                SetPage.FILE -> SuiteFileSection(state)
+                SetPage.FILE -> if (state.single != null) SingleVaultSection(state) else SuiteFileSection(state)
                 SetPage.IMPORT -> ImportExportSection(state)
                 SetPage.SERVERS -> ServersSection(state)
                 SetPage.MODULES -> AreasPage(state)

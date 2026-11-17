@@ -1,0 +1,322 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+package de.danerd.ghulsuite.ui
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import de.danerd.ghulsuite.model.ContainerInfoUi
+import de.danerd.ghulsuite.model.PickedFile
+import de.danerd.ghulsuite.model.ShareVaultUi
+import de.danerd.ghulsuite.model.SharedVaultUi
+import de.danerd.ghulsuite.model.VaultErrorKind
+import de.danerd.ghulsuite.model.VaultException
+import de.danerd.ghulsuite.model.VaultKindUi
+import de.danerd.ghulsuite.resources.Res
+import de.danerd.ghulsuite.resources.*
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.stringResource
+
+/** GhulDrive and GhulMail need the servers and accounts of a suite: they can only be added to one. */
+fun opensOnItsOwn(kind: VaultKindUi) = kind != VaultKindUi.DRIVE && kind != VaultKindUi.MAIL
+
+/**
+ * A vault file was picked: open only this vault, add it to the own suite (unlocked first if
+ * needed) or, without a suite on this device, build a new suite around it.
+ */
+@Composable
+fun VaultFileChoice(
+    state: AppState,
+    file: PickedSuiteFile,
+    info: ContainerInfoUi,
+    onOnlyThis: () -> Unit,
+    onNewSuite: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    val kind = vaultKindOf(info.kind)
+    val hasSuite = state.backend.exists()
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(stringResource(Res.string.single_choice_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(Res.string.single_choice_text, file.ref.name, stringResource(kindLabel(kind))))
+                if (opensOnItsOwn(kind)) {
+                    Button(onClick = onOnlyThis, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.single_only_this)) }
+                    Hint(stringResource(Res.string.single_only_this_hint))
+                } else {
+                    Hint(stringResource(Res.string.single_not_alone))
+                }
+                if (hasSuite) {
+                    OutlinedButton(onClick = {
+                        state.pendingAdd = PickedFile(file.ref.name, file.data)
+                        onCancel()
+                        // Back to the own suite: added once it is unlocked (at once if it is).
+                        state.showStart = false
+                        state.vaultExists = true
+                    }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.single_add_to_suite)) }
+                    Hint(stringResource(Res.string.single_add_hint))
+                } else {
+                    OutlinedButton(onClick = onNewSuite, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.single_new_suite)) }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onCancel) { Text(stringResource(Res.string.a_cancel)) } },
+    )
+}
+
+/** Password plus key or key file of the vault; then only this vault is open. */
+@Composable
+fun OpenSingleVault(state: AppState, file: PickedSuiteFile, info: ContainerInfoUi, onCancel: () -> Unit) {
+    val backend = state.backend
+    val kind = vaultKindOf(info.kind)
+    val hasKey = info.protection.securityKeys > 0
+    val hasKeyfile = info.protection.keyfiles > 0
+    var withKey by remember { mutableStateOf(hasKey) }
+    val needsKey = withKey && hasKey
+    var password by remember { mutableStateOf("") }
+    var pin by remember { mutableStateOf("") }
+    var keyfile by remember { mutableStateOf<PickedFile?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    SectionCard(stringResource(Res.string.single_open_title)) {
+        Hint(stringResource(Res.string.single_open_text, file.ref.name, stringResource(kindLabel(kind))))
+        SecretTextField(password, { password = it; error = null }, stringResource(Res.string.l_master_password))
+        if (hasKey && hasKeyfile) FactorChoice(withKey) { withKey = it; error = null }
+        if (needsKey) KeyPinField(state, pin) { pin = it; error = null } else KeyfilePicker(keyfile) { keyfile = it; error = null }
+        BusyBanner(state)
+        ErrorText(error)
+        ButtonRow {
+            OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text(stringResource(Res.string.a_back)) }
+            Button(
+                modifier = Modifier.weight(1f),
+                enabled = !state.busy && password.isNotEmpty() && (if (needsKey) keyPinOk(state, pin) else keyfile != null),
+                onClick = {
+                    state.run(onError = { error = it }, block = {
+                        backend.openSingle(
+                            file.ref, file.data, password, if (needsKey) pin else null,
+                            if (needsKey) null else keyfile?.bytes, state.onTouchNeeded,
+                        )
+                    }) { k ->
+                        password = ""; pin = ""
+                        state.single = SingleUi(k, file.ref)
+                        state.singleNotSaved = false
+                        state.unsaved = false
+                        state.stack.clear()
+                        state.tab = tabOf(k)
+                        state.showStart = false
+                        state.vaultExists = true
+                    }
+                },
+            ) { Text(stringResource(Res.string.a_open)) }
+        }
+    }
+}
+
+/** Options while a vault is open on its own: its file, whether all is in it, closing. */
+@Composable
+fun SingleVaultSection(state: AppState) {
+    val s = state.single ?: return
+    val backend = state.backend
+    val name = state.vaults.firstOrNull()?.name ?: s.file.name
+    SectionCard(stringResource(Res.string.single_title)) {
+        Hint(stringResource(Res.string.single_text, name, s.file.name))
+        when {
+            state.singleNotSaved -> Banner(Icons.Filled.Warning, stringResource(Res.string.single_not_saved))
+            state.unsaved -> Banner(Icons.Filled.Warning, stringResource(Res.string.single_saving))
+            else -> Banner(Icons.Filled.CheckCircle, stringResource(Res.string.single_saved))
+        }
+        if (state.singleNotSaved) {
+            Button(onClick = { state.saveSingle() }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(Res.string.single_try_again))
+            }
+        }
+        Button(onClick = { backend.lock() }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(Res.string.single_close))
+        }
+        if (backend.singleFile() != null && filePickersAvailable) {
+            OutlinedButton(onClick = {
+                state.run(block = { backend.saveSingle(); backend.readSuiteFile(s.file) }) { data ->
+                    if (data != null) {
+                        state.pendingAdd = PickedFile(s.file.name, data)
+                        backend.lock()
+                    }
+                }
+            }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.single_add_to_suite)) }
+        }
+        Hint(stringResource(Res.string.single_close_hint))
+        BusyBanner(state)
+    }
+}
+
+/**
+ * A vault file waits to be added to the own suite: once it is unlocked, it is added (a vault
+ * with another protection asks for its password and key or key file once).
+ */
+@Composable
+fun PendingAddHandler(state: AppState) {
+    val file = state.pendingAdd ?: return
+    val backend = state.backend
+    val unlocked by backend.unlocked.collectAsState()
+    var foreign by remember { mutableStateOf<ForeignRequest?>(null) }
+    val added = stringResource(Res.string.msg_vault_added)
+    LaunchedEffect(file, unlocked, state.single) {
+        if (!unlocked || state.single != null || foreign != null) return@LaunchedEffect
+        val name = file.name.substringBeforeLast('.')
+        state.run(onError = { state.pendingAdd = null; state.message(it) }, block = {
+            try {
+                val id = backend.addVaultFile(file.bytes, name)
+                backend.listVaults().firstOrNull { it.id == id }?.kind to null
+            } catch (e: VaultException) {
+                if (e.kind != VaultErrorKind.DIFFERENT_PROTECTION) throw e
+                val info = backend.inspectFile(file.bytes)
+                null to ForeignRequest(file.bytes, vaultKindOf(info.kind), info.protection, name)
+            }
+        }) { (kind, request) ->
+            if (request != null) {
+                foreign = request
+            } else {
+                state.pendingAdd = null
+                kind?.let { state.enableModule(it) }
+                state.changed()
+                state.message(added)
+            }
+        }
+    }
+    foreign?.let { r -> ForeignVaultDialog(state, r, onDone = { foreign = null; state.pendingAdd = null }) }
+}
+
+/**
+ * "Hand on as a vault": the picked entries go into a new vault file with a password of its own
+ * and a new key file or a security key. The file is saved, then the key file, then the new
+ * recovery code is shown.
+ */
+@Composable
+fun ShareAsVaultDialog(state: AppState, vaultId: String, ids: List<String>, onDone: () -> Unit) {
+    val backend = state.backend
+    var name by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var repeat by remember { mutableStateOf("") }
+    var master by remember { mutableStateOf("") }
+    var withKey by remember { mutableStateOf(false) }
+    var pin by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    var shared by remember { mutableStateOf<SharedVaultUi?>(null) }
+    var keyfile by remember { mutableStateOf<ByteArray?>(null) }
+    /** 0: the form, 1: vault file saved, 2: key file saved too (or none), then the code. */
+    var step by remember { mutableStateOf(0) }
+    val notSaved = stringResource(Res.string.share_vault_not_saved)
+    val keyLabel = stringResource(Res.string.setup_default_key_label)
+    val keyfileLabel = stringResource(Res.string.keyfile_default_label)
+    val recoveryLabel = stringResource(Res.string.setup_recovery_label)
+    val tooShort = pluralStringResource(Res.plurals.setup_pw_too_short, PasswordPolicy.MIN_LENGTH, PasswordPolicy.MIN_LENGTH.toString())
+    val tooWeak = stringResource(Res.string.setup_pw_too_weak)
+    val mismatch = stringResource(Res.string.setup_pw_mismatch)
+    val saveKeyfile = rememberSaveFile { ok -> if (ok) step = 2 else error = notSaved }
+    val saveVault = rememberSaveFile { ok ->
+        if (!ok) {
+            error = notSaved
+        } else {
+            step = 1
+            if (keyfile == null) step = 2
+        }
+    }
+
+    val result = shared
+    AlertDialog(
+        onDismissRequest = { if (!state.busy && step == 0) onDone() },
+        title = { Text(stringResource(Res.string.share_vault_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                when {
+                    result == null -> {
+                        Hint(pluralStringResource(Res.plurals.share_vault_text, ids.size, ids.size.toString()))
+                        OutlinedTextField(
+                            name, { name = it; error = null }, label = { Text(stringResource(Res.string.l_vault_name)) },
+                            singleLine = true, modifier = Modifier.fillMaxWidth(),
+                        )
+                        SecretTextField(password, { password = it; error = null }, stringResource(Res.string.l_vault_password))
+                        if (password.isNotEmpty()) StrengthMeter(backend.passwordScore(password))
+                        SecretTextField(repeat, { repeat = it; error = null }, stringResource(Res.string.l_repeat_password))
+                        Hint(stringResource(Res.string.share_vault_factor))
+                        ChipRow {
+                            FilterChip(!withKey, { withKey = false; error = null }, label = { Text(stringResource(Res.string.share_vault_new_keyfile)) })
+                            FilterChip(withKey, { withKey = true; error = null }, label = { Text(stringResource(Res.string.factor_key)) })
+                        }
+                        if (withKey) KeyPinField(state, pin) { pin = it; error = null }
+                        Hint(stringResource(Res.string.share_vault_master))
+                        SecretTextField(master, { master = it; error = null }, stringResource(Res.string.l_master_password))
+                    }
+                    step == 0 -> Hint(stringResource(Res.string.share_vault_save_file))
+                    step == 1 -> Hint(stringResource(Res.string.share_vault_save_keyfile))
+                    else -> {
+                        Hint(stringResource(Res.string.share_vault_code))
+                        RecoveryCodeView(result.recoveryCode)
+                        PrintSheetButton(state, result.recoveryCode)
+                    }
+                }
+                BusyBanner(state)
+                ErrorText(error)
+            }
+        },
+        confirmButton = {
+            when {
+                result == null -> TextButton(
+                    enabled = !state.busy && name.isNotBlank() && password.isNotEmpty() && master.isNotEmpty() &&
+                        (!withKey || keyPinOk(state, pin)),
+                    onClick = {
+                        run {
+                            error = PasswordPolicy.check(backend, password, repeat, tooShort, tooWeak, mismatch)
+                            if (error != null) return@run
+                            val kf = if (withKey) null else backend.generateKeyfile()
+                            state.run(onError = { error = it }, block = {
+                                backend.shareAsVault(
+                                    ShareVaultUi(
+                                        vaultId = vaultId, ids = ids, name = name.trim(), masterPassword = master,
+                                        password = password, keyfile = kf,
+                                        keyLabel = keyLabel, keyfileLabel = keyfileLabel, recoveryLabel = recoveryLabel,
+                                    ),
+                                    if (withKey) pin else null, state.onTouchNeeded,
+                                )
+                            }) { r ->
+                                master = ""; password = ""; repeat = ""; pin = ""
+                                keyfile = kf
+                                shared = r
+                            }
+                        }
+                    },
+                ) { Text(stringResource(Res.string.a_create)) }
+                step == 0 -> TextButton(onClick = {
+                    error = null
+                    saveVault("${name.trim().ifBlank { "vault" }}.${extensionOf(result.kind)}", result.data)
+                }) { Text(stringResource(Res.string.share_vault_save_file_button)) }
+                step == 1 -> TextButton(onClick = {
+                    error = null
+                    keyfile?.let { saveKeyfile("${name.trim().ifBlank { "vault" }}.ghlkey", it) }
+                }) { Text(stringResource(Res.string.share_vault_save_keyfile_button)) }
+                else -> TextButton(onClick = onDone) { Text(stringResource(Res.string.a_finish)) }
+            }
+        },
+        dismissButton = {
+            if (result == null) TextButton(onClick = onDone, enabled = !state.busy) { Text(stringResource(Res.string.a_cancel)) }
+        },
+    )
+}

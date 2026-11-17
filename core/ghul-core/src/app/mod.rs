@@ -22,6 +22,7 @@ pub(crate) mod redact;
 pub mod servers;
 pub mod setup;
 pub mod shares;
+pub mod single;
 pub mod storage;
 pub mod suite;
 

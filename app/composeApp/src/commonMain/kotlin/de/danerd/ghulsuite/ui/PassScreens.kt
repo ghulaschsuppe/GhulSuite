@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Warning
 import de.danerd.ghulsuite.model.SecurityIssueKindUi
 import kotlinx.coroutines.launch
@@ -134,6 +135,9 @@ fun PassListScreen(state: AppState, padding: PaddingValues) {
     // every list. With one entry chosen it also copies and edits.
     val selected = rememberListSelection()
     val keyOf = { e: EntrySummaryUi -> e.vaultId + "/" + e.id }
+    /** "Hand on as a vault": the vault and the picked entries. */
+    var sharing by remember { mutableStateOf<Pair<String, List<String>>?>(null) }
+    sharing?.let { (v, ids) -> ShareAsVaultDialog(state, v, ids) { sharing = null } }
     val selecting = selected.active
     val toggle = { e: EntrySummaryUi -> selected.toggle(keyOf(e)) }
     val noValue = stringResource(Res.string.pass_no_value)
@@ -165,6 +169,13 @@ fun PassListScreen(state: AppState, padding: PaddingValues) {
                     add(SelAction(Icons.Filled.Person, stringResource(Res.string.pass_copy_username)) { selected.clear(); copyField(one, "username", userLabel) })
                     add(SelAction(Icons.Filled.Key, stringResource(Res.string.pass_copy_password)) { selected.clear(); copyField(one, "password", pwLabel) })
                     add(SelAction(Icons.Filled.Edit, stringResource(Res.string.a_edit)) { selected.clear(); state.push(Screen.EntryEdit(one.vaultId, one.id, one.type)) })
+                }
+                // Picked entries of one vault: into a vault file of their own.
+                chosen.map { it.vaultId }.distinct().singleOrNull()?.let { v ->
+                    add(SelAction(Icons.Filled.Share, stringResource(Res.string.share_vault_action)) {
+                        selected.clear()
+                        sharing = v to chosen.map { it.id }
+                    })
                 }
                 add(SelAction(Icons.Filled.Delete, stringResource(Res.string.a_delete), danger = true) { delete(chosen) })
             },

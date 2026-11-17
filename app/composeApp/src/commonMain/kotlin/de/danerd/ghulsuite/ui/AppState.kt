@@ -26,6 +26,18 @@ import org.jetbrains.compose.resources.getString
 
 enum class Tab { PASS, AUTH, DRIVE, MAIL, CAL, SETTINGS }
 
+/** The tab of a vault's area. */
+fun tabOf(kind: de.danerd.ghulsuite.model.VaultKindUi): Tab = when (kind) {
+    de.danerd.ghulsuite.model.VaultKindUi.PASS -> Tab.PASS
+    de.danerd.ghulsuite.model.VaultKindUi.TOTP -> Tab.AUTH
+    de.danerd.ghulsuite.model.VaultKindUi.CAL -> Tab.CAL
+    de.danerd.ghulsuite.model.VaultKindUi.DRIVE -> Tab.DRIVE
+    de.danerd.ghulsuite.model.VaultKindUi.MAIL -> Tab.MAIL
+}
+
+/** A vault opened on its own: its kind and the file it is written back into. */
+data class SingleUi(val kind: de.danerd.ghulsuite.model.VaultKindUi, val file: de.danerd.ghulsuite.model.SuiteFileRef)
+
 /** How long "Undo" is offered after a deletion or move. */
 const val UNDO_MILLIS = 6000L
 
@@ -122,6 +134,15 @@ data class MailDraft(
  * archive, scheduled mail, update check) and owns the hooks of [JobStatus].
  */
 class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
+    /** A vault opened on its own instead of the own suite (see [SingleVault]). */
+    var single by mutableStateOf<SingleUi?>(null)
+
+    /** The vault opened on its own could not be written back into its file. */
+    var singleNotSaved by mutableStateOf(false)
+
+    /** A vault file waiting to be added to the own suite once it is unlocked. */
+    var pendingAdd by mutableStateOf<de.danerd.ghulsuite.model.PickedFile?>(null)
+
     var vaultExists by mutableStateOf(backend.exists())
 
     /** Shows the start screen (open another suite or vault) although a suite exists. */
@@ -303,7 +324,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     /** Reloads the calendars and hands the reminders of the next 30 days to the system. */
     fun refreshCalendar() {
         val st = backend.settings
-        if (!st.moduleGhulCal) {
+        val alone = single != null
+        if (!st.moduleGhulCal && !alone) {
             backend.cal.clearReminders()
             return
         }
@@ -311,6 +333,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             calendars = catching { backend.cal.calendars() }.getOrDefault(emptyList())
             val lang = getString(Res.string.cal_lang)
             calRegionName = catching { backend.cal.regions(lang) }.getOrDefault(emptyList()).firstOrNull { it.code == st.calRegion }?.name ?: ""
+            // A calendar opened on its own does not replace the reminders of the own suite.
+            if (alone) return@launch
             val rem = catching { backend.cal.reminders(localNow(), 30) }.getOrDefault(emptyList())
             val names = loadCalNames()
             backend.cal.scheduleReminders(rem.take(400).map { calAlarm(it, st.calNotifyDetail, names) }, st.calSound)
@@ -442,6 +466,12 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     mailUnread = 0
                     areasKnown = false
                     codeUnconfirmed = false
+                    if (single != null) {
+                        // The vault opened on its own is closed: back to the own suite (locked) or the start.
+                        single = null
+                        unsaved = false
+                        vaultExists = backend.exists()
+                    }
                 } else {
                     if (discardedOnLock) {
                         discardedOnLock = false
@@ -449,6 +479,10 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     }
                     afterUnlock.toList().also { afterUnlock.clear() }.forEach { message(it) }
                     refreshVaults()
+                    if (single != null) {
+                        refreshCalendar()
+                        return@collect
+                    }
                     sendDueMail()
                     runAutoArchive()
                     val start = backend.settings.startTab.let { if (it < 0) backend.settings.lastTab else it }
@@ -472,7 +506,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         scope.launch { AppLaunch.inFront.collect { if (!it) catching { settlePending() } } }
         // Area settings go into the area's file (they travel with the suite file).
         backend.settings.onAreaChange = { kind, key, value ->
-            if (backend.unlocked.value && vaults.any { it.kind == kind }) {
+            if (backend.unlocked.value && single == null && vaults.any { it.kind == kind }) {
                 scope.launch {
                     catching { backend.setAreaOptions(kind, mapOf(key to value)) }
                 }
@@ -491,6 +525,19 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                 if (it > 0 && backend.unlocked.value) {
                     mailRefreshTick++
                     refreshUnread()
+                }
+            }
+        }
+        // A vault opened on its own goes back into its file soon after every change, whatever made it.
+        scope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(1500)
+                if (single != null && backend.unlocked.value &&
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { backend.archiveUnsaved() }
+                ) {
+                    val ok = catching { backend.saveSingle() }.getOrDefault(false)
+                    singleNotSaved = !ok
+                    unsaved = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { backend.archiveUnsaved() }
                 }
             }
         }
@@ -584,6 +631,11 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     /** Tabs of the areas this suite has and this device shows, plus settings. */
     val tabs: List<Tab>
         get() = buildList {
+            single?.let {
+                add(tabOf(it.kind))
+                add(Tab.SETTINGS)
+                return@buildList
+            }
             if (backend.settings.moduleGhulPass && hasArea(VaultKindUi.PASS)) add(Tab.PASS)
             if (backend.settings.moduleGhulAuth && hasArea(VaultKindUi.TOTP)) add(Tab.AUTH)
             if (backend.settings.moduleGhulDrive && hasArea(VaultKindUi.DRIVE)) add(Tab.DRIVE)
@@ -644,6 +696,15 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     /** The working copy has changes that are not in the suite file yet (see [SuiteFileSection]). */
     var unsaved by mutableStateOf(false)
 
+    /** Writes the vault opened on its own back into its file now ("Try again"). */
+    fun saveSingle() {
+        if (single == null) return
+        run(block = { backend.saveSingle() }) { ok ->
+            singleNotSaved = !ok
+            unsaved = backend.archiveUnsaved()
+        }
+    }
+
     /** Something changed: reload. */
     fun changed() {
         unsaved = backend.archiveUnsaved()
@@ -663,7 +724,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     tab = tabs.first()
                 }
                 codeUnconfirmed = catching { !backend.recoveryConfirmed() }.getOrDefault(false)
-                loadAreaOptions()
+                // The options of a vault opened on its own are not this device's.
+                if (single == null) loadAreaOptions()
             }
             if (passVault != null && vaults.none { it.id == passVault }) passVault = null
             if (authVault != null && vaults.none { it.id == authVault }) authVault = null
@@ -1039,6 +1101,14 @@ object PasswordPolicy {
         password.length < MIN_LENGTH -> getPluralString(Res.plurals.setup_pw_too_short, MIN_LENGTH, MIN_LENGTH.toString())
         backend.passwordScore(password) < MIN_SCORE -> getString(Res.string.setup_pw_too_weak)
         password != repeat -> getString(Res.string.setup_pw_mismatch)
+        else -> null
+    }
+
+    /** The same check with the texts the screen looked up already. */
+    fun check(backend: VaultBackend, password: String, repeat: String, tooShort: String, tooWeak: String, mismatch: String): String? = when {
+        password.length < MIN_LENGTH -> tooShort
+        backend.passwordScore(password) < MIN_SCORE -> tooWeak
+        password != repeat -> mismatch
         else -> null
     }
 }

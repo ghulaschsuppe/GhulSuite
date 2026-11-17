@@ -171,6 +171,20 @@ interface VaultBackend {
     /** Reads / writes a remembered suite file; null / false when it is not reachable (e.g. the stick is out). */
     suspend fun readSuiteFile(ref: SuiteFileRef): ByteArray? = null
     suspend fun writeSuiteFile(ref: SuiteFileRef, data: ByteArray): Boolean = false
+    // --- One vault on its own, and picked entries handed on as a vault of their own
+    /**
+     * Opens one vault file on its own: only that vault is unlocked, the own suite stays locked.
+     * Changes go back into [file] (see [saveSingle]); [closeSingle] or locking ends it.
+     */
+    suspend fun openSingle(file: SuiteFileRef, data: ByteArray, password: String, pin: String?, keyfile: ByteArray?, onTouchNeeded: () -> Unit): VaultKindUi =
+        throw VaultException(VaultErrorKind.OTHER)
+    /** The file of the vault open on its own; null while the own suite is in use. */
+    fun singleFile(): SuiteFileRef? = null
+    /** Writes the vault open on its own back into its file; false if that did not work. */
+    suspend fun saveSingle(): Boolean = false
+    /** Picked entries into a new vault file with a protection of its own (key file or security key). */
+    suspend fun shareAsVault(share: ShareVaultUi, pin: String?, onTouchNeeded: () -> Unit): SharedVaultUi =
+        throw VaultException(VaultErrorKind.OTHER)
     /** Last crash report of this device, if any. */
     fun crashReport(): String? = null
     /** Breach check (k-anonymity); network. */
@@ -276,6 +290,23 @@ data class OpenVaultUi(
     val keyfile: ByteArray?,
     val recoveryLabel: String,
 )
+
+/** What "hand on as a vault" needs besides a security key. */
+class ShareVaultUi(
+    val vaultId: String,
+    val ids: List<String>,
+    val name: String,
+    val masterPassword: String,
+    val password: String,
+    /** A new key file; null with a security key. */
+    val keyfile: ByteArray?,
+    val keyLabel: String,
+    val keyfileLabel: String,
+    val recoveryLabel: String,
+)
+
+/** A new vault file of picked entries and its recovery code. */
+class SharedVaultUi(val kind: VaultKindUi, val data: ByteArray, val recoveryCode: String)
 
 data class QuickUnlockReady(val biometric: Boolean, val pin: Boolean) {
     val any: Boolean get() = biometric || pin

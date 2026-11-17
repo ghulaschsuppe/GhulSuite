@@ -133,6 +133,8 @@ fun GhulSuiteApp(state: AppState) {
                             else -> MainScreen(state, wide, maxWidth)
                         }
                     }
+                    // A vault file waiting to be added once the own suite is unlocked.
+                    if (unlocked && state.single == null && !state.showStart) PendingAddHandler(state)
                     // A running action, in front of the screens (sheets show it themselves).
                     BusyOverlay()
                     // Development build only: alarms of DevChecks, in every screenshot.

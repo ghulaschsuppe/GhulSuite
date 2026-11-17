@@ -114,6 +114,11 @@ fun SettingsScreen(state: AppState, padding: PaddingValues) {
     val keys = slots.count { it.type == SlotType.SECURITY_KEY }
     val files = slots.count { it.type == SlotType.KEYFILE }
 
+    if (state.single != null) {
+        // A vault opened on its own: no options of the own suite.
+        Column(Modifier.padding(padding)) { ScreenColumn { SingleVaultSection(state) } }
+        return
+    }
     Column(Modifier.padding(padding)) {
         ScreenColumn {
             SectionCard {

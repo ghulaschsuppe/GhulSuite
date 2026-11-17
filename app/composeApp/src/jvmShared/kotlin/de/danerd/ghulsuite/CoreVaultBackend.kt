@@ -68,6 +68,10 @@ import de.danerd.ghulsuite.model.SuiteFileRef
 import de.danerd.ghulsuite.core.ArchiveCheck
 import de.danerd.ghulsuite.core.ArchiveRelation
 import de.danerd.ghulsuite.core.ArchiveTarget
+import de.danerd.ghulsuite.core.ShareVaultOptions
+import de.danerd.ghulsuite.core.localStorage
+import de.danerd.ghulsuite.model.ShareVaultUi
+import de.danerd.ghulsuite.model.SharedVaultUi
 
 /**
  * Everything of [VaultBackend] that is the same on Android and Windows: the open suite, vaults,
@@ -177,6 +181,91 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
 
     override fun setSuiteFile(ref: SuiteFileRef?) = setDevicePref("suite_file", ref?.let { it.id + "|" + it.name } ?: "")
 
+    // --- one vault on its own ----------------------------------------------------------------
+
+    /** The file of the vault open on its own (then [suite] is the temporary suite around it). */
+    private var single: SuiteFileRef? = null
+
+    /** Where a vault opened on its own is kept meanwhile: encrypted files only, wiped on closing. */
+    private fun singleRoot() = java.io.File(localDir).absoluteFile.resolveSibling("single-vault")
+
+    override fun singleFile(): SuiteFileRef? = single
+
+    override suspend fun openSingle(
+        file: SuiteFileRef,
+        data: ByteArray,
+        password: String,
+        pin: String?,
+        keyfile: ByteArray?,
+        onTouchNeeded: () -> Unit,
+    ): VaultKindUi {
+        if (single != null || unlockedState.value) lock()
+        val root = singleRoot()
+        io { root.deleteRecursively() }
+        val temp = GhulSuite(localStorage(java.io.File(root, "vault").path), java.io.File(root, "local").path)
+            .also { it.setTimeZones(DeviceTimeZones) }
+        val kind = try {
+            maybeWithKey(pin) { t -> temp.openSingleVault(data, password, t, t?.let { Touch(onTouchNeeded) }, pin, keyfile) }
+        } catch (e: Throwable) {
+            io { root.deleteRecursively() }
+            throw e
+        }
+        current = temp
+        single = file
+        unlockedState.value = true
+        return kind.toUi()
+    }
+
+    override suspend fun saveSingle(): Boolean {
+        val ref = single ?: return false
+        val s = suite
+        val data = io { s.singleVaultFile() }
+        if (!writeSuiteFile(ref, data)) return false
+        // Changed meanwhile: still not in the file.
+        if (io { s.singleVaultFile() }.contentEquals(data)) io { s.singleSaved() }
+        return true
+    }
+
+    /**
+     * Ends the vault opened on its own at once (main thread); unsaved changes are written back
+     * into its file in the background, then the temporary folder goes.
+     */
+    private fun closeSingle(ref: SuiteFileRef) {
+        val s = suite
+        s.lock()
+        single = null
+        current = null
+        unlockedState.value = false
+        val root = singleRoot()
+        Thread({
+            runCatching { s.finishLock() }
+            runCatching {
+                if (java.io.File(root, "local/archive-unsaved").exists()) {
+                    val vault = java.io.File(root, "vault").listFiles()
+                        ?.firstOrNull { it.isFile && it.extension.startsWith("ghl") && it.extension != "ghlsuite" }
+                    vault?.readBytes()?.let { kotlinx.coroutines.runBlocking { writeSuiteFile(ref, it) } }
+                }
+            }
+            root.deleteRecursively()
+        }, "ghul-single-close").apply { isDaemon = true }.start()
+    }
+
+    override suspend fun shareAsVault(share: ShareVaultUi, pin: String?, onTouchNeeded: () -> Unit): SharedVaultUi {
+        val options = ShareVaultOptions(
+            vaultId = share.vaultId,
+            ids = share.ids.map { it.hexToBytes() },
+            name = share.name,
+            masterPassword = share.masterPassword,
+            password = share.password,
+            keyfile = share.keyfile,
+            keyLabel = share.keyLabel,
+            keyfileLabel = share.keyfileLabel,
+            recoveryLabel = share.recoveryLabel,
+        )
+        val r = maybeWithKey(pin) { t -> suite.shareAsVault(options, t, t?.let { Touch(onTouchNeeded) }, pin) }
+        return SharedVaultUi(r.kind.toUi(), r.data, r.recoveryCode)
+    }
+
     override fun protection(): ProtectionUi? = runCatching { suite.protection().toUi() }.getOrNull()
 
     override suspend fun inspectFile(data: ByteArray): ContainerInfoUi = io {
@@ -185,6 +274,7 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
     }
 
     override fun lock() {
+        single?.let { closeSingle(it); return }
         // F92: returns at once, also while a slow server still holds the open suite (the main
         // thread must not wait for it); the rest is dropped in the background when that ends.
         val s = suite

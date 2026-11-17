@@ -58,7 +58,7 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 
-private enum class Flow { START, NEW, OPEN_VAULT, OPEN_FILE }
+private enum class Flow { START, NEW, OPEN_VAULT, OPEN_FILE, OPEN_SINGLE }
 
 const val KEYFILE_NAME = "ghulsuite.ghlkey"
 
@@ -79,7 +79,9 @@ fun ScreenColumn(content: @Composable () -> Unit) {
 @Composable
 fun SetupScreen(state: AppState) {
     var flow by remember { mutableStateOf(Flow.START) }
-    var vaultFile by remember { mutableStateOf<PickedFile?>(null) }
+    var vaultFile by remember { mutableStateOf<PickedSuiteFile?>(null) }
+    /** A vault file was picked: ask what to do with it. */
+    var choose by remember { mutableStateOf(false) }
     var vaultInfo by remember { mutableStateOf<ContainerInfoUi?>(null) }
     var suiteFile by remember { mutableStateOf<PickedSuiteFile?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -92,17 +94,18 @@ fun SetupScreen(state: AppState) {
         error = null
         flow = Flow.OPEN_FILE
     }
-    val openFile = rememberOpenFile { file ->
+    // With access to write: a vault opened on its own goes back into its file.
+    val openFile = rememberOpenSuiteFile { ref, data ->
         scope.launch {
-            catching { backend.inspectFile(file.bytes) }
+            catching { backend.inspectFile(data) }
                 .onSuccess { info ->
                     if (info.kind == "suite") {
                         error = isSuiteFile
                     } else {
-                        vaultFile = file
+                        vaultFile = PickedSuiteFile(ref, data)
                         vaultInfo = info
                         error = null
-                        flow = Flow.OPEN_VAULT
+                        choose = true
                     }
                 }
                 .onFailure { error = describe(it) }
@@ -151,10 +154,29 @@ fun SetupScreen(state: AppState) {
                 val file = vaultFile
                 val info = vaultInfo
                 if (file != null && info != null) {
-                    OpenVaultWizard(state, file, info) { flow = Flow.START }
+                    OpenVaultWizard(state, PickedFile(file.ref.name, file.data), info) { flow = Flow.START }
+                }
+            }
+
+            Flow.OPEN_SINGLE -> {
+                val file = vaultFile
+                val info = vaultInfo
+                if (file != null && info != null) {
+                    OpenSingleVault(state, file, info) { flow = Flow.START }
                 }
             }
         }
+    }
+
+    val picked = vaultFile
+    val pickedInfo = vaultInfo
+    if (choose && picked != null && pickedInfo != null) {
+        VaultFileChoice(
+            state, picked, pickedInfo,
+            onOnlyThis = { choose = false; flow = Flow.OPEN_SINGLE },
+            onNewSuite = { choose = false; flow = Flow.OPEN_VAULT },
+            onCancel = { choose = false },
+        )
     }
 }
 

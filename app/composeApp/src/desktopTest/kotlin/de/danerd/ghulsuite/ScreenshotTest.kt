@@ -88,7 +88,33 @@ class ScreenshotTest {
         /** Windows (true) or a phone (false): what only one of them has (keyboard keys …). */
         var desktop = false
         override val isDesktop get() = desktop
-        override fun lock() { locks++ }
+        override fun lock() {
+            locks++
+            // A vault open on its own ends with locking.
+            if (single != null) {
+                single = null
+                unlocked.value = false
+            }
+        }
+        /** The file of a vault open on its own. */
+        var single: de.danerd.ghulsuite.model.SuiteFileRef? = null
+        override fun singleFile() = single
+        override suspend fun openSingle(
+            file: de.danerd.ghulsuite.model.SuiteFileRef, data: ByteArray, password: String, pin: String?,
+            keyfile: ByteArray?, onTouchNeeded: () -> Unit,
+        ): VaultKindUi {
+            calls += "openSingle:${file.name}"
+            single = file
+            unlocked.value = true
+            return VaultKindUi.PASS
+        }
+        override suspend fun saveSingle(): Boolean = true.also { calls += "saveSingle" }
+        override suspend fun shareAsVault(
+            share: de.danerd.ghulsuite.model.ShareVaultUi, pin: String?, onTouchNeeded: () -> Unit,
+        ): de.danerd.ghulsuite.model.SharedVaultUi {
+            calls += "shareAsVault:${share.vaultId}:${share.ids.joinToString(",")}:${share.name}:${share.keyfile != null}:${share.masterPassword}"
+            return de.danerd.ghulsuite.model.SharedVaultUi(VaultKindUi.PASS, ByteArray(10), "AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF-GGGGG-HHHHH-JJJJJ-KKKKK-MMMMM")
+        }
         override fun panicLock() {}
         override fun biometricAvailable() = true
         override fun quickUnlockReady() = QuickUnlockReady(biometric = quickReady, pin = quickReady)

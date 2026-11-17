@@ -213,6 +213,7 @@ fun UnlockScreen(state: AppState) {
                     stringResource(Res.string.unlock_use_code) to { clear(); mode = UnlockMode.RECOVERY },
                 )
                 backend.suiteFile()?.let { HintText(stringResource(Res.string.file_current, it.name)) }
+                state.pendingAdd?.let { HintText(stringResource(Res.string.single_pending_add, it.name)) }
             }
 
             UnlockMode.RECOVERY -> {

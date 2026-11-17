@@ -2083,4 +2083,57 @@ class InteractionTest {
         text("Save server").performScrollTo().performClick()
         waitUntil(timeoutMillis = 10_000) { "saveServer:nas.example.org:ghulsuite" in net.calls }
     }
+
+    /**
+     * P5b: a vault opened on its own shows only its area; Options hold only that vault (no options
+     * of the own suite), and "Close vault" ends it like locking.
+     */
+    @Test
+    fun singleVaultShowsOnlyItsAreaAndCloses() = app(
+        prepare = { single = de.danerd.ghulsuite.model.SuiteFileRef("/x/Privat.ghlpss", "Privat.ghlpss") },
+        setup = { single = de.danerd.ghulsuite.ui.SingleUi(VaultKindUi.PASS, de.danerd.ghulsuite.model.SuiteFileRef("/x/Privat.ghlpss", "Privat.ghlpss")) },
+    ) { state, fake ->
+        waitFor("Codeberg")
+        assertEquals(listOf(Tab.PASS, Tab.SETTINGS), state.tabs)
+        assertFalse(shown("GhulAuth"), "no other area")
+        shot("single-pass")
+        text("Options").performClick()
+        waitFor("Close vault")
+        assertFalse(shown("My suite"), "no options of the own suite")
+        assertTrue(shown("Everything is in the file."))
+        shot("single-options")
+        text("Close vault").performClick()
+        waitUntil(timeoutMillis = 10_000) { state.single == null }
+        assertFalse(state.backend.unlocked.value)
+        assertEquals(1, fake.locks)
+    }
+
+    /**
+     * P5b: picked entries of one vault are handed on as a vault: name, its own password (twice,
+     * checked like a master password), a new key file, and the own master password to confirm.
+     */
+    @Test
+    fun shareAsVaultFromTheSelection() = app { _, fake ->
+        longPress("Codeberg")
+        waitFor("1 selected")
+        desc("More").performClick()
+        waitFor("Hand on as a vault")
+        text("Hand on as a vault").performClick()
+        waitFor("Password of the new vault")
+        shot("share-vault-form")
+        val fields = onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog()))
+        fields[0].performTextReplacement("Für Anna")
+        fields[1].performTextReplacement("kurz")
+        fields[2].performTextReplacement("kurz")
+        fields[3].performTextReplacement("Master Passwort!")
+        onAllNodes(hasText("Create") and hasAnyAncestor(isDialog())).onFirst().performClick()
+        waitForIdle()
+        assertFalse(fake.calls.any { it.startsWith("shareAsVault") }, "a weak password is refused first")
+        fields[1].performTextReplacement("ein langes neues Passwort")
+        fields[2].performTextReplacement("ein langes neues Passwort")
+        onAllNodes(hasText("Create") and hasAnyAncestor(isDialog())).onFirst().performClick()
+        waitFor("Save vault file")
+        assertTrue("shareAsVault:p1:1:Für Anna:true:Master Passwort!" in fake.calls, fake.calls.toString())
+        shot("share-vault-ready")
+    }
 }
