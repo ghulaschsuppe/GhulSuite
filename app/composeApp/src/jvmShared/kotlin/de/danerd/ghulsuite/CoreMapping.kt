@@ -134,6 +134,7 @@ internal fun GhulException.toVault(): VaultException {
         is GhulException.ServerAuthFailed -> VaultException(VaultErrorKind.SERVER_AUTH, d)
         is GhulException.DriveRolledBack -> VaultException(VaultErrorKind.DRIVE_ROLLED_BACK, d)
         is GhulException.DriveEarlierKey -> VaultException(VaultErrorKind.DRIVE_EARLIER_KEY, d)
+        is GhulException.KeyChangeNotSaved -> VaultException(VaultErrorKind.KEY_CHANGE_NOT_SAVED, d)
         is GhulException.ShareNotDeleted -> VaultException(VaultErrorKind.SHARE_NOT_DELETED, d)
         is GhulException.PhpNotExecuted -> VaultException(VaultErrorKind.PHP_NOT_EXECUTED, d)
         is GhulException.NotConfigured -> VaultException(VaultErrorKind.NOT_CONFIGURED, d)

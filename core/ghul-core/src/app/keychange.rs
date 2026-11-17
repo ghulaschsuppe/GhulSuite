@@ -78,6 +78,9 @@ pub struct KeyChangeStatus {
     pub servers: Vec<KeyChangeServer>,
     /// The new public key (to add by hand where needed).
     pub public_key: String,
+    /// Nothing moves to the new keys before the suite file with the new protection is saved:
+    /// until then the earlier copy is the only one that opens GhulDrive and the servers.
+    pub waiting_for_save: bool,
 }
 
 /// Where the server keeps the keys allowed to log in: the login folder and the file in it.
@@ -277,13 +280,22 @@ impl GhulSuite {
             Vec::new()
         };
         let public_key = if ssh_running { public_key_of(&ssh_private_key(o)?)? } else { String::new() };
-        Ok(KeyChangeStatus { running: ssh_running || !drive_waiting.is_empty(), drive_waiting, servers, public_key })
+        let running = ssh_running || !drive_waiting.is_empty();
+        let waiting_for_save = running && !self.key_change_saved(o);
+        Ok(KeyChangeStatus { running, drive_waiting, servers, public_key, waiting_for_save })
+    }
+
+    /// Whether the suite file with the current protection was saved (or opened) on this device:
+    /// only then the key change goes on. Before, the earlier suite file is the only copy, and
+    /// it must still reach GhulDrive and the servers (e.g. when this device is lost meanwhile).
+    pub(super) fn key_change_saved(&self, o: &Open) -> bool {
+        self.saved_epoch(&o.suite.header().suite_id) >= o.epoch()
     }
 
     /// The servers still to move to the new key.
     fn key_change_jobs(&self, o: &mut Open) -> Result<Vec<Job>> {
         let c: KeyChange = setting(&o.suite, CHANGE_KEY);
-        if c.ssh_old.is_empty() {
+        if c.ssh_old.is_empty() || !self.key_change_saved(o) {
             return Ok(Vec::new());
         }
         let new = ssh_private_key(o)?;

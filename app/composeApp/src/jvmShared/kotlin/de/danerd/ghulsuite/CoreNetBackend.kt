@@ -487,6 +487,7 @@ abstract class CoreNetBackend(protected val suite: () -> GhulSuite) : NetBackend
 
 private fun de.danerd.ghulsuite.core.KeyChangeStatus.toUi() = KeyChangeUi(
     running = running,
+    waitingForSave = waitingForSave,
     driveWaiting = driveWaiting,
     servers = servers.map {
         KeyChangeServerUi(

@@ -303,7 +303,7 @@ fn unused_blocks_are_tidied_up() {
         .flat_map(|d| std::fs::read_dir(d.path()).unwrap().flatten().map(|f| f.path()))
         .collect();
     assert_eq!(used.len(), 1);
-    let day_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 86_400);
+    let day_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(10 * 86_400);
     let orphan = |name: &str, old: bool| {
         let dir = blocks.join(&name[..2]);
         std::fs::create_dir_all(&dir).unwrap();

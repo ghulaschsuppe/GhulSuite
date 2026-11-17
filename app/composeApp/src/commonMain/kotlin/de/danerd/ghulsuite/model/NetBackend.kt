@@ -332,6 +332,8 @@ data class KeyChangeUi(
     val driveWaiting: List<String> = emptyList(),
     val servers: List<KeyChangeServerUi> = emptyList(),
     val publicKey: String = "",
+    /** Nothing moves before the suite file with the new protection is saved. */
+    val waitingForSave: Boolean = false,
 ) {
     /** Something only the user can do (the hoster manages keys in its web panel). */
     val byHand: Boolean get() = servers.any { it.state == KeyChangeStateUi.ADD_BY_HAND || it.state == KeyChangeStateUi.REMOVE_BY_HAND }

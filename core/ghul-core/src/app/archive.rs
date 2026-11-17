@@ -108,6 +108,10 @@ struct Seen {
     /// The counter of `state` (`counter` is the highest one seen; 0: as `counter`).
     #[serde(default)]
     at: u64,
+    /// The protection epoch of the newest suite file this device saved or opened: a key change
+    /// waits until the suite file with the new protection is saved (see `key_change_saved`).
+    #[serde(default)]
+    saved_epoch: u64,
 }
 
 /// How a `.ghlzip` relates to what this device has.
@@ -330,6 +334,22 @@ impl GhulSuite {
         e.complete = state.complete;
         e.epoch = e.epoch.max(epoch);
         self.write_seen(&all);
+    }
+
+    /// A suite file with protection epoch `epoch` was saved here or opened.
+    fn note_saved_epoch(&self, suite_id: &[u8; 16], epoch: u64) {
+        let mut all = self.seen_all();
+        let e = all.entry(crate::kdf::hex(suite_id)).or_default();
+        if epoch <= e.saved_epoch {
+            return;
+        }
+        e.saved_epoch = epoch;
+        self.write_seen(&all);
+    }
+
+    /// The protection epoch of the newest suite file saved or opened on this device.
+    pub(super) fn saved_epoch(&self, suite_id: &[u8; 16]) -> u64 {
+        self.seen_all().get(&crate::kdf::hex(suite_id)).map_or(0, |e| e.saved_epoch)
     }
 
     /// The protection of a suite changed on this device (its epoch is `epoch` now).
@@ -617,6 +637,8 @@ impl GhulSuite {
             let epoch = o.epoch();
             self.save_container(&mut o.suite, SUITE_FILE)?;
             self.note_archive_seen(&p.suite_id, &accepted, epoch.max(p.header.epoch));
+            // The file's own protection is in a file (after the recovery code: the new one is not).
+            self.note_saved_epoch(&p.suite_id, p.header.epoch);
             Ok(())
         })?;
         // After the recovery code everything was written anew: that is a change to save.
@@ -753,6 +775,7 @@ impl GhulSuite {
                 return Err(GhulError::InvalidInput { msg: "another state was built meanwhile".into() });
             }
             self.note_archive_seen(&o.suite.header().suite_id, &mine, o.epoch());
+            self.note_saved_epoch(&o.suite.header().suite_id, o.epoch());
             Ok(())
         })?;
         self.clear_unsaved_at(change);

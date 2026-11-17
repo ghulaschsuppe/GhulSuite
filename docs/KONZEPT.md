@@ -552,14 +552,17 @@ weder an GhulDrive noch an die Server.
 
 1. **Lokal vormerken:** Die Arbeitskopie bekommt einen neuen Drive-Schlüssel und einen neuen SSH-Schlüssel,
    zusätzlich zu den alten, mit dem Vermerk „Wechsel läuft“. Bricht etwas ab (kein Netz, App beendet), setzt die App
-   beim nächsten Entsperren dort fort.
+   beim nächsten Entsperren dort fort. Die Schritte 2 und 3 laufen erst, wenn die Suite-Datei mit dem neuen Schutz
+   gespeichert (oder geöffnet) ist: Bis dahin ist die ältere Datei die einzige Kopie und muss GhulDrive und die Server
+   weiter erreichen. GhulDrive liest und schreibt den Index solange mit dem Schlüssel, den er hat; ein Speicherort, der
+   nicht umgeschlüsselt ist, lässt sich bis dahin nicht mit behaltenen Dateien entfernen.
 2. **Index umschlüsseln** (unter der Sperre, je Speicherort): mit dem alten Schlüssel lesen, mit dem neuen schreiben,
    eine `index.bak` mit altem Schlüssel löschen. Die Blöcke bleiben unverändert, ihre Schlüssel stehen nur im Index.
    Ist der Index älter als gesehen, beschädigt oder fehlt er, wird nichts still übernommen: Der Nutzer entscheidet wie
    beim normalen Lesen.
 3. **SSH-Zugang tauschen** (je Server, siehe unten).
 4. **Abschließen:** Erst wenn alle Server und alle Drive-Speicherorte durch sind, werden die alten SSH- und
-   Drive-Schlüssel aus der Suite gelöscht. Die App fordert auf, die Suite-Datei zu speichern.
+   Drive-Schlüssel aus der Suite gelöscht.
 
 **Je Anbieter.** Wie Schritt 3 abläuft, hängt davon ab, wo der Anbieter die erlaubten Schlüssel hält. Die App erkennt
 das selbst, eine Einstellung braucht es nicht:

@@ -216,6 +216,8 @@ fun SuiteFileSection(state: AppState) {
                 error = null
                 state.unsaved = false
                 state.message(savedMsg.replace("%1\$s", target.name))
+                // A key change waiting for this file goes on now.
+                state.continueKeyChange()
             }
         }
     }

@@ -18,6 +18,12 @@ fn local_drive(name: &str) -> std::path::PathBuf {
     server
 }
 
+/// The suite file with the current protection is saved: only then the key change goes on.
+fn save_file(s: &GhulSuite) {
+    let built = s.archive_build("Test".into()).unwrap();
+    s.archive_saved(built.state, built.change).unwrap();
+}
+
 fn attach(s: &GhulSuite, server: &std::path::Path) {
     let fs: Arc<dyn RemoteFs> = Arc::new(LocalFs::new(server));
     s.drive_use_folder(fs).unwrap();
@@ -40,8 +46,22 @@ fn a_new_password_gives_drive_a_new_key() {
     let (key_before, _) = a.drive_test_keys();
 
     a.change_password("pw-123456".into(), "pw-neu-7890".into()).unwrap();
+    // Until the suite file with the new password is saved, the earlier one is the only copy:
+    // Drive stays with the earlier key, the change waits.
     let st = a.key_change_status().unwrap();
-    assert!(st.running);
+    assert!(st.running && st.waiting_for_save, "{st:?}");
+    upload(&a, None, "b.txt", b"B");
+    assert_eq!(names(&a).unwrap(), vec!["a.txt", "b.txt"]);
+    assert!(a.key_change_continue().unwrap().waiting_for_save);
+    {
+        let o = old.suite();
+        o.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
+        attach(&o, &server);
+        assert_eq!(names(&o).unwrap(), vec!["a.txt", "b.txt"], "the earlier file still opens Drive");
+    }
+    save_file(&a);
+    let st = a.key_change_status().unwrap();
+    assert!(st.running && !st.waiting_for_save);
     assert_eq!(st.drive_waiting, vec!["test".to_string()]);
     assert!(st.servers.is_empty(), "no server, no SSH key to change");
     // The next Drive call writes the index with the new key.
@@ -82,6 +102,7 @@ fn a_key_change_continues_where_it_stopped() {
     upload(&s, None, "a.txt", b"A");
     let code = s.new_recovery_code("neu".into()).unwrap();
     assert!(!code.is_empty());
+    save_file(&s);
     // Another device holds the index (a fresh lock): the change waits.
     let fresh = format!("other {}", super::super::suite::now_ms());
     std::fs::write(server.join("drive/index.lock"), fresh).unwrap();
@@ -112,6 +133,7 @@ fn a_damaged_index_is_not_rekeyed_silently() {
     upload(&s, None, "a.txt", b"A");
     upload(&s, None, "b.txt", b"B");
     s.change_password("pw-123456".into(), "pw-neu-7890".into()).unwrap();
+    save_file(&s);
     let index = server.join("drive/index.ghldrv");
     std::fs::write(&index, b"kaputt").unwrap();
     assert!(matches!(names(&s), Err(GhulError::DriveRolledBack)));
@@ -137,6 +159,7 @@ fn an_older_index_is_not_rekeyed_silently() {
     upload(&s, None, "b.txt", b"B");
     upload(&s, None, "c.txt", b"C");
     s.change_password("pw-123456".into(), "pw-neu-7890".into()).unwrap();
+    save_file(&s);
     std::fs::write(&index, &old).unwrap();
     assert!(matches!(names(&s), Err(GhulError::DriveRolledBack)));
     assert_eq!(std::fs::read(&index).unwrap(), old);
@@ -158,6 +181,7 @@ fn after_the_change_an_index_with_the_earlier_key_is_refused() {
     let index = server.join("drive/index.ghldrv");
     let backup = std::fs::read(&index).unwrap();
     s.change_password("pw-123456".into(), "pw-neu-7890".into()).unwrap();
+    save_file(&s);
     assert!(!s.key_change_continue().unwrap().running);
     upload(&s, None, "b.txt", b"B");
     // The earlier key is no longer in the suite. (The hoster puts back its folder: no copy before.)
@@ -180,8 +204,13 @@ fn many_changes_keep_the_key_a_waiting_location_needs() {
     upload(&s, None, "a.txt", b"A");
     for i in 0..20 {
         s.new_recovery_code(format!("Code {i}")).unwrap();
+        // Before saving, Drive keeps the key its index has (here: the one before all changes).
+        upload(&s, None, &format!("{i}.txt"), b"x");
     }
-    assert_eq!(names(&s).unwrap(), vec!["a.txt"]);
+    assert_eq!(names(&s).unwrap().len(), 21);
+    assert!(s.key_change_continue().unwrap().waiting_for_save);
+    save_file(&s);
+    assert_eq!(names(&s).unwrap().len(), 21);
     assert!(!s.key_change_continue().unwrap().running);
     let _ = std::fs::remove_dir_all(&server);
 }
@@ -251,6 +280,7 @@ fn sftp_key_change_ends_when_the_waiting_server_is_removed() {
     {
         let _at = AuthKeysAt::set(&elsewhere, "authorized_keys");
         s.change_password("pw-123456".into(), "pw-neu-7890".into()).unwrap();
+        save_file(&s);
         let st = s.key_change_continue().unwrap();
         assert!(states(&st).iter().all(|x| *x == KeyChangeState::AddByHand), "{st:?}");
     }
@@ -291,6 +321,14 @@ fn sftp_key_change_swaps_the_ssh_key() {
     {
         let _at = AuthKeysAt::set(dir, name);
         a.change_password("pw-123456".into(), "pw-neu-7890".into()).unwrap();
+        // Not before the suite file is saved: the earlier key stays the only one.
+        let st = {
+            let _file = crate::net::tests::AUTHKEYS_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+            a.key_change_continue().unwrap()
+        };
+        assert!(st.waiting_for_save && states(&st).iter().all(|s| *s == KeyChangeState::Waiting));
+        assert!(file_has(&first) && !file_has(&st.public_key));
+        save_file(&a);
         let st = a.key_change_status().unwrap();
         assert!(st.running);
         assert!(states(&st).iter().all(|s| *s == KeyChangeState::Waiting));
@@ -320,6 +358,7 @@ fn sftp_key_change_swaps_the_ssh_key() {
     {
         let _at = AuthKeysAt::set(&elsewhere, "authorized_keys");
         a.change_password("pw-neu-7890".into(), "pw-dritt-555".into()).unwrap();
+        save_file(&a);
         let st = a.key_change_continue().unwrap();
         assert!(st.running);
         assert!(states(&st).iter().all(|s| *s == KeyChangeState::AddByHand), "{st:?}");
@@ -346,6 +385,7 @@ fn sftp_key_change_swaps_the_ssh_key() {
     {
         let _at = AuthKeysAt::set(&elsewhere, "authorized_keys");
         a.change_password("pw-dritt-555".into(), "pw-viert-666".into()).unwrap();
+        save_file(&a);
         {
             let _file = crate::net::tests::AUTHKEYS_LOCK.lock().unwrap_or_else(|p| p.into_inner());
             let text = std::fs::read_to_string(&authkeys).unwrap();
@@ -396,6 +436,9 @@ fn sftp_a_location_removed_during_a_key_change_stays_readable() {
     s.drive_switch_location(b.clone()).unwrap();
     s.change_password("pw-123456".into(), "pw-neu-7890".into()).unwrap();
     assert!(s.key_change_status().unwrap().drive_waiting.len() == 2);
+    // Removed before the suite file is saved: refused (the change cannot go on yet).
+    assert!(matches!(s.drive_remove_location(a.clone(), false, false), Err(GhulError::KeyChangeNotSaved)));
+    save_file(&s);
 
     // Its index cannot be read (damaged, no copy before): not removed.
     let index = std::path::Path::new(&first).join("drive/index.ghldrv");

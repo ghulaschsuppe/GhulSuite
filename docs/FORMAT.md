@@ -527,7 +527,11 @@ id    = hex(HMAC-SHA256(BIK_f, Klartext-Block))      <ab> = die ersten zwei Zeic
 - **Schlüsselwechsel** (seit 0.9, Konzept 6.4): Bei einem neuen Passwort, einem neuen Wiederherstellungscode oder
   einem entfernten Key bzw. einer entfernten Schlüsseldatei (nicht beim Hinzufügen) bekommt der Drive-Tresor ein neues
   `DK`. Das bisherige kommt nach `drive.old_keys` (neuestes zuerst; nur zum Lesen, solange der Wechsel läuft), `drive.rekey_running`
-  wird gesetzt, die bereits umgeschlüsselten Speicherorte stehen in `drive.rekeyed`. Beim ersten Zugriff auf einen
+  wird gesetzt, die bereits umgeschlüsselten Speicherorte stehen in `drive.rekeyed`. Umgeschlüsselt wird erst, wenn
+  dieses Gerät die Suite-Datei mit der neuen Schutz-Epoche gespeichert oder geöffnet hat (`saved_epoch` in
+  `archive-seen.json` ≥ `protection_epoch`); bis dahin wird der Index eines noch nicht umgeschlüsselten Speicherorts
+  mit dem früheren `DK` gelesen und geschrieben, das ihn öffnet (Index, sonst `index.bak`; keiner da: das neueste
+  frühere), und auch der SSH-Tausch wartet. Danach gilt: Beim ersten Zugriff auf einen
   Speicherort (oder mit `key_change_continue`) wird unter der Sperre der Index gelesen, mit dem neuen `DK` geschrieben
   und eine `index.bak` mit früherem Schlüssel gelöscht; die Blöcke bleiben, ihre Schlüssel stehen nur im Index. Dabei
   gelten dieselben Regeln wie beim Lesen: Ein älterer Stand, ein beschädigter Index (nur `index.bak` öffnet) oder ein
@@ -692,7 +696,8 @@ eine andere Suite (Rückfrage: überschreiben oder unter neuem Namen speichern).
    `suite_id`; jede öffnet, ihr Siegel stimmt; die Epoche des Suite-Containers ist die des Kopfs.
 
 Danach vergleicht die App mit dem, was dieses Gerät zuletzt gesehen hat (gemerkt je Suite im Gerätespeicher:
-`archive-seen.json` mit Stand-ID, höchstem Zähler, Epoche und Herkunft):
+`archive-seen.json` mit Stand-ID, höchstem Zähler, Epoche und Herkunft; dazu `saved_epoch`, die Epoche der zuletzt
+hier gespeicherten oder geöffneten Datei, auf die ein Schlüsselwechsel wartet):
 
 | Ergebnis | Bedeutung | App |
 |---|---|---|

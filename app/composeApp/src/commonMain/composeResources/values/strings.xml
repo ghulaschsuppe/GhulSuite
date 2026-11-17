@@ -410,6 +410,7 @@
     <string name="err_cert_untrusted">The server certificate is not trusted (%1$s).</string>
     <string name="err_server_auth">The server rejected the login. Check user name, password or key. If the protection of your suite was changed on another device, open the current suite file here.</string>
     <string name="err_drive_earlier_key">The server holds a GhulDrive state with a key of before your last change of the protection, e.g. a backup put back. Nothing was changed. Only take it over if you put the backup back yourself (Options → GhulDrive → “Take older server state”): otherwise someone with an old copy of your suite file may have put it there.</string>
+    <string name="err_key_change_not_saved">Save the suite file first: the key change after your change of the protection waits for it, and only then this location can be removed without its files becoming unreadable.</string>
     <string name="err_drive_rolled_back">The GhulDrive state on the server is older than the one seen last (server reset or an old backup put back). Nothing was changed. If that was on purpose: Options → GhulDrive → “Take older server state”.</string>
     <string name="err_share_not_deleted">The server of this link is no longer set up, its package could not be deleted. The link works until it expires.</string>
     <string name="err_php_not_executed">The web server does not run PHP and delivers the server module as text: its access key would be readable. The app deleted the file again. Ask your host whether PHP is active for this folder.</string>
@@ -1770,6 +1771,6 @@
     <string name="kc_waiting">Not reached yet, tried again later.</string>
     <string name="kc_check">Check</string>
     <string name="prot_save_title">Save the suite file now</string>
-    <string name="prot_save_text">The protection of your suite was changed. Save the suite file now and replace older copies on other devices, sticks or in backups with it. They still open with the old protection, but no longer reach GhulDrive and your servers.</string>
+    <string name="prot_save_text">The protection of your suite was changed. Save the suite file now and replace older copies on other devices, sticks or in backups with it. Only then GhulDrive and your servers get new keys; older copies still open with the old protection after that, but no longer reach GhulDrive and your servers. Until then the older file is your only copy, so everything stays as it was until you save.</string>
     <string name="prot_save_now">Save now</string>
 </resources>

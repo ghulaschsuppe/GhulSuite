@@ -141,14 +141,17 @@ Bei jeder Schutzänderung (neues Passwort, neuer Code, Key oder Schlüsseldatei 
 
 1. **Lokal vormerken:** Die Arbeitskopie bekommt einen neuen Drive-Schlüssel und einen neuen SSH-Schlüssel, zusätzlich
    zu den alten, mit dem Vermerk „Wechsel läuft“. Bricht etwas ab, setzt die App beim nächsten Start dort fort.
+   **Erst speichern:** Die Schritte 2 und 3 laufen erst, wenn die Suite-Datei mit dem neuen Schutz gespeichert (oder
+   geöffnet) ist. Bis dahin ist die ältere Datei die einzige Kopie; GhulDrive liest und schreibt den Index mit dem
+   Schlüssel, den er hat, und der alte SSH-Schlüssel bleibt eingetragen. Geht das Gerät vorher verloren, öffnet die
+   ältere Datei GhulDrive und die Server weiter. Die App bittet nach der Schutzänderung und bei jedem Entsperren darum.
 2. **Index umschlüsseln** (unter der Sperre): mit dem alten Schlüssel lesen, mit dem neuen Schlüssel schreiben,
    `index.bak` (alter Schlüssel) löschen. Ein Schreibvorgang; die Blöcke bleiben unverändert, denn ihre Schlüssel
    stehen nur im Index. Ist der Index älter als gesehen, beschädigt oder fehlt er, wird nichts still übernommen: der
    Nutzer entscheidet wie beim normalen Lesen (6.3).
 3. **SSH-Zugang tauschen:** neuen öffentlichen Schlüssel auf dem Server eintragen, damit anmelden und prüfen, dann den
    alten entfernen und prüfen, dass er abgewiesen wird (je Anbieter, siehe unten).
-4. **Abschließen:** alte SSH- und Drive-Schlüssel aus der Arbeitskopie entfernen; die App fordert auf, die
-   Suite-Datei zu speichern. Eine Sicherung des Servers von vor der Schutzänderung ist danach nicht mehr lesbar (6.5).
+4. **Abschließen:** alte SSH- und Drive-Schlüssel aus der Arbeitskopie entfernen. Eine Sicherung des Servers von vor der Schutzänderung ist danach nicht mehr lesbar (6.5).
 
 Danach:
 - Eine **alte Datei** (z. B. auf einem verlorenen Stick) kann sich nicht mehr am Server anmelden und den Index nicht

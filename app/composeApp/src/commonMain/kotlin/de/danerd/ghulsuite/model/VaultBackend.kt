@@ -560,6 +560,8 @@ enum class VaultErrorKind {
     DRIVE_ROLLED_BACK,
     /** GhulDrive's index on the server has a key of before the last change of the protection. */
     DRIVE_EARLIER_KEY,
+    /** A key change waits for the suite file to be saved, and this needs it to have gone on. */
+    KEY_CHANGE_NOT_SAVED,
     SHARE_NOT_DELETED,
     PHP_NOT_EXECUTED,
     NOT_CONFIGURED,

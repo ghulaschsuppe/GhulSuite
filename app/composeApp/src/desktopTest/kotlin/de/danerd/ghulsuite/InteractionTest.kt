@@ -758,6 +758,22 @@ class InteractionTest {
         assertFalse(state.saveAfterProtection)
     }
 
+    /** A key change still waiting for the suite file to be saved asks for that again after unlocking. */
+    @Test
+    fun aKeyChangeWaitingForTheFileAsksToSave() = app(
+        prepare = {
+            net = FakeNet().apply {
+                repeat(3) { keyChanges += KeyChangeUi(true, listOf("Drive"), emptyList(), "", waitingForSave = true) }
+            }
+        },
+    ) { state, _ ->
+        waitForIdle()
+        if (!shown("Save the suite file now")) state.continueKeyChange(askToSave = true)
+        waitFor("Save the suite file now")
+        // Nothing to do by hand meanwhile: no key change dialog on top of it.
+        assertFalse(shown("Add the new server key"))
+    }
+
     /** A suite file handed over by another app while unlocked: the page of the suite file opens it. */
     @Test
     fun aHandedOverSuiteFileOpensOnTheFilePage() = app { state, _ ->

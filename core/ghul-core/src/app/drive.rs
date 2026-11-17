@@ -679,14 +679,15 @@ fn check_name(name: &str) -> Result<String> {
 impl GhulSuite {
     /// Drive settings, the server connection and the keys.
     fn drive_ctx(&self, o: &mut Open) -> Result<(Arc<dyn RemoteFs>, Keys)> {
-        let (fs, keys) = self.drive_ctx_as_is(o)?;
-        // A location whose index still has an earlier key gets the new one first.
+        // A location whose index still has an earlier key gets the new one first (once the suite
+        // file with the new protection is saved, see `key_change_saved`).
         let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
         let server = self.drive_location(o).unwrap_or_default();
-        if d.rekey_running && !d.rekeyed.contains(&server) {
+        if d.rekey_running && !d.rekeyed.contains(&server) && self.key_change_saved(o) {
+            let (fs, _) = self.drive_ctx_as_is(o)?;
             self.drive_rekey_here(o, fs.as_ref(), &server)?;
         }
-        Ok((fs, keys))
+        self.drive_ctx_as_is(o)
     }
 
     /// Like `drive_ctx`, without moving the location to a new key.
@@ -697,7 +698,31 @@ impl GhulSuite {
             return Err(GhulError::NotConfigured);
         }
         let fs = self.remote(o, &server)?;
-        Ok((fs, Keys::new(&d.key, o.suite.header().suite_id)))
+        let keys = self.drive_keys_at(o, &d, &server, fs.as_ref())?;
+        Ok((fs, keys))
+    }
+
+    /// The key the index of location `server` is read and written with: Drive's key, but while
+    /// a key change waits for the suite file to be saved, the earlier key the index there has
+    /// (it stays with it: the earlier suite file must still open it). Several changes before
+    /// saving: whichever earlier key opens it (or the copy before); none there: the newest
+    /// earlier one.
+    fn drive_keys_at(&self, o: &Open, d: &DriveSettings, server: &str, fs: &dyn RemoteFs) -> Result<Keys> {
+        let suite = o.suite.header().suite_id;
+        if d.rekey_running && !d.rekeyed.iter().any(|r| r == server) && !self.key_change_saved(o) {
+            let earlier: Vec<Keys> = d.old_keys.iter().map(|k| Keys::new(k, suite)).collect();
+            for name in [INDEX, INDEX_BAK] {
+                if let Some(data) = fs.read(name)? {
+                    if let Some(i) = earlier.iter().position(|k| decode_index(&data, k).is_ok()) {
+                        return Ok(Keys::new(&d.old_keys[i], suite));
+                    }
+                }
+            }
+            if let Some(k) = d.old_keys.first() {
+                return Ok(Keys::new(k, suite));
+            }
+        }
+        Ok(Keys::new(&d.key, suite))
     }
 
     /// Drive's earlier keys, for reading only.
@@ -911,6 +936,9 @@ impl GhulSuite {
     /// Tries every location still waiting (see `drive_rekey_waiting`); the change ends once none
     /// waits any more. Returns the error of the last location that failed.
     pub(super) fn drive_rekey_all(&self, o: &mut Open) -> Result<()> {
+        if !self.key_change_saved(o) {
+            return Ok(());
+        }
         let mut last = Ok(());
         for (id, _) in self.drive_rekey_waiting(o) {
             let r = self.remote(o, &id).and_then(|fs| self.drive_rekey_here(o, fs.as_ref(), &id));
@@ -1224,7 +1252,11 @@ impl GhulSuite {
             // the folder is added again. Refused if that does not work, unless `force`.
             let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
             if d.rekey_running && !d.rekeyed.contains(&id) && !delete_files {
-                let r = self.remote(o, &id).and_then(|fs| self.drive_rekey_here(o, fs.as_ref(), &id));
+                let r = if self.key_change_saved(o) {
+                    self.remote(o, &id).and_then(|fs| self.drive_rekey_here(o, fs.as_ref(), &id))
+                } else {
+                    Err(GhulError::KeyChangeNotSaved)
+                };
                 if let Err(e) = r {
                     if !force {
                         return Err(e);
@@ -1518,7 +1550,8 @@ impl GhulSuite {
             drop(lock);
             let mut d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
             let server = self.drive_location(o).unwrap_or_default();
-            if d.rekey_running && !d.rekeyed.contains(&server) {
+            // Written with the new key only once the suite file is saved (see `drive_keys_at`).
+            if d.rekey_running && !d.rekeyed.contains(&server) && self.key_change_saved(o) {
                 d.rekeyed.push(server.clone());
             }
             d.seen.insert(server, index.revision);

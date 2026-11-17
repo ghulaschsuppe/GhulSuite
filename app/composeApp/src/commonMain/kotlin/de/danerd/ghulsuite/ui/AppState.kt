@@ -504,8 +504,9 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     }
                     sendDueMail()
                     runAutoArchive()
-                    // A key change that stopped (no network, app closed) continues.
-                    continueKeyChange()
+                    // A key change that stopped (no network, app closed) continues; one still
+                    // waiting for the suite file to be saved asks for that again.
+                    continueKeyChange(askToSave = true)
                     // GhulDrive tidies up its server quietly (blocks nothing uses any more, once a day).
                     if (backend.settings.moduleGhulDrive && hasArea(VaultKindUi.DRIVE)) {
                         scope.launch { catching { backend.net.driveTidy() } }
@@ -761,8 +762,11 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         continueKeyChange()
     }
 
-    /** Continues a running key change as far as it goes now; shows what is left. */
-    fun continueKeyChange() {
+    /**
+     * Continues a running key change as far as it goes now; shows what is left. It waits until
+     * the suite file with the new protection is saved; with [askToSave] that is asked for then.
+     */
+    fun continueKeyChange(askToSave: Boolean = false) {
         // While one runs, once more afterwards (e.g. the protection was changed meanwhile).
         if (keyChangeBusy) {
             keyChangeAgain = true
@@ -777,6 +781,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     return@launch
                 }
                 keyChange = catching { backend.net.keyChangeContinue() }.getOrNull()?.takeIf { it.running }
+                if (askToSave && keyChange?.waitingForSave == true) saveAfterProtection = true
             } finally {
                 keyChangeBusy = false
                 if (keyChangeAgain) {
@@ -1160,6 +1165,7 @@ private suspend fun describeText(e: Throwable): String {
         VaultErrorKind.SERVER_AUTH -> getString(Res.string.err_server_auth)
         VaultErrorKind.DRIVE_ROLLED_BACK -> getString(Res.string.err_drive_rolled_back)
         VaultErrorKind.DRIVE_EARLIER_KEY -> getString(Res.string.err_drive_earlier_key)
+        VaultErrorKind.KEY_CHANGE_NOT_SAVED -> getString(Res.string.err_key_change_not_saved)
         VaultErrorKind.SHARE_NOT_DELETED -> getString(Res.string.err_share_not_deleted)
         VaultErrorKind.PHP_NOT_EXECUTED -> getString(Res.string.err_php_not_executed)
         VaultErrorKind.NOT_CONFIGURED -> getString(Res.string.err_not_configured)

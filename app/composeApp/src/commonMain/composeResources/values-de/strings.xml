@@ -410,6 +410,7 @@
     <string name="err_cert_untrusted">Dem Server-Zertifikat wird nicht vertraut (%1$s).</string>
     <string name="err_server_auth">Der Server hat die Anmeldung abgelehnt. Prüfe Benutzername, Passwort oder Schlüssel. Wurde der Schutz deiner Suite auf einem anderen Gerät geändert, öffne hier die aktuelle Suite-Datei.</string>
     <string name="err_drive_earlier_key">Auf dem Server liegt ein GhulDrive-Stand mit einem Schlüssel von vor deiner letzten Schutzänderung, z. B. eine zurückgespielte Sicherung. Es wurde nichts geändert. Übernimm ihn nur, wenn du die Sicherung selbst eingespielt hast (Optionen → GhulDrive → „Älteren Serverstand übernehmen“): Sonst kann ihn jemand mit einer alten Kopie deiner Suite-Datei dort abgelegt haben.</string>
+    <string name="err_key_change_not_saved">Speichere zuerst die Suite-Datei: Der Schlüsselwechsel nach deiner Schutzänderung wartet darauf, und erst danach kann dieser Speicherort entfernt werden, ohne dass seine Dateien unlesbar werden.</string>
     <string name="err_drive_rolled_back">Der GhulDrive-Stand auf dem Server ist älter als der zuletzt gesehene (Server zurückgesetzt oder alte Sicherung eingespielt). Es wurde nichts geändert. War das Absicht: Optionen → GhulDrive → „Älteren Serverstand übernehmen“.</string>
     <string name="err_share_not_deleted">Der Server dieses Links ist nicht mehr eingetragen, das Paket konnte nicht gelöscht werden. Der Link funktioniert bis zu seinem Ablauf.</string>
     <string name="err_php_not_executed">Der Webserver führt PHP nicht aus und liefert das Server-Modul als Text aus: Sein Zugangsschlüssel wäre lesbar. Die App hat die Datei wieder gelöscht. Prüfe beim Hoster, ob PHP für diesen Ordner aktiv ist.</string>
@@ -1770,6 +1771,6 @@
     <string name="kc_waiting">Noch nicht erreicht, wird später wieder versucht.</string>
     <string name="kc_check">Prüfen</string>
     <string name="prot_save_title">Suite-Datei jetzt speichern</string>
-    <string name="prot_save_text">Der Schutz deiner Suite wurde geändert. Speichere die Suite-Datei jetzt und ersetze damit ältere Kopien auf anderen Geräten, Sticks oder in Sicherungen. Diese öffnen sich zwar weiter mit dem alten Schutz, kommen aber nicht mehr an GhulDrive und deine Server.</string>
+    <string name="prot_save_text">Der Schutz deiner Suite wurde geändert. Speichere die Suite-Datei jetzt und ersetze damit ältere Kopien auf anderen Geräten, Sticks oder in Sicherungen. Erst danach bekommen GhulDrive und deine Server neue Schlüssel; ältere Kopien öffnen sich dann zwar weiter mit dem alten Schutz, kommen aber nicht mehr an GhulDrive und deine Server. Bis dahin ist die ältere Datei deine einzige Kopie, darum bleibt bis zum Speichern alles beim Alten.</string>
     <string name="prot_save_now">Jetzt speichern</string>
 </resources>

@@ -90,6 +90,10 @@ pub enum GhulError {
     /// file). Nothing is written; `drive_accept_server_state` takes it if the owner put it back.
     #[error("the GhulDrive index on the server has a key of before the last change of the protection")]
     DriveEarlierKey,
+    /// A key change waits for the suite file with the new protection to be saved, and this
+    /// needs it to have gone on (e.g. a storage location removed with its files kept).
+    #[error("save the suite file first: the key change waits for it")]
+    KeyChangeNotSaved,
     /// B14: the link's server is no longer set up, its package could not be deleted: the link
     /// keeps working until it expires.
     #[error("the server of this link is no longer set up; the package could not be deleted")]
