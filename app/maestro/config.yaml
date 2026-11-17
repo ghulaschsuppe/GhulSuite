@@ -12,7 +12,6 @@ executionOrder:
     - GhulCal
     - App PIN, lock and unlock
     - Options pages
-    - GhulDrive and GhulMail without a server
     - GhulPass in depth
     - GhulAuth in depth
     - All options pages

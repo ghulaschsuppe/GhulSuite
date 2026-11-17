@@ -1,5 +1,5 @@
 # Helper: start the app anew, unlock with the app PIN and go to GhulPass. Areas are reached by the
-# ids of the bottom bar (tab-pass, tab-auth, tab-drive, tab-mail, tab-cal, tab-settings).
+# ids of the bottom bar (tab-pass, tab-auth, tab-cal, tab-settings).
 appId: de.danerd.ghulsuite.dev
 ---
 - launchApp:

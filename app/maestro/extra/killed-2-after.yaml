@@ -1,5 +1,5 @@
 # Killed by Android, part 2: back into the app. It asks to unlock (the keys were only in memory)
-# and then shows GhulDrive correctly at once: server named, no "Not set up", no "…".
+# and then shows GhulPass correctly at once: its list, no technical error, no alarm of the development build.
 appId: de.danerd.ghulsuite.dev
 name: Vom System beendet 2
 ---
@@ -12,10 +12,8 @@ name: Vom System beendet 2
 - hideKeyboard
 - tapOn: "Unlock with app PIN"
 - extendedWaitUntil: { visible: "Lock now", timeout: 30000 }
-- tapOn: { id: "tab-drive" }
-- extendedWaitUntil: { visible: "Urlaub-Maestro", timeout: 60000 }
-- assertVisible: ${GHUL_SERVER}
-- assertNotVisible: "Not set up"
-- assertNotVisible: "No server yet"
+- tapOn: { id: "tab-pass" }
+- extendedWaitUntil: { visible: "Search entries", timeout: 30000 }
+- assertNotVisible: ".*[Cc]oroutine.*"
 - assertNotVisible: "GHUL-DEV-ALARM.*"
 - takeScreenshot: x2-03-after
