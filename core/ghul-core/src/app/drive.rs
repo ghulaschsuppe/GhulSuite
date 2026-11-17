@@ -39,8 +39,9 @@ const INDEX: &str = "drive/index.ghldrv";
 const INDEX_BAK: &str = "drive/index.bak";
 /// Held by the device changing the index (made only if it is not there).
 const INDEX_LOCK: &str = "drive/index.lock";
-/// A lock older than this is taken to be left by a device that stopped.
-const LOCK_STALE_MS: i64 = 120_000;
+/// A lock older than this is taken to be left by a device that stopped (by the time written in
+/// it and, where the server tells, by the time the server wrote it).
+const LOCK_STALE_MS: i64 = 300_000;
 /// How long a change waits for another device's lock.
 #[cfg(not(test))]
 const LOCK_WAIT_MS: u64 = 30_000;
@@ -50,15 +51,17 @@ const LOCK_WAIT_MS: u64 = 3_000;
 const INDEX_MAGIC: &[u8; 8] = b"GHULDRV1";
 /// Bound to the suite (its id is part of the authenticated data).
 const INDEX_MAGIC2: &[u8; 8] = b"GHULDRV2";
-/// This device's own key for the keys of unfinished uploads (never leaves the device).
+/// Before 0.9: a device key for the keys of unfinished uploads, kept in plain text next to them
+/// (now in the Drive file, see `DriveSettings::pending_key`); deleted when found.
 const DEVICE_KEY_FILE: &str = "drive-device.key";
 /// When this device last tidied up each location (local, Unix ms per location id).
 const TIDY_FILE: &str = "drive-tidy.json";
 /// Tidied up at most this often per location and device.
 const TIDY_EVERY_MS: i64 = 86_400_000;
 /// A block nothing uses is removed only when it is older than this (an upload writes its
-/// blocks before its entry; one running now is not cut).
-const ORPHAN_AGE_S: i64 = 86_400;
+/// blocks before its entry; one running now is not cut, and neither are the blocks of an
+/// unfinished upload that may still continue, see [`PENDING_MS`]).
+const ORPHAN_AGE_S: i64 = 9 * 86_400;
 const BLOCK_MAGIC: &[u8; 8] = b"GHULBLK2";
 /// Keys of uploads that did not finish, on this device, so a repeated upload continues.
 const PENDING_FILE: &str = "drive-pending";
@@ -95,6 +98,10 @@ struct DriveSettings {
     /// During a key change: the locations whose index has the new key.
     #[serde(default)]
     rekeyed: Vec<String>,
+    /// The key for the keys of unfinished uploads on this device (`drive-pending`). Not changed
+    /// by a key change, so an upload continues after one.
+    #[serde(default, with = "serde_bytes")]
+    pending_key: Vec<u8>,
 }
 
 /// Wipes Drive's earlier keys (the key change is through).
@@ -108,6 +115,7 @@ fn wipe_old_keys(d: &mut DriveSettings) {
 impl Drop for DriveSettings {
     fn drop(&mut self) {
         zeroize::Zeroize::zeroize(&mut self.key);
+        zeroize::Zeroize::zeroize(&mut self.pending_key);
         for k in &mut self.old_keys {
             zeroize::Zeroize::zeroize(k.as_mut_slice());
         }
@@ -526,19 +534,11 @@ impl<'a> IndexLock<'a> {
             if fs.create_new(INDEX_LOCK, body.as_bytes())? {
                 return Ok(IndexLock { fs, token });
             }
-            match fs.read(INDEX_LOCK)? {
-                // Released meanwhile: try again at once.
-                None => continue,
-                Some(held) => {
-                    let since =
-                        String::from_utf8_lossy(&held).split_whitespace().nth(1).and_then(|t| t.parse::<i64>().ok());
-                    if since.map_or(true, |t| now_ms() - t > LOCK_STALE_MS) {
-                        // Left behind: removed only if it is still that very lock.
-                        if fs.read(INDEX_LOCK)?.as_deref() == Some(held.as_slice()) {
-                            fs.delete(INDEX_LOCK)?;
-                        }
-                        continue;
-                    }
+            // `None`: released meanwhile, tried again below.
+            if let Some(held) = fs.read(INDEX_LOCK)? {
+                if lock_is_stale(fs, &held)? && fs.read(INDEX_LOCK)?.as_deref() == Some(held.as_slice()) {
+                    // Left behind: removed only if it is still that very lock.
+                    delete_quiet(fs, INDEX_LOCK)?;
                 }
             }
             if start.elapsed().as_millis() as u64 > LOCK_WAIT_MS {
@@ -549,6 +549,26 @@ impl<'a> IndexLock<'a> {
             std::thread::sleep(std::time::Duration::from_millis(200));
         }
     }
+}
+
+/// Whether a lock was left by a device that stopped. A lock just being made can be read empty
+/// (made first, written then): one whose own time cannot be read counts as left only when the
+/// server says it was written long ago. Where both times are known, both must be old.
+fn lock_is_stale(fs: &dyn RemoteFs, held: &[u8]) -> Result<bool> {
+    let written = String::from_utf8_lossy(held).split_whitespace().nth(1).and_then(|t| t.parse::<i64>().ok());
+    let name = INDEX_LOCK.rsplit('/').next().unwrap_or(INDEX_LOCK);
+    let on_server = list_quiet(fs, "drive")?
+        .into_iter()
+        .find(|e| e.name == name && !e.is_dir)
+        .map(|e| e.modified * 1000)
+        .filter(|m| *m > 0);
+    let old = |t: i64| now_ms() - t > LOCK_STALE_MS;
+    Ok(match (written, on_server) {
+        (Some(w), Some(m)) => old(w) && old(m),
+        (Some(w), None) => old(w),
+        (None, Some(m)) => old(m),
+        (None, None) => false,
+    })
 }
 
 impl Drop for IndexLock<'_> {
@@ -687,7 +707,9 @@ impl GhulSuite {
     }
 
     /// Checks the location Drive's calls work on: an existing index must open with Drive's key
-    /// (otherwise it belongs to someone else); without one, an empty index is made.
+    /// or an earlier one (otherwise it belongs to someone else); without one, an empty index is
+    /// made. Not moved to a new key here: a damaged or older state there is shown as such by the
+    /// next call, so the owner can still switch to it and decide (`drive_accept_server_state`).
     fn drive_attach_check(&self, o: &mut Open) -> Result<()> {
         let mut d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
         if d.key.len() != 32 {
@@ -696,7 +718,7 @@ impl GhulSuite {
             d.key = k;
             put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
         }
-        let (fs, keys) = self.drive_ctx(o)?;
+        let (fs, keys) = self.drive_ctx_as_is(o)?;
         let old = self.drive_old_keys(o);
         let _lock = IndexLock::take(fs.as_ref())?;
         let loaded = read_index_any(fs.as_ref(), &keys, &old)?;
@@ -947,28 +969,27 @@ impl GhulSuite {
         }
     }
 
-    /// This device's own key for the keys of unfinished uploads: made once, kept on the device
-    /// (so an upload continues also after Drive's key changed).
-    fn device_key(&self) -> Option<Zeroizing<[u8; 32]>> {
-        let path = self.local_dir.join(DEVICE_KEY_FILE);
-        if let Ok(k) = std::fs::read(&path) {
-            if let Ok(k) = <[u8; 32]>::try_from(k.as_slice()) {
-                return Some(Zeroizing::new(k));
-            }
+    /// Makes the key for unfinished uploads the first time (in the Drive file). Pending keys of
+    /// an earlier version under a plain device key are dropped with it (such an upload starts
+    /// again).
+    fn ensure_pending_key(&self, o: &mut Open) -> Result<()> {
+        let mut d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
+        if d.pending_key.len() == 32 {
+            return Ok(());
         }
-        let mut k = Zeroizing::new([0u8; 32]);
-        OsRng.fill_bytes(k.as_mut());
-        let _ = std::fs::create_dir_all(&self.local_dir);
-        super::storage::write_atomic(&self.local_dir, DEVICE_KEY_FILE, k.as_ref()).ok()?;
-        Some(k)
+        let _ = std::fs::remove_file(self.local_dir.join(DEVICE_KEY_FILE));
+        let _ = std::fs::remove_file(self.local_dir.join(PENDING_FILE));
+        let mut k = vec![0u8; 32];
+        OsRng.fill_bytes(&mut k);
+        d.pending_key = k;
+        put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
+        // Only for continuing uploads here: nothing to save into the suite file.
+        self.save_area_quietly(o, VaultKind::Drive)
     }
 
     fn pending_keys(&self, o: &Open) -> Option<(Zeroizing<[u8; 32]>, Pending)> {
         let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
-        if d.key.is_empty() {
-            return None;
-        }
-        let key = self.device_key()?;
+        let key = Zeroizing::new(<[u8; 32]>::try_from(d.pending_key.as_slice()).ok()?);
         let map = std::fs::read(self.local_dir.join(PENDING_FILE))
             .ok()
             .and_then(|data| decrypt(PENDING_MAGIC, &key, &data, b"").ok())
@@ -1198,6 +1219,18 @@ impl GhulSuite {
                     });
                 }
             }
+            // During a key change a location whose files stay gets the new key first: once the
+            // change is through, the earlier key is gone and its files could not be opened when
+            // the folder is added again. Refused if that does not work, unless `force`.
+            let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
+            if d.rekey_running && !d.rekeyed.contains(&id) && !delete_files {
+                let r = self.remote(o, &id).and_then(|fs| self.drive_rekey_here(o, fs.as_ref(), &id));
+                if let Err(e) = r {
+                    if !force {
+                        return Err(e);
+                    }
+                }
+            }
             at_location(Some(id.clone()), || -> Result<()> {
                 self.shares_end_on_location(o, &id, force)?;
                 if delete_files {
@@ -1213,6 +1246,7 @@ impl GhulSuite {
             put_area_setting(o, VaultKind::Drive, servers::SERVERS_KEY, &own)?;
             let mut d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
             d.seen.remove(&id);
+            d.rekeyed.retain(|r| *r != id);
             if d.archive == id {
                 d.archive.clear();
             }
@@ -1231,6 +1265,8 @@ impl GhulSuite {
                     net.drive = None;
                 }
             }
+            // It may have been the last location waiting for the new key.
+            self.drive_rekey_end_if_through(o)?;
             self.save_area(o, VaultKind::Drive)
         })
     }
@@ -1502,6 +1538,7 @@ impl GhulSuite {
             let id = crate::kdf::hex(&new_id());
             let parent = folder.unwrap_or_default();
             self.drive_index(o, false)?;
+            self.ensure_pending_key(o)?;
             let key = self.pending_key(o, &parent, &name)?;
             let up = Upload { loc: self.drive_location(o), parent, name, blocks: vec![], size: 0, key };
             self.net.lock().unwrap_or_else(|p| p.into_inner()).uploads.insert(id.clone(), up);

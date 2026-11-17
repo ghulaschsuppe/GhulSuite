@@ -749,6 +749,8 @@ private fun RemoveLocationDialog(state: AppState, s: ServerUi, onError: (String)
 private val UNREACHABLE = setOf(
     VaultErrorKind.NETWORK, VaultErrorKind.TIMEOUT, VaultErrorKind.STORAGE, VaultErrorKind.SERVER_AUTH,
     VaultErrorKind.HOST_KEY_CHANGED, VaultErrorKind.CERT_UNTRUSTED, VaultErrorKind.CORRUPTED, VaultErrorKind.SHARE_NOT_DELETED,
+    // During a key change: its index could not get the new key.
+    VaultErrorKind.DRIVE_ROLLED_BACK, VaultErrorKind.DRIVE_EARLIER_KEY,
 )
 
 /**
@@ -758,6 +760,10 @@ private val UNREACHABLE = setOf(
 @Composable
 private fun RemoveLocationAnywayDialog(state: AppState, s: ServerUi, why: String, onError: (String) -> Unit, onRemoved: () -> Unit, onDone: () -> Unit) {
     val removed = stringResource(Res.string.drive_location_removed, s.name)
+    // During a key change its files keep the earlier key, which goes once the change is through.
+    val rekeying by produceState(false) {
+        value = catching { state.backend.net.keyChangeStatus().running }.getOrDefault(false)
+    }
     AlertDialog(
         danger = true,
         onDismissRequest = onDone,
@@ -766,6 +772,7 @@ private fun RemoveLocationAnywayDialog(state: AppState, s: ServerUi, why: String
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(why)
                 Text(stringResource(Res.string.drive_location_force_text))
+                if (rekeying) Text(stringResource(Res.string.drive_location_force_rekey))
             }
         },
         confirmButton = {

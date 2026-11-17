@@ -149,15 +149,30 @@ fn a_left_lock_is_taken_over_a_fresh_one_waited_for() {
     s.drive_use_folder(Arc::new(LocalFs::new(&server))).unwrap();
     let lock = server.join("drive/index.lock");
     std::fs::create_dir_all(server.join("drive")).unwrap();
+    let written_long_ago = |path: &std::path::Path| {
+        let then = std::time::SystemTime::now() - std::time::Duration::from_secs(10 * 60);
+        std::fs::File::options().write(true).open(path).unwrap().set_modified(then).unwrap();
+    };
     std::fs::write(&lock, format!("someone {}", now_ms() - 10 * 60_000)).unwrap();
+    written_long_ago(&lock);
     s.drive_create_folder(None, "Trotzdem".into()).unwrap();
     assert!(!lock.exists());
-    std::fs::write(&lock, format!("someone {}", now_ms())).unwrap();
+    // Fresh by its own time, or old by its own time but just written on the server: waited for.
+    for body in [format!("someone {}", now_ms()), format!("someone {}", now_ms() - 10 * 60_000)] {
+        std::fs::write(&lock, body).unwrap();
+        let r = s.drive_create_folder(None, "Wartet".into());
+        assert!(matches!(r, Err(GhulError::Network { .. })), "{r:?}");
+        assert!(lock.exists(), "another device's lock stays");
+    }
+    // One being made (still empty) is waited for; an empty one written long ago is taken over.
+    std::fs::write(&lock, b"").unwrap();
     let r = s.drive_create_folder(None, "Wartet".into());
     assert!(matches!(r, Err(GhulError::Network { .. })), "{r:?}");
-    assert!(lock.exists(), "another device's lock stays");
-    std::fs::remove_file(&lock).unwrap();
-    assert_eq!(drive_names(&s).unwrap(), vec!["Trotzdem"]);
+    assert!(lock.exists());
+    written_long_ago(&lock);
+    s.drive_create_folder(None, "Leer".into()).unwrap();
+    assert!(!lock.exists());
+    assert_eq!(drive_names(&s).unwrap(), vec!["Leer", "Trotzdem"]);
     let _ = std::fs::remove_dir_all(&server);
 }
 

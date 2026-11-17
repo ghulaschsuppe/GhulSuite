@@ -1664,6 +1664,7 @@
     <string name="drive_location_folder_shared">Another storage location or server still uses this folder. Its files are therefore not deleted; remove the location without the tick.</string>
     <string name="drive_location_force_title">Remove %1$s anyway?</string>
     <string name="drive_location_force_text">The share links of this location could not be ended. If you remove it anyway, GhulSuite only forgets the links; they keep working as long as the server hands them out. Nothing is deleted on the server.</string>
+    <string name="drive_location_force_rekey">A key change is running. The files there keep the earlier key, which is deleted after the change: if you add the folder again later, they can no longer be opened.</string>
     <string name="drive_location_force_yes">Remove anyway</string>
     <string name="file_title">Suite file</string>
     <string name="file_sub">Open and save (.ghlzip)</string>

@@ -879,6 +879,10 @@ fn drive_upload_continues_with_its_key() {
     s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "P")]), None, None, None).unwrap();
     let fs: std::sync::Arc<dyn crate::net::remote::RemoteFs> = std::sync::Arc::new(LocalFs::new(&server_dir));
     s.drive_use_folder(fs).unwrap();
+    // A plain device key of an earlier version goes.
+    let device_key = std::path::Path::new(&d.local()).join("drive-device.key");
+    std::fs::create_dir_all(d.local()).unwrap();
+    std::fs::write(&device_key, [7u8; 32]).unwrap();
     let block = super::drive::BLOCK_SIZE as usize;
     let data: Vec<u8> = (0..3 * block as u32).map(|i| (i.wrapping_mul(2654435761) >> 24) as u8).collect();
     // Two of three parts, then the app is gone (no finish, no cancel).
@@ -892,6 +896,9 @@ fn drive_upload_continues_with_its_key() {
     assert_eq!(written.len(), 2);
     let note = std::fs::read(std::path::Path::new(&d.local()).join("drive-pending")).expect("unfinished upload noted");
     assert!(!note.windows(11).any(|w| w == b"Geheimname."), "the note is encrypted");
+    assert!(!device_key.exists(), "its key is in the Drive file, not next to it");
+    // A key change meanwhile does not stop it.
+    s.change_password("pw-123456".into(), "pw-neu-7890".into()).unwrap();
     // The same file again: the first two blocks are there and stay untouched.
     let id = upload(&s, None, "Film Geheimname.mp4", &data);
     for (p, at) in &written {

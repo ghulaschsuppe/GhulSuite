@@ -1664,6 +1664,7 @@
     <string name="drive_location_folder_shared">Diesen Ordner nutzt noch ein anderer Speicherort oder Server. Seine Dateien werden deshalb nicht gelöscht; entferne den Speicherort ohne den Haken.</string>
     <string name="drive_location_force_title">%1$s trotzdem entfernen?</string>
     <string name="drive_location_force_text">Die geteilten Links dieses Speicherorts konnten nicht beendet werden. Entfernst du ihn trotzdem, vergisst GhulSuite die Links nur; solange der Server sie ausliefert, funktionieren sie weiter. Auf dem Server wird nichts gelöscht.</string>
+    <string name="drive_location_force_rekey">Gerade läuft ein Schlüsselwechsel. Die Dateien dort behalten den bisherigen Schlüssel, und der wird nach dem Wechsel gelöscht: Fügst du den Ordner später wieder hinzu, lassen sie sich nicht mehr öffnen.</string>
     <string name="drive_location_force_yes">Trotzdem entfernen</string>
     <string name="file_title">Suite-Datei</string>
     <string name="file_sub">Öffnen und speichern (.ghlzip)</string>

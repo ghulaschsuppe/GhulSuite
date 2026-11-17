@@ -527,7 +527,9 @@ nach Rückfrage) nimmt den Stand des Servers an und schreibt ihn wieder als Inde
 
 **Ändern** (Hochladen, Umbenennen, Verschieben, Löschen) unter einer Sperre:
 1. `index.lock` exklusiv anlegen (SFTP legt sie nur an, wenn es sie noch nicht gibt). Wer sie nicht bekommt, wartet
-   (höchstens 30 Sekunden); eine Sperre, die älter als zwei Minuten ist, gilt als verwaist und wird übernommen.
+   (höchstens 30 Sekunden); eine Sperre, die älter als fünf Minuten ist (nach der Zeit darin und, wo der Server sie
+   nennt, nach seiner Änderungszeit), gilt als verwaist und wird übernommen. Eine noch leere Sperre (gerade angelegt)
+   gilt nur dann als verwaist, wenn der Server sie vor mehr als fünf Minuten geschrieben hat.
 2. Index neu laden, ändern, als neue Datei schreiben und in einem Schritt ersetzen; der bisherige wird `index.bak`.
 3. Sperre löschen.
 
@@ -538,7 +540,8 @@ Blöcke löschen; Blöcke, die ein Freigabelink noch braucht, bleiben, bis der l
 
 **Aufräumen** (automatisch, höchstens einmal am Tag je Gerät und Speicherort): Der Index ist der vollständige Stand.
 Blöcke, die in keinem Eintrag, keiner Fassung, nicht im Papierkorb und in keinem Freigabelink vorkommen und älter als
-einen Tag sind (Schutz für laufende Uploads), werden gelöscht. Ist der Index des Servers älter als der gesehene oder
+neun Tage sind (Schutz für laufende und unterbrochene Uploads, die bis zu sieben Tage fortgesetzt werden), werden
+gelöscht. Ist der Index des Servers älter als der gesehene oder
 beschädigt, wird nichts gelöscht.
 
 #### 8.4.1 Schlüsselwechsel

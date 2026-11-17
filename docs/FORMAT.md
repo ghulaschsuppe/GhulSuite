@@ -453,7 +453,7 @@ Datei**: Der Suite-Container behält Schutz, Server und Freigaben; GhulDrive und
 
 | Schlüssel | Inhalt |
 |---|---|
-| `drive` | `server` (ID des **aktiven** Speicherorts), `key` (32 Byte, Drive-Schlüssel DK), `seen` (Speicherort-ID → höchste gesehene Index-Revision; ein älterer Index wird abgelehnt), `archive` (ID des Speicherorts für das Mail-Archiv, leer = der aktive), `old_keys`, `rekey_running` und `rekeyed` (laufender Schlüsselwechsel, siehe unten) |
+| `drive` | `server` (ID des **aktiven** Speicherorts), `key` (32 Byte, Drive-Schlüssel DK), `seen` (Speicherort-ID → höchste gesehene Index-Revision; ein älterer Index wird abgelehnt), `archive` (ID des Speicherorts für das Mail-Archiv, leer = der aktive), `old_keys`, `rekey_running` und `rekeyed` (laufender Schlüsselwechsel, siehe unten), `pending_key` (32 Byte, Schlüssel für die Merker unterbrochener Uploads) |
 | `servers` | die Speicherorte von GhulDrive (beliebig viele, Aufbau wie im Suite-Container, auch mit `module`); jeder hat eigene Dateien unter `drive/` und eigene Freigaben unter `shares/` in seinem Ordner |
 | `options` | Optionen des Bereichs, je Schlüssel `{v, at}` (Text, Zeit in ms) |
 
@@ -501,7 +501,9 @@ id    = hex(HMAC-SHA256(BIK_f, Klartext-Block))      <ab> = die ersten zwei Zeic
   `modified`, `blocks`, `key`). Aufgefüllt wie der Tresor-Inhalt (Abschnitt 5.1).
 - Schreiben immer atomar (temporäre Datei, dann Umbenennen). **Jede Änderung des Index** läuft unter der Sperre
   `index.lock`: Sie wird nur angelegt, wenn es sie noch nicht gibt (SFTP `O_EXCL`); wer sie nicht bekommt, wartet
-  (höchstens 30 s). Eine Sperre, die älter als zwei Minuten ist, gilt als verwaist und wird übernommen. Unter der
+  (höchstens 30 s). Eine Sperre gilt als verwaist und wird übernommen, wenn die Zeit darin älter als fünf Minuten ist
+  und, wo der Server eine Änderungszeit nennt, auch diese; eine Sperre ohne lesbare Zeit (gerade angelegt, noch leer)
+  nur nach der Änderungszeit des Servers, ohne eine solche nie. Unter der
   Sperre wird der Index neu geladen, geändert und geschrieben; der bisherige (sofern lesbar) wird vorher als
   `index.bak` abgelegt. Ist der Index beschädigt, öffnet die App `index.bak`, meldet einen älteren Stand und schreibt
   nichts, bis der Nutzer ihn übernimmt; dann wird er wieder als Index geschrieben.
@@ -513,13 +515,14 @@ id    = hex(HMAC-SHA256(BIK_f, Klartext-Block))      <ab> = die ersten zwei Zeic
   Nicht mehr referenzierte Blöcke werden nach dem Löschen entfernt, außer eine Freigabe liefert sie noch aus
   (`shares/*.json`); sie gehen, wenn der letzte Link endet, der sie braucht.
 - **Aufräumen** (höchstens einmal am Tag je Gerät und Speicherort, gemerkt lokal in `drive-tidy.json`): Blöcke, die
-  in keinem Eintrag, keiner Fassung, nicht im Papierkorb und in keinem Freigabelink vorkommen und älter als einen Tag
-  sind (ein laufendes Hochladen schreibt seine Blöcke vor dem Eintrag), werden gelöscht. Blöcke ohne bekanntes Alter
+  in keinem Eintrag, keiner Fassung, nicht im Papierkorb und in keinem Freigabelink vorkommen und älter als neun Tage
+  sind (ein Hochladen schreibt seine Blöcke vor dem Eintrag und kann bis zu 7 Tage fortgesetzt werden), werden gelöscht. Blöcke ohne bekanntes Alter
   und fremde Dateien bleiben. Ist der Index des Servers älter als der gesehene oder beschädigt, wird nichts gelöscht.
 - Unterbrochenes Hochladen: Das Gerät merkt sich `FK` je „Ordner/Name“ höchstens 7 Tage in `drive-pending`
-  (lokal, `"GHULPND1" ‖ nonce[24] ‖ XChaCha20-Poly1305(GK, CBOR)`). `GK` ist ein zufälliger Geräteschlüssel
-  (`drive-device.key`, 32 Byte, verlässt das Gerät nie), damit ein Hochladen auch nach einem Wechsel von `DK`
-  fortgesetzt werden kann. Ein erneutes Hochladen derselben Datei überspringt die Blöcke, die schon da sind.
+  (lokal, `"GHULPND1" ‖ nonce[24] ‖ XChaCha20-Poly1305(GK, CBOR)`). `GK` ist ein zufälliger Schlüssel in der
+  Drive-Datei (`drive.pending_key`, 32 Byte), den ein Schlüsselwechsel nicht ändert, damit ein Hochladen auch danach
+  fortgesetzt werden kann. Vor 0.9 lag `GK` im Klartext in `drive-device.key`; die Datei wird gelöscht, die damit
+  verschlüsselten Merker ebenso (solche Uploads beginnen neu). Ein erneutes Hochladen derselben Datei überspringt die Blöcke, die schon da sind.
 - Blöcke des Formats `GHULBLK1` (gemeinsamer Blockschlüssel aus `DK`, vor 0.7.0) werden nicht mehr gelesen.
 - **Schlüsselwechsel** (seit 0.9, Konzept 6.4): Bei einem neuen Passwort, einem neuen Wiederherstellungscode oder
   einem entfernten Key bzw. einer entfernten Schlüsseldatei (nicht beim Hinzufügen) bekommt der Drive-Tresor ein neues

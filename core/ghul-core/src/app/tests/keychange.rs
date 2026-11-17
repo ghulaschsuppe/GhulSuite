@@ -366,3 +366,70 @@ fn sftp_key_change_swaps_the_ssh_key() {
     let _ = std::fs::remove_dir_all(&base);
     let _ = std::fs::remove_dir_all(&elsewhere);
 }
+
+/// A storage location removed during a key change, its files kept on the server: it gets the
+/// new key first (otherwise its files could not be opened once the earlier key is gone). If that
+/// does not work, removing it is refused.
+#[test]
+fn sftp_a_location_removed_during_a_key_change_stays_readable() {
+    let _one = ONE_AT_A_TIME.lock().unwrap_or_else(|p| p.into_inner());
+    use super::super::servers::ServerInput;
+    let Some((host, port, user, root, authkeys, hostkey)) = crate::net::tests::sftp_env() else { return };
+    let d = Dirs::new("kc-loc");
+    let s = d.suite();
+    s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "P")]), None, None, None).unwrap();
+    crate::net::tests::authorize_test_key(&authkeys, &s.ssh_public_key().unwrap());
+    let run = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+    let (first, second) = (format!("{root}/kcl-{run}-a"), format!("{root}/kcl-{run}-b"));
+    let input = |base: &str| ServerInput {
+        name: "S".into(),
+        host: host.clone(),
+        port,
+        user: user.clone(),
+        password: None,
+        base: base.into(),
+    };
+    let a = saved(s.drive_save_server(input(&first), Some(hostkey.clone())).unwrap());
+    upload(&s, None, "a.txt", b"A");
+    upload(&s, None, "b.txt", b"B");
+    let b = saved(s.drive_save_server(input(&second), Some(hostkey.clone())).unwrap());
+    s.drive_switch_location(b.clone()).unwrap();
+    s.change_password("pw-123456".into(), "pw-neu-7890".into()).unwrap();
+    assert!(s.key_change_status().unwrap().drive_waiting.len() == 2);
+
+    // Its index cannot be read (damaged, no copy before): not removed.
+    let index = std::path::Path::new(&first).join("drive/index.ghldrv");
+    let bak = std::path::Path::new(&first).join("drive/index.bak");
+    let (good, good_bak) = (std::fs::read(&index).unwrap(), std::fs::read(&bak).unwrap());
+    let mut bad = good.clone();
+    let n = bad.len();
+    bad[n - 5] ^= 1;
+    std::fs::write(&index, &bad).unwrap();
+    std::fs::remove_file(&bak).unwrap();
+    assert!(s.drive_remove_location(a.clone(), false, false).is_err());
+    assert_eq!(s.drive_locations().unwrap().len(), 2, "nothing removed");
+
+    // Damaged with the copy before still there: switching to it works, the owner decides there.
+    std::fs::write(&bak, &good_bak).unwrap();
+    s.drive_switch_location(a.clone()).unwrap();
+    assert!(matches!(names(&s), Err(GhulError::DriveRolledBack)));
+    s.drive_accept_server_state().unwrap();
+    assert_eq!(names(&s).unwrap(), vec!["a.txt"]);
+    s.drive_switch_location(b).unwrap();
+    s.drive_remove_location(a, false, false).unwrap();
+    assert_eq!(s.drive_locations().unwrap().len(), 1);
+
+    let (dir, name) = authkeys.rsplit_once('/').unwrap();
+    {
+        let _at = AuthKeysAt::set(dir, name);
+        let _file = crate::net::tests::AUTHKEYS_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let st = s.key_change_continue().unwrap();
+        assert!(!st.running, "{st:?}");
+    }
+    // Added again after the change: its files open with the new key.
+    let again = saved(s.drive_save_server(input(&first), Some(hostkey)).unwrap());
+    s.drive_switch_location(again).unwrap();
+    assert_eq!(names(&s).unwrap(), vec!["a.txt"]);
+    let _ = std::fs::remove_dir_all(&first);
+    let _ = std::fs::remove_dir_all(&second);
+}
