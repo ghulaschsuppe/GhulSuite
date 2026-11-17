@@ -9,7 +9,6 @@ import androidx.compose.runtime.setValue
 import de.danerd.ghulsuite.model.VaultBackend
 import de.danerd.ghulsuite.model.UpdateStep
 import de.danerd.ghulsuite.model.UpdateUi
-import de.danerd.ghulsuite.model.FoundVaultUi
 import de.danerd.ghulsuite.model.VaultKindUi
 import de.danerd.ghulsuite.model.VaultUi
 import de.danerd.ghulsuite.model.VaultErrorKind
@@ -189,14 +188,6 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     /** The area has its file in this suite (it may still be hidden on this device). */
     fun hasArea(kind: VaultKindUi): Boolean = !areasKnown || vaults.any { it.kind == kind }
 
-    /** Vault files in the folder that are not part of the suite yet (offered after unlocking). */
-    var found by mutableStateOf<List<FoundVaultUi>>(emptyList())
-
-    /** The user postponed the "new vaults found" question for this session. */
-    var foundPostponed by mutableStateOf(false)
-
-    private var outdatedNotified = false
-
     /** Vault filter of the GhulPass and GhulAuth lists (null = all vaults). */
     var passVault by mutableStateOf<String?>(null)
     var authVault by mutableStateOf<String?>(null)
@@ -331,20 +322,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     /** The context sheet of the current area is open (vault, storage, mailbox). */
     var contextSheet by mutableStateOf(false)
 
-    /** A synchronisation is running in the background. */
-    var syncing by mutableStateOf(false)
-        private set
-
-    /** The server has a suite with a newer master password: ask for it. */
-    var passwordChangedElsewhere by mutableStateOf(false)
     /** B6: a calendar file another app handed over, waiting for the user to confirm the import. */
     var icsPending by mutableStateOf<ByteArray?>(null)
-    /** A key was removed and the code renewed on another device (see [ProtectionChangedDialog]). */
-    var protectionChangedElsewhere by mutableStateOf(false)
-
-    private var syncAgain = false
-    /** Count of synchronisation runs; locking moves it on (see [sync]). */
-    private var syncRun = 0
 
     /**
      * U12: an editor (login, event) holds input that is not saved. "Back" then asks first. Locking
@@ -354,9 +333,6 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
 
     /** U11: opened with the recovery code: the next steps are shown once (see [RecoveredDialog]). */
     var recoveredGuide by mutableStateOf(false)
-
-    /** U13: the last automatic sync found no connection; shown on the area pages until a sync works. */
-    var syncOffline by mutableStateOf(false)
 
     /** A newer version was found: the update dialog shows it. */
     var update by mutableStateOf<UpdateUi?>(null)
@@ -463,14 +439,6 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     vaults = emptyList()
                     passVault = null
                     authVault = null
-                    found = emptyList()
-                    foundPostponed = false
-                    outdatedNotified = false
-                    passwordChangedElsewhere = false
-                    protectionChangedElsewhere = false
-                    syncing = false
-                    syncAgain = false
-                    syncRun++
                     mailUnread = 0
                     areasKnown = false
                     codeUnconfirmed = false
@@ -481,8 +449,6 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     }
                     afterUnlock.toList().also { afterUnlock.clear() }.forEach { message(it) }
                     refreshVaults()
-                    scanFound()
-                    autoSync()
                     sendDueMail()
                     runAutoBackup()
                     runAutoArchive()
@@ -505,11 +471,11 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         JobStatus.keepUnlocked = { keepUnlocked() }
         // Going to the background carries out what waits for "Undo": the auto lock may come next.
         scope.launch { AppLaunch.inFront.collect { if (!it) catching { settlePending() } } }
-        // Area settings go into the area's file (and from there to the other devices).
+        // Area settings go into the area's file (they travel with the suite file).
         backend.settings.onAreaChange = { kind, key, value ->
             if (backend.unlocked.value && vaults.any { it.kind == kind }) {
                 scope.launch {
-                    catching { backend.setAreaOptions(kind, mapOf(key to value)) }.onSuccess { autoSync() }
+                    catching { backend.setAreaOptions(kind, mapOf(key to value)) }
                 }
             }
         }
@@ -676,68 +642,11 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex)
     }
 
-    /** Something changed: reload, and synchronise automatically unless the caller syncs itself. */
-    fun changed(sync: Boolean = true) {
+    /** Something changed: reload. */
+    fun changed() {
         revision++
         refreshVaults()
-        if (sync) autoSync()
         refreshCalendar()
-    }
-
-
-    /** Synchronises in the background if a sync server is set and automatic sync is on. */
-    fun autoSync() {
-        if (backend.settings.autoSync) sync(quiet = true)
-    }
-
-    /** Synchronises now; errors are shown unless [quiet] (then only real problems). */
-    fun sync(quiet: Boolean = false, onDone: (de.danerd.ghulsuite.model.SyncReportUi) -> Unit = {}) {
-        if (syncing) {
-            syncAgain = true
-            return
-        }
-        // Set before the start: a second call before the coroutine runs (Android's main
-        // dispatcher starts it later) joins this run instead of starting one of its own. ATOMIC:
-        // the body (and with it the reset below) always runs.
-        syncing = true
-        // Which run this is: locking starts a new count, and an old run then neither ends a newer
-        // one ("not syncing" in the middle of it) nor starts another pass.
-        val run = ++syncRun
-        scope.launch(start = CoroutineStart.ATOMIC) {
-            try {
-                do {
-                    syncAgain = false
-                    val status = catching { backend.net.syncStatus() }.getOrNull()
-                    if (status?.serverId == null) {
-                        if (!quiet) message(getString(Res.string.sync_not_set))
-                        // A request in the meantime (a server chosen just now) looks again.
-                        continue
-                    }
-                    val r = backend.net.syncNow()
-                    syncOffline = false
-                    if (r.downloaded > 0 || r.merged > 0 || r.deleted > 0) {
-                        revision++
-                        refreshVaults()
-                        refreshCalendar()
-                    }
-                    onDone(r)
-                } while (syncAgain && run == syncRun)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                val kind = (e as? VaultException)?.kind
-                when {
-                    kind == VaultErrorKind.PASSWORD_CHANGED_ELSEWHERE -> passwordChangedElsewhere = true
-                    kind == VaultErrorKind.PROTECTION_CHANGED_ELSEWHERE -> protectionChangedElsewhere = true
-                    kind == VaultErrorKind.LOCKED -> {}
-                    // Offline is normal for automatic runs: no message, a quiet note on the area pages.
-                    quiet && kind == VaultErrorKind.NETWORK -> syncOffline = true
-                    else -> message(getString(Res.string.sync_failed, describe(e)))
-                }
-            } finally {
-                if (run == syncRun) syncing = false
-            }
-        }
     }
 
     fun refreshVaults() {
@@ -752,11 +661,6 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                 }
                 codeUnconfirmed = catching { !backend.recoveryConfirmed() }.getOrDefault(false)
                 loadAreaOptions()
-            }
-            val old = vaults.filter { it.outdated }
-            if (old.isNotEmpty() && !outdatedNotified) {
-                outdatedNotified = true
-                message(getString(Res.string.msg_outdated, old.joinToString(", ") { it.name }))
             }
             if (passVault != null && vaults.none { it.id == passVault }) passVault = null
             if (authVault != null && vaults.none { it.id == authVault }) authVault = null
@@ -774,14 +678,6 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             st.applyArea(stored)
             val missing = st.deviceValues(kind).filterKeys { it !in stored }
             if (missing.isNotEmpty()) catching { backend.setAreaOptions(kind, missing) }
-        }
-    }
-
-    /** Looks for vault files in the folder that are not part of the suite. */
-    fun scanFound(onDone: (List<FoundVaultUi>) -> Unit = {}) {
-        scope.launch {
-            found = catching { backend.findNewVaults() }.getOrDefault(emptyList())
-            onDone(found)
         }
     }
 
@@ -1041,7 +937,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                 touchNeeded = false
             }
             // Only once the action is done: a follow-up action started here (run inside onSuccess,
-            // e.g. "check GhulDrive first, then set the sync server") must not find the app busy,
+            // e.g. "check GhulDrive first, then add a server") must not find the app busy,
             // or it would be dropped without a word. The same for onError.
             failure?.let { text ->
                 callback { onError(text) }
@@ -1133,8 +1029,6 @@ private suspend fun describeText(e: Throwable): String {
         VaultErrorKind.HOST_KEY_CHANGED -> getString(Res.string.err_host_key_changed, e.detail)
         VaultErrorKind.CERT_UNTRUSTED -> getString(Res.string.err_cert_untrusted, e.detail)
         VaultErrorKind.SERVER_AUTH -> getString(Res.string.err_server_auth)
-        VaultErrorKind.PASSWORD_CHANGED_ELSEWHERE -> getString(Res.string.err_password_elsewhere)
-        VaultErrorKind.PROTECTION_CHANGED_ELSEWHERE -> getString(Res.string.err_protection_elsewhere)
         VaultErrorKind.DRIVE_ROLLED_BACK -> getString(Res.string.err_drive_rolled_back)
         VaultErrorKind.SHARE_NOT_DELETED -> getString(Res.string.err_share_not_deleted)
         VaultErrorKind.PHP_NOT_EXECUTED -> getString(Res.string.err_php_not_executed)

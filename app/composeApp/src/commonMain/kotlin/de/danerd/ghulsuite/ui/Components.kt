@@ -533,12 +533,6 @@ fun SectionCard(title: String? = null, content: @Composable ColumnScope.() -> Un
 /** Busy indicator, with "touch your key" when the key is waiting. */
 @Composable
 fun BusyBanner(state: AppState) {
-    // U13: on the area pages, a sync that could not reach the server is not silent. Tap: try again.
-    if (state.syncOffline && state.stack.isEmpty() && !state.busy) {
-        Box(Modifier.fillMaxWidth().clickable { state.sync() }) {
-            Banner(Icons.Filled.CloudOff, stringResource(Res.string.sync_offline_banner))
-        }
-    }
     // The running action itself is shown in front of everything (BusyOverlay).
 }
 

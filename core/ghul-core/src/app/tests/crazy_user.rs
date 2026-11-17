@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The crazy user: thousands of random, often pointless or wrong, actions on three devices
-//! that share one suite. Delete twice, edit what is gone, rename to nothing, move a folder into
-//! itself, lock in between, type wrong passwords, restart the app, import rubbish, synchronise
-//! with a wrong folder, ... Afterwards:
+//! the suite moves between (like on a USB stick). Delete twice, edit what is gone, rename to
+//! nothing, move a folder into itself, lock in between, type wrong passwords, restart the app,
+//! import rubbish, ... Afterwards:
 //! - nothing crashed, every error is one a user can understand (no "corrupted", no storage error);
-//! - everything the user created and nobody deleted is still there, on every device;
+//! - everything the user created and did not delete is still there, on every device;
 //! - all devices show the same.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -46,7 +46,6 @@ fn acceptable(e: &GhulError) -> bool {
             | GhulError::WrongPassword
             | GhulError::Locked
             | GhulError::NotConfigured
-            | GhulError::PasswordChangedElsewhere
             | GhulError::ImportUnknownFormat
             | GhulError::NoVault
             | GhulError::LastFactor
@@ -114,7 +113,6 @@ impl Stats {
 fn run(seed: u64, steps: usize) -> Stats {
     let server = std::env::temp_dir().join(format!("ghul-crazy-{seed}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&server);
-    let sync = LocalFs::new(server.join("sync"));
     let drive: Arc<dyn RemoteFs> = Arc::new(LocalFs::new(server.join("drive")));
     let kf = generate_keyfile();
     let pw = "Bekloppt-pw-1";
@@ -147,11 +145,10 @@ fn run(seed: u64, steps: usize) -> Stats {
             events: 0,
         })
         .unwrap();
-    s0.sync_folder(&sync).unwrap();
     let mut devs = vec![Dev { dirs: d0, s: s0 }];
     for i in 1..3 {
         let d = Dirs::new(&format!("crazy-{seed}-{i}"));
-        copy_suite(&server.join("sync"), &d);
+        super::everyday::copy_folder(&devs[0].dirs, &d);
         let s = d.suite();
         s.unlock(pw.into(), None, None, None, Some(kf.clone())).unwrap();
         s.drive_use_folder(drive.clone()).unwrap();
@@ -161,18 +158,15 @@ fn run(seed: u64, steps: usize) -> Stats {
     // What the user created and never deleted (by anyone): must survive.
     let mut logins: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     let mut deleted_logins: BTreeSet<String> = BTreeSet::new();
-    // B18: a login deleted on one device but changed on another device that had not seen the
-    // deletion comes back (the change is kept). Which devices edited / deleted each login:
-    let mut edited_on: BTreeMap<String, BTreeSet<usize>> = BTreeMap::new();
-    let mut deleted_on: BTreeMap<String, usize> = BTreeMap::new();
     let mut counter = 0u32;
     let mut extra_vaults: Vec<String> = Vec::new();
     let mut events: Vec<(String, String)> = Vec::new();
     let mut files: Vec<String> = Vec::new();
     let mut folders: Vec<String> = Vec::new();
 
+    // The device that has the suite: only it works on it.
+    let mut di = 0usize;
     for _ in 0..steps {
-        let di = rng.below(devs.len());
         let s = devs[di].s.clone();
         match rng.below(30) {
             0..=4 => {
@@ -186,25 +180,21 @@ fn run(seed: u64, steps: usize) -> Stats {
                 }
             }
             5 => {
-                // Edit something, maybe deleted meanwhile, maybe on another device.
-                if let Some((t, id)) = logins.iter().nth(rng.below(logins.len())).map(|(t, i)| (t.clone(), i.clone())) {
+                // Edit something, maybe deleted meanwhile.
+                if let Some(id) = logins.values().nth(rng.below(logins.len())).cloned() {
                     if let Some(mut e) = st.note("get", s.get_entry(pass.clone(), id.clone())) {
                         for f in e.fields.iter_mut().filter(|f| f.name == "password") {
                             f.value = FieldValue::Secret { value: format!("neu {}", rng.next()) };
                         }
-                        if st.note("edit", s.save_entry(pass.clone(), e)).is_some() {
-                            edited_on.entry(t.clone()).or_default().insert(di);
-                        }
+                        st.note("edit", s.save_entry(pass.clone(), e));
                     }
                 }
             }
             6 => {
                 // Delete, twice in a row sometimes.
                 if let Some((t, id)) = logins.iter().nth(rng.below(logins.len())).map(|(t, i)| (t.clone(), i.clone())) {
-                    // Not yet on this device (created elsewhere, not synchronised): "not found", nothing deleted.
                     if st.note("delete", s.delete_entry(pass.clone(), id.clone())).is_some() {
                         logins.remove(&t);
-                        deleted_on.insert(t.clone(), di);
                         deleted_logins.insert(t);
                     }
                     if rng.chance(50) {
@@ -326,20 +316,18 @@ fn run(seed: u64, steps: usize) -> Stats {
                 fresh.drive_use_folder(drive.clone()).unwrap();
                 devs[di].s = fresh;
             }
-            21..=24 => {
-                st.note("sync", s.sync_folder(&sync));
-            }
-            25 => {
-                // Typo in the server folder: an empty one. Must not delete anything.
-                // (Deleting there what was deleted on purpose is fine; losing data is not.)
-                // A fresh, empty folder each time (a folder used before is a real second server of
-                // this suite and may rightly bring other devices' changes).
+            21..=25 => {
+                // The suite goes to another device: its folder becomes a copy, its app starts again.
+                let to = (di + 1 + rng.below(devs.len() - 1)) % devs.len();
                 let before = titles(&s);
-                counter += 1;
-                let wrong = LocalFs::new(server.join(format!("vertippt-{counter}")));
-                if st.note("sync wrong folder", s.sync_folder(&wrong)).is_some() {
-                    assert_eq!(titles(&s), before, "a wrong folder changed the logins");
-                }
+                devs[to].s.lock();
+                super::everyday::copy_folder(&devs[di].dirs, &devs[to].dirs);
+                let fresh = devs[to].dirs.suite();
+                fresh.unlock(pw.into(), None, None, None, Some(kf.clone())).unwrap();
+                fresh.drive_use_folder(drive.clone()).unwrap();
+                assert_eq!(titles(&fresh), before, "the copy differs");
+                devs[to].s = fresh;
+                di = to;
             }
             26 => {
                 let junk: Vec<u8> = (0..rng.below(3000)).map(|_| rng.next() as u8).collect();
@@ -370,11 +358,16 @@ fn run(seed: u64, steps: usize) -> Stats {
         }
     }
 
-    // Evening: everyone online and synchronised twice.
-    for _ in 0..2 {
-        for d in &devs {
-            d.s.sync_folder(&sync).unwrap();
+    // Evening: every device gets the suite.
+    for to in 0..devs.len() {
+        if to == di {
+            continue;
         }
+        devs[to].s.lock();
+        super::everyday::copy_folder(&devs[di].dirs, &devs[to].dirs);
+        let fresh = devs[to].dirs.suite();
+        fresh.unlock(pw.into(), None, None, None, Some(kf.clone())).unwrap();
+        devs[to].s = fresh;
     }
     let first = titles(&devs[0].s);
     for (i, d) in devs.iter().enumerate() {
@@ -385,10 +378,7 @@ fn run(seed: u64, steps: usize) -> Stats {
             assert!(first.contains(t), "{t} was lost (seed {seed})");
         }
         for t in &deleted_logins {
-            // Only a change made on another device may bring it back (B18), never nothing.
-            let edited_elsewhere =
-                edited_on.get(t).is_some_and(|devs| devs.iter().any(|d| Some(d) != deleted_on.get(t)));
-            assert!(!first.contains(t) || edited_elsewhere, "{t} came back after being deleted (seed {seed})");
+            assert!(!first.contains(t), "{t} came back after being deleted (seed {seed})");
         }
     }
     let _ = std::fs::remove_dir_all(&server);

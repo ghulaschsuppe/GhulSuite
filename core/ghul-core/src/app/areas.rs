@@ -1,45 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! One area, one file: GhulDrive (`.ghldrv`) and GhulMail (`.ghlmail`) keep their data and their
-//! settings in their own vault file. The suite file only holds the protection, the sync server,
-//! the sync state and the shares.
-//!
-//! Suites from before keep these settings in the suite file. They move into the area files on the
-//! first unlock (and again whenever a sync brings them back from a device with an older app).
+//! settings in their own vault file. The suite file only holds the protection, the servers and
+//! the shares.
 
 use std::collections::BTreeMap;
+use std::collections::HashMap;
 
-use ciborium::value::Value;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use std::collections::HashMap;
-
 use super::error::{GhulError, Result};
-use super::suite::{now_ms, put_setting, setting, GhulSuite, Open, VaultKind, SUITE_FILE};
-use super::sync::{merge_settings, DELETED_KEY};
+use super::suite::{put_setting, setting, GhulSuite, Open, VaultKind};
 use crate::vault::UnlockedContainer;
 
-/// Settings that belong to GhulDrive.
-pub(super) const DRIVE_KEYS: &[&str] = &["drive"];
-/// Settings that belong to GhulMail.
-pub(super) const MAIL_KEYS: &[&str] =
-    &["mail_accounts", "mail_keys", "mail_contacts", "mail_cache_key", "mail_drafts", "mail_outbox"];
-
-/// Options of an area that travel with its file (e.g. GhulCal's holiday region); each one is
-/// stamped and the latest change wins when two devices changed it.
+/// Options of an area that travel with its file (e.g. GhulCal's holiday region).
 const OPTIONS_KEY: &str = "options";
-
-/// A value with the time of its last change (Unix ms). Synchronisation keeps the later one.
-#[derive(Serialize, serde::Deserialize, Clone, Default, Debug, PartialEq)]
-pub(super) struct Stamped<T> {
-    pub v: T,
-    pub at: i64,
-}
-
-/// `v`, stamped now.
-pub(super) fn stamp<T>(v: T) -> Stamped<T> {
-    Stamped { v, at: now_ms() }
-}
 
 /// Name of an area file created without asking for one.
 fn default_name(kind: VaultKind) -> &'static str {
@@ -81,37 +56,6 @@ pub(super) fn put_area_setting<T: Serialize>(o: &mut Open, kind: VaultKind, key:
     put_setting(o.area_mut(kind)?, key, value)
 }
 
-/// Marks a list item of an area's settings as deleted on every device.
-pub(super) fn mark_area_deleted(o: &mut Open, kind: VaultKind, list: &str, id: &str) -> Result<()> {
-    super::sync::mark_deleted(&mut o.area_mut(kind)?.payload.settings, list, id);
-    Ok(())
-}
-
-/// Moves `keys` (and their deletion marks) from `from` into `to`. Returns whether anything moved.
-fn move_settings(from: &mut BTreeMap<String, Value>, to: &mut BTreeMap<String, Value>, keys: &[&str]) -> bool {
-    let mut moved = BTreeMap::new();
-    for k in keys {
-        if let Some(v) = from.remove(*k) {
-            moved.insert((*k).to_owned(), v);
-        }
-    }
-    if let Some(Value::Map(marks)) = from.get_mut(DELETED_KEY) {
-        let (mine, rest): (Vec<_>, Vec<_>) = std::mem::take(marks).into_iter().partition(
-            |(k, _)| matches!(k, Value::Text(t) if keys.iter().any(|key| t.starts_with(&format!("{key}/")))),
-        );
-        *marks = rest;
-        if !mine.is_empty() {
-            moved.insert(DELETED_KEY.to_owned(), Value::Map(mine));
-        }
-    }
-    if moved.is_empty() {
-        return false;
-    }
-    merge_settings(to, &moved);
-    super::sync::prune_deleted(to);
-    true
-}
-
 impl GhulSuite {
     /// The area's file id, created (with the suite's protection) if the area does not exist yet.
     pub(super) fn ensure_area(&self, o: &mut Open, kind: VaultKind) -> Result<String> {
@@ -130,25 +74,6 @@ impl GhulSuite {
             None => Ok(()),
         }
     }
-
-    /// Moves Drive and Mail settings that still live in the suite file into their area files.
-    pub(super) fn migrate_areas(&self, o: &mut Open) -> Result<()> {
-        for (kind, keys) in [(VaultKind::Drive, DRIVE_KEYS), (VaultKind::Mail, MAIL_KEYS)] {
-            if !keys.iter().any(|k| o.suite.payload.settings.contains_key(*k)) {
-                continue;
-            }
-            let id = self.ensure_area(o, kind)?;
-            let mut suite_settings = std::mem::take(&mut o.suite.payload.settings);
-            let (_, area) = o.vault_mut(&id)?;
-            let moved = move_settings(&mut suite_settings, &mut area.payload.settings, keys);
-            o.suite.payload.settings = suite_settings;
-            if moved {
-                self.save_vault(o, &id)?;
-                self.save_container(&mut o.suite, SUITE_FILE)?;
-            }
-        }
-        Ok(())
-    }
 }
 
 #[uniffi::export]
@@ -157,20 +82,19 @@ impl GhulSuite {
     /// values are chosen by the app, e.g. `holiday_region` → `DE-NW`.
     pub fn area_options(&self, kind: VaultKind) -> Result<HashMap<String, String>> {
         self.with_open(|o| {
-            let map: BTreeMap<String, Stamped<String>> = area_setting(o, kind, OPTIONS_KEY);
-            Ok(map.into_iter().map(|(k, s)| (k, s.v)).collect())
+            let map: BTreeMap<String, String> = area_setting(o, kind, OPTIONS_KEY);
+            Ok(map.into_iter().collect())
         })
     }
 
     /// Stores options in the area's file and saves it (`NotConfigured` without the area).
-    /// Unchanged values keep their time, so they do not override a change from another device.
     pub fn set_area_options(&self, kind: VaultKind, options: HashMap<String, String>) -> Result<()> {
         self.with_open(|o| {
-            let mut map: BTreeMap<String, Stamped<String>> = area_setting(o, kind, OPTIONS_KEY);
+            let mut map: BTreeMap<String, String> = area_setting(o, kind, OPTIONS_KEY);
             let mut changed = false;
             for (k, v) in options {
-                if map.get(&k).map(|s| &s.v) != Some(&v) {
-                    map.insert(k, stamp(v));
+                if map.get(&k) != Some(&v) {
+                    map.insert(k, v);
                     changed = true;
                 }
             }
@@ -182,9 +106,8 @@ impl GhulSuite {
         })
     }
 
-    /// Removes an area on every device: its files are deleted here and, with the next
-    /// synchronisation, on the server and the other devices. Hiding an area on one device is a
-    /// setting of the app instead.
+    /// Removes an area: its files are deleted. Hiding an area on one device is a setting of the
+    /// app instead.
     pub fn remove_area(&self, kind: VaultKind) -> Result<()> {
         let name = kind.container().name();
         let ids: Vec<String> = self.with_open(|o| {
@@ -211,35 +134,5 @@ impl GhulSuite {
             self.save_vault(o, &id)?;
             Ok(id)
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn moves_keys_and_their_deletion_marks() {
-        let mut suite = BTreeMap::new();
-        suite.insert("mail_accounts".to_owned(), Value::Array(vec![Value::Text("a".into())]));
-        suite.insert("servers".to_owned(), Value::Array(vec![]));
-        suite.insert(
-            DELETED_KEY.to_owned(),
-            Value::Map(vec![
-                (Value::Text("mail_drafts/x".into()), Value::Integer(5.into())),
-                (Value::Text("shares/y".into()), Value::Integer(6.into())),
-            ]),
-        );
-        let mut area = BTreeMap::new();
-        assert!(move_settings(&mut suite, &mut area, MAIL_KEYS));
-        assert!(area.contains_key("mail_accounts") && !suite.contains_key("mail_accounts"));
-        assert!(suite.contains_key("servers"));
-        let marks = |m: &BTreeMap<String, Value>| match m.get(DELETED_KEY) {
-            Some(Value::Map(v)) => v.iter().filter_map(|(k, _)| k.as_text().map(str::to_owned)).collect::<Vec<_>>(),
-            _ => vec![],
-        };
-        assert_eq!(marks(&suite), vec!["shares/y"]);
-        assert_eq!(marks(&area), vec!["mail_drafts/x"]);
-        assert!(!move_settings(&mut suite, &mut area, MAIL_KEYS));
     }
 }

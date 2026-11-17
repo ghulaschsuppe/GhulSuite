@@ -33,14 +33,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import de.danerd.ghulsuite.model.FoundVaultUi
 import de.danerd.ghulsuite.model.PickedFile
 import de.danerd.ghulsuite.model.ProtectionUi
 import de.danerd.ghulsuite.model.VaultErrorKind
 import de.danerd.ghulsuite.model.FolderRef
 import de.danerd.ghulsuite.model.VaultException
 import de.danerd.ghulsuite.model.VaultKindUi
-import de.danerd.ghulsuite.model.VaultSourceUi
 import de.danerd.ghulsuite.model.VaultUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
@@ -164,10 +162,8 @@ fun VaultsSection(state: AppState) {
     val added = stringResource(Res.string.msg_vault_added)
     val save = rememberSaveFile { ok -> if (ok) state.message(exported) }
     var foreign by remember { mutableStateOf<ForeignRequest?>(null) }
-    val noneFound = stringResource(Res.string.msg_no_new_vaults)
     val addFile = rememberOpenFile { file ->
         val name = file.name.substringBeforeLast('.')
-        val source = VaultSourceUi.Bytes(file.bytes)
         state.run(block = {
             try {
                 val id = backend.addVaultFile(file.bytes, name)
@@ -175,7 +171,7 @@ fun VaultsSection(state: AppState) {
             } catch (e: VaultException) {
                 if (e.kind != VaultErrorKind.DIFFERENT_PROTECTION) throw e
                 val info = backend.inspectFile(file.bytes)
-                null to ForeignRequest(source, vaultKindOf(info.kind), info.protection, name)
+                null to ForeignRequest(file.bytes, vaultKindOf(info.kind), info.protection, name)
             }
         }) { (kind, request) ->
             if (request != null) {
@@ -204,11 +200,10 @@ fun VaultsSection(state: AppState) {
                     v.name,
                     when {
                         !v.available -> stringResource(Res.string.vault_missing, v.file)
-                        v.outdated -> stringResource(Res.string.vault_outdated)
                         else -> stringResource(Res.string.vault_summary, stringResource(kindLabel(v.kind)), v.entries.toString())
                     },
                     leading = {
-                        if (v.available && !v.outdated) IconTile(tabIcon(tab), areaColor(tab)) else IconTile(Icons.Filled.Warning, warnColor())
+                        if (v.available) IconTile(tabIcon(tab), areaColor(tab)) else IconTile(Icons.Filled.Warning, warnColor())
                     },
                     trailing = { BarIcon(Icons.Filled.MoreVert, stringResource(Res.string.a_more)) { menuFor = v.id } },
                     divider = v != state.vaults.first(), flush = true,
@@ -227,12 +222,6 @@ fun VaultsSection(state: AppState) {
                                     }
                                 }
                             }
-                            if (v.outdated) {
-                                SheetRow(stringResource(Res.string.a_accept_state), leading = { IconTile(Icons.Filled.Check, g.accent) }, divider = true) {
-                                    close()
-                                    state.run(block = { backend.acceptVaultState(v.id) }) { state.changed() }
-                                }
-                            }
                             SheetRow(stringResource(Res.string.a_delete), leading = { IconTile(Icons.Filled.Delete, g.danger) }, color = g.danger, divider = true) {
                                 removing = v; close()
                             }
@@ -246,17 +235,9 @@ fun VaultsSection(state: AppState) {
             OutlinedButton(onClick = addFile, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.vault_add_file)) }
             Hint(stringResource(Res.string.vault_add_file_hint))
         }
-        // Where the files are. Searching only makes sense in an own folder (files copied in by
-        // hand); in the app storage nobody can put files, there "Add vault file" is the way.
+        // Where the files are.
         val storage = state.backend.storageName()
         Hint(stringResource(Res.string.storage_current, storageLabel(storage)))
-        if (storage != "app") {
-            OutlinedButton(onClick = {
-                state.foundPostponed = false
-                state.scanFound { if (it.isEmpty()) state.message(noneFound) }
-            }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.vault_scan)) }
-            Hint(stringResource(Res.string.vault_scan_hint))
-        }
         var moving by remember { mutableStateOf(false) }
         OutlinedButton(onClick = { moving = true }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.storage_move)) }
         Hint(stringResource(Res.string.storage_move_hint))
@@ -312,50 +293,7 @@ fun VaultsSection(state: AppState) {
 }
 
 /** A vault with its own protection that the user wants to add. */
-class ForeignRequest(val source: VaultSourceUi, val kind: VaultKindUi, val protection: ProtectionUi, val name: String)
-
-/** Offers vault files found in the suite's folder that are not part of the suite yet. */
-@Composable
-fun FoundVaultsDialog(state: AppState) {
-    var foreign by remember { mutableStateOf<ForeignRequest?>(null) }
-    foreign?.let { r ->
-        ForeignVaultDialog(state, r, onDone = { foreign = null })
-        return
-    }
-    AlertDialog(
-        onDismissRequest = { state.foundPostponed = true },
-        title = { Text(stringResource(Res.string.found_title)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Hint(stringResource(Res.string.found_text))
-                for (f in state.found) {
-                    FoundRow(state, f, onForeign = {
-                        foreign = ForeignRequest(VaultSourceUi.InFolder(f.file), f.kind, f.protection, f.file.substringBeforeLast('.'))
-                    })
-                }
-                BusyBanner(state)
-            }
-        },
-        confirmButton = { TextButton(onClick = { state.foundPostponed = true }) { Text(stringResource(Res.string.a_later)) } },
-    )
-}
-
-@Composable
-private fun FoundRow(state: AppState, f: FoundVaultUi, onForeign: () -> Unit) {
-    Column(Modifier.fillMaxWidth()) {
-        Text(f.file, style = androidx.compose.material3.MaterialTheme.typography.titleSmall)
-        Hint(
-            stringResource(kindLabel(f.kind)) + " · " +
-                stringResource(Res.string.found_own_protection),
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onForeign, enabled = !state.busy) { Text(stringResource(Res.string.a_open_with_password)) }
-            TextButton(onClick = {
-                state.run(block = { state.backend.ignoreFoundVault(f.file) }) { state.scanFound() }
-            }, enabled = !state.busy) { Text(stringResource(Res.string.a_ignore)) }
-        }
-    }
-}
+class ForeignRequest(val data: ByteArray, val kind: VaultKindUi, val protection: ProtectionUi, val name: String)
 
 /** Opens a vault with its own password and key or key file once and adds it to the suite. */
 @Composable
@@ -394,13 +332,12 @@ fun ForeignVaultDialog(state: AppState, request: ForeignRequest, onDone: () -> U
             TextButton(onClick = {
                 state.run(onError = { error = it }, block = {
                     state.backend.adoptVault(
-                        request.source, name.ifBlank { request.name }, password,
+                        request.data, name.ifBlank { request.name }, password,
                         if (needsKey) pin else null, if (needsKey) null else keyfile?.bytes, state.onTouchNeeded,
                     )
                 }) {
                     state.enableModule(request.kind)
                     state.changed()
-                    state.scanFound()
                     state.message(added)
                     onDone()
                 }

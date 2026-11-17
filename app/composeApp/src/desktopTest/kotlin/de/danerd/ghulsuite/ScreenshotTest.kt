@@ -31,8 +31,6 @@ import de.danerd.ghulsuite.model.VaultKindUi
 import de.danerd.ghulsuite.model.VaultUi
 import de.danerd.ghulsuite.model.ImportPreviewUi
 import de.danerd.ghulsuite.model.ImportResultUi
-import de.danerd.ghulsuite.model.VaultSourceUi
-import de.danerd.ghulsuite.model.FoundVaultUi
 import de.danerd.ghulsuite.ui.AppState
 import de.danerd.ghulsuite.ui.GhulSuiteApp
 import de.danerd.ghulsuite.ui.MailSheet
@@ -55,8 +53,6 @@ class ScreenshotTest {
         override val unlocked = MutableStateFlow(unlocked)
         override var net: de.danerd.ghulsuite.model.NetBackend = FakeNet()
         override var updater: de.danerd.ghulsuite.model.AppUpdater = de.danerd.ghulsuite.model.NoUpdater
-        override fun deviceSshKey() = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDeviceKeyExample ghulsuite-device"
-        override suspend fun fetchFromServer(input: de.danerd.ghulsuite.model.ServerInputUi, hostKey: String?) = ""
         private val existsFlag = exists
         var protection = ProtectionUi(securityKeys = 1, keyfiles = 0, recoveryCodes = 1)
         var vaults = listOf(
@@ -67,7 +63,7 @@ class ScreenshotTest {
             // The areas with one file each: without them their tabs would not exist.
             VaultUi("d1", VaultKindUi.DRIVE, "Drive", "Drive.ghldrv", true, 0),
             VaultUi("m1", VaultKindUi.MAIL, "Mail", "Mail.ghlmail", true, 0),
-            VaultUi("f1", VaultKindUi.PASS, "Verein", "verein.ghlpss", true, 3, outdated = true),
+            VaultUi("f1", VaultKindUi.PASS, "Verein", "verein.ghlpss", true, 3),
         )
         override val settings = Settings(object : KeyValueStore {
             private val map = mutableMapOf<String, Any>()
@@ -112,12 +108,8 @@ class ScreenshotTest {
         override suspend fun exportVault(id: String) = ByteArray(0)
         override suspend fun addVaultFile(data: ByteArray, name: String) = "x"
         override suspend fun adoptVault(
-            source: VaultSourceUi, name: String, password: String, pin: String?, keyfile: ByteArray?, onTouchNeeded: () -> Unit,
+            data: ByteArray, name: String, password: String, pin: String?, keyfile: ByteArray?, onTouchNeeded: () -> Unit,
         ) = "x"
-        var found = emptyList<FoundVaultUi>()
-        override suspend fun findNewVaults() = found
-        override suspend fun ignoreFoundVault(file: String) {}
-        override suspend fun acceptVaultState(id: String) {}
         override suspend fun listEntries(vaultId: String?) = listOf(
             EntrySummaryUi("p1", "Privat", "1", "login", "Codeberg", "ghul"),
             EntrySummaryUi("p2", "Arbeit", "2", "login", "Jira", "g.hul@firma.de"),
@@ -156,7 +148,6 @@ class ScreenshotTest {
         override suspend fun addKeyfile(keyfile: ByteArray, label: String) {}
         override suspend fun newRecoveryCode(label: String) = ""
         override suspend fun removeSlot(id: String) {}
-        override suspend fun adoptRemoteProtection(password: String?, pin: String?, keyfile: ByteArray?, onTouchNeeded: () -> Unit) {}
         override suspend fun changePassword(current: String, new: String) {}
         override fun generatePassword(options: PasswordOptionsUi) = "x7#Kq!9mVw2\$Lp4@Zr8&"
         override fun passwordScore(password: String) = if (password.length > 12) 4 else 1

@@ -34,7 +34,7 @@ pub(super) struct StoredServer {
     /// Empty: log in with the suite's SSH key.
     #[serde(default)]
     pub password: String,
-    /// Folder on the server for GhulSuite (suite files under `suite/`, Drive under `drive/`).
+    /// Folder on the server for GhulSuite (Drive under `drive/`).
     pub base: String,
     pub host_key: String,
     /// Absolute path of `base` on the server, as reported by the server (for display).
@@ -232,12 +232,6 @@ pub(super) fn open_fs(o: &mut Open, s: &StoredServer, base: Option<&str>) -> Res
 pub(super) fn connect(o: &mut Open, server_id: &str) -> Result<Arc<dyn RemoteFs>> {
     let s = all_servers(o).into_iter().find(|s| s.id == server_id).ok_or(GhulError::NotConfigured)?;
     open_fs(o, &s, None)
-}
-
-/// Prepares connecting to a stored server (see [`Connect`]).
-pub(super) fn connect_later(o: &mut Open, server_id: &str) -> Result<Connect> {
-    let s = all_servers(o).into_iter().find(|s| s.id == server_id).ok_or(GhulError::NotConfigured)?;
-    connector(o, &s, None)
 }
 
 pub(super) fn server(o: &Open, server_id: &str) -> Result<StoredServer> {
@@ -525,8 +519,8 @@ pub(super) fn check_server(
         Ok(fs) => fs,
         Err(fingerprint) => return Ok(Err(fingerprint)),
     };
-    fs.write("suite/.ghulsuite-check", b"ok")?;
-    fs.delete("suite/.ghulsuite-check")?;
+    fs.write(".ghulsuite-check", b"ok")?;
+    fs.delete(".ghulsuite-check")?;
     stored.location = match ServerKind::of(&stored) {
         ServerKind::Sftp => {
             let cfg = sftp_config(o, &stored)?;
@@ -537,94 +531,8 @@ pub(super) fn check_server(
     Ok(Ok(stored))
 }
 
-/// A new SSH key pair for a device that has no suite yet (to fetch the suite from the server).
-#[derive(uniffi::Record, Clone)]
-pub struct SshKeyPair {
-    pub private_key: String,
-    pub public_key: String,
-}
-
-#[uniffi::export]
-pub fn generate_ssh_key() -> Result<SshKeyPair> {
-    let (private, public) = generate_key("GhulSuite device")?;
-    Ok(SshKeyPair { private_key: private.to_string(), public_key: public })
-}
-
 #[uniffi::export]
 impl GhulSuite {
-    /// New device: downloads the suite files from `<base>/suite/` on the server into the
-    /// (empty) local folder. SFTP logs in with `input.password` or the given `private_key` (from
-    /// `generate_ssh_key`), FTPS with `input.password` (U7). Without `host_key` an unknown SFTP host key or an
-    /// untrusted FTPS certificate is returned as fingerprint to confirm and nothing is downloaded;
-    /// otherwise it returns an empty string. Then unlock as usual.
-    pub fn fetch_from_server(
-        &self,
-        input: ServerInput,
-        host_key: Option<String>,
-        private_key: Option<String>,
-    ) -> Result<String> {
-        if self.exists()? {
-            return Err(GhulError::AlreadyExists);
-        }
-        use crate::net::remote::RemoteFs;
-        let base = input.base.trim().trim_end_matches('/').to_owned();
-        let fs: Arc<dyn RemoteFs> = match input.kind {
-            ServerKind::Sftp => {
-                let auth = match (&input.password, private_key) {
-                    (Some(p), _) if !p.is_empty() => SshAuth::Password(Zeroizing::new(p.clone())),
-                    (_, Some(k)) => SshAuth::Key(Zeroizing::new(k)),
-                    _ => return Err(GhulError::InvalidInput { msg: "password or key required".into() }),
-                };
-                let cfg = SftpConfig {
-                    host: input.host.trim().to_owned(),
-                    port: if input.port == 0 { 22 } else { input.port },
-                    user: input.user.trim().to_owned(),
-                    auth,
-                    base,
-                    host_key: host_key.clone(),
-                };
-                match SftpFs::connect(&cfg) {
-                    Err(NetError::HostKeyUnknown(fp)) if host_key.is_none() => return Ok(fp),
-                    other => Arc::new(other?),
-                }
-            }
-            ServerKind::Ftps => {
-                let password = input.password.clone().filter(|p| !p.is_empty());
-                let Some(password) = password else {
-                    return Err(GhulError::InvalidInput { msg: "password required".into() });
-                };
-                let cfg = FtpsConfig {
-                    host: input.host.trim().to_owned(),
-                    port: if input.port == 0 { 21 } else { input.port },
-                    user: input.user.trim().to_owned(),
-                    password: Zeroizing::new(password),
-                    base,
-                    cert: host_key.clone(),
-                };
-                match FtpsFs::connect(&cfg) {
-                    Err(NetError::CertUntrusted(fp)) if host_key.is_none() => return Ok(fp),
-                    other => Arc::new(other?),
-                }
-            }
-        };
-        let files: Vec<String> = fs
-            .list("suite")?
-            .into_iter()
-            .filter(|e| !e.is_dir && (super::suite::is_vault_file(&e.name) || e.name == super::suite::SUITE_FILE))
-            .filter(|e| super::storage::plain_file_name(&e.name))
-            .map(|e| e.name)
-            .collect();
-        if files.is_empty() {
-            return Err(GhulError::NoVault);
-        }
-        for f in files {
-            if let Some(data) = fs.read(&format!("suite/{f}"))? {
-                self.storage.write(f, data)?;
-            }
-        }
-        Ok(String::new())
-    }
-
     /// The suite's SSH public key (created on first use), to add to `authorized_keys` on the server.
     pub fn ssh_public_key(&self) -> Result<String> {
         self.with_open(|o| {
@@ -881,16 +789,12 @@ impl GhulSuite {
     pub fn remove_server(&self, id: String) -> Result<()> {
         self.net.lock().unwrap_or_else(|p| p.into_inner()).conn = None;
         self.with_open(|o| {
-            // An older Drive on this server keeps it (as a location of its own) first.
-            self.drive_move_to_locations(o)?;
             if drive_servers(o).iter().any(|s| s.id == id) {
                 return Err(GhulError::InvalidInput { msg: "GhulDrive's server is changed in GhulDrive".into() });
             }
             let mut list = servers(o);
             list.retain(|s| s.id != id);
             put_setting(&mut o.suite, SERVERS_KEY, &list)?;
-            super::sync::mark_deleted(&mut o.suite.payload.settings, SERVERS_KEY, &id);
-            super::sync::forget_server(o, &id)?;
             self.save_container(&mut o.suite, super::suite::SUITE_FILE)
         })
     }

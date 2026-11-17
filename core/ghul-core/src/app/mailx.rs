@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
 
-use super::areas::{area_setting, mark_area_deleted, put_area_setting};
+use super::areas::{area_setting, put_area_setting};
 use super::error::{GhulError, Result};
 use super::mail::{summary, MailPage, MailSummary, OutgoingAttachment, OutgoingMail};
 use super::suite::{new_id, now_ms, GhulSuite, VaultKind};
@@ -288,7 +288,6 @@ impl GhulSuite {
             let mut list: Vec<MailDraftData> = area_setting(o, VaultKind::Mail, DRAFTS_KEY);
             list.retain(|x| x.id != id);
             put_area_setting(o, VaultKind::Mail, DRAFTS_KEY, &list)?;
-            mark_area_deleted(o, VaultKind::Mail, DRAFTS_KEY, &id)?;
             self.save_area(o, VaultKind::Mail)
         })
     }
@@ -350,7 +349,6 @@ impl GhulSuite {
             let mut list: Vec<StoredScheduled> = area_setting(o, VaultKind::Mail, OUTBOX_KEY);
             list.retain(|x| x.id != id);
             put_area_setting(o, VaultKind::Mail, OUTBOX_KEY, &list)?;
-            mark_area_deleted(o, VaultKind::Mail, OUTBOX_KEY, &id)?;
             self.save_area(o, VaultKind::Mail)
         })
     }

@@ -25,7 +25,6 @@ import de.danerd.ghulsuite.model.ModuleCheckUi
 import de.danerd.ghulsuite.model.ModuleInstalledUi
 import de.danerd.ghulsuite.model.ShareOptionsUi
 import de.danerd.ghulsuite.model.OutgoingAttachmentUi
-import de.danerd.ghulsuite.core.SyncReport
 import de.danerd.ghulsuite.core.mailSuggestServers
 import de.danerd.ghulsuite.model.ByteSink
 import de.danerd.ghulsuite.model.ByteSource
@@ -48,8 +47,6 @@ import de.danerd.ghulsuite.model.NetBackend
 import de.danerd.ghulsuite.model.OutgoingMailUi
 import de.danerd.ghulsuite.model.ServerInputUi
 import de.danerd.ghulsuite.model.ServerUi
-import de.danerd.ghulsuite.model.SyncReportUi
-import de.danerd.ghulsuite.model.SyncStatusUi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -62,7 +59,7 @@ import de.danerd.ghulsuite.model.DriveLocationUi
 private const val UPLOAD_CHUNK = 1024 * 1024
 
 /**
- * Servers, sync, GhulDrive, sharing and GhulMail, the same on Android and Windows. Platforms add
+ * Servers, GhulDrive, sharing and GhulMail, the same on Android and Windows. Platforms add
  * handing files to other apps and mail notifications.
  */
 abstract class CoreNetBackend(protected val suite: () -> GhulSuite) : NetBackend {
@@ -149,19 +146,6 @@ abstract class CoreNetBackend(protected val suite: () -> GhulSuite) : NetBackend
         io { suite().installSshKey(input.toCore(), hostKey) }
 
     override suspend fun sshPublicKey(): String = io { suite().sshPublicKey() }
-
-    // --- sync ----------------------------------------------------------------------------------
-
-    override suspend fun syncStatus(): SyncStatusUi = io {
-        val s = suite().syncStatus()
-        SyncStatusUi(s.serverId, s.lastSync)
-    }
-
-    override suspend fun setSyncServer(id: String?) = io { suite().setSyncServer(id) }
-
-    override suspend fun syncNow(): SyncReportUi = io { suite().syncNow().toUi() }
-
-    override suspend fun adoptRemotePassword(password: String): SyncReportUi = io { suite().adoptRemotePassword(password).toUi() }
 
     // --- drive ---------------------------------------------------------------------------------
 

@@ -24,7 +24,7 @@ pub mod setup;
 pub mod shares;
 pub mod storage;
 pub mod suite;
-pub mod sync;
+
 pub mod tools;
 
 #[cfg(test)]

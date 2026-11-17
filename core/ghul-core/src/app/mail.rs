@@ -16,7 +16,7 @@ use pgp::composed::{SignedPublicKey, SignedSecretKey};
 
 use sha2::{Digest, Sha256};
 
-use super::areas::{area_setting, mark_area_deleted, put_area_setting};
+use super::areas::{area_setting, put_area_setting};
 use super::error::{GhulError, Result};
 use super::mailcrypt;
 use super::suite::{new_id, GhulSuite, Open, VaultKind};
@@ -1535,7 +1535,6 @@ impl GhulSuite {
             let mut list = accounts(o);
             list.retain(|a| a.id != id);
             put_area_setting(o, VaultKind::Mail, ACCOUNTS_KEY, &list)?;
-            mark_area_deleted(o, VaultKind::Mail, ACCOUNTS_KEY, &id)?;
             self.net.lock().unwrap_or_else(|p| p.into_inner()).imap.remove(&id);
             self.save_area(o, VaultKind::Mail)
         })
@@ -1883,7 +1882,6 @@ impl GhulSuite {
             let mut list = contact_keys(o);
             list.retain(|c| c.email != bare(&email));
             put_area_setting(o, VaultKind::Mail, KEYS_KEY, &list)?;
-            mark_area_deleted(o, VaultKind::Mail, KEYS_KEY, &bare(&email))?;
             self.save_area(o, VaultKind::Mail)
         })
     }

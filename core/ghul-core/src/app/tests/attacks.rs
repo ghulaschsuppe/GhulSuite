@@ -54,7 +54,7 @@ fn assert_no_marks(what: &str, data: &[u8]) {
     assert!(!data.windows(TOTP_SECRET.len()).any(|w| w == TOTP_SECRET.as_bytes()), "{what} contains the 2FA secret");
 }
 
-/// A suite with a mark in every area, synchronised to a folder server, with Drive and a mail account.
+/// A suite with a mark in every area, with Drive on a folder server and a mail account.
 fn marked_suite(name: &str) -> (Dirs, Arc<GhulSuite>, std::path::PathBuf, Vec<u8>) {
     let d = Dirs::new(name);
     let kf = generate_keyfile();
@@ -118,7 +118,6 @@ fn marked_suite(name: &str) -> (Dirs, Arc<GhulSuite>, std::path::PathBuf, Vec<u8
     };
     s.mail_trust_for_test(None, &account);
     s.mail_save_account(None, account).unwrap();
-    s.sync_folder(&LocalFs::new(server.join("sync"))).unwrap();
     (d, s, server, kf)
 }
 
@@ -156,7 +155,9 @@ fn stolen_files_do_not_open_without_both_factors() {
     s.lock();
     // A thief copies the folder to another device.
     let thief = Dirs::new("thief");
-    copy_suite(&server.join("sync"), &thief);
+    for f in d.storage().list().unwrap() {
+        thief.storage().write(f.clone(), d.storage().read(f).unwrap().unwrap()).unwrap();
+    }
     let t = thief.suite();
     assert!(t.unlock("pw-123456".into(), None, None, None, None).is_err(), "password alone");
     assert!(t.unlock("falsch".into(), None, None, None, Some(kf.clone())).is_err(), "key file alone");
@@ -167,7 +168,6 @@ fn stolen_files_do_not_open_without_both_factors() {
     assert!(t.unlock("pw-123456".into(), None, None, None, Some(bent)).is_err(), "changed key file");
     // The owner still can.
     t.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
-    drop(d);
     let _ = std::fs::remove_dir_all(&server);
 }
 
@@ -220,44 +220,6 @@ fn a_server_cannot_change_or_swap_drive_files() {
         std::fs::remove_file(blk).unwrap();
     }
     assert!(s.drive_download_block(a.clone(), 0).is_err());
-    let _ = std::fs::remove_dir_all(&server);
-}
-
-#[test]
-fn forged_or_weakened_vault_files_are_refused() {
-    let (_d, s, server, kf) = marked_suite("forge");
-    let pass = vault_id(&s, "KlauTresorX9");
-    let file = server.join("sync/suite").join(vault_file(&s, &pass));
-    let good = std::fs::read(&file).unwrap();
-    let parsed = crate::vault::LockedContainer::parse(&good).unwrap();
-    // KDF parameters sit in the clear header (memory ‖ iterations ‖ parallelism ‖ salt): an
-    // attacker can make them weak, out of range or as expensive as allowed.
-    let salt = parsed.header().kdf.salt;
-    let at = good.windows(32).position(|w| w == salt).unwrap();
-    for (memory, iterations, parallelism) in
-        [(8u32, 1u32, 1u32), (u32::MAX, u32::MAX, u32::MAX), (2 * 1024 * 1024, 64, 1), (64 * 1024, 3, 0), (0, 0, 0)]
-    {
-        let t = std::time::Instant::now();
-        let mut forged = good.clone();
-        forged[at - 12..at - 8].copy_from_slice(&memory.to_le_bytes());
-        forged[at - 8..at - 4].copy_from_slice(&iterations.to_le_bytes());
-        forged[at - 4..at].copy_from_slice(&parallelism.to_le_bytes());
-        std::fs::write(&file, &forged).unwrap();
-        let r = s.sync_folder(&LocalFs::new(server.join("sync")));
-        assert!(t.elapsed().as_secs() < 30, "a forged KDF made the app work for {:?}", t.elapsed());
-        assert!(!matches!(r, Ok(ref rep) if rep.deleted > 0));
-        assert_eq!(titles(&s), vec!["Bank"], "data intact ({memory}, {iterations}, {parallelism})");
-    }
-    std::fs::write(&file, &good).unwrap();
-    // A file from another suite under the same name.
-    let other = Dirs::new("forge-other");
-    let o = other.suite();
-    o.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "KlauTresorX9")]), None, None, None).unwrap();
-    o.save_entry(vault_id(&o, "KlauTresorX9"), login("Angreifer", "a", "b")).unwrap();
-    let theirs = other.storage().read(vault_file(&o, &vault_id(&o, "KlauTresorX9"))).unwrap().unwrap();
-    std::fs::write(&file, &theirs).unwrap();
-    s.sync_folder(&LocalFs::new(server.join("sync"))).unwrap();
-    assert_eq!(titles(&s), vec!["Bank"], "nothing from the foreign file");
     let _ = std::fs::remove_dir_all(&server);
 }
 
@@ -503,78 +465,6 @@ fn exports_are_safe_to_open_in_a_spreadsheet() {
     got.sort();
     want.sort();
     assert_eq!(got, want);
-}
-
-/// Names in a server's folder listing come from the server. Whatever it lists, nothing is
-/// written outside the suite folder, nothing odd is created, and the sync still works.
-#[test]
-fn a_server_cannot_plant_files_through_names() {
-    let (d, s, server, _kf) = marked_suite("names");
-    let dir = server.join("sync/suite");
-    let good = std::fs::read(dir.join(vault_file(&s, &vault_id(&s, "KlauTresorX9")))).unwrap();
-    // What a file system allows as names on the server side.
-    for name in [
-        ".versteckt.ghlpss",
-        "aux.ghlpss",
-        "CON.ghlpss",
-        "nul.ghltotp",
-        "a:b.ghlpss",
-        "x\u{202e}sspslhg.exe.ghlpss",
-        "ende .ghlpss ",
-        "tab\there.ghlpss",
-        "stern*.ghlpss",
-        "frage?.ghlpss",
-        "pipe|.ghlpss",
-        "<kleiner>.ghlpss",
-        "zitat\".ghlpss",
-        "neue\nzeile.ghlpss",
-        "..ghlpss",
-    ] {
-        let _ = std::fs::write(dir.join(name), &good);
-    }
-    /// A server that lists names no file system would allow.
-    struct Liar(LocalFs);
-    impl RemoteFs for Liar {
-        fn list(&self, dir: &str) -> crate::net::NetResult<Vec<crate::net::remote::RemoteEntry>> {
-            let mut l = self.0.list(dir)?;
-            for n in [
-                "../raus.ghlpss",
-                "..\\raus.ghlpss",
-                "/tmp/abs.ghlpss",
-                "a/b.ghlpss",
-                "C:\\x.ghlpss",
-                "\0.ghlpss",
-                "../../suite.ghlsuite",
-            ] {
-                l.push(crate::net::remote::RemoteEntry { name: n.into(), is_dir: false, size: 10 });
-            }
-            Ok(l)
-        }
-        fn read(&self, path: &str) -> crate::net::NetResult<Option<Vec<u8>>> {
-            self.0.read(path)
-        }
-        fn write(&self, path: &str, data: &[u8]) -> crate::net::NetResult<()> {
-            self.0.write(path, data)
-        }
-        fn delete(&self, path: &str) -> crate::net::NetResult<()> {
-            self.0.delete(path)
-        }
-        fn mkdir_all(&self, dir: &str) -> crate::net::NetResult<()> {
-            self.0.mkdir_all(dir)
-        }
-    }
-    s.sync_folder(&Liar(LocalFs::new(server.join("sync")))).unwrap();
-    assert_eq!(titles(&s), vec!["Bank"]);
-    for f in d.storage().list().unwrap() {
-        assert!(super::super::storage::plain_file_name(&f), "odd local file {f:?}");
-    }
-    let outside: Vec<_> = files_under(&d.root)
-        .into_iter()
-        .filter(|p| !p.starts_with(d.root.join("vault")) && !p.starts_with(d.root.join("local")))
-        .collect();
-    assert!(outside.is_empty(), "{outside:?}");
-    assert!(!d.root.parent().unwrap().join("raus.ghlpss").exists());
-    let _ = std::fs::remove_dir_all(&server);
 }
 
 /// Passwords, keys and codes never appear in debug output (logs, crash reports, error texts).

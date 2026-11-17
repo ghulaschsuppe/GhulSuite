@@ -12,12 +12,11 @@
 
 use sha2::{Digest, Sha256};
 
-use super::areas::{stamp, Stamped};
 use super::error::{GhulError, Result};
 use super::suite::{put_setting, setting, GhulSuite, Open, SUITE_FILE};
 use crate::vault::{RecoveryCode, UnlockedContainer};
 
-/// Fingerprint of the confirmed recovery code (stamped, merged by the latest change).
+/// Fingerprint of the confirmed recovery code (empty while not confirmed).
 pub(super) const CONFIRMED_KEY: &str = "recovery_confirmed";
 
 /// What the app finds in the suite folder.
@@ -41,8 +40,7 @@ fn fingerprint(code: &RecoveryCode) -> String {
 
 /// Marks the suite's recovery code as not yet confirmed (new suites).
 pub(super) fn mark_unconfirmed(suite: &mut UnlockedContainer) -> Result<()> {
-    // Time 0: any real confirmation from another device wins over this mark.
-    put_setting(suite, CONFIRMED_KEY, &Stamped { v: String::new(), at: 0 })
+    put_setting(suite, CONFIRMED_KEY, &String::new())
 }
 
 /// Normalises a typed group: upper case, no spaces or dashes, O read as 0.
@@ -60,9 +58,9 @@ impl GhulSuite {
             // Suites from before this check.
             return true;
         }
-        let s: Stamped<String> = setting(&o.suite, CONFIRMED_KEY);
+        let s: String = setting(&o.suite, CONFIRMED_KEY);
         match o.suite.recovery_code() {
-            Some(code) => s.v == fingerprint(&code),
+            Some(code) => s == fingerprint(&code),
             None => false,
         }
     }
@@ -100,7 +98,7 @@ impl GhulSuite {
             if normalise(&typed) != normalise(expected) {
                 return Ok(false);
             }
-            put_setting(&mut o.suite, CONFIRMED_KEY, &stamp(fingerprint(&code)))?;
+            put_setting(&mut o.suite, CONFIRMED_KEY, &fingerprint(&code))?;
             self.save_container(&mut o.suite, SUITE_FILE)?;
             Ok(true)
         })

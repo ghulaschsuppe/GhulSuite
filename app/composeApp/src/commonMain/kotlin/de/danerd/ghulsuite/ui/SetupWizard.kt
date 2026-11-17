@@ -61,9 +61,9 @@ import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 
-/** The eight steps of a new setup, in this order (sync comes before the areas so Drive can use it). */
+/** The seven steps of a new setup, in this order. */
 private val WZ_STEPS = listOf(
-    Res.string.wz_step_password, Res.string.wz_step_factor, Res.string.wz_step_storage, Res.string.wz_step_sync,
+    Res.string.wz_step_password, Res.string.wz_step_factor, Res.string.wz_step_storage,
     Res.string.wz_step_areas, Res.string.wz_step_lock, Res.string.wz_step_unlock, Res.string.wz_step_code,
 )
 
@@ -106,8 +106,8 @@ fun showModule(state: AppState, kind: VaultKindUi, on: Boolean) {
 }
 
 /**
- * New setup in eight steps (#24). The suite is created when leaving step 3 (storage), the steps
- * after it need an open suite (sync server check, area files). Should the app stop later, the suite
+ * New setup in seven steps (#24). The suite is created when leaving step 3 (storage), the steps
+ * after it need an open suite (area files). Should the app stop later, the suite
  * exists with an unconfirmed recovery code, and GhulSuite asks for a new code after unlocking.
  */
 @Composable
@@ -135,11 +135,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
     // 3: storage
     var inFolder by remember { mutableStateOf(false) }
     var storageName by remember { mutableStateOf(backend.storageName()) }
-    // 4: sync
-    var syncOn by remember { mutableStateOf(false) }
-    val syncForm = rememberServerForm()
-    var syncId by remember { mutableStateOf<String?>(null) }
-    // 5: areas
+    // 4: areas
     val areaOn = remember { mutableStateMapOf(VaultKindUi.PASS to true, VaultKindUi.TOTP to true, VaultKindUi.DRIVE to false, VaultKindUi.MAIL to false, VaultKindUi.CAL to true) }
     val areaName = remember { mutableStateMapOf<VaultKindUi, String>() }
     /** Area files this wizard created (switched off again on a second pass: removed). */
@@ -148,7 +144,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
     val driveForm = rememberServerForm()
     var mailSheet by remember { mutableStateOf(false) }
     var mailAdded by remember { mutableStateOf(false) }
-    // 7: unlock
+    // 6: unlock
     var quick by remember { mutableStateOf(if (backend.biometricAvailable()) QuickChoice.BIO else QuickChoice.NONE) }
     var quickPin by remember { mutableStateOf("") }
 
@@ -168,7 +164,6 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
     }
     val notSaved = stringResource(Res.string.keyfile_not_saved)
     val suiteThere = stringResource(Res.string.storage_suite_exists)
-    val missingFmt = stringResource(Res.string.srvf_missing)
     val driveMissingFmt = stringResource(Res.string.wz_drive_missing)
     val oneArea = stringResource(Res.string.wz_one_area)
     val pinRule = stringResource(Res.string.wz_pin_rule)
@@ -199,7 +194,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
         }
     }
 
-    /** Creates the chosen area files (and removes those switched off again), then step 6. */
+    /** Creates the chosen area files (and removes those switched off again), then step 5. */
     fun applyAreas() {
         state.run(onError = { error = it }, block = {
             for (a in AREAS) {
@@ -215,7 +210,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
             }
         }) {
             for (a in AREAS) showModule(state, a.kind, areaOn[a.kind] == true)
-            step = 6
+            step = 5
         }
     }
 
@@ -231,16 +226,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                 if (keyPinOk(state, pin)) step = 3 else error = keyPinMissing
             } else if (keyfile != null && keyfileSaved) step = 3 else error = notSaved
             3 -> create()
-            4 -> if (!syncOn) step = 5 else {
-                val id = syncId
-                val missing = syncForm.missing()
-                if (id == null || missing != null) {
-                    scope.launch { error = missingFmt.replace("%1\$s", getString(missing ?: Res.string.srvf_step_test)) }
-                } else {
-                    state.run(onError = { error = it }, block = { net.setSyncServer(id) }) { step = 5 }
-                }
-            }
-            5 -> {
+            4 -> {
                 val driveMissing = driveForm.missing()
                 when {
                     AREAS.none { areaOn[it.kind] == true } -> error = oneArea
@@ -249,17 +235,17 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                     else -> applyAreas()
                 }
             }
-            6 -> step = 7
-            7 -> {
+            5 -> step = 6
+            6 -> {
                 settings.quickUnlockHours = settings.quickUnlockHours.let { if (it in listOf(4, 24, 72, 168, 0)) it else 24 }
                 when (quick) {
                     QuickChoice.NONE -> {
                         backend.disableQuickUnlock()
-                        step = 8
+                        step = 7
                     }
-                    QuickChoice.BIO -> state.run(onError = { error = it }, block = { backend.enableBiometricUnlock() }) { step = 8 }
+                    QuickChoice.BIO -> state.run(onError = { error = it }, block = { backend.enableBiometricUnlock() }) { step = 7 }
                     QuickChoice.PIN -> if (quickPin.length !in 6..12 || !quickPin.all(Char::isDigit)) error = pinRule
-                    else state.run(onError = { error = it }, block = { backend.enablePinUnlock(quickPin) }) { quickPin = ""; step = 8 }
+                    else state.run(onError = { error = it }, block = { backend.enablePinUnlock(quickPin) }) { quickPin = ""; step = 7 }
                 }
             }
         }
@@ -287,7 +273,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
         }
     }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        for (i in 1..8) Box(Modifier.weight(1f).height(4.dp).clip(RoundedCornerShape(2.dp)).background(if (i <= step) g.accent else g.line))
+        for (i in 1..7) Box(Modifier.weight(1f).height(4.dp).clip(RoundedCornerShape(2.dp)).background(if (i <= step) g.accent else g.line))
     }
     Text(stringResource(WZ_STEPS[step - 1]), fontSize = 22.sp, fontWeight = FontWeight.Bold)
     BusyBanner(state)
@@ -366,16 +352,6 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
         }
 
         4 -> {
-            ListCard {
-                PickRow(!syncOn, Icons.Filled.Smartphone, 5, stringResource(Res.string.wz_later), stringResource(Res.string.wz_sync_later_sub), onClick = { syncOn = false })
-                PickRow(syncOn, Icons.Filled.Dns, 1, stringResource(Res.string.wz_own_server), stringResource(Res.string.wz_sync_own_sub), divider = true, onClick = { syncOn = true }) {
-                    ServerSetup(state, syncForm, { input, fp -> net.saveServer(input, fp) }) { syncId = it }
-                }
-            }
-            HintText(stringResource(Res.string.wz_sync_hint))
-        }
-
-        5 -> {
             for (a in AREAS) {
                 val on = areaOn[a.kind] == true
                 ListCard {
@@ -431,7 +407,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
             HintText(stringResource(Res.string.wz_areas_hint))
         }
 
-        6 -> {
+        5 -> {
             SectionCard(stringResource(Res.string.set_auto_lock)) {
                 Hint(stringResource(Res.string.wz_lock_sub))
                 FilterChipRow(AUTO_LOCK_OPTIONS.map { it.first.toString() to stringResource(it.second) }, settings.autoLockSeconds.toString(),
@@ -449,7 +425,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
             HintText(stringResource(Res.string.wz_lock_hint))
         }
 
-        7 -> {
+        6 -> {
             HintText(stringResource(Res.string.wz_quick_explain))
             ListCard {
                 PickRow(quick == QuickChoice.NONE, Icons.Filled.Usb, 0, stringResource(Res.string.wz_quick_none), stringResource(Res.string.wz_quick_none_sub), onClick = { quick = QuickChoice.NONE })
@@ -475,11 +451,11 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
             HintText(stringResource(Res.string.set_quick_always_full))
         }
 
-        8 -> RecoveryCodeSteps(state, code) { finishWizard(state) }
+        7 -> RecoveryCodeSteps(state, code) { finishWizard(state) }
     }
 
     ErrorText(error)
-    if (step < 8) {
+    if (step < 7) {
         ButtonRow {
             if (step > 1 && !(created && step <= 4)) OutlinedButton(onClick = { back() }, modifier = Modifier.weight(1f)) { Text(stringResource(Res.string.a_back)) }
             Button(
@@ -490,7 +466,6 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                 Text(stringResource(when {
                     step == 3 && useKey -> Res.string.a_register_key
                     step == 3 -> Res.string.a_setup
-                    step == 4 && !syncOn -> Res.string.wz_later
                     else -> Res.string.a_next
                 }))
             }

@@ -28,7 +28,6 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Password
 import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Icon
@@ -48,7 +47,6 @@ import androidx.compose.ui.unit.dp
 import de.danerd.ghulsuite.model.ServerUi
 import de.danerd.ghulsuite.model.SlotType
 import de.danerd.ghulsuite.model.SlotUi
-import de.danerd.ghulsuite.model.SyncStatusUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
 import org.jetbrains.compose.resources.StringResource
@@ -73,7 +71,7 @@ fun SetPage.title(): StringResource = when (this) {
     SetPage.FACTORS -> Res.string.set_factors
     SetPage.VAULTS -> Res.string.set_vaults
     SetPage.IMPORT -> Res.string.set_import_export
-    SetPage.SERVERS -> Res.string.set_servers_sync_share
+    SetPage.SERVERS -> Res.string.set_servers_share
     SetPage.MODULES -> Res.string.set_modules
     SetPage.PASS -> Res.string.tab_pass
     SetPage.AUTH -> Res.string.tab_auth
@@ -107,12 +105,8 @@ fun SettingsScreen(state: AppState, padding: PaddingValues) {
     val backend = state.backend
     val settings = backend.settings
     var slots by remember { mutableStateOf<List<SlotUi>>(emptyList()) }
-    var servers by remember { mutableStateOf<List<ServerUi>>(emptyList()) }
-    var sync by remember { mutableStateOf(SyncStatusUi(null, 0)) }
     LaunchedEffect(state.liveRevision()) {
         slots = catching { backend.slots() }.getOrDefault(emptyList())
-        servers = catching { backend.net.servers() }.getOrDefault(emptyList())
-        sync = catching { backend.net.syncStatus() }.getOrDefault(SyncStatusUi(null, 0))
     }
     val open = { p: SetPage -> state.push(Screen.SettingsPage(p)) }
     val keys = slots.count { it.type == SlotType.SECURITY_KEY }
@@ -191,10 +185,8 @@ fun SettingsScreen(state: AppState, padding: PaddingValues) {
                 SetRow(Icons.Filled.Layers, Teal, stringResource(Res.string.set_vaults),
                     pluralStringResource(Res.plurals.set_vaults_sub, state.vaults.size, state.vaults.size.toString()), first = true) { open(SetPage.VAULTS) }
                 SetRow(Icons.Filled.Download, Cyan, stringResource(Res.string.set_import_export), stringResource(Res.string.set_import_sub)) { open(SetPage.IMPORT) }
-                // Only the synchronisation (GhulDrive's storage locations are in GhulDrive's settings).
-                val syncName = servers.firstOrNull { it.id == sync.serverId }?.name
-                SetRow(Icons.Filled.Sync, Blue, stringResource(Res.string.set_servers_sync_share),
-                    if (syncName == null) stringResource(Res.string.set_sync_sub_off) else stringResource(Res.string.set_sync_sub_on, syncName)) { open(SetPage.SERVERS) }
+                SetRow(Icons.Filled.Dns, Blue, stringResource(Res.string.set_servers_share),
+                    stringResource(Res.string.set_servers_sub)) { open(SetPage.SERVERS) }
             }
             Group(stringResource(Res.string.set_g_areas)) {
                 SetRow(Icons.Filled.Apps, Gray, stringResource(Res.string.set_modules), stringResource(Res.string.set_modules_sub), first = true) { open(SetPage.MODULES) }

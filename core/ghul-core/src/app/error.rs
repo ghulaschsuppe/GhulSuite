@@ -72,12 +72,6 @@ pub enum GhulError {
     CertUntrusted { fingerprint: String },
     #[error("the server rejected the login")]
     ServerAuthFailed,
-    #[error("the password was changed on another device")]
-    PasswordChangedElsewhere,
-    /// A key was removed and the recovery code renewed on another device: one touch of a
-    /// remaining key (or the key file) takes the new protection over (`adopt_remote_protection`).
-    #[error("the protection was changed on another device")]
-    ProtectionChangedElsewhere,
     /// B3: the Drive index on the server is older than the one this suite saw last (server
     /// reset or an old copy put back). Nothing is written; `drive_accept_server_state` takes it.
     #[error("the GhulDrive index on the server is older than the one seen last")]

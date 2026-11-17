@@ -5,7 +5,7 @@
 //! <base>/drive/index.ghldrv              "GHULDRV1" ‖ nonce[24] ‖ AEAD(index key, padded CBOR index)
 //! <base>/drive/blocks/<ab>/<block id>    "GHULBLK1" ‖ nonce[24] ‖ AEAD(block key, block, aad = magic ‖ id)
 //!
-//! DK          = random 256 bit, kept in the suite's encrypted settings (synchronised)
+//! DK          = random 256 bit, kept in the Drive vault's encrypted settings
 //! index key   = HKDF(DK, "ghul/v1/drive/index")
 //! block key   = HKDF(DK, "ghul/v1/drive/block")
 //! block id    = hex(HMAC-SHA256(HKDF(DK, "ghul/v1/drive/block-id"), plaintext block))
@@ -52,12 +52,9 @@ struct DriveSettings {
     /// Id of the server Drive uses (its own one in the Drive file, or one of the suite's).
     #[serde(default)]
     server: String,
-    /// Use the server this device synchronises with (`server` is then empty).
-    #[serde(default)]
-    use_sync: bool,
     #[serde(with = "serde_bytes")]
     key: Vec<u8>,
-    /// B3: the highest index revision seen per server (synchronised, the highest wins). A lower
+    /// B3: the highest index revision seen per server. A lower
     /// one, or no index at all, means the server was reset: nothing is written then.
     #[serde(default)]
     seen: BTreeMap<String, u64>,
@@ -262,12 +259,8 @@ pub(super) struct SharedFile {
 }
 
 /// The server Drive uses on this device.
-fn drive_server_id(o: &Open, d: &DriveSettings) -> Option<String> {
-    if d.use_sync {
-        super::sync::sync_server(o)
-    } else {
-        (!d.server.is_empty()).then(|| d.server.clone())
-    }
+fn drive_server_id(_o: &Open, d: &DriveSettings) -> Option<String> {
+    (!d.server.is_empty()).then(|| d.server.clone())
 }
 
 thread_local! {
@@ -285,33 +278,20 @@ pub(super) fn at_location<T>(id: Option<String>, f: impl FnOnce() -> T) -> T {
     out
 }
 
-/// Id of a storage location made from a server Drive used before it had a list of its own
-/// (the synchronisation's, or one of the suite's). The same on every device, so two devices
-/// that move the same Drive file make one location, not two.
-fn moved_location_id(old: &str) -> String {
-    crate::kdf::hex(&hkdf(old.as_bytes(), &[b"ghul/v1/drive/location"])[..8])
-}
-
 /// How GhulDrive stores its files.
 #[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DriveMode {
     /// Not set up.
     None,
-    /// On the server this device synchronises with.
-    Sync,
     /// On its own server, stored in the Drive file.
     Own,
-    /// On one of the suite's servers (Drive set up with an older app).
-    Suite,
 }
 
 #[derive(uniffi::Record, Clone, Debug, PartialEq)]
 pub struct DriveStorage {
     pub mode: DriveMode,
-    /// The server in use; `None` when not set up, or `Sync` while synchronisation is off.
+    /// The server in use; `None` when not set up.
     pub server: Option<ServerInfo>,
-    /// Synchronisation is set up on this device ("wie Synchronisation" can be offered).
-    pub sync_available: bool,
 }
 
 /// One of GhulDrive's storage locations.
@@ -526,7 +506,6 @@ fn check_name(name: &str) -> Result<String> {
 impl GhulSuite {
     /// Drive settings, the server connection and the keys.
     fn drive_ctx(&self, o: &mut Open) -> Result<(Arc<dyn RemoteFs>, Keys)> {
-        self.drive_move_to_locations(o)?;
         let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
         let server = self.drive_location(o).ok_or(GhulError::NotConfigured)?;
         if d.key.len() != 32 {
@@ -554,9 +533,9 @@ impl GhulSuite {
         Ok(())
     }
 
-    /// Points Drive at a server (`server` empty with `use_sync`) and checks it: creates Drive's
-    /// key the first time, opens an existing index with it (or creates one) and saves.
-    fn drive_attach(&self, o: &mut Open, server: String, use_sync: bool) -> Result<()> {
+    /// Points Drive at a server and checks it: creates Drive's key the first time, opens an
+    /// existing index with it (or creates one) and saves.
+    fn drive_attach(&self, o: &mut Open, server: String) -> Result<()> {
         self.ensure_area(o, VaultKind::Drive)?;
         let mut d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
         if d.key.len() != 32 {
@@ -564,12 +543,12 @@ impl GhulSuite {
             OsRng.fill_bytes(&mut k);
             d.key = k;
         }
-        let before = (std::mem::replace(&mut d.server, server), std::mem::replace(&mut d.use_sync, use_sync));
+        let before = std::mem::replace(&mut d.server, server);
         put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
         self.net.lock().unwrap_or_else(|p| p.into_inner()).drive = None;
         let checked = self.drive_attach_check(o);
         if let Err(e) = checked {
-            (d.server, d.use_sync) = before;
+            d.server = before;
             put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
             return Err(e);
         }
@@ -657,41 +636,6 @@ impl GhulSuite {
     fn drive_on_active(&self, o: &Open) -> bool {
         let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
         AT.with(|a| a.borrow().as_ref().map_or(true, |at| Some(at) == drive_server_id(o, &d).as_ref()))
-    }
-
-    /// Drive used the synchronisation's server, or one of the suite's (older apps): that server
-    /// becomes a storage location of Drive's own (a copy of the login in the Drive file), so the
-    /// synchronisation and Drive are independent. What was seen and the share links go along.
-    pub(super) fn drive_move_to_locations(&self, o: &mut Open) -> Result<()> {
-        let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
-        let own = servers::drive_servers(o);
-        let old = if d.use_sync {
-            super::sync::sync_server(o)
-        } else if !d.server.is_empty() && !own.iter().any(|s| s.id == d.server) {
-            Some(d.server.clone())
-        } else {
-            return Ok(());
-        };
-        // Without that server (sync off, or not found) nothing changes: nothing is lost.
-        let Some(old) = old else { return Ok(()) };
-        let Ok(mut copy) = servers::server(o, &old) else { return Ok(()) };
-        let mut d = d;
-        let mut own = own;
-        let id = moved_location_id(&old);
-        copy.id = id.clone();
-        if !own.iter().any(|s| s.id == id) {
-            own.push(copy);
-        }
-        if let Some(seen) = d.seen.get(&old).copied() {
-            let e = d.seen.entry(id.clone()).or_insert(0);
-            *e = (*e).max(seen);
-        }
-        d.use_sync = false;
-        d.server = id;
-        put_area_setting(o, VaultKind::Drive, servers::SERVERS_KEY, &own)?;
-        put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
-        self.net.lock().unwrap_or_else(|p| p.into_inner()).drive = None;
-        self.save_area(o, VaultKind::Drive)
     }
 
     fn pending_keys(&self, o: &Open) -> Option<(Zeroizing<[u8; 32]>, Pending)> {
@@ -802,33 +746,26 @@ impl GhulSuite {
 #[uniffi::export]
 impl GhulSuite {
     /// Sets up GhulDrive on a stored server (creates the Drive key once; keeps an existing Drive).
-    /// Uses one of the suite's servers for Drive (by id, not following later changes of the
-    /// synchronisation; for that use `drive_use_sync`).
+    /// A server of the suite becomes one of Drive's storage locations (a copy in the Drive file).
     pub fn drive_setup(&self, server_id: String) -> Result<()> {
         self.with_open(|o| {
-            if !servers::all_servers(o).iter().any(|s| s.id == server_id) {
-                return Err(GhulError::NotFound);
+            let srv = servers::server(o, &server_id)?;
+            self.ensure_area(o, VaultKind::Drive)?;
+            let mut own = servers::drive_servers(o);
+            if !own.iter().any(|s| s.id == server_id) {
+                own.push(srv);
+                put_area_setting(o, VaultKind::Drive, servers::SERVERS_KEY, &own)?;
             }
-            self.drive_attach(o, server_id, false)
+            self.drive_attach(o, server_id)
         })
     }
 
-    /// Drive uses the server this device synchronises with ("wie Synchronisation").
-    pub fn drive_use_sync(&self) -> Result<()> {
-        self.with_open(|o| {
-            super::sync::sync_server(o).ok_or(GhulError::NotConfigured)?;
-            self.drive_attach(o, String::new(), true)
-        })
-    }
-
-    /// Checks a server and adds it to GhulDrive's storage locations (in the Drive file; the
-    /// synchronisation does not see it). The first location becomes the active one; a further
+    /// Checks a server and adds it to GhulDrive's storage locations (in the Drive file). The first location becomes the active one; a further
     /// one is only added (switch to it with `drive_switch_location`). Fingerprints as with
     /// `save_server`.
     pub fn drive_save_server(&self, input: ServerInput, confirmed: Option<String>) -> Result<ServerSaved> {
         self.with_open(|o| {
             self.ensure_area(o, VaultKind::Drive)?;
-            self.drive_move_to_locations(o)?;
             let stored = match servers::check_server(o, &input, confirmed.as_deref())? {
                 Ok(s) => s,
                 Err(fingerprint) => return Ok(ServerSaved::Confirm { fingerprint }),
@@ -846,7 +783,7 @@ impl GhulSuite {
             let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
             let first = drive_server_id(o, &d).is_none();
             let attached = if first {
-                self.drive_attach(o, id.clone(), false)
+                self.drive_attach(o, id.clone())
             } else {
                 // Checked like the active one (an index there must open with Drive's key), but
                 // the active location stays.
@@ -870,18 +807,16 @@ impl GhulSuite {
     /// Where Drive stores its files.
     pub fn drive_storage(&self) -> Result<DriveStorage> {
         self.with_open(|o| {
-            self.drive_move_to_locations(o)?;
             let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
             let mode = if d.server.is_empty() || d.key.len() != 32 { DriveMode::None } else { DriveMode::Own };
             let server = drive_server_id(o, &d).and_then(|id| servers::server(o, &id).ok()).map(|s| servers::info(&s));
-            Ok(DriveStorage { mode, server, sync_available: super::sync::sync_server(o).is_some() })
+            Ok(DriveStorage { mode, server })
         })
     }
 
     /// GhulDrive's storage locations: each its own server with its own files, one of them active.
     pub fn drive_locations(&self) -> Result<Vec<DriveLocation>> {
         self.with_open(|o| {
-            self.drive_move_to_locations(o)?;
             let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
             let active = drive_server_id(o, &d).unwrap_or_default();
             let own = servers::drive_servers(o);
@@ -896,19 +831,17 @@ impl GhulSuite {
     /// Makes another storage location the active one (its files are shown from now on).
     pub fn drive_switch_location(&self, id: String) -> Result<()> {
         self.with_open(|o| {
-            self.drive_move_to_locations(o)?;
             if !servers::drive_servers(o).iter().any(|s| s.id == id) {
                 return Err(GhulError::NotFound);
             }
             self.drive_pin_archive(o)?;
-            self.drive_attach(o, id, false)
+            self.drive_attach(o, id)
         })
     }
 
     /// The storage location the mail archive writes into.
     pub fn drive_set_archive_location(&self, id: String) -> Result<()> {
         self.with_open(|o| {
-            self.drive_move_to_locations(o)?;
             if !servers::drive_servers(o).iter().any(|s| s.id == id) {
                 return Err(GhulError::NotFound);
             }
@@ -927,7 +860,6 @@ impl GhulSuite {
     /// the folder is added again. Another location becomes active if this one was.
     pub fn drive_remove_location(&self, id: String, delete_files: bool, force: bool) -> Result<()> {
         self.with_open(|o| {
-            self.drive_move_to_locations(o)?;
             let srv = servers::drive_servers(o).into_iter().find(|s| s.id == id).ok_or(GhulError::NotFound)?;
             let delete_files = delete_files && !force;
             if delete_files {
@@ -974,30 +906,6 @@ impl GhulSuite {
                     net.drive = None;
                 }
             }
-            self.save_area(o, VaultKind::Drive)
-        })
-    }
-
-    /// Before the synchronisation server is removed or changed: Drive keeps using that server,
-    /// as its own one (a copy of the login goes into the Drive file). Nothing when Drive does
-    /// not follow the synchronisation.
-    pub fn drive_detach_from_sync(&self) -> Result<()> {
-        self.with_open(|o| {
-            let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
-            if !d.use_sync {
-                return Ok(());
-            }
-            let sync = super::sync::sync_server(o).ok_or(GhulError::NotConfigured)?;
-            let mut copy = servers::server(o, &sync)?;
-            copy.id = crate::kdf::hex(&new_id()[..8]);
-            // Same server, same folder: an installed module keeps working for GhulDrive.
-            let id = copy.id.clone();
-            put_area_setting(o, VaultKind::Drive, servers::SERVERS_KEY, &vec![copy])?;
-            let mut d = d;
-            d.server = id;
-            d.use_sync = false;
-            put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
-            self.net.lock().unwrap_or_else(|p| p.into_inner()).drive = None;
             self.save_area(o, VaultKind::Drive)
         })
     }
@@ -1642,26 +1550,15 @@ impl GhulSuite {
         self.drive_location(o)
     }
 
-    /// The location a share made on server `id` belongs to now (a share made while Drive used
-    /// the synchronisation's server belongs to the location made from it).
-    pub(super) fn drive_location_of(&self, o: &Open, id: &str) -> String {
-        let own = servers::drive_servers(o);
-        if own.iter().any(|s| s.id == id) {
-            return id.to_owned();
-        }
-        let moved = moved_location_id(id);
-        if own.iter().any(|s| s.id == moved) {
-            moved
-        } else {
-            id.to_owned()
-        }
+    /// The location a share made on server `id` belongs to.
+    pub(super) fn drive_location_of(&self, _o: &Open, id: &str) -> String {
+        id.to_owned()
     }
 
     /// The location the mail archive writes into: the chosen one, else the active one, which
     /// is then kept (the archive does not follow a later switch).
     pub(super) fn drive_archive_location(&self) -> Result<Option<String>> {
         self.with_open(|o| {
-            self.drive_move_to_locations(o)?;
             self.drive_pin_archive(o)?;
             let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
             let own = servers::drive_servers(o);
@@ -1670,22 +1567,6 @@ impl GhulSuite {
             }
             Ok(drive_server_id(o, &d))
         })
-    }
-
-    /// Turns Drive back into the state an older app left: `use_sync`, no locations of its own.
-    #[cfg(test)]
-    pub(super) fn drive_back_to_use_sync_for_tests(&self) {
-        self.with_open(|o| {
-            let mut d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
-            d.use_sync = true;
-            d.server.clear();
-            d.archive.clear();
-            put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
-            put_area_setting(o, VaultKind::Drive, servers::SERVERS_KEY, &Vec::<StoredServer>::new())?;
-            self.net.lock().unwrap_or_else(|p| p.into_inner()).drive = None;
-            self.save_area(o, VaultKind::Drive)
-        })
-        .unwrap();
     }
 
     /// Without a chosen archive location: the active one becomes it (stored).

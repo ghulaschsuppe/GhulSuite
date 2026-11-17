@@ -58,7 +58,7 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 
-private enum class Flow { START, NEW, OPEN_VAULT, FETCH }
+private enum class Flow { START, NEW, OPEN_VAULT }
 
 const val KEYFILE_NAME = "ghulsuite.ghlkey"
 
@@ -154,10 +154,6 @@ fun SetupScreen(state: AppState) {
                 StartOption(Icons.Filled.Add, paletteColor(0), stringResource(Res.string.start_new), stringResource(Res.string.start_new_text)) {
                     error = null; flow = Flow.NEW
                 }
-                StartOption(Icons.Filled.Cloud, paletteColor(1), stringResource(Res.string.start_fetch), stringResource(Res.string.start_fetch_text)) {
-                    error = null
-                    flow = Flow.FETCH
-                }
                 if (filePickersAvailable) {
                     StartOption(Icons.Filled.Folder, paletteColor(2), stringResource(Res.string.start_open_suite), stringResource(Res.string.start_open_suite_text)) {
                         error = null
@@ -184,8 +180,6 @@ fun SetupScreen(state: AppState) {
             }
 
             Flow.NEW -> NewSuiteWizard(state) { flow = Flow.START }
-
-            Flow.FETCH -> FetchFromServer(state) { flow = Flow.START }
 
             Flow.OPEN_VAULT -> {
                 val file = vaultFile

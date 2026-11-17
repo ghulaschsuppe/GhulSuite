@@ -184,59 +184,6 @@ fn recovery_codes_in_every_spelling() {
 }
 
 #[test]
-fn merging_is_independent_of_order_and_repetition() {
-    use super::super::sync::merge_entries;
-    use crate::vault::{Entry, Field};
-    let mut rng = Rng(2026);
-    let entry = |rng: &mut Rng, id: u8, rev: u64, deleted: bool| {
-        let mut e = Entry::new([id; 16], "login", (rng.below(10_000) + 1) as i64);
-        e.revision = rev;
-        e.deleted = deleted;
-        if !deleted {
-            e.fields.insert("title".into(), Field::Text(format!("T{id}-{rev}-{}", rng.below(3))));
-        }
-        e
-    };
-    type Key = Vec<(Vec<u8>, u64, bool, i64, Vec<String>)>;
-    let key = |v: &[Entry]| {
-        let mut k: Key = v
-            .iter()
-            .map(|e| (e.id.clone(), e.revision, e.deleted, e.modified, e.fields.keys().cloned().collect()))
-            .collect();
-        k.sort();
-        k
-    };
-    for case in 0..3000 {
-        let n = 1 + rng.below(12) as u8;
-        let mut a = Vec::new();
-        let mut b = Vec::new();
-        for id in 0..n {
-            let (r1, d1, r2, d2) = (1 + rng.below(5), rng.below(4) == 0, 1 + rng.below(5), rng.below(5) == 0);
-            match rng.below(4) {
-                0 => a.push(entry(&mut rng, id, r1, d1)),
-                1 => b.push(entry(&mut rng, id, r1, d1)),
-                _ => {
-                    a.push(entry(&mut rng, id, r1, d2));
-                    b.push(entry(&mut rng, id, r2, d2));
-                }
-            }
-        }
-        let (ab, _, _) = merge_entries(&a, &b);
-        let (ba, _, _) = merge_entries(&b, &a);
-        assert_eq!(key(&ab), key(&ba), "case {case}: order matters");
-        let (again, l, r) = merge_entries(&ab, &ab);
-        assert_eq!(key(&again), key(&ab), "case {case}");
-        assert!(!l && !r, "case {case}: merging with itself reports a change");
-        let (with_a, _, _) = merge_entries(&ab, &a);
-        assert_eq!(key(&with_a), key(&ab), "case {case}: merging an older side changes the result");
-        // Nothing is lost: every id of either side is in the result.
-        for e in a.iter().chain(&b) {
-            assert!(ab.iter().any(|x| x.id == e.id), "case {case}: lost an entry");
-        }
-    }
-}
-
-#[test]
 fn password_generator_rules_for_every_option() {
     let mut rng = Rng(8);
     for _ in 0..5000 {

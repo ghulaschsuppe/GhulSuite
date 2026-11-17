@@ -1040,13 +1040,12 @@ class InteractionTest {
 
     /**
      * The servers cannot be read: the page says why and offers to try again, instead of an empty
-     * list and "Off" (looked as if the server was gone) or an error with no way out.
+     * list (looked as if the server was gone) or an error with no way out.
      */
     @Test
     fun serversPageLoadErrorOffersRetry() {
         app(setup = { push(Screen.SettingsPage(SetPage.SERVERS)) }, prepare = { (net as FakeNet).serversFailures = 1 }) { _, _ ->
             waitFor("Try again")
-            assertTrue(onAllNodesWithText("Off").fetchSemanticsNodes().isEmpty())
             assertTrue(onAllNodesWithText("Add server").fetchSemanticsNodes().isEmpty())
             text("Try again").performClick()
             waitFor("Heimserver")
@@ -1065,45 +1064,6 @@ class InteractionTest {
             assertTrue(onAllNodesWithText("New mail").fetchSemanticsNodes().isEmpty())
             // Without a display (CI) there is no file picker and no button at all; never two.
             assertTrue(onAllNodesWithContentDescription("Attach file").fetchSemanticsNodes().size <= 1)
-        }
-    }
-
-    /** Only the sync status cannot be read: the servers are shown, the sync card does not claim "Off". */
-    @Test
-    fun syncStatusErrorDoesNotSayOff() {
-        app(setup = { push(Screen.SettingsPage(SetPage.SERVERS)) }, prepare = { (net as FakeNet).syncStatusFails = true }) { _, fake ->
-            waitFor("Heimserver")
-            waitFor("Try again")
-            assertTrue(onAllNodesWithText("Off").fetchSemanticsNodes().isEmpty())
-            (fake.net as FakeNet).syncStatusFails = false
-            text("Try again").performScrollTo().performClick()
-            waitFor("Synchronise now")
-            waitGone("Try again")
-        }
-    }
-
-    /** Choosing the sync server must stick: it is saved and shown (bug: it stayed "Off"). */
-    @Test
-    fun choosingTheSyncServerSticks() {
-        app(setup = { push(Screen.SettingsPage(SetPage.SERVERS)) }, prepare = { (net as FakeNet).syncServer = null }) { _, fake ->
-            val net = fake.net as FakeNet
-            waitFor("Off")
-            text("Off").performScrollTo().performClick()
-            waitFor("Heimserver")
-            onAllNodesWithText("Heimserver", useUnmergedTree = true).onLast().performClick()
-            waitUntil(timeoutMillis = 10_000) { net.calls.contains("setSyncServer:s1") }
-            assertEquals("s1", net.syncServer)
-            // The row now names the server, not "Off".
-            waitUntil(timeoutMillis = 10_000) { !shown("Off") }
-            shot("sync-server-chosen")
-            // With a server, the controls of the synchronisation appear.
-            waitFor("Synchronise now")
-            // One synchronisation for the choice, not one automatic and then one more (bug: the
-            // emulator waited for the second full run).
-            assertTrue(fake.settings.autoSync)
-            Thread.sleep(500)
-            waitForIdle()
-            assertEquals(1, net.syncRuns)
         }
     }
 
@@ -1399,12 +1359,11 @@ class InteractionTest {
         assertTrue(calls.indexOf("shareDelete:a1") < calls.indexOf("driveDelete:f1"), "the link ends first: $calls")
     }
 
-    /** GhulDrive with a server of its own (no synchronisation): the card and the header name it. */
+    /** GhulDrive with a server of its own: the card and the header name it. */
     @Test
     fun driveWithItsOwnServerShowsIt() {
         app(setup = { tab = Tab.DRIVE }, prepare = {
             val n = net as FakeNet
-            n.syncServer = null
             n.driveOwnServer = ServerUi("d1", "Drive-NAS", "nas.example.org", 22, "max", "drive", true, "SHA256:x", "/srv/drive",
                 ServerKindUi.SFTP)
         }) { _, _ ->
@@ -1443,9 +1402,9 @@ class InteractionTest {
             waitFor("Steuer 2025.pdf")
             assertFalse(shown("No server yet"))
             assertFalse(shown("Choose server"))
-            // The synchronisation is done: the core answers again.
+            // The core answers again.
             (fake.net as FakeNet).driveLocationsFails = 0
-            state.sync()
+            state.changed()
             waitFor("Heimserver")
             assertFalse(shown("No server yet"))
         }
@@ -1563,64 +1522,6 @@ class InteractionTest {
         waitFor("Steuer 2025.pdf")
     }
 
-    /**
-     * Adding a location: the new block appears at once, also when the synchronisation that
-     * follows holds the core for a long time (bug: in the emulator it only appeared afterwards).
-     */
-    @Test
-    fun anAddedLocationAppearsBeforeTheSynchronisation() = app(setup = { push(Screen.SettingsPage(SetPage.DRIVE)) }) { _, fake ->
-        val net = fake.net as FakeNet
-        waitFor("Heimserver")
-        // From now on a synchronisation takes 20 s and holds the core meanwhile.
-        net.syncDelayMs = 20_000
-        net.driveLocationsWaitForSync = true
-        text("Add storage location").performScrollTo().performClick()
-        typeInto("Server address", "example.org")
-        typeInto("User name", "web123")
-        text("Test connection").performClick()
-        waitFor("Create new (recommended)")
-        text("ghulsuite").performClick()
-        text("Check connection").performClick()
-        waitFor("Check the server key")
-        dialogButton("Fingerprint matches")
-        waitFor("Save server")
-        text("Save server").performScrollTo().performClick()
-        waitUntil(timeoutMillis = 10_000) { net.driveLocationCalls.contains("add:ghulsuite") }
-        waitFor("Storage location added. The active one stays; switch in GhulDrive with \"Switch storage location\".")
-        // Within the 10 s of waitFor, while the synchronisation takes 20 s.
-        waitFor("Folder: /ghulsuite")
-        assertEquals(2, onAllNodesWithContentDescription("Remove storage location").fetchSemanticsNodes().size)
-    }
-
-    /** Removing a location: the block goes at once, also while the synchronisation that follows holds the core. */
-    @Test
-    fun aRemovedLocationGoesBeforeTheSynchronisation() = app(setup = { push(Screen.SettingsPage(SetPage.DRIVE)) }, prepare = { (net as FakeNet).addSecondDriveLocation() }) { _, fake ->
-        val net = fake.net as FakeNet
-        waitFor("Webspace")
-        net.syncDelayMs = 20_000
-        net.driveLocationsWaitForSync = true
-        onAllNodesWithContentDescription("Remove storage location")[1].performScrollTo().performClick()
-        waitFor("Remove Webspace?")
-        text("Remove").performClick()
-        waitUntil(timeoutMillis = 10_000) { net.driveLocationCalls.contains("remove:d2:false") }
-        // Within the 10 s of waitGone, while the synchronisation takes 20 s.
-        waitGone("Webspace")
-    }
-
-    /** Switching in GhulDrive's card: the other location shows at once, also while a synchronisation holds the core. */
-    @Test
-    fun switchingShowsTheOtherLocationBeforeTheSynchronisation() = app(setup = { tab = Tab.DRIVE }, prepare = { (net as FakeNet).addSecondDriveLocation() }) { _, fake ->
-        val net = fake.net as FakeNet
-        waitFor("Switch storage location")
-        net.syncDelayMs = 20_000
-        net.driveLocationsWaitForSync = true
-        text("Switch storage location").performClick()
-        waitFor("/drive-b/drive")
-        text("Webspace").performClick()
-        waitUntil(timeoutMillis = 10_000) { net.driveLocationCalls == listOf("switch:d2") }
-        waitFor("/drive-b/drive · encrypted")
-    }
-
     /** One location: no switch button in GhulDrive. Two: the button shows them and switches. */
     @Test
     fun driveOffersToSwitchOnlyWithSeveralLocations() {
@@ -1675,15 +1576,16 @@ class InteractionTest {
         waitGone("Switch to Webspace")
     }
 
-    /** Options > Synchronisation is about the synchronisation only: no module, nothing of GhulDrive. */
+    /** Options > Servers and sharing: the suite's servers, nothing of GhulDrive's locations. */
     @Test
-    fun syncPageHasNothingOfGhulDrive() = app(setup = { push(Screen.SettingsPage(SetPage.SERVERS)) }) { _, _ ->
-        waitFor("Synchronise now")
+    fun serversPageHasNothingOfGhulDrive() = app(setup = { push(Screen.SettingsPage(SetPage.SERVERS)) }) { _, _ ->
+        waitFor("Heimserver")
+        waitFor("Add server")
         assertFalse(shown("Install module"))
         assertFalse(shown("Update module"))
         assertFalse(onAllNodesWithText("Server module", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
         assertFalse(onAllNodesWithText("GhulDrive", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
-        shot("sync-page")
+        shot("servers-page")
     }
 
     // --- Background jobs and the mail archive in GhulDrive ----------------------------------------

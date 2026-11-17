@@ -26,7 +26,6 @@ import de.danerd.ghulsuite.model.SecurityIssueKindUi
 import de.danerd.ghulsuite.model.SecurityIssueUi
 import de.danerd.ghulsuite.model.SecurityReportUi
 import de.danerd.ghulsuite.model.TotpNowUi
-import de.danerd.ghulsuite.core.generateSshKey
 import de.danerd.ghulsuite.core.inspectContainer
 import de.danerd.ghulsuite.core.parseOtpauthUri
 import de.danerd.ghulsuite.core.passwordStrength
@@ -34,7 +33,6 @@ import de.danerd.ghulsuite.model.ContainerInfoUi
 import de.danerd.ghulsuite.model.EntrySummaryUi
 import de.danerd.ghulsuite.model.EntryUi
 import de.danerd.ghulsuite.model.FolderRef
-import de.danerd.ghulsuite.model.FoundVaultUi
 import de.danerd.ghulsuite.model.ImportPreviewUi
 import de.danerd.ghulsuite.model.ImportResultUi
 import de.danerd.ghulsuite.model.KdfChoice
@@ -52,7 +50,6 @@ import de.danerd.ghulsuite.model.VaultBackend
 import de.danerd.ghulsuite.model.VaultErrorKind
 import de.danerd.ghulsuite.model.VaultException
 import de.danerd.ghulsuite.model.VaultKindUi
-import de.danerd.ghulsuite.model.VaultSourceUi
 import de.danerd.ghulsuite.model.VaultUi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -151,28 +148,6 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
         Thread({ runCatching { s.finishLock() } }, "ghul-lock").apply { isDaemon = true }.start()
     }
 
-    override fun deviceSshKey(): String {
-        devicePref("device_ssh_public")?.let { return it }
-        val pair = mapped { generateSshKey() }
-        setDevicePref("device_ssh_private", pair.privateKey)
-        setDevicePref("device_ssh_public", pair.publicKey)
-        return pair.publicKey
-    }
-
-    override suspend fun fetchFromServer(input: ServerInputUi, hostKey: String?): String = io {
-        val key = if (input.password.isNullOrEmpty()) {
-            deviceSshKey()
-            devicePref("device_ssh_private")
-        } else {
-            null
-        }
-        try {
-            suite.fetchFromServer(input.toCore(), hostKey, key)
-        } catch (e: GhulException.NoVault) {
-            throw VaultException(VaultErrorKind.NOT_FOUND)
-        }
-    }
-
     // --- setup and unlock -------------------------------------------------------------------
 
     override suspend fun calibrateKdf(): KdfChoice = withContext(Dispatchers.Default) {
@@ -229,7 +204,7 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
 
     override suspend fun listVaults(): List<VaultUi> = io {
         suite.listVaults().map {
-            VaultUi(it.id, it.kind.toUi(), it.name, it.file, it.available, it.entries.toInt(), it.outdated)
+            VaultUi(it.id, it.kind.toUi(), it.name, it.file, it.available, it.entries.toInt())
         }
     }
 
@@ -264,23 +239,15 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
     override suspend fun addVaultFile(data: ByteArray, name: String): String = io { suite.addVaultFile(data, name) }
 
     override suspend fun adoptVault(
-        source: VaultSourceUi,
+        data: ByteArray,
         name: String,
         password: String,
         pin: String?,
         keyfile: ByteArray?,
         onTouchNeeded: () -> Unit,
     ): String = maybeWithKey(pin) { t ->
-        suite.adoptVault(source.toCore(), name, password, t, t?.let { Touch(onTouchNeeded) }, pin, keyfile)
+        suite.adoptVault(data, name, password, t, t?.let { Touch(onTouchNeeded) }, pin, keyfile)
     }
-
-    override suspend fun findNewVaults(): List<FoundVaultUi> = io {
-        suite.findNewVaults().map { FoundVaultUi(it.file, it.kind.toUi(), it.protection.toUi()) }
-    }
-
-    override suspend fun ignoreFoundVault(file: String) = io { suite.ignoreFoundVault(file) }
-
-    override suspend fun acceptVaultState(id: String) = io { suite.acceptVaultState(id) }
 
     // --- GhulPass -----------------------------------------------------------------------------
 
@@ -387,11 +354,6 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
 
     override suspend fun removeSlot(id: String) {
         io { suite.removeSlot(id.hexToBytes()) }
-        onProtectionChanged()
-    }
-
-    override suspend fun adoptRemoteProtection(password: String?, pin: String?, keyfile: ByteArray?, onTouchNeeded: () -> Unit) {
-        maybeWithKey(pin) { t -> suite.adoptRemoteProtection(password, t, t?.let { Touch(onTouchNeeded) }, pin, keyfile) }
         onProtectionChanged()
     }
 

@@ -7,7 +7,6 @@ use super::error::GhulError;
 use super::storage::{local_storage, VaultStorage};
 use super::suite::{
     generate_keyfile, EntryData, FieldData, FieldValue, GhulSuite, NewVault, SetupOptions, SlotKind, VaultKind,
-    VaultSource,
 };
 use super::tools::{OtpAlgo, TotpInput};
 use crate::mock::{MockAuthenticator, MockConfig};
@@ -442,11 +441,10 @@ fn the_folder_is_the_suite() {
     let arbeit = od.create_vault(VaultKind::Pass, "Arbeit".into()).unwrap();
     let arbeit_file = vault_file(&od, &arbeit);
     st.write(arbeit_file.clone(), other_device.storage().read(arbeit_file.clone()).unwrap().unwrap()).unwrap();
-    assert!(s.find_new_vaults().unwrap().is_empty());
-    assert!(s.list_vaults().unwrap().iter().any(|v| v.name == "Arbeit"));
     s.lock();
     s.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
     assert_eq!(s.list_vaults().unwrap().len(), 3);
+    assert!(s.list_vaults().unwrap().iter().any(|v| v.name == "Arbeit"));
 
     // A copy of a vault under another name is not listed twice.
     st.write("privat (1).ghlpss".into(), st.read(privat_file.clone()).unwrap().unwrap()).unwrap();
@@ -492,7 +490,7 @@ fn the_folder_is_the_suite() {
 }
 
 #[test]
-fn foreign_and_outdated_vaults() {
+fn foreign_vaults() {
     let d = Dirs::new("foreign");
     let kf = generate_keyfile();
     let s = d.suite();
@@ -505,28 +503,30 @@ fn foreign_and_outdated_vaults() {
     let privat_file = vault_file(&s, &privat);
     let old_privat = st.read(privat_file.clone()).unwrap().unwrap();
 
-    // A vault of another suite (other password and key file) in the folder is offered.
+    // A vault of another suite (other password and key file) lying in the folder is left alone.
     let other = Dirs::new("foreign-other");
     let okf = generate_keyfile();
     let o = other.suite();
     o.create(options("anderes-pw-1", Some(okf.clone()), &[(VaultKind::Totp, "Verein")]), None, None, None).unwrap();
     let verein = vault_id(&o, "Verein");
     o.add_totp(verein.clone(), totp_input()).unwrap();
-    st.write("verein.ghltotp".into(), o.export_vault(verein).unwrap()).unwrap();
-    let found = s.find_new_vaults().unwrap();
-    assert_eq!(found.len(), 1);
-    assert!(found[0].kind == VaultKind::Totp && found[0].protection.keyfiles == 1);
-    let src = VaultSource::InFolder { file: "verein.ghltotp".into() };
+    let verein_data = o.export_vault(verein).unwrap();
+    st.write("verein.ghltotp".into(), verein_data.clone()).unwrap();
+    s.lock();
+    s.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
+    assert_eq!(s.list_vaults().unwrap().len(), 1);
+    assert!(s.totp_codes(59).unwrap().is_empty());
+    st.delete("verein.ghltotp".into()).unwrap();
+    // Added on purpose, it needs its own password and key file once.
+    assert!(matches!(s.add_vault_file(verein_data.clone(), "".into()), Err(GhulError::DifferentProtection)));
     assert!(matches!(
-        s.adopt_vault(src.clone(), "".into(), "falsch".into(), None, None, None, Some(okf.clone())),
+        s.adopt_vault(verein_data.clone(), "".into(), "falsch".into(), None, None, None, Some(okf.clone())),
         Err(GhulError::WrongPassword)
     ));
     // Taking it over switches it to this suite's protection and gives it a neutral name.
-    s.adopt_vault(src, "".into(), "anderes-pw-1".into(), None, None, None, Some(okf.clone())).unwrap();
-    assert!(s.find_new_vaults().unwrap().is_empty());
+    s.adopt_vault(verein_data, "".into(), "anderes-pw-1".into(), None, None, None, Some(okf.clone())).unwrap();
     let verein_file = s.list_vaults().unwrap().into_iter().find(|v| v.name == "Verein").unwrap().file;
     assert!(verein_file.ends_with(".ghltotp") && !verein_file.contains("verein"), "{verein_file}");
-    assert!(st.read("verein.ghltotp".into()).unwrap().is_none());
     s.lock();
     s.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
     assert_eq!(s.totp_codes(59).unwrap().len(), 1);
@@ -535,22 +535,10 @@ fn foreign_and_outdated_vaults() {
     single.storage().write("verein.ghltotp".into(), st.read(verein_file.clone()).unwrap().unwrap()).unwrap();
     single.suite().unlock_with_recovery_code(code.clone(), "neu-neu-123".into()).unwrap();
 
-    // Ignoring: a dismissed file is not offered again.
-    st.write("fremd2.ghltotp".into(), other.storage().read(vault_file(&o, &vault_id(&o, "Verein"))).unwrap().unwrap())
-        .unwrap();
-    assert_eq!(s.find_new_vaults().unwrap().len(), 1);
-    s.ignore_found_vault("fremd2.ghltotp".into()).unwrap();
-    assert!(s.find_new_vaults().unwrap().is_empty());
-    st.delete("fremd2.ghltotp".into()).unwrap();
-
     // Password change: an old copy (old salt) needs the old password once and is brought up to date.
     s.change_password("pw-123456".into(), "pw-neu-7890".into()).unwrap();
-    st.delete(privat_file.clone()).unwrap();
-    st.write("privat-alt.ghlpss".into(), old_privat.clone()).unwrap();
-    let f = s.find_new_vaults().unwrap();
-    assert_eq!(f.len(), 1);
-    let src = VaultSource::InFolder { file: "privat-alt.ghlpss".into() };
-    s.adopt_vault(src, "".into(), "pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
+    s.remove_vault(privat.clone()).unwrap();
+    s.adopt_vault(old_privat, "".into(), "pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
     s.lock();
     s.unlock("pw-neu-7890".into(), None, None, None, Some(kf.clone())).unwrap();
     assert_eq!(s.list_entries(VaultKind::Pass, None).unwrap().len(), 1);
@@ -561,21 +549,6 @@ fn foreign_and_outdated_vaults() {
     s.lock();
     s.unlock("pw-neu-7890".into(), Some(k), Some(listener()), Some("1234".into()), None).unwrap();
     assert_eq!(s.list_vaults().unwrap().iter().filter(|v| v.available).count(), 2);
-
-    // Outdated: an older file of a known vault is flagged until accepted.
-    // (The taken-over file got a neutral name, F23.)
-    assert!(st.read("privat-alt.ghlpss".into()).unwrap().is_none());
-    let privat_now = vault_file(&s, &privat);
-    let before = st.read(privat_now.clone()).unwrap().unwrap();
-    s.save_entry(privat.clone(), login("B", "c", "d")).unwrap();
-    s.lock();
-    st.write(privat_now, before).unwrap();
-    s.unlock("pw-neu-7890".into(), None, None, None, Some(kf.clone())).unwrap();
-    assert!(s.list_vaults().unwrap().into_iter().find(|v| v.id == privat).unwrap().outdated);
-    s.accept_vault_state(privat.clone()).unwrap();
-    s.lock();
-    s.unlock("pw-neu-7890".into(), None, None, None, Some(kf)).unwrap();
-    assert!(!s.list_vaults().unwrap().into_iter().find(|v| v.id == privat).unwrap().outdated);
 }
 
 #[test]
@@ -649,371 +622,6 @@ fn titles(s: &GhulSuite) -> Vec<String> {
     let mut t: Vec<String> = s.list_entries(VaultKind::Pass, None).unwrap().into_iter().map(|e| e.title).collect();
     t.sort();
     t
-}
-
-/// Copies the server's suite folder into a new device's storage (what `fetch_from_server` does).
-fn copy_suite(server: &std::path::Path, device: &Dirs) {
-    let st = device.storage();
-    for e in std::fs::read_dir(server.join("suite")).unwrap() {
-        let e = e.unwrap();
-        st.write(e.file_name().to_string_lossy().into_owned(), std::fs::read(e.path()).unwrap()).unwrap();
-    }
-}
-
-/// A server that answers slowly (every call waits), like a weak connection.
-struct SlowFs {
-    inner: crate::net::remote::LocalFs,
-    delay: std::time::Duration,
-}
-
-impl crate::net::remote::RemoteFs for SlowFs {
-    fn list(&self, dir: &str) -> crate::net::NetResult<Vec<crate::net::remote::RemoteEntry>> {
-        std::thread::sleep(self.delay);
-        self.inner.list(dir)
-    }
-    fn read(&self, path: &str) -> crate::net::NetResult<Option<Vec<u8>>> {
-        std::thread::sleep(self.delay);
-        self.inner.read(path)
-    }
-    fn write(&self, path: &str, data: &[u8]) -> crate::net::NetResult<()> {
-        std::thread::sleep(self.delay);
-        self.inner.write(path, data)
-    }
-    fn delete(&self, path: &str) -> crate::net::NetResult<()> {
-        std::thread::sleep(self.delay);
-        self.inner.delete(path)
-    }
-    fn mkdir_all(&self, dir: &str) -> crate::net::NetResult<()> {
-        self.inner.mkdir_all(dir)
-    }
-}
-
-/// F147: a synchronisation with a slow server does not hold the suite while it reads the
-/// server: reading and saving entries meanwhile answer at once.
-#[test]
-fn a_slow_server_does_not_hold_the_suite() {
-    use crate::net::remote::LocalFs;
-    let server_dir = std::env::temp_dir().join(format!("ghul-sync-slow-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&server_dir);
-    let kf = generate_keyfile();
-    let (da, db) = (Dirs::new("sync-slow-a"), Dirs::new("sync-slow-b"));
-    let a = da.suite();
-    a.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
-    let privat = vault_id(&a, "Privat");
-    a.save_entry(privat.clone(), login("Vorher", "u", "1")).unwrap();
-    a.sync_folder(&LocalFs::new(&server_dir)).unwrap();
-    a.save_entry(privat.clone(), login("Vor dem Lauf", "u", "2")).unwrap();
-
-    let slow = SlowFs { inner: LocalFs::new(&server_dir), delay: std::time::Duration::from_millis(700) };
-    let (a2, done) = (a.clone(), std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)));
-    let done2 = done.clone();
-    let run = std::thread::spawn(move || {
-        let r = a2.sync_folder(&slow);
-        done2.store(true, std::sync::atomic::Ordering::SeqCst);
-        r
-    });
-    // The synchronisation is reading the server now (each call takes 0.7 s).
-    std::thread::sleep(std::time::Duration::from_millis(300));
-    let t = std::time::Instant::now();
-    assert!(titles(&a).contains(&"Vorher".to_owned()));
-    a.save_entry(privat.clone(), login("Während des Laufs", "u", "3")).unwrap();
-    let waited = t.elapsed();
-    assert!(!done.load(std::sync::atomic::Ordering::SeqCst), "the synchronisation still runs");
-    assert!(waited < std::time::Duration::from_millis(500), "the app waited {waited:?} for the server");
-    run.join().unwrap().unwrap();
-
-    // Nothing is lost: the entry saved meanwhile goes up with the next synchronisation.
-    a.sync_folder(&LocalFs::new(&server_dir)).unwrap();
-    copy_suite(&server_dir, &db);
-    let b = db.suite();
-    b.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
-    assert_eq!(titles(&b), vec!["Vor dem Lauf", "Vorher", "Während des Laufs"]);
-    let _ = std::fs::remove_dir_all(&server_dir);
-}
-
-/// A server that stops at its first write until the test lets it go on (the upload phase).
-struct GateFs {
-    inner: crate::net::remote::LocalFs,
-    armed: std::sync::atomic::AtomicBool,
-    entered: std::sync::mpsc::Sender<()>,
-    go_on: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
-}
-
-impl GateFs {
-    fn new(dir: &std::path::Path) -> (GateFs, std::sync::mpsc::Receiver<()>, std::sync::mpsc::Sender<()>) {
-        let (entered, at_gate) = std::sync::mpsc::channel();
-        let (release, go_on) = std::sync::mpsc::channel();
-        let fs = GateFs {
-            inner: crate::net::remote::LocalFs::new(dir),
-            armed: std::sync::atomic::AtomicBool::new(true),
-            entered,
-            go_on: std::sync::Mutex::new(go_on),
-        };
-        (fs, at_gate, release)
-    }
-}
-
-impl crate::net::remote::RemoteFs for GateFs {
-    fn list(&self, dir: &str) -> crate::net::NetResult<Vec<crate::net::remote::RemoteEntry>> {
-        self.inner.list(dir)
-    }
-    fn read(&self, path: &str) -> crate::net::NetResult<Option<Vec<u8>>> {
-        self.inner.read(path)
-    }
-    fn write(&self, path: &str, data: &[u8]) -> crate::net::NetResult<()> {
-        if self.armed.swap(false, std::sync::atomic::Ordering::SeqCst) {
-            self.entered.send(()).unwrap();
-            self.go_on.lock().unwrap().recv().unwrap();
-        }
-        self.inner.write(path, data)
-    }
-    fn delete(&self, path: &str) -> crate::net::NetResult<()> {
-        self.inner.delete(path)
-    }
-    fn mkdir_all(&self, dir: &str) -> crate::net::NetResult<()> {
-        self.inner.mkdir_all(dir)
-    }
-}
-
-/// F147: while a synchronisation uploads, the app's calls answer at once, and an entry saved
-/// meanwhile goes up with the next run.
-#[test]
-fn uploading_does_not_hold_the_suite() {
-    use crate::net::remote::LocalFs;
-    let server_dir = std::env::temp_dir().join(format!("ghul-sync-gate-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&server_dir);
-    let kf = generate_keyfile();
-    let (da, db) = (Dirs::new("sync-gate-a"), Dirs::new("sync-gate-b"));
-    let a = da.suite();
-    a.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
-    let privat = vault_id(&a, "Privat");
-    a.save_entry(privat.clone(), login("Vorher", "u", "1")).unwrap();
-    a.sync_folder(&LocalFs::new(&server_dir)).unwrap();
-    a.save_entry(privat.clone(), login("Vor dem Lauf", "u", "2")).unwrap();
-
-    let (gate, at_gate, release) = GateFs::new(&server_dir);
-    let a2 = a.clone();
-    let run = std::thread::spawn(move || a2.sync_folder(&gate));
-    at_gate.recv_timeout(std::time::Duration::from_secs(20)).expect("the run reaches its upload");
-    // The app's calls in a thread of their own: if they waited for the upload, the test would
-    // otherwise wait forever (the upload goes on only when the test lets it).
-    let (a3, p3) = (a.clone(), privat.clone());
-    let (answered, answer) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let seen = titles(&a3).contains(&"Vor dem Lauf".to_owned());
-        a3.save_entry(p3, login("Während des Hochladens", "u", "3")).unwrap();
-        let _ = answered.send(seen);
-    });
-    // Generous for a busy test machine; before, the calls waited until the test gave up.
-    let calls = answer.recv_timeout(std::time::Duration::from_secs(2));
-    release.send(()).unwrap();
-    assert_eq!(calls, Ok(true), "the app's calls waited for the upload");
-    run.join().unwrap().unwrap();
-
-    a.sync_folder(&LocalFs::new(&server_dir)).unwrap();
-    copy_suite(&server_dir, &db);
-    let b = db.suite();
-    b.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
-    assert_eq!(titles(&b), vec!["Vor dem Lauf", "Vorher", "Während des Hochladens"]);
-    let _ = std::fs::remove_dir_all(&server_dir);
-}
-
-/// F147: locking during the upload stops it. That run does not count as the last
-/// synchronisation, and the next run still reports what it took over (so the app reloads).
-#[test]
-fn locking_stops_an_upload_and_the_next_run_reports_it() {
-    use crate::net::remote::LocalFs;
-    let server_dir = std::env::temp_dir().join(format!("ghul-sync-gate-lock-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&server_dir);
-    let kf = generate_keyfile();
-    let (da, db) = (Dirs::new("sync-lock-a"), Dirs::new("sync-lock-b"));
-    let a = da.suite();
-    a.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
-    let privat = vault_id(&a, "Privat");
-    a.save_entry(privat.clone(), login("Von A", "u", "1")).unwrap();
-    a.sync_folder(&LocalFs::new(&server_dir)).unwrap();
-    let last = a.sync_status().unwrap().last_sync;
-    assert!(last > 0);
-    // B adds an entry on the server; A changes one too, so A's run merges and uploads.
-    copy_suite(&server_dir, &db);
-    let b = db.suite();
-    b.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
-    b.save_entry(vault_id(&b, "Privat"), login("Von B", "u", "2")).unwrap();
-    b.sync_folder(&LocalFs::new(&server_dir)).unwrap();
-    a.save_entry(privat.clone(), login("Noch von A", "u", "3")).unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(5));
-
-    let (gate, at_gate, release) = GateFs::new(&server_dir);
-    let a2 = a.clone();
-    let run = std::thread::spawn(move || a2.sync_folder(&gate));
-    at_gate.recv_timeout(std::time::Duration::from_secs(20)).expect("the run reaches its upload");
-    a.lock();
-    release.send(()).unwrap();
-    assert!(matches!(run.join().unwrap(), Err(GhulError::Locked)));
-
-    a.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
-    assert_eq!(a.sync_status().unwrap().last_sync, last, "the stopped run is not the last synchronisation");
-    assert!(titles(&a).contains(&"Von B".to_owned()), "merged here before the upload");
-    let rep = a.sync_folder(&LocalFs::new(&server_dir)).unwrap();
-    assert!(rep.downloaded + rep.merged > 0, "the next run reports what the stopped one took over: {rep:?}");
-    assert!(a.sync_status().unwrap().last_sync > last);
-    b.sync_folder(&LocalFs::new(&server_dir)).unwrap();
-    assert_eq!(titles(&b), vec!["Noch von A", "Von A", "Von B"]);
-    let _ = std::fs::remove_dir_all(&server_dir);
-}
-
-/// F147: a run whose server was changed or removed after it connected neither merges nor
-/// uploads (the next run uses the new server).
-#[test]
-fn a_run_whose_server_changed_meanwhile_does_nothing() {
-    use crate::net::remote::LocalFs;
-    let server_dir = std::env::temp_dir().join(format!("ghul-sync-changed-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&server_dir);
-    let kf = generate_keyfile();
-    let (da, db) = (Dirs::new("sync-changed-a"), Dirs::new("sync-changed-b"));
-    let a = da.suite();
-    a.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
-    a.sync_folder(&LocalFs::new(&server_dir)).unwrap();
-    copy_suite(&server_dir, &db);
-    let b = db.suite();
-    b.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
-    b.save_entry(vault_id(&b, "Privat"), login("Von B", "u", "1")).unwrap();
-    b.sync_folder(&LocalFs::new(&server_dir)).unwrap();
-    a.save_entry(vault_id(&a, "Privat"), login("Von A", "u", "2")).unwrap();
-    let before = std::fs::read(server_dir.join("suite").join(super::suite::SUITE_FILE)).unwrap();
-
-    // Connected to a server that is no longer the configured one (synchronisation is off here).
-    let mut pending = super::sync::SyncReport::default();
-    let rep = a.sync_unlocked(&LocalFs::new(&server_dir), Some([7; 32]), &mut pending).unwrap();
-    assert_eq!(rep, super::sync::SyncReport::default());
-    assert_eq!(titles(&a), vec!["Von A"], "nothing merged");
-    assert_eq!(
-        std::fs::read(server_dir.join("suite").join(super::suite::SUITE_FILE)).unwrap(),
-        before,
-        "nothing uploaded"
-    );
-    let _ = std::fs::remove_dir_all(&server_dir);
-}
-
-/// A server whose folder listing leaves out the settings file (some FTP listings do).
-struct HidingFs(crate::net::remote::LocalFs);
-
-impl crate::net::remote::RemoteFs for HidingFs {
-    fn list(&self, dir: &str) -> crate::net::NetResult<Vec<crate::net::remote::RemoteEntry>> {
-        Ok(self.0.list(dir)?.into_iter().filter(|e| e.name != super::suite::SUITE_FILE).collect())
-    }
-    fn read(&self, path: &str) -> crate::net::NetResult<Option<Vec<u8>>> {
-        self.0.read(path)
-    }
-    fn write(&self, path: &str, data: &[u8]) -> crate::net::NetResult<()> {
-        self.0.write(path, data)
-    }
-    fn delete(&self, path: &str) -> crate::net::NetResult<()> {
-        self.0.delete(path)
-    }
-    fn mkdir_all(&self, dir: &str) -> crate::net::NetResult<()> {
-        self.0.mkdir_all(dir)
-    }
-}
-
-/// F147: the settings file is read by name, not only when the listing shows it; else a
-/// password changed on another device would go unnoticed and be overwritten.
-#[test]
-fn a_listing_without_the_settings_file_still_notices_a_new_password() {
-    use crate::net::remote::LocalFs;
-    let server_dir = std::env::temp_dir().join(format!("ghul-sync-hiding-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&server_dir);
-    let kf = generate_keyfile();
-    let (da, db) = (Dirs::new("sync-hiding-a"), Dirs::new("sync-hiding-b"));
-    let a = da.suite();
-    a.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
-    a.sync_folder(&LocalFs::new(&server_dir)).unwrap();
-    copy_suite(&server_dir, &db);
-    let b = db.suite();
-    b.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
-    a.change_password("pw-123456".into(), "neues-pw-789".into()).unwrap();
-    a.sync_folder(&LocalFs::new(&server_dir)).unwrap();
-    let hiding = HidingFs(LocalFs::new(&server_dir));
-    assert!(matches!(b.sync_folder(&hiding), Err(GhulError::PasswordChangedElsewhere)));
-    let _ = std::fs::remove_dir_all(&server_dir);
-}
-
-#[test]
-fn sync_between_two_devices() {
-    use crate::net::remote::LocalFs;
-    let server_dir = std::env::temp_dir().join(format!("ghul-sync-server-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&server_dir);
-    let server = LocalFs::new(&server_dir);
-    let kf = generate_keyfile();
-    let (da, db) = (Dirs::new("sync-a"), Dirs::new("sync-b"));
-    let a = da.suite();
-    a.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
-    let privat = vault_id(&a, "Privat");
-    let shared = a.save_entry(privat.clone(), login("Shared", "u", "1")).unwrap();
-    let r = a.sync_folder(&server).unwrap();
-    assert_eq!(r.uploaded, 1);
-
-    // Second device gets the files and unlocks with the same password and key file.
-    copy_suite(&server_dir, &db);
-    let b = db.suite();
-    b.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
-    assert_eq!(titles(&b), vec!["Shared"]);
-    assert_eq!(b.sync_folder(&server).unwrap(), super::sync::SyncReport::default());
-
-    // Both change different entries at the same time; the same entry changes on both sides.
-    a.save_entry(privat.clone(), login("From A", "a", "x")).unwrap();
-    b.save_entry(privat.clone(), login("From B", "b", "y")).unwrap();
-    let mut on_a = a.get_entry(privat.clone(), shared.clone()).unwrap();
-    on_a.fields[2] = FieldData { name: "password".into(), value: FieldValue::Secret { value: "A1".into() } };
-    a.save_entry(privat.clone(), on_a.clone()).unwrap();
-    let mut on_b = b.get_entry(privat.clone(), shared.clone()).unwrap();
-    on_b.fields[2] = FieldData { name: "password".into(), value: FieldValue::Secret { value: "B1".into() } };
-    b.save_entry(privat.clone(), on_b.clone()).unwrap();
-    on_b.fields[2] = FieldData { name: "password".into(), value: FieldValue::Secret { value: "B2".into() } };
-    b.save_entry(privat.clone(), on_b).unwrap(); // B changed it twice: higher revision wins
-    a.sync_folder(&server).unwrap();
-    let r = b.sync_folder(&server).unwrap();
-    assert_eq!(r.merged, 1);
-    a.sync_folder(&server).unwrap();
-    for s in [&a, &b] {
-        assert_eq!(titles(s), vec!["From A", "From B", "Shared"]);
-        let e = s.get_entry(privat.clone(), shared.clone()).unwrap();
-        assert!(e
-            .fields
-            .contains(&FieldData { name: "password".into(), value: FieldValue::Secret { value: "B2".into() } }));
-    }
-
-    // Deleting an entry and a vault travels; a new vault travels.
-    b.delete_entry(privat.clone(), shared.clone()).unwrap();
-    let work = b.create_vault(VaultKind::Totp, "Arbeit".into()).unwrap();
-    b.add_totp(work.clone(), totp_input()).unwrap();
-    b.sync_folder(&server).unwrap();
-    a.sync_folder(&server).unwrap();
-    assert_eq!(titles(&a), vec!["From A", "From B"]);
-    assert_eq!(a.totp_codes(59).unwrap().len(), 1);
-    a.remove_vault(work.clone()).unwrap();
-    a.sync_folder(&server).unwrap();
-    b.sync_folder(&server).unwrap();
-    assert!(b.list_vaults().unwrap().iter().all(|v| v.id != work));
-
-    // A key file added on A reaches B without asking.
-    let kf2 = generate_keyfile();
-    a.add_keyfile(kf2.clone(), "Zweite".into()).unwrap();
-    a.sync_folder(&server).unwrap();
-    b.sync_folder(&server).unwrap();
-    b.lock();
-    b.unlock("pw-123456".into(), None, None, None, Some(kf2.clone())).unwrap();
-
-    // A password change on A: B has to type the new password once.
-    a.change_password("pw-123456".into(), "neues-pw-789".into()).unwrap();
-    a.sync_folder(&server).unwrap();
-    assert!(matches!(b.sync_folder(&server), Err(GhulError::PasswordChangedElsewhere)));
-    assert!(matches!(b.adopt_password_folder(&server, "falsch"), Err(GhulError::WrongPassword)));
-    b.adopt_password_folder(&server, "neues-pw-789").unwrap();
-    b.lock();
-    b.unlock("neues-pw-789".into(), None, None, None, Some(kf.clone())).unwrap();
-    assert_eq!(titles(&b), vec!["From A", "From B"]);
-    let _ = std::fs::remove_dir_all(&server_dir);
 }
 
 /// Archiving in GhulDrive against Dovecot (IMAP) and the SFTP test server: old mails become
@@ -1224,61 +832,6 @@ fn mail_archive_to_drive_against_imap_and_sftp() {
     assert_eq!(top, vec!["Mail-Archiv"]);
     let _ = std::fs::remove_dir_all(format!("{sroot}/archive-drive-{run}"));
     let _ = std::fs::remove_dir_all(format!("{sroot}/archive-drive-{run}-b"));
-}
-
-#[test]
-fn sync_over_sftp() {
-    use super::servers::ServerInput;
-    let Some((host, port, user, root, authkeys, hostkey)) = crate::net::tests::sftp_env() else { return };
-    let authorize = |public: &str| {
-        crate::net::tests::authorize_test_key(&authkeys, public);
-    };
-    let kf = generate_keyfile();
-    let (da, db) = (Dirs::new("sftp-a"), Dirs::new("sftp-b"));
-    let a = da.suite();
-    a.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
-    a.save_entry(vault_id(&a, "Privat"), login("Über SFTP", "u", "p")).unwrap();
-    authorize(&a.ssh_public_key().unwrap());
-    let run = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
-    let base = format!("{root}/sync-{run}");
-    let input = ServerInput {
-        kind: super::servers::ServerKind::Sftp,
-        name: "Test".into(),
-        host: host.clone(),
-        port,
-        user: user.clone(),
-        password: None,
-        base: base.clone(),
-    };
-    // "Check connection" stores nothing: first the fingerprint, then (confirmed) it works.
-    use super::servers::ServerTest;
-    assert_eq!(a.server_test(input.clone(), None).unwrap(), ServerTest::Confirm { fingerprint: hostkey.clone() });
-    assert_eq!(a.server_test(input.clone(), Some(hostkey.clone())).unwrap(), ServerTest::Ok);
-    assert!(a.list_servers().unwrap().is_empty(), "checking stores nothing");
-    let mut wrong_user = input.clone();
-    wrong_user.user = "niemand-hier".into();
-    assert!(a.server_test(wrong_user, Some(hostkey.clone())).is_err());
-    // First the fingerprint is shown; then the server is stored with the confirmed fingerprint.
-    assert_eq!(a.save_server(input.clone(), None).unwrap(), ServerSaved::Confirm { fingerprint: hostkey.clone() });
-    let id = saved(a.save_server(input.clone(), Some(hostkey.clone())).unwrap());
-    assert_eq!(a.list_servers().unwrap()[0].id, id);
-    a.set_sync_server(Some(id.clone())).unwrap();
-    let r = a.sync_now().unwrap();
-    assert_eq!(r.uploaded, 1);
-    assert!(a.sync_status().unwrap().last_sync > 0);
-
-    // New device: fetch with its own key, unlock, synchronise with the suite's settings.
-    let b = db.suite();
-    let device = super::servers::generate_ssh_key().unwrap();
-    authorize(&device.public_key);
-    assert_eq!(b.fetch_from_server(input.clone(), None, Some(device.private_key.clone())).unwrap(), hostkey);
-    assert_eq!(b.fetch_from_server(input, Some(hostkey), Some(device.private_key)).unwrap(), "");
-    b.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
-    assert_eq!(titles(&b), vec!["Über SFTP"]);
-    b.save_entry(vault_id(&b, "Privat"), login("Von B", "b", "q")).unwrap();
-    b.sync_now().unwrap();
-    a.sync_now().unwrap();
-    assert_eq!(titles(&a), vec!["Von B", "Über SFTP"]);
 }
 
 fn upload(s: &GhulSuite, folder: Option<String>, name: &str, data: &[u8]) -> String {
@@ -1538,56 +1091,15 @@ fn drive_over_sftp_two_devices() {
     };
     let id = saved(a.save_server(input.clone(), Some(hostkey.clone())).unwrap());
     a.drive_setup(id.clone()).unwrap();
-    a.set_sync_server(Some(id)).unwrap();
     let file = upload(&a, None, "bericht.pdf", b"%PDF-1.7 test");
-    a.sync_now().unwrap();
+    drop(input);
 
-    // Second device: the Drive key comes with the suite settings.
+    // Second device: the Drive key and the login come with a copy of the suite.
+    super::tests::everyday::copy_folder(&da, &db);
     let b = db.suite();
-    let device = super::servers::generate_ssh_key().unwrap();
-    authorize(&device.public_key);
-    b.fetch_from_server(input, Some(hostkey), Some(device.private_key)).unwrap();
     b.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
     assert_eq!(b.drive_list(None, true).unwrap()[0].name, "bericht.pdf");
     assert_eq!(download(&b, &file), b"%PDF-1.7 test");
-}
-
-/// The order of the emulator flow: GhulDrive on its own location, then the synchronisation is
-/// set up and runs, then a second location is added and the synchronisation runs again. The
-/// new location must still be there (bug: it vanished after the next synchronisation).
-#[test]
-fn a_location_added_after_the_first_sync_stays() {
-    use super::servers::ServerInput;
-    let Some((host, port, user, root, authkeys, hostkey)) = crate::net::tests::sftp_env() else { return };
-    let d = Dirs::new("location-after-sync");
-    let s = d.suite();
-    s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "P")]), None, None, None).unwrap();
-    let mut keys = std::fs::read_to_string(&authkeys).unwrap_or_default();
-    keys.push_str(&s.ssh_public_key().unwrap());
-    keys.push('\n');
-    std::fs::write(&authkeys, keys).unwrap();
-    let run = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
-    let input = |base: String| ServerInput {
-        kind: super::servers::ServerKind::Sftp,
-        name: String::new(),
-        host: host.clone(),
-        port,
-        user: user.clone(),
-        password: None,
-        base,
-    };
-    let first = saved(s.drive_save_server(input(format!("{root}/loc-a-{run}")), Some(hostkey.clone())).unwrap());
-    upload(&s, None, "a.txt", b"A");
-    let sync = saved(s.save_server(input(format!("{root}/loc-sync-{run}")), Some(hostkey.clone())).unwrap());
-    s.set_sync_server(Some(sync)).unwrap();
-    s.sync_now().unwrap();
-    let second = saved(s.drive_save_server(input(format!("{root}/loc-b-{run}")), Some(hostkey.clone())).unwrap());
-    let ids = |s: &GhulSuite| s.drive_locations().unwrap().into_iter().map(|l| l.server.id).collect::<Vec<_>>();
-    assert_eq!(ids(&s), vec![first.clone(), second.clone()]);
-    s.sync_now().unwrap();
-    assert_eq!(ids(&s), vec![first.clone(), second.clone()], "kept after the synchronisation");
-    s.sync_now().unwrap();
-    assert_eq!(ids(&s), vec![first, second], "and after the next one");
 }
 
 #[test]
@@ -2181,7 +1693,6 @@ fn share_links_over_sftp_through_the_module() {
     };
     let id = saved(s.save_server(input, Some(hostkey)).unwrap());
     s.drive_setup(id.clone()).unwrap();
-    s.set_sync_server(Some(id.clone())).unwrap();
     let loc = s.drive_locations().unwrap()[0].server.id.clone();
     let root = std::path::PathBuf::from(&root);
     let web = format!("{}/web-{run}/public_html", root.display());
@@ -2255,9 +1766,7 @@ fn ftps_storage_drive_and_share_links() {
     };
     assert_eq!(Some(fp.clone()), cfg.cert);
     let id = saved(s.save_server(input, Some(fp)).unwrap());
-    // Sync and Drive over FTPS.
-    s.set_sync_server(Some(id.clone())).unwrap();
-    assert_eq!(s.sync_now().unwrap().uploaded, 1);
+    // Drive over FTPS.
     s.drive_setup(id.clone()).unwrap();
     let big: Vec<u8> = (0..5_000_000u32).map(|i| (i % 251) as u8).collect();
     let f = upload(&s, None, "Video.mp4", &big);
@@ -2270,7 +1779,7 @@ fn ftps_storage_drive_and_share_links() {
 }
 
 #[test]
-fn drive_locations_are_separate_from_the_synchronisation() {
+fn drive_storage_locations() {
     use super::drive::DriveMode;
     use super::servers::{ServerFolders, ServerInput, ServerKind};
     let Some(cfg) = crate::net::tests::ftps_test_config("drive-modes") else { return };
@@ -2298,29 +1807,16 @@ fn drive_locations_are_separate_from_the_synchronisation() {
         ServerFolders::Folders { folders } => assert!(folders.contains(&cfg.base)),
         other => panic!("{other:?}"),
     }
-    let st = s.drive_storage().unwrap();
-    assert_eq!((st.mode, st.sync_available), (DriveMode::None, false));
-    assert!(matches!(s.drive_use_sync(), Err(GhulError::NotConfigured)));
+    assert_eq!(s.drive_storage().unwrap().mode, DriveMode::None);
 
-    // An older Drive that used the synchronisation's server: that server becomes a storage
-    // location of Drive's own (a copy in the Drive file). The synchronisation keeps its server
-    // and can drop it; Drive keeps working.
-    s.set_sync_server(Some(sync_id.clone())).unwrap();
-    s.drive_use_sync().unwrap();
-    // As an older app left it: only a reference to the synchronisation, no location yet.
-    s.drive_back_to_use_sync_for_tests();
-    // The synchronisation is switched off before Drive is opened again: Drive keeps its server
-    // all the same (it becomes a location before the synchronisation changes).
-    s.set_sync_server(None).unwrap();
+    // A server of the suite becomes a storage location of Drive's own (a copy in the Drive file).
+    s.drive_setup(sync_id.clone()).unwrap();
     let first = s.drive_locations().unwrap();
     assert_eq!(first.len(), 1);
     assert!(first[0].active && first[0].archive);
     let first_id = first[0].server.id.clone();
-    assert_ne!(first_id, sync_id);
     assert_eq!(s.drive_storage().unwrap().mode, DriveMode::Own);
     let plan = upload(&s, None, "Plan.txt", b"Plan A");
-    s.remove_server(sync_id.clone()).unwrap();
-    assert!(s.list_servers().unwrap().is_empty(), "Drive's locations are not offered for synchronisation");
     assert!(s.remove_server(first_id.clone()).is_err(), "a location is removed in GhulDrive");
     assert_eq!(download(&s, &plan), b"Plan A");
 
@@ -2923,12 +2419,8 @@ fn backup_and_restore_into_an_empty_folder() {
 }
 
 #[test]
-fn calendar_vault_events_series_reminders_and_sync() {
+fn calendar_vault_events_series_reminders_and_handing_over() {
     use super::cal::{CalCalendar, CalDeleteMode, CalEvent, CalLink, CalRepeat};
-    use crate::net::remote::LocalFs;
-    let server_dir = std::env::temp_dir().join(format!("ghul-cal-server-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&server_dir);
-    let server = LocalFs::new(&server_dir);
     let kf = generate_keyfile();
     let (da, db) = (Dirs::new("cal-a"), Dirs::new("cal-b"));
     let a = da.suite();
@@ -3059,15 +2551,7 @@ fn calendar_vault_events_series_reminders_and_sync() {
     a.cal_delete_calendar(fresh).unwrap();
     assert_eq!(a.cal_calendars().unwrap().len(), 2);
 
-    // Sync to a second device, change on both, merge.
-    a.sync_folder(&server).unwrap();
-    copy_suite(&server_dir, &db);
-    let b = db.suite();
-    b.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
-    assert_eq!(b.cal_calendars().unwrap().len(), 2);
-    let mut on_b = b.cal_get_event(dentist.clone()).unwrap();
-    on_b.location = "Praxis Süd".into();
-    b.cal_save_event(on_b).unwrap();
+    // The suite goes to a second device and is changed there, then comes back.
     a.cal_save_event(CalEvent {
         calendar_id: privat,
         title: "Abendessen".into(),
@@ -3076,60 +2560,23 @@ fn calendar_vault_events_series_reminders_and_sync() {
         ..Default::default()
     })
     .unwrap();
-    a.sync_folder(&server).unwrap();
-    b.sync_folder(&server).unwrap();
-    a.sync_folder(&server).unwrap();
+    a.lock();
+    super::tests::everyday::copy_folder(&da, &db);
+    let b = db.suite();
+    b.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
+    assert_eq!(b.cal_calendars().unwrap().len(), 2);
+    let mut on_b = b.cal_get_event(dentist.clone()).unwrap();
+    on_b.location = "Praxis Süd".into();
+    b.cal_save_event(on_b).unwrap();
+    b.lock();
+    super::tests::everyday::copy_folder(&db, &da);
+    a.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
+    b.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
     for s in [&a, &b] {
         let day = s.cal_occurrences("2026-11-12".into(), "2026-11-13".into(), "".into(), "de".into()).unwrap();
         assert!(day.iter().any(|o| o.title == "Abendessen"));
         assert!(day.iter().any(|o| o.location == "Praxis Süd"));
     }
-    let _ = std::fs::remove_dir_all(&server_dir);
-}
-
-#[test]
-fn old_suites_move_drive_and_mail_into_their_own_files() {
-    use ciborium::value::Value;
-    let d = Dirs::new("areas");
-    let kf = generate_keyfile();
-    let s = d.suite();
-    s.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
-    // A suite from before: GhulMail and GhulDrive keep their settings in the suite file.
-    s.with_open(|o| {
-        let st = &mut o.suite.payload.settings;
-        st.insert(
-            "mail_accounts".into(),
-            Value::Array(vec![Value::Map(vec![(Value::Text("id".into()), Value::Text("a1".into()))])]),
-        );
-        st.insert("mail_drafts".into(), Value::Array(vec![]));
-        st.insert("drive".into(), Value::Map(vec![(Value::Text("server".into()), Value::Text("s1".into()))]));
-        st.insert("servers".into(), Value::Array(vec![]));
-        Ok(())
-    })
-    .unwrap();
-    // Any call moves them; the suite keeps only its own settings.
-    let kinds: Vec<VaultKind> = s.list_vaults().unwrap().iter().map(|v| v.kind).collect();
-    assert!(kinds.contains(&VaultKind::Mail) && kinds.contains(&VaultKind::Drive), "{kinds:?}");
-    s.with_open(|o| {
-        let st = &o.suite.payload.settings;
-        assert!(!st.contains_key("mail_accounts") && !st.contains_key("drive") && st.contains_key("servers"));
-        let mail = o.area_id(VaultKind::Mail).unwrap();
-        assert!(o.vault_mut(&mail)?.1.payload.settings.contains_key("mail_accounts"));
-        Ok(())
-    })
-    .unwrap();
-    let files: Vec<String> = s.list_vaults().unwrap().into_iter().map(|v| v.file).collect();
-    assert!(files.iter().any(|f| f.ends_with(".ghlmail")) && files.iter().any(|f| f.ends_with(".ghldrv")), "{files:?}");
-    // The files are written: after locking, everything is still where it moved to.
-    s.lock();
-    s.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
-    s.with_open(|o| {
-        assert!(!o.suite.payload.settings.contains_key("mail_accounts"));
-        let id = o.area_id(VaultKind::Mail).unwrap();
-        assert!(o.vault_mut(&id)?.1.payload.settings.contains_key("mail_accounts"));
-        Ok(())
-    })
-    .unwrap();
 }
 
 #[test]
@@ -3202,11 +2649,7 @@ fn a_setup_that_stopped_halfway_is_completed_by_unlocking() {
 }
 
 #[test]
-fn area_options_live_in_the_area_file_and_areas_can_be_removed_everywhere() {
-    use crate::net::remote::LocalFs;
-    let server_dir = std::env::temp_dir().join(format!("ghul-areas-server-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&server_dir);
-    let server = LocalFs::new(&server_dir);
+fn area_options_live_in_the_area_file_and_areas_can_be_removed() {
     let kf = generate_keyfile();
     let (da, db) = (Dirs::new("areas-a"), Dirs::new("areas-b"));
     let a = da.suite();
@@ -3222,34 +2665,23 @@ fn area_options_live_in_the_area_file_and_areas_can_be_removed_everywhere() {
     ));
     set(&a, "holiday_region", "DE-NW");
     set(&a, "week_start", "0");
-    a.sync_folder(&server).unwrap();
-    copy_suite(&server_dir, &db);
-    let b = db.suite();
-    b.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
-    assert_eq!(b.area_options(VaultKind::Cal).unwrap()["holiday_region"], "DE-NW");
-    // Both change options: the later change of each option wins, on both devices.
     set(&a, "week_start", "6");
-    std::thread::sleep(std::time::Duration::from_millis(5));
-    set(&b, "holiday_region", "AT");
-    std::thread::sleep(std::time::Duration::from_millis(5));
-    set(&a, "holiday_region", "CH");
-    b.sync_folder(&server).unwrap();
-    a.sync_folder(&server).unwrap();
-    b.sync_folder(&server).unwrap();
-    for s in [&a, &b] {
-        let o = s.area_options(VaultKind::Cal).unwrap();
-        assert_eq!((o["holiday_region"].as_str(), o["week_start"].as_str()), ("CH", "6"));
-    }
-    // Removing an area deletes its file here, on the server and on the other device.
-    a.add_area(VaultKind::Drive, String::new()).unwrap();
-    a.remove_area(VaultKind::Cal).unwrap();
-    assert!(a.area_options(VaultKind::Cal).unwrap().is_empty());
-    a.sync_folder(&server).unwrap();
-    b.sync_folder(&server).unwrap();
+    // The options travel with the area's file.
+    a.lock();
+    super::tests::everyday::copy_folder(&da, &db);
+    let b = db.suite();
+    b.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
+    let o = b.area_options(VaultKind::Cal).unwrap();
+    assert_eq!((o["holiday_region"].as_str(), o["week_start"].as_str()), ("DE-NW", "6"));
+    // Removing an area deletes its file.
+    b.add_area(VaultKind::Drive, String::new()).unwrap();
+    b.remove_area(VaultKind::Cal).unwrap();
+    assert!(b.area_options(VaultKind::Cal).unwrap().is_empty());
     let kinds = |s: &GhulSuite| s.list_vaults().unwrap().into_iter().map(|v| v.kind).collect::<Vec<_>>();
-    assert_eq!(kinds(&a), vec![VaultKind::Drive]);
     assert_eq!(kinds(&b), vec![VaultKind::Drive]);
-    let _ = std::fs::remove_dir_all(&server_dir);
+    b.lock();
+    b.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    assert_eq!(kinds(&b), vec![VaultKind::Drive]);
 }
 
 #[test]
@@ -3336,7 +2768,6 @@ fn import_keeps_what_it_cannot_convert_and_names_it() {
 
 mod absurd;
 mod attacks;
-mod chaos;
 mod collections;
 mod crazy_user;
 mod everyday;
@@ -3390,44 +2821,6 @@ fn copy_to_other_storage() {
     // An empty source has nothing to copy.
     let empty = Dirs::new("copy-empty");
     assert!(matches!(empty.suite().copy_to(Dirs::new("copy-empty-to").storage()), Err(GhulError::NoVault)));
-}
-
-/// A vault file renamed by hand (other name, even the extension of another kind) is recognised
-/// by its content and gets its neutral name back at the next unlock. A file renamed to something
-/// that is no vault file at all (`.txt`) is simply not seen, and is back once its name is.
-#[test]
-fn renamed_vault_files_are_found_by_content() {
-    let d = Dirs::new("renamed");
-    let kf = generate_keyfile();
-    let s = d.suite();
-    s.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
-    let v = s.list_vaults().unwrap().into_iter().find(|v| v.kind == VaultKind::Pass).unwrap();
-    s.save_entry(v.id.clone(), login("A", "b", "c")).unwrap();
-    s.lock();
-    let st = d.storage();
-    let data = st.read(v.file.clone()).unwrap().unwrap();
-
-    for other in ["Urlaub 2026.ghlpss", "x.ghltotp"] {
-        st.delete(v.file.clone()).unwrap();
-        st.write(other.into(), data.clone()).unwrap();
-        s.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
-        let now = s.list_vaults().unwrap().into_iter().find(|x| x.id == v.id).unwrap();
-        assert_eq!(now.file, v.file, "back to its neutral name");
-        assert_eq!(now.kind, VaultKind::Pass, "the kind comes from the content, not the extension");
-        assert_eq!(s.list_entries(VaultKind::Pass, None).unwrap()[0].title, "A");
-        assert!(st.read(other.into()).unwrap().is_none());
-        s.lock();
-    }
-
-    st.delete(v.file.clone()).unwrap();
-    st.write("tresor.txt".into(), data.clone()).unwrap();
-    s.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
-    assert!(s.list_entries(VaultKind::Pass, None).unwrap().is_empty());
-    s.lock();
-    st.delete("tresor.txt".into()).unwrap();
-    st.write("tresor.ghlpss".into(), data).unwrap();
-    s.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
-    assert_eq!(s.list_entries(VaultKind::Pass, None).unwrap()[0].title, "A");
 }
 
 /// A server name that does not resolve and a port nobody listens on give fixed texts the app

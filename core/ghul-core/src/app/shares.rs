@@ -360,16 +360,13 @@ impl GhulSuite {
         self.forget_shares(o, &gone)
     }
 
-    /// Removes shares from the list (and marks them deleted for the other devices).
+    /// Removes shares from the list.
     fn forget_shares(&self, o: &mut Open, gone: &[String]) -> Result<()> {
         if gone.is_empty() {
             return Ok(());
         }
         let keep: Vec<StoredShare> = shares(o).into_iter().filter(|s| !gone.contains(&s.id)).collect();
         put_setting(&mut o.suite, SHARES_KEY, &keep)?;
-        for id in gone {
-            super::sync::mark_deleted(&mut o.suite.payload.settings, SHARES_KEY, id);
-        }
         self.save_container(&mut o.suite, SUITE_FILE)
     }
 }

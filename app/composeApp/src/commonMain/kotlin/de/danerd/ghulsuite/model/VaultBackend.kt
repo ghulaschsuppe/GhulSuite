@@ -13,7 +13,7 @@ interface VaultBackend {
 
     val unlocked: StateFlow<Boolean>
     val settings: Settings
-    /** Servers, synchronisation, GhulDrive and GhulMail. */
+    /** Servers, GhulDrive and GhulMail. */
     val net: NetBackend
     /** GhulCal. */
     val cal: CalBackend get() = NoCalBackend
@@ -47,15 +47,6 @@ interface VaultBackend {
     /** Starts a suite from an existing vault file; returns a new recovery code, or null if the vault already has one. */
     suspend fun createFromVault(open: OpenVaultUi, onTouchNeeded: () -> Unit): String?
 
-    /** SSH public key of this device for fetching a suite from a server (created once). */
-    fun deviceSshKey(): String
-    /**
-     * New device: downloads the suite from a server into the empty storage location. Logs in with
-     * the password in [input] or this device's SSH key. Without [hostKey] it returns the server's
-     * key fingerprint to confirm; afterwards an empty string. Then unlock as usual.
-     */
-    suspend fun fetchFromServer(input: ServerInputUi, hostKey: String?): String
-
     // --- Unlock
     suspend fun unlock(password: String, pin: String?, keyfile: ByteArray?, onTouchNeeded: () -> Unit)
     /** Emergency: recovery code alone, sets a new master password. */
@@ -86,7 +77,7 @@ interface VaultBackend {
     fun setupState(): SetupStateUi = if (exists()) SetupStateUi.COMPLETE else SetupStateUi.EMPTY
     /** Creates the area's file (when switched on later); an existing area keeps its file. */
     suspend fun addArea(kind: VaultKindUi, name: String): String = createVault(kind, name)
-    /** Removes the area on every device (its files are deleted, also through the synchronisation). */
+    /** Removes the area (its files are deleted). */
     suspend fun removeArea(kind: VaultKindUi) {}
     /** Options stored in the area's file (empty without the area). */
     suspend fun areaOptions(kind: VaultKindUi): Map<String, String> = emptyMap()
@@ -100,18 +91,13 @@ interface VaultBackend {
     suspend fun addVaultFile(data: ByteArray, name: String): String
     /** Takes over a vault with another protection: opened once with its own password, then switched to the suite's. */
     suspend fun adoptVault(
-        source: VaultSourceUi,
+        data: ByteArray,
         name: String,
         password: String,
         pin: String?,
         keyfile: ByteArray?,
         onTouchNeeded: () -> Unit,
     ): String
-    /** Reads the folder again; returns vault files with another protection. */
-    suspend fun findNewVaults(): List<FoundVaultUi>
-    suspend fun ignoreFoundVault(file: String)
-    /** Accepts an older state of a vault file (e.g. a restored backup). */
-    suspend fun acceptVaultState(id: String)
 
     // --- GhulPass
     suspend fun listEntries(vaultId: String?): List<EntrySummaryUi>
@@ -135,12 +121,6 @@ interface VaultBackend {
     suspend fun newRecoveryCode(label: String): String
     /** Removes a security key or key file (not the last one). */
     suspend fun removeSlot(id: String)
-    /**
-     * A key was removed and the recovery code renewed on another device: a remaining security key
-     * ([pin]) or [keyfile] takes the new protection over, then the sync runs. [password] only if
-     * the master password was changed there as well.
-     */
-    suspend fun adoptRemoteProtection(password: String?, pin: String?, keyfile: ByteArray?, onTouchNeeded: () -> Unit)
     suspend fun changePassword(current: String, new: String)
 
     // --- Import and export
@@ -231,16 +211,7 @@ data class VaultUi(
     val file: String,
     val available: Boolean,
     val entries: Int,
-    /** The file is older than the last state the suite has seen. */
-    val outdated: Boolean = false,
 )
-
-sealed interface VaultSourceUi {
-    data class InFolder(val file: String) : VaultSourceUi
-    class Bytes(val data: ByteArray) : VaultSourceUi
-}
-
-data class FoundVaultUi(val file: String, val kind: VaultKindUi, val protection: ProtectionUi)
 
 data class ProtectionUi(
     val securityKeys: Int,
@@ -457,8 +428,6 @@ enum class VaultErrorKind {
     HOST_KEY_CHANGED,
     CERT_UNTRUSTED,
     SERVER_AUTH,
-    PASSWORD_CHANGED_ELSEWHERE,
-    PROTECTION_CHANGED_ELSEWHERE,
     DRIVE_ROLLED_BACK,
     SHARE_NOT_DELETED,
     PHP_NOT_EXECUTED,

@@ -16,9 +16,7 @@ import de.danerd.ghulsuite.core.ServerInput
 import de.danerd.ghulsuite.core.ServerKind
 import de.danerd.ghulsuite.core.ShareInfo
 import de.danerd.ghulsuite.core.ShareOptions
-import de.danerd.ghulsuite.core.SyncReport
 import de.danerd.ghulsuite.core.VaultKind
-import de.danerd.ghulsuite.core.VaultSource
 import de.danerd.ghulsuite.model.DriveItemUi
 import de.danerd.ghulsuite.model.FieldType
 import de.danerd.ghulsuite.model.FieldUi
@@ -31,11 +29,9 @@ import de.danerd.ghulsuite.model.ServerInputUi
 import de.danerd.ghulsuite.model.ServerKindUi
 import de.danerd.ghulsuite.model.ShareInfoUi
 import de.danerd.ghulsuite.model.ShareOptionsUi
-import de.danerd.ghulsuite.model.SyncReportUi
 import de.danerd.ghulsuite.model.VaultErrorKind
 import de.danerd.ghulsuite.model.VaultException
 import de.danerd.ghulsuite.model.VaultKindUi
-import de.danerd.ghulsuite.model.VaultSourceUi
 import de.danerd.ghulsuite.core.ServerInfo
 import de.danerd.ghulsuite.model.ServerUi
 
@@ -49,11 +45,6 @@ fun ByteArray.toHex(): String = buildString(size * 2) {
 }
 
 fun String.hexToBytes(): ByteArray = ByteArray(length / 2) { i -> substring(2 * i, 2 * i + 2).toInt(16).toByte() }
-
-internal fun VaultSourceUi.toCore(): VaultSource = when (this) {
-    is VaultSourceUi.InFolder -> VaultSource.InFolder(file)
-    is VaultSourceUi.Bytes -> VaultSource.Bytes(data)
-}
 
 internal fun VaultKindUi.toCore() = when (this) {
     VaultKindUi.PASS -> VaultKind.PASS
@@ -141,8 +132,6 @@ internal fun GhulException.toVault(): VaultException {
         is GhulException.HostKeyChanged -> VaultException(VaultErrorKind.HOST_KEY_CHANGED, fingerprint)
         is GhulException.CertUntrusted -> VaultException(VaultErrorKind.CERT_UNTRUSTED, fingerprint)
         is GhulException.ServerAuthFailed -> VaultException(VaultErrorKind.SERVER_AUTH, d)
-        is GhulException.PasswordChangedElsewhere -> VaultException(VaultErrorKind.PASSWORD_CHANGED_ELSEWHERE, d)
-        is GhulException.ProtectionChangedElsewhere -> VaultException(VaultErrorKind.PROTECTION_CHANGED_ELSEWHERE, d)
         is GhulException.DriveRolledBack -> VaultException(VaultErrorKind.DRIVE_ROLLED_BACK, d)
         is GhulException.ShareNotDeleted -> VaultException(VaultErrorKind.SHARE_NOT_DELETED, d)
         is GhulException.PhpNotExecuted -> VaultException(VaultErrorKind.PHP_NOT_EXECUTED, d)
@@ -204,9 +193,6 @@ fun mimeOf(name: String): String = when (name.substringAfterLast('.', "").lowerc
     "mp3" -> "audio/mpeg"
     else -> "application/octet-stream"
 }
-
-internal fun SyncReport.toUi() =
-    SyncReportUi(uploaded.toInt(), downloaded.toInt(), merged.toInt(), deleted.toInt(), skipped.toInt())
 
 internal fun DriveItem.toUi() = DriveItemUi(id, parent, name, isDir, size.toLong(), modified, favorite, offline, trashed, versions.toInt())
 

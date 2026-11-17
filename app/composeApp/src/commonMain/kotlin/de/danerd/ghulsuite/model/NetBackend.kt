@@ -2,7 +2,7 @@
 package de.danerd.ghulsuite.model
 
 /**
- * Network features of the open suite: own servers (SFTP), synchronisation, GhulDrive and GhulMail.
+ * Network features of the open suite: own servers (SFTP), GhulDrive and GhulMail.
  * All calls need an unlocked suite and run on a background thread.
  */
 interface NetBackend {
@@ -59,13 +59,6 @@ interface NetBackend {
     suspend fun shareBytesToApps(name: String, mime: String, data: ByteArray): Boolean = false
     /** Decrypted content of Drive files as mail attachments (folders are skipped). */
     suspend fun driveFilesForMail(files: List<DriveItemUi>): List<OutgoingAttachmentUi>
-
-    // --- Synchronisation
-    suspend fun syncStatus(): SyncStatusUi
-    suspend fun setSyncServer(id: String?)
-    suspend fun syncNow(): SyncReportUi
-    /** After the master password was changed on another device. */
-    suspend fun adoptRemotePassword(password: String): SyncReportUi
 
     // --- GhulDrive
     suspend fun driveStatus(): DriveStatusUi
@@ -320,9 +313,7 @@ data class ServerUi(
     val moduleOutdated: Boolean get() = hasModule && moduleVersion < moduleCurrent
 }
 
-data class SyncStatusUi(val serverId: String?, val lastSync: Long)
 
-data class SyncReportUi(val uploaded: Int, val downloaded: Int, val merged: Int, val deleted: Int, val skipped: Int)
 
 data class DriveStatusUi(val serverId: String?, val files: Int, val bytes: Long)
 

@@ -33,7 +33,6 @@ import de.danerd.ghulsuite.model.ServerInputUi
 import de.danerd.ghulsuite.model.ServerKindUi
 import de.danerd.ghulsuite.model.ServerSavedUi
 import de.danerd.ghulsuite.model.ServerUi
-import de.danerd.ghulsuite.model.SyncStatusUi
 import de.danerd.ghulsuite.model.VaultErrorKind
 import de.danerd.ghulsuite.model.VaultException
 import de.danerd.ghulsuite.resources.Res
@@ -136,31 +135,20 @@ fun AddServerScreen(state: AppState, padding: PaddingValues) {
 @Composable
 fun ServersSection(state: AppState) {
     val net = state.backend.net
-    val settings = state.backend.settings
     var servers by remember { mutableStateOf<List<ServerUi>>(emptyList()) }
-    var sync by remember { mutableStateOf(SyncStatusUi(null, 0)) }
     var removing by remember { mutableStateOf<ServerUi?>(null) }
     /** Loaded once (until then: "Loading …", not "no servers" and "Off"), and why it failed. */
     var loaded by remember { mutableStateOf(false) }
     var loadError by remember { mutableStateOf<String?>(null) }
     var reload by remember { mutableStateOf(0) }
-    var syncLoaded by remember { mutableStateOf(false) }
-    var syncError by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(state.liveRevision(), state.syncing, reload) {
-        // While a synchronisation runs the core answers only after it (it holds the suite);
-        // until then the page says it is loading instead of showing an empty list and "Off".
+    LaunchedEffect(state.liveRevision(), reload) {
         val list = catching { net.servers() }.getOrElse { loadError = describe(it); return@LaunchedEffect }
         servers = list
         loaded = true
         loadError = null
-        // The sync status on its own: if it cannot be read, its card says so instead of "Off".
-        catching { net.syncStatus() }
-            .onSuccess { sync = it; syncLoaded = true; syncError = null }
-            .onFailure { syncError = describe(it) }
     }
-    val retry: () -> Unit = { loadError = null; syncError = null; reload++ }
+    val retry: () -> Unit = { loadError = null; reload++ }
 
-    Hint(stringResource(Res.string.sync_page_hint))
     if (!loaded) {
         SectionCard(stringResource(Res.string.sync_servers_title)) {
             if (loadError != null) LoadError(loadError, retry) else Hint(stringResource(Res.string.loading))
@@ -180,71 +168,10 @@ fun ServersSection(state: AppState) {
             Column(Modifier.fillMaxWidth().padding(start = 56.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Hint("${s.user}@${s.host}:${s.port}")
                 Hint(stringResource(Res.string.server_location, s.location.ifBlank { "~/" + s.base }))
-                if (s.id == sync.serverId) Hint(stringResource(Res.string.sync_server_in_use))
             }
         }
         OutlinedButton(onClick = { state.push(Screen.AddServer) }, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(Res.string.server_add_title))
-        }
-    }
-
-    SectionCard(stringResource(Res.string.set_sync)) {
-        Hint(stringResource(Res.string.set_sync_hint))
-        if (!syncLoaded) {
-            if (syncError != null) LoadError(syncError, retry) else Hint(stringResource(Res.string.loading))
-            return@SectionCard
-        }
-        LoadError(syncError, retry)
-        val noSync = stringResource(Res.string.sync_off)
-        var open by remember { mutableStateOf(false) }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(Res.string.sync_server), Modifier.weight(1f))
-            TextButton(onClick = { open = true }, enabled = servers.isNotEmpty()) {
-                Text(servers.firstOrNull { it.id == sync.serverId }?.name ?: noSync)
-            }
-        }
-        // The choice opens as a sheet like every other choice in the app.
-        if (open) {
-            GhulSheet({ open = false }, stringResource(Res.string.sync_server)) {
-                SheetList {
-                    SheetRow(noSync, end = { if (sync.serverId == null) SheetCheck() }) {
-                        open = false
-                        state.run(block = { net.setSyncServer(null) }) { state.changed() }
-                    }
-                    servers.forEach { s ->
-                        SheetRow(s.name, s.location.ifBlank { s.host }, leading = { IconTile(Icons.Filled.Dns, paletteColor(1)) }, divider = true,
-                            end = { if (s.id == sync.serverId) SheetCheck() }) {
-                            open = false
-                            if (s.id != sync.serverId) {
-                                state.run(block = { net.setSyncServer(s.id) }) {
-                                    // One run for the choice (with its errors shown), not an
-                                    // automatic one and then a second full one.
-                                    state.changed(sync = false)
-                                    state.sync()
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        if (sync.serverId != null) {
-            SwitchRow(stringResource(Res.string.sync_auto), settings.autoSync) { settings.autoSync = it }
-            Hint(
-                if (sync.lastSync > 0) {
-                    stringResource(Res.string.sync_last, formatDateTime(sync.lastSync))
-                } else {
-                    stringResource(Res.string.sync_never)
-                },
-            )
-            val doneText = stringResource(Res.string.sync_done)
-            Button(onClick = {
-                state.sync { r ->
-                    state.message(doneText.replace("%1\$s", r.uploaded.toString()).replace("%2\$s", (r.downloaded + r.merged).toString()))
-                }
-            }, enabled = !state.syncing, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(if (state.syncing) Res.string.sync_running else Res.string.a_sync_now))
-            }
         }
     }
 
@@ -262,190 +189,6 @@ fun ServersSection(state: AppState) {
                 }) { Text(stringResource(Res.string.a_remove)) }
             },
             dismissButton = { TextButton(onClick = { removing = null }) { Text(stringResource(Res.string.a_cancel)) } },
-        )
-    }
-}
-
-/** The master password was changed on another device: take over the new one. */
-@Composable
-fun PasswordChangedDialog(state: AppState) {
-    var password by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
-    AlertDialog(
-        onDismissRequest = {},
-        title = { Text(stringResource(Res.string.sync_pw_title)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(stringResource(Res.string.sync_pw_text))
-                SecretTextField(password, { password = it; error = null }, stringResource(Res.string.l_new_password))
-                ErrorText(error)
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                state.run(onError = { error = it }, block = {
-                    try {
-                        state.backend.net.adoptRemotePassword(password)
-                        true
-                    } catch (e: VaultException) {
-                        // A key was removed there as well: the key dialog takes it over (and asks
-                        // for the password again).
-                        if (e.kind == VaultErrorKind.PROTECTION_CHANGED_ELSEWHERE) false else throw e
-                    }
-                }) { done ->
-                    state.passwordChangedElsewhere = false
-                    if (done) state.changed() else state.protectionChangedElsewhere = true
-                }
-            }, enabled = password.isNotEmpty() && !state.busy) { Text(stringResource(Res.string.a_take_over)) }
-        },
-        dismissButton = {
-            TextButton(onClick = { state.passwordChangedElsewhere = false }) { Text(stringResource(Res.string.a_later)) }
-        },
-    )
-}
-
-/**
- * A key was removed and the recovery code renewed on another device: this device can no longer
- * read the server's files. One touch of a remaining key (or the key file) takes the new
- * protection over; the new master password is asked for only if it changed as well.
- */
-@Composable
-fun ProtectionChangedDialog(state: AppState) {
-    val backend = state.backend
-    var withKey by remember { mutableStateOf(true) }
-    var pin by remember { mutableStateOf("") }
-    var keyfile by remember { mutableStateOf<PickedFile?>(null) }
-    var password by remember { mutableStateOf("") }
-    var askPassword by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    AlertDialog(
-        onDismissRequest = {},
-        title = { Text(stringResource(Res.string.sync_protection_title)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(stringResource(Res.string.sync_protection_text))
-                FactorChoice(withKey) { withKey = it; error = null }
-                if (withKey) KeyPinField(state, pin) { pin = it; error = null } else KeyfilePicker(keyfile) { keyfile = it; error = null }
-                if (askPassword) {
-                    Hint(stringResource(Res.string.sync_protection_password))
-                    SecretTextField(password, { password = it; error = null }, stringResource(Res.string.l_new_password))
-                }
-                ErrorText(error)
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                state.run(onError = { error = it }, block = {
-                    try {
-                        backend.adoptRemoteProtection(
-                            if (askPassword) password else null,
-                            if (withKey) pin else null,
-                            if (withKey) null else keyfile?.bytes,
-                            state.onTouchNeeded,
-                        )
-                        true
-                    } catch (e: VaultException) {
-                        // The master password changed there too: ask for it, then try again.
-                        if (e.kind == VaultErrorKind.PASSWORD_CHANGED_ELSEWHERE && !askPassword) false else throw e
-                    }
-                }) { done ->
-                    if (done) {
-                        state.protectionChangedElsewhere = false
-                        state.changed()
-                        state.sync(quiet = true)
-                    } else {
-                        askPassword = true
-                    }
-                }
-            }, enabled = !state.busy && (if (withKey) keyPinOk(state, pin) else keyfile != null) &&
-                (!askPassword || password.isNotEmpty())) { Text(stringResource(Res.string.a_take_over)) }
-        },
-        dismissButton = {
-            TextButton(onClick = { state.protectionChangedElsewhere = false }) { Text(stringResource(Res.string.a_later)) }
-        },
-    )
-}
-
-/** Start option on a new device: download the suite from an own server, then unlock as usual. */
-@Composable
-fun FetchFromServer(state: AppState, onCancel: () -> Unit) {
-    val backend = state.backend
-    var input by remember { mutableStateOf(defaultServer()) }
-    var usePassword by remember { mutableStateOf(false) }
-    var fingerprint by remember { mutableStateOf<String?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
-    val deviceKey = remember { catching { backend.deviceSshKey() }.getOrNull() }
-    // U7: SFTP (key or password) or FTPS (password).
-    val effective = when (input.kind) {
-        ServerKindUi.SFTP -> if (usePassword) input else input.copy(password = null)
-        ServerKindUi.FTPS -> input
-    }
-    val notFound = stringResource(Res.string.fetch_nothing)
-    val doneMsg = stringResource(Res.string.fetch_done)
-
-    fun fetch(hostKey: String?) {
-        state.run(onError = { error = it }, block = {
-            try {
-                backend.fetchFromServer(effective, hostKey)
-            } catch (e: VaultException) {
-                if (e.kind == VaultErrorKind.NOT_FOUND) throw VaultException(VaultErrorKind.OTHER, notFound)
-                throw e
-            }
-        }) { fp ->
-            if (fp.isNotEmpty()) {
-                fingerprint = fp
-            } else {
-                state.showStart = false
-                state.vaultExists = true
-                state.message(doneMsg)
-            }
-        }
-    }
-
-    SectionCard(stringResource(Res.string.start_fetch)) {
-        Hint(stringResource(Res.string.fetch_text))
-        StorageChooser(state)
-        ChipRow {
-            for (k in ServerKindUi.entries) {
-                FilterChip(input.kind == k, {
-                    input = input.copy(kind = k, port = if (k == ServerKindUi.SFTP) 22 else 21, password = null)
-                    error = null
-                }, label = { Text(kindLabel(k)) })
-            }
-        }
-        when (input.kind) {
-            ServerKindUi.SFTP -> {
-                ServerFields(input, usePassword, { input = it; error = null }, { usePassword = it }, showName = false)
-                if (!usePassword && deviceKey != null) {
-                    Hint(stringResource(Res.string.fetch_device_key))
-                    PublicKeyBox(state, deviceKey)
-                }
-            }
-            ServerKindUi.FTPS -> {
-                ServerFields(input, true, { input = it; error = null }, {}, showName = false, passwordOnly = true)
-            }
-        }
-        ErrorText(error)
-        ButtonRow {
-            OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text(stringResource(Res.string.a_back)) }
-            Button(
-                onClick = { fetch(null) },
-                enabled = !state.busy && when (input.kind) {
-                    ServerKindUi.SFTP -> input.host.isNotBlank() && input.user.isNotBlank() && (!usePassword || !input.password.isNullOrEmpty())
-                    ServerKindUi.FTPS -> input.host.isNotBlank() && input.user.isNotBlank() && !input.password.isNullOrEmpty()
-                },
-                modifier = Modifier.weight(1f),
-            ) { Text(stringResource(Res.string.a_fetch)) }
-        }
-    }
-    fingerprint?.let { fp ->
-        FingerprintDialog(
-            stringResource(Res.string.server_fp_title), stringResource(Res.string.server_fp_text), fp,
-            onTrust = {
-                fingerprint = null
-                fetch(fp)
-            },
-            onDismiss = { fingerprint = null },
         )
     }
 }

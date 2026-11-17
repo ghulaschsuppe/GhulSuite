@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <resources>
-    <string name="a_accept_state">Accept this state</string>
     <string name="a_add">Add</string>
     <string name="a_add_key">Add security key</string>
     <string name="a_add_keyfile">Add key file</string>
@@ -32,7 +31,6 @@
     <string name="a_finish">Finish</string>
     <string name="a_generate">Generate password</string>
     <string name="a_hide">Hide</string>
-    <string name="a_ignore">Ignore</string>
     <string name="a_import">Import</string>
     <string name="a_later">Later</string>
     <string name="a_lock_now">Lock now</string>
@@ -40,7 +38,6 @@
     <string name="a_new_code">New recovery code</string>
     <string name="a_next">Next</string>
     <string name="a_open">Open</string>
-    <string name="a_open_with_password">Open with password …</string>
     <string name="a_print_sheet">Print emergency sheet / save as PDF</string>
     <string name="a_register_key">Register key</string>
     <string name="a_remove">Remove</string>
@@ -145,9 +142,6 @@
     <string name="foreign_text">Open the vault once with its previous password and its key or key file.</string>
     <string name="foreign_title">Take over vault</string>
     <string name="foreign_warning">Afterwards it is switched to your password, your keys and your recovery code. Its previous password no longer works for this file.</string>
-    <string name="found_own_protection">other password</string>
-    <string name="found_text">Your folder contains vault files with another password, e.g. from another suite or from before a password change. Open them once with their password, then they are switched to your protection and belong to your suite.</string>
-    <string name="found_title">Vaults with another password</string>
     <string name="gen_again">New password</string>
     <string name="gen_ambiguous">Avoid confusable characters</string>
     <string name="gen_digits">Digits</string>
@@ -237,8 +231,6 @@
         <item quantity="one">%1$s taken over from Google Authenticator, %2$s was already there.</item>
         <item quantity="other">%1$s taken over from Google Authenticator, %2$s were already there.</item>
     </plurals>
-    <string name="msg_no_new_vaults">No new vaults in the folder.</string>
-    <string name="msg_outdated">Warning: %1$s is older than last seen. Details in the options.</string>
     <string name="msg_password_changed">Master password changed.</string>
     <string name="msg_vault_added">Vault added.</string>
     <string name="open_vault_needs_key">Plug in your security key.</string>
@@ -404,16 +396,12 @@
     <string name="vault_new">New vault</string>
     <string name="vault_new_text">The new vault gets your password, keys and recovery code and is stored as a separate file in your folder.</string>
     <string name="vault_none_yet">There is no vault for this area yet.</string>
-    <string name="vault_outdated">Older than the last state seen, maybe an old copy.</string>
     <string name="vault_pick_title">Which vault?</string>
     <string name="vault_remove_warning">The file is deleted from your folder, with all its entries.</string>
     <string name="vault_remove_tip">Tip: export first what you want to keep.</string>
     <string name="vault_remove_title">Delete “%1$s”?</string>
-    <string name="vault_scan">Look for new vault files</string>
-    <string name="vault_scan_hint">Only needed if you copied vault files into this folder yourself. The app looks anyway when unlocking.</string>
     <string name="vault_summary">%1$s · entries: %2$s</string>
     <string name="a_attach">Attach file</string>
-    <string name="a_fetch">Fetch suite</string>
     <string name="a_flag">Flag</string>
     <string name="a_unflag">Remove flag</string>
     <string name="a_forward">Forward</string>
@@ -423,7 +411,6 @@
     <string name="a_reply">Reply</string>
     <string name="a_reply_all">Reply all</string>
     <string name="a_send">Send</string>
-    <string name="a_sync_now">Synchronise now</string>
     <string name="a_trust">Fingerprint matches</string>
     <string name="tab_drive">GhulDrive</string>
     <string name="tab_mail">GhulMail</string>
@@ -446,8 +433,6 @@
     <string name="mail_key_compare_text">Have the contact show or read out their fingerprint, in person or on the phone. If it matches character by character, it really is their key.</string>
     <string name="mail_key_offered_was">Offered was: %1$s</string>
     <string name="mail_key_matches">It matches</string>
-    <string name="err_password_elsewhere">The master password was changed on another device.</string>
-    <string name="err_protection_elsewhere">The keys of your suite were changed on another device.</string>
     <string name="err_not_configured">Not set up yet.</string>
     <string name="err_not_found">Not found.</string>
     <string name="server_add_title">Add server</string>
@@ -468,28 +453,6 @@
     <string name="server_remove_text">The files on the server stay. The synchronisation stops using this server.</string>
     <string name="set_servers">Own servers</string>
     <string name="set_servers_hint">The servers your devices synchronise with (SFTP or FTPS). Everything is encrypted before it leaves the device; the server only sees encrypted files.</string>
-    <string name="set_sync">Synchronisation</string>
-    <string name="set_sync_hint">Keeps the vaults of this suite equal on all your devices. Changes on both sides are merged; nothing is overwritten silently.</string>
-    <string name="sync_server">Server</string>
-    <string name="sync_off">Off</string>
-    <string name="sync_auto">Automatically (after unlocking and changes)</string>
-    <string name="sync_last">Last synchronised: %1$s</string>
-    <string name="sync_never">Not synchronised yet.</string>
-    <string name="sync_running">Synchronising …</string>
-    <string name="sync_done">Synchronised: %1$s sent, %2$s received.</string>
-    <string name="sync_failed">Synchronisation failed: %1$s</string>
-    <string name="sync_not_set">No server set for synchronisation.</string>
-    <string name="sync_pw_title">New master password</string>
-    <string name="sync_pw_text">The master password was changed on another device. Enter the new password to take it over on this device as well.</string>
-    <string name="sync_protection_title">Protection changed</string>
-    <string name="sync_protection_text">A key was removed on another device and a new recovery sheet was made. Confirm once with one of your remaining keys or your key file, then this device synchronises again.</string>
-    <string name="sync_protection_password">The master password was changed there as well. Enter the new password.</string>
-    <string name="start_fetch">Fetch from my server</string>
-    <string name="start_fetch_text">Your suite is already synchronised to your own server: download it to this device.</string>
-    <string name="fetch_text">The encrypted suite is downloaded from the server. Afterwards you unlock it as usual with password and security key or key file.</string>
-    <string name="fetch_device_key">Key of this device (only for downloading):</string>
-    <string name="fetch_done">Suite downloaded. Unlock it now.</string>
-    <string name="fetch_nothing">No suite found in this folder on the server.</string>
     <string name="drive_setup_title">Set up GhulDrive</string>
     <string name="drive_setup_text">Your files, encrypted on your own server. The server sees neither names nor contents nor folder structure.</string>
     <string name="drive_root">My files</string>
@@ -607,12 +570,9 @@
     <string name="set_pass_sub">Display, generator</string>
     <string name="set_privacy">Privacy</string>
     <string name="set_privacy_sub">Screenshots, clipboard</string>
-    <string name="sync_page_hint">The synchronisation keeps this suite the same on all your devices: passwords, 2FA codes, calendars, mail accounts and settings. An own server with SFTP or FTPS is all it needs. Without synchronisation everything stays on this device only. GhulDrive\'s files have storage locations of their own (Settings → GhulDrive).</string>
     <string name="sync_servers_title">Servers for the synchronisation</string>
-    <string name="sync_server_in_use">Used for the synchronisation</string>
-    <string name="set_sync_sub_off">Off · on this device only</string>
-    <string name="set_sync_sub_on">On · %1$s</string>
-    <string name="set_servers_sync_share">Synchronisation</string>
+    <string name="set_servers_share">Servers and sharing</string>
+    <string name="set_servers_sub">Your own servers for GhulDrive and share links</string>
     <plurals name="set_suite_summary">
         <item quantity="one">%1$s vault · %2$s</item>
         <item quantity="other">%1$s vaults · %2$s</item>
@@ -1175,7 +1135,6 @@
 2. Add a new key or key file.
 3. Create a new recovery sheet. The old one is then no longer valid.</string>
     <string name="recovered_go">Do it now</string>
-    <string name="sync_offline_banner">Sync not possible right now (no connection to the server). Your changes are saved and will be synced later. Tap to try again.</string>
     <string name="edit_discard_title">Discard changes?</string>
     <string name="edit_discard_text">What you entered here is not saved yet.</string>
     <string name="edit_discard_yes">Discard</string>
@@ -1261,15 +1220,13 @@
     <string name="srvf_folder_loading">Reading folders …</string>
     <string name="srvf_folder_public">Website folder, not for GhulSuite</string>
     <string name="srvf_login_first">Enter server, user and password first.</string>
-    <string name="srvf_missing">Still open: %1$s</string>
     <string name="quick_4h">4 hours</string>
     <string name="quick_always">Always</string>
     <string name="wz_title">Set up new</string>
-    <string name="wz_step_of">Step %1$s of 8 · %2$s</string>
+    <string name="wz_step_of">Step %1$s of 7 · %2$s</string>
     <string name="wz_step_password">Master password</string>
     <string name="wz_step_factor">Second factor</string>
     <string name="wz_step_storage">Storage location</string>
-    <string name="wz_step_sync">Synchronisation</string>
     <string name="wz_step_areas">Areas</string>
     <string name="wz_step_lock">Locking</string>
     <string name="wz_step_unlock">Unlocking</string>
@@ -1285,9 +1242,6 @@
     <string name="wz_create_touch">Next, GhulSuite creates the suite. Touch your key twice when asked.</string>
     <string name="wz_later">Later</string>
     <string name="wz_own_server">Own server</string>
-    <string name="wz_sync_later_sub">Only on this device for now</string>
-    <string name="wz_sync_own_sub">All devices sync through it, encrypted only</string>
-    <string name="wz_sync_hint">Optional. On other devices you then choose “Fetch from my server”. GhulDrive can use the same server or a completely different one, also with another method (next step).</string>
     <string name="wz_drive_where">Where should the files be stored?</string>
     <string name="wz_drive_later_sub">GhulDrive then shows “Not set up yet”</string>
     <string name="wz_mail_later">Or later, right in GhulMail.</string>

@@ -26,8 +26,6 @@ import de.danerd.ghulsuite.model.ServerSavedUi
 import de.danerd.ghulsuite.model.ShareInfoUi
 import de.danerd.ghulsuite.model.ShareOptionsUi
 import de.danerd.ghulsuite.model.ServerUi
-import de.danerd.ghulsuite.model.SyncReportUi
-import de.danerd.ghulsuite.model.SyncStatusUi
 
 /** Sample data for screenshots of the network screens. */
 class FakeNet(private val configured: Boolean = true, private val encryptedMail: Boolean = false, private val conversation: Boolean = false) : NetBackend {
@@ -130,47 +128,6 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
     override suspend fun shareDriveToApps(files: List<DriveItemUi>) { calls += "toApps:${files.size}" }
     override suspend fun driveFilesForMail(files: List<DriveItemUi>) =
         files.filter { !it.isDir }.map { OutgoingAttachmentUi(it.name, "application/octet-stream", ByteArray(3)) }
-    /** The sync server as set through the screens (the fake starts with s1 when configured). */
-    var syncServer: String? = if (configured) "s1" else null
-    /** While true, syncStatus() fails (a core that cannot answer). */
-    var syncStatusFails = false
-    /** Holds the answer of syncStatus() back (read before waiting) until released. */
-    @Volatile var syncStatusGate: java.util.concurrent.CountDownLatch? = null
-    /** Calls of syncStatus() that have read their answer. */
-    @Volatile var syncStatusWaiting = 0
-    override suspend fun syncStatus(): SyncStatusUi {
-        if (syncStatusFails) throw java.io.IOException("timeout")
-        val answer = SyncStatusUi(syncServer, now * 1000)
-        syncStatusWaiting++
-        syncStatusGate?.let { gate -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { gate.await(30, java.util.concurrent.TimeUnit.SECONDS) } }
-        return answer
-    }
-    override suspend fun setSyncServer(id: String?) {
-        calls += "setSyncServer:$id"
-        syncServer = id
-    }
-    /** How many synchronisations ran, and the most that ran at the same time. */
-    @Volatile var syncRuns = 0
-    @Volatile var syncMaxAtOnce = 0
-    /** Synchronisations that have ended. */
-    @Volatile var syncDone = 0
-    private val syncActive = java.util.concurrent.atomic.AtomicInteger()
-    /** A synchronisation takes this long (it suspends, like the real one). */
-    var syncDelayMs = 0L
-    override suspend fun syncNow(): SyncReportUi {
-        val now = syncActive.incrementAndGet()
-        syncMaxAtOnce = maxOf(syncMaxAtOnce, now)
-        try {
-            syncRuns++
-            if (syncDelayMs > 0) kotlinx.coroutines.delay(syncDelayMs)
-            return SyncReportUi(1, 2, 0, 0, 0)
-        } finally {
-            syncActive.decrementAndGet()
-            syncDone++
-        }
-    }
-    override suspend fun adoptRemotePassword(password: String) = SyncReportUi(0, 0, 0, 0, 0)
-
     /** GhulDrive's storage locations (not in the suite's list); the fake starts with s1 when configured. */
     val driveLocs: MutableList<de.danerd.ghulsuite.model.DriveLocationUi> =
         if (configured) mutableListOf(de.danerd.ghulsuite.model.DriveLocationUi(server, active = true, archive = true)) else mutableListOf()
@@ -194,14 +151,9 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
     }
     /** What was asked of the locations, in order ("switch:id", "remove:id:files", "archive:id", "add:host"). */
     val driveLocationCalls = java.util.Collections.synchronizedList(mutableListOf<String>())
-    /** So many calls of driveLocations() fail first (the core is busy with a synchronisation). */
+    /** So many calls of driveLocations() fail first (the core is busy). */
     var driveLocationsFails = 0
-    /** Like the real core: reading the locations waits while a synchronisation holds it. */
-    var driveLocationsWaitForSync = false
     override suspend fun driveLocations(): List<de.danerd.ghulsuite.model.DriveLocationUi> {
-        if (driveLocationsWaitForSync) {
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { while (syncActive.get() > 0) Thread.sleep(20) }
-        }
         if (driveLocationsFails > 0) {
             driveLocationsFails--
             throw java.io.IOException("busy")
