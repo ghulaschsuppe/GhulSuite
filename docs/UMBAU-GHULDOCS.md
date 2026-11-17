@@ -6,8 +6,9 @@ Stand: 17.11.2026, freigegeben. Grundlage ist der Umbau ohne Synchronisation
 ## 1. Grundidee
 
 GhulSuite wird eine reine Offline-App. Alles liegt verschlüsselt auf dem Gerät und in der Suite-Datei (`.ghlzip`),
-es gibt keine Server, keine Konten und keine Verbindungen nach draußen. Einzige Ausnahme ist die Update-Prüfung, und
-die lässt sich abschalten.
+es gibt keine Server, keine Konten und keine Verbindungen nach draußen. Ausnahmen sind nur die Update-Prüfung und
+die Leak-Prüfung von GhulPass (Have I Been Pwned, es gehen nur die ersten 5 Zeichen eines SHA-1-Werts hinaus, nie das
+Passwort); beide lassen sich abschalten.
 
 | Bereich | Inhalt |
 |---|---|
@@ -44,7 +45,7 @@ Faktor hat, öffnet sie mit einer frischen Installation (wie bei VeraCrypt). Des
 - Einzelne Tresore öffnen und speichern, eine Auswahl als eigenen Tresor weitergeben
 - Schnell-Entsperren, Panik-Sperre, Auto-Sperre, Bildschirmfoto-Schutz
 - Import und Export (Passwort-Manager, 2FA-Apps, ICS)
-- Update-Prüfung (abschaltbar, einzige Verbindung)
+- Update-Prüfung und Leak-Prüfung von GhulPass (beide abschaltbar, die einzigen Verbindungen)
 
 ## 4. Was wegfällt
 
@@ -56,7 +57,7 @@ Faktor hat, öffnet sie mit einer frischen Installation (wie bei VeraCrypt). Des
 - **Fehlerbericht hochladen**: Der Bericht wird als Text angezeigt, zum Kopieren oder zum Teilen über eine andere
   App. `report.php` auf der Website entfällt.
 - Android-Berechtigungen, die nur Mail oder Server brauchten (Netzwerkstatus, Dauerdienst für Mail,
-  Akku-Ausnahme). `INTERNET` bleibt nur für die Update-Prüfung.
+  Akku-Ausnahme). `INTERNET` bleibt nur für die Update- und die Leak-Prüfung.
 - Testserver (SFTP, Mail) in der CI und lokal
 
 ## 5. GhulDocs
