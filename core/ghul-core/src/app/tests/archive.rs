@@ -386,22 +386,29 @@ fn a_damaged_vault_is_not_left_out() {
     assert!(matches!(r, Err(GhulError::InvalidInput { .. })), "{:?}", r.err());
 }
 
-/// A checked file's keys do not outlive locking; the one-step-back copy not a protection change.
+/// A checked file's keys do not outlive locking; no copy of an old working copy stays behind.
 #[test]
 fn locking_forgets_a_checked_file() {
-    let (_da, a, kf, _) = device_with_suite("forget-a");
+    let (da, a, kf, _) = device_with_suite("forget-a");
     let file = save(&a);
     let db = Dirs::new("forget-b");
     let b = db.suite();
     open(&b, &file, &kf);
     b.lock();
     assert!(matches!(b.archive_accept(), Err(GhulError::NotFound)));
+    assert!(!b.archive_device_data_wiped(), "failed before anything was removed");
 
     // No copy of the old working copy is left behind (it would still open with old passwords).
-    std::fs::write(_da.root.join("local").join("before-open.ghlzip"), b"old").unwrap();
+    let old = da.root.join("local").join("before-open.ghlzip");
+    std::fs::write(&old, b"old").unwrap();
     open(&a, &file, &kf);
     a.archive_accept().unwrap();
-    assert!(!_da.root.join("local").join("before-open.ghlzip").exists());
+    assert!(!old.exists());
+    // Also on a device that never opens a file again: gone with the next start of the app.
+    std::fs::write(&old, b"old").unwrap();
+    let _again = da.suite();
+    assert!(!old.exists());
+    assert!(a.archive_device_data_wiped());
 }
 
 /// More entries than any suite has: refused before anything is read.

@@ -13,6 +13,7 @@ import de.danerd.ghulsuite.model.EmergencySheetText
 import de.danerd.ghulsuite.model.KeyValueStore
 import de.danerd.ghulsuite.model.Settings
 import de.danerd.ghulsuite.model.SingleSaveUi
+import de.danerd.ghulsuite.model.SingleWrite
 import de.danerd.ghulsuite.model.SuiteFileRef
 import de.danerd.ghulsuite.model.VaultException
 import de.danerd.ghulsuite.model.VaultKindUi
@@ -90,16 +91,9 @@ class SingleBackendTest {
         return t.listVaults().single().name
     }
 
-    /**
-     * Before a test removes its folder: closing writes may still run. Each ends by removing its
-     * folder (written) or leaving it with its changes (not written); a moment more for the thread.
-     */
-    private fun settle(root: File) {
-        waitUntil("closings done") {
-            root.walkTopDown().filter { it.isDirectory && it.parentFile?.name == "single-vault" }
-                .all { File(it, "local/archive-unsaved").exists() }
-        }
-        Thread.sleep(300)
+    /** Before a test removes its folder: closing writes may still run (their own threads). */
+    private fun settle(@Suppress("UNUSED_PARAMETER") root: File) {
+        waitUntil("closings done") { Thread.getAllStackTraces().keys.none { it.name == "ghul-single-close" && it.isAlive } }
     }
 
     private fun waitUntil(what: String, check: () -> Boolean) {
@@ -231,7 +225,7 @@ class SingleBackendTest {
             target.writeBytes(original.copyOf(10))
             assertTrue(!b.pendingSingleWrites().single().fileIntact)
             b.failWrites = false
-            assertEquals(SingleSaveUi.SAVED, b.retrySingleWrite(b.pendingSingleWrites().single().key, overwrite = true))
+            assertEquals(SingleSaveUi.SAVED, b.retrySingleWrite(b.pendingSingleWrites().single().key, SingleWrite.OVERWRITE))
             assertEquals("Abgebrochen", nameIn(dir, target, kf))
         } finally {
             runCatching { settle(dir) }
@@ -304,7 +298,13 @@ class SingleBackendTest {
             b.renameVault(b.listVaults().single().id, "Wieder da")
             assertEquals(SingleSaveUi.MISSING, b.saveSingle())
             assertTrue(!one.exists(), "not written unasked")
-            assertEquals(SingleSaveUi.SAVED, b.saveSingle(overwrite = true))
+            // Back meanwhile, changed elsewhere: "write anew" asks again instead of overwriting.
+            val elsewhere = bytes + byteArrayOf(1)
+            one.writeBytes(elsewhere)
+            assertEquals(SingleSaveUi.CHANGED_ELSEWHERE, b.saveSingle(SingleWrite.ANEW))
+            assertTrue(one.readBytes().contentEquals(elsewhere), "not overwritten")
+            one.delete()
+            assertEquals(SingleSaveUi.SAVED, b.saveSingle(SingleWrite.ANEW))
             assertEquals("Wieder da", nameIn(dir, one, kf))
 
             // A leftover for "Zwei" whose file is gone meanwhile: offered as written anew.
@@ -325,7 +325,7 @@ class SingleBackendTest {
             assertEquals(de.danerd.ghulsuite.model.VaultErrorKind.SINGLE_PENDING, e.kind)
             assertEquals(refOne, b.singleFile(), "still open")
 
-            assertEquals(SingleSaveUi.SAVED, b.retrySingleWrite(p.key, overwrite = true))
+            assertEquals(SingleSaveUi.SAVED, b.retrySingleWrite(p.key, SingleWrite.ANEW))
             assertEquals("Zwei neu", nameIn(dir, two, kf))
             b.lock()
         } finally {

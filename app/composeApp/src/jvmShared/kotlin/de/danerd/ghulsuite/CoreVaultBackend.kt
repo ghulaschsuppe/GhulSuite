@@ -59,6 +59,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.withLock
 import de.danerd.ghulsuite.model.PendingSingleUi
 import de.danerd.ghulsuite.model.SingleSaveUi
+import de.danerd.ghulsuite.model.SingleWrite
 import de.danerd.ghulsuite.core.SetupState
 import de.danerd.ghulsuite.model.SetupStateUi
 import de.danerd.ghulsuite.model.SkippedImportUi
@@ -167,11 +168,10 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
             io { suite.archiveAccept() }
         } catch (e: Throwable) {
             // The core may have locked before failing: the app must not show an open suite.
-            val open = runCatching { suite.isUnlocked() }.getOrDefault(false)
-            // Locked after failing: the core got past its lock and removed this device's quick
-            // unlock with the old state; the platform's part of it goes too.
-            if (!open) onProtectionChanged()
-            unlockedState.value = open
+            // The core got as far as removing this device's quick unlock of the old state: the
+            // platform's part of it goes too (not when it failed before that).
+            if (runCatching { suite.archiveDeviceDataWiped() }.getOrDefault(false)) onProtectionChanged()
+            unlockedState.value = runCatching { suite.isUnlocked() }.getOrDefault(false)
             throw e
         }
         // The device's quick unlock belonged to the state before.
@@ -219,6 +219,9 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
     private val pendingTick = MutableStateFlow(0)
     override val singleWritesChanged: StateFlow<Int> = pendingTick.asStateFlow()
 
+    /** File extensions of vault files (a record that cannot be read falls back to them). */
+    private val VAULT_EXTENSIONS = setOf("ghlpss", "ghltotp", "ghlcal", "ghldrv", "ghlmail")
+
     /** Where vaults opened on their own are kept meanwhile, each in a folder of its own. */
     private fun singleBase() = java.io.File(localDir).absoluteFile.resolveSibling("single-vault")
 
@@ -230,13 +233,14 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
 
     /** The vault file in a folder (when its record cannot be read; the newest if several). */
     private fun vaultIn(dir: java.io.File): String? =
-        java.io.File(dir, "vault").listFiles().orEmpty().filter { it.isFile && it.extension.startsWith("ghl") && it.extension != "ghlsuite" }
+        java.io.File(dir, "vault").listFiles().orEmpty().filter { it.isFile && it.extension in VAULT_EXTENSIONS }
             .maxByOrNull { it.lastModified() }?.name
 
     private fun readTarget(dir: java.io.File): Target? = runCatching {
         val file = java.io.File(dir, "target")
         val lines = file.readLines()
-        if (lines.none { it.startsWith("id=") }) {
+        // The earlier form: exactly three plain lines (a properties file starts with a comment).
+        if (lines.size == 3 && lines.none { it.startsWith("#") || it.startsWith("id=") }) {
             // Written by an earlier development version: three plain lines, no hash.
             Target(SuiteFileRef(lines[0], lines[1]), lines[2], "")
         } else {
@@ -267,12 +271,16 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
 
     override fun ownSuiteExists(): Boolean = runCatching { ownSuite.exists() }.getOrDefault(false)
 
-    /** Changes of earlier openings of [ref] that wait or are still written (only records read). */
-    private fun waitingFor(ref: SuiteFileRef): Boolean {
+    /**
+     * Changes of earlier openings of [ref] that wait (only records read); with [busyToo] also
+     * those still being written.
+     */
+    private fun waitingFor(ref: SuiteFileRef, busyToo: Boolean = true): Boolean {
         val open = singleDir
         return singleBase().listFiles().orEmpty().any { dir ->
-            dir.isDirectory && dir != open && readTarget(dir)?.ref?.id == ref.id &&
-                (dir.name in busyDirs || tempSuite(dir).archiveUnsaved())
+            val busy = dir.name in busyDirs
+            dir.isDirectory && dir != open && (busyToo || !busy) && readTarget(dir)?.ref?.id == ref.id &&
+                (busy || tempSuite(dir).archiveUnsaved())
         }
     }
 
@@ -287,7 +295,7 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
         onTouchNeeded: () -> Unit,
     ): VaultKindUi {
         // Changes of an earlier opening of this file come first: refused before anything is closed.
-        if (io { waitingFor(file) && busyDirs.isEmpty() }) throw VaultException(VaultErrorKind.SINGLE_PENDING)
+        if (io { waitingFor(file, busyToo = false) }) throw VaultException(VaultErrorKind.SINGLE_PENDING)
         if (single != null || unlockedState.value) lock()
         // A closing still writing: wait for it (it may be this file), then read the file anew.
         var bytes = data
@@ -330,24 +338,28 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
      * wrote it, or cannot be read now ([overwrite] writes anyway). Records what is in the file
      * now. Only while holding [singleWrite].
      */
-    private suspend fun writeBackLocked(dir: java.io.File, data: ByteArray, overwrite: Boolean): SingleSaveUi {
+    private suspend fun writeBackLocked(dir: java.io.File, data: ByteArray, mode: SingleWrite): SingleSaveUi {
         val t = io { readTarget(dir) } ?: return SingleSaveUi.FAILED
-        if (!overwrite && t.hash.isNotEmpty()) {
-            // Gone or unreadable (deleted, moved, storage away): asked like a change elsewhere.
-            val now = readSuiteFile(t.ref) ?: return SingleSaveUi.MISSING
-            if (sha(now) != t.hash) return SingleSaveUi.CHANGED_ELSEWHERE
+        if (mode != SingleWrite.OVERWRITE && t.hash.isNotEmpty()) {
+            val now = readSuiteFile(t.ref)
+            when {
+                // Gone or unreadable (deleted, moved, storage away): only written anew when asked.
+                now == null -> if (mode != SingleWrite.ANEW) return SingleSaveUi.MISSING
+                // Back meanwhile, changed elsewhere: asked again, also when writing anew.
+                sha(now) != t.hash -> return SingleSaveUi.CHANGED_ELSEWHERE
+            }
         }
         if (!writeSuiteFile(t.ref, data)) return SingleSaveUi.FAILED
         io { writeTarget(dir, Target(t.ref, t.vault, sha(data))) }
         return SingleSaveUi.SAVED
     }
 
-    override suspend fun saveSingle(overwrite: Boolean): SingleSaveUi = singleWrite.withLock {
+    override suspend fun saveSingle(mode: SingleWrite): SingleSaveUi = singleWrite.withLock {
         // Read while holding the lock: an older state never goes over a newer one.
         val dir = singleDir ?: return@withLock SingleSaveUi.FAILED
         val s = temp ?: return@withLock SingleSaveUi.FAILED
         val f = io { s.singleVaultFile() }
-        val r = writeBackLocked(dir, f.data, overwrite)
+        val r = writeBackLocked(dir, f.data, mode)
         // Only what is in the file counts as saved (a change meanwhile stays unsaved).
         if (r == SingleSaveUi.SAVED) io { s.singleSaved(f.change) }
         r
@@ -363,8 +375,15 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
         if (singleDir !== dir) return@withLock true
         // From now on this vault goes into the new file (set before anything can suspend, so a
         // lock meanwhile is not undone).
+        val before = single
         single = ref
-        io { writeTarget(dir, Target(ref, old.vault, sha(f.data))) }
+        try {
+            io { writeTarget(dir, Target(ref, old.vault, sha(f.data))) }
+        } catch (e: Throwable) {
+            // The record still names the old file: so does the app.
+            if (singleDir === dir) single = before
+            throw e
+        }
         io { s.singleSaved(f.change) }
         true
     }
@@ -388,7 +407,7 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
         unlockedState.value = false
         Thread({
             runCatching { s.finishLock() }
-            if (dir != null && runCatching { writePending(dir, s, overwrite = false) == SingleSaveUi.SAVED }.getOrDefault(false)) {
+            if (dir != null && runCatching { writePending(dir, s, SingleWrite.CHECKED) == SingleSaveUi.SAVED }.getOrDefault(false)) {
                 dir.deleteRecursively()
             }
             dir?.let { busyDirs -= it.name }
@@ -397,11 +416,11 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
     }
 
     /** Writes the unsaved changes of the vault in [dir] into its file. */
-    private fun writePending(dir: java.io.File, s: GhulSuite = tempSuite(dir), overwrite: Boolean): SingleSaveUi {
+    private fun writePending(dir: java.io.File, s: GhulSuite = tempSuite(dir), mode: SingleWrite): SingleSaveUi {
         if (!s.archiveUnsaved()) return SingleSaveUi.SAVED
         val t = readTarget(dir) ?: return SingleSaveUi.FAILED
         val data = java.io.File(java.io.File(dir, "vault"), t.vault).readBytes()
-        return kotlinx.coroutines.runBlocking { singleWrite.withLock { writeBackLocked(dir, data, overwrite) } }
+        return kotlinx.coroutines.runBlocking { singleWrite.withLock { writeBackLocked(dir, data, mode) } }
     }
 
     /** The changes in [dir] (its own record's vault, else the only vault file there). */
@@ -440,9 +459,9 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
     private fun pendingDir(key: String): java.io.File? =
         java.io.File(singleBase(), key).takeIf { key.isNotBlank() && it.name == key && it.isDirectory }
 
-    override suspend fun retrySingleWrite(key: String, overwrite: Boolean): SingleSaveUi {
+    override suspend fun retrySingleWrite(key: String, mode: SingleWrite): SingleSaveUi {
         val dir = pendingDir(key) ?: return SingleSaveUi.SAVED
-        val r = io { writePending(dir, overwrite = overwrite) }
+        val r = io { writePending(dir, mode = mode) }
         if (r == SingleSaveUi.SAVED) io { dir.deleteRecursively() }
         tick()
         return r

@@ -27,6 +27,7 @@ import de.danerd.ghulsuite.model.PickedFile
 import de.danerd.ghulsuite.model.ShareVaultUi
 import de.danerd.ghulsuite.model.SharedVaultUi
 import de.danerd.ghulsuite.model.SingleSaveUi
+import de.danerd.ghulsuite.model.SingleWrite
 import de.danerd.ghulsuite.model.VaultErrorKind
 import de.danerd.ghulsuite.model.VaultException
 import de.danerd.ghulsuite.model.VaultKindUi
@@ -166,14 +167,24 @@ fun SingleVaultSection(state: AppState) {
         Hint(stringResource(Res.string.single_text, name, s.file.name))
         when {
             state.singleSave == SingleSaveUi.CHANGED_ELSEWHERE -> Banner(Icons.Filled.Warning, stringResource(Res.string.single_changed_elsewhere))
-            state.singleSave == SingleSaveUi.MISSING -> Banner(Icons.Filled.Warning, stringResource(Res.string.single_missing))
+            state.singleSave == SingleSaveUi.MISSING -> Banner(
+                Icons.Filled.Warning,
+                stringResource(if (backend.canWriteFilesAnew) Res.string.single_missing else Res.string.single_missing_save_as),
+            )
             state.singleNotSaved -> Banner(Icons.Filled.Warning, stringResource(Res.string.single_not_saved))
             state.unsaved -> Banner(Icons.Filled.Warning, stringResource(Res.string.single_saving))
             else -> Banner(Icons.Filled.CheckCircle, stringResource(Res.string.single_saved))
         }
-        if (state.singleSave == SingleSaveUi.CHANGED_ELSEWHERE || state.singleSave == SingleSaveUi.MISSING) {
-            Button(onClick = { state.saveSingle(overwrite = true) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(if (state.singleSave == SingleSaveUi.MISSING) Res.string.single_write_anew else Res.string.file_overwrite))
+        if (state.singleSave == SingleSaveUi.CHANGED_ELSEWHERE) {
+            Button(onClick = { state.saveSingle(SingleWrite.OVERWRITE) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(Res.string.file_overwrite))
+            }
+        } else if (state.singleSave == SingleSaveUi.MISSING) {
+            // Written anew only where the platform can (and never over a file changed meanwhile).
+            if (backend.canWriteFilesAnew) {
+                Button(onClick = { state.saveSingle(SingleWrite.ANEW) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(Res.string.single_write_anew))
+                }
             }
         } else if (state.singleNotSaved) {
             Button(onClick = { state.saveSingle() }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
@@ -385,8 +396,8 @@ fun PendingSingleWrites(state: AppState) {
         }
     }
     if (p == null || state.single != null) return
-    fun write(overwrite: Boolean) {
-        state.run(onError = { error = it }, block = { backend.retrySingleWrite(p.key, overwrite) }) { r ->
+    fun write(mode: SingleWrite) {
+        state.run(onError = { error = it }, block = { backend.retrySingleWrite(p.key, mode) }) { r ->
             when (r) {
                 SingleSaveUi.SAVED -> { error = null; tick++ }
                 SingleSaveUi.CHANGED_ELSEWHERE, SingleSaveUi.MISSING -> tick++
@@ -404,6 +415,7 @@ fun PendingSingleWrites(state: AppState) {
                     stringResource(
                         when {
                             !p.targetKnown -> Res.string.single_pending_discard_unknown
+                            p.missing -> Res.string.single_pending_discard_missing
                             // Changed or cut short (a write cut off may still look like a vault): be careful.
                             p.fileIntact && !p.changedElsewhere -> Res.string.single_pending_discard_text
                             else -> Res.string.single_pending_discard_damaged
@@ -429,7 +441,12 @@ fun PendingSingleWrites(state: AppState) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(if (p.targetKnown) Res.string.single_pending_text else Res.string.single_pending_unknown, p.file.name))
                 if (p.changedElsewhere) Banner(Icons.Filled.Warning, stringResource(Res.string.single_pending_changed))
-                if (p.missing && p.targetKnown) Banner(Icons.Filled.Warning, stringResource(Res.string.single_pending_missing))
+                if (p.missing && p.targetKnown) {
+                    Banner(
+                        Icons.Filled.Warning,
+                        stringResource(if (backend.canWriteFilesAnew) Res.string.single_pending_missing else Res.string.single_missing_save_as),
+                    )
+                }
                 if (filePickersAvailable) {
                     OutlinedButton(onClick = { error = null; saveAs(p.file.name) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
                         Text(stringResource(Res.string.file_save_as))
@@ -442,8 +459,17 @@ fun PendingSingleWrites(state: AppState) {
             }
         },
         confirmButton = {
-            if (p.targetKnown) {
-                TextButton(enabled = !state.busy, onClick = { write(overwrite = p.changedElsewhere || p.missing) }) {
+            if (p.targetKnown && (!p.missing || backend.canWriteFilesAnew)) {
+                TextButton(enabled = !state.busy, onClick = {
+                    write(
+                        when {
+                            p.changedElsewhere -> SingleWrite.OVERWRITE
+                            // Checked again: back meanwhile and changed elsewhere is asked anew.
+                            p.missing -> SingleWrite.ANEW
+                            else -> SingleWrite.CHECKED
+                        },
+                    )
+                }) {
                     Text(
                         stringResource(
                             when {

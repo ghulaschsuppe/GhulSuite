@@ -184,7 +184,7 @@ interface VaultBackend {
      * Writes the vault open on its own back into its file; not when the file was changed
      * elsewhere meanwhile (unless [overwrite]).
      */
-    suspend fun saveSingle(overwrite: Boolean = false): SingleSaveUi = SingleSaveUi.FAILED
+    suspend fun saveSingle(mode: SingleWrite = SingleWrite.CHECKED): SingleSaveUi = SingleSaveUi.FAILED
     /** Writes the vault open on its own into another file, which it is written into from now on. */
     suspend fun saveSingleAs(ref: SuiteFileRef): Boolean = false
     /** Whether the own suite exists on this device (also while a vault is open on its own). */
@@ -200,7 +200,9 @@ interface VaultBackend {
     /** Vaults opened on their own whose last changes could not be written back into their file. */
     fun pendingSingleWrites(): List<PendingSingleUi> = emptyList()
     /** Tries again to write such changes into their file. */
-    suspend fun retrySingleWrite(key: String, overwrite: Boolean = false): SingleSaveUi = SingleSaveUi.FAILED
+    suspend fun retrySingleWrite(key: String, mode: SingleWrite = SingleWrite.CHECKED): SingleSaveUi = SingleSaveUi.FAILED
+    /** Whether a file that is gone can be written anew at its place (not with Android's documents). */
+    val canWriteFilesAnew: Boolean get() = true
     /** Writes such changes into another file instead. */
     suspend fun saveSingleWriteAs(key: String, ref: SuiteFileRef): Boolean = false
     /** Gives such changes up. */
@@ -341,6 +343,16 @@ class PendingSingleUi(
     /** Its file is gone or cannot be read now (writing would create it anew). */
     val missing: Boolean = false,
 )
+
+/** How a vault opened on its own is written back into its file. */
+enum class SingleWrite {
+    /** Only when the file is as this vault left it. */
+    CHECKED,
+    /** Also when the file is gone (but not when it is back, changed elsewhere). */
+    ANEW,
+    /** Whatever the file holds now. */
+    OVERWRITE,
+}
 
 /** How writing a vault opened on its own back into its file went. */
 enum class SingleSaveUi {

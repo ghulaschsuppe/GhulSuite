@@ -82,6 +82,9 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
         }.getOrDefault(false) && readSuiteFile(ref)?.contentEquals(data) == true
     }
 
+    /** A deleted document cannot be opened for writing again: "save as" instead. */
+    override val canWriteFilesAnew: Boolean = false
+
     override suspend fun canWriteSuiteFile(ref: SuiteFileRef): Boolean = withContext(Dispatchers.IO) {
         runCatching { androidx.documentfile.provider.DocumentFile.fromSingleUri(context, Uri.parse(ref.id))?.canWrite() == true }
             .getOrDefault(false)

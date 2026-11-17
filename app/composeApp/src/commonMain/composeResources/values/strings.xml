@@ -1757,4 +1757,6 @@
     <string name="single_write_anew">Write anew</string>
     <string name="single_pending_missing">The file is not there or cannot be read now. Writing creates it anew.</string>
     <string name="single_pending_discard_unknown">These changes are lost; which file they belonged to is unknown.</string>
+    <string name="single_missing_save_as">The file is gone or cannot be read (moved, deleted, storage away?). It is written as soon as it is back; else save the vault as a new file.</string>
+    <string name="single_pending_discard_missing">The last changes to %1$s are lost; the file itself is not there now.</string>
 </resources>

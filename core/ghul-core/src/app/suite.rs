@@ -591,6 +591,8 @@ pub struct GhulSuite {
     pub(super) changes: std::sync::atomic::AtomicU64,
     /// Grows with every lock and cancel: a file checked meanwhile is not kept (see `archive_open`).
     pub(super) pending_gen: std::sync::atomic::AtomicU64,
+    /// The last `archive_accept` got as far as removing this device's data of the old state.
+    pub(super) wiped: AtomicBool,
 }
 
 #[derive(Default)]
@@ -1069,7 +1071,7 @@ impl GhulSuite {
     /// (quick unlock).
     #[uniffi::constructor]
     pub fn new(storage: Arc<dyn VaultStorage>, local_dir: String) -> Arc<Self> {
-        Arc::new(GhulSuite {
+        let s = Arc::new(GhulSuite {
             storage,
             local_dir: PathBuf::from(local_dir),
             open: Mutex::new(None),
@@ -1079,7 +1081,11 @@ impl GhulSuite {
             pending: Mutex::new(None),
             changes: std::sync::atomic::AtomicU64::new(0),
             pending_gen: std::sync::atomic::AtomicU64::new(0),
-        })
+            wiped: AtomicBool::new(false),
+        });
+        // A copy earlier development versions left would still open with old passwords.
+        s.forget_before_open();
+        s
     }
 
     /// Whether the folder contains a suite (settings file or any vault file).

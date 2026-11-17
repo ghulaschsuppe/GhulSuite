@@ -39,7 +39,7 @@ const SEEN_FILE: &str = "archive-seen.json";
 /// Marks unsaved changes in the working copy (in the device's own folder).
 const UNSAVED_FILE: &str = "archive-unsaved";
 /// Left by earlier development versions (a copy of the working copy before opening a file,
-/// without a header, so it could not be opened): removed when seen.
+/// without a header, so it could not be opened): removed whenever a suite object is made.
 const BEFORE_FILE: &str = "before-open.ghlzip";
 /// The message for anything that is no `.ghlzip` (translated by the app).
 const NOT_A_SUITE_FILE: &str = "not a GhulSuite file";
@@ -585,12 +585,14 @@ impl GhulSuite {
     /// Takes the checked file: the working copy is replaced (the old one stays one step back),
     /// this device's data of the old state goes, and the suite is open.
     pub fn archive_accept(&self) -> Result<()> {
+        self.wiped.store(false, std::sync::atomic::Ordering::SeqCst);
         let p = self.pending.lock().unwrap_or_else(|e| e.into_inner()).take().ok_or(GhulError::NotFound)?;
         // Checked again right before replacing: another file may have been opened meanwhile.
         self.relation(&p.header, &p.suite_id)?;
         self.lock();
         self.finish_lock();
         self.wipe_device_data();
+        self.wiped.store(true, std::sync::atomic::Ordering::SeqCst);
         self.replace_working_copy(&p.files)?;
         match (&p.recovery, p.keys) {
             (Some((code, new_password)), _) => {
@@ -622,6 +624,12 @@ impl GhulSuite {
             self.clear_unsaved();
         }
         Ok(())
+    }
+
+    /// Whether the last `archive_accept` removed this device's data of the old state (quick
+    /// unlock among it), also when it failed afterwards: the app's part of it goes as well.
+    pub fn archive_device_data_wiped(&self) -> bool {
+        self.wiped.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// Whether the working copy has changes that are not in a file yet.

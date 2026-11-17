@@ -535,7 +535,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         scope.launch {
             while (true) {
                 kotlinx.coroutines.delay(1500)
-                // Changed elsewhere: the user decides (overwrite or save as), not this loop.
+                // Changed elsewhere: the user decides (overwrite or save as), not this loop. Gone or
+                // failed: tried again (written as soon as the storage is back and unchanged).
                 if (single != null && backend.unlocked.value && !busy &&
                     singleSave != de.danerd.ghulsuite.model.SingleSaveUi.CHANGED_ELSEWHERE &&
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { backend.archiveUnsaved() }
@@ -700,10 +701,10 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     /** The working copy has changes that are not in the suite file yet (see [SuiteFileSection]). */
     var unsaved by mutableStateOf(false)
 
-    /** Writes the vault opened on its own back into its file now ("Try again", "Overwrite"). */
-    fun saveSingle(overwrite: Boolean = false) {
+    /** Writes the vault opened on its own back into its file now ("Try again", "Overwrite", "Write anew"). */
+    fun saveSingle(mode: de.danerd.ghulsuite.model.SingleWrite = de.danerd.ghulsuite.model.SingleWrite.CHECKED) {
         if (single == null) return
-        run(block = { backend.saveSingle(overwrite) }) { r ->
+        run(block = { backend.saveSingle(mode) }) { r ->
             singleSave = r
             unsaved = backend.archiveUnsaved()
         }
