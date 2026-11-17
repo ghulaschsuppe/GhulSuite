@@ -31,8 +31,11 @@ import kotlinx.coroutines.delay
 /** Without any input in the window for this long, GhulSuite locks itself (also while in front). */
 private const val IDLE_LOCK_MS = 15 * 60 * 1000L
 
-fun main() {
+fun main(args: Array<String>) {
     WinNative.hardenDllSearch()
+    // A double click on a suite file while GhulSuite runs: the running one opens it.
+    val fileArg = SingleInstance.suiteFileArg(args)
+    if (SingleInstance.handOver(fileArg)) return
     // B10: decrypted copies a program still held open last time are removed now.
     ShareFiles.wipe()
     // The core library lies next to the program (installer, portable folder, Gradle run).
@@ -46,6 +49,7 @@ fun main() {
     // The language chosen in the app (otherwise the system's).
     backend.settings.appLanguage.takeIf { it.isNotEmpty() }?.let { java.util.Locale.setDefault(java.util.Locale.forLanguageTag(it)) }
     val state = AppState(backend, CoroutineScope(SupervisorJob() + Dispatchers.Main))
+    fileArg?.let { SingleInstance.open(it) }
 
     // Activity tracking for the idle lock.
     var lastInput = System.currentTimeMillis()
@@ -99,6 +103,18 @@ fun main() {
         ) {
             awtWindow = window
             window.minimumSize = java.awt.Dimension(380, 560)
+
+            // Later starts (a double click on a suite file) come here; the window comes to the front.
+            LaunchedEffect(Unit) {
+                SingleInstance.listen { path ->
+                    path?.let { SingleInstance.open(it) }
+                    java.awt.EventQueue.invokeLater {
+                        if (window.state == java.awt.Frame.ICONIFIED) window.state = java.awt.Frame.NORMAL
+                        window.toFront()
+                        window.requestFocus()
+                    }
+                }
+            }
 
             // Keep vault contents out of screenshots and screen sharing unless allowed.
             LaunchedEffect(Unit) {

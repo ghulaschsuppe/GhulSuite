@@ -302,7 +302,7 @@ Ein CBOR-Map mit Text-Schlüsseln. **Unbekannte Schlüssel müssen beim Zurücks
 dieselben Faktor-Slots, dasselbe Passwort und denselben Code. Es gibt keine Liste der Tresore. Der Name eines Tresors
 steht verschlüsselt in `settings.name`; der **Dateiname** verrät ihn nicht: die ersten 16 Hex-Zeichen der
 `CONTAINER_ID` und die Endung der Art, z. B. `3f9a1c2b7d4e5f60.ghlpss`. Ältere App-Versionen haben Tresore nach ihrem
-Namen benannt; solche Dateien werden beim Entsperren und beim Synchronisieren umbenannt. Der Suite-Container (`suite.ghlsuite`) enthält nur Einstellungen und kann aus
+Namen benannt; solche Dateien werden beim Entsperren umbenannt. Der Suite-Container (`suite.ghlsuite`) enthält nur Einstellungen und kann aus
 jeder Tresordatei neu erzeugt werden.
 
 **Rollback-Erkennung:** Der Suite-Container merkt sich in `settings.revisions` je `container_id` (hex) die höchste
@@ -317,7 +317,7 @@ gesehene `revision`. Taucht eine niedrigere auf, warnt die App, bis der Stand be
 | `type` | text | Eintragstyp (unten) |
 | `revision` | uint | Änderungszähler des Eintrags (zum Zusammenführen) |
 | `modified` | int | Unix-Zeit in Millisekunden |
-| `deleted` | bool | Löschmarker; Felder werden geleert, der Eintrag bleibt für die Synchronisation erhalten |
+| `deleted` | bool | Löschmarker; Felder werden geleert, der Eintrag bleibt als Marke erhalten und wird nicht angezeigt |
 | `deleted_from` | uint | nur bei Löschmarkern: die `revision`, die gelöscht wurde (fehlt bei älteren Löschmarkern) |
 | `fields` | map | Feldname → Feld (unten) |
 | `tags` | array of text | Schlagworte |
@@ -434,32 +434,28 @@ verrät sie nichts Verwertbares.
 
 Diese Daten liegen **nicht** in den Tresor-Containern, sondern auf dem eigenen Server des Nutzers. Ihre Schlüssel und
 Zugangsdaten stehen nur in verschlüsselten Einstellungen (CBOR-Map `settings`). Seit 0.5.0 gilt **ein Bereich, eine
-Datei**: Der Suite-Container behält Schutz, Sync-Server, Sync-Zustand und Freigaben; GhulDrive und GhulMail haben
-ihre eigenen Dateien (`.ghldrv`, `.ghlmail`).
+Datei**: Der Suite-Container behält Schutz, Server und Freigaben; GhulDrive und GhulMail haben ihre eigenen Dateien
+(`.ghldrv`, `.ghlmail`). Alle zusammen wandern in der Suite-Datei (`.ghlzip`, Abschnitt 13) von Gerät zu Gerät.
 
 **Suite-Container (`suite.ghlsuite`):**
 
-| Schlüssel | Inhalt | Synchronisiert |
-|---|---|---|
-| `servers` | Liste: `id`, `name`, `kind` (`sftp` oder `ftps`; leer = `sftp`), `host`, `port`, `user`, `password` (SFTP: leer = Schlüssel; FTPS: Passwort), `base`, `host_key` (SSH-Schlüssel- bzw. Zertifikat-Fingerabdruck SHA256), `location`, `module` (Server-Modul für Freigabelinks, fehlt = keins: `url` der `ghulsuite.php`, `dir` = ihr Ordner relativ zum Login-Ordner, `version`). Einträge mit `kind` = `php` (ältere Apps) werden nicht mehr gelesen | ja |
-| `ssh_key` | privater Ed25519-Schlüssel der Suite (OpenSSH-Format) | ja |
-| `key_change` | laufender Schlüsselwechsel nach einer Schutzänderung (fehlt = keiner): `ssh_old` (frühere private SSH-Schlüssel, neuester zuerst), `done` (Server-IDs, die nur noch den neuen annehmen); Abschnitt 10, „Schlüsselwechsel“ | ja |
-| `sync` | `server` (ID), `last` (ms) | nein (je Gerät) |
-| `sync_known` | bereits synchronisierte Tresor-IDs (für das Übertragen von Löschungen) | nein (je Gerät) |
-| `protection_before` | Liste (neueste zuerst, höchstens 256): `s` (vorheriges `S`), `code` (vorheriges Code-Geheimnis). Damit liest das Gerät Dateien auf dem Server, die ein anderes Gerät schrieb, bevor es von der Schutzänderung wusste | nein (je Gerät) |
-| `protection_changed` | Zeitpunkt der letzten Schutzänderung (ms) | ja |
-| `removed_slots` | Slot-IDs (hex) absichtlich entfernter Keys und Schlüsseldateien. Werden beim Synchronisieren vereinigt; ein Gerät, das die Entfernung verpasst hat, entfernt sie ebenfalls | ja |
-| `recovery_confirmed` | `{v, at}`: `v` = hex(SHA-256(„ghul/recovery-confirmed/v1“ ‖ Code-Geheimnis)[0..8]) des bestätigten Codes, `at` = Zeit (ms); fehlt bei Suiten von vor 0.5.0 (gilt als bestätigt) | ja |
-| `shares` | Liste der eigenen Freigaben: `id`, `server`, `name`, `size`, `created`, `expires` (ms, 0 = nie), `password`, `max_downloads`, `url` (vollständiger Link mit Schlüssel), `items` (die geteilten Drive-Knoten), `own_blocks` (Blöcke nur dieser Freigabe, für Inhalt außerhalb von GhulDrive) | ja |
-| `mail_accounts` | Liste: `id`, `name`, `display_name`, `email`, `username`, `password`, `servers`, `imap_cert`, `smtp_cert`, `signature` | ja |
+| Schlüssel | Inhalt |
+|---|---|
+| `servers` | Liste: `id`, `name`, `host`, `port`, `user`, `base`, `host_key` (Fingerabdruck des SSH-Schlüssels des Servers, SHA256), `location`, `module` (Server-Modul für Freigabelinks, fehlt = keins: `url` der `ghulsuite.php`, `dir` = ihr Ordner relativ zum Login-Ordner, `version`). Immer SFTP mit `ssh_key`, nie ein Passwort; Felder älterer Versionen (`kind`, `password`) werden nicht mehr gelesen |
+| `ssh_key` | privater Ed25519-Schlüssel der Suite (OpenSSH-Format) |
+| `key_change` | laufender Schlüsselwechsel nach einer Schutzänderung (fehlt = keiner): `ssh_old` (frühere private SSH-Schlüssel, neuester zuerst), `done` (Server-IDs, die nur noch den neuen annehmen); Abschnitt 10, „Schlüsselwechsel“ |
+| `protection_epoch` | Schutz-Epoche: wächst mit jeder Schutzänderung; eine Suite-Datei mit kleinerer Epoche als auf dem Gerät gesehen öffnet nicht (Abschnitt 13) |
+| `archive_state` | welcher Stand der Suite-Datei die Arbeitskopie ist (`state`, `counter`, `previous`, `ancestors`, `complete`; Abschnitt 13) |
+| `recovery_confirmed` | `{v, at}`: `v` = hex(SHA-256(„ghul/recovery-confirmed/v1“ ‖ Code-Geheimnis)[0..8]) des bestätigten Codes, `at` = Zeit (ms); fehlt bei Suiten von vor 0.5.0 (gilt als bestätigt) |
+| `shares` | Liste der eigenen Freigaben: `id`, `server`, `name`, `size`, `created`, `expires` (ms, 0 = nie), `password`, `max_downloads`, `url` (vollständiger Link mit Schlüssel), `items` (die geteilten Drive-Knoten), `own_blocks` (Blöcke nur dieser Freigabe, für Inhalt außerhalb von GhulDrive) |
 
 **GhulDrive (`.ghldrv`):**
 
-| Schlüssel | Inhalt | Synchronisiert |
-|---|---|---|
-| `drive` | `server` (ID des **aktiven** Speicherorts), `key` (32 Byte, Drive-Schlüssel DK), `seen` (Speicherort-ID → höchste gesehene Index-Revision; ein älterer Index wird abgelehnt), `archive` (ID des Speicherorts für das Mail-Archiv, leer = der aktive), `old_keys`, `rekey_running` und `rekeyed` (laufender Schlüsselwechsel, siehe unten). Früher auch `use_sync` (Verweis auf den Sync-Server dieses Geräts); ein solches GhulDrive wird beim ersten Öffnen zu einem eigenen Speicherort mit der ID hex(HKDF(alte ID, „ghul/v1/drive/location“)[0..8]), auf jedem Gerät dieselbe | ja |
-| `servers` | die Speicherorte von GhulDrive (beliebig viele, Aufbau wie im Suite-Container, auch mit `module`); jeder hat eigene Dateien unter `drive/` und eigene Freigaben unter `shares/` in seinem Ordner | ja |
-| `options` | Optionen des Bereichs, je Schlüssel `{v, at}` (Text, Zeit in ms) | ja |
+| Schlüssel | Inhalt |
+|---|---|
+| `drive` | `server` (ID des **aktiven** Speicherorts), `key` (32 Byte, Drive-Schlüssel DK), `seen` (Speicherort-ID → höchste gesehene Index-Revision; ein älterer Index wird abgelehnt), `archive` (ID des Speicherorts für das Mail-Archiv, leer = der aktive), `old_keys`, `rekey_running` und `rekeyed` (laufender Schlüsselwechsel, siehe unten) |
+| `servers` | die Speicherorte von GhulDrive (beliebig viele, Aufbau wie im Suite-Container, auch mit `module`); jeder hat eigene Dateien unter `drive/` und eigene Freigaben unter `shares/` in seinem Ordner |
+| `options` | Optionen des Bereichs, je Schlüssel `{v, at}` (Text, Zeit in ms) |
 
 **GhulMail (`.ghlmail`):** `mail_accounts` (wie oben), `mail_keys`, `mail_contacts`, `mail_cache_key`, `mail_drafts`,
 `mail_outbox`, `options`, `archive_roots` (Speicherort-ID → Knoten-ID des Archivordners dort; davor
@@ -467,23 +463,18 @@ ihre eigenen Dateien (`.ghldrv`, `.ghlmail`).
 `marks`: je „Konto/Ordner“ `[UIDVALIDITY, höchste UID]` der automatischen Läufe; nie über der niedrigsten UID, die seit
 dem Stichtag (einen Tag früher) eingegangen ist, weil UIDs nicht der Datumsfolge entsprechen), siehe Abschnitt 12. **GhulPass, GhulAuth, GhulCal:** `options` in ihren Dateien.
 
-**Listen mit `changed`:** Einträge von `servers` und `mail_accounts` tragen `changed` (ms). Beim Zusammenführen gewinnt
-der später geänderte Eintrag derselben `id`; ohne `changed` bleibt der lokale.
-
-**Optionen und Zusammenführen:** Ein Wert `{v, at}` (Map aus genau `v` und ganzzahligem `at`) wird beim Synchronisieren
-als Ganzes übernommen, wenn sein `at` neuer ist, die letzte Änderung gewinnt. Bekannte Optionen: GhulPass
+**Optionen:** Ein Wert `{v, at}` (Map aus genau `v` und ganzzahligem `at`, Zeit der Änderung). Zusammengeführt wird
+nichts: Es gilt der Stand der zuletzt gespeicherten Suite-Datei. Bekannte Optionen: GhulPass
 `generator_mode`, `generator_length`; GhulDrive `drive_trash_days`; GhulMail `mail_image_senders`; GhulCal
 `cal_holidays`, `cal_region`, `cal_default_reminder`, `cal_allday_reminder`, `cal_default`, `cal_week_start`.
 Unbekannte Optionen bleiben erhalten.
 
 **Umzug älterer Suiten:** Stehen `drive` oder `mail_*` noch im Suite-Container, wandern sie beim Entsperren samt ihren
-Löschmarken in die Bereichsdatei (die bei Bedarf angelegt wird). Das geschieht auch, wenn eine Synchronisation sie von
-einem Gerät mit älterer App zurückbringt.
+Löschmarken in die Bereichsdatei (die bei Bedarf angelegt wird).
 
 **Ablage auf dem Server** (`<base>` = gewählter Ordner):
 
 ```text
-<base>/suite/                 Tresore (.ghlpss, .ghltotp, .ghlcal) und suite.ghlsuite, unverändert im Container-Format
 <base>/drive/index.ghldrv     "GHULDRV2" ‖ nonce[24] ‖ XChaCha20-Poly1305(IK, pad(CBOR-Index), aad = "GHULDRV2" ‖ suite_id)
 <base>/drive/index.bak        der Index vor der letzten Änderung (gleiches Format)
 <base>/drive/index.lock       Sperre während einer Änderung: "<Zufallskennung> <Zeit in ms>"
@@ -595,7 +586,7 @@ die Empfängerseite entfernt ihn nach dem Lesen aus der Adresszeile. Sie ruft `?
 auf, wenn jemand auf „Freigabe öffnen“ klickt: Link-Scanner und Vorschauen, die die Seite laden, verbrauchen keinen
 Einmal-Link.
 
-**Beschreibung auf dem Server** `<base>/shares/<id>.json` (von der App über SFTP/FTPS geschrieben):
+**Beschreibung auf dem Server** `<base>/shares/<id>.json` (von der App über SFTP geschrieben):
 
 ```json
 {"package": "<Paket, Base64>", "files": [["<Block-ID>", ...], ...], "exp": 0, "max": 0}
@@ -608,7 +599,7 @@ Tag nach `exp` aus ihrer Liste und vom Server (Uhren können abweichen); abgewie
 aus GhulPass), wird mit einem neuen `FK` in eigene Blöcke geschrieben, die mit der Freigabe gelöscht werden.
 
 **Server-Modul (`ghulsuite.php`, PHP 8.1+, ohne Datenbank, Version 3):** eine Datei ohne Geheimnis, von der App über
-den SFTP- oder FTPS-Zugang des Servers in den Ordner der Website gelegt, mit dem Pfad zum GhulSuite-Ordner
+den SFTP-Zugang des Servers in den Ordner der Website gelegt, mit dem Pfad zum GhulSuite-Ordner
 (`GHUL_BASE`, relativ zur Datei) und eingebetteter Empfängerseite. Es schreibt nichts außer `shares/<id>.state`
 (dazu `shares/<id>.lock` als Sperrdatei und kurz `shares/<id>.state.tmp`).
 
@@ -656,3 +647,69 @@ Archivierte Mails sind normale Dateien in GhulDrive (Abschnitt 10): die Mail unv
 - Beim Anbieter ändert sich nichts (`EXAMINE`, `BODY.PEEK[]`, auch „gelesen“ bleibt).
 
 Das eigene Archivformat der Version 0.6.0 (`mailarchive/`, Epochen-Schlüssel) wird nicht mehr gelesen.
+
+## 13. Suite-Datei (`.ghlzip`, seit 0.9)
+
+Die Suite reist als **eine Datei** von Gerät zu Gerät (z. B. auf einem USB-Stick). Es gibt keine Synchronisation und
+kein Zusammenführen: Aktuell ist der Stand, der zuletzt gespeichert wurde. Auf dem Gerät arbeitet die App mit einer
+Arbeitskopie im eigenen Speicher; die Datei wird nur beim Speichern geschrieben und beim Öffnen gelesen.
+
+**Aufbau:** ein ZIP (unkomprimiert gespeichert) mit genau diesen Einträgen, ohne Ordner, jeder Name einmal:
+
+```text
+export.ghlexp        Kopf: Container der Art "export", wie die Tresore geschützt und versiegelt (Abschnitt 4.7)
+suite.ghlsuite       der Suite-Container
+<id>.ghlpss …        jede Tresor- und Bereichsdatei (.ghlpss, .ghltotp, .ghlcal, .ghldrv, .ghlmail)
+```
+
+Der Kopf trägt in `settings.export` (CBOR):
+
+| Feld | Inhalt |
+|---|---|
+| `files` | Liste aller anderen Einträge: `name`, `kind` (Art des Containers), `id` (hex der `CONTAINER_ID`), `sha256` (hex der Datei) |
+| `state` | zufällige Stand-ID (16 Byte hex), neu bei jedem Speichern |
+| `previous` | die Stand-ID, von der aus gespeichert wurde (leer beim ersten Mal) |
+| `ancestors`, `complete` | die Stände, aus denen dieser hervorging, neuester zuerst (höchstens 64); `complete`: die Liste reicht bis zum ersten Speichern |
+| `counter` | Zähler, wächst mit jedem Speichern über alles hinaus, was das Gerät gesehen hat |
+| `epoch` | Schutz-Epoche der Suite (`protection_epoch`, Abschnitt 10) |
+| `time`, `device` | wann und auf welchem Gerät gespeichert (ms, Gerätename) |
+
+**Speichern:** Alle Container werden neu versiegelt, der Kopf mit neuer Stand-ID geschrieben, das ZIP gebaut und an
+die gewählte Stelle geschrieben (unter Windows erst in eine Zwischendatei, die dann in einem Schritt ersetzt; unter
+Android wird zurückgelesen und verglichen). Erst dann gilt die Arbeitskopie als
+gespeichert (eine Änderung, die während des Schreibens geschah, bleibt ungespeichert). Liegt dort schon eine Datei,
+wird sie vorher geprüft: derselbe Stand wie die Arbeitskopie (überschreiben), inzwischen woanders gespeichert oder
+eine andere Suite (Rückfrage: überschreiben oder unter neuem Namen speichern).
+
+**Öffnen:** Höchstens 512 MiB und 1000 Einträge, beim Lesen gezählt. Geprüft wird vor jeder Änderung auf dem Gerät:
+
+1. nur die erlaubten Einträge, keine doppelt, keine Ordner oder Pfade;
+2. der Kopf öffnet mit Passwort und zweitem Faktor, sein Siegel stimmt;
+3. genau die gelisteten Dateien sind da, jede mit ihrem SHA-256, ihrer Art, ihrer `CONTAINER_ID` und derselben
+   `suite_id`; jede öffnet, ihr Siegel stimmt; die Epoche des Suite-Containers ist die des Kopfs.
+
+Danach vergleicht die App mit dem, was dieses Gerät zuletzt gesehen hat (gemerkt je Suite im Gerätespeicher:
+`archive-seen.json` mit Stand-ID, höchstem Zähler, Epoche und Herkunft):
+
+| Ergebnis | Bedeutung | App |
+|---|---|---|
+| kleinere Epoche | ein Stand von vor einer Schutzänderung | wird nicht geöffnet (`ProtectionOutdated`) |
+| keine Suite | noch keine Suite auf dem Gerät | öffnen |
+| andere Suite | eine andere `suite_id` als die Arbeitskopie | Rückfrage, ersetzt alles |
+| gleich, neuer | derselbe Stand, oder er stammt (über `ancestors`) von diesem ab | öffnen |
+| älter | ein früherer Stand dieses Geräts | Rückfrage |
+| Abzweig | von einem anderen Stand aus weitergeführt | Rückfrage |
+
+Hat die Arbeitskopie Änderungen, die in keiner Datei stehen, fragt die App zusätzlich nach. Erst nach dem Bestätigen
+ersetzt der Inhalt die Arbeitskopie; die Schnell-Entsperr-Daten des Geräts werden dabei gelöscht.
+
+**Mit dem Wiederherstellungscode** (Passwort vergessen) öffnet die Datei ohne Passwort; die Siegel lassen sich dann
+nicht prüfen (die App sagt das). Danach schützt ein neues Passwort die Suite, und alles wird neu versiegelt.
+
+**Einzelner Tresor:** Eine Tresordatei lässt sich auch ohne `.ghlzip` öffnen (nur dieser Tresor, in einer eigenen,
+vorübergehenden Arbeitskopie) oder der Suite hinzufügen. „Als Tresor weitergeben“ schreibt ausgewählte Einträge in
+eine neue Tresordatei mit eigenem Passwort und neuer Schlüsseldatei oder eigenem Security Key.
+
+**Dateizuordnung:** Unter Android öffnet ein Tippen auf eine `.ghlzip` im Dateimanager GhulSuite (über den Namen
+erkannt), unter Windows ein Doppelklick (MSI); läuft GhulSuite schon, übernimmt das laufende Programm die Datei. In
+beiden Fällen gilt alles oben, es ist dasselbe wie „Suite-Datei öffnen“.

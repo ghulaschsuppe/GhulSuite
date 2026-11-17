@@ -17,7 +17,8 @@ import java.time.ZoneId
  * GhulSuite as the mail and calendar app of the phone. Other apps hand over:
  * - `mailto:` links and "send by e-mail" (with attachments) → a new mail in GhulMail,
  * - `.ics` files → imported into the default calendar of GhulCal,
- * - "add to calendar" (title, time, place) → a new appointment in GhulCal.
+ * - "add to calendar" (title, time, place) → a new appointment in GhulCal,
+ * - a suite file (`.ghlzip`) → opened like "Open suite file" (checked completely first).
  *
  * Invisible: reads what was handed over (attachments while their read permission lasts), then
  * opens [MainActivity] in GhulSuite's own task. After unlocking the mail or appointment is ready.
@@ -73,9 +74,23 @@ class IntentEntryActivity : Activity() {
                 AppLaunch.compose.value = mailDraft(intent)
             intent.action == Intent.ACTION_INSERT || intent.action == Intent.ACTION_EDIT ->
                 AppLaunch.newEvent.value = event(intent)
+            intent.action == Intent.ACTION_VIEW && data != null && name(data).endsWith(".ghlzip", ignoreCase = true) ->
+                read(data, MAX_SUITE_BYTES)?.let { AppLaunch.suiteFile.value = suiteFile(data, it) }
             intent.action == Intent.ACTION_VIEW && data != null ->
                 read(data, MAX_ICS_BYTES)?.let { AppLaunch.icsFile.value = it }
         }
+    }
+
+    /**
+     * A suite file handed over. It is remembered for saving only where Android lets GhulSuite
+     * keep the right to write it; otherwise "Save as" chooses the place (empty id).
+     */
+    private fun suiteFile(uri: Uri, data: ByteArray): de.danerd.ghulsuite.ui.PickedSuiteFile {
+        val writable = runCatching {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        }.isSuccess
+        val ref = de.danerd.ghulsuite.model.SuiteFileRef(if (writable) uri.toString() else "", name(uri))
+        return de.danerd.ghulsuite.ui.PickedSuiteFile(ref, data)
     }
 
     /** `mailto:a@b.de?cc=..&subject=..&body=..` plus the usual extras of "send". */
@@ -187,5 +202,7 @@ class IntentEntryActivity : Activity() {
     companion object {
         private const val MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
         private const val MAX_ICS_BYTES = 5 * 1024 * 1024
+        /** A suite with attachments can be large, but not larger than memory allows. */
+        private const val MAX_SUITE_BYTES = 512 * 1024 * 1024
     }
 }

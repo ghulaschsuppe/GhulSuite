@@ -95,6 +95,24 @@
                 <data android:mimeType="text/x-vcalendar" />
                 <data android:mimeType="application/ics" />
             </intent-filter>
+            <!--
+              A suite file (.ghlzip) tapped in a file manager: GhulSuite opens it after checking it
+              completely, the same as "Open suite file". Only by its name: a file of another type
+              is not handed to GhulSuite.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:host="*" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-zip-compressed" />
+                <data android:pathPattern=".*\\.ghlzip" />
+                <data android:pathPattern=".*\\..*\\.ghlzip" />
+                <data android:pathPattern=".*\\..*\\..*\\.ghlzip" />
+            </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.INSERT" />
                 <action android:name="android.intent.action.EDIT" />

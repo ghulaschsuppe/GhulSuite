@@ -88,7 +88,8 @@ fun OpenSuiteFile(state: AppState, file: PickedSuiteFile, onOpened: () -> Unit, 
 
     fun accept() {
         state.run(onError = { error = it }, block = { backend.archiveAccept() }) {
-            backend.setSuiteFile(file.ref)
+            // A file handed over without the right to write it again: "Save as" chooses the place.
+            backend.setSuiteFile(file.ref.takeIf { it.id.isNotEmpty() })
             check = null
             password = ""; pin = ""; code = ""; newPassword = ""; repeat = ""
             state.afterSuiteFileOpened()
@@ -220,6 +221,15 @@ fun SuiteFileSection(state: AppState) {
     }
     val saveAs = rememberCreateSuiteFile { created -> if (created != null) save(created, force = false) }
     val openOther = rememberOpenSuiteFile { r, data -> opening = PickedSuiteFile(r, data) }
+    // A suite file handed over by another app while unlocked (see AppState.applyLaunch).
+    LaunchedEffect(Unit) {
+        AppLaunch.suiteFile.collect { f ->
+            if (f != null) {
+                AppLaunch.suiteFile.value = null
+                opening = f
+            }
+        }
+    }
 
     opening?.let { f ->
         OpenSuiteFile(state, f, onOpened = { opening = null; ref = backend.suiteFile() }, onCancel = { opening = null })

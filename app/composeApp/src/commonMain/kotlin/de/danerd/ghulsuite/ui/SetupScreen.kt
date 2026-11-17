@@ -112,6 +112,18 @@ fun SetupScreen(state: AppState) {
         }
     }
 
+    // A suite file handed over by another app (file manager, double click): opened as if picked here.
+    LaunchedEffect(Unit) {
+        AppLaunch.suiteFile.collect { f ->
+            if (f != null && !backend.unlocked.value) {
+                AppLaunch.suiteFile.value = null
+                suiteFile = f
+                error = null
+                flow = Flow.OPEN_FILE
+            }
+        }
+    }
+
     PlatformBackHandler(enabled = flow != Flow.START) { flow = Flow.START }
 
     ScreenColumn {

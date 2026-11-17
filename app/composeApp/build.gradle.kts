@@ -359,6 +359,13 @@ compose.desktop {
                 // Fixed, so a newer MSI replaces the installed version.
                 upgradeUuid = "6d1f3c52-8e0b-4b1e-9a57-2f4c8a1d7e39"
                 iconFile.set(project.layout.projectDirectory.file("icons/ghulsuite.ico"))
+                // A double click on a suite file opens it in GhulSuite.
+                fileAssociation(
+                    mimeType = "application/x-ghulsuite",
+                    extension = "ghlzip",
+                    description = "GhulSuite-Datei",
+                    iconFile = project.layout.projectDirectory.file("icons/ghulsuite.ico").asFile,
+                )
             }
         }
     }

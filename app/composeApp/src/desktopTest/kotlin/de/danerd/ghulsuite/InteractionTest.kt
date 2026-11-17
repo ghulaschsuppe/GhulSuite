@@ -758,6 +758,20 @@ class InteractionTest {
         assertFalse(state.saveAfterProtection)
     }
 
+    /** A suite file handed over by another app while unlocked: the page of the suite file opens it. */
+    @Test
+    fun aHandedOverSuiteFileOpensOnTheFilePage() = app { state, _ ->
+        waitForIdle()
+        de.danerd.ghulsuite.ui.AppLaunch.suiteFile.value = de.danerd.ghulsuite.ui.PickedSuiteFile(
+            de.danerd.ghulsuite.model.SuiteFileRef("", "Stick.ghlzip"), ByteArray(64),
+        )
+        waitUntil(timeoutMillis = 10_000) { state.stack.lastOrNull() == Screen.SettingsPage(SetPage.FILE) }
+        waitUntil(timeoutMillis = 10_000) { de.danerd.ghulsuite.ui.AppLaunch.suiteFile.value == null }
+        // "Stick.ghlzip is checked completely first …": the form of opening, not the page alone.
+        waitFor("Stick.ghlzip is checked completely first", substring = true)
+        shot("suite-file-handed-over")
+    }
+
     /** "Later" puts the key change's steps off until the next unlock. */
     @Test
     fun keyChangeCanWait() = app(

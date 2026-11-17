@@ -73,6 +73,9 @@ object AppLaunch {
     /** An appointment handed over by another app ("add to calendar"). */
     val newEvent = kotlinx.coroutines.flow.MutableStateFlow<de.danerd.ghulsuite.model.CalEventUi?>(null)
 
+    /** A suite file (.ghlzip) opened with GhulSuite from another app (file manager, double click). */
+    val suiteFile = kotlinx.coroutines.flow.MutableStateFlow<PickedSuiteFile?>(null)
+
     /** A calendar file (.ics) opened with GhulSuite: imported into the default calendar. */
     val icsFile = kotlinx.coroutines.flow.MutableStateFlow<ByteArray?>(null)
 
@@ -541,6 +544,14 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         scope.launch { AppLaunch.compose.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
         scope.launch { AppLaunch.newEvent.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
         scope.launch { AppLaunch.icsFile.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
+        // A suite file handed over: unlocked, the page of the suite file opens it; locked, the start
+        // screen does (as "Open another suite or vault" would).
+        scope.launch {
+            AppLaunch.suiteFile.collect {
+                if (it == null) return@collect
+                if (backend.unlocked.value) applyLaunch() else if (vaultExists) showStart = true
+            }
+        }
         scope.launch { AppLaunch.driveFiles.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
         scope.launch {
             AppLaunch.newMail.collect {
@@ -624,6 +635,9 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             } else {
                 scope.launch { message(getString(Res.string.drive_upload_not_set_up)) }
             }
+        }
+        if (AppLaunch.suiteFile.value != null && single == null && stack.lastOrNull() != Screen.SettingsPage(SetPage.FILE)) {
+            push(Screen.SettingsPage(SetPage.FILE))
         }
         AppLaunch.icsFile.value?.let { data ->
             AppLaunch.icsFile.value = null
