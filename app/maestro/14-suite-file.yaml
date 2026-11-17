@@ -80,9 +80,24 @@ name: Suite file
       - tapOn:
           text: "Open"
           index: 1
+# Opened: the app starts again at its main view, everything is there.
 - extendedWaitUntil:
-    visible: "Suite file: GhulSuite.*"
+    visible: "Search entries"
     timeout: 60000
 - assertNotVisible: ".*[Cc]oroutine.*"
 - assertNotVisible: ".*[Ee]xception.*"
 - takeScreenshot: 14-05-opened
+# The opened file is the suite file from now on (saving goes there).
+- tapOn: { id: "tab-settings" }
+- scrollUntilVisible:
+    element: "Unlocking"
+    direction: UP
+- scrollUntilVisible:
+    element: "Open and save \\(\\.ghlzip\\)|Unsaved changes"
+    direction: DOWN
+- tapOn: "Suite file"
+- extendedWaitUntil:
+    visible: "Suite file: GhulSuite.*"
+    timeout: 10000
+- assertVisible: "Everything is saved in the suite file\\."
+- takeScreenshot: 14-06-file-after-open

@@ -173,7 +173,9 @@ actual fun QrScanner(onResult: (String) -> Unit) {
 
 // --- files: the native Windows dialogs ------------------------------------------------------
 
-actual val filePickersAvailable: Boolean = !GraphicsEnvironment.isHeadless()
+// Screenshots for the docs are made without a display: "ghul.pickers" shows the buttons anyway.
+actual val filePickersAvailable: Boolean
+    get() = System.getProperty("ghul.pickers")?.toBoolean() ?: !GraphicsEnvironment.isHeadless()
 
 private fun chooseOpen(): File? {
     val d = FileDialog(null as Frame?, "", FileDialog.LOAD)

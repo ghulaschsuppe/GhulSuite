@@ -201,7 +201,13 @@ class ScreenshotTest {
     @Test
     fun screens() {
         Locale.setDefault(Locale.GERMAN)
-        render("1-setup") { GhulSuiteApp(state(exists = false, unlocked = false)) }
+        // The start screen as on a device: with the buttons that open a file.
+        System.setProperty("ghul.pickers", "true")
+        try {
+            render("1-setup") { GhulSuiteApp(state(exists = false, unlocked = false)) }
+        } finally {
+            System.clearProperty("ghul.pickers")
+        }
         render("2-unlock") { GhulSuiteApp(state(exists = true, unlocked = false)) }
         render("3-pass") { GhulSuiteApp(state(exists = true, unlocked = true)) }
         render("4-entry") { GhulSuiteApp(state(true, true) { push(Screen.EntryDetail("p1", "1")) }) }
