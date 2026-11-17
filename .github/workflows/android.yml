@@ -6,8 +6,9 @@ on:
     branches: ['**']
     paths: ['core/**', 'app/**', 'docs/testvectors/**', 'tools/**', 'website/static/report.php', '.github/workflows/android.yml', '.github/actions/ftps-upload/**',
             '!app/maestro/**', '!tools/ci-emulator.sh', '!tools/run-maestro.sh', '!tools/check-reminders.sh', '!tools/check-server-flows.sh']
-  # Every pull request: "build" and "Windows-App" are required checks for main. Without changes to
-  # the app or the core they are skipped (which counts as passed) instead of missing.
+  # Every pull request: "build" and "Windows-App (Installer und portable Version)" are required
+  # checks. They come from the jobs "build-check" and "windows-check", which always run and report
+  # under these names, also when the app and the core did not change.
   pull_request:
   workflow_dispatch:
 
@@ -310,10 +311,9 @@ jobs:
           wait $!
 
   windows:
-    # In the push run of a working branch under another name: the required checks of a pull
-    # request ("build", "Windows-App ...") come only from its own run, never from a push run that
-    # skipped itself on the same commit.
-    name: ${{ (github.event_name == 'push' && github.ref_name != 'main' && github.ref_name != 'dev') && 'Windows-App (Push)' || 'Windows-App (Installer und portable Version)' }}
+    # The required check "Windows-App (Installer und portable Version)" is the job
+    # "windows-check" below, not this one.
+    name: Windows-App bauen
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: windows-latest
@@ -420,7 +420,8 @@ jobs:
           remote-dir: ${{ steps.dest.outputs.dir }}/download/
 
   build:
-    name: ${{ (github.event_name == 'push' && github.ref_name != 'main' && github.ref_name != 'dev') && 'build (Push)' || 'build' }}
+    # The required check "build" is the job "build-check" below, not this one.
+    name: Android-App bauen und testen
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
@@ -578,3 +579,39 @@ jobs:
     with:
       servers: true
       same-run: true
+
+  # The required checks. GitHub does not work out the name of a skipped job (it shows the raw
+  # expression), so the jobs that may be skipped have fixed names and these two always run.
+  # In the push run of a working branch they report under another name: the required checks of a
+  # pull request come only from its own run, never from a push run that skipped itself on the
+  # same commit. Passed means: the job ran successfully, or it was skipped (nothing it checks
+  # changed, or a push run next to an open pull request).
+  build-check:
+    name: ${{ (github.event_name == 'push' && github.ref_name != 'main' && github.ref_name != 'dev') && 'build (Push)' || 'build' }}
+    needs: [changes, build]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - env:
+          CHANGES: ${{ needs.changes.result }}
+          RESULT: ${{ needs.build.result }}
+        run: |
+          echo "Geänderte Bereiche: $CHANGES · Android-App bauen und testen: $RESULT"
+          [ "$CHANGES" = success ] && { [ "$RESULT" = success ] || [ "$RESULT" = skipped ]; }
+
+  windows-check:
+    name: ${{ (github.event_name == 'push' && github.ref_name != 'main' && github.ref_name != 'dev') && 'Windows-App (Push)' || 'Windows-App (Installer und portable Version)' }}
+    needs: [changes, windows]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - env:
+          CHANGES: ${{ needs.changes.result }}
+          RESULT: ${{ needs.windows.result }}
+        run: |
+          echo "Geänderte Bereiche: $CHANGES · Windows-App bauen: $RESULT"
+          [ "$CHANGES" = success ] && { [ "$RESULT" = success ] || [ "$RESULT" = skipped ]; }
