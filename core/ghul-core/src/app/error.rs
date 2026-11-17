@@ -85,6 +85,11 @@ pub enum GhulError {
     /// reset or an old copy put back). Nothing is written; `drive_accept_server_state` takes it.
     #[error("the GhulDrive index on the server is older than the one seen last")]
     DriveRolledBack,
+    /// The Drive index on the server only opens with a key of before the last change of the
+    /// protection (a backup put back, or written by someone with an older copy of the suite
+    /// file). Nothing is written; `drive_accept_server_state` takes it if the owner put it back.
+    #[error("the GhulDrive index on the server has a key of before the last change of the protection")]
+    DriveEarlierKey,
     /// B14: the link's server is no longer set up, its package could not be deleted: the link
     /// keeps working until it expires.
     #[error("the server of this link is no longer set up; the package could not be deleted")]

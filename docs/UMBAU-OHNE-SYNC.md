@@ -218,6 +218,7 @@ alten Schlüssel aus der Suite gelöscht.
 | Hat Stick, alten Code und altes Passwort | einen alten Stand mit altem Schutz anbieten | ihn auf einem Gerät mit neuerem Stand öffnen lassen (Schutz-Epoche, Sperre); an den Server |
 | Hat eine alte Suite-Datei (vor einer Schutzänderung) | die damaligen Inhalte lesen | sich am Server anmelden; den aktuellen Drive-Index öffnen; neue Drive-Dateien lesen |
 | Betreibt den Server | Blöcke löschen, einen alten Index zurückspielen, Freigaben stören | Dateien lesen; einen Index fälschen (authentisiert mit dem Drive-Schlüssel); einen alten Index unbemerkt unterschieben (Revision) |
+| Betreibt den Server und hat eine alte Kopie der Suite-Datei | einen Index unter dem alten Drive-Schlüssel ablegen | ihn unbemerkt unterschieben (eigene Warnung „Schlüssel von vor der Schutzänderung“, Übernahme nur nach Bestätigung) |
 
 ## 9. Umsetzung in Paketen (je ein Pull Request, Doku jeweils mit)
 

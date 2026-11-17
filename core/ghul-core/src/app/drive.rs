@@ -100,6 +100,14 @@ struct DriveSettings {
 /// How many earlier Drive keys stay for reading (backups of the server).
 const OLD_KEYS_KEPT: usize = 16;
 
+/// Keeps the newest [`OLD_KEYS_KEPT`] earlier keys; the others are wiped.
+fn trim_old_keys(d: &mut DriveSettings) {
+    for k in d.old_keys.iter_mut().skip(OLD_KEYS_KEPT) {
+        zeroize::Zeroize::zeroize(k.as_mut_slice());
+    }
+    d.old_keys.truncate(OLD_KEYS_KEPT);
+}
+
 impl Drop for DriveSettings {
     fn drop(&mut self) {
         zeroize::Zeroize::zeroize(&mut self.key);
@@ -734,7 +742,10 @@ impl GhulSuite {
         // An older state, none at all, a damaged index (only the copy before it opens) or one
         // under an earlier key (a backup of the server put back): the owner decides
         // (`drive_accept_server_state`), nothing is written over it meanwhile.
-        if loaded.from_bak || loaded.old_key || loaded.index.revision < seen || (!loaded.present && seen > 0) {
+        if loaded.old_key {
+            return Err(GhulError::DriveEarlierKey);
+        }
+        if loaded.from_bak || loaded.index.revision < seen || (!loaded.present && seen > 0) {
             return Err(GhulError::DriveRolledBack);
         }
         let index = loaded.index;
@@ -817,10 +828,10 @@ impl GhulSuite {
         OsRng.fill_bytes(&mut k);
         let before = std::mem::replace(&mut d.key, k);
         d.old_keys.insert(0, serde_bytes::ByteBuf::from(before));
-        for k in d.old_keys.iter_mut().skip(OLD_KEYS_KEPT) {
-            zeroize::Zeroize::zeroize(k.as_mut_slice());
+        // While locations still wait for the new key, no earlier key goes (their index needs it).
+        if !d.rekey_running {
+            trim_old_keys(&mut d);
         }
-        d.old_keys.truncate(OLD_KEYS_KEPT);
         d.rekey_running = true;
         d.rekeyed.clear();
         put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
@@ -896,6 +907,7 @@ impl GhulSuite {
             if d.rekey_running {
                 d.rekey_running = false;
                 d.rekeyed.clear();
+                trim_old_keys(&mut d);
                 put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
                 self.save_area_quietly(o, VaultKind::Drive)?;
             }

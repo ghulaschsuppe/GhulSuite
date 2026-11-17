@@ -202,10 +202,19 @@ impl Job {
             Ok(Some(had)) => {
                 let kept = without_lines(&had, &earlier_bodies);
                 if kept != had {
+                    // Rewritten, the file gets the server's default rights: only where they can
+                    // be set to 0600 (else sshd may ignore it, and both keys are out).
+                    if let Err(e) = fs.set_private(&path) {
+                        return or_wait(e, RemoveByHand);
+                    }
                     if let Err(e) = fs.write(&path, &kept) {
                         return or_wait(e, RemoveByHand);
                     }
-                    let _ = fs.set_private(&path);
+                    if fs.set_private(&path).is_err() {
+                        let _ = fs.write(&path, &had);
+                        let _ = fs.set_private(&path);
+                        return RemoveByHand;
+                    }
                     // The new key must still log in; otherwise the file goes back as it was.
                     match self.login(&self.new) {
                         Ok(_) => {}
@@ -334,8 +343,20 @@ impl GhulSuite {
         })?;
         let states: Vec<(String, KeyChangeState)> = jobs.iter().map(|j| (j.id.clone(), j.run())).collect();
         self.with_open(|o| {
-            if let Some(j) = jobs.first() {
-                self.note_key_change(o, &j.new_public, &states)?;
+            // Also without jobs: e.g. the only server still waiting was removed meanwhile.
+            let worked_with = match jobs.first() {
+                Some(j) => j.new_public.clone(),
+                None => {
+                    let current: Zeroizing<String> = Zeroizing::new(setting(&o.suite, SSH_KEY));
+                    if current.is_empty() {
+                        String::new()
+                    } else {
+                        public_key_of(&current)?
+                    }
+                }
+            };
+            self.note_key_change(o, &worked_with, &states)?;
+            if !jobs.is_empty() {
                 // The connection kept so far may still use an earlier key.
                 self.net.lock().unwrap_or_else(|p| p.into_inner()).conn = None;
             }

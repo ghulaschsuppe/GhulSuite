@@ -160,11 +160,30 @@ fn a_backup_from_before_the_change_can_be_taken_back() {
     upload(&s, None, "b.txt", b"B");
     // The hoster restores its backup.
     std::fs::write(server.join("drive/index.ghldrv"), &backup).unwrap();
-    assert!(matches!(names(&s), Err(GhulError::DriveRolledBack)));
+    // Told apart from an older state: it may also come from someone with an older copy.
+    assert!(matches!(names(&s), Err(GhulError::DriveEarlierKey)));
     s.drive_accept_server_state().unwrap();
     assert_eq!(names(&s).unwrap(), vec!["a.txt"]);
     upload(&s, None, "c.txt", b"C");
     assert_eq!(names(&s).unwrap(), vec!["a.txt", "c.txt"]);
+    let _ = std::fs::remove_dir_all(&server);
+}
+
+/// Many changes of the protection while a location is not reached: the key its index has stays
+/// (only once every location has the new key are the oldest ones dropped).
+#[test]
+fn many_changes_keep_the_key_a_waiting_location_needs() {
+    let d = Dirs::new("kc-many");
+    let s = d.suite();
+    s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "P")]), None, None, None).unwrap();
+    let server = local_drive("many");
+    attach(&s, &server);
+    upload(&s, None, "a.txt", b"A");
+    for i in 0..20 {
+        s.new_recovery_code(format!("Code {i}")).unwrap();
+    }
+    assert_eq!(names(&s).unwrap(), vec!["a.txt"]);
+    assert!(!s.key_change_continue().unwrap().running);
     let _ = std::fs::remove_dir_all(&server);
 }
 
@@ -192,6 +211,9 @@ fn adding_a_factor_starts_no_key_change() {
     let _ = std::fs::remove_dir_all(&server);
 }
 
+/// The tests that point the key change elsewhere run one after the other (one setting for all).
+static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Points the key change at another authorized_keys file for the test, and back.
 struct AuthKeysAt;
 
@@ -212,11 +234,41 @@ fn states(st: &super::super::keychange::KeyChangeStatus) -> Vec<KeyChangeState> 
     st.servers.iter().map(|s| s.state).collect()
 }
 
+/// A server still waiting is removed: the change ends anyway (the earlier keys go).
+#[test]
+fn sftp_key_change_ends_when_the_waiting_server_is_removed() {
+    let _one = ONE_AT_A_TIME.lock().unwrap_or_else(|p| p.into_inner());
+    use super::super::servers::ServerInput;
+    let Some((host, port, user, root, authkeys, hostkey)) = crate::net::tests::sftp_env() else { return };
+    let d = Dirs::new("kc-removed");
+    let s = d.suite();
+    s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "P")]), None, None, None).unwrap();
+    crate::net::tests::authorize_test_key(&authkeys, &s.ssh_public_key().unwrap());
+    let run = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+    let input = ServerInput { name: "S".into(), host, port, user, password: None, base: format!("{root}/kcr-{run}") };
+    let id = saved(s.save_server(input, Some(hostkey)).unwrap());
+    let elsewhere = format!("{root}/kcr-keys-{run}");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    {
+        let _at = AuthKeysAt::set(&elsewhere, "authorized_keys");
+        s.change_password("pw-123456".into(), "pw-neu-7890".into()).unwrap();
+        let st = s.key_change_continue().unwrap();
+        assert!(states(&st).iter().all(|x| *x == KeyChangeState::AddByHand), "{st:?}");
+    }
+    s.remove_server(id).unwrap();
+    let st = s.key_change_continue().unwrap();
+    assert!(!st.running, "{st:?}");
+    assert!(!s.key_change_status().unwrap().running);
+    let _ = std::fs::remove_dir_all(&elsewhere);
+    let _ = std::fs::remove_dir_all(format!("{root}/kcr-{run}"));
+}
+
 /// Against the SFTP test server: the new SSH key goes in, the earlier one out; checked both ways.
 /// Where the hoster keeps keys elsewhere (here: a file the server does not read), the user adds
 /// and removes them by hand and the app checks.
 #[test]
 fn sftp_key_change_swaps_the_ssh_key() {
+    let _one = ONE_AT_A_TIME.lock().unwrap_or_else(|p| p.into_inner());
     use super::super::servers::ServerInput;
     let Some((host, port, user, root, authkeys, hostkey)) = crate::net::tests::sftp_env() else { return };
     let (da, old) = (Dirs::new("kc-sftp"), Dirs::new("kc-sftp-old"));

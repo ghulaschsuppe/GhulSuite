@@ -1141,6 +1141,7 @@ private suspend fun describeText(e: Throwable): String {
         VaultErrorKind.CERT_UNTRUSTED -> getString(Res.string.err_cert_untrusted, e.detail)
         VaultErrorKind.SERVER_AUTH -> getString(Res.string.err_server_auth)
         VaultErrorKind.DRIVE_ROLLED_BACK -> getString(Res.string.err_drive_rolled_back)
+        VaultErrorKind.DRIVE_EARLIER_KEY -> getString(Res.string.err_drive_earlier_key)
         VaultErrorKind.SHARE_NOT_DELETED -> getString(Res.string.err_share_not_deleted)
         VaultErrorKind.PHP_NOT_EXECUTED -> getString(Res.string.err_php_not_executed)
         VaultErrorKind.NOT_CONFIGURED -> getString(Res.string.err_not_configured)

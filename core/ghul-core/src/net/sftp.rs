@@ -169,8 +169,6 @@ impl SftpFs {
         block_on(async { self.sftp.canonicalize(full).await.map_err(proto) }, TIMEOUT)
     }
 
-    /// Appends `line` to a text file (created with mode 600), without rewriting what is there.
-    /// Used for `~/.ssh/authorized_keys`, where losing existing lines must be impossible.
     /// Makes a file readable and writable only by the login (0600), as sshd's StrictModes
     /// expects for `authorized_keys`.
     pub fn set_private(&self, path: &str) -> NetResult<()> {
@@ -186,6 +184,8 @@ impl SftpFs {
         )
     }
 
+    /// Appends `line` to a text file (created with mode 600), without rewriting what is there.
+    /// Used for `~/.ssh/authorized_keys`, where losing existing lines must be impossible.
     pub fn append_line(&self, path: &str, line: &str) -> NetResult<()> {
         self.mkdir_all(parent(path))?;
         let full = self.full(path)?;

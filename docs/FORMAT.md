@@ -540,12 +540,15 @@ id    = hex(HMAC-SHA256(BIK_f, Klartext-Block))      <ab> = die ersten zwei Zeic
   fehlender werden nicht still übernommen (`DriveRolledBack`), der Nutzer entscheidet mit „Stand des Servers
   übernehmen“. Sind alle Speicherorte durch, endet der Wechsel (`rekey_running` falsch). Die früheren Schlüssel bleiben,
   damit eine zurückgespielte Sicherung des Servers lesbar bleibt: Ein Index, der nur mit einem früheren `DK` öffnet,
-  gilt als älterer Stand und wird nach Bestätigung mit dem aktuellen geschrieben. Eine ältere Kopie der Suite-Datei hat
+  wird nicht benutzt (`DriveEarlierKey`, eigene Warnung: er kann auch von jemandem mit einer älteren Kopie der
+  Suite-Datei stammen) und erst nach Bestätigung mit dem aktuellen geschrieben. Solange ein Speicherort noch wartet,
+  wird kein früherer Schlüssel verworfen. Eine ältere Kopie der Suite-Datei hat
   nur frühere Schlüssel und öffnet den aktuellen Index nicht.
   Zugleich bekommt die Suite einen neuen SSH-Schlüssel (`ssh_key`); der bisherige steht in `key_change.ssh_old`
   (Suite-Container), fertige Server in `key_change.done`. Je Server: mit dem neuen Schlüssel anmelden, sonst mit einem
   früheren und den neuen an `~/.ssh/authorized_keys` anhängen; dann die Zeilen der früheren entfernen (alle anderen
-  Zeilen bleiben Byte für Byte, Rechte 0600), prüfen, dass der neue weiter funktioniert (sonst wird die Datei
+  Zeilen bleiben Byte für Byte, Rechte 0600; lässt der Server das Setzen der Rechte nicht zu, wird nichts
+  umgeschrieben und der Nutzer entfernt den alten Schlüssel selbst), prüfen, dass der neue weiter funktioniert (sonst wird die Datei
   zurückgeschrieben), und prüfen, dass die früheren abgewiesen werden. Nur eine abgewiesene Anmeldung zählt; eine
   Zeitüberschreitung oder Verbindungsfehler heißt „später wieder versuchen“. Liest der Server die Datei nicht
   (Schlüssel im Webpanel des Anbieters), trägt der Nutzer sie dort ein bzw. entfernt sie, die App prüft. Bis zum

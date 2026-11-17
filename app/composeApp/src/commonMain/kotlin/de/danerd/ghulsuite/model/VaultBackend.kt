@@ -558,6 +558,8 @@ enum class VaultErrorKind {
     CERT_UNTRUSTED,
     SERVER_AUTH,
     DRIVE_ROLLED_BACK,
+    /** GhulDrive's index on the server has a key of before the last change of the protection. */
+    DRIVE_EARLIER_KEY,
     SHARE_NOT_DELETED,
     PHP_NOT_EXECUTED,
     NOT_CONFIGURED,
