@@ -1760,4 +1760,5 @@
     <string name="single_missing_save_as">The file is gone or cannot be read (moved, deleted, storage away?). It is written as soon as it is back; else save the vault as a new file.</string>
     <string name="single_pending_discard_missing">%1$s is not there now. If it is really gone, giving up loses this vault. Better save it as a new file.</string>
     <string name="single_pending_missing_retry">The file is not there or cannot be read now. Is the storage back? Then try again; otherwise save as a new file.</string>
+    <string name="single_pending_still_missing">Still not there. Is the storage back? Otherwise save as a new file.</string>
 </resources>

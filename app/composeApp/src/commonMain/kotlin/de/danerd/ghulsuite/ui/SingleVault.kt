@@ -386,7 +386,10 @@ fun PendingSingleWrites(state: AppState) {
         }
     }
     val stillNot = stringResource(Res.string.single_pending_failed)
+    val stillMissing = stringResource(Res.string.single_pending_still_missing)
     val p = pending.firstOrNull()
+    // A message belongs to the leftover it was about.
+    LaunchedEffect(p?.key) { error = null }
     val saveAs = rememberCreateSuiteFile { ref ->
         val key = p?.key
         if (ref != null && key != null) {
@@ -400,7 +403,9 @@ fun PendingSingleWrites(state: AppState) {
         state.run(onError = { error = it }, block = { backend.retrySingleWrite(p.key, mode) }) { r ->
             when (r) {
                 SingleSaveUi.SAVED -> { error = null; tick++ }
-                SingleSaveUi.CHANGED_ELSEWHERE, SingleSaveUi.MISSING -> tick++
+                SingleSaveUi.CHANGED_ELSEWHERE -> tick++
+                // Still not there: said, so the tap is not taken for nothing.
+                SingleSaveUi.MISSING -> { error = stillMissing; tick++ }
                 SingleSaveUi.FAILED -> { error = stillNot; tick++ }
             }
         }

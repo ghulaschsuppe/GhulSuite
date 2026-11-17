@@ -174,9 +174,9 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
 
     /** Written next to the file first and moved over it in one step: a pulled stick leaves the old file. */
     override suspend fun writeSuiteFile(ref: SuiteFileRef, data: ByteArray): Boolean = withContext(Dispatchers.IO) {
+        val target = File(ref.id)
+        val tmp = File(target.parentFile, target.name + ".ghltmp")
         runCatching {
-            val target = File(ref.id)
-            val tmp = File(target.parentFile, target.name + ".ghltmp")
             java.io.FileOutputStream(tmp).use { it.write(data); it.fd.sync() }
             try {
                 java.nio.file.Files.move(tmp.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE)
@@ -184,7 +184,11 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
                 java.nio.file.Files.move(tmp.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
             }
             target.readBytes().contentEquals(data)
-        }.getOrDefault(false)
+        }.getOrElse {
+            // No half-written temporary file next to the user's file.
+            tmp.delete()
+            false
+        }
     }
 
     /** Only where no file is: moved without replacing (a file that came back meanwhile stays). */

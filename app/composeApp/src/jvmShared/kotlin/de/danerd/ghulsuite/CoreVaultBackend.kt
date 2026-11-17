@@ -342,28 +342,33 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
      */
     private suspend fun writeBackLocked(dir: java.io.File, data: ByteArray, mode: SingleWrite): SingleSaveUi {
         val t = io { readTarget(dir) } ?: return SingleSaveUi.FAILED
-        var create = false
-        if (mode != SingleWrite.OVERWRITE && t.hash.isNotEmpty()) {
-            val now = readSuiteFile(t.ref)
-            when {
-                // Gone or unreadable (deleted, moved, storage away): only written anew when asked,
-                // and then only where nothing is (an unreadable file that exists stays).
-                now == null -> if (mode == SingleWrite.ANEW) create = true else return SingleSaveUi.MISSING
-                // What this vault wrote itself (its record was not updated then): no change elsewhere.
-                now.contentEquals(data) -> {}
-                // Back meanwhile, changed elsewhere: asked again, also when writing anew.
-                sha(now) != t.hash -> return SingleSaveUi.CHANGED_ELSEWHERE
-            }
+        val done = suspend {
+            io { writeTarget(dir, Target(t.ref, t.vault, sha(data))) }
+            SingleSaveUi.SAVED
         }
-        if (create) {
-            if (!createSuiteFile(t.ref, data)) {
-                return if (readSuiteFile(t.ref) != null) SingleSaveUi.CHANGED_ELSEWHERE else SingleSaveUi.FAILED
+        if (mode == SingleWrite.OVERWRITE) return if (writeSuiteFile(t.ref, data)) done() else SingleSaveUi.FAILED
+        val now = readSuiteFile(t.ref)
+        when {
+            // Gone or unreadable (deleted, moved, storage away): only made anew when asked, and
+            // then only where nothing is (a file that is there but unreadable stays).
+            now == null -> {
+                if (mode != SingleWrite.ANEW) return SingleSaveUi.MISSING
+                if (createSuiteFile(t.ref, data)) return done()
+                // Not made: what is there now decides.
+                val there = readSuiteFile(t.ref) ?: return SingleSaveUi.FAILED
+                return when {
+                    there.contentEquals(data) -> done()
+                    t.hash.isNotEmpty() && sha(there) == t.hash -> if (writeSuiteFile(t.ref, data)) done() else SingleSaveUi.FAILED
+                    else -> SingleSaveUi.CHANGED_ELSEWHERE
+                }
             }
-        } else if (!writeSuiteFile(t.ref, data)) {
-            return SingleSaveUi.FAILED
+            // It holds exactly this already (an earlier write whose record was not updated):
+            // nothing to write, a write would only risk the file.
+            now.contentEquals(data) -> return done()
+            // Changed elsewhere since this vault read or wrote it.
+            t.hash.isNotEmpty() && sha(now) != t.hash -> return SingleSaveUi.CHANGED_ELSEWHERE
         }
-        io { writeTarget(dir, Target(t.ref, t.vault, sha(data))) }
-        return SingleSaveUi.SAVED
+        return if (writeSuiteFile(t.ref, data)) done() else SingleSaveUi.FAILED
     }
 
     override suspend fun saveSingle(mode: SingleWrite): SingleSaveUi = singleWrite.withLock {
@@ -458,6 +463,11 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
                     return@mapNotNull v?.let { PendingSingleUi(dir.name, SuiteFileRef("", it), targetKnown = false) }
                 }
                 val now = kotlinx.coroutines.runBlocking { readSuiteFile(t.ref) }
+                // Already in the file (written, but its record was not updated): done.
+                if (now != null && pendingData(dir)?.contentEquals(now) == true) {
+                    dir.deleteRecursively()
+                    return@mapNotNull null
+                }
                 PendingSingleUi(
                     key = dir.name,
                     file = t.ref,

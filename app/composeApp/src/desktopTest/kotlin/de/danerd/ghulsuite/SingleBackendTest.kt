@@ -50,7 +50,10 @@ class SingleBackendTest {
             f.writeBytes(data)
             return true
         }
+        /** How often the file was written (a write that is not needed must not happen). */
+        @Volatile var writes = 0
         override suspend fun writeSuiteFile(ref: SuiteFileRef, data: ByteArray): Boolean {
+            writes++
             if (failWrites) return false
             File(ref.id).writeBytes(data)
             return true
@@ -371,6 +374,39 @@ class SingleBackendTest {
             assertTrue(p.targetKnown)
             assertEquals("D:\\unterlagen\\Privat.ghlpss", p.file.id)
             b.discardSingleWrite(p.key)
+        } finally {
+            runCatching { settle(dir) }
+            dir.deleteRecursively()
+        }
+    }
+
+    /** A file that already holds exactly this vault (written, record not updated) is not "changed elsewhere". */
+    @Test
+    fun aFileHoldingThisVaultIsNotChangedElsewhere() = runBlocking {
+        val dir = Files.createTempDirectory("ghul-single-own").toFile()
+        try {
+            val kf = generateKeyfile()
+            val target = File(dir, "Privat.ghlpss").apply { writeBytes(vaultFile(dir, kf)) }
+            val ref = SuiteFileRef(target.absolutePath, target.name)
+            val b = Backend(dir)
+            b.openSingle(ref, target.readBytes(), "Master Passwort!", null, kf) {}
+            b.renameVault(b.listVaults().single().id, "Schon drin")
+            // The write reached the file, its record did not (simulated).
+            target.writeBytes(b.singleVaultBytes())
+            val before = b.writes
+            assertEquals(SingleSaveUi.SAVED, b.saveSingle())
+            assertEquals(before, b.writes, "nothing written again")
+            assertEquals("Schon drin", nameIn(dir, target, kf))
+            // The same as a leftover: not offered at all.
+            b.renameVault(b.listVaults().single().id, "Liegt drin")
+            b.failWrites = true
+            b.lock()
+            waitUntil("offered") { b.pendingSingleWrites().size == 1 }
+            val key = b.pendingSingleWrites().single().key
+            val folder = File(File(dir, "single-vault"), key)
+            val vault = File(folder, "vault").listFiles()!!.first { it.extension == "ghlpss" }
+            target.writeBytes(vault.readBytes())
+            assertTrue(b.pendingSingleWrites().isEmpty(), "already in the file: done")
         } finally {
             runCatching { settle(dir) }
             dir.deleteRecursively()

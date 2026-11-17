@@ -1760,4 +1760,5 @@
     <string name="single_missing_save_as">Die Datei ist weg oder nicht lesbar (verschoben, gelöscht, Speicher weg?). Sobald sie wieder da ist, wird geschrieben; sonst den Tresor als neue Datei speichern.</string>
     <string name="single_pending_discard_missing">%1$s ist gerade nicht da. Ist sie wirklich weg, verliert Verwerfen diesen Tresor. Besser als neue Datei speichern.</string>
     <string name="single_pending_missing_retry">Die Datei ist gerade nicht da oder nicht lesbar. Ist der Speicher wieder da? Dann erneut versuchen, sonst als neue Datei speichern.</string>
+    <string name="single_pending_still_missing">Immer noch nicht da. Ist der Speicher wieder da? Sonst als neue Datei speichern.</string>
 </resources>
