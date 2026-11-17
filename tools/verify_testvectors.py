@@ -86,7 +86,7 @@ def parse_container(data: bytes) -> dict:
         elif tag == 0x0010:
             stype, slot_id = value[0], value[1:17]
             assert stype in (2, 4, 5), "version 3 only knows slot types 2, 4 and 5"
-            if stype in (1, 4):
+            if stype == 4:
                 rp_len = value[17]
                 rp_id = value[18 : 18 + rp_len].decode()
                 q = 18 + rp_len
@@ -96,25 +96,18 @@ def parse_container(data: bytes) -> dict:
                 prf_input, options = value[q : q + 32], value[q + 32]
                 assert options == 1
                 q += 33
-                pub = eph = None
-                if stype == 4:
-                    pub, eph = value[q : q + 32], value[q + 32 : q + 64]
-                    q += 64
+                pub, eph = value[q : q + 32], value[q + 32 : q + 64]
+                q += 64
                 nonce, ct = value[q : q + 24], value[q + 24 : q + 72]
                 assert len(value) == q + 72
                 c["slots"].append(("fido2", slot_id, rp_id, cred, prf_input, nonce, ct, pub, eph))
             elif stype == 2:
                 assert len(value) == 1 + 16 + 72
                 c["slots"].append(("recovery", slot_id, value[17:41], value[41:89]))
-            elif stype == 3:
-                assert len(value) == 1 + 16 + 8 + 72
-                c["slots"].append(("keyfile", slot_id, value[17:25], value[25:49], value[49:97], None, None))
-            elif stype == 5:
+            else:
                 assert len(value) == 1 + 16 + 8 + 64 + 72
                 pub, eph = value[25:57], value[57:89]
                 c["slots"].append(("keyfile", slot_id, value[17:25], value[89:113], value[113:161], pub, eph))
-            else:
-                raise ValueError("unknown slot type")
         elif tag == 0x0020:
             c["vmk"] = (value[:24], value[24:72])
         else:
@@ -156,7 +149,7 @@ def verify(v: dict) -> None:
 
     # Second factor: FIDO2 slot or key file slot -> factor secret S
     ftype = v["factor"]["type"]
-    if ftype in ("fido2", "fido2-x25519"):
+    if ftype == "fido2-x25519":
         fido = next(x for x in c["slots"] if x[0] == "fido2")
         _, slot_id, rp_id, cred, prf_input, nonce, ct, pub, eph = fido
         assert rp_id == v["factor"]["rp_id"] and cred.hex() == v["factor"]["credential_id"]
@@ -164,16 +157,10 @@ def verify(v: dict) -> None:
         assert hmac_salt.hex() == v["factor"]["hmac_salt"], "hmac salt"
         hmac_output = h(v["factor"]["hmac_output"])
         aad = b"ghul/v1/factor" + sid + slot_id
-        if ftype == "fido2":
-            assert pub is None
-            slot_key = hkdf(hmac_output, b"ghul/v1/slot/fido2" + slot_id)
-            assert slot_key.hex() == v["factor"]["slot_key"]
-            s = aead_open(slot_key, nonce, ct, aad)
-        else:
-            seed = hkdf(hmac_output, b"ghul/v2/slot/fido2-x25519" + slot_id)
-            s = x25519_open(seed, slot_id, pub, eph, nonce, ct, aad, v)
+        seed = hkdf(hmac_output, b"ghul/v2/slot/fido2-x25519" + slot_id)
+        s = x25519_open(seed, slot_id, pub, eph, nonce, ct, aad, v)
     else:
-        assert ftype in ("keyfile", "keyfile-x25519")
+        assert ftype == "keyfile-x25519"
         kf = h(v["keyfile"])
         assert len(kf) == 46 and kf[:8] == b"GHULKEY\x00" and kf[8:10] == b"\x01\x00"
         assert hashlib.sha256(kf[:42]).digest()[:4] == kf[42:46]
@@ -182,14 +169,8 @@ def verify(v: dict) -> None:
         assert hashlib.sha256(b"ghul/v1/keyfile-id" + secret).digest()[:8] == keyfile_id
         assert keyfile_id.hex() == v["factor"]["keyfile_id"]
         aad = b"ghul/v1/factor" + sid + slot_id
-        if ftype == "keyfile":
-            assert pub is None
-            slot_key = hkdf(secret, b"ghul/v1/slot/keyfile" + slot_id)
-            assert slot_key.hex() == v["factor"]["slot_key"]
-            s = aead_open(slot_key, nonce, ct, aad)
-        else:
-            seed = hkdf(secret, b"ghul/v2/slot/keyfile-x25519" + slot_id)
-            s = x25519_open(seed, slot_id, pub, eph, nonce, ct, aad, v)
+        seed = hkdf(secret, b"ghul/v2/slot/keyfile-x25519" + slot_id)
+        s = x25519_open(seed, slot_id, pub, eph, nonce, ct, aad, v)
     assert s.hex() == v["factor_secret"], "factor secret"
     assert c["flags"] == 0
 
@@ -234,15 +215,12 @@ def verify(v: dict) -> None:
 
 
 def main() -> int:
-    total = 0
-    for version in (3,):
-        path = Path(__file__).resolve().parent.parent / "docs" / "testvectors" / f"container-v{version}.json"
-        vectors = json.loads(path.read_text())["vectors"]
-        for v in vectors:
-            assert struct.unpack_from("<H", bytes.fromhex(v["file"]), 8)[0] == version
-            verify(v)
-        total += len(vectors)
-    print(f"{total} test vectors verified independently")
+    path = Path(__file__).resolve().parent.parent / "docs" / "testvectors" / "container-v3.json"
+    vectors = json.loads(path.read_text())["vectors"]
+    for v in vectors:
+        assert struct.unpack_from("<H", bytes.fromhex(v["file"]), 8)[0] == 3
+        verify(v)
+    print(f"{len(vectors)} test vectors verified independently")
     return 0
 
 

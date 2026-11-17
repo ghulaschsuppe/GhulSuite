@@ -38,9 +38,6 @@ const STATE_KEY: &str = "archive_state";
 const SEEN_FILE: &str = "archive-seen.json";
 /// Marks unsaved changes in the working copy (in the device's own folder).
 const UNSAVED_FILE: &str = "archive-unsaved";
-/// Left by earlier development versions (a copy of the working copy before opening a file,
-/// without a header, so it could not be opened): removed whenever a suite object is made.
-const BEFORE_FILE: &str = "before-open.ghlzip";
 /// The message for anything that is no `.ghlzip` (translated by the app).
 const NOT_A_SUITE_FILE: &str = "not a GhulSuite file";
 /// Largest `.ghlzip` read (counted while reading, not taken from the ZIP).
@@ -71,10 +68,8 @@ struct ArchiveHeader {
     time: i64,
     device: String,
     /// The states this one was carried on from, the latest first (at most [`MAX_ANCESTORS`]).
-    #[serde(default)]
     ancestors: Vec<String>,
     /// `ancestors` reaches back to the first save: a state not in it is no ancestor.
-    #[serde(default)]
     complete: bool,
 }
 
@@ -84,13 +79,10 @@ struct StateRef {
     state: String,
     counter: u64,
     /// The state before (still in the file when the last built one was not written).
-    #[serde(default)]
     previous: String,
     /// The states this one was carried on from, the latest first.
-    #[serde(default)]
     ancestors: Vec<String>,
     /// See [`ArchiveHeader::complete`].
-    #[serde(default)]
     complete: bool,
 }
 
@@ -101,12 +93,9 @@ struct Seen {
     counter: u64,
     epoch: u64,
     /// The states the seen one was carried on from (see [`ArchiveHeader::ancestors`]).
-    #[serde(default)]
     ancestors: Vec<String>,
-    #[serde(default)]
     complete: bool,
-    /// The counter of `state` (`counter` is the highest one seen; 0: as `counter`).
-    #[serde(default)]
+    /// The counter of `state` (`counter` is the highest one seen).
     at: u64,
 }
 
@@ -373,11 +362,6 @@ impl GhulSuite {
         }
     }
 
-    /// Removes the copy earlier development versions left (see [`BEFORE_FILE`]).
-    pub(super) fn forget_before_open(&self) {
-        let _ = std::fs::remove_file(self.local_dir.join(BEFORE_FILE));
-    }
-
     pub(super) fn clear_unsaved(&self) {
         let _ = std::fs::remove_file(self.local_dir.join(UNSAVED_FILE));
     }
@@ -414,8 +398,7 @@ impl GhulSuite {
         if seen.ancestors.contains(&header.state) {
             return Ok(ArchiveRelation::Older);
         }
-        // The counter of the state this device has (files of older versions: the highest seen).
-        let at = if seen.at > 0 { seen.at } else { seen.counter };
+        let at = seen.at;
         // Neither, and the file's lineage is complete: it was not carried on from this state.
         if header.complete {
             return Ok(if seen.complete || header.counter >= at {
@@ -424,7 +407,7 @@ impl GhulSuite {
                 ArchiveRelation::Older
             });
         }
-        // Files without a complete lineage (older app versions): by the counter.
+        // A lineage that had to be cut off (more than MAX_ANCESTORS saves): by the counter.
         Ok(if header.counter < at {
             ArchiveRelation::Older
         } else if header.counter == at || (header.counter == at + 1 && header.previous != seen.state) {
@@ -480,7 +463,6 @@ impl GhulSuite {
                 }
             }
         }
-        self.forget_before_open();
         let new: Vec<(String, Vec<u8>)> = files.iter().filter(|(n, _)| n != HEADER_FILE).cloned().collect();
         if let Err(e) = self.put_files(&new, &before) {
             // Half replaced is neither state: back to the one before.

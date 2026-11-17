@@ -474,8 +474,7 @@ data class TotpInputUi(
 
 enum class SlotType { SECURITY_KEY, KEYFILE, RECOVERY_CODE }
 
-/** [needsUpdate]: added with an older app version; it gets the current protection when it is used once. */
-data class SlotUi(val id: String, val type: SlotType, val label: String, val created: Long, val needsUpdate: Boolean = false)
+data class SlotUi(val id: String, val type: SlotType, val label: String, val created: Long)
 
 data class PasswordOptionsUi(
     val length: Int = 20,

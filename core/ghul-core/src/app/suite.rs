@@ -187,9 +187,6 @@ pub struct SlotInfo {
     pub kind: SlotKind,
     pub label: String,
     pub created: i64,
-    /// A key or key file of an older app version: it gets the current protection when it is
-    /// used to unlock once. Until then, removing another key cannot renew the factor secret.
-    pub needs_update: bool,
 }
 
 #[derive(uniffi::Record, Clone, Debug, PartialEq)]
@@ -486,16 +483,12 @@ impl Open {
     /// B1: after a change of the protection, older copies of the files (backups, `.bak`, copies
     /// of the suite file) must not open what is written from now on. Every file gets a new container key;
     /// with `factor`, the suite also gets a new factor secret, wrapped for every remaining key
-    /// and key file through their public keys. Returns whether the factor secret was renewed
-    /// (not while a slot of format version 1 remains).
-    pub(super) fn renew_keys(&mut self, factor: bool, now: i64) -> Result<bool> {
+    /// and key file through their public keys.
+    pub(super) fn renew_keys(&mut self, factor: bool, now: i64) -> Result<()> {
         let pk = PasswordKey::from_bytes(*self.password_key.expose());
-        let mut renewed = false;
         if factor {
-            if let Some((s, slots)) = self.suite.renewed_factor(&mut OsRng)? {
-                self.suite.replace_factor(s, slots, &pk, &mut OsRng)?;
-                renewed = true;
-            }
+            let (s, slots) = self.suite.renewed_factor(&mut OsRng)?;
+            self.suite.replace_factor(s, slots, &pk, &mut OsRng)?;
         }
         // The vaults take over the suite's slots, factor secret and code ...
         self.harmonize(now)?;
@@ -503,7 +496,7 @@ impl Open {
         for (c, _) in self.containers_mut() {
             c.renew_container_key(&pk, &mut OsRng)?;
         }
-        Ok(renewed)
+        Ok(())
     }
 
     /// Brings vaults whose slots differ from the suite's in line with them.
@@ -1029,7 +1022,7 @@ impl GhulSuite {
     /// (quick unlock).
     #[uniffi::constructor]
     pub fn new(storage: Arc<dyn VaultStorage>, local_dir: String) -> Arc<Self> {
-        let s = Arc::new(GhulSuite {
+        Arc::new(GhulSuite {
             storage,
             local_dir: PathBuf::from(local_dir),
             open: Mutex::new(None),
@@ -1039,10 +1032,7 @@ impl GhulSuite {
             changes: std::sync::atomic::AtomicU64::new(0),
             pending_gen: std::sync::atomic::AtomicU64::new(0),
             wiped: AtomicBool::new(false),
-        });
-        // A copy earlier development versions left would still open with old passwords.
-        s.forget_before_open();
-        s
+        })
     }
 
     /// Whether the folder contains a suite (settings file or any vault file).
@@ -1271,7 +1261,6 @@ impl GhulSuite {
                 o.suite.factor_secret().expose(),
                 pin.as_deref().map(|p| p.as_str()),
                 now_ms(),
-                None,
             )?;
             Ok(qk.to_vec())
         })
@@ -1301,31 +1290,13 @@ impl GhulSuite {
             now_ms(),
         )?;
         let pk = PasswordKey::from_bytes(*secret.password_key);
-        let opened = if secret.old_version {
-            locked.unlock_with_vmk(&secret.secret)
-        } else {
-            locked.unlock(&pk, &FactorSecret::from_bytes(*secret.secret))
-        };
-        let suite = match opened {
+        let suite = match locked.unlock(&pk, &FactorSecret::from_bytes(*secret.factor_secret)) {
             Ok(s) => s,
             Err(_) => {
                 super::quick::delete_all(&self.local_dir);
                 return Err(GhulError::QuickUnlockUnavailable);
             }
         };
-        if secret.old_version {
-            // Rewrite as version 2 with the same quick key (the platform keeps protecting it).
-            let _ = super::quick::create(
-                &self.local_dir,
-                &name,
-                &suite.header().suite_id,
-                pk.expose(),
-                suite.factor_secret().expose(),
-                pin.as_deref().map(|p| p.as_str()),
-                secret.created,
-                Some(&quick_key),
-            );
-        }
         self.finish_unlock(pk, suite, false)
     }
 
@@ -1856,7 +1827,6 @@ impl GhulSuite {
                         },
                         label,
                         created,
-                        needs_update: s.is_legacy(),
                     }
                 })
                 .collect())

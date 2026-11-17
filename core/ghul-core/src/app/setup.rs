@@ -55,7 +55,7 @@ fn normalise(s: &str) -> String {
 impl GhulSuite {
     pub(super) fn recovery_confirmed_in(o: &Open) -> bool {
         if !o.suite.payload.settings.contains_key(CONFIRMED_KEY) {
-            // Suites from before this check.
+            // Nothing to confirm: a vault opened on its own carries no code of this device.
             return true;
         }
         let s: String = setting(&o.suite, CONFIRMED_KEY);

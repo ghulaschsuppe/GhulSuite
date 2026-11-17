@@ -45,7 +45,7 @@ pub struct AttachmentInfo {
 #[derive(uniffi::Record, Clone, Debug, PartialEq)]
 pub struct EntryExtras {
     pub favorite: bool,
-    /// Unix milliseconds, 0 if unknown (entries from older versions).
+    /// Unix milliseconds, 0 if unknown.
     pub created: i64,
     /// Newest first.
     pub history: Vec<PasswordHistoryItem>,

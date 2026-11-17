@@ -60,8 +60,7 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "?"
 
     init {
-        // Test data of versions before 0.3 used an older format; it is not migrated.
-        File(context.filesDir, "vault").deleteRecursively()
+        // Decrypted copies handed to other apps do not outlive the app (also after a crash).
         File(context.cacheDir, "shared").deleteRecursively()
     }
 

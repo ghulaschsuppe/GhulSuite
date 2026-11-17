@@ -14,7 +14,7 @@
 //! The recovery code opens the container key (reading without the password); writing a file that
 //! another device accepts needs the write key, so the password as well (H0).
 //!
-//! Slots of format version 2 hold an X25519 public key per security key or key file: the
+//! Security key and key file slots hold an X25519 public key: the
 //! private key is derived from the key's hmac-secret output (or the key file), so the app can
 //! wrap a new `S` for every slot without touching the keys (`wrap_to_public`).
 
@@ -32,8 +32,6 @@ use super::format::{KdfParams, Wrapped, NONCE_LEN, TAG_LEN};
 pub const INFO_KEK: &[u8] = b"ghul/v1/kek";
 pub const INFO_PAYLOAD: &[u8] = b"ghul/v1/payload";
 pub const INFO_AUTH: &[u8] = b"ghul/v3/auth";
-pub const INFO_SLOT_FIDO2: &[u8] = b"ghul/v1/slot/fido2";
-pub const INFO_SLOT_KEYFILE: &[u8] = b"ghul/v1/slot/keyfile";
 pub const INFO_SLOT_RECOVERY: &[u8] = b"ghul/v1/slot/recovery";
 pub const AAD_VMK: &[u8] = b"ghul/v1/vmk";
 pub const AAD_FACTOR: &[u8] = b"ghul/v1/factor";
@@ -132,10 +130,6 @@ pub fn payload_key(vmk: &Key32, container_id: &[u8; 16]) -> Key32 {
     hkdf(vmk.as_ref(), &[INFO_PAYLOAD, container_id])
 }
 
-pub fn fido2_slot_key(hmac_output: &[u8; 32], slot_id: &[u8; 16]) -> Key32 {
-    hkdf(hmac_output, &[INFO_SLOT_FIDO2, slot_id])
-}
-
 pub fn recovery_slot_key(code: &[u8; 32], slot_id: &[u8; 16], container_id: &[u8; 16]) -> Key32 {
     hkdf(code, &[INFO_SLOT_RECOVERY, slot_id, container_id])
 }
@@ -144,11 +138,7 @@ pub fn recovery_aad(container_id: &[u8; 16], slot_id: &[u8; 16]) -> Vec<u8> {
     [AAD_RECOVERY, container_id, slot_id].concat()
 }
 
-pub fn keyfile_slot_key(keyfile_secret: &[u8; 32], slot_id: &[u8; 16]) -> Key32 {
-    hkdf(keyfile_secret, &[INFO_SLOT_KEYFILE, slot_id])
-}
-
-/// X25519 private key of a version-2 slot, derived from the hmac-secret output or key file
+/// X25519 private key of a security key or key file slot, derived from the hmac-secret output or key file
 /// secret (`info` = [`INFO_X25519_FIDO2`] or [`INFO_X25519_KEYFILE`]). Clamped as in RFC 7748.
 pub fn slot_private_key(ikm: &[u8; 32], info: &[u8], slot_id: &[u8; 16]) -> x25519_dalek::StaticSecret {
     x25519_dalek::StaticSecret::from(*hkdf(ikm, &[info, slot_id]))

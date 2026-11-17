@@ -255,6 +255,39 @@ fn rejects_tampered_kind_and_versions() {
     assert!(LockedContainer::parse(b"").is_err());
 }
 
+/// Slot types 1 and 3 (a key or key file without a public key) do not exist in this format.
+#[test]
+fn slots_without_a_public_key_are_unknown() {
+    let mut r = rng(16);
+    let s = setup(&mut r, "pw");
+    let kf = s.keys.keyfile_slot(&Keyfile::generate(&mut r), &mut r);
+    let mut c = s.keys.create_container(ContainerKind::Pass, vec![s.fido_slot.clone(), kf], &mut r).unwrap();
+    let file = c.seal(&mut r).unwrap();
+    // The type byte of every slot record (tag 0x0010) in the header.
+    let header_len = u32::from_le_bytes(file[10..14].try_into().unwrap()) as usize;
+    let mut at = 14;
+    let mut types = Vec::new();
+    while at < 14 + header_len {
+        let tag = u16::from_le_bytes([file[at], file[at + 1]]);
+        let len = u32::from_le_bytes(file[at + 2..at + 6].try_into().unwrap()) as usize;
+        if tag == 0x0010 {
+            types.push(at + 6);
+        }
+        at += 6 + len;
+    }
+    assert_eq!(types.iter().map(|&t| file[t]).collect::<Vec<_>>(), vec![4, 5]);
+    for (old, new) in [(4u8, 1u8), (5, 3)] {
+        for &t in &types {
+            if file[t] == old {
+                let mut changed = file.clone();
+                changed[t] = new;
+                let e = LockedContainer::parse(&changed).err();
+                assert!(matches!(e, Some(VaultError::Format(ref m)) if m.contains("unknown slot type")), "{e:?}");
+            }
+        }
+    }
+}
+
 /// Every modification of a sealed file must be rejected, and nothing may panic.
 #[test]
 fn mutation_fuzzing() {
@@ -374,8 +407,8 @@ fn unhex(s: &str) -> Vec<u8> {
 /// The intermediate values of a public-key slot (type 4 or 5) for the vectors.
 fn public_slot_json(ikm: &[u8; 32], info: &[u8], slot: &Slot) -> Json {
     let (slot_id, public) = match slot {
-        Slot::Fido2(f) => (f.slot_id, f.public.as_ref().unwrap()),
-        Slot::Keyfile(k) => (k.slot_id, k.public.as_ref().unwrap()),
+        Slot::Fido2(f) => (f.slot_id, &f.public),
+        Slot::Keyfile(k) => (k.slot_id, &k.public),
         Slot::Recovery(_) => unreachable!(),
     };
     let seed = hkdf(ikm, &[info, &slot_id]);

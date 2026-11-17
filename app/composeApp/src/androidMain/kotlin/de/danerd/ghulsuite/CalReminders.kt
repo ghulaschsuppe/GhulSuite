@@ -133,7 +133,6 @@ class CalReminders(private val context: Context) {
         // B4: new IDs, private on the lock screen also with Android's default settings.
         const val CHANNEL = "cal_private"
         const val CHANNEL_SILENT = "cal_silent_private"
-        val OLD_CHANNELS = listOf("cal", "cal_silent")
     }
 }
 
@@ -155,7 +154,6 @@ fun deviceLocked(ctx: Context): Boolean =
 /** Posts a reminder: full text while unlocked, only the chosen lock screen detail while locked. */
 fun postCalNotification(ctx: Context, a: CalAlarmUi, sound: Boolean, index: Int) {
     val nm = ctx.getSystemService(NotificationManager::class.java)
-    CalReminders.OLD_CHANNELS.forEach { nm.deleteNotificationChannel(it) }
     nm.createNotificationChannel(
         NotificationChannel(CalReminders.CHANNEL, ctx.getString(R.string.cal_channel), NotificationManager.IMPORTANCE_HIGH)
     )

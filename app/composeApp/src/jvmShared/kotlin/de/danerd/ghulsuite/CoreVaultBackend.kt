@@ -730,7 +730,6 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
                 },
                 it.label,
                 it.created,
-                it.needsUpdate,
             )
         }
     }

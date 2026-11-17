@@ -128,7 +128,6 @@ fn a_removed_key_file_with_an_old_copy_does_not_open_the_current_files() {
     s.add_keyfile(kf2.clone(), "Verloren".into()).unwrap();
     s.save_entry(vault_id(&s, "Privat"), login("Bank", "u", "alt")).unwrap();
     let old = files(&d);
-    assert!(s.slots().unwrap().iter().all(|x| !x.needs_update));
 
     // The second key file got lost: it is removed.
     s.remove_slot(slot_id(&s, "Verloren")).unwrap();

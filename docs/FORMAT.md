@@ -56,7 +56,7 @@ Offset        Länge  Feld
 ```
 
 - Maximale Dateigröße: 256 MiB.
-- Leser akzeptieren nur `format_version` 3 und lehnen alles andere ab (ältere Versionen tragen kein Schreibsiegel).
+- Leser akzeptieren nur `format_version` 3 und lehnen alles andere ab.
 - **AAD des Inhalts** = Bytes `0 … 14+H−1` (Magic, Version, Header-Länge und Header). Damit sind auch Dateityp
   und Version geschützt: Ein `.ghlpss`, dessen Magic auf `GHULTOTP` geändert wurde, lässt sich nicht mehr öffnen.
 
@@ -103,8 +103,7 @@ slot_type (u8) ‖ slot_id[16] ‖ typabhängige Felder
 | 4 | FIDO2 `hmac-secret` mit öffentlichem Schlüssel | Faktor-Geheimnis `S` | siehe unten |
 | 5 | Schlüsseldatei mit öffentlichem Schlüssel | Faktor-Geheimnis `S` | `keyfile_id[8] ‖ public_key[32] ‖ ephemeral[32] ‖ nonce[24] ‖ wrapped_S[48]` |
 
-Die Typen 1 und 3 (Key und Schlüsseldatei ohne öffentlichen Schlüssel) gab es in älteren Versionen; eine Datei mit
-ihnen wird abgelehnt.
+Andere Slot-Typen werden abgelehnt.
 
 **Typ 4, FIDO2 `hmac-secret`:**
 

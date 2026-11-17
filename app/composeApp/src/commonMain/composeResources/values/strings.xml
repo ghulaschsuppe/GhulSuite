@@ -278,7 +278,6 @@
     <string name="set_quick_pin">App PIN</string>
     <string name="set_quick_validity">Valid for</string>
     <string name="set_remove_text">“%1$s” will no longer open anything you save from now on, not even together with an old copy of the suite file. Your other keys, key files and the recovery sheet stay valid.</string>
-    <string name="slot_needs_update">unlock with it once to bring it up to the current protection</string>
     <string name="set_remove_title">Remove access?</string>
     <string name="set_screenshots">Allow screenshots</string>
     <string name="set_screenshots_warning">Screenshots and screen recordings may then contain your passwords and codes, and the app is visible in the app switcher. Only allow this if you really need it.</string>

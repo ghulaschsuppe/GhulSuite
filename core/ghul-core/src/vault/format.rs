@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Binary layout of GhulSuite containers (format versions 1 and 2). See `docs/FORMAT.md`.
-//! Version 2 adds the slot types 4 and 5 (security key and key file with an X25519 public key);
-//! the app writes version 2 and still reads version 1.
+//! Binary layout of GhulSuite containers (format version 3). See `docs/FORMAT.md`.
+//! Only the current version is read; every file carries the write tag.
 //!
 //! ```text
 //! magic[8] | version u16 | header_len u32 | header[header_len] | payload_nonce[24] | payload_ciphertext
@@ -12,8 +11,6 @@
 use super::error::{Result, VaultError};
 
 pub const FORMAT_VERSION: u16 = 3;
-/// Oldest version still read: only the current one (every file carries the write tag).
-pub const MIN_FORMAT_VERSION: u16 = 3;
 /// Length of the write tag at the end of a file (HMAC-SHA256, see `keys::auth_key`).
 pub const AUTH_LEN: usize = 32;
 pub const PREFIX_LEN: usize = 14;
@@ -37,9 +34,7 @@ pub const MAX_PARALLELISM: u32 = 16;
 pub const KDF_ARGON2ID_V13: u8 = 1;
 pub const CIPHER_XCHACHA20_POLY1305: u8 = 1;
 
-pub const SLOT_FIDO2_HMAC_SECRET: u8 = 1;
 pub const SLOT_RECOVERY_CODE: u8 = 2;
-pub const SLOT_KEYFILE: u8 = 3;
 pub const SLOT_FIDO2_X25519: u8 = 4;
 pub const SLOT_KEYFILE_X25519: u8 = 5;
 pub const SLOT_OPTION_UV_REQUIRED: u8 = 0x01;
@@ -137,7 +132,8 @@ pub struct Wrapped {
     pub ciphertext: [u8; 32 + TAG_LEN],
 }
 
-/// The public key of a version-2 slot and the ephemeral key of its current wrapping.
+/// The public key of a security key or key file slot and the ephemeral key of its current
+/// wrapping.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PublicWrap {
     pub public_key: [u8; 32],
@@ -152,14 +148,13 @@ pub struct Fido2Slot {
     /// PRF input; the hmac-secret salt is `SHA-256("WebAuthn PRF" || 0x00 || prf_input)`.
     pub prf_input: [u8; 32],
     pub uv_required: bool,
-    /// Set for slot type 4 (the factor secret is wrapped to this public key); `None` for the
-    /// older type 1.
-    pub public: Option<PublicWrap>,
+    /// The factor secret is wrapped to this public key.
+    pub public: PublicWrap,
     pub wrapped: Wrapped,
 }
 
 /// Recovery code slot: wraps the container key (VMK) directly, so the code alone opens the
-/// container (and, in the suite, the keyring with all vault keys).
+/// container.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RecoverySlot {
     pub slot_id: [u8; 16],
@@ -172,8 +167,8 @@ pub struct RecoverySlot {
 pub struct KeyfileSlot {
     pub slot_id: [u8; 16],
     pub keyfile_id: [u8; 8],
-    /// Set for slot type 5; `None` for the older type 3.
-    pub public: Option<PublicWrap>,
+    /// The factor secret is wrapped to this public key.
+    pub public: PublicWrap,
     pub wrapped: Wrapped,
 }
 
@@ -198,16 +193,10 @@ impl Slot {
         !matches!(self, Slot::Recovery(_))
     }
 
-    /// A security key or key file slot of version 1 (no public key): the app cannot give it a
-    /// new factor secret until the key or key file is used once.
-    pub fn is_legacy(&self) -> bool {
-        matches!(self, Slot::Fido2(Fido2Slot { public: None, .. }) | Slot::Keyfile(KeyfileSlot { public: None, .. }))
-    }
-
     fn encode(&self, out: &mut Vec<u8>) {
         match self {
             Slot::Fido2(s) => {
-                out.push(if s.public.is_some() { SLOT_FIDO2_X25519 } else { SLOT_FIDO2_HMAC_SECRET });
+                out.push(SLOT_FIDO2_X25519);
                 out.extend_from_slice(&s.slot_id);
                 out.push(s.rp_id.len() as u8);
                 out.extend_from_slice(s.rp_id.as_bytes());
@@ -224,7 +213,7 @@ impl Slot {
                 encode_wrapped(&s.wrapped, out);
             }
             Slot::Keyfile(s) => {
-                out.push(if s.public.is_some() { SLOT_KEYFILE_X25519 } else { SLOT_KEYFILE });
+                out.push(SLOT_KEYFILE_X25519);
                 out.extend_from_slice(&s.slot_id);
                 out.extend_from_slice(&s.keyfile_id);
                 encode_public(&s.public, out);
@@ -236,7 +225,7 @@ impl Slot {
     fn parse(value: &[u8]) -> Result<Slot> {
         let mut r = Reader::new(value);
         let slot = match r.u8()? {
-            t @ (SLOT_FIDO2_HMAC_SECRET | SLOT_FIDO2_X25519) => {
+            SLOT_FIDO2_X25519 => {
                 let slot_id = r.array::<16>()?;
                 let rp_len = r.u8()? as usize;
                 if rp_len == 0 {
@@ -258,7 +247,7 @@ impl Slot {
                 if options & SLOT_OPTION_UV_REQUIRED == 0 {
                     return Err(VaultError::format("FIDO2 slots without PIN verification are not allowed"));
                 }
-                let public = if t == SLOT_FIDO2_X25519 { Some(parse_public(&mut r)?) } else { None };
+                let public = parse_public(&mut r)?;
                 let wrapped = parse_wrapped(&mut r)?;
                 Slot::Fido2(Fido2Slot { slot_id, rp_id, credential_id, prf_input, uv_required: true, public, wrapped })
             }
@@ -267,10 +256,10 @@ impl Slot {
                 let wrapped = parse_wrapped(&mut r)?;
                 Slot::Recovery(RecoverySlot { slot_id, wrapped })
             }
-            t @ (SLOT_KEYFILE | SLOT_KEYFILE_X25519) => {
+            SLOT_KEYFILE_X25519 => {
                 let slot_id = r.array::<16>()?;
                 let keyfile_id = r.array::<8>()?;
-                let public = if t == SLOT_KEYFILE_X25519 { Some(parse_public(&mut r)?) } else { None };
+                let public = parse_public(&mut r)?;
                 let wrapped = parse_wrapped(&mut r)?;
                 Slot::Keyfile(KeyfileSlot { slot_id, keyfile_id, public, wrapped })
             }
@@ -281,11 +270,9 @@ impl Slot {
     }
 }
 
-fn encode_public(p: &Option<PublicWrap>, out: &mut Vec<u8>) {
-    if let Some(p) = p {
-        out.extend_from_slice(&p.public_key);
-        out.extend_from_slice(&p.ephemeral);
-    }
+fn encode_public(p: &PublicWrap, out: &mut Vec<u8>) {
+    out.extend_from_slice(&p.public_key);
+    out.extend_from_slice(&p.ephemeral);
 }
 
 fn parse_public(r: &mut Reader<'_>) -> Result<PublicWrap> {
@@ -337,13 +324,6 @@ impl Header {
             return Err(VaultError::format("no slot provides the factor secret"));
         }
         Ok(())
-    }
-
-    /// Whether the header has slots of the first format (security keys and key files without a
-    /// public key). They are no longer accepted: the app must be able to give every slot a new
-    /// factor secret without a touch.
-    pub fn has_legacy_slots(&self) -> bool {
-        self.slots.iter().any(Slot::is_legacy)
     }
 
     /// Encodes the TLV records in canonical order.
@@ -487,7 +467,7 @@ pub fn split_file(data: &[u8]) -> Result<FileParts<'_>> {
         }
     })?;
     let version = u16::from_le_bytes([data[8], data[9]]);
-    if !(MIN_FORMAT_VERSION..=FORMAT_VERSION).contains(&version) {
+    if version != FORMAT_VERSION {
         return Err(VaultError::UnsupportedVersion(version));
     }
     let header_len = u32::from_le_bytes([data[10], data[11], data[12], data[13]]) as usize;

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Where the suite's files live. The app passes an implementation: the app's private storage
-//! (Rust implementation below) or a folder chosen by the user (Android: Storage Access Framework,
-//! implemented in Kotlin).
+//! Where the suite's files live (the working copy). The app passes an implementation: the app's
+//! private storage (Rust implementation below; tests wrap it).
 
 use std::fs;
 use std::io::Write;

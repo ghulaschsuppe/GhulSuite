@@ -278,7 +278,6 @@
     <string name="set_quick_pin">App-PIN</string>
     <string name="set_quick_validity">Gültig für</string>
     <string name="set_remove_text">„%1$s“ öffnet danach nichts mehr, was du ab jetzt speicherst, auch nicht zusammen mit einer alten Kopie der Suite-Datei. Deine übrigen Keys, Schlüsseldateien und das Notfallblatt bleiben gültig.</string>
-    <string name="slot_needs_update">einmal damit entsperren, um ihn auf den neuesten Schutz umzustellen</string>
     <string name="set_remove_title">Zugang entfernen?</string>
     <string name="set_screenshots">Bildschirmfotos erlauben</string>
     <string name="set_screenshots_warning">Bildschirmfotos und -aufnahmen können dann deine Passwörter und Codes enthalten, und die App ist in der App-Übersicht sichtbar. Nur erlauben, wenn du es wirklich brauchst.</string>
