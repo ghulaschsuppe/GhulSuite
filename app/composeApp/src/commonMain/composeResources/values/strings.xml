@@ -267,7 +267,7 @@
     <string name="set_change_pw_text">Applies to the suite and all vaults. Keys, key files and the recovery code stay valid.</string>
     <string name="set_clipboard">Clear clipboard</string>
     <string name="set_code_shown_once">This code is shown only now. Write it down or print it and keep it in a safe place. The old code no longer works.</string>
-    <string name="set_import_export">Import, export and backup</string>
+    <string name="set_import_export">Import and export</string>
     <string name="set_import_hint">For moving from Proton, Bitwarden, KeePass, Aegis, 2FAS or Google Authenticator.</string>
     <string name="set_keys">Protection and recovery</string>
     <string name="set_keys_hint">What opens your suite: the password plus one of the keys or key files. The recovery code opens everything on its own. Keep it safe.</string>
@@ -286,7 +286,7 @@
     <string name="set_quick_hint">After unlocking with password and second factor, you can open GhulSuite with your fingerprint or an app PIN for a while.</string>
     <string name="set_quick_pin">App PIN</string>
     <string name="set_quick_validity">Valid for</string>
-    <string name="set_remove_text">“%1$s” will no longer open anything you save from now on, not even together with an old backup copy. Your other keys, key files and the recovery sheet stay valid.</string>
+    <string name="set_remove_text">“%1$s” will no longer open anything you save from now on, not even together with an old copy of the suite file. Your other keys, key files and the recovery sheet stay valid.</string>
     <string name="slot_needs_update">unlock with it once to bring it up to the current protection</string>
     <string name="set_remove_title">Remove access?</string>
     <string name="set_screenshots">Allow screenshots</string>
@@ -296,7 +296,7 @@
     <string name="set_shake_sensitivity">Shake sensitivity</string>
     <string name="set_show_subtitles">GhulPass: show user names in the list</string>
     <string name="set_swap_hint">Every key and key file opens the suite together with your password. Adding or removing one does not affect the others.</string>
-    <string name="set_lost_hint">Lost something (key, key file or recovery sheet)? Removing it, or a new recovery sheet, locks it out of the current suite. An old backup copy still opens with it, though, and shows the state of back then, including the logins of your mail accounts and your server. So afterwards change these passwords with each provider and enter them in GhulSuite again. This also protects your Drive content: without server access nobody gets to the blocks.</string>
+    <string name="set_lost_hint">Lost something (key, key file or recovery sheet)? Removing it, or a new recovery sheet, locks it out of the current suite, and GhulDrive and your servers get new keys: an old copy of the suite file no longer reaches them. Such a copy still opens with what you lost, though, and shows the state of back then, including the logins of your mail accounts. So also change your mail passwords with each provider and enter them in GhulSuite again.</string>
     <string name="set_theme">Design</string>
     <string name="set_totp_hide">GhulAuth: hide codes until tapped</string>
     <string name="set_totp_next">GhulAuth: show next code shortly before expiry</string>
@@ -441,9 +441,9 @@
     <string name="server_fp_title">Check the server key</string>
     <string name="server_fp_text">First connection to this server. Compare the fingerprint with the server (ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub). Only continue if it matches.</string>
     <string name="server_remove_title">Remove %1$s?</string>
-    <string name="server_remove_text">The files on the server stay. The synchronisation stops using this server.</string>
+    <string name="server_remove_text">The files on the server stay.</string>
     <string name="set_servers">Own servers</string>
-    <string name="set_servers_hint">The servers your devices synchronise with (SFTP or FTPS). Everything is encrypted before it leaves the device; the server only sees encrypted files.</string>
+    <string name="set_servers_hint">Your own servers, reached over SFTP with the suite’s SSH key. Everything is encrypted before it leaves the device; the server only sees encrypted files. GhulDrive and share links need SSH access: a web space with plain FTP is not enough.</string>
     <string name="drive_setup_title">Set up GhulDrive</string>
     <string name="drive_setup_text">Your files, encrypted on your own server. The server sees neither names nor contents nor folder structure.</string>
     <string name="drive_root">My files</string>
@@ -558,7 +558,7 @@
     <string name="set_pass_sub">Display, generator</string>
     <string name="set_privacy">Privacy</string>
     <string name="set_privacy_sub">Screenshots, clipboard</string>
-    <string name="sync_servers_title">Servers for the synchronisation</string>
+    <string name="sync_servers_title">Your servers</string>
     <string name="set_servers_share">Servers and sharing</string>
     <string name="set_servers_sub">Your own servers for GhulDrive and share links</string>
     <plurals name="set_suite_summary">
@@ -755,7 +755,7 @@
     <string name="pass_code">2FA code</string>
     <string name="pass_attachments_empty">No attachments yet.</string>
     <string name="pass_attach_add">Attach file</string>
-    <string name="pass_attachments_hint">Attachments (up to 10 MB each) are stored encrypted in the vault and synced with it.</string>
+    <string name="pass_attachments_hint">Attachments (up to 10 MB each) are stored encrypted in the vault and saved with it in the suite file.</string>
     <string name="sec_score_great">Very good</string>
     <string name="sec_score_good">Good, with room to improve</string>
     <string name="sec_score_bad">Some tidying up is worth it</string>
@@ -1123,7 +1123,7 @@
     <string name="cal_import_no_calendar">Create a calendar first, then you can import events.</string>
     <string name="cal_import_into">Import into which calendar?</string>
     <string name="cal_export_all_hint">"Export" takes all calendars, also hidden ones. A single calendar is exported in its settings.</string>
-    <string name="cal_closed_hint">Every calendar is stored encrypted in your suite (.ghlcal) and syncs like your passwords via your own storage. Deliberately without CalDAV.</string>
+    <string name="cal_closed_hint">Every calendar is stored encrypted in your suite (.ghlcal) and goes with the suite file like your passwords. Deliberately without CalDAV.</string>
     <string name="cal_start_view">Start view</string>
     <string name="cal_week_starts">Week starts on</string>
     <string name="cal_monday">Monday</string>
@@ -1243,7 +1243,7 @@
     <string name="area_pass_default">Private</string>
     <string name="area_auth_default">Personal</string>
     <string name="area_cal_default">Calendar</string>
-    <string name="drive_own_sub">SFTP or FTPS (web hosting)</string>
+    <string name="drive_own_sub">SFTP (a server or web hosting with SSH access)</string>
     <string name="a_reset">Reset</string>
     <string name="mail_accounts_all">Accounts · all devices</string>
     <plurals name="mail_images_always_sub">
@@ -1273,7 +1273,7 @@
     <string name="area_tag_active">active</string>
     <string name="areas_hint">Every area is an encrypted file of its own with its settings. “Hide” applies to this device only, “Remove” deletes the file everywhere.</string>
     <string name="area_set_up_title">Set up %1$s</string>
-    <string name="area_set_up_text">%1$s. The file %2$s is created and synchronised like everything else.</string>
+    <string name="area_set_up_text">%1$s. The file %2$s is created and saved in the suite file like everything else.</string>
     <string name="area_set_up">Set up</string>
     <string name="area_set_up_msg">%1$s set up</string>
     <string name="area_settings">Options</string>
@@ -1635,7 +1635,7 @@
     <string name="srvf_check_ok">Connection works, the folder can be written. You can save the server now.</string>
     <string name="core_mail_not_tested">Check the connection first.</string>
     <string name="drive_locations_title">Storage locations</string>
-    <string name="drive_locations_hint">GhulDrive can use several servers. Each storage location has its own files and its own share links; GhulDrive always shows the active one. The logins are stored encrypted in the Drive file, separate from the synchronisation.</string>
+    <string name="drive_locations_hint">GhulDrive can use several servers. Each storage location has its own files and its own share links; GhulDrive always shows the active one. The logins are stored encrypted in the Drive file.</string>
     <string name="drive_locations_none">No storage location yet. Add a server where GhulDrive keeps its files.</string>
     <string name="drive_locations_manage">Manage storage locations</string>
     <string name="drive_location_active">Active</string>
@@ -1661,7 +1661,7 @@
         <item quantity="one">%1$d share link</item>
         <item quantity="other">%1$d share links</item>
     </plurals>
-    <string name="drive_location_folder_shared">Another storage location or the synchronisation still uses this folder. Its files are therefore not deleted; remove the location without the tick.</string>
+    <string name="drive_location_folder_shared">Another storage location or server still uses this folder. Its files are therefore not deleted; remove the location without the tick.</string>
     <string name="drive_location_force_title">Remove %1$s anyway?</string>
     <string name="drive_location_force_text">The share links of this location could not be ended. If you remove it anyway, GhulSuite only forgets the links; they keep working as long as the server hands them out. Nothing is deleted on the server.</string>
     <string name="drive_location_force_yes">Remove anyway</string>
@@ -1768,4 +1768,7 @@
     <string name="kc_remove">The new key works. Now remove the old key in the hoster's web panel, then tap “Check”.</string>
     <string name="kc_waiting">Not reached yet, tried again later.</string>
     <string name="kc_check">Check</string>
+    <string name="prot_save_title">Save the suite file now</string>
+    <string name="prot_save_text">The protection of your suite was changed. Save the suite file now and replace older copies on other devices, sticks or in backups with it. They still open with the old protection, but no longer reach GhulDrive and your servers.</string>
+    <string name="prot_save_now">Save now</string>
 </resources>

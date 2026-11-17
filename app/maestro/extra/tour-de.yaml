@@ -63,21 +63,21 @@ name: Rundgang auf Deutsch
 - runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Sperre", SHOT: "${PREFIX}-12-sperre" } }
 - runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Privatsphäre", SHOT: "${PREFIX}-13-privatsphaere" } }
 - runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Keys und Schlüsseldateien", SHOT: "${PREFIX}-14-keys" } }
+- runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Suite-Datei", SHOT: "${PREFIX}-14b-suite-datei" } }
 - runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Tresore", SHOT: "${PREFIX}-15-tresore" } }
-- runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Import, Export und Sicherung", SHOT: "${PREFIX}-16-import" } }
-- runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Synchronisation", SHOT: "${PREFIX}-17-sync" } }
+- runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Import und Export", SHOT: "${PREFIX}-16-import" } }
+- runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Server und Freigaben", SHOT: "${PREFIX}-17-server" } }
 - runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Bereiche verwalten", SHOT: "${PREFIX}-18-bereiche" } }
 - runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Anzeige, Generator", SHOT: "${PREFIX}-19-pass" } }
 - runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Code-Anzeige", SHOT: "${PREFIX}-20-auth" } }
 - runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Design, Sprache", SHOT: "${PREFIX}-21-darstellung" } }
 - runFlow: { file: ../open-option-de.yaml, env: { PAGE: "Über und Hilfe", SHOT: "${PREFIX}-22-ueber" } }
-# --- Server form (SFTP and FTPS, each with its checklist) ---
-- scrollUntilVisible: { element: "Synchronisation", direction: DOWN }
-- tapOn: "Synchronisation"
+# --- Server form (SFTP with its checklist) ---
+- scrollUntilVisible: { element: "Server und Freigaben", direction: DOWN }
+- tapOn: "Server und Freigaben"
+- scrollUntilVisible: { element: "Server hinzufügen", direction: DOWN }
 - tapOn: "Server hinzufügen"
 - takeScreenshot: ${PREFIX}-23-server-sftp
-- tapOn: "FTPS"
-- takeScreenshot: ${PREFIX}-24-server-ftps
 - back
 - back
 - assertNotVisible: "GHUL-DEV-ALARM.*"

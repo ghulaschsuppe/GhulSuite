@@ -9,7 +9,7 @@
 #           GhulDrive and GhulMail with a server that does not exist, the areas in depth, dark
 #           design, landscape), then the German tour with normal and with large font
 #   server  setup and app PIN, then with a real server: GhulDrive (server/1-drive.yaml), servers,
-#           synchronisation, sharing, Drive card, selection (3-sync-share.yaml), GhulDrive in
+#           sharing, Drive card, selection (3-servers-share.yaml), GhulDrive in
 #           depth (4-drive-deep.yaml), servers cut off and back, the process ended in the
 #           background (app/maestro/extra)
 #   mail    setup, app PIN and GhulMail without account, then a real mail account (server/2-mail.yaml)
@@ -139,7 +139,7 @@ case "$shard" in
     run "$flows/04-app-pin-lock-unlock.yaml" 300
     addr=$(server_address)
     run "$flows/server/1-drive.yaml" 900 -e GHUL_SERVER="$addr"
-    run "$flows/server/3-sync-share.yaml" 1200 -e GHUL_SERVER="$addr"
+    run "$flows/server/3-servers-share.yaml" 1200 -e GHUL_SERVER="$addr"
     run "$flows/server/4-drive-deep.yaml" 900 -e GHUL_SERVER="$addr"
     hard_conditions "$addr"
     ;;
@@ -161,7 +161,7 @@ case "$shard" in
       addr=$(server_address)
       run "$flows/server/1-drive.yaml" 900 -e GHUL_SERVER="$addr"
       run "$flows/server/2-mail.yaml" 900 -e GHUL_SERVER="$addr"
-      run "$flows/server/3-sync-share.yaml" 1200 -e GHUL_SERVER="$addr"
+      run "$flows/server/3-servers-share.yaml" 1200 -e GHUL_SERVER="$addr"
       run "$flows/server/4-drive-deep.yaml" 900 -e GHUL_SERVER="$addr"
       run "$flows/server/5-mail-deep.yaml" 900 -e GHUL_SERVER="$addr"
     fi

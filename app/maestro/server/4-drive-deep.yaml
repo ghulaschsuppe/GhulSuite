@@ -1,4 +1,4 @@
-# GhulDrive in depth on the slow real server (after 3-sync-share.yaml):
+# GhulDrive in depth on the slow real server (after 3-servers-share.yaml):
 #   - "Create" tapped twice for a new folder: one folder, not two.
 #   - Search while typing, letter by letter: no technical error, the hit appears.
 #   - Into a folder and straight back out while it loads.
@@ -73,7 +73,7 @@ name: GhulDrive in depth on a real server
 # message with "Undo" appears; on the slow server that takes a moment.
 - tapOn: "Move to trash"
 # The question comes at once; while the share links are checked (the core may still be busy
-# with the synchronisation on the slow server) its button waits.
+# on the slow server) its button waits.
 - extendedWaitUntil:
     visible: { id: "ask-confirm", enabled: true }
     timeout: 60000
@@ -93,7 +93,7 @@ name: GhulDrive in depth on a real server
 - longPressOn: "Steuer-2026"
 - tapOn: "Move to trash"
 # The question comes at once; while the share links are checked (the core may still be busy
-# with the synchronisation on the slow server) its button waits.
+# on the slow server) its button waits.
 - extendedWaitUntil:
     visible: { id: "ask-confirm", enabled: true }
     timeout: 60000

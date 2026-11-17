@@ -1,29 +1,22 @@
-# Servers gone, part 2: no packet reaches them. Synchronising and GhulDrive say so in plain words,
-# nothing hangs for good, nothing technical is shown, the app stays usable.
+# Servers gone, part 2: no packet reaches them. Opening a GhulDrive folder neither hangs for good
+# nor shows anything technical (a plain message, or the folder known from before), and the app
+# stays usable.
 appId: de.danerd.ghulsuite.dev
 name: Server weg 2
 ---
-- scrollUntilVisible:
-    element: "Synchronise now"
-    direction: DOWN
-- tapOn: "Synchronise now"
-- extendedWaitUntil:
-    visible: "Synchronisation failed: .*|Sync not possible right now.*|No connection to the server.*"
-    timeout: 180000
-- assertNotVisible: ".*[Cc]oroutine.*"
-- assertNotVisible: "GHUL-DEV-ALARM.*"
-- takeScreenshot: x1-02-sync-offline
-- extendedWaitUntil:
-    visible: "Synchronise now"
-    timeout: 60000
-- back
 - tapOn: { id: "tab-drive" }
+- tapOn: "Urlaub-Maestro"
+# The request runs into the time limit of the slow, cut-off server.
+- waitForAnimationToEnd:
+    timeout: 60000
 - extendedWaitUntil:
-    visible: "No connection to the server.*|.*offline.*|.*Offline.*|Urlaub-Maestro"
+    visible: "No connection to the server.*|.*[Oo]ffline.*|This folder is empty\\.|Try again"
     timeout: 180000
 - assertNotVisible: ".*[Cc]oroutine.*"
+- assertNotVisible: ".*[Ee]xception.*"
 - assertNotVisible: "GHUL-DEV-ALARM.*"
 - takeScreenshot: x1-03-drive-offline
+- back
 # Still usable: the other areas open.
 - tapOn: { id: "tab-pass" }
 - extendedWaitUntil: { visible: "Search entries", timeout: 15000 }

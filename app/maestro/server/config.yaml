@@ -11,6 +11,6 @@ executionOrder:
   flowsOrder:
     - GhulDrive on a real server
     - GhulMail on a real server
-    - Sync server and sharing on a real server
+    - Servers and sharing on a real server
     - GhulDrive in depth on a real server
     - GhulMail in depth on a real server

@@ -742,6 +742,22 @@ class InteractionTest {
         assertEquals(2, net.calls.count { it == "keyChangeContinue" })
     }
 
+    /**
+     * After a change of the protection the app asks to save the suite file (older copies no longer
+     * reach GhulDrive and the servers); "Save now" opens the page of the suite file.
+     */
+    @Test
+    fun protectionChangeAsksToSave() = app { state, _ ->
+        waitForIdle()
+        state.protectionChanged()
+        waitFor("Save the suite file now")
+        shot("protection-save")
+        onAllNodes(hasText("Save now") and hasAnyAncestor(isDialog())).onFirst().performClick()
+        waitGone("Save the suite file now")
+        assertTrue(state.stack.lastOrNull() == Screen.SettingsPage(SetPage.FILE), state.stack.toString())
+        assertFalse(state.saveAfterProtection)
+    }
+
     /** "Later" puts the key change's steps off until the next unlock. */
     @Test
     fun keyChangeCanWait() = app(

@@ -15,7 +15,7 @@ name: Setup
     timeout: 30000
 - takeScreenshot: 01-start
 - tapOn: "Set up new"
-# Step 1 of 8: master password. Index 0 is the step title, index 1 the field label.
+# Step 1 of 7: master password. Index 0 is the step title, index 1 the field label.
 - tapOn:
     text: "Master password"
     index: 1
@@ -36,7 +36,7 @@ name: Setup
     visible: "Key file ready."
     timeout: 15000
 - tapOn: "Next"
-# Step 3: storage (app storage). "Set up" is enabled once the key derivation is calibrated.
+# Step 3: create (kept on this device). "Set up" is enabled once the key derivation is calibrated.
 - extendedWaitUntil:
     visible:
       text: "Set up"
@@ -44,21 +44,23 @@ name: Setup
     timeout: 90000
 - takeScreenshot: 01-storage
 - tapOn: "Set up"
-# Step 4: synchronisation later (the button says "Later" too; it is the last match).
+# Step 4: areas (GhulPass, GhulAuth, GhulCal are on by default).
 - extendedWaitUntil:
-    visible: "Step 4 of 8.*"
+    visible: "Step 4 of 7.*"
     timeout: 90000
-- tapOn:
-    text: "Later"
-    index: 1
-# Step 5: areas (GhulPass, GhulAuth, GhulCal are on by default).
 - takeScreenshot: 01-areas
 - scrollUntilVisible:
     element: "Next"
     direction: DOWN
 - tapOn: "Next"
-# Step 6: locking, step 7: unlocking (no fingerprint on the emulator).
+# Step 5: locking, step 6: unlocking (no fingerprint on the emulator).
+- extendedWaitUntil:
+    visible: "Step 5 of 7.*"
+    timeout: 30000
 - tapOn: "Next"
+- extendedWaitUntil:
+    visible: "Step 6 of 7.*"
+    timeout: 30000
 - scrollUntilVisible:
     element: "Next"
     direction: DOWN

@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -52,6 +53,30 @@ fun KeyChangeDialog(state: AppState) {
         },
         dismissButton = {
             TextButton(onClick = { state.keyChangeLater = true }) { Text(stringResource(Res.string.a_later)) }
+        },
+    )
+}
+
+/**
+ * After a change of the protection the suite file must be saved: older copies (other devices,
+ * sticks, backups) still open with the old protection but no longer reach GhulDrive and the
+ * servers (concept 6.4).
+ */
+@Composable
+fun SaveAfterProtectionDialog(state: AppState) {
+    AlertDialog(
+        onDismissRequest = { state.saveAfterProtection = false },
+        icon = { Icon(Icons.Filled.Save, null, tint = warnColor()) },
+        title = { Text(stringResource(Res.string.prot_save_title)) },
+        text = { Text(stringResource(Res.string.prot_save_text)) },
+        confirmButton = {
+            TextButton(onClick = {
+                state.saveAfterProtection = false
+                state.push(Screen.SettingsPage(SetPage.FILE))
+            }) { Text(stringResource(Res.string.prot_save_now)) }
+        },
+        dismissButton = {
+            TextButton(onClick = { state.saveAfterProtection = false }) { Text(stringResource(Res.string.a_later)) }
         },
     )
 }

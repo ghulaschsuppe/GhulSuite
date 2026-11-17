@@ -1,20 +1,18 @@
 # The way a user takes on a real server, step by step with a screenshot after each one:
-#   1. Options > Synchronisation: add the SFTP test server. First "Test connection", only then the folder
-#      (a new one, "sync-maestro"), then save.
-#   2. Choose it for the synchronisation: the choice sticks (bug: it stayed "Off") and the first
-#      synchronisation runs.
-#   3. Options > GhulDrive: one block per storage location. A second location is added (its own
+#   1. Options > Servers and sharing: add the SFTP test server. First "Test connection", only then
+#      the folder (a new one, "server-maestro"), then "Check connection" and save.
+#   2. Options > GhulDrive: one block per storage location. A second location is added (its own
 #      folder), then the server module (share links) is installed on the first one: browse the
 #      folders, enter an address, "Install and check". No internal error text may appear (bug: "The coroutine scope left the
 #      composition"). The CI has no web server with PHP: the address does not exist, so the
 #      upload works, HTTPS fails, and the folder step is "not checked".
-#   4. GhulDrive (its location from 1-drive.yaml): "Switch storage location" shows the second
+#   3. GhulDrive (its location from 1-drive.yaml): "Switch storage location" shows the second
 #      location (empty) and back again; the card names the server (bug: "…" and "Not set up"
 #      next to the files). Then the second location is removed again (files kept).
-#   5. Selection bar with everything selected: no "All" button that does nothing. Sharing it:
+#   4. Selection bar with everything selected: no "All" button that does nothing. Sharing it:
 #      "Share link" says that links need the server module (GhulDrive's server has none).
 appId: de.danerd.ghulsuite.dev
-name: Sync server and sharing on a real server
+name: Servers and sharing on a real server
 ---
 - runFlow: unlock.yaml
 - tapOn: { id: "tab-settings" }
@@ -23,15 +21,14 @@ name: Sync server and sharing on a real server
     element: "Unlocking|Entsperren"
     direction: UP
 - scrollUntilVisible:
-    element: "Synchronisation"
+    element: "Servers and sharing"
     direction: DOWN
-- tapOn: "Synchronisation"
-- extendedWaitUntil:
-    visible: "Add server"
-    timeout: 10000
-# No server for the synchronisation yet.
-- assertVisible: "Off"
-- takeScreenshot: s3-01-servers-empty
+- tapOn: "Servers and sharing"
+- scrollUntilVisible:
+    element: "Add server"
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: s3-01-servers
 
 # --- 1. Add the server ---------------------------------------------------------------------
 - tapOn: "Add server"
@@ -78,15 +75,15 @@ name: Sync server and sharing on a real server
 - takeScreenshot: s3-04-folders
 - tapOn: "New folder …"
 - tapOn: "Name of the new folder"
-- inputText: "sync-maestro"
+- inputText: "server-maestro"
 - hideKeyboard
-- tapOn: "Use sync-maestro \\(created when testing\\)"
+- tapOn: "Use server-maestro \\(created when testing\\)"
 - extendedWaitUntil:
     visible: "Connection works, folder chosen\\."
     timeout: 10000
 # The old hint ("Now choose the folder") is gone once the folder is chosen.
 - assertNotVisible: ".*Now choose the folder.*"
-- assertVisible: "sync-maestro/"
+- assertVisible: "server-maestro/"
 - assertNotVisible: ".*composition.*"
 - takeScreenshot: s3-05-connected
 # Check first (login, folder writable); only then "Save server".
@@ -102,42 +99,13 @@ name: Sync server and sharing on a real server
     element: "Save server"
     direction: DOWN
 - tapOn: "Save server"
-# Saved: back on the page of the synchronisation, the server is listed with its folder. The page
-# is about the synchronisation only: no server module, nothing of GhulDrive.
+# Saved: back on the page of the servers, the server is listed with its folder.
 - extendedWaitUntil:
-    visible: "Folder: .*sync-maestro.*"
+    visible: "Folder: .*server-maestro.*"
     timeout: 120000
-- assertNotVisible: "Install module"
-- assertNotVisible: "Server module: .*"
 - takeScreenshot: s3-06-server-saved
 
-# --- 2. Synchronisation ----------------------------------------------------------------------
-- scrollUntilVisible:
-    element: "Off"
-    direction: DOWN
-- tapOn: "Off"
-- extendedWaitUntil:
-    visible: "[/~].*sync-maestro/?"
-    timeout: 10000
-- takeScreenshot: s3-07-sync-choice
-- tapOn: "[/~].*sync-maestro/?"
-# The choice sticks: the first run is done and the controls of the synchronisation appear
-# (the button may be below the screen's edge: scroll to it, running or not, then wait for the
-# end of the run; one run, not an automatic one and then a second full one).
-- extendedWaitUntil:
-    visible: "Last synchronised: .*"
-    timeout: 120000
-- scrollUntilVisible:
-    element: "Synchronise now|Synchronising …"
-    direction: DOWN
-- extendedWaitUntil:
-    visible: "Synchronise now"
-    timeout: 120000
-- assertNotVisible: "Off"
-- assertNotVisible: "Synchronisation failed: .*"
-- takeScreenshot: s3-08-sync-chosen
-
-# --- 3. GhulDrive's storage locations ---------------------------------------------------------
+# --- 2. GhulDrive's storage locations ---------------------------------------------------------
 - back
 # The row of the options page (its subtitle): "GhulDrive" alone is also the tab in the bar below.
 - scrollUntilVisible:
@@ -224,7 +192,7 @@ name: Sync server and sharing on a real server
     direction: DOWN
 - takeScreenshot: s3-08c-two-locations
 
-# --- 3b. Server module on the first location (GhulDrive's folder "ghulsuite") -----------------
+# --- 2b. Server module on the first location (GhulDrive's folder "ghulsuite") -----------------
 - scrollUntilVisible:
     element:
       id: "location-module-install-ghulsuite"
@@ -234,18 +202,18 @@ name: Sync server and sharing on a real server
 - extendedWaitUntil:
     visible: "Choose the folder your website is delivered from.*"
     timeout: 10000
-# The folder list can wait for the synchronisation that follows adding a location.
+# The folder list can take a while on the slow server.
 - extendedWaitUntil:
-    visible: "sync-maestro"
+    visible: "server-maestro"
     timeout: 120000
 - takeScreenshot: s3-09-module-install
 # Into folders and back out again, without waiting in between.
-- tapOn: "sync-maestro"
+- tapOn: "server-maestro"
 - tapOn: "\\.\\."
 - tapOn: "ghulsuite"
 - tapOn: "\\.\\."
 - extendedWaitUntil:
-    visible: "sync-maestro"
+    visible: "server-maestro"
     timeout: 120000
 - assertNotVisible: ".*composition.*"
 - assertNotVisible: ".*[Cc]oroutine.*"
@@ -280,7 +248,7 @@ name: Sync server and sharing on a real server
 - back
 - back
 
-# --- 4. GhulDrive card, switching the location -------------------------------------------------
+# --- 3. GhulDrive card, switching the location -------------------------------------------------
 - tapOn: { id: "tab-drive" }
 - extendedWaitUntil:
     visible: "Urlaub-Maestro"
@@ -317,7 +285,7 @@ name: Sync server and sharing on a real server
 - assertVisible: ${GHUL_SERVER}
 - takeScreenshot: s3-12-drive
 
-# --- 5. Selection bar --------------------------------------------------------------------------
+# --- 4. Selection bar --------------------------------------------------------------------------
 - longPressOn: "Urlaub-Maestro"
 - extendedWaitUntil:
     visible: "1 selected"
@@ -326,7 +294,7 @@ name: Sync server and sharing on a real server
 - assertNotVisible: { id: "sel-all" }
 - takeScreenshot: s3-13-drive-selected
 # Share links need the server module on GhulDrive's server: the row says so. Until the core
-# answers (it can still be synchronising after the switch above), the row says it is checking.
+# answers (it can still be busy after the switch above), the row says it is checking.
 - tapOn: "Share"
 - extendedWaitUntil:
     visible: "Needs the GhulSuite server module.*"
@@ -346,7 +314,7 @@ name: Sync server and sharing on a real server
     notVisible: "1 selected"
     timeout: 10000
 
-# --- 6. Background and back, and a fresh start (the card must be right at once) -------------
+# --- 5. Background and back, and a fresh start (the card must be right at once) -------------
 - pressKey: Home
 - launchApp:
     stopApp: false
@@ -375,7 +343,7 @@ name: Sync server and sharing on a real server
 - assertNotVisible: "No server yet"
 - takeScreenshot: s3-15-drive-after-restart
 
-# --- 7. Remove the second location again (its files stay on the server) ---------------------
+# --- 6. Remove the second location again (its files stay on the server) ---------------------
 - tapOn: { id: "tab-settings" }
 - scrollUntilVisible:
     element: "Unlocking|Entsperren"

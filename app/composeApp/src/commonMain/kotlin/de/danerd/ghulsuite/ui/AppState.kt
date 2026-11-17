@@ -213,6 +213,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     var keyChange by mutableStateOf<KeyChangeUi?>(null)
     /** The user put the key change's steps by hand off until the next unlock. */
     var keyChangeLater by mutableStateOf(false)
+    /** After a change of the protection: asks to save the suite file (older copies are outdated). */
+    var saveAfterProtection by mutableStateOf(false)
     /** The key change is being continued now (its logins wait for the network). */
     var keyChangeBusy by mutableStateOf(false)
     private var keyChangeAgain = false
@@ -479,6 +481,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     codeUnconfirmed = false
                     keyChange = null
                     keyChangeLater = false
+                    saveAfterProtection = false
                     if (single != null) {
                         // The vault opened on its own is closed: back to the own suite (locked) or the start.
                         single = null
@@ -740,6 +743,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
      */
     fun protectionChanged() {
         changed()
+        saveAfterProtection = true
         continueKeyChange()
     }
 

@@ -25,13 +25,16 @@ name: All options pages
     env: { PAGE: "Keys & key files", SHOT: "10-04-keys" }
 - runFlow:
     file: open-option-full.yaml
+    env: { PAGE: "Suite file", SHOT: "10-04b-suite-file" }
+- runFlow:
+    file: open-option-full.yaml
     env: { PAGE: "Vaults", SHOT: "10-05-vaults" }
 - runFlow:
     file: open-option-full.yaml
-    env: { PAGE: "Import, export and backup", SHOT: "10-06-import" }
+    env: { PAGE: "Import and export", SHOT: "10-06-import" }
 - runFlow:
     file: open-option-full.yaml
-    env: { PAGE: "Synchronisation", SHOT: "10-07-sync" }
+    env: { PAGE: "Servers and sharing", SHOT: "10-07-servers" }
 - runFlow:
     file: open-option-full.yaml
     env: { PAGE: "Manage areas", SHOT: "10-08-areas" }

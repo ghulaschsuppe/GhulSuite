@@ -128,8 +128,8 @@ fun AddServerScreen(state: AppState, padding: PaddingValues) {
 }
 
 /**
- * Settings → Synchronisation: the servers the suite synchronises with, which one, and how. Only
- * the synchronisation: GhulDrive has storage locations of its own (Settings → GhulDrive).
+ * Settings → Servers and sharing: the suite's own servers (SFTP with its SSH key). GhulDrive has
+ * storage locations of its own (Settings → GhulDrive).
  */
 @Composable
 fun ServersSection(state: AppState) {
