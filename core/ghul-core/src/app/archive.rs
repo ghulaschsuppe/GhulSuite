@@ -104,6 +104,9 @@ struct Seen {
     ancestors: Vec<String>,
     #[serde(default)]
     complete: bool,
+    /// The counter of `state` (`counter` is the highest one seen; 0: as `counter`).
+    #[serde(default)]
+    at: u64,
 }
 
 /// How a `.ghlzip` relates to what this device has.
@@ -320,6 +323,7 @@ impl GhulSuite {
         let mut all = self.seen_all();
         let e = all.entry(crate::kdf::hex(suite_id)).or_default();
         e.counter = e.counter.max(state.counter);
+        e.at = state.counter;
         e.state = state.state.clone();
         e.ancestors = state.ancestors.iter().take(MAX_ANCESTORS).cloned().collect();
         e.complete = state.complete;
@@ -347,9 +351,6 @@ impl GhulSuite {
 
     /// The working copy changed since it was loaded from or saved into a file.
     pub(super) fn mark_unsaved(&self) {
-        if self.quiet.load(std::sync::atomic::Ordering::SeqCst) {
-            return;
-        }
         self.changes.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let _ = std::fs::create_dir_all(&self.local_dir);
         let _ = std::fs::write(self.local_dir.join(UNSAVED_FILE), b"1");
@@ -412,20 +413,20 @@ impl GhulSuite {
         if seen.ancestors.contains(&header.state) {
             return Ok(ArchiveRelation::Older);
         }
+        // The counter of the state this device has (files of older versions: the highest seen).
+        let at = if seen.at > 0 { seen.at } else { seen.counter };
         // Neither, and the file's lineage is complete: it was not carried on from this state.
         if header.complete {
-            return Ok(if seen.complete || header.counter >= seen.counter {
+            return Ok(if seen.complete || header.counter >= at {
                 ArchiveRelation::Branch
             } else {
                 ArchiveRelation::Older
             });
         }
         // Files without a complete lineage (older app versions): by the counter.
-        Ok(if header.counter < seen.counter {
+        Ok(if header.counter < at {
             ArchiveRelation::Older
-        } else if header.counter == seen.counter
-            || (header.counter == seen.counter + 1 && header.previous != seen.state)
-        {
+        } else if header.counter == at || (header.counter == at + 1 && header.previous != seen.state) {
             ArchiveRelation::Branch
         } else {
             ArchiveRelation::Newer

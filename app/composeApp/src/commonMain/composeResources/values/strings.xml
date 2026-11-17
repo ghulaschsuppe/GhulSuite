@@ -1751,6 +1751,6 @@
     <string name="single_pending_discard_text">The last changes to %1$s are lost; the file stays as it is.</string>
     <string name="single_pending_discard_damaged">%1$s was changed since or cannot be read (was writing it cut off?). Giving up may lose this vault. Better save it as a new file.</string>
     <string name="single_pending_first">Changes of the last opening still wait for this file. Write them first (or give them up).</string>
-    <string name="file_before_save">Save the state before the last opening</string>
-    <string name="file_before_saved">Saved the state before as %1$s.</string>
+    <string name="single_busy">The vault is still being written into its file. Try again in a moment.</string>
+    <string name="single_pending_unknown">Changes of a vault opened on its own are left, but which file they belong to is unreadable. Save them as a new file, or give them up.</string>
 </resources>

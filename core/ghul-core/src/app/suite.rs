@@ -589,8 +589,6 @@ pub struct GhulSuite {
     pub(super) pending: Mutex<Option<super::archive::Pending>>,
     /// Grows with every write of a container (see `archive_saved`, `single_saved`).
     pub(super) changes: std::sync::atomic::AtomicU64,
-    /// Set while a container is written that is no change of the suite (see `save_area_quietly`).
-    pub(super) quiet: AtomicBool,
     /// Grows with every lock and cancel: a file checked meanwhile is not kept (see `archive_open`).
     pub(super) pending_gen: std::sync::atomic::AtomicU64,
 }
@@ -1082,7 +1080,6 @@ impl GhulSuite {
             zones: Mutex::new(None),
             pending: Mutex::new(None),
             changes: std::sync::atomic::AtomicU64::new(0),
-            quiet: AtomicBool::new(false),
             pending_gen: std::sync::atomic::AtomicU64::new(0),
         })
     }
@@ -1305,6 +1302,8 @@ impl GhulSuite {
     pub fn quick_unlock_enable(&self, name: String, pin: Option<String>) -> Result<Vec<u8>> {
         let pin = pin.map(Zeroizing::new);
         self.with_open(|o| {
+            // The device's quick unlock belongs to the own suite.
+            super::single::refuse_single(o)?;
             let qk = super::quick::create(
                 &self.local_dir,
                 &name,

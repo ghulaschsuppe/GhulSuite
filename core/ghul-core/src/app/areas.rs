@@ -6,11 +6,12 @@
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 
+use rand_core::OsRng;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 use super::error::{GhulError, Result};
-use super::suite::{put_setting, setting, GhulSuite, Open, VaultKind};
+use super::suite::{put_setting, setting, GhulSuite, Open, VaultKind, SUITE_FILE};
 use crate::vault::UnlockedContainer;
 
 /// Options of an area that travel with its file (e.g. GhulCal's holiday region).
@@ -70,12 +71,16 @@ impl GhulSuite {
     /// Saves the area's file without counting it as a change of the working copy (for notes of
     /// what this device saw, e.g. a newer Drive index).
     pub(super) fn save_area_quietly(&self, o: &mut Open, kind: VaultKind) -> Result<()> {
-        // Not a change of the suite: neither marked unsaved nor counted (a suite file being
-        // written meanwhile still counts as saved).
-        self.quiet.store(true, std::sync::atomic::Ordering::SeqCst);
-        let r = self.save_area(o, kind);
-        self.quiet.store(false, std::sync::atomic::Ordering::SeqCst);
-        r
+        // Not a change of the suite: written without marking it unsaved or counting it (a suite
+        // file being written meanwhile still counts as saved).
+        let Some(id) = o.area_id(kind) else { return Ok(()) };
+        let (r, c) = o.vault_mut(&id)?;
+        let file = r.file.clone();
+        let data = c.seal(&mut OsRng)?;
+        self.storage.write(file, data)?;
+        let data = o.suite.seal(&mut OsRng)?;
+        self.storage.write(SUITE_FILE.to_owned(), data)?;
+        Ok(())
     }
 
     /// Saves the area's file (and the suite's record of it); nothing when the area does not exist.

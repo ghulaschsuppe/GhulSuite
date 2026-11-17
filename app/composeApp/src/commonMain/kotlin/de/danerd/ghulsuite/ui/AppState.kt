@@ -1070,6 +1070,8 @@ private suspend fun describeText(e: Throwable): String {
         VaultErrorKind.CORRUPTED -> getString(Res.string.err_corrupted, coreText(e.detail) ?: e.detail)
         VaultErrorKind.TAMPERED -> getString(Res.string.err_tampered)
         VaultErrorKind.PROTECTION_OUTDATED -> getString(Res.string.err_protection_outdated)
+        VaultErrorKind.SINGLE_BUSY -> getString(Res.string.single_busy)
+        VaultErrorKind.SINGLE_PENDING -> getString(Res.string.single_pending_first)
         VaultErrorKind.STORAGE -> getString(Res.string.err_storage, coreText(e.detail) ?: e.detail)
         // U5: the core's known details are complete sentences in the app's language.
         VaultErrorKind.INVALID_INPUT -> coreText(e.detail) ?: getString(Res.string.err_input, e.detail)

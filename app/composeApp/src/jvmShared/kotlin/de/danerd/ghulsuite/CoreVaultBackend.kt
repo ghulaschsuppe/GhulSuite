@@ -54,6 +54,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.withLock
 import de.danerd.ghulsuite.model.PendingSingleUi
@@ -165,11 +166,8 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
         try {
             io { suite.archiveAccept() }
         } catch (e: Throwable) {
-            // The core locked before replacing: the app must not show an open suite. If it failed
-            // after opening the new state, the old quick unlock does not belong to it either.
-            val open = runCatching { suite.isUnlocked() }.getOrDefault(false)
-            if (open) onProtectionChanged()
-            unlockedState.value = open
+            // The core may have locked before failing: the app must not show an open suite.
+            unlockedState.value = runCatching { suite.isUnlocked() }.getOrDefault(false)
             throw e
         }
         // The device's quick unlock belonged to the state before.
@@ -194,8 +192,6 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
     }
 
     override suspend fun archiveSaved(state: String, change: Long) = io { suite.archiveSaved(state, change.toULong()) }
-
-    override suspend fun archiveBeforeOpen(): ByteArray? = io { runCatching { suite.archiveBeforeOpen() }.getOrNull() }
 
     override fun suiteFile(): SuiteFileRef? =
         devicePref("suite_file")?.takeIf { it.contains('|') }?.let { SuiteFileRef(it.substringBefore('|'), it.substringAfter('|')) }
@@ -228,10 +224,23 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
     /** What a folder of a vault opened on its own records: its file and what is in that file. */
     private class Target(val ref: SuiteFileRef, val vault: String, val hash: String)
 
+    /** The only vault file in a folder (when its record cannot be read). */
+    private fun vaultIn(dir: java.io.File): String? =
+        java.io.File(dir, "vault").listFiles().orEmpty().filter { it.isFile && it.extension.startsWith("ghl") && it.extension != "ghlsuite" }
+            .singleOrNull()?.name
+
     private fun readTarget(dir: java.io.File): Target? = runCatching {
+        val file = java.io.File(dir, "target")
         val p = java.util.Properties()
-        java.io.File(dir, "target").inputStream().use { p.load(it) }
-        Target(SuiteFileRef(p.getProperty("id")!!, p.getProperty("name")!!), p.getProperty("vault")!!, p.getProperty("hash") ?: "")
+        file.inputStream().use { p.load(it) }
+        val id = p.getProperty("id")
+        if (id != null) {
+            Target(SuiteFileRef(id, p.getProperty("name")!!), p.getProperty("vault")!!, p.getProperty("hash") ?: "")
+        } else {
+            // Written by an earlier development version: three lines, no hash.
+            val l = file.readLines()
+            Target(SuiteFileRef(l[0], l[1]), l[2], "")
+        }
     }.getOrNull()
 
     private fun writeTarget(dir: java.io.File, t: Target) {
@@ -249,9 +258,21 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
     private fun sha(data: ByteArray?): String =
         data?.let { java.security.MessageDigest.getInstance("SHA-256").digest(it).joinToString("") { b -> "%02x".format(b) } } ?: ""
 
+    private fun tick() = pendingTick.update { it + 1 }
+
     override fun singleFile(): SuiteFileRef? = single
 
     override fun ownSuiteExists(): Boolean = runCatching { ownSuite.exists() }.getOrDefault(false)
+
+    /** Leftovers of earlier openings that wait for [ref] (only their records are read). */
+    private fun waitingFor(ref: SuiteFileRef): Boolean {
+        val open = singleDir
+        return singleBase().listFiles().orEmpty().any { dir ->
+            dir.isDirectory && dir != open && (dir.name in busyDirs || (readTarget(dir)?.ref?.id == ref.id && tempSuite(dir).archiveUnsaved()))
+        }
+    }
+
+    override suspend fun hasPendingSingleWrite(ref: SuiteFileRef): Boolean = io { waitingFor(ref) }
 
     override suspend fun openSingle(
         file: SuiteFileRef,
@@ -262,12 +283,20 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
         onTouchNeeded: () -> Unit,
     ): VaultKindUi {
         if (single != null || unlockedState.value) lock()
-        // The same file still being written by its last closing: wait for it, then read it anew.
+        // A closing still writing: wait for it (it may be this file), then read the file anew.
         var bytes = data
         if (busyDirs.isNotEmpty()) {
-            io { repeat(300) { if (busyDirs.isEmpty()) return@repeat; Thread.sleep(100) } }
+            io {
+                for (i in 0 until 300) {
+                    if (busyDirs.isEmpty()) break
+                    Thread.sleep(100)
+                }
+            }
+            if (busyDirs.isNotEmpty()) throw VaultException(VaultErrorKind.SINGLE_BUSY)
             bytes = readSuiteFile(file) ?: data
         }
+        // Changes of an earlier opening of this file come first (else they would be overwritten).
+        if (io { waitingFor(file) }) throw VaultException(VaultErrorKind.SINGLE_PENDING)
         val name = java.util.UUID.randomUUID().toString()
         val dir = java.io.File(singleBase(), name)
         busyDirs += name
@@ -292,41 +321,47 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
 
     /**
      * Writes [data] into the file of [dir] unless that file changed since this vault read or
-     * wrote it ([overwrite] writes anyway). Records what is in the file now.
+     * wrote it, or cannot be read now ([overwrite] writes anyway). Records what is in the file
+     * now. Only while holding [singleWrite].
      */
-    private suspend fun writeBack(dir: java.io.File, data: ByteArray, overwrite: Boolean): SingleSaveUi = singleWrite.withLock {
-        val t = io { readTarget(dir) } ?: return@withLock SingleSaveUi.FAILED
-        val now = readSuiteFile(t.ref)
-        if (!overwrite && now != null && t.hash.isNotEmpty() && sha(now) != t.hash) return@withLock SingleSaveUi.CHANGED_ELSEWHERE
-        if (!writeSuiteFile(t.ref, data)) return@withLock SingleSaveUi.FAILED
+    private suspend fun writeBackLocked(dir: java.io.File, data: ByteArray, overwrite: Boolean): SingleSaveUi {
+        val t = io { readTarget(dir) } ?: return SingleSaveUi.FAILED
+        if (!overwrite && t.hash.isNotEmpty()) {
+            val now = readSuiteFile(t.ref) ?: return SingleSaveUi.FAILED
+            if (sha(now) != t.hash) return SingleSaveUi.CHANGED_ELSEWHERE
+        }
+        if (!writeSuiteFile(t.ref, data)) return SingleSaveUi.FAILED
         io { writeTarget(dir, Target(t.ref, t.vault, sha(data))) }
-        SingleSaveUi.SAVED
+        return SingleSaveUi.SAVED
     }
 
-    override suspend fun saveSingle(overwrite: Boolean): SingleSaveUi {
-        val dir = singleDir ?: return SingleSaveUi.FAILED
-        val s = suite
+    override suspend fun saveSingle(overwrite: Boolean): SingleSaveUi = singleWrite.withLock {
+        // Read while holding the lock: an older state never goes over a newer one.
+        val dir = singleDir ?: return@withLock SingleSaveUi.FAILED
+        val s = temp ?: return@withLock SingleSaveUi.FAILED
         val f = io { s.singleVaultFile() }
-        val r = writeBack(dir, f.data, overwrite)
+        val r = writeBackLocked(dir, f.data, overwrite)
         // Only what is in the file counts as saved (a change meanwhile stays unsaved).
         if (r == SingleSaveUi.SAVED) io { s.singleSaved(f.change) }
-        return r
+        r
     }
 
-    override suspend fun saveSingleAs(ref: SuiteFileRef): Boolean {
-        val dir = singleDir ?: return false
-        val s = suite
+    override suspend fun saveSingleAs(ref: SuiteFileRef): Boolean = singleWrite.withLock {
+        val dir = singleDir ?: return@withLock false
+        val s = temp ?: return@withLock false
         val f = io { s.singleVaultFile() }
-        val old = io { readTarget(dir) } ?: return false
-        if (!singleWrite.withLock { writeSuiteFile(ref, f.data) }) return false
+        val old = io { readTarget(dir) } ?: return@withLock false
+        if (!writeSuiteFile(ref, f.data)) return@withLock false
+        // Closed meanwhile (locked): the new file has it, nothing else changes.
+        if (singleDir !== dir) return@withLock true
         // From now on this vault goes into the new file.
         io { writeTarget(dir, Target(ref, old.vault, sha(f.data))) }
         single = ref
         io { s.singleSaved(f.change) }
-        return true
+        true
     }
 
-    override suspend fun singleVaultBytes(): ByteArray = io { suite.singleVaultFile().data }
+    override suspend fun singleVaultBytes(): ByteArray = io { (temp ?: throw VaultException(VaultErrorKind.LOCKED)).singleVaultFile().data }
 
     /**
      * Ends the vault opened on its own at once (main thread). Its last changes go into its file
@@ -336,19 +371,20 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
     private fun closeSingle() {
         val s = suite
         val dir = singleDir
+        // Busy before it stops being the open one: never taken for a leftover in between.
+        dir?.let { busyDirs += it.name }
         s.lock()
         single = null
         singleDir = null
         temp = null
         unlockedState.value = false
-        dir?.let { busyDirs += it.name }
         Thread({
             runCatching { s.finishLock() }
             if (dir != null && runCatching { writePending(dir, s, overwrite = false) == SingleSaveUi.SAVED }.getOrDefault(false)) {
                 dir.deleteRecursively()
             }
             dir?.let { busyDirs -= it.name }
-            pendingTick.value++
+            tick()
         }, "ghul-single-close").apply { isDaemon = false }.start()
     }
 
@@ -357,8 +393,12 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
         if (!s.archiveUnsaved()) return SingleSaveUi.SAVED
         val t = readTarget(dir) ?: return SingleSaveUi.FAILED
         val data = java.io.File(java.io.File(dir, "vault"), t.vault).readBytes()
-        return kotlinx.coroutines.runBlocking { writeBack(dir, data, overwrite) }
+        return kotlinx.coroutines.runBlocking { singleWrite.withLock { writeBackLocked(dir, data, overwrite) } }
     }
+
+    /** The changes in [dir] (its own record's vault, else the only vault file there). */
+    private fun pendingData(dir: java.io.File): ByteArray? =
+        (readTarget(dir)?.vault ?: vaultIn(dir))?.let { java.io.File(java.io.File(dir, "vault"), it).readBytes() }
 
     override fun pendingSingleWrites(): List<PendingSingleUi> {
         val open = singleDir
@@ -366,12 +406,17 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
             .filter { it.isDirectory && it != open && it.name !in busyDirs }
             .sortedBy { it.lastModified() }
             .mapNotNull { dir ->
-                val t = readTarget(dir)
-                if (t == null || !tempSuite(dir).archiveUnsaved()) {
-                    // Nothing left to write (or never opened): gone.
+                // Only what holds no unsaved changes goes; an unreadable record does not lose them.
+                if (!tempSuite(dir).archiveUnsaved()) {
                     dir.deleteRecursively()
                     return@mapNotNull null
                 }
+                val t = readTarget(dir)
+                    ?: return@mapNotNull if (vaultIn(dir) != null) {
+                        PendingSingleUi(dir.name, SuiteFileRef("", "?"), targetKnown = false)
+                    } else {
+                        null
+                    }
                 val now = kotlinx.coroutines.runBlocking { readSuiteFile(t.ref) }
                 PendingSingleUi(
                     key = dir.name,
@@ -389,23 +434,22 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
         val dir = pendingDir(key) ?: return SingleSaveUi.SAVED
         val r = io { writePending(dir, overwrite = overwrite) }
         if (r == SingleSaveUi.SAVED) io { dir.deleteRecursively() }
-        pendingTick.value++
+        tick()
         return r
     }
 
     override suspend fun saveSingleWriteAs(key: String, ref: SuiteFileRef): Boolean {
         val dir = pendingDir(key) ?: return false
-        val t = io { readTarget(dir) } ?: return false
-        val data = io { java.io.File(java.io.File(dir, "vault"), t.vault).readBytes() }
+        val data = io { pendingData(dir) } ?: return false
         val ok = singleWrite.withLock { writeSuiteFile(ref, data) }
         if (ok) io { dir.deleteRecursively() }
-        pendingTick.value++
+        tick()
         return ok
     }
 
     override fun discardSingleWrite(key: String) {
         pendingDir(key)?.deleteRecursively()
-        pendingTick.value++
+        tick()
     }
 
     override suspend fun shareAsVault(share: ShareVaultUi, pin: String?, onTouchNeeded: () -> Unit): SharedVaultUi {

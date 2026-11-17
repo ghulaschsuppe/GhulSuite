@@ -1751,6 +1751,6 @@
     <string name="single_pending_discard_text">Die letzten Änderungen an %1$s gehen verloren; die Datei bleibt, wie sie ist.</string>
     <string name="single_pending_discard_damaged">%1$s wurde seitdem verändert oder lässt sich nicht lesen (wurde das Schreiben abgebrochen?). Verwerfen kann diesen Tresor verlieren. Besser als neue Datei speichern.</string>
     <string name="single_pending_first">Für diese Datei warten noch Änderungen vom letzten Öffnen. Schreibe sie zuerst (oder verwirf sie).</string>
-    <string name="file_before_save">Stand vor dem letzten Öffnen sichern</string>
-    <string name="file_before_saved">Stand von vorher als %1$s gespeichert.</string>
+    <string name="single_busy">Der Tresor wird noch in seine Datei geschrieben. Versuche es gleich noch einmal.</string>
+    <string name="single_pending_unknown">Von einem einzeln geöffneten Tresor sind Änderungen übrig, aber zu welcher Datei sie gehören, ist nicht lesbar. Als neue Datei speichern oder verwerfen.</string>
 </resources>

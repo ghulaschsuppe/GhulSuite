@@ -53,7 +53,8 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
     private val main = Handler(Looper.getMainLooper())
 
     override val settings: Settings = Settings(PrefsStore(context))
-    private val quick = AndroidQuickUnlock(context, { suite }, settings, activity)
+    // Quick unlock belongs to the own suite (not to a vault opened on its own).
+    private val quick = AndroidQuickUnlock(context, { ownSuite }, settings, activity)
     // Mail and Drive belong to the own suite (also while a vault is open on its own: then locked).
     override val net: NetBackend = AndroidNetBackend(context) { ownSuite }
     override val cal: de.danerd.ghulsuite.model.CalBackend = AndroidCalBackend(context) { suite }

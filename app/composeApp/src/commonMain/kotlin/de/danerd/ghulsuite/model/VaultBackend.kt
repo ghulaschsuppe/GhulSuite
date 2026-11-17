@@ -165,8 +165,6 @@ interface VaultBackend {
     /** Builds the suite file of the working copy; confirm with [archiveSaved] once it is written. */
     suspend fun archiveBuild(device: String): ArchiveBuiltUi = ArchiveBuiltUi(ByteArray(0), "")
     suspend fun archiveSaved(state: String, change: Long) {}
-    /** The working copy as it was before the last suite file was opened over it (null: none). */
-    suspend fun archiveBeforeOpen(): ByteArray? = null
     /** The suite file used last on this device (opened or saved), if any. */
     fun suiteFile(): SuiteFileRef? = null
     fun setSuiteFile(ref: SuiteFileRef?) {}
@@ -197,6 +195,8 @@ interface VaultBackend {
     suspend fun singleVaultBytes(): ByteArray = throw VaultException(VaultErrorKind.OTHER)
     /** Whether the app may write into this file (a vault opened on its own goes back into it). */
     suspend fun canWriteSuiteFile(ref: SuiteFileRef): Boolean = true
+    /** Whether changes of an earlier opening still wait for [ref] (cheap: only their records). */
+    suspend fun hasPendingSingleWrite(ref: SuiteFileRef): Boolean = false
     /** Vaults opened on their own whose last changes could not be written back into their file. */
     fun pendingSingleWrites(): List<PendingSingleUi> = emptyList()
     /** Tries again to write such changes into their file. */
@@ -336,6 +336,8 @@ class PendingSingleUi(
     val changedElsewhere: Boolean = false,
     /** The file there is a readable vault (giving up keeps that). */
     val fileIntact: Boolean = true,
+    /** Its file is known (else only "save as" and giving up). */
+    val targetKnown: Boolean = true,
 )
 
 /** How writing a vault opened on its own back into its file went. */
@@ -485,6 +487,10 @@ data class KeepSkippedUi(
 )
 
 enum class VaultErrorKind {
+    /** A vault opened on its own is still being written back: try again in a moment. */
+    SINGLE_BUSY,
+    /** Changes of an earlier opening of this file wait: write them first. */
+    SINGLE_PENDING,
     /** A file from a newer GhulSuite: update the app. */
     UPDATE_REQUIRED,
     NO_KEY,

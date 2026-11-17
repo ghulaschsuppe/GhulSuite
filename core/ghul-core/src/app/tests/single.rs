@@ -232,6 +232,8 @@ fn a_vault_on_its_own_stays_one_vault() {
     refused(t.change_password(PW.into(), "ganz-neu-123".into()));
     refused(t.new_recovery_code("Neu".into()).map(|_| ()));
     refused(t.archive_build("Test".into()).map(|_| ()));
+    // The device's quick unlock belongs to the own suite.
+    refused(t.quick_unlock_enable("pin".into(), Some("1234".into())).map(|_| ()));
     assert_eq!(t.list_vaults().unwrap().len(), 1);
     assert_eq!(t.single_vault_name().unwrap(), t.list_vaults().unwrap()[0].file);
     // Entries change as usual.

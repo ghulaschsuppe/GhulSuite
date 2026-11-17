@@ -224,4 +224,50 @@ class SingleBackendTest {
             dir.deleteRecursively()
         }
     }
+
+    /** Leftovers are never lost and never overwritten by a new opening of the same file. */
+    @Test
+    fun leftoversComeFirstAndSurviveAnUnreadableRecord() = runBlocking {
+        val dir = Files.createTempDirectory("ghul-single-left").toFile()
+        try {
+            val kf = generateKeyfile()
+            val target = File(dir, "Privat.ghlpss").apply { writeBytes(vaultFile(dir, kf)) }
+            val ref = SuiteFileRef(target.absolutePath, target.name)
+            val b = Backend(dir)
+            b.openSingle(ref, target.readBytes(), "Master Passwort!", null, kf) {}
+            b.failWrites = true
+            b.renameVault(b.listVaults().single().id, "Wartet")
+            b.lock()
+            waitUntil("offered") { b.pendingSingleWrites().size == 1 }
+            b.failWrites = false
+            assertTrue(b.hasPendingSingleWrite(ref))
+
+            // Opening the same file again: refused until the waiting changes are dealt with.
+            val e = assertFailsWith<VaultException> { b.openSingle(ref, target.readBytes(), "Master Passwort!", null, kf) {} }
+            assertEquals(de.danerd.ghulsuite.model.VaultErrorKind.SINGLE_PENDING, e.kind)
+
+            // Its record cannot be read: the changes stay, offered as "save as".
+            val key = b.pendingSingleWrites().single().key
+            File(File(File(dir, "single-vault"), key), "target").writeText("kaputt")
+            val p = b.pendingSingleWrites().single()
+            assertTrue(!p.targetKnown)
+            val copy = File(dir, "Gerettet.ghlpss")
+            assertTrue(b.saveSingleWriteAs(p.key, SuiteFileRef(copy.absolutePath, copy.name)))
+            assertEquals("Wartet", nameIn(dir, copy, kf))
+            assertTrue(b.pendingSingleWrites().isEmpty())
+            assertTrue(!b.hasPendingSingleWrite(ref))
+
+            // Now it opens again.
+            b.openSingle(ref, target.readBytes(), "Master Passwort!", null, kf) {}
+            assertEquals(ref, b.singleFile())
+
+            // Saved as a new file while it is being locked: the closed state is not brought back.
+            val other = File(dir, "Neu.ghlpss")
+            b.lock()
+            assertTrue(!b.saveSingleAs(SuiteFileRef(other.absolutePath, other.name)))
+            assertEquals(null, b.singleFile())
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
 }

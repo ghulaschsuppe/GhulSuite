@@ -102,7 +102,6 @@ fun OpenSingleVault(state: AppState, file: PickedSuiteFile, info: ContainerInfoU
     var pin by remember { mutableStateOf("") }
     var keyfile by remember { mutableStateOf<PickedFile?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    val waiting = stringResource(Res.string.single_pending_first)
 
     SectionCard(stringResource(Res.string.single_open_title)) {
         Hint(stringResource(Res.string.single_open_text, file.ref.name, stringResource(kindLabel(kind))))
@@ -118,10 +117,6 @@ fun OpenSingleVault(state: AppState, file: PickedSuiteFile, info: ContainerInfoU
                 enabled = !state.busy && password.isNotEmpty() && (if (needsKey) keyPinOk(state, pin) else keyfile != null),
                 onClick = {
                     state.run(onError = { error = it }, block = {
-                        // Changes of an earlier opening wait for this file: first those (dialog).
-                        if (backend.pendingSingleWrites().any { it.file.id == file.ref.id }) {
-                            throw VaultException(VaultErrorKind.OTHER, waiting)
-                        }
                         backend.openSingle(
                             file.ref, file.data, password, if (needsKey) pin else null,
                             if (needsKey) null else keyfile?.bytes, state.onTouchNeeded,
@@ -156,7 +151,8 @@ fun SingleVaultSection(state: AppState) {
         if (ref != null) {
             state.run(block = { backend.saveSingleAs(ref) }) { ok ->
                 if (ok) {
-                    state.single = s.copy(file = ref)
+                    // Closed meanwhile: nothing to show any more.
+                    if (state.single == s) state.single = s.copy(file = ref)
                     state.singleSave = SingleSaveUi.SAVED
                     state.unsaved = backend.archiveUnsaved()
                     state.message(savedAs.replace("%1\$s", ref.name))
@@ -426,7 +422,7 @@ fun PendingSingleWrites(state: AppState) {
         title = { Text(stringResource(Res.string.single_pending_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(stringResource(Res.string.single_pending_text, p.file.name))
+                Text(stringResource(if (p.targetKnown) Res.string.single_pending_text else Res.string.single_pending_unknown, p.file.name))
                 if (p.changedElsewhere) Banner(Icons.Filled.Warning, stringResource(Res.string.single_pending_changed))
                 if (filePickersAvailable) {
                     OutlinedButton(onClick = { error = null; saveAs(p.file.name) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
@@ -440,8 +436,10 @@ fun PendingSingleWrites(state: AppState) {
             }
         },
         confirmButton = {
-            TextButton(enabled = !state.busy, onClick = { write(overwrite = p.changedElsewhere) }) {
-                Text(stringResource(if (p.changedElsewhere) Res.string.file_overwrite else Res.string.single_pending_write))
+            if (p.targetKnown) {
+                TextButton(enabled = !state.busy, onClick = { write(overwrite = p.changedElsewhere) }) {
+                    Text(stringResource(if (p.changedElsewhere) Res.string.file_overwrite else Res.string.single_pending_write))
+                }
             }
         },
         dismissButton = {},
