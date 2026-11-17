@@ -60,6 +60,12 @@ interface NetBackend {
     /** Decrypted content of Drive files as mail attachments (folders are skipped). */
     suspend fun driveFilesForMail(files: List<DriveItemUi>): List<OutgoingAttachmentUi>
 
+    // --- Key change after a change of the protection (an older copy of the suite file is shut out)
+    /** Where a running key change is (nothing tried). */
+    suspend fun keyChangeStatus(): KeyChangeUi = KeyChangeUi()
+    /** Continues a running key change as far as it goes now. */
+    suspend fun keyChangeContinue(): KeyChangeUi = KeyChangeUi()
+
     // --- GhulDrive
     suspend fun driveStatus(): DriveStatusUi
     /** Removes blocks nothing uses any more (at most once a day per device); how many went. */
@@ -311,6 +317,25 @@ data class ServerUi(
 }
 
 
+
+/** Where a server is in the key change. */
+enum class KeyChangeStateUi { WAITING, DONE, ADD_BY_HAND, REMOVE_BY_HAND }
+
+data class KeyChangeServerUi(val id: String, val name: String, val host: String, val state: KeyChangeStateUi)
+
+/**
+ * A key change after a change of the protection: GhulDrive's index gets a new key, every server a
+ * new SSH key; [driveWaiting] names the Drive locations not reached yet.
+ */
+data class KeyChangeUi(
+    val running: Boolean = false,
+    val driveWaiting: List<String> = emptyList(),
+    val servers: List<KeyChangeServerUi> = emptyList(),
+    val publicKey: String = "",
+) {
+    /** Something only the user can do (the hoster manages keys in its web panel). */
+    val byHand: Boolean get() = servers.any { it.state == KeyChangeStateUi.ADD_BY_HAND || it.state == KeyChangeStateUi.REMOVE_BY_HAND }
+}
 
 data class DriveStatusUi(val serverId: String?, val files: Int, val bytes: Long)
 

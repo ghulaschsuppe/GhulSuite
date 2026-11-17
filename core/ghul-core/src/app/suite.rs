@@ -1271,6 +1271,7 @@ impl GhulSuite {
             c.rekey(&pk, kdf.clone(), &mut OsRng)?;
         }
         open.renew_keys(false, now_ms())?;
+        self.begin_key_change(&mut open)?;
         self.protection_changed(&mut open)?;
         self.save_all(&mut open)?;
         super::quick::delete_all(&self.local_dir);
@@ -1956,6 +1957,7 @@ impl GhulSuite {
             }
             // The old code with an old copy of a file must not open what is written now.
             o.renew_keys(false, now)?;
+            self.begin_key_change(o)?;
             self.protection_changed(o)?;
             self.save_all(o)?;
             Ok(code.to_display().to_string())
@@ -1985,6 +1987,7 @@ impl GhulSuite {
             // The removed key with an old copy of a file must not open what is written now:
             // new factor secret for the remaining keys and key files, new container keys.
             o.renew_keys(true, now_ms())?;
+            self.begin_key_change(o)?;
             self.protection_changed(o)?;
             self.save_all(o)?;
             super::quick::delete_all(&self.local_dir);
@@ -2012,6 +2015,7 @@ impl GhulSuite {
             o.password_key = new_pk;
             // The old password with an old copy of a file must not open what is written now.
             o.renew_keys(false, now_ms())?;
+            self.begin_key_change(o)?;
             self.protection_changed(o)?;
             self.save_all(o)?;
             super::quick::delete_all(&self.local_dir);

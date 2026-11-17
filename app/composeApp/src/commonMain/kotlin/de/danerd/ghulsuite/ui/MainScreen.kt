@@ -200,6 +200,7 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     LaunchedEffect(state.tab) { focusManager.clearFocus(force = true) }
     if (state.codeUnconfirmed && top !is Screen.RecoveryCode) CodeReminderDialog(state)
+    else if (state.keyChange?.byHand == true && !state.keyChangeLater) KeyChangeDialog(state)
     state.mailAccountSheet?.let { sheet -> MailAccountSheet(state, sheet.id) { state.mailAccountSheet = null } }
     // A new recovery code cannot be skipped: it must be confirmed first.
     PlatformBackHandler(enabled = top != null && top !is Screen.RecoveryCode) { state.back() }

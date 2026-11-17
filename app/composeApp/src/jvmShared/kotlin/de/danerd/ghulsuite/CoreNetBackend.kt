@@ -28,6 +28,9 @@ import de.danerd.ghulsuite.model.ByteSink
 import de.danerd.ghulsuite.model.ByteSource
 import de.danerd.ghulsuite.model.DriveItemUi
 import de.danerd.ghulsuite.model.DriveStatusUi
+import de.danerd.ghulsuite.model.KeyChangeServerUi
+import de.danerd.ghulsuite.model.KeyChangeStateUi
+import de.danerd.ghulsuite.model.KeyChangeUi
 import de.danerd.ghulsuite.model.MailAccountInputUi
 import de.danerd.ghulsuite.model.MailAccountUi
 import de.danerd.ghulsuite.model.MailAttachmentUi
@@ -148,6 +151,8 @@ abstract class CoreNetBackend(protected val suite: () -> GhulSuite) : NetBackend
     // --- drive ---------------------------------------------------------------------------------
 
     override suspend fun driveTidy(): Int = io { suite().driveTidy(false).toInt() }
+    override suspend fun keyChangeStatus(): KeyChangeUi = io { suite().keyChangeStatus().toUi() }
+    override suspend fun keyChangeContinue(): KeyChangeUi = io { suite().keyChangeContinue().toUi() }
 
     override suspend fun driveStatus(): DriveStatusUi = io {
         val s = suite().driveStatus()
@@ -479,3 +484,20 @@ abstract class CoreNetBackend(protected val suite: () -> GhulSuite) : NetBackend
 
     override suspend fun mailVerifyKey(email: String) = io { suite().mailVerifyKey(email) }
 }
+
+private fun de.danerd.ghulsuite.core.KeyChangeStatus.toUi() = KeyChangeUi(
+    running = running,
+    driveWaiting = driveWaiting,
+    servers = servers.map {
+        KeyChangeServerUi(
+            it.id, it.name, it.host,
+            when (it.state) {
+                de.danerd.ghulsuite.core.KeyChangeState.WAITING -> KeyChangeStateUi.WAITING
+                de.danerd.ghulsuite.core.KeyChangeState.DONE -> KeyChangeStateUi.DONE
+                de.danerd.ghulsuite.core.KeyChangeState.ADD_BY_HAND -> KeyChangeStateUi.ADD_BY_HAND
+                de.danerd.ghulsuite.core.KeyChangeState.REMOVE_BY_HAND -> KeyChangeStateUi.REMOVE_BY_HAND
+            },
+        )
+    },
+    publicKey = publicKey,
+)

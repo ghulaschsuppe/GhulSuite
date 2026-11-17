@@ -144,7 +144,7 @@ Bei jeder Schutzänderung (neues Passwort, neuer Code, Key oder Schlüsseldatei 
    schreiben, `index.bak` (alter Schlüssel) löschen. Ein Schreibvorgang; die Blöcke bleiben unverändert, denn ihre
    Schlüssel stehen nur im Index.
 3. **SSH-Zugang tauschen:** neuen öffentlichen Schlüssel auf dem Server eintragen, damit anmelden und prüfen, dann den
-   alten entfernen.
+   alten entfernen und prüfen, dass er abgewiesen wird (je Anbieter, siehe unten).
 4. **Abschließen:** alte Schlüssel aus der Arbeitskopie entfernen; die App fordert auf, die Suite-Datei zu speichern.
 
 Danach:
@@ -154,6 +154,24 @@ Danach:
   Suite-Datei.“). Es kann nichts zerstören; seine Drive-Änderungen liegen bereits auf dem Server.
 - Regel: Nach einer Schutzänderung arbeitet nur das Gerät weiter, das sie gemacht hat; alle anderen öffnen zuerst die
   neue Datei.
+
+**Je Anbieter.** Wie Schritt 3 abläuft, hängt davon ab, wo der Anbieter die erlaubten Schlüssel hält. Die App erkennt
+das selbst, eine Einstellung braucht es nicht:
+
+- **Der Server liest `~/.ssh/authorized_keys`** (eigene Server, VPS, NAS, die meisten Webhoster mit SSH-Zugang und
+  Speicherboxen mit SFTP): Die App meldet sich mit dem alten Schlüssel an, hängt den neuen an die Datei an, meldet sich
+  mit dem neuen an, entfernt die Zeilen der alten Schlüssel (alle anderen Zeilen bleiben) und prüft zum Schluss, dass
+  der alte Schlüssel abgewiesen wird. Ohne Zutun des Nutzers.
+- **Der Anbieter verwaltet Schlüssel nur in seinem Webpanel** (die Datei wird angelegt, aber nicht gelesen, oder ist
+  nicht beschreibbar): Die Anmeldung mit dem neuen Schlüssel scheitert. Die App zeigt den neuen öffentlichen Schlüssel
+  und bittet, ihn im Webpanel einzutragen; „Prüfen“ meldet sich damit an. Danach bittet sie, den alten im Webpanel zu
+  entfernen; „Prüfen“ stellt sicher, dass er abgewiesen wird. Bis dahin meldet sich die App mit dem alten Schlüssel an,
+  der Server bleibt also nutzbar.
+- **Nur Passwort-Anmeldung, keine Schlüssel:** Solche Server nimmt die App nicht auf (6.1), es gibt nichts zu tauschen.
+
+Ist ein Server gerade nicht erreichbar, bleibt er auf „wartet“ und wird nach dem nächsten Entsperren wieder versucht.
+Der Wechsel gilt erst als abgeschlossen, wenn alle Server und alle Drive-Speicherorte durch sind; erst dann werden die
+alten Schlüssel aus der Suite gelöscht.
 
 ### 6.5 Grenzen
 

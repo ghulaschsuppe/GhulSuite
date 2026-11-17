@@ -19,13 +19,15 @@ pub(crate) fn sftp_env() -> Option<(String, u16, String, String, String, String)
     ))
 }
 
+/// Held while the test server's authorized_keys is changed (tests that rewrite it hold it too).
+pub(crate) static AUTHKEYS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Adds `public` to the test server's authorized_keys. Tests run in parallel: reading the file,
 /// adding a line and writing it back lost keys of other tests (ServerAuthFailed in CI), so this
 /// appends under a lock.
 pub(crate) fn authorize_test_key(authkeys: &str, public: &str) {
     use std::io::Write;
-    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let _one = LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let _one = AUTHKEYS_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let mut f = std::fs::OpenOptions::new().create(true).append(true).open(authkeys).unwrap();
     f.write_all(format!("{public}\n").as_bytes()).unwrap();
 }

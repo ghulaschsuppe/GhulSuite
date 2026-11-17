@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import de.danerd.ghulsuite.model.VaultBackend
+import de.danerd.ghulsuite.model.KeyChangeUi
 import de.danerd.ghulsuite.model.UpdateStep
 import de.danerd.ghulsuite.model.UpdateUi
 import de.danerd.ghulsuite.model.VaultKindUi
@@ -208,6 +209,10 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
 
     /** The recovery code was never confirmed: a banner asks for a new one (#24). */
     var codeUnconfirmed by mutableStateOf(false)
+    /** A running key change after a change of the protection (null: none, or not known yet). */
+    var keyChange by mutableStateOf<KeyChangeUi?>(null)
+    /** The user put the key change's steps by hand off until the next unlock. */
+    var keyChangeLater by mutableStateOf(false)
 
     /** The area has its file in this suite (it may still be hidden on this device). */
     fun hasArea(kind: VaultKindUi): Boolean = !areasKnown || vaults.any { it.kind == kind }
@@ -469,6 +474,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     mailUnread = 0
                     areasKnown = false
                     codeUnconfirmed = false
+                    keyChange = null
+                    keyChangeLater = false
                     if (single != null) {
                         // The vault opened on its own is closed: back to the own suite (locked) or the start.
                         single = null
@@ -488,6 +495,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     }
                     sendDueMail()
                     runAutoArchive()
+                    // A key change that stopped (no network, app closed) continues.
+                    continueKeyChange()
                     // GhulDrive tidies up its server quietly (blocks nothing uses any more, once a day).
                     if (backend.settings.moduleGhulDrive && hasArea(VaultKindUi.DRIVE)) {
                         scope.launch { catching { backend.net.driveTidy() } }
@@ -720,6 +729,27 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         revision++
         refreshVaults()
         refreshCalendar()
+    }
+
+    /**
+     * After a change of the protection (password, recovery code, a key removed): an older copy
+     * of the suite file is shut out of GhulDrive and the servers (new keys there).
+     */
+    fun protectionChanged() {
+        changed()
+        continueKeyChange()
+    }
+
+    /** Continues a running key change as far as it goes now; shows what is left. */
+    fun continueKeyChange() {
+        scope.launch {
+            // Only then the network: most of the time no change runs.
+            if (catching { backend.net.keyChangeStatus() }.getOrNull()?.running != true) {
+                keyChange = null
+                return@launch
+            }
+            keyChange = catching { backend.net.keyChangeContinue() }.getOrNull()?.takeIf { it.running }
+        }
     }
 
     fun refreshVaults() {

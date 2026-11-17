@@ -262,6 +262,7 @@ fun CodeReminderDialog(state: AppState) {
             TextButton(onClick = {
                 state.run(block = { state.backend.newRecoveryCode(getString(Res.string.setup_recovery_label)) }) {
                     state.codeUnconfirmed = false
+                    state.protectionChanged()
                     state.push(Screen.RecoveryCode(it))
                 }
             }, enabled = !state.busy) { Text(stringResource(Res.string.code_do_now)) }

@@ -11,6 +11,7 @@ pub mod domain;
 pub mod drive;
 pub mod error;
 pub mod import;
+pub mod keychange;
 pub mod mail;
 pub(crate) mod mailcrypt;
 pub mod maildrive;

@@ -343,7 +343,7 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                 TextButton(onClick = {
                     newCode = false
                     state.run(block = { backend.newRecoveryCode(getString(Res.string.setup_recovery_label)) }) {
-                        state.changed()
+                        state.protectionChanged()
                         state.push(Screen.RecoveryCode(it))
                     }
                 }) { Text(stringResource(Res.string.a_create)) }
@@ -362,7 +362,7 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
             confirmButton = {
                 TextButton(onClick = {
                     removing = null
-                    state.run(block = { backend.removeSlot(s.id) }) { state.changed() }
+                    state.run(block = { backend.removeSlot(s.id) }) { state.protectionChanged() }
                 }) { Text(stringResource(Res.string.a_delete)) }
             },
             dismissButton = { TextButton(onClick = { removing = null }) { Text(stringResource(Res.string.a_cancel)) } },
@@ -526,6 +526,7 @@ fun ChangePasswordScreen(state: AppState, padding: PaddingValues) {
                         error = PasswordPolicy.check(state.backend, new, repeat)
                         if (error == null) {
                             state.run(onError = { error = it }, block = { state.backend.changePassword(current, new) }) {
+                                state.protectionChanged()
                                 state.message(done)
                                 state.pop()
                             }

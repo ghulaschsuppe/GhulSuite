@@ -21,7 +21,7 @@ use crate::net::NetError;
 
 /// The server list, in the suite file and in the Drive file (Drive's storage locations).
 pub(super) const SERVERS_KEY: &str = "servers";
-const SSH_KEY: &str = "ssh_key";
+pub(super) const SSH_KEY: &str = "ssh_key";
 
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub(super) struct StoredServer {
@@ -124,7 +124,7 @@ pub(super) fn all_servers(o: &Open) -> Vec<StoredServer> {
     list
 }
 
-fn ssh_private_key(o: &mut Open) -> Result<Zeroizing<String>> {
+pub(super) fn ssh_private_key(o: &mut Open) -> Result<Zeroizing<String>> {
     let stored: String = setting(&o.suite, SSH_KEY);
     if !stored.is_empty() {
         return Ok(Zeroizing::new(stored));
@@ -154,7 +154,24 @@ pub(super) fn connector(o: &mut Open, s: &StoredServer, base: Option<&str>) -> R
     let base = base.map(str::to_owned).unwrap_or_else(|| s.base.clone());
     let mut cfg = sftp_config(o, s)?;
     cfg.base = base;
-    Ok(Box::new(move || Ok(Arc::new(SftpFs::connect(&cfg)?) as Arc<dyn RemoteFs>)))
+    // During a key change (see `keychange`): servers that do not take the new key yet are
+    // reached with an earlier one.
+    let earlier = super::keychange::earlier_ssh_keys(o);
+    Ok(Box::new(move || match SftpFs::connect(&cfg) {
+        Err(NetError::AuthFailed) if !earlier.is_empty() => {
+            for k in &earlier {
+                let mut c = cfg.clone();
+                c.auth = SshAuth::Key(k.clone());
+                match SftpFs::connect(&c) {
+                    Ok(fs) => return Ok(Arc::new(fs) as Arc<dyn RemoteFs>),
+                    Err(NetError::AuthFailed) => continue,
+                    Err(e) => return Err(e.into()),
+                }
+            }
+            Err(GhulError::ServerAuthFailed)
+        }
+        other => Ok(Arc::new(other?) as Arc<dyn RemoteFs>),
+    }))
 }
 
 /// Opens a stored server with its own folder, or with `base` instead (e.g. the login folder).

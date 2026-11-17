@@ -3,6 +3,9 @@ package de.danerd.ghulsuite
 
 import androidx.compose.runtime.CompositionLocalProvider
 import de.danerd.ghulsuite.model.ServerUi
+import de.danerd.ghulsuite.model.KeyChangeServerUi
+import de.danerd.ghulsuite.model.KeyChangeStateUi
+import de.danerd.ghulsuite.model.KeyChangeUi
 import de.danerd.ghulsuite.model.VaultKindUi
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.asSkiaBitmap
@@ -703,6 +706,58 @@ class InteractionTest {
         waitFor("Delete “Privat”?")
         shot("vault-delete")
         assertFalse(fake.calls.any { it.startsWith("removeVault") }, "a vault is only deleted after confirming")
+    }
+
+    /**
+     * Key change (concept 6.4) at a hoster that manages SSH keys in its web panel: the app shows
+     * the new key to add there, then asks to remove the old one, and checks each step.
+     */
+    @Test
+    fun keyChangeGuidesThroughTheWebPanel() = app(
+        prepare = {
+            net = FakeNet().apply {
+                val server = { st: KeyChangeStateUi -> KeyChangeServerUi("s2", "Webspace", "example.org", st) }
+                val key = "ssh-ed25519 AAAAC3NzaNEW GhulSuite"
+                keyChanges += KeyChangeUi(true, emptyList(), listOf(server(KeyChangeStateUi.ADD_BY_HAND)), key)
+                keyChanges += KeyChangeUi(true, emptyList(), listOf(server(KeyChangeStateUi.REMOVE_BY_HAND)), key)
+                keyChanges += KeyChangeUi(false, emptyList(), emptyList(), "")
+            }
+        },
+    ) { state, fake ->
+        val net = fake.net as FakeNet
+        waitForIdle()
+        if (!shown("Add the new server key")) state.continueKeyChange()
+        waitFor("Add the new server key")
+        assertTrue(shown("Webspace"))
+        assertTrue(shown("ssh-ed25519 AAAAC3NzaNEW GhulSuite"), "the key to add is shown")
+        waitFor("Add the new key", substring = true)
+        shot("key-change-add")
+        onAllNodes(hasText("Check") and hasAnyAncestor(isDialog())).onFirst().performClick()
+        waitFor("Now remove the old key", substring = true)
+        assertFalse(shown("ssh-ed25519 AAAAC3NzaNEW GhulSuite"), "nothing to add any more")
+        onAllNodes(hasText("Check") and hasAnyAncestor(isDialog())).onFirst().performClick()
+        waitGone("Add the new server key")
+        assertTrue(state.keyChange == null)
+        // The last "Check" only asks where the change stands (done): no network needed.
+        assertEquals(2, net.calls.count { it == "keyChangeContinue" })
+    }
+
+    /** "Later" puts the key change's steps off until the next unlock. */
+    @Test
+    fun keyChangeCanWait() = app(
+        prepare = {
+            net = FakeNet().apply {
+                val s = KeyChangeServerUi("s2", "Webspace", "example.org", KeyChangeStateUi.ADD_BY_HAND)
+                repeat(2) { keyChanges += KeyChangeUi(true, emptyList(), listOf(s), "ssh-ed25519 AAAA GhulSuite") }
+            }
+        },
+    ) { state, _ ->
+        waitForIdle()
+        if (!shown("Add the new server key")) state.continueKeyChange()
+        waitFor("Add the new server key")
+        onAllNodes(hasText("Later") and hasAnyAncestor(isDialog())).onFirst().performClick()
+        waitGone("Add the new server key")
+        assertTrue(state.keyChangeLater)
     }
 
     /** F105: setting up GhulMail under "Areas" opens the sheet for the mail account at once. */

@@ -5,6 +5,7 @@ import de.danerd.ghulsuite.model.ByteSink
 import de.danerd.ghulsuite.model.ByteSource
 import de.danerd.ghulsuite.model.DriveItemUi
 import de.danerd.ghulsuite.model.DriveStatusUi
+import de.danerd.ghulsuite.model.KeyChangeUi
 import de.danerd.ghulsuite.model.MailAccountInputUi
 import de.danerd.ghulsuite.model.MailAccountUi
 import de.danerd.ghulsuite.model.MailAttachmentUi
@@ -189,6 +190,14 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
     var driveFiles = 3
     /** GhulDrive is not set up (while the rest, e.g. mail, is). */
     var driveMissing = false
+    /** What each `keyChangeContinue` answers, one after the other (empty: no change runs). */
+    val keyChanges: MutableList<KeyChangeUi> = java.util.Collections.synchronizedList(mutableListOf<KeyChangeUi>())
+    override suspend fun keyChangeStatus(): KeyChangeUi = keyChanges.firstOrNull() ?: KeyChangeUi()
+    override suspend fun keyChangeContinue(): KeyChangeUi {
+        calls += "keyChangeContinue"
+        return keyChanges.removeFirstOrNull() ?: KeyChangeUi()
+    }
+
     override suspend fun driveStatus(): DriveStatusUi {
         driveStatusGate?.let { gate -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { gate.await(30, java.util.concurrent.TimeUnit.SECONDS) } }
         return DriveStatusUi(if (driveMissing) null else driveStatusServer ?: driveOwnServer?.id, driveFiles, 12_345_678)

@@ -84,11 +84,21 @@ struct DriveSettings {
     /// The storage location the mail archive writes into (empty: the active one).
     #[serde(default)]
     archive: String,
+    /// During a key change: Drive's earlier keys (newest first). Indexes of locations not yet
+    /// written with the new key are read with them.
+    #[serde(default)]
+    old_keys: Vec<serde_bytes::ByteBuf>,
+    /// During a key change: the locations whose index has the new key.
+    #[serde(default)]
+    rekeyed: Vec<String>,
 }
 
 impl Drop for DriveSettings {
     fn drop(&mut self) {
         zeroize::Zeroize::zeroize(&mut self.key);
+        for k in &mut self.old_keys {
+            zeroize::Zeroize::zeroize(k.as_mut_slice());
+        }
     }
 }
 
@@ -628,7 +638,12 @@ impl GhulSuite {
             return Err(GhulError::NotConfigured);
         }
         let fs = self.remote(o, &server)?;
-        Ok((fs, Keys::new(&d.key, o.suite.header().suite_id)))
+        let keys = Keys::new(&d.key, o.suite.header().suite_id);
+        // A location whose index still has an earlier key gets the new one first.
+        if !d.old_keys.is_empty() && !d.rekeyed.contains(&server) {
+            self.drive_rekey_here(o, fs.as_ref(), &server)?;
+        }
+        Ok((fs, keys))
     }
 
     /// Checks the location Drive's calls work on: an existing index must open with Drive's key
@@ -752,6 +767,99 @@ impl GhulSuite {
     fn drive_on_active(&self, o: &Open) -> bool {
         let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
         AT.with(|a| a.borrow().as_ref().map_or(true, |at| Some(at) == drive_server_id(o, &d).as_ref()))
+    }
+
+    /// Starts Drive's part of a key change (concept 6.4): a new key; the earlier one stays until
+    /// every location's index is written with the new one.
+    pub(super) fn drive_begin_rekey(&self, o: &mut Open) -> Result<()> {
+        let mut d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
+        if d.key.len() != 32 {
+            return Ok(());
+        }
+        d.old_keys.insert(0, serde_bytes::ByteBuf::from(d.key.clone()));
+        let mut k = vec![0u8; 32];
+        OsRng.fill_bytes(&mut k);
+        d.key = k;
+        d.rekeyed.clear();
+        put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
+        self.net.lock().unwrap_or_else(|p| p.into_inner()).drive = None;
+        Ok(())
+    }
+
+    /// Writes the index of location `loc` with Drive's new key (under the lock). Its blocks stay
+    /// as they are: their keys are only in the index. The copy before (`index.bak`, with an
+    /// earlier key) goes. Done once per location.
+    fn drive_rekey_here(&self, o: &mut Open, fs: &dyn RemoteFs, loc: &str) -> Result<()> {
+        let mut d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
+        let suite = o.suite.header().suite_id;
+        let new = Keys::new(&d.key, suite);
+        let lock = IndexLock::take(fs)?;
+        let open_with = |data: &[u8]| -> Option<DriveIndex> {
+            d.old_keys.iter().find_map(|k| decode_index(data, &Keys::new(k, suite)).ok())
+        };
+        if let Some(data) = fs.read(INDEX)? {
+            if decode_index(&data, &new).is_err() {
+                // An earlier key (or, the index being damaged, the copy before it).
+                let mut index =
+                    match open_with(&data) {
+                        Some(i) => i,
+                        None => fs.read(INDEX_BAK)?.as_deref().and_then(open_with).ok_or_else(|| {
+                            GhulError::Corrupted { msg: "Drive data damaged or from another key".into() }
+                        })?,
+                    };
+                save_index(fs, &new, &mut index)?;
+                let seen = d.seen.entry(loc.to_owned()).or_insert(0);
+                *seen = (*seen).max(index.revision);
+            }
+        }
+        // The copy before is under an earlier key: whoever still has that key must not read it.
+        delete_quiet(fs, INDEX_BAK)?;
+        drop(lock);
+        d.rekeyed.push(loc.to_owned());
+        put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
+        self.save_area(o, VaultKind::Drive)
+    }
+
+    /// The locations whose index does not have Drive's new key yet (id, name); empty when no
+    /// key change runs. Locations that cannot be reached stay in the list.
+    pub(super) fn drive_rekey_waiting(&self, o: &Open) -> Vec<(String, String)> {
+        let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
+        if d.old_keys.is_empty() {
+            return Vec::new();
+        }
+        let mut all: Vec<(String, String)> = servers::drive_servers(o).into_iter().map(|s| (s.id, s.name)).collect();
+        // The active location also when it is no stored server (tests attach a folder directly).
+        if let Some(active) = drive_server_id(o, &d) {
+            if !all.iter().any(|(id, _)| *id == active) {
+                all.push((active.clone(), active));
+            }
+        }
+        all.into_iter().filter(|(id, _)| !d.rekeyed.contains(id)).collect()
+    }
+
+    /// Tries every location still waiting (see `drive_rekey_waiting`); the earlier keys go once
+    /// none waits any more. Returns the error of the last location that failed.
+    pub(super) fn drive_rekey_all(&self, o: &mut Open) -> Result<()> {
+        let mut last = Ok(());
+        for (id, _) in self.drive_rekey_waiting(o) {
+            let r = self.remote(o, &id).and_then(|fs| self.drive_rekey_here(o, fs.as_ref(), &id));
+            if let Err(e) = r {
+                last = Err(e);
+            }
+        }
+        if self.drive_rekey_waiting(o).is_empty() {
+            let mut d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
+            if !d.old_keys.is_empty() {
+                for k in &mut d.old_keys {
+                    zeroize::Zeroize::zeroize(k.as_mut_slice());
+                }
+                d.old_keys.clear();
+                d.rekeyed.clear();
+                put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
+                self.save_area(o, VaultKind::Drive)?;
+            }
+        }
+        last
     }
 
     /// Tests: Drive's index key and the suite id it is bound to.

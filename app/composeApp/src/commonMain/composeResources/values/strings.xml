@@ -408,7 +408,7 @@
     <string name="err_host_key_unknown">The server key is not confirmed yet (%1$s).</string>
     <string name="err_host_key_changed">Warning: the server presents a different key (%1$s). Someone may be intercepting the connection. Nothing was transferred.</string>
     <string name="err_cert_untrusted">The server certificate is not trusted (%1$s).</string>
-    <string name="err_server_auth">The server rejected the login. Check user name, password or key.</string>
+    <string name="err_server_auth">The server rejected the login. Check user name, password or key. If the protection of your suite was changed on another device, open the current suite file here.</string>
     <string name="err_drive_rolled_back">The GhulDrive state on the server is older than the one seen last (server reset or an old backup put back). Nothing was changed. If that was on purpose: Options → GhulDrive → “Take older server state”.</string>
     <string name="err_share_not_deleted">The server of this link is no longer set up, its package could not be deleted. The link works until it expires.</string>
     <string name="err_php_not_executed">The web server does not run PHP and delivers the server module as text: its access key would be readable. The app deleted the file again. Ask your host whether PHP is active for this folder.</string>
@@ -1343,7 +1343,7 @@
     <string name="core_suite_file">This is a suite file. Open its folder instead.</string>
     <string name="core_drive_block_missing">A part of a GhulDrive file is missing on the server.</string>
     <string name="core_drive_block_mismatch">A part of a GhulDrive file does not match the index (damaged or modified).</string>
-    <string name="core_drive_damaged">GhulDrive data is damaged or encrypted with another key.</string>
+    <string name="core_drive_damaged">GhulDrive cannot be read with this suite file: the data is damaged, or the protection was changed on another device. Then open the current suite file.</string>
     <string name="core_key_pin_unverified">The key did not confirm the PIN.</string>
     <string name="core_key_bad_answer">The key gave an unexpected answer.</string>
     <string name="core_msg_unreadable">The message cannot be read.</string>
@@ -1761,4 +1761,10 @@
     <string name="single_pending_discard_missing">%1$s is not there now. If it is really gone, giving up loses this vault. Better save it as a new file.</string>
     <string name="single_pending_missing_retry">The file is not there or cannot be read now. Is the storage back? Then try again; otherwise save as a new file.</string>
     <string name="single_pending_still_missing">Still not there. Is the storage back? Otherwise save as a new file.</string>
+    <string name="kc_title">Add the new server key</string>
+    <string name="kc_text">The protection of your suite was changed. So that older copies of the suite file no longer reach your servers, the suite has a new SSH key. On these servers the hoster manages keys in its web panel, which only works there:</string>
+    <string name="kc_add">Add the new key (below) in the hoster's web panel, then tap “Check”.</string>
+    <string name="kc_remove">The new key works. Now remove the old key in the hoster's web panel, then tap “Check”.</string>
+    <string name="kc_waiting">Not reached yet, tried again later.</string>
+    <string name="kc_check">Check</string>
 </resources>

@@ -2706,6 +2706,7 @@ mod collections;
 mod crazy_user;
 mod everyday;
 mod gnupg;
+mod keychange;
 mod properties;
 mod rekey;
 mod security;

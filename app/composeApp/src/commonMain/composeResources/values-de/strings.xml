@@ -408,7 +408,7 @@
     <string name="err_host_key_unknown">Der Server-Schlüssel ist noch nicht bestätigt (%1$s).</string>
     <string name="err_host_key_changed">Achtung: Der Server zeigt einen anderen Schlüssel (%1$s). Möglicherweise hört jemand mit. Es wurde nichts übertragen.</string>
     <string name="err_cert_untrusted">Dem Server-Zertifikat wird nicht vertraut (%1$s).</string>
-    <string name="err_server_auth">Der Server hat die Anmeldung abgelehnt. Prüfe Benutzername, Passwort oder Schlüssel.</string>
+    <string name="err_server_auth">Der Server hat die Anmeldung abgelehnt. Prüfe Benutzername, Passwort oder Schlüssel. Wurde der Schutz deiner Suite auf einem anderen Gerät geändert, öffne hier die aktuelle Suite-Datei.</string>
     <string name="err_drive_rolled_back">Der GhulDrive-Stand auf dem Server ist älter als der zuletzt gesehene (Server zurückgesetzt oder alte Sicherung eingespielt). Es wurde nichts geändert. War das Absicht: Optionen → GhulDrive → „Älteren Serverstand übernehmen“.</string>
     <string name="err_share_not_deleted">Der Server dieses Links ist nicht mehr eingetragen, das Paket konnte nicht gelöscht werden. Der Link funktioniert bis zu seinem Ablauf.</string>
     <string name="err_php_not_executed">Der Webserver führt PHP nicht aus und liefert das Server-Modul als Text aus: Sein Zugangsschlüssel wäre lesbar. Die App hat die Datei wieder gelöscht. Prüfe beim Hoster, ob PHP für diesen Ordner aktiv ist.</string>
@@ -1343,7 +1343,7 @@
     <string name="core_suite_file">Das ist eine Suite-Datei. Öffne stattdessen ihren Ordner.</string>
     <string name="core_drive_block_missing">Ein Teil einer GhulDrive-Datei fehlt auf dem Server.</string>
     <string name="core_drive_block_mismatch">Ein Teil einer GhulDrive-Datei passt nicht zum Inhaltsverzeichnis (beschädigt oder verändert).</string>
-    <string name="core_drive_damaged">GhulDrive-Daten sind beschädigt oder mit einem anderen Schlüssel verschlüsselt.</string>
+    <string name="core_drive_damaged">GhulDrive lässt sich mit dieser Suite-Datei nicht lesen: Die Daten sind beschädigt, oder der Schutz wurde auf einem anderen Gerät geändert. Dann öffne die aktuelle Suite-Datei.</string>
     <string name="core_key_pin_unverified">Der Key hat die PIN nicht bestätigt.</string>
     <string name="core_key_bad_answer">Der Key hat eine unerwartete Antwort geliefert.</string>
     <string name="core_msg_unreadable">Die Nachricht lässt sich nicht lesen.</string>
@@ -1761,4 +1761,10 @@
     <string name="single_pending_discard_missing">%1$s ist gerade nicht da. Ist sie wirklich weg, verliert Verwerfen diesen Tresor. Besser als neue Datei speichern.</string>
     <string name="single_pending_missing_retry">Die Datei ist gerade nicht da oder nicht lesbar. Ist der Speicher wieder da? Dann erneut versuchen, sonst als neue Datei speichern.</string>
     <string name="single_pending_still_missing">Immer noch nicht da. Ist der Speicher wieder da? Sonst als neue Datei speichern.</string>
+    <string name="kc_title">Neuen Server-Schlüssel eintragen</string>
+    <string name="kc_text">Der Schutz deiner Suite wurde geändert. Damit ältere Kopien der Suite-Datei nicht mehr auf deine Server kommen, hat die Suite einen neuen SSH-Schlüssel. Bei diesen Servern verwaltet der Anbieter die Schlüssel in seinem Webpanel, das geht nur dort:</string>
+    <string name="kc_add">Den neuen Schlüssel (unten) im Webpanel des Anbieters hinzufügen, dann „Prüfen“.</string>
+    <string name="kc_remove">Der neue Schlüssel funktioniert. Jetzt den alten Schlüssel im Webpanel des Anbieters entfernen, dann „Prüfen“.</string>
+    <string name="kc_waiting">Noch nicht erreicht, wird später wieder versucht.</string>
+    <string name="kc_check">Prüfen</string>
 </resources>
