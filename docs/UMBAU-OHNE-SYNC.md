@@ -112,8 +112,10 @@ Wieder auf dem Handy: öffnen.
   - die **Blöcke**: Dateiinhalte, je Dateifassung mit eigenem, zufälligem Schlüssel; Blöcke werden nie überschrieben.
 - **In der Suite-Datei** (Drive-Tresor): Drive-Schlüssel, SSH-Schlüssel, Serveradresse, Host-Key und die höchste
   gesehene Index-Revision. Kein Index, keine Dateiliste.
-- Drive ist damit nicht Teil des Speicherns: Änderungen liegen sofort auf dem Server, und jede aktuelle Suite-Datei
-  sieht denselben Stand, egal auf welchem Gerät sie geöffnet ist.
+- Drive ist damit nicht Teil des Speicherns: Änderungen liegen sofort auf dem Server. **Jede Kopie der Suite-Datei seit
+  der letzten Schutzänderung** sieht denselben, aktuellen Drive-Stand, egal auf welchem Gerät sie geöffnet wird (wer den
+  ganzen Tag am Telefon hoch- und herunterlädt, sieht am PC alles, auch mit einer älteren Kopie). Nur Passwörter, 2FA,
+  Kalender und Mail-Einstellungen stehen in der Datei selbst; für sie gilt die zuletzt gespeicherte.
 
 ### 6.3 Im Alltag
 
