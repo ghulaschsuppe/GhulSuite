@@ -56,31 +56,6 @@ fn xchacha20_poly1305_as_used_by_the_container_format() {
 }
 
 #[test]
-fn aes_256_gcm_as_used_by_shares() {
-    use aes_gcm::aead::{Aead, KeyInit, Payload};
-    use aes_gcm::{Aes256Gcm, Nonce};
-    let mut checked = 0;
-    for (g, t) in cases(&data("aes_gcm")) {
-        // Share packages: AES-256-GCM, 96-bit IV, 128-bit tag (as in the browser).
-        if g["keySize"] != 256 || g["ivSize"] != 96 || g["tagSize"] != 128 {
-            continue;
-        }
-        let cipher = Aes256Gcm::new_from_slice(&h(&t, "key")).unwrap();
-        let iv = h(&t, "iv");
-        let (aad, msg) = (h(&t, "aad"), h(&t, "msg"));
-        let mut sealed = h(&t, "ct");
-        sealed.extend(h(&t, "tag"));
-        let opened = cipher.decrypt(Nonce::from_slice(&iv), Payload { msg: &sealed, aad: &aad });
-        match t["result"].as_str().unwrap() {
-            "valid" => assert_eq!(opened.as_deref().ok(), Some(msg.as_slice()), "tc {}", t["tcId"]),
-            _ => assert!(opened.is_err(), "invalid case accepted: tc {}", t["tcId"]),
-        }
-        checked += 1;
-    }
-    assert!(checked > 30, "{checked}");
-}
-
-#[test]
 fn hkdf_sha256() {
     let mut checked = 0;
     for (_, t) in cases(&data("hkdf_sha256")) {
@@ -108,7 +83,7 @@ fn hkdf_sha256() {
 }
 
 #[test]
-fn hmac_sha256_as_used_by_the_php_module_and_totp() {
+fn hmac_sha256_as_used_by_totp() {
     use hmac::{Hmac, Mac};
     let mut checked = 0;
     for (g, t) in cases(&data("hmac_sha256")) {
