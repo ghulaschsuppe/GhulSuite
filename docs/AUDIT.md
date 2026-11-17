@@ -1,6 +1,10 @@
 # GhulSuite: Sicherheitsbericht
 
-**Stand:** 14.11.2026, Entwicklungsversion 0.5.0-dev mit Formatversion 2 (B1, F23).
+**Stand:** 17.11.2026, Formatversion 3 mit Schreibsiegel, **ohne Synchronisation** (Umbau nach
+[`UMBAU-OHNE-SYNC.md`](UMBAU-OHNE-SYNC.md)): Die Suite wandert als eine Datei (`.ghlzip`), Server nur per SFTP mit
+SSH-Schlüssel, GhulDrive mit Sperre, Revision und Schlüsselwechsel. Befunde, die nur entfernte Funktionen betrafen
+(Synchronisation, FTP/FTPS, Sicherung/Wiederherstellung, „Von meinem Server holen“, Autofill), bleiben in der
+Geschichte stehen und sind als **obsolet** markiert.
 **Art:** Internes Audit des eigenen Codes plus eine dauerhafte Testsuite mit Angriffen. Es gibt **keinen externen
 Audit durch Dritte**: GhulSuite ist ein Soloprojekt. Wer sich mit Sicherheit auskennt, ist eingeladen mitzulesen,
 anzugreifen und zu melden ([`SECURITY.md`](../SECURITY.md)).
@@ -22,9 +26,10 @@ Dieser Bericht fasst alle bisherigen Runden zusammen und sagt ehrlich, was offen
 | 14.11.2026 | Runde 7: Updates aus der App (signierte Prüfsummen, nur GitHub, Kanäle Stabil und Vorab), Gmail vorerst ohne Löschen beim Anbieter | keine Funde; Schutz des Updaters in 4.2 |
 | 14.11.2026 | Runde 8: Website www.ghulsuite.de (keine Cookies, nichts von fremden Servern, Content-Security-Policy), Fehlerberichte aus der App über `report.php` mit Spamschutz (Proof-of-Work, einmalige Beweise, Begrenzung je Adresse und Tag, 20 Angriffsfälle in `tools/test-report-php.py`) | 1 Fund (F48, Wettlauf beim Schreiben gleicher Archiv-Blöcke), behoben |
 | 15.11.2026 | Runde 9: Teilen ohne Kopie (Schlüssel je Datei, Server-Modul ohne Geheimnis und ohne Schreibzugriff übers Web), Mail-Archiv als Kopie in GhulDrive, Löschen nur mit Rückfrage | 30 Funde (F106 bis F135), behoben; F110 bis F117 aus eigenen, unabhängigen Durchsichten der Runde |
-| 16.11.2026 | Runde 10: Autofill und Foto-Sicherung gestrichen, mehrere Speicherorte für GhulDrive (getrennt von der Synchronisation, Entfernen beendet die Freigabelinks, Löschen der Dateien nur auf ausdrückliche Wahl) | 14 Funde (F136 bis F149), erledigt; F138 bis F144 aus der unabhängigen Durchsicht, F145, F146 und F149 aus den Emulator-Läufen, F147 (die Synchronisation hält den Kern nicht mehr während der Netzwerkarbeit) und F148 (Testschlüssel der CI) aus der CI |
+| 16.11.2026 | Runde 10: Autofill und Foto-Sicherung gestrichen, mehrere Speicherorte für GhulDrive (getrennt von der Synchronisation, Entfernen beendet die Freigabelinks, Löschen der Dateien nur auf ausdrückliche Wahl) | 14 Funde (F136 bis F149), erledigt; F138 bis F144 aus der unabhängigen Durchsicht, F145, F146 und F149 aus den Emulator-Läufen, F147 (die Synchronisation hält den Kern nicht mehr während der Netzwerkarbeit, **obsolet** seit dem Umbau) und F148 (Testschlüssel der CI) aus der CI |
+| 17.11.2026 | **Umbau ohne Synchronisation.** Anlass: die Befunde der letzten Durchsichten (u. a. H1, S1, M18, viele M- und N-Punkte), die meisten zur Synchronisation (fremde Dateien übernehmen, Schutzstände zusammenführen, ersetzte Codes, gleichzeitige Änderungen, gefälschte Server-Dateien). Entfernt: Synchronisation, Zusammenführen, „Der Ordner ist die Suite“, FTP/FTPS, Sicherung/Wiederherstellung und „Von meinem Server holen“. Neu: Suite-Datei `.ghlzip` mit versiegelter Kopfdatei und vollständiger Prüfung vor dem Ersetzen (Zähler, Stand-ID, Schutz-Epoche), Formatversion 3 mit Schreibsiegel, GhulDrive mit `index.lock`, `index.bak`, Revision und automatischem Aufräumen, Schlüsselwechsel (Drive-Schlüssel und SSH-Schlüssel) nach jeder Schutzänderung, einzelne Tresore | H1, S1, M18 und die Sync-Teile der M- und N-Punkte sind **obsolet** (die Funktion gibt es nicht mehr); die übrigen werden neu gesichtet (Paket 9 des Umbaus). Tests für Angriffe auf die Suite-Datei, gleichzeitige Drive-Änderungen, Abbrüche im Schlüsselwechsel, alte Datei nach dem Wechsel, zurückgespielten und beschädigten Index |
 
-**In Zahlen:** 149 Funde aus den Testrunden (F01 bis F149), alle behoben bzw. entschieden (F24 ist gewollt). Alle Punkte des Audits
+**In Zahlen (Stand vor dem Umbau):** 149 Funde aus den Testrunden (F01 bis F149), alle behoben bzw. entschieden (F24 ist gewollt). Alle Punkte des Audits
 vom 13.11.2026 sind erledigt (B1 bis B18, L1, L3, L5, L7, L10, L13) oder begründet entschieden (L4/B17). 269 Testfunktionen im Kern mit über einer Million Einzelprüfungen je Lauf, 64 Angriffe auf das
 PHP-Modul, Nachtlauf mit langem Fuzzing, Monkey im Emulator und Server mit kaputtem TLS.
 
@@ -32,9 +37,9 @@ PHP-Modul, Nachtlauf mit langem Fuzzing, Monkey im Emulator und Server mit kaput
 
 | Angreifer | Schutz |
 |---|---|
-| **Server** (Hoster, Einbruch beim Hoster) | Sieht nur Verschlüsseltes: keine Inhalte, keine Datei-, Ordner- oder Tresornamen. Gefälschte, vertauschte oder zurückgespielte Dateien werden erkannt, nie als richtig angezeigt |
-| **Dieb von Dateien** (Gerät, Sicherung, USB-Stick) | Ohne Master-Passwort **und** zweiten Faktor (Key oder Schlüsseldatei) wertlos. Argon2id mit mindestens 64 MiB |
-| **Finder eines Keys oder des Notfallblatts** | Key entfernen bzw. neues Blatt erstellen: Danach öffnet es nichts mehr, was gespeichert wird, auch nicht zusammen mit einer alten Sicherung (B1) |
+| **Server** (Hoster, Einbruch beim Hoster) | Sieht nur Verschlüsseltes (GhulDrive-Blöcke, Index, Freigaben): keine Inhalte, keine Datei- oder Ordnernamen; die Tresore liegen gar nicht auf dem Server. Gefälschte, vertauschte oder zurückgespielte Dateien werden erkannt, nie als richtig angezeigt |
+| **Dieb von Dateien** (Gerät, USB-Stick mit der Suite-Datei) | Ohne Master-Passwort **und** zweiten Faktor (Key oder Schlüsseldatei) wertlos. Argon2id mit mindestens 64 MiB |
+| **Finder eines Keys oder des Notfallblatts** | Key entfernen bzw. neues Blatt erstellen: Danach öffnet es nichts mehr, was gespeichert wird, auch nicht zusammen mit einer alten Kopie der Suite-Datei (B1); der Schlüsselwechsel sperrt alte Kopien von GhulDrive und den Servern aus |
 | **Netzwerk** (WLAN, Provider) | TLS mit Zertifikatsprüfung oder bestätigtem Fingerabdruck, SFTP mit festem Host-Schlüssel, IMAP/SMTP nie unverschlüsselt |
 | **Absender böswilliger Mails** | HTML ohne Skripte und ohne Zugriff aufs eigene Netz, echte Link-Ziele sichtbar, keine eingeschleusten Kopfzeilen, Autocrypt-Regeln gegen untergeschobene Schlüssel |
 | **Andere Apps auf dem Gerät** | Keine privaten Dateien in fremde Mail-Entwürfe, keine Backups, Bildschirmschutz |
@@ -43,19 +48,38 @@ PHP-Modul, Nachtlauf mit langem Fuzzing, Monkey im Emulator und Server mit kaput
 Nicht im Bedrohungsmodell: ein bereits kompromittiertes, entsperrtes Gerät (Schadsoftware mit Root, fremde
 Tastatur-App, Bedienungshilfen-Dienste). Dagegen schützt keine App (siehe 4.3).
 
+### 2.1 Suite-Datei, Server und alte Kopien (seit dem Umbau)
+
+Die Suite reist als eine Datei (`.ghlzip`); aktuell ist der Stand, der zuletzt gespeichert wurde. Jede Datei trägt ein
+Schreibsiegel, das nur mit dem Passwort entsteht; die Kopfdatei nennt Zähler, Stand-ID und Schutz-Epoche. Nach jeder
+Schutzänderung bekommen GhulDrive und der Server-Zugang neue Schlüssel ([`KONZEPT.md`](KONZEPT.md), 8.1 und 8.4).
+
+| Wer | Kann | Kann nicht |
+|---|---|---|
+| Hat den Stick, sonst nichts | Datei kopieren, löschen, durch eine ältere ersetzen | lesen; etwas unterschieben (Siegel); eine ältere Datei unbemerkt öffnen lassen (Zähler, Rückfrage) |
+| Hat Stick und einen alten Code | lesen, was im alten Stand galt | etwas unterschieben; den aktuellen Stand lesen; nach dem Schlüsselwechsel an den Server |
+| Hat Stick, alten Code und altes Passwort | einen alten Stand mit altem Schutz anbieten | ihn auf einem Gerät mit neuerem Stand öffnen lassen (Schutz-Epoche, Sperre); an den Server |
+| Hat eine alte Suite-Datei (vor einer Schutzänderung) | die damaligen Inhalte lesen | sich am Server anmelden; den aktuellen Drive-Index öffnen; neue Drive-Dateien lesen |
+| Betreibt den Server | Blöcke löschen, einen alten Index zurückspielen, Freigaben stören | Dateien lesen; einen Index fälschen (authentisiert mit dem Drive-Schlüssel); einen alten Index unbemerkt unterschieben (Revision) |
+| Betreibt den Server und hat eine alte Kopie der Suite-Datei | einen Index unter dem alten Drive-Schlüssel ablegen | ihn unterschieben (nach dem Schlüsselwechsel kennt die Suite den alten Schlüssel nicht mehr; während des Wechsels nur nach Bestätigung einer eigenen Warnung) |
+
+Bewusste Ausnahme: Wer nur den Wiederherstellungscode hat (Passwort vergessen), kann eine Suite-Datei öffnen, ohne
+dass sich die Siegel prüfen lassen. Die App sagt das, prüft Stand und Schutz-Epoche trotzdem und versiegelt danach
+alles mit dem neuen Passwort neu.
+
 ## 3. Behoben
 
 Nach Bereich zusammengefasst; die Nummern führen ins [Testprotokoll](TESTPROTOKOLL.md) bzw. zur Tabelle 6.
 
 | Bereich | Was behoben wurde | Nummern |
 |---|---|---|
-| **Synchronisation** | Eine kaputte, fehlende oder neuere Datei (auf dem Server oder lokal) löscht nie mehr einen Tresor; Löschungen nur über ausdrückliche Löschmarken. Abgerissene Uploads blockieren nichts. Geräte, die lange offline waren, verlieren nichts und überschreiben nichts, was sie nicht lesen können | F01 bis F06, F40, F41 |
+| **Synchronisation** (**obsolet**, Synchronisation am 17.11.2026 entfernt) | Eine kaputte, fehlende oder neuere Datei (auf dem Server oder lokal) löscht nie mehr einen Tresor; Löschungen nur über ausdrückliche Löschmarken. Abgerissene Uploads blockieren nichts. Geräte, die lange offline waren, verlieren nichts und überschreiben nichts, was sie nicht lesen können | F01 bis F06, F40, F41 |
 | **Schlüssel und Format** | Neues Notfallblatt, neues Passwort, entfernter Key: neue innere Schlüssel in jeder Datei; ein entfernter Key erneuert das Faktor-Geheimnis für die übrigen Keys, ohne sie zu berühren (öffentlicher Schlüssel je Key, Formatversion 2). Dateinamen verraten keine Tresornamen | B1, F23 |
-| **Netzwerk-Parser** | Abstürze durch präparierte HTTP-, SMTP- und FTP-Antworten (teils vor STARTTLS von jedem im WLAN auslösbar) | F07 bis F10 |
+| **Netzwerk-Parser** | Abstürze durch präparierte HTTP-, SMTP- und FTP-Antworten (teils vor STARTTLS von jedem im WLAN auslösbar); der FTP-Teil ist **obsolet** (FTP/FTPS entfernt) | F07 bis F10 |
 | **Mail** | Kopfzeilen-Einschleusung, versteckte Link-Ziele, Autocrypt-Schlüsseltausch durch gefälschten Absender, Bilder an `localhost` und das Heimnetz | F13, F16, F17, F28 |
-| **Autofill** | Basis-Domain zu grob (`evil.github.io`), jede App konnte eine Webadresse behaupten, Adressen mit Backslash und IPv4-Schreibweisen anders gelesen als im Browser | F18, F19, F25, F26 |
+| **Autofill** (**obsolet**, Autofill am 16.11.2026 entfernt) | Basis-Domain zu grob (`evil.github.io`), jede App konnte eine Webadresse behaupten, Adressen mit Backslash und IPv4-Schreibweisen anders gelesen als im Browser | F18, F19, F25, F26 |
 | **Andere Apps** | Private Dateien über „Per E-Mail senden“ in Entwürfe geschmuggelt; Dev-APK debuggbar | F20, F21 |
-| **Dateien von außen** | Sicherungen mit Pfad-Tricks und Zip-Bomben; Dateinamen vom Server mit Gerätenamen, Doppelpunkten, Steuer- und Richtungszeichen; Drive-Namen, die den Dateityp tarnen | F11, F14, F27 |
+| **Dateien von außen** | Sicherungen mit Pfad-Tricks und Zip-Bomben (die Sicherung ist **obsolet**; dieselben und strengere Regeln gelten für die `.ghlzip`: nur genau die erwarteten Einträge, Größen beim Lesen gezählt); Dateinamen vom Server mit Gerätenamen, Doppelpunkten, Steuer- und Richtungszeichen; Drive-Namen, die den Dateityp tarnen | F11, F14, F27 |
 | **Daten, die das Gerät verlassen** | CSV-Export als Formel ausführbar; Geheimnisse in Debug-Ausgaben; Passwort blieb nach dem Sperren in der Zwischenablage | F15, F22, F29 |
 | **Entsperren** | App-PIN-Zähler zählte erst nach dem Versuch (Freiversuch durch Abschießen der App) | F31 |
 | **CI** | Tests gegen echte Server liefen nach einem Runner-Wechsel ins Leere und wurden grün gemeldet | F39 |
@@ -63,8 +87,9 @@ Nach Bereich zusammengefasst; die Nummern führen ins [Testprotokoll](TESTPROTOK
 | **Freigaben ohne Kopie** (Runde 9) | Einmal-Links durch Link-Scanner verbraucht, Blockliste des Servers ungeprüft, beschädigter Zähler als „nie geöffnet“ gelesen, Ticket-Flut verdrängte laufende Downloads, fehlende Prüfung von Schreibrecht und Web-Erreichbarkeit des GhulSuite-Ordners, verwaiste oder gelöschte Blöcke bei unlesbarer Freigabenliste | F110 bis F113, F115 |
 | **Mail-Archiv** (Runde 9) | Gefälschte Message-ID verhinderte das Archivieren der echten Mail, Richtungsmarken im Dateinamen | F114 |
 | **Android-Teilen und Anhänge** (Audit 0.5.0) | Dateinamen wie `..`, Anhänge beliebiger Größe | A6, A7 |
-| **Sync, Runde 5** | Ein entfernter Key kommt nie per Sync zurück (Löschmarken je Key). Geänderte Server- und Kontodaten erreichen andere Geräte. Gelöscht auf A, geändert auf B: feste Regel, eine nie gesehene Änderung bleibt. Konfliktkopien fremder Sync-Programme werden zusammengeführt. Ein Server kann keine übermäßig teuren Argon2-Werte erzwingen | B2, B11, B13, B18, F42 |
-| **Drive** | Ein zurückgesetzter Index auf dem Server wird abgelehnt (nichts verschwindet); zwei Geräte, die gleichzeitig ändern, verlieren nichts | B3 |
+| **Sync, Runde 5** (**obsolet** bis auf F42: Die Argon2-Grenzen gelten weiter für jede Datei) | Ein entfernter Key kommt nie per Sync zurück (Löschmarken je Key). Geänderte Server- und Kontodaten erreichen andere Geräte. Gelöscht auf A, geändert auf B: feste Regel, eine nie gesehene Änderung bleibt. Konfliktkopien fremder Sync-Programme werden zusammengeführt. Ein Server kann keine übermäßig teuren Argon2-Werte erzwingen | B2, B11, B13, B18, F42 |
+| **Drive** | Ein zurückgesetzter Index auf dem Server wird abgelehnt (nichts verschwindet); zwei Geräte, die gleichzeitig ändern, verlieren nichts. Seit dem Umbau unter `index.lock` (exklusiv angelegt, verwaist nach zwei Minuten), mit `index.bak` bei beschädigtem Index und automatischem Aufräumen | B3 |
+| **Umbau ohne Synchronisation** (17.11.2026) | Ungeprüfte Ladewege (Sicherung, „Von meinem Server holen“, Übernahme fremder Dateien aus dem Ordner) ersetzt durch die geprüfte `.ghlzip`; Schreibsiegel gegen untergeschobene Dateien mit altem Code; ältere, abgezweigte und fremde Suite-Dateien nur nach Rückfrage, ein älterer Schutz gar nicht; Gerätedaten des alten Stands (Schnell-Entsperren, Mail-Zwischenspeicher, Drive-Offline-Kopien, unfertige Uploads) werden beim Öffnen gelöscht; alte Suite-Dateien kommen nach dem Schlüsselwechsel nicht mehr an GhulDrive und die Server; kein Server-Passwort mehr in der Suite | Umbau, Pakete 2 bis 7 |
 | **Android** | Benachrichtigungen, die bei gesperrtem Gerät eintreffen, enthalten nur ihre Sperrbildschirm-Fassung (Android lässt Apps die Kanal-Einstellung nicht vorgeben, daher entscheidet die App beim Eintreffen); Mail-Zugang für Benachrichtigungen bevorzugt in StrongBox, wahlweise löscht ihn die Sofortsperre; `.ics` von fremden Apps nur nach Vorschau; interne Aktionen nur aus eigenen Benachrichtigungen; Auto-Sperre zählt die echte Zeit; Autofill fragt vor dem Verknüpfen; kein Tippen durch darübergelegte Fenster | B4 bis B9, L10, F43 |
 | **Windows** | Entschlüsselte Kopien werden überschrieben und gelöscht, auch wenn ein Programm sie erst später freigibt; portabel bleiben sie im Datenordner; Arbeitsverzeichnis nicht mehr im DLL-Suchpfad | B10, L13 |
 | **Mail** (Runde 5) | Herkunft von Kontaktschlüsseln gemerkt; Fingerabdruck vergleichen und bestätigen, Warnung bei Wechsel; Bilder nur von genau der geprüften Adresse (kein DNS-Rebinding) | B12, B16, L7 |
