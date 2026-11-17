@@ -15,16 +15,18 @@ chmod 755 "$D"
 HERE=$(cd "$(dirname "$0")" && pwd)
 
 # --- SFTP ------------------------------------------------------------------------------------
-mkdir -p "$D/ssh" "$D/sftp-root" /run/sshd
+mkdir -p "$D/ssh" "$D/ssh-keys" "$D/sftp-root" /run/sshd
 ssh-keygen -q -t ed25519 -N "" -f "$D/ssh/host_key"
-touch "$D/ssh/authorized_keys"
-chmod 600 "$D/ssh/authorized_keys"
+# The allowed keys in a folder of their own that belongs to the test user, like ~/.ssh: the key
+# change rewrites the file (a new file next to it, then renamed).
+touch "$D/ssh-keys/authorized_keys"
+chmod 600 "$D/ssh-keys/authorized_keys"
 # The tests (run without sudo) add their keys to this file. They log in as that same user, so
 # what they write over SFTP belongs to them and they can also lay out files there directly
 # (web folders for the PHP module, files for the chaos tests).
 SFTP_LOGIN=$(id -un)
 if [ -n "${SUDO_USER:-}" ]; then
-  chown "$SUDO_USER" "$D/ssh/authorized_keys" "$D/sftp-root"
+  chown -R "$SUDO_USER" "$D/ssh-keys" "$D/sftp-root"
   SFTP_LOGIN=$SUDO_USER
   # sshd refuses accounts locked with "!" even for key logins; "*" still allows no password.
   if getent shadow "$SUDO_USER" | cut -d: -f2 | grep -q '^!'; then usermod -p '*' "$SUDO_USER"; fi
@@ -34,7 +36,9 @@ Port 2222
 ListenAddress 127.0.0.1
 HostKey $D/ssh/host_key
 PidFile $D/ssh/sshd.pid
-AuthorizedKeysFile $D/ssh/authorized_keys
+AuthorizedKeysFile $D/ssh-keys/authorized_keys
+# Many tests connect at the same time (several connections each): no connection may be dropped.
+MaxStartups 200:30:400
 PermitRootLogin yes
 PasswordAuthentication no
 KbdInteractiveAuthentication no
@@ -227,7 +231,7 @@ echo "export GHUL_TEST_DIR=$D"
 echo "export GHUL_TEST_SFTP=127.0.0.1:2222"
 echo "export GHUL_TEST_SFTP_USER=$SFTP_LOGIN"
 echo "export GHUL_TEST_SFTP_ROOT=$D/sftp-root"
-echo "export GHUL_TEST_SFTP_AUTHKEYS=$D/ssh/authorized_keys"
+echo "export GHUL_TEST_SFTP_AUTHKEYS=$D/ssh-keys/authorized_keys"
 echo "export GHUL_TEST_SFTP_HOSTKEY=$HOST_FP"
 if [ "${GHUL_TEST_SFTP_PASSWORD:-0}" = 1 ]; then
   echo "export GHUL_TEST_SFTP_PW=127.0.0.1:2223"
