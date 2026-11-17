@@ -954,3 +954,84 @@ fn a_failed_sync_after_merging_settings_does_not_lock() {
     assert!(s.changing_protection(merge_then_fail("cd")).is_err());
     assert!(!s.is_unlocked(), "a change of the protection locks");
 }
+
+/// Review of H0: the recovery code opens the suite file's content, so no password key may be in
+/// it unprotected. After a password change the earlier password key is kept (to check files not
+/// yet rewritten), but only sealed with the current one; the code alone does not reveal it.
+#[test]
+fn the_recovery_code_does_not_reveal_a_password_key() {
+    let server_dir = std::env::temp_dir().join(format!("ghul-nopk-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&server_dir);
+    let server = LocalFs::new(&server_dir);
+    let kf = generate_keyfile();
+    let d = Dirs::new("nopk");
+    let s = d.suite();
+    let res =
+        s.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    let _ = res;
+    s.sync_folder(&server).unwrap();
+    let suite_path = server_dir.join("suite").join("suite.ghlsuite");
+    let check = |s: &GhulSuite, code: &RecoveryCode, what: &str| {
+        let pk: Vec<u8> = s.with_open(|o| Ok(o.password_key.expose().to_vec())).unwrap();
+        for data in [std::fs::read(&suite_path).unwrap(), std::fs::read(d.root.join("vault/suite.ghlsuite")).unwrap()] {
+            let c = LockedContainer::parse(&data).unwrap().recover(code).unwrap();
+            let cbor = c.payload.to_cbor().unwrap();
+            assert!(
+                !cbor.windows(32).any(|w| w == pk.as_slice()),
+                "{what}: the password key is readable with the code"
+            );
+        }
+        pk
+    };
+    // A new code, a removed key: never the password key.
+    let code = RecoveryCode::parse(&s.new_recovery_code("Neu".into()).unwrap()).unwrap();
+    s.sync_folder(&server).unwrap();
+    check(&s, &code, "new code");
+    // A password change: the earlier key is kept, sealed with the new one.
+    let old_pk = check(&s, &code, "before");
+    s.change_password("pw-123456".into(), "pw-neu-789".into()).unwrap();
+    let data = std::fs::read(d.root.join("vault/suite.ghlsuite")).unwrap();
+    let c = LockedContainer::parse(&data).unwrap().recover(&code).unwrap();
+    assert!(c.payload.settings.contains_key(crate::app::suite::PASSWORD_BEFORE_KEY), "kept for half-written files");
+    assert!(!c.payload.to_cbor().unwrap().windows(32).any(|w| w == old_pk.as_slice()), "only sealed");
+    s.sync_folder(&server).unwrap();
+    check(&s, &code, "after the password change");
+    let _ = std::fs::remove_dir_all(&server_dir);
+}
+
+/// Review of H1: two devices that change the protection with the same change time (both after
+/// a change from a device whose clock was ahead) still agree: the same one wins on both.
+#[test]
+fn two_changes_with_the_same_time_agree() {
+    let server_dir = std::env::temp_dir().join(format!("ghul-tie-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&server_dir);
+    let server = LocalFs::new(&server_dir);
+    let kf = generate_keyfile();
+    let (da, db) = (Dirs::new("tie-a"), Dirs::new("tie-b"));
+    let a = da.suite();
+    a.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    a.sync_folder(&server).unwrap();
+    copy_suite(&server_dir, &db);
+    let b = db.suite();
+    b.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
+    let code_a = RecoveryCode::parse(&a.new_recovery_code("A".into()).unwrap()).unwrap();
+    let code_b = RecoveryCode::parse(&b.new_recovery_code("B".into()).unwrap()).unwrap();
+    let t = crate::app::suite::now_ms() + 5000;
+    for s in [&a, &b] {
+        s.with_open(|o| {
+            crate::app::suite::put_setting(&mut o.suite, crate::app::sync::PROTECTION_CHANGED, &t)?;
+            s.save_all(o)
+        })
+        .unwrap();
+    }
+    for _ in 0..3 {
+        a.sync_folder(&server).unwrap();
+        b.sync_folder(&server).unwrap();
+    }
+    let opens = |dirs: &Dirs, code: &RecoveryCode| {
+        files(dirs).iter().all(|(_, data)| LockedContainer::parse(data).unwrap().recover(code).is_ok())
+    };
+    let winner = if opens(&da, &code_a) { &code_a } else { &code_b };
+    assert!(opens(&da, winner) && opens(&db, winner), "both devices have the same code");
+    let _ = std::fs::remove_dir_all(&server_dir);
+}

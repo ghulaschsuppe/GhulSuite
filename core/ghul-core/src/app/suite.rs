@@ -64,10 +64,38 @@ pub(super) struct PreviousProtection {
     s: Vec<u8>,
     #[serde(with = "serde_bytes", default)]
     code: Vec<u8>,
-    /// The password key from before (a file still in the old password must be checked with it,
-    /// see the write tag). Kept only until every file is in the new protection.
-    #[serde(with = "serde_bytes", default)]
-    pk: Vec<u8>,
+}
+
+/// Password keys from before a password change, each sealed with a key from the **current**
+/// password key: a file still in the old password is checked with them (write tag), and the
+/// recovery code alone (which opens this content) does not reveal them. Kept only until every
+/// file is in the new protection and on the server.
+pub(super) const PASSWORD_BEFORE_KEY: &str = "password_before";
+
+#[derive(Serialize, serde::Deserialize, Default, Clone)]
+struct SealedPasswordKey {
+    #[serde(with = "serde_bytes")]
+    nonce: Vec<u8>,
+    #[serde(with = "serde_bytes")]
+    sealed: Vec<u8>,
+}
+
+fn password_before_key(current: &PasswordKey) -> Zeroizing<[u8; 32]> {
+    crate::vault::keys::hkdf(current.expose(), &[b"ghul/v3/password-before"])
+}
+
+/// The password keys from before, opened with the current one.
+fn previous_password_keys(suite: &UnlockedContainer, current: &PasswordKey) -> Vec<PasswordKey> {
+    let key = password_before_key(current);
+    let list: Vec<SealedPasswordKey> = setting(suite, PASSWORD_BEFORE_KEY);
+    list.iter()
+        .filter_map(|e| {
+            let nonce: [u8; 24] = e.nonce.as_slice().try_into().ok()?;
+            let plain = crate::vault::keys::open(&key, &nonce, &e.sealed, b"ghul/v3/password-before")?;
+            let k: [u8; 32] = plain.as_slice().try_into().ok()?;
+            Some(PasswordKey::from_bytes(k))
+        })
+        .collect()
 }
 
 pub(super) fn now_ms() -> i64 {
@@ -440,7 +468,8 @@ fn open_with_before(data: &[u8], suite: &UnlockedContainer, pk: &PasswordKey) ->
     let revoked: Vec<String> = setting(suite, REVOKED_KEY);
     let allowed = |secret: &[u8]| !revoked.contains(&revoked_fingerprint(secret));
     // The current password key, and the earlier ones (a password change that stopped half way).
-    let pks: Vec<&PasswordKey> = std::iter::once(pk).chain(before.iter().filter_map(|p| p.pk.as_ref())).collect();
+    let earlier = previous_password_keys(suite, pk);
+    let pks: Vec<&PasswordKey> = std::iter::once(pk).chain(earlier.iter()).collect();
     for p in before.iter().filter(|p| allowed(p.s.expose())) {
         for k in &pks {
             if let Ok(c) = LockedContainer::parse(data).ok()?.unlock(k, &p.s) {
@@ -470,7 +499,6 @@ fn open_with_before(data: &[u8], suite: &UnlockedContainer, pk: &PasswordKey) ->
 pub(super) struct Previous {
     pub s: FactorSecret,
     pub code: Option<RecoveryCode>,
-    pub pk: Option<PasswordKey>,
 }
 
 fn previous_of(suite: &UnlockedContainer) -> Vec<Previous> {
@@ -479,8 +507,7 @@ fn previous_of(suite: &UnlockedContainer) -> Vec<Previous> {
         .filter_map(|p| {
             let s: [u8; 32] = p.s.as_slice().try_into().ok()?;
             let code = <[u8; 32]>::try_from(p.code.as_slice()).ok().map(RecoveryCode::from_bytes);
-            let pk = <[u8; 32]>::try_from(p.pk.as_slice()).ok().map(PasswordKey::from_bytes);
-            Some(Previous { s: FactorSecret::from_bytes(s), code, pk })
+            Some(Previous { s: FactorSecret::from_bytes(s), code })
         })
         .collect()
 }
@@ -697,7 +724,6 @@ impl Open {
         let now = PreviousProtection {
             s: self.suite.factor_secret().expose().to_vec(),
             code: self.suite.recovery_code().map(|c| c.expose().to_vec()).unwrap_or_default(),
-            pk: self.password_key.expose().to_vec(),
         };
         list.retain(|p| p != &now);
         list.insert(0, now);
@@ -711,20 +737,39 @@ impl Open {
         previous_of(&self.suite)
     }
 
+    /// After a password change (`self.password_key` is already the new one): keeps `old` and
+    /// the earlier ones, sealed with the new password key (see [`PASSWORD_BEFORE_KEY`]).
+    pub(super) fn keep_password_key(&mut self, old: &PasswordKey) -> Result<()> {
+        let mut keys = previous_password_keys(&self.suite, old);
+        keys.insert(0, PasswordKey::from_bytes(*old.expose()));
+        keys.truncate(MAX_PREVIOUS);
+        let key = password_before_key(&self.password_key);
+        let list: Vec<SealedPasswordKey> = keys
+            .iter()
+            .map(|k| {
+                let mut nonce = [0u8; 24];
+                OsRng.fill_bytes(&mut nonce);
+                let sealed = crate::vault::keys::seal(&key, &nonce, k.expose(), b"ghul/v3/password-before");
+                SealedPasswordKey { nonce: nonce.to_vec(), sealed }
+            })
+            .collect();
+        put_setting(&mut self.suite, PASSWORD_BEFORE_KEY, &list)
+    }
+
+    /// The password keys from before (see [`PASSWORD_BEFORE_KEY`]).
+    pub(super) fn previous_password_keys(&self) -> Vec<PasswordKey> {
+        previous_password_keys(&self.suite, &self.password_key)
+    }
+
     /// Forgets the password keys from before once every file is in the current protection and
-    /// the server has it (or there is no server): only a change that stopped half way needs
-    /// them. Returns whether anything changed.
+    /// the server has it (or this device does not synchronise): only a change that stopped half
+    /// way needs them. Returns whether anything changed.
     pub(super) fn forget_previous_password_keys(&mut self) -> Result<bool> {
         let uploaded = setting::<bool>(&self.suite, PREVIOUS_UPLOADED_KEY) || !super::sync::synchronises(self);
-        let mut list: Vec<PreviousProtection> = setting(&self.suite, PREVIOUS_KEY);
-        if !uploaded || list.iter().all(|p| p.pk.is_empty()) {
+        if !uploaded || !self.suite.payload.settings.contains_key(PASSWORD_BEFORE_KEY) {
             return Ok(false);
         }
-        for p in &mut list {
-            zeroize::Zeroize::zeroize(&mut p.pk);
-            p.pk.clear();
-        }
-        put_setting(&mut self.suite, PREVIOUS_KEY, &list)?;
+        self.suite.payload.settings.remove(PASSWORD_BEFORE_KEY);
         Ok(true)
     }
 
@@ -2580,6 +2625,7 @@ impl GhulSuite {
                 c.rekey(&new_pk, new_kdf.clone(), &mut OsRng)?;
             }
             o.password_key = new_pk;
+            o.keep_password_key(&old_pk)?;
             // The old password with an old copy of a file must not open what is written now.
             o.renew_keys(false, now_ms())?;
             super::drive::renew_drive_key(o)?;

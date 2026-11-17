@@ -35,7 +35,13 @@ pub(super) const DELETED_VAULTS_KEY: &str = "deleted_vaults";
 pub(super) const PROTECTION_CHANGED: &str = "protection_changed";
 const DIR: &str = "suite";
 /// Settings that belong to one device and are never merged from another.
-const DEVICE_KEYS: &[&str] = &[SYNC_KEY, KNOWN_KEY, super::suite::PREVIOUS_KEY, super::suite::PREVIOUS_UPLOADED_KEY];
+const DEVICE_KEYS: &[&str] = &[
+    SYNC_KEY,
+    KNOWN_KEY,
+    super::suite::PREVIOUS_KEY,
+    super::suite::PREVIOUS_UPLOADED_KEY,
+    super::suite::PASSWORD_BEFORE_KEY,
+];
 
 #[derive(serde::Serialize, serde::Deserialize, Default, Clone)]
 struct SyncSettings {
@@ -107,6 +113,21 @@ pub(super) fn mark_protection_changed(o: &mut Open) -> Result<()> {
 pub(super) fn synchronises(o: &Open) -> bool {
     let s: SyncSettings = setting(&o.suite, SYNC_KEY);
     !s.server.is_empty() || s.last > 0
+}
+
+/// Which of two protections is the newer: the time of its change, and for the same time (two
+/// devices changed it at once) a fingerprint of the protection, so that both devices pick the
+/// same one instead of each keeping its own.
+fn protection_order(c: &UnlockedContainer) -> (i64, [u8; 32]) {
+    use sha2::Digest;
+    let mut h = sha2::Sha256::new();
+    h.update(b"ghul/v3/protection");
+    h.update(c.factor_secret().expose());
+    if let Some(code) = c.recovery_code() {
+        h.update(code.expose());
+    }
+    h.update(format!("{:?}", c.header().kdf).as_bytes());
+    (setting(c, PROTECTION_CHANGED), h.finalize().into())
 }
 
 /// The server this device synchronises with, if any.
@@ -400,7 +421,8 @@ fn open_remote_how(o: &Open, data: &[u8]) -> Remote {
     // the code and the password from before.
     if found.is_none() && !setting::<bool>(&o.suite, super::suite::PREVIOUS_UPLOADED_KEY) {
         let before = o.previous_protection();
-        let pks: Vec<&PasswordKey> = std::iter::once(pk).chain(before.iter().filter_map(|p| p.pk.as_ref())).collect();
+        let earlier = o.previous_password_keys();
+        let pks: Vec<&PasswordKey> = std::iter::once(pk).chain(earlier.iter()).collect();
         'outer: for p in &before {
             for k in &pks {
                 found = parse().ok().and_then(|l| attempt(l.unlock(k, &p.s), true));
@@ -575,19 +597,19 @@ impl GhulSuite {
             if locked.header().suite_id != o.suite.header().suite_id {
                 return Err(GhulError::InvalidInput { msg: "the server folder belongs to another suite".into() });
             }
-            let local_ts: i64 = setting(&o.suite, PROTECTION_CHANGED);
             let changed_factors = other_factor_slots(o, &locked);
             match open_remote_how(o, &data) {
                 Remote::Open(r, older_protection) => {
                     let r = *r;
                     let remote_ts: i64 = setting(&r, PROTECTION_CHANGED);
+                    let newer = protection_order(&r) > protection_order(&o.suite);
                     // Opened only with a protection this device left behind: never newer than
                     // it, whatever the file says (a file made with a revoked secret could claim
                     // any time and take over the protection, H1).
                     // Nor one that brings back a code or key replaced on purpose (whoever knows
                     // it could have made the file from an old copy).
                     // A code or secret replaced here is not taken back (see `adopt_protection`).
-                    if remote_ts > local_ts && !older_protection {
+                    if newer && !older_protection {
                         if r.header().kdf != o.kdf() {
                             return Err(GhulError::PasswordChangedElsewhere);
                         }
@@ -623,11 +645,11 @@ impl GhulSuite {
                 // uploaded yet): replaced below, nothing of it is used. Otherwise the password
                 // changed elsewhere and is asked for.
                 Remote::Unreadable if locked.header().kdf != o.kdf() => {
-                    let remote_ts = o.suite.recovery_code().and_then(|code| {
+                    let older = o.suite.recovery_code().and_then(|code| {
                         let r = LockedContainer::parse(&data).ok()?.recover(&code).ok()?;
-                        Some(setting::<i64>(&r, PROTECTION_CHANGED))
+                        Some(protection_order(&r) < protection_order(&o.suite))
                     });
-                    if !remote_ts.is_some_and(|t| t <= local_ts) {
+                    if older != Some(true) {
                         return Err(GhulError::PasswordChangedElsewhere);
                     }
                 }
@@ -992,7 +1014,8 @@ impl GhulSuite {
                 for (c, _) in o.containers_mut() {
                     c.rekey(&pk, kdf.clone(), &mut rand_core::OsRng)?;
                 }
-                o.password_key = pk;
+                let old = std::mem::replace(&mut o.password_key, pk);
+                o.keep_password_key(&old)?;
             }
             let remote_ts: i64 = setting(&remote, PROTECTION_CHANGED);
             put_setting(&mut o.suite, PROTECTION_CHANGED, &remote_ts)?;
@@ -1036,7 +1059,8 @@ impl GhulSuite {
             for (c, _) in o.containers_mut() {
                 c.rekey(&pk, kdf.clone(), &mut rand_core::OsRng)?;
             }
-            o.password_key = pk;
+            let old = std::mem::replace(&mut o.password_key, pk);
+            o.keep_password_key(&old)?;
             let remote_ts: i64 = setting(&remote, PROTECTION_CHANGED);
             put_setting(&mut o.suite, PROTECTION_CHANGED, &remote_ts)?;
             self.adopt_protection(o, &remote)?;

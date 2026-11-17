@@ -268,10 +268,16 @@ auth = HMAC-SHA256(AK, alle Bytes vor auth)
   Passwort neu geschrieben.
 - **Schreiben:** nur ein Container mit Passwort-Schlüssel wird versiegelt, und nur wenn sein `VMK`-Eintrag zu
   `PK` und `S` passt.
-- Eine Datei, die mit Passwort und `S` aufgeht, deren Siegel aber nicht stimmt, wird beim Synchronisieren nicht
-  verwendet, gezählt (die App warnt) und durch die eigene Kopie ersetzt.
+- Eine Datei, die mit Passwort und `S` aufgeht und deren Inhalt sich entschlüsseln lässt, deren Siegel aber nicht
+  stimmt, gilt als verändert: beim Synchronisieren nicht verwendet, gezählt (die App warnt) und, wo das Gerät eine
+  eigene Kopie hat, durch sie ersetzt. Lässt sich auch der Inhalt nicht entschlüsseln, ist die Datei nur beschädigt.
 - Nach einem Passwortwechsel prüft ein Gerät Dateien, die noch mit dem alten Passwort geschrieben sind, mit dem
-  früheren `PK` (verschlüsselt in `protection_before`), bis alles im neuen Schutz und auf dem Server ist.
+  früheren `PK`, bis alles im neuen Schutz und auf dem Server ist. Er steht nur in `password_before`, versiegelt mit
+  einem Schlüssel aus dem **aktuellen** `PK`: Der Code allein öffnet den Inhalt, verrät damit aber keinen
+  Passwort-Schlüssel (sonst könnte, wer einen Code kennt, Siegel erzeugen).
+- Welche von zwei Schutzänderungen neuer ist, entscheidet `protection_changed`; bei gleicher Zeit (zwei Geräte zugleich)
+  SHA-256(„ghul/v3/protection“ ‖ `S` ‖ Code ‖ KDF-Parameter), damit beide Geräte dieselbe wählen. Jede eigene
+  Änderung bekommt eine Zeit nach jeder gesehenen (logische Uhr).
 
 ---
 
@@ -448,7 +454,8 @@ ihre eigenen Dateien (`.ghldrv`, `.ghlmail`).
 | `ssh_key` | privater Ed25519-Schlüssel der Suite (OpenSSH-Format) | ja |
 | `sync` | `server` (ID), `last` (ms) | nein (je Gerät) |
 | `sync_known` | bereits synchronisierte Tresor-IDs (für das Übertragen von Löschungen) | nein (je Gerät) |
-| `protection_before` | Liste (neueste zuerst, höchstens 256): `s` (vorheriges `S`), `code` (vorheriges Code-Geheimnis), `pk` (vorheriger Passwort-Schlüssel, nur bis alles im neuen Schutz und auf dem Server ist, Abschnitt 4.7). Damit liest das Gerät Dateien auf dem Server, die ein anderes Gerät schrieb, bevor es von der Schutzänderung wusste (nur bis zum ersten Hochladen danach), und eigene Tresore, die eine abgebrochene Schutzänderung im alten Schutz ließ. Ein damit geöffneter Schutz wird nie übernommen | nein (je Gerät) |
+| `password_before` | Liste versiegelter früherer Passwort-Schlüssel (`nonce`, `sealed` = XChaCha20-Poly1305 mit HKDF(aktueller `PK`, „ghul/v3/password-before“), AAD „ghul/v3/password-before“), nur nach einem Passwortwechsel und nur bis alles im neuen Schutz und auf dem Server ist (Abschnitt 4.7) | nein (je Gerät) |
+| `protection_before` | Liste (neueste zuerst, höchstens 256): `s` (vorheriges `S`), `code` (vorheriges Code-Geheimnis). Damit liest das Gerät Dateien auf dem Server, die ein anderes Gerät schrieb, bevor es von der Schutzänderung wusste (nur bis zum ersten Hochladen danach), und eigene Tresore, die eine abgebrochene Schutzänderung im alten Schutz ließ. Ein damit geöffneter Schutz wird nie übernommen | nein (je Gerät) |
 | `protection_before_uploaded` | `true`, sobald nach der letzten Schutzänderung hochgeladen wurde; dann öffnet `protection_before` keine Server-Dateien mehr | nein (je Gerät) |
 | `revoked_secrets` | hex(SHA-256(„ghul/v1/revoked“ ‖ Geheimnis)) absichtlich ersetzter Faktor-Geheimnisse und Codes (Key entfernt, neuer Code), auch in jedem Tresor. Ein Schutz vom Server, der eines davon zurückbringt, wird nur ohne dieses übernommen (das Gerät behält seinen Code, erneuert ein ersetztes `S`, auch auf Nachfrage), eine alte Tresorkopie öffnet damit nicht; ein Tresor, der den Code oder das `S` der Suite-Datei darin führt, wird nicht an eine ältere Suite-Datei angeglichen | ja |
 | `protection_changed` | Zeitpunkt der letzten Schutzänderung (ms); wird nur beim Übernehmen eines Schutzes gesetzt, nicht als Zahl zusammengeführt | ja |
@@ -461,7 +468,7 @@ ihre eigenen Dateien (`.ghldrv`, `.ghlmail`).
 
 | Schlüssel | Inhalt | Synchronisiert |
 |---|---|---|
-| `drive` | `server` (ID des **aktiven** Speicherorts), `keys` (Liste der Drive-Schlüssel DK: `id`, `key` 32 Byte, `at` Zeit; der neueste nach `at`, dann `id` ist der aktuelle, ältere nur zum Lesen; bei jeder Schutzänderung auf einem Gerät kommt ein neuer hinzu), `written` (Speicherort-ID → `at` des neuesten DK, mit dem dort geschrieben wurde; ältere DK öffnen dort keinen Index mehr), `seen` (Speicherort-ID → höchste gesehene Index-Revision; ein älterer Index wird abgelehnt), `archive` (ID des Speicherorts für das Mail-Archiv, leer = der aktive). Früher auch `use_sync` (Verweis auf den Sync-Server dieses Geräts); ein solches GhulDrive wird beim ersten Öffnen zu einem eigenen Speicherort mit der ID hex(HKDF(alte ID, „ghul/v1/drive/location“)[0..8]), auf jedem Gerät dieselbe | ja |
+| `drive` | `server` (ID des **aktiven** Speicherorts), `keys` (Liste der Drive-Schlüssel DK: `id`, `key` 32 Byte, `at` Zeit; der neueste nach `at`, dann `id` ist der aktuelle, ältere nur zum Lesen; bei jeder Schutzänderung auf einem Gerät kommt ein neuer hinzu), `written` (Speicherort-ID → `at` des neuesten DK, mit dem dort geschrieben wurde; ältere DK öffnen dort keinen Index mehr: ein solcher Index gilt als zurückgesetzt und wird nur übernommen, wenn der Nutzer zustimmt, dann sofort mit dem aktuellen DK neu geschrieben; ein Index, der noch mit einem älteren DK geschrieben ist, wird beim nächsten Zugriff mit dem aktuellen neu geschrieben), `seen` (Speicherort-ID → höchste gesehene Index-Revision; ein älterer Index wird abgelehnt), `archive` (ID des Speicherorts für das Mail-Archiv, leer = der aktive). Früher auch `use_sync` (Verweis auf den Sync-Server dieses Geräts); ein solches GhulDrive wird beim ersten Öffnen zu einem eigenen Speicherort mit der ID hex(HKDF(alte ID, „ghul/v1/drive/location“)[0..8]), auf jedem Gerät dieselbe | ja |
 | `servers` | die Speicherorte von GhulDrive (beliebig viele, Aufbau wie im Suite-Container, auch mit `module`); jeder hat eigene Dateien unter `drive/` und eigene Freigaben unter `shares/` in seinem Ordner | ja |
 | `options` | Optionen des Bereichs, je Schlüssel `{v, at}` (Text, Zeit in ms) | ja |
 

@@ -3563,14 +3563,23 @@ fn drive_gets_a_new_key_with_a_new_recovery_code() {
     assert!(GhulSuite::drive_index_opens_with(&old_dk, &std::fs::read(&index).unwrap()));
 
     s.new_recovery_code("Neu".into()).unwrap();
-    upload(&s, None, "Neu.txt", b"nachher");
+    // The next access writes the index with the new key, before anything else changes.
+    s.drive_list(None, true).unwrap();
     assert!(!GhulSuite::drive_index_opens_with(&old_dk, &std::fs::read(&index).unwrap()), "new key");
+    upload(&s, None, "Neu.txt", b"nachher");
     assert_eq!(download(&s, &alt), b"vorher", "older files stay readable");
     let names: Vec<String> = s.drive_list(None, true).unwrap().into_iter().map(|i| i.name).collect();
     assert_eq!(names, vec!["Alt.txt", "Neu.txt"]);
 
     // An index sealed with the old key is not accepted any more.
+    // (Also what a device that had not yet seen the new key writes in the same moment as one
+    // that had: taken only when the user accepts it, then written with the new key at once.)
+    let good = std::fs::read(&index).unwrap();
     std::fs::write(&index, GhulSuite::drive_index_sealed_with(&old_dk)).unwrap();
-    assert!(s.drive_list(None, true).is_err(), "an index made with the old key");
+    assert!(matches!(s.drive_list(None, true), Err(GhulError::DriveRolledBack)), "an index made with the old key");
+    s.drive_accept_server_state().unwrap();
+    assert!(!GhulSuite::drive_index_opens_with(&old_dk, &std::fs::read(&index).unwrap()), "written again");
+    std::fs::write(&index, good).unwrap();
+    let _ = s.drive_accept_server_state();
     let _ = std::fs::remove_dir_all(&server);
 }

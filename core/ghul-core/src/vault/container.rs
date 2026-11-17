@@ -332,7 +332,7 @@ impl LockedContainer {
         let cid = self.header.container_id;
         let k = kek(password_key, factor_secret, &cid);
         let vmk = unwrap32(&k, &self.header.vmk, &vmk_aad(&cid)).ok_or(VaultError::WrongPassword)?;
-        self.check_tag(&auth_key(password_key, factor_secret, &cid))?;
+        self.check_tag(&auth_key(password_key, factor_secret, &cid), &vmk)?;
         let payload = self.decrypt(&vmk)?;
         let pk = Some(PasswordKey::from_bytes(*password_key.expose()));
         Ok(self.into_unlocked(vmk, FactorSecret::from_bytes(*factor_secret.expose()), payload, pk))
@@ -369,7 +369,7 @@ impl LockedContainer {
             Some(v) if *v == *vmk => {}
             _ => return Err(VaultError::WrongPassword),
         }
-        self.check_tag(&auth_key(password_key, &s, &cid))?;
+        self.check_tag(&auth_key(password_key, &s, &cid), &vmk)?;
         Ok(self.into_unlocked(vmk, s, payload, Some(PasswordKey::from_bytes(*password_key.expose()))))
     }
 
@@ -389,12 +389,18 @@ impl LockedContainer {
             .ok_or(VaultError::WrongSecondFactor)
     }
 
-    fn check_tag(&self, ak: &Key32) -> Result<()> {
+    /// Checks the write tag. A wrong one on content that still decrypts is `Tampered` (made
+    /// without the password); content that does not decrypt either is just damaged (a cut-off
+    /// or broken upload), `Corrupted`. The content is not parsed here.
+    fn check_tag(&self, ak: &Key32, vmk: &Key32) -> Result<()> {
         let parts = split_file(&self.data)?;
         if tag_matches(ak, parts.signed, &parts.auth) {
-            Ok(())
-        } else {
-            Err(VaultError::Tampered)
+            return Ok(());
+        }
+        let pkey = payload_key(vmk, &self.header.container_id);
+        match open(&pkey, &parts.nonce, parts.ciphertext, parts.aad) {
+            Some(_) => Err(VaultError::Tampered),
+            None => Err(VaultError::Corrupted),
         }
     }
 

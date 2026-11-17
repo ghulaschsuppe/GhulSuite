@@ -478,7 +478,7 @@
     <string name="sync_running">Synchronisiere …</string>
     <string name="sync_done">Synchronisiert: %1$s gesendet, %2$s empfangen.</string>
     <string name="sync_failed">Synchronisation fehlgeschlagen: %1$s</string>
-    <string name="sync_rejected">Achtung: %1$d Datei(en) auf dem Sync-Server wurden von jemandem ohne dein Passwort verändert. Sie wurden nicht verwendet und werden durch deine Kopie ersetzt. Hast du den Wiederherstellungscode ersetzt, weil ihn jemand gesehen haben könnte, ändere auch dein Passwort.</string>
+    <string name="sync_rejected">Achtung: %1$d Datei(en) auf dem Sync-Server wurden von jemandem ohne dein Passwort verändert. Sie wurden nicht verwendet; wo dieses Gerät eine eigene Kopie hat, ersetzt sie sie. Hast du den Wiederherstellungscode ersetzt, weil ihn jemand gesehen haben könnte, ändere auch dein Passwort.</string>
     <string name="sync_not_set">Kein Server für die Synchronisation gewählt.</string>
     <string name="sync_pw_title">Neues Master-Passwort</string>
     <string name="sync_pw_text">Das Master-Passwort wurde auf einem anderen Gerät geändert. Gib das neue Passwort ein, um es auch auf diesem Gerät zu übernehmen.</string>

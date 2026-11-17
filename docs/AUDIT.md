@@ -23,10 +23,10 @@ Dieser Bericht fasst alle bisherigen Runden zusammen und sagt ehrlich, was offen
 | 14.11.2026 | Runde 8: Website www.ghulsuite.de (keine Cookies, nichts von fremden Servern, Content-Security-Policy), Fehlerberichte aus der App über `report.php` mit Spamschutz (Proof-of-Work, einmalige Beweise, Begrenzung je Adresse und Tag, 20 Angriffsfälle in `tools/test-report-php.py`) | 1 Fund (F48, Wettlauf beim Schreiben gleicher Archiv-Blöcke), behoben |
 | 15.11.2026 | Runde 9: Teilen ohne Kopie (Schlüssel je Datei, Server-Modul ohne Geheimnis und ohne Schreibzugriff übers Web), Mail-Archiv als Kopie in GhulDrive, Löschen nur mit Rückfrage | 30 Funde (F106 bis F135), behoben; F110 bis F117 aus eigenen, unabhängigen Durchsichten der Runde |
 | 16.11.2026 | Runde 10: Autofill und Foto-Sicherung gestrichen, mehrere Speicherorte für GhulDrive (getrennt von der Synchronisation, Entfernen beendet die Freigabelinks, Löschen der Dateien nur auf ausdrückliche Wahl) | 14 Funde (F136 bis F149), erledigt; F138 bis F144 aus der unabhängigen Durchsicht, F145, F146 und F149 aus den Emulator-Läufen, F147 (die Synchronisation hält den Kern nicht mehr während der Netzwerkarbeit) und F148 (Testschlüssel der CI) aus der CI |
-| 16.11.2026 | Runde 11: Code-Durchsicht mit 55 unabhängigen Agenten (Runde 0 und fünf Läufe mit je zehn Agenten: Logik, Nebenläufigkeit, Fehlerpfade, Sicherheit, Doku gegen Code), 149 zusammengeführte Befunde; hier Paket 1 (Sicherheit und Datenverlust im Kern) | 19 Funde (F150 bis F168, davon F158 bis F168 aus vier Durchsichten des Pakets und zwei unabhängigen Entwürfen zu H0), behoben; die übrigen Befunde folgen in eigenen Paketen |
+| 16.11.2026 | Runde 11: Code-Durchsicht mit 55 unabhängigen Agenten (Runde 0 und fünf Läufe mit je zehn Agenten: Logik, Nebenläufigkeit, Fehlerpfade, Sicherheit, Doku gegen Code), 149 zusammengeführte Befunde; hier Paket 1 (Sicherheit und Datenverlust im Kern) | 20 Funde (F150 bis F169, davon F158 bis F169 aus fünf Durchsichten des Pakets und zwei unabhängigen Entwürfen zu H0), behoben; die übrigen Befunde folgen in eigenen Paketen |
 
-**In Zahlen:** 168 Funde aus den Testrunden (F01 bis F168), alle behoben bzw. entschieden (F24 ist gewollt). Alle Punkte des Audits
-vom 13.11.2026 sind erledigt (B1 bis B18, L1, L3, L5, L7, L10, L13) oder begründet entschieden (L4/B17). 286 Testfunktionen im Kern mit über einer Million Einzelprüfungen je Lauf, 64 Angriffe auf das
+**In Zahlen:** 169 Funde aus den Testrunden (F01 bis F169), alle behoben bzw. entschieden (F24 ist gewollt). Alle Punkte des Audits
+vom 13.11.2026 sind erledigt (B1 bis B18, L1, L3, L5, L7, L10, L13) oder begründet entschieden (L4/B17). 288 Testfunktionen im Kern mit über einer Million Einzelprüfungen je Lauf, 64 Angriffe auf das
 PHP-Modul, Nachtlauf mit langem Fuzzing, Monkey im Emulator und Server mit kaputtem TLS.
 
 ## 2. Wogegen GhulSuite schützt
@@ -76,7 +76,7 @@ Nach Bereich zusammengefasst; die Nummern führen ins [Testprotokoll](TESTPROTOK
 ## 4. Offen
 
 Offen sind die übrigen Befunde der Runde 11; sie folgen in eigenen Paketen. H0 aus der Durchsicht von Paket 1 ist
-geschlossen (F168, Schreibsiegel).
+geschlossen (F168 Schreibsiegel, F169).
 
 Was sonst bleibt, sind zwei bewusste Entscheidungen und die Grenzen, die keine App lösen kann (4.3). Nichts davon
 gibt einem Angreifer ohne Passwort **und** zweiten Faktor Zugriff auf Tresorinhalte.

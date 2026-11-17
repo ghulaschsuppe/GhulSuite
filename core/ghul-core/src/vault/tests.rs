@@ -232,8 +232,8 @@ fn rejects_tampered_kind_and_versions() {
 
     let mut as_totp = file.clone();
     as_totp[..8].copy_from_slice(b"GHULTOTP");
-    // The write tag covers the magic as well: found before anything is decrypted.
-    assert_eq!(open(&as_totp, "pw", &fido_factor(&s)).err(), Some(VaultError::Tampered));
+    // Content that no longer decrypts (the magic is part of its AAD) is damaged, not tampered.
+    assert_eq!(open(&as_totp, "pw", &fido_factor(&s)).err(), Some(VaultError::Corrupted));
     // Only the current version is read (older ones carry no write tag).
     for v in [0u8, 1, 2, 4] {
         let mut other = file.clone();
@@ -244,6 +244,11 @@ fn rejects_tampered_kind_and_versions() {
     let mut tag = file.clone();
     *tag.last_mut().unwrap() ^= 1;
     assert_eq!(open(&tag, "pw", &fido_factor(&s)).err(), Some(VaultError::Tampered));
+    // A broken upload (a changed byte in the content) is damaged, never reported as tampered.
+    let mut broken = file.clone();
+    let mid = broken.len() - 100;
+    broken[mid] ^= 1;
+    assert_eq!(open(&broken, "pw", &fido_factor(&s)).err(), Some(VaultError::Corrupted));
     assert!(open(&file[..file.len() - 32], "pw", &fido_factor(&s)).is_err());
     assert!(c.seal(&mut r).is_ok());
     assert!(LockedContainer::parse(b"GHULPASS").is_err());

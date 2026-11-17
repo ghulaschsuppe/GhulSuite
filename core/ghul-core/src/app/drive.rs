@@ -219,10 +219,16 @@ pub struct DriveStatus {
     pub bytes: u64,
 }
 
+#[derive(Clone)]
 struct Keys {
     /// Index keys of the Drive keys this location may still be read with, newest first, with
     /// the time of their Drive key. The first one writes.
     index: Vec<(i64, Zeroizing<[u8; 32]>)>,
+    /// Index keys of older Drive keys, no longer accepted at this location by themselves (see
+    /// `drive_accept_server_state`).
+    older: Vec<Zeroizing<[u8; 32]>>,
+    /// Whether the location's index is not yet written with the current Drive key.
+    outdated: bool,
     /// Seals the keys of uploads that did not finish, on this device.
     pending: Zeroizing<[u8; 32]>,
 }
@@ -234,8 +240,14 @@ impl Keys {
         let floor = d.written.get(location).copied().unwrap_or(i64::MIN);
         let mut usable: Vec<&DriveKey> = d.keys.iter().filter(|k| k.key.len() == 32 && k.at >= floor).collect();
         usable.sort_by(|a, b| (b.at, &b.id).cmp(&(a.at, &a.id)));
+        if usable.is_empty() {
+            return None;
+        }
+        let older = d.keys.iter().filter(|k| k.key.len() == 32 && k.at < floor);
         Some(Keys {
             index: usable.iter().map(|k| (k.at, hkdf(&k.key, &[b"ghul/v1/drive/index"]))).collect(),
+            older: older.map(|k| hkdf(&k.key, &[b"ghul/v1/drive/index"])).collect(),
+            outdated: floor < current.at,
             pending: hkdf(&current.key, &[b"ghul/v2/drive/pending"]),
         })
     }
@@ -495,8 +507,15 @@ fn load_index(fs: &dyn RemoteFs, keys: &Keys) -> Result<DriveIndex> {
                     break;
                 }
             }
-            let plain =
-                plain.ok_or_else(|| GhulError::Corrupted { msg: "Drive data damaged or from another key".into() })?;
+            let Some(plain) = plain else {
+                // Written with an older Drive key after a newer one had written here (two devices
+                // at once, one not yet with the new key), or planted with an old key: only taken
+                // when the user accepts it (`drive_accept_server_state`).
+                if keys.older.iter().any(|k| decrypt(INDEX_MAGIC, k, &data, b"").is_ok()) {
+                    return Err(GhulError::DriveRolledBack);
+                }
+                return Err(GhulError::Corrupted { msg: "Drive data damaged or from another key".into() });
+            };
             let cbor = unpad(&plain)?;
             ciborium::de::from_reader(cbor).map_err(|e| GhulError::Corrupted { msg: format!("Drive index: {e}") })
         }
@@ -739,6 +758,11 @@ impl GhulSuite {
             }
         }
         let (fs, keys) = self.drive_ctx(o)?;
+        if keys.outdated {
+            // A new Drive key since the last write here: the index is written with it now, so the
+            // old key no longer opens anything at this location.
+            return self.drive_change(o, |i, _, _| Ok(i.clone()));
+        }
         let index = self.load_checked(o, fs.as_ref(), &keys)?;
         if active {
             self.net.lock().unwrap_or_else(|p| p.into_inner()).drive = Some(index.clone());
@@ -795,6 +819,10 @@ impl GhulSuite {
         if let Some(seen) = d.seen.get(&old).copied() {
             let e = d.seen.entry(id.clone()).or_insert(0);
             *e = (*e).max(seen);
+        }
+        if let Some(w) = d.written.get(&old).copied() {
+            let e = d.written.entry(id.clone()).or_insert(i64::MIN);
+            *e = (*e).max(w);
         }
         d.use_sync = false;
         d.server = id;
@@ -1304,9 +1332,19 @@ impl GhulSuite {
             if fs.read(INDEX)?.is_none() {
                 return Err(index_missing());
             }
-            let index = load_index(fs.as_ref(), &keys)?;
+            // Also an index of an older Drive key (taken on purpose here): written again with
+            // the current one at once.
+            let all = Keys { index: keys.older.iter().map(|k| (i64::MIN, k.clone())).collect(), ..keys.clone() };
+            let (mut index, rewrite) = match load_index(fs.as_ref(), &keys) {
+                Err(GhulError::DriveRolledBack) => (load_index(fs.as_ref(), &all)?, true),
+                other => (other?, false),
+            };
             let mut d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
             let server = self.drive_location(o).unwrap_or_default();
+            if rewrite {
+                save_index(fs.as_ref(), &keys, &mut index)?;
+                d.written.insert(server.clone(), keys.writing().0);
+            }
             d.seen.insert(server, index.revision);
             put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
             self.save_area(o, VaultKind::Drive)?;
