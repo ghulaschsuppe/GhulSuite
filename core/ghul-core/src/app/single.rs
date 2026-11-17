@@ -86,8 +86,7 @@ super::redact::redacted_debug!(SharedVault { kind });
 #[uniffi::export]
 impl GhulSuite {
     /// Opens one vault file on its own (this suite's folder must be empty: the app gives it a
-    /// temporary one). GhulDrive and GhulMail vaults need the servers and accounts of a suite
-    /// and can only be added to one.
+    /// temporary one).
     pub fn open_single_vault(
         &self,
         data: Vec<u8>,
@@ -106,9 +105,6 @@ impl GhulSuite {
         let locked = LockedContainer::parse(&data)?;
         let kind = VaultKind::from_container(locked.kind())
             .ok_or_else(|| GhulError::InvalidInput { msg: "this is a suite file, open its folder instead".into() })?;
-        if matches!(kind, VaultKind::Drive | VaultKind::Mail) {
-            return Err(GhulError::InvalidInput { msg: "this vault can only be added to a suite".into() });
-        }
         let keyfile = parse_keyfile(keyfile)?;
         let s = second_factor(
             &locked,

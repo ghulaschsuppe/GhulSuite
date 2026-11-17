@@ -61,10 +61,6 @@ pub enum ContainerKind {
     Suite,
     /// GhulCal calendar vault.
     Cal,
-    /// GhulDrive: Drive key, storage and settings.
-    Drive,
-    /// GhulMail: accounts, keys, drafts and settings.
-    Mail,
     /// The header of a suite file (`.ghlzip`): which files belong to it and which state it is.
     Export,
 }
@@ -76,24 +72,14 @@ impl ContainerKind {
             ContainerKind::Totp => b"GHULTOTP",
             ContainerKind::Suite => b"GHULSUIT",
             ContainerKind::Cal => b"GHULCLDR",
-            ContainerKind::Drive => b"GHULDRIV",
-            ContainerKind::Mail => b"GHULMAIL",
             ContainerKind::Export => b"GHULEXPT",
         }
     }
 
     pub fn from_magic(magic: &[u8]) -> Option<Self> {
-        [
-            ContainerKind::Pass,
-            ContainerKind::Totp,
-            ContainerKind::Suite,
-            ContainerKind::Cal,
-            ContainerKind::Drive,
-            ContainerKind::Mail,
-            ContainerKind::Export,
-        ]
-        .into_iter()
-        .find(|k| k.magic().as_slice() == magic)
+        [ContainerKind::Pass, ContainerKind::Totp, ContainerKind::Suite, ContainerKind::Cal, ContainerKind::Export]
+            .into_iter()
+            .find(|k| k.magic().as_slice() == magic)
     }
 
     /// Value of the `kind` field in the payload.
@@ -103,8 +89,6 @@ impl ContainerKind {
             ContainerKind::Totp => "totp",
             ContainerKind::Suite => "suite",
             ContainerKind::Cal => "cal",
-            ContainerKind::Drive => "drive",
-            ContainerKind::Mail => "mail",
             ContainerKind::Export => "export",
         }
     }
@@ -115,8 +99,6 @@ impl ContainerKind {
             ContainerKind::Totp => "ghltotp",
             ContainerKind::Suite => "ghlsuite",
             ContainerKind::Cal => "ghlcal",
-            ContainerKind::Drive => "ghldrv",
-            ContainerKind::Mail => "ghlmail",
             ContainerKind::Export => "ghlexp",
         }
     }

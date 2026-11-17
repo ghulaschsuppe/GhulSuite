@@ -1,24 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Network access: SFTP for storage and GhulDrive, IMAP/SMTP for GhulMail.
+//! Network access: HTTPS for the update check (and the optional password leak check of GhulPass).
 //!
 //! The app calls blocking functions on a background thread; inside, one shared Tokio runtime
-//! drives the asynchronous protocol libraries. Everything is pure Rust (rustls with ring,
-//! russh), so it builds the same for Android and Windows.
+//! drives the asynchronous I/O. Everything is pure Rust (rustls with ring), so it builds the same
+//! for Android and Windows.
 
 use std::future::Future;
 use std::sync::OnceLock;
 use std::time::Duration;
 
 pub mod http;
-pub mod imap;
-pub mod module;
-pub mod remote;
-pub mod sftp;
-pub mod smtp;
 pub mod tls;
 
 #[cfg(test)]
-pub(crate) mod tests;
+mod tests;
 #[cfg(test)]
 mod tests_limbo;
 
@@ -29,21 +24,11 @@ pub enum NetError {
     Connect(String),
     #[error("timeout")]
     Timeout,
-    /// First connection: the server's key is not yet confirmed by the user.
-    #[error("unknown server key {0}")]
-    HostKeyUnknown(String),
-    /// The server presents another key than confirmed before (possible attack).
-    #[error("server key changed to {0}")]
-    HostKeyChanged(String),
-    #[error("login rejected")]
-    AuthFailed,
     /// The TLS certificate is not trusted; the user may confirm its fingerprint.
     #[error("untrusted certificate {0}")]
     CertUntrusted(String),
     #[error("server error: {0}")]
     Protocol(String),
-    #[error("not found: {0}")]
-    NotFound(String),
 }
 
 pub type NetResult<T> = std::result::Result<T, NetError>;

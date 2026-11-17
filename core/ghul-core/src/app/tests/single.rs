@@ -9,7 +9,7 @@ use crate::vault::{LockedContainer, RecoveryCode};
 const PW: &str = "pw-123456";
 const NEW_PW: &str = "weiter-98765";
 
-/// A suite with a GhulPass vault "Privat" (Bank, Mail, Forum), a GhulAuth and a calendar vault.
+/// A suite with a GhulPass vault "Privat" (Bank, Kino, Forum), a GhulAuth and a calendar vault.
 fn suite_with_entries(name: &str) -> (Dirs, Arc<GhulSuite>, Vec<u8>, String) {
     let d = Dirs::new(name);
     let s = d.suite();
@@ -32,7 +32,7 @@ fn suite_with_entries(name: &str) -> (Dirs, Arc<GhulSuite>, Vec<u8>, String) {
     let mut changed = login("Bank", "u", "neu-2");
     changed.id = bank;
     s.save_entry(v.clone(), changed).unwrap();
-    s.save_entry(v.clone(), login("Mail", "m", "3")).unwrap();
+    s.save_entry(v.clone(), login("Kino", "m", "3")).unwrap();
     s.save_entry(v, login("Forum", "f", "4")).unwrap();
     s.add_totp(vault_id(&s, "Codes"), totp_input()).unwrap();
     (d, s, kf, res.recovery_code.unwrap())
@@ -75,7 +75,7 @@ fn a_vault_opens_on_its_own_and_is_written_back() {
     );
     assert!(t.is_single() && !s.is_unlocked());
     assert_eq!(t.list_vaults().unwrap().len(), 1);
-    assert_eq!(titles(&t), vec!["Bank", "Forum", "Mail"]);
+    assert_eq!(titles(&t), vec!["Bank", "Forum", "Kino"]);
     assert!(t.recovery_confirmed().unwrap(), "no reminder about a code that is not ours");
     assert!(!t.archive_unsaved());
 
@@ -96,11 +96,11 @@ fn a_vault_opens_on_its_own_and_is_written_back() {
     let again_dirs = Dirs::new("single-again");
     let again = again_dirs.suite();
     again.open_single_vault(back.data, PW.into(), None, None, None, Some(kf.clone())).unwrap();
-    assert_eq!(titles(&again), vec!["Bank", "Dazwischen", "Forum", "Mail", "Neu"]);
+    assert_eq!(titles(&again), vec!["Bank", "Dazwischen", "Forum", "Kino", "Neu"]);
 
     // The own suite did not change.
     s.unlock(PW.into(), None, None, None, Some(kf.clone())).unwrap();
-    assert_eq!(titles(&s), vec!["Bank", "Forum", "Mail"]);
+    assert_eq!(titles(&s), vec!["Bank", "Forum", "Kino"]);
     assert!(!s.is_single());
     assert!(matches!(s.single_vault_file(), Err(GhulError::InvalidInput { .. })));
 }
@@ -117,16 +117,13 @@ fn what_cannot_be_opened_on_its_own() {
     let r = busy.open_single_vault(pass.clone(), PW.into(), None, None, None, Some(kf.clone()));
     assert!(matches!(r, Err(GhulError::AlreadyExists)), "{r:?}");
 
-    // No suite file, no GhulDrive vault.
+    // No suite file.
     let suite_file = d.storage().read(super::super::suite::SUITE_FILE.into()).unwrap().unwrap();
     let t_dirs = Dirs::new("single-refuse-t");
     let t = t_dirs.suite();
     let r = t.open_single_vault(suite_file, PW.into(), None, None, None, Some(kf.clone()));
     assert!(matches!(r, Err(GhulError::InvalidInput { .. })), "{r:?}");
     s.unlock(PW.into(), None, None, None, Some(kf.clone())).unwrap();
-    let drive = s.create_vault(VaultKind::Drive, "Dateien".into()).unwrap();
-    let r = t.open_single_vault(s.export_vault(drive).unwrap(), PW.into(), None, None, None, Some(kf.clone()));
-    assert!(matches!(r, Err(GhulError::InvalidInput { .. })), "{r:?}");
 
     // A file changed by someone without the keys is refused.
     let mut forged = pass.clone();
@@ -143,7 +140,7 @@ fn what_cannot_be_opened_on_its_own() {
 #[test]
 fn picked_entries_go_into_a_vault_of_their_own() {
     let (_d, s, kf, code) = suite_with_entries("share-vault");
-    let ids = vec![entry_id(&s, "Bank"), entry_id(&s, "Mail")];
+    let ids = vec![entry_id(&s, "Bank"), entry_id(&s, "Kino")];
     let new_kf = generate_keyfile();
 
     // The own master password is asked again; the new one must be long enough; one factor.
@@ -175,7 +172,7 @@ fn picked_entries_go_into_a_vault_of_their_own() {
     let old = t.open_single_vault(shared.data.clone(), PW.into(), None, None, None, Some(kf));
     assert!(old.is_err(), "the own password and key file do not open it");
     t.open_single_vault(shared.data.clone(), NEW_PW.into(), None, None, None, Some(new_kf)).unwrap();
-    assert_eq!(titles(&t), vec!["Bank", "Mail"]);
+    assert_eq!(titles(&t), vec!["Bank", "Kino"]);
     assert_eq!(t.list_vaults().unwrap()[0].name, "Für Anna");
     // New ids: nothing points back to the own vault.
     let theirs: Vec<Vec<u8>> = t.list_entries(VaultKind::Pass, None).unwrap().into_iter().map(|e| e.id).collect();
@@ -186,7 +183,7 @@ fn picked_entries_go_into_a_vault_of_their_own() {
     assert!(t.entry_extras(bank.vault_id, bank.id).unwrap().history.is_empty());
 
     // The own suite still has everything, history included.
-    assert_eq!(titles(&s), vec!["Bank", "Forum", "Mail"]);
+    assert_eq!(titles(&s), vec!["Bank", "Forum", "Kino"]);
     let bank = s.list_entries(VaultKind::Pass, None).unwrap().into_iter().find(|e| e.title == "Bank").unwrap();
     assert_eq!(s.entry_extras(bank.vault_id, bank.id).unwrap().history.len(), 1);
 }
@@ -238,5 +235,5 @@ fn a_vault_on_its_own_stays_one_vault() {
     assert_eq!(t.single_vault_name().unwrap(), t.list_vaults().unwrap()[0].file);
     // Entries change as usual.
     t.save_entry(id, login("Neu", "n", "1")).unwrap();
-    assert_eq!(titles(&t), vec!["Bank", "Forum", "Mail", "Neu"]);
+    assert_eq!(titles(&t), vec!["Bank", "Forum", "Kino", "Neu"]);
 }

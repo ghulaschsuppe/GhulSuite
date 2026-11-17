@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! GhulAuth extras: export an account as otpauth link (for a QR code) and check the device clock.
+//! GhulAuth extras: export an account as otpauth link (for a QR code).
 
 use super::error::{GhulError, Result};
 use super::suite::{text_field, GhulSuite};
@@ -31,32 +31,6 @@ fn pct(s: &str) -> String {
             _ => format!("%{b:02X}"),
         })
         .collect()
-}
-
-/// Seconds since 1970 of an HTTP date ("Tue, 12 Nov 2026 07:40:00 GMT").
-pub(crate) fn parse_http_date(s: &str) -> Option<i64> {
-    let parts: Vec<&str> = s.split_whitespace().collect();
-    if parts.len() < 5 {
-        return None;
-    }
-    let day: i64 = parts[1].parse().ok()?;
-    let month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-        .iter()
-        .position(|m| *m == parts[2])? as i64
-        + 1;
-    let year: i64 = parts[3].parse().ok()?;
-    let hms: Vec<i64> = parts[4].split(':').filter_map(|x| x.parse().ok()).collect();
-    if hms.len() != 3 {
-        return None;
-    }
-    // Days since 1970 (civil calendar, Howard Hinnant's algorithm).
-    let (y, m) = if month <= 2 { (year - 1, month + 9) } else { (year, month - 3) };
-    let era = y.div_euclid(400);
-    let yoe = y - era * 400;
-    let doy = (153 * m + 2) / 5 + day - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era * 146097 + doe - 719468;
-    Some(days * 86400 + hms[0] * 3600 + hms[1] * 60 + hms[2])
 }
 
 #[uniffi::export]
@@ -91,25 +65,6 @@ impl GhulSuite {
             Ok(uri)
         })
     }
-
-    /// Difference between this device's clock and one of the user's own web servers (seconds;
-    /// positive = device is ahead). `None` without such a server or when it cannot be reached.
-    /// One-time codes only work with a correct clock.
-    pub fn clock_offset(&self, device_unix: i64) -> Result<Option<i64>> {
-        let url = self.with_open(|o| {
-            Ok(super::servers::all_servers(o)
-                .into_iter()
-                .filter_map(|s| s.module.as_ref().map(|m| m.url.clone()))
-                .find(|u| u.starts_with("https://")))
-        })?;
-        let Some(url) = url else { return Ok(None) };
-        let Ok(url) = crate::net::http::Url::parse(&url) else { return Ok(None) };
-        let resp = crate::net::block_on(
-            async move { crate::net::http::request("HEAD", &url, &[], &[], None).await },
-            crate::net::TIMEOUT,
-        );
-        Ok(resp.ok().and_then(|r| r.header("Date").and_then(parse_http_date)).map(|server| device_unix - server))
-    }
 }
 
 #[cfg(test)]
@@ -117,11 +72,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn http_dates_and_base32() {
-        assert_eq!(parse_http_date("Thu, 01 Jan 1970 00:00:10 GMT"), Some(10));
-        assert_eq!(parse_http_date("Sun, 06 Nov 1994 08:49:37 GMT"), Some(784111777));
-        assert_eq!(parse_http_date("Thu, 12 Nov 2026 07:40:00 GMT"), Some(1794469200));
-        assert_eq!(parse_http_date("nonsense"), None);
+    fn base32_and_percent_encoding() {
         assert_eq!(base32(b"12345678901234567890"), "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ");
         assert_eq!(base32(b"f"), "MY");
         assert_eq!(pct("a b@c"), "a%20b%40c");

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Quick fuzzing of every parser that reads data from outside (servers, mails, files, links,
-//! other apps). Thousands of random inputs and mutations of real examples per parser, on every
+//! Quick fuzzing of every parser that reads data from outside (files, links, other apps, the
+//! update server). Thousands of random inputs and mutations of real examples per parser, on every
 //! test run. Promise Z3 of docs/TESTKONZEPT.md: whatever comes in, no crash, an error at most.
 //! (Long runs with libFuzzer live in `core/fuzz`.)
 
@@ -208,34 +208,6 @@ fn http_responses() {
 }
 
 #[test]
-fn smtp_reply_lines() {
-    let seeds =
-        seeds(&["220 mail.example.org ESMTP\r\n", "250-PIPELINING\r\n", "250 OK\r\n", "535 5.7.8 nope\r\n", "250\r\n"]);
-    fuzz("smtp", &seeds, 4000, |d| {
-        let _ = crate::net::smtp::reply_line(&s(d));
-    });
-    // Found by the audit: a multi-byte character right after the code (cleartext before STARTTLS).
-    assert_eq!(crate::net::smtp::reply_line("ab\u{20ac}x"), None);
-    assert_eq!(crate::net::smtp::reply_line("25\u{20ac}"), None);
-    assert_eq!(crate::net::smtp::reply_line("250-x"), Some((250, false)));
-    assert_eq!(crate::net::smtp::reply_line("250 x"), Some((250, true)));
-}
-
-#[test]
-fn html_mails() {
-    let seeds = seeds(&[
-        "<html><head><style>p{color:red}</style></head><body><p>Hallo <b>Welt</b> &amp; &#x1F600; &nbsp;<a href=\"https://example.org\">Link</a><img src=\"https://t.example/p.gif\" width=1 height=1><table><tr><td>1</td></tr></table></body></html>",
-        "<div onclick=\"alert(1)\">x</div><script>alert(1)</script><!-- c --><a href=\"javascript:alert(1)\">y</a>",
-        "<p>unclosed <b><i>tags <br/> &unknown; &#99999999; &#x;",
-    ]);
-    fuzz("html", &seeds, 4000, |d| {
-        let t = s(d);
-        let _ = crate::app::mailhtml::parse(&t);
-        let _ = crate::app::mailhtml::decode_entities(&t);
-    });
-}
-
-#[test]
 fn calendar_files_and_quick_entries() {
     let ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:1@x\r\nSUMMARY:Zahnarzt\\, Dr. Weber\r\nDTSTART;TZID=Europe/Berlin:20261113T100000\r\nDTEND:20261113T104500Z\r\nRRULE:FREQ=WEEKLY;COUNT=10;BYDAY=MO,WE\r\nEXDATE:20261120T100000\r\nDURATION:PT45M\r\nLOCATION:Praxis\r\nDESCRIPTION:Lange\r\n  Zeile\r\nBEGIN:VALARM\r\nTRIGGER:-PT15M\r\nEND:VALARM\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nSUMMARY:Geburtstag\r\nDTSTART;VALUE=DATE:20000229\r\nRRULE:FREQ=YEARLY\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
     // Time zone rules as Outlook and tzurl.org write them: the device does not know these names,
@@ -323,38 +295,5 @@ fn keys_codes_and_containers() {
     let kf = crate::app::suite::generate_keyfile();
     fuzz("key file", &[kf], 3000, |d| {
         let _ = crate::vault::Keyfile::parse(d);
-    });
-}
-
-#[test]
-fn shares_and_mail_keys() {
-    let meta =
-        crate::share::ShareMeta { name: "a.txt".into(), mime: "text/plain".into(), size: 6, created: 1, expires: 0 };
-    let sealed = crate::share::seal(&meta, b"Inhalt", Some("pw"));
-    let key: [u8; 32] = *sealed.link_key;
-    // Without the password: PBKDF2 with the real iteration count would make every try slow
-    // (the parser is the same; the iteration count itself is bounded by MAX_ITERATIONS).
-    fuzz("share", std::slice::from_ref(&sealed.data), 2000, |d| {
-        let _ = crate::share::open(d, &key, None);
-        let _ = crate::share::b64url_decode(&s(d));
-    });
-    fuzz("autocrypt", &seeds(&["addr=alice@example.org; prefer-encrypt=mutual; keydata=mDMEZ0123456789"]), 2000, |d| {
-        let _ = crate::app::mailcrypt::parse_autocrypt(&s(d));
-    });
-}
-
-#[test]
-fn url_hosts_and_domains() {
-    let seeds = seeds(&[
-        "https://user:pw@www.Example.co.uk:8443/login?x=1#y",
-        "192.168.1.1",
-        "[::1]:8080",
-        "xn--bcher-kva.example",
-    ]);
-    fuzz("domains", &seeds, 4000, |d| {
-        let t = s(d);
-        if let Some(h) = crate::app::domain::host_of(&t) {
-            let _ = crate::app::domain::base_domain(&h);
-        }
     });
 }

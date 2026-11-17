@@ -61,17 +61,6 @@ pub enum GhulError {
     /// The file was made by a newer GhulSuite (new file kind or format): update the app.
     #[error("please update GhulSuite to open this file")]
     UpdateRequired,
-    // --- servers and network
-    #[error("network error: {msg}")]
-    Network { msg: String },
-    #[error("server key not confirmed yet: {fingerprint}")]
-    HostKeyUnknown { fingerprint: String },
-    #[error("the server key changed to {fingerprint}")]
-    HostKeyChanged { fingerprint: String },
-    #[error("the server certificate is not trusted: {fingerprint}")]
-    CertUntrusted { fingerprint: String },
-    #[error("the server rejected the login")]
-    ServerAuthFailed,
     /// A file opens with the password and the second factor, but its write seal is wrong: it was
     /// made or changed by someone without the password (e.g. from an old copy and an old
     /// recovery code). It is not used.
@@ -81,29 +70,13 @@ pub enum GhulError {
     /// password, a key or the recovery code): it is not opened.
     #[error("the file has an older protection")]
     ProtectionOutdated,
-    /// B3: the Drive index on the server is older than the one this suite saw last (server
-    /// reset or an old copy put back). Nothing is written; `drive_accept_server_state` takes it.
-    #[error("the GhulDrive index on the server is older than the one seen last")]
-    DriveRolledBack,
-    /// The Drive index on the server only opens with a key of before the last change of the
-    /// protection (a backup put back, or written by someone with an older copy of the suite
-    /// file). Nothing is written; `drive_accept_server_state` takes it if the owner put it back.
-    #[error("the GhulDrive index on the server has a key of before the last change of the protection")]
-    DriveEarlierKey,
-    /// A key change waits for the suite file with the new protection to be saved, and this
-    /// needs it to have gone on (e.g. a storage location removed with its files kept).
-    #[error("save the suite file first: the key change waits for it")]
-    KeyChangeNotSaved,
-    /// B14: the link's server is no longer set up, its package could not be deleted: the link
-    /// keeps working until it expires.
-    #[error("the server of this link is no longer set up; the package could not be deleted")]
-    ShareNotDeleted,
-    /// L5: the web server delivers the server module as text instead of running PHP; its access
-    /// key would be readable. The app deleted the file again (if it uploaded it).
-    #[error("the web server does not run PHP: it delivers the module as text")]
-    PhpNotExecuted,
-    #[error("no server set up for this")]
+    #[error("this area has not been set up")]
     NotConfigured,
+    // --- network (update check)
+    #[error("network error: {msg}")]
+    Network { msg: String },
+    #[error("the server certificate is not trusted: {fingerprint}")]
+    CertUntrusted { fingerprint: String },
     // --- import
     #[error("this export is encrypted; export it without encryption")]
     ImportEncrypted,
@@ -162,9 +135,6 @@ impl From<crate::net::NetError> for GhulError {
     fn from(e: crate::net::NetError) -> Self {
         use crate::net::NetError as N;
         match e {
-            N::HostKeyUnknown(fingerprint) => GhulError::HostKeyUnknown { fingerprint },
-            N::HostKeyChanged(fingerprint) => GhulError::HostKeyChanged { fingerprint },
-            N::AuthFailed => GhulError::ServerAuthFailed,
             N::CertUntrusted(fingerprint) => GhulError::CertUntrusted { fingerprint },
             N::Timeout => GhulError::Network { msg: "timeout".into() },
             N::Connect(m) if host_not_found(&m) => GhulError::Network { msg: "server address not found".into() },

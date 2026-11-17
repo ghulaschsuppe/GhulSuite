@@ -58,10 +58,6 @@ pub enum VaultKind {
     Totp,
     /// GhulCal (`.ghlcal`).
     Cal,
-    /// GhulDrive (`.ghldrv`).
-    Drive,
-    /// GhulMail (`.ghlmail`).
-    Mail,
 }
 
 impl VaultKind {
@@ -70,8 +66,6 @@ impl VaultKind {
             VaultKind::Pass => ContainerKind::Pass,
             VaultKind::Totp => ContainerKind::Totp,
             VaultKind::Cal => ContainerKind::Cal,
-            VaultKind::Drive => ContainerKind::Drive,
-            VaultKind::Mail => ContainerKind::Mail,
         }
     }
 
@@ -79,8 +73,6 @@ impl VaultKind {
         match name {
             "pass" => VaultKind::Pass,
             "cal" => VaultKind::Cal,
-            "drive" => VaultKind::Drive,
-            "mail" => VaultKind::Mail,
             _ => VaultKind::Totp,
         }
     }
@@ -90,8 +82,6 @@ impl VaultKind {
             ContainerKind::Pass => Some(VaultKind::Pass),
             ContainerKind::Totp => Some(VaultKind::Totp),
             ContainerKind::Cal => Some(VaultKind::Cal),
-            ContainerKind::Drive => Some(VaultKind::Drive),
-            ContainerKind::Mail => Some(VaultKind::Mail),
             ContainerKind::Suite | ContainerKind::Export => None,
         }
     }
@@ -360,7 +350,7 @@ fn dedup_key(entry_type: &str, fields: &BTreeMap<String, Field>) -> String {
 // --- files and names --------------------------------------------------------------------------
 
 pub(super) fn is_vault_file(name: &str) -> bool {
-    [".ghlpss", ".ghltotp", ".ghlcal", ".ghldrv", ".ghlmail"].iter().any(|e| name.ends_with(e))
+    [".ghlpss", ".ghltotp", ".ghlcal"].iter().any(|e| name.ends_with(e))
 }
 
 /// F23: the file name of a vault says nothing about it: the first 16 hex digits of its random
@@ -493,8 +483,8 @@ impl Open {
         put_setting(&mut self.suite, EPOCH_KEY, &(epoch + 1))
     }
 
-    /// B1: after a change of the protection, older copies of the files (backups, `.bak`, server
-    /// versions) must not open what is written from now on. Every file gets a new container key;
+    /// B1: after a change of the protection, older copies of the files (backups, `.bak`, copies
+    /// of the suite file) must not open what is written from now on. Every file gets a new container key;
     /// with `factor`, the suite also gets a new factor secret, wrapped for every remaining key
     /// and key file through their public keys. Returns whether the factor secret was renewed
     /// (not while a slot of format version 1 remains).
@@ -578,11 +568,9 @@ pub struct GhulSuite {
     /// Device-local directory for quick unlock (never inside a shared folder).
     pub(super) local_dir: PathBuf,
     open: Mutex<Option<Open>>,
-    /// A lock was asked for while a call (e.g. a slow server) still held the open suite: the
+    /// A lock was asked for while a call (e.g. a slow import) still held the open suite: the
     /// suite counts as locked at once and is dropped as soon as that call ends (F92).
     lock_pending: AtomicBool,
-    /// Open server connection, Drive index and running uploads (dropped when locking).
-    pub(super) net: Mutex<NetCache>,
     /// The time zone database of the device (see `set_time_zones`).
     pub(super) zones: Mutex<Option<Arc<dyn super::caltext::TimeZones>>>,
     /// A checked `.ghlzip` waiting to replace the working copy (see `archive_accept`).
@@ -593,17 +581,6 @@ pub struct GhulSuite {
     pub(super) pending_gen: std::sync::atomic::AtomicU64,
     /// The last `archive_accept` got as far as removing this device's data of the old state.
     pub(super) wiped: AtomicBool,
-}
-
-#[derive(Default)]
-pub(super) struct NetCache {
-    pub(super) conn: Option<(String, Arc<dyn crate::net::remote::RemoteFs>)>,
-    pub(super) drive: Option<super::drive::DriveIndex>,
-    pub(super) uploads: BTreeMap<String, super::drive::Upload>,
-    pub(super) imap: BTreeMap<String, crate::net::imap::ImapSession>,
-    /// The mail account settings that passed "check connection" last (a hash): only those may
-    /// be saved.
-    pub(super) mail_tested: Option<([u8; 32], Option<String>, Option<String>)>,
 }
 
 /// How containers of the folder are opened.
@@ -790,9 +767,8 @@ impl GhulSuite {
         *guard = Some(open);
     }
 
-    /// Drops the open suite (if a lock is still pending) and the network cache. With `wait`
-    /// false it gives up at once if a call holds either (returns false; the call drops the
-    /// suite when it ends, `finish_lock` the rest).
+    /// Drops the open suite (if a lock is still pending). With `wait` false it gives up at once
+    /// if a call holds it (returns false; the call drops the suite when it ends).
     fn drop_open(&self, wait: bool) -> bool {
         let mut guard = match self.open.try_lock() {
             Ok(g) => g,
@@ -803,20 +779,6 @@ impl GhulSuite {
         if self.lock_pending.swap(false, Ordering::SeqCst) {
             *guard = None;
         }
-        if guard.is_some() {
-            // Unlocked again since: its connection and running uploads stay.
-            return true;
-        }
-        // The connection, the Drive index and mail sessions go as well (same lock order as
-        // the calls: open suite first, then the network cache).
-        let mut net = match self.net.try_lock() {
-            Ok(n) => n,
-            Err(TryLockError::Poisoned(p)) => p.into_inner(),
-            Err(TryLockError::WouldBlock) if wait => self.net.lock().unwrap_or_else(|p| p.into_inner()),
-            // The suite is dropped already; only the cache waits for the call using it.
-            Err(TryLockError::WouldBlock) => return false,
-        };
-        *net = NetCache::default();
         true
     }
 
@@ -909,10 +871,6 @@ impl GhulSuite {
                 VaultKind::Pass
             } else if file.ends_with(".ghlcal") {
                 VaultKind::Cal
-            } else if file.ends_with(".ghldrv") {
-                VaultKind::Drive
-            } else if file.ends_with(".ghlmail") {
-                VaultKind::Mail
             } else {
                 VaultKind::Totp
             };
@@ -1076,7 +1034,6 @@ impl GhulSuite {
             local_dir: PathBuf::from(local_dir),
             open: Mutex::new(None),
             lock_pending: AtomicBool::new(false),
-            net: Mutex::new(NetCache::default()),
             zones: Mutex::new(None),
             pending: Mutex::new(None),
             changes: std::sync::atomic::AtomicU64::new(0),
@@ -1271,7 +1228,6 @@ impl GhulSuite {
             c.rekey(&pk, kdf.clone(), &mut OsRng)?;
         }
         open.renew_keys(false, now_ms())?;
-        self.begin_key_change(&mut open)?;
         self.protection_changed(&mut open)?;
         self.save_all(&mut open)?;
         super::quick::delete_all(&self.local_dir);
@@ -1281,22 +1237,20 @@ impl GhulSuite {
     }
 
     /// Locks immediately; all secrets are wiped from memory.
-    /// Locks at once, also while another call (e.g. a slow or unreachable server) still works
-    /// with the open suite: the caller (the app's main thread) never waits for it (F92). The
-    /// suite counts as locked immediately; its keys and decrypted data are dropped right away
-    /// or, if that call still holds them, as soon as it ends. Callers then run `finish_lock`
-    /// on a background thread: it covers a call ending in the same moment and the network cache.
+    /// Locks at once, also while another call (e.g. a slow import) still works with the open
+    /// suite: the caller (the app's main thread) never waits for it (F92). The suite counts as
+    /// locked immediately; its keys and decrypted data are dropped right away or, if that call
+    /// still holds them, as soon as it ends. Callers then run `finish_lock` on a background
+    /// thread: it covers a call ending in the same moment.
     pub fn lock(&self) {
         self.lock_pending.store(true, Ordering::SeqCst);
-        // A checked mail connection (with its password's hash) is not kept past locking.
-        self.net.lock().unwrap_or_else(|p| p.into_inner()).mail_tested = None;
         // A checked suite file holds its keys: not past locking either.
         self.set_pending(None);
         self.drop_open(false);
     }
 
-    /// After `lock`, on a background thread: waits until a call still holding the open suite or
-    /// the network cache has ended, and makes sure both are gone (unless unlocked again since).
+    /// After `lock`, on a background thread: waits until a call still holding the open suite has
+    /// ended, and makes sure it is gone (unless unlocked again since).
     pub fn finish_lock(&self) {
         self.drop_open(true);
     }
@@ -1957,7 +1911,6 @@ impl GhulSuite {
             }
             // The old code with an old copy of a file must not open what is written now.
             o.renew_keys(false, now)?;
-            self.begin_key_change(o)?;
             self.protection_changed(o)?;
             self.save_all(o)?;
             Ok(code.to_display().to_string())
@@ -1987,7 +1940,6 @@ impl GhulSuite {
             // The removed key with an old copy of a file must not open what is written now:
             // new factor secret for the remaining keys and key files, new container keys.
             o.renew_keys(true, now_ms())?;
-            self.begin_key_change(o)?;
             self.protection_changed(o)?;
             self.save_all(o)?;
             super::quick::delete_all(&self.local_dir);
@@ -2015,7 +1967,6 @@ impl GhulSuite {
             o.password_key = new_pk;
             // The old password with an old copy of a file must not open what is written now.
             o.renew_keys(false, now_ms())?;
-            self.begin_key_change(o)?;
             self.protection_changed(o)?;
             self.save_all(o)?;
             super::quick::delete_all(&self.local_dir);

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The crazy user: thousands of random, often pointless or wrong, actions on three devices
 //! the suite moves between (like on a USB stick). Delete twice, edit what is gone, rename to
-//! nothing, move a folder into itself, lock in between, type wrong passwords, restart the app,
-//! import rubbish, ... Afterwards:
+//! nothing, lock in between, type wrong passwords, restart the app, import rubbish, ...
+//! Afterwards:
 //! - nothing crashed, every error is one a user can understand (no "corrupted", no storage error);
 //! - everything the user created and did not delete is still there, on every device;
 //! - all devices show the same.
@@ -12,7 +12,6 @@ use std::sync::Arc;
 
 use super::super::cal::{CalCalendar, CalDeleteMode, CalEvent, CalRepeat};
 use super::*;
-use crate::net::remote::{LocalFs, RemoteFs};
 
 struct Rng(u64);
 impl Rng {
@@ -111,9 +110,6 @@ impl Stats {
 }
 
 fn run(seed: u64, steps: usize) -> Stats {
-    let server = std::env::temp_dir().join(format!("ghul-crazy-{seed}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&server);
-    let drive: Arc<dyn RemoteFs> = Arc::new(LocalFs::new(server.join("drive")));
     let kf = generate_keyfile();
     let pw = "Bekloppt-pw-1";
     let mut rng = Rng(seed);
@@ -132,7 +128,6 @@ fn run(seed: u64, steps: usize) -> Stats {
         None,
     )
     .unwrap();
-    s0.drive_use_folder(drive.clone()).unwrap();
     let pass = vault_id(&s0, "Privat");
     let totp = vault_id(&s0, "2FA");
     let cal = s0
@@ -151,7 +146,6 @@ fn run(seed: u64, steps: usize) -> Stats {
         super::everyday::copy_folder(&devs[0].dirs, &d);
         let s = d.suite();
         s.unlock(pw.into(), None, None, None, Some(kf.clone())).unwrap();
-        s.drive_use_folder(drive.clone()).unwrap();
         devs.push(Dev { dirs: d, s });
     }
 
@@ -161,14 +155,12 @@ fn run(seed: u64, steps: usize) -> Stats {
     let mut counter = 0u32;
     let mut extra_vaults: Vec<String> = Vec::new();
     let mut events: Vec<(String, String)> = Vec::new();
-    let mut files: Vec<String> = Vec::new();
-    let mut folders: Vec<String> = Vec::new();
 
     // The device that has the suite: only it works on it.
     let mut di = 0usize;
     for _ in 0..steps {
         let s = devs[di].s.clone();
-        match rng.below(30) {
+        match rng.below(25) {
             0..=4 => {
                 counter += 1;
                 let title = format!("Login {counter} {}", rng.pick(SILLY).unwrap().trim());
@@ -258,65 +250,22 @@ fn run(seed: u64, steps: usize) -> Stats {
                     st.note("delete event again", s.cal_delete_event(id, day, CalDeleteMode::All));
                 }
             }
-            14 | 15 => {
-                let name = format!("{}{}.txt", rng.pick(SILLY).unwrap(), rng.below(3));
-                let folder = if rng.chance(30) { rng.pick(&folders).cloned() } else { None };
-                if let Some(up) = st.note("upload begin", s.drive_upload_begin(folder, name)) {
-                    st.note("upload chunk", s.drive_upload_chunk(up.clone(), vec![rng.next() as u8; rng.below(5000)]));
-                    if rng.chance(90) {
-                        if let Some(id) = st.note("upload finish", s.drive_upload_finish(up)) {
-                            files.push(id);
-                        }
-                    }
-                }
-            }
-            16 => {
-                if let Some(id) = st.note(
-                    "folder",
-                    s.drive_create_folder(rng.pick(&folders).cloned(), rng.pick(SILLY).unwrap().to_string()),
-                ) {
-                    folders.push(id);
-                }
-            }
-            17 => {
-                let all: Vec<String> = files.iter().chain(&folders).cloned().collect();
-                if let (Some(a), Some(b)) = (rng.pick(&all).cloned(), rng.pick(&folders).cloned()) {
-                    st.note("move", s.drive_move(a.clone(), Some(b)));
-                    st.note("move to root", s.drive_move(a.clone(), None));
-                    st.note("rename", s.drive_rename(a, rng.pick(SILLY).unwrap().to_string()));
-                }
-            }
-            18 => {
-                if let Some(id) = rng.pick(&files).cloned() {
-                    st.note("trash", s.drive_delete(id.clone()));
-                    st.note("trash again", s.drive_delete(id.clone()));
-                    if rng.chance(50) {
-                        st.note("restore", s.drive_restore(id));
-                    }
-                }
-                if rng.chance(10) {
-                    st.note("empty trash", s.drive_empty_trash(0));
-                }
-            }
-            19 => {
+            14 => {
                 // Lock, then call things while locked, then unlock (wrong password first).
                 s.lock();
                 assert!(matches!(s.save_entry(pass.clone(), login("x", "y", "z")), Err(GhulError::Locked)));
                 let _ = st.note("list while locked", s.list_entries(VaultKind::Pass, None));
                 let _ = s.unlock("falsch".into(), None, None, None, Some(kf.clone()));
                 s.unlock(pw.into(), None, None, None, Some(kf.clone())).unwrap();
-                // (Tests reach Drive through a folder set up by hand; the app reconnects by itself.)
-                s.drive_use_folder(drive.clone()).unwrap();
             }
-            20 => {
+            15 => {
                 // The app is killed and started again.
                 s.lock();
                 let fresh = devs[di].dirs.suite();
                 fresh.unlock(pw.into(), None, None, None, Some(kf.clone())).unwrap();
-                fresh.drive_use_folder(drive.clone()).unwrap();
                 devs[di].s = fresh;
             }
-            21..=25 => {
+            16..=20 => {
                 // The suite goes to another device: its folder becomes a copy, its app starts again.
                 let to = (di + 1 + rng.below(devs.len() - 1)) % devs.len();
                 let before = titles(&s);
@@ -327,12 +276,11 @@ fn run(seed: u64, steps: usize) -> Stats {
                 devs[to].s.lock();
                 let fresh = devs[to].dirs.suite();
                 fresh.unlock(pw.into(), None, None, None, Some(kf.clone())).unwrap();
-                fresh.drive_use_folder(drive.clone()).unwrap();
                 assert_eq!(titles(&fresh), before, "the copy differs");
                 devs[to].s = fresh;
                 di = to;
             }
-            26 => {
+            21 => {
                 let junk: Vec<u8> = (0..rng.below(3000)).map(|_| rng.next() as u8).collect();
                 let name = ["x.csv", "x.json", "x.zip", "x.txt", "", "export.1pux"][rng.below(6)];
                 st.note(
@@ -340,7 +288,7 @@ fn run(seed: u64, steps: usize) -> Stats {
                     s.import_data(junk, name.into(), Some(pass.clone()), Some(totp.clone()), true, None),
                 );
             }
-            27 => {
+            22 => {
                 st.note("export wrong password", s.export_plain(pass.clone(), "falsch".into()));
                 st.note(
                     "confirm code garbage",
@@ -348,8 +296,7 @@ fn run(seed: u64, steps: usize) -> Stats {
                 );
                 st.note("setup state", s.setup_state());
             }
-            28 => {
-                st.note("search", s.drive_search(rng.pick(SILLY).unwrap().to_string()));
+            23 => {
                 st.note(
                     "occurrences",
                     s.cal_occurrences("2026-01-01".into(), "2028-01-01".into(), "DE-BY".into(), "de".into()),
@@ -383,7 +330,6 @@ fn run(seed: u64, steps: usize) -> Stats {
             assert!(!first.contains(t), "{t} came back after being deleted (seed {seed})");
         }
     }
-    let _ = std::fs::remove_dir_all(&server);
     st
 }
 

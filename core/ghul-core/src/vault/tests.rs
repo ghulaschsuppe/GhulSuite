@@ -244,7 +244,7 @@ fn rejects_tampered_kind_and_versions() {
     let mut tag = file.clone();
     *tag.last_mut().unwrap() ^= 1;
     assert_eq!(open(&tag, "pw", &fido_factor(&s)).err(), Some(VaultError::Tampered));
-    // A broken upload (a changed byte in the content) is damaged, never reported as tampered.
+    // A broken copy (a changed byte in the content) is damaged, never reported as tampered.
     let mut broken = file.clone();
     let mid = broken.len() - 100;
     broken[mid] ^= 1;
@@ -463,7 +463,7 @@ fn build_vectors(version: u16) -> Json {
             ContainerKind::Suite => {
                 c.payload.settings.insert("note".into(), ciborium::value::Value::Text("keyring lives here".into()));
             }
-            ContainerKind::Drive | ContainerKind::Mail | ContainerKind::Export => {
+            ContainerKind::Export => {
                 c.payload.settings.insert("note".into(), ciborium::value::Value::Text("area settings".into()));
             }
             ContainerKind::Cal => {

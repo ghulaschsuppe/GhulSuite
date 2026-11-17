@@ -391,7 +391,7 @@ impl LockedContainer {
 
     /// Checks the write tag. A wrong one on content that still decrypts is `Tampered` (made
     /// without the password); content that does not decrypt either is just damaged (a cut-off
-    /// or broken upload), `Corrupted`. The content is not parsed here.
+    /// or broken copy), `Corrupted`. The content is not parsed here.
     fn check_tag(&self, ak: &Key32, vmk: &Key32) -> Result<()> {
         let parts = split_file(&self.data)?;
         if tag_matches(ak, parts.signed, &parts.auth) {

@@ -80,13 +80,13 @@ fn a_suite_goes_to_another_device_and_back() {
     assert!(!b.archive_unsaved());
 
     // B works on it and saves; A opens the newer file.
-    b.save_entry(vault_id(&b, "Privat"), login("Mail", "u", "2")).unwrap();
+    b.save_entry(vault_id(&b, "Privat"), login("Shop", "u", "2")).unwrap();
     assert!(b.archive_unsaved());
     let file2 = save(&b);
     let check = open(&a, &file2, &kf);
     assert_eq!(check.relation, ArchiveRelation::Newer);
     a.archive_accept().unwrap();
-    assert_eq!(titles(&a), vec!["Bank", "Mail"]);
+    assert_eq!(titles(&a), vec!["Bank", "Shop"]);
     // The same file again: the same state.
     assert_eq!(open(&a, &file2, &kf).relation, ArchiveRelation::Same);
     a.archive_cancel();
@@ -201,16 +201,13 @@ fn the_recovery_code_opens_a_file_unverified_and_sets_a_new_password() {
 
 #[test]
 fn opening_a_file_removes_this_devices_data_of_the_old_state() {
-    let (da, a, kf, _) = device_with_suite("wipe-a");
+    let (_da, a, kf, _) = device_with_suite("wipe-a");
     let file = save(&a);
     a.quick_unlock_enable("pin".into(), Some("1234".into())).unwrap();
     assert!(a.quick_unlock_exists("pin".into()));
-    std::fs::create_dir_all(da.root.join("local/mail-cache")).unwrap();
-    std::fs::write(da.root.join("local/mail-cache/x"), b"cache").unwrap();
     open(&a, &file, &kf);
     a.archive_accept().unwrap();
     assert!(!a.quick_unlock_exists("pin".into()), "quick unlock holds the old password key");
-    assert!(!da.root.join("local/mail-cache").exists());
 }
 
 /// Every way of changing a `.ghlzip` without the password is refused before anything is
@@ -521,17 +518,4 @@ fn several_saves_behind_is_newer_and_own_files_are_own() {
     let _ = a.archive_build("A".into()).unwrap();
     assert_eq!(a.archive_target(latest.clone()).unwrap(), ArchiveTarget::Same);
     assert_eq!(a.archive_target(first).unwrap(), ArchiveTarget::Same);
-}
-
-/// A note of GhulDrive written while the suite file is written is no change of the suite.
-#[test]
-fn a_quiet_save_while_saving_is_no_change() {
-    let (_da, a, _kf, _) = device_with_suite("quiet-a");
-    a.create_vault(VaultKind::Drive, "Drive".into()).unwrap();
-    let built = a.archive_build("A".into()).unwrap();
-    let before = a.change();
-    a.with_open(|o| a.save_area_quietly(o, VaultKind::Drive)).unwrap();
-    assert_eq!(a.change(), before, "not counted");
-    a.archive_saved(built.state, built.change).unwrap();
-    assert!(!a.archive_unsaved());
 }

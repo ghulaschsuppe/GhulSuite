@@ -16,7 +16,6 @@ pub mod error;
 pub mod kdf;
 pub mod net;
 pub mod pin;
-pub mod share;
 pub mod totp;
 pub mod update;
 pub mod vault;
@@ -35,29 +34,18 @@ pub mod fuzzing {
     pub fn parse_any(data: &[u8]) {
         let Some((&which, rest)) = data.split_first() else { return };
         let text = String::from_utf8_lossy(rest);
-        match which % 11 {
+        match which % 8 {
             0 => drop(crate::net::http::parse(rest)),
-            1 => {
-                let _ = crate::net::smtp::reply_line(&text);
-            }
-            2 => drop(crate::app::mailhtml::parse(&text)),
-            3 => drop(crate::app::caltext::ics_import(&text, 60)),
-            4 => drop(crate::app::caltext::cal_quick_parse(text.into_owned(), "2026-11-13".into(), 600)),
-            5 => drop(crate::app::import::parse(rest, "x.csv")),
-            6 => drop(crate::app::import::parse(rest, "x.json")),
-            7 => drop(crate::app::import::parse(rest, "x.zip")),
-            8 => {
+            1 => drop(crate::app::caltext::ics_import(&text, 60)),
+            2 => drop(crate::app::caltext::cal_quick_parse(text.into_owned(), "2026-11-13".into(), 600)),
+            3 => drop(crate::app::import::parse(rest, "x.csv")),
+            4 => drop(crate::app::import::parse(rest, "x.json")),
+            5 => drop(crate::app::import::parse(rest, "x.zip")),
+            6 => {
                 drop(crate::app::tools::parse_otpauth_uri(text.to_string()));
                 drop(crate::app::import::parse_migration(&text));
             }
-            9 => drop(crate::share::open(rest, &[7u8; 32], None)),
-            _ => {
-                drop(crate::cbor::decode(rest));
-                drop(crate::app::mailcrypt::parse_autocrypt(&text));
-                if let Some(h) = crate::app::domain::host_of(&text) {
-                    drop(crate::app::domain::base_domain(&h));
-                }
-            }
+            _ => drop(crate::cbor::decode(rest)),
         }
     }
 }

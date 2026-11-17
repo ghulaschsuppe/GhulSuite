@@ -3,14 +3,13 @@
 //!
 //! - `a_month_of_everyday_use_on_two_devices` (runs with every `cargo test`): a phone and a
 //!   laptop use one suite for 30 simulated days, the suite moving between them like on a USB
-//!   stick. Every day the device that has it adds, changes and deletes logins, 2FA codes,
-//!   appointments and Drive files, restarts the app, changes the password and makes a backup.
-//!   At the end both devices must show exactly the same, nothing may be lost, and the server must
-//!   not contain plaintext.
+//!   stick. Every day the device that has it adds, changes and deletes logins, 2FA codes and
+//!   appointments, restarts the app, changes the password and makes a backup. At the end both
+//!   devices must show exactly the same, nothing may be lost, and no file the app wrote may
+//!   contain plaintext.
 //! - The stress tests are `#[ignore]`d and run in release mode in CI
 //!   (`cargo test --release -p ghul-core -- --ignored stress`): thousands of entries, codes and
-//!   appointments, big and many Drive files, many app starts, and parallel access from several
-//!   threads. They print their timings and fail when something becomes unreasonably slow.
+//!   appointments, many app starts, and parallel access from several threads. They print their timings and fail when something becomes unreasonably slow.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -18,7 +17,6 @@ use std::time::Instant;
 
 use super::super::cal::{CalCalendar, CalDeleteMode, CalEvent};
 use super::*;
-use crate::net::remote::{LocalFs, RemoteFs};
 
 /// Small deterministic random generator (xorshift): the same "month" on every run.
 struct Rng(u64);
@@ -42,12 +40,9 @@ impl Rng {
     fn secret(&mut self) -> String {
         (0..32).map(|_| b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"[self.below(32) as usize] as char).collect()
     }
-    fn bytes(&mut self, n: usize) -> Vec<u8> {
-        (0..n).map(|_| self.next() as u8).collect()
-    }
 }
 
-/// A word that must never show up in plaintext on the server.
+/// A word that must never show up in plaintext in a file.
 const MARKER: &str = "GhulGeheimnis";
 
 fn pw_of(e: &EntryData) -> String {
@@ -75,8 +70,6 @@ struct Expected {
     totps: BTreeMap<String, Vec<u8>>,
     /// title -> (id, start)
     events: BTreeMap<String, (String, String)>,
-    /// name -> (id, content)
-    files: BTreeMap<String, (String, Vec<u8>)>,
 }
 
 struct Device {
@@ -88,11 +81,10 @@ struct Device {
 
 impl Device {
     /// The app is closed and started again: a new instance on the same folders, unlocked.
-    fn restart(&mut self, password: &str, keyfile: &[u8], drive: &Arc<dyn RemoteFs>) {
+    fn restart(&mut self, password: &str, keyfile: &[u8]) {
         self.suite.lock();
         self.suite = self.dirs.suite();
         self.suite.unlock(password.into(), None, None, None, Some(keyfile.to_vec())).unwrap();
-        self.suite.drive_use_folder(drive.clone()).unwrap();
     }
 }
 
@@ -118,22 +110,15 @@ fn event_titles(s: &GhulSuite) -> Vec<String> {
     v
 }
 
-fn drive_names(s: &GhulSuite) -> Vec<String> {
-    let mut v: Vec<String> =
-        s.drive_list(None, true).unwrap().into_iter().filter(|i| !i.is_dir).map(|i| i.name).collect();
-    v.sort();
-    v
-}
-
 /// The suite moves to the other device (like on a USB stick): saved into a file there, opened
 /// here; the app here starts again afterwards.
-fn hand_over(from: &Device, to: &mut Device, password: &str, keyfile: &[u8], drive: &Arc<dyn RemoteFs>) {
+fn hand_over(from: &Device, to: &mut Device, password: &str, keyfile: &[u8]) {
     let built = from.suite.archive_build(from.name.into()).unwrap();
     from.suite.archive_saved(built.state, built.change).unwrap();
     let check = to.suite.archive_open(built.data, password.into(), None, None, None, Some(keyfile.to_vec())).unwrap();
     assert!(!check.unsaved_changes, "{} worked on an old copy", to.name);
     to.suite.archive_accept().unwrap();
-    to.restart(password, keyfile, drive);
+    to.restart(password, keyfile);
 }
 
 /// Makes `to`'s suite folder an exact copy of `from`'s.
@@ -149,9 +134,6 @@ pub(super) fn copy_folder(from: &Dirs, to: &Dirs) {
 
 #[test]
 fn a_month_of_everyday_use_on_two_devices() {
-    let server_dir = std::env::temp_dir().join(format!("ghul-everyday-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&server_dir);
-    let drive: Arc<dyn RemoteFs> = Arc::new(LocalFs::new(server_dir.join("drive")));
     let kf = generate_keyfile();
     let mut password = "Alltag-pw-2026".to_string();
     let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
@@ -171,7 +153,6 @@ fn a_month_of_everyday_use_on_two_devices() {
             None,
         )
         .unwrap();
-    phone_suite.drive_use_folder(drive.clone()).unwrap();
     let pass = vault_id(&phone_suite, "Privat");
     let totp = vault_id(&phone_suite, "2FA");
     let cal_vault = vault_id(&phone_suite, "Kalender");
@@ -195,7 +176,7 @@ fn a_month_of_everyday_use_on_two_devices() {
     ];
     {
         let [phone, laptop] = &mut devices;
-        hand_over(phone, laptop, &password, &kf, &drive);
+        hand_over(phone, laptop, &password, &kf);
     }
     assert_eq!(all_titles(&devices[1].suite), vec!["Familie WLAN"]);
     // What the suite holds now (one state, no merging: whoever has it works on it).
@@ -210,9 +191,9 @@ fn a_month_of_everyday_use_on_two_devices() {
             let to = 1 - holder;
             let [a, b] = &mut devices;
             if to == 1 {
-                hand_over(a, b, &password, &kf, &drive);
+                hand_over(a, b, &password, &kf);
             } else {
-                hand_over(b, a, &password, &kf, &drive);
+                hand_over(b, a, &password, &kf);
             }
             holder = to;
         }
@@ -283,39 +264,12 @@ fn a_month_of_everyday_use_on_two_devices() {
             let (id, start) = exp.events.remove(&k).unwrap();
             s.cal_delete_event(id, start[..10].to_owned(), CalDeleteMode::All).unwrap();
         }
-        // Drive: photos and documents, renamed and deleted now and then. Drive lives on the
-        // server: the other device sees it at once, whatever copy of the suite it has.
-        if rng.chance(35) {
-            d.counter += 1;
-            let name = format!("{}-{}.bin", d.name, d.counter);
-            let max = if rng.chance(10) { 3_000_000 } else { 200_000 };
-            let size = 1 + rng.below(max) as usize;
-            let mut data = rng.bytes(size);
-            data.extend_from_slice(MARKER.as_bytes());
-            let id = upload(&s, None, &name, &data);
-            exp.files.insert(name, (id, data));
-        }
-        if rng.chance(10) && !exp.files.is_empty() {
-            let k = exp.files.keys().next().unwrap().clone();
-            let (id, data) = exp.files.remove(&k).unwrap();
-            let renamed = format!("umbenannt-{k}");
-            s.drive_rename(id.clone(), renamed.clone()).unwrap();
-            exp.files.insert(renamed, (id, data));
-        }
-        if rng.chance(8) && !exp.files.is_empty() {
-            let k = exp.files.keys().last().unwrap().clone();
-            let (id, _) = exp.files.remove(&k).unwrap();
-            s.drive_delete(id).unwrap();
-        }
-        // The other device's app works with Drive meanwhile (its own, older copy of the suite).
-        assert_eq!(drive_names(&devices[1 - holder].suite), drive_names(&devices[holder].suite));
-
         // Once a week the laptop is restarted; on day 10 the phone too.
         if day % 7 == 0 && holder == 1 {
-            devices[1].restart(&password, &kf, &drive);
+            devices[1].restart(&password, &kf);
         }
         if day == 10 && holder == 0 {
-            devices[0].restart(&password, &kf, &drive);
+            devices[0].restart(&password, &kf);
         }
         // Day 15: new master password; the other device gets it with the next copy.
         if day == 15 {
@@ -338,9 +292,9 @@ fn a_month_of_everyday_use_on_two_devices() {
         let to = 1 - holder;
         let [a, b] = &mut devices;
         if to == 1 {
-            hand_over(a, b, &password, &kf, &drive);
+            hand_over(a, b, &password, &kf);
         } else {
-            hand_over(b, a, &password, &kf, &drive);
+            hand_over(b, a, &password, &kf);
         }
     }
 
@@ -350,33 +304,27 @@ fn a_month_of_everyday_use_on_two_devices() {
     want_titles.sort();
     let want_totps: Vec<String> = exp.totps.keys().cloned().collect();
     let want_events: Vec<String> = exp.events.keys().cloned().collect();
-    let want_files: Vec<String> = exp.files.keys().cloned().collect();
     let wifi_a = pw_of(&devices[0].suite.get_entry(pass.clone(), wifi.clone()).unwrap());
     for d in &devices {
         let s = &d.suite;
         assert_eq!(all_titles(s), want_titles, "{}", d.name);
         assert_eq!(totp_issuers(s), want_totps, "{}", d.name);
         assert_eq!(event_titles(s), want_events, "{}", d.name);
-        assert_eq!(drive_names(s), want_files, "{}", d.name);
         assert_eq!(pw_of(&s.get_entry(pass.clone(), wifi.clone()).unwrap()), wifi_a);
         for (title, (id, pw)) in &exp.logins {
             assert_eq!(&pw_of(&s.get_entry(pass.clone(), id.clone()).unwrap()), pw, "{title} on {}", d.name);
         }
-        for (name, (id, data)) in &exp.files {
-            assert_eq!(&download(s, id), data, "{name} on {}", d.name);
-        }
     }
     assert!(
-        want_titles.len() > 20 && want_files.len() > 3 && want_events.len() > 10,
-        "a real month: {} logins, {} files, {} events",
+        want_titles.len() > 20 && want_events.len() > 10,
+        "a real month: {} logins, {} events",
         want_titles.len(),
-        want_files.len(),
         want_events.len()
     );
     assert!(devices.iter().all(|d| d.counter > 0), "both devices worked on the suite");
 
-    // Nothing readable on the server.
-    for f in files_under(&server_dir) {
+    // Nothing readable in the files of either device (working copy and device data).
+    for f in devices.iter().flat_map(|d| files_under(&d.dirs.root)) {
         let raw = std::fs::read(&f).unwrap();
         assert!(!raw.windows(MARKER.len()).any(|w| w == MARKER.as_bytes()), "{f:?} contains plaintext");
     }
@@ -390,14 +338,12 @@ fn a_month_of_everyday_use_on_two_devices() {
     assert_eq!(all_titles(&restored).len(), count);
 
     eprintln!(
-        "Alltagstest: 30 Tage, {} Anmeldungen, {} 2FA, {} Termine, {} Dateien in {:.1} s",
+        "Alltagstest: 30 Tage, {} Anmeldungen, {} 2FA, {} Termine in {:.1} s",
         want_titles.len(),
         want_totps.len(),
         want_events.len(),
-        want_files.len(),
         started.elapsed().as_secs_f64()
     );
-    let _ = std::fs::remove_dir_all(&server_dir);
 }
 
 /// Fails with a readable message when a step takes longer than `max_secs` (release build).
@@ -413,9 +359,6 @@ fn timed<T>(label: &str, max_secs: f64, f: impl FnOnce() -> T) -> T {
 #[test]
 #[ignore = "stress test: cargo test --release -p ghul-core -- --ignored stress"]
 fn stress_big_suite_on_two_devices() {
-    let server_dir = std::env::temp_dir().join(format!("ghul-stress-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&server_dir);
-    let drive: Arc<dyn RemoteFs> = Arc::new(LocalFs::new(server_dir.join("drive")));
     let kf = generate_keyfile();
     let mut rng = Rng(42);
     let da = Dirs::new("stress-a");
@@ -431,7 +374,6 @@ fn stress_big_suite_on_two_devices() {
         None,
     )
     .unwrap();
-    a.drive_use_folder(drive.clone()).unwrap();
     let pass = vault_id(&a, "Privat");
     let totp = vault_id(&a, "2FA");
     let cal_vault = vault_id(&a, "Kalender");
@@ -497,16 +439,6 @@ fn stress_big_suite_on_two_devices() {
         assert!(occ.len() >= 2_000);
     });
 
-    // Drive: 300 small files and one of 64 MB.
-    let small: Vec<(String, Vec<u8>)> =
-        (0..300).map(|i| (format!("foto-{i:03}.jpg"), rng.bytes(5_000 + (i * 997) % 60_000))).collect();
-    let small_ids = timed("300 kleine Dateien hochladen", 120.0, || {
-        small.iter().map(|(n, d)| upload(&a, None, n, d)).collect::<Vec<String>>()
-    });
-    let big = rng.bytes(64 * 1024 * 1024);
-    let big_id = timed("64-MB-Datei hochladen", 120.0, || upload(&a, None, "video.mp4", &big));
-    timed("64-MB-Datei herunterladen", 60.0, || assert!(download(&a, &big_id) == big));
-
     // Everything to a second device.
     let db = Dirs::new("stress-b");
     timed("Suite auf das zweite Gerät kopieren", 60.0, || copy_folder(&da, &db));
@@ -514,12 +446,7 @@ fn stress_big_suite_on_two_devices() {
     timed("Zweites Gerät entsperren", 30.0, || {
         b.unlock("Stress-pw-1".into(), None, None, None, Some(kf.clone())).unwrap()
     });
-    b.drive_use_folder(drive.clone()).unwrap();
     assert_eq!(titles(&b).len(), 5_000);
-    assert_eq!(drive_names(&b).len(), 301);
-    for (i, id) in small_ids.iter().enumerate().step_by(37) {
-        assert_eq!(download(&b, id), small[i].1);
-    }
 
     // The suite goes back and forth, each device changes something in between.
     timed("20 Runden ändern + Suite weitergeben auf 2 Geräten", 240.0, || {
@@ -549,14 +476,11 @@ fn stress_big_suite_on_two_devices() {
     timed("Suite-Datei der großen Suite speichern", 60.0, || {
         assert!(!a.archive_build("A".into()).unwrap().data.is_empty())
     });
-    let _ = std::fs::remove_dir_all(&server_dir);
 }
 
 #[test]
 #[ignore = "stress test: cargo test --release -p ghul-core -- --ignored stress"]
 fn stress_parallel_access_from_several_threads() {
-    let server_dir = std::env::temp_dir().join(format!("ghul-stress-par-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&server_dir);
     let kf = generate_keyfile();
     let d = Dirs::new("stress-par");
     let s = d.suite();
@@ -614,5 +538,4 @@ fn stress_parallel_access_from_several_threads() {
     let b = d2.suite();
     b.unlock("Par-pw-1".into(), None, None, None, Some(kf)).unwrap();
     assert_eq!(titles(&b), titles(&s));
-    let _ = std::fs::remove_dir_all(&server_dir);
 }

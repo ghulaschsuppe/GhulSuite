@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! B1: a change of the protection also protects against older copies of the files.
 //!
-//! The attacker has an old copy of the folder (a backup, a `.bak`, an older server version) and
+//! The attacker has an old copy of the folder (a backup, a `.bak`, an older suite file) and
 //! what was valid back then: the old recovery code, a key file that has since been removed, or
 //! the old password. With that, the old copy opens, but nothing written after the change may:
 //! every file gets a new container key, and removing a key also renews the factor secret for
@@ -10,7 +10,7 @@
 use super::*;
 use crate::vault::{FactorSecret, Keyfile, LockedContainer, PasswordKey, RecoveryCode, SecondFactor};
 
-const EXTENSIONS: &[&str] = &[".ghlsuite", ".ghlpss", ".ghltotp", ".ghlcal", ".ghldrv", ".ghlmail"];
+const EXTENSIONS: &[&str] = &[".ghlsuite", ".ghlpss", ".ghltotp", ".ghlcal"];
 
 /// The container files of the folder (what a backup or a thief would copy).
 fn files(d: &Dirs) -> Vec<(String, Vec<u8>)> {

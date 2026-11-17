@@ -1,17 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! One area, one file: GhulDrive (`.ghldrv`) and GhulMail (`.ghlmail`) keep their data and their
-//! settings in their own vault file. The suite file only holds the protection, the servers and
-//! the shares.
+//! Areas and their files: an area (e.g. GhulCal) keeps its data and its options in its own vault
+//! file. The suite file only holds the protection and the suite's settings.
 
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 
-use rand_core::OsRng;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 use super::error::{GhulError, Result};
-use super::suite::{put_setting, setting, GhulSuite, Open, VaultKind, SUITE_FILE};
+use super::suite::{put_setting, setting, GhulSuite, Open, VaultKind};
 use crate::vault::UnlockedContainer;
 
 /// Options of an area that travel with its file (e.g. GhulCal's holiday region).
@@ -20,8 +18,6 @@ const OPTIONS_KEY: &str = "options";
 /// Name of an area file created without asking for one.
 fn default_name(kind: VaultKind) -> &'static str {
     match kind {
-        VaultKind::Drive => "Drive",
-        VaultKind::Mail => "Mail",
         VaultKind::Cal => "Kalender",
         VaultKind::Totp => "2FA",
         VaultKind::Pass => "Passwörter",
@@ -58,31 +54,6 @@ pub(super) fn put_area_setting<T: Serialize>(o: &mut Open, kind: VaultKind, key:
 }
 
 impl GhulSuite {
-    /// The area's file id, created (with the suite's protection) if the area does not exist yet.
-    pub(super) fn ensure_area(&self, o: &mut Open, kind: VaultKind) -> Result<String> {
-        if let Some(id) = o.area_id(kind) {
-            return Ok(id);
-        }
-        let id = self.add_vault(o, kind, default_name(kind))?;
-        self.save_vault(o, &id)?;
-        Ok(id)
-    }
-
-    /// Saves the area's file without counting it as a change of the working copy (for notes of
-    /// what this device saw, e.g. a newer Drive index).
-    pub(super) fn save_area_quietly(&self, o: &mut Open, kind: VaultKind) -> Result<()> {
-        // Not a change of the suite: written without marking it unsaved or counting it (a suite
-        // file being written meanwhile still counts as saved).
-        let Some(id) = o.area_id(kind) else { return Ok(()) };
-        let (r, c) = o.vault_mut(&id)?;
-        let file = r.file.clone();
-        let data = c.seal(&mut OsRng)?;
-        self.storage.write(file, data)?;
-        let data = o.suite.seal(&mut OsRng)?;
-        self.storage.write(SUITE_FILE.to_owned(), data)?;
-        Ok(())
-    }
-
     /// Saves the area's file (and the suite's record of it); nothing when the area does not exist.
     pub(super) fn save_area(&self, o: &mut Open, kind: VaultKind) -> Result<()> {
         match o.area_id(kind) {
@@ -131,9 +102,6 @@ impl GhulSuite {
         })?;
         for id in ids {
             self.remove_vault(id)?;
-        }
-        if kind == VaultKind::Drive {
-            self.net.lock().unwrap_or_else(|p| p.into_inner()).drive = None;
         }
         Ok(())
     }

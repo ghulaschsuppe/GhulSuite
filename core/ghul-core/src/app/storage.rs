@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Where the suite's files live. The app passes an implementation: the app's private storage
 //! (Rust implementation below) or a folder chosen by the user (Android: Storage Access Framework,
-//! implemented in Kotlin). Later, sync adapters (SFTP, WebDAV, …) implement the same interface.
+//! implemented in Kotlin).
 
 use std::fs;
 use std::io::Write;
@@ -63,7 +63,7 @@ pub(crate) fn write_atomic(dir: &Path, name: &str, data: &[u8]) -> Result<()> {
 
 /// A plain file name that is safe on every system: no folders, no drive or stream separators
 /// (`C:`, `file:stream`), no control or direction characters, no Windows device names, not
-/// hidden, not ending in a dot or space. File names also come from servers and backups,
+/// hidden, not ending in a dot or space. File names also come from suite files and backups,
 /// whoever controls those must not be able to write anywhere else.
 pub(crate) fn plain_file_name(name: &str) -> bool {
     const DEVICES: [&str; 22] = [
