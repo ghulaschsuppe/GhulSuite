@@ -707,7 +707,7 @@ aufgehoben, `~/.ssh/authorized_keys` auf dem Server angesehen.
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| KW1 | **Automatisch:** Server, der `~/.ssh/authorized_keys` liest. Passwort ändern (Optionen → Passwort). | Danach Dialog „Suite-Datei jetzt speichern“. Ohne weitere Fragen: In `authorized_keys` steht jetzt eine neue Zeile `ssh-ed25519 … GhulSuite`, die alte Zeile der Suite ist weg, **alle anderen Zeilen sind unverändert**. GhulDrive zeigt alle Dateien wie vorher. |
+| KW1 | **Automatisch:** Server, der `~/.ssh/authorized_keys` liest. Passwort ändern (Optionen → Passwort), im Dialog „Suite-Datei jetzt speichern“ speichern. | Erst nach dem Speichern und ohne weitere Fragen: In `authorized_keys` steht jetzt eine neue Zeile `ssh-ed25519 … GhulSuite`, die alte Zeile der Suite ist weg, **alle anderen Zeilen sind unverändert**. GhulDrive zeigt alle Dateien wie vorher. |
 | KW2 | Nach KW1 auf dem Server `drive/` ansehen. | `index.ghldrv` wurde neu geschrieben (neue Änderungszeit); die Blöcke sind unverändert (gleiche Namen und Anzahl). Eine `index.bak` mit dem alten Schlüssel ist weg. |
 | KW3 | Wie KW1 mit „Neuer Wiederherstellungscode“ und mit „Schlüsseldatei entfernen“. | Jedes Mal ein neuer SSH-Schlüssel und neuer Drive-Schlüssel wie in KW1 und KW2. |
 | KW4 | Einen Key oder eine Schlüsseldatei **hinzufügen**. | **Kein** Schlüsselwechsel: `authorized_keys` und `index.ghldrv` bleiben unverändert, kein Dialog „Suite-Datei jetzt speichern“. |
@@ -721,7 +721,9 @@ aufgehoben, `~/.ssh/authorized_keys` auf dem Server angesehen.
 | KW12 | **Alter Index unter dem alten Schlüssel:** Vor KW1 `drive/index.ghldrv` kopieren. Nach KW1 (Wechsel abgeschlossen) diese Kopie auf dem Server zurückspielen, GhulDrive öffnen. | Der zurückgespielte Index öffnet nicht mit dem neuen Schlüssel und wird nicht still übernommen: GhulDrive meldet einen beschädigten bzw. älteren Stand und schreibt nichts, bis du entscheidest. |
 | KW13 | Während ein Wechsel läuft (ein Server wartet noch, z. B. KW5), auf einem schon umgeschlüsselten Speicherort einen Index mit dem alten Schlüssel zurückspielen. | Eigene Warnung („… mit einem Schlüssel von vor deiner letzten Schutzänderung …“); übernommen wird er nur nach Bestätigung unter Optionen → GhulDrive → „Älteren Serverstand übernehmen“. |
 | KW14 | Mitten im Wechsel (nach KW5, vor KW7) den Server mit dem alten Schlüssel aus der Suite entfernen. | Der Wechsel endet, sobald alle übrigen Server und Speicherorte durch sind; kein Dialog mehr. |
-| KW15 | Ein Upload läuft, dann Passwort ändern; nach dem Wechsel denselben Upload fortsetzen. | Das Hochladen setzt fort (der Geräteschlüssel für unfertige Uploads bleibt), die Datei ist danach vollständig da. |
+| KW15 | Ein Upload läuft, dann Passwort ändern; nach dem Wechsel denselben Upload fortsetzen. | Das Hochladen setzt fort (der Schlüssel für unfertige Uploads bleibt), die Datei ist danach vollständig da. Im App-Ordner liegt keine Datei `drive-device.key`. |
+| KW16 | **Erst speichern:** Passwort ändern, im Dialog „Später“. GhulDrive benutzen, dann auf einem zweiten Gerät die vorher aufgehobene Kopie öffnen (altes Passwort). App auf Gerät A sperren und entsperren. | Bis zum Speichern ändert sich auf dem Server nichts: `authorized_keys` unverändert, `index.ghldrv` mit dem alten Schlüssel; die alte Kopie öffnet GhulDrive weiter. Nach dem Entsperren fragt die App wieder nach dem Speichern. Nach dem Speichern läuft der Wechsel wie KW1. |
+| KW17 | Wie KW16 (noch nicht gespeichert), einen zweiten Speicherort ohne seine Dateien entfernen. Dann speichern und noch einmal entfernen. | Erst: „Speichere zuerst die Suite-Datei …“, nichts entfernt. Nach dem Speichern wird er entfernt; später wieder hinzugefügt zeigt er seine Dateien. |
 
 ## Fehler melden
 
