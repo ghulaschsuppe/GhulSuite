@@ -74,8 +74,6 @@ class ScreenshotTest {
         })
         var quickReady = false
         override fun exists() = existsFlag
-        override fun storageName() = "App-Speicher"
-        override fun useStorage(folder: FolderRef?) {}
         override fun protection() = protection
         override suspend fun inspectFile(data: ByteArray) = ContainerInfoUi("pass", protection)
         override suspend fun calibrateKdf() = KdfChoice(256 * 1024, 3, 800)

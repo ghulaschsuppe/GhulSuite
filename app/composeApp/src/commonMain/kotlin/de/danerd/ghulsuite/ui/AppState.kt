@@ -119,7 +119,7 @@ data class MailDraft(
 
 /**
  * UI state and navigation of the whole app. Runs the background work after unlocking (automatic
- * archive, scheduled mail, backups, update check) and owns the hooks of [JobStatus].
+ * archive, scheduled mail, update check) and owns the hooks of [JobStatus].
  */
 class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     var vaultExists by mutableStateOf(backend.exists())
@@ -450,7 +450,6 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     afterUnlock.toList().also { afterUnlock.clear() }.forEach { message(it) }
                     refreshVaults()
                     sendDueMail()
-                    runAutoBackup()
                     runAutoArchive()
                     val start = backend.settings.startTab.let { if (it < 0) backend.settings.lastTab else it }
                     tabs.getOrNull(start)?.let { tab = it }
@@ -642,8 +641,12 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex)
     }
 
+    /** The working copy has changes that are not in the suite file yet (see [SuiteFileSection]). */
+    var unsaved by mutableStateOf(false)
+
     /** Something changed: reload. */
     fun changed() {
+        unsaved = backend.archiveUnsaved()
         revision++
         refreshVaults()
         refreshCalendar()
@@ -866,20 +869,6 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         jobs.lockWhenDone = false
     }
 
-    /** Weekly backup into the folder chosen in Options (if set). */
-    fun runAutoBackup() {
-        val st = backend.settings
-        val folder = st.autoBackupFolder
-        if (folder.isEmpty() || nowSeconds() - st.lastAutoBackup < 7 * 86_400) return
-        scope.launch {
-            catching {
-                val data = backend.suiteBackup()
-                backend.writeToFolder(FolderRef(folder.substringBefore('|'), folder.substringAfter('|')), backupName(), data, keep = 4)
-            }.onSuccess { st.lastAutoBackup = nowSeconds().toInt() }
-                .onFailure { message(getString(Res.string.backup_auto_failed, describe(it))) }
-        }
-    }
-
     private var dueJob: kotlinx.coroutines.Job? = null
 
     /** Sends scheduled mail that is due, now and every minute while unlocked. */
@@ -1014,6 +1003,7 @@ private suspend fun describeText(e: Throwable): String {
         VaultErrorKind.LOCKED -> getString(Res.string.err_locked)
         VaultErrorKind.CORRUPTED -> getString(Res.string.err_corrupted, coreText(e.detail) ?: e.detail)
         VaultErrorKind.TAMPERED -> getString(Res.string.err_tampered)
+        VaultErrorKind.PROTECTION_OUTDATED -> getString(Res.string.err_protection_outdated)
         VaultErrorKind.STORAGE -> getString(Res.string.err_storage, coreText(e.detail) ?: e.detail)
         // U5: the core's known details are complete sentences in the app's language.
         VaultErrorKind.INVALID_INPUT -> coreText(e.detail) ?: getString(Res.string.err_input, e.detail)

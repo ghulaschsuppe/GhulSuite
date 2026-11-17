@@ -212,7 +212,7 @@ fun UnlockScreen(state: AppState) {
                     stringResource(Res.string.unlock_other_suite) to { clear(); state.showStart = true },
                     stringResource(Res.string.unlock_use_code) to { clear(); mode = UnlockMode.RECOVERY },
                 )
-                HintText(stringResource(Res.string.storage_current, storageLabel(backend.storageName())))
+                backend.suiteFile()?.let { HintText(stringResource(Res.string.file_current, it.name)) }
             }
 
             UnlockMode.RECOVERY -> {

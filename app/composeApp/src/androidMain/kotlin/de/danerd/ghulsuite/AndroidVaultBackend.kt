@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package de.danerd.ghulsuite
 
-import de.danerd.ghulsuite.ui.backupPrefix
 import android.app.Activity
 import android.app.ActivityManager
 import android.content.ClipData
@@ -19,6 +18,7 @@ import de.danerd.ghulsuite.core.VaultStorage
 import de.danerd.ghulsuite.core.fidoGetInfo
 import de.danerd.ghulsuite.core.fidoSetPin
 import de.danerd.ghulsuite.core.localStorage
+import de.danerd.ghulsuite.model.SuiteFileRef
 import de.danerd.ghulsuite.model.EmergencySheetText
 import de.danerd.ghulsuite.model.FolderRef
 import de.danerd.ghulsuite.model.KeyStatus
@@ -42,7 +42,7 @@ class PrefsStore(context: Context) : KeyValueStore {
     override fun putString(key: String, value: String) = prefs.edit().putString(key, value).apply()
 }
 
-/** Android: storage via SAF, security key via USB, quick unlock via Keystore. */
+/** Android: the working copy in the app's own storage, security key via USB, quick unlock via Keystore. */
 /** How long unlocking waits for a security key to be plugged in. */
 private const val KEY_WAIT_MS = 60_000L
 
@@ -66,15 +66,19 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
         File(context.cacheDir, "shared").deleteRecursively()
     }
 
-    override fun storage(): VaultStorage =
-        storageFor(prefs.getString("folder_uri", null)?.let { FolderRef(it, "") })
+    override fun storage(): VaultStorage = localStorage(File(context.filesDir, "suite").absolutePath)
 
-    override fun storageFor(folder: FolderRef?): VaultStorage =
-        if (folder == null) {
-            localStorage(File(context.filesDir, "suite").absolutePath)
-        } else {
-            SafStorage(context, Uri.parse(folder.uri))
-        }
+    override suspend fun readSuiteFile(ref: SuiteFileRef): ByteArray? = withContext(Dispatchers.IO) {
+        runCatching { context.contentResolver.openInputStream(Uri.parse(ref.id))?.use { it.readBytes() } }.getOrNull()
+    }
+
+    override suspend fun writeSuiteFile(ref: SuiteFileRef, data: ByteArray): Boolean = withContext(Dispatchers.IO) {
+        // "wt": the document is truncated and written; the provider (a USB stick, a cloud app)
+        // keeps its name and place.
+        runCatching {
+            context.contentResolver.openOutputStream(Uri.parse(ref.id), "wt")?.use { it.write(data); it.flush() } != null
+        }.getOrDefault(false) && readSuiteFile(ref)?.contentEquals(data) == true
+    }
 
     override fun devicePref(key: String): String? = prefs.getString(key, null)
 
@@ -91,22 +95,6 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
     override fun onFullUnlock() = quick.onFullUnlock()
 
     override fun onProtectionChanged() = quick.disableAll()
-
-    override fun useStorage(folder: FolderRef?) {
-        lock()
-        if (folder == null) {
-            prefs.edit().remove("folder_uri").apply()
-        } else {
-            val uri = Uri.parse(folder.uri)
-            runCatching {
-                context.contentResolver.takePersistableUriPermission(
-                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
-                )
-            }
-            prefs.edit().putString("folder_uri", folder.uri).apply()
-        }
-        reopen()
-    }
 
     override fun lock() {
         // Decrypted copies handed to other apps and a copied password do not outlive the session.
@@ -263,14 +251,6 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
         if (seconds > 0) {
             main.postDelayed({ if (copiedLabel == tagged) clearOwnClip() }, seconds * 1000L)
         }
-    }
-
-    override suspend fun writeToFolder(folder: FolderRef, name: String, data: ByteArray, keep: Int) = withContext(Dispatchers.IO) {
-        val store = SafStorage(context, android.net.Uri.parse(folder.uri))
-        store.write(name, data)
-        // Only the newest backups stay.
-        val old = store.list().filter { it.startsWith(backupPrefix(name)) && it.endsWith(".zip") }.sortedDescending().drop(keep)
-        for (o in old) runCatching { store.delete(o) }
     }
 
     override fun crashReport(): String? = CrashLog.pending(context)

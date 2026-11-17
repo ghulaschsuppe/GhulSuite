@@ -77,6 +77,10 @@ pub enum GhulError {
     /// recovery code). It is not used.
     #[error("the file was changed without the password")]
     Tampered,
+    /// A suite file with an older protection than this device saw (before a change of the
+    /// password, a key or the recovery code): it is not opened.
+    #[error("the file has an older protection")]
+    ProtectionOutdated,
     /// B3: the Drive index on the server is older than the one this suite saw last (server
     /// reset or an old copy put back). Nothing is written; `drive_accept_server_state` takes it.
     #[error("the GhulDrive index on the server is older than the one seen last")]

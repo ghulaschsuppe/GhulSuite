@@ -124,8 +124,7 @@ fn marked_suite(name: &str) -> (Dirs, Arc<GhulSuite>, std::path::PathBuf, Vec<u8
 #[test]
 fn stolen_device_files_server_and_backup_reveal_nothing() {
     let (d, s, server, _kf) = marked_suite("leak");
-    let backup = s.suite_backup().unwrap();
-    let export = s.export_suite().unwrap();
+    let backup = s.archive_build("Dieb".into()).unwrap().data;
     s.lock();
     // Everything the app wrote: its folder (vault files, local state), the server, the backup.
     for (p, data) in all_files(&d.root).into_iter().chain(all_files(&server)) {
@@ -136,7 +135,6 @@ fn stolen_device_files_server_and_backup_reveal_nothing() {
         let name = p.file_name().unwrap().to_string_lossy().into_owned();
         assert_no_marks(&format!("file name {name}"), name.as_bytes());
     }
-    let _ = &export;
     // Inside the backup ZIP as well (entries stored, but check unpacked too).
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(backup)).unwrap();
     for i in 0..z.len() {
@@ -255,7 +253,8 @@ fn backups_with_path_tricks_and_bombs_write_nothing_outside() {
     for t in tricks {
         let zip = make(&[("suite.ghlsuite", b"GHULSUIT"), (t, b"evil")]);
         let s = target.suite();
-        let _ = s.restore_backup(zip);
+        let _ = s.archive_open(zip, "pw".into(), None, None, None, None);
+        let _ = s.archive_accept();
         assert!(!outside.exists(), "{t} wrote outside");
         for f in target.storage().list().unwrap() {
             assert!(!f.contains(['/', '\\', ':', '\0']) && !f.starts_with('.'), "{t} created {f:?}");
@@ -280,8 +279,7 @@ fn backups_with_path_tricks_and_bombs_write_nothing_outside() {
     }
     let bomb = out.into_inner();
     assert!(bomb.len() < 200_000);
-    let s = target.suite();
-    assert!(s.restore_backup_limited(bomb, 16 * 1024 * 1024).is_err(), "a bomb must be refused");
+    assert!(super::super::archive::read_zip_limited(&bomb, 16 * 1024 * 1024).is_err(), "a bomb must be refused");
 }
 
 /// Every mail has its own Message-ID in the sender's domain (bug: none at all, so answers had

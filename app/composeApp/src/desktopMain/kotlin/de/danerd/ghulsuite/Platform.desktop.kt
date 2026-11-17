@@ -200,6 +200,19 @@ actual fun rememberSaveFile(onSaved: (Boolean) -> Unit): (String, ByteArray) -> 
 }
 
 @Composable
+actual fun rememberOpenSuiteFile(onPicked: (de.danerd.ghulsuite.model.SuiteFileRef, ByteArray) -> Unit): () -> Unit = {
+    chooseOpen()?.let { f ->
+        runCatching { f.readBytes() }.getOrNull()?.let { onPicked(de.danerd.ghulsuite.model.SuiteFileRef(f.absolutePath, f.name), it) }
+    }
+}
+
+@Composable
+actual fun rememberCreateSuiteFile(onCreated: (de.danerd.ghulsuite.model.SuiteFileRef?) -> Unit): (String) -> Unit = { name ->
+    val f = chooseSave(name)
+    onCreated(f?.let { de.danerd.ghulsuite.model.SuiteFileRef(it.absolutePath, it.name) })
+}
+
+@Composable
 actual fun rememberPickFolder(onPicked: (FolderRef) -> Unit): () -> Unit = {
     val chooser = JFileChooser().apply { fileSelectionMode = JFileChooser.DIRECTORIES_ONLY }
     if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {

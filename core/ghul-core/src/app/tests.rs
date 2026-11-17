@@ -2352,28 +2352,6 @@ fn totp_export_link_round_trip() {
 }
 
 #[test]
-fn backup_and_restore_into_an_empty_folder() {
-    let d = Dirs::new("backup-a");
-    let s = d.suite();
-    let kf = generate_keyfile();
-    s.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
-    let privat = vault_id(&s, "Privat");
-    s.save_entry(privat, login("Bank", "ich", "geheim-1234")).unwrap();
-    let zip = s.suite_backup().unwrap();
-    assert!(!zip.windows(11).any(|w| w == b"geheim-1234"), "backup holds only encrypted files");
-    s.lock();
-    assert!(s.suite_backup().is_err(), "only while unlocked");
-
-    let d2 = Dirs::new("backup-b");
-    let t = d2.suite();
-    assert!(t.restore_backup(b"kein zip".to_vec()).is_err());
-    assert!(t.restore_backup(zip.clone()).unwrap() >= 2);
-    assert!(t.restore_backup(zip).is_err(), "not over an existing suite");
-    t.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
-    assert_eq!(t.list_entries(VaultKind::Pass, None).unwrap()[0].title, "Bank");
-}
-
-#[test]
 fn calendar_vault_events_series_reminders_and_handing_over() {
     use super::cal::{CalCalendar, CalDeleteMode, CalEvent, CalLink, CalRepeat};
     let kf = generate_keyfile();
@@ -2722,6 +2700,7 @@ fn import_keeps_what_it_cannot_convert_and_names_it() {
 }
 
 mod absurd;
+mod archive;
 mod attacks;
 mod collections;
 mod crazy_user;
@@ -2730,53 +2709,6 @@ mod gnupg;
 mod properties;
 mod rekey;
 mod security;
-
-/// "Change storage location": every file is copied and checked, a target holding a suite is
-/// refused, and the suite opens from the new place with all entries.
-#[test]
-fn copy_to_other_storage() {
-    let from = Dirs::new("copy-from");
-    let to = Dirs::new("copy-to");
-    let kf = generate_keyfile();
-    let s = from.suite();
-    s.create(
-        options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat"), (VaultKind::Totp, "Codes")]),
-        None,
-        None,
-        None,
-    )
-    .unwrap();
-    let pass = s.list_vaults().unwrap().into_iter().find(|v| v.kind == VaultKind::Pass).unwrap();
-    s.save_entry(pass.id.clone(), login("A", "anna", "geheim-1")).unwrap();
-
-    // Copied while unlocked: settings file plus two vault files.
-    assert_eq!(s.copy_to(to.storage()).unwrap(), 3);
-    let mut a = from.storage().list().unwrap();
-    let mut b = to.storage().list().unwrap();
-    a.retain(|f| !f.ends_with(".bak") && !f.ends_with(".tmp"));
-    b.retain(|f| !f.ends_with(".bak") && !f.ends_with(".tmp"));
-    a.sort();
-    b.sort();
-    assert_eq!(a, b);
-    for f in &a {
-        assert_eq!(from.storage().read(f.clone()).unwrap(), to.storage().read(f.clone()).unwrap(), "{f}");
-    }
-    // The old place keeps its files.
-    assert!(from.suite().exists().unwrap());
-
-    // A second copy into the same place is refused, nothing is overwritten.
-    assert!(matches!(s.copy_to(to.storage()), Err(GhulError::AlreadyExists)));
-
-    // The new place opens on its own.
-    s.lock();
-    let moved = GhulSuite::new(to.storage(), from.local());
-    moved.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
-    assert_eq!(moved.list_entries(VaultKind::Pass, None).unwrap()[0].title, "A");
-
-    // An empty source has nothing to copy.
-    let empty = Dirs::new("copy-empty");
-    assert!(matches!(empty.suite().copy_to(Dirs::new("copy-empty-to").storage()), Err(GhulError::NoVault)));
-}
 
 /// A server name that does not resolve and a port nobody listens on give fixed texts the app
 /// translates, not the system's message ("failed to lookup address information: ...").

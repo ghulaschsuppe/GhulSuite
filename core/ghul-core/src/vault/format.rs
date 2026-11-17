@@ -65,6 +65,8 @@ pub enum ContainerKind {
     Drive,
     /// GhulMail: accounts, keys, drafts and settings.
     Mail,
+    /// The header of a suite file (`.ghlzip`): which files belong to it and which state it is.
+    Export,
 }
 
 impl ContainerKind {
@@ -76,6 +78,7 @@ impl ContainerKind {
             ContainerKind::Cal => b"GHULCLDR",
             ContainerKind::Drive => b"GHULDRIV",
             ContainerKind::Mail => b"GHULMAIL",
+            ContainerKind::Export => b"GHULEXPT",
         }
     }
 
@@ -87,6 +90,7 @@ impl ContainerKind {
             ContainerKind::Cal,
             ContainerKind::Drive,
             ContainerKind::Mail,
+            ContainerKind::Export,
         ]
         .into_iter()
         .find(|k| k.magic().as_slice() == magic)
@@ -101,6 +105,7 @@ impl ContainerKind {
             ContainerKind::Cal => "cal",
             ContainerKind::Drive => "drive",
             ContainerKind::Mail => "mail",
+            ContainerKind::Export => "export",
         }
     }
 
@@ -112,6 +117,7 @@ impl ContainerKind {
             ContainerKind::Cal => "ghlcal",
             ContainerKind::Drive => "ghldrv",
             ContainerKind::Mail => "ghlmail",
+            ContainerKind::Export => "ghlexp",
         }
     }
 }

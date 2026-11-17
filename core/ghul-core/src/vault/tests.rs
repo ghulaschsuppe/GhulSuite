@@ -463,7 +463,7 @@ fn build_vectors(version: u16) -> Json {
             ContainerKind::Suite => {
                 c.payload.settings.insert("note".into(), ciborium::value::Value::Text("keyring lives here".into()));
             }
-            ContainerKind::Drive | ContainerKind::Mail => {
+            ContainerKind::Drive | ContainerKind::Mail | ContainerKind::Export => {
                 c.payload.settings.insert("note".into(), ciborium::value::Value::Text("area settings".into()));
             }
             ContainerKind::Cal => {

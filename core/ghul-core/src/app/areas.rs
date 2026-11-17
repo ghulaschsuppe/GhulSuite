@@ -67,6 +67,17 @@ impl GhulSuite {
         Ok(id)
     }
 
+    /// Saves the area's file without counting it as a change of the working copy (for notes of
+    /// what this device saw, e.g. a newer Drive index).
+    pub(super) fn save_area_quietly(&self, o: &mut Open, kind: VaultKind) -> Result<()> {
+        let unsaved = self.archive_unsaved();
+        self.save_area(o, kind)?;
+        if !unsaved {
+            self.clear_unsaved();
+        }
+        Ok(())
+    }
+
     /// Saves the area's file (and the suite's record of it); nothing when the area does not exist.
     pub(super) fn save_area(&self, o: &mut Open, kind: VaultKind) -> Result<()> {
         match o.area_id(kind) {

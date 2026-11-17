@@ -191,10 +191,7 @@ class Settings(private val store: KeyValueStore) {
     /** Days until trashed files are deleted for good (0 = never). */
     var driveTrashDays by int("drive_trash_days", 30)
 
-    // --- Backup and start
-    /** Folder for the weekly automatic backup ("uri|name"), empty = off. */
-    var autoBackupFolder by str("auto_backup_folder", "")
-    var lastAutoBackup by int("last_auto_backup_s", 0)
+    // --- Start
     /** Area opened after unlocking: -1 = the one used last, else the tab index. */
     var startTab by int("start_tab", -1)
     var lastTab by int("last_tab", 0)

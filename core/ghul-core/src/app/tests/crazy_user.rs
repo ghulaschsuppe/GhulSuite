@@ -320,8 +320,11 @@ fn run(seed: u64, steps: usize) -> Stats {
                 // The suite goes to another device: its folder becomes a copy, its app starts again.
                 let to = (di + 1 + rng.below(devs.len() - 1)) % devs.len();
                 let before = titles(&s);
+                let built = s.archive_build("Gerät".into()).unwrap();
+                s.archive_saved(built.state).unwrap();
+                devs[to].s.archive_open(built.data, pw.into(), None, None, None, Some(kf.clone())).unwrap();
+                devs[to].s.archive_accept().unwrap();
                 devs[to].s.lock();
-                super::everyday::copy_folder(&devs[di].dirs, &devs[to].dirs);
                 let fresh = devs[to].dirs.suite();
                 fresh.unlock(pw.into(), None, None, None, Some(kf.clone())).unwrap();
                 fresh.drive_use_folder(drive.clone()).unwrap();
@@ -353,7 +356,7 @@ fn run(seed: u64, steps: usize) -> Stats {
                 );
             }
             _ => {
-                st.note("backup", s.suite_backup());
+                st.note("save file", s.archive_build("Test".into()).map(|b| b.data.len()));
             }
         }
     }
@@ -363,11 +366,10 @@ fn run(seed: u64, steps: usize) -> Stats {
         if to == di {
             continue;
         }
-        devs[to].s.lock();
-        super::everyday::copy_folder(&devs[di].dirs, &devs[to].dirs);
-        let fresh = devs[to].dirs.suite();
-        fresh.unlock(pw.into(), None, None, None, Some(kf.clone())).unwrap();
-        devs[to].s = fresh;
+        let built = devs[di].s.archive_build("Gerät".into()).unwrap();
+        devs[di].s.archive_saved(built.state).unwrap();
+        devs[to].s.archive_open(built.data, pw.into(), None, None, None, Some(kf.clone())).unwrap();
+        devs[to].s.archive_accept().unwrap();
     }
     let first = titles(&devs[0].s);
     for (i, d) in devs.iter().enumerate() {

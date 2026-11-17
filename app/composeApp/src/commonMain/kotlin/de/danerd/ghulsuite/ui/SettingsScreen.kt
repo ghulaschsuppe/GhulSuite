@@ -111,7 +111,7 @@ fun <T> ChoiceRow(label: String, options: List<Pair<T, StringResource>>, selecte
 }
 
 /** Pages of the settings, opened from the overview. */
-enum class SetPage { UNLOCK, LOCK, PRIVACY, FACTORS, VAULTS, IMPORT, SERVERS, MODULES, PASS, AUTH, DRIVE, MAIL, CAL, LOOK, ABOUT }
+enum class SetPage { UNLOCK, LOCK, PRIVACY, FACTORS, VAULTS, FILE, IMPORT, SERVERS, MODULES, PASS, AUTH, DRIVE, MAIL, CAL, LOOK, ABOUT }
 
 @Composable
 fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
@@ -235,12 +235,12 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                 Hint(stringResource(Res.string.set_swap_hint))
                 // L1: old backups still open with what was valid back then.
                 Hint(stringResource(Res.string.set_lost_hint))
-                Hint(stringResource(Res.string.storage_current, storageLabel(backend.storageName())))
             }
 
 
                 }
                 SetPage.VAULTS -> VaultsSection(state)
+                SetPage.FILE -> SuiteFileSection(state)
                 SetPage.IMPORT -> ImportExportSection(state)
                 SetPage.SERVERS -> ServersSection(state)
                 SetPage.MODULES -> AreasPage(state)

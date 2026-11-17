@@ -92,7 +92,7 @@ impl VaultKind {
             ContainerKind::Cal => Some(VaultKind::Cal),
             ContainerKind::Drive => Some(VaultKind::Drive),
             ContainerKind::Mail => Some(VaultKind::Mail),
-            ContainerKind::Suite => None,
+            ContainerKind::Suite | ContainerKind::Export => None,
         }
     }
 }
@@ -377,7 +377,7 @@ pub(super) fn vault_name(c: &UnlockedContainer, file: &str) -> String {
     }
 }
 
-fn set_vault_name(c: &mut UnlockedContainer, name: &str) {
+pub(super) fn set_vault_name(c: &mut UnlockedContainer, name: &str) {
     c.payload.settings.insert(NAME_KEY.into(), Value::Text(name.trim().to_owned()));
 }
 
@@ -391,7 +391,7 @@ pub(super) fn put_setting<T: Serialize>(suite: &mut UnlockedContainer, key: &str
     Ok(())
 }
 
-fn protection_of(l: &LockedContainer) -> ProtectionInfo {
+pub(super) fn protection_of(l: &LockedContainer) -> ProtectionInfo {
     ProtectionInfo {
         security_keys: l.fido2_requests().len() as u32,
         keyfiles: l.keyfile_slots() as u32,
@@ -460,8 +460,35 @@ impl Open {
         out
     }
 
-    /// Notes a change of the protection: the epoch grows (see [`EPOCH_KEY`]).
-    pub(super) fn protection_changed(&mut self) -> Result<()> {
+    /// A new container of `kind` with the suite's protection and recovery code.
+    pub(super) fn new_container(&self, kind: ContainerKind) -> Result<UnlockedContainer> {
+        let slots = factor_slots(&self.suite);
+        let mut c = self.keys().create_container(kind, slots.clone(), &mut OsRng)?;
+        for s in &slots {
+            let (label, created) = slot_label(&self.suite, s);
+            c.payload.slots.insert(crate::kdf::hex(s.id()), SlotMeta { label, created, extra: Default::default() });
+        }
+        if let Some(code) = self.suite.recovery_code() {
+            let label = self
+                .suite
+                .slots()
+                .iter()
+                .find(|s| matches!(s, Slot::Recovery(_)))
+                .map(|s| slot_label(&self.suite, s).0)
+                .unwrap_or_default();
+            c.set_recovery_code(&code, &label, now_ms(), &mut OsRng)?;
+        }
+        Ok(c)
+    }
+
+    /// The protection epoch of the open suite.
+    pub(super) fn epoch(&self) -> u64 {
+        setting(&self.suite, EPOCH_KEY)
+    }
+
+    /// Notes a change of the protection: the epoch grows (see [`EPOCH_KEY`]). Use
+    /// [`GhulSuite::protection_changed`], which also tells the device.
+    fn bump_epoch(&mut self) -> Result<()> {
         let epoch: u64 = setting(&self.suite, EPOCH_KEY);
         put_setting(&mut self.suite, EPOCH_KEY, &(epoch + 1))
     }
@@ -558,6 +585,8 @@ pub struct GhulSuite {
     pub(super) net: Mutex<NetCache>,
     /// The time zone database of the device (see `set_time_zones`).
     pub(super) zones: Mutex<Option<Arc<dyn super::caltext::TimeZones>>>,
+    /// A checked `.ghlzip` waiting to replace the working copy (see `archive_accept`).
+    pub(super) pending: Mutex<Option<super::archive::Pending>>,
 }
 
 #[derive(Default)]
@@ -579,7 +608,7 @@ enum Opener<'a> {
 
 /// Opens the key: CTAP2 over the given HID connection, or the system's WebAuthn API when the
 /// app passed [`crate::key_device::platform_security_key`].
-fn with_authenticator<T>(
+pub(super) fn with_authenticator<T>(
     transport: &Arc<dyn HidTransport>,
     listener: Option<&Arc<dyn FidoListener>>,
     f: impl FnOnce(&dyn KeyDevice) -> Result<T>,
@@ -600,7 +629,7 @@ fn with_authenticator<T>(
 type NewKey = (Vec<u8>, [u8; 32], Zeroizing<[u8; 32]>);
 
 /// Registers a new credential and evaluates hmac-secret once (two touches).
-fn register_key(auth: &dyn KeyDevice, pin: &str) -> Result<NewKey> {
+pub(super) fn register_key(auth: &dyn KeyDevice, pin: &str) -> Result<NewKey> {
     let cred = auth.make_credential(RP_ID, RP_NAME, pin)?;
     if !cred.hmac_secret {
         return Err(GhulError::HmacSecretUnsupported);
@@ -739,7 +768,7 @@ fn apply(e: &mut Entry, data: EntryData) {
     e.folder = data.folder.filter(|f| !f.is_empty());
 }
 
-fn slot_label(c: &UnlockedContainer, s: &Slot) -> (String, i64) {
+pub(super) fn slot_label(c: &UnlockedContainer, s: &Slot) -> (String, i64) {
     c.payload.slots.get(&crate::kdf::hex(s.id())).map(|m| (m.label.clone(), m.created)).unwrap_or_default()
 }
 
@@ -749,7 +778,7 @@ impl GhulSuite {
     }
 
     /// Unlocked: a lock asked for before is done with.
-    fn set_open(&self, open: Open) {
+    pub(super) fn set_open(&self, open: Open) {
         let mut guard = self.guard();
         self.lock_pending.store(false, Ordering::SeqCst);
         *guard = Some(open);
@@ -839,7 +868,7 @@ impl GhulSuite {
     }
 
     /// A new suite (settings) container with the same protection and recovery code as `anchor`.
-    fn suite_for_vault(&self, anchor: &UnlockedContainer, pk: &PasswordKey) -> Result<UnlockedContainer> {
+    pub(super) fn suite_for_vault(&self, anchor: &UnlockedContainer, pk: &PasswordKey) -> Result<UnlockedContainer> {
         let keys = SuiteKeys::from_parts(
             anchor.header().suite_id,
             anchor.header().kdf.clone(),
@@ -935,7 +964,9 @@ impl GhulSuite {
 
     pub(super) fn save_container(&self, c: &mut UnlockedContainer, file: &str) -> Result<()> {
         let data = c.seal(&mut OsRng)?;
-        Ok(self.storage.write(file.to_owned(), data)?)
+        self.storage.write(file.to_owned(), data)?;
+        self.mark_unsaved();
+        Ok(())
     }
 
     /// Saves one vault and the suite.
@@ -958,7 +989,7 @@ impl GhulSuite {
     }
 
     /// Opens the folder's vaults with the suite's password and factor secret and keeps the session.
-    fn finish_unlock(&self, password_key: PasswordKey, suite: UnlockedContainer, full: bool) -> Result<()> {
+    pub(super) fn finish_unlock(&self, password_key: PasswordKey, suite: UnlockedContainer, full: bool) -> Result<()> {
         let s = FactorSecret::from_bytes(*suite.factor_secret().expose());
         let kdf = suite.header().kdf.clone();
         let opener = Opener::Factors { pk: &password_key, s: &s, suite_id: suite.header().suite_id, kdf: &kdf };
@@ -979,22 +1010,7 @@ impl GhulSuite {
 
     /// Creates a vault with the suite's protection and recovery code.
     pub(super) fn add_vault(&self, o: &mut Open, kind: VaultKind, name: &str) -> Result<String> {
-        let slots = factor_slots(&o.suite);
-        let mut c = o.keys().create_container(kind.container(), slots.clone(), &mut OsRng)?;
-        for s in &slots {
-            let (label, created) = slot_label(&o.suite, s);
-            c.payload.slots.insert(crate::kdf::hex(s.id()), SlotMeta { label, created, extra: Default::default() });
-        }
-        if let Some(code) = o.suite.recovery_code() {
-            let label = o
-                .suite
-                .slots()
-                .iter()
-                .find(|s| matches!(s, Slot::Recovery(_)))
-                .map(|s| slot_label(&o.suite, s).0)
-                .unwrap_or_default();
-            c.set_recovery_code(&code, &label, now_ms(), &mut OsRng)?;
-        }
+        let mut c = o.new_container(kind.container())?;
         set_vault_name(&mut c, name);
         let id = crate::kdf::hex(&c.container_id());
         let file = file_name(kind, &id);
@@ -1023,6 +1039,14 @@ impl GhulSuite {
         Ok(id)
     }
 
+    /// Notes a change of the protection: the epoch grows in the suite, and this device knows from
+    /// now on that files with an older protection are not to be opened.
+    pub(super) fn protection_changed(&self, o: &mut Open) -> Result<()> {
+        o.bump_epoch()?;
+        self.note_epoch(&o.suite.header().suite_id, o.epoch());
+        Ok(())
+    }
+
     /// Copies a new factor slot (created in the suite) into every vault and saves all.
     fn insert_everywhere(&self, o: &mut Open, slot: Slot, label: &str, now: i64) -> Result<()> {
         for v in &mut o.vaults {
@@ -1030,7 +1054,7 @@ impl GhulSuite {
                 c.insert_slot(slot.clone(), label, now)?;
             }
         }
-        o.protection_changed()?;
+        self.protection_changed(o)?;
         self.save_all(o)
     }
 }
@@ -1048,6 +1072,7 @@ impl GhulSuite {
             lock_pending: AtomicBool::new(false),
             net: Mutex::new(NetCache::default()),
             zones: Mutex::new(None),
+            pending: Mutex::new(None),
         })
     }
 
@@ -1058,45 +1083,6 @@ impl GhulSuite {
 
     pub fn storage_name(&self) -> String {
         self.storage.describe()
-    }
-
-    /// "Change storage location": copies the settings file and every vault file to `target` and
-    /// reads each copy back to compare it byte for byte. Refuses a target that already holds a
-    /// suite (nothing is overwritten). The files here stay untouched; the caller switches to the
-    /// new location only after this succeeded. If anything fails, the copies made so far are
-    /// removed again. Returns the number of files copied.
-    pub fn copy_to(&self, target: Arc<dyn VaultStorage>) -> Result<u32> {
-        // No save may run while the files are copied.
-        let _hold = self.guard();
-        if target.read(SUITE_FILE.to_owned())?.is_some() || target.list()?.iter().any(|f| is_vault_file(f)) {
-            return Err(GhulError::AlreadyExists);
-        }
-        let mut names = self.vault_files()?;
-        if self.storage.read(SUITE_FILE.to_owned())?.is_some() {
-            names.insert(0, SUITE_FILE.to_owned());
-        }
-        if names.is_empty() {
-            return Err(GhulError::NoVault);
-        }
-        let mut done: Vec<String> = Vec::new();
-        let result = (|| -> Result<()> {
-            for name in &names {
-                let data = self.storage.read(name.clone())?.ok_or(GhulError::NoVault)?;
-                target.write(name.clone(), data.clone())?;
-                done.push(name.clone());
-                if target.read(name.clone())?.as_deref() != Some(&data[..]) {
-                    return Err(GhulError::Storage { msg: format!("copy of {name} differs") });
-                }
-            }
-            Ok(())
-        })();
-        if let Err(e) = result {
-            for name in &done {
-                let _ = target.delete(name.clone());
-            }
-            return Err(e);
-        }
-        Ok(names.len() as u32)
     }
 
     pub fn is_unlocked(&self) -> bool {
@@ -1273,7 +1259,7 @@ impl GhulSuite {
             c.rekey(&pk, kdf.clone(), &mut OsRng)?;
         }
         open.renew_keys(false, now_ms())?;
-        open.protection_changed()?;
+        self.protection_changed(&mut open)?;
         self.save_all(&mut open)?;
         super::quick::delete_all(&self.local_dir);
         super::quick::refresh_stamps(&self.local_dir, open.password_key.expose(), now_ms());
@@ -1447,10 +1433,6 @@ impl GhulSuite {
             Ok(o.vaults.iter().find(|v| v.reference.id == id).ok_or(GhulError::NotFound)?.reference.file.clone())
         })?;
         self.storage.read(file)?.ok_or(GhulError::NotFound)
-    }
-
-    pub fn export_suite(&self) -> Result<Vec<u8>> {
-        self.storage.read(SUITE_FILE.to_owned())?.ok_or(GhulError::NoVault)
     }
 
     /// Adds a vault file (e.g. picked by the user) that already has this suite's protection.
@@ -1953,7 +1935,7 @@ impl GhulSuite {
             }
             // The old code with an old copy of a file must not open what is written now.
             o.renew_keys(false, now)?;
-            o.protection_changed()?;
+            self.protection_changed(o)?;
             self.save_all(o)?;
             Ok(code.to_display().to_string())
         })
@@ -1981,7 +1963,7 @@ impl GhulSuite {
             // The removed key with an old copy of a file must not open what is written now:
             // new factor secret for the remaining keys and key files, new container keys.
             o.renew_keys(true, now_ms())?;
-            o.protection_changed()?;
+            self.protection_changed(o)?;
             self.save_all(o)?;
             super::quick::delete_all(&self.local_dir);
             Ok(())
@@ -2007,7 +1989,7 @@ impl GhulSuite {
             o.password_key = new_pk;
             // The old password with an old copy of a file must not open what is written now.
             o.renew_keys(false, now_ms())?;
-            o.protection_changed()?;
+            self.protection_changed(o)?;
             self.save_all(o)?;
             super::quick::delete_all(&self.local_dir);
             Ok(())

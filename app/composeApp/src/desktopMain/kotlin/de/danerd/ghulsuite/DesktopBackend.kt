@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package de.danerd.ghulsuite
 
-import de.danerd.ghulsuite.ui.backupPrefix
 import de.danerd.ghulsuite.core.GhulSuite
 import de.danerd.ghulsuite.core.HidTransport
 import de.danerd.ghulsuite.core.VaultStorage
 import de.danerd.ghulsuite.core.localStorage
 import de.danerd.ghulsuite.core.platformSecurityKey
 import de.danerd.ghulsuite.core.platformSecurityKeyAvailable
+import de.danerd.ghulsuite.model.SuiteFileRef
 import de.danerd.ghulsuite.model.DriveItemUi
 import de.danerd.ghulsuite.model.EmergencySheetText
 import de.danerd.ghulsuite.model.FolderRef
@@ -143,7 +143,7 @@ class PropertiesStore(private val file: File) : KeyValueStore {
     override fun putBoolean(key: String, value: Boolean) = putString(key, value.toString())
 }
 
-/** Windows (and other desktops): suite folder on disk, security key through the system API. */
+/** Windows (and other desktops): the working copy in the app's data folder, security key through the system API. */
 class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
     CoreVaultBackend(File(DesktopPaths.dataDir, "local").absolutePath) {
     private val device = PropertiesStore(File(DesktopPaths.dataDir, "device.properties"))
@@ -160,10 +160,26 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
         ShareFiles.wipe()
     }
 
-    override fun storage(): VaultStorage = storageFor(device.getString("folder")?.let { FolderRef(it, "") })
+    override fun storage(): VaultStorage = localStorage(File(DesktopPaths.dataDir, "suite").absolutePath)
 
-    override fun storageFor(folder: FolderRef?): VaultStorage =
-        localStorage(folder?.uri ?: File(DesktopPaths.dataDir, "suite").absolutePath)
+    override suspend fun readSuiteFile(ref: SuiteFileRef): ByteArray? = withContext(Dispatchers.IO) {
+        runCatching { File(ref.id).takeIf { it.isFile }?.readBytes() }.getOrNull()
+    }
+
+    /** Written next to the file first and moved over it in one step: a pulled stick leaves the old file. */
+    override suspend fun writeSuiteFile(ref: SuiteFileRef, data: ByteArray): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            val target = File(ref.id)
+            val tmp = File(target.parentFile, target.name + ".ghltmp")
+            java.io.FileOutputStream(tmp).use { it.write(data); it.fd.sync() }
+            try {
+                java.nio.file.Files.move(tmp.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+            } catch (e: java.nio.file.AtomicMoveNotSupportedException) {
+                java.nio.file.Files.move(tmp.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            }
+            target.readBytes().contentEquals(data)
+        }.getOrDefault(false)
+    }
 
     override fun devicePref(key: String): String? = device.getString(key)
 
@@ -175,24 +191,9 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
         return (total / (16L * 1024 * 1024)).toInt()
     }
 
-    override fun useStorage(folder: FolderRef?) {
-        lock()
-        if (folder == null) device.remove("folder") else device.putString("folder", folder.uri)
-        reopen()
-    }
-
     override fun lock() {
         ShareFiles.wipe()
         super.lock()
-    }
-
-    override suspend fun writeToFolder(folder: FolderRef, name: String, data: ByteArray, keep: Int) = withContext(Dispatchers.IO) {
-        val dir = File(folder.uri)
-        dir.mkdirs()
-        File(dir, name).writeBytes(data)
-        dir.listFiles { f -> f.name.startsWith(backupPrefix(name)) && f.name.endsWith(".zip") }
-            ?.sortedByDescending { it.name }?.drop(keep)?.forEach { it.delete() }
-        Unit
     }
 
     override fun crashReport(): String? = File(DesktopPaths.dataDir, "absturz.txt").takeIf { it.exists() }?.readText()

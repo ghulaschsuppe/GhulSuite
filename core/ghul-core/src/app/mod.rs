@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! API for the GhulSuite app (exported via UniFFI).
 
+pub mod archive;
 pub mod areas;
 pub mod authx;
-pub mod backup;
 pub mod cal;
 pub mod caldate;
 pub mod caltext;

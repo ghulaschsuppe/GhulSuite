@@ -132,9 +132,6 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
     var keyfileSaved by remember { mutableStateOf(false) }
     var kdf by remember { mutableStateOf<KdfChoice?>(null) }
     var code by remember { mutableStateOf("") }
-    // 3: storage
-    var inFolder by remember { mutableStateOf(false) }
-    var storageName by remember { mutableStateOf(backend.storageName()) }
     // 4: areas
     val areaOn = remember { mutableStateMapOf(VaultKindUi.PASS to true, VaultKindUi.TOTP to true, VaultKindUi.DRIVE to false, VaultKindUi.MAIL to false, VaultKindUi.CAL to true) }
     val areaName = remember { mutableStateMapOf<VaultKindUi, String>() }
@@ -157,11 +154,6 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
     }
     val saveKeyfile = rememberSaveFile { ok -> keyfileSaved = ok; if (ok) error = null }
     val openKeyfile = rememberOpenFile { file -> keyfile = file.bytes; keyfileSaved = true; error = null }
-    val pickFolder = rememberPickFolder { folder ->
-        backend.useStorage(folder)
-        storageName = backend.storageName()
-        inFolder = true
-    }
     val notSaved = stringResource(Res.string.keyfile_not_saved)
     val suiteThere = stringResource(Res.string.storage_suite_exists)
     val driveMissingFmt = stringResource(Res.string.wz_drive_missing)
@@ -332,17 +324,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
         }
 
         3 -> {
-            ListCard {
-                PickRow(!inFolder, Icons.Filled.Smartphone, 5, stringResource(Res.string.storage_app), stringResource(Res.string.wz_storage_app_sub), onClick = {
-                    backend.useStorage(null); storageName = backend.storageName(); inFolder = false
-                })
-                if (filePickersAvailable) {
-                    PickRow(inFolder, Icons.Filled.Folder, 9, stringResource(Res.string.storage_folder), stringResource(Res.string.wz_storage_folder_sub), divider = true, onClick = pickFolder) {
-                        Hint(stringResource(Res.string.storage_current, storageLabel(storageName)))
-                    }
-                }
-            }
-            HintText(stringResource(Res.string.wz_storage_hint))
+            HintText(stringResource(Res.string.wz_create_hint))
             if (backend.exists()) {
                 Text(suiteThere, color = warnColor())
                 TextButton(onClick = { state.showStart = false; state.vaultExists = true }) { Text(stringResource(Res.string.storage_open_existing)) }

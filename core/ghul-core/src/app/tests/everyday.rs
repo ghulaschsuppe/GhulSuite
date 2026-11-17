@@ -125,11 +125,14 @@ fn drive_names(s: &GhulSuite) -> Vec<String> {
     v
 }
 
-/// The suite moves to the other device (like on a USB stick): the other device's folder becomes an
-/// exact copy, the app there starts again and is unlocked.
+/// The suite moves to the other device (like on a USB stick): saved into a file there, opened
+/// here; the app here starts again afterwards.
 fn hand_over(from: &Device, to: &mut Device, password: &str, keyfile: &[u8], drive: &Arc<dyn RemoteFs>) {
-    to.suite.lock();
-    copy_folder(&from.dirs, &to.dirs);
+    let built = from.suite.archive_build(from.name.into()).unwrap();
+    from.suite.archive_saved(built.state).unwrap();
+    let check = to.suite.archive_open(built.data, password.into(), None, None, None, Some(keyfile.to_vec())).unwrap();
+    assert!(!check.unsaved_changes, "{} worked on an old copy", to.name);
+    to.suite.archive_accept().unwrap();
     to.restart(password, keyfile, drive);
 }
 
@@ -322,7 +325,9 @@ fn a_month_of_everyday_use_on_two_devices() {
         }
         // Day 20: backup.
         if day == 20 {
-            let data = devices[holder].suite.suite_backup().unwrap();
+            let built = devices[holder].suite.archive_build("Laptop".into()).unwrap();
+            devices[holder].suite.archive_saved(built.state).unwrap();
+            let data = built.data;
             let count = all_titles(&devices[holder].suite).len();
             backup = Some((data, count));
         }
@@ -376,12 +381,12 @@ fn a_month_of_everyday_use_on_two_devices() {
         assert!(!raw.windows(MARKER.len()).any(|w| w == MARKER.as_bytes()), "{f:?} contains plaintext");
     }
 
-    // The backup of day 20 restores into an empty folder with the password of that day.
+    // The suite file of day 20 opens on a new device with the password of that day.
     let (data, count) = backup.unwrap();
     let fresh = Dirs::new("everyday-restore");
     let restored = fresh.suite();
-    assert!(restored.restore_backup(data).unwrap() > 0);
-    restored.unlock("Neues-Alltag-pw-15".into(), None, None, None, Some(kf.clone())).unwrap();
+    restored.archive_open(data, "Neues-Alltag-pw-15".into(), None, None, None, Some(kf.clone())).unwrap();
+    restored.archive_accept().unwrap();
     assert_eq!(all_titles(&restored).len(), count);
 
     eprintln!(
@@ -541,7 +546,9 @@ fn stress_big_suite_on_two_devices() {
             a.unlock("Stress-pw-1".into(), None, None, None, Some(kf.clone())).unwrap();
         }
     });
-    timed("Sicherung (Backup) der großen Suite", 60.0, || assert!(!a.suite_backup().unwrap().is_empty()));
+    timed("Suite-Datei der großen Suite speichern", 60.0, || {
+        assert!(!a.archive_build("A".into()).unwrap().data.is_empty())
+    });
     let _ = std::fs::remove_dir_all(&server_dir);
 }
 
@@ -581,7 +588,7 @@ fn stress_parallel_access_from_several_threads() {
                             s.save_entry(pass.clone(), login(&format!("T{t}-{i}"), "u", "p")).unwrap();
                         }
                         2 => {
-                            assert!(!s.suite_backup().unwrap().is_empty());
+                            assert!(!s.archive_build("T".into()).unwrap().data.is_empty());
                         }
                         3 => {
                             let _ = s.list_entries(VaultKind::Pass, None).unwrap();

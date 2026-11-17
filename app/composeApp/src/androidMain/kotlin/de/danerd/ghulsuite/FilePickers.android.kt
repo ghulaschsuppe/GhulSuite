@@ -83,6 +83,66 @@ actual fun rememberSaveFile(onSaved: (Boolean) -> Unit): (String, ByteArray) -> 
     }
 }
 
+/** Keeps read and write access to a document across restarts (where the provider allows it). */
+private fun keepAccess(context: android.content.Context, uri: Uri) {
+    runCatching {
+        context.contentResolver.takePersistableUriPermission(
+            uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+        )
+    }
+}
+
+@Composable
+actual fun rememberOpenSuiteFile(onPicked: (de.danerd.ghulsuite.model.SuiteFileRef, ByteArray) -> Unit): () -> Unit {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        ExternalActivity.finished()
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val picked = withContext(Dispatchers.IO) {
+                runCatching {
+                    keepAccess(context, uri)
+                    val doc = DocumentFile.fromSingleUri(context, uri)
+                    if ((doc?.length() ?: 0) > MAX_FILE_BYTES) return@runCatching null
+                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@runCatching null
+                    de.danerd.ghulsuite.model.SuiteFileRef(uri.toString(), doc?.name ?: uri.lastPathSegment ?: "GhulSuite.ghlzip") to bytes
+                }.getOrNull()
+            }
+            if (picked != null) onPicked(picked.first, picked.second)
+        }
+    }
+    return remember(launcher) {
+        {
+            ExternalActivity.started()
+            launcher.launch(arrayOf("*/*"))
+        }
+    }
+}
+
+@Composable
+actual fun rememberCreateSuiteFile(onCreated: (de.danerd.ghulsuite.model.SuiteFileRef?) -> Unit): (String) -> Unit {
+    val context = LocalContext.current
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream"),
+    ) { uri: Uri? ->
+        ExternalActivity.finished()
+        if (uri == null) {
+            onCreated(null)
+            return@rememberLauncherForActivityResult
+        }
+        keepAccess(context, uri)
+        val name = DocumentFile.fromSingleUri(context, uri)?.name ?: uri.lastPathSegment ?: "GhulSuite.ghlzip"
+        onCreated(de.danerd.ghulsuite.model.SuiteFileRef(uri.toString(), name))
+    }
+    return remember(launcher) {
+        { name ->
+            ExternalActivity.started()
+            launcher.launch(name)
+        }
+    }
+}
+
 @Composable
 actual fun rememberPickFolder(onPicked: (FolderRef) -> Unit): () -> Unit {
     val context = LocalContext.current

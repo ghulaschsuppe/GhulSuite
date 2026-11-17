@@ -32,7 +32,6 @@ import de.danerd.ghulsuite.core.passwordStrength
 import de.danerd.ghulsuite.model.ContainerInfoUi
 import de.danerd.ghulsuite.model.EntrySummaryUi
 import de.danerd.ghulsuite.model.EntryUi
-import de.danerd.ghulsuite.model.FolderRef
 import de.danerd.ghulsuite.model.ImportPreviewUi
 import de.danerd.ghulsuite.model.ImportResultUi
 import de.danerd.ghulsuite.model.KdfChoice
@@ -61,6 +60,14 @@ import de.danerd.ghulsuite.model.SetupStateUi
 import de.danerd.ghulsuite.model.SkippedImportUi
 import de.danerd.ghulsuite.model.SkipReasonUi
 import de.danerd.ghulsuite.model.KeepSkippedUi
+import de.danerd.ghulsuite.model.ArchiveBuiltUi
+import de.danerd.ghulsuite.model.ArchiveCheckUi
+import de.danerd.ghulsuite.model.ArchiveRelationUi
+import de.danerd.ghulsuite.model.ArchiveTargetUi
+import de.danerd.ghulsuite.model.SuiteFileRef
+import de.danerd.ghulsuite.core.ArchiveCheck
+import de.danerd.ghulsuite.core.ArchiveRelation
+import de.danerd.ghulsuite.core.ArchiveTarget
 
 /**
  * Everything of [VaultBackend] that is the same on Android and Windows: the open suite, vaults,
@@ -78,17 +85,8 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
     protected val suite: GhulSuite
         get() = current ?: newSuite().also { current = it }
 
-    /** Where the suite lives (app folder, chosen folder, USB stick …). */
+    /** Where the working copy lives: the app's own storage. */
     protected abstract fun storage(): VaultStorage
-
-    /** The storage for the app's private folder (`null`) or a chosen folder. */
-    protected abstract fun storageFor(folder: FolderRef?): VaultStorage
-
-    override suspend fun moveStorage(folder: FolderRef?): Int {
-        val copied = io { suite.copyTo(storageFor(folder)).toInt() }
-        useStorage(folder)
-        return copied
-    }
 
     /** Opens the suite again, e.g. after another storage location was chosen. */
     protected fun reopen() {
@@ -130,7 +128,54 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
 
     override fun exists(): Boolean = runCatching { suite.exists() }.getOrDefault(false)
 
-    override fun storageName(): String = suite.storageName()
+    // --- the suite file ----------------------------------------------------------------------------
+
+    override suspend fun archiveProtection(data: ByteArray): ProtectionUi = io { suite.archiveProtection(data).toUi() }
+
+    override suspend fun archiveOpen(
+        data: ByteArray,
+        password: String,
+        pin: String?,
+        keyfile: ByteArray?,
+        onTouchNeeded: () -> Unit,
+    ): ArchiveCheckUi = maybeWithKey(pin) { t ->
+        suite.archiveOpen(data, password, t, t?.let { Touch(onTouchNeeded) }, pin, keyfile).toUi()
+    }
+
+    override suspend fun archiveOpenWithCode(data: ByteArray, code: String, newPassword: String): ArchiveCheckUi =
+        io { suite.archiveOpenWithCode(data, code, newPassword).toUi() }
+
+    override fun archiveCancel() = suite.archiveCancel()
+
+    override suspend fun archiveAccept() {
+        io { suite.archiveAccept() }
+        // The device's quick unlock belonged to the state before.
+        onProtectionChanged()
+        unlockedState.value = true
+    }
+
+    override fun archiveUnsaved(): Boolean = runCatching { suite.archiveUnsaved() }.getOrDefault(false)
+
+    override suspend fun archiveTarget(data: ByteArray): ArchiveTargetUi = io {
+        when (suite.archiveTarget(data)) {
+            ArchiveTarget.NEW -> ArchiveTargetUi.NEW
+            ArchiveTarget.SAME -> ArchiveTargetUi.SAME
+            ArchiveTarget.CHANGED_ELSEWHERE -> ArchiveTargetUi.CHANGED_ELSEWHERE
+            ArchiveTarget.OTHER_SUITE -> ArchiveTargetUi.OTHER_SUITE
+        }
+    }
+
+    override suspend fun archiveBuild(device: String): ArchiveBuiltUi = io {
+        val b = suite.archiveBuild(device)
+        ArchiveBuiltUi(b.data, b.state)
+    }
+
+    override suspend fun archiveSaved(state: String) = io { suite.archiveSaved(state) }
+
+    override fun suiteFile(): SuiteFileRef? =
+        devicePref("suite_file")?.takeIf { it.contains('|') }?.let { SuiteFileRef(it.substringBefore('|'), it.substringAfter('|')) }
+
+    override fun setSuiteFile(ref: SuiteFileRef?) = setDevicePref("suite_file", ref?.let { it.id + "|" + it.name } ?: "")
 
     override fun protection(): ProtectionUi? = runCatching { suite.protection().toUi() }.getOrNull()
 
@@ -468,9 +513,7 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
 
     override suspend fun clockOffset(nowSeconds: Long): Long? = io { suite.clockOffset(nowSeconds) }
 
-    override suspend fun suiteBackup(): ByteArray = io { suite.suiteBackup() }
 
-    override suspend fun restoreBackup(data: ByteArray): Int = io { suite.restoreBackup(data).toInt() }
 
     override suspend fun pwnedCount(password: String): Int = io { de.danerd.ghulsuite.core.pwnedCount(password).toInt() }
 
@@ -478,3 +521,19 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
         de.danerd.ghulsuite.core.reportSend(report, note, contact)
     }
 }
+
+internal fun ArchiveCheck.toUi() = ArchiveCheckUi(
+    relation = when (relation) {
+        ArchiveRelation.NO_SUITE -> ArchiveRelationUi.NO_SUITE
+        ArchiveRelation.OTHER_SUITE -> ArchiveRelationUi.OTHER_SUITE
+        ArchiveRelation.SAME -> ArchiveRelationUi.SAME
+        ArchiveRelation.NEWER -> ArchiveRelationUi.NEWER
+        ArchiveRelation.OLDER -> ArchiveRelationUi.OLDER
+        ArchiveRelation.BRANCH -> ArchiveRelationUi.BRANCH
+    },
+    unsavedChanges = unsavedChanges,
+    unverified = unverified,
+    savedAt = savedAt,
+    device = device,
+    vaults = vaults.toInt(),
+)

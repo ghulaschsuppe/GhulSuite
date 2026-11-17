@@ -58,7 +58,7 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 
-private enum class Flow { START, NEW, OPEN_VAULT }
+private enum class Flow { START, NEW, OPEN_VAULT, OPEN_FILE }
 
 const val KEYFILE_NAME = "ghulsuite.ghlkey"
 
@@ -81,20 +81,16 @@ fun SetupScreen(state: AppState) {
     var flow by remember { mutableStateOf(Flow.START) }
     var vaultFile by remember { mutableStateOf<PickedFile?>(null) }
     var vaultInfo by remember { mutableStateOf<ContainerInfoUi?>(null) }
+    var suiteFile by remember { mutableStateOf<PickedSuiteFile?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     val backend = state.backend
     val scope = rememberCoroutineScope()
 
-    val noSuiteHere = stringResource(Res.string.start_no_suite_in_folder)
     val isSuiteFile = stringResource(Res.string.start_is_suite_file)
-    val pickFolder = rememberPickFolder { folder ->
-        backend.useStorage(folder)
-        if (backend.exists()) {
-            state.showStart = false
-            state.vaultExists = true
-        } else {
-            error = noSuiteHere
-        }
+    val openSuiteFile = rememberOpenSuiteFile { ref, data ->
+        suiteFile = PickedSuiteFile(ref, data)
+        error = null
+        flow = Flow.OPEN_FILE
     }
     val openFile = rememberOpenFile { file ->
         scope.launch {
@@ -113,34 +109,6 @@ fun SetupScreen(state: AppState) {
         }
     }
 
-    val restoredMsg = stringResource(Res.string.backup_restored)
-    val restoreBackup = rememberOpenFile { file ->
-        state.run(onError = { error = it }, block = { backend.restoreBackup(file.bytes) }) {
-            state.message(restoredMsg)
-            state.showStart = false
-            state.vaultExists = true
-        }
-    }
-
-    // U6: a backup never goes over an existing suite: there the app offers another (empty) folder.
-    var restoreAsk by remember { mutableStateOf(false) }
-    val folderHasSuite = stringResource(Res.string.core_folder_has_suite)
-    val pickRestoreFolder = rememberPickFolder { folder ->
-        backend.useStorage(folder)
-        if (backend.exists()) error = folderHasSuite else restoreBackup()
-    }
-    if (restoreAsk) {
-        AlertDialog(
-            onDismissRequest = { restoreAsk = false },
-            title = { Text(stringResource(Res.string.restore_exists_title)) },
-            text = { Text(stringResource(Res.string.restore_exists_text)) },
-            confirmButton = {
-                TextButton(onClick = { restoreAsk = false; pickRestoreFolder() }) { Text(stringResource(Res.string.restore_choose_folder)) }
-            },
-            dismissButton = { TextButton(onClick = { restoreAsk = false }) { Text(stringResource(Res.string.a_cancel)) } },
-        )
-    }
-
     PlatformBackHandler(enabled = flow != Flow.START) { flow = Flow.START }
 
     ScreenColumn {
@@ -157,29 +125,27 @@ fun SetupScreen(state: AppState) {
                 if (filePickersAvailable) {
                     StartOption(Icons.Filled.Folder, paletteColor(2), stringResource(Res.string.start_open_suite), stringResource(Res.string.start_open_suite_text)) {
                         error = null
-                        pickFolder()
+                        openSuiteFile()
                     }
                     StartOption(Icons.Filled.Description, paletteColor(3), stringResource(Res.string.start_open_vault), stringResource(Res.string.start_open_vault_text)) {
                         error = null
                         openFile()
                     }
                 }
-                if (filePickersAvailable) {
-                    StartOption(Icons.Filled.Restore, paletteColor(5), stringResource(Res.string.backup_restore), stringResource(Res.string.backup_restore_sub)) {
-                        error = null
-                        if (backend.exists()) restoreAsk = true else restoreBackup()
-                    }
-                }
                 HintText(stringResource(Res.string.start_footer))
                 ErrorText(error)
                 if (state.showStart && backend.exists()) {
                     TextButton(onClick = { state.showStart = false; state.vaultExists = true }) {
-                        Text(stringResource(Res.string.start_back_to_suite, storageLabel(backend.storageName())))
+                        Text(stringResource(Res.string.start_back_to_suite))
                     }
                 }
             }
 
             Flow.NEW -> NewSuiteWizard(state) { flow = Flow.START }
+
+            Flow.OPEN_FILE -> suiteFile?.let { f ->
+                OpenSuiteFile(state, f, onOpened = { suiteFile = null; flow = Flow.START }, onCancel = { suiteFile = null; flow = Flow.START })
+            }
 
             Flow.OPEN_VAULT -> {
                 val file = vaultFile
@@ -205,38 +171,6 @@ private fun StartOption(icon: ImageVector, color: androidx.compose.ui.graphics.C
             Text(text, fontSize = 14.sp, color = g.muted)
         }
         ChevronEnd()
-    }
-}
-
-/** Shows where the suite is stored and lets the user choose a folder. */
-@Composable
-fun StorageChooser(state: AppState) {
-    val backend = state.backend
-    var name by remember { mutableStateOf(backend.storageName()) }
-    var exists by remember { mutableStateOf(backend.exists()) }
-    val pickFolder = rememberPickFolder { folder ->
-        backend.useStorage(folder)
-        name = backend.storageName()
-        exists = backend.exists()
-    }
-    Text(stringResource(Res.string.storage_title), style = MaterialTheme.typography.titleSmall)
-    Hint(stringResource(Res.string.storage_current, storageLabel(name)))
-    Hint(stringResource(Res.string.storage_hint))
-    if (filePickersAvailable) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = {
-                backend.useStorage(null)
-                name = backend.storageName()
-                exists = backend.exists()
-            }) { Text(stringResource(Res.string.storage_app)) }
-            OutlinedButton(onClick = pickFolder) { Text(stringResource(Res.string.storage_folder)) }
-        }
-    }
-    if (exists) {
-        Text(stringResource(Res.string.storage_suite_exists), color = warnColor(), style = MaterialTheme.typography.bodyMedium)
-        TextButton(onClick = { state.showStart = false; state.vaultExists = true }) {
-            Text(stringResource(Res.string.storage_open_existing))
-        }
     }
 }
 
@@ -292,7 +226,6 @@ private fun OpenVaultWizard(state: AppState, file: PickedFile, info: ContainerIn
         if (hasKey && hasKeyfile) FactorChoice(withKey) { withKey = it; error = null }
         if (!needsKey) KeyfilePicker(keyfile) { keyfile = it; error = null }
         Hint(stringResource(Res.string.open_vault_new_code))
-        StorageChooser(state)
         ErrorText(error)
         ButtonRow {
             OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text(stringResource(Res.string.a_back)) }

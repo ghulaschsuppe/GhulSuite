@@ -582,7 +582,8 @@ impl GhulSuite {
         }
         *e = revision;
         put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
-        self.save_area(o, VaultKind::Drive)
+        // Only a note of what was seen on the server: no change to save into the suite file.
+        self.save_area_quietly(o, VaultKind::Drive)
     }
 
     /// Loads the current index from the server, applies `f`, saves it. If another device saved

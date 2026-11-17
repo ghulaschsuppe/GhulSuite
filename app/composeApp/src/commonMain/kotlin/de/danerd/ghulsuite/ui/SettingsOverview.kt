@@ -17,6 +17,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.CalendarMonth
@@ -70,6 +71,7 @@ fun SetPage.title(): StringResource = when (this) {
     SetPage.PRIVACY -> Res.string.set_privacy
     SetPage.FACTORS -> Res.string.set_factors
     SetPage.VAULTS -> Res.string.set_vaults
+    SetPage.FILE -> Res.string.file_title
     SetPage.IMPORT -> Res.string.set_import_export
     SetPage.SERVERS -> Res.string.set_servers_share
     SetPage.MODULES -> Res.string.set_modules
@@ -119,7 +121,7 @@ fun SettingsScreen(state: AppState, padding: PaddingValues) {
                     IconTile(Icons.Outlined.Shield, paletteColor(0), size = 64.dp)
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(stringResource(Res.string.set_my_suite), style = MaterialTheme.typography.titleMedium)
-                        Hint(pluralStringResource(Res.plurals.set_suite_summary, state.vaults.size, state.vaults.size.toString(), storageLabel(backend.storageName())))
+                        Hint(pluralStringResource(Res.plurals.set_suite_summary, state.vaults.size, state.vaults.size.toString()))
                         val how = stringResource(
                             when {
                                 keys > 0 -> Res.string.prot_pw_key
@@ -182,8 +184,10 @@ fun SettingsScreen(state: AppState, padding: PaddingValues) {
                 }
             }
             Group(stringResource(Res.string.set_g_data)) {
+                SetRow(Icons.Filled.Save, Blue, stringResource(Res.string.file_title),
+                    stringResource(if (state.unsaved) Res.string.file_unsaved_short else Res.string.file_sub), first = true) { open(SetPage.FILE) }
                 SetRow(Icons.Filled.Layers, Teal, stringResource(Res.string.set_vaults),
-                    pluralStringResource(Res.plurals.set_vaults_sub, state.vaults.size, state.vaults.size.toString()), first = true) { open(SetPage.VAULTS) }
+                    pluralStringResource(Res.plurals.set_vaults_sub, state.vaults.size, state.vaults.size.toString())) { open(SetPage.VAULTS) }
                 SetRow(Icons.Filled.Download, Cyan, stringResource(Res.string.set_import_export), stringResource(Res.string.set_import_sub)) { open(SetPage.IMPORT) }
                 SetRow(Icons.Filled.Dns, Blue, stringResource(Res.string.set_servers_share),
                     stringResource(Res.string.set_servers_sub)) { open(SetPage.SERVERS) }

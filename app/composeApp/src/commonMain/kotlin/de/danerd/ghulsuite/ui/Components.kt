@@ -49,7 +49,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -533,6 +533,12 @@ fun SectionCard(title: String? = null, content: @Composable ColumnScope.() -> Un
 /** Busy indicator, with "touch your key" when the key is waiting. */
 @Composable
 fun BusyBanner(state: AppState) {
+    // On the area pages: changes that are not in the suite file yet. Tap: save.
+    if (state.unsaved && state.stack.isEmpty() && !state.busy) {
+        Box(Modifier.fillMaxWidth().clickable { state.push(Screen.SettingsPage(SetPage.FILE)) }) {
+            Banner(Icons.Filled.Save, stringResource(Res.string.file_unsaved_banner))
+        }
+    }
     // The running action itself is shown in front of everything (BusyOverlay).
 }
 
@@ -653,6 +659,3 @@ fun vaultKindOf(kind: String): de.danerd.ghulsuite.model.VaultKindUi = when (kin
     else -> de.danerd.ghulsuite.model.VaultKindUi.TOTP
 }
 
-/** Display name of the storage location: the app's own storage gets a readable name. */
-@Composable
-fun storageLabel(raw: String): String = if (raw == "app") stringResource(Res.string.storage_app) else raw

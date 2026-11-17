@@ -252,34 +252,9 @@ fun ExportScreen(state: AppState, padding: PaddingValues) {
     }
 }
 
-/** Settings section: backup, import and export. */
+/** Settings section: import and export. */
 @Composable
 fun ImportExportSection(state: AppState) {
-    val settings = state.backend.settings
-    val savedMsg = stringResource(Res.string.msg_saved_file)
-    val save = rememberSaveFile { ok -> if (ok) state.message(savedMsg) }
-    val pickBackupFolder = rememberPickFolder { f ->
-        settings.autoBackupFolder = f.uri + "|" + f.name
-        settings.lastAutoBackup = 0
-        state.runAutoBackup()
-    }
-    SectionCard(stringResource(Res.string.backup_title)) {
-        Hint(stringResource(Res.string.backup_hint))
-        if (filePickersAvailable) {
-            Button(onClick = {
-                state.run(block = { state.backend.suiteBackup() }) { data -> save(backupName(), data) }
-            }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.backup_create)) }
-            val folder = settings.autoBackupFolder.substringAfter('|', "")
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(stringResource(Res.string.backup_auto))
-                    Hint(if (folder.isEmpty()) stringResource(Res.string.backup_auto_off) else stringResource(Res.string.backup_auto_on, folder))
-                }
-                Switch(folder.isNotEmpty(), { on -> if (on) pickBackupFolder() else settings.autoBackupFolder = "" })
-            }
-            Hint(stringResource(Res.string.backup_restore_hint))
-        }
-    }
     SectionCard(stringResource(Res.string.set_import_export)) {
         OutlinedButton(onClick = { state.push(Screen.Import) }, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(Res.string.a_import))
@@ -290,30 +265,6 @@ fun ImportExportSection(state: AppState) {
         Hint(stringResource(Res.string.set_import_hint))
     }
 }
-
-/** File name of a backup with a readable UTC date and time, e.g. "GhulSuite-Backup-2026-11-12-1530.zip". */
-fun backupName(): String {
-    val secs = nowSeconds()
-    // Civil date from days since 1970 (Howard Hinnant's algorithm), no platform date API needed.
-    val z = secs / 86_400 + 719_468
-    val era = (if (z >= 0) z else z - 146_096) / 146_097
-    val doe = z - era * 146_097
-    val yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365
-    val doy = doe - (365 * yoe + yoe / 4 - yoe / 100)
-    val mp = (5 * doy + 2) / 153
-    val day = doy - (153 * mp + 2) / 5 + 1
-    val month = if (mp < 10) mp + 3 else mp - 9
-    val year = yoe + era * 400 + (if (month <= 2) 1 else 0)
-    val minutes = (secs % 86_400) / 60
-    fun two(n: Long) = n.toString().padStart(2, '0')
-    return "GhulSuite-Backup-$year-${two(month)}-${two(day)}-${two(minutes / 60)}${two(minutes % 60)}.zip"
-}
-
-/**
- * Common start of all automatic backups with the same naming ("GhulSuite-Backup-"): only those are
- * rotated, other ZIP files in the folder (older names included) are left alone.
- */
-fun backupPrefix(name: String): String = name.split('-').take(2).joinToString("-") + "-"
 
 /** Vault name, with its area when the list mixes GhulPass and GhulAuth vaults ("Personal · GhulAuth"). */
 private fun vaultLabel(v: de.danerd.ghulsuite.model.VaultUi, all: List<de.danerd.ghulsuite.model.VaultUi>): String =

@@ -18,20 +18,9 @@ interface VaultBackend {
     /** GhulCal. */
     val cal: CalBackend get() = NoCalBackend
 
-    // --- Storage location and suite
-    /** Whether a suite exists in the configured storage location. */
+    // --- The working copy and the suite file
+    /** Whether this device has a suite (its working copy, in the app's own storage). */
     fun exists(): Boolean
-    /** Name of the storage location (app storage or folder name). */
-    fun storageName(): String
-    /** Uses the app's private storage (`null`) or a folder chosen by the user. */
-    fun useStorage(folder: FolderRef?)
-    /**
-     * "Change storage location": copies every suite file to the app's private storage (`null`)
-     * or the chosen folder, checks each copy and then uses the new place. The old files stay.
-     * Fails with [VaultErrorKind.ALREADY_EXISTS] if the target already holds a suite. Locks.
-     * Returns the number of files copied.
-     */
-    suspend fun moveStorage(folder: FolderRef?): Int = 0
     /** Protection of the suite (for the unlock screen); null if there is no suite. */
     fun protection(): ProtectionUi?
     /** What a vault file needs to be opened. */
@@ -157,11 +146,31 @@ interface VaultBackend {
     /** GhulAuth: account as otpauth link (QR export); clock difference to an own web server. */
     suspend fun totpUri(vaultId: String, id: String): String = ""
     suspend fun clockOffset(nowSeconds: Long): Long? = null
-    /** Complete encrypted backup of the suite folder (ZIP) and restoring it into an empty folder. */
-    suspend fun suiteBackup(): ByteArray = ByteArray(0)
-    suspend fun restoreBackup(data: ByteArray): Int = 0
-    /** Writes a file into a folder the user chose once (automatic backup); keeps the newest [keep]. */
-    suspend fun writeToFolder(folder: FolderRef, name: String, data: ByteArray, keep: Int) {}
+    // --- The suite file (.ghlzip): opened into the working copy, saved from it
+    /** What a suite file needs to be opened (password plus key or key file). */
+    suspend fun archiveProtection(data: ByteArray): ProtectionUi = throw VaultException(VaultErrorKind.OTHER)
+    /** Opens and checks a suite file; nothing is replaced before [archiveAccept]. */
+    suspend fun archiveOpen(data: ByteArray, password: String, pin: String?, keyfile: ByteArray?, onTouchNeeded: () -> Unit): ArchiveCheckUi =
+        throw VaultException(VaultErrorKind.OTHER)
+    /** Emergency: opens a suite file with the recovery code; on accepting, [newPassword] protects it. */
+    suspend fun archiveOpenWithCode(data: ByteArray, code: String, newPassword: String): ArchiveCheckUi =
+        throw VaultException(VaultErrorKind.OTHER)
+    fun archiveCancel() {}
+    /** Replaces the working copy with the checked file and opens it. */
+    suspend fun archiveAccept() {}
+    /** The working copy has changes that are not in a file yet. */
+    fun archiveUnsaved(): Boolean = false
+    /** The file at the place the suite is saved to, compared with the working copy. */
+    suspend fun archiveTarget(data: ByteArray): ArchiveTargetUi = ArchiveTargetUi.NEW
+    /** Builds the suite file of the working copy; confirm with [archiveSaved] once it is written. */
+    suspend fun archiveBuild(device: String): ArchiveBuiltUi = ArchiveBuiltUi(ByteArray(0), "")
+    suspend fun archiveSaved(state: String) {}
+    /** The suite file used last on this device (opened or saved), if any. */
+    fun suiteFile(): SuiteFileRef? = null
+    fun setSuiteFile(ref: SuiteFileRef?) {}
+    /** Reads / writes a remembered suite file; null / false when it is not reachable (e.g. the stick is out). */
+    suspend fun readSuiteFile(ref: SuiteFileRef): ByteArray? = null
+    suspend fun writeSuiteFile(ref: SuiteFileRef, data: ByteArray): Boolean = false
     /** Last crash report of this device, if any. */
     fun crashReport(): String? = null
     /** Breach check (k-anonymity); network. */
@@ -190,6 +199,28 @@ interface VaultBackend {
 
 /** A folder chosen by the user (Android: SAF tree URI). */
 data class FolderRef(val uri: String, val name: String)
+
+/** A suite file the app may read and write again (Android: a document it keeps access to, Windows: a path). */
+data class SuiteFileRef(val id: String, val name: String)
+
+/** How a suite file relates to what this device has. */
+enum class ArchiveRelationUi { NO_SUITE, OTHER_SUITE, SAME, NEWER, OLDER, BRANCH }
+
+/** The result of checking a suite file before it replaces the working copy. */
+data class ArchiveCheckUi(
+    val relation: ArchiveRelationUi,
+    val unsavedChanges: Boolean,
+    /** Opened with the recovery code: the seals could not be checked. */
+    val unverified: Boolean,
+    val savedAt: Long,
+    val device: String,
+    val vaults: Int,
+)
+
+/** The file at the place the suite is saved to. */
+enum class ArchiveTargetUi { NEW, SAME, CHANGED_ELSEWHERE, OTHER_SUITE }
+
+class ArchiveBuiltUi(val data: ByteArray, val state: String)
 
 /** A file picked by the user. */
 class PickedFile(val name: String, val bytes: ByteArray)
@@ -423,6 +454,8 @@ enum class VaultErrorKind {
     CORRUPTED,
     /** A file opens with the password, but its seal is wrong: it was changed without the password. */
     TAMPERED,
+    /** A suite file with an older protection than this device saw: it is not opened. */
+    PROTECTION_OUTDATED,
     STORAGE,
     INVALID_INPUT,
     NETWORK,
