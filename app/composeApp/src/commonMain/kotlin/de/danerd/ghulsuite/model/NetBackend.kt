@@ -62,6 +62,8 @@ interface NetBackend {
 
     // --- GhulDrive
     suspend fun driveStatus(): DriveStatusUi
+    /** Removes blocks nothing uses any more (at most once a day per device); how many went. */
+    suspend fun driveTidy(): Int = 0
     /** After "server state older than seen": takes the server's GhulDrive as it is. */
     suspend fun driveAcceptServerState() {}
     /** Checks a server and adds it to GhulDrive's storage locations (in the Drive file). */

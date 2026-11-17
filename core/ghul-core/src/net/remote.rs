@@ -10,6 +10,8 @@ pub struct RemoteEntry {
     pub name: String,
     pub is_dir: bool,
     pub size: u64,
+    /// Last change (Unix seconds); 0 if the server did not say.
+    pub modified: i64,
 }
 
 /// Paths are relative to the configured base folder and use `/`.
@@ -79,6 +81,11 @@ impl RemoteFs for LocalFs {
                 name: e.file_name().to_string_lossy().into_owned(),
                 is_dir: m.is_dir(),
                 size: m.len(),
+                modified: m
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map_or(0, |d| d.as_secs() as i64),
             });
         }
         out.sort_by(|a, b| a.name.cmp(&b.name));

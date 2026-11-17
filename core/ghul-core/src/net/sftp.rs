@@ -263,7 +263,12 @@ impl RemoteFs for SftpFs {
                 let mut out: Vec<RemoteEntry> = entries
                     .map(|e| {
                         let m = e.metadata();
-                        RemoteEntry { name: e.file_name(), is_dir: m.is_dir(), size: m.size.unwrap_or(0) }
+                        RemoteEntry {
+                            name: e.file_name(),
+                            is_dir: m.is_dir(),
+                            size: m.size.unwrap_or(0),
+                            modified: m.mtime.map_or(0, i64::from),
+                        }
                     })
                     .filter(|e| e.name != "." && e.name != "..")
                     .collect();

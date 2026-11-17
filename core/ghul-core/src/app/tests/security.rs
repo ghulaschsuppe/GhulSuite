@@ -267,3 +267,58 @@ fn confirmed_pgp_keys_stay_and_key_changes_are_reported() {
     assert!(carol.verified);
     assert_eq!(carol.offered, mailcrypt::pretty_fingerprint(&mailcrypt::fingerprint(&c3)));
 }
+
+/// Blocks nothing uses any more are removed once a day (older than a day only: an upload
+/// writes its blocks before its entry); used ones stay, and nothing goes while the server's
+/// index is older than the one seen.
+#[test]
+fn unused_blocks_are_tidied_up() {
+    let d = Dirs::new("tidy");
+    let kf = generate_keyfile();
+    let s = d.suite();
+    s.create(options("pw-123456", Some(kf), &[(VaultKind::Pass, "P")]), None, None, None).unwrap();
+    let server = std::env::temp_dir().join(format!("ghul-tidy-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&server);
+    s.drive_use_folder(Arc::new(LocalFs::new(&server))).unwrap();
+    upload(&s, None, "a.txt", b"A");
+    let blocks = server.join("drive/blocks");
+    let used: Vec<std::path::PathBuf> = std::fs::read_dir(&blocks)
+        .unwrap()
+        .flatten()
+        .flat_map(|d| std::fs::read_dir(d.path()).unwrap().flatten().map(|f| f.path()))
+        .collect();
+    assert_eq!(used.len(), 1);
+    let day_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 86_400);
+    let orphan = |name: &str, old: bool| {
+        let dir = blocks.join(&name[..2]);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(name);
+        std::fs::write(&path, b"x").unwrap();
+        if old {
+            std::fs::File::options().write(true).open(&path).unwrap().set_modified(day_ago).unwrap();
+        }
+        path
+    };
+    let old = orphan(&"ab".repeat(32), true);
+    let young = orphan(&"cd".repeat(32), false);
+    // The used block is old as well: it stays all the same.
+    std::fs::File::options().write(true).open(&used[0]).unwrap().set_modified(day_ago).unwrap();
+    let foreign = blocks.join("ab").join("notiz.txt");
+    std::fs::write(&foreign, b"not ours").unwrap();
+    std::fs::File::options().write(true).open(&foreign).unwrap().set_modified(day_ago).unwrap();
+
+    assert_eq!(s.drive_tidy(false).unwrap(), 1);
+    assert!(!old.exists() && young.exists() && used[0].exists() && foreign.exists());
+    // Not again the same day (unless asked).
+    let old2 = orphan(&"ef".repeat(32), true);
+    assert_eq!(s.drive_tidy(false).unwrap(), 0);
+    assert!(old2.exists());
+    // An older index on the server: nothing is removed.
+    let index = server.join("drive/index.ghldrv");
+    let before = std::fs::read(&index).unwrap();
+    upload(&s, None, "b.txt", b"B");
+    std::fs::write(&index, &before).unwrap();
+    assert!(matches!(s.drive_tidy(true), Err(GhulError::DriveRolledBack)));
+    assert!(old2.exists());
+    let _ = std::fs::remove_dir_all(&server);
+}

@@ -52,6 +52,13 @@ const INDEX_MAGIC: &[u8; 8] = b"GHULDRV1";
 const INDEX_MAGIC2: &[u8; 8] = b"GHULDRV2";
 /// This device's own key for the keys of unfinished uploads (never leaves the device).
 const DEVICE_KEY_FILE: &str = "drive-device.key";
+/// When this device last tidied up each location (local, Unix ms per location id).
+const TIDY_FILE: &str = "drive-tidy.json";
+/// Tidied up at most this often per location and device.
+const TIDY_EVERY_MS: i64 = 86_400_000;
+/// A block nothing uses is removed only when it is older than this (an upload writes its
+/// blocks before its entry; one running now is not cut).
+const ORPHAN_AGE_S: i64 = 86_400;
 const BLOCK_MAGIC: &[u8; 8] = b"GHULBLK2";
 /// Keys of uploads that did not finish, on this device, so a repeated upload continues.
 const PENDING_FILE: &str = "drive-pending";
@@ -758,6 +765,26 @@ impl GhulSuite {
         .unwrap()
     }
 
+    fn tidy_times(&self) -> BTreeMap<String, i64> {
+        std::fs::read(self.local_dir.join(TIDY_FILE))
+            .ok()
+            .and_then(|d| serde_json::from_slice(&d).ok())
+            .unwrap_or_default()
+    }
+
+    fn tidy_due(&self, loc: &str) -> bool {
+        self.tidy_times().get(loc).map_or(true, |t| now_ms() - t > TIDY_EVERY_MS)
+    }
+
+    fn note_tidy(&self, loc: &str) {
+        let mut all = self.tidy_times();
+        all.insert(loc.to_owned(), now_ms());
+        if let Ok(json) = serde_json::to_vec(&all) {
+            let _ = std::fs::create_dir_all(&self.local_dir);
+            let _ = super::storage::write_atomic(&self.local_dir, TIDY_FILE, &json);
+        }
+    }
+
     /// This device's own key for the keys of unfinished uploads: made once, kept on the device
     /// (so an upload continues also after Drive's key changed).
     fn device_key(&self) -> Option<Zeroizing<[u8; 32]>> {
@@ -1225,6 +1252,50 @@ impl GhulSuite {
             }
             Ok(())
         })
+    }
+
+    /// Tidies up the current storage location: blocks that no file, no version, nothing in the
+    /// trash and no share link uses, and that are older than a day, are removed. At most once a
+    /// day per device, unless `force`. Nothing is removed while the server's index is older
+    /// than the one seen or damaged. Returns how many blocks were removed.
+    pub fn drive_tidy(&self, force: bool) -> Result<u32> {
+        // What is in use is read with the suite open; listing and removing need it no more (a
+        // large Drive takes a while, and other calls must not wait for that).
+        let (fs, used, loc) = self
+            .with_open(|o| {
+                let loc = self.drive_location(o).ok_or(GhulError::NotConfigured)?;
+                if !force && !self.tidy_due(&loc) {
+                    return Ok(None);
+                }
+                let (fs, keys) = self.drive_ctx(o)?;
+                let index = self.load_checked(o, fs.as_ref(), &keys)?;
+                let used: BTreeSet<String> = used_blocks(&index).into_iter().cloned().collect();
+                Ok(Some((fs, used, loc)))
+            })?
+            .map_or((None, BTreeSet::new(), String::new()), |(f, u, l)| (Some(f), u, l));
+        let Some(fs) = fs else { return Ok(0) };
+        // Read after the index: a link made meanwhile pins its blocks, a file added meanwhile
+        // has young blocks.
+        let pinned = super::shares::pinned_blocks(fs.as_ref())?;
+        let now = now_ms() / 1000;
+        let mut removed = 0u32;
+        for dir in list_quiet(fs.as_ref(), "drive/blocks")? {
+            if !dir.is_dir || dir.name.len() != 2 || !is_hex(&dir.name) {
+                continue;
+            }
+            let path = format!("drive/blocks/{}", dir.name);
+            for f in list_quiet(fs.as_ref(), &path)? {
+                let ours = !f.is_dir && is_hex(&f.name) && f.name.starts_with(&dir.name);
+                // Unknown age (the server did not say): kept.
+                let old = f.modified > 0 && now - f.modified > ORPHAN_AGE_S;
+                if ours && old && !used.contains(&f.name) && !pinned.contains(&f.name) {
+                    delete_quiet(fs.as_ref(), &format!("{path}/{}", f.name))?;
+                    removed += 1;
+                }
+            }
+        }
+        self.note_tidy(&loc);
+        Ok(removed)
     }
 
     /// After `DriveRolledBack`: takes the server's index as it is (e.g. a server restored from

@@ -488,6 +488,10 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     }
                     sendDueMail()
                     runAutoArchive()
+                    // GhulDrive tidies up its server quietly (blocks nothing uses any more, once a day).
+                    if (backend.settings.moduleGhulDrive && hasArea(VaultKindUi.DRIVE)) {
+                        scope.launch { catching { backend.net.driveTidy() } }
+                    }
                     val start = backend.settings.startTab.let { if (it < 0) backend.settings.lastTab else it }
                     tabs.getOrNull(start)?.let { tab = it }
                     applyLaunch()

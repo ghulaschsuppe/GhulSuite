@@ -147,6 +147,8 @@ abstract class CoreNetBackend(protected val suite: () -> GhulSuite) : NetBackend
 
     // --- drive ---------------------------------------------------------------------------------
 
+    override suspend fun driveTidy(): Int = io { suite().driveTidy(false).toInt() }
+
     override suspend fun driveStatus(): DriveStatusUi = io {
         val s = suite().driveStatus()
         DriveStatusUi(s.serverId, s.files.toInt(), s.bytes.toLong())

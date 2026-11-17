@@ -520,6 +520,10 @@ id    = hex(HMAC-SHA256(BIK_f, Klartext-Block))      <ab> = die ersten zwei Zeic
   gegen Kopien von vor einer Schutzänderung schützt der Schlüsselwechsel (neues `DK`).
   Nicht mehr referenzierte Blöcke werden nach dem Löschen entfernt, außer eine Freigabe liefert sie noch aus
   (`shares/*.json`); sie gehen, wenn der letzte Link endet, der sie braucht.
+- **Aufräumen** (höchstens einmal am Tag je Gerät und Speicherort, gemerkt lokal in `drive-tidy.json`): Blöcke, die
+  in keinem Eintrag, keiner Fassung, nicht im Papierkorb und in keinem Freigabelink vorkommen und älter als einen Tag
+  sind (ein laufendes Hochladen schreibt seine Blöcke vor dem Eintrag), werden gelöscht. Blöcke ohne bekanntes Alter
+  und fremde Dateien bleiben. Ist der Index des Servers älter als der gesehene oder beschädigt, wird nichts gelöscht.
 - Unterbrochenes Hochladen: Das Gerät merkt sich `FK` je „Ordner/Name“ höchstens 7 Tage in `drive-pending`
   (lokal, `"GHULPND1" ‖ nonce[24] ‖ XChaCha20-Poly1305(GK, CBOR)`). `GK` ist ein zufälliger Geräteschlüssel
   (`drive-device.key`, 32 Byte, verlässt das Gerät nie), damit ein Hochladen auch nach einem Wechsel von `DK`
