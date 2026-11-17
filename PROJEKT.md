@@ -2,18 +2,27 @@
 
 Diese Datei ist der Einstieg für alle, die am Code arbeiten (Menschen wie KI-Assistenten).
 Was GhulSuite ist und kann, steht in der [README](README.md), das vollständige Konzept in
-[`docs/KONZEPT.md`](docs/KONZEPT.md), das Dateiformat in [`docs/FORMAT.md`](docs/FORMAT.md).
+[`docs/KONZEPT.md`](docs/KONZEPT.md), das Dateiformat in [`docs/FORMAT.md`](docs/FORMAT.md). Warum es keine
+Synchronisation mehr gibt und wie Suite-Datei, Server und GhulDrive seitdem zusammenspielen, steht in
+[`docs/UMBAU-OHNE-SYNC.md`](docs/UMBAU-OHNE-SYNC.md).
 
 ## Grundsätze
 
 - **Sicherheit zuerst, dicht gefolgt von Benutzerfreundlichkeit.** Alles wird auf dem Gerät verschlüsselt;
   Server sehen nur Chiffretext.
-- **Selbst hostbar, ohne bestimmten Anbieter:** beliebige IMAP/SMTP-Mailserver, eigene Speicher per SFTP, FTPS
-  oder das GhulSuite-Server-Modul. Das Server-Modul läuft auf **Standard-Webhosting mit PHP 8.1, ohne Datenbank**.
+- **Selbst hostbar, ohne bestimmten Anbieter:** beliebige IMAP/SMTP-Mailserver, eigene Server **nur per SFTP**
+  (Anmeldung mit dem SSH-Schlüssel der Suite, nie mit einem gespeicherten Passwort) für GhulDrive und das
+  GhulSuite-Server-Modul. Das Modul läuft auf **Standard-Webhosting mit PHP 8.1, ohne Datenbank**. GhulDrive und
+  Freigabelinks brauchen einen SSH-Zugang, ein Webspace nur mit FTP reicht nicht; die übrigen Bereiche brauchen
+  keinen Server.
 - **Fünf Bereiche in einer App:** GhulPass (Passwörter), GhulAuth (2FA), GhulCal (Kalender), GhulDrive (Dateien),
   GhulMail (E-Mail).
-- **Der Ordner ist die Suite:** `.ghlpss` (Passwörter), `.ghltotp` (2FA) und `.ghlcal` (Kalender) im Ordner gehören dazu, `.ghlsuite`
-  hält Einstellungen, Mail-Konten und den Drive-Schlüssel, `.ghlkey` ist eine Schlüsseldatei.
+- **Die Suite ist eine Datei, ohne Synchronisation:** Die Suite-Datei `.ghlzip` enthält die Tresore (`.ghlpss`
+  Passwörter, `.ghltotp` 2FA, `.ghldrv` Dateien, `.ghlmail` Mail, `.ghlcal` Kalender), `suite.ghlsuite` (Einstellungen,
+  Server-Zugänge mit dem SSH-Schlüssel) und die Kopfdatei `export.ghlexp`. Öffnen prüft alles, bevor etwas ersetzt wird;
+  Speichern schreibt die Arbeitskopie zurück. Abgeglichen oder zusammengeführt wird nichts: Aktuell ist der Stand,
+  der zuletzt gespeichert wurde. GhulDrive liegt auf dem eigenen Server und ist auf jedem Gerät gleich. `.ghlkey`
+  ist eine Schlüsseldatei.
 - **Schutz:** Master-Passwort **plus** zweiter Faktor (Security Key oder Schlüsseldatei); der Wiederherstellungscode
   ist Pflicht und steckt in jeder Datei.
 - **Plattformen:** Android und Windows (auch portabel), eine gemeinsame Oberfläche. Kein Web-Client.
@@ -25,7 +34,7 @@ Was GhulSuite ist und kann, steht in der [README](README.md), das vollständige 
 ## Aufbau
 
 ```
-core/ghul-core/        Rust-Kern: Krypto, FIDO2/CTAP2, Dateiformat, Suite-API, Sync, Drive, Mail, PGP, Teilen
+core/ghul-core/        Rust-Kern: Krypto, FIDO2/CTAP2, Dateiformat, Suite-API, Suite-Datei, SFTP, Drive, Mail, PGP, Teilen
                        (ein Bereich, eine Datei: .ghlpss, .ghltotp, .ghldrv, .ghlmail, .ghlcal + suite.ghlsuite)
 core/ghul-core/server/ PHP-Server-Modul (ghulsuite.php, PHP 8.1, ohne Datenbank)
 core/fuzz/             Fuzzing-Ziele (cargo-fuzz)
@@ -40,7 +49,7 @@ core/ghul-core/share-viewer/  Empfängerseite für Freigabelinks
 public/                Testseiten und Designvorschau für den Testserver
 docs/                  Konzept, Format, Audit, Testpläne, Testvektoren, Bilder
 tools/                 Testserver (SFTP/IMAP/SMTP), Prüfskripte, Emulator-Skripte
-.github/               Workflows und FTPS-Upload-Action
+.github/               Workflows und FTPS-Upload-Action (nur für Testserver und Website, nicht Teil der App)
 ```
 
 ## Bauen und testen

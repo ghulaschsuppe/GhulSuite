@@ -6,10 +6,10 @@
 
 <img src="docs/images/stripes.svg" width="192" alt="">
 
-**Passwörter · 2FA · Dateien · Mail · Kalender in einer App, verschlüsselt auf deinem Gerät, gespeichert auf deinem eigenen Server.**
+**Passwörter · 2FA · Dateien · Mail · Kalender in einer App, verschlüsselt auf deinem Gerät, in einer Datei, die du mitnimmst, und auf deinem eigenen Server.**
 
 Die selbst gehostete Alternative zu den bekannten Privacy-Suiten: gleicher Komfort, aber ohne Abo,
-ohne Konto bei einem Anbieter und ohne Vertrauensvorschuss. Die Daten liegen da, wo **du** sie hinlegst.
+ohne Konto bei einem Anbieter, ohne Sync-Dienst und ohne Vertrauensvorschuss. Die Daten liegen da, wo **du** sie hinlegst.
 
 </div>
 
@@ -25,7 +25,7 @@ ohne Konto bei einem Anbieter und ohne Vertrauensvorschuss. Die Daten liegen da,
 [![Lizenz: AGPL-3.0](https://img.shields.io/badge/Lizenz-AGPL--3.0-6A4DF5)](LICENSE)
 ![Android](https://img.shields.io/badge/Android-10%2B-0E9F80)
 ![Windows](https://img.shields.io/badge/Windows-10%2F11%20%C2%B7%20portabel-2F74E8)
-![Server](https://img.shields.io/badge/Server-SFTP%20%C2%B7%20FTPS%20%C2%B7%20optional%20PHP%208.1-E0700F)
+![Server](https://img.shields.io/badge/Server-SFTP%20%28SSH%29%20%C2%B7%20optional%20PHP%208.1-E0700F)
 ![Status](https://img.shields.io/badge/Status-Work%20in%20Progress-red)
 [![Website](https://img.shields.io/badge/Website-www.ghulsuite.de-A996FF)](https://www.ghulsuite.de)
 
@@ -44,7 +44,7 @@ ohne Konto bei einem Anbieter und ohne Vertrauensvorschuss. Die Daten liegen da,
 [Teilen](#teilen-per-link) ·
 [Mails archivieren](#mails-in-ghuldrive-archivieren) ·
 [Einrichten](#einrichten-und-entsperren) ·
-[Synchronisation](#synchronisation-zwischen-deinen-geräten) ·
+[Eine Datei für alle Geräte](#eine-datei-für-alle-geräte) ·
 [Selbst hosten](#selbst-hosten-in-fünf-minuten) ·
 [Sicherheit](#so-schützt-ghulsuite-deine-daten) ·
 [Download](#download) ·
@@ -60,8 +60,8 @@ ohne Konto bei einem Anbieter und ohne Vertrauensvorschuss. Die Daten liegen da,
 |---|---|
 | **Eine App, fünf Bereiche** | Passwörter, 2FA-Codes, Dateien, Mail und Kalender, einzeln ein- und ausschaltbar |
 | **Zwei Faktoren, immer** | Master-Passwort **plus** Security Key (FIDO2) oder Schlüsseldatei, dazu ein Notfallblatt |
-| **Dein Speicher** | Ein Ordner mit verschlüsselten Dateien: App-Speicher, eigener Ordner, USB-Stick oder Sync-Programm |
-| **Dein Server** | Jeder Server mit SFTP oder FTPS, auch ein einfacher Webspace; ganz ohne Datenbank |
+| **Eine Datei** | Die ganze Suite in einer verschlüsselten Datei (`.ghlzip`): speichern, z. B. auf einen USB-Stick, und auf dem nächsten Gerät öffnen. Kein Sync, kein Abgleich |
+| **Dein Server** | Für GhulDrive und Freigabelinks: jeder Server oder jedes Webhosting **mit SSH-Zugang** (SFTP), Anmeldung per SSH-Schlüssel, ganz ohne Datenbank. Ein Webspace nur mit FTP reicht nicht |
 | **Teilen per Link** | Mit dem kleinen GhulSuite-Server-Modul (PHP 8.1) auf demselben Server, ohne Kopie |
 | **Was der Server sieht** | Nur verschlüsselte Blöcke mit Zufallsnamen: keine Inhalte, keine Namen, keine Ordner |
 | **Plattformen** | Android 10+ und Windows 10/11 (Installer oder portabel vom USB-Stick) |
@@ -75,16 +75,17 @@ dessen Zukunft. GhulSuite dreht das um:
 - 🔐 **Ende-zu-Ende verschlüsselt, immer.** Alles wird auf deinem Gerät verschlüsselt, bevor es irgendwohin geht.
   Dein Server sieht nur Datensalat: keine Inhalte, keine Datei- und Ordnernamen deiner Ablage, nicht einmal die
   Namen deiner Tresore.
-- 🏠 **Dein Server, deine Regeln.** Jeder Server mit SFTP oder FTPS reicht, auch ein günstiges Webhosting. Keine
-  Datenbank, kein Docker, kein Root-Zugang nötig. Für Freigabelinks legt die App ein kleines PHP-Modul dazu.
+- 🏠 **Dein Server, deine Regeln.** Für GhulDrive reicht jeder Server mit SSH-Zugang (SFTP), auch ein günstiges
+  Webhosting mit SSH. Keine Datenbank, kein Docker, kein Root-Zugang nötig. Die App meldet sich nur mit einem
+  SSH-Schlüssel an, nie mit einem gespeicherten Passwort. Für Freigabelinks legt sie ein kleines PHP-Modul dazu.
 - 🗝️ **Zwei Faktoren, ohne Ausnahme.** Master-Passwort **plus** Security Key (FIDO2) oder Schlüsseldatei.
   Dazu ein Wiederherstellungscode mit Notfallblatt für den Tag, an dem alles schiefgeht. Verlierst du einen Key
-  oder das Blatt, entfernst bzw. erneuerst du es: Ab dann öffnet es nichts mehr, auch nicht mit einer alten Sicherung.
-- 📦 **Der Ordner ist die Suite.** Deine Daten sind normale, verschlüsselte Dateien. Kopieren, sichern, auf den
-  USB-Stick legen, ohne Export-Zwang und ohne Anbieterbindung. Standard ist der private App-Speicher; unter
-  Optionen → Tresore wechselst du jederzeit in einen eigenen Ordner und zurück (alles wird kopiert und geprüft).
-  Dateinamen sind egal: Umbenannte Tresordateien erkennt die App am Inhalt.
-- 🧩 **Eine App statt fünf.** Ein Entsperren, ein Design, eine Synchronisation.
+  oder das Blatt, entfernst bzw. erneuerst du es: Was du ab dann speicherst, öffnet es nicht mehr, und GhulDrive und
+  deine Server bekommen neue Schlüssel, an die eine alte Kopie der Suite nicht herankommt.
+- 📦 **Die Suite ist eine Datei.** Alles steckt in einer verschlüsselten Datei (`.ghlzip`). Speichern, auf den
+  USB-Stick legen, auf dem nächsten Gerät öffnen, ohne Konto, ohne Sync-Dienst und ohne Anbieterbindung. Aktuell
+  ist immer der Stand, der zuletzt gespeichert wurde; zusammengeführt wird nichts.
+- 🧩 **Eine App statt fünf.** Ein Entsperren, ein Design, eine Datei.
 - 💯 **Open Source.** Jede Zeile ist hier nachlesbar.
 
 ## Die fünf Bereiche
@@ -103,7 +104,10 @@ Leiste, seine Datei bleibt unberührt.
 - **Generator** für Passwörter und Passphrasen.
 - **Sicherheitscheck:** schwache und doppelte Passwörter, Konten ohne 2FA; auf Wunsch der Abgleich mit bekannten
   Datenlecks, ohne dass dein Passwort das Gerät verlässt (k-Anonymität: nur der Anfang eines Hashes geht hinaus).
-- **Mehrere Tresore**, z. B. „Privat“ und „Familie“, jeder in seiner eigenen Datei.
+- **Mehrere Tresore**, z. B. „Privat“ und „Familie“, jeder in seiner eigenen Datei. Eine einzelne Tresordatei
+  öffnest du auch für sich oder fügst sie deiner Suite hinzu.
+- **Als Tresor weitergeben:** ausgewählte Einträge (auch 2FA-Konten aus GhulAuth) als neue Tresordatei mit eigenem
+  Passwort und neuer Schlüsseldatei oder eigenem Security Key; vom Schutz deiner Suite geht nichts mit.
 - **2FA im Eintrag:** Der aktuelle Code steht direkt bei der Anmeldung.
 
 </td></tr></table>
@@ -130,8 +134,12 @@ Leiste, seine Datei bleibt unberührt.
 
 - **Verschlüsselte Ablage** auf deinem Server: Dateien werden in Blöcke zerlegt und einzeln verschlüsselt; Namen,
   Ordner und Größen kennt nur dein Gerät.
+- **Auf jedem Gerät gleich:** GhulDrive liegt auf deinem Server, nicht in der Suite-Datei. Jede Kopie der
+  Suite-Datei seit der letzten Schutzänderung sieht denselben, aktuellen Stand. Arbeiten zwei Geräte gleichzeitig,
+  geht nichts verloren (Sperre auf dem Server); ein zurückgespielter oder beschädigter Stand auf dem Server wird
+  erkannt, die App warnt und schreibt nichts.
 - **Mehrere Speicherorte:** beliebig viele eigene Server, jeder mit eigenen Dateien und Links; einer ist aktiv,
-  „Speicherort wechseln“ schaltet um. Unabhängig von der Synchronisation.
+  „Speicherort wechseln“ schaltet um.
 - **Ordner, Suche, Favoriten, Zuletzt**, Liste oder Raster mit Vorschaubildern, Speicherbalken nach Dateiart.
 - **Offline verfügbar** für ausgewählte Dateien, **Versionen** (die letzten fünf) und **Papierkorb**.
 - **Teilen per Link ohne Kopie:** Jede Datei hat ihren eigenen Schlüssel, der Link enthält nur diesen. Ablaufdatum,
@@ -165,7 +173,7 @@ Leiste, seine Datei bleibt unberührt.
 <td width="200" valign="top"><img src="docs/images/phone-cal-week.png" width="190" alt="GhulCal in der Wochenansicht"></td>
 <td valign="top">
 
-- **Termine verschlüsselt** im Suite-Ordner, synchronisiert wie alles andere; bewusst ohne CalDAV.
+- **Termine verschlüsselt** in der Suite-Datei, unterwegs mit allem anderen; bewusst ohne CalDAV.
 - **Monat, Woche, Tag und Liste**, mehrere Kalender in eigenen Farben, Geburtstage mit Alter.
 - **Schnell-Eintragen** in Alltagssprache, etwa „Zahnarzt Fr 10 Uhr“.
 - **Serien und Erinnerungen**, auch bei gesperrter App (Android); Zeitzonen-Wechsel auf Reisen werden beachtet.
@@ -175,7 +183,7 @@ Leiste, seine Datei bleibt unberührt.
 </td></tr></table>
 
 **Für alle Bereiche:** Sofortsperre (Schütteln oder Schnellkachel), Auto-Sperre, Entsperren per Fingerabdruck oder
-App-PIN, Schutz vor Bildschirmfotos und vor Apps, die sich über GhulSuite legen, Komplett-Sicherung als ZIP,
+App-PIN, Schutz vor Bildschirmfotos und vor Apps, die sich über GhulSuite legen, die ganze Suite als eine Datei,
 „Rückgängig“ nach dem Löschen, dunkles Design und Deutsch oder Englisch.
 
 ## Teilen per Link
@@ -186,7 +194,7 @@ wird beim Teilen **nichts kopiert, heruntergeladen oder hochgeladen**: Der Link 
 Gigabyte oder ganze Ordner.
 
 - **Das GhulSuite-Server-Modul** (eine PHP-Datei) liefert die verschlüsselten Blöcke aus. Die App installiert es über
-  deinen SFTP- oder FTPS-Zugang auf demselben Server, auf dem GhulDrive liegt, und prüft, dass es funktioniert.
+  deinen SFTP-Zugang auf demselben Server, auf dem GhulDrive liegt, und prüft, dass es funktioniert.
 - **Es setzt alles selbst durch:** Ablaufdatum, Einmal-Links und Abrufzähler gelten auf die Minute, auch wenn keins
   deiner Geräte an ist. Zurückziehen beendet den Link sofort.
 - **Es kennt kein Geheimnis und kann nichts schreiben:** Es liefert nur die Blöcke der geteilten Dateien aus, nichts
@@ -195,9 +203,11 @@ Gigabyte oder ganze Ordner.
   bei mehreren Dateien gibt es jede einzeln.
 - **Der Link zeigt die geteilte Fassung**, auch wenn du die Datei danach änderst. Löschst du eine geteilte Datei,
   fragt die App vorher und beendet die Links.
+- **Jedes Gerät sieht alle Freigaben:** Sie liegen auf dem Server, nicht in der Suite-Datei; beenden kannst du sie
+  von jedem Gerät mit der aktuellen Suite-Datei.
 
-Ohne PHP auf dem Server (etwa ein NAS nur mit SFTP) gibt es keine Freigabelinks; „An App senden“ und „Als
-Mail-Anhang“ gehen weiterhin.
+Freigabelinks brauchen einen Server mit SSH-Zugang **und** PHP. Ohne PHP (etwa ein NAS nur mit SFTP) gibt es keine
+Freigabelinks, ein Webspace nur mit FTP reicht gar nicht; „An App senden“ und „Als Mail-Anhang“ gehen weiterhin.
 
 ## Mails in GhulDrive archivieren
 
@@ -221,7 +231,9 @@ Ein Assistent führt in wenigen Schritten durch alles:
 1. **Master-Passwort** wählen.
 2. **Zweiter Faktor:** Security Key (FIDO2) oder eine Schlüsseldatei, z. B. auf einem USB-Stick.
 3. **Notfallblatt** als PDF: ein Wiederherstellungscode mit QR, falls Passwort oder Key verloren gehen.
-4. **Bereiche** auswählen und, wenn gewünscht, Server und Synchronisation einrichten.
+4. **Bereiche** auswählen. Server für GhulDrive richtest du danach unter Optionen ein.
+
+Die Suite liegt dann auf diesem Gerät. Zum Mitnehmen speicherst du sie unter **Optionen → Suite-Datei** als Datei.
 
 **Im Alltag** reicht auf dem Handy Fingerabdruck oder App-PIN; der Schnellzugang liegt geschützt im Schlüsselspeicher
 des Geräts. Die **Sofortsperre** schließt alles mit einem Schütteln oder über
@@ -229,16 +241,31 @@ die Schnellkachel und löscht den Schnellzugang, bis du wieder mit beiden Faktor
 
 </td></tr></table>
 
-## Synchronisation zwischen deinen Geräten
+## Eine Datei für alle Geräte
 
-- **Eintrag für Eintrag zusammengeführt:** Ändern zwei Geräte gleichzeitig, bleibt beides erhalten. Bei
-  „gelöscht auf A, geändert auf B“ gewinnt die Änderung, die das löschende Gerät nie gesehen hat.
-- **Wochenlang offline?** Kein Problem: Ein Gerät liest auch ältere Server-Stände und überschreibt nichts, was es
-  nicht lesen kann.
-- **Kein Zurücksetzen von außen:** Wer GhulDrive auf dem Server auf einen alten Stand zurücksetzt, kann damit keine
-  Dateien verschwinden lassen; die App lehnt den alten Stand ab. Ein entfernter Key kommt nie per Sync zurück.
-- **Ohne eigenen Server** geht es auch: Lege den Suite-Ordner in einen Ordner deines Sync-Programms (Syncthing,
-  Nextcloud, …). Konfliktkopien führt GhulSuite Eintrag für Eintrag zusammen.
+GhulSuite synchronisiert nicht. Die Suite ist **eine Datei** (`.ghlzip`): Du öffnest sie, arbeitest darin und
+speicherst sie. Wohin sie wandert, entscheidest du, etwa auf einen USB-Stick. Am Handy öffnen, arbeiten, speichern;
+am PC dieselbe Datei öffnen, arbeiten, speichern; wieder am Handy öffnen.
+
+- **Speichern unter Optionen → Suite-Datei.** Die App merkt sich die Datei und speichert direkt dorthin, auch auf
+  den Stick. Gibt es Änderungen, die noch nicht in der Datei sind, zeigt sie das an („Nicht gespeicherte
+  Änderungen“). Auf dem Gerät bleibt eine Arbeitskopie, damit die App auch ohne den Stick funktioniert.
+- **Aktuell ist, was zuletzt gespeichert wurde.** Zusammengeführt wird nichts. Wurde die Datei inzwischen auf einem
+  anderen Gerät gespeichert, fragt die App, bevor sie sie überschreibt: überschreiben oder unter neuem Namen
+  speichern.
+- **Erst prüfen, dann ersetzen.** Beim Öffnen wird jeder Teil der Datei geprüft (Siegel, Liste der Tresore, alles
+  aus derselben Suite), bevor sie den Stand auf dem Gerät ersetzt. Ist die Datei älter als der Stand hier, wurde
+  sie von einem anderen Stand aus weiterbearbeitet oder enthält sie eine andere Suite, fragt die App nach, ebenso,
+  wenn dabei nicht gespeicherte Änderungen verloren gingen.
+- **Nach einer Schutzänderung** (neues Passwort, neuer Wiederherstellungscode, Key oder Schlüsseldatei entfernt)
+  bittet die App, die Suite-Datei zu speichern; damit ersetzt du ältere Kopien. Eine ältere Datei mit dem alten
+  Schutz öffnet sich auf einem Gerät, das den neuen Stand kennt, nicht mehr, und auf keinem Gerät kommt sie noch an
+  GhulDrive und deine Server.
+- **GhulDrive und Mails reisen nicht mit:** GhulDrive liegt auf deinem Server und ist auf jedem Gerät gleich, Mails
+  liegen bei deinem Anbieter. In der Datei stehen Passwörter, 2FA, Mail-Konten, Kalender und die Server-Zugänge.
+- **Einzelne Tresore:** Eine Tresordatei lässt sich auch für sich öffnen, mit Passwort und zweitem Faktor oder dem
+  Wiederherstellungscode, und zu deiner Suite hinzufügen. Ausgewählte Einträge gibst du als neuen Tresor mit eigener
+  Schlüsseldatei oder eigenem Security Key weiter.
 
 ## Auch auf dem großen Bildschirm
 
@@ -255,30 +282,45 @@ Unter Windows (und im Querformat) mit den Bereichen links in einer Seitenleiste 
 
 ## Selbst hosten in fünf Minuten
 
-GhulSuite braucht **keinen speziellen Server**. Ein Server in der App ist immer ein Zugang per SFTP oder FTPS:
+GhulSuite braucht **keinen speziellen Server**, und GhulPass, GhulAuth, GhulMail und GhulCal brauchen gar keinen.
+Ein Server in der App ist für **GhulDrive und Freigabelinks** da und immer ein Zugang per SFTP:
+
+> [!IMPORTANT]
+> **Voraussetzung: ein Server oder Webhosting mit SSH-Zugang.** Die App meldet sich nur per SFTP mit einem
+> SSH-Schlüssel an, der verschlüsselt in deiner Suite liegt, nie mit einem gespeicherten Passwort. Ein Webspace nur
+> mit FTP (auch mit FTPS) reicht für GhulDrive und Freigabelinks **nicht**.
 
 | Zugang | Was du brauchst | Ideal für |
 |---|---|---|
-| **SFTP** | Einen Server mit SSH-Zugang | Eigener Server, NAS, Raspberry Pi, Webhosting mit SSH |
-| **FTPS** | FTP mit TLS-Verschlüsselung | Webhosting ohne SSH |
+| **SFTP** | Einen Server mit SSH-Zugang, Anmeldung per Schlüssel | Eigener Server, VPS, NAS, Raspberry Pi, Webhosting mit SSH, Speicherbox mit SFTP |
 | **+ Server-Modul** (optional) | **PHP 8.1** oder neuer auf demselben Server, ohne Datenbank | Freigabelinks |
 
 **So geht's:**
-1. In der App: **Optionen → Synchronisation → Server hinzufügen**, SFTP oder FTPS wählen, den Ordner für GhulSuite
-   aussuchen. Er muss **außerhalb deiner Website** liegen (siehe unten). **„Verbindung prüfen“** zeigt Schritt für
-   Schritt, was klappt und was nicht; erst danach erscheint **„Speichern“**. Bei Mail-Konten genauso: Posteingang und
-   Postausgang werden einzeln geprüft, gespeichert wird nur eine Verbindung, die funktioniert.
-2. GhulDrive hat seine eigenen Speicherorte: **Optionen → GhulDrive → Speicherort hinzufügen**, mit demselben
-   Formular. Es kann derselbe Server sein wie für die Synchronisation, mit einem eigenen Ordner.
-3. Für Freigabelinks: im Block des Speicherorts **„Modul installieren“**, den Ordner deiner Website wählen. Die App
-   legt `ghulsuite.php` dorthin und prüft Adresse, PHP, den Zugriff auf den GhulSuite-Ordner und dass dieser Ordner
-   nicht aus dem Web abrufbar ist.
+1. In der App: **Optionen → GhulDrive → Speicherort hinzufügen**, Server und Benutzer eintragen. Die Suite hat einen
+   eigenen SSH-Schlüssel: Mit deinem Passwort trägt die App ihn einmal in `~/.ssh/authorized_keys` ein (das Passwort
+   wird nicht gespeichert), oder du trägst den angezeigten öffentlichen Schlüssel selbst ein, bei manchen Anbietern
+   im Webpanel. Den Fingerabdruck des Servers bestätigst du beim ersten Verbinden, danach wird er geprüft. Dann den
+   Ordner für GhulSuite aussuchen; er muss **außerhalb deiner Website** liegen (siehe unten). **„Verbindung
+   testen“** zeigt Schritt für Schritt, was klappt und was nicht; erst danach lässt sich der Server speichern. Bei
+   Mail-Konten genauso: Posteingang und Postausgang werden einzeln geprüft, gespeichert wird nur eine Verbindung,
+   die funktioniert.
+2. Für Freigabelinks: im Block des Speicherorts **„Modul installieren“**, den Ordner deiner Website wählen. Die App
+   lädt `ghulsuite.php` per SFTP dorthin und prüft Adresse, PHP, den Zugriff auf den GhulSuite-Ordner und dass
+   dieser Ordner nicht aus dem Web abrufbar ist.
+
+**Neue Schlüssel nach einer Schutzänderung.** Änderst du Passwort oder Wiederherstellungscode oder entfernst du einen
+Key oder eine Schlüsseldatei, bekommen GhulDrive und deine Server neue Schlüssel: Die App verschlüsselt den Index von
+GhulDrive neu, trägt einen neuen SSH-Schlüssel ein, meldet sich damit an und entfernt den alten. Bei eigenen Servern,
+NAS und den meisten Webhostern mit SSH geht das ohne dein Zutun. Verwaltet dein Anbieter SSH-Schlüssel nur in seinem
+Webpanel, zeigt die App den neuen Schlüssel und führt dich durch Eintragen und Entfernen, mit „Prüfen“ nach jedem
+Schritt; bis dahin bleibt der Server mit dem alten Schlüssel nutzbar. Danach kommt eine ältere Kopie der Suite-Datei
+(etwa auf einem verlorenen Stick) nicht mehr an GhulDrive und deine Server.
 
 **Wo liegt was?** Zwei Ordner mit zwei Aufgaben:
 
 ```
-dein Zugang (SFTP/FTPS)
-├── ghulsuite/          ← GhulSuite-Ordner: Tresore, GhulDrive, Freigaben. NICHT aus dem Web erreichbar
+dein Zugang (SFTP)
+├── ghulsuite/          ← GhulSuite-Ordner: GhulDrive und Freigaben. NICHT aus dem Web erreichbar
 └── public_html/        ← Ordner deiner Website (auch htdocs, www oder ein Ordner mit Domainnamen)
     └── ghulsuite.php   ← nur das Server-Modul, per https erreichbar
 ```
@@ -312,16 +354,16 @@ eigenen Server: GhulMail spricht direkt mit deinem Postfach.
 
 | Wer | sieht | sieht nicht |
 |---|---|---|
-| Dein Server bzw. Hoster | Anzahl und ungefähre Größe verschlüsselter Dateien, wann sie sich ändern | Inhalte, Namen von Tresoren, Dateien, Ordnern, Mail-Konten oder Monaten |
-| Jemand mit deinen Dateien (gestohlene Sicherung) | Datensalat | ohne Passwort **und** zweiten Faktor nichts |
+| Dein Server bzw. Hoster | Anzahl und ungefähre Größe verschlüsselter Blöcke von GhulDrive, wann sie sich ändern | Inhalte, Namen von Dateien und Ordnern; Passwörter, 2FA, Termine und Mail-Konten liegen gar nicht dort. Löscht er Blöcke oder spielt einen alten Stand zurück, merkt es die App |
+| Jemand mit deiner Suite-Datei (z. B. verlorener USB-Stick) | Datensalat | ohne Passwort **und** zweiten Faktor nichts; er kann nichts unterschieben (Siegel) und dir keine ältere Datei unbemerkt unterjubeln (die App fragt nach) |
 | Jemand mit deinem gesperrten Handy | Benachrichtigungen ohne Inhalt | Einträge, Codes, Dateien, Mails |
 | Dein Mail-Anbieter | die Mails, die bei ihm liegen (bei PGP nur verschlüsselt) | Kopien im Archiv in GhulDrive |
 | Wer einen Freigabelink hat | genau die geteilten Dateien, solange der Link gilt | alles andere in deinem Drive |
-| Ein verlorener Key oder ein altes Notfallblatt | nach dem Entfernen bzw. Erneuern nichts mehr, auch nicht mit alten Sicherungen | |
+| Ein verlorener Key oder ein altes Notfallblatt | nach dem Entfernen bzw. Erneuern höchstens eine alte Kopie der Suite-Datei, mit dem Stand von damals | alles, was du danach speicherst; GhulDrive und deine Server (sie haben neue Schlüssel) |
 
 - **Schlüssel:** Argon2id für das Passwort, FIDO2 `hmac-secret`/PRF für den Security Key; beide sind nötig.
-- **Verschlüsselung:** XChaCha20-Poly1305, Dateiformat offen dokumentiert ([`docs/FORMAT.md`](docs/FORMAT.md)) mit
-  unabhängig geprüften Testvektoren.
+- **Verschlüsselung:** XChaCha20-Poly1305, jede Datei mit einem Siegel, das nur mit deinem Passwort entsteht;
+  Dateiformat offen dokumentiert ([`docs/FORMAT.md`](docs/FORMAT.md)) mit unabhängig geprüften Testvektoren.
 - **Kern in Rust**, eine gemeinsame Codebasis für Android und Windows.
 - Der [Sicherheitsbericht](docs/AUDIT.md) fasst alle Audits und Testrunden zusammen: was behoben ist, was offen ist und wogegen GhulSuite schützt.
 
@@ -330,9 +372,11 @@ eigenen Server: GhulMail spricht direkt mit deinem Postfach.
 GhulSuite ist ein Soloprojekt ohne bezahlten externen Audit. Umso wichtiger ist, dass jeder nachprüfen kann, was
 getestet wird und was nicht:
 
-- **Bei jeder Änderung** laufen über eine Million Einzelprüfungen in über 250 Testfunktionen: Angriffe auf Dateien,
-  Server und Synchronisation, ein „bekloppter Nutzer“ auf drei Geräten, kaputte und böswillige Eingaben in jeden
-  Parser, Tests gegen echte SFTP-, FTPS-, IMAP- und SMTP-Server. Dazu kommen öffentliche Sammlungen wie Project
+- **Bei jeder Änderung** laufen über eine Million Einzelprüfungen in über 250 Testfunktionen: Angriffe auf Dateien
+  und auf die Suite-Datei (fehlende, vertauschte, alte, fremde oder abgezweigte Teile, ZIP-Tricks), auf Server und
+  GhulDrive (gleichzeitige Änderungen, zurückgespielter Index, Abbruch mitten im Schlüsselwechsel), ein „bekloppter
+  Nutzer“, der die Suite zwischen drei Geräten hin- und herträgt, kaputte und böswillige Eingaben in jeden Parser,
+  Tests gegen echte SFTP-, IMAP- und SMTP-Server. Dazu kommen öffentliche Sammlungen wie Project
   Wycheproof (Kryptografie), die Big List of Naughty Strings, XSS- und CRLF-Sammlungen für Mails, die URL-Testdaten
   der Browser, JSONTestSuite, Kalenderdateien anderer Programme und die Zeitzonen-Regeln der ganzen Welt. Das
   Server-Modul muss gezielte Angriffe abwehren (Tickets, Pfade, Einmal-Links im Wettlauf), und Freigabelinks werden
@@ -344,8 +388,8 @@ getestet wird und was nicht:
 - **Was gefunden wurde und was offen ist,** steht mit Nummer und Schwere im
   [Testprotokoll](docs/TESTPROTOKOLL.md); wie getestet wird, im [Testkonzept](docs/TESTKONZEPT.md).
 
-Kein Test beweist, dass es keine Lücke mehr gibt. GhulSuite ist eine **Entwicklungsversion**: Nutze sie mit
-regelmäßiger Sicherung. Und wenn du dich mit Sicherheit auskennst: Lies mit, greif an, melde, was du findest.
+Kein Test beweist, dass es keine Lücke mehr gibt. GhulSuite ist eine **Entwicklungsversion**: Speichere die
+Suite-Datei regelmäßig und bewahre eine Kopie auf. Und wenn du dich mit Sicherheit auskennst: Lies mit, greif an, melde, was du findest.
 
 ## Umziehen leicht gemacht
 
@@ -411,9 +455,12 @@ Datenschutzerklärung der App.
 
 **GhulSuite** is a self-hosted, end-to-end encrypted suite for **passwords, 2FA codes, files, mail and calendar**: one app for
 Android and Windows. Everything is encrypted on your device (master password **plus** FIDO2 security key or key
-file); your own server only ever stores ciphertext. Any SFTP/FTPS server is enough, plain web hosting included;
-share links come from a small PHP 8.1 module the app installs on the same server, without copying anything (every
-file has its own key). Mail can be archived as encrypted `.eml` files in GhulDrive. Free software under the
+file). There is no sync: the whole suite is one encrypted file (`.ghlzip`) you save and open on your next device,
+e.g. from a USB stick; the state saved last is the current one. GhulDrive lives on your own server, which only ever
+stores ciphertext and is the same on every device. It needs a server or web hosting **with SSH access** (SFTP, key
+login only); plain FTP web space is not enough. Share links come from a small PHP 8.1 module the app installs on the
+same server, without copying anything (every file has its own key). Mail can be archived as encrypted `.eml` files
+in GhulDrive. Free software under the
 AGPL-3.0, see [`LICENSE`](LICENSE).
 
 > **Work in progress, not for production use.** GhulSuite is still under development; whole parts of the app, the

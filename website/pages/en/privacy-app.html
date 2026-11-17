@@ -5,7 +5,7 @@
     <p>This is a translation for convenience. The German <a href="../datenschutz-app.html" lang="de">Datenschutzerklärung</a> is the legally binding version. This policy applies to the app GhulSuite on Android and Windows. This website has a <a href="privacy.html">privacy policy of its own</a>.</p>
 
     <div class="box">
-      <p style="margin:0"><strong>In short:</strong> GhulSuite sends no data at all to the developer. There is no account, no telemetry, no crash reports in the background, no advertising and no analytics. Your content is encrypted on your device and stored only where you set it up: on your own server. The few connections to other services are all listed below.</p>
+      <p style="margin:0"><strong>In short:</strong> GhulSuite sends no data at all to the developer. There is no account, no telemetry, no crash reports in the background, no advertising and no analytics. Your content is encrypted on your device and stored only where you put it yourself: on your device, in the suite file wherever you save it (for example on a USB stick), and for GhulDrive and share links on your own server. There is no sync server. The few connections to other services are all listed below.</p>
     </div>
 
     <h2>1. Controller</h2>
@@ -17,11 +17,12 @@
 
     <h2>2. Data on your device</h2>
     <p>Passwords, 2FA codes, files, mails, events and settings are kept in encrypted files (Argon2id, XChaCha20-Poly1305; opened only with the master password and a security key or key file). For the optional unlock by fingerprint or app PIN, the app uses the system's protected key store; the app never sees fingerprints. An error report is only stored on the device and only passed on if you copy or save it yourself.</p>
+    <p><strong>The suite file</strong> (<code>.ghlzip</code>): the device keeps an encrypted working copy of your suite. The app writes it as a file only where you save it, for example on a USB stick or in a folder of your choice. The file is fully encrypted and sealed; the app only remembers where it is (on Android as a permission for this one file, on Windows as a path). If you choose a folder that another program copies to a cloud, that program's terms apply; the app itself sends the file nowhere. When you open another suite file, the app deletes the device data of the previous state (quick unlock, mail cache, offline copies from GhulDrive, unfinished uploads).</p>
 
     <h2>3. Connections you set up yourself</h2>
     <p>You or the respective provider are responsible for these connections; the app makes them on your behalf:</p>
     <ul>
-      <li><strong>Your server</strong> (SFTP, FTPS or the PHP server module) for sync, files, the mail archive and share links. Only encrypted data is stored there. The server's operator sees your IP address and access times.</li>
+      <li><strong>Your server</strong> for GhulDrive, the mail archive and share links, over SFTP (SSH) only with your suite's SSH key, plus the PHP server module if you wish. Only encrypted data is stored there: GhulDrive's files in encrypted blocks, their encrypted index and, for every share link, an encrypted package with the expiry and download limit the module enforces. Passwords, 2FA codes, events and mail accounts are not on the server. The server's operator sees your IP address, access times and the number and rough size of the encrypted files.</li>
       <li><strong>Your mail providers</strong> (IMAP and SMTP, encrypted with TLS only). Their privacy policies apply.</li>
       <li><strong>Share links:</strong> whoever opens a link from you fetches it from your server; the key is only in the part of the link that is never sent to the server.</li>
     </ul>
@@ -70,14 +71,14 @@
     </table>
 
     <h2>6. Storage period and deletion</h2>
-    <p>Data stays until you delete it. Uninstalling the app makes the system remove its data on the device; you delete files on your own server and in your suite folder yourself.</p>
+    <p>Data stays until you delete it. Uninstalling the app makes the system remove its data on the device; you delete files on your own server and saved suite files (for example on a USB stick) yourself.</p>
 
     <h2>7. Your rights</h2>
-    <p>You have the right of access (Art. 15 GDPR), rectification (Art. 16), erasure (Art. 17), restriction (Art. 18), data portability (Art. 20), to object (Art. 21) and to lodge a complaint with a supervisory authority (Art. 77). As the controller receives no data from the app, most data is with you alone: the app offers export, backup and deletion for it.</p>
+    <p>You have the right of access (Art. 15 GDPR), rectification (Art. 16), erasure (Art. 17), restriction (Art. 18), data portability (Art. 20), to object (Art. 21) and to lodge a complaint with a supervisory authority (Art. 77). As the controller receives no data from the app, most data is with you alone: the app offers export, saving as a suite file and deletion for it.</p>
 
     <h2>8. Changes</h2>
     <p>This policy is updated when the app changes. New connections to other services are listed here before they appear in a version.</p>
 
-    <p class="stand">Last updated: 16 November 2026</p>
+    <p class="stand">Last updated: 17 November 2026</p>
   </div>
 </section>

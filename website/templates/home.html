@@ -55,6 +55,24 @@
   </div>
 </section>
 
+<section id="datei">
+  <div class="wrap split rev">
+    <div>
+      <p class="eyebrow rv" style="color:var(--pass)">{{t.file_eyebrow}}</p>
+      <h2 class="rv">{{t.file_title}}</h2>
+      <p class="sub rv" style="margin-bottom:0">{{t.file_sub}}</p>
+      <ul class="checks">
+        <li class="rv">{{i.check}}<span>{{t.file_1}}</span></li>
+        <li class="rv" style="--d:.05s">{{i.check}}<span>{{t.file_2}}</span></li>
+        <li class="rv" style="--d:.1s">{{i.check}}<span>{{t.file_3}}</span></li>
+        <li class="rv" style="--d:.15s">{{i.check}}<span>{{t.file_4}}</span></li>
+        <li class="rv" style="--d:.2s">{{i.check}}<span>{{t.file_5}}</span></li>
+      </ul>
+    </div>
+    <div class="shot rv"><div class="device"><img src="{{v.root}}assets/img/phone-unlock.png" alt="{{t.file_img}}" width="412" height="892" loading="lazy"></div></div>
+  </div>
+</section>
+
 <section id="archiv">
   <div class="wrap split">
     <div>
@@ -102,9 +120,10 @@
     <p class="sub rv">{{t.host_sub}}</p>
     <div class="hosts">
       <article class="card rv" style="--c:var(--auth)"><div class="icon">{{i.terminal}}</div><h3>SFTP</h3><p>{{t.host_1}}</p></article>
-      <article class="card rv" style="--c:var(--drive);--d:.06s"><div class="icon">{{i.server}}</div><h3>FTPS</h3><p>{{t.host_2}}</p></article>
+      <article class="card rv" style="--c:var(--drive);--d:.06s"><div class="icon">{{i.refresh}}</div><h3>{{t.host_2_title}}</h3><p>{{t.host_2}}</p></article>
       <article class="card rv" style="--c:var(--mail);--d:.12s"><div class="icon">{{i.globe}}</div><h3>{{t.host_3_title}}</h3><p>{{t.host_3}}</p></article>
     </div>
+    <p class="honest rv">{{t.host_need}}</p>
   </div>
 </section>
 

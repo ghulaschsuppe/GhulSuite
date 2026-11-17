@@ -5,7 +5,7 @@
     <p>Diese Erklärung gilt für die App GhulSuite unter Android und Windows. Für diese Website gibt es eine <a href="datenschutz.html">eigene Datenschutzerklärung</a>.</p>
 
     <div class="box">
-      <p style="margin:0"><strong>Kurz gesagt:</strong> GhulSuite schickt dem Entwickler keinerlei Daten. Es gibt kein Konto, keine Telemetrie, keine Absturzberichte im Hintergrund, keine Werbung und keine Analyse-Dienste. Deine Inhalte werden auf deinem Gerät verschlüsselt und nur dort gespeichert, wo du es einrichtest: auf deinem eigenen Server. Die wenigen Verbindungen zu anderen Diensten stehen unten vollständig aufgelistet.</p>
+      <p style="margin:0"><strong>Kurz gesagt:</strong> GhulSuite schickt dem Entwickler keinerlei Daten. Es gibt kein Konto, keine Telemetrie, keine Absturzberichte im Hintergrund, keine Werbung und keine Analyse-Dienste. Deine Inhalte werden auf deinem Gerät verschlüsselt und nur dort gespeichert, wo du sie selbst hinlegst: auf deinem Gerät, in der Suite-Datei an dem Ort, an dem du sie speicherst (etwa auf einem USB-Stick), und für GhulDrive und Freigabelinks auf deinem eigenen Server. Einen Sync-Server gibt es nicht. Die wenigen Verbindungen zu anderen Diensten stehen unten vollständig aufgelistet.</p>
     </div>
 
     <h2>1. Verantwortlicher</h2>
@@ -17,11 +17,12 @@
 
     <h2>2. Daten auf deinem Gerät</h2>
     <p>Passwörter, 2FA-Codes, Dateien, Mails, Termine und Einstellungen liegen in verschlüsselten Dateien (Argon2id, XChaCha20-Poly1305; geöffnet nur mit Master-Passwort und Security Key oder Schlüsseldatei). Für das optionale Entsperren per Fingerabdruck oder App-PIN nutzt die App den geschützten Schlüsselspeicher des Systems; Fingerabdrücke selbst sieht die App nie. Ein Fehlerbericht wird nur auf dem Gerät gespeichert und nur weitergegeben, wenn du ihn selbst kopierst oder speicherst.</p>
+    <p><strong>Die Suite-Datei</strong> (<code>.ghlzip</code>): Auf dem Gerät liegt eine verschlüsselte Arbeitskopie deiner Suite. Als Datei schreibt die App sie nur dorthin, wo du sie speicherst, etwa auf einen USB-Stick oder in einen Ordner deiner Wahl. Die Datei ist vollständig verschlüsselt und versiegelt; die App merkt sich nur, wo sie liegt (unter Android als Berechtigung für diese eine Datei, unter Windows als Pfad). Wählst du einen Ordner, den ein anderes Programm in eine Cloud überträgt, gelten dessen Bedingungen; die App selbst schickt die Datei nirgendwohin. Öffnest du eine andere Suite-Datei, löscht die App die Gerätedaten des bisherigen Stands (Schnell-Entsperren, Mail-Zwischenspeicher, Offline-Kopien aus GhulDrive, unfertige Uploads).</p>
 
     <h2>3. Verbindungen, die du selbst einrichtest</h2>
     <p>Für die folgenden Verbindungen bist du bzw. der jeweilige Anbieter verantwortlich; die App führt sie in deinem Auftrag aus:</p>
     <ul>
-      <li><strong>Dein Server</strong> (SFTP, FTPS oder das PHP-Server-Modul) für Synchronisation, Dateien, das Mail-Archiv und Freigabelinks. Dort liegen nur verschlüsselte Daten. Der Betreiber des Servers sieht deine IP-Adresse und die Zugriffszeiten.</li>
+      <li><strong>Dein Server</strong> für GhulDrive, das Mail-Archiv und Freigabelinks, nur über SFTP (SSH) mit dem SSH-Schlüssel deiner Suite, dazu auf Wunsch das PHP-Server-Modul. Dort liegen nur verschlüsselte Daten: die Dateien von GhulDrive in verschlüsselten Blöcken, ihr verschlüsseltes Verzeichnis und für jeden Freigabelink ein verschlüsseltes Paket mit Ablaufdatum und Abrufgrenze, die das Modul durchsetzt. Passwörter, 2FA-Codes, Termine und Mail-Konten liegen nicht auf dem Server. Der Betreiber des Servers sieht deine IP-Adresse, die Zugriffszeiten sowie Anzahl und ungefähre Größe der verschlüsselten Dateien.</li>
       <li><strong>Deine Mail-Anbieter</strong> (IMAP und SMTP, nur verschlüsselt über TLS). Es gelten deren Datenschutzbestimmungen.</li>
       <li><strong>Freigabelinks:</strong> Wer einen Link von dir öffnet, ruft ihn von deinem Server ab; der Schlüssel steht nur im Teil des Links, der nicht an den Server übertragen wird.</li>
     </ul>
@@ -70,14 +71,14 @@
     </table>
 
     <h2>6. Speicherdauer und Löschen</h2>
-    <p>Daten bleiben, bis du sie löschst. Wenn du die App deinstallierst, entfernt das System ihre Daten auf dem Gerät; Dateien auf deinem eigenen Server und in deinem Suite-Ordner löschst du selbst.</p>
+    <p>Daten bleiben, bis du sie löschst. Wenn du die App deinstallierst, entfernt das System ihre Daten auf dem Gerät; Dateien auf deinem eigenen Server und gespeicherte Suite-Dateien (etwa auf einem USB-Stick) löschst du selbst.</p>
 
     <h2>7. Deine Rechte</h2>
-    <p>Du hast das Recht auf Auskunft (Art. 15 DSGVO), Berichtigung (Art. 16), Löschung (Art. 17), Einschränkung der Verarbeitung (Art. 18), Datenübertragbarkeit (Art. 20) und Widerspruch (Art. 21) sowie das Recht auf Beschwerde bei einer Aufsichtsbehörde (Art. 77). Da der Verantwortliche keine Daten aus der App erhält, liegen die meisten Daten allein bei dir: Die App bietet dafür Export, Sicherung und Löschen an.</p>
+    <p>Du hast das Recht auf Auskunft (Art. 15 DSGVO), Berichtigung (Art. 16), Löschung (Art. 17), Einschränkung der Verarbeitung (Art. 18), Datenübertragbarkeit (Art. 20) und Widerspruch (Art. 21) sowie das Recht auf Beschwerde bei einer Aufsichtsbehörde (Art. 77). Da der Verantwortliche keine Daten aus der App erhält, liegen die meisten Daten allein bei dir: Die App bietet dafür Export, das Speichern als Suite-Datei und Löschen an.</p>
 
     <h2>8. Änderungen</h2>
     <p>Diese Erklärung wird angepasst, wenn sich die App ändert. Neue Verbindungen zu anderen Diensten werden hier aufgeführt, bevor sie in einer Version erscheinen.</p>
 
-    <p class="stand">Stand: 16. November 2026</p>
+    <p class="stand">Stand: 17. November 2026</p>
   </div>
 </section>
