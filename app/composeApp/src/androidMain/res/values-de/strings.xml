@@ -9,20 +9,10 @@
     <string name="bio_title">GhulSuite entsperren</string>
     <string name="bio_subtitle">Mit Fingerabdruck bestätigen</string>
     <string name="bio_cancel">Abbrechen</string>
-    <string name="mail_channel">Neue E-Mails</string>
-    <string name="mail_push_channel">GhulMail wartet auf neue E-Mails</string>
-    <string name="mail_push_title">GhulMail ist bereit</string>
-    <string name="mail_push_text">Neue E-Mails werden sofort gemeldet. Ausschalten: in GhulMail beim Konto.</string>
-    <plurals name="mail_new">
-        <item quantity="one">%d neue E-Mail</item>
-        <item quantity="other">%d neue E-Mails</item>
-    </plurals>
     <string name="cal_channel">Termin-Erinnerungen</string>
     <string name="cal_channel_silent">Termin-Erinnerungen (lautlos)</string>
     <string name="cal_snooze">In 5 Min. erneut</string>
     <string name="cal_done">Erledigt</string>
-    <string name="share_as_mail">Per E-Mail senden (GhulMail)</string>
-    <string name="share_to_drive">In GhulDrive speichern</string>
     <string name="update_failed">Das Update konnte nicht installiert werden. Lade es stattdessen von der Release-Seite.</string>
     <string name="notif_job_channel">Aufgaben im Hintergrund</string>
     <string name="notif_job_cancel">Abbrechen</string>

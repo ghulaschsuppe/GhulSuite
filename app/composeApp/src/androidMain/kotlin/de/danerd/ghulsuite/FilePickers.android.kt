@@ -184,8 +184,8 @@ actual fun rememberOpenStream(onPicked: (ByteSource) -> Unit): () -> Unit {
 }
 
 /**
- * A file another app or the system picker hands over, opened only when it is read (GhulDrive
- * uploads one after the other).
+ * A file another app or the system picker hands over, opened only when it is read (several are
+ * read one after the other).
  */
 fun contentSource(context: android.content.Context, uri: Uri): ByteSource {
     var name: String? = null

@@ -13,8 +13,6 @@ interface VaultBackend {
 
     val unlocked: StateFlow<Boolean>
     val settings: Settings
-    /** Servers, GhulDrive and GhulMail. */
-    val net: NetBackend
     /** GhulCal. */
     val cal: CalBackend get() = NoCalBackend
 
@@ -62,7 +60,7 @@ interface VaultBackend {
     /** Deletes the vault file from the folder. */
     suspend fun removeVault(id: String)
 
-    // --- Areas: one file per area (GhulPass, GhulAuth, GhulDrive, GhulMail, GhulCal)
+    // --- Areas: one file per area (GhulPass, GhulAuth, GhulCal)
     fun setupState(): SetupStateUi = if (exists()) SetupStateUi.COMPLETE else SetupStateUi.EMPTY
     /** Creates the area's file (when switched on later); an existing area keeps its file. */
     suspend fun addArea(kind: VaultKindUi, name: String): String = createVault(kind, name)
@@ -143,9 +141,8 @@ interface VaultBackend {
     suspend fun securityReport(): SecurityReportUi = SecurityReportUi(100, 0, emptyList())
     fun entryTotp(secret: String, nowSeconds: Long): TotpNowUi? = null
     fun generatePassphrase(words: Int, separator: String, capitalize: Boolean, number: Boolean): String = ""
-    /** GhulAuth: account as otpauth link (QR export); clock difference to an own web server. */
+    /** GhulAuth: account as otpauth link (QR export). */
     suspend fun totpUri(vaultId: String, id: String): String = ""
-    suspend fun clockOffset(nowSeconds: Long): Long? = null
     // --- The suite file (.ghlzip): opened into the working copy, saved from it
     /** What a suite file needs to be opened (password plus key or key file). */
     suspend fun archiveProtection(data: ByteArray): ProtectionUi = throw VaultException(VaultErrorKind.OTHER)
@@ -213,8 +210,15 @@ interface VaultBackend {
     fun crashReport(): String? = null
     /** Breach check (k-anonymity); network. */
     suspend fun pwnedCount(password: String): Int = 0
-    /** Sends an error report with the user's note to the developer (www.ghulsuite.de); network. */
-    suspend fun sendReport(report: String, note: String, contact: String) {}
+
+    /**
+     * Hands a file to other apps: Android's share sheet, Windows opens it in the program
+     * registered for it. False if the platform cannot (then the caller offers to save it).
+     */
+    suspend fun shareToApps(name: String, mime: String, data: ByteArray): Boolean = false
+
+    /** Whether [shareToApps] lets the user pick another app to send the file with (Android). */
+    val canShareToApps: Boolean get() = false
 
     /** Copies to the clipboard, marked as sensitive and cleared automatically. */
     fun copySensitive(label: String, text: String)
@@ -263,7 +267,25 @@ class ArchiveBuiltUi(val data: ByteArray, val state: String, val change: Long = 
 /** A file picked by the user. */
 class PickedFile(val name: String, val bytes: ByteArray)
 
-enum class VaultKindUi { PASS, TOTP, CAL, DRIVE, MAIL }
+/** A readable file chosen by the user (streamed, not loaded at once). */
+interface ByteSource {
+    val name: String
+    /** Size in bytes, or -1 if unknown. */
+    val size: Long
+    /** Reads up to [length] bytes into [buffer] at [offset]; returns -1 at the end. */
+    fun read(buffer: ByteArray, offset: Int, length: Int): Int
+    fun close()
+}
+
+/** A writable file chosen by the user. */
+interface ByteSink {
+    fun write(data: ByteArray)
+    fun close()
+    /** Removes what was written (a cancelled or failed write leaves no half file). */
+    fun discard() {}
+}
+
+enum class VaultKindUi { PASS, TOTP, CAL }
 
 /** What the app finds in the suite folder. */
 enum class SetupStateUi {
@@ -553,17 +575,7 @@ enum class VaultErrorKind {
     STORAGE,
     INVALID_INPUT,
     NETWORK,
-    HOST_KEY_UNKNOWN,
-    HOST_KEY_CHANGED,
     CERT_UNTRUSTED,
-    SERVER_AUTH,
-    DRIVE_ROLLED_BACK,
-    /** GhulDrive's index on the server has a key of before the last change of the protection. */
-    DRIVE_EARLIER_KEY,
-    /** A key change waits for the suite file to be saved, and this needs it to have gone on. */
-    KEY_CHANGE_NOT_SAVED,
-    SHARE_NOT_DELETED,
-    PHP_NOT_EXECUTED,
     NOT_CONFIGURED,
     NOT_FOUND,
     OTHER,

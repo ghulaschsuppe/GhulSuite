@@ -36,9 +36,6 @@ import de.danerd.ghulsuite.resources.*
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 
-/** GhulDrive and GhulMail need the servers and accounts of a suite: they can only be added to one. */
-fun opensOnItsOwn(kind: VaultKindUi) = kind != VaultKindUi.DRIVE && kind != VaultKindUi.MAIL
-
 /**
  * A vault file was picked: open only this vault, add it to the own suite (unlocked first if
  * needed) or, without a suite on this device, build a new suite around it.
@@ -63,14 +60,10 @@ fun VaultFileChoice(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(Res.string.single_choice_text, file.ref.name, stringResource(kindLabel(kind))))
-                if (opensOnItsOwn(kind)) {
-                    Button(onClick = onOnlyThis, enabled = writable == true, modifier = Modifier.fillMaxWidth()) {
-                        Text(stringResource(Res.string.single_only_this))
-                    }
-                    Hint(stringResource(if (writable == false) Res.string.single_not_writable else Res.string.single_only_this_hint))
-                } else {
-                    Hint(stringResource(Res.string.single_not_alone))
+                Button(onClick = onOnlyThis, enabled = writable == true, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(Res.string.single_only_this))
                 }
+                Hint(stringResource(if (writable == false) Res.string.single_not_writable else Res.string.single_only_this_hint))
                 if (hasSuite) {
                     OutlinedButton(onClick = {
                         state.pendingAdd = PickedFile(file.ref.name, file.data)

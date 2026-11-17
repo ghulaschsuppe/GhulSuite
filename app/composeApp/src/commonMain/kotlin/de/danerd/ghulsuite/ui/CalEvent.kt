@@ -35,9 +35,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.MoreVert
@@ -269,20 +267,12 @@ fun CalEventScreen(state: AppState, id: String, day: String, padding: PaddingVal
             ButtonRow {
                 FilledTonalButton(onClick = {
                     state.run(block = { cal.eventIcs(id) }) { ics ->
-                        state.run(block = { state.backend.net.shareBytesToApps("${safeName(e.title)}.ics", "text/calendar", ics.encodeToByteArray()) }) { ok ->
+                        state.run(block = { state.backend.shareToApps("${safeName(e.title)}.ics", "text/calendar", ics.encodeToByteArray()) }) { ok ->
                             if (!ok) shareIcs("${safeName(e.title)}.ics", ics.encodeToByteArray())
                         }
                     }
                 }, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Filled.Upload, null, Modifier.size(18.dp)); Text(stringResource(Res.string.cal_share_ics), maxLines = 1, softWrap = false)
-                }
-                OutlinedButton(onClick = {
-                    state.run(block = { cal.eventIcs(id) }) { ics ->
-                        state.push(Screen.MailCompose(MailDraft(state.mailAccount, subject = e.title,
-                            attachments = listOf(de.danerd.ghulsuite.model.OutgoingAttachmentUi("${safeName(e.title)}.ics", "text/calendar", ics.encodeToByteArray())))))
-                    }
-                }, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.AutoMirrored.Filled.Send, null, Modifier.size(18.dp)); Text(stringResource(Res.string.cal_by_mail), maxLines = 1, softWrap = false)
                 }
             }
             HintText(stringResource(Res.string.cal_invite_hint))
@@ -378,11 +368,9 @@ private fun durationText(min: Long): String =
     if (min < 60) stringResource(Res.string.cal_dur_min, min.toString())
     else stringResource(Res.string.cal_dur_hours, ((min / 6) / 10.0).toString().removeSuffix(".0").replace('.', ','))
 
-private fun linkLook(kind: String): Triple<androidx.compose.ui.graphics.vector.ImageVector, Int, StringResource> = when (kind) {
-    "drive" -> Triple(Icons.Filled.Cloud, 1, Res.string.tab_drive)
-    "mail" -> Triple(Icons.Filled.Email, 3, Res.string.tab_mail)
-    else -> Triple(Icons.Filled.Key, 0, Res.string.tab_pass)
-}
+/** Links point to GhulPass entries (the only kind left). */
+private fun linkLook(@Suppress("UNUSED_PARAMETER") kind: String): Triple<androidx.compose.ui.graphics.vector.ImageVector, Int, StringResource> =
+    Triple(Icons.Filled.Key, 0, Res.string.tab_pass)
 
 /** Percent-encoding for a search in the map app. */
 fun urlEncode(s: String): String = s.encodeToByteArray().joinToString("") { b ->
@@ -391,27 +379,12 @@ fun urlEncode(s: String): String = s.encodeToByteArray().joinToString("") { b ->
     else "%" + c.toString(16).uppercase().padStart(2, '0')
 }
 
-/** Opens what a link points to: the mail, the entry, the file. */
+/** Opens the GhulPass entry a link points to. */
 fun openLink(state: AppState, l: CalLinkUi) {
-    when (l.kind) {
-        "mail" -> {
-            val p = l.target.split('|')
-            if (p.size == 3) {
-                state.stack.clear(); state.selectTab(Tab.MAIL)
-                state.push(Screen.MailRead(p[0], p[1], p[2].toLongOrNull() ?: 0))
-            }
-        }
-        "pass" -> {
-            val p = l.target.split('|')
-            if (p.size == 2) {
-                state.stack.clear(); state.selectTab(Tab.PASS)
-                state.push(Screen.EntryDetail(p[0], p[1]))
-            }
-        }
-        else -> {
-            state.stack.clear(); state.selectTab(Tab.DRIVE)
-            state.scope.launch { state.message(getString(Res.string.cal_link_in_drive, l.label)) }
-        }
+    val p = l.target.split('|')
+    if (l.kind == "pass" && p.size == 2) {
+        state.stack.clear(); state.selectTab(Tab.PASS)
+        state.push(Screen.EntryDetail(p[0], p[1]))
     }
 }
 
@@ -710,31 +683,18 @@ private fun SmallChip(text: String, icon: androidx.compose.ui.graphics.vector.Im
     }
 }
 
-/** Link to a GhulPass entry, a GhulDrive file or a GhulMail message. */
+/** Link to a GhulPass entry. */
 @Composable
 private fun LinkSheet(state: AppState, close: () -> Unit, onPick: (CalLinkUi) -> Unit) {
-    var kind by remember { mutableStateOf<String?>(null) }
     var items by remember { mutableStateOf<List<CalLinkUi>>(emptyList()) }
     var query by remember { mutableStateOf("") }
-    LaunchedEffect(kind) {
-        items = when (kind) {
-            "pass" -> catching { state.backend.listEntries(null) }.getOrDefault(emptyList())
-                .map { CalLinkUi("pass", it.title, "${it.vaultId}|${it.id}") }
-            "drive" -> catching { state.backend.net.driveRecent(60) }.getOrDefault(emptyList()).filter { !it.isDir }
-                .map { CalLinkUi("drive", it.name, it.id) }
-            "mail" -> state.mailLoaded.map { CalLinkUi("mail", it.m.subject.ifBlank { it.m.from }, "${it.accountId}|${state.mailFolder}|${it.m.uid}") }
-            else -> emptyList()
-        }
+    LaunchedEffect(Unit) {
+        items = catching { state.backend.listEntries(null) }.getOrDefault(emptyList())
+            .map { CalLinkUi("pass", it.title, "${it.vaultId}|${it.id}") }
     }
     GhulSheet(close, stringResource(Res.string.cal_link_title)) {
-        if (kind == null) {
-            SheetList {
-                SheetRow(stringResource(Res.string.cal_link_drive), stringResource(Res.string.tab_drive), leading = { IconTile(Icons.Filled.Cloud, paletteColor(1)) }) { kind = "drive" }
-                SheetRow(stringResource(Res.string.cal_link_mail), stringResource(Res.string.tab_mail), leading = { IconTile(Icons.Filled.Email, paletteColor(3)) }, divider = true) { kind = "mail" }
-                SheetRow(stringResource(Res.string.cal_link_pass), stringResource(Res.string.tab_pass), leading = { IconTile(Icons.Filled.Key, paletteColor(0)) }, divider = true) { kind = "pass" }
-            }
-            HintText(stringResource(Res.string.cal_link_hint))
-        } else {
+        HintText(stringResource(Res.string.cal_link_hint))
+        run {
             SearchField(query, { query = it })
             val shown = items.filter { query.isBlank() || it.label.contains(query, ignoreCase = true) }.take(40)
             if (shown.isEmpty()) HintText(stringResource(Res.string.cal_link_none))

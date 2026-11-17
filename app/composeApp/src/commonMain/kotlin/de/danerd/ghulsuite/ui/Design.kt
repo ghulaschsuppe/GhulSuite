@@ -615,7 +615,7 @@ fun HeaderButton(
     text: String,
     enabled: Boolean = true,
     icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
-    // The colour of the area (GhulMail orange, GhulCal pink …), as its "+" button has it.
+    // The colour of the area (GhulAuth green, GhulCal pink …), as its "+" button has it.
     color: Color? = null,
     onClick: () -> Unit,
 ) {
@@ -714,7 +714,7 @@ private fun Modifier.androidx_statusBarsPadding(): Modifier = this.statusBarsPad
 
 /** One tab of the bottom navigation. */
 /** [tag]: "tab-pass", "tab-auth" …: the emulator flows tap the bar by it (the area's name is also its title). */
-class NavTab(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector, val color: Color, val badge: Int = 0, val tag: String = "")
+class NavTab(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector, val color: Color, val tag: String = "")
 
 /** Bottom navigation: 80 dp, surface, line on top, pill indicator in the tab colour. */
 @Composable
@@ -733,33 +733,13 @@ fun GhulNavBar(tabs: List<NavTab>, selected: Int, onSelect: (Int) -> Unit) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(3.dp),
                 ) {
-                    val pill = if (tabs.size >= 6) 50.dp else 56.dp
-                    // The badge sits on top of the pill, not inside it: the pill clips its content.
-                    Box(Modifier.size(pill, 30.dp)) {
-                        Box(
-                            // Six areas: a little narrower, as in the design preview.
-                            Modifier.fillMaxSize().clip(RoundedCornerShape(15.dp)).background(if (on) tab.color.copy(alpha = 0.16f) else Color.Transparent),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            androidx.compose.material3.Icon(tab.icon, null, Modifier.size(22.dp), tint = if (on) tab.color else t.muted)
-                        }
-                        if (tab.badge > 0) {
-                            Box(
-                                Modifier.align(Alignment.TopStart).offset(x = pill / 2 + 4.dp, y = (-5).dp)
-                                    .heightIn(min = 16.dp).widthIn(min = 16.dp)
-                                    .border(1.5.dp, t.surface, RoundedCornerShape(8.dp))
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(tab.color).padding(horizontal = 4.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    if (tab.badge > 99) "99+" else tab.badge.toString(),
-                                    color = Color.White, fontSize = 10.sp, lineHeight = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false,
-                                )
-                            }
-                        }
+                    Box(
+                        Modifier.size(56.dp, 30.dp).clip(RoundedCornerShape(15.dp)).background(if (on) tab.color.copy(alpha = 0.16f) else Color.Transparent),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        androidx.compose.material3.Icon(tab.icon, null, Modifier.size(22.dp), tint = if (on) tab.color else t.muted)
                     }
-                    Text(tab.label, fontSize = if (tabs.size >= 6) 10.5.sp else 11.sp, fontWeight = FontWeight.SemiBold, color = if (on) tab.color else t.muted, maxLines = 1, softWrap = false)
+                    Text(tab.label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = if (on) tab.color else t.muted, maxLines = 1, softWrap = false)
                 }
             }
         }
@@ -769,7 +749,7 @@ fun GhulNavBar(tabs: List<NavTab>, selected: Int, onSelect: (Int) -> Unit) {
 /** True in wide windows (Windows, phones and tablets lying sideways): the areas in a sidebar on the left. */
 val LocalWide = compositionLocalOf { false }
 
-/** Columns for tile grids (Drive, Auth): 2 on phones, more in wide windows. */
+/** Columns for tile grids (GhulAuth): 2 on phones, more in wide windows. */
 val LocalColumns = compositionLocalOf { 2 }
 
 /**

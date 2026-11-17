@@ -256,7 +256,7 @@ fun PassListScreen(state: AppState, padding: PaddingValues) {
                     trailing = if (e.hasTotp || e.favorite) ({
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             if (e.hasTotp) Icon(Icons.Filled.Schedule, null, Modifier.size(20.dp), tint = t.muted)
-                            if (e.favorite) Icon(Icons.Filled.Star, null, Modifier.size(20.dp), tint = areaColor(Tab.MAIL))
+                            if (e.favorite) Icon(Icons.Filled.Star, null, Modifier.size(20.dp), tint = starColor())
                         }
                     }) else null,
                     divider = i > 0,
@@ -333,25 +333,12 @@ fun TypePickerDialog(onPick: (String) -> Unit, onDismiss: () -> Unit, onGenerate
 fun EntryDetailScreen(state: AppState, vaultId: String, id: String, padding: PaddingValues) {
     var entry by remember { mutableStateOf<EntryUi?>(null) }
     val deletedMsg = stringResource(Res.string.msg_deleted_n)
-    var sharing by remember { mutableStateOf(false) }
-    // One-time links come from GhulDrive's server like every share link.
-    val shareNeed = rememberShareNeed(state)
     LaunchedEffect(id, state.liveRevision()) {
         entry = catching { state.backend.getEntry(vaultId, id) }.getOrElse { state.message(describe(it)); state.pop(); null }
     }
     val e = entry ?: return
     val def = entryType(e.type)
     val known = def.fields.map { it.name }.toSet()
-    // Plain text of the entry for a one-time link (built here because the labels are resources).
-    val shareText = buildString {
-        appendLine(e.value("title"))
-        appendLine()
-        for (f in def.fields.filter { it.name != "title" }) {
-            val v = e.value(f.name)
-            if (v.isNotBlank()) appendLine(stringResource(f.label) + ": " + v)
-        }
-        for (f in e.fields.filter { it.name !in known && it.value.isNotBlank() }) appendLine(f.name + ": " + f.value)
-    }
     var menu by remember { mutableStateOf(false) }
     var extras by remember { mutableStateOf<EntryExtrasUi?>(null) }
     var sheet by remember { mutableStateOf("") }
@@ -367,7 +354,7 @@ fun EntryDetailScreen(state: AppState, vaultId: String, id: String, padding: Pad
             "", onLock = { state.lockNow() }, onBack = { state.pop() }, backIcon = backIcon(),
             actions = {
                 BarIcon(if (fav) Icons.Filled.Star else Icons.Filled.StarBorder, stringResource(Res.string.chip_favorites),
-                    tint = if (fav) areaColor(Tab.MAIL) else Color.Unspecified) {
+                    tint = if (fav) starColor() else Color.Unspecified) {
                     state.run(block = { state.backend.setFavorite(vaultId, id, !fav) }) { reloadExtras++; state.changed() }
                 }
                 BarIcon(Icons.Filled.Edit, stringResource(Res.string.a_edit)) { state.push(Screen.EntryEdit(vaultId, id, e.type)) }
@@ -455,20 +442,7 @@ fun EntryDetailScreen(state: AppState, vaultId: String, id: String, padding: Pad
         val copySuffix = stringResource(Res.string.pass_copy_suffix)
         GhulSheet({ menu = false }, e.value("title").ifBlank { stringResource(Res.string.untitled) }) {
             SheetList {
-                SheetRow(
-                    stringResource(Res.string.pass_share_short),
-                    if (shareNeed == ShareNeed.Ready) stringResource(Res.string.pass_share_hint) else shareLinkSub(shareNeed),
-                    leading = { IconTile(Icons.Filled.Link, paletteColor(2)) },
-                    enabled = shareNeed != null && shareNeed != ShareNeed.Drive,
-                ) {
-                    menu = false
-                    when (val need = shareNeed) {
-                        ShareNeed.Ready -> sharing = true
-                        is ShareNeed.Module -> state.push(Screen.ModuleInstall(need.serverId))
-                        else -> {}
-                    }
-                }
-                SheetRow(stringResource(Res.string.pass_duplicate), leading = { IconTile(Icons.Filled.ContentCopy, paletteColor(1)) }, divider = true) {
+                SheetRow(stringResource(Res.string.pass_duplicate), leading = { IconTile(Icons.Filled.ContentCopy, paletteColor(1)) }) {
                     menu = false
                     state.run(block = { state.backend.duplicateEntry(vaultId, id, copySuffix) }) { nid ->
                         state.changed(); state.pop(); state.push(Screen.EntryDetail(vaultId, nid))
@@ -531,9 +505,6 @@ fun EntryDetailScreen(state: AppState, vaultId: String, id: String, padding: Pad
             QrImage("WIFI:T:${if (pw.isEmpty()) "nopass" else "WPA"};S:$ssid;P:$pw;;", Modifier.fillMaxWidth())
             HintText(stringResource(Res.string.pass_wifi_qr_hint))
         }
-    }
-    if (sharing) {
-        PassShareDialog(state, e.value("title").ifBlank { "GhulPass" }, shareText) { sharing = false }
     }
 }
 
@@ -692,32 +663,6 @@ fun SecurityScreen(state: AppState, padding: PaddingValues) {
             }
         }
     }
-}
-
-/** One-time link for an entry: encrypted on the device, the key stays in the link. */
-@Composable
-private fun PassShareDialog(state: AppState, title: String, text: String, onDismiss: () -> Unit) {
-    var result by remember { mutableStateOf<de.danerd.ghulsuite.model.ShareInfoUi?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
-    val mail = rememberMailAvailable(state)
-    result?.let { ShareResultDialog(state, it, mail, onDismiss); return }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(Res.string.pass_share)) },
-        text = {
-            Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                ShareOptionsForm(state, onError = { error = it }, defaultDays = 1, defaultMax = 1) { options ->
-                    val name = title.filter { it.isLetterOrDigit() || it in " -_." }.trim().ifEmpty { "GhulPass" } + ".txt"
-                    state.run(onError = { error = it }, block = { state.backend.net.shareBytes(name, text.encodeToByteArray(), options) }) {
-                        result = it
-                    }
-                }
-                ErrorText(error)
-            }
-        },
-        confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(Res.string.a_cancel)) } },
-    )
 }
 
 @Composable

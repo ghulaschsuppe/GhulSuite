@@ -2,36 +2,18 @@
 // Shared by Android and Windows: conversions between the core (UniFFI) and the UI model.
 package de.danerd.ghulsuite
 
-import de.danerd.ghulsuite.core.DriveItem
 import de.danerd.ghulsuite.core.FidoException
 import de.danerd.ghulsuite.core.FieldData
 import de.danerd.ghulsuite.core.FieldValue
 import de.danerd.ghulsuite.core.GhulException
-import de.danerd.ghulsuite.core.MailAccountInput
-import de.danerd.ghulsuite.core.MailSecurity
-import de.danerd.ghulsuite.core.MailServers
-import de.danerd.ghulsuite.core.MailSummary
 import de.danerd.ghulsuite.core.ProtectionInfo
-import de.danerd.ghulsuite.core.ServerInput
-import de.danerd.ghulsuite.core.ShareInfo
-import de.danerd.ghulsuite.core.ShareOptions
 import de.danerd.ghulsuite.core.VaultKind
-import de.danerd.ghulsuite.model.DriveItemUi
 import de.danerd.ghulsuite.model.FieldType
 import de.danerd.ghulsuite.model.FieldUi
-import de.danerd.ghulsuite.model.MailAccountInputUi
-import de.danerd.ghulsuite.model.MailSecurityUi
-import de.danerd.ghulsuite.model.MailServersUi
-import de.danerd.ghulsuite.model.MailSummaryUi
 import de.danerd.ghulsuite.model.ProtectionUi
-import de.danerd.ghulsuite.model.ServerInputUi
-import de.danerd.ghulsuite.model.ShareInfoUi
-import de.danerd.ghulsuite.model.ShareOptionsUi
 import de.danerd.ghulsuite.model.VaultErrorKind
 import de.danerd.ghulsuite.model.VaultException
 import de.danerd.ghulsuite.model.VaultKindUi
-import de.danerd.ghulsuite.core.ServerInfo
-import de.danerd.ghulsuite.model.ServerUi
 
 private const val HEX = "0123456789abcdef"
 
@@ -48,16 +30,12 @@ internal fun VaultKindUi.toCore() = when (this) {
     VaultKindUi.PASS -> VaultKind.PASS
     VaultKindUi.TOTP -> VaultKind.TOTP
     VaultKindUi.CAL -> VaultKind.CAL
-    VaultKindUi.DRIVE -> VaultKind.DRIVE
-    VaultKindUi.MAIL -> VaultKind.MAIL
 }
 
 internal fun VaultKind.toUi() = when (this) {
     VaultKind.PASS -> VaultKindUi.PASS
     VaultKind.TOTP -> VaultKindUi.TOTP
     VaultKind.CAL -> VaultKindUi.CAL
-    VaultKind.DRIVE -> VaultKindUi.DRIVE
-    VaultKind.MAIL -> VaultKindUi.MAIL
 }
 
 internal fun ProtectionInfo.toUi() = ProtectionUi(securityKeys.toInt(), keyfiles.toInt(), recoveryCodes.toInt())
@@ -128,15 +106,7 @@ internal fun GhulException.toVault(): VaultException {
         is GhulException.QuickUnlockExpired -> VaultException(VaultErrorKind.QUICK_EXPIRED, d)
         is GhulException.QuickUnlockUnavailable -> VaultException(VaultErrorKind.QUICK_UNAVAILABLE, d)
         is GhulException.Network -> VaultException(VaultErrorKind.NETWORK, msg)
-        is GhulException.HostKeyUnknown -> VaultException(VaultErrorKind.HOST_KEY_UNKNOWN, fingerprint)
-        is GhulException.HostKeyChanged -> VaultException(VaultErrorKind.HOST_KEY_CHANGED, fingerprint)
         is GhulException.CertUntrusted -> VaultException(VaultErrorKind.CERT_UNTRUSTED, fingerprint)
-        is GhulException.ServerAuthFailed -> VaultException(VaultErrorKind.SERVER_AUTH, d)
-        is GhulException.DriveRolledBack -> VaultException(VaultErrorKind.DRIVE_ROLLED_BACK, d)
-        is GhulException.DriveEarlierKey -> VaultException(VaultErrorKind.DRIVE_EARLIER_KEY, d)
-        is GhulException.KeyChangeNotSaved -> VaultException(VaultErrorKind.KEY_CHANGE_NOT_SAVED, d)
-        is GhulException.ShareNotDeleted -> VaultException(VaultErrorKind.SHARE_NOT_DELETED, d)
-        is GhulException.PhpNotExecuted -> VaultException(VaultErrorKind.PHP_NOT_EXECUTED, d)
         is GhulException.NotConfigured -> VaultException(VaultErrorKind.NOT_CONFIGURED, d)
         is GhulException.NotFound -> VaultException(VaultErrorKind.NOT_FOUND, d)
         is GhulException.UpdateRequired -> VaultException(VaultErrorKind.UPDATE_REQUIRED, d)
@@ -161,49 +131,6 @@ internal fun FidoException.toVault(): VaultException {
         else -> VaultException(VaultErrorKind.KEY_PROTOCOL, d)
     }
 }
-
-fun ServerInputUi.toCore() = ServerInput(name, host, port.toUShort(), user, password, base)
-
-internal fun ServerInfo.toUi() = ServerUi(
-    id, name, host, port.toInt(), user, base, hostKey, location,
-    moduleUrl, moduleVersion.toInt(), moduleCurrent.toInt(),
-)
-
-internal fun ShareOptionsUi.toCore() = ShareOptions(password, expiresDays.toUInt(), maxDownloads.toUInt())
-
-internal fun ShareInfo.toUi() =
-    ShareInfoUi(id, serverId, name, size.toLong(), created, expires, password, maxDownloads.toInt(), downloads, url)
-
-fun mimeOf(name: String): String = when (name.substringAfterLast('.', "").lowercase()) {
-    "pdf" -> "application/pdf"
-    "jpg", "jpeg" -> "image/jpeg"
-    "png" -> "image/png"
-    "gif" -> "image/gif"
-    "txt" -> "text/plain"
-    "zip" -> "application/zip"
-    "mp4" -> "video/mp4"
-    "mp3" -> "audio/mpeg"
-    else -> "application/octet-stream"
-}
-
-internal fun DriveItem.toUi() = DriveItemUi(id, parent, name, isDir, size.toLong(), modified, favorite, offline, trashed, versions.toInt())
-
-internal fun MailSecurity.toUi() = if (this == MailSecurity.TLS) MailSecurityUi.TLS else MailSecurityUi.STARTTLS
-
-internal fun MailSecurityUi.toCore() = if (this == MailSecurityUi.TLS) MailSecurity.TLS else MailSecurity.START_TLS
-
-internal fun MailServers.toUi() =
-    MailServersUi(imapHost, imapPort.toInt(), imapSecurity.toUi(), smtpHost, smtpPort.toInt(), smtpSecurity.toUi())
-
-internal fun MailServersUi.toCore() = MailServers(
-    imapHost.trim(), imapPort.toUShort(), imapSecurity.toCore(), smtpHost.trim(), smtpPort.toUShort(), smtpSecurity.toCore(),
-)
-
-internal fun MailAccountInputUi.toCore() =
-    MailAccountInput(name, displayName, email.trim(), username.trim(), password, servers.toCore(), imapCert, smtpCert, signature)
-
-internal fun MailSummary.toUi() =
-    MailSummaryUi(uid.toLong(), from, fromAddress, subject, date, seen, flagged, hasAttachments, size.toLong(), preview, encrypted, labels, threadKey)
 
 /**
  * A file name that stays inside the share folder: no path separators or control characters,

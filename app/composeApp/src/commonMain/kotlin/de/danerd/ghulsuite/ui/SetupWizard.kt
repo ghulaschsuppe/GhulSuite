@@ -18,18 +18,13 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.Mail
 import androidx.compose.material.icons.filled.Pin
-import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Smartphone
-import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -80,15 +75,11 @@ class AreaInfo(
 val AREAS = listOf(
     AreaInfo(VaultKindUi.PASS, Res.string.tab_pass, Res.string.area_pass_sub, Tab.PASS, ".ghlpss"),
     AreaInfo(VaultKindUi.TOTP, Res.string.tab_auth, Res.string.area_auth_sub, Tab.AUTH, ".ghltotp"),
-    AreaInfo(VaultKindUi.DRIVE, Res.string.tab_drive, Res.string.area_drive_sub, Tab.DRIVE, ".ghldrv"),
-    AreaInfo(VaultKindUi.MAIL, Res.string.tab_mail, Res.string.area_mail_sub, Tab.MAIL, ".ghlmail"),
     AreaInfo(VaultKindUi.CAL, Res.string.tab_cal, Res.string.area_cal_sub, Tab.CAL, ".ghlcal"),
 )
 
-/** Areas with a name the user picks (Drive and Mail have one file without a name of its own). */
+/** Areas with a name the user picks (each vault of them has a name of its own). */
 val NAMED_AREAS = setOf(VaultKindUi.PASS, VaultKindUi.TOTP, VaultKindUi.CAL)
-
-private enum class DriveChoice { OWN, LATER }
 
 private enum class QuickChoice { NONE, BIO, PIN }
 
@@ -99,8 +90,6 @@ fun showModule(state: AppState, kind: VaultKindUi, on: Boolean) {
     when (kind) {
         VaultKindUi.PASS -> s.moduleGhulPass = on
         VaultKindUi.TOTP -> s.moduleGhulAuth = on
-        VaultKindUi.DRIVE -> s.moduleGhulDrive = on
-        VaultKindUi.MAIL -> s.moduleGhulMail = on
         VaultKindUi.CAL -> s.moduleGhulCal = on
     }
 }
@@ -113,7 +102,6 @@ fun showModule(state: AppState, kind: VaultKindUi, on: Boolean) {
 @Composable
 fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
     val backend = state.backend
-    val net = backend.net
     val settings = backend.settings
     var step by remember { mutableStateOf(1) }
     var created by remember { mutableStateOf(false) }
@@ -133,14 +121,10 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
     var kdf by remember { mutableStateOf<KdfChoice?>(null) }
     var code by remember { mutableStateOf("") }
     // 4: areas
-    val areaOn = remember { mutableStateMapOf(VaultKindUi.PASS to true, VaultKindUi.TOTP to true, VaultKindUi.DRIVE to false, VaultKindUi.MAIL to false, VaultKindUi.CAL to true) }
+    val areaOn = remember { mutableStateMapOf(VaultKindUi.PASS to true, VaultKindUi.TOTP to true, VaultKindUi.CAL to true) }
     val areaName = remember { mutableStateMapOf<VaultKindUi, String>() }
     /** Area files this wizard created (switched off again on a second pass: removed). */
     val made = remember { mutableStateMapOf<VaultKindUi, Boolean>() }
-    var drive by remember { mutableStateOf(DriveChoice.LATER) }
-    val driveForm = rememberServerForm()
-    var mailSheet by remember { mutableStateOf(false) }
-    var mailAdded by remember { mutableStateOf(false) }
     // 6: unlock
     var quick by remember { mutableStateOf(if (backend.biometricAvailable()) QuickChoice.BIO else QuickChoice.NONE) }
     var quickPin by remember { mutableStateOf("") }
@@ -156,7 +140,6 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
     val openKeyfile = rememberOpenFile { file -> keyfile = file.bytes; keyfileSaved = true; error = null }
     val notSaved = stringResource(Res.string.keyfile_not_saved)
     val suiteThere = stringResource(Res.string.storage_suite_exists)
-    val driveMissingFmt = stringResource(Res.string.wz_drive_missing)
     val oneArea = stringResource(Res.string.wz_one_area)
     val pinRule = stringResource(Res.string.wz_pin_rule)
     val keyPinMissing = stringResource(Res.string.wz_key_pin_missing)
@@ -218,15 +201,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                 if (keyPinOk(state, pin)) step = 3 else error = keyPinMissing
             } else if (keyfile != null && keyfileSaved) step = 3 else error = notSaved
             3 -> create()
-            4 -> {
-                val driveMissing = driveForm.missing()
-                when {
-                    AREAS.none { areaOn[it.kind] == true } -> error = oneArea
-                    areaOn[VaultKindUi.DRIVE] == true && drive == DriveChoice.OWN && driveMissing != null ->
-                        scope.launch { error = driveMissingFmt.replace("%1\$s", getString(driveMissing)) }
-                    else -> applyAreas()
-                }
-            }
+            4 -> if (AREAS.none { areaOn[it.kind] == true }) error = oneArea else applyAreas()
             5 -> step = 6
             6 -> {
                 settings.quickUnlockHours = settings.quickUnlockHours.let { if (it in listOf(4, 24, 72, 168, 0)) it else 24 }
@@ -338,7 +313,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                 val on = areaOn[a.kind] == true
                 ListCard {
                     Row(
-                        Modifier.fillMaxWidth().clickable { areaOn[a.kind] = !on; if (a.kind == VaultKindUi.DRIVE && !on) drive = DriveChoice.LATER }
+                        Modifier.fillMaxWidth().clickable { areaOn[a.kind] = !on }
                             .heightIn(min = 60.dp).padding(horizontal = 16.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
@@ -347,41 +322,14 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                             Text(stringResource(a.title), fontWeight = FontWeight.W500, fontSize = 15.sp, color = if (on) g.fg else g.muted)
                             Text(stringResource(a.sub), fontSize = 14.sp, color = g.muted)
                         }
-                        Switch(on, { areaOn[a.kind] = it; if (a.kind == VaultKindUi.DRIVE && it) drive = DriveChoice.LATER })
+                        Switch(on, { areaOn[a.kind] = it })
                     }
                     if (on) {
                         Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            when (a.kind) {
-                                VaultKindUi.PASS, VaultKindUi.TOTP, VaultKindUi.CAL -> OutlinedTextField(
-                                    areaName[a.kind].orEmpty(), { areaName[a.kind] = it }, Modifier.fillMaxWidth(),
-                                    label = { Text(stringResource(Res.string.l_vault_name)) }, singleLine = true, enabled = made[a.kind] != true,
-                                )
-                                VaultKindUi.DRIVE -> {
-                                    Hint(stringResource(Res.string.wz_drive_where))
-                                    SheetList {
-                                        PickRow(drive == DriveChoice.OWN, Icons.Filled.Dns, 1, stringResource(Res.string.wz_own_server), stringResource(Res.string.drive_own_sub),
-                                            onClick = { drive = DriveChoice.OWN }) {
-                                            ServerSetup(state, driveForm, { input, fp -> net.driveSaveServer(input, fp) }) { made[VaultKindUi.DRIVE] = true }
-                                        }
-                                        PickRow(drive == DriveChoice.LATER, Icons.Filled.Schedule, 5, stringResource(Res.string.wz_later), stringResource(Res.string.wz_drive_later_sub),
-                                            divider = true, onClick = { drive = DriveChoice.LATER })
-                                    }
-                                }
-                                VaultKindUi.MAIL -> {
-                                    // The first account right here, in the same sheet as later in GhulMail.
-                                    SheetList {
-                                        ListRow(
-                                            stringResource(if (mailAdded) Res.string.wz_mail_added else Res.string.mail_account_new),
-                                            stringResource(if (mailAdded) Res.string.wz_mail_more else Res.string.mail_add_sub),
-                                            leading = { IconTile(if (mailAdded) Icons.Filled.Check else Icons.Filled.Add, paletteColor(4)) },
-                                        ) { mailSheet = true }
-                                    }
-                                    if (!mailAdded) Hint(stringResource(Res.string.wz_mail_later))
-                                    if (mailSheet) {
-                                        MailAccountSheet(state, null, onSaved = { made[VaultKindUi.MAIL] = true; mailAdded = true }) { mailSheet = false }
-                                    }
-                                }
-                            }
+                            OutlinedTextField(
+                                areaName[a.kind].orEmpty(), { areaName[a.kind] = it }, Modifier.fillMaxWidth(),
+                                label = { Text(stringResource(Res.string.l_vault_name)) }, singleLine = true, enabled = made[a.kind] != true,
+                            )
                         }
                     }
                 }

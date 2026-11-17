@@ -206,8 +206,7 @@ private fun ImportResultCard(r: ImportResultUi, onDone: () -> Unit) {
 @Composable
 fun ExportScreen(state: AppState, padding: PaddingValues) {
     val backend = state.backend
-    // GhulDrive and GhulMail files hold settings and logins only: nothing to export as plain text.
-    val vaults = state.vaults.filter { it.available && it.kind != VaultKindUi.DRIVE && it.kind != VaultKindUi.MAIL }
+    val vaults = state.vaults.filter { it.available }
     var target by remember { mutableStateOf(vaults.firstOrNull()?.id) }
     var password by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
@@ -226,7 +225,7 @@ fun ExportScreen(state: AppState, padding: PaddingValues) {
                     Hint(stringResource(when (v.kind) {
                         VaultKindUi.PASS -> Res.string.export_format_csv
                         VaultKindUi.TOTP -> Res.string.export_format_otpauth
-                        VaultKindUi.CAL, VaultKindUi.DRIVE, VaultKindUi.MAIL -> Res.string.export_format_ics
+                        VaultKindUi.CAL -> Res.string.export_format_ics
                     }))
                 }
                 SecretTextField(password, { password = it; error = null }, stringResource(Res.string.l_master_password))
@@ -240,7 +239,7 @@ fun ExportScreen(state: AppState, padding: PaddingValues) {
                             save(when (vault.kind) {
                                 VaultKindUi.PASS -> "$name.csv"
                                 VaultKindUi.TOTP -> "$name-2fa.txt"
-                                VaultKindUi.CAL, VaultKindUi.DRIVE, VaultKindUi.MAIL -> "$name.ics"
+                                VaultKindUi.CAL -> "$name.ics"
                             }, data)
                         }
                     },
@@ -268,4 +267,4 @@ fun ImportExportSection(state: AppState) {
 
 /** Vault name, with its area when the list mixes GhulPass and GhulAuth vaults ("Personal · GhulAuth"). */
 private fun vaultLabel(v: de.danerd.ghulsuite.model.VaultUi, all: List<de.danerd.ghulsuite.model.VaultUi>): String =
-    if (all.map { it.kind }.distinct().size > 1) v.name + " · " + (when (v.kind) { VaultKindUi.PASS -> "GhulPass"; VaultKindUi.TOTP -> "GhulAuth"; VaultKindUi.CAL -> "GhulCal"; VaultKindUi.DRIVE -> "GhulDrive"; VaultKindUi.MAIL -> "GhulMail" }) else v.name
+    if (all.map { it.kind }.distinct().size > 1) v.name + " · " + (when (v.kind) { VaultKindUi.PASS -> "GhulPass"; VaultKindUi.TOTP -> "GhulAuth"; VaultKindUi.CAL -> "GhulCal" }) else v.name

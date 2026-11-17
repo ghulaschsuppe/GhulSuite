@@ -37,7 +37,7 @@ class FakeCal : CalBackend {
         for (w in -6..6) for (d in 0..4) add(Ev("1", "work", "Team-Standup", m0.plus(w * 7 + d), 570, 585, "Video-Raum", rep = true))
         add(Ev("2", "priv", "Zahnarzt Dr. Weber", t0.plus(1), 600, 645, "Praxis am Markt, Hauptstraße 12", link = true))
         add(Ev("3", "work", "Quartalsbericht freigeben", m0.plus(2), 840, 900, link = true))
-        add(Ev("4", "work", "Wartungsfenster VPN und Mail", m0.plus(5), 360, 540, rem = false, link = true))
+        add(Ev("4", "work", "Wartungsfenster VPN", m0.plus(5), 360, 540, rem = false, link = true))
         for (w in -6..6) {
             add(Ev("5", "sport", "Laufen im Stadtpark", m0.plus(w * 7 + 1), 1110, 1170, rep = true))
             add(Ev("6", "sport", "Laufen im Stadtpark", m0.plus(w * 7 + 3), 1110, 1170, rep = true))
@@ -66,7 +66,7 @@ class FakeCal : CalBackend {
             if (e.s < 0) e.day.plus(e.days - 1).toString() else dateTime(e.day, e.e),
             if (e.rep) CalRepeatUi.WEEKDAYS else CalRepeatUi.NONE, "", emptyList(), if (e.rem) listOf(1440, 60) else emptyList(), e.loc,
             if (id == "2") "Überweisung und Versichertenkarte mitnehmen." else "",
-            if (e.link) listOf(CalLinkUi("drive", "Überweisung.pdf", "f1")) else emptyList(),
+            if (e.link) listOf(CalLinkUi("pass", "Versichertenkarte", "p1|e1")) else emptyList(),
         )
     }
     override suspend fun saveEvent(event: CalEventUi) = "x"

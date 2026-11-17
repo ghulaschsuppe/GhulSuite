@@ -283,11 +283,6 @@ actual fun decodeQrImage(bytes: ByteArray): String? = runCatching {
     com.google.zxing.MultiFormatReader().decode(bitmap, mapOf(com.google.zxing.DecodeHintType.TRY_HARDER to true)).text
 }.getOrNull()
 
-actual val cameraPhotoAvailable: Boolean = false
-
-@androidx.compose.runtime.Composable
-actual fun rememberTakePhoto(onResult: (ByteArray?) -> Unit): () -> Unit = { onResult(null) }
-
 actual fun deviceInfo(): String =
     "${System.getProperty("os.name")} ${System.getProperty("os.version")} (${System.getProperty("os.arch")}) · Java ${System.getProperty("java.version")}"
 

@@ -15,11 +15,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Apps
-import androidx.compose.material.icons.filled.Cloud
-import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Info
@@ -45,7 +42,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-import de.danerd.ghulsuite.model.ServerUi
 import de.danerd.ghulsuite.model.SlotType
 import de.danerd.ghulsuite.model.SlotUi
 import de.danerd.ghulsuite.resources.Res
@@ -61,7 +57,6 @@ private val Gray = Color(0xFF6F7187)
 private val Blue = Color(0xFF2F74E8)
 private val Teal = Color(0xFF0E9F80)
 private val Cyan = Color(0xFF1E9BB8)
-private val Orange = Color(0xFFE0700F)
 private val Pink = Color(0xFFD03B7E)
 
 /** Title of a settings page (top bar). */
@@ -73,12 +68,9 @@ fun SetPage.title(): StringResource = when (this) {
     SetPage.VAULTS -> Res.string.set_vaults
     SetPage.FILE -> Res.string.file_title
     SetPage.IMPORT -> Res.string.set_import_export
-    SetPage.SERVERS -> Res.string.set_servers_share
     SetPage.MODULES -> Res.string.set_modules
     SetPage.PASS -> Res.string.tab_pass
     SetPage.AUTH -> Res.string.tab_auth
-    SetPage.DRIVE -> Res.string.tab_drive
-    SetPage.MAIL -> Res.string.tab_mail
     SetPage.CAL -> Res.string.tab_cal
     SetPage.LOOK -> Res.string.set_view
     SetPage.ABOUT -> Res.string.set_about
@@ -194,8 +186,6 @@ fun SettingsScreen(state: AppState, padding: PaddingValues) {
                 SetRow(Icons.Filled.Layers, Teal, stringResource(Res.string.set_vaults),
                     pluralStringResource(Res.plurals.set_vaults_sub, state.vaults.size, state.vaults.size.toString())) { open(SetPage.VAULTS) }
                 SetRow(Icons.Filled.Download, Cyan, stringResource(Res.string.set_import_export), stringResource(Res.string.set_import_sub)) { open(SetPage.IMPORT) }
-                SetRow(Icons.Filled.Dns, Blue, stringResource(Res.string.set_servers_share),
-                    stringResource(Res.string.set_servers_sub)) { open(SetPage.SERVERS) }
             }
             Group(stringResource(Res.string.set_g_areas)) {
                 SetRow(Icons.Filled.Apps, Gray, stringResource(Res.string.set_modules), stringResource(Res.string.set_modules_sub), first = true) { open(SetPage.MODULES) }
@@ -205,12 +195,6 @@ fun SettingsScreen(state: AppState, padding: PaddingValues) {
                 }
                 if (state.vaults.any { it.kind == VaultKindUi.TOTP }) {
                     SetRow(tabIcon(Tab.AUTH), areaColor(Tab.AUTH), stringResource(Res.string.tab_auth), stringResource(Res.string.set_auth_sub)) { open(SetPage.AUTH) }
-                }
-                if (state.vaults.any { it.kind == VaultKindUi.DRIVE }) {
-                    SetRow(tabIcon(Tab.DRIVE), areaColor(Tab.DRIVE), stringResource(Res.string.tab_drive), stringResource(Res.string.set_drive_sub)) { open(SetPage.DRIVE) }
-                }
-                if (state.vaults.any { it.kind == VaultKindUi.MAIL }) {
-                    SetRow(tabIcon(Tab.MAIL), areaColor(Tab.MAIL), stringResource(Res.string.tab_mail), stringResource(Res.string.set_mail_sub)) { open(SetPage.MAIL) }
                 }
                 if (state.vaults.any { it.kind == VaultKindUi.CAL }) {
                     SetRow(tabIcon(Tab.CAL), areaColor(Tab.CAL), stringResource(Res.string.tab_cal),

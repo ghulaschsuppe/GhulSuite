@@ -23,7 +23,6 @@ import de.danerd.ghulsuite.model.EmergencySheetText
 import de.danerd.ghulsuite.model.FolderRef
 import de.danerd.ghulsuite.model.KeyStatus
 import de.danerd.ghulsuite.model.KeyValueStore
-import de.danerd.ghulsuite.model.NetBackend
 import de.danerd.ghulsuite.model.QuickUnlockReady
 import de.danerd.ghulsuite.model.Settings
 import de.danerd.ghulsuite.model.VaultErrorKind
@@ -55,8 +54,6 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
     override val settings: Settings = Settings(PrefsStore(context))
     // Quick unlock belongs to the own suite (not to a vault opened on its own).
     private val quick = AndroidQuickUnlock(context, { ownSuite }, settings, activity)
-    // Mail and Drive belong to the own suite (also while a vault is open on its own: then locked).
-    override val net: NetBackend = AndroidNetBackend(context) { ownSuite }
     override val cal: de.danerd.ghulsuite.model.CalBackend = AndroidCalBackend(context) { suite }
     override val updater: de.danerd.ghulsuite.model.AppUpdater = AndroidUpdater(context)
     override val appVersion: String =
@@ -115,17 +112,31 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
 
     /**
      * Panic lock: locks the app and removes fingerprint and app PIN, so only the master password
-     * opens it again. Mail notifications and calendar reminders keep working: the panic lock
-     * closes the app, it does not switch off its mail reception.
+     * opens it again. Calendar reminders keep working: the panic lock closes the app.
      */
     override fun panicLock() {
         lock()
         quick.disableAll()
-        // B5 "hard panic": also the mail logins kept for notifications go (until the next unlock).
-        if (settings.panicStopsMail) {
-            val mail = MailNotifications(context)
-            mail.accounts().forEach { mail.disable(it) }
+    }
+
+    override val canShareToApps: Boolean = true
+
+    /** Android's share sheet: a copy in the app's cache (deleted on lock) for the chosen app. */
+    override suspend fun shareToApps(name: String, mime: String, data: ByteArray): Boolean {
+        val uri = withContext(Dispatchers.IO) {
+            val dir = File(context.cacheDir, "shared").apply { deleteRecursively(); mkdirs() }
+            val target = File(dir, safeFileName(name, mutableSetOf())).apply { writeBytes(data) }
+            androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".files", target)
         }
+        val intent = Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, uri)
+        intent.type = mime
+        intent.clipData = ClipData.newRawUri("", uri)
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        ExternalActivity.started()
+        context.startActivity(
+            Intent.createChooser(intent, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION),
+        )
+        return true
     }
 
     // --- key access -----------------------------------------------------------------------

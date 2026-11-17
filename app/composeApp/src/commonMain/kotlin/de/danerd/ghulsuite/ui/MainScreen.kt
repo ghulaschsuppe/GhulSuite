@@ -49,9 +49,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Tune
@@ -59,18 +57,13 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DoneAll
-import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.GridView
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.VerifiedUser
-import androidx.compose.material.icons.outlined.Cloud
-import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Key
@@ -201,8 +194,6 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
     LaunchedEffect(state.tab) { focusManager.clearFocus(force = true) }
     if (state.codeUnconfirmed && top !is Screen.RecoveryCode) CodeReminderDialog(state)
     else if (state.saveAfterProtection && top !is Screen.RecoveryCode) SaveAfterProtectionDialog(state)
-    else if (state.keyChange?.byHand == true && !state.keyChangeLater) KeyChangeDialog(state)
-    state.mailAccountSheet?.let { sheet -> MailAccountSheet(state, sheet.id) { state.mailAccountSheet = null } }
     // A new recovery code cannot be skipped: it must be confirmed first.
     PlatformBackHandler(enabled = top != null && top !is Screen.RecoveryCode) { state.back() }
     UpdateDialog(state)
@@ -225,19 +216,16 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
         AlertDialog(
             danger = true,
             onDismissRequest = { state.deleteAsk = null },
-            title = { Text(stringResource(if (ask.trash) Res.string.ask_trash_title else Res.string.ask_delete_title)) },
+            title = { Text(stringResource(Res.string.ask_delete_title)) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        if (one != null) stringResource(if (ask.trash) Res.string.ask_trash_named else Res.string.ask_delete_named, one)
-                        else pluralStringResource(if (ask.trash) Res.plurals.ask_trash_n else Res.plurals.ask_delete_n, ask.names.size, ask.names.size.toString()),
-                    )
-                    ask.extra?.let { Text(it) }
-                }
+                Text(
+                    if (one != null) stringResource(Res.string.ask_delete_named, one)
+                    else pluralStringResource(Res.plurals.ask_delete_n, ask.names.size, ask.names.size.toString()),
+                )
             },
             confirmButton = {
-                TextButton(onClick = { state.deleteAsk = null; ask.action() }, enabled = ask.ready, modifier = Modifier.testTag("ask-confirm")) {
-                    Text(stringResource(if (ask.trash) Res.string.a_to_trash else Res.string.a_delete))
+                TextButton(onClick = { state.deleteAsk = null; ask.action() }, modifier = Modifier.testTag("ask-confirm")) {
+                    Text(stringResource(Res.string.a_delete))
                 }
             },
             dismissButton = { TextButton(onClick = { state.deleteAsk = null }) { Text(stringResource(Res.string.a_cancel)) } },
@@ -270,7 +258,7 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
             containerColor = MaterialTheme.colorScheme.background,
             snackbarHost = { GhulSnackbarHost(state.snackbar) },
             topBar = {
-                // Mail, compose and entry draw their own header (own actions).
+                // Entries and events draw their own header (own actions).
                 if (top == null) TabTopBar(state)
                 else if (!ownHeader(top)) ScreenTopBar(state, top)
             },
@@ -290,7 +278,7 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
         }
     } else {
         // Sidebar | one column in the middle of the rest, in a readable width (as on a phone, only
-        // with the areas on the left). An opened entry, mail or page takes the place of the list
+        // with the areas on the left). An opened entry or page takes the place of the list
         // and "back" returns to it; there is no third column that mostly stood empty.
         val column = minOf(width - 240.dp - 1.dp, WIDE_COLUMN)
         val cols = ((column - 32.dp) / 220.dp).toInt().coerceIn(2, 6)
@@ -396,8 +384,7 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
     }
 }
 
-private fun ownHeader(top: Screen) = top is Screen.MailRead || top is Screen.MailCompose || top is Screen.EntryDetail ||
-    top is Screen.MailArchive || top is Screen.MailArchiveRead ||
+private fun ownHeader(top: Screen) = top is Screen.EntryDetail ||
     top is Screen.EntryEdit || top is Screen.CalEvent || top is Screen.CalEdit
 
 @Composable
@@ -429,7 +416,6 @@ private fun navTabs(state: AppState): List<NavTab> = state.tabs.map { t ->
         stringResource(if (t == Tab.SETTINGS) Res.string.tab_settings_short else tabTitle(t)),
         tabIcon(t),
         areaColor(t),
-        badge = if (t == Tab.MAIL) state.mailUnread else 0,
         tag = "tab-" + t.name.lowercase(),
     )
 }
@@ -438,22 +424,12 @@ private fun navTabs(state: AppState): List<NavTab> = state.tabs.map { t ->
 fun tabIcon(t: Tab) = when (t) {
     Tab.PASS -> Icons.Outlined.Key
     Tab.AUTH -> Icons.Outlined.VerifiedUser
-    Tab.DRIVE -> Icons.Outlined.Cloud
-    Tab.MAIL -> Icons.Outlined.Email
     Tab.CAL -> Icons.Outlined.CalendarMonth
     Tab.SETTINGS -> Icons.Outlined.Tune
 }
 
 @Composable
 private fun MainFab(state: AppState, onAdd: () -> Unit) {
-    if (state.tab == Tab.MAIL && state.mailReady) {
-        GhulFab(areaColor(Tab.MAIL), Icons.Filled.Edit, stringResource(Res.string.mail_write)) {
-            state.push(Screen.MailCompose(MailDraft(state.mailAccount)))
-        }
-    }
-    if (state.tab == Tab.DRIVE && state.driveReady && !state.driveTrashShown) {
-        GhulFab(areaColor(Tab.DRIVE), Icons.Filled.Add, stringResource(Res.string.a_add)) { state.driveUploadTick++ }
-    }
     if (state.tab == Tab.CAL) {
         GhulFab(areaColor(Tab.CAL), Icons.Filled.Add, stringResource(Res.string.cal_event_short)) { state.calQuickOpen = true }
     }
@@ -480,8 +456,6 @@ private fun TabContents(state: AppState, visited: Set<Tab>, visible: Boolean, pa
                         when (t) {
                             Tab.PASS -> PassListScreen(state, padding)
                             Tab.AUTH -> AuthListScreen(state, padding)
-                            Tab.DRIVE -> DriveScreen(state, padding)
-                            Tab.MAIL -> MailScreen(state, padding)
                             Tab.CAL -> CalScreen(state, padding)
                             Tab.SETTINGS -> SettingsScreen(state, padding)
                         }
@@ -503,15 +477,8 @@ private fun TopScreen(state: AppState, top: Screen, padding: PaddingValues) {
             Screen.Import -> ImportScreen(state, padding)
             Screen.Export -> ExportScreen(state, padding)
             is Screen.RecoveryCode -> RecoveryCodeScreen(state, top.code, padding)
-            Screen.AddServer -> AddServerScreen(state, padding)
             is Screen.SettingsPage -> key(top) { SettingsPageScreen(state, top.page, padding) }
-            is Screen.ModuleInstall -> key(top) { ModuleInstallScreen(state, top.serverId, padding) }
-            Screen.Shares -> SharesScreen(state, padding)
             Screen.Security -> SecurityScreen(state, padding)
-            is Screen.MailRead -> key(top) { MailReadScreen(state, top.accountId, top.folder, top.uid, padding) }
-            is Screen.MailCompose -> key(top) { MailComposeScreen(state, top.draft, padding) }
-            is Screen.MailArchive -> key(top) { MailArchiveScreen(state, top.accountId, padding) }
-            is Screen.MailArchiveRead -> key(top) { MailArchiveReadScreen(state, top.accountId, top.fileId, top.name, padding) }
             is Screen.CalEvent -> key(top) { CalEventScreen(state, top.id, top.day, padding) }
             is Screen.CalEdit -> key(top) { CalEditScreen(state, top.draft, padding) }
         }
@@ -542,7 +509,7 @@ private fun SideNav(state: AppState, tabs: List<Tab>) {
             Column {
                 Text(stringResource(Res.string.app_name), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = t.fg, letterSpacing = (-0.3).sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 3.dp)) {
-                    for (a in listOf(Tab.PASS, Tab.AUTH, Tab.DRIVE, Tab.MAIL, Tab.CAL)) {
+                    for (a in listOf(Tab.PASS, Tab.AUTH, Tab.CAL)) {
                         Box(Modifier.size(width = 14.dp, height = 3.dp).clip(RoundedCornerShape(2.dp)).background(areaColor(a)))
                     }
                 }
@@ -564,12 +531,6 @@ private fun SideNav(state: AppState, tabs: List<Tab>) {
                     stringResource(tabTitle(area)), Modifier.weight(1f), fontSize = 15.sp,
                     fontWeight = if (on) FontWeight.Bold else FontWeight.SemiBold, color = if (on) nav.color else t.fg,
                 )
-                if (nav.badge > 0) {
-                    Box(
-                        Modifier.heightIn(min = 20.dp).widthIn(min = 20.dp).clip(RoundedCornerShape(10.dp)).background(areaColor(Tab.MAIL)).padding(horizontal = 6.dp),
-                        contentAlignment = Alignment.Center,
-                    ) { Text(nav.badge.toString(), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
-                }
             }
         }
         Spacer(Modifier.weight(1f))
@@ -598,15 +559,8 @@ private fun screenTitle(top: Screen?, tab: Tab): String = stringResource(
                             Screen.Import -> Res.string.import_title
                             Screen.Export -> Res.string.export_title
                             is Screen.RecoveryCode -> Res.string.setup_code_title
-                            Screen.AddServer -> Res.string.server_add_title
                             is Screen.SettingsPage -> top.page.title()
-                            is Screen.ModuleInstall -> Res.string.module_title
-                            Screen.Shares -> Res.string.shares_title
                             Screen.Security -> Res.string.sec_title
-                            is Screen.MailRead -> Res.string.mail_read_title
-                            is Screen.MailCompose -> Res.string.mail_compose_title
-                            is Screen.MailArchive -> Res.string.mail_archive_entry
-                            is Screen.MailArchiveRead -> Res.string.mail_read_title
                             is Screen.CalEvent -> Res.string.cal_event_title
                             is Screen.CalEdit -> if (top.draft.id.isEmpty()) Res.string.cal_new_event else Res.string.cal_edit_event
                             null -> tabTitle(tab)
@@ -618,16 +572,6 @@ private fun screenTitle(top: Screen?, tab: Tab): String = stringResource(
 private fun TabActions(state: AppState) {
     when (state.tab) {
         Tab.AUTH -> BarIcon(if (state.authGrid) Icons.AutoMirrored.Filled.ViewList else Icons.Filled.GridView, null) { state.authGrid = !state.authGrid }
-        Tab.DRIVE -> if (state.driveReady) {
-            BarIcon(if (state.driveGrid) Icons.AutoMirrored.Filled.ViewList else Icons.Filled.GridView, null) { state.driveGrid = !state.driveGrid }
-        }
-        Tab.MAIL -> if (state.mailReady) {
-            BarIcon(Icons.Filled.Refresh, stringResource(Res.string.a_refresh)) { state.mailRefreshTick++ }
-            // The folder's actions (archive in GhulDrive) need one account, not "all inboxes".
-            if (state.mailAccount != null && state.mailAccount != ALL_INBOXES) {
-                BarIcon(Icons.Filled.MoreVert, stringResource(Res.string.mail_folder_menu)) { state.mailFolderMenu = true }
-            }
-        }
         Tab.CAL -> {
             CalTodayIcon { state.calSel = today(); if (state.calView == CalView.LIST) state.calView = CalView.MONTH }
             BarIcon(Icons.Filled.Search, stringResource(Res.string.cal_search_short)) { state.calView = CalView.LIST; state.calSearchTick++ }
@@ -641,7 +585,7 @@ val LocalTabActive = compositionLocalOf { true }
 
 /**
  * [AppState.revision] as seen by this screen: a hidden tab keeps its value and catches up when it
- * becomes visible again, so hidden tabs do not reload (e.g. mail over the network) on every change.
+ * becomes visible again, so hidden tabs do not reload on every change.
  */
 @Composable
 fun AppState.liveRevision(): Int {
@@ -664,8 +608,6 @@ private fun KeepAlive(visible: Boolean, content: @Composable () -> Unit) {
 internal fun tabTitle(t: Tab) = when (t) {
     Tab.PASS -> Res.string.tab_pass
     Tab.AUTH -> Res.string.tab_auth
-    Tab.DRIVE -> Res.string.tab_drive
-    Tab.MAIL -> Res.string.tab_mail
     Tab.CAL -> Res.string.tab_cal
     Tab.SETTINGS -> Res.string.tab_settings
 }

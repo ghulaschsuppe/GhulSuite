@@ -6,7 +6,7 @@ import android.content.Intent
 import java.security.SecureRandom
 
 /**
- * B7: the internal actions of MainActivity ("open mail", "open event") come only from the app's
+ * B7: the internal actions of MainActivity ("open event") come only from the app's
  * own notifications. They carry a random token known only to this installation; MainActivity is
  * exported (launcher), so another app could otherwise send these actions as well.
  */

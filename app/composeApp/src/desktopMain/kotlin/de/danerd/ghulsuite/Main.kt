@@ -88,9 +88,7 @@ fun main(args: Array<String>) {
     )
 
     application {
-        // Unread mails appear as a number on a small envelope in the taskbar icon (only while unlocked).
-        val unread = if (backend.unlocked.collectAsState().value) state.mailUnread else 0
-        val icon = remember(unread) { badgeIcon(unread) }
+        val icon = remember { appIcon() }
         Window(
             onCloseRequest = {
                 backend.lock()
@@ -124,7 +122,7 @@ fun main(args: Array<String>) {
             }
 
             // A background job that ends while the window is not in front: a Windows notification.
-            // Only what ended and the counts: no file or mail names, they would stay in the Action
+            // Only what ended and the counts: no file names, they would stay in the Action
             // Center after the suite is locked.
             LaunchedEffect(Unit) {
                 de.danerd.ghulsuite.ui.JobStatus.finished.collect { end ->
@@ -154,7 +152,7 @@ fun main(args: Array<String>) {
                     val waitingForKey = state.busy
                     // A few seconds of grace, so that a short switch (e.g. to a system dialog) does not lock.
                     val autoLock = maxOf(backend.settings.autoLockSeconds * 1000L, 3000L)
-                    // A running background job (upload, mail archive) is not cut off: the lock
+                    // A running background job is not cut off: the lock
                     // follows when it ends, unless the user is back by then. Ctrl+L locks at once.
                     when {
                         backend.settings.lockOnScreenOff && WinNative.workstationLocked() -> state.autoLock()

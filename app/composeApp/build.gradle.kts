@@ -130,7 +130,6 @@ kotlin {
                 implementation(libs.androidx.camera.view)
                 implementation(libs.zxing.core)
                 implementation(libs.androidx.documentfile)
-                implementation(libs.androidx.work.runtime)
                 implementation(libs.kotlinx.coroutines.android)
                 implementation("${libs.jna.get()}@aar")
             }
@@ -344,7 +343,7 @@ compose.desktop {
             packageName = "GhulSuite"
             // MSI needs a purely numeric version (see msiVersion).
             packageVersion = msiVersion
-            description = "GhulSuite: Passwörter, 2FA, Dateien, Mail und Kalender, verschlüsselt"
+            description = "GhulSuite: Passwörter, 2FA und Kalender, verschlüsselt"
             vendor = "GhulSuite"
             copyright = "© 2026 Daniel Erdmann · AGPL-3.0-or-later"
             licenseFile.set(rootProject.layout.projectDirectory.file("../LICENSE"))

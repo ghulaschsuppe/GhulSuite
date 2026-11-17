@@ -76,8 +76,6 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
     var revealed by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
     var sorting by remember { mutableStateOf(false) }
     var exporting by remember { mutableStateOf<Pair<TotpCodeUi, String>?>(null) }
-    var clock by remember { mutableStateOf<Long?>(null) }
-    LaunchedEffect(Unit) { clock = catching { state.backend.clockOffset(nowSeconds()) }.getOrNull() }
     val settings = state.backend.settings
     val vaults = state.vaultsOf(VaultKindUi.TOTP)
     val filter = state.authVault
@@ -218,12 +216,6 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
         if (!shown.isNullOrEmpty()) {
             item(key = "hint") {
                 HintText(stringResource(Res.string.auth_tap_hint_short) + " " + stringResource(Res.string.auth_swipe_hint), Modifier.padding(top = 2.dp))
-            }
-            item(key = "clock") {
-                clock?.let { off ->
-                    val ok = kotlin.math.abs(off) <= 15
-                    Banner(Icons.Filled.Schedule, if (ok) stringResource(Res.string.auth_clock_ok) else stringResource(Res.string.auth_clock_off, off.toString()))
-                }
             }
         }
     }

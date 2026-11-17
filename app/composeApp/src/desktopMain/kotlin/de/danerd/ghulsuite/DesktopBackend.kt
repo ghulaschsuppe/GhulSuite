@@ -1,19 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package de.danerd.ghulsuite
 
-import de.danerd.ghulsuite.core.GhulSuite
 import de.danerd.ghulsuite.core.HidTransport
 import de.danerd.ghulsuite.core.VaultStorage
 import de.danerd.ghulsuite.core.localStorage
 import de.danerd.ghulsuite.core.platformSecurityKey
 import de.danerd.ghulsuite.core.platformSecurityKeyAvailable
 import de.danerd.ghulsuite.model.SuiteFileRef
-import de.danerd.ghulsuite.model.DriveItemUi
 import de.danerd.ghulsuite.model.EmergencySheetText
 import de.danerd.ghulsuite.model.FolderRef
 import de.danerd.ghulsuite.model.KeyStatus
 import de.danerd.ghulsuite.model.KeyValueStore
-import de.danerd.ghulsuite.model.NetBackend
 import de.danerd.ghulsuite.model.QuickUnlockReady
 import de.danerd.ghulsuite.model.Settings
 import de.danerd.ghulsuite.model.VaultErrorKind
@@ -148,8 +145,6 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
     CoreVaultBackend(File(DesktopPaths.dataDir, "local").absolutePath) {
     private val device = PropertiesStore(File(DesktopPaths.dataDir, "device.properties"))
     override val settings: Settings = Settings(PropertiesStore(File(DesktopPaths.dataDir, "settings.properties")))
-    // Mail and Drive belong to the own suite (also while a vault is open on its own: then locked).
-    override val net: NetBackend = DesktopNetBackend { ownSuite }
     override val cal: de.danerd.ghulsuite.model.CalBackend = DesktopCalBackend(window) { suite }
     override val updater: de.danerd.ghulsuite.model.AppUpdater = DesktopUpdater()
     override val appVersion: String = DESKTOP_VERSION + if (DesktopPaths.portable) " (portabel)" else ""
@@ -257,6 +252,15 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
 
     // --- tools --------------------------------------------------------------------------------
 
+    /** Windows has no share sheet: the file opens in the program registered for it. */
+    override suspend fun shareToApps(name: String, mime: String, data: ByteArray): Boolean {
+        val f = withContext(Dispatchers.IO) {
+            val dir = DesktopPaths.shareDir.apply { mkdirs() }
+            File(dir, safeFileName(name, mutableSetOf())).apply { writeBytes(data) }
+        }
+        return runCatching { java.awt.Desktop.getDesktop().open(f) }.isSuccess
+    }
+
     override fun printEmergencySheet(code: String, text: EmergencySheetText) = DesktopEmergencySheet.print(code, text)
 
     override fun copySensitive(label: String, text: String) {
@@ -278,35 +282,4 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
             }
         }
     }
-}
-
-/** Desktop: decrypted files are opened with the program Windows uses for them. */
-class DesktopNetBackend(suite: () -> GhulSuite) : CoreNetBackend(suite) {
-    /** Windows has no share sheet: the file opens in the program registered for it. */
-    override suspend fun shareBytesToApps(name: String, mime: String, data: ByteArray): Boolean {
-        val f = withContext(Dispatchers.IO) {
-            val dir = DesktopPaths.shareDir.apply { mkdirs() }
-            File(dir, safeFileName(name, mutableSetOf())).apply { writeBytes(data) }
-        }
-        return runCatching { java.awt.Desktop.getDesktop().open(f) }.isSuccess
-    }
-
-    override suspend fun shareDriveToApps(files: List<DriveItemUi>) {
-        val written = withContext(Dispatchers.IO) {
-            val dir = DesktopPaths.shareDir.apply { mkdirs() }
-            val used = mutableSetOf<String>()
-            files.filter { !it.isDir }.map { f ->
-                File(dir, safeFileName(f.name, used)).also { target -> writeDriveFile(f.id, target) }
-            }
-        }
-        if (written.isEmpty()) return
-        val desktop = java.awt.Desktop.getDesktop()
-        // One file: open it; several: show the folder.
-        if (written.size == 1) desktop.open(written[0]) else desktop.open(DesktopPaths.shareDir)
-    }
-
-    // Mail notifications while locked need a background service; on the desktop not yet.
-    override fun mailNotificationsOn(accountId: String): Boolean = false
-
-    override suspend fun setMailNotifications(accountId: String, on: Boolean) {}
 }

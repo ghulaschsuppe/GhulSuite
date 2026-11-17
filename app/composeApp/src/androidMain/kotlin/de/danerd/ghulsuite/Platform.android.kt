@@ -34,26 +34,6 @@ actual fun decodeQrImage(bytes: ByteArray): String? = runCatching {
     com.google.zxing.MultiFormatReader().decode(bitmap, mapOf(com.google.zxing.DecodeHintType.TRY_HARDER to true)).text
 }.getOrNull()
 
-actual val cameraPhotoAvailable: Boolean = true
-
-@androidx.compose.runtime.Composable
-actual fun rememberTakePhoto(onResult: (ByteArray?) -> Unit): () -> Unit {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val file = androidx.compose.runtime.remember { java.io.File(context.cacheDir, "scan/scan.jpg") }
-    val launcher = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.TakePicture()) { ok ->
-        val data = if (ok && file.exists()) runCatching { file.readBytes() }.getOrNull() else null
-        file.delete()
-        onResult(data)
-    }
-    return {
-        file.parentFile?.mkdirs()
-        file.delete()
-        val uri = androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".files", file)
-        de.danerd.ghulsuite.ExternalActivity.started()
-        launcher.launch(uri)
-    }
-}
-
 actual fun deviceInfo(): String =
     "Android ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT}) · " +
         "${android.os.Build.MANUFACTURER.replaceFirstChar { it.uppercase() }} ${android.os.Build.MODEL}"

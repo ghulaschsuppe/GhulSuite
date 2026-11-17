@@ -95,8 +95,6 @@ class Settings(private val store: KeyValueStore) {
         val AREA_KEYS: Map<String, VaultKindUi> = mapOf(
             "generator_mode" to VaultKindUi.PASS,
             "generator_length" to VaultKindUi.PASS,
-            "drive_trash_days" to VaultKindUi.DRIVE,
-            "mail_image_senders" to VaultKindUi.MAIL,
             "cal_holidays" to VaultKindUi.CAL,
             "cal_region" to VaultKindUi.CAL,
             "cal_default_reminder" to VaultKindUi.CAL,
@@ -118,8 +116,6 @@ class Settings(private val store: KeyValueStore) {
     var autoLockSeconds by int("auto_lock_seconds", 60)
     var lockOnScreenOff by bool("lock_on_screen_off", true)
     var shakeToLock by bool("shake_to_lock", true)
-    /** B5: the panic lock also removes the mail logins kept for notifications (no more mails until unlocked). */
-    var panicStopsMail by bool("panic_stops_mail", false)
     /** 0 = low, 1 = medium, 2 = high sensitivity. */
     var shakeSensitivity by int("shake_sensitivity", 1)
     /** 0 = never clear. */
@@ -139,8 +135,6 @@ class Settings(private val store: KeyValueStore) {
         set(v) { themeOrdinal = v.ordinal }
     var moduleGhulPass by bool("module_pass", true)
     var moduleGhulAuth by bool("module_auth", true)
-    var moduleGhulDrive by bool("module_drive", true)
-    var moduleGhulMail by bool("module_mail", true)
     var moduleGhulCal by bool("module_cal", true)
 
     // --- GhulCal
@@ -171,9 +165,7 @@ class Settings(private val store: KeyValueStore) {
         calHidden = (if (id in s) s - id else s + id).joinToString(",")
     }
 
-    // --- Servers
-    /** Synchronise after unlocking and after changes (if a sync server is set). */
-    var autoSync by bool("auto_sync", true)
+    // --- Lists
     var showEntrySubtitles by bool("show_subtitles", true)
     var totpHideCodes by bool("totp_hide", false)
     var totpShowNext by bool("totp_next", true)
@@ -187,24 +179,13 @@ class Settings(private val store: KeyValueStore) {
     var generatorMode by int("generator_mode", 0)
     var generatorLength by int("generator_length", 20)
 
-    // --- GhulDrive
-    /** Days until trashed files are deleted for good (0 = never). */
-    var driveTrashDays by int("drive_trash_days", 30)
-
     // --- Start
     /** Area opened after unlocking: -1 = the one used last, else the tab index. */
     var startTab by int("start_tab", -1)
     var lastTab by int("last_tab", 0)
 
-    // --- GhulMail
-    /** Swipe left: 0 archive, 1 delete, 2 mark as read. */
-    var mailSwipeLeft by int("mail_swipe_left", 0)
     /** App language: "" follows the system, otherwise a language tag ("de", "en"). */
     var appLanguage by str("app_language", "")
-    /** Last automatic run of the mail archive on this device (seconds since 1970, as text): at most once a day. */
-    var archiveAutoLast by str("archive_auto_last_s", "0")
-    /** Senders whose HTML mails load images from the internet without asking (lower case, newline separated). */
-    var mailImageSenders by str("mail_image_senders", "")
 
     // --- GhulAuth
     /** 0 = by name, 1 = newest first, 2 = favourites first. */

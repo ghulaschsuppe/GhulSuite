@@ -64,8 +64,8 @@ expect fun rememberPickFolder(onPicked: (de.danerd.ghulsuite.model.FolderRef) ->
 expect fun rememberOpenStream(onPicked: (de.danerd.ghulsuite.model.ByteSource) -> Unit): () -> Unit
 
 /**
- * The same for several files at once (GhulDrive). Each file is only opened when it is read, so
- * choosing many files keeps nothing open.
+ * The same for several files at once. Each file is only opened when it is read, so choosing many
+ * files keeps nothing open.
  */
 @Composable
 expect fun rememberOpenStreams(onPicked: (List<de.danerd.ghulsuite.model.ByteSource>) -> Unit): () -> Unit
@@ -82,12 +82,6 @@ expect fun qrModules(text: String): List<BooleanArray>
 
 /** Finds a QR code in an image file (PNG, JPEG, …); null if there is none. */
 expect fun decodeQrImage(bytes: ByteArray): String?
-
-/** Takes a photo with the camera (document scan); null if cancelled or not available. */
-expect val cameraPhotoAvailable: Boolean
-
-@androidx.compose.runtime.Composable
-expect fun rememberTakePhoto(onResult: (ByteArray?) -> Unit): () -> Unit
 
 /** Operating system and device for error reports, e.g. "Android 15 (API 35) · Google Pixel 8". */
 expect fun deviceInfo(): String

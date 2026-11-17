@@ -51,8 +51,6 @@ fun extensionOf(kind: VaultKindUi) = when (kind) {
     VaultKindUi.PASS -> "ghlpss"
     VaultKindUi.TOTP -> "ghltotp"
     VaultKindUi.CAL -> "ghlcal"
-    VaultKindUi.DRIVE -> "ghldrv"
-    VaultKindUi.MAIL -> "ghlmail"
 }
 
 /** Name of the area a vault belongs to. */
@@ -60,8 +58,6 @@ fun kindLabel(kind: VaultKindUi) = when (kind) {
     VaultKindUi.PASS -> Res.string.tab_pass
     VaultKindUi.TOTP -> Res.string.tab_auth
     VaultKindUi.CAL -> Res.string.tab_cal
-    VaultKindUi.DRIVE -> Res.string.tab_drive
-    VaultKindUi.MAIL -> Res.string.tab_mail
 }
 
 /** Filter chips "All" + one per vault; hidden when there is only one vault. */
@@ -189,13 +185,7 @@ fun VaultsSection(state: AppState) {
         for (v in state.vaults) {
             Box {
                 // The same row as in every list: tile in the colour of the area, name, what it holds.
-                val tab = when (v.kind) {
-                    VaultKindUi.PASS -> Tab.PASS
-                    VaultKindUi.CAL -> Tab.CAL
-                    VaultKindUi.DRIVE -> Tab.DRIVE
-                    VaultKindUi.MAIL -> Tab.MAIL
-                    else -> Tab.AUTH
-                }
+                val tab = tabOf(v.kind)
                 ListRow(
                     v.name,
                     when {

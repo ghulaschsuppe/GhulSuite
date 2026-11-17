@@ -19,9 +19,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.compose.runtime.snapshotFlow
 import de.danerd.ghulsuite.ui.AppLaunch
-import de.danerd.ghulsuite.ui.MailTarget
 import de.danerd.ghulsuite.ui.AppState
-import de.danerd.ghulsuite.ui.Tab
 import de.danerd.ghulsuite.ui.GhulSuiteApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -57,9 +55,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         if (current?.get() === this) current = null
-        // Files shared into GhulDrive may only be read while this window lives (Android's rule for
-        // shared files): once it is closed for good, they cannot be uploaded any more.
-        if (isFinishing) de.danerd.ghulsuite.ui.AppLaunch.driveFiles.value = null
         super.onDestroy()
     }
 
@@ -152,26 +147,12 @@ class MainActivity : ComponentActivity() {
         handleLaunch(intent)
     }
 
-    /**
-     * A tapped mail notification opens the new mail, or the account's inbox if several arrived
-     * (right away, or once the suite is unlocked).
-     */
+    /** A tapped reminder opens its event (right away, or once the suite is unlocked). */
     private fun handleLaunch(intent: Intent?) {
         // B7: only from the app's own notifications.
-        if (intent != null && (intent.action == ACTION_OPEN_MAIL || intent.action == ACTION_OPEN_EVENT) &&
-            !IntentToken.valid(this, intent)
-        ) {
+        if (intent != null && intent.action == ACTION_OPEN_EVENT && !IntentToken.valid(this, intent)) {
             intent.action = null
             return
-        }
-        if (intent?.action == ACTION_OPEN_MAIL) {
-            val account = intent.getStringExtra(EXTRA_MAIL_ACCOUNT)
-            if (account != null) {
-                AppLaunch.openMail.value = MailTarget(account, intent.getIntExtra(EXTRA_MAIL_UID, 0).toUInt().toLong())
-            } else {
-                AppLaunch.openTab.value = Tab.MAIL
-            }
-            intent.action = null
         }
         if (intent?.action == ACTION_OPEN_EVENT) {
             AppLaunch.openEvent.value = intent.getStringExtra(CalReminders.EXTRA_KEY)
@@ -180,9 +161,6 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
-        const val ACTION_OPEN_MAIL = "de.danerd.ghulsuite.OPEN_MAIL"
-        const val EXTRA_MAIL_ACCOUNT = "de.danerd.ghulsuite.MAIL_ACCOUNT"
-        const val EXTRA_MAIL_UID = "de.danerd.ghulsuite.MAIL_UID"
         const val ACTION_OPEN_EVENT = "de.danerd.ghulsuite.OPEN_EVENT"
         /** The running activity (language switch). */
         @Volatile

@@ -66,6 +66,12 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.FolderZip
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -198,12 +204,14 @@ fun areaColor(tab: Tab): Color {
     return when (tab) {
         Tab.PASS -> if (dark) VioletLight else Violet
         Tab.AUTH -> if (dark) Color(0xFF4FD8B6) else Color(0xFF0E9F80)
-        Tab.DRIVE -> if (dark) Color(0xFF6FA8FF) else Color(0xFF2F74E8)
-        Tab.MAIL -> if (dark) Color(0xFFFFA25C) else Color(0xFFE0700F)
         Tab.CAL -> if (dark) Color(0xFFFF7AA8) else Color(0xFFD6336C)
         Tab.SETTINGS -> g.accent
     }
 }
+
+/** Colour of a favourite's star (the same in every area). */
+@Composable
+fun starColor(): Color = if (LocalDark.current) Color(0xFFFFA25C) else Color(0xFFE0700F)
 
 private val AvatarColors = listOf(
     0xFF7B61FF, 0xFF2F74E8, 0xFF0E9F80, 0xFFE0700F, 0xFFD03B7E, 0xFF8E5BD8, 0xFF1E9BB8, 0xFFC0533A, 0xFF4E8A2E, 0xFFB58600,
@@ -607,7 +615,7 @@ fun StrengthMeter(score: Int) {
 @Composable
 fun Hint(text: String) = HintText(text)
 
-/** App name with a shield tile and the five areas, at the top of start and unlock. */
+/** App name with a shield tile and the areas, at the top of start and unlock. */
 @Composable
 fun BrandHeader(subtitle: String? = null) {
     Column(Modifier.fillMaxWidth().padding(top = 40.dp, bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally,
@@ -622,7 +630,7 @@ fun BrandHeader(subtitle: String? = null) {
         }
         Text(stringResource(Res.string.app_name), fontSize = 28.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.84).sp, modifier = Modifier.padding(top = 4.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            for (t in listOf(Tab.PASS, Tab.AUTH, Tab.DRIVE, Tab.MAIL, Tab.CAL)) {
+            for (t in listOf(Tab.PASS, Tab.AUTH, Tab.CAL)) {
                 Box(Modifier.size(width = 24.dp, height = 4.dp).clip(RoundedCornerShape(2.dp)).background(areaColor(t)))
             }
         }
@@ -660,12 +668,70 @@ fun ConfirmByName(name: String, typed: String, onTyped: (String) -> Unit) {
     )
 }
 
-/** The area of a container kind as the core names it (`pass`, `totp`, `cal`, `drive`, `mail`). */
+/** The area of a container kind as the core names it (`pass`, `totp`, `cal`). */
 fun vaultKindOf(kind: String): de.danerd.ghulsuite.model.VaultKindUi = when (kind) {
     "pass" -> de.danerd.ghulsuite.model.VaultKindUi.PASS
     "cal" -> de.danerd.ghulsuite.model.VaultKindUi.CAL
-    "drive" -> de.danerd.ghulsuite.model.VaultKindUi.DRIVE
-    "mail" -> de.danerd.ghulsuite.model.VaultKindUi.MAIL
     else -> de.danerd.ghulsuite.model.VaultKindUi.TOTP
 }
 
+/** Unix seconds or milliseconds → local date and time. */
+fun formatDateTime(time: Long): String {
+    val millis = if (time < 100_000_000_000L) time * 1000 else time
+    return formatDate(millis) + " " + formatTime(millis)
+}
+
+/**
+ * The text for a count, looked up after an action is done. It never fails: if the text cannot be
+ * read, the numbers alone are shown, so a finished action is never reported as failed.
+ */
+suspend fun countText(
+    env: org.jetbrains.compose.resources.ResourceEnvironment,
+    res: org.jetbrains.compose.resources.PluralStringResource,
+    count: Int,
+    vararg args: Any,
+): String = try {
+    org.jetbrains.compose.resources.getPluralString(env, res, count, *args)
+} catch (c: kotlinx.coroutines.CancellationException) {
+    throw c
+} catch (_: Exception) {
+    args.joinToString(" ")
+}
+
+/** Human-readable size: 1.2 MB. */
+fun formatSize(bytes: Long): String = when {
+    bytes < 1024 -> "$bytes B"
+    bytes < 1024 * 1024 -> "${(bytes * 10 / 1024) / 10.0} KB"
+    bytes < 1024L * 1024 * 1024 -> "${(bytes * 10 / (1024 * 1024)) / 10.0} MB"
+    else -> "${(bytes * 10 / (1024L * 1024 * 1024)) / 10.0} GB"
+}
+
+/** Icon and colour of a file by its name (attachments of GhulPass entries). */
+fun fileKind(name: String): Pair<ImageVector, Color> = when (name.substringAfterLast('.', "").lowercase()) {
+    "jpg", "jpeg", "png", "gif", "webp", "heic" -> Icons.Filled.Image to paletteColor(1)
+    "mp4", "mov", "mkv", "webm" -> Icons.Filled.Movie to paletteColor(4)
+    "mp3", "m4a", "ogg", "flac", "wav" -> Icons.Filled.MusicNote to paletteColor(5)
+    "pdf" -> Icons.Filled.Description to paletteColor(7)
+    "zip", "7z", "rar", "tar", "gz" -> Icons.Filled.FolderZip to paletteColor(9)
+    else -> Icons.Filled.Description to paletteColor(9)
+}
+
+/** Asks for a name: something new is created, something that exists is saved under its new name. */
+@Composable
+fun NameDialog(title: String, initial: String, onDismiss: () -> Unit, onDone: (String) -> Unit) {
+    val confirm = stringResource(if (initial.isEmpty()) Res.string.a_create else Res.string.a_save)
+    var name by remember { mutableStateOf(initial) }
+    // The cursor is in the field right away: there is nothing else to do in this dialog.
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    androidx.compose.runtime.LaunchedEffect(Unit) { kotlinx.coroutines.delay(250); catching { focus.requestFocus() } }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            OutlinedTextField(name, { name = it }, singleLine = true, label = { Text(stringResource(Res.string.f_name)) },
+                modifier = Modifier.fillMaxWidth().focusRequester(focus))
+        },
+        confirmButton = { TextButton(onClick = { onDone(name.trim()) }, enabled = name.isNotBlank()) { Text(confirm) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(Res.string.a_cancel)) } },
+    )
+}

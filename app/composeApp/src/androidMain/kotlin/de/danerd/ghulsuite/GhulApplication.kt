@@ -91,8 +91,6 @@ class GhulApplication : Application() {
             override fun onActivityDestroyed(activity: Activity) { if (current?.get() === activity) current = null }
         })
         backend = AndroidVaultBackend(this) { current?.get() }
-        // Instant mail notifications, if switched on (also after the app was closed by Android).
-        MailPushService.start(this)
 
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {

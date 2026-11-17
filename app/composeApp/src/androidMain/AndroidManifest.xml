@@ -7,9 +7,8 @@
 
     <!-- Only for scanning 2FA QR codes; asked when the scanner is opened. -->
     <uses-permission android:name="android.permission.CAMERA" />
-    <!-- Own servers (SFTP), GhulDrive and GhulMail. -->
+    <!-- Only the update check and the password leak check of GhulPass (both can be switched off). -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <!-- A short buzz confirms the panic lock by shaking. -->
     <uses-permission android:name="android.permission.VIBRATE" />
@@ -18,13 +17,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- Instant new-mail notifications (only if switched on for an account): an open IMAP IDLE connection. -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
+    <!-- GhulCal reminders at the exact minute (calendar apps may use exact alarms), again after a restart. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!-- GhulCal reminders at the exact minute (calendar apps may use exact alarms). -->
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- App updates from the project's signed releases (AndroidUpdater); not used by store installs. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
@@ -53,8 +49,8 @@
         </activity>
 
         <!--
-          GhulSuite as the phone's mail and calendar app: mailto links, "send by e-mail", .ics
-          files and "add to calendar" from other apps. Invisible; hands over to MainActivity.
+          GhulSuite as the phone's calendar app: .ics files and "add to calendar" from other apps,
+          and suite files from a file manager. Invisible; hands over to MainActivity.
         -->
         <activity
             android:name=".IntentEntryActivity"
@@ -65,25 +61,7 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.APP_EMAIL" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.APP_CALENDAR" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.SENDTO" />
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="mailto" />
-            </intent-filter>
-            <intent-filter android:label="@string/share_as_mail">
-                <action android:name="android.intent.action.SEND" />
-                <action android:name="android.intent.action.SEND_MULTIPLE" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="*/*" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
@@ -121,23 +99,6 @@
             </intent-filter>
         </activity>
 
-        <!--
-          "Save in GhulDrive" in the share menu of other apps: the same invisible entry, under its
-          own name; the files are uploaded encrypted into GhulDrive after unlocking.
-        -->
-        <activity-alias
-            android:name=".ShareToDriveActivity"
-            android:exported="true"
-            android:label="@string/share_to_drive"
-            android:targetActivity=".IntentEntryActivity">
-            <intent-filter android:label="@string/share_to_drive">
-                <action android:name="android.intent.action.SEND" />
-                <action android:name="android.intent.action.SEND_MULTIPLE" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="*/*" />
-            </intent-filter>
-        </activity-alias>
-
         <service
             android:name=".UnlockedService"
             android:exported="false"
@@ -146,11 +107,6 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Shows that the password vault is unlocked and offers an immediate lock (panic lock by shaking)." />
         </service>
-
-        <service
-            android:name=".MailPushService"
-            android:exported="false"
-            android:foregroundServiceType="remoteMessaging" />
 
         <receiver android:name=".CalAlarmReceiver" android:exported="false">
             <intent-filter>
@@ -164,15 +120,6 @@
         <!-- Result of an app update (only the system installer sends it, through our PendingIntent). -->
         <receiver android:name=".UpdateResultReceiver" android:exported="false" />
 
-        <receiver android:name=".MailPushBootReceiver" android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
-                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
-            </intent-filter>
-        </receiver>
-
         <service
             android:name=".LockTileService"
             android:exported="true"
@@ -184,7 +131,7 @@
             </intent-filter>
             <meta-data android:name="android.service.quicksettings.TOGGLEABLE_TILE" android:value="false" />
         </service>
-        <!-- Decrypted copies of GhulDrive files handed to other apps (deleted on lock). -->
+        <!-- Copies handed to other apps (an .ics file, the error report; deleted on lock). -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.files"

@@ -23,8 +23,8 @@ import kotlinx.coroutines.launch
 
 /**
  * Runs only while the vault is unlocked: shows a notification with a "Lock" action and
- * detects shaking (panic lock). Stops as soon as the vault is locked. While a background job runs
- * (upload, mail archive), the notification shows it with its progress and "Cancel"; a job that
+ * detects shaking (panic lock). Stops as soon as the vault is locked. While a background job runs,
+ * the notification shows it with its progress and "Cancel"; a job that
  * ends while the app is not in front leaves a short notification.
  */
 class UnlockedService : Service() {

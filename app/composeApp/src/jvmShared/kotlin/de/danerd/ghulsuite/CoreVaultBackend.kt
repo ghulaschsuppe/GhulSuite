@@ -39,7 +39,6 @@ import de.danerd.ghulsuite.model.OpenVaultUi
 import de.danerd.ghulsuite.model.OtpAlgorithmUi
 import de.danerd.ghulsuite.model.PasswordOptionsUi
 import de.danerd.ghulsuite.model.ProtectionUi
-import de.danerd.ghulsuite.model.ServerInputUi
 import de.danerd.ghulsuite.model.SetupUi
 import de.danerd.ghulsuite.model.SlotType
 import de.danerd.ghulsuite.model.SlotUi
@@ -221,7 +220,7 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
     override val singleWritesChanged: StateFlow<Int> = pendingTick.asStateFlow()
 
     /** File extensions of vault files (a record that cannot be read falls back to them). */
-    private val VAULT_EXTENSIONS = setOf("ghlpss", "ghltotp", "ghlcal", "ghldrv", "ghlmail")
+    private val VAULT_EXTENSIONS = setOf("ghlpss", "ghltotp", "ghlcal")
 
     /** Where vaults opened on their own are kept meanwhile, each in a folder of its own. */
     private fun singleBase() = java.io.File(localDir).absoluteFile.resolveSibling("single-vault")
@@ -531,7 +530,7 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
             closeSingle()
             return
         }
-        // F92: returns at once, also while a slow server still holds the open suite (the main
+        // F92: returns at once, also while a slow call still holds the open suite (the main
         // thread must not wait for it); the rest is dropped in the background when that ends.
         val s = suite
         s.lock()
@@ -857,15 +856,7 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
 
     override suspend fun totpUri(vaultId: String, id: String): String = io { suite.totpUri(vaultId, id.hexToBytes()) }
 
-    override suspend fun clockOffset(nowSeconds: Long): Long? = io { suite.clockOffset(nowSeconds) }
-
-
-
     override suspend fun pwnedCount(password: String): Int = io { de.danerd.ghulsuite.core.pwnedCount(password).toInt() }
-
-    override suspend fun sendReport(report: String, note: String, contact: String) = io {
-        de.danerd.ghulsuite.core.reportSend(report, note, contact)
-    }
 }
 
 internal fun ArchiveCheck.toUi() = ArchiveCheckUi(
