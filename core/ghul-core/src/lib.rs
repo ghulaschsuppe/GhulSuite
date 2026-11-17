@@ -16,7 +16,6 @@ pub mod error;
 pub mod kdf;
 pub mod net;
 pub mod pin;
-pub mod report;
 pub mod share;
 pub mod totp;
 pub mod update;
