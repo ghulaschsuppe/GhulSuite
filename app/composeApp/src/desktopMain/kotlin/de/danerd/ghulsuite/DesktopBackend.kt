@@ -166,6 +166,8 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
         runCatching { File(ref.id).takeIf { it.isFile }?.readBytes() }.getOrNull()
     }
 
+    override suspend fun canWriteSuiteFile(ref: SuiteFileRef): Boolean = withContext(Dispatchers.IO) { File(ref.id).canWrite() }
+
     /** Written next to the file first and moved over it in one step: a pulled stick leaves the old file. */
     override suspend fun writeSuiteFile(ref: SuiteFileRef, data: ByteArray): Boolean = withContext(Dispatchers.IO) {
         runCatching {

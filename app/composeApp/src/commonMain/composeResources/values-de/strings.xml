@@ -1723,7 +1723,7 @@
     <string name="share_vault_factor">Zweiter Faktor des neuen Tresors:</string>
     <string name="share_vault_new_keyfile">Neue Schlüsseldatei</string>
     <string name="share_vault_master">Zur Bestätigung: dein eigenes Master-Passwort.</string>
-    <string name="share_vault_save_file">Der Tresor ist fertig. Speichere jetzt die Datei.</string>
+    <string name="share_vault_save_file">Letzter Schritt: Speichere die Tresordatei.</string>
     <string name="share_vault_save_file_button">Tresordatei speichern</string>
     <string name="share_vault_save_keyfile">Speichere jetzt die neue Schlüsseldatei. Gib sie getrennt von der Tresordatei weiter.</string>
     <string name="share_vault_save_keyfile_button">Schlüsseldatei speichern</string>
@@ -1736,4 +1736,13 @@
     <string name="core_pw_short">Das Passwort ist zu kurz.</string>
     <string name="core_single_only_add">Dieser Tresor lässt sich nur zu einer Suite hinzufügen.</string>
     <string name="l_vault_password">Passwort des neuen Tresors</string>
+    <string name="single_not_writable">Die App darf diese Datei nicht beschreiben (z. B. ein Mail-Anhang). Speichere sie zuerst woanders oder füge den Tresor zu deiner Suite hinzu.</string>
+    <string name="share_vault_done">Fertig. Gib Tresordatei, Schlüsseldatei und Passwort getrennt weiter.</string>
+    <string name="single_pending_title">Änderungen nicht in der Datei</string>
+    <string name="single_pending_text">Die letzten Änderungen an %1$s ließen sich nicht in die Datei schreiben (war der Speicher weg oder wurde die App beendet?). Jetzt schreiben oder verwerfen.</string>
+    <string name="single_pending_write">Jetzt schreiben</string>
+    <string name="single_pending_discard">Verwerfen</string>
+    <string name="single_pending_failed">Immer noch nicht geschrieben. Ist der Speicher da? Versuche es später erneut.</string>
+    <string name="core_single_not_suite">Nicht, während ein einzelner Tresor geöffnet ist.</string>
+    <string name="core_vault_unreadable">Ein Tresor der Suite lässt sich nicht lesen (Optionen > Tresore). Entferne ihn oder stelle ihn wieder her, dann speichern.</string>
 </resources>

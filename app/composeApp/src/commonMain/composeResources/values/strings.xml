@@ -1723,7 +1723,7 @@
     <string name="share_vault_factor">Second factor of the new vault:</string>
     <string name="share_vault_new_keyfile">New key file</string>
     <string name="share_vault_master">To confirm: your own master password.</string>
-    <string name="share_vault_save_file">The vault is ready. Save the file now.</string>
+    <string name="share_vault_save_file">Last step: save the vault file.</string>
     <string name="share_vault_save_file_button">Save vault file</string>
     <string name="share_vault_save_keyfile">Now save the new key file. Hand it over separately from the vault file.</string>
     <string name="share_vault_save_keyfile_button">Save key file</string>
@@ -1736,4 +1736,13 @@
     <string name="core_pw_short">The password is too short.</string>
     <string name="core_single_only_add">This vault can only be added to a suite.</string>
     <string name="l_vault_password">Password of the new vault</string>
+    <string name="single_not_writable">The app may not write into this file (e.g. a mail attachment). Save it somewhere else first, or add the vault to your suite.</string>
+    <string name="share_vault_done">Done. Hand on the vault file, the key file and the password separately.</string>
+    <string name="single_pending_title">Changes not in the file</string>
+    <string name="single_pending_text">The last changes to %1$s could not be written into its file (was the storage gone, or the app ended?). Write them now, or give them up.</string>
+    <string name="single_pending_write">Write now</string>
+    <string name="single_pending_discard">Give up</string>
+    <string name="single_pending_failed">Still not written. Is the storage there? Try again later.</string>
+    <string name="core_single_not_suite">Not while a vault is open on its own.</string>
+    <string name="core_vault_unreadable">A vault of the suite cannot be read (Options > Vaults). Remove it or bring it back, then save.</string>
 </resources>

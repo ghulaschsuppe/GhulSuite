@@ -164,7 +164,7 @@ interface VaultBackend {
     suspend fun archiveTarget(data: ByteArray): ArchiveTargetUi = ArchiveTargetUi.NEW
     /** Builds the suite file of the working copy; confirm with [archiveSaved] once it is written. */
     suspend fun archiveBuild(device: String): ArchiveBuiltUi = ArchiveBuiltUi(ByteArray(0), "")
-    suspend fun archiveSaved(state: String) {}
+    suspend fun archiveSaved(state: String, change: Long) {}
     /** The suite file used last on this device (opened or saved), if any. */
     fun suiteFile(): SuiteFileRef? = null
     fun setSuiteFile(ref: SuiteFileRef?) {}
@@ -182,6 +182,16 @@ interface VaultBackend {
     fun singleFile(): SuiteFileRef? = null
     /** Writes the vault open on its own back into its file; false if that did not work. */
     suspend fun saveSingle(): Boolean = false
+    /** The vault open on its own as it is now (to add it to the own suite). */
+    suspend fun singleVaultBytes(): ByteArray = throw VaultException(VaultErrorKind.OTHER)
+    /** Whether the app may write into this file (a vault opened on its own goes back into it). */
+    suspend fun canWriteSuiteFile(ref: SuiteFileRef): Boolean = true
+    /** Vaults opened on their own whose last changes could not be written back into their file. */
+    fun pendingSingleWrites(): List<PendingSingleUi> = emptyList()
+    /** Tries again to write such changes into their file; false if that still does not work. */
+    suspend fun retrySingleWrite(key: String): Boolean = false
+    /** Gives such changes up. */
+    fun discardSingleWrite(key: String) {}
     /** Picked entries into a new vault file with a protection of its own (key file or security key). */
     suspend fun shareAsVault(share: ShareVaultUi, pin: String?, onTouchNeeded: () -> Unit): SharedVaultUi =
         throw VaultException(VaultErrorKind.OTHER)
@@ -234,7 +244,7 @@ data class ArchiveCheckUi(
 /** The file at the place the suite is saved to. */
 enum class ArchiveTargetUi { NEW, SAME, CHANGED_ELSEWHERE, OTHER_SUITE }
 
-class ArchiveBuiltUi(val data: ByteArray, val state: String)
+class ArchiveBuiltUi(val data: ByteArray, val state: String, val change: Long = 0)
 
 /** A file picked by the user. */
 class PickedFile(val name: String, val bytes: ByteArray)
@@ -304,6 +314,9 @@ class ShareVaultUi(
     val keyfileLabel: String,
     val recoveryLabel: String,
 )
+
+/** Changes of a vault opened on its own that are not in its file yet ([key] names them). */
+class PendingSingleUi(val key: String, val file: SuiteFileRef)
 
 /** A new vault file of picked entries and its recovery code. */
 class SharedVaultUi(val kind: VaultKindUi, val data: ByteArray, val recoveryCode: String)

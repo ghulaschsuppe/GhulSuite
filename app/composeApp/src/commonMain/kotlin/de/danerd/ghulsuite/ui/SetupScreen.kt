@@ -198,6 +198,7 @@ private fun StartOption(icon: ImageVector, color: androidx.compose.ui.graphics.C
 
 /** Finish of a setup around one vault file: only the area of that vault is switched on. */
 private fun finishSetup(state: AppState, kind: VaultKindUi) {
+    state.pendingAdd = null
     state.backend.settings.moduleGhulPass = kind == VaultKindUi.PASS
     state.backend.settings.moduleGhulAuth = kind == VaultKindUi.TOTP
     state.enableModule(kind)

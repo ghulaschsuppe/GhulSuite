@@ -83,15 +83,20 @@ fn a_vault_opens_on_its_own_and_is_written_back() {
     t.save_entry(vault_id(&t, "Privat"), login("Neu", "n", "5")).unwrap();
     assert!(t.archive_unsaved());
     let back = t.single_vault_file().unwrap();
-    t.single_saved();
+    // A change while the file is written is not in it: it stays unsaved.
+    t.save_entry(vault_id(&t, "Privat"), login("Dazwischen", "d", "6")).unwrap();
+    t.single_saved(back.change);
+    assert!(t.archive_unsaved(), "the change in between is not in the file");
+    let back = t.single_vault_file().unwrap();
+    t.single_saved(back.change);
     assert!(!t.archive_unsaved());
-    let (l1, l2) = (LockedContainer::parse(&file).unwrap(), LockedContainer::parse(&back).unwrap());
+    let (l1, l2) = (LockedContainer::parse(&file).unwrap(), LockedContainer::parse(&back.data).unwrap());
     assert_eq!(l1.header().suite_id, l2.header().suite_id);
     assert_eq!(l1.header().kdf, l2.header().kdf);
     let again_dirs = Dirs::new("single-again");
     let again = again_dirs.suite();
-    again.open_single_vault(back, PW.into(), None, None, None, Some(kf.clone())).unwrap();
-    assert_eq!(titles(&again), vec!["Bank", "Forum", "Mail", "Neu"]);
+    again.open_single_vault(back.data, PW.into(), None, None, None, Some(kf.clone())).unwrap();
+    assert_eq!(titles(&again), vec!["Bank", "Dazwischen", "Forum", "Mail", "Neu"]);
 
     // The own suite did not change.
     s.unlock(PW.into(), None, None, None, Some(kf.clone())).unwrap();
@@ -172,6 +177,10 @@ fn picked_entries_go_into_a_vault_of_their_own() {
     t.open_single_vault(shared.data.clone(), NEW_PW.into(), None, None, None, Some(new_kf)).unwrap();
     assert_eq!(titles(&t), vec!["Bank", "Mail"]);
     assert_eq!(t.list_vaults().unwrap()[0].name, "Für Anna");
+    // New ids: nothing points back to the own vault.
+    let theirs: Vec<Vec<u8>> = t.list_entries(VaultKind::Pass, None).unwrap().into_iter().map(|e| e.id).collect();
+    let mine: Vec<Vec<u8>> = s.list_entries(VaultKind::Pass, None).unwrap().into_iter().map(|e| e.id).collect();
+    assert!(theirs.iter().all(|i| !mine.contains(i)));
     // Old passwords stay behind.
     let bank = t.list_entries(VaultKind::Pass, None).unwrap().into_iter().find(|e| e.title == "Bank").unwrap();
     assert!(t.entry_extras(bank.vault_id, bank.id).unwrap().history.is_empty());
@@ -203,4 +212,29 @@ fn handed_on_with_a_security_key() {
     let mut o = share_opts(&s, vec![vec![1; 16]], Some(generate_keyfile()));
     o.vault_id = vault_id(&s, "Kalender");
     assert!(matches!(s.share_as_vault(o, None, None, None), Err(GhulError::InvalidInput { .. })));
+}
+
+#[test]
+fn a_vault_on_its_own_stays_one_vault() {
+    let (_d, s, kf, _) = suite_with_entries("single-one");
+    let file = s.export_vault(vault_id(&s, "Privat")).unwrap();
+    let other = s.export_vault(vault_id(&s, "Codes")).unwrap();
+    let t_dirs = Dirs::new("single-one-t");
+    let t = t_dirs.suite();
+    t.open_single_vault(file, PW.into(), None, None, None, Some(kf.clone())).unwrap();
+    let id = vault_id(&t, "Privat");
+    let refused = |r: Result<(), GhulError>| assert!(matches!(r, Err(GhulError::InvalidInput { .. })), "{r:?}");
+    // No second vault (it could end up in the file), none removed, no other protection.
+    refused(t.create_vault(VaultKind::Pass, "Neu".into()).map(|_| ()));
+    refused(t.add_vault_file(other, "Codes".into()).map(|_| ()));
+    refused(t.remove_vault(id.clone()));
+    refused(t.add_keyfile(generate_keyfile(), "Zweite".into()));
+    refused(t.change_password(PW.into(), "ganz-neu-123".into()));
+    refused(t.new_recovery_code("Neu".into()).map(|_| ()));
+    refused(t.archive_build("Test".into()).map(|_| ()));
+    assert_eq!(t.list_vaults().unwrap().len(), 1);
+    assert_eq!(t.single_vault_name().unwrap(), t.list_vaults().unwrap()[0].file);
+    // Entries change as usual.
+    t.save_entry(id, login("Neu", "n", "1")).unwrap();
+    assert_eq!(titles(&t), vec!["Bank", "Forum", "Mail", "Neu"]);
 }

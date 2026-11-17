@@ -80,6 +80,11 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
         }.getOrDefault(false) && readSuiteFile(ref)?.contentEquals(data) == true
     }
 
+    override suspend fun canWriteSuiteFile(ref: SuiteFileRef): Boolean = withContext(Dispatchers.IO) {
+        runCatching { androidx.documentfile.provider.DocumentFile.fromSingleUri(context, Uri.parse(ref.id))?.canWrite() == true }
+            .getOrDefault(false)
+    }
+
     override fun devicePref(key: String): String? = prefs.getString(key, null)
 
     override fun setDevicePref(key: String, value: String) {

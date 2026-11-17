@@ -135,6 +135,8 @@ fun GhulSuiteApp(state: AppState) {
                     }
                     // A vault file waiting to be added once the own suite is unlocked.
                     if (unlocked && state.single == null && !state.showStart) PendingAddHandler(state)
+                    // Changes of a vault opened on its own that did not reach its file.
+                    PendingSingleWrites(state)
                     // A running action, in front of the screens (sheets show it themselves).
                     BusyOverlay()
                     // Development build only: alarms of DevChecks, in every screenshot.

@@ -459,6 +459,8 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
 private fun finishWizard(state: AppState) {
     // The suite was unlocked before its areas existed: start in the first area, not in Options.
     state.openFirstArea = true
+    // A vault file waiting for the suite before belongs to that one, not to this new suite.
+    state.pendingAdd = null
     state.showStart = false
     state.vaultExists = true
     state.refreshVaults()

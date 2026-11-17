@@ -16,17 +16,40 @@ use rand_core::OsRng;
 use zeroize::Zeroizing;
 
 use super::error::{GhulError, Result};
-use super::passx::HISTORY;
+use super::passx::{CREATED, HISTORY};
 use super::suite::{
-    file_name, now_ms, parse_keyfile, put_setting, register_key, second_factor, set_vault_name, setting,
+    file_name, new_id, now_ms, parse_keyfile, put_setting, register_key, second_factor, set_vault_name, setting,
     with_authenticator, GhulSuite, Open, OpenVault, VaultKind, VaultRef,
 };
 use crate::vault::container::{Fido2Registration, KdfCost, SuiteKeys};
 use crate::vault::{Entry, LockedContainer, PasswordKey, Slot, SlotMeta};
 use crate::{FidoListener, HidTransport, RP_ID};
 
-/// Suite setting of the temporary suite around a vault opened on its own.
+/// Suite setting of the temporary suite around a vault opened on its own: the vault's file.
 const SINGLE_KEY: &str = "single";
+
+/// The vault opened on its own as it is now, and the change it holds (see `single_saved`).
+#[derive(uniffi::Record, Clone)]
+pub struct SingleFile {
+    pub data: Vec<u8>,
+    pub change: u64,
+}
+
+super::redact::redacted_debug!(SingleFile { change });
+
+/// The file of the vault opened on its own, if this suite is the temporary one around it.
+fn single_file(o: &Open) -> Option<String> {
+    Some(setting::<String>(&o.suite, SINGLE_KEY)).filter(|f| !f.is_empty())
+}
+
+/// Vaults, protection and the suite file belong to a suite: not to a vault opened on its own
+/// (only that one vault is written back into its file).
+pub(super) fn refuse_single(o: &Open) -> Result<()> {
+    if single_file(o).is_some() {
+        return Err(GhulError::InvalidInput { msg: "not while a vault is open on its own".into() });
+    }
+    Ok(())
+}
 
 /// What "hand on as a vault" needs besides the second factor.
 #[derive(uniffi::Record, Clone)]
@@ -97,11 +120,11 @@ impl GhulSuite {
         let pk = PasswordKey::derive(&password, &locked.header().kdf)?;
         let vault = locked.unlock(&pk, &s)?;
         let mut suite = self.suite_for_vault(&vault, &pk)?;
-        put_setting(&mut suite, SINGLE_KEY, &true)?;
         // Nothing to confirm: the code (if any) belongs to whoever made the file.
         suite.payload.settings.remove(super::setup::CONFIRMED_KEY);
         let id = crate::kdf::hex(&vault.container_id());
         let file = file_name(kind, &id);
+        put_setting(&mut suite, SINGLE_KEY, &file)?;
         let name = super::suite::vault_name(&vault, &file);
         let reference = VaultRef { id, kind: kind.container().name().into(), name, file };
         let mut open = Open { password_key: pk, suite, vaults: vec![OpenVault { reference, container: Some(vault) }] };
@@ -113,25 +136,29 @@ impl GhulSuite {
 
     /// Whether this suite is the temporary one around a vault opened on its own.
     pub fn is_single(&self) -> bool {
-        self.with_open(|o| Ok(setting::<bool>(&o.suite, SINGLE_KEY))).unwrap_or(false)
+        self.with_open(|o| Ok(single_file(o).is_some())).unwrap_or(false)
     }
 
-    /// The vault opened on its own as it is now (to be written back into its file). Its
-    /// protection is the one it came with.
-    pub fn single_vault_file(&self) -> Result<Vec<u8>> {
-        let file = self.with_open(|o| {
-            if !setting::<bool>(&o.suite, SINGLE_KEY) {
-                return Err(GhulError::InvalidInput { msg: "no vault is open on its own".into() });
-            }
-            let v = o.vaults.first().filter(|v| v.container.is_some()).ok_or(GhulError::NotFound)?;
-            Ok(v.reference.file.clone())
-        })?;
-        self.storage.read(file)?.ok_or(GhulError::NotFound)
+    /// The name of the vault file opened on its own in this suite's folder (also readable after
+    /// locking, to write it back).
+    pub fn single_vault_name(&self) -> Result<String> {
+        self.with_open(|o| single_file(o).ok_or(GhulError::InvalidInput { msg: "no vault is open on its own".into() }))
     }
 
-    /// The vault opened on its own was written back into its file.
-    pub fn single_saved(&self) {
-        self.clear_unsaved();
+    /// The vault opened on its own as it is now (to be written back into its file), with the
+    /// change it holds. Its protection is the one it came with.
+    pub fn single_vault_file(&self) -> Result<SingleFile> {
+        let file = self.single_vault_name()?;
+        // Read before the counter: a change in between is counted, not lost.
+        let change = self.change();
+        let data = self.storage.read(file)?.ok_or(GhulError::NotFound)?;
+        Ok(SingleFile { data, change })
+    }
+
+    /// The vault opened on its own was written back into its file (as of `change`): unsaved
+    /// only if it changed since.
+    pub fn single_saved(&self, change: u64) {
+        self.clear_unsaved_at(change);
     }
 
     /// Puts the picked entries of a GhulPass or GhulAuth vault into a new vault file with a
@@ -160,6 +187,7 @@ impl GhulSuite {
         if !self.verify_password(options.master_password.clone())? {
             return Err(GhulError::WrongPassword);
         }
+        let now = now_ms();
         // Copied first: the key may take a while to be touched, the suite is not held meanwhile.
         let (kind, cost, entries) = self.with_open(|o| {
             let (r, c) = o.vault_mut(&options.vault_id)?;
@@ -176,7 +204,12 @@ impl GhulSuite {
                 .filter(|e| !e.deleted && options.ids.contains(&e.id))
                 .cloned()
                 .map(|mut e| {
+                    // Nothing about the own vault: new ids, a fresh history.
                     e.extra.remove(HISTORY);
+                    e.extra.remove(CREATED);
+                    e.id = new_id().to_vec();
+                    e.revision = 1;
+                    e.modified = now;
                     e
                 })
                 .collect();
@@ -188,7 +221,6 @@ impl GhulSuite {
             Ok((kind, cost, entries))
         })?;
         let keys = SuiteKeys::create(&password, cost, &mut OsRng)?;
-        let now = now_ms();
         let (slot, label): (Slot, &str) = match (&keyfile, &transport, &pin) {
             (Some(kf), _, _) => (keys.keyfile_slot(kf, &mut OsRng), &options.keyfile_label),
             (None, Some(t), Some(pin)) => {

@@ -21,7 +21,7 @@ fn device_with_suite(name: &str) -> (Dirs, Arc<GhulSuite>, Vec<u8>, String) {
 /// Saves the suite into a file and confirms it.
 fn save(s: &GhulSuite) -> Vec<u8> {
     let built = s.archive_build("Test".into()).unwrap();
-    s.archive_saved(built.state).unwrap();
+    s.archive_saved(built.state, built.change).unwrap();
     built.data
 }
 
@@ -150,7 +150,7 @@ fn a_file_with_an_older_protection_is_not_opened() {
     let r = a.archive_open(old.clone(), PW.into(), None, None, None, Some(kf.clone()));
     assert!(matches!(r, Err(GhulError::ProtectionOutdated)), "{r:?}");
     let newer = a.archive_build("A".into()).unwrap();
-    a.archive_saved(newer.state).unwrap();
+    a.archive_saved(newer.state, newer.change).unwrap();
     // B opens the new file (new password); then the old one is refused there as well.
     let check = b.archive_open(newer.data, "pw-neu-7890".into(), None, None, None, Some(kf.clone())).unwrap();
     assert_eq!(check.relation, ArchiveRelation::Newer);
@@ -322,4 +322,144 @@ fn zip_tricks_are_refused() {
     }
     assert!(super::super::archive::read_zip_limited(&out.into_inner(), 16 * 1024 * 1024).is_err(), "a bomb");
     assert!(!b.exists().unwrap());
+}
+
+/// A branch several saves apart is still a branch (not "newer"), and an old state of the own
+/// line is older.
+#[test]
+fn branches_are_noticed_several_saves_apart() {
+    let (_da, a, kf, _) = device_with_suite("lineage-a");
+    let first = save(&a);
+    let db = Dirs::new("lineage-b");
+    let b = db.suite();
+    open(&b, &first, &kf);
+    b.archive_accept().unwrap();
+    b.save_entry(vault_id(&b, "Privat"), login("Von B", "u", "1")).unwrap();
+    let from_b = save(&b);
+    // A saves three times from the first state, never seeing B's file.
+    let mut from_a = Vec::new();
+    for i in 0..3 {
+        a.save_entry(vault_id(&a, "Privat"), login(&format!("A{i}"), "u", "2")).unwrap();
+        from_a = save(&a);
+    }
+    let check = open(&b, &from_a, &kf);
+    assert_eq!(check.relation, ArchiveRelation::Branch, "B's saved state is not in A's line");
+    b.archive_cancel();
+    // A gets B's file: a branch as well.
+    assert_eq!(open(&a, &from_b, &kf).relation, ArchiveRelation::Branch);
+    a.archive_cancel();
+    // A's own first state: older.
+    assert_eq!(open(&a, &first, &kf).relation, ArchiveRelation::Older);
+    a.archive_cancel();
+    // A device that has the first state takes A's latest as newer.
+    let dc = Dirs::new("lineage-c");
+    let c = dc.suite();
+    open(&c, &first, &kf);
+    c.archive_accept().unwrap();
+    assert_eq!(open(&c, &from_a, &kf).relation, ArchiveRelation::Newer);
+}
+
+/// A change while the file is being written is not in it: it stays unsaved.
+#[test]
+fn a_change_while_saving_stays_unsaved() {
+    let (_da, a, _kf, _) = device_with_suite("change-a");
+    let built = a.archive_build("A".into()).unwrap();
+    a.save_entry(vault_id(&a, "Privat"), login("Dazwischen", "u", "1")).unwrap();
+    a.archive_saved(built.state, built.change).unwrap();
+    assert!(a.archive_unsaved(), "the change after building is not in the file");
+    save(&a);
+    assert!(!a.archive_unsaved());
+}
+
+/// A vault that cannot be read is not silently left out of the file.
+#[test]
+fn a_damaged_vault_is_not_left_out() {
+    let (d, a, kf, _) = device_with_suite("damaged-a");
+    let file = a.list_vaults().unwrap()[0].file.clone();
+    a.lock();
+    a.finish_lock();
+    let st = d.storage();
+    let mut data = st.read(file.clone()).unwrap().unwrap();
+    let n = data.len();
+    data[n - 10] ^= 1;
+    st.write(file, data).unwrap();
+    a.unlock(PW.into(), None, None, None, Some(kf)).unwrap();
+    assert!(!a.list_vaults().unwrap()[0].available);
+    let r = a.archive_build("A".into());
+    assert!(matches!(r, Err(GhulError::InvalidInput { .. })), "{:?}", r.err());
+}
+
+/// A checked file's keys do not outlive locking; the one-step-back copy not a protection change.
+#[test]
+fn locking_forgets_a_checked_file() {
+    let (_da, a, kf, _) = device_with_suite("forget-a");
+    let file = save(&a);
+    let db = Dirs::new("forget-b");
+    let b = db.suite();
+    open(&b, &file, &kf);
+    b.lock();
+    assert!(matches!(b.archive_accept(), Err(GhulError::NotFound)));
+
+    // Opened over a working copy: one step back is kept, until the protection changes.
+    open(&a, &file, &kf);
+    a.archive_accept().unwrap();
+    assert!(a.archive_before_open().is_ok());
+    a.change_password(PW.into(), "pw-neu-7890".into()).unwrap();
+    assert!(a.archive_before_open().is_err(), "it would open with the old password");
+}
+
+/// More entries than any suite has: refused before anything is read.
+#[test]
+fn a_zip_with_too_many_entries_is_refused() {
+    let files: Vec<(String, Vec<u8>)> = (0..1001).map(|i| (format!("v{i}.ghlpss"), vec![0u8])).collect();
+    let dd = Dirs::new("many");
+    let s = dd.suite();
+    let r = s.archive_protection(zip_of(&files));
+    assert!(matches!(r, Err(GhulError::InvalidInput { .. })));
+}
+
+/// A storage whose next write of the suite file fails (a full or pulled storage).
+struct FailOnce {
+    inner: Arc<dyn VaultStorage>,
+    armed: std::sync::atomic::AtomicBool,
+}
+
+impl VaultStorage for FailOnce {
+    fn read(&self, name: String) -> Result<Option<Vec<u8>>, super::super::storage::StorageError> {
+        self.inner.read(name)
+    }
+    fn write(&self, name: String, data: Vec<u8>) -> Result<(), super::super::storage::StorageError> {
+        if name == "suite.ghlsuite" && self.armed.swap(false, std::sync::atomic::Ordering::SeqCst) {
+            return Err(super::super::storage::StorageError::Io { msg: "full".into() });
+        }
+        self.inner.write(name, data)
+    }
+    fn delete(&self, name: String) -> Result<(), super::super::storage::StorageError> {
+        self.inner.delete(name)
+    }
+    fn list(&self) -> Result<Vec<String>, super::super::storage::StorageError> {
+        self.inner.list()
+    }
+    fn describe(&self) -> String {
+        self.inner.describe()
+    }
+}
+
+/// Opening a file that cannot be written completely leaves the working copy as it was.
+#[test]
+fn a_half_written_open_goes_back() {
+    let (d, a, kf, _) = device_with_suite("half-a");
+    let file = save(&a);
+    a.save_entry(vault_id(&a, "Privat"), login("Neu", "u", "1")).unwrap();
+    a.lock();
+    a.finish_lock();
+    let flaky = Arc::new(FailOnce { inner: d.storage(), armed: std::sync::atomic::AtomicBool::new(false) });
+    let s = GhulSuite::new(flaky.clone(), d.local());
+    s.unlock(PW.into(), None, None, None, Some(kf.clone())).unwrap();
+    open(&s, &file, &kf);
+    flaky.armed.store(true, std::sync::atomic::Ordering::SeqCst);
+    assert!(s.archive_accept().is_err());
+    assert!(!s.is_unlocked());
+    s.unlock(PW.into(), None, None, None, Some(kf)).unwrap();
+    assert_eq!(titles(&s), vec!["Bank", "Neu"], "the working copy before, unchanged");
 }

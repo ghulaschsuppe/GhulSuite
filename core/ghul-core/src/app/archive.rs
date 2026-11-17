@@ -44,6 +44,10 @@ const BEFORE_FILE: &str = "before-open.ghlzip";
 const NOT_A_SUITE_FILE: &str = "not a GhulSuite file";
 /// Largest `.ghlzip` read (counted while reading, not taken from the ZIP).
 const MAX_ARCHIVE: u64 = 512 * 1024 * 1024;
+/// Most entries a `.ghlzip` may have (a suite has a handful of files).
+const MAX_ENTRIES: usize = 1000;
+/// How many earlier states a file and a device remember (to tell newer states from branches).
+const MAX_ANCESTORS: usize = 64;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
 struct ArchiveFile {
@@ -65,6 +69,9 @@ struct ArchiveHeader {
     /// When it was saved (Unix ms) and on which device.
     time: i64,
     device: String,
+    /// The states this one was carried on from, the latest first (at most [`MAX_ANCESTORS`]).
+    #[serde(default)]
+    ancestors: Vec<String>,
 }
 
 /// The state a working copy is.
@@ -75,6 +82,9 @@ struct StateRef {
     /// The state before (still in the file when the last built one was not written).
     #[serde(default)]
     previous: String,
+    /// The states this one was carried on from, the latest first.
+    #[serde(default)]
+    ancestors: Vec<String>,
 }
 
 /// What a device saw last of a suite.
@@ -83,6 +93,9 @@ struct Seen {
     state: String,
     counter: u64,
     epoch: u64,
+    /// The states the seen one was carried on from (see [`ArchiveHeader::ancestors`]).
+    #[serde(default)]
+    ancestors: Vec<String>,
 }
 
 /// How a `.ghlzip` relates to what this device has.
@@ -131,11 +144,14 @@ pub enum ArchiveTarget {
     OtherSuite,
 }
 
-/// A built `.ghlzip`: write `data`, then confirm with `archive_saved(state)`.
+/// A built `.ghlzip`: write `data`, then confirm with `archive_saved(state, change)`.
 #[derive(uniffi::Record, Clone)]
 pub struct ArchiveBuilt {
     pub data: Vec<u8>,
     pub state: String,
+    /// The change of the working copy it holds: a change made while the file is written is
+    /// not in it and stays unsaved.
+    pub change: u64,
 }
 
 /// A checked file waiting for `archive_accept`.
@@ -160,6 +176,9 @@ pub(crate) fn read_zip_limited(data: &[u8], max: u64) -> Result<Vec<(String, Vec
     // What is wrong stays out of the message: the app names it in plain words.
     let bad = |_why: &str| GhulError::InvalidInput { msg: NOT_A_SUITE_FILE.into() };
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(data)).map_err(|_| bad("no ZIP"))?;
+    if z.len() > MAX_ENTRIES {
+        return Err(bad("too many entries"));
+    }
     let mut out: Vec<(String, Vec<u8>)> = Vec::new();
     let mut total = 0u64;
     for i in 0..z.len() {
@@ -287,12 +306,13 @@ impl GhulSuite {
             .unwrap_or_default()
     }
 
-    fn note_archive_seen(&self, suite_id: &[u8; 16], state: &str, counter: u64, epoch: u64) {
+    fn note_archive_seen(&self, suite_id: &[u8; 16], state: &str, counter: u64, epoch: u64, ancestors: &[String]) {
         let mut all = self.seen_all();
         let e = all.entry(crate::kdf::hex(suite_id)).or_default();
         if counter >= e.counter {
             e.counter = counter;
             e.state = state.to_owned();
+            e.ancestors = ancestors.iter().take(MAX_ANCESTORS).cloned().collect();
         }
         e.epoch = e.epoch.max(epoch);
         self.write_seen(&all);
@@ -318,12 +338,30 @@ impl GhulSuite {
 
     /// The working copy changed since it was loaded from or saved into a file.
     pub(super) fn mark_unsaved(&self) {
+        self.changes.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let _ = std::fs::create_dir_all(&self.local_dir);
         let _ = std::fs::write(self.local_dir.join(UNSAVED_FILE), b"1");
     }
 
     fn unsaved(&self) -> bool {
         self.local_dir.join(UNSAVED_FILE).exists()
+    }
+
+    /// The change counter of the working copy (grows with every write of a container).
+    pub(super) fn change(&self) -> u64 {
+        self.changes.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Clears the unsaved mark if nothing changed since `change` was read.
+    pub(super) fn clear_unsaved_at(&self, change: u64) {
+        if self.change() == change {
+            self.clear_unsaved();
+        }
+    }
+
+    /// Forgets the working copy as it was before the last file was opened.
+    pub(super) fn forget_before_open(&self) {
+        let _ = std::fs::remove_file(self.local_dir.join(BEFORE_FILE));
     }
 
     pub(super) fn clear_unsaved(&self) {
@@ -352,9 +390,22 @@ impl GhulSuite {
         if seen.state.is_empty() {
             return Ok(ArchiveRelation::Newer);
         }
-        Ok(if header.state == seen.state {
-            ArchiveRelation::Same
-        } else if header.counter < seen.counter {
+        if header.state == seen.state {
+            return Ok(ArchiveRelation::Same);
+        }
+        // With the lineage of both: carried on from this device's state, or an earlier one of it;
+        // anything else is a branch (also when the lineage is too long to tell).
+        if !header.ancestors.is_empty() {
+            return Ok(if header.ancestors.contains(&seen.state) {
+                ArchiveRelation::Newer
+            } else if seen.ancestors.contains(&header.state) {
+                ArchiveRelation::Older
+            } else {
+                ArchiveRelation::Branch
+            });
+        }
+        // Files without a lineage: by the counter.
+        Ok(if header.counter < seen.counter {
             ArchiveRelation::Older
         } else if header.counter == seen.counter
             || (header.counter == seen.counter + 1 && header.previous != seen.state)
@@ -377,7 +428,7 @@ impl GhulSuite {
         })
     }
 
-    fn set_pending(&self, p: Option<Pending>) {
+    pub(super) fn set_pending(&self, p: Option<Pending>) {
         *self.pending.lock().unwrap_or_else(|e| e.into_inner()) = p;
     }
 
@@ -393,19 +444,32 @@ impl GhulSuite {
                 }
             }
         }
-        if !before.is_empty() {
+        if before.is_empty() {
+            // Nothing to keep: an older one-step-back would belong to another state.
+            let _ = std::fs::remove_file(self.local_dir.join(BEFORE_FILE));
+        } else {
             let _ = std::fs::create_dir_all(&self.local_dir);
             super::storage::write_atomic(&self.local_dir, BEFORE_FILE, &write_zip(&before)?)?;
         }
-        let new: Vec<&(String, Vec<u8>)> = files.iter().filter(|(n, _)| n != HEADER_FILE).collect();
-        for (n, d) in new.iter().filter(|(n, _)| n != SUITE_FILE) {
+        let new: Vec<(String, Vec<u8>)> = files.iter().filter(|(n, _)| n != HEADER_FILE).cloned().collect();
+        if let Err(e) = self.put_files(&new, &before) {
+            // Half replaced is neither state: back to the one before.
+            let _ = self.put_files(&before, &new);
+            return Err(e);
+        }
+        Ok(())
+    }
+
+    /// Writes `files` (the suite file last) and removes what only `old` had.
+    fn put_files(&self, files: &[(String, Vec<u8>)], old: &[(String, Vec<u8>)]) -> Result<()> {
+        for (n, d) in files.iter().filter(|(n, _)| n != SUITE_FILE) {
             self.storage.write(n.clone(), d.clone())?;
         }
-        if let Some((_, d)) = new.iter().find(|(n, _)| n == SUITE_FILE) {
+        if let Some((_, d)) = files.iter().find(|(n, _)| n == SUITE_FILE) {
             self.storage.write(SUITE_FILE.to_owned(), d.clone())?;
         }
-        for (n, _) in &before {
-            if !new.iter().any(|(m, _)| m == n) {
+        for (n, _) in old {
+            if !files.iter().any(|(m, _)| m == n) {
                 self.storage.delete(n.clone())?;
             }
         }
@@ -514,11 +578,22 @@ impl GhulSuite {
             put_setting(
                 &mut o.suite,
                 STATE_KEY,
-                &StateRef { state: p.header.state.clone(), counter: p.header.counter, previous: String::new() },
+                &StateRef {
+                    state: p.header.state.clone(),
+                    counter: p.header.counter,
+                    previous: String::new(),
+                    ancestors: p.header.ancestors.clone(),
+                },
             )?;
             let epoch = o.epoch();
             self.save_container(&mut o.suite, SUITE_FILE)?;
-            self.note_archive_seen(&p.suite_id, &p.header.state, p.header.counter, epoch.max(p.header.epoch));
+            self.note_archive_seen(
+                &p.suite_id,
+                &p.header.state,
+                p.header.counter,
+                epoch.max(p.header.epoch),
+                &p.header.ancestors,
+            );
             Ok(())
         })?;
         // After the recovery code everything was written anew: that is a change to save.
@@ -562,10 +637,26 @@ impl GhulSuite {
             let suite_id = o.suite.header().suite_id;
             let seen = self.seen_all().get(&crate::kdf::hex(&suite_id)).cloned().unwrap_or_default();
             let mine: StateRef = setting(&o.suite, STATE_KEY);
+            super::single::refuse_single(o)?;
+            // A vault that cannot be read would be missing from the file, and gone wherever it
+            // is opened: not without the user knowing.
+            if o.vaults.iter().any(|v| v.container.is_none()) {
+                return Err(GhulError::InvalidInput { msg: "a vault of the suite cannot be read".into() });
+            }
             let state = random_id();
             let counter = seen.counter.max(mine.counter) + 1;
             let previous = mine.state.clone();
-            put_setting(&mut o.suite, STATE_KEY, &StateRef { state: state.clone(), counter, previous })?;
+            let mut ancestors: Vec<String> = Vec::new();
+            if !mine.state.is_empty() {
+                ancestors.push(mine.state.clone());
+                ancestors.extend(mine.ancestors.iter().cloned());
+            }
+            ancestors.truncate(MAX_ANCESTORS);
+            put_setting(
+                &mut o.suite,
+                STATE_KEY,
+                &StateRef { state: state.clone(), counter, previous, ancestors: ancestors.clone() },
+            )?;
             let mut files: Vec<(String, Vec<u8>)> = Vec::new();
             for v in &mut o.vaults {
                 if let Some(c) = v.container.as_mut() {
@@ -601,6 +692,7 @@ impl GhulSuite {
                 epoch: o.epoch(),
                 time: now_ms(),
                 device: device.trim().chars().take(80).collect(),
+                ancestors,
             };
             let mut hc = o.new_container(ContainerKind::Export)?;
             put_setting(&mut hc, HEADER_KEY, &header)?;
@@ -611,21 +703,22 @@ impl GhulSuite {
                     self.storage.write(n.clone(), d.clone())?;
                 }
             }
-            Ok(ArchiveBuilt { data: write_zip(&files)?, state })
+            Ok(ArchiveBuilt { data: write_zip(&files)?, state, change: self.change() })
         })
     }
 
-    /// The built file was written: this device has this state now, nothing is unsaved.
-    pub fn archive_saved(&self, state: String) -> Result<()> {
+    /// The built file was written: this device has this state now. Nothing is unsaved unless
+    /// the working copy changed after it was built (`change` from [`ArchiveBuilt`]).
+    pub fn archive_saved(&self, state: String, change: u64) -> Result<()> {
         self.with_open(|o| {
             let mine: StateRef = setting(&o.suite, STATE_KEY);
             if mine.state != state {
                 return Err(GhulError::InvalidInput { msg: "another state was built meanwhile".into() });
             }
-            self.note_archive_seen(&o.suite.header().suite_id, &state, mine.counter, o.epoch());
+            self.note_archive_seen(&o.suite.header().suite_id, &state, mine.counter, o.epoch(), &mine.ancestors);
             Ok(())
         })?;
-        self.clear_unsaved();
+        self.clear_unsaved_at(change);
         Ok(())
     }
 

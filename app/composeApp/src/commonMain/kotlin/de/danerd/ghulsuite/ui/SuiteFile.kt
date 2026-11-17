@@ -12,6 +12,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -30,6 +31,7 @@ import de.danerd.ghulsuite.model.VaultException
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
 import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 
 /** File name suggested for a new suite file. */
@@ -67,7 +69,13 @@ fun OpenSuiteFile(state: AppState, file: PickedSuiteFile, onOpened: () -> Unit, 
     var keyfile by remember { mutableStateOf<PickedFile?>(null) }
     var code by remember { mutableStateOf("") }
     var newPassword by remember { mutableStateOf("") }
+    var repeat by remember { mutableStateOf("") }
     var check by remember { mutableStateOf<ArchiveCheckUi?>(null) }
+    // Leaving this screen any other way (locking, back) forgets the checked file and its keys.
+    DisposableEffect(file) { onDispose { backend.archiveCancel() } }
+    val tooShort = pluralStringResource(Res.plurals.setup_pw_too_short, PasswordPolicy.MIN_LENGTH, PasswordPolicy.MIN_LENGTH.toString())
+    val tooWeak = stringResource(Res.string.setup_pw_too_weak)
+    val mismatch = stringResource(Res.string.setup_pw_mismatch)
     LaunchedEffect(file) {
         catching { backend.archiveProtection(file.data) }.onSuccess { protection = it }.onFailure { error = describe(it) }
     }
@@ -82,7 +90,7 @@ fun OpenSuiteFile(state: AppState, file: PickedSuiteFile, onOpened: () -> Unit, 
         state.run(onError = { error = it }, block = { backend.archiveAccept() }) {
             backend.setSuiteFile(file.ref)
             check = null
-            password = ""; pin = ""; code = ""; newPassword = ""
+            password = ""; pin = ""; code = ""; newPassword = ""; repeat = ""
             state.afterSuiteFileOpened()
             state.message(opened.replace("%1\$s", file.ref.name))
             onOpened()
@@ -106,6 +114,8 @@ fun OpenSuiteFile(state: AppState, file: PickedSuiteFile, onOpened: () -> Unit, 
             Hint(stringResource(Res.string.file_with_code_hint))
             SecretTextField(code, { code = it; error = null }, stringResource(Res.string.l_recovery_code))
             SecretTextField(newPassword, { newPassword = it; error = null }, stringResource(Res.string.l_new_password))
+            if (newPassword.isNotEmpty()) StrengthMeter(backend.passwordScore(newPassword))
+            SecretTextField(repeat, { repeat = it; error = null }, stringResource(Res.string.l_repeat_password))
             TextButton(onClick = { withCode = false; error = null }) { Text(stringResource(Res.string.file_with_password)) }
         }
         BusyBanner(state)
@@ -117,11 +127,16 @@ fun OpenSuiteFile(state: AppState, file: PickedSuiteFile, onOpened: () -> Unit, 
             Button(
                 modifier = Modifier.weight(1f),
                 enabled = !state.busy && if (withCode) {
-                    code.isNotBlank() && newPassword.length >= 8
+                    code.isNotBlank() && newPassword.isNotEmpty() && repeat.isNotEmpty()
                 } else {
                     password.isNotEmpty() && (if (needsKey) keyPinOk(state, pin) else keyfile != null)
                 },
                 onClick = {
+                    // The same rules as for every new master password (one typo would lock out).
+                    if (withCode) {
+                        error = PasswordPolicy.check(backend, newPassword, repeat, tooShort, tooWeak, mismatch)
+                        if (error != null) return@Button
+                    }
                     state.run(onError = { error = it }, block = {
                         if (withCode) {
                             backend.archiveOpenWithCode(file.data, code, newPassword)
@@ -189,7 +204,7 @@ fun SuiteFileSection(state: AppState) {
             }
             val built = backend.archiveBuild(deviceInfo())
             if (!backend.writeSuiteFile(target, built.data)) throw VaultException(VaultErrorKind.OTHER, notWritten)
-            backend.archiveSaved(built.state)
+            backend.archiveSaved(built.state, built.change)
             backend.setSuiteFile(target)
             null
         }) { there ->
@@ -261,6 +276,8 @@ fun SuiteFileSection(state: AppState) {
 
 /** After a suite file replaced the working copy: everything is shown anew from the first area. */
 fun AppState.afterSuiteFileOpened() {
+    // A vault file waiting for the suite before is not added to this one unasked.
+    pendingAdd = null
     showStart = false
     vaultExists = true
     openFirstArea = true

@@ -587,6 +587,8 @@ pub struct GhulSuite {
     pub(super) zones: Mutex<Option<Arc<dyn super::caltext::TimeZones>>>,
     /// A checked `.ghlzip` waiting to replace the working copy (see `archive_accept`).
     pub(super) pending: Mutex<Option<super::archive::Pending>>,
+    /// Grows with every write of a container (see `archive_saved`, `single_saved`).
+    pub(super) changes: std::sync::atomic::AtomicU64,
 }
 
 #[derive(Default)]
@@ -1042,6 +1044,8 @@ impl GhulSuite {
     /// Notes a change of the protection: the epoch grows in the suite, and this device knows from
     /// now on that files with an older protection are not to be opened.
     pub(super) fn protection_changed(&self, o: &mut Open) -> Result<()> {
+        // The one-step-back copy would still open with the protection before.
+        self.forget_before_open();
         o.bump_epoch()?;
         self.note_epoch(&o.suite.header().suite_id, o.epoch());
         Ok(())
@@ -1073,6 +1077,7 @@ impl GhulSuite {
             net: Mutex::new(NetCache::default()),
             zones: Mutex::new(None),
             pending: Mutex::new(None),
+            changes: std::sync::atomic::AtomicU64::new(0),
         })
     }
 
@@ -1277,6 +1282,8 @@ impl GhulSuite {
         self.lock_pending.store(true, Ordering::SeqCst);
         // A checked mail connection (with its password's hash) is not kept past locking.
         self.net.lock().unwrap_or_else(|p| p.into_inner()).mail_tested = None;
+        // A checked suite file holds its keys: not past locking either.
+        self.set_pending(None);
         self.drop_open(false);
     }
 
@@ -1398,6 +1405,7 @@ impl GhulSuite {
             return Err(GhulError::InvalidInput { msg: "name required".into() });
         }
         self.with_open(|o| {
+            super::single::refuse_single(o)?;
             let id = self.add_vault(o, kind, &name)?;
             self.save_vault(o, &id)?;
             Ok(id)
@@ -1420,6 +1428,7 @@ impl GhulSuite {
     /// Deletes a vault: its file is removed from the folder.
     pub fn remove_vault(&self, id: String) -> Result<()> {
         self.with_open(|o| {
+            super::single::refuse_single(o)?;
             let pos = o.vaults.iter().position(|v| v.reference.id == id).ok_or(GhulError::NotFound)?;
             let v = o.vaults.remove(pos);
             self.storage.delete(v.reference.file.clone())?;
@@ -1440,6 +1449,7 @@ impl GhulSuite {
     pub fn add_vault_file(&self, data: Vec<u8>, name: String) -> Result<String> {
         let data = Zeroizing::new(data);
         self.with_open(|o| {
+            super::single::refuse_single(o)?;
             let locked = LockedContainer::parse(&data)?;
             if VaultKind::from_container(locked.kind()).is_none() {
                 return Err(GhulError::InvalidInput { msg: "a suite file cannot be added as a vault".into() });
@@ -1487,6 +1497,7 @@ impl GhulSuite {
         let pk = PasswordKey::derive(&password, &locked.header().kdf)?;
         let mut c = locked.unlock(&pk, &s)?;
         self.with_open(|o| {
+            super::single::refuse_single(o)?;
             let now = now_ms();
             let slots = factor_slots(&o.suite);
             c.reprotect(
@@ -1904,6 +1915,7 @@ impl GhulSuite {
         }
         let (cred_id, prf_input, output) = with_authenticator(&transport, Some(&listener), |a| register_key(a, &pin))?;
         self.with_open(|o| {
+            super::single::refuse_single(o)?;
             let reg = Fido2Registration { rp_id: RP_ID, credential_id: &cred_id, prf_input, hmac_output: &output };
             let now = now_ms();
             let slot = o.suite.add_fido2_slot(&reg, &label, now, &mut OsRng)?;
@@ -1915,6 +1927,7 @@ impl GhulSuite {
     pub fn add_keyfile(&self, keyfile: Vec<u8>, label: String) -> Result<()> {
         let keyfile = Keyfile::parse(&Zeroizing::new(keyfile))?;
         self.with_open(|o| {
+            super::single::refuse_single(o)?;
             let id = keyfile.id();
             if o.suite.slots().iter().any(|s| matches!(s, Slot::Keyfile(k) if k.keyfile_id == id)) {
                 return Err(GhulError::AlreadyExists);
@@ -1928,6 +1941,7 @@ impl GhulSuite {
     /// Creates a new recovery code for all files; the previous code stops working.
     pub fn new_recovery_code(&self, label: String) -> Result<String> {
         self.with_open(|o| {
+            super::single::refuse_single(o)?;
             let code = RecoveryCode::generate(&mut OsRng);
             let now = now_ms();
             for (c, _) in o.containers_mut() {
@@ -1947,6 +1961,7 @@ impl GhulSuite {
         let id: [u8; 16] =
             slot_id.as_slice().try_into().map_err(|_| GhulError::InvalidInput { msg: "invalid slot id".into() })?;
         self.with_open(|o| {
+            super::single::refuse_single(o)?;
             let slot = o.suite.slots().iter().find(|s| *s.id() == id).cloned().ok_or(GhulError::NotFound)?;
             if !slot.provides_factor() {
                 return Err(GhulError::InvalidInput { msg: "recovery codes are replaced, not removed".into() });
@@ -1975,6 +1990,7 @@ impl GhulSuite {
         let current = Zeroizing::new(current);
         let new_password = Zeroizing::new(new_password);
         self.with_open(|o| {
+            super::single::refuse_single(o)?;
             let kdf = o.kdf();
             let old_pk = PasswordKey::derive(&current, &kdf)?;
             if !o.suite.verify_password_key(&old_pk) {

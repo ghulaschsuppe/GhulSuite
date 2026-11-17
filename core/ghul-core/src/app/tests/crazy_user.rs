@@ -321,7 +321,7 @@ fn run(seed: u64, steps: usize) -> Stats {
                 let to = (di + 1 + rng.below(devs.len() - 1)) % devs.len();
                 let before = titles(&s);
                 let built = s.archive_build("Gerät".into()).unwrap();
-                s.archive_saved(built.state).unwrap();
+                s.archive_saved(built.state, built.change).unwrap();
                 devs[to].s.archive_open(built.data, pw.into(), None, None, None, Some(kf.clone())).unwrap();
                 devs[to].s.archive_accept().unwrap();
                 devs[to].s.lock();
@@ -367,7 +367,7 @@ fn run(seed: u64, steps: usize) -> Stats {
             continue;
         }
         let built = devs[di].s.archive_build("Gerät".into()).unwrap();
-        devs[di].s.archive_saved(built.state).unwrap();
+        devs[di].s.archive_saved(built.state, built.change).unwrap();
         devs[to].s.archive_open(built.data, pw.into(), None, None, None, Some(kf.clone())).unwrap();
         devs[to].s.archive_accept().unwrap();
     }

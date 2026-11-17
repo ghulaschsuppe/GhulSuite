@@ -52,6 +52,9 @@ fun VaultFileChoice(
 ) {
     val kind = vaultKindOf(info.kind)
     val hasSuite = state.backend.exists()
+    // Opened on its own, the vault goes back into this file: only if the app may write it.
+    var writable by remember(file) { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(file) { writable = catching { state.backend.canWriteSuiteFile(file.ref) }.getOrDefault(false) }
     AlertDialog(
         onDismissRequest = onCancel,
         title = { Text(stringResource(Res.string.single_choice_title)) },
@@ -59,8 +62,10 @@ fun VaultFileChoice(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(Res.string.single_choice_text, file.ref.name, stringResource(kindLabel(kind))))
                 if (opensOnItsOwn(kind)) {
-                    Button(onClick = onOnlyThis, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.single_only_this)) }
-                    Hint(stringResource(Res.string.single_only_this_hint))
+                    Button(onClick = onOnlyThis, enabled = writable == true, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(Res.string.single_only_this))
+                    }
+                    Hint(stringResource(if (writable == false) Res.string.single_not_writable else Res.string.single_only_this_hint))
                 } else {
                     Hint(stringResource(Res.string.single_not_alone))
                 }
@@ -117,6 +122,7 @@ fun OpenSingleVault(state: AppState, file: PickedSuiteFile, info: ContainerInfoU
                         )
                     }) { k ->
                         password = ""; pin = ""
+                        state.pendingAdd = null
                         state.single = SingleUi(k, file.ref)
                         state.singleNotSaved = false
                         state.unsaved = false
@@ -154,11 +160,10 @@ fun SingleVaultSection(state: AppState) {
         }
         if (backend.singleFile() != null && filePickersAvailable) {
             OutlinedButton(onClick = {
-                state.run(block = { backend.saveSingle(); backend.readSuiteFile(s.file) }) { data ->
-                    if (data != null) {
-                        state.pendingAdd = PickedFile(s.file.name, data)
-                        backend.lock()
-                    }
+                // The vault as it is here (also when writing its file failed), then the own suite.
+                state.run(block = { backend.singleVaultBytes() }) { data ->
+                    state.pendingAdd = PickedFile(s.file.name, data)
+                    backend.lock()
                 }
             }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.single_add_to_suite)) }
         }
@@ -221,7 +226,10 @@ fun ShareAsVaultDialog(state: AppState, vaultId: String, ids: List<String>, onDo
     var error by remember { mutableStateOf<String?>(null) }
     var shared by remember { mutableStateOf<SharedVaultUi?>(null) }
     var keyfile by remember { mutableStateOf<ByteArray?>(null) }
-    /** 0: the form, 1: vault file saved, 2: key file saved too (or none), then the code. */
+    /**
+     * After the form: 0 the code (noted first, so a vault file never exists without it), 1 the
+     * key file saved, 2 the vault file saved.
+     */
     var step by remember { mutableStateOf(0) }
     val notSaved = stringResource(Res.string.share_vault_not_saved)
     val keyLabel = stringResource(Res.string.setup_default_key_label)
@@ -231,18 +239,11 @@ fun ShareAsVaultDialog(state: AppState, vaultId: String, ids: List<String>, onDo
     val tooWeak = stringResource(Res.string.setup_pw_too_weak)
     val mismatch = stringResource(Res.string.setup_pw_mismatch)
     val saveKeyfile = rememberSaveFile { ok -> if (ok) step = 2 else error = notSaved }
-    val saveVault = rememberSaveFile { ok ->
-        if (!ok) {
-            error = notSaved
-        } else {
-            step = 1
-            if (keyfile == null) step = 2
-        }
-    }
+    val saveVault = rememberSaveFile { ok -> if (ok) step = 3 else error = notSaved }
 
     val result = shared
     AlertDialog(
-        onDismissRequest = { if (!state.busy && step == 0) onDone() },
+        onDismissRequest = { if (!state.busy && result == null) onDone() },
         title = { Text(stringResource(Res.string.share_vault_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -265,13 +266,14 @@ fun ShareAsVaultDialog(state: AppState, vaultId: String, ids: List<String>, onDo
                         Hint(stringResource(Res.string.share_vault_master))
                         SecretTextField(master, { master = it; error = null }, stringResource(Res.string.l_master_password))
                     }
-                    step == 0 -> Hint(stringResource(Res.string.share_vault_save_file))
-                    step == 1 -> Hint(stringResource(Res.string.share_vault_save_keyfile))
-                    else -> {
+                    step == 0 -> {
                         Hint(stringResource(Res.string.share_vault_code))
                         RecoveryCodeView(result.recoveryCode)
                         PrintSheetButton(state, result.recoveryCode)
                     }
+                    step == 1 -> Hint(stringResource(Res.string.share_vault_save_keyfile))
+                    step == 2 -> Hint(stringResource(Res.string.share_vault_save_file))
+                    else -> Hint(stringResource(Res.string.share_vault_done))
                 }
                 BusyBanner(state)
                 ErrorText(error)
@@ -304,19 +306,71 @@ fun ShareAsVaultDialog(state: AppState, vaultId: String, ids: List<String>, onDo
                         }
                     },
                 ) { Text(stringResource(Res.string.a_create)) }
-                step == 0 -> TextButton(onClick = {
-                    error = null
-                    saveVault("${name.trim().ifBlank { "vault" }}.${extensionOf(result.kind)}", result.data)
-                }) { Text(stringResource(Res.string.share_vault_save_file_button)) }
+                step == 0 -> TextButton(onClick = { step = if (keyfile != null) 1 else 2 }) { Text(stringResource(Res.string.a_next)) }
                 step == 1 -> TextButton(onClick = {
                     error = null
                     keyfile?.let { saveKeyfile("${name.trim().ifBlank { "vault" }}.ghlkey", it) }
                 }) { Text(stringResource(Res.string.share_vault_save_keyfile_button)) }
+                step == 2 -> TextButton(onClick = {
+                    error = null
+                    saveVault("${name.trim().ifBlank { "vault" }}.${extensionOf(result.kind)}", result.data)
+                }) { Text(stringResource(Res.string.share_vault_save_file_button)) }
                 else -> TextButton(onClick = onDone) { Text(stringResource(Res.string.a_finish)) }
             }
         },
         dismissButton = {
             if (result == null) TextButton(onClick = onDone, enabled = !state.busy) { Text(stringResource(Res.string.a_cancel)) }
+        },
+    )
+}
+
+/**
+ * Changes of a vault opened on its own that could not be written into its file when it was
+ * closed (storage gone, app ended): offered again until written or given up.
+ */
+@Composable
+fun PendingSingleWrites(state: AppState) {
+    val backend = state.backend
+    val unlocked by backend.unlocked.collectAsState()
+    var pending by remember { mutableStateOf<List<de.danerd.ghulsuite.model.PendingSingleUi>>(emptyList()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var tick by remember { mutableStateOf(0) }
+    LaunchedEffect(unlocked, state.single, tick) {
+        // Right after closing, its own write may still run: a moment later.
+        kotlinx.coroutines.delay(1500)
+        pending = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            catching { backend.pendingSingleWrites() }.getOrDefault(emptyList())
+        }
+    }
+    val stillNot = stringResource(Res.string.single_pending_failed)
+    val p = pending.firstOrNull() ?: return
+    if (state.single != null) return
+    AlertDialog(
+        danger = true,
+        onDismissRequest = {},
+        title = { Text(stringResource(Res.string.single_pending_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(Res.string.single_pending_text, p.file.name))
+                ErrorText(error)
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = !state.busy, onClick = {
+                state.run(onError = { error = it }, block = { backend.retrySingleWrite(p.key) }) { ok ->
+                    if (ok) {
+                        error = null
+                        tick++
+                    } else {
+                        error = stillNot
+                    }
+                }
+            }) { Text(stringResource(Res.string.single_pending_write)) }
+        },
+        dismissButton = {
+            TextButton(enabled = !state.busy, onClick = { backend.discardSingleWrite(p.key); tick++ }) {
+                Text(stringResource(Res.string.single_pending_discard))
+            }
         },
     )
 }

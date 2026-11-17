@@ -21,6 +21,8 @@ private val CORE_TEXTS: Map<String, StringResource> = mapOf(
     "only GhulPass and GhulAuth entries can be handed on" to Res.string.core_single_kinds,
     "password too short" to Res.string.core_pw_short,
     "this vault can only be added to a suite" to Res.string.core_single_only_add,
+    "not while a vault is open on its own" to Res.string.core_single_not_suite,
+    "a vault of the suite cannot be read" to Res.string.core_vault_unreadable,
     "a suite file cannot be added as a vault" to Res.string.core_suite_not_vault,
     "this is a suite file, open its folder instead" to Res.string.core_suite_file,
     "Drive block missing" to Res.string.core_drive_block_missing,

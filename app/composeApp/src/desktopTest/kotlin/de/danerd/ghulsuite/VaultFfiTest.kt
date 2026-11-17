@@ -199,9 +199,9 @@ class VaultFfiTest {
             t.saveEntry(t.listVaults().single().id, login("Neu"))
             assertTrue(t.archiveUnsaved())
             val back = t.singleVaultFile()
-            t.singleSaved()
+            t.singleSaved(back.change)
             val again = suite(File(dir, "again"))
-            again.openSingleVault(back, "Master Passwort!", null, null, null, kf)
+            again.openSingleVault(back.data, "Master Passwort!", null, null, null, kf)
             assertEquals(setOf("Bank", "Codeberg", "Neu"), again.listEntries(VaultKind.PASS, null).map { it.title }.toSet())
 
             // Handed on: its own password and key file; the own ones do not open it.

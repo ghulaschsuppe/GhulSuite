@@ -119,6 +119,8 @@ class InteractionTest {
     private fun DesktopComposeUiTest.desc(d: String): SemanticsNodeInteraction = onAllNodesWithContentDescription(d).onFirst()
     private fun DesktopComposeUiTest.shown(t: String) = onAllNodesWithText(t, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
     private fun DesktopComposeUiTest.waitFor(t: String) = waitUntil(timeoutMillis = 10_000) { shown(t) }
+    private fun DesktopComposeUiTest.waitFor(t: String, substring: Boolean) =
+        waitUntil(timeoutMillis = 10_000) { onAllNodesWithText(t, substring = substring, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
     private fun DesktopComposeUiTest.waitGone(t: String) = waitUntil(timeoutMillis = 10_000) { !shown(t) }
     /** F103: every deletion asks first; answers the question with [button]. */
     private fun DesktopComposeUiTest.confirm(button: String? = null) {
@@ -2132,8 +2134,11 @@ class InteractionTest {
         fields[1].performTextReplacement("ein langes neues Passwort")
         fields[2].performTextReplacement("ein langes neues Passwort")
         onAllNodes(hasText("Create") and hasAnyAncestor(isDialog())).onFirst().performClick()
-        waitFor("Save vault file")
+        // The code first: no vault file exists without it having been shown.
+        waitFor("The recovery code of the new vault", substring = true)
         assertTrue("shareAsVault:p1:1:Für Anna:true:Master Passwort!" in fake.calls, fake.calls.toString())
-        shot("share-vault-ready")
+        shot("share-vault-code")
+        onAllNodes(hasText("Next") and hasAnyAncestor(isDialog())).onFirst().performClick()
+        waitFor("Save key file")
     }
 }

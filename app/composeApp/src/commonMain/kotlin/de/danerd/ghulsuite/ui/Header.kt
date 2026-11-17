@@ -160,8 +160,11 @@ private fun VaultSheet(state: AppState, kind: VaultKindUi, close: () -> Unit) {
             for (v in state.vaultsOf(kind)) {
                 CtxRow(v.name, pluralStringResource(Res.plurals.ctx_entries, v.entries, v.entries.toString()), selected = selected == v.id, divider = true, leading = { Avatar(v.name) }) { pick(v.id) }
             }
-            CtxRow(stringResource(Res.string.set_vaults), divider = true, leading = { IconTile(Icons.Filled.Tune, paletteColor(5)) }) {
-                close(); state.push(Screen.SettingsPage(SetPage.VAULTS))
+            // A vault open on its own: no vaults of a suite to manage.
+            if (state.single == null) {
+                CtxRow(stringResource(Res.string.set_vaults), divider = true, leading = { IconTile(Icons.Filled.Tune, paletteColor(5)) }) {
+                    close(); state.push(Screen.SettingsPage(SetPage.VAULTS))
+                }
             }
         }
     }

@@ -129,7 +129,7 @@ fn drive_names(s: &GhulSuite) -> Vec<String> {
 /// here; the app here starts again afterwards.
 fn hand_over(from: &Device, to: &mut Device, password: &str, keyfile: &[u8], drive: &Arc<dyn RemoteFs>) {
     let built = from.suite.archive_build(from.name.into()).unwrap();
-    from.suite.archive_saved(built.state).unwrap();
+    from.suite.archive_saved(built.state, built.change).unwrap();
     let check = to.suite.archive_open(built.data, password.into(), None, None, None, Some(keyfile.to_vec())).unwrap();
     assert!(!check.unsaved_changes, "{} worked on an old copy", to.name);
     to.suite.archive_accept().unwrap();
@@ -326,7 +326,7 @@ fn a_month_of_everyday_use_on_two_devices() {
         // Day 20: backup.
         if day == 20 {
             let built = devices[holder].suite.archive_build("Laptop".into()).unwrap();
-            devices[holder].suite.archive_saved(built.state).unwrap();
+            devices[holder].suite.archive_saved(built.state, built.change).unwrap();
             let data = built.data;
             let count = all_titles(&devices[holder].suite).len();
             backup = Some((data, count));
