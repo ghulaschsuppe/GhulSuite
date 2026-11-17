@@ -151,7 +151,7 @@ jobs:
           mkdir -p corpus/container_parse
           python3 - <<'PY'
           import json
-          d = json.load(open('../../docs/testvectors/container-v1.json'))
+          d = json.load(open('../../docs/testvectors/container-v3.json'))
           for i, v in enumerate(d['vectors']):
               open(f'corpus/container_parse/vector{i}', 'wb').write(bytes.fromhex(v['file']))
           PY
@@ -240,17 +240,17 @@ jobs:
           fi
           sed 's/^export //' servers.env >> "$GITHUB_ENV"
 
-      - name: Sync, Drive und Mail gegen die Testserver
+      - name: SFTP, Drive und Mail gegen die Testserver
         if: env.GHUL_NET_SKIP != '1'
         working-directory: core
         run: |
           rustup toolchain install stable --profile minimal
           # The network tests must really run (without servers they skip silently).
           # ("a && b" does not stop a bash -e script when a fails: each check on its own line.)
-          for v in GHUL_TEST_SFTP GHUL_TEST_MAIL GHUL_TEST_FTPS; do
+          for v in GHUL_TEST_SFTP GHUL_TEST_MAIL; do
             if [ -z "${!v:-}" ]; then echo "::error title=Testserver::$v fehlt: die Netzwerk-Tests würden still übersprungen."; exit 1; fi
           done
-          cargo test --locked -p ghul-core -- sftp ftps mail sync drive share module
+          cargo test --locked -p ghul-core -- sftp mail drive share module keychange
 
   browser:
     name: Browser-Tests (Freigabelinks über das PHP-Server-Modul)

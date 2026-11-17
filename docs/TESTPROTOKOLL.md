@@ -63,7 +63,7 @@ cargo test -p ghul-core                                   # alles außer den Lan
 cargo test --release -p ghul-core -- --ignored stress     # Stresstests
 cargo test --release -p ghul-core -- --ignored crazy      # bekloppter Nutzer, lang
 sudo -E bash ../tools/test-servers.sh > servers.env && set -a && . ./servers.env && set +a
-cargo test -p ghul-core -- sftp ftps mail sync drive share php   # gegen echte Testserver
+cargo test -p ghul-core -- sftp mail drive share module keychange   # gegen echte Testserver
 python3 ../tools/check-texts.py                            # Texte
 ```
 
