@@ -144,33 +144,32 @@ fn an_older_index_is_not_rekeyed_silently() {
     let _ = std::fs::remove_dir_all(&server);
 }
 
-/// A backup of the server from before the change (under the earlier key) put back later: the
-/// suite still reads it, as an older state the owner takes over.
+/// Once the change is through, Drive's earlier keys are gone: a backup of the server from before
+/// the change (or an index someone with an older copy put there) is not read and not taken over,
+/// and nothing is written over it.
 #[test]
-fn a_backup_from_before_the_change_can_be_taken_back() {
+fn after_the_change_an_index_with_the_earlier_key_is_refused() {
     let d = Dirs::new("kc-backup");
     let s = d.suite();
     s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "P")]), None, None, None).unwrap();
     let server = local_drive("backup");
     attach(&s, &server);
     upload(&s, None, "a.txt", b"A");
-    let backup = std::fs::read(server.join("drive/index.ghldrv")).unwrap();
+    let index = server.join("drive/index.ghldrv");
+    let backup = std::fs::read(&index).unwrap();
     s.change_password("pw-123456".into(), "pw-neu-7890".into()).unwrap();
     assert!(!s.key_change_continue().unwrap().running);
     upload(&s, None, "b.txt", b"B");
-    // The hoster restores its backup.
-    std::fs::write(server.join("drive/index.ghldrv"), &backup).unwrap();
-    // Told apart from an older state: it may also come from someone with an older copy.
-    assert!(matches!(names(&s), Err(GhulError::DriveEarlierKey)));
-    s.drive_accept_server_state().unwrap();
-    assert_eq!(names(&s).unwrap(), vec!["a.txt"]);
-    upload(&s, None, "c.txt", b"C");
-    assert_eq!(names(&s).unwrap(), vec!["a.txt", "c.txt"]);
+    // The earlier key is no longer in the suite. (The hoster puts back its folder: no copy before.)
+    std::fs::write(&index, &backup).unwrap();
+    let _ = std::fs::remove_file(server.join("drive/index.bak"));
+    let r = names(&s);
+    assert!(matches!(r, Err(GhulError::Corrupted { .. })), "{r:?}");
+    assert!(s.drive_accept_server_state().is_err());
+    assert_eq!(std::fs::read(&index).unwrap(), backup, "nothing written over it");
     let _ = std::fs::remove_dir_all(&server);
 }
 
-/// Many changes of the protection while a location is not reached: the key its index has stays
-/// (only once every location has the new key are the oldest ones dropped).
 #[test]
 fn many_changes_keep_the_key_a_waiting_location_needs() {
     let d = Dirs::new("kc-many");

@@ -84,8 +84,8 @@ struct DriveSettings {
     /// The storage location the mail archive writes into (empty: the active one).
     #[serde(default)]
     archive: String,
-    /// Drive's earlier keys (newest first, at most [`OLD_KEYS_KEPT`]). Only for reading: an index
-    /// not yet written with the new key, or one put back from a backup of the server.
+    /// During a key change: Drive's earlier keys (newest first), only to read the index of a
+    /// location not yet written with the new key. Wiped once every location has it.
     #[serde(default)]
     old_keys: Vec<serde_bytes::ByteBuf>,
     /// A key change runs: the locations whose index does not have the new key yet are written
@@ -97,15 +97,12 @@ struct DriveSettings {
     rekeyed: Vec<String>,
 }
 
-/// How many earlier Drive keys stay for reading (backups of the server).
-const OLD_KEYS_KEPT: usize = 16;
-
-/// Keeps the newest [`OLD_KEYS_KEPT`] earlier keys; the others are wiped.
-fn trim_old_keys(d: &mut DriveSettings) {
-    for k in d.old_keys.iter_mut().skip(OLD_KEYS_KEPT) {
+/// Wipes Drive's earlier keys (the key change is through).
+fn wipe_old_keys(d: &mut DriveSettings) {
+    for k in &mut d.old_keys {
         zeroize::Zeroize::zeroize(k.as_mut_slice());
     }
-    d.old_keys.truncate(OLD_KEYS_KEPT);
+    d.old_keys.clear();
 }
 
 impl Drop for DriveSettings {
@@ -827,11 +824,8 @@ impl GhulSuite {
         let mut k = vec![0u8; 32];
         OsRng.fill_bytes(&mut k);
         let before = std::mem::replace(&mut d.key, k);
-        d.old_keys.insert(0, serde_bytes::ByteBuf::from(before));
         // While locations still wait for the new key, no earlier key goes (their index needs it).
-        if !d.rekey_running {
-            trim_old_keys(&mut d);
-        }
+        d.old_keys.insert(0, serde_bytes::ByteBuf::from(before));
         d.rekey_running = true;
         d.rekeyed.clear();
         put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
@@ -871,7 +865,8 @@ impl GhulSuite {
         put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
         // Only notes of what the server holds (like `note_seen`): nothing to save into the suite
         // file; lost, the location is only checked once more.
-        self.save_area_quietly(o, VaultKind::Drive)
+        self.save_area_quietly(o, VaultKind::Drive)?;
+        self.drive_rekey_end_if_through(o)
     }
 
     /// The locations whose index does not have Drive's new key yet (id, name); empty when no
@@ -892,8 +887,7 @@ impl GhulSuite {
     }
 
     /// Tries every location still waiting (see `drive_rekey_waiting`); the change ends once none
-    /// waits any more (the earlier keys stay for reading backups). Returns the error of the last
-    /// location that failed.
+    /// waits any more. Returns the error of the last location that failed.
     pub(super) fn drive_rekey_all(&self, o: &mut Open) -> Result<()> {
         let mut last = Ok(());
         for (id, _) in self.drive_rekey_waiting(o) {
@@ -902,17 +896,24 @@ impl GhulSuite {
                 last = Err(e);
             }
         }
+        self.drive_rekey_end_if_through(o)?;
+        last
+    }
+
+    /// Ends Drive's part of the key change once no location waits: the earlier keys are wiped
+    /// (a backup of the server from before the change cannot be read any more).
+    fn drive_rekey_end_if_through(&self, o: &mut Open) -> Result<()> {
         if self.drive_rekey_waiting(o).is_empty() {
             let mut d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
             if d.rekey_running {
                 d.rekey_running = false;
                 d.rekeyed.clear();
-                trim_old_keys(&mut d);
+                wipe_old_keys(&mut d);
                 put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
                 self.save_area_quietly(o, VaultKind::Drive)?;
             }
         }
-        last
+        Ok(())
     }
 
     /// Tests: Drive's index key and the suite id it is bound to.
@@ -1487,6 +1488,7 @@ impl GhulSuite {
             d.seen.insert(server, index.revision);
             put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
             self.save_area(o, VaultKind::Drive)?;
+            self.drive_rekey_end_if_through(o)?;
             self.net.lock().unwrap_or_else(|p| p.into_inner()).drive = Some(index);
             Ok(())
         })

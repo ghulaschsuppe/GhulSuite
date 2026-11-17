@@ -147,10 +147,8 @@ Bei jeder Schutzänderung (neues Passwort, neuer Code, Key oder Schlüsseldatei 
    Nutzer entscheidet wie beim normalen Lesen (6.3).
 3. **SSH-Zugang tauschen:** neuen öffentlichen Schlüssel auf dem Server eintragen, damit anmelden und prüfen, dann den
    alten entfernen und prüfen, dass er abgewiesen wird (je Anbieter, siehe unten).
-4. **Abschließen:** alte SSH-Schlüssel aus der Arbeitskopie entfernen; die App fordert auf, die Suite-Datei zu
-   speichern. Frühere Drive-Schlüssel bleiben nur zum Lesen in der aktuellen Datei (höchstens 16), damit eine
-   zurückgespielte Sicherung des Servers lesbar bleibt (6.5). Einer alten Datei hilft das nicht: Sie hat den neuen
-   Schlüssel nicht.
+4. **Abschließen:** alte SSH- und Drive-Schlüssel aus der Arbeitskopie entfernen; die App fordert auf, die
+   Suite-Datei zu speichern. Eine Sicherung des Servers von vor der Schutzänderung ist danach nicht mehr lesbar (6.5).
 
 Danach:
 - Eine **alte Datei** (z. B. auf einem verlorenen Stick) kann sich nicht mehr am Server anmelden und den Index nicht
@@ -185,7 +183,8 @@ alten Schlüssel aus der Suite gelöscht.
 ### 6.5 Grenzen
 
 - Verliert der Server Daten (Hoster setzt zurück, Datenträger kaputt), merkt die App es (Revision, fehlende Blöcke),
-  retten kann sie es nicht. Dagegen hilft nur eine Sicherung beim Hoster.
+  retten kann sie es nicht. Dagegen hilft nur eine Sicherung beim Hoster, und zwar eine von nach der letzten
+  Schutzänderung: Ältere sind mit einem Drive-Schlüssel verschlüsselt, den die Suite nicht mehr hat.
 - Wer die aktuelle Datei mit Passwort und Key öffnen kann, hat Zugriff auf Drive. So ist es gedacht.
 - Unfertige Uploads werden auf dem Gerät mit einem eigenen Geräteschlüssel versiegelt.
 
@@ -218,7 +217,7 @@ alten Schlüssel aus der Suite gelöscht.
 | Hat Stick, alten Code und altes Passwort | einen alten Stand mit altem Schutz anbieten | ihn auf einem Gerät mit neuerem Stand öffnen lassen (Schutz-Epoche, Sperre); an den Server |
 | Hat eine alte Suite-Datei (vor einer Schutzänderung) | die damaligen Inhalte lesen | sich am Server anmelden; den aktuellen Drive-Index öffnen; neue Drive-Dateien lesen |
 | Betreibt den Server | Blöcke löschen, einen alten Index zurückspielen, Freigaben stören | Dateien lesen; einen Index fälschen (authentisiert mit dem Drive-Schlüssel); einen alten Index unbemerkt unterschieben (Revision) |
-| Betreibt den Server und hat eine alte Kopie der Suite-Datei | einen Index unter dem alten Drive-Schlüssel ablegen | ihn unbemerkt unterschieben (eigene Warnung „Schlüssel von vor der Schutzänderung“, Übernahme nur nach Bestätigung) |
+| Betreibt den Server und hat eine alte Kopie der Suite-Datei | einen Index unter dem alten Drive-Schlüssel ablegen | ihn unterschieben (nach dem Schlüsselwechsel kennt die Suite den alten Schlüssel nicht mehr; während des Wechsels nur nach Bestätigung einer eigenen Warnung) |
 
 ## 9. Umsetzung in Paketen (je ein Pull Request, Doku jeweils mit)
 
