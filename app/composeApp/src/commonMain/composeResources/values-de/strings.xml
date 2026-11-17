@@ -1758,5 +1758,6 @@
     <string name="single_pending_missing">Die Datei ist gerade nicht da oder nicht lesbar. Schreiben legt sie neu an.</string>
     <string name="single_pending_discard_unknown">Diese Änderungen gehen verloren; zu welcher Datei sie gehörten, ist unbekannt.</string>
     <string name="single_missing_save_as">Die Datei ist weg oder nicht lesbar (verschoben, gelöscht, Speicher weg?). Sobald sie wieder da ist, wird geschrieben; sonst den Tresor als neue Datei speichern.</string>
-    <string name="single_pending_discard_missing">Die letzten Änderungen an %1$s gehen verloren; die Datei selbst ist gerade nicht da.</string>
+    <string name="single_pending_discard_missing">%1$s ist gerade nicht da. Ist sie wirklich weg, verliert Verwerfen diesen Tresor. Besser als neue Datei speichern.</string>
+    <string name="single_pending_missing_retry">Die Datei ist gerade nicht da oder nicht lesbar. Ist der Speicher wieder da? Dann erneut versuchen, sonst als neue Datei speichern.</string>
 </resources>

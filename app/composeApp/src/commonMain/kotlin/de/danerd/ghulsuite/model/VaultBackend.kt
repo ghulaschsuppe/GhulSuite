@@ -171,6 +171,8 @@ interface VaultBackend {
     /** Reads / writes a remembered suite file; null / false when it is not reachable (e.g. the stick is out). */
     suspend fun readSuiteFile(ref: SuiteFileRef): ByteArray? = null
     suspend fun writeSuiteFile(ref: SuiteFileRef, data: ByteArray): Boolean = false
+    /** Creates the file anew; false (and nothing changed) if there is one at that place. */
+    suspend fun createSuiteFile(ref: SuiteFileRef, data: ByteArray): Boolean = false
     // --- One vault on its own, and picked entries handed on as a vault of their own
     /**
      * Opens one vault file on its own: only that vault is unlocked, the own suite stays locked.
@@ -180,10 +182,7 @@ interface VaultBackend {
         throw VaultException(VaultErrorKind.OTHER)
     /** The file of the vault open on its own; null while the own suite is in use. */
     fun singleFile(): SuiteFileRef? = null
-    /**
-     * Writes the vault open on its own back into its file; not when the file was changed
-     * elsewhere meanwhile (unless [overwrite]).
-     */
+    /** Writes the vault open on its own back into its file, as [mode] allows (see [SingleWrite]). */
     suspend fun saveSingle(mode: SingleWrite = SingleWrite.CHECKED): SingleSaveUi = SingleSaveUi.FAILED
     /** Writes the vault open on its own into another file, which it is written into from now on. */
     suspend fun saveSingleAs(ref: SuiteFileRef): Boolean = false

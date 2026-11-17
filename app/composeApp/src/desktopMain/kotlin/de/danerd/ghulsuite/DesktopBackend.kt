@@ -187,6 +187,20 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
         }.getOrDefault(false)
     }
 
+    /** Only where no file is: moved without replacing (a file that came back meanwhile stays). */
+    override suspend fun createSuiteFile(ref: SuiteFileRef, data: ByteArray): Boolean = withContext(Dispatchers.IO) {
+        val target = File(ref.id)
+        val tmp = File(target.parentFile, target.name + ".ghltmp")
+        runCatching {
+            java.io.FileOutputStream(tmp).use { it.write(data); it.fd.sync() }
+            java.nio.file.Files.move(tmp.toPath(), target.toPath())
+            target.readBytes().contentEquals(data)
+        }.getOrElse {
+            tmp.delete()
+            false
+        }
+    }
+
     override fun devicePref(key: String): String? = device.getString(key)
 
     override fun setDevicePref(key: String, value: String) = device.putString(key, value)

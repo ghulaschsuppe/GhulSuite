@@ -164,14 +164,15 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
     override fun archiveCancel() = suite.archiveCancel()
 
     override suspend fun archiveAccept() {
+        val s = suite
         try {
-            io { suite.archiveAccept() }
+            io { s.archiveAccept() }
         } catch (e: Throwable) {
             // The core may have locked before failing: the app must not show an open suite.
             // The core got as far as removing this device's quick unlock of the old state: the
             // platform's part of it goes too (not when it failed before that).
-            if (runCatching { suite.archiveDeviceDataWiped() }.getOrDefault(false)) onProtectionChanged()
-            unlockedState.value = runCatching { suite.isUnlocked() }.getOrDefault(false)
+            if (runCatching { s.archiveDeviceDataWiped() }.getOrDefault(false)) onProtectionChanged()
+            unlockedState.value = runCatching { s.isUnlocked() }.getOrDefault(false)
             throw e
         }
         // The device's quick unlock belonged to the state before.
@@ -334,22 +335,33 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
     }
 
     /**
-     * Writes [data] into the file of [dir] unless that file changed since this vault read or
-     * wrote it, or cannot be read now ([overwrite] writes anyway). Records what is in the file
-     * now. Only while holding [singleWrite].
+     * Writes [data] into the file of [dir] as [mode] allows: [SingleWrite.CHECKED] only when the
+     * file is as this vault left it, [SingleWrite.ANEW] also where it is gone (created, never
+     * replaced), [SingleWrite.OVERWRITE] whatever it holds. Records what is in the file now. Only
+     * while holding [singleWrite].
      */
     private suspend fun writeBackLocked(dir: java.io.File, data: ByteArray, mode: SingleWrite): SingleSaveUi {
         val t = io { readTarget(dir) } ?: return SingleSaveUi.FAILED
+        var create = false
         if (mode != SingleWrite.OVERWRITE && t.hash.isNotEmpty()) {
             val now = readSuiteFile(t.ref)
             when {
-                // Gone or unreadable (deleted, moved, storage away): only written anew when asked.
-                now == null -> if (mode != SingleWrite.ANEW) return SingleSaveUi.MISSING
+                // Gone or unreadable (deleted, moved, storage away): only written anew when asked,
+                // and then only where nothing is (an unreadable file that exists stays).
+                now == null -> if (mode == SingleWrite.ANEW) create = true else return SingleSaveUi.MISSING
+                // What this vault wrote itself (its record was not updated then): no change elsewhere.
+                now.contentEquals(data) -> {}
                 // Back meanwhile, changed elsewhere: asked again, also when writing anew.
                 sha(now) != t.hash -> return SingleSaveUi.CHANGED_ELSEWHERE
             }
         }
-        if (!writeSuiteFile(t.ref, data)) return SingleSaveUi.FAILED
+        if (create) {
+            if (!createSuiteFile(t.ref, data)) {
+                return if (readSuiteFile(t.ref) != null) SingleSaveUi.CHANGED_ELSEWHERE else SingleSaveUi.FAILED
+            }
+        } else if (!writeSuiteFile(t.ref, data)) {
+            return SingleSaveUi.FAILED
+        }
         io { writeTarget(dir, Target(t.ref, t.vault, sha(data))) }
         return SingleSaveUi.SAVED
     }

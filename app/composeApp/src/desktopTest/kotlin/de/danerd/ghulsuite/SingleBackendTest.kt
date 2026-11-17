@@ -40,7 +40,16 @@ class SingleBackendTest {
         override fun devicePref(key: String): String? = prefs[key]
         override fun setDevicePref(key: String, value: String) { prefs[key] = value }
         override fun kdfMaxMib(): Int = 64
-        override suspend fun readSuiteFile(ref: SuiteFileRef): ByteArray? = File(ref.id).takeIf { it.exists() }?.readBytes()
+        /** The file exists but cannot be read (a placeholder of a cloud folder while offline). */
+        @Volatile var unreadable = false
+        override suspend fun readSuiteFile(ref: SuiteFileRef): ByteArray? =
+            if (unreadable) null else File(ref.id).takeIf { it.exists() }?.readBytes()
+        override suspend fun createSuiteFile(ref: SuiteFileRef, data: ByteArray): Boolean {
+            val f = File(ref.id)
+            if (f.exists()) return false
+            f.writeBytes(data)
+            return true
+        }
         override suspend fun writeSuiteFile(ref: SuiteFileRef, data: ByteArray): Boolean {
             if (failWrites) return false
             File(ref.id).writeBytes(data)
@@ -303,6 +312,13 @@ class SingleBackendTest {
             one.writeBytes(elsewhere)
             assertEquals(SingleSaveUi.CHANGED_ELSEWHERE, b.saveSingle(SingleWrite.ANEW))
             assertTrue(one.readBytes().contentEquals(elsewhere), "not overwritten")
+            one.delete()
+            // There but unreadable (offline placeholder): "write anew" does not replace it.
+            one.writeBytes(elsewhere)
+            b.unreadable = true
+            assertEquals(SingleSaveUi.FAILED, b.saveSingle(SingleWrite.ANEW))
+            assertTrue(one.readBytes().contentEquals(elsewhere), "not replaced")
+            b.unreadable = false
             one.delete()
             assertEquals(SingleSaveUi.SAVED, b.saveSingle(SingleWrite.ANEW))
             assertEquals("Wieder da", nameIn(dir, one, kf))

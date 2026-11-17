@@ -401,7 +401,7 @@ fun PendingSingleWrites(state: AppState) {
             when (r) {
                 SingleSaveUi.SAVED -> { error = null; tick++ }
                 SingleSaveUi.CHANGED_ELSEWHERE, SingleSaveUi.MISSING -> tick++
-                SingleSaveUi.FAILED -> error = stillNot
+                SingleSaveUi.FAILED -> { error = stillNot; tick++ }
             }
         }
     }
@@ -444,7 +444,7 @@ fun PendingSingleWrites(state: AppState) {
                 if (p.missing && p.targetKnown) {
                     Banner(
                         Icons.Filled.Warning,
-                        stringResource(if (backend.canWriteFilesAnew) Res.string.single_pending_missing else Res.string.single_missing_save_as),
+                        stringResource(if (backend.canWriteFilesAnew) Res.string.single_pending_missing else Res.string.single_pending_missing_retry),
                     )
                 }
                 if (filePickersAvailable) {
@@ -459,13 +459,14 @@ fun PendingSingleWrites(state: AppState) {
             }
         },
         confirmButton = {
-            if (p.targetKnown && (!p.missing || backend.canWriteFilesAnew)) {
+            if (p.targetKnown) {
                 TextButton(enabled = !state.busy, onClick = {
                     write(
                         when {
                             p.changedElsewhere -> SingleWrite.OVERWRITE
                             // Checked again: back meanwhile and changed elsewhere is asked anew.
-                            p.missing -> SingleWrite.ANEW
+                            // Where a file cannot be made anew: tried again (is it back?).
+                            p.missing -> if (backend.canWriteFilesAnew) SingleWrite.ANEW else SingleWrite.CHECKED
                             else -> SingleWrite.CHECKED
                         },
                     )
@@ -474,7 +475,8 @@ fun PendingSingleWrites(state: AppState) {
                         stringResource(
                             when {
                                 p.changedElsewhere -> Res.string.file_overwrite
-                                p.missing -> Res.string.single_write_anew
+                                p.missing && backend.canWriteFilesAnew -> Res.string.single_write_anew
+                                p.missing -> Res.string.single_try_again
                                 else -> Res.string.single_pending_write
                             },
                         ),
