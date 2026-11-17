@@ -174,7 +174,9 @@ das selbst, eine Einstellung braucht es nicht:
 
 Ist ein Server gerade nicht erreichbar, bleibt er auf „wartet“ und wird nach dem nächsten Entsperren wieder versucht.
 Nur eine abgewiesene Anmeldung zählt als „alter Schlüssel abgewiesen“; bricht die Verbindung ab (Zeitlimit,
-Verbindungssperren nach vielen Anmeldungen), wartet der Server. Nach dem Entfernen der alten Zeilen prüft die App, dass
+Verbindungssperren nach vielen Anmeldungen), wartet der Server. Neuere SSH-Server sperren eine Adresse nach
+abgewiesenen Anmeldungen kurz (bei OpenSSH ab 9.8 einige Sekunden); auch dann wartet der Server und wird beim nächsten
+Mal fertig. Nach dem Entfernen der alten Zeilen prüft die App, dass
 der neue Schlüssel weiter funktioniert, sonst schreibt sie die Datei zurück. Kommt kein Schlüssel mehr hinein (der
 alte wurde im Webpanel schon entfernt), bittet sie, den neuen dort einzutragen.
 Der Wechsel gilt erst als abgeschlossen, wenn alle Server und alle Drive-Speicherorte durch sind; erst dann werden die

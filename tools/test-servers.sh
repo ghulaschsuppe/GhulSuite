@@ -46,6 +46,11 @@ StrictModes no
 UsePAM no
 Subsystem sftp internal-sftp
 CFG
+# OpenSSH 9.8 and newer shut out an address for a while after refused logins (PerSourcePenalties).
+# The tests log in with wrong keys on purpose (the key change), all from 127.0.0.1: off here.
+if /usr/sbin/sshd -t -f "$D/ssh/sshd_config" -o PerSourcePenalties=no 2>/dev/null; then
+  echo "PerSourcePenalties no" >> "$D/ssh/sshd_config"
+fi
 /usr/sbin/sshd -f "$D/ssh/sshd_config" -E "$D/ssh/sshd.log"
 HOST_FP=$(ssh-keygen -lf "$D/ssh/host_key.pub" -E sha256 | awk '{print $2}')
 
@@ -211,6 +216,9 @@ StrictModes no
 UsePAM no
 Subsystem sftp internal-sftp
 CFG
+  if /usr/sbin/sshd -t -f "$D/ssh/sshd_config_pw" -o PerSourcePenalties=no 2>/dev/null; then
+    echo "PerSourcePenalties no" >> "$D/ssh/sshd_config_pw"
+  fi
   /usr/sbin/sshd -f "$D/ssh/sshd_config_pw" -E "$D/ssh/sshd_pw.log"
 fi
 
