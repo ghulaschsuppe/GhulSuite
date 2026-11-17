@@ -92,8 +92,7 @@ impl ServerCertVerifier for Verifier {
     }
 }
 
-/// A TLS client configuration that remembers the certificate it saw. One configuration can be
-/// used for several connections, which lets TLS sessions resume (needed for FTPS data channels).
+/// A TLS client configuration that remembers the certificate it saw.
 pub struct Client {
     config: Arc<rustls::ClientConfig>,
     seen: Arc<Mutex<Option<String>>>,
@@ -104,13 +103,6 @@ impl Client {
     /// `pinned`: a confirmed certificate fingerprint (self-signed own servers).
     pub fn new(pinned: Option<&str>) -> NetResult<Client> {
         Self::with_versions(pinned, rustls::DEFAULT_VERSIONS)
-    }
-
-    /// FTPS: TLS 1.2 only. FTPS servers demand that every data connection resumes the control
-    /// connection's TLS session; TLS 1.3 tickets are single-use, TLS 1.2 sessions can be resumed
-    /// again and again. Still forward secret (ECDHE) with AEAD ciphers only.
-    pub fn for_ftps(pinned: Option<&str>) -> NetResult<Client> {
-        Self::with_versions(pinned, &[&rustls::version::TLS12])
     }
 
     fn with_versions(

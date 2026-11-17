@@ -161,7 +161,7 @@ jobs:
           cargo audit --deny unmaintained > /tmp/unmaintained.txt 2>&1 || echo "::warning::Nicht mehr gepflegte Abhängigkeiten, siehe Log"
           tail -n 40 /tmp/unmaintained.txt
 
-  # Certificate checking of the TLS connections (IMAP, SMTP, FTPS, GhulDrive) against the
+  # Certificate checking of the TLS connections (IMAP, SMTP, GhulDrive) against the
   # x509-limbo suite, and OpenPGP in both directions with GnuPG. Fails only when a certificate
   # that must be refused is accepted (and is not explained in core/ghul-core/tests/limbo-known.txt).
   interop:

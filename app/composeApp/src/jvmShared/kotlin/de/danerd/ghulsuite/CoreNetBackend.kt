@@ -14,11 +14,9 @@ import de.danerd.ghulsuite.core.MailSummary
 import de.danerd.ghulsuite.core.OutgoingAttachment
 import de.danerd.ghulsuite.core.OutgoingMail
 import de.danerd.ghulsuite.core.ServerInput
-import de.danerd.ghulsuite.core.ServerKind
 import de.danerd.ghulsuite.core.ServerSaved
 import de.danerd.ghulsuite.core.ShareInfo
 import de.danerd.ghulsuite.core.ShareOptions
-import de.danerd.ghulsuite.model.ServerKindUi
 import de.danerd.ghulsuite.model.ServerSavedUi
 import de.danerd.ghulsuite.model.ShareInfoUi
 import de.danerd.ghulsuite.model.ModuleCheckUi

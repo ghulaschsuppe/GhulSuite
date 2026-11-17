@@ -9,7 +9,6 @@ use std::future::Future;
 use std::sync::OnceLock;
 use std::time::Duration;
 
-pub mod ftps;
 pub mod http;
 pub mod imap;
 pub mod module;

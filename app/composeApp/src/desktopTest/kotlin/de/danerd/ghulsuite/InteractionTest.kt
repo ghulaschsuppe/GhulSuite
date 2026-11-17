@@ -2,7 +2,6 @@
 package de.danerd.ghulsuite
 
 import androidx.compose.runtime.CompositionLocalProvider
-import de.danerd.ghulsuite.model.ServerKindUi
 import de.danerd.ghulsuite.model.ServerUi
 import de.danerd.ghulsuite.model.VaultKindUi
 import androidx.compose.ui.platform.LocalDensity
@@ -1364,8 +1363,7 @@ class InteractionTest {
     fun driveWithItsOwnServerShowsIt() {
         app(setup = { tab = Tab.DRIVE }, prepare = {
             val n = net as FakeNet
-            n.driveOwnServer = ServerUi("d1", "Drive-NAS", "nas.example.org", 22, "max", "drive", true, "SHA256:x", "/srv/drive",
-                ServerKindUi.SFTP)
+            n.driveOwnServer = ServerUi("d1", "Drive-NAS", "nas.example.org", 22, "max", "drive", "SHA256:x", "/srv/drive")
         }) { _, _ ->
             waitFor("Drive-NAS")
             assertFalse(shown("No server yet"))

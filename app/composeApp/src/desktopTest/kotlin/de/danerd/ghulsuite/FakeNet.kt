@@ -21,7 +21,6 @@ import de.danerd.ghulsuite.model.OutgoingAttachmentUi
 import de.danerd.ghulsuite.model.ModuleCheckUi
 import de.danerd.ghulsuite.model.ModuleInstalledUi
 import de.danerd.ghulsuite.model.ServerInputUi
-import de.danerd.ghulsuite.model.ServerKindUi
 import de.danerd.ghulsuite.model.ServerSavedUi
 import de.danerd.ghulsuite.model.ShareInfoUi
 import de.danerd.ghulsuite.model.ShareOptionsUi
@@ -30,14 +29,14 @@ import de.danerd.ghulsuite.model.ServerUi
 /** Sample data for screenshots of the network screens. */
 class FakeNet(private val configured: Boolean = true, private val encryptedMail: Boolean = false, private val conversation: Boolean = false) : NetBackend {
     private val now = 1_762_000_000L
-    /** The sync and GhulDrive server, with an older server module (it can be updated). */
+    /** The GhulDrive server, with an older server module (it can be updated). */
     private val server = ServerUi(
-        "s1", "Heimserver", "nas.example.org", 22, "max", "ghulsuite", true, "SHA256:abc", "/home/max/ghulsuite",
-        ServerKindUi.SFTP, "https://nas.example.org/ghulsuite.php", 1, 2,
+        "s1", "Heimserver", "nas.example.org", 22, "max", "ghulsuite", "SHA256:abc", "/home/max/ghulsuite",
+        "https://nas.example.org/ghulsuite.php", 1, 2,
     )
-    /** A web hosting over FTPS without the server module. */
+    /** A web hosting without the server module. */
     private val web = ServerUi(
-        "s2", "Webspace", "example.org", 21, "web123", "ghulsuite", false, "SHA256:def", "/ghulsuite", ServerKindUi.FTPS, "", 0, 2,
+        "s2", "Webspace", "example.org", 22, "web123", "ghulsuite", "SHA256:def", "/ghulsuite", "", 0, 2,
     )
     /** Calls the screens made, for tests. */
     val calls: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf<String>())
@@ -138,11 +137,11 @@ class FakeNet(private val configured: Boolean = true, private val encryptedMail:
             driveLocs.clear()
             if (v != null) driveLocs += de.danerd.ghulsuite.model.DriveLocationUi(v, active = true, archive = true)
         }
-    /** A second storage location (the FTPS web hosting, folder "drive-b"), not active. */
+    /** A second storage location (the web hosting, folder "drive-b"), not active. */
     fun addSecondDriveLocation() {
         driveLocs += de.danerd.ghulsuite.model.DriveLocationUi(web.copy(id = "d2", base = "drive-b", location = "/drive-b"), active = false, archive = false)
     }
-    /** Saving a location adds it (the FTPS web hosting with the folder that was entered). */
+    /** Saving a location adds it (the web hosting with the folder that was entered). */
     override suspend fun driveSaveServer(input: ServerInputUi, confirmed: String?): ServerSavedUi {
         if (confirmed == null) return ServerSavedUi.Confirm("SHA256:7beJP+X7anXY96H6FlO+I7u8z2xP1gJsp7GiBGawac4")
         driveLocationCalls += "add:${input.base}"

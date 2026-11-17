@@ -31,7 +31,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import de.danerd.ghulsuite.model.ServerFoldersUi
 import de.danerd.ghulsuite.model.ServerInputUi
-import de.danerd.ghulsuite.model.ServerKindUi
 import de.danerd.ghulsuite.model.ServerSavedUi
 import de.danerd.ghulsuite.model.ServerTestUi
 import de.danerd.ghulsuite.resources.Res
@@ -51,12 +50,12 @@ private val WEB_ROOTS = setOf("public_html", "htdocs", "httpdocs", "html", "www"
  */
 @Stable
 class ServerForm {
-    var kind by mutableStateOf(ServerKindUi.SFTP)
     var input by mutableStateOf(ServerInputUi(name = "", host = "", port = 22, user = "", password = null, base = ""))
+    /** Log in once with the password to put the suite's SSH key on the server (it is not stored). */
     var usePassword by mutableStateOf(false)
-    /** SFTP with password: put the suite's SSH key on the server and do not store the password. */
-    var installKey by mutableStateOf(true)
-    /** Fingerprint of the SSH host key or TLS certificate the user confirmed. */
+    /** The suite's SSH key was put on the server with the password: from now on it logs in with the key. */
+    var keyInstalled by mutableStateOf(false)
+    /** Fingerprint of the SSH host key the user confirmed. */
     var confirmed by mutableStateOf<String?>(null)
     /** The login was tried and works (only then the folder can be chosen). */
     var connected by mutableStateOf(false)
@@ -80,7 +79,7 @@ class ServerForm {
 
     val loginReady: Boolean
         get() = input.host.isNotBlank() && input.user.isNotBlank() &&
-            (kind == ServerKindUi.SFTP && !usePassword || !input.password.isNullOrEmpty())
+            (!usePassword || keyInstalled || !input.password.isNullOrEmpty())
 
     /** The step still missing, or null when the server is stored. */
     fun missing(): StringResource? = when {
@@ -92,19 +91,9 @@ class ServerForm {
         else -> Res.string.srvf_step_test
     }
 
-    fun switchKind(k: ServerKindUi) {
-        kind = k
-        input = input.copy(port = if (k == ServerKindUi.SFTP) 22 else 21, password = if (k == ServerKindUi.SFTP) null else "")
-        usePassword = k != ServerKindUi.SFTP
-        confirmed = null
-        connected = false
-        folder = ""
-        tested = false
-        savedId = null
-    }
-
     /** The login changed: test it again, then choose the folder again. */
     fun relogin() {
+        keyInstalled = false
         connected = false
         connectFailed = false
         folder = ""
@@ -112,11 +101,8 @@ class ServerForm {
         testFailed = false
     }
 
-    /** The login as typed. */
-    fun login(): ServerInputUi = when (kind) {
-        ServerKindUi.SFTP -> input.copy(kind = ServerKindUi.SFTP, password = if (usePassword) input.password else null)
-        ServerKindUi.FTPS -> input.copy(kind = ServerKindUi.FTPS)
-    }
+    /** The login as used from now on: always with the suite's SSH key, never a password. */
+    fun login(): ServerInputUi = input.copy(password = null)
 }
 
 @Composable
@@ -129,7 +115,7 @@ fun rememberServerForm(): ServerForm = remember { ServerForm() }
  * appears (nothing is saved by itself). A numbered checklist below names what is still missing. The server
  * module for share links is installed later from the list of servers, over the same login.
  *
- * [save] stores the checked server (suite list for synchronisation, Drive file for GhulDrive).
+ * [save] stores the checked server (suite list, or Drive file for GhulDrive).
  */
 @Composable
 fun ServerSetup(
@@ -147,27 +133,15 @@ fun ServerSetup(
     var publicKey by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) { publicKey = catching { net.sshPublicKey() }.getOrNull() }
 
-    SingleChoiceSegmentedButtonRow {
-        for (k in ServerKindUi.entries) {
-            SegmentedButton(form.kind == k, { if (form.kind != k) { form.switchKind(k); error = null } }) { SegLabel(kindLabel(k)) }
-        }
-    }
-
     val saved = form.savedId
     if (saved != null) {
         Banner(Icons.Filled.CheckCircle, stringResource(Res.string.srvf_connected, form.savedWhere))
         return
     }
 
-    /** Stores the server: SFTP with password puts the SSH key on it first. */
+    /** Stores the server (logged in with the suite's SSH key). */
     fun store(input: ServerInputUi, confirmed: String?) {
-        state.run(onError = { error = it }, block = {
-            if (form.kind == ServerKindUi.SFTP && form.usePassword && form.installKey) {
-                val fp = net.installSshKey(form.input.copy(kind = ServerKindUi.SFTP), confirmed)
-                if (fp.isNotEmpty()) return@run ServerSavedUi.Confirm(fp)
-            }
-            save(input, confirmed)
-        }) { r ->
+        state.run(onError = { error = it }, block = { save(input, confirmed) }) { r ->
             when (r) {
                 is ServerSavedUi.Confirm -> {
                     fingerprint = r.fingerprint
@@ -183,13 +157,9 @@ fun ServerSetup(
         }
     }
 
-    /** Saves the checked server (SFTP with password and "install key": with the key from then on). */
+    /** Saves the checked server. */
     fun saveChecked() {
-        val login = form.login()
-        val input = when (form.kind) {
-            ServerKindUi.SFTP -> (if (form.usePassword && form.installKey) login.copy(password = null) else login).copy(base = form.folder)
-            ServerKindUi.FTPS -> login.copy(base = form.folder)
-        }
+        val input = form.login().copy(base = form.folder)
         store(input.copy(name = input.name.ifBlank { input.host }), form.confirmed)
     }
 
@@ -224,26 +194,30 @@ fun ServerSetup(
     }
     OutlinedTextField(form.input.user, { form.input = form.input.copy(user = it.trim()); form.relogin(); error = null }, Modifier.fillMaxWidth(),
         label = { Text(stringResource(Res.string.server_user)) }, singleLine = true)
-    if (form.kind == ServerKindUi.SFTP) {
-        ChipRow {
-            FilterChip(!form.usePassword, { form.usePassword = false; form.relogin() }, label = { Text(stringResource(Res.string.server_auth_key)) })
-            FilterChip(form.usePassword, { form.usePassword = true; form.relogin(); if (form.input.password == null) form.input = form.input.copy(password = "") },
-                label = { Text(stringResource(Res.string.server_auth_password)) })
-        }
+    ChipRow {
+        FilterChip(!form.usePassword, { form.usePassword = false; form.relogin() }, label = { Text(stringResource(Res.string.server_auth_key)) })
+        FilterChip(form.usePassword, { form.usePassword = true; form.relogin(); if (form.input.password == null) form.input = form.input.copy(password = "") },
+            label = { Text(stringResource(Res.string.server_auth_password)) })
     }
-    if (form.kind != ServerKindUi.SFTP || form.usePassword) {
+    if (form.usePassword) {
         SecretTextField(form.input.password.orEmpty(), { form.input = form.input.copy(password = it); form.relogin(); error = null }, stringResource(Res.string.server_password))
-    }
-    if (form.kind == ServerKindUi.SFTP && form.usePassword) {
-        SwitchRow(stringResource(Res.string.server_install_key), form.installKey) { form.installKey = it }
-        Hint(stringResource(if (form.installKey) Res.string.server_install_key_hint else Res.string.server_password_stored_hint))
-    } else if (form.kind == ServerKindUi.SFTP) {
+        Hint(stringResource(Res.string.server_install_key_hint))
+    } else {
         publicKey?.let { PublicKeyBox(state, it) }
     }
 
-    // Step 1: test the login. Only a working login gets to choose a folder.
+    // Step 1: test the login. Only a working login gets to choose a folder. With the password,
+    // the suite's SSH key is put on the server first; from then on only the key logs in.
     fun connect() {
-        state.run(onError = { error = it; form.connectFailed = true }, block = { net.serverBrowseInput(form.login(), form.confirmed, "") }) { r ->
+        state.run(onError = { error = it; form.connectFailed = true }, block = {
+            if (form.usePassword && !form.keyInstalled) {
+                val fp = net.installSshKey(form.input, form.confirmed)
+                if (fp.isNotEmpty()) return@run ServerFoldersUi.Confirm(fp)
+                form.keyInstalled = true
+                form.input = form.input.copy(password = null)
+            }
+            net.serverBrowseInput(form.login(), form.confirmed, "")
+        }) { r ->
             when (r) {
                 is ServerFoldersUi.Confirm -> {
                     fingerprint = r.fingerprint
@@ -300,7 +274,7 @@ fun ServerSetup(
     fingerprint?.let { fp ->
         FingerprintDialog(
             stringResource(Res.string.server_fp_title),
-            stringResource(if (form.kind == ServerKindUi.SFTP) Res.string.server_fp_text else Res.string.server_cert_text), fp,
+            stringResource(Res.string.server_fp_text), fp,
             onTrust = {
                 fingerprint = null
                 form.confirmed = fp

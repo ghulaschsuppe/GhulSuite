@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Every parser for outside data (HTTP, SMTP, FTP, HTML mails, ICS, imports, links, shares,
+//! Every parser for outside data (HTTP, SMTP, HTML mails, ICS, imports, links, shares,
 //! CBOR, Autocrypt, URL hosts); the first byte chooses which.
 #![no_main]
 use libfuzzer_sys::fuzz_target;

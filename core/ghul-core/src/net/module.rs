@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The GhulSuite server module (`server/ghulsuite.php`): share links on web hosting.
 //!
-//! The app installs it over SFTP or FTPS on the server that holds GhulDrive. It has no write
+//! The app installs it over SFTP on the server that holds GhulDrive. It has no write
 //! access over the web and no secret: it reads the share descriptions the app writes into the
 //! GhulSuite folder and hands out the encrypted blocks of a share (see `app::shares`).
 

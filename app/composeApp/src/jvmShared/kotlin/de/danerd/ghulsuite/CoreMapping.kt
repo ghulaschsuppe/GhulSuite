@@ -13,7 +13,6 @@ import de.danerd.ghulsuite.core.MailServers
 import de.danerd.ghulsuite.core.MailSummary
 import de.danerd.ghulsuite.core.ProtectionInfo
 import de.danerd.ghulsuite.core.ServerInput
-import de.danerd.ghulsuite.core.ServerKind
 import de.danerd.ghulsuite.core.ShareInfo
 import de.danerd.ghulsuite.core.ShareOptions
 import de.danerd.ghulsuite.core.VaultKind
@@ -26,7 +25,6 @@ import de.danerd.ghulsuite.model.MailServersUi
 import de.danerd.ghulsuite.model.MailSummaryUi
 import de.danerd.ghulsuite.model.ProtectionUi
 import de.danerd.ghulsuite.model.ServerInputUi
-import de.danerd.ghulsuite.model.ServerKindUi
 import de.danerd.ghulsuite.model.ShareInfoUi
 import de.danerd.ghulsuite.model.ShareOptionsUi
 import de.danerd.ghulsuite.model.VaultErrorKind
@@ -160,22 +158,12 @@ internal fun FidoException.toVault(): VaultException {
     }
 }
 
-fun ServerInputUi.toCore() = ServerInput(kind.toCore(), name, host, port.toUShort(), user, password, base)
+fun ServerInputUi.toCore() = ServerInput(name, host, port.toUShort(), user, password, base)
 
 internal fun ServerInfo.toUi() = ServerUi(
-    id, name, host, port.toInt(), user, base, usesKey, hostKey, location, kind.toUi(),
+    id, name, host, port.toInt(), user, base, hostKey, location,
     moduleUrl, moduleVersion.toInt(), moduleCurrent.toInt(),
 )
-
-internal fun ServerKindUi.toCore() = when (this) {
-    ServerKindUi.SFTP -> ServerKind.SFTP
-    ServerKindUi.FTPS -> ServerKind.FTPS
-}
-
-internal fun ServerKind.toUi() = when (this) {
-    ServerKind.SFTP -> ServerKindUi.SFTP
-    ServerKind.FTPS -> ServerKindUi.FTPS
-}
 
 internal fun ShareOptionsUi.toCore() = ShareOptions(password, expiresDays.toUInt(), maxDownloads.toUInt())
 

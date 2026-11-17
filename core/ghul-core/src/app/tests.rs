@@ -632,7 +632,7 @@ fn titles(s: &GhulSuite) -> Vec<String> {
 fn mail_archive_to_drive_against_imap_and_sftp() {
     use super::mail::{MailAccountInput, MailSecurity, MailServers};
     use super::maildrive::MailArchived;
-    use super::servers::{ServerInput, ServerKind};
+    use super::servers::ServerInput;
     let (Ok(host), Ok(fp)) = (std::env::var("GHUL_TEST_MAIL"), std::env::var("GHUL_TEST_MAIL_TLSFP")) else { return };
     let Some((shost, sport, suser, sroot, authkeys, hostkey)) = crate::net::tests::sftp_env() else { return };
     let d = Dirs::new("archive-drive");
@@ -698,7 +698,6 @@ fn mail_archive_to_drive_against_imap_and_sftp() {
 
     crate::net::tests::authorize_test_key(&authkeys, &s.ssh_public_key().unwrap());
     let input = ServerInput {
-        kind: ServerKind::Sftp,
         name: "Heimserver".into(),
         host: shost,
         port: sport,
@@ -1080,15 +1079,7 @@ fn drive_over_sftp_two_devices() {
     a.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "P")]), None, None, None).unwrap();
     authorize(&a.ssh_public_key().unwrap());
     let run = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
-    let input = ServerInput {
-        kind: super::servers::ServerKind::Sftp,
-        name: "S".into(),
-        host,
-        port,
-        user,
-        password: None,
-        base: format!("{root}/drive-{run}"),
-    };
+    let input = ServerInput { name: "S".into(), host, port, user, password: None, base: format!("{root}/drive-{run}") };
     let id = saved(a.save_server(input.clone(), Some(hostkey.clone())).unwrap());
     a.drive_setup(id.clone()).unwrap();
     let file = upload(&a, None, "bericht.pdf", b"%PDF-1.7 test");
@@ -1675,7 +1666,7 @@ fn share_through_module(
 
 #[test]
 fn share_links_over_sftp_through_the_module() {
-    use super::servers::{ServerInput, ServerKind};
+    use super::servers::ServerInput;
     let Some((host, port, user, root, authkeys, hostkey)) = crate::net::tests::sftp_env() else { return };
     let d = Dirs::new("share-sftp");
     let s = d.suite();
@@ -1683,7 +1674,6 @@ fn share_links_over_sftp_through_the_module() {
     crate::net::tests::authorize_test_key(&authkeys, &s.ssh_public_key().unwrap());
     let run = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
     let input = ServerInput {
-        kind: ServerKind::Sftp,
         name: "Heimserver".into(),
         host,
         port,
@@ -1707,7 +1697,6 @@ fn share_links_over_sftp_through_the_module() {
     let www = site.join("www");
     let info = s.list_servers().unwrap().into_iter().find(|x| x.id == id).unwrap();
     let open = ServerInput {
-        kind: ServerKind::Sftp,
         name: "Offen".into(),
         host: info.host.clone(),
         port,
@@ -1743,70 +1732,37 @@ fn share_links_over_sftp_through_the_module() {
 }
 
 #[test]
-fn ftps_storage_drive_and_share_links() {
-    use super::servers::{ServerInput, ServerKind};
-    let Some(cfg) = crate::net::tests::ftps_test_config("app") else { return };
-    let home = std::env::var("GHUL_TEST_DIR").map(|d| std::path::PathBuf::from(d).join("ftp-home")).unwrap();
-    let d = Dirs::new("ftps");
-    let s = d.suite();
-    s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
-    let input = ServerInput {
-        kind: ServerKind::Ftps,
-        name: "Webhosting".into(),
-        host: cfg.host.clone(),
-        port: cfg.port,
-        user: cfg.user.clone(),
-        password: Some(cfg.password.to_string()),
-        base: cfg.base.clone(),
-    };
-    // Self-signed certificate: confirm its fingerprint first.
-    let fp = match s.save_server(input.clone(), None).unwrap() {
-        ServerSaved::Confirm { fingerprint } => fingerprint,
-        other => panic!("{other:?}"),
-    };
-    assert_eq!(Some(fp.clone()), cfg.cert);
-    let id = saved(s.save_server(input, Some(fp)).unwrap());
-    // Drive over FTPS.
-    s.drive_setup(id.clone()).unwrap();
-    let big: Vec<u8> = (0..5_000_000u32).map(|i| (i % 251) as u8).collect();
-    let f = upload(&s, None, "Video.mp4", &big);
-    assert_eq!(download(&s, &f), big);
-    // Folder browsing for the module's folder; the module over FTPS, then share links.
-    assert!(s.server_browse(id.clone(), String::new()).unwrap().contains(&cfg.base));
-    let rel = format!("{}-web", cfg.base);
-    let loc = s.drive_locations().unwrap()[0].server.id.clone();
-    share_through_module(&s, &loc, &rel, &home.join(&rel), &home.join(&cfg.base));
-}
-
-#[test]
 fn drive_storage_locations() {
     use super::drive::DriveMode;
-    use super::servers::{ServerFolders, ServerInput, ServerKind};
-    let Some(cfg) = crate::net::tests::ftps_test_config("drive-modes") else { return };
-    let home = std::env::var("GHUL_TEST_DIR").map(|d| std::path::PathBuf::from(d).join("ftp-home")).unwrap();
+    use super::servers::{ServerFolders, ServerInput};
+    let Some((host, port, user, root, authkeys, _)) = crate::net::tests::sftp_env() else { return };
+    // The SFTP test server and the test share one file system: server paths are local paths.
+    let home = std::path::PathBuf::from("/");
+    let run = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+    let base = format!("{root}/locs-{run}");
     let d = Dirs::new("drive-modes");
     let s = d.suite();
     let kf = generate_keyfile();
     s.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    crate::net::tests::authorize_test_key(&authkeys, &s.ssh_public_key().unwrap());
     let input = |base: &str| ServerInput {
-        kind: ServerKind::Ftps,
         name: String::new(),
-        host: cfg.host.clone(),
-        port: cfg.port,
-        user: cfg.user.clone(),
-        password: Some(cfg.password.to_string()),
+        host: host.clone(),
+        port,
+        user: user.clone(),
+        password: None,
         base: base.to_owned(),
     };
-    // Folder picker before anything is stored: confirm the certificate, then list.
+    // Folder picker before anything is stored: confirm the host key, then list.
     let fp = match s.server_browse_input(input(""), None, String::new()).unwrap() {
         ServerFolders::Confirm { fingerprint } => fingerprint,
         other => panic!("{other:?}"),
     };
-    let sync_id = saved(s.save_server(input(&cfg.base), Some(fp.clone())).unwrap());
-    match s.server_browse_input(input(""), Some(fp.clone()), String::new()).unwrap() {
-        ServerFolders::Folders { folders } => assert!(folders.contains(&cfg.base)),
-        other => panic!("{other:?}"),
-    }
+    let sync_id = saved(s.save_server(input(&base), Some(fp.clone())).unwrap());
+    assert!(matches!(
+        s.server_browse_input(input(""), Some(fp.clone()), String::new()).unwrap(),
+        ServerFolders::Folders { .. }
+    ));
     assert_eq!(s.drive_storage().unwrap().mode, DriveMode::None);
 
     // A server of the suite becomes a storage location of Drive's own (a copy in the Drive file).
@@ -1821,7 +1777,7 @@ fn drive_storage_locations() {
     assert_eq!(download(&s, &plan), b"Plan A");
 
     // A second location is added next to it; the active one stays.
-    let other = format!("{}-b", cfg.base);
+    let other = format!("{base}-b");
     let second_id = saved(s.drive_save_server(input(&other), Some(fp.clone())).unwrap());
     let locs = s.drive_locations().unwrap();
     assert_eq!(
@@ -1873,7 +1829,7 @@ fn drive_storage_locations() {
     // Removing with the files: everything of GhulDrive on that server goes, nothing else.
     std::fs::write(home.join(&other).join("drive/eigene-notiz.txt"), b"mine").unwrap();
     std::fs::create_dir_all(home.join(&other).join("shares")).unwrap();
-    // Writable for the FTP user, as GhulDrive's own share folder would be.
+    // Writable for the server's user, as GhulDrive's own share folder would be.
     #[cfg(unix)]
     std::fs::set_permissions(home.join(&other).join("shares"), std::os::unix::fs::PermissionsExt::from_mode(0o777))
         .unwrap();
@@ -1899,18 +1855,20 @@ fn drive_storage_locations() {
     s.drive_remove_location(first_id.clone(), false, false).unwrap();
     assert!(s.drive_locations().unwrap().is_empty());
     assert_eq!(s.drive_storage().unwrap().mode, DriveMode::None);
-    assert!(home.join(&cfg.base).join("drive/index.ghldrv").exists(), "files stay on the server");
-    let again = saved(s.drive_save_server(input(&cfg.base), Some(cfg.cert.clone().unwrap())).unwrap());
+    assert!(home.join(&base).join("drive/index.ghldrv").exists(), "files stay on the server");
+    let again = saved(s.drive_save_server(input(&base), Some(fp.clone())).unwrap());
     assert_eq!(s.drive_storage().unwrap().server.map(|x| x.id), Some(again.clone()));
     let names: Vec<String> = s.drive_list(None, true).unwrap().into_iter().map(|i| i.name).collect();
     assert_eq!(names, vec!["Plan.txt"]);
 
-    // A location in the folder the synchronisation uses: removing it never deletes files there.
-    let sync_again = saved(s.save_server(input(&cfg.base), Some(fp.clone())).unwrap());
+    // A location in the folder a server of the suite uses: removing it never deletes files there.
+    let suite_again = saved(s.save_server(input(&base), Some(fp.clone())).unwrap());
     assert!(s.drive_remove_location(again.clone(), true, false).is_err());
     assert_eq!(s.drive_locations().unwrap().len(), 1, "nothing removed");
-    assert!(home.join(&cfg.base).join("drive/index.ghldrv").exists());
-    s.remove_server(sync_again).unwrap();
+    assert!(home.join(&base).join("drive/index.ghldrv").exists());
+    s.remove_server(suite_again).unwrap();
+    let _ = std::fs::remove_dir_all(&base);
+    let _ = std::fs::remove_dir_all(&other);
 }
 
 #[test]
@@ -1946,7 +1904,7 @@ impl Drop for ModuleSuite {
 }
 
 fn module_suite(name: &str) -> Option<ModuleSuite> {
-    use super::servers::{ServerInput, ServerKind};
+    use super::servers::ServerInput;
     let (host, port, user, root, authkeys, hostkey) = crate::net::tests::sftp_env()?;
     std::process::Command::new("php").arg("-v").output().ok()?;
     let d = Dirs::new(name);
@@ -1955,15 +1913,7 @@ fn module_suite(name: &str) -> Option<ModuleSuite> {
     crate::net::tests::authorize_test_key(&authkeys, &s.ssh_public_key().unwrap());
     let run = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
     let base = format!("{root}/{name}-suite-{run}");
-    let input = ServerInput {
-        kind: ServerKind::Sftp,
-        name: String::new(),
-        host,
-        port,
-        user,
-        password: None,
-        base: base.clone(),
-    };
+    let input = ServerInput { name: String::new(), host, port, user, password: None, base: base.clone() };
     let id = saved(s.save_server(input, Some(hostkey)).unwrap());
     s.drive_setup(id.clone()).unwrap();
     // GhulDrive works on a storage location of its own (a copy of that server): the module there.

@@ -4,7 +4,7 @@
 //!
 //! Every file content in GhulDrive has its own key (`drive::FileKey`). A share is a small
 //! encrypted package (`crate::share`) with the names, sizes and keys of its files, sealed with
-//! a new random link key (and, optionally, a password). The app writes it over SFTP/FTPS as
+//! a new random link key (and, optionally, a password). The app writes it over SFTP as
 //! `shares/<id>.json` into the GhulSuite folder, together with the list of the files' block
 //! names. The module answers the package and then only those blocks, and enforces expiry,
 //! download limit and one-time links; the recipient's browser decrypts block by block. The

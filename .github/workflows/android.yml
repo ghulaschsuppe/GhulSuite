@@ -224,7 +224,7 @@ jobs:
           ok=0
           for i in 1 2 3; do
             timeout 120 sudo apt-get update -qq || true
-            if timeout 240 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o Acquire::Retries=3 openssh-server dovecot-imapd vsftpd > /dev/null; then ok=1; break; fi
+            if timeout 240 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o Acquire::Retries=3 openssh-server dovecot-imapd > /dev/null; then ok=1; break; fi
             sleep $((i * 15))
           done
           if [ "$ok" != 1 ]; then
@@ -232,7 +232,7 @@ jobs:
             echo "GHUL_NET_SKIP=1" >> "$GITHUB_ENV"
             exit 0
           fi
-          sudo systemctl stop dovecot vsftpd 2>/dev/null || true
+          sudo systemctl stop dovecot 2>/dev/null || true
           # A server that does not start fails the run: the tests would skip and look green.
           if ! sudo bash tools/test-servers.sh > servers.env; then
             echo "::error title=Testserver::Die Testserver ließen sich nicht starten (siehe oben)."
@@ -285,14 +285,14 @@ jobs:
           ok=0
           for i in 1 2 3; do
             timeout 120 sudo apt-get update -qq || true
-            if timeout 240 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o Acquire::Retries=3 openssh-server dovecot-imapd vsftpd > /dev/null; then ok=1; break; fi
+            if timeout 240 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o Acquire::Retries=3 openssh-server dovecot-imapd > /dev/null; then ok=1; break; fi
             sleep $((i * 15))
           done
           if [ "$ok" != 1 ]; then
             echo "::error title=Testserver::Ubuntu-Paketspiegel nicht erreichbar; der Browser-Test braucht den SFTP-Testserver."
             exit 1
           fi
-          sudo systemctl stop dovecot vsftpd 2>/dev/null || true
+          sudo systemctl stop dovecot 2>/dev/null || true
           if ! sudo bash tools/test-servers.sh > servers.env; then
             echo "::error title=Testserver::Die Testserver ließen sich nicht starten (siehe oben)."
             exit 1

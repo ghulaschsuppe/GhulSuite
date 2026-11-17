@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Own servers (SFTP or FTPS) for synchronisation and GhulDrive, each optionally with the
-//! GhulSuite server module (PHP) for share links, installed over the same login.
+//! Own servers (SFTP only) for GhulDrive and share links, each optionally with the GhulSuite
+//! server module (PHP) for share links, installed over the same login.
 //!
-//! The servers for synchronisation and the SSH login key live in the suite's encrypted settings,
-//! so nobody can see which servers are set up without unlocking. A server that only GhulDrive
-//! uses lives in the Drive file instead. The SSH key is the suite's own Ed25519 key; its public
-//! half is added to `~/.ssh/authorized_keys` on the server.
+//! The servers and the SSH login key live in the suite's encrypted settings, so nobody can see
+//! which servers are set up without unlocking. GhulDrive's storage locations live in the Drive
+//! file. The login is always the suite's own Ed25519 key, never a password: its public half is
+//! added to `~/.ssh/authorized_keys` on the server (once with the password, which is not kept).
 
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
@@ -15,12 +15,11 @@ use super::error::{GhulError, Result};
 use super::suite::{new_id, put_setting, setting, GhulSuite, Open, VaultKind};
 use std::sync::Arc;
 
-use crate::net::ftps::{FtpsConfig, FtpsFs};
 use crate::net::remote::RemoteFs;
 use crate::net::sftp::{generate_key, public_key_of, SftpConfig, SftpFs, SshAuth};
 use crate::net::NetError;
 
-/// The server list, in the suite file (synchronisation) and in the Drive file (Drive's own server).
+/// The server list, in the suite file and in the Drive file (Drive's storage locations).
 pub(super) const SERVERS_KEY: &str = "servers";
 const SSH_KEY: &str = "ssh_key";
 
@@ -31,24 +30,15 @@ pub(super) struct StoredServer {
     pub host: String,
     pub port: u16,
     pub user: String,
-    /// Empty: log in with the suite's SSH key.
-    #[serde(default)]
-    pub password: String,
     /// Folder on the server for GhulSuite (Drive under `drive/`).
     pub base: String,
     pub host_key: String,
     /// Absolute path of `base` on the server, as reported by the server (for display).
     #[serde(default)]
     pub location: String,
-    /// "sftp" (also when empty) or "ftps".
-    #[serde(default)]
-    pub kind: String,
     /// The server module for share links on this server, if installed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub module: Option<StoredModule>,
-    /// Last edit (Unix ms): the later edit wins when devices synchronise (B13).
-    #[serde(default)]
-    pub changed: i64,
 }
 
 /// The server module of a server: where its PHP file is and the address it answers at.
@@ -59,31 +49,6 @@ pub(super) struct StoredModule {
     /// Folder of the PHP file, relative to the login folder.
     pub dir: String,
     pub version: u32,
-}
-
-/// How GhulSuite reaches a server.
-#[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ServerKind {
-    /// SSH/SFTP: own server, NAS, root server. Password or the suite's SSH key.
-    Sftp,
-    /// FTP with TLS (explicit, port 21): typical web hosting.
-    Ftps,
-}
-
-impl ServerKind {
-    fn as_str(self) -> &'static str {
-        match self {
-            ServerKind::Sftp => "sftp",
-            ServerKind::Ftps => "ftps",
-        }
-    }
-
-    pub(super) fn of(s: &StoredServer) -> ServerKind {
-        match s.kind.as_str() {
-            "ftps" => ServerKind::Ftps,
-            _ => ServerKind::Sftp,
-        }
-    }
 }
 
 /// Result of "check connection" for a server: nothing is stored.
@@ -98,8 +63,8 @@ pub enum ServerTest {
 /// Result of checking a server.
 #[derive(uniffi::Enum, Clone, Debug, PartialEq)]
 pub enum ServerSaved {
-    /// First contact: the user compares this fingerprint (SSH host key or TLS certificate) and
-    /// calls again with it confirmed. Nothing is stored yet.
+    /// First contact: the user compares this fingerprint (SSH host key) and calls again with it
+    /// confirmed. Nothing is stored yet.
     Confirm {
         fingerprint: String,
     },
@@ -111,17 +76,17 @@ pub enum ServerSaved {
 /// A server as entered by the user.
 #[derive(uniffi::Record, Clone)]
 pub struct ServerInput {
-    pub kind: ServerKind,
     pub name: String,
     pub host: String,
     pub port: u16,
     pub user: String,
-    /// SFTP: `None` = log in with the suite's SSH key (recommended). FTPS: the password.
+    /// Only for `install_ssh_key`: the login password, used once and never stored. Everything
+    /// else logs in with the suite's SSH key.
     pub password: Option<String>,
     pub base: String,
 }
 
-super::redact::redacted_debug!(ServerInput { kind, name, host, port, user, base });
+super::redact::redacted_debug!(ServerInput { name, host, port, user, base });
 
 #[derive(uniffi::Record, Clone, Debug, PartialEq)]
 pub struct ServerInfo {
@@ -131,11 +96,9 @@ pub struct ServerInfo {
     pub port: u16,
     pub user: String,
     pub base: String,
-    pub uses_key: bool,
     pub host_key: String,
     /// Where GhulSuite's folder is on the server, e.g. `/home/max/ghulsuite`.
     pub location: String,
-    pub kind: ServerKind,
     /// Address of the server module (share links); empty = not installed.
     pub module_url: String,
     /// Version of the installed module (0 = none).
@@ -144,23 +107,14 @@ pub struct ServerInfo {
     pub module_current: u32,
 }
 
-impl Drop for StoredServer {
-    fn drop(&mut self) {
-        zeroize::Zeroize::zeroize(&mut self.password);
-    }
-}
-
-/// Servers in the suite file (offered for synchronisation).
+/// Servers in the suite file.
 pub(super) fn servers(o: &Open) -> Vec<StoredServer> {
-    let list: Vec<StoredServer> = setting(&o.suite, SERVERS_KEY);
-    // Older apps also stored the server module alone as a server: no longer a server of its own.
-    list.into_iter().filter(|s| s.kind != "php").collect()
+    setting(&o.suite, SERVERS_KEY)
 }
 
-/// GhulDrive's own server (in the Drive file); at most one.
+/// GhulDrive's storage locations (in the Drive file).
 pub(super) fn drive_servers(o: &Open) -> Vec<StoredServer> {
-    let list: Vec<StoredServer> = area_setting(o, VaultKind::Drive, SERVERS_KEY);
-    list.into_iter().filter(|s| s.kind != "php").collect()
+    area_setting(o, VaultKind::Drive, SERVERS_KEY)
 }
 
 /// Every server this suite knows: the suite's and the Drive file's.
@@ -181,16 +135,11 @@ fn ssh_private_key(o: &mut Open) -> Result<Zeroizing<String>> {
 }
 
 pub(super) fn sftp_config(o: &mut Open, s: &StoredServer) -> Result<SftpConfig> {
-    let auth = if s.password.is_empty() {
-        SshAuth::Key(ssh_private_key(o)?)
-    } else {
-        SshAuth::Password(Zeroizing::new(s.password.clone()))
-    };
     Ok(SftpConfig {
         host: s.host.clone(),
         port: s.port,
         user: s.user.clone(),
-        auth,
+        auth: SshAuth::Key(ssh_private_key(o)?),
         base: s.base.clone(),
         host_key: (!s.host_key.is_empty()).then(|| s.host_key.clone()),
     })
@@ -203,24 +152,9 @@ pub(super) type Connect = Box<dyn FnOnce() -> Result<Arc<dyn RemoteFs>> + Send>;
 /// Prepares connecting to a stored server with its own folder, or with `base` instead.
 pub(super) fn connector(o: &mut Open, s: &StoredServer, base: Option<&str>) -> Result<Connect> {
     let base = base.map(str::to_owned).unwrap_or_else(|| s.base.clone());
-    Ok(match ServerKind::of(s) {
-        ServerKind::Sftp => {
-            let mut cfg = sftp_config(o, s)?;
-            cfg.base = base;
-            Box::new(move || Ok(Arc::new(SftpFs::connect(&cfg)?) as Arc<dyn RemoteFs>))
-        }
-        ServerKind::Ftps => {
-            let cfg = FtpsConfig {
-                host: s.host.clone(),
-                port: s.port,
-                user: s.user.clone(),
-                password: Zeroizing::new(s.password.clone()),
-                base,
-                cert: (!s.host_key.is_empty()).then(|| s.host_key.clone()),
-            };
-            Box::new(move || Ok(Arc::new(FtpsFs::connect(&cfg)?) as Arc<dyn RemoteFs>))
-        }
-    })
+    let mut cfg = sftp_config(o, s)?;
+    cfg.base = base;
+    Ok(Box::new(move || Ok(Arc::new(SftpFs::connect(&cfg)?) as Arc<dyn RemoteFs>)))
 }
 
 /// Opens a stored server with its own folder, or with `base` instead (e.g. the login folder).
@@ -248,9 +182,6 @@ pub(super) enum ServerHome {
 /// Replaces a stored server with `changed` (same id) in the file it lives in.
 pub(super) fn update_server(o: &mut Open, changed: &StoredServer) -> Result<ServerHome> {
     let mut list = servers(o);
-    let mut changed = changed.clone();
-    changed.changed = super::suite::now_ms();
-    let changed = &changed;
     if let Some(s) = list.iter_mut().find(|s| s.id == changed.id) {
         *s = changed.clone();
         put_setting(&mut o.suite, SERVERS_KEY, &list)?;
@@ -267,25 +198,17 @@ pub(super) fn update_server(o: &mut Open, changed: &StoredServer) -> Result<Serv
 
 /// A server as entered, before it is stored.
 fn stored_from(input: &ServerInput, confirmed: Option<&str>) -> StoredServer {
-    let kind = input.kind;
-    let default_port = match kind {
-        ServerKind::Sftp => 22,
-        ServerKind::Ftps => 21,
-    };
     let host = input.host.trim().to_owned();
     StoredServer {
         id: crate::kdf::hex(&new_id()[..8]),
         name: if input.name.trim().is_empty() { host.clone() } else { input.name.trim().to_owned() },
         host,
-        port: if input.port == 0 { default_port } else { input.port },
+        port: if input.port == 0 { 22 } else { input.port },
         user: input.user.trim().to_owned(),
-        password: input.password.clone().unwrap_or_default(),
         base: input.base.trim().trim_end_matches('/').to_owned(),
         host_key: confirmed.unwrap_or_default().to_owned(),
         location: String::new(),
-        kind: kind.as_str().to_owned(),
         module: None,
-        changed: 0,
     }
 }
 
@@ -297,11 +220,7 @@ fn open_input(
 ) -> Result<std::result::Result<Arc<dyn RemoteFs>, String>> {
     match open_fs(o, s, None) {
         Ok(fs) => Ok(Ok(fs)),
-        Err(GhulError::HostKeyUnknown { fingerprint }) | Err(GhulError::CertUntrusted { fingerprint })
-            if !confirmed =>
-        {
-            Ok(Err(fingerprint))
-        }
+        Err(GhulError::HostKeyUnknown { fingerprint }) if !confirmed => Ok(Err(fingerprint)),
         Err(e) => Err(e),
     }
 }
@@ -341,10 +260,8 @@ pub(super) fn info(s: &StoredServer) -> ServerInfo {
         port: s.port,
         user: s.user.clone(),
         base: s.base.clone(),
-        uses_key: ServerKind::of(s) == ServerKind::Sftp && s.password.is_empty(),
         host_key: s.host_key.clone(),
         location: if s.location.is_empty() { s.base.clone() } else { s.location.clone() },
-        kind: ServerKind::of(s),
         module_url: s.module.as_ref().map(|m| m.url.clone()).unwrap_or_default(),
         module_version: s.module.as_ref().map_or(0, |m| m.version),
         module_current: crate::net::module::MODULE_VERSION,
@@ -521,13 +438,8 @@ pub(super) fn check_server(
     };
     fs.write(".ghulsuite-check", b"ok")?;
     fs.delete(".ghulsuite-check")?;
-    stored.location = match ServerKind::of(&stored) {
-        ServerKind::Sftp => {
-            let cfg = sftp_config(o, &stored)?;
-            SftpFs::connect(&cfg).ok().and_then(|f| f.absolute("").ok()).unwrap_or_default()
-        }
-        ServerKind::Ftps => format!("/{}", stored.base),
-    };
+    let cfg = sftp_config(o, &stored)?;
+    stored.location = SftpFs::connect(&cfg).ok().and_then(|f| f.absolute("").ok()).unwrap_or_default();
     Ok(Ok(stored))
 }
 
@@ -557,8 +469,7 @@ impl GhulSuite {
     }
 
     /// Checks a server and stores it. On first contact it returns the fingerprint of the SSH host
-    /// key (SFTP) or of a not publicly trusted TLS certificate (FTPS) for the user to compare;
-    /// call again with it in `confirmed`. Then it logs in, checks that the folder is writable and
+    /// key for the user to compare; call again with it in `confirmed`. Then it logs in, checks that the folder is writable and
     /// stores the server.
     pub fn save_server(&self, input: ServerInput, confirmed: Option<String>) -> Result<ServerSaved> {
         self.with_open(|o| {
@@ -568,15 +479,9 @@ impl GhulSuite {
             };
             let mut list = servers(o);
             list.retain(|s| {
-                !(s.kind == stored.kind
-                    && s.host == stored.host
-                    && s.port == stored.port
-                    && s.user == stored.user
-                    && s.base == stored.base)
+                !(s.host == stored.host && s.port == stored.port && s.user == stored.user && s.base == stored.base)
             });
             let id = stored.id.clone();
-            let mut stored = stored;
-            stored.changed = super::suite::now_ms();
             list.push(stored);
             put_setting(&mut o.suite, SERVERS_KEY, &list)?;
             self.net.lock().unwrap_or_else(|p| p.into_inner()).conn = None;
@@ -586,7 +491,7 @@ impl GhulSuite {
     }
 
     /// Folders on a server as entered, before it is stored (for the folder picker of the server
-    /// form). `path` is relative to the login folder. SFTP and FTPS only.
+    /// form). `path` is relative to the login folder.
     pub fn server_browse_input(
         &self,
         input: ServerInput,
@@ -620,7 +525,7 @@ impl GhulSuite {
     /// usual addresses are tried), that PHP runs there and that it can read the GhulSuite
     /// folder. Only when everything works is it remembered for the server.
     pub fn server_module_install(&self, server_id: String, dir: String, url: String) -> Result<ModuleInstalled> {
-        // Relative to the login folder, or absolute (SFTP).
+        // Relative to the login folder, or absolute.
         let dir = dir.trim().trim_end_matches('/').to_owned();
         let url = url.trim().to_owned();
         if !url.is_empty() && !module_address_ok(&url) {
@@ -630,14 +535,9 @@ impl GhulSuite {
             let srv = server(o, &server_id)?;
             let web = open_fs(o, &srv, Some(&dir))?;
             let base_fs = open_fs(o, &srv, None)?;
-            // Where the login folder is: SFTP knows it, FTPS starts at "/".
-            let home = match ServerKind::of(&srv) {
-                ServerKind::Sftp => {
-                    let cfg = SftpConfig { base: String::new(), ..sftp_config(o, &srv)? };
-                    SftpFs::connect(&cfg)?.absolute("")?
-                }
-                ServerKind::Ftps => "/".to_owned(),
-            };
+            // Where the login folder is.
+            let cfg = SftpConfig { base: String::new(), ..sftp_config(o, &srv)? };
+            let home = SftpFs::connect(&cfg)?.absolute("")?;
             let abs =
                 |p: &str| if p.starts_with('/') { p.to_owned() } else { format!("{}/{p}", home.trim_end_matches('/')) };
             let base_path = relative_path(&abs(&dir), &abs(&srv.base))

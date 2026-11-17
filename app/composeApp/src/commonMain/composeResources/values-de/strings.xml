@@ -526,9 +526,7 @@
     <string name="set_mail">GhulMail-Konten</string>
     <string name="msg_saved_file">Datei gespeichert.</string>
     <string name="tab_settings_short">Optionen</string>
-    <string name="server_install_key">SSH-Schlüssel automatisch einrichten (empfohlen)</string>
     <string name="server_install_key_hint">Das Passwort wird einmal benutzt, um den Schlüssel von GhulSuite in ~/.ssh/authorized_keys auf dem Server einzutragen. Es wird nicht gespeichert; danach meldet sich GhulSuite mit dem Schlüssel an.</string>
-    <string name="server_password_stored_hint">Das Passwort wird verschlüsselt in deiner Suite gespeichert und für jede Verbindung benutzt.</string>
     <string name="server_location">Ordner: %1$s</string>
     <string name="a_done">Fertig</string>
     <string name="a_lock">Sperren</string>
@@ -550,7 +548,6 @@
     <string name="drive_crypto_hint">Dateien werden auf diesem Gerät verschlüsselt (AES-256-GCM, 1-MiB-Blöcke). Der Server sieht nur verschlüsselte Blöcke.</string>
     <string name="pass_share">Sicher teilen (Einmal-Link)</string>
     <string name="pass_share_hint">Wird auf dem Gerät verschlüsselt. Der Schlüssel steht nur im Link, der Server kann den Eintrag nicht lesen.</string>
-    <string name="server_cert_text">Vergleiche diesen Zertifikats-Fingerabdruck mit dem deines Hosters, bevor du ihm vertraust.</string>
     <string name="set_auth_sub">Code-Anzeige</string>
     <string name="set_drive_sub">Speicherort, Freigaben</string>
     <string name="set_factors">Keys und Schlüsseldateien</string>

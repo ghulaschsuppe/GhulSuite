@@ -471,7 +471,7 @@ fn exports_are_safe_to_open_in_a_spreadsheet() {
 #[test]
 fn secrets_never_show_up_in_debug_output_or_errors() {
     use super::super::mail::{MailAccountInput, MailPollConfig, MailSecurity};
-    use super::super::servers::{ServerInput, ServerKind};
+    use super::super::servers::ServerInput;
     const M: &str = "DebugGeheimX7";
     let servers = super::super::mail::mail_suggest_servers("a@example.org".into());
     let shown = [
@@ -505,10 +505,9 @@ fn secrets_never_show_up_in_debug_output_or_errors() {
         format!(
             "{:?}",
             ServerInput {
-                kind: ServerKind::Ftps,
                 name: "n".into(),
                 host: "h".into(),
-                port: 21,
+                port: 22,
                 user: "u".into(),
                 password: Some(M.into()),
                 base: "b".into(),

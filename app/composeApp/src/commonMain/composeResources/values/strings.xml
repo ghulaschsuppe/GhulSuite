@@ -526,9 +526,7 @@
     <string name="set_mail">GhulMail accounts</string>
     <string name="msg_saved_file">File saved.</string>
     <string name="tab_settings_short">Options</string>
-    <string name="server_install_key">Set up SSH key automatically (recommended)</string>
     <string name="server_install_key_hint">The password is used once to add GhulSuite's key to ~/.ssh/authorized_keys on the server. It is not stored; afterwards GhulSuite logs in with its key.</string>
-    <string name="server_password_stored_hint">The password is stored encrypted in your suite and used for every connection.</string>
     <string name="server_location">Folder: %1$s</string>
     <string name="a_done">Done</string>
     <string name="a_lock">Lock</string>
@@ -550,7 +548,6 @@
     <string name="drive_crypto_hint">Files are encrypted on this device (AES-256-GCM, 1 MiB blocks). The server only sees encrypted blocks.</string>
     <string name="pass_share">Share securely (one-time link)</string>
     <string name="pass_share_hint">Encrypted on this device. The key is only in the link, so the server cannot read the entry.</string>
-    <string name="server_cert_text">Compare this certificate fingerprint with the one of your hoster before trusting it.</string>
     <string name="set_auth_sub">Code display</string>
     <string name="set_drive_sub">Storage, shares</string>
     <string name="set_factors">Keys &amp; key files</string>

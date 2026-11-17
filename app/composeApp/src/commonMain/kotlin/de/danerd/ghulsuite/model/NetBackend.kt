@@ -232,8 +232,6 @@ interface ByteSink {
     fun discard() {}
 }
 
-enum class ServerKindUi { SFTP, FTPS }
-
 sealed interface ServerTestUi {
     data class Confirm(val fingerprint: String) : ServerTestUi
     data object Ok : ServerTestUi
@@ -245,12 +243,11 @@ sealed interface ServerSavedUi {
 }
 
 data class ServerInputUi(
-    val kind: ServerKindUi = ServerKindUi.SFTP,
     val name: String,
     val host: String,
     val port: Int,
     val user: String,
-    /** SFTP: null = log in with the suite's SSH key. FTPS: password. */
+    /** Only to put the suite's SSH key on the server once ([NetBackend.installSshKey]); never stored. */
     val password: String?,
     val base: String,
 )
@@ -297,11 +294,9 @@ data class ServerUi(
     val port: Int,
     val user: String,
     val base: String,
-    val usesKey: Boolean,
     val hostKey: String,
     /** Absolute folder on the server, e.g. /home/max/ghulsuite. */
     val location: String = "",
-    val kind: ServerKindUi = ServerKindUi.SFTP,
     /** Address of the server module (share links); empty = not installed. */
     val moduleUrl: String = "",
     /** Version of the installed module (0 = none). */

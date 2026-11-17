@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # CI only: makes the test servers of tools/test-servers.sh behave like servers reached over a
-# mobile network. Every packet to and from the servers (SFTP, FTPS, IMAP, SMTP on this computer's
+# mobile network. Every packet to and from the servers (SFTP, IMAP, SMTP on this computer's
 # 127.0.0.1) waits the given milliseconds and is lost with the given chance; all other traffic on
 # the machine, adb and the emulator's own included, stays fast and complete.
 # Usage: sudo tools/slow-servers.sh <milliseconds> [loss in percent]
@@ -19,7 +19,7 @@ if [ "$ms" -le 0 ] && [ "$loss" -le 0 ]; then echo "Testserver: normal"; exit 0;
 # than a real network does.
 tc qdisc add dev "$dev" root handle 1: prio bands 3 priomap 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
 tc qdisc add dev "$dev" parent 1:3 handle 30: netem delay "${ms}ms" loss "${loss}%"
-for port in 2222 2223 10021 10993 10587; do
+for port in 2222 2223 10993 10587; do
   tc filter add dev "$dev" protocol ip parent 1:0 prio 1 u32 match ip sport "$port" 0xffff flowid 1:3
   # Also what goes to the servers: with 100 % loss not even a connection is made.
   tc filter add dev "$dev" protocol ip parent 1:0 prio 1 u32 match ip dport "$port" 0xffff flowid 1:3

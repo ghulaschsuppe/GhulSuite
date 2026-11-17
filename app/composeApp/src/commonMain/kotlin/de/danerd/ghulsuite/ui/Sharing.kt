@@ -422,7 +422,7 @@ fun ModuleInstallScreen(state: AppState, serverId: String, padding: PaddingValue
     Column(Modifier.padding(padding)) {
         ScreenColumn {
             BusyBanner(state)
-            SectionCard(server?.let { "${it.name} · ${kindLabel(it.kind)}" }) {
+            SectionCard(server?.let { "${it.name} · $SERVER_KIND" }) {
                 Hint(stringResource(Res.string.module_intro))
             }
             SectionCard(stringResource(Res.string.module_step1)) {
@@ -604,7 +604,7 @@ fun DriveSettingsSection(state: AppState) {
         val s = loc.server
         SectionCard {
             ListRow(
-                s.name, kindLabel(s.kind), leading = { IconTile(Icons.Filled.Dns, paletteColor(1)) },
+                s.name, SERVER_KIND, leading = { IconTile(Icons.Filled.Dns, paletteColor(1)) },
                 trailing = {
                     // Tagged by its folder for the emulator flows (two locations can share a name).
                     Box(Modifier.testTag("location-remove-" + folderTag(s))) {

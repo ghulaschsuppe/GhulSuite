@@ -222,27 +222,6 @@ fn smtp_reply_lines() {
 }
 
 #[test]
-fn ftp_replies_and_listings() {
-    let seeds = seeds(&[
-        "227 Entering Passive Mode (192,168,1,2,19,137)",
-        "229 Entering Extended Passive Mode (|||6446|)",
-        "drwxr-xr-x    2 user  group     4096 Nov 13 12:00 Ordner mit Leerzeichen",
-        "-rw-r--r--    1 user  group  1234567 Jan  1  2025 suite.ghlsuite",
-        "type=file;size=1234;modify=20261113120000; datei.ghlpss",
-        "type=cdir; .",
-    ]);
-    fuzz("ftp", &seeds, 4000, |d| {
-        let t = s(d);
-        let _ = crate::net::ftps::data_port(227, &t);
-        let _ = crate::net::ftps::data_port(229, &t);
-        let _ = crate::net::ftps::parse_list_line(&t);
-        let _ = crate::net::ftps::parse_mlsd_line(&t);
-    });
-    // Numbers above 255 are no valid port bytes (used to overflow).
-    assert_eq!(crate::net::ftps::data_port(227, "227 (1,2,3,4,300,300)"), None);
-}
-
-#[test]
 fn html_mails() {
     let seeds = seeds(&[
         "<html><head><style>p{color:red}</style></head><body><p>Hallo <b>Welt</b> &amp; &#x1F600; &nbsp;<a href=\"https://example.org\">Link</a><img src=\"https://t.example/p.gif\" width=1 height=1><table><tr><td>1</td></tr></table></body></html>",

@@ -144,40 +144,6 @@ fn sftp_against_openssh() {
     }
 }
 
-pub(crate) fn ftps_test_config(sub: &str) -> Option<super::ftps::FtpsConfig> {
-    let addr = std::env::var("GHUL_TEST_FTPS").ok()?;
-    let (host, port) = addr.split_once(':')?;
-    let run = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
-    Some(super::ftps::FtpsConfig {
-        host: host.to_owned(),
-        port: port.parse().ok()?,
-        user: std::env::var("GHUL_TEST_FTPS_USER").ok()?,
-        password: zeroize::Zeroizing::new(std::env::var("GHUL_TEST_FTPS_PASSWORD").ok()?),
-        base: format!("{sub}-{run}"),
-        cert: std::env::var("GHUL_TEST_FTPS_TLSFP").ok(),
-    })
-}
-
-#[test]
-fn ftps_against_vsftpd() {
-    use super::ftps::FtpsFs;
-    let Some(cfg) = ftps_test_config("ftps-basic") else { return };
-    // Without the confirmed fingerprint the self-signed certificate is refused.
-    let unpinned = super::ftps::FtpsConfig { cert: None, ..cfg.clone() };
-    match FtpsFs::connect(&unpinned) {
-        Err(NetError::CertUntrusted(fp)) => assert_eq!(Some(fp), cfg.cert),
-        other => panic!("expected CertUntrusted, got {:?}", other.err()),
-    }
-    let wrong = super::ftps::FtpsConfig { password: zeroize::Zeroizing::new("falsch".into()), ..cfg.clone() };
-    assert_eq!(FtpsFs::connect(&wrong).err(), Some(NetError::AuthFailed));
-    let fs = FtpsFs::connect(&cfg).unwrap();
-    exercise(&fs);
-    // Names with spaces and umlauts survive listing.
-    fs.write("Ordner mit Leerzeichen/Grüße.txt", b"hallo").unwrap();
-    let names: Vec<String> = fs.list("Ordner mit Leerzeichen").unwrap().into_iter().map(|e| e.name).collect();
-    assert_eq!(names, vec!["Grüße.txt"]);
-}
-
 /// Starts PHP's built-in web server for `dir` on a free port and returns it once it answers.
 ///
 /// Tests run in parallel, and a port found free can be taken by another test's server before

@@ -184,44 +184,6 @@ CFG
   echo $! > "$D/smtp.pid"
 fi
 
-# --- FTPS (vsftpd, explicit TLS, data channel encrypted with session reuse) ---------------------
-if command -v vsftpd >/dev/null; then
-  id ghulftp >/dev/null 2>&1 || useradd -M -s /usr/sbin/nologin ghulftp
-  echo 'ghulftp:test-pw-123' | chpasswd
-  grep -qx /usr/sbin/nologin /etc/shells || echo /usr/sbin/nologin >> /etc/shells
-  mkdir -p "$D/ftp-home" "$D/vsftpd-empty"
-  chown ghulftp "$D/ftp-home"
-  # The tests (run without sudo) lay out web folders in there and run PHP on them.
-  chmod 777 "$D/ftp-home"
-  usermod -d "$D/ftp-home" ghulftp
-  cat > "$D/vsftpd.conf" <<CFG
-listen=YES
-listen_address=127.0.0.1
-listen_port=10021
-anonymous_enable=NO
-local_enable=YES
-write_enable=YES
-local_umask=000
-ssl_enable=YES
-rsa_cert_file=$D/tls.crt
-rsa_private_key_file=$D/tls.key
-force_local_logins_ssl=YES
-force_local_data_ssl=YES
-require_ssl_reuse=YES
-pasv_enable=YES
-pasv_min_port=10090
-pasv_max_port=10099
-pasv_address=127.0.0.1
-seccomp_sandbox=NO
-secure_chroot_dir=$D/vsftpd-empty
-pam_service_name=vsftpd
-utf8_filesystem=YES
-vsftpd_log_file=$D/vsftpd.log
-CFG
-  vsftpd "$D/vsftpd.conf" >/dev/null 2>&1 &
-  echo $! > "$D/vsftpd.pid"
-fi
-
 # --- SFTP with a password (GHUL_TEST_SFTP_PASSWORD=1) ---------------------------------------------
 # For the emulator flows: a person sets up GhulDrive with user name and password, and the app
 # puts its own SSH key on the server. A second sshd, so the key-only server above stays as it is.
@@ -252,7 +214,6 @@ fi
 PORTS="2222"
 if [ "${GHUL_TEST_SFTP_PASSWORD:-0}" = 1 ]; then PORTS="$PORTS 2223"; fi
 if command -v dovecot >/dev/null; then PORTS="$PORTS 10993 10143 10587"; fi
-if command -v vsftpd >/dev/null; then PORTS="$PORTS 10021"; fi
 for port in $PORTS; do
   for _ in $(seq 1 50); do
     if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then continue 2; fi
@@ -273,12 +234,6 @@ if [ "${GHUL_TEST_SFTP_PASSWORD:-0}" = 1 ]; then
   echo "export GHUL_TEST_SFTP_PW_USER=ghulsftp"
   echo "export GHUL_TEST_SFTP_PW_PASSWORD=test-pw-123"
   echo "export GHUL_TEST_SFTP_PW_ROOT=$D/sftp-pw"
-fi
-if command -v vsftpd >/dev/null; then
-  echo "export GHUL_TEST_FTPS=127.0.0.1:10021"
-  echo "export GHUL_TEST_FTPS_USER=ghulftp"
-  echo "export GHUL_TEST_FTPS_PASSWORD=test-pw-123"
-  echo "export GHUL_TEST_FTPS_TLSFP=$TLS_FP"
 fi
 if command -v dovecot >/dev/null; then
   echo "export GHUL_TEST_MAIL=127.0.0.1"

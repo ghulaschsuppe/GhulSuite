@@ -30,7 +30,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import de.danerd.ghulsuite.model.PickedFile
 import de.danerd.ghulsuite.model.ServerInputUi
-import de.danerd.ghulsuite.model.ServerKindUi
 import de.danerd.ghulsuite.model.ServerSavedUi
 import de.danerd.ghulsuite.model.ServerUi
 import de.danerd.ghulsuite.model.VaultErrorKind
@@ -161,7 +160,7 @@ fun ServersSection(state: AppState) {
         servers.forEachIndexed { i, s ->
             // Like the list of mail accounts: a row with a tile, and removing as a red icon.
             ListRow(
-                s.name, kindLabel(s.kind), leading = { IconTile(Icons.Filled.Dns, paletteColor(1)) },
+                s.name, SERVER_KIND, leading = { IconTile(Icons.Filled.Dns, paletteColor(1)) },
                 trailing = { BarIcon(Icons.Filled.Delete, stringResource(Res.string.a_remove), tint = g.danger) { removing = s } },
                 divider = i > 0, flush = true,
             )
@@ -193,10 +192,8 @@ fun ServersSection(state: AppState) {
     }
 }
 
-fun kindLabel(kind: ServerKindUi): String = when (kind) {
-    ServerKindUi.SFTP -> "SFTP"
-    ServerKindUi.FTPS -> "FTPS"
-}
+/** How GhulSuite reaches a server: always SFTP. */
+const val SERVER_KIND = "SFTP"
 
 /** Unix seconds or milliseconds → local date and time. */
 fun formatDateTime(time: Long): String {
