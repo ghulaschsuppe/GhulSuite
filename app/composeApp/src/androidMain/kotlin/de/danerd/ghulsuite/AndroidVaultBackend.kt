@@ -54,7 +54,8 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
 
     override val settings: Settings = Settings(PrefsStore(context))
     private val quick = AndroidQuickUnlock(context, { suite }, settings, activity)
-    override val net: NetBackend = AndroidNetBackend(context) { suite }
+    // Mail and Drive belong to the own suite (also while a vault is open on its own: then locked).
+    override val net: NetBackend = AndroidNetBackend(context) { ownSuite }
     override val cal: de.danerd.ghulsuite.model.CalBackend = AndroidCalBackend(context) { suite }
     override val updater: de.danerd.ghulsuite.model.AppUpdater = AndroidUpdater(context)
     override val appVersion: String =

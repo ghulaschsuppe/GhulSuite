@@ -1745,4 +1745,12 @@
     <string name="single_pending_failed">Still not written. Is the storage there? Try again later.</string>
     <string name="core_single_not_suite">Not while a vault is open on its own.</string>
     <string name="core_vault_unreadable">A vault of the suite cannot be read (Options > Vaults). Remove it or bring it back, then save.</string>
+    <string name="single_changed_elsewhere">The file was changed elsewhere since it was opened. Overwrite it with this vault, or save this vault as a new file.</string>
+    <string name="single_pending_changed">The file was changed elsewhere meanwhile: writing would overwrite that. Save as a new file instead if unsure.</string>
+    <string name="single_pending_discard_title">Give up the changes?</string>
+    <string name="single_pending_discard_text">The last changes to %1$s are lost; the file stays as it is.</string>
+    <string name="single_pending_discard_damaged">%1$s was changed since or cannot be read (was writing it cut off?). Giving up may lose this vault. Better save it as a new file.</string>
+    <string name="single_pending_first">Changes of the last opening still wait for this file. Write them first (or give them up).</string>
+    <string name="file_before_save">Save the state before the last opening</string>
+    <string name="file_before_saved">Saved the state before as %1$s.</string>
 </resources>

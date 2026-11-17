@@ -108,7 +108,7 @@ class ScreenshotTest {
             unlocked.value = true
             return VaultKindUi.PASS
         }
-        override suspend fun saveSingle(): Boolean = true.also { calls += "saveSingle" }
+        override suspend fun saveSingle(overwrite: Boolean) = de.danerd.ghulsuite.model.SingleSaveUi.SAVED.also { calls += "saveSingle" }
         override suspend fun shareAsVault(
             share: de.danerd.ghulsuite.model.ShareVaultUi, pin: String?, onTouchNeeded: () -> Unit,
         ): de.danerd.ghulsuite.model.SharedVaultUi {

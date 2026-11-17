@@ -219,6 +219,18 @@ fun SuiteFileSection(state: AppState) {
         }
     }
     val saveAs = rememberCreateSuiteFile { created -> if (created != null) save(created, force = false) }
+    // The state before the last suite file was opened over this one (one step back), as a file.
+    var hasBefore by remember { mutableStateOf(false) }
+    LaunchedEffect(state.liveRevision()) { hasBefore = catching { backend.archiveBeforeOpen() }.getOrNull() != null }
+    val keptBefore = stringResource(Res.string.file_before_saved)
+    val saveBefore = rememberCreateSuiteFile { created ->
+        if (created != null) {
+            state.run(onError = { error = it }, block = {
+                val data = backend.archiveBeforeOpen() ?: throw VaultException(VaultErrorKind.OTHER, notWritten)
+                if (!backend.writeSuiteFile(created, data)) throw VaultException(VaultErrorKind.OTHER, notWritten)
+            }) { state.message(keptBefore.replace("%1\$s", created.name)) }
+        }
+    }
     val openOther = rememberOpenSuiteFile { r, data -> opening = PickedSuiteFile(r, data) }
 
     opening?.let { f ->
@@ -245,6 +257,11 @@ fun SuiteFileSection(state: AppState) {
             }
             OutlinedButton(onClick = openOther, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(Res.string.file_open_other))
+            }
+        }
+        if (hasBefore && filePickersAvailable) {
+            TextButton(onClick = { saveBefore("GhulSuite-vorher.ghlzip") }, enabled = !state.busy) {
+                Text(stringResource(Res.string.file_before_save))
             }
         }
         Hint(stringResource(Res.string.file_hint))

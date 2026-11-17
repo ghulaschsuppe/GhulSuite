@@ -72,6 +72,9 @@ struct ArchiveHeader {
     /// The states this one was carried on from, the latest first (at most [`MAX_ANCESTORS`]).
     #[serde(default)]
     ancestors: Vec<String>,
+    /// `ancestors` reaches back to the first save: a state not in it is no ancestor.
+    #[serde(default)]
+    complete: bool,
 }
 
 /// The state a working copy is.
@@ -85,6 +88,9 @@ struct StateRef {
     /// The states this one was carried on from, the latest first.
     #[serde(default)]
     ancestors: Vec<String>,
+    /// See [`ArchiveHeader::complete`].
+    #[serde(default)]
+    complete: bool,
 }
 
 /// What a device saw last of a suite.
@@ -96,6 +102,8 @@ struct Seen {
     /// The states the seen one was carried on from (see [`ArchiveHeader::ancestors`]).
     #[serde(default)]
     ancestors: Vec<String>,
+    #[serde(default)]
+    complete: bool,
 }
 
 /// How a `.ghlzip` relates to what this device has.
@@ -306,14 +314,15 @@ impl GhulSuite {
             .unwrap_or_default()
     }
 
-    fn note_archive_seen(&self, suite_id: &[u8; 16], state: &str, counter: u64, epoch: u64, ancestors: &[String]) {
+    /// This device has `state` now (opened or saved; also an older one or a branch the user
+    /// took). The counter only grows: a later save goes above everything seen.
+    fn note_archive_seen(&self, suite_id: &[u8; 16], state: &StateRef, epoch: u64) {
         let mut all = self.seen_all();
         let e = all.entry(crate::kdf::hex(suite_id)).or_default();
-        if counter >= e.counter {
-            e.counter = counter;
-            e.state = state.to_owned();
-            e.ancestors = ancestors.iter().take(MAX_ANCESTORS).cloned().collect();
-        }
+        e.counter = e.counter.max(state.counter);
+        e.state = state.state.clone();
+        e.ancestors = state.ancestors.iter().take(MAX_ANCESTORS).cloned().collect();
+        e.complete = state.complete;
         e.epoch = e.epoch.max(epoch);
         self.write_seen(&all);
     }
@@ -338,6 +347,9 @@ impl GhulSuite {
 
     /// The working copy changed since it was loaded from or saved into a file.
     pub(super) fn mark_unsaved(&self) {
+        if self.quiet.load(std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
         self.changes.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let _ = std::fs::create_dir_all(&self.local_dir);
         let _ = std::fs::write(self.local_dir.join(UNSAVED_FILE), b"1");
@@ -393,18 +405,22 @@ impl GhulSuite {
         if header.state == seen.state {
             return Ok(ArchiveRelation::Same);
         }
-        // With the lineage of both: carried on from this device's state, or an earlier one of it;
-        // anything else is a branch (also when the lineage is too long to tell).
-        if !header.ancestors.is_empty() {
-            return Ok(if header.ancestors.contains(&seen.state) {
-                ArchiveRelation::Newer
-            } else if seen.ancestors.contains(&header.state) {
-                ArchiveRelation::Older
-            } else {
+        // By the lineage: carried on from this device's state, or an earlier state of it.
+        if header.ancestors.contains(&seen.state) {
+            return Ok(ArchiveRelation::Newer);
+        }
+        if seen.ancestors.contains(&header.state) {
+            return Ok(ArchiveRelation::Older);
+        }
+        // Neither, and the file's lineage is complete: it was not carried on from this state.
+        if header.complete {
+            return Ok(if seen.complete || header.counter >= seen.counter {
                 ArchiveRelation::Branch
+            } else {
+                ArchiveRelation::Older
             });
         }
-        // Files without a lineage: by the counter.
+        // Files without a complete lineage (older app versions): by the counter.
         Ok(if header.counter < seen.counter {
             ArchiveRelation::Older
         } else if header.counter == seen.counter
@@ -429,7 +445,25 @@ impl GhulSuite {
     }
 
     pub(super) fn set_pending(&self, p: Option<Pending>) {
+        if p.is_none() {
+            self.pending_gen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
         *self.pending.lock().unwrap_or_else(|e| e.into_inner()) = p;
+    }
+
+    /// Keeps a checked file unless it was cancelled or locked while it was checked (`gen` from
+    /// before the check).
+    fn keep_pending(&self, gen: u64, p: Pending) -> Result<()> {
+        let mut slot = self.pending.lock().unwrap_or_else(|e| e.into_inner());
+        if self.pending_gen.load(std::sync::atomic::Ordering::SeqCst) != gen {
+            return Err(GhulError::Locked);
+        }
+        *slot = Some(p);
+        Ok(())
+    }
+
+    fn pending_gen_now(&self) -> u64 {
+        self.pending_gen.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// Replaces the working copy with the pending files: the current one is kept in
@@ -510,6 +544,7 @@ impl GhulSuite {
         pin: Option<String>,
         keyfile: Option<Vec<u8>>,
     ) -> Result<ArchiveCheck> {
+        let gen = self.pending_gen_now();
         let password = Zeroizing::new(password);
         let pin = pin.map(Zeroizing::new);
         let files = read_zip(&data)?;
@@ -525,7 +560,7 @@ impl GhulSuite {
         let pk = PasswordKey::derive(&password, &locked.header().kdf)?;
         let (header, suite_id) = verify(&files, &Key::Password(&pk, &s))?;
         let check = self.check_of(&header, &suite_id, false)?;
-        self.set_pending(Some(Pending { files, header, suite_id, recovery: None, keys: Some((pk, s)) }));
+        self.keep_pending(gen, Pending { files, header, suite_id, recovery: None, keys: Some((pk, s)) })?;
         Ok(check)
     }
 
@@ -533,18 +568,16 @@ impl GhulSuite {
     /// without the password (`unverified`); everything else is. On accepting, everything is
     /// written again with `new_password`.
     pub fn archive_open_with_code(&self, data: Vec<u8>, code: String, new_password: String) -> Result<ArchiveCheck> {
+        let gen = self.pending_gen_now();
         let code = Zeroizing::new(code);
         let parsed = RecoveryCode::parse(&code)?;
         let files = read_zip(&data)?;
         let (header, suite_id) = verify(&files, &Key::Code(&parsed))?;
         let check = self.check_of(&header, &suite_id, true)?;
-        self.set_pending(Some(Pending {
-            files,
-            header,
-            suite_id,
-            recovery: Some((code, Zeroizing::new(new_password))),
-            keys: None,
-        }));
+        self.keep_pending(
+            gen,
+            Pending { files, header, suite_id, recovery: Some((code, Zeroizing::new(new_password))), keys: None },
+        )?;
         Ok(check)
     }
 
@@ -574,26 +607,18 @@ impl GhulSuite {
             }
             _ => return Err(GhulError::NotFound),
         }
+        let accepted = StateRef {
+            state: p.header.state.clone(),
+            counter: p.header.counter,
+            previous: String::new(),
+            ancestors: p.header.ancestors.clone(),
+            complete: p.header.complete,
+        };
         self.with_open(|o| {
-            put_setting(
-                &mut o.suite,
-                STATE_KEY,
-                &StateRef {
-                    state: p.header.state.clone(),
-                    counter: p.header.counter,
-                    previous: String::new(),
-                    ancestors: p.header.ancestors.clone(),
-                },
-            )?;
+            put_setting(&mut o.suite, STATE_KEY, &accepted)?;
             let epoch = o.epoch();
             self.save_container(&mut o.suite, SUITE_FILE)?;
-            self.note_archive_seen(
-                &p.suite_id,
-                &p.header.state,
-                p.header.counter,
-                epoch.max(p.header.epoch),
-                &p.header.ancestors,
-            );
+            self.note_archive_seen(&p.suite_id, &accepted, epoch.max(p.header.epoch));
             Ok(())
         })?;
         // After the recovery code everything was written anew: that is a change to save.
@@ -624,7 +649,12 @@ impl GhulSuite {
             let Ok(c) = locked.unlock(&o.password_key, &s) else { return Ok(ArchiveTarget::ChangedElsewhere) };
             let header: ArchiveHeader = setting(&c, HEADER_KEY);
             let mine: StateRef = setting(&o.suite, STATE_KEY);
-            let ours = !header.state.is_empty() && (header.state == mine.state || header.state == mine.previous);
+            // The file holds a state of this working copy's own line (also after a build that was
+            // never written): overwriting it loses nothing.
+            let ours = !header.state.is_empty()
+                && (header.state == mine.state
+                    || header.state == mine.previous
+                    || mine.ancestors.contains(&header.state));
             Ok(if ours { ArchiveTarget::Same } else { ArchiveTarget::ChangedElsewhere })
         })
     }
@@ -651,11 +681,13 @@ impl GhulSuite {
                 ancestors.push(mine.state.clone());
                 ancestors.extend(mine.ancestors.iter().cloned());
             }
+            // Complete from the first save on, as long as nothing had to be cut off.
+            let complete = mine.state.is_empty() || (mine.complete && ancestors.len() <= MAX_ANCESTORS);
             ancestors.truncate(MAX_ANCESTORS);
             put_setting(
                 &mut o.suite,
                 STATE_KEY,
-                &StateRef { state: state.clone(), counter, previous, ancestors: ancestors.clone() },
+                &StateRef { state: state.clone(), counter, previous, ancestors: ancestors.clone(), complete },
             )?;
             let mut files: Vec<(String, Vec<u8>)> = Vec::new();
             for v in &mut o.vaults {
@@ -693,6 +725,7 @@ impl GhulSuite {
                 time: now_ms(),
                 device: device.trim().chars().take(80).collect(),
                 ancestors,
+                complete,
             };
             let mut hc = o.new_container(ContainerKind::Export)?;
             put_setting(&mut hc, HEADER_KEY, &header)?;
@@ -715,7 +748,7 @@ impl GhulSuite {
             if mine.state != state {
                 return Err(GhulError::InvalidInput { msg: "another state was built meanwhile".into() });
             }
-            self.note_archive_seen(&o.suite.header().suite_id, &state, mine.counter, o.epoch(), &mine.ancestors);
+            self.note_archive_seen(&o.suite.header().suite_id, &mine, o.epoch());
             Ok(())
         })?;
         self.clear_unsaved_at(change);
@@ -725,5 +758,34 @@ impl GhulSuite {
     /// The working copy as it was before the last file was opened over it (to open again).
     pub fn archive_before_open(&self) -> Result<Vec<u8>> {
         std::fs::read(self.local_dir.join(BEFORE_FILE)).map_err(|_| GhulError::NotFound)
+    }
+}
+
+#[cfg(test)]
+mod pending_tests {
+    use super::*;
+
+    fn dummy() -> Pending {
+        Pending { files: Vec::new(), header: ArchiveHeader::default(), suite_id: [0; 16], recovery: None, keys: None }
+    }
+
+    /// A check that ends after a lock (or cancel) is not kept: its keys must not outlive it.
+    #[test]
+    fn a_check_ending_after_a_lock_is_not_kept() {
+        let dir = std::env::temp_dir().join(format!("ghul-gen-{}", random_id()));
+        let s = GhulSuite::new(
+            super::super::storage::local_storage(dir.join("v").to_string_lossy().into_owned()),
+            dir.join("l").to_string_lossy().into_owned(),
+        );
+        let gen = s.pending_gen_now();
+        s.lock();
+        assert!(matches!(s.keep_pending(gen, dummy()), Err(GhulError::Locked)));
+        assert!(s.pending.lock().unwrap().is_none());
+        let gen = s.pending_gen_now();
+        s.keep_pending(gen, dummy()).unwrap();
+        assert!(s.pending.lock().unwrap().is_some());
+        s.archive_cancel();
+        assert!(s.pending.lock().unwrap().is_none());
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

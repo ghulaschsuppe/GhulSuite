@@ -148,7 +148,8 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
     CoreVaultBackend(File(DesktopPaths.dataDir, "local").absolutePath) {
     private val device = PropertiesStore(File(DesktopPaths.dataDir, "device.properties"))
     override val settings: Settings = Settings(PropertiesStore(File(DesktopPaths.dataDir, "settings.properties")))
-    override val net: NetBackend = DesktopNetBackend { suite }
+    // Mail and Drive belong to the own suite (also while a vault is open on its own: then locked).
+    override val net: NetBackend = DesktopNetBackend { ownSuite }
     override val cal: de.danerd.ghulsuite.model.CalBackend = DesktopCalBackend(window) { suite }
     override val updater: de.danerd.ghulsuite.model.AppUpdater = DesktopUpdater()
     override val appVersion: String = DESKTOP_VERSION + if (DesktopPaths.portable) " (portabel)" else ""
@@ -166,7 +167,10 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
         runCatching { File(ref.id).takeIf { it.isFile }?.readBytes() }.getOrNull()
     }
 
-    override suspend fun canWriteSuiteFile(ref: SuiteFileRef): Boolean = withContext(Dispatchers.IO) { File(ref.id).canWrite() }
+    override suspend fun canWriteSuiteFile(ref: SuiteFileRef): Boolean = withContext(Dispatchers.IO) {
+        // Written next to it and moved over it: the folder must be writable too.
+        File(ref.id).let { it.canWrite() && it.absoluteFile.parentFile?.canWrite() == true }
+    }
 
     /** Written next to the file first and moved over it in one step: a pulled stick leaves the old file. */
     override suspend fun writeSuiteFile(ref: SuiteFileRef, data: ByteArray): Boolean = withContext(Dispatchers.IO) {

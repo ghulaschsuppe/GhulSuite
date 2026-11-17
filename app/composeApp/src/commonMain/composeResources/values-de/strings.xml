@@ -1745,4 +1745,12 @@
     <string name="single_pending_failed">Immer noch nicht geschrieben. Ist der Speicher da? Versuche es später erneut.</string>
     <string name="core_single_not_suite">Nicht, während ein einzelner Tresor geöffnet ist.</string>
     <string name="core_vault_unreadable">Ein Tresor der Suite lässt sich nicht lesen (Optionen > Tresore). Entferne ihn oder stelle ihn wieder her, dann speichern.</string>
+    <string name="single_changed_elsewhere">Die Datei wurde seit dem Öffnen anderswo geändert. Mit diesem Tresor überschreiben oder ihn als neue Datei speichern.</string>
+    <string name="single_pending_changed">Die Datei wurde inzwischen anderswo geändert: Schreiben würde das überschreiben. Im Zweifel als neue Datei speichern.</string>
+    <string name="single_pending_discard_title">Änderungen verwerfen?</string>
+    <string name="single_pending_discard_text">Die letzten Änderungen an %1$s gehen verloren; die Datei bleibt, wie sie ist.</string>
+    <string name="single_pending_discard_damaged">%1$s wurde seitdem verändert oder lässt sich nicht lesen (wurde das Schreiben abgebrochen?). Verwerfen kann diesen Tresor verlieren. Besser als neue Datei speichern.</string>
+    <string name="single_pending_first">Für diese Datei warten noch Änderungen vom letzten Öffnen. Schreibe sie zuerst (oder verwirf sie).</string>
+    <string name="file_before_save">Stand vor dem letzten Öffnen sichern</string>
+    <string name="file_before_saved">Stand von vorher als %1$s gespeichert.</string>
 </resources>

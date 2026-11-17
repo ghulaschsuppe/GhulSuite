@@ -463,3 +463,72 @@ fn a_half_written_open_goes_back() {
     s.unlock(PW.into(), None, None, None, Some(kf)).unwrap();
     assert_eq!(titles(&s), vec!["Bank", "Neu"], "the working copy before, unchanged");
 }
+
+/// What a device took counts, also an older state: a file carried on from it is newer, and the
+/// state it left is newer again (not "the same").
+#[test]
+fn the_state_taken_counts_also_an_older_one() {
+    let (_da, a, kf, _) = device_with_suite("taken-a");
+    let first = save(&a);
+    a.save_entry(vault_id(&a, "Privat"), login("Zwei", "u", "2")).unwrap();
+    let second = save(&a);
+    // A goes back to the first state on purpose.
+    assert_eq!(open(&a, &first, &kf).relation, ArchiveRelation::Older);
+    a.archive_accept().unwrap();
+    assert_eq!(open(&a, &first, &kf).relation, ArchiveRelation::Same);
+    a.archive_cancel();
+    assert_eq!(open(&a, &second, &kf).relation, ArchiveRelation::Newer, "not the state A has now");
+    a.archive_cancel();
+    // Carried on from the first state again: newer for a device that has the first state.
+    a.save_entry(vault_id(&a, "Privat"), login("Drei", "u", "3")).unwrap();
+    let third = save(&a);
+    let db = Dirs::new("taken-b");
+    let b = db.suite();
+    open(&b, &first, &kf);
+    b.archive_accept().unwrap();
+    assert_eq!(open(&b, &third, &kf).relation, ArchiveRelation::Newer);
+    b.archive_cancel();
+    // A device that has the second state: the third is a branch from it.
+    let dc = Dirs::new("taken-c");
+    let c = dc.suite();
+    open(&c, &second, &kf);
+    c.archive_accept().unwrap();
+    assert_eq!(open(&c, &third, &kf).relation, ArchiveRelation::Branch);
+}
+
+/// A device several saves behind takes the latest as newer; a file saved over by this device's
+/// own line (also after a build that was never written) counts as its own.
+#[test]
+fn several_saves_behind_is_newer_and_own_files_are_own() {
+    let (_da, a, kf, _) = device_with_suite("behind-a");
+    let first = save(&a);
+    let db = Dirs::new("behind-b");
+    let b = db.suite();
+    open(&b, &first, &kf);
+    b.archive_accept().unwrap();
+    let mut latest = Vec::new();
+    for i in 0..4 {
+        a.save_entry(vault_id(&a, "Privat"), login(&format!("A{i}"), "u", "1")).unwrap();
+        latest = save(&a);
+    }
+    assert_eq!(open(&b, &latest, &kf).relation, ArchiveRelation::Newer);
+    b.archive_cancel();
+    // Built twice without writing: the file there (an older state of A's own line) is A's own.
+    let _ = a.archive_build("A".into()).unwrap();
+    let _ = a.archive_build("A".into()).unwrap();
+    assert_eq!(a.archive_target(latest.clone()).unwrap(), ArchiveTarget::Same);
+    assert_eq!(a.archive_target(first).unwrap(), ArchiveTarget::Same);
+}
+
+/// A note of GhulDrive written while the suite file is written is no change of the suite.
+#[test]
+fn a_quiet_save_while_saving_is_no_change() {
+    let (_da, a, _kf, _) = device_with_suite("quiet-a");
+    a.create_vault(VaultKind::Drive, "Drive".into()).unwrap();
+    let built = a.archive_build("A".into()).unwrap();
+    let before = a.change();
+    a.with_open(|o| a.save_area_quietly(o, VaultKind::Drive)).unwrap();
+    assert_eq!(a.change(), before, "not counted");
+    a.archive_saved(built.state, built.change).unwrap();
+    assert!(!a.archive_unsaved());
+}

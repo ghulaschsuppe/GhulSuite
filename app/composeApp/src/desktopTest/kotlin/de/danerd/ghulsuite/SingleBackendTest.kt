@@ -12,6 +12,7 @@ import de.danerd.ghulsuite.core.generateKeyfile
 import de.danerd.ghulsuite.model.EmergencySheetText
 import de.danerd.ghulsuite.model.KeyValueStore
 import de.danerd.ghulsuite.model.Settings
+import de.danerd.ghulsuite.model.SingleSaveUi
 import de.danerd.ghulsuite.model.SuiteFileRef
 import de.danerd.ghulsuite.model.VaultException
 import de.danerd.ghulsuite.model.VaultKindUi
@@ -113,7 +114,7 @@ class SingleBackendTest {
             assertFailsWith<VaultException> { b.createVault(VaultKindUi.PASS, "Zweiter") }
             b.renameVault(id, "Neu")
             assertTrue(b.archiveUnsaved())
-            assertTrue(b.saveSingle())
+            assertEquals(SingleSaveUi.SAVED, b.saveSingle())
             assertTrue(!b.archiveUnsaved())
             assertEquals("Neu", nameIn(dir, target, kf))
 
@@ -133,10 +134,10 @@ class SingleBackendTest {
             assertEquals("Beim Sperren", nameIn(dir, target, kf))
             val p = b.pendingSingleWrites().single()
             assertEquals(ref, p.file)
-            assertTrue(!b.retrySingleWrite(p.key), "still not reachable")
+            assertEquals(SingleSaveUi.FAILED, b.retrySingleWrite(p.key), "still not reachable")
             assertEquals(1, b.pendingSingleWrites().size)
             b.failWrites = false
-            assertTrue(b.retrySingleWrite(p.key))
+            assertEquals(SingleSaveUi.SAVED, b.retrySingleWrite(p.key))
             assertEquals("Nicht geschrieben", nameIn(dir, target, kf))
             assertTrue(b.pendingSingleWrites().isEmpty())
 
@@ -149,6 +150,76 @@ class SingleBackendTest {
             b.discardSingleWrite(b.pendingSingleWrites().single().key)
             assertTrue(b.pendingSingleWrites().isEmpty())
             assertEquals("Nicht geschrieben", nameIn(dir, target, kf))
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    /** A file changed elsewhere meanwhile is not overwritten without asking; save-as keeps both. */
+    @Test
+    fun aFileChangedElsewhereIsNotOverwrittenUnasked() = runBlocking {
+        val dir = Files.createTempDirectory("ghul-single-conflict").toFile()
+        try {
+            val kf = generateKeyfile()
+            val original = vaultFile(dir, kf)
+            val target = File(dir, "Privat.ghlpss").apply { writeBytes(original) }
+            val ref = SuiteFileRef(target.absolutePath, target.name)
+            val b = Backend(dir)
+            b.openSingle(ref, target.readBytes(), "Master Passwort!", null, kf) {}
+            val id = b.listVaults().single().id
+
+            // Someone else writes the file (another device, a synced folder).
+            val other = Backend(File(dir, "other").apply { mkdirs() })
+            other.openSingle(ref, target.readBytes(), "Master Passwort!", null, kf) {}
+            other.renameVault(other.listVaults().single().id, "Von woanders")
+            assertEquals(SingleSaveUi.SAVED, other.saveSingle())
+            other.lock()
+
+            b.renameVault(id, "Von hier")
+            assertEquals(SingleSaveUi.CHANGED_ELSEWHERE, b.saveSingle())
+            assertEquals("Von woanders", nameIn(dir, target, kf), "not overwritten")
+            // Saved as a new file: that is where it goes from now on.
+            val copy = File(dir, "Kopie.ghlpss")
+            val copyRef = SuiteFileRef(copy.absolutePath, copy.name)
+            assertTrue(b.saveSingleAs(copyRef))
+            assertEquals(copyRef, b.singleFile())
+            assertEquals("Von hier", nameIn(dir, copy, kf))
+            b.renameVault(id, "Weiter")
+            assertEquals(SingleSaveUi.SAVED, b.saveSingle())
+            assertEquals("Weiter", nameIn(dir, copy, kf))
+            assertEquals("Von woanders", nameIn(dir, target, kf))
+            b.lock()
+            waitUntil("closed") { b.pendingSingleWrites().isEmpty() }
+
+            // A leftover over a file changed elsewhere: offered, not written unasked.
+            b.openSingle(ref, target.readBytes(), "Master Passwort!", null, kf) {}
+            b.failWrites = true
+            b.renameVault(b.listVaults().single().id, "Liegen geblieben")
+            b.lock()
+            waitUntil("offered") { b.pendingSingleWrites().size == 1 }
+            b.failWrites = false
+            target.writeBytes(original)
+            val p = b.pendingSingleWrites().single()
+            assertTrue(p.changedElsewhere && p.fileIntact)
+            assertEquals(SingleSaveUi.CHANGED_ELSEWHERE, b.retrySingleWrite(p.key))
+            assertEquals("Privat", nameIn(dir, target, kf))
+            // Saved elsewhere instead: done, the file stays.
+            val third = File(dir, "Rest.ghlpss")
+            assertTrue(b.saveSingleWriteAs(p.key, SuiteFileRef(third.absolutePath, third.name)))
+            assertEquals("Liegen geblieben", nameIn(dir, third, kf))
+            assertTrue(b.pendingSingleWrites().isEmpty())
+
+            // A file cut short: said, so giving up is not taken lightly.
+            b.openSingle(ref, target.readBytes(), "Master Passwort!", null, kf) {}
+            b.failWrites = true
+            b.renameVault(b.listVaults().single().id, "Abgebrochen")
+            b.lock()
+            waitUntil("offered") { b.pendingSingleWrites().size == 1 }
+            target.writeBytes(original.copyOf(10))
+            assertTrue(!b.pendingSingleWrites().single().fileIntact)
+            b.failWrites = false
+            assertEquals(SingleSaveUi.SAVED, b.retrySingleWrite(b.pendingSingleWrites().single().key, overwrite = true))
+            assertEquals("Abgebrochen", nameIn(dir, target, kf))
         } finally {
             dir.deleteRecursively()
         }

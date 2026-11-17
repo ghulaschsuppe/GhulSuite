@@ -70,12 +70,12 @@ impl GhulSuite {
     /// Saves the area's file without counting it as a change of the working copy (for notes of
     /// what this device saw, e.g. a newer Drive index).
     pub(super) fn save_area_quietly(&self, o: &mut Open, kind: VaultKind) -> Result<()> {
-        let unsaved = self.archive_unsaved();
-        self.save_area(o, kind)?;
-        if !unsaved {
-            self.clear_unsaved();
-        }
-        Ok(())
+        // Not a change of the suite: neither marked unsaved nor counted (a suite file being
+        // written meanwhile still counts as saved).
+        self.quiet.store(true, std::sync::atomic::Ordering::SeqCst);
+        let r = self.save_area(o, kind);
+        self.quiet.store(false, std::sync::atomic::Ordering::SeqCst);
+        r
     }
 
     /// Saves the area's file (and the suite's record of it); nothing when the area does not exist.

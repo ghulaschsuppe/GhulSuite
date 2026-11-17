@@ -26,6 +26,7 @@ import de.danerd.ghulsuite.model.ContainerInfoUi
 import de.danerd.ghulsuite.model.PickedFile
 import de.danerd.ghulsuite.model.ShareVaultUi
 import de.danerd.ghulsuite.model.SharedVaultUi
+import de.danerd.ghulsuite.model.SingleSaveUi
 import de.danerd.ghulsuite.model.VaultErrorKind
 import de.danerd.ghulsuite.model.VaultException
 import de.danerd.ghulsuite.model.VaultKindUi
@@ -101,6 +102,7 @@ fun OpenSingleVault(state: AppState, file: PickedSuiteFile, info: ContainerInfoU
     var pin by remember { mutableStateOf("") }
     var keyfile by remember { mutableStateOf<PickedFile?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    val waiting = stringResource(Res.string.single_pending_first)
 
     SectionCard(stringResource(Res.string.single_open_title)) {
         Hint(stringResource(Res.string.single_open_text, file.ref.name, stringResource(kindLabel(kind))))
@@ -116,6 +118,10 @@ fun OpenSingleVault(state: AppState, file: PickedSuiteFile, info: ContainerInfoU
                 enabled = !state.busy && password.isNotEmpty() && (if (needsKey) keyPinOk(state, pin) else keyfile != null),
                 onClick = {
                     state.run(onError = { error = it }, block = {
+                        // Changes of an earlier opening wait for this file: first those (dialog).
+                        if (backend.pendingSingleWrites().any { it.file.id == file.ref.id }) {
+                            throw VaultException(VaultErrorKind.OTHER, waiting)
+                        }
                         backend.openSingle(
                             file.ref, file.data, password, if (needsKey) pin else null,
                             if (needsKey) null else keyfile?.bytes, state.onTouchNeeded,
@@ -124,7 +130,7 @@ fun OpenSingleVault(state: AppState, file: PickedSuiteFile, info: ContainerInfoU
                         password = ""; pin = ""
                         state.pendingAdd = null
                         state.single = SingleUi(k, file.ref)
-                        state.singleNotSaved = false
+                        state.singleSave = de.danerd.ghulsuite.model.SingleSaveUi.SAVED
                         state.unsaved = false
                         state.stack.clear()
                         state.tab = tabOf(k)
@@ -143,22 +149,50 @@ fun SingleVaultSection(state: AppState) {
     val s = state.single ?: return
     val backend = state.backend
     val name = state.vaults.firstOrNull()?.name ?: s.file.name
+    val savedAs = stringResource(Res.string.file_saved)
+    val notWritten = stringResource(Res.string.file_not_written)
+    // Into another file (also when the old one changed elsewhere or is gone): it is used from now on.
+    val saveAs = rememberCreateSuiteFile { ref ->
+        if (ref != null) {
+            state.run(block = { backend.saveSingleAs(ref) }) { ok ->
+                if (ok) {
+                    state.single = s.copy(file = ref)
+                    state.singleSave = SingleSaveUi.SAVED
+                    state.unsaved = backend.archiveUnsaved()
+                    state.message(savedAs.replace("%1\$s", ref.name))
+                } else {
+                    state.message(notWritten)
+                }
+            }
+        }
+    }
     SectionCard(stringResource(Res.string.single_title)) {
         Hint(stringResource(Res.string.single_text, name, s.file.name))
         when {
+            state.singleSave == SingleSaveUi.CHANGED_ELSEWHERE -> Banner(Icons.Filled.Warning, stringResource(Res.string.single_changed_elsewhere))
             state.singleNotSaved -> Banner(Icons.Filled.Warning, stringResource(Res.string.single_not_saved))
             state.unsaved -> Banner(Icons.Filled.Warning, stringResource(Res.string.single_saving))
             else -> Banner(Icons.Filled.CheckCircle, stringResource(Res.string.single_saved))
         }
-        if (state.singleNotSaved) {
+        if (state.singleSave == SingleSaveUi.CHANGED_ELSEWHERE) {
+            Button(onClick = { state.saveSingle(overwrite = true) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(Res.string.file_overwrite))
+            }
+        } else if (state.singleNotSaved) {
             Button(onClick = { state.saveSingle() }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(Res.string.single_try_again))
+            }
+        }
+        if (filePickersAvailable) {
+            OutlinedButton(onClick = { saveAs(s.file.name) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(Res.string.file_save_as))
             }
         }
         Button(onClick = { backend.lock() }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(Res.string.single_close))
         }
-        if (backend.singleFile() != null && filePickersAvailable) {
+        // Only with an own suite on this device to add it to.
+        if (backend.singleFile() != null && backend.ownSuiteExists()) {
             OutlinedButton(onClick = {
                 // The vault as it is here (also when writing its file failed), then the own suite.
                 state.run(block = { backend.singleVaultBytes() }) { data ->
@@ -326,25 +360,66 @@ fun ShareAsVaultDialog(state: AppState, vaultId: String, ids: List<String>, onDo
 
 /**
  * Changes of a vault opened on its own that could not be written into its file when it was
- * closed (storage gone, app ended): offered again until written or given up.
+ * closed (storage gone, app ended): offered again until written, saved elsewhere or given up.
+ * A file changed elsewhere meanwhile is not overwritten without asking.
  */
 @Composable
 fun PendingSingleWrites(state: AppState) {
     val backend = state.backend
     val unlocked by backend.unlocked.collectAsState()
+    val changes by backend.singleWritesChanged.collectAsState()
     var pending by remember { mutableStateOf<List<de.danerd.ghulsuite.model.PendingSingleUi>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
     var tick by remember { mutableStateOf(0) }
-    LaunchedEffect(unlocked, state.single, tick) {
-        // Right after closing, its own write may still run: a moment later.
-        kotlinx.coroutines.delay(1500)
+    var confirmGiveUp by remember { mutableStateOf(false) }
+    LaunchedEffect(unlocked, state.single, tick, changes) {
         pending = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
             catching { backend.pendingSingleWrites() }.getOrDefault(emptyList())
         }
     }
     val stillNot = stringResource(Res.string.single_pending_failed)
-    val p = pending.firstOrNull() ?: return
-    if (state.single != null) return
+    val p = pending.firstOrNull()
+    val saveAs = rememberCreateSuiteFile { ref ->
+        val key = p?.key
+        if (ref != null && key != null) {
+            state.run(onError = { error = it }, block = { backend.saveSingleWriteAs(key, ref) }) { ok ->
+                if (ok) { error = null; tick++ } else error = stillNot
+            }
+        }
+    }
+    if (p == null || state.single != null) return
+    fun write(overwrite: Boolean) {
+        state.run(onError = { error = it }, block = { backend.retrySingleWrite(p.key, overwrite) }) { r ->
+            when (r) {
+                SingleSaveUi.SAVED -> { error = null; tick++ }
+                SingleSaveUi.CHANGED_ELSEWHERE -> tick++
+                SingleSaveUi.FAILED -> error = stillNot
+            }
+        }
+    }
+    if (confirmGiveUp) {
+        AlertDialog(
+            danger = true,
+            onDismissRequest = { confirmGiveUp = false },
+            title = { Text(stringResource(Res.string.single_pending_discard_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        // Changed or cut short (a write cut off may still look like a vault): be careful.
+                        if (p.fileIntact && !p.changedElsewhere) Res.string.single_pending_discard_text else Res.string.single_pending_discard_damaged,
+                        p.file.name,
+                    ),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { confirmGiveUp = false; backend.discardSingleWrite(p.key); tick++ }) {
+                    Text(stringResource(Res.string.single_pending_discard))
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmGiveUp = false }) { Text(stringResource(Res.string.a_cancel)) } },
+        )
+        return
+    }
     AlertDialog(
         danger = true,
         onDismissRequest = {},
@@ -352,25 +427,23 @@ fun PendingSingleWrites(state: AppState) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(Res.string.single_pending_text, p.file.name))
+                if (p.changedElsewhere) Banner(Icons.Filled.Warning, stringResource(Res.string.single_pending_changed))
+                if (filePickersAvailable) {
+                    OutlinedButton(onClick = { error = null; saveAs(p.file.name) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(Res.string.file_save_as))
+                    }
+                }
+                TextButton(onClick = { confirmGiveUp = true }, enabled = !state.busy) {
+                    Text(stringResource(Res.string.single_pending_discard))
+                }
                 ErrorText(error)
             }
         },
         confirmButton = {
-            TextButton(enabled = !state.busy, onClick = {
-                state.run(onError = { error = it }, block = { backend.retrySingleWrite(p.key) }) { ok ->
-                    if (ok) {
-                        error = null
-                        tick++
-                    } else {
-                        error = stillNot
-                    }
-                }
-            }) { Text(stringResource(Res.string.single_pending_write)) }
-        },
-        dismissButton = {
-            TextButton(enabled = !state.busy, onClick = { backend.discardSingleWrite(p.key); tick++ }) {
-                Text(stringResource(Res.string.single_pending_discard))
+            TextButton(enabled = !state.busy, onClick = { write(overwrite = p.changedElsewhere) }) {
+                Text(stringResource(if (p.changedElsewhere) Res.string.file_overwrite else Res.string.single_pending_write))
             }
         },
+        dismissButton = {},
     )
 }

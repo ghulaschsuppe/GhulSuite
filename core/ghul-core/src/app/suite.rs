@@ -589,6 +589,10 @@ pub struct GhulSuite {
     pub(super) pending: Mutex<Option<super::archive::Pending>>,
     /// Grows with every write of a container (see `archive_saved`, `single_saved`).
     pub(super) changes: std::sync::atomic::AtomicU64,
+    /// Set while a container is written that is no change of the suite (see `save_area_quietly`).
+    pub(super) quiet: AtomicBool,
+    /// Grows with every lock and cancel: a file checked meanwhile is not kept (see `archive_open`).
+    pub(super) pending_gen: std::sync::atomic::AtomicU64,
 }
 
 #[derive(Default)]
@@ -1078,6 +1082,8 @@ impl GhulSuite {
             zones: Mutex::new(None),
             pending: Mutex::new(None),
             changes: std::sync::atomic::AtomicU64::new(0),
+            quiet: AtomicBool::new(false),
+            pending_gen: std::sync::atomic::AtomicU64::new(0),
         })
     }
 
@@ -1483,9 +1489,8 @@ impl GhulSuite {
         if VaultKind::from_container(locked.kind()).is_none() {
             return Err(GhulError::InvalidInput { msg: "a suite file cannot be added as a vault".into() });
         }
-        if !self.is_unlocked() {
-            return Err(GhulError::Locked);
-        }
+        // Refused before the key is touched or the password derived.
+        self.with_open(|o| super::single::refuse_single(o))?;
         let keyfile = parse_keyfile(keyfile)?;
         let s = second_factor(
             &locked,
@@ -1910,9 +1915,8 @@ impl GhulSuite {
         label: String,
     ) -> Result<()> {
         let pin = Zeroizing::new(pin);
-        if !self.is_unlocked() {
-            return Err(GhulError::Locked);
-        }
+        // Refused before the key is touched.
+        self.with_open(|o| super::single::refuse_single(o))?;
         let (cred_id, prf_input, output) = with_authenticator(&transport, Some(&listener), |a| register_key(a, &pin))?;
         self.with_open(|o| {
             super::single::refuse_single(o)?;

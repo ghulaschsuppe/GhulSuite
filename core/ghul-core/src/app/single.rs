@@ -139,8 +139,7 @@ impl GhulSuite {
         self.with_open(|o| Ok(single_file(o).is_some())).unwrap_or(false)
     }
 
-    /// The name of the vault file opened on its own in this suite's folder (also readable after
-    /// locking, to write it back).
+    /// The name of the vault file opened on its own in this suite's folder (while it is open).
     pub fn single_vault_name(&self) -> Result<String> {
         self.with_open(|o| single_file(o).ok_or(GhulError::InvalidInput { msg: "no vault is open on its own".into() }))
     }
@@ -149,7 +148,8 @@ impl GhulSuite {
     /// change it holds. Its protection is the one it came with.
     pub fn single_vault_file(&self) -> Result<SingleFile> {
         let file = self.single_vault_name()?;
-        // Read before the counter: a change in between is counted, not lost.
+        // The counter first, then the file: a change in between makes the counter newer than
+        // the one returned, so it stays unsaved.
         let change = self.change();
         let data = self.storage.read(file)?.ok_or(GhulError::NotFound)?;
         Ok(SingleFile { data, change })
@@ -206,7 +206,7 @@ impl GhulSuite {
                 .map(|mut e| {
                     // Nothing about the own vault: new ids, a fresh history.
                     e.extra.remove(HISTORY);
-                    e.extra.remove(CREATED);
+                    e.extra.insert(CREATED.into(), ciborium::value::Value::Integer(now.into()));
                     e.id = new_id().to_vec();
                     e.revision = 1;
                     e.modified = now;

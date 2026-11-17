@@ -165,6 +165,8 @@ interface VaultBackend {
     /** Builds the suite file of the working copy; confirm with [archiveSaved] once it is written. */
     suspend fun archiveBuild(device: String): ArchiveBuiltUi = ArchiveBuiltUi(ByteArray(0), "")
     suspend fun archiveSaved(state: String, change: Long) {}
+    /** The working copy as it was before the last suite file was opened over it (null: none). */
+    suspend fun archiveBeforeOpen(): ByteArray? = null
     /** The suite file used last on this device (opened or saved), if any. */
     fun suiteFile(): SuiteFileRef? = null
     fun setSuiteFile(ref: SuiteFileRef?) {}
@@ -180,16 +182,27 @@ interface VaultBackend {
         throw VaultException(VaultErrorKind.OTHER)
     /** The file of the vault open on its own; null while the own suite is in use. */
     fun singleFile(): SuiteFileRef? = null
-    /** Writes the vault open on its own back into its file; false if that did not work. */
-    suspend fun saveSingle(): Boolean = false
+    /**
+     * Writes the vault open on its own back into its file; not when the file was changed
+     * elsewhere meanwhile (unless [overwrite]).
+     */
+    suspend fun saveSingle(overwrite: Boolean = false): SingleSaveUi = SingleSaveUi.FAILED
+    /** Writes the vault open on its own into another file, which it is written into from now on. */
+    suspend fun saveSingleAs(ref: SuiteFileRef): Boolean = false
+    /** Whether the own suite exists on this device (also while a vault is open on its own). */
+    fun ownSuiteExists(): Boolean = exists()
+    /** Grows when leftovers of vaults opened on their own may have changed. */
+    val singleWritesChanged: kotlinx.coroutines.flow.StateFlow<Int> get() = kotlinx.coroutines.flow.MutableStateFlow(0)
     /** The vault open on its own as it is now (to add it to the own suite). */
     suspend fun singleVaultBytes(): ByteArray = throw VaultException(VaultErrorKind.OTHER)
     /** Whether the app may write into this file (a vault opened on its own goes back into it). */
     suspend fun canWriteSuiteFile(ref: SuiteFileRef): Boolean = true
     /** Vaults opened on their own whose last changes could not be written back into their file. */
     fun pendingSingleWrites(): List<PendingSingleUi> = emptyList()
-    /** Tries again to write such changes into their file; false if that still does not work. */
-    suspend fun retrySingleWrite(key: String): Boolean = false
+    /** Tries again to write such changes into their file. */
+    suspend fun retrySingleWrite(key: String, overwrite: Boolean = false): SingleSaveUi = SingleSaveUi.FAILED
+    /** Writes such changes into another file instead. */
+    suspend fun saveSingleWriteAs(key: String, ref: SuiteFileRef): Boolean = false
     /** Gives such changes up. */
     fun discardSingleWrite(key: String) {}
     /** Picked entries into a new vault file with a protection of its own (key file or security key). */
@@ -316,7 +329,17 @@ class ShareVaultUi(
 )
 
 /** Changes of a vault opened on its own that are not in its file yet ([key] names them). */
-class PendingSingleUi(val key: String, val file: SuiteFileRef)
+class PendingSingleUi(
+    val key: String,
+    val file: SuiteFileRef,
+    /** The file was changed elsewhere since: writing would lose that. */
+    val changedElsewhere: Boolean = false,
+    /** The file there is a readable vault (giving up keeps that). */
+    val fileIntact: Boolean = true,
+)
+
+/** How writing a vault opened on its own back into its file went. */
+enum class SingleSaveUi { SAVED, FAILED, CHANGED_ELSEWHERE }
 
 /** A new vault file of picked entries and its recovery code. */
 class SharedVaultUi(val kind: VaultKindUi, val data: ByteArray, val recoveryCode: String)

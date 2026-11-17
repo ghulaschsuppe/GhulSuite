@@ -138,7 +138,10 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     var single by mutableStateOf<SingleUi?>(null)
 
     /** The vault opened on its own could not be written back into its file. */
-    var singleNotSaved by mutableStateOf(false)
+    var singleSave by mutableStateOf(de.danerd.ghulsuite.model.SingleSaveUi.SAVED)
+
+    /** See [singleSave]. */
+    val singleNotSaved: Boolean get() = singleSave != de.danerd.ghulsuite.model.SingleSaveUi.SAVED
 
     /** A vault file waiting to be added to the own suite once it is unlocked. */
     var pendingAdd by mutableStateOf<de.danerd.ghulsuite.model.PickedFile?>(null)
@@ -532,11 +535,12 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         scope.launch {
             while (true) {
                 kotlinx.coroutines.delay(1500)
-                if (single != null && backend.unlocked.value &&
+                // Changed elsewhere: the user decides (overwrite or save as), not this loop.
+                if (single != null && backend.unlocked.value && !busy &&
+                    singleSave != de.danerd.ghulsuite.model.SingleSaveUi.CHANGED_ELSEWHERE &&
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { backend.archiveUnsaved() }
                 ) {
-                    val ok = catching { backend.saveSingle() }.getOrDefault(false)
-                    singleNotSaved = !ok
+                    singleSave = catching { backend.saveSingle() }.getOrDefault(de.danerd.ghulsuite.model.SingleSaveUi.FAILED)
                     unsaved = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { backend.archiveUnsaved() }
                 }
             }
@@ -696,11 +700,11 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     /** The working copy has changes that are not in the suite file yet (see [SuiteFileSection]). */
     var unsaved by mutableStateOf(false)
 
-    /** Writes the vault opened on its own back into its file now ("Try again"). */
-    fun saveSingle() {
+    /** Writes the vault opened on its own back into its file now ("Try again", "Overwrite"). */
+    fun saveSingle(overwrite: Boolean = false) {
         if (single == null) return
-        run(block = { backend.saveSingle() }) { ok ->
-            singleNotSaved = !ok
+        run(block = { backend.saveSingle(overwrite) }) { r ->
+            singleSave = r
             unsaved = backend.archiveUnsaved()
         }
     }
