@@ -453,7 +453,7 @@ Datei**: Der Suite-Container behält Schutz, Server und Freigaben; GhulDrive und
 
 | Schlüssel | Inhalt |
 |---|---|
-| `drive` | `server` (ID des **aktiven** Speicherorts), `key` (32 Byte, Drive-Schlüssel DK), `seen` (Speicherort-ID → höchste gesehene Index-Revision; ein älterer Index wird abgelehnt), `archive` (ID des Speicherorts für das Mail-Archiv, leer = der aktive), `old_keys`, `rekey_running` und `rekeyed` (laufender Schlüsselwechsel, siehe unten), `pending_key` (32 Byte, Schlüssel für die Merker unterbrochener Uploads) |
+| `drive` | `server` (ID des **aktiven** Speicherorts), `key` (32 Byte, Drive-Schlüssel DK), `seen` (Speicherort-ID → höchste gesehene Index-Revision; ein älterer Index wird abgelehnt), `archive` (ID des Speicherorts für das Mail-Archiv, leer = der aktive), `old_keys`, `rekey_running` und `rekeyed` (laufender Schlüsselwechsel, siehe unten), `pending_key` (32 Byte, Schlüssel für die Merker unterbrochener Uploads), `v2` (Speicherorte, deren Index schon in Version 2 gesehen wurde: ein Index der Version 1 dort gilt wie ein älterer Stand) |
 | `servers` | die Speicherorte von GhulDrive (beliebig viele, Aufbau wie im Suite-Container, auch mit `module`); jeder hat eigene Dateien unter `drive/` und eigene Freigaben unter `shares/` in seinem Ordner |
 | `options` | Optionen des Bereichs, je Schlüssel `{v, at}` (Text, Zeit in ms) |
 

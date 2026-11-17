@@ -102,6 +102,10 @@ struct DriveSettings {
     /// by a key change, so an upload continues after one.
     #[serde(default, with = "serde_bytes")]
     pending_key: Vec<u8>,
+    /// The locations whose index was seen in version 2: an index of version 1 there (only
+    /// versions before 0.9 write it, not bound to the suite) is not taken silently.
+    #[serde(default)]
+    v2: Vec<String>,
 }
 
 /// Wipes Drive's earlier keys (the key change is through).
@@ -465,6 +469,8 @@ struct Loaded {
     present: bool,
     /// The index was damaged: this is the one before the last change (`index.bak`).
     from_bak: bool,
+    /// Version 1 (before 0.9, not bound to the suite).
+    v1: bool,
 }
 
 fn read_index(fs: &dyn RemoteFs, keys: &Keys) -> Result<Loaded> {
@@ -474,7 +480,7 @@ fn read_index(fs: &dyn RemoteFs, keys: &Keys) -> Result<Loaded> {
 /// Like [`read_index`], also with Drive's earlier keys `old` (noted in `old_key`).
 fn read_index_any(fs: &dyn RemoteFs, keys: &Keys, old: &[Keys]) -> Result<Loaded> {
     let Some(data) = fs.read(INDEX)? else {
-        return Ok(Loaded { index: DriveIndex::default(), old_key: false, present: false, from_bak: false });
+        return Ok(Loaded { index: DriveIndex::default(), old_key: false, present: false, from_bak: false, v1: false });
     };
     let open = |data: &[u8]| -> Option<(DriveIndex, bool)> {
         decode_index(data, keys)
@@ -482,12 +488,14 @@ fn read_index_any(fs: &dyn RemoteFs, keys: &Keys, old: &[Keys]) -> Result<Loaded
             .map(|i| (i, false))
             .or_else(|| old.iter().find_map(|k| decode_index(data, k).ok()).map(|i| (i, true)))
     };
+    let v1 = |data: &[u8]| !data.starts_with(INDEX_MAGIC2);
     if let Some((index, old_key)) = open(&data) {
-        return Ok(Loaded { index, old_key, present: true, from_bak: false });
+        return Ok(Loaded { index, old_key, present: true, from_bak: false, v1: v1(&data) });
     }
     // Damaged (or another key): the copy before the last change, if that one opens.
-    match fs.read(INDEX_BAK)?.as_deref().and_then(open) {
-        Some((index, old_key)) => Ok(Loaded { index, old_key, present: true, from_bak: true }),
+    let bak = fs.read(INDEX_BAK)?;
+    match bak.as_deref().and_then(|b| open(b).map(|(i, k)| (i, k, v1(b)))) {
+        Some((index, old_key, v1)) => Ok(Loaded { index, old_key, present: true, from_bak: true, v1 }),
         None => Err(decode_index(&data, keys)
             .err()
             .unwrap_or(GhulError::Corrupted { msg: "Drive data damaged or from another key".into() })),
@@ -789,14 +797,29 @@ impl GhulSuite {
         if loaded.old_key {
             return Err(GhulError::DriveEarlierKey);
         }
-        if loaded.from_bak || loaded.index.revision < seen || (!loaded.present && seen > 0) {
+        let downgraded = loaded.v1 && d.v2.contains(&server);
+        if loaded.from_bak || loaded.index.revision < seen || (!loaded.present && seen > 0) || downgraded {
             return Err(GhulError::DriveRolledBack);
         }
         let index = loaded.index;
         if index.revision > seen {
             self.note_seen(o, index.revision)?;
         }
+        if loaded.present && !loaded.v1 && !d.v2.contains(&server) {
+            self.note_v2(o, &server)?;
+        }
         Ok(index)
+    }
+
+    /// Remembers that location `server` has an index of version 2 (see `DriveSettings::v2`).
+    fn note_v2(&self, o: &mut Open, server: &str) -> Result<()> {
+        let mut d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
+        if d.v2.iter().any(|s| s == server) {
+            return Ok(());
+        }
+        d.v2.push(server.to_owned());
+        put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
+        self.save_area_quietly(o, VaultKind::Drive)
     }
 
     /// Remembers `revision` as seen on Drive's server (in the Drive file).
@@ -827,6 +850,9 @@ impl GhulSuite {
         save_index(fs.as_ref(), &keys, &mut index)?;
         drop(lock);
         self.note_seen(o, index.revision)?;
+        // Written in version 2 (an index of version 1 was moved to it).
+        let server = self.drive_location(o).unwrap_or_default();
+        self.note_v2(o, &server)?;
         if self.drive_on_active(o) {
             self.net.lock().unwrap_or_else(|p| p.into_inner()).drive = Some(index);
         }
@@ -964,6 +990,17 @@ impl GhulSuite {
             }
         }
         Ok(())
+    }
+
+    /// Tests: as a suite of before 0.9, which noted no location as seen in version 2.
+    #[cfg(test)]
+    pub(super) fn drive_test_forget_v2(&self) {
+        self.with_open(|o| {
+            let mut d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
+            d.v2.clear();
+            put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)
+        })
+        .unwrap()
     }
 
     /// Tests: Drive's index key and the suite id it is bound to.
@@ -1278,6 +1315,7 @@ impl GhulSuite {
             put_area_setting(o, VaultKind::Drive, servers::SERVERS_KEY, &own)?;
             let mut d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
             d.seen.remove(&id);
+            d.v2.retain(|r| *r != id);
             d.rekeyed.retain(|r| *r != id);
             if d.archive == id {
                 d.archive.clear();
@@ -1538,9 +1576,9 @@ impl GhulSuite {
             let lock = IndexLock::take(fs.as_ref())?;
             let loaded = read_index_any(fs.as_ref(), &keys, &old)?;
             let mut index = loaded.index;
-            if loaded.from_bak || loaded.old_key {
-                // The index was damaged, or has an earlier key: that state is written as the
-                // index again, with Drive's key.
+            if loaded.from_bak || loaded.old_key || loaded.v1 {
+                // The index was damaged, has an earlier key or is of version 1: that state is
+                // written as the index again, with Drive's key.
                 save_index(fs.as_ref(), &keys, &mut index)?;
             }
             if loaded.old_key {

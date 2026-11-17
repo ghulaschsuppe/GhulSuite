@@ -19,6 +19,7 @@ import java.security.SecureRandom
  * nothing is accepted, so another program on the machine cannot hand files over.
  */
 object SingleInstance {
+    private const val MAX_SUITE_BYTES = 512L * 1024 * 1024
     private val portFile: File get() = File(DesktopPaths.dataDir, "instance.port")
 
     /** Hands [path] (or nothing: just come to the front) to a running GhulSuite; true if one took it. */
@@ -67,6 +68,8 @@ object SingleInstance {
     /** A suite file from the command line (double click) for the app to open. */
     fun open(path: String) {
         val f = File(path)
+        // As large as the core reads at most (it checks the size itself as well).
+        if (!f.isFile || f.length() > MAX_SUITE_BYTES) return
         val data = runCatching { f.readBytes() }.getOrNull() ?: return
         AppLaunch.suiteFile.value = PickedSuiteFile(SuiteFileRef(f.absolutePath, f.name), data)
     }

@@ -154,24 +154,28 @@ pub(super) fn connector(o: &mut Open, s: &StoredServer, base: Option<&str>) -> R
     let base = base.map(str::to_owned).unwrap_or_else(|| s.base.clone());
     let mut cfg = sftp_config(o, s)?;
     cfg.base = base;
-    // During a key change (see `keychange`): servers that do not take the new key yet are
-    // reached with an earlier one.
     let earlier = super::keychange::earlier_ssh_keys(o);
-    Ok(Box::new(move || match SftpFs::connect(&cfg) {
+    Ok(Box::new(move || Ok(Arc::new(connect_sftp(&cfg, &earlier)?) as Arc<dyn RemoteFs>)))
+}
+
+/// Connects with the suite's SSH key; during a key change (see `keychange`) a server that does
+/// not take the new key yet is reached with an earlier one (`earlier`).
+fn connect_sftp(cfg: &SftpConfig, earlier: &[Zeroizing<String>]) -> Result<SftpFs> {
+    match SftpFs::connect(cfg) {
         Err(NetError::AuthFailed) if !earlier.is_empty() => {
-            for k in &earlier {
+            for k in earlier {
                 let mut c = cfg.clone();
                 c.auth = SshAuth::Key(k.clone());
                 match SftpFs::connect(&c) {
-                    Ok(fs) => return Ok(Arc::new(fs) as Arc<dyn RemoteFs>),
+                    Ok(fs) => return Ok(fs),
                     Err(NetError::AuthFailed) => continue,
                     Err(e) => return Err(e.into()),
                 }
             }
             Err(GhulError::ServerAuthFailed)
         }
-        other => Ok(Arc::new(other?) as Arc<dyn RemoteFs>),
-    }))
+        other => Ok(other?),
+    }
 }
 
 /// Opens a stored server with its own folder, or with `base` instead (e.g. the login folder).
@@ -456,7 +460,8 @@ pub(super) fn check_server(
     fs.write(".ghulsuite-check", b"ok")?;
     fs.delete(".ghulsuite-check")?;
     let cfg = sftp_config(o, &stored)?;
-    stored.location = SftpFs::connect(&cfg).ok().and_then(|f| f.absolute("").ok()).unwrap_or_default();
+    let earlier = super::keychange::earlier_ssh_keys(o);
+    stored.location = connect_sftp(&cfg, &earlier).ok().and_then(|f| f.absolute("").ok()).unwrap_or_default();
     Ok(Ok(stored))
 }
 
@@ -554,7 +559,7 @@ impl GhulSuite {
             let base_fs = open_fs(o, &srv, None)?;
             // Where the login folder is.
             let cfg = SftpConfig { base: String::new(), ..sftp_config(o, &srv)? };
-            let home = SftpFs::connect(&cfg)?.absolute("")?;
+            let home = connect_sftp(&cfg, &super::keychange::earlier_ssh_keys(o))?.absolute("")?;
             let abs =
                 |p: &str| if p.starts_with('/') { p.to_owned() } else { format!("{}/{p}", home.trim_end_matches('/')) };
             let base_path = relative_path(&abs(&dir), &abs(&srv.base))

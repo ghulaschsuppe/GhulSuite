@@ -74,8 +74,9 @@ class IntentEntryActivity : Activity() {
                 AppLaunch.compose.value = mailDraft(intent)
             intent.action == Intent.ACTION_INSERT || intent.action == Intent.ACTION_EDIT ->
                 AppLaunch.newEvent.value = event(intent)
+            // A suite file only from a content provider (a file:// path could point at any file of the app).
             intent.action == Intent.ACTION_VIEW && data != null && name(data).endsWith(".ghlzip", ignoreCase = true) ->
-                read(data, MAX_SUITE_BYTES)?.let { AppLaunch.suiteFile.value = suiteFile(data, it) }
+                if (data.scheme == "content") read(data, MAX_SUITE_BYTES)?.let { AppLaunch.suiteFile.value = suiteFile(data, it) }
             intent.action == Intent.ACTION_VIEW && data != null ->
                 read(data, MAX_ICS_BYTES)?.let { AppLaunch.icsFile.value = it }
         }

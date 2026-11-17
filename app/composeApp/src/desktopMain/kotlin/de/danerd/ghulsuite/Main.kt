@@ -50,6 +50,18 @@ fun main(args: Array<String>) {
     backend.settings.appLanguage.takeIf { it.isNotEmpty() }?.let { java.util.Locale.setDefault(java.util.Locale.forLanguageTag(it)) }
     val state = AppState(backend, CoroutineScope(SupervisorJob() + Dispatchers.Main))
     fileArg?.let { SingleInstance.open(it) }
+    // Later starts (a double click on a suite file) come here at once, also before the window is
+    // there (a start meanwhile would otherwise find no one listening and open a second GhulSuite);
+    // the window comes to the front.
+    SingleInstance.listen { path ->
+        path?.let { SingleInstance.open(it) }
+        java.awt.EventQueue.invokeLater {
+            val w = awtWindow as? java.awt.Frame ?: return@invokeLater
+            if (w.state == java.awt.Frame.ICONIFIED) w.state = java.awt.Frame.NORMAL
+            w.toFront()
+            w.requestFocus()
+        }
+    }
 
     // Activity tracking for the idle lock.
     var lastInput = System.currentTimeMillis()
@@ -103,18 +115,6 @@ fun main(args: Array<String>) {
         ) {
             awtWindow = window
             window.minimumSize = java.awt.Dimension(380, 560)
-
-            // Later starts (a double click on a suite file) come here; the window comes to the front.
-            LaunchedEffect(Unit) {
-                SingleInstance.listen { path ->
-                    path?.let { SingleInstance.open(it) }
-                    java.awt.EventQueue.invokeLater {
-                        if (window.state == java.awt.Frame.ICONIFIED) window.state = java.awt.Frame.NORMAL
-                        window.toFront()
-                        window.requestFocus()
-                    }
-                }
-            }
 
             // Keep vault contents out of screenshots and screen sharing unless allowed.
             LaunchedEffect(Unit) {

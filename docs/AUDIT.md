@@ -141,6 +141,8 @@ Zugriff auf Tresorinhalte.
 | - | Wer den Stick hat, kann die Suite-Datei löschen oder durch eine ältere ersetzen. Die App erkennt das beim Öffnen, gegen den Verlust helfen nur Kopien an einem zweiten Ort |
 | - | Das Schreibsiegel beweist, wer eine Datei geschrieben hat, nicht dass sie aktuell ist. Ein Gerät, das den neueren Stand nie gesehen hat, öffnet auch eine ältere Datei (ohne Rückfrage, es kennt nichts Neueres); nach dem Schlüsselwechsel kommt sie aber nicht mehr an den Server |
 | - | Ein Hoster, der SSH-Schlüssel nur im Webpanel verwaltet: Den Tausch nach einer Schutzänderung macht der Nutzer dort selbst, die App prüft ihn. Bis dahin funktioniert auf diesem Server auch der alte Schlüssel |
+| - | Bis die Suite-Datei mit dem neuen Schutz gespeichert ist, wartet der Schlüsselwechsel: Solange erreicht auch die ältere Datei GhulDrive und die Server (sie ist bis dahin die einzige Kopie). Die App bittet sofort und bei jedem Entsperren ums Speichern |
+| - | Die GhulDrive-Sperre (`index.lock`) schützt nur Geräte, die sich an sie halten. Bricht ein Gerät nach mehr als fünf Minuten ohne Antwort des Servers ab und führt der Server dessen letztes Umbenennen danach doch noch aus, kann ein Index einen anderen ersetzen; die Revision und `index.bak` machen das sichtbar, „Stand des Servers übernehmen“ entscheidet |
 | L8 | Geheimnisse im Arbeitsspeicher der Oberfläche (Kotlin-Zeichenketten lassen sich nicht sicher löschen), Auslagerungsdatei und Ruhezustand unter Windows. Nur der Rust-Kern löscht sicher; Geräteverschlüsselung nutzen |
 | L9 | Schadsoftware mit Root, fremde Tastatur-Apps, Bedienungshilfen-Dienste |
 | L11 | Zertifikats-Widerruf wird nicht geprüft (wie bei den meisten Apps; mit festem Fingerabdruck ohne Belang) |

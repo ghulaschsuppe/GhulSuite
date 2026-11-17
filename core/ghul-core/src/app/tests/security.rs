@@ -205,7 +205,8 @@ fn a_damaged_index_falls_back_to_the_one_before() {
 }
 
 /// The index of before 0.9 (not bound to the suite) still opens, and is bound at the next
-/// change; an index carried over from another suite with the same key does not open.
+/// change; once a location was seen in version 2, one of version 1 there is not taken silently;
+/// an index carried over from another suite with the same key does not open.
 #[test]
 fn the_old_index_format_opens_and_is_bound_to_the_suite() {
     let d = Dirs::new("v1");
@@ -215,21 +216,33 @@ fn the_old_index_format_opens_and_is_bound_to_the_suite() {
     let server = std::env::temp_dir().join(format!("ghul-v1-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&server);
     s.drive_use_folder(Arc::new(LocalFs::new(&server))).unwrap();
-    upload(&s, None, "a.txt", b"A");
     let index = server.join("drive/index.ghldrv");
-    let v2 = std::fs::read(&index).unwrap();
-    assert!(v2.starts_with(b"GHULDRV2"));
-    // The same content as version 1 (what 0.8 wrote).
     let (key, suite) = s.drive_test_keys();
-    let plain = super::super::drive::decrypt(b"GHULDRV2", &key, &v2, &suite).unwrap();
-    std::fs::write(&index, super::super::drive::encrypt(b"GHULDRV1", &key, &plain, b"")).unwrap();
-    assert_eq!(drive_names(&s).unwrap(), vec!["a.txt"]);
+    // The same content as version 1 (what 0.8 wrote).
+    let as_v1 = || {
+        let v2 = std::fs::read(&index).unwrap();
+        assert!(v2.starts_with(b"GHULDRV2"));
+        let plain = super::super::drive::decrypt(b"GHULDRV2", &key, &v2, &suite).unwrap();
+        std::fs::write(&index, super::super::drive::encrypt(b"GHULDRV1", &key, &plain, b"")).unwrap();
+        plain
+    };
     s.drive_create_folder(None, "Neu".into()).unwrap();
+    // A location of a suite of before 0.9: version 1 opens and is written as version 2.
+    s.drive_test_forget_v2();
+    as_v1();
+    assert_eq!(drive_names(&s).unwrap(), vec!["Neu"]);
+    s.drive_create_folder(None, "Zwei".into()).unwrap();
     assert!(std::fs::read(&index).unwrap().starts_with(b"GHULDRV2"));
+    // Seen in version 2 now: version 1 there again is refused until the owner takes it.
+    let plain = as_v1();
+    assert!(matches!(drive_names(&s), Err(GhulError::DriveRolledBack)));
+    s.drive_accept_server_state().unwrap();
+    assert!(std::fs::read(&index).unwrap().starts_with(b"GHULDRV2"));
+    assert_eq!(drive_names(&s).unwrap(), vec!["Neu", "Zwei"]);
     // Bound to another suite: does not open (also not as the copy before).
     let other = super::super::drive::encrypt(b"GHULDRV2", &key, &plain, &[9u8; 16]);
     std::fs::write(&index, &other).unwrap();
-    std::fs::remove_file(server.join("drive/index.bak")).unwrap();
+    let _ = std::fs::remove_file(server.join("drive/index.bak"));
     assert!(drive_names(&s).is_err());
     let _ = std::fs::remove_dir_all(&server);
 }
