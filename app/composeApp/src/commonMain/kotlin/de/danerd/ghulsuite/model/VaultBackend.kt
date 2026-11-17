@@ -338,10 +338,20 @@ class PendingSingleUi(
     val fileIntact: Boolean = true,
     /** Its file is known (else only "save as" and giving up). */
     val targetKnown: Boolean = true,
+    /** Its file is gone or cannot be read now (writing would create it anew). */
+    val missing: Boolean = false,
 )
 
 /** How writing a vault opened on its own back into its file went. */
-enum class SingleSaveUi { SAVED, FAILED, CHANGED_ELSEWHERE }
+enum class SingleSaveUi {
+    SAVED,
+    /** Writing did not work (storage away?): try again later or save as. */
+    FAILED,
+    /** The file was changed elsewhere since: overwrite or save as. */
+    CHANGED_ELSEWHERE,
+    /** The file is gone or cannot be read: write it anew (overwrite) or save as. */
+    MISSING,
+}
 
 /** A new vault file of picked entries and its recovery code. */
 class SharedVaultUi(val kind: VaultKindUi, val data: ByteArray, val recoveryCode: String)

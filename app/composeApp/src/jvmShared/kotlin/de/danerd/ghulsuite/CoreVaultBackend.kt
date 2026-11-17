@@ -167,7 +167,11 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
             io { suite.archiveAccept() }
         } catch (e: Throwable) {
             // The core may have locked before failing: the app must not show an open suite.
-            unlockedState.value = runCatching { suite.isUnlocked() }.getOrDefault(false)
+            val open = runCatching { suite.isUnlocked() }.getOrDefault(false)
+            // Locked after failing: the core got past its lock and removed this device's quick
+            // unlock with the old state; the platform's part of it goes too.
+            if (!open) onProtectionChanged()
+            unlockedState.value = open
             throw e
         }
         // The device's quick unlock belonged to the state before.
@@ -224,22 +228,21 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
     /** What a folder of a vault opened on its own records: its file and what is in that file. */
     private class Target(val ref: SuiteFileRef, val vault: String, val hash: String)
 
-    /** The only vault file in a folder (when its record cannot be read). */
+    /** The vault file in a folder (when its record cannot be read; the newest if several). */
     private fun vaultIn(dir: java.io.File): String? =
         java.io.File(dir, "vault").listFiles().orEmpty().filter { it.isFile && it.extension.startsWith("ghl") && it.extension != "ghlsuite" }
-            .singleOrNull()?.name
+            .maxByOrNull { it.lastModified() }?.name
 
     private fun readTarget(dir: java.io.File): Target? = runCatching {
         val file = java.io.File(dir, "target")
-        val p = java.util.Properties()
-        file.inputStream().use { p.load(it) }
-        val id = p.getProperty("id")
-        if (id != null) {
-            Target(SuiteFileRef(id, p.getProperty("name")!!), p.getProperty("vault")!!, p.getProperty("hash") ?: "")
+        val lines = file.readLines()
+        if (lines.none { it.startsWith("id=") }) {
+            // Written by an earlier development version: three plain lines, no hash.
+            Target(SuiteFileRef(lines[0], lines[1]), lines[2], "")
         } else {
-            // Written by an earlier development version: three lines, no hash.
-            val l = file.readLines()
-            Target(SuiteFileRef(l[0], l[1]), l[2], "")
+            val p = java.util.Properties()
+            file.inputStream().use { p.load(it) }
+            Target(SuiteFileRef(p.getProperty("id")!!, p.getProperty("name")!!), p.getProperty("vault")!!, p.getProperty("hash") ?: "")
         }
     }.getOrNull()
 
@@ -264,11 +267,12 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
 
     override fun ownSuiteExists(): Boolean = runCatching { ownSuite.exists() }.getOrDefault(false)
 
-    /** Leftovers of earlier openings that wait for [ref] (only their records are read). */
+    /** Changes of earlier openings of [ref] that wait or are still written (only records read). */
     private fun waitingFor(ref: SuiteFileRef): Boolean {
         val open = singleDir
         return singleBase().listFiles().orEmpty().any { dir ->
-            dir.isDirectory && dir != open && (dir.name in busyDirs || (readTarget(dir)?.ref?.id == ref.id && tempSuite(dir).archiveUnsaved()))
+            dir.isDirectory && dir != open && readTarget(dir)?.ref?.id == ref.id &&
+                (dir.name in busyDirs || tempSuite(dir).archiveUnsaved())
         }
     }
 
@@ -282,6 +286,8 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
         keyfile: ByteArray?,
         onTouchNeeded: () -> Unit,
     ): VaultKindUi {
+        // Changes of an earlier opening of this file come first: refused before anything is closed.
+        if (io { waitingFor(file) && busyDirs.isEmpty() }) throw VaultException(VaultErrorKind.SINGLE_PENDING)
         if (single != null || unlockedState.value) lock()
         // A closing still writing: wait for it (it may be this file), then read the file anew.
         var bytes = data
@@ -327,7 +333,8 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
     private suspend fun writeBackLocked(dir: java.io.File, data: ByteArray, overwrite: Boolean): SingleSaveUi {
         val t = io { readTarget(dir) } ?: return SingleSaveUi.FAILED
         if (!overwrite && t.hash.isNotEmpty()) {
-            val now = readSuiteFile(t.ref) ?: return SingleSaveUi.FAILED
+            // Gone or unreadable (deleted, moved, storage away): asked like a change elsewhere.
+            val now = readSuiteFile(t.ref) ?: return SingleSaveUi.MISSING
             if (sha(now) != t.hash) return SingleSaveUi.CHANGED_ELSEWHERE
         }
         if (!writeSuiteFile(t.ref, data)) return SingleSaveUi.FAILED
@@ -354,9 +361,10 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
         if (!writeSuiteFile(ref, f.data)) return@withLock false
         // Closed meanwhile (locked): the new file has it, nothing else changes.
         if (singleDir !== dir) return@withLock true
-        // From now on this vault goes into the new file.
-        io { writeTarget(dir, Target(ref, old.vault, sha(f.data))) }
+        // From now on this vault goes into the new file (set before anything can suspend, so a
+        // lock meanwhile is not undone).
         single = ref
+        io { writeTarget(dir, Target(ref, old.vault, sha(f.data))) }
         io { s.singleSaved(f.change) }
         true
     }
@@ -412,17 +420,19 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
                     return@mapNotNull null
                 }
                 val t = readTarget(dir)
-                    ?: return@mapNotNull if (vaultIn(dir) != null) {
-                        PendingSingleUi(dir.name, SuiteFileRef("", "?"), targetKnown = false)
-                    } else {
-                        null
-                    }
+                if (t == null) {
+                    // Which file is unknown: only "save as" (named like the vault file) or give up.
+                    val v = vaultIn(dir)
+                    if (v == null) dir.deleteRecursively()
+                    return@mapNotNull v?.let { PendingSingleUi(dir.name, SuiteFileRef("", it), targetKnown = false) }
+                }
                 val now = kotlinx.coroutines.runBlocking { readSuiteFile(t.ref) }
                 PendingSingleUi(
                     key = dir.name,
                     file = t.ref,
                     changedElsewhere = now != null && t.hash.isNotEmpty() && sha(now) != t.hash,
                     fileIntact = now != null && runCatching { inspectContainer(now) }.isSuccess,
+                    missing = now == null,
                 )
             }
     }

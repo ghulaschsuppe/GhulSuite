@@ -1046,8 +1046,6 @@ impl GhulSuite {
     /// Notes a change of the protection: the epoch grows in the suite, and this device knows from
     /// now on that files with an older protection are not to be opened.
     pub(super) fn protection_changed(&self, o: &mut Open) -> Result<()> {
-        // The one-step-back copy would still open with the protection before.
-        self.forget_before_open();
         o.bump_epoch()?;
         self.note_epoch(&o.suite.header().suite_id, o.epoch());
         Ok(())

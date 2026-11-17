@@ -1753,4 +1753,8 @@
     <string name="single_pending_first">Für diese Datei warten noch Änderungen vom letzten Öffnen. Schreibe sie zuerst (oder verwirf sie).</string>
     <string name="single_busy">Der Tresor wird noch in seine Datei geschrieben. Versuche es gleich noch einmal.</string>
     <string name="single_pending_unknown">Von einem einzeln geöffneten Tresor sind Änderungen übrig, aber zu welcher Datei sie gehören, ist nicht lesbar. Als neue Datei speichern oder verwerfen.</string>
+    <string name="single_missing">Die Datei ist weg oder nicht lesbar (verschoben, gelöscht, Speicher weg?). Dort neu schreiben oder als neue Datei speichern.</string>
+    <string name="single_write_anew">Neu schreiben</string>
+    <string name="single_pending_missing">Die Datei ist gerade nicht da oder nicht lesbar. Schreiben legt sie neu an.</string>
+    <string name="single_pending_discard_unknown">Diese Änderungen gehen verloren; zu welcher Datei sie gehörten, ist unbekannt.</string>
 </resources>

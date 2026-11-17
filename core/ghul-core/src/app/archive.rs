@@ -38,7 +38,8 @@ const STATE_KEY: &str = "archive_state";
 const SEEN_FILE: &str = "archive-seen.json";
 /// Marks unsaved changes in the working copy (in the device's own folder).
 const UNSAVED_FILE: &str = "archive-unsaved";
-/// The working copy as it was before a file was opened over it (one step back).
+/// Left by earlier development versions (a copy of the working copy before opening a file,
+/// without a header, so it could not be opened): removed when seen.
 const BEFORE_FILE: &str = "before-open.ghlzip";
 /// The message for anything that is no `.ghlzip` (translated by the app).
 const NOT_A_SUITE_FILE: &str = "not a GhulSuite file";
@@ -372,7 +373,7 @@ impl GhulSuite {
         }
     }
 
-    /// Forgets the working copy as it was before the last file was opened.
+    /// Removes the copy earlier development versions left (see [`BEFORE_FILE`]).
     pub(super) fn forget_before_open(&self) {
         let _ = std::fs::remove_file(self.local_dir.join(BEFORE_FILE));
     }
@@ -467,9 +468,9 @@ impl GhulSuite {
         self.pending_gen.load(std::sync::atomic::Ordering::SeqCst)
     }
 
-    /// Replaces the working copy with the pending files: the current one is kept in
-    /// [`BEFORE_FILE`] (one step back), files of the old copy that the new one does not have are
-    /// removed, the suite file is written last.
+    /// Replaces the working copy with the pending files: files of the old copy that the new one
+    /// does not have are removed, the suite file is written last; if writing fails midway, the
+    /// old copy is put back.
     fn replace_working_copy(&self, files: &[(String, Vec<u8>)]) -> Result<()> {
         let mut before = Vec::new();
         for n in self.storage.list()? {
@@ -479,13 +480,7 @@ impl GhulSuite {
                 }
             }
         }
-        if before.is_empty() {
-            // Nothing to keep: an older one-step-back would belong to another state.
-            let _ = std::fs::remove_file(self.local_dir.join(BEFORE_FILE));
-        } else {
-            let _ = std::fs::create_dir_all(&self.local_dir);
-            super::storage::write_atomic(&self.local_dir, BEFORE_FILE, &write_zip(&before)?)?;
-        }
+        self.forget_before_open();
         let new: Vec<(String, Vec<u8>)> = files.iter().filter(|(n, _)| n != HEADER_FILE).cloned().collect();
         if let Err(e) = self.put_files(&new, &before) {
             // Half replaced is neither state: back to the one before.
@@ -754,11 +749,6 @@ impl GhulSuite {
         })?;
         self.clear_unsaved_at(change);
         Ok(())
-    }
-
-    /// The working copy as it was before the last file was opened over it (to open again).
-    pub fn archive_before_open(&self) -> Result<Vec<u8>> {
-        std::fs::read(self.local_dir.join(BEFORE_FILE)).map_err(|_| GhulError::NotFound)
     }
 }
 

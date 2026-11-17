@@ -166,13 +166,14 @@ fun SingleVaultSection(state: AppState) {
         Hint(stringResource(Res.string.single_text, name, s.file.name))
         when {
             state.singleSave == SingleSaveUi.CHANGED_ELSEWHERE -> Banner(Icons.Filled.Warning, stringResource(Res.string.single_changed_elsewhere))
+            state.singleSave == SingleSaveUi.MISSING -> Banner(Icons.Filled.Warning, stringResource(Res.string.single_missing))
             state.singleNotSaved -> Banner(Icons.Filled.Warning, stringResource(Res.string.single_not_saved))
             state.unsaved -> Banner(Icons.Filled.Warning, stringResource(Res.string.single_saving))
             else -> Banner(Icons.Filled.CheckCircle, stringResource(Res.string.single_saved))
         }
-        if (state.singleSave == SingleSaveUi.CHANGED_ELSEWHERE) {
+        if (state.singleSave == SingleSaveUi.CHANGED_ELSEWHERE || state.singleSave == SingleSaveUi.MISSING) {
             Button(onClick = { state.saveSingle(overwrite = true) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(Res.string.file_overwrite))
+                Text(stringResource(if (state.singleSave == SingleSaveUi.MISSING) Res.string.single_write_anew else Res.string.file_overwrite))
             }
         } else if (state.singleNotSaved) {
             Button(onClick = { state.saveSingle() }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
@@ -388,7 +389,7 @@ fun PendingSingleWrites(state: AppState) {
         state.run(onError = { error = it }, block = { backend.retrySingleWrite(p.key, overwrite) }) { r ->
             when (r) {
                 SingleSaveUi.SAVED -> { error = null; tick++ }
-                SingleSaveUi.CHANGED_ELSEWHERE -> tick++
+                SingleSaveUi.CHANGED_ELSEWHERE, SingleSaveUi.MISSING -> tick++
                 SingleSaveUi.FAILED -> error = stillNot
             }
         }
@@ -401,8 +402,12 @@ fun PendingSingleWrites(state: AppState) {
             text = {
                 Text(
                     stringResource(
-                        // Changed or cut short (a write cut off may still look like a vault): be careful.
-                        if (p.fileIntact && !p.changedElsewhere) Res.string.single_pending_discard_text else Res.string.single_pending_discard_damaged,
+                        when {
+                            !p.targetKnown -> Res.string.single_pending_discard_unknown
+                            // Changed or cut short (a write cut off may still look like a vault): be careful.
+                            p.fileIntact && !p.changedElsewhere -> Res.string.single_pending_discard_text
+                            else -> Res.string.single_pending_discard_damaged
+                        },
                         p.file.name,
                     ),
                 )
@@ -424,6 +429,7 @@ fun PendingSingleWrites(state: AppState) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(if (p.targetKnown) Res.string.single_pending_text else Res.string.single_pending_unknown, p.file.name))
                 if (p.changedElsewhere) Banner(Icons.Filled.Warning, stringResource(Res.string.single_pending_changed))
+                if (p.missing && p.targetKnown) Banner(Icons.Filled.Warning, stringResource(Res.string.single_pending_missing))
                 if (filePickersAvailable) {
                     OutlinedButton(onClick = { error = null; saveAs(p.file.name) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
                         Text(stringResource(Res.string.file_save_as))
@@ -437,8 +443,16 @@ fun PendingSingleWrites(state: AppState) {
         },
         confirmButton = {
             if (p.targetKnown) {
-                TextButton(enabled = !state.busy, onClick = { write(overwrite = p.changedElsewhere) }) {
-                    Text(stringResource(if (p.changedElsewhere) Res.string.file_overwrite else Res.string.single_pending_write))
+                TextButton(enabled = !state.busy, onClick = { write(overwrite = p.changedElsewhere || p.missing) }) {
+                    Text(
+                        stringResource(
+                            when {
+                                p.changedElsewhere -> Res.string.file_overwrite
+                                p.missing -> Res.string.single_write_anew
+                                else -> Res.string.single_pending_write
+                            },
+                        ),
+                    )
                 }
             }
         },

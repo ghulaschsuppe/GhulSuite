@@ -132,9 +132,6 @@ fn a_branch_unsaved_changes_and_another_suite_are_noticed() {
     assert_eq!(check.relation, ArchiveRelation::OtherSuite);
     a.archive_accept().unwrap();
     assert_eq!(titles(&a), vec!["Bank"], "the other suite replaced everything");
-    // The working copy before is one step back.
-    let before = a.archive_before_open().unwrap();
-    assert!(!before.is_empty());
 }
 
 #[test]
@@ -400,12 +397,11 @@ fn locking_forgets_a_checked_file() {
     b.lock();
     assert!(matches!(b.archive_accept(), Err(GhulError::NotFound)));
 
-    // Opened over a working copy: one step back is kept, until the protection changes.
+    // No copy of the old working copy is left behind (it would still open with old passwords).
+    std::fs::write(_da.root.join("local").join("before-open.ghlzip"), b"old").unwrap();
     open(&a, &file, &kf);
     a.archive_accept().unwrap();
-    assert!(a.archive_before_open().is_ok());
-    a.change_password(PW.into(), "pw-neu-7890".into()).unwrap();
-    assert!(a.archive_before_open().is_err(), "it would open with the old password");
+    assert!(!_da.root.join("local").join("before-open.ghlzip").exists());
 }
 
 /// More entries than any suite has: refused before anything is read.

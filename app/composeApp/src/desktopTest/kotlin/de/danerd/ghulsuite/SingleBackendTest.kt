@@ -90,6 +90,18 @@ class SingleBackendTest {
         return t.listVaults().single().name
     }
 
+    /**
+     * Before a test removes its folder: closing writes may still run. Each ends by removing its
+     * folder (written) or leaving it with its changes (not written); a moment more for the thread.
+     */
+    private fun settle(root: File) {
+        waitUntil("closings done") {
+            root.walkTopDown().filter { it.isDirectory && it.parentFile?.name == "single-vault" }
+                .all { File(it, "local/archive-unsaved").exists() }
+        }
+        Thread.sleep(300)
+    }
+
     private fun waitUntil(what: String, check: () -> Boolean) {
         val end = System.currentTimeMillis() + 10_000
         while (!check()) {
@@ -151,6 +163,7 @@ class SingleBackendTest {
             assertTrue(b.pendingSingleWrites().isEmpty())
             assertEquals("Nicht geschrieben", nameIn(dir, target, kf))
         } finally {
+            runCatching { settle(dir) }
             dir.deleteRecursively()
         }
     }
@@ -221,6 +234,7 @@ class SingleBackendTest {
             assertEquals(SingleSaveUi.SAVED, b.retrySingleWrite(b.pendingSingleWrites().single().key, overwrite = true))
             assertEquals("Abgebrochen", nameIn(dir, target, kf))
         } finally {
+            runCatching { settle(dir) }
             dir.deleteRecursively()
         }
     }
@@ -267,6 +281,82 @@ class SingleBackendTest {
             assertTrue(!b.saveSingleAs(SuiteFileRef(other.absolutePath, other.name)))
             assertEquals(null, b.singleFile())
         } finally {
+            runCatching { settle(dir) }
+            dir.deleteRecursively()
+        }
+    }
+
+    /** A file that is gone is not written unasked; "write anew" creates it; nothing closes first. */
+    @Test
+    fun aMissingFileIsWrittenAnewOnlyWhenAsked() = runBlocking {
+        val dir = Files.createTempDirectory("ghul-single-missing").toFile()
+        try {
+            val kf = generateKeyfile()
+            val bytes = vaultFile(dir, kf)
+            val one = File(dir, "Eins.ghlpss").apply { writeBytes(bytes) }
+            val two = File(dir, "Zwei.ghlpss").apply { writeBytes(bytes) }
+            val refOne = SuiteFileRef(one.absolutePath, one.name)
+            val refTwo = SuiteFileRef(two.absolutePath, two.name)
+            val b = Backend(dir)
+
+            b.openSingle(refOne, one.readBytes(), "Master Passwort!", null, kf) {}
+            one.delete()
+            b.renameVault(b.listVaults().single().id, "Wieder da")
+            assertEquals(SingleSaveUi.MISSING, b.saveSingle())
+            assertTrue(!one.exists(), "not written unasked")
+            assertEquals(SingleSaveUi.SAVED, b.saveSingle(overwrite = true))
+            assertEquals("Wieder da", nameIn(dir, one, kf))
+
+            // A leftover for "Zwei" whose file is gone meanwhile: offered as written anew.
+            b.openSingle(refTwo, two.readBytes(), "Master Passwort!", null, kf) {}
+            b.failWrites = true
+            b.renameVault(b.listVaults().single().id, "Zwei neu")
+            b.lock()
+            waitUntil("offered") { b.pendingSingleWrites().size == 1 }
+            b.failWrites = false
+            two.delete()
+            val p = b.pendingSingleWrites().single()
+            assertTrue(p.missing && !p.changedElsewhere)
+            assertEquals(SingleSaveUi.MISSING, b.retrySingleWrite(p.key))
+
+            // While it waits, opening "Zwei" is refused without closing what is open ("Eins").
+            b.openSingle(refOne, one.readBytes(), "Master Passwort!", null, kf) {}
+            val e = assertFailsWith<VaultException> { b.openSingle(refTwo, bytes, "Master Passwort!", null, kf) {} }
+            assertEquals(de.danerd.ghulsuite.model.VaultErrorKind.SINGLE_PENDING, e.kind)
+            assertEquals(refOne, b.singleFile(), "still open")
+
+            assertEquals(SingleSaveUi.SAVED, b.retrySingleWrite(p.key, overwrite = true))
+            assertEquals("Zwei neu", nameIn(dir, two, kf))
+            b.lock()
+        } finally {
+            runCatching { settle(dir) }
+            dir.deleteRecursively()
+        }
+    }
+
+    /** Records of the earlier development version are read, also with a Windows path. */
+    @Test
+    fun oldRecordsWithWindowsPathsAreRead() = runBlocking {
+        val dir = Files.createTempDirectory("ghul-single-old").toFile()
+        try {
+            val kf = generateKeyfile()
+            val target = File(dir, "Privat.ghlpss").apply { writeBytes(vaultFile(dir, kf)) }
+            val b = Backend(dir)
+            b.openSingle(SuiteFileRef(target.absolutePath, target.name), target.readBytes(), "Master Passwort!", null, kf) {}
+            b.failWrites = true
+            b.renameVault(b.listVaults().single().id, "Alt")
+            b.lock()
+            waitUntil("offered") { b.pendingSingleWrites().size == 1 }
+            val key = b.pendingSingleWrites().single().key
+            val folder = File(File(dir, "single-vault"), key)
+            val vault = File(folder, "vault").listFiles()!!.first { it.extension == "ghlpss" }.name
+            File(folder, "target").writeText("D:\\unterlagen\\Privat.ghlpss\nPrivat.ghlpss\n$vault\n")
+            val p = b.pendingSingleWrites().single()
+            assertTrue(p.targetKnown)
+            assertEquals("D:\\unterlagen\\Privat.ghlpss", p.file.id)
+            b.discardSingleWrite(p.key)
+        } finally {
+            runCatching { settle(dir) }
             dir.deleteRecursively()
         }
     }

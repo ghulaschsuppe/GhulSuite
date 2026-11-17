@@ -1753,4 +1753,8 @@
     <string name="single_pending_first">Changes of the last opening still wait for this file. Write them first (or give them up).</string>
     <string name="single_busy">The vault is still being written into its file. Try again in a moment.</string>
     <string name="single_pending_unknown">Changes of a vault opened on its own are left, but which file they belong to is unreadable. Save them as a new file, or give them up.</string>
+    <string name="single_missing">The file is gone or cannot be read (moved, deleted, storage away?). Write it anew there, or save as a new file.</string>
+    <string name="single_write_anew">Write anew</string>
+    <string name="single_pending_missing">The file is not there or cannot be read now. Writing creates it anew.</string>
+    <string name="single_pending_discard_unknown">These changes are lost; which file they belonged to is unknown.</string>
 </resources>
