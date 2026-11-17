@@ -32,7 +32,7 @@ use super::error::{GhulError, Result};
 use super::servers::{self, ServerInfo, ServerInput, ServerSaved, StoredServer};
 use super::suite::{new_id, now_ms, GhulSuite, Open, VaultKind};
 use crate::net::remote::RemoteFs;
-use crate::vault::keys::{hkdf, open, seal};
+use crate::vault::keys::{hkdf, open, seal, PasswordKey};
 use crate::vault::payload::{pad, unpad};
 
 const DRIVE_KEY: &str = "drive";
@@ -103,6 +103,21 @@ impl DriveSettings {
         let at = now_ms().max(self.current().map_or(0, |c| c.at.saturating_add(1)));
         self.keys.push(DriveKey { id: crate::kdf::hex(&new_id()), key: k, at });
     }
+}
+
+/// Whether every Drive location's index is written with the current Drive key (then no index
+/// needs an earlier password key any more, see `forget_previous_password_keys`).
+pub(super) fn all_locations_current(o: &Open) -> bool {
+    if o.area_id(VaultKind::Drive).is_none() {
+        return true;
+    }
+    let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
+    let Some(current) = d.current() else { return true };
+    let mut ids: Vec<String> = servers::drive_servers(o).into_iter().map(|s| s.id.clone()).collect();
+    if !d.server.is_empty() {
+        ids.push(d.server.clone());
+    }
+    ids.iter().all(|id| d.written.get(id).is_some_and(|w| *w >= current.at))
 }
 
 /// A new Drive key after a change of the protection (new recovery code, key removed, new
@@ -219,44 +234,87 @@ pub struct DriveStatus {
     pub bytes: u64,
 }
 
+/// One Drive key as the index uses it: its time, the index key and the write keys (one per
+/// password key this device may check with: the current one, and earlier ones after a password
+/// change until everything is rewritten).
+#[derive(Clone)]
+struct IndexKey {
+    at: i64,
+    key: Zeroizing<[u8; 32]>,
+    /// Write keys for the tag: HKDF(PK ‖ DK, "ghul/v3/drive-auth"); the first is the current PK's.
+    auth: Vec<Zeroizing<[u8; 32]>>,
+}
+
+impl IndexKey {
+    fn new(dk: &DriveKey, pks: &[&PasswordKey]) -> IndexKey {
+        let auth = pks
+            .iter()
+            .map(|pk| {
+                let mut ikm = Zeroizing::new([0u8; 64]);
+                ikm[..32].copy_from_slice(pk.expose());
+                ikm[32..].copy_from_slice(&dk.key);
+                hkdf(ikm.as_ref(), &[b"ghul/v3/drive-auth"])
+            })
+            .collect();
+        IndexKey { at: dk.at, key: hkdf(&dk.key, &[b"ghul/v1/drive/index"]), auth }
+    }
+
+    /// Whether `data` (an index file with its tag) was written with this Drive key by someone
+    /// with one of the password keys.
+    fn signed(&self, data: &[u8]) -> bool {
+        data.len() > 32
+            && self.auth.iter().any(|ak| {
+                crate::vault::keys::tag_matches(
+                    ak,
+                    &data[..data.len() - 32],
+                    data[data.len() - 32..].try_into().expect("32 bytes"),
+                )
+            })
+    }
+
+    fn opens(&self, data: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
+        decrypt(INDEX_MAGIC, &self.key, data.get(..data.len().checked_sub(32)?)?, b"").ok()
+    }
+}
+
 #[derive(Clone)]
 struct Keys {
-    /// Index keys of the Drive keys this location may still be read with, newest first, with
-    /// the time of their Drive key. The first one writes.
-    index: Vec<(i64, Zeroizing<[u8; 32]>)>,
-    /// Index keys of older Drive keys, no longer accepted at this location by themselves (see
+    /// The Drive keys this location may still be read with, newest first. The first one writes.
+    index: Vec<IndexKey>,
+    /// Older Drive keys, no longer accepted at this location by themselves (see
     /// `drive_accept_server_state`).
-    older: Vec<Zeroizing<[u8; 32]>>,
+    older: Vec<IndexKey>,
     /// Whether the location's index is not yet written with the current Drive key.
     outdated: bool,
-    /// Seals the keys of uploads that did not finish, on this device.
-    pending: Zeroizing<[u8; 32]>,
 }
 
 impl Keys {
     /// The keys for `location`: the current one and the older ones not yet replaced there.
-    fn new(d: &DriveSettings, location: &str) -> Option<Keys> {
+    /// `pks`: the current password key first, then earlier ones (see `previous_password_keys`).
+    fn new(d: &DriveSettings, location: &str, pks: &[&PasswordKey]) -> Option<Keys> {
         let current = d.current()?;
         let floor = d.written.get(location).copied().unwrap_or(i64::MIN);
         let mut usable: Vec<&DriveKey> = d.keys.iter().filter(|k| k.key.len() == 32 && k.at >= floor).collect();
         usable.sort_by(|a, b| (b.at, &b.id).cmp(&(a.at, &a.id)));
-        if usable.is_empty() {
+        if usable.is_empty() || pks.is_empty() {
             return None;
         }
         let older = d.keys.iter().filter(|k| k.key.len() == 32 && k.at < floor);
         Some(Keys {
-            index: usable.iter().map(|k| (k.at, hkdf(&k.key, &[b"ghul/v1/drive/index"]))).collect(),
-            older: older.map(|k| hkdf(&k.key, &[b"ghul/v1/drive/index"])).collect(),
+            index: usable.iter().map(|k| IndexKey::new(k, pks)).collect(),
+            older: older.map(|k| IndexKey::new(k, pks)).collect(),
             outdated: floor < current.at,
-            pending: hkdf(&current.key, &[b"ghul/v2/drive/pending"]),
         })
     }
 
-    /// The key the index is written with, and the time of its Drive key.
-    fn writing(&self) -> (i64, &[u8; 32]) {
-        let (at, k) = &self.index[0];
-        (*at, k)
+    /// The Drive key the index is written with.
+    fn writing(&self) -> &IndexKey {
+        &self.index[0]
     }
+}
+
+fn pending_key(dk: &DriveKey) -> Zeroizing<[u8; 32]> {
+    hkdf(&dk.key, &[b"ghul/v2/drive/pending"])
 }
 
 /// The key of one content of a file (random, in the encrypted index). Its blocks are encrypted
@@ -500,19 +558,19 @@ fn load_index(fs: &dyn RemoteFs, keys: &Keys) -> Result<DriveIndex> {
     match fs.read(INDEX)? {
         None => Ok(DriveIndex::default()),
         Some(data) => {
-            let mut plain = None;
-            for (_, k) in &keys.index {
-                if let Ok(p) = decrypt(INDEX_MAGIC, k, &data, b"") {
-                    plain = Some(p);
-                    break;
-                }
-            }
+            // The tag first (H0): whoever has a Drive key (any recovery code opens the Drive file)
+            // but not the password cannot write an index that is accepted.
+            let plain = keys.index.iter().find(|k| k.signed(&data)).and_then(|k| k.opens(&data));
             let Some(plain) = plain else {
-                // Written with an older Drive key after a newer one had written here (two devices
-                // at once, one not yet with the new key), or planted with an old key: only taken
-                // when the user accepts it (`drive_accept_server_state`).
-                if keys.older.iter().any(|k| decrypt(INDEX_MAGIC, k, &data, b"").is_ok()) {
+                // Written by someone with the password, but with an older Drive key after a newer
+                // one had written here (two devices at once, one not yet with the new key): only
+                // taken when the user accepts it (`drive_accept_server_state`).
+                if keys.older.iter().any(|k| k.signed(&data) && k.opens(&data).is_some()) {
                     return Err(GhulError::DriveRolledBack);
+                }
+                // Opens with a Drive key but carries no valid tag: made without the password.
+                if keys.index.iter().chain(&keys.older).any(|k| k.opens(&data).is_some()) {
+                    return Err(GhulError::from(crate::vault::VaultError::Tampered));
                 }
                 return Err(GhulError::Corrupted { msg: "Drive data damaged or from another key".into() });
             };
@@ -527,7 +585,11 @@ fn save_index(fs: &dyn RemoteFs, keys: &Keys, index: &mut DriveIndex) -> Result<
     let mut cbor = Zeroizing::new(Vec::new());
     ciborium::ser::into_writer(&*index, &mut *cbor).map_err(|e| GhulError::Corrupted { msg: e.to_string() })?;
     let padded = pad(&cbor)?;
-    fs.write(INDEX, &encrypt(INDEX_MAGIC, keys.writing().1, &padded, b""))?;
+    let w = keys.writing();
+    let mut file = encrypt(INDEX_MAGIC, &w.key, &padded, b"");
+    let tag = crate::vault::keys::file_tag(&w.auth[0], &file);
+    file.extend_from_slice(&tag);
+    fs.write(INDEX, &file)?;
     Ok(())
 }
 
@@ -631,7 +693,9 @@ impl GhulSuite {
         self.drive_move_to_locations(o)?;
         let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
         let server = self.drive_location(o).ok_or(GhulError::NotConfigured)?;
-        let keys = Keys::new(&d, &server).ok_or(GhulError::NotConfigured)?;
+        let earlier = o.previous_password_keys();
+        let pks: Vec<&PasswordKey> = std::iter::once(&o.password_key).chain(earlier.iter()).collect();
+        let keys = Keys::new(&d, &server, &pks).ok_or(GhulError::NotConfigured)?;
         let fs = self.remote(o, &server)?;
         Ok((fs, keys))
     }
@@ -701,13 +765,18 @@ impl GhulSuite {
     fn note_written(&self, o: &mut Open, keys: &Keys) -> Result<()> {
         let mut d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
         let server = self.drive_location(o).unwrap_or_default();
-        let at = keys.writing().0;
+        let at = keys.writing().at;
         if d.written.get(&server).is_some_and(|w| *w >= at) {
             return Ok(());
         }
         d.written.insert(server, at);
         put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
-        self.save_area(o, VaultKind::Drive)
+        self.save_area(o, VaultKind::Drive)?;
+        // The last index in an earlier password written again: that password key can go.
+        if o.forget_previous_password_keys()? {
+            self.save_container(&mut o.suite, super::suite::SUITE_FILE)?;
+        }
+        Ok(())
     }
 
     /// Remembers `revision` as seen on Drive's server (in the Drive file).
@@ -834,10 +903,17 @@ impl GhulSuite {
 
     fn pending_keys(&self, o: &Open) -> Option<(Zeroizing<[u8; 32]>, Pending)> {
         let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
-        let key = Keys::new(&d, "")?.pending;
-        let map = std::fs::read(self.local_dir.join(PENDING_FILE))
-            .ok()
-            .and_then(|data| decrypt(PENDING_MAGIC, &key, &data, b"").ok())
+        let key = pending_key(d.current()?);
+        // Sealed with the current Drive key, or an earlier one (renewed since): read either,
+        // written again with the current one.
+        let data = std::fs::read(self.local_dir.join(PENDING_FILE)).ok();
+        let map = data
+            .and_then(|data| {
+                d.keys
+                    .iter()
+                    .filter(|k| k.key.len() == 32)
+                    .find_map(|k| decrypt(PENDING_MAGIC, &pending_key(k), &data, b"").ok())
+            })
             .and_then(|plain| ciborium::de::from_reader::<Pending, _>(&plain[..]).ok())
             .unwrap_or_default();
         Some((key, map))
@@ -1334,7 +1410,7 @@ impl GhulSuite {
             }
             // Also an index of an older Drive key (taken on purpose here): written again with
             // the current one at once.
-            let all = Keys { index: keys.older.iter().map(|k| (i64::MIN, k.clone())).collect(), ..keys.clone() };
+            let all = Keys { index: keys.older.clone(), ..keys.clone() };
             let (mut index, rewrite) = match load_index(fs.as_ref(), &keys) {
                 Err(GhulError::DriveRolledBack) => (load_index(fs.as_ref(), &all)?, true),
                 other => (other?, false),
@@ -1343,7 +1419,7 @@ impl GhulSuite {
             let server = self.drive_location(o).unwrap_or_default();
             if rewrite {
                 save_index(fs.as_ref(), &keys, &mut index)?;
-                d.written.insert(server.clone(), keys.writing().0);
+                d.written.insert(server.clone(), keys.writing().at);
             }
             d.seen.insert(server, index.revision);
             put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
@@ -1852,14 +1928,35 @@ impl GhulSuite {
     /// sealed with `dk` (what someone who kept an old Drive key could write).
     #[cfg(test)]
     pub(crate) fn drive_index_opens_with(dk: &[u8; 32], data: &[u8]) -> bool {
-        decrypt(INDEX_MAGIC, &hkdf(dk, &[b"ghul/v1/drive/index"]), data, b"").is_ok()
+        decrypt(INDEX_MAGIC, &hkdf(dk, &[b"ghul/v1/drive/index"]), &data[..data.len() - 32], b"").is_ok()
     }
 
+    /// Tests: the current Drive key.
     #[cfg(test)]
-    pub(crate) fn drive_index_sealed_with(dk: &[u8; 32]) -> Vec<u8> {
+    pub(crate) fn drive_key_for_tests(&self) -> [u8; 32] {
+        self.with_open(|o| {
+            let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
+            Ok(d.current().unwrap().key.as_slice().try_into().unwrap())
+        })
+        .unwrap()
+    }
+
+    /// Tests: an index sealed with the Drive key `dk`, with the tag of this suite's password
+    /// (`signed`) or a made-up one (someone who has the Drive key but not the password).
+    #[cfg(test)]
+    pub(crate) fn drive_index_sealed_with(&self, dk: &[u8; 32], signed: bool) -> Vec<u8> {
         let mut cbor = Vec::new();
         ciborium::ser::into_writer(&DriveIndex { revision: u64::MAX / 2, ..Default::default() }, &mut cbor).unwrap();
-        encrypt(INDEX_MAGIC, &hkdf(dk, &[b"ghul/v1/drive/index"]), &pad(&cbor).unwrap(), b"")
+        let mut file = encrypt(INDEX_MAGIC, &hkdf(dk, &[b"ghul/v1/drive/index"]), &pad(&cbor).unwrap(), b"");
+        let tag = if signed {
+            let key = DriveKey { id: String::new(), key: dk.to_vec(), at: 0 };
+            let ik = self.with_open(|o| Ok(IndexKey::new(&key, &[&o.password_key]))).unwrap();
+            crate::vault::keys::file_tag(&ik.auth[0], &file)
+        } else {
+            [0x5a; 32]
+        };
+        file.extend_from_slice(&tag);
+        file
     }
 
     /// Turns Drive back into the state an older app left: `use_sync`, no locations of its own.

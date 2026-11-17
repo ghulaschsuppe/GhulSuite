@@ -3575,11 +3575,21 @@ fn drive_gets_a_new_key_with_a_new_recovery_code() {
     // (Also what a device that had not yet seen the new key writes in the same moment as one
     // that had: taken only when the user accepts it, then written with the new key at once.)
     let good = std::fs::read(&index).unwrap();
-    std::fs::write(&index, GhulSuite::drive_index_sealed_with(&old_dk)).unwrap();
+    std::fs::write(&index, s.drive_index_sealed_with(&old_dk, true)).unwrap();
     assert!(matches!(s.drive_list(None, true), Err(GhulError::DriveRolledBack)), "an index made with the old key");
     s.drive_accept_server_state().unwrap();
     assert!(!GhulSuite::drive_index_opens_with(&old_dk, &std::fs::read(&index).unwrap()), "written again");
-    std::fs::write(&index, good).unwrap();
+    std::fs::write(&index, &good).unwrap();
     let _ = s.drive_accept_server_state();
+
+    // H0: whoever has the Drive key (any recovery code opens the Drive file, also the current
+    // one) but not the password cannot plant an index: not accepted, also not when asked to.
+    let current_dk = s.drive_key_for_tests();
+    std::fs::write(&index, s.drive_index_sealed_with(&current_dk, false)).unwrap();
+    assert!(matches!(s.drive_list(None, true), Err(GhulError::Corrupted { .. })), "made without the password");
+    assert!(s.drive_accept_server_state().is_err(), "not even when accepted");
+    std::fs::write(&index, &good).unwrap();
+    let names: Vec<String> = s.drive_list(None, true).unwrap().into_iter().map(|i| i.name).collect();
+    assert_eq!(names, vec!["Alt.txt", "Neu.txt"]);
     let _ = std::fs::remove_dir_all(&server);
 }

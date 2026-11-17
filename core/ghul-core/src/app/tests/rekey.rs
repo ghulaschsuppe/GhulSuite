@@ -535,8 +535,7 @@ fn a_protection_taken_over_is_taken_over_once() {
     let state = |s: &GhulSuite| {
         s.with_open(|o| {
             let ts: i64 = crate::app::suite::setting(&o.suite, crate::app::sync::PROTECTION_CHANGED);
-            let before: Vec<ciborium::Value> = crate::app::suite::setting(&o.suite, crate::app::suite::PREVIOUS_KEY);
-            Ok((ts, before.len()))
+            Ok((ts, o.previous_protection().len()))
         })
         .unwrap()
     };
@@ -955,8 +954,8 @@ fn a_failed_sync_after_merging_settings_does_not_lock() {
     assert!(!s.is_unlocked(), "a change of the protection locks");
 }
 
-/// Review of H0: the recovery code opens the suite file's content, so no password key may be in
-/// it unprotected. After a password change the earlier password key is kept (to check files not
+/// Review of H0: the recovery code opens the suite file's content, so no password key (and no
+/// replaced code) may be in it unprotected. After a password change the earlier password key is kept (to check files not
 /// yet rewritten), but only sealed with the current one; the code alone does not reveal it.
 #[test]
 fn the_recovery_code_does_not_reveal_a_password_key() {
@@ -968,7 +967,7 @@ fn the_recovery_code_does_not_reveal_a_password_key() {
     let s = d.suite();
     let res =
         s.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
-    let _ = res;
+    let first_code = RecoveryCode::parse(&res.recovery_code.unwrap()).unwrap();
     s.sync_folder(&server).unwrap();
     let suite_path = server_dir.join("suite").join("suite.ghlsuite");
     let check = |s: &GhulSuite, code: &RecoveryCode, what: &str| {
@@ -987,6 +986,12 @@ fn the_recovery_code_does_not_reveal_a_password_key() {
     let code = RecoveryCode::parse(&s.new_recovery_code("Neu".into()).unwrap()).unwrap();
     s.sync_folder(&server).unwrap();
     check(&s, &code, "new code");
+    // Nor the replaced code (with it, old copies of every file would open).
+    for data in [std::fs::read(&suite_path).unwrap(), std::fs::read(d.root.join("vault/suite.ghlsuite")).unwrap()] {
+        let c = LockedContainer::parse(&data).unwrap().recover(&code).unwrap();
+        let cbor = c.payload.to_cbor().unwrap();
+        assert!(!cbor.windows(32).any(|w| w == first_code.expose().as_slice()), "the old code is readable");
+    }
     // A password change: the earlier key is kept, sealed with the new one.
     let old_pk = check(&s, &code, "before");
     s.change_password("pw-123456".into(), "pw-neu-789".into()).unwrap();

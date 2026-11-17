@@ -464,7 +464,7 @@ fn dedup_key(entry_type: &str, folder: Option<&str>, fields: &BTreeMap<String, F
 /// secret or code replaced on purpose (see [`REVOKED_KEY`]): whoever still knows one could have
 /// made the file.
 fn open_with_before(data: &[u8], suite: &UnlockedContainer, pk: &PasswordKey) -> Option<UnlockedContainer> {
-    let before = previous_of(suite);
+    let before = previous_of(suite, pk);
     let revoked: Vec<String> = setting(suite, REVOKED_KEY);
     let allowed = |secret: &[u8]| !revoked.contains(&revoked_fingerprint(secret));
     // The current password key, and the earlier ones (a password change that stopped half way).
@@ -501,9 +501,31 @@ pub(super) struct Previous {
     pub code: Option<RecoveryCode>,
 }
 
-fn previous_of(suite: &UnlockedContainer) -> Vec<Previous> {
-    let list: Vec<PreviousProtection> = setting(suite, PREVIOUS_KEY);
-    list.into_iter()
+/// The protections from before, sealed with a key from the current password key: the recovery
+/// code opens the suite file, and with earlier codes and factor secrets it would also open old
+/// copies of every file.
+fn previous_list(suite: &UnlockedContainer, pk: &PasswordKey) -> Vec<PreviousProtection> {
+    let sealed: SealedPasswordKey = setting(suite, PREVIOUS_KEY);
+    let Ok(nonce) = <[u8; 24]>::try_from(sealed.nonce.as_slice()) else { return Vec::new() };
+    let key = crate::vault::keys::hkdf(pk.expose(), &[b"ghul/v3/protection-before"]);
+    crate::vault::keys::open(&key, &nonce, &sealed.sealed, b"ghul/v3/protection-before")
+        .and_then(|plain| ciborium::de::from_reader(&plain[..]).ok())
+        .unwrap_or_default()
+}
+
+fn put_previous_list(suite: &mut UnlockedContainer, pk: &PasswordKey, list: &[PreviousProtection]) -> Result<()> {
+    let mut cbor = Zeroizing::new(Vec::new());
+    ciborium::ser::into_writer(&list, &mut *cbor).map_err(|e| GhulError::Corrupted { msg: e.to_string() })?;
+    let key = crate::vault::keys::hkdf(pk.expose(), &[b"ghul/v3/protection-before"]);
+    let mut nonce = [0u8; 24];
+    OsRng.fill_bytes(&mut nonce);
+    let sealed = crate::vault::keys::seal(&key, &nonce, &cbor, b"ghul/v3/protection-before");
+    put_setting(suite, PREVIOUS_KEY, &SealedPasswordKey { nonce: nonce.to_vec(), sealed })
+}
+
+fn previous_of(suite: &UnlockedContainer, pk: &PasswordKey) -> Vec<Previous> {
+    previous_list(suite, pk)
+        .into_iter()
         .filter_map(|p| {
             let s: [u8; 32] = p.s.as_slice().try_into().ok()?;
             let code = <[u8; 32]>::try_from(p.code.as_slice()).ok().map(RecoveryCode::from_bytes);
@@ -720,7 +742,7 @@ impl Open {
 
     /// Keeps the current factor secret and recovery code before they change (see [`PREVIOUS_KEY`]).
     pub(super) fn remember_protection(&mut self) -> Result<()> {
-        let mut list: Vec<PreviousProtection> = setting(&self.suite, PREVIOUS_KEY);
+        let mut list = previous_list(&self.suite, &self.password_key);
         let now = PreviousProtection {
             s: self.suite.factor_secret().expose().to_vec(),
             code: self.suite.recovery_code().map(|c| c.expose().to_vec()).unwrap_or_default(),
@@ -729,17 +751,20 @@ impl Open {
         list.insert(0, now);
         list.truncate(MAX_PREVIOUS);
         put_setting(&mut self.suite, PREVIOUS_UPLOADED_KEY, &false)?;
-        put_setting(&mut self.suite, PREVIOUS_KEY, &list)
+        put_previous_list(&mut self.suite, &self.password_key, &list)
     }
 
     /// The protections from before (factor secret, recovery code, password key), newest first.
     pub(super) fn previous_protection(&self) -> Vec<Previous> {
-        previous_of(&self.suite)
+        previous_of(&self.suite, &self.password_key)
     }
 
     /// After a password change (`self.password_key` is already the new one): keeps `old` and
     /// the earlier ones, sealed with the new password key (see [`PASSWORD_BEFORE_KEY`]).
     pub(super) fn keep_password_key(&mut self, old: &PasswordKey) -> Result<()> {
+        // The protections from before move to the new password key as well.
+        let before = previous_list(&self.suite, old);
+        put_previous_list(&mut self.suite, &self.password_key, &before)?;
         let mut keys = previous_password_keys(&self.suite, old);
         keys.insert(0, PasswordKey::from_bytes(*old.expose()));
         keys.truncate(MAX_PREVIOUS);
@@ -766,7 +791,9 @@ impl Open {
     /// way needs them. Returns whether anything changed.
     pub(super) fn forget_previous_password_keys(&mut self) -> Result<bool> {
         let uploaded = setting::<bool>(&self.suite, PREVIOUS_UPLOADED_KEY) || !super::sync::synchronises(self);
-        if !uploaded || !self.suite.payload.settings.contains_key(PASSWORD_BEFORE_KEY) {
+        // A Drive index still in the earlier password needs it too, until it is written again.
+        let drive = super::drive::all_locations_current(self);
+        if !uploaded || !drive || !self.suite.payload.settings.contains_key(PASSWORD_BEFORE_KEY) {
             return Ok(false);
         }
         self.suite.payload.settings.remove(PASSWORD_BEFORE_KEY);
