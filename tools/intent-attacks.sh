@@ -128,7 +128,7 @@ big=$(head -c 20000 /dev/zero | tr '\0' 'A')
 weird="%n%s%x'\"<script>alert(1)</script>../../\$(id);\`id\`|&"
 priv="/data/data/$pkg"
 files_auth="$pkg.files"
-internal_actions="de.danerd.ghulsuite.OPEN_MAIL de.danerd.ghulsuite.OPEN_EVENT de.danerd.ghulsuite.LOCK de.danerd.ghulsuite.CAL_FIRE de.danerd.ghulsuite.CAL_SNOOZE de.danerd.ghulsuite.CAL_DONE"
+internal_actions="de.danerd.ghulsuite.OPEN_EVENT de.danerd.ghulsuite.LOCK de.danerd.ghulsuite.CAL_FIRE de.danerd.ghulsuite.CAL_SNOOZE de.danerd.ghulsuite.CAL_DONE"
 uris=("file://$priv/shared_prefs/intent_token.xml" "file://$priv/files/" "file:///proc/self/environ" "file:///sdcard/../data/data/$pkg/databases"
   "content://$files_auth/drive/x" "content://$files_auth/../../shared_prefs/intent_token.xml" "content://settings/secure"
   "content://media/external/file/999999999" "mailto:$big@example.org" "mailto:?subject=$weird&body=$weird&cc=a@b&bcc=c@d&attachment=file://$priv/shared_prefs/intent_token.xml"

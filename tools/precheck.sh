@@ -3,11 +3,11 @@
 # Runs every check of the CI that works on this computer, one after the other, and does NOT stop
 # at the first failure: at the end a list shows what passed and what failed, with a log for each.
 # Run it before every push, so the CI only has to find what really needs its machines (Windows,
-# emulator, test servers).
+# emulator).
 #
-#   tools/precheck.sh            all checks (Rust, texts, PHP module, workflows, Gradle builds)
+#   tools/precheck.sh            all checks (Rust, texts, workflows, Gradle builds)
 #   tools/precheck.sh --quick    without the Gradle builds (a few minutes instead of ~20)
-#   tools/precheck.sh --full     also the long release tests and the browser tests
+#   tools/precheck.sh --full     also the long release tests
 #
 # Logs: $PRECHECK_OUT (default: a new temporary folder, shown at the end).
 # Gradle needs ANDROID_HOME. The signed build (with Android lint, as in CI pushes) uses a throwaway
@@ -99,30 +99,6 @@ if [ "$mode" = "full" ]; then
   step "Rust: Alltags- und Stresstest (Release)" cd_core cargo test --locked --release -p ghul-core --lib everyday -- --include-ignored --test-threads=1
 fi
 
-# --- PHP module --------------------------------------------------------------------------------
-if have php; then
-  step "PHP-Modul (Syntax)" php -l core/ghul-core/server/ghulsuite.php
-  step "PHP-Modul (Angriffe)" python3 tools/attack-php-module.py
-  step "Fehlerberichte (report.php)" python3 tools/test-report-php.py
-else
-  skip "PHP-Modul" "php fehlt"
-fi
-if [ "$mode" = "full" ]; then
-  if have node && [ -n "${NODE_PATH:-}" ]; then
-    browser() {
-      (cd core && cargo test --locked -p ghul-core --no-run) || return 1
-      local d; d=$(mktemp -d)
-      (cd core && GHUL_PHP_FIXTURE="$d" cargo test --locked -q -p ghul-core php_browser_fixture) &
-      node tools/test-share-php.js "$d"; local rc=$?
-      wait $! || rc=1
-      return $rc
-    }
-    step "Browser: Freigabelinks über das PHP-Modul" browser
-  else
-    skip "Browser: Freigabelinks über das PHP-Modul" "node und NODE_PATH mit playwright nötig"
-  fi
-fi
-
 # --- Gradle: the same tasks as the CI, with the dependency checksums ------------------------------
 if [ "$mode" = "quick" ]; then
   skip "Gradle (Desktop, Android, Paketierung)" "--quick"
@@ -157,7 +133,7 @@ for i in "${!names[@]}"; do
   esac
 done
 echo
-echo "Nur in der CI: Windows-Build und -Tests, Emulator, Netzwerk-Tests gegen echte Testserver."
+echo "Nur in der CI: Windows-Build und -Tests, Emulator."
 if [ "$failed" -gt 0 ]; then
   echo "$failed Prüfung(en) fehlgeschlagen. Erst beheben, dann pushen."
   exit 1

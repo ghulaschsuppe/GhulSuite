@@ -4,8 +4,8 @@ name: Android & Kern
 on:
   push:
     branches: ['**']
-    paths: ['core/**', 'app/**', 'docs/testvectors/**', 'tools/**', 'website/static/report.php', '.github/workflows/android.yml', '.github/actions/ftps-upload/**',
-            '!app/maestro/**', '!tools/ci-emulator.sh', '!tools/run-maestro.sh', '!tools/check-reminders.sh', '!tools/check-server-flows.sh']
+    paths: ['core/**', 'app/**', 'docs/testvectors/**', 'tools/**', '.github/workflows/android.yml', '.github/actions/ftps-upload/**',
+            '!app/maestro/**', '!tools/ci-emulator.sh', '!tools/run-maestro.sh', '!tools/check-reminders.sh']
   # Every pull request: "build" and "Windows-App (Installer und portable Version)" are required
   # checks. They come from the jobs "build-check" and "windows-check", which always run and report
   # under these names, also when the app and the core did not change.
@@ -115,7 +115,7 @@ jobs:
           fi
           files=$(git diff --name-only "$BASE" HEAD)
           if printf '%s\n' "$files" | grep -qE '^(core/|docs/testvectors/)'; then core=true; else core=false; fi
-          if printf '%s\n' "$files" | grep -qE '^(core/|app/|docs/testvectors/|tools/|website/static/report\.php|\.github/workflows/android\.yml|\.github/actions/ftps-upload/)'; then code=true; else code=false; fi
+          if printf '%s\n' "$files" | grep -qE '^(core/|app/|docs/testvectors/|tools/|\.github/workflows/android\.yml|\.github/actions/ftps-upload/)'; then code=true; else code=false; fi
           echo "Kern geändert: $core · App/Kern/Werkzeuge geändert: $code"
           echo "core=$core" >> "$GITHUB_OUTPUT"; echo "code=$code" >> "$GITHUB_OUTPUT"
 
@@ -184,131 +184,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-stress-${{ hashFiles('core/Cargo.lock') }}-
             ${{ runner.os }}-stress-
-      # Thousands of entries, appointments and files, many sync rounds and parallel threads; the
+      # Thousands of entries and appointments, many saves and parallel threads; the
       # log lists the time of every step.
       - name: Alltagstest und Stresstests
         working-directory: core
         run: |
           rustup toolchain install stable --profile minimal
           cargo test --locked --release -p ghul-core --lib everyday -- --include-ignored --nocapture --test-threads=1
-
-  network:
-    name: Netzwerk-Tests (echte SFTP-, IMAP- und SMTP-Testserver)
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      # Compiled Rust code from earlier runs: only what changed is built again.
-      - name: Rust-Zwischenspeicher
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            core/target/
-          key: ${{ runner.os }}-network-${{ hashFiles('core/Cargo.lock') }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-network-${{ hashFiles('core/Cargo.lock') }}-
-            ${{ runner.os }}-network-
-
-      - name: Testserver starten (SFTP, IMAP, SMTP, nur lokal für die Netzwerk-Tests)
-        timeout-minutes: 20
-        run: |
-          # The package mirror sometimes fails briefly: retry a few times.
-          # If the mirror stays down, skip these tests with a warning instead of failing the run:
-          # an outage at the package mirror says nothing about our code.
-          ok=0
-          for i in 1 2 3; do
-            timeout 120 sudo apt-get update -qq || true
-            if timeout 240 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o Acquire::Retries=3 openssh-server dovecot-imapd > /dev/null; then ok=1; break; fi
-            sleep $((i * 15))
-          done
-          if [ "$ok" != 1 ]; then
-            echo "::warning title=Netzwerk-Tests übersprungen::Ubuntu-Paketspiegel nicht erreichbar; SFTP/IMAP/SMTP-Testserver konnten nicht installiert werden."
-            echo "GHUL_NET_SKIP=1" >> "$GITHUB_ENV"
-            exit 0
-          fi
-          sudo systemctl stop dovecot 2>/dev/null || true
-          # A server that does not start fails the run: the tests would skip and look green.
-          if ! sudo bash tools/test-servers.sh > servers.env; then
-            echo "::error title=Testserver::Die Testserver ließen sich nicht starten (siehe oben)."
-            exit 1
-          fi
-          sed 's/^export //' servers.env >> "$GITHUB_ENV"
-
-      - name: SFTP, Drive und Mail gegen die Testserver
-        if: env.GHUL_NET_SKIP != '1'
-        working-directory: core
-        run: |
-          rustup toolchain install stable --profile minimal
-          # The network tests must really run (without servers they skip silently).
-          # ("a && b" does not stop a bash -e script when a fails: each check on its own line.)
-          for v in GHUL_TEST_SFTP GHUL_TEST_MAIL; do
-            if [ -z "${!v:-}" ]; then echo "::error title=Testserver::$v fehlt: die Netzwerk-Tests würden still übersprungen."; exit 1; fi
-          done
-          cargo test --locked -p ghul-core -- sftp mail drive share module keychange
-
-  browser:
-    name: Browser-Tests (Freigabelinks über das PHP-Server-Modul)
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: PHP-Modul mit PHP 8.1 prüfen (Syntax)
-        run: |
-          docker run --rm -v "$PWD/core/ghul-core/server:/m:ro" php:8.1-cli php -l /m/ghulsuite.php
-          docker run --rm -v "$PWD/website/static:/w:ro" php:8.1-cli php -l /w/report.php
-      # Other methods, share id, ticket and index tricks, descriptions naming paths, broken
-      # descriptions, expiry, one-time links opened at once: every case has its expected answer.
-      - name: Angriffe auf das PHP-Modul
-        run: python3 tools/attack-php-module.py
-      # Error reports from the app (website/static/report.php): spam, replays, injection, limits.
-      - name: Fehlerberichte (report.php) gegen Missbrauch
-        run: python3 tools/test-report-php.py
-
-      - name: Chromium für Playwright
-        run: |
-          mkdir -p /tmp/pw && cd /tmp/pw && npm init -y > /dev/null && npm install --silent playwright@1.49.1
-          npx --prefix /tmp/pw playwright install chromium
-
-      # The shares come from the suite with GhulDrive on the SFTP test server (as on web hosting).
-      - name: SFTP-Testserver starten (nur lokal)
-        timeout-minutes: 20
-        run: |
-          ok=0
-          for i in 1 2 3; do
-            timeout 120 sudo apt-get update -qq || true
-            if timeout 240 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o Acquire::Retries=3 openssh-server dovecot-imapd > /dev/null; then ok=1; break; fi
-            sleep $((i * 15))
-          done
-          if [ "$ok" != 1 ]; then
-            echo "::error title=Testserver::Ubuntu-Paketspiegel nicht erreichbar; der Browser-Test braucht den SFTP-Testserver."
-            exit 1
-          fi
-          sudo systemctl stop dovecot 2>/dev/null || true
-          if ! sudo bash tools/test-servers.sh > servers.env; then
-            echo "::error title=Testserver::Die Testserver ließen sich nicht starten (siehe oben)."
-            exit 1
-          fi
-          sed 's/^export //' servers.env >> "$GITHUB_ENV"
-
-      - name: Freigabelinks über das PHP-Modul im Browser
-        env:
-          NODE_PATH: /tmp/pw/node_modules
-        run: |
-          rustup toolchain install stable --profile minimal
-          cd core && cargo test --locked -p ghul-core --no-run
-          P=$(mktemp -d)
-          GHUL_PHP_FIXTURE=$P cargo test --locked -p ghul-core php_browser_fixture &
-          node ../tools/test-share-php.js "$P"
-          wait $!
 
   windows:
     # The required check "Windows-App (Installer und portable Version)" is the job
@@ -565,9 +447,8 @@ jobs:
           remote-dir: ${{ steps.dest.outputs.dir }}/download/
 
   # The Android app in the emulator for every pull request and for main, with the APK of this
-  # run: three parts side by side, two of them against real, slow test servers, with a screenshot
-  # after every step (emulator.yml). Monkey and the intent attacks run in the nightly run;
-  # emulator.yml can also be started by hand for any branch.
+  # run and a screenshot after every step (emulator.yml). Monkey and the intent attacks run in the
+  # nightly run; emulator.yml can also be started by hand for any branch.
   emulator:
     name: Emulator-Tests
     needs: build
@@ -577,7 +458,6 @@ jobs:
       actions: read
     uses: ./.github/workflows/emulator.yml
     with:
-      servers: true
       same-run: true
 
   # The required checks. GitHub does not work out the name of a skipped job (it shows the raw
