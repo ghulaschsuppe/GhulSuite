@@ -457,7 +457,7 @@ ihre eigenen Dateien (`.ghldrv`, `.ghlmail`).
 
 | Schlüssel | Inhalt | Synchronisiert |
 |---|---|---|
-| `drive` | `server` (ID des **aktiven** Speicherorts), `key` (32 Byte, Drive-Schlüssel DK), `seen` (Speicherort-ID → höchste gesehene Index-Revision; ein älterer Index wird abgelehnt), `archive` (ID des Speicherorts für das Mail-Archiv, leer = der aktive), `old_keys` und `rekeyed` (laufender Schlüsselwechsel, siehe unten). Früher auch `use_sync` (Verweis auf den Sync-Server dieses Geräts); ein solches GhulDrive wird beim ersten Öffnen zu einem eigenen Speicherort mit der ID hex(HKDF(alte ID, „ghul/v1/drive/location“)[0..8]), auf jedem Gerät dieselbe | ja |
+| `drive` | `server` (ID des **aktiven** Speicherorts), `key` (32 Byte, Drive-Schlüssel DK), `seen` (Speicherort-ID → höchste gesehene Index-Revision; ein älterer Index wird abgelehnt), `archive` (ID des Speicherorts für das Mail-Archiv, leer = der aktive), `old_keys`, `rekey_running` und `rekeyed` (Schlüsselwechsel, siehe unten). Früher auch `use_sync` (Verweis auf den Sync-Server dieses Geräts); ein solches GhulDrive wird beim ersten Öffnen zu einem eigenen Speicherort mit der ID hex(HKDF(alte ID, „ghul/v1/drive/location“)[0..8]), auf jedem Gerät dieselbe | ja |
 | `servers` | die Speicherorte von GhulDrive (beliebig viele, Aufbau wie im Suite-Container, auch mit `module`); jeder hat eigene Dateien unter `drive/` und eigene Freigaben unter `shares/` in seinem Ordner | ja |
 | `options` | Optionen des Bereichs, je Schlüssel `{v, at}` (Text, Zeit in ms) | ja |
 
@@ -532,17 +532,25 @@ id    = hex(HMAC-SHA256(BIK_f, Klartext-Block))      <ab> = die ersten zwei Zeic
 - Blöcke des Formats `GHULBLK1` (gemeinsamer Blockschlüssel aus `DK`, vor 0.7.0) werden nicht mehr gelesen.
 - **Schlüsselwechsel** (seit 0.9, Konzept 6.4): Bei einem neuen Passwort, einem neuen Wiederherstellungscode oder
   einem entfernten Key bzw. einer entfernten Schlüsseldatei (nicht beim Hinzufügen) bekommt der Drive-Tresor ein neues
-  `DK`. Das bisherige steht in `drive.old_keys` (Liste, neuestes zuerst), die bereits umgeschlüsselten Speicherorte in
-  `drive.rekeyed`. Beim ersten Zugriff auf einen Speicherort (oder mit `key_change_continue`) wird unter der Sperre der
-  Index mit einem früheren `DK` gelesen (beschädigt: `index.bak`), mit dem neuen geschrieben und `index.bak` gelöscht;
-  die Blöcke bleiben, ihre Schlüssel stehen nur im Index. Sind alle Speicherorte durch, werden `old_keys` und
-  `rekeyed` geleert. Eine ältere Kopie der Suite-Datei hat nur das frühere `DK` und öffnet den Index nicht mehr.
+  `DK`. Das bisherige kommt nach `drive.old_keys` (neuestes zuerst, höchstens 16; nur zum Lesen), `drive.rekey_running`
+  wird gesetzt, die bereits umgeschlüsselten Speicherorte stehen in `drive.rekeyed`. Beim ersten Zugriff auf einen
+  Speicherort (oder mit `key_change_continue`) wird unter der Sperre der Index gelesen, mit dem neuen `DK` geschrieben
+  und eine `index.bak` mit früherem Schlüssel gelöscht; die Blöcke bleiben, ihre Schlüssel stehen nur im Index. Dabei
+  gelten dieselben Regeln wie beim Lesen: Ein älterer Stand, ein beschädigter Index (nur `index.bak` öffnet) oder ein
+  fehlender werden nicht still übernommen (`DriveRolledBack`), der Nutzer entscheidet mit „Stand des Servers
+  übernehmen“. Sind alle Speicherorte durch, endet der Wechsel (`rekey_running` falsch). Die früheren Schlüssel bleiben,
+  damit eine zurückgespielte Sicherung des Servers lesbar bleibt: Ein Index, der nur mit einem früheren `DK` öffnet,
+  gilt als älterer Stand und wird nach Bestätigung mit dem aktuellen geschrieben. Eine ältere Kopie der Suite-Datei hat
+  nur frühere Schlüssel und öffnet den aktuellen Index nicht.
   Zugleich bekommt die Suite einen neuen SSH-Schlüssel (`ssh_key`); der bisherige steht in `key_change.ssh_old`
   (Suite-Container), fertige Server in `key_change.done`. Je Server: mit dem neuen Schlüssel anmelden, sonst mit einem
-  früheren und den neuen an `~/.ssh/authorized_keys` anhängen, dann die Zeilen der früheren entfernen und prüfen, dass
-  sie abgewiesen werden. Liest der Server die Datei nicht (Schlüssel im Webpanel des Anbieters), trägt der Nutzer sie
-  dort ein bzw. entfernt sie, die App prüft. Bis zum Abschluss meldet sich die App, wo der neue nicht geht, mit einem
-  früheren Schlüssel an; danach wird `key_change` geleert.
+  früheren und den neuen an `~/.ssh/authorized_keys` anhängen; dann die Zeilen der früheren entfernen (alle anderen
+  Zeilen bleiben Byte für Byte, Rechte 0600), prüfen, dass der neue weiter funktioniert (sonst wird die Datei
+  zurückgeschrieben), und prüfen, dass die früheren abgewiesen werden. Nur eine abgewiesene Anmeldung zählt; eine
+  Zeitüberschreitung oder Verbindungsfehler heißt „später wieder versuchen“. Liest der Server die Datei nicht
+  (Schlüssel im Webpanel des Anbieters), trägt der Nutzer sie dort ein bzw. entfernt sie, die App prüft. Bis zum
+  Abschluss meldet sich die App, wo der neue nicht geht, mit einem früheren Schlüssel an; danach wird `key_change`
+  geleert und die früheren SSH-Schlüssel sind weg.
 
 ## 11. Freigaben (seit 0.7.0 nur über das Server-Modul)
 

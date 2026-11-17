@@ -213,6 +213,9 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     var keyChange by mutableStateOf<KeyChangeUi?>(null)
     /** The user put the key change's steps by hand off until the next unlock. */
     var keyChangeLater by mutableStateOf(false)
+    /** The key change is being continued now (its logins wait for the network). */
+    var keyChangeBusy by mutableStateOf(false)
+    private var keyChangeAgain = false
 
     /** The area has its file in this suite (it may still be hidden on this device). */
     fun hasArea(kind: VaultKindUi): Boolean = !areasKnown || vaults.any { it.kind == kind }
@@ -742,13 +745,27 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
 
     /** Continues a running key change as far as it goes now; shows what is left. */
     fun continueKeyChange() {
+        // While one runs, once more afterwards (e.g. the protection was changed meanwhile).
+        if (keyChangeBusy) {
+            keyChangeAgain = true
+            return
+        }
+        keyChangeBusy = true
         scope.launch {
-            // Only then the network: most of the time no change runs.
-            if (catching { backend.net.keyChangeStatus() }.getOrNull()?.running != true) {
-                keyChange = null
-                return@launch
+            try {
+                // Only then the network: most of the time no change runs.
+                if (catching { backend.net.keyChangeStatus() }.getOrNull()?.running != true) {
+                    keyChange = null
+                    return@launch
+                }
+                keyChange = catching { backend.net.keyChangeContinue() }.getOrNull()?.takeIf { it.running }
+            } finally {
+                keyChangeBusy = false
+                if (keyChangeAgain) {
+                    keyChangeAgain = false
+                    continueKeyChange()
+                }
             }
-            keyChange = catching { backend.net.keyChangeContinue() }.getOrNull()?.takeIf { it.running }
         }
     }
 

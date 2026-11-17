@@ -98,6 +98,86 @@ fn a_key_change_continues_where_it_stopped() {
     let _ = std::fs::remove_dir_all(&server);
 }
 
+/// A damaged index during the change: the copy before it is not written as the new index
+/// without the owner (the last change would be lost silently). After "take the server's state"
+/// it has the new key and the change goes on.
+#[test]
+fn a_damaged_index_is_not_rekeyed_silently() {
+    let d = Dirs::new("kc-damaged");
+    let kf = generate_keyfile();
+    let s = d.suite();
+    s.create(options("pw-123456", Some(kf), &[(VaultKind::Pass, "P")]), None, None, None).unwrap();
+    let server = local_drive("damaged");
+    attach(&s, &server);
+    upload(&s, None, "a.txt", b"A");
+    upload(&s, None, "b.txt", b"B");
+    s.change_password("pw-123456".into(), "pw-neu-7890".into()).unwrap();
+    let index = server.join("drive/index.ghldrv");
+    std::fs::write(&index, b"kaputt").unwrap();
+    assert!(matches!(names(&s), Err(GhulError::DriveRolledBack)));
+    assert_eq!(std::fs::read(&index).unwrap(), b"kaputt", "nothing written over it");
+    assert!(s.key_change_status().unwrap().running);
+    s.drive_accept_server_state().unwrap();
+    assert_eq!(names(&s).unwrap(), vec!["a.txt"]);
+    assert!(!s.key_change_continue().unwrap().running);
+    let _ = std::fs::remove_dir_all(&server);
+}
+
+/// A server put back to an older state during the change: refused as without a change.
+#[test]
+fn an_older_index_is_not_rekeyed_silently() {
+    let d = Dirs::new("kc-older");
+    let s = d.suite();
+    s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "P")]), None, None, None).unwrap();
+    let server = local_drive("older");
+    attach(&s, &server);
+    upload(&s, None, "a.txt", b"A");
+    let index = server.join("drive/index.ghldrv");
+    let old = std::fs::read(&index).unwrap();
+    upload(&s, None, "b.txt", b"B");
+    upload(&s, None, "c.txt", b"C");
+    s.change_password("pw-123456".into(), "pw-neu-7890".into()).unwrap();
+    std::fs::write(&index, &old).unwrap();
+    assert!(matches!(names(&s), Err(GhulError::DriveRolledBack)));
+    assert_eq!(std::fs::read(&index).unwrap(), old);
+    assert!(s.key_change_status().unwrap().running);
+    let _ = std::fs::remove_dir_all(&server);
+}
+
+/// A backup of the server from before the change (under the earlier key) put back later: the
+/// suite still reads it, as an older state the owner takes over.
+#[test]
+fn a_backup_from_before_the_change_can_be_taken_back() {
+    let d = Dirs::new("kc-backup");
+    let s = d.suite();
+    s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "P")]), None, None, None).unwrap();
+    let server = local_drive("backup");
+    attach(&s, &server);
+    upload(&s, None, "a.txt", b"A");
+    let backup = std::fs::read(server.join("drive/index.ghldrv")).unwrap();
+    s.change_password("pw-123456".into(), "pw-neu-7890".into()).unwrap();
+    assert!(!s.key_change_continue().unwrap().running);
+    upload(&s, None, "b.txt", b"B");
+    // The hoster restores its backup.
+    std::fs::write(server.join("drive/index.ghldrv"), &backup).unwrap();
+    assert!(matches!(names(&s), Err(GhulError::DriveRolledBack)));
+    s.drive_accept_server_state().unwrap();
+    assert_eq!(names(&s).unwrap(), vec!["a.txt"]);
+    upload(&s, None, "c.txt", b"C");
+    assert_eq!(names(&s).unwrap(), vec!["a.txt", "c.txt"]);
+    let _ = std::fs::remove_dir_all(&server);
+}
+
+/// Removing the earlier keys from authorized_keys keeps every other line byte for byte.
+#[test]
+fn only_the_earlier_keys_leave_authorized_keys() {
+    let text = b"ssh-ed25519 AAAAold one\nssh-rsa BBBB other \xff\xfe bytes\n# note\nssh-ed25519 AAAAold two";
+    let out = super::super::keychange::without_lines_for_tests(text, &["ssh-ed25519 AAAAold".to_string()]);
+    assert_eq!(out, b"ssh-rsa BBBB other \xff\xfe bytes\n# note\n");
+    let same = super::super::keychange::without_lines_for_tests(text, &[String::new()]);
+    assert_eq!(same, text);
+}
+
 /// Adding a key or key file changes nothing for older copies (they are not weaker): no change.
 #[test]
 fn adding_a_factor_starts_no_key_change() {
@@ -208,8 +288,29 @@ fn sftp_key_change_swaps_the_ssh_key() {
         let st = a.key_change_continue().unwrap();
         assert!(!st.running, "{st:?}");
     }
+
+    // No key logs in at all (the old one was removed in the panel before the new one was added):
+    // the user is asked to add the new one, not told to wait for the network.
+    let third = a.ssh_public_key().unwrap();
+    {
+        let _at = AuthKeysAt::set(&elsewhere, "authorized_keys");
+        a.change_password("pw-dritt-555".into(), "pw-viert-666".into()).unwrap();
+        {
+            let _file = crate::net::tests::AUTHKEYS_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+            let text = std::fs::read_to_string(&authkeys).unwrap();
+            let kept: String = text.lines().filter(|l| !l.contains(&body(&third))).map(|l| format!("{l}\n")).collect();
+            std::fs::write(&authkeys, kept).unwrap();
+        }
+        let st = a.key_change_continue().unwrap();
+        let ids: std::collections::HashSet<_> = st.servers.iter().map(|s| s.id.clone()).collect();
+        assert_eq!(ids.len(), st.servers.len(), "every server once: {st:?}");
+        assert!(states(&st).iter().all(|s| *s == KeyChangeState::AddByHand), "{st:?}");
+        crate::net::tests::authorize_test_key(&authkeys, &st.public_key);
+        let st = a.key_change_continue().unwrap();
+        assert!(!st.running, "{st:?}");
+    }
     a.lock();
-    a.unlock("pw-dritt-555".into(), None, None, None, Some(kf)).unwrap();
+    a.unlock("pw-viert-666".into(), None, None, None, Some(kf)).unwrap();
     assert_eq!(names(&a).unwrap(), vec!["a.txt"]);
     let _ = std::fs::remove_dir_all(&base);
     let _ = std::fs::remove_dir_all(&elsewhere);

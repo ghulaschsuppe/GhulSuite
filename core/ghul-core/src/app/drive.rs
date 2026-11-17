@@ -84,14 +84,21 @@ struct DriveSettings {
     /// The storage location the mail archive writes into (empty: the active one).
     #[serde(default)]
     archive: String,
-    /// During a key change: Drive's earlier keys (newest first). Indexes of locations not yet
-    /// written with the new key are read with them.
+    /// Drive's earlier keys (newest first, at most [`OLD_KEYS_KEPT`]). Only for reading: an index
+    /// not yet written with the new key, or one put back from a backup of the server.
     #[serde(default)]
     old_keys: Vec<serde_bytes::ByteBuf>,
+    /// A key change runs: the locations whose index does not have the new key yet are written
+    /// with it (see `drive_rekey_here`).
+    #[serde(default)]
+    rekey_running: bool,
     /// During a key change: the locations whose index has the new key.
     #[serde(default)]
     rekeyed: Vec<String>,
 }
+
+/// How many earlier Drive keys stay for reading (backups of the server).
+const OLD_KEYS_KEPT: usize = 16;
 
 impl Drop for DriveSettings {
     fn drop(&mut self) {
@@ -439,6 +446,8 @@ fn decode_index(data: &[u8], keys: &Keys) -> Result<DriveIndex> {
 /// The server's index as read.
 struct Loaded {
     index: DriveIndex,
+    /// It opened only with an earlier Drive key (before a key change).
+    old_key: bool,
     /// There is an index file at all.
     present: bool,
     /// The index was damaged: this is the one before the last change (`index.bak`).
@@ -446,16 +455,29 @@ struct Loaded {
 }
 
 fn read_index(fs: &dyn RemoteFs, keys: &Keys) -> Result<Loaded> {
+    read_index_any(fs, keys, &[])
+}
+
+/// Like [`read_index`], also with Drive's earlier keys `old` (noted in `old_key`).
+fn read_index_any(fs: &dyn RemoteFs, keys: &Keys, old: &[Keys]) -> Result<Loaded> {
     let Some(data) = fs.read(INDEX)? else {
-        return Ok(Loaded { index: DriveIndex::default(), present: false, from_bak: false });
+        return Ok(Loaded { index: DriveIndex::default(), old_key: false, present: false, from_bak: false });
     };
-    match decode_index(&data, keys) {
-        Ok(index) => Ok(Loaded { index, present: true, from_bak: false }),
-        // Damaged (or another key): the copy before the last change, if that one opens.
-        Err(e) => match fs.read(INDEX_BAK)?.and_then(|b| decode_index(&b, keys).ok()) {
-            Some(index) => Ok(Loaded { index, present: true, from_bak: true }),
-            None => Err(e),
-        },
+    let open = |data: &[u8]| -> Option<(DriveIndex, bool)> {
+        decode_index(data, keys)
+            .ok()
+            .map(|i| (i, false))
+            .or_else(|| old.iter().find_map(|k| decode_index(data, k).ok()).map(|i| (i, true)))
+    };
+    if let Some((index, old_key)) = open(&data) {
+        return Ok(Loaded { index, old_key, present: true, from_bak: false });
+    }
+    // Damaged (or another key): the copy before the last change, if that one opens.
+    match fs.read(INDEX_BAK)?.as_deref().and_then(open) {
+        Some((index, old_key)) => Ok(Loaded { index, old_key, present: true, from_bak: true }),
+        None => Err(decode_index(&data, keys)
+            .err()
+            .unwrap_or(GhulError::Corrupted { msg: "Drive data damaged or from another key".into() })),
     }
 }
 
@@ -632,18 +654,31 @@ fn check_name(name: &str) -> Result<String> {
 impl GhulSuite {
     /// Drive settings, the server connection and the keys.
     fn drive_ctx(&self, o: &mut Open) -> Result<(Arc<dyn RemoteFs>, Keys)> {
+        let (fs, keys) = self.drive_ctx_as_is(o)?;
+        // A location whose index still has an earlier key gets the new one first.
+        let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
+        let server = self.drive_location(o).unwrap_or_default();
+        if d.rekey_running && !d.rekeyed.contains(&server) {
+            self.drive_rekey_here(o, fs.as_ref(), &server)?;
+        }
+        Ok((fs, keys))
+    }
+
+    /// Like `drive_ctx`, without moving the location to a new key.
+    fn drive_ctx_as_is(&self, o: &mut Open) -> Result<(Arc<dyn RemoteFs>, Keys)> {
         let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
         let server = self.drive_location(o).ok_or(GhulError::NotConfigured)?;
         if d.key.len() != 32 {
             return Err(GhulError::NotConfigured);
         }
         let fs = self.remote(o, &server)?;
-        let keys = Keys::new(&d.key, o.suite.header().suite_id);
-        // A location whose index still has an earlier key gets the new one first.
-        if !d.old_keys.is_empty() && !d.rekeyed.contains(&server) {
-            self.drive_rekey_here(o, fs.as_ref(), &server)?;
-        }
-        Ok((fs, keys))
+        Ok((fs, Keys::new(&d.key, o.suite.header().suite_id)))
+    }
+
+    /// Drive's earlier keys, for reading only.
+    fn drive_old_keys(&self, o: &Open) -> Vec<Keys> {
+        let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
+        d.old_keys.iter().map(|k| Keys::new(k, o.suite.header().suite_id)).collect()
     }
 
     /// Checks the location Drive's calls work on: an existing index must open with Drive's key
@@ -657,8 +692,9 @@ impl GhulSuite {
             put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
         }
         let (fs, keys) = self.drive_ctx(o)?;
+        let old = self.drive_old_keys(o);
         let _lock = IndexLock::take(fs.as_ref())?;
-        let loaded = read_index(fs.as_ref(), &keys)?;
+        let loaded = read_index_any(fs.as_ref(), &keys, &old)?;
         if !loaded.present {
             let mut index = loaded.index;
             save_index(fs.as_ref(), &keys, &mut index)?;
@@ -694,10 +730,11 @@ impl GhulSuite {
         let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
         let server = self.drive_location(o).unwrap_or_default();
         let seen = d.seen.get(&server).copied().unwrap_or(0);
-        let loaded = read_index(fs, keys)?;
-        // An older state, none at all, or a damaged index (only the copy before it opens): the
-        // owner decides (`drive_accept_server_state`), nothing is written over it meanwhile.
-        if loaded.from_bak || loaded.index.revision < seen || (!loaded.present && seen > 0) {
+        let loaded = read_index_any(fs, keys, &self.drive_old_keys(o))?;
+        // An older state, none at all, a damaged index (only the copy before it opens) or one
+        // under an earlier key (a backup of the server put back): the owner decides
+        // (`drive_accept_server_state`), nothing is written over it meanwhile.
+        if loaded.from_bak || loaded.old_key || loaded.index.revision < seen || (!loaded.present && seen > 0) {
             return Err(GhulError::DriveRolledBack);
         }
         let index = loaded.index;
@@ -776,10 +813,15 @@ impl GhulSuite {
         if d.key.len() != 32 {
             return Ok(());
         }
-        d.old_keys.insert(0, serde_bytes::ByteBuf::from(d.key.clone()));
         let mut k = vec![0u8; 32];
         OsRng.fill_bytes(&mut k);
-        d.key = k;
+        let before = std::mem::replace(&mut d.key, k);
+        d.old_keys.insert(0, serde_bytes::ByteBuf::from(before));
+        for k in d.old_keys.iter_mut().skip(OLD_KEYS_KEPT) {
+            zeroize::Zeroize::zeroize(k.as_mut_slice());
+        }
+        d.old_keys.truncate(OLD_KEYS_KEPT);
+        d.rekey_running = true;
         d.rekeyed.clear();
         put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
         self.net.lock().unwrap_or_else(|p| p.into_inner()).drive = None;
@@ -788,43 +830,44 @@ impl GhulSuite {
 
     /// Writes the index of location `loc` with Drive's new key (under the lock). Its blocks stay
     /// as they are: their keys are only in the index. The copy before (`index.bak`, with an
-    /// earlier key) goes. Done once per location.
+    /// earlier key) goes. Done once per location. The same rules as for reading apply: an older
+    /// state, a damaged index or none where there was one are not taken over silently
+    /// (`DriveRolledBack`; the owner decides with `drive_accept_server_state`).
     fn drive_rekey_here(&self, o: &mut Open, fs: &dyn RemoteFs, loc: &str) -> Result<()> {
         let mut d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
         let suite = o.suite.header().suite_id;
         let new = Keys::new(&d.key, suite);
+        let old: Vec<Keys> = d.old_keys.iter().map(|k| Keys::new(k, suite)).collect();
+        let seen = d.seen.get(loc).copied().unwrap_or(0);
         let lock = IndexLock::take(fs)?;
-        let open_with = |data: &[u8]| -> Option<DriveIndex> {
-            d.old_keys.iter().find_map(|k| decode_index(data, &Keys::new(k, suite)).ok())
-        };
-        if let Some(data) = fs.read(INDEX)? {
-            if decode_index(&data, &new).is_err() {
-                // An earlier key (or, the index being damaged, the copy before it).
-                let mut index =
-                    match open_with(&data) {
-                        Some(i) => i,
-                        None => fs.read(INDEX_BAK)?.as_deref().and_then(open_with).ok_or_else(|| {
-                            GhulError::Corrupted { msg: "Drive data damaged or from another key".into() }
-                        })?,
-                    };
-                save_index(fs, &new, &mut index)?;
-                let seen = d.seen.entry(loc.to_owned()).or_insert(0);
-                *seen = (*seen).max(index.revision);
-            }
+        let loaded = read_index_any(fs, &new, &old)?;
+        if loaded.from_bak || loaded.index.revision < seen || (!loaded.present && seen > 0) {
+            return Err(GhulError::DriveRolledBack);
+        }
+        if loaded.old_key {
+            let mut index = loaded.index;
+            save_index(fs, &new, &mut index)?;
+            d.seen.insert(loc.to_owned(), index.revision);
         }
         // The copy before is under an earlier key: whoever still has that key must not read it.
-        delete_quiet(fs, INDEX_BAK)?;
+        if let Some(bak) = fs.read(INDEX_BAK)? {
+            if decode_index(&bak, &new).is_err() {
+                delete_quiet(fs, INDEX_BAK)?;
+            }
+        }
         drop(lock);
         d.rekeyed.push(loc.to_owned());
         put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
-        self.save_area(o, VaultKind::Drive)
+        // Only notes of what the server holds (like `note_seen`): nothing to save into the suite
+        // file; lost, the location is only checked once more.
+        self.save_area_quietly(o, VaultKind::Drive)
     }
 
     /// The locations whose index does not have Drive's new key yet (id, name); empty when no
     /// key change runs. Locations that cannot be reached stay in the list.
     pub(super) fn drive_rekey_waiting(&self, o: &Open) -> Vec<(String, String)> {
         let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
-        if d.old_keys.is_empty() {
+        if !d.rekey_running {
             return Vec::new();
         }
         let mut all: Vec<(String, String)> = servers::drive_servers(o).into_iter().map(|s| (s.id, s.name)).collect();
@@ -837,8 +880,9 @@ impl GhulSuite {
         all.into_iter().filter(|(id, _)| !d.rekeyed.contains(id)).collect()
     }
 
-    /// Tries every location still waiting (see `drive_rekey_waiting`); the earlier keys go once
-    /// none waits any more. Returns the error of the last location that failed.
+    /// Tries every location still waiting (see `drive_rekey_waiting`); the change ends once none
+    /// waits any more (the earlier keys stay for reading backups). Returns the error of the last
+    /// location that failed.
     pub(super) fn drive_rekey_all(&self, o: &mut Open) -> Result<()> {
         let mut last = Ok(());
         for (id, _) in self.drive_rekey_waiting(o) {
@@ -849,14 +893,11 @@ impl GhulSuite {
         }
         if self.drive_rekey_waiting(o).is_empty() {
             let mut d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
-            if !d.old_keys.is_empty() {
-                for k in &mut d.old_keys {
-                    zeroize::Zeroize::zeroize(k.as_mut_slice());
-                }
-                d.old_keys.clear();
+            if d.rekey_running {
+                d.rekey_running = false;
                 d.rekeyed.clear();
                 put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
-                self.save_area(o, VaultKind::Drive)?;
+                self.save_area_quietly(o, VaultKind::Drive)?;
             }
         }
         last
@@ -1410,17 +1451,27 @@ impl GhulSuite {
     /// a backup on purpose). Files added since that state are then no longer listed.
     pub fn drive_accept_server_state(&self) -> Result<()> {
         self.with_open(|o| {
-            let (fs, keys) = self.drive_ctx(o)?;
+            // As it is: a location still waiting for the new key would refuse that older state.
+            let (fs, keys) = self.drive_ctx_as_is(o)?;
+            let old = self.drive_old_keys(o);
             let lock = IndexLock::take(fs.as_ref())?;
-            let loaded = read_index(fs.as_ref(), &keys)?;
+            let loaded = read_index_any(fs.as_ref(), &keys, &old)?;
             let mut index = loaded.index;
-            if loaded.from_bak {
-                // The index was damaged: the state before it is written as the index again.
+            if loaded.from_bak || loaded.old_key {
+                // The index was damaged, or has an earlier key: that state is written as the
+                // index again, with Drive's key.
                 save_index(fs.as_ref(), &keys, &mut index)?;
+            }
+            if loaded.old_key {
+                // A copy before under an earlier key goes (see `drive_rekey_here`).
+                delete_quiet(fs.as_ref(), INDEX_BAK)?;
             }
             drop(lock);
             let mut d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
             let server = self.drive_location(o).unwrap_or_default();
+            if d.rekey_running && !d.rekeyed.contains(&server) {
+                d.rekeyed.push(server.clone());
+            }
             d.seen.insert(server, index.revision);
             put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
             self.save_area(o, VaultKind::Drive)?;

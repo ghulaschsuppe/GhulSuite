@@ -107,7 +107,8 @@ Wieder auf dem Handy: öffnen.
 
 - **Auf dem Server, im Drive-Ordner:**
   - `index.ghldrv`: der eine Index (Ordner, Namen, Größen, Dateischlüssel, Blocklisten, Papierkorb, Versionen),
-    verschlüsselt mit dem Drive-Schlüssel und versiegelt (das Siegel braucht das Passwort);
+    verschlüsselt und authentisiert mit dem Drive-Schlüssel, an die Suite gebunden (ein eigenes Siegel mit dem
+    Passwort braucht er nicht: der Drive-Schlüssel steht nur im Drive-Tresor, gegen alte Kopien hilft 6.4);
   - `index.bak`: der vorige Stand (falls der Index beschädigt wird);
   - die **Blöcke**: Dateiinhalte, je Dateifassung mit eigenem, zufälligem Schlüssel; Blöcke werden nie überschrieben.
 - **In der Suite-Datei** (Drive-Tresor): Drive-Schlüssel, SSH-Schlüssel, Serveradresse, Host-Key und die höchste
@@ -119,7 +120,7 @@ Wieder auf dem Handy: öffnen.
 
 ### 6.3 Im Alltag
 
-- **Lesen:** Index laden, Siegel prüfen, entschlüsseln. Ist die Revision kleiner als die gemerkte, hat der Server
+- **Lesen:** Index laden, entschlüsseln und prüfen. Ist die Revision kleiner als die gemerkte, hat der Server
   einen alten Stand zurückgespielt: Die App warnt und schreibt nichts.
 - **Ändern** (Hochladen, Umbenennen, Verschieben, Löschen) unter einer Sperre:
   1. `index.lock` exklusiv anlegen (SFTP legt sie nur an, wenn es sie noch nicht gibt); eine Sperre, die älter als
@@ -140,12 +141,16 @@ Bei jeder Schutzänderung (neues Passwort, neuer Code, Key oder Schlüsseldatei 
 
 1. **Lokal vormerken:** Die Arbeitskopie bekommt einen neuen Drive-Schlüssel und einen neuen SSH-Schlüssel, zusätzlich
    zu den alten, mit dem Vermerk „Wechsel läuft“. Bricht etwas ab, setzt die App beim nächsten Start dort fort.
-2. **Index umschlüsseln** (unter der Sperre): mit dem alten Schlüssel lesen, mit dem neuen Schlüssel und neuem Siegel
-   schreiben, `index.bak` (alter Schlüssel) löschen. Ein Schreibvorgang; die Blöcke bleiben unverändert, denn ihre
-   Schlüssel stehen nur im Index.
+2. **Index umschlüsseln** (unter der Sperre): mit dem alten Schlüssel lesen, mit dem neuen Schlüssel schreiben,
+   `index.bak` (alter Schlüssel) löschen. Ein Schreibvorgang; die Blöcke bleiben unverändert, denn ihre Schlüssel
+   stehen nur im Index. Ist der Index älter als gesehen, beschädigt oder fehlt er, wird nichts still übernommen: der
+   Nutzer entscheidet wie beim normalen Lesen (6.3).
 3. **SSH-Zugang tauschen:** neuen öffentlichen Schlüssel auf dem Server eintragen, damit anmelden und prüfen, dann den
    alten entfernen und prüfen, dass er abgewiesen wird (je Anbieter, siehe unten).
-4. **Abschließen:** alte Schlüssel aus der Arbeitskopie entfernen; die App fordert auf, die Suite-Datei zu speichern.
+4. **Abschließen:** alte SSH-Schlüssel aus der Arbeitskopie entfernen; die App fordert auf, die Suite-Datei zu
+   speichern. Frühere Drive-Schlüssel bleiben nur zum Lesen in der aktuellen Datei (höchstens 16), damit eine
+   zurückgespielte Sicherung des Servers lesbar bleibt (6.5). Einer alten Datei hilft das nicht: Sie hat den neuen
+   Schlüssel nicht.
 
 Danach:
 - Eine **alte Datei** (z. B. auf einem verlorenen Stick) kann sich nicht mehr am Server anmelden und den Index nicht
@@ -170,6 +175,10 @@ das selbst, eine Einstellung braucht es nicht:
 - **Nur Passwort-Anmeldung, keine Schlüssel:** Solche Server nimmt die App nicht auf (6.1), es gibt nichts zu tauschen.
 
 Ist ein Server gerade nicht erreichbar, bleibt er auf „wartet“ und wird nach dem nächsten Entsperren wieder versucht.
+Nur eine abgewiesene Anmeldung zählt als „alter Schlüssel abgewiesen“; bricht die Verbindung ab (Zeitlimit,
+Verbindungssperren nach vielen Anmeldungen), wartet der Server. Nach dem Entfernen der alten Zeilen prüft die App, dass
+der neue Schlüssel weiter funktioniert, sonst schreibt sie die Datei zurück. Kommt kein Schlüssel mehr hinein (der
+alte wurde im Webpanel schon entfernt), bittet sie, den neuen dort einzutragen.
 Der Wechsel gilt erst als abgeschlossen, wenn alle Server und alle Drive-Speicherorte durch sind; erst dann werden die
 alten Schlüssel aus der Suite gelöscht.
 
@@ -208,7 +217,7 @@ alten Schlüssel aus der Suite gelöscht.
 | Hat Stick und einen alten Code | lesen, was im alten Stand galt | etwas unterschieben; den aktuellen Stand lesen; nach dem Schlüsselwechsel an den Server |
 | Hat Stick, alten Code und altes Passwort | einen alten Stand mit altem Schutz anbieten | ihn auf einem Gerät mit neuerem Stand öffnen lassen (Schutz-Epoche, Sperre); an den Server |
 | Hat eine alte Suite-Datei (vor einer Schutzänderung) | die damaligen Inhalte lesen | sich am Server anmelden; den aktuellen Drive-Index öffnen; neue Drive-Dateien lesen |
-| Betreibt den Server | Blöcke löschen, einen alten Index zurückspielen, Freigaben stören | Dateien lesen; einen Index fälschen (Siegel); einen alten Index unbemerkt unterschieben (Revision) |
+| Betreibt den Server | Blöcke löschen, einen alten Index zurückspielen, Freigaben stören | Dateien lesen; einen Index fälschen (authentisiert mit dem Drive-Schlüssel); einen alten Index unbemerkt unterschieben (Revision) |
 
 ## 9. Umsetzung in Paketen (je ein Pull Request, Doku jeweils mit)
 

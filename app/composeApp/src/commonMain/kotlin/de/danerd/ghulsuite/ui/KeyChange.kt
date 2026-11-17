@@ -46,7 +46,7 @@ fun KeyChangeDialog(state: AppState) {
             }
         },
         confirmButton = {
-            TextButton(onClick = { state.continueKeyChange() }, enabled = !state.busy) {
+            TextButton(onClick = { state.continueKeyChange() }, enabled = !state.keyChangeBusy) {
                 Text(stringResource(Res.string.kc_check))
             }
         },
