@@ -460,3 +460,30 @@ fn badssl_broken_tls_is_refused() {
         assert!(r.is_err(), "{host} was accepted");
     }
 }
+
+/// The Drive lock between devices: over SFTP a file is made only where there is none, also
+/// when several devices try at the same moment (exactly one gets it).
+#[test]
+fn sftp_creates_a_lock_file_only_once() {
+    let Some(cfg) = sftp_test_config("sftp-create-new") else { return };
+    let fs = SftpFs::connect(&cfg).unwrap();
+    let _ = fs.delete("drive/index.lock");
+    assert!(fs.create_new("drive/index.lock", b"a").unwrap());
+    assert!(!fs.create_new("drive/index.lock", b"b").unwrap());
+    assert_eq!(fs.read("drive/index.lock").unwrap().unwrap(), b"a", "not replaced");
+    fs.delete("drive/index.lock").unwrap();
+    let won: usize = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..6)
+            .map(|i| {
+                let cfg = cfg.clone();
+                scope.spawn(move || {
+                    SftpFs::connect(&cfg)
+                        .and_then(|fs| fs.create_new("drive/index.lock", format!("{i}").as_bytes()))
+                        .unwrap()
+                })
+            })
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap() as usize).sum()
+    });
+    assert_eq!(won, 1);
+}

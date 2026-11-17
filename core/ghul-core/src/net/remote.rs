@@ -22,6 +22,15 @@ pub trait RemoteFs: Send + Sync {
     /// Deleting a missing file is not an error.
     fn delete(&self, path: &str) -> NetResult<()>;
     fn mkdir_all(&self, dir: &str) -> NetResult<()>;
+    /// Creates `path` with `data` only if there is no such file yet (one step where the server
+    /// can): `false` if it exists. Used as a lock between devices.
+    fn create_new(&self, path: &str, data: &[u8]) -> NetResult<bool> {
+        if self.read(path)?.is_some() {
+            return Ok(false);
+        }
+        self.write(path, data)?;
+        Ok(true)
+    }
 }
 
 /// Rejects paths that could leave the base folder.
@@ -101,5 +110,18 @@ impl RemoteFs for LocalFs {
 
     fn mkdir_all(&self, dir: &str) -> NetResult<()> {
         std::fs::create_dir_all(self.full(dir)?).map_err(io)
+    }
+
+    fn create_new(&self, path: &str, data: &[u8]) -> NetResult<bool> {
+        let full = self.full(path)?;
+        self.mkdir_all(parent(path))?;
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&full) {
+            Ok(mut f) => {
+                std::io::Write::write_all(&mut f, data).map_err(io)?;
+                Ok(true)
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
+            Err(e) => Err(io(e)),
+        }
     }
 }

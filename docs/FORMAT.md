@@ -483,7 +483,9 @@ einem Gerät mit älterer App zurückbringt.
 
 ```text
 <base>/suite/                 Tresore (.ghlpss, .ghltotp, .ghlcal) und suite.ghlsuite, unverändert im Container-Format
-<base>/drive/index.ghldrv     "GHULDRV1" ‖ nonce[24] ‖ XChaCha20-Poly1305(IK, pad(CBOR-Index), aad = "")
+<base>/drive/index.ghldrv     "GHULDRV2" ‖ nonce[24] ‖ XChaCha20-Poly1305(IK, pad(CBOR-Index), aad = "GHULDRV2" ‖ suite_id)
+<base>/drive/index.bak        der Index vor der letzten Änderung (gleiches Format)
+<base>/drive/index.lock       Sperre während einer Änderung: "<Zufallskennung> <Zeit in ms>"
 <base>/drive/blocks/<ab>/<id> "GHULBLK2" ‖ nonce[12] ‖ AES-256-GCM(BK_f, Block, aad = "GHULBLK2" ‖ id)
 <base>/shares/<id>.json       Beschreibung einer Freigabe (Abschnitt 11), von der App geschrieben
 <base>/shares/<id>.state      Abrufe und Tickets einer Freigabe, vom Server-Modul geschrieben
@@ -505,12 +507,23 @@ id    = hex(HMAC-SHA256(BIK_f, Klartext-Block))      <ab> = die ersten zwei Zeic
 - Index (CBOR): `revision` (u64) und `nodes`: je Knoten `id`, `parent` (leer = oberste Ebene), `name`, `dir`,
   `size`, `modified` (ms), `blocks` (Liste der Block-IDs in Reihenfolge), `key` (`FK`), `versions` (je `size`,
   `modified`, `blocks`, `key`). Aufgefüllt wie der Tresor-Inhalt (Abschnitt 5.1).
-- Schreiben immer atomar (temporäre Datei, dann Umbenennen). Vor jeder Änderung wird der Index neu geladen.
+- Schreiben immer atomar (temporäre Datei, dann Umbenennen). **Jede Änderung des Index** läuft unter der Sperre
+  `index.lock`: Sie wird nur angelegt, wenn es sie noch nicht gibt (SFTP `O_EXCL`); wer sie nicht bekommt, wartet
+  (höchstens 30 s). Eine Sperre, die älter als zwei Minuten ist, gilt als verwaist und wird übernommen. Unter der
+  Sperre wird der Index neu geladen, geändert und geschrieben; der bisherige (sofern lesbar) wird vorher als
+  `index.bak` abgelegt. Ist der Index beschädigt, öffnet die App `index.bak`, meldet einen älteren Stand und schreibt
+  nichts, bis der Nutzer ihn übernimmt; dann wird er wieder als Index geschrieben.
+- Seit 0.9 ist der Index an die Suite gebunden (`suite_id` in den authentisierten Daten, Magie `GHULDRV2`): ein
+  Index einer anderen Suite mit gleichem `DK` öffnet nicht. Ein Index im Format `GHULDRV1` (vor 0.9, `aad` = "") wird
+  noch gelesen und bei der nächsten Änderung als `GHULDRV2` geschrieben. Ein Siegel mit dem Passwort ist für den
+  Index nicht nötig: `DK` steht nur im Drive-Tresor und ist damit nur mit Passwort und zweitem Faktor erreichbar;
+  gegen Kopien von vor einer Schutzänderung schützt der Schlüsselwechsel (neues `DK`).
   Nicht mehr referenzierte Blöcke werden nach dem Löschen entfernt, außer eine Freigabe liefert sie noch aus
   (`shares/*.json`); sie gehen, wenn der letzte Link endet, der sie braucht.
 - Unterbrochenes Hochladen: Das Gerät merkt sich `FK` je „Ordner/Name“ höchstens 7 Tage in `drive-pending`
-  (lokal, `"GHULPND1" ‖ nonce[24] ‖ XChaCha20-Poly1305(HKDF-SHA256(DK, "ghul/v2/drive/pending"), CBOR)`). Ein erneutes
-  Hochladen derselben Datei überspringt die Blöcke, die schon da sind.
+  (lokal, `"GHULPND1" ‖ nonce[24] ‖ XChaCha20-Poly1305(GK, CBOR)`). `GK` ist ein zufälliger Geräteschlüssel
+  (`drive-device.key`, 32 Byte, verlässt das Gerät nie), damit ein Hochladen auch nach einem Wechsel von `DK`
+  fortgesetzt werden kann. Ein erneutes Hochladen derselben Datei überspringt die Blöcke, die schon da sind.
 - Blöcke des Formats `GHULBLK1` (gemeinsamer Blockschlüssel aus `DK`, vor 0.7.0) werden nicht mehr gelesen.
 
 ## 11. Freigaben (seit 0.7.0 nur über das Server-Modul)

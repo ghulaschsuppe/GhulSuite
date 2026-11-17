@@ -35,7 +35,23 @@ use crate::vault::payload::{pad, unpad};
 
 const DRIVE_KEY: &str = "drive";
 const INDEX: &str = "drive/index.ghldrv";
+/// The index before the last change: used when the index itself is damaged.
+const INDEX_BAK: &str = "drive/index.bak";
+/// Held by the device changing the index (made only if it is not there).
+const INDEX_LOCK: &str = "drive/index.lock";
+/// A lock older than this is taken to be left by a device that stopped.
+const LOCK_STALE_MS: i64 = 120_000;
+/// How long a change waits for another device's lock.
+#[cfg(not(test))]
+const LOCK_WAIT_MS: u64 = 30_000;
+#[cfg(test)]
+const LOCK_WAIT_MS: u64 = 3_000;
+/// Before 0.9: not bound to the suite (still read; written as version 2 at the next change).
 const INDEX_MAGIC: &[u8; 8] = b"GHULDRV1";
+/// Bound to the suite (its id is part of the authenticated data).
+const INDEX_MAGIC2: &[u8; 8] = b"GHULDRV2";
+/// This device's own key for the keys of unfinished uploads (never leaves the device).
+const DEVICE_KEY_FILE: &str = "drive-device.key";
 const BLOCK_MAGIC: &[u8; 8] = b"GHULBLK2";
 /// Keys of uploads that did not finish, on this device, so a repeated upload continues.
 const PENDING_FILE: &str = "drive-pending";
@@ -170,13 +186,14 @@ pub struct DriveStatus {
 
 struct Keys {
     index: Zeroizing<[u8; 32]>,
-    /// Seals the keys of uploads that did not finish, on this device.
-    pending: Zeroizing<[u8; 32]>,
+    /// The suite the index belongs to (authenticated with it: an index of another suite with the
+    /// same key, or one carried over, does not open).
+    suite: [u8; 16],
 }
 
 impl Keys {
-    fn new(dk: &[u8]) -> Keys {
-        Keys { index: hkdf(dk, &[b"ghul/v1/drive/index"]), pending: hkdf(dk, &[b"ghul/v2/drive/pending"]) }
+    fn new(dk: &[u8], suite: [u8; 16]) -> Keys {
+        Keys { index: hkdf(dk, &[b"ghul/v1/drive/index"]), suite }
     }
 }
 
@@ -341,6 +358,8 @@ fn delete_drive_files(fs: &dyn RemoteFs) -> Result<()> {
         }
     }
     delete_quiet(fs, INDEX)?;
+    delete_quiet(fs, INDEX_BAK)?;
+    delete_quiet(fs, INDEX_LOCK)?;
     for f in list_quiet(fs, "shares")? {
         let ours = match f.name.rsplit_once('.') {
             _ if f.name.starts_with("check-") => true,
@@ -389,24 +408,114 @@ pub(super) fn decrypt(magic: &[u8; 8], key: &[u8; 32], data: &[u8], aad_extra: &
     open(key, &nonce, &data[32..], &aad).ok_or_else(bad)
 }
 
-fn load_index(fs: &dyn RemoteFs, keys: &Keys) -> Result<DriveIndex> {
-    match fs.read(INDEX)? {
-        None => Ok(DriveIndex::default()),
-        Some(data) => {
-            let plain = decrypt(INDEX_MAGIC, &keys.index, &data, b"")?;
-            let cbor = unpad(&plain)?;
-            ciborium::de::from_reader(cbor).map_err(|e| GhulError::Corrupted { msg: format!("Drive index: {e}") })
-        }
+/// An index file's content (version 2 bound to the suite, or version 1 of before 0.9).
+fn decode_index(data: &[u8], keys: &Keys) -> Result<DriveIndex> {
+    let plain = if data.starts_with(INDEX_MAGIC2) {
+        decrypt(INDEX_MAGIC2, &keys.index, data, &keys.suite)?
+    } else {
+        decrypt(INDEX_MAGIC, &keys.index, data, b"")?
+    };
+    let cbor = unpad(&plain)?;
+    ciborium::de::from_reader(cbor).map_err(|e| GhulError::Corrupted { msg: format!("Drive index: {e}") })
+}
+
+/// The server's index as read.
+struct Loaded {
+    index: DriveIndex,
+    /// There is an index file at all.
+    present: bool,
+    /// The index was damaged: this is the one before the last change (`index.bak`).
+    from_bak: bool,
+}
+
+fn read_index(fs: &dyn RemoteFs, keys: &Keys) -> Result<Loaded> {
+    let Some(data) = fs.read(INDEX)? else {
+        return Ok(Loaded { index: DriveIndex::default(), present: false, from_bak: false });
+    };
+    match decode_index(&data, keys) {
+        Ok(index) => Ok(Loaded { index, present: true, from_bak: false }),
+        // Damaged (or another key): the copy before the last change, if that one opens.
+        Err(e) => match fs.read(INDEX_BAK)?.and_then(|b| decode_index(&b, keys).ok()) {
+            Some(index) => Ok(Loaded { index, present: true, from_bak: true }),
+            None => Err(e),
+        },
     }
 }
 
+fn load_index(fs: &dyn RemoteFs, keys: &Keys) -> Result<DriveIndex> {
+    Ok(read_index(fs, keys)?.index)
+}
+
+/// Writes the index (one revision more); the one there so far is kept as `index.bak` first.
+/// Only while holding the lock ([`IndexLock`]).
 fn save_index(fs: &dyn RemoteFs, keys: &Keys, index: &mut DriveIndex) -> Result<()> {
     index.revision += 1;
     let mut cbor = Zeroizing::new(Vec::new());
     ciborium::ser::into_writer(&*index, &mut *cbor).map_err(|e| GhulError::Corrupted { msg: e.to_string() })?;
     let padded = pad(&cbor)?;
-    fs.write(INDEX, &encrypt(INDEX_MAGIC, &keys.index, &padded, b""))?;
+    if let Some(before) = fs.read(INDEX)? {
+        // Only a readable one is worth keeping (a damaged one would replace the good copy).
+        if decode_index(&before, keys).is_ok() {
+            fs.write(INDEX_BAK, &before)?;
+        }
+    }
+    fs.write(INDEX, &encrypt(INDEX_MAGIC2, &keys.index, &padded, &keys.suite))?;
     Ok(())
+}
+
+/// The lock on the index of one location: while it is held, no other device changes it. Made
+/// only where there is none (`create_new`); one left by a device that stopped (older than
+/// [`LOCK_STALE_MS`]) is taken over. Released when dropped.
+struct IndexLock<'a> {
+    fs: &'a dyn RemoteFs,
+    token: String,
+}
+
+impl<'a> IndexLock<'a> {
+    fn take(fs: &'a dyn RemoteFs) -> Result<IndexLock<'a>> {
+        let mut t = [0u8; 16];
+        OsRng.fill_bytes(&mut t);
+        let token = crate::kdf::hex(&t);
+        let start = std::time::Instant::now();
+        loop {
+            let body = format!("{token} {}", now_ms());
+            if fs.create_new(INDEX_LOCK, body.as_bytes())? {
+                return Ok(IndexLock { fs, token });
+            }
+            match fs.read(INDEX_LOCK)? {
+                // Released meanwhile: try again at once.
+                None => continue,
+                Some(held) => {
+                    let since =
+                        String::from_utf8_lossy(&held).split_whitespace().nth(1).and_then(|t| t.parse::<i64>().ok());
+                    if since.map_or(true, |t| now_ms() - t > LOCK_STALE_MS) {
+                        // Left behind: removed only if it is still that very lock.
+                        if fs.read(INDEX_LOCK)?.as_deref() == Some(held.as_slice()) {
+                            fs.delete(INDEX_LOCK)?;
+                        }
+                        continue;
+                    }
+                }
+            }
+            if start.elapsed().as_millis() as u64 > LOCK_WAIT_MS {
+                return Err(GhulError::Network {
+                    msg: "GhulDrive is being changed on another device, please try again".into(),
+                });
+            }
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+    }
+}
+
+impl Drop for IndexLock<'_> {
+    fn drop(&mut self) {
+        // Only our own lock (a stale-taken one belongs to someone else now).
+        if let Ok(Some(held)) = self.fs.read(INDEX_LOCK) {
+            if held.starts_with(self.token.as_bytes()) {
+                let _ = self.fs.delete(INDEX_LOCK);
+            }
+        }
+    }
 }
 
 fn item_with(n: &Node, offline: &BTreeSet<String>) -> DriveItem {
@@ -512,7 +621,7 @@ impl GhulSuite {
             return Err(GhulError::NotConfigured);
         }
         let fs = self.remote(o, &server)?;
-        Ok((fs, Keys::new(&d.key)))
+        Ok((fs, Keys::new(&d.key, o.suite.header().suite_id)))
     }
 
     /// Checks the location Drive's calls work on: an existing index must open with Drive's key
@@ -526,8 +635,10 @@ impl GhulSuite {
             put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
         }
         let (fs, keys) = self.drive_ctx(o)?;
-        let mut index = load_index(fs.as_ref(), &keys)?;
-        if fs.read(INDEX)?.is_none() {
+        let _lock = IndexLock::take(fs.as_ref())?;
+        let loaded = read_index(fs.as_ref(), &keys)?;
+        if !loaded.present {
+            let mut index = loaded.index;
             save_index(fs.as_ref(), &keys, &mut index)?;
         }
         Ok(())
@@ -561,11 +672,13 @@ impl GhulSuite {
         let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
         let server = self.drive_location(o).unwrap_or_default();
         let seen = d.seen.get(&server).copied().unwrap_or(0);
-        let present = fs.read(INDEX)?.is_some();
-        let index = load_index(fs, keys)?;
-        if index.revision < seen || (!present && seen > 0) {
+        let loaded = read_index(fs, keys)?;
+        // An older state, none at all, or a damaged index (only the copy before it opens): the
+        // owner decides (`drive_accept_server_state`), nothing is written over it meanwhile.
+        if loaded.from_bak || loaded.index.revision < seen || (!loaded.present && seen > 0) {
             return Err(GhulError::DriveRolledBack);
         }
+        let index = loaded.index;
         if index.revision > seen {
             self.note_seen(o, index.revision)?;
         }
@@ -586,29 +699,24 @@ impl GhulSuite {
         self.save_area_quietly(o, VaultKind::Drive)
     }
 
-    /// Loads the current index from the server, applies `f`, saves it. If another device saved
-    /// the index in between, `f` is applied to that one instead (B3: no change is lost).
+    /// Under the index lock: loads the current index from the server, applies `f`, saves it
+    /// (the one before as `index.bak`). Another device waits meanwhile (B3: no change is lost).
     fn drive_change<T>(
         &self,
         o: &mut Open,
         mut f: impl FnMut(&mut DriveIndex, &dyn RemoteFs, &Keys) -> Result<T>,
     ) -> Result<T> {
         let (fs, keys) = self.drive_ctx(o)?;
-        for _ in 0..8 {
-            let mut index = self.load_checked(o, fs.as_ref(), &keys)?;
-            let base = index.revision;
-            let out = f(&mut index, fs.as_ref(), &keys)?;
-            if load_index(fs.as_ref(), &keys)?.revision != base {
-                continue;
-            }
-            save_index(fs.as_ref(), &keys, &mut index)?;
-            self.note_seen(o, index.revision)?;
-            if self.drive_on_active(o) {
-                self.net.lock().unwrap_or_else(|p| p.into_inner()).drive = Some(index);
-            }
-            return Ok(out);
+        let lock = IndexLock::take(fs.as_ref())?;
+        let mut index = self.load_checked(o, fs.as_ref(), &keys)?;
+        let out = f(&mut index, fs.as_ref(), &keys)?;
+        save_index(fs.as_ref(), &keys, &mut index)?;
+        drop(lock);
+        self.note_seen(o, index.revision)?;
+        if self.drive_on_active(o) {
+            self.net.lock().unwrap_or_else(|p| p.into_inner()).drive = Some(index);
         }
-        Err(GhulError::Network { msg: "GhulDrive is being changed on another device, please try again".into() })
+        Ok(out)
     }
 
     fn drive_index(&self, o: &mut Open, refresh: bool) -> Result<DriveIndex> {
@@ -639,12 +747,39 @@ impl GhulSuite {
         AT.with(|a| a.borrow().as_ref().map_or(true, |at| Some(at) == drive_server_id(o, &d).as_ref()))
     }
 
+    /// Tests: Drive's index key and the suite id it is bound to.
+    #[cfg(test)]
+    pub(super) fn drive_test_keys(&self) -> ([u8; 32], [u8; 16]) {
+        self.with_open(|o| {
+            let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
+            let k = Keys::new(&d.key, o.suite.header().suite_id);
+            Ok((*k.index, k.suite))
+        })
+        .unwrap()
+    }
+
+    /// This device's own key for the keys of unfinished uploads: made once, kept on the device
+    /// (so an upload continues also after Drive's key changed).
+    fn device_key(&self) -> Option<Zeroizing<[u8; 32]>> {
+        let path = self.local_dir.join(DEVICE_KEY_FILE);
+        if let Ok(k) = std::fs::read(&path) {
+            if let Ok(k) = <[u8; 32]>::try_from(k.as_slice()) {
+                return Some(Zeroizing::new(k));
+            }
+        }
+        let mut k = Zeroizing::new([0u8; 32]);
+        OsRng.fill_bytes(k.as_mut());
+        let _ = std::fs::create_dir_all(&self.local_dir);
+        super::storage::write_atomic(&self.local_dir, DEVICE_KEY_FILE, k.as_ref()).ok()?;
+        Some(k)
+    }
+
     fn pending_keys(&self, o: &Open) -> Option<(Zeroizing<[u8; 32]>, Pending)> {
         let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
         if d.key.is_empty() {
             return None;
         }
-        let key = Keys::new(&d.key).pending;
+        let key = self.device_key()?;
         let map = std::fs::read(self.local_dir.join(PENDING_FILE))
             .ok()
             .and_then(|data| decrypt(PENDING_MAGIC, &key, &data, b"").ok())
@@ -1097,7 +1232,14 @@ impl GhulSuite {
     pub fn drive_accept_server_state(&self) -> Result<()> {
         self.with_open(|o| {
             let (fs, keys) = self.drive_ctx(o)?;
-            let index = load_index(fs.as_ref(), &keys)?;
+            let lock = IndexLock::take(fs.as_ref())?;
+            let loaded = read_index(fs.as_ref(), &keys)?;
+            let mut index = loaded.index;
+            if loaded.from_bak {
+                // The index was damaged: the state before it is written as the index again.
+                save_index(fs.as_ref(), &keys, &mut index)?;
+            }
+            drop(lock);
             let mut d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
             let server = self.drive_location(o).unwrap_or_default();
             d.seen.insert(server, index.revision);

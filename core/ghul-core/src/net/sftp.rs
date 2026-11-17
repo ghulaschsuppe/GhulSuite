@@ -409,6 +409,35 @@ impl RemoteFs for SftpFs {
         )
     }
 
+    fn create_new(&self, path: &str, data: &[u8]) -> NetResult<bool> {
+        self.mkdir_all(parent(path))?;
+        let full = self.full(path)?;
+        block_on(
+            async {
+                use russh_sftp::protocol::OpenFlags;
+                // EXCLUDE: the server creates it only if it is not there (O_EXCL).
+                let opened = self
+                    .sftp
+                    .open_with_flags(full.clone(), OpenFlags::CREATE | OpenFlags::EXCLUDE | OpenFlags::WRITE)
+                    .await;
+                let mut f = match opened {
+                    Ok(f) => f,
+                    // Refused: there already (any other reason shows when it is not).
+                    Err(e) => {
+                        return match self.sftp.metadata(full).await {
+                            Ok(_) => Ok(false),
+                            Err(_) => Err(proto(e)),
+                        };
+                    }
+                };
+                f.write_all(data).await.map_err(|e| NetError::Protocol(e.to_string()))?;
+                f.shutdown().await.map_err(|e| NetError::Protocol(e.to_string()))?;
+                Ok(true)
+            },
+            TIMEOUT,
+        )
+    }
+
     fn mkdir_all(&self, dir: &str) -> NetResult<()> {
         check_path(dir)?;
         if dir.is_empty() && self.base.is_empty() {
