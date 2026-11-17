@@ -154,7 +154,11 @@ fn a_server_cannot_force_expensive_password_parameters() {
     forged[at - 12..at - 8].copy_from_slice(&(2u32 * 1024 * 1024).to_le_bytes());
     forged[at - 8..at - 4].copy_from_slice(&64u32.to_le_bytes());
     std::fs::write(&file, &forged).unwrap();
-    assert!(matches!(s.sync_folder(&server), Err(GhulError::PasswordChangedElsewhere)));
+    // Changed without the password (H0, write tag): not used and replaced, no password asked.
+    assert_eq!(s.sync_folder(&server).unwrap().rejected, 1);
+    assert_ne!(std::fs::read(&file).unwrap(), forged, "replaced");
+    // Asked for the password anyway, the forged parameters are refused before deriving.
+    std::fs::write(&file, &forged).unwrap();
     let t = std::time::Instant::now();
     assert!(matches!(s.adopt_password_folder(&server, "pw-123456"), Err(GhulError::InvalidInput { .. })));
     assert!(t.elapsed().as_secs() < 5, "derived with the forged parameters ({:?})", t.elapsed());

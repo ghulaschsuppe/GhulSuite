@@ -9,11 +9,7 @@
 
 use super::*;
 use crate::net::remote::LocalFs;
-use crate::vault::container::legacy_keyfile_slot;
-use crate::vault::{
-    ContainerKind, FactorSecret, KdfCost, Keyfile, LockedContainer, PasswordKey, RecoveryCode, SecondFactor, Slot,
-    SlotMeta, SuiteKeys,
-};
+use crate::vault::{FactorSecret, Keyfile, LockedContainer, PasswordKey, RecoveryCode, SecondFactor};
 
 const EXTENSIONS: &[&str] = &[".ghlsuite", ".ghlpss", ".ghltotp", ".ghlcal", ".ghldrv", ".ghlmail"];
 
@@ -213,73 +209,6 @@ fn an_old_copy_and_the_old_password_do_not_open_the_current_files() {
 }
 
 /// A suite as an app before format version 2 wrote it: three key files in slots of type 3.
-fn legacy_suite(d: &Dirs, password: &str, keyfiles: &[(&Keyfile, &str)]) -> RecoveryCode {
-    let mut rng = rand_core::OsRng;
-    let keys = SuiteKeys::create(password, KdfCost { memory_kib: 64 * 1024, iterations: 3, parallelism: 1 }, &mut rng)
-        .unwrap();
-    let slots: Vec<Slot> =
-        keyfiles.iter().map(|(kf, _)| legacy_keyfile_slot(&keys.suite_id, &keys.factor_secret, kf, &mut rng)).collect();
-    let code = RecoveryCode::generate(&mut rng);
-    let st = d.storage();
-    for (kind, file) in [(ContainerKind::Suite, "suite.ghlsuite"), (ContainerKind::Pass, "privat-0123abcd.ghlpss")] {
-        let mut c = keys.create_container(kind, slots.clone(), &mut rng).unwrap();
-        for (slot, (_, label)) in slots.iter().zip(keyfiles) {
-            c.payload.slots.insert(
-                crate::kdf::hex(slot.id()),
-                SlotMeta { label: (*label).into(), created: 1, extra: Default::default() },
-            );
-        }
-        c.set_recovery_code(&code, "Notfallblatt", 1, &mut rng).unwrap();
-        if kind == ContainerKind::Pass {
-            c.payload.settings.insert("name".into(), ciborium::value::Value::Text("Privat".into()));
-        }
-        st.write(file.into(), c.seal_version(1, &mut rng).unwrap()).unwrap();
-    }
-    code
-}
-
-#[test]
-fn slots_of_older_apps_get_a_public_key_when_they_are_used() {
-    let d = Dirs::new("rekey-legacy");
-    let (kf1, kf2, kf3) = (Keyfile::generate(&mut rand_core::OsRng), Keyfile::generate(&mut rand_core::OsRng), {
-        Keyfile::generate(&mut rand_core::OsRng)
-    });
-    let code = legacy_suite(&d, "pw-123456", &[(&kf1, "Eins"), (&kf2, "Zwei"), (&kf3, "Drei")]);
-    for (_, data) in files(&d) {
-        assert_eq!(u16::from_le_bytes([data[8], data[9]]), 1);
-    }
-    let s = d.suite();
-    s.unlock("pw-123456".into(), None, None, None, Some(kf1.encode().to_vec())).unwrap();
-    s.save_entry(vault_id(&s, "Privat"), login("Bank", "u", "alt")).unwrap();
-    // The key file just used now has a public key (in every file); the others still wait.
-    let need: Vec<(String, bool)> = s.slots().unwrap().into_iter().map(|x| (x.label, x.needs_update)).collect();
-    assert!(need.contains(&("Eins".into(), false)) && need.contains(&("Zwei".into(), true)), "{need:?}");
-    for (name, data) in files(&d) {
-        assert_eq!(u16::from_le_bytes([data[8], data[9]]), 2, "{name} written as version 2");
-        let l = LockedContainer::parse(&data).unwrap();
-        assert_eq!(l.header().slots.iter().filter(|x| x.is_legacy()).count(), 2, "{name}");
-        assert!(l.recover(&code).is_ok(), "{name}: the code stays valid");
-    }
-    let old = files(&d);
-
-    // Removing "Drei" while "Zwei" has no public key yet: new container keys, but the factor
-    // secret stays (it cannot be given to "Zwei" without the key file).
-    s.remove_slot(slot_id(&s, "Drei")).unwrap();
-    // "Zwei" is used once: its slot gets a public key too.
-    s.lock();
-    s.unlock("pw-123456".into(), None, None, None, Some(kf2.encode().to_vec())).unwrap();
-    assert!(s.slots().unwrap().iter().all(|x| !x.needs_update));
-    // The next change renews the factor secret: from now on "Drei" opens nothing current.
-    let kf4 = generate_keyfile();
-    s.add_keyfile(kf4, "Vier".into()).unwrap();
-    s.remove_slot(slot_id(&s, "Vier")).unwrap();
-    let loot = loot_with_keyfile(&old, "pw-123456", &kf3.encode());
-    assert_nothing_opens(&files(&d), &loot, Some("pw-123456"), "key file of an older app");
-    s.lock();
-    s.unlock("pw-123456".into(), None, None, None, Some(kf1.encode().to_vec())).unwrap();
-    assert_eq!(titles(&s), vec!["Bank"]);
-}
-
 #[test]
 fn quick_unlock_survives_a_new_code_but_not_a_removed_key() {
     let d = Dirs::new("rekey-quick");
@@ -541,7 +470,8 @@ fn a_file_made_with_a_revoked_code_never_takes_over_the_protection() {
     let forged = || {
         let mut c = LockedContainer::parse(&old_file).unwrap().recover(&old_code).unwrap();
         crate::app::suite::put_setting(&mut c, crate::app::sync::PROTECTION_CHANGED, &i64::MAX).unwrap();
-        c.seal(&mut rand_core::OsRng).unwrap()
+        // Without the password the write tag cannot be made (H0).
+        c.seal_without_password(&mut rand_core::OsRng)
     };
     let opens_with_old_code = |s: &GhulSuite| {
         let _ = s;
@@ -902,10 +832,11 @@ fn two_changes_of_the_protection_at_the_same_time_agree() {
     let _ = std::fs::remove_dir_all(&server_dir);
 }
 
-/// Review of H1: a protection change that claims a time far in the future is not taken over
-/// (made up, it would win every later comparison).
+/// Review of H1: a device whose clock is far ahead blocks nobody: its change is taken over, and
+/// the next change made after seeing it is newer still (a logical clock), so it reaches that
+/// device as well.
 #[test]
-fn implausible_protection_changes_are_not_taken_over() {
+fn a_clock_far_ahead_blocks_nothing() {
     let server_dir = std::env::temp_dir().join(format!("ghul-future-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&server_dir);
     let server = LocalFs::new(&server_dir);
@@ -917,7 +848,7 @@ fn implausible_protection_changes_are_not_taken_over() {
     copy_suite(&server_dir, &db);
     let b = db.suite();
     b.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
-    // B adds a key file and claims its change happened in two days.
+    // B adds a key file; its clock is two days ahead.
     b.add_keyfile(kf_b.clone(), "Von B".into()).unwrap();
     let in_two_days = crate::app::suite::now_ms() + 2 * 24 * 60 * 60 * 1000;
     let set_time = |s: &GhulSuite, t: i64| {
@@ -930,49 +861,96 @@ fn implausible_protection_changes_are_not_taken_over() {
     set_time(&b, in_two_days);
     b.sync_folder(&server).unwrap();
     a.sync_folder(&server).unwrap();
+    // Taken over (it is newer); A's next change still wins and reaches B.
     a.lock();
-    assert!(a.unlock("pw-123456".into(), None, None, None, Some(kf_b.clone())).is_err(), "not taken over");
-    a.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    a.unlock("pw-123456".into(), None, None, None, Some(kf_b.clone())).unwrap();
+    let code = RecoveryCode::parse(&a.new_recovery_code("Neu".into()).unwrap()).unwrap();
+    a.sync_folder(&server).unwrap();
+    b.sync_folder(&server).unwrap();
+    for (name, data) in files(&db) {
+        assert!(LockedContainer::parse(&data).unwrap().recover(&code).is_ok(), "{name}: B has A's newer code");
+    }
+    let _ = (kf, b);
     let _ = std::fs::remove_dir_all(&server_dir);
 }
 
-/// Review of H1: a newer protection from another device that brings back a factor secret
-/// replaced here, with a key of an older app among its keys (its secret cannot be renewed
-/// without a touch): not taken over; this device's protection becomes the newest and the other
-/// device takes it. The replaced secret opens nothing current afterwards.
+/// H0: whoever has an old copy of the folder, the recovery code from back then (replaced since)
+/// and write access to the server can open the old files, but not write one that a device
+/// accepts: every file carries a write tag that needs the password. A forged suite file (own key
+/// file slot, the user's key removed, a newer change time) and a forged vault (an injected
+/// entry) are rejected, counted and replaced from the device's copy.
 #[test]
-fn a_replaced_secret_does_not_come_back_with_a_key_of_an_older_app() {
-    let server_dir = std::env::temp_dir().join(format!("ghul-legacy-back-{}", std::process::id()));
+fn files_forged_with_an_old_code_are_rejected() {
+    let server_dir = std::env::temp_dir().join(format!("ghul-h0-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&server_dir);
     let server = LocalFs::new(&server_dir);
-    let (kf1, kf2) = (generate_keyfile(), generate_keyfile());
-    let (da, db) = (Dirs::new("legacy-back-a"), Dirs::new("legacy-back-b"));
-    let a = da.suite();
-    a.create(options("pw-123456", Some(kf1.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
-    a.add_keyfile(kf2.clone(), "Zwei".into()).unwrap();
+    let kf = generate_keyfile();
+    let d = Dirs::new("h0");
+    let a = d.suite();
+    let res =
+        a.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    let old_code = RecoveryCode::parse(&res.recovery_code.unwrap()).unwrap();
+    a.save_entry(vault_id(&a, "Privat"), login("Bank", "u", "1")).unwrap();
     a.sync_folder(&server).unwrap();
-    copy_suite(&server_dir, &db);
-    let b = db.suite();
-    b.unlock("pw-123456".into(), None, None, None, Some(kf1.clone())).unwrap();
-    let before = files(&db);
-    // A removes "Zwei": a new factor secret, the old one is replaced on purpose.
-    a.remove_slot(slot_id(&a, "Zwei")).unwrap();
+    // The old copy the attacker has.
+    let suite_dir = server_dir.join("suite");
+    let old: Vec<(std::path::PathBuf, Vec<u8>)> = std::fs::read_dir(&suite_dir)
+        .unwrap()
+        .flatten()
+        .map(|e| (e.path(), std::fs::read(e.path()).unwrap()))
+        .collect();
+    a.new_recovery_code("Neu".into()).unwrap();
     a.sync_folder(&server).unwrap();
-    // B, meanwhile, gets a key file of an older app (no public key) and is newer.
-    let old_kf = Keyfile::generate(&mut rand_core::OsRng);
-    b.with_open(|o| {
-        let slot =
-            legacy_keyfile_slot(&o.suite.header().suite_id, o.suite.factor_secret(), &old_kf, &mut rand_core::OsRng);
-        o.suite.insert_slot(slot, "Alt", crate::app::suite::now_ms())?;
-        crate::app::sync::mark_protection_changed(o)?;
-        b.save_all(o)
-    })
-    .unwrap();
-    for _ in 0..3 {
-        let _ = b.sync_folder(&server);
-        let _ = a.sync_folder(&server);
+
+    // The forgeries: the attacker's own key file in, the user's key out, the newest time; an
+    // entry of the attacker's in the vault.
+    let evil = Keyfile::parse(&generate_keyfile()).unwrap();
+    for (path, data) in &old {
+        let mut c = LockedContainer::parse(data).unwrap().recover(&old_code).unwrap();
+        if path.to_string_lossy().ends_with(".ghlsuite") {
+            let user: Vec<[u8; 16]> = c.slots().iter().filter(|s| s.provides_factor()).map(|s| *s.id()).collect();
+            c.add_keyfile_slot(&evil, "Angreifer", 1, &mut rand_core::OsRng).unwrap();
+            for id in user {
+                c.remove_slot(&id).unwrap();
+            }
+            crate::app::suite::put_setting(&mut c, crate::app::sync::PROTECTION_CHANGED, &i64::MAX).unwrap();
+        } else {
+            let mut e = crate::vault::payload::Entry::new([9; 16], "login", 1);
+            e.fields.insert("title".into(), crate::vault::payload::Field::Text("Angreifer".into()));
+            c.payload.entries.push(e);
+        }
+        // The container key and the old header are known; the write key is not.
+        std::fs::write(path, c.seal_without_password(&mut rand_core::OsRng)).unwrap();
     }
-    let loot = loot_with_keyfile(&before, "pw-123456", &kf2);
-    assert_nothing_opens(&files(&da), &loot, Some("pw-123456"), "device A");
+    let rep = a.sync_folder(&server).unwrap();
+    assert_eq!(rep.rejected, 2, "the suite file and the vault are rejected");
+    assert_eq!(titles(&a), vec!["Bank"], "no injected entry");
+    a.lock();
+    assert!(a.unlock("pw-123456".into(), None, None, None, Some(evil.encode().to_vec())).is_err(), "no injected key");
+    a.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
+    // The server has the device's files again, which the forged ones do not open.
+    let rep = a.sync_folder(&server).unwrap();
+    assert_eq!(rep.rejected, 0, "replaced from the device's copy");
     let _ = std::fs::remove_dir_all(&server_dir);
+}
+
+/// Review of M18: the synchronisation locks the suite after an error only when keys or slots
+/// changed; settings about the protection merged in a run are merged again by the next one.
+/// A change of the protection itself also locks after a settings-only change.
+#[test]
+fn a_failed_sync_after_merging_settings_does_not_lock() {
+    let d = Dirs::new("m18-keys");
+    let kf = generate_keyfile();
+    let s = d.suite();
+    s.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    let merge_then_fail = |mark: &'static str| {
+        move |o: &mut crate::app::suite::Open| {
+            crate::app::suite::put_setting(&mut o.suite, crate::app::suite::REVOKED_KEY, &vec![mark.to_owned()])?;
+            Err::<(), _>(GhulError::Timeout)
+        }
+    };
+    assert!(s.changing_keys(merge_then_fail("ab")).is_err());
+    assert!(s.is_unlocked(), "only settings changed: still open");
+    assert!(s.changing_protection(merge_then_fail("cd")).is_err());
+    assert!(!s.is_unlocked(), "a change of the protection locks");
 }

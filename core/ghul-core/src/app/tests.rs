@@ -567,12 +567,15 @@ fn foreign_and_outdated_vaults() {
     assert!(s.find_new_vaults().unwrap().is_empty());
     st.delete("fremd2.ghltotp".into()).unwrap();
 
-    // Password change: an old copy of this suite's own file (old salt) opens with the suite's
-    // recovery code, no old password needed, and is brought up to date (M18).
+    // Password change: an old copy of this suite's own file (old password) is not taken in by
+    // itself once the change is complete (H0: only the password proves who wrote a file, the
+    // code alone does not). It is offered and taken over with the password it was made with.
     s.change_password("pw-123456".into(), "pw-neu-7890".into()).unwrap();
     st.delete(privat_file.clone()).unwrap();
     st.write("privat-alt.ghlpss".into(), old_privat.clone()).unwrap();
-    assert!(s.find_new_vaults().unwrap().is_empty(), "not a foreign file");
+    assert_eq!(s.find_new_vaults().unwrap().len(), 1, "offered, not taken in");
+    let src = VaultSource::InFolder { file: "privat-alt.ghlpss".into() };
+    s.adopt_vault(src, "".into(), "pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
     s.lock();
     s.unlock("pw-neu-7890".into(), None, None, None, Some(kf.clone())).unwrap();
     assert_eq!(s.list_entries(VaultKind::Pass, None).unwrap().len(), 1);
@@ -3541,4 +3544,33 @@ fn an_item_renewed_after_its_deletion_mark_is_not_deleted() {
         })
         .unwrap();
     assert_eq!(state, (true, false));
+}
+
+/// After a change of the protection GhulDrive gets a new key: whoever kept the old one (an old
+/// copy and an old recovery code) reads no index written from then on, and an index sealed with
+/// the old key is no longer accepted where the new one has written.
+#[test]
+fn drive_gets_a_new_key_with_a_new_recovery_code() {
+    let d = Dirs::new("drive-dk");
+    let s = d.suite();
+    s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    let server = std::env::temp_dir().join(format!("ghul-drive-dk-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&server);
+    s.drive_use_folder(Arc::new(crate::net::remote::LocalFs::new(&server))).unwrap();
+    let old_dk = [7u8; 32];
+    let alt = upload(&s, None, "Alt.txt", b"vorher");
+    let index = server.join("drive/index.ghldrv");
+    assert!(GhulSuite::drive_index_opens_with(&old_dk, &std::fs::read(&index).unwrap()));
+
+    s.new_recovery_code("Neu".into()).unwrap();
+    upload(&s, None, "Neu.txt", b"nachher");
+    assert!(!GhulSuite::drive_index_opens_with(&old_dk, &std::fs::read(&index).unwrap()), "new key");
+    assert_eq!(download(&s, &alt), b"vorher", "older files stay readable");
+    let names: Vec<String> = s.drive_list(None, true).unwrap().into_iter().map(|i| i.name).collect();
+    assert_eq!(names, vec!["Alt.txt", "Neu.txt"]);
+
+    // An index sealed with the old key is not accepted any more.
+    std::fs::write(&index, GhulSuite::drive_index_sealed_with(&old_dk)).unwrap();
+    assert!(s.drive_list(None, true).is_err(), "an index made with the old key");
+    let _ = std::fs::remove_dir_all(&server);
 }

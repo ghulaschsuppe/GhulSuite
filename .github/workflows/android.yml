@@ -150,7 +150,7 @@ jobs:
           mkdir -p corpus/container_parse
           python3 - <<'PY'
           import json
-          d = json.load(open('../../docs/testvectors/container-v1.json'))
+          d = json.load(open('../../docs/testvectors/container-v3.json'))
           for i, v in enumerate(d['vectors']):
               open(f'corpus/container_parse/vector{i}', 'wb').write(bytes.fromhex(v['file']))
           PY

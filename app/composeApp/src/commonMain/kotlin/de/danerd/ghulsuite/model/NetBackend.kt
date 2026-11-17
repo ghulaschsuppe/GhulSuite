@@ -322,7 +322,9 @@ data class ServerUi(
 
 data class SyncStatusUi(val serverId: String?, val lastSync: Long)
 
-data class SyncReportUi(val uploaded: Int, val downloaded: Int, val merged: Int, val deleted: Int, val skipped: Int)
+/** `rejected`: server files that open but were not written with the password (made by someone
+ *  without it, e.g. from an old copy and an old recovery code); never used, replaced. */
+data class SyncReportUi(val uploaded: Int, val downloaded: Int, val merged: Int, val deleted: Int, val skipped: Int, val rejected: Int = 0)
 
 data class DriveStatusUi(val serverId: String?, val files: Int, val bytes: Long)
 

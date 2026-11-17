@@ -715,6 +715,9 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     }
                     val r = backend.net.syncNow()
                     syncOffline = false
+                    // Always said, also in automatic runs: someone without the password changed
+                    // files on the server (they were not used and are replaced).
+                    if (r.rejected > 0) message(getString(Res.string.sync_rejected, r.rejected))
                     if (r.downloaded > 0 || r.merged > 0 || r.deleted > 0) {
                         revision++
                         refreshVaults()

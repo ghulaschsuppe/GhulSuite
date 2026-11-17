@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Independent verification of docs/testvectors/container-v1.json and container-v2.json.
+"""Independent verification of docs/testvectors/container-v3.json.
 
 Written only from docs/FORMAT.md with different libraries than ghul-core
 (argon2-cffi, cryptography, PyNaCl/libsodium, cbor2), so that the specification,
@@ -11,6 +11,7 @@ not just the Rust code, is checked.
 """
 
 import hashlib
+import hmac
 import json
 import struct
 import sys
@@ -26,6 +27,7 @@ from nacl.bindings import crypto_aead_xchacha20poly1305_ietf_decrypt
 
 CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 MAGIC = {b"GHULPASS": "pass", b"GHULTOTP": "totp", b"GHULSUIT": "suite"}
+AUTH_LEN = 32
 
 
 def hkdf(ikm: bytes, info: bytes) -> bytes:
@@ -55,11 +57,13 @@ def x25519_open(seed: bytes, slot_id: bytes, pub: bytes, eph: bytes, nonce: byte
 def parse_container(data: bytes) -> dict:
     kind = MAGIC[data[:8]]
     version, header_len = struct.unpack_from("<HI", data, 8)
-    assert version in (1, 2), version
+    assert version == 3, version
     header = data[14 : 14 + header_len]
     c = {"kind": kind, "aad": data[: 14 + header_len], "slots": []}
     c["nonce"] = data[14 + header_len : 14 + header_len + 24]
-    c["ciphertext"] = data[14 + header_len + 24 :]
+    # Version 3 ends with the write tag (HMAC-SHA256, FORMAT.md section 2).
+    c["ciphertext"] = data[14 + header_len + 24 : -AUTH_LEN]
+    c["signed"], c["auth"] = data[:-AUTH_LEN], data[-AUTH_LEN:]
     pos, last = 0, 0
     while pos < len(header):
         tag, length = struct.unpack_from("<HI", header, pos)
@@ -81,7 +85,7 @@ def parse_container(data: bytes) -> dict:
             c["flags"] = struct.unpack("<I", value)[0]
         elif tag == 0x0010:
             stype, slot_id = value[0], value[1:17]
-            assert stype in (1, 2, 3) or version == 2, "slot types 4 and 5 need format version 2"
+            assert stype in (2, 4, 5), "version 3 only knows slot types 2, 4 and 5"
             if stype in (1, 4):
                 rp_len = value[17]
                 rp_id = value[18 : 18 + rp_len].decode()
@@ -196,6 +200,11 @@ def verify(v: dict) -> None:
     pkey = hkdf(vmk, b"ghul/v1/payload" + cid)
     assert pkey.hex() == v["payload_key"]
 
+    # Write tag: only whoever has the password (and S) can make it.
+    ak = hkdf(pk + s, b"ghul/v3/auth" + cid)
+    assert ak.hex() == v["auth_key"], "write key"
+    assert hmac.compare_digest(hmac.new(ak, c["signed"], hashlib.sha256).digest(), c["auth"]), "write tag"
+
     plain = aead_open(pkey, c["nonce"], c["ciphertext"], c["aad"])
     (length,) = struct.unpack_from("<I", plain)
     assert len(plain) == max(4096, 1 << (length + 4 - 1).bit_length())
@@ -226,7 +235,7 @@ def verify(v: dict) -> None:
 
 def main() -> int:
     total = 0
-    for version in (1, 2):
+    for version in (3,):
         path = Path(__file__).resolve().parent.parent / "docs" / "testvectors" / f"container-v{version}.json"
         vectors = json.loads(path.read_text())["vectors"]
         for v in vectors:

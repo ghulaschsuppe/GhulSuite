@@ -206,7 +206,7 @@ fun mimeOf(name: String): String = when (name.substringAfterLast('.', "").lowerc
 }
 
 internal fun SyncReport.toUi() =
-    SyncReportUi(uploaded.toInt(), downloaded.toInt(), merged.toInt(), deleted.toInt(), skipped.toInt())
+    SyncReportUi(uploaded.toInt(), downloaded.toInt(), merged.toInt(), deleted.toInt(), skipped.toInt(), rejected.toInt())
 
 internal fun DriveItem.toUi() = DriveItemUi(id, parent, name, isDir, size.toLong(), modified, favorite, offline, trashed, versions.toInt())
 

@@ -178,11 +178,12 @@ flowchart TB
    - FIDO2-Slot: privater X25519-Schlüssel = `HKDF(hmac-secret(Key, slot_salt))`
    - Schlüsseldatei-Slot: privater X25519-Schlüssel = `HKDF(Geheimnis der Datei)`
    - Im Slot steht der zugehörige **öffentliche** Schlüssel. Damit kann die App ein neues `S` für jeden Key
-     verschließen, ohne ihn zu berühren (Formatversion 2; Slots älterer Versionen ziehen beim nächsten Entsperren
-     mit diesem Key um).
+     verschließen, ohne ihn zu berühren.
 3. Je Container: `KEK = HKDF-SHA256(PK ‖ S, info = "ghul/v1/kek" ‖ Container-UUID)`
 4. Der `KEK` entschlüsselt den zufälligen **Container-Hauptschlüssel (VMK)**. Aus dem VMK wird der Inhalts-Schlüssel
    abgeleitet; der Header ist als AAD eingebunden. Exakte Ableitungen: [`docs/FORMAT.md`](FORMAT.md), Abschnitt 4.
+5. **Schreibsiegel:** Jede Datei endet mit `HMAC-SHA256(HKDF(PK ‖ S, "ghul/v3/auth" ‖ Container-UUID), Datei)`.
+   Lesen geht mit dem Code allein, eine Datei, die ein Gerät annimmt, entsteht aber nur mit dem Passwort.
 
 **Eigenschaften:**
 - Nur Key oder nur Schlüsseldatei → `S`, aber ohne Passwort kein `KEK` → wertlos.
@@ -192,7 +193,8 @@ flowchart TB
   z. B. nur `.ghlpss` vom USB-Stick ohne Suite-Container.
 - Passwort ändern geht mit einem einzigen Key. Ein Key oder eine Schlüsseldatei wird hinzugefügt oder entfernt, indem man einen Slot hinzufügt oder löscht. Die App aktualisiert dabei alle Container. Der letzte zweite Faktor lässt sich nicht entfernen.
 - **Erneuern bei jeder Schutzänderung:** Neues Notfallblatt, neues Passwort oder ein entfernter Key geben jedem
-  Container einen neuen VMK; ein entfernter Key erneuert zusätzlich `S` für alle übrigen Keys. So öffnet ein
+  Container einen neuen VMK und GhulDrive einen neuen Schlüssel; ein entfernter Key erneuert zusätzlich `S` für alle
+  übrigen Keys. So öffnet ein
   verlorenes Notfallblatt oder ein entfernter Key zusammen mit einer **alten Sicherungskopie** nichts, was danach
   gespeichert wurde. Die alte Kopie selbst zeigt weiter den Stand von damals.
 - **Dateinamen verraten nichts:** Tresordateien heißen nach ihrer zufälligen Kennung (`3f9a1c2b7d4e5f60.ghlpss`),
@@ -220,6 +222,10 @@ flowchart TB
 - Ein ersetzter Code (und ein Schlüssel, der entfernt wurde) bleibt ersetzt: Suite und Tresore merken ihn als
   Fingerabdruck, auch über die Synchronisation. Eine Datei, die ihn zurückbringen würde (eine ältere Suite-Datei im
   Ordner, eine mit dem alten Code gebaute Datei auf dem Server), ändert den Schutz nicht.
+- **Mit dem alten Code und einer alten Kopie lässt sich nichts unterschieben:** Wer beides hat, kann die alte Kopie
+  lesen, aber keine Datei bauen, die ein Gerät annimmt (dafür fehlt ihm das Passwort, Schreibsiegel). Solche Dateien
+  auf dem Server werden nicht verwendet, ersetzt, und die App warnt. Wer den alten Code **und** das Passwort hat,
+  kommt weiter an alles: Wer vermutet, dass jemand das Blatt gesehen hat, ändert Code **und** Passwort.
 - Schutzänderungen sind ein Schritt: die Suite-Datei wird zuerst geschrieben. Scheitert das, ist nichts geändert und
   die Suite wird gesperrt. Bleibt danach ein Tresor im alten Schutz liegen, öffnet das Entsperren ihn damit und
   gleicht ihn an.
@@ -302,11 +308,13 @@ Die verbindliche Byte-Spezifikation steht in **[`docs/FORMAT.md`](FORMAT.md)** (
 │ Flags (derzeit 0) · verpackter VMK                              │
 ├─ Inhalt: XChaCha20-Poly1305, AAD = Präfix + Header ─────────────┤
 │ CBOR-Dokument mit Revisionszähler, aufgefüllt auf Blockgrößen   │
+├─ Schreibsiegel: HMAC-SHA256 mit Schlüssel aus Passwort und S ────┤
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-Ein separater Header-MAC (Entwurf v0.1 bis v0.4) entfällt: Der Header ist vollständig als AAD in die Verschlüsselung
-des Inhalts eingebunden.
+Der Header ist vollständig als AAD in die Verschlüsselung des Inhalts eingebunden. Das Schreibsiegel am Ende deckt
+zusätzlich die ganze Datei mit einem Schlüssel aus Passwort und `S` ab: Der Container-Schlüssel allein (den der
+Wiederherstellungscode liefert) reicht damit zum Lesen, nicht zum Schreiben.
 
 - **XChaCha20-Poly1305:** Zufalls-Nonces ohne Wiederverwendungsrisiko. Bewusst nur **ein** Verfahren je Formatversion.
 - **Header als AAD:** Jede Änderung am Header macht die Entschlüsselung ungültig. Zusätzlich gelten Mindest- und Höchstwerte für Argon2id.

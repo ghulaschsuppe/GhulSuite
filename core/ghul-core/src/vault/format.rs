@@ -11,9 +11,11 @@
 
 use super::error::{Result, VaultError};
 
-pub const FORMAT_VERSION: u16 = 2;
-/// Oldest version still read (its files are rewritten as version 2).
-pub const MIN_FORMAT_VERSION: u16 = 1;
+pub const FORMAT_VERSION: u16 = 3;
+/// Oldest version still read: only the current one (every file carries the write tag).
+pub const MIN_FORMAT_VERSION: u16 = 3;
+/// Length of the write tag at the end of a file (HMAC-SHA256, see `keys::auth_key`).
+pub const AUTH_LEN: usize = 32;
 pub const PREFIX_LEN: usize = 14;
 pub const NONCE_LEN: usize = 24;
 pub const TAG_LEN: usize = 16;
@@ -214,11 +216,6 @@ impl Slot {
         matches!(self, Slot::Fido2(Fido2Slot { public: None, .. }) | Slot::Keyfile(KeyfileSlot { public: None, .. }))
     }
 
-    /// Slot types that need format version 2.
-    fn needs_v2(&self) -> bool {
-        self.provides_factor() && !self.is_legacy()
-    }
-
     fn encode(&self, out: &mut Vec<u8>) {
         match self {
             Slot::Fido2(s) => {
@@ -354,9 +351,11 @@ impl Header {
         Ok(())
     }
 
-    /// Whether the header can be stored in a file of `version` (version 1 knows no public-key slots).
-    pub fn fits_version(&self, version: u16) -> bool {
-        version >= 2 || !self.slots.iter().any(Slot::needs_v2)
+    /// Whether the header has slots of the first format (security keys and key files without a
+    /// public key). They are no longer accepted: the app must be able to give every slot a new
+    /// factor secret without a touch.
+    pub fn has_legacy_slots(&self) -> bool {
+        self.slots.iter().any(Slot::is_legacy)
     }
 
     /// Encodes the TLV records in canonical order.
@@ -479,6 +478,10 @@ pub struct FileParts<'a> {
     pub aad: &'a [u8],
     pub nonce: [u8; NONCE_LEN],
     pub ciphertext: &'a [u8],
+    /// Everything before the write tag (what the tag covers).
+    pub signed: &'a [u8],
+    /// The write tag.
+    pub auth: [u8; AUTH_LEN],
 }
 
 pub fn split_file(data: &[u8]) -> Result<FileParts<'_>> {
@@ -504,18 +507,23 @@ pub fn split_file(data: &[u8]) -> Result<FileParts<'_>> {
         return Err(VaultError::format("invalid header length"));
     }
     let header_end = PREFIX_LEN + header_len;
-    if data.len() < header_end + NONCE_LEN + TAG_LEN {
+    if data.len() < header_end + NONCE_LEN + TAG_LEN + AUTH_LEN {
         return Err(VaultError::format("file truncated"));
     }
     let mut nonce = [0u8; NONCE_LEN];
     nonce.copy_from_slice(&data[header_end..header_end + NONCE_LEN]);
+    let end = data.len() - AUTH_LEN;
+    let mut auth = [0u8; AUTH_LEN];
+    auth.copy_from_slice(&data[end..]);
     Ok(FileParts {
         kind,
         version,
         header: &data[PREFIX_LEN..header_end],
         aad: &data[..header_end],
         nonce,
-        ciphertext: &data[header_end + NONCE_LEN..],
+        ciphertext: &data[header_end + NONCE_LEN..end],
+        signed: &data[..end],
+        auth,
     })
 }
 

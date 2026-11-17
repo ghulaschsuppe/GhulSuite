@@ -25,6 +25,11 @@ pub enum VaultError {
     /// Payload authentication failed: the file was modified or damaged.
     #[error("container content is damaged or was modified")]
     Corrupted,
+    /// The file opens with the password and the second factor, but its write tag is wrong: it
+    /// was made by someone without the password (e.g. from an old copy and an old recovery
+    /// code) or damaged.
+    #[error("the file was changed without the password")]
+    Tampered,
     #[error("payload: {0}")]
     Payload(String),
     #[error("slot not found")]

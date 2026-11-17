@@ -335,16 +335,10 @@ impl RemoteFs for FtpsFs {
                 let missing = match cmd(c, &format!("SIZE {full}")).await?.0 {
                     213 => false,
                     550 => true,
-                    // A server without SIZE: "rename from" answers 350 for a file that is
-                    // there (then renamed to itself), 550 for none. Anything else (busy): no
-                    // healing, nothing is moved.
-                    _ => match cmd(c, &format!("RNFR {full}")).await?.0 {
-                        350 => {
-                            let _ = cmd(c, &format!("RNTO {full}")).await?;
-                            false
-                        }
-                        code => code == 550,
-                    },
+                    // A server without SIZE: the modification time (213 there, 550 missing).
+                    // Anything else: no healing, nothing is moved (never a rename to probe:
+                    // some gateways copy and delete on rename).
+                    _ => cmd(c, &format!("MDTM {full}")).await?.0 == 550,
                 };
                 if missing {
                     for from in [&tmp, &old] {

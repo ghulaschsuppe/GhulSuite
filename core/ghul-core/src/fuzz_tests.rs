@@ -319,7 +319,8 @@ fn keys_codes_and_containers() {
         let _ = crate::cbor::decode(d);
     });
     let mut containers: Vec<Vec<u8>> = Vec::new();
-    for version in [1, 2] {
+    {
+        let version = crate::vault::format::FORMAT_VERSION;
         let vectors: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(format!(
                 "{}/../../docs/testvectors/container-v{version}.json",

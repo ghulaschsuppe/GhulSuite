@@ -5,7 +5,9 @@
 //! <base>/drive/index.ghldrv              "GHULDRV1" ‖ nonce[24] ‖ AEAD(index key, padded CBOR index)
 //! <base>/drive/blocks/<ab>/<block id>    "GHULBLK1" ‖ nonce[24] ‖ AEAD(block key, block, aad = magic ‖ id)
 //!
-//! DK          = random 256 bit, kept in the suite's encrypted settings (synchronised)
+//! DK          = random 256 bit, kept in the Drive file's encrypted settings (synchronised);
+//!               a new one with every change of the protection made on a device, the older
+//!               ones stay for reading indexes not written again since
 //! index key   = HKDF(DK, "ghul/v1/drive/index")
 //! block key   = HKDF(DK, "ghul/v1/drive/block")
 //! block id    = hex(HMAC-SHA256(HKDF(DK, "ghul/v1/drive/block-id"), plaintext block))
@@ -55,8 +57,14 @@ struct DriveSettings {
     /// Use the server this device synchronises with (`server` is then empty).
     #[serde(default)]
     use_sync: bool,
-    #[serde(with = "serde_bytes")]
-    key: Vec<u8>,
+    /// Drive keys (DK), the newest is current (see [`DriveKey`]).
+    #[serde(default)]
+    keys: Vec<DriveKey>,
+    /// Per location: the time of the newest Drive key its index was written with. Older keys
+    /// no longer open an index there: whoever kept an old key (from an old copy and an old
+    /// recovery code) cannot plant an index that devices accept.
+    #[serde(default)]
+    written: BTreeMap<String, i64>,
     /// B3: the highest index revision seen per server (synchronised, the highest wins). A lower
     /// one, or no index at all, means the server was reset: nothing is written then.
     #[serde(default)]
@@ -66,10 +74,50 @@ struct DriveSettings {
     archive: String,
 }
 
-impl Drop for DriveSettings {
+/// One Drive key. Synchronised as a list (every device ends up with all of them); the newest
+/// (`at`, then `id`) is the current one, so two devices that renewed it at the same time agree.
+#[derive(Serialize, Deserialize, Clone, Default)]
+struct DriveKey {
+    id: String,
+    #[serde(with = "serde_bytes")]
+    key: Vec<u8>,
+    at: i64,
+}
+
+impl Drop for DriveKey {
     fn drop(&mut self) {
         zeroize::Zeroize::zeroize(&mut self.key);
     }
+}
+
+impl DriveSettings {
+    /// The current Drive key.
+    fn current(&self) -> Option<&DriveKey> {
+        self.keys.iter().filter(|k| k.key.len() == 32).max_by(|a, b| (a.at, &a.id).cmp(&(b.at, &b.id)))
+    }
+
+    /// Adds a new Drive key; it becomes the current one.
+    fn new_key(&mut self) {
+        let mut k = vec![0u8; 32];
+        OsRng.fill_bytes(&mut k);
+        let at = now_ms().max(self.current().map_or(0, |c| c.at.saturating_add(1)));
+        self.keys.push(DriveKey { id: crate::kdf::hex(&new_id()), key: k, at });
+    }
+}
+
+/// A new Drive key after a change of the protection (new recovery code, key removed, new
+/// password): whoever had the old one (an old copy and the old code) reads nothing written from
+/// now on. Nothing happens without GhulDrive.
+pub(super) fn renew_drive_key(o: &mut Open) -> Result<()> {
+    if o.area_id(VaultKind::Drive).is_none() {
+        return Ok(());
+    }
+    let mut d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
+    if d.keys.is_empty() {
+        return Ok(());
+    }
+    d.new_key();
+    put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)
 }
 
 /// An older content of a file (kept when a file with the same name is uploaded again).
@@ -172,14 +220,30 @@ pub struct DriveStatus {
 }
 
 struct Keys {
-    index: Zeroizing<[u8; 32]>,
+    /// Index keys of the Drive keys this location may still be read with, newest first, with
+    /// the time of their Drive key. The first one writes.
+    index: Vec<(i64, Zeroizing<[u8; 32]>)>,
     /// Seals the keys of uploads that did not finish, on this device.
     pending: Zeroizing<[u8; 32]>,
 }
 
 impl Keys {
-    fn new(dk: &[u8]) -> Keys {
-        Keys { index: hkdf(dk, &[b"ghul/v1/drive/index"]), pending: hkdf(dk, &[b"ghul/v2/drive/pending"]) }
+    /// The keys for `location`: the current one and the older ones not yet replaced there.
+    fn new(d: &DriveSettings, location: &str) -> Option<Keys> {
+        let current = d.current()?;
+        let floor = d.written.get(location).copied().unwrap_or(i64::MIN);
+        let mut usable: Vec<&DriveKey> = d.keys.iter().filter(|k| k.key.len() == 32 && k.at >= floor).collect();
+        usable.sort_by(|a, b| (b.at, &b.id).cmp(&(a.at, &a.id)));
+        Some(Keys {
+            index: usable.iter().map(|k| (k.at, hkdf(&k.key, &[b"ghul/v1/drive/index"]))).collect(),
+            pending: hkdf(&current.key, &[b"ghul/v2/drive/pending"]),
+        })
+    }
+
+    /// The key the index is written with, and the time of its Drive key.
+    fn writing(&self) -> (i64, &[u8; 32]) {
+        let (at, k) = &self.index[0];
+        (*at, k)
     }
 }
 
@@ -424,7 +488,15 @@ fn load_index(fs: &dyn RemoteFs, keys: &Keys) -> Result<DriveIndex> {
     match fs.read(INDEX)? {
         None => Ok(DriveIndex::default()),
         Some(data) => {
-            let plain = decrypt(INDEX_MAGIC, &keys.index, &data, b"")?;
+            let mut plain = None;
+            for (_, k) in &keys.index {
+                if let Ok(p) = decrypt(INDEX_MAGIC, k, &data, b"") {
+                    plain = Some(p);
+                    break;
+                }
+            }
+            let plain =
+                plain.ok_or_else(|| GhulError::Corrupted { msg: "Drive data damaged or from another key".into() })?;
             let cbor = unpad(&plain)?;
             ciborium::de::from_reader(cbor).map_err(|e| GhulError::Corrupted { msg: format!("Drive index: {e}") })
         }
@@ -436,7 +508,7 @@ fn save_index(fs: &dyn RemoteFs, keys: &Keys, index: &mut DriveIndex) -> Result<
     let mut cbor = Zeroizing::new(Vec::new());
     ciborium::ser::into_writer(&*index, &mut *cbor).map_err(|e| GhulError::Corrupted { msg: e.to_string() })?;
     let padded = pad(&cbor)?;
-    fs.write(INDEX, &encrypt(INDEX_MAGIC, &keys.index, &padded, b""))?;
+    fs.write(INDEX, &encrypt(INDEX_MAGIC, keys.writing().1, &padded, b""))?;
     Ok(())
 }
 
@@ -540,21 +612,17 @@ impl GhulSuite {
         self.drive_move_to_locations(o)?;
         let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
         let server = self.drive_location(o).ok_or(GhulError::NotConfigured)?;
-        if d.key.len() != 32 {
-            return Err(GhulError::NotConfigured);
-        }
+        let keys = Keys::new(&d, &server).ok_or(GhulError::NotConfigured)?;
         let fs = self.remote(o, &server)?;
-        Ok((fs, Keys::new(&d.key)))
+        Ok((fs, keys))
     }
 
     /// Checks the location Drive's calls work on: an existing index must open with Drive's key
     /// (otherwise it belongs to someone else); without one, an empty index is made.
     fn drive_attach_check(&self, o: &mut Open) -> Result<()> {
         let mut d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
-        if d.key.len() != 32 {
-            let mut k = vec![0u8; 32];
-            OsRng.fill_bytes(&mut k);
-            d.key = k;
+        if d.current().is_none() {
+            d.new_key();
             put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
         }
         let (fs, keys) = self.drive_ctx(o)?;
@@ -567,6 +635,7 @@ impl GhulSuite {
                 return Err(index_missing());
             }
             save_index(fs.as_ref(), &keys, &mut index)?;
+            self.note_written(o, &keys)?;
         }
         Ok(())
     }
@@ -576,10 +645,8 @@ impl GhulSuite {
     fn drive_attach(&self, o: &mut Open, server: String, use_sync: bool) -> Result<()> {
         self.ensure_area(o, VaultKind::Drive)?;
         let mut d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
-        if d.key.len() != 32 {
-            let mut k = vec![0u8; 32];
-            OsRng.fill_bytes(&mut k);
-            d.key = k;
+        if d.current().is_none() {
+            d.new_key();
         }
         let before = (std::mem::replace(&mut d.server, server), std::mem::replace(&mut d.use_sync, use_sync));
         put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
@@ -608,6 +675,20 @@ impl GhulSuite {
             self.note_seen(o, index.revision)?;
         }
         Ok(index)
+    }
+
+    /// Remembers that the index of Drive's location is now written with the current key: older
+    /// keys no longer open an index there (in the Drive file, for every device).
+    fn note_written(&self, o: &mut Open, keys: &Keys) -> Result<()> {
+        let mut d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
+        let server = self.drive_location(o).unwrap_or_default();
+        let at = keys.writing().0;
+        if d.written.get(&server).is_some_and(|w| *w >= at) {
+            return Ok(());
+        }
+        d.written.insert(server, at);
+        put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
+        self.save_area(o, VaultKind::Drive)
     }
 
     /// Remembers `revision` as seen on Drive's server (in the Drive file).
@@ -640,6 +721,7 @@ impl GhulSuite {
             }
             save_index(fs.as_ref(), &keys, &mut index)?;
             self.note_seen(o, index.revision)?;
+            self.note_written(o, &keys)?;
             if self.drive_on_active(o) {
                 self.net.lock().unwrap_or_else(|p| p.into_inner()).drive = Some(index);
             }
@@ -724,10 +806,7 @@ impl GhulSuite {
 
     fn pending_keys(&self, o: &Open) -> Option<(Zeroizing<[u8; 32]>, Pending)> {
         let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
-        if d.key.is_empty() {
-            return None;
-        }
-        let key = Keys::new(&d.key).pending;
+        let key = Keys::new(&d, "")?.pending;
         let map = std::fs::read(self.local_dir.join(PENDING_FILE))
             .ok()
             .and_then(|data| decrypt(PENDING_MAGIC, &key, &data, b"").ok())
@@ -901,7 +980,7 @@ impl GhulSuite {
             self.drive_move_to_locations(o)?;
             let d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
             let active = drive_server_id(o, &d);
-            let mode = if active.is_none() || d.key.len() != 32 { DriveMode::None } else { DriveMode::Own };
+            let mode = if active.is_none() || d.current().is_none() { DriveMode::None } else { DriveMode::Own };
             let server = active.and_then(|id| servers::server(o, &id).ok()).map(|s| servers::info(&s));
             Ok(DriveStorage { mode, server, sync_available: super::sync::sync_server(o).is_some() })
         })
@@ -1661,8 +1740,9 @@ impl GhulSuite {
         self.with_open(|o| {
             self.ensure_area(o, VaultKind::Drive)?;
             let mut d: DriveSettings = area_setting(o, VaultKind::Drive, DRIVE_KEY);
-            if d.key.len() != 32 {
-                d.key = vec![7u8; 32];
+            // The same key on every test device (as if synchronised).
+            if d.current().is_none() {
+                d.keys.push(DriveKey { id: "test".into(), key: vec![7u8; 32], at: 0 });
             }
             d.server = "test".into();
             put_area_setting(o, VaultKind::Drive, DRIVE_KEY, &d)?;
@@ -1728,6 +1808,20 @@ impl GhulSuite {
         })
         .unwrap();
         self.net.lock().unwrap_or_else(|p| p.into_inner()).drive = None;
+    }
+
+    /// Tests: whether `data` (an index file) opens with the Drive key `dk`, and an index file
+    /// sealed with `dk` (what someone who kept an old Drive key could write).
+    #[cfg(test)]
+    pub(crate) fn drive_index_opens_with(dk: &[u8; 32], data: &[u8]) -> bool {
+        decrypt(INDEX_MAGIC, &hkdf(dk, &[b"ghul/v1/drive/index"]), data, b"").is_ok()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn drive_index_sealed_with(dk: &[u8; 32]) -> Vec<u8> {
+        let mut cbor = Vec::new();
+        ciborium::ser::into_writer(&DriveIndex { revision: u64::MAX / 2, ..Default::default() }, &mut cbor).unwrap();
+        encrypt(INDEX_MAGIC, &hkdf(dk, &[b"ghul/v1/drive/index"]), &pad(&cbor).unwrap(), b"")
     }
 
     /// Turns Drive back into the state an older app left: `use_sync`, no locations of its own.

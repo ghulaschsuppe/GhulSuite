@@ -206,8 +206,12 @@ impl SftpFs {
 /// An SFTP failure. A request without answer in time (no network) is a timeout like everywhere
 /// else, not "server error: I/O: Timeout" (which the app could not translate).
 fn proto(e: russh_sftp::client::error::Error) -> NetError {
+    proto_ref(&e)
+}
+
+fn proto_ref(e: &russh_sftp::client::error::Error) -> NetError {
     use russh_sftp::client::error::Error as E;
-    match &e {
+    match e {
         E::Timeout => NetError::Timeout,
         E::IO(m) if m.eq_ignore_ascii_case("timeout") || m.contains("timed out") => NetError::Timeout,
         _ => NetError::Protocol(e.to_string()),
@@ -222,7 +226,7 @@ async fn open_posix(session: &russh::client::Handle<Client>) -> Option<russh_sft
     let channel = session.channel_open_session().await.ok()?;
     channel.request_subsystem(true, "sftp").await.ok()?;
     let raw = russh_sftp::client::RawSftpSession::new(channel.into_stream());
-    raw.set_timeout(TIMEOUT.as_secs());
+    raw.set_timeout(RENAME_TIMEOUT.as_secs());
     let version = raw.init().await.ok()?;
     version.extensions.get(POSIX_RENAME).is_some_and(|v| v == "1").then_some(raw)
 }
@@ -236,6 +240,10 @@ static NO_POSIX_RENAME: std::sync::atomic::AtomicBool = std::sync::atomic::Atomi
 fn is_missing(e: &russh_sftp::client::error::Error) -> bool {
     matches!(e, russh_sftp::client::error::Error::Status(s) if s.status_code == russh_sftp::protocol::StatusCode::NoSuchFile)
 }
+
+/// How long the one-step replace may take. Shorter than the whole write's limit, so that after
+/// no answer there is still time to check whether it happened and to retry once.
+const RENAME_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// Large transfers get more time than single requests.
 fn limit_for(len: usize) -> std::time::Duration {
@@ -356,7 +364,7 @@ impl RemoteFs for SftpFs {
                                 if done().await {
                                     return Ok(());
                                 }
-                                let timeout = matches!(e, russh_sftp::client::error::Error::Timeout);
+                                let timeout = matches!(proto_ref(&e), NetError::Timeout);
                                 last = Some(e);
                                 // A closed channel is opened again once; after a timeout the
                                 // request may still be running: an error, the old file stays.
@@ -378,7 +386,8 @@ impl RemoteFs for SftpFs {
                 }
                 self.sftp.rename(tmp, full).await.map_err(proto)
             },
-            limit_for(data.len()),
+            // The upload, then up to two replace requests and the checks after them.
+            limit_for(data.len()) + RENAME_TIMEOUT * 3,
         )
     }
 

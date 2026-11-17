@@ -64,6 +64,10 @@ pub(super) struct PreviousProtection {
     s: Vec<u8>,
     #[serde(with = "serde_bytes", default)]
     code: Vec<u8>,
+    /// The password key from before (a file still in the old password must be checked with it,
+    /// see the write tag). Kept only until every file is in the new protection.
+    #[serde(with = "serde_bytes", default)]
+    pk: Vec<u8>,
 }
 
 pub(super) fn now_ms() -> i64 {
@@ -431,34 +435,54 @@ fn dedup_key(entry_type: &str, folder: Option<&str>, fields: &BTreeMap<String, F
 /// secret (same password parameters), else with the suite's code or an earlier one. Never with a
 /// secret or code replaced on purpose (see [`REVOKED_KEY`]): whoever still knows one could have
 /// made the file.
-fn open_with_before(
-    data: &[u8],
-    suite: &UnlockedContainer,
-    pk: &PasswordKey,
-    same_kdf: bool,
-) -> Option<UnlockedContainer> {
-    let list: Vec<PreviousProtection> = setting(suite, PREVIOUS_KEY);
+fn open_with_before(data: &[u8], suite: &UnlockedContainer, pk: &PasswordKey) -> Option<UnlockedContainer> {
+    let before = previous_of(suite);
     let revoked: Vec<String> = setting(suite, REVOKED_KEY);
     let allowed = |secret: &[u8]| !revoked.contains(&revoked_fingerprint(secret));
-    if same_kdf {
-        for p in list.iter().filter(|p| allowed(&p.s)) {
-            let Ok(s) = <[u8; 32]>::try_from(p.s.as_slice()) else { continue };
-            if let Ok(c) = LockedContainer::parse(data).ok()?.unlock(pk, &FactorSecret::from_bytes(s)) {
+    // The current password key, and the earlier ones (a password change that stopped half way).
+    let pks: Vec<&PasswordKey> = std::iter::once(pk).chain(before.iter().filter_map(|p| p.pk.as_ref())).collect();
+    for p in before.iter().filter(|p| allowed(p.s.expose())) {
+        for k in &pks {
+            if let Ok(c) = LockedContainer::parse(data).ok()?.unlock(k, &p.s) {
                 return Some(c);
             }
         }
     }
     let codes = suite.recovery_code().into_iter().chain(
-        list.iter()
-            .filter(|p| allowed(&p.code))
-            .filter_map(|p| <[u8; 32]>::try_from(p.code.as_slice()).ok().map(RecoveryCode::from_bytes)),
+        before
+            .iter()
+            .filter_map(|p| p.code.as_ref())
+            .filter(|c| allowed(c.expose()))
+            .map(|c| RecoveryCode::from_bytes(*c.expose())),
     );
     for code in codes {
-        if let Ok(c) = LockedContainer::parse(data).ok()?.recover(&code) {
-            return Some(c);
+        // The code only gives the factor secret; the file must be written with the password (H0).
+        for k in &pks {
+            if let Ok(c) = LockedContainer::parse(data).ok()?.recover_with_password(&code, k) {
+                return Some(c);
+            }
         }
     }
     None
+}
+
+/// One protection from before.
+pub(super) struct Previous {
+    pub s: FactorSecret,
+    pub code: Option<RecoveryCode>,
+    pub pk: Option<PasswordKey>,
+}
+
+fn previous_of(suite: &UnlockedContainer) -> Vec<Previous> {
+    let list: Vec<PreviousProtection> = setting(suite, PREVIOUS_KEY);
+    list.into_iter()
+        .filter_map(|p| {
+            let s: [u8; 32] = p.s.as_slice().try_into().ok()?;
+            let code = <[u8; 32]>::try_from(p.code.as_slice()).ok().map(RecoveryCode::from_bytes);
+            let pk = <[u8; 32]>::try_from(p.pk.as_slice()).ok().map(PasswordKey::from_bytes);
+            Some(Previous { s: FactorSecret::from_bytes(s), code, pk })
+        })
+        .collect()
 }
 
 /// Which of `c`'s factor secret and recovery code this suite replaced on purpose.
@@ -673,6 +697,7 @@ impl Open {
         let now = PreviousProtection {
             s: self.suite.factor_secret().expose().to_vec(),
             code: self.suite.recovery_code().map(|c| c.expose().to_vec()).unwrap_or_default(),
+            pk: self.password_key.expose().to_vec(),
         };
         list.retain(|p| p != &now);
         list.insert(0, now);
@@ -681,16 +706,26 @@ impl Open {
         put_setting(&mut self.suite, PREVIOUS_KEY, &list)
     }
 
-    /// The protections from before (factor secret, recovery code), newest first.
-    pub(super) fn previous_protection(&self) -> Vec<(FactorSecret, Option<RecoveryCode>)> {
-        let list: Vec<PreviousProtection> = setting(&self.suite, PREVIOUS_KEY);
-        list.into_iter()
-            .filter_map(|p| {
-                let s: [u8; 32] = p.s.as_slice().try_into().ok()?;
-                let code = <[u8; 32]>::try_from(p.code.as_slice()).ok().map(RecoveryCode::from_bytes);
-                Some((FactorSecret::from_bytes(s), code))
-            })
-            .collect()
+    /// The protections from before (factor secret, recovery code, password key), newest first.
+    pub(super) fn previous_protection(&self) -> Vec<Previous> {
+        previous_of(&self.suite)
+    }
+
+    /// Forgets the password keys from before once every file is in the current protection and
+    /// the server has it (or there is no server): only a change that stopped half way needs
+    /// them. Returns whether anything changed.
+    pub(super) fn forget_previous_password_keys(&mut self) -> Result<bool> {
+        let uploaded = setting::<bool>(&self.suite, PREVIOUS_UPLOADED_KEY) || !super::sync::synchronises(self);
+        let mut list: Vec<PreviousProtection> = setting(&self.suite, PREVIOUS_KEY);
+        if !uploaded || list.iter().all(|p| p.pk.is_empty()) {
+            return Ok(false);
+        }
+        for p in &mut list {
+            zeroize::Zeroize::zeroize(&mut p.pk);
+            p.pk.clear();
+        }
+        put_setting(&mut self.suite, PREVIOUS_KEY, &list)?;
+        Ok(true)
     }
 
     /// B2: removes keys and key files that some device removed on purpose but that are still
@@ -903,19 +938,13 @@ fn register_key(auth: &dyn KeyDevice, pin: &str) -> Result<NewKey> {
     Ok((cred.id, prf_input, out.output))
 }
 
-/// The security key that opened a container (to give its slot a public key, see `upgrade_slot`).
-pub(super) struct UsedKey {
-    slot_id: [u8; 16],
-    hmac_output: Zeroizing<[u8; 32]>,
-}
-
 /// Asks the key for the factor secret of one of the container's FIDO2 slots.
 fn key_factor(
     locked: &LockedContainer,
     transport: &Arc<dyn HidTransport>,
     listener: Option<&Arc<dyn FidoListener>>,
     pin: &str,
-) -> Result<(FactorSecret, UsedKey)> {
+) -> Result<FactorSecret> {
     let requests = locked.fido2_requests();
     if requests.is_empty() {
         return Err(GhulError::InvalidInput { msg: "this vault has no security key".into() });
@@ -941,7 +970,7 @@ fn key_factor(
             }
             let req = &requests[out.index];
             match locked.factor_secret(&SecondFactor::Fido2 { slot_id: req.slot_id, hmac_output: &out.output }) {
-                Ok(s) => return Ok((s, UsedKey { slot_id: req.slot_id, hmac_output: out.output })),
+                Ok(s) => return Ok(s),
                 // The system API may have treated the salt differently: ask once more the other way.
                 Err(_) if auth.switch_salt_mode() => continue,
                 Err(e) => return Err(e.into()),
@@ -950,35 +979,23 @@ fn key_factor(
     })
 }
 
-/// The second factor that was presented, for [`GhulSuite::upgrade_slot`].
-pub(super) fn used_factor<'a>(key: &'a Option<UsedKey>, keyfile: &'a Option<Keyfile>) -> Option<SecondFactor<'a>> {
-    match (key, keyfile) {
-        (Some(k), _) => Some(SecondFactor::Fido2 { slot_id: k.slot_id, hmac_output: &k.hmac_output }),
-        (None, Some(kf)) => Some(SecondFactor::Keyfile(kf)),
-        _ => None,
-    }
-}
-
 pub(super) fn parse_keyfile(data: Option<Vec<u8>>) -> Result<Option<Keyfile>> {
     data.map(|d| Keyfile::parse(&Zeroizing::new(d)).map_err(GhulError::from)).transpose()
 }
 
-/// Gets the factor secret with a key file or a security key, whichever is given; also returns
-/// the key that was used (none for a key file: the caller has it).
+/// Gets the factor secret with a key file or a security key, whichever is given.
 pub(super) fn second_factor(
     locked: &LockedContainer,
     transport: Option<&Arc<dyn HidTransport>>,
     listener: Option<&Arc<dyn FidoListener>>,
     pin: Option<&str>,
     keyfile: Option<&Keyfile>,
-) -> Result<(FactorSecret, Option<UsedKey>)> {
+) -> Result<FactorSecret> {
     if let Some(kf) = keyfile {
-        return Ok((locked.factor_secret(&SecondFactor::Keyfile(kf))?, None));
+        return Ok(locked.factor_secret(&SecondFactor::Keyfile(kf))?);
     }
     match (transport, pin) {
-        (Some(t), Some(pin)) if !locked.fido2_requests().is_empty() => {
-            key_factor(locked, t, listener, pin).map(|(s, k)| (s, Some(k)))
-        }
+        (Some(t), Some(pin)) if !locked.fido2_requests().is_empty() => key_factor(locked, t, listener, pin),
         _ if locked.fido2_requests().is_empty() => Err(GhulError::KeyfileRequired),
         _ => Err(GhulError::SecurityKeyRequired),
     }
@@ -1257,7 +1274,6 @@ impl GhulSuite {
             };
             let protection = protection_of(&locked);
             let header_suite = locked.header().suite_id;
-            let header_kdf = locked.header().kdf.clone();
             let opened = match opener {
                 Opener::Factors { pk, s, .. } if ours => locked.unlock(pk, s).ok(),
                 Opener::Code(code) => locked.recover(code).ok(),
@@ -1269,7 +1285,7 @@ impl GhulSuite {
             let (opened, ours) = match (opened, opener) {
                 (None, Opener::Factors { pk, suite_id, kdf, .. }) if &header_suite == suite_id => {
                     let data = self.storage.read(file.clone()).ok().flatten();
-                    match data.and_then(|d| open_with_before(&d, suite, pk, &header_kdf == *kdf)) {
+                    match data.and_then(|d| open_with_before(&d, suite, pk)) {
                         Some(c) => (Some(c), true),
                         None => (None, ours),
                     }
@@ -1372,9 +1388,14 @@ impl GhulSuite {
             self.lock_pending.store(true, Ordering::SeqCst);
             return Err(e);
         }
+        let mut all = true;
         for (file, data) in sealed {
             // Not undone: the next save writes it again, unlocking opens it meanwhile.
-            let _ = self.storage.write(file, data);
+            all &= self.storage.write(file, data).is_ok();
+        }
+        // Every file is in the new protection: the old password key is no longer needed.
+        if all && o.forget_previous_password_keys()? {
+            self.save_container(&mut o.suite, SUITE_FILE)?;
         }
         Ok(())
     }
@@ -1387,24 +1408,9 @@ impl GhulSuite {
                 self.storage.write(v.reference.file.clone(), data)?;
             }
         }
+        o.forget_previous_password_keys()?;
         o.record_revisions()?;
         self.save_container(&mut o.suite, SUITE_FILE)
-    }
-
-    /// Gives the slot of the key (or key file) just used a public key in every file, so that
-    /// later protection changes can renew the factor secret for it without a touch (B1).
-    pub(super) fn upgrade_slot(&self, factor: &SecondFactor<'_>) -> Result<()> {
-        self.changing_protection(|o| {
-            let Some(slot) = o.suite.upgraded_slot(factor, &mut OsRng) else { return Ok(()) };
-            for (c, _) in o.containers_mut() {
-                match c.replace_slot(slot.clone()) {
-                    Ok(()) | Err(crate::vault::VaultError::SlotNotFound) => {}
-                    Err(e) => return Err(e.into()),
-                }
-            }
-            super::sync::mark_protection_changed(o)?;
-            self.save_protection(o)
-        })
     }
 
     /// F23: renames vault files whose names come from older app versions (they contained the
@@ -1695,7 +1701,7 @@ impl GhulSuite {
         let kind = VaultKind::from_container(locked.kind())
             .ok_or_else(|| GhulError::InvalidInput { msg: "this is a suite file, open its folder instead".into() })?;
         let keyfile = parse_keyfile(keyfile)?;
-        let (s, _) = second_factor(
+        let s = second_factor(
             &locked,
             transport.as_ref(),
             listener.as_ref(),
@@ -1742,7 +1748,7 @@ impl GhulSuite {
         let pin = pin.map(Zeroizing::new);
         let locked = self.anchor()?;
         let keyfile = parse_keyfile(keyfile)?;
-        let (s, key) = second_factor(
+        let s = second_factor(
             &locked,
             transport.as_ref(),
             listener.as_ref(),
@@ -1752,13 +1758,7 @@ impl GhulSuite {
         let pk = PasswordKey::derive(&password, &locked.header().kdf)?;
         let anchor = locked.unlock(&pk, &s)?;
         let suite = self.suite_from_anchor(anchor, &pk)?;
-        self.finish_unlock(pk, suite, true)?;
-        if let Some(factor) = used_factor(&key, &keyfile) {
-            // Not being able to rewrite the files now is no reason to refuse the unlock: the
-            // slot gets its public key at the next unlock with this key.
-            let _ = self.upgrade_slot(&factor);
-        }
-        Ok(())
+        self.finish_unlock(pk, suite, true)
     }
 
     /// Emergency: opens everything with the recovery code alone and sets a new master password.
@@ -1780,6 +1780,7 @@ impl GhulSuite {
             c.rekey(&pk, kdf.clone(), &mut OsRng)?;
         }
         open.renew_keys(false, now_ms())?;
+        super::drive::renew_drive_key(&mut open)?;
         super::sync::mark_protection_changed(&mut open)?;
         self.save_all(&mut open)?;
         self.remove_copies(&mut open, copies)?;
@@ -1852,8 +1853,9 @@ impl GhulSuite {
             now_ms(),
         )?;
         let pk = PasswordKey::from_bytes(*secret.password_key);
+        // A quick unlock file of the first version (container key only) is no longer used.
         let opened = if secret.old_version {
-            locked.unlock_with_vmk(&secret.secret)
+            Err(crate::vault::VaultError::WrongPassword)
         } else {
             locked.unlock(&pk, &FactorSecret::from_bytes(*secret.secret))
         };
@@ -1864,19 +1866,6 @@ impl GhulSuite {
                 return Err(GhulError::QuickUnlockUnavailable);
             }
         };
-        if secret.old_version {
-            // Rewrite as version 2 with the same quick key (the platform keeps protecting it).
-            let _ = super::quick::create(
-                &self.local_dir,
-                &name,
-                &suite.header().suite_id,
-                pk.expose(),
-                suite.factor_secret().expose(),
-                pin.as_deref().map(|p| p.as_str()),
-                secret.created,
-                Some(&quick_key),
-            );
-        }
         self.finish_unlock(pk, suite, false)
     }
 
@@ -2054,7 +2043,7 @@ impl GhulSuite {
             return Err(GhulError::Locked);
         }
         let keyfile = parse_keyfile(keyfile)?;
-        let (s, _) = second_factor(
+        let s = second_factor(
             &locked,
             transport.as_ref(),
             listener.as_ref(),
@@ -2527,6 +2516,7 @@ impl GhulSuite {
             }
             // The old code with an old copy of a file must not open what is written now.
             o.renew_keys(false, now)?;
+            super::drive::renew_drive_key(o)?;
             o.revoke_replaced(before)?;
             super::sync::mark_protection_changed(o)?;
             self.save_protection(o)?;
@@ -2561,6 +2551,7 @@ impl GhulSuite {
             // The removed key with an old copy of a file must not open what is written now:
             // new factor secret for the remaining keys and key files, new container keys.
             o.renew_keys(true, now_ms())?;
+            super::drive::renew_drive_key(o)?;
             o.revoke_replaced(before)?;
             super::sync::mark_protection_changed(o)?;
             self.save_protection(o)?;
@@ -2582,12 +2573,16 @@ impl GhulSuite {
             let mut new_kdf = kdf;
             OsRng.fill_bytes(&mut new_kdf.salt);
             let new_pk = PasswordKey::derive(&new_password, &new_kdf)?;
+            // A file that is not rewritten (the change stops half way) is still checked with
+            // the old password key.
+            o.remember_protection()?;
             for (c, _) in o.containers_mut() {
                 c.rekey(&new_pk, new_kdf.clone(), &mut OsRng)?;
             }
             o.password_key = new_pk;
             // The old password with an old copy of a file must not open what is written now.
             o.renew_keys(false, now_ms())?;
+            super::drive::renew_drive_key(o)?;
             super::sync::mark_protection_changed(o)?;
             self.save_protection(o)?;
             super::quick::delete_all(&self.local_dir);

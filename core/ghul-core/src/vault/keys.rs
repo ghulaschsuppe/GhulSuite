@@ -7,7 +7,12 @@
 //! KEK  = HKDF(PK || S, "ghul/v1/kek" || container_id)
 //! VMK  = random 256 bit, AEAD(KEK, aad = "ghul/v1/vmk" || container_id)
 //! PKEY = HKDF(VMK, "ghul/v1/payload" || container_id)
+//! AK   = HKDF(PK || S, "ghul/v3/auth" || container_id)                  write key
+//! auth = HMAC-SHA256(AK, file without auth)                              write tag (end of file)
 //! ```
+//!
+//! The recovery code opens the container key (reading without the password); writing a file that
+//! another device accepts needs the write key, so the password as well (H0).
 //!
 //! Slots of format version 2 hold an X25519 public key per security key or key file: the
 //! private key is derived from the key's hmac-secret output (or the key file), so the app can
@@ -26,6 +31,7 @@ use super::format::{KdfParams, Wrapped, NONCE_LEN, TAG_LEN};
 
 pub const INFO_KEK: &[u8] = b"ghul/v1/kek";
 pub const INFO_PAYLOAD: &[u8] = b"ghul/v1/payload";
+pub const INFO_AUTH: &[u8] = b"ghul/v3/auth";
 pub const INFO_SLOT_FIDO2: &[u8] = b"ghul/v1/slot/fido2";
 pub const INFO_SLOT_KEYFILE: &[u8] = b"ghul/v1/slot/keyfile";
 pub const INFO_SLOT_RECOVERY: &[u8] = b"ghul/v1/slot/recovery";
@@ -97,6 +103,29 @@ pub fn kek(pk: &PasswordKey, s: &FactorSecret, container_id: &[u8; 16]) -> Key32
     ikm[..32].copy_from_slice(pk.0.as_ref());
     ikm[32..].copy_from_slice(s.0.as_ref());
     hkdf(ikm.as_ref(), &[INFO_KEK, container_id])
+}
+
+/// The write key of a container: only whoever has the password (and `S`) can make a file that
+/// other devices accept.
+pub fn auth_key(pk: &PasswordKey, s: &FactorSecret, container_id: &[u8; 16]) -> Key32 {
+    let mut ikm = Zeroizing::new([0u8; 64]);
+    ikm[..32].copy_from_slice(pk.0.as_ref());
+    ikm[32..].copy_from_slice(s.0.as_ref());
+    hkdf(ikm.as_ref(), &[INFO_AUTH, container_id])
+}
+
+/// The write tag of a file: HMAC-SHA256 over everything before it.
+pub fn file_tag(ak: &[u8; 32], signed: &[u8]) -> [u8; 32] {
+    use hmac::{Hmac, Mac};
+    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(ak).expect("any key length");
+    mac.update(signed);
+    mac.finalize().into_bytes().into()
+}
+
+/// Checks a write tag in constant time.
+pub fn tag_matches(ak: &[u8; 32], signed: &[u8], tag: &[u8; 32]) -> bool {
+    use subtle::ConstantTimeEq;
+    bool::from(file_tag(ak, signed).ct_eq(tag))
 }
 
 pub fn payload_key(vmk: &Key32, container_id: &[u8; 16]) -> Key32 {
