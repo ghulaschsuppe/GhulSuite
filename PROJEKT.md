@@ -77,8 +77,11 @@ tools/                 Testserver (SFTP/IMAP/SMTP), Prüfskripte, Emulator-Skrip
 - **Kein doppelter Lauf:** Ein Push auf einen Arbeits-Branch mit offenem, konfliktfreiem Pull Request startet in
   `android.yml` keine Jobs; der Lauf des Pull Requests prüft dieselben Commits (zusammengeführt mit dem Ziel-Branch)
   und lädt sie hoch. Ohne Pull Request, bei Konflikten, wenn die Abfrage scheitert sowie auf `main` und `dev` läuft
-  der Push wie gewohnt. Im Push-Lauf eines Arbeits-Branches heißen die Jobs `build (Push)` und `Windows-App (Push)`:
-  die Pflicht-Checks `build` und `Windows-App (…)` kommen so nur aus dem Lauf des Pull Requests.
+  der Push wie gewohnt. Die Pflicht-Checks `build` und `Windows-App (Installer und portable Version)` sind die
+  Sammel-Jobs `build-check` und `windows-check`: sie laufen in jedem Lauf (auch bei reinen Doku-Änderungen, sonst
+  käme der Check nie an und der Pull Request bliebe blockiert) und sind grün, wenn der eigentliche Job grün war oder
+  übersprungen wurde (keine passenden Änderungen oder Push-Lauf neben einem Pull Request). Im Push-Lauf eines Arbeits-Branches heißen sie `build (Push)` und
+  `Windows-App (Push)`: die Pflicht-Checks kommen so nur aus dem Lauf des Pull Requests.
   Dessen APK ist darum mit dem echten Schlüssel signiert und nicht debuggable: der Emulator-Schritt „vom System
   beendet“ beendet den Prozess dann als root (`su` im google_apis-Abbild) statt über `run-as`.
 - Uploads auf den Testserver des Inhabers laufen **nur im Original-Repository**: bei Pushes und bei Pull Requests
