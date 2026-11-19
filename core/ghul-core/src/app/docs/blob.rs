@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Content files of GhulDocs (`.ghlblob`, FORMAT.md section 14): the encrypted content of one
+//! Content files of GhulDocs (`.ghlblob`, FORMAT.md section 11): the encrypted content of one
 //! document, written and read as a stream.
 //!
 //! ```text

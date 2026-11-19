@@ -218,7 +218,7 @@ def verify(v: dict) -> None:
     print(f"ok  {v['description']}: {len(data)} bytes")
 
 
-# --- GhulDocs (FORMAT.md section 14) ------------------------------------------------------------
+# --- GhulDocs (FORMAT.md section 11) ------------------------------------------------------------
 
 BLOB_SECTION = 4 * 1024 * 1024
 BLOB_PAD = 64 * 1024

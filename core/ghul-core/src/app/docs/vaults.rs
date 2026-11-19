@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The content files of GhulDocs in `.ghlzip` files: in the suite file next to their vault, and
-//! in a GhulDocs vault saved on its own (FORMAT.md section 13).
+//! in a GhulDocs vault saved on its own (FORMAT.md section 10).
 //!
 //! A GhulDocs vault on its own is a `.ghlzip` with the vault file as the first entry and then
 //! its content files, nothing else:

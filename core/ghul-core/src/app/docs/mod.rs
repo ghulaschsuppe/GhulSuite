@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! GhulDocs: an encrypted store for important documents and scans (FORMAT.md section 14).
+//! GhulDocs: an encrypted store for important documents and scans (FORMAT.md section 11).
 //!
 //! A GhulDocs vault is a vault file `<id>.ghldoc` like the others (same keys, same write seal)
 //! that holds only the index: folders and files with their names, sizes, times, types,

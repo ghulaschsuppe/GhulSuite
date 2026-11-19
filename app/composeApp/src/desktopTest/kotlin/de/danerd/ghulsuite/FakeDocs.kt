@@ -14,7 +14,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.yield
 
 /**
- * GhulDocs as the core behaves (docs/FORMAT.md section 14): folders first, names unique in a
+ * GhulDocs as the core behaves (docs/FORMAT.md section 11): folders first, names unique in a
  * folder (a taken name of a new file gets a number), the trash with what is in a folder in it,
  * the 1 GB limit before anything is read when the size is known, else as soon as it is too much
  * (nothing stays), reading in sections where a damaged document fails after earlier sections

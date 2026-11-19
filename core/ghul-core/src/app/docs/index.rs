@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The index of a GhulDocs vault: its folders and files, kept as the entries of its container
-//! (FORMAT.md section 14). Nothing else is in a GhulDocs vault.
+//! (FORMAT.md section 11). Nothing else is in a GhulDocs vault.
 //!
 //! - `folder`: `name`, `parent` (16 bytes, missing at the top), `created`, `favorite`, `trashed`
 //! - `file`: the same and `size`, `mime`, `key` (32 bytes, the document's own key), `blob`

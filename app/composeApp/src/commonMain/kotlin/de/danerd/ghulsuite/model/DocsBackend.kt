@@ -33,7 +33,7 @@ enum class ArchiveContentUi { SUITE, DOCS_VAULT }
 data class ArchiveInfoUi(val content: ArchiveContentUi, val protection: ProtectionUi)
 
 /**
- * GhulDocs: encrypted documents in folders (FORMAT.md section 14). Content goes in and out as a
+ * GhulDocs: encrypted documents in folders (FORMAT.md section 11). Content goes in and out as a
  * stream, encrypted while it is read and decrypted while it is written: plaintext never reaches
  * the disk of the app. Cancelling the calling coroutine stops a transfer (nothing stays behind).
  */

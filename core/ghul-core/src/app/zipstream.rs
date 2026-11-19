@@ -2,7 +2,7 @@
 //! The ZIP of a suite file, written to and read from a stream: nothing is held whole in memory
 //! and nothing needs to seek, so a file of a gigabyte goes through a few buffers.
 //!
-//! Only what a suite file needs (FORMAT.md, section 13): entries stored uncompressed (they are
+//! Only what a suite file needs (FORMAT.md, section 10): entries stored uncompressed (they are
 //! encrypted anyway), CRC-32 and sizes in every local header (no data descriptors), no ZIP64,
 //! no encryption, no extra fields, no comments, UTF-8 names. The central directory at the end
 //! must repeat every local header exactly, and nothing may follow it. Any standard ZIP tool
