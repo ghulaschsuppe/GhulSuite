@@ -118,7 +118,10 @@ interface PdfView {
 expect fun openPdf(bytes: ByteArray): PdfView?
 
 /**
- * G7 (document scanning) fills this in on Android: the camera in the app, pages cropped and
- * straightened, saved as one PDF. Until then there is no "Scan" in the add menu of GhulDocs.
+ * Scanning documents into GhulDocs (G7): Android has it (the camera in the app, pages cropped and
+ * straightened, saved as one PDF); Windows has no "Scan" in the add menu of GhulDocs.
  */
 expect val docScanAvailable: Boolean
+
+/** The camera and pictures for scanning (see [de.danerd.ghulsuite.scan.ScanEngine]); null without scanning. */
+expect fun platformScanEngine(): de.danerd.ghulsuite.scan.ScanEngine?

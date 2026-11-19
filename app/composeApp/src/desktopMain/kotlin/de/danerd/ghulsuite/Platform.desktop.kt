@@ -350,4 +350,7 @@ actual fun openPdf(bytes: ByteArray): PdfView? = runCatching {
     }
 }.getOrNull()
 
+/** Windows: no scanning (files are added instead). */
 actual val docScanAvailable: Boolean = false
+
+actual fun platformScanEngine(): de.danerd.ghulsuite.scan.ScanEngine? = null

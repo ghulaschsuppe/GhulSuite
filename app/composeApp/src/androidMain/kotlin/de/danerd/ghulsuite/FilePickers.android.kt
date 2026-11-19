@@ -325,5 +325,3 @@ actual fun openPdf(bytes: ByteArray): PdfView? {
         }
     }.getOrNull()
 }
-
-actual val docScanAvailable: Boolean = false

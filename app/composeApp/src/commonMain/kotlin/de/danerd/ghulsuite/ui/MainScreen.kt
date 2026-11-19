@@ -386,7 +386,7 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
 }
 
 private fun ownHeader(top: Screen) = top is Screen.EntryDetail ||
-    top is Screen.EntryEdit || top is Screen.CalEvent || top is Screen.CalEdit || top is Screen.DocView
+    top is Screen.EntryEdit || top is Screen.CalEvent || top is Screen.CalEdit || top is Screen.DocView || top is Screen.DocScan
 
 @Composable
 private fun TabTopBar(state: AppState) {
@@ -488,6 +488,7 @@ private fun TopScreen(state: AppState, top: Screen, padding: PaddingValues) {
             is Screen.CalEvent -> key(top) { CalEventScreen(state, top.id, top.day, padding) }
             is Screen.CalEdit -> key(top) { CalEditScreen(state, top.draft, padding) }
             is Screen.DocView -> key(top) { DocViewScreen(state, top.vaultId, top.id, padding) }
+            is Screen.DocScan -> DocScanScreen(state, top.vaultId, top.folder, padding)
         }
     }
 }
@@ -571,6 +572,7 @@ private fun screenTitle(top: Screen?, tab: Tab): String = stringResource(
                             is Screen.CalEvent -> Res.string.cal_event_title
                             is Screen.CalEdit -> if (top.draft.id.isEmpty()) Res.string.cal_new_event else Res.string.cal_edit_event
                             is Screen.DocView -> Res.string.tab_docs
+                            is Screen.DocScan -> Res.string.scan_title
                             null -> tabTitle(tab)
                         },
 )

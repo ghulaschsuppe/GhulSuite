@@ -69,13 +69,13 @@ private suspend fun AppState.limitText(e: VaultException): String {
  * Adds files to a GhulDocs folder, one after the other, each encrypted while it is read. A failed
  * file does not stop the others (the message names it); when GhulDocs is full the rest is not
  * tried (each would fail the same way). "Cancel" stops the file being read (nothing of it stays)
- * and the rest. Every file is closed in the end.
+ * and the rest. Every file is closed in the end. Returns the job (null: nothing to add).
  */
-fun AppState.addDocs(vaultId: String, folder: String?, sources: List<ByteSource>) {
-    if (sources.isEmpty()) return
+fun AppState.addDocs(vaultId: String, folder: String?, sources: List<ByteSource>): BgJob? {
+    if (sources.isEmpty()) return null
     val docs = backend.docs
     val one = sources.singleOrNull()
-    jobs.start(
+    return jobs.start(
         JobKind.ADD,
         title = { if (one != null) str(Res.string.docs_adding, docName(one.name)) else plural(Res.plurals.docs_adding_n, sources.size, sources.size.toString()) },
         cancelled = { j ->

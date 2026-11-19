@@ -95,6 +95,8 @@ sealed interface Screen {
     data class CalEdit(val draft: de.danerd.ghulsuite.model.CalEventUi) : Screen
     /** A document of GhulDocs, shown in the app (from memory, nothing on the disk). */
     data class DocView(val vaultId: String, val id: String) : Screen
+    /** Scanning a document into a GhulDocs folder ([folder] null: the top of the vault). */
+    data class DocScan(val vaultId: String, val folder: String?) : Screen
 }
 
 /**
@@ -307,6 +309,9 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
      */
     var editorDirty by mutableStateOf(false)
 
+    /** A scan in progress (photos and pages in memory only); wiped when it ends or the suite locks. */
+    var scanSession: ScanSession? = null
+
     /** U11: opened with the recovery code: the next steps are shown once (see [RecoveredDialog]). */
     var recoveredGuide by mutableStateOf(false)
 
@@ -406,6 +411,9 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     pendingTab = null
                     deleteAsk = null
                     dropPending()
+                    // A scan in progress: its photos and pages are overwritten now, not saved.
+                    scanSession?.wipe()
+                    scanSession = null
                     stack.clear()
                     tab = tabs.first()
                     vaults = emptyList()

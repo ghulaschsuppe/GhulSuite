@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderZip
@@ -383,7 +384,14 @@ fun DocsScreen(state: AppState, padding: PaddingValues) {
                     addTarget[0] = target!! to folder
                     pick()
                 }
-                // G7: "Scan document" (Android, the camera in the app) comes here.
+                // Scanning (Android): the camera in the app, the pages into one PDF in this folder.
+                if (LocalScanEngine.current != null) {
+                    SheetRow(stringResource(Res.string.docs_add_scan), stringResource(Res.string.docs_add_scan_sub),
+                        leading = { IconTile(Icons.Filled.DocumentScanner, paletteColor(7)) }, enabled = target != null, divider = true) {
+                        addSheet = false
+                        state.push(Screen.DocScan(target!!, folder))
+                    }
+                }
                 SheetRow(stringResource(Res.string.docs_new_folder), leading = { IconTile(Icons.Filled.CreateNewFolder, paletteColor(9)) }, divider = true) {
                     addSheet = false
                     newFolder = true
