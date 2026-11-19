@@ -517,6 +517,12 @@ Abläufe prüft auch `app/maestro/07-docs.yaml`.
 | GD15 | Optionen → GhulDocs: Belegung, „Dokumente prüfen“. | „Alle Dokumente sind in Ordnung.“ Nichts wird geändert. |
 | GD16 | Während des Hinzufügens einer großen Datei die App über die Liste der letzten Apps beenden; neu starten und entsperren. | Die Datei fehlt, die Belegung stimmt, es bleibt kein Rest (Reste räumt die App beim Entsperren weg). |
 | GD17 | Dunkles Design und Querformat: Liste, Ansicht, Papierkorb, Optionen → GhulDocs. | Alles lesbar, nichts abgeschnitten. |
+| GD18 | Suite-Datei speichern (viele MB Dokumente) und währenddessen ein Dokument endgültig löschen oder den Papierkorb leeren. | Das Speichern läuft zu Ende und die Datei öffnet auf Gerät B mit allen Dokumenten des Stands beim Speichern; danach ist das gelöschte Dokument auch auf dem Datenträger weg. |
+| GD19 | Auf Gerät B eine Suite-Datei öffnen, die Rückfrage stehen lassen (Auto-Sperre aus), später bestätigen. | Alle Dokumente sind da, auch nach langer Wartezeit oder wenn die Uhr des Geräts inzwischen springt. |
+| GD20 | Aus einer anderen App eine Datei mit Richtungszeichen im Namen teilen (z. B. `rechnung`, das Zeichen U+202E und `fdp.exe`), ebenso einen Namen nur aus geschützten Leerzeichen. | Gespeichert als `rechnungfdp.exe` bzw. `file`, keine Meldung „ungültiger Name“. |
+| GD21 | GhulPass: einem Eintrag große Anhänge hinzufügen, bis es nicht mehr geht. | Bei etwa 200 MiB in allen Tresoren neben GhulDocs: „Die Tresore neben GhulDocs sind voll …“, nichts hinzugefügt; die Suite-Datei lässt sich speichern und öffnen. |
+| GD22 | Nach dem Update von einer Version mit GhulMail, GhulDrive oder automatischer Sicherung: App starten. | Einmal still entfernt: Mail-Zwischenspeicher, Drive-Offline-Kopien, Datenbank der alten Hintergrundaufgaben, alte Einstellungen, Zugriff auf den Ordner der alten Sicherung (Android-Einstellungen → Apps → GhulSuite → Speicher), Benachrichtigungskanäle von Mail. Tresore, Dokumente und Schnell-Entsperren bleiben. |
+| GD23 | Eine Suite-Datei oder Arbeitskopie einer älteren Entwicklerversion (vor Formatversion 3) öffnen. | „Diese Datei stammt von einer älteren Entwicklerversion von GhulSuite …“ statt „keine GhulSuite-Datei“. |
 
 ## Fehler melden
 

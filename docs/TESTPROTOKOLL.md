@@ -445,5 +445,22 @@ ihren Tests entfernt und GhulDocs mit dem Scannen dazugekommen. Was dafür neu g
 | Oberfläche GhulDocs | `DocsInteractionTest`, `DocsBackendTest`, `LayoutCheckTest`, Emulator `07-docs.yaml` | Liste, Hinzufügen, Ansehen (Bild, PDF, Text), Exportieren, Papierkorb, volle Grenze, Sperren |
 | Scannen | `DocScanTest`, `ScanAlgorithmsTest`, Testplan Abschnitt 38 | gezeichnete Fotos (schräg, quer, wenig Kontrast, kein Blatt); nach Speichern, Verlassen und Sperren sind Fotos und Seiten überschrieben; auf echten Geräten von Hand |
 
-Neue Funde mit Nummer kommen aus der unabhängigen Durchsicht in Paket G9 hierher.
+Funde der unabhängigen Durchsicht in Paket G9 (19.11.2026), alle behoben:
+
+| Nr. | Stufe | Fund | Behoben, Test |
+|---|---|---|---|
+| G9-1 | H | Windows: Beim Ansehen einer PDF mit JPEG-Seiten (Scan) schrieb ImageIO die Bilddaten in eine Datei in `%TEMP%` | ImageIO ohne Zwischenspeicher als Erstes in `main` und vor jeder PDF; `PdfMemoryTest` |
+| G9-2 | M | Der Zwischenordner einer wartenden Prüfung wurde nach einem Tag (oder einem Sprung der Uhr) aufgeräumt; „Bestätigen“ ersetzte dann die Arbeitskopie ohne Dokumente | Zwischenordner in Gebrauch werden nie aufgeräumt; vor dem Ersetzen muss jede Inhaltsdatei mit ihrer Länge da sein, sonst wird nichts ersetzt; `a_waiting_check_keeps_its_documents_however_old`, `accept_with_a_checked_document_missing_changes_nothing` |
+| G9-3 | M | Speichern konnte eine Suite-Datei über 1,25 GiB schreiben, die sich nie mehr öffnen ließ | Größe vorher berechnet und abgelehnt; Tresore neben GhulDocs höchstens 200 MiB (Anhänge, Kopien, hinzugefügte Tresore); `a_suite_file_too_large_to_open_is_never_written`, `attachments_stop_before_the_suite_file_gets_too_large`, `a_full_suite_fits_into_the_largest_file` |
+| G9-4 | M | Kopieren und Verschieben von Einträgen (und Favorit, Anhänge, 2FA umbenennen) wirkten auf GhulDocs-Verzeichnisse und machten die Suite-Datei unbrauchbar | alle allgemeinen Eintragsfunktionen lehnen GhulDocs ab; `generic_entry_functions_refuse_docs_vaults` |
+| G9-5 | N | Ein übernommener GhulDocs-Tresor, dessen Speichern scheiterte, blieb ohne Inhalt in der Suite | vollständig zurückgenommen; `an_adopted_docs_vault_that_cannot_be_saved_is_not_half_added` |
+| G9-6 | N | Endgültig löschen während des Speicherns ließ das Speichern scheitern (Android: die alte Datei war schon gekürzt) | Inhaltsdateien werden erst nach dem Schreiben gelöscht; `deleting_a_document_while_saving_keeps_the_file_complete` |
+| G9-7 | N | Klartext-Puffer beim Lesen und Hinzufügen von Dokumenten wurden nicht überschrieben | `Zeroizing` in `SinkWriter` und `SourceReader` |
+| G9-8 | N | Namen aus anderen Apps mit Richtungszeichen oder nur geschützten Leerzeichen wurden abgelehnt statt bereinigt | `docName` bereinigt wie der Kern; `DocsBackendTest.namesFromOtherAppsAreCleanedTheWayTheCoreTakesThem` |
+| G9-9 | N | Ansicht: verlassen, während die PDF öffnete, ließ den Renderer offen und überschrieb die Bytes beim Lesen | geschlossen nach dem Abbruch, Bytes erst danach überschrieben |
+| G9-10 | N | Windows: zwei Starts kurz nacheinander konnten zwei GhulSuite auf denselben Daten öffnen; der zweite löschte die Kopien des ersten; unbegrenzte Übergabezeile | Sperre auf den Datenordner als Erstes, Übergabe höchstens 8 KiB und 3 s; `SingleInstanceTest` |
+| G9-11 | N | Neue Parser (ZIP-Leser, Inhaltsdateien, Inhaltsverzeichnis) nicht im Fuzzing; Nachtlauf filterte auf entfernte Tests | `fuzzing::parse_any`, Ziel `docs_files`, `fuzz_tests::suite_file_zip_content_files_and_indexes`; Filter berichtigt |
+| G9-12 | N | README: „ungefähr wie viele Dateien“, tatsächlich ist die Zahl genau und die Zeiten zeigen, wann Dokumente hinzukamen | README wie AUDIT und FORMAT |
+| G9-13 | N | Dateien älterer Entwicklerversionen: nur allgemeiner Fehler; Reste entfernter Funktionen blieben auf Android | Fehler `OldFormat` mit eigener Meldung; einmaliges Aufräumen (`LegacyCleanup`, `LeftoversTest`, `files_of_an_older_development_version_say_so`) |
+| G9-14 | N | Ließ sich ein bisheriger Dokumentordner beim Ersetzen nicht zurücklegen, wurde er gelöscht | nie gelöscht: in `rescued-documents-…` aufbewahrt, Fehler sagt es; `content_folders_that_cannot_go_back_are_kept` |
 

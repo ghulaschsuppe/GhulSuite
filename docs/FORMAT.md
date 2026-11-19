@@ -32,7 +32,9 @@ Jede Änderung an irgendeinem Byte macht die Datei unbrauchbar.
 
 **Ein Bereich, eine Datei:** Jeder Bereich hat seine eigene Datei mit seinen Einstellungen. Eine Datei mit `GHUL`
 am Anfang, aber unbekannter Art oder höherer Formatversion stammt von einer neueren App: Leser melden dann „bitte
-aktualisieren“ statt „beschädigt“ (Fehler `UpdateRequired`).
+aktualisieren“ statt „beschädigt“ (Fehler `UpdateRequired`). Eine mit niedrigerer Formatversion stammt von einer
+älteren Entwicklerversion: Sie wird nicht gelesen, die App sagt das so (Fehler `OldFormat`), auch für den ersten
+Eintrag einer Suite-Datei.
 
 ### Verwendete Verfahren (keine Alternativen)
 
@@ -514,6 +516,18 @@ geschriebene Datei zurückgelesen und mit Größe und SHA-256 des Geschriebenen 
 Arbeitskopie als gespeichert (eine Änderung, die während des Schreibens geschah, bleibt ungespeichert); bis dahin
 hält die Arbeitskopie den ganzen Stand, eine halb geschriebene Datei ist also nie die einzige Kopie.
 
+Vor dem Schreiben wird die Größe der ganzen Datei berechnet: Wäre sie größer als beim Öffnen gelesen wird
+(1,25 GiB), wird nichts geschrieben (Fehler „die Suite-Datei wäre zu groß“), und die Arbeitskopie behält ihren
+Stand. Damit es im Alltag nicht dazu kommt, dürfen die Tresore neben GhulDocs und die Suite-Datei zusammen höchstens
+**200 MiB** belegen (geschätzt aus ihrem Inhalt, je Container 64 KiB dazu); geprüft beim Hinzufügen von Anhängen, beim
+Kopieren eines Eintrags mit Anhängen und beim Hinzufügen eines Tresors. Ein volles GhulDocs (Abschnitt 11.3) und
+diese 200 MiB passen mit den ZIP-Einträgen immer in 1,25 GiB.
+
+Inhaltsdateien, die während des Schreibens endgültig gelöscht werden (Papierkorb leeren, „Endgültig löschen“,
+Tresor entfernen), bleiben auf dem Datenträger, bis die Datei fertig geschrieben ist, und werden erst dann gelöscht:
+Die Datei enthält den Stand, aus dem sie gebaut wurde, vollständig. Das gilt auch beim Speichern oder Weitergeben
+eines einzelnen GhulDocs-Tresors.
+
 - Windows: erst in eine Zwischendatei daneben (`<Name>.ghltmp`), die zurückgelesen und erst dann in einem Schritt
   über die alte Datei geschoben wird. Bricht etwas ab, bleibt die alte Datei unverändert und die Zwischendatei wird
   gelöscht. Kurzzeitig ist doppelter Platz nötig.
@@ -526,7 +540,8 @@ Liegt dort schon eine Datei, wird vorher ihr Kopf gelesen: derselbe Stand wie di
 inzwischen woanders gespeichert oder eine andere Suite (Rückfrage: überschreiben oder unter neuem Namen speichern);
 eine leere Datei gilt als keine.
 
-**Öffnen:** Höchstens 1,25 GiB (1 GB Dokumente und die übrigen Tresore) und 21 000 Einträge (bis zu 20 000
+**Öffnen:** Höchstens 1,25 GiB (1 GB Dokumente und die übrigen Tresore, dieselbe Grenze wie beim Schreiben) und
+21 000 Einträge (bis zu 20 000
 Dokumente und die Tresore), beim Lesen gezählt,
 gleich was in den Köpfen steht; ein Container höchstens 256 MiB. Die Datei wird einmal als Datenstrom gelesen, mit
 Fortschritt. Geprüft wird vor jeder Änderung auf dem Gerät:
@@ -543,8 +558,15 @@ Fortschritt. Geprüft wird vor jeder Änderung auf dem Gerät:
 
 Inhaltsdateien kommen beim Lesen nie in den Arbeitsspeicher: Sie werden in einen Zwischenordner `.staging/<Zufall>/`
 neben der Arbeitskopie geschrieben und erst nach dem Bestätigen in einem Schritt (Umbenennen der Ordner
-`docs-<Tresor-ID>`) an ihren Platz gebracht. Wird abgelehnt, abgebrochen oder gesperrt, wird der Zwischenordner
-gelöscht; einen, den eine beendete App zurückließ, löscht die App nach einem Tag.
+`docs-<Tresor-ID>`) an ihren Platz gebracht. Vorher wird geprüft, dass jede zwischengespeicherte Inhaltsdatei noch
+mit ihrer Länge da ist; fehlt eine, wird nichts ersetzt (Fehler „ein Dokument ist beschädigt oder fehlt“), die
+Arbeitskopie bleibt, wie sie war. Wird abgelehnt, abgebrochen oder gesperrt, wird der Zwischenordner gelöscht;
+einen, den eine beendete App zurückließ, löscht die App nach einem Tag. Den Zwischenordner einer Prüfung, die noch
+auf das Bestätigen wartet, löscht sie nie, gleich wie alt er ist (auch nach einem Sprung der Uhr).
+
+Lässt sich beim Ersetzen ein bisheriger Ordner `docs-<Tresor-ID>` nicht an seinen Platz zurücklegen (das Schreiben
+der neuen Tresore scheiterte), wird keiner davon gelöscht: Sie bleiben in einem eigenen Ordner
+`rescued-documents-<Zufall>` neben der Arbeitskopie, den die App nie aufräumt, und der Fehler sagt es.
 
 Danach vergleicht die App mit dem, was dieses Gerät zuletzt gesehen hat (gemerkt je Suite im Gerätespeicher:
 `archive-seen.json` mit Stand-ID, höchstem Zähler, Epoche und Herkunft):

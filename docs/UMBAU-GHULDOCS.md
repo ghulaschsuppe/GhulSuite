@@ -3,7 +3,8 @@
 Stand: 17.11.2026, freigegeben. Grundlage ist der Umbau ohne Synchronisation
 ([`UMBAU-OHNE-SYNC.md`](UMBAU-OHNE-SYNC.md)). Umsetzung auf dem Branch `feature/ghulvault`.
 
-**Status (19.11.2026):** Pakete G1 bis G8 umgesetzt, G9 (unabhängige Durchsicht, Befunde, PR nach `dev`) steht aus.
+**Status (19.11.2026):** Pakete G1 bis G8 umgesetzt; aus G9 die unabhängige Durchsicht mit 14 Befunden, alle
+behoben ([`TESTPROTOKOLL.md`](TESTPROTOKOLL.md), Abschnitt 10); der PR nach `dev` steht aus.
 Abweichungen bei der Umsetzung stehen in Abschnitt 11.
 
 ## 1. Grundidee
@@ -175,7 +176,7 @@ Auf dem Branch `feature/ghulvault` (vom Umbau-Branch), am Ende eine PR nach `dev
 | G6 | GhulDocs in der App: Liste, Ordner, Hinzufügen, Ansehen, Exportieren, Papierkorb, Belegung | erledigt |
 | G7 | Scannen: Kamera, mehrere Seiten, Zuschneiden mit verschiebbaren Ecken, Entzerren, PDF | erledigt |
 | G8 | Doku (FORMAT, KONZEPT, AUDIT, Testpläne), README, Website, Emulator-Abläufe | erledigt |
-| G9 | Unabhängige Durchsicht, Befunde beheben, PR | offen |
+| G9 | Unabhängige Durchsicht, Befunde beheben, PR | Befunde behoben, PR offen |
 
 ## 11. Abweichungen bei der Umsetzung
 
@@ -183,8 +184,9 @@ Was beim Bauen anders oder genauer wurde als oben geplant:
 
 - **Zusätzliche Grenzen von GhulDocs:** höchstens **20 000 Dokumente** je Suite (jedes ist ein Eintrag der
   Suite-Datei, die höchstens 21 000 Einträge hat) und höchstens 1 100 000 000 Byte Inhaltsdateien auf dem Datenträger
-  (Inhalt plus Aufrundung auf 64 KiB). So passt ein volles GhulDocs mit den übrigen Tresoren immer in die größte
-  Suite-Datei (1,25 GiB), auch bei sehr vielen kleinen Dateien. Der Papierkorb zählt mit, bis er geleert wird.
+  (Inhalt plus Aufrundung auf 64 KiB). Die übrigen Tresore dürfen zusammen höchstens 200 MiB belegen (geprüft vor
+  allem bei Anhängen). So passt ein volles GhulDocs mit den übrigen Tresoren immer in die größte Suite-Datei
+  (1,25 GiB), auch bei sehr vielen kleinen Dateien; eine größere schreibt die App nicht. Der Papierkorb zählt mit, bis er geleert wird.
 - **Ansehen von PDF:** unter Android mit dem `PdfRenderer` des Systems über eine anonyme Datei im Arbeitsspeicher
   (`memfd`), das gibt es erst ab **Android 11**; darunter bietet die App „Mit App öffnen“ und „Exportieren“ an. Unter
   Windows zeigt **Apache PDFBox** die Seiten, nur im Arbeitsspeicher.

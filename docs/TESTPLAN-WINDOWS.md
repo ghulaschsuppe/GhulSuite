@@ -111,6 +111,8 @@ Windows nicht. Unter Windows anders:
 | WD4 | „Exportieren“ in einen Ordner auf dem Stick; im Streifen „Abbrechen“ bei einer großen Datei. | Rückfrage vorher; vollständige Datei bzw. nach dem Abbruch keine halbe Datei. |
 | WD5 | Suite-Datei mit etwa 500 MB Dokumenten auf SSD und auf einen USB-Stick speichern. | Fortschritt; auf der SSD wenige Sekunden, auf dem Stick deutlich länger; daneben kurzzeitig eine `.ghltmp`, danach nur die neue Datei. |
 | WD6 | Breites Fenster: Dokument anklicken, „Zurück“. | Die Ansicht steht in der Spalte an der Stelle der Liste, die Seitenleiste bleibt. |
+| WD7 | Einen Scan vom Handy (PDF mit JPEG-Seiten) ansehen; vorher und nachher `%TEMP%` nach `imageio*.tmp` durchsuchen (auch mit einem Programm, das gelöschte Dateien zeigt). | Keine Datei von ImageIO; die Seiten entstehen nur im Arbeitsspeicher. |
+| WD8 | GhulSuite starten und sofort, noch während es startet, eine `.ghlzip` doppelklicken; dann ein zweites Mal GhulSuite starten. | Es bleibt bei einem Fenster: die Datei wird im ersten geöffnet, der zweite Start holt es nur nach vorn. Mit „Mit App öffnen“ geöffnete Dokumente bleiben dabei offen (der zweite Start löscht keine Kopien). |
 
 ## 8. GhulMail mit Verschlüsselung (entfernt)
 

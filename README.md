@@ -129,8 +129,8 @@ der Leiste, seine Tresore bleiben unberührt.
 - **Verschlüsselter Speicher** für das, was du nicht verlieren und niemandem zeigen willst: Ausweis, Verträge,
   Zeugnisse, Steuer, Versicherungen. Bis zu **1 GB** je Suite.
 - **Jede Datei mit eigenem Schlüssel**, verschlüsselt in Abschnitten. Namen, Ordner und Typen stehen nur im
-  verschlüsselten Inhaltsverzeichnis; von außen sieht man nur, wie viele Dateien es ungefähr gibt und wie groß sie
-  ungefähr sind.
+  verschlüsselten Inhaltsverzeichnis; von außen sieht man nur, wie viele Dokumente es gibt (genau), wie groß sie
+  ungefähr sind (in Schritten von 64 KiB) und auf dem Gerät, wann sie hinzukamen.
 - **Hinzufügen** aus dem Dateisystem, mehrere auf einmal; auf Android auch über „Teilen“ aus anderen Apps
   („In GhulDocs speichern“) und mit der Kamera, siehe [unten](#dokumente-scannen).
 - **Ordner, Suche, Favoriten und Papierkorb**, Anzeige der Belegung („412 MB von 1 GB“).
