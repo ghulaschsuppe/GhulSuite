@@ -28,7 +28,7 @@ pub use self::vaults::{
     archive_inspect, ArchiveContent, ArchiveInfo, DocsArchive, DocsShared, ShareDocsOptions, SingleDocsWritten,
 };
 pub(super) use self::vaults::{
-    content_files, content_root_of, parse_entry_name, stage_entry, ContentFile, Expected, Staging,
+    content_files, content_root_of, parse_entry_name, stage_entry, tidy_staging, ContentFile, Expected, Staging,
 };
 
 use self::blob::BlobError;
@@ -297,7 +297,49 @@ fn new_entry(kind: &str, name: String, folder: Option<Id>, now: i64) -> Entry {
     e
 }
 
+/// Content files being copied into a `.ghlzip` (how many copies run) and the content files
+/// deleted while one ran, deleted once none runs any more.
+#[derive(Default)]
+pub(crate) struct Copies {
+    running: usize,
+    deferred: Vec<PathBuf>,
+}
+
+/// Content files are being copied into a `.ghlzip` while this lives (a save of the suite file,
+/// a GhulDocs vault saved or handed on): a document deleted for good meanwhile keeps its content
+/// file until the copy ended, so the file being written stays complete.
+pub(super) struct ContentCopy<'a>(&'a GhulSuite);
+
+impl Drop for ContentCopy<'_> {
+    fn drop(&mut self) {
+        let deferred = {
+            let mut c = self.0.content_copies.lock().unwrap_or_else(|e| e.into_inner());
+            c.running = c.running.saturating_sub(1);
+            if c.running > 0 {
+                return;
+            }
+            std::mem::take(&mut c.deferred)
+        };
+        deferred.iter().for_each(|p| remove_path(p));
+    }
+}
+
+fn remove_path(p: &std::path::Path) {
+    if p.is_dir() {
+        let _ = fs::remove_dir_all(p);
+    } else {
+        let _ = fs::remove_file(p);
+    }
+}
+
 impl GhulSuite {
+    /// Starts copying content files into a `.ghlzip` (see [`ContentCopy`]). Take it while the
+    /// suite is held, before the list of content files is made.
+    pub(super) fn content_copy(&self) -> ContentCopy<'_> {
+        self.content_copies.lock().unwrap_or_else(|e| e.into_inner()).running += 1;
+        ContentCopy(self)
+    }
+
     /// The folder of the device the content files are kept in (the suite's folder).
     pub(super) fn content_root(&self) -> Result<PathBuf> {
         content_root_of(self.storage.as_ref())
@@ -344,19 +386,34 @@ impl GhulSuite {
         })
     }
 
-    /// Deletes content files of a vault (after its index no longer has them).
+    /// Deletes content files of a vault (after its index no longer has them); while content
+    /// files are copied into a `.ghlzip`, only when that ended (see [`ContentCopy`]).
     fn delete_contents(&self, vault_id: &str, blobs: &[Id]) {
-        if let Ok(dir) = self.docs_dir(vault_id) {
-            for b in blobs {
-                let _ = fs::remove_file(dir.join(blob::file_name(b)));
+        let Ok(dir) = self.docs_dir(vault_id) else { return };
+        self.remove_contents(blobs.iter().map(|b| dir.join(blob::file_name(b))).collect());
+    }
+
+    /// Removes content files or folders of content files now, or when the copies running
+    /// ended (see [`ContentCopy`]).
+    pub(super) fn remove_contents(&self, paths: Vec<PathBuf>) {
+        {
+            let mut c = self.content_copies.lock().unwrap_or_else(|e| e.into_inner());
+            if c.running > 0 {
+                c.deferred.extend(paths);
+                return;
             }
         }
+        paths.iter().for_each(|p| remove_path(p));
     }
 
     /// Removes what no index refers to: content files of an add or a delete that did not end,
     /// folders of vaults that are gone. A vault that cannot be opened (damaged, another
     /// protection) keeps its folder.
     pub(super) fn docs_tidy(&self, o: &Open) {
+        // A copy into a `.ghlzip` still runs (begun before a lock): what it copies stays.
+        if self.content_copies.lock().unwrap_or_else(|e| e.into_inner()).running > 0 {
+            return;
+        }
         let Ok(root) = self.content_root() else { return };
         let Ok(list) = fs::read_dir(&root) else { return };
         let files: HashSet<String> = self.storage.list().unwrap_or_default().into_iter().collect();
@@ -388,7 +445,7 @@ impl GhulSuite {
                 None => {}
             }
         }
-        vaults::tidy_staging(&root);
+        tidy_staging(&root);
     }
 }
 
@@ -768,4 +825,95 @@ fn remove(entries: &mut Vec<Entry>, gone: &[Vec<u8>]) -> Vec<Id> {
         false
     });
     blobs
+}
+
+/// Entry points for fuzzing the parsers of hostile GhulDocs data (`fuzz_tests` and the long
+/// libFuzzer runs in `core/fuzz`): the stream ZIP reader, content files and indexes.
+#[cfg(any(test, feature = "fuzzing"))]
+pub(crate) mod fuzz {
+    use super::{blob, index, DOCS_LIMIT};
+
+    /// The key the content files are decrypted with (as in the test vector).
+    pub(crate) const KEY: [u8; 32] = {
+        let mut k = [0u8; 32];
+        let mut i = 0;
+        while i < 32 {
+            k[i] = i as u8;
+            i += 1;
+        }
+        k
+    };
+
+    /// `data` as a `.ghlzip`, read as a stream like a suite file (every entry to the end).
+    pub(crate) fn zip(data: &[u8]) {
+        let mut z = crate::app::zipstream::ZipReader::new(data, 1 << 24, 64, |_| {});
+        while let Ok(Some(_)) = z.next_entry() {
+            if z.read_entry(&mut std::io::sink()).is_err() {
+                return;
+            }
+        }
+    }
+
+    /// Inputs that hold, to start mutating from: a `.ghlzip` like a GhulDocs vault on its own,
+    /// a content file (the test vector) and an index with a folder and a file in it.
+    #[cfg(test)]
+    pub(crate) fn seeds() -> (Vec<u8>, Vec<u8>, Vec<u8>) {
+        use crate::vault::{Entry, Field};
+        let (id, key, content, file, info) = blob::tests::hello_vector();
+        assert_eq!(key, KEY);
+        let mut blob_seed = id.to_vec();
+        blob_seed.extend_from_slice(&(content.len() as u64).to_le_bytes());
+        blob_seed.extend_from_slice(&file);
+        let mut z = crate::app::zipstream::ZipWriter::new(Vec::new(), |_| {});
+        z.add_bytes("0123456789abcdef0123456789abcdef.ghldoc", b"vault").unwrap_or_default();
+        let name = format!("docs-0123456789abcdef0123456789abcdef/{}", blob::file_name(&id));
+        z.add_bytes(&name, &file).unwrap_or_default();
+        let zip_seed = z.finish().unwrap_or_default();
+        let mut p = crate::vault::payload::Payload::new(crate::vault::ContainerKind::Docs);
+        let mut folder = Entry::new([1u8; 16], index::FOLDER, 1);
+        folder.fields.insert(index::NAME.into(), Field::Text("Steuer".into()));
+        let mut doc = Entry::new([2u8; 16], index::FILE, 2);
+        doc.fields.insert(index::NAME.into(), Field::Text("Bescheid.pdf".into()));
+        index::set_parent(&mut doc, Some([1u8; 16]));
+        doc.fields.insert(index::SIZE.into(), Field::Int(content.len() as i64));
+        doc.fields.insert(index::MIME.into(), Field::Text("application/pdf".into()));
+        doc.fields.insert(index::KEY.into(), Field::Bytes(KEY.to_vec()));
+        doc.fields.insert(index::BLOB.into(), Field::Bytes(id.to_vec()));
+        doc.fields.insert(index::SHA256.into(), Field::Bytes(info.sha256.to_vec()));
+        doc.fields.insert(index::CRC32.into(), Field::Int(i64::from(info.crc32)));
+        p.entries = vec![folder, doc];
+        assert!(index::validate(&p.entries, DOCS_LIMIT));
+        let index_seed = p.to_cbor().map(|c| c.to_vec()).unwrap_or_default();
+        (zip_seed, blob_seed, index_seed)
+    }
+
+    /// `data` as id (16 bytes), size (8 bytes, little endian) and a content file.
+    pub(crate) fn content_file(data: &[u8]) {
+        if data.len() < 24 {
+            return;
+        }
+        let id: [u8; 16] = data[..16].try_into().unwrap_or_default();
+        let size = u64::from_le_bytes(data[16..24].try_into().unwrap_or_default()) % (DOCS_LIMIT + 1);
+        let mut f = std::io::Cursor::new(&data[24..]);
+        let _ = blob::decrypt(&mut f, &id, &KEY, size, &mut std::io::sink(), &mut |_| {});
+    }
+
+    /// `data` as the payload of a GhulDocs vault: its index is checked, and every item is
+    /// looked at in its tree like the app does (also when the check fails: the tree must not
+    /// hang or crash on cycles or missing folders either).
+    pub(crate) fn docs_index(data: &[u8]) {
+        let Ok(p) = crate::vault::payload::Payload::from_cbor(data, crate::vault::ContainerKind::Docs) else { return };
+        let entries = &p.entries;
+        let _ = index::validate(entries, DOCS_LIMIT);
+        let tree = index::Tree::new(entries);
+        for e in entries.iter().filter(|e| index::is_item(e)) {
+            let _ = index::content(e);
+            let _ = tree.path(e);
+            let _ = tree.in_trash(e);
+            if let Some(id) = index::id_of(e) {
+                let _ = tree.subtree(&id);
+                let _ = tree.free_name(index::parent(e), &index::name(e), Some(&id));
+            }
+        }
+    }
 }

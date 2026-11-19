@@ -798,6 +798,7 @@
     <string name="cal_test_place">Praxis am Markt</string>
     <string name="export_format_ics">Als .ics-Datei, lesbar für jedes Kalenderprogramm.</string>
     <string name="err_update_required">Diese Datei stammt von einer neueren GhulSuite. Bitte GhulSuite aktualisieren.</string>
+    <string name="err_old_format">Diese Datei stammt von einer älteren Entwicklerversion von GhulSuite. Ihr Format wird nicht mehr unterstützt.</string>
     <string name="quick_4h">4 Stunden</string>
     <string name="quick_always">Immer</string>
     <string name="wz_title">Neu einrichten</string>
@@ -931,6 +932,9 @@
     <string name="core_vault_no_key">Dieser Tresor hat keinen Key.</string>
     <string name="core_attach_many">Zu viele Anhänge.</string>
     <string name="core_attach_big">Anhang zu groß (höchstens 10 MB).</string>
+    <string name="core_suite_too_large">Die Suite-Datei würde zu groß (höchstens 1,25 GiB) und ließe sich nicht mehr öffnen. Es wurde nichts gespeichert. Entferne große Anhänge oder Dokumente und speichere dann erneut.</string>
+    <string name="core_other_full">Die Tresore neben GhulDocs sind voll (zusammen höchstens 200 MiB, vor allem Anhänge). Es wurde nichts hinzugefügt.</string>
+    <string name="core_docs_kept_aside">Die bisherigen Dokumente ließen sich nicht an ihren Platz zurücklegen. Sie wurden nicht gelöscht, sondern in einem eigenen Ordner „rescued-documents-…“ im Ordner der Suite aufbewahrt.</string>
     <string name="core_no_group">Diese Gruppe gibt es nicht.</string>
     <string name="core_no_password">Kein Passwort angegeben.</string>
     <string name="core_password_empty">Das Passwort darf nicht leer sein.</string>

@@ -619,6 +619,8 @@ enum class VaultErrorKind {
     SINGLE_PENDING,
     /** A file from a newer GhulSuite: update the app. */
     UPDATE_REQUIRED,
+    /** A file of an older development version (an older format): not read any more. */
+    OLD_FORMAT,
     NO_KEY,
     PERMISSION_DENIED,
     NOT_A_FIDO_KEY,

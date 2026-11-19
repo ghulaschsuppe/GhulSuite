@@ -428,6 +428,15 @@ impl Open {
         Ok((&v.reference, c))
     }
 
+    /// A vault whose entries the generic entry functions may change: GhulPass, GhulAuth (and
+    /// calendars), never GhulDocs, whose index goes with its content files and has functions of
+    /// its own (`docs`).
+    pub(super) fn entry_vault_mut(&mut self, id: &str) -> Result<(&VaultRef, &mut UnlockedContainer)> {
+        let (r, c) = self.vault_mut(id)?;
+        refuse_docs_file(VaultKind::from_name(&r.kind))?;
+        Ok((r, c))
+    }
+
     pub(super) fn kdf(&self) -> crate::vault::KdfParams {
         self.suite.header().kdf.clone()
     }
@@ -582,6 +591,9 @@ pub struct GhulSuite {
     /// How much content all GhulDocs vaults may hold ([`super::docs::DOCS_LIMIT`]; smaller only
     /// in tests).
     pub(super) docs_limit: std::sync::atomic::AtomicU64,
+    /// Content files being copied into a `.ghlzip` right now, and content files deleted
+    /// meanwhile (deleted only when the last copy ended, see `docs::ContentCopy`).
+    pub(super) content_copies: Mutex<super::docs::Copies>,
 }
 
 /// How containers of the folder are opened.
@@ -1007,11 +1019,25 @@ impl GhulSuite {
         if !name.trim().is_empty() {
             set_vault_name(&mut c, name);
         }
+        if kind != VaultKind::Docs {
+            super::archive::check_other_room(o, super::archive::container_weight(&c)?)?;
+        }
         let file = file_name(kind, &id);
         let name = vault_name(&c, &file);
-        let reference = VaultRef { id: id.clone(), kind: kind.container().name().into(), name, file };
+        let reference = VaultRef { id: id.clone(), kind: kind.container().name().into(), name, file: file.clone() };
         o.vaults.push(OpenVault { reference, container: Some(c) });
-        self.save_vault(o, &id)?;
+        if let Err(e) = self.save_vault(o, &id) {
+            // Not half added: neither in the open suite nor in the folder (the suite file on the
+            // disk does not list vaults, a vault file alone would be found at the next unlock).
+            if let Some(pos) = o.vaults.iter().position(|v| v.reference.id == id) {
+                let mut v = o.vaults.remove(pos);
+                if let Some(c) = v.container.as_mut() {
+                    c.payload.entries.iter_mut().for_each(zeroize::Zeroize::zeroize);
+                }
+            }
+            let _ = self.storage.delete(file);
+            return Err(e);
+        }
         Ok(id)
     }
 
@@ -1077,6 +1103,7 @@ impl GhulSuite {
             pending_gen: std::sync::atomic::AtomicU64::new(0),
             wiped: AtomicBool::new(false),
             docs_limit: std::sync::atomic::AtomicU64::new(super::docs::DOCS_LIMIT),
+            content_copies: Mutex::new(Default::default()),
         })
     }
 
@@ -1420,7 +1447,7 @@ impl GhulSuite {
             // The content files of a GhulDocs vault go with it (what is left goes at the next unlock).
             if v.reference.kind == "docs" {
                 if let Ok(dir) = self.docs_dir(&v.reference.id) {
-                    let _ = std::fs::remove_dir_all(dir);
+                    self.remove_contents(vec![dir]);
                 }
             }
             self.save_container(&mut o.suite, SUITE_FILE)
@@ -1516,7 +1543,7 @@ impl GhulSuite {
 
     pub fn get_entry(&self, vault_id: String, id: Vec<u8>) -> Result<EntryData> {
         self.with_open(|o| {
-            let (_, c) = o.vault_mut(&vault_id)?;
+            let (_, c) = o.entry_vault_mut(&vault_id)?;
             let e = c.payload.entries.iter().find(|e| e.id == id && !e.deleted).ok_or(GhulError::NotFound)?;
             Ok(EntryData {
                 id: e.id.clone(),
@@ -1586,8 +1613,7 @@ impl GhulSuite {
     /// Deletes an entry (keeps a tombstone without content for later synchronisation).
     pub fn delete_entry(&self, vault_id: String, id: Vec<u8>) -> Result<()> {
         self.with_open(|o| {
-            let (r, c) = o.vault_mut(&vault_id)?;
-            refuse_docs_file(VaultKind::from_name(&r.kind))?;
+            let (_, c) = o.entry_vault_mut(&vault_id)?;
             let e = c.payload.entries.iter_mut().find(|e| e.id == id && !e.deleted).ok_or(GhulError::NotFound)?;
             e.make_tombstone(now_ms());
             self.save_vault(o, &vault_id)
@@ -1623,7 +1649,10 @@ impl GhulSuite {
 
     pub fn rename_totp(&self, vault_id: String, id: Vec<u8>, issuer: String, account: String) -> Result<()> {
         self.with_open(|o| {
-            let (_, c) = o.vault_mut(&vault_id)?;
+            let (r, c) = o.entry_vault_mut(&vault_id)?;
+            if r.kind != "totp" {
+                return Err(GhulError::InvalidInput { msg: "not a GhulAuth vault".into() });
+            }
             let e = c.payload.entries.iter_mut().find(|e| e.id == id && !e.deleted).ok_or(GhulError::NotFound)?;
             e.fields.insert("issuer".into(), Field::Text(issuer.trim().to_owned()));
             e.fields.insert("account".into(), Field::Text(account.trim().to_owned()));

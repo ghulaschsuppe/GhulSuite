@@ -798,6 +798,7 @@
     <string name="cal_test_place">Market Street Clinic</string>
     <string name="export_format_ics">As an .ics file, readable by any calendar program.</string>
     <string name="err_update_required">This file was made by a newer GhulSuite. Please update the app.</string>
+    <string name="err_old_format">This file was made by an older development version of GhulSuite. Its format is not supported any more.</string>
     <string name="quick_4h">4 hours</string>
     <string name="quick_always">Always</string>
     <string name="wz_title">Set up new</string>
@@ -931,6 +932,9 @@
     <string name="core_vault_no_key">This vault has no security key.</string>
     <string name="core_attach_many">Too many attachments.</string>
     <string name="core_attach_big">Attachment too large (at most 10 MB).</string>
+    <string name="core_suite_too_large">The suite file would be too large (at most 1.25 GiB) and could not be opened any more. Nothing was saved. Remove large attachments or documents and save again.</string>
+    <string name="core_other_full">The vaults besides GhulDocs are full (at most 200 MiB together, mostly attachments). Nothing was added.</string>
+    <string name="core_docs_kept_aside">The previous documents could not be put back in their place. They were not deleted but kept in a folder of their own, "rescued-documents-…", in the folder of the suite.</string>
     <string name="core_no_group">This group does not exist.</string>
     <string name="core_no_password">No password given.</string>
     <string name="core_password_empty">The password must not be empty.</string>

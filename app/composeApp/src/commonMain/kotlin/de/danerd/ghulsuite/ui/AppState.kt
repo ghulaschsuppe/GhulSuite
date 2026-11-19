@@ -922,6 +922,7 @@ private suspend fun describeText(e: Throwable): String {
     }
     return when (e.kind) {
         VaultErrorKind.UPDATE_REQUIRED -> getString(Res.string.err_update_required)
+        VaultErrorKind.OLD_FORMAT -> getString(Res.string.err_old_format)
         VaultErrorKind.NO_KEY -> getString(Res.string.err_no_key)
         VaultErrorKind.PERMISSION_DENIED -> getString(Res.string.err_permission)
         VaultErrorKind.NOT_A_FIDO_KEY -> getString(Res.string.err_not_fido)

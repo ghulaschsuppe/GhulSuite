@@ -50,6 +50,14 @@ const NOT_A_SUITE_FILE: &str = "not a GhulSuite file";
 /// Largest `.ghlzip` read (counted while reading, not taken from the ZIP): 1 GB of documents
 /// plus the other vaults.
 pub(crate) const MAX_ARCHIVE: u64 = 1280 * 1024 * 1024;
+/// What the vaults besides GhulDocs (and the suite file) may take in a suite file together, so a
+/// full GhulDocs ([`super::docs::stored_limit`] of the content files plus the ZIP entries of
+/// [`super::docs::DOCS_MAX_FILES`] documents) and these always fit into [`MAX_ARCHIVE`]; checked
+/// when attachments or vaults are added (estimated from the payloads, see [`container_weight`]).
+pub(crate) const OTHER_LIMIT: u64 = 200 * 1024 * 1024;
+/// Room a container takes besides its payload (header, slots, encryption), counted generously.
+const CONTAINER_EXTRA: u64 = 64 * 1024;
+/// The message when a suite file would be larger than [`MAX_ARCHIVE`].
 /// Most entries a `.ghlzip` may have (a suite has a handful of vault files and up to
 /// [`super::docs::DOCS_MAX_FILES`] documents).
 pub(crate) const MAX_ENTRIES: usize = super::docs::DOCS_MAX_FILES as usize + 1000;
@@ -207,22 +215,25 @@ pub(super) struct Pending {
 }
 
 /// An [`ArchiveSource`] as a reader.
+/// The piece held is wiped when the next one comes and when it is dropped (it may be the
+/// plaintext of a document being added).
 pub(super) struct SourceReader {
     source: Arc<dyn ArchiveSource>,
-    buf: Vec<u8>,
+    buf: Zeroizing<Vec<u8>>,
     pos: usize,
 }
 
 impl SourceReader {
     pub(super) fn new(source: Arc<dyn ArchiveSource>) -> Self {
-        SourceReader { source, buf: Vec::new(), pos: 0 }
+        SourceReader { source, buf: Zeroizing::new(Vec::new()), pos: 0 }
     }
 }
 
 impl Read for SourceReader {
     fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
         if self.pos == self.buf.len() {
-            self.buf = self.source.read(CHUNK as u32).map_err(std::io::Error::other)?;
+            // The old piece is wiped when it is replaced.
+            self.buf = Zeroizing::new(self.source.read(CHUNK as u32).map_err(std::io::Error::other)?);
             self.pos = 0;
             if self.buf.is_empty() {
                 return Ok(0);
@@ -236,22 +247,26 @@ impl Read for SourceReader {
 }
 
 /// An [`ArchiveSink`] as a writer (pieces of up to [`CHUNK`] bytes), hashing what it writes.
+/// The piece being collected is wiped once it was handed on and when the writer is dropped (it
+/// may be the plaintext of a document being read).
 pub(super) struct SinkWriter {
     sink: Arc<dyn ArchiveSink>,
-    buf: Vec<u8>,
+    buf: Zeroizing<Vec<u8>>,
     len: u64,
     sha: Sha256,
 }
 
 impl SinkWriter {
     pub(super) fn new(sink: Arc<dyn ArchiveSink>) -> Self {
-        SinkWriter { sink, buf: Vec::with_capacity(CHUNK), len: 0, sha: Sha256::new() }
+        SinkWriter { sink, buf: Zeroizing::new(Vec::with_capacity(CHUNK)), len: 0, sha: Sha256::new() }
     }
 
     fn send(&mut self) -> std::io::Result<()> {
         if !self.buf.is_empty() {
-            let piece = std::mem::replace(&mut self.buf, Vec::with_capacity(CHUNK));
-            self.sink.write(piece).map_err(std::io::Error::other)?;
+            // The sink gets a copy (UniFFI copies it anyway); ours is wiped right after.
+            let r = self.sink.write(self.buf.to_vec());
+            zeroize::Zeroize::zeroize(&mut *self.buf);
+            r.map_err(std::io::Error::other)?;
         }
         Ok(())
     }
@@ -299,6 +314,15 @@ pub(super) fn not_a_suite_file() -> GhulError {
     GhulError::InvalidInput { msg: NOT_A_SUITE_FILE.into() }
 }
 
+/// The first container of a `.ghlzip`: anything that is no container of this format is "not a
+/// GhulSuite file", except a container of an older or newer format version, which says so.
+pub(super) fn parse_first(data: &[u8]) -> Result<LockedContainer> {
+    LockedContainer::parse(data).map_err(|e| match e {
+        crate::vault::VaultError::UnsupportedVersion(_) | crate::vault::VaultError::NewerKind => GhulError::from(e),
+        _ => not_a_suite_file(),
+    })
+}
+
 pub(super) fn suite_zip(
     source: Arc<dyn ArchiveSource>,
     progress: Option<Arc<dyn ArchiveProgress>>,
@@ -324,7 +348,7 @@ fn read_header(z: &mut ZipReader<SourceReader>) -> Result<LockedContainer> {
         return Err(not_a_suite_file());
     }
     let (data, _) = read_container(z, &e)?;
-    let l = LockedContainer::parse(&data).map_err(|_| not_a_suite_file())?;
+    let l = parse_first(&data)?;
     if l.kind() != ContainerKind::Export {
         return Err(not_a_suite_file());
     }
@@ -446,12 +470,7 @@ pub(super) fn write_zip(
     sink: Arc<dyn ArchiveSink>,
     progress: Option<Arc<dyn ArchiveProgress>>,
 ) -> Result<(u64, String)> {
-    let total = zip_len(
-        files
-            .iter()
-            .map(|(n, d)| (n.as_str(), d.len() as u64))
-            .chain(contents.iter().map(|c| (c.name.as_str(), c.len))),
-    );
+    let total = archive_len(files, contents)?;
     let storage = |e: std::io::Error| GhulError::Storage { msg: e.to_string() };
     let mut w = ZipWriter::new(SinkWriter::new(sink), reporter(progress, total));
     for (n, d) in files {
@@ -463,6 +482,55 @@ pub(super) fn write_zip(
     }
     let out = w.finish().map_err(storage)?;
     Ok((out.len, crate::kdf::hex(&out.sha.finalize())))
+}
+
+/// The size of the `.ghlzip` of `files` and `contents`; more than [`MAX_ARCHIVE`] (the most that
+/// is read) is refused before anything is written: such a file could never be opened.
+pub(super) fn archive_len(files: &[(String, Vec<u8>)], contents: &[ContentFile]) -> Result<u64> {
+    let total = zip_len(
+        files
+            .iter()
+            .map(|(n, d)| (n.as_str(), d.len() as u64))
+            .chain(contents.iter().map(|c| (c.name.as_str(), c.len))),
+    );
+    if total > limits().0 {
+        return Err(GhulError::InvalidInput { msg: "the suite file would be too large".into() });
+    }
+    Ok(total)
+}
+
+/// The largest suite file written and [`OTHER_LIMIT`] (smaller in tests, so they can be
+/// reached without writing a gigabyte).
+fn limits() -> (u64, u64) {
+    #[cfg(test)]
+    if let Some(l) = TEST_LIMITS.with(std::cell::Cell::get) {
+        return l;
+    }
+    (MAX_ARCHIVE, OTHER_LIMIT)
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Tests only: other values for [`limits`] (in this thread).
+    pub(crate) static TEST_LIMITS: std::cell::Cell<Option<(u64, u64)>> = const { std::cell::Cell::new(None) };
+}
+
+/// About the room a container takes in a suite file: its payload plus [`CONTAINER_EXTRA`].
+pub(super) fn container_weight(c: &UnlockedContainer) -> Result<u64> {
+    Ok(c.payload.to_cbor()?.len() as u64 + CONTAINER_EXTRA)
+}
+
+/// Whether `add` more bytes still fit next to the suite and its vaults besides GhulDocs
+/// ([`OTHER_LIMIT`]).
+pub(super) fn check_other_room(o: &super::suite::Open, add: u64) -> Result<()> {
+    let mut have = container_weight(&o.suite)?;
+    for c in o.vaults.iter().filter(|v| v.reference.kind != "docs").filter_map(|v| v.container.as_ref()) {
+        have += container_weight(c)?;
+    }
+    if have.saturating_add(add) > limits().1 {
+        return Err(GhulError::InvalidInput { msg: "the vaults besides GhulDocs are full".into() });
+    }
+    Ok(())
 }
 
 /// Whether the file at a place is exactly the one written (`size` bytes with this SHA-256,
@@ -664,8 +732,8 @@ impl GhulSuite {
         if let Err(e) = self.put_files(&new, &before) {
             // Half replaced is neither state: back to the one before.
             let _ = self.put_files(&before, &new);
-            if let Some(a) = &aside {
-                a.back();
+            if let Some(a) = aside {
+                a.back()?;
             }
             return Err(e);
         }
@@ -680,6 +748,10 @@ impl GhulSuite {
             Err(_) if staged.is_none() => return Ok(None),
             Err(e) => return Err(e),
         };
+        // Every checked document must still be there before anything is moved.
+        if let Some(s) = staged {
+            s.verify()?;
+        }
         let old = Staging::new(&root)?;
         let mut aside = Aside { root: root.clone(), old, moved_in: Vec::new(), moved_out: Vec::new() };
         let result = (|| {
@@ -699,7 +771,7 @@ impl GhulSuite {
             Ok::<(), std::io::Error>(())
         })();
         if let Err(e) = result {
-            aside.back();
+            aside.back()?;
             return Err(e.into());
         }
         Ok(Some(aside))
@@ -817,6 +889,10 @@ impl GhulSuite {
         let p = self.pending.lock().unwrap_or_else(|e| e.into_inner()).take().ok_or(GhulError::NotFound)?;
         // Checked again right before replacing: another file may have been opened meanwhile.
         self.relation(&p.header, &p.suite_id)?;
+        // The checked documents are all still there (nothing is locked or removed otherwise).
+        if let Some(s) = &p.staged {
+            s.verify()?;
+        }
         self.lock();
         self.finish_lock();
         self.wipe_device_data();
@@ -904,6 +980,8 @@ impl GhulSuite {
         sink: Arc<dyn ArchiveSink>,
         progress: Option<Arc<dyn ArchiveProgress>>,
     ) -> Result<ArchiveBuilt> {
+        // Content files deleted while the file is written stay until it is written.
+        let _copy = self.content_copy();
         let (files, contents, state, change) = self.with_open(|o| {
             let suite_id = o.suite.header().suite_id;
             let seen = self.seen_all().get(&crate::kdf::hex(&suite_id)).cloned().unwrap_or_default();
@@ -976,15 +1054,23 @@ impl GhulSuite {
                     contents.extend(content_files(&self.docs_dir(id)?, id, &c.payload.entries)?);
                 }
             }
-            // The working copy is this state as well (sealed the same way).
-            for (n, d) in &files {
-                self.storage.write(n.clone(), d.clone())?;
-            }
             let mut hc = o.new_container(ContainerKind::Export)?;
             put_setting(&mut hc, HEADER_KEY, &header)?;
+            let header_file = (HEADER_FILE.to_owned(), hc.seal(&mut OsRng)?);
+            // A file that could never be opened is not written (and the working copy keeps its
+            // state).
+            let mut all = vec![header_file];
+            all.extend(files);
+            if let Err(e) = archive_len(&all, &contents) {
+                put_setting(&mut o.suite, STATE_KEY, &mine)?;
+                return Err(e);
+            }
+            // The working copy is this state as well (sealed the same way).
+            for (n, d) in &all[1..] {
+                self.storage.write(n.clone(), d.clone())?;
+            }
             // The header first: opening knows every hash before the files come.
-            files.insert(0, (HEADER_FILE.to_owned(), hc.seal(&mut OsRng)?));
-            Ok((files, contents, state, self.change()))
+            Ok((all, contents, state, self.change()))
         })?;
         let (size, sha256) = write_zip(&files, &contents, sink, progress)?;
         Ok(ArchiveBuilt { state, change, size, sha256 })
@@ -1016,14 +1102,27 @@ struct Aside {
 }
 
 impl Aside {
-    /// Back to the content folders before.
-    fn back(&self) {
-        for name in &self.moved_in {
-            let _ = std::fs::remove_dir_all(self.root.join(name));
+    /// Back to the content folders before. If one of them cannot be put back, none of them is
+    /// removed: the folder they were moved to is kept (renamed to `rescued-documents-<id>` in the
+    /// content root, never tidied) and the error says so.
+    fn back(self) -> Result<()> {
+        let Aside { root, old, moved_in, moved_out } = self;
+        for name in &moved_in {
+            let _ = std::fs::remove_dir_all(root.join(name));
         }
-        for name in &self.moved_out {
-            let _ = std::fs::rename(self.old.path().join(name), self.root.join(name));
+        let mut all_back = true;
+        for name in &moved_out {
+            if std::fs::rename(old.path().join(name), root.join(name)).is_err() {
+                all_back = false;
+            }
         }
+        if all_back {
+            return Ok(());
+        }
+        old.keep(&root, &format!("rescued-documents-{}", random_id()));
+        Err(GhulError::Storage {
+            msg: "the documents before could not be put back, they were kept in a folder of their own".into(),
+        })
     }
 }
 
@@ -1126,6 +1225,73 @@ mod pending_tests {
             keys: None,
             staged: None,
         }
+    }
+
+    /// A full GhulDocs (content files of the largest stored size, as many documents as allowed)
+    /// and the other vaults at their limit always fit into the largest suite file read.
+    #[test]
+    fn a_full_suite_fits_into_the_largest_file() {
+        use super::super::docs::{stored_limit, DOCS_LIMIT, DOCS_MAX_FILES};
+        let doc = format!("docs-{0}/{0}.ghlblob", "0".repeat(32));
+        let entries = DOCS_MAX_FILES * super::super::zipstream::entry_len(&doc, 0);
+        // The header, the suite file and a few hundred vaults (their names; their content is in
+        // OTHER_LIMIT).
+        let vaults = 500 * super::super::zipstream::entry_len(&format!("{}.ghlpss", "0".repeat(32)), 0);
+        let full = stored_limit(DOCS_LIMIT) + entries + OTHER_LIMIT + vaults;
+        assert!(full <= MAX_ARCHIVE, "{full} > {MAX_ARCHIVE}");
+    }
+
+    /// A file larger than is read is not written at all (nothing reaches the sink).
+    #[test]
+    fn a_file_too_large_to_read_is_not_written() {
+        struct Never;
+        impl ArchiveSink for Never {
+            fn write(&self, _: Vec<u8>) -> std::result::Result<(), StorageError> {
+                panic!("nothing may be written");
+            }
+        }
+        let big = ContentFile {
+            name: format!("docs-{0}/{0}.ghlblob", "0".repeat(32)),
+            path: std::path::PathBuf::from("/nonexistent"),
+            len: MAX_ARCHIVE,
+            crc: 0,
+        };
+        let r = write_zip(&[("a.ghlpss".into(), vec![1, 2, 3])], &[big], Arc::new(Never), None);
+        assert!(
+            matches!(&r, Err(GhulError::InvalidInput { msg }) if msg == "the suite file would be too large"),
+            "{r:?}"
+        );
+    }
+
+    /// Content folders that cannot be put back are never removed: kept in a folder of their own.
+    #[test]
+    fn content_folders_that_cannot_go_back_are_kept() {
+        let root = std::env::temp_dir().join(format!("ghul-aside-{}", random_id()));
+        let old_docs = format!("docs-{}", "a".repeat(32));
+        std::fs::create_dir_all(root.join(&old_docs)).unwrap();
+        std::fs::write(root.join(&old_docs).join("x.ghlblob"), b"old document").unwrap();
+        let old = Staging::new(&root).unwrap();
+        std::fs::rename(root.join(&old_docs), old.path().join(&old_docs)).unwrap();
+        // Something is in the way where the folder belongs (not one this replace moved in).
+        std::fs::create_dir_all(root.join(&old_docs).join("in-the-way")).unwrap();
+        let aside = Aside { root: root.clone(), old, moved_in: Vec::new(), moved_out: vec![old_docs.clone()] };
+        let r = aside.back();
+        assert!(
+            matches!(&r, Err(GhulError::Storage { msg }) if msg.contains("kept in a folder of their own")),
+            "{r:?}"
+        );
+        let rescued: Vec<_> = std::fs::read_dir(&root)
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().starts_with("rescued-documents-"))
+            .collect();
+        assert_eq!(rescued.len(), 1);
+        let kept = rescued[0].path().join(&old_docs).join("x.ghlblob");
+        assert_eq!(std::fs::read(kept).unwrap(), b"old document");
+        // Tidying (also much later) leaves it alone.
+        super::super::docs::tidy_staging(&root);
+        assert_eq!(std::fs::read(rescued[0].path().join(&old_docs).join("x.ghlblob")).unwrap(), b"old document");
+        let _ = std::fs::remove_dir_all(root);
     }
 
     /// A check that ends after a lock (or cancel) is not kept: its keys must not outlive it.

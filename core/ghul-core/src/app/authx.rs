@@ -38,7 +38,7 @@ impl GhulSuite {
     /// The account as `otpauth://` link, e.g. for a QR code to move it to another app.
     pub fn totp_uri(&self, vault_id: String, id: Vec<u8>) -> Result<String> {
         self.with_open(|o| {
-            let (_, c) = o.vault_mut(&vault_id)?;
+            let (_, c) = o.entry_vault_mut(&vault_id)?;
             let e = c
                 .payload
                 .entries

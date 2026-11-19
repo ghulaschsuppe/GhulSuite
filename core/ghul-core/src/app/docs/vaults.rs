@@ -14,11 +14,11 @@
 //! first) and kept in a staging folder next to the working copy until everything is checked;
 //! only then do they move into place.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{BufWriter, Read};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use rand_core::OsRng;
@@ -44,8 +44,21 @@ use crate::{FidoListener, HidTransport, RP_ID};
 
 /// Folder (in the content root) of content files read from a `.ghlzip` and not yet in place.
 const STAGING_DIR: &str = ".staging";
-/// A staging folder older than this was left by an app that ended (it is removed).
+/// A staging folder older than this was left by an app that ended (it is removed), unless it is
+/// in use (see [`LIVE`]) or kept on purpose ([`KEEP_MARK`]).
 const STAGING_MAX_AGE: Duration = Duration::from_secs(24 * 3600);
+/// A file in a staging folder that must never be tidied (it holds documents that could not be
+/// put back, see `archive`).
+pub(in crate::app) const KEEP_MARK: &str = "KEEP";
+
+/// The staging folders of this process (by their name, a random id): a check waiting for
+/// `archive_accept` may wait any time, also over a jump of the clock, and its folder must not be
+/// tidied meanwhile.
+static LIVE: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+
+fn live() -> std::sync::MutexGuard<'static, BTreeSet<String>> {
+    LIVE.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 /// The folder of the device the content files are kept in.
 pub(in crate::app) fn content_root_of(storage: &dyn VaultStorage) -> Result<PathBuf> {
@@ -96,17 +109,54 @@ pub(in crate::app) fn content_files(dir: &Path, vault_id: &str, entries: &[Entry
 }
 
 /// A folder for content files read from a `.ghlzip` until they are checked; removed with
-/// everything still in it when dropped.
+/// everything still in it when dropped. It knows every file staged into it (with its size), so
+/// nothing moves into place unless all of them are still there.
 pub(in crate::app) struct Staging {
     dir: PathBuf,
+    name: String,
+    files: Mutex<Vec<(PathBuf, u64)>>,
 }
 
 impl Staging {
     pub(in crate::app) fn new(root: &Path) -> Result<Self> {
         tidy_staging(root);
-        let dir = root.join(STAGING_DIR).join(crate::kdf::hex(&crate::app::suite::new_id()));
-        fs::create_dir_all(&dir)?;
-        Ok(Staging { dir })
+        let name = crate::kdf::hex(&crate::app::suite::new_id());
+        let dir = root.join(STAGING_DIR).join(&name);
+        live().insert(name.clone());
+        let s = Staging { dir, name, files: Mutex::new(Vec::new()) };
+        fs::create_dir_all(&s.dir)?;
+        Ok(s)
+    }
+
+    /// A content file was staged (complete and checked).
+    fn staged(&self, path: PathBuf, len: u64) {
+        self.files.lock().unwrap_or_else(|e| e.into_inner()).push((path, len));
+    }
+
+    /// Every file staged is still there with its size (nothing else removed or cut it). Checked
+    /// before anything moves into place: a missing document would be gone for good.
+    pub(in crate::app) fn verify(&self) -> Result<()> {
+        let files = self.files.lock().unwrap_or_else(|e| e.into_inner());
+        if files.iter().all(|(p, len)| fs::metadata(p).is_ok_and(|m| m.is_file() && m.len() == *len)) {
+            Ok(())
+        } else {
+            Err(super::damaged_doc())
+        }
+    }
+
+    /// Keeps the folder and everything in it (also over a restart): it is not removed when
+    /// dropped and never tidied. Moved to `root/<rescue>` if possible; returns where it is.
+    pub(in crate::app) fn keep(self, root: &Path, rescue: &str) -> PathBuf {
+        let to = root.join(rescue);
+        let kept = if fs::rename(&self.dir, &to).is_ok() {
+            to
+        } else {
+            let _ = fs::write(self.dir.join(KEEP_MARK), b"");
+            self.dir.clone()
+        };
+        live().remove(&self.name);
+        std::mem::forget(self);
+        kept
     }
 
     pub(in crate::app) fn vault_dir(&self, vault_id: &str) -> PathBuf {
@@ -133,6 +183,7 @@ impl Staging {
             fs::remove_dir_all(&to)?;
         }
         let from = self.vault_dir(vault_id);
+        self.verify()?;
         if from.exists() {
             fs::rename(from, to)?;
         }
@@ -147,13 +198,19 @@ impl Staging {
 impl Drop for Staging {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.dir);
+        live().remove(&self.name);
     }
 }
 
-/// Removes staging folders an app left behind when it ended.
+/// Removes staging folders an app left behind when it ended: never one in use by this process,
+/// never one kept on purpose.
 pub(in crate::app) fn tidy_staging(root: &Path) {
     let now = SystemTime::now();
+    let live = live();
     for e in fs::read_dir(root.join(STAGING_DIR)).into_iter().flatten().flatten() {
+        if live.contains(e.file_name().to_string_lossy().as_ref()) || e.path().join(KEEP_MARK).exists() {
+            continue;
+        }
         let old = e
             .metadata()
             .and_then(|m| m.modified())
@@ -217,6 +274,7 @@ pub(in crate::app) fn stage_entry<R: Read>(
     if got != sha {
         return Err(mismatch("a document changed"));
     }
+    staging.staged(path, len);
     Ok(())
 }
 
@@ -224,7 +282,7 @@ pub(in crate::app) fn stage_entry<R: Read>(
 fn read_first(z: &mut ZipReader<SourceReader>) -> Result<(String, LockedContainer)> {
     let e = z.next_entry().map_err(zip_error)?.ok_or_else(not_a_suite_file)?;
     let (data, _) = read_container(z, &e)?;
-    let l = LockedContainer::parse(&data).map_err(|_| not_a_suite_file())?;
+    let l = crate::app::archive::parse_first(&data)?;
     Ok((e.name, l))
 }
 
@@ -390,6 +448,7 @@ impl GhulSuite {
         sink: Arc<dyn ArchiveSink>,
         progress: Option<Arc<dyn ArchiveProgress>>,
     ) -> Result<DocsArchive> {
+        let _copy = self.content_copy();
         let (file, data, contents) = self.with_open(|o| {
             let c = o.docs(&vault_id)?;
             let file = file_name(VaultKind::Docs, &vault_id);
@@ -432,6 +491,7 @@ impl GhulSuite {
         }
         let now = now_ms();
         // Copied first: the key may take a while to be touched, the suite is not held meanwhile.
+        let _copy = self.content_copy();
         let (cost, entries, dir) = self.with_open(|o| {
             let c = o.docs(&options.vault_id)?;
             let entries = picked(&c.payload.entries, &ids);
@@ -579,6 +639,7 @@ impl GhulSuite {
     ) -> Result<SingleDocsWritten> {
         // The counter first, then the files: a change in between stays unsaved.
         let change = self.change();
+        let _copy = self.content_copy();
         let (file, data, contents) = self.with_open(|o| {
             let file = single_file(o).ok_or(GhulError::InvalidInput { msg: "no vault is open on its own".into() })?;
             let vid =

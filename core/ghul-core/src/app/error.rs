@@ -61,6 +61,10 @@ pub enum GhulError {
     /// The file was made by a newer GhulSuite (new file kind or format): update the app.
     #[error("please update GhulSuite to open this file")]
     UpdateRequired,
+    /// The file was made by an older development version of GhulSuite (an older file format,
+    /// before the first stable version): it is not read any more.
+    #[error("this file was made by an older development version of GhulSuite and is not supported any more")]
+    OldFormat,
     /// A file opens with the password and the second factor, but its write seal is wrong: it was
     /// made or changed by someone without the password (e.g. from an old copy and an old
     /// recovery code). It is not used.
@@ -130,6 +134,7 @@ impl From<VaultError> for GhulError {
             VaultError::NewerKind => GhulError::UpdateRequired,
             VaultError::Tampered => GhulError::Tampered,
             VaultError::UnsupportedVersion(v) if v > crate::vault::format::FORMAT_VERSION => GhulError::UpdateRequired,
+            VaultError::UnsupportedVersion(_) => GhulError::OldFormat,
             other => GhulError::Corrupted { msg: other.to_string() },
         }
     }

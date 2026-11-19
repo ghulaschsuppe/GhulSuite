@@ -784,3 +784,254 @@ fn a_large_document_needs_little_memory() {
     assert_eq!(b.docs_usage().unwrap().used, SIZE);
     assert!(b.docs_verify(v).unwrap().is_empty());
 }
+
+// --- review G9: regressions ---------------------------------------------------------------------
+
+fn unhex(s: &str) -> Vec<u8> {
+    (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect()
+}
+
+fn refused_as_docs<T: std::fmt::Debug>(r: Result<T, GhulError>) -> bool {
+    matches!(&r, Err(GhulError::InvalidInput { msg }) if msg == "a GhulDocs vault goes with its documents")
+}
+
+/// Opens a suite file on a new device and accepts it.
+fn take(name: &str, file: Vec<u8>, kf: &[u8]) -> (Dirs, Arc<GhulSuite>) {
+    let d = Dirs::new(name);
+    let s = d.suite();
+    s.archive_open_bytes(file, PW.into(), None, None, None, Some(kf.to_vec())).unwrap();
+    s.archive_accept().unwrap();
+    (d, s)
+}
+
+/// Sets the modification time of everything directly in `dir` to three days ago.
+fn backdate(dir: &std::path::Path) {
+    let then = std::time::SystemTime::now() - std::time::Duration::from_secs(3 * 24 * 3600);
+    for e in std::fs::read_dir(dir).unwrap().flatten() {
+        std::fs::File::open(e.path()).unwrap().set_modified(then).unwrap();
+    }
+}
+
+/// The generic entry functions (GhulPass, GhulAuth) never touch a GhulDocs index: a copy would
+/// share its content file, a move would leave it behind (G9 4).
+#[test]
+fn generic_entry_functions_refuse_docs_vaults() {
+    let (_d, a, kf, _, v) = docs_suite("g9-entry");
+    let v2 = a.create_vault(VaultKind::Docs, "Zweiter".into()).unwrap();
+    let x = add(&a, &v, None, "x.pdf", b"hello");
+    let id = unhex(&x.id);
+    assert!(refused_as_docs(a.duplicate_entry(v.clone(), id.clone(), " (Kopie)".into())));
+    assert!(refused_as_docs(a.move_entry(v.clone(), id.clone(), v2.clone())));
+    assert!(refused_as_docs(a.set_entry_favorite(v.clone(), id.clone(), true)));
+    assert!(refused_as_docs(a.add_entry_attachment(v.clone(), id.clone(), "a.txt".into(), b"a".to_vec())));
+    assert!(refused_as_docs(a.remove_entry_attachment(v.clone(), id.clone(), "a.txt".into())));
+    assert!(refused_as_docs(a.entry_attachment(v.clone(), id.clone(), "a.txt".into())));
+    assert!(refused_as_docs(a.entry_extras(v.clone(), id.clone())));
+    assert!(refused_as_docs(a.get_entry(v.clone(), id.clone())));
+    assert!(refused_as_docs(a.delete_entry(v.clone(), id.clone())));
+    assert!(refused_as_docs(a.rename_totp(v.clone(), id.clone(), "i".into(), "a".into())));
+    assert!(refused_as_docs(a.totp_uri(v.clone(), id.clone())));
+    // Nothing changed: one document, the suite file saves and opens elsewhere with it.
+    assert_eq!(a.docs_usage().unwrap().files, 1);
+    let file = save(&a);
+    let (_db, b) = take("g9-entry-b", file, &kf);
+    assert_eq!(read(&b, &v, &x.id).unwrap(), b"hello");
+}
+
+/// A check waiting for "accept" keeps its documents however long it waits (also over a jump of
+/// the clock): tidying leaves its staging folder alone (G9 2).
+#[test]
+fn a_waiting_check_keeps_its_documents_however_old() {
+    let (_d, a, kf, _, v) = docs_suite("g9-stage-a");
+    let x = add(&a, &v, None, "x.pdf", b"hello");
+    let file = save(&a);
+    let db = Dirs::new("g9-stage-b");
+    let b = db.suite();
+    b.archive_open_bytes(file, PW.into(), None, None, None, Some(kf.clone())).unwrap();
+    backdate(&db.root.join("vault").join(".staging"));
+    // Any later staging (another open, an adopt, accept's own) tidies old folders.
+    drop(super::super::docs::Staging::new(&db.root.join("vault")).unwrap());
+    b.archive_accept().unwrap();
+    assert_eq!(read(&b, &v, &x.id).unwrap(), b"hello");
+    assert_eq!(staging_left(&db), 0);
+}
+
+/// A checked document missing before "accept" (removed by anything else): nothing is replaced,
+/// the documents of the device stay (G9 2).
+#[test]
+fn accept_with_a_checked_document_missing_changes_nothing() {
+    let (_da, a, kf_a, _, va) = docs_suite("g9-miss-a");
+    add(&a, &va, None, "x.pdf", b"hello");
+    let file = save(&a);
+    let (db, b, _kf_b, _, vb) = docs_suite("g9-miss-b");
+    let y = add(&b, &vb, None, "y.pdf", b"mine");
+    b.archive_open_bytes(file, PW.into(), None, None, None, Some(kf_a)).unwrap();
+    let staging = db.root.join("vault").join(".staging");
+    let mut gone = 0;
+    for s in std::fs::read_dir(&staging).unwrap().flatten() {
+        for v in std::fs::read_dir(s.path()).unwrap().flatten() {
+            for f in std::fs::read_dir(v.path()).unwrap().flatten() {
+                std::fs::remove_file(f.path()).unwrap();
+                gone += 1;
+            }
+        }
+    }
+    assert_eq!(gone, 1);
+    let r = b.archive_accept();
+    assert!(matches!(&r, Err(GhulError::Corrupted { msg }) if msg == "a document is damaged or missing"), "{r:?}");
+    assert!(b.is_unlocked(), "failed before anything was replaced");
+    assert!(!b.archive_device_data_wiped());
+    assert_eq!(read(&b, &vb, &y.id).unwrap(), b"mine");
+    assert_eq!(staging_left(&db), 0);
+}
+
+/// A suite file larger than is read is never written: the save is refused with a clear error
+/// before anything reaches the sink, and the working copy keeps its state (G9 3).
+#[test]
+fn a_suite_file_too_large_to_open_is_never_written() {
+    use super::super::archive::{ArchiveTarget, OTHER_LIMIT, TEST_LIMITS};
+    let (_d, a, _kf, _, v) = docs_suite("g9-big");
+    let first = save(&a);
+    add(&a, &v, None, "big.bin", &content(300_000, 1));
+    TEST_LIMITS.with(|l| l.set(Some((300_000, OTHER_LIMIT))));
+    let sink = Arc::new(BytesSink::default());
+    let r = a.archive_build("Test".into(), sink.clone(), None);
+    TEST_LIMITS.with(|l| l.set(None));
+    assert!(
+        matches!(&r, Err(GhulError::InvalidInput { msg }) if msg == "the suite file would be too large"),
+        "{:?}",
+        r.map(|_| ())
+    );
+    assert!(sink.0.lock().unwrap().is_empty(), "nothing written");
+    assert_eq!(a.archive_target_bytes(first).unwrap(), ArchiveTarget::Same, "the state before");
+    save(&a);
+}
+
+/// Attachments stop before the vaults besides GhulDocs could make the suite file too large
+/// (G9 3).
+#[test]
+fn attachments_stop_before_the_suite_file_gets_too_large() {
+    use super::super::archive::{MAX_ARCHIVE, TEST_LIMITS};
+    let (_d, a, _kf, _, _v) = docs_suite("g9-other");
+    let p = vault_id(&a, "Privat");
+    let id = a.save_entry(p.clone(), login("Bank", "u", "1")).unwrap();
+    TEST_LIMITS.with(|l| l.set(Some((MAX_ARCHIVE, 600_000))));
+    let mut added = 0;
+    let refused = loop {
+        match a.add_entry_attachment(p.clone(), id.clone(), format!("{added}.bin"), content(100_000, added as u8)) {
+            Ok(()) => added += 1,
+            Err(e) => break e,
+        }
+        assert!(added < 10);
+    };
+    let dup = a.duplicate_entry(p.clone(), id.clone(), " (Kopie)".into());
+    TEST_LIMITS.with(|l| l.set(None));
+    assert!(matches!(&refused, GhulError::InvalidInput { msg } if msg == "the vaults besides GhulDocs are full"));
+    assert!((3..=4).contains(&added), "{added}");
+    assert!(matches!(&dup, Err(GhulError::InvalidInput { msg }) if msg == "the vaults besides GhulDocs are full"));
+}
+
+/// A GhulDocs vault whose adoption cannot be saved is not half added: not in the open suite, not
+/// in the folder, no content folder; the suite still saves, and adopting again works (G9 5).
+#[test]
+fn an_adopted_docs_vault_that_cannot_be_saved_is_not_half_added() {
+    let (_da, a, kf_a, _, va) = docs_suite("g9-adopt-a");
+    let x = add(&a, &va, None, "x.pdf", b"hello");
+    let sink = Arc::new(BytesSink::default());
+    a.docs_export_vault(va.clone(), sink.clone(), None).unwrap();
+    let file = std::mem::take(&mut *sink.0.lock().unwrap());
+    let db = Dirs::new("g9-adopt-b");
+    let flaky = Arc::new(super::archive::FailOnce { inner: db.storage(), armed: false.into() });
+    let b = GhulSuite::new(flaky.clone(), db.local());
+    let kf_b = generate_keyfile();
+    b.create(options(PW, Some(kf_b), &[(VaultKind::Docs, "Eigene")]), None, None, None).unwrap();
+    flaky.armed.store(true, std::sync::atomic::Ordering::SeqCst);
+    let adopt = || {
+        b.docs_adopt_vault(
+            source(file.clone()),
+            "Übernommen".into(),
+            PW.into(),
+            None,
+            None,
+            None,
+            Some(kf_a.clone()),
+            None,
+        )
+    };
+    assert!(adopt().is_err());
+    assert!(!b.list_vaults().unwrap().iter().any(|i| i.id == va));
+    assert!(!flaky.list().unwrap().iter().any(|f| f.contains(&va)), "no vault file");
+    assert!(!docs_dir(&db, &va).exists(), "no content folder");
+    b.archive_build_bytes("Test".into()).unwrap();
+    assert_eq!(adopt().unwrap(), va);
+    assert_eq!(read(&b, &va, &x.id).unwrap(), b"hello");
+}
+
+/// Deletes a document for good when the first piece of the suite file is written.
+struct DeletingSink {
+    suite: Arc<GhulSuite>,
+    vault: String,
+    id: String,
+    done: std::sync::atomic::AtomicBool,
+    data: Mutex<Vec<u8>>,
+}
+
+impl ArchiveSink for DeletingSink {
+    fn write(&self, data: Vec<u8>) -> Result<(), StorageError> {
+        if !self.done.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            self.suite.docs_delete_forever(self.vault.clone(), self.id.clone()).unwrap();
+        }
+        self.data.lock().unwrap().extend_from_slice(&data);
+        Ok(())
+    }
+}
+
+/// A document deleted for good (or the trash emptied) while the suite file is written: its
+/// content file stays until the file is complete (on Android the file is overwritten in place,
+/// a failure there loses the copy before), and goes afterwards (G9 6).
+#[test]
+fn deleting_a_document_while_saving_keeps_the_file_complete() {
+    let (d, a, kf, _, v) = docs_suite("g9-del");
+    let x = add(&a, &v, None, "x.bin", &content(3 * 1024 * 1024, 3));
+    let y = add(&a, &v, None, "y.pdf", b"second");
+    let sink = Arc::new(DeletingSink {
+        suite: a.clone(),
+        vault: v.clone(),
+        id: y.id.clone(),
+        done: false.into(),
+        data: Mutex::new(Vec::new()),
+    });
+    let built = a.archive_build("Test".into(), sink.clone(), None).unwrap();
+    assert!(sink.done.load(std::sync::atomic::Ordering::SeqCst), "deleted while it was written");
+    assert_eq!(content_files(&d, &v).len(), 1, "deleted once the file was complete");
+    let data = std::mem::take(&mut *sink.data.lock().unwrap());
+    assert!(
+        super::super::archive::archive_written_matches(source(data.clone()), built.size, built.sha256, None).unwrap()
+    );
+    // The file holds the state it was built from, with both documents.
+    let (_db, b) = take("g9-del-b", data, &kf);
+    assert_eq!(read(&b, &v, &y.id).unwrap(), b"second");
+    assert_eq!(read(&b, &v, &x.id).unwrap().len(), 3 * 1024 * 1024);
+    // The next unlock tidies nothing it should not.
+    a.lock();
+    a.finish_lock();
+    a.unlock(PW.into(), None, None, None, Some(kf)).unwrap();
+    assert_eq!(read(&a, &v, &x.id).unwrap().len(), 3 * 1024 * 1024);
+}
+
+/// A file of an older development version (an older format) says so, instead of a generic
+/// error: the working copy and a suite file (G9 13).
+#[test]
+fn files_of_an_older_development_version_say_so() {
+    let (d, a, _kf, _, _v) = docs_suite("g9-old");
+    let mut suite = std::fs::read(d.root.join("vault").join("suite.ghlsuite")).unwrap();
+    suite[8..10].copy_from_slice(&2u16.to_le_bytes());
+    assert!(matches!(LockedContainer::parse(&suite).map_err(GhulError::from), Err(GhulError::OldFormat)));
+    let r = a.archive_protection_bytes(zip_of(&[("export.ghlexp".into(), suite.clone())]));
+    assert!(matches!(r, Err(GhulError::OldFormat)), "{r:?}");
+    a.lock();
+    a.finish_lock();
+    std::fs::write(d.root.join("vault").join("suite.ghlsuite"), &suite).unwrap();
+    let r = a.unlock(PW.into(), None, None, None, Some(_kf));
+    assert!(matches!(r, Err(GhulError::OldFormat)), "{r:?}");
+}

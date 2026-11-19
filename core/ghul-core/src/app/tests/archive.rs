@@ -408,9 +408,9 @@ fn a_zip_with_too_many_entries_is_refused() {
 }
 
 /// A storage whose next write of the suite file fails (a full or pulled storage).
-struct FailOnce {
-    inner: Arc<dyn VaultStorage>,
-    armed: std::sync::atomic::AtomicBool,
+pub(super) struct FailOnce {
+    pub(super) inner: Arc<dyn VaultStorage>,
+    pub(super) armed: std::sync::atomic::AtomicBool,
 }
 
 impl VaultStorage for FailOnce {
