@@ -1,6 +1,13 @@
 # Maestro test suite for GhulSuite (Android dev build). Runs on any emulator or device:
 #   maestro test app/maestro/
 # The flows use the English texts (default language of a fresh emulator).
+#
+# Scanning documents (GhulDocs, "Scan document") has no flow here: the CI emulator starts without
+# cameras (tools/ci-emulator.sh, -camera-back none), and the emulator's virtual scene camera needs
+# GPU rendering that the headless CI machines do not provide reliably; its picture is a 3D room,
+# not a sheet, so the flow could only check the screens, not the result. The scan screens are
+# tested on the desktop instead (DocScanTest with drawn photos, the same page transform; LayoutCheckTest)
+# and by hand on a phone (docs/TESTPLAN.md, section 38).
 flows:
   - "[01][0-9]-*.yaml"
 executionOrder:

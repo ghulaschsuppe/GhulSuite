@@ -77,6 +77,23 @@ class LayoutCheckTest {
     private fun state(setup: AppState.() -> Unit = {}): AppState =
         AppState(ScreenshotTest.Fake(exists = true, unlocked = true), scope()).apply(setup)
 
+    private val scanEngine = FakeScanEngine()
+
+    /** The sheet in the photos of [FakeScanEngine] (parts of the upright photo). */
+    private val SAMPLE_CORNERS = de.danerd.ghulsuite.scan.Quad(
+        de.danerd.ghulsuite.scan.Pt(160f / 900, 120f / 1200), de.danerd.ghulsuite.scan.Pt(760f / 900, 180f / 1200),
+        de.danerd.ghulsuite.scan.Pt(720f / 900, 1080f / 1200), de.danerd.ghulsuite.scan.Pt(110f / 900, 1020f / 1200),
+    )
+
+    // Made once (drawing the pages takes a moment): the scan screens of every phone show the same.
+    private val samplePhoto by lazy { scanEngine.photo() }
+    private val samplePreview by lazy { scanEngine.preview(samplePhoto, 1600) }
+    private val samplePages by lazy {
+        listOf(0, 1).map { turns ->
+            de.danerd.ghulsuite.ui.ScanPage(samplePhoto, SAMPLE_CORNERS, turns, turns == 1, scanEngine.render(samplePhoto, SAMPLE_CORNERS, turns, turns == 1))
+        }
+    }
+
     /** The screens, each made fresh (name to state). */
     private val screens: List<Pair<String, () -> AppState>> = buildList {
         add("einrichtung" to { AppState(ScreenshotTest.Fake(exists = false, unlocked = false), scope()) })
@@ -109,6 +126,32 @@ class LayoutCheckTest {
         add("kalender-liste" to { state { tab = Tab.CAL; calView = CalView.LIST } })
         add("optionen" to { state { tab = Tab.SETTINGS } })
         for (p in SetPage.entries) add("optionen-${p.name.lowercase()}" to { state { push(Screen.SettingsPage(p)) } })
+        // Scanning a document (Android): camera, crop, review, with the drawn photos of FakeScanEngine.
+        add("scan-kamera" to { state { tab = Tab.DOCS; push(Screen.DocScan("d1", null)) } })
+        add("scan-zuschneiden" to {
+            state {
+                tab = Tab.DOCS
+                scanSession = de.danerd.ghulsuite.ui.ScanSession("d1", null, scope).apply {
+                    shot = samplePhoto
+                    preview = samplePreview
+                    corners = SAMPLE_CORNERS
+                    found = true
+                    step = de.danerd.ghulsuite.ui.ScanStep.CROP
+                }
+                push(Screen.DocScan("d1", null))
+            }
+        })
+        add("scan-pruefen" to {
+            state {
+                tab = Tab.DOCS
+                scanSession = de.danerd.ghulsuite.ui.ScanSession("d1", "f1", scope).apply {
+                    pages += samplePages
+                    name = "Scan 2026-11-19 14.05.pdf"
+                    step = de.danerd.ghulsuite.ui.ScanStep.REVIEW
+                }
+                push(Screen.DocScan("d1", "f1"))
+            }
+        })
         add("import" to { state { push(Screen.Import) } })
         add("export" to { state { push(Screen.Export) } })
     }
@@ -134,7 +177,7 @@ class LayoutCheckTest {
                 // moved on by hand instead of waiting for idle.
                 mainClock.autoAdvance = false
                 setContent {
-                    CompositionLocalProvider(LocalDensity provides Density(2f, phone.fontScale)) {
+                    CompositionLocalProvider(LocalDensity provides Density(2f, phone.fontScale), de.danerd.ghulsuite.ui.LocalScanEngine provides scanEngine) {
                         // A new state (and composition) for each screen.
                         key(current) { GhulSuiteApp(screens[current].second()) }
                     }

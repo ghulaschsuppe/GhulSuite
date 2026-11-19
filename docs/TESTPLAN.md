@@ -725,6 +725,28 @@ aufgehoben, `~/.ssh/authorized_keys` auf dem Server angesehen.
 | KW16 | **Erst speichern:** Passwort ändern, im Dialog „Später“. GhulDrive benutzen, dann auf einem zweiten Gerät die vorher aufgehobene Kopie öffnen (altes Passwort). App auf Gerät A sperren und entsperren. | Bis zum Speichern ändert sich auf dem Server nichts: `authorized_keys` unverändert, `index.ghldrv` mit dem alten Schlüssel; die alte Kopie öffnet GhulDrive weiter. Nach dem Entsperren fragt die App wieder nach dem Speichern. Nach dem Speichern läuft der Wechsel wie KW1. |
 | KW17 | Wie KW16 (noch nicht gespeichert), einen zweiten Speicherort ohne seine Dateien entfernen. Dann speichern und noch einmal entfernen. | Erst: „Speichere zuerst die Suite-Datei …“, nichts entfernt. Nach dem Speichern wird er entfernt; später wieder hinzugefügt zeigt er seine Dateien. |
 
+## 38. Dokumente scannen (GhulDocs, Android)
+
+Die Kamera in der App (nicht die Kamera-App des Systems), mehrere Seiten in eine PDF. Fotos und Seiten liegen nur im
+Arbeitsspeicher. Vorher: ein GhulDocs-Tresor mit einem Ordner, ein paar Blätter Papier (auch ein Kassenbon).
+
+| Nr. | Schritt | Erwartet |
+|---|---|---|
+| SC1 | GhulDocs → „+“ → „Dokument scannen“, beim ersten Mal die Kamera ablehnen. | Hinweis, wozu die Kamera gebraucht wird, und „Kamera erlauben“. Nach „Kamera erlauben“ (bzw. in den App-Berechtigungen des Systems) erscheint das Kamerabild ohne Neustart. |
+| SC2 | Ein Blatt schräg auf einem dunklen Tisch fotografieren. | Zuschneiden: Der Rahmen liegt auf den Ecken des Blatts („Blatt erkannt.“). Ohne erkennbares Blatt (z. B. eine Wand) steht ein Rahmen etwas innerhalb des Fotos („Kein Blatt erkannt.“). |
+| SC3 | Eine Ecke mit dem Finger verschieben, dann über die gegenüberliegende Ecke hinaus ziehen. | Die Ecke folgt dem Finger, eine Lupe zeigt sie vergrößert. Der Rahmen klappt nie um: Die Ecke bleibt an der letzten gültigen Stelle stehen. „Ganzes Foto“ und „Erkanntes Blatt“ wechseln. |
+| SC4 | „Übernehmen“, zwei weitere Seiten fotografieren, „Fertig“. | Seitenzähler und Vorschaubilder unter dem Kamerabild; die Seiten sind gerade (nicht mehr schräg) und scharf. |
+| SC5 | Eine Seite drehen, „Dokument“ für eine Seite, dann „Dokument-Filter für alle Seiten“. | Die Vorschau zeigt die Änderung; mit Filter ist das Papier weiß (auch im Schatten), der Text schwarz. |
+| SC6 | Eine Seite „Zuschneiden“ (Abbrechen), eine „Neu aufnehmen“, eine löschen. | Abbrechen lässt die Seite wie sie war; die neue Aufnahme ersetzt die Seite an ihrer Stelle; Löschen nimmt sie aus der Reihe. |
+| SC7 | Namen ändern, „Als PDF speichern“. | Fortschritt unter der Kopfzeile, danach steht die PDF im geöffneten Ordner. In der App angesehen: alle Seiten, in der richtigen Reihenfolge, etwa A4, je Seite etwa 200 bis 600 KB. |
+| SC8 | Mitten im Scan (Seiten aufgenommen) sperren: von Hand im Hintergrund, über die automatische Sperre und über die Panik-Sperre. | Nach dem Entsperren ist der Scan weg, nichts wurde gespeichert; die App sagt, dass nicht Gespeichertes verworfen wurde. |
+| SC9 | Mit Seiten „Schließen“ bzw. Zurück. | Rückfrage „Änderungen verwerfen?“; „Verwerfen“ beendet den Scan ohne Speichern. |
+| SC10 | Im Scan ein Bildschirmfoto versuchen und die Liste der letzten Apps öffnen. | Kein Bildschirmfoto, keine Vorschau (außer Bildschirmfotos sind in den Optionen erlaubt). |
+| SC11 | Nach einem Scan im Dateimanager und unter `Android/data/…` nachsehen. | Keine Fotos, keine PDF außerhalb des Tresors; auch die Galerie zeigt keine neuen Fotos. |
+| SC12 | Über 30 Seiten aufnehmen. | Hinweis „Viele Seiten …“; reicht der Speicher nicht mehr, nimmt die App keine weitere Seite auf und sagt es. |
+| SC13 | GhulDocs fast voll (Testtresor nahe 1 GB), dann speichern. | Meldung „GhulDocs ist voll …“, die Seiten bleiben erhalten. |
+| SC14 | Querformat, Taschenlampe („Licht“) an und aus, Kassenbon (lang und schmal). | Alles bedienbar; der Kassenbon wird eine schmale, hohe Seite. |
+
 ## Fehler melden
 
 Bitte je Fehler: **Testnummer**, Handy und Android-Version, App-Version (Optionen → Über GhulSuite), was du gemacht hast,
