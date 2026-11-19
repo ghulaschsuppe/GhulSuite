@@ -318,10 +318,20 @@ actual fun decodeImage(bytes: ByteArray, maxSide: Int): androidx.compose.ui.grap
 }.getOrNull()
 
 /**
+ * Image data stays in memory: ImageIO caches the streams it decodes in a file in the temp folder
+ * by default (PDFBox decodes JPEG pages, e.g. of a scanned document, through ImageIO). Called
+ * first in `main`, before anything can use ImageIO, and again before a PDF is shown.
+ */
+fun keepImagesInMemory() {
+    javax.imageio.ImageIO.setUseCache(false)
+}
+
+/**
  * A PDF read from the bytes with Apache PDFBox, everything in memory (no scratch file; the
- * stream cache is memory only).
+ * stream cache is memory only, and so is ImageIO's, see [keepImagesInMemory]).
  */
 actual fun openPdf(bytes: ByteArray): PdfView? = runCatching {
+    keepImagesInMemory()
     // PDFBox keeps a list of the system's fonts: in the portable version next to the data, not on the PC.
     if (System.getProperty("pdfbox.fontcache") == null && System.getProperty("jpackage.app-path") != null) {
         System.setProperty("pdfbox.fontcache", de.danerd.ghulsuite.DesktopPaths.dataDir.absolutePath)

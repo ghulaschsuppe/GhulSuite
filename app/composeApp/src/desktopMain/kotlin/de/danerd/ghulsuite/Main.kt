@@ -32,27 +32,22 @@ import kotlinx.coroutines.delay
 private const val IDLE_LOCK_MS = 15 * 60 * 1000L
 
 fun main(args: Array<String>) {
+    // Before anything can use ImageIO (PDFBox decoding JPEG pages, the icon): its disk cache would
+    // put image data, e.g. the pages of a scanned document, into a file in %TEMP%.
+    de.danerd.ghulsuite.ui.keepImagesInMemory()
     WinNative.hardenDllSearch()
-    // A double click on a suite file while GhulSuite runs: the running one opens it.
+    // One GhulSuite per data folder, decided first: a double click on a suite file while GhulSuite
+    // runs (or is still starting) hands the file to that one and ends here, before it touches
+    // anything (e.g. the copies handed to other programs, which the first one still needs).
     val fileArg = SingleInstance.suiteFileArg(args)
-    if (SingleInstance.handOver(fileArg)) return
-    // B10: decrypted copies a program still held open last time are removed now.
-    ShareFiles.wipe()
-    // The core library lies next to the program (installer, portable folder, Gradle run).
-    System.getProperty("compose.application.resources.dir")?.let { System.setProperty("jna.library.path", it) }
-    Thread.setDefaultUncaughtExceptionHandler { _, e ->
-        runCatching { File(DesktopPaths.dataDir, "absturz.txt").writeText(e.stackTraceToString()) }
+    if (!SingleInstance.claim()) {
+        SingleInstance.handOverWaiting(fileArg)
+        return
     }
-
     var awtWindow: java.awt.Window? = null
-    val backend = DesktopVaultBackend { awtWindow }
-    // The language chosen in the app (otherwise the system's).
-    backend.settings.appLanguage.takeIf { it.isNotEmpty() }?.let { java.util.Locale.setDefault(java.util.Locale.forLanguageTag(it)) }
-    val state = AppState(backend, CoroutineScope(SupervisorJob() + Dispatchers.Main))
     fileArg?.let { SingleInstance.open(it) }
-    // Later starts (a double click on a suite file) come here at once, also before the window is
-    // there (a start meanwhile would otherwise find no one listening and open a second GhulSuite);
-    // the window comes to the front.
+    // Later starts come here at once, also before the window is there; the window comes to the
+    // front once it is.
     SingleInstance.listen { path ->
         path?.let { SingleInstance.open(it) }
         java.awt.EventQueue.invokeLater {
@@ -62,6 +57,18 @@ fun main(args: Array<String>) {
             w.requestFocus()
         }
     }
+    // B10: decrypted copies a program still held open last time are removed now.
+    ShareFiles.wipe()
+    // The core library lies next to the program (installer, portable folder, Gradle run).
+    System.getProperty("compose.application.resources.dir")?.let { System.setProperty("jna.library.path", it) }
+    Thread.setDefaultUncaughtExceptionHandler { _, e ->
+        runCatching { File(DesktopPaths.dataDir, "absturz.txt").writeText(e.stackTraceToString()) }
+    }
+
+    val backend = DesktopVaultBackend { awtWindow }
+    // The language chosen in the app (otherwise the system's).
+    backend.settings.appLanguage.takeIf { it.isNotEmpty() }?.let { java.util.Locale.setDefault(java.util.Locale.forLanguageTag(it)) }
+    val state = AppState(backend, CoroutineScope(SupervisorJob() + Dispatchers.Main))
 
     // Activity tracking for the idle lock.
     var lastInput = System.currentTimeMillis()
