@@ -301,8 +301,8 @@ getestet wird und was nicht:
   auf die Suite-Datei und auf GhulDocs (fehlende, vertauschte, alte, fremde oder abgezweigte Teile, ZIP-Tricks,
   vertauschte, abgeschnittene oder fremde Abschnitte eines Dokuments, ein volles GhulDocs), ein „bekloppter
   Nutzer“, der die Suite zwischen drei Geräten hin- und herträgt, kaputte und böswillige Eingaben in jeden Parser.
-  Dazu kommen öffentliche Sammlungen wie Project Wycheproof (Kryptografie), die Big List of Naughty Strings, die
-  URL-Testdaten der Browser, JSONTestSuite, Kalenderdateien anderer Programme und die Zeitzonen-Regeln der ganzen
+  Dazu kommen öffentliche Sammlungen wie Project Wycheproof (Kryptografie), die Big List of Naughty Strings,
+  JSONTestSuite, Kalenderdateien anderer Programme und die Zeitzonen-Regeln der ganzen
   Welt. Die Oberfläche wird am Desktop durchgeklickt, auch das Scannen mit gezeichneten Fotos.
 - **Im Emulator** werden die wichtigsten Abläufe durchgeklickt, mit einem Bild nach jedem Schritt.
 - **Jede Nacht** zusätzlich: langes Fuzzing, Dauerläufe, zufällige Bedienung im Emulator, Server mit kaputtem TLS

@@ -1,8 +1,12 @@
 # Testprotokoll und Fehlerbericht
 
-> **Hinweis (17.11.2026):** Dieses Protokoll stammt aus der Zeit **vor dem Umbau ohne Synchronisation** und bleibt als
-> Geschichte unverändert. Damals gab es noch Synchronisation, FTPS sowie Sicherung und Wiederherstellung; Funde dazu
-> sind seitdem obsolet. Den aktuellen Stand beschreiben [`UMBAU-OHNE-SYNC.md`](UMBAU-OHNE-SYNC.md) und [`AUDIT.md`](AUDIT.md).
+> **Hinweis (19.11.2026):** Die Abschnitte 3 bis 9 stammen aus der Zeit **vor den Umbauten** und bleiben als
+> Geschichte unverändert. Damals gab es noch Synchronisation, FTPS, Sicherung und Wiederherstellung (entfernt mit
+> [`UMBAU-OHNE-SYNC.md`](UMBAU-OHNE-SYNC.md)) sowie GhulMail, GhulDrive, eigene Server (SFTP, PHP-Modul), Freigabelinks,
+> den Schlüsselwechsel, das Mail-Archiv und das Hochladen von Fehlerberichten (entfernt mit
+> [`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)). Funde und offene Punkte zu diesen Funktionen sind **obsolet**; welche das
+> sind, fasst [`AUDIT.md`](AUDIT.md), Abschnitt 3, zusammen. **Aktuell** sind die Abschnitte 1 und 2 (Zahlen und
+> Testsuite) und Abschnitt 10 (GhulDocs und Scannen).
 
 Stand: 14. November 2026 (vierte Runde: B1 Schlüssel bei jeder Schutzänderung erneuern, F23 neutrale Dateinamen, Geräte lange offline) · Branch `feat/rekey-neutral-names` · Zusammenfassung aller Audits: Sicherheitsbericht (`docs/AUDIT.md`); Testkonzept: `docs/TESTKONZEPT.md`.
 
@@ -10,54 +14,50 @@ Dieses Protokoll ist die Arbeitsliste für die nächsten Durchgänge: Jeder Fund
 
 ## 1. Ergebnis in Zahlen
 
+Stand 19.11.2026, nach dem Umbau zu GhulDocs (die Zahlen vor den Umbauten stehen in [`AUDIT.md`](AUDIT.md), Abschnitt 1).
+
 | | |
 |---|---|
-| Testfunktionen im Kern | 269 (263 bei jedem Lauf, 6 lange oder mit externen Daten nur nachts) |
-| Einzelprüfungen pro Lauf | über 1,1 Millionen (u. a. 777.000 Zeitzonen-Umrechnungen in 446 Zonen, 292.000 Kalendertage, 45.000 Fuzz-Eingaben, 20.000 Base32-Schreibweisen, 12.000 Wiederherstellungscodes, 5.000 HOTP-Fälle, 5.000 Passwortgenerator-Varianten, 3.000 Zusammenführungen, 3.000+ Aktionen „bekloppter Nutzer“, 515 Naughty Strings × 8 Felder) |
-| Davon gegen echte Server | 55 (SFTP, FTPS, IMAP, SMTP, PHP-Modul) |
-| Externe Testsammlungen | Big List of Naughty Strings, Project Wycheproof (5 Algorithmen), Public-Suffix-Liste mit offiziellen Testfällen, RFC 4226/6238, PayloadsAllTheThings (XSS, CRLF), SecLists (XSS), DOMPurify-Testfälle, WHATWG-URL-Testdaten, JSONTestSuite, 304 Kalenderdateien aus den Tests von iCal4j und python-icalendar (auch deren Fuzzing-Funde), Zeitzonen-Regeln aller Zonen der IANA-Datenbank |
-| Gefundene Fehler | 51 und die Umbauten F106/F107, alle behoben bzw. entschieden (F24 gewollt) |
-| Offene Punkte aus dem Audit | keine mehr (Abschnitt 4: erledigt oder entschieden) + Bedienung/Texte (Abschnitt 5) |
-| Laufzeit | Kern-Tests ca. 95 s, Android/Desktop-Build ca. 10 min, Nachtlauf ca. 2 h |
+| Testfunktionen im Kern | 211 (205 bei jedem Lauf, 6 lange oder mit externen Daten nur nachts) |
+| Einzelprüfungen pro Lauf | über 1 Million (u. a. Zeitzonen-Umrechnungen in 446 Zonen, Kalendertage, Fuzz-Eingaben, Base32-Schreibweisen, Wiederherstellungscodes, HOTP-Fälle, Passwortgenerator-Varianten, Aktionen „bekloppter Nutzer“, 515 Naughty Strings in jedem Feld) |
+| Davon gegen echte Server | keine mehr (Testserver mit dem Umbau entfallen); nachts badssl.com und x509-limbo gegen den TLS-Prüfer |
+| Externe Testsammlungen | Big List of Naughty Strings, Project Wycheproof (XChaCha20-Poly1305, HKDF, HMAC, P-256), RFC 4226/6238, JSONTestSuite, 304 Kalenderdateien aus den Tests von iCal4j und python-icalendar, Zeitzonen-Regeln aller Zonen der IANA-Datenbank |
+| Gefundene Fehler | Abschnitt 3 (Geschichte, F01 bis F149); zu GhulDocs und Scannen Abschnitt 10 |
+| Offene Punkte | werden in Paket G9 von [`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md) neu gesichtet |
 
-Alle Tests sind grün (Kern, Netzwerk, Android-Kotlin, Desktop-Tests). Die App-Tests im Emulator (Maestro, Monkey) laufen in der CI.
+Alle Tests sind grün (Kern, Android-Kotlin, Desktop-Tests). Die App-Tests im Emulator (Maestro, Monkey) laufen in der CI.
 
 ## 2. Testsuite: was es gibt und wie man es startet
 
 | Datei | Was | Zusage* |
 |---|---|---|
-| `core/ghul-core/src/app/tests/chaos.rs` | Server fällt aus, Uploads reißen ab, Dateien fehlen oder sind kaputt, neuere App-Version, leerer/falscher Ordner | Z1, Z5 |
-| `…/tests/crazy_user.rs` | „Bekloppter Nutzer“: tausende zufällige, oft unsinnige Aktionen auf drei Geräten; danach nichts verloren, nichts Gelöschtes zurück, alle Geräte gleich, nur verständliche Fehler | Z1, Z3, Z5, Z6 |
-| `…/tests/absurd.rs` | Naughty Strings in jedem Feld, riesige/leere Werte, seltsame Master-Passwörter, unmögliche Termine, kaputte Drive-Namen, Aufrufe im gesperrten Zustand | Z3, Z6, Z8 |
-| `…/tests/attacks.rs` | Datenklau (Klartextsuche in allen Dateien), gestohlene Dateien, manipulierter Drive-Server, gefälschte/geschwächte Tresordateien, Sicherungen mit Pfad-Tricks und Zip-Bomben, Mail-Kopfzeilen-Injektion, 34 HTML-Mail-Tricks, CSV-Formeln | Z2, Z3, Z4, Z7 |
-| `…/tests/properties.rs` | Generierte Reihen: Kalender 1600 bis 2400, RFC-Vektoren, Base32, Wiederherstellungscodes, Zusammenführen (Reihenfolge, Wiederholung), Passwortgenerator, Lookalike-Domains, ICS-Rundreise | Z5, Z8 |
+| `core/ghul-core/src/app/tests/archive.rs` | Suite-Datei: Speichern und Öffnen mit allen Rückfragen (älter, Abzweig, andere Suite, älterer Schutz), Angriffe (fehlende, vertauschte, fremde Teile, falsches Siegel, ZIP-Tricks), Abbruch an jeder Stelle, Code ohne Passwort, Dokumente in der Suite-Datei | Z1, Z2, Z5, Z9 |
+| `…/tests/docs.rs` | GhulDocs: Ordner, Namen, Papierkorb, Grenzen (1 GB, 20 000 Dokumente, Platz), abgebrochenes Hinzufügen, Angriffe auf Inhaltsverzeichnis und Inhaltsdateien, einzelner GhulDocs-Tresor, Reste nach einem Absturz | Z1, Z2, Z3, Z5 |
+| `core/ghul-core/src/app/docs/blob.rs`, `app/zipstream.rs` (Tests) | Inhaltsdateien (Abschnitte, Füllung, Länge, vertauschte und fremde Abschnitte) und das ZIP der Suite-Datei als Datenstrom | Z2, Z3 |
+| `…/tests/crazy_user.rs` | „Bekloppter Nutzer“: tausende zufällige, oft unsinnige Aktionen auf drei Geräten, zwischen denen die Suite-Datei wandert; danach nichts verloren, nur verständliche Fehler | Z1, Z3, Z5, Z6 |
+| `…/tests/absurd.rs` | Naughty Strings in jedem Feld, riesige/leere Werte, seltsame Master-Passwörter, unmögliche Termine, Aufrufe im gesperrten Zustand | Z3, Z6, Z8 |
+| `…/tests/attacks.rs` | Datenklau (Klartextsuche in allen Dateien), gestohlene Dateien, gefälschte/geschwächte Tresordateien, CSV-Formeln | Z2, Z3, Z7 |
+| `…/tests/properties.rs` | Generierte Reihen: Kalender 1600 bis 2400, RFC-Vektoren, Base32, Wiederherstellungscodes, Passwortgenerator, ICS-Rundreise | Z5, Z8 |
 | `…/tests/everyday.rs` | Alltagstest (2 Geräte, 30 Tage) und Stresstests (5.000 Einträge, 64 MB, 8 Threads) | Z1, Z5 |
-| `core/ghul-core/src/app/tests/mailarchive.rs` | Mail-Archiv gegen einen simulierten Anbieter: Abbruch nach jedem Schritt (hochgeladen, geprüft, im Verzeichnis, zurückgelesen, gelöscht), abbrechende Verbindungen, neu nummerierte Ordner, doppelte und kaputte Mails, manipulierte Archivdateien, Sperre, Schlüssel-Epochen; nach jedem Schritt die Zählregel „Anbieter + Archiv nie weniger als vorher“. Nachts 30.000 Mails mit Zufallsabbrüchen. Dazu `mail_archive_against_imap_and_sftp` über die App-Schnittstelle gegen Dovecot und SFTP | Z1, Z2, Z5 |
+| `…/tests.rs` (`rekey`, `single`) | Neue innere Schlüssel bei jeder Schutzänderung, alte Kopien danach; einzelne Tresore öffnen, hinzufügen, weitergeben | Z5, Z9 |
 | `core/ghul-core/src/fuzz_tests.rs` | Schnelles Fuzzing aller Parser bei jedem Lauf | Z3 |
-| `…/tests/collections.rs` | Öffentliche Angriffssammlungen: ~500 XSS-Muster (in 3 Schreibweisen), CRLF-Muster in jedem Mail-Kopffeld, WHATWG-URL-Testdaten, JSONTestSuite durch alle JSON-Importe | Z3, Z4 |
-| `…/tests/collections.rs` (Kalender) | 304 Kalenderdateien anderer Programme (echte Exporte, kaputte Dateien, Fuzzing-Funde): was der Import annimmt, ist ein gültiger Termin und übersteht Export → Import unverändert; alle Dateien zusätzlich durch einen echten Kalender (anzeigen, Erinnerungen, exportieren, sperren) | Z3, Z8 |
-| `core/ghul-core/src/app/caltext.rs` `zone_tests` | Zeitzonen: UTC-Zeiten mit dem Versatz ihres Tages, Termine aus anderen Zonen, Zonen, die nur die Datei kennt (Outlook), Serien-Ausnahmen; dazu die Regeln **aller 446 Zeitzonen** gegen die Zeitzonendatenbank, 2000 bis 2023 (Vergleichswerte: `tools/make-zone-oracle.py`) | Z8 |
-| `app/…/desktopTest/VaultFfiTest.kt` | Kalender-Import über die echte Anbindung mit der Zeitzonendatenbank des Geräts | Z8 |
-| `core/ghul-core/src/wycheproof_tests.rs` | Wycheproof-Vektoren für XChaCha20-Poly1305, AES-GCM, HKDF, HMAC, P-256 | Z2 |
-| `core/ghul-core/src/app/domain.rs` (Tests) | Public-Suffix-Testfälle, Phishing-Matrix (gleiche Website für Mail-Links) | Z4 |
+| `…/tests/collections.rs` | JSONTestSuite durch alle JSON-Importe; 304 Kalenderdateien anderer Programme durch Import, Anzeige und Export | Z3, Z8 |
+| `core/ghul-core/src/app/caltext.rs` `zone_tests` | Zeitzonen, dazu die Regeln **aller 446 Zeitzonen** gegen die Zeitzonendatenbank (Vergleichswerte: `tools/make-zone-oracle.py`) | Z8 |
+| `core/ghul-core/src/wycheproof_tests.rs` | Wycheproof-Vektoren für XChaCha20-Poly1305, HKDF, HMAC, P-256 | Z2 |
 | `core/fuzz/` | libFuzzer-Ziele `parsers`, `container_parse`, `ctap_responses` (nachts 15 min je Ziel) | Z3 |
-| `tools/attack-php-module.py` | 64 Angriffe auf das PHP-Modul (seit 0.7.0 ohne Schreibzugriff übers Web): falsche Methoden, Tricks mit Freigabe-Kennung, Ticket, Datei- und Blocknummer, Beschreibungen mit Pfaden statt Blöcken, kaputte Beschreibungen, Ablauf, 16 gleichzeitige Aufrufe eines Einmal-Links, Prüfdateien, übergroße Anfragen, beschädigter Zustand, Flut von Öffnungen; keine Fehlerantwort verrät Pfade oder PHP-Meldungen | Z2, Z4 |
+| `net/tests.rs` `badssl_…`, `net/tests_limbo.rs` (nachts) | 21 echte Server mit kaputtem TLS und 9.807 Zertifikatsketten gegen den TLS-Prüfer der Update- und Leak-Prüfung | Z4 |
+| `tools/verify_testvectors.py` | Testvektoren der Container und der Inhaltsdateien, unabhängig in Python nachgerechnet | Z2 |
 | `tools/check-android-manifest.py` | Von außen erreichbare Komponenten und Berechtigungen nur wie in einer festen Liste; verbotene Berechtigungen | Z7 |
-| `net/tests.rs` `badssl_…` (nachts) | 21 echte Server mit kaputtem TLS (abgelaufen, falscher Name, selbst signiert, alte Protokolle, schwache Verfahren, bekannte Schad-Zertifikate) müssen abgelehnt werden | Z4 |
-| `tools/check-texts.py` | Texte: fehlende Übersetzungen und Platzhalter (Fehler), uneinheitliche Begriffe und ungenutzte Texte (Hinweise) | Z6 |
-| `tools/ci-emulator.sh` + `emulator.yml` | Bei **jedem Pull Request** und auf main: die Android-App im Emulator, in drei Teilen nebeneinander. **base:** Einrichtung, GhulPass, GhulAuth, GhulCal, App-PIN, Bereiche mit nicht erreichbarem Server, dazu GhulPass und GhulAuth in der Tiefe (Speichern doppelt getippt, Bearbeiten, „Alle“, Löschen und Rückgängig), alle Optionsseiten oben und unten, die ganze App dunkel und im Querformat, Hintergrund und zurück. **server** und **mail:** gegen echte Testserver, die absichtlich 150 ms pro Paket langsam antworten (`tools/slow-servers.sh`). Nach jedem Schritt ein Bild; die Bilder werden vor jedem Merge durchgesehen. Nachts zusätzlich Monkey (3 × 30.000 zufällige Gesten) | Z3, Z6 |
-| `app/…/desktopTest/InteractionTest.kt` | Bedienung am Desktop mit Compose UI Test: langes Drücken, Auswahlkopf, Löschen mit „Rückgängig“ in allen fünf Bereichen (der Aufruf erreicht den Speicher nur ohne Rückgängig), Rückfragen mit rotem Knopf, Aktionsblätter, zweite Spalte im breiten Fenster, verschlüsselte Mail in der Liste; speichert je ein Bild | Z1, Z6 |
-| `app/maestro/server/` + `tools/check-server-flows.sh` | Im Emulator mit echten Testservern daneben: GhulDrive auf SFTP mit Passwort einrichten (erst Verbindung testen, dann Ordner) und einen Ordner anlegen, ein Mailkonto mit selbst signiertem Zertifikat anlegen, sich selbst eine Mail schicken und lesen; einen Sync-Server hinzufügen und wählen, Teilen einrichten mit schnellem Weitertippen im Ordner-Browser, Drive-Karte und Auswahlleiste prüfen, Hintergrund und Neustart, mit Bild nach jedem Schritt; danach prüfen, dass auf den Servern nur Verschlüsseltes liegt | Z2, Z4 |
-| `app/…/desktopTest/LayoutCheckTest.kt` | Alle Hauptbildschirme auf drei Handys (320 dp, 360 dp mit 130 % Schrift, 412 dp), deutsch und englisch: meldet Wörter, die mitten im Wort brechen, abgeschnittene Knöpfe und Titel, Inhalte über den Rand, zu kleine Tippflächen und Texte übereinander; ein Bild je Bildschirm und Handy (`build/screenshots/l-…`) | Z1, Z6 |
-| `app/…/desktopTest/AppStateRunTest.kt` | Aktionen der App mit verzögerter Ausführung wie auf dem Gerät: doppeltes Tippen, Folgeaktionen, Fehler | Z1 |
-| Entwicklerversion (`DevChecks.kt`) | Rote Leiste und Protokollzeile `GHUL-DEV-ALARM`, wenn eine Folgeaktion verworfen oder ein unerwarteter Fehler angezeigt wird; die Desktop-Tests und `tools/check-logcat.sh` scheitern daran | Z1 |
-| `tools/check-logcat.sh` | Nach den Emulator-Abläufen: Absturz, Hänger (ANR) oder Alarm der Entwicklerversion im Systemprotokoll lassen den Lauf scheitern; Datei- und Netzzugriffe im Hauptfaden werden gemeldet | Z1, Z3 |
-| `tools/compare-screenshots.py` | Bei jedem Pull Request: jedes Bild gegen den letzten Lauf von dev, eine Seite nur mit den Änderungen (vorher, nachher, rot markiert), Artefakt `screenshot-diff` | Z6 |
-| `app/maestro/extra/` | Rundgang auf Deutsch, mit normaler und mit großer Schrift; Server weg und wieder da; App im Hintergrund vom System beendet | Z1, Z3 |
-| `tools/check-reminders.sh` | Im Emulator nach den Abläufen: Der Termin hat einen Alarm im System; nach Zeitzonen-Wechsel steht er auf derselben Uhrzeit; nach „App beendet + Neustart“ ist er wieder da; beim Auslösen kommt die Benachrichtigung, bei beendeter, gesperrter App | Z1, Z8 |
-| `.github/workflows/nightly.yml` | Nachtlauf: Fuzzing lang, Langläufe in Release, Monkey, gitleaks (ganze Historie), PHPStan, cargo audit | alle |
+| `tools/check-texts.py` | Texte: fehlende Übersetzungen und Platzhalter, lange Striche (Fehler), uneinheitliche Begriffe und ungenutzte Texte (Hinweise) | Z6 |
+| `app/…/desktopTest/DocsInteractionTest.kt`, `DocsBackendTest.kt` | GhulDocs am Desktop: Bedienung mit Compose UI Test und gegen den echten Kern (Hinzufügen, Ansehen, Exportieren, Papierkorb, Grenze, Sperren) | Z1, Z2, Z6 |
+| `app/…/desktopTest/DocScanTest.kt`, `ScanAlgorithmsTest.kt` | Scannen mit gezeichneten Fotos und einer Ersatz-Kamera: Blatt finden, Ecken ziehen, mehrere Seiten, Filter, PDF; nach Speichern, Verlassen und Sperren bleibt nichts im Speicher | Z2, Z6 |
+| `app/…/desktopTest/InteractionTest.kt`, `AppStateRunTest.kt` | Bedienung: langes Drücken, Auswahl, Löschen mit „Rückgängig“, Rückfragen, zweite Spalte; Aktionen mit verzögerter Ausführung wie auf dem Gerät | Z1, Z6 |
+| `app/…/desktopTest/LayoutCheckTest.kt`, `ScreenshotTest.kt` | Alle Hauptbildschirme auf drei Handys, deutsch und englisch (Umbrüche, Abschneiden, Tippflächen); Bilder für die Durchsicht und die README | Z6 |
+| `tools/ci-emulator.sh` + `emulator.yml` | Bei jedem Pull Request und auf main: die Android-App im Emulator (Einrichtung, alle vier Bereiche, GhulDocs `07-docs.yaml`, Suite-Datei mit Dokumenten `14-suite-file.yaml`, Optionen, dunkel und quer), ein Bild nach jedem Schritt; nachts Monkey und Intent-Angriffe. Die Kamera hat keinen Ablauf im Emulator | Z1, Z3, Z6 |
+| `tools/check-logcat.sh`, `tools/check-reminders.sh`, `tools/compare-screenshots.py` | Absturz, ANR oder Alarm der Entwicklerversion im Systemprotokoll; Erinnerungen im System; Bildvergleich mit dev | Z1, Z6, Z8 |
+| `.github/workflows/nightly.yml` | Nachtlauf: Fuzzing lang, Langläufe in Release, Monkey, gitleaks, cargo audit, x509-limbo, MobSF, reproduzierbarer Kern | alle |
 
-\* Zusagen Z1 bis Z8 siehe `docs/TESTKONZEPT.md`, Abschnitt 1.
+\* Zusagen Z1 bis Z9 siehe `docs/TESTKONZEPT.md`, Abschnitt 1.
 
 Lokal starten:
 
@@ -66,8 +66,6 @@ cd core
 cargo test -p ghul-core                                   # alles außer den Langläufen
 cargo test --release -p ghul-core -- --ignored stress     # Stresstests
 cargo test --release -p ghul-core -- --ignored crazy      # bekloppter Nutzer, lang
-sudo -E bash ../tools/test-servers.sh > servers.env && set -a && . ./servers.env && set +a
-cargo test -p ghul-core -- sftp mail drive share module keychange   # gegen echte Testserver
 python3 ../tools/check-texts.py                            # Texte
 ```
 
@@ -433,3 +431,19 @@ Bedienung (zweiter Durchgang), alles erledigt:
 | G6 | Geprüft: 10 neue Bedienungstests klicken durch die echten Bildschirme (Auswahl, Löschen, Rückgängig, Rückfragen, Menüs, breites Fenster) und speichern 25 Bilder; App-Symbol in den drei Android-Formen gezeichnet | erledigt |
 
 Noch nicht auf einem Gerät ausprobiert: Zurück-Taste beendet die Auswahl, Wechsel in den Hintergrund führt eine offene Löschung aus, Strg+L unter Windows.
+
+## 10. GhulDocs und Scannen (Umbau, 17. bis 19.11.2026)
+
+Mit den Paketen G1 bis G7 von [`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md) sind Mail, Drive, Server und Freigaben samt
+ihren Tests entfernt und GhulDocs mit dem Scannen dazugekommen. Was dafür neu geprüft wird:
+
+| Bereich | Geprüft durch | Ergebnis |
+|---|---|---|
+| Inhaltsdateien `.ghlblob` | `docs/blob.rs` (Tests), Testvektoren `docs-blob-v1.json` (unabhängig in Python) | vertauschte, weggelassene, abgeschnittene, veränderte und fremde Abschnitte, falsche Füllung und Länge werden erkannt |
+| Inhaltsverzeichnis, Grenzen, Papierkorb | `tests/docs.rs` | Kreise, doppelte Kennungen und fehlende Felder abgelehnt; 1 GB, 20 000 Dokumente und Platz auf dem Datenträger greifen vor dem Schreiben; Abbruch hinterlässt nichts |
+| Suite-Datei als Datenstrom mit Dokumenten | `tests/archive.rs`, `zipstream.rs` | bis 1,25 GiB, nichts ganz im Arbeitsspeicher; Inhaltsdateien erst nach dem Bestätigen an ihrem Platz; älterer Schutz öffnet nie |
+| Oberfläche GhulDocs | `DocsInteractionTest`, `DocsBackendTest`, `LayoutCheckTest`, Emulator `07-docs.yaml` | Liste, Hinzufügen, Ansehen (Bild, PDF, Text), Exportieren, Papierkorb, volle Grenze, Sperren |
+| Scannen | `DocScanTest`, `ScanAlgorithmsTest`, Testplan Abschnitt 38 | gezeichnete Fotos (schräg, quer, wenig Kontrast, kein Blatt); nach Speichern, Verlassen und Sperren sind Fotos und Seiten überschrieben; auf echten Geräten von Hand |
+
+Neue Funde mit Nummer kommen aus der unabhängigen Durchsicht in Paket G9 hierher.
+
