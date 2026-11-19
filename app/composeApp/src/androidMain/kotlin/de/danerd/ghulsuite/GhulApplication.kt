@@ -91,6 +91,8 @@ class GhulApplication : Application() {
             override fun onActivityDestroyed(activity: Activity) { if (current?.get() === activity) current = null }
         })
         backend = AndroidVaultBackend(this) { current?.get() }
+        // Once after the update: what removed features left on the device (off the main thread).
+        scope.launch(Dispatchers.IO) { runCatching { LegacyCleanup.runOnce(this@GhulApplication) } }
 
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
