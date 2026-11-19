@@ -99,6 +99,25 @@
             </intent-filter>
         </activity>
 
+        <!--
+          "Save in GhulDocs" in the share menu of other apps: the same invisible entry under its own
+          name. It takes only files another app really hands over (content:// of a foreign
+          provider that GhulSuite may read); they are read only when GhulDocs adds them, encrypted,
+          after unlocking and after the user chose where they go.
+        -->
+        <activity-alias
+            android:name=".ShareToDocsActivity"
+            android:exported="true"
+            android:label="@string/share_to_docs"
+            android:targetActivity=".IntentEntryActivity">
+            <intent-filter android:label="@string/share_to_docs">
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+        </activity-alias>
+
         <service
             android:name=".UnlockedService"
             android:exported="false"
@@ -131,7 +150,7 @@
             </intent-filter>
             <meta-data android:name="android.service.quicksettings.TOGGLEABLE_TILE" android:value="false" />
         </service>
-        <!-- Copies handed to other apps (an .ics file, the error report; deleted on lock). -->
+        <!-- Copies handed to other apps (a document of GhulDocs, an .ics file, the error report; deleted on lock). -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.files"

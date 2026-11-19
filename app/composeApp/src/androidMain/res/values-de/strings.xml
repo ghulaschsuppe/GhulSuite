@@ -17,4 +17,5 @@
     <string name="notif_job_channel">Aufgaben im Hintergrund</string>
     <string name="notif_job_cancel">Abbrechen</string>
     <string name="notif_job_of">%1$d von %2$d fertig</string>
+    <string name="share_to_docs">In GhulDocs speichern</string>
 </resources>

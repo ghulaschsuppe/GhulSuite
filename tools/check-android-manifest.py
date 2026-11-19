@@ -21,6 +21,7 @@ A = "{http://schemas.android.com/apk/res/android}"
 EXPORTED = {
     ".MainActivity": None,  # launcher
     ".IntentEntryActivity": None,  # .ics, add to calendar, suite files (takes only foreign content)
+    ".ShareToDocsActivity": None,  # "Save in GhulDocs" (alias of IntentEntryActivity, takes only foreign content)
     ".LockTileService": "android.permission.BIND_QUICK_SETTINGS_TILE",
 }
 PERMISSIONS = {

@@ -55,6 +55,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         if (current?.get() === this) current = null
+        // Files shared into GhulDocs may only be read while this window lives (Android's rule for
+        // shared files): once it is closed for good, they cannot be added any more.
+        if (isFinishing) AppLaunch.docsFiles.value = null
         super.onDestroy()
     }
 
