@@ -297,3 +297,11 @@ fn keys_codes_and_containers() {
         let _ = crate::vault::Keyfile::parse(d);
     });
 }
+
+#[test]
+fn suite_file_zip_content_files_and_indexes() {
+    let (zip, content_file, index) = crate::app::docs::fuzz::seeds();
+    fuzz("suite file zip", &[zip], 3000, crate::app::docs::fuzz::zip);
+    fuzz("content file", &[content_file], 3000, crate::app::docs::fuzz::content_file);
+    fuzz("docs index", &[index], 3000, crate::app::docs::fuzz::docs_index);
+}

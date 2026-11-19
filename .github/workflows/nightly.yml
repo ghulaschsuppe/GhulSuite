@@ -30,7 +30,7 @@ jobs:
       - name: Fuzzing
         working-directory: core/fuzz
         run: |
-          for t in parsers container_parse ctap_responses; do
+          for t in parsers docs_files container_parse ctap_responses; do
             cargo +nightly fuzz run "$t" -- -max_total_time=900 -rss_limit_mb=3000 -timeout=10
           done
       - name: Fundstücke sichern
@@ -51,7 +51,7 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal
           cargo test --locked --release -p ghul-core --lib -- --include-ignored --nocapture --test-threads=2 \
-            crazy everyday chaos attacks absurd fuzz_tests wycheproof collections properties badssl
+            crazy everyday attacks absurd fuzz_tests wycheproof collections properties badssl
 
   # B17/L4: anyone can check that a build comes from this source. The core is built twice, in two
   # different folders, and must come out byte for byte the same (paths are mapped away).

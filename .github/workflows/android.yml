@@ -157,6 +157,7 @@ jobs:
           PY
           cargo +nightly fuzz run container_parse corpus/container_parse -- -max_total_time=120 -rss_limit_mb=3000
           cargo +nightly fuzz run ctap_responses -- -max_total_time=120
+          cargo +nightly fuzz run docs_files -- -max_total_time=120 -rss_limit_mb=3000
       - name: Fundstücke sichern
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

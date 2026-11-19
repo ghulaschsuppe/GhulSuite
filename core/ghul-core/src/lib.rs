@@ -29,7 +29,9 @@ mod wycheproof_tests;
 #[cfg(test)]
 mod alloc_meter;
 
-/// Every parser that reads outside data, for the long libFuzzer runs (`core/fuzz`).
+/// Every parser that reads outside data, for the long libFuzzer runs (`core/fuzz`): HTTP, ICS,
+/// quick entry, imports, links, CBOR, and from suite files the stream ZIP reader, GhulDocs content
+/// files and GhulDocs indexes (containers have a target of their own).
 #[cfg(feature = "fuzzing")]
 #[doc(hidden)]
 pub mod fuzzing {
@@ -37,7 +39,7 @@ pub mod fuzzing {
     pub fn parse_any(data: &[u8]) {
         let Some((&which, rest)) = data.split_first() else { return };
         let text = String::from_utf8_lossy(rest);
-        match which % 8 {
+        match which % 11 {
             0 => drop(crate::net::http::parse(rest)),
             1 => drop(crate::app::caltext::ics_import(&text, 60)),
             2 => drop(crate::app::caltext::cal_quick_parse(text.into_owned(), "2026-11-13".into(), 600)),
@@ -48,7 +50,10 @@ pub mod fuzzing {
                 drop(crate::app::tools::parse_otpauth_uri(text.to_string()));
                 drop(crate::app::import::parse_migration(&text));
             }
-            _ => drop(crate::cbor::decode(rest)),
+            7 => drop(crate::cbor::decode(rest)),
+            8 => crate::app::docs::fuzz::zip(rest),
+            9 => crate::app::docs::fuzz::content_file(rest),
+            _ => crate::app::docs::fuzz::docs_index(rest),
         }
     }
 }

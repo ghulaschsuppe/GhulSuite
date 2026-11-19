@@ -32,3 +32,10 @@ path = "fuzz_targets/parsers.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "docs_files"
+path = "fuzz_targets/docs_files.rs"
+test = false
+doc = false
+bench = false
