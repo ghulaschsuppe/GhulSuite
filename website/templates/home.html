@@ -16,7 +16,7 @@
     </div>
     <div class="stage" aria-hidden="true">
       <div class="glow"></div>
-      <div class="device phone2"><img src="{{v.root}}assets/img/phone-mail.png" alt="" width="412" height="892" loading="eager"></div>
+      <div class="device phone2"><img src="{{v.root}}assets/img/phone-docs.png" alt="" width="412" height="892" loading="eager"></div>
       <div class="device phone"><img src="{{v.root}}assets/img/phone-pass-dark.png" alt="" width="412" height="892" loading="eager"></div>
     </div>
   </div>
@@ -30,9 +30,8 @@
     <div class="areas">
       <article class="card rv" style="--c:var(--pass)"><div class="icon">{{i.key}}</div><span class="tag">GhulPass</span><h3>{{t.pass_title}}</h3><p>{{t.pass_text}}</p></article>
       <article class="card rv" style="--c:var(--auth);--d:.06s"><div class="icon">{{i.clock}}</div><span class="tag">GhulAuth</span><h3>{{t.auth_title}}</h3><p>{{t.auth_text}}</p></article>
-      <article class="card rv" style="--c:var(--drive);--d:.12s"><div class="icon">{{i.cloud}}</div><span class="tag">GhulDrive</span><h3>{{t.drive_title}}</h3><p>{{t.drive_text}}</p></article>
-      <article class="card rv" style="--c:var(--mail)"><div class="icon">{{i.mail}}</div><span class="tag">GhulMail</span><h3>{{t.mail_title}}</h3><p>{{t.mail_text}}</p></article>
-      <article class="card rv" style="--c:var(--cal);--d:.06s"><div class="icon">{{i.cal}}</div><span class="tag">GhulCal</span><h3>{{t.cal_title}}</h3><p>{{t.cal_text}}</p></article>
+      <article class="card rv" style="--c:var(--docs);--d:.12s"><div class="icon">{{i.doc}}</div><span class="tag">GhulDocs</span><h3>{{t.docs_title}}</h3><p>{{t.docs_text}}</p></article>
+      <article class="card rv" style="--c:var(--cal);--d:.18s"><div class="icon">{{i.cal}}</div><span class="tag">GhulCal</span><h3>{{t.cal_title}}</h3><p>{{t.cal_text}}</p></article>
     </div>
     <div class="marquee rv" aria-label="{{t.imports_label}}">
       <div>{{v.imports}}{{v.imports}}</div>
@@ -50,7 +49,7 @@
       <div class="wire" aria-hidden="true"><i></i><i></i><i></i></div>
       <div class="card node rv" style="--c:var(--auth);--d:.08s"><div class="icon">{{i.lock}}</div><b>{{t.flow_2_title}}</b><span>{{t.flow_2_text}}</span><div class="code">Argon2id · FIDO2 · XChaCha20</div></div>
       <div class="wire" aria-hidden="true"><i></i><i></i><i></i></div>
-      <div class="card node rv" style="--c:var(--drive);--d:.16s"><div class="icon">{{i.server}}</div><b>{{t.flow_3_title}}</b><span>{{t.flow_3_text}}</span><div class="code">8f3a·c91e·04bd·7f22·e6a0·5b19…</div></div>
+      <div class="card node rv" style="--c:var(--docs);--d:.16s"><div class="icon">{{i.usb}}</div><b>{{t.flow_3_title}}</b><span>{{t.flow_3_text}}</span><div class="code">8f3a·c91e·04bd·7f22·e6a0·5b19…</div></div>
     </div>
   </div>
 </section>
@@ -73,20 +72,20 @@
   </div>
 </section>
 
-<section id="archiv">
+<section id="dokumente">
   <div class="wrap split">
     <div>
-      <p class="eyebrow rv" style="color:var(--mail)">{{t.archive_eyebrow}}</p>
-      <h2 class="rv">{{t.archive_title}}</h2>
-      <p class="sub rv" style="margin-bottom:0">{{t.archive_sub}}</p>
+      <p class="eyebrow rv" style="color:var(--docs)">{{t.scan_eyebrow}}</p>
+      <h2 class="rv">{{t.scan_title}}</h2>
+      <p class="sub rv" style="margin-bottom:0">{{t.scan_sub}}</p>
       <ul class="checks">
-        <li class="rv">{{i.check}}<span>{{t.archive_1}}</span></li>
-        <li class="rv" style="--d:.05s">{{i.check}}<span>{{t.archive_2}}</span></li>
-        <li class="rv" style="--d:.1s">{{i.check}}<span>{{t.archive_3}}</span></li>
-        <li class="rv" style="--d:.15s">{{i.check}}<span>{{t.archive_4}}</span></li>
+        <li class="rv">{{i.check}}<span>{{t.scan_1}}</span></li>
+        <li class="rv" style="--d:.05s">{{i.check}}<span>{{t.scan_2}}</span></li>
+        <li class="rv" style="--d:.1s">{{i.check}}<span>{{t.scan_3}}</span></li>
+        <li class="rv" style="--d:.15s">{{i.check}}<span>{{t.scan_4}}</span></li>
       </ul>
     </div>
-    <div class="shot rv"><div class="device"><img src="{{v.root}}assets/img/phone-drive-grid.png" alt="{{t.archive_img}}" width="412" height="892" loading="lazy"></div></div>
+    <div class="shot rv"><div class="device"><img src="{{v.root}}assets/img/phone-scan.png" alt="{{t.scan_img}}" width="412" height="892" loading="lazy"></div></div>
   </div>
 </section>
 
@@ -98,32 +97,32 @@
     <div class="sec-grid">
       <article class="card rv"><div class="icon" style="--c:var(--pass)">{{i.key}}</div><h3>{{t.sec_1_title}}</h3><p>{{t.sec_1_text}}</p></article>
       <article class="card rv" style="--d:.06s"><div class="icon" style="--c:var(--auth)">{{i.shield}}</div><h3>{{t.sec_2_title}}</h3><p>{{t.sec_2_text}}</p></article>
-      <article class="card rv" style="--d:.12s"><div class="icon" style="--c:var(--drive)">{{i.code}}</div><h3>{{t.sec_3_title}}</h3><p>{{t.sec_3_text}}</p></article>
-      <article class="card rv"><div class="icon" style="--c:var(--mail)">{{i.zap}}</div><h3>{{t.sec_4_title}}</h3><p>{{t.sec_4_text}}</p></article>
+      <article class="card rv" style="--d:.12s"><div class="icon" style="--c:var(--docs)">{{i.code}}</div><h3>{{t.sec_3_title}}</h3><p>{{t.sec_3_text}}</p></article>
+      <article class="card rv"><div class="icon" style="--c:var(--warn)">{{i.zap}}</div><h3>{{t.sec_4_title}}</h3><p>{{t.sec_4_text}}</p></article>
       <article class="card rv" style="--d:.06s"><div class="icon" style="--c:var(--cal)">{{i.eye}}</div><h3>{{t.sec_5_title}}</h3><p>{{t.sec_5_text}}</p></article>
       <article class="card rv" style="--d:.12s"><div class="icon" style="--c:var(--accent)">{{i.refresh}}</div><h3>{{t.sec_6_title}}</h3><p>{{t.sec_6_text}}</p></article>
     </div>
     <div class="stats">
       <div class="card stat rv"><b data-count="1" data-suffix="{{t.stat_1_suffix}}">0</b><span>{{t.stat_1}}</span></div>
       <div class="card stat rv" style="--d:.05s"><b data-count="{{v.tests}}">0</b><span>{{t.stat_2}}</span></div>
-      <div class="card stat rv" style="--d:.1s"><b data-count="{{v.attacks}}">0</b><span>{{t.stat_3}}</span></div>
+      <div class="card stat rv" style="--d:.1s"><b data-count="446">0</b><span>{{t.stat_3}}</span></div>
       <div class="card stat rv" style="--d:.15s"><b data-count="9807">0</b><span>{{t.stat_4}}</span></div>
     </div>
     <p class="honest rv">{{t.sec_honest}}</p>
   </div>
 </section>
 
-<section id="hosten">
+<section id="offline">
   <div class="wrap">
-    <p class="eyebrow rv">{{t.host_eyebrow}}</p>
-    <h2 class="rv">{{t.host_title}}</h2>
-    <p class="sub rv">{{t.host_sub}}</p>
+    <p class="eyebrow rv">{{t.off_eyebrow}}</p>
+    <h2 class="rv">{{t.off_title}}</h2>
+    <p class="sub rv">{{t.off_sub}}</p>
     <div class="hosts">
-      <article class="card rv" style="--c:var(--auth)"><div class="icon">{{i.terminal}}</div><h3>SFTP</h3><p>{{t.host_1}}</p></article>
-      <article class="card rv" style="--c:var(--drive);--d:.06s"><div class="icon">{{i.refresh}}</div><h3>{{t.host_2_title}}</h3><p>{{t.host_2}}</p></article>
-      <article class="card rv" style="--c:var(--mail);--d:.12s"><div class="icon">{{i.globe}}</div><h3>{{t.host_3_title}}</h3><p>{{t.host_3}}</p></article>
+      <article class="card rv" style="--c:var(--auth)"><div class="icon">{{i.refresh}}</div><h3>{{t.off_1_title}}</h3><p>{{t.off_1}}</p></article>
+      <article class="card rv" style="--c:var(--pass);--d:.06s"><div class="icon">{{i.shield}}</div><h3>{{t.off_2_title}}</h3><p>{{t.off_2}}</p></article>
+      <article class="card rv" style="--c:var(--cal);--d:.12s"><div class="icon">{{i.eye}}</div><h3>{{t.off_3_title}}</h3><p>{{t.off_3}}</p></article>
     </div>
-    <p class="honest rv">{{t.host_need}}</p>
+    <p class="honest rv">{{t.off_need}}</p>
   </div>
 </section>
 
@@ -138,8 +137,8 @@
       <figure><img src="{{v.root}}assets/img/phone-unlock.png" alt="{{t.g_unlock}}" width="412" height="892" loading="lazy"><figcaption>{{t.g_unlock}}</figcaption></figure>
       <figure><img src="{{v.root}}assets/img/phone-pass.png" alt="{{t.g_pass}}" width="412" height="892" loading="lazy"><figcaption>{{t.g_pass}}</figcaption></figure>
       <figure><img src="{{v.root}}assets/img/phone-auth-grid.png" alt="{{t.g_auth}}" width="412" height="892" loading="lazy"><figcaption>{{t.g_auth}}</figcaption></figure>
-      <figure><img src="{{v.root}}assets/img/phone-drive-grid.png" alt="{{t.g_drive}}" width="412" height="892" loading="lazy"><figcaption>{{t.g_drive}}</figcaption></figure>
-      <figure><img src="{{v.root}}assets/img/phone-mail-read.png" alt="{{t.g_mail}}" width="412" height="892" loading="lazy"><figcaption>{{t.g_mail}}</figcaption></figure>
+      <figure><img src="{{v.root}}assets/img/phone-docs.png" alt="{{t.g_docs}}" width="412" height="892" loading="lazy"><figcaption>{{t.g_docs}}</figcaption></figure>
+      <figure><img src="{{v.root}}assets/img/phone-docs-pdf.png" alt="{{t.g_pdf}}" width="412" height="892" loading="lazy"><figcaption>{{t.g_pdf}}</figcaption></figure>
       <figure><img src="{{v.root}}assets/img/phone-cal-week.png" alt="{{t.g_cal}}" width="412" height="892" loading="lazy"><figcaption>{{t.g_cal}}</figcaption></figure>
       <figure class="wide"><img src="{{v.root}}assets/img/windows-dark.png" alt="{{t.g_windows}}" width="1280" height="820" loading="lazy"><figcaption>{{t.g_windows}}</figcaption></figure>
       <figure><img src="{{v.root}}assets/img/phone-setup.png" alt="{{t.g_setup}}" width="412" height="892" loading="lazy"><figcaption>{{t.g_setup}}</figcaption></figure>

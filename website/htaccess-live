@@ -3,11 +3,6 @@ Options -Indexes
 AddDefaultCharset utf-8
 ErrorDocument 404 /404.html
 
-# Error reports from the app (report.php): its settings and counters are never readable.
-<Files "report-config.php">
-  Require all denied
-</Files>
-
 <IfModule mod_rewrite.c>
   RewriteEngine On
   # Everything to https://www.ghulsuite.de (one address for search engines and bookmarks).
