@@ -10,6 +10,7 @@ material-icons = "1.7.3"
 camerax = "1.4.2"
 zxing = "3.5.3"
 documentfile = "1.0.1"
+pdfbox = "3.0.5"
 
 [libraries]
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activity-compose" }
@@ -23,6 +24,8 @@ androidx-camera-lifecycle = { module = "androidx.camera:camera-lifecycle", versi
 androidx-camera-view = { module = "androidx.camera:camera-view", version.ref = "camerax" }
 zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
 androidx-documentfile = { module = "androidx.documentfile:documentfile", version.ref = "documentfile" }
+# GhulDocs on Windows: PDF pages drawn from memory (Android has PdfRenderer).
+pdfbox = { module = "org.apache.pdfbox:pdfbox", version.ref = "pdfbox" }
 androidx-lifecycle-process = { module = "androidx.lifecycle:lifecycle-process", version.ref = "lifecycle" }
 
 [plugins]

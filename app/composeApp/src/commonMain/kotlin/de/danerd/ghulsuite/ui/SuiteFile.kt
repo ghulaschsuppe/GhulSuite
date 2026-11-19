@@ -65,7 +65,14 @@ private fun questions(check: ArchiveCheckUi): List<String> = buildList {
  * replaced; [onOpened] runs once the working copy is the file's state.
  */
 @Composable
-fun OpenSuiteFile(state: AppState, file: PickedSuiteFile, onOpened: () -> Unit, onCancel: () -> Unit) {
+fun OpenSuiteFile(
+    state: AppState,
+    file: PickedSuiteFile,
+    onOpened: () -> Unit,
+    onCancel: () -> Unit,
+    /** The file is a GhulDocs vault saved on its own (no suite file): its protection. */
+    onDocsVault: ((ProtectionUi) -> Unit)? = null,
+) {
     val backend = state.backend
     var protection by remember { mutableStateOf<ProtectionUi?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -83,6 +90,12 @@ fun OpenSuiteFile(state: AppState, file: PickedSuiteFile, onOpened: () -> Unit, 
     val tooWeak = stringResource(Res.string.setup_pw_too_weak)
     val mismatch = stringResource(Res.string.setup_pw_mismatch)
     LaunchedEffect(file) {
+        // A .ghlzip may also be a GhulDocs vault saved on its own: that is not opened as a suite.
+        val inspected = catching { backend.archiveInspect(file.source) }.getOrNull()
+        if (inspected?.content == de.danerd.ghulsuite.model.ArchiveContentUi.DOCS_VAULT && onDocsVault != null) {
+            onDocsVault(inspected.protection)
+            return@LaunchedEffect
+        }
         catching { backend.archiveProtection(file.source) }.onSuccess { protection = it }.onFailure { error = describe(it) }
     }
     val p = protection
@@ -197,6 +210,7 @@ fun SuiteFileSection(state: AppState) {
     /** The file there was saved elsewhere meanwhile (or is no file of this suite): ask first. */
     var ask by remember { mutableStateOf<Triple<SuiteFileRef, ArchiveTargetUi, Boolean>?>(null) }
     var opening by remember { mutableStateOf<PickedSuiteFile?>(null) }
+    var foreignDocs by remember { mutableStateOf<ForeignRequest?>(null) }
     val savedMsg = stringResource(Res.string.file_saved)
     val unreachable = stringResource(Res.string.file_unreachable)
     val notWritten = stringResource(Res.string.file_not_written)
@@ -239,8 +253,16 @@ fun SuiteFileSection(state: AppState) {
         }
     }
 
+    foreignDocs?.let { r -> ForeignVaultDialog(state, r, onDone = { foreignDocs = null }) }
     opening?.let { f ->
-        OpenSuiteFile(state, f, onOpened = { opening = null; ref = backend.suiteFile() }, onCancel = { opening = null })
+        OpenSuiteFile(
+            state, f, onOpened = { opening = null; ref = backend.suiteFile() }, onCancel = { opening = null },
+            // A GhulDocs vault saved on its own: added to this suite (opened once with its own protection).
+            onDocsVault = { protection ->
+                opening = null
+                foreignDocs = ForeignRequest(ByteArray(0), de.danerd.ghulsuite.model.VaultKindUi.DOCS, protection, f.source.name.substringBeforeLast('.'), f.source)
+            },
+        )
         return
     }
 

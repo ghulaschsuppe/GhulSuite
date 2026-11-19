@@ -91,6 +91,13 @@ fun SetupScreen(state: AppState) {
     val scope = rememberCoroutineScope()
 
     val isSuiteFile = stringResource(Res.string.start_is_suite_file)
+    /** A GhulDocs vault saved on its own was picked: what to do with it (no bytes: it is read as a stream). */
+    fun docsVaultPicked(ref: de.danerd.ghulsuite.model.SuiteFileRef, protection: de.danerd.ghulsuite.model.ProtectionUi) {
+        vaultFile = PickedVaultFile(ref, ByteArray(0))
+        vaultInfo = ContainerInfoUi("docs", protection)
+        error = null
+        choose = true
+    }
     val openSuiteFile = rememberOpenSuiteFile { ref ->
         suiteFile = PickedSuiteFile(ref)
         error = null
@@ -99,6 +106,13 @@ fun SetupScreen(state: AppState) {
     // With access to write: a vault opened on its own goes back into its file.
     val openFile = rememberOpenSuiteFile { ref ->
         scope.launch {
+            // A .ghlzip is a suite file or a GhulDocs vault: only its first entry is read.
+            val archive = catching { backend.archiveInspect(ref) }.getOrNull()
+            when (archive?.content) {
+                de.danerd.ghulsuite.model.ArchiveContentUi.SUITE -> { error = isSuiteFile; return@launch }
+                de.danerd.ghulsuite.model.ArchiveContentUi.DOCS_VAULT -> { docsVaultPicked(ref, archive.protection); return@launch }
+                null -> {}
+            }
             catching {
                 val data = backend.readSuiteFile(ref) ?: throw VaultException(VaultErrorKind.STORAGE, "the file cannot be read")
                 data to backend.inspectFile(data)
@@ -164,7 +178,15 @@ fun SetupScreen(state: AppState) {
             Flow.NEW -> NewSuiteWizard(state) { flow = Flow.START }
 
             Flow.OPEN_FILE -> suiteFile?.let { f ->
-                OpenSuiteFile(state, f, onOpened = { suiteFile = null; flow = Flow.START }, onCancel = { suiteFile = null; flow = Flow.START })
+                OpenSuiteFile(
+                    state, f, onOpened = { suiteFile = null; flow = Flow.START }, onCancel = { suiteFile = null; flow = Flow.START },
+                    // A GhulDocs vault saved on its own: open only it, or add it to the own suite.
+                    onDocsVault = { protection ->
+                        suiteFile = null
+                        flow = Flow.START
+                        docsVaultPicked(f.source, protection)
+                    },
+                )
             }
 
             Flow.OPEN_VAULT -> {

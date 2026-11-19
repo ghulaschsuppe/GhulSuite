@@ -94,3 +94,31 @@ expect fun localNow(): String
 expect fun epochMillisOf(local: String): Long
 /** Switches the app language ("" = follow the system). Android restarts the screen; Windows after a restart. */
 expect fun applyAppLanguage(tag: String)
+
+/**
+ * Decodes an image (JPEG, PNG, WebP, GIF, on Android also HEIC) from memory, scaled down so its
+ * longer side is at most [maxSide] pixels; null if it is no image this platform can read.
+ * Nothing is written to the disk.
+ */
+expect fun decodeImage(bytes: ByteArray, maxSide: Int): androidx.compose.ui.graphics.ImageBitmap?
+
+/** A PDF opened from memory: its pages, rendered when they are shown. */
+interface PdfView {
+    val pageCount: Int
+    /** Page [index] (from 0), [widthPx] wide; null if it cannot be drawn. */
+    fun render(index: Int, widthPx: Int): androidx.compose.ui.graphics.ImageBitmap?
+    fun close()
+}
+
+/**
+ * Opens a PDF held in memory, never through a file on the disk (Android: an anonymous file in
+ * memory; Windows: read from the bytes). Null if it cannot be shown here (damaged, protected by a
+ * password, or an Android version without anonymous files in memory).
+ */
+expect fun openPdf(bytes: ByteArray): PdfView?
+
+/**
+ * G7 (document scanning) fills this in on Android: the camera in the app, pages cropped and
+ * straightened, saved as one PDF. Until then there is no "Scan" in the add menu of GhulDocs.
+ */
+expect val docScanAvailable: Boolean

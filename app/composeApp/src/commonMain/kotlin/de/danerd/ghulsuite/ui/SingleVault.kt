@@ -64,7 +64,18 @@ fun VaultFileChoice(
                     Text(stringResource(Res.string.single_only_this))
                 }
                 Hint(stringResource(if (writable == false) Res.string.single_not_writable else Res.string.single_only_this_hint))
-                if (hasSuite) {
+                if (hasSuite && kind == VaultKindUi.DOCS) {
+                    OutlinedButton(onClick = {
+                        state.pendingDocsAdd = file.ref
+                        onCancel()
+                        state.showStart = false
+                        state.vaultExists = true
+                    }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.single_add_to_suite)) }
+                    Hint(stringResource(Res.string.single_add_hint))
+                } else if (kind == VaultKindUi.DOCS) {
+                    // A new suite is set up first; the GhulDocs vault is added to it afterwards.
+                    Hint(stringResource(Res.string.docs_single_no_new_suite))
+                } else if (hasSuite) {
                     OutlinedButton(onClick = {
                         state.pendingAdd = PickedFile(file.ref.name, file.data)
                         onCancel()
@@ -111,10 +122,17 @@ fun OpenSingleVault(state: AppState, file: PickedVaultFile, info: ContainerInfoU
                 enabled = !state.busy && password.isNotEmpty() && (if (needsKey) keyPinOk(state, pin) else keyfile != null),
                 onClick = {
                     state.run(onError = { error = it }, block = {
-                        backend.openSingle(
-                            file.ref, file.data, password, if (needsKey) pin else null,
-                            if (needsKey) null else keyfile?.bytes, state.onTouchNeeded,
-                        )
+                        if (kind == VaultKindUi.DOCS) {
+                            backend.openSingleDocs(
+                                file.ref, password, if (needsKey) pin else null,
+                                if (needsKey) null else keyfile?.bytes, state.onTouchNeeded, state.onProgress,
+                            )
+                        } else {
+                            backend.openSingle(
+                                file.ref, file.data, password, if (needsKey) pin else null,
+                                if (needsKey) null else keyfile?.bytes, state.onTouchNeeded,
+                            )
+                        }
                     }) { k ->
                         password = ""; pin = ""
                         state.pendingAdd = null
@@ -193,7 +211,8 @@ fun SingleVaultSection(state: AppState) {
             Text(stringResource(Res.string.single_close))
         }
         // Only with an own suite on this device to add it to.
-        if (backend.singleFile() != null && backend.ownSuiteExists()) {
+        // A GhulDocs vault is added from its file (Options, Vaults, in the own suite).
+        if (backend.singleFile() != null && backend.ownSuiteExists() && !backend.singleIsDocs) {
             OutlinedButton(onClick = {
                 // The vault as it is here (also when writing its file failed), then the own suite.
                 state.run(block = { backend.singleVaultBytes() }) { data ->
@@ -213,6 +232,26 @@ fun SingleVaultSection(state: AppState) {
  */
 @Composable
 fun PendingAddHandler(state: AppState) {
+    state.pendingDocsAdd?.let { ref ->
+        // A GhulDocs vault saved on its own: always opened once with its own protection.
+        val unlocked by state.backend.unlocked.collectAsState()
+        var info by remember(ref) { mutableStateOf<de.danerd.ghulsuite.model.ArchiveInfoUi?>(null) }
+        LaunchedEffect(ref, unlocked) {
+            if (!unlocked) return@LaunchedEffect
+            val i = catching { state.backend.archiveInspect(ref) }.getOrNull()
+            if (i == null) {
+                state.pendingDocsAdd = null
+                state.message(notASuiteFile())
+            } else {
+                info = i
+            }
+        }
+        info?.let { i ->
+            ForeignVaultDialog(state, ForeignRequest(ByteArray(0), VaultKindUi.DOCS, i.protection, ref.name.substringBeforeLast('.'), ref)) {
+                state.pendingDocsAdd = null
+            }
+        }
+    }
     val file = state.pendingAdd ?: return
     val backend = state.backend
     val unlocked by backend.unlocked.collectAsState()
@@ -250,7 +289,7 @@ fun PendingAddHandler(state: AppState) {
  * recovery code is shown.
  */
 @Composable
-fun ShareAsVaultDialog(state: AppState, vaultId: String, ids: List<String>, onDone: () -> Unit) {
+fun ShareAsVaultDialog(state: AppState, vaultId: String, ids: List<String>, docs: Boolean = false, onDone: () -> Unit) {
     val backend = state.backend
     var name by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -273,8 +312,35 @@ fun ShareAsVaultDialog(state: AppState, vaultId: String, ids: List<String>, onDo
     val tooShort = pluralStringResource(Res.plurals.setup_pw_too_short, PasswordPolicy.MIN_LENGTH, PasswordPolicy.MIN_LENGTH.toString())
     val tooWeak = stringResource(Res.string.setup_pw_too_weak)
     val mismatch = stringResource(Res.string.setup_pw_mismatch)
-    val saveKeyfile = rememberSaveFile { ok -> if (ok) step = 2 else error = notSaved }
+    // A GhulDocs vault is written as a stream into the file chosen first (it can be large): its
+    // file is there before the code is shown, so there is no last step "save the vault file".
+    val saveKeyfile = rememberSaveFile { ok -> if (ok) step = if (docs) 3 else 2 else error = notSaved }
     val saveVault = rememberSaveFile { ok -> if (ok) step = 3 else error = notSaved }
+    /** What "Create" handed over, waiting for the place of the GhulDocs vault's file. */
+    val docsShare = remember { arrayOfNulls<Pair<ShareVaultUi, String?>>(1) }
+    val createDocsFile = rememberCreateStream { sink ->
+        val pending = docsShare[0]
+        docsShare[0] = null
+        if (sink == null || pending == null) {
+            sink?.let { runCatching { it.close() }; runCatching { it.discard() } }
+            return@rememberCreateStream
+        }
+        val (share, keyPin) = pending
+        state.run(onError = { error = it }, block = {
+            try {
+                backend.docs.shareVault(share, keyPin, state.onTouchNeeded, sink, state.onProgress).also { sink.close() }
+            } catch (e: Throwable) {
+                // Nothing half written stays behind.
+                runCatching { sink.close() }
+                runCatching { sink.discard() }
+                throw e
+            }
+        }) { code ->
+            master = ""; password = ""; repeat = ""; pin = ""
+            keyfile = share.keyfile
+            shared = SharedVaultUi(VaultKindUi.DOCS, ByteArray(0), code)
+        }
+    }
 
     val result = shared
     AlertDialog(
@@ -284,7 +350,10 @@ fun ShareAsVaultDialog(state: AppState, vaultId: String, ids: List<String>, onDo
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 when {
                     result == null -> {
-                        Hint(pluralStringResource(Res.plurals.share_vault_text, ids.size, ids.size.toString()))
+                        Hint(
+                            if (docs) pluralStringResource(Res.plurals.docs_share_text, ids.size, ids.size.toString())
+                            else pluralStringResource(Res.plurals.share_vault_text, ids.size, ids.size.toString()),
+                        )
                         OutlinedTextField(
                             name, { name = it; error = null }, label = { Text(stringResource(Res.string.l_vault_name)) },
                             singleLine = true, modifier = Modifier.fillMaxWidth(),
@@ -324,6 +393,15 @@ fun ShareAsVaultDialog(state: AppState, vaultId: String, ids: List<String>, onDo
                             error = PasswordPolicy.check(backend, password, repeat, tooShort, tooWeak, mismatch)
                             if (error != null) return@run
                             val kf = if (withKey) null else backend.generateKeyfile()
+                            if (docs) {
+                                docsShare[0] = ShareVaultUi(
+                                    vaultId = vaultId, ids = ids, name = name.trim(), masterPassword = master,
+                                    password = password, keyfile = kf,
+                                    keyLabel = keyLabel, keyfileLabel = keyfileLabel, recoveryLabel = recoveryLabel,
+                                ) to (if (withKey) pin else null)
+                                createDocsFile("${name.trim().ifBlank { "GhulDocs" }}.ghlzip", "application/octet-stream")
+                                return@run
+                            }
                             state.run(onError = { error = it }, block = {
                                 backend.shareAsVault(
                                     ShareVaultUi(
@@ -341,7 +419,7 @@ fun ShareAsVaultDialog(state: AppState, vaultId: String, ids: List<String>, onDo
                         }
                     },
                 ) { Text(stringResource(Res.string.a_create)) }
-                step == 0 -> TextButton(onClick = { step = if (keyfile != null) 1 else 2 }) { Text(stringResource(Res.string.a_next)) }
+                step == 0 -> TextButton(onClick = { step = if (keyfile != null) 1 else if (docs) 3 else 2 }) { Text(stringResource(Res.string.a_next)) }
                 step == 1 -> TextButton(onClick = {
                     error = null
                     keyfile?.let { saveKeyfile("${name.trim().ifBlank { "vault" }}.ghlkey", it) }
@@ -392,6 +470,21 @@ fun PendingSingleWrites(state: AppState) {
         }
     }
     if (p == null || state.single != null) return
+    if (p.docs) {
+        // A GhulDocs vault is only written back while it is open: what did not reach its file
+        // when it was locked can only be given up (then the file can be opened again).
+        AlertDialog(
+            danger = true,
+            onDismissRequest = {},
+            title = { Text(stringResource(Res.string.single_pending_title)) },
+            text = { Text(stringResource(Res.string.docs_single_pending_text, p.file.name)) },
+            confirmButton = {
+                TextButton(onClick = { backend.discardSingleWrite(p.key); tick++ }) { Text(stringResource(Res.string.single_pending_discard)) }
+            },
+            dismissButton = {},
+        )
+        return
+    }
     fun write(mode: SingleWrite) {
         state.run(onError = { error = it }, block = { backend.retrySingleWrite(p.key, mode) }) { r ->
             when (r) {

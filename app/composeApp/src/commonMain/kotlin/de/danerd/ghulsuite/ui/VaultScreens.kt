@@ -50,6 +50,8 @@ import org.jetbrains.compose.resources.pluralStringResource
 fun extensionOf(kind: VaultKindUi) = when (kind) {
     VaultKindUi.PASS -> "ghlpss"
     VaultKindUi.TOTP -> "ghltotp"
+    // A GhulDocs vault goes with its documents: a .ghlzip of its own.
+    VaultKindUi.DOCS -> "ghlzip"
     VaultKindUi.CAL -> "ghlcal"
 }
 
@@ -57,6 +59,7 @@ fun extensionOf(kind: VaultKindUi) = when (kind) {
 fun kindLabel(kind: VaultKindUi) = when (kind) {
     VaultKindUi.PASS -> Res.string.tab_pass
     VaultKindUi.TOTP -> Res.string.tab_auth
+    VaultKindUi.DOCS -> Res.string.tab_docs
     VaultKindUi.CAL -> Res.string.tab_cal
 }
 
@@ -118,7 +121,7 @@ fun CreateVaultDialog(state: AppState, kind: VaultKindUi?, onCreated: (String) -
                 if (kind == null) {
                     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                         VaultKindUi.entries.forEachIndexed { i, k ->
-                            SegmentedButton(chosen == k, { chosen = k }, SegmentedButtonDefaults.itemShape(i, 3)) {
+                            SegmentedButton(chosen == k, { chosen = k }, SegmentedButtonDefaults.itemShape(i, VaultKindUi.entries.size)) {
                                 SegLabel(stringResource(kindLabel(k)))
                             }
                         }
@@ -158,16 +161,40 @@ fun VaultsSection(state: AppState) {
     val added = stringResource(Res.string.msg_vault_added)
     val save = rememberSaveFile { ok -> if (ok) state.message(exported) }
     var foreign by remember { mutableStateOf<ForeignRequest?>(null) }
-    val addFile = rememberOpenFile { file ->
-        val name = file.name.substringBeforeLast('.')
+    val isSuite = stringResource(Res.string.start_is_suite_file)
+    /** The GhulDocs vault whose export waits for the system's save dialog. */
+    val exportingDocs = remember { arrayOfNulls<VaultUi>(1) }
+    val exportDocs = rememberCreateStream { sink ->
+        val v = exportingDocs[0]
+        exportingDocs[0] = null
+        if (sink == null) return@rememberCreateStream
+        if (v == null) {
+            runCatching { sink.close() }
+            runCatching { sink.discard() }
+            return@rememberCreateStream
+        }
+        state.exportDocsVault(v, sink)
+    }
+    // A vault file, or a GhulDocs vault saved on its own (a .ghlzip, read as a stream: it can be
+    // large). A suite file is opened under Options, Suite file instead.
+    val addFile = rememberOpenSuiteFile { ref ->
+        val name = ref.name.substringBeforeLast('.')
         state.run(block = {
+            val archive = backend.archiveInspect(ref)
+            when (archive?.content) {
+                de.danerd.ghulsuite.model.ArchiveContentUi.SUITE -> throw VaultException(VaultErrorKind.OTHER, isSuite)
+                de.danerd.ghulsuite.model.ArchiveContentUi.DOCS_VAULT ->
+                    return@run null to ForeignRequest(ByteArray(0), VaultKindUi.DOCS, archive.protection, name, ref)
+                null -> {}
+            }
+            val data = backend.readSuiteFile(ref) ?: throw VaultException(VaultErrorKind.STORAGE, "the file cannot be read")
             try {
-                val id = backend.addVaultFile(file.bytes, name)
+                val id = backend.addVaultFile(data, name)
                 backend.listVaults().firstOrNull { it.id == id }?.kind to null
             } catch (e: VaultException) {
                 if (e.kind != VaultErrorKind.DIFFERENT_PROTECTION) throw e
-                val info = backend.inspectFile(file.bytes)
-                null to ForeignRequest(file.bytes, vaultKindOf(info.kind), info.protection, name)
+                val info = backend.inspectFile(data)
+                null to ForeignRequest(data, vaultKindOf(info.kind), info.protection, name)
             }
         }) { (kind, request) ->
             if (request != null) {
@@ -207,8 +234,14 @@ fun VaultsSection(state: AppState) {
                             if (v.available && filePickersAvailable) {
                                 SheetRow(stringResource(Res.string.a_export), leading = { IconTile(Icons.Filled.Upload, g.accent) }, divider = true) {
                                     close()
-                                    state.run(block = { backend.exportVault(v.id) }) { data ->
-                                        save("${v.name.ifBlank { "vault" }}.${extensionOf(v.kind)}", data)
+                                    if (v.kind == VaultKindUi.DOCS) {
+                                        // With its documents, as a stream into the file chosen.
+                                        exportingDocs[0] = v
+                                        exportDocs("${v.name.ifBlank { "GhulDocs" }}.ghlzip", "application/octet-stream")
+                                    } else {
+                                        state.run(block = { backend.exportVault(v.id) }) { data ->
+                                            save("${v.name.ifBlank { "vault" }}.${extensionOf(v.kind)}", data)
+                                        }
                                     }
                                 }
                             }
@@ -275,8 +308,17 @@ fun VaultsSection(state: AppState) {
     }
 }
 
-/** A vault with its own protection that the user wants to add. */
-class ForeignRequest(val data: ByteArray, val kind: VaultKindUi, val protection: ProtectionUi, val name: String)
+/**
+ * A vault with its own protection that the user wants to add. A GhulDocs vault comes as its
+ * [file] (a `.ghlzip` read as a stream), the others as [data].
+ */
+class ForeignRequest(
+    val data: ByteArray,
+    val kind: VaultKindUi,
+    val protection: ProtectionUi,
+    val name: String,
+    val file: de.danerd.ghulsuite.model.SuiteFileRef? = null,
+)
 
 /** Opens a vault with its own password and key or key file once and adds it to the suite. */
 @Composable
@@ -297,7 +339,7 @@ fun ForeignVaultDialog(state: AppState, request: ForeignRequest, onDone: () -> U
         text = {
             // The sheet scrolls itself; a second scroll container inside it crashes (T6).
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Hint(stringResource(Res.string.foreign_text))
+                Hint(stringResource(if (request.kind == VaultKindUi.DOCS) Res.string.docs_foreign_text else Res.string.foreign_text))
                 OutlinedTextField(name, { name = it }, label = { Text(stringResource(Res.string.l_vault_name)) }, singleLine = true)
                 SecretTextField(password, { password = it; error = null }, stringResource(Res.string.l_master_password))
                 if (hasKey && hasKeyfile) FactorChoice(withKey) { withKey = it; error = null }
@@ -314,10 +356,18 @@ fun ForeignVaultDialog(state: AppState, request: ForeignRequest, onDone: () -> U
         confirmButton = {
             TextButton(onClick = {
                 state.run(onError = { error = it }, block = {
-                    state.backend.adoptVault(
-                        request.data, name.ifBlank { request.name }, password,
-                        if (needsKey) pin else null, if (needsKey) null else keyfile?.bytes, state.onTouchNeeded,
-                    )
+                    val f = request.file
+                    if (f != null) {
+                        state.backend.docs.adoptVault(
+                            f, name.ifBlank { request.name }, password,
+                            if (needsKey) pin else null, if (needsKey) null else keyfile?.bytes, state.onTouchNeeded, state.onProgress,
+                        )
+                    } else {
+                        state.backend.adoptVault(
+                            request.data, name.ifBlank { request.name }, password,
+                            if (needsKey) pin else null, if (needsKey) null else keyfile?.bytes, state.onTouchNeeded,
+                        )
+                    }
                 }) {
                     state.enableModule(request.kind)
                     state.changed()

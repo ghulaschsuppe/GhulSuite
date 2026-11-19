@@ -135,6 +135,7 @@ class Settings(private val store: KeyValueStore) {
         set(v) { themeOrdinal = v.ordinal }
     var moduleGhulPass by bool("module_pass", true)
     var moduleGhulAuth by bool("module_auth", true)
+    var moduleGhulDocs by bool("module_docs", true)
     var moduleGhulCal by bool("module_cal", true)
 
     // --- GhulCal

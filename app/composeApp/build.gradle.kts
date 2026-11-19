@@ -105,6 +105,7 @@ kotlin {
                 implementation(libs.jna)
                 implementation(libs.kotlinx.coroutines.swing)
                 implementation(libs.zxing.core)
+                implementation(libs.pdfbox)
             }
         }
         getByName("desktopTest") {
@@ -295,7 +296,7 @@ val generateHostBindings by tasks.registering(Exec::class) {
 tasks.matching { it.name == "compileTestKotlinDesktop" }.configureEach { dependsOn(generateHostBindings) }
 // Tests through the app's own bindings (package de.danerd.ghulsuite.core) run in a JVM of their
 // own: both binding packages register their callbacks in the same library, the last one wins.
-val appBindingTests = listOf("*SingleBackendTest", "*SuiteFileBackendTest")
+val appBindingTests = listOf("*SingleBackendTest", "*SuiteFileBackendTest", "*DocsBackendTest")
 val desktopAppBindingTest by tasks.registering(Test::class) {
     group = "verification"
     description = "Desktop tests through the app's own core bindings (own JVM)."
@@ -343,7 +344,7 @@ compose.desktop {
             packageName = "GhulSuite"
             // MSI needs a purely numeric version (see msiVersion).
             packageVersion = msiVersion
-            description = "GhulSuite: Passwörter, 2FA und Kalender, verschlüsselt"
+            description = "GhulSuite: Passwörter, 2FA, Dokumente und Kalender, verschlüsselt"
             vendor = "GhulSuite"
             copyright = "© 2026 Daniel Erdmann · AGPL-3.0-or-later"
             licenseFile.set(rootProject.layout.projectDirectory.file("../LICENSE"))

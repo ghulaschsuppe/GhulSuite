@@ -46,7 +46,7 @@ import org.jetbrains.compose.resources.stringResource
 enum class JobState { WAITING, RUNNING, DONE, FAILED, CANCELLED }
 
 /** What a job does (its picture in the strip and the notification). */
-enum class JobKind { UPLOAD, DOWNLOAD }
+enum class JobKind { UPLOAD, DOWNLOAD, ADD, EXPORT }
 
 /** A job ends with this text (the message) as failed, e.g. "stopped after 12 of 40 files: …". */
 class JobFailed(val text: String) : Exception(text)
@@ -319,6 +319,8 @@ class Jobs internal constructor(private val state: AppState) {
             when (job.kind) {
                 JobKind.UPLOAD -> Res.string.job_kind_upload
                 JobKind.DOWNLOAD -> Res.string.job_kind_download
+                JobKind.ADD -> Res.string.job_kind_add
+                JobKind.EXPORT -> Res.string.job_kind_export
             },
         )
         val end = state.str(
@@ -374,8 +376,8 @@ private fun JobRow(jobs: Jobs, job: BgJob) {
     val t = g
     val color = t.accent
     val icon = when (job.kind) {
-        JobKind.UPLOAD -> Icons.Filled.Upload
-        JobKind.DOWNLOAD -> Icons.Filled.Download
+        JobKind.UPLOAD, JobKind.ADD -> Icons.Filled.Upload
+        JobKind.DOWNLOAD, JobKind.EXPORT -> Icons.Filled.Download
     }
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(t.surface)

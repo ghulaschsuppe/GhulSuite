@@ -1110,4 +1110,145 @@
     <string name="prot_save_title">Suite-Datei jetzt speichern</string>
     <string name="prot_save_text">Der Schutz deiner Suite wurde geändert. Speichere die Suite-Datei jetzt und ersetze damit ältere Kopien auf anderen Geräten, Sticks oder in Sicherungen. Ältere Kopien öffnen sich weiter mit dem alten Schutz: Lösche sie. Bis zum Speichern ist die ältere Datei deine einzige Kopie, darum bleibt bis dahin alles beim Alten.</string>
     <string name="prot_save_now">Jetzt speichern</string>
+    <!-- GhulDocs -->
+    <string name="tab_docs">GhulDocs</string>
+    <string name="area_docs_sub">Wichtige Dokumente und Scans, bis 1 GB</string>
+    <string name="area_docs_default">Dokumente</string>
+    <string name="set_docs_sub">Belegung, Prüfung, Papierkorb</string>
+    <string name="set_start_fourth">4. Bereich</string>
+    <string name="fab_docs">Hinzufügen</string>
+    <string name="ask_trash_title">In den Papierkorb?</string>
+    <string name="ask_trash_named">„%1$s“ kommt in den Papierkorb.</string>
+    <plurals name="ask_trash_n">
+        <item quantity="one">%1$s Element kommt in den Papierkorb.</item>
+        <item quantity="other">%1$s Elemente kommen in den Papierkorb.</item>
+    </plurals>
+    <string name="a_to_trash">In den Papierkorb</string>
+    <string name="a_move">Verschieben</string>
+    <string name="msg_moved_to_trash">In den Papierkorb gelegt</string>
+    <string name="err_docs_limit">GhulDocs ist voll: %1$s von %2$s belegt. Es wurde nichts hinzugefügt. Leere den Papierkorb oder lösche Dokumente, um Platz zu schaffen.</string>
+    <string name="err_docs_too_large">Diese Datei ist zu groß für GhulDocs (höchstens %1$s). Sie wurde nicht hinzugefügt.</string>
+    <string name="job_kind_add">Dokumente hinzufügen</string>
+    <string name="job_kind_export">Export</string>
+    <string name="docs_search">Dokumente suchen</string>
+    <string name="docs_search_results">Suchergebnisse</string>
+    <string name="docs_trash">Papierkorb</string>
+    <string name="docs_trash_hint">Was im Papierkorb liegt, zählt weiter zum 1 GB, bis der Papierkorb geleert wird.</string>
+    <string name="docs_trash_empty">Der Papierkorb ist leer.</string>
+    <string name="docs_empty_trash">Leeren</string>
+    <string name="docs_empty_trash_title">Papierkorb leeren</string>
+    <string name="docs_empty_trash_text">Alles im Papierkorb wird endgültig gelöscht. Das lässt sich nicht rückgängig machen.</string>
+    <string name="docs_delete_forever">Endgültig löschen</string>
+    <string name="docs_restore">Wiederherstellen</string>
+    <string name="docs_restored">%1$s wiederhergestellt</string>
+    <string name="docs_empty">Dieser Ordner ist leer. Füge Dateien mit „Hinzufügen“ hinzu.</string>
+    <string name="docs_nothing_found">Nichts gefunden.</string>
+    <string name="docs_no_favorites">Noch keine Favoriten. Markiere ein Dokument mit dem Stern.</string>
+    <string name="docs_no_vault">Noch kein GhulDocs-Tresor.</string>
+    <string name="docs_privacy">Verschlüsselt auf diesem Gerät. Namen, Ordner und Inhalte stehen nur im Tresor.</string>
+    <string name="docs_usage">%1$s von %2$s</string>
+    <plurals name="docs_n_documents">
+        <item quantity="one">%1$s Dokument</item>
+        <item quantity="other">%1$s Dokumente</item>
+    </plurals>
+    <plurals name="docs_n_items">
+        <item quantity="one">%1$s Element</item>
+        <item quantity="other">%1$s Elemente</item>
+    </plurals>
+    <plurals name="docs_vault_items">
+        <item quantity="one">%1$s Dokument oder Ordner</item>
+        <item quantity="other">%1$s Dokumente und Ordner</item>
+    </plurals>
+    <string name="docs_encrypted_here">verschlüsselt auf diesem Gerät</string>
+    <string name="docs_almost_full">GhulDocs ist fast voll.</string>
+    <string name="docs_in">in %1$s</string>
+    <string name="docs_at_top">oberste Ebene</string>
+    <string name="docs_add_title">Zu GhulDocs hinzufügen</string>
+    <string name="docs_add_files">Dateien hinzufügen</string>
+    <string name="docs_add_files_sub">Von diesem Gerät, mehrere auf einmal</string>
+    <string name="docs_new_folder">Neuer Ordner</string>
+    <string name="docs_move_title">„%1$s“ verschieben</string>
+    <plurals name="docs_move_n">
+        <item quantity="one">%1$s Element verschieben</item>
+        <item quantity="other">%1$s Elemente verschieben</item>
+    </plurals>
+    <string name="docs_move_here">Hierher verschieben</string>
+    <string name="docs_up">Eine Ebene höher</string>
+    <string name="docs_no_subfolders">Hier sind keine Ordner.</string>
+    <string name="docs_adding">%1$s wird hinzugefügt …</string>
+    <plurals name="docs_adding_n">
+        <item quantity="one">%1$s Datei wird hinzugefügt …</item>
+        <item quantity="other">%1$s Dateien werden hinzugefügt …</item>
+    </plurals>
+    <string name="docs_added">%1$s hinzugefügt.</string>
+    <plurals name="docs_added_n">
+        <item quantity="one">%1$s Datei hinzugefügt.</item>
+        <item quantity="other">%1$s Dateien hinzugefügt.</item>
+    </plurals>
+    <string name="docs_add_cancelled_one">Hinzufügen von %1$s abgebrochen. Davon wurde nichts behalten.</string>
+    <plurals name="docs_add_cancelled_n">
+        <item quantity="one">Abgebrochen nach %1$s von %2$s Datei.</item>
+        <item quantity="other">Abgebrochen nach %1$s von %2$s Dateien.</item>
+    </plurals>
+    <string name="docs_incoming_title">In GhulDocs speichern</string>
+    <string name="docs_incoming_one">„%1$s“ aus einer anderen App, verschlüsselt in GhulDocs.</string>
+    <plurals name="docs_incoming_n">
+        <item quantity="one">%1$s Datei aus einer anderen App, verschlüsselt in GhulDocs.</item>
+        <item quantity="other">%1$s Dateien aus einer anderen App, verschlüsselt in GhulDocs.</item>
+    </plurals>
+    <string name="docs_incoming_into">Speichern in</string>
+    <string name="docs_incoming_no_area">Mit GhulSuite geteilte Dateien kommen in GhulDocs: Richte es zuerst ein (Optionen, Bereiche).</string>
+    <string name="docs_change">Ändern</string>
+    <string name="docs_save_here">Hier speichern</string>
+    <string name="docs_choose_here">Diesen Ordner wählen</string>
+    <string name="docs_open_with">Mit App öffnen</string>
+    <string name="docs_open_with_sub">Eine befristete Kopie, gelöscht, sobald GhulSuite sperrt</string>
+    <string name="docs_export">Exportieren</string>
+    <string name="docs_export_sub">Unverschlüsselt an einem Ort deiner Wahl gespeichert</string>
+    <string name="docs_export_title">Unverschlüsselt exportieren?</string>
+    <string name="docs_export_text">„%1$s“ wird ohne Verschlüsselung an dem Ort gespeichert, den du gleich wählst. Wer dort Zugriff hat, kann die Datei lesen.</string>
+    <string name="docs_export_yes">Exportieren</string>
+    <string name="docs_exporting">%1$s wird exportiert …</string>
+    <string name="docs_exported">%1$s exportiert (unverschlüsselt).</string>
+    <string name="docs_export_cancelled">Export von %1$s abgebrochen. Die unvollständige Datei wurde entfernt.</string>
+    <string name="docs_opening">%1$s wird geöffnet …</string>
+    <string name="docs_open_cancelled">Öffnen von %1$s abgebrochen.</string>
+    <string name="docs_no_app">Es wurde kein Programm gefunden, das die Datei öffnet.</string>
+    <string name="docs_copy_hint">„Mit App öffnen“ gibt der gewählten App eine befristete Kopie; sie wird gelöscht, sobald GhulSuite sperrt. Was die App damit macht, liegt bei ihr.</string>
+    <string name="docs_added_on">hinzugefügt am %1$s</string>
+    <string name="docs_reading">Wird entschlüsselt … %1$s %</string>
+    <string name="docs_no_preview">Diese Art von Datei kann die App nicht anzeigen.</string>
+    <string name="docs_too_large_to_show">Zu groß zum Anzeigen in der App (mehr als %1$s).</string>
+    <string name="docs_pdf_not_here">Diese PDF kann hier nicht angezeigt werden (mit Passwort geschützt, beschädigt oder nicht auf dieser Android-Version).</string>
+    <string name="docs_image_not_read">Dieses Bild kann hier nicht angezeigt werden.</string>
+    <string name="docs_open_hint">Öffne es mit einer anderen App oder exportiere es.</string>
+    <string name="docs_text_cut">Nur der Anfang des Textes wird angezeigt.</string>
+    <plurals name="docs_pages">
+        <item quantity="one">%1$s Seite</item>
+        <item quantity="other">%1$s Seiten</item>
+    </plurals>
+    <string name="docs_limit_hint">GhulDocs fasst bis zu 1 GB, alle seine Tresore und der Papierkorb zusammen, eine einzelne Datei ebenfalls bis 1 GB.</string>
+    <string name="docs_usage_title">Belegung</string>
+    <string name="docs_verify_title">Dokumente prüfen</string>
+    <string name="docs_verify_hint">Liest jedes Dokument eines Tresors und vergleicht es mit seiner Prüfsumme. Dabei wird nichts geändert.</string>
+    <string name="docs_verify">Prüfen</string>
+    <string name="docs_verify_ok">Alle Dokumente sind in Ordnung.</string>
+    <plurals name="docs_verify_bad">
+        <item quantity="one">%1$s Dokument ist beschädigt oder fehlt</item>
+        <item quantity="other">%1$s Dokumente sind beschädigt oder fehlen</item>
+    </plurals>
+    <string name="docs_verify_bad_hint">Öffne eine ältere Suite-Datei, um sie zurückzubekommen.</string>
+    <plurals name="docs_trash_count">
+        <item quantity="one">%1$s Element im Papierkorb, in allen GhulDocs-Tresoren.</item>
+        <item quantity="other">%1$s Elemente im Papierkorb, in allen GhulDocs-Tresoren.</item>
+    </plurals>
+    <string name="docs_vault_exporting">%1$s wird gespeichert …</string>
+    <string name="docs_vault_export_cancelled">Speichern von %1$s abgebrochen. Die unvollständige Datei wurde entfernt.</string>
+    <plurals name="docs_share_text">
+        <item quantity="one">%1$s gewähltes Element kommt in einen eigenen GhulDocs-Tresor (eine .ghlzip-Datei mit den Dokumenten), mit eigenem Passwort, eigenem zweiten Faktor und neuem Wiederherstellungscode.</item>
+        <item quantity="other">%1$s gewählte Elemente kommen in einen eigenen GhulDocs-Tresor (eine .ghlzip-Datei mit den Dokumenten), mit eigenem Passwort, eigenem zweiten Faktor und neuem Wiederherstellungscode.</item>
+    </plurals>
+    <string name="docs_single_no_new_suite">Für eine eigene Suite: Richte zuerst eine neue Suite ein und füge diese Datei dann unter Optionen, Tresore hinzu.</string>
+    <string name="docs_single_pending_text">Die letzten Änderungen des GhulDocs-Tresors in %1$s konnten vor dem Sperren nicht in seine Datei geschrieben werden. Ein GhulDocs-Tresor kann nur geschrieben werden, solange er geöffnet ist: Verwirf sie, um die Datei wieder zu öffnen.</string>
+    <string name="docs_foreign_text">Öffne den GhulDocs-Tresor einmal mit seinem eigenen Passwort und seinem Key bzw. seiner Schlüsseldatei. Er wird dann mit seinen Dokumenten hinzugefügt und bekommt den Schutz deiner Suite.</string>
 </resources>

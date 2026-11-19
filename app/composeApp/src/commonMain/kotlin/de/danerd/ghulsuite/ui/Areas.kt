@@ -42,6 +42,7 @@ fun moduleShown(state: AppState, kind: VaultKindUi): Boolean {
     return when (kind) {
         VaultKindUi.PASS -> s.moduleGhulPass
         VaultKindUi.TOTP -> s.moduleGhulAuth
+        VaultKindUi.DOCS -> s.moduleGhulDocs
         VaultKindUi.CAL -> s.moduleGhulCal
     }
 }
@@ -174,7 +175,14 @@ private fun AreaSheet(state: AppState, kind: VaultKindUi, onDismiss: () -> Unit)
     if (!exists) {
         var name by remember { mutableStateOf("") }
         var error by remember { mutableStateOf<String?>(null) }
-        val defaultName = stringResource(when (kind) { VaultKindUi.PASS -> Res.string.area_pass_default; VaultKindUi.TOTP -> Res.string.area_auth_default; else -> Res.string.area_cal_default })
+        val defaultName = stringResource(
+            when (kind) {
+                VaultKindUi.PASS -> Res.string.area_pass_default
+                VaultKindUi.TOTP -> Res.string.area_auth_default
+                VaultKindUi.DOCS -> Res.string.area_docs_default
+                VaultKindUi.CAL -> Res.string.area_cal_default
+            },
+        )
         LaunchedEffect(kind) { name = defaultName }
         val done = stringResource(Res.string.area_set_up_msg, title)
         GhulSheet(onDismiss, stringResource(Res.string.area_set_up_title, title)) {
@@ -220,6 +228,7 @@ private fun AreaSheet(state: AppState, kind: VaultKindUi, onDismiss: () -> Unit)
 fun areaPage(kind: VaultKindUi): SetPage = when (kind) {
     VaultKindUi.PASS -> SetPage.PASS
     VaultKindUi.TOTP -> SetPage.AUTH
+    VaultKindUi.DOCS -> SetPage.DOCS
     VaultKindUi.CAL -> SetPage.CAL
 }
 

@@ -75,11 +75,12 @@ class AreaInfo(
 val AREAS = listOf(
     AreaInfo(VaultKindUi.PASS, Res.string.tab_pass, Res.string.area_pass_sub, Tab.PASS, ".ghlpss"),
     AreaInfo(VaultKindUi.TOTP, Res.string.tab_auth, Res.string.area_auth_sub, Tab.AUTH, ".ghltotp"),
+    AreaInfo(VaultKindUi.DOCS, Res.string.tab_docs, Res.string.area_docs_sub, Tab.DOCS, ".ghldoc"),
     AreaInfo(VaultKindUi.CAL, Res.string.tab_cal, Res.string.area_cal_sub, Tab.CAL, ".ghlcal"),
 )
 
 /** Areas with a name the user picks (each vault of them has a name of its own). */
-val NAMED_AREAS = setOf(VaultKindUi.PASS, VaultKindUi.TOTP, VaultKindUi.CAL)
+val NAMED_AREAS = setOf(VaultKindUi.PASS, VaultKindUi.TOTP, VaultKindUi.DOCS, VaultKindUi.CAL)
 
 private enum class QuickChoice { NONE, BIO, PIN }
 
@@ -90,6 +91,7 @@ fun showModule(state: AppState, kind: VaultKindUi, on: Boolean) {
     when (kind) {
         VaultKindUi.PASS -> s.moduleGhulPass = on
         VaultKindUi.TOTP -> s.moduleGhulAuth = on
+        VaultKindUi.DOCS -> s.moduleGhulDocs = on
         VaultKindUi.CAL -> s.moduleGhulCal = on
     }
 }
@@ -121,7 +123,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
     var kdf by remember { mutableStateOf<KdfChoice?>(null) }
     var code by remember { mutableStateOf("") }
     // 4: areas
-    val areaOn = remember { mutableStateMapOf(VaultKindUi.PASS to true, VaultKindUi.TOTP to true, VaultKindUi.CAL to true) }
+    val areaOn = remember { mutableStateMapOf(VaultKindUi.PASS to true, VaultKindUi.TOTP to true, VaultKindUi.DOCS to true, VaultKindUi.CAL to true) }
     val areaName = remember { mutableStateMapOf<VaultKindUi, String>() }
     /** Area files this wizard created (switched off again on a second pass: removed). */
     val made = remember { mutableStateMapOf<VaultKindUi, Boolean>() }
@@ -134,6 +136,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
         keyLabel = getString(Res.string.setup_default_key_label)
         areaName[VaultKindUi.PASS] = getString(Res.string.area_pass_default)
         areaName[VaultKindUi.TOTP] = getString(Res.string.area_auth_default)
+        areaName[VaultKindUi.DOCS] = getString(Res.string.area_docs_default)
         areaName[VaultKindUi.CAL] = getString(Res.string.area_cal_default)
     }
     val saveKeyfile = rememberSaveFile { ok -> keyfileSaved = ok; if (ok) error = null }

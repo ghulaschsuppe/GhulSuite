@@ -15,6 +15,8 @@ interface VaultBackend {
     val settings: Settings
     /** GhulCal. */
     val cal: CalBackend get() = NoCalBackend
+    /** GhulDocs. */
+    val docs: DocsBackend get() = NoDocsBackend
 
     // --- The working copy and the suite file
     /** Whether this device has a suite (its working copy, in the app's own storage). */
@@ -207,6 +209,8 @@ interface VaultBackend {
     val singleWritesChanged: kotlinx.coroutines.flow.StateFlow<Int> get() = kotlinx.coroutines.flow.MutableStateFlow(0)
     /** The vault open on its own as it is now (to add it to the own suite). */
     suspend fun singleVaultBytes(): ByteArray = throw VaultException(VaultErrorKind.OTHER)
+    /** The vault open on its own is a GhulDocs vault (its file holds its documents too). */
+    val singleIsDocs: Boolean get() = false
     /** Whether the app may write into this file (a vault opened on its own goes back into it). */
     suspend fun canWriteSuiteFile(ref: SuiteFileRef): Boolean = true
     /** Whether changes of an earlier opening still wait for [ref] (cheap: only their records). */
@@ -235,11 +239,39 @@ interface VaultBackend {
      */
     suspend fun shareToApps(name: String, mime: String, data: ByteArray): Boolean = false
 
+    /**
+     * The same for a file that is written piece by piece (a document of GhulDocs, up to 1 GB):
+     * [write] puts the content into the sink it gets. The copy lives where [shareToApps] keeps
+     * its copies (wiped when the app locks); a failed or cancelled [write] removes it at once and
+     * hands nothing over.
+     */
+    suspend fun shareStreamToApps(name: String, mime: String, write: suspend (ByteSink) -> Unit): Boolean {
+        val sink = MemorySink()
+        write(sink)
+        return shareToApps(name, mime, sink.bytes())
+    }
+
     /** Whether [shareToApps] lets the user pick another app to send the file with (Android). */
     val canShareToApps: Boolean get() = false
 
     /** Copies to the clipboard, marked as sensitive and cleared automatically. */
     fun copySensitive(label: String, text: String)
+
+    // --- A GhulDocs vault saved on its own (a .ghlzip with the vault and its documents)
+    /** What a `.ghlzip` holds (reads only its first entry); null if it is no `.ghlzip` at all. */
+    suspend fun archiveInspect(file: SuiteFileRef): ArchiveInfoUi? = null
+    /**
+     * Opens a GhulDocs vault saved on its own, like [openSingle]: only that vault is unlocked, its
+     * changes go back into [file] (as a stream, with its documents).
+     */
+    suspend fun openSingleDocs(
+        file: SuiteFileRef,
+        password: String,
+        pin: String?,
+        keyfile: ByteArray?,
+        onTouchNeeded: () -> Unit,
+        onProgress: (Long, Long) -> Unit = { _, _ -> },
+    ): VaultKindUi = throw VaultException(VaultErrorKind.OTHER)
 
     /** Opens the system print dialog with the emergency sheet (also "Save as PDF"). */
     fun printEmergencySheet(code: String, text: EmergencySheetText)
@@ -288,9 +320,42 @@ interface ByteSource {
     val name: String
     /** Size in bytes, or -1 if unknown. */
     val size: Long
+    /** Media type as the system names it (empty: not known, the app guesses it from the name). */
+    val mime: String get() = ""
     /** Reads up to [length] bytes into [buffer] at [offset]; returns -1 at the end. */
     fun read(buffer: ByteArray, offset: Int, length: Int): Int
     fun close()
+}
+
+/** Collects what is written in memory (a document read for viewing, small files only). */
+class MemorySink(private val max: Long = Long.MAX_VALUE) : ByteSink {
+    private var buf = ByteArray(0)
+    var size = 0
+        private set
+
+    override fun write(data: ByteArray) {
+        if (size.toLong() + data.size > max) throw IllegalStateException("too large")
+        if (size + data.size > buf.size) {
+            val grown = ByteArray(maxOf(buf.size * 2, size + data.size, 64 * 1024))
+            buf.copyInto(grown, 0, 0, size)
+            buf.fill(0)
+            buf = grown
+        }
+        data.copyInto(buf, size)
+        size += data.size
+    }
+
+    override fun close() {}
+
+    /** Forgets what was written (overwritten with zeros first). */
+    override fun discard() {
+        buf.fill(0)
+        buf = ByteArray(0)
+        size = 0
+    }
+
+    /** What was written, as a copy of its own; the buffer is wiped. */
+    fun bytes(): ByteArray = buf.copyOf(size).also { discard() }
 }
 
 /** A writable file chosen by the user. */
@@ -301,7 +366,8 @@ interface ByteSink {
     fun discard() {}
 }
 
-enum class VaultKindUi { PASS, TOTP, CAL }
+/** The areas, in the order they are named everywhere: passwords, 2FA, documents, calendar. */
+enum class VaultKindUi { PASS, TOTP, DOCS, CAL }
 
 /** What the app finds in the suite folder. */
 enum class SetupStateUi {
@@ -379,6 +445,8 @@ class PendingSingleUi(
     val targetKnown: Boolean = true,
     /** Its file is gone or cannot be read now (writing would create it anew). */
     val missing: Boolean = false,
+    /** A GhulDocs vault: written back only while it is open, so only giving up is left. */
+    val docs: Boolean = false,
 )
 
 /** How a vault opened on its own is written back into its file. */
@@ -593,6 +661,8 @@ enum class VaultErrorKind {
     CERT_UNTRUSTED,
     NOT_CONFIGURED,
     NOT_FOUND,
+    /** GhulDocs holds as much as it may: [VaultException.detail] is "used|limit" in bytes. */
+    DOCS_LIMIT,
     OTHER,
 }
 

@@ -2,6 +2,7 @@
 package de.danerd.ghulsuite.ui
 
 import android.net.Uri
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
@@ -198,10 +199,12 @@ fun contentSource(context: android.content.Context, uri: Uri): ByteSource {
             }
         }
     }
+    val type = runCatching { context.contentResolver.getType(uri) }.getOrNull().orEmpty()
     return object : ByteSource {
         private var input: java.io.InputStream? = null
         override val name = name ?: uri.lastPathSegment?.substringAfterLast('/') ?: "file"
         override val size = size
+        override val mime = type
         override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
             val i = input ?: (context.contentResolver.openInputStream(uri) ?: throw java.io.IOException("cannot open $name")).also { input = it }
             return i.read(buffer, offset, length)
@@ -261,3 +264,66 @@ actual fun rememberCreateStream(onCreated: (ByteSink?) -> Unit): (String, String
         }
     }
 }
+
+actual fun decodeImage(bytes: ByteArray, maxSide: Int): androidx.compose.ui.graphics.ImageBitmap? = runCatching {
+    val source = android.graphics.ImageDecoder.createSource(java.nio.ByteBuffer.wrap(bytes))
+    android.graphics.ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+        val side = maxOf(info.size.width, info.size.height)
+        var sample = 1
+        while (side / sample > maxSide) sample *= 2
+        decoder.setTargetSampleSize(sample)
+        // Drawn in software: a hardware bitmap could not be read back for the screen protection.
+        decoder.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
+    }.asImageBitmap()
+}.getOrNull()
+
+/**
+ * A PDF in an anonymous file in memory (memfd, Android 11 and newer): PdfRenderer needs a file
+ * it can seek in, and this one never reaches the storage. Older Android versions show no preview
+ * (the app offers to open or export the document instead).
+ */
+actual fun openPdf(bytes: ByteArray): PdfView? {
+    if (android.os.Build.VERSION.SDK_INT < 30) return null
+    return runCatching {
+        val fd = android.system.Os.memfd_create("ghuldocs", 0)
+        try {
+            var off = 0
+            while (off < bytes.size) off += android.system.Os.write(fd, bytes, off, bytes.size - off)
+            android.system.Os.lseek(fd, 0, android.system.OsConstants.SEEK_SET)
+            val pfd = android.os.ParcelFileDescriptor.dup(fd)
+            val renderer = try {
+                android.graphics.pdf.PdfRenderer(pfd)
+            } catch (e: Exception) {
+                pfd.close()
+                throw e
+            }
+            object : PdfView {
+                override val pageCount: Int = renderer.pageCount
+
+                override fun render(index: Int, widthPx: Int): androidx.compose.ui.graphics.ImageBitmap? = synchronized(renderer) {
+                    runCatching {
+                        renderer.openPage(index).use { page ->
+                            val w = widthPx.coerceIn(100, 2400)
+                            val h = (w.toLong() * page.height / page.width.coerceAtLeast(1)).toInt().coerceIn(1, 4 * w)
+                            val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+                            bmp.eraseColor(android.graphics.Color.WHITE)
+                            page.render(bmp, null, null, android.graphics.pdf.PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                            bmp.asImageBitmap()
+                        }
+                    }.getOrNull()
+                }
+
+                override fun close() = synchronized(renderer) {
+                    runCatching { renderer.close() }
+                    runCatching { pfd.close() }
+                    Unit
+                }
+            }
+        } finally {
+            // The renderer holds its own copy of the descriptor.
+            runCatching { android.system.Os.close(fd) }
+        }
+    }.getOrNull()
+}
+
+actual val docScanAvailable: Boolean = false

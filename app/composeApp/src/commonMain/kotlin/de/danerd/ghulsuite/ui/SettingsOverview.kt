@@ -71,6 +71,7 @@ fun SetPage.title(): StringResource = when (this) {
     SetPage.MODULES -> Res.string.set_modules
     SetPage.PASS -> Res.string.tab_pass
     SetPage.AUTH -> Res.string.tab_auth
+    SetPage.DOCS -> Res.string.tab_docs
     SetPage.CAL -> Res.string.tab_cal
     SetPage.LOOK -> Res.string.set_view
     SetPage.ABOUT -> Res.string.set_about
@@ -195,6 +196,9 @@ fun SettingsScreen(state: AppState, padding: PaddingValues) {
                 }
                 if (state.vaults.any { it.kind == VaultKindUi.TOTP }) {
                     SetRow(tabIcon(Tab.AUTH), areaColor(Tab.AUTH), stringResource(Res.string.tab_auth), stringResource(Res.string.set_auth_sub)) { open(SetPage.AUTH) }
+                }
+                if (state.vaults.any { it.kind == VaultKindUi.DOCS }) {
+                    SetRow(tabIcon(Tab.DOCS), areaColor(Tab.DOCS), stringResource(Res.string.tab_docs), stringResource(Res.string.set_docs_sub)) { open(SetPage.DOCS) }
                 }
                 if (state.vaults.any { it.kind == VaultKindUi.CAL }) {
                     SetRow(tabIcon(Tab.CAL), areaColor(Tab.CAL), stringResource(Res.string.tab_cal),

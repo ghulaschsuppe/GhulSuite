@@ -84,6 +84,23 @@ object ShareFiles {
         }
     }
 
+    /** Overwrites one file with zeros and deletes it (a copy that was not finished). */
+    fun wipeFile(f: File) {
+        runCatching {
+            java.io.RandomAccessFile(f, "rw").use { raf ->
+                val zeros = ByteArray(64 * 1024)
+                var left = raf.length()
+                while (left > 0) {
+                    val n = minOf(left, zeros.size.toLong()).toInt()
+                    raf.write(zeros, 0, n)
+                    left -= n
+                }
+                raf.fd.sync()
+            }
+        }
+        f.delete()
+    }
+
     /** True when nothing is left. */
     private fun wipeOnce(): Boolean {
         val dir = DesktopPaths.shareDir
@@ -239,7 +256,13 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
     override fun crashReport(): String? = File(DesktopPaths.dataDir, "absturz.txt").takeIf { it.exists() }?.readText()
 
     override fun panicLock() {
-        lock()
+        // Nothing is written back first (a GhulDocs vault open on its own locks at once).
+        panicking = true
+        try {
+            lock()
+        } finally {
+            panicking = false
+        }
         cal.clearReminders()
     }
 
@@ -274,10 +297,32 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
     // --- tools --------------------------------------------------------------------------------
 
     /** Windows has no share sheet: the file opens in the program registered for it. */
-    override suspend fun shareToApps(name: String, mime: String, data: ByteArray): Boolean {
+    override suspend fun shareToApps(name: String, mime: String, data: ByteArray): Boolean =
+        shareStreamToApps(name, mime) { it.write(data) }
+
+    /**
+     * The same, written piece by piece into the copy (a document of GhulDocs). A write that fails
+     * or is cancelled wipes the half copy at once and opens nothing.
+     */
+    override suspend fun shareStreamToApps(name: String, mime: String, write: suspend (de.danerd.ghulsuite.model.ByteSink) -> Unit): Boolean {
         val f = withContext(Dispatchers.IO) {
             val dir = DesktopPaths.shareDir.apply { mkdirs() }
-            File(dir, safeFileName(name, mutableSetOf())).apply { writeBytes(data) }
+            File(dir, safeFileName(name, mutableSetOf()))
+        }
+        val out = withContext(Dispatchers.IO) { java.io.BufferedOutputStream(java.io.FileOutputStream(f), 1 shl 20) }
+        var complete = false
+        try {
+            write(object : de.danerd.ghulsuite.model.ByteSink {
+                override fun write(data: ByteArray) = out.write(data)
+                override fun close() = out.close()
+            })
+            withContext(Dispatchers.IO) { out.close() }
+            complete = true
+        } finally {
+            if (!complete) withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
+                runCatching { out.close() }
+                ShareFiles.wipeFile(f)
+            }
         }
         return runCatching { java.awt.Desktop.getDesktop().open(f) }.isSuccess
     }

@@ -151,6 +151,17 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
 
     override fun exists(): Boolean = runCatching { suite.exists() }.getOrDefault(false)
 
+    /** Calls of the core with the security key when a PIN is given (GhulDocs: hand on, take over). */
+    private val keyRunner = object : KeyRunner {
+        override suspend fun <T> run(pin: String?, block: (HidTransport?) -> T): T = maybeWithKey(pin, block)
+    }
+
+    private val coreDocs by lazy { CoreDocsBackend({ suite }, { openSuiteInput(it) }, keyRunner) }
+
+    override val docs: de.danerd.ghulsuite.model.DocsBackend get() = coreDocs
+
+    override suspend fun archiveInspect(file: SuiteFileRef): de.danerd.ghulsuite.model.ArchiveInfoUi? = coreDocs.inspect(file)
+
     // --- the suite file ----------------------------------------------------------------------------
 
     /** Opens a suite file for reading (streamed); null if it cannot be read. */
@@ -311,7 +322,37 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
     override val singleWritesChanged: StateFlow<Int> = pendingTick.asStateFlow()
 
     /** File extensions of vault files (a record that cannot be read falls back to them). */
-    private val VAULT_EXTENSIONS = setOf("ghlpss", "ghltotp", "ghlcal")
+    private val VAULT_EXTENSIONS = setOf("ghlpss", "ghltotp", "ghlcal", "ghldoc")
+
+    /**
+     * The vault open on its own is a GhulDocs vault: its file is a `.ghlzip` with the vault and
+     * its documents, read and written as a stream (see [openSingleDocs]).
+     */
+    @Volatile private var singleDocs = false
+
+    /** Set while the panic lock locks: nothing is written back first (see [closeSingle]). */
+    @Volatile protected var panicking = false
+
+    /** A folder of a vault opened on its own holds a GhulDocs vault (its record names a `.ghldoc`). */
+    private fun isDocsDir(dir: java.io.File, t: Target? = readTarget(dir)): Boolean =
+        (t?.vault ?: vaultIn(dir))?.endsWith(".ghldoc") == true
+
+    /** SHA-256 (hex) of the file at [ref], read as a stream; null if it cannot be read. */
+    private fun fileHash(ref: SuiteFileRef): String? {
+        val input = openSuiteInput(ref) ?: return null
+        return runCatching {
+            input.stream.use { s ->
+                val md = java.security.MessageDigest.getInstance("SHA-256")
+                val buf = ByteArray(1 shl 20)
+                while (true) {
+                    val n = s.read(buf)
+                    if (n < 0) break
+                    md.update(buf, 0, n)
+                }
+                md.digest().joinToString("") { b -> "%02x".format(b) }
+            }
+        }.getOrNull()
+    }
 
     /** Where vaults opened on their own are kept meanwhile, each in a folder of its own. */
     private fun singleBase() = java.io.File(localDir).absoluteFile.resolveSibling("single-vault")
@@ -465,6 +506,7 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
         // Read while holding the lock: an older state never goes over a newer one.
         val dir = singleDir ?: return@withLock SingleSaveUi.FAILED
         val s = temp ?: return@withLock SingleSaveUi.FAILED
+        if (singleDocs) return@withLock io { writeBackDocs(dir, s, mode) }
         val f = io { s.singleVaultFile() }
         val r = writeBackLocked(dir, f.data, mode)
         // Only what is in the file counts as saved (a change meanwhile stays unsaved).
@@ -475,6 +517,13 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
     override suspend fun saveSingleAs(ref: SuiteFileRef): Boolean = singleWrite.withLock {
         val dir = singleDir ?: return@withLock false
         val s = temp ?: return@withLock false
+        if (singleDocs) {
+            // Written into the new file, which is its file from now on (writeBackDocs records it).
+            val r = io { writeBackDocs(dir, s, SingleWrite.OVERWRITE, target = ref, created = true) }
+            if (r != SingleSaveUi.SAVED) return@withLock false
+            if (singleDir === dir) single = ref
+            return@withLock true
+        }
         val f = io { s.singleVaultFile() }
         val old = io { readTarget(dir) } ?: return@withLock false
         if (!writeSuiteFile(ref, f.data)) return@withLock false
@@ -497,6 +546,8 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
 
     override suspend fun singleVaultBytes(): ByteArray = io { (temp ?: throw VaultException(VaultErrorKind.LOCKED)).singleVaultFile().data }
 
+    override val singleIsDocs: Boolean get() = singleDocs
+
     /**
      * Ends the vault opened on its own at once (main thread). Its last changes go into its file
      * on a thread the app waits for when it ends; only when that worked (or nothing was left) is
@@ -505,21 +556,129 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
     private fun closeSingle() {
         val s = suite
         val dir = singleDir
+        val docs = singleDocs
+        // A GhulDocs vault can only be written back while it is open (its documents are listed in
+        // its index): its last changes go into its file first, then it locks. Not so in a panic:
+        // then it locks at once, and what is not in its file yet stays behind (encrypted).
+        val writeFirst = docs && !panicking
         // Busy before it stops being the open one: never taken for a leftover in between.
         dir?.let { busyDirs += it.name }
-        s.lock()
+        if (!writeFirst) s.lock()
         single = null
         singleDir = null
+        singleDocs = false
         temp = null
         unlockedState.value = false
         Thread({
-            runCatching { s.finishLock() }
-            if (dir != null && runCatching { writePending(dir, s, SingleWrite.CHECKED) == SingleSaveUi.SAVED }.getOrDefault(false)) {
-                dir.deleteRecursively()
+            val saved = if (writeFirst) {
+                val r = dir == null || runCatching {
+                    !s.archiveUnsaved() || kotlinx.coroutines.runBlocking { singleWrite.withLock { writeBackDocs(dir, s, SingleWrite.CHECKED) } } == SingleSaveUi.SAVED
+                }.getOrDefault(false)
+                s.lock()
+                r
+            } else {
+                false
             }
+            runCatching { s.finishLock() }
+            val done = when {
+                dir == null -> false
+                writeFirst -> saved
+                docs -> runCatching { !s.archiveUnsaved() }.getOrDefault(false)
+                else -> runCatching { writePending(dir, s, SingleWrite.CHECKED) == SingleSaveUi.SAVED }.getOrDefault(false)
+            }
+            if (dir != null && done) dir.deleteRecursively()
             dir?.let { busyDirs -= it.name }
             tick()
         }, "ghul-single-close").apply { isDaemon = false }.start()
+    }
+
+    /**
+     * Writes the GhulDocs vault open on its own (in [s], folder [dir]) into its file as a stream,
+     * as [mode] allows (see [writeBackLocked]); the file is read back and compared before it
+     * counts. Only while holding [singleWrite].
+     */
+    private fun writeBackDocs(dir: java.io.File, s: GhulSuite, mode: SingleWrite, target: SuiteFileRef? = null, created: Boolean = false): SingleSaveUi {
+        val t = readTarget(dir) ?: return SingleSaveUi.FAILED
+        val ref = target ?: t.ref
+        if (target == null && mode != SingleWrite.OVERWRITE) {
+            val now = fileHash(ref)
+            when {
+                // Gone or unreadable: only written anew when asked.
+                now == null -> if (mode != SingleWrite.ANEW) return SingleSaveUi.MISSING
+                // Changed elsewhere since this vault read or wrote it.
+                t.hash.isNotEmpty() && now != t.hash -> return SingleSaveUi.CHANGED_ELSEWHERE
+            }
+        }
+        var written: de.danerd.ghulsuite.core.SingleDocsWritten? = null
+        val ok = runCatching {
+            writeSuiteStreamed(
+                ref, created,
+                write = { out -> written = s.singleDocsWrite(StreamSink(out), null) },
+                check = { input ->
+                    val w = written ?: return@writeSuiteStreamed false
+                    archiveWrittenMatches(StreamSource(input), w.size, w.sha256, null)
+                },
+            )
+        }.getOrDefault(false)
+        val w = written
+        if (!ok || w == null) return SingleSaveUi.FAILED
+        writeTarget(dir, Target(ref, t.vault, w.sha256.lowercase()))
+        s.singleSaved(w.change)
+        return SingleSaveUi.SAVED
+    }
+
+    override suspend fun openSingleDocs(
+        file: SuiteFileRef,
+        password: String,
+        pin: String?,
+        keyfile: ByteArray?,
+        onTouchNeeded: () -> Unit,
+        onProgress: (Long, Long) -> Unit,
+    ): VaultKindUi {
+        if (io { waitingFor(file, busyToo = false) }) throw VaultException(VaultErrorKind.SINGLE_PENDING)
+        if (single != null || unlockedState.value) lock()
+        if (busyDirs.isNotEmpty()) {
+            io {
+                for (i in 0 until 300) {
+                    if (busyDirs.isEmpty()) break
+                    Thread.sleep(100)
+                }
+            }
+            if (busyDirs.isNotEmpty()) throw VaultException(VaultErrorKind.SINGLE_BUSY)
+        }
+        if (io { waitingFor(file) }) throw VaultException(VaultErrorKind.SINGLE_PENDING)
+        val name = java.util.UUID.randomUUID().toString()
+        val dir = java.io.File(singleBase(), name)
+        busyDirs += name
+        val t = tempSuite(dir).also { it.setTimeZones(DeviceTimeZones) }
+        try {
+            // The file's hash on the way (what it holds now: written back only over this state).
+            val hash = maybeWithKey(pin) { k ->
+                val input = openSuiteInput(file) ?: throw VaultException(VaultErrorKind.STORAGE, "the file cannot be read")
+                input.stream.use { raw ->
+                    val md = java.security.MessageDigest.getInstance("SHA-256")
+                    val hashing = java.security.DigestInputStream(raw, md)
+                    t.openSingleDocs(StreamSource(SuiteInput(hashing, input.size)), password, k, k?.let { Touch(onTouchNeeded) }, pin, keyfile, Progress(onProgress))
+                    // The rest of the file (the core may stop before its end) counts too.
+                    val buf = ByteArray(1 shl 16)
+                    while (hashing.read(buf) >= 0) { /* hashed */ }
+                    md.digest().joinToString("") { b -> "%02x".format(b) }
+                }
+            }
+            io { writeTarget(dir, Target(file, t.singleVaultName(), hash)) }
+            temp = t
+            single = file
+            singleDir = dir
+            singleDocs = true
+            unlockedState.value = true
+            return VaultKindUi.DOCS
+        } catch (e: Throwable) {
+            runCatching { t.lock(); t.finishLock() }
+            io { dir.deleteRecursively() }
+            throw e
+        } finally {
+            busyDirs -= name
+        }
     }
 
     /** Writes the unsaved changes of the vault in [dir] into its file. */
@@ -546,6 +705,10 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
                     return@mapNotNull null
                 }
                 val t = readTarget(dir)
+                // A GhulDocs vault: only written while it is open (see closeSingle); only giving up.
+                if (isDocsDir(dir, t)) {
+                    return@mapNotNull PendingSingleUi(dir.name, t?.ref ?: SuiteFileRef("", vaultIn(dir) ?: "GhulDocs.ghlzip"), docs = true)
+                }
                 if (t == null) {
                     // Which file is unknown: only "save as" (named like the vault file) or give up.
                     val v = vaultIn(dir)
@@ -573,6 +736,7 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
 
     override suspend fun retrySingleWrite(key: String, mode: SingleWrite): SingleSaveUi {
         val dir = pendingDir(key) ?: return SingleSaveUi.SAVED
+        if (io { isDocsDir(dir) }) return SingleSaveUi.FAILED
         val r = io { writePending(dir, mode = mode) }
         if (r == SingleSaveUi.SAVED) io { dir.deleteRecursively() }
         tick()
@@ -581,6 +745,7 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
 
     override suspend fun saveSingleWriteAs(key: String, ref: SuiteFileRef): Boolean {
         val dir = pendingDir(key) ?: return false
+        if (io { isDocsDir(dir) }) return false
         val data = io { pendingData(dir) } ?: return false
         val ok = singleWrite.withLock { writeSuiteFile(ref, data) }
         if (ok) io { dir.deleteRecursively() }
@@ -684,8 +849,7 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
     // --- vaults -------------------------------------------------------------------------------
 
     override suspend fun listVaults(): List<VaultUi> = io {
-        // GhulDocs comes with its own screens later; until then its vaults are not listed.
-        suite.listVaults().filter { it.kind != VaultKind.DOCS }.map {
+        suite.listVaults().map {
             VaultUi(it.id, it.kind.toUi(), it.name, it.file, it.available, it.entries.toInt())
         }
     }

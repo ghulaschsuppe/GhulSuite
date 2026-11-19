@@ -2,6 +2,7 @@
 package de.danerd.ghulsuite.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Button
@@ -302,3 +303,51 @@ actual fun epochMillisOf(local: String): Long {
 actual fun applyAppLanguage(tag: String) {
     // Takes effect at the next start (Main.kt applies the stored language before the window opens).
 }
+
+actual fun decodeImage(bytes: ByteArray, maxSide: Int): androidx.compose.ui.graphics.ImageBitmap? = runCatching {
+    val image = org.jetbrains.skia.Image.makeFromEncoded(bytes)
+    val side = maxOf(image.width, image.height)
+    if (side <= maxSide) return@runCatching image.toComposeImageBitmap()
+    // Scaled down in memory: a photo of a phone camera is far larger than any window.
+    val scale = maxSide.toFloat() / side
+    val w = (image.width * scale).toInt().coerceAtLeast(1)
+    val h = (image.height * scale).toInt().coerceAtLeast(1)
+    val surface = org.jetbrains.skia.Surface.makeRasterN32Premul(w, h)
+    surface.canvas.drawImageRect(image, org.jetbrains.skia.Rect.makeWH(w.toFloat(), h.toFloat()))
+    surface.makeImageSnapshot().toComposeImageBitmap().also { image.close() }
+}.getOrNull()
+
+/**
+ * A PDF read from the bytes with Apache PDFBox, everything in memory (no scratch file; the
+ * stream cache is memory only).
+ */
+actual fun openPdf(bytes: ByteArray): PdfView? = runCatching {
+    // PDFBox keeps a list of the system's fonts: in the portable version next to the data, not on the PC.
+    if (System.getProperty("pdfbox.fontcache") == null && System.getProperty("jpackage.app-path") != null) {
+        System.setProperty("pdfbox.fontcache", de.danerd.ghulsuite.DesktopPaths.dataDir.absolutePath)
+    }
+    val doc = org.apache.pdfbox.Loader.loadPDF(
+        org.apache.pdfbox.io.RandomAccessReadBuffer(bytes), "", null, null,
+        org.apache.pdfbox.io.IOUtils.createMemoryOnlyStreamCache(),
+    )
+    val renderer = org.apache.pdfbox.rendering.PDFRenderer(doc)
+    object : PdfView {
+        override val pageCount: Int = doc.numberOfPages
+
+        override fun render(index: Int, widthPx: Int): androidx.compose.ui.graphics.ImageBitmap? = synchronized(doc) {
+            runCatching {
+                val box = doc.getPage(index).cropBox
+                val w = widthPx.coerceIn(100, 2400)
+                val scale = w / box.width.coerceAtLeast(1f)
+                val img = renderer.renderImage(index, scale, org.apache.pdfbox.rendering.ImageType.RGB)
+                img.toComposeImageBitmap()
+            }.getOrNull()
+        }
+
+        override fun close() {
+            synchronized(doc) { runCatching { doc.close() } }
+        }
+    }
+}.getOrNull()
+
+actual val docScanAvailable: Boolean = false

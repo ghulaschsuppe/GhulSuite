@@ -112,7 +112,7 @@ fun <T> ChoiceRow(label: String, options: List<Pair<T, StringResource>>, selecte
 }
 
 /** Pages of the settings, opened from the overview. */
-enum class SetPage { UNLOCK, LOCK, PRIVACY, FACTORS, VAULTS, FILE, IMPORT, MODULES, PASS, AUTH, CAL, LOOK, ABOUT }
+enum class SetPage { UNLOCK, LOCK, PRIVACY, FACTORS, VAULTS, FILE, IMPORT, MODULES, PASS, AUTH, DOCS, CAL, LOOK, ABOUT }
 
 @Composable
 fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
@@ -264,6 +264,10 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
             AreaFileNote(VaultKindUi.TOTP)
             AreaFooter(state, VaultKindUi.TOTP)
                 }
+                SetPage.DOCS -> {
+                    DocsSettingsSection(state)
+                    AreaFooter(state, VaultKindUi.DOCS)
+                }
                 SetPage.CAL -> {
                     // B22: Windows has no background service: reminders need the app running (also locked).
                     if (backend.isDesktop) Hint(stringResource(Res.string.cal_desktop_running))
@@ -276,7 +280,10 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                 ChoiceRow(stringResource(Res.string.set_theme), THEME_OPTIONS, settings.theme) { settings.theme = it }
                 ChoiceRow(
                     stringResource(Res.string.set_start_tab),
-                    listOf(-1 to Res.string.set_start_last, 0 to Res.string.set_start_first, 1 to Res.string.set_start_second, 2 to Res.string.set_start_third)
+                    listOf(
+                        -1 to Res.string.set_start_last, 0 to Res.string.set_start_first, 1 to Res.string.set_start_second,
+                        2 to Res.string.set_start_third, 3 to Res.string.set_start_fourth,
+                    )
                         .filter { it.first < state.tabs.size - 1 },
                     settings.startTab,
                 ) { settings.startTab = it }
@@ -663,6 +670,7 @@ private val LIBRARIES = listOf(
     "RustCrypto (ChaCha20-Poly1305, AES, SHA-2, HKDF, Argon2, P-256)" to "MIT / Apache-2.0",
     "rustls, ring, webpki-roots" to "Apache-2.0 / ISC / MPL-2.0",
     "zxcvbn" to "MIT",
+    "Apache PDFBox (Windows)" to "Apache-2.0",
     "zip" to "MIT",
     "tokio, serde, ciborium" to "MIT / Apache-2.0",
     "ZXing" to "Apache-2.0",

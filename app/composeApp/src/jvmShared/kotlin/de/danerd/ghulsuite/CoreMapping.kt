@@ -29,6 +29,7 @@ fun String.hexToBytes(): ByteArray = ByteArray(length / 2) { i -> substring(2 * 
 internal fun VaultKindUi.toCore() = when (this) {
     VaultKindUi.PASS -> VaultKind.PASS
     VaultKindUi.TOTP -> VaultKind.TOTP
+    VaultKindUi.DOCS -> VaultKind.DOCS
     VaultKindUi.CAL -> VaultKind.CAL
 }
 
@@ -36,8 +37,7 @@ internal fun VaultKind.toUi() = when (this) {
     VaultKind.PASS -> VaultKindUi.PASS
     VaultKind.TOTP -> VaultKindUi.TOTP
     VaultKind.CAL -> VaultKindUi.CAL
-    // GhulDocs has no screens yet: its vaults are left out of the lists (see listVaults).
-    VaultKind.DOCS -> throw VaultException(VaultErrorKind.UPDATE_REQUIRED, "GhulDocs")
+    VaultKind.DOCS -> VaultKindUi.DOCS
 }
 
 internal fun ProtectionInfo.toUi() = ProtectionUi(securityKeys.toInt(), keyfiles.toInt(), recoveryCodes.toInt())
@@ -112,7 +112,7 @@ internal fun GhulException.toVault(): VaultException {
         is GhulException.NotConfigured -> VaultException(VaultErrorKind.NOT_CONFIGURED, d)
         is GhulException.NotFound -> VaultException(VaultErrorKind.NOT_FOUND, d)
         is GhulException.UpdateRequired -> VaultException(VaultErrorKind.UPDATE_REQUIRED, d)
-        else -> VaultException(VaultErrorKind.OTHER, d)
+        is GhulException.DocsLimit -> VaultException(VaultErrorKind.DOCS_LIMIT, "$used|$limit")
     }
 }
 

@@ -24,12 +24,14 @@ import kotlinx.coroutines.flow.first
 import org.jetbrains.compose.resources.getPluralString
 import org.jetbrains.compose.resources.getString
 
-enum class Tab { PASS, AUTH, CAL, SETTINGS }
+/** The areas in the order they are named everywhere (passwords, 2FA, documents, calendar), then Options. */
+enum class Tab { PASS, AUTH, DOCS, CAL, SETTINGS }
 
 /** The tab of a vault's area. */
 fun tabOf(kind: de.danerd.ghulsuite.model.VaultKindUi): Tab = when (kind) {
     de.danerd.ghulsuite.model.VaultKindUi.PASS -> Tab.PASS
     de.danerd.ghulsuite.model.VaultKindUi.TOTP -> Tab.AUTH
+    de.danerd.ghulsuite.model.VaultKindUi.DOCS -> Tab.DOCS
     de.danerd.ghulsuite.model.VaultKindUi.CAL -> Tab.CAL
 }
 
@@ -69,6 +71,12 @@ object AppLaunch {
 
     /** A calendar file (.ics) opened with GhulSuite: imported into the default calendar. */
     val icsFile = kotlinx.coroutines.flow.MutableStateFlow<ByteArray?>(null)
+
+    /**
+     * Files shared with GhulSuite from other apps ("Save in GhulDocs", Android): GhulDocs asks
+     * where they go once the suite is unlocked. Only read when they are added (encrypted then).
+     */
+    val docsFiles = kotlinx.coroutines.flow.MutableStateFlow<List<de.danerd.ghulsuite.model.ByteSource>?>(null)
 }
 
 /** Screens shown on top of the tabs. */
@@ -85,6 +93,8 @@ sealed interface Screen {
     data object Security : Screen
     data class CalEvent(val id: String, val day: String) : Screen
     data class CalEdit(val draft: de.danerd.ghulsuite.model.CalEventUi) : Screen
+    /** A document of GhulDocs, shown in the app (from memory, nothing on the disk). */
+    data class DocView(val vaultId: String, val id: String) : Screen
 }
 
 /**
@@ -180,14 +190,29 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
 
     val onTouchNeeded: () -> Unit = { touchNeeded = true }
 
-    /** A deletion waiting for "Delete?" to be answered (F103: every deletion asks first). */
-    class DeleteAsk(val names: List<String>, val action: () -> Unit)
+    /**
+     * A deletion waiting for "Delete?" (or "Move to the trash?") to be answered (F103: every
+     * deletion asks first).
+     */
+    class DeleteAsk(val names: List<String>, val action: () -> Unit, val trash: Boolean = false)
 
     // Declared before init (the lock listener there clears it).
     var deleteAsk by mutableStateOf<DeleteAsk?>(null)
 
     /** Header action of GhulAuth: list or grid view. */
     var authGrid by mutableStateOf(false)
+
+    // --- GhulDocs
+    /** The GhulDocs vault shown (null: all, or the only one). */
+    var docsVault by mutableStateOf<String?>(null)
+    /** Grows with every tap on "+" in GhulDocs: its screen opens the add sheet. */
+    var docsAddTick by mutableStateOf(0)
+    /** GhulDocs shows its trash: nothing can be added there, so there is no "+". */
+    var docsTrashShown by mutableStateOf(false)
+    /** Files shared from other apps, waiting for the user to choose a vault and folder. */
+    var docsIncoming by mutableStateOf<List<de.danerd.ghulsuite.model.ByteSource>?>(null)
+    /** A GhulDocs vault saved on its own, waiting to be added to the own suite once it is unlocked. */
+    var pendingDocsAdd by mutableStateOf<de.danerd.ghulsuite.model.SuiteFileRef?>(null)
 
     // --- GhulCal
     var calView by mutableStateOf(CalView.entries[backend.settings.calStartView.coerceIn(0, 3)])
@@ -386,6 +411,12 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     vaults = emptyList()
                     passVault = null
                     authVault = null
+                    docsVault = null
+                    docsTrashShown = false
+                    // Files shared from another app stay waiting (they were never decrypted); the
+                    // question where they go comes again after unlocking.
+                    docsIncoming?.let { list -> if (AppLaunch.docsFiles.value == null) AppLaunch.docsFiles.value = list }
+                    docsIncoming = null
                     areasKnown = false
                     codeUnconfirmed = false
                     saveAfterProtection = false
@@ -434,6 +465,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         scope.launch { AppLaunch.openEvent.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
         scope.launch { AppLaunch.newEvent.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
         scope.launch { AppLaunch.icsFile.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
+        scope.launch { AppLaunch.docsFiles.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
         // A suite file handed over: unlocked, the page of the suite file opens it; locked, the start
         // screen does (as "Open another suite or vault" would).
         scope.launch {
@@ -448,7 +480,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                 kotlinx.coroutines.delay(1500)
                 // Changed elsewhere: the user decides (overwrite or save as), not this loop. Gone or
                 // failed: tried again (written as soon as the storage is back and unchanged).
-                if (single != null && backend.unlocked.value && !busy &&
+                // Not while files are added (a GhulDocs vault is written with its documents): once after.
+                if (single != null && backend.unlocked.value && !busy && !jobs.running &&
                     singleSave != de.danerd.ghulsuite.model.SingleSaveUi.CHANGED_ELSEWHERE &&
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { backend.archiveUnsaved() }
                 ) {
@@ -487,6 +520,20 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                 icsPending = data
             }
         }
+        AppLaunch.docsFiles.value?.let { files ->
+            // A vault opened on its own is no place for them: they wait for the own suite.
+            if (single == null) {
+                AppLaunch.docsFiles.value = null
+                if (Tab.DOCS in tabs) {
+                    stack.clear()
+                    tab = Tab.DOCS
+                    docsIncoming = (docsIncoming.orEmpty() + files)
+                } else {
+                    files.forEach { runCatching { it.close() } }
+                    scope.launch { message(getString(Res.string.docs_incoming_no_area)) }
+                }
+            }
+        }
         val t = AppLaunch.openTab.value ?: return
         AppLaunch.openTab.value = null
         if (t !in tabs) return
@@ -504,6 +551,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             }
             if (backend.settings.moduleGhulPass && hasArea(VaultKindUi.PASS)) add(Tab.PASS)
             if (backend.settings.moduleGhulAuth && hasArea(VaultKindUi.TOTP)) add(Tab.AUTH)
+            if (backend.settings.moduleGhulDocs && hasArea(VaultKindUi.DOCS)) add(Tab.DOCS)
             if (backend.settings.moduleGhulCal && hasArea(VaultKindUi.CAL)) add(Tab.CAL)
             add(Tab.SETTINGS)
         }
@@ -602,6 +650,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             }
             if (passVault != null && vaults.none { it.id == passVault }) passVault = null
             if (authVault != null && vaults.none { it.id == authVault }) authVault = null
+            if (docsVault != null && vaults.none { it.id == docsVault }) docsVault = null
         }
     }
 
@@ -626,6 +675,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         when (kind) {
             VaultKindUi.PASS -> backend.settings.moduleGhulPass = true
             VaultKindUi.TOTP -> backend.settings.moduleGhulAuth = true
+            VaultKindUi.DOCS -> backend.settings.moduleGhulDocs = true
             VaultKindUi.CAL -> backend.settings.moduleGhulCal = true
         }
     }
@@ -690,9 +740,9 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
      * Asks before deleting [names]; [action] runs only after "Delete". Every area deletes through
      * this; "Undo" afterwards stays as it was.
      */
-    fun askDelete(names: List<String>, action: () -> Unit) {
+    fun askDelete(names: List<String>, trash: Boolean = false, action: () -> Unit) {
         if (names.isEmpty()) return
-        deleteAsk = DeleteAsk(names, action)
+        deleteAsk = DeleteAsk(names, action, trash)
     }
 
     /** Carries out the action that waits for "Undo" now (before the next one, before locking). */
@@ -907,6 +957,12 @@ private suspend fun describeText(e: Throwable): String {
         VaultErrorKind.CERT_UNTRUSTED -> getString(Res.string.err_cert_untrusted, e.detail)
         VaultErrorKind.NOT_CONFIGURED -> getString(Res.string.err_not_configured)
         VaultErrorKind.NOT_FOUND -> getString(Res.string.err_not_found)
+        VaultErrorKind.DOCS_LIMIT -> {
+            val used = e.detail.substringBefore('|').toLongOrNull() ?: 0
+            val limit = e.detail.substringAfter('|').toLongOrNull() ?: 1_000_000_000
+            if (used > 0) getString(Res.string.err_docs_limit, formatSizeSi(used), formatSizeSi(limit))
+            else getString(Res.string.err_docs_too_large, formatSizeSi(limit))
+        }
         VaultErrorKind.OTHER -> getString(Res.string.err_other, coreText(e.detail) ?: e.detail)
     }
 }

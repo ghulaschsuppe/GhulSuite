@@ -171,19 +171,47 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
      * opens it again. Calendar reminders keep working: the panic lock closes the app.
      */
     override fun panicLock() {
-        lock()
+        // Nothing is written back first (a GhulDocs vault open on its own locks at once).
+        panicking = true
+        try {
+            lock()
+        } finally {
+            panicking = false
+        }
         quick.disableAll()
     }
 
     override val canShareToApps: Boolean = true
 
     /** Android's share sheet: a copy in the app's cache (deleted on lock) for the chosen app. */
-    override suspend fun shareToApps(name: String, mime: String, data: ByteArray): Boolean {
-        val uri = withContext(Dispatchers.IO) {
+    override suspend fun shareToApps(name: String, mime: String, data: ByteArray): Boolean =
+        shareStreamToApps(name, mime) { it.write(data) }
+
+    /**
+     * The same, written piece by piece into the copy (a document of GhulDocs). A write that fails
+     * or is cancelled removes the half copy at once; nothing is handed over then.
+     */
+    override suspend fun shareStreamToApps(name: String, mime: String, write: suspend (de.danerd.ghulsuite.model.ByteSink) -> Unit): Boolean {
+        val target = withContext(Dispatchers.IO) {
             val dir = File(context.cacheDir, "shared").apply { deleteRecursively(); mkdirs() }
-            val target = File(dir, safeFileName(name, mutableSetOf())).apply { writeBytes(data) }
-            androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".files", target)
+            File(dir, safeFileName(name, mutableSetOf()))
         }
+        val out = withContext(Dispatchers.IO) { java.io.BufferedOutputStream(java.io.FileOutputStream(target), 1 shl 20) }
+        var complete = false
+        try {
+            write(object : de.danerd.ghulsuite.model.ByteSink {
+                override fun write(data: ByteArray) = out.write(data)
+                override fun close() = out.close()
+            })
+            withContext(Dispatchers.IO) { out.close() }
+            complete = true
+        } finally {
+            if (!complete) withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
+                runCatching { out.close() }
+                target.delete()
+            }
+        }
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".files", target)
         val intent = Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, uri)
         intent.type = mime
         intent.clipData = ClipData.newRawUri("", uri)

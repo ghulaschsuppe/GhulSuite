@@ -1110,4 +1110,145 @@
     <string name="prot_save_title">Save the suite file now</string>
     <string name="prot_save_text">The protection of your suite was changed. Save the suite file now and replace older copies on other devices, sticks or in backups with it. Older copies still open with the old protection: delete them. Until you save, the older file is your only copy, so everything stays as it was until then.</string>
     <string name="prot_save_now">Save now</string>
+    <!-- GhulDocs -->
+    <string name="tab_docs">GhulDocs</string>
+    <string name="area_docs_sub">Important documents and scans, up to 1 GB</string>
+    <string name="area_docs_default">Documents</string>
+    <string name="set_docs_sub">Storage used, check, trash</string>
+    <string name="set_start_fourth">4th area</string>
+    <string name="fab_docs">Add</string>
+    <string name="ask_trash_title">Move to the trash?</string>
+    <string name="ask_trash_named">“%1$s” goes to the trash.</string>
+    <plurals name="ask_trash_n">
+        <item quantity="one">%1$s item goes to the trash.</item>
+        <item quantity="other">%1$s items go to the trash.</item>
+    </plurals>
+    <string name="a_to_trash">Move to trash</string>
+    <string name="a_move">Move</string>
+    <string name="msg_moved_to_trash">Moved to the trash</string>
+    <string name="err_docs_limit">GhulDocs is full: %1$s of %2$s used. Nothing was added. Empty the trash or delete documents to make room.</string>
+    <string name="err_docs_too_large">This file is too large for GhulDocs (at most %1$s). It was not added.</string>
+    <string name="job_kind_add">Adding documents</string>
+    <string name="job_kind_export">Export</string>
+    <string name="docs_search">Search documents</string>
+    <string name="docs_search_results">Search results</string>
+    <string name="docs_trash">Trash</string>
+    <string name="docs_trash_hint">What is in the trash still counts towards the 1 GB until the trash is emptied.</string>
+    <string name="docs_trash_empty">The trash is empty.</string>
+    <string name="docs_empty_trash">Empty</string>
+    <string name="docs_empty_trash_title">Empty the trash</string>
+    <string name="docs_empty_trash_text">Everything in the trash is deleted for good. This cannot be undone.</string>
+    <string name="docs_delete_forever">Delete for good</string>
+    <string name="docs_restore">Restore</string>
+    <string name="docs_restored">%1$s restored</string>
+    <string name="docs_empty">This folder is empty. Add files with “Add”.</string>
+    <string name="docs_nothing_found">Nothing found.</string>
+    <string name="docs_no_favorites">No favourites yet. Mark a document with the star.</string>
+    <string name="docs_no_vault">No GhulDocs vault yet.</string>
+    <string name="docs_privacy">Encrypted on this device. Names, folders and contents are only in the vault.</string>
+    <string name="docs_usage">%1$s of %2$s</string>
+    <plurals name="docs_n_documents">
+        <item quantity="one">%1$s document</item>
+        <item quantity="other">%1$s documents</item>
+    </plurals>
+    <plurals name="docs_n_items">
+        <item quantity="one">%1$s item</item>
+        <item quantity="other">%1$s items</item>
+    </plurals>
+    <plurals name="docs_vault_items">
+        <item quantity="one">%1$s document or folder</item>
+        <item quantity="other">%1$s documents and folders</item>
+    </plurals>
+    <string name="docs_encrypted_here">encrypted on this device</string>
+    <string name="docs_almost_full">GhulDocs is almost full.</string>
+    <string name="docs_in">in %1$s</string>
+    <string name="docs_at_top">at the top</string>
+    <string name="docs_add_title">Add to GhulDocs</string>
+    <string name="docs_add_files">Add files</string>
+    <string name="docs_add_files_sub">From this device, several at once</string>
+    <string name="docs_new_folder">New folder</string>
+    <string name="docs_move_title">Move “%1$s”</string>
+    <plurals name="docs_move_n">
+        <item quantity="one">Move %1$s item</item>
+        <item quantity="other">Move %1$s items</item>
+    </plurals>
+    <string name="docs_move_here">Move here</string>
+    <string name="docs_up">Up one level</string>
+    <string name="docs_no_subfolders">No folders in here.</string>
+    <string name="docs_adding">Adding %1$s …</string>
+    <plurals name="docs_adding_n">
+        <item quantity="one">Adding %1$s file …</item>
+        <item quantity="other">Adding %1$s files …</item>
+    </plurals>
+    <string name="docs_added">%1$s added.</string>
+    <plurals name="docs_added_n">
+        <item quantity="one">%1$s file added.</item>
+        <item quantity="other">%1$s files added.</item>
+    </plurals>
+    <string name="docs_add_cancelled_one">Adding %1$s cancelled. Nothing of it was kept.</string>
+    <plurals name="docs_add_cancelled_n">
+        <item quantity="one">Cancelled after %1$s of %2$s file.</item>
+        <item quantity="other">Cancelled after %1$s of %2$s files.</item>
+    </plurals>
+    <string name="docs_incoming_title">Save in GhulDocs</string>
+    <string name="docs_incoming_one">“%1$s” from another app, encrypted in GhulDocs.</string>
+    <plurals name="docs_incoming_n">
+        <item quantity="one">%1$s file from another app, encrypted in GhulDocs.</item>
+        <item quantity="other">%1$s files from another app, encrypted in GhulDocs.</item>
+    </plurals>
+    <string name="docs_incoming_into">Save into</string>
+    <string name="docs_incoming_no_area">Files shared with GhulSuite go into GhulDocs: set it up first (Options, Areas).</string>
+    <string name="docs_change">Change</string>
+    <string name="docs_save_here">Save here</string>
+    <string name="docs_choose_here">Choose this folder</string>
+    <string name="docs_open_with">Open with app</string>
+    <string name="docs_open_with_sub">A temporary copy, deleted when GhulSuite locks</string>
+    <string name="docs_export">Export</string>
+    <string name="docs_export_sub">Saved unencrypted at a place you choose</string>
+    <string name="docs_export_title">Export unencrypted?</string>
+    <string name="docs_export_text">“%1$s” is saved without encryption at the place you choose next. Anyone with access to that place can read it.</string>
+    <string name="docs_export_yes">Export</string>
+    <string name="docs_exporting">Exporting %1$s …</string>
+    <string name="docs_exported">%1$s exported (unencrypted).</string>
+    <string name="docs_export_cancelled">Export of %1$s cancelled. The incomplete file was removed.</string>
+    <string name="docs_opening">Opening %1$s …</string>
+    <string name="docs_open_cancelled">Opening %1$s cancelled.</string>
+    <string name="docs_no_app">No program to open it was found.</string>
+    <string name="docs_copy_hint">“Open with app” hands a temporary copy to the app you choose; it is deleted when GhulSuite locks. What that app does with it is up to that app.</string>
+    <string name="docs_added_on">added %1$s</string>
+    <string name="docs_reading">Decrypting … %1$s %</string>
+    <string name="docs_no_preview">The app cannot show this type of file.</string>
+    <string name="docs_too_large_to_show">Too large to show in the app (more than %1$s).</string>
+    <string name="docs_pdf_not_here">This PDF cannot be shown here (protected by a password, damaged, or not on this Android version).</string>
+    <string name="docs_image_not_read">This image cannot be shown here.</string>
+    <string name="docs_open_hint">Open it with another app or export it.</string>
+    <string name="docs_text_cut">Only the beginning of the text is shown.</string>
+    <plurals name="docs_pages">
+        <item quantity="one">%1$s page</item>
+        <item quantity="other">%1$s pages</item>
+    </plurals>
+    <string name="docs_limit_hint">GhulDocs holds up to 1 GB, all its vaults and the trash together, a single file also up to 1 GB.</string>
+    <string name="docs_usage_title">Storage used</string>
+    <string name="docs_verify_title">Check documents</string>
+    <string name="docs_verify_hint">Reads every document of a vault and compares it with its checksum. Nothing is changed.</string>
+    <string name="docs_verify">Check</string>
+    <string name="docs_verify_ok">All documents are intact.</string>
+    <plurals name="docs_verify_bad">
+        <item quantity="one">%1$s document is damaged or missing</item>
+        <item quantity="other">%1$s documents are damaged or missing</item>
+    </plurals>
+    <string name="docs_verify_bad_hint">Open an earlier suite file to get them back.</string>
+    <plurals name="docs_trash_count">
+        <item quantity="one">%1$s item in the trash, in all GhulDocs vaults.</item>
+        <item quantity="other">%1$s items in the trash, in all GhulDocs vaults.</item>
+    </plurals>
+    <string name="docs_vault_exporting">Saving %1$s …</string>
+    <string name="docs_vault_export_cancelled">Saving %1$s cancelled. The incomplete file was removed.</string>
+    <plurals name="docs_share_text">
+        <item quantity="one">%1$s picked item goes into a GhulDocs vault of its own (a .ghlzip file with the documents), with a password and second factor of its own and a new recovery code.</item>
+        <item quantity="other">%1$s picked items go into a GhulDocs vault of its own (a .ghlzip file with the documents), with a password and second factor of its own and a new recovery code.</item>
+    </plurals>
+    <string name="docs_single_no_new_suite">To keep it in a suite of its own: set up a new suite first, then add this file under Options, Vaults.</string>
+    <string name="docs_single_pending_text">The last changes of the GhulDocs vault in %1$s could not be written into its file before it was locked. A GhulDocs vault can only be written while it is open: give them up to open the file again.</string>
+    <string name="docs_foreign_text">Open the GhulDocs vault once with its own password and its key or key file. It is then added with its documents and gets the protection of your suite.</string>
 </resources>

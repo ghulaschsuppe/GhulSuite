@@ -204,6 +204,7 @@ fun areaColor(tab: Tab): Color {
     return when (tab) {
         Tab.PASS -> if (dark) VioletLight else Violet
         Tab.AUTH -> if (dark) Color(0xFF4FD8B6) else Color(0xFF0E9F80)
+        Tab.DOCS -> if (dark) Color(0xFF6FA8FF) else Color(0xFF2F74E8)
         Tab.CAL -> if (dark) Color(0xFFFF7AA8) else Color(0xFFD6336C)
         Tab.SETTINGS -> g.accent
     }
@@ -615,6 +616,9 @@ fun StrengthMeter(score: Int) {
 @Composable
 fun Hint(text: String) = HintText(text)
 
+/** The areas in the logo: one stripe each, in their colour and order. */
+val BRAND_AREAS = listOf(Tab.PASS, Tab.AUTH, Tab.DOCS, Tab.CAL)
+
 /** App name with a shield tile and the areas, at the top of start and unlock. */
 @Composable
 fun BrandHeader(subtitle: String? = null) {
@@ -630,7 +634,7 @@ fun BrandHeader(subtitle: String? = null) {
         }
         Text(stringResource(Res.string.app_name), fontSize = 28.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.84).sp, modifier = Modifier.padding(top = 4.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            for (t in listOf(Tab.PASS, Tab.AUTH, Tab.CAL)) {
+            for (t in BRAND_AREAS) {
                 Box(Modifier.size(width = 24.dp, height = 4.dp).clip(RoundedCornerShape(2.dp)).background(areaColor(t)))
             }
         }
@@ -672,6 +676,7 @@ fun ConfirmByName(name: String, typed: String, onTyped: (String) -> Unit) {
 fun vaultKindOf(kind: String): de.danerd.ghulsuite.model.VaultKindUi = when (kind) {
     "pass" -> de.danerd.ghulsuite.model.VaultKindUi.PASS
     "cal" -> de.danerd.ghulsuite.model.VaultKindUi.CAL
+    "docs" -> de.danerd.ghulsuite.model.VaultKindUi.DOCS
     else -> de.danerd.ghulsuite.model.VaultKindUi.TOTP
 }
 
@@ -696,6 +701,21 @@ suspend fun countText(
     throw c
 } catch (_: Exception) {
     args.joinToString(" ")
+}
+
+/**
+ * A size in decimal units, as GhulDocs counts its limit ("412 MB of 1 GB"): 1 KB = 1000 bytes.
+ * Whole numbers from 10 on, one decimal below.
+ */
+fun formatSizeSi(bytes: Long): String {
+    if (bytes < 1000) return "$bytes B"
+    val units = listOf("KB", "MB", "GB")
+    var v = bytes / 1000.0
+    var u = 0
+    while (v >= 1000 && u < units.lastIndex) { v /= 1000; u++ }
+    val text = if (v >= 10 || v == kotlin.math.floor(v)) kotlin.math.round(v).toLong().toString()
+    else (kotlin.math.round(v * 10) / 10.0).toString()
+    return "$text ${units[u]}"
 }
 
 /** Human-readable size: 1.2 MB. */

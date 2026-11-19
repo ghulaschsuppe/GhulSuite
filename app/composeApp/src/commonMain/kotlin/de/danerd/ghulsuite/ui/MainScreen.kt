@@ -65,6 +65,7 @@ import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Tune
@@ -216,16 +217,16 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
         AlertDialog(
             danger = true,
             onDismissRequest = { state.deleteAsk = null },
-            title = { Text(stringResource(Res.string.ask_delete_title)) },
+            title = { Text(stringResource(if (ask.trash) Res.string.ask_trash_title else Res.string.ask_delete_title)) },
             text = {
                 Text(
-                    if (one != null) stringResource(Res.string.ask_delete_named, one)
-                    else pluralStringResource(Res.plurals.ask_delete_n, ask.names.size, ask.names.size.toString()),
+                    if (one != null) stringResource(if (ask.trash) Res.string.ask_trash_named else Res.string.ask_delete_named, one)
+                    else pluralStringResource(if (ask.trash) Res.plurals.ask_trash_n else Res.plurals.ask_delete_n, ask.names.size, ask.names.size.toString()),
                 )
             },
             confirmButton = {
                 TextButton(onClick = { state.deleteAsk = null; ask.action() }, modifier = Modifier.testTag("ask-confirm")) {
-                    Text(stringResource(Res.string.a_delete))
+                    Text(stringResource(if (ask.trash) Res.string.a_to_trash else Res.string.a_delete))
                 }
             },
             dismissButton = { TextButton(onClick = { state.deleteAsk = null }) { Text(stringResource(Res.string.a_cancel)) } },
@@ -385,7 +386,7 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
 }
 
 private fun ownHeader(top: Screen) = top is Screen.EntryDetail ||
-    top is Screen.EntryEdit || top is Screen.CalEvent || top is Screen.CalEdit
+    top is Screen.EntryEdit || top is Screen.CalEvent || top is Screen.CalEdit || top is Screen.DocView
 
 @Composable
 private fun TabTopBar(state: AppState) {
@@ -424,6 +425,7 @@ private fun navTabs(state: AppState): List<NavTab> = state.tabs.map { t ->
 fun tabIcon(t: Tab) = when (t) {
     Tab.PASS -> Icons.Outlined.Key
     Tab.AUTH -> Icons.Outlined.VerifiedUser
+    Tab.DOCS -> Icons.Outlined.Description
     Tab.CAL -> Icons.Outlined.CalendarMonth
     Tab.SETTINGS -> Icons.Outlined.Tune
 }
@@ -432,6 +434,9 @@ fun tabIcon(t: Tab) = when (t) {
 private fun MainFab(state: AppState, onAdd: () -> Unit) {
     if (state.tab == Tab.CAL) {
         GhulFab(areaColor(Tab.CAL), Icons.Filled.Add, stringResource(Res.string.cal_event_short)) { state.calQuickOpen = true }
+    }
+    if (state.tab == Tab.DOCS && !state.docsTrashShown) {
+        GhulFab(areaColor(Tab.DOCS), Icons.Filled.Add, stringResource(Res.string.fab_docs), description = stringResource(Res.string.a_add)) { state.docsAddTick++ }
     }
     if (state.tab == Tab.PASS || state.tab == Tab.AUTH) {
         // Always "+": scanning a QR code is one of the choices behind it. Icon and short text, as in
@@ -456,6 +461,7 @@ private fun TabContents(state: AppState, visited: Set<Tab>, visible: Boolean, pa
                         when (t) {
                             Tab.PASS -> PassListScreen(state, padding)
                             Tab.AUTH -> AuthListScreen(state, padding)
+                            Tab.DOCS -> DocsScreen(state, padding)
                             Tab.CAL -> CalScreen(state, padding)
                             Tab.SETTINGS -> SettingsScreen(state, padding)
                         }
@@ -481,6 +487,7 @@ private fun TopScreen(state: AppState, top: Screen, padding: PaddingValues) {
             Screen.Security -> SecurityScreen(state, padding)
             is Screen.CalEvent -> key(top) { CalEventScreen(state, top.id, top.day, padding) }
             is Screen.CalEdit -> key(top) { CalEditScreen(state, top.draft, padding) }
+            is Screen.DocView -> key(top) { DocViewScreen(state, top.vaultId, top.id, padding) }
         }
     }
 }
@@ -509,7 +516,7 @@ private fun SideNav(state: AppState, tabs: List<Tab>) {
             Column {
                 Text(stringResource(Res.string.app_name), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = t.fg, letterSpacing = (-0.3).sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 3.dp)) {
-                    for (a in listOf(Tab.PASS, Tab.AUTH, Tab.CAL)) {
+                    for (a in BRAND_AREAS) {
                         Box(Modifier.size(width = 14.dp, height = 3.dp).clip(RoundedCornerShape(2.dp)).background(areaColor(a)))
                     }
                 }
@@ -563,6 +570,7 @@ private fun screenTitle(top: Screen?, tab: Tab): String = stringResource(
                             Screen.Security -> Res.string.sec_title
                             is Screen.CalEvent -> Res.string.cal_event_title
                             is Screen.CalEdit -> if (top.draft.id.isEmpty()) Res.string.cal_new_event else Res.string.cal_edit_event
+                            is Screen.DocView -> Res.string.tab_docs
                             null -> tabTitle(tab)
                         },
 )
@@ -608,6 +616,7 @@ private fun KeepAlive(visible: Boolean, content: @Composable () -> Unit) {
 internal fun tabTitle(t: Tab) = when (t) {
     Tab.PASS -> Res.string.tab_pass
     Tab.AUTH -> Res.string.tab_auth
+    Tab.DOCS -> Res.string.tab_docs
     Tab.CAL -> Res.string.tab_cal
     Tab.SETTINGS -> Res.string.tab_settings
 }
