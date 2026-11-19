@@ -1,0 +1,148 @@
+# GhulDocs (UMBAU-GHULDOCS 5.4): a folder, a file added from the device (the system picker; the
+# key file saved during the setup is among its recent files), the viewer, favourite, moving into
+# the folder, the trash with its question and "Restore", the check on the options page. Every
+# step with a screenshot.
+appId: de.danerd.ghulsuite.dev
+name: GhulDocs
+---
+- runFlow: home.yaml
+- tapOn: { id: "tab-docs" }
+- extendedWaitUntil:
+    visible: "Search documents"
+    timeout: 15000
+- extendedWaitUntil:
+    visible: ".* of 1 GB"
+    timeout: 15000
+- takeScreenshot: 07-01-empty
+- assertNotVisible: ".*[Cc]oroutine.*"
+
+# --- A folder -----------------------------------------------------------------------------------
+- tapOn: "Add"
+- extendedWaitUntil:
+    visible: "Add to GhulDocs"
+    timeout: 10000
+- takeScreenshot: 07-02-add-sheet
+- tapOn: "New folder"
+- extendedWaitUntil:
+    visible: "Name"
+    timeout: 10000
+- inputText: "Steuer"
+- hideKeyboard
+- tapOn: "Create"
+- extendedWaitUntil:
+    visible: "Steuer"
+    timeout: 15000
+
+# --- A file from the device (DocumentsUI) -------------------------------------------------------
+- tapOn: "Add"
+- tapOn: "Add files"
+- extendedWaitUntil:
+    visible: "ghulsuite.*\\.ghlkey|ghuldocs-probe\\.txt"
+    timeout: 30000
+- takeScreenshot: 07-03-picker
+- runFlow:
+    when:
+      visible: "ghuldocs-probe\\.txt"
+    commands:
+      - tapOn: "ghuldocs-probe\\.txt"
+- runFlow:
+    when:
+      notVisible: "Search documents"
+    commands:
+      - tapOn: "ghulsuite.*\\.ghlkey"
+- extendedWaitUntil:
+    visible: ".* added\\."
+    timeout: 60000
+- takeScreenshot: 07-04-added
+- assertNotVisible: "0 B of 1 GB"
+
+# --- View it ------------------------------------------------------------------------------------
+- tapOn: "ghuldocs-probe\\.txt|ghulsuite.*\\.ghlkey"
+- extendedWaitUntil:
+    visible: "GhulDocs probe.*|The app cannot show this type of file\\."
+    timeout: 30000
+- takeScreenshot: 07-05-viewer
+- back
+
+# --- Favourite, move into the folder ------------------------------------------------------------
+- longPressOn: "ghuldocs-probe\\.txt|ghulsuite.*\\.ghlkey"
+- extendedWaitUntil:
+    visible: "1 selected"
+    timeout: 10000
+- takeScreenshot: 07-06-selected
+- tapOn: "Add to favourites"
+- longPressOn: "ghuldocs-probe\\.txt|ghulsuite.*\\.ghlkey"
+- tapOn: "More"
+- tapOn: "Move"
+- extendedWaitUntil:
+    visible: "Move here"
+    timeout: 10000
+- tapOn: { id: "docs-folder-Steuer" }
+- extendedWaitUntil:
+    visible: ".* › Steuer"
+    timeout: 10000
+- takeScreenshot: 07-07-move
+- tapOn: { id: "docs-pick-here" }
+- extendedWaitUntil:
+    notVisible: "ghuldocs-probe\\.txt|ghulsuite.*\\.ghlkey"
+    timeout: 15000
+- tapOn: "Steuer"
+- extendedWaitUntil:
+    visible: "ghuldocs-probe\\.txt|ghulsuite.*\\.ghlkey"
+    timeout: 15000
+- takeScreenshot: 07-08-in-folder
+
+# --- The trash: it asks first, "Undo", then restore -------------------------------------------
+- longPressOn: "ghuldocs-probe\\.txt|ghulsuite.*\\.ghlkey"
+- tapOn: "Move to trash"
+- extendedWaitUntil:
+    visible: "Move to the trash\\?"
+    timeout: 10000
+- takeScreenshot: 07-09-trash-ask
+- tapOn: { id: "ask-confirm" }
+- extendedWaitUntil:
+    visible: "Undo"
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible: "Undo"
+    timeout: 20000
+- back
+- extendedWaitUntil:
+    visible: { id: "docs-view-trash" }
+    timeout: 10000
+- tapOn: { id: "docs-view-trash" }
+- extendedWaitUntil:
+    visible: "ghuldocs-probe\\.txt|ghulsuite.*\\.ghlkey"
+    timeout: 15000
+- takeScreenshot: 07-10-trash
+- longPressOn: "ghuldocs-probe\\.txt|ghulsuite.*\\.ghlkey"
+- tapOn: "Restore"
+- extendedWaitUntil:
+    visible: ".* restored"
+    timeout: 15000
+- tapOn: { id: "docs-crumb-0" }
+- tapOn: "Steuer"
+- extendedWaitUntil:
+    visible: "ghuldocs-probe\\.txt|ghulsuite.*\\.ghlkey"
+    timeout: 15000
+- back
+- assertNotVisible: ".*[Ee]xception.*"
+
+# --- Options, GhulDocs: usage and the check -----------------------------------------------------
+- tapOn: { id: "tab-settings" }
+- scrollUntilVisible:
+    element: "Storage used, check, trash"
+    direction: DOWN
+- tapOn: "Storage used, check, trash"
+- extendedWaitUntil:
+    visible: ".* of 1 GB"
+    timeout: 15000
+- scrollUntilVisible:
+    element: "Check"
+    direction: DOWN
+- tapOn: "Check"
+- extendedWaitUntil:
+    visible: "All documents are intact\\."
+    timeout: 30000
+- takeScreenshot: 07-11-options
+- back

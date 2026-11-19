@@ -17,6 +17,11 @@ adb uninstall de.danerd.ghulsuite.dev > /dev/null 2>&1 || true
 timeout 300 adb install -r "$apk"
 # English texts, as the flows expect them.
 adb shell "settings put system system_locales en-US" > /dev/null 2>&1 || true
+# A plain text file for GhulDocs (app/maestro/07-docs.yaml) among the downloads, where the system
+# picker finds it (the flow falls back to the key file of the setup if it is not listed).
+printf 'GhulDocs probe: a plain text, shown in the app from memory.\n' > "$out/ghuldocs-probe.txt"
+adb push "$out/ghuldocs-probe.txt" /sdcard/Download/ghuldocs-probe.txt > /dev/null 2>&1 || true
+adb shell am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file:///sdcard/Download/ghuldocs-probe.txt > /dev/null 2>&1 || true
 
 # One flow file; the report is named after it.
 run() {

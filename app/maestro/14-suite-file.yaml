@@ -1,6 +1,8 @@
 # Konzept 4/5: the suite as a file (.ghlzip). Saved under Options, Suite file (system dialog),
 # then that very file opened again: checked completely with password and key file, then it
-# replaces the state on this device (the same state: no question). Every step with a screenshot.
+# replaces the state on this device (the same state: no question). The suite holds the
+# documents of GhulDocs (07-docs.yaml): they travel in the file and are there after opening it.
+# Every step with a screenshot.
 appId: de.danerd.ghulsuite.dev
 name: Suite file
 ---
@@ -87,6 +89,22 @@ name: Suite file
 - assertNotVisible: ".*[Cc]oroutine.*"
 - assertNotVisible: ".*[Ee]xception.*"
 - takeScreenshot: 14-05-opened
+# The documents of GhulDocs came with the file: the folder and the file in it are there.
+- tapOn: { id: "tab-docs" }
+- extendedWaitUntil:
+    visible: "Steuer"
+    timeout: 30000
+- tapOn: "Steuer"
+- extendedWaitUntil:
+    visible: "ghuldocs-probe\\.txt|ghulsuite.*\\.ghlkey"
+    timeout: 30000
+- takeScreenshot: 14-05b-docs-after-open
+- tapOn: "ghuldocs-probe\\.txt|ghulsuite.*\\.ghlkey"
+- extendedWaitUntil:
+    visible: "GhulDocs probe.*|The app cannot show this type of file\\."
+    timeout: 30000
+- back
+- back
 # The opened file is the suite file from now on (saving goes there).
 - tapOn: { id: "tab-settings" }
 - scrollUntilVisible:
