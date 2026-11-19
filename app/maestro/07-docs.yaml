@@ -50,9 +50,14 @@ name: GhulDocs
       notVisible: "Search documents"
     commands:
       - tapOn: "ghulsuite.*\\.ghlkey"
+- takeScreenshot: 07-04a-after-picker
+# Added: the file is in the list (the message "… added." may be gone again by then).
 - extendedWaitUntil:
-    visible: ".* added\\."
+    visible: "ghuldocs-probe\\.txt|ghulsuite.*\\.ghlkey"
     timeout: 60000
+- extendedWaitUntil:
+    visible: "Search documents"
+    timeout: 30000
 - takeScreenshot: 07-04-added
 - assertNotVisible: "0 B of 1 GB"
 
