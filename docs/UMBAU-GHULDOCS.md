@@ -3,6 +3,9 @@
 Stand: 17.11.2026, freigegeben. Grundlage ist der Umbau ohne Synchronisation
 ([`UMBAU-OHNE-SYNC.md`](UMBAU-OHNE-SYNC.md)). Umsetzung auf dem Branch `feature/ghulvault`.
 
+**Status (19.11.2026):** Pakete G1 bis G8 umgesetzt, G9 (unabhängige Durchsicht, Befunde, PR nach `dev`) steht aus.
+Abweichungen bei der Umsetzung stehen in Abschnitt 11.
+
 ## 1. Grundidee
 
 GhulSuite wird eine reine Offline-App. Alles liegt verschlüsselt auf dem Gerät und in der Suite-Datei (`.ghlzip`),
@@ -162,14 +165,42 @@ Update.
 
 Auf dem Branch `feature/ghulvault` (vom Umbau-Branch), am Ende eine PR nach `dev`.
 
-| Paket | Inhalt |
-|---|---|
-| G1 | GhulMail raus (Kern, App, Android-Dienste und -Berechtigungen, Tests, Emulator-Abläufe) |
-| G2 | GhulDrive, Server, PHP-Modul, Freigaben und Schlüsselwechsel raus; Fehlerbericht ohne Hochladen; Testserver raus |
-| G3 | Altlasten raus (ältere Formate); Schutzänderung: ältere Suite-Dateien werden nie mehr geöffnet |
-| G4 | Suite-Datei als Datenstrom, bis 1,25 GiB, mit Fortschritt |
-| G5 | GhulDocs im Kern: Tresor-Art, Inhaltsverzeichnis, Inhaltsdateien, Grenzen, Tests (auch Angriffe) |
-| G6 | GhulDocs in der App: Liste, Ordner, Hinzufügen, Ansehen, Exportieren, Papierkorb, Belegung |
-| G7 | Scannen: Kamera, mehrere Seiten, Zuschneiden mit verschiebbaren Ecken, Entzerren, PDF |
-| G8 | Doku (FORMAT, KONZEPT, AUDIT, Testpläne), README, Website, Emulator-Abläufe |
-| G9 | Unabhängige Durchsicht, Befunde beheben, PR |
+| Paket | Inhalt | Stand |
+|---|---|---|
+| G1 | GhulMail raus (Kern, App, Android-Dienste und -Berechtigungen, Tests, Emulator-Abläufe) | erledigt |
+| G2 | GhulDrive, Server, PHP-Modul, Freigaben und Schlüsselwechsel raus; Fehlerbericht ohne Hochladen; Testserver raus | erledigt |
+| G3 | Altlasten raus (ältere Formate); Schutzänderung: ältere Suite-Dateien werden nie mehr geöffnet | erledigt |
+| G4 | Suite-Datei als Datenstrom, bis 1,25 GiB, mit Fortschritt | erledigt |
+| G5 | GhulDocs im Kern: Tresor-Art, Inhaltsverzeichnis, Inhaltsdateien, Grenzen, Tests (auch Angriffe) | erledigt |
+| G6 | GhulDocs in der App: Liste, Ordner, Hinzufügen, Ansehen, Exportieren, Papierkorb, Belegung | erledigt |
+| G7 | Scannen: Kamera, mehrere Seiten, Zuschneiden mit verschiebbaren Ecken, Entzerren, PDF | erledigt |
+| G8 | Doku (FORMAT, KONZEPT, AUDIT, Testpläne), README, Website, Emulator-Abläufe | erledigt |
+| G9 | Unabhängige Durchsicht, Befunde beheben, PR | offen |
+
+## 11. Abweichungen bei der Umsetzung
+
+Was beim Bauen anders oder genauer wurde als oben geplant:
+
+- **Zusätzliche Grenzen von GhulDocs:** höchstens **20 000 Dokumente** je Suite (jedes ist ein Eintrag der
+  Suite-Datei, die höchstens 21 000 Einträge hat) und höchstens 1 100 000 000 Byte Inhaltsdateien auf dem Datenträger
+  (Inhalt plus Aufrundung auf 64 KiB). So passt ein volles GhulDocs mit den übrigen Tresoren immer in die größte
+  Suite-Datei (1,25 GiB), auch bei sehr vielen kleinen Dateien. Der Papierkorb zählt mit, bis er geleert wird.
+- **Ansehen von PDF:** unter Android mit dem `PdfRenderer` des Systems über eine anonyme Datei im Arbeitsspeicher
+  (`memfd`), das gibt es erst ab **Android 11**; darunter bietet die App „Mit App öffnen“ und „Exportieren“ an. Unter
+  Windows zeigt **Apache PDFBox** die Seiten, nur im Arbeitsspeicher.
+- **Scannen:** eigener Kamera-Bildschirm mit CameraX; Blatterkennung, Entzerren und der Filter „Dokument“ in eigenem
+  Kotlin-Code; ein **eigener kleiner PDF-Schreiber** bettet die JPEG-Seiten unverändert ein (keine PDF-Bibliothek auf
+  Android). Dazu „Drehen“, „Ganzes Foto“ und eine Lupe beim Ziehen der Ecken.
+- **Kein Emulator-Ablauf für die Kamera:** Das Scannen prüfen Desktop-Tests mit gezeichneten Fotos und einer
+  Ersatz-Kamera (`DocScanTest`, `ScanAlgorithmsTest`) und der Testplan von Hand (Abschnitt 38). Die übrigen
+  Emulator-Abläufe laufen ohne Testserver in einem Teil.
+- **Suite-Datei:** eine feste, einfache ZIP-Form (unkomprimiert, ohne Data Descriptors und ZIP64), damit Schreiben und
+  Prüfen als Datenstrom gehen; beim Öffnen kommen die Inhaltsdateien erst in einen Zwischenordner und nach dem
+  Bestätigen an ihren Platz. Unter Android wird direkt in das gewählte Dokument geschrieben (keine Zwischendatei
+  möglich), danach zurückgelesen.
+- **Ein GhulDocs-Tresor für sich** ist eine `.ghlzip` ohne Kopfdatei und Suite-Container (der Tresor als erster
+  Eintrag); „Als Tresor weitergeben“ geht auch für ausgewählte Ordner und Dateien.
+- **Website:** `report.php` und sein Datenordner sind entfernt; die Datenschutzerklärung der App nennt nur noch die
+  Update- und die Leak-Prüfung. Auf dem Webspace der Live-Seite liegen die alten Dateien, bis sie von Hand gelöscht
+  werden (der Upload löscht nichts).
+

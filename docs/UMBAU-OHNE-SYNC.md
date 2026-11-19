@@ -2,6 +2,11 @@
 
 **Stand:** 17.11.2026 · **Status:** beschlossen, Umsetzung in Paketen (Abschnitt 9)
 
+> **Hinweis (19.11.2026):** Die Teile zu Servern (SFTP, PHP-Modul), GhulDrive, Freigabelinks und zum
+> Schlüsselwechsel sind durch [`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md) überholt: GhulSuite ist seitdem eine reine
+> Offline-App mit GhulDocs statt GhulDrive und GhulMail. Die Suite-Datei und die einzelnen Tresore gelten weiter. Dieses
+> Dokument bleibt als Geschichte unverändert.
+
 Die Synchronisation zwischen mehreren Geräten wird vollständig entfernt. Sie war die Quelle der meisten
 Sicherheitsfunde der letzten Durchsichten (fremde Dateien übernehmen, Schutzstände zusammenführen, ersetzte Codes,
 gleichzeitige Änderungen, gefälschte Server-Dateien). An ihre Stelle tritt ein einfaches Modell:
