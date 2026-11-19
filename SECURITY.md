@@ -29,9 +29,10 @@ neueste veröffentlichte Version.
 
 ## Was als Sicherheitslücke zählt
 
-Zum Beispiel: Zugriff auf Tresorinhalte ohne Master-Passwort **und** zweiten Faktor, Schwächen im Dateiformat
-oder in der Verschlüsselung, Datenabfluss an Server oder Logs, Umgehen der Sperre, Lücken im PHP-Server-Modul
-oder auf der Empfängerseite für Freigabelinks.
+Zum Beispiel: Zugriff auf Tresorinhalte oder Dokumente ohne Master-Passwort **und** zweiten Faktor, Schwächen im
+Dateiformat oder in der Verschlüsselung, Klartext auf dem Datenträger (auch beim Ansehen oder Scannen von
+Dokumenten), Datenabfluss nach draußen oder in Logs, Umgehen der Sperre, eine präparierte Suite-Datei, die etwas
+unterschiebt.
 
 Kein Sicherheitsproblem im engeren Sinn sind Angriffe, die ein bereits vollständig kompromittiertes, entsperrtes
 Gerät voraussetzen.

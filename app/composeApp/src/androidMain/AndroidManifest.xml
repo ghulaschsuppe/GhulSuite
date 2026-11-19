@@ -5,7 +5,7 @@
     <uses-feature android:name="android.hardware.usb.host" android:required="false" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
-    <!-- Only for scanning 2FA QR codes; asked when the scanner is opened. -->
+    <!-- Only for scanning 2FA QR codes and documents (GhulDocs); asked when the scanner is opened. -->
     <uses-permission android:name="android.permission.CAMERA" />
     <!-- Only the update check and the password leak check of GhulPass (both can be switched off). -->
     <uses-permission android:name="android.permission.INTERNET" />
