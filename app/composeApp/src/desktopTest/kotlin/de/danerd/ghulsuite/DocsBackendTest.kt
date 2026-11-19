@@ -157,6 +157,40 @@ class DocsBackendTest {
         return -1
     }
 
+    /** Names from other apps are cleaned the way the core takes them, never refused (review G9 8). */
+    @Test
+    fun namesFromOtherAppsAreCleanedTheWayTheCoreTakesThem() = runBlocking<Unit> {
+        val dir = Files.createTempDirectory("ghul-docs-names").toFile()
+        try {
+            val a = device(File(dir, "a"), generateKeyfile())
+            val vault = a.listVaults().single { it.kind == VaultKindUi.DOCS }
+            val long = "Ä".repeat(300) + "\uD83D\uDCC4".repeat(10) + ".pdf"
+            val names = mapOf(
+                "rechnung\u202Efdp.exe" to "rechnungfdp.exe",
+                "\u2066Brief\u2069.pdf" to "Brief.pdf",
+                "\u00A0\u3000Scan.pdf\u2003" to "Scan.pdf",
+                "\u00A0\u3000" to "file",
+                "a/b\\c\u0007.txt" to "a_b_c_.txt",
+                ".." to "file",
+                long to null,
+            )
+            for ((raw, expected) in names) {
+                val clean = de.danerd.ghulsuite.ui.docName(raw)
+                if (expected != null) assertEquals(expected, clean, raw)
+                val item = a.docs.add(vault.id, null, clean, "", Bytes(clean, byteArrayOf(1, 2, 3)))
+                assertTrue(item.name == clean || item.name.startsWith(clean.substringBeforeLast('.')), "${item.name} / $clean")
+            }
+            val cut = de.danerd.ghulsuite.ui.docName("x".repeat(254) + "\uD83D\uDCC4" + "y".repeat(10))
+            assertTrue(cut.codePointCount(0, cut.length) <= 255)
+            assertFalse(cut.last().isHighSurrogate(), "not between the halves of a character")
+            a.docs.add(vault.id, null, cut, "", Bytes(cut, byteArrayOf(1)))
+            val l = de.danerd.ghulsuite.ui.docName(long)
+            assertTrue(l.endsWith(".pdf") && l.codePointCount(0, l.length) <= 255, l)
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
     @Test
     fun cancelledAddKeepsNothing() = runBlocking<Unit> {
         val dir = Files.createTempDirectory("ghul-docs-cancel").toFile()

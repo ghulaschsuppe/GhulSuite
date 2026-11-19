@@ -31,14 +31,34 @@ private val MIME_BY_EXT = mapOf(
 /** The media type of a file by its name (application/octet-stream when the ending is not known). */
 fun mimeOf(name: String): String = MIME_BY_EXT[name.substringAfterLast('.', "").lowercase()] ?: "application/octet-stream"
 
-/** A name GhulDocs keeps: no slashes or control characters, at most 255 characters, never empty. */
+/** Characters that turn the direction of text (e.g. "rechnung\u202Efdp.exe" shows as "rechnungexe.pdf"). */
+private fun isBidiControl(c: Char): Boolean = c in '\u202A'..'\u202E' || c in '\u2066'..'\u2069'
+
+/** White space as the core trims it (Unicode White_Space, like Rust's `str::trim`). */
+private fun isCoreSpace(c: Char): Boolean = c in '\u0009'..'\u000D' || c == ' ' || c == '\u0085' || c == '\u00A0' ||
+    c == '\u1680' || c in '\u2000'..'\u200A' || c == '\u2028' || c == '\u2029' || c == '\u202F' || c == '\u205F' || c == '\u3000'
+
+/**
+ * A name GhulDocs keeps, made the way the core accepts it (`check_name`): slashes and control
+ * characters become "_", direction controls are removed, trimmed like the core trims, at most 255
+ * characters (the ending kept), never empty, "." or "..".
+ */
 fun docName(name: String): String {
-    val clean = name.map { if (it == '/' || it == '\\' || it.isISOControl()) '_' else it }.joinToString("").trim()
+    val clean = name.filterNot(::isBidiControl)
+        .map { if (it == '/' || it == '\\' || it.isISOControl()) '_' else it }.joinToString("")
+        .trim(::isCoreSpace)
     if (clean.isEmpty() || clean == "." || clean == "..") return "file"
-    if (clean.length <= 255) return clean
+    if (clean.coreLength() <= 255) return clean
     val dot = clean.lastIndexOf('.').takeIf { it > 0 && clean.length - it <= 16 } ?: clean.length
-    return clean.substring(0, 255 - (clean.length - dot)) + clean.substring(dot)
+    var end = 255 - (clean.length - dot)
+    // Not between the two halves of a character outside the BMP.
+    if (end > 0 && clean[end - 1].isHighSurrogate()) end--
+    val cut = (clean.substring(0, end).trimEnd(::isCoreSpace) + clean.substring(dot)).trim(::isCoreSpace)
+    return cut.ifEmpty { "file" }
 }
+
+/** How many characters (code points) the core counts. */
+private fun String.coreLength(): Int = length - count { it.isLowSurrogate() }
 
 /** Whether the app can show a document itself (image, PDF, text). */
 fun docViewable(item: DocsItemUi): Boolean = !item.isFolder && docViewKind(item) != DocViewKind.NONE

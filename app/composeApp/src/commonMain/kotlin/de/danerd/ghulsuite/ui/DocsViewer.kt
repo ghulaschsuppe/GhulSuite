@@ -245,24 +245,32 @@ private fun DocBody(state: AppState, item: DocsItemUi) {
             return@LaunchedEffect
         }
         val bytes = sink.bytes()
-        read[0] = bytes
-        shown = withContext(Dispatchers.Default) {
-            when (kind) {
-                DocViewKind.IMAGE -> decodeImage(bytes, IMAGE_MAX_SIDE)?.let { Shown.Picture(it) } ?: Shown.None(imageNot)
-                DocViewKind.PDF -> openPdf(bytes)?.let { Shown.Pages(it) } ?: Shown.None(pdfNot)
-                DocViewKind.TEXT -> {
-                    val text = bytes.decodeToString()
-                    Shown.Plain(text.take(TEXT_MAX_CHARS), text.length > TEXT_MAX_CHARS)
+        // While the bytes are decoded they belong to this coroutine: the page going away (which
+        // cancels it) must not wipe them under the decoder's feet, and what was opened meanwhile
+        // (a PDF renderer holding the document) is closed here, not dropped.
+        var opened: Shown? = null
+        try {
+            withContext(Dispatchers.Default) {
+                opened = when (kind) {
+                    DocViewKind.IMAGE -> decodeImage(bytes, IMAGE_MAX_SIDE)?.let { Shown.Picture(it) } ?: Shown.None(imageNot)
+                    DocViewKind.PDF -> openPdf(bytes)?.let { Shown.Pages(it) } ?: Shown.None(pdfNot)
+                    DocViewKind.TEXT -> {
+                        val text = bytes.decodeToString()
+                        Shown.Plain(text.take(TEXT_MAX_CHARS), text.length > TEXT_MAX_CHARS)
+                    }
+                    DocViewKind.NONE -> Shown.None(noPreview)
                 }
-                DocViewKind.NONE -> Shown.None(noPreview)
             }
+        } catch (e: CancellationException) {
+            // withContext ends only after its block did: nothing reads the bytes any more.
+            (opened as? Shown.Pages)?.pdf?.close()
+            bytes.fill(0)
+            throw e
         }
+        shown = opened ?: Shown.None(noPreview)
         // An image is drawn now: its bytes are not needed any more. A PDF reads its bytes while its
         // pages are drawn (Windows) and a text is shown from them: those go when the page goes.
-        if (kind == DocViewKind.IMAGE) {
-            bytes.fill(0)
-            read[0] = null
-        }
+        if (kind == DocViewKind.IMAGE) bytes.fill(0) else read[0] = bytes
     }
     val info = listOfNotNull(
         formatSizeSi(item.size),
