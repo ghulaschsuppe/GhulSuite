@@ -1,8 +1,9 @@
 # GhulSuite: Dateiformat, Version 3
 
-**Stand:** 17.11.2026 (Version 3: jede Datei trägt ein Schreibsiegel, das nur mit dem Passwort entsteht; nur noch Keys und Schlüsseldateien mit öffentlichem Schlüssel. Ältere Versionen werden nicht mehr gelesen) · gilt für `.ghlpss`, `.ghltotp`, `.ghlcal`, `.ghldrv`, `.ghlmail`, `.ghlsuite` und `.ghlkey`
+**Stand:** 17.11.2026 (Version 3: jede Datei trägt ein Schreibsiegel, das nur mit dem Passwort entsteht; nur noch Keys und Schlüsseldateien mit öffentlichem Schlüssel. Ältere Versionen werden nicht mehr gelesen) · gilt für `.ghlpss`, `.ghltotp`, `.ghlcal`, `.ghldoc`, `.ghldrv`, `.ghlmail`, `.ghlsuite` und `.ghlkey`, dazu die Inhaltsdateien `.ghlblob` von GhulDocs (Abschnitt 14)
 **Referenzimplementierung:** `core/ghul-core/src/vault/`
-**Testvektoren:** [`docs/testvectors/container-v3.json`](testvectors/container-v3.json), unabhängig geprüft mit
+**Testvektoren:** [`docs/testvectors/container-v3.json`](testvectors/container-v3.json) und
+[`docs/testvectors/docs-blob-v1.json`](testvectors/docs-blob-v1.json) (Inhaltsdateien), unabhängig geprüft mit
 [`tools/verify_testvectors.py`](../tools/verify_testvectors.py) (Python, andere Krypto-Bibliotheken)
 
 Diese Spezifikation ist so geschrieben, dass eine zweite Implementierung allein daraus entstehen kann.
@@ -17,6 +18,7 @@ Alle Zahlen sind **Little-Endian**, sofern nicht anders angegeben. `‖` bedeute
 | `.ghlpss` | `GHULPASS` | Passwort-Tresor (`pass`) |
 | `.ghltotp` | `GHULTOTP` | TOTP/HOTP-Tresor (`totp`) |
 | `.ghlcal` | `GHULCLDR` | Kalender-Tresor (`cal`): Einträge `calendar` (name, color, reminder, order) und `event` (calendar, title, start, end, all_day, repeat, until, exceptions, reminders, location, notes, links, birth_year, zone); Zeiten als Ortszeit `YYYY-MM-DDTHH:MM`. `zone` (optional, IANA-Name wie `America/New_York`) trägt eine Serie, die aus einer anderen Zeitzone stammt: `start`, `end`, `until` und `exceptions` stehen dann in der Zeit dieser Zone, und jedes Vorkommen wird für die Anzeige mit dem Versatz seines Tages umgerechnet |
+| `.ghldoc` | `GHULDOCS` | GhulDocs-Tresor (`docs`): das Inhaltsverzeichnis der Dokumente als Einträge `folder` und `file` (Abschnitt 14); der Inhalt jeder Datei liegt in einer eigenen Inhaltsdatei `.ghlblob` |
 | `.ghldrv` | `GHULDRIV` | GhulDrive-Bereich (`drive`): keine Einträge; Drive-Schlüssel, Speicher und Optionen in `settings` (Abschnitt 10) |
 | `.ghlmail` | `GHULMAIL` | GhulMail-Bereich (`mail`): keine Einträge; Konten, Schlüssel, Entwürfe, Postausgang und Optionen in `settings` (Abschnitt 10) |
 | `.ghlsuite` | `GHULSUIT` | Suite-Container: Schutz, Sync-Server, Sync-Zustand, Freigaben (`suite`) |
@@ -289,7 +291,7 @@ Ein CBOR-Map mit Text-Schlüsseln. **Unbekannte Schlüssel müssen beim Zurücks
 | Schlüssel | Typ | Bedeutung |
 |---|---|---|
 | `schema` | uint | `1` |
-| `kind` | text | `pass`, `totp` oder `suite`: muss zur Magic passen |
+| `kind` | text | `pass`, `totp`, `cal`, `docs`, `suite` oder `export`: muss zur Magic passen |
 | `revision` | uint | Zähler, wird bei jedem Speichern erhöht (Rollback-Erkennung) |
 | `factor_secret` | bytes(32) | Kopie von `S`, damit die Wiederherstellung über den Container-Schlüssel `S` zurückgewinnt |
 | `recovery_secret` | bytes(32) | Der Wiederherstellungscode der Suite, damit neue Tresore denselben Code-Slot bekommen (nur lesbar, wer den Container ohnehin öffnen kann) |
@@ -660,13 +662,19 @@ Die Suite reist als **eine Datei** von Gerät zu Gerät (z. B. auf einem USB-Sti
 kein Zusammenführen: Aktuell ist der Stand, der zuletzt gespeichert wurde. Auf dem Gerät arbeitet die App mit einer
 Arbeitskopie im eigenen Speicher; die Datei wird nur beim Speichern geschrieben und beim Öffnen gelesen.
 
-**Aufbau:** ein ZIP mit genau diesen Einträgen, ohne Ordner, jeder Name einmal, der Kopf als **erster** Eintrag:
+**Aufbau:** ein ZIP mit genau diesen Einträgen, ohne Ordner-Einträge, jeder Name einmal, der Kopf als **erster**
+Eintrag:
 
 ```text
-export.ghlexp        Kopf: Container der Art "export", wie die Tresore geschützt und versiegelt (Abschnitt 4.7)
-suite.ghlsuite       der Suite-Container
-<id>.ghlpss …        jede Tresordatei (.ghlpss, .ghltotp, .ghlcal)
+export.ghlexp                       Kopf: Container der Art "export", wie die Tresore geschützt und versiegelt (Abschnitt 4.7)
+<id>.ghlpss …                       jede Tresordatei (.ghlpss, .ghltotp, .ghlcal, .ghldoc)
+suite.ghlsuite                      der Suite-Container
+docs-<Tresor-ID>/<Inhalts-ID>.ghlblob  jede Inhaltsdatei jedes GhulDocs-Tresors (Abschnitt 14)
 ```
+
+Die App schreibt die Einträge in dieser Reihenfolge. Pflicht beim Lesen ist nur: der Kopf zuerst und jede
+Inhaltsdatei **nach** ihrem GhulDocs-Tresor. `<Tresor-ID>` ist die `CONTAINER_ID` des Tresors, `<Inhalts-ID>` die
+Kennung der Inhaltsdatei, beide als 32 Hex-Zeichen in Kleinbuchstaben; andere Namen mit `/` gibt es nicht.
 
 Das ZIP wird als Datenstrom geschrieben und gelesen (nichts davon liegt ganz im Arbeitsspeicher, nichts muss
 springen). Darum ist es in einer festen, einfachen Form geschrieben, und nur diese wird gelesen:
@@ -682,12 +690,15 @@ gepackt) ist keine Suite-Datei. Weil der Kopf zuerst kommt, kennt die App beim �
 Dateien kommen, und prüft jede, während sie gelesen wird. Für Inhaltsdateien, die schon verschlüsselt auf dem Gerät
 liegen, braucht das Schreiben CRC-32 und SHA-256 vorher (ein Durchgang über die Datei, oder der SHA-256 ist schon
 bekannt); beim Hineinkopieren wird die CRC erneut gerechnet, eine inzwischen geänderte Datei bricht das Schreiben ab.
+Für die Inhaltsdateien von GhulDocs stehen beide im Inhaltsverzeichnis (`sha256`, `crc32`, Abschnitt 14): sie werden
+ohne vorherigen Durchgang direkt von der Arbeitskopie hineinkopiert, unkomprimiert. Fehlt eine oder hat sie nicht
+die erwartete Länge, wird nichts geschrieben (das Dokument wäre sonst überall verloren, wo die Datei geöffnet wird).
 
 Der Kopf trägt in `settings.export` (CBOR):
 
 | Feld | Inhalt |
 |---|---|
-| `files` | Liste aller anderen Einträge: `name`, `kind` (Art des Containers), `id` (hex der `CONTAINER_ID`), `sha256` (hex der Datei) |
+| `files` | Liste aller Container-Einträge (ohne die Inhaltsdateien): `name`, `kind` (Art des Containers), `id` (hex der `CONTAINER_ID`), `sha256` (hex der Datei) |
 | `state` | zufällige Stand-ID (16 Byte hex), neu bei jedem Speichern |
 | `previous` | die Stand-ID, von der aus gespeichert wurde (leer beim ersten Mal) |
 | `ancestors`, `complete` | die Stände, aus denen dieser hervorging, neuester zuerst (höchstens 64); `complete`: die Liste reicht bis zum ersten Speichern |
@@ -713,16 +724,25 @@ Liegt dort schon eine Datei, wird vorher ihr Kopf gelesen: derselbe Stand wie di
 inzwischen woanders gespeichert oder eine andere Suite (Rückfrage: überschreiben oder unter neuem Namen speichern);
 eine leere Datei gilt als keine.
 
-**Öffnen:** Höchstens 1,25 GiB (1 GB Dokumente und die übrigen Tresore) und 1000 Einträge, beim Lesen gezählt,
+**Öffnen:** Höchstens 1,25 GiB (1 GB Dokumente und die übrigen Tresore) und 21 000 Einträge (bis zu 20 000
+Dokumente und die Tresore), beim Lesen gezählt,
 gleich was in den Köpfen steht; ein Container höchstens 256 MiB. Die Datei wird einmal als Datenstrom gelesen, mit
 Fortschritt. Geprüft wird vor jeder Änderung auf dem Gerät:
 
 1. die Form oben (abgeschnitten, beschädigt, zu groß, zu viele Einträge: keine Suite-Datei); nur die erlaubten
-   Einträge, keine doppelt, keine Ordner oder Pfade;
+   Einträge, keine doppelt, keine Ordner und keine anderen Pfade als die der Inhaltsdateien;
 2. der Kopf (erster Eintrag) öffnet mit Passwort und zweitem Faktor, sein Siegel stimmt;
 3. genau die gelisteten Dateien sind da, jede mit ihrem SHA-256 (beim Lesen gerechnet), ihrer Art, ihrer
-   `CONTAINER_ID` und derselben `suite_id`; jede öffnet, ihr Siegel stimmt; die Epoche des Suite-Containers ist
-   die des Kopfs.
+   `CONTAINER_ID` und derselben `suite_id`; jede öffnet, sobald sie gelesen ist, ihr Siegel stimmt; die Epoche des
+   Suite-Containers ist die des Kopfs;
+4. das Inhaltsverzeichnis jedes GhulDocs-Tresors ist in sich stimmig (Abschnitt 14), und genau seine Inhaltsdateien
+   folgen ihm: jede Kennung steht darin, keine kommt doppelt, jede hat die Länge, die sich aus `size` ergibt, und den
+   SHA-256 aus `sha256` (beim Lesen gerechnet, bevor die nächste gelesen wird); keine fehlt.
+
+Inhaltsdateien kommen beim Lesen nie in den Arbeitsspeicher: Sie werden in einen Zwischenordner `.staging/<Zufall>/`
+neben der Arbeitskopie geschrieben und erst nach dem Bestätigen in einem Schritt (Umbenennen der Ordner
+`docs-<Tresor-ID>`) an ihren Platz gebracht. Wird abgelehnt, abgebrochen oder gesperrt, wird der Zwischenordner
+gelöscht; einen, den eine beendete App zurückließ, löscht die App nach einem Tag.
 
 Danach vergleicht die App mit dem, was dieses Gerät zuletzt gesehen hat (gemerkt je Suite im Gerätespeicher:
 `archive-seen.json` mit Stand-ID, höchstem Zähler, Epoche und Herkunft):
@@ -742,6 +762,23 @@ ersetzt der Inhalt die Arbeitskopie; die Schnell-Entsperr-Daten des Geräts werd
 **Mit dem Wiederherstellungscode** (Passwort vergessen) öffnet die Datei ohne Passwort; die Siegel lassen sich dann
 nicht prüfen (die App sagt das). Danach schützt ein neues Passwort die Suite, und alles wird neu versiegelt.
 
+**Ein GhulDocs-Tresor für sich** (weitergeben, sichern) ist ebenfalls eine `.ghlzip` in derselben Form, aber ohne Kopf
+und Suite-Container:
+
+```text
+<id>.ghldoc                         der GhulDocs-Tresor, der erste Eintrag (sein Inhaltsverzeichnis nennt alle Inhaltsdateien)
+docs-<Tresor-ID>/<Inhalts-ID>.ghlblob  genau seine Inhaltsdateien
+```
+
+Geprüft wird wie oben (Punkte 1, 3 und 4): der Tresor öffnet mit seinem Passwort und zweitem Faktor, sein Siegel
+stimmt, sein Name passt zu seiner `CONTAINER_ID`, und es folgen genau seine Inhaltsdateien mit ihrem SHA-256.
+Gespeichert wird er entweder mit dem Schutz der Suite (wie eine exportierte Tresordatei) oder mit eigenem Passwort,
+neuer Schlüsseldatei oder eigenem Security Key und neuem Wiederherstellungscode (weitergeben, auch nur ausgewählte
+Ordner und Dateien). Die Inhaltsdateien werden dabei unverändert kopiert, ihre Schlüssel stehen im neuen
+Inhaltsverzeichnis. Der Empfänger öffnet ihn für sich (eigene, vorübergehende Arbeitskopie, Zurückschreiben in
+dieselbe Form) oder fügt ihn seiner Suite hinzu (dann bekommt er deren Schutz und einen neuen Container-Schlüssel).
+Ob eine `.ghlzip` eine Suite-Datei oder ein GhulDocs-Tresor ist, zeigt ihr erster Eintrag.
+
 **Einzelner Tresor:** Eine Tresordatei lässt sich auch ohne `.ghlzip` öffnen (nur dieser Tresor, in einer eigenen,
 vorübergehenden Arbeitskopie) oder der Suite hinzufügen. „Als Tresor weitergeben“ schreibt ausgewählte Einträge in
 eine neue Tresordatei mit eigenem Passwort und neuer Schlüsseldatei oder eigenem Security Key.
@@ -749,3 +786,99 @@ eine neue Tresordatei mit eigenem Passwort und neuer Schlüsseldatei oder eigene
 **Dateizuordnung:** Unter Android öffnet ein Tippen auf eine `.ghlzip` im Dateimanager GhulSuite (über den Namen
 erkannt), unter Windows ein Doppelklick (MSI); läuft GhulSuite schon, übernimmt das laufende Programm die Datei. In
 beiden Fällen gilt alles oben, es ist dasselbe wie „Suite-Datei öffnen“.
+
+## 14. GhulDocs (`.ghldoc` und `.ghlblob`)
+
+GhulDocs speichert wichtige Dokumente und Scans verschlüsselt. Ein GhulDocs-Tresor besteht aus
+
+- der Tresordatei `<id>.ghldoc`: ein Container wie alle anderen (Abschnitte 2 bis 5, Magic `GHULDOCS`, `kind` =
+  `docs`, gleiche Schlüssel, gleiches Schreibsiegel), der nur das **Inhaltsverzeichnis** enthält;
+- je Datei einer **Inhaltsdatei** `docs-<Tresor-ID>/<Inhalts-ID>.ghlblob` neben den Tresordateien der Arbeitskopie,
+  mit dem verschlüsselten Inhalt. `<Tresor-ID>` ist die `CONTAINER_ID` des Tresors (32 Hex-Zeichen),
+  `<Inhalts-ID>` eine zufällige Kennung (16 Byte, 32 Hex-Zeichen). Eine Inhaltsdatei wird einmal geschrieben und
+  nie geändert; ein neuer Inhalt bekommt eine neue Kennung und einen neuen Schlüssel.
+
+Eine Suite darf mehrere GhulDocs-Tresore haben.
+
+### 14.1 Inhaltsverzeichnis
+
+Die Einträge des Containers (Abschnitt 5.3, `entries`) sind Ordner und Dateien; `settings.name` ist der Name des
+Tresors. `id` (16 Byte Zufall) kennzeichnet einen Eintrag, `modified` ist die letzte Änderung, `revision` wächst mit
+jeder Änderung. Felder (`fields`, Abschnitt 5.3):
+
+| Feld | Typ | Ordner | Datei | Bedeutung |
+|---|---|---|---|---|
+| `name` | `text` | ja | ja | Name, ohne Steuerzeichen, Richtungszeichen, `/` und `\`, höchstens 255 Zeichen; in einem Ordner einmal (ohne Groß- und Kleinschreibung, Papierkorb ausgenommen) |
+| `parent` | `bytes` (16) | optional | optional | `id` des Ordners, in dem er liegt; fehlt = oberste Ebene |
+| `created` | `int` | ja | ja | angelegt (Unix-ms) |
+| `favorite` | `bool` | optional | optional | `true` = Favorit |
+| `trashed` | `int` | optional | optional | in den Papierkorb gelegt (Unix-ms); fehlt = nicht. Was in einem Ordner im Papierkorb liegt, ist mit ihm im Papierkorb |
+| `size` | `int` | | ja | Länge des Inhalts in Byte (0 bis 1 000 000 000) |
+| `mime` | `text` | | ja | Medientyp, z. B. `application/pdf` |
+| `key` | `bytes` (32) | | ja | der eigene, zufällige Schlüssel dieser Datei `K` |
+| `blob` | `bytes` (16) | | ja | Kennung ihrer Inhaltsdatei |
+| `sha256` | `bytes` (32) | | ja | SHA-256 der ganzen Inhaltsdatei |
+| `crc32` | `int` | | ja | CRC-32 der ganzen Inhaltsdatei (für den Eintrag im ZIP) |
+
+Ein Inhaltsverzeichnis, das von außen kommt (Suite-Datei, weitergegebener Tresor), muss in sich stimmig sein: nur
+Einträge `folder` und `file` mit allen Pflichtfeldern, jede `id` und jede Inhaltsdatei nur einmal, `parent` nennt
+einen Ordner dieses Verzeichnisses, keine Kreise. Sonst wird der Tresor nicht übernommen.
+
+Schützt eine Schutzänderung die Suite neu (Abschnitt 4.6), bekommt auch der GhulDocs-Tresor einen neuen
+Container-Schlüssel; die Inhaltsdateien bleiben, wie sie sind, denn ihre Schlüssel stehen nur im (neu
+verschlüsselten) Inhaltsverzeichnis.
+
+### 14.2 Inhaltsdatei `.ghlblob`
+
+```
+Offset          Länge   Feld
+0               8       magic "GHULBLOB"
+8               2       version (u16) = 1
+10              16      id: die Kennung der Inhaltsdatei (= `blob` im Inhaltsverzeichnis, = Dateiname)
+26              …       Abschnitte i = 0 … n−1: nonce[24] ‖ ciphertext (Länge des Abschnitts + 16-Byte-Tag)
+…               …       Nullbytes (Auffüllung)
+F−48            24      end_nonce
+F−24            24      XChaCha20-Poly1305(BK, end_nonce, L als u64, aad = Bytes 0 … 25 ‖ "end"), mit Tag
+```
+
+```
+BK        = HKDF(K, "ghul/v1/docs/blob" ‖ id)                        K = `key` aus dem Inhaltsverzeichnis
+prefix    = Bytes 0 … 25 (magic, version, id)
+aad(i)    = prefix ‖ i (u64) ‖ last (u8: 1 beim letzten Abschnitt, sonst 0)
+Abschnitt = nonce ‖ XChaCha20-Poly1305(BK, nonce, Klartext des Abschnitts, aad(i))
+```
+
+- Der Inhalt (Länge `L`) wird in Abschnitte zu **4 MiB** (4 194 304 Byte) geteilt, der letzte trägt den Rest:
+  `n = max(1, ⌈L / 4 MiB⌉)`. Ein leeres Dokument hat einen leeren Abschnitt; ein Dokument von genau 4 MiB hat einen.
+  Jede Nonce (24 Byte) ist zufällig.
+- **Größe:** `F` = die Länge `26 + n · 40 + L + 48`, aufgerundet auf ein Vielfaches von **64 KiB** (65 536 Byte). Die
+  Lücke vor dem Ende ist mit Nullbytes gefüllt. Von außen sind so nur die Zahl der Dokumente und ihre ungefähre Größe
+  zu sehen.
+- **Lesen:** `L` aus dem Ende entschlüsseln; daraus folgen `n`, die Länge jedes Abschnitts und `F`. Die Datei muss
+  genau `F` Byte lang sein, die ersten 26 Byte müssen `prefix` mit der erwarteten Kennung sein, die Füllung muss aus
+  Nullbytes bestehen, und `L` muss `size` im Inhaltsverzeichnis entsprechen. Dann wird Abschnitt für Abschnitt
+  entschlüsselt; jeder ist geprüft, bevor sein Klartext weitergegeben wird. Schlägt einer fehl, ist das Dokument
+  beschädigt; was bis dahin weitergegeben wurde, ist unvollständig und wird verworfen.
+- **Eigenschaften:** Abschnitte lassen sich weder ändern noch vertauschen (Nummer in `aad`), noch weglassen oder
+  abschneiden (`last` und `L`), noch an eine andere Datei hängen (`id` in `aad` und im Schlüssel). Die Füllung trägt
+  nichts: sie muss null sein, und `sha256` im Inhaltsverzeichnis deckt die ganze Datei ab (beim Öffnen einer
+  Suite-Datei geprüft).
+- **Schreiben:** Klartext erreicht nie den Datenträger. Der Inhalt wird beim Einlesen verschlüsselt und in
+  `<id>.ghlblob.tmp` geschrieben, dabei werden SHA-256 und CRC-32 der Datei gerechnet; erst wenn sie vollständig und
+  auf den Datenträger geschrieben ist, wird sie umbenannt und danach ins Inhaltsverzeichnis eingetragen. Scheitert
+  etwas, wird die Zwischendatei gelöscht. Beim Löschen wird zuerst das Inhaltsverzeichnis gespeichert, dann die
+  Inhaltsdatei gelöscht. Was nach einem Abbruch übrig bleibt (Inhaltsdateien, die kein Verzeichnis nennt, Ordner von
+  Tresoren, die es nicht mehr gibt), entfernt die App beim nächsten Entsperren; Ordner von Tresoren, deren Datei noch
+  da ist, aber nicht geöffnet werden kann, bleiben.
+
+### 14.3 Grenzen
+
+- Höchstens **1 GB** (1 000 000 000 Byte) Inhalt je Suite, alle GhulDocs-Tresore zusammen und mit dem Papierkorb,
+  bis er geleert wird. Ein einzelnes Dokument ebenso.
+- Die Inhaltsdateien zusammen höchstens 1 100 000 000 Byte (der Inhalt und die Aufrundung auf 64 KiB), damit ein
+  volles GhulDocs mit den übrigen Tresoren in die größte Suite-Datei passt (1,25 GiB); bei sehr vielen sehr kleinen
+  Dokumenten greift diese Grenze vor der ersten (jedes belegt mindestens 64 KiB).
+- Höchstens 20 000 Dokumente je Suite.
+
+Darüber wird das Hinzufügen abgelehnt (Fehler `DocsLimit`), bevor etwas geschrieben wird, wenn die Größe vorher
+bekannt ist; sonst, sobald es zu viel wird, und nichts bleibt zurück.
