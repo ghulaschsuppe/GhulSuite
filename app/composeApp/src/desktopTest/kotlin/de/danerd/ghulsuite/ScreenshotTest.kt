@@ -57,6 +57,7 @@ class ScreenshotTest {
             VaultUi("p1", VaultKindUi.PASS, "Privat", "privat-p1.ghlpss", true, 4),
             VaultUi("p2", VaultKindUi.PASS, "Arbeit", "arbeit-p2.ghlpss", true, 1),
             VaultUi("t1", VaultKindUi.TOTP, "Persönlich", "personlich-t1.ghltotp", true, 2),
+            VaultUi("d1", VaultKindUi.DOCS, "Dokumente", "d1.ghldoc", true, 8),
             VaultUi("c1", VaultKindUi.CAL, "Kalender", "kalender-c1.ghlcal", true, 21),
             VaultUi("f1", VaultKindUi.PASS, "Verein", "verein.ghlpss", true, 3),
         )
@@ -120,6 +121,33 @@ class ScreenshotTest {
         override suspend fun unlockWithBiometric() {}
         override suspend fun unlockWithPin(pin: String) {}
         override val cal: de.danerd.ghulsuite.model.CalBackend = FakeCal()
+        override val docs = FakeDocs()
+        /** What [archiveInspect] says about a picked `.ghlzip` (null: none). */
+        var archiveInfo: de.danerd.ghulsuite.model.ArchiveInfoUi? = null
+        override suspend fun archiveInspect(file: de.danerd.ghulsuite.model.SuiteFileRef) = archiveInfo
+        /** Copies handed to other apps: name and content (the UI tests check them). */
+        val shared = java.util.Collections.synchronizedList(mutableListOf<Pair<String, ByteArray>>())
+        override suspend fun shareStreamToApps(name: String, mime: String, write: suspend (de.danerd.ghulsuite.model.ByteSink) -> Unit): Boolean {
+            // As the platforms do it: a failed write leaves no copy and hands nothing over.
+            val sink = de.danerd.ghulsuite.model.MemorySink()
+            try {
+                write(sink)
+            } catch (e: Throwable) {
+                sink.discard()
+                throw e
+            }
+            shared += name to sink.bytes()
+            return true
+        }
+        override suspend fun openSingleDocs(
+            file: de.danerd.ghulsuite.model.SuiteFileRef, password: String, pin: String?, keyfile: ByteArray?,
+            onTouchNeeded: () -> Unit, onProgress: (Long, Long) -> Unit,
+        ): VaultKindUi {
+            calls += "openSingleDocs:${file.name}"
+            single = file
+            unlocked.value = true
+            return VaultKindUi.DOCS
+        }
         override suspend fun listVaults() = vaults
         override suspend fun createVault(kind: VaultKindUi, name: String) = "new"
         override suspend fun renameVault(id: String, name: String) {}
@@ -181,17 +209,21 @@ class ScreenshotTest {
         override val coreVersion = "ghul-core 0.5.0 (RP-ID ghulsuite.invalid)"
     }
 
-    private fun render(name: String, w: Int = 412, h: Int = 892, content: @Composable () -> Unit) {
+    private fun render(name: String, w: Int = 412, h: Int = 892, settleMs: Long = 0, content: @Composable () -> Unit) {
         val out = File("build/screenshots").apply { mkdirs() }
         ImageComposeScene(width = w * 2, height = h * 2, density = Density(2f), content = content).use { scene ->
-            repeat(5) { scene.render(it * 100_000_000L) } // let LaunchedEffects run
+            repeat(5) {
+                scene.render(it * 100_000_000L) // let LaunchedEffects run
+                // Work on other threads (a document decrypted and drawn) gets its time.
+                if (settleMs > 0) Thread.sleep(settleMs)
+            }
             val image = scene.render(600_000_000L)
             File(out, "$name.png").writeBytes(image.encodeToData(EncodedImageFormat.PNG)!!.bytes)
         }
     }
 
     private fun state(exists: Boolean, unlocked: Boolean, setup: AppState.() -> Unit = {}): AppState =
-        AppState(Fake(exists, unlocked), CoroutineScope(Dispatchers.Unconfined)).apply(setup)
+        AppState(Fake(exists, unlocked).apply { docs.delayMs = 0; docs.sectionDelayMs = 0 }, CoroutineScope(Dispatchers.Unconfined)).apply(setup)
 
     @Test
     fun screens() {
@@ -254,6 +286,25 @@ class ScreenshotTest {
         render("67-cal-dark") {
             GhulSuiteApp(state(true, true) { tab = Tab.CAL; backend.settings.theme = de.danerd.ghulsuite.model.ThemeMode.DARK })
         }
+        render("70-docs", settleMs = 150) { GhulSuiteApp(state(true, true) { tab = Tab.DOCS }) }
+        render("71-docs-view-image", settleMs = 300) { GhulSuiteApp(state(true, true) { tab = Tab.DOCS; push(Screen.DocView("d1", "a2")) }) }
+        render("72-docs-view-pdf", settleMs = 600) { GhulSuiteApp(state(true, true) { tab = Tab.DOCS; push(Screen.DocView("d1", "a1")) }) }
+        render("73-docs-view-text", settleMs = 300) { GhulSuiteApp(state(true, true) { tab = Tab.DOCS; push(Screen.DocView("d1", "a3")) }) }
+        render("74-docs-view-none", settleMs = 300) { GhulSuiteApp(state(true, true) { tab = Tab.DOCS; push(Screen.DocView("d1", "a5")) }) }
+        render("75-docs-dark", settleMs = 150) {
+            GhulSuiteApp(state(true, true) { tab = Tab.DOCS; backend.settings.theme = de.danerd.ghulsuite.model.ThemeMode.DARK })
+        }
+        render("76-docs-incoming", settleMs = 150) {
+            GhulSuiteApp(state(true, true) {
+                tab = Tab.DOCS
+                docsIncoming = listOf(object : de.danerd.ghulsuite.model.ByteSource {
+                    override val name = "Rechnung Mai.pdf"
+                    override val size = 120_000L
+                    override fun read(buffer: ByteArray, offset: Int, length: Int) = -1
+                    override fun close() {}
+                })
+            })
+        }
         render("44-auth-grid") { GhulSuiteApp(state(true, true) { tab = Tab.AUTH; authGrid = true }) }
         render("45-pass-dark") {
             val s = state(true, true)
@@ -272,7 +323,7 @@ class ScreenshotTest {
     @Test
     fun wideScreens() {
         Locale.setDefault(Locale.GERMAN)
-        fun wide(name: String, content: @Composable () -> Unit) = render("w-$name", 1280, 820, content)
+        fun wide(name: String, content: @Composable () -> Unit) = render("w-$name", 1280, 820, content = content)
         wide("1-unlock") { GhulSuiteApp(state(exists = true, unlocked = false)) }
         wide("2-pass") { GhulSuiteApp(state(true, true)) }
         wide("3-pass-entry") { GhulSuiteApp(state(true, true) { push(Screen.EntryDetail("p1", "1")) }) }
@@ -295,5 +346,7 @@ class ScreenshotTest {
             GhulSuiteApp(s)
         }
         wide("16-setup") { GhulSuiteApp(state(exists = false, unlocked = false)) }
+        render("w-17-docs", 1280, 820, settleMs = 150) { GhulSuiteApp(state(true, true) { tab = Tab.DOCS }) }
+        render("w-18-docs-view-pdf", 1280, 820, settleMs = 600) { GhulSuiteApp(state(true, true) { tab = Tab.DOCS; push(Screen.DocView("d1", "a1")) }) }
     }
 }

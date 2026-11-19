@@ -99,6 +99,10 @@ class LayoutCheckTest {
                 }
             }
         })
+        add("dokumente" to { state { tab = Tab.DOCS } })
+        add("dokument-bild" to { state { tab = Tab.DOCS; push(Screen.DocView("d1", "a2")) } })
+        add("dokument-text" to { state { tab = Tab.DOCS; push(Screen.DocView("d1", "a3")) } })
+        add("dokument-ohne-vorschau" to { state { tab = Tab.DOCS; push(Screen.DocView("d1", "a5")) } })
         add("kalender-monat" to { state { tab = Tab.CAL } })
         add("kalender-woche" to { state { tab = Tab.CAL; calView = CalView.WEEK } })
         add("kalender-tag" to { state { tab = Tab.CAL; calView = CalView.DAY } })
