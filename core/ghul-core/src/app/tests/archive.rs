@@ -432,6 +432,9 @@ impl VaultStorage for FailOnce {
     fn describe(&self) -> String {
         self.inner.describe()
     }
+    fn content_dir(&self) -> Option<String> {
+        self.inner.content_dir()
+    }
 }
 
 /// Opening a file that cannot be written completely leaves the working copy as it was.

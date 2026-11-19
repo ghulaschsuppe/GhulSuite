@@ -1099,6 +1099,7 @@ mod archive;
 mod attacks;
 mod collections;
 mod crazy_user;
+mod docs;
 mod everyday;
 mod properties;
 mod rekey;

@@ -684,7 +684,8 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
     // --- vaults -------------------------------------------------------------------------------
 
     override suspend fun listVaults(): List<VaultUi> = io {
-        suite.listVaults().map {
+        // GhulDocs comes with its own screens later; until then its vaults are not listed.
+        suite.listVaults().filter { it.kind != VaultKind.DOCS }.map {
             VaultUi(it.id, it.kind.toUi(), it.name, it.file, it.available, it.entries.toInt())
         }
     }

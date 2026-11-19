@@ -10,7 +10,7 @@
 use super::*;
 use crate::vault::{FactorSecret, Keyfile, LockedContainer, PasswordKey, RecoveryCode, SecondFactor};
 
-const EXTENSIONS: &[&str] = &[".ghlsuite", ".ghlpss", ".ghltotp", ".ghlcal"];
+const EXTENSIONS: &[&str] = &[".ghlsuite", ".ghlpss", ".ghltotp", ".ghlcal", ".ghldoc"];
 
 /// The container files of the folder (what a backup or a thief would copy).
 fn files(d: &Dirs) -> Vec<(String, Vec<u8>)> {
@@ -89,7 +89,11 @@ fn an_old_copy_and_the_old_recovery_code_do_not_open_the_current_files() {
     let s = d.suite();
     let res = s
         .create(
-            options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "Privat"), (VaultKind::Totp, "2FA")]),
+            options(
+                "pw-123456",
+                Some(kf.clone()),
+                &[(VaultKind::Pass, "Privat"), (VaultKind::Totp, "2FA"), (VaultKind::Docs, "Dokumente")],
+            ),
             None,
             None,
             None,
@@ -98,7 +102,7 @@ fn an_old_copy_and_the_old_recovery_code_do_not_open_the_current_files() {
     let old_code = RecoveryCode::parse(&res.recovery_code.unwrap()).unwrap();
     s.save_entry(vault_id(&s, "Privat"), login("Bank", "u", "alt")).unwrap();
     let old = files(&d);
-    assert!(old.len() >= 3);
+    assert!(old.len() >= 4);
 
     let new_code = RecoveryCode::parse(&s.new_recovery_code("Neues Blatt".into()).unwrap()).unwrap();
     s.save_entry(vault_id(&s, "Privat"), login("Neu", "u", "neu")).unwrap();
@@ -124,7 +128,13 @@ fn a_removed_key_file_with_an_old_copy_does_not_open_the_current_files() {
     let d = Dirs::new("rekey-key");
     let (kf1, kf2) = (generate_keyfile(), generate_keyfile());
     let s = d.suite();
-    s.create(options("pw-123456", Some(kf1.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    s.create(
+        options("pw-123456", Some(kf1.clone()), &[(VaultKind::Pass, "Privat"), (VaultKind::Docs, "Dokumente")]),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
     s.add_keyfile(kf2.clone(), "Verloren".into()).unwrap();
     s.save_entry(vault_id(&s, "Privat"), login("Bank", "u", "alt")).unwrap();
     let old = files(&d);

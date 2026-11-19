@@ -918,6 +918,15 @@
     <string name="core_not_pass">Das ist kein GhulPass-Tresor.</string>
     <string name="core_not_auth">Das ist kein GhulAuth-Tresor.</string>
     <string name="core_not_cal">Das ist kein Kalender.</string>
+    <string name="core_not_docs">Das ist kein GhulDocs-Tresor.</string>
+    <string name="core_doc_damaged">Ein Dokument ist beschädigt oder fehlt.</string>
+    <string name="core_doc_folder_self">Ein Ordner kann nicht in sich selbst verschoben werden.</string>
+    <string name="core_doc_folder_content">Ein Ordner lässt sich nicht als Datei öffnen.</string>
+    <string name="core_doc_bad_id">Dieses Dokument gibt es nicht.</string>
+    <string name="core_doc_bad_name">Dieser Name ist nicht erlaubt: Er darf nicht leer sein und keinen Schrägstrich enthalten.</string>
+    <string name="core_docs_no_place">In diesem Ordner können keine Dokumente gespeichert werden.</string>
+    <string name="core_docs_with_documents">Ein GhulDocs-Tresor wird mit seinen Dokumenten gespeichert und geöffnet (als .ghlzip-Datei).</string>
+    <string name="core_docs_index_bad">Das Inhaltsverzeichnis eines GhulDocs-Tresors ist beschädigt.</string>
     <string name="core_vault_other_kind">Der Ziel-Tresor ist von einer anderen Art.</string>
     <string name="core_vault_no_key">Dieser Tresor hat keinen Key.</string>
     <string name="core_attach_many">Zu viele Anhänge.</string>

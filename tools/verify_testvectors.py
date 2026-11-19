@@ -213,6 +213,8 @@ def verify(v: dict) -> None:
         assert aead_open(rkey, rec[2], rec[3], b"ghul/v1/recovery" + cid + rec[1]) == vmk
     else:
         assert not rec_slots
+    if v["kind"] == "docs":
+        verify_docs_index(doc)
     print(f"ok  {v['description']}: {len(data)} bytes")
 
 
@@ -309,6 +311,36 @@ def verify_blob(v: dict) -> None:
     print(f"ok  {v['description']}: {len(file)} bytes")
 
 
+def field(entry: dict, name: str, t: str):
+    f = entry["fields"][name]
+    assert f["t"] == t, (name, f)
+    return f["v"]
+
+
+def verify_docs_index(doc: dict) -> None:
+    """The index of a GhulDocs vault: folders and files; each file's content file opens with the
+    key in the index and has the SHA-256, CRC-32 and size the index says."""
+    entries = doc["entries"]
+    folders = {e["id"]: e for e in entries if e["type"] == "folder"}
+    files = [e for e in entries if e["type"] == "file"]
+    assert folders and files and len(folders) + len(files) == len(entries)
+    for e in entries:
+        assert len(e["id"]) == 16 and not e["deleted"]
+        assert field(e, "name", "text")
+        if "parent" in e["fields"]:
+            assert field(e, "parent", "bytes") in folders
+    for e in files:
+        content_id = field(e, "blob", "bytes")
+        v, file = BLOBS[content_id.hex()]
+        key = field(e, "key", "bytes")
+        assert len(key) == 32 and key.hex() == v["key"]
+        assert field(e, "sha256", "bytes") == hashlib.sha256(file).digest()
+        assert field(e, "crc32", "int") == zlib.crc32(file)
+        assert field(e, "size", "int") == v["size"]
+        assert field(e, "mime", "text")
+        assert blob_decrypt(content_id, key, file).hex() == v["content"]
+
+
 def main() -> int:
     vectors_dir = Path(__file__).resolve().parent.parent / "docs" / "testvectors"
     blobs = json.loads((vectors_dir / "docs-blob-v1.json").read_text())["vectors"]
@@ -318,6 +350,7 @@ def main() -> int:
     for v in vectors:
         assert struct.unpack_from("<H", bytes.fromhex(v["file"]), 8)[0] == 3
         verify(v)
+    assert any(v["kind"] == "docs" for v in vectors)
     print(f"{len(vectors)} container and {len(blobs)} content file test vectors verified independently")
     return 0
 

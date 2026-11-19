@@ -21,6 +21,7 @@ fn default_name(kind: VaultKind) -> &'static str {
         VaultKind::Cal => "Kalender",
         VaultKind::Totp => "2FA",
         VaultKind::Pass => "Passwörter",
+        VaultKind::Docs => "Dokumente",
     }
 }
 

@@ -466,6 +466,14 @@ fn build_vectors(version: u16) -> Json {
             Some(&keyfile),
             "GhulAuth container of another suite: key file slot + recovery slot",
         ),
+        (
+            &keys,
+            ContainerKind::Docs,
+            fido.clone(),
+            true,
+            None,
+            "GhulDocs vault of the same suite: index with a folder and a document (its content file is in docs-blob-v1.json)",
+        ),
     ];
     let suite_code = RecoveryCode::generate(&mut r);
     for (k, kind, slot, with_recovery, kf, description) in cases {
@@ -498,6 +506,24 @@ fn build_vectors(version: u16) -> Json {
             }
             ContainerKind::Export => {
                 c.payload.settings.insert("note".into(), ciborium::value::Value::Text("area settings".into()));
+            }
+            ContainerKind::Docs => {
+                let (blob_id, key, _, _, info) = crate::app::docs::blob::tests::hello_vector();
+                let mut f = Entry::new([4; 16], "folder", NOW);
+                f.fields.insert("name".into(), Field::Text("Steuer".into()));
+                f.fields.insert("created".into(), Field::Int(NOW));
+                c.payload.entries.push(f);
+                let mut e = Entry::new([5; 16], "file", NOW);
+                e.fields.insert("name".into(), Field::Text("Steuerbescheid 2025.pdf".into()));
+                e.fields.insert("parent".into(), Field::Bytes(vec![4; 16]));
+                e.fields.insert("created".into(), Field::Int(NOW));
+                e.fields.insert("size".into(), Field::Int(info.size as i64));
+                e.fields.insert("mime".into(), Field::Text("application/pdf".into()));
+                e.fields.insert("key".into(), Field::Bytes(key.to_vec()));
+                e.fields.insert("blob".into(), Field::Bytes(blob_id.to_vec()));
+                e.fields.insert("sha256".into(), Field::Bytes(info.sha256.to_vec()));
+                e.fields.insert("crc32".into(), Field::Int(i64::from(info.crc32)));
+                c.payload.entries.push(e);
             }
             ContainerKind::Cal => {
                 let mut e = Entry::new([3; 16], "event", NOW);

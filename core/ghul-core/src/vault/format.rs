@@ -58,6 +58,8 @@ pub enum ContainerKind {
     Cal,
     /// The header of a suite file (`.ghlzip`): which files belong to it and which state it is.
     Export,
+    /// GhulDocs vault: the index of the documents (their content is in content files).
+    Docs,
 }
 
 impl ContainerKind {
@@ -68,13 +70,21 @@ impl ContainerKind {
             ContainerKind::Suite => b"GHULSUIT",
             ContainerKind::Cal => b"GHULCLDR",
             ContainerKind::Export => b"GHULEXPT",
+            ContainerKind::Docs => b"GHULDOCS",
         }
     }
 
     pub fn from_magic(magic: &[u8]) -> Option<Self> {
-        [ContainerKind::Pass, ContainerKind::Totp, ContainerKind::Suite, ContainerKind::Cal, ContainerKind::Export]
-            .into_iter()
-            .find(|k| k.magic().as_slice() == magic)
+        [
+            ContainerKind::Pass,
+            ContainerKind::Totp,
+            ContainerKind::Suite,
+            ContainerKind::Cal,
+            ContainerKind::Export,
+            ContainerKind::Docs,
+        ]
+        .into_iter()
+        .find(|k| k.magic().as_slice() == magic)
     }
 
     /// Value of the `kind` field in the payload.
@@ -85,6 +95,7 @@ impl ContainerKind {
             ContainerKind::Suite => "suite",
             ContainerKind::Cal => "cal",
             ContainerKind::Export => "export",
+            ContainerKind::Docs => "docs",
         }
     }
 
@@ -95,6 +106,7 @@ impl ContainerKind {
             ContainerKind::Suite => "ghlsuite",
             ContainerKind::Cal => "ghlcal",
             ContainerKind::Export => "ghlexp",
+            ContainerKind::Docs => "ghldoc",
         }
     }
 }

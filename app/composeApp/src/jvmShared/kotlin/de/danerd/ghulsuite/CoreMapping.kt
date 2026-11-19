@@ -36,6 +36,8 @@ internal fun VaultKind.toUi() = when (this) {
     VaultKind.PASS -> VaultKindUi.PASS
     VaultKind.TOTP -> VaultKindUi.TOTP
     VaultKind.CAL -> VaultKindUi.CAL
+    // GhulDocs has no screens yet: its vaults are left out of the lists (see listVaults).
+    VaultKind.DOCS -> throw VaultException(VaultErrorKind.UPDATE_REQUIRED, "GhulDocs")
 }
 
 internal fun ProtectionInfo.toUi() = ProtectionUi(securityKeys.toInt(), keyfiles.toInt(), recoveryCodes.toInt())

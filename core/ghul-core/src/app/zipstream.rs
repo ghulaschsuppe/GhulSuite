@@ -73,7 +73,6 @@ pub(crate) fn zip_len<'a>(entries: impl IntoIterator<Item = (&'a str, u64)>) -> 
 
 /// CRC-32, SHA-256 and size of a file read in pieces (for entries streamed from a file, whose
 /// local header needs the CRC before the data).
-#[cfg_attr(not(test), allow(dead_code))] // for content files (GhulDocs)
 pub(crate) fn digest(mut r: impl Read) -> io::Result<(u64, u32, [u8; 32])> {
     let mut crc = crc32fast::Hasher::new();
     let mut sha = Sha256::new();
@@ -157,7 +156,6 @@ impl<W: Write> ZipWriter<W> {
 
     /// An entry streamed from `r`, which must give exactly `size` bytes with this CRC-32 (see
     /// [`digest`]); otherwise (the file changed meanwhile) writing fails.
-    #[cfg_attr(not(test), allow(dead_code))] // for content files (GhulDocs)
     pub(crate) fn add_reader(&mut self, name: &str, size: u64, crc: u32, mut r: impl Read) -> io::Result<()> {
         self.local_header(name, crc, size)?;
         let mut check = crc32fast::Hasher::new();

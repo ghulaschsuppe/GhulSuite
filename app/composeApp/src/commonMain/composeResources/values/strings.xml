@@ -918,6 +918,15 @@
     <string name="core_not_pass">This is not a GhulPass vault.</string>
     <string name="core_not_auth">This is not a GhulAuth vault.</string>
     <string name="core_not_cal">This is not a calendar.</string>
+    <string name="core_not_docs">This is not a GhulDocs vault.</string>
+    <string name="core_doc_damaged">A document is damaged or missing.</string>
+    <string name="core_doc_folder_self">A folder cannot be moved into itself.</string>
+    <string name="core_doc_folder_content">A folder cannot be opened as a file.</string>
+    <string name="core_doc_bad_id">This document does not exist.</string>
+    <string name="core_doc_bad_name">This name is not allowed: it must not be empty or contain a slash.</string>
+    <string name="core_docs_no_place">Documents cannot be stored in this folder.</string>
+    <string name="core_docs_with_documents">A GhulDocs vault is saved and opened together with its documents (as a .ghlzip file).</string>
+    <string name="core_docs_index_bad">The table of contents of a GhulDocs vault is damaged.</string>
     <string name="core_vault_other_kind">The target vault is of another kind.</string>
     <string name="core_vault_no_key">This vault has no security key.</string>
     <string name="core_attach_many">Too many attachments.</string>

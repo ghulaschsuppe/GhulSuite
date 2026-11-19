@@ -38,7 +38,7 @@ pub struct SingleFile {
 super::redact::redacted_debug!(SingleFile { change });
 
 /// The file of the vault opened on its own, if this suite is the temporary one around it.
-fn single_file(o: &Open) -> Option<String> {
+pub(super) fn single_file(o: &Open) -> Option<String> {
     Some(setting::<String>(&o.suite, SINGLE_KEY)).filter(|f| !f.is_empty())
 }
 
@@ -83,6 +83,27 @@ pub struct SharedVault {
 
 super::redact::redacted_debug!(SharedVault { kind });
 
+impl GhulSuite {
+    /// Makes this (empty) suite the temporary one around a vault opened on its own.
+    pub(super) fn start_single(&self, vault: crate::vault::UnlockedContainer, pk: PasswordKey) -> Result<VaultKind> {
+        let kind = VaultKind::from_container(vault.kind())
+            .ok_or_else(|| GhulError::InvalidInput { msg: "this is a suite file, open its folder instead".into() })?;
+        let mut suite = self.suite_for_vault(&vault, &pk)?;
+        // Nothing to confirm: the code (if any) belongs to whoever made the file.
+        suite.payload.settings.remove(super::setup::CONFIRMED_KEY);
+        let id = crate::kdf::hex(&vault.container_id());
+        let file = file_name(kind, &id);
+        put_setting(&mut suite, SINGLE_KEY, &file)?;
+        let name = super::suite::vault_name(&vault, &file);
+        let reference = VaultRef { id, kind: kind.container().name().into(), name, file };
+        let mut open = Open { password_key: pk, suite, vaults: vec![OpenVault { reference, container: Some(vault) }] };
+        self.save_all(&mut open)?;
+        self.clear_unsaved();
+        self.set_open(open);
+        Ok(kind)
+    }
+}
+
 #[uniffi::export]
 impl GhulSuite {
     /// Opens one vault file on its own (this suite's folder must be empty: the app gives it a
@@ -105,6 +126,7 @@ impl GhulSuite {
         let locked = LockedContainer::parse(&data)?;
         let kind = VaultKind::from_container(locked.kind())
             .ok_or_else(|| GhulError::InvalidInput { msg: "this is a suite file, open its folder instead".into() })?;
+        super::suite::refuse_docs_file(kind)?;
         let keyfile = parse_keyfile(keyfile)?;
         let s = second_factor(
             &locked,
@@ -115,19 +137,7 @@ impl GhulSuite {
         )?;
         let pk = PasswordKey::derive(&password, &locked.header().kdf)?;
         let vault = locked.unlock(&pk, &s)?;
-        let mut suite = self.suite_for_vault(&vault, &pk)?;
-        // Nothing to confirm: the code (if any) belongs to whoever made the file.
-        suite.payload.settings.remove(super::setup::CONFIRMED_KEY);
-        let id = crate::kdf::hex(&vault.container_id());
-        let file = file_name(kind, &id);
-        put_setting(&mut suite, SINGLE_KEY, &file)?;
-        let name = super::suite::vault_name(&vault, &file);
-        let reference = VaultRef { id, kind: kind.container().name().into(), name, file };
-        let mut open = Open { password_key: pk, suite, vaults: vec![OpenVault { reference, container: Some(vault) }] };
-        self.save_all(&mut open)?;
-        self.clear_unsaved();
-        self.set_open(open);
-        Ok(kind)
+        self.start_single(vault, pk)
     }
 
     /// Whether this suite is the temporary one around a vault opened on its own.
@@ -144,6 +154,10 @@ impl GhulSuite {
     /// change it holds. Its protection is the one it came with.
     pub fn single_vault_file(&self) -> Result<SingleFile> {
         let file = self.single_vault_name()?;
+        if file.ends_with(".ghldoc") {
+            // Written back with its content files: `single_docs_write`.
+            super::suite::refuse_docs_file(VaultKind::Docs)?;
+        }
         // The counter first, then the file: a change in between makes the counter newer than
         // the one returned, so it stays unsaved.
         let change = self.change();

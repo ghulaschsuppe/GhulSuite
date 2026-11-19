@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The suite as one file (`.ghlzip`): opened into the working copy and saved from it.
 //!
-//! A `.ghlzip` is a ZIP with exactly the suite file, its vault files and the header
-//! `export.ghlexp`, a container of its own (sealed like the vaults) that lists every file with
-//! its kind, container id and SHA-256, and says which state the file is: a random state id, the
-//! state it was made from, a counter and the protection epoch. Opening checks everything before
+//! A `.ghlzip` is a ZIP with exactly the suite file, its vault files, the content files of its
+//! GhulDocs vaults and the header `export.ghlexp`, a container of its own (sealed like the
+//! vaults) that lists every vault file with its kind, container id and SHA-256, and says which
+//! state the file is: a random state id, the state it was made from, a counter and the
+//! protection epoch. The content files are listed with their SHA-256 in the index of their
+//! GhulDocs vault, which comes before them; they are kept on the disk while they are checked,
+//! never in memory. Opening checks everything before
 //! anything is replaced; nothing is matched or merged. Saving seals everything again and writes
 //! a new state.
 //!
@@ -21,6 +24,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
 
+use super::docs::{content_files, parse_entry_name, stage_entry, ContentFile, Expected, Staging};
 use super::error::{GhulError, Result};
 use super::storage::StorageError;
 use super::suite::{
@@ -46,8 +50,9 @@ const NOT_A_SUITE_FILE: &str = "not a GhulSuite file";
 /// Largest `.ghlzip` read (counted while reading, not taken from the ZIP): 1 GB of documents
 /// plus the other vaults.
 pub(crate) const MAX_ARCHIVE: u64 = 1280 * 1024 * 1024;
-/// Most entries a `.ghlzip` may have (a suite has a handful of files).
-pub(crate) const MAX_ENTRIES: usize = 1000;
+/// Most entries a `.ghlzip` may have (a suite has a handful of vault files and up to
+/// [`super::docs::DOCS_MAX_FILES`] documents).
+pub(crate) const MAX_ENTRIES: usize = super::docs::DOCS_MAX_FILES as usize + 1000;
 /// How many earlier states a file and a device remember (to tell newer states from branches).
 const MAX_ANCESTORS: usize = 64;
 
@@ -197,17 +202,19 @@ pub(super) struct Pending {
     recovery: Option<(Zeroizing<String>, Zeroizing<String>)>,
     /// With the password: the password key and the factor secret (the files verified with them).
     keys: Option<(PasswordKey, FactorSecret)>,
+    /// The checked content files of its GhulDocs vaults (on the disk, removed when dropped).
+    staged: Option<Staging>,
 }
 
 /// An [`ArchiveSource`] as a reader.
-struct SourceReader {
+pub(super) struct SourceReader {
     source: Arc<dyn ArchiveSource>,
     buf: Vec<u8>,
     pos: usize,
 }
 
 impl SourceReader {
-    fn new(source: Arc<dyn ArchiveSource>) -> Self {
+    pub(super) fn new(source: Arc<dyn ArchiveSource>) -> Self {
         SourceReader { source, buf: Vec::new(), pos: 0 }
     }
 }
@@ -229,7 +236,7 @@ impl Read for SourceReader {
 }
 
 /// An [`ArchiveSink`] as a writer (pieces of up to [`CHUNK`] bytes), hashing what it writes.
-struct SinkWriter {
+pub(super) struct SinkWriter {
     sink: Arc<dyn ArchiveSink>,
     buf: Vec<u8>,
     len: u64,
@@ -237,7 +244,7 @@ struct SinkWriter {
 }
 
 impl SinkWriter {
-    fn new(sink: Arc<dyn ArchiveSink>) -> Self {
+    pub(super) fn new(sink: Arc<dyn ArchiveSink>) -> Self {
         SinkWriter { sink, buf: Vec::with_capacity(CHUNK), len: 0, sha: Sha256::new() }
     }
 
@@ -268,7 +275,7 @@ impl Write for SinkWriter {
 }
 
 /// Reports progress to the app, at most once per megabyte (and at the end).
-fn reporter(progress: Option<Arc<dyn ArchiveProgress>>, total: u64) -> impl FnMut(u64) + Send + 'static {
+pub(super) fn reporter(progress: Option<Arc<dyn ArchiveProgress>>, total: u64) -> impl FnMut(u64) + Send + 'static {
     let mut last = 0u64;
     move |done| {
         if let Some(p) = &progress {
@@ -281,24 +288,27 @@ fn reporter(progress: Option<Arc<dyn ArchiveProgress>>, total: u64) -> impl FnMu
 }
 
 /// What is wrong stays out of the message: the app names it in plain words.
-fn zip_error(e: ZipError) -> GhulError {
+pub(super) fn zip_error(e: ZipError) -> GhulError {
     match e {
         ZipError::Io(e) => GhulError::Storage { msg: e.to_string() },
         _ => GhulError::InvalidInput { msg: NOT_A_SUITE_FILE.into() },
     }
 }
 
-fn not_a_suite_file() -> GhulError {
+pub(super) fn not_a_suite_file() -> GhulError {
     GhulError::InvalidInput { msg: NOT_A_SUITE_FILE.into() }
 }
 
-fn suite_zip(source: Arc<dyn ArchiveSource>, progress: Option<Arc<dyn ArchiveProgress>>) -> ZipReader<SourceReader> {
+pub(super) fn suite_zip(
+    source: Arc<dyn ArchiveSource>,
+    progress: Option<Arc<dyn ArchiveProgress>>,
+) -> ZipReader<SourceReader> {
     let total = source.size();
     ZipReader::new(SourceReader::new(source), MAX_ARCHIVE, MAX_ENTRIES, reporter(progress, total))
 }
 
 /// Reads the data of the entry just found, a container (at most [`MAX_FILE_LEN`]).
-fn read_container(z: &mut ZipReader<SourceReader>, e: &EntryInfo) -> Result<(Vec<u8>, String)> {
+pub(super) fn read_container(z: &mut ZipReader<SourceReader>, e: &EntryInfo) -> Result<(Vec<u8>, String)> {
     if e.size > MAX_FILE_LEN as u64 {
         return Err(not_a_suite_file());
     }
@@ -321,33 +331,7 @@ fn read_header(z: &mut ZipReader<SourceReader>) -> Result<LockedContainer> {
     Ok(l)
 }
 
-/// The other entries, read with every rule: only plain names of the suite's files, no folders,
-/// no entry twice, exactly the files the header lists, each with its SHA-256 (checked while
-/// reading, before the next one is read).
-fn read_files(z: &mut ZipReader<SourceReader>, header: &ArchiveHeader) -> Result<Files> {
-    let mut out: Files = Vec::new();
-    while let Some(e) = z.next_entry().map_err(zip_error)? {
-        let name = e.name.clone();
-        if !super::storage::plain_file_name(&name) || !(name == SUITE_FILE || is_vault_file(&name)) {
-            return Err(not_a_suite_file());
-        }
-        if out.iter().any(|(n, _)| n.eq_ignore_ascii_case(&name)) {
-            return Err(not_a_suite_file());
-        }
-        let listed = header.files.iter().find(|f| f.name == name).ok_or_else(|| mismatch("a file too many"))?;
-        let (data, sha) = read_container(z, &e)?;
-        if sha != listed.sha256 {
-            return Err(mismatch("a file changed"));
-        }
-        out.push((name, data));
-    }
-    if out.len() != header.files.len() {
-        return Err(mismatch("files missing"));
-    }
-    Ok(out)
-}
-
-fn mismatch(_why: &str) -> GhulError {
+pub(super) fn mismatch(_why: &str) -> GhulError {
     GhulError::Corrupted { msg: "the suite file does not match its list".into() }
 }
 
@@ -376,23 +360,52 @@ fn open_container(l: LockedContainer, key: &Key<'_>) -> Result<UnlockedContainer
 
 /// Reads and checks a whole `.ghlzip` (header from `z` already read as `locked`): the header
 /// opens (with the password: its seal holds), the entries are exactly the listed files with
-/// their hashes, every container belongs to the same suite, has its kind and id and opens.
+/// their hashes, every container belongs to the same suite, has its kind and id and opens, and
+/// the content files are exactly those the indexes of its GhulDocs vaults list, with their
+/// hashes. Every rule holds while reading: only plain names of the suite's files or content
+/// files, no folders, no entry twice, each checked before the next one is read; a content file
+/// only after its vault. Content files go to a staging folder in `root` (the content root of
+/// the working copy), the containers stay in memory.
 fn read_checked(
     z: &mut ZipReader<SourceReader>,
     locked: LockedContainer,
     key: &Key<'_>,
-) -> Result<(Files, ArchiveHeader, [u8; 16])> {
+    root: Option<&std::path::Path>,
+) -> Result<(Files, ArchiveHeader, [u8; 16], Option<Staging>)> {
     let header_c = open_container(locked, key)?;
     let header: ArchiveHeader = setting(&header_c, HEADER_KEY);
     let suite_id = header_c.header().suite_id;
     if !header.files.iter().any(|f| f.name == SUITE_FILE) {
         return Err(mismatch("no suite file"));
     }
-    let files = read_files(z, &header)?;
+    let mut out: Files = Vec::new();
+    let mut docs: BTreeMap<String, Expected> = BTreeMap::new();
+    let mut staging: Option<Staging> = None;
     let mut suite_epoch = None;
-    for f in &header.files {
-        let data = &files.iter().find(|(n, _)| n == &f.name).ok_or_else(|| mismatch("missing"))?.1;
-        let l = LockedContainer::parse(data)?;
+    while let Some(e) = z.next_entry().map_err(zip_error)? {
+        let name = e.name.clone();
+        if let Some((vid, content)) = parse_entry_name(&name) {
+            let expected = docs.get_mut(&vid).ok_or_else(|| mismatch("a document without its vault"))?;
+            if staging.is_none() {
+                let root =
+                    root.ok_or_else(|| GhulError::Storage { msg: "documents cannot be stored in this folder".into() })?;
+                staging = Some(Staging::new(root)?);
+            }
+            stage_entry(z, &e, &vid, &content, expected, staging.as_ref().ok_or(GhulError::NotFound)?)?;
+            continue;
+        }
+        if !super::storage::plain_file_name(&name) || !(name == SUITE_FILE || is_vault_file(&name)) {
+            return Err(not_a_suite_file());
+        }
+        if out.iter().any(|(n, _)| n.eq_ignore_ascii_case(&name)) {
+            return Err(not_a_suite_file());
+        }
+        let f = header.files.iter().find(|f| f.name == name).ok_or_else(|| mismatch("a file too many"))?;
+        let (data, sha) = read_container(z, &e)?;
+        if sha != f.sha256 {
+            return Err(mismatch("a file changed"));
+        }
+        let l = LockedContainer::parse(&data)?;
         if l.kind().name() != f.kind || l.header().suite_id != suite_id {
             return Err(mismatch(&format!("{} belongs elsewhere", f.name)));
         }
@@ -403,28 +416,50 @@ fn read_checked(
         if crate::kdf::hex(&c.container_id()) != f.id {
             return Err(mismatch(&format!("{} is another vault", f.name)));
         }
-        if c.kind() == ContainerKind::Suite {
-            suite_epoch = Some(setting::<u64>(&c, super::suite::EPOCH_KEY));
+        match c.kind() {
+            ContainerKind::Suite => suite_epoch = Some(setting::<u64>(&c, super::suite::EPOCH_KEY)),
+            ContainerKind::Docs if docs.insert(f.id.clone(), Expected::of(&c)?).is_some() => {
+                return Err(mismatch("a vault twice"));
+            }
+            _ => {}
         }
+        out.push((name, data));
+    }
+    if out.len() != header.files.len() {
+        return Err(mismatch("files missing"));
+    }
+    if !docs.values().all(Expected::complete) {
+        return Err(mismatch("documents missing"));
     }
     if suite_epoch != Some(header.epoch) {
         return Err(mismatch("protection"));
     }
-    Ok((files, header, suite_id))
+    Ok((out, header, suite_id, staging))
 }
 
-/// Writes a `.ghlzip` of `files` (the header first). Returns size and SHA-256 of the whole
-/// file.
-fn write_suite_zip(
+/// Writes a `.ghlzip` of `files` (in memory, in this order: the header or the vault first) and
+/// then the content files `contents`, copied from the disk. Returns size and SHA-256 of the
+/// whole file.
+pub(super) fn write_zip(
     files: &[(String, Vec<u8>)],
+    contents: &[ContentFile],
     sink: Arc<dyn ArchiveSink>,
     progress: Option<Arc<dyn ArchiveProgress>>,
 ) -> Result<(u64, String)> {
-    let total = zip_len(files.iter().map(|(n, d)| (n.as_str(), d.len() as u64)));
+    let total = zip_len(
+        files
+            .iter()
+            .map(|(n, d)| (n.as_str(), d.len() as u64))
+            .chain(contents.iter().map(|c| (c.name.as_str(), c.len))),
+    );
     let storage = |e: std::io::Error| GhulError::Storage { msg: e.to_string() };
     let mut w = ZipWriter::new(SinkWriter::new(sink), reporter(progress, total));
     for (n, d) in files {
         w.add_bytes(n, d).map_err(storage)?;
+    }
+    for c in contents {
+        let f = std::fs::File::open(&c.path).map_err(storage)?;
+        w.add_reader(&c.name, c.len, c.crc, f).map_err(storage)?;
     }
     let out = w.finish().map_err(storage)?;
     Ok((out.len, crate::kdf::hex(&out.sha.finalize())))
@@ -613,8 +648,9 @@ impl GhulSuite {
 
     /// Replaces the working copy with the pending files: files of the old copy that the new one
     /// does not have are removed, the suite file is written last; if writing fails midway, the
-    /// old copy is put back.
-    fn replace_working_copy(&self, files: &[(String, Vec<u8>)]) -> Result<()> {
+    /// old copy is put back. The content files of GhulDocs move as whole folders: the old ones
+    /// aside, the checked ones (`staged`) into place, the old ones removed at the end.
+    fn replace_working_copy(&self, files: &[(String, Vec<u8>)], staged: Option<&Staging>) -> Result<()> {
         let mut before = Vec::new();
         for n in self.storage.list()? {
             if n == SUITE_FILE || is_vault_file(&n) {
@@ -623,13 +659,50 @@ impl GhulSuite {
                 }
             }
         }
+        let aside = self.docs_aside(staged)?;
         let new: Vec<(String, Vec<u8>)> = files.iter().filter(|(n, _)| n != HEADER_FILE).cloned().collect();
         if let Err(e) = self.put_files(&new, &before) {
             // Half replaced is neither state: back to the one before.
             let _ = self.put_files(&before, &new);
+            if let Some(a) = &aside {
+                a.back();
+            }
             return Err(e);
         }
         Ok(())
+    }
+
+    /// Moves the content folders of the working copy aside and the staged ones into place
+    /// (`None` without a content root and nothing to stage).
+    fn docs_aside(&self, staged: Option<&Staging>) -> Result<Option<Aside>> {
+        let root = match self.content_root() {
+            Ok(r) => r,
+            Err(_) if staged.is_none() => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        let old = Staging::new(&root)?;
+        let mut aside = Aside { root: root.clone(), old, moved_in: Vec::new(), moved_out: Vec::new() };
+        let result = (|| {
+            for d in std::fs::read_dir(&root).into_iter().flatten().flatten() {
+                let name = d.file_name().to_string_lossy().into_owned();
+                if name.starts_with(super::docs::DIR_PREFIX) && d.file_type().is_ok_and(|t| t.is_dir()) {
+                    std::fs::rename(d.path(), aside.old.path().join(&name))?;
+                    aside.moved_out.push(name);
+                }
+            }
+            if let Some(s) = staged {
+                for name in s.vaults() {
+                    std::fs::rename(s.path().join(&name), root.join(&name))?;
+                    aside.moved_in.push(name);
+                }
+            }
+            Ok::<(), std::io::Error>(())
+        })();
+        if let Err(e) = result {
+            aside.back();
+            return Err(e.into());
+        }
+        Ok(Some(aside))
     }
 
     /// Writes `files` (the suite file last) and removes what only `old` had.
@@ -693,9 +766,10 @@ impl GhulSuite {
             keyfile.as_ref(),
         )?;
         let pk = PasswordKey::derive(&password, &locked.header().kdf)?;
-        let (files, header, suite_id) = read_checked(&mut z, locked, &Key::Password(&pk, &s))?;
+        let root = self.content_root().ok();
+        let (files, header, suite_id, staged) = read_checked(&mut z, locked, &Key::Password(&pk, &s), root.as_deref())?;
         let check = self.check_of(&header, &suite_id, false)?;
-        self.keep_pending(gen, Pending { files, header, suite_id, recovery: None, keys: Some((pk, s)) })?;
+        self.keep_pending(gen, Pending { files, header, suite_id, recovery: None, keys: Some((pk, s)), staged })?;
         Ok(check)
     }
 
@@ -714,11 +788,19 @@ impl GhulSuite {
         let parsed = RecoveryCode::parse(&code)?;
         let mut z = suite_zip(source, progress);
         let locked = read_header(&mut z)?;
-        let (files, header, suite_id) = read_checked(&mut z, locked, &Key::Code(&parsed))?;
+        let root = self.content_root().ok();
+        let (files, header, suite_id, staged) = read_checked(&mut z, locked, &Key::Code(&parsed), root.as_deref())?;
         let check = self.check_of(&header, &suite_id, true)?;
         self.keep_pending(
             gen,
-            Pending { files, header, suite_id, recovery: Some((code, Zeroizing::new(new_password))), keys: None },
+            Pending {
+                files,
+                header,
+                suite_id,
+                recovery: Some((code, Zeroizing::new(new_password))),
+                keys: None,
+                staged,
+            },
         )?;
         Ok(check)
     }
@@ -739,7 +821,7 @@ impl GhulSuite {
         self.finish_lock();
         self.wipe_device_data();
         self.wiped.store(true, std::sync::atomic::Ordering::SeqCst);
-        self.replace_working_copy(&p.files)?;
+        self.replace_working_copy(&p.files, p.staged.as_ref())?;
         match (&p.recovery, p.keys) {
             (Some((code, new_password)), _) => {
                 self.unlock_with_recovery_code(code.to_string(), new_password.to_string())?
@@ -822,7 +904,7 @@ impl GhulSuite {
         sink: Arc<dyn ArchiveSink>,
         progress: Option<Arc<dyn ArchiveProgress>>,
     ) -> Result<ArchiveBuilt> {
-        let (files, state, change) = self.with_open(|o| {
+        let (files, contents, state, change) = self.with_open(|o| {
             let suite_id = o.suite.header().suite_id;
             let seen = self.seen_all().get(&crate::kdf::hex(&suite_id)).cloned().unwrap_or_default();
             let mine: StateRef = setting(&o.suite, STATE_KEY);
@@ -886,6 +968,14 @@ impl GhulSuite {
                 ancestors,
                 complete,
             };
+            // Every document goes along, also those in the trash: each must be there.
+            let mut contents: Vec<ContentFile> = Vec::new();
+            for v in o.vaults.iter().filter(|v| v.reference.kind == "docs") {
+                if let Some(c) = &v.container {
+                    let id = &v.reference.id;
+                    contents.extend(content_files(&self.docs_dir(id)?, id, &c.payload.entries)?);
+                }
+            }
             // The working copy is this state as well (sealed the same way).
             for (n, d) in &files {
                 self.storage.write(n.clone(), d.clone())?;
@@ -894,9 +984,9 @@ impl GhulSuite {
             put_setting(&mut hc, HEADER_KEY, &header)?;
             // The header first: opening knows every hash before the files come.
             files.insert(0, (HEADER_FILE.to_owned(), hc.seal(&mut OsRng)?));
-            Ok((files, state, self.change()))
+            Ok((files, contents, state, self.change()))
         })?;
-        let (size, sha256) = write_suite_zip(&files, sink, progress)?;
+        let (size, sha256) = write_zip(&files, &contents, sink, progress)?;
         Ok(ArchiveBuilt { state, change, size, sha256 })
     }
 
@@ -913,6 +1003,27 @@ impl GhulSuite {
         })?;
         self.clear_unsaved_at(change);
         Ok(())
+    }
+}
+
+/// The content folders of the working copy moved aside while a suite file replaces it: put back
+/// if replacing fails, removed with the staging folder when it worked.
+struct Aside {
+    root: std::path::PathBuf,
+    old: Staging,
+    moved_in: Vec<String>,
+    moved_out: Vec<String>,
+}
+
+impl Aside {
+    /// Back to the content folders before.
+    fn back(&self) {
+        for name in &self.moved_in {
+            let _ = std::fs::remove_dir_all(self.root.join(name));
+        }
+        for name in &self.moved_out {
+            let _ = std::fs::rename(self.old.path().join(name), self.root.join(name));
+        }
     }
 }
 
@@ -1007,7 +1118,14 @@ mod pending_tests {
     use super::*;
 
     fn dummy() -> Pending {
-        Pending { files: Vec::new(), header: ArchiveHeader::default(), suite_id: [0; 16], recovery: None, keys: None }
+        Pending {
+            files: Vec::new(),
+            header: ArchiveHeader::default(),
+            suite_id: [0; 16],
+            recovery: None,
+            keys: None,
+            staged: None,
+        }
     }
 
     /// A check that ends after a lock (or cancel) is not kept: its keys must not outlive it.
