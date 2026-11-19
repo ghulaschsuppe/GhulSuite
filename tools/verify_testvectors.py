@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Independent verification of docs/testvectors/container-v3.json.
+"""Independent verification of docs/testvectors/container-v3.json and
+docs/testvectors/docs-blob-v1.json (GhulDocs content files).
 
 Written only from docs/FORMAT.md with different libraries than ghul-core
 (argon2-cffi, cryptography, PyNaCl/libsodium, cbor2), so that the specification,
@@ -16,6 +17,7 @@ import json
 import struct
 import sys
 import unicodedata
+import zlib
 from pathlib import Path
 
 import cbor2
@@ -23,10 +25,10 @@ from argon2.low_level import Type, hash_secret_raw
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from nacl.bindings import crypto_aead_xchacha20poly1305_ietf_decrypt
+from nacl.bindings import crypto_aead_xchacha20poly1305_ietf_decrypt, crypto_aead_xchacha20poly1305_ietf_encrypt
 
 CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
-MAGIC = {b"GHULPASS": "pass", b"GHULTOTP": "totp", b"GHULSUIT": "suite"}
+MAGIC = {b"GHULPASS": "pass", b"GHULTOTP": "totp", b"GHULSUIT": "suite", b"GHULDOCS": "docs"}
 AUTH_LEN = 32
 
 
@@ -214,13 +216,109 @@ def verify(v: dict) -> None:
     print(f"ok  {v['description']}: {len(data)} bytes")
 
 
+# --- GhulDocs (FORMAT.md section 14) ------------------------------------------------------------
+
+BLOB_SECTION = 4 * 1024 * 1024
+BLOB_PAD = 64 * 1024
+BLOBS = {}  # content id (hex) -> (vector, file bytes), filled by verify_blob
+
+
+def blob_prefix(content_id: bytes) -> bytes:
+    return b"GHULBLOB" + struct.pack("<H", 1) + content_id
+
+
+def blob_layout(size: int) -> tuple:
+    """Plaintext length of each section, the end of the last one and the file length."""
+    n = 1 if size == 0 else -(-size // BLOB_SECTION)
+    lens = [min(BLOB_SECTION, size - i * BLOB_SECTION) for i in range(n)]
+    end = 26 + sum(40 + k for k in lens)
+    total = -(-(end + 48) // BLOB_PAD) * BLOB_PAD
+    return lens, end, total
+
+
+def blob_encrypt(content_id: bytes, key: bytes, content: bytes, nonces: list, trailer_nonce: bytes) -> bytes:
+    bk = hkdf(key, b"ghul/v1/docs/blob" + content_id)
+    prefix = blob_prefix(content_id)
+    lens, end, total = blob_layout(len(content))
+    out, pos = bytearray(prefix), 0
+    for i, k in enumerate(lens):
+        aad = prefix + struct.pack("<QB", i, 1 if i == len(lens) - 1 else 0)
+        out += nonces[i] + crypto_aead_xchacha20poly1305_ietf_encrypt(content[pos : pos + k], aad, nonces[i], bk)
+        pos += k
+    assert len(out) == end
+    out += bytes(total - 48 - end)
+    out += trailer_nonce + crypto_aead_xchacha20poly1305_ietf_encrypt(struct.pack("<Q", len(content)), prefix + b"end", trailer_nonce, bk)
+    assert len(out) == total
+    return bytes(out)
+
+
+def blob_decrypt(content_id: bytes, key: bytes, data: bytes) -> bytes:
+    """Reads a content file from its key alone: length from the trailer, then every section."""
+    bk = hkdf(key, b"ghul/v1/docs/blob" + content_id)
+    prefix = blob_prefix(content_id)
+    assert data[:26] == prefix, "magic, version, id"
+    assert len(data) % BLOB_PAD == 0
+    (size,) = struct.unpack("<Q", aead_open(bk, data[-48:-24], data[-24:], prefix + b"end"))
+    lens, end, total = blob_layout(size)
+    assert len(data) == total, "file length"
+    assert not any(data[end : total - 48]), "filling is zero"
+    out, pos = bytearray(), 26
+    for i, k in enumerate(lens):
+        nonce, ct = data[pos : pos + 24], data[pos + 24 : pos + 40 + k]
+        out += aead_open(bk, nonce, ct, prefix + struct.pack("<QB", i, 1 if i == len(lens) - 1 else 0))
+        pos += 40 + k
+    return bytes(out)
+
+
+def verify_blob(v: dict) -> None:
+    h = bytes.fromhex
+    content_id, key = h(v["id"]), h(v["key"])
+    assert hkdf(key, b"ghul/v1/docs/blob" + content_id).hex() == v["blob_key"], "content file key"
+    if v["content"] is not None:
+        content = h(v["content"])
+    else:
+        assert v["content_pattern"] == "byte i = i mod 251"
+        content = bytes(i % 251 for i in range(v["size"]))
+    assert len(content) == v["size"]
+    # Encrypted again from its inputs: the same file, byte for byte.
+    nonces = [h(x) for x in v["section_nonces"]]
+    file = blob_encrypt(content_id, key, content, nonces, h(v["trailer_nonce"]))
+    assert len(file) == v["file_len"] == blob_layout(len(content))[2]
+    assert hashlib.sha256(file).hexdigest() == v["file_sha256"], "file SHA-256"
+    assert zlib.crc32(file) == v["file_crc32"], "file CRC-32"
+    if v["file"] is not None:
+        assert file == h(v["file"]), "published file"
+    assert blob_decrypt(content_id, key, file) == content
+    # Every change is noticed: a flipped byte in the prefix, a section, the filling, the trailer;
+    # cut off; sections of another file id.
+    for at in [5, 12, 30, 26 + 24 + 3, len(file) - 1000, len(file) - 1]:
+        bad = bytearray(file)
+        bad[at] ^= 1
+        try:
+            blob_decrypt(content_id, key, bytes(bad))
+        except Exception:
+            continue
+        raise AssertionError(f"a changed byte at {at} was not noticed")
+    for bad in [file[:-BLOB_PAD], file + bytes(BLOB_PAD)]:
+        try:
+            blob_decrypt(content_id, key, bad)
+        except Exception:
+            continue
+        raise AssertionError("a cut or longer file was not noticed")
+    BLOBS[v["id"]] = (v, file)
+    print(f"ok  {v['description']}: {len(file)} bytes")
+
+
 def main() -> int:
-    path = Path(__file__).resolve().parent.parent / "docs" / "testvectors" / "container-v3.json"
-    vectors = json.loads(path.read_text())["vectors"]
+    vectors_dir = Path(__file__).resolve().parent.parent / "docs" / "testvectors"
+    blobs = json.loads((vectors_dir / "docs-blob-v1.json").read_text())["vectors"]
+    for v in blobs:
+        verify_blob(v)
+    vectors = json.loads((vectors_dir / "container-v3.json").read_text())["vectors"]
     for v in vectors:
         assert struct.unpack_from("<H", bytes.fromhex(v["file"]), 8)[0] == 3
         verify(v)
-    print(f"{len(vectors)} test vectors verified independently")
+    print(f"{len(vectors)} container and {len(blobs)} content file test vectors verified independently")
     return 0
 
 

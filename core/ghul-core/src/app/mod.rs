@@ -7,6 +7,7 @@ pub mod authx;
 pub mod cal;
 pub mod caldate;
 pub mod caltext;
+pub mod docs;
 pub mod error;
 pub mod import;
 pub mod passx;
