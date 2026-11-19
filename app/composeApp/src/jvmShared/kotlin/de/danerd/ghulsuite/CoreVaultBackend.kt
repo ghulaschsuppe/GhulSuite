@@ -64,7 +64,12 @@ import de.danerd.ghulsuite.model.SetupStateUi
 import de.danerd.ghulsuite.model.SkippedImportUi
 import de.danerd.ghulsuite.model.SkipReasonUi
 import de.danerd.ghulsuite.model.KeepSkippedUi
-import de.danerd.ghulsuite.model.ArchiveBuiltUi
+import de.danerd.ghulsuite.core.ArchiveBuilt
+import de.danerd.ghulsuite.core.ArchiveProgress
+import de.danerd.ghulsuite.core.ArchiveSink
+import de.danerd.ghulsuite.core.ArchiveSource
+import de.danerd.ghulsuite.core.StorageException
+import de.danerd.ghulsuite.core.archiveWrittenMatches
 import de.danerd.ghulsuite.model.ArchiveCheckUi
 import de.danerd.ghulsuite.model.ArchiveRelationUi
 import de.danerd.ghulsuite.model.ArchiveTargetUi
@@ -76,6 +81,9 @@ import de.danerd.ghulsuite.core.ShareVaultOptions
 import de.danerd.ghulsuite.core.localStorage
 import de.danerd.ghulsuite.model.ShareVaultUi
 import de.danerd.ghulsuite.model.SharedVaultUi
+
+/** A suite file opened for reading: the stream and its size (0: not known). */
+class SuiteInput(val stream: java.io.InputStream, val size: Long)
 
 /**
  * Everything of [VaultBackend] that is the same on Android and Windows: the open suite, vaults,
@@ -145,20 +153,85 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
 
     // --- the suite file ----------------------------------------------------------------------------
 
-    override suspend fun archiveProtection(data: ByteArray): ProtectionUi = io { suite.archiveProtection(data).toUi() }
+    /** Opens a suite file for reading (streamed); null if it cannot be read. */
+    protected open fun openSuiteInput(ref: SuiteFileRef): SuiteInput? = null
+
+    /**
+     * Writes the suite file [ref] (streamed): [write] puts all bytes into the stream it gets,
+     * [check] reads the result back and says whether it is complete. True only when the file is
+     * in place and [check] said so; where the platform allows it the old file is replaced only
+     * then (see the platforms). [created]: the file was just made for this; a failed write
+     * removes it.
+     */
+    protected open fun writeSuiteStreamed(
+        ref: SuiteFileRef,
+        created: Boolean,
+        write: (java.io.OutputStream) -> Unit,
+        check: (SuiteInput) -> Boolean,
+    ): Boolean = false
+
+    /** A suite file for the core to read, piece by piece. */
+    private class StreamSource(private val input: SuiteInput) : ArchiveSource {
+        override fun size(): ULong = input.size.coerceAtLeast(0).toULong()
+
+        override fun read(max: UInt): ByteArray {
+            val buf = ByteArray(max.toInt().coerceIn(1, 1 shl 20))
+            var n = 0
+            try {
+                while (n < buf.size) {
+                    val r = input.stream.read(buf, n, buf.size - n)
+                    if (r < 0) break
+                    n += r
+                }
+            } catch (e: java.io.IOException) {
+                throw StorageException.Io("the file cannot be read")
+            }
+            return if (n == buf.size) buf else buf.copyOf(n)
+        }
+    }
+
+    private class StreamSink(private val out: java.io.OutputStream) : ArchiveSink {
+        override fun write(data: ByteArray) {
+            try {
+                out.write(data)
+            } catch (e: java.io.IOException) {
+                throw StorageException.Io("the file cannot be written")
+            }
+        }
+    }
+
+    private class Progress(private val report: (Long, Long) -> Unit) : ArchiveProgress {
+        override fun progress(done: ULong, total: ULong) = report(done.toLong(), total.toLong())
+    }
+
+    /** Runs [block] with [file] open for reading; a file that cannot be opened is a storage error. */
+    private fun <T> reading(file: SuiteFileRef, block: (ArchiveSource) -> T): T {
+        val input = openSuiteInput(file) ?: throw VaultException(VaultErrorKind.STORAGE, "the file cannot be read")
+        return input.stream.use { block(StreamSource(input)) }
+    }
+
+    override suspend fun archiveProtection(file: SuiteFileRef): ProtectionUi =
+        io { reading(file) { suite.archiveProtection(it).toUi() } }
 
     override suspend fun archiveOpen(
-        data: ByteArray,
+        file: SuiteFileRef,
         password: String,
         pin: String?,
         keyfile: ByteArray?,
         onTouchNeeded: () -> Unit,
+        onProgress: (Long, Long) -> Unit,
     ): ArchiveCheckUi = maybeWithKey(pin) { t ->
-        suite.archiveOpen(data, password, t, t?.let { Touch(onTouchNeeded) }, pin, keyfile).toUi()
+        reading(file) { src ->
+            suite.archiveOpen(src, password, t, t?.let { Touch(onTouchNeeded) }, pin, keyfile, Progress(onProgress)).toUi()
+        }
     }
 
-    override suspend fun archiveOpenWithCode(data: ByteArray, code: String, newPassword: String): ArchiveCheckUi =
-        io { suite.archiveOpenWithCode(data, code, newPassword).toUi() }
+    override suspend fun archiveOpenWithCode(
+        file: SuiteFileRef,
+        code: String,
+        newPassword: String,
+        onProgress: (Long, Long) -> Unit,
+    ): ArchiveCheckUi = io { reading(file) { suite.archiveOpenWithCode(it, code, newPassword, Progress(onProgress)).toUi() } }
 
     override fun archiveCancel() = suite.archiveCancel()
 
@@ -181,8 +254,9 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
 
     override fun archiveUnsaved(): Boolean = runCatching { suite.archiveUnsaved() }.getOrDefault(false)
 
-    override suspend fun archiveTarget(data: ByteArray): ArchiveTargetUi = io {
-        when (suite.archiveTarget(data)) {
+    override suspend fun archiveTarget(file: SuiteFileRef): ArchiveTargetUi? = io {
+        val input = openSuiteInput(file) ?: return@io null
+        when (input.stream.use { suite.archiveTarget(StreamSource(input)) }) {
             ArchiveTarget.NEW -> ArchiveTargetUi.NEW
             ArchiveTarget.SAME -> ArchiveTargetUi.SAME
             ArchiveTarget.CHANGED_ELSEWHERE -> ArchiveTargetUi.CHANGED_ELSEWHERE
@@ -190,12 +264,29 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
         }
     }
 
-    override suspend fun archiveBuild(device: String): ArchiveBuiltUi = io {
-        val b = suite.archiveBuild(device)
-        ArchiveBuiltUi(b.data, b.state, b.change.toLong())
+    override suspend fun archiveSave(
+        target: SuiteFileRef,
+        device: String,
+        created: Boolean,
+        onProgress: (Long, Long) -> Unit,
+    ): Boolean = io {
+        val s = suite
+        var built: ArchiveBuilt? = null
+        // One bar for both steps: writing is the first half, reading back the second.
+        val written = writeSuiteStreamed(
+            target,
+            created,
+            write = { out -> built = s.archiveBuild(device, StreamSink(out), Progress { d, t -> onProgress(d, 2 * t) }) },
+            check = { input ->
+                val b = built ?: return@writeSuiteStreamed false
+                val size = b.size.toLong()
+                archiveWrittenMatches(StreamSource(input), b.size, b.sha256, Progress { d, _ -> onProgress(size + d, 2 * size) })
+            },
+        )
+        val b = built
+        if (written && b != null) s.archiveSaved(b.state, b.change)
+        written && b != null
     }
-
-    override suspend fun archiveSaved(state: String, change: Long) = io { suite.archiveSaved(state, change.toULong()) }
 
     override fun suiteFile(): SuiteFileRef? =
         devicePref("suite_file")?.takeIf { it.contains('|') }?.let { SuiteFileRef(it.substringBefore('|'), it.substringAfter('|')) }

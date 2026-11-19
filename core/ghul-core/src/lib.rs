@@ -26,6 +26,9 @@ mod mock;
 #[cfg(test)]
 mod wycheproof_tests;
 
+#[cfg(test)]
+mod alloc_meter;
+
 /// Every parser that reads outside data, for the long libFuzzer runs (`core/fuzz`).
 #[cfg(feature = "fuzzing")]
 #[doc(hidden)]

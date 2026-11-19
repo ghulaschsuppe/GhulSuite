@@ -92,7 +92,7 @@ fn marked_suite(name: &str) -> (Dirs, Arc<GhulSuite>, Vec<u8>) {
 #[test]
 fn stolen_device_files_and_backup_reveal_nothing() {
     let (d, s, _kf) = marked_suite("leak");
-    let backup = s.archive_build("Dieb".into()).unwrap().data;
+    let backup = s.archive_build_bytes("Dieb".into()).unwrap().data;
     s.lock();
     // Everything the app wrote: its folder (vault files, local state) and the backup.
     for (p, data) in all_files(&d.root) {
@@ -139,18 +139,13 @@ fn stolen_files_do_not_open_without_both_factors() {
 fn backups_with_path_tricks_and_bombs_write_nothing_outside() {
     let target = Dirs::new("restore-attack");
     let outside = target.root.join("outside.ghlpss");
+    // Stored, as the app writes them: the names themselves are what is checked.
     let make = |entries: &[(&str, &[u8])]| {
-        let mut out = std::io::Cursor::new(Vec::new());
-        {
-            let mut z = zip::ZipWriter::new(&mut out);
-            let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-            for (n, d) in entries {
-                z.start_file(*n, opts).unwrap();
-                z.write_all(d).unwrap();
-            }
-            z.finish().unwrap();
+        let mut z = super::super::zipstream::ZipWriter::new(Vec::new(), |_| {});
+        for (n, d) in entries {
+            z.add_bytes(n, d).unwrap();
         }
-        out.into_inner()
+        z.finish().unwrap()
     };
     let tricks = [
         "../outside.ghlpss",
@@ -165,9 +160,9 @@ fn backups_with_path_tricks_and_bombs_write_nothing_outside() {
         "x\u{202e}sspslhg.exe",
     ];
     for t in tricks {
-        let zip = make(&[("suite.ghlsuite", b"GHULSUIT"), (t, b"evil")]);
+        let zip = make(&[("export.ghlexp", b"GHULEXPT"), ("suite.ghlsuite", b"GHULSUIT"), (t, b"evil")]);
         let s = target.suite();
-        let _ = s.archive_open(zip, "pw".into(), None, None, None, None);
+        let _ = s.archive_open_bytes(zip, "pw".into(), None, None, None, None);
         let _ = s.archive_accept();
         assert!(!outside.exists(), "{t} wrote outside");
         for f in target.storage().list().unwrap() {
@@ -193,7 +188,10 @@ fn backups_with_path_tricks_and_bombs_write_nothing_outside() {
     }
     let bomb = out.into_inner();
     assert!(bomb.len() < 200_000);
-    assert!(super::super::archive::read_zip_limited(&bomb, 16 * 1024 * 1024).is_err(), "a bomb must be refused");
+    // Compressed entries are refused before anything is unpacked.
+    let s = target.suite();
+    assert!(s.archive_protection_bytes(bomb.clone()).is_err(), "a bomb must be refused");
+    assert!(s.archive_open_bytes(bomb, "pw".into(), None, None, None, None).is_err(), "a bomb must be refused");
 }
 
 #[test]

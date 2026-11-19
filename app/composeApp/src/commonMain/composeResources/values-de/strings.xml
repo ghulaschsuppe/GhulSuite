@@ -251,6 +251,7 @@
     <string name="quick_7d">7 Tage</string>
     <string name="quick_8h">8 Stunden</string>
     <string name="s_busy">Arbeite …</string>
+    <string name="s_busy_percent">Arbeite … %1$s</string>
     <string name="s_touch_key">Jetzt den Key berühren</string>
     <string name="set_about">Über und Hilfe</string>
     <string name="set_add_key_text">Stecke den Key ein. Du berührst ihn zweimal. Danach öffnet er die Suite genau wie deine anderen Keys und Schlüsseldateien. An diesen ändert sich nichts.</string>
@@ -1015,7 +1016,8 @@
     <string name="file_hint">Die Suite-Datei (.ghlzip) enthält alle Tresore, verschlüsselt und versiegelt. Du nimmst sie z. B. auf einem USB-Stick zu einem anderen Gerät mit und öffnest sie dort. Abgeglichen wird nichts: Aktuell ist der Stand, der zuletzt gespeichert wurde.</string>
     <string name="file_saved">Gespeichert in %1$s.</string>
     <string name="file_unreachable">Die Suite-Datei ist gerade nicht erreichbar (ist der USB-Stick eingesteckt?). Speichere unter einem neuen Ort oder versuche es erneut.</string>
-    <string name="file_not_written">Die Suite-Datei konnte nicht geschrieben werden. Die bisherige Datei ist unverändert.</string>
+    <string name="file_not_written">Die Suite-Datei ließ sich nicht vollständig schreiben. In der App ist noch alles da: speichere erneut oder an einem neuen Ort.</string>
+    <string name="file_unreadable">Die Datei lässt sich nicht lesen (ist der USB-Stick eingesteckt?).</string>
     <string name="file_overwrite_title">Datei überschreiben?</string>
     <string name="file_overwrite_changed">Die Datei wurde inzwischen anderswo gespeichert. Überschreiben (die Änderungen von dort gehen verloren) oder unter neuem Namen speichern?</string>
     <string name="file_overwrite_other">An diesem Ort liegt eine andere Suite oder keine GhulSuite-Datei. Überschreiben oder unter neuem Namen speichern?</string>

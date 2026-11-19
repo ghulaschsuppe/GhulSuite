@@ -115,7 +115,7 @@ fun GhulSuiteApp(state: AppState) {
                 val undoLabel = stringResource(Res.string.a_undo)
                 val env = org.jetbrains.compose.resources.rememberResourceEnvironment()
                 SideEffect { state.wide = wide; state.undoLabel = undoLabel; state.resEnv.value = env }
-                CompositionLocalProvider(LocalWide provides wide, LocalBusy provides BusyState(state.busy, state.touchNeeded), LocalJobs provides state.jobs) {
+                CompositionLocalProvider(LocalWide provides wide, LocalBusy provides BusyState(state.busy, state.touchNeeded, state.progress), LocalJobs provides state.jobs) {
                     // One place for messages: the main screen on phones shows them above its own bar,
                     // everywhere else this outer host shows them (never both, which doubled every message).
                     val mainHasHost = state.vaultExists && !state.showStart && unlocked

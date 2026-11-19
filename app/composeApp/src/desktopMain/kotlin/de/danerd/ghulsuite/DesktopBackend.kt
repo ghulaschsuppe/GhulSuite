@@ -24,6 +24,9 @@ import kotlin.concurrent.schedule
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+/** A vault file opened on its own is read as a whole: at most as large as the core reads one. */
+private const val MAX_VAULT_FILE_BYTES = 256L * 1024 * 1024
+
 /** Version shown in the app (the MSI version is purely numeric). */
 const val DESKTOP_VERSION = BuildInfo.VERSION
 
@@ -106,6 +109,39 @@ object ShareFiles {
     }
 }
 
+/** Suite files on a file system (Windows; also the desktop tests). */
+object SuiteFiles {
+    fun input(f: File): SuiteInput? = runCatching { f.takeIf { it.isFile }?.let { SuiteInput(it.inputStream(), it.length()) } }.getOrNull()
+
+    /**
+     * Written next to the file first (`<name>.ghltmp`), read back from there, and only then moved
+     * over the old file in one step: a pulled stick or a full disk leaves the old file as it was.
+     */
+    fun writeReplacing(target: File, write: (java.io.OutputStream) -> Unit, check: (SuiteInput) -> Boolean): Boolean {
+        val tmp = File(target.absoluteFile.parentFile, target.name + ".ghltmp")
+        var done = false
+        try {
+            java.io.FileOutputStream(tmp).use { out ->
+                val buffered = java.io.BufferedOutputStream(out, 1 shl 20)
+                write(buffered)
+                buffered.flush()
+                out.fd.sync()
+            }
+            if (!java.io.FileInputStream(tmp).use { check(SuiteInput(it, tmp.length())) }) return false
+            try {
+                java.nio.file.Files.move(tmp.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+            } catch (e: java.nio.file.AtomicMoveNotSupportedException) {
+                java.nio.file.Files.move(tmp.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            }
+            done = true
+            return true
+        } finally {
+            // No half-written temporary file next to the user's file.
+            if (!done) tmp.delete()
+        }
+    }
+}
+
 /** Settings in a small properties file (written atomically). */
 class PropertiesStore(private val file: File) : KeyValueStore {
     private val props = Properties().apply { if (file.exists()) runCatching { file.inputStream().use { load(it) } } }
@@ -159,32 +195,17 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
     override fun storage(): VaultStorage = localStorage(File(DesktopPaths.dataDir, "suite").absolutePath)
 
     override suspend fun readSuiteFile(ref: SuiteFileRef): ByteArray? = withContext(Dispatchers.IO) {
-        runCatching { File(ref.id).takeIf { it.isFile }?.readBytes() }.getOrNull()
+        runCatching { File(ref.id).takeIf { it.isFile && it.length() <= MAX_VAULT_FILE_BYTES }?.readBytes() }.getOrNull()
     }
 
-    override suspend fun canWriteSuiteFile(ref: SuiteFileRef): Boolean = withContext(Dispatchers.IO) {
-        // Written next to it and moved over it: the folder must be writable too.
-        File(ref.id).let { it.canWrite() && it.absoluteFile.parentFile?.canWrite() == true }
-    }
+    override fun openSuiteInput(ref: SuiteFileRef): SuiteInput? = SuiteFiles.input(File(ref.id))
 
-    /** Written next to the file first and moved over it in one step: a pulled stick leaves the old file. */
-    override suspend fun writeSuiteFile(ref: SuiteFileRef, data: ByteArray): Boolean = withContext(Dispatchers.IO) {
-        val target = File(ref.id)
-        val tmp = File(target.parentFile, target.name + ".ghltmp")
-        runCatching {
-            java.io.FileOutputStream(tmp).use { it.write(data); it.fd.sync() }
-            try {
-                java.nio.file.Files.move(tmp.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE)
-            } catch (e: java.nio.file.AtomicMoveNotSupportedException) {
-                java.nio.file.Files.move(tmp.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-            }
-            target.readBytes().contentEquals(data)
-        }.getOrElse {
-            // No half-written temporary file next to the user's file.
-            tmp.delete()
-            false
-        }
-    }
+    override fun writeSuiteStreamed(
+        ref: SuiteFileRef,
+        created: Boolean,
+        write: (java.io.OutputStream) -> Unit,
+        check: (SuiteInput) -> Boolean,
+    ): Boolean = SuiteFiles.writeReplacing(File(ref.id), write, check)
 
     /** Only where no file is: moved without replacing (a file that came back meanwhile stays). */
     override suspend fun createSuiteFile(ref: SuiteFileRef, data: ByteArray): Boolean = withContext(Dispatchers.IO) {

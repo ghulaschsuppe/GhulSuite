@@ -202,10 +202,8 @@ actual fun rememberSaveFile(onSaved: (Boolean) -> Unit): (String, ByteArray) -> 
 }
 
 @Composable
-actual fun rememberOpenSuiteFile(onPicked: (de.danerd.ghulsuite.model.SuiteFileRef, ByteArray) -> Unit): () -> Unit = {
-    chooseOpen()?.let { f ->
-        runCatching { f.readBytes() }.getOrNull()?.let { onPicked(de.danerd.ghulsuite.model.SuiteFileRef(f.absolutePath, f.name), it) }
-    }
+actual fun rememberOpenSuiteFile(onPicked: (de.danerd.ghulsuite.model.SuiteFileRef) -> Unit): () -> Unit = {
+    chooseOpen()?.takeIf { it.isFile }?.let { f -> onPicked(de.danerd.ghulsuite.model.SuiteFileRef(f.absolutePath, f.name)) }
 }
 
 @Composable

@@ -18,47 +18,60 @@ import java.time.ZoneId
  * - a suite file (`.ghlzip`) → opened like "Open suite file" (checked completely first).
  *
  * Invisible: reads what was handed over (while its read permission lasts), then opens
- * [MainActivity] in GhulSuite's own task. After unlocking the appointment is ready.
+ * [MainActivity] in GhulSuite's own task. After unlocking the appointment is ready. A suite file is
+ * not read here (it can be over a gigabyte): MainActivity gets the right to read it and reads it
+ * as a stream when it is opened.
  */
 class IntentEntryActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val intent = intent ?: return finish()
         Thread {
-            runCatching { handle(intent) }
+            val suiteFile = runCatching { handle(intent) }.getOrNull()
             runOnUiThread {
-                startActivity(
-                    Intent(this, MainActivity::class.java)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
-                )
+                val main = Intent(this, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                if (suiteFile != null) {
+                    // The read permission of this activity ends with it: handed on to MainActivity,
+                    // which reads the file later (where Android kept no lasting permission).
+                    main.clipData = android.content.ClipData.newRawUri("", suiteFile)
+                    main.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                startActivity(main)
                 finish()
             }
         }.start()
     }
 
-    private fun handle(intent: Intent) {
+    /** Takes over what was handed over; the suite file's address if it was one (to pass its read permission on). */
+    private fun handle(intent: Intent): Uri? {
         val data = intent.data
         when {
             intent.action == Intent.ACTION_INSERT || intent.action == Intent.ACTION_EDIT ->
                 AppLaunch.newEvent.value = event(intent)
             // A suite file only from a content provider (a file:// path could point at any file of the app).
             intent.action == Intent.ACTION_VIEW && data != null && name(data).endsWith(".ghlzip", ignoreCase = true) ->
-                if (data.scheme == "content") read(data, MAX_SUITE_BYTES)?.let { AppLaunch.suiteFile.value = suiteFile(data, it) }
+                if (foreign(data)) {
+                    AppLaunch.suiteFile.value = suiteFile(data)
+                    return data
+                }
             intent.action == Intent.ACTION_VIEW && data != null ->
                 read(data, MAX_ICS_BYTES)?.let { AppLaunch.icsFile.value = it }
         }
+        return null
     }
 
     /**
      * A suite file handed over. It is remembered for saving only where Android lets GhulSuite
      * keep the right to write it; otherwise "Save as" chooses the place (empty id).
      */
-    private fun suiteFile(uri: Uri, data: ByteArray): de.danerd.ghulsuite.ui.PickedSuiteFile {
+    private fun suiteFile(uri: Uri): de.danerd.ghulsuite.ui.PickedSuiteFile {
         val writable = runCatching {
             contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         }.isSuccess
-        val ref = de.danerd.ghulsuite.model.SuiteFileRef(if (writable) uri.toString() else "", name(uri))
-        return de.danerd.ghulsuite.ui.PickedSuiteFile(ref, data)
+        val name = name(uri)
+        val ref = de.danerd.ghulsuite.model.SuiteFileRef(if (writable) uri.toString() else "", name)
+        return de.danerd.ghulsuite.ui.PickedSuiteFile(ref, de.danerd.ghulsuite.model.SuiteFileRef(uri.toString(), name))
     }
 
     /** "Add to calendar" from other apps (CalendarContract extras). */
@@ -115,7 +128,5 @@ class IntentEntryActivity : Activity() {
 
     companion object {
         private const val MAX_ICS_BYTES = 5 * 1024 * 1024
-        /** A suite with attachments can be large, but not larger than memory allows. */
-        private const val MAX_SUITE_BYTES = 512 * 1024 * 1024
     }
 }

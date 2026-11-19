@@ -295,13 +295,13 @@ val generateHostBindings by tasks.registering(Exec::class) {
 tasks.matching { it.name == "compileTestKotlinDesktop" }.configureEach { dependsOn(generateHostBindings) }
 // Tests through the app's own bindings (package de.danerd.ghulsuite.core) run in a JVM of their
 // own: both binding packages register their callbacks in the same library, the last one wins.
-val appBindingTests = "*SingleBackendTest"
+val appBindingTests = listOf("*SingleBackendTest", "*SuiteFileBackendTest")
 val desktopAppBindingTest by tasks.registering(Test::class) {
     group = "verification"
     description = "Desktop tests through the app's own core bindings (own JVM)."
     dependsOn(generateHostBindings, "desktopTestClasses")
     systemProperty("jna.library.path", hostTargetDir.get().dir("debug").asFile.absolutePath)
-    filter { includeTestsMatching(appBindingTests) }
+    filter { appBindingTests.forEach { includeTestsMatching(it) } }
 }
 afterEvaluate {
     // The same classes and classpath as desktopTest (taken from it, not depending on it).
@@ -317,7 +317,7 @@ tasks.withType<Test>().matching { it.name == "desktopTest" }.configureEach {
     // The layout check renders every screen on several phones (the default of 512 MB is too little).
     maxHeapSize = "2g"
     filter {
-        excludeTestsMatching(appBindingTests)
+        appBindingTests.forEach { excludeTestsMatching(it) }
         isFailOnNoMatchingTests = false
     }
 }

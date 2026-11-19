@@ -165,6 +165,15 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     var touchNeeded by mutableStateOf(false)
         private set
 
+    /** How far the running action is (0 to 1), null when it does not say (shown with the busy indicator). */
+    var progress by mutableStateOf<Float?>(null)
+        private set
+
+    /** For actions that report bytes done and in all (saving or opening a suite file); total 0: not known. */
+    val onProgress: (Long, Long) -> Unit = { done, total ->
+        progress = if (total > 0) (done.toFloat() / total).coerceIn(0f, 1f) else null
+    }
+
     /** Incremented whenever vault content changes, so lists reload. */
     var revision by mutableStateOf(0)
         private set
@@ -787,6 +796,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         // before the coroutine had its first turn (else Save tapped twice saved twice).
         busy = true
         touchNeeded = false
+        progress = null
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             var failure: String? = null
             val result = try {
@@ -799,6 +809,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             } finally {
                 busy = false
                 touchNeeded = false
+                progress = null
             }
             // Only once the action is done: a follow-up action started here (run inside onSuccess)
             // must not find the app busy,
@@ -881,7 +892,7 @@ private suspend fun describeText(e: Throwable): String {
         VaultErrorKind.PROTECTION_OUTDATED -> getString(Res.string.err_protection_outdated)
         VaultErrorKind.SINGLE_BUSY -> getString(Res.string.single_busy)
         VaultErrorKind.SINGLE_PENDING -> getString(Res.string.single_pending_first)
-        VaultErrorKind.STORAGE -> getString(Res.string.err_storage, coreText(e.detail) ?: e.detail)
+        VaultErrorKind.STORAGE -> coreText(e.detail) ?: getString(Res.string.err_storage, e.detail)
         // U5: the core's known details are complete sentences in the app's language.
         VaultErrorKind.INVALID_INPUT -> coreText(e.detail) ?: getString(Res.string.err_input, e.detail)
         VaultErrorKind.SECURITY_KEY_REQUIRED -> getString(Res.string.err_key_required)

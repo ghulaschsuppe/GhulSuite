@@ -41,6 +41,9 @@ class PrefsStore(context: Context) : KeyValueStore {
     override fun putString(key: String, value: String) = prefs.edit().putString(key, value).apply()
 }
 
+/** A vault file opened on its own is read as a whole: at most as large as the core reads one. */
+private const val MAX_VAULT_FILE_BYTES = 256 * 1024 * 1024
+
 /** Android: the working copy in the app's own storage, security key via USB, quick unlock via Keystore. */
 /** How long unlocking waits for a security key to be plugged in. */
 private const val KEY_WAIT_MS = 60_000L
@@ -67,7 +70,61 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
     override fun storage(): VaultStorage = localStorage(File(context.filesDir, "suite").absolutePath)
 
     override suspend fun readSuiteFile(ref: SuiteFileRef): ByteArray? = withContext(Dispatchers.IO) {
-        runCatching { context.contentResolver.openInputStream(Uri.parse(ref.id))?.use { it.readBytes() } }.getOrNull()
+        runCatching {
+            context.contentResolver.openInputStream(Uri.parse(ref.id))?.use { input ->
+                // A vault file is read as a whole: at most as large as the core reads one.
+                val out = java.io.ByteArrayOutputStream()
+                val buf = ByteArray(64 * 1024)
+                while (true) {
+                    val n = input.read(buf)
+                    if (n < 0) break
+                    out.write(buf, 0, n)
+                    if (out.size() > MAX_VAULT_FILE_BYTES) return@runCatching null
+                }
+                out.toByteArray()
+            }
+        }.getOrNull()
+    }
+
+    override fun openSuiteInput(ref: SuiteFileRef): SuiteInput? = runCatching {
+        val uri = Uri.parse(ref.id)
+        val size = runCatching {
+            context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)?.use { c ->
+                if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else 0L
+            }
+        }.getOrNull() ?: 0L
+        context.contentResolver.openInputStream(uri)?.let { SuiteInput(it, size) }
+    }.getOrNull()
+
+    /**
+     * The Storage Access Framework hands over the chosen document only, no folder to write a
+     * temporary file into: the document is truncated and written ("wt"; the provider, a USB stick
+     * or a cloud app, keeps its name and place), then read back. Until then the working copy is
+     * the only complete state and stays marked as unsaved. A document made just for this that
+     * could not be written completely is removed.
+     */
+    override fun writeSuiteStreamed(
+        ref: SuiteFileRef,
+        created: Boolean,
+        write: (java.io.OutputStream) -> Unit,
+        check: (SuiteInput) -> Boolean,
+    ): Boolean {
+        val uri = Uri.parse(ref.id)
+        var ok = false
+        try {
+            val out = context.contentResolver.openOutputStream(uri, "wt") ?: return false
+            out.use { raw ->
+                java.io.BufferedOutputStream(raw, 1 shl 20).use { buffered ->
+                    write(buffered)
+                    buffered.flush()
+                    if (raw is java.io.FileOutputStream) runCatching { raw.fd.sync() }
+                }
+            }
+            ok = openSuiteInput(ref)?.let { input -> input.stream.use { check(input) } } == true
+            return ok
+        } finally {
+            if (!ok && created) runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri) }
+        }
     }
 
     override suspend fun writeSuiteFile(ref: SuiteFileRef, data: ByteArray): Boolean = withContext(Dispatchers.IO) {

@@ -16,8 +16,8 @@ pub mod setup;
 pub mod single;
 pub mod storage;
 pub mod suite;
-
 pub mod tools;
+pub(crate) mod zipstream;
 
 #[cfg(test)]
 mod tests;

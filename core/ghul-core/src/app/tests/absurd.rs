@@ -254,7 +254,7 @@ fn locked_suite_answers_every_call_with_an_error() {
     assert!(s.list_entries(VaultKind::Pass, None).is_err());
     assert!(s.totp_codes(0).is_err());
     assert!(s.cal_calendars().is_err());
-    assert!(s.archive_build("x".into()).is_err());
+    assert!(s.archive_build_bytes("x".into()).is_err());
     // Locking twice, unlocking with nothing.
     s.lock();
     assert!(s.unlock(String::new(), None, None, None, None).is_err());

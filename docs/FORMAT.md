@@ -660,13 +660,28 @@ Die Suite reist als **eine Datei** von Gerät zu Gerät (z. B. auf einem USB-Sti
 kein Zusammenführen: Aktuell ist der Stand, der zuletzt gespeichert wurde. Auf dem Gerät arbeitet die App mit einer
 Arbeitskopie im eigenen Speicher; die Datei wird nur beim Speichern geschrieben und beim Öffnen gelesen.
 
-**Aufbau:** ein ZIP (unkomprimiert gespeichert) mit genau diesen Einträgen, ohne Ordner, jeder Name einmal:
+**Aufbau:** ein ZIP mit genau diesen Einträgen, ohne Ordner, jeder Name einmal, der Kopf als **erster** Eintrag:
 
 ```text
 export.ghlexp        Kopf: Container der Art "export", wie die Tresore geschützt und versiegelt (Abschnitt 4.7)
 suite.ghlsuite       der Suite-Container
-<id>.ghlpss …        jede Tresor- und Bereichsdatei (.ghlpss, .ghltotp, .ghlcal, .ghldrv, .ghlmail)
+<id>.ghlpss …        jede Tresordatei (.ghlpss, .ghltotp, .ghlcal)
 ```
+
+Das ZIP wird als Datenstrom geschrieben und gelesen (nichts davon liegt ganz im Arbeitsspeicher, nichts muss
+springen). Darum ist es in einer festen, einfachen Form geschrieben, und nur diese wird gelesen:
+
+- jeder Eintrag unkomprimiert gespeichert (Methode 0; der Inhalt ist ohnehin verschlüsselt), ohne Verschlüsselung;
+- im lokalen Kopf jedes Eintrags stehen CRC-32 und Größe (keine Data Descriptors, kein ZIP64, kein Extra-Feld);
+  Flags genau `0x0800` (Name in UTF-8), „needed“ 10, Zeit und Datum fest 1980-01-01 00:00;
+- danach das zentrale Verzeichnis, das jeden lokalen Kopf genau wiederholt („made by“ 20, Attribute 0, Offset),
+  und das Ende des Verzeichnisses ohne Kommentar; dahinter nichts.
+
+Jedes ZIP-Programm kann die Datei lesen; eine Datei in anderer Form (komprimiert, von einem anderen Programm neu
+gepackt) ist keine Suite-Datei. Weil der Kopf zuerst kommt, kennt die App beim Öffnen alle SHA-256-Werte, bevor die
+Dateien kommen, und prüft jede, während sie gelesen wird. Für Inhaltsdateien, die schon verschlüsselt auf dem Gerät
+liegen, braucht das Schreiben CRC-32 und SHA-256 vorher (ein Durchgang über die Datei, oder der SHA-256 ist schon
+bekannt); beim Hineinkopieren wird die CRC erneut gerechnet, eine inzwischen geänderte Datei bricht das Schreiben ab.
 
 Der Kopf trägt in `settings.export` (CBOR):
 
@@ -680,27 +695,41 @@ Der Kopf trägt in `settings.export` (CBOR):
 | `epoch` | Schutz-Epoche der Suite (`protection_epoch`, Abschnitt 10) |
 | `time`, `device` | wann und auf welchem Gerät gespeichert (ms, Gerätename) |
 
-**Speichern:** Alle Container werden neu versiegelt, der Kopf mit neuer Stand-ID geschrieben, das ZIP gebaut und an
-die gewählte Stelle geschrieben (unter Windows erst in eine Zwischendatei, die dann in einem Schritt ersetzt; unter
-Android wird zurückgelesen und verglichen). Erst dann gilt die Arbeitskopie als
-gespeichert (eine Änderung, die während des Schreibens geschah, bleibt ungespeichert). Liegt dort schon eine Datei,
-wird sie vorher geprüft: derselbe Stand wie die Arbeitskopie (überschreiben), inzwischen woanders gespeichert oder
-eine andere Suite (Rückfrage: überschreiben oder unter neuem Namen speichern).
+**Speichern:** Alle Container werden neu versiegelt (die Arbeitskopie ist danach dieser Stand), der Kopf mit neuer
+Stand-ID gebaut und das ZIP als Datenstrom an die gewählte Stelle geschrieben, mit Fortschritt. Danach wird die
+geschriebene Datei zurückgelesen und mit Größe und SHA-256 des Geschriebenen verglichen. Erst dann gilt die
+Arbeitskopie als gespeichert (eine Änderung, die während des Schreibens geschah, bleibt ungespeichert); bis dahin
+hält die Arbeitskopie den ganzen Stand, eine halb geschriebene Datei ist also nie die einzige Kopie.
 
-**Öffnen:** Höchstens 512 MiB und 1000 Einträge, beim Lesen gezählt. Geprüft wird vor jeder Änderung auf dem Gerät:
+- Windows: erst in eine Zwischendatei daneben (`<Name>.ghltmp`), die zurückgelesen und erst dann in einem Schritt
+  über die alte Datei geschoben wird. Bricht etwas ab, bleibt die alte Datei unverändert und die Zwischendatei wird
+  gelöscht. Kurzzeitig ist doppelter Platz nötig.
+- Android: Das Storage Access Framework gibt nur das gewählte Dokument frei, keinen Ordner, in dem eine
+  Zwischendatei entstehen könnte. Geschrieben wird darum direkt in das Dokument; ein Abbruch kann dort eine halbe
+  Datei hinterlassen, die beim nächsten Speichern ersetzt wird (die Arbeitskopie hat alles). Ein unter neuem Namen
+  angelegtes Dokument, das nicht vollständig geschrieben werden konnte, wird gelöscht.
 
-1. nur die erlaubten Einträge, keine doppelt, keine Ordner oder Pfade;
-2. der Kopf öffnet mit Passwort und zweitem Faktor, sein Siegel stimmt;
-3. genau die gelisteten Dateien sind da, jede mit ihrem SHA-256, ihrer Art, ihrer `CONTAINER_ID` und derselben
-   `suite_id`; jede öffnet, ihr Siegel stimmt; die Epoche des Suite-Containers ist die des Kopfs.
+Liegt dort schon eine Datei, wird vorher ihr Kopf gelesen: derselbe Stand wie die Arbeitskopie (überschreiben),
+inzwischen woanders gespeichert oder eine andere Suite (Rückfrage: überschreiben oder unter neuem Namen speichern);
+eine leere Datei gilt als keine.
+
+**Öffnen:** Höchstens 1,25 GiB (1 GB Dokumente und die übrigen Tresore) und 1000 Einträge, beim Lesen gezählt,
+gleich was in den Köpfen steht; ein Container höchstens 256 MiB. Die Datei wird einmal als Datenstrom gelesen, mit
+Fortschritt. Geprüft wird vor jeder Änderung auf dem Gerät:
+
+1. die Form oben (abgeschnitten, beschädigt, zu groß, zu viele Einträge: keine Suite-Datei); nur die erlaubten
+   Einträge, keine doppelt, keine Ordner oder Pfade;
+2. der Kopf (erster Eintrag) öffnet mit Passwort und zweitem Faktor, sein Siegel stimmt;
+3. genau die gelisteten Dateien sind da, jede mit ihrem SHA-256 (beim Lesen gerechnet), ihrer Art, ihrer
+   `CONTAINER_ID` und derselben `suite_id`; jede öffnet, ihr Siegel stimmt; die Epoche des Suite-Containers ist
+   die des Kopfs.
 
 Danach vergleicht die App mit dem, was dieses Gerät zuletzt gesehen hat (gemerkt je Suite im Gerätespeicher:
-`archive-seen.json` mit Stand-ID, höchstem Zähler, Epoche und Herkunft; dazu `saved_epoch`, die Epoche der zuletzt
-hier gespeicherten oder geöffneten Datei, auf die ein Schlüsselwechsel wartet):
+`archive-seen.json` mit Stand-ID, höchstem Zähler, Epoche und Herkunft):
 
 | Ergebnis | Bedeutung | App |
 |---|---|---|
-| kleinere Epoche | ein Stand von vor einer Schutzänderung | wird nicht geöffnet (`ProtectionOutdated`) |
+| kleinere Epoche | ein Stand von vor einer Schutzänderung | wird nie geöffnet (`ProtectionOutdated`), auch nicht nach Rückfrage oder mit dem Wiederherstellungscode |
 | keine Suite | noch keine Suite auf dem Gerät | öffnen |
 | andere Suite | eine andere `suite_id` als die Arbeitskopie | Rückfrage, ersetzt alles |
 | gleich, neuer | derselbe Stand, oder er stammt (über `ancestors`) von diesem ab | öffnen |

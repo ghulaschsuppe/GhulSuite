@@ -37,8 +37,14 @@ import org.jetbrains.compose.resources.stringResource
 /** File name suggested for a new suite file. */
 const val SUITE_FILE_NAME = "GhulSuite.ghlzip"
 
-/** A suite file picked to be opened. */
-class PickedSuiteFile(val ref: SuiteFileRef, val data: ByteArray)
+/**
+ * A suite file picked to be opened: read from [source] (as a stream, when it is opened), saved
+ * into [ref] later (an empty id: the app may not write it, "Save as" chooses the place).
+ */
+class PickedSuiteFile(val ref: SuiteFileRef, val source: SuiteFileRef = ref)
+
+/** A vault file picked to be opened on its own or added (small: read as a whole). */
+class PickedVaultFile(val ref: SuiteFileRef, val data: ByteArray)
 
 /** The questions before a checked file replaces the working copy (empty: none). */
 @Composable
@@ -77,7 +83,7 @@ fun OpenSuiteFile(state: AppState, file: PickedSuiteFile, onOpened: () -> Unit, 
     val tooWeak = stringResource(Res.string.setup_pw_too_weak)
     val mismatch = stringResource(Res.string.setup_pw_mismatch)
     LaunchedEffect(file) {
-        catching { backend.archiveProtection(file.data) }.onSuccess { protection = it }.onFailure { error = describe(it) }
+        catching { backend.archiveProtection(file.source) }.onSuccess { protection = it }.onFailure { error = describe(it) }
     }
     val p = protection
     val hasKey = (p?.securityKeys ?: 0) > 0
@@ -140,11 +146,11 @@ fun OpenSuiteFile(state: AppState, file: PickedSuiteFile, onOpened: () -> Unit, 
                     }
                     state.run(onError = { error = it }, block = {
                         if (withCode) {
-                            backend.archiveOpenWithCode(file.data, code, newPassword)
+                            backend.archiveOpenWithCode(file.source, code, newPassword, state.onProgress)
                         } else {
                             backend.archiveOpen(
-                                file.data, password, if (needsKey) pin else null,
-                                if (needsKey) null else keyfile?.bytes, state.onTouchNeeded,
+                                file.source, password, if (needsKey) pin else null,
+                                if (needsKey) null else keyfile?.bytes, state.onTouchNeeded, state.onProgress,
                             )
                         }
                     }) { c -> check = c }
@@ -189,28 +195,30 @@ fun SuiteFileSection(state: AppState) {
     var ref by remember { mutableStateOf(backend.suiteFile()) }
     var error by remember { mutableStateOf<String?>(null) }
     /** The file there was saved elsewhere meanwhile (or is no file of this suite): ask first. */
-    var ask by remember { mutableStateOf<Pair<SuiteFileRef, ArchiveTargetUi>?>(null) }
+    var ask by remember { mutableStateOf<Triple<SuiteFileRef, ArchiveTargetUi, Boolean>?>(null) }
     var opening by remember { mutableStateOf<PickedSuiteFile?>(null) }
     val savedMsg = stringResource(Res.string.file_saved)
     val unreachable = stringResource(Res.string.file_unreachable)
     val notWritten = stringResource(Res.string.file_not_written)
 
-    fun save(target: SuiteFileRef, force: Boolean) {
+    /** [created]: the file was just made for this ("Save as"). */
+    fun save(target: SuiteFileRef, force: Boolean, created: Boolean = false) {
         state.run(onError = { error = it }, block = {
-            val current = backend.readSuiteFile(target)
-            if (current == null && target == backend.suiteFile()) throw VaultException(VaultErrorKind.OTHER, unreachable)
-            val there = backend.archiveTarget(current ?: ByteArray(0))
+            // Only its header is read: is it this working copy's own state?
+            val there = backend.archiveTarget(target)
+            if (there == null && target == backend.suiteFile()) throw VaultException(VaultErrorKind.OTHER, unreachable)
             if (!force && (there == ArchiveTargetUi.CHANGED_ELSEWHERE || there == ArchiveTargetUi.OTHER_SUITE)) {
                 return@run there
             }
-            val built = backend.archiveBuild(deviceInfo())
-            if (!backend.writeSuiteFile(target, built.data)) throw VaultException(VaultErrorKind.OTHER, notWritten)
-            backend.archiveSaved(built.state, built.change)
+            // Built, written and read back as a stream, with progress; only then saved.
+            if (!backend.archiveSave(target, deviceInfo(), created, state.onProgress)) {
+                throw VaultException(VaultErrorKind.OTHER, notWritten)
+            }
             backend.setSuiteFile(target)
             null
         }) { there ->
             if (there != null) {
-                ask = target to there
+                ask = Triple(target, there, created)
             } else {
                 ref = target
                 error = null
@@ -219,8 +227,8 @@ fun SuiteFileSection(state: AppState) {
             }
         }
     }
-    val saveAs = rememberCreateSuiteFile { created -> if (created != null) save(created, force = false) }
-    val openOther = rememberOpenSuiteFile { r, data -> opening = PickedSuiteFile(r, data) }
+    val saveAs = rememberCreateSuiteFile { created -> if (created != null) save(created, force = false, created = true) }
+    val openOther = rememberOpenSuiteFile { r -> opening = PickedSuiteFile(r) }
     // A suite file handed over by another app while unlocked (see AppState.applyLaunch).
     LaunchedEffect(Unit) {
         AppLaunch.suiteFile.collect { f ->
@@ -262,7 +270,7 @@ fun SuiteFileSection(state: AppState) {
         ErrorText(error)
     }
 
-    ask?.let { (target, there) ->
+    ask?.let { (target, there, created) ->
         AlertDialog(
             danger = true,
             onDismissRequest = { ask = null },
@@ -275,7 +283,7 @@ fun SuiteFileSection(state: AppState) {
                 )
             },
             confirmButton = {
-                TextButton(onClick = { ask = null; save(target, force = true) }) { Text(stringResource(Res.string.file_overwrite)) }
+                TextButton(onClick = { ask = null; save(target, force = true, created = created) }) { Text(stringResource(Res.string.file_overwrite)) }
             },
             dismissButton = {
                 TextButton(onClick = { ask = null; saveAs(SUITE_FILE_NAME) }) { Text(stringResource(Res.string.file_save_as)) }

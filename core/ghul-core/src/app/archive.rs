@@ -22,9 +22,12 @@ use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
 
 use super::error::{GhulError, Result};
+use super::storage::StorageError;
 use super::suite::{
     is_vault_file, now_ms, parse_keyfile, put_setting, second_factor, setting, GhulSuite, ProtectionInfo, SUITE_FILE,
 };
+use super::zipstream::{zip_len, EntryInfo, ZipError, ZipReader, ZipWriter, CHUNK};
+use crate::vault::format::MAX_FILE_LEN;
 use crate::vault::{ContainerKind, FactorSecret, LockedContainer, PasswordKey, RecoveryCode, UnlockedContainer};
 use crate::{FidoListener, HidTransport};
 
@@ -40,10 +43,11 @@ const SEEN_FILE: &str = "archive-seen.json";
 const UNSAVED_FILE: &str = "archive-unsaved";
 /// The message for anything that is no `.ghlzip` (translated by the app).
 const NOT_A_SUITE_FILE: &str = "not a GhulSuite file";
-/// Largest `.ghlzip` read (counted while reading, not taken from the ZIP).
-const MAX_ARCHIVE: u64 = 512 * 1024 * 1024;
+/// Largest `.ghlzip` read (counted while reading, not taken from the ZIP): 1 GB of documents
+/// plus the other vaults.
+pub(crate) const MAX_ARCHIVE: u64 = 1280 * 1024 * 1024;
 /// Most entries a `.ghlzip` may have (a suite has a handful of files).
-const MAX_ENTRIES: usize = 1000;
+pub(crate) const MAX_ENTRIES: usize = 1000;
 /// How many earlier states a file and a device remember (to tell newer states from branches).
 const MAX_ANCESTORS: usize = 64;
 
@@ -145,19 +149,48 @@ pub enum ArchiveTarget {
     OtherSuite,
 }
 
-/// A built `.ghlzip`: write `data`, then confirm with `archive_saved(state, change)`.
-#[derive(uniffi::Record, Clone)]
+/// A built `.ghlzip`, written to the sink of `archive_build`: once the file is in place (and
+/// [`archive_written_matches`] found it complete), confirm with `archive_saved(state, change)`.
+#[derive(uniffi::Record, Clone, Debug, PartialEq)]
 pub struct ArchiveBuilt {
-    pub data: Vec<u8>,
     pub state: String,
     /// The change of the working copy it holds: a change made while the file is written is
     /// not in it and stays unsaved.
     pub change: u64,
+    /// Size and SHA-256 (hex) of the whole file as written.
+    pub size: u64,
+    pub sha256: String,
 }
+
+/// A suite file being read: the platform opens it (a path, a document of Android's Storage
+/// Access Framework), the core takes it piece by piece.
+#[uniffi::export(with_foreign)]
+pub trait ArchiveSource: Send + Sync {
+    /// The size in bytes, 0 if not known (only for the progress; the core counts itself).
+    fn size(&self) -> u64;
+    /// Up to `max` next bytes; empty at the end.
+    fn read(&self, max: u32) -> std::result::Result<Vec<u8>, StorageError>;
+}
+
+/// Where a suite file is written to, piece by piece.
+#[uniffi::export(with_foreign)]
+pub trait ArchiveSink: Send + Sync {
+    fn write(&self, data: Vec<u8>) -> std::result::Result<(), StorageError>;
+}
+
+/// How far writing or reading a suite file is.
+#[uniffi::export(with_foreign)]
+pub trait ArchiveProgress: Send + Sync {
+    /// `done` of `total` bytes (`total` 0: not known).
+    fn progress(&self, done: u64, total: u64);
+}
+
+/// The files of a suite file: name and content.
+type Files = Vec<(String, Vec<u8>)>;
 
 /// A checked file waiting for `archive_accept`.
 pub(super) struct Pending {
-    files: Vec<(String, Vec<u8>)>,
+    files: Files,
     header: ArchiveHeader,
     suite_id: [u8; 16],
     /// With the recovery code: the code and the new password (set on accepting).
@@ -166,58 +199,156 @@ pub(super) struct Pending {
     keys: Option<(PasswordKey, FactorSecret)>,
 }
 
-/// The entries of a `.ghlzip`, read with every rule: only plain names, no folders, no entry
-/// twice, sizes counted while reading.
-fn read_zip(data: &[u8]) -> Result<Vec<(String, Vec<u8>)>> {
-    read_zip_limited(data, MAX_ARCHIVE)
+/// An [`ArchiveSource`] as a reader.
+struct SourceReader {
+    source: Arc<dyn ArchiveSource>,
+    buf: Vec<u8>,
+    pos: usize,
 }
 
-/// [`read_zip`] with another size limit (tests).
-pub(crate) fn read_zip_limited(data: &[u8], max: u64) -> Result<Vec<(String, Vec<u8>)>> {
-    // What is wrong stays out of the message: the app names it in plain words.
-    let bad = |_why: &str| GhulError::InvalidInput { msg: NOT_A_SUITE_FILE.into() };
-    let mut z = zip::ZipArchive::new(std::io::Cursor::new(data)).map_err(|_| bad("no ZIP"))?;
-    if z.len() > MAX_ENTRIES {
-        return Err(bad("too many entries"));
+impl SourceReader {
+    fn new(source: Arc<dyn ArchiveSource>) -> Self {
+        SourceReader { source, buf: Vec::new(), pos: 0 }
     }
-    let mut out: Vec<(String, Vec<u8>)> = Vec::new();
-    let mut total = 0u64;
-    for i in 0..z.len() {
-        let mut f = z.by_index(i).map_err(|_| bad("damaged entry"))?;
-        let name = f.name().map_err(|_| bad("entry name"))?.to_string();
-        if f.is_dir()
-            || !super::storage::plain_file_name(&name)
-            || !(name == HEADER_FILE || name == SUITE_FILE || is_vault_file(&name))
-        {
-            return Err(bad("unexpected entry"));
+}
+
+impl Read for SourceReader {
+    fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+        if self.pos == self.buf.len() {
+            self.buf = self.source.read(CHUNK as u32).map_err(std::io::Error::other)?;
+            self.pos = 0;
+            if self.buf.is_empty() {
+                return Ok(0);
+            }
+        }
+        let n = out.len().min(self.buf.len() - self.pos);
+        out[..n].copy_from_slice(&self.buf[self.pos..self.pos + n]);
+        self.pos += n;
+        Ok(n)
+    }
+}
+
+/// An [`ArchiveSink`] as a writer (pieces of up to [`CHUNK`] bytes), hashing what it writes.
+struct SinkWriter {
+    sink: Arc<dyn ArchiveSink>,
+    buf: Vec<u8>,
+    len: u64,
+    sha: Sha256,
+}
+
+impl SinkWriter {
+    fn new(sink: Arc<dyn ArchiveSink>) -> Self {
+        SinkWriter { sink, buf: Vec::with_capacity(CHUNK), len: 0, sha: Sha256::new() }
+    }
+
+    fn send(&mut self) -> std::io::Result<()> {
+        if !self.buf.is_empty() {
+            let piece = std::mem::replace(&mut self.buf, Vec::with_capacity(CHUNK));
+            self.sink.write(piece).map_err(std::io::Error::other)?;
+        }
+        Ok(())
+    }
+}
+
+impl Write for SinkWriter {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        let n = data.len().min(CHUNK - self.buf.len());
+        self.buf.extend_from_slice(&data[..n]);
+        self.sha.update(&data[..n]);
+        self.len += n as u64;
+        if self.buf.len() == CHUNK {
+            self.send()?;
+        }
+        Ok(n)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.send()
+    }
+}
+
+/// Reports progress to the app, at most once per megabyte (and at the end).
+fn reporter(progress: Option<Arc<dyn ArchiveProgress>>, total: u64) -> impl FnMut(u64) + Send + 'static {
+    let mut last = 0u64;
+    move |done| {
+        if let Some(p) = &progress {
+            if done == total || done >= last + CHUNK as u64 || done < last {
+                last = done;
+                p.progress(done, total);
+            }
+        }
+    }
+}
+
+/// What is wrong stays out of the message: the app names it in plain words.
+fn zip_error(e: ZipError) -> GhulError {
+    match e {
+        ZipError::Io(e) => GhulError::Storage { msg: e.to_string() },
+        _ => GhulError::InvalidInput { msg: NOT_A_SUITE_FILE.into() },
+    }
+}
+
+fn not_a_suite_file() -> GhulError {
+    GhulError::InvalidInput { msg: NOT_A_SUITE_FILE.into() }
+}
+
+fn suite_zip(source: Arc<dyn ArchiveSource>, progress: Option<Arc<dyn ArchiveProgress>>) -> ZipReader<SourceReader> {
+    let total = source.size();
+    ZipReader::new(SourceReader::new(source), MAX_ARCHIVE, MAX_ENTRIES, reporter(progress, total))
+}
+
+/// Reads the data of the entry just found, a container (at most [`MAX_FILE_LEN`]).
+fn read_container(z: &mut ZipReader<SourceReader>, e: &EntryInfo) -> Result<(Vec<u8>, String)> {
+    if e.size > MAX_FILE_LEN as u64 {
+        return Err(not_a_suite_file());
+    }
+    let mut data = Vec::with_capacity(e.size as usize);
+    let sha = z.read_entry(&mut data).map_err(zip_error)?;
+    Ok((data, crate::kdf::hex(&sha)))
+}
+
+/// The header, the first entry of a `.ghlzip`.
+fn read_header(z: &mut ZipReader<SourceReader>) -> Result<LockedContainer> {
+    let e = z.next_entry().map_err(zip_error)?.ok_or_else(not_a_suite_file)?;
+    if e.name != HEADER_FILE {
+        return Err(not_a_suite_file());
+    }
+    let (data, _) = read_container(z, &e)?;
+    let l = LockedContainer::parse(&data).map_err(|_| not_a_suite_file())?;
+    if l.kind() != ContainerKind::Export {
+        return Err(not_a_suite_file());
+    }
+    Ok(l)
+}
+
+/// The other entries, read with every rule: only plain names of the suite's files, no folders,
+/// no entry twice, exactly the files the header lists, each with its SHA-256 (checked while
+/// reading, before the next one is read).
+fn read_files(z: &mut ZipReader<SourceReader>, header: &ArchiveHeader) -> Result<Files> {
+    let mut out: Files = Vec::new();
+    while let Some(e) = z.next_entry().map_err(zip_error)? {
+        let name = e.name.clone();
+        if !super::storage::plain_file_name(&name) || !(name == SUITE_FILE || is_vault_file(&name)) {
+            return Err(not_a_suite_file());
         }
         if out.iter().any(|(n, _)| n.eq_ignore_ascii_case(&name)) {
-            return Err(bad("entry twice"));
+            return Err(not_a_suite_file());
         }
-        let mut buf = Vec::new();
-        (&mut f).take(max - total + 1).read_to_end(&mut buf).map_err(|_| bad("damaged entry"))?;
-        total += buf.len() as u64;
-        if total > max {
-            return Err(bad("too large"));
+        let listed = header.files.iter().find(|f| f.name == name).ok_or_else(|| mismatch("a file too many"))?;
+        let (data, sha) = read_container(z, &e)?;
+        if sha != listed.sha256 {
+            return Err(mismatch("a file changed"));
         }
-        out.push((name, buf));
+        out.push((name, data));
+    }
+    if out.len() != header.files.len() {
+        return Err(mismatch("files missing"));
     }
     Ok(out)
 }
 
-fn write_zip(files: &[(String, Vec<u8>)]) -> Result<Vec<u8>> {
-    let err = |e: &dyn std::fmt::Display| GhulError::Storage { msg: e.to_string() };
-    let mut out = std::io::Cursor::new(Vec::new());
-    {
-        let mut z = zip::ZipWriter::new(&mut out);
-        let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        for (n, d) in files {
-            z.start_file(n.as_str(), opts).map_err(|e| err(&e))?;
-            z.write_all(d).map_err(|e| err(&e))?;
-        }
-        z.finish().map_err(|e| err(&e))?;
-    }
-    Ok(out.into_inner())
+fn mismatch(_why: &str) -> GhulError {
+    GhulError::Corrupted { msg: "the suite file does not match its list".into() }
 }
 
 fn sha256_hex(data: &[u8]) -> String {
@@ -228,20 +359,6 @@ fn random_id() -> String {
     let mut id = [0u8; 16];
     OsRng.fill_bytes(&mut id);
     crate::kdf::hex(&id)
-}
-
-/// The header container of the entries.
-fn header_of(files: &[(String, Vec<u8>)]) -> Result<LockedContainer> {
-    let data = files
-        .iter()
-        .find(|(n, _)| n == HEADER_FILE)
-        .map(|(_, d)| d)
-        .ok_or_else(|| GhulError::InvalidInput { msg: NOT_A_SUITE_FILE.into() })?;
-    let l = LockedContainer::parse(data)?;
-    if l.kind() != ContainerKind::Export {
-        return Err(GhulError::InvalidInput { msg: NOT_A_SUITE_FILE.into() });
-    }
-    Ok(l)
 }
 
 /// How the checked containers are opened.
@@ -257,27 +374,24 @@ fn open_container(l: LockedContainer, key: &Key<'_>) -> Result<UnlockedContainer
     })
 }
 
-/// Checks every entry against the header: the same suite everywhere, exactly the listed files
-/// with their kinds, ids and hashes, every container opens (with the password: its seal holds).
-fn verify(files: &[(String, Vec<u8>)], key: &Key<'_>) -> Result<(ArchiveHeader, [u8; 16])> {
-    let mismatch = |_why: &str| GhulError::Corrupted { msg: "the suite file does not match its list".into() };
-    let header_c = open_container(header_of(files)?, key)?;
+/// Reads and checks a whole `.ghlzip` (header from `z` already read as `locked`): the header
+/// opens (with the password: its seal holds), the entries are exactly the listed files with
+/// their hashes, every container belongs to the same suite, has its kind and id and opens.
+fn read_checked(
+    z: &mut ZipReader<SourceReader>,
+    locked: LockedContainer,
+    key: &Key<'_>,
+) -> Result<(Files, ArchiveHeader, [u8; 16])> {
+    let header_c = open_container(locked, key)?;
     let header: ArchiveHeader = setting(&header_c, HEADER_KEY);
     let suite_id = header_c.header().suite_id;
-    let listed: Vec<&str> = header.files.iter().map(|f| f.name.as_str()).collect();
-    let present: Vec<&str> = files.iter().map(|(n, _)| n.as_str()).filter(|n| *n != HEADER_FILE).collect();
-    if listed.len() != present.len() || present.iter().any(|n| !listed.contains(n)) {
-        return Err(mismatch("files missing or too many"));
-    }
-    if !listed.contains(&SUITE_FILE) {
+    if !header.files.iter().any(|f| f.name == SUITE_FILE) {
         return Err(mismatch("no suite file"));
     }
+    let files = read_files(z, &header)?;
     let mut suite_epoch = None;
     for f in &header.files {
-        let data = &files.iter().find(|(n, _)| n == &f.name).expect("checked above").1;
-        if sha256_hex(data) != f.sha256 {
-            return Err(mismatch(&format!("{} changed", f.name)));
-        }
+        let data = &files.iter().find(|(n, _)| n == &f.name).ok_or_else(|| mismatch("missing"))?.1;
         let l = LockedContainer::parse(data)?;
         if l.kind().name() != f.kind || l.header().suite_id != suite_id {
             return Err(mismatch(&format!("{} belongs elsewhere", f.name)));
@@ -296,7 +410,53 @@ fn verify(files: &[(String, Vec<u8>)], key: &Key<'_>) -> Result<(ArchiveHeader, 
     if suite_epoch != Some(header.epoch) {
         return Err(mismatch("protection"));
     }
-    Ok((header, suite_id))
+    Ok((files, header, suite_id))
+}
+
+/// Writes a `.ghlzip` of `files` (the header first). Returns size and SHA-256 of the whole
+/// file.
+fn write_suite_zip(
+    files: &[(String, Vec<u8>)],
+    sink: Arc<dyn ArchiveSink>,
+    progress: Option<Arc<dyn ArchiveProgress>>,
+) -> Result<(u64, String)> {
+    let total = zip_len(files.iter().map(|(n, d)| (n.as_str(), d.len() as u64)));
+    let storage = |e: std::io::Error| GhulError::Storage { msg: e.to_string() };
+    let mut w = ZipWriter::new(SinkWriter::new(sink), reporter(progress, total));
+    for (n, d) in files {
+        w.add_bytes(n, d).map_err(storage)?;
+    }
+    let out = w.finish().map_err(storage)?;
+    Ok((out.len, crate::kdf::hex(&out.sha.finalize())))
+}
+
+/// Whether the file at a place is exactly the one written (`size` bytes with this SHA-256,
+/// from [`ArchiveBuilt`]): read back after writing, before the working copy counts as saved.
+#[uniffi::export]
+pub fn archive_written_matches(
+    source: Arc<dyn ArchiveSource>,
+    size: u64,
+    sha256: String,
+    progress: Option<Arc<dyn ArchiveProgress>>,
+) -> Result<bool> {
+    let mut report = reporter(progress, size);
+    let mut r = SourceReader::new(source);
+    let mut sha = Sha256::new();
+    let mut buf = vec![0u8; CHUNK];
+    let mut len = 0u64;
+    loop {
+        let n = r.read(&mut buf).map_err(|e| GhulError::Storage { msg: e.to_string() })?;
+        if n == 0 {
+            break;
+        }
+        len += n as u64;
+        if len > size {
+            return Ok(false);
+        }
+        sha.update(&buf[..n]);
+        report(len);
+    }
+    Ok(len == size && crate::kdf::hex(&sha.finalize()) == sha256)
 }
 
 impl GhulSuite {
@@ -497,31 +657,33 @@ impl GhulSuite {
 
 #[uniffi::export]
 impl GhulSuite {
-    /// What a `.ghlzip` needs to be opened (password plus key or key file). Checks only that it
-    /// is one; nothing is opened.
-    pub fn archive_protection(&self, data: Vec<u8>) -> Result<ProtectionInfo> {
-        let files = read_zip(&data)?;
-        Ok(super::suite::protection_of(&header_of(&files)?))
+    /// What a `.ghlzip` needs to be opened (password plus key or key file). Reads only its
+    /// header; nothing is opened.
+    pub fn archive_protection(&self, source: Arc<dyn ArchiveSource>) -> Result<ProtectionInfo> {
+        Ok(super::suite::protection_of(&read_header(&mut suite_zip(source, None))?))
     }
 
     /// Opens a `.ghlzip` with the password plus key or key file and checks all of it (see the
     /// module). Nothing is replaced yet: the result says how it relates to this device, then
     /// `archive_accept` takes it. A file with an older protection than this device saw is
-    /// refused (`ProtectionOutdated`).
+    /// refused (`ProtectionOutdated`), whatever else it holds. The file is read once, as a
+    /// stream; `progress` gets the bytes read.
+    #[allow(clippy::too_many_arguments)]
     pub fn archive_open(
         &self,
-        data: Vec<u8>,
+        source: Arc<dyn ArchiveSource>,
         password: String,
         transport: Option<Arc<dyn HidTransport>>,
         listener: Option<Arc<dyn FidoListener>>,
         pin: Option<String>,
         keyfile: Option<Vec<u8>>,
+        progress: Option<Arc<dyn ArchiveProgress>>,
     ) -> Result<ArchiveCheck> {
         let gen = self.pending_gen_now();
         let password = Zeroizing::new(password);
         let pin = pin.map(Zeroizing::new);
-        let files = read_zip(&data)?;
-        let locked = header_of(&files)?;
+        let mut z = suite_zip(source, progress);
+        let locked = read_header(&mut z)?;
         let keyfile = parse_keyfile(keyfile)?;
         let s = second_factor(
             &locked,
@@ -531,7 +693,7 @@ impl GhulSuite {
             keyfile.as_ref(),
         )?;
         let pk = PasswordKey::derive(&password, &locked.header().kdf)?;
-        let (header, suite_id) = verify(&files, &Key::Password(&pk, &s))?;
+        let (files, header, suite_id) = read_checked(&mut z, locked, &Key::Password(&pk, &s))?;
         let check = self.check_of(&header, &suite_id, false)?;
         self.keep_pending(gen, Pending { files, header, suite_id, recovery: None, keys: Some((pk, s)) })?;
         Ok(check)
@@ -540,12 +702,19 @@ impl GhulSuite {
     /// Emergency: opens a `.ghlzip` with the recovery code alone. The seals cannot be checked
     /// without the password (`unverified`); everything else is. On accepting, everything is
     /// written again with `new_password`.
-    pub fn archive_open_with_code(&self, data: Vec<u8>, code: String, new_password: String) -> Result<ArchiveCheck> {
+    pub fn archive_open_with_code(
+        &self,
+        source: Arc<dyn ArchiveSource>,
+        code: String,
+        new_password: String,
+        progress: Option<Arc<dyn ArchiveProgress>>,
+    ) -> Result<ArchiveCheck> {
         let gen = self.pending_gen_now();
         let code = Zeroizing::new(code);
         let parsed = RecoveryCode::parse(&code)?;
-        let files = read_zip(&data)?;
-        let (header, suite_id) = verify(&files, &Key::Code(&parsed))?;
+        let mut z = suite_zip(source, progress);
+        let locked = read_header(&mut z)?;
+        let (files, header, suite_id) = read_checked(&mut z, locked, &Key::Code(&parsed))?;
         let check = self.check_of(&header, &suite_id, true)?;
         self.keep_pending(
             gen,
@@ -614,14 +783,16 @@ impl GhulSuite {
         self.unsaved()
     }
 
-    /// Compares the file at the place the suite is saved to (its content, empty when there is
-    /// none) with the working copy, before overwriting it.
-    pub fn archive_target(&self, data: Vec<u8>) -> Result<ArchiveTarget> {
-        if data.is_empty() {
-            return Ok(ArchiveTarget::New);
-        }
-        let Ok(files) = read_zip(&data) else { return Ok(ArchiveTarget::OtherSuite) };
-        let Ok(locked) = header_of(&files) else { return Ok(ArchiveTarget::OtherSuite) };
+    /// Compares the file at the place the suite is saved to (reading only its header; an empty
+    /// file counts as none) with the working copy, before overwriting it.
+    pub fn archive_target(&self, source: Arc<dyn ArchiveSource>) -> Result<ArchiveTarget> {
+        let mut z = suite_zip(source, None);
+        let locked = match read_header(&mut z) {
+            Ok(l) => l,
+            Err(e @ GhulError::Storage { .. }) => return Err(e),
+            Err(_) if z.position() == 0 => return Ok(ArchiveTarget::New),
+            Err(_) => return Ok(ArchiveTarget::OtherSuite),
+        };
         self.with_open(|o| {
             if locked.header().suite_id != o.suite.header().suite_id {
                 return Ok(ArchiveTarget::OtherSuite);
@@ -640,11 +811,18 @@ impl GhulSuite {
         })
     }
 
-    /// Builds the `.ghlzip` of the working copy: every container sealed again, a new state.
-    /// Write `data` to the file, then confirm with `archive_saved`. `device`: shown when the
-    /// file is opened elsewhere.
-    pub fn archive_build(&self, device: String) -> Result<ArchiveBuilt> {
-        self.with_open(|o| {
+    /// Builds the `.ghlzip` of the working copy into `sink`: every container sealed again, a
+    /// new state. Once the file is in place (and read back with [`archive_written_matches`]),
+    /// confirm with `archive_saved`. `device`: shown when the file is opened elsewhere.
+    /// `progress` gets the bytes written. The open suite is held only while sealing, not while
+    /// the file is written.
+    pub fn archive_build(
+        &self,
+        device: String,
+        sink: Arc<dyn ArchiveSink>,
+        progress: Option<Arc<dyn ArchiveProgress>>,
+    ) -> Result<ArchiveBuilt> {
+        let (files, state, change) = self.with_open(|o| {
             let suite_id = o.suite.header().suite_id;
             let seen = self.seen_all().get(&crate::kdf::hex(&suite_id)).cloned().unwrap_or_default();
             let mine: StateRef = setting(&o.suite, STATE_KEY);
@@ -708,17 +886,18 @@ impl GhulSuite {
                 ancestors,
                 complete,
             };
-            let mut hc = o.new_container(ContainerKind::Export)?;
-            put_setting(&mut hc, HEADER_KEY, &header)?;
-            files.push((HEADER_FILE.to_owned(), hc.seal(&mut OsRng)?));
             // The working copy is this state as well (sealed the same way).
             for (n, d) in &files {
-                if n != HEADER_FILE {
-                    self.storage.write(n.clone(), d.clone())?;
-                }
+                self.storage.write(n.clone(), d.clone())?;
             }
-            Ok(ArchiveBuilt { data: write_zip(&files)?, state, change: self.change() })
-        })
+            let mut hc = o.new_container(ContainerKind::Export)?;
+            put_setting(&mut hc, HEADER_KEY, &header)?;
+            // The header first: opening knows every hash before the files come.
+            files.insert(0, (HEADER_FILE.to_owned(), hc.seal(&mut OsRng)?));
+            Ok((files, state, self.change()))
+        })?;
+        let (size, sha256) = write_suite_zip(&files, sink, progress)?;
+        Ok(ArchiveBuilt { state, change, size, sha256 })
     }
 
     /// The built file was written: this device has this state now. Nothing is unsaved unless
@@ -734,6 +913,92 @@ impl GhulSuite {
         })?;
         self.clear_unsaved_at(change);
         Ok(())
+    }
+}
+
+/// Suite files in memory, for tests.
+#[cfg(test)]
+pub(crate) mod in_memory {
+    use super::*;
+    use std::sync::Mutex;
+
+    /// Reads from bytes, in pieces of the asked size.
+    pub(crate) struct BytesSource(Mutex<(Vec<u8>, usize)>);
+
+    pub(crate) fn source(data: Vec<u8>) -> Arc<dyn ArchiveSource> {
+        Arc::new(BytesSource(Mutex::new((data, 0))))
+    }
+
+    impl ArchiveSource for BytesSource {
+        fn size(&self) -> u64 {
+            self.0.lock().unwrap().0.len() as u64
+        }
+        fn read(&self, max: u32) -> std::result::Result<Vec<u8>, StorageError> {
+            let mut g = self.0.lock().unwrap();
+            let (data, pos) = &mut *g;
+            let n = (max as usize).min(data.len() - *pos);
+            let piece = data[*pos..*pos + n].to_vec();
+            *pos += n;
+            Ok(piece)
+        }
+    }
+
+    /// Collects what is written.
+    #[derive(Default)]
+    pub(crate) struct BytesSink(pub Mutex<Vec<u8>>);
+
+    impl ArchiveSink for BytesSink {
+        fn write(&self, data: Vec<u8>) -> std::result::Result<(), StorageError> {
+            self.0.lock().unwrap().extend_from_slice(&data);
+            Ok(())
+        }
+    }
+
+    /// A built file with its bytes.
+    pub(crate) struct Built {
+        pub data: Vec<u8>,
+        pub state: String,
+        pub change: u64,
+    }
+
+    impl GhulSuite {
+        pub(crate) fn archive_build_bytes(&self, device: String) -> Result<Built> {
+            let sink = Arc::new(BytesSink::default());
+            let b = self.archive_build(device, sink.clone(), None)?;
+            let data = std::mem::take(&mut *sink.0.lock().unwrap());
+            assert_eq!(data.len() as u64, b.size);
+            assert!(archive_written_matches(source(data.clone()), b.size, b.sha256.clone(), None).unwrap());
+            Ok(Built { data, state: b.state, change: b.change })
+        }
+
+        pub(crate) fn archive_protection_bytes(&self, data: Vec<u8>) -> Result<ProtectionInfo> {
+            self.archive_protection(source(data))
+        }
+
+        pub(crate) fn archive_open_bytes(
+            &self,
+            data: Vec<u8>,
+            password: String,
+            transport: Option<Arc<dyn HidTransport>>,
+            listener: Option<Arc<dyn FidoListener>>,
+            pin: Option<String>,
+            keyfile: Option<Vec<u8>>,
+        ) -> Result<ArchiveCheck> {
+            self.archive_open(source(data), password, transport, listener, pin, keyfile, None)
+        }
+
+        pub(crate) fn archive_open_with_code_bytes(
+            &self,
+            data: Vec<u8>,
+            code: String,
+            new_password: String,
+        ) -> Result<ArchiveCheck> {
+            self.archive_open_with_code(source(data), code, new_password, None)
+        }
+
+        pub(crate) fn archive_target_bytes(&self, data: Vec<u8>) -> Result<ArchiveTarget> {
+            self.archive_target(source(data))
+        }
     }
 }
 

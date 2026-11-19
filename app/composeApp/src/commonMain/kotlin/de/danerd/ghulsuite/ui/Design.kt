@@ -21,6 +21,7 @@ import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.a_back
 import de.danerd.ghulsuite.resources.a_lock_now
 import de.danerd.ghulsuite.resources.s_busy
+import de.danerd.ghulsuite.resources.s_busy_percent
 import de.danerd.ghulsuite.resources.s_touch_key
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.layout.height
@@ -319,7 +320,7 @@ fun OutlinedTextField(
 // --- Busy: in front of everything -----------------------------------------------------------------
 
 /** Something is running (state.busy), and whether the security key waits for a touch. */
-class BusyState(val busy: Boolean, val touch: Boolean)
+class BusyState(val busy: Boolean, val touch: Boolean, val progress: Float? = null)
 
 val LocalBusy = androidx.compose.runtime.compositionLocalOf { BusyState(false, false) }
 
@@ -353,10 +354,27 @@ fun BusyOverlay(modifier: Modifier = Modifier) {
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 androidx.compose.material3.CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 3.dp, color = t.accent)
-                Text(
-                    org.jetbrains.compose.resources.stringResource(if (b.touch) Res.string.s_touch_key else Res.string.s_busy),
-                    color = t.fg, fontWeight = FontWeight.SemiBold, fontSize = 16.sp,
-                )
+                val p = b.progress
+                if (p != null && !b.touch) {
+                    // Saving or opening a large suite file: how far it is.
+                    androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            org.jetbrains.compose.resources.stringResource(Res.string.s_busy_percent, "${(p * 100).toInt()} %"),
+                            color = t.fg, fontWeight = FontWeight.SemiBold, fontSize = 16.sp,
+                        )
+                        androidx.compose.material3.LinearProgressIndicator(
+                            progress = { p },
+                            modifier = Modifier.width(180.dp).height(4.dp).clip(RoundedCornerShape(2.dp)),
+                            color = t.accent,
+                            trackColor = t.surface3,
+                        )
+                    }
+                } else {
+                    Text(
+                        org.jetbrains.compose.resources.stringResource(if (b.touch) Res.string.s_touch_key else Res.string.s_busy),
+                        color = t.fg, fontWeight = FontWeight.SemiBold, fontSize = 16.sp,
+                    )
+                }
             }
         }
     }

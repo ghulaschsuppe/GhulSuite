@@ -143,29 +143,47 @@ interface VaultBackend {
     fun generatePassphrase(words: Int, separator: String, capitalize: Boolean, number: Boolean): String = ""
     /** GhulAuth: account as otpauth link (QR export). */
     suspend fun totpUri(vaultId: String, id: String): String = ""
-    // --- The suite file (.ghlzip): opened into the working copy, saved from it
-    /** What a suite file needs to be opened (password plus key or key file). */
-    suspend fun archiveProtection(data: ByteArray): ProtectionUi = throw VaultException(VaultErrorKind.OTHER)
+    // --- The suite file (.ghlzip): opened into the working copy, saved from it. Read and written
+    // as a stream (it can be over a gigabyte); [onProgress] gets bytes done and in all (0: not known).
+    /** What a suite file needs to be opened (password plus key or key file); reads only its header. */
+    suspend fun archiveProtection(file: SuiteFileRef): ProtectionUi = throw VaultException(VaultErrorKind.OTHER)
     /** Opens and checks a suite file; nothing is replaced before [archiveAccept]. */
-    suspend fun archiveOpen(data: ByteArray, password: String, pin: String?, keyfile: ByteArray?, onTouchNeeded: () -> Unit): ArchiveCheckUi =
-        throw VaultException(VaultErrorKind.OTHER)
+    suspend fun archiveOpen(
+        file: SuiteFileRef,
+        password: String,
+        pin: String?,
+        keyfile: ByteArray?,
+        onTouchNeeded: () -> Unit,
+        onProgress: (Long, Long) -> Unit = { _, _ -> },
+    ): ArchiveCheckUi = throw VaultException(VaultErrorKind.OTHER)
     /** Emergency: opens a suite file with the recovery code; on accepting, [newPassword] protects it. */
-    suspend fun archiveOpenWithCode(data: ByteArray, code: String, newPassword: String): ArchiveCheckUi =
-        throw VaultException(VaultErrorKind.OTHER)
+    suspend fun archiveOpenWithCode(
+        file: SuiteFileRef,
+        code: String,
+        newPassword: String,
+        onProgress: (Long, Long) -> Unit = { _, _ -> },
+    ): ArchiveCheckUi = throw VaultException(VaultErrorKind.OTHER)
     fun archiveCancel() {}
     /** Replaces the working copy with the checked file and opens it. */
     suspend fun archiveAccept() {}
     /** The working copy has changes that are not in a file yet. */
     fun archiveUnsaved(): Boolean = false
-    /** The file at the place the suite is saved to, compared with the working copy. */
-    suspend fun archiveTarget(data: ByteArray): ArchiveTargetUi = ArchiveTargetUi.NEW
-    /** Builds the suite file of the working copy; confirm with [archiveSaved] once it is written. */
-    suspend fun archiveBuild(device: String): ArchiveBuiltUi = ArchiveBuiltUi(ByteArray(0), "")
-    suspend fun archiveSaved(state: String, change: Long) {}
+    /** The file at the place the suite is saved to, compared with the working copy; null if it cannot be read. */
+    suspend fun archiveTarget(file: SuiteFileRef): ArchiveTargetUi? = ArchiveTargetUi.NEW
+    /**
+     * Saves the working copy into [target]: built and written as a stream, read back and compared,
+     * only then the working copy counts as saved. False (an error message is up to the caller) when
+     * it could not be written completely; [created]: the file was just made for this ("Save as"),
+     * a failed write removes it again.
+     */
+    suspend fun archiveSave(target: SuiteFileRef, device: String, created: Boolean, onProgress: (Long, Long) -> Unit = { _, _ -> }): Boolean = false
     /** The suite file used last on this device (opened or saved), if any. */
     fun suiteFile(): SuiteFileRef? = null
     fun setSuiteFile(ref: SuiteFileRef?) {}
-    /** Reads / writes a remembered suite file; null / false when it is not reachable (e.g. the stick is out). */
+    /**
+     * Reads / writes a vault file (opened on its own) at a remembered place, as a whole; null / false
+     * when it is not reachable (e.g. the stick is out) or too large for a vault file.
+     */
     suspend fun readSuiteFile(ref: SuiteFileRef): ByteArray? = null
     suspend fun writeSuiteFile(ref: SuiteFileRef, data: ByteArray): Boolean = false
     /** Creates the file anew; false (and nothing changed) if there is one at that place. */
@@ -261,8 +279,6 @@ data class ArchiveCheckUi(
 
 /** The file at the place the suite is saved to. */
 enum class ArchiveTargetUi { NEW, SAME, CHANGED_ELSEWHERE, OTHER_SUITE }
-
-class ArchiveBuiltUi(val data: ByteArray, val state: String, val change: Long = 0)
 
 /** A file picked by the user. */
 class PickedFile(val name: String, val bytes: ByteArray)

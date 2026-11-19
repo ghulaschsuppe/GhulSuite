@@ -313,7 +313,8 @@ class InteractionTest {
     fun aHandedOverSuiteFileOpensOnTheFilePage() = app { state, _ ->
         waitForIdle()
         de.danerd.ghulsuite.ui.AppLaunch.suiteFile.value = de.danerd.ghulsuite.ui.PickedSuiteFile(
-            de.danerd.ghulsuite.model.SuiteFileRef("", "Stick.ghlzip"), ByteArray(64),
+            de.danerd.ghulsuite.model.SuiteFileRef("", "Stick.ghlzip"),
+            de.danerd.ghulsuite.model.SuiteFileRef("/nicht/da/Stick.ghlzip", "Stick.ghlzip"),
         )
         waitUntil(timeoutMillis = 10_000) { state.stack.lastOrNull() == Screen.SettingsPage(SetPage.FILE) }
         waitUntil(timeoutMillis = 10_000) { de.danerd.ghulsuite.ui.AppLaunch.suiteFile.value == null }

@@ -269,9 +269,9 @@ fn run(seed: u64, steps: usize) -> Stats {
                 // The suite goes to another device: its folder becomes a copy, its app starts again.
                 let to = (di + 1 + rng.below(devs.len() - 1)) % devs.len();
                 let before = titles(&s);
-                let built = s.archive_build("Gerät".into()).unwrap();
+                let built = s.archive_build_bytes("Gerät".into()).unwrap();
                 s.archive_saved(built.state, built.change).unwrap();
-                devs[to].s.archive_open(built.data, pw.into(), None, None, None, Some(kf.clone())).unwrap();
+                devs[to].s.archive_open_bytes(built.data, pw.into(), None, None, None, Some(kf.clone())).unwrap();
                 devs[to].s.archive_accept().unwrap();
                 devs[to].s.lock();
                 let fresh = devs[to].dirs.suite();
@@ -303,7 +303,7 @@ fn run(seed: u64, steps: usize) -> Stats {
                 );
             }
             _ => {
-                st.note("save file", s.archive_build("Test".into()).map(|b| b.data.len()));
+                st.note("save file", s.archive_build_bytes("Test".into()).map(|b| b.data.len()));
             }
         }
     }
@@ -313,9 +313,9 @@ fn run(seed: u64, steps: usize) -> Stats {
         if to == di {
             continue;
         }
-        let built = devs[di].s.archive_build("Gerät".into()).unwrap();
+        let built = devs[di].s.archive_build_bytes("Gerät".into()).unwrap();
         devs[di].s.archive_saved(built.state, built.change).unwrap();
-        devs[to].s.archive_open(built.data, pw.into(), None, None, None, Some(kf.clone())).unwrap();
+        devs[to].s.archive_open_bytes(built.data, pw.into(), None, None, None, Some(kf.clone())).unwrap();
         devs[to].s.archive_accept().unwrap();
     }
     let first = titles(&devs[0].s);

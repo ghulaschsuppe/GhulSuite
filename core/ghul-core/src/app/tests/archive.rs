@@ -2,7 +2,10 @@
 //! The suite as one file (`.ghlzip`): opening, saving, what a device notices (older states,
 //! branches, another suite, an older protection) and files changed by someone else.
 
-use super::super::archive::{ArchiveRelation, ArchiveTarget, HEADER_FILE};
+use super::super::archive::{
+    archive_written_matches, in_memory, ArchiveProgress, ArchiveRelation, ArchiveTarget, HEADER_FILE,
+};
+use super::super::zipstream::ZipWriter;
 use super::*;
 use crate::vault::{Keyfile, LockedContainer, RecoveryCode};
 
@@ -20,13 +23,13 @@ fn device_with_suite(name: &str) -> (Dirs, Arc<GhulSuite>, Vec<u8>, String) {
 
 /// Saves the suite into a file and confirms it.
 fn save(s: &GhulSuite) -> Vec<u8> {
-    let built = s.archive_build("Test".into()).unwrap();
+    let built = s.archive_build_bytes("Test".into()).unwrap();
     s.archive_saved(built.state, built.change).unwrap();
     built.data
 }
 
 fn open(s: &GhulSuite, data: &[u8], kf: &[u8]) -> super::super::archive::ArchiveCheck {
-    s.archive_open(data.to_vec(), PW.into(), None, None, None, Some(kf.to_vec())).unwrap()
+    s.archive_open_bytes(data.to_vec(), PW.into(), None, None, None, Some(kf.to_vec())).unwrap()
 }
 
 fn entries(data: &[u8]) -> Vec<(String, Vec<u8>)> {
@@ -41,18 +44,13 @@ fn entries(data: &[u8]) -> Vec<(String, Vec<u8>)> {
         .collect()
 }
 
+/// A ZIP the way the app writes it, of any entries.
 fn zip_of(files: &[(String, Vec<u8>)]) -> Vec<u8> {
-    let mut out = std::io::Cursor::new(Vec::new());
-    {
-        let mut z = zip::ZipWriter::new(&mut out);
-        let o = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        for (n, d) in files {
-            z.start_file(n.as_str(), o).unwrap();
-            std::io::Write::write_all(&mut z, d).unwrap();
-        }
-        z.finish().unwrap();
+    let mut z = ZipWriter::new(Vec::new(), |_| {});
+    for (n, d) in files {
+        z.add_bytes(n, d).unwrap();
     }
-    out.into_inner()
+    z.finish().unwrap()
 }
 
 #[test]
@@ -67,8 +65,8 @@ fn a_suite_goes_to_another_device_and_back() {
     // A new device: nothing there yet.
     let db = Dirs::new("arch-b");
     let b = db.suite();
-    assert_eq!(b.archive_protection(file.clone()).unwrap().keyfiles, 1);
-    let wrong = b.archive_open(file.clone(), "falsch".into(), None, None, None, Some(kf.clone()));
+    assert_eq!(b.archive_protection_bytes(file.clone()).unwrap().keyfiles, 1);
+    let wrong = b.archive_open_bytes(file.clone(), "falsch".into(), None, None, None, Some(kf.clone()));
     assert!(matches!(wrong, Err(GhulError::WrongPassword)));
     let check = open(&b, &file, &kf);
     assert_eq!(check.relation, ArchiveRelation::NoSuite);
@@ -125,10 +123,10 @@ fn a_branch_unsaved_changes_and_another_suite_are_noticed() {
     // A file of another suite.
     let (_dc, c, kfc, _) = device_with_suite("branch-c");
     let other = save(&c);
-    let check = c.archive_open(other.clone(), PW.into(), None, None, None, Some(kfc.clone())).unwrap();
+    let check = c.archive_open_bytes(other.clone(), PW.into(), None, None, None, Some(kfc.clone())).unwrap();
     assert_eq!(check.relation, ArchiveRelation::Same);
     c.archive_cancel();
-    let check = a.archive_open(other, PW.into(), None, None, None, Some(kfc)).unwrap();
+    let check = a.archive_open_bytes(other, PW.into(), None, None, None, Some(kfc)).unwrap();
     assert_eq!(check.relation, ArchiveRelation::OtherSuite);
     a.archive_accept().unwrap();
     assert_eq!(titles(&a), vec!["Bank"], "the other suite replaced everything");
@@ -144,15 +142,15 @@ fn a_file_with_an_older_protection_is_not_opened() {
     b.archive_accept().unwrap();
     // A changes the password: from now on A refuses the old file, also before saving.
     a.change_password(PW.into(), "pw-neu-7890".into()).unwrap();
-    let r = a.archive_open(old.clone(), PW.into(), None, None, None, Some(kf.clone()));
+    let r = a.archive_open_bytes(old.clone(), PW.into(), None, None, None, Some(kf.clone()));
     assert!(matches!(r, Err(GhulError::ProtectionOutdated)), "{r:?}");
-    let newer = a.archive_build("A".into()).unwrap();
+    let newer = a.archive_build_bytes("A".into()).unwrap();
     a.archive_saved(newer.state, newer.change).unwrap();
     // B opens the new file (new password); then the old one is refused there as well.
-    let check = b.archive_open(newer.data, "pw-neu-7890".into(), None, None, None, Some(kf.clone())).unwrap();
+    let check = b.archive_open_bytes(newer.data, "pw-neu-7890".into(), None, None, None, Some(kf.clone())).unwrap();
     assert_eq!(check.relation, ArchiveRelation::Newer);
     b.archive_accept().unwrap();
-    let r = b.archive_open(old.clone(), PW.into(), None, None, None, Some(kf.clone()));
+    let r = b.archive_open_bytes(old.clone(), PW.into(), None, None, None, Some(kf.clone()));
     assert!(matches!(r, Err(GhulError::ProtectionOutdated)), "{r:?}");
     // A device that never saw the newer state opens the old file (it cannot know).
     let dc = Dirs::new("epoch-c");
@@ -163,12 +161,12 @@ fn a_file_with_an_older_protection_is_not_opened() {
 #[test]
 fn saving_over_a_file_saved_elsewhere_is_noticed() {
     let (_da, a, kf, _) = device_with_suite("target-a");
-    assert_eq!(a.archive_target(vec![]).unwrap(), ArchiveTarget::New);
+    assert_eq!(a.archive_target_bytes(vec![]).unwrap(), ArchiveTarget::New);
     let file = save(&a);
-    assert_eq!(a.archive_target(file.clone()).unwrap(), ArchiveTarget::Same);
+    assert_eq!(a.archive_target_bytes(file.clone()).unwrap(), ArchiveTarget::Same);
     // Built but not written: the file there is still "ours".
-    let _unwritten = a.archive_build("A".into()).unwrap();
-    assert_eq!(a.archive_target(file.clone()).unwrap(), ArchiveTarget::Same);
+    let _unwritten = a.archive_build_bytes("A".into()).unwrap();
+    assert_eq!(a.archive_target_bytes(file.clone()).unwrap(), ArchiveTarget::Same);
     // Another device saved over it.
     let db = Dirs::new("target-b");
     let b = db.suite();
@@ -176,11 +174,11 @@ fn saving_over_a_file_saved_elsewhere_is_noticed() {
     b.archive_accept().unwrap();
     b.save_entry(vault_id(&b, "Privat"), login("B", "u", "2")).unwrap();
     let from_b = save(&b);
-    assert_eq!(a.archive_target(from_b).unwrap(), ArchiveTarget::ChangedElsewhere);
+    assert_eq!(a.archive_target_bytes(from_b).unwrap(), ArchiveTarget::ChangedElsewhere);
     // Not a GhulSuite file, another suite.
-    assert_eq!(a.archive_target(b"irgendwas".to_vec()).unwrap(), ArchiveTarget::OtherSuite);
+    assert_eq!(a.archive_target_bytes(b"irgendwas".to_vec()).unwrap(), ArchiveTarget::OtherSuite);
     let (_dc, c, _, _) = device_with_suite("target-c");
-    assert_eq!(a.archive_target(save(&c)).unwrap(), ArchiveTarget::OtherSuite);
+    assert_eq!(a.archive_target_bytes(save(&c)).unwrap(), ArchiveTarget::OtherSuite);
 }
 
 #[test]
@@ -189,8 +187,8 @@ fn the_recovery_code_opens_a_file_unverified_and_sets_a_new_password() {
     let file = save(&a);
     let db = Dirs::new("code-b");
     let b = db.suite();
-    assert!(b.archive_open_with_code(file.clone(), "AAAA-BBBB".into(), "neu-pw-123".into()).is_err());
-    let check = b.archive_open_with_code(file, code, "neu-pw-123".into()).unwrap();
+    assert!(b.archive_open_with_code_bytes(file.clone(), "AAAA-BBBB".into(), "neu-pw-123".into()).is_err());
+    let check = b.archive_open_with_code_bytes(file, code, "neu-pw-123".into()).unwrap();
     assert!(check.unverified);
     b.archive_accept().unwrap();
     assert_eq!(titles(&b), vec!["Bank"]);
@@ -221,7 +219,7 @@ fn changed_files_are_refused() {
     let db = Dirs::new("forge-b");
     let b = db.suite();
     let refused = |files: Vec<(String, Vec<u8>)>, what: &str| {
-        let r = b.archive_open(zip_of(&files), PW.into(), None, None, None, Some(kf.clone()));
+        let r = b.archive_open_bytes(zip_of(&files), PW.into(), None, None, None, Some(kf.clone()));
         assert!(r.is_err(), "{what} was accepted");
         assert!(!b.exists().unwrap(), "{what}: nothing written");
     };
@@ -276,15 +274,15 @@ fn changed_files_are_refused() {
     let header: ciborium::value::Value = serde_json::from_value(header).unwrap();
     super::super::suite::put_setting(&mut hc, "export", &header).unwrap();
     h.1 = hc.seal_without_password(&mut rand_core::OsRng);
-    let r = b.archive_open(zip_of(&forged), PW.into(), None, None, None, Some(kf.clone()));
+    let r = b.archive_open_bytes(zip_of(&forged), PW.into(), None, None, None, Some(kf.clone()));
     assert!(matches!(r, Err(GhulError::Tampered)), "{:?}", r.err());
     // With the code alone it opens (unverified, the emergency case) but shows it.
-    let check = b.archive_open_with_code(zip_of(&forged), code.to_display().to_string(), "x-neu-123".into());
+    let check = b.archive_open_with_code_bytes(zip_of(&forged), code.to_display().to_string(), "x-neu-123".into());
     assert!(check.unwrap().unverified);
     b.archive_cancel();
     // A forged key file slot: the attacker's key file is let in nowhere.
     let evil = Keyfile::parse(&generate_keyfile()).unwrap();
-    assert!(b.archive_open(good.clone(), PW.into(), None, None, None, Some(evil.encode().to_vec())).is_err());
+    assert!(b.archive_open_bytes(good.clone(), PW.into(), None, None, None, Some(evil.encode().to_vec())).is_err());
 }
 
 #[test]
@@ -298,11 +296,11 @@ fn zip_tricks_are_refused() {
     {
         let mut files = base.clone();
         files.push((name.into(), b"x".to_vec()));
-        let r = b.archive_open(zip_of(&files), PW.into(), None, None, None, Some(kf.clone()));
+        let r = b.archive_open_bytes(zip_of(&files), PW.into(), None, None, None, Some(kf.clone()));
         assert!(r.is_err(), "{name} was accepted");
     }
-    assert!(b.archive_open(b"kein zip".to_vec(), PW.into(), None, None, None, Some(kf.clone())).is_err());
-    assert!(b.archive_protection(b"kein zip".to_vec()).is_err());
+    assert!(b.archive_open_bytes(b"kein zip".to_vec(), PW.into(), None, None, None, Some(kf.clone())).is_err());
+    assert!(b.archive_protection_bytes(b"kein zip".to_vec()).is_err());
     // A file that unpacks to much more than it says.
     let mut out = std::io::Cursor::new(Vec::new());
     {
@@ -314,7 +312,7 @@ fn zip_tricks_are_refused() {
         }
         z.finish().unwrap();
     }
-    assert!(super::super::archive::read_zip_limited(&out.into_inner(), 16 * 1024 * 1024).is_err(), "a bomb");
+    assert!(b.archive_open_bytes(out.into_inner(), PW.into(), None, None, None, Some(kf.clone())).is_err(), "a bomb");
     assert!(!b.exists().unwrap());
 }
 
@@ -357,7 +355,7 @@ fn branches_are_noticed_several_saves_apart() {
 #[test]
 fn a_change_while_saving_stays_unsaved() {
     let (_da, a, _kf, _) = device_with_suite("change-a");
-    let built = a.archive_build("A".into()).unwrap();
+    let built = a.archive_build_bytes("A".into()).unwrap();
     a.save_entry(vault_id(&a, "Privat"), login("Dazwischen", "u", "1")).unwrap();
     a.archive_saved(built.state, built.change).unwrap();
     assert!(a.archive_unsaved(), "the change after building is not in the file");
@@ -379,7 +377,7 @@ fn a_damaged_vault_is_not_left_out() {
     st.write(file, data).unwrap();
     a.unlock(PW.into(), None, None, None, Some(kf)).unwrap();
     assert!(!a.list_vaults().unwrap()[0].available);
-    let r = a.archive_build("A".into());
+    let r = a.archive_build_bytes("A".into());
     assert!(matches!(r, Err(GhulError::InvalidInput { .. })), "{:?}", r.err());
 }
 
@@ -405,7 +403,7 @@ fn a_zip_with_too_many_entries_is_refused() {
     let files: Vec<(String, Vec<u8>)> = (0..1001).map(|i| (format!("v{i}.ghlpss"), vec![0u8])).collect();
     let dd = Dirs::new("many");
     let s = dd.suite();
-    let r = s.archive_protection(zip_of(&files));
+    let r = s.archive_protection_bytes(zip_of(&files));
     assert!(matches!(r, Err(GhulError::InvalidInput { .. })));
 }
 
@@ -505,8 +503,145 @@ fn several_saves_behind_is_newer_and_own_files_are_own() {
     assert_eq!(open(&b, &latest, &kf).relation, ArchiveRelation::Newer);
     b.archive_cancel();
     // Built twice without writing: the file there (an older state of A's own line) is A's own.
-    let _ = a.archive_build("A".into()).unwrap();
-    let _ = a.archive_build("A".into()).unwrap();
-    assert_eq!(a.archive_target(latest.clone()).unwrap(), ArchiveTarget::Same);
-    assert_eq!(a.archive_target(first).unwrap(), ArchiveTarget::Same);
+    let _ = a.archive_build_bytes("A".into()).unwrap();
+    let _ = a.archive_build_bytes("A".into()).unwrap();
+    assert_eq!(a.archive_target_bytes(latest.clone()).unwrap(), ArchiveTarget::Same);
+    assert_eq!(a.archive_target_bytes(first).unwrap(), ArchiveTarget::Same);
+}
+
+/// The header is the first entry, everything is stored uncompressed: any ZIP tool lists it.
+#[test]
+fn the_header_comes_first_and_nothing_is_compressed() {
+    let (_da, a, _kf, _) = device_with_suite("layout-a");
+    let file = save(&a);
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(file)).unwrap();
+    assert_eq!(z.by_index(0).unwrap().name().unwrap(), HEADER_FILE);
+    for i in 0..z.len() {
+        assert_eq!(z.by_index(i).unwrap().compression(), zip::CompressionMethod::Stored);
+    }
+}
+
+/// A file cut off anywhere (a pulled stick) or with a damaged entry is refused, and the
+/// working copy stays as it is.
+#[test]
+fn cut_and_damaged_files_are_refused() {
+    let (_da, a, kf, _) = device_with_suite("cut-a");
+    let file = save(&a);
+    let (_db, b, kfb, _) = device_with_suite("cut-b");
+    for cut in [0, 1, 29, 200, file.len() / 2, file.len() - 23, file.len() - 1] {
+        let r = b.archive_open_bytes(file[..cut].to_vec(), PW.into(), None, None, None, Some(kf.clone()));
+        assert!(matches!(r, Err(GhulError::InvalidInput { .. })), "cut at {cut}: {r:?}");
+    }
+    // A changed byte in the data of the last entry (a vault or the suite file): its CRC tells.
+    let mut damaged = file.clone();
+    let at = file.len() - 400;
+    damaged[at] ^= 0x10;
+    assert!(b.archive_open_bytes(damaged, PW.into(), None, None, None, Some(kf.clone())).is_err());
+    let mut longer = file.clone();
+    longer.extend_from_slice(b"mehr");
+    assert!(b.archive_open_bytes(longer, PW.into(), None, None, None, Some(kf.clone())).is_err());
+    // B's own suite is untouched.
+    b.lock();
+    b.unlock(PW.into(), None, None, None, Some(kfb)).unwrap();
+    assert_eq!(titles(&b), vec!["Bank"]);
+    assert_eq!(b.archive_target_bytes(file[..100].to_vec()).unwrap(), ArchiveTarget::OtherSuite);
+}
+
+/// After writing, the file is read back: only exactly the built bytes count as saved.
+#[test]
+fn the_written_file_is_read_back() {
+    let (_da, a, _kf, _) = device_with_suite("written-a");
+    let sink = Arc::new(in_memory::BytesSink::default());
+    let built = a.archive_build("A".into(), sink.clone(), None).unwrap();
+    let data = sink.0.lock().unwrap().clone();
+    let matches =
+        |d: Vec<u8>| archive_written_matches(in_memory::source(d), built.size, built.sha256.clone(), None).unwrap();
+    assert!(matches(data.clone()));
+    assert!(!matches(data[..data.len() - 1].to_vec()), "shorter");
+    let mut longer = data.clone();
+    longer.push(0);
+    assert!(!matches(longer), "longer");
+    let mut changed = data.clone();
+    changed[data.len() / 2] ^= 1;
+    assert!(!matches(changed), "changed");
+    assert!(!matches(Vec::new()), "empty");
+}
+
+#[derive(Default)]
+struct Steps(std::sync::Mutex<Vec<(u64, u64)>>);
+
+impl ArchiveProgress for Steps {
+    fn progress(&self, done: u64, total: u64) {
+        self.0.lock().unwrap().push((done, total));
+    }
+}
+
+/// Building and opening report how far they are, up to the whole size.
+#[test]
+fn progress_is_reported() {
+    let (_da, a, kf, _) = device_with_suite("progress-a");
+    // Some size, so there is more than one step.
+    let big = "x".repeat(3 * 1024 * 1024);
+    let mut e = login("Groß", "u", "1");
+    e.fields.push(FieldData { name: "notes".into(), value: FieldValue::Text { value: big } });
+    a.save_entry(vault_id(&a, "Privat"), e).unwrap();
+    let sink = Arc::new(in_memory::BytesSink::default());
+    let steps = Arc::new(Steps::default());
+    let built = a.archive_build("A".into(), sink.clone(), Some(steps.clone())).unwrap();
+    let written = steps.0.lock().unwrap().clone();
+    assert!(written.len() > 2, "{written:?}");
+    assert!(written.windows(2).all(|w| w[0].0 <= w[1].0));
+    assert_eq!(*written.last().unwrap(), (built.size, built.size));
+
+    let data = sink.0.lock().unwrap().clone();
+    let db = Dirs::new("progress-b");
+    let b = db.suite();
+    let steps = Arc::new(Steps::default());
+    b.archive_open(in_memory::source(data.clone()), PW.into(), None, None, None, Some(kf), Some(steps.clone()))
+        .unwrap();
+    let read = steps.0.lock().unwrap().clone();
+    assert!(read.len() > 2, "{read:?}");
+    assert_eq!(*read.last().unwrap(), (data.len() as u64, data.len() as u64));
+}
+
+/// A sink that cannot be written (a full or pulled stick).
+struct FailingSink;
+
+impl super::super::archive::ArchiveSink for FailingSink {
+    fn write(&self, _data: Vec<u8>) -> Result<(), super::super::storage::StorageError> {
+        Err(super::super::storage::StorageError::Io { msg: "voll".into() })
+    }
+}
+
+/// A source that fails after its first piece.
+struct FailingSource(std::sync::atomic::AtomicBool, Vec<u8>);
+
+impl super::super::archive::ArchiveSource for FailingSource {
+    fn size(&self) -> u64 {
+        0
+    }
+    fn read(&self, max: u32) -> Result<Vec<u8>, super::super::storage::StorageError> {
+        if self.0.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            return Err(super::super::storage::StorageError::Io { msg: "weg".into() });
+        }
+        Ok(self.1[..(max as usize).min(self.1.len())].to_vec())
+    }
+}
+
+/// Writing or reading that fails midway is a storage error, not a broken file; what failed to
+/// be written stays unsaved.
+#[test]
+fn failing_writes_and_reads_are_storage_errors() {
+    let (_da, a, kf, _) = device_with_suite("fail-a");
+    let file = save(&a);
+    a.save_entry(vault_id(&a, "Privat"), login("Neu", "u", "1")).unwrap();
+    let r = a.archive_build("A".into(), Arc::new(FailingSink), None);
+    assert!(matches!(r, Err(GhulError::Storage { .. })), "{:?}", r.err());
+    assert!(a.archive_unsaved());
+    let db = Dirs::new("fail-b");
+    let b = db.suite();
+    let source = Arc::new(FailingSource(Default::default(), file[..64].to_vec()));
+    let r = b.archive_open(source, PW.into(), None, None, None, Some(kf), None);
+    assert!(matches!(r, Err(GhulError::Storage { .. })), "{:?}", r.err());
+    assert!(!b.exists().unwrap());
 }

@@ -93,9 +93,11 @@ private fun keepAccess(context: android.content.Context, uri: Uri) {
 }
 
 @Composable
-actual fun rememberOpenSuiteFile(onPicked: (de.danerd.ghulsuite.model.SuiteFileRef, ByteArray) -> Unit): () -> Unit {
+actual fun rememberOpenSuiteFile(onPicked: (de.danerd.ghulsuite.model.SuiteFileRef) -> Unit): () -> Unit {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    // Nothing is read here: a suite file is read as a stream when it is opened, a vault file as
+    // a whole (see readSuiteFile).
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         ExternalActivity.finished()
         if (uri == null) return@rememberLauncherForActivityResult
@@ -103,13 +105,11 @@ actual fun rememberOpenSuiteFile(onPicked: (de.danerd.ghulsuite.model.SuiteFileR
             val picked = withContext(Dispatchers.IO) {
                 runCatching {
                     keepAccess(context, uri)
-                    val doc = DocumentFile.fromSingleUri(context, uri)
-                    if ((doc?.length() ?: 0) > MAX_FILE_BYTES) return@runCatching null
-                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@runCatching null
-                    de.danerd.ghulsuite.model.SuiteFileRef(uri.toString(), doc?.name ?: uri.lastPathSegment ?: "GhulSuite.ghlzip") to bytes
+                    val name = DocumentFile.fromSingleUri(context, uri)?.name ?: uri.lastPathSegment ?: "GhulSuite.ghlzip"
+                    de.danerd.ghulsuite.model.SuiteFileRef(uri.toString(), name)
                 }.getOrNull()
             }
-            if (picked != null) onPicked(picked.first, picked.second)
+            if (picked != null) onPicked(picked)
         }
     }
     return remember(launcher) {

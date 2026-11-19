@@ -22,3 +22,10 @@ opt-level = 3
 
 [profile.dev.package.blake2]
 opt-level = 3
+
+# The streaming tests of the suite file hash hundreds of megabytes.
+[profile.dev.package.sha2]
+opt-level = 3
+
+[profile.dev.package.crc32fast]
+opt-level = 3

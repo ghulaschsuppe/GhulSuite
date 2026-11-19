@@ -251,6 +251,7 @@
     <string name="quick_7d">7 days</string>
     <string name="quick_8h">8 hours</string>
     <string name="s_busy">Working …</string>
+    <string name="s_busy_percent">Working … %1$s</string>
     <string name="s_touch_key">Touch your security key now</string>
     <string name="set_about">About and help</string>
     <string name="set_add_key_text">Plug in the key. You touch it twice. Afterwards it opens the suite just like your other keys and key files. They stay unchanged.</string>
@@ -1015,7 +1016,8 @@
     <string name="file_hint">The suite file (.ghlzip) holds all vaults, encrypted and sealed. Take it to another device, e.g. on a USB stick, and open it there. Nothing is matched: the state saved last is the current one.</string>
     <string name="file_saved">Saved in %1$s.</string>
     <string name="file_unreachable">The suite file cannot be reached right now (is the USB stick plugged in?). Save to a new place or try again.</string>
-    <string name="file_not_written">The suite file could not be written. The file there is unchanged.</string>
+    <string name="file_not_written">The suite file could not be written completely. Everything is still in the app: save again or to a new place.</string>
+    <string name="file_unreadable">The file cannot be read (is the USB stick plugged in?).</string>
     <string name="file_overwrite_title">Overwrite the file?</string>
     <string name="file_overwrite_changed">The file was saved somewhere else meanwhile. Overwrite it (the changes from there are lost) or save under a new name?</string>
     <string name="file_overwrite_other">There is another suite or no GhulSuite file at this place. Overwrite it or save under a new name?</string>

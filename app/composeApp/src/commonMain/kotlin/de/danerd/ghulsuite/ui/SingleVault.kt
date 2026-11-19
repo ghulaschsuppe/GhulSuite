@@ -43,7 +43,7 @@ import org.jetbrains.compose.resources.stringResource
 @Composable
 fun VaultFileChoice(
     state: AppState,
-    file: PickedSuiteFile,
+    file: PickedVaultFile,
     info: ContainerInfoUi,
     onOnlyThis: () -> Unit,
     onNewSuite: () -> Unit,
@@ -85,7 +85,7 @@ fun VaultFileChoice(
 
 /** Password plus key or key file of the vault; then only this vault is open. */
 @Composable
-fun OpenSingleVault(state: AppState, file: PickedSuiteFile, info: ContainerInfoUi, onCancel: () -> Unit) {
+fun OpenSingleVault(state: AppState, file: PickedVaultFile, info: ContainerInfoUi, onCancel: () -> Unit) {
     val backend = state.backend
     val kind = vaultKindOf(info.kind)
     val hasKey = info.protection.securityKeys > 0

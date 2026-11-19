@@ -776,6 +776,7 @@ dependencies = [
  "cbc",
  "chacha20poly1305",
  "ciborium",
+ "crc32fast",
  "hkdf 0.12.4",
  "hmac 0.12.1",
  "p256",

@@ -45,11 +45,12 @@ expect fun rememberOpenFile(onPicked: (de.danerd.ghulsuite.model.PickedFile) -> 
 expect fun rememberSaveFile(onSaved: (Boolean) -> Unit): (String, ByteArray) -> Unit
 
 /**
- * Returns a launcher that picks a suite file (`.ghlzip`) to open. The app keeps access to it, so
- * it can save into the same file later (Android: a kept document permission; Windows: the path).
+ * Returns a launcher that picks a suite file (`.ghlzip`) or a vault file to open. Nothing is read
+ * yet. The app keeps access to it, so it can save into the same file later (Android: a kept
+ * document permission; Windows: the path).
  */
 @Composable
-expect fun rememberOpenSuiteFile(onPicked: (de.danerd.ghulsuite.model.SuiteFileRef, ByteArray) -> Unit): () -> Unit
+expect fun rememberOpenSuiteFile(onPicked: (de.danerd.ghulsuite.model.SuiteFileRef) -> Unit): () -> Unit
 
 /** Returns a launcher that asks where to save a new suite file (suggested name); null when cancelled. */
 @Composable

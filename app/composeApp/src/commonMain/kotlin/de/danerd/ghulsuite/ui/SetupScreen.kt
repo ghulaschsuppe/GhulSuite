@@ -43,6 +43,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import de.danerd.ghulsuite.model.VaultErrorKind
+import de.danerd.ghulsuite.model.VaultException
 import de.danerd.ghulsuite.model.ContainerInfoUi
 import de.danerd.ghulsuite.model.KdfChoice
 import de.danerd.ghulsuite.model.KeyStatus
@@ -79,7 +81,7 @@ fun ScreenColumn(content: @Composable () -> Unit) {
 @Composable
 fun SetupScreen(state: AppState) {
     var flow by remember { mutableStateOf(Flow.START) }
-    var vaultFile by remember { mutableStateOf<PickedSuiteFile?>(null) }
+    var vaultFile by remember { mutableStateOf<PickedVaultFile?>(null) }
     /** A vault file was picked: ask what to do with it. */
     var choose by remember { mutableStateOf(false) }
     var vaultInfo by remember { mutableStateOf<ContainerInfoUi?>(null) }
@@ -89,20 +91,23 @@ fun SetupScreen(state: AppState) {
     val scope = rememberCoroutineScope()
 
     val isSuiteFile = stringResource(Res.string.start_is_suite_file)
-    val openSuiteFile = rememberOpenSuiteFile { ref, data ->
-        suiteFile = PickedSuiteFile(ref, data)
+    val openSuiteFile = rememberOpenSuiteFile { ref ->
+        suiteFile = PickedSuiteFile(ref)
         error = null
         flow = Flow.OPEN_FILE
     }
     // With access to write: a vault opened on its own goes back into its file.
-    val openFile = rememberOpenSuiteFile { ref, data ->
+    val openFile = rememberOpenSuiteFile { ref ->
         scope.launch {
-            catching { backend.inspectFile(data) }
-                .onSuccess { info ->
+            catching {
+                val data = backend.readSuiteFile(ref) ?: throw VaultException(VaultErrorKind.STORAGE, "the file cannot be read")
+                data to backend.inspectFile(data)
+            }
+                .onSuccess { (data, info) ->
                     if (info.kind == "suite") {
                         error = isSuiteFile
                     } else {
-                        vaultFile = PickedSuiteFile(ref, data)
+                        vaultFile = PickedVaultFile(ref, data)
                         vaultInfo = info
                         error = null
                         choose = true

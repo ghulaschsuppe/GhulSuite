@@ -29,6 +29,9 @@ private val CORE_TEXTS: Map<String, StringResource> = mapOf(
     "server address not found" to Res.string.core_host_not_found,
     "connection refused" to Res.string.core_refused,
     "not a GhulSuite file" to Res.string.file_not_suite,
+    // From the app's own file access (reading or writing a suite file as a stream).
+    "the file cannot be read" to Res.string.file_unreadable,
+    "the file cannot be written" to Res.string.file_not_written,
     "the suite file does not match its list" to Res.string.core_file_mismatch,
     "another state was built meanwhile" to Res.string.core_file_rebuilt,
     "not a GhulPass vault" to Res.string.core_not_pass,

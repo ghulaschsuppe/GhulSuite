@@ -113,9 +113,10 @@ fn event_titles(s: &GhulSuite) -> Vec<String> {
 /// The suite moves to the other device (like on a USB stick): saved into a file there, opened
 /// here; the app here starts again afterwards.
 fn hand_over(from: &Device, to: &mut Device, password: &str, keyfile: &[u8]) {
-    let built = from.suite.archive_build(from.name.into()).unwrap();
+    let built = from.suite.archive_build_bytes(from.name.into()).unwrap();
     from.suite.archive_saved(built.state, built.change).unwrap();
-    let check = to.suite.archive_open(built.data, password.into(), None, None, None, Some(keyfile.to_vec())).unwrap();
+    let check =
+        to.suite.archive_open_bytes(built.data, password.into(), None, None, None, Some(keyfile.to_vec())).unwrap();
     assert!(!check.unsaved_changes, "{} worked on an old copy", to.name);
     to.suite.archive_accept().unwrap();
     to.restart(password, keyfile);
@@ -279,7 +280,7 @@ fn a_month_of_everyday_use_on_two_devices() {
         }
         // Day 20: backup.
         if day == 20 {
-            let built = devices[holder].suite.archive_build("Laptop".into()).unwrap();
+            let built = devices[holder].suite.archive_build_bytes("Laptop".into()).unwrap();
             devices[holder].suite.archive_saved(built.state, built.change).unwrap();
             let data = built.data;
             let count = all_titles(&devices[holder].suite).len();
@@ -333,7 +334,7 @@ fn a_month_of_everyday_use_on_two_devices() {
     let (data, count) = backup.unwrap();
     let fresh = Dirs::new("everyday-restore");
     let restored = fresh.suite();
-    restored.archive_open(data, "Neues-Alltag-pw-15".into(), None, None, None, Some(kf.clone())).unwrap();
+    restored.archive_open_bytes(data, "Neues-Alltag-pw-15".into(), None, None, None, Some(kf.clone())).unwrap();
     restored.archive_accept().unwrap();
     assert_eq!(all_titles(&restored).len(), count);
 
@@ -474,7 +475,7 @@ fn stress_big_suite_on_two_devices() {
         }
     });
     timed("Suite-Datei der großen Suite speichern", 60.0, || {
-        assert!(!a.archive_build("A".into()).unwrap().data.is_empty())
+        assert!(!a.archive_build_bytes("A".into()).unwrap().data.is_empty())
     });
 }
 
@@ -512,7 +513,7 @@ fn stress_parallel_access_from_several_threads() {
                             s.save_entry(pass.clone(), login(&format!("T{t}-{i}"), "u", "p")).unwrap();
                         }
                         2 => {
-                            assert!(!s.archive_build("T".into()).unwrap().data.is_empty());
+                            assert!(!s.archive_build_bytes("T".into()).unwrap().data.is_empty());
                         }
                         3 => {
                             let _ = s.list_entries(VaultKind::Pass, None).unwrap();
