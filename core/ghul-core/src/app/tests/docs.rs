@@ -1336,3 +1336,120 @@ fn deleting_the_working_copy_leaves_nothing_of_the_suite() {
     o.archive_accept().unwrap();
     assert_eq!(read(&o, &v, &x.id).unwrap(), content(300, 1));
 }
+
+// --- review of several GhulDocs vaults: adding never overwrites another vault -------------------
+
+/// a GhulDocs vault that cannot be opened (damaged file) keeps its folder at unlock;
+/// adding a package with the same CONTAINER_ID must not remove that folder or overwrite the file.
+#[test]
+fn adopting_never_removes_a_damaged_docs_vault() {
+    let (d, s, kf, _, v) = docs_suite("audit-p3-damaged");
+    let _old = add(&s, &v, None, "alt.pdf", b"alt");
+    let sink = Arc::new(BytesSink::default());
+    s.docs_export_vault(v.clone(), sink.clone(), None).unwrap();
+    let exported = std::mem::take(&mut *sink.0.lock().unwrap());
+    let newer = add(&s, &v, None, "neu.pdf", b"neu, nicht im Export");
+    let newer_blob_files = content_files(&d, &v);
+    assert_eq!(newer_blob_files.len(), 2);
+    s.lock();
+    // Damage the vault file (one byte in the sealed payload).
+    let file = d.root.join("vault").join(format!("{}.ghldoc", &v[..16]));
+    let mut bytes = std::fs::read(&file).unwrap();
+    let n = bytes.len();
+    bytes[n - 40] ^= 1;
+    std::fs::write(&file, &bytes).unwrap();
+    let damaged_copy = bytes.clone();
+    s.unlock(PW.into(), None, None, None, Some(kf.clone())).unwrap();
+    assert_eq!(content_files(&d, &v).len(), 2, "unlock keeps the folder of the damaged vault");
+    let r = s.docs_adopt_vault(source(exported), "".into(), PW.into(), None, None, None, Some(kf.clone()), None);
+    let after = content_files(&d, &v);
+    assert_eq!(after, newer_blob_files, "its documents are all still there");
+    assert_eq!(std::fs::read(&file).unwrap(), damaged_copy, "the damaged vault file is kept as it was");
+    let _ = newer;
+    assert!(matches!(r, Err(GhulError::AlreadyExists)), "adopted over a damaged vault: {r:?}, files {after:?}");
+}
+
+/// Gives `pre` first, then OS randomness.
+struct Prefixed(Vec<u8>);
+impl rand_core::RngCore for Prefixed {
+    fn next_u32(&mut self) -> u32 {
+        let mut b = [0u8; 4];
+        self.fill_bytes(&mut b);
+        u32::from_le_bytes(b)
+    }
+    fn next_u64(&mut self) -> u64 {
+        let mut b = [0u8; 8];
+        self.fill_bytes(&mut b);
+        u64::from_le_bytes(b)
+    }
+    fn fill_bytes(&mut self, dest: &mut [u8]) {
+        let n = dest.len().min(self.0.len());
+        dest[..n].copy_from_slice(&self.0[..n]);
+        self.0.drain(..n);
+        rand_core::OsRng.fill_bytes(&mut dest[n..]);
+    }
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand_core::Error> {
+        self.fill_bytes(dest);
+        Ok(())
+    }
+}
+impl rand_core::CryptoRng for Prefixed {}
+
+/// a package whose CONTAINER_ID shares the first 8 bytes with a vault of the suite
+/// (the file name has only 16 hex characters) is added next to it and writes the same file.
+#[test]
+fn adopting_never_overwrites_a_vault_with_the_same_file_name() {
+    use crate::vault::container::{KdfCost, SuiteKeys};
+    use crate::vault::{ContainerKind, Keyfile};
+    use rand_core::OsRng;
+    let (d, s, kf, _, v) = docs_suite("audit-p3-collide");
+    let doc = add(&s, &v, None, "wichtig.pdf", b"wichtiger Inhalt");
+    let vfile = d.root.join("vault").join(format!("{}.ghldoc", &v[..16]));
+    let before = std::fs::read(&vfile).unwrap();
+    // The attacker knows v (it is in every suite file: docs-<v>/...): same first 8 bytes.
+    let mut id = unhex(&v);
+    id[15] ^= 0xff;
+    let akf = generate_keyfile();
+    let keys = SuiteKeys::create(
+        "attacker-pw-1",
+        KdfCost { memory_kib: 64 * 1024, iterations: 3, parallelism: 1 },
+        &mut OsRng,
+    )
+    .unwrap();
+    let parsed = Keyfile::parse(&zeroize::Zeroizing::new(akf.clone())).unwrap();
+    let slot = keys.keyfile_slot(&parsed, &mut OsRng);
+    let mut c = keys.create_container(ContainerKind::Docs, vec![slot], &mut Prefixed(id.clone())).unwrap();
+    c.add_recovery_slot("x", 0, &mut OsRng).unwrap();
+    let vid = crate::kdf::hex(&c.container_id());
+    assert_ne!(vid, v);
+    assert_eq!(&vid[..16], &v[..16]);
+    let data = c.seal(&mut OsRng).unwrap();
+    let pkg = zip_of(&[(format!("{}.ghldoc", &vid[..16]), data)]);
+    let r =
+        s.docs_adopt_vault(source(pkg), "Geschenk".into(), "attacker-pw-1".into(), None, None, None, Some(akf), None);
+    assert_eq!(std::fs::read(&vfile).unwrap(), before, "the vault file is not overwritten");
+    s.lock();
+    s.unlock(PW.into(), None, None, None, Some(kf.clone())).unwrap();
+    assert_eq!(read(&s, &v, &doc.id).unwrap(), b"wichtiger Inhalt");
+    assert!(matches!(r, Err(GhulError::AlreadyExists)), "a package with a colliding file name was added: {r:?}");
+}
+
+/// A vault removed while a suite file is written keeps its folder until the copy ended: added
+/// again meanwhile, it is refused (nothing would be left of it afterwards); once the copy ended,
+/// it comes back with its documents and keeps them.
+#[test]
+fn a_vault_added_again_while_saving_never_loses_its_documents() {
+    let (_d, s, kf, _, v) = docs_suite("readopt-while-saving");
+    let x = add(&s, &v, None, "x.pdf", b"hello");
+    let sink = Arc::new(BytesSink::default());
+    s.docs_export_vault(v.clone(), sink.clone(), None).unwrap();
+    let pkg = std::mem::take(&mut *sink.0.lock().unwrap());
+    let copy = s.content_copy();
+    s.remove_vault(v.clone()).unwrap();
+    let r = s.docs_adopt_vault(source(pkg.clone()), "".into(), PW.into(), None, None, None, Some(kf.clone()), None);
+    assert!(matches!(r, Err(GhulError::AlreadyExists)), "{r:?}");
+    drop(copy);
+    let id = s.docs_adopt_vault(source(pkg), "".into(), PW.into(), None, None, None, Some(kf), None).unwrap();
+    assert_eq!(id, v);
+    assert_eq!(read(&s, &v, &x.id).unwrap(), b"hello");
+}

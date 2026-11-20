@@ -591,9 +591,15 @@ impl GhulSuite {
         let add = Usage::of(&c.payload.entries);
         let limit = self.docs_limit();
         let vid = vid.as_str();
+        let root_dir = root.clone();
         let fits = move |o: &mut crate::app::suite::Open| {
             crate::app::single::refuse_single(o)?;
-            if o.vaults.iter().any(|v| v.reference.id == vid) {
+            // The same vault, a vault with the same file name (only half the id is in it), or
+            // documents of a vault that cannot be read: never overwritten or removed.
+            if o.vaults.iter().any(|v| v.reference.id == vid)
+                || self.vault_file_taken(o, &file_name(VaultKind::Docs, vid))?
+                || root_dir.join(format!("{DIR_PREFIX}{vid}")).exists()
+            {
                 return Err(GhulError::AlreadyExists);
             }
             check_room(room(o, None), add, limit)

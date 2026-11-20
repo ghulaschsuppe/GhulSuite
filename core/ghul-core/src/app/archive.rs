@@ -506,7 +506,9 @@ pub(super) fn archive_len(files: &[(String, Vec<u8>)], contents: &[ContentFile])
             .map(|(n, d)| (n.as_str(), d.len() as u64))
             .chain(contents.iter().map(|c| (c.name.as_str(), c.len))),
     );
-    if total > limits().0 {
+    // As many entries as are read at most (a vault file each, a content file each): a file with
+    // more could never be opened.
+    if total > limits().0 || files.len() + contents.len() > MAX_ENTRIES {
         return Err(GhulError::InvalidInput { msg: "the suite file would be too large".into() });
     }
     Ok(total)
@@ -1299,9 +1301,21 @@ mod pending_tests {
         let full = stored_limit(DOCS_SUITE_LIMIT) + entries + OTHER_LIMIT + vaults;
         assert!(full <= MAX_ARCHIVE, "{full} > {MAX_ARCHIVE}");
         // The ZIP has 32-bit offsets and sizes (no ZIP64): the largest file and its central
-        // directory (every entry with a name of at most 64 bytes) stay below 4 GiB.
-        let central = (MAX_ENTRIES as u64) * (46 + 64) + 22;
+        // directory (every entry with a name of at most 80 bytes: `docs-<32>/<32>.ghlblob` is 78)
+        // stay below 4 GiB.
+        let central = (MAX_ENTRIES as u64) * (46 + 80) + 22;
         assert!(MAX_ARCHIVE + central < u64::from(u32::MAX), "{MAX_ARCHIVE} + {central}");
+    }
+
+    /// A file with more entries than are read is not written either.
+    #[test]
+    fn a_file_with_too_many_entries_is_not_written() {
+        let many: Vec<(String, Vec<u8>)> = (0..=MAX_ENTRIES).map(|i| (format!("{i:032x}.ghlpss"), vec![1])).collect();
+        assert!(matches!(
+            archive_len(&many, &[]),
+            Err(GhulError::InvalidInput { msg }) if msg == "the suite file would be too large"
+        ));
+        assert!(archive_len(&many[..MAX_ENTRIES], &[]).is_ok());
     }
 
     /// A file larger than is read is not written at all (nothing reaches the sink).

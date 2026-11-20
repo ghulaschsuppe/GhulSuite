@@ -1023,6 +1023,11 @@ impl GhulSuite {
             super::archive::check_other_room(o, super::archive::container_weight(&c)?)?;
         }
         let file = file_name(kind, &id);
+        // The file name holds only the first half of the id: another vault (one listed, or a
+        // damaged one that is only in the folder) with that name is never overwritten.
+        if self.vault_file_taken(o, &file)? {
+            return Err(GhulError::AlreadyExists);
+        }
         let name = vault_name(&c, &file);
         let reference = VaultRef { id: id.clone(), kind: kind.container().name().into(), name, file: file.clone() };
         o.vaults.push(OpenVault { reference, container: Some(c) });
@@ -1039,6 +1044,15 @@ impl GhulSuite {
             return Err(e);
         }
         Ok(id)
+    }
+
+    /// Whether a vault file `file` is there already: listed in the open suite, or in the folder
+    /// (e.g. a vault that cannot be read and is kept as it is).
+    pub(super) fn vault_file_taken(&self, o: &Open, file: &str) -> Result<bool> {
+        if o.vaults.iter().any(|v| v.reference.file == file) {
+            return Ok(true);
+        }
+        Ok(self.storage.list()?.iter().any(|n| n == file))
     }
 
     /// Switches a vault opened with another protection to this suite's password, keys and
