@@ -804,11 +804,32 @@ fn take(name: &str, file: Vec<u8>, kf: &[u8]) -> (Dirs, Arc<GhulSuite>) {
     (d, s)
 }
 
-/// Sets the modification time of everything directly in `dir` to three days ago.
+/// Sets the modification time of everything directly in `dir` (files and folders) to three days
+/// ago.
 fn backdate(dir: &std::path::Path) {
     let then = std::time::SystemTime::now() - std::time::Duration::from_secs(3 * 24 * 3600);
     for e in std::fs::read_dir(dir).unwrap().flatten() {
-        std::fs::File::open(e.path()).unwrap().set_modified(then).unwrap();
+        open_for_times(&e.path()).unwrap().set_modified(then).unwrap();
+    }
+}
+
+/// Opens a file or folder so its times can be set. Windows opens a folder only with
+/// FILE_FLAG_BACKUP_SEMANTICS and sets times only with FILE_WRITE_ATTRIBUTES access; a plain
+/// `File::open` is refused there ("Access is denied").
+fn open_for_times(path: &std::path::Path) -> std::io::Result<std::fs::File> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_WRITE_ATTRIBUTES: u32 = 0x0100;
+        const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+        std::fs::OpenOptions::new()
+            .access_mode(FILE_WRITE_ATTRIBUTES)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+            .open(path)
+    }
+    #[cfg(not(windows))]
+    {
+        std::fs::File::open(path)
     }
 }
 
