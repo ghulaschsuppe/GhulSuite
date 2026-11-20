@@ -1,6 +1,6 @@
 # GhulSuite: Dateiformat, Version 3
 
-**Stand:** 20.11.2026 (Version 3: jede Datei trägt ein Schreibsiegel, das nur mit dem Passwort entsteht; nur noch Keys und Schlüsseldateien mit öffentlichem Schlüssel. Ältere Versionen werden nicht mehr gelesen. Seit dem Umbau zu GhulDocs ohne GhulDrive, GhulMail, Server und Freigaben) · gilt für `.ghlpss`, `.ghltotp`, `.ghlcal`, `.ghldoc`, `.ghlsuite` und `.ghlkey`, dazu die Inhaltsdateien `.ghlblob` von GhulDocs (Abschnitt 11), die Suite-Datei `.ghlzip` und das GhulDocs-Paket `.ghldocs` (Abschnitt 10)
+**Stand:** 20.11.2026 (Version 3: jede Datei trägt ein Schreibsiegel, das nur mit dem Passwort entsteht; nur noch Keys und Schlüsseldateien mit öffentlichem Schlüssel. Ältere Versionen werden nicht mehr gelesen. Seit dem Umbau zu GhulDocs ohne GhulDrive, GhulMail, Server und Freigaben; seit 20.11.2026 mehrere GhulDocs-Tresore je Suite und Suite-Dateien bis 3,75 GiB) · gilt für `.ghlpss`, `.ghltotp`, `.ghlcal`, `.ghldoc`, `.ghlsuite` und `.ghlkey`, dazu die Inhaltsdateien `.ghlblob` von GhulDocs (Abschnitt 11), die Suite-Datei `.ghlzip` und das GhulDocs-Paket `.ghldocs` (Abschnitt 10)
 **Referenzimplementierung:** `core/ghul-core/src/vault/`
 **Testvektoren:** [`docs/testvectors/container-v3.json`](testvectors/container-v3.json) und
 [`docs/testvectors/docs-blob-v1.json`](testvectors/docs-blob-v1.json) (Inhaltsdateien), unabhängig geprüft mit
@@ -518,11 +518,13 @@ Arbeitskopie als gespeichert (eine Änderung, die während des Schreibens gescha
 hält die Arbeitskopie den ganzen Stand, eine halb geschriebene Datei ist also nie die einzige Kopie.
 
 Vor dem Schreiben wird die Größe der ganzen Datei berechnet: Wäre sie größer als beim Öffnen gelesen wird
-(1,25 GiB), wird nichts geschrieben (Fehler „die Suite-Datei wäre zu groß“), und die Arbeitskopie behält ihren
+(3,75 GiB), wird nichts geschrieben (Fehler „die Suite-Datei wäre zu groß“), und die Arbeitskopie behält ihren
 Stand. Damit es im Alltag nicht dazu kommt, dürfen die Tresore neben GhulDocs und die Suite-Datei zusammen höchstens
 **200 MiB** belegen (geschätzt aus ihrem Inhalt, je Container 64 KiB dazu); geprüft beim Hinzufügen von Anhängen, beim
-Kopieren eines Eintrags mit Anhängen und beim Hinzufügen eines Tresors. Ein volles GhulDocs (Abschnitt 11.3) und
-diese 200 MiB passen mit den ZIP-Einträgen immer in 1,25 GiB.
+Kopieren eines Eintrags mit Anhängen und beim Hinzufügen eines Tresors. Volle GhulDocs-Tresore (Abschnitt 11.3,
+zusammen höchstens 3,3 GB Inhaltsdateien) und diese 200 MiB passen mit den ZIP-Einträgen immer in 3,75 GiB. Das bleibt
+unter 4 GiB: Die ZIP hat kein ZIP64 (Größen und Abstände mit 32 Bit), und FAT32-Datenträger nehmen Dateien bis
+4 GiB.
 
 Inhaltsdateien, die während des Schreibens endgültig gelöscht werden (Papierkorb leeren, „Endgültig löschen“,
 Tresor entfernen), bleiben auf dem Datenträger, bis die Datei fertig geschrieben ist, und werden erst dann gelöscht:
@@ -541,17 +543,15 @@ Liegt dort schon eine Datei, wird vorher ihr Kopf gelesen: derselbe Stand wie di
 inzwischen woanders gespeichert oder eine andere Suite (Rückfrage: überschreiben oder unter neuem Namen speichern);
 eine leere Datei gilt als keine.
 
-**Öffnen:** Höchstens 1,25 GiB (1 GB Dokumente und die übrigen Tresore, dieselbe Grenze wie beim Schreiben) und
-21 000 Einträge (bis zu 20 000
-Dokumente und die Tresore), beim Lesen gezählt,
+**Öffnen:** Höchstens 3,75 GiB (3 GB Dokumente in allen GhulDocs-Tresoren und die übrigen Tresore, dieselbe Grenze
+wie beim Schreiben) und 21 000 Einträge (bis zu 20 000 Dokumente und die Tresore), beim Lesen gezählt,
 gleich was in den Köpfen steht; ein Container höchstens 256 MiB. Die Datei wird einmal als Datenstrom gelesen, mit
 Fortschritt. Geprüft wird vor jeder Änderung auf dem Gerät:
 
 1. die Form oben (abgeschnitten, beschädigt, zu groß, zu viele Einträge: keine Suite-Datei); nur die erlaubten
    Einträge, keine doppelt, keine Ordner und keine anderen Pfade als die der Inhaltsdateien; ist der erste Eintrag
    ein GhulDocs-Tresor, ist die Datei ein GhulDocs-Paket und keine Suite-Datei (Fehler, der das sagt);
-2. der Kopf (erster Eintrag) öffnet mit Passwort und zweitem Faktor, sein Siegel stimmt; er listet höchstens einen
-   GhulDocs-Tresor (eine Suite hat nur einen, Abschnitt 11), sonst ist die Datei ungültig;
+2. der Kopf (erster Eintrag) öffnet mit Passwort und zweitem Faktor, sein Siegel stimmt;
 3. genau die gelisteten Dateien sind da, jede mit ihrem SHA-256 (beim Lesen gerechnet), ihrer Art, ihrer
    `CONTAINER_ID` und derselben `suite_id`; jede öffnet, sobald sie gelesen ist, ihr Siegel stimmt; die Epoche des
    Suite-Containers ist die des Kopfs;
@@ -599,32 +599,24 @@ docs-<Tresor-ID>/<Inhalts-ID>.ghlblob  genau seine Inhaltsdateien
 
 Geprüft wird wie oben (Punkte 1, 3 und 4): der Tresor öffnet mit seinem Passwort und zweitem Faktor, sein Siegel
 stimmt, sein Name passt zu seiner `CONTAINER_ID`, und es folgen genau seine Inhaltsdateien mit ihrem SHA-256.
-Gespeichert wird er entweder mit dem Schutz der Suite (wie eine exportierte Tresordatei) oder mit eigenem Passwort,
-neuer Schlüsseldatei oder eigenem Security Key und neuem Wiederherstellungscode (weitergeben, auch nur ausgewählte
-Ordner und Dateien). Die Inhaltsdateien werden dabei unverändert kopiert, ihre Schlüssel stehen im neuen
-Inhaltsverzeichnis. Der Empfänger öffnet ihn für sich (eigene, vorübergehende Arbeitskopie, Zurückschreiben in
-dieselbe Form) oder fügt ihn seiner Suite hinzu:
+Gespeichert wird er entweder mit dem Schutz der Suite (`docs_export_vault`, wie eine exportierte Tresordatei) oder
+mit eigenem Passwort, neuer Schlüsseldatei oder eigenem Security Key und neuem Wiederherstellungscode
+(`docs_share_vault`: weitergeben, der ganze Tresor ohne Papierkorb oder nur ausgewählte Ordner und Dateien). Die
+Inhaltsdateien werden dabei unverändert kopiert, ihre Schlüssel stehen im neuen Inhaltsverzeichnis. Der Empfänger
+öffnet ihn für sich (eigene, vorübergehende Arbeitskopie, Zurückschreiben in dieselbe Form) oder fügt ihn seiner
+Suite hinzu.
 
-- **Die Suite hat noch keinen GhulDocs-Tresor:** Das Paket wird ihr GhulDocs-Tresor; er bekommt den Schutz der Suite
-  und einen neuen Container-Schlüssel.
-- **Die Suite hat einen:** Der Inhalt des Pakets kommt in ihn, in einen neuen Ordner auf der obersten Ebene, benannt
-  nach dem Paket (oder dem Namen, den der Nutzer wählt; ein vergebener Name bekommt eine Nummer). Jeder Ordner und jede
-  Datei bekommt eine neue `id`, die Ordnung darunter bleibt, ebenso Papierkorb und Favoriten. Die Inhaltsdateien
-  werden nach der Prüfung unverändert in den Ordner des Tresors verschoben (ihre Schlüssel stehen im
-  Inhaltsverzeichnis), dann wird das Inhaltsverzeichnis gespeichert; scheitert das, bleibt es, wie es war, und die
-  verschobenen Inhaltsdateien werden gelöscht. Steht eine Inhaltsdatei des Pakets schon im Tresor (dasselbe Paket
-  noch einmal), wird nichts übernommen (`AlreadyExists`).
-- **Die Suite hat einen, und der Nutzer will ihn ersetzen** (`docs_replace_vault`, in der App „Vorhandenes GhulDocs
-  sichern und ersetzen“ bzw. „… löschen und ersetzen“; Sichern ist ein GhulDocs-Paket mit dem Schutz der Suite,
-  geschrieben, zurückgelesen und verglichen, bevor ersetzt wird): Das Paket wird geprüft und seine Inhaltsdateien in
-  einen Zwischenordner gelegt, dann bekommt der Tresor den Schutz der Suite und einen neuen Container-Schlüssel,
-  seine Inhaltsdateien kommen an ihren Platz und seine Tresordatei wird geschrieben. Erst danach wird die alte
-  Tresordatei gelöscht und mit ihr die alten Inhaltsdateien (auch die im Papierkorb). Scheitert vorher etwas, bleibt
-  der alte Tresor, wie er war. Ein Paket desselben Tresors (ein früher gesicherter Stand) ersetzt ihn ebenso; die
-  alten Inhaltsdateien liegen dann bis zum Ende in einem Zwischenordner.
-
-In allen Fällen zählen seine Dokumente zu den Grenzen (Abschnitt 11.3), geprüft bevor etwas kopiert wird; beim
-Ersetzen nur die des Pakets (der alte Tresor geht).
+**Hinzufügen** (`docs_adopt_vault`): Das Paket wird **immer ein eigener GhulDocs-Tresor** der Suite, wie
+`adopt_vault` bei den anderen Tresoren, gleich wie viele GhulDocs-Tresore sie schon hat. Es wird einmal mit seinem
+eigenen Passwort und zweitem Faktor geöffnet und bekommt den Schutz der Suite und neue Schlüssel (das Paket öffnet
+nichts, was danach gespeichert wird); sein Name ist der gewählte, sonst der des Pakets. Vorher wird geprüft, dass es
+in die Grenzen passt (Abschnitt 11.3: der Tresor selbst und alle GhulDocs-Tresore der Suite zusammen, `DocsLimit`,
+bevor etwas kopiert wird). Dann werden seine Inhaltsdateien geprüft und in einen Zwischenordner gelegt; erst danach
+kommen sie in einem Schritt in den Ordner `docs-<Tresor-ID>` und die Tresordatei wird geschrieben. Scheitert etwas,
+bleibt die Suite, wie sie war (ein schon verschobener Ordner wird wieder entfernt). Hat die Suite schon einen Tresor
+mit derselben `CONTAINER_ID` (dasselbe Paket noch einmal), wird nichts übernommen (`AlreadyExists`). Das frühere
+Einsortieren in den einen GhulDocs-Tresor und das Ersetzen (`docs_replace_vault`) gibt es seit dem 20.11.2026 nicht
+mehr.
 
 Was eine Datei ist, zeigt ihr erster Eintrag (Kopf `export.ghlexp` oder GhulDocs-Tresor `<id>.ghldoc`), nicht ihr
 Name: Eine Suite-Datei, die als GhulDocs-Paket geöffnet werden soll, und ein GhulDocs-Paket, das als Suite-Datei
@@ -632,13 +624,18 @@ geöffnet werden soll, werden mit einem Fehler abgelehnt, der sagt, was die Date
 was sie mit einer übergebenen Datei tut (`.ghlzip` öffnen, `.ghldocs` für sich öffnen oder hinzufügen).
 
 **Einzelner Tresor:** Eine Tresordatei lässt sich auch ohne `.ghlzip` öffnen (nur dieser Tresor, in einer eigenen,
-vorübergehenden Arbeitskopie) oder der Suite hinzufügen. „Als Tresor weitergeben“ schreibt ausgewählte Einträge in
-eine neue Tresordatei mit eigenem Passwort und neuer Schlüsseldatei oder eigenem Security Key.
+vorübergehenden Arbeitskopie) oder der Suite hinzufügen. „Als Tresor weitergeben“ (`share_as_vault`) schreibt
+ausgewählte Einträge oder, mit leerer Liste `ids`, den ganzen Tresor in eine neue Tresordatei mit eigener Suite-ID,
+eigenem Passwort und neuer Schlüsseldatei oder eigenem Security Key und neuem Wiederherstellungscode. Das geht für
+GhulPass und GhulAuth (auch ausgewählte Einträge; sie bekommen neue `id`s, Passwort-Verläufe bleiben zurück) und für
+einen ganzen GhulCal-Tresor (die Einträge behalten ihre `id`s, weil jeder Termin seinen Kalender über dessen `id`
+nennt); GhulDocs geht als Paket (`docs_share_vault`, oben).
 
 **Dateizuordnung:** Unter Android öffnet ein Tippen auf eine `.ghlzip` oder `.ghldocs` im Dateimanager GhulSuite
 (über den Namen erkannt, nur als `content://`), unter Windows ein Doppelklick (MSI, beide Endungen); läuft GhulSuite
 schon, übernimmt das laufende Programm die Datei. Eine `.ghlzip` öffnet wie „Suite-Datei öffnen“; eine `.ghldocs`
-bietet an, das Paket für sich zu öffnen oder (entsperrt sofort) der Suite hinzuzufügen. Es gilt jeweils alles oben.
+bietet an, das Paket für sich zu öffnen oder (entsperrt sofort) der Suite als eigenen GhulDocs-Tresor
+hinzuzufügen. Es gilt jeweils alles oben.
 
 ## 11. GhulDocs (`.ghldoc` und `.ghlblob`)
 
@@ -651,10 +648,11 @@ GhulDocs speichert wichtige Dokumente und Scans verschlüsselt. Ein GhulDocs-Tre
   `<Inhalts-ID>` eine zufällige Kennung (16 Byte, 32 Hex-Zeichen). Eine Inhaltsdatei wird einmal geschrieben und
   nie geändert; ein neuer Inhalt bekommt eine neue Kennung und einen neuen Schlüssel.
 
-Eine Suite hat **höchstens einen** GhulDocs-Tresor. Einen zweiten lehnt der Kern ab, wo immer ein Tresor
-hinzukommt (Tresor anlegen, Einrichten, Hinzufügen; Fehler „a suite has only one GhulDocs vault“); eine Suite-Datei
-mit mehr als einem ist ungültig (Abschnitt 10). Ein GhulDocs-Paket, das einer Suite mit GhulDocs-Tresor hinzugefügt
-wird, kommt in diesen (Abschnitt 10).
+Eine Suite kann **mehrere** GhulDocs-Tresore haben, wie bei den anderen Bereichen; jeder ist in sich geschlossen
+(eigenes Inhaltsverzeichnis mit Ordnern, Papierkorb und Favoriten, eigener Ordner `docs-<Tresor-ID>`). Ein
+GhulDocs-Paket, das einer Suite hinzugefügt wird, wird ein eigener GhulDocs-Tresor (Abschnitt 10). (Vom 17. bis
+20.11.2026 hatte eine Suite höchstens einen; die Fehler „a suite has only one GhulDocs vault“ und „a suite file holds
+at most one GhulDocs vault“ gibt es nicht mehr.)
 
 ### 11.1 Inhaltsverzeichnis
 
@@ -733,14 +731,18 @@ Abschnitt = nonce ‖ XChaCha20-Poly1305(BK, nonce, Klartext des Abschnitts, aad
 
 ### 11.3 Grenzen
 
-- Höchstens **1 GB** (1 000 000 000 Byte) Inhalt je Suite (in ihrem einen GhulDocs-Tresor, mit dem Papierkorb,
-  bis er geleert wird). Ein einzelnes Dokument ebenso. Die Suite-Datei selbst darf weiter bis 1,25 GiB groß sein.
-- Die Inhaltsdateien zusammen höchstens 1 100 000 000 Byte (der Inhalt und die Aufrundung auf 64 KiB), damit ein
-  volles GhulDocs mit den übrigen Tresoren in die größte Suite-Datei passt (1,25 GiB); bei sehr vielen sehr kleinen
-  Dokumenten greift diese Grenze vor der ersten (jedes belegt mindestens 64 KiB).
-- Höchstens 20 000 Dokumente je Suite.
+- Höchstens **1 GB** (`DOCS_LIMIT`, 1 000 000 000 Byte) Inhalt je GhulDocs-Tresor (mit dem Papierkorb, bis er
+  geleert wird). Ein einzelnes Dokument ebenso.
+- Alle GhulDocs-Tresore einer Suite zusammen höchstens **3 GB** (`DOCS_SUITE_LIMIT` = 3 × `DOCS_LIMIT`) und
+  höchstens **20 000 Dokumente** (`DOCS_MAX_FILES`).
+- Die Inhaltsdateien eines Tresors zusammen höchstens 1 100 000 000 Byte, die aller GhulDocs-Tresore zusammen
+  höchstens 3 300 000 000 Byte (der Inhalt und die Aufrundung auf 64 KiB), damit volle GhulDocs-Tresore mit den
+  übrigen Tresoren (höchstens 200 MiB, Abschnitt 10) in die größte Suite-Datei passen (3,75 GiB); bei sehr vielen sehr
+  kleinen Dokumenten greift diese Grenze vor der ersten (jedes belegt mindestens 64 KiB).
 
-Darüber wird das Hinzufügen abgelehnt (Fehler `DocsLimit` mit `used`, `limit` und `needed`: belegt, Grenze und
-was hinzukommen sollte, 0 wenn das nicht vorher bekannt war), bevor etwas geschrieben wird, wenn die Größe vorher
-bekannt ist; sonst, sobald es zu viel wird, und nichts bleibt zurück. Die App nennt damit, wie viel die Datei bzw.
-das Paket braucht und wie viel frei ist.
+Darüber wird das Hinzufügen abgelehnt (Fehler `DocsLimit` mit `used`, `limit`, `needed` und `suite`: belegt, Grenze,
+was hinzukommen sollte, 0 wenn das nicht vorher bekannt war, und ob die Grenze der Suite erreicht ist), bevor etwas
+geschrieben wird, wenn die Größe vorher bekannt ist; sonst, sobald es zu viel wird, und nichts bleibt zurück. Bei
+`suite = false` ist der Tresor voll, `used` und `limit` sind seine (`limit` 1 GB); bei `suite = true` sind alle
+GhulDocs-Tresore zusammen voll, `used` und `limit` sind die der Suite (`limit` 3 GB). Die App nennt damit, wie viel die
+Datei bzw. das Paket braucht und wie viel im Tresor bzw. in allen GhulDocs-Tresoren zusammen frei ist.

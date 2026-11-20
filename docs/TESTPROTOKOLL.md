@@ -6,7 +6,8 @@
 > den Schlüsselwechsel, das Mail-Archiv und das Hochladen von Fehlerberichten (entfernt mit
 > [`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)). Funde und offene Punkte zu diesen Funktionen sind **obsolet**; welche das
 > sind, fasst [`AUDIT.md`](AUDIT.md), Abschnitt 3, zusammen. **Aktuell** sind die Abschnitte 1 und 2 (Zahlen und
-> Testsuite) und Abschnitt 10 (GhulDocs und Scannen).
+> Testsuite), Abschnitt 10 (GhulDocs und Scannen) und Abschnitt 11 (mehrere GhulDocs-Tresore, ganzen Tresor
+> weitergeben).
 
 Stand: 14. November 2026 (vierte Runde: B1 Schlüssel bei jeder Schutzänderung erneuern, F23 neutrale Dateinamen, Geräte lange offline) · Branch `feat/rekey-neutral-names` · Zusammenfassung aller Audits: Sicherheitsbericht (`docs/AUDIT.md`); Testkonzept: `docs/TESTKONZEPT.md`.
 
@@ -32,14 +33,14 @@ Alle Tests sind grün (Kern, Android-Kotlin, Desktop-Tests). Die App-Tests im Em
 | Datei | Was | Zusage* |
 |---|---|---|
 | `core/ghul-core/src/app/tests/archive.rs` | Suite-Datei: Speichern und Öffnen mit allen Rückfragen (älter, Abzweig, andere Suite, älterer Schutz), Angriffe (fehlende, vertauschte, fremde Teile, falsches Siegel, ZIP-Tricks), Abbruch an jeder Stelle, Code ohne Passwort, Dokumente in der Suite-Datei | Z1, Z2, Z5, Z9 |
-| `…/tests/docs.rs` | GhulDocs: Ordner, Namen, Papierkorb, Grenzen (1 GB, 20 000 Dokumente, Platz), abgebrochenes Hinzufügen, Angriffe auf Inhaltsverzeichnis und Inhaltsdateien, einzelner GhulDocs-Tresor, Reste nach einem Absturz | Z1, Z2, Z3, Z5 |
+| `…/tests/docs.rs` | GhulDocs: mehrere Tresore, Ordner, Namen, Papierkorb, Grenzen (1 GB je Tresor, 3 GB und 20 000 Dokumente je Suite, Platz), abgebrochenes Hinzufügen, Angriffe auf Inhaltsverzeichnis und Inhaltsdateien, einzelner GhulDocs-Tresor (exportieren, öffnen, zurückschreiben, hinzufügen, weitergeben), Reste nach einem Absturz | Z1, Z2, Z3, Z5 |
 | `core/ghul-core/src/app/docs/blob.rs`, `app/zipstream.rs` (Tests) | Inhaltsdateien (Abschnitte, Füllung, Länge, vertauschte und fremde Abschnitte) und das ZIP der Suite-Datei als Datenstrom | Z2, Z3 |
 | `…/tests/crazy_user.rs` | „Bekloppter Nutzer“: tausende zufällige, oft unsinnige Aktionen auf drei Geräten, zwischen denen die Suite-Datei wandert; danach nichts verloren, nur verständliche Fehler | Z1, Z3, Z5, Z6 |
 | `…/tests/absurd.rs` | Naughty Strings in jedem Feld, riesige/leere Werte, seltsame Master-Passwörter, unmögliche Termine, Aufrufe im gesperrten Zustand | Z3, Z6, Z8 |
 | `…/tests/attacks.rs` | Datenklau (Klartextsuche in allen Dateien), gestohlene Dateien, gefälschte/geschwächte Tresordateien, CSV-Formeln | Z2, Z3, Z7 |
 | `…/tests/properties.rs` | Generierte Reihen: Kalender 1600 bis 2400, RFC-Vektoren, Base32, Wiederherstellungscodes, Passwortgenerator, ICS-Rundreise | Z5, Z8 |
 | `…/tests/everyday.rs` | Alltagstest (2 Geräte, 30 Tage) und Stresstests (5.000 Einträge, 64 MB, 8 Threads) | Z1, Z5 |
-| `…/tests.rs` (`rekey`, `single`) | Neue innere Schlüssel bei jeder Schutzänderung, alte Kopien danach; einzelne Tresore öffnen, hinzufügen, weitergeben | Z5, Z9 |
+| `…/tests.rs` (`rekey`, `single`) | Neue innere Schlüssel bei jeder Schutzänderung, alte Kopien danach; einzelne Tresore öffnen, hinzufügen, weitergeben (Auswahl und ganzer Tresor, auch GhulCal) | Z5, Z9 |
 | `core/ghul-core/src/fuzz_tests.rs` | Schnelles Fuzzing aller Parser bei jedem Lauf | Z3 |
 | `…/tests/collections.rs` | JSONTestSuite durch alle JSON-Importe; 304 Kalenderdateien anderer Programme durch Import, Anzeige und Export | Z3, Z8 |
 | `core/ghul-core/src/app/caltext.rs` `zone_tests` | Zeitzonen, dazu die Regeln **aller 446 Zeitzonen** gegen die Zeitzonendatenbank (Vergleichswerte: `tools/make-zone-oracle.py`) | Z8 |
@@ -281,7 +282,7 @@ Zu F17 (Verhalten seit der Behebung): Die erste Mail eines neuen Kontakts mit Au
 
 Offen (Layout): `LayoutCheckTest` prüft die Handy-Darstellung mit den Schriften unter Linux (strenger als Roboto auf Android). Unter Windows fand er mit den dortigen Schriften Funde; ein schmal gezogenes Windows-Fenster ist damit noch nicht geprüft und bekommt eine eigene Prüfung mit Fensterbreiten.
 
-Offen (Kern): `sync_now` arbeitet über das Netz, während der Kern seine Sperre hält (`with_open`). Solange eine Synchronisation mit einem langsamen Server läuft, warten alle anderen Aufrufe der App (Serverliste, Status). Die App zeigt dann „Wird geladen …“ (F61); die Sperre kürzer zu halten (Netz außerhalb, nur das Zusammenführen unter der Sperre) ist ein eigener Umbau.
+~~Offen (Kern): `sync_now` arbeitet über das Netz, während der Kern seine Sperre hält (`with_open`). Solange eine Synchronisation mit einem langsamen Server läuft, warten alle anderen Aufrufe der App (Serverliste, Status). Die App zeigt dann „Wird geladen …“ (F61); die Sperre kürzer zu halten (Netz außerhalb, nur das Zusammenführen unter der Sperre) ist ein eigener Umbau.~~ **Hinfällig** (20.11.2026): Mit dem Umbau ohne Synchronisation gibt es `sync_now` und Sync-Server nicht mehr, der Punkt betraf nur die Synchronisation.
 
 ### Uneinheitliche Bedienung
 
@@ -441,7 +442,7 @@ ihren Tests entfernt und GhulDocs mit dem Scannen dazugekommen. Was dafür neu g
 |---|---|---|
 | Inhaltsdateien `.ghlblob` | `docs/blob.rs` (Tests), Testvektoren `docs-blob-v1.json` (unabhängig in Python) | vertauschte, weggelassene, abgeschnittene, veränderte und fremde Abschnitte, falsche Füllung und Länge werden erkannt |
 | Inhaltsverzeichnis, Grenzen, Papierkorb | `tests/docs.rs` | Kreise, doppelte Kennungen und fehlende Felder abgelehnt; 1 GB, 20 000 Dokumente und Platz auf dem Datenträger greifen vor dem Schreiben; Abbruch hinterlässt nichts |
-| Suite-Datei als Datenstrom mit Dokumenten | `tests/archive.rs`, `zipstream.rs` | bis 1,25 GiB, nichts ganz im Arbeitsspeicher; Inhaltsdateien erst nach dem Bestätigen an ihrem Platz; älterer Schutz öffnet nie |
+| Suite-Datei als Datenstrom mit Dokumenten | `tests/archive.rs`, `zipstream.rs` | bis 1,25 GiB (seit 20.11.2026 3,75 GiB, Abschnitt 11), nichts ganz im Arbeitsspeicher; Inhaltsdateien erst nach dem Bestätigen an ihrem Platz; älterer Schutz öffnet nie |
 | Oberfläche GhulDocs | `DocsInteractionTest`, `DocsBackendTest`, `LayoutCheckTest`, Emulator `07-docs.yaml` | Liste, Hinzufügen, Ansehen (Bild, PDF, Text), Exportieren, Papierkorb, volle Grenze, Sperren |
 | Scannen | `DocScanTest`, `ScanAlgorithmsTest`, Testplan Abschnitt 38 | gezeichnete Fotos (schräg, quer, wenig Kontrast, kein Blatt); nach Speichern, Verlassen und Sperren sind Fotos und Seiten überschrieben; auf echten Geräten von Hand |
 
@@ -463,4 +464,35 @@ Funde der unabhängigen Durchsicht in Paket G9 (19.11.2026), alle behoben:
 | G9-12 | N | README: „ungefähr wie viele Dateien“, tatsächlich ist die Zahl genau und die Zeiten zeigen, wann Dokumente hinzukamen | README wie AUDIT und FORMAT |
 | G9-13 | N | Dateien älterer Entwicklerversionen: nur allgemeiner Fehler; Reste entfernter Funktionen blieben auf Android | Fehler `OldFormat` mit eigener Meldung; einmaliges Aufräumen (`LegacyCleanup`, `LeftoversTest`, `files_of_an_older_development_version_say_so`) |
 | G9-14 | N | Ließ sich ein bisheriger Dokumentordner beim Ersetzen nicht zurücklegen, wurde er gelöscht | nie gelöscht: in `rescued-documents-…` aufbewahrt, Fehler sagt es; `content_folders_that_cannot_go_back_are_kept` |
+
+## 11. Mehrere GhulDocs-Tresore und ganzen Tresor weitergeben (20.11.2026)
+
+Entschieden vom Inhaber am 20.11.2026, Begründung und Einzelheiten in [`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md),
+Abschnitt 11 (letzte Einträge). Geändert wurde:
+
+- **Mehrere GhulDocs-Tresore je Suite** statt genau einem, jeder in sich geschlossen (eigene Ordner, Papierkorb,
+  Favoriten, Inhaltsdateien `docs-<Tresor-ID>/`); „Neuer Tresor“ bietet GhulDocs an, GhulDocs zeigt „Alle Tresore“
+  und eine Tresorwahl in der Kontextzeile, die Ordnerwahl und „In GhulDocs speichern“ können den Tresor wählen.
+- **Grenzen:** 1 GB je GhulDocs-Tresor, alle zusammen 3 GB und 20 000 Dokumente; Inhaltsdateien 1,1 GB je Tresor,
+  3,3 GB zusammen; die größte Suite-Datei 3,75 GiB (unter 4 GiB: kein ZIP64, FAT32). `DocsLimit` sagt mit `suite`,
+  ob der Tresor oder alle zusammen voll sind; die Meldungen und die Belegung nennen das.
+- **Ein GhulDocs-Paket wird beim Hinzufügen ein eigener Tresor** (Dialog „Tresor übernehmen“); das Einsortieren als
+  Ordner, das Ersetzen (`docs_replace_vault`) und die Fehler „a suite has only one GhulDocs vault“ und „a suite file
+  holds at most one GhulDocs vault“ sind entfernt.
+- **Exportieren und „Als Tresor weitergeben“** stehen im Menü jedes Tresors, mit erklärenden Untertiteln und einem
+  Hinweis über der Tresorliste; aus dem Menü geht der ganze Tresor weiter, für alle vier Bereiche, auch GhulCal
+  (`share_as_vault` mit leerer Liste `ids`).
+
+Was es prüft:
+
+| Bereich | Geprüft durch | Ergebnis |
+|---|---|---|
+| Mehrere GhulDocs-Tresore | `several_docs_vaults_each_on_their_own` (`tests/docs.rs`) | jeder Tresor hat seine eigenen Ordner, Papierkorb, Favoriten und Inhaltsdateien |
+| Grenzen je Tresor und für alle zusammen | `the_limit_holds_with_the_trash` (`tests/docs.rs`) | der Papierkorb zählt mit; `DocsLimit` mit den Zahlen des Tresors bzw. der Suite (`suite`) |
+| Ein GhulDocs-Tresor für sich | `a_docs_vault_on_its_own_export_open_write_back_adopt_and_share` (`tests/docs.rs`) | exportieren, für sich öffnen, zurückschreiben, als eigenen Tresor hinzufügen (zweimal: schon vorhanden), weitergeben |
+| Hinzufügen scheitert beim Speichern | `an_adopted_docs_vault_that_cannot_be_saved_is_not_half_added` (`tests/docs.rs`) | die Suite bleibt, wie sie war |
+| Größte Suite-Datei | `a_full_suite_fits_into_the_largest_file` (`archive.rs`) | volle GhulDocs-Tresore (3,3 GB Inhaltsdateien, 20 000 Dokumente) und 200 MiB übrige Tresore passen in 3,75 GiB, mit ZIP-Verzeichnis unter 4 GiB |
+| Ganzen Tresor weitergeben | `a_whole_vault_is_handed_on` (`tests/single.rs`) | ganzer Tresor mit leerer Liste `ids`, auch GhulCal |
+| Oberfläche | `DocsBackendTest.aPackageBecomesADocsVaultOfItsOwn`; `DocsInteractionTest.severalVaultsAreChosen`, `aHandedOverDocsPackageBecomesAVaultOfItsOwn`, `aPackageThatDoesNotFitSaysHowMuch`, `aSecondDocsVaultIsOffered`, `aVaultIsHandedOnFromItsMenu` | Paket wird eigener Tresor; Tresorwahl; Meldung mit Bedarf und freiem Platz; „Neuer Tresor“ bietet GhulDocs an; Weitergeben aus dem Tresor-Menü |
+| Von Hand | Testplan T16, DS3, GD1, GD11, GD13 bis GD13c, SC13, S3, S6; Windows WT6, WD9, W11.4 | |
 

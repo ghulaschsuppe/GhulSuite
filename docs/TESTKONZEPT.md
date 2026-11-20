@@ -3,8 +3,8 @@
 Ziel: Die Suite läuft stabil, verliert nie Daten und gibt nie Geheimnisse preis, auch wenn Netz, Dateien, USB-Sticks, andere Apps oder der Nutzer selbst „allen möglichen Mist“ machen. Dieses Konzept beschreibt, *was* geprüft wird, *womit* (eigene Tests und fertige Testsammlungen aus dem Netz) und *wann* es in der CI läuft.
 
 **Stand:** 19.11.2026, nach dem Umbau zu GhulDocs ([`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)): eine reine
-Offline-App. Die Suite wandert als eine Datei (`.ghlzip`, Datenstrom bis 1,25 GiB), die man speichert und öffnet;
-Dokumente liegen verschlüsselt in GhulDocs, Scannen auf Android nur im Arbeitsspeicher. Tests, die nur die
+Offline-App. Die Suite wandert als eine Datei (`.ghlzip`, Datenstrom bis 3,75 GiB), die man speichert und öffnet;
+Dokumente liegen verschlüsselt in GhulDocs (seit 20.11.2026 wieder mehrere Tresore, je bis 1 GB, zusammen bis 3 GB), Scannen auf Android nur im Arbeitsspeicher. Tests, die nur die
 Synchronisation, FTP/FTPS, die frühere Sicherung, GhulMail, GhulDrive, Server, das PHP-Modul, Freigaben oder den
 Schlüsselwechsel prüften, sind mit diesen Funktionen entfallen; Testserver gibt es nicht mehr.
 
@@ -34,7 +34,7 @@ Jeder Test prüft eine oder mehrere dieser Zusagen. Ein Test, der keine davon pr
 ### E2: Eigenschaftstests (Rundreisen und Regeln)
 Zufällig erzeugte, aber gültige Daten; geprüft wird eine Eigenschaft statt eines festen Ergebnisses:
 - verschlüsseln → entschlüsseln = gleich (Container, Inhaltsdateien von GhulDocs in allen Größen um die Abschnitts- und Füllgrenzen);
-- speichern → öffnen = gleich (Suite-Datei `.ghlzip` mit allen Bereichen und Dokumenten, auch über viele Geräte und Speicherungen; der GhulDocs-Tresor als GhulDocs-Paket `.ghldocs`, für sich geöffnet oder in den GhulDocs-Tresor einer anderen Suite übernommen);
+- speichern → öffnen = gleich (Suite-Datei `.ghlzip` mit allen Bereichen und Dokumenten, auch über viele Geräte und Speicherungen; ein GhulDocs-Tresor als GhulDocs-Paket `.ghldocs`, für sich geöffnet oder als eigener GhulDocs-Tresor in eine andere Suite übernommen; ein ganzer Tresor jedes Bereichs als Tresor weitergegeben und wieder geöffnet);
 - exportieren → importieren = gleich (CSV, Bitwarden, Aegis, ICS, otpauth-Links);
 - Stand der Suite-Datei: neuer, älter, Abzweig und andere Suite werden richtig erkannt, auch viele Speicherungen auseinander (Z5);
 - Termin-Serien: jede berechnete Wiederholung liegt im Zeitraum und auf dem richtigen Wochentag.
@@ -66,7 +66,7 @@ Parallele Threads (vorhanden), dazu: Sperren während Hinzufügen/Import/Speiche
 ### E8: Angriffe (Sicherheit)
 - **Andere Apps:** Intents mit eigenen privaten Dateien, `file://`, fremde Content-Provider, riesige oder endlose Streams, gefälschte Benachrichtigungs-Aktionen.
 - **Rückfall-Angriffe:** alte Suite-Dateien und Tresore einspielen, entfernte Keys, alte Codes (auch mit altem Passwort), geschwächte KDF-Werte.
-- **Angriffe auf GhulDocs:** vertauschte, weggelassene, abgeschnittene, veränderte und fremde Abschnitte einer Inhaltsdatei, falsche Füllung und Länge, Inhaltsdatei unter falschem Namen, kaputte Inhaltsverzeichnisse (Kreise, doppelte Kennungen, fehlende Felder), Grenzen (1 GB, 20 000 Dokumente, Platz auf dem Datenträger).
+- **Angriffe auf GhulDocs:** vertauschte, weggelassene, abgeschnittene, veränderte und fremde Abschnitte einer Inhaltsdatei, falsche Füllung und Länge, Inhaltsdatei unter falschem Namen, kaputte Inhaltsverzeichnisse (Kreise, doppelte Kennungen, fehlende Felder), Grenzen (1 GB je Tresor, 3 GB und 20 000 Dokumente für alle GhulDocs-Tresore zusammen, Platz auf dem Datenträger).
 - **Angriffe auf die Suite-Datei:** fehlende, vertauschte, alte, fremde und abgezweigte Teile (auch Inhaltsdateien); falsches oder fehlendes Schreibsiegel; Code ohne Passwort (öffnet nur ungeprüft und mit Hinweis); ZIP-Tricks (Ordner, doppelte und zusätzliche Einträge, falsche Größen im Verzeichnis, Zip-Bomben, zu viele Einträge).
 - **Geheimnis-Suche:** Marker-Text in allen Eingaben, danach alle geschriebenen Dateien (Arbeitskopie, Suite-Datei, Inhaltsdateien), temporären Dateien und Logs nach dem Marker durchsuchen (Z2).
 
@@ -88,7 +88,7 @@ Verbindungen.
 `cargo-mutants` ändert den Code absichtlich (z. B. `>` zu `>=`) und prüft, ob ein Test das bemerkt. Überlebende Mutanten zeigen Lücken.
 
 ### E13: Last
-Stresstest (vorhanden), dazu: volles GhulDocs (1 GB, 20 000 Dokumente) in der Suite-Datei als Datenstrom, 100.000 Einträge, Speicherverbrauch beim Scannen vieler Seiten auf schwachen Geräten.
+Stresstest (vorhanden), dazu: volle GhulDocs-Tresore (zusammen 3 GB, 20 000 Dokumente) in der Suite-Datei als Datenstrom (bis 3,75 GiB, unter 4 GiB), 100.000 Einträge, Speicherverbrauch beim Scannen vieler Seiten auf schwachen Geräten.
 
 ## 3. Fertige Testsammlungen aus dem Netz
 
@@ -131,3 +131,4 @@ Jeder gefundene Fehler wird zuerst als Test festgehalten (rot), dann behoben (gr
 8. Danach: Audit-Punkte B (Schlüsselrotation, damals Autocrypt, Löschbestätigungen, deutsche Fehlermeldungen).
 9. **Umbau ohne Synchronisation:** Tests für Speichern und Öffnen der Suite-Datei mit allen Rückfragen und Angriffen (`app/tests/archive.rs`), einzelne Tresore und Weitergeben (`single.rs`), damals GhulDrive und der Schlüsselwechsel (mit dem Umbau zu GhulDocs entfernt).
 10. **Umbau zu GhulDocs:** Suite-Datei als Datenstrom mit Inhaltsdateien, Abbrüche und Angriffe (`archive.rs`, `zipstream.rs`), GhulDocs mit Inhaltsdateien, Grenzen und Angriffen (`docs.rs`, `docs/blob.rs`, Testvektoren `docs-blob-v1.json`), Oberfläche und Scannen am Desktop (`DocsInteractionTest`, `DocsBackendTest`, `DocScanTest`, `ScanAlgorithmsTest`).
+11. **Mehrere GhulDocs-Tresore, ganzen Tresor weitergeben (20.11.2026):** Tresore für sich, Grenzen je Tresor und je Suite, Paket als eigener Tresor, größte Suite-Datei unter 4 GiB, ganzer Tresor auch für GhulCal (`docs.rs`, `archive.rs`, `single.rs`), am Desktop Tresorwahl, Paket und Weitergeben aus dem Tresor-Menü (`DocsInteractionTest`, `DocsBackendTest`); Liste im Testprotokoll, Abschnitt 11.
