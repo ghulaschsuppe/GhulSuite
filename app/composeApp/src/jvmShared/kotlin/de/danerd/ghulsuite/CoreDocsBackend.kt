@@ -233,7 +233,7 @@ class CoreDocsBackend(
         }
     }
 
-    /** What a `.ghlzip` holds; null if it is none (or cannot be read). */
+    /** What a `.ghlzip` or `.ghldocs` holds; null if it is neither (or cannot be read). */
     suspend fun inspect(file: SuiteFileRef): ArchiveInfoUi? = withContext(Dispatchers.IO) {
         val input = openInput(file) ?: return@withContext null
         input.stream.use {

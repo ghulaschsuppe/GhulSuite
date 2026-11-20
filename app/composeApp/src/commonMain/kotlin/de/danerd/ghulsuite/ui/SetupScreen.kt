@@ -91,6 +91,7 @@ fun SetupScreen(state: AppState) {
     val scope = rememberCoroutineScope()
 
     val isSuiteFile = stringResource(Res.string.start_is_suite_file)
+
     /** A GhulDocs vault saved on its own was picked: what to do with it (no bytes: it is read as a stream). */
     fun docsVaultPicked(ref: de.danerd.ghulsuite.model.SuiteFileRef, protection: de.danerd.ghulsuite.model.ProtectionUi) {
         vaultFile = PickedVaultFile(ref, ByteArray(0))
@@ -106,10 +107,10 @@ fun SetupScreen(state: AppState) {
     // With access to write: a vault opened on its own goes back into its file.
     val openFile = rememberOpenSuiteFile { ref ->
         scope.launch {
-            // A .ghlzip is a suite file or a GhulDocs vault: only its first entry is read.
+            // A ZIP is a suite file or a GhulDocs package: only its first entry is read.
             val archive = catching { backend.archiveInspect(ref) }.getOrNull()
             when (archive?.content) {
-                de.danerd.ghulsuite.model.ArchiveContentUi.SUITE -> { error = isSuiteFile; return@launch }
+                de.danerd.ghulsuite.model.ArchiveContentUi.SUITE -> { error = describe(suiteNotDocsPackage()); return@launch }
                 de.danerd.ghulsuite.model.ArchiveContentUi.DOCS_VAULT -> { docsVaultPicked(ref, archive.protection); return@launch }
                 null -> {}
             }
@@ -131,14 +132,21 @@ fun SetupScreen(state: AppState) {
         }
     }
 
-    // A suite file handed over by another app (file manager, double click): opened as if picked here.
+    // A suite file or GhulDocs package handed over by another app (file manager, double click):
+    // opened as if picked here, each as what its name says.
     LaunchedEffect(Unit) {
         AppLaunch.suiteFile.collect { f ->
             if (f != null && !backend.unlocked.value) {
                 AppLaunch.suiteFile.value = null
-                suiteFile = f
                 error = null
-                flow = Flow.OPEN_FILE
+                if (isDocsPackageName(f.source.name)) {
+                    catching { docsPackageProtection(backend, f.source) }
+                        .onSuccess { p -> docsVaultPicked(f.source, p) }
+                        .onFailure { error = describe(it) }
+                } else {
+                    suiteFile = f
+                    flow = Flow.OPEN_FILE
+                }
             }
         }
     }
@@ -180,12 +188,6 @@ fun SetupScreen(state: AppState) {
             Flow.OPEN_FILE -> suiteFile?.let { f ->
                 OpenSuiteFile(
                     state, f, onOpened = { suiteFile = null; flow = Flow.START }, onCancel = { suiteFile = null; flow = Flow.START },
-                    // A GhulDocs vault saved on its own: open only it, or add it to the own suite.
-                    onDocsVault = { protection ->
-                        suiteFile = null
-                        flow = Flow.START
-                        docsVaultPicked(f.source, protection)
-                    },
                 )
             }
 

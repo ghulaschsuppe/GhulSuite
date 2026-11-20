@@ -205,8 +205,6 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     var authGrid by mutableStateOf(false)
 
     // --- GhulDocs
-    /** The GhulDocs vault shown (null: all, or the only one). */
-    var docsVault by mutableStateOf<String?>(null)
     /** Grows with every tap on "+" in GhulDocs: its screen opens the add sheet. */
     var docsAddTick by mutableStateOf(0)
     /** GhulDocs shows its trash: nothing can be added there, so there is no "+". */
@@ -419,7 +417,6 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     vaults = emptyList()
                     passVault = null
                     authVault = null
-                    docsVault = null
                     docsTrashShown = false
                     // Files shared from another app stay waiting (they were never decrypted); the
                     // question where they go comes again after unlocking.
@@ -658,7 +655,6 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             }
             if (passVault != null && vaults.none { it.id == passVault }) passVault = null
             if (authVault != null && vaults.none { it.id == authVault }) authVault = null
-            if (docsVault != null && vaults.none { it.id == docsVault }) docsVault = null
         }
     }
 

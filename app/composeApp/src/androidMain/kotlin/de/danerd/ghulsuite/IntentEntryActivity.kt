@@ -16,6 +16,7 @@ import java.time.ZoneId
  * - `.ics` files → imported into the default calendar of GhulCal,
  * - "add to calendar" (title, time, place) → a new appointment in GhulCal,
  * - a suite file (`.ghlzip`) → opened like "Open suite file" (checked completely first),
+ * - a GhulDocs package (`.ghldocs`) → opened on its own or added to GhulDocs, as the user chooses,
  * - "Save in GhulDocs" (one or several files of any type) → added to GhulDocs, encrypted, after
  *   unlocking and choosing the vault and folder.
  *
@@ -75,8 +76,9 @@ class IntentEntryActivity : Activity() {
         when {
             intent.action == Intent.ACTION_INSERT || intent.action == Intent.ACTION_EDIT ->
                 AppLaunch.newEvent.value = event(intent)
-            // A suite file only from a content provider (a file:// path could point at any file of the app).
-            intent.action == Intent.ACTION_VIEW && data != null && name(data).endsWith(".ghlzip", ignoreCase = true) ->
+            // A suite file or GhulDocs package only from a content provider (a file:// path could
+            // point at any file of the app). Which of the two, its name says (see SuiteFileSection).
+            intent.action == Intent.ACTION_VIEW && data != null && isSuiteOrDocsPackage(name(data)) ->
                 if (foreign(data)) {
                     AppLaunch.suiteFile.value = suiteFile(data)
                     return data
@@ -87,8 +89,11 @@ class IntentEntryActivity : Activity() {
         return null
     }
 
+    private fun isSuiteOrDocsPackage(name: String) =
+        name.endsWith(".ghlzip", ignoreCase = true) || name.endsWith(".ghldocs", ignoreCase = true)
+
     /**
-     * A suite file handed over. It is remembered for saving only where Android lets GhulSuite
+     * A suite file or GhulDocs package handed over. It is remembered for saving only where Android lets GhulSuite
      * keep the right to write it; otherwise "Save as" chooses the place (empty id).
      */
     private fun suiteFile(uri: Uri): de.danerd.ghulsuite.ui.PickedSuiteFile {

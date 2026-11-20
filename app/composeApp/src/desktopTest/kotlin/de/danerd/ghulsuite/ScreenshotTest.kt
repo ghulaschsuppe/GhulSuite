@@ -122,7 +122,7 @@ class ScreenshotTest {
         override suspend fun unlockWithPin(pin: String) {}
         override val cal: de.danerd.ghulsuite.model.CalBackend = FakeCal()
         override val docs = FakeDocs()
-        /** What [archiveInspect] says about a picked `.ghlzip` (null: none). */
+        /** What [archiveInspect] says about a picked `.ghlzip` or `.ghldocs` (null: none). */
         var archiveInfo: de.danerd.ghulsuite.model.ArchiveInfoUi? = null
         override suspend fun archiveInspect(file: de.danerd.ghulsuite.model.SuiteFileRef) = archiveInfo
         /** Copies handed to other apps: name and content (the UI tests check them). */

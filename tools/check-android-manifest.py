@@ -20,7 +20,7 @@ A = "{http://schemas.android.com/apk/res/android}"
 # Components other apps may reach, and what protects them.
 EXPORTED = {
     ".MainActivity": None,  # launcher
-    ".IntentEntryActivity": None,  # .ics, add to calendar, suite files (takes only foreign content)
+    ".IntentEntryActivity": None,  # .ics, add to calendar, suite files and GhulDocs packages (takes only foreign content)
     ".ShareToDocsActivity": None,  # "Save in GhulDocs" (alias of IntentEntryActivity, takes only foreign content)
     ".LockTileService": "android.permission.BIND_QUICK_SETTINGS_TILE",
 }
@@ -37,6 +37,9 @@ PERMISSIONS = {
     "android.permission.SCHEDULE_EXACT_ALARM",
     "android.permission.REQUEST_INSTALL_PACKAGES",  # app updates from signed releases (AndroidUpdater)
 }
+# Files opened by their name (VIEW): the suite file and the GhulDocs package, only as content://
+# (a file:// path could point at any file of the app).
+VIEW_EXTENSIONS = {"ghlzip", "ghldocs"}
 # Never, whatever the reason.
 FORBIDDEN = {
     "android.permission.READ_SMS", "android.permission.RECEIVE_SMS", "android.permission.READ_CONTACTS",
@@ -81,10 +84,31 @@ def main():
             errors.append(f"{name}: exported with permission {perm!r}, expected {EXPORTED[name]!r}")
     for name in sorted(set(EXPORTED) - set(exported)):
         errors.append(f"{name} is no longer exported: remove it from EXPORTED in this script")
+    errors += check_view_by_name(app)
     for e in errors:
         print("FEHLER:", e)
     print(f"Manifest geprüft: {len(exported)} von außen erreichbare Komponenten, {len(perms)} Berechtigungen, {len(errors)} Fehler.")
     return 1 if errors else 0
+
+
+def check_view_by_name(app):
+    """The intent filters that open files by their extension: exactly VIEW_EXTENSIONS, content:// only."""
+    errors = []
+    found = set()
+    for f in app.iter("intent-filter"):
+        data = f.findall("data")
+        exts = {d.get(A + "pathPattern", "").rsplit(".", 1)[-1] for d in data if d.get(A + "pathPattern")}
+        if not exts:
+            continue
+        found |= exts
+        schemes = {d.get(A + "scheme") for d in data if d.get(A + "scheme")}
+        if schemes != {"content"}:
+            errors.append(f"files opened by name ({', '.join(sorted(exts))}) only as content://, not {sorted(schemes)}")
+    for e in sorted(found - VIEW_EXTENSIONS):
+        errors.append(f"files .{e} are opened by name: add it to VIEW_EXTENSIONS in this script if it is intended")
+    for e in sorted(VIEW_EXTENSIONS - found):
+        errors.append(f"files .{e} are no longer opened by name: remove it from VIEW_EXTENSIONS in this script")
+    return errors
 
 
 if __name__ == "__main__":

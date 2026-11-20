@@ -413,20 +413,18 @@ class DocsInteractionTest {
         assertEquals("Zählerstand Strom: 4711\nWasser: 815\n", fake.shared[0].second.decodeToString())
     }
 
-    /** Locking leaves nothing of GhulDocs: no page with a document, no chosen vault, no shared files. */
+    /** Locking leaves nothing of GhulDocs: no page with a document, no shared files. */
     @Test
     fun lockClearsState() = app { state, fake ->
         waitFor("Personalausweis.png")
         text("Personalausweis.png").performClick()
         waitUntil(timeoutMillis = 10_000) { tagged("docs-image") }
-        runOnIdle { state.docsVault = "d1" }
         runOnIdle { state.lockNow() }
         waitUntil(timeoutMillis = 5_000) { fake.locks == 1 }
         fake.unlocked.value = false
         waitForIdle()
         assertTrue(state.stack.isEmpty())
         assertFalse(tagged("docs-image"))
-        assertNull(state.docsVault)
         assertNull(state.docsIncoming)
         assertFalse(part("Personalausweis"), "nothing of GhulDocs on the lock screen")
     }
@@ -460,7 +458,7 @@ class DocsInteractionTest {
     @Test
     fun optionsPageVerifiesAndEmptiesTrash() = app(setup = { tab = Tab.SETTINGS; push(Screen.SettingsPage(SetPage.DOCS)) }) { _, fake ->
         waitPart("of 1 GB")
-        waitFor("1 item in the trash, in all GhulDocs vaults.")
+        waitFor("1 item in the trash.")
         onAllNodesWithTag("docs-verify-d1").onFirst().performClick()
         waitFor("All documents are intact.")
         fake.docs.badOnVerify = setOf("a4")
@@ -471,24 +469,84 @@ class DocsInteractionTest {
         onAllNodesWithTag("docs-settings-empty-trash").onFirst().performClick()
         waitFor("Empty the trash")
         dialogButton("Delete for good")
-        waitUntil(timeoutMillis = 10_000) { "emptyTrash:null" in fake.docs.calls }
+        waitUntil(timeoutMillis = 10_000) { "emptyTrash:d1" in fake.docs.calls }
     }
 
-    /** Several GhulDocs vaults: "All vaults" lists them, the chosen one opens; the header chooses too. */
+    /**
+     * A suite has one GhulDocs vault: its files at once, no list of vaults and no "All vaults",
+     * and nothing to choose in the header (its line only names the vault).
+     */
     @Test
-    fun severalVaultsAreChosen() = app(prepare = {
-        vaults = vaults + de.danerd.ghulsuite.model.VaultUi("d2", de.danerd.ghulsuite.model.VaultKindUi.DOCS, "Steuer", "d2.ghldoc", true, 0)
-    }) { state, _ ->
-        waitFor("Steuer")
+    fun oneVaultNothingToChoose() = app { state, _ ->
+        waitFor("Mietvertrag.pdf")
+        assertFalse(part("All vaults"))
         waitFor("Dokumente")
-        assertFalse(shown("Mietvertrag.pdf"))
-        shot("vaults")
         text("Dokumente").performClick()
+        waitForIdle()
+        assertFalse(state.contextSheet, "the header line of GhulDocs opens nothing")
+        assertFalse(shown("Choose vault"))
+        shot("one-vault")
+    }
+
+    /** Hands [name] over as another app (file manager, double click) would, until this app takes it. */
+    private fun DesktopComposeUiTest.handOver(name: String, until: () -> Boolean) {
+        var taken = false
+        repeat(3) {
+            if (!taken) {
+                runOnIdle {
+                    AppLaunch.suiteFile.value = de.danerd.ghulsuite.ui.PickedSuiteFile(
+                        de.danerd.ghulsuite.model.SuiteFileRef("/stick/$name", name),
+                    )
+                }
+                taken = runCatching { waitUntil(timeoutMillis = 10_000) { until() } }.isSuccess
+            }
+        }
+        assertTrue(taken, "$name was never taken")
+    }
+
+    /**
+     * A GhulDocs package (.ghldocs) handed over while unlocked: added into the GhulDocs vault of
+     * the suite, in a new folder named after the package (not opened as a suite file).
+     */
+    @Test
+    fun aHandedOverDocsPackageGoesIntoGhulDocs() = app(prepare = {
+        archiveInfo = de.danerd.ghulsuite.model.ArchiveInfoUi(
+            de.danerd.ghulsuite.model.ArchiveContentUi.DOCS_VAULT,
+            de.danerd.ghulsuite.model.ProtectionUi(securityKeys = 0, keyfiles = 1, recoveryCodes = 1),
+        )
+    }) { _, _ ->
         waitFor("Mietvertrag.pdf")
-        assertTrue(tagged("docs-breadcrumb"))
-        onAllNodes(hasText("All vaults") and hasAnyAncestor(androidx.compose.ui.test.hasTestTag("docs-breadcrumb")), useUnmergedTree = true).onFirst().performClick()
-        waitGone("Mietvertrag.pdf")
-        runOnIdle { state.docsVault = "d1" }
+        handOver("Steuer 2025.ghldocs") { shown("Add to GhulDocs") }
+        assertTrue(shown("Folder name"))
+        assertTrue(shown("Steuer 2025"), "the folder is named after the package")
+        assertFalse(part("is checked completely first"), "not opened as a suite file")
+        shot("package-merge")
+        dialogButton("Cancel")
+        waitGone("Add to GhulDocs")
+    }
+
+    /** A suite file named .ghldocs is no GhulDocs package: refused with a text that says what it is. */
+    @Test
+    fun aSuiteFileNamedLikeAPackageIsRefused() = app(prepare = {
+        archiveInfo = de.danerd.ghulsuite.model.ArchiveInfoUi(
+            de.danerd.ghulsuite.model.ArchiveContentUi.SUITE,
+            de.danerd.ghulsuite.model.ProtectionUi(securityKeys = 0, keyfiles = 1, recoveryCodes = 1),
+        )
+    }) { _, _ ->
         waitFor("Mietvertrag.pdf")
+        // In the app the text is translated; without a display the test sees the core's text.
+        handOver("Falsch.ghldocs") { part("not a GhulDocs package") }
+        assertFalse(shown("Add to GhulDocs"))
+    }
+
+    /** "New vault" offers no second GhulDocs vault. */
+    @Test
+    fun noSecondDocsVaultIsOffered() = app(setup = { tab = Tab.SETTINGS; push(Screen.SettingsPage(SetPage.VAULTS)) }) { _, _ ->
+        waitFor("New vault")
+        text("New vault").performClick()
+        waitUntil(timeoutMillis = 10_000) { onAllNodes(hasText("GhulPass") and hasAnyAncestor(isDialog())).fetchSemanticsNodes().isNotEmpty() }
+        assertTrue(onAllNodes(hasText("GhulDocs") and hasAnyAncestor(isDialog()), useUnmergedTree = true).fetchSemanticsNodes().isEmpty())
+        assertTrue(onAllNodes(hasText("GhulCal") and hasAnyAncestor(isDialog()), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        shot("new-vault")
     }
 }

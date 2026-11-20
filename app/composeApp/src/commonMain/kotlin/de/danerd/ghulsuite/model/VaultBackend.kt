@@ -257,11 +257,11 @@ interface VaultBackend {
     /** Copies to the clipboard, marked as sensitive and cleared automatically. */
     fun copySensitive(label: String, text: String)
 
-    // --- A GhulDocs vault saved on its own (a .ghlzip with the vault and its documents)
-    /** What a `.ghlzip` holds (reads only its first entry); null if it is no `.ghlzip` at all. */
+    // --- A GhulDocs package (a .ghldocs with the vault and its documents)
+    /** What a `.ghlzip` or `.ghldocs` holds (reads only its first entry); null if it is neither. */
     suspend fun archiveInspect(file: SuiteFileRef): ArchiveInfoUi? = null
     /**
-     * Opens a GhulDocs vault saved on its own, like [openSingle]: only that vault is unlocked, its
+     * Opens a GhulDocs package, like [openSingle]: only that vault is unlocked, its
      * changes go back into [file] (as a stream, with its documents).
      */
     suspend fun openSingleDocs(

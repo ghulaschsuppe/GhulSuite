@@ -95,6 +95,7 @@ class SingleInstanceTest {
     @Test
     fun onlySuiteFilesAreTakenFromTheArguments() {
         assertEquals("a.GHLZIP", SingleInstance.suiteFileArg(arrayOf("-x", "a.GHLZIP")))
+        assertEquals("C:\\Daten\\Steuer.ghldocs", SingleInstance.suiteFileArg(arrayOf("C:\\Daten\\Steuer.ghldocs")))
         assertEquals(null, SingleInstance.suiteFileArg(arrayOf("notiz.txt")))
     }
 }

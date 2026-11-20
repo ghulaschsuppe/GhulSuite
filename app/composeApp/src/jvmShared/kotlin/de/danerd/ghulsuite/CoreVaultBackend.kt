@@ -325,7 +325,7 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
     private val VAULT_EXTENSIONS = setOf("ghlpss", "ghltotp", "ghlcal", "ghldoc")
 
     /**
-     * The vault open on its own is a GhulDocs vault: its file is a `.ghlzip` with the vault and
+     * The vault open on its own is a GhulDocs vault: its file is a `.ghldocs` with the vault and
      * its documents, read and written as a stream (see [openSingleDocs]).
      */
     @Volatile private var singleDocs = false
@@ -707,7 +707,7 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
                 val t = readTarget(dir)
                 // A GhulDocs vault: only written while it is open (see closeSingle); only giving up.
                 if (isDocsDir(dir, t)) {
-                    return@mapNotNull PendingSingleUi(dir.name, t?.ref ?: SuiteFileRef("", vaultIn(dir) ?: "GhulDocs.ghlzip"), docs = true)
+                    return@mapNotNull PendingSingleUi(dir.name, t?.ref ?: SuiteFileRef("", vaultIn(dir) ?: "GhulDocs.ghldocs"), docs = true)
                 }
                 if (t == null) {
                     // Which file is unknown: only "save as" (named like the vault file) or give up.

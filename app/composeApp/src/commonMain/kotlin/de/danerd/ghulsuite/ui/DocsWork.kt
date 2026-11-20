@@ -193,7 +193,7 @@ fun AppState.openDocWith(item: DocsItemUi) {
 }
 
 /**
- * Saves a GhulDocs vault with its documents as a `.ghlzip` into [sink] (this suite's protection).
+ * Saves the GhulDocs vault with its documents as a GhulDocs package (`.ghldocs`) into [sink] (this suite's protection).
  * Cancelled or failed, the half written file is removed.
  */
 fun AppState.exportDocsVault(vault: VaultUi, sink: ByteSink) {

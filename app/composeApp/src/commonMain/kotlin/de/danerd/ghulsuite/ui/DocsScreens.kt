@@ -68,7 +68,6 @@ import de.danerd.ghulsuite.model.DocsUsageUi
 import de.danerd.ghulsuite.model.VaultErrorKind
 import de.danerd.ghulsuite.model.VaultException
 import de.danerd.ghulsuite.model.VaultKindUi
-import de.danerd.ghulsuite.model.VaultUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
 import org.jetbrains.compose.resources.pluralStringResource
@@ -95,18 +94,16 @@ fun docKind(item: DocsItemUi): Pair<ImageVector, Color> {
     }
 }
 
-/** The GhulDocs tab: the folders and files of a vault, its favourites, trash and search. */
+/** The GhulDocs vault of the suite (a suite has one at most), if it can be read. */
+fun AppState.docsVaultId(): String? = vaultsOf(VaultKindUi.DOCS).firstOrNull { it.available }?.id
+
+/** The GhulDocs tab: the folders and files of the suite's GhulDocs vault, its favourites, trash and search. */
 @Composable
 fun DocsScreen(state: AppState, padding: PaddingValues) {
     val docs = state.backend.docs
-    val vaults = state.vaultsOf(VaultKindUi.DOCS).filter { it.available }
-    /** A vault entered from "All vaults" (the header's choice stays "All"). */
-    var entered by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(vaults.map { it.id }) { if (entered != null && vaults.none { it.id == entered }) entered = null }
-    val vault: String? = state.docsVault ?: entered ?: vaults.singleOrNull()?.id
-    val vaultName = vaults.firstOrNull { it.id == vault }?.name.orEmpty()
-    val severalVaults = vaults.size > 1 && state.docsVault == null
-    // The folders inside the vault (another vault starts at its top).
+    val vault: String? = state.docsVaultId()
+    val vaultName = state.vaultsOf(VaultKindUi.DOCS).firstOrNull { it.id == vault }?.name.orEmpty()
+    // The folders inside the vault (another vault, e.g. after opening a suite file, starts at its top).
     var pathState by remember { mutableStateOf<Pair<String?, List<Crumb>>>(null to emptyList()) }
     val path = pathState.second.takeIf { pathState.first == vault }.orEmpty()
     fun setPath(p: List<Crumb>, inVault: String? = vault) {
@@ -119,12 +116,11 @@ fun DocsScreen(state: AppState, padding: PaddingValues) {
     SideEffect { state.docsTrashShown = view == "trash" }
     DisposableEffect(Unit) { onDispose { state.docsTrashShown = false } }
     val active = LocalTabActive.current
-    // Back: out of a view, up one folder, back to "All vaults" (only while GhulDocs is visible).
-    PlatformBackHandler(enabled = active && (view.isNotEmpty() || path.isNotEmpty() || (entered != null && state.docsVault == null))) {
+    // Back: out of a view, up one folder (only while GhulDocs is visible).
+    PlatformBackHandler(enabled = active && (view.isNotEmpty() || path.isNotEmpty())) {
         when {
             view.isNotEmpty() -> view = ""
-            path.isNotEmpty() -> setPath(path.dropLast(1))
-            else -> entered = null
+            else -> setPath(path.dropLast(1))
         }
     }
     // Long press selects (as in every list); registered after the back of the folders, so "back"
@@ -138,7 +134,8 @@ fun DocsScreen(state: AppState, padding: PaddingValues) {
     var usage by remember { mutableStateOf<DocsUsageUi?>(null) }
     /** Which place the loaded list belongs to: another one is not shown under the new path while it loads. */
     var itemsOf by remember { mutableStateOf<String?>(null) }
-    val showVaults = vault == null && query.isBlank() && view.isEmpty()
+    /** No GhulDocs vault (or it cannot be read): nothing to list. */
+    val noVault = vault == null
     LaunchedEffect(vault, folder, query, view, state.liveRevision(), reload) {
         val place = "$vault|$folder|$view|${query.isNotBlank()}"
         if (itemsOf != place) {
@@ -146,14 +143,13 @@ fun DocsScreen(state: AppState, padding: PaddingValues) {
             loaded = false
             error = null
         }
-        if (!showVaults) {
+        if (vault != null) {
             catching {
                 when {
                     query.isNotBlank() -> docs.search(vault, query)
                     view == "fav" -> docs.favorites(vault)
                     view == "trash" -> docs.trash(vault)
-                    vault != null -> docs.list(vault, folder)
-                    else -> emptyList()
+                    else -> docs.list(vault, folder)
                 }
             }.onSuccess { items = it; itemsOf = place; error = null }.onFailure { e ->
                 // The folder is gone (deleted elsewhere, in the trash): back to the top of the vault.
@@ -167,7 +163,6 @@ fun DocsScreen(state: AppState, padding: PaddingValues) {
 
     // --- adding: files of the device, files shared from other apps --------------------------------
     var addSheet by remember { mutableStateOf(false) }
-    var choosingVault by remember { mutableStateOf(false) }
     var newFolder by remember { mutableStateOf(false) }
     /** Where the files picked next go (the picker answers later on Android). */
     val addTarget = remember { arrayOfNulls<Pair<String, String?>>(1) }
@@ -181,7 +176,7 @@ fun DocsScreen(state: AppState, padding: PaddingValues) {
     LaunchedEffect(addTick) {
         if (addTick != seenTick) {
             seenTick = addTick
-            if (vault == null) choosingVault = true else addSheet = true
+            if (vault != null) addSheet = true
         }
     }
 
@@ -202,10 +197,9 @@ fun DocsScreen(state: AppState, padding: PaddingValues) {
         when {
             item.trashed != null || view == "trash" -> selected.toggle(keyOf(item))
             item.isFolder -> {
-                val inList = query.isBlank() && view.isEmpty() && item.vaultId == vault && item.parent == folder
+                val inList = query.isBlank() && view.isEmpty() && item.parent == folder
                 query = ""
                 view = ""
-                if (state.docsVault == null && vaults.size > 1) entered = item.vaultId
                 // From a search or a view the folders above it are not listed here: its breadcrumb
                 // starts at the vault.
                 setPath(if (inList) path + Crumb(item.id, item.name) else listOf(Crumb(item.id, item.name)), item.vaultId)
@@ -243,7 +237,6 @@ fun DocsScreen(state: AppState, padding: PaddingValues) {
     Column(Modifier.fillMaxSize().padding(padding)) {
         if (selecting) {
             val one = chosen.singleOrNull()
-            val oneVault = chosen.map { it.vaultId }.distinct().singleOrNull()
             SelectionHeader(
                 selected.keys.size,
                 onClose = { selected.clear() },
@@ -256,11 +249,11 @@ fun DocsScreen(state: AppState, padding: PaddingValues) {
                     val allFav = chosen.isNotEmpty() && chosen.all { it.favorite }
                     add(SelAction(if (allFav) Icons.Filled.StarBorder else Icons.Filled.Star, stringResource(if (allFav) Res.string.a_unfavorite else Res.string.a_favorite)) { favorite(chosen) })
                     if (one != null) add(SelAction(Icons.Filled.Edit, stringResource(Res.string.a_rename)) { selected.clear(); renaming = one })
-                    if (oneVault != null) {
+                    if (vault != null) {
                         add(SelAction(Icons.AutoMirrored.Filled.DriveFileMove, stringResource(Res.string.a_move)) { moving = chosen })
                         add(SelAction(Icons.Filled.Share, stringResource(Res.string.share_vault_action)) {
                             selected.clear()
-                            sharing = oneVault to chosen.map { it.id }
+                            sharing = vault to chosen.map { it.id }
                         })
                     }
                     add(SelAction(Icons.Filled.Delete, stringResource(Res.string.a_to_trash), danger = true) { toTrash(chosen) })
@@ -273,8 +266,8 @@ fun DocsScreen(state: AppState, padding: PaddingValues) {
                     BusyBanner(state)
                     SearchField(query, { query = it; selected.clear() }, placeholder = stringResource(Res.string.docs_search))
                     LoadError(error) { error = null; reload++ }
-                    if (!loaded && error == null && !showVaults) LoadingHint()
-                    val atTop = path.isEmpty() && query.isBlank() && !selecting && view.isEmpty() && (vault == null || !severalVaults || entered == null)
+                    if (!loaded && error == null && !noVault) LoadingHint()
+                    val atTop = path.isEmpty() && query.isBlank() && !selecting && view.isEmpty()
                     if (atTop) {
                         DocsUsageCard(usage)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -284,24 +277,11 @@ fun DocsScreen(state: AppState, padding: PaddingValues) {
                     } else if (query.isBlank() && view.isNotEmpty()) {
                         // A view (favourites, trash): the way back to the folders.
                         Breadcrumb(
-                            listOf(
-                                if (vault != null) vaultName else stringResource(Res.string.vault_all_vaults),
-                                stringResource(if (view == "fav") Res.string.chip_favorites else Res.string.docs_trash),
-                            ),
+                            listOf(vaultName, stringResource(if (view == "fav") Res.string.chip_favorites else Res.string.docs_trash)),
                         ) { view = ""; selected.clear() }
                     } else if (query.isBlank() && view.isEmpty() && vault != null) {
-                        Breadcrumb(
-                            buildList {
-                                if (severalVaults) add(stringResource(Res.string.vault_all_vaults))
-                                add(vaultName)
-                                addAll(path.map { it.name })
-                            },
-                        ) { i ->
-                            val offset = if (severalVaults) 1 else 0
-                            when {
-                                severalVaults && i == 0 -> { entered = null; setPath(emptyList()) }
-                                else -> setPath(path.take(i - offset))
-                            }
+                        Breadcrumb(listOf(vaultName) + path.map { it.name }) { i ->
+                            setPath(path.take(i))
                             selected.clear()
                         }
                     }
@@ -310,7 +290,6 @@ fun DocsScreen(state: AppState, padding: PaddingValues) {
                             query.isNotBlank() -> stringResource(Res.string.docs_search_results)
                             view == "fav" -> stringResource(Res.string.chip_favorites)
                             view == "trash" -> stringResource(Res.string.docs_trash)
-                            showVaults -> stringResource(Res.string.set_vaults)
                             else -> pluralStringResource(Res.plurals.docs_n_items, visible.size, visible.size.toString())
                         },
                         trailing = when {
@@ -321,8 +300,8 @@ fun DocsScreen(state: AppState, padding: PaddingValues) {
                         },
                     )
                     if (view == "trash") HintText(stringResource(Res.string.docs_trash_hint))
-                    if (showVaults && vaults.isEmpty()) EmptyState(tabIcon(Tab.DOCS), stringResource(Res.string.docs_no_vault), color)
-                    if (!showVaults && loaded && visible.isEmpty() && error == null) {
+                    if (noVault) EmptyState(tabIcon(Tab.DOCS), stringResource(Res.string.docs_no_vault), color)
+                    if (!noVault && loaded && visible.isEmpty() && error == null) {
                         EmptyState(
                             if (view == "trash") Icons.Filled.Delete else tabIcon(Tab.DOCS),
                             stringResource(
@@ -338,24 +317,14 @@ fun DocsScreen(state: AppState, padding: PaddingValues) {
                     }
                 }
             }
-            if (showVaults) {
-                itemsIndexed(vaults, key = { _, v -> "vault-" + v.id }) { i, v ->
-                    Column(Modifier.cardItem(i, vaults.size)) {
-                        ListRow(
-                            v.name, pluralStringResource(Res.plurals.docs_vault_items, v.entries, v.entries.toString()),
-                            leading = { IconTile(tabIcon(Tab.DOCS), color) },
-                            trailing = { ChevronEnd() }, divider = i > 0,
-                        ) { entered = v.id }
-                    }
-                }
-            } else {
+            if (!noVault) {
                 // A search, the favourites and the trash show where each item is.
                 val wherePlace = query.isNotBlank() || view.isNotEmpty()
                 itemsIndexed(visible, key = { _, it -> place + it.vaultId + it.id }) { i, item ->
                     Column(Modifier.cardItem(i, visible.size)) {
                         DocsRow(
                             item, keyOf(item) in selected, divider = i > 0,
-                            where = if (wherePlace) docWhere(item, vaults, vault == null) else null,
+                            where = if (wherePlace) docWhere(item) else null,
                             onLongClick = { selected.toggle(keyOf(item)) },
                         ) { if (selecting) selected.toggle(keyOf(item)) else open(item) }
                     }
@@ -367,13 +336,6 @@ fun DocsScreen(state: AppState, padding: PaddingValues) {
         }
     }
 
-    if (choosingVault) {
-        VaultPickerDialog(state, VaultKindUi.DOCS, onPick = { id ->
-            choosingVault = false
-            entered = id
-            addSheet = true
-        }, onDismiss = { choosingVault = false })
-    }
     if (addSheet) {
         val target = vault
         GhulSheet({ addSheet = false }, stringResource(Res.string.docs_add_title)) {
@@ -415,12 +377,12 @@ fun DocsScreen(state: AppState, padding: PaddingValues) {
     moving?.let { list ->
         val v = list.first().vaultId
         FolderPickerDialog(
-            state, fixedVault = v, startFolder = if (v == vault) path.map { it.id to it.name } else emptyList(),
+            state, vault = v, startFolder = if (v == vault) path.map { it.id to it.name } else emptyList(),
             exclude = list.filter { it.isFolder }.map { it.id }.toSet(),
             title = if (list.size == 1) stringResource(Res.string.docs_move_title, list[0].name) else pluralStringResource(Res.plurals.docs_move_n, list.size, list.size.toString()),
             confirm = stringResource(Res.string.docs_move_here),
             onDismiss = { moving = null },
-        ) { _, picked ->
+        ) { picked ->
             moving = null
             selected.clear()
             val target = picked.lastOrNull()?.first
@@ -445,17 +407,14 @@ fun DocsScreen(state: AppState, padding: PaddingValues) {
     }
     // Files shared from another app: where they go is chosen here.
     state.docsIncoming?.let { files ->
-        if (active) IncomingDocsSheet(state, files, vaults, vault, path.map { it.id to it.name })
+        if (active) IncomingDocsSheet(state, files, vault, vaultName, path.map { it.id to it.name })
     }
 }
 
-/** "In Private › Taxes", or only the folders when one vault is shown. */
+/** "In Taxes › 2025": the folders it is in. */
 @Composable
-private fun docWhere(item: DocsItemUi, vaults: List<VaultUi>, withVault: Boolean): String {
-    val parts = buildList {
-        if (withVault) vaults.firstOrNull { it.id == item.vaultId }?.name?.let { add(it) }
-        if (item.path.isNotBlank()) addAll(item.path.split('/'))
-    }
+private fun docWhere(item: DocsItemUi): String {
+    val parts = if (item.path.isNotBlank()) item.path.split('/') else emptyList()
     return if (parts.isEmpty()) stringResource(Res.string.docs_at_top) else stringResource(Res.string.docs_in, parts.joinToString(" › "))
 }
 
@@ -548,50 +507,36 @@ private fun Breadcrumb(parts: List<String>, onPick: (Int) -> Unit) {
 }
 
 /**
- * Chooses a folder of a GhulDocs vault: browse into folders, back up, "here". [fixedVault] keeps
- * the vault; else the vaults are the first level (several of them). [exclude] are folders that
- * cannot be the target (those being moved).
+ * Chooses a folder of the GhulDocs vault [vault]: browse into folders, back up, "here".
+ * [exclude] are folders that cannot be the target (those being moved).
  */
 @Composable
 fun FolderPickerDialog(
     state: AppState,
-    fixedVault: String?,
+    vault: String,
     startFolder: List<Pair<String, String>> = emptyList(),
     exclude: Set<String> = emptySet(),
     title: String,
     confirm: String,
-    startVault: String? = fixedVault,
     onDismiss: () -> Unit,
-    onPick: (String, List<Pair<String, String>>) -> Unit,
+    onPick: (List<Pair<String, String>>) -> Unit,
 ) {
-    val vaults = state.vaultsOf(VaultKindUi.DOCS).filter { it.available }
-    var vault by remember { mutableStateOf(startVault ?: vaults.singleOrNull()?.id) }
     var path by remember { mutableStateOf(startFolder) }
     var folders by remember { mutableStateOf<List<DocsItemUi>>(emptyList()) }
     val here = path.lastOrNull()?.first
     LaunchedEffect(vault, here) {
-        val v = vault
-        folders = if (v == null) emptyList()
-        else catching { state.backend.docs.list(v, here) }.getOrDefault(emptyList()).filter { it.isFolder && it.id !in exclude }
+        folders = catching { state.backend.docs.list(vault, here) }.getOrDefault(emptyList()).filter { it.isFolder && it.id !in exclude }
     }
-    val canLeaveVault = fixedVault == null && vaults.size > 1
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                val v = vault
-                if (v == null) {
-                    for (x in vaults) {
-                        ListRow(x.name, leading = { IconTile(tabIcon(Tab.DOCS), areaColor(Tab.DOCS), size = 36.dp) }, divider = x != vaults.first(), flush = true) { vault = x.id }
-                    }
-                    return@Column
-                }
-                val name = vaults.firstOrNull { it.id == v }?.name.orEmpty()
+                val name = state.vaultsOf(VaultKindUi.DOCS).firstOrNull { it.id == vault }?.name.orEmpty()
                 HintText((listOf(name) + path.map { it.second }).joinToString(" › "))
-                if (path.isNotEmpty() || canLeaveVault) {
+                if (path.isNotEmpty()) {
                     ListRow(stringResource(Res.string.docs_up), leading = { IconTile(Icons.Filled.Folder, g.faint, size = 36.dp) }, flush = true) {
-                        if (path.isNotEmpty()) path = path.dropLast(1) else vault = null
+                        path = path.dropLast(1)
                     }
                 }
                 for (f in folders) {
@@ -604,20 +549,19 @@ fun FolderPickerDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { vault?.let { onPick(it, path) } }, enabled = vault != null, modifier = Modifier.testTag("docs-pick-here")) { Text(confirm) }
+            TextButton(onClick = { onPick(path) }, modifier = Modifier.testTag("docs-pick-here")) { Text(confirm) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(Res.string.a_cancel)) } },
     )
 }
 
 /**
- * Files shared from another app ("Save in GhulDocs"): into the vault and folder shown, or
- * another one chosen here. "Cancel" lets them go (nothing was read).
+ * Files shared from another app ("Save in GhulDocs"): into the folder shown, or another one
+ * chosen here. "Cancel" lets them go (nothing was read).
  */
 @Composable
-private fun IncomingDocsSheet(state: AppState, files: List<ByteSource>, vaults: List<VaultUi>, vault: String?, path: List<Pair<String, String>>) {
-    var target by remember { mutableStateOf(vault ?: vaults.firstOrNull()?.id) }
-    var folder by remember { mutableStateOf(if (vault != null) path else emptyList()) }
+private fun IncomingDocsSheet(state: AppState, files: List<ByteSource>, vault: String?, vaultName: String, path: List<Pair<String, String>>) {
+    var folder by remember { mutableStateOf(path) }
     var choosing by remember { mutableStateOf(false) }
     val close = {
         files.forEach { runCatching { it.close() } }
@@ -628,32 +572,31 @@ private fun IncomingDocsSheet(state: AppState, files: List<ByteSource>, vaults: 
             if (files.size == 1) stringResource(Res.string.docs_incoming_one, files[0].name)
             else pluralStringResource(Res.plurals.docs_incoming_n, files.size, files.size.toString()),
         )
-        val name = vaults.firstOrNull { it.id == target }?.name
         SheetList {
             SheetRow(
                 stringResource(Res.string.docs_incoming_into),
-                if (name == null) stringResource(Res.string.docs_no_vault) else (listOf(name) + folder.map { it.second }).joinToString(" › "),
+                if (vault == null) stringResource(Res.string.docs_no_vault) else (listOf(vaultName) + folder.map { it.second }).joinToString(" › "),
                 leading = { IconTile(Icons.Filled.Folder, areaColor(Tab.DOCS)) },
                 end = { Text(stringResource(Res.string.docs_change), color = g.accent, fontSize = 14.sp) },
+                enabled = vault != null,
             ) { choosing = true }
         }
         ButtonRow {
             OutlinedButton(onClick = close, modifier = Modifier.weight(1f)) { Text(stringResource(Res.string.a_cancel)) }
             Button(onClick = {
-                val v = target ?: return@Button
+                val v = vault ?: return@Button
                 state.docsIncoming = null
                 state.addDocs(v, folder.lastOrNull()?.first, files)
-            }, enabled = target != null, modifier = Modifier.weight(1f).testTag("docs-incoming-save")) { Text(stringResource(Res.string.docs_save_here)) }
+            }, enabled = vault != null, modifier = Modifier.weight(1f).testTag("docs-incoming-save")) { Text(stringResource(Res.string.docs_save_here)) }
         }
     }
-    if (choosing) {
+    if (choosing && vault != null) {
         FolderPickerDialog(
-            state, fixedVault = null, startVault = target, startFolder = folder,
+            state, vault = vault, startFolder = folder,
             title = stringResource(Res.string.docs_incoming_into), confirm = stringResource(Res.string.docs_choose_here),
             onDismiss = { choosing = false },
-        ) { v, picked ->
+        ) { picked ->
             choosing = false
-            target = v
             folder = picked
         }
     }
@@ -670,7 +613,7 @@ fun DocsSettingsSection(state: AppState) {
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(state.liveRevision()) {
         usage = catching { docs.usage() }.getOrNull()
-        trashCount = catching { docs.trash(null).size }.getOrDefault(0)
+        trashCount = catching { docs.trash(state.docsVaultId()).size }.getOrDefault(0)
     }
     val vaults = state.vaultsOf(VaultKindUi.DOCS)
     SectionCard(stringResource(Res.string.docs_usage_title)) {
@@ -724,7 +667,7 @@ fun DocsSettingsSection(state: AppState) {
             confirmButton = {
                 TextButton(onClick = {
                     emptyTrash = false
-                    state.run(onError = { error = it }, block = { docs.emptyTrash(null) }) { state.changed() }
+                    state.run(onError = { error = it }, block = { docs.emptyTrash(state.docsVaultId()) }) { state.changed() }
                 }, modifier = Modifier.testTag("ask-confirm")) { Text(stringResource(Res.string.docs_delete_forever)) }
             },
             dismissButton = { TextButton(onClick = { emptyTrash = false }) { Text(stringResource(Res.string.a_cancel)) } },

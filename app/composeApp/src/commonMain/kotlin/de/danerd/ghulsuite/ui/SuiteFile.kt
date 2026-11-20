@@ -34,8 +34,36 @@ import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 
+/** Extension of the suite file. */
+const val SUITE_FILE_EXT = ".ghlzip"
+
 /** File name suggested for a new suite file. */
-const val SUITE_FILE_NAME = "GhulSuite.ghlzip"
+const val SUITE_FILE_NAME = "GhulSuite$SUITE_FILE_EXT"
+
+/** Extension of a GhulDocs package: the GhulDocs vault (or a part of it) as a file of its own. */
+const val DOCS_PACKAGE_EXT = ".ghldocs"
+
+/** Whether [name] is the name of a GhulDocs package (by its extension). */
+fun isDocsPackageName(name: String) = name.endsWith(DOCS_PACKAGE_EXT, ignoreCase = true)
+
+/** File name suggested for a GhulDocs package named [name]. */
+fun docsPackageName(name: String) = "${name.trim().ifBlank { "GhulDocs" }}$DOCS_PACKAGE_EXT"
+
+/** A suite file was picked where a GhulDocs package was expected (the core's text, translated). */
+fun suiteNotDocsPackage() = VaultException(VaultErrorKind.INVALID_INPUT, "this is a suite file, not a GhulDocs package")
+
+/**
+ * The protection of the GhulDocs package [ref] (only its first entry is read): a suite file or
+ * anything else is refused with a text that says what it is.
+ */
+suspend fun docsPackageProtection(backend: de.danerd.ghulsuite.model.VaultBackend, ref: SuiteFileRef): ProtectionUi {
+    val info = backend.archiveInspect(ref)
+    return when (info?.content) {
+        de.danerd.ghulsuite.model.ArchiveContentUi.DOCS_VAULT -> info.protection
+        de.danerd.ghulsuite.model.ArchiveContentUi.SUITE -> throw suiteNotDocsPackage()
+        null -> throw VaultException(VaultErrorKind.INVALID_INPUT, "not a GhulSuite file")
+    }
+}
 
 /**
  * A suite file picked to be opened: read from [source] (as a stream, when it is opened), saved
@@ -70,8 +98,6 @@ fun OpenSuiteFile(
     file: PickedSuiteFile,
     onOpened: () -> Unit,
     onCancel: () -> Unit,
-    /** The file is a GhulDocs vault saved on its own (no suite file): its protection. */
-    onDocsVault: ((ProtectionUi) -> Unit)? = null,
 ) {
     val backend = state.backend
     var protection by remember { mutableStateOf<ProtectionUi?>(null) }
@@ -90,12 +116,7 @@ fun OpenSuiteFile(
     val tooWeak = stringResource(Res.string.setup_pw_too_weak)
     val mismatch = stringResource(Res.string.setup_pw_mismatch)
     LaunchedEffect(file) {
-        // A .ghlzip may also be a GhulDocs vault saved on its own: that is not opened as a suite.
-        val inspected = catching { backend.archiveInspect(file.source) }.getOrNull()
-        if (inspected?.content == de.danerd.ghulsuite.model.ArchiveContentUi.DOCS_VAULT && onDocsVault != null) {
-            onDocsVault(inspected.protection)
-            return@LaunchedEffect
-        }
+        // Only its header is read; a GhulDocs package (.ghldocs) is refused with a text that says so.
         catching { backend.archiveProtection(file.source) }.onSuccess { protection = it }.onFailure { error = describe(it) }
     }
     val p = protection
@@ -243,26 +264,28 @@ fun SuiteFileSection(state: AppState) {
     }
     val saveAs = rememberCreateSuiteFile { created -> if (created != null) save(created, force = false, created = true) }
     val openOther = rememberOpenSuiteFile { r -> opening = PickedSuiteFile(r) }
-    // A suite file handed over by another app while unlocked (see AppState.applyLaunch).
+    // A suite file or GhulDocs package handed over by another app while unlocked (see
+    // AppState.applyLaunch): a GhulDocs package (by its name) is added to GhulDocs.
     LaunchedEffect(Unit) {
         AppLaunch.suiteFile.collect { f ->
             if (f != null) {
                 AppLaunch.suiteFile.value = null
-                opening = f
+                if (isDocsPackageName(f.source.name)) {
+                    catching { docsPackageProtection(backend, f.source) }
+                        .onSuccess { p ->
+                            foreignDocs = ForeignRequest(ByteArray(0), de.danerd.ghulsuite.model.VaultKindUi.DOCS, p, f.source.name.substringBeforeLast('.'), f.source)
+                        }
+                        .onFailure { error = describe(it) }
+                } else {
+                    opening = f
+                }
             }
         }
     }
 
     foreignDocs?.let { r -> ForeignVaultDialog(state, r, onDone = { foreignDocs = null }) }
     opening?.let { f ->
-        OpenSuiteFile(
-            state, f, onOpened = { opening = null; ref = backend.suiteFile() }, onCancel = { opening = null },
-            // A GhulDocs vault saved on its own: added to this suite (opened once with its own protection).
-            onDocsVault = { protection ->
-                opening = null
-                foreignDocs = ForeignRequest(ByteArray(0), de.danerd.ghulsuite.model.VaultKindUi.DOCS, protection, f.source.name.substringBeforeLast('.'), f.source)
-            },
-        )
+        OpenSuiteFile(state, f, onOpened = { opening = null; ref = backend.suiteFile() }, onCancel = { opening = null })
         return
     }
 

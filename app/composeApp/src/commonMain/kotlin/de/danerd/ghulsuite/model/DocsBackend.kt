@@ -27,7 +27,7 @@ data class DocsItemUi(
 /** How much GhulDocs holds (all its vaults together, the trash included). */
 data class DocsUsageUi(val used: Long, val limit: Long, val files: Int)
 
-/** What a `.ghlzip` holds. */
+/** What a suite file (`.ghlzip`) or GhulDocs package (`.ghldocs`) holds. */
 enum class ArchiveContentUi { SUITE, DOCS_VAULT }
 
 data class ArchiveInfoUi(val content: ArchiveContentUi, val protection: ProtectionUi)
@@ -73,16 +73,19 @@ interface DocsBackend {
     /** Checks every document of a vault; returns those that are damaged or missing. */
     suspend fun verify(vaultId: String): List<DocsItemUi>
 
-    /** The whole vault with its documents as a `.ghlzip` (this suite's protection) into [sink]. */
+    /** The whole vault with its documents as a GhulDocs package (`.ghldocs`, this suite's protection) into [sink]. */
     suspend fun exportVault(vaultId: String, sink: ByteSink, onProgress: (Long, Long) -> Unit = { _, _ -> })
 
     /**
      * Picked files and folders ([ShareVaultUi.ids], empty: all) as a vault of their own with a new
-     * protection, into [sink] as a `.ghlzip`; returns the new vault's recovery code.
+     * protection, into [sink] as a `.ghldocs`; returns the new vault's recovery code.
      */
     suspend fun shareVault(share: ShareVaultUi, pin: String?, onTouchNeeded: () -> Unit, sink: ByteSink, onProgress: (Long, Long) -> Unit = { _, _ -> }): String
 
-    /** Adds a GhulDocs vault saved on its own (opened once with its own protection); its id. */
+    /**
+     * Adds a GhulDocs package (opened once with its own protection): into the suite's GhulDocs
+     * vault (a new folder named [name]) if it has one, else as it; the vault's id.
+     */
     suspend fun adoptVault(
         file: SuiteFileRef,
         name: String,

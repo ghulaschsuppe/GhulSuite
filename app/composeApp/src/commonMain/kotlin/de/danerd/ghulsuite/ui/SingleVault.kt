@@ -399,7 +399,7 @@ fun ShareAsVaultDialog(state: AppState, vaultId: String, ids: List<String>, docs
                                     password = password, keyfile = kf,
                                     keyLabel = keyLabel, keyfileLabel = keyfileLabel, recoveryLabel = recoveryLabel,
                                 ) to (if (withKey) pin else null)
-                                createDocsFile("${name.trim().ifBlank { "GhulDocs" }}.ghlzip", "application/octet-stream")
+                                createDocsFile(docsPackageName(name), "application/octet-stream")
                                 return@run
                             }
                             state.run(onError = { error = it }, block = {
