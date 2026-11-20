@@ -436,8 +436,17 @@ class DocsInteractionTest {
     fun sharedFilesAskWhereTheyGo() = app(setup = { tab = Tab.PASS }) { state, fake ->
         waitFor("Codeberg")
         val f = Source("Rechnung.pdf", 2000, mime = "application/pdf")
-        runOnIdle { AppLaunch.docsFiles.value = listOf(f) }
-        waitFor("Save in GhulDocs")
+        // AppLaunch is one for the whole test process: on a slow runner the state of an earlier
+        // test may still be winding down and take the hand-over. Hand it over again until this
+        // app shows it (in the app there is only one state).
+        var shownHere = false
+        repeat(3) {
+            if (!shownHere) {
+                runOnIdle { AppLaunch.docsFiles.value = listOf(f) }
+                shownHere = runCatching { waitUntil(timeoutMillis = 10_000) { shown("Save in GhulDocs") } }.isSuccess
+            }
+        }
+        assertTrue(shownHere, "the shared file was never offered")
         assertEquals(Tab.DOCS, state.tab)
         shot("incoming")
         onAllNodesWithTag("docs-incoming-save").onFirst().performClick()
