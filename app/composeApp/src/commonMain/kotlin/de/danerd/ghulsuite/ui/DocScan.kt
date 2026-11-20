@@ -485,9 +485,13 @@ private fun save(state: AppState, s: ScanSession, fallbackName: String) {
         try {
             val jpegs = s.pages.map { it.rendered.jpeg }
             pdf = offMain({ it.fill(0) }) { buildPdf(jpegs) }
-            val usage = catching { state.backend.docs.usage() }.getOrNull()
+            val usage = catching { state.backend.docs.usage(s.vaultId) }.getOrNull()
             if (usage != null && usage.used + pdf.size > usage.limit) {
-                s.error = docsLimitText("${usage.used}|${usage.limit}|${pdf.size}", DocsAdding.FILE) { res, args -> state.str(res, *args) }
+                s.error = docsLimitText("${usage.used}|${usage.limit}|${pdf.size}|false", DocsAdding.FILE) { res, args -> state.str(res, *args) }
+                return@launch
+            }
+            if (usage != null && usage.suiteUsed + pdf.size > usage.suiteLimit) {
+                s.error = docsLimitText("${usage.suiteUsed}|${usage.suiteLimit}|${pdf.size}|true", DocsAdding.FILE) { res, args -> state.str(res, *args) }
                 return@launch
             }
             val name = docName(pdfName(s.name, fallbackName))

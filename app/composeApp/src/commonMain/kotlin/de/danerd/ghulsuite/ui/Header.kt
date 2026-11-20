@@ -55,7 +55,7 @@ fun AreaContext(state: AppState) {
     val allCalendars = stringResource(Res.string.cal_all_calendars)
     // Texts looked up later (after a count is known) use the language of the screen.
     val env = rememberResourceEnvironment()
-    LaunchedEffect(state.tab, state.revision, state.passVault, state.authVault, state.calendars, state.backend.settings.calHidden, state.hidden) {
+    LaunchedEffect(state.tab, state.revision, state.passVault, state.authVault, state.docsVault, state.calendars, state.backend.settings.calHidden, state.hidden) {
         label = when (state.tab) {
             Tab.PASS -> state.vaults.firstOrNull { it.id == state.passVault }?.name ?: allVaults
             Tab.AUTH -> {
@@ -64,8 +64,8 @@ fun AreaContext(state: AppState) {
                     .count { (state.authVault == null || it.vaultId == state.authVault) && hiddenKey("auth", it.vaultId, it.id) !in state.hidden }
                 (state.vaults.firstOrNull { it.id == state.authVault }?.name ?: allAccounts) + " · " + countText(env, Res.plurals.auth_count, n, n.toString())
             }
-            // A suite has one GhulDocs vault: its name, nothing to choose.
-            Tab.DOCS -> state.vaultsOf(VaultKindUi.DOCS).firstOrNull()?.name.orEmpty()
+            Tab.DOCS -> state.vaults.firstOrNull { it.id == state.docsVault }?.name
+                ?: state.vaultsOf(VaultKindUi.DOCS).singleOrNull()?.name ?: allVaults
             Tab.CAL -> {
                 val cals = state.calendars
                 val hidden = state.backend.settings.calHiddenSet()
@@ -75,7 +75,7 @@ fun AreaContext(state: AppState) {
             Tab.SETTINGS -> "$suite · Version " + state.backend.appVersion.substringBefore("-").split('.').take(2).joinToString(".")
         }
     }
-    val clickable = state.tab != Tab.SETTINGS && state.tab != Tab.DOCS
+    val clickable = state.tab != Tab.SETTINGS
     Row(
         Modifier.then(if (clickable) Modifier.clickable { state.contextSheet = true } else Modifier),
         verticalAlignment = Alignment.CenterVertically,
@@ -106,16 +106,25 @@ fun AreaContextSheet(state: AppState) {
     val close = { state.contextSheet = false }
     when (state.tab) {
         Tab.PASS, Tab.AUTH -> VaultSheet(state, if (state.tab == Tab.PASS) VaultKindUi.PASS else VaultKindUi.TOTP, close)
+        Tab.DOCS -> VaultSheet(state, VaultKindUi.DOCS, close)
         Tab.CAL -> CalendarsSheet(state, close)
-        Tab.DOCS, Tab.SETTINGS -> close()
+        Tab.SETTINGS -> close()
     }
 }
 
 @Composable
 private fun VaultSheet(state: AppState, kind: VaultKindUi, close: () -> Unit) {
-    val selected = if (kind == VaultKindUi.PASS) state.passVault else state.authVault
+    val selected = when (kind) {
+        VaultKindUi.PASS -> state.passVault
+        VaultKindUi.DOCS -> state.docsVault
+        else -> state.authVault
+    }
     val pick = { id: String? ->
-        if (kind == VaultKindUi.PASS) state.passVault = id else state.authVault = id
+        when (kind) {
+            VaultKindUi.PASS -> state.passVault = id
+            VaultKindUi.DOCS -> state.docsVault = id
+            else -> state.authVault = id
+        }
         close()
     }
     GhulSheet(close, stringResource(Res.string.ctx_choose_vault)) {

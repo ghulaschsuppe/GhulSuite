@@ -180,12 +180,6 @@ interface VaultBackend {
      */
     suspend fun archiveSave(target: SuiteFileRef, device: String, created: Boolean, onProgress: (Long, Long) -> Unit = { _, _ -> }): Boolean = false
     /**
-     * Saves the GhulDocs vault [vaultId] with its documents as a GhulDocs package (`.ghldocs`, this
-     * suite's protection) into [target]: written as a stream, read back and compared. False when
-     * it could not be written completely ([created]: a failed write removes the file again).
-     */
-    suspend fun docsSaveVault(vaultId: String, target: SuiteFileRef, created: Boolean, onProgress: (Long, Long) -> Unit = { _, _ -> }): Boolean = false
-    /**
      * Deletes the suite on this device for good, to set up a new one in its place: it is locked,
      * then its quick unlock (with the platform's keys), calendar reminders, the remembered suite
      * file and this device's settings that name its vaults or entries go, and the core removes

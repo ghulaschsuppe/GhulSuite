@@ -177,9 +177,12 @@ class CoreDocsBackend(
         transfer { s.docsReadFile(vaultId, id, ByteSinkOutput(sink, active), BytesProgress { d, _ -> onProgress(d) }) }
     }
 
-    override suspend fun usage() = io {
-        val u = suite().docsUsage()
-        DocsUsageUi(u.used.toLong(), u.limit.toLong(), u.files.toInt())
+    override suspend fun usage(vaultId: String?) = io {
+        val u = suite().docsUsage(vaultId.orEmpty())
+        DocsUsageUi(
+            u.used.toLong(), u.limit.toLong(), u.files.toInt(),
+            u.suiteUsed.toLong(), u.suiteLimit.toLong(), u.suiteFiles.toInt(), u.maxFiles.toInt(),
+        )
     }
 
     override suspend fun verify(vaultId: String) = io { suite().docsVerify(vaultId).map { it.toUi() } }
@@ -229,24 +232,6 @@ class CoreDocsBackend(
             val input = openInput(file) ?: throw VaultException(VaultErrorKind.STORAGE, "the file cannot be read")
             input.stream.use {
                 mapped { s.docsAdoptVault(SuiteInputSource(input), name, password, t, t?.let { Touch(onTouchNeeded) }, pin, keyfile, BytesProgress(onProgress)) }
-            }
-        }
-    }
-
-    override suspend fun replaceVault(
-        file: SuiteFileRef,
-        name: String,
-        password: String,
-        pin: String?,
-        keyfile: ByteArray?,
-        onTouchNeeded: () -> Unit,
-        onProgress: (Long, Long) -> Unit,
-    ): String {
-        val s = suite()
-        return keys.run(pin) { t ->
-            val input = openInput(file) ?: throw VaultException(VaultErrorKind.STORAGE, "the file cannot be read")
-            input.stream.use {
-                mapped { s.docsReplaceVault(SuiteInputSource(input), name, password, t, t?.let { Touch(onTouchNeeded) }, pin, keyfile, BytesProgress(onProgress)) }
             }
         }
     }

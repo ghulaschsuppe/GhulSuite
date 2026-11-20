@@ -81,11 +81,6 @@ class ScreenshotTest {
             calls += "archiveSave:${target.name}:$created"
             return saveOk
         }
-        override suspend fun docsSaveVault(vaultId: String, target: de.danerd.ghulsuite.model.SuiteFileRef, created: Boolean, onProgress: (Long, Long) -> Unit): Boolean {
-            kotlinx.coroutines.delay(30)
-            calls += "docsSaveVault:$vaultId:${target.name}:$created"
-            return saveOk
-        }
         override suspend fun deleteSuite() {
             // As the real backend: locked first, then the files go.
             kotlinx.coroutines.delay(30)

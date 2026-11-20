@@ -205,6 +205,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     var authGrid by mutableStateOf(false)
 
     // --- GhulDocs
+    /** The GhulDocs vault shown (null: all, or the only one). */
+    var docsVault by mutableStateOf<String?>(null)
     /** Grows with every tap on "+" in GhulDocs: its screen opens the add sheet. */
     var docsAddTick by mutableStateOf(0)
     /** GhulDocs shows its trash: nothing can be added there, so there is no "+". */
@@ -417,6 +419,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     vaults = emptyList()
                     passVault = null
                     authVault = null
+                    docsVault = null
                     docsTrashShown = false
                     // Files shared from another app stay waiting (they were never decrypted); the
                     // question where they go comes again after unlocking.
@@ -655,6 +658,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             }
             if (passVault != null && vaults.none { it.id == passVault }) passVault = null
             if (authVault != null && vaults.none { it.id == authVault }) authVault = null
+            if (docsVault != null && vaults.none { it.id == docsVault }) docsVault = null
         }
     }
 
@@ -993,9 +997,10 @@ object PasswordPolicy {
 enum class DocsAdding { FILE, PACKAGE, ANY }
 
 /**
- * The text for [VaultErrorKind.DOCS_LIMIT] (detail `used|limit|needed`, bytes): how much it needs
- * and how much is free when that is the reason, else that GhulDocs is full (too many documents,
- * or a size that was not known before). [get] reads a text in the language of the screens.
+ * The text for [VaultErrorKind.DOCS_LIMIT] (detail `used|limit|needed|suite`, bytes): how much it
+ * needs and how much is free when that is the reason, else that the vault (or, with `suite`, all
+ * GhulDocs vaults together) is full (too many documents, or a size that was not known before).
+ * [get] reads a text in the language of the screens.
  */
 suspend fun docsLimitText(
     detail: String,
@@ -1006,17 +1011,26 @@ suspend fun docsLimitText(
     val used = parts.getOrNull(0)?.toLongOrNull() ?: 0
     val limit = parts.getOrNull(1)?.toLongOrNull() ?: 1_000_000_000
     val needed = parts.getOrNull(2)?.toLongOrNull() ?: 0
+    val suite = parts.getOrNull(3) == "true"
     val free = (limit - used).coerceAtLeast(0)
+    if (suite) {
+        // All GhulDocs vaults together: another vault would not help, emptying or deleting would.
+        // Room for the bytes but not for one more document, or a size not known before: "full".
+        return if (needed > free) {
+            get(Res.string.err_docs_suite_room, arrayOf(formatSizeSi(needed), formatSizeSi(free), formatSizeSi(limit)))
+        } else {
+            get(Res.string.err_docs_suite_full, arrayOf(formatSizeSi(used), formatSizeSi(limit)))
+        }
+    }
     return when {
-        // More than GhulDocs holds at all: emptying the trash would not help.
+        // More than a GhulDocs vault holds at all: emptying the trash would not help.
         needed > limit && adding == DocsAdding.PACKAGE ->
             get(Res.string.err_docs_package_too_large, arrayOf(formatSizeSi(needed), formatSizeSi(limit)))
         needed > limit -> get(Res.string.err_docs_too_large, arrayOf(formatSizeSi(limit)))
         needed > free -> get(
             when (adding) {
                 DocsAdding.FILE -> Res.string.err_docs_room_file
-                DocsAdding.PACKAGE -> Res.string.err_docs_room_package
-                DocsAdding.ANY -> Res.string.err_docs_room
+                DocsAdding.PACKAGE, DocsAdding.ANY -> Res.string.err_docs_room
             },
             arrayOf(formatSizeSi(needed), formatSizeSi(free)),
         )

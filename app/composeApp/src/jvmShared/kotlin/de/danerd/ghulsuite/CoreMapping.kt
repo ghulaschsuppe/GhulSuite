@@ -113,7 +113,7 @@ internal fun GhulException.toVault(): VaultException {
         is GhulException.NotFound -> VaultException(VaultErrorKind.NOT_FOUND, d)
         is GhulException.UpdateRequired -> VaultException(VaultErrorKind.UPDATE_REQUIRED, d)
         is GhulException.OldFormat -> VaultException(VaultErrorKind.OLD_FORMAT, d)
-        is GhulException.DocsLimit -> VaultException(VaultErrorKind.DOCS_LIMIT, "$used|$limit|$needed")
+        is GhulException.DocsLimit -> VaultException(VaultErrorKind.DOCS_LIMIT, "$used|$limit|$needed|$suite")
     }
 }
 

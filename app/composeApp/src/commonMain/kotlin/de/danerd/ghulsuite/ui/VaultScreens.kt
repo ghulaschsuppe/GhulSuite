@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Key
@@ -35,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import de.danerd.ghulsuite.model.PickedFile
 import de.danerd.ghulsuite.model.ProtectionUi
@@ -113,8 +115,7 @@ fun VaultPickerDialog(state: AppState, kind: VaultKindUi, onPick: (String) -> Un
 /** Creates a vault; [kind] fixed or chosen by the user when null. */
 @Composable
 fun CreateVaultDialog(state: AppState, kind: VaultKindUi?, onCreated: (String) -> Unit, onDismiss: () -> Unit) {
-    // A suite has one GhulDocs vault: a second one is not offered.
-    val kinds = VaultKindUi.entries.filter { it != VaultKindUi.DOCS || state.vaultsOf(VaultKindUi.DOCS).isEmpty() }
+    val kinds = VaultKindUi.entries
     var chosen by remember { mutableStateOf(kind ?: VaultKindUi.PASS) }
     var name by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
@@ -162,6 +163,8 @@ fun VaultsSection(state: AppState) {
     var menuFor by remember { mutableStateOf<String?>(null) }
     var renaming by remember { mutableStateOf<VaultUi?>(null) }
     var removing by remember { mutableStateOf<VaultUi?>(null) }
+    /** The vault handed on as a whole (with a protection of its own). */
+    var sharing by remember { mutableStateOf<VaultUi?>(null) }
     val exported = stringResource(Res.string.msg_exported)
     val added = stringResource(Res.string.msg_vault_added)
     val save = rememberSaveFile { ok -> if (ok) state.message(exported) }
@@ -213,6 +216,7 @@ fun VaultsSection(state: AppState) {
 
     SectionCard(stringResource(Res.string.set_vaults)) {
         Hint(stringResource(Res.string.set_vaults_hint))
+        Hint(stringResource(Res.string.vaults_export_share_hint))
         for (v in state.vaults) {
             Box {
                 // The same row as in every list: tile in the colour of the area, name, what it holds.
@@ -226,7 +230,10 @@ fun VaultsSection(state: AppState) {
                     leading = {
                         if (v.available) IconTile(tabIcon(tab), areaColor(tab)) else IconTile(Icons.Filled.Warning, warnColor())
                     },
-                    trailing = { BarIcon(Icons.Filled.MoreVert, stringResource(Res.string.a_more)) { menuFor = v.id } },
+                    trailing = {
+                        // Tagged with the name: the emulator's flows open the menu of a vault they made.
+                        Box(Modifier.testTag("vault-menu-" + v.name)) { BarIcon(Icons.Filled.MoreVert, stringResource(Res.string.a_more)) { menuFor = v.id } }
+                    },
                     divider = v != state.vaults.first(), flush = true,
                 )
                 // The menu of a vault: an action sheet like every other (title = name, tiles, delete last in red).
@@ -236,7 +243,10 @@ fun VaultsSection(state: AppState) {
                         SheetList {
                             SheetRow(stringResource(Res.string.a_rename), leading = { IconTile(Icons.Filled.Edit, g.accent) }) { renaming = v; close() }
                             if (v.available && filePickersAvailable) {
-                                SheetRow(stringResource(Res.string.a_export), leading = { IconTile(Icons.Filled.Upload, g.accent) }, divider = true) {
+                                SheetRow(
+                                    stringResource(Res.string.a_export), stringResource(Res.string.vault_export_sub),
+                                    leading = { IconTile(Icons.Filled.Upload, g.accent) }, divider = true,
+                                ) {
                                     close()
                                     if (v.kind == VaultKindUi.DOCS) {
                                         // With its documents, as a stream into the file chosen.
@@ -247,6 +257,15 @@ fun VaultsSection(state: AppState) {
                                             save("${v.name.ifBlank { "vault" }}.${extensionOf(v.kind)}", data)
                                         }
                                     }
+                                }
+                            }
+                            if (v.available && filePickersAvailable) {
+                                SheetRow(
+                                    stringResource(Res.string.share_vault_action), stringResource(Res.string.vault_share_sub),
+                                    leading = { IconTile(Icons.Filled.Share, paletteColor(5)) }, divider = true,
+                                ) {
+                                    close()
+                                    sharing = v
                                 }
                             }
                             SheetRow(stringResource(Res.string.a_delete), leading = { IconTile(Icons.Filled.Delete, g.danger) }, color = g.danger, divider = true) {
@@ -265,6 +284,7 @@ fun VaultsSection(state: AppState) {
     }
 
     foreign?.let { r -> ForeignVaultDialog(state, r, onDone = { foreign = null }) }
+    sharing?.let { v -> ShareAsVaultDialog(state, v.id, emptyList(), docs = v.kind == VaultKindUi.DOCS, wholeVault = v.name) { sharing = null } }
 
     if (create) CreateVaultDialog(state, null, onCreated = { create = false }, onDismiss = { create = false })
     renaming?.let { v ->
@@ -324,13 +344,9 @@ class ForeignRequest(
     val file: de.danerd.ghulsuite.model.SuiteFileRef? = null,
 )
 
-/** What happens to a GhulDocs package when the suite has a GhulDocs vault already. */
-enum class DocsPackageMode { MERGE, SAVE_REPLACE, DELETE_REPLACE }
-
 /**
- * Opens a vault with its own password and key or key file once and adds it to the suite. A
- * GhulDocs package when the suite has a GhulDocs vault: added as a folder of it, or in its place
- * (saved as a package first, or deleted for good after a typed confirmation).
+ * Opens a vault with its own password and key or key file once and adds it to the suite, as a
+ * vault of its own with the suite's protection. A GhulDocs package comes as its file.
  */
 @Composable
 fun ForeignVaultDialog(state: AppState, request: ForeignRequest, onDone: () -> Unit) {
@@ -339,102 +355,22 @@ fun ForeignVaultDialog(state: AppState, request: ForeignRequest, onDone: () -> U
     var withKey by remember { mutableStateOf(hasKey) }
     val needsKey = withKey && hasKey
     var name by remember { mutableStateOf(request.name) }
-    // A suite has one GhulDocs vault: a GhulDocs package goes into it or takes its place.
-    val docsVault = if (request.kind == VaultKindUi.DOCS) state.vaultsOf(VaultKindUi.DOCS).firstOrNull() else null
-    val intoDocs = docsVault != null && request.file != null
-    var mode by remember { mutableStateOf(DocsPackageMode.MERGE) }
-    val merging = !intoDocs || mode == DocsPackageMode.MERGE
-    var confirmDelete by remember { mutableStateOf(false) }
     var password by remember { mutableStateOf("") }
     var pin by remember { mutableStateOf("") }
     var keyfile by remember { mutableStateOf<PickedFile?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    val added = stringResource(if (intoDocs) Res.string.msg_docs_merged else Res.string.msg_vault_added)
-    val replaced = stringResource(Res.string.docs_replaced)
-    val savedReplaced = stringResource(Res.string.docs_saved_replaced)
-    val notSaved = stringResource(Res.string.docs_save_not_saved)
-    val saveFailed = stringResource(Res.string.docs_save_failed)
-    /** A text worked out where it happened (a full GhulDocs, a package not saved): shown as it is. */
+    val added = stringResource(Res.string.msg_vault_added)
+    /** A full GhulDocs says how much the package needs and how much is free: shown as it is. */
     val plain = remember { arrayOfNulls<String>(1) }
 
-    /** Runs the adding; a full GhulDocs says how much the package needs and how much is free. */
-    fun adding(block: suspend () -> String?) {
-        plain[0] = null
-        state.run(onError = { error = plain[0] ?: it }, block = {
-            try {
-                block()
-            } catch (e: VaultException) {
-                if (e.kind == VaultErrorKind.DOCS_LIMIT) {
-                    plain[0] = docsLimitText(e.detail, DocsAdding.PACKAGE) { res, args -> state.str(res, *args) }
-                }
-                throw e
-            }
-        }) { msg ->
-            state.enableModule(request.kind)
-            state.changed()
-            state.message(msg ?: added)
-            onDone()
-        }
-    }
-
-    suspend fun replace(): String = state.backend.docs.replaceVault(
-        request.file!!, name.ifBlank { request.name }, password,
-        if (needsKey) pin else null, if (needsKey) null else keyfile?.bytes, state.onTouchNeeded, state.onProgress,
-    )
-
-    val pickPackage = rememberCreateFile { target ->
-        val old = docsVault ?: return@rememberCreateFile
-        if (target == null) {
-            error = notSaved
-            return@rememberCreateFile
-        }
-        adding {
-            // Written and read back first; only then the package takes the old vault's place.
-            if (!state.backend.docsSaveVault(old.id, target, created = true, state.onProgress)) {
-                plain[0] = saveFailed
-                throw VaultException(VaultErrorKind.OTHER, saveFailed)
-            }
-            replace()
-            savedReplaced.replace("%1\$s", target.name)
-        }
-    }
-
     AlertDialog(
-        danger = !merging,
         onDismissRequest = { if (!state.busy) onDone() },
-        title = { Text(stringResource(if (intoDocs) Res.string.docs_merge_title else Res.string.foreign_title)) },
+        title = { Text(stringResource(Res.string.foreign_title)) },
         text = {
             // The sheet scrolls itself; a second scroll container inside it crashes (T6).
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (intoDocs) {
-                    ListCard {
-                        PickRow(mode == DocsPackageMode.MERGE, Icons.Filled.CreateNewFolder, 3, stringResource(Res.string.docs_pkg_merge),
-                            stringResource(Res.string.docs_pkg_merge_sub), onClick = { mode = DocsPackageMode.MERGE; error = null })
-                        if (filePickersAvailable) {
-                            PickRow(mode == DocsPackageMode.SAVE_REPLACE, Icons.Filled.Save, 0, stringResource(Res.string.docs_pkg_save_replace),
-                                stringResource(Res.string.docs_pkg_save_replace_sub), divider = true,
-                                onClick = { mode = DocsPackageMode.SAVE_REPLACE; error = null })
-                        }
-                        PickRow(mode == DocsPackageMode.DELETE_REPLACE, Icons.Filled.DeleteForever, 7, stringResource(Res.string.docs_pkg_delete_replace),
-                            stringResource(Res.string.docs_pkg_delete_replace_sub), divider = true,
-                            onClick = { mode = DocsPackageMode.DELETE_REPLACE; error = null })
-                    }
-                }
-                Hint(
-                    stringResource(
-                        when {
-                            intoDocs && !merging -> Res.string.docs_replace_text
-                            intoDocs -> Res.string.docs_merge_text
-                            request.kind == VaultKindUi.DOCS -> Res.string.docs_foreign_text
-                            else -> Res.string.foreign_text
-                        },
-                    ),
-                )
-                OutlinedTextField(
-                    name, { name = it },
-                    label = { Text(stringResource(if (intoDocs && merging) Res.string.l_docs_folder_name else Res.string.l_vault_name)) },
-                    singleLine = true,
-                )
+                Hint(stringResource(if (request.kind == VaultKindUi.DOCS) Res.string.docs_foreign_text else Res.string.foreign_text))
+                OutlinedTextField(name, { name = it }, label = { Text(stringResource(Res.string.l_vault_name)) }, singleLine = true)
                 SecretTextField(password, { password = it; error = null }, stringResource(Res.string.l_master_password))
                 if (hasKey && hasKeyfile) FactorChoice(withKey) { withKey = it; error = null }
                 if (needsKey) {
@@ -450,8 +386,9 @@ fun ForeignVaultDialog(state: AppState, request: ForeignRequest, onDone: () -> U
         confirmButton = {
             TextButton(onClick = {
                 error = null
-                when {
-                    merging -> adding {
+                plain[0] = null
+                state.run(onError = { error = plain[0] ?: it }, block = {
+                    try {
                         val f = request.file
                         if (f != null) {
                             state.backend.docs.adoptVault(
@@ -464,40 +401,22 @@ fun ForeignVaultDialog(state: AppState, request: ForeignRequest, onDone: () -> U
                                 if (needsKey) pin else null, if (needsKey) null else keyfile?.bytes, state.onTouchNeeded,
                             )
                         }
-                        null
+                    } catch (e: VaultException) {
+                        if (e.kind == VaultErrorKind.DOCS_LIMIT) {
+                            plain[0] = docsLimitText(e.detail, DocsAdding.PACKAGE) { res, args -> state.str(res, *args) }
+                        }
+                        throw e
                     }
-                    mode == DocsPackageMode.SAVE_REPLACE -> pickPackage(docsPackageName(docsVault?.name.orEmpty()))
-                    else -> confirmDelete = true
+                }) {
+                    state.enableModule(request.kind)
+                    state.changed()
+                    state.message(added)
+                    onDone()
                 }
             }, enabled = !state.busy && password.isNotEmpty() && (if (needsKey) keyPinOk(state, pin) else keyfile != null)) {
-                Text(
-                    stringResource(
-                        when {
-                            merging -> Res.string.a_take_over
-                            mode == DocsPackageMode.SAVE_REPLACE -> Res.string.a_save_and_replace
-                            else -> Res.string.a_delete_and_replace
-                        },
-                    ),
-                )
+                Text(stringResource(Res.string.a_take_over))
             }
         },
         dismissButton = { TextButton(onClick = onDone, enabled = !state.busy) { Text(stringResource(Res.string.a_cancel)) } },
     )
-
-    if (confirmDelete) {
-        DeleteForGoodDialog(
-            title = stringResource(Res.string.docs_delete_title),
-            warning = stringResource(Res.string.docs_delete_warning),
-            note = stringResource(Res.string.docs_delete_note),
-            confirm = stringResource(Res.string.a_delete_and_replace),
-            onConfirm = {
-                confirmDelete = false
-                adding {
-                    replace()
-                    replaced
-                }
-            },
-            onDismiss = { confirmDelete = false },
-        )
-    }
 }

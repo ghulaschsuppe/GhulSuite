@@ -235,12 +235,12 @@ class DocsInteractionTest {
         fake.docs.limit = used + 500
         runOnIdle { state.addDocs("d1", null, listOf(Source("Gross.pdf", 5000))) }
         // How much the file needs and how much is free.
-        val msg = "The file needs ${formatSizeSi(5000)}, ${formatSizeSi(500)} are free. Nothing was added."
+        val msg = "The file needs ${formatSizeSi(5000)}, ${formatSizeSi(500)} are free in this GhulDocs vault. Nothing was added."
         waitPart(msg)
         shot("limit")
         // Without a known size: refused as soon as it is too much, and nothing stays.
         runOnIdle { state.addDocs("d1", null, listOf(Source("Unbekannt.bin", 5000, known = false), Source("Noch eine.pdf", 100))) }
-        waitPart("Unbekannt.bin, Noch eine.pdf: GhulDocs is full")
+        waitPart("Unbekannt.bin, Noch eine.pdf: This GhulDocs vault is full")
         assertTrue(fake.docs.nodes.none { it.name == "Gross.pdf" || it.name == "Unbekannt.bin" || it.name == "Noch eine.pdf" })
     }
 
@@ -418,18 +418,20 @@ class DocsInteractionTest {
         assertEquals("Zählerstand Strom: 4711\nWasser: 815\n", fake.shared[0].second.decodeToString())
     }
 
-    /** Locking leaves nothing of GhulDocs: no page with a document, no shared files. */
+    /** Locking leaves nothing of GhulDocs: no page with a document, no chosen vault, no shared files. */
     @Test
     fun lockClearsState() = app { state, fake ->
         waitFor("Personalausweis.png")
         text("Personalausweis.png").performClick()
         waitUntil(timeoutMillis = 10_000) { tagged("docs-image") }
+        runOnIdle { state.docsVault = "d1" }
         runOnIdle { state.lockNow() }
         waitUntil(timeoutMillis = 5_000) { fake.locks == 1 }
         fake.unlocked.value = false
         waitForIdle()
         assertTrue(state.stack.isEmpty())
         assertFalse(tagged("docs-image"))
+        assertNull(state.docsVault)
         assertNull(state.docsIncoming)
         assertFalse(part("Personalausweis"), "nothing of GhulDocs on the lock screen")
     }
@@ -462,8 +464,9 @@ class DocsInteractionTest {
     /** Options → GhulDocs: usage, a check of every document with its result, emptying the trash. */
     @Test
     fun optionsPageVerifiesAndEmptiesTrash() = app(setup = { tab = Tab.SETTINGS; push(Screen.SettingsPage(SetPage.DOCS)) }) { _, fake ->
-        waitPart("of 1 GB")
-        waitFor("1 item in the trash.")
+        // All GhulDocs vaults together (one here): of 3 GB.
+        waitPart("of 3 GB")
+        waitFor("1 item in the trash, in all GhulDocs vaults.")
         onAllNodesWithTag("docs-verify-d1").onFirst().performClick()
         waitFor("All documents are intact.")
         fake.docs.badOnVerify = setOf("a4")
@@ -474,24 +477,27 @@ class DocsInteractionTest {
         onAllNodesWithTag("docs-settings-empty-trash").onFirst().performClick()
         waitFor("Empty the trash")
         dialogButton("Delete for good")
-        waitUntil(timeoutMillis = 10_000) { "emptyTrash:d1" in fake.docs.calls }
+        waitUntil(timeoutMillis = 10_000) { "emptyTrash:null" in fake.docs.calls }
     }
 
-    /**
-     * A suite has one GhulDocs vault: its files at once, no list of vaults and no "All vaults",
-     * and nothing to choose in the header (its line only names the vault).
-     */
+    /** Several GhulDocs vaults: "All vaults" lists them, the chosen one opens; the header chooses too. */
     @Test
-    fun oneVaultNothingToChoose() = app { state, _ ->
-        waitFor("Mietvertrag.pdf")
-        assertFalse(part("All vaults"))
+    fun severalVaultsAreChosen() = app(prepare = {
+        vaults = vaults + de.danerd.ghulsuite.model.VaultUi("d2", de.danerd.ghulsuite.model.VaultKindUi.DOCS, "Steuer", "d2.ghldoc", true, 0)
+    }) { state, _ ->
+        waitFor("Steuer")
         waitFor("Dokumente")
+        assertFalse(shown("Mietvertrag.pdf"))
+        shot("vaults")
         text("Dokumente").performClick()
-        waitForIdle()
-        assertFalse(state.contextSheet, "the header line of GhulDocs opens nothing")
-        assertFalse(shown("Choose vault"))
-        shot("one-vault")
+        waitFor("Mietvertrag.pdf")
+        assertTrue(tagged("docs-breadcrumb"))
+        onAllNodes(hasText("All vaults") and hasAnyAncestor(androidx.compose.ui.test.hasTestTag("docs-breadcrumb")), useUnmergedTree = true).onFirst().performClick()
+        waitGone("Mietvertrag.pdf")
+        runOnIdle { state.docsVault = "d1" }
+        waitFor("Mietvertrag.pdf")
     }
+
 
     /** Hands [name] over as another app (file manager, double click) would, until this app takes it. */
     private fun DesktopComposeUiTest.handOver(name: String, until: () -> Boolean) {
@@ -507,52 +513,6 @@ class DocsInteractionTest {
             }
         }
         assertTrue(taken, "$name was never taken")
-    }
-
-    /**
-     * A GhulDocs package (.ghldocs) handed over while unlocked: added into the GhulDocs vault of
-     * the suite, in a new folder named after the package (not opened as a suite file).
-     */
-    @Test
-    fun aHandedOverDocsPackageGoesIntoGhulDocs() = app(prepare = {
-        archiveInfo = de.danerd.ghulsuite.model.ArchiveInfoUi(
-            de.danerd.ghulsuite.model.ArchiveContentUi.DOCS_VAULT,
-            de.danerd.ghulsuite.model.ProtectionUi(securityKeys = 0, keyfiles = 1, recoveryCodes = 1),
-        )
-    }) { _, _ ->
-        waitFor("Mietvertrag.pdf")
-        handOver("Steuer 2025.ghldocs") { shown("Add to GhulDocs") }
-        assertTrue(shown("Folder name"))
-        assertTrue(shown("Steuer 2025"), "the folder is named after the package")
-        assertFalse(part("is checked completely first"), "not opened as a suite file")
-        shot("package-merge")
-        dialogButton("Cancel")
-        waitGone("Add to GhulDocs")
-    }
-
-    /** A suite file named .ghldocs is no GhulDocs package: refused with a text that says what it is. */
-    @Test
-    fun aSuiteFileNamedLikeAPackageIsRefused() = app(prepare = {
-        archiveInfo = de.danerd.ghulsuite.model.ArchiveInfoUi(
-            de.danerd.ghulsuite.model.ArchiveContentUi.SUITE,
-            de.danerd.ghulsuite.model.ProtectionUi(securityKeys = 0, keyfiles = 1, recoveryCodes = 1),
-        )
-    }) { _, _ ->
-        waitFor("Mietvertrag.pdf")
-        // In the app the text is translated; without a display the test sees the core's text.
-        handOver("Falsch.ghldocs") { part("not a GhulDocs package") }
-        assertFalse(shown("Add to GhulDocs"))
-    }
-
-    /** "New vault" offers no second GhulDocs vault. */
-    @Test
-    fun noSecondDocsVaultIsOffered() = app(setup = { tab = Tab.SETTINGS; push(Screen.SettingsPage(SetPage.VAULTS)) }) { _, _ ->
-        waitFor("New vault")
-        text("New vault").performClick()
-        waitUntil(timeoutMillis = 10_000) { onAllNodes(hasText("GhulPass") and hasAnyAncestor(isDialog())).fetchSemanticsNodes().isNotEmpty() }
-        assertTrue(onAllNodes(hasText("GhulDocs") and hasAnyAncestor(isDialog()), useUnmergedTree = true).fetchSemanticsNodes().isEmpty())
-        assertTrue(onAllNodes(hasText("GhulCal") and hasAnyAncestor(isDialog()), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
-        shot("new-vault")
     }
 
     private val keyPackage: ScreenshotTest.Fake.() -> Unit = {
@@ -580,90 +540,96 @@ class DocsInteractionTest {
     }
 
     /**
-     * A GhulDocs package while the suite has a GhulDocs vault: three ways. Added as a folder, a
-     * full GhulDocs says how much the package needs and how much is free, and nothing is added.
+     * A GhulDocs package (.ghldocs) handed over while unlocked: offered as a vault of its own
+     * ("Take over vault", named after the package), not opened as a suite file.
      */
     @Test
-    fun aPackageOffersThreeWaysAndAFullGhulDocsSaysHowMuch() = withPickers {
-        app(prepare = keyPackage) { _, fake ->
-            waitFor("Mietvertrag.pdf")
-            handOver("Steuer 2025.ghldocs") { shown("Add to GhulDocs") }
-            assertTrue(shown("Add as a folder"))
-            assertTrue(shown("Save the existing GhulDocs and replace it"))
-            assertTrue(shown("Delete the existing GhulDocs and replace it"))
-            shot("package-choices")
-            val used = fake.docs.nodes.filter { !it.isFolder }.sumOf { it.data.size.toLong() }
-            fake.docs.limit = used + 40_000
-            fake.docs.packageSize = 60_000
-            val before = fake.docs.nodes.map { it.name }
-            packageSecrets()
-            dialogButton("Add")
-            waitPart("The package needs ${formatSizeSi(60_000)}, ${formatSizeSi(40_000)} are free. Nothing was added.")
-            shot("package-full")
-            assertEquals(before, fake.docs.nodes.map { it.name }, "nothing changed")
-            assertTrue(fake.docs.calls.none { it.startsWith("adoptVault") || it.startsWith("replaceVault") })
-            dialogButton("Cancel")
-            waitGone("Add to GhulDocs")
-        }
-    }
-
-    /** "Delete the existing GhulDocs and replace it" asks with the word typed out; "Cancel" keeps it. */
-    @Test
-    fun aPackageReplacesGhulDocsOnlyWhenConfirmed() = withPickers {
-        app(prepare = keyPackage) { _, fake ->
-            waitFor("Mietvertrag.pdf")
-            handOver("Steuer 2025.ghldocs") { shown("Add to GhulDocs") }
-            text("Delete the existing GhulDocs and replace it").performClick()
-            waitFor("Delete and replace")
-            packageSecrets()
-            dialogButton("Delete and replace")
-            waitFor("Delete the existing GhulDocs for good?")
-            shot("package-delete-ask")
-            onAllNodes(hasText("Delete and replace") and hasAnyAncestor(isDialog()) and hasClickAction()).onLast().assertIsNotEnabled()
-            onAllNodes(hasText("Cancel") and hasAnyAncestor(isDialog())).onLast().performClick()
-            waitGone("Delete the existing GhulDocs for good?")
-            assertTrue(fake.docs.nodes.any { it.name == "Mietvertrag.pdf" })
-            assertTrue(fake.docs.calls.none { it.startsWith("replaceVault") })
-
-            dialogButton("Delete and replace")
-            waitFor("Delete the existing GhulDocs for good?")
-            onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog())).onLast().performTextInput("DELETE")
-            onAllNodes(hasText("Delete and replace") and hasAnyAncestor(isDialog()) and hasClickAction()).onLast().performClick()
-            waitFor("GhulDocs replaced.")
-            assertTrue("replaceVault:Steuer 2025.ghldocs:Steuer 2025" in fake.docs.calls, fake.docs.calls.toString())
-            assertTrue(fake.docs.nodes.none { it.name == "Mietvertrag.pdf" })
-            assertTrue(fake.calls.none { it.startsWith("docsSaveVault") })
-        }
+    fun aHandedOverDocsPackageBecomesAVaultOfItsOwn() = app(prepare = keyPackage) { _, _ ->
+        waitFor("Mietvertrag.pdf")
+        handOver("Steuer 2025.ghldocs") { shown("Take over vault") }
+        assertTrue(part("becomes a GhulDocs vault of its own"))
+        assertTrue(shown("Vault name"))
+        assertTrue(shown("Steuer 2025"), "the vault is named after the package")
+        assertFalse(part("is checked completely first"), "not opened as a suite file")
+        shot("package-own-vault")
+        dialogButton("Cancel")
+        waitGone("Take over vault")
     }
 
     /**
-     * "Save the existing GhulDocs and replace it": saved as a package where the user picks, read
-     * back, and only then replaced. Cancelled or not written, nothing is replaced.
+     * A GhulDocs package that does not fit: a vault holds its limit, all of them together three
+     * times as much. The message says how much it needs and how much is free; nothing is added.
      */
     @Test
-    fun aPackageReplacesGhulDocsAfterSavingIt() = withPickers {
-        app(prepare = keyPackage) { _, fake ->
-            waitFor("Mietvertrag.pdf")
-            handOver("Steuer 2025.ghldocs") { shown("Add to GhulDocs") }
-            text("Save the existing GhulDocs and replace it").performClick()
-            waitFor("Save and replace")
-            packageSecrets()
-            shot("package-save-replace")
-            de.danerd.ghulsuite.ui.CreateFilePicker.override = { null }
-            dialogButton("Save and replace")
-            waitFor("Not saved. Nothing was replaced.")
-            de.danerd.ghulsuite.ui.CreateFilePicker.override = { name -> de.danerd.ghulsuite.model.SuiteFileRef("/stick/$name", name) }
-            fake.saveOk = false
-            dialogButton("Save and replace")
-            waitFor("The package was not written completely. Nothing was replaced.")
-            assertTrue(fake.docs.calls.none { it.startsWith("replaceVault") })
-            assertTrue(fake.docs.nodes.any { it.name == "Mietvertrag.pdf" })
-            fake.saveOk = true
-            dialogButton("Save and replace")
-            waitFor("GhulDocs saved as Dokumente.ghldocs and replaced.")
-            assertTrue("docsSaveVault:d1:Dokumente.ghldocs:true" in fake.calls, fake.calls.toString())
-            assertTrue("replaceVault:Steuer 2025.ghldocs:Steuer 2025" in fake.docs.calls)
-            assertTrue(fake.docs.nodes.none { it.name == "Mietvertrag.pdf" })
+    fun aPackageThatDoesNotFitSaysHowMuch() = app(prepare = keyPackage) { _, fake ->
+        waitFor("Mietvertrag.pdf")
+        val used = fake.docs.nodes.filter { !it.isFolder }.sumOf { it.data.size.toLong() }
+        // A vault may hold 100 000 bytes, all of them together 300 000: the package fits into a
+        // vault of its own, but not next to the others.
+        fake.docs.limit = 100_000
+        fake.docs.nodes += FakeDocs.Node("d3", "big", null, "Gross.bin", false, ByteArray((300_000 - used - 40_000).toInt()))
+        fake.docs.packageSize = 60_000
+        handOver("Steuer 2025.ghldocs") { shown("Take over vault") }
+        val before = fake.docs.nodes.map { it.name }
+        packageSecrets()
+        dialogButton("Add")
+        waitPart("This needs ${formatSizeSi(60_000)}, all GhulDocs vaults together have ${formatSizeSi(40_000)} free")
+        shot("package-full")
+        assertEquals(before, fake.docs.nodes.map { it.name }, "nothing changed")
+        assertTrue(fake.docs.calls.none { it.startsWith("adoptVault") })
+        // Larger than a vault holds at all.
+        fake.docs.packageSize = 150_000
+        dialogButton("Add")
+        waitPart("The package needs ${formatSizeSi(150_000)}, a GhulDocs vault holds at most ${formatSizeSi(100_000)}")
+        // It fits: a vault of its own.
+        fake.docs.packageSize = 30_000
+        dialogButton("Add")
+        waitUntil(timeoutMillis = 10_000) { "adoptVault:Steuer 2025.ghldocs:Steuer 2025" in fake.docs.calls }
+    }
+
+    /** "New vault" offers GhulDocs like every other area (a suite may have several GhulDocs vaults). */
+    @Test
+    fun aSecondDocsVaultIsOffered() = app(setup = { tab = Tab.SETTINGS; push(Screen.SettingsPage(SetPage.VAULTS)) }) { _, _ ->
+        waitFor("New vault")
+        text("New vault").performClick()
+        waitUntil(timeoutMillis = 10_000) { onAllNodes(hasText("GhulPass") and hasAnyAncestor(isDialog())).fetchSemanticsNodes().isNotEmpty() }
+        assertTrue(onAllNodes(hasText("GhulDocs") and hasAnyAncestor(isDialog()), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        assertTrue(onAllNodes(hasText("GhulCal") and hasAnyAncestor(isDialog()), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        shot("new-vault")
+    }
+
+    /**
+     * A vault's menu says what "Export" and "Hand on as a vault" are for; "Hand on as a vault"
+     * hands on the whole vault with a protection of its own: the name is the vault's, no entries
+     * picked (all of it). GhulDocs says it goes as a package.
+     */
+    @Test
+    fun aVaultIsHandedOnFromItsMenu() = withPickers {
+        app(setup = { tab = Tab.SETTINGS; push(Screen.SettingsPage(SetPage.VAULTS)) }) { _, fake ->
+            waitPart("for someone else")
+            onAllNodesWithTag("vault-menu-Dokumente", useUnmergedTree = true).onFirst().performClick()
+            waitFor("Hand on as a vault")
+            assertTrue(part("For you: with your password"))
+            assertTrue(part("For someone else: with a password"))
+            shot("vault-menu")
+            text("Hand on as a vault").performClick()
+            waitPart("The whole GhulDocs vault")
+            assertTrue(part("(.ghldocs)"))
+            shot("vault-hand-on")
+            dialogButton("Cancel")
+            waitGone("Hand on as a vault")
+
+            // GhulPass: the whole vault, handed on; the code is shown next.
+            onAllNodesWithTag("vault-menu-Privat", useUnmergedTree = true).onFirst().performClick()
+            waitFor("Hand on as a vault")
+            text("Hand on as a vault").performClick()
+            waitPart("The whole vault")
+            val fields = onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog()))
+            fields[1].performTextReplacement("Anna-Passwort-2468!")
+            fields[2].performTextReplacement("Anna-Passwort-2468!")
+            fields[3].performTextReplacement("master")
+            dialogButton("Create")
+            waitUntil(timeoutMillis = 10_000) { fake.calls.any { it.startsWith("shareAsVault:p1::Privat:true:master") } }
         }
     }
 }

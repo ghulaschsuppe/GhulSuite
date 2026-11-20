@@ -24,7 +24,9 @@ import kotlinx.coroutines.yield
 class FakeDocs : DocsBackend {
     /** What the UI asked to change (the UI tests check these). */
     val calls = java.util.Collections.synchronizedList(mutableListOf<String>())
+    /** What a GhulDocs vault may hold; all of them together [suiteLimit] (three times as much, as the core). */
     var limit = 1_000_000_000L
+    val suiteLimit get() = 3 * limit
     /** Wait of every call (ms) and of every section of a transfer. */
     var delayMs = 20L
     var sectionDelayMs = 30L
@@ -124,7 +126,19 @@ class FakeDocs : DocsBackend {
         return n
     }
 
-    private fun used(): Long = synchronized(nodes) { nodes.filter { !it.isFolder }.sumOf { it.data.size.toLong() } }
+    private fun used(vaultId: String? = null): Long =
+        synchronized(nodes) { nodes.filter { !it.isFolder && (vaultId == null || it.vaultId == vaultId) }.sumOf { it.data.size.toLong() } }
+
+    /**
+     * As the core: [size] bytes more fit into [vaultId] (null: a new vault) and next to the other
+     * vaults; otherwise DOCS_LIMIT with the numbers of what is full (`used|limit|needed|suite`).
+     */
+    private fun room(vaultId: String?, size: Long, needed: Long = size) {
+        val mine = if (vaultId == null) 0 else used(vaultId)
+        if (mine + size > limit) throw VaultException(VaultErrorKind.DOCS_LIMIT, "$mine|$limit|$needed|false")
+        val all = used()
+        if (all + size > suiteLimit) throw VaultException(VaultErrorKind.DOCS_LIMIT, "$all|$suiteLimit|$needed|true")
+    }
 
     override suspend fun list(vaultId: String, folder: String?): List<DocsItemUi> {
         delay(delayMs)
@@ -242,9 +256,8 @@ class FakeDocs : DocsBackend {
     override suspend fun add(vaultId: String, folder: String?, name: String, mime: String, source: ByteSource, onProgress: (Long) -> Unit): DocsItemUi {
         delay(delayMs)
         val n = checkName(name)
-        val have = used()
         // Known size: refused before anything is read.
-        if (source.size >= 0 && have + source.size > limit) throw VaultException(VaultErrorKind.DOCS_LIMIT, "$have|$limit|${source.size}")
+        if (source.size >= 0) room(vaultId, source.size)
         val out = java.io.ByteArrayOutputStream()
         val buf = ByteArray(section)
         while (true) {
@@ -254,7 +267,7 @@ class FakeDocs : DocsBackend {
             val r = source.read(buf, 0, buf.size)
             if (r < 0) break
             out.write(buf, 0, r)
-            if (have + out.size() > limit) throw VaultException(VaultErrorKind.DOCS_LIMIT, "$have|$limit|0")
+            room(vaultId, out.size().toLong(), needed = 0)
             onProgress(out.size().toLong())
         }
         calls += "add:$vaultId:$folder:$n:$mime:${out.size()}"
@@ -281,9 +294,13 @@ class FakeDocs : DocsBackend {
         if (x.damaged) throw VaultException(VaultErrorKind.CORRUPTED, "a document is damaged or missing")
     }
 
-    override suspend fun usage(): DocsUsageUi {
+    override suspend fun usage(vaultId: String?): DocsUsageUi {
         delay(delayMs)
-        return DocsUsageUi(used(), limit, nodes.count { !it.isFolder })
+        val all = used()
+        val files = synchronized(nodes) { nodes.count { !it.isFolder } }
+        if (vaultId == null) return DocsUsageUi(all, limit, files, all, suiteLimit, files)
+        val mine = synchronized(nodes) { nodes.filter { it.vaultId == vaultId && !it.isFolder } }
+        return DocsUsageUi(mine.sumOf { it.data.size.toLong() }, limit, mine.size, all, suiteLimit, files)
     }
 
     /** Ids the next check reports as damaged. */
@@ -313,30 +330,14 @@ class FakeDocs : DocsBackend {
         onProgress: (Long, Long) -> Unit,
     ): String {
         delay(delayMs)
-        // As the core: the package's documents count towards the limit, before anything is copied.
-        val have = used()
-        if (have + packageSize > limit) throw VaultException(VaultErrorKind.DOCS_LIMIT, "$have|$limit|$packageSize")
+        // As the core: a vault of its own; its documents count towards the limits before anything is copied.
+        room(null, packageSize)
         calls += "adoptVault:${file.name}:$name"
         return "d2"
     }
 
     /** Bytes of the documents in a GhulDocs package to be added (the limit counts them). */
     var packageSize = 1000L
-
-    override suspend fun replaceVault(
-        file: SuiteFileRef, name: String, password: String, pin: String?, keyfile: ByteArray?, onTouchNeeded: () -> Unit,
-        onProgress: (Long, Long) -> Unit,
-    ): String {
-        delay(delayMs)
-        // As the core: the package alone counts (the old vault goes); refused, nothing changes.
-        if (packageSize > limit) throw VaultException(VaultErrorKind.DOCS_LIMIT, "0|$limit|$packageSize")
-        calls += "replaceVault:${file.name}:$name"
-        synchronized(nodes) {
-            nodes.removeAll { it.vaultId == "d1" }
-            nodes += Node("d1", newId(), null, "Aus dem Paket.pdf", false, ByteArray(packageSize.toInt()), "application/pdf")
-        }
-        return "d1"
-    }
 
     companion object {
         /** A small PNG (a coloured card) made in memory. */

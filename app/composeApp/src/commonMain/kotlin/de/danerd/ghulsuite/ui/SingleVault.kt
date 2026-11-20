@@ -284,14 +284,14 @@ fun PendingAddHandler(state: AppState) {
 }
 
 /**
- * "Hand on as a vault": the picked entries go into a new vault file with a password of its own
- * and a new key file or a security key. The file is saved, then the key file, then the new
- * recovery code is shown.
+ * "Hand on as a vault": the picked entries (or, with [wholeVault], the name of the vault, all of
+ * it: [ids] empty) go into a new vault file with a password of its own and a new key file or a
+ * security key. The file is saved, then the key file, then the new recovery code is shown.
  */
 @Composable
-fun ShareAsVaultDialog(state: AppState, vaultId: String, ids: List<String>, docs: Boolean = false, onDone: () -> Unit) {
+fun ShareAsVaultDialog(state: AppState, vaultId: String, ids: List<String>, docs: Boolean = false, wholeVault: String? = null, onDone: () -> Unit) {
     val backend = state.backend
-    var name by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf(wholeVault.orEmpty()) }
     var password by remember { mutableStateOf("") }
     var repeat by remember { mutableStateOf("") }
     var master by remember { mutableStateOf("") }
@@ -351,8 +351,12 @@ fun ShareAsVaultDialog(state: AppState, vaultId: String, ids: List<String>, docs
                 when {
                     result == null -> {
                         Hint(
-                            if (docs) pluralStringResource(Res.plurals.docs_share_text, ids.size, ids.size.toString())
-                            else pluralStringResource(Res.plurals.share_vault_text, ids.size, ids.size.toString()),
+                            when {
+                                wholeVault != null && docs -> stringResource(Res.string.docs_share_whole_text, wholeVault)
+                                wholeVault != null -> stringResource(Res.string.share_vault_whole_text, wholeVault)
+                                docs -> pluralStringResource(Res.plurals.docs_share_text, ids.size, ids.size.toString())
+                                else -> pluralStringResource(Res.plurals.share_vault_text, ids.size, ids.size.toString())
+                            },
                         )
                         OutlinedTextField(
                             name, { name = it; error = null }, label = { Text(stringResource(Res.string.l_vault_name)) },
