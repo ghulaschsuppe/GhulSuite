@@ -31,8 +31,32 @@ import kotlinx.coroutines.delay
 /** Without any input in the window for this long, GhulSuite locks itself (also while in front). */
 private const val IDLE_LOCK_MS = 15 * 60 * 1000L
 
-fun main() {
+fun main(args: Array<String>) {
+    // Before anything can use ImageIO (PDFBox decoding JPEG pages, the icon): its disk cache would
+    // put image data, e.g. the pages of a scanned document, into a file in %TEMP%.
+    de.danerd.ghulsuite.ui.keepImagesInMemory()
     WinNative.hardenDllSearch()
+    // One GhulSuite per data folder, decided first: a double click on a suite file while GhulSuite
+    // runs (or is still starting) hands the file to that one and ends here, before it touches
+    // anything (e.g. the copies handed to other programs, which the first one still needs).
+    val fileArg = SingleInstance.suiteFileArg(args)
+    if (!SingleInstance.claim()) {
+        SingleInstance.handOverWaiting(fileArg)
+        return
+    }
+    var awtWindow: java.awt.Window? = null
+    fileArg?.let { SingleInstance.open(it) }
+    // Later starts come here at once, also before the window is there; the window comes to the
+    // front once it is.
+    SingleInstance.listen { path ->
+        path?.let { SingleInstance.open(it) }
+        java.awt.EventQueue.invokeLater {
+            val w = awtWindow as? java.awt.Frame ?: return@invokeLater
+            if (w.state == java.awt.Frame.ICONIFIED) w.state = java.awt.Frame.NORMAL
+            w.toFront()
+            w.requestFocus()
+        }
+    }
     // B10: decrypted copies a program still held open last time are removed now.
     ShareFiles.wipe()
     // The core library lies next to the program (installer, portable folder, Gradle run).
@@ -41,7 +65,6 @@ fun main() {
         runCatching { File(DesktopPaths.dataDir, "absturz.txt").writeText(e.stackTraceToString()) }
     }
 
-    var awtWindow: java.awt.Window? = null
     val backend = DesktopVaultBackend { awtWindow }
     // The language chosen in the app (otherwise the system's).
     backend.settings.appLanguage.takeIf { it.isNotEmpty() }?.let { java.util.Locale.setDefault(java.util.Locale.forLanguageTag(it)) }
@@ -72,9 +95,7 @@ fun main() {
     )
 
     application {
-        // Unread mails appear as a number on a small envelope in the taskbar icon (only while unlocked).
-        val unread = if (backend.unlocked.collectAsState().value) state.mailUnread else 0
-        val icon = remember(unread) { badgeIcon(unread) }
+        val icon = remember { appIcon() }
         Window(
             onCloseRequest = {
                 backend.lock()
@@ -108,7 +129,7 @@ fun main() {
             }
 
             // A background job that ends while the window is not in front: a Windows notification.
-            // Only what ended and the counts: no file or mail names, they would stay in the Action
+            // Only what ended and the counts: no file names, they would stay in the Action
             // Center after the suite is locked.
             LaunchedEffect(Unit) {
                 de.danerd.ghulsuite.ui.JobStatus.finished.collect { end ->
@@ -138,7 +159,7 @@ fun main() {
                     val waitingForKey = state.busy
                     // A few seconds of grace, so that a short switch (e.g. to a system dialog) does not lock.
                     val autoLock = maxOf(backend.settings.autoLockSeconds * 1000L, 3000L)
-                    // A running background job (upload, mail archive) is not cut off: the lock
+                    // A running background job is not cut off: the lock
                     // follows when it ends, unless the user is back by then. Ctrl+L locks at once.
                     when {
                         backend.settings.lockOnScreenOff && WinNative.workstationLocked() -> state.autoLock()

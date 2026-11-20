@@ -31,11 +31,8 @@ import de.danerd.ghulsuite.model.VaultKindUi
 import de.danerd.ghulsuite.model.VaultUi
 import de.danerd.ghulsuite.model.ImportPreviewUi
 import de.danerd.ghulsuite.model.ImportResultUi
-import de.danerd.ghulsuite.model.VaultSourceUi
-import de.danerd.ghulsuite.model.FoundVaultUi
 import de.danerd.ghulsuite.ui.AppState
 import de.danerd.ghulsuite.ui.GhulSuiteApp
-import de.danerd.ghulsuite.ui.MailSheet
 import de.danerd.ghulsuite.ui.Screen
 import de.danerd.ghulsuite.ui.Tab
 import java.io.File
@@ -53,21 +50,16 @@ class ScreenshotTest {
         /** What the UI asked the backend to change (the UI tests check these). */
         val calls = java.util.Collections.synchronizedList(mutableListOf<String>())
         override val unlocked = MutableStateFlow(unlocked)
-        override var net: de.danerd.ghulsuite.model.NetBackend = FakeNet()
         override var updater: de.danerd.ghulsuite.model.AppUpdater = de.danerd.ghulsuite.model.NoUpdater
-        override fun deviceSshKey() = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDeviceKeyExample ghulsuite-device"
-        override suspend fun fetchFromServer(input: de.danerd.ghulsuite.model.ServerInputUi, hostKey: String?) = ""
         private val existsFlag = exists
         var protection = ProtectionUi(securityKeys = 1, keyfiles = 0, recoveryCodes = 1)
         var vaults = listOf(
             VaultUi("p1", VaultKindUi.PASS, "Privat", "privat-p1.ghlpss", true, 4),
             VaultUi("p2", VaultKindUi.PASS, "Arbeit", "arbeit-p2.ghlpss", true, 1),
             VaultUi("t1", VaultKindUi.TOTP, "Persönlich", "personlich-t1.ghltotp", true, 2),
+            VaultUi("d1", VaultKindUi.DOCS, "Dokumente", "d1.ghldoc", true, 8),
             VaultUi("c1", VaultKindUi.CAL, "Kalender", "kalender-c1.ghlcal", true, 21),
-            // The areas with one file each: without them their tabs would not exist.
-            VaultUi("d1", VaultKindUi.DRIVE, "Drive", "Drive.ghldrv", true, 0),
-            VaultUi("m1", VaultKindUi.MAIL, "Mail", "Mail.ghlmail", true, 0),
-            VaultUi("f1", VaultKindUi.PASS, "Verein", "verein.ghlpss", true, 3, outdated = true),
+            VaultUi("f1", VaultKindUi.PASS, "Verein", "verein.ghlpss", true, 3),
         )
         override val settings = Settings(object : KeyValueStore {
             private val map = mutableMapOf<String, Any>()
@@ -78,8 +70,6 @@ class ScreenshotTest {
         })
         var quickReady = false
         override fun exists() = existsFlag
-        override fun storageName() = "App-Speicher"
-        override fun useStorage(folder: FolderRef?) {}
         override fun protection() = protection
         override suspend fun inspectFile(data: ByteArray) = ContainerInfoUi("pass", protection)
         override suspend fun calibrateKdf() = KdfChoice(256 * 1024, 3, 800)
@@ -94,7 +84,33 @@ class ScreenshotTest {
         /** Windows (true) or a phone (false): what only one of them has (keyboard keys …). */
         var desktop = false
         override val isDesktop get() = desktop
-        override fun lock() { locks++ }
+        override fun lock() {
+            locks++
+            // A vault open on its own ends with locking.
+            if (single != null) {
+                single = null
+                unlocked.value = false
+            }
+        }
+        /** The file of a vault open on its own. */
+        var single: de.danerd.ghulsuite.model.SuiteFileRef? = null
+        override fun singleFile() = single
+        override suspend fun openSingle(
+            file: de.danerd.ghulsuite.model.SuiteFileRef, data: ByteArray, password: String, pin: String?,
+            keyfile: ByteArray?, onTouchNeeded: () -> Unit,
+        ): VaultKindUi {
+            calls += "openSingle:${file.name}"
+            single = file
+            unlocked.value = true
+            return VaultKindUi.PASS
+        }
+        override suspend fun saveSingle(mode: de.danerd.ghulsuite.model.SingleWrite) = de.danerd.ghulsuite.model.SingleSaveUi.SAVED.also { calls += "saveSingle" }
+        override suspend fun shareAsVault(
+            share: de.danerd.ghulsuite.model.ShareVaultUi, pin: String?, onTouchNeeded: () -> Unit,
+        ): de.danerd.ghulsuite.model.SharedVaultUi {
+            calls += "shareAsVault:${share.vaultId}:${share.ids.joinToString(",")}:${share.name}:${share.keyfile != null}:${share.masterPassword}"
+            return de.danerd.ghulsuite.model.SharedVaultUi(VaultKindUi.PASS, ByteArray(10), "AAAAA-BBBBB-CCCCC-DDDDD-EEEEE-FFFFF-GGGGG-HHHHH-JJJJJ-KKKKK-MMMMM")
+        }
         override fun panicLock() {}
         override fun biometricAvailable() = true
         override fun quickUnlockReady() = QuickUnlockReady(biometric = quickReady, pin = quickReady)
@@ -105,6 +121,33 @@ class ScreenshotTest {
         override suspend fun unlockWithBiometric() {}
         override suspend fun unlockWithPin(pin: String) {}
         override val cal: de.danerd.ghulsuite.model.CalBackend = FakeCal()
+        override val docs = FakeDocs()
+        /** What [archiveInspect] says about a picked `.ghlzip` (null: none). */
+        var archiveInfo: de.danerd.ghulsuite.model.ArchiveInfoUi? = null
+        override suspend fun archiveInspect(file: de.danerd.ghulsuite.model.SuiteFileRef) = archiveInfo
+        /** Copies handed to other apps: name and content (the UI tests check them). */
+        val shared = java.util.Collections.synchronizedList(mutableListOf<Pair<String, ByteArray>>())
+        override suspend fun shareStreamToApps(name: String, mime: String, write: suspend (de.danerd.ghulsuite.model.ByteSink) -> Unit): Boolean {
+            // As the platforms do it: a failed write leaves no copy and hands nothing over.
+            val sink = de.danerd.ghulsuite.model.MemorySink()
+            try {
+                write(sink)
+            } catch (e: Throwable) {
+                sink.discard()
+                throw e
+            }
+            shared += name to sink.bytes()
+            return true
+        }
+        override suspend fun openSingleDocs(
+            file: de.danerd.ghulsuite.model.SuiteFileRef, password: String, pin: String?, keyfile: ByteArray?,
+            onTouchNeeded: () -> Unit, onProgress: (Long, Long) -> Unit,
+        ): VaultKindUi {
+            calls += "openSingleDocs:${file.name}"
+            single = file
+            unlocked.value = true
+            return VaultKindUi.DOCS
+        }
         override suspend fun listVaults() = vaults
         override suspend fun createVault(kind: VaultKindUi, name: String) = "new"
         override suspend fun renameVault(id: String, name: String) {}
@@ -112,12 +155,8 @@ class ScreenshotTest {
         override suspend fun exportVault(id: String) = ByteArray(0)
         override suspend fun addVaultFile(data: ByteArray, name: String) = "x"
         override suspend fun adoptVault(
-            source: VaultSourceUi, name: String, password: String, pin: String?, keyfile: ByteArray?, onTouchNeeded: () -> Unit,
+            data: ByteArray, name: String, password: String, pin: String?, keyfile: ByteArray?, onTouchNeeded: () -> Unit,
         ) = "x"
-        var found = emptyList<FoundVaultUi>()
-        override suspend fun findNewVaults() = found
-        override suspend fun ignoreFoundVault(file: String) {}
-        override suspend fun acceptVaultState(id: String) {}
         override suspend fun listEntries(vaultId: String?) = listOf(
             EntrySummaryUi("p1", "Privat", "1", "login", "Codeberg", "ghul"),
             EntrySummaryUi("p2", "Arbeit", "2", "login", "Jira", "g.hul@firma.de"),
@@ -156,7 +195,6 @@ class ScreenshotTest {
         override suspend fun addKeyfile(keyfile: ByteArray, label: String) {}
         override suspend fun newRecoveryCode(label: String) = ""
         override suspend fun removeSlot(id: String) {}
-        override suspend fun adoptRemoteProtection(password: String?, pin: String?, keyfile: ByteArray?, onTouchNeeded: () -> Unit) {}
         override suspend fun changePassword(current: String, new: String) {}
         override fun generatePassword(options: PasswordOptionsUi) = "x7#Kq!9mVw2\$Lp4@Zr8&"
         override fun passwordScore(password: String) = if (password.length > 12) 4 else 1
@@ -171,22 +209,32 @@ class ScreenshotTest {
         override val coreVersion = "ghul-core 0.5.0 (RP-ID ghulsuite.invalid)"
     }
 
-    private fun render(name: String, w: Int = 412, h: Int = 892, content: @Composable () -> Unit) {
+    private fun render(name: String, w: Int = 412, h: Int = 892, settleMs: Long = 0, content: @Composable () -> Unit) {
         val out = File("build/screenshots").apply { mkdirs() }
         ImageComposeScene(width = w * 2, height = h * 2, density = Density(2f), content = content).use { scene ->
-            repeat(5) { scene.render(it * 100_000_000L) } // let LaunchedEffects run
+            repeat(5) {
+                scene.render(it * 100_000_000L) // let LaunchedEffects run
+                // Work on other threads (a document decrypted and drawn) gets its time.
+                if (settleMs > 0) Thread.sleep(settleMs)
+            }
             val image = scene.render(600_000_000L)
             File(out, "$name.png").writeBytes(image.encodeToData(EncodedImageFormat.PNG)!!.bytes)
         }
     }
 
     private fun state(exists: Boolean, unlocked: Boolean, setup: AppState.() -> Unit = {}): AppState =
-        AppState(Fake(exists, unlocked), CoroutineScope(Dispatchers.Unconfined)).apply(setup)
+        AppState(Fake(exists, unlocked).apply { docs.delayMs = 0; docs.sectionDelayMs = 0 }, CoroutineScope(Dispatchers.Unconfined)).apply(setup)
 
     @Test
     fun screens() {
         Locale.setDefault(Locale.GERMAN)
-        render("1-setup") { GhulSuiteApp(state(exists = false, unlocked = false)) }
+        // The start screen as on a device: with the buttons that open a file.
+        System.setProperty("ghul.pickers", "true")
+        try {
+            render("1-setup") { GhulSuiteApp(state(exists = false, unlocked = false)) }
+        } finally {
+            System.clearProperty("ghul.pickers")
+        }
         render("2-unlock") { GhulSuiteApp(state(exists = true, unlocked = false)) }
         render("3-pass") { GhulSuiteApp(state(exists = true, unlocked = true)) }
         render("4-entry") { GhulSuiteApp(state(true, true) { push(Screen.EntryDetail("p1", "1")) }) }
@@ -216,55 +264,6 @@ class ScreenshotTest {
         render("15-pass-one-vault") { GhulSuiteApp(state(true, true) { passVault = "p2" }) }
         render("17-import") { GhulSuiteApp(state(true, true) { push(Screen.Import) }) }
         render("18-export") { GhulSuiteApp(state(true, true) { push(Screen.Export) }) }
-        render("19-drive") { GhulSuiteApp(state(true, true) { tab = Tab.DRIVE }) }
-        render("20-drive-setup") {
-            GhulSuiteApp(AppState(Fake(true, true).apply { net = FakeNet(configured = false) }, CoroutineScope(Dispatchers.Unconfined)).apply { tab = Tab.DRIVE })
-        }
-        render("21-mail") { GhulSuiteApp(state(true, true) { tab = Tab.MAIL }) }
-        render("22-mail-read") { GhulSuiteApp(state(true, true) { push(Screen.MailRead("m1", "INBOX", 2)) }) }
-        render("23-mail-compose") {
-            GhulSuiteApp(state(true, true) { push(Screen.MailCompose(de.danerd.ghulsuite.ui.MailDraft("m1", to = "erika@example.org", subject = "AW: Treffen am Freitag"))) })
-        }
-        render("24-mail-account") { GhulSuiteApp(state(true, true) { mailAccountSheet = MailSheet(null) }) }
-        render("25-add-server") { GhulSuiteApp(state(true, true) { push(Screen.AddServer) }) }
-        render("26-settings-servers") { GhulSuiteApp(state(true, true) { tab = Tab.SETTINGS }) }
-        render("27-shares") { GhulSuiteApp(state(true, true) { push(Screen.Shares) }) }
-        render("28-module-install") { GhulSuiteApp(state(true, true) { push(Screen.ModuleInstall("s2")) }) }
-        render("29-settings-servers") { GhulSuiteApp(state(true, true) { push(Screen.SettingsPage(de.danerd.ghulsuite.ui.SetPage.SERVERS)) }) }
-        render("30-settings-drive") { GhulSuiteApp(state(true, true) { push(Screen.SettingsPage(de.danerd.ghulsuite.ui.SetPage.DRIVE)) }) }
-        render("31-mail-compose-attachment") {
-            GhulSuiteApp(state(true, true) {
-                push(Screen.MailCompose(de.danerd.ghulsuite.ui.MailDraft("m1", subject = "Steuer 2025.pdf",
-                    attachments = listOf(de.danerd.ghulsuite.model.OutgoingAttachmentUi("Steuer 2025.pdf", "application/pdf", ByteArray(2_400))))))
-            })
-        }
-        val files = listOf(de.danerd.ghulsuite.model.DriveItemUi("f1", null, "Steuer 2025.pdf", false, 2_400_000, 0))
-        render("32-share-sheet-mail-on") {
-            val s = state(true, true) { tab = Tab.DRIVE }
-            GhulSuiteApp(s)
-            de.danerd.ghulsuite.ui.ShareSheet(s, files, {}, {})
-        }
-        render("33-share-sheet-mail-off") {
-            val s = state(true, true) { tab = Tab.DRIVE }
-            s.backend.settings.moduleGhulMail = false
-            GhulSuiteApp(s)
-            de.danerd.ghulsuite.ui.ShareSheet(s, files, {}, {})
-        }
-        render("34-share-result") {
-            val s = state(true, true) { tab = Tab.DRIVE }
-            GhulSuiteApp(s)
-            de.danerd.ghulsuite.ui.ShareResultDialog(s, kotlinx.coroutines.runBlocking { s.backend.net.shareList().first() }, true) {}
-        }
-        render("35-share-sheet-no-module") {
-            val s = state(true, true) { tab = Tab.DRIVE }
-            (s.backend.net as FakeNet).missingModule = "s2"
-            GhulSuiteApp(s)
-            de.danerd.ghulsuite.ui.ShareSheet(s, files, {}, {})
-        }
-        render("36-settings-mail") { GhulSuiteApp(state(true, true) { push(Screen.SettingsPage(de.danerd.ghulsuite.ui.SetPage.MAIL)) }) }
-        render("37-mail-compose-unknown") {
-            GhulSuiteApp(state(true, true) { push(Screen.MailCompose(de.danerd.ghulsuite.ui.MailDraft("m1", to = "neu@example.org", subject = "Hallo"))) })
-        }
         render("40-new-entry-sheet") {
             val s = state(true, true)
             GhulSuiteApp(s)
@@ -275,7 +274,6 @@ class ScreenshotTest {
             GhulSuiteApp(s)
             de.danerd.ghulsuite.ui.GeneratorDialog(s, {}, {})
         }
-        render("42-mail-compose-new") { GhulSuiteApp(state(true, true) { push(Screen.MailCompose(de.danerd.ghulsuite.ui.MailDraft("m1"))) }) }
         render("60-cal-month") { GhulSuiteApp(state(true, true) { tab = Tab.CAL }) }
         render("61-cal-week") { GhulSuiteApp(state(true, true) { tab = Tab.CAL; calView = de.danerd.ghulsuite.ui.CalView.WEEK }) }
         render("62-cal-day") { GhulSuiteApp(state(true, true) { tab = Tab.CAL; calView = de.danerd.ghulsuite.ui.CalView.DAY }) }
@@ -288,26 +286,25 @@ class ScreenshotTest {
         render("67-cal-dark") {
             GhulSuiteApp(state(true, true) { tab = Tab.CAL; backend.settings.theme = de.danerd.ghulsuite.model.ThemeMode.DARK })
         }
-        render("46-mail-html") { GhulSuiteApp(state(true, true) { tab = Tab.MAIL; push(Screen.MailRead("m1", "INBOX", 9)) }) }
-        // The mail archive in GhulDrive: a year with its mails, and an archived mail in the reader.
-        render("70-mail-archive") {
+        render("70-docs", settleMs = 150) { GhulSuiteApp(state(true, true) { tab = Tab.DOCS }) }
+        render("71-docs-view-image", settleMs = 300) { GhulSuiteApp(state(true, true) { tab = Tab.DOCS; push(Screen.DocView("d1", "a2")) }) }
+        render("72-docs-view-pdf", settleMs = 600) { GhulSuiteApp(state(true, true) { tab = Tab.DOCS; push(Screen.DocView("d1", "a1")) }) }
+        render("73-docs-view-text", settleMs = 300) { GhulSuiteApp(state(true, true) { tab = Tab.DOCS; push(Screen.DocView("d1", "a3")) }) }
+        render("74-docs-view-none", settleMs = 300) { GhulSuiteApp(state(true, true) { tab = Tab.DOCS; push(Screen.DocView("d1", "a5")) }) }
+        render("75-docs-dark", settleMs = 150) {
+            GhulSuiteApp(state(true, true) { tab = Tab.DOCS; backend.settings.theme = de.danerd.ghulsuite.model.ThemeMode.DARK })
+        }
+        render("76-docs-incoming", settleMs = 150) {
             GhulSuiteApp(state(true, true) {
-                tab = Tab.MAIL
-                (backend.net as FakeNet).archiveExists = true
-                archivePath = listOf("y2025" to "2025")
-                push(Screen.MailArchive("m1"))
+                tab = Tab.DOCS
+                docsIncoming = listOf(object : de.danerd.ghulsuite.model.ByteSource {
+                    override val name = "Rechnung Mai.pdf"
+                    override val size = 120_000L
+                    override fun read(buffer: ByteArray, offset: Int, length: Int) = -1
+                    override fun close() {}
+                })
             })
         }
-        render("71-mail-archive-years") {
-            GhulSuiteApp(state(true, true) { tab = Tab.MAIL; (backend.net as FakeNet).archiveExists = true; push(Screen.MailArchive("m1")) })
-        }
-        render("72-mail-archive-read") {
-            GhulSuiteApp(state(true, true) {
-                tab = Tab.MAIL
-                push(Screen.MailArchiveRead("m1", "e1", "2025-10-30 Finanzamt - Steuerbescheid 2024 (1a2b3c4d5e6f7a8b).eml"))
-            })
-        }
-        render("43-drive-grid") { GhulSuiteApp(state(true, true) { tab = Tab.DRIVE; driveGrid = true }) }
         render("44-auth-grid") { GhulSuiteApp(state(true, true) { tab = Tab.AUTH; authGrid = true }) }
         render("45-pass-dark") {
             val s = state(true, true)
@@ -326,20 +323,15 @@ class ScreenshotTest {
     @Test
     fun wideScreens() {
         Locale.setDefault(Locale.GERMAN)
-        fun wide(name: String, content: @Composable () -> Unit) = render("w-$name", 1280, 820, content)
+        fun wide(name: String, content: @Composable () -> Unit) = render("w-$name", 1280, 820, content = content)
         wide("1-unlock") { GhulSuiteApp(state(exists = true, unlocked = false)) }
         wide("2-pass") { GhulSuiteApp(state(true, true)) }
         wide("3-pass-entry") { GhulSuiteApp(state(true, true) { push(Screen.EntryDetail("p1", "1")) }) }
         wide("4-pass-edit") { GhulSuiteApp(state(true, true) { push(Screen.EntryDetail("p1", "1")); push(Screen.EntryEdit("p1", "1", "login")) }) }
         wide("5-auth") { GhulSuiteApp(state(true, true) { tab = Tab.AUTH }) }
         wide("6-auth-grid") { GhulSuiteApp(state(true, true) { tab = Tab.AUTH; authGrid = true }) }
-        wide("7-drive") { GhulSuiteApp(state(true, true) { tab = Tab.DRIVE }) }
-        wide("8-drive-grid") { GhulSuiteApp(state(true, true) { tab = Tab.DRIVE; driveGrid = true }) }
-        wide("9-mail") { GhulSuiteApp(state(true, true) { tab = Tab.MAIL }) }
-        wide("10-mail-read") { GhulSuiteApp(state(true, true) { tab = Tab.MAIL; push(Screen.MailRead("m1", "INBOX", 2)) }) }
-        wide("11-mail-compose") { GhulSuiteApp(state(true, true) { tab = Tab.MAIL; push(Screen.MailCompose(de.danerd.ghulsuite.ui.MailDraft("m1"))) }) }
         wide("12-settings") { GhulSuiteApp(state(true, true) { tab = Tab.SETTINGS }) }
-        wide("13-settings-page") { GhulSuiteApp(state(true, true) { tab = Tab.SETTINGS; push(Screen.SettingsPage(de.danerd.ghulsuite.ui.SetPage.MAIL)) }) }
+        wide("13-settings-page") { GhulSuiteApp(state(true, true) { tab = Tab.SETTINGS; push(Screen.SettingsPage(de.danerd.ghulsuite.ui.SetPage.CAL)) }) }
         wide("14-new-entry-dialog") {
             GhulSuiteApp(state(true, true))
             CompositionLocalProvider(de.danerd.ghulsuite.ui.LocalWide provides true) {
@@ -354,13 +346,7 @@ class ScreenshotTest {
             GhulSuiteApp(s)
         }
         wide("16-setup") { GhulSuiteApp(state(exists = false, unlocked = false)) }
-        wide("17-mail-archive") {
-            GhulSuiteApp(state(true, true) {
-                tab = Tab.MAIL
-                (backend.net as FakeNet).archiveExists = true
-                archivePath = listOf("y2025" to "2025")
-                push(Screen.MailArchive("m1"))
-            })
-        }
+        render("w-17-docs", 1280, 820, settleMs = 150) { GhulSuiteApp(state(true, true) { tab = Tab.DOCS }) }
+        render("w-18-docs-view-pdf", 1280, 820, settleMs = 600) { GhulSuiteApp(state(true, true) { tab = Tab.DOCS; push(Screen.DocView("d1", "a1")) }) }
     }
 }

@@ -5,7 +5,7 @@
     <p>This is a translation for convenience. The German <a href="../datenschutz-app.html" lang="de">Datenschutzerklärung</a> is the legally binding version. This policy applies to the app GhulSuite on Android and Windows. This website has a <a href="privacy.html">privacy policy of its own</a>.</p>
 
     <div class="box">
-      <p style="margin:0"><strong>In short:</strong> GhulSuite sends no data at all to the developer. There is no account, no telemetry, no crash reports in the background, no advertising and no analytics. Your content is encrypted on your device and stored only where you set it up: on your own server. The few connections to other services are all listed below.</p>
+      <p style="margin:0"><strong>In short:</strong> GhulSuite sends no data at all to the developer. There is no account, no server, no telemetry, no crash reports in the background, no advertising and no analytics. Your content is encrypted on your device and stored only where you put it yourself: on your device and in the suite file wherever you save it (for example on a USB stick). On its own the app makes only two connections, the update check and, if you switch it on, the leak check. Both are listed in section 4 below and can be switched off.</p>
     </div>
 
     <h2>1. Controller</h2>
@@ -16,68 +16,57 @@
     <p>The controller receives no personal data through the use of the app. They are responsible for the design of the app and the connections it makes on its own (section 4).</p>
 
     <h2>2. Data on your device</h2>
-    <p>Passwords, 2FA codes, files, mails, events and settings are kept in encrypted files (Argon2id, XChaCha20-Poly1305; opened only with the master password and a security key or key file). For the optional unlock by fingerprint or app PIN, the app uses the system's protected key store; the app never sees fingerprints. An error report is only stored on the device and only passed on if you copy or save it yourself.</p>
+    <p>Passwords, 2FA codes, documents, events and settings are kept in encrypted files (Argon2id, XChaCha20-Poly1305; opened only with the master password and a security key or key file). Every document in GhulDocs is encrypted with a key of its own; names and folders are only in the encrypted index. For the optional unlock by fingerprint or app PIN, the app uses the system's protected key store; the app never sees fingerprints.</p>
+    <p><strong>Scanning documents</strong> (Android): the app uses the camera itself, not the system's camera app. Photos and pages stay in memory until the finished PDF is encrypted in GhulDocs; if you leave the scan or the app locks, they are deleted. Only the encrypted PDF is stored.</p>
+    <p><strong>The suite file</strong> (<code>.ghlzip</code>): the device keeps an encrypted working copy of your suite. The app writes it as a file only where you save it, for example on a USB stick or in a folder of your choice. The file is fully encrypted and sealed, the documents in it included; the app only remembers where it is (on Android as a permission for this one file, on Windows as a path). When you open another suite file, the app deletes the device data of the previous state (quick unlock).</p>
+    <p><strong>Error report:</strong> under Options → About → Error report the app shows a report (app and core version, device and system version, the last crash report if any, no vault contents). The app does not send it. You decide whether to copy it, save it or send it to the developer with another app (for example your mail app). If you send it by e-mail, the <a href="privacy.html">privacy policy of the website</a> applies (contact by e-mail).</p>
 
-    <h2>3. Connections you set up yourself</h2>
-    <p>You or the respective provider are responsible for these connections; the app makes them on your behalf:</p>
+    <h2>3. What you hand out of the app yourself</h2>
+    <p>The app passes data to other apps or places only when you explicitly do so. What happens there is up to you or the other app:</p>
     <ul>
-      <li><strong>Your server</strong> (SFTP, FTPS or the PHP server module) for sync, files, the mail archive and share links. Only encrypted data is stored there. The server's operator sees your IP address and access times.</li>
-      <li><strong>Your mail providers</strong> (IMAP and SMTP, encrypted with TLS only). Their privacy policies apply.</li>
-      <li><strong>Share links:</strong> whoever opens a link from you fetches it from your server; the key is only in the part of the link that is never sent to the server.</li>
+      <li><strong>Export</strong> (documents, calendar, entries): the file is saved where you choose; for unencrypted exports the app asks first.</li>
+      <li><strong>Open with app</strong> (GhulDocs): the chosen app gets a temporary copy of the document, deleted as soon as GhulSuite locks.</li>
+      <li><strong>Share</strong> (e.g. an event as <code>.ics</code>, a vault to hand on): through the system's share menu to the app you choose.</li>
+      <li><strong>Where the suite file is saved:</strong> if you choose a folder that another program copies to a cloud, that program's terms apply; the file is encrypted and sealed there. The app itself sends it nowhere.</li>
     </ul>
 
     <h2>4. Connections the app makes on its own</h2>
     <table>
-      <tr><th>When</th><th>Where and what</th><th>Legal basis</th></tr>
+      <tr><th>When</th><th>Where to and what</th><th>Legal basis</th></tr>
       <tr>
-        <td><strong>Update check</strong>: at most once a day after unlocking, and when you tap "Check for updates now". Can be switched off in Options → About → Updates.</td>
-        <td>GitHub (api.github.com, github.com, GitHub's download servers). Sent: your IP address, the time and "GhulSuite" as the program name. No device or user identifier. Installing loads the new version from GitHub.</td>
-        <td>Art. 6 (1) (f) GDPR: protecting your data with current, fixed versions. Versions from an app store and test versions do not check themselves.</td>
+        <td><strong>Update check</strong>: at most once a day after unlocking and when you tap “Check for updates now”. Can be switched off under Options → About → Updates.</td>
+        <td>GitHub (api.github.com, github.com, GitHub's download servers). Sent: your IP address, the time and the name “GhulSuite” as the program name. No device or user identifier. When installing, the new version is downloaded from GitHub.</td>
+        <td>Art. 6 (1) (f) GDPR: protecting your data with current, fixed versions. Versions from an app store and test versions do not check by themselves.</td>
       </tr>
       <tr>
-        <td><strong>Password check</strong>: only when you start it for a password.</td>
-        <td>"Pwned Passwords" (api.pwnedpasswords.com). Sent: only the first five characters of the SHA-1 hash of your password, never the password (k-anonymity), and your IP address.</td>
-        <td>Art. 6 (1) (a) GDPR (your action as consent in the single case)</td>
-      </tr>
-      <tr>
-        <td><strong>Key lookup for encrypted mail</strong>: when you write to an address whose key is not known yet (once per address).</td>
-        <td>The recipient's mail provider (Web Key Directory on their domain). Sent: your IP address and the address looked up, hashed and in readable form, as the standard requires. The provider learns that someone looked for this address's key.</td>
-        <td>Art. 6 (1) (f) GDPR: confidential communication through encryption</td>
-      </tr>
-      <tr>
-        <td><strong>Sending an error report</strong>: only when you tap "Send" in Options → About → Error report. You see what is sent before.</td>
-        <td>This website (www.ghulsuite.de/report.php). Sent: the report shown (app and core version, device and system version, the last crash report if any, no vault contents), your note, your e-mail address for questions if you enter one, and your IP address. The report is forwarded by e-mail to the controller and not stored on the server; the e-mail is deleted once the bug has been dealt with.</td>
-        <td>Art. 6 (1) (a) GDPR (your consent by sending; can be withdrawn by e-mail to the address above)</td>
-      </tr>
-      <tr>
-        <td><strong>Images in mails</strong>: only when you tap "Load images" or allowed it for a sender.</td>
-        <td>The server holding the image. The sender may learn that and when you opened the mail. The app removes invisible tracking pixels.</td>
-        <td>Art. 6 (1) (a) GDPR (your decision in the single case)</td>
+        <td><strong>Leak check</strong> (GhulPass): only if you switch on “Check data breaches” in the security check (off by default). The passwords of your logins are then checked whenever you open the security check. Switched off with the same switch.</td>
+        <td>The “Pwned Passwords” service of Have I Been Pwned (api.pwnedpasswords.com). For each password only the first five characters of its SHA-1 checksum are sent, never the password itself (k-anonymity), plus your IP address and the name “GhulSuite” as the program name. Whether a password is affected, the app works out from the answer itself.</td>
+        <td>Art. 6 (1) (a) GDPR (your consent by switching it on; withdrawn by switching it off)</td>
       </tr>
     </table>
-    <p>The app makes no other connections. Holidays, time zones and translations are built in.</p>
+    <p>The app makes no other connections. Holidays, time zones and translations are built in; documents are shown in the app without loading anything.</p>
 
     <h2>5. Android permissions</h2>
     <table>
       <tr><th>Permission</th><th>What for</th></tr>
-      <tr><td>Internet, network state</td><td>Connecting to your server and mail providers; mail archive on Wi-Fi only if you wish.</td></tr>
-      <tr><td>Camera</td><td>Scanning QR codes (2FA, import, emergency sheet). No pictures are stored.</td></tr>
+      <tr><td>Internet</td><td>Only the update check and the leak check (section 4).</td></tr>
+      <tr><td>Camera</td><td>Scanning QR codes (2FA, import, emergency sheet) and scanning documents. Asked only when you open the scanner. Photos stay in memory, only the encrypted PDF is stored.</td></tr>
       <tr><td>Biometrics</td><td>Optional fingerprint unlock.</td></tr>
-      <tr><td>Notifications, foreground service, start after reboot, battery optimisation</td><td>New mail and event reminders, also while the app is closed.</td></tr>
+      <tr><td>Notifications, foreground service, start after reboot</td><td>The “unlocked” notification with a lock button and the shake detection while something is unlocked; event reminders, also while the app is closed.</td></tr>
       <tr><td>Exact alarms</td><td>Reminders on time.</td></tr>
       <tr><td>Vibration</td><td>Feedback for the instant lock.</td></tr>
       <tr><td>Install apps</td><td>Installing updates, only after you confirm in the system's dialog.</td></tr>
     </table>
 
     <h2>6. Storage period and deletion</h2>
-    <p>Data stays until you delete it. Uninstalling the app makes the system remove its data on the device; you delete files on your own server and in your suite folder yourself.</p>
+    <p>Data stays until you delete it. Documents in the GhulDocs trash stay until you empty the trash. Uninstalling the app makes the system remove its data on the device; you delete saved suite files (for example on a USB stick) and exported files yourself.</p>
 
     <h2>7. Your rights</h2>
-    <p>You have the right of access (Art. 15 GDPR), rectification (Art. 16), erasure (Art. 17), restriction (Art. 18), data portability (Art. 20), to object (Art. 21) and to lodge a complaint with a supervisory authority (Art. 77). As the controller receives no data from the app, most data is with you alone: the app offers export, backup and deletion for it.</p>
+    <p>You have the right of access (Art. 15 GDPR), rectification (Art. 16), erasure (Art. 17), restriction (Art. 18), data portability (Art. 20), to object (Art. 21) and to lodge a complaint with a supervisory authority (Art. 77). As the controller receives no data from the app, most data is with you alone: the app offers export, saving as a suite file and deletion for it.</p>
 
     <h2>8. Changes</h2>
     <p>This policy is updated when the app changes. New connections to other services are listed here before they appear in a version.</p>
 
-    <p class="stand">Last updated: 16 November 2026</p>
+    <p class="stand">Last updated: 19 November 2026</p>
   </div>
 </section>

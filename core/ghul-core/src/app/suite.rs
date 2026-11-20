@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The GhulSuite session used by the app.
 //!
-//! **The folder is the suite:** every vault file (`*.ghlpss`, `*.ghltotp`) in the storage folder
-//! belongs to it. All containers share the same password, the same factor slots (security keys
-//! and key files, each wrapping the same factor secret) and the same recovery code, so one key
-//! touch, or the recovery code alone, opens everything, and every file can also be opened on
-//! its own. `suite.ghlsuite` only holds settings (last seen revisions, dismissed files, later mail
-//! and storage accounts); it decides nothing about membership and is recreated if missing.
-//! Vault files with another protection are offered and, once opened with their own password,
-//! switched to the suite's protection.
+//! The suite's files live in one folder on the device (its working copy): `suite.ghlsuite` and
+//! one vault file per area or vault (`*.ghlpss`, `*.ghltotp`, ...). Only the app writes there;
+//! nothing is matched or merged with other devices. All containers share the same password, the
+//! same factor slots (security keys and key files, each wrapping the same factor secret) and the
+//! same recovery code, so one key touch, or the recovery code alone, opens everything, and every
+//! file can also be opened on its own. Vault files with another protection are ignored.
 //!
 //! TOTP secrets never leave the core; GhulPass entries are returned to the app because it has to
 //! show and fill them.
@@ -38,26 +36,9 @@ use crate::vault::{
 use crate::{FidoListener, HidTransport, RP_ID, RP_NAME};
 
 pub const SUITE_FILE: &str = "suite.ghlsuite";
-const REVISIONS_KEY: &str = "revisions";
-const IGNORED_KEY: &str = "ignored_files";
 const NAME_KEY: &str = "name";
-/// The factor secrets and recovery codes this device had before its last protection changes
-/// (newest first, at most [`MAX_PREVIOUS`]): to read files on the server that another device
-/// wrote before it learned of the change, instead of taking them for damaged. Never merged.
-pub(super) const PREVIOUS_KEY: &str = "protection_before";
-/// Practically no limit: 256 changes of the protection while another device is offline (64 bytes each).
-const MAX_PREVIOUS: usize = 256;
-/// Slot IDs (hex) of keys and key files removed on purpose (B2). Synchronised and united, so a
-/// device that missed the removal (and changed its own protection meanwhile) drops them too.
-pub(super) const REMOVED_SLOTS_KEY: &str = "removed_slots";
-
-#[derive(Serialize, serde::Deserialize, Default, Clone, PartialEq)]
-struct PreviousProtection {
-    #[serde(with = "serde_bytes")]
-    s: Vec<u8>,
-    #[serde(with = "serde_bytes", default)]
-    code: Vec<u8>,
-}
+/// Grows with every change of the protection (password, keys, key files, recovery code).
+pub(super) const EPOCH_KEY: &str = "protection_epoch";
 
 pub(super) fn now_ms() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
@@ -77,10 +58,8 @@ pub enum VaultKind {
     Totp,
     /// GhulCal (`.ghlcal`).
     Cal,
-    /// GhulDrive (`.ghldrv`).
-    Drive,
-    /// GhulMail (`.ghlmail`).
-    Mail,
+    /// GhulDocs (`.ghldoc` and its content files, see `docs`).
+    Docs,
 }
 
 impl VaultKind {
@@ -89,8 +68,7 @@ impl VaultKind {
             VaultKind::Pass => ContainerKind::Pass,
             VaultKind::Totp => ContainerKind::Totp,
             VaultKind::Cal => ContainerKind::Cal,
-            VaultKind::Drive => ContainerKind::Drive,
-            VaultKind::Mail => ContainerKind::Mail,
+            VaultKind::Docs => ContainerKind::Docs,
         }
     }
 
@@ -98,8 +76,7 @@ impl VaultKind {
         match name {
             "pass" => VaultKind::Pass,
             "cal" => VaultKind::Cal,
-            "drive" => VaultKind::Drive,
-            "mail" => VaultKind::Mail,
+            "docs" => VaultKind::Docs,
             _ => VaultKind::Totp,
         }
     }
@@ -109,9 +86,8 @@ impl VaultKind {
             ContainerKind::Pass => Some(VaultKind::Pass),
             ContainerKind::Totp => Some(VaultKind::Totp),
             ContainerKind::Cal => Some(VaultKind::Cal),
-            ContainerKind::Drive => Some(VaultKind::Drive),
-            ContainerKind::Mail => Some(VaultKind::Mail),
-            ContainerKind::Suite => None,
+            ContainerKind::Docs => Some(VaultKind::Docs),
+            ContainerKind::Suite | ContainerKind::Export => None,
         }
     }
 }
@@ -216,9 +192,6 @@ pub struct SlotInfo {
     pub kind: SlotKind,
     pub label: String,
     pub created: i64,
-    /// A key or key file of an older app version: it gets the current protection when it is
-    /// used to unlock once. Until then, removing another key cannot renew the factor secret.
-    pub needs_update: bool,
 }
 
 #[derive(uniffi::Record, Clone, Debug, PartialEq)]
@@ -230,26 +203,6 @@ pub struct VaultInfo {
     /// False if the file is damaged and cannot be opened.
     pub available: bool,
     pub entries: u32,
-    /// The file is older than the last state this suite has seen (e.g. an old copy).
-    pub outdated: bool,
-}
-
-/// Where a vault to be added comes from.
-#[derive(uniffi::Enum, Clone, Debug)]
-pub enum VaultSource {
-    /// A file that already lies in the suite's folder (kept under its name).
-    InFolder { file: String },
-    /// File content, e.g. picked by the user; stored as a new file in the folder.
-    Bytes { data: Vec<u8> },
-}
-
-/// A vault file in the folder with another protection (needs its own password once).
-#[derive(uniffi::Record, Clone, Debug, PartialEq)]
-pub struct FoundVault {
-    pub file: String,
-    pub kind: VaultKind,
-    /// What it needs: password plus key or key file.
-    pub protection: ProtectionInfo,
 }
 
 /// What the unlock screen has to ask for.
@@ -399,7 +352,7 @@ fn dedup_key(entry_type: &str, fields: &BTreeMap<String, Field>) -> String {
 // --- files and names --------------------------------------------------------------------------
 
 pub(super) fn is_vault_file(name: &str) -> bool {
-    [".ghlpss", ".ghltotp", ".ghlcal", ".ghldrv", ".ghlmail"].iter().any(|e| name.ends_with(e))
+    [".ghlpss", ".ghltotp", ".ghlcal", ".ghldoc"].iter().any(|e| name.ends_with(e))
 }
 
 /// F23: the file name of a vault says nothing about it: the first 16 hex digits of its random
@@ -416,7 +369,7 @@ pub(super) fn vault_name(c: &UnlockedContainer, file: &str) -> String {
     }
 }
 
-fn set_vault_name(c: &mut UnlockedContainer, name: &str) {
+pub(super) fn set_vault_name(c: &mut UnlockedContainer, name: &str) {
     c.payload.settings.insert(NAME_KEY.into(), Value::Text(name.trim().to_owned()));
 }
 
@@ -430,15 +383,7 @@ pub(super) fn put_setting<T: Serialize>(suite: &mut UnlockedContainer, key: &str
     Ok(())
 }
 
-fn ignored_files(suite: &UnlockedContainer) -> Vec<String> {
-    setting(suite, IGNORED_KEY)
-}
-
-fn revisions(suite: &UnlockedContainer) -> BTreeMap<String, u64> {
-    setting(suite, REVISIONS_KEY)
-}
-
-fn protection_of(l: &LockedContainer) -> ProtectionInfo {
+pub(super) fn protection_of(l: &LockedContainer) -> ProtectionInfo {
     ProtectionInfo {
         security_keys: l.fido2_requests().len() as u32,
         keyfiles: l.keyfile_slots() as u32,
@@ -465,16 +410,12 @@ pub(super) struct OpenVault {
     pub(super) reference: VaultRef,
     /// `None` if the file is damaged.
     pub(super) container: Option<UnlockedContainer>,
-    /// The file's revision is lower than the one last seen.
-    pub(super) stale: bool,
 }
 
 pub(super) struct Open {
     pub(super) password_key: PasswordKey,
     pub(super) suite: UnlockedContainer,
     pub(super) vaults: Vec<OpenVault>,
-    /// Vault files with another protection.
-    pub(super) found: Vec<FoundVault>,
 }
 
 impl Open {
@@ -485,6 +426,15 @@ impl Open {
             .as_mut()
             .ok_or_else(|| GhulError::Storage { msg: format!("{} is damaged", v.reference.file) })?;
         Ok((&v.reference, c))
+    }
+
+    /// A vault whose entries the generic entry functions may change: GhulPass, GhulAuth (and
+    /// calendars), never GhulDocs, whose index goes with its content files and has functions of
+    /// its own (`docs`).
+    pub(super) fn entry_vault_mut(&mut self, id: &str) -> Result<(&VaultRef, &mut UnlockedContainer)> {
+        let (r, c) = self.vault_mut(id)?;
+        refuse_docs_file(VaultKind::from_name(&r.kind))?;
+        Ok((r, c))
     }
 
     pub(super) fn kdf(&self) -> crate::vault::KdfParams {
@@ -511,89 +461,48 @@ impl Open {
         out
     }
 
-    /// Records the vaults' current revisions as "last seen" (not for stale files).
-    pub(super) fn record_revisions(&mut self) -> Result<()> {
-        let mut map = revisions(&self.suite);
-        for v in &self.vaults {
-            if let (Some(c), false) = (&v.container, v.stale) {
-                let r = map.entry(v.reference.id.clone()).or_insert(0);
-                *r = (*r).max(c.payload.revision);
-            }
+    /// A new container of `kind` with the suite's protection and recovery code.
+    pub(super) fn new_container(&self, kind: ContainerKind) -> Result<UnlockedContainer> {
+        let slots = factor_slots(&self.suite);
+        let mut c = self.keys().create_container(kind, slots.clone(), &mut OsRng)?;
+        for s in &slots {
+            let (label, created) = slot_label(&self.suite, s);
+            c.payload.slots.insert(crate::kdf::hex(s.id()), SlotMeta { label, created, extra: Default::default() });
         }
-        put_setting(&mut self.suite, REVISIONS_KEY, &map)
-    }
-
-    /// Keeps the current factor secret and recovery code before they change (see [`PREVIOUS_KEY`]).
-    pub(super) fn remember_protection(&mut self) -> Result<()> {
-        let mut list: Vec<PreviousProtection> = setting(&self.suite, PREVIOUS_KEY);
-        let now = PreviousProtection {
-            s: self.suite.factor_secret().expose().to_vec(),
-            code: self.suite.recovery_code().map(|c| c.expose().to_vec()).unwrap_or_default(),
-        };
-        list.retain(|p| p != &now);
-        list.insert(0, now);
-        list.truncate(MAX_PREVIOUS);
-        put_setting(&mut self.suite, PREVIOUS_KEY, &list)
-    }
-
-    /// The protections from before (factor secret, recovery code), newest first.
-    pub(super) fn previous_protection(&self) -> Vec<(FactorSecret, Option<RecoveryCode>)> {
-        let list: Vec<PreviousProtection> = setting(&self.suite, PREVIOUS_KEY);
-        list.into_iter()
-            .filter_map(|p| {
-                let s: [u8; 32] = p.s.as_slice().try_into().ok()?;
-                let code = <[u8; 32]>::try_from(p.code.as_slice()).ok().map(RecoveryCode::from_bytes);
-                Some((FactorSecret::from_bytes(s), code))
-            })
-            .collect()
-    }
-
-    /// B2: removes keys and key files that some device removed on purpose but that are still
-    /// here (this device missed the removal). Renews the keys then. Returns whether anything changed.
-    pub(super) fn drop_removed_slots(&mut self, now: i64) -> Result<bool> {
-        let removed: Vec<String> = setting(&self.suite, REMOVED_SLOTS_KEY);
-        let doomed: Vec<[u8; 16]> = self
-            .suite
-            .slots()
-            .iter()
-            .filter(|s| s.provides_factor() && removed.contains(&crate::kdf::hex(s.id())))
-            .map(|s| *s.id())
-            .collect();
-        let mut dropped = false;
-        for id in doomed {
-            // The last key or key file stays (a second factor is always required).
-            if self.suite.slots().iter().filter(|s| s.provides_factor()).count() <= 1 {
-                break;
-            }
-            self.remember_protection()?;
-            for (c, _) in self.containers_mut() {
-                match c.remove_slot(&id) {
-                    Ok(()) | Err(crate::vault::VaultError::SlotNotFound) => {}
-                    Err(e) => return Err(e.into()),
-                }
-            }
-            dropped = true;
+        if let Some(code) = self.suite.recovery_code() {
+            let label = self
+                .suite
+                .slots()
+                .iter()
+                .find(|s| matches!(s, Slot::Recovery(_)))
+                .map(|s| slot_label(&self.suite, s).0)
+                .unwrap_or_default();
+            c.set_recovery_code(&code, &label, now_ms(), &mut OsRng)?;
         }
-        if dropped {
-            self.renew_keys(true, now)?;
-            super::sync::mark_protection_changed(self)?;
-        }
-        Ok(dropped)
+        Ok(c)
     }
 
-    /// B1: after a change of the protection, older copies of the files (backups, `.bak`, server
-    /// versions) must not open what is written from now on. Every file gets a new container key;
+    /// The protection epoch of the open suite.
+    pub(super) fn epoch(&self) -> u64 {
+        setting(&self.suite, EPOCH_KEY)
+    }
+
+    /// Notes a change of the protection: the epoch grows (see [`EPOCH_KEY`]). Use
+    /// [`GhulSuite::protection_changed`], which also tells the device.
+    fn bump_epoch(&mut self) -> Result<()> {
+        let epoch: u64 = setting(&self.suite, EPOCH_KEY);
+        put_setting(&mut self.suite, EPOCH_KEY, &(epoch + 1))
+    }
+
+    /// B1: after a change of the protection, older copies of the files (backups, `.bak`, copies
+    /// of the suite file) must not open what is written from now on. Every file gets a new container key;
     /// with `factor`, the suite also gets a new factor secret, wrapped for every remaining key
-    /// and key file through their public keys. Returns whether the factor secret was renewed
-    /// (not while a slot of format version 1 remains).
-    pub(super) fn renew_keys(&mut self, factor: bool, now: i64) -> Result<bool> {
+    /// and key file through their public keys.
+    pub(super) fn renew_keys(&mut self, factor: bool, now: i64) -> Result<()> {
         let pk = PasswordKey::from_bytes(*self.password_key.expose());
-        let mut renewed = false;
         if factor {
-            if let Some((s, slots)) = self.suite.renewed_factor(&mut OsRng)? {
-                self.suite.replace_factor(s, slots, &pk, &mut OsRng)?;
-                renewed = true;
-            }
+            let (s, slots) = self.suite.renewed_factor(&mut OsRng)?;
+            self.suite.replace_factor(s, slots, &pk, &mut OsRng)?;
         }
         // The vaults take over the suite's slots, factor secret and code ...
         self.harmonize(now)?;
@@ -601,10 +510,10 @@ impl Open {
         for (c, _) in self.containers_mut() {
             c.renew_container_key(&pk, &mut OsRng)?;
         }
-        Ok(renewed)
+        Ok(())
     }
 
-    /// Brings vaults whose slots differ from the suite's (e.g. an old copy) in line with them.
+    /// Brings vaults whose slots differ from the suite's in line with them.
     /// Returns whether anything changed.
     pub(super) fn harmonize(&mut self, now: i64) -> Result<bool> {
         let slots = factor_slots(&self.suite);
@@ -666,27 +575,25 @@ pub struct GhulSuite {
     /// Device-local directory for quick unlock (never inside a shared folder).
     pub(super) local_dir: PathBuf,
     open: Mutex<Option<Open>>,
-    /// A lock was asked for while a call (e.g. a slow server) still held the open suite: the
+    /// A lock was asked for while a call (e.g. a slow import) still held the open suite: the
     /// suite counts as locked at once and is dropped as soon as that call ends (F92).
     lock_pending: AtomicBool,
-    /// Open server connection, Drive index and running uploads (dropped when locking).
-    pub(super) net: Mutex<NetCache>,
-    /// One synchronisation at a time: it no longer holds `open` while it waits for the server.
-    /// Holds what a run merged here but could not upload, reported with the next run (F147).
-    pub(super) syncing: Mutex<super::sync::SyncReport>,
     /// The time zone database of the device (see `set_time_zones`).
     pub(super) zones: Mutex<Option<Arc<dyn super::caltext::TimeZones>>>,
-}
-
-#[derive(Default)]
-pub(super) struct NetCache {
-    pub(super) conn: Option<(String, Arc<dyn crate::net::remote::RemoteFs>)>,
-    pub(super) drive: Option<super::drive::DriveIndex>,
-    pub(super) uploads: BTreeMap<String, super::drive::Upload>,
-    pub(super) imap: BTreeMap<String, crate::net::imap::ImapSession>,
-    /// The mail account settings that passed "check connection" last (a hash): only those may
-    /// be saved.
-    pub(super) mail_tested: Option<([u8; 32], Option<String>, Option<String>)>,
+    /// A checked `.ghlzip` waiting to replace the working copy (see `archive_accept`).
+    pub(super) pending: Mutex<Option<super::archive::Pending>>,
+    /// Grows with every write of a container (see `archive_saved`, `single_saved`).
+    pub(super) changes: std::sync::atomic::AtomicU64,
+    /// Grows with every lock and cancel: a file checked meanwhile is not kept (see `archive_open`).
+    pub(super) pending_gen: std::sync::atomic::AtomicU64,
+    /// The last `archive_accept` got as far as removing this device's data of the old state.
+    pub(super) wiped: AtomicBool,
+    /// How much content all GhulDocs vaults may hold ([`super::docs::DOCS_LIMIT`]; smaller only
+    /// in tests).
+    pub(super) docs_limit: std::sync::atomic::AtomicU64,
+    /// Content files being copied into a `.ghlzip` right now, and content files deleted
+    /// meanwhile (deleted only when the last copy ended, see `docs::ContentCopy`).
+    pub(super) content_copies: Mutex<super::docs::Copies>,
 }
 
 /// How containers of the folder are opened.
@@ -697,7 +604,7 @@ enum Opener<'a> {
 
 /// Opens the key: CTAP2 over the given HID connection, or the system's WebAuthn API when the
 /// app passed [`crate::key_device::platform_security_key`].
-fn with_authenticator<T>(
+pub(super) fn with_authenticator<T>(
     transport: &Arc<dyn HidTransport>,
     listener: Option<&Arc<dyn FidoListener>>,
     f: impl FnOnce(&dyn KeyDevice) -> Result<T>,
@@ -718,7 +625,7 @@ fn with_authenticator<T>(
 type NewKey = (Vec<u8>, [u8; 32], Zeroizing<[u8; 32]>);
 
 /// Registers a new credential and evaluates hmac-secret once (two touches).
-fn register_key(auth: &dyn KeyDevice, pin: &str) -> Result<NewKey> {
+pub(super) fn register_key(auth: &dyn KeyDevice, pin: &str) -> Result<NewKey> {
     let cred = auth.make_credential(RP_ID, RP_NAME, pin)?;
     if !cred.hmac_secret {
         return Err(GhulError::HmacSecretUnsupported);
@@ -733,19 +640,13 @@ fn register_key(auth: &dyn KeyDevice, pin: &str) -> Result<NewKey> {
     Ok((cred.id, prf_input, out.output))
 }
 
-/// The security key that opened a container (to give its slot a public key, see `upgrade_slot`).
-pub(super) struct UsedKey {
-    slot_id: [u8; 16],
-    hmac_output: Zeroizing<[u8; 32]>,
-}
-
 /// Asks the key for the factor secret of one of the container's FIDO2 slots.
 fn key_factor(
     locked: &LockedContainer,
     transport: &Arc<dyn HidTransport>,
     listener: Option<&Arc<dyn FidoListener>>,
     pin: &str,
-) -> Result<(FactorSecret, UsedKey)> {
+) -> Result<FactorSecret> {
     let requests = locked.fido2_requests();
     if requests.is_empty() {
         return Err(GhulError::InvalidInput { msg: "this vault has no security key".into() });
@@ -771,7 +672,7 @@ fn key_factor(
             }
             let req = &requests[out.index];
             match locked.factor_secret(&SecondFactor::Fido2 { slot_id: req.slot_id, hmac_output: &out.output }) {
-                Ok(s) => return Ok((s, UsedKey { slot_id: req.slot_id, hmac_output: out.output })),
+                Ok(s) => return Ok(s),
                 // The system API may have treated the salt differently: ask once more the other way.
                 Err(_) if auth.switch_salt_mode() => continue,
                 Err(e) => return Err(e.into()),
@@ -780,38 +681,34 @@ fn key_factor(
     })
 }
 
-/// The second factor that was presented, for [`GhulSuite::upgrade_slot`].
-pub(super) fn used_factor<'a>(key: &'a Option<UsedKey>, keyfile: &'a Option<Keyfile>) -> Option<SecondFactor<'a>> {
-    match (key, keyfile) {
-        (Some(k), _) => Some(SecondFactor::Fido2 { slot_id: k.slot_id, hmac_output: &k.hmac_output }),
-        (None, Some(kf)) => Some(SecondFactor::Keyfile(kf)),
-        _ => None,
-    }
-}
-
 pub(super) fn parse_keyfile(data: Option<Vec<u8>>) -> Result<Option<Keyfile>> {
     data.map(|d| Keyfile::parse(&Zeroizing::new(d)).map_err(GhulError::from)).transpose()
 }
 
-/// Gets the factor secret with a key file or a security key, whichever is given; also returns
-/// the key that was used (none for a key file: the caller has it).
+/// Gets the factor secret with a key file or a security key, whichever is given.
 pub(super) fn second_factor(
     locked: &LockedContainer,
     transport: Option<&Arc<dyn HidTransport>>,
     listener: Option<&Arc<dyn FidoListener>>,
     pin: Option<&str>,
     keyfile: Option<&Keyfile>,
-) -> Result<(FactorSecret, Option<UsedKey>)> {
+) -> Result<FactorSecret> {
     if let Some(kf) = keyfile {
-        return Ok((locked.factor_secret(&SecondFactor::Keyfile(kf))?, None));
+        return Ok(locked.factor_secret(&SecondFactor::Keyfile(kf))?);
     }
     match (transport, pin) {
-        (Some(t), Some(pin)) if !locked.fido2_requests().is_empty() => {
-            key_factor(locked, t, listener, pin).map(|(s, k)| (s, Some(k)))
-        }
+        (Some(t), Some(pin)) if !locked.fido2_requests().is_empty() => key_factor(locked, t, listener, pin),
         _ if locked.fido2_requests().is_empty() => Err(GhulError::KeyfileRequired),
         _ => Err(GhulError::SecurityKeyRequired),
     }
+}
+
+/// A GhulDocs vault is more than its vault file: it goes with its content files (`docs`).
+pub(super) fn refuse_docs_file(kind: VaultKind) -> Result<()> {
+    if kind == VaultKind::Docs {
+        return Err(GhulError::InvalidInput { msg: "a GhulDocs vault goes with its documents".into() });
+    }
+    Ok(())
 }
 
 pub(super) fn text_field(e: &Entry, name: &str) -> String {
@@ -875,7 +772,7 @@ fn apply(e: &mut Entry, data: EntryData) {
     e.folder = data.folder.filter(|f| !f.is_empty());
 }
 
-fn slot_label(c: &UnlockedContainer, s: &Slot) -> (String, i64) {
+pub(super) fn slot_label(c: &UnlockedContainer, s: &Slot) -> (String, i64) {
     c.payload.slots.get(&crate::kdf::hex(s.id())).map(|m| (m.label.clone(), m.created)).unwrap_or_default()
 }
 
@@ -885,15 +782,14 @@ impl GhulSuite {
     }
 
     /// Unlocked: a lock asked for before is done with.
-    fn set_open(&self, open: Open) {
+    pub(super) fn set_open(&self, open: Open) {
         let mut guard = self.guard();
         self.lock_pending.store(false, Ordering::SeqCst);
         *guard = Some(open);
     }
 
-    /// Drops the open suite (if a lock is still pending) and the network cache. With `wait`
-    /// false it gives up at once if a call holds either (returns false; the call drops the
-    /// suite when it ends, `finish_lock` the rest).
+    /// Drops the open suite (if a lock is still pending). With `wait` false it gives up at once
+    /// if a call holds it (returns false; the call drops the suite when it ends).
     fn drop_open(&self, wait: bool) -> bool {
         let mut guard = match self.open.try_lock() {
             Ok(g) => g,
@@ -904,20 +800,6 @@ impl GhulSuite {
         if self.lock_pending.swap(false, Ordering::SeqCst) {
             *guard = None;
         }
-        if guard.is_some() {
-            // Unlocked again since: its connection and running uploads stay.
-            return true;
-        }
-        // The connection, the Drive index and mail sessions go as well (same lock order as
-        // the calls: open suite first, then the network cache).
-        let mut net = match self.net.try_lock() {
-            Ok(n) => n,
-            Err(TryLockError::Poisoned(p)) => p.into_inner(),
-            Err(TryLockError::WouldBlock) if wait => self.net.lock().unwrap_or_else(|p| p.into_inner()),
-            // The suite is dropped already; only the cache waits for the call using it.
-            Err(TryLockError::WouldBlock) => return false,
-        };
-        *net = NetCache::default();
         true
     }
 
@@ -936,14 +818,6 @@ impl GhulSuite {
 
     fn run_open<T>(&self, guard: &mut Option<Open>, f: impl FnOnce(&mut Open) -> Result<T>) -> Result<T> {
         let open = guard.as_mut().ok_or(GhulError::Locked)?;
-        // Settings of older suites (or synced from a device with an older app) move into the area files.
-        if super::areas::DRIVE_KEYS
-            .iter()
-            .chain(super::areas::MAIL_KEYS)
-            .any(|k| open.suite.payload.settings.contains_key(*k))
-        {
-            self.migrate_areas(open)?;
-        }
         f(open)
     }
 
@@ -983,7 +857,7 @@ impl GhulSuite {
     }
 
     /// A new suite (settings) container with the same protection and recovery code as `anchor`.
-    fn suite_for_vault(&self, anchor: &UnlockedContainer, pk: &PasswordKey) -> Result<UnlockedContainer> {
+    pub(super) fn suite_for_vault(&self, anchor: &UnlockedContainer, pk: &PasswordKey) -> Result<UnlockedContainer> {
         let keys = SuiteKeys::from_parts(
             anchor.header().suite_id,
             anchor.header().kdf.clone(),
@@ -1009,29 +883,17 @@ impl GhulSuite {
         Ok(suite)
     }
 
-    /// Opens every vault file of the folder. Files with another protection end up in `found`,
-    /// damaged files are listed as unavailable. Copies of the same vault (e.g. conflict copies of
-    /// a folder sync tool such as Syncthing or Nextcloud) are merged entry by entry into the
-    /// newest one; their files are returned to be deleted once the merged vault is saved.
-    fn scan(
-        &self,
-        suite: &UnlockedContainer,
-        opener: &Opener<'_>,
-    ) -> Result<(Vec<OpenVault>, Vec<FoundVault>, Vec<String>)> {
-        let mut copies: Vec<String> = Vec::new();
-        let seen = revisions(suite);
-        let ignored = ignored_files(suite);
+    /// Opens every vault file of the folder. Files with another protection are left alone;
+    /// damaged files of this suite are listed as unavailable.
+    fn scan(&self, opener: &Opener<'_>) -> Result<Vec<OpenVault>> {
         let mut vaults: Vec<OpenVault> = Vec::new();
-        let mut found = Vec::new();
         for file in self.vault_files()? {
             let kind_by_ext = if file.ends_with(".ghlpss") {
                 VaultKind::Pass
             } else if file.ends_with(".ghlcal") {
                 VaultKind::Cal
-            } else if file.ends_with(".ghldrv") {
-                VaultKind::Drive
-            } else if file.ends_with(".ghlmail") {
-                VaultKind::Mail
+            } else if file.ends_with(".ghldoc") {
+                VaultKind::Docs
             } else {
                 VaultKind::Totp
             };
@@ -1043,7 +905,6 @@ impl GhulSuite {
                     file: file.to_owned(),
                 },
                 container: None,
-                stale: false,
             };
             let locked = match self.read_locked(&file) {
                 Ok(Some(l)) => l,
@@ -1054,90 +915,52 @@ impl GhulSuite {
                 }
             };
             let Some(kind) = VaultKind::from_container(locked.kind()) else { continue };
-            let ours = match opener {
-                Opener::Factors { suite_id, kdf, .. } => {
-                    &locked.header().suite_id == suite_id && &locked.header().kdf == *kdf
-                }
-                Opener::Code(_) => locked.has_recovery(),
-            };
-            let protection = protection_of(&locked);
             let opened = match opener {
-                Opener::Factors { pk, s, .. } if ours => locked.unlock(pk, s).ok(),
-                Opener::Code(code) => locked.recover(code).ok(),
-                _ => None,
-            };
-            let c = match (opened, ours) {
-                (Some(c), _) => c,
-                (None, true) if matches!(opener, Opener::Factors { .. }) => {
-                    vaults.push(damaged(&file));
-                    continue;
-                }
-                _ => {
-                    if !ignored.contains(&file) {
-                        found.push(FoundVault { file, kind, protection });
+                Opener::Factors { pk, s, suite_id, kdf } => {
+                    if &locked.header().suite_id != suite_id || &locked.header().kdf != *kdf {
+                        continue;
                     }
-                    continue;
+                    locked.unlock(pk, s).ok()
                 }
+                Opener::Code(code) => {
+                    if !locked.has_recovery() {
+                        continue;
+                    }
+                    match locked.recover(code) {
+                        Ok(c) => Some(c),
+                        Err(_) => continue,
+                    }
+                }
+            };
+            let Some(c) = opened else {
+                vaults.push(damaged(&file));
+                continue;
             };
             let id = crate::kdf::hex(&c.container_id());
-            if let Some(existing) = vaults.iter_mut().find(|v| v.reference.id == id) {
-                let Some(e) = existing.container.as_mut() else { continue };
-                let mut c = c;
-                // Both copies may hold changes of their own: merge, the newer copy carries on.
-                let (winner, loser_file) = if c.payload.revision > e.payload.revision {
-                    let (merged, _, _) = super::sync::merge_entries(&c.payload.entries, &e.payload.entries);
-                    c.payload.entries = merged;
-                    super::sync::merge_settings(&mut c.payload.settings, &e.payload.settings);
-                    let old = std::mem::replace(&mut existing.reference.file, file.clone());
-                    existing.reference.name = vault_name(&c, &file);
-                    existing.stale = seen.get(&id).is_some_and(|r| c.payload.revision < *r);
-                    (Some(c), old)
-                } else {
-                    let (merged, _, _) = super::sync::merge_entries(&e.payload.entries, &c.payload.entries);
-                    e.payload.entries = merged;
-                    super::sync::merge_settings(&mut e.payload.settings, &c.payload.settings);
-                    (None, file.clone())
-                };
-                if let Some(w) = winner {
-                    existing.container = Some(w);
-                }
-                copies.push(loser_file);
+            if vaults.iter().any(|v| v.reference.id == id) {
+                // A second file of the same vault (only the app writes here): the first counts.
                 continue;
             }
-            let stale = seen.get(&id).is_some_and(|r| c.payload.revision < *r);
             vaults.push(OpenVault {
                 reference: VaultRef { id, kind: kind.container().name().into(), name: vault_name(&c, &file), file },
                 container: Some(c),
-                stale,
             });
         }
-        copies.retain(|f| !vaults.iter().any(|v| &v.reference.file == f));
-        Ok((vaults, found, copies))
-    }
-
-    /// Saves vaults that were merged from copies and deletes the copies.
-    fn remove_copies(&self, o: &mut Open, copies: Vec<String>) -> Result<()> {
-        if copies.is_empty() {
-            return Ok(());
-        }
-        self.save_all(o)?;
-        for f in copies {
-            self.storage.delete(f)?;
-        }
-        Ok(())
+        Ok(vaults)
     }
 
     pub(super) fn save_container(&self, c: &mut UnlockedContainer, file: &str) -> Result<()> {
         let data = c.seal(&mut OsRng)?;
-        Ok(self.storage.write(file.to_owned(), data)?)
+        self.storage.write(file.to_owned(), data)?;
+        self.mark_unsaved();
+        Ok(())
     }
 
-    /// Saves one vault and the suite (with its new revision as "last seen").
+    /// Saves one vault and the suite.
     pub(super) fn save_vault(&self, o: &mut Open, id: &str) -> Result<()> {
         let (r, c) = o.vault_mut(id)?;
         let file = r.file.clone();
         self.save_container(c, &file)?;
-        o.record_revisions()?;
         self.save_container(&mut o.suite, SUITE_FILE)
     }
 
@@ -1149,100 +972,44 @@ impl GhulSuite {
                 self.storage.write(v.reference.file.clone(), data)?;
             }
         }
-        o.record_revisions()?;
         self.save_container(&mut o.suite, SUITE_FILE)
     }
 
-    /// Gives the slot of the key (or key file) just used a public key in every file, so that
-    /// later protection changes can renew the factor secret for it without a touch (B1).
-    pub(super) fn upgrade_slot(&self, factor: &SecondFactor<'_>) -> Result<()> {
-        self.with_open(|o| {
-            let Some(slot) = o.suite.upgraded_slot(factor, &mut OsRng) else { return Ok(()) };
-            for (c, _) in o.containers_mut() {
-                match c.replace_slot(slot.clone()) {
-                    Ok(()) | Err(crate::vault::VaultError::SlotNotFound) => {}
-                    Err(e) => return Err(e.into()),
-                }
-            }
-            super::sync::mark_protection_changed(o)?;
-            self.save_all(o)
-        })
-    }
-
-    /// F23: renames vault files whose names come from older app versions (they contained the
-    /// vault's name) to [`file_name`]. The bytes are copied as they are; the old file is deleted
-    /// once the new one is written.
-    fn neutral_file_names(&self, o: &mut Open) -> Result<()> {
-        for v in &mut o.vaults {
-            if v.container.is_none() {
-                continue;
-            }
-            let want = file_name(VaultKind::from_name(&v.reference.kind), &v.reference.id);
-            if v.reference.file == want {
-                continue;
-            }
-            let Some(data) = self.storage.read(v.reference.file.clone())? else { continue };
-            self.storage.write(want.clone(), data)?;
-            self.storage.delete(v.reference.file.clone())?;
-            v.reference.file = want;
-        }
-        Ok(())
-    }
-
     /// Opens the folder's vaults with the suite's password and factor secret and keeps the session.
-    fn finish_unlock(&self, password_key: PasswordKey, suite: UnlockedContainer, full: bool) -> Result<()> {
+    pub(super) fn finish_unlock(&self, password_key: PasswordKey, suite: UnlockedContainer, full: bool) -> Result<()> {
         let s = FactorSecret::from_bytes(*suite.factor_secret().expose());
         let kdf = suite.header().kdf.clone();
         let opener = Opener::Factors { pk: &password_key, s: &s, suite_id: suite.header().suite_id, kdf: &kdf };
-        let (vaults, found, copies) = self.scan(&suite, &opener)?;
-        let mut open = Open { password_key, suite, vaults, found };
-        self.remove_copies(&mut open, copies)?;
+        let vaults = self.scan(&opener)?;
+        let mut open = Open { password_key, suite, vaults };
         let suite_missing = self.storage.read(SUITE_FILE.to_owned())?.is_none();
         if open.harmonize(now_ms())? {
             self.save_all(&mut open)?;
         } else if suite_missing {
-            open.record_revisions()?;
             self.save_container(&mut open.suite, SUITE_FILE)?;
         }
         if full {
             super::quick::refresh_stamps(&self.local_dir, open.password_key.expose(), now_ms());
         }
-        // Files named after their vaults by older app versions get neutral names. Not being
-        // able to rename now is no reason to refuse the unlock: it is tried again next time.
-        let _ = self.neutral_file_names(&mut open);
+        self.docs_tidy(&open);
         self.set_open(open);
         Ok(())
     }
 
     /// Creates a vault with the suite's protection and recovery code.
     pub(super) fn add_vault(&self, o: &mut Open, kind: VaultKind, name: &str) -> Result<String> {
-        let slots = factor_slots(&o.suite);
-        let mut c = o.keys().create_container(kind.container(), slots.clone(), &mut OsRng)?;
-        for s in &slots {
-            let (label, created) = slot_label(&o.suite, s);
-            c.payload.slots.insert(crate::kdf::hex(s.id()), SlotMeta { label, created, extra: Default::default() });
-        }
-        if let Some(code) = o.suite.recovery_code() {
-            let label = o
-                .suite
-                .slots()
-                .iter()
-                .find(|s| matches!(s, Slot::Recovery(_)))
-                .map(|s| slot_label(&o.suite, s).0)
-                .unwrap_or_default();
-            c.set_recovery_code(&code, &label, now_ms(), &mut OsRng)?;
-        }
+        let mut c = o.new_container(kind.container())?;
         set_vault_name(&mut c, name);
         let id = crate::kdf::hex(&c.container_id());
         let file = file_name(kind, &id);
         let reference =
             VaultRef { id: id.clone(), kind: kind.container().name().into(), name: name.trim().to_owned(), file };
-        o.vaults.push(OpenVault { reference, container: Some(c), stale: false });
+        o.vaults.push(OpenVault { reference, container: Some(c) });
         Ok(id)
     }
 
     /// Adds an opened vault (already with the suite's protection) and writes it to the folder.
-    fn insert_vault(&self, o: &mut Open, mut c: UnlockedContainer, name: &str, file: Option<String>) -> Result<String> {
+    pub(super) fn insert_vault(&self, o: &mut Open, mut c: UnlockedContainer, name: &str) -> Result<String> {
         let kind = VaultKind::from_container(c.kind())
             .ok_or_else(|| GhulError::InvalidInput { msg: "a suite file cannot be added as a vault".into() })?;
         let id = crate::kdf::hex(&c.container_id());
@@ -1252,19 +1019,59 @@ impl GhulSuite {
         if !name.trim().is_empty() {
             set_vault_name(&mut c, name);
         }
-        let neutral = file_name(kind, &id);
-        let name = vault_name(&c, file.as_deref().unwrap_or(&neutral));
-        if let Some(f) = &file {
-            o.found.retain(|x| &x.file != f);
+        if kind != VaultKind::Docs {
+            super::archive::check_other_room(o, super::archive::container_weight(&c)?)?;
         }
-        let reference = VaultRef { id: id.clone(), kind: kind.container().name().into(), name, file: neutral.clone() };
-        o.vaults.push(OpenVault { reference, container: Some(c), stale: false });
-        self.save_vault(o, &id)?;
-        // A file of the folder that was taken over keeps no name of its own (F23).
-        if let Some(f) = file.filter(|f| f != &neutral) {
-            self.storage.delete(f)?;
+        let file = file_name(kind, &id);
+        let name = vault_name(&c, &file);
+        let reference = VaultRef { id: id.clone(), kind: kind.container().name().into(), name, file: file.clone() };
+        o.vaults.push(OpenVault { reference, container: Some(c) });
+        if let Err(e) = self.save_vault(o, &id) {
+            // Not half added: neither in the open suite nor in the folder (the suite file on the
+            // disk does not list vaults, a vault file alone would be found at the next unlock).
+            if let Some(pos) = o.vaults.iter().position(|v| v.reference.id == id) {
+                let mut v = o.vaults.remove(pos);
+                if let Some(c) = v.container.as_mut() {
+                    c.payload.entries.iter_mut().for_each(zeroize::Zeroize::zeroize);
+                }
+            }
+            let _ = self.storage.delete(file);
+            return Err(e);
         }
         Ok(id)
+    }
+
+    /// Switches a vault opened with another protection to this suite's password, keys and
+    /// recovery code, with a new container key (the file it came from still opens with its old
+    /// protection).
+    pub(super) fn take_over(&self, o: &Open, c: &mut UnlockedContainer) -> Result<()> {
+        let now = now_ms();
+        let slots = factor_slots(&o.suite);
+        c.reprotect(
+            o.suite.header().suite_id,
+            FactorSecret::from_bytes(*o.suite.factor_secret().expose()),
+            slots.clone(),
+            &o.password_key,
+            o.kdf(),
+            &mut OsRng,
+        )?;
+        for slot in &slots {
+            let (label, created) = slot_label(&o.suite, slot);
+            c.payload.slots.insert(crate::kdf::hex(slot.id()), SlotMeta { label, created, extra: Default::default() });
+        }
+        if let Some(code) = o.suite.recovery_code() {
+            c.set_recovery_code(&code, "", now, &mut OsRng)?;
+        }
+        c.renew_container_key(&o.password_key, &mut OsRng)?;
+        Ok(())
+    }
+
+    /// Notes a change of the protection: the epoch grows in the suite, and this device knows from
+    /// now on that files with an older protection are not to be opened.
+    pub(super) fn protection_changed(&self, o: &mut Open) -> Result<()> {
+        o.bump_epoch()?;
+        self.note_epoch(&o.suite.header().suite_id, o.epoch());
+        Ok(())
     }
 
     /// Copies a new factor slot (created in the suite) into every vault and saves all.
@@ -1274,18 +1081,8 @@ impl GhulSuite {
                 c.insert_slot(slot.clone(), label, now)?;
             }
         }
-        super::sync::mark_protection_changed(o)?;
+        self.protection_changed(o)?;
         self.save_all(o)
-    }
-
-    fn source_bytes(&self, source: &VaultSource) -> Result<(Zeroizing<Vec<u8>>, Option<String>)> {
-        match source {
-            VaultSource::Bytes { data } => Ok((Zeroizing::new(data.clone()), None)),
-            VaultSource::InFolder { file } => {
-                let data = self.storage.read(file.clone())?.ok_or(GhulError::NotFound)?;
-                Ok((Zeroizing::new(data), Some(file.clone())))
-            }
-        }
     }
 }
 
@@ -1300,9 +1097,13 @@ impl GhulSuite {
             local_dir: PathBuf::from(local_dir),
             open: Mutex::new(None),
             lock_pending: AtomicBool::new(false),
-            net: Mutex::new(NetCache::default()),
-            syncing: Mutex::new(Default::default()),
             zones: Mutex::new(None),
+            pending: Mutex::new(None),
+            changes: std::sync::atomic::AtomicU64::new(0),
+            pending_gen: std::sync::atomic::AtomicU64::new(0),
+            wiped: AtomicBool::new(false),
+            docs_limit: std::sync::atomic::AtomicU64::new(super::docs::DOCS_LIMIT),
+            content_copies: Mutex::new(Default::default()),
         })
     }
 
@@ -1313,45 +1114,6 @@ impl GhulSuite {
 
     pub fn storage_name(&self) -> String {
         self.storage.describe()
-    }
-
-    /// "Change storage location": copies the settings file and every vault file to `target` and
-    /// reads each copy back to compare it byte for byte. Refuses a target that already holds a
-    /// suite (nothing is overwritten). The files here stay untouched; the caller switches to the
-    /// new location only after this succeeded. If anything fails, the copies made so far are
-    /// removed again. Returns the number of files copied.
-    pub fn copy_to(&self, target: Arc<dyn VaultStorage>) -> Result<u32> {
-        // No save may run while the files are copied.
-        let _hold = self.guard();
-        if target.read(SUITE_FILE.to_owned())?.is_some() || target.list()?.iter().any(|f| is_vault_file(f)) {
-            return Err(GhulError::AlreadyExists);
-        }
-        let mut names = self.vault_files()?;
-        if self.storage.read(SUITE_FILE.to_owned())?.is_some() {
-            names.insert(0, SUITE_FILE.to_owned());
-        }
-        if names.is_empty() {
-            return Err(GhulError::NoVault);
-        }
-        let mut done: Vec<String> = Vec::new();
-        let result = (|| -> Result<()> {
-            for name in &names {
-                let data = self.storage.read(name.clone())?.ok_or(GhulError::NoVault)?;
-                target.write(name.clone(), data.clone())?;
-                done.push(name.clone());
-                if target.read(name.clone())?.as_deref() != Some(&data[..]) {
-                    return Err(GhulError::Storage { msg: format!("copy of {name} differs") });
-                }
-            }
-            Ok(())
-        })();
-        if let Err(e) = result {
-            for name in &done {
-                let _ = target.delete(name.clone());
-            }
-            return Err(e);
-        }
-        Ok(names.len() as u32)
     }
 
     pub fn is_unlocked(&self) -> bool {
@@ -1419,12 +1181,8 @@ impl GhulSuite {
         }
         let (_, code) = suite.add_recovery_slot(&options.recovery_label, now, &mut OsRng)?;
         super::setup::mark_unconfirmed(&mut suite)?;
-        let mut open = Open {
-            password_key: PasswordKey::from_bytes(*keys.password_key.expose()),
-            suite,
-            vaults: Vec::new(),
-            found: Vec::new(),
-        };
+        let mut open =
+            Open { password_key: PasswordKey::from_bytes(*keys.password_key.expose()), suite, vaults: Vec::new() };
         for v in &options.vaults {
             self.add_vault(&mut open, v.kind, &v.name)?;
         }
@@ -1456,8 +1214,9 @@ impl GhulSuite {
         let locked = LockedContainer::parse(&vault_file)?;
         let kind = VaultKind::from_container(locked.kind())
             .ok_or_else(|| GhulError::InvalidInput { msg: "this is a suite file, open its folder instead".into() })?;
+        refuse_docs_file(kind)?;
         let keyfile = parse_keyfile(keyfile)?;
-        let (s, _) = second_factor(
+        let s = second_factor(
             &locked,
             transport.as_ref(),
             listener.as_ref(),
@@ -1479,12 +1238,7 @@ impl GhulSuite {
         let suite = self.suite_for_vault(&vault, &pk)?;
         let name = self::vault_name(&vault, &file);
         let reference = VaultRef { id, kind: kind.container().name().into(), name, file };
-        let mut open = Open {
-            password_key: pk,
-            suite,
-            vaults: vec![OpenVault { reference, container: Some(vault), stale: false }],
-            found: Vec::new(),
-        };
+        let mut open = Open { password_key: pk, suite, vaults: vec![OpenVault { reference, container: Some(vault) }] };
         self.save_all(&mut open)?;
         self.set_open(open);
         Ok(SetupResult { recovery_code: new_code })
@@ -1504,7 +1258,7 @@ impl GhulSuite {
         let pin = pin.map(Zeroizing::new);
         let locked = self.anchor()?;
         let keyfile = parse_keyfile(keyfile)?;
-        let (s, key) = second_factor(
+        let s = second_factor(
             &locked,
             transport.as_ref(),
             listener.as_ref(),
@@ -1515,11 +1269,6 @@ impl GhulSuite {
         let anchor = locked.unlock(&pk, &s)?;
         let suite = self.suite_from_anchor(anchor, &pk)?;
         self.finish_unlock(pk, suite, true)?;
-        if let Some(factor) = used_factor(&key, &keyfile) {
-            // Not being able to rewrite the files now is no reason to refuse the unlock: the
-            // slot gets its public key at the next unlock with this key.
-            let _ = self.upgrade_slot(&factor);
-        }
         Ok(())
     }
 
@@ -1534,38 +1283,38 @@ impl GhulSuite {
         OsRng.fill_bytes(&mut kdf.salt);
         let pk = PasswordKey::derive(&new_password, &kdf)?;
         let suite = self.suite_from_anchor(anchor, &pk)?;
-        let (vaults, found, copies) = self.scan(&suite, &Opener::Code(&code))?;
-        let mut open = Open { password_key: PasswordKey::from_bytes(*pk.expose()), suite, vaults, found };
+        let vaults = self.scan(&Opener::Code(&code))?;
+        let mut open = Open { password_key: PasswordKey::from_bytes(*pk.expose()), suite, vaults };
         open.suite.rekey(&pk, kdf.clone(), &mut OsRng)?;
         open.harmonize(now_ms())?;
         for (c, _) in open.containers_mut() {
             c.rekey(&pk, kdf.clone(), &mut OsRng)?;
         }
         open.renew_keys(false, now_ms())?;
-        super::sync::mark_protection_changed(&mut open)?;
+        self.protection_changed(&mut open)?;
         self.save_all(&mut open)?;
-        self.remove_copies(&mut open, copies)?;
         super::quick::delete_all(&self.local_dir);
         super::quick::refresh_stamps(&self.local_dir, open.password_key.expose(), now_ms());
+        self.docs_tidy(&open);
         self.set_open(open);
         Ok(())
     }
 
     /// Locks immediately; all secrets are wiped from memory.
-    /// Locks at once, also while another call (e.g. a slow or unreachable server) still works
-    /// with the open suite: the caller (the app's main thread) never waits for it (F92). The
-    /// suite counts as locked immediately; its keys and decrypted data are dropped right away
-    /// or, if that call still holds them, as soon as it ends. Callers then run `finish_lock`
-    /// on a background thread: it covers a call ending in the same moment and the network cache.
+    /// Locks at once, also while another call (e.g. a slow import) still works with the open
+    /// suite: the caller (the app's main thread) never waits for it (F92). The suite counts as
+    /// locked immediately; its keys and decrypted data are dropped right away or, if that call
+    /// still holds them, as soon as it ends. Callers then run `finish_lock` on a background
+    /// thread: it covers a call ending in the same moment.
     pub fn lock(&self) {
         self.lock_pending.store(true, Ordering::SeqCst);
-        // A checked mail connection (with its password's hash) is not kept past locking.
-        self.net.lock().unwrap_or_else(|p| p.into_inner()).mail_tested = None;
+        // A checked suite file holds its keys: not past locking either.
+        self.set_pending(None);
         self.drop_open(false);
     }
 
-    /// After `lock`, on a background thread: waits until a call still holding the open suite or
-    /// the network cache has ended, and makes sure both are gone (unless unlocked again since).
+    /// After `lock`, on a background thread: waits until a call still holding the open suite has
+    /// ended, and makes sure it is gone (unless unlocked again since).
     pub fn finish_lock(&self) {
         self.drop_open(true);
     }
@@ -1576,6 +1325,8 @@ impl GhulSuite {
     pub fn quick_unlock_enable(&self, name: String, pin: Option<String>) -> Result<Vec<u8>> {
         let pin = pin.map(Zeroizing::new);
         self.with_open(|o| {
+            // The device's quick unlock belongs to the own suite.
+            super::single::refuse_single(o)?;
             let qk = super::quick::create(
                 &self.local_dir,
                 &name,
@@ -1584,7 +1335,6 @@ impl GhulSuite {
                 o.suite.factor_secret().expose(),
                 pin.as_deref().map(|p| p.as_str()),
                 now_ms(),
-                None,
             )?;
             Ok(qk.to_vec())
         })
@@ -1614,31 +1364,13 @@ impl GhulSuite {
             now_ms(),
         )?;
         let pk = PasswordKey::from_bytes(*secret.password_key);
-        let opened = if secret.old_version {
-            locked.unlock_with_vmk(&secret.secret)
-        } else {
-            locked.unlock(&pk, &FactorSecret::from_bytes(*secret.secret))
-        };
-        let suite = match opened {
+        let suite = match locked.unlock(&pk, &FactorSecret::from_bytes(*secret.factor_secret)) {
             Ok(s) => s,
             Err(_) => {
                 super::quick::delete_all(&self.local_dir);
                 return Err(GhulError::QuickUnlockUnavailable);
             }
         };
-        if secret.old_version {
-            // Rewrite as version 2 with the same quick key (the platform keeps protecting it).
-            let _ = super::quick::create(
-                &self.local_dir,
-                &name,
-                &suite.header().suite_id,
-                pk.expose(),
-                suite.factor_secret().expose(),
-                pin.as_deref().map(|p| p.as_str()),
-                secret.created,
-                Some(&quick_key),
-            );
-        }
         self.finish_unlock(pk, suite, false)
     }
 
@@ -1670,9 +1402,11 @@ impl GhulSuite {
                     entries: v
                         .container
                         .as_ref()
-                        .map(|c| c.payload.entries.iter().filter(|e| !e.deleted).count() as u32)
+                        .map(|c| match VaultKind::from_name(&v.reference.kind) {
+                            VaultKind::Docs => super::docs::Usage::of(&c.payload.entries).files as u32,
+                            _ => c.payload.entries.iter().filter(|e| !e.deleted).count() as u32,
+                        })
                         .unwrap_or(0),
-                    outdated: v.stale,
                 })
                 .collect())
         })
@@ -1683,6 +1417,7 @@ impl GhulSuite {
             return Err(GhulError::InvalidInput { msg: "name required".into() });
         }
         self.with_open(|o| {
+            super::single::refuse_single(o)?;
             let id = self.add_vault(o, kind, &name)?;
             self.save_vault(o, &id)?;
             Ok(id)
@@ -1705,66 +1440,29 @@ impl GhulSuite {
     /// Deletes a vault: its file is removed from the folder.
     pub fn remove_vault(&self, id: String) -> Result<()> {
         self.with_open(|o| {
+            super::single::refuse_single(o)?;
             let pos = o.vaults.iter().position(|v| v.reference.id == id).ok_or(GhulError::NotFound)?;
             let v = o.vaults.remove(pos);
             self.storage.delete(v.reference.file.clone())?;
-            // Deleted on purpose: the next synchronisation removes it on the server and the other
-            // devices (and only such a mark does; a missing file is repaired instead).
-            let mut deleted: Vec<String> = setting(&o.suite, super::sync::DELETED_VAULTS_KEY);
-            if !deleted.contains(&v.reference.id) {
-                deleted.push(v.reference.id.clone());
+            // The content files of a GhulDocs vault go with it (what is left goes at the next unlock).
+            if v.reference.kind == "docs" {
+                if let Ok(dir) = self.docs_dir(&v.reference.id) {
+                    self.remove_contents(vec![dir]);
+                }
             }
-            put_setting(&mut o.suite, super::sync::DELETED_VAULTS_KEY, &deleted)?;
-            let mut map = revisions(&o.suite);
-            map.remove(&v.reference.id);
-            put_setting(&mut o.suite, REVISIONS_KEY, &map)?;
             self.save_container(&mut o.suite, SUITE_FILE)
         })
     }
 
-    /// Current file of a vault (for export / backup).
+    /// Current file of a vault (for export / backup). A GhulDocs vault goes with its content
+    /// files: `docs_export_vault`.
     pub fn export_vault(&self, id: String) -> Result<Vec<u8>> {
         let file = self.with_open(|o| {
-            Ok(o.vaults.iter().find(|v| v.reference.id == id).ok_or(GhulError::NotFound)?.reference.file.clone())
+            let v = o.vaults.iter().find(|v| v.reference.id == id).ok_or(GhulError::NotFound)?;
+            refuse_docs_file(VaultKind::from_name(&v.reference.kind))?;
+            Ok(v.reference.file.clone())
         })?;
         self.storage.read(file)?.ok_or(GhulError::NotFound)
-    }
-
-    pub fn export_suite(&self) -> Result<Vec<u8>> {
-        self.storage.read(SUITE_FILE.to_owned())?.ok_or(GhulError::NoVault)
-    }
-
-    /// Reads the folder again: vaults of this suite that appeared meanwhile are opened right
-    /// away, removed files disappear; vault files with another protection are returned (they need
-    /// their password once).
-    pub fn find_new_vaults(&self) -> Result<Vec<FoundVault>> {
-        self.with_open(|o| {
-            let s = FactorSecret::from_bytes(*o.suite.factor_secret().expose());
-            let kdf = o.kdf();
-            let opener = Opener::Factors { pk: &o.password_key, s: &s, suite_id: o.suite.header().suite_id, kdf: &kdf };
-            // Everything is saved immediately, so the folder is the truth: read it again.
-            let (vaults, found, copies) = self.scan(&o.suite, &opener)?;
-            o.vaults = vaults;
-            o.found = found;
-            self.remove_copies(o, copies)?;
-            if o.harmonize(now_ms())? {
-                self.save_all(o)?;
-            }
-            Ok(o.found.clone())
-        })
-    }
-
-    /// Does not offer this file again.
-    pub fn ignore_found_vault(&self, file: String) -> Result<()> {
-        self.with_open(|o| {
-            let mut list = ignored_files(&o.suite);
-            if !list.contains(&file) {
-                list.push(file.clone());
-            }
-            put_setting(&mut o.suite, IGNORED_KEY, &list)?;
-            o.found.retain(|f| f.file != file);
-            self.save_container(&mut o.suite, SUITE_FILE)
-        })
     }
 
     /// Adds a vault file (e.g. picked by the user) that already has this suite's protection.
@@ -1772,16 +1470,17 @@ impl GhulSuite {
     pub fn add_vault_file(&self, data: Vec<u8>, name: String) -> Result<String> {
         let data = Zeroizing::new(data);
         self.with_open(|o| {
+            super::single::refuse_single(o)?;
             let locked = LockedContainer::parse(&data)?;
-            if VaultKind::from_container(locked.kind()).is_none() {
-                return Err(GhulError::InvalidInput { msg: "a suite file cannot be added as a vault".into() });
-            }
+            let kind = VaultKind::from_container(locked.kind())
+                .ok_or_else(|| GhulError::InvalidInput { msg: "a suite file cannot be added as a vault".into() })?;
+            refuse_docs_file(kind)?;
             if locked.header().suite_id != o.suite.header().suite_id || locked.header().kdf != o.kdf() {
                 return Err(GhulError::DifferentProtection);
             }
             let s = FactorSecret::from_bytes(*o.suite.factor_secret().expose());
             let c = locked.unlock(&o.password_key, &s).map_err(|_| GhulError::DifferentProtection)?;
-            self.insert_vault(o, c, &name, None)
+            self.insert_vault(o, c, &name)
         })
     }
 
@@ -1790,7 +1489,7 @@ impl GhulSuite {
     #[allow(clippy::too_many_arguments)]
     pub fn adopt_vault(
         &self,
-        source: VaultSource,
+        data: Vec<u8>,
         name: String,
         password: String,
         transport: Option<Arc<dyn HidTransport>>,
@@ -1800,16 +1499,15 @@ impl GhulSuite {
     ) -> Result<String> {
         let password = Zeroizing::new(password);
         let pin = pin.map(Zeroizing::new);
-        let (data, existing) = self.source_bytes(&source)?;
+        let data = Zeroizing::new(data);
         let locked = LockedContainer::parse(&data)?;
-        if VaultKind::from_container(locked.kind()).is_none() {
-            return Err(GhulError::InvalidInput { msg: "a suite file cannot be added as a vault".into() });
-        }
-        if !self.is_unlocked() {
-            return Err(GhulError::Locked);
-        }
+        let kind = VaultKind::from_container(locked.kind())
+            .ok_or_else(|| GhulError::InvalidInput { msg: "a suite file cannot be added as a vault".into() })?;
+        refuse_docs_file(kind)?;
+        // Refused before the key is touched or the password derived.
+        self.with_open(|o| super::single::refuse_single(o))?;
         let keyfile = parse_keyfile(keyfile)?;
-        let (s, _) = second_factor(
+        let s = second_factor(
             &locked,
             transport.as_ref(),
             listener.as_ref(),
@@ -1819,41 +1517,9 @@ impl GhulSuite {
         let pk = PasswordKey::derive(&password, &locked.header().kdf)?;
         let mut c = locked.unlock(&pk, &s)?;
         self.with_open(|o| {
-            let now = now_ms();
-            let slots = factor_slots(&o.suite);
-            c.reprotect(
-                o.suite.header().suite_id,
-                FactorSecret::from_bytes(*o.suite.factor_secret().expose()),
-                slots.clone(),
-                &o.password_key,
-                o.kdf(),
-                &mut OsRng,
-            )?;
-            for slot in &slots {
-                let (label, created) = slot_label(&o.suite, slot);
-                c.payload
-                    .slots
-                    .insert(crate::kdf::hex(slot.id()), SlotMeta { label, created, extra: Default::default() });
-            }
-            if let Some(code) = o.suite.recovery_code() {
-                c.set_recovery_code(&code, "", now, &mut OsRng)?;
-            }
-            // The file it came from still opens with its old protection: new key for the content.
-            c.renew_container_key(&o.password_key, &mut OsRng)?;
-            self.insert_vault(o, c, &name, existing)
-        })
-    }
-
-    /// Accepts the current (older) state of a vault file, e.g. a deliberately restored backup.
-    pub fn accept_vault_state(&self, id: String) -> Result<()> {
-        self.with_open(|o| {
-            let v = o.vaults.iter_mut().find(|v| v.reference.id == id).ok_or(GhulError::NotFound)?;
-            let rev = v.container.as_ref().map(|c| c.payload.revision).unwrap_or(0);
-            v.stale = false;
-            let mut map = revisions(&o.suite);
-            map.insert(id.clone(), rev);
-            put_setting(&mut o.suite, REVISIONS_KEY, &map)?;
-            self.save_container(&mut o.suite, SUITE_FILE)
+            super::single::refuse_single(o)?;
+            self.take_over(o, &mut c)?;
+            self.insert_vault(o, c, &name)
         })
     }
 
@@ -1877,7 +1543,7 @@ impl GhulSuite {
 
     pub fn get_entry(&self, vault_id: String, id: Vec<u8>) -> Result<EntryData> {
         self.with_open(|o| {
-            let (_, c) = o.vault_mut(&vault_id)?;
+            let (_, c) = o.entry_vault_mut(&vault_id)?;
             let e = c.payload.entries.iter().find(|e| e.id == id && !e.deleted).ok_or(GhulError::NotFound)?;
             Ok(EntryData {
                 id: e.id.clone(),
@@ -1947,7 +1613,7 @@ impl GhulSuite {
     /// Deletes an entry (keeps a tombstone without content for later synchronisation).
     pub fn delete_entry(&self, vault_id: String, id: Vec<u8>) -> Result<()> {
         self.with_open(|o| {
-            let (_, c) = o.vault_mut(&vault_id)?;
+            let (_, c) = o.entry_vault_mut(&vault_id)?;
             let e = c.payload.entries.iter_mut().find(|e| e.id == id && !e.deleted).ok_or(GhulError::NotFound)?;
             e.make_tombstone(now_ms());
             self.save_vault(o, &vault_id)
@@ -1983,7 +1649,10 @@ impl GhulSuite {
 
     pub fn rename_totp(&self, vault_id: String, id: Vec<u8>, issuer: String, account: String) -> Result<()> {
         self.with_open(|o| {
-            let (_, c) = o.vault_mut(&vault_id)?;
+            let (r, c) = o.entry_vault_mut(&vault_id)?;
+            if r.kind != "totp" {
+                return Err(GhulError::InvalidInput { msg: "not a GhulAuth vault".into() });
+            }
             let e = c.payload.entries.iter_mut().find(|e| e.id == id && !e.deleted).ok_or(GhulError::NotFound)?;
             e.fields.insert("issuer".into(), Field::Text(issuer.trim().to_owned()));
             e.fields.insert("account".into(), Field::Text(account.trim().to_owned()));
@@ -2175,6 +1844,7 @@ impl GhulSuite {
         }
         self.with_open(|o| {
             let (r, c) = o.vault_mut(&vault_id)?;
+            refuse_docs_file(VaultKind::from_name(&r.kind))?;
             let text = if r.kind == "pass" {
                 super::import::export_csv(&c.payload.entries)
             } else if r.kind == "cal" {
@@ -2195,6 +1865,7 @@ impl GhulSuite {
         }
         self.with_open(|o| {
             let (r, c) = o.vault_mut(&vault_id)?;
+            refuse_docs_file(VaultKind::from_name(&r.kind))?;
             let picked: Vec<Entry> =
                 c.payload.entries.iter().filter(|e| !e.deleted && ids.contains(&e.id)).cloned().collect();
             if picked.is_empty() {
@@ -2227,7 +1898,6 @@ impl GhulSuite {
                         },
                         label,
                         created,
-                        needs_update: s.is_legacy(),
                     }
                 })
                 .collect())
@@ -2244,11 +1914,11 @@ impl GhulSuite {
         label: String,
     ) -> Result<()> {
         let pin = Zeroizing::new(pin);
-        if !self.is_unlocked() {
-            return Err(GhulError::Locked);
-        }
+        // Refused before the key is touched.
+        self.with_open(|o| super::single::refuse_single(o))?;
         let (cred_id, prf_input, output) = with_authenticator(&transport, Some(&listener), |a| register_key(a, &pin))?;
         self.with_open(|o| {
+            super::single::refuse_single(o)?;
             let reg = Fido2Registration { rp_id: RP_ID, credential_id: &cred_id, prf_input, hmac_output: &output };
             let now = now_ms();
             let slot = o.suite.add_fido2_slot(&reg, &label, now, &mut OsRng)?;
@@ -2260,6 +1930,7 @@ impl GhulSuite {
     pub fn add_keyfile(&self, keyfile: Vec<u8>, label: String) -> Result<()> {
         let keyfile = Keyfile::parse(&Zeroizing::new(keyfile))?;
         self.with_open(|o| {
+            super::single::refuse_single(o)?;
             let id = keyfile.id();
             if o.suite.slots().iter().any(|s| matches!(s, Slot::Keyfile(k) if k.keyfile_id == id)) {
                 return Err(GhulError::AlreadyExists);
@@ -2273,7 +1944,7 @@ impl GhulSuite {
     /// Creates a new recovery code for all files; the previous code stops working.
     pub fn new_recovery_code(&self, label: String) -> Result<String> {
         self.with_open(|o| {
-            o.remember_protection()?;
+            super::single::refuse_single(o)?;
             let code = RecoveryCode::generate(&mut OsRng);
             let now = now_ms();
             for (c, _) in o.containers_mut() {
@@ -2281,7 +1952,7 @@ impl GhulSuite {
             }
             // The old code with an old copy of a file must not open what is written now.
             o.renew_keys(false, now)?;
-            super::sync::mark_protection_changed(o)?;
+            self.protection_changed(o)?;
             self.save_all(o)?;
             Ok(code.to_display().to_string())
         })
@@ -2293,6 +1964,7 @@ impl GhulSuite {
         let id: [u8; 16] =
             slot_id.as_slice().try_into().map_err(|_| GhulError::InvalidInput { msg: "invalid slot id".into() })?;
         self.with_open(|o| {
+            super::single::refuse_single(o)?;
             let slot = o.suite.slots().iter().find(|s| *s.id() == id).cloned().ok_or(GhulError::NotFound)?;
             if !slot.provides_factor() {
                 return Err(GhulError::InvalidInput { msg: "recovery codes are replaced, not removed".into() });
@@ -2300,10 +1972,6 @@ impl GhulSuite {
             if o.suite.slots().iter().filter(|s| s.provides_factor()).count() <= 1 {
                 return Err(GhulError::LastFactor);
             }
-            o.remember_protection()?;
-            let mut removed: Vec<String> = setting(&o.suite, REMOVED_SLOTS_KEY);
-            removed.push(crate::kdf::hex(&id));
-            put_setting(&mut o.suite, REMOVED_SLOTS_KEY, &removed)?;
             for (c, _) in o.containers_mut() {
                 match c.remove_slot(&id) {
                     Ok(()) | Err(crate::vault::VaultError::SlotNotFound) => {}
@@ -2313,7 +1981,7 @@ impl GhulSuite {
             // The removed key with an old copy of a file must not open what is written now:
             // new factor secret for the remaining keys and key files, new container keys.
             o.renew_keys(true, now_ms())?;
-            super::sync::mark_protection_changed(o)?;
+            self.protection_changed(o)?;
             self.save_all(o)?;
             super::quick::delete_all(&self.local_dir);
             Ok(())
@@ -2325,6 +1993,7 @@ impl GhulSuite {
         let current = Zeroizing::new(current);
         let new_password = Zeroizing::new(new_password);
         self.with_open(|o| {
+            super::single::refuse_single(o)?;
             let kdf = o.kdf();
             let old_pk = PasswordKey::derive(&current, &kdf)?;
             if !o.suite.verify_password_key(&old_pk) {
@@ -2339,7 +2008,7 @@ impl GhulSuite {
             o.password_key = new_pk;
             // The old password with an old copy of a file must not open what is written now.
             o.renew_keys(false, now_ms())?;
-            super::sync::mark_protection_changed(o)?;
+            self.protection_changed(o)?;
             self.save_all(o)?;
             super::quick::delete_all(&self.local_dir);
             Ok(())

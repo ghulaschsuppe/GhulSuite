@@ -15,11 +15,11 @@
   --accent2: #6a4df5;
   --ok: #4fd8a0;
   --warn: #ffb85c;
-  --pass: #8f7bff;
-  --auth: #2bc7a2;
-  --drive: #4c8dff;
-  --mail: #ff8a2a;
-  --cal: #ff4f86;
+  /* The four areas in the colours of the app (dark design): GhulPass, GhulAuth, GhulDocs, GhulCal. */
+  --pass: #a996ff;
+  --auth: #4fd8b6;
+  --docs: #6fa8ff;
+  --cal: #ff7aa8;
   --radius: 22px;
   --max: 1180px;
   --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -56,7 +56,7 @@ a:hover { text-decoration: underline; text-underline-offset: 3px; }
   animation: drift 28s ease-in-out infinite alternate;
 }
 .aurora i:nth-child(1) { background: var(--accent2); left: -15vmax; top: -20vmax; }
-.aurora i:nth-child(2) { background: var(--drive); right: -20vmax; top: 10vmax; animation-duration: 34s; opacity: 0.14; }
+.aurora i:nth-child(2) { background: var(--docs); right: -20vmax; top: 10vmax; animation-duration: 34s; opacity: 0.14; }
 .aurora i:nth-child(3) { background: var(--cal); left: 20vmax; bottom: -35vmax; animation-duration: 40s; opacity: 0.12; }
 @keyframes drift {
   0% { transform: translate(0, 0) scale(1); }
@@ -141,9 +141,8 @@ h1 {
 .stripes i { display: block; width: 34px; height: 7px; border-radius: 4px; transform-origin: left; animation: grow 0.9s cubic-bezier(.2, .8, .2, 1) both; }
 .stripes i:nth-child(1) { background: var(--pass); }
 .stripes i:nth-child(2) { background: var(--auth); animation-delay: 0.08s; }
-.stripes i:nth-child(3) { background: var(--drive); animation-delay: 0.16s; }
-.stripes i:nth-child(4) { background: var(--mail); animation-delay: 0.24s; }
-.stripes i:nth-child(5) { background: var(--cal); animation-delay: 0.32s; }
+.stripes i:nth-child(3) { background: var(--docs); animation-delay: 0.16s; }
+.stripes i:nth-child(4) { background: var(--cal); animation-delay: 0.24s; }
 @keyframes grow { from { transform: scaleX(0); opacity: 0; } }
 
 .stage { position: relative; height: 620px; perspective: 1400px; }
@@ -183,9 +182,7 @@ h3 { font-size: 21px; letter-spacing: -0.01em; margin: 0 0 8px; }
 .card ul { color: var(--muted); margin: 14px 0 0; padding-left: 20px; }
 .card li { margin: 4px 0; }
 
-.areas { display: grid; grid-template-columns: repeat(6, 1fr); gap: 18px; }
-.areas .card { grid-column: span 2; }
-.areas .card:nth-child(4), .areas .card:nth-child(5) { grid-column: span 3; }
+.areas { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
 .icon {
   width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center; margin-bottom: 18px;
   background: color-mix(in srgb, var(--c) 18%, transparent); color: var(--c);
@@ -194,7 +191,7 @@ h3 { font-size: 21px; letter-spacing: -0.01em; margin: 0 0 8px; }
 .icon svg { width: 26px; height: 26px; }
 .tag { display: inline-block; font-size: 13px; font-weight: 700; color: var(--c); margin-bottom: 4px; letter-spacing: 0.02em; }
 
-/* How it works: device, lock, server with packets travelling along. */
+/* How it works: device, lock, suite file with packets travelling along. */
 .flow { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: center; gap: 12px; margin-top: 10px; }
 .node { text-align: center; padding: 26px 18px; }
 .node .icon { margin-inline: auto; }
@@ -238,9 +235,8 @@ h3 { font-size: 21px; letter-spacing: -0.01em; margin: 0 0 8px; }
 }
 .honest b { color: var(--warn); }
 
-/* Hosting options */
+/* The only connections: update check, leak check, error report */
 .hosts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
-.hosts .card code { font-family: var(--mono); font-size: 14px; color: var(--accent); }
 
 /* Gallery: scroll with snap, drag with the mouse. */
 .gallery { display: flex; gap: 22px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 10px 4px 30px; cursor: grab; scrollbar-width: thin; scrollbar-color: var(--surface2) transparent; }
@@ -325,8 +321,6 @@ footer .made { grid-column: 1 / -1; border-top: 1px solid var(--line); padding-t
   .split.rev > :first-child { order: 0; }
   .stage { height: 620px; max-width: 520px; margin-inline: auto; width: 100%; }
   .areas { grid-template-columns: 1fr 1fr; }
-  .areas .card, .areas .card:nth-child(4), .areas .card:nth-child(5) { grid-column: span 1; }
-  .areas .card:nth-child(5) { grid-column: 1 / -1; }
   .sec-grid, .hosts, .dl { grid-template-columns: 1fr; }
   .stats { grid-template-columns: 1fr 1fr; }
   .flow { grid-template-columns: 1fr; }
@@ -351,7 +345,6 @@ footer .made { grid-column: 1 / -1; border-top: 1px solid var(--line); padding-t
   .device.phone2 { width: 165px; top: 60px; }
   section { padding: 64px 0; }
   .areas { grid-template-columns: 1fr; }
-  .areas .card:nth-child(5) { grid-column: auto; }
   .channel { grid-template-columns: 1fr; }
   .band { padding: 36px 22px; }
   .gallery figure.wide { width: 86vw; }

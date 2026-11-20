@@ -33,14 +33,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import de.danerd.ghulsuite.model.FoundVaultUi
 import de.danerd.ghulsuite.model.PickedFile
 import de.danerd.ghulsuite.model.ProtectionUi
 import de.danerd.ghulsuite.model.VaultErrorKind
 import de.danerd.ghulsuite.model.FolderRef
 import de.danerd.ghulsuite.model.VaultException
 import de.danerd.ghulsuite.model.VaultKindUi
-import de.danerd.ghulsuite.model.VaultSourceUi
 import de.danerd.ghulsuite.model.VaultUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
@@ -52,18 +50,17 @@ import org.jetbrains.compose.resources.pluralStringResource
 fun extensionOf(kind: VaultKindUi) = when (kind) {
     VaultKindUi.PASS -> "ghlpss"
     VaultKindUi.TOTP -> "ghltotp"
+    // A GhulDocs vault goes with its documents: a .ghlzip of its own.
+    VaultKindUi.DOCS -> "ghlzip"
     VaultKindUi.CAL -> "ghlcal"
-    VaultKindUi.DRIVE -> "ghldrv"
-    VaultKindUi.MAIL -> "ghlmail"
 }
 
 /** Name of the area a vault belongs to. */
 fun kindLabel(kind: VaultKindUi) = when (kind) {
     VaultKindUi.PASS -> Res.string.tab_pass
     VaultKindUi.TOTP -> Res.string.tab_auth
+    VaultKindUi.DOCS -> Res.string.tab_docs
     VaultKindUi.CAL -> Res.string.tab_cal
-    VaultKindUi.DRIVE -> Res.string.tab_drive
-    VaultKindUi.MAIL -> Res.string.tab_mail
 }
 
 /** Filter chips "All" + one per vault; hidden when there is only one vault. */
@@ -124,7 +121,7 @@ fun CreateVaultDialog(state: AppState, kind: VaultKindUi?, onCreated: (String) -
                 if (kind == null) {
                     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                         VaultKindUi.entries.forEachIndexed { i, k ->
-                            SegmentedButton(chosen == k, { chosen = k }, SegmentedButtonDefaults.itemShape(i, 3)) {
+                            SegmentedButton(chosen == k, { chosen = k }, SegmentedButtonDefaults.itemShape(i, VaultKindUi.entries.size)) {
                                 SegLabel(stringResource(kindLabel(k)))
                             }
                         }
@@ -164,18 +161,40 @@ fun VaultsSection(state: AppState) {
     val added = stringResource(Res.string.msg_vault_added)
     val save = rememberSaveFile { ok -> if (ok) state.message(exported) }
     var foreign by remember { mutableStateOf<ForeignRequest?>(null) }
-    val noneFound = stringResource(Res.string.msg_no_new_vaults)
-    val addFile = rememberOpenFile { file ->
-        val name = file.name.substringBeforeLast('.')
-        val source = VaultSourceUi.Bytes(file.bytes)
+    val isSuite = stringResource(Res.string.start_is_suite_file)
+    /** The GhulDocs vault whose export waits for the system's save dialog. */
+    val exportingDocs = remember { arrayOfNulls<VaultUi>(1) }
+    val exportDocs = rememberCreateStream { sink ->
+        val v = exportingDocs[0]
+        exportingDocs[0] = null
+        if (sink == null) return@rememberCreateStream
+        if (v == null) {
+            runCatching { sink.close() }
+            runCatching { sink.discard() }
+            return@rememberCreateStream
+        }
+        state.exportDocsVault(v, sink)
+    }
+    // A vault file, or a GhulDocs vault saved on its own (a .ghlzip, read as a stream: it can be
+    // large). A suite file is opened under Options, Suite file instead.
+    val addFile = rememberOpenSuiteFile { ref ->
+        val name = ref.name.substringBeforeLast('.')
         state.run(block = {
+            val archive = backend.archiveInspect(ref)
+            when (archive?.content) {
+                de.danerd.ghulsuite.model.ArchiveContentUi.SUITE -> throw VaultException(VaultErrorKind.OTHER, isSuite)
+                de.danerd.ghulsuite.model.ArchiveContentUi.DOCS_VAULT ->
+                    return@run null to ForeignRequest(ByteArray(0), VaultKindUi.DOCS, archive.protection, name, ref)
+                null -> {}
+            }
+            val data = backend.readSuiteFile(ref) ?: throw VaultException(VaultErrorKind.STORAGE, "the file cannot be read")
             try {
-                val id = backend.addVaultFile(file.bytes, name)
+                val id = backend.addVaultFile(data, name)
                 backend.listVaults().firstOrNull { it.id == id }?.kind to null
             } catch (e: VaultException) {
                 if (e.kind != VaultErrorKind.DIFFERENT_PROTECTION) throw e
-                val info = backend.inspectFile(file.bytes)
-                null to ForeignRequest(source, vaultKindOf(info.kind), info.protection, name)
+                val info = backend.inspectFile(data)
+                null to ForeignRequest(data, vaultKindOf(info.kind), info.protection, name)
             }
         }) { (kind, request) ->
             if (request != null) {
@@ -193,22 +212,15 @@ fun VaultsSection(state: AppState) {
         for (v in state.vaults) {
             Box {
                 // The same row as in every list: tile in the colour of the area, name, what it holds.
-                val tab = when (v.kind) {
-                    VaultKindUi.PASS -> Tab.PASS
-                    VaultKindUi.CAL -> Tab.CAL
-                    VaultKindUi.DRIVE -> Tab.DRIVE
-                    VaultKindUi.MAIL -> Tab.MAIL
-                    else -> Tab.AUTH
-                }
+                val tab = tabOf(v.kind)
                 ListRow(
                     v.name,
                     when {
                         !v.available -> stringResource(Res.string.vault_missing, v.file)
-                        v.outdated -> stringResource(Res.string.vault_outdated)
                         else -> stringResource(Res.string.vault_summary, stringResource(kindLabel(v.kind)), v.entries.toString())
                     },
                     leading = {
-                        if (v.available && !v.outdated) IconTile(tabIcon(tab), areaColor(tab)) else IconTile(Icons.Filled.Warning, warnColor())
+                        if (v.available) IconTile(tabIcon(tab), areaColor(tab)) else IconTile(Icons.Filled.Warning, warnColor())
                     },
                     trailing = { BarIcon(Icons.Filled.MoreVert, stringResource(Res.string.a_more)) { menuFor = v.id } },
                     divider = v != state.vaults.first(), flush = true,
@@ -222,15 +234,15 @@ fun VaultsSection(state: AppState) {
                             if (v.available && filePickersAvailable) {
                                 SheetRow(stringResource(Res.string.a_export), leading = { IconTile(Icons.Filled.Upload, g.accent) }, divider = true) {
                                     close()
-                                    state.run(block = { backend.exportVault(v.id) }) { data ->
-                                        save("${v.name.ifBlank { "vault" }}.${extensionOf(v.kind)}", data)
+                                    if (v.kind == VaultKindUi.DOCS) {
+                                        // With its documents, as a stream into the file chosen.
+                                        exportingDocs[0] = v
+                                        exportDocs("${v.name.ifBlank { "GhulDocs" }}.ghlzip", "application/octet-stream")
+                                    } else {
+                                        state.run(block = { backend.exportVault(v.id) }) { data ->
+                                            save("${v.name.ifBlank { "vault" }}.${extensionOf(v.kind)}", data)
+                                        }
                                     }
-                                }
-                            }
-                            if (v.outdated) {
-                                SheetRow(stringResource(Res.string.a_accept_state), leading = { IconTile(Icons.Filled.Check, g.accent) }, divider = true) {
-                                    close()
-                                    state.run(block = { backend.acceptVaultState(v.id) }) { state.changed() }
                                 }
                             }
                             SheetRow(stringResource(Res.string.a_delete), leading = { IconTile(Icons.Filled.Delete, g.danger) }, color = g.danger, divider = true) {
@@ -246,21 +258,6 @@ fun VaultsSection(state: AppState) {
             OutlinedButton(onClick = addFile, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.vault_add_file)) }
             Hint(stringResource(Res.string.vault_add_file_hint))
         }
-        // Where the files are. Searching only makes sense in an own folder (files copied in by
-        // hand); in the app storage nobody can put files, there "Add vault file" is the way.
-        val storage = state.backend.storageName()
-        Hint(stringResource(Res.string.storage_current, storageLabel(storage)))
-        if (storage != "app") {
-            OutlinedButton(onClick = {
-                state.foundPostponed = false
-                state.scanFound { if (it.isEmpty()) state.message(noneFound) }
-            }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.vault_scan)) }
-            Hint(stringResource(Res.string.vault_scan_hint))
-        }
-        var moving by remember { mutableStateOf(false) }
-        OutlinedButton(onClick = { moving = true }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.storage_move)) }
-        Hint(stringResource(Res.string.storage_move_hint))
-        if (moving) MoveStorageDialog(state, inApp = storage == "app", onDone = { moving = false })
     }
 
     foreign?.let { r -> ForeignVaultDialog(state, r, onDone = { foreign = null }) }
@@ -311,51 +308,17 @@ fun VaultsSection(state: AppState) {
     }
 }
 
-/** A vault with its own protection that the user wants to add. */
-class ForeignRequest(val source: VaultSourceUi, val kind: VaultKindUi, val protection: ProtectionUi, val name: String)
-
-/** Offers vault files found in the suite's folder that are not part of the suite yet. */
-@Composable
-fun FoundVaultsDialog(state: AppState) {
-    var foreign by remember { mutableStateOf<ForeignRequest?>(null) }
-    foreign?.let { r ->
-        ForeignVaultDialog(state, r, onDone = { foreign = null })
-        return
-    }
-    AlertDialog(
-        onDismissRequest = { state.foundPostponed = true },
-        title = { Text(stringResource(Res.string.found_title)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Hint(stringResource(Res.string.found_text))
-                for (f in state.found) {
-                    FoundRow(state, f, onForeign = {
-                        foreign = ForeignRequest(VaultSourceUi.InFolder(f.file), f.kind, f.protection, f.file.substringBeforeLast('.'))
-                    })
-                }
-                BusyBanner(state)
-            }
-        },
-        confirmButton = { TextButton(onClick = { state.foundPostponed = true }) { Text(stringResource(Res.string.a_later)) } },
-    )
-}
-
-@Composable
-private fun FoundRow(state: AppState, f: FoundVaultUi, onForeign: () -> Unit) {
-    Column(Modifier.fillMaxWidth()) {
-        Text(f.file, style = androidx.compose.material3.MaterialTheme.typography.titleSmall)
-        Hint(
-            stringResource(kindLabel(f.kind)) + " · " +
-                stringResource(Res.string.found_own_protection),
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onForeign, enabled = !state.busy) { Text(stringResource(Res.string.a_open_with_password)) }
-            TextButton(onClick = {
-                state.run(block = { state.backend.ignoreFoundVault(f.file) }) { state.scanFound() }
-            }, enabled = !state.busy) { Text(stringResource(Res.string.a_ignore)) }
-        }
-    }
-}
+/**
+ * A vault with its own protection that the user wants to add. A GhulDocs vault comes as its
+ * [file] (a `.ghlzip` read as a stream), the others as [data].
+ */
+class ForeignRequest(
+    val data: ByteArray,
+    val kind: VaultKindUi,
+    val protection: ProtectionUi,
+    val name: String,
+    val file: de.danerd.ghulsuite.model.SuiteFileRef? = null,
+)
 
 /** Opens a vault with its own password and key or key file once and adds it to the suite. */
 @Composable
@@ -376,7 +339,7 @@ fun ForeignVaultDialog(state: AppState, request: ForeignRequest, onDone: () -> U
         text = {
             // The sheet scrolls itself; a second scroll container inside it crashes (T6).
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Hint(stringResource(Res.string.foreign_text))
+                Hint(stringResource(if (request.kind == VaultKindUi.DOCS) Res.string.docs_foreign_text else Res.string.foreign_text))
                 OutlinedTextField(name, { name = it }, label = { Text(stringResource(Res.string.l_vault_name)) }, singleLine = true)
                 SecretTextField(password, { password = it; error = null }, stringResource(Res.string.l_master_password))
                 if (hasKey && hasKeyfile) FactorChoice(withKey) { withKey = it; error = null }
@@ -393,14 +356,21 @@ fun ForeignVaultDialog(state: AppState, request: ForeignRequest, onDone: () -> U
         confirmButton = {
             TextButton(onClick = {
                 state.run(onError = { error = it }, block = {
-                    state.backend.adoptVault(
-                        request.source, name.ifBlank { request.name }, password,
-                        if (needsKey) pin else null, if (needsKey) null else keyfile?.bytes, state.onTouchNeeded,
-                    )
+                    val f = request.file
+                    if (f != null) {
+                        state.backend.docs.adoptVault(
+                            f, name.ifBlank { request.name }, password,
+                            if (needsKey) pin else null, if (needsKey) null else keyfile?.bytes, state.onTouchNeeded, state.onProgress,
+                        )
+                    } else {
+                        state.backend.adoptVault(
+                            request.data, name.ifBlank { request.name }, password,
+                            if (needsKey) pin else null, if (needsKey) null else keyfile?.bytes, state.onTouchNeeded,
+                        )
+                    }
                 }) {
                     state.enableModule(request.kind)
                     state.changed()
-                    state.scanFound()
                     state.message(added)
                     onDone()
                 }
@@ -409,47 +379,5 @@ fun ForeignVaultDialog(state: AppState, request: ForeignRequest, onDone: () -> U
             }
         },
         dismissButton = { TextButton(onClick = onDone, enabled = !state.busy) { Text(stringResource(Res.string.a_cancel)) } },
-    )
-}
-
-/**
- * "Change storage location": copies all suite files to the app storage or a chosen folder, checks
- * them and uses the new place from then on. The old files stay where they were.
- */
-@Composable
-private fun MoveStorageDialog(state: AppState, inApp: Boolean, onDone: () -> Unit) {
-    val targetFull = stringResource(Res.string.storage_move_target_full)
-    fun move(folder: FolderRef?) {
-        state.run(block = {
-            try {
-                // Locks afterwards: the unlock screen then shows the result.
-                val copied = state.backend.moveStorage(folder)
-                getPluralString(Res.plurals.storage_move_done, copied, copied)
-            } catch (e: VaultException) {
-                // The target already holds a suite: nothing was overwritten.
-                if (e.kind != VaultErrorKind.ALREADY_EXISTS) throw e
-                null
-            }
-        }) { done ->
-            state.message(done ?: targetFull)
-            if (done != null) onDone()
-        }
-    }
-    val pickFolder = rememberPickFolder { move(it) }
-    AlertDialog(
-        onDismissRequest = onDone,
-        title = { Text(stringResource(Res.string.storage_move)) },
-        text = { Text(stringResource(Res.string.storage_move_text)) },
-        confirmButton = {
-            TextButton(onClick = pickFolder, enabled = !state.busy) { Text(stringResource(Res.string.storage_move_folder)) }
-        },
-        dismissButton = {
-            Row {
-                if (!inApp) {
-                    TextButton(onClick = { move(null) }, enabled = !state.busy) { Text(stringResource(Res.string.storage_move_app)) }
-                }
-                TextButton(onClick = onDone) { Text(stringResource(Res.string.a_cancel)) }
-            }
-        },
     )
 }

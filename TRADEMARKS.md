@@ -2,7 +2,7 @@
 
 Der Quelltext von GhulSuite ist freie Software unter der [AGPL-3.0](LICENSE). **Name und Logo sind es nicht.**
 
-„GhulSuite“, die Bereichsnamen „GhulPass“, „GhulAuth“, „GhulDrive“ und „GhulMail“ als Produktnamen sowie das
+„GhulSuite“, die Bereichsnamen „GhulPass“, „GhulAuth“, „GhulDocs“ und „GhulCal“ als Produktnamen sowie das
 Logo (violettes Schild mit den vier Farbstreifen) sind Kennzeichen von **Daniel Erdmann**.
 
 **Erlaubt ohne Nachfrage**

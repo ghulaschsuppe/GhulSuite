@@ -2,18 +2,25 @@
 
 Diese Datei ist der Einstieg für alle, die am Code arbeiten (Menschen wie KI-Assistenten).
 Was GhulSuite ist und kann, steht in der [README](README.md), das vollständige Konzept in
-[`docs/KONZEPT.md`](docs/KONZEPT.md), das Dateiformat in [`docs/FORMAT.md`](docs/FORMAT.md).
+[`docs/KONZEPT.md`](docs/KONZEPT.md), das Dateiformat in [`docs/FORMAT.md`](docs/FORMAT.md). Warum es keine
+Synchronisation mehr gibt, steht in [`docs/UMBAU-OHNE-SYNC.md`](docs/UMBAU-OHNE-SYNC.md); warum GhulDocs GhulDrive und
+GhulMail ersetzt und die App ohne Server auskommt, in [`docs/UMBAU-GHULDOCS.md`](docs/UMBAU-GHULDOCS.md).
 
 ## Grundsätze
 
 - **Sicherheit zuerst, dicht gefolgt von Benutzerfreundlichkeit.** Alles wird auf dem Gerät verschlüsselt;
-  Server sehen nur Chiffretext.
-- **Selbst hostbar, ohne bestimmten Anbieter:** beliebige IMAP/SMTP-Mailserver, eigene Speicher per SFTP, FTPS
-  oder das GhulSuite-Server-Modul. Das Server-Modul läuft auf **Standard-Webhosting mit PHP 8.1, ohne Datenbank**.
-- **Fünf Bereiche in einer App:** GhulPass (Passwörter), GhulAuth (2FA), GhulCal (Kalender), GhulDrive (Dateien),
-  GhulMail (E-Mail).
-- **Der Ordner ist die Suite:** `.ghlpss` (Passwörter), `.ghltotp` (2FA) und `.ghlcal` (Kalender) im Ordner gehören dazu, `.ghlsuite`
-  hält Einstellungen, Mail-Konten und den Drive-Schlüssel, `.ghlkey` ist eine Schlüsseldatei.
+  die Suite-Datei enthält nur Chiffretext.
+- **Offline, ohne bestimmten Anbieter:** keine Server, keine Konten, kein Cloud-Dienst. Nach draußen gehen nur die
+  Update-Prüfung (GitHub) und die Leak-Prüfung von GhulPass (Pwned Passwords, k-Anonymität); beide sind abschaltbar.
+  Fehlerberichte werden nur angezeigt, nie hochgeladen.
+- **Vier Bereiche in einer App:** GhulPass (Passwörter), GhulAuth (2FA), GhulDocs (Dokumente, bis 1 GB, mit Scannen
+  auf Android), GhulCal (Kalender).
+- **Die Suite ist eine Datei, ohne Synchronisation:** Die Suite-Datei `.ghlzip` (bis 1,25 GiB, als Datenstrom
+  geschrieben und gelesen) enthält die Tresore (`.ghlpss` Passwörter, `.ghltotp` 2FA, `.ghldoc` Dokumente mit ihren
+  Inhaltsdateien `.ghlblob`, `.ghlcal` Kalender), `suite.ghlsuite` (Einstellungen, Schutz-Epoche) und die Kopfdatei
+  `export.ghlexp`. Öffnen prüft alles, bevor etwas ersetzt wird; Speichern schreibt die Arbeitskopie zurück.
+  Abgeglichen oder zusammengeführt wird nichts: Aktuell ist der Stand, der zuletzt gespeichert wurde. `.ghlkey` ist
+  eine Schlüsseldatei.
 - **Schutz:** Master-Passwort **plus** zweiter Faktor (Security Key oder Schlüsseldatei); der Wiederherstellungscode
   ist Pflicht und steckt in jeder Datei.
 - **Plattformen:** Android und Windows (auch portabel), eine gemeinsame Oberfläche. Kein Web-Client.
@@ -25,54 +32,52 @@ Was GhulSuite ist und kann, steht in der [README](README.md), das vollständige 
 ## Aufbau
 
 ```
-core/ghul-core/        Rust-Kern: Krypto, FIDO2/CTAP2, Dateiformat, Suite-API, Sync, Drive, Mail, PGP, Teilen
-                       (ein Bereich, eine Datei: .ghlpss, .ghltotp, .ghldrv, .ghlmail, .ghlcal + suite.ghlsuite)
-core/ghul-core/server/ PHP-Server-Modul (ghulsuite.php, PHP 8.1, ohne Datenbank)
+core/ghul-core/        Rust-Kern: Krypto, FIDO2/CTAP2, Dateiformat, Suite-API, Suite-Datei (Datenstrom), GhulDocs,
+                       Kalender, Update- und Leak-Prüfung
+                       (je Bereich Tresore: .ghlpss, .ghltotp, .ghldoc + .ghlblob, .ghlcal; dazu suite.ghlsuite)
 core/fuzz/             Fuzzing-Ziele (cargo-fuzz)
 app/                   Kotlin + Compose Multiplatform (Android und Windows), Anbindung per UniFFI
   composeApp/src/commonMain   gemeinsame Oberfläche und Texte
   composeApp/src/jvmShared    gemeinsamer Code Android/Windows (Kern-Anbindung)
-  composeApp/src/androidMain  Android (USB/NFC-Key, Benachrichtigungen)
-  composeApp/src/desktopMain  Windows (WebAuthn, Fenster, Pakete)
-  composeApp/src/desktopTest  FFI-, PDF- und Screenshot-Tests
+  composeApp/src/androidMain  Android (USB/NFC-Key, Benachrichtigungen, Kamera zum Scannen, PDF-Anzeige)
+  composeApp/src/desktopMain  Windows (WebAuthn, Fenster, Pakete, PDF-Anzeige mit PDFBox)
+  composeApp/src/desktopTest  FFI-, GhulDocs-, Scan-, Layout- und Screenshot-Tests
 app/maestro/           Oberflächen-Abläufe für Emulator oder Gerät (Maestro)
-core/ghul-core/share-viewer/  Empfängerseite für Freigabelinks
-public/                Testseiten und Designvorschau für den Testserver
+public/                Testseiten für den Testserver (WebAuthn-Test, Download-Seite) und die alte Designvorschau
 docs/                  Konzept, Format, Audit, Testpläne, Testvektoren, Bilder
-tools/                 Testserver (SFTP/IMAP/SMTP), Prüfskripte, Emulator-Skripte
-.github/               Workflows und FTPS-Upload-Action
+tools/                 Prüfskripte, Website-Bau, Emulator-Skripte
+.github/               Workflows und FTPS-Upload-Action (nur für Testserver und Website, nicht Teil der App)
 ```
 
 ## Bauen und testen
 
 - **Vor jedem Push: `tools/precheck.sh`.** Führt alle Prüfungen der CI aus, die lokal gehen (Texte, Testvektoren,
-  Format, Clippy für Linux und Windows, alle Kerntests, PHP-Modul, Workflows, signierte APK mit Lint,
+  Format, Clippy für Linux und Windows, alle Kerntests, Website, Workflows, signierte APK mit Lint,
   Desktop-Paketierung mit den Gradle-Prüfsummen), bricht beim ersten Fehler **nicht** ab und listet am Ende alle
   Fehler mit Log. Erst wenn alles grün ist, pushen; mehrere Korrekturen gesammelt pushen. `--quick` lässt Gradle
-  weg, `--full` nimmt die langen Release- und Browser-Tests dazu. Nur Windows selbst, der Emulator und die
-  Netzwerk-Tests gegen echte Testserver bleiben der CI.
+  weg, `--full` nimmt die langen Release-Tests dazu. Nur Windows selbst und der Emulator bleiben der CI.
 - Voraussetzungen: Rust (Ziele `aarch64-linux-android`, `x86_64-linux-android`), `cargo-ndk`, Android SDK mit
   NDK 28.2.13676358, JDK 17+.
 - Kern: `cd core && cargo fmt --all && cargo clippy -p ghul-core --all-targets -- -D warnings && cargo test -p ghul-core`.
-  Netzwerk-Tests gegen echte lokale Server: vorher `eval "$(sudo -E tools/test-servers.sh)"`.
 - App: `cd app && ./gradlew :composeApp:desktopTest :composeApp:assembleDebug` (baut Kern und Anbindung mit).
 - Oberfläche im Emulator: `tools/run-maestro.sh <apk>`, unter Windows `maestro test app\maestro`.
-- Weitere Prüfungen: `python3 tools/attack-php-module.py` (Angriffe auf das Server-Modul), `tools/check-texts.py`,
-  `tools/check-android-manifest.py`; nachts läuft `.github/workflows/nightly.yml` (Fuzzing lang, Langläufe, Monkey).
+- Weitere Prüfungen: `tools/check-texts.py`, `tools/check-android-manifest.py`, `tools/verify_testvectors.py`; nachts
+  läuft `.github/workflows/nightly.yml` (Fuzzing lang, Langläufe, Monkey, x509-limbo, MobSF).
+- Bilder für README und Website: `ScreenshotTest` (und `DocScanTest` für das Zuschneiden) schreiben nach
+  `app/composeApp/build/screenshots/`; auf die halbe Größe verkleinert (Handy 412 × 892, Windows 1280 × 820) liegen sie
+  in `docs/images/`.
 - Manuelle Tests: [`docs/TESTPLAN.md`](docs/TESTPLAN.md) (Android), [`docs/TESTPLAN-WINDOWS.md`](docs/TESTPLAN-WINDOWS.md).
 
 ## CI und Testserver
 
 - `.github/workflows/release.yml`: stabile Versionen (`main`) und Vorabversionen (`dev`) als GitHub-Releases,
   siehe „Versionen und Veröffentlichung“.
-- `.github/workflows/android.yml`: Kern (Format, Clippy, Tests, Fuzzing, Audit), Netzwerk-Tests, Browser-Tests,
-  Windows-Pakete (MSI und portabel), APK, Emulator-Abläufe. Format, Clippy, Tests und der App-Build laufen auch nach
-  einem Fehler weiter, damit ein Lauf alle Fehler auf einmal zeigt. Artefakte: `ghulsuite-dev`, `ghulsuite-windows-dev`,
-  `screenshots`, `emulator-base`, `emulator-server`, `emulator-mail`.
+- `.github/workflows/android.yml`: Kern (Format, Clippy, Tests, Fuzzing, Audit), Windows-Pakete (MSI und portabel),
+  APK, Emulator-Abläufe. Format, Clippy, Tests und der App-Build laufen auch nach einem Fehler weiter, damit ein Lauf
+  alle Fehler auf einmal zeigt. Artefakte: `ghulsuite-dev`, `ghulsuite-windows-dev`, `screenshots`, `emulator-base`.
 - **Emulator-Abläufe** (langsam, weil ein ganzes Android startet) laufen nicht bei jedem Push eines Arbeits-Branches,
-  sondern bei jedem Pull Request, auf `main` und nachts, in drei Teilen nebeneinander (`base`, `server`, `mail`).
-  `server` und `mail` laufen gegen echte Testserver, die absichtlich langsam antworten (`tools/slow-servers.sh`);
-  danach wird geprüft, dass dort nur Verschlüsseltes liegt. Von Hand für jeden Branch:
+  sondern bei jedem Pull Request, auf `main` und nachts, in einem Teil (`base`; Testserver für SFTP und Mail gibt es nicht mehr). Die
+  Kamera hat keinen Ablauf im Emulator; das Scannen prüfen die Desktop-Tests. Von Hand für jeden Branch:
   `.github/workflows/emulator.yml` („Run workflow“, nutzt die zuletzt gebaute APK des Branches).
 - **Kein doppelter Lauf:** Ein Push auf einen Arbeits-Branch mit offenem, konfliktfreiem Pull Request startet in
   `android.yml` keine Jobs; der Lauf des Pull Requests prüft dieselben Commits (zusammengeführt mit dem Ziel-Branch)
@@ -139,10 +144,9 @@ tools/                 Testserver (SFTP/IMAP/SMTP), Prüfskripte, Emulator-Skrip
   Content-Security-Policy in `htaccess-live` verbietet es auch. Neue Funktionen der App kommen mit dem
   jeweiligen PR in die Texte (wie bei der README). Ändert sich, was die App an Verbindungen aufbaut, wird
   `pages/*/datenschutz-app.html` bzw. `privacy-app.html` im selben PR angepasst.
-- **Fehlerberichte aus der App:** `website/static/report.php` (PHP 8.1, ohne Datenbank) nimmt Berichte entgegen und
-  schickt sie per E-Mail an `IMPRESSUM_EMAIL` (oder `REPORT_EMAIL`); gespeichert wird nichts. Spamschutz:
-  Proof-of-Work aus `core/ghul-core/src/report.rs` (20 Bit), jeder Beweis nur einmal, 5 je Adresse und Stunde,
-  100 am Tag, Größenlimits. `tools/test-report-php.py` prüft das gegen `php -S` (Precheck und CI).
+- **Fehlerberichte aus der App** zeigt die App nur an; der Nutzer schickt sie selbst (z. B. mit seiner Mail-App). Die
+  Website nimmt keine Daten an (`report.php` ist entfernt). Auf dem Webspace der Live-Seite liegen ältere Dateien,
+  bis sie von Hand gelöscht werden: Der Upload ergänzt und ersetzt, löscht aber nichts.
 - Lokal ansehen: `tools/build-website.py --out /tmp/site --preview` und den Ordner mit einem Webserver öffnen.
 
 ## Arbeitsweise: Branches, Pull Requests, Issues
@@ -160,17 +164,18 @@ tools/                 Testserver (SFTP/IMAP/SMTP), Prüfskripte, Emulator-Skrip
 - Neue Texte immer auf Deutsch **und** Englisch.
 - **Keine langen Striche** (Geviert- und Halbgeviertstrich) in Texten der App und des Projekts: stattdessen Punkt,
   Komma, Doppelpunkt, Klammern oder „bis“; für Zeitspannen der einfache Bindestrich. `tools/check-texts.py` prüft das.
-- Die Bereiche werden überall in derselben Reihenfolge genannt: Passwörter, 2FA, Dateien, Mail, Kalender.
+- Die Bereiche werden überall in derselben Reihenfolge genannt: Passwörter, 2FA, Dokumente, Kalender.
 - Neue Funktionen bekommen Tests im Kern und einen Eintrag im Testplan.
 - **Die README ist die Hauptseite des Projekts und bleibt aktuell:** Jeder Pull Request, der etwas ändert, das Nutzer
-  oder Mitlesende betrifft (Funktionen, Bereiche, Sicherheit, Server-Varianten, Plattformen, Download, Stand der
+  oder Mitlesende betrifft (Funktionen, Bereiche, Sicherheit, Verbindungen, Plattformen, Download, Stand der
   Prüfungen), passt die README im selben Pull Request an. Vor dem Merge kurz gegenlesen: Stimmt noch, was dort steht?
   Die README verspricht nichts, was der Code nicht hält; bekannte offene Punkte stehen in
   [`docs/TESTPROTOKOLL.md`](docs/TESTPROTOKOLL.md).
 - Gefundene Fehler und offene Punkte kommen mit Nummer ins Testprotokoll; Testkonzept: [`docs/TESTKONZEPT.md`](docs/TESTKONZEPT.md).
 - **Getestet wird wie auf dem Handy.** Jede Änderung an der Oberfläche läuft vor dem Merge im Android-Emulator
-  (`emulator.yml`, bei jedem Pull Request automatisch, drei Teile, zwei davon gegen echte und absichtlich langsame
-  Testserver). Neue Funktionen bekommen einen Maestro-Ablauf in `app/maestro/` mit einem Bild nach jedem Schritt.
+  (`emulator.yml`, bei jedem Pull Request automatisch). Neue Funktionen bekommen einen Maestro-Ablauf in
+  `app/maestro/` mit einem Bild nach jedem Schritt (wo der Emulator es nicht kann, wie bei der Kamera, einen
+  Desktop-Test mit Ersatz).
   Testattrappen im Desktop-Test verhalten sich wie der echte Kern (Wartezeit, Abbruch erst nach der Antwort,
   gespeicherte Werte bleiben gespeichert); eine Attrappe, die alles sofort und fehlerfrei beantwortet, beweist nichts.
 - **Bilder werden angesehen, nicht nur erzeugt.** Ein Pull Request ist erst fertig, wenn die Bilder aller Abläufe

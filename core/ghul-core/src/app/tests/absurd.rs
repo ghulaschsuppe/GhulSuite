@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Absurd input everywhere: the Big List of Naughty Strings in every text field, huge and empty
-//! values, impossible dates, odd file names, header tricks, odd passwords. Allowed results: it
-//! works and comes back exactly as entered, or a clear error. Never a crash, never a mangled value.
-
-use std::sync::Arc;
+//! values, impossible dates, odd passwords. Allowed results: it works and comes back exactly as
+//! entered, or a clear error. Never a crash, never a mangled value.
 
 use super::super::cal::{CalCalendar, CalDeleteMode, CalEvent, CalRepeat};
 use super::*;
-use crate::net::remote::{LocalFs, RemoteFs};
 
 fn naughty() -> Vec<String> {
     let path = format!("{}/tests/data/blns.json", env!("CARGO_MANIFEST_DIR"));
@@ -48,10 +45,6 @@ fn naughty_strings_come_back_exactly_everywhere() {
         None,
     )
     .unwrap();
-    let server = std::env::temp_dir().join(format!("ghul-naughty-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&server);
-    let drive: Arc<dyn RemoteFs> = Arc::new(LocalFs::new(server.join("drive")));
-    s.drive_use_folder(drive.clone()).unwrap();
     let (pass, totp, calv) = (vault_id(&s, "P"), vault_id(&s, "T"), vault_id(&s, "K"));
     let cal = s
         .cal_save_calendar(CalCalendar {
@@ -93,37 +86,12 @@ fn naughty_strings_come_back_exactly_everywhere() {
             ..Default::default()
         });
         if let Ok(id) = ev {
-            assert_eq!(s.cal_get_event(id).unwrap().title, super::super::drive::trim_invisible(n), "#{i}");
+            assert_eq!(s.cal_get_event(id).unwrap().title, super::super::cal::trim_invisible(n), "#{i}");
         }
-        // Drive: folder and file names (refusing odd names is fine, mangling them is not).
-        // Drive trims spaces around names and refuses invisible or disguising ones.
-        if let Ok(id) = s.drive_create_folder(None, n.clone()) {
-            let item = s.drive_list(None, false).unwrap().into_iter().find(|x| x.id == id).unwrap();
-            // Same name twice in one folder: the second gets " (2)", like in every file manager.
-            let want = super::super::drive::trim_invisible(n);
-            assert!(
-                item.name == want || (item.name.starts_with(want) && item.name.ends_with(')')),
-                "#{i}: {:?}",
-                item.name
-            );
-            assert!(
-                item.name.chars().any(|c| !c.is_whitespace() && !matches!(c, '\u{200b}'..='\u{200d}' | '\u{feff}')),
-                "#{i} invisible"
-            );
-        }
-        if i % 7 == 0 {
-            if let Ok(up) = s.drive_upload_begin(None, format!("{n}.txt")) {
-                s.drive_upload_chunk(up.clone(), n.as_bytes().to_vec()).unwrap();
-                let id = s.drive_upload_finish(up).unwrap();
-                assert_eq!(download(&s, &id), n.as_bytes(), "#{i}");
-            }
-        }
-        // Vault names and search.
+        // Vault names.
         let _ = s.rename_vault(pass.clone(), n.clone());
-        let _ = s.drive_search(n.clone());
     }
     assert!(saved.len() > 400, "{}", saved.len());
-    let _ = std::fs::remove_dir_all(&server);
 }
 
 #[test]
@@ -275,37 +243,6 @@ fn impossible_dates_and_series() {
 }
 
 #[test]
-fn odd_drive_names_and_moves() {
-    let d = Dirs::new("drivenames");
-    let s = d.suite();
-    s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "P")]), None, None, None).unwrap();
-    let server = std::env::temp_dir().join(format!("ghul-drivenames-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&server);
-    let fs: Arc<dyn RemoteFs> = Arc::new(LocalFs::new(&server));
-    s.drive_use_folder(fs).unwrap();
-    for name in ["..", ".", "/", "a/b", "\\", "CON", "", " ", "\u{0}", &"n".repeat(300), "Ordner", "Ordner", "ordner"] {
-        let _ = s.drive_create_folder(None, name.into());
-    }
-    let a = s.drive_create_folder(None, "A".into()).unwrap();
-    let b = s.drive_create_folder(Some(a.clone()), "B".into()).unwrap();
-    // A folder cannot go into itself or into its own child.
-    assert!(s.drive_move(a.clone(), Some(a.clone())).is_err());
-    assert!(s.drive_move(a.clone(), Some(b.clone())).is_err());
-    // Empty file, same name twice, rename onto an existing name.
-    let empty = upload(&s, None, "leer.txt", b"");
-    assert_eq!(download(&s, &empty), b"");
-    let x = upload(&s, None, "x.txt", b"1");
-    let y = upload(&s, None, "y.txt", b"2");
-    let _ = s.drive_rename(y.clone(), "x.txt".into());
-    assert_eq!(download(&s, &x), b"1", "renaming onto a name must not overwrite another file");
-    assert_eq!(download(&s, &y), b"2");
-    // Ids that do not exist.
-    assert!(s.drive_rename("nope".into(), "z".into()).is_err());
-    assert!(s.drive_move("nope".into(), None).is_err());
-    let _ = std::fs::remove_dir_all(&server);
-}
-
-#[test]
 fn locked_suite_answers_every_call_with_an_error() {
     let d = Dirs::new("lockedcalls");
     let s = d.suite();
@@ -316,9 +253,8 @@ fn locked_suite_answers_every_call_with_an_error() {
     assert!(s.save_entry(pass.clone(), login("x", "y", "z")).is_err());
     assert!(s.list_entries(VaultKind::Pass, None).is_err());
     assert!(s.totp_codes(0).is_err());
-    assert!(s.drive_list(None, false).is_err());
     assert!(s.cal_calendars().is_err());
-    assert!(s.suite_backup().is_err());
+    assert!(s.archive_build_bytes("x".into()).is_err());
     // Locking twice, unlocking with nothing.
     s.lock();
     assert!(s.unlock(String::new(), None, None, None, None).is_err());

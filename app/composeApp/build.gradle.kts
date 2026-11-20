@@ -105,6 +105,7 @@ kotlin {
                 implementation(libs.jna)
                 implementation(libs.kotlinx.coroutines.swing)
                 implementation(libs.zxing.core)
+                implementation(libs.pdfbox)
             }
         }
         getByName("desktopTest") {
@@ -130,7 +131,6 @@ kotlin {
                 implementation(libs.androidx.camera.view)
                 implementation(libs.zxing.core)
                 implementation(libs.androidx.documentfile)
-                implementation(libs.androidx.work.runtime)
                 implementation(libs.kotlinx.coroutines.android)
                 implementation("${libs.jna.get()}@aar")
             }
@@ -294,11 +294,33 @@ val generateHostBindings by tasks.registering(Exec::class) {
 }
 
 tasks.matching { it.name == "compileTestKotlinDesktop" }.configureEach { dependsOn(generateHostBindings) }
+// Tests through the app's own bindings (package de.danerd.ghulsuite.core) run in a JVM of their
+// own: both binding packages register their callbacks in the same library, the last one wins.
+val appBindingTests = listOf("*SingleBackendTest", "*SuiteFileBackendTest", "*DocsBackendTest")
+val desktopAppBindingTest by tasks.registering(Test::class) {
+    group = "verification"
+    description = "Desktop tests through the app's own core bindings (own JVM)."
+    dependsOn(generateHostBindings, "desktopTestClasses")
+    systemProperty("jna.library.path", hostTargetDir.get().dir("debug").asFile.absolutePath)
+    filter { appBindingTests.forEach { includeTestsMatching(it) } }
+}
+afterEvaluate {
+    // The same classes and classpath as desktopTest (taken from it, not depending on it).
+    val main = tasks.getByName<Test>("desktopTest")
+    desktopAppBindingTest.configure {
+        testClassesDirs = main.testClassesDirs
+        classpath = main.classpath
+    }
+}
 tasks.withType<Test>().matching { it.name == "desktopTest" }.configureEach {
-    dependsOn(generateHostBindings)
+    dependsOn(generateHostBindings, desktopAppBindingTest)
     systemProperty("jna.library.path", hostTargetDir.get().dir("debug").asFile.absolutePath)
     // The layout check renders every screen on several phones (the default of 512 MB is too little).
     maxHeapSize = "2g"
+    filter {
+        appBindingTests.forEach { excludeTestsMatching(it) }
+        isFailOnNoMatchingTests = false
+    }
 }
 
 // --- Windows app (installer and portable folder) --------------------------------------------
@@ -322,7 +344,7 @@ compose.desktop {
             packageName = "GhulSuite"
             // MSI needs a purely numeric version (see msiVersion).
             packageVersion = msiVersion
-            description = "GhulSuite: Passwörter, 2FA, Dateien, Mail und Kalender, verschlüsselt"
+            description = "GhulSuite: Passwörter, 2FA, Dokumente und Kalender, verschlüsselt"
             vendor = "GhulSuite"
             copyright = "© 2026 Daniel Erdmann · AGPL-3.0-or-later"
             licenseFile.set(rootProject.layout.projectDirectory.file("../LICENSE"))
@@ -337,6 +359,13 @@ compose.desktop {
                 // Fixed, so a newer MSI replaces the installed version.
                 upgradeUuid = "6d1f3c52-8e0b-4b1e-9a57-2f4c8a1d7e39"
                 iconFile.set(project.layout.projectDirectory.file("icons/ghulsuite.ico"))
+                // A double click on a suite file opens it in GhulSuite.
+                fileAssociation(
+                    mimeType = "application/x-ghulsuite",
+                    extension = "ghlzip",
+                    description = "GhulSuite-Datei",
+                    iconFile = project.layout.projectDirectory.file("icons/ghulsuite.ico").asFile,
+                )
             }
         }
     }

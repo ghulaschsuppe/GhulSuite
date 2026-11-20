@@ -168,7 +168,7 @@ pub struct Payload {
     pub slots: BTreeMap<String, SlotMeta>,
     #[serde(default)]
     pub entries: Vec<Entry>,
-    /// Free-form settings (used by the suite container: storage connections, mail accounts, …).
+    /// Free-form settings (used by the suite container and the area files, e.g. the protection epoch).
     #[serde(default)]
     pub settings: BTreeMap<String, Value>,
     #[serde(flatten)]

@@ -13,10 +13,6 @@
 //! key = HKDF(QK [|| Argon2id(NFC(PIN), salt)], "ghul/v1/quick" || suite_id), AAD = everything before the nonce
 //! ```
 //!
-//! Version 1 held the suite's container key instead of `S`; since container keys are renewed
-//! with every change of the protection (B1), such a file is rewritten as version 2 (with the
-//! same `QK`) at its next use.
-//!
 //! The validity is counted from the last *full* unlock: every full unlock writes
 //! `quick-<name>.stamp` = `time_ms i64 || HMAC-SHA256(HKDF(PK, "ghul/v2/quick-stamp" || name), time_ms)`.
 //! The stamp can only be verified (and forged) with the password key.
@@ -33,7 +29,6 @@ use crate::vault::keys::{hkdf, open, seal};
 
 const MAGIC: &[u8; 8] = b"GHULQUIK";
 const VERSION: u16 = 2;
-const OLD_VERSION: u16 = 1;
 const PREFIX_LEN: usize = 8 + 2 + 16 + 32 + 1 + 8;
 const PIN_MEMORY_KIB: u32 = 64 * 1024;
 const PIN_ITERATIONS: u32 = 3;
@@ -68,17 +63,11 @@ const SECRET_LEN: usize = 32 + 32;
 
 pub struct QuickSecret {
     pub password_key: Zeroizing<[u8; 32]>,
-    /// The factor secret `S` (version 2) or, from a version-1 file, the suite's container key.
-    pub secret: Zeroizing<[u8; 32]>,
-    /// The file is of version 1: `secret` is the container key; rewrite it with [`create`].
-    pub old_version: bool,
-    /// When the file was written (kept when it is rewritten).
-    pub created: i64,
+    /// The factor secret `S`.
+    pub factor_secret: Zeroizing<[u8; 32]>,
 }
 
-/// Writes the quick unlock file. `reuse_qk` keeps the quick key the platform already protects
-/// (rewriting a version-1 file); otherwise a new one is made and returned.
-#[allow(clippy::too_many_arguments)]
+/// Writes the quick unlock file and returns the new quick key.
 pub fn create(
     dir: &Path,
     name: &str,
@@ -87,21 +76,14 @@ pub fn create(
     factor_secret: &[u8; 32],
     pin: Option<&str>,
     now_ms: i64,
-    reuse_qk: Option<&[u8]>,
 ) -> Result<Zeroizing<Vec<u8>>> {
     if let Some(p) = pin {
         if p.chars().count() < MIN_PIN_LEN {
             return Err(GhulError::InvalidInput { msg: format!("PIN must have at least {MIN_PIN_LEN} characters") });
         }
     }
-    let qk = match reuse_qk {
-        Some(q) => Zeroizing::new(q.to_vec()),
-        None => {
-            let mut qk = Zeroizing::new(vec![0u8; 32]);
-            OsRng.fill_bytes(&mut qk);
-            qk
-        }
-    };
+    let mut qk = Zeroizing::new(vec![0u8; 32]);
+    OsRng.fill_bytes(&mut qk);
     let mut salt = [0u8; 32];
     OsRng.fill_bytes(&mut salt);
     let key = file_key(&qk, pin, &salt, suite_id)?;
@@ -143,7 +125,7 @@ pub fn open_file(
         return Err(GhulError::QuickUnlockUnavailable);
     }
     let version = u16::from_le_bytes([data[8], data[9]]);
-    if !(version == VERSION || version == OLD_VERSION) || data[10..26] != suite_id[..] {
+    if version != VERSION || data[10..26] != suite_id[..] {
         let _ = wipe(&p);
         return Err(GhulError::QuickUnlockUnavailable);
     }
@@ -161,23 +143,20 @@ pub fn open_file(
     let mut secret = Zeroizing::new([0u8; 32]);
     pk.copy_from_slice(&plain[..32]);
     secret.copy_from_slice(&plain[32..64]);
-    let old_version = version == OLD_VERSION;
-    let last_full_unlock =
-        read_stamp(dir, name, &pk, old_version.then_some(&*secret)).map_or(created, |t| t.max(created));
+    let last_full_unlock = read_stamp(dir, name, &pk).map_or(created, |t| t.max(created));
     if now_ms < last_full_unlock || now_ms - last_full_unlock > max_age_ms {
         let _ = wipe(&p);
         let _ = fs::remove_file(stamp_path(dir, name));
         return Err(GhulError::QuickUnlockExpired);
     }
-    Ok(QuickSecret { password_key: pk, secret, old_version, created })
+    Ok(QuickSecret { password_key: pk, factor_secret: secret })
 }
 
 fn stamp_path(dir: &Path, name: &str) -> PathBuf {
     dir.join(format!("quick-{name}.stamp"))
 }
 
-/// `info` = "ghul/v2/quick-stamp" with the password key; stamps of version 1 used the container key
-/// with "ghul/v1/quick-stamp" and are still accepted for files of version 1.
+/// `info` = "ghul/v2/quick-stamp" with the password key.
 fn stamp_mac(key: &[u8; 32], info: &[u8], name: &str, time_ms: i64) -> [u8; 32] {
     use hmac::{Hmac, Mac};
     let key = hkdf(key, &[info, name.as_bytes()]);
@@ -186,20 +165,17 @@ fn stamp_mac(key: &[u8; 32], info: &[u8], name: &str, time_ms: i64) -> [u8; 32] 
     mac.finalize().into_bytes().into()
 }
 
-fn read_stamp(dir: &Path, name: &str, password_key: &[u8; 32], old_vmk: Option<&[u8; 32]>) -> Option<i64> {
+fn read_stamp(dir: &Path, name: &str, password_key: &[u8; 32]) -> Option<i64> {
     use subtle::ConstantTimeEq;
     let data = fs::read(stamp_path(dir, name)).ok()?;
     if data.len() != 40 {
         return None;
     }
     let t = i64::from_le_bytes(data[..8].try_into().ok()?);
-    let ok = bool::from(stamp_mac(password_key, STAMP_INFO, name, t).ct_eq(&data[8..]))
-        || old_vmk.is_some_and(|v| bool::from(stamp_mac(v, OLD_STAMP_INFO, name, t).ct_eq(&data[8..])));
-    ok.then_some(t)
+    bool::from(stamp_mac(password_key, STAMP_INFO, name, t).ct_eq(&data[8..])).then_some(t)
 }
 
 const STAMP_INFO: &[u8] = b"ghul/v2/quick-stamp";
-const OLD_STAMP_INFO: &[u8] = b"ghul/v1/quick-stamp";
 
 /// Records a full unlock for every existing quick unlock file.
 pub fn refresh_stamps(dir: &Path, password_key: &[u8; 32], now_ms: i64) {

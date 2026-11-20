@@ -1,8 +1,8 @@
 # GhulSuite: Sicherheits- und Architekturkonzept
 
-**Stand:** Entwurf v0.7 · 11.11.2026 (v0.6: Einrichtungsassistent, zweiter Faktor Pflicht, der Ordner ist die Suite; **v0.7: eigene Server per SFTP, Synchronisation, GhulDrive und GhulMail umgesetzt**, Abschnitte 8 und 9 mit Stand der Umsetzung)
-**App:** GhulSuite mit den Bereichen **GhulPass** (Passwörter) · **GhulAuth** (TOTP) · **GhulMail** (Mail) · **GhulDrive** (Dateien)
-**Plattformen:** Android (nativ) **zuerst** · Windows (nativ, auch portabel vom USB-Stick) **später**
+**Stand:** Entwurf v0.9 · 19.11.2026 (v0.8: ohne Synchronisation, die Suite ist eine Datei (`.ghlzip`), Formatversion 3 mit Schreibsiegel, [`UMBAU-OHNE-SYNC.md`](UMBAU-OHNE-SYNC.md); **v0.9: eine reine Offline-App. GhulDocs statt GhulDrive und GhulMail, keine Server, keine Freigabelinks, kein Schlüsselwechsel; die Suite-Datei als Datenstrom bis 1,25 GiB; Dokumente scannen auf Android**, Abschnitte 8 und 9. Begründung und Pakete: [`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md))
+**App:** GhulSuite mit den Bereichen **GhulPass** (Passwörter) · **GhulAuth** (TOTP) · **GhulDocs** (Dokumente) · **GhulCal** (Kalender)
+**Plattformen:** Android (nativ) und Windows (nativ, auch portabel vom USB-Stick); Android kam zuerst (Abschnitt 4.1)
 **Lizenz:** AGPL-3.0-or-later
 **Sprachen:** Deutsch und Englisch ab der ersten Version
 
@@ -10,17 +10,19 @@
 
 ## 1. Ziel und Leitprinzipien
 
-Eine benutzerfreundliche, universelle Suite, die ohne Anbieterbindung funktioniert. Alle Daten liegen in
-verschlüsselten Dateien, die man überall ablegen kann. Speicher und Mailserver sind frei wählbar.
+Eine benutzerfreundliche, universelle Suite, die ohne Anbieterbindung funktioniert. Die Suite ist **eine
+verschlüsselte Datei**, die man öffnet, darin arbeitet und speichert, und die man überall hin mitnehmen kann
+(z. B. auf einem USB-Stick). Es gibt keine Server und keine Konten; die App braucht kein Netz.
 
-1. **Zero Knowledge:** Ver- und entschlüsselt wird nur auf deinen Geräten. Speicher, Server und Netzwerk sehen nur Chiffretext.
+1. **Zero Knowledge:** Ver- und entschlüsselt wird nur auf deinen Geräten. Datenträger und Suite-Datei enthalten nur Chiffretext.
 2. **Zwei Faktoren sind kryptografisch erzwungen:** Ohne Master-Passwort **und** zweiten Faktor (FIDO2-Key oder
    Schlüsseldatei) lässt sich nichts entschlüsseln, auch nicht offline, auch nicht mit der Datei in der Hand.
    Einzige Ausnahme ist der ausgedruckte **Wiederherstellungscode**: Er öffnet bewusst alles allein (Abschnitt 6.3).
 3. **Keine eigene Kryptografie:** Nur etablierte Verfahren aus geprüften Bibliotheken.
-4. **Ein Kern für alles:** Ein Rust-Kern (`ghul-core`) für Krypto, Formate, Sync, TOTP, Drive und Mail-Protokolle, identisch auf Android und Windows.
-5. **Offline zuerst:** Passwörter und TOTP sind immer lokal verfügbar. Speicher dienen nur der Synchronisation.
-6. **Universell:** Kein bestimmter Hoster, Mailanbieter oder Cloud-Dienst wird vorausgesetzt.
+4. **Ein Kern für alles:** Ein Rust-Kern (`ghul-core`) für Krypto, Formate, die Suite-Datei, TOTP, GhulDocs und Kalender, identisch auf Android und Windows.
+5. **Offline:** Alles ist lokal verfügbar und braucht keinen Server. Ins Netz gehen nur die Update-Prüfung und die
+   Leak-Prüfung von GhulPass; beide lassen sich abschalten (Abschnitt 8.4).
+6. **Universell:** Kein bestimmter Speicherort, Hoster oder Cloud-Dienst wird vorausgesetzt. Wohin die Suite-Datei wandert, entscheidet der Nutzer.
 7. **Benutzerfreundlich:** Sicherheit über verständliche Abläufe, nicht über Fachbegriffe.
 8. **Öffentlich prüfbar:** Das Repository wird später veröffentlicht. Die Sicherheit hängt nie davon ab, dass der Code
    geheim ist. Im Repository liegen keine Geheimnisse.
@@ -31,22 +33,23 @@ verschlüsselten Dateien, die man überall ablegen kann. Speicher und Mailserver
 
 | Thema | Entscheidung |
 |---|---|
-| App-Struktur | **Eine App „GhulSuite“** mit fünf Bereichen (GhulPass, GhulAuth, GhulCal, GhulDrive, GhulMail; der Kalender kam als fünfter dazu) |
+| App-Struktur | **Eine App „GhulSuite“** mit vier Bereichen: GhulPass, GhulAuth, GhulDocs, GhulCal. GhulDocs ersetzt seit dem 17.11.2026 GhulDrive und GhulMail ([`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)) |
+| Netz | **Offline.** Keine Server, keine Konten. Nur zwei Verbindungen, beide abschaltbar: Update-Prüfung (GitHub) und Leak-Prüfung von GhulPass (Pwned Passwords, k-Anonymität). Ein Fehlerbericht wird nur angezeigt (Abschnitt 8.4) |
+| Altlasten | **Keine** (17.11.2026): Die App hat noch keine Nutzer. Ältere Formate werden nicht gelesen; nach einer Schutzänderung öffnet die App keine Suite-Datei mit älterem Schutz mehr, auch nicht nach Rückfrage |
 | Web-Client | **Keiner.** Ersatz für unterwegs: portables Windows-Programm auf dem USB-Stick |
-| Ablage der Tresore | **Überall:** USB-Stick, Cloud, NAS, eigener Server |
-| Teilen | Tresore: „überall ablegen“, nicht mit anderen Personen. Dateien und einzelne Einträge: **Ende-zu-Ende-verschlüsselte Freigabelinks** über den eigenen Server (Abschnitt 10, Teilen) |
-| Mail-Benachrichtigung | **Ja, auch bei gesperrter App**: mit eigenem, gerätegebundenem Mail-Zugang (Abschnitt 9.3); geändert am 11.11.2026 |
+| Ablage der Suite | **Eine Datei** (`.ghlzip`), die der Nutzer speichert und öffnet, wo er will (USB-Stick, eigener Ordner). Kein Abgleich zwischen Geräten: Aktuell ist der Stand, der zuletzt gespeichert wurde (geändert am 17.11.2026) |
+| Synchronisation | **Keine** (entfernt am 17.11.2026): kein Sync-Server, kein Zusammenführen, kein „Von meinem Server holen“, keine eigene Sicherung/Wiederherstellung. Ersetzt durch Öffnen und Speichern der Suite-Datei (Abschnitt 8.1) |
+| Teilen | Tresore werden nicht gemeinsam mit anderen Personen bearbeitet; ausgewählte Einträge lassen sich aber **als eigener Tresor weitergeben** (eigenes Passwort, neue Schlüsseldatei oder Security Key, Abschnitt 8.3), ein GhulDocs-Tresor mit seinen Dokumenten. Einzelne Dokumente gehen über „Exportieren“ oder „Mit App öffnen“ hinaus. Freigabelinks gibt es nicht mehr (17.11.2026) |
 | Schnell-Entsperren | **Fingerabdruck und/oder App-PIN**, optional und mit engen Grenzen (Abschnitt 6.5) |
-| Module | Jeder Bereich (GhulPass, GhulAuth, später GhulMail, GhulDrive) ist in den Einstellungen **abschaltbar**; er verschwindet dann aus dem Menü, die Daten bleiben erhalten |
+| Module | Jeder Bereich (GhulPass, GhulAuth, GhulDocs, GhulCal) ist in den Einstellungen **abschaltbar**; er verschwindet dann aus dem Menü, die Daten bleiben erhalten |
 | Sofortsperre | **Sofort sperren** (Stufe 1), auch durch **Schütteln**; kein Löschen, kein Notfall-Passwort (Abschnitt 6.6) |
-| Erster Speicher-Adapter | **SFTP**: eigener Server mit SSH/SFTP ist vorhanden |
-| Drive-Speicher | **Eigene Server** per SFTP oder FTPS (auch Webhosting); Freigabelinks über das Server-Modul (PHP) auf demselben Server; lokale Datenträger nur als verschlüsseltes Sicherungsziel |
-| Plattformen | **Zuerst nur Android.** Windows folgt später; die Architektur ist von Anfang an darauf ausgelegt (Abschnitt 4.1) |
+| Dokumente | **GhulDocs** in der Suite: fest **1 GB** Inhalt je Suite, jede Datei mit eigenem Schlüssel, in der Suite-Datei mit unterwegs (Abschnitt 9.3). Eigene Server, SFTP und das PHP-Modul sind entfernt (17.11.2026) |
+| Plattformen | **Android und Windows**; Android kam zuerst, die Architektur war von Anfang an auf beide ausgelegt (Abschnitt 4.1). Scannen nur auf Android |
 | Schutz | **Master-Passwort plus zweiter Faktor, immer.** Zweiter Faktor: Security Key (empfohlen) oder Schlüsseldatei; beliebig viele, jederzeit austauschbar, ohne dass etwas ungültig wird. Einen Schutz nur mit Passwort gibt es nicht (geändert am 11.11.2026) |
 | Wiederherstellungscode | **Pflicht** bei jeder Suite; öffnet alles allein, auch ohne Passwort, Key und Schlüsseldatei; danach wird ein neues Passwort gesetzt |
-| Suite und Tresore | **Der Ordner ist die Suite:** Alle Tresordateien im Ordner gehören dazu, es gibt keine Liste und keine Frage „gehört das dazu?“. Je Bereich beliebig viele Tresore (z. B. GhulPass „Privat“ und „Arbeit“), später ebenso mehrere Mail- und Drive-Konten. `suite.ghlsuite` hält nur Einstellungen (geändert am 11.11.2026, Konzept A) |
-| Erster Start | Auswahl: **neu einrichten**, **vorhandene Suite öffnen** (Ordner) oder **einzelnen Tresor öffnen** (Datei; um ihn wird eine neue Suite gebaut, nur dieser Bereich wird eingeschaltet) |
-| Speicherort | Standard: privater App-Speicher; optional ein eigener Ordner (z. B. USB-Stick). Suite und Tresore liegen im **selben Ordner**. „Speicherort wechseln“ (Optionen → Tresore) kopiert alle Dateien, prüft jede Kopie Byte für Byte und nutzt erst dann den neuen Ort; ein Ordner mit einer anderen Suite wird nie überschrieben, die alten Dateien bleiben liegen |
+| Suite und Tresore | **Die Suite ist eine Datei:** Der Suite-Container `suite.ghlsuite`, alle Tresore mit den Inhaltsdateien von GhulDocs und eine Kopfdatei liegen zusammen in der `.ghlzip`. Je Bereich beliebig viele Tresore (z. B. GhulPass „Privat“ und „Arbeit“). Auf dem Gerät gibt es eine Arbeitskopie (geändert am 17.11.2026; davor „Der Ordner ist die Suite“) |
+| Erster Start | Auswahl: **neu einrichten**, **Suite-Datei öffnen** (`.ghlzip`) oder **einzelnen Tresor öffnen** (Tresordatei: nur diesen Tresor öffnen, zur eigenen Suite hinzufügen oder eine neue Suite damit anlegen; Abschnitt 8.3) |
+| Speicherort | Die **Arbeitskopie** liegt im privaten App-Speicher (Windows portabel: im Ordner `GhulSuite-Daten` neben dem Programm), damit die App auch ohne den Stick funktioniert. Die **Suite-Datei** liegt, wo der Nutzer sie speichert; die App merkt sich die zuletzt geöffnete Datei und speichert direkt dorthin |
 | GhulAuth-Passwort | Alle Tresore einer Suite haben dasselbe Passwort und dieselben Faktoren. Wer ein getrenntes Passwort will, legt eine zweite Suite an |
 | Lizenz | **AGPL-3.0-or-later** |
 | Windows-Code-Signatur | **Nein** (SmartScreen-Warnung beim ersten Start wird in Kauf genommen) |
@@ -63,15 +66,16 @@ Was sich gegenüber v0.1 geändert hat und warum:
 | 1 | Ohne Web-Client entfällt der Grund für Tauri (gemeinsame Oberfläche mit dem Web). Zwei getrennte Oberflächen für Android und Windows wären doppelte Arbeit für alle Bereiche. | **Kotlin + Compose Multiplatform** für beide Plattformen: eine Oberfläche, einheitliche Bedienung. Der Rust-Kern hängt per UniFFI an beiden. |
 | 2 | Android bindet FIDO2 für Apps über den Credential Manager an eine **eigene, verifizierte Web-Domain**. Für eine universelle, öffentliche App hat nicht jeder Nutzer eine. | **Direkter CTAP2-Zugriff** auf den Key über USB (später NFC). Keine Domain nötig, keine Abhängigkeit von Google-Diensten, läuft auch auf Android ohne Google (z. B. GrapheneOS). |
 | 3 | Die Credential-ID und der PRF-Salt stehen offen im Datei-Header. Wäre die RP-ID eine echte Domain, könnte deren Besitzer eine Webseite bauen, die mit einer Key-Berührung den geheimen Wert abfragt. | **Feste RP-ID, die keine gültige Web-Domain ist** (Vorschlag: `ghulsuite.invalid`, reservierte Endung). Kein Browser kann sie je anfragen. |
-| 4 | Cloud-Anbindungen über den Android-Dateidialog (z. B. Google Drive) sind beim Zurückschreiben bekanntermaßen unzuverlässig: Zwischenspeicher, verzögerter Upload, Konflikte. | Sync läuft **direkt über die Speicher-Adapter** (wie bei Drive). Der Dateidialog dient nur zum **Export und Import** (USB-Stick, Cloud, E-Mail an sich selbst). |
-| 5 | Geräte-Registrierung am Server mit FIDO2-Freigabe ist aufwendig und bringt kaum Gewinn: Wer den Suite-Container entschlüsseln kann, hat ohnehin alle Zugänge. | **Zugangsdaten für alle Speicher stehen verschlüsselt im Suite-Container.** Ein neues Gerät muss nur den Container öffnen, ohne Konto und ohne Freischaltung. |
+| 4 | Cloud-Anbindungen über den Android-Dateidialog (z. B. Google Drive) sind beim Zurückschreiben bekanntermaßen unzuverlässig: Zwischenspeicher, verzögerter Upload, Konflikte. | Seit 17.11.2026 gibt es keine Synchronisation mehr: Die Suite wandert als **eine Datei**, die der Nutzer über den Dateidialog öffnet und speichert (z. B. auf einem USB-Stick). Die App schreibt die ganze Datei auf einmal und prüft beim Öffnen alles, bevor sie etwas ersetzt (Abschnitt 8.1). |
+| 5 | Geräte-Registrierung am Server mit FIDO2-Freigabe ist aufwendig und bringt kaum Gewinn: Wer den Suite-Container entschlüsseln kann, hat ohnehin alle Zugänge. | Ein neues Gerät muss nur die Suite-Datei öffnen, ohne Konto und ohne Freischaltung. Seit dem 17.11.2026 gibt es keine Server mehr, also auch keine Zugänge dazu. |
 | 6 | Vier Container einzeln zu entsperren wäre umständlich; WebAuthn-PRF liefert pro Berührung nur zwei Werte. | Alle Container einer Suite teilen sich Passwort-Ableitung und Faktor-Geheimnis. **Ein Passwort, eine Berührung, alles offen**: die Container bleiben dabei kryptografisch getrennt. |
-| 7 | HTML-Mails sind der größte Angriffsweg. Eine Browser-Engine zur Anzeige ist zudem unter Compose Desktop schwierig. | **Standard: native, vereinfachte Darstellung** (Text, Formatierung, Links, Bilder nach Klick) **ohne Browser-Engine**. Original-HTML nur auf Wunsch in einer abgeschotteten Ansicht ohne Skripte. |
-| 8 | Gmail und Microsoft-Konten verlangen inzwischen OAuth2. Für Gmail braucht eine öffentliche App dazu eine kostenpflichtige Sicherheitsprüfung durch Google. | GhulMail unterstützt **Standard-IMAP/SMTP** (eigener Server, Posteo, mailbox.org, GMX, Web.de, die meisten Hoster). Gmail nur über App-Passwort, OAuth-Anbieter frühestens später. |
-| 9 | Ein lokaler Ordner als Drive-Speicher wirkte unsicher. | Jeder Adapter speichert **ausschließlich verschlüsselte Blöcke**, auch ein lokaler Datenträger. Er bleibt als **Sicherungsziel** (z. B. externe Festplatte) erhalten, nicht als Hauptspeicher. |
-| 10 | Unverschlüsseltes FTP ist unsicher. | **Kein FTP ohne TLS.** Webhosting ohne SSH geht über FTPS (seit 0.5.0); das PHP-Modul dient seit 0.7.0 nur noch Freigabelinks. |
-| 11 | Mail-Abruf im Hintergrund braucht Zugangsdaten bei gesperrter App. | Seit v0.5 gewünscht: eigener, gerätegebundener Mail-Zugang nur für den Abruf (Abschnitt 9.3). |
-| 12 | Die Drive-Schlüssel liegen nur im Suite-Container. Geht er verloren, sind die Drive-Daten weg. | Der Suite-Container wird **automatisch auf jeden eingerichteten Speicher mitgesichert**, mit Versionen. Die Sicherheitszentrale warnt, wenn es keine aktuelle Kopie gibt. |
+| 7 | HTML-Mails sind der größte Angriffsweg. Eine Browser-Engine zur Anzeige ist zudem unter Compose Desktop schwierig. | Damals: native, vereinfachte Darstellung ohne Browser-Engine. **Seit dem 17.11.2026 gegenstandslos:** GhulMail ist entfernt. |
+| 8 | Gmail und Microsoft-Konten verlangen inzwischen OAuth2. Für Gmail braucht eine öffentliche App dazu eine kostenpflichtige Sicherheitsprüfung durch Google. | Damals: nur Standard-IMAP/SMTP. **Seit dem 17.11.2026 gegenstandslos:** GhulMail ist entfernt. |
+| 9 | Ein lokaler Ordner als Drive-Speicher wirkte unsicher. | Damals lag GhulDrive auf dem eigenen Server. **Seit dem 17.11.2026:** Dokumente liegen in GhulDocs, verschlüsselt in der Arbeitskopie und in der Suite-Datei; jede Datei mit eigenem Schlüssel, Namen und Ordner nur im verschlüsselten Inhaltsverzeichnis (Abschnitt 9.3). |
+| 10 | Unverschlüsseltes FTP ist unsicher; ein gespeichertes Server-Passwort kann die App nach einer Schutzänderung nicht selbst wechseln. | Erst nur noch SFTP mit SSH-Schlüssel, **seit dem 17.11.2026 gar keine Server mehr** (auch kein PHP-Modul, keine Freigabelinks). |
+| 11 | Mail-Abruf im Hintergrund braucht Zugangsdaten bei gesperrter App. | **Gegenstandslos** mit GhulMail (17.11.2026). |
+| 12 | Die Schlüssel liegen nur in der Suite. Geht sie verloren, sind die Daten weg. | Die Suite-Datei ist das, was man aufbewahrt (auch in Kopien an mehreren Orten). Die App zeigt **„Nicht gespeicherte Änderungen“** und fordert nach jeder Schutzänderung auf, die Datei zu speichern. |
+| 13 | GhulDrive, GhulMail und die Server waren die Quelle der meisten offenen Befunde (Sperren auf dem Server, Schlüsselwechsel, PHP-Modul, Mail-Parser, Benachrichtigungen). | **Offline-App mit GhulDocs** (17.11.2026): Dokumente verschlüsselt in der Suite, bis 1 GB, mit Scannen auf Android. Rund 70 offene Befunde entfallen ([`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md), Abschnitt 9). |
 
 ---
 
@@ -80,25 +84,26 @@ Was sich gegenüber v0.1 geändert hat und warum:
 ```mermaid
 flowchart TB
   subgraph App["GhulSuite (Kotlin + Compose Multiplatform)"]
-    UI[Oberfläche: GhulPass · GhulAuth · GhulDrive · GhulMail · GhulCal]
-    PF[Plattform-Anbindung<br/>Android: USB/NFC, Keystore<br/>Windows: WebAuthn-API, Hotkeys, Zwischenablage]
+    UI[Oberfläche: GhulPass · GhulAuth · GhulDocs · GhulCal]
+    PF[Plattform-Anbindung<br/>Android: USB/NFC, Keystore, Kamera, PDF-Anzeige<br/>Windows: WebAuthn-API, Hotkeys, Zwischenablage, PDF-Anzeige]
   end
   subgraph Core["ghul-core (Rust, per UniFFI)"]
     C1[Krypto & Schlüssel] --- C2[Container-Formate]
-    C2 --- C3[Sync & Zusammenführen]
-    C3 --- C4[Speicher-Adapter]
-    C1 --- C5[TOTP] --- C6[IMAP/SMTP + OpenPGP]
+    C2 --- C3[Suite-Datei .ghlzip<br/>Datenstrom, Öffnen & Speichern]
+    C2 --- C4[GhulDocs<br/>Inhaltsverzeichnis, Inhaltsdateien]
+    C1 --- C5[TOTP] --- C6[Kalender, ICS]
+    C7[Update-Prüfung, Leak-Prüfung]
   end
   UI --> Core
   PF --> Core
-  C4 -- "nur Chiffretext" --> S1[(SFTP)] & S2[(FTPS)] & S5[(Sicherung auf<br/>lokalem Datenträger)]
-  C6 -- "TLS" --> M[(Mailserver deiner Wahl)]
+  C3 -- "Dateidialog" --> F[(USB-Stick oder<br/>eigener Ordner)]
+  C7 -- "TLS, abschaltbar" --> N[(GitHub,<br/>Pwned Passwords)]
 ```
 
 | Baustein | Technik | Begründung |
 |---|---|---|
 | Kern | **Rust** | Speichersicher, Schlüssel im RAM werden überschrieben (`zeroize`), eine Implementierung für beide Plattformen |
-| Oberfläche | **Kotlin + Compose Multiplatform** | Eine Oberfläche für Android und Windows; auf Android echt nativ (Credential-Provider, Kamera) |
+| Oberfläche | **Kotlin + Compose Multiplatform** | Eine Oberfläche für Android und Windows; auf Android echt nativ (Kamera mit CameraX, PDF-Anzeige des Systems) |
 | Anbindung | **UniFFI** | Erzeugt sichere Kotlin-Anbindungen an den Rust-Kern für Android und Windows |
 | Windows-Paket | Installer **und** portable Version (Ordner mit Programm und Laufzeit, startet vom Stick) | Die Java-Laufzeit wird mitgeliefert, auf dem PC muss nichts installiert sein |
 
@@ -178,44 +183,49 @@ flowchart TB
    - FIDO2-Slot: privater X25519-Schlüssel = `HKDF(hmac-secret(Key, slot_salt))`
    - Schlüsseldatei-Slot: privater X25519-Schlüssel = `HKDF(Geheimnis der Datei)`
    - Im Slot steht der zugehörige **öffentliche** Schlüssel. Damit kann die App ein neues `S` für jeden Key
-     verschließen, ohne ihn zu berühren (Formatversion 2; Slots älterer Versionen ziehen beim nächsten Entsperren
-     mit diesem Key um).
+     verschließen, ohne ihn zu berühren.
 3. Je Container: `KEK = HKDF-SHA256(PK ‖ S, info = "ghul/v1/kek" ‖ Container-UUID)`
 4. Der `KEK` entschlüsselt den zufälligen **Container-Hauptschlüssel (VMK)**. Aus dem VMK wird der Inhalts-Schlüssel
    abgeleitet; der Header ist als AAD eingebunden. Exakte Ableitungen: [`docs/FORMAT.md`](FORMAT.md), Abschnitt 4.
+5. **Schreibsiegel (Formatversion 3):** Jede Datei endet mit einem HMAC über alle Bytes davor, mit einem Schlüssel aus
+   `PK` und `S`. Es entsteht nur mit dem Passwort. Wer eine alte Kopie und einen alten Code hat, kann damit lesen, was
+   damals galt, aber keine Datei bauen, die ein Gerät annimmt. Dass eine Datei aktuell ist, beweist das Siegel nicht;
+   dafür sorgen Zähler und Schutz-Epoche der Suite-Datei (Abschnitt 8.1). Ältere Formatversionen werden nicht mehr
+   gelesen.
 
 **Eigenschaften:**
 - Nur Key oder nur Schlüsseldatei → `S`, aber ohne Passwort kein `KEK` → wertlos.
 - Nur Passwort → kein `S` → wertlos.
 - **Ein Passwort, eine Berührung** öffnet alle Container. Jeder Container hat trotzdem seinen eigenen VMK.
 - Jeder Container enthält alle Slots in seinem eigenen Header und lässt sich daher **auch einzeln** öffnen,
-  z. B. nur `.ghlpss` vom USB-Stick ohne Suite-Container.
+  z. B. nur eine `.ghlpss` vom USB-Stick ohne Suite-Datei (Abschnitt 8.3).
 - Passwort ändern geht mit einem einzigen Key. Ein Key oder eine Schlüsseldatei wird hinzugefügt oder entfernt, indem man einen Slot hinzufügt oder löscht. Die App aktualisiert dabei alle Container. Der letzte zweite Faktor lässt sich nicht entfernen.
 - **Erneuern bei jeder Schutzänderung:** Neues Notfallblatt, neues Passwort oder ein entfernter Key geben jedem
   Container einen neuen VMK; ein entfernter Key erneuert zusätzlich `S` für alle übrigen Keys. So öffnet ein
-  verlorenes Notfallblatt oder ein entfernter Key zusammen mit einer **alten Sicherungskopie** nichts, was danach
-  gespeichert wurde. Die alte Kopie selbst zeigt weiter den Stand von damals.
+  verlorenes Notfallblatt oder ein entfernter Key zusammen mit einer **alten Kopie der Suite-Datei** nichts, was
+  danach gespeichert wurde. Die alte Kopie selbst zeigt weiter den Stand von damals; wie man sie unbrauchbar macht,
+  steht in Abschnitt 8.2.
 - **Dateinamen verraten nichts:** Tresordateien heißen nach ihrer zufälligen Kennung (`3f9a1c2b7d4e5f60.ghlpss`),
   der Name steht nur verschlüsselt darin.
-- **Der Ordner ist die Suite:** Beim Entsperren öffnet die App jede Tresordatei im Ordner mit Passwort und Faktor.
-  Eine Datei, die auf einem anderen Gerät angelegt und in den Ordner kopiert wurde, ist einfach dabei. Gelöscht wird ein
-  Tresor, indem seine Datei verschwindet. Eine beschädigte Datei wird als „beschädigt“ angezeigt, der Rest öffnet sich.
-  Liegen zwei Kopien desselben Tresors im Ordner, gilt die neuere. `suite.ghlsuite` enthält nur Einstellungen; fehlt sie,
-  wird sie aus einer Tresordatei neu erzeugt.
-- **Dateien mit anderem Passwort** (aus einer anderen Suite oder von vor einem Passwortwechsel) werden angeboten. Man öffnet
-  sie einmal mit ihrem bisherigen Passwort und Key bzw. Schlüsseldatei; dann werden sie auf Passwort, Faktoren und Code
-  der Suite **umgestellt** und gehören dazu. Es gibt keine Tresore mit dauerhaft eigenem Schutz, dafür einen zweiten Ordner nutzen.
-- **Gleicher Stand überall:** Fehlt einer Datei ein neuer Key (z. B. eine alte Kopie), gleicht die App sie beim Entsperren an.
-- **Älterer Stand:** Die Einstellungsdatei merkt sich je Tresor die höchste gesehene Revision. Ist die Datei älter,
-  warnt die App, bis man den Stand bewusst übernimmt (z. B. nach dem Zurückspielen einer Sicherung).
+- **Die Suite ist eine Datei:** Der Suite-Container `suite.ghlsuite` (Schutz-Epoche, Stand, Einstellungen) und alle
+  Tresore samt den Inhaltsdateien von GhulDocs gehören zusammen und reisen gemeinsam in der `.ghlzip` (Abschnitt 8.1). Auf dem Gerät arbeitet die App in
+  einer Arbeitskopie; sie gleicht nichts mit Dateien in fremden Ordnern ab und übernimmt nichts von selbst.
+- **Tresore mit anderem Schutz** (aus einer anderen Suite) kommen nur auf ausdrücklichen Wunsch dazu: „Zu meiner Suite
+  hinzufügen“ öffnet sie einmal mit ihrem bisherigen Passwort und Key bzw. Schlüsseldatei und stellt sie auf Passwort,
+  Faktoren und Code der Suite um. Oder man öffnet sie einzeln, mit ihrem eigenen Schutz (Abschnitt 8.3).
+- **Älterer Stand:** Ob eine Suite-Datei älter, abgezweigt oder mit einem älteren Schutz ist, erkennt die App beim
+  Öffnen an Zähler, Stand-ID und Schutz-Epoche in der Kopfdatei (Abschnitt 8.1).
 - **Passwort vergessen heißt Daten weg.** Das ist bewusst so: Es gibt keine Hintertür.
 
 ### 6.3 Wiederherstellungscode und Notfallblatt
 
-- **Pflicht** bei jeder Suite. Derselbe Code steckt in **jeder** Datei des Ordners und öffnet sie direkt (ohne Passwort,
-  Key oder Schlüsseldatei), auch eine einzelne Tresordatei ohne den Rest. Danach wird ein neues Master-Passwort gesetzt; Keys, Schlüsseldateien und der
-  Code selbst bleiben gültig. Empfohlen wird anschließend ein neuer Code. Ein neuer Code macht das alte Blatt
-  wertlos, auch zusammen mit einer alten Sicherungskopie (für alles, was danach gespeichert wird).
+- **Pflicht** bei jeder Suite. Derselbe Code steckt in **jeder** Datei der Suite und öffnet sie direkt (ohne Passwort,
+  Key oder Schlüsseldatei), auch eine einzelne Tresordatei ohne den Rest und eine ganze `.ghlzip`. Danach wird ein neues
+  Master-Passwort gesetzt; Keys, Schlüsseldateien und der Code selbst bleiben gültig. Empfohlen wird anschließend ein
+  neuer Code. Ein neuer Code macht das alte Blatt wertlos, auch zusammen mit einer alten Kopie der Suite-Datei (für
+  alles, was danach gespeichert wird).
+- **Notfall-Ausnahme beim Siegel:** Ohne Passwort lässt sich das Schreibsiegel nicht prüfen, nur lesen. Die App sagt
+  das beim Öffnen, prüft Stand und Schutz-Epoche trotzdem und versiegelt danach alles mit dem neuen Passwort neu.
 - Bewusste Abwägung: Wer Notfallblatt **und** Dateien hat, hat Zugriff. Das Blatt ist wie ein Tresorschlüssel aufzubewahren.
 
 - 256 Bit Zufall, dargestellt als 52 Zeichen Base32 in Vierergruppen mit Prüfsumme, zusätzlich als QR-Code.
@@ -244,7 +254,8 @@ Nach einer vollständigen Entsperrung (Passwort und Key) lässt sich die App fü
 - **Gültigkeit** (1 Stunde bis 7 Tage, Standard 24 Stunden) zählt ab dem **letzten vollständigen Entsperren**
   (signierter Zeitstempel, nur mit `S` fälschbar).
 - Passwort und Key sind immer wieder nötig: nach **jedem Neustart**, nach Ablauf, nach einer **Sofortsperre**, nach
-  einem **Passwortwechsel** und wenn Fingerabdrücke geändert wurden.
+  einem **Passwortwechsel**, nach dem **Öffnen einer Suite-Datei** (die Schnell-Entsperren-Dateien des alten Stands
+  werden gelöscht) und wenn Fingerabdrücke geändert wurden.
 - **Ehrlich:** In der Gültigkeitszeit reichen das entsperrte Handy plus Finger bzw. App-PIN. Deshalb optional und
   standardmäßig aus. Ein Angreifer mit Root-Zugriff auf das laufende Gerät könnte den Fehlversuchszähler umgehen;
   die PIN ist aber an den Hardware-Schlüssel des Geräts gebunden, ein Durchprobieren außerhalb des Geräts ist nicht möglich.
@@ -278,13 +289,17 @@ Ein Fingerabdruck kann erzwungen werden, ein Passwort im Kopf nicht so leicht. D
 | `.ghlpss` | `GHULPASS` | GhulPass-Tresor |
 | `.ghltotp` | `GHULTOTP` | GhulAuth-Tresor |
 | `.ghlcal` | `GHULCLDR` | GhulCal-Kalender (bewusst ohne CalDAV; Austausch per .ics) |
-| `.ghlsuite` | `GHULSUIT` | Suite-Container: Speicherverbindungen, Mail-Konten, Drive-Schlüssel und -Index-Verweise, Einstellungen |
+| `.ghldoc` | `GHULDOCS` | GhulDocs-Tresor: das Inhaltsverzeichnis (Ordner, Namen, Größen, Typen, Favoriten, Papierkorb, je Datei ihr Schlüssel und ihre Prüfsumme) |
+| `.ghlblob` | `GHULBLOB` | Inhaltsdatei von GhulDocs: der verschlüsselte Inhalt einer Datei, in Abschnitten zu 4 MiB, aufgefüllt auf 64 KiB (eigenes Format, kein Container) |
+| `.ghlsuite` | `GHULSUIT` | Suite-Container: Schutz-Epoche, Stand der Suite-Datei, Einstellungen |
 | `.ghlkey` | `GHULKEY\0` | Schlüsseldatei |
+| `.ghlzip` | ZIP | Die ganze Suite zum Mitnehmen: `suite.ghlsuite`, alle Tresore, die Inhaltsdateien von GhulDocs und die Kopfdatei `export.ghlexp` (ein eigener, versiegelter Container mit Liste, Hashes, Stand-ID, Zähler und Schutz-Epoche). Bis 1,25 GiB, kein zweites Passwort; Abschnitt 8.1. Auch ein einzelner GhulDocs-Tresor reist als `.ghlzip` |
 
-Gerätegebundene Daten (Mail-Zwischenspeicher, Drive-Offline-Dateien, Vorschaubilder) sind **keine** Austauschdateien.
-Sie liegen verschlüsselt im App-Speicher, bzw. bei der portablen Version auf dem Stick.
+Gerätegebundene Daten (Arbeitskopie, Schnell-Entsperren, befristete Kopien für „Mit App öffnen“) sind **keine**
+Austauschdateien. Sie liegen im App-Speicher, bzw. bei der portablen Version auf dem Stick; die Arbeitskopie ist
+verschlüsselt, die befristeten Kopien werden beim Sperren gelöscht.
 
-### 7.1 Container-Aufbau (gemeinsam für alle drei)
+### 7.1 Container-Aufbau (gemeinsam für alle Container)
 
 Die verbindliche Byte-Spezifikation steht in **[`docs/FORMAT.md`](FORMAT.md)** (mit Testvektoren).
 
@@ -296,6 +311,7 @@ Die verbindliche Byte-Spezifikation steht in **[`docs/FORMAT.md`](FORMAT.md)** (
 │ Flags (derzeit 0) · verpackter VMK                              │
 ├─ Inhalt: XChaCha20-Poly1305, AAD = Präfix + Header ─────────────┤
 │ CBOR-Dokument mit Revisionszähler, aufgefüllt auf Blockgrößen   │
+├─ Schreibsiegel: HMAC-SHA256 über alles davor (nur mit Passwort) ┤
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -305,192 +321,203 @@ des Inhalts eingebunden.
 - **XChaCha20-Poly1305:** Zufalls-Nonces ohne Wiederverwendungsrisiko. Bewusst nur **ein** Verfahren je Formatversion.
 - **Header als AAD:** Jede Änderung am Header macht die Entschlüsselung ungültig. Zusätzlich gelten Mindest- und Höchstwerte für Argon2id.
 - **Auffüllen:** Die Dateigröße verrät nicht die Anzahl der Einträge.
-- **Rollback-Schutz:** Jedes Gerät merkt sich die höchste gesehene Revision. Taucht eine ältere auf, warnt die App.
-- **Einträge** haben UUID, Revision und Änderungszeit. Gelöschte Einträge bleiben als Löschmarker erhalten,
-  damit das Zusammenführen funktioniert.
+- **Schreibsiegel:** Eine Datei, die mit Passwort und `S` aufgeht, deren Siegel aber nicht stimmt, gilt als verändert
+  und wird nicht verwendet.
+- **Rollback-Schutz:** Für die ganze Suite über Zähler, Stand-ID und Schutz-Epoche der `.ghlzip` (Abschnitt 8.1).
+- **Einträge** haben UUID, Revision und Änderungszeit.
 
 ---
 
-## 8. Speicherorte und Synchronisation
+## 8. Suite-Datei und einzelne Tresore
 
-### 8.1 Zwei getrennte Wege
+Bis zum Umbau hielt eine Synchronisation über den eigenen Server (später auch über fremde Sync-Programme im Ordner) die
+Geräte gleich. Sie war die Quelle der meisten Sicherheitsfunde und ist seit dem 17.11.2026 vollständig entfernt
+([`UMBAU-OHNE-SYNC.md`](UMBAU-OHNE-SYNC.md)). Mit dem Umbau zu GhulDocs am selben Tag fielen auch GhulDrive, GhulMail,
+alle Server (SFTP, PHP-Modul), Freigabelinks und der Schlüsselwechsel auf Servern weg
+([`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)). Seitdem ist GhulSuite eine reine Offline-App.
 
-GhulSuite bringt keine Anbindung an Cloud-Ordner mit (kein Nextcloud-, Dropbox- oder Syncthing-Client). Wer die
-Dateien in einem eigenen Ordner hält, kann ihn mit einem selbst installierten Programm abgleichen; das ist erlaubt,
-aber nicht nötig. Entsteht dabei eine Konfliktkopie derselben Datei, führt die App beide beim Entsperren zusammen.
-Tresordateien werden am Inhalt erkannt (Kennung im verschlüsselten Kopf), nicht am Namen: Umbenennen schadet nicht,
-die App gibt der Datei beim nächsten Entsperren ihren neutralen Namen zurück.
+### 8.1 Die Suite als Datei (`.ghlzip`)
 
-1. **Speicher-Adapter (automatische Synchronisation):** für Tresore, Suite-Container und Drive.
-2. **Export und Import (manuell, überall):** Container-Datei auf USB-Stick, in einen Cloud-Ordner, per Mail an sich selbst
-   oder über das Android-Teilen-Menü. Die Datei ist in sich sicher.
+**Die Suite ist eine Datei. Man öffnet sie, arbeitet darin und speichert sie.** Wohin die Datei wandert (USB-Stick,
+eigener Ordner), entscheidet der Nutzer; die App gleicht nichts ab und führt nichts zusammen. Aktuell ist immer der
+Stand, der zuletzt in die Datei gespeichert wurde.
 
-### 8.2 Adapter
+Beispiel: Handy: Datei auf dem Stick öffnen, arbeiten, speichern. Windows: dieselbe Datei öffnen, arbeiten,
+speichern. Wieder auf dem Handy: öffnen.
 
-| Adapter | Für wen | Verbindung | Priorität |
-|---|---|---|---|
-| **SFTP** | Jeder vServer oder Root-Server, NAS, Raspberry Pi, Storage-Box-Angebote | SSH-Schlüssel, Server-Fingerabdruck wird beim ersten Verbinden fest gespeichert | **1**: Testserver vorhanden |
-| **WebDAV** | Nextcloud, ownCloud, viele NAS, Webserver mit WebDAV | HTTPS mit Zertifikats-Pinning | 2 |
-| **S3-kompatibel** | MinIO oder Garage auf dem eigenen Server, S3-Anbieter | HTTPS, Upload in Teilen mit Fortsetzen | 3 |
-| **FTPS** | Webhosting ohne SSH | FTP mit TLS, Zertifikat per Fingerabdruck bestätigt | **1** |
-| **Lokaler Datenträger** | Externe Festplatte, USB-Stick | keine (Inhalte trotzdem verschlüsselt) | nur als **Sicherungsziel** |
+- **Arbeitskopie:** Öffnen lädt die Datei (nach allen Prüfungen) in die Arbeitskopie im App-Speicher. Sie bleibt
+  bestehen, damit die App auch ohne den Stick funktioniert; sie ist Zwischenstand, nicht die Datenbank. In der
+  Arbeitskopie schreibt die App nur, was sich ändert (eine neue Inhaltsdatei von GhulDocs, das Inhaltsverzeichnis,
+  einen Tresor); das geht sofort.
+- **Die zuletzt geöffnete Datei** merkt sich die App (Android: über die Dateiauswahl des Systems mit dauerhafter
+  Berechtigung; Windows: Pfad). „Speichern“ schreibt dorthin, „Speichern unter“ an einen neuen Ort. Ist der Stick
+  nicht da, sagt die App das und bietet „Speichern unter“ an. Zu finden unter Optionen → Suite-Datei.
+- **Eigene Endung**, damit Android und Windows die Datei der App zuordnen. **Kein zweites Passwort:** Die Inhalte sind
+  die verschlüsselten, versiegelten Container und die verschlüsselten Inhaltsdateien; die ZIP fügt nichts hinzu.
 
-- **Mehrere Speicher gleichzeitig:** Ein Hauptspeicher plus Spiegel, z. B. vServer plus NAS. Fällt einer aus, ist der andere noch da.
-- Alle Zugangsdaten (Host, Benutzer, SSH-Schlüssel, Passwörter) liegen **nur verschlüsselt**: der Sync-Server im
-  Suite-Container, ein eigener Server nur für GhulDrive in der Drive-Datei. Ohne Entsperren ist nicht erkennbar,
-  welche Server eingerichtet sind.
-- **Synchronisation und GhulDrive sind getrennt** (abgestimmt am 13.11.2026, #24, erweitert am 16.11.2026): die
-  Synchronisation hat ihre Server im Suite-Container, GhulDrive seine **Speicherorte** in der Drive-Datei. Es gibt
-  keinen Verweis mehr von einem auf das andere; die Seite „Synchronisation“ in den Optionen kennt GhulDrive nicht.
-- **Mehrere Speicherorte für GhulDrive** (abgestimmt am 16.11.2026): beliebig viele Server, jeder mit eigenem Ordner,
-  eigenen Dateien, eigenem Server-Modul und eigenen Freigabelinks. **Einer ist aktiv**; GhulDrive zeigt nur ihn,
-  „Speicherort wechseln“ schaltet um, ohne etwas zu kopieren. Hinzufügen prüft den Server und lässt den aktiven
-  Speicherort, wie er ist. Entfernen fragt, ob auch die Dateien auf dem Server gelöscht werden sollen (sonst bleiben
-  sie verschlüsselt liegen); die Freigabelinks des Speicherorts enden in beiden Fällen. Das Mail-Archiv schreibt in
-  einen **fest eingestellten** Speicherort (Optionen → GhulMail, änderbar), auch wenn GhulDrive gerade einen anderen
-  zeigt. Ein älteres GhulDrive, das den Sync-Server mitnutzte, wird beim ersten Öffnen zu einem eigenen Speicherort
-  (Kopie der Zugangsdaten in die Drive-Datei, auf allen Geräten dieselbe Kennung). Ältere App-Versionen kennen nur
-  einen Speicherort und können die Liste beim Speichern verkürzen: alle Geräte sollten auf dieselbe Version
-  aktualisiert werden. Entfernen löscht auf Wunsch nur GhulDrives eigene Dateien und nie in einem Ordner, den ein
-  anderer Speicherort oder die Synchronisation nutzt; ist der Server nicht erreichbar, kann der Speicherort trotzdem
-  entfernt werden (die Links werden dann nur vergessen). Ein laufendes Hochladen endet in seinem Speicherort, auch
-  nach einem Wechsel.
-- **Ein Server ist ein Webspace** (abgestimmt am 15.11.2026, 0.7.0): sein SFTP- oder FTPS-Zugang und, nur für
-  Freigabelinks, optional das GhulSuite-Server-Modul, das die App über **denselben** Zugang installiert. Ein weiterer
-  Server ist völlig getrennt (eigener Zugang, eigenes Modul, eigene Links). Synchronisation und GhulDrive wählen
-  ihren Server frei; es kann derselbe sein.
-- **Zwei Ordner, zwei Aufgaben:** Der GhulSuite-Ordner (Tresore, GhulDrive, Freigaben) liegt außerhalb der Website,
-  das Modul (`ghulsuite.php`) im Ordner der Website. Die Ordnerauswahl markiert Website-Ordner und warnt darin; die
-  Installation des Moduls prüft, dass der GhulSuite-Ordner nicht aus dem Web abrufbar ist.
-- **Ein Server-Formular** für Assistent, GhulDrive und Optionen: SFTP/FTPS anmelden, **Ordner aus der Liste des
-  Servers wählen**, Verbindung testen. Modul: Ordner der Website wählen, die App legt `ghulsuite.php` hinein (mit dem
-  Pfad zum GhulSuite-Ordner) und prüft Adresse, ob PHP läuft, ob das Modul den GhulSuite-Ordner lesen und darin
-  schreiben kann (Testdatei) und dass der GhulSuite-Ordner selbst nicht aus dem Web abrufbar ist. Eine Checkliste
-  nennt den fehlenden Schritt.
-- **Erst prüfen, dann speichern** (Server und Mail-Konten, abgestimmt am 15.11.2026): ein Knopf „Verbindung prüfen“
-  prüft Schritt für Schritt und zeigt jeden Schritt mit Haken oder Grund (Server nicht erreichbar, Anmeldung
-  abgelehnt, Zertifikat bestätigen, Ordner nicht beschreibbar). Erst wenn alles geklappt hat, erscheint „Speichern“;
-  nichts wird automatisch gespeichert. Wer danach an der Verbindung etwas ändert, prüft erneut. Der Kern speichert
-  ein Mail-Konto nur mit Einstellungen, die gerade erfolgreich geprüft wurden, und einen Server nur nach erneuter
-  Anmeldung und Schreibprobe.
-- **Synchronisation ohne Warten der App** (16.11.2026): Ein Lauf hält die entsperrte Suite nur, während er die
-  Dateien des Servers zusammenführt und lokal speichert. Verbinden, Lesen vom Server und Hochladen laufen ohne sie, in
-  derselben Reihenfolge wie zuvor (die Einstellungsdatei zuletzt). So warten die anderen Funktionen der App nicht auf
-  einen langsamen Server; was währenddessen gespeichert wird, geht mit dem nächsten Lauf hoch. Es läuft immer nur ein
-  Lauf zugleich (auch beim Übernehmen eines anderswo geänderten Passworts oder Schutzes). Wird während des Hochladens
-  gesperrt, bricht der Lauf ab; „zuletzt synchronisiert“ gilt erst, wenn alles oben ist. Wurde der Server während des
-  Laufs gewechselt oder geändert, führt der Lauf nichts zusammen; der nächste nimmt den neuen.
+**Inhalt.** Genau diese Einträge, keine Ordner-Einträge, keine doppelten oder zusätzlichen; Größen werden beim Lesen
+gezählt, nicht aus dem ZIP-Verzeichnis übernommen:
 
-### 8.2.1 SFTP im Detail
+- `suite.ghlsuite` und alle Tresore (neutrale Dateinamen);
+- je Dokument in GhulDocs seine Inhaltsdatei `docs-<Tresor-ID>/<Kennung>.ghlblob`, schon verschlüsselt, unverändert
+  und unkomprimiert hineinkopiert;
+- die Kopfdatei `export.ghlexp` als erster Eintrag, ein eigener kleiner Container, verschlüsselt und versiegelt wie
+  die Tresore, mit: Suite-ID und `container_id` der Suite-Datei; je Datei `container_id`, Art, Dateiname und
+  SHA-256; **Stand-ID** (zufällig, neu bei jedem Speichern), **Vorgänger** (die Stand-IDs, aus denen dieser Stand
+  hervorging) und **Zähler**; **Schutz-Epoche** (wächst bei jeder Schutzänderung); Zeitpunkt und Gerätename. Die
+  Prüfsummen der Inhaltsdateien stehen im verschlüsselten Inhaltsverzeichnis ihres Tresors.
 
-**Anmeldung und Rechte**
-- **Ein SSH-Schlüssel je Gerät** (Ed25519), von der App erzeugt. Die App zeigt den öffentlichen Teil zum Kopieren an
-  (Text und QR-Code). Der private Schlüssel liegt verschlüsselt im Suite-Container.
-  Bei Geräteverlust wird nur dieser eine Schlüssel auf dem Server entfernt.
-- **Eigener Benutzer, eingesperrt:** Er darf nur SFTP (`ForceCommand internal-sftp`), hat keine Kommandozeile und keine
-  Weiterleitungen und sieht nur seinen Ordner (`ChrootDirectory`). Die App liefert dafür eine **Anleitung und ein kurzes
-  Einrichtungsskript** mit, das du selbst auf dem Server ausführst. Ergebnis: Selbst mit einem gestohlenen Geräteschlüssel
-  kommt man nur an verschlüsselte Blöcke, nicht an den Server.
-- **Server-Fingerabdruck** wird beim ersten Verbinden angezeigt (zum Abgleich mit der Ausgabe des Einrichtungsskripts) und
-  fest gespeichert. Ändert er sich, verbindet die App nicht und warnt.
-- Passwort-Anmeldung wird nur angeboten, um einmalig den Schlüssel einzurichten, und danach nicht gespeichert.
-- **Option „Hochsicher“:** Der SSH-Schlüssel liegt auf dem FIDO2-Key selbst (`ed25519-sk`, ab OpenSSH 8.2).
-  Jede Verbindung braucht dann eine Key-Berührung. Für automatische Abläufe im Hintergrund ungeeignet, daher nur optional.
+**Größe:** höchstens **1,25 GiB** (1 GB Dokumente und die übrigen Tresore) und 21 000 Einträge. Die Datei wird beim
+Speichern und Öffnen als **Datenstrom** geschrieben und gelesen, nie ganz im Arbeitsspeicher, mit Fortschritt.
+Geschätzte Dauer beim Speichern mit vollem GhulDocs (1 GB):
 
-**Stabilität**
-- Abgebrochene Uploads setzen an der letzten geschriebenen Stelle wieder an (SFTP erlaubt Schreiben ab einer Position).
-- Hochladen unter temporärem Namen, danach **atomares Umbenennen** (`posix-rename@openssh.com`), nie halbe Dateien.
-- Eine Verbindung für mehrere Übertragungen, Keep-Alive, automatischer Wiederaufbau bei Netzwechsel (WLAN ↔ Mobilfunk).
-- Implementierung im Rust-Kern (reine Rust-SSH-Bibliothek), damit Android und Windows identisch arbeiten.
+| Ziel | Dauer |
+|---|---|
+| Windows, SSD | etwa 2 bis 5 s |
+| Handy, interner Speicher | etwa 5 bis 12 s |
+| USB-Stick oder SD-Karte | etwa 40 s bis 1,5 min |
 
-**Ordnerstruktur auf dem Server** (nur Chiffretext, Namen ohne Aussagekraft)
-```
-<chroot>/ghulsuite/<suite-id>/
-  containers/   .ghlpss, .ghltotp, .ghlsuite (je mit Versionen)
-  drive/blocks/ verschlüsselte Blöcke mit Zufalls-IDs
-  drive/log/    Änderungsprotokolle je Gerät
-  tmp/          laufende Uploads
-```
+Mit typischen 100 bis 300 MB ist es ein Bruchteil davon.
 
-**Stand der Umsetzung (0.4.0-dev):**
-- Anmeldung mit einem Ed25519-Schlüssel **der Suite** (erzeugt beim ersten Bedarf, privat nur verschlüsselt in den
-  Suite-Einstellungen, synchronisiert) oder mit Passwort (dann ebenfalls nur verschlüsselt gespeichert). Ein neues
-  Gerät holt die Suite mit einem eigenen Geräteschlüssel („Von meinem Server holen“) und nutzt danach den der Suite.
-  Schlüssel je Gerät, `ed25519-sk` und das Einrichtungsskript folgen später.
-- Server-Fingerabdruck (SHA256, wie `ssh-keygen -lf`) wird beim ersten Verbinden gezeigt und festgehalten; bei
-  Änderung bricht die Verbindung ab (`HostKeyChanged`).
-- Atomares Schreiben: temporäre Datei, dann Umbenennen. Fortsetzen abgebrochener Uploads folgt.
-- Ordnerstruktur tatsächlich: `<Ordner>/suite/` (Tresore und `suite.ghlsuite`) und `<Ordner>/drive/`
-  (`index.ghldrv`, `blocks/<ab>/<id>`).
+**Speichern.**
 
-**Server zu Hause hinter dem Router:** über DynDNS oder ein VPN (z. B. WireGuard). Den SSH-Port nur mit
-Schlüsselanmeldung ins Internet stellen, idealerweise zusätzlich mit `fail2ban` o. Ä.
+1. Alle Container werden frisch versiegelt und mit der Kopfdatei und den Inhaltsdateien als Datenstrom geschrieben.
+   Unter Windows erst in eine Zwischendatei neben dem Ziel, die zurückgelesen und dann in einem Schritt über die alte
+   geschoben wird (kurzzeitig ist doppelter Platz nötig). Android gibt nur das gewählte Dokument frei: Dort wird
+   direkt hineingeschrieben und danach zurückgelesen; ein Abbruch kann eine halbe Datei hinterlassen, die beim
+   nächsten Speichern ersetzt wird. In beiden Fällen gilt die Arbeitskopie erst als gespeichert, wenn die
+   geschriebene Datei zurückgelesen und geprüft ist; bis dahin hält sie den ganzen Stand.
+2. Vorher vergleicht die App die Zieldatei mit der Arbeitskopie. Wurde sie seit dem Öffnen anderswo gespeichert
+   (andere Stand-ID), fragt sie: „Die Datei wurde inzwischen anderswo gespeichert. Überschreiben (die Änderungen von
+   dort gehen verloren) oder unter neuem Namen speichern?“ Liegt dort eine andere Suite oder gar keine GhulSuite-Datei,
+   fragt sie ebenfalls. Zusammengeführt wird nicht.
+3. Danach merkt sich das Gerät Stand-ID, Zähler und Schutz-Epoche. Eine Änderung, die während des Schreibens
+   entstand, bleibt als „nicht gespeichert“ markiert.
 
-### 8.3 Stabile Übertragung
+**Öffnen.**
 
-- **Blöcke** von 4 bis 16 MiB, jeder einzeln verschlüsselt und geprüft. Nach einem Abbruch geht es beim letzten Block weiter.
-- **Dauerhafte Warteschlange:** übersteht App-Abstürze, Neustarts und Funklöcher. Auf Android optional nur im WLAN oder beim Laden.
-- **Erst Blöcke, dann Eintrag:** Eine Datei erscheint erst, wenn alle Blöcke angekommen sind. Reste räumt die App automatisch auf.
-- Automatische Wiederholung mit wachsenden Pausen, parallele Übertragung, einstellbare Bandbreite.
-- Nach jedem Upload wird geprüft, ob der Block korrekt angekommen ist (Größe und Prüfsumme des Chiffretexts).
+1. Die App liest die Kopfdatei und fragt nach Passwort und Key bzw. Schlüsseldatei.
+2. **Alles wird geprüft, bevor etwas ersetzt wird:** das Schreibsiegel jeder Datei und der Kopfdatei; jede Datei steht
+   in der Liste mit Art, `container_id` und Hash; die Liste stimmt genau mit den Tresoren der Suite-Datei überein,
+   nichts fehlt, nichts ist zu viel; alles gehört zu derselben Suite. Jede Inhaltsdatei steht im Inhaltsverzeichnis
+   ihres Tresors, hat die erwartete Länge und Prüfsumme, keine fehlt. Inhaltsdateien werden dabei in einen
+   Zwischenordner geschrieben und erst nach dem Bestätigen an ihren Platz gebracht. Schlägt etwas fehl, wird nichts
+   geladen, und die App sagt, was nicht stimmt.
+3. **Rückfragen** (alle auf einmal, in einem Dialog, vor dem Ersetzen):
+   - **Andere Suite** als die auf dem Gerät: „Diese Datei enthält eine andere Suite als die auf diesem Gerät. Sie
+     ersetzt alles hier.“
+   - **Älterer Stand** (kleinerer Zähler als hier zuletzt gesehen): „Diese Datei ist älter als dein Stand hier.“
+   - **Abzweig** (von einem anderen Stand aus weiterbearbeitet als dem hier bekannten): „Diese Datei wurde von einem
+     anderen Stand aus weiterbearbeitet als deinem hier.“
+   - **Nicht gespeicherte Änderungen** auf dem Gerät: Sie gehen verloren; die App bietet an, vorher zu speichern.
+4. **Älterer Schutz** (kleinere Schutz-Epoche als hier zuletzt gesehen): **wird nie geöffnet**, auch nicht nach
+   Rückfrage und nicht mit dem Wiederherstellungscode. Die Datei ist durch eine neuere mit geändertem Schutz ersetzt.
+5. Ersetzt wird in einem Schritt; bricht es mittendrin ab, bleibt der bisherige Stand.
+6. **Gerätedaten des alten Stands werden gelöscht:** Schnell-Entsperren (Dateien und Zeitstempel, sie enthalten den
+   alten Passwort-Schlüssel und `S`).
+7. **Mit dem Wiederherstellungscode** (Passwort vergessen): Die Siegel lassen sich dann nicht prüfen, nur lesen. Das ist
+   die bewusste Notfall-Ausnahme; die App weist darauf hin, prüft Stand und Schutz-Epoche trotzdem, setzt ein neues
+   Passwort und versiegelt alles neu.
 
-### 8.4 Zusammenführen ohne Sperren
+Was ein Gerät zuletzt gesehen hat (höchster Zähler, Stand-ID, Schutz-Epoche), steht je Suite in seinem eigenen Ordner,
+nicht in der Arbeitskopie: Eine ältere Datei, ein Abzweig oder ein älterer Schutz fallen auch auf, nachdem die
+Arbeitskopie ersetzt wurde.
 
-Einfache Speicher wie S3 oder WebDAV können nicht zuverlässig sperren. Deshalb:
+**„Nicht gespeicherte Änderungen“.** Gibt es Änderungen seit dem letzten Speichern, zeigt die App oben einen Hinweis
+(„Nicht gespeicherte Änderungen. Tippen zum Speichern.“) und auf der Seite Suite-Datei den Stand. Ohne Änderungen:
+„Alles ist in der Suite-Datei gespeichert.“
 
-- **Tresore** (klein): Die App lädt die aktuelle Fassung, führt Eintrag für Eintrag zusammen und schreibt eine neue Version.
-  Beim Server-Modul geschieht das mit Versionsprüfung (`ETag`), bei den anderen Adaptern mit Gerätekennung und anschließender Kontrolle.
-- **Drive-Index** (groß, häufige Änderungen): Jedes Gerät schreibt seine Änderungen in **eigene, verschlüsselte Protokolldateien**.
-  So überschreibt nie ein Gerät die Datei eines anderen. In Abständen fasst ein Gerät alles zu einem Schnappschuss zusammen.
-- Echte Konflikte, derselbe Eintrag wurde auf zwei Geräten unterschiedlich geändert, zeigt die App nebeneinander zur Auswahl.
+**Schutzänderungen** wirken in der Arbeitskopie und reisen mit dem nächsten Speichern mit; sie erneuern die inneren
+Schlüssel (Abschnitt 6.2) und erhöhen die Schutz-Epoche. Keys und Schlüsseldateien funktionieren auf jedem Gerät;
+Schnell-Entsperren bleibt je Gerät.
 
-**Stand der Umsetzung (0.4.0-dev):** Tresore werden Eintrag für Eintrag zusammengeführt (höhere Revision gewinnt, bei
-Gleichstand die spätere Änderung; Löschungen als Grabsteine). Gelöschte Tresore werden auf den anderen Geräten gelöscht.
-Den Schutz (Passwort, Keys, Schlüsseldateien, Code) übernimmt die zuletzt geänderte Seite; ein neues Passwort von einem
-anderen Gerät muss einmal eingegeben werden. Einstellungen werden zusammengeführt (Listen nach ID vereinigt), **Grenze:**
-ein entfernter Server oder ein entferntes Mail-Konto kann durch ein anderes Gerät wieder auftauchen; Grabsteine dafür
-folgen. Der Drive-Index wird vor jeder Änderung neu geladen (kein eigenes Protokoll je Gerät); bei gleichzeitiger Änderung
-desselben Eintrags gewinnt die letzte. Eine Konfliktansicht folgt.
+**Dateizuordnung:** Unter Android öffnet ein Tippen auf eine `.ghlzip` im Dateimanager GhulSuite, unter Windows ein
+Doppelklick (MSI); läuft GhulSuite schon, übernimmt das laufende Programm die Datei. Das ist dasselbe wie
+„Suite-Datei öffnen“. Format: [`FORMAT.md`](FORMAT.md), Abschnitt 10.
 
-### 8.5 Server-Modul (PHP, nur für Freigabelinks)
+### 8.2 Alte Kopien nach einer Schutzänderung
 
-Läuft auf **jedem PHP-Webhosting ab 8.1 ohne Datenbank**, auf demselben Server wie GhulDrive (seit 0.7.0).
-- **Kein Speicher, kein Geheimnis, kein Schreiben übers Web.** Die App schreibt Freigaben über SFTP/FTPS als
-  Beschreibung in den GhulSuite-Ordner; das Modul liest sie und gibt genau die verschlüsselten Blöcke dieser Freigabe
-  heraus. Es schreibt nur Abrufzähler und Tickets (`shares/<id>.state`).
-- **Setzt Ablauf, Einmal-Links und Abrufzähler selbst durch**, unter Dateisperre, auch wenn kein Gerät läuft.
-- Blöcke nur mit einem Ticket, das beim Öffnen der Freigabe ausgegeben wird (24 Stunden, gehasht gespeichert); so
-  läuft ein Download Block für Block (kurze Anfragen, kein Zeitlimit des Hostings) und lässt sich fortsetzen.
-- Liegt der GhulSuite-Ordner innerhalb der Website, sperrt eine `.htaccess` ihn für den Webserver. Die App prüft beim
-  Installieren, dass er wirklich nicht abrufbar ist (nicht jeder Webserver beachtet `.htaccess`); sonst wird das
-  Modul nicht eingerichtet, bis der Ordner außerhalb der Website liegt.
-- Voraussetzung: PHP darf den GhulSuite-Ordner lesen und in `shares/` schreiben (bei manchen Hostern verhindert
-  `open_basedir` das). Die App prüft beides beim Installieren und sagt es klar; ohne Modul gibt es keine Freigabelinks.
-- Viele gleichzeitige Öffnungen verdrängen keine laufenden Downloads: ab 1000 gültigen Tickets heißt es „später
-  erneut versuchen“. Ein beschädigter Zähler wird abgewiesen, nie auf null gesetzt; geschrieben wird er atomar
-  (Zwischendatei, dann umbenennen).
+Nach einer **Schutzänderung** (neues Passwort, neuer Wiederherstellungscode, Key oder Schlüsseldatei entfernt) fordert
+die App auf, die Suite-Datei jetzt zu speichern, und sagt deutlich: **Alte Kopien der Suite-Datei löschen.** Ein Gerät,
+das den neuen Stand kennt, öffnet keine Suite-Datei mit älterem Schutz mehr.
+
+**Was technisch nicht geht:** Eine Kopie, die schon irgendwo liegt (Stick, Cloud, anderes Gerät), lässt sich ohne
+Server nicht nachträglich unbrauchbar machen. Wer das alte Passwort **und** den alten zweiten Faktor hat, öffnet sie
+mit einer frischen Installation (wie bei VeraCrypt) und sieht den Stand von damals, einschließlich der Dokumente von
+damals. Was danach gespeichert wurde, sieht er nicht.
+
+**Sicher unbrauchbar** werden alte Kopien, wenn der zweite Faktor getauscht wird: neuen Security Key oder neue
+Schlüsseldatei hinzufügen, den alten entfernen und die alte Schlüsseldatei vernichten bzw. den alten Key
+zurücksetzen. Ohne den alten Faktor öffnet keine alte Kopie mehr, auch nicht mit dem alten Passwort. Ein altes
+Notfallblatt öffnet eine alte Kopie allein; deshalb gehört es nach einem neuen Code vernichtet.
+
+### 8.3 Einzelne Tresore
+
+Jede Tresordatei (`.ghlpss`, `.ghltotp`, `.ghlcal` …) trägt alle Slots und den Wiederherstellungscode in sich und
+lässt sich deshalb auch ohne die übrige Suite öffnen. Startbildschirm → „Einzelnen Tresor öffnen“ bzw. eine
+Tresordatei mit der App öffnen bietet:
+
+- **Nur diesen Tresor öffnen:** Die App öffnet ihn mit seinem eigenen Passwort und Key bzw. Schlüsseldatei in einer
+  eigenen, leeren Umgebung; die eigene Suite bleibt gesperrt. Sein Schutz bleibt, wie er ist; jede Änderung wird direkt
+  in die Datei zurückgeschrieben, aus der er kam. Wurde die Datei inzwischen anderswo geändert, fragt die App, ob sie
+  überschreiben oder als neue Datei speichern soll. Schutz und weitere Tresore gibt es in diesem Modus nicht.
+- **Zu meiner Suite hinzufügen:** nach dem Entsperren der eigenen Suite. Hat der Tresor deren Schutz, gehört er
+  sofort dazu; sonst wird er einmal mit seinem bisherigen Passwort und Key bzw. Schlüsseldatei geöffnet und auf
+  Passwort, Keys und Wiederherstellungscode der Suite umgestellt (mit neuem Inhalts-Schlüssel, damit die alte Datei
+  nichts öffnet, was danach gespeichert wird).
+- **Neue Suite damit anlegen** (wenn auf dem Gerät noch keine ist): Um den Tresor wird eine neue Suite gebaut, nur
+  dieser Bereich wird eingeschaltet; hat er noch keinen Wiederherstellungscode, entsteht ein neuer.
+
+**Ein GhulDocs-Tresor** reist nie ohne seine Dokumente: Er wird für sich als `.ghlzip` gespeichert, mit seiner
+Tresordatei als erstem Eintrag und genau seinen Inhaltsdateien, ohne Kopfdatei und Suite-Container. Geöffnet,
+geprüft, hinzugefügt und zurückgeschrieben wird er wie oben, als Datenstrom.
+
+**Als Tresor weitergeben:** Ausgewählte Einträge aus GhulPass oder GhulAuth lassen sich als **eigener Tresor**
+weitergeben, z. B. an eine Person, die selbst GhulSuite nutzt; ebenso ein GhulDocs-Tresor (auch nur ausgewählte
+Ordner und Dateien) als `.ghlzip`. Der neue Tresor bekommt eine eigene Suite-ID, ein eigenes Passwort, als zweiten
+Faktor eine **neue Schlüsseldatei** oder einen **Security Key** (zwei Berührungen) und einen eigenen
+Wiederherstellungscode (wird nur einmal angezeigt). Nichts vom Schutz der eigenen Suite geht mit; Einträge bekommen
+neue Kennungen, Passwort-Verläufe bleiben zurück. Die Inhaltsdateien von GhulDocs werden unverändert kopiert, ihre
+Schlüssel stehen im neuen Inhaltsverzeichnis. Zur Bestätigung fragt die App das eigene Master-Passwort ab, damit
+niemand an einem entsperrten Gerät Einträge unter eigenem Passwort mitnimmt. Tresordatei, Schlüsseldatei und
+Passwort gibt man getrennt weiter.
+
+### 8.4 Verbindungen nach draußen
+
+GhulSuite braucht kein Netz. Von sich aus baut die App nur zwei Verbindungen auf, beide über TLS mit
+Zertifikatsprüfung und beide abschaltbar:
+
+| Verbindung | Wann | Was hinausgeht |
+|---|---|---|
+| **Update-Prüfung** (`core/ghul-core/src/update.rs`) | höchstens einmal am Tag nach dem Entsperren und auf Wunsch; Optionen → Über → Updates | Anfragen an `api.github.com`, `github.com` und die Download-Server von GitHub; IP-Adresse und der Programmname „GhulSuite“, keine Kennung (Abschnitt 13) |
+| **Leak-Prüfung** von GhulPass | nur wenn im Sicherheitscheck eingeschaltet (standardmäßig aus), dann beim Öffnen des Sicherheitschecks | je Passwort die ersten 5 Zeichen seines SHA-1-Werts an `api.pwnedpasswords.com/range/…` (k-Anonymität), nie das Passwort; ob es betroffen ist, rechnet die App selbst aus |
+
+- **Fehlerbericht:** Die App zeigt ihn nur an (Version, Gerät, letzter Absturz, keine Tresor-Inhalte), zum Kopieren,
+  Speichern oder Teilen über eine andere App. Hochgeladen wird nichts; `report.php` auf der Website ist entfernt.
+- **Android:** Die Berechtigung `INTERNET` bleibt nur für diese beiden Verbindungen. Berechtigungen, die nur Mail oder
+  Server brauchten (Netzwerkstatus, Dauerdienst für Mail, Akku-Ausnahme), sind entfernt.
+- Keine Telemetrie, keine Absturzberichte im Hintergrund, keine Werbung.
 
 ---
 
 ## 9. Die Bereiche
 
-**Ein Bereich, eine Datei** (abgestimmt am 13.11.2026, #24): GhulPass `.ghlpss`, GhulAuth `.ghltotp`, GhulDrive
-`.ghldrv`, GhulMail `.ghlmail`, GhulCal `.ghlcal`. Jede Datei trägt die Einstellungen ihres Bereichs, die auf allen
-Geräten gelten; was nur dieses Gerät betrifft (Sperren, Schnell-Entsperren, Thema, Benachrichtigungen,
-Datenleck-Prüfung …), bleibt auf dem Gerät. Die Bereichsseiten der Optionen zeigen beides getrennt.
-- **Bereich entfernen** löscht die Datei auf allen Geräten (mit Rückfrage). **Auf diesem Gerät ausblenden** ändert nur
-  die Anzeige. Ein später eingeschalteter Bereich fragt sofort nach seiner Einrichtung; nichts wird still angelegt.
-- **GhulDrive und GhulMail ohne Zugang** zeigen auf ihrem Hauptbildschirm „Noch nicht eingerichtet“ mit der
-  Einrichtung direkt dort (Drive: Speicherwahl; Mail: vollständiges Kontoformular mit Benutzername, IMAP, SMTP).
+**Ein Bereich, eigene Tresore** (abgestimmt am 13.11.2026, #24): GhulPass `.ghlpss`, GhulAuth `.ghltotp`, GhulDocs
+`.ghldoc` (mit seinen Inhaltsdateien), GhulCal `.ghlcal`. Je Bereich kann es mehrere Tresore geben. Jede Datei trägt
+die Einstellungen ihres Bereichs, die auf allen Geräten gelten; was nur dieses Gerät betrifft (Sperren,
+Schnell-Entsperren, Thema, Benachrichtigungen, Update- und Datenleck-Prüfung …), bleibt auf dem Gerät. Die
+Bereichsseiten der Optionen zeigen beides getrennt.
+- **Bereich entfernen** löscht seine Tresore aus der Suite (mit Rückfrage); andere Geräte bekommen das mit der nächsten
+  gespeicherten Suite-Datei. **Auf diesem Gerät ausblenden** ändert nur die Anzeige. Ein später eingeschalteter Bereich fragt sofort nach seiner Einrichtung; nichts wird still angelegt.
 
-**Einrichtungsassistent** in acht Schritten: Master-Passwort, zweiter Faktor, Speicherort, Synchronisation (optional),
-Bereiche (mit Speicherwahl für GhulDrive), Sperren, Entsperren (Schnell entsperren = Fingerabdruck oder App-PIN; gültig
-4 Std., 24 Std., 3 Tage, 7 Tage oder immer, nach Neustart, Sofortsperre oder Passwortwechsel trotzdem wieder Passwort
-und Key), Wiederherstellungscode. Die Suite entsteht nach Schritt 3; der Code gilt erst als bestätigt, wenn ein Block
-richtig abgetippt wurde. **Absturzsicher:** Wurde der Code nie bestätigt, verlangt die App nach dem Entsperren einen
-neuen (ohne „später“). Liegen Tresordateien ohne Suite-Datei vor, erkennt die App die unterbrochene Einrichtung, und
-das Entsperren vervollständigt die Suite. Auf dem Security Key ist nichts aufzuräumen: GhulSuite legt nicht-residente
-Zugänge an (`rk = false`), der Key speichert nichts.
+**Einrichtungsassistent** in sieben Schritten: Master-Passwort, zweiter Faktor, Anlegen, Bereiche, Sperren, Entsperren
+(Schnell entsperren = Fingerabdruck oder App-PIN; gültig 4 Std., 24 Std., 3 Tage, 7 Tage oder immer, nach Neustart,
+Sofortsperre oder Passwortwechsel trotzdem wieder Passwort und Key), Wiederherstellungscode. Die Suite entsteht nach
+Schritt 3 im App-Speicher; als Datei zum Mitnehmen speichert man sie später (Optionen → Suite-Datei); der Code gilt
+erst als bestätigt, wenn ein Block richtig abgetippt wurde. **Absturzsicher:** Wurde der Code nie bestätigt, verlangt
+die App nach dem Entsperren einen neuen (ohne „später“). Liegen Tresordateien ohne Suite-Datei vor, erkennt die App
+die unterbrochene Einrichtung, und das Entsperren vervollständigt die Suite. Auf dem Security Key ist nichts
+aufzuräumen: GhulSuite legt nicht-residente Zugänge an (`rk = false`), der Key speichert nichts.
 
 ### 9.1 GhulPass
 
@@ -503,7 +530,8 @@ Zugänge an (`rk = false`), der Key speichert nichts.
 - Import (umgesetzt): Proton Pass (ZIP/JSON/CSV), Bitwarden (JSON/CSV), KeePass/KeePassXC- und andere CSV-Dateien;
   Duplikate werden übersprungen. `.kdbx` direkt folgt später. Export: `.ghlpss` (verschlüsselt) und unverschlüsselt
   als CSV nur mit Master-Passwort und deutlicher Warnung; `.kdbx` als Notausgang später.
-- Optionaler Leak-Check (Have I Been Pwned, k-Anonymität), standardmäßig aus.
+- Optionaler Leak-Check (Have I Been Pwned, k-Anonymität), standardmäßig aus, im Sicherheitscheck abschaltbar; eine
+  der beiden Verbindungen nach draußen (Abschnitt 8.4).
 
 ### 9.2 GhulAuth
 
@@ -513,143 +541,103 @@ Zugänge an (`rk = false`), der Key speichert nichts.
 - Optional: Codes erst nach Antippen zeigen. Warnung, wenn die Geräteuhr abweicht.
 - Vollständig offline.
 
-### 9.3 GhulMail
+### 9.3 GhulDocs (abgestimmt und umgesetzt am 17. bis 19.11.2026)
 
-- **Standard-IMAP/SMTP** über TLS, mehrere Konten, gemeinsamer Posteingang.
-- **Einrichtung:** Server werden über DNS-Einträge (RFC 6186) und die Autoconfig-Adresse des eigenen Anbieters gefunden.
-  **Keine** Abfrage bei zentralen Verzeichnissen Dritter, die verraten würden, welchen Anbieter du nutzt.
-- Zugangsdaten und Kontoeinstellungen nur im Suite-Container. Der Mail-Zwischenspeicher liegt verschlüsselt auf dem Gerät.
-- **Benachrichtigungen auch bei gesperrter App** (Entscheidung vom 11.11.2026). Damit der Tresor dafür nicht offen
-  bleiben muss, bekommt jedes Mail-Konto einen **eigenen Abruf-Zugang auf dem Gerät**: Die IMAP-Zugangsdaten werden
-  zusätzlich mit einem gerätegebundenen Android-Keystore-Schlüssel gespeichert (ohne Biometrie, im Sicherheitschip
-  **StrongBox**, wo vorhanden, sonst in der geschützten Umgebung des Keystores). Er ist auch bei gesperrtem Gerät
-  nutzbar, sonst kämen bei gesperrtem Handy keine Benachrichtigungen. Der Hintergrunddienst kann damit nur **prüfen,
-  ob neue Mails da sind**: Inhalte und alle anderen Geheimnisse bleiben im gesperrten Tresor.
-  - Inhalt der Benachrichtigung einstellbar: neutral („Neue Nachricht“, Standard), Absender, oder Absender und Betreff.
-  - Standardmäßig an, pro Konto abschaltbar. Die Sofortsperre lässt die Abruf-Zugänge bestehen, damit Mails weiter
-    ankommen; wahlweise löscht sie sie mit („Sofortsperre stoppt auch Mail-Benachrichtigungen“, bis zum nächsten Entsperren).
-  - Wo der Anbieter es erlaubt, sollte dafür ein **App-Passwort** genutzt werden, das sich einzeln widerrufen lässt.
-  - **Ehrlich:** Wer das entsperrte Handy samt Root-Zugriff hat, kommt an diesen Abruf-Zugang, also an das Postfach,
-    nicht an Passwörter, 2FA oder Drive.
-- **Darstellung:** standardmäßig nativ und vereinfacht, ohne Browser-Engine. Externe Bilder (Tracking) erst nach Klick.
-  Original-HTML nur auf Wunsch, abgeschottet und ohne Skripte.
-- **OpenPGP** (rPGP) mit Autocrypt und WKD: läuft automatisch, ein Schloss-Symbol zeigt verschlüsselte Mails.
-- Import aus dem Proton-Mail-Export (EML/MBOX).
-- **Bewusst nicht:** Kalender, Kontakte-Synchronisation (CardDAV), OAuth-Anbieter. Adressvorschläge kommen aus bisherigen Mails.
+Ein verschlüsselter Speicher für wichtige Scans und Dokumente (Ausweis, Verträge, Zeugnisse, Steuer). Ersetzt
+GhulDrive, das auf einem eigenen Server lag. Format: [`FORMAT.md`](FORMAT.md), Abschnitt 11.
 
-**Stand der Umsetzung (0.4.0-dev):**
-- IMAP (TLS oder STARTTLS, nie unverschlüsselt) und SMTP (TLS oder STARTTLS, AUTH PLAIN), mehrere Konten.
-  Server-Vorschläge aus einer eingebauten Liste bekannter Anbieter, sonst `imap.`/`smtp.` + Domain, ohne Anfrage bei
-  Dritten. DNS-Suche (RFC 6186) und Autoconfig folgen.
-- Eigene Server mit selbst signiertem Zertifikat: Fingerabdruck (SHA-256 des Zertifikats) wird angezeigt und nach
-  Bestätigung festgehalten.
-- Lesen nur als Text (HTML wird in Text umgewandelt), keine Bilder oder Inhalte aus dem Internet. Anhänge speichern und
-  senden, Antworten (mit `In-Reply-To`/`References`), Allen antworten, Weiterleiten, Markieren, Ungelesen, Verschieben,
-  Löschen über den Papierkorb, Suche, Kopie gesendeter Mails im Ordner „Gesendet“.
-- Kein Zwischenspeicher auf dem Gerät (alles wird bei Bedarf geladen).
-- Benachrichtigungen: siehe oben (Abruf-Zugang je Konto, AES-GCM mit einem Keystore-Schlüssel, StrongBox wo
-  vorhanden). Sofort per IMAP IDLE, zusätzlich alle 15 Minuten (WorkManager). Inhalt wählbar (neutral, Absender,
-  Absender und Betreff); auf dem Sperrbildschirm immer die neutrale Fassung.
+**Aufbau.** Ein GhulDocs-Tresor besteht aus
 
-**Ehrliche Grenzen:**
-- Mails von außen liegen beim Anbieter im Klartext, sofern nicht mit PGP verschlüsselt.
-- Wer dein Netzwerk beobachtet, sieht, welchen Mailserver du ansprichst (DNS und TLS-Verbindungsaufbau).
-  Abhilfe: privates DNS bzw. DNS-over-HTTPS, VPN.
-- Manche Mailserver schreiben beim Versand deine IP-Adresse in den Mail-Header.
+- der Tresordatei `<id>.ghldoc`: ein Container wie bei GhulPass (gleiche Schlüssel, gleiches Schreibsiegel) mit dem
+  **Inhaltsverzeichnis**: Ordner, Dateinamen, Größen, Datum, Typ, Favoriten, Papierkorb und je Datei ihr eigener
+  Schlüssel und ihre Prüfsumme;
+- je Datei einer **Inhaltsdatei** `docs-<Tresor-ID>/<zufällige Kennung>.ghlblob` mit dem verschlüsselten Inhalt. Sie
+  wird einmal geschrieben und nie geändert.
 
-**Auswahl und Aufräumen (abgestimmt am 14.11.2026):**
-- Mehrfachauswahl per langem Drücken, „Alle“ wählt die geladenen Mails. Sind alle geladen ausgewählt, erscheint
-  „Alle N Mails in diesem Ordner auswählen“; die Aktionen (gelesen, markieren, archivieren, verschieben, löschen)
-  wirken dann auf den ganzen Ordner. Löschen heißt wie überall: in den Papierkorb.
-- **„Ordner leeren“** nur in Papierkorb und Spam: Rückfrage mit Anzahl, danach beim Anbieter endgültig gelöscht.
+Mehrere GhulDocs-Tresore sind möglich, z. B. „Wichtige Dokumente“ und „Steuer 2025“. Ein einzelner Tresor lässt sich
+wie jeder andere für sich öffnen, speichern und weitergeben, immer mit seinen Dokumenten (Abschnitt 8.3).
 
-#### 9.3.1 Mails in GhulDrive archivieren (abgestimmt am 15.11.2026, umgesetzt in 0.7.0-dev)
+**Verschlüsselung.**
+- Das Inhaltsverzeichnis ist durch den Container geschützt: Argon2id mit Passwort und zweitem Faktor, Schreibsiegel.
+- Jede Datei hat einen eigenen zufälligen Schlüssel (32 Byte), der nur im Inhaltsverzeichnis steht.
+- Der Inhalt wird in Abschnitten zu 4 MiB mit XChaCha20-Poly1305 verschlüsselt. Jeder Abschnitt ist an die Kennung
+  der Datei, seine Nummer und „letzter Abschnitt ja/nein“ gebunden: Abschnitte lassen sich weder vertauschen noch
+  weglassen noch an eine andere Datei hängen, ohne dass es auffällt.
+- Dateinamen, Ordner und Typen stehen nur im verschlüsselten Inhaltsverzeichnis. Von außen sichtbar sind nur die
+  Anzahl der Inhaltsdateien und ihre ungefähre Größe (aufgerundet auf 64 KiB).
+- Eine Schutzänderung gibt dem Inhaltsverzeichnis einen neuen Container-Schlüssel; die Inhaltsdateien bleiben, ihre
+  Schlüssel stehen nur im neu verschlüsselten Verzeichnis.
 
-Ersetzt das eigene verschlüsselte Archiv aus 0.6.0 (eigenes Format, Fristen, Abgleich, Löschen beim Anbieter nach
-Gegenlesen, Geräte-Kopien), das für Nutzer und Technik zu verwickelt war.
+**Funktionen.**
+- Dateien hinzufügen: aus dem Dateisystem, mehrere auf einmal, als Aufgabe im Hintergrund mit Fortschritt und
+  „Abbrechen“; auf Android auch per „Teilen“ aus anderen Apps („In GhulDocs speichern“) und per Scan (9.3.1). Der
+  Inhalt wird beim Einlesen verschlüsselt; Klartext erreicht den Datenträger nie.
+- Ordner anlegen, umbenennen, verschieben; Mehrfachauswahl; Suche über Namen; Favoriten; Papierkorb (Wiederherstellen,
+  endgültig löschen, leeren).
+- **Ansehen in der App** ohne Klartext auf dem Datenträger: Bilder, PDF und Text, entschlüsselt in den
+  Arbeitsspeicher und beim Verlassen oder Sperren überschrieben. PDF unter Android mit dem `PdfRenderer` des Systems
+  über eine anonyme Datei im Arbeitsspeicher (`memfd`, ab **Android 11**; darunter „Mit App öffnen“ oder
+  Exportieren), unter Windows mit **Apache PDFBox** nur im Arbeitsspeicher. Größere Dateien und andere Typen: mit
+  einer App öffnen oder exportieren.
+- **Exportieren** (entschlüsselt an einen gewählten Ort, mit Rückfrage) und **Mit App öffnen** (befristete Kopie,
+  gelöscht, sobald GhulSuite sperrt, wie bisher bei Anhängen).
+- **Belegung** (z. B. „412 MB von 1 GB“) und **Dokumente prüfen** (jedes Dokument gegen seine Prüfsumme lesen, ohne
+  etwas zu ändern) unter Optionen → GhulDocs.
 
-- **Archivieren heißt kopieren:** Mails werden als `.eml` (unverändert, wie beim Anbieter) in GhulDrive abgelegt,
-  unter `Mail-Archiv/<Konto>/<Jahr>/`. Beim Anbieter ändert sich nichts, auch „gelesen“ nicht. Aufräumen ist eine
-  eigene, sichtbare Entscheidung: archivieren, dann selbst löschen (mit der üblichen Rückfrage).
-- **Kein Gegenlesen:** Blöcke werden vollständig unter einem Ersatznamen geschrieben und erst dann umbenannt; die
-  Verschlüsselung erkennt jede spätere Veränderung. Archivieren dauert so lange wie einmal laden und hochladen.
-- **Auswahl, ganzer Ordner oder „älter als …“**, als Vorgang im Hintergrund mit Fortschritt; am Ende eine Meldung
-  wie „40 Mails archiviert, 3 waren schon im Archiv“.
-- **Doppeltes wird erkannt** am Code aus der Message-ID im Dateinamen; eine umbenannte Datei ergibt höchstens eine
-  zweite Kopie, verloren geht nichts.
-- **Automatisch** (Mail-Optionen, aus/30/90/365 Tage): nach dem Entsperren, höchstens einmal am Tag, Posteingang und
-  Gesendet aller Konten. Die App merkt sich je Ordner, bis zu welcher Mail sie gekommen ist, und lädt nicht alles neu.
-- **Der Ordner gehört dem Nutzer:** eigene Dateien und Unterordner darin stören nicht; GhulMail zeigt im Eintrag
-  „Archiv“ nur `.eml`-Dateien als Mails. Gefunden wird der Ordner über seine Kennung, Umbenennen und Verschieben
-  ändern nichts. Format: [`FORMAT.md`, Abschnitt 12](FORMAT.md#12-mail-archiv-seit-070-in-ghuldrive).
-- **Voraussetzung:** GhulDrive ist eingerichtet; sonst sagt die App, dass das Archiv GhulDrive braucht.
+**Grenzen.**
+- Fest **1 GB Inhalt je Suite** (alle GhulDocs-Tresore zusammen, mit dem Papierkorb, bis er geleert wird), eine
+  einzelne Datei ebenfalls bis 1 GB. Darüber lehnt die App das Hinzufügen mit einer klaren Meldung ab, bevor etwas
+  geschrieben wird.
+- Zusätzlich (bei der Umsetzung ergänzt): höchstens **20 000 Dokumente** je Suite und höchstens 1 100 000 000 Byte
+  Inhaltsdateien auf dem Datenträger (Inhalt plus Aufrundung auf 64 KiB), damit ein volles GhulDocs mit den übrigen
+  Tresoren immer in die größte Suite-Datei (1,25 GiB) passt.
+- Keine Fassungen: Eine Datei hat einen Inhalt.
 
-### 9.4 GhulDrive
+#### 9.3.1 Dokumente scannen (nur Android)
 
-- Jede Datei hat einen eigenen Schlüssel. Sie wird in Blöcke zerlegt und im STREAM-Verfahren verschlüsselt
-  (Reihenfolge und Vollständigkeit sind gesichert).
-- Blöcke haben **zufällige IDs**, keine Inhalts-Hashes. Sonst ließe sich prüfen, ob du eine bestimmte Datei besitzt.
-- Dateinamen, Ordner und Vorschaubilder sind verschlüsselt. Vorschaubilder werden auf dem Gerät erzeugt.
-- Der Speicher sieht nur Anzahl, ungefähre Größe und Zeitpunkte der Blöcke.
-- **Funktionen:** Ordner, Upload und Download (fortsetzbar), Vorschau, Suche, Papierkorb, Versionen, Videos ansehen ohne vollständigen Download.
-- **Android:** automatische Foto- und Video-Sicherung (ein Schalter), „In GhulDrive speichern“ im Teilen-Menü,
-  GhulDrive erscheint im Dateiauswahl-Dialog jeder App, Offline-Dateien.
-- **Windows:** Drive-Ansicht in der App mit Drag & Drop. Ordner-Synchronisation kommt in einer späteren Ausbaustufe (siehe Abschnitt 14).
+- **Fotografieren** mit der Kamera in der App (eigener Bildschirm mit CameraX, nicht die Kamera-App des Systems, keine
+  Google-Dienste), auch mehrere Seiten nacheinander, mit Licht.
+- **Zuschneiden** je Seite mit einem Rahmen, dessen vier Ecken man mit dem Finger verschiebt (mit Lupe). Die App
+  schlägt die Ecken des Blatts vor (Erkennung in eigenem Kotlin-Code: Schwellwerte und Kantenlinien, ohne
+  Bibliothek) und entzerrt das Bild danach: Ein schräg fotografiertes Blatt wird gerade. „Ganzes Foto“ und „Neu
+  aufnehmen“ sind jederzeit möglich.
+- **Drehen** und optional **„Dokument“**: Graustufen und mehr Kontrast für Text, für eine Seite oder alle.
+- **Als PDF speichern:** alle Seiten in einer PDF-Datei (ein eigener, kleiner PDF-Schreiber bettet die JPEG-Seiten
+  unverändert ein), Name vorgeschlagen (Datum), änderbar, in den offenen Ordner. Gespeichert wird über das normale
+  Hinzufügen, also mit Prüfung der Grenze vorher.
+- **Kein Klartext auf dem Datenträger:** Fotos, Seiten und die PDF bleiben im Arbeitsspeicher, bis die PDF
+  verschlüsselt im Tresor liegt. Beim Speichern, Verlassen und Sperren (auch Auto- und Sofortsperre) werden sie
+  überschrieben. Reicht der Arbeitsspeicher für keine weitere Seite, sagt die App das.
+- Unter Windows gibt es keinen Scan; dort werden Dateien hinzugefügt. Im Emulator gibt es keinen Ablauf mit der
+  Kamera; geprüft wird das Scannen mit gezeichneten Fotos in den Desktop-Tests und von Hand (Testplan, Abschnitt 38).
 
-**Teilen (abgestimmt am 15.11.2026, umgesetzt in 0.7.0-dev; ersetzt das Teilen per Kopie aus 0.5.0):**
-- *An eine andere App:* immer möglich, entschlüsselt auf dem Gerät, über das Android-Teilen-Menü.
-- *Freigabelink:* **nur über das Server-Modul** auf dem Server, auf dem GhulDrive liegt. Ohne PHP (z. B. ein NAS nur mit
-  SFTP) gibt es keine Links; „An App senden“ und „Als Mail-Anhang“ gehen weiter. Fehlt das Modul, bietet die App beim
-  Teilen direkt die Installation an.
-- *Ohne Kopie:* Jeder Inhalt einer Datei hat seinen eigenen Schlüssel (siehe Stand der Umsetzung). Ein Link enthält
-  ein kleines Paket mit Namen, Größen und diesen Dateischlüsseln, verschlüsselt mit einem neuen, zufälligen
-  256-Bit-Link-Schlüssel (AES-256-GCM). Nichts wird heruntergeladen oder hochgeladen; der Link steht in Sekunden,
-  auch für viele Gigabyte. Der Link-Schlüssel steht nur im Teil nach `#`: Browser schicken ihn nie an den Server.
-  Optionales Passwort: Schlüssel = HKDF(Link-Schlüssel ‖ PBKDF2-SHA256(Passwort, 600 000 Runden)).
-- *Empfängerseite:* vom Modul ausgeliefert, ohne fremde Inhalte (strenge CSP). Jede Datei einzeln (auch bei Ordnern),
-  Block für Block entschlüsselt und direkt auf die Festplatte geschrieben, wo der Browser das kann (Chrome, Edge),
-  sonst über den Arbeitsspeicher mit Hinweis bei sehr großen Dateien. Abbrechen und Fortsetzen. Geöffnet (und
-  gezählt) wird erst nach einem Klick auf „Freigabe öffnen“, damit Link-Scanner keinen Einmal-Link verbrauchen. Die
-  Blockliste steht verschlüsselt im Paket; weicht die des Servers ab, bricht die Seite ab.
-- *Ablauf und Widerruf:* Ablaufdatum, Einmal-Link und Abrufzähler setzt das Modul durch. Zurückziehen löscht die
-  Beschreibung sofort. Ein Link zeigt die Fassung, die geteilt wurde: ihre Blöcke bleiben, solange ein Link sie braucht,
-  auch wenn die Datei geändert oder gelöscht wird. Löschen einer geteilten Datei fragt vorher und beendet die Links.
-- *Mehrfachauswahl und Ordner:* eine Freigabe mit allen Dateien (Momentaufnahme), keine Größengrenze.
-- *GhulPass:* einzelne Einträge als Einmal-Link (Text, standardmäßig 1 Tag und 1 Abruf); der Text wird mit eigenem
-  Schlüssel in eigene Blöcke auf GhulDrives Server geschrieben und mit dem Link gelöscht.
-- *Strikt modular:* „Als Mail-Anhang“ und „Mit GhulMail senden“ erscheinen nur, wenn GhulMail eingeschaltet ist **und**
-  ein Konto hat; sonst bleiben Link kopieren und „An App senden“. GhulMail selbst kennt GhulDrive nicht, es bekommt nur
-  einen fertigen Entwurf (Text, Anhänge). Anhänge über 20 MB werden nicht angeboten (Mailserver lehnen sie meist ab),
-  dann als Link. Format und Modul: [`FORMAT.md`, Abschnitt 11](FORMAT.md#11-freigaben-seit-070-nur-über-das-server-modul).
+### 9.4 GhulCal
 
-**Stand der Umsetzung (0.7.0-dev), Format in [`FORMAT.md`](FORMAT.md#drive):**
-- Ein zufälliger Drive-Schlüssel (in der Drive-Datei, synchronisiert) verschlüsselt den Index. **Jeder Inhalt einer
-  Datei hat einen eigenen, zufälligen Dateischlüssel** im Index (eine neue Fassung bekommt einen neuen); seine Blöcke
-  sind mit AES-256-GCM verschlüsselt und über die zusätzlichen Daten an ihre ID gebunden. Dateien werden in Blöcke
-  bis 4 MiB zerlegt, die Reihenfolge steht im verschlüsselten Index.
-- Block-IDs sind ein **geheimer** HMAC über den Klartext mit einem Schlüssel aus dem Dateischlüssel: Ohne ihn kann
-  niemand prüfen, ob du eine bestimmte Datei besitzt, und dass zwei Dateien gleich sind, ist auf dem Server nicht zu
-  sehen (gleiche Blöcke werden nur innerhalb einer Datei einmal gespeichert).
-- Ordner, Hoch- und Herunterladen (gestreamt), Umbenennen, Verschieben, Löschen (nicht mehr genutzte Blöcke werden
-  entfernt), Suche nach Namen. Papierkorb, Versionen, Vorschau, Fortsetzen, Teilen-Menü und
-  Dateiauswahl-Anbieter folgen.
+- Termine verschlüsselt im Kalender-Tresor (`.ghlcal`), unterwegs in der Suite-Datei; bewusst ohne CalDAV (ein
+  CalDAV-Server kann verschlüsselte Termine nicht lesen).
+- Monat, Woche, Tag und Liste; mehrere Kalender in eigenen Farben; Serien mit Ausnahmen; Geburtstage mit Alter;
+  Feiertage nach Bundesland, für Österreich und die Schweiz; Schnell-Eintragen in Alltagssprache.
+- Erinnerungen plant das Gerät selbst (Android: exakte Wecker, auch nach einem Neustart; Windows: solange GhulSuite
+  läuft), ohne Server.
+- Import und Export als `.ics`, Termine aus anderen Zeitzonen werden richtig umgerechnet; Einladungen gehen als Datei
+  über eine andere App.
 
 ---
 
 ## 10. Benutzerfreundlichkeit
 
-1. **Erster Start:** „Neu einrichten“, „Vorhandene Suite öffnen“ oder „Einzelnen Tresor öffnen“.
-   **Einrichtung:** zweiter Faktor wählen (Key empfohlen oder Schlüsseldatei) → Passwort (Stärkeanzeige, Vorschlag) →
-   ggf. Schlüsseldatei erstellen und speichern → Bereiche und Tresornamen, Speicherort → Key berühren →
+1. **Erster Start:** „Neu einrichten“, „Suite-Datei öffnen“ oder „Einzelnen Tresor öffnen“.
+   **Einrichtung:** Passwort (Stärkeanzeige, Vorschlag) → zweiter Faktor (Key empfohlen oder Schlüsseldatei, ggf.
+   erstellen und speichern) → Key berühren → Bereiche und Tresornamen → Sperren und Entsperren →
    Notfallblatt drucken und Gruppe 3 bestätigen.
-2. **Neues Gerät:** App installieren, Container öffnen (vom Stick, aus der Cloud oder per Speicher-Adresse), Passwort, Key, fertig.
-   Kein Konto, keine Registrierung.
-3. **Ein Entsperren für alles.** Die automatische Sperre ist pro Bereich einstellbar (z. B. GhulPass 2 Minuten, GhulMail 1 Stunde).
+2. **Neues Gerät:** App installieren, Suite-Datei öffnen (z. B. vom Stick), Passwort, Key, fertig. Kein Konto, keine
+   Registrierung. GhulDocs ist mit allen Dokumenten dabei, weil es in der Suite-Datei steckt.
+3. **Ein Entsperren für alles.** Die automatische Sperre ist pro Bereich einstellbar (z. B. GhulPass 2 Minuten, GhulCal 1 Stunde).
 4. **Ein einheitliches Schutzmodell** statt Stufen: Passwort plus Key oder Schlüsseldatei, Ersatz jederzeit hinzufügbar. Fachbegriffe nur unter „Experte“.
-5. **Umzugsassistent von anderen Anbietern** für Pass, Authenticator, Mail und Drive.
-6. **Sicherheitszentrale:** schwache oder doppelte Passwörter, kein Ersatzkey, altes Notfallblatt, Sicherungsstand, Erreichbarkeit der Speicher.
-7. **Geführte Notfälle:** „Key verloren“, „Neues Notfallblatt“, „Gerät verloren“ (Zugänge erneuern).
-8. **Ruhige Synchronisation:** Die App fragt nur bei echten Konflikten nach. Der Status ist immer sichtbar.
+5. **Umzugsassistent von anderen Anbietern** für Passwörter, 2FA und Kalender; Dokumente kommen als normale Dateien.
+6. **Sicherheitszentrale:** schwache oder doppelte Passwörter, kein Ersatzkey, altes Notfallblatt, nicht gespeicherte Änderungen.
+7. **Geführte Notfälle:** „Key verloren“, „Neues Notfallblatt“, „Gerät verloren“ (Schutz ändern, die Suite-Datei speichern, alte Kopien löschen; den zweiten Faktor tauschen, damit alte Kopien sicher unbrauchbar werden, Abschnitt 8.2).
+8. **Klarer Stand statt Abgleich:** Der Hinweis „Nicht gespeicherte Änderungen“ zeigt, ob die Suite-Datei aktuell ist. Rückfragen kommen nur, wenn beim Öffnen oder Speichern etwas verloren ginge.
 9. **Gemeinsame Suche** über alle Bereiche.
 10. **Sprache:** Deutsch und Englisch von Anfang an, umschaltbar, Standard ist die Systemsprache. Fehlermeldungen in Klartext, mit einem Vorschlag, was zu tun ist.
 11. Barrierefreiheit (Schriftgröße, Screenreader, Kontrast), heller und dunkler Modus.
@@ -666,6 +654,8 @@ Gegenlesen, Geräte-Kopien), das für Nutzer und Technik zu verwickelt war.
 | Keine Cloud-Sicherung der App-Daten durch das System | `allowBackup=false` | - |
 | Tastatur lernt keine Eingaben | `IME_FLAG_NO_PERSONALIZED_LEARNING` | - |
 | Schlüssel im RAM überschreiben | Rust `zeroize` | Rust `zeroize`, `VirtualLock` |
+| Dokumente ansehen und scannen ohne Klartext auf dem Datenträger | ✓ (PDF über `memfd`, Scan im Arbeitsspeicher) | ✓ (PDFBox nur im Arbeitsspeicher; kein Scan) |
+| Befristete Kopien („Mit App öffnen“) beim Sperren löschen | ✓ | ✓, überschrieben, auch wenn ein Programm sie erst später freigibt |
 | Portabler Modus: nichts in Registry/Benutzerprofil, temporäre Dateien beim Beenden löschen | - | ✓ |
 
 **Grenzen:**
@@ -680,34 +670,45 @@ Gegenlesen, Geräte-Kopien), das für Nutzer und Technik zu verwickelt war.
 
 | Szenario | Ergebnis |
 |---|---|
-| Container-Datei gestohlen (Stick, Cloud, Server, Gerät) | wertlos ohne Passwort **und** Key bzw. Schlüsseldatei (oder das Notfallblatt) |
+| Suite-Datei oder Tresordatei gestohlen (Stick, Gerät) | wertlos ohne Passwort **und** Key bzw. Schlüsseldatei (oder das Notfallblatt); zu sehen sind nur Anzahl und ungefähre Größe der Dokumente |
+| Hat den Stick, sonst nichts | kann die Datei kopieren, löschen oder durch eine ältere ersetzen; kann sie nicht lesen, nichts unterschieben (Schreibsiegel, Prüfsumme jeder Inhaltsdatei) und eine ältere Datei nicht unbemerkt öffnen lassen (Zähler, Rückfrage) |
+| Hat Stick und einen alten Code | liest, was im alten Stand galt; kann nichts unterschieben und den aktuellen Stand nicht lesen |
+| Hat eine alte Suite-Datei (von vor einer Schutzänderung) und den alten Schutz (Passwort und zweiter Faktor) | öffnet diese alte Kopie mit einer frischen Installation, mit dem Stand und den Dokumenten von damals; nichts, was danach gespeichert wurde. Ein Gerät, das den neuen Stand kennt, öffnet sie nicht (Schutz-Epoche). Abhilfe: alte Kopien löschen und den zweiten Faktor tauschen (Abschnitt 8.2) |
 | Passwort ausgespäht | wertlos ohne Key |
 | Key gestohlen | wertlos ohne Passwort; der Key sperrt sich nach 8 falschen PINs |
 | Entsperren per Fingerabdruck wird erzwungen | Sofortsperre vorher auslösen (Schütteln); danach nur noch Passwort und Key |
 | Gerät mit aktivem Fingerabdruck-Zugang gestohlen | ohne deinen Finger wertlos; erlischt spätestens nach Neustart oder Ablauf der Frist |
-| SFTP-Geräteschlüssel gestohlen | nur Zugriff auf verschlüsselte Blöcke im eingesperrten Ordner; Schlüssel auf dem Server entfernen |
-| Key **und** Passwort gestohlen | Zugriff, sofort Slot des Keys löschen (von jedem anderen Gerät aus) |
+| Key **und** Passwort gestohlen | Zugriff, sofort Slot des Keys löschen (von jedem anderen Gerät aus) und die Suite-Datei speichern |
 | Notfallblatt gefunden | zusammen mit den Dateien voller Zugriff (bewusst so gewählt); sofort neuen Code erzeugen, der alte wird damit ungültig |
 | Schlüsseldatei kopiert | wertlos ohne Passwort; Datei in den Einstellungen entfernen (andere Keys bleiben gültig) |
-| Speicher kompromittiert | nur Chiffretext; Löschen oder Zurückhalten fällt durch Spiegel, Versionen und Rollback-Schutz auf |
-| Speicher liefert alte Version | Rollback-Warnung |
-| Angreifer im Netzwerk | TLS bzw. SSH plus gespeicherte Fingerabdrücke, Inhalte ohnehin verschlüsselt |
+| Präparierte Suite-Datei, präparierter GhulDocs-Tresor | fehlende, vertauschte, zusätzliche, zu große oder fremde Teile, vertauschte oder abgeschnittene Abschnitte eines Dokuments: abgelehnt, bevor etwas ersetzt wird |
+| Eine App, mit der ein Dokument geöffnet wird | bekommt genau diese befristete Kopie; was sie damit tut, liegt bei ihr (die App sagt das) |
+| Angreifer im Netzwerk | sieht nur, dass GhulSuite GitHub (Update-Prüfung) und, falls eingeschaltet, Pwned Passwords anfragt; TLS mit Zertifikatsprüfung, keine Inhalte |
 | Präparierte Webseite will den Key-Wert abfragen | unmöglich durch die RP-ID `ghulsuite.invalid` |
-| Präparierte HTML-Mail | native, vereinfachte Darstellung ohne Browser-Engine und ohne Skripte |
 | Manipuliertes Update | Release-Signaturen, die die App vor dem Update prüft |
 | GitHub-Konto übernommen | 2FA mit FIDO2 auf GitHub, Branch-Schutz, signierte Releases |
+| Schadsoftware auf dem entsperrten Gerät | sieht alles, was gerade angezeigt wird; nicht verhinderbar |
 | Passwort vergessen | Daten weg, bewusst keine Hintertür |
+
+Klartext entsteht nur beim Ansehen (im Arbeitsspeicher), beim Scannen (im Arbeitsspeicher) und beim Exportieren oder
+Öffnen mit einer anderen App (befristete Kopie).
+
+Ausführlich, mit Grenzen und Befunden: [`AUDIT.md`](AUDIT.md), Abschnitt 2.
 
 ---
 
 ## 13. Lieferkette, Qualität, Veröffentlichung
 
-- **Bibliotheken:** RustCrypto (`chacha20poly1305`, `argon2`, `hkdf`, `hmac`, `sha2`, `zeroize`), `rpgp`,
-  bewährte Bibliotheken für SSH/SFTP, WebDAV, S3 und IMAP. Für CTAP2 eine etablierte Rust-Implementierung. Keine eigenen Krypto-Primitive.
+- **Bibliotheken:** RustCrypto (`chacha20poly1305`, `argon2`, `hkdf`, `hmac`, `sha2`, `zeroize`), `rustls` mit
+  `webpki` für die beiden Verbindungen. Die Suite-Datei schreibt und liest der Kern selbst (ein ZIP in einer festen,
+  einfachen Form als Datenstrom). Für CTAP2 eine etablierte Rust-Implementierung. In der App: CameraX (Android) und
+  Apache PDFBox (Windows). Keine eigenen Krypto-Primitive.
 - **Abhängigkeiten festgeschrieben** (`Cargo.lock`, Gradle-Prüfsummen), geprüft mit `cargo-audit`, `cargo-deny` und Dependabot.
   GitHub Actions auf Commit-Hashes festgelegt, CodeQL.
 - **Tests:** Testvektoren für jede Ableitung, Fuzzing des Container-Parsers, Tests über beide Plattformen hinweg
-  (sobald Windows dazukommt: eine Datei von Android öffnet sich unter Windows identisch und umgekehrt), Tests jedes Adapters gegen echte Testserver in CI.
+  (eine Suite-Datei von Android öffnet sich unter Windows identisch und umgekehrt), Angriffe auf Suite-Datei und
+  GhulDocs, Oberflächen-Tests am Desktop (auch das Scannen mit gezeichneten Fotos) und im Emulator. Testserver gibt es
+  seit dem Umbau nicht mehr.
 - **Signierte Releases** (`.github/workflows/release.yml`):
   - Zwei Kanäle: **stabil** aus `main` (`v0.6.0`) und **Vorab** aus `dev` (`v0.6.0-dev.3`, GitHub-Pre-Release). Die
     Nummer zählt der Workflow selbst weiter (nach `v0.5.0` kommt `0.6.0`); die Datei `VERSION` braucht man nur für
@@ -729,7 +730,7 @@ Gegenlesen, Geräte-Kopien), das für Nutzer und Technik zu verwickelt war.
   (lokal, F-Droid, Forks) und Installationen aus einem Store aktualisieren sich nicht selbst.
 - **Sprache im Repository:** Code und Kommentare auf Englisch (öffentliches Projekt), Oberfläche Deutsch und Englisch.
   Konzept-Dokumente vorerst auf Deutsch, README zur Veröffentlichung zweisprachig.
-- **Lizenz: AGPL-3.0-or-later** für App, Kern und Server-Modul. Alle Abhängigkeiten müssen AGPL-3.0-kompatibel sein (MIT, Apache-2.0,
+- **Lizenz: AGPL-3.0-or-later** für App und Kern. Alle Abhängigkeiten müssen AGPL-3.0-kompatibel sein (MIT, Apache-2.0,
   BSD, LGPL, MPL-2.0); `cargo-deny` und ein Gradle-Lizenz-Check prüfen das automatisch. Jede Quelldatei bekommt einen
   SPDX-Kopf (`SPDX-License-Identifier: AGPL-3.0-or-later`). GPL-3.0 passt zur Verbreitung über F-Droid.
 - **Veröffentlichung später:** `SECURITY.md`, offene Format-Spezifikation, Bedrohungsmodell.
@@ -742,19 +743,26 @@ Gegenlesen, Geräte-Kopien), das für Nutzer und Technik zu verwickelt war.
 | Thema | Status | Grund |
 |---|---|---|
 | Web-Client | gestrichen | schwächstes Glied; ersetzt durch die portable Windows-Version |
-| Anbindung über den Android-Dateidialog als Sync | gestrichen | unzuverlässig; bleibt für Export und Import |
-| FTP ohne TLS | gestrichen | unsicher; FTPS stattdessen |
+| Synchronisation zwischen Geräten (Sync-Server, Zusammenführen, „Der Ordner ist die Suite“, Konfliktkopien fremder Sync-Programme) | gestrichen (17.11.2026) | Quelle der meisten Sicherheitsfunde; ersetzt durch Öffnen und Speichern der Suite-Datei ([`UMBAU-OHNE-SYNC.md`](UMBAU-OHNE-SYNC.md)) |
+| Sicherung/Wiederherstellung als ZIP, „Von meinem Server holen“ | gestrichen (17.11.2026) | ungeprüfte Ladewege ohne Kopfdatei; ersetzt durch die geprüfte `.ghlzip` |
+| **GhulMail** (IMAP/SMTP, Konten, OpenPGP und Autocrypt, Mail-Archiv, Benachrichtigungen, Dauerdienst, „Standard-App für Mail“) | gestrichen (17.11.2026) | viele Befunde, ein dauernder Netzzugang; dafür gibt es gute Mail-Apps ([`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)) |
+| **GhulDrive** (Speicherorte, Index auf dem Server, `index.lock`, Aufräumen, Offline-Kopien) | gestrichen (17.11.2026) | ersetzt durch GhulDocs in der Suite (Abschnitt 9.3) |
+| **Eigene Server** (SFTP, SSH-Schlüssel der Suite, PHP-Modul), Freigabelinks und Einmal-Links | gestrichen (17.11.2026) | ohne GhulDrive kein Zweck; ohne Server keine Verbindung, die angegriffen werden kann |
+| Schlüsselwechsel auf Servern und in GhulDrive | gestrichen (17.11.2026) | ohne Server gibt es nichts zu wechseln; alte Kopien macht der Tausch des zweiten Faktors unbrauchbar (Abschnitt 8.2) |
+| FTP, FTPS, WebDAV, S3 | gestrichen | erst nur noch SFTP, seit 17.11.2026 gar keine Server mehr |
+| Fehlerbericht hochladen (`report.php`) | gestrichen (17.11.2026) | der Bericht wird nur angezeigt; geschickt wird er vom Nutzer selbst |
+| Lesen älterer Formate und Übernahme alter Daten | gestrichen (17.11.2026) | die App hat noch keine Nutzer; weniger Code, weniger Angriffsfläche |
 | Autofill unter Android (Anmeldungen in anderen Apps und Browsern ausfüllen) | gestrichen (16.11.2026) | funktionierte nicht zuverlässig (F136) |
-| Foto-Sicherung in GhulDrive | gestrichen (16.11.2026) | funktionierte nicht zuverlässig (F136) |
-| Mail-Abruf im Hintergrund | geplant (v0.5) | mit eigenem Abruf-Zugang, siehe Abschnitt 9.3 |
+| Foto-Sicherung | gestrichen (16.11.2026) | funktionierte nicht zuverlässig (F136) |
 | Sofortsperre: lokale Daten löschen, Notfall-Passwort, Fernsperre | nicht geplant | Stufe 1 reicht kryptografisch; Täuschung ist schwer überzeugend umzusetzen |
-| OAuth-Mailanbieter (Gmail, Microsoft) | später, vielleicht | Aufwand und Kosten der Google-Prüfung |
-| Windows-Ordner-Synchronisation für Drive | später | aufwendig; zuerst Drive-Ansicht in der App |
+| Scannen unter Windows | nicht geplant | dort werden Dateien hinzugefügt |
+| Mehr als 1 GB in GhulDocs, Fassungen von Dokumenten | nicht geplant | die Suite-Datei soll handlich bleiben (höchstens 1,25 GiB) |
+| Texterkennung (OCR) in Scans | später, vielleicht | nur auf dem Gerät denkbar |
 | Browser-Erweiterung für Windows | später | zuerst Auto-Type |
 | Passkeys im Tresor speichern | später | eigenes Teilprojekt |
 | Tresore mit anderen Personen teilen | später | vorerst nicht benötigt; das Format lässt es zu (zusätzlicher Slot) |
 | Linux, macOS, iOS | später | Linux ist mit Compose Multiplatform wenig Mehraufwand |
-| Kalender und Kontakte | nicht geplant | außerhalb des Ziels |
+| Kontakte | nicht geplant | außerhalb des Ziels |
 
 ---
 
@@ -766,16 +774,18 @@ Gegenlesen, Geräte-Kopien), das für Nutzer und Technik zu verwickelt war.
 | 0b ✓ | **Android-Prototyp:** CTAP2 per USB-C mit deinem Key (`hmac-secret`, PIN, RP-ID `ghulsuite.invalid`), Rust-Kern per UniFFI in einer Compose-Multiplatform-App | Technische Machbarkeit auf Android bestätigt |
 | 1 ✓ | `docs/FORMAT.md` und `ghul-core`: Schlüssel, Container, Testvektoren, Fuzzing | Geprüfter Kern |
 | 2 | **GhulPass + GhulAuth** für Android: Einrichtung, Notfallblatt, Fingerabdruck, Sofortsperre, QR-Scan, Import, Export | Ersetzt Proton Pass und den Authenticator (lokal und per Export) |
-| 3 | **Speicher-Adapter** SFTP (zuerst, gegen deinen Server) und WebDAV, Synchronisation der Container, Spiegel | Automatische Synchronisation und Sicherung |
-| 4 | **GhulDrive** für Android, dazu die Adapter S3 und Server-Modul | Ersetzt Cloud-Speicher von Drittanbietern |
-| 5 | **GhulMail** für Android | Ersetzt Mail-Apps von Drittanbietern |
+| 3 ✓ | **Eigene Server** per SFTP; die damalige Synchronisation ist seit 17.11.2026 durch die Suite-Datei (`.ghlzip`) ersetzt, die Server sind mit dem Umbau zu GhulDocs entfernt | Suite auf mehreren Geräten |
+| 4 ✓ | **GhulDrive** mit Server-Modul für Freigabelinks; seit 17.11.2026 ersetzt durch GhulDocs | Ersetzte Cloud-Speicher von Drittanbietern |
+| 5 ✓ | **GhulMail** für Android; seit 17.11.2026 entfernt | Ersetzte Mail-Apps von Drittanbietern |
 | 6 | **Windows-App** mit vollem Funktionsumfang (inkl. portabler Version) | GhulSuite auf dem PC |
 | 7 | Härtung, Review, `SECURITY.md`, Veröffentlichung unter AGPL-3.0 | Öffentliches Repository |
+| 8 ✓ | **Offline-App mit GhulDocs** (Pakete G1 bis G8 in [`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)): GhulMail, GhulDrive und Server raus, Suite-Datei als Datenstrom bis 1,25 GiB, GhulDocs mit Scannen auf Android | Dokumente verschlüsselt in der Suite, ohne Server |
 
 Windows kann je nach Bedarf auch früher kommen, z. B. direkt nach Phase 2 oder 3.
 
-**Ehrlich zum Aufwand:** Phasen 0b bis 2 sind der Kern und schon für sich ein großes Projekt. Drive und Mail sind jeweils noch
-einmal ein Projekt in ähnlicher Größe. Jede Phase ist für sich nutzbar.
+**Ehrlich zum Aufwand:** Phasen 0b bis 2 sind der Kern und schon für sich ein großes Projekt. Drive und Mail waren jeweils
+noch einmal ein Projekt in ähnlicher Größe; mit Servern brachten sie die meisten Befunde. Deshalb wurden sie durch
+GhulDocs ersetzt, das ohne Netz auskommt. Jede Phase ist für sich nutzbar.
 
 ---
 
@@ -787,10 +797,8 @@ einmal ein Projekt in ähnlicher Größe. Jede Phase ist für sich nutzbar.
 7. Key-Bedienung: Ist beim Entsperren kein Key eingesteckt, wartet die App auf das Einstecken (USB-Ereignis) und macht
    automatisch weiter, statt sofort einen Fehler zu zeigen
 6. Credentials mit `credProtect` Stufe 3 anlegen (vom Key unterstützt): Der Key gibt das Credential dann nur nach PIN-Prüfung preis
-2. Für Phase 3: einen eigenen SFTP-Testbenutzer auf deinem Server anlegen (Anleitung kommt mit dem Adapter).
-   Zugangsdaten gehören nie ins Repository; für automatische Tests in CI trägst du sie selbst als GitHub-Secrets ein.
 3. Android-Mindestversion (Vorschlag: Android 10 / API 29, deckt fast alle aktiven Geräte ab und bringt die nötigen Sicherheitsfunktionen mit)
 4. Verbreitung der APK: GitHub Releases, später ggf. F-Droid
-8. Idee: **GhulCal, Kalender als Tresor** (`.ghlcal`): Termine verschlüsselt im Suite-Ordner, Synchronisation wie die
-   anderen Tresore über den eigenen Server, Erinnerungen auf dem Gerät, Import/Export als `.ics`. Ein CalDAV-Server
+8. **GhulCal, Kalender als Tresor** (`.ghlcal`, umgesetzt): Termine verschlüsselt in der Suite, reisen mit der
+   Suite-Datei wie die anderen Tresore, Erinnerungen auf dem Gerät, Import/Export als `.ics`. Ein CalDAV-Server
    kann verschlüsselte Termine nicht lesen; Abos fremder Kalender (nur lesen) wären zusätzlich möglich.

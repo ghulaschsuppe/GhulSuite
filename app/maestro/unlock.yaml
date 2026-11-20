@@ -1,0 +1,23 @@
+# Helper: start the app anew, unlock with the app PIN and go to GhulPass. Areas are reached by the
+# ids of the bottom bar (tab-pass, tab-auth, tab-cal, tab-settings).
+appId: de.danerd.ghulsuite.dev
+---
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible: "Unlock with app PIN"
+    timeout: 30000
+- tapOn: "App PIN"
+- inputText: "246813"
+- hideKeyboard
+- tapOn: "Unlock with app PIN"
+# The app opens the tab used last; the lock button shows it is unlocked.
+- extendedWaitUntil:
+    visible: "Lock now"
+    timeout: 30000
+# To GhulPass by the bar (id tab-pass): the name "GhulPass" is also the title, and tapping that
+# opens the choice of vaults over the list.
+- tapOn: { id: "tab-pass" }
+- extendedWaitUntil:
+    visible: "Search entries"
+    timeout: 15000

@@ -20,8 +20,17 @@ pub enum CalRepeat {
     Yearly,
 }
 
-/// Points to something else in the suite: `drive` (file name), `mail` (`account|folder|uid`),
-/// `pass` (`vault|entry`).
+/// Characters that take no space on screen: a title made only of them looks empty.
+fn invisible(c: char) -> bool {
+    c.is_whitespace() || matches!(c, '\u{200b}'..='\u{200d}' | '\u{2060}' | '\u{feff}' | '\u{180e}')
+}
+
+/// Text without spaces and invisible characters at both ends.
+pub(crate) fn trim_invisible(s: &str) -> &str {
+    s.trim_matches(invisible)
+}
+
+/// Points to something else in the suite, e.g. `pass` (`vault|entry`).
 #[derive(uniffi::Record, Clone, Debug, PartialEq, Eq)]
 pub struct CalLink {
     pub kind: String,
@@ -255,7 +264,7 @@ fn put_event_fields(e: &mut Entry, ev: &CalEvent) {
         }
     };
     text("calendar", &ev.calendar_id);
-    text("title", super::drive::trim_invisible(&ev.title));
+    text("title", trim_invisible(&ev.title));
     text("start", &ev.start);
     text("end", &ev.end);
     text("repeat", repeat_code(ev.repeat));
@@ -291,7 +300,7 @@ impl GhulSuite {
 /// Checks and normalises an event; returns (start, end) for convenience.
 fn validate(ev: &mut CalEvent) -> Result<()> {
     let bad = |m: &str| GhulError::InvalidInput { msg: m.into() };
-    if super::drive::trim_invisible(&ev.title).is_empty() {
+    if trim_invisible(&ev.title).is_empty() {
         return Err(bad("title required"));
     }
     if ev.all_day {
@@ -767,7 +776,7 @@ impl GhulSuite {
         })
     }
 
-    /// One event as `.ics` (to share or attach to a mail).
+    /// One event as `.ics` (to share with another app).
     pub fn cal_event_ics(&self, id: String) -> Result<String> {
         let ev = self.cal_get_event(id)?;
         Ok(super::caltext::ics_export(&[ev], "GhulCal"))

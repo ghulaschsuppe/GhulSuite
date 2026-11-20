@@ -2,6 +2,7 @@
 package de.danerd.ghulsuite.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Button
@@ -173,7 +174,9 @@ actual fun QrScanner(onResult: (String) -> Unit) {
 
 // --- files: the native Windows dialogs ------------------------------------------------------
 
-actual val filePickersAvailable: Boolean = !GraphicsEnvironment.isHeadless()
+// Screenshots for the docs are made without a display: "ghul.pickers" shows the buttons anyway.
+actual val filePickersAvailable: Boolean
+    get() = System.getProperty("ghul.pickers")?.toBoolean() ?: !GraphicsEnvironment.isHeadless()
 
 private fun chooseOpen(): File? {
     val d = FileDialog(null as Frame?, "", FileDialog.LOAD)
@@ -197,6 +200,17 @@ actual fun rememberOpenFile(onPicked: (PickedFile) -> Unit): () -> Unit = {
 actual fun rememberSaveFile(onSaved: (Boolean) -> Unit): (String, ByteArray) -> Unit = { name, data ->
     val f = chooseSave(name)
     onSaved(f != null && runCatching { f.writeBytes(data) }.isSuccess)
+}
+
+@Composable
+actual fun rememberOpenSuiteFile(onPicked: (de.danerd.ghulsuite.model.SuiteFileRef) -> Unit): () -> Unit = {
+    chooseOpen()?.takeIf { it.isFile }?.let { f -> onPicked(de.danerd.ghulsuite.model.SuiteFileRef(f.absolutePath, f.name)) }
+}
+
+@Composable
+actual fun rememberCreateSuiteFile(onCreated: (de.danerd.ghulsuite.model.SuiteFileRef?) -> Unit): (String) -> Unit = { name ->
+    val f = chooseSave(name)
+    onCreated(f?.let { de.danerd.ghulsuite.model.SuiteFileRef(it.absolutePath, it.name) })
 }
 
 @Composable
@@ -268,11 +282,6 @@ actual fun decodeQrImage(bytes: ByteArray): String? = runCatching {
     com.google.zxing.MultiFormatReader().decode(bitmap, mapOf(com.google.zxing.DecodeHintType.TRY_HARDER to true)).text
 }.getOrNull()
 
-actual val cameraPhotoAvailable: Boolean = false
-
-@androidx.compose.runtime.Composable
-actual fun rememberTakePhoto(onResult: (ByteArray?) -> Unit): () -> Unit = { onResult(null) }
-
 actual fun deviceInfo(): String =
     "${System.getProperty("os.name")} ${System.getProperty("os.version")} (${System.getProperty("os.arch")}) · Java ${System.getProperty("java.version")}"
 
@@ -294,3 +303,64 @@ actual fun epochMillisOf(local: String): Long {
 actual fun applyAppLanguage(tag: String) {
     // Takes effect at the next start (Main.kt applies the stored language before the window opens).
 }
+
+actual fun decodeImage(bytes: ByteArray, maxSide: Int): androidx.compose.ui.graphics.ImageBitmap? = runCatching {
+    val image = org.jetbrains.skia.Image.makeFromEncoded(bytes)
+    val side = maxOf(image.width, image.height)
+    if (side <= maxSide) return@runCatching image.toComposeImageBitmap()
+    // Scaled down in memory: a photo of a phone camera is far larger than any window.
+    val scale = maxSide.toFloat() / side
+    val w = (image.width * scale).toInt().coerceAtLeast(1)
+    val h = (image.height * scale).toInt().coerceAtLeast(1)
+    val surface = org.jetbrains.skia.Surface.makeRasterN32Premul(w, h)
+    surface.canvas.drawImageRect(image, org.jetbrains.skia.Rect.makeWH(w.toFloat(), h.toFloat()))
+    surface.makeImageSnapshot().toComposeImageBitmap().also { image.close() }
+}.getOrNull()
+
+/**
+ * Image data stays in memory: ImageIO caches the streams it decodes in a file in the temp folder
+ * by default (PDFBox decodes JPEG pages, e.g. of a scanned document, through ImageIO). Called
+ * first in `main`, before anything can use ImageIO, and again before a PDF is shown.
+ */
+fun keepImagesInMemory() {
+    javax.imageio.ImageIO.setUseCache(false)
+}
+
+/**
+ * A PDF read from the bytes with Apache PDFBox, everything in memory (no scratch file; the
+ * stream cache is memory only, and so is ImageIO's, see [keepImagesInMemory]).
+ */
+actual fun openPdf(bytes: ByteArray): PdfView? = runCatching {
+    keepImagesInMemory()
+    // PDFBox keeps a list of the system's fonts: in the portable version next to the data, not on the PC.
+    if (System.getProperty("pdfbox.fontcache") == null && System.getProperty("jpackage.app-path") != null) {
+        System.setProperty("pdfbox.fontcache", de.danerd.ghulsuite.DesktopPaths.dataDir.absolutePath)
+    }
+    val doc = org.apache.pdfbox.Loader.loadPDF(
+        org.apache.pdfbox.io.RandomAccessReadBuffer(bytes), "", null, null,
+        org.apache.pdfbox.io.IOUtils.createMemoryOnlyStreamCache(),
+    )
+    val renderer = org.apache.pdfbox.rendering.PDFRenderer(doc)
+    object : PdfView {
+        override val pageCount: Int = doc.numberOfPages
+
+        override fun render(index: Int, widthPx: Int): androidx.compose.ui.graphics.ImageBitmap? = synchronized(doc) {
+            runCatching {
+                val box = doc.getPage(index).cropBox
+                val w = widthPx.coerceIn(100, 2400)
+                val scale = w / box.width.coerceAtLeast(1f)
+                val img = renderer.renderImage(index, scale, org.apache.pdfbox.rendering.ImageType.RGB)
+                img.toComposeImageBitmap()
+            }.getOrNull()
+        }
+
+        override fun close() {
+            synchronized(doc) { runCatching { doc.close() } }
+        }
+    }
+}.getOrNull()
+
+/** Windows: no scanning (files are added instead). */
+actual val docScanAvailable: Boolean = false
+
+actual fun platformScanEngine(): de.danerd.ghulsuite.scan.ScanEngine? = null

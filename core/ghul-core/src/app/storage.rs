@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Where the suite's files live. The app passes an implementation: the app's private storage
-//! (Rust implementation below) or a folder chosen by the user (Android: Storage Access Framework,
-//! implemented in Kotlin). Later, sync adapters (SFTP, WebDAV, …) implement the same interface.
+//! Where the suite's files live (the working copy). The app passes an implementation: the app's
+//! private storage (Rust implementation below; tests wrap it).
 
 use std::fs;
 use std::io::Write;
@@ -40,6 +39,10 @@ pub trait VaultStorage: Send + Sync {
     fn list(&self) -> std::result::Result<Vec<String>, StorageError>;
     /// Human-readable location, e.g. "App storage" or a folder name.
     fn describe(&self) -> String;
+    /// The local directory of this folder, where GhulDocs keeps its content files (encrypted,
+    /// `docs-<vault id>/<id>.ghlblob`, see `docs`); `None` if the folder is not on the device's
+    /// file system (then no documents can be stored).
+    fn content_dir(&self) -> Option<String>;
 }
 
 /// Writes atomically: temporary file, fsync, keep the previous version as `.bak`, rename.
@@ -63,7 +66,7 @@ pub(crate) fn write_atomic(dir: &Path, name: &str, data: &[u8]) -> Result<()> {
 
 /// A plain file name that is safe on every system: no folders, no drive or stream separators
 /// (`C:`, `file:stream`), no control or direction characters, no Windows device names, not
-/// hidden, not ending in a dot or space. File names also come from servers and backups,
+/// hidden, not ending in a dot or space. File names also come from suite files and backups,
 /// whoever controls those must not be able to write anywhere else.
 pub(crate) fn plain_file_name(name: &str) -> bool {
     const DEVICES: [&str; 22] = [
@@ -135,6 +138,10 @@ impl VaultStorage for LocalDirStorage {
         let mut out = Vec::new();
         if let Ok(entries) = fs::read_dir(&self.dir) {
             for e in entries.flatten() {
+                // Only files: the content files of GhulDocs live in folders of their own.
+                if !e.file_type().is_ok_and(|t| t.is_file()) {
+                    continue;
+                }
                 let n = e.file_name().to_string_lossy().into_owned();
                 if !n.ends_with(".tmp") && !n.ends_with(".bak") && !n.starts_with('.') {
                     out.push(n);
@@ -147,6 +154,10 @@ impl VaultStorage for LocalDirStorage {
 
     fn describe(&self) -> String {
         "app".into()
+    }
+
+    fn content_dir(&self) -> Option<String> {
+        Some(self.dir.to_string_lossy().into_owned())
     }
 }
 

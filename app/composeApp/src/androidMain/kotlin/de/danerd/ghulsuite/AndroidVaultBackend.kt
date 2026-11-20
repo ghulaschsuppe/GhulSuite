@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package de.danerd.ghulsuite
 
-import de.danerd.ghulsuite.ui.backupPrefix
 import android.app.Activity
 import android.app.ActivityManager
 import android.content.ClipData
@@ -19,11 +18,11 @@ import de.danerd.ghulsuite.core.VaultStorage
 import de.danerd.ghulsuite.core.fidoGetInfo
 import de.danerd.ghulsuite.core.fidoSetPin
 import de.danerd.ghulsuite.core.localStorage
+import de.danerd.ghulsuite.model.SuiteFileRef
 import de.danerd.ghulsuite.model.EmergencySheetText
 import de.danerd.ghulsuite.model.FolderRef
 import de.danerd.ghulsuite.model.KeyStatus
 import de.danerd.ghulsuite.model.KeyValueStore
-import de.danerd.ghulsuite.model.NetBackend
 import de.danerd.ghulsuite.model.QuickUnlockReady
 import de.danerd.ghulsuite.model.Settings
 import de.danerd.ghulsuite.model.VaultErrorKind
@@ -42,7 +41,10 @@ class PrefsStore(context: Context) : KeyValueStore {
     override fun putString(key: String, value: String) = prefs.edit().putString(key, value).apply()
 }
 
-/** Android: storage via SAF, security key via USB, quick unlock via Keystore. */
+/** A vault file opened on its own is read as a whole: at most as large as the core reads one. */
+private const val MAX_VAULT_FILE_BYTES = 256 * 1024 * 1024
+
+/** Android: the working copy in the app's own storage, security key via USB, quick unlock via Keystore. */
 /** How long unlocking waits for a security key to be plugged in. */
 private const val KEY_WAIT_MS = 60_000L
 
@@ -53,28 +55,93 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
     private val main = Handler(Looper.getMainLooper())
 
     override val settings: Settings = Settings(PrefsStore(context))
-    private val quick = AndroidQuickUnlock(context, { suite }, settings, activity)
-    override val net: NetBackend = AndroidNetBackend(context) { suite }
+    // Quick unlock belongs to the own suite (not to a vault opened on its own).
+    private val quick = AndroidQuickUnlock(context, { ownSuite }, settings, activity)
     override val cal: de.danerd.ghulsuite.model.CalBackend = AndroidCalBackend(context) { suite }
     override val updater: de.danerd.ghulsuite.model.AppUpdater = AndroidUpdater(context)
     override val appVersion: String =
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "?"
 
     init {
-        // Test data of versions before 0.3 used an older format; it is not migrated.
-        File(context.filesDir, "vault").deleteRecursively()
+        // Decrypted copies handed to other apps do not outlive the app (also after a crash).
         File(context.cacheDir, "shared").deleteRecursively()
     }
 
-    override fun storage(): VaultStorage =
-        storageFor(prefs.getString("folder_uri", null)?.let { FolderRef(it, "") })
+    override fun storage(): VaultStorage = localStorage(File(context.filesDir, "suite").absolutePath)
 
-    override fun storageFor(folder: FolderRef?): VaultStorage =
-        if (folder == null) {
-            localStorage(File(context.filesDir, "suite").absolutePath)
-        } else {
-            SafStorage(context, Uri.parse(folder.uri))
+    override suspend fun readSuiteFile(ref: SuiteFileRef): ByteArray? = withContext(Dispatchers.IO) {
+        runCatching {
+            context.contentResolver.openInputStream(Uri.parse(ref.id))?.use { input ->
+                // A vault file is read as a whole: at most as large as the core reads one.
+                val out = java.io.ByteArrayOutputStream()
+                val buf = ByteArray(64 * 1024)
+                while (true) {
+                    val n = input.read(buf)
+                    if (n < 0) break
+                    out.write(buf, 0, n)
+                    if (out.size() > MAX_VAULT_FILE_BYTES) return@runCatching null
+                }
+                out.toByteArray()
+            }
+        }.getOrNull()
+    }
+
+    override fun openSuiteInput(ref: SuiteFileRef): SuiteInput? = runCatching {
+        val uri = Uri.parse(ref.id)
+        val size = runCatching {
+            context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)?.use { c ->
+                if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else 0L
+            }
+        }.getOrNull() ?: 0L
+        context.contentResolver.openInputStream(uri)?.let { SuiteInput(it, size) }
+    }.getOrNull()
+
+    /**
+     * The Storage Access Framework hands over the chosen document only, no folder to write a
+     * temporary file into: the document is truncated and written ("wt"; the provider, a USB stick
+     * or a cloud app, keeps its name and place), then read back. Until then the working copy is
+     * the only complete state and stays marked as unsaved. A document made just for this that
+     * could not be written completely is removed.
+     */
+    override fun writeSuiteStreamed(
+        ref: SuiteFileRef,
+        created: Boolean,
+        write: (java.io.OutputStream) -> Unit,
+        check: (SuiteInput) -> Boolean,
+    ): Boolean {
+        val uri = Uri.parse(ref.id)
+        var ok = false
+        try {
+            val out = context.contentResolver.openOutputStream(uri, "wt") ?: return false
+            out.use { raw ->
+                java.io.BufferedOutputStream(raw, 1 shl 20).use { buffered ->
+                    write(buffered)
+                    buffered.flush()
+                    if (raw is java.io.FileOutputStream) runCatching { raw.fd.sync() }
+                }
+            }
+            ok = openSuiteInput(ref)?.let { input -> input.stream.use { check(input) } } == true
+            return ok
+        } finally {
+            if (!ok && created) runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri) }
         }
+    }
+
+    override suspend fun writeSuiteFile(ref: SuiteFileRef, data: ByteArray): Boolean = withContext(Dispatchers.IO) {
+        // "wt": the document is truncated and written; the provider (a USB stick, a cloud app)
+        // keeps its name and place.
+        runCatching {
+            context.contentResolver.openOutputStream(Uri.parse(ref.id), "wt")?.use { it.write(data); it.flush() } != null
+        }.getOrDefault(false) && readSuiteFile(ref)?.contentEquals(data) == true
+    }
+
+    /** A deleted document cannot be opened for writing again: "save as" instead. */
+    override val canWriteFilesAnew: Boolean = false
+
+    override suspend fun canWriteSuiteFile(ref: SuiteFileRef): Boolean = withContext(Dispatchers.IO) {
+        runCatching { androidx.documentfile.provider.DocumentFile.fromSingleUri(context, Uri.parse(ref.id))?.canWrite() == true }
+            .getOrDefault(false)
+    }
 
     override fun devicePref(key: String): String? = prefs.getString(key, null)
 
@@ -92,22 +159,6 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
 
     override fun onProtectionChanged() = quick.disableAll()
 
-    override fun useStorage(folder: FolderRef?) {
-        lock()
-        if (folder == null) {
-            prefs.edit().remove("folder_uri").apply()
-        } else {
-            val uri = Uri.parse(folder.uri)
-            runCatching {
-                context.contentResolver.takePersistableUriPermission(
-                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
-                )
-            }
-            prefs.edit().putString("folder_uri", folder.uri).apply()
-        }
-        reopen()
-    }
-
     override fun lock() {
         // Decrypted copies handed to other apps and a copied password do not outlive the session.
         File(context.cacheDir, "shared").deleteRecursively()
@@ -117,17 +168,59 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
 
     /**
      * Panic lock: locks the app and removes fingerprint and app PIN, so only the master password
-     * opens it again. Mail notifications and calendar reminders keep working: the panic lock
-     * closes the app, it does not switch off its mail reception.
+     * opens it again. Calendar reminders keep working: the panic lock closes the app.
      */
     override fun panicLock() {
-        lock()
-        quick.disableAll()
-        // B5 "hard panic": also the mail logins kept for notifications go (until the next unlock).
-        if (settings.panicStopsMail) {
-            val mail = MailNotifications(context)
-            mail.accounts().forEach { mail.disable(it) }
+        // Nothing is written back first (a GhulDocs vault open on its own locks at once).
+        panicking = true
+        try {
+            lock()
+        } finally {
+            panicking = false
         }
+        quick.disableAll()
+    }
+
+    override val canShareToApps: Boolean = true
+
+    /** Android's share sheet: a copy in the app's cache (deleted on lock) for the chosen app. */
+    override suspend fun shareToApps(name: String, mime: String, data: ByteArray): Boolean =
+        shareStreamToApps(name, mime) { it.write(data) }
+
+    /**
+     * The same, written piece by piece into the copy (a document of GhulDocs). A write that fails
+     * or is cancelled removes the half copy at once; nothing is handed over then.
+     */
+    override suspend fun shareStreamToApps(name: String, mime: String, write: suspend (de.danerd.ghulsuite.model.ByteSink) -> Unit): Boolean {
+        val target = withContext(Dispatchers.IO) {
+            val dir = File(context.cacheDir, "shared").apply { deleteRecursively(); mkdirs() }
+            File(dir, safeFileName(name, mutableSetOf()))
+        }
+        val out = withContext(Dispatchers.IO) { java.io.BufferedOutputStream(java.io.FileOutputStream(target), 1 shl 20) }
+        var complete = false
+        try {
+            write(object : de.danerd.ghulsuite.model.ByteSink {
+                override fun write(data: ByteArray) = out.write(data)
+                override fun close() = out.close()
+            })
+            withContext(Dispatchers.IO) { out.close() }
+            complete = true
+        } finally {
+            if (!complete) withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
+                runCatching { out.close() }
+                target.delete()
+            }
+        }
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".files", target)
+        val intent = Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, uri)
+        intent.type = mime
+        intent.clipData = ClipData.newRawUri("", uri)
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        ExternalActivity.started()
+        context.startActivity(
+            Intent.createChooser(intent, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION),
+        )
+        return true
     }
 
     // --- key access -----------------------------------------------------------------------
@@ -263,14 +356,6 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
         if (seconds > 0) {
             main.postDelayed({ if (copiedLabel == tagged) clearOwnClip() }, seconds * 1000L)
         }
-    }
-
-    override suspend fun writeToFolder(folder: FolderRef, name: String, data: ByteArray, keep: Int) = withContext(Dispatchers.IO) {
-        val store = SafStorage(context, android.net.Uri.parse(folder.uri))
-        store.write(name, data)
-        // Only the newest backups stay.
-        val old = store.list().filter { it.startsWith(backupPrefix(name)) && it.endsWith(".zip") }.sortedDescending().drop(keep)
-        for (o in old) runCatching { store.delete(o) }
     }
 
     override fun crashReport(): String? = CrashLog.pending(context)

@@ -31,6 +31,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -111,7 +112,7 @@ fun <T> ChoiceRow(label: String, options: List<Pair<T, StringResource>>, selecte
 }
 
 /** Pages of the settings, opened from the overview. */
-enum class SetPage { UNLOCK, LOCK, PRIVACY, FACTORS, VAULTS, IMPORT, SERVERS, MODULES, PASS, AUTH, DRIVE, MAIL, CAL, LOOK, ABOUT }
+enum class SetPage { UNLOCK, LOCK, PRIVACY, FACTORS, VAULTS, FILE, IMPORT, MODULES, PASS, AUTH, DOCS, CAL, LOOK, ABOUT }
 
 @Composable
 fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
@@ -177,8 +178,6 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                         ChoiceRow(stringResource(Res.string.set_shake_sensitivity), SHAKE_OPTIONS, settings.shakeSensitivity) { settings.shakeSensitivity = it }
                     }
                     Hint(stringResource(Res.string.set_panic_hint))
-                    SwitchRow(stringResource(Res.string.set_panic_mail), settings.panicStopsMail) { settings.panicStopsMail = it }
-                    Hint(stringResource(Res.string.set_panic_mail_hint))
                 } else {
                     // On wide windows the lock is in the sidebar, else in the top bar.
                     Hint(stringResource(if (LocalWide.current) Res.string.set_panic_hint_sidebar else Res.string.set_panic_hint_desktop))
@@ -200,8 +199,7 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                 for (s in slots) {
                     ListRow(
                         s.label.ifBlank { stringResource(typeLabel(s.type)) },
-                        stringResource(typeLabel(s.type)) + (if (s.created > 0) " · " + formatDate(s.created) else "") +
-                            if (s.needsUpdate) " · " + stringResource(Res.string.slot_needs_update) else "",
+                        stringResource(typeLabel(s.type)) + (if (s.created > 0) " · " + formatDate(s.created) else ""),
                         leading = {
                             IconTile(
                                 when (s.type) {
@@ -235,14 +233,13 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                 Hint(stringResource(Res.string.set_swap_hint))
                 // L1: old backups still open with what was valid back then.
                 Hint(stringResource(Res.string.set_lost_hint))
-                Hint(stringResource(Res.string.storage_current, storageLabel(backend.storageName())))
             }
 
 
                 }
-                SetPage.VAULTS -> VaultsSection(state)
+                SetPage.VAULTS -> if (state.single == null) VaultsSection(state) else SingleVaultSection(state)
+                SetPage.FILE -> if (state.single != null) SingleVaultSection(state) else SuiteFileSection(state)
                 SetPage.IMPORT -> ImportExportSection(state)
-                SetPage.SERVERS -> ServersSection(state)
                 SetPage.MODULES -> AreasPage(state)
                 SetPage.PASS -> {
             SectionCard(areaGroupTitle(VaultKindUi.PASS)) {
@@ -267,16 +264,9 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
             AreaFileNote(VaultKindUi.TOTP)
             AreaFooter(state, VaultKindUi.TOTP)
                 }
-                SetPage.DRIVE -> {
-                    DriveSettingsSection(state)
-                    AreaFileNote(VaultKindUi.DRIVE)
-                    AreaFooter(state, VaultKindUi.DRIVE)
-                }
-                SetPage.MAIL -> {
-                    MailAccountsSection(state)
-                    MailArchiveLocationSection(state)
-                    AreaFileNote(VaultKindUi.MAIL)
-                    AreaFooter(state, VaultKindUi.MAIL)
+                SetPage.DOCS -> {
+                    DocsSettingsSection(state)
+                    AreaFooter(state, VaultKindUi.DOCS)
                 }
                 SetPage.CAL -> {
                     // B22: Windows has no background service: reminders need the app running (also locked).
@@ -290,7 +280,10 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                 ChoiceRow(stringResource(Res.string.set_theme), THEME_OPTIONS, settings.theme) { settings.theme = it }
                 ChoiceRow(
                     stringResource(Res.string.set_start_tab),
-                    listOf(-1 to Res.string.set_start_last, 0 to Res.string.set_start_first, 1 to Res.string.set_start_second, 2 to Res.string.set_start_third, 3 to Res.string.set_start_fourth, 4 to Res.string.set_start_fifth)
+                    listOf(
+                        -1 to Res.string.set_start_last, 0 to Res.string.set_start_first, 1 to Res.string.set_start_second,
+                        2 to Res.string.set_start_third, 3 to Res.string.set_start_fourth,
+                    )
                         .filter { it.first < state.tabs.size - 1 },
                     settings.startTab,
                 ) { settings.startTab = it }
@@ -343,7 +336,7 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                 TextButton(onClick = {
                     newCode = false
                     state.run(block = { backend.newRecoveryCode(getString(Res.string.setup_recovery_label)) }) {
-                        state.changed()
+                        state.protectionChanged()
                         state.push(Screen.RecoveryCode(it))
                     }
                 }) { Text(stringResource(Res.string.a_create)) }
@@ -362,7 +355,7 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
             confirmButton = {
                 TextButton(onClick = {
                     removing = null
-                    state.run(block = { backend.removeSlot(s.id) }) { state.changed() }
+                    state.run(block = { backend.removeSlot(s.id) }) { state.protectionChanged() }
                 }) { Text(stringResource(Res.string.a_delete)) }
             },
             dismissButton = { TextButton(onClick = { removing = null }) { Text(stringResource(Res.string.a_cancel)) } },
@@ -526,6 +519,7 @@ fun ChangePasswordScreen(state: AppState, padding: PaddingValues) {
                         error = PasswordPolicy.check(state.backend, new, repeat)
                         if (error == null) {
                             state.run(onError = { error = it }, block = { state.backend.changePassword(current, new) }) {
+                                state.protectionChanged()
                                 state.message(done)
                                 state.pop()
                             }
@@ -578,56 +572,24 @@ private fun AboutSection(state: AppState) {
     when (sheet) {
         "report" -> GhulSheet({ sheet = "" }, stringResource(Res.string.about_report)) {
             val reportLabel = stringResource_report()
-            var note by remember { mutableStateOf("") }
-            var contact by remember { mutableStateOf("") }
-            var sending by remember { mutableStateOf(false) }
-            var error by remember { mutableStateOf<String?>(null) }
-            val sentMsg = stringResource(Res.string.report_sent)
-            val scope = androidx.compose.runtime.rememberCoroutineScope()
             HintText(stringResource(Res.string.about_report_hint))
-            Text(report, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = 12.sp,
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(g.surface2).padding(12.dp))
-            // A note of the user: what happened, what they did before.
-            OutlinedTextField(
-                note, { if (it.length <= 4000) note = it },
-                label = { Text(stringResource(Res.string.report_note)) },
-                placeholder = { Text(stringResource(Res.string.report_note_hint)) },
-                minLines = 3, modifier = Modifier.fillMaxWidth(),
-            )
-            OutlinedTextField(
-                contact, { contact = it.take(200) },
-                label = { Text(stringResource(Res.string.report_contact)) },
-                singleLine = true, modifier = Modifier.fillMaxWidth(),
-            )
-            HintText(stringResource(Res.string.report_send_hint))
-            ErrorText(error)
-            Button(onClick = {
-                error = null
-                sending = true
-                scope.launch {
-                    try {
-                        backend.sendReport(report, note, contact)
-                        state.message(sentMsg)
-                        sheet = ""
-                    } catch (e: kotlinx.coroutines.CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        error = describe(e)
-                    } finally {
-                        sending = false
-                    }
-                }
-            }, enabled = !sending, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(if (sending) Res.string.report_sending else Res.string.report_send))
+            SelectionContainer {
+                Text(report, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = 12.sp,
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(g.surface2).padding(12.dp))
             }
             ButtonRow {
-                OutlinedButton(onClick = {
-                    state.copy(reportLabel, if (note.isBlank()) report else "$report\n\n$note")
-                }, modifier = Modifier.weight(1f)) { Text(stringResource(Res.string.a_copy)) }
-                if (filePickersAvailable) OutlinedButton(onClick = {
-                    save("GhulSuite-Fehlerbericht.txt", (if (note.isBlank()) report else "$report\n\n$note").encodeToByteArray())
-                }, modifier = Modifier.weight(1f)) {
-                    Text(stringResource(Res.string.a_save))
+                OutlinedButton(onClick = { state.copy(reportLabel, report) }, modifier = Modifier.weight(1f)) {
+                    Text(stringResource(Res.string.a_copy))
+                }
+                // Android: hand it to another app (mail, messenger); elsewhere save it as a file.
+                if (backend.canShareToApps) {
+                    OutlinedButton(onClick = {
+                        state.run(block = { backend.shareToApps(REPORT_FILE, "text/plain", report.encodeToByteArray()) })
+                    }, modifier = Modifier.weight(1f)) { Text(stringResource(Res.string.a_share)) }
+                } else if (filePickersAvailable) {
+                    OutlinedButton(onClick = { save(REPORT_FILE, report.encodeToByteArray()) }, modifier = Modifier.weight(1f)) {
+                        Text(stringResource(Res.string.a_save))
+                    }
                 }
             }
         }
@@ -646,6 +608,9 @@ private fun AboutSection(state: AppState) {
 
 @Composable
 private fun stringResource_report(): String = stringResource(Res.string.about_report)
+
+/** File name of the error report when it is shared or saved. */
+private const val REPORT_FILE = "GhulSuite-Fehlerbericht.txt"
 
 /** Updates: automatically or by hand, stable or development versions. */
 @Composable
@@ -702,14 +667,12 @@ fun UpdateDialog(state: AppState) {
 private val LIBRARIES = listOf(
     "Kotlin, Compose Multiplatform" to "Apache-2.0",
     "UniFFI" to "MPL-2.0",
-    "RustCrypto (AES-GCM, ChaCha20-Poly1305, SHA-2, HKDF, Argon2, P-256)" to "MIT / Apache-2.0",
+    "RustCrypto (ChaCha20-Poly1305, AES, SHA-2, HKDF, Argon2, P-256)" to "MIT / Apache-2.0",
     "rustls, ring, webpki-roots" to "Apache-2.0 / ISC / MPL-2.0",
-    "russh, russh-sftp" to "Apache-2.0",
-    "async-imap, mail-parser, lettre" to "MIT / Apache-2.0",
-    "rPGP (pgp)" to "MIT / Apache-2.0",
     "zxcvbn" to "MIT",
+    "Apache PDFBox (Windows)" to "Apache-2.0",
     "zip" to "MIT",
-    "tokio, futures, serde, ciborium" to "MIT / Apache-2.0",
+    "tokio, serde, ciborium" to "MIT / Apache-2.0",
     "ZXing" to "Apache-2.0",
     "JNA (Windows)" to "Apache-2.0 / LGPL-2.1",
     "EFF Large Wordlist" to "CC BY 3.0 US",

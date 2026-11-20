@@ -10,22 +10,13 @@
     <string name="bio_title">Unlock GhulSuite</string>
     <string name="bio_subtitle">Confirm with your fingerprint</string>
     <string name="bio_cancel">Cancel</string>
-    <string name="mail_channel">New e-mail</string>
-    <string name="mail_push_channel">GhulMail waiting for new e-mail</string>
-    <string name="mail_push_title">GhulMail is ready</string>
-    <string name="mail_push_text">New e-mail is reported at once. Turn off: in GhulMail, at the account.</string>
-    <plurals name="mail_new">
-        <item quantity="one">%d new e-mail</item>
-        <item quantity="other">%d new e-mails</item>
-    </plurals>
     <string name="cal_channel">Event reminders</string>
     <string name="cal_channel_silent">Event reminders (silent)</string>
     <string name="cal_snooze">Again in 5 min</string>
     <string name="cal_done">Done</string>
-    <string name="share_as_mail">Send by e-mail (GhulMail)</string>
-    <string name="share_to_drive">Save in GhulDrive</string>
     <string name="update_failed">Update could not be installed. Download it from the release page instead.</string>
     <string name="notif_job_channel">Tasks in the background</string>
     <string name="notif_job_cancel">Cancel</string>
     <string name="notif_job_of">%1$d of %2$d done</string>
+    <string name="share_to_docs">Save in GhulDocs</string>
 </resources>

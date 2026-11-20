@@ -15,10 +15,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Apps
-import androidx.compose.material.icons.filled.Cloud
-import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Info
@@ -28,7 +26,6 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Password
 import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Icon
@@ -45,10 +42,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-import de.danerd.ghulsuite.model.ServerUi
 import de.danerd.ghulsuite.model.SlotType
 import de.danerd.ghulsuite.model.SlotUi
-import de.danerd.ghulsuite.model.SyncStatusUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
 import org.jetbrains.compose.resources.StringResource
@@ -62,7 +57,6 @@ private val Gray = Color(0xFF6F7187)
 private val Blue = Color(0xFF2F74E8)
 private val Teal = Color(0xFF0E9F80)
 private val Cyan = Color(0xFF1E9BB8)
-private val Orange = Color(0xFFE0700F)
 private val Pink = Color(0xFFD03B7E)
 
 /** Title of a settings page (top bar). */
@@ -72,13 +66,12 @@ fun SetPage.title(): StringResource = when (this) {
     SetPage.PRIVACY -> Res.string.set_privacy
     SetPage.FACTORS -> Res.string.set_factors
     SetPage.VAULTS -> Res.string.set_vaults
+    SetPage.FILE -> Res.string.file_title
     SetPage.IMPORT -> Res.string.set_import_export
-    SetPage.SERVERS -> Res.string.set_servers_sync_share
     SetPage.MODULES -> Res.string.set_modules
     SetPage.PASS -> Res.string.tab_pass
     SetPage.AUTH -> Res.string.tab_auth
-    SetPage.DRIVE -> Res.string.tab_drive
-    SetPage.MAIL -> Res.string.tab_mail
+    SetPage.DOCS -> Res.string.tab_docs
     SetPage.CAL -> Res.string.tab_cal
     SetPage.LOOK -> Res.string.set_view
     SetPage.ABOUT -> Res.string.set_about
@@ -107,17 +100,18 @@ fun SettingsScreen(state: AppState, padding: PaddingValues) {
     val backend = state.backend
     val settings = backend.settings
     var slots by remember { mutableStateOf<List<SlotUi>>(emptyList()) }
-    var servers by remember { mutableStateOf<List<ServerUi>>(emptyList()) }
-    var sync by remember { mutableStateOf(SyncStatusUi(null, 0)) }
     LaunchedEffect(state.liveRevision()) {
         slots = catching { backend.slots() }.getOrDefault(emptyList())
-        servers = catching { backend.net.servers() }.getOrDefault(emptyList())
-        sync = catching { backend.net.syncStatus() }.getOrDefault(SyncStatusUi(null, 0))
     }
     val open = { p: SetPage -> state.push(Screen.SettingsPage(p)) }
     val keys = slots.count { it.type == SlotType.SECURITY_KEY }
     val files = slots.count { it.type == SlotType.KEYFILE }
 
+    if (state.single != null) {
+        // A vault opened on its own: no options of the own suite.
+        Column(Modifier.padding(padding)) { ScreenColumn { SingleVaultSection(state) } }
+        return
+    }
     Column(Modifier.padding(padding)) {
         ScreenColumn {
             SectionCard {
@@ -125,7 +119,7 @@ fun SettingsScreen(state: AppState, padding: PaddingValues) {
                     IconTile(Icons.Outlined.Shield, paletteColor(0), size = 64.dp)
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(stringResource(Res.string.set_my_suite), style = MaterialTheme.typography.titleMedium)
-                        Hint(pluralStringResource(Res.plurals.set_suite_summary, state.vaults.size, state.vaults.size.toString(), storageLabel(backend.storageName())))
+                        Hint(pluralStringResource(Res.plurals.set_suite_summary, state.vaults.size, state.vaults.size.toString()))
                         val how = stringResource(
                             when {
                                 keys > 0 -> Res.string.prot_pw_key
@@ -188,13 +182,11 @@ fun SettingsScreen(state: AppState, padding: PaddingValues) {
                 }
             }
             Group(stringResource(Res.string.set_g_data)) {
+                SetRow(Icons.Filled.Save, Blue, stringResource(Res.string.file_title),
+                    stringResource(if (state.unsaved) Res.string.file_unsaved_short else Res.string.file_sub), first = true) { open(SetPage.FILE) }
                 SetRow(Icons.Filled.Layers, Teal, stringResource(Res.string.set_vaults),
-                    pluralStringResource(Res.plurals.set_vaults_sub, state.vaults.size, state.vaults.size.toString()), first = true) { open(SetPage.VAULTS) }
+                    pluralStringResource(Res.plurals.set_vaults_sub, state.vaults.size, state.vaults.size.toString())) { open(SetPage.VAULTS) }
                 SetRow(Icons.Filled.Download, Cyan, stringResource(Res.string.set_import_export), stringResource(Res.string.set_import_sub)) { open(SetPage.IMPORT) }
-                // Only the synchronisation (GhulDrive's storage locations are in GhulDrive's settings).
-                val syncName = servers.firstOrNull { it.id == sync.serverId }?.name
-                SetRow(Icons.Filled.Sync, Blue, stringResource(Res.string.set_servers_sync_share),
-                    if (syncName == null) stringResource(Res.string.set_sync_sub_off) else stringResource(Res.string.set_sync_sub_on, syncName)) { open(SetPage.SERVERS) }
             }
             Group(stringResource(Res.string.set_g_areas)) {
                 SetRow(Icons.Filled.Apps, Gray, stringResource(Res.string.set_modules), stringResource(Res.string.set_modules_sub), first = true) { open(SetPage.MODULES) }
@@ -205,11 +197,8 @@ fun SettingsScreen(state: AppState, padding: PaddingValues) {
                 if (state.vaults.any { it.kind == VaultKindUi.TOTP }) {
                     SetRow(tabIcon(Tab.AUTH), areaColor(Tab.AUTH), stringResource(Res.string.tab_auth), stringResource(Res.string.set_auth_sub)) { open(SetPage.AUTH) }
                 }
-                if (state.vaults.any { it.kind == VaultKindUi.DRIVE }) {
-                    SetRow(tabIcon(Tab.DRIVE), areaColor(Tab.DRIVE), stringResource(Res.string.tab_drive), stringResource(Res.string.set_drive_sub)) { open(SetPage.DRIVE) }
-                }
-                if (state.vaults.any { it.kind == VaultKindUi.MAIL }) {
-                    SetRow(tabIcon(Tab.MAIL), areaColor(Tab.MAIL), stringResource(Res.string.tab_mail), stringResource(Res.string.set_mail_sub)) { open(SetPage.MAIL) }
+                if (state.vaults.any { it.kind == VaultKindUi.DOCS }) {
+                    SetRow(tabIcon(Tab.DOCS), areaColor(Tab.DOCS), stringResource(Res.string.tab_docs), stringResource(Res.string.set_docs_sub)) { open(SetPage.DOCS) }
                 }
                 if (state.vaults.any { it.kind == VaultKindUi.CAL }) {
                     SetRow(tabIcon(Tab.CAL), areaColor(Tab.CAL), stringResource(Res.string.tab_cal),

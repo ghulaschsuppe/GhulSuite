@@ -89,23 +89,8 @@ if [ "${SKIP_MAESTRO:-0}" != 1 ]; then
   fi
   [ "$maestro_rc" = 0 ] || exit "$maestro_rc"
   [ "$logcat_rc" = 0 ] || exit "$logcat_rc"
-  shard="${MAESTRO_SHARD:-all}"
   # What no flow can see: the reminder of the calendar flow as an alarm of the system.
-  if [ "$shard" = all ] || [ "$shard" = base ]; then
-    timeout 300 "$(dirname "$0")/check-reminders.sh" "$out"
-  fi
-  # And what the servers of the flows with a real server hold now: only ciphertext.
-  if [ "${GHUL_TEST_SERVERS:-0}" = 1 ] && [ -f servers.env ]; then
-    case "$shard" in
-      all) parts="drive mail" ;;
-      server) parts="drive" ;;
-      mail) parts="mail" ;;
-      *) parts="" ;;
-    esac
-    if [ -n "$parts" ]; then
-      CHECK_PARTS="$parts" timeout 120 "$(dirname "$0")/check-server-flows.sh" servers.env "$out"
-    fi
-  fi
+  timeout 300 "$(dirname "$0")/check-reminders.sh" "$out"
 else
   timeout 120 adb install -r "$apk" > /dev/null
 fi

@@ -186,8 +186,10 @@ mod imp {
         s.encode_utf16().chain(std::iter::once(0)).collect()
     }
 
+    /// Base64url without padding (RFC 4648, section 5), as WebAuthn client data uses it.
     fn b64url(data: &[u8]) -> String {
-        crate::share::b64url(data)
+        use base64::Engine as _;
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(data)
     }
 
     /// Client data as a browser would send it; only its hash reaches the key.

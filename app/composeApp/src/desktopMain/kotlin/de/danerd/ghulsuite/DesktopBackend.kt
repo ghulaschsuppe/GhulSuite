@@ -1,19 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package de.danerd.ghulsuite
 
-import de.danerd.ghulsuite.ui.backupPrefix
-import de.danerd.ghulsuite.core.GhulSuite
 import de.danerd.ghulsuite.core.HidTransport
 import de.danerd.ghulsuite.core.VaultStorage
 import de.danerd.ghulsuite.core.localStorage
 import de.danerd.ghulsuite.core.platformSecurityKey
 import de.danerd.ghulsuite.core.platformSecurityKeyAvailable
-import de.danerd.ghulsuite.model.DriveItemUi
+import de.danerd.ghulsuite.model.SuiteFileRef
 import de.danerd.ghulsuite.model.EmergencySheetText
 import de.danerd.ghulsuite.model.FolderRef
 import de.danerd.ghulsuite.model.KeyStatus
 import de.danerd.ghulsuite.model.KeyValueStore
-import de.danerd.ghulsuite.model.NetBackend
 import de.danerd.ghulsuite.model.QuickUnlockReady
 import de.danerd.ghulsuite.model.Settings
 import de.danerd.ghulsuite.model.VaultErrorKind
@@ -26,6 +23,9 @@ import java.util.Timer
 import kotlin.concurrent.schedule
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
+/** A vault file opened on its own is read as a whole: at most as large as the core reads one. */
+private const val MAX_VAULT_FILE_BYTES = 256L * 1024 * 1024
 
 /** Version shown in the app (the MSI version is purely numeric). */
 const val DESKTOP_VERSION = BuildInfo.VERSION
@@ -84,6 +84,23 @@ object ShareFiles {
         }
     }
 
+    /** Overwrites one file with zeros and deletes it (a copy that was not finished). */
+    fun wipeFile(f: File) {
+        runCatching {
+            java.io.RandomAccessFile(f, "rw").use { raf ->
+                val zeros = ByteArray(64 * 1024)
+                var left = raf.length()
+                while (left > 0) {
+                    val n = minOf(left, zeros.size.toLong()).toInt()
+                    raf.write(zeros, 0, n)
+                    left -= n
+                }
+                raf.fd.sync()
+            }
+        }
+        f.delete()
+    }
+
     /** True when nothing is left. */
     private fun wipeOnce(): Boolean {
         val dir = DesktopPaths.shareDir
@@ -106,6 +123,39 @@ object ShareFiles {
             f.delete()
         }
         return !dir.exists()
+    }
+}
+
+/** Suite files on a file system (Windows; also the desktop tests). */
+object SuiteFiles {
+    fun input(f: File): SuiteInput? = runCatching { f.takeIf { it.isFile }?.let { SuiteInput(it.inputStream(), it.length()) } }.getOrNull()
+
+    /**
+     * Written next to the file first (`<name>.ghltmp`), read back from there, and only then moved
+     * over the old file in one step: a pulled stick or a full disk leaves the old file as it was.
+     */
+    fun writeReplacing(target: File, write: (java.io.OutputStream) -> Unit, check: (SuiteInput) -> Boolean): Boolean {
+        val tmp = File(target.absoluteFile.parentFile, target.name + ".ghltmp")
+        var done = false
+        try {
+            java.io.FileOutputStream(tmp).use { out ->
+                val buffered = java.io.BufferedOutputStream(out, 1 shl 20)
+                write(buffered)
+                buffered.flush()
+                out.fd.sync()
+            }
+            if (!java.io.FileInputStream(tmp).use { check(SuiteInput(it, tmp.length())) }) return false
+            try {
+                java.nio.file.Files.move(tmp.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+            } catch (e: java.nio.file.AtomicMoveNotSupportedException) {
+                java.nio.file.Files.move(tmp.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            }
+            done = true
+            return true
+        } finally {
+            // No half-written temporary file next to the user's file.
+            if (!done) tmp.delete()
+        }
     }
 }
 
@@ -143,12 +193,11 @@ class PropertiesStore(private val file: File) : KeyValueStore {
     override fun putBoolean(key: String, value: Boolean) = putString(key, value.toString())
 }
 
-/** Windows (and other desktops): suite folder on disk, security key through the system API. */
+/** Windows (and other desktops): the working copy in the app's data folder, security key through the system API. */
 class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
     CoreVaultBackend(File(DesktopPaths.dataDir, "local").absolutePath) {
     private val device = PropertiesStore(File(DesktopPaths.dataDir, "device.properties"))
     override val settings: Settings = Settings(PropertiesStore(File(DesktopPaths.dataDir, "settings.properties")))
-    override val net: NetBackend = DesktopNetBackend { suite }
     override val cal: de.danerd.ghulsuite.model.CalBackend = DesktopCalBackend(window) { suite }
     override val updater: de.danerd.ghulsuite.model.AppUpdater = DesktopUpdater()
     override val appVersion: String = DESKTOP_VERSION + if (DesktopPaths.portable) " (portabel)" else ""
@@ -160,10 +209,34 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
         ShareFiles.wipe()
     }
 
-    override fun storage(): VaultStorage = storageFor(device.getString("folder")?.let { FolderRef(it, "") })
+    override fun storage(): VaultStorage = localStorage(File(DesktopPaths.dataDir, "suite").absolutePath)
 
-    override fun storageFor(folder: FolderRef?): VaultStorage =
-        localStorage(folder?.uri ?: File(DesktopPaths.dataDir, "suite").absolutePath)
+    override suspend fun readSuiteFile(ref: SuiteFileRef): ByteArray? = withContext(Dispatchers.IO) {
+        runCatching { File(ref.id).takeIf { it.isFile && it.length() <= MAX_VAULT_FILE_BYTES }?.readBytes() }.getOrNull()
+    }
+
+    override fun openSuiteInput(ref: SuiteFileRef): SuiteInput? = SuiteFiles.input(File(ref.id))
+
+    override fun writeSuiteStreamed(
+        ref: SuiteFileRef,
+        created: Boolean,
+        write: (java.io.OutputStream) -> Unit,
+        check: (SuiteInput) -> Boolean,
+    ): Boolean = SuiteFiles.writeReplacing(File(ref.id), write, check)
+
+    /** Only where no file is: moved without replacing (a file that came back meanwhile stays). */
+    override suspend fun createSuiteFile(ref: SuiteFileRef, data: ByteArray): Boolean = withContext(Dispatchers.IO) {
+        val target = File(ref.id)
+        val tmp = File(target.parentFile, target.name + ".ghltmp")
+        runCatching {
+            java.io.FileOutputStream(tmp).use { it.write(data); it.fd.sync() }
+            java.nio.file.Files.move(tmp.toPath(), target.toPath())
+            target.readBytes().contentEquals(data)
+        }.getOrElse {
+            tmp.delete()
+            false
+        }
+    }
 
     override fun devicePref(key: String): String? = device.getString(key)
 
@@ -175,30 +248,21 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
         return (total / (16L * 1024 * 1024)).toInt()
     }
 
-    override fun useStorage(folder: FolderRef?) {
-        lock()
-        if (folder == null) device.remove("folder") else device.putString("folder", folder.uri)
-        reopen()
-    }
-
     override fun lock() {
         ShareFiles.wipe()
         super.lock()
     }
 
-    override suspend fun writeToFolder(folder: FolderRef, name: String, data: ByteArray, keep: Int) = withContext(Dispatchers.IO) {
-        val dir = File(folder.uri)
-        dir.mkdirs()
-        File(dir, name).writeBytes(data)
-        dir.listFiles { f -> f.name.startsWith(backupPrefix(name)) && f.name.endsWith(".zip") }
-            ?.sortedByDescending { it.name }?.drop(keep)?.forEach { it.delete() }
-        Unit
-    }
-
     override fun crashReport(): String? = File(DesktopPaths.dataDir, "absturz.txt").takeIf { it.exists() }?.readText()
 
     override fun panicLock() {
-        lock()
+        // Nothing is written back first (a GhulDocs vault open on its own locks at once).
+        panicking = true
+        try {
+            lock()
+        } finally {
+            panicking = false
+        }
         cal.clearReminders()
     }
 
@@ -232,6 +296,37 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
 
     // --- tools --------------------------------------------------------------------------------
 
+    /** Windows has no share sheet: the file opens in the program registered for it. */
+    override suspend fun shareToApps(name: String, mime: String, data: ByteArray): Boolean =
+        shareStreamToApps(name, mime) { it.write(data) }
+
+    /**
+     * The same, written piece by piece into the copy (a document of GhulDocs). A write that fails
+     * or is cancelled wipes the half copy at once and opens nothing.
+     */
+    override suspend fun shareStreamToApps(name: String, mime: String, write: suspend (de.danerd.ghulsuite.model.ByteSink) -> Unit): Boolean {
+        val f = withContext(Dispatchers.IO) {
+            val dir = DesktopPaths.shareDir.apply { mkdirs() }
+            File(dir, safeFileName(name, mutableSetOf()))
+        }
+        val out = withContext(Dispatchers.IO) { java.io.BufferedOutputStream(java.io.FileOutputStream(f), 1 shl 20) }
+        var complete = false
+        try {
+            write(object : de.danerd.ghulsuite.model.ByteSink {
+                override fun write(data: ByteArray) = out.write(data)
+                override fun close() = out.close()
+            })
+            withContext(Dispatchers.IO) { out.close() }
+            complete = true
+        } finally {
+            if (!complete) withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
+                runCatching { out.close() }
+                ShareFiles.wipeFile(f)
+            }
+        }
+        return runCatching { java.awt.Desktop.getDesktop().open(f) }.isSuccess
+    }
+
     override fun printEmergencySheet(code: String, text: EmergencySheetText) = DesktopEmergencySheet.print(code, text)
 
     override fun copySensitive(label: String, text: String) {
@@ -253,35 +348,4 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
             }
         }
     }
-}
-
-/** Desktop: decrypted files are opened with the program Windows uses for them. */
-class DesktopNetBackend(suite: () -> GhulSuite) : CoreNetBackend(suite) {
-    /** Windows has no share sheet: the file opens in the program registered for it. */
-    override suspend fun shareBytesToApps(name: String, mime: String, data: ByteArray): Boolean {
-        val f = withContext(Dispatchers.IO) {
-            val dir = DesktopPaths.shareDir.apply { mkdirs() }
-            File(dir, safeFileName(name, mutableSetOf())).apply { writeBytes(data) }
-        }
-        return runCatching { java.awt.Desktop.getDesktop().open(f) }.isSuccess
-    }
-
-    override suspend fun shareDriveToApps(files: List<DriveItemUi>) {
-        val written = withContext(Dispatchers.IO) {
-            val dir = DesktopPaths.shareDir.apply { mkdirs() }
-            val used = mutableSetOf<String>()
-            files.filter { !it.isDir }.map { f ->
-                File(dir, safeFileName(f.name, used)).also { target -> writeDriveFile(f.id, target) }
-            }
-        }
-        if (written.isEmpty()) return
-        val desktop = java.awt.Desktop.getDesktop()
-        // One file: open it; several: show the folder.
-        if (written.size == 1) desktop.open(written[0]) else desktop.open(DesktopPaths.shareDir)
-    }
-
-    // Mail notifications while locked need a background service; on the desktop not yet.
-    override fun mailNotificationsOn(accountId: String): Boolean = false
-
-    override suspend fun setMailNotifications(accountId: String, on: Boolean) {}
 }

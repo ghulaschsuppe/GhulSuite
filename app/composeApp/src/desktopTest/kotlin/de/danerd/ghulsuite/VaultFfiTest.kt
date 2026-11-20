@@ -12,6 +12,7 @@ import de.danerd.ghulsuite.coretest.GhulSuite
 import de.danerd.ghulsuite.coretest.NewVault
 import de.danerd.ghulsuite.coretest.OtpAlgo
 import de.danerd.ghulsuite.coretest.SetupOptions
+import de.danerd.ghulsuite.coretest.ShareVaultOptions
 import de.danerd.ghulsuite.coretest.SlotKind
 import de.danerd.ghulsuite.coretest.TimeZones
 import de.danerd.ghulsuite.coretest.TotpInput
@@ -171,6 +172,51 @@ class VaultFfiTest {
             s.unlock("Master Passwort!", null, null, null, kf)
             s.lock()
             s.unlockWithRecoveryCode(setup.recoveryCode!!, "Noch ein Passwort")
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    /** P5b: one vault opened on its own in a second, temporary suite, and entries handed on as a vault. */
+    @Test
+    fun singleVaultAndHandingOn() {
+        val dir = Files.createTempDirectory("ghul-single").toFile()
+        try {
+            val kf = generateKeyfile()
+            val s = suite(File(dir, "own"))
+            s.create(options(kf), null, null, null)
+            val privat = s.listVaults().first { it.name == "Privat" }.id
+            val a = s.saveEntry(privat, login("Codeberg"))
+            s.saveEntry(privat, login("Bank"))
+            val file = s.exportVault(privat)
+            s.lock()
+
+            val t = suite(File(dir, "single"))
+            assertFailsWith<GhulException.WrongPassword> { t.openSingleVault(file, "falsch", null, null, null, kf) }
+            assertEquals(VaultKind.PASS, t.openSingleVault(file, "Master Passwort!", null, null, null, kf))
+            assertTrue(t.isSingle())
+            assertEquals(1, t.listVaults().size)
+            t.saveEntry(t.listVaults().single().id, login("Neu"))
+            assertTrue(t.archiveUnsaved())
+            val back = t.singleVaultFile()
+            t.singleSaved(back.change)
+            val again = suite(File(dir, "again"))
+            again.openSingleVault(back.data, "Master Passwort!", null, null, null, kf)
+            assertEquals(setOf("Bank", "Codeberg", "Neu"), again.listEntries(VaultKind.PASS, null).map { it.title }.toSet())
+
+            // Handed on: its own password and key file; the own ones do not open it.
+            s.unlock("Master Passwort!", null, null, null, kf)
+            val newKf = generateKeyfile()
+            val shared = s.shareAsVault(
+                ShareVaultOptions(privat, listOf(a), "Für Anna", "Master Passwort!", "ein neues Passwort", newKf, "Key", "Datei", "Blatt"),
+                null, null, null,
+            )
+            assertEquals(VaultKind.PASS, shared.kind)
+            assertEquals(11, shared.recoveryCode.split('-').size)
+            val r = suite(File(dir, "anna"))
+            assertFailsWith<GhulException> { r.openSingleVault(shared.data, "Master Passwort!", null, null, null, kf) }
+            r.openSingleVault(shared.data, "ein neues Passwort", null, null, null, newKf)
+            assertEquals(listOf("Codeberg"), r.listEntries(VaultKind.PASS, null).map { it.title })
         } finally {
             dir.deleteRecursively()
         }

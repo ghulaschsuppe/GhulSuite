@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TLS for IMAP and SMTP (rustls with ring and the Mozilla root certificates).
+//! TLS for the HTTPS requests (rustls with ring and the Mozilla root certificates).
 //!
-//! Certificates are checked normally. For own servers with a self-signed certificate the user
-//! can confirm the certificate's SHA-256 fingerprint once; exactly that certificate is then
-//! trusted (pinning). An untrusted certificate is reported with its fingerprint.
+//! Certificates are checked normally. A caller may pass a confirmed SHA-256 fingerprint; exactly
+//! that certificate is then trusted (pinning). An untrusted certificate is reported with its
+//! fingerprint.
 
 use std::sync::{Arc, Mutex};
 
@@ -92,8 +92,7 @@ impl ServerCertVerifier for Verifier {
     }
 }
 
-/// A TLS client configuration that remembers the certificate it saw. One configuration can be
-/// used for several connections, which lets TLS sessions resume (needed for FTPS data channels).
+/// A TLS client configuration that remembers the certificate it saw.
 pub struct Client {
     config: Arc<rustls::ClientConfig>,
     seen: Arc<Mutex<Option<String>>>,
@@ -104,13 +103,6 @@ impl Client {
     /// `pinned`: a confirmed certificate fingerprint (self-signed own servers).
     pub fn new(pinned: Option<&str>) -> NetResult<Client> {
         Self::with_versions(pinned, rustls::DEFAULT_VERSIONS)
-    }
-
-    /// FTPS: TLS 1.2 only. FTPS servers demand that every data connection resumes the control
-    /// connection's TLS session; TLS 1.3 tickets are single-use, TLS 1.2 sessions can be resumed
-    /// again and again. Still forward secret (ECDHE) with AEAD ciphers only.
-    pub fn for_ftps(pinned: Option<&str>) -> NetResult<Client> {
-        Self::with_versions(pinned, &[&rustls::version::TLS12])
     }
 
     fn with_versions(
@@ -154,17 +146,4 @@ impl Client {
 /// Starts TLS on a connected socket. `pinned`: a confirmed certificate fingerprint.
 pub async fn start(tcp: TcpStream, host: &str, pinned: Option<&str>) -> NetResult<TlsStream<TcpStream>> {
     Client::new(pinned)?.connect(tcp, host).await
-}
-
-/// Base64 (standard, with padding), e.g. for SMTP AUTH.
-pub fn base64(data: &[u8]) -> String {
-    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
-    for c in data.chunks(3) {
-        let n = c.iter().enumerate().fold(0u32, |a, (i, b)| a | (*b as u32) << (16 - 8 * i));
-        for i in 0..4 {
-            out.push(if i <= c.len() { T[((n >> (18 - 6 * i)) & 63) as usize] as char } else { '=' });
-        }
-    }
-    out
 }

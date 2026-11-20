@@ -7,118 +7,97 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
 import de.danerd.ghulsuite.model.CalEventUi
-import de.danerd.ghulsuite.model.OutgoingAttachmentUi
 import de.danerd.ghulsuite.ui.AppLaunch
-import de.danerd.ghulsuite.ui.MailDraft
 import java.time.Instant
 import java.time.ZoneId
 
 /**
- * GhulSuite as the mail and calendar app of the phone. Other apps hand over:
- * - `mailto:` links and "send by e-mail" (with attachments) → a new mail in GhulMail,
+ * GhulSuite as the calendar app of the phone, and the place suite files open. Other apps hand over:
  * - `.ics` files → imported into the default calendar of GhulCal,
- * - "add to calendar" (title, time, place) → a new appointment in GhulCal.
+ * - "add to calendar" (title, time, place) → a new appointment in GhulCal,
+ * - a suite file (`.ghlzip`) → opened like "Open suite file" (checked completely first),
+ * - "Save in GhulDocs" (one or several files of any type) → added to GhulDocs, encrypted, after
+ *   unlocking and choosing the vault and folder.
  *
- * Invisible: reads what was handed over (attachments while their read permission lasts), then
- * opens [MainActivity] in GhulSuite's own task. After unlocking the mail or appointment is ready.
+ * Invisible: reads what was handed over (while its read permission lasts), then opens
+ * [MainActivity] in GhulSuite's own task. After unlocking the appointment is ready. A suite file is
+ * not read here (it can be over a gigabyte): MainActivity gets the right to read it and reads it
+ * as a stream when it is opened.
  */
 class IntentEntryActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val intent = intent ?: return finish()
-        // "Save in GhulDrive": the files stay where they are until they are uploaded; the right
-        // to read them goes along to GhulSuite's own window (it ends with this one otherwise).
-        val toDrive = intent.component?.className?.endsWith(".ShareToDriveActivity") == true
+        // "Save in GhulDocs": the files stay where they are until GhulDocs adds them; the right to
+        // read them goes along to GhulSuite's own window (it ends with this one otherwise).
+        val toDocs = intent.component?.className?.endsWith(".ShareToDocsActivity") == true &&
+            (intent.action == Intent.ACTION_SEND || intent.action == Intent.ACTION_SEND_MULTIPLE)
         // Only files GhulSuite was really allowed to read: passing on a right it does not hold
         // would make Android end GhulSuite (any app could crash it this way).
-        val driveUris = if (!toDrive) emptyList() else streams(intent).filter {
+        val docsUris = if (!toDocs) emptyList() else streams(intent).filter {
             foreign(it) && checkUriPermission(it, android.os.Process.myPid(), android.os.Process.myUid(), Intent.FLAG_GRANT_READ_URI_PERMISSION) ==
                 android.content.pm.PackageManager.PERMISSION_GRANTED
-        }
+        }.distinct().take(MAX_SHARED_FILES)
         Thread {
-            runCatching {
-                if (toDrive) {
-                    if (driveUris.isNotEmpty()) AppLaunch.driveFiles.value = driveUris.map { de.danerd.ghulsuite.ui.contentSource(applicationContext, it) }
-                } else {
-                    handle(intent)
-                }
+            val suiteFile = if (toDocs) null else runCatching { handle(intent) }.getOrNull()
+            if (docsUris.isNotEmpty()) {
+                runCatching { AppLaunch.docsFiles.value = docsUris.map { de.danerd.ghulsuite.ui.contentSource(applicationContext, it) } }
             }
             runOnUiThread {
-                val next = Intent(this, MainActivity::class.java)
+                val main = Intent(this, MainActivity::class.java)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                if (driveUris.isNotEmpty()) {
-                    val clip = android.content.ClipData.newRawUri("", driveUris[0])
-                    driveUris.drop(1).forEach { clip.addItem(android.content.ClipData.Item(it)) }
-                    next.clipData = clip
-                    next.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                val grant = if (suiteFile != null) listOf(suiteFile) else docsUris
+                if (grant.isNotEmpty()) {
+                    // The read permission of this activity ends with it: handed on to MainActivity,
+                    // which reads the files later (where Android kept no lasting permission).
+                    val clip = android.content.ClipData.newRawUri("", grant[0])
+                    grant.drop(1).forEach { clip.addItem(android.content.ClipData.Item(it)) }
+                    main.clipData = clip
+                    main.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
                 try {
-                    startActivity(next)
+                    startActivity(main)
                 } catch (e: SecurityException) {
                     // The right could not be passed on after all: GhulSuite opens, the files stay out.
-                    AppLaunch.driveFiles.value = null
-                    next.clipData = null
-                    next.flags = next.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION.inv()
-                    startActivity(next)
+                    if (docsUris.isNotEmpty()) AppLaunch.docsFiles.value = null
+                    main.clipData = null
+                    main.flags = main.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION.inv()
+                    startActivity(main)
                 }
                 finish()
             }
         }.start()
     }
 
-    private fun handle(intent: Intent) {
+    /** Takes over what was handed over; the suite file's address if it was one (to pass its read permission on). */
+    private fun handle(intent: Intent): Uri? {
         val data = intent.data
         when {
-            data?.scheme.equals("mailto", ignoreCase = true) || intent.action == Intent.ACTION_SEND || intent.action == Intent.ACTION_SEND_MULTIPLE ->
-                AppLaunch.compose.value = mailDraft(intent)
             intent.action == Intent.ACTION_INSERT || intent.action == Intent.ACTION_EDIT ->
                 AppLaunch.newEvent.value = event(intent)
+            // A suite file only from a content provider (a file:// path could point at any file of the app).
+            intent.action == Intent.ACTION_VIEW && data != null && name(data).endsWith(".ghlzip", ignoreCase = true) ->
+                if (foreign(data)) {
+                    AppLaunch.suiteFile.value = suiteFile(data)
+                    return data
+                }
             intent.action == Intent.ACTION_VIEW && data != null ->
                 read(data, MAX_ICS_BYTES)?.let { AppLaunch.icsFile.value = it }
         }
+        return null
     }
 
-    /** `mailto:a@b.de?cc=..&subject=..&body=..` plus the usual extras of "send". */
-    private fun mailDraft(intent: Intent): MailDraft {
-        val to = mutableListOf<String>()
-        val cc = mutableListOf<String>()
-        val bcc = mutableListOf<String>()
-        var subject = intent.getStringExtra(Intent.EXTRA_SUBJECT).orEmpty()
-        var body = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString().orEmpty()
-        intent.data?.takeIf { it.scheme.equals("mailto", ignoreCase = true) }?.let { uri ->
-            val raw = uri.toString().substringAfter(':')
-            to += Uri.decode(raw.substringBefore('?')).split(',').map { it.trim() }.filter { it.isNotEmpty() }
-            val query = raw.substringAfter('?', "")
-            for (pair in query.split('&').filter { it.contains('=') }) {
-                val value = Uri.decode(pair.substringAfter('='))
-                when (pair.substringBefore('=').lowercase()) {
-                    "to" -> to += value.split(',').map { it.trim() }.filter { it.isNotEmpty() }
-                    "cc" -> cc += value.split(',').map { it.trim() }.filter { it.isNotEmpty() }
-                    "bcc" -> bcc += value.split(',').map { it.trim() }.filter { it.isNotEmpty() }
-                    "subject" -> subject = value
-                    "body" -> body = value
-                }
-            }
-        }
-        intent.getStringArrayExtra(Intent.EXTRA_EMAIL)?.let { to += it }
-        intent.getStringArrayExtra(Intent.EXTRA_CC)?.let { cc += it }
-        intent.getStringArrayExtra(Intent.EXTRA_BCC)?.let { bcc += it }
-        val streams = streams(intent)
-        var left = MAX_ATTACHMENT_BYTES
-        val attachments = streams.mapNotNull { uri ->
-            val bytes = read(uri, left) ?: return@mapNotNull null
-            left -= bytes.size
-            OutgoingAttachmentUi(name(uri), contentResolver.getType(uri) ?: "application/octet-stream", bytes)
-        }
-        return MailDraft(
-            accountId = null,
-            to = to.distinct().joinToString(", "),
-            cc = cc.distinct().joinToString(", "),
-            bcc = bcc.distinct().joinToString(", "),
-            subject = subject,
-            text = body,
-            attachments = attachments,
-        )
+    /**
+     * A suite file handed over. It is remembered for saving only where Android lets GhulSuite
+     * keep the right to write it; otherwise "Save as" chooses the place (empty id).
+     */
+    private fun suiteFile(uri: Uri): de.danerd.ghulsuite.ui.PickedSuiteFile {
+        val writable = runCatching {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        }.isSuccess
+        val name = name(uri)
+        val ref = de.danerd.ghulsuite.model.SuiteFileRef(if (writable) uri.toString() else "", name)
+        return de.danerd.ghulsuite.ui.PickedSuiteFile(ref, de.danerd.ghulsuite.model.SuiteFileRef(uri.toString(), name))
     }
 
     /** "Add to calendar" from other apps (CalendarContract extras). */
@@ -138,28 +117,30 @@ class IntentEntryActivity : Activity() {
         )
     }
 
-    /** The files handed over with "send" (one or several). */
-    private fun streams(intent: Intent): List<Uri> = buildList {
-        if (intent.action == Intent.ACTION_SEND_MULTIPLE) {
-            @Suppress("DEPRECATION")
-            intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)?.let { addAll(it) }
-        } else if (intent.action == Intent.ACTION_SEND) {
-            @Suppress("DEPRECATION")
-            (intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM))?.let { add(it) }
+    /**
+     * The files handed over with "send" (one or several). Only addresses: anything else another
+     * app puts there (a text, a list of something else) is left out instead of ending GhulSuite.
+     */
+    private fun streams(intent: Intent): List<Uri> = runCatching {
+        @Suppress("DEPRECATION")
+        when (intent.action) {
+            Intent.ACTION_SEND_MULTIPLE -> intent.getParcelableArrayListExtra<android.os.Parcelable>(Intent.EXTRA_STREAM).orEmpty().filterIsInstance<Uri>()
+            Intent.ACTION_SEND -> listOfNotNull(intent.getParcelableExtra<android.os.Parcelable>(Intent.EXTRA_STREAM) as? Uri)
+            else -> emptyList()
         }
-    }
+    }.getOrDefault(emptyList())
 
     private fun name(uri: Uri): String =
         runCatching {
             contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
                 if (c.moveToFirst()) c.getString(0) else null
             }
-        }.getOrNull() ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Anhang"
+        }.getOrNull() ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Datei"
 
     /**
      * Only files another app really hands over: `content://` of a provider that does not belong
-     * to GhulSuite. A `file://` path or GhulSuite's own provider would let any app put GhulSuite's
-     * private files (or decrypted Drive copies) into a ready-to-send mail ("confused deputy").
+     * to GhulSuite. A `file://` path or GhulSuite's own provider would let any app make GhulSuite
+     * read its own private files ("confused deputy").
      */
     private fun foreign(uri: Uri): Boolean {
         if (uri.scheme != "content") return false
@@ -185,7 +166,8 @@ class IntentEntryActivity : Activity() {
     }.getOrNull()
 
     companion object {
-        private const val MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
         private const val MAX_ICS_BYTES = 5 * 1024 * 1024
+        /** Files handed over at once ("send" with many files): more are left out. */
+        private const val MAX_SHARED_FILES = 100
     }
 }

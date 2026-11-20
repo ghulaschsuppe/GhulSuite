@@ -20,24 +20,21 @@ A = "{http://schemas.android.com/apk/res/android}"
 # Components other apps may reach, and what protects them.
 EXPORTED = {
     ".MainActivity": None,  # launcher
-    ".IntentEntryActivity": None,  # mailto, share, .ics, add to calendar (takes only foreign content)
-    ".ShareToDriveActivity": None,  # "Save in GhulDrive" (alias of IntentEntryActivity, only foreign content)
+    ".IntentEntryActivity": None,  # .ics, add to calendar, suite files (takes only foreign content)
+    ".ShareToDocsActivity": None,  # "Save in GhulDocs" (alias of IntentEntryActivity, takes only foreign content)
     ".LockTileService": "android.permission.BIND_QUICK_SETTINGS_TILE",
 }
 PERMISSIONS = {
     "android.permission.CAMERA",
-    "android.permission.INTERNET",
-    "android.permission.ACCESS_NETWORK_STATE",
+    "android.permission.INTERNET",  # only the update check and the leak check of GhulPass
     "android.permission.USE_BIOMETRIC",
     "android.permission.VIBRATE",
     "android.permission.FOREGROUND_SERVICE",
     "android.permission.FOREGROUND_SERVICE_SPECIAL_USE",
     "android.permission.POST_NOTIFICATIONS",
-    "android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING",
     "android.permission.RECEIVE_BOOT_COMPLETED",
     "android.permission.USE_EXACT_ALARM",
     "android.permission.SCHEDULE_EXACT_ALARM",
-    "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
     "android.permission.REQUEST_INSTALL_PACKAGES",  # app updates from signed releases (AndroidUpdater)
 }
 # Never, whatever the reason.

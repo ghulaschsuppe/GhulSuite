@@ -14,7 +14,7 @@ name: Website
 on:
   push:
     branches: ['**']
-    paths: ['website/**', 'tools/build-website.py', 'docs/images/**', 'docs/TESTPROTOKOLL.md', 'docs/AUDIT.md',
+    paths: ['website/**', 'tools/build-website.py', 'docs/images/**', 'docs/TESTPROTOKOLL.md',
             '.github/workflows/website.yml', '.github/actions/ftps-upload/**']
   # After a release: the download section shows the new version.
   workflow_run:

@@ -8,8 +8,10 @@
 //! 3. [`LockedContainer::factor_secret`] → `S`, [`PasswordKey::derive`] → `PK`.
 //! 4. [`LockedContainer::unlock`] → [`UnlockedContainer`]; change the payload; [`UnlockedContainer::seal`].
 //!
-//! Alternatives: [`LockedContainer::recover`] with the recovery code (opens the container key
-//! directly) and [`LockedContainer::unlock_with_vmk`] with a key from the suite's keyring.
+//! Alternative: [`LockedContainer::recover`] with the recovery code (opens the container key
+//! directly). It only reads: the write tag of such a container is not checked and it cannot be
+//! sealed. Whoever has the password uses [`LockedContainer::recover_with_password`] (checked,
+//! can be sealed).
 
 use rand_core::CryptoRngCore;
 use zeroize::Zeroizing;
@@ -20,10 +22,11 @@ use super::format::{
     Slot, FORMAT_VERSION, MAX_SLOTS, NONCE_LEN,
 };
 use super::keyfile::Keyfile;
+use super::keys::{auth_key, file_tag, tag_matches};
 use super::keys::{
-    factor_aad, fido2_slot_key, kek, keyfile_slot_key, open, payload_key, public_key, random32, recovery_aad,
-    recovery_slot_key, seal, slot_private_key, unwrap32, unwrap_with_private, vmk_aad, wrap32, wrap_to_public,
-    FactorSecret, Key32, PasswordKey, INFO_X25519_FIDO2, INFO_X25519_KEYFILE,
+    factor_aad, kek, open, payload_key, public_key, random32, recovery_aad, recovery_slot_key, seal, slot_private_key,
+    unwrap32, unwrap_with_private, vmk_aad, wrap32, wrap_to_public, FactorSecret, Key32, PasswordKey,
+    INFO_X25519_FIDO2, INFO_X25519_KEYFILE,
 };
 use super::payload::{pad, unpad, Payload, SlotMeta};
 use super::recovery::RecoveryCode;
@@ -133,6 +136,7 @@ impl SuiteKeys {
             vmk,
             factor_secret: FactorSecret::from_bytes(*self.factor_secret.expose()),
             payload: Payload::new(kind),
+            password_key: Some(PasswordKey::from_bytes(*self.password_key.expose())),
         })
     }
 }
@@ -172,7 +176,7 @@ fn fido2_slot_with_id(
         credential_id: reg.credential_id.to_vec(),
         prf_input: reg.prf_input,
         uv_required: true,
-        public: Some(public),
+        public,
         wrapped,
     })
 }
@@ -187,7 +191,7 @@ fn keyfile_slot_with_id(
 ) -> Slot {
     let public = public_key(&slot_private_key(keyfile.expose(), INFO_X25519_KEYFILE, &slot_id));
     let (public, wrapped) = public_wrap(public, suite_id, &slot_id, s, rng).expect("own public key");
-    Slot::Keyfile(KeyfileSlot { slot_id, keyfile_id: keyfile.id(), public: Some(public), wrapped })
+    Slot::Keyfile(KeyfileSlot { slot_id, keyfile_id: keyfile.id(), public, wrapped })
 }
 
 fn new_fido2_slot(
@@ -205,63 +209,18 @@ fn new_keyfile_slot(suite_id: &[u8; 16], s: &FactorSecret, keyfile: &Keyfile, rn
     keyfile_slot_with_id(slot_id, suite_id, s, keyfile, rng)
 }
 
-/// Slots of format version 1 (type 1 and 3), only to test reading and upgrading older files.
-#[cfg(test)]
-pub(crate) fn legacy_fido2_slot(
-    suite_id: &[u8; 16],
-    s: &FactorSecret,
-    reg: &Fido2Registration<'_>,
-    rng: &mut impl CryptoRngCore,
-) -> Slot {
-    let slot_id = random_slot_id(rng);
-    let key = fido2_slot_key(reg.hmac_output, &slot_id);
-    let wrapped = wrap32(&key, s.expose(), &factor_aad(suite_id, &slot_id), rng);
-    Slot::Fido2(Fido2Slot {
-        slot_id,
-        rp_id: reg.rp_id.to_owned(),
-        credential_id: reg.credential_id.to_vec(),
-        prf_input: reg.prf_input,
-        uv_required: true,
-        public: None,
-        wrapped,
-    })
-}
-
-#[cfg(test)]
-pub(crate) fn legacy_keyfile_slot(
-    suite_id: &[u8; 16],
-    s: &FactorSecret,
-    keyfile: &Keyfile,
-    rng: &mut impl CryptoRngCore,
-) -> Slot {
-    let slot_id = random_slot_id(rng);
-    let key = keyfile_slot_key(keyfile.expose(), &slot_id);
-    let wrapped = wrap32(&key, s.expose(), &factor_aad(suite_id, &slot_id), rng);
-    Slot::Keyfile(KeyfileSlot { slot_id, keyfile_id: keyfile.id(), public: None, wrapped })
-}
-
 /// Opens the factor secret of one security key slot with the key's hmac-secret output.
 fn fido2_factor(suite_id: &[u8; 16], f: &Fido2Slot, hmac_output: &[u8; 32]) -> Option<Key32> {
     let aad = factor_aad(suite_id, &f.slot_id);
-    match &f.public {
-        Some(p) => {
-            let private = slot_private_key(hmac_output, INFO_X25519_FIDO2, &f.slot_id);
-            unwrap_with_private(&private, &p.public_key, &p.ephemeral, &f.slot_id, &f.wrapped, &aad)
-        }
-        None => unwrap32(&fido2_slot_key(hmac_output, &f.slot_id), &f.wrapped, &aad),
-    }
+    let private = slot_private_key(hmac_output, INFO_X25519_FIDO2, &f.slot_id);
+    unwrap_with_private(&private, &f.public.public_key, &f.public.ephemeral, &f.slot_id, &f.wrapped, &aad)
 }
 
 /// Opens the factor secret of one key file slot with the key file.
 fn keyfile_factor(suite_id: &[u8; 16], k: &KeyfileSlot, keyfile: &Keyfile) -> Option<Key32> {
     let aad = factor_aad(suite_id, &k.slot_id);
-    match &k.public {
-        Some(p) => {
-            let private = slot_private_key(keyfile.expose(), INFO_X25519_KEYFILE, &k.slot_id);
-            unwrap_with_private(&private, &p.public_key, &p.ephemeral, &k.slot_id, &k.wrapped, &aad)
-        }
-        None => unwrap32(&keyfile_slot_key(keyfile.expose(), &k.slot_id), &k.wrapped, &aad),
-    }
+    let private = slot_private_key(keyfile.expose(), INFO_X25519_KEYFILE, &k.slot_id);
+    unwrap_with_private(&private, &k.public.public_key, &k.public.ephemeral, &k.slot_id, &k.wrapped, &aad)
 }
 
 /// A parsed container whose header is readable but whose content is still encrypted.
@@ -276,13 +235,10 @@ impl LockedContainer {
     pub fn parse(data: &[u8]) -> Result<Self> {
         let parts = split_file(data)?;
         let header = Header::parse(parts.header)?;
-        if !header.fits_version(parts.version) {
-            return Err(VaultError::format("slot type not allowed in this format version"));
-        }
         Ok(LockedContainer { kind: parts.kind, version: parts.version, header, data: data.to_vec() })
     }
 
-    /// The format version of the file (1 or 2).
+    /// The format version of the file.
     pub fn version(&self) -> u16 {
         self.version
     }
@@ -357,23 +313,58 @@ impl LockedContainer {
     }
 
     /// Decrypts the container. `password_key` must be derived with this container's KDF parameters.
+    /// Checks the write tag before the content is read: `Tampered` when the password and `S` open
+    /// the container key but the file was not written with them.
     pub fn unlock(self, password_key: &PasswordKey, factor_secret: &FactorSecret) -> Result<UnlockedContainer> {
         let cid = self.header.container_id;
         let k = kek(password_key, factor_secret, &cid);
         let vmk = unwrap32(&k, &self.header.vmk, &vmk_aad(&cid)).ok_or(VaultError::WrongPassword)?;
-        self.open_payload(vmk, Some(FactorSecret::from_bytes(*factor_secret.expose())))
+        self.check_tag(&auth_key(password_key, factor_secret, &cid), &vmk)?;
+        let payload = self.decrypt(&vmk)?;
+        let pk = Some(PasswordKey::from_bytes(*password_key.expose()));
+        Ok(self.into_unlocked(vmk, FactorSecret::from_bytes(*factor_secret.expose()), payload, pk))
     }
 
-    /// Opens the container with its key from the suite's keyring.
+    /// Opens the container with its container key (read only; tests check which keys still open
+    /// a file).
+    #[cfg(test)]
     pub fn unlock_with_vmk(self, vmk: &[u8; 32]) -> Result<UnlockedContainer> {
-        self.open_payload(Zeroizing::new(*vmk), None)
+        let vmk = Zeroizing::new(*vmk);
+        let payload = self.decrypt(&vmk)?;
+        let s = payload_factor_secret(&payload)?;
+        Ok(self.into_unlocked(vmk, s, payload, None))
     }
 
-    /// Opens the container with the recovery code alone (no password, key or key file).
+    /// Opens the container with the recovery code alone (no password, key or key file). Read
+    /// only: nothing shows that the file was written by someone with the password.
     pub fn recover(self, code: &RecoveryCode) -> Result<UnlockedContainer> {
+        let vmk = self.recovery_vmk(code)?;
+        let payload = self.decrypt(&vmk)?;
+        let s = payload_factor_secret(&payload)?;
+        Ok(self.into_unlocked(vmk, s, payload, None))
+    }
+
+    /// Opens the container with the recovery code and checks it with the password: the file must
+    /// carry the write tag of the password and the factor secret it holds (e.g. after another
+    /// device removed a key and renewed `S`). `Tampered` otherwise.
+    pub fn recover_with_password(self, code: &RecoveryCode, password_key: &PasswordKey) -> Result<UnlockedContainer> {
+        let vmk = self.recovery_vmk(code)?;
+        let payload = self.decrypt(&vmk)?;
+        let s = payload_factor_secret(&payload)?;
         let cid = self.header.container_id;
-        let vmk = self
-            .header
+        // The file's container key must also be the one its password slot holds for this `S`.
+        let k = kek(password_key, &s, &cid);
+        match unwrap32(&k, &self.header.vmk, &vmk_aad(&cid)) {
+            Some(v) if *v == *vmk => {}
+            _ => return Err(VaultError::WrongPassword),
+        }
+        self.check_tag(&auth_key(password_key, &s, &cid), &vmk)?;
+        Ok(self.into_unlocked(vmk, s, payload, Some(PasswordKey::from_bytes(*password_key.expose()))))
+    }
+
+    fn recovery_vmk(&self, code: &RecoveryCode) -> Result<Key32> {
+        let cid = self.header.container_id;
+        self.header
             .slots
             .iter()
             .filter_map(|s| match s {
@@ -384,25 +375,47 @@ impl LockedContainer {
                 let key = recovery_slot_key(code.expose(), &r.slot_id, &cid);
                 unwrap32(&key, &r.wrapped, &recovery_aad(&cid, &r.slot_id))
             })
-            .ok_or(VaultError::WrongSecondFactor)?;
-        self.open_payload(vmk, None)
+            .ok_or(VaultError::WrongSecondFactor)
     }
 
-    fn open_payload(self, vmk: Key32, factor_secret: Option<FactorSecret>) -> Result<UnlockedContainer> {
+    /// Checks the write tag. A wrong one on content that still decrypts is `Tampered` (made
+    /// without the password); content that does not decrypt either is just damaged (a cut-off
+    /// or broken copy), `Corrupted`. The content is not parsed here.
+    fn check_tag(&self, ak: &Key32, vmk: &Key32) -> Result<()> {
+        let parts = split_file(&self.data)?;
+        if tag_matches(ak, parts.signed, &parts.auth) {
+            return Ok(());
+        }
+        let pkey = payload_key(vmk, &self.header.container_id);
+        match open(&pkey, &parts.nonce, parts.ciphertext, parts.aad) {
+            Some(_) => Err(VaultError::Tampered),
+            None => Err(VaultError::Corrupted),
+        }
+    }
+
+    fn decrypt(&self, vmk: &Key32) -> Result<Payload> {
         let cid = self.header.container_id;
         let parts = split_file(&self.data)?;
-        let pkey = payload_key(&vmk, &cid);
+        let pkey = payload_key(vmk, &cid);
         let plaintext = open(&pkey, &parts.nonce, parts.ciphertext, parts.aad).ok_or(VaultError::Corrupted)?;
-        let payload = Payload::from_cbor(unpad(&plaintext)?, self.kind)?;
-        let factor_secret = match factor_secret {
-            Some(s) => s,
-            None => {
-                let s = payload.factor_secret.as_deref().ok_or(VaultError::Corrupted)?;
-                FactorSecret::from_bytes(s.try_into().map_err(|_| VaultError::Corrupted)?)
-            }
-        };
-        Ok(UnlockedContainer { kind: self.kind, header: self.header, vmk, factor_secret, payload })
+        Payload::from_cbor(unpad(&plaintext)?, self.kind)
     }
+
+    fn into_unlocked(
+        self,
+        vmk: Key32,
+        factor_secret: FactorSecret,
+        payload: Payload,
+        password_key: Option<PasswordKey>,
+    ) -> UnlockedContainer {
+        UnlockedContainer { kind: self.kind, header: self.header, vmk, factor_secret, payload, password_key }
+    }
+}
+
+/// The factor secret a container keeps in its content.
+fn payload_factor_secret(payload: &Payload) -> Result<FactorSecret> {
+    let s = payload.factor_secret.as_deref().ok_or(VaultError::Corrupted)?;
+    Ok(FactorSecret::from_bytes(s.try_into().map_err(|_| VaultError::Corrupted)?))
 }
 
 /// A decrypted container. Secrets are wiped from memory when it is dropped.
@@ -412,6 +425,9 @@ pub struct UnlockedContainer {
     vmk: Key32,
     factor_secret: FactorSecret,
     pub payload: Payload,
+    /// The password key, to make the write tag when sealing (see `keys::auth_key`); `None` when
+    /// opened without the password (read only).
+    password_key: Option<PasswordKey>,
 }
 
 impl UnlockedContainer {
@@ -427,29 +443,35 @@ impl UnlockedContainer {
         self.header.container_id
     }
 
-    /// The container key, for the suite's keyring.
+    /// The container key.
     pub fn vmk(&self) -> &[u8; 32] {
         &self.vmk
     }
 
-    /// Encrypts and serializes the container. Increments the payload revision.
+    /// Encrypts and serializes the container with its write tag. Increments the payload revision.
+    /// A container opened without the password (recovery code) cannot be sealed until it
+    /// gets a password ([`Self::rekey`]).
     pub fn seal(&mut self, rng: &mut impl CryptoRngCore) -> Result<Vec<u8>> {
-        self.seal_version(FORMAT_VERSION, rng)
-    }
-
-    /// Like [`Self::seal`], in an older format version (only for tests of older files).
-    pub(crate) fn seal_version(&mut self, version: u16, rng: &mut impl CryptoRngCore) -> Result<Vec<u8>> {
-        if !self.header.fits_version(version) {
-            return Err(VaultError::InvalidInput("slots need a newer format version".into()));
+        let pk = self
+            .password_key
+            .as_ref()
+            .ok_or_else(|| VaultError::InvalidInput("opened without the password: read only".into()))?;
+        // Only a consistent protection is written: the password slot must hold this container
+        // key for this password and factor secret (otherwise other devices could not open it).
+        let cid = self.header.container_id;
+        match unwrap32(&kek(pk, &self.factor_secret, &cid), &self.header.vmk, &vmk_aad(&cid)) {
+            Some(v) if *v == *self.vmk => {}
+            _ => return Err(VaultError::InvalidInput("inconsistent protection".into())),
         }
+        let ak = auth_key(pk, &self.factor_secret, &cid);
         self.payload.revision =
             self.payload.revision.checked_add(1).ok_or_else(|| VaultError::Payload("revision overflow".into()))?;
         self.payload.factor_secret = Some(self.factor_secret.expose().to_vec());
         let header = self.header.encode()?;
         let cbor = self.payload.to_cbor()?;
         let plaintext = pad(&cbor)?;
-        let mut out = Vec::with_capacity(14 + header.len() + NONCE_LEN + plaintext.len() + 16);
-        encode_prefix(self.kind, version, header.len(), &mut out);
+        let mut out = Vec::with_capacity(14 + header.len() + NONCE_LEN + plaintext.len() + 16 + 32);
+        encode_prefix(self.kind, FORMAT_VERSION, header.len(), &mut out);
         out.extend_from_slice(&header);
         let mut nonce = [0u8; NONCE_LEN];
         rng.fill_bytes(&mut nonce);
@@ -457,7 +479,32 @@ impl UnlockedContainer {
         let ct = seal(&pkey, &nonce, &plaintext, &out);
         out.extend_from_slice(&nonce);
         out.extend_from_slice(&ct);
+        let tag = file_tag(&ak, &out);
+        out.extend_from_slice(&tag);
         Ok(out)
+    }
+
+    /// Tests: what someone without the password can make from a container opened with an old
+    /// code (the container key is known, the write key is not): a file with a made-up write tag.
+    #[cfg(test)]
+    pub(crate) fn seal_without_password(&mut self, rng: &mut impl CryptoRngCore) -> Vec<u8> {
+        self.payload.factor_secret = Some(self.factor_secret.expose().to_vec());
+        let header = self.header.encode().expect("valid header");
+        let cbor = self.payload.to_cbor().expect("valid payload");
+        let plaintext = pad(&cbor).expect("fits");
+        let mut out = Vec::new();
+        encode_prefix(self.kind, FORMAT_VERSION, header.len(), &mut out);
+        out.extend_from_slice(&header);
+        let mut nonce = [0u8; NONCE_LEN];
+        rng.fill_bytes(&mut nonce);
+        let pkey = payload_key(&self.vmk, &self.header.container_id);
+        let ct = seal(&pkey, &nonce, &plaintext, &out);
+        out.extend_from_slice(&nonce);
+        out.extend_from_slice(&ct);
+        let mut tag = [0u8; 32];
+        rng.fill_bytes(&mut tag);
+        out.extend_from_slice(&tag);
+        out
     }
 
     pub fn slots(&self) -> &[Slot] {
@@ -604,79 +651,32 @@ impl UnlockedContainer {
         let k = kek(new_password_key, &self.factor_secret, &cid);
         self.header.vmk = wrap32(&k, &self.vmk, &vmk_aad(&cid), rng);
         self.header.kdf = new_kdf;
-        Ok(())
-    }
-
-    /// The security key or key file slot of version 1 that `factor` opens, rebuilt as a slot
-    /// with a public key (same slot ID, wrapping this container's factor secret). `None` if the
-    /// slot already has a public key or `factor` opens no slot of this container.
-    pub fn upgraded_slot(&self, factor: &SecondFactor<'_>, rng: &mut impl CryptoRngCore) -> Option<Slot> {
-        let suite_id = &self.header.suite_id;
-        let s = &self.factor_secret;
-        self.header.slots.iter().find_map(|slot| match (slot, factor) {
-            (Slot::Fido2(f), SecondFactor::Fido2 { slot_id, hmac_output })
-                if f.public.is_none() && &f.slot_id == slot_id =>
-            {
-                let opened = fido2_factor(suite_id, f, hmac_output)?;
-                if opened.as_ref() != s.expose() {
-                    return None;
-                }
-                let reg = Fido2Registration {
-                    rp_id: &f.rp_id,
-                    credential_id: &f.credential_id,
-                    prf_input: f.prf_input,
-                    hmac_output,
-                };
-                Some(fido2_slot_with_id(f.slot_id, suite_id, s, &reg, rng))
-            }
-            (Slot::Keyfile(k), SecondFactor::Keyfile(kf)) if k.public.is_none() && k.keyfile_id == kf.id() => {
-                let opened = keyfile_factor(suite_id, k, kf)?;
-                if opened.as_ref() != s.expose() {
-                    return None;
-                }
-                Some(keyfile_slot_with_id(k.slot_id, suite_id, s, kf, rng))
-            }
-            _ => None,
-        })
-    }
-
-    /// Replaces the slot with the same ID (e.g. by [`Self::upgraded_slot`]); the label stays.
-    pub fn replace_slot(&mut self, slot: Slot) -> Result<()> {
-        let pos = self.header.slots.iter().position(|s| s.id() == slot.id()).ok_or(VaultError::SlotNotFound)?;
-        let mut slots = self.header.slots.clone();
-        slots[pos] = slot;
-        let candidate = Header { slots, ..self.header.clone() };
-        candidate.validate()?;
-        self.header = candidate;
+        self.password_key = Some(PasswordKey::from_bytes(*new_password_key.expose()));
         Ok(())
     }
 
     /// A new factor secret wrapped for every security key and key file of this container,
     /// without touching them (their slots carry public keys). Nothing changes here: give the
-    /// result to [`Self::replace_factor`] of every container of the suite. `None` while a slot
-    /// of version 1 remains (it can only get a new secret when its key or key file is used).
-    pub fn renewed_factor(&self, rng: &mut impl CryptoRngCore) -> Result<Option<(FactorSecret, Vec<Slot>)>> {
+    /// result to [`Self::replace_factor`] of every container of the suite.
+    pub fn renewed_factor(&self, rng: &mut impl CryptoRngCore) -> Result<(FactorSecret, Vec<Slot>)> {
         let factor: Vec<&Slot> = self.header.slots.iter().filter(|s| s.provides_factor()).collect();
-        if factor.iter().any(|s| s.is_legacy()) {
-            return Ok(None);
-        }
         let new_s = FactorSecret::generate(rng);
         let suite_id = self.header.suite_id;
         let mut slots = Vec::with_capacity(factor.len());
         for slot in factor {
             let mut slot = slot.clone();
             match &mut slot {
-                Slot::Fido2(Fido2Slot { slot_id, public: Some(p), wrapped, .. })
-                | Slot::Keyfile(KeyfileSlot { slot_id, public: Some(p), wrapped, .. }) => {
-                    let (np, nw) = public_wrap(p.public_key, &suite_id, slot_id, &new_s, rng)?;
-                    *p = np;
+                Slot::Fido2(Fido2Slot { slot_id, public, wrapped, .. })
+                | Slot::Keyfile(KeyfileSlot { slot_id, public, wrapped, .. }) => {
+                    let (np, nw) = public_wrap(public.public_key, &suite_id, slot_id, &new_s, rng)?;
+                    *public = np;
                     *wrapped = nw;
                 }
-                _ => unreachable!("only factor slots with a public key"),
+                Slot::Recovery(_) => unreachable!("only factor slots"),
             }
             slots.push(slot);
         }
-        Ok(Some((new_s, slots)))
+        Ok((new_s, slots))
     }
 
     /// Switches to another factor secret and its slots (from [`Self::renewed_factor`]); the
@@ -710,6 +710,7 @@ impl UnlockedContainer {
         self.vmk = random32(rng);
         let k = kek(password_key, &self.factor_secret, &cid);
         self.header.vmk = wrap32(&k, &self.vmk, &vmk_aad(&cid), rng);
+        self.password_key = Some(PasswordKey::from_bytes(*password_key.expose()));
         if let Some(code) = self.recovery_code() {
             let label = self
                 .header

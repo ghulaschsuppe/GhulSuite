@@ -44,6 +44,18 @@ expect fun rememberOpenFile(onPicked: (de.danerd.ghulsuite.model.PickedFile) -> 
 @Composable
 expect fun rememberSaveFile(onSaved: (Boolean) -> Unit): (String, ByteArray) -> Unit
 
+/**
+ * Returns a launcher that picks a suite file (`.ghlzip`) or a vault file to open. Nothing is read
+ * yet. The app keeps access to it, so it can save into the same file later (Android: a kept
+ * document permission; Windows: the path).
+ */
+@Composable
+expect fun rememberOpenSuiteFile(onPicked: (de.danerd.ghulsuite.model.SuiteFileRef) -> Unit): () -> Unit
+
+/** Returns a launcher that asks where to save a new suite file (suggested name); null when cancelled. */
+@Composable
+expect fun rememberCreateSuiteFile(onCreated: (de.danerd.ghulsuite.model.SuiteFileRef?) -> Unit): (String) -> Unit
+
 /** Returns a launcher that lets the user choose a folder. */
 @Composable
 expect fun rememberPickFolder(onPicked: (de.danerd.ghulsuite.model.FolderRef) -> Unit): () -> Unit
@@ -53,8 +65,8 @@ expect fun rememberPickFolder(onPicked: (de.danerd.ghulsuite.model.FolderRef) ->
 expect fun rememberOpenStream(onPicked: (de.danerd.ghulsuite.model.ByteSource) -> Unit): () -> Unit
 
 /**
- * The same for several files at once (GhulDrive). Each file is only opened when it is read, so
- * choosing many files keeps nothing open.
+ * The same for several files at once. Each file is only opened when it is read, so choosing many
+ * files keeps nothing open.
  */
 @Composable
 expect fun rememberOpenStreams(onPicked: (List<de.danerd.ghulsuite.model.ByteSource>) -> Unit): () -> Unit
@@ -72,12 +84,6 @@ expect fun qrModules(text: String): List<BooleanArray>
 /** Finds a QR code in an image file (PNG, JPEG, …); null if there is none. */
 expect fun decodeQrImage(bytes: ByteArray): String?
 
-/** Takes a photo with the camera (document scan); null if cancelled or not available. */
-expect val cameraPhotoAvailable: Boolean
-
-@androidx.compose.runtime.Composable
-expect fun rememberTakePhoto(onResult: (ByteArray?) -> Unit): () -> Unit
-
 /** Operating system and device for error reports, e.g. "Android 15 (API 35) · Google Pixel 8". */
 expect fun deviceInfo(): String
 
@@ -88,3 +94,34 @@ expect fun localNow(): String
 expect fun epochMillisOf(local: String): Long
 /** Switches the app language ("" = follow the system). Android restarts the screen; Windows after a restart. */
 expect fun applyAppLanguage(tag: String)
+
+/**
+ * Decodes an image (JPEG, PNG, WebP, GIF, on Android also HEIC) from memory, scaled down so its
+ * longer side is at most [maxSide] pixels; null if it is no image this platform can read.
+ * Nothing is written to the disk.
+ */
+expect fun decodeImage(bytes: ByteArray, maxSide: Int): androidx.compose.ui.graphics.ImageBitmap?
+
+/** A PDF opened from memory: its pages, rendered when they are shown. */
+interface PdfView {
+    val pageCount: Int
+    /** Page [index] (from 0), [widthPx] wide; null if it cannot be drawn. */
+    fun render(index: Int, widthPx: Int): androidx.compose.ui.graphics.ImageBitmap?
+    fun close()
+}
+
+/**
+ * Opens a PDF held in memory, never through a file on the disk (Android: an anonymous file in
+ * memory; Windows: read from the bytes). Null if it cannot be shown here (damaged, protected by a
+ * password, or an Android version without anonymous files in memory).
+ */
+expect fun openPdf(bytes: ByteArray): PdfView?
+
+/**
+ * Scanning documents into GhulDocs (G7): Android has it (the camera in the app, pages cropped and
+ * straightened, saved as one PDF); Windows has no "Scan" in the add menu of GhulDocs.
+ */
+expect val docScanAvailable: Boolean
+
+/** The camera and pictures for scanning (see [de.danerd.ghulsuite.scan.ScanEngine]); null without scanning. */
+expect fun platformScanEngine(): de.danerd.ghulsuite.scan.ScanEngine?

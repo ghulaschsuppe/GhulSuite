@@ -1,8 +1,12 @@
 # GhulSuite: Testplan Android (Version 0.5.0-dev)
 
-**Stand:** 15.11.2026 · neu: Aufgaben im Hintergrund und Mail-Archiv in GhulDrive (Abschnitte 33 und 34); ein Server mit optionalem Server-Modul, Freigabelinks nur über das Modul (Abschnitte 17 und 18) · deckt Phase 2 (Etappen 1, 2a, 2b, „Der Ordner ist die Suite“) und Phase 3 ab: eigene Server,
-Synchronisation, GhulDrive und GhulMail (Abschnitte 12 bis 15) sowie 0.5.0: neues Design, Servertypen SFTP und FTPS
-mit dem Server-Modul, Teilen mit Freigabelinks und die Modultrennung (Abschnitte 16 bis 19), verschlüsselte Mails (Abschnitt 20), Korrekturen nach dem ersten Test (Abschnitt 21).
+**Stand:** 19.11.2026 · **neu: Umbau zu GhulDocs** ([`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)): eine reine
+Offline-App mit GhulPass, GhulAuth, GhulDocs und GhulCal. GhulDocs testet Abschnitt 39, das Scannen Abschnitt 38, die
+Suite-Datei mit Dokumenten Abschnitt 35, einzelne Tresore Abschnitt 6. Die Abschnitte zu GhulMail, GhulDrive, Servern,
+Freigabelinks, Mail-Archiv und Schlüsselwechsel (12 bis 15, 17 bis 20, 32, 34, 36, 37) sind entfallen und bleiben
+nur als Überschrift stehen, damit die Nummern gleich bleiben. Davor entfallen (Umbau ohne Synchronisation,
+[`UMBAU-OHNE-SYNC.md`](UMBAU-OHNE-SYNC.md)): Synchronisation, FTPS, Sicherung/Wiederherstellung und „Von meinem Server
+holen“.
 
 **Neu in 0.5.0:** Die Einstellungen sind jetzt eine Übersicht mit Unterseiten. Pfade wie „Optionen → Tresore“
 meinen: Tab **Optionen** → Zeile **Tresore**. Den Testplan für Windows gibt es getrennt:
@@ -19,42 +23,35 @@ soll; weicht etwas ab, notiere die Nummer, was du gemacht hast und was stattdess
 |---|---|
 | V1 | Alte GhulSuite-Version deinstallieren (das Dateiformat hat sich geändert, alte Testdaten lassen sich nicht öffnen). |
 | V2 | APK `ghulsuite-dev.apk` installieren (Testserver, Ordner `ghulsuite/download/`, oder Artefakt „ghulsuite-dev“ im Actions-Tab auf GitHub). |
-| V3 | Bereitlegen: Security Key mit PIN (USB-C), möglichst ein zweiter Key, Stift und Papier, ein USB-Stick oder ein Ordner, den du selbst anlegen kannst. |
+| V3 | Bereitlegen: Security Key mit PIN (USB-C), möglichst ein zweiter Key, Stift und Papier, ein **USB-Stick** (USB-C oder mit Adapter) für die Suite-Datei. |
 | V4 | Für den Import Exportdateien bereitlegen, z. B. aus Proton Pass (ZIP oder CSV), Proton Authenticator, Bitwarden, KeePassXC, Aegis, 2FAS, und Google Authenticator auf einem zweiten Gerät. **Nur Testdaten** verwenden. |
 | V5 | Wichtig: Diese Entwicklerversion ist mit einem öffentlichen Testschlüssel signiert. Keine echten Passwörter speichern. |
-| V6 | Für Abschnitt 12 bis 13: deinen Server mit SSH/SFTP (Adresse, Port, Benutzer) und Zugriff auf `~/.ssh/authorized_keys`. Fingerabdruck des Servers bereithalten: auf dem Server `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`. Ein zweites Android-Gerät (oder eine zweite Installation nach Deinstallation) für die Synchronisation. |
-| V7 | Für Abschnitt 14 bis 15: ein **Test**-Mailkonto mit IMAP/SMTP (Server, Benutzer, Passwort bzw. App-Passwort) und eine zweite Adresse, von der du Mails schicken kannst. |
-| V8 | Für Abschnitt 17 bis 18: ein **Webhosting** mit FTP-Zugang (FTPS) oder SFTP und PHP 8.1 oder neuer, dessen Website über https erreichbar ist (z. B. Ordner `public_html`). Optional: ein Webhosting ohne PHP und eines mit `open_basedir`, für ST9 und ST10. |
+| V6 | Für die Abschnitte 35 und 39: ein **zweites Gerät** (zweites Android-Gerät oder Windows-PC mit GhulSuite) und ein paar Testdokumente (PDF, Fotos, Text, eine große Datei von mehreren hundert MB). Für 38: ein paar Blätter Papier. |
 
 ---
 
 ## 1. Erster Start und Einrichtung
 
-Der Assistent hat acht Schritte; oben steht „Schritt n von 8“ mit Fortschrittsbalken. Die Suite entsteht beim Verlassen
-von Schritt 3, danach geht „Zurück“ nur noch bis Schritt 4.
+Der Assistent hat sieben Schritte; oben steht „Schritt n von 7“ mit Fortschrittsbalken. Die Suite entsteht beim
+Verlassen von Schritt 3 im App-Speicher, danach geht „Zurück“ nur noch bis Schritt 4.
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| E1 | App öffnen. | Startbildschirm mit „Neu einrichten“, „Von meinem Server holen“, „Vorhandene Suite öffnen“, „Einzelnen Tresor öffnen“. |
-| E2 | „Neu einrichten“. | Schritt 1 von 8 · Master-Passwort. |
+| E1 | App öffnen. | Startbildschirm mit „Neu einrichten“, „Suite-Datei öffnen“ (.ghlzip, z. B. von einem USB-Stick) und „Einzelnen Tresor öffnen“. Kein „Von meinem Server holen“, kein „Sicherung wiederherstellen“. |
+| E2 | „Neu einrichten“. | Schritt 1 von 7 · Master-Passwort. |
 | E3 | Passwort „abc“ eingeben, Weiter. Dann ein schwaches 10-Zeichen-Passwort. Dann zwei verschiedene Passwörter. | Jeweils klare Meldung: zu kurz / zu leicht zu erraten / stimmen nicht überein. |
 | E4 | „Passwort vorschlagen“ antippen, Wiederholung eingeben, Weiter. | Langes Zufallspasswort, Stärkebalken voll; Schritt 2 · Zweiter Faktor. |
-| E5 | „Security Key“ gewählt lassen, Name des Keys, Key-PIN eingeben (Android: „Key prüfen“ zeigt „Erkannt: …“). Weiter. | Schritt 3 · Speicherort. |
-| E6 | App-Speicher lassen, „Key registrieren“, Key **zweimal** berühren. | Schritt 4 · Synchronisation; kein „Zurück“ zu den Schritten 1 bis 3 mehr. |
-| E7 | „Eigener Server“ wählen, ohne Angaben „Weiter“. | Meldung „Noch offen: Anmeldung“ (bzw. der fehlende Schritt). Checkliste unter dem Formular zeigt Anmeldung, Verbindung testen, Ordner wählen, Ordner beschreibbar, Speichern. |
-| E8 | SFTP-Server eintragen (siehe Abschnitt 12), „Ordner wählen“. | Fingerabdruck bestätigen, dann die Ordner des Servers; „ghulsuite, Neu anlegen (empfohlen)“, Unterordner öffnen, „Eine Ebene höher“, „Neuer Ordner …“. |
-| E9 | Ordner wählen → „Verbindung prüfen“ → „Server speichern“ → Weiter. | Vor der Prüfung gibt es kein „Server speichern“. Nach der Prüfung „Verbindung klappt, der Ordner ist beschreibbar …“, dann nach dem Speichern „Verbunden · host:/ordner“, Haken in der Checkliste; Schritt 5 · Bereiche. |
-| E10 | Alle fünf Bereiche einschalten. Bei GhulDrive „Eigener Server“. Weiter. | Namen für GhulPass, GhulAuth, GhulCal änderbar; GhulDrive bietet nur einen eigenen Speicherort an (kein „Wie Synchronisation“). Schritt 6 · Sperren. |
-| E11 | Sperrzeit wählen, Schalter für Bildschirm aus und Schütteln. Weiter. | Schritt 7 · Entsperren mit Hinweis, dass „Schnell entsperren“ Fingerabdruck und App-PIN meint. |
-| E12 | „Zusätzlich Fingerabdruck“, Gültigkeit „Immer“. Weiter. | Hinweis: ohne Ablauf, aber nach Neustart, Sofortsperre oder Passwortwechsel wieder Passwort und Key. Fingerabdruck-Abfrage; Schritt 8. |
+| E5 | „Security Key“ gewählt lassen, Name des Keys, Key-PIN eingeben (Android: „Key prüfen“ zeigt „Erkannt: …“). Weiter. | Schritt 3 · Anlegen, mit dem Hinweis, dass die Suite auf diesem Gerät liegt und du sie später als Datei (.ghlzip) unter Optionen → Suite-Datei speicherst. Keine Ordnerwahl. |
+| E6 | „Anlegen“, Key **zweimal** berühren. | Schritt 4 · Bereiche; kein „Zurück“ zu den Schritten 1 bis 3 mehr. |
+| E7 | Alle vier Bereiche einschalten. | Namen für GhulPass, GhulAuth, GhulDocs und GhulCal änderbar; kein Bereich fragt nach einem Server oder Konto. |
+| E11 | Sperrzeit wählen, Schalter für Bildschirm aus und Schütteln. Weiter. | Schritt 6 · Entsperren mit Hinweis, dass „Schnell entsperren“ Fingerabdruck und App-PIN meint. |
+| E12 | „Zusätzlich Fingerabdruck“, Gültigkeit „Immer“. Weiter. | Hinweis: ohne Ablauf, aber nach Neustart, Sofortsperre oder Passwortwechsel wieder Passwort und Key. Fingerabdruck-Abfrage; Schritt 7. |
 | E13 | Code ansehen, „Notfallblatt drucken“ → „Als PDF speichern“. | PDF mit Code, QR-Code und Anleitung. PDF danach vom Handy löschen. |
 | E14 | „Ich habe den Code notiert“ → Weiter → falsche Gruppe 3 eingeben. | Meldung „Das ist nicht die dritte Gruppe“. Es gibt kein „Später“. |
-| E15 | Richtige Gruppe 3 eingeben → Abschließen. | Hauptansicht mit allen fünf Bereichen und Optionen; GhulMail zeigt „Noch kein Konto“ mit dem vollständigen Kontoformular. |
-| E16 | Zweite Einrichtung: in Schritt 4 „Später“, in Schritt 5 GhulDrive einschalten. | „Eigener Server“ klappt das Formular direkt auf; ohne Synchronisation geht GhulDrive genauso. |
-| E17 | GhulDrive „Eigener Server“ → FTPS: Daten des Webhostings, „Verbindung testen“, Ordner wählen (nicht `public_html`), „Verbindung prüfen“, „Server speichern“. | Zur Wahl stehen nur SFTP und FTPS. Der Server ist gespeichert; das Server-Modul für Freigabelinks kommt später über die Serverliste (ST6). |
+| E15 | Richtige Gruppe 3 eingeben → Abschließen. | Hauptansicht mit allen vier Bereichen und Optionen; GhulDocs zeigt einen leeren Tresor mit Belegung „0 B von 1 GB“. Oben der Hinweis „Nicht gespeicherte Änderungen“. |
 | E18 | Einrichtung mit „Schlüsseldatei“ statt Key: Datei erstellen und z. B. auf den USB-Stick speichern. | Ohne gespeicherte Datei geht es nicht weiter. Danach wie E6 bis E15 (ohne Key-Berührung). |
-| E19 | In Schritt 3 einen eigenen Ordner wählen, in dem schon GhulSuite-Dateien liegen. | Hinweis „Hier liegen bereits GhulSuite-Dateien“ und „Diese Suite öffnen“. |
-| E20 | Nur GhulAuth wählen und einrichten. | In der Leiste nur GhulAuth und Optionen; keine weiteren Dateien im Ordner. |
+| E19 | Nach E15: Optionen → Suite-Datei → „Speichern unter …“ → auf den USB-Stick. | Datei `GhulSuite.ghlzip` entsteht; „Gespeichert in …“; der Hinweis „Nicht gespeicherte Änderungen“ verschwindet. |
+| E20 | Nur GhulAuth wählen und einrichten. | In der Leiste nur GhulAuth und Optionen; Optionen → Bereiche zeigt nur GhulAuth als eingerichtet. |
 | E21 | Einrichtung in Schritt 6 abbrechen (App schließen), App neu öffnen. | Entsperren-Bildschirm; nach dem Entsperren verlangt GhulSuite einen neuen Wiederherstellungscode (ohne „später“), bestätigt per Gruppe. |
 
 ## 2. Entsperren
@@ -88,7 +85,7 @@ von Schritt 3, danach geht „Zurück“ nur noch bis Schritt 4.
 | P5 | Schnelleinstellungs-Kachel „GhulSuite sperren“ hinzufügen und antippen. | Gesperrt, Fingerabdruck/PIN-Zugang gelöscht. |
 | P6 | „Schütteln zum Sperren“ an, Handy eine halbe Sekunde deutlich hin und her schütteln, in der App, mit der App im Hintergrund und mit gesperrtem Startbildschirm-Wechsel. Jede Empfindlichkeit ausprobieren. | Gesperrt, kurzes Vibrieren, Fingerabdruck/PIN-Zugang gelöscht. Gehen, Treppensteigen, Handy auf den Tisch legen sperren **nicht**. |
 | P7 | Bildschirmfoto in der App versuchen; App-Übersicht öffnen. | Bildschirmfoto blockiert, Vorschau schwarz (solange „Bildschirmfotos erlauben“ aus ist). |
-| P7a | Benachrichtigungen aufziehen, während GhulSuite entsperrt ist (und mit eingerichtetem Mail-Konto). | Die dauerhaften Benachrichtigungen („GhulSuite entsperrt“, Mail-Empfang) zeigen das **Schutzschild**; ein Briefumschlag erscheint nur bei einer neu eingegangenen Mail. Text: „Tippen zum Öffnen. Schütteln oder „Sperren“ sperrt sofort.“ |
+| P7a | Benachrichtigungen aufziehen, während GhulSuite entsperrt ist. | Die dauerhafte Benachrichtigung „GhulSuite entsperrt“ zeigt das **Schutzschild**. Text: „Tippen zum Öffnen. Schütteln oder „Sperren“ sperrt sofort.“ |
 | P7b | Optionen → Sperren → „Schütteln zum Sperren“ aus, Benachrichtigungen erneut aufziehen. | Der Text ändert sich sofort zu „Tippen zum Öffnen. „Sperren“ sperrt sofort.“ (kein Schütteln mehr erwähnt). Wieder an: Schütteln steht wieder da. |
 
 ## 4. GhulPass
@@ -114,37 +111,44 @@ von Schritt 3, danach geht „Zurück“ nur noch bis Schritt 4.
 | A5 | „Codes verbergen“ und „Nächsten Code zeigen“ unter Optionen → GhulAuth. | Codes erst nach Antippen sichtbar; in den letzten Sekunden erscheint der nächste Code. |
 | A6 | Google Authenticator (zweites Gerät): Konten exportieren, den Export-QR in GhulAuth scannen. | Alle Konten auf einmal übernommen, Meldung mit Anzahl. Erneut scannen: „schon vorhanden“. |
 
-## 6. Tresore: „Der Ordner ist die Suite“
+## 6. Tresore und einzelne Tresore
 
-Für T5 bis T8 brauchst du einen eigenen Ordner als Speicherort (z. B. USB-Stick oder ein Ordner im internen Speicher).
+Für T5 bis T14 brauchst du Tresordateien auf dem USB-Stick oder in einem Ordner (z. B. aus T2) und für T13 ein zweites
+Gerät.
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
 | T1 | Optionen → Tresore → „Neuer Tresor“, umbenennen. Sperren und entsperren. | Neuer Name bleibt erhalten. |
 | T2 | Menü eines Tresors → „Exportieren“, Datei speichern. | Verschlüsselte `.ghlpss`/`.ghltotp`-Datei. |
 | T3 | „Tresordatei hinzufügen“ → die gerade exportierte Datei. | Meldung „schon vorhanden“ (gleicher Tresor). |
-| T4 | Tresor löschen (Menü → Löschen). | Warnung; danach ist er weg. Über „Tresordatei hinzufügen“ + Export aus T2 wieder da. |
-| T5 | Mit einem Dateimanager eine Tresordatei derselben Suite (z. B. vom zweiten Gerät oder aus T2) in den Ordner kopieren, App sperren und entsperren. | Tresor ist ohne Rückfrage da. |
-| T6 | Tresordatei einer **anderen** Suite (anderes Passwort) in den Ordner kopieren, entsperren. | Dialog „Tresore mit anderem Passwort“ → „Mit Passwort öffnen“ → altes Passwort + Key/Datei → Tresor gehört dazu und öffnet sich ab jetzt mit deinem Passwort. |
-| T7 | Eine ältere Kopie eines Tresors über die aktuelle Datei kopieren, entsperren. | Hinweis „älter als zuletzt gesehen“, im Tresor-Menü „Diesen Stand übernehmen“. |
-| T8 | `suite.ghlsuite` im Ordner löschen, App entsperren. | Entsperren klappt trotzdem, die Datei wird neu angelegt. |
-| T9 | Nur eine einzelne Tresordatei auf ein anderes Gerät/in einen leeren Ordner legen, dort „Einzelnen Tresor öffnen“. | Öffnet mit Passwort + Key; Hinweis „dein bisheriges Notfallblatt gilt weiter“; nur dieser Bereich ist eingeschaltet. |
+| T4 | Tresor löschen (Menü → Löschen). | Warnung; danach ist er weg. Über „Tresordatei hinzufügen“ + Export aus T2 wieder da. Hinweis „Nicht gespeicherte Änderungen“ erscheint. |
+| T5 | Gesperrt: Startbildschirm bzw. Entsperren-Seite → „Einzelnen Tresor öffnen“ → eine `.ghlpss` (z. B. aus T2 oder von einer anderen Suite). | Auswahl „Tresordatei öffnen“: „… ist ein GhulPass-Tresor. Was möchtest du tun?“ mit „Nur diesen Tresor öffnen“ und „Zu meiner Suite hinzufügen“ (ohne Suite auf dem Gerät: „Neue Suite damit anlegen“). |
+| T6 | „Nur diesen Tresor öffnen“ → Passwort und Key bzw. Schlüsseldatei **des Tresors**. | Oben „Einzeln geöffnet: … Deine Suite bleibt gesperrt. Jede Änderung wird direkt in diese Datei zurückgeschrieben.“ Nur dieser Tresor ist zu sehen. Schutz, weitere Tresore und Suite-Datei lassen sich in diesem Modus nicht ändern. |
+| T7 | Im einzeln geöffneten Tresor einen Eintrag anlegen und einen ändern; dann „Tresor schließen“. Die Datei erneut einzeln öffnen. | Nach jeder Änderung kurz „Die Änderungen werden in die Datei geschrieben …“, dann „Alles ist in der Datei.“ Nach dem erneuten Öffnen sind beide Änderungen da. Die eigene Suite ist unverändert. |
+| T8 | Einzeln geöffnet: USB-Stick abziehen, einen Eintrag ändern. Dann den Stick wieder einstecken und „Erneut versuchen“. | Warnstreifen „Die Datei ließ sich nicht schreiben (ist der Speicher noch da?). Deine Änderungen sind noch hier.“ Nach dem Einstecken wird geschrieben; nichts geht verloren. Bleibt der Stick weg, kommen die Änderungen beim nächsten Mal als „Änderungen nicht in der Datei“ wieder (jetzt schreiben, als neue Datei speichern oder verwerfen). |
+| T9 | Einzeln geöffnet: Dieselbe Tresordatei auf einem zweiten Gerät ändern (oder durch eine andere Kopie ersetzen), dann hier etwas ändern. | „Die Datei wurde seit dem Öffnen anderswo geändert. Mit diesem Tresor überschreiben oder ihn als neue Datei speichern.“ Nichts wird still überschrieben. |
+| T10 | „Einzelnen Tresor öffnen“ mit einem einzeln gespeicherten GhulDocs-Tresor (`.ghlzip`, siehe GD12). | Der Tresor öffnet sich mit seinen Dokumenten (geprüft wie eine Suite-Datei); „Nur diesen Tresor öffnen“ und „Zu meiner Suite hinzufügen“ gehen. |
+| T11 | „Zu meiner Suite hinzufügen“ mit einem Tresor einer **anderen** Suite (anderes Passwort). | „Nach dem Entsperren wird … zu deiner Suite hinzugefügt.“ Nach dem Entsperren der eigenen Suite einmal Passwort und Key bzw. Schlüsseldatei des Tresors; danach gehört er dazu und öffnet sich mit deinem Passwort, deinen Keys und deinem Wiederherstellungscode. Die Ausgangsdatei öffnet weiterhin nur ihren alten Stand. Hinweis „Nicht gespeicherte Änderungen“. |
+| T12 | Auf einem Gerät **ohne** Suite: „Einzelnen Tresor öffnen“ → „Neue Suite damit anlegen“. | Öffnet mit Passwort + Key des Tresors; Hinweis „dein bisheriges Notfallblatt gilt weiter“ (bzw. neuer Code, wenn der Tresor keinen hatte); nur dieser Bereich ist eingeschaltet. |
+| T13 | GhulPass: zwei Einträge lange drücken → Auswahlkopf → „Als Tresor weitergeben“. Name, neues Passwort, zweiter Faktor „Neue Schlüsseldatei“, zur Bestätigung dein eigenes Master-Passwort (erst falsch, dann richtig). | Falsches Master-Passwort: abgelehnt. Richtig: „Speichere jetzt die neue Schlüsseldatei …“, dann „Tresordatei speichern“, dann der Wiederherstellungscode des neuen Tresors (nur jetzt angezeigt). Am Ende „Fertig. Gib Tresordatei, Schlüsseldatei und Passwort getrennt weiter.“ |
+| T14 | Den Tresor aus T13 auf dem zweiten Gerät mit „Nur diesen Tresor öffnen“ öffnen: erst mit deinem eigenen Passwort und Key, dann mit dem neuen Passwort und der neuen Schlüsseldatei, dann mit seinem Wiederherstellungscode. | Eigener Schutz: öffnet nicht. Neuer Schutz: genau die zwei Einträge, ohne Passwort-Verlauf. Code: öffnet ebenfalls. |
+| T15 | Wie T13 in GhulAuth, zweiter Faktor „Security Key“ (zweiter Key). | Zwei Berührungen; der neue Tresor öffnet nur mit seinem Passwort und diesem Key. |
 
 ## 7. Schutz und Wiederherstellung
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| S1 | Optionen → Sicherheitsschlüssel & Schlüsseldateien → „Security Key hinzufügen“ mit zweitem Key (zwei Berührungen). | Zweiter Key in der Liste; beide entsperren. Code bleibt gültig. |
+| S1 | Optionen → Sicherheitsschlüssel & Schlüsseldateien → „Security Key hinzufügen“ mit zweitem Key (zwei Berührungen). | Zweiter Key in der Liste; beide entsperren. Code bleibt gültig. **Kein** Schlüsselwechsel und keine Aufforderung zum Speichern der Suite-Datei (Hinzufügen ist keine Schutzänderung, die etwas ungültig macht); nur der Hinweis „Nicht gespeicherte Änderungen“. |
 | S2 | „Schlüsseldatei hinzufügen“ (erstellen und speichern). | Datei in der Liste; Entsperren damit möglich (U6). |
 | S3 | Schlüsseldatei entfernen, später den letzten Key entfernen versuchen. | Entfernen geht; der letzte Key/die letzte Datei lässt sich **nicht** entfernen. |
-| S4 | Suite mit Schlüsseldatei (E11): Key hinzufügen, dann Datei entfernen. | Key funktioniert, Datei nicht mehr, **alter Wiederherstellungscode funktioniert weiterhin**. |
+| S4 | Suite mit Schlüsseldatei (E18): Key hinzufügen, dann Datei entfernen. | Key funktioniert, Datei nicht mehr, **alter Wiederherstellungscode funktioniert weiterhin**. |
 | S5 | „Neuer Wiederherstellungscode“. Sperren, alten Code probieren, dann neuen. | Alter Code: ungültig. Neuer: geht. |
-| S6 | Passwort ändern (aktuelles falsch, dann richtig). | Falsch: Meldung. Richtig: neues Passwort gilt, Fingerabdruck/PIN-Zugang ist neu einzurichten. |
-| S7 | Vor S5: den Suite-Ordner kopieren (alte Sicherung). Nach S5 die Kopie in einen leeren Ordner legen und mit dem **alten** Code öffnen; dann die **aktuellen** Dateien mit dem alten Code. | Die alte Kopie öffnet sich (Stand von damals). Die aktuellen Dateien öffnen sich mit dem alten Code nicht. Fingerabdruck/PIN funktionieren nach S5 weiter. |
-| S8 | Zwei Keys (oder Key + Schlüsseldatei). Ordner kopieren, dann einen Key entfernen. Mit dem entfernten Key + Passwort die Kopie öffnen, dann die aktuellen Dateien. | Kopie: öffnet sich. Aktuelle Dateien: „Key nicht eingetragen“. Der verbliebene Key öffnet alles, **ohne** dass er beim Entfernen berührt werden musste. Fingerabdruck/PIN ist neu einzurichten. |
-| S9 | Suite aus einer älteren App-Version (vor Formatversion 2) mit zwei Keys öffnen. Optionen → Keys. | Der benutzte Key ist normal, der andere zeigt „einmal damit entsperren …“. Nach einem Entsperren mit ihm verschwindet der Hinweis. |
-| S10 | Zwei Geräte mit Sync. Gerät B in den Flugmodus, dort Einträge ändern. Auf A einen Key entfernen und einen neuen Code erstellen, Sync. B wieder online, Sync. | B fragt einmal „Schutz geändert“ nach einem übrigen Key oder der Schlüsseldatei (bei neuem Passwort auch danach). Danach sind die Änderungen beider Geräte auf beiden. Auf dem Server wurde nichts überschrieben. |
-| S11 | Suite-Ordner auf dem Gerät und auf dem Server ansehen. | Tresordateien heißen nur nach ihrer Kennung (z. B. `3f9a1c2b7d4e5f60.ghlpss`), kein Tresorname; ältere Namen sind nach dem Entsperren bzw. nächsten Sync verschwunden. Die Tresorliste zeigt keine Dateinamen. |
+| S6 | Passwort ändern (aktuelles falsch, dann richtig). | Falsch: Meldung. Richtig: neues Passwort gilt, Fingerabdruck/PIN-Zugang ist neu einzurichten. Danach Dialog „Suite-Datei jetzt speichern“ (S12). |
+| S7 | Vor S5: die Suite-Datei speichern und eine Kopie davon aufheben. Nach S5 die Suite-Datei neu speichern. Auf einem Gerät ohne Suite die **alte** Kopie mit dem **alten** Code öffnen; dann die **neue** Datei mit dem alten Code. | Die alte Kopie öffnet sich (Stand von damals, Hinweis, dass ohne Passwort nicht geprüft werden konnte). Die neue Datei öffnet sich mit dem alten Code nicht. Fingerabdruck/PIN funktionieren nach S5 weiter. |
+| S8 | Zwei Keys (oder Key + Schlüsseldatei). Suite-Datei speichern und eine Kopie aufheben, dann einen Key entfernen und neu speichern. Mit dem entfernten Key + Passwort die Kopie öffnen, dann die neue Datei. | Kopie: öffnet sich (auf einem Gerät, das den neueren Stand nie gesehen hat). Neue Datei: „Key nicht eingetragen“. Der verbliebene Key öffnet alles, **ohne** dass er beim Entfernen berührt werden musste. Fingerabdruck/PIN ist neu einzurichten. |
+| S11 | Die Suite-Datei mit einem ZIP-Programm (z. B. Dateien-App oder 7-Zip) ansehen. | Darin nur `suite.ghlsuite`, `export.ghlexp` und Tresordateien, die nach ihrer Kennung heißen (z. B. `3f9a1c2b7d4e5f60.ghlpss`); kein Tresorname, kein lesbarer Inhalt. |
+| S12 | Nach S3 (Datei entfernt), S5 und S6 jeweils auf den Dialog achten. | Jedes Mal „Suite-Datei jetzt speichern“: Der Schutz wurde geändert; ältere Kopien der Suite-Datei sollen gelöscht werden. Eine alte Kopie öffnet sich auf diesem Gerät nicht mehr (SD14); anderswo nur mit dem alten Passwort **und** dem alten zweiten Faktor. „Jetzt speichern“ führt zu Optionen → Suite-Datei; „Später“ schließt ihn, der Hinweis „Nicht gespeicherte Änderungen“ bleibt. |
+| S13 | Eine Tresordatei mit einem Hex-Editor an einer Stelle im Inhalt verändern (oder ein Byte am Ende) und mit „Einzelnen Tresor öffnen“ öffnen. | Mit dem richtigen Passwort und Key: Meldung „verändert“ bzw. „beschädigt“, **nie** „falsches Passwort“; nichts wird geöffnet. |
 
 ## 8. Import
 
@@ -179,95 +183,28 @@ Entfällt: Autofill wurde entfernt, weil es nicht zuverlässig funktionierte (Te
 | O1 | Module: GhulAuth ausschalten, wieder einschalten. | Verschwindet aus dem Menü, Daten bleiben. |
 | O2 | Design hell/dunkel/System. | Wechselt sofort, alles lesbar. |
 | O3 | Android-Optionen → Apps → GhulSuite → Sprache: Englisch. | Oberfläche englisch. |
-| O4 | Flugmodus an, alles Obige kurz wiederholen (Entsperren, Codes, GhulPass, GhulAuth). | Funktioniert vollständig offline (nur Synchronisation, Drive und Mail brauchen das Netz). |
+| O4 | Flugmodus an, alles Obige kurz wiederholen (Entsperren, Codes, GhulPass, GhulAuth, GhulDocs, GhulCal). | Funktioniert vollständig offline. Nur die Update-Prüfung und die Prüfung auf Datenlecks melden verständlich, dass kein Netz da ist. |
 | O5 | Handy drehen in Listen, Bearbeiten und Dialogen. | Kein Datenverlust, keine Abstürze. |
 
-## 12. Eigene Server und Synchronisation
+## 12. Eigene Server (entfernt)
 
-| Nr. | Schritt | Erwartet |
-|---|---|---|
-| SY1 | Optionen → Daten → Synchronisation → „Server hinzufügen“ → Verbindungsart **SFTP (SSH)**. Adresse, Port und Benutzer eingeben, „SSH-Schlüssel“ gewählt lassen. | Ein öffentlicher Schlüssel `ssh-ed25519 …` wird angezeigt; „Kopieren“ legt ihn in die Zwischenablage. Es gibt noch **keine** Ordnerwahl, nur „Verbindung testen“; darunter die Schritte 1. bis 4. untereinander. |
-| SY2 | Schlüssel auf dem Server in `~/.ssh/authorized_keys` eintragen, dann „Verbindung testen“. | Dialog „Server-Schlüssel prüfen“ mit `SHA256:…`. Er stimmt mit dem Fingerabdruck aus V6 überein. |
-| SY3 | „Fingerabdruck stimmt“, in der Ordnerliste „ghulsuite (Neu anlegen, empfohlen)“ wählen, „Verbindung prüfen“, „Server speichern“. | Nach dem Fingerabdruck: „Verbindung klappt. Wähle jetzt den Ordner …“ und die Ordnerliste öffnet sich von selbst. Nach dem Speichern erscheint der Server in der Liste. Auf dem Server gibt es den Ordner `ghulsuite/suite/` (leer). |
-| SY4 | Server mit falschem Fingerabdruck-Abgleich: „Abbrechen“ im Dialog. | Nichts wird gespeichert. |
-| SY4b | Einfachster Weg: „Server hinzufügen“ → „Passwort“ → SSH-Passwort eingeben, „SSH-Schlüssel automatisch einrichten“ eingeschaltet lassen → „Verbindung testen“ → Fingerabdruck bestätigen → Ordner wählen → „Verbindung prüfen“ → „Server speichern“. | Server erscheint mit „Ordner: /home/…/ghulsuite“. Auf dem Server steht in `~/.ssh/authorized_keys` eine neue Zeile `ssh-ed25519 … GhulSuite`, alte Zeilen sind unverändert. Das Passwort ist nicht gespeichert (Server funktioniert auch nach Passwortänderung weiter). |
-| SY5 | Variante Passwort: zweiten Server-Eintrag mit „Passwort“ anlegen (falls der Server Passwort-Anmeldung erlaubt). | Funktioniert wie SY2 bis SY3. Falsches Passwort → „Der Server hat die Anmeldung abgelehnt …“. |
-| SY6 | Synchronisation → „Aus“ antippen → Server wählen. | Statt „Aus“ steht der Servername da; synchronisiert sofort, genau **einmal** (danach steht gleich wieder „Jetzt synchronisieren“, kein zweiter Lauf mit „Synchronisiere …“); „Zuletzt synchronisiert: …“. Auf dem Server liegen jetzt `suite.ghlsuite` und die Tresordateien, alle verschlüsselt (Inhalt unlesbar). |
-| SY7 | **Zweites Gerät:** Startbildschirm → „Von meinem Server holen“. Adresse usw. eingeben; den angezeigten **Geräteschlüssel** zusätzlich in `authorized_keys` eintragen; „Suite holen“, Fingerabdruck bestätigen. | „Suite geladen. Jetzt entsperren.“ → Entsperren mit Passwort und Key/Schlüsseldatei klappt, alle Einträge sind da. |
-| SY8 | Gerät 1: Eintrag A anlegen. Gerät 2: Eintrag B anlegen (beide mit „Automatisch“). Danach auf beiden „Jetzt synchronisieren“. | Beide Geräte zeigen A **und** B. Nichts geht verloren. |
-| SY9 | Denselben Eintrag auf beiden Geräten unterschiedlich ändern, nacheinander synchronisieren. | Die später gespeicherte Änderung gewinnt auf beiden Geräten. |
-| SY10 | Gerät 1: Eintrag löschen, synchronisieren; Gerät 2 synchronisieren. | Eintrag ist auf beiden weg. |
-| SY11 | Gerät 1: neuen Tresor anlegen → synchronisieren → Gerät 2 synchronisieren. | Tresor erscheint auf Gerät 2. Danach auf Gerät 1 Tresor entfernen, beide synchronisieren: auf beiden weg. |
-| SY12 | Gerät 1: Master-Passwort ändern, synchronisieren. Gerät 2: synchronisieren. | Gerät 2 fragt „Neues Master-Passwort“. Neues Passwort eingeben → übernommen; nach Sperren entsperrt Gerät 2 nur noch mit dem neuen Passwort. |
-| SY13 | Gerät 1: zusätzlichen Key oder Schlüsseldatei hinzufügen, synchronisieren; Gerät 2 synchronisieren, sperren. | Gerät 2 lässt sich auch mit dem neuen Key/der neuen Schlüsseldatei entsperren. |
-| SY14 | Flugmodus an, etwas ändern. | Keine Fehlermeldung (automatische Synchronisation still). „Jetzt synchronisieren“ meldet „Keine Verbindung …“. Nach dem Flugmodus synchronisiert es wieder. |
-| SY15 | Auf dem Server den Host-Key tauschen (oder einen anderen Server unter derselben Adresse) und synchronisieren. | Warnung „Der Server zeigt einen anderen Schlüssel …“, es wird nichts übertragen. |
-| SY16 | Server entfernen, dann auf einem zweiten Gerät synchronisieren. | Server weg, Synchronisation aus; Dateien auf dem Server bleiben. Der Server taucht auch nach dem Synchronisieren nicht wieder auf. |
+Entfällt: GhulMail, GhulDrive, Server, Freigabelinks und der Schlüsselwechsel wurden mit dem Umbau zu GhulDocs entfernt
+([`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)). GhulDocs testet Abschnitt 39, das Scannen Abschnitt 38.
 
-## 13. GhulDrive
+## 13. GhulDrive (entfernt)
 
-| Nr. | Schritt | Erwartet |
-|---|---|---|
-| D1 | Tab GhulDrive (ggf. unter Optionen → Module einschalten). | „GhulDrive einrichten“ mit deinen Servern. |
-| D2 | „<Server> verwenden“. | Leere Liste „Meine Dateien“, unten „Auf dem Server: /home/…/ghulsuite/drive“. Dort entsteht `index.ghldrv`. |
-| D3 | „Hochladen“, ein Foto oder PDF wählen. | Unter der Kopfleiste der Streifen „Lade … hoch“ mit Balken und Größe; danach „… hochgeladen.“; Datei mit Größe und Datum in der Liste. |
-| D4 | Auf dem Server in `ghulsuite/drive/` schauen. | Nur `index.ghldrv` und `blocks/xx/<lange ID>`: **kein** Dateiname, Inhalt unlesbar. |
-| D5 | Große Datei (> 50 MB, z. B. Video) hochladen. | Fortschritt läuft durch; App bleibt bedienbar; Datei erscheint. |
-| D5a | App ganz schließen, neu starten, entsperren und sofort GhulDrive öffnen (während die Synchronisation nach dem Entsperren läuft). | Die Karte oben zeigt nie „Noch kein Server“; höchstens kurz „Wird geladen …“, dann den Servernamen. |
-| D6 | Datei antippen → „Speichern“ → Speicherort wählen. | Streifen „Lade … herunter“ mit Fortschritt, dann „… gespeichert.“; die Datei ist identisch (öffnen, ansehen). |
-| D7 | Upload starten und im Streifen „Abbrechen“. | Bricht ab mit „Hochladen von … abgebrochen.“, keine halbe Datei in der Liste. |
-| D7a | „Hochladen“ und im Auswahlfenster mehrere Dateien markieren (Android: lange drücken; Windows: Strg oder Umschalt). | Streifen „Lade 5 Dateien hoch“, darunter „2 von 5 fertig · Name · Größe“; nach jeder Datei stimmen Liste und „X Dateien“; am Ende „5 Dateien hochgeladen.“. Scheitert eine Datei, laufen die anderen weiter und die Meldung nennt sie; „Abbrechen“ stoppt den Rest mit „Hochladen abgebrochen: 2 von 5 Dateien fertig.“. |
-| D7b | In der Galerie mehrere Fotos auswählen → Teilen → „In GhulDrive speichern“ (gesperrt: erst entsperren). | GhulDrive öffnet sich, die Fotos werden nacheinander in „Meine Dateien“ hochgeladen; ohne eingerichtetes GhulDrive kommt der Hinweis, es zuerst einzurichten. Andere Apps können so keine Dateien von GhulSuite selbst hineinschieben. |
-| D8 | „Hinzufügen“ → „Neuer Ordner“ → Name; Ordner öffnen, Datei hineinladen; Zurück-Pfeil. | Ordnerstruktur stimmt, Pfad oben passt. |
-| D9 | Datei umbenennen, in einen anderen Ordner verschieben („Hierher verschieben“). | Name bzw. Ort ändern sich. |
-| D10 | Suche nach einem Teil des Dateinamens. | Treffer aus allen Ordnern. |
-| D11 | Datei löschen; Ordner mit Inhalt löschen. | Weg; nach dem Löschen auf dem Server weniger Blöcke. |
-| D12 | Zweites Gerät (nach Synchronisation, SY7): GhulDrive öffnen, aktualisieren. | Dieselben Dateien und Ordner; Herunterladen klappt. |
-| D13 | Dieselbe Datei zweimal hochladen. | Zwei Einträge in der Liste, auf dem Server aber nicht doppelter Platz. |
+Entfällt: GhulMail, GhulDrive, Server, Freigabelinks und der Schlüsselwechsel wurden mit dem Umbau zu GhulDocs entfernt
+([`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)). GhulDocs testet Abschnitt 39, das Scannen Abschnitt 38.
 
-## 14. GhulMail
+## 14. GhulMail (entfernt)
 
-| Nr. | Schritt | Erwartet |
-|---|---|---|
-| M1 | Tab GhulMail → „E-Mail-Konto hinzufügen“. E-Mail-Adresse eingeben. | Unter „Eingang/Ausgang“ werden passende Server vorgeschlagen (bei bekannten Anbietern genau, sonst `imap.`/`smtp.` + Domain). |
-| M2 | Passwort (bzw. App-Passwort), Name eingeben. Erst „Verbindung prüfen“, dann „Speichern“. | Vor der Prüfung gibt es kein „Speichern“. Die Prüfung zeigt vier Haken: Posteingangsserver erreichbar, Anmeldung am Posteingang, Postausgangsserver erreichbar, Anmeldung am Postausgang, und „Verbindung klappt …“; erst dann erscheint „Speichern“. Durch die Prüfung wird nichts gespeichert. Signatur ist mit „Viele Grüße“ und deinem Namen vorbelegt. Nach „Speichern“ erscheint der Posteingang. |
-| M2a | Nach erfolgreicher Prüfung Passwort, Adresse, Benutzername, Server oder Port ändern. | Ergebnis und „Speichern“ verschwinden sofort; erst eine neue Prüfung bringt sie zurück. Nur Name, Absendername oder Signatur ändern: „Speichern“ bleibt. |
-| M2b | Bestehendes Konto bearbeiten, nur den Namen oder die Signatur ändern. | „Speichern“ ist ohne Prüfung möglich. Ein neues Passwort verlangt erst „Verbindung prüfen“. |
-| M3 | Falsches Passwort, „Verbindung prüfen“. | Server erreichbar (grün), beide Anmeldungen rot mit „Anmeldung abgelehnt. Prüfe Benutzername und Passwort …“; kein „Speichern“, nichts gespeichert. Falsche Serveradresse: „Posteingangsserver erreichbar“ rot mit dem Grund, die Anmeldung grau „Nicht geprüft“. |
-| M4 | „Server-Einstellungen anzeigen“: Ports ändern, falscher Server. | Für IMAP gibt es nur SSL/TLS (keine Wahl), für den Ausgang SSL/TLS oder STARTTLS. Falscher Server: klare Meldung „Keine Verbindung …“. |
-| M5 | Eigener Mailserver mit selbst signiertem Zertifikat (falls vorhanden), „Verbindung prüfen“. | Dialog „Zertifikat prüfen“ mit Fingerabdruck; nach „Fingerabdruck stimmt“ läuft die Prüfung von selbst noch einmal und zeigt die Haken; dann „Speichern“. |
-| M6 | Liste: ungelesene fett, Stern, Büroklammer bei Anhängen, Datum. „Weitere laden“ bei mehr als 50. | Stimmt mit dem Postfach im Webmail überein. |
-| M7 | Ordner wechseln (Gesendet, Papierkorb …), Aktualisieren. | Richtige Inhalte. |
-| M8 | Mail öffnen. | Text lesbar, Absender/Empfänger/Datum; bei HTML-Mails Hinweis „Als Text angezeigt …“; **keine** Bilder aus dem Internet. Im Webmail ist sie jetzt gelesen. |
-| M9 | Anhang „Speichern“. | Datei korrekt gespeichert. |
-| M10 | „Schreiben“: an die zweite Adresse, mit Anhang, senden. | „Nachricht gesendet.“; kommt an (inkl. Anhang, Umlaute korrekt, Signatur); liegt in „Gesendet“. |
-| M11 | Antworten, Allen antworten, Weiterleiten. | Betreff „AW:“/„WG:“, Zitat, Empfänger vorausgefüllt; Antwort erscheint beim Empfänger im selben Gesprächsverlauf. |
-| M12 | Markieren, Als ungelesen, Verschieben in einen Ordner. | Wirkt sich auch im Webmail aus. |
-| M13 | Löschen im Posteingang, dann im Papierkorb. | Erst in den Papierkorb, dort endgültig gelöscht. |
-| M14 | Suche nach einem Wort aus Betreff oder Text. | Passende Mails. |
-| M15 | Zweites Konto anlegen. | Konto-Auswahl oben; beim Schreiben Absender wählbar. |
-| M16 | Optionen → GhulMail → Konto → Bearbeiten, Passwort leer lassen, Namen ändern, speichern. | Name geändert, Anmeldung funktioniert weiter. |
-| M17 | Konto entfernen. | Konto weg; Mails auf dem Server unverändert. |
-| M18 | Sperren und entsperren, Synchronisation (SY7) auf Gerät 2. | Konten sind nach Entsperren bzw. auf Gerät 2 vorhanden. |
+Entfällt: GhulMail, GhulDrive, Server, Freigabelinks und der Schlüsselwechsel wurden mit dem Umbau zu GhulDocs entfernt
+([`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)). GhulDocs testet Abschnitt 39, das Scannen Abschnitt 38.
 
-## 15. Benachrichtigungen
+## 15. Benachrichtigungen (Mail) (entfernt)
 
-| Nr. | Schritt | Erwartet |
-|---|---|---|
-| N1 | Neues Mailkonto anlegen (oder nach dem Update entsperren). | Benachrichtigungen für das Konto sind **von selbst an** (Optionen → GhulMail → Benachrichtigungen). Android fragt einmal nach Benachrichtigungen und Akku-Optimierung → erlauben. |
-| N1b | Optionen → GhulMail. | Grün: „GhulMail darf im Hintergrund laufen“. Sonst Hinweis mit Knopf „Im Hintergrund erlauben“; danach grün. In der Statusleiste steht die stille Benachrichtigung „GhulMail ist bereit“. |
-| N2 | GhulSuite sperren, Handy sperren. Von der zweiten Adresse eine Mail schicken. | **Innerhalb weniger Sekunden** Benachrichtigung „<Kontoname>, 1 neue E-Mail“, **ohne** Absender und Betreff. |
-| N2b | Handy neu starten, ohne GhulSuite zu öffnen eine Mail schicken. | „GhulMail ist bereit“ ist wieder da, die Benachrichtigung kommt sofort. |
-| N3 | Benachrichtigung antippen (vorher in GhulMail den Postausgang oder einen anderen Ordner offen lassen). | Nach dem Entsperren öffnet sich **genau diese Mail** im Posteingang des Kontos; zurück führt in den Posteingang. Bei mehreren neuen Mails: der Posteingang. Die Benachrichtigung verschwindet. |
-| N4 | Schalter aus, wieder Mail schicken. | Keine Benachrichtigung mehr; „GhulMail ist bereit“ verschwindet (wenn kein anderes Konto benachrichtigt). |
-| N5 | Schalter an, dann **Sofortsperre** (Schütteln oder Schnellkachel), danach Mail schicken. | Gesperrt, aber **Benachrichtigungen kommen weiter**; Schalter bleibt an. |
-| N6 | Konto-Passwort in GhulSuite ändern (M16 mit neuem Passwort), Benachrichtigung an. | Benachrichtigungen kommen weiter. |
-| N7 | Mailpasswort auf dem **anderen** Gerät ändern, hier synchronisieren und einmal entsperren. | Benachrichtigungen kommen weiter (die Kopie für den Empfang wird beim Entsperren erneuert). |
-| N8 | GhulSuite aus der Liste der letzten Apps wischen, Mail schicken. | Benachrichtigung kommt sofort. |
-| N9 | WLAN aus (nur mobile Daten), Mail schicken; dann WLAN wieder an, Mail schicken. | Beide Male Benachrichtigung innerhalb weniger Sekunden (bei Netzwechsel verbindet GhulMail sofort neu). |
-| N10 | Handy 30 Minuten unberührt liegen lassen (Bildschirm aus), dann Mail schicken. | Benachrichtigung innerhalb von 1 bis 2 Minuten, meist sofort. |
-| N11 | Android-Einstellungen → Apps → GhulSuite → „Beenden erzwingen“, Mail schicken. | **Keine** Benachrichtigung (Android-Regel). Nach dem nächsten Öffnen von GhulSuite kommt sie wieder. |
-| N12 | Zwei Konten mit Benachrichtigung, an beide gleichzeitig eine Mail. | Zwei Benachrichtigungen; jede öffnet die Mail ihres Kontos. Keine Mail meldet sich doppelt. |
+Entfällt: GhulMail, GhulDrive, Server, Freigabelinks und der Schlüsselwechsel wurden mit dem Umbau zu GhulDocs entfernt
+([`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)). GhulDocs testet Abschnitt 39, das Scannen Abschnitt 38.
 
 ## 16. Neues Design und Einstellungen
 
@@ -275,118 +212,43 @@ Entfällt: Autofill wurde entfernt, weil es nicht zuverlässig funktionierte (Te
 |---|---|---|
 | DS1 | Durch alle Tabs blättern. | Überall dieselbe Kopfzeile: Bereichsname, darunter farbige Kontextzeile (Tresor, Speicherort bzw. „Konto · Ordner“) mit Pfeil; rechts das Schloss. |
 | DS2 | Kontextzeile in GhulPass antippen. | Auswahl „Tresor wählen“ (Alle / einzelne Tresore mit Anzahl Einträgen, „Tresore verwalten“). Wahl wirkt sofort. |
-| DS3 | Kontextzeile in GhulDrive und GhulMail antippen. | Drive: alle Speicherorte (der aktive markiert, ein anderer schaltet um), „Freigabelinks“, „Speicherorte verwalten“. Mail: Konten, Ordner mit Symbolen, „Neues Konto“. |
+| DS3 | Kontextzeile in GhulDocs und GhulCal antippen. | GhulDocs: „Alle Tresore“ und die einzelnen GhulDocs-Tresore. GhulCal: die Kalender. Wahl wirkt sofort. |
 | DS4 | Passwort eines Eintrags anzeigen lassen. | Ziffern und Sonderzeichen sind farbig, Buchstaben normal. |
-| DS5 | Tab Einstellungen. | Karte „Meine Suite“ mit „Sperren“, darunter Gruppen Sicherheit, Schutz, Daten, Server, Bereiche, Allgemein; jede Zeile mit kurzem Status (z. B. „1 Schlüssel, 1 Schlüsseldateien“, „2 Server · Sync an · Teilen an“). |
+| DS5 | Tab Einstellungen. | Karte „Meine Suite“ mit „Sperren“, darunter Gruppen Sicherheit, Schutz, Daten, Bereiche, Allgemein; jede Zeile mit kurzem Status (z. B. „1 Schlüssel, 1 Schlüsseldateien“; unter Daten „Suite-Datei“ mit „Öffnen und speichern (.ghlzip)“ bzw. „Nicht gespeicherte Änderungen“). Keine Gruppe „Server“. |
 | DS6 | Jede Zeile öffnen, Zurück. | Eigene Seite mit Titel; Zurück führt zur Übersicht. Abgeschaltete Module erscheinen nicht unter „Bereiche“. |
 | DS7 | Dunkles Design (Optionen → Ansicht). | Alle Seiten gut lesbar. |
 
-## 17. Servertypen und Server-Modul
+## 17. Servertypen und Server-Modul (entfernt)
 
-Ein Server in der App ist ein Webspace bzw. Server: seine SFTP- oder FTPS-Anmeldung und, wenn gewünscht, das GhulSuite-Server-Modul (eine PHP-Datei), das die App über dieselbe Anmeldung installiert. Das Modul wird nur für Freigabelinks gebraucht. Synchronisation und GhulDrive wählen ihren Server frei (auch denselben).
+Entfällt: GhulMail, GhulDrive, Server, Freigabelinks und der Schlüsselwechsel wurden mit dem Umbau zu GhulDocs entfernt
+([`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)). GhulDocs testet Abschnitt 39, das Scannen Abschnitt 38.
 
-| Nr. | Schritt | Erwartet |
-|---|---|---|
-| ST1 | Optionen → Synchronisation → „Server hinzufügen“, ebenso Optionen → GhulDrive → „Speicherort hinzufügen“. | Auswahl SFTP oder FTPS, kein PHP-Modul als eigene Verbindungsart. |
-| ST2 | **FTPS**: Adresse, Port 21, Benutzer, Passwort → „Verbindung testen“ → Ordner `ghulsuite` → „Verbindung prüfen“ → „Server speichern“. | Dialog mit Zertifikat-Fingerabdruck (bei gültigem Zertifikat ohne Dialog). Danach steht der Server in der Liste mit „FTPS“, Anmeldung und „Ordner: /ghulsuite“. |
-| ST3 | FTPS mit falschem Passwort. | Fehlermeldung „Anmeldung abgelehnt“, nichts gespeichert. |
-| ST4 | Synchronisation und GhulDrive mit dem FTPS-Server (wie SY6, D2 bis D6). | Funktioniert; auf dem Webhosting nur verschlüsselte Dateien. |
-| ST4a | Server hinzufügen, beim GhulSuite-Ordner „Ordner wählen“ und in `public_html` (oder `htdocs`, einen Ordner mit Domainnamen) wechseln. | Der Ordner ist in der Liste als „Ordner der Website, nicht für GhulSuite“ markiert; darin steht rot, den GhulSuite-Ordner besser daneben anzulegen. Der Hinweis unter dem Feld sagt, dass der Ordner nicht in der Website liegen soll. |
-| ST5 | Serverliste ansehen. | Je Server: Name mit SFTP oder FTPS, Anmeldung (Benutzer@Adresse:Port), Ordner, „Genutzt für: Synchronisation, GhulDrive“ bzw. „Noch nicht genutzt“ und „Server-Modul: nicht installiert (nur für Freigabelinks nötig)“ mit „Modul installieren“. Ein eigener Server von GhulDrive steht auch da, ohne Entfernen-Knopf („Du änderst ihn in GhulDrive“). |
-| ST6 | Beim Server des Webhostings „Modul installieren“ → im Ordner-Browser den Ordner der Website wählen (z. B. `public_html`), Adresse leer lassen → „Installieren und prüfen“. | Vier grüne Haken: „Moduldatei hochgeladen“ (mit Pfad), „Antwortet über HTTPS“ (mit Adresse), „Liest den GhulSuite-Ordner“, „GhulSuite-Ordner aus dem Web nicht abrufbar“. „Das Server-Modul läuft unter …“, „Fertig“ führt zurück; die Liste zeigt „Server-Modul: Version …“. |
-| ST7 | Wie ST6, aber die Website hat eine andere Adresse als die üblichen (z. B. eigene Domain auf einem Unterordner). | „Antwortet über HTTPS“ rot: „Keine Antwort unter … Trag oben die Adresse des Moduls ein …“ mit den probierten Adressen; „Liest den GhulSuite-Ordner“ grau mit „Nicht geprüft, weil der HTTPS-Schritt fehlschlug“. Richtige Adresse eintragen, erneut „Installieren und prüfen“: alles grün. |
-| ST8 | Adresse mit `http://` eintragen. | Hinweis „Die Adresse muss mit https:// beginnen.“, „Installieren und prüfen“ bleibt gesperrt. |
-| ST9 | Webhosting ohne PHP (oder ein Ordner, in dem PHP nicht läuft). | „PHP läuft“ rot: „Dort läuft kein PHP … Die App hat sie wieder gelöscht. Auf diesem Webhosting kann das Modul nicht laufen.“ `ghulsuite.php` liegt nicht mehr auf dem Server; die Liste zeigt weiter „nicht installiert“. |
-| ST10 | Webhosting, dessen PHP den GhulSuite-Ordner nicht lesen darf (z. B. `open_basedir`). | „Liest den GhulSuite-Ordner“ rot mit Erklärung, dass Freigabelinks dort nicht möglich sind. Nichts wird gespeichert. |
-| ST10a | Webhosting, dessen PHP im GhulSuite-Ordner nicht schreiben darf (Rechte von `shares/` z. B. auf 555). | „Liest den GhulSuite-Ordner“ rot: „PHP darf den GhulSuite-Ordner lesen, aber in seinem Ordner „shares“ nicht schreiben …“. Nichts wird gespeichert; Rechte korrigieren, erneut prüfen: grün. |
-| ST10b | GhulSuite-Ordner innerhalb der Website anlegen (z. B. `public_html/ghulsuite`) auf einem Webserver, der `.htaccess` nicht beachtet (z. B. nginx). | „GhulSuite-Ordner aus dem Web nicht abrufbar“ rot mit der Adresse, unter der er abrufbar war; das Modul ist wieder entfernt und nicht gespeichert. Mit Apache (`.htaccess` wirkt) bleibt der Schritt grün. |
-| ST11 | Im Browser `https://deine-domain/ghulsuite.php` öffnen. | Seite „Geteilte Datei“ mit „Der Link ist unvollständig“ (es fehlt der Teil nach #). |
-| ST12 | Liegt der GhulSuite-Ordner innerhalb der Website: ihn im Browser öffnen. | Zugriff verweigert (403), kein Inhalt. |
-| ST13 | Server mit älterer Modulversion (mit einer älteren App installiert). | Liste: „Server-Modul: Version x, Version y ist verfügbar“ und „Modul aktualisieren“; danach „Server-Modul aktualisiert (Version y)“. |
-| ST14 | „Modul entfernen“. | Rückfrage „Server-Modul von … entfernen?“: „Abbrechen“ lässt alles, wie es ist. „Entfernen“: Datei weg, Links dieses Servers funktionieren nicht mehr, Liste „nicht installiert“. |
-| ST15 | Einen zweiten Server (anderes Webhosting) hinzufügen und dort ebenfalls das Modul installieren. | Beide Server haben ihre eigene Anmeldung und ihr eigenes Modul. Freigabelinks kommen immer vom Server von GhulDrive. |
-| ST16 | Neues Gerät: „Von meinem Server holen“. | Zur Wahl stehen SFTP und FTPS (kein PHP-Modul mehr). |
+## 18. Teilen per Freigabelink (entfernt)
 
-## 18. Teilen
+Entfällt: GhulMail, GhulDrive, Server, Freigabelinks und der Schlüsselwechsel wurden mit dem Umbau zu GhulDocs entfernt
+([`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)). GhulDocs testet Abschnitt 39, das Scannen Abschnitt 38.
 
-Freigabelinks gibt es nur über das Server-Modul auf dem Server von GhulDrive (Abschnitt 17). Einen statischen Teilen-Ordner gibt es nicht mehr.
+## 19. Modultrennung und GhulMail-Anbindung (entfernt)
 
-| Nr. | Schritt | Erwartet |
-|---|---|---|
-| SH1 | GhulDrive auf einem Server **ohne** Modul: Datei → Teilen. | Zeile „Freigabelink“ mit „Braucht das GhulSuite-Server-Modul. Zum Installieren antippen.“ Antippen öffnet die Modul-Installation genau dieses Servers. |
-| SH2 | Ohne eingerichtetes GhulDrive: GhulPass-Eintrag → ⋮; Optionen → GhulDrive → Freigabelinks. | „Sicher teilen …“ ist ausgegraut mit „Freigabelinks kommen vom Server von GhulDrive. Richte zuerst GhulDrive ein.“; die leere Liste der Freigabelinks sagt dasselbe. |
-| SH3 | Mit Modul: Datei → Teilen → Freigabelink. | Keine Serverauswahl. „Gültig für“: 1 Tag, 7 Tage (vorgewählt), 30 Tage, Unbegrenzt. „Abrufe“: Unbegrenzt, 1× (einmalig), 3×, 5×, 10×. Schalter „Zusätzliches Passwort“. |
-| SH4 | „Link erstellen“. | „Link bereit“ mit Link, Größe und Ablauf; „Link kopieren“ legt ihn in die Zwischenablage, QR-Code zeigt ihn. |
-| SH5 | Link auf einem anderen Gerät/PC im Browser öffnen. | Seite zeigt Dateiname und Größe, „Herunterladen“ liefert die identische Datei. Der Teil nach # verschwindet aus der Adresszeile. |
-| SH6 | Link mit „Zusätzliches Passwort“ erstellen, im Browser öffnen. | Passwortfeld; falsches Passwort → Fehlermeldung; richtiges → Download. |
-| SH7 | Link um ein Zeichen kürzen oder ändern und öffnen. | „Der Link ist unvollständig …“ bzw. „Falsches Passwort oder der Link ist beschädigt“. Kein Download. |
-| SH8 | „Abrufe“ auf „1× (einmalig)“ → Link erstellen, zweimal öffnen. | Erster Abruf klappt, zweiter: „Diese Freigabe gibt es nicht mehr …“. |
-| SH9 | „5×“ → zweimal öffnen → GhulDrive → Kontextzeile → Freigabelinks. | Eintrag zeigt Ablauf und „2 von 5 Abrufen“. |
-| SH10 | Freigabe mit „1 Tag“ erstellen, am nächsten Tag öffnen, ohne GhulSuite vorher zu öffnen. | „Diese Freigabe gibt es nicht mehr …“: das Modul beendet den Link selbst. |
-| SH11 | Freigabelinks → Eintrag „Zurückziehen“ → Rückfrage bestätigen → Link im Browser neu laden. | Eintrag verschwindet sofort, Meldung „Link zurückgezogen“. Im Browser: „Diese Freigabe gibt es nicht mehr …“. Die Datei bleibt in GhulDrive. Mit Synchronisation: Freigabelinks erneut öffnen, der Eintrag bleibt weg. |
-| SH12 | Freigabelinks im Flugmodus öffnen. | Einträge mit Größe und Ablauf, ohne Abrufzahl (nie „-1“). |
-| SH13 | In GhulDrive lange drücken, zwei Dateien und einen Ordner dazu antippen → Teilen → Freigabelink. | Feld „Titel des Links“ (vorbelegt „GhulDrive“) und Hinweis „Der Empfänger bekommt jede Datei einzeln.“ Im Browser: jede Datei einzeln zum Herunterladen, auch große Dateien (kein ZIP, keine Größengrenze). |
-| SH14 | Eine geteilte Datei in GhulDrive in den Papierkorb (einzeln über das Datei-Blatt und mit Mehrfachauswahl). | Die Rückfrage sagt zusätzlich „1 aktiver Freigabelink endet.“ „Abbrechen“: Datei und Link bleiben. Bestätigt: Der Link endet zuerst (Browser: „Diese Freigabe gibt es nicht mehr …“, Freigabelinks ohne den Eintrag), dann liegt die Datei im Papierkorb. |
-| SH15 | Eine Datei in einem geteilten Ordner im Papierkorb „Endgültig löschen“, bzw. den geteilten Ordner selbst in den Papierkorb. | Wie SH14: die Rückfrage nennt die Links, die enden; nach Bestätigung sind sie beendet. |
-| SH16 | Eine geteilte Datei ändern (neue Version hochladen), dann den Link öffnen. | Der Link funktioniert weiter. |
-| SH17 | Mehrfachauswahl ohne geteilte Dateien → „In den Papierkorb“. | Rückfrage „In den Papierkorb?“ mit der Anzahl, ohne Zeile zu Links; „Abbrechen“ lässt alles da. Bestätigt: weg, Meldung „Rückgängig“; „Rückgängig“ bringt alle zurück. |
-| SH17a | Gleich nach „Rückgängig“ (oder während einer Synchronisation) eine geteilte Datei wieder „In den Papierkorb“. | Die Rückfrage kommt sofort; solange „Freigabelinks werden geprüft …“ dasteht, ist „In den Papierkorb“ grau, danach steht die Zeile zu den endenden Links da und der Knopf geht. |
-| SH18 | Datei → Teilen → „An App senden“ → z. B. Messenger oder Dateien-App. | Android-Teilen-Menü; die Ziel-App erhält die **entschlüsselte** Datei mit richtigem Namen. |
-| SH19 | Nach SH18 GhulSuite sperren. | Die entschlüsselte Kopie im App-Cache wird gelöscht (ein erneutes Öffnen aus der Ziel-App kann fehlschlagen, gewollt). |
-| SH20 | GhulPass → Eintrag öffnen → „Sicher teilen (Einmal-Link)“. | Formular mit „1 Tag“ und „1× (einmalig)“ vorgewählt, keine Serverauswahl. Link erstellen und im Browser öffnen: Textdatei mit Titel und Feldern (Benutzer, Passwort, …). Ohne Modul auf dem Server von GhulDrive führt „Sicher teilen …“ zur Modul-Installation. |
+Entfällt: GhulMail, GhulDrive, Server, Freigabelinks und der Schlüsselwechsel wurden mit dem Umbau zu GhulDocs entfernt
+([`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)). GhulDocs testet Abschnitt 39, das Scannen Abschnitt 38.
 
-## 19. Modultrennung und GhulMail-Anbindung
+## 20. Verschlüsselte Mails (PGP) (entfernt)
 
-| Nr. | Schritt | Erwartet |
-|---|---|---|
-| MO1 | GhulMail eingeschaltet, mindestens ein Konto: GhulDrive → Datei → Teilen. | „Als Mail-Anhang“ wird angeboten. |
-| MO2 | „Als Mail-Anhang“. | „Schreiben“ öffnet sich: Betreff = Dateiname, Datei als Anhang. Senden an die zweite Adresse: Anhang kommt identisch an. |
-| MO3 | Freigabelink erstellen → „Mit GhulMail senden“. | Entwurf mit Text „Hallo, hier ist … für dich:“ und dem Link. Nach dem Senden: Link in der empfangenen Mail anklicken → Datei öffnet sich im Browser. |
-| MO4 | Datei über 20 MB → Teilen. | „Als Mail-Anhang“: „Zu groß für eine Mail, bitte als Link teilen“, nicht antippbar. |
-| MO5 | Optionen → Module → GhulMail **aus**. Dann MO1 und SH6 wiederholen. | Kein „Als Mail-Anhang“, im Link-Dialog kein „Mit GhulMail senden“, nur „Kopieren“. Freigabelinks und „An App senden“ funktionieren normal. |
-| MO6 | GhulMail ein, aber **kein** Konto (alle entfernt). | Wie MO5: keine Mail-Optionen. |
-| MO7 | GhulDrive **aus**, GhulMail ein. | GhulMail funktioniert vollständig (Lesen, Schreiben, Anhänge aus Dateien). Der GhulPass-Einmal-Link funktioniert weiter, solange GhulDrive eingerichtet ist und sein Server das Server-Modul hat. |
-| MO8 | Alle Module außer GhulPass aus. | App läuft normal; Einstellungen zeigen unter „Bereiche“ nur GhulPass. Das Server-Modul gehört zu GhulDrive (Speicherort-Block) und ist mit GhulDrive aus nicht zu sehen. |
-
-## 20. Verschlüsselte Mails (PGP): läuft automatisch
-
-Du brauchst dafür nichts einzurichten. Für P5 bis P9 eine zweite Adresse, deren Programm OpenPGP kann: ein zweites
-GhulSuite-Konto (z. B. auf dem zweiten Gerät), Thunderbird (Konto-Optionen → Ende-zu-Ende-Verschlüsselung)
-oder Proton.
-
-| Nr. | Schritt | Erwartet |
-|---|---|---|
-| P1 | Optionen → GhulMail. | Abschnitt „Verschlüsselung (OpenPGP)“ mit dem Fingerabdruck deines Kontos (10 Vierergruppen). |
-| P2 | „Meinen öffentlichen Schlüssel speichern (.asc)“. | Datei wird gespeichert; sie beginnt mit `-----BEGIN PGP PUBLIC KEY BLOCK-----`. |
-| P3 | Neue Mail an eine Adresse ohne PGP (z. B. Gmail). Empfänger eintragen und kurz warten. | Unter den Empfängern: „Wird signiert, aber nicht verschlüsselt gesendet“ und der Hinweis, warum. |
-| P4 | Senden und im Webmail der Gegenseite öffnen. | Mail normal lesbar; zusätzlich ein Anhang `signature.asc` (das ist die digitale Unterschrift). |
-| P5 | Von der zweiten PGP-Adresse eine Mail an dich schicken (Thunderbird: signiert). In GhulSuite öffnen. | „Wirklich von …, unverändert.“ Unter Optionen → GhulMail → „Schlüssel von Kontakten“ steht die Adresse „aus einer Mail“. *(Thunderbird schickt den Schlüssel mit, wenn „Autocrypt“ an ist; sonst seine .asc importieren, P10.)* |
-| P6 | Dieser Person antworten, Empfänger kurz stehen lassen. | „Wird Ende-zu-Ende verschlüsselt gesendet.“ |
-| P7 | Senden; bei der Gegenseite öffnen, dann im Webmail deines Anbieters (Gesendet) ansehen. | Gegenseite kann lesen (Betreff und Text stimmen). Im Webmail: Betreff „...“, Inhalt unlesbar. |
-| P8 | Gegenseite antwortet verschlüsselt mit Anhang. In GhulSuite öffnen. | Grünes Schloss „Ende-zu-Ende verschlüsselt“, richtiger Betreff, Text, Anhang speicherbar. In der Liste steht der Betreff erst nach dem Öffnen richtig (außen „...“). |
-| P9 | In GhulSuite den Ordner „Gesendet“ öffnen, deine verschlüsselte Mail. | Lesbar (du verschlüsselst immer auch an dich selbst). |
-| P10 | Optionen → GhulMail → „Schlüssel eines Kontakts importieren“ → .asc-Datei. | „Schlüssel für … importiert“; in der Liste „importiert“. Mails an diese Adresse werden verschlüsselt. |
-| P11 | Bei einem Kontakt „Vergessen“. | Rückfrage; danach wieder „nicht verschlüsselt“ beim Schreiben. |
-| P12 | An eine Adresse schreiben, deren Anbieter Schlüssel veröffentlicht (z. B. Proton oder Posteo mit eingerichtetem Schlüssel). | Auch ohne vorherige Mail: „Wird Ende-zu-Ende verschlüsselt gesendet“; in der Kontaktliste „vom Anbieter“. |
-| P13 | Fingerabdruck mit der Gegenseite vergleichen (sie liest ihn vor). | Stimmt mit der Anzeige bei dir überein. |
-| P14 | Suche nach einem Wort aus einer verschlüsselten Mail. | Wird **nicht** gefunden (der Server kann verschlüsselte Mails nicht durchsuchen), Suche nach dem Absender klappt. *Bekannte Grenze.* |
-| P15 | Eine signierte Mail, bei der unterwegs etwas verändert wurde (falls verfügbar, sonst überspringen). | Rote Warnung „Achtung: Die Signatur passt nicht …“. |
+Entfällt: GhulMail, GhulDrive, Server, Freigabelinks und der Schlüsselwechsel wurden mit dem Umbau zu GhulDocs entfernt
+([`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)). GhulDocs testet Abschnitt 39, das Scannen Abschnitt 38.
 
 ## 21. Korrekturen nach dem ersten Test
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| K1 | GhulDrive öffnen, in einen Unterordner gehen, zu GhulMail und zurück zu GhulDrive wechseln. | GhulDrive steht sofort im selben Unterordner, ohne neu zu laden. Gleiches für GhulMail (Liste und Scrollposition bleiben). |
-| K2 | In GhulMail eine Mail öffnen und zurück. | Die Liste ist sofort da (kein erneutes Laden). |
-| K3 | In GhulDrive in einem Unterordner die Android-Zurück-Geste. | Geht einen Ordner nach oben, nicht aus der App. |
-| K4 | GhulMail offen lassen, von der zweiten Adresse eine Mail schicken. | Taucht nach spätestens etwa einer Minute ohne Antippen in der Liste auf. |
-| K5 | Design: alle Bereiche, Unterseiten und Blätter mit der Webvorschau (`public/design/`, auf dem Testserver unter `ghulsuite/design/`) vergleichen, hell und dunkel. | Gleiches Aussehen: Kopfzeile mit farbiger Kontextzeile, Navigationsleiste „Optionen“, Eingabefelder als Karten mit Beschriftung oben, Pillen-Knöpfe, Blätter von unten statt Dialoge („Neuer Eintrag“, „2FA-Konto hinzufügen“, „Zu GhulDrive hinzufügen“, Datei, Teilen, Generator), „Neue Mail“ mit Zeilen Von/An/Betreff und Senden oben, Lesen mit Aktionsleiste unten. |
+| K3 | In GhulDocs in einem Unterordner die Android-Zurück-Geste. | Geht einen Ordner nach oben, nicht aus der App. |
+| K5 | Design: alle Bereiche, Unterseiten und Blätter hell und dunkel durchsehen. | Gleiches Aussehen: Kopfzeile mit farbiger Kontextzeile, Navigationsleiste „Optionen“, Eingabefelder als Karten mit Beschriftung oben, Pillen-Knöpfe, Blätter von unten statt Dialoge („Neuer Eintrag“, „2FA-Konto hinzufügen“, „Zu GhulDocs hinzufügen“, Generator). |
 
 ## 22. Neue Funktionen aus der Vorschau
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| N1 | Optionen → GhulMail → „Inhalt der Benachrichtigung“: nacheinander „Nur Hinweis“, „Mit Absender“, „Mit Absender und Betreff“ wählen, je eine Mail von der zweiten Adresse schicken. | Benachrichtigung zeigt nur „Neue Mail“ bzw. zusätzlich den Absender bzw. Absender und Betreff. Auf dem Sperrbildschirm immer nur „Neue Mail“. |
 | N2 | GhulPass: Eintrag öffnen, Stern antippen. Liste → Chip „Favoriten“. | Eintrag erscheint unter Favoriten; oben in der Liste „Zuletzt verwendet“. |
 | N3 | Passwort eines Eintrags zweimal ändern, dann „Mehr“ → „Passwort-Verlauf“. | Alte Passwörter mit Datum, kopierbar. |
 | N4 | Eintrag bearbeiten → „Eigenes Feld“ hinzufügen; „Mehr“ → Anhang (Foto/PDF) hinzufügen, öffnen, entfernen. | Feld bleibt nach Speichern; Anhang lässt sich speichern/öffnen und löschen. |
@@ -395,25 +257,8 @@ oder Proton.
 | N7 | Generator: „Passphrase“ wählen, Wortzahl/Trennzeichen ändern. | Wörter wie „Kabel-Sonne-…“; Stärkebalken grün. |
 | N8 | Eintrag-Menü: Duplizieren, In anderen Tresor verschieben, WLAN-Eintrag → QR. | Kopie „(Kopie)“; Eintrag im Zieltresor; Handy kann per QR ins WLAN. |
 | N9 | GhulAuth: Stern, Sortieren (Name/zuletzt), Kachelansicht, „QR aus Bild“, Konto → „Als QR exportieren“. | Favoriten oben; Sortierung bleibt; Bild-QR wird erkannt; zweites Gerät scannt den QR. |
-| N10 | GhulDrive: Datei löschen → Ansicht „Papierkorb“ → Wiederherstellen; „Endgültig löschen“; „Papierkorb leeren“. | Datei zurück; danach endgültig weg. |
-| N11 | Datei mit gleichem Namen erneut hochladen → Datei → „Versionen“. | Ältere Version wiederherstellbar (bis 5 Versionen). |
-| N12 | Datei als Favorit und „Offline verfügbar“; Flugmodus; Ansichten Favoriten/Zuletzt/Offline. | Offline-Datei öffnet sich ohne Netz; Speicherbalken zeigt die Belegung. |
-| N13 | Mehrere Dateien wählen → „Als ZIP“ mit Passwort. | ZIP öffnet sich (z. B. 7-Zip) nur mit Passwort. |
-| N14 | Drive → „+“ → „Dokument scannen“. Seite fotografieren. | PDF „Scan …“ im aktuellen Ordner, Seite lesbar. *(Nur Android.)* |
-| N16 | GhulMail: Postfach-Blatt → „Alle Posteingänge“; Liste zeigt Vorschautext; Unterhaltung mit Antworten. | Mails aller Konten gemischt; Antworten unter einem Eintrag gruppiert. |
-| N17 | Mail markieren (Stern), Label vergeben, nach links wischen. | Stern auch im Webmail; Label sichtbar; Wischen führt die gewählte Aktion aus (Optionen → GhulMail). |
-| N18 | Neue Mail anfangen, zurück. Postfach → „Entwürfe“. | Entwurf ist da und lässt sich fortsetzen. Adressvorschläge beim Tippen. |
-| N19 | „Später senden“ in 2 Minuten. App entsperrt lassen. | Mail geht zur Zeit raus; vorher unter „Geplant“ abbrechbar. *Nur bei entsperrter App.* |
-| N20 | Mail → Menü: als .eml, als PDF, in GhulDrive speichern, „Original anzeigen“. | Dateien korrekt (Umlaute im PDF richtig); Kopfzeilen sichtbar. |
-| N21 | Optionen → GhulMail → „Offline lesen“ an, Posteingang öffnen, Flugmodus. | Liste und geöffnete Mails bleiben lesbar, Hinweis „offline“. |
-| N22 | Optionen → Sicherung → „Komplette Suite sichern“; neues Gerät/leerer Ordner → Start → „Sicherung wiederherstellen“. | Alles wieder da (Tresore, Einstellungen); Hauptpasswort wie vorher. Automatische Wochensicherung in gewählten Ordner (hält die letzten 4). |
 | N23 | Optionen → Darstellung → Start-Bereich „Zuletzt geöffnet“ / Bereiche ausblenden. | Startet im gewählten Bereich; ausgeblendete fehlen in der Leiste. |
 | N24 | Optionen → Über: Lizenzen, Bibliotheken, „Fehlerbericht“. | „Made by Daniel Erdmann · 2026“, AGPL-3.0 und Liste (inkl. EFF-Wortliste); Fehlerbericht ohne Geheimnisse. |
-| N25 | Newsletter (HTML-Mail mit Bildern und Links) öffnen. | Formatiert: Überschriften, fett/kursiv, Listen, Links. Hinweis „x Bild(er) aus dem Internet blockiert“; Bilder in der Mail selbst (z. B. Logo) sichtbar. Keine Skripte, keine Formulare. |
-| N26 | „Bilder laden“ bzw. „Immer für diesen Absender“. | Bilder erscheinen; bei „Immer“ auch bei der nächsten Mail dieses Absenders ohne Nachfrage. |
-| N27 | Link in einer HTML-Mail antippen. | Rückfrage mit Ziel-Domain und vollständiger Adresse, erst „Öffnen“ öffnet den Browser. |
-| N28 | „Als reinen Text anzeigen“ und zurück. | Wechselt zwischen Text- und formatierter Ansicht. |
-| N29 | Neue Mail mit Anhang beginnen, zurück, später unter „Entwürfe“ fortsetzen. | Anhang ist noch da. Anhänge über 10 MB zusammen werden im Entwurf nicht gespeichert. |
 | N30 | Optionen → Darstellung → Sprache: „English“, dann „Wie das System“. | Die App wechselt sofort die Sprache (Android); zurück auf Systemsprache. |
 | N31 | Import einer 1Password-Datei (.1pux oder CSV) bzw. LastPass-CSV. | Anmeldungen, Notizen, Karten und 2FA-Codes übernommen; archivierte Einträge nicht. |
 | N32 | Eintrag → Menü → „Eintrag exportieren“ mit Master-Passwort. | CSV nur mit diesem Eintrag; falsches Passwort wird abgelehnt. |
@@ -424,20 +269,11 @@ oder Proton.
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| B1 | Optionen → Bereiche verwalten. | Alle fünf Bereiche mit „aktiv“, „hier ausgeblendet“ oder „nicht eingerichtet“ und dem Dateinamen. |
-| B2 | Nicht eingerichteten Bereich antippen (z. B. GhulCal) → Einrichten. | Name abgefragt; Datei `….ghlcal` entsteht, Bereich erscheint in der Leiste. Bei GhulDrive: „Einrichten“ öffnet direkt das Server-Formular für den ersten Speicherort. |
-| B2a | Bereiche verwalten → GhulMail (nicht eingerichtet) → Einrichten. Danach GhulMail ausblenden und wieder einblenden, solange es kein Konto hat. | Gleich danach öffnet sich „E-Mail-Konto hinzufügen“, ohne Umweg über GhulMail; beim Wieder-Einblenden ohne Konto ebenso. |
-| B3 | Bereich → „Auf diesem Gerät ausblenden“. | Verschwindet nur hier aus der Leiste; zweites Gerät zeigt ihn weiter. Wieder einblenden geht. |
-| B4 | Bereich → „Bereich entfernen“. | Rückfrage mit Warnung; danach ist die Datei weg, nach dem Synchronisieren auch auf dem zweiten Gerät und dem Server. |
-| B5 | Optionen → GhulCal: Bundesland ändern, synchronisieren, zweites Gerät synchronisieren. | Oben „Für GhulCal · alle Geräte“, unten „Nur auf diesem Gerät“. Das Bundesland ist auf dem zweiten Gerät übernommen, die Startansicht nicht. |
-| B6 | Optionen → GhulDrive. | Ein Block je Speicherort: Name, Art, Benutzer@Server:Port, Ordner, „Aktiv“/„Mail-Archiv“, Server-Modul mit Installieren/Aktualisieren/Entfernen, Zahl der Links, roter Papierkorb. Darunter „Speicherort hinzufügen“. Kein Speicherort erscheint unter Optionen → Synchronisation. |
-| B7 | Optionen → Synchronisation → Sync-Server entfernen oder wechseln. | Keine Rückfrage zu GhulDrive; GhulDrive arbeitet unverändert weiter (eigene Speicherorte). Ein älteres GhulDrive auf dem Sync-Server wurde schon beim Öffnen zu einem eigenen Speicherort. |
-| B7a | Zwei Speicherorte. GhulDrive öffnen. | In der Speicher-Karte steht der Knopf „Speicherort wechseln“; er listet beide (der aktive markiert). Der andere zeigt seine eigenen Dateien, zurück wieder die ersten. Mit nur einem Speicherort gibt es den Knopf nicht. |
-| B7b | Optionen → GhulDrive → Papierkorb an einem Speicherort. | Rückfrage „… entfernen?“ mit Schalter „Auch die Dateien auf dem Server löschen“ und Erklärung, was jeweils passiert. Abbrechen ändert nichts. Ohne Schalter bleiben die Dateien auf dem Server, mit Schalter sind GhulDrive-Ordner, Freigaben und Modul dort weg. Die Freigabelinks des Speicherorts enden in beiden Fällen; war er aktiv, wird der nächste aktiv. |
-| B7c | Optionen → GhulMail → Archiv-Speicherort auf einen anderen Speicherort stellen, Mails archivieren. | Die Mails landen im eingestellten Speicherort, auch wenn GhulDrive einen anderen zeigt. „Archiv“ in GhulMail sagt dann, wo das Archiv liegt, und bietet „Zu … wechseln“ an. |
-| B8 | GhulDrive ohne Speicher öffnen. | „Noch nicht eingerichtet“ mit „Eigener Server“ direkt im Bereich. |
-| B9 | GhulMail ohne Konto öffnen, Anbieter mit eigenem Benutzernamen einrichten. | Vollständiges Formular: Mailadresse, Passwort, Benutzername, IMAP und SMTP getrennt; bekannte Anbieter vorgeschlagen, alles änderbar. |
-| B10 | Alte Suite (Version vor diesem Stand) mit Drive und Mail öffnen. | Drive und Mail funktionieren weiter; im Ordner liegen danach `Drive.ghldrv` und `Mail.ghlmail`. |
+| B1 | Optionen → Bereiche verwalten. | Alle vier Bereiche mit „aktiv“, „hier ausgeblendet“ oder „nicht eingerichtet“ und dem Dateinamen. |
+| B2 | Nicht eingerichteten Bereich antippen (z. B. GhulCal oder GhulDocs) → Einrichten. | Name abgefragt; die Datei (`….ghlcal` bzw. `….ghldoc`) entsteht, Bereich erscheint in der Leiste. |
+| B3 | Bereich → „Auf diesem Gerät ausblenden“. | Verschwindet nur hier aus der Leiste; nach Speichern und Öffnen der Suite-Datei auf dem zweiten Gerät ist er dort weiter sichtbar. Wieder einblenden geht. |
+| B4 | Bereich → „Bereich entfernen“. | Rückfrage mit Warnung; danach ist der Bereich weg und „Nicht gespeicherte Änderungen“ erscheint; nach Speichern und Öffnen der Suite-Datei auch auf dem zweiten Gerät. Bei GhulDocs sind auch die Inhaltsdateien weg. |
+| B5 | Optionen → GhulCal: Bundesland ändern, Suite-Datei speichern, auf dem zweiten Gerät öffnen. | Oben „Für GhulCal · alle Geräte“, unten „Nur auf diesem Gerät“. Das Bundesland ist auf dem zweiten Gerät übernommen, die Startansicht nicht. |
 | B11 | Optionen → Entsperren → Gültigkeit „Immer“, App neu starten, Gerät neu starten. | Nach App-Neustart Fingerabdruck reicht; nach Geräte-Neustart wieder Passwort und Key. |
 
 ## 24. Import ohne Verluste, Listen bedienen
@@ -452,25 +288,16 @@ oder Proton.
 | I6 | Irgendeine Aktion mit Meldung (z. B. Passwort kopieren). | Die Meldung erscheint einmal, dunkel und abgerundet. |
 | I7 | GhulPass und GhulAuth: der runde Knopf unten rechts. | Zeigt ein „+“. |
 | I8 | GhulPass: Eintrag lange drücken. | Auswahlkopf oben (Anzahl, Alle, Kopieren, Löschen, ⋮ mit Passwort kopieren und Bearbeiten). Ein ⋮ je Zeile gibt es nicht mehr. |
-| I9 | In allen fünf Bereichen (Pass, Auth, Drive, Mail, Kalender-Liste) einen Eintrag lange drücken, weitere antippen, „Alle“, Löschen. | Gleicher Auswahlkopf oben überall; Löschen ohne Rückfrage, Meldung mit „Rückgängig“ (ca. 6 s), „Rückgängig“ bringt alle zurück; Zurück beendet die Auswahl. |
+| I9 | In allen vier Bereichen (Pass, Auth, Docs, Kalender-Liste) einen Eintrag lange drücken, weitere antippen, „Alle“, Löschen. | Gleicher Auswahlkopf oben überall; Löschen ohne Rückfrage, Meldung mit „Rückgängig“ (in GhulDocs: in den Papierkorb). |
 | I10 | GhulAuth (Listenansicht): Konto nach rechts wischen, dann nach links. | Rechts: Bearbeiten (Anbieter, Konto). Links: gelöscht, Meldung mit „Rückgängig“. |
 
-## 25. Mail, Optionen und Sofortsperre (zweite Runde)
+## 25. Optionen und Sofortsperre (zweite Runde)
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| R1 | GhulMail ohne Konto öffnen. | Karte „GhulMail einrichten“ und Zeile „E-Mail-Konto hinzufügen“, wie bei GhulDrive. Antippen öffnet das Formular in einem Blatt. |
-| R2 | Optionen → GhulMail. | Konten als Zeilen (antippen = bearbeiten im Blatt, Papierkorb = entfernen mit Rückfrage), darunter „E-Mail-Konto hinzufügen“. Die Seite bleibt offen. |
-| R3 | Kontoauswahl oben in GhulMail → „E-Mail-Konto hinzufügen“. | Dasselbe Blatt. |
-| R4 | Neue Suite: im Assistenten bei „Bereiche“ GhulMail einschalten → „E-Mail-Konto hinzufügen“. | Blatt mit dem Formular; danach „E-Mail-Konto eingerichtet“. Nach dem Assistenten ist das Konto in GhulMail da. |
-| R5 | Mail lesen. | Unten nur **Antworten** und **Weiterleiten**. „Allen antworten“ steht im ⋮-Menü, wenn die Mail mehrere Empfänger hat. |
-| R6 | Mail schreiben, unten „PGP an“ antippen. | Wird „PGP aus“, Hinweis „ohne PGP: nicht signiert, nicht verschlüsselt, ohne Schlüssel“. Beim Empfänger: keine signature.asc, kein Autocrypt-Kopf, Betreff lesbar. |
-| R7 | Dasselbe mit „Später senden“. | Die geplante Mail geht ebenfalls ohne PGP raus. |
 | R8 | Optionen-Übersicht → „Entsperren“ mit nur Fingerabdruck, nur App-PIN, beidem, nichts. | Untertitel „Fingerabdruck · 24 Stunden“, „App-PIN · …“, „Fingerabdruck und App-PIN · …“ bzw. „Nur Passwort“; bei „Immer“: „ohne Ablauf“. |
 | R9 | Optionen → Schlüssel und Schlüsseldateien. | Kein zweites „Master-Passwort ändern“ (das steht als eigene Zeile in der Übersicht). |
-| R10 | Android-Einstellungen → Apps → Standard-Apps (je nach Hersteller „E-Mail“, „Kalender“). | GhulSuite ist als Mail- und Kalender-App wählbar. |
-| R11 | In einer anderen App (Browser, Kontakte) einen `mailto:`-Link antippen. | Auswahl zeigt GhulSuite; nach dem Entsperren ist eine neue Mail mit Empfänger, Betreff und Text offen. |
-| R12 | In der Galerie ein Foto teilen → „Per E-Mail senden (GhulMail)“. | Neue Mail mit dem Foto als Anhang. |
+| R10 | Android-Einstellungen → Apps → Standard-Apps → „Kalender“. | GhulSuite ist als Kalender-App wählbar; als Mail-App erscheint sie nicht mehr. |
 | R13 | Eine `.ics`-Datei (z. B. Einladung im Download-Ordner) mit GhulSuite öffnen. | Nach dem Entsperren: „n Termine importiert“ in den Standardkalender. |
 | R14 | In einer App „Zum Kalender hinzufügen“ (z. B. Bahn- oder Kino-App). | Neuer Termin mit Titel, Zeit und Ort, zum Speichern bereit. |
 | R15 | Schnell entsperren mit Fingerabdruck an. App gesperrt im Hintergrund lassen, wieder hineinwechseln. | Die Fingerabdruck-Abfrage erscheint **sofort**, ohne den Knopf zu drücken. Abbrechen: sie kommt nicht in Dauerschleife wieder, der Knopf bleibt. |
@@ -481,13 +308,13 @@ Ziel: GhulSuite eine Woche wie im echten Leben benutzen, mit echten Konten, aber
 
 | Tag | Was du tust | Worauf du achtest |
 |---|---|---|
-| 1 | Neue Suite mit Assistent: Sync-Server, alle Bereiche, Mailkonto im Assistenten, Fingerabdruck. Passwörter aus deinem alten Manager importieren. Windows: Suite vom Server holen. | Alles importiert oder als Notiz behalten? Beide Geräte zeigen dasselbe? |
-| 2 | Den Tag über Anmeldedaten aus GhulPass nutzen (kopieren). 2FA-Codes aus GhulAuth nutzen. Abends ein Passwort ändern. | Kommt die Änderung auf Windows an? |
-| 3 | Mails nur in GhulMail lesen und schreiben, auch mit Anhang und an jemanden mit PGP. Handy zwischendurch neu starten. | Kommt **jede** Mail sofort als Benachrichtigung, auch nach dem Neustart? Öffnet das Antippen die Mail? |
-| 4 | Fotos und Dokumente in GhulDrive (auch Ordner, Umbenennen, Papierkorb), eine Datei teilen. Zwischen WLAN und mobilen Daten wechseln. | Uploads brechen nicht ab oder setzen fort; Freigabelink funktioniert. |
-| 5 | Termine in GhulCal, auch wiederkehrend und mit Erinnerung; einen davon auf Windows ändern. Sofortsperre durch Schütteln testen (in der App und im Hintergrund). | Erinnerung kommt pünktlich; Schütteln sperrt beim ersten Versuch, Mails und Erinnerungen kommen danach weiter. |
-| 6 | Beide Geräte gleichzeitig benutzen: dieselbe Anmeldung auf beiden ändern, offline (Flugmodus) Einträge anlegen, später wieder online. | Nach dem Synchronisieren nichts verloren, nichts doppelt. |
-| 7 | Sicherung erstellen, auf einem zweiten Gerät oder in einem leeren Ordner wiederherstellen. Master-Passwort ändern; das andere Gerät fragt einmal nach dem neuen. | Wiederhergestellt ist alles da; danach weiter ganz normal. |
+| 1 | Neue Suite mit Assistent: alle Bereiche, Fingerabdruck. Passwörter aus deinem alten Manager importieren. Suite-Datei auf den USB-Stick speichern; unter Windows öffnen. | Alles da, nichts doppelt; Entsperren mit Key auf beiden Geräten. |
+| 2 | Den Tag über Anmeldedaten aus GhulPass nutzen (kopieren). 2FA-Codes aus GhulAuth nutzen. Abends ein Passwort ändern, Suite-Datei speichern, unter Windows öffnen. | Ist die Änderung auf Windows da? Erinnert der Hinweis „Nicht gespeicherte Änderungen“ zuverlässig ans Speichern? |
+| 3 | Wichtige Papiere in GhulDocs scannen und Dateien aus anderen Apps dorthin teilen; einige ansehen, eine exportieren, eine mit einer App öffnen. Handy zwischendurch neu starten. | Alles lesbar; die Belegung stimmt; nach dem Sperren ist die befristete Kopie weg. |
+| 4 | GhulDocs mit 200 bis 500 MB füllen (Ordner, Umbenennen, Papierkorb); Suite-Datei speichern und auf Windows öffnen. | Speichern und Öffnen mit Fortschritt in vertretbarer Zeit (KONZEPT 8.1); alle Dokumente auf beiden Geräten. |
+| 5 | Termine in GhulCal, auch wiederkehrend und mit Erinnerung; einen davon auf Windows ändern (Suite-Datei hin und zurück). Sofortsperre durch Schütteln testen (in der App und im Hintergrund). | Erinnerung kommt pünktlich; Schütteln sperrt beim ersten Versuch, Mails und Erinnerungen kommen danach weiter. |
+| 6 | Beide Geräte am selben Tag: Auf einem arbeiten und speichern, auf dem anderen öffnen und weiterarbeiten; einmal absichtlich ohne vorheriges Öffnen auf dem zweiten Gerät ändern und speichern. | Rückfragen wie in Abschnitt 35; nichts wird still überschrieben oder zusammengeführt. |
+| 7 | Master-Passwort ändern, Suite-Datei speichern (Aufforderung kommt), unter Windows die neue Datei öffnen. Eine alte Kopie auf dem Handy öffnen. | Die App sagt nach der Änderung, dass alte Kopien gelöscht werden sollen; die alte Kopie öffnet auf dem Handy nicht mehr (SD14). |
 
 ## 27. Stresstest (von Hand)
 
@@ -495,49 +322,36 @@ Ziel: GhulSuite eine Woche wie im echten Leben benutzen, mit echten Konten, aber
 |---|---|---|
 | S1 | 5.000 Anmeldungen importieren (z. B. große CSV aus einem anderen Passwortmanager). | Import in unter einer Minute; Liste scrollt flüssig; Suche antwortet sofort. |
 | S2 | 200 2FA-Codes. | Codes laufen flüssig, keine Ruckler beim Wechsel der 30-Sekunden-Runde. |
-| S3 | Ein Video über 500 MB in GhulDrive hochladen, währenddessen App in den Hintergrund und WLAN aus/an. | Upload setzt fort; danach herunterladen, Datei ist unversehrt. |
-| S4 | Ein Postfach mit über 10.000 Mails öffnen, schnell scrollen, suchen. | Liste lädt nach, nichts friert ein. |
+| S3 | Ein Video von etwa 900 MB zu GhulDocs hinzufügen, währenddessen App in den Hintergrund. | Fortschritt, danach ansehen bzw. exportieren: die Datei ist unversehrt. Eine zweite große Datei über 1 GB hinaus wird mit „GhulDocs ist voll …“ abgelehnt. |
+| S4 | GhulDocs mit 2.000 kleinen Dateien in vielen Ordnern: schnell scrollen, suchen. | Liste lädt flüssig, nichts friert ein. |
 | S5 | 50-mal schnell hintereinander sperren (Knopf) und entsperren (Fingerabdruck). | Kein Absturz, kein „hängendes“ Entsperren. |
-| S6 | 20-mal kurz hintereinander synchronisieren, auf beiden Geräten gleichzeitig. | Keine Fehlermeldung, keine doppelten Einträge. |
+| S6 | Suite-Datei mit vollem GhulDocs (fast 1 GB) auf einen langsamen USB-Stick speichern und wieder öffnen. | Fortschritt bis zum Ende, etwa eine Minute; danach alles da. Abbrechen lässt die alte Datei bzw. den Stand auf dem Gerät unverändert. |
 | S7 | Handy mit wenig freiem Speicher (unter 500 MB) benutzen. | Klare Meldung statt Absturz, keine kaputten Dateien. |
 
-Automatisch läuft bei jedem Push der Alltagstest im Kern (zwei Geräte, 30 simulierte Tage mit allen Bereichen) und in einem eigenen Job der Stresstest (5.000 Anmeldungen, 2.000 Termine, 300 Dateien und 64 MB, 20 Sync-Runden, 8 parallele Threads).
+Automatisch läuft bei jedem Push der Alltagstest im Kern (zwei Geräte, 30 simulierte Tage mit allen Bereichen) und in einem eigenen Job der Stresstest (5.000 Anmeldungen, 2.000 Termine, 300 Dateien und 64 MB, 8 parallele Threads); dabei wandert die Suite wie auf einem USB-Stick zwischen den Geräten.
 
-## 28. Sicherheitspunkte und Speicherort (Runde 5)
+## 28. Sicherheitspunkte (Runde 5)
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| R1 | Optionen → Tresore → „Speicherort wechseln“ → „Ordner wählen“, einen leeren Ordner wählen. Danach entsperren. | Meldung „… Dateien kopiert und geprüft“, Entsperren nötig, danach alles da; „Speicherort:“ zeigt den neuen Ordner. Im alten Ort liegen die Dateien noch. |
-| R2 | Dasselbe noch einmal mit einem Ordner, in dem schon eine Suite liegt. | Meldung „Im gewählten Ordner liegt schon eine Suite …“, nichts überschrieben, der alte Ort bleibt aktiv. |
-| R3 | Aus dem eigenen Ordner „In den App-Speicher“ wählen. | Wie R1; „Speicherort: App-Speicher“. |
-| R4 | Im eigenen Ordner eine Tresordatei umbenennen (z. B. in `Urlaub.ghlpss`), dann entsperren. | Tresor ist vollständig da, die Datei heißt wieder nach ihrer Kennung. |
-| R5 | Android-Einstellung „alle Inhalte anzeigen“, Handy mit PIN sperren; Mail und Termin-Erinnerung kommen lassen. Danach entsperren und noch eine Mail kommen lassen. | Gesperrt eingetroffen: nur die in GhulSuite gewählte Sperrbildschirm-Stufe (Mail: Kontoname und Anzahl; Termin: wie in den Kalender-Optionen gewählt), auch nach dem Entsperren in der Leiste. Entsperrt eingetroffen: mit Details (B4, F43). |
-| R6 | Optionen → Sperren → „Sofortsperre stoppt auch Mail-Benachrichtigungen“ an; schütteln; Mail schicken; dann entsperren. | Gesperrt keine Mail-Benachrichtigung; nach dem Entsperren kommen sie wieder (B5). |
+| R5 | Android-Einstellung „alle Inhalte anzeigen“, Handy mit PIN sperren; eine Termin-Erinnerung kommen lassen. | Gesperrt eingetroffen: nur die in GhulSuite eingestellte Sperrbildschirm-Fassung (B4). |
 | R7 | Eine `.ics`-Datei aus einer anderen App (z. B. Dateien) mit GhulSuite öffnen. | Vorschau mit Anzahl und ersten Terminen, Import erst nach „Importieren“ (B6). |
 | R8 | App sperren, Handy 20 Minuten in den Standby (Bildschirm aus), dann App wieder öffnen. | Gesperrt, auch wenn das Handy zwischendurch tief geschlafen hat (B8). |
 | R10 | Eine App mit Bildschirm-Overlay (z. B. Blaulichtfilter) einschalten und GhulSuite entsperren. | Tipps werden ignoriert, solange etwas darüberliegt (L10); Overlay aus, dann geht es. |
-| R11 | Zwei Geräte mit Sync: auf A einen Eintrag löschen, auf B (offline) denselben Eintrag ändern; dann beide synchronisieren. | Der geänderte Eintrag ist auf beiden Geräten wieder da (B18). Andersherum (B kannte die Löschung): bleibt gelöscht. |
-| R12 | Windows: eine Drive-Datei öffnen, das Programm offen lassen, GhulSuite sperren; Programm schließen, eine Minute warten. | Der Weitergabe-Ordner ist danach leer (B10). Portabel: der Ordner liegt in `GhulSuite-Daten`, nicht im Windows-Temp. |
-| R13 | Optionen → Sicherheit: Hinweis „Etwas verloren …“ lesen. | Hinweis nennt: entfernen bzw. neues Notfallblatt, alte Sicherungen, Mail- und Server-Passwörter wechseln (L1). |
-| R14 | GhulMail: bei einem Kontakt mit PGP-Schlüssel „Vergleichen“ öffnen. | Fingerabdruck in Vierergruppen; nach dem Bestätigen gilt er als geprüft; ein später geänderter Schlüssel wird gemeldet (L7). |
-| R15 | Drive-Server auf einen alten Stand zurücksetzen (alte Index-Datei zurückkopieren), dann GhulDrive öffnen. | Meldung „Drive auf dem Server ist älter …“, nichts verschwindet; „Älteren Serverstand übernehmen“ (Optionen → GhulDrive) nur nach Rückfrage (B3). |
+| R12 | Windows: ein Dokument aus GhulDocs „Mit App öffnen“, das Programm offen lassen, GhulSuite sperren; Programm schließen, eine Minute warten. | Der Weitergabe-Ordner ist danach leer (B10). Portabel: der Ordner liegt in `GhulSuite-Daten`. |
+| R13 | Optionen → Sicherheit: Hinweis „Etwas verloren …“ lesen. | Hinweis nennt: entfernen bzw. neues Notfallblatt, Suite-Datei speichern und alte Kopien löschen, den zweiten Faktor tauschen (L1). |
 
-## 29. Bedienung und Mail (Runde 6)
+## 29. Bedienung (Runde 6)
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
 | V1 | Optionen → Bereiche → einen Bereich entfernen; ebenso Optionen → Tresore → einen Tresor löschen. | Dialog nennt die Anzahl der Einträge, bietet „Vorher exportieren“; „Entfernen“ bzw. „Löschen“ geht erst, wenn der Name eingetippt ist (U4). |
-| V2 | Etwas Falsches eingeben, das der Kern ablehnt (z. B. beim Server-Abruf FTPS ohne Passwort, oder IMAP mit Port 143). | Meldung auf Deutsch, kein englischer Rest (U5). |
-| V3 | Startbildschirm, obwohl schon eine Suite da ist: „Sicherung wiederherstellen“. | Frage „Hier liegt schon eine Suite“, dann einen leeren Ordner wählen; vorhandene Suite bleibt unverändert (U6). |
-| V4 | Neues Gerät: „Von meinem Server holen“ mit FTPS. | Suite wird geladen, danach normal entsperren (U7). |
+| V2 | Etwas Falsches eingeben, das der Kern ablehnt (z. B. einen Ordnernamen mit `/` in GhulDocs). | Meldung auf Deutsch, kein englischer Rest (U5). |
+| V3 | Gesperrt mit vorhandener Suite: „Suite-Datei öffnen“ mit der Datei einer anderen Suite, im Dialog „Abbrechen“. | Rückfrage „… andere Suite … ersetzt alles hier“; nach „Abbrechen“ bleibt die vorhandene Suite unverändert (U6). |
 | V5 | Einrichtung: Key wählen, keine PIN eingeben, „Weiter“. | Meldung „Bitte gib die PIN deines Keys ein …“ (U9). |
-| V6 | Startbildschirm: „Einzelne Tresordatei öffnen“ mit einer `.ghlcal`-Datei. | Wird als Kalender erkannt, GhulCal ist danach eingeschaltet (U10). |
-| V7 | „Mit Wiederherstellungscode öffnen“. | Danach Dialog mit den drei Schritten; „Jetzt erledigen“ öffnet die Keys (U11). |
-| V8 | Anmeldung bearbeiten, etwas ändern, Zurück; danach etwas ändern und die App sperren lassen. | Zurück fragt „Änderungen verwerfen?“; nach dem Entsperren die Meldung, dass eine Bearbeitung verworfen wurde (U12). Ebenso im Termin-Editor. |
-| V9 | Flugmodus, Synchronisation automatisch an, App entsperren. | Auf den Bereichsseiten der Hinweis „Synchronisation gerade nicht möglich …“; Tippen versucht es erneut; mit Netz verschwindet er (U13). |
-| V10 | Optionen → GhulDrive → zweiten Speicherort hinzufügen. | Meldung „Speicherort hinzugefügt …“; der aktive bleibt aktiv, GhulDrive zeigt weiter dieselben Dateien. |
+| V6 | Für die Abschnitte 35 und 39: ein **zweites Gerät** (zweites Android-Gerät oder Windows-PC mit GhulSuite) und ein paar Testdokumente (PDF, Fotos, Text, eine große Datei von mehreren hundert MB). Für 38: ein paar Blätter Papier. |
+| V9 | Flugmodus, App entsperren, „Jetzt nach Updates suchen“. | Verständlicher Hinweis, dass kein Netz da ist; sonst nichts (U13). |
 | V11 | Kalender ohne Kalender: Import; dann mit zwei Kalendern: Import; Export mit einem ausgeblendeten Kalender. | Meldung „Lege zuerst einen Kalender an“; Wahl des Ziels; Export enthält alle Kalender, Hinweis darunter (U15). |
-| V12 | Mail-Ordner mit mehr als 50 Mails: eine lang drücken, „Alle“, dann „Alle N Mails in diesem Ordner auswählen“, „Als gelesen“. | Alle Mails des Ordners gelesen, Meldung mit Anzahl. Ebenso Verschieben, Archivieren, Löschen (Löschen fragt vorher). |
 | V13 | Papierkorb bzw. Spam: „Ordner leeren“. | Rückfrage mit Anzahl, danach beim Anbieter leer; in anderen Ordnern gibt es den Knopf nicht. |
 
 ## GhulCal (Kalender)
@@ -555,16 +369,14 @@ Automatisch läuft bei jedem Push der Alltagstest im Kern (zwei Geräte, 30 simu
 | K9 | Termin mit Erinnerung in 2 Minuten anlegen, App sperren (Android: auch schließen). | Benachrichtigung pünktlich; auf dem Sperrbildschirm nur die gewählte Detailstufe; „In 5 Min. erneut“, „Erledigt“; Tippen öffnet nach dem Entsperren den Termin. |
 | K10 | Optionen → GhulCal: Detailstufe „Nur Hinweis“ → „Test-Erinnerung zeigen“. | Auf dem Sperrbildschirm nur „Termin in 15 Min.“ ohne Titel. |
 | K11 | Sofortsperre auslösen. | Erinnerungen kommen weiter (die Sofortsperre sperrt nur die App). |
-| K12 | Zweites Gerät synchronisieren, dort einen Termin ändern, zurück synchronisieren. | Änderungen beider Seiten kommen an (Zusammenführen pro Termin). |
-| K13 | Mail-Benachrichtigung antippen (gesperrt und entsperrt). | Die neue Mail öffnet sich (nach dem Entsperren); Leiste und App-Symbol zeigen die Zahl ungelesener Mails, vollständig, nicht angeschnitten, ab 100 „99+“. Windows-Taskleiste: Briefumschlag mit Zahl. |
+| K12 | Termin ändern, Suite-Datei speichern, auf dem zweiten Gerät öffnen. | Der geänderte Termin ist dort. Hatte das zweite Gerät vorher selbst etwas ohne Speichern geändert, warnt die Rückfrage (SD10), dass das verloren geht. |
 | K14 | Eine `.ics` importieren, die Zeiten in UTC (`…Z`, z. B. Google-Export) und in einer anderen Zeitzone (`TZID=America/New_York`) enthält, je ein Termin im Sommer und im Winter. | Alle Termine stehen auf der Stunde, zu der sie hier stattfinden (10:00 New York = 16:00 in Deutschland), unabhängig davon, ob gerade Sommer- oder Winterzeit ist. Ganztägige Termine bleiben auf ihrem Tag. |
 | K15 | Termin mit Erinnerung anlegen, App schließen, in den Systemeinstellungen die Zeitzone ändern (z. B. London). | Die Erinnerung kommt zur selben Uhrzeit der neuen Zone (Termin 10:00 → Erinnerung 09:45 Londoner Zeit), ohne dass die App geöffnet wurde. |
 | K16 | Eine Serie aus einer anderen Zeitzone importieren (z. B. Einladung „jeden Dienstag 10:00 New York“ aus Outlook oder Google) und durch das Jahr blättern: Januar, Mitte März, April, Ende Oktober, November. | In Deutschland steht der Termin um 16:00, in den Wochen, in denen nur die USA oder nur Europa Sommerzeit haben, um 15:00. Die Termin-Ansicht zeigt zusätzlich „Ortszeit in New York: 10:00 - 11:00“; beim Bearbeiten steht unter „Zeitzone“ der Ort. „Nur diesen Termin löschen“ entfernt genau den angezeigten Tag. |
-| K17 | Einen einzelnen Eintrag löschen: GhulPass-Eintrag, GhulAuth-Konto, Drive-Datei, Mail, Termin. Einmal „Rückgängig“ tippen, einmal die Meldung ablaufen lassen; einmal löschen und sofort sperren. | Erst eine Rückfrage mit dem Namen („‚Codeberg‘ wird gelöscht.“); „Abbrechen“ ändert nichts. Bestätigt: weg, Meldung mit „Rückgängig“; auch ein Wisch nach links fragt erst. Rückgängig: wieder da, nichts passiert. Abgelaufen: endgültig gelöscht (nach Sperren/Entsperren weiterhin weg). Sofort gesperrt: die Löschung wird vor dem Sperren ausgeführt. Sofortsperre direkt nach dem Löschen: der Eintrag bleibt. |
+| K17 | Einen einzelnen Eintrag löschen: GhulPass-Eintrag, GhulAuth-Konto, Dokument, Termin. Einmal „Rückgängig“ tippen, einmal die Meldung ablaufen lassen; einmal löschen und sofort sperren. | Erst eine Rückfrage mit dem Namen („‚Codeberg‘ wird gelöscht.“); „Abbrechen“ ändert nichts. Bestätigt: weg, Meldung mit „Rückgängig“; auch ein Wisch nach links fragt erst. Rückgängig: wieder da, nichts passiert. Abgelaufen: endgültig gelöscht (nach Sperren/Entsperren weiterhin weg). Sofort gesperrt: die Löschung wird vor dem Sperren ausgeführt. Sofortsperre direkt nach dem Löschen: der Eintrag bleibt. |
 | K17a | In GhulPass ins Suchfeld tippen (Tastatur auf), Tastatur schließen, zu GhulAuth wechseln, ein Konto löschen und die Rückfrage bestätigen. | Die Tastatur bleibt zu; „1 gelöscht“ mit „Rückgängig“ ist sichtbar. |
-| K18 | Ganzes löschen: Tresor, Bereich, Mailkonto, Server, Papierkorb leeren, mehrere endgültig löschen. | Immer eine Rückfrage mit rotem Knopf, Warnung als Hinweisfeld wie bei „Bereich entfernen“. |
+| K18 | Ganzes löschen: Tresor, Bereich, Papierkorb leeren, mehrere endgültig löschen. | Immer eine Rückfrage mit rotem Knopf, Warnung als Hinweisfeld wie bei „Bereich entfernen“. |
 | K19 | Breites Fenster (Windows oder Handy/Tablet quer): Termin öffnen, Termin bearbeiten, in GhulAuth „Konto hinzufügen“. | Links die Seitenleiste mit den Bereichen, daneben eine Spalte in der Mitte; Geöffnetes steht an der Stelle der Liste, „Zurück“ führt zur Liste. Keine leere dritte Spalte. |
-| K20 | Verschlüsselte Mail in der Liste. | Schloss und „Verschlüsselte Nachricht“ an der Stelle des Betreffs (kein „...“); geöffnet Betreff und Text. |
 
 ## 30. Updates
 
@@ -587,67 +399,130 @@ Vorher: eine Version aus den Releases (nicht die Testversion aus den Artefakten)
 | Nr. | Schritt | Erwartet |
 |---|---|---|
 | W1 | Optionen → Über: „Website“, „Impressum“, „Datenschutzerklärung“ antippen. | Die jeweilige Seite von www.ghulsuite.de öffnet sich im Browser, in der Sprache der App. Die Zeilen haben Innenabstand wie alle Listen. |
-| W2 | Fehlerbericht öffnen, Notiz und E-Mail eintragen, „Senden“. | „Wird gesendet…“, nach wenigen Sekunden „Danke! Dein Bericht ist angekommen.“; beim Entwickler kommt eine Mail mit Notiz, Adresse und Bericht an. |
-| W3 | Ungültige E-Mail-Adresse (z. B. „abc“), „Senden“. | Hinweis, dass die Adresse nicht gültig aussieht; nichts wird gesendet. |
-| W4 | Flugmodus, „Senden“. | Verständliche Fehlermeldung; „Kopieren“ und „Speichern“ funktionieren weiter. |
-| W5 | Sechs Berichte hintereinander senden. | Der sechste innerhalb einer Stunde wird mit „Gerade zu viele Berichte von hier“ abgelehnt. |
+| W2 | Optionen → Über → „Fehlerbericht anzeigen“. | Der Bericht mit Version, Gerät und ggf. letztem Absturz, ohne Tresor-Inhalte; Hinweis, dass nichts von selbst gesendet wird. Es gibt keinen Knopf „Senden“. |
+| W4 | Bericht „Kopieren“, „Teilen“ (z. B. an die Mail-App) und „Speichern“. | Alle drei funktionieren, auch im Flugmodus; GhulSuite selbst baut dabei keine Verbindung auf. |
 | W6 | Optionen und eine Unterseite (z. B. Über) öffnen. | Zwischen Kopfleiste und Inhalt kein zusätzlicher leerer Streifen. |
 
-## 32. Server, Teilen und Anzeige (Runde 7)
+## 32. Server, Teilen und Anzeige (Runde 7) (entfernt)
 
-Diese Punkte prüft auch der Emulator-Ablauf `app/maestro/server/3-sync-share.yaml` mit echtem SFTP-Server, mit einem Bild nach jedem Schritt.
-
-| Nr. | Schritt | Erwartet |
-|---|---|---|
-| R1 | Server hinzufügen (SFTP oder FTPS): Zugangsdaten eingeben, ohne zu testen nach einem Ordner suchen. | Es gibt keine Ordnerwahl. Erst „Verbindung testen“; nach Erfolg „Verbindung klappt …“ und die Ordnerliste öffnet sich. Nach der Ordnerwahl „Verbindung prüfen“ (Anmeldung und Ordner beschreibbar); erst danach „Server speichern“. Eine geänderte Adresse, ein geänderter Benutzer, ein geändertes Passwort oder ein anderer Ordner verlangen eine neue Prüfung; nichts wird von selbst gespeichert. |
-| R2 | Server mit nicht erreichbarer Adresse, „Verbindung testen“. | Die Fehlermeldung steht im Formular; keine Ordnerliste öffnet sich. |
-| R3 | Reiter „FTPS“ im Formular, Liste der Schritte unten ansehen. | Schritte 1. bis 4. untereinander, jeder in einer Zeile, nichts zerhackt. |
-| R4 | Synchronisation: „Aus“ antippen, Server wählen. | Der Servername steht statt „Aus“; „Jetzt synchronisieren“ erscheint. |
-| R5 | Server-Modul installieren: im Ordner-Browser schnell hintereinander mehrere Ordner antippen (auch „..“). | Nie eine Meldung wie „The coroutine scope left the composition“; die Liste zeigt den zuletzt gewählten Ordner. |
-| R6 | GhulDrive mit eigenem Server (ohne Synchronisation): Reiter GhulDrive. | Die Karte oben nennt den Server mit Ordner und „verschlüsselt“, dazu Dateien und Größe; kein „…“ und kein „Nicht eingerichtet“. Ohne Server: „Noch kein Server“ und „Server wählen“. |
-| R7 | In einer Liste alles auswählen (oder das einzige Element). | Das Symbol „Alle“ verschwindet, sobald alles ausgewählt ist. |
-| R9 | Handy auf große Schrift stellen (Einstellungen → Anzeige → Schriftgröße, größte Stufe) und alle Bereiche und Optionsseiten durchgehen. | Kein Wort ist mitten im Wort getrennt; zu lange Knopfpaare stehen untereinander, Einstellungswerte unter ihrer Beschriftung; Titel höchstens zweizeilig. |
-| R10 | Auf „Speichern“, „Senden“ oder „Erstellen“ schnell zweimal tippen. | Der Eintrag, die Mail oder der Ordner entsteht genau einmal. |
-| R8 | Etwas Langsames starten (z. B. Server speichern) und währenddessen auf Knöpfe tippen, auch in einem offenen Blatt. | Nach kurzer Zeit liegt „Arbeite …“ mit Kreisel über dem Bildschirm bzw. dem Blatt; Tippen dahinter bewirkt nichts. |
+Entfällt: GhulMail, GhulDrive, Server, Freigabelinks und der Schlüsselwechsel wurden mit dem Umbau zu GhulDocs entfernt
+([`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)). GhulDocs testet Abschnitt 39, das Scannen Abschnitt 38.
 
 ## 33. Aufgaben im Hintergrund
 
-Lange Arbeiten (Hochladen, Herunterladen, Mail-Archiv) laufen im Hintergrund weiter, auch wenn du den Bereich verlässt. Ein Streifen unter der Kopfleiste zeigt, was läuft, wie weit es ist, und „Abbrechen“; am Ende sagt eine Meldung, wie es ausging.
+Lange Arbeiten (Dokumente hinzufügen, exportieren, Suite-Datei speichern und öffnen) laufen im Hintergrund weiter, auch wenn du den Bereich verlässt. Ein Streifen unter der Kopfleiste zeigt, was läuft, wie weit es ist, und „Abbrechen“; am Ende sagt eine Meldung, wie es ausging.
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| BG1 | In GhulDrive drei große Dateien hochladen, dann zu GhulMail wechseln und eine Mail öffnen. | Der Streifen „Lade 3 Dateien hoch“ bleibt unter jeder Kopfleiste sichtbar, mit Balken und „1 von 3 fertig“; der Upload läuft weiter. Am Ende „3 Dateien hochgeladen.“, in GhulDrive stehen alle drei. |
-| BG2 | Während BG1 im Streifen „Abbrechen“. | Sofort Schluss; „Hochladen abgebrochen: 1 von 3 Dateien fertig.“; die fertigen Dateien sind da, keine halbe. |
-| BG3 | Upload starten, App in den Hintergrund (Home-Taste), Benachrichtigungen aufziehen. | Die Benachrichtigung „GhulSuite ist entsperrt“ zeigt jetzt den Auftrag mit Balken, „Abbrechen“ und „Sperren“. „Abbrechen“ dort stoppt ihn. Auf dem Sperrbildschirm steht nur „GhulSuite ist entsperrt“ (keine Dateinamen). |
-| BG4 | Upload starten, App in den Hintergrund, länger warten als die Zeit für automatisches Sperren. | Die App sperrt nicht mitten im Upload, sondern erst, wenn er fertig ist; die Meldung „… hochgeladen.“ kommt erst nach dem Entsperren. Kommt zwei Minuten lang kein Fortschritt (z. B. WLAN aus), sperrt sie trotzdem und bricht den Upload ab. |
-| BG4a | Automatisches Mail-Archiv läuft (Streifen), App in den Hintergrund. | Die App sperrt nach der üblichen Zeit; der leise Auftrag stoppt und macht beim nächsten Entsperren an seiner Stelle weiter. |
-| BG5 | Wie BG4, aber vor dem Ende zurück in die App. | Die App bleibt entsperrt; der Upload läuft zu Ende. |
-| BG6 | Upload starten, dann von Hand sperren (Schloss, Schütteln oder „Sperren“ in der Benachrichtigung). | Sofort gesperrt, der Upload ist gestoppt. Nach dem Entsperren: „GhulSuite wurde gesperrt. Hochladen abgebrochen: …“. |
-| BG7 | Auftrag läuft, App im Hintergrund, Auftrag endet. | Eine kurze Benachrichtigung mit dem Ergebnis (Android 13+: nur wenn Benachrichtigungen erlaubt sind); auf dem Sperrbildschirm nur „Hochladen fertig“ ohne Dateinamen. Ist die App vorne, kommt nur die Meldung in der App. |
-| BG8 | Mehrere Aufträge nacheinander starten (z. B. Upload und Mail-Archiv). | Der zweite zeigt „Wartet auf die Aufgabe davor …“ und startet danach; beide sind im Streifen. |
-| BG11 | Eine große Datei aus GhulDrive herunterladen (Speicherort wählen), im Streifen „Abbrechen“; dasselbe mit abgeschaltetem WLAN mitten im Download. | Beide Male bleibt keine halbe Datei am gewählten Ort liegen; ein vollständiger Download bleibt. |
-| BG12 | Nur Android 11 oder älter: Upload starten, auf der Startseite „Zurück“. | Die App geht in den Hintergrund, der Upload läuft weiter (Streifen und Benachrichtigung). Ohne laufenden Auftrag schließt „Zurück“ die App wie gewohnt. |
+| BG1 | In GhulDocs drei große Dateien hinzufügen, dann zu GhulPass wechseln und einen Eintrag öffnen. | Der Streifen mit Balken und „1 von 3 fertig“ bleibt unter jeder Kopfleiste sichtbar; das Hinzufügen läuft weiter. Am Ende eine Meldung, in GhulDocs stehen alle drei. |
+| BG2 | Während BG1 im Streifen „Abbrechen“. | Sofort Schluss; die fertigen Dateien sind da, von der abgebrochenen bleibt nichts (auch kein Platz in der Belegung). |
+| BG3 | Hinzufügen einer großen Datei starten, App in den Hintergrund (Home-Taste), Benachrichtigungen aufziehen. | Die Benachrichtigung „GhulSuite ist entsperrt“ zeigt jetzt den Auftrag mit Balken, „Abbrechen“ und „Sperren“. „Abbrechen“ dort stoppt ihn. Auf dem Sperrbildschirm steht nur „GhulSuite ist entsperrt“ (keine Dateinamen). |
+| BG4 | Hinzufügen einer großen Datei starten, App in den Hintergrund, länger warten als die Zeit für automatisches Sperren. | Die App sperrt nicht mitten im Hinzufügen, sondern erst, wenn er fertig ist; die Meldung „… hinzugefügt.“ kommt erst nach dem Entsperren. Kommt zwei Minuten lang kein Fortschritt (z. B. WLAN aus), sperrt sie trotzdem und bricht das Hinzufügen ab. |
+| BG5 | Wie BG4, aber vor dem Ende zurück in die App. | Die App bleibt entsperrt; das Hinzufügen läuft zu Ende. |
+| BG6 | Hinzufügen einer großen Datei starten, dann von Hand sperren (Schloss, Schütteln oder „Sperren“ in der Benachrichtigung). | Sofort gesperrt, das Hinzufügen ist gestoppt. Nach dem Entsperren: „GhulSuite wurde gesperrt. Hinzufügen abgebrochen: …“. |
+| BG7 | Auftrag läuft, App im Hintergrund, Auftrag endet. | Eine kurze Benachrichtigung mit dem Ergebnis (Android 13+: nur wenn Benachrichtigungen erlaubt sind); auf dem Sperrbildschirm nur eine Meldung ohne Dateinamen. Ist die App vorne, kommt nur die Meldung in der App. |
+| BG8 | Mehrere Aufträge nacheinander starten (z. B. Hinzufügen und Exportieren). | Der zweite zeigt „Wartet auf die Aufgabe davor …“ und startet danach; beide sind im Streifen. |
+| BG12 | Nur Android 11 oder älter: Hinzufügen einer großen Datei starten, auf der Startseite „Zurück“. | Die App geht in den Hintergrund, das Hinzufügen läuft weiter (Streifen und Benachrichtigung). Ohne laufenden Auftrag schließt „Zurück“ die App wie gewohnt. |
 
-## 34. Mail-Archiv in GhulDrive
+## 34. Mail-Archiv in GhulDrive (entfernt)
 
-Archivieren heißt: Mails werden als .eml-Datei nach GhulDrive kopiert (`Mail-Archiv/<Konto>/<Jahr>/`). Beim Anbieter ändert sich nichts, dort wird nichts gelöscht. Mails, die schon im Archiv sind, werden übersprungen. Diese Punkte prüft zum Teil auch `app/maestro/server/2-mail.yaml` mit echtem IMAP und SFTP.
+Entfällt: GhulMail, GhulDrive, Server, Freigabelinks und der Schlüsselwechsel wurden mit dem Umbau zu GhulDocs entfernt
+([`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)). GhulDocs testet Abschnitt 39, das Scannen Abschnitt 38.
+
+## 35. Suite-Datei: speichern und öffnen
+
+Die Suite wandert als **eine Datei** (`.ghlzip`) zwischen den Geräten, z. B. auf dem USB-Stick. Abgeglichen wird
+nichts: Aktuell ist der Stand, der zuletzt gespeichert wurde. GhulDocs reist mit allen Dokumenten in der Datei mit.
+Gerät A und Gerät B sind zwei Geräte mit GhulSuite (Android oder Windows). Diese Abläufe prüft auch
+`app/maestro/14-suite-file.yaml`.
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| MA1 | GhulMail, eine Mail lange drücken, weitere antippen, „Mehr“ → „In GhulDrive archivieren“. | Frage „In GhulDrive archivieren?“ mit „3 gewählte Mails werden kopiert.“ und dem Hinweis, dass die Mails beim Anbieter bleiben. |
-| MA2 | „Archivieren“. | Streifen „3 Mails werden archiviert“ mit Fortschritt; am Ende „3 Mails in GhulDrive archiviert.“. In GhulDrive: `Mail-Archiv/<Konto>/<Jahr>/` mit Dateien „Datum Absender - Betreff (Code).eml“. Im Webmail sind die Mails unverändert (auch „gelesen“ nicht geändert). |
-| MA3 | Dieselben Mails noch einmal archivieren. | „0 Mails in GhulDrive archiviert. 3 waren schon im Archiv.“; keine doppelten Dateien. |
-| MA4 | Kopfleiste „⋮“ (Ordner-Aktionen) → „Diesen Ordner in GhulDrive archivieren“ bei einem großen Ordner, nach einigen Mails im Streifen „Abbrechen“. | „Archivieren abgebrochen: 12 von 400 Mails fertig.“; das Archiv enthält genau die fertigen. |
-| MA5 | „⋮“ → „Archivieren, was älter ist als …“ → „1 Jahr“. | Frage nennt Ordner und „1 Jahr“; archiviert werden nur Mails, die älter als ein Jahr sind. |
-| MA6 | Ohne eingerichtetes GhulDrive „In GhulDrive archivieren“. | Statt der Frage: „GhulDrive nötig“ mit „GhulDrive einrichten“; das führt zur Einrichtung von GhulDrive. Nichts wird archiviert. |
-| MA7 | Postfach-Auswahl (Zeile unter „GhulMail“) öffnen. | Unter den Ordnern „Archiv (GhulDrive)“, sobald etwas archiviert ist. Antippen: Jahre als Zeilen, darin die Mails mit Datum, Absender und Betreff; andere Dateien im Ordner erscheinen nicht, eigene Unterordner schon. |
-| MA8 | Archivierte Mail antippen. | Sie öffnet sich wie eine normale Mail (Schlagwort „GhulDrive“), auch verschlüsselte Mails sind lesbar. Anhänge speichern, „Antworten“, „Weiterleiten“, „⋮“ → „Allen antworten“, „Als Datei speichern“ und „Als PDF speichern“ funktionieren. |
-| MA9 | In der archivierten Mail „Löschen“. | Frage „In den Papierkorb?“ mit dem Hinweis, dass sie in den Papierkorb von GhulDrive kommt und die Mail beim Anbieter bleibt; danach „Rückgängig“ möglich. |
-| MA10 | In GhulDrive eine beliebige Datei in einen Jahresordner legen und `kaputt.eml` nennen, im Archiv antippen. | „Lässt sich nicht als Mail lesen.“ mit „Als Datei speichern“; die Zeile sagt es danach auch. |
-| MA11 | Optionen → GhulMail → „Automatisch archivieren“ → „Älter als 30 Tage“. | Erklärung: kopiert Posteingang und Gesendet, einmal am Tag nach dem Entsperren, beim Anbieter wird nichts gelöscht. Es startet gleich ein leiser Lauf (Streifen „Automatisches Mail-Archiv“), Meldung nur, wenn etwas archiviert wurde. |
-| MA12 | Sperren und am selben Tag wieder entsperren. | Kein zweiter Lauf. Am nächsten Tag nach dem Entsperren läuft er wieder, nur mit neuen alten Mails. |
-| MA13 | Ohne GhulDrive die Mail-Optionen öffnen. | „Automatisch archivieren“ lässt sich nicht einschalten; Hinweis „Das Archiv braucht GhulDrive“ mit „GhulDrive einrichten“. |
-| MA14 | Zweites Gerät nach Synchronisation. | Die Einstellung „Automatisch archivieren“ ist dort gleich; das Archiv ist in GhulDrive sichtbar. |
+| SD1 | Gerät A: Optionen → Suite-Datei. | Seite mit „Speichern“, „Speichern unter …“, „Andere Suite-Datei öffnen“ und dem Stand („Noch nicht als Datei gespeichert“ bzw. „Suite-Datei: …“, „Alles ist in der Suite-Datei gespeichert.“). Kurze Erklärung, dass die Datei alle Tresore verschlüsselt und versiegelt enthält. |
+| SD2 | Gerät A: Einen Eintrag ändern. | Auf den Bereichsseiten oben „Nicht gespeicherte Änderungen. Tippen zum Speichern.“; in der Optionen-Übersicht unter „Suite-Datei“ ebenfalls. Antippen führt zur Seite Suite-Datei. |
+| SD3 | „Speichern“ (die Datei liegt auf dem Stick). | „Gespeichert in …“; der Hinweis aus SD2 verschwindet; „Alles ist in der Suite-Datei gespeichert.“ |
+| SD4 | Stick abziehen, etwas ändern, „Speichern“. | „Die Suite-Datei ist gerade nicht erreichbar (ist der USB-Stick eingesteckt?) …“; die Änderung bleibt als nicht gespeichert markiert. Stick wieder einstecken, „Speichern“: klappt. |
+| SD5 | Gerät B (ohne Suite): Startbildschirm → „Suite-Datei öffnen“ → die Datei vom Stick → Passwort und Key. | „… wird zuerst vollständig geprüft. Erst danach ersetzt sie den Stand auf diesem Gerät.“ Fortschritt beim Öffnen; danach ohne Rückfrage geöffnet; alle Einträge, Dokumente und Einstellungen sind da. |
+| SD6 | Gerät B: etwas ändern, speichern. Gerät A: „Andere Suite-Datei öffnen“ → dieselbe Datei. | Öffnet ohne Rückfrage (neuerer Stand derselben Suite); die Änderung von B ist auf A. |
+| SD7 | **Älterer Stand:** Vor SD6 eine Kopie der Datei aufheben. Gerät A (hat jetzt den neueren Stand) öffnet die alte Kopie. | Rückfrage „Diese Datei öffnen?“ mit „Diese Datei ist älter als dein Stand hier.“ „Abbrechen“ ändert nichts; „Öffnen“ lädt den alten Stand. |
+| SD8 | **Abzweig:** A und B öffnen denselben Stand. A ändert und speichert unter neuem Namen, B ändert und speichert unter einem anderen Namen. A öffnet die Datei von B. | „Diese Datei wurde von einem anderen Stand aus weiterbearbeitet als deinem hier.“ Nichts wird zusammengeführt: Nach „Öffnen“ gilt nur der Stand von B. |
+| SD9 | **Andere Suite:** Auf A die Datei einer anderen Suite (z. B. aus E18) öffnen. | „Diese Datei enthält eine andere Suite als die auf diesem Gerät. Sie ersetzt alles hier.“ Passwort und Key der anderen Suite werden verlangt. |
+| SD10 | **Nicht gespeicherte Änderungen:** Auf A etwas ändern (nicht speichern), dann eine Suite-Datei öffnen. | Rückfrage nennt zusätzlich: „Auf diesem Gerät gibt es Änderungen, die noch in keiner Suite-Datei sind. Sie gehen verloren. Speichere vorher, wenn du sie behalten willst.“ Abbrechen, speichern, erneut öffnen: keine Rückfrage mehr. |
+| SD11 | Mehrere Gründe auf einmal (z. B. ältere Datei und nicht gespeicherte Änderungen). | Alle Gründe stehen in **einem** Dialog. |
+| SD12 | **Überschreiben:** A und B öffnen dieselbe Datei. B ändert und speichert. A ändert und tippt „Speichern“ auf dieselbe Datei. | „Die Datei wurde inzwischen anderswo gespeichert. Überschreiben (die Änderungen von dort gehen verloren) oder unter neuem Namen speichern?“ „Speichern unter …“ legt eine zweite Datei an; „Überschreiben“ ersetzt sie. |
+| SD13 | „Speichern unter …“ auf eine Datei, die eine andere Suite oder etwas ganz anderes (z. B. ein Foto, umbenannt in `.ghlzip`) ist. | „An diesem Ort liegt eine andere Suite oder keine GhulSuite-Datei. Überschreiben oder unter neuem Namen speichern?“ |
+| SD14 | **Älterer Schutz:** Datei speichern, Kopie aufheben. Dann Passwort ändern und neu speichern. Auf demselben Gerät die alte Kopie öffnen (mit dem alten Passwort). | Wird **nicht** geöffnet: „Diese Suite-Datei ist durch eine neuere mit geändertem Schutz … ersetzt und nicht mehr gültig. Öffne die neueste Datei.“ |
+| SD15 | Wie SD14, aber die alte Kopie auf einem Gerät öffnen, das den neuen Stand nie gesehen hat (z. B. frisch installiert). | Öffnet sich mit dem alten Passwort und dem alten zweiten Faktor (bekannte Grenze, KONZEPT 8.2). Nach dem Tausch des zweiten Faktors (alten Key zurücksetzen bzw. alte Schlüsseldatei löschen) öffnet sie gar nicht mehr. |
+| SD16 | Eine Suite-Datei mit einem ZIP-Programm verändern: eine Tresordatei entfernen, eine fremde hinzufügen, eine Datei durch die aus einer älteren Kopie ersetzen oder einen Ordner hinzufügen. Dann öffnen. | Jedes Mal wird nichts geladen, und die App sagt, dass die Datei nicht stimmt. Der bisherige Stand auf dem Gerät bleibt unverändert. |
+| SD17 | Eine beliebige andere Datei (Foto, normale ZIP) als Suite-Datei öffnen. | „Das ist keine GhulSuite-Datei.“ |
+| SD18 | **Mit dem Wiederherstellungscode:** „Suite-Datei öffnen“ → „Passwort vergessen? Mit dem Wiederherstellungscode öffnen“ → Code und neues Passwort. | Hinweis, dass die Datei ohne Passwort nicht geprüft werden konnte; danach offen mit dem neuen Passwort, Hinweis „Nicht gespeicherte Änderungen“ (alles wurde neu versiegelt). Ältere Datei, Abzweig und älterer Schutz werden trotzdem erkannt wie in SD7 bis SD14. |
+| SD19 | **Gerätedaten:** Schnell-Entsperren (Fingerabdruck) einrichten, dann eine Suite-Datei öffnen. | Danach braucht das Entsperren wieder Passwort und Key (Schnell-Entsperren ist gelöscht). |
+| SD20 | Während des Öffnens (nach der Prüfung, beim Ersetzen) die App über die Liste der letzten Apps beenden; neu starten. | Entweder der alte oder der neue Stand ist vollständig da, nie eine Mischung. |
+| SD21 | Eine Suite mit allen vier Bereichen speichern, auf dem anderen Gerät öffnen. | Alle Bereiche, Tresornamen, Dokumente und Bereichs-Einstellungen (z. B. Bundesland in GhulCal) sind da; was nur ein Gerät betrifft (Sperren, Schnell-Entsperren, Ansicht), nicht. |
+
+## 36. GhulDrive auf dem Server: zwei Geräte, Index (entfernt)
+
+Entfällt: GhulMail, GhulDrive, Server, Freigabelinks und der Schlüsselwechsel wurden mit dem Umbau zu GhulDocs entfernt
+([`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)). GhulDocs testet Abschnitt 39, das Scannen Abschnitt 38.
+
+## 37. Schlüsselwechsel nach einer Schutzänderung (entfernt)
+
+Entfällt: GhulMail, GhulDrive, Server, Freigabelinks und der Schlüsselwechsel wurden mit dem Umbau zu GhulDocs entfernt
+([`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)). GhulDocs testet Abschnitt 39, das Scannen Abschnitt 38.
+
+## 38. Dokumente scannen (GhulDocs, Android)
+
+Die Kamera in der App (nicht die Kamera-App des Systems), mehrere Seiten in eine PDF. Fotos und Seiten liegen nur im
+Arbeitsspeicher. Vorher: ein GhulDocs-Tresor mit einem Ordner, ein paar Blätter Papier (auch ein Kassenbon).
+
+| Nr. | Schritt | Erwartet |
+|---|---|---|
+| SC1 | GhulDocs → „+“ → „Dokument scannen“, beim ersten Mal die Kamera ablehnen. | Hinweis, wozu die Kamera gebraucht wird, und „Kamera erlauben“. Nach „Kamera erlauben“ (bzw. in den App-Berechtigungen des Systems) erscheint das Kamerabild ohne Neustart. |
+| SC2 | Ein Blatt schräg auf einem dunklen Tisch fotografieren. | Zuschneiden: Der Rahmen liegt auf den Ecken des Blatts („Blatt erkannt.“). Ohne erkennbares Blatt (z. B. eine Wand) steht ein Rahmen etwas innerhalb des Fotos („Kein Blatt erkannt.“). |
+| SC3 | Eine Ecke mit dem Finger verschieben, dann über die gegenüberliegende Ecke hinaus ziehen. | Die Ecke folgt dem Finger, eine Lupe zeigt sie vergrößert. Der Rahmen klappt nie um: Die Ecke bleibt an der letzten gültigen Stelle stehen. „Ganzes Foto“ und „Erkanntes Blatt“ wechseln. |
+| SC4 | „Übernehmen“, zwei weitere Seiten fotografieren, „Fertig“. | Seitenzähler und Vorschaubilder unter dem Kamerabild; die Seiten sind gerade (nicht mehr schräg) und scharf. |
+| SC5 | Eine Seite drehen, „Dokument“ für eine Seite, dann „Dokument-Filter für alle Seiten“. | Die Vorschau zeigt die Änderung; mit Filter ist das Papier weiß (auch im Schatten), der Text schwarz. |
+| SC6 | Eine Seite „Zuschneiden“ (Abbrechen), eine „Neu aufnehmen“, eine löschen. | Abbrechen lässt die Seite wie sie war; die neue Aufnahme ersetzt die Seite an ihrer Stelle; Löschen nimmt sie aus der Reihe. |
+| SC7 | Namen ändern, „Als PDF speichern“. | Fortschritt unter der Kopfzeile, danach steht die PDF im geöffneten Ordner. In der App angesehen: alle Seiten, in der richtigen Reihenfolge, etwa A4, je Seite etwa 200 bis 600 KB. |
+| SC8 | Mitten im Scan (Seiten aufgenommen) sperren: von Hand im Hintergrund, über die automatische Sperre und über die Panik-Sperre. | Nach dem Entsperren ist der Scan weg, nichts wurde gespeichert; die App sagt, dass nicht Gespeichertes verworfen wurde. |
+| SC9 | Mit Seiten „Schließen“ bzw. Zurück. | Rückfrage „Änderungen verwerfen?“; „Verwerfen“ beendet den Scan ohne Speichern. |
+| SC10 | Im Scan ein Bildschirmfoto versuchen und die Liste der letzten Apps öffnen. | Kein Bildschirmfoto, keine Vorschau (außer Bildschirmfotos sind in den Optionen erlaubt). |
+| SC11 | Nach einem Scan im Dateimanager und unter `Android/data/…` nachsehen. | Keine Fotos, keine PDF außerhalb des Tresors; auch die Galerie zeigt keine neuen Fotos. |
+| SC12 | Über 30 Seiten aufnehmen. | Hinweis „Viele Seiten …“; reicht der Speicher nicht mehr, nimmt die App keine weitere Seite auf und sagt es. |
+| SC13 | GhulDocs fast voll (Testtresor nahe 1 GB), dann speichern. | Meldung „GhulDocs ist voll …“, die Seiten bleiben erhalten. |
+| SC14 | Querformat, Taschenlampe („Licht“) an und aus, Kassenbon (lang und schmal). | Alles bedienbar; der Kassenbon wird eine schmale, hohe Seite. |
+
+## 39. GhulDocs
+
+Verschlüsselter Speicher für Dokumente, bis 1 GB je Suite. Vorher: GhulDocs eingerichtet, ein paar Testdateien auf dem
+Gerät (PDF mit mehreren Seiten, Foto, Textdatei, eine Datei, die die App nicht anzeigen kann, z. B. `.docx`). Diese
+Abläufe prüft auch `app/maestro/07-docs.yaml`.
+
+| Nr. | Schritt | Erwartet |
+|---|---|---|
+| GD1 | GhulDocs öffnen. | Karte mit Belegung („… von 1 GB“, Zahl der Dokumente, „verschlüsselt auf diesem Gerät“), Favoriten und Papierkorb, darunter die Liste (Ordner zuerst). |
+| GD2 | „Hinzufügen“ → „Dateien hinzufügen“, mehrere Dateien auf einmal wählen. | Fortschritt im Streifen, danach „n Dateien hinzugefügt.“; jede Datei mit Größe, Datum und Symbol nach Typ; die Belegung wächst. |
+| GD3 | In einer anderen App (Galerie, Dateimanager) eine Datei teilen → „In GhulDocs speichern“. | Nach dem Entsperren „In GhulDocs speichern“ mit Ziel (Tresor, Ordner, änderbar); danach liegt die Datei dort. Ist GhulDocs nicht eingerichtet, sagt die App, wie man es einrichtet. |
+| GD4 | Ordner anlegen, umbenennen, Datei hinein verschieben, Ordner verschieben, Namen mit `/` oder einen schon vorhandenen Namen versuchen. | Alles wirkt sofort; doppelte und ungültige Namen werden mit einer verständlichen Meldung abgelehnt. |
+| GD5 | Suchen nach einem Teil eines Namens; Stern an einer Datei; Ansicht Favoriten. | Treffer aus allen Ordnern; Favorit erscheint unter Favoriten. |
+| GD6 | Ein Bild, eine PDF (mehrere Seiten) und eine Textdatei antippen. | Ansicht in der App: Bild, alle Seiten der PDF (Android 11 und neuer; darunter Hinweis mit „Mit App öffnen“ und „Exportieren“), Text. Bei einer Datei, die die App nicht anzeigen kann: Hinweis mit beiden Möglichkeiten. |
+| GD7 | Während der Ansicht eine Bildschirmaufnahme versuchen; App sperren; nach dem Entsperren im Dateimanager und unter `Android/data/…` suchen. | Kein Bildschirmfoto (außer erlaubt); nach dem Sperren ist die Ansicht weg; nirgends eine entschlüsselte Kopie. |
+| GD8 | Datei → „Exportieren“. | Rückfrage „Unverschlüsselt exportieren?“; nach „Exportieren“ und Wahl des Orts liegt die Datei dort, lesbar. „Abbrechen“ im Streifen lässt keine halbe Datei zurück. |
+| GD9 | Datei → „Mit App öffnen“, eine App wählen; dann GhulSuite sperren. | Die andere App zeigt die Datei; nach dem Sperren ist die befristete Kopie gelöscht (die andere App kann sie nicht mehr neu laden). |
+| GD10 | Datei löschen, Papierkorb öffnen, wiederherstellen; nochmal löschen, „Endgültig löschen“; „Papierkorb leeren“. | Zurück am alten Ort; danach endgültig weg. Hinweis: Was im Papierkorb liegt, zählt zur Belegung, bis er geleert wird. |
+| GD11 | **Grenze:** Dateien hinzufügen, bis fast 1 GB belegt ist, dann eine weitere große Datei. Ebenso eine einzelne Datei über 1 GB. | „GhulDocs ist voll: … Es wurde nichts hinzugefügt.“ bzw. „Diese Datei ist zu groß für GhulDocs …“; Belegung unverändert, nichts zurückgeblieben. Nach dem Leeren des Papierkorbs geht es wieder. |
+| GD12 | Einen GhulDocs-Tresor für sich speichern (Optionen → Tresore) und in GhulDocs Dokumente lange drücken → „Als Tresor weitergeben“ (eigenes Passwort, neue Schlüsseldatei). | Eine `.ghlzip` mit dem Tresor und seinen Dokumenten, mit Fortschritt. Auf einem zweiten Gerät „Einzelnen Tresor öffnen“: alle Dokumente da, lesbar; „Zu meiner Suite hinzufügen“ übernimmt ihn mit dem Schutz der Suite. |
+| GD13 | Einen zweiten GhulDocs-Tresor anlegen, Kontextzeile „Alle Tresore“ und einen einzelnen wählen. | Die Liste zeigt alle bzw. nur diesen; die Belegung gilt für alle zusammen. |
+| GD14 | **Suite-Datei mit Dokumenten:** Suite-Datei speichern (Fortschritt), auf Gerät B öffnen. | Alle Dokumente sind da und lassen sich ansehen; die Datei ist etwa so groß wie die Dokumente zusammen. |
+| GD15 | Optionen → GhulDocs: Belegung, „Dokumente prüfen“. | „Alle Dokumente sind in Ordnung.“ Nichts wird geändert. |
+| GD16 | Während des Hinzufügens einer großen Datei die App über die Liste der letzten Apps beenden; neu starten und entsperren. | Die Datei fehlt, die Belegung stimmt, es bleibt kein Rest (Reste räumt die App beim Entsperren weg). |
+| GD17 | Dunkles Design und Querformat: Liste, Ansicht, Papierkorb, Optionen → GhulDocs. | Alles lesbar, nichts abgeschnitten. |
+| GD18 | Suite-Datei speichern (viele MB Dokumente) und währenddessen ein Dokument endgültig löschen oder den Papierkorb leeren. | Das Speichern läuft zu Ende und die Datei öffnet auf Gerät B mit allen Dokumenten des Stands beim Speichern; danach ist das gelöschte Dokument auch auf dem Datenträger weg. |
+| GD19 | Auf Gerät B eine Suite-Datei öffnen, die Rückfrage stehen lassen (Auto-Sperre aus), später bestätigen. | Alle Dokumente sind da, auch nach langer Wartezeit oder wenn die Uhr des Geräts inzwischen springt. |
+| GD20 | Aus einer anderen App eine Datei mit Richtungszeichen im Namen teilen (z. B. `rechnung`, das Zeichen U+202E und `fdp.exe`), ebenso einen Namen nur aus geschützten Leerzeichen. | Gespeichert als `rechnungfdp.exe` bzw. `file`, keine Meldung „ungültiger Name“. |
+| GD21 | GhulPass: einem Eintrag große Anhänge hinzufügen, bis es nicht mehr geht. | Bei etwa 200 MiB in allen Tresoren neben GhulDocs: „Die Tresore neben GhulDocs sind voll …“, nichts hinzugefügt; die Suite-Datei lässt sich speichern und öffnen. |
+| GD22 | Nach dem Update von einer Version mit GhulMail, GhulDrive oder automatischer Sicherung: App starten. | Einmal still entfernt: Mail-Zwischenspeicher, Drive-Offline-Kopien, Datenbank der alten Hintergrundaufgaben, alte Einstellungen, Zugriff auf den Ordner der alten Sicherung (Android-Einstellungen → Apps → GhulSuite → Speicher), Benachrichtigungskanäle von Mail. Tresore, Dokumente und Schnell-Entsperren bleiben. |
+| GD23 | Eine Suite-Datei oder Arbeitskopie einer älteren Entwicklerversion (vor Formatversion 3) öffnen. | „Diese Datei stammt von einer älteren Entwicklerversion von GhulSuite …“ statt „keine GhulSuite-Datei“. |
 
 ## Fehler melden
 

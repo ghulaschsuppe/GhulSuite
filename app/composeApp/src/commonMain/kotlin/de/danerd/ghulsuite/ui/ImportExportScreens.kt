@@ -206,8 +206,8 @@ private fun ImportResultCard(r: ImportResultUi, onDone: () -> Unit) {
 @Composable
 fun ExportScreen(state: AppState, padding: PaddingValues) {
     val backend = state.backend
-    // GhulDrive and GhulMail files hold settings and logins only: nothing to export as plain text.
-    val vaults = state.vaults.filter { it.available && it.kind != VaultKindUi.DRIVE && it.kind != VaultKindUi.MAIL }
+    // GhulDocs exports its documents one by one (and a vault as a .ghlzip under Options, Vaults).
+    val vaults = state.vaults.filter { it.available && it.kind != VaultKindUi.DOCS }
     var target by remember { mutableStateOf(vaults.firstOrNull()?.id) }
     var password by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
@@ -226,7 +226,7 @@ fun ExportScreen(state: AppState, padding: PaddingValues) {
                     Hint(stringResource(when (v.kind) {
                         VaultKindUi.PASS -> Res.string.export_format_csv
                         VaultKindUi.TOTP -> Res.string.export_format_otpauth
-                        VaultKindUi.CAL, VaultKindUi.DRIVE, VaultKindUi.MAIL -> Res.string.export_format_ics
+                        VaultKindUi.CAL, VaultKindUi.DOCS -> Res.string.export_format_ics
                     }))
                 }
                 SecretTextField(password, { password = it; error = null }, stringResource(Res.string.l_master_password))
@@ -240,7 +240,7 @@ fun ExportScreen(state: AppState, padding: PaddingValues) {
                             save(when (vault.kind) {
                                 VaultKindUi.PASS -> "$name.csv"
                                 VaultKindUi.TOTP -> "$name-2fa.txt"
-                                VaultKindUi.CAL, VaultKindUi.DRIVE, VaultKindUi.MAIL -> "$name.ics"
+                                VaultKindUi.CAL, VaultKindUi.DOCS -> "$name.ics"
                             }, data)
                         }
                     },
@@ -252,34 +252,9 @@ fun ExportScreen(state: AppState, padding: PaddingValues) {
     }
 }
 
-/** Settings section: backup, import and export. */
+/** Settings section: import and export. */
 @Composable
 fun ImportExportSection(state: AppState) {
-    val settings = state.backend.settings
-    val savedMsg = stringResource(Res.string.msg_saved_file)
-    val save = rememberSaveFile { ok -> if (ok) state.message(savedMsg) }
-    val pickBackupFolder = rememberPickFolder { f ->
-        settings.autoBackupFolder = f.uri + "|" + f.name
-        settings.lastAutoBackup = 0
-        state.runAutoBackup()
-    }
-    SectionCard(stringResource(Res.string.backup_title)) {
-        Hint(stringResource(Res.string.backup_hint))
-        if (filePickersAvailable) {
-            Button(onClick = {
-                state.run(block = { state.backend.suiteBackup() }) { data -> save(backupName(), data) }
-            }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.backup_create)) }
-            val folder = settings.autoBackupFolder.substringAfter('|', "")
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(stringResource(Res.string.backup_auto))
-                    Hint(if (folder.isEmpty()) stringResource(Res.string.backup_auto_off) else stringResource(Res.string.backup_auto_on, folder))
-                }
-                Switch(folder.isNotEmpty(), { on -> if (on) pickBackupFolder() else settings.autoBackupFolder = "" })
-            }
-            Hint(stringResource(Res.string.backup_restore_hint))
-        }
-    }
     SectionCard(stringResource(Res.string.set_import_export)) {
         OutlinedButton(onClick = { state.push(Screen.Import) }, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(Res.string.a_import))
@@ -291,30 +266,6 @@ fun ImportExportSection(state: AppState) {
     }
 }
 
-/** File name of a backup with a readable UTC date and time, e.g. "GhulSuite-Backup-2026-11-12-1530.zip". */
-fun backupName(): String {
-    val secs = nowSeconds()
-    // Civil date from days since 1970 (Howard Hinnant's algorithm), no platform date API needed.
-    val z = secs / 86_400 + 719_468
-    val era = (if (z >= 0) z else z - 146_096) / 146_097
-    val doe = z - era * 146_097
-    val yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365
-    val doy = doe - (365 * yoe + yoe / 4 - yoe / 100)
-    val mp = (5 * doy + 2) / 153
-    val day = doy - (153 * mp + 2) / 5 + 1
-    val month = if (mp < 10) mp + 3 else mp - 9
-    val year = yoe + era * 400 + (if (month <= 2) 1 else 0)
-    val minutes = (secs % 86_400) / 60
-    fun two(n: Long) = n.toString().padStart(2, '0')
-    return "GhulSuite-Backup-$year-${two(month)}-${two(day)}-${two(minutes / 60)}${two(minutes % 60)}.zip"
-}
-
-/**
- * Common start of all automatic backups with the same naming ("GhulSuite-Backup-"): only those are
- * rotated, other ZIP files in the folder (older names included) are left alone.
- */
-fun backupPrefix(name: String): String = name.split('-').take(2).joinToString("-") + "-"
-
 /** Vault name, with its area when the list mixes GhulPass and GhulAuth vaults ("Personal · GhulAuth"). */
 private fun vaultLabel(v: de.danerd.ghulsuite.model.VaultUi, all: List<de.danerd.ghulsuite.model.VaultUi>): String =
-    if (all.map { it.kind }.distinct().size > 1) v.name + " · " + (when (v.kind) { VaultKindUi.PASS -> "GhulPass"; VaultKindUi.TOTP -> "GhulAuth"; VaultKindUi.CAL -> "GhulCal"; VaultKindUi.DRIVE -> "GhulDrive"; VaultKindUi.MAIL -> "GhulMail" }) else v.name
+    if (all.map { it.kind }.distinct().size > 1) v.name + " · " + (when (v.kind) { VaultKindUi.PASS -> "GhulPass"; VaultKindUi.TOTP -> "GhulAuth"; VaultKindUi.DOCS -> "GhulDocs"; VaultKindUi.CAL -> "GhulCal" }) else v.name

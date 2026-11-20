@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
@@ -47,13 +46,13 @@ import org.jetbrains.compose.resources.stringResource
 enum class JobState { WAITING, RUNNING, DONE, FAILED, CANCELLED }
 
 /** What a job does (its picture in the strip and the notification). */
-enum class JobKind { UPLOAD, DOWNLOAD, ARCHIVE }
+enum class JobKind { UPLOAD, DOWNLOAD, ADD, EXPORT }
 
-/** A job ends with this text (the message) as failed, e.g. "stopped after 12 of 40 mails: …". */
+/** A job ends with this text (the message) as failed, e.g. "stopped after 12 of 40 files: …". */
 class JobFailed(val text: String) : Exception(text)
 
 /**
- * Something long that runs in the background (upload, download, mail archive): in the app-wide
+ * Something long that runs in the background (adding or saving files): in the app-wide
  * scope, so leaving a screen does not stop it. The strip in the header shows it with its progress
  * and "Cancel"; when it ends, a message says how it went.
  */
@@ -71,7 +70,7 @@ class BgJob internal constructor(val id: Int, val kind: JobKind, val quiet: Bool
     private var itemState by mutableStateOf("")
 
     var title: String get() = titleState; set(v) { titleState = v; changed() }
-    /** Items done (files, mails). */
+    /** Items done (files). */
     var done: Int get() = doneState; set(v) { doneState = v; changed() }
     /** Items in all (0: one thing, or not known yet). */
     var total: Int get() = totalState; set(v) { totalState = v; changed() }
@@ -116,9 +115,9 @@ data class JobInfo(
 )
 
 /**
- * How a job ended, for a system notification: [text] is the full message (it may name files or
- * mails), [publicText] says only what kind of job ended and the counts (Windows Action Center,
- * Android lock screen).
+ * How a job ended, for a system notification: [text] is the full message (it may name files),
+ * [publicText] says only what kind of job ended and the counts (Windows Action Center, Android
+ * lock screen).
  */
 data class JobEnd(val text: String, val publicText: String)
 
@@ -178,8 +177,8 @@ class Jobs internal constructor(private val state: AppState) {
     private fun progressing(): Boolean = list.any { it.active && !it.quiet && clock() - it.lastProgress < stallMillis }
 
     /**
-     * An automatic lock (time away, idle, screen off). Quiet jobs (automatic archive) stop at
-     * once: they continue from their marks next time and never hold the lock back. Jobs the user
+     * An automatic lock (time away, idle, screen off). Quiet jobs stop at once: they continue
+     * from their marks next time and never hold the lock back. Jobs the user
      * started are waited for while they make progress; once none reported progress for
      * [stallMillis], the suite locks and cancels them.
      */
@@ -211,7 +210,7 @@ class Jobs internal constructor(private val state: AppState) {
 
     /**
      * Starts [block] as a background job and returns at once. Jobs of the same [lane] run one after
-     * the other (GhulDrive takes one transfer at a time), the others wait. [title] is looked up
+     * the other (one transfer at a time), the others wait. [title] is looked up
      * first; [block] returns the message at the end (null: none), [cancelled] the message after
      * "Cancel" (null: none). [onEnd] runs in every case (e.g. closes the files). A [quiet] job is
      * shown in the strip but only says something when its [block] has something to say.
@@ -221,7 +220,7 @@ class Jobs internal constructor(private val state: AppState) {
         kind: JobKind,
         title: suspend () -> String,
         quiet: Boolean = false,
-        lane: String = "drive",
+        lane: String = "files",
         cancelled: suspend (BgJob) -> String? = { null },
         onEnd: () -> Unit = {},
         block: suspend (BgJob) -> String?,
@@ -314,13 +313,14 @@ class Jobs internal constructor(private val state: AppState) {
         }
     }
 
-    /** "Upload finished · 3 of 3 done": what ended and the counts, never a file or mail name. */
+    /** "Upload finished · 3 of 3 done": what ended and the counts, never a file name. */
     private suspend fun publicText(job: BgJob): String {
         val what = state.str(
             when (job.kind) {
                 JobKind.UPLOAD -> Res.string.job_kind_upload
                 JobKind.DOWNLOAD -> Res.string.job_kind_download
-                JobKind.ARCHIVE -> Res.string.job_kind_archive
+                JobKind.ADD -> Res.string.job_kind_add
+                JobKind.EXPORT -> Res.string.job_kind_export
             },
         )
         val end = state.str(
@@ -374,10 +374,10 @@ fun JobStrip() {
 @Composable
 private fun JobRow(jobs: Jobs, job: BgJob) {
     val t = g
-    val (icon, color) = when (job.kind) {
-        JobKind.UPLOAD -> Icons.Filled.Upload to areaColor(Tab.DRIVE)
-        JobKind.DOWNLOAD -> Icons.Filled.Download to areaColor(Tab.DRIVE)
-        JobKind.ARCHIVE -> Icons.Filled.Inventory2 to areaColor(Tab.MAIL)
+    val color = t.accent
+    val icon = when (job.kind) {
+        JobKind.UPLOAD, JobKind.ADD -> Icons.Filled.Upload
+        JobKind.DOWNLOAD, JobKind.EXPORT -> Icons.Filled.Download
     }
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(t.surface)

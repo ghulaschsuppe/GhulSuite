@@ -16,8 +16,6 @@ pub mod error;
 pub mod kdf;
 pub mod net;
 pub mod pin;
-pub mod report;
-pub mod share;
 pub mod totp;
 pub mod update;
 pub mod vault;
@@ -28,7 +26,12 @@ mod mock;
 #[cfg(test)]
 mod wycheproof_tests;
 
-/// Every parser that reads outside data, for the long libFuzzer runs (`core/fuzz`).
+#[cfg(test)]
+mod alloc_meter;
+
+/// Every parser that reads outside data, for the long libFuzzer runs (`core/fuzz`): HTTP, ICS,
+/// quick entry, imports, links, CBOR, and from suite files the stream ZIP reader, GhulDocs content
+/// files and GhulDocs indexes (containers have a target of their own).
 #[cfg(feature = "fuzzing")]
 #[doc(hidden)]
 pub mod fuzzing {
@@ -36,34 +39,21 @@ pub mod fuzzing {
     pub fn parse_any(data: &[u8]) {
         let Some((&which, rest)) = data.split_first() else { return };
         let text = String::from_utf8_lossy(rest);
-        match which % 12 {
+        match which % 11 {
             0 => drop(crate::net::http::parse(rest)),
-            1 => {
-                let _ = crate::net::smtp::reply_line(&text);
-            }
-            2 => {
-                let _ = crate::net::ftps::data_port(227, &text);
-                drop(crate::net::ftps::parse_list_line(&text));
-                drop(crate::net::ftps::parse_mlsd_line(&text));
-            }
-            3 => drop(crate::app::mailhtml::parse(&text)),
-            4 => drop(crate::app::caltext::ics_import(&text, 60)),
-            5 => drop(crate::app::caltext::cal_quick_parse(text.into_owned(), "2026-11-13".into(), 600)),
-            6 => drop(crate::app::import::parse(rest, "x.csv")),
-            7 => drop(crate::app::import::parse(rest, "x.json")),
-            8 => drop(crate::app::import::parse(rest, "x.zip")),
-            9 => {
+            1 => drop(crate::app::caltext::ics_import(&text, 60)),
+            2 => drop(crate::app::caltext::cal_quick_parse(text.into_owned(), "2026-11-13".into(), 600)),
+            3 => drop(crate::app::import::parse(rest, "x.csv")),
+            4 => drop(crate::app::import::parse(rest, "x.json")),
+            5 => drop(crate::app::import::parse(rest, "x.zip")),
+            6 => {
                 drop(crate::app::tools::parse_otpauth_uri(text.to_string()));
                 drop(crate::app::import::parse_migration(&text));
             }
-            10 => drop(crate::share::open(rest, &[7u8; 32], None)),
-            _ => {
-                drop(crate::cbor::decode(rest));
-                drop(crate::app::mailcrypt::parse_autocrypt(&text));
-                if let Some(h) = crate::app::domain::host_of(&text) {
-                    drop(crate::app::domain::base_domain(&h));
-                }
-            }
+            7 => drop(crate::cbor::decode(rest)),
+            8 => crate::app::docs::fuzz::zip(rest),
+            9 => crate::app::docs::fuzz::content_file(rest),
+            _ => crate::app::docs::fuzz::docs_index(rest),
         }
     }
 }

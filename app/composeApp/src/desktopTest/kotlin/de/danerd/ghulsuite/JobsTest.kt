@@ -48,11 +48,11 @@ class JobsTest {
         assertTrue(!de.danerd.ghulsuite.ui.backKeepsJobs(jobRunning = true, sdk = 31), "Android 12+ keeps it anyway")
     }
 
-    /** A quiet job (automatic archive) never holds the automatic lock back: it stops. */
+    /** A quiet job (one the app started itself) never holds the automatic lock back: it stops. */
     @Test
     fun quietJobDoesNotDelayTheAutoLock() {
         val (s, fake) = state()
-        val job = s.jobs.start(JobKind.ARCHIVE, title = { "archive" }, quiet = true) { awaitCancellation() }
+        val job = s.jobs.start(JobKind.DOWNLOAD, title = { "quiet" }, quiet = true) { awaitCancellation() }
         assertTrue(job.active)
         s.autoLock()
         waitUntil(2_000, "locked at once") { fake.locks == 1 }
@@ -112,14 +112,15 @@ class JobsTest {
         }
     }
 
-    /** Unlocking starts the automatic archive and takes the hooks of the notification. */
+    /** The app state takes the hooks of the notification ("Cancel" stops its jobs). */
     @Test
-    fun unlockingStartsTheArchiveAndTakesTheHooks() {
+    fun theStateTakesTheHooks() {
         val cancel = {}
         JobStatus.cancelAll = cancel
-        val (app, _) = state(prepare = { (net as FakeNet).archiveAutoDaysValue = 1 })
-        waitUntil(what = "archive job") { app.jobs.list.any { it.kind == JobKind.ARCHIVE } }
+        val (app, _) = state()
         assertNotSame(cancel, JobStatus.cancelAll)
-        app.jobs.cancelAll()
+        val job = app.jobs.start(JobKind.UPLOAD, title = { "upload" }) { awaitCancellation() }
+        JobStatus.cancelAll()
+        waitUntil(what = "the job stopped") { job.state == JobState.CANCELLED }
     }
 }

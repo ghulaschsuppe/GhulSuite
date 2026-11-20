@@ -45,7 +45,7 @@ pub struct AttachmentInfo {
 #[derive(uniffi::Record, Clone, Debug, PartialEq)]
 pub struct EntryExtras {
     pub favorite: bool,
-    /// Unix milliseconds, 0 if unknown (entries from older versions).
+    /// Unix milliseconds, 0 if unknown.
     pub created: i64,
     /// Newest first.
     pub history: Vec<PasswordHistoryItem>,
@@ -179,7 +179,7 @@ impl GhulSuite {
     /// Favourite flag, creation time, password history and attachments of an entry.
     pub fn entry_extras(&self, vault_id: String, id: Vec<u8>) -> Result<EntryExtras> {
         self.with_open(|o| {
-            let (_, c) = o.vault_mut(&vault_id)?;
+            let (_, c) = o.entry_vault_mut(&vault_id)?;
             let e = find_entry(&mut c.payload.entries, &id)?;
             let created = match e.extra.get(CREATED) {
                 Some(Value::Integer(i)) => i64::try_from(*i).unwrap_or(0),
@@ -192,7 +192,7 @@ impl GhulSuite {
     /// Marks an entry (GhulPass or GhulAuth) as favourite.
     pub fn set_entry_favorite(&self, vault_id: String, id: Vec<u8>, favorite: bool) -> Result<()> {
         self.with_open(|o| {
-            let (_, c) = o.vault_mut(&vault_id)?;
+            let (_, c) = o.entry_vault_mut(&vault_id)?;
             let e = find_entry(&mut c.payload.entries, &id)?;
             if favorite {
                 e.extra.insert(FAVORITE.into(), Value::Bool(true));
@@ -213,7 +213,9 @@ impl GhulSuite {
         }
         let name = clean_name(&name)?;
         self.with_open(|o| {
-            let (_, c) = o.vault_mut(&vault_id)?;
+            // The suite file must still fit (see archive::OTHER_LIMIT).
+            crate::app::archive::check_other_room(o, data.len() as u64 + name.len() as u64)?;
+            let (_, c) = o.entry_vault_mut(&vault_id)?;
             let e = find_entry(&mut c.payload.entries, &id)?;
             if attachments(e).len() >= MAX_ATTACHMENTS {
                 return Err(GhulError::InvalidInput { msg: "too many attachments".into() });
@@ -237,7 +239,7 @@ impl GhulSuite {
 
     pub fn entry_attachment(&self, vault_id: String, id: Vec<u8>, name: String) -> Result<Vec<u8>> {
         self.with_open(|o| {
-            let (_, c) = o.vault_mut(&vault_id)?;
+            let (_, c) = o.entry_vault_mut(&vault_id)?;
             let e = find_entry(&mut c.payload.entries, &id)?;
             match e.fields.get(&format!("{ATTACHMENT_PREFIX}{name}")) {
                 Some(Field::Bytes(b)) => Ok(b.clone()),
@@ -248,7 +250,7 @@ impl GhulSuite {
 
     pub fn remove_entry_attachment(&self, vault_id: String, id: Vec<u8>, name: String) -> Result<()> {
         self.with_open(|o| {
-            let (_, c) = o.vault_mut(&vault_id)?;
+            let (_, c) = o.entry_vault_mut(&vault_id)?;
             let e = find_entry(&mut c.payload.entries, &id)?;
             e.fields.remove(&format!("{ATTACHMENT_PREFIX}{name}")).ok_or(GhulError::NotFound)?;
             e.revision += 1;
@@ -260,8 +262,11 @@ impl GhulSuite {
     /// Copies an entry within its vault; `title_suffix` is appended to the title (e.g. " (Kopie)").
     pub fn duplicate_entry(&self, vault_id: String, id: Vec<u8>, title_suffix: String) -> Result<Vec<u8>> {
         self.with_open(|o| {
-            let (_, c) = o.vault_mut(&vault_id)?;
+            let (_, c) = o.entry_vault_mut(&vault_id)?;
             let src = find_entry(&mut c.payload.entries, &id)?.clone();
+            let bytes: usize = src.fields.values().map(|f| if let Field::Bytes(b) = f { b.len() } else { 0 }).sum();
+            crate::app::archive::check_other_room(o, bytes as u64)?;
+            let (_, c) = o.entry_vault_mut(&vault_id)?;
             let now = now_ms();
             let mut e = Entry::new(new_id(), &src.entry_type, now);
             e.fields = src.fields;
@@ -283,10 +288,10 @@ impl GhulSuite {
             return Ok(id);
         }
         self.with_open(|o| {
-            let (src_ref, c) = o.vault_mut(&vault_id)?;
+            let (src_ref, c) = o.entry_vault_mut(&vault_id)?;
             let kind = src_ref.kind.clone();
             let src = find_entry(&mut c.payload.entries, &id)?.clone();
-            let (dst_ref, dst) = o.vault_mut(&target_vault_id)?;
+            let (dst_ref, dst) = o.entry_vault_mut(&target_vault_id)?;
             if dst_ref.kind != kind {
                 return Err(GhulError::InvalidInput { msg: "target vault is of another kind".into() });
             }
@@ -300,7 +305,7 @@ impl GhulSuite {
             dst.payload.entries.push(e);
             self.save_vault(o, &target_vault_id)?;
             // Only after the copy is safely stored: delete the original (tombstone).
-            let (_, c) = o.vault_mut(&vault_id)?;
+            let (_, c) = o.entry_vault_mut(&vault_id)?;
             let old = find_entry(&mut c.payload.entries, &id)?;
             old.make_tombstone(now);
             self.save_vault(o, &vault_id)?;

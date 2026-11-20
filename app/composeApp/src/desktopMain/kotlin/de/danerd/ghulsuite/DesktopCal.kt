@@ -64,8 +64,8 @@ class DesktopCalBackend(private val window: () -> java.awt.Window?, suite: () ->
     }
 
     /**
-     * A short Windows notification (a background job is done, [text] without names of files or
-     * mails); a click brings GhulSuite to the front.
+     * A short Windows notification (a background job is done, [text] without names of files); a
+     * click brings GhulSuite to the front.
      */
     fun note(title: String, text: String) {
         val icon = trayIcon() ?: return

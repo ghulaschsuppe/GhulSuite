@@ -1864,7 +1864,11 @@ mod tests {
         e.location = "Praxis\\Müller".into();
         e.notes = "Zeile 1\nZeile 2".into();
         e.reminders = vec![15, 0];
-        e.links = vec![super::super::cal::CalLink { kind: "drive".into(), label: "x".into(), target: "y".into() }];
+        e.links = vec![super::super::cal::CalLink {
+            kind: "pass".into(),
+            label: "Linked entry".into(),
+            target: "vault|entry".into(),
+        }];
         let ics = ics_export_at(&[e], "Privat, Familie", NOW);
         assert!(ics.ends_with("END:VCALENDAR\r\n"));
         assert!(!ics.replace("\r\n", "").contains('\n'));
@@ -1888,7 +1892,7 @@ mod tests {
             assert!(l.iter().any(|x| x == want), "missing {want}\n{ics}");
         }
         assert!(!ics.contains("RRULE"));
-        assert!(!ics.contains("drive"));
+        assert!(!ics.contains("Linked entry"));
         assert_eq!(l.iter().filter(|x| *x == "BEGIN:VALARM").count(), 2);
     }
 

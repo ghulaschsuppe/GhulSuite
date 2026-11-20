@@ -23,11 +23,10 @@ import androidx.compose.ui.platform.LocalDensity
 import de.danerd.ghulsuite.ui.AppState
 import de.danerd.ghulsuite.ui.CalView
 import de.danerd.ghulsuite.ui.GhulSuiteApp
-import de.danerd.ghulsuite.ui.MailDraft
 import de.danerd.ghulsuite.ui.Screen
 import de.danerd.ghulsuite.ui.SetPage
 import de.danerd.ghulsuite.ui.Tab
-import de.danerd.ghulsuite.ui.uploadToDrive
+import de.danerd.ghulsuite.ui.JobKind
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import org.jetbrains.skia.EncodedImageFormat
@@ -78,6 +77,23 @@ class LayoutCheckTest {
     private fun state(setup: AppState.() -> Unit = {}): AppState =
         AppState(ScreenshotTest.Fake(exists = true, unlocked = true), scope()).apply(setup)
 
+    private val scanEngine = FakeScanEngine()
+
+    /** The sheet in the photos of [FakeScanEngine] (parts of the upright photo). */
+    private val SAMPLE_CORNERS = de.danerd.ghulsuite.scan.Quad(
+        de.danerd.ghulsuite.scan.Pt(160f / 900, 120f / 1200), de.danerd.ghulsuite.scan.Pt(760f / 900, 180f / 1200),
+        de.danerd.ghulsuite.scan.Pt(720f / 900, 1080f / 1200), de.danerd.ghulsuite.scan.Pt(110f / 900, 1020f / 1200),
+    )
+
+    // Made once (drawing the pages takes a moment): the scan screens of every phone show the same.
+    private val samplePhoto by lazy { scanEngine.photo() }
+    private val samplePreview by lazy { scanEngine.preview(samplePhoto, 1600) }
+    private val samplePages by lazy {
+        listOf(0, 1).map { turns ->
+            de.danerd.ghulsuite.ui.ScanPage(samplePhoto, SAMPLE_CORNERS, turns, turns == 1, scanEngine.render(samplePhoto, SAMPLE_CORNERS, turns, turns == 1))
+        }
+    }
+
     /** The screens, each made fresh (name to state). */
     private val screens: List<Pair<String, () -> AppState>> = buildList {
         add("einrichtung" to { AppState(ScreenshotTest.Fake(exists = false, unlocked = false), scope()) })
@@ -87,36 +103,55 @@ class LayoutCheckTest {
         add("pass-bearbeiten" to { state { push(Screen.EntryEdit("p1", "1", "login")) } })
         add("auth" to { state { tab = Tab.AUTH } })
         add("auth-hinzufuegen" to { state { push(Screen.AddTotp("t1")) } })
-        add("drive" to { state { tab = Tab.DRIVE } })
-        add("drive-ohne-server" to {
-            AppState(ScreenshotTest.Fake(true, true).apply { net = FakeNet(configured = false) }, scope()).apply { tab = Tab.DRIVE }
-        })
-        add("mail" to { state { tab = Tab.MAIL } })
-        add("mail-lesen" to { state { push(Screen.MailRead("m1", "INBOX", 2)) } })
-        add("mail-archiv" to {
-            state { (backend.net as FakeNet).archiveExists = true; archivePath = listOf("y2025" to "2025"); push(Screen.MailArchive("m1")) }
-        })
-        add("mail-archiv-lesen" to {
-            state { push(Screen.MailArchiveRead("m1", "e1", "2025-10-30 Finanzamt - Steuerbescheid 2024 (1a2b3c4d5e6f7a8b).eml")) }
-        })
+        // The strip of a running background job under the header, with its progress and "Cancel".
         add("hintergrund-auftrag" to {
             state {
-                tab = Tab.MAIL
-                (backend.net as FakeNet).driveUploadMs = 60_000
                 jobs.revealMillis = 0
-                uploadToDrive(null, listOf(fakeSource("Steuerunterlagen 2025 vollständig.pdf", 2_400_000), fakeSource("Urlaub.jpg")))
+                jobs.start(JobKind.UPLOAD, title = { "Steuerunterlagen 2025 vollständig.pdf" }) { j ->
+                    j.total = 2
+                    j.item = "Steuerunterlagen 2025 vollständig.pdf"
+                    j.bytesTotal = 2_400_000
+                    j.bytes = 800_000
+                    kotlinx.coroutines.awaitCancellation()
+                }
             }
         })
-        add("mail-schreiben" to { state { push(Screen.MailCompose(MailDraft("m1", to = "erika@example.org", subject = "AW: Treffen am Freitag"))) } })
+        add("dokumente" to { state { tab = Tab.DOCS } })
+        add("dokument-bild" to { state { tab = Tab.DOCS; push(Screen.DocView("d1", "a2")) } })
+        add("dokument-text" to { state { tab = Tab.DOCS; push(Screen.DocView("d1", "a3")) } })
+        add("dokument-ohne-vorschau" to { state { tab = Tab.DOCS; push(Screen.DocView("d1", "a5")) } })
         add("kalender-monat" to { state { tab = Tab.CAL } })
         add("kalender-woche" to { state { tab = Tab.CAL; calView = CalView.WEEK } })
         add("kalender-tag" to { state { tab = Tab.CAL; calView = CalView.DAY } })
         add("kalender-liste" to { state { tab = Tab.CAL; calView = CalView.LIST } })
         add("optionen" to { state { tab = Tab.SETTINGS } })
         for (p in SetPage.entries) add("optionen-${p.name.lowercase()}" to { state { push(Screen.SettingsPage(p)) } })
-        add("server-hinzufuegen" to { state { push(Screen.AddServer) } })
-        add("server-modul" to { state { push(Screen.ModuleInstall("s2")) } })
-        add("freigaben" to { state { push(Screen.Shares) } })
+        // Scanning a document (Android): camera, crop, review, with the drawn photos of FakeScanEngine.
+        add("scan-kamera" to { state { tab = Tab.DOCS; push(Screen.DocScan("d1", null)) } })
+        add("scan-zuschneiden" to {
+            state {
+                tab = Tab.DOCS
+                scanSession = de.danerd.ghulsuite.ui.ScanSession("d1", null, scope).apply {
+                    shot = samplePhoto
+                    preview = samplePreview
+                    corners = SAMPLE_CORNERS
+                    found = true
+                    step = de.danerd.ghulsuite.ui.ScanStep.CROP
+                }
+                push(Screen.DocScan("d1", null))
+            }
+        })
+        add("scan-pruefen" to {
+            state {
+                tab = Tab.DOCS
+                scanSession = de.danerd.ghulsuite.ui.ScanSession("d1", "f1", scope).apply {
+                    pages += samplePages
+                    name = "Scan 2026-11-19 14.05.pdf"
+                    step = de.danerd.ghulsuite.ui.ScanStep.REVIEW
+                }
+                push(Screen.DocScan("d1", "f1"))
+            }
+        })
         add("import" to { state { push(Screen.Import) } })
         add("export" to { state { push(Screen.Export) } })
     }
@@ -142,7 +177,7 @@ class LayoutCheckTest {
                 // moved on by hand instead of waiting for idle.
                 mainClock.autoAdvance = false
                 setContent {
-                    CompositionLocalProvider(LocalDensity provides Density(2f, phone.fontScale)) {
+                    CompositionLocalProvider(LocalDensity provides Density(2f, phone.fontScale), de.danerd.ghulsuite.ui.LocalScanEngine provides scanEngine) {
                         // A new state (and composition) for each screen.
                         key(current) { GhulSuiteApp(screens[current].second()) }
                     }

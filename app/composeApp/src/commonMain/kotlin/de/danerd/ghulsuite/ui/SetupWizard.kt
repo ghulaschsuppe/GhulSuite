@@ -18,18 +18,13 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.Mail
 import androidx.compose.material.icons.filled.Pin
-import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Smartphone
-import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -61,9 +56,9 @@ import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 
-/** The eight steps of a new setup, in this order (sync comes before the areas so Drive can use it). */
+/** The seven steps of a new setup, in this order. */
 private val WZ_STEPS = listOf(
-    Res.string.wz_step_password, Res.string.wz_step_factor, Res.string.wz_step_storage, Res.string.wz_step_sync,
+    Res.string.wz_step_password, Res.string.wz_step_factor, Res.string.wz_step_storage,
     Res.string.wz_step_areas, Res.string.wz_step_lock, Res.string.wz_step_unlock, Res.string.wz_step_code,
 )
 
@@ -80,15 +75,12 @@ class AreaInfo(
 val AREAS = listOf(
     AreaInfo(VaultKindUi.PASS, Res.string.tab_pass, Res.string.area_pass_sub, Tab.PASS, ".ghlpss"),
     AreaInfo(VaultKindUi.TOTP, Res.string.tab_auth, Res.string.area_auth_sub, Tab.AUTH, ".ghltotp"),
-    AreaInfo(VaultKindUi.DRIVE, Res.string.tab_drive, Res.string.area_drive_sub, Tab.DRIVE, ".ghldrv"),
-    AreaInfo(VaultKindUi.MAIL, Res.string.tab_mail, Res.string.area_mail_sub, Tab.MAIL, ".ghlmail"),
+    AreaInfo(VaultKindUi.DOCS, Res.string.tab_docs, Res.string.area_docs_sub, Tab.DOCS, ".ghldoc"),
     AreaInfo(VaultKindUi.CAL, Res.string.tab_cal, Res.string.area_cal_sub, Tab.CAL, ".ghlcal"),
 )
 
-/** Areas with a name the user picks (Drive and Mail have one file without a name of its own). */
-val NAMED_AREAS = setOf(VaultKindUi.PASS, VaultKindUi.TOTP, VaultKindUi.CAL)
-
-private enum class DriveChoice { OWN, LATER }
+/** Areas with a name the user picks (each vault of them has a name of its own). */
+val NAMED_AREAS = setOf(VaultKindUi.PASS, VaultKindUi.TOTP, VaultKindUi.DOCS, VaultKindUi.CAL)
 
 private enum class QuickChoice { NONE, BIO, PIN }
 
@@ -99,21 +91,19 @@ fun showModule(state: AppState, kind: VaultKindUi, on: Boolean) {
     when (kind) {
         VaultKindUi.PASS -> s.moduleGhulPass = on
         VaultKindUi.TOTP -> s.moduleGhulAuth = on
-        VaultKindUi.DRIVE -> s.moduleGhulDrive = on
-        VaultKindUi.MAIL -> s.moduleGhulMail = on
+        VaultKindUi.DOCS -> s.moduleGhulDocs = on
         VaultKindUi.CAL -> s.moduleGhulCal = on
     }
 }
 
 /**
- * New setup in eight steps (#24). The suite is created when leaving step 3 (storage), the steps
- * after it need an open suite (sync server check, area files). Should the app stop later, the suite
+ * New setup in seven steps (#24). The suite is created when leaving step 3 (storage), the steps
+ * after it need an open suite (area files). Should the app stop later, the suite
  * exists with an unconfirmed recovery code, and GhulSuite asks for a new code after unlocking.
  */
 @Composable
 fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
     val backend = state.backend
-    val net = backend.net
     val settings = backend.settings
     var step by remember { mutableStateOf(1) }
     var created by remember { mutableStateOf(false) }
@@ -132,23 +122,12 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
     var keyfileSaved by remember { mutableStateOf(false) }
     var kdf by remember { mutableStateOf<KdfChoice?>(null) }
     var code by remember { mutableStateOf("") }
-    // 3: storage
-    var inFolder by remember { mutableStateOf(false) }
-    var storageName by remember { mutableStateOf(backend.storageName()) }
-    // 4: sync
-    var syncOn by remember { mutableStateOf(false) }
-    val syncForm = rememberServerForm()
-    var syncId by remember { mutableStateOf<String?>(null) }
-    // 5: areas
-    val areaOn = remember { mutableStateMapOf(VaultKindUi.PASS to true, VaultKindUi.TOTP to true, VaultKindUi.DRIVE to false, VaultKindUi.MAIL to false, VaultKindUi.CAL to true) }
+    // 4: areas
+    val areaOn = remember { mutableStateMapOf(VaultKindUi.PASS to true, VaultKindUi.TOTP to true, VaultKindUi.DOCS to true, VaultKindUi.CAL to true) }
     val areaName = remember { mutableStateMapOf<VaultKindUi, String>() }
     /** Area files this wizard created (switched off again on a second pass: removed). */
     val made = remember { mutableStateMapOf<VaultKindUi, Boolean>() }
-    var drive by remember { mutableStateOf(DriveChoice.LATER) }
-    val driveForm = rememberServerForm()
-    var mailSheet by remember { mutableStateOf(false) }
-    var mailAdded by remember { mutableStateOf(false) }
-    // 7: unlock
+    // 6: unlock
     var quick by remember { mutableStateOf(if (backend.biometricAvailable()) QuickChoice.BIO else QuickChoice.NONE) }
     var quickPin by remember { mutableStateOf("") }
 
@@ -157,19 +136,13 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
         keyLabel = getString(Res.string.setup_default_key_label)
         areaName[VaultKindUi.PASS] = getString(Res.string.area_pass_default)
         areaName[VaultKindUi.TOTP] = getString(Res.string.area_auth_default)
+        areaName[VaultKindUi.DOCS] = getString(Res.string.area_docs_default)
         areaName[VaultKindUi.CAL] = getString(Res.string.area_cal_default)
     }
     val saveKeyfile = rememberSaveFile { ok -> keyfileSaved = ok; if (ok) error = null }
     val openKeyfile = rememberOpenFile { file -> keyfile = file.bytes; keyfileSaved = true; error = null }
-    val pickFolder = rememberPickFolder { folder ->
-        backend.useStorage(folder)
-        storageName = backend.storageName()
-        inFolder = true
-    }
     val notSaved = stringResource(Res.string.keyfile_not_saved)
     val suiteThere = stringResource(Res.string.storage_suite_exists)
-    val missingFmt = stringResource(Res.string.srvf_missing)
-    val driveMissingFmt = stringResource(Res.string.wz_drive_missing)
     val oneArea = stringResource(Res.string.wz_one_area)
     val pinRule = stringResource(Res.string.wz_pin_rule)
     val keyPinMissing = stringResource(Res.string.wz_key_pin_missing)
@@ -199,7 +172,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
         }
     }
 
-    /** Creates the chosen area files (and removes those switched off again), then step 6. */
+    /** Creates the chosen area files (and removes those switched off again), then step 5. */
     fun applyAreas() {
         state.run(onError = { error = it }, block = {
             for (a in AREAS) {
@@ -215,7 +188,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
             }
         }) {
             for (a in AREAS) showModule(state, a.kind, areaOn[a.kind] == true)
-            step = 6
+            step = 5
         }
     }
 
@@ -231,35 +204,18 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                 if (keyPinOk(state, pin)) step = 3 else error = keyPinMissing
             } else if (keyfile != null && keyfileSaved) step = 3 else error = notSaved
             3 -> create()
-            4 -> if (!syncOn) step = 5 else {
-                val id = syncId
-                val missing = syncForm.missing()
-                if (id == null || missing != null) {
-                    scope.launch { error = missingFmt.replace("%1\$s", getString(missing ?: Res.string.srvf_step_test)) }
-                } else {
-                    state.run(onError = { error = it }, block = { net.setSyncServer(id) }) { step = 5 }
-                }
-            }
-            5 -> {
-                val driveMissing = driveForm.missing()
-                when {
-                    AREAS.none { areaOn[it.kind] == true } -> error = oneArea
-                    areaOn[VaultKindUi.DRIVE] == true && drive == DriveChoice.OWN && driveMissing != null ->
-                        scope.launch { error = driveMissingFmt.replace("%1\$s", getString(driveMissing)) }
-                    else -> applyAreas()
-                }
-            }
-            6 -> step = 7
-            7 -> {
+            4 -> if (AREAS.none { areaOn[it.kind] == true }) error = oneArea else applyAreas()
+            5 -> step = 6
+            6 -> {
                 settings.quickUnlockHours = settings.quickUnlockHours.let { if (it in listOf(4, 24, 72, 168, 0)) it else 24 }
                 when (quick) {
                     QuickChoice.NONE -> {
                         backend.disableQuickUnlock()
-                        step = 8
+                        step = 7
                     }
-                    QuickChoice.BIO -> state.run(onError = { error = it }, block = { backend.enableBiometricUnlock() }) { step = 8 }
+                    QuickChoice.BIO -> state.run(onError = { error = it }, block = { backend.enableBiometricUnlock() }) { step = 7 }
                     QuickChoice.PIN -> if (quickPin.length !in 6..12 || !quickPin.all(Char::isDigit)) error = pinRule
-                    else state.run(onError = { error = it }, block = { backend.enablePinUnlock(quickPin) }) { quickPin = ""; step = 8 }
+                    else state.run(onError = { error = it }, block = { backend.enablePinUnlock(quickPin) }) { quickPin = ""; step = 7 }
                 }
             }
         }
@@ -287,7 +243,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
         }
     }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        for (i in 1..8) Box(Modifier.weight(1f).height(4.dp).clip(RoundedCornerShape(2.dp)).background(if (i <= step) g.accent else g.line))
+        for (i in 1..7) Box(Modifier.weight(1f).height(4.dp).clip(RoundedCornerShape(2.dp)).background(if (i <= step) g.accent else g.line))
     }
     Text(stringResource(WZ_STEPS[step - 1]), fontSize = 22.sp, fontWeight = FontWeight.Bold)
     BusyBanner(state)
@@ -346,17 +302,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
         }
 
         3 -> {
-            ListCard {
-                PickRow(!inFolder, Icons.Filled.Smartphone, 5, stringResource(Res.string.storage_app), stringResource(Res.string.wz_storage_app_sub), onClick = {
-                    backend.useStorage(null); storageName = backend.storageName(); inFolder = false
-                })
-                if (filePickersAvailable) {
-                    PickRow(inFolder, Icons.Filled.Folder, 9, stringResource(Res.string.storage_folder), stringResource(Res.string.wz_storage_folder_sub), divider = true, onClick = pickFolder) {
-                        Hint(stringResource(Res.string.storage_current, storageLabel(storageName)))
-                    }
-                }
-            }
-            HintText(stringResource(Res.string.wz_storage_hint))
+            HintText(stringResource(Res.string.wz_create_hint))
             if (backend.exists()) {
                 Text(suiteThere, color = warnColor())
                 TextButton(onClick = { state.showStart = false; state.vaultExists = true }) { Text(stringResource(Res.string.storage_open_existing)) }
@@ -366,21 +312,11 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
         }
 
         4 -> {
-            ListCard {
-                PickRow(!syncOn, Icons.Filled.Smartphone, 5, stringResource(Res.string.wz_later), stringResource(Res.string.wz_sync_later_sub), onClick = { syncOn = false })
-                PickRow(syncOn, Icons.Filled.Dns, 1, stringResource(Res.string.wz_own_server), stringResource(Res.string.wz_sync_own_sub), divider = true, onClick = { syncOn = true }) {
-                    ServerSetup(state, syncForm, { input, fp -> net.saveServer(input, fp) }) { syncId = it }
-                }
-            }
-            HintText(stringResource(Res.string.wz_sync_hint))
-        }
-
-        5 -> {
             for (a in AREAS) {
                 val on = areaOn[a.kind] == true
                 ListCard {
                     Row(
-                        Modifier.fillMaxWidth().clickable { areaOn[a.kind] = !on; if (a.kind == VaultKindUi.DRIVE && !on) drive = DriveChoice.LATER }
+                        Modifier.fillMaxWidth().clickable { areaOn[a.kind] = !on }
                             .heightIn(min = 60.dp).padding(horizontal = 16.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
@@ -389,41 +325,14 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                             Text(stringResource(a.title), fontWeight = FontWeight.W500, fontSize = 15.sp, color = if (on) g.fg else g.muted)
                             Text(stringResource(a.sub), fontSize = 14.sp, color = g.muted)
                         }
-                        Switch(on, { areaOn[a.kind] = it; if (a.kind == VaultKindUi.DRIVE && it) drive = DriveChoice.LATER })
+                        Switch(on, { areaOn[a.kind] = it })
                     }
                     if (on) {
                         Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            when (a.kind) {
-                                VaultKindUi.PASS, VaultKindUi.TOTP, VaultKindUi.CAL -> OutlinedTextField(
-                                    areaName[a.kind].orEmpty(), { areaName[a.kind] = it }, Modifier.fillMaxWidth(),
-                                    label = { Text(stringResource(Res.string.l_vault_name)) }, singleLine = true, enabled = made[a.kind] != true,
-                                )
-                                VaultKindUi.DRIVE -> {
-                                    Hint(stringResource(Res.string.wz_drive_where))
-                                    SheetList {
-                                        PickRow(drive == DriveChoice.OWN, Icons.Filled.Dns, 1, stringResource(Res.string.wz_own_server), stringResource(Res.string.drive_own_sub),
-                                            onClick = { drive = DriveChoice.OWN }) {
-                                            ServerSetup(state, driveForm, { input, fp -> net.driveSaveServer(input, fp) }) { made[VaultKindUi.DRIVE] = true }
-                                        }
-                                        PickRow(drive == DriveChoice.LATER, Icons.Filled.Schedule, 5, stringResource(Res.string.wz_later), stringResource(Res.string.wz_drive_later_sub),
-                                            divider = true, onClick = { drive = DriveChoice.LATER })
-                                    }
-                                }
-                                VaultKindUi.MAIL -> {
-                                    // The first account right here, in the same sheet as later in GhulMail.
-                                    SheetList {
-                                        ListRow(
-                                            stringResource(if (mailAdded) Res.string.wz_mail_added else Res.string.mail_account_new),
-                                            stringResource(if (mailAdded) Res.string.wz_mail_more else Res.string.mail_add_sub),
-                                            leading = { IconTile(if (mailAdded) Icons.Filled.Check else Icons.Filled.Add, paletteColor(4)) },
-                                        ) { mailSheet = true }
-                                    }
-                                    if (!mailAdded) Hint(stringResource(Res.string.wz_mail_later))
-                                    if (mailSheet) {
-                                        MailAccountSheet(state, null, onSaved = { made[VaultKindUi.MAIL] = true; mailAdded = true }) { mailSheet = false }
-                                    }
-                                }
-                            }
+                            OutlinedTextField(
+                                areaName[a.kind].orEmpty(), { areaName[a.kind] = it }, Modifier.fillMaxWidth(),
+                                label = { Text(stringResource(Res.string.l_vault_name)) }, singleLine = true, enabled = made[a.kind] != true,
+                            )
                         }
                     }
                 }
@@ -431,7 +340,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
             HintText(stringResource(Res.string.wz_areas_hint))
         }
 
-        6 -> {
+        5 -> {
             SectionCard(stringResource(Res.string.set_auto_lock)) {
                 Hint(stringResource(Res.string.wz_lock_sub))
                 FilterChipRow(AUTO_LOCK_OPTIONS.map { it.first.toString() to stringResource(it.second) }, settings.autoLockSeconds.toString(),
@@ -449,7 +358,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
             HintText(stringResource(Res.string.wz_lock_hint))
         }
 
-        7 -> {
+        6 -> {
             HintText(stringResource(Res.string.wz_quick_explain))
             ListCard {
                 PickRow(quick == QuickChoice.NONE, Icons.Filled.Usb, 0, stringResource(Res.string.wz_quick_none), stringResource(Res.string.wz_quick_none_sub), onClick = { quick = QuickChoice.NONE })
@@ -475,11 +384,11 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
             HintText(stringResource(Res.string.set_quick_always_full))
         }
 
-        8 -> RecoveryCodeSteps(state, code) { finishWizard(state) }
+        7 -> RecoveryCodeSteps(state, code) { finishWizard(state) }
     }
 
     ErrorText(error)
-    if (step < 8) {
+    if (step < 7) {
         ButtonRow {
             if (step > 1 && !(created && step <= 4)) OutlinedButton(onClick = { back() }, modifier = Modifier.weight(1f)) { Text(stringResource(Res.string.a_back)) }
             Button(
@@ -490,7 +399,6 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                 Text(stringResource(when {
                     step == 3 && useKey -> Res.string.a_register_key
                     step == 3 -> Res.string.a_setup
-                    step == 4 && !syncOn -> Res.string.wz_later
                     else -> Res.string.a_next
                 }))
             }
@@ -502,6 +410,8 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
 private fun finishWizard(state: AppState) {
     // The suite was unlocked before its areas existed: start in the first area, not in Options.
     state.openFirstArea = true
+    // A vault file waiting for the suite before belongs to that one, not to this new suite.
+    state.pendingAdd = null
     state.showStart = false
     state.vaultExists = true
     state.refreshVaults()

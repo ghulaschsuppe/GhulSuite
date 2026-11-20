@@ -61,37 +61,30 @@ pub enum GhulError {
     /// The file was made by a newer GhulSuite (new file kind or format): update the app.
     #[error("please update GhulSuite to open this file")]
     UpdateRequired,
-    // --- servers and network
+    /// The file was made by an older development version of GhulSuite (an older file format,
+    /// before the first stable version): it is not read any more.
+    #[error("this file was made by an older development version of GhulSuite and is not supported any more")]
+    OldFormat,
+    /// A file opens with the password and the second factor, but its write seal is wrong: it was
+    /// made or changed by someone without the password (e.g. from an old copy and an old
+    /// recovery code). It is not used.
+    #[error("the file was changed without the password")]
+    Tampered,
+    /// A suite file with an older protection than this device saw (before a change of the
+    /// password, a key or the recovery code): it is not opened.
+    #[error("the file has an older protection")]
+    ProtectionOutdated,
+    #[error("this area has not been set up")]
+    NotConfigured,
+    /// GhulDocs holds as much as it may (all its vaults together, the trash included): nothing
+    /// was added.
+    #[error("GhulDocs is full ({used} of {limit} bytes used)")]
+    DocsLimit { used: u64, limit: u64 },
+    // --- network (update check)
     #[error("network error: {msg}")]
     Network { msg: String },
-    #[error("server key not confirmed yet: {fingerprint}")]
-    HostKeyUnknown { fingerprint: String },
-    #[error("the server key changed to {fingerprint}")]
-    HostKeyChanged { fingerprint: String },
     #[error("the server certificate is not trusted: {fingerprint}")]
     CertUntrusted { fingerprint: String },
-    #[error("the server rejected the login")]
-    ServerAuthFailed,
-    #[error("the password was changed on another device")]
-    PasswordChangedElsewhere,
-    /// A key was removed and the recovery code renewed on another device: one touch of a
-    /// remaining key (or the key file) takes the new protection over (`adopt_remote_protection`).
-    #[error("the protection was changed on another device")]
-    ProtectionChangedElsewhere,
-    /// B3: the Drive index on the server is older than the one this suite saw last (server
-    /// reset or an old copy put back). Nothing is written; `drive_accept_server_state` takes it.
-    #[error("the GhulDrive index on the server is older than the one seen last")]
-    DriveRolledBack,
-    /// B14: the link's server is no longer set up, its package could not be deleted: the link
-    /// keeps working until it expires.
-    #[error("the server of this link is no longer set up; the package could not be deleted")]
-    ShareNotDeleted,
-    /// L5: the web server delivers the server module as text instead of running PHP; its access
-    /// key would be readable. The app deleted the file again (if it uploaded it).
-    #[error("the web server does not run PHP: it delivers the module as text")]
-    PhpNotExecuted,
-    #[error("no server set up for this")]
-    NotConfigured,
     // --- import
     #[error("this export is encrypted; export it without encryption")]
     ImportEncrypted,
@@ -139,7 +132,9 @@ impl From<VaultError> for GhulError {
             VaultError::InvalidInput(msg) => GhulError::InvalidInput { msg },
             VaultError::LastSlot => GhulError::LastFactor,
             VaultError::NewerKind => GhulError::UpdateRequired,
+            VaultError::Tampered => GhulError::Tampered,
             VaultError::UnsupportedVersion(v) if v > crate::vault::format::FORMAT_VERSION => GhulError::UpdateRequired,
+            VaultError::UnsupportedVersion(_) => GhulError::OldFormat,
             other => GhulError::Corrupted { msg: other.to_string() },
         }
     }
@@ -149,9 +144,6 @@ impl From<crate::net::NetError> for GhulError {
     fn from(e: crate::net::NetError) -> Self {
         use crate::net::NetError as N;
         match e {
-            N::HostKeyUnknown(fingerprint) => GhulError::HostKeyUnknown { fingerprint },
-            N::HostKeyChanged(fingerprint) => GhulError::HostKeyChanged { fingerprint },
-            N::AuthFailed => GhulError::ServerAuthFailed,
             N::CertUntrusted(fingerprint) => GhulError::CertUntrusted { fingerprint },
             N::Timeout => GhulError::Network { msg: "timeout".into() },
             N::Connect(m) if host_not_found(&m) => GhulError::Network { msg: "server address not found".into() },

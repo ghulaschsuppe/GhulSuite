@@ -2,6 +2,11 @@
 
 **Stand:** 17.11.2026 · **Status:** beschlossen, Umsetzung in Paketen (Abschnitt 9)
 
+> **Hinweis (19.11.2026):** Die Teile zu Servern (SFTP, PHP-Modul), GhulDrive, Freigabelinks und zum
+> Schlüsselwechsel sind durch [`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md) überholt: GhulSuite ist seitdem eine reine
+> Offline-App mit GhulDocs statt GhulDrive und GhulMail. Die Suite-Datei und die einzelnen Tresore gelten weiter. Dieses
+> Dokument bleibt als Geschichte unverändert.
+
 Die Synchronisation zwischen mehreren Geräten wird vollständig entfernt. Sie war die Quelle der meisten
 Sicherheitsfunde der letzten Durchsichten (fremde Dateien übernehmen, Schutzstände zusammenführen, ersetzte Codes,
 gleichzeitige Änderungen, gefälschte Server-Dateien). An ihre Stelle tritt ein einfaches Modell:
@@ -107,7 +112,8 @@ Wieder auf dem Handy: öffnen.
 
 - **Auf dem Server, im Drive-Ordner:**
   - `index.ghldrv`: der eine Index (Ordner, Namen, Größen, Dateischlüssel, Blocklisten, Papierkorb, Versionen),
-    verschlüsselt mit dem Drive-Schlüssel und versiegelt (das Siegel braucht das Passwort);
+    verschlüsselt und authentisiert mit dem Drive-Schlüssel, an die Suite gebunden (ein eigenes Siegel mit dem
+    Passwort braucht er nicht: der Drive-Schlüssel steht nur im Drive-Tresor, gegen alte Kopien hilft 6.4);
   - `index.bak`: der vorige Stand (falls der Index beschädigt wird);
   - die **Blöcke**: Dateiinhalte, je Dateifassung mit eigenem, zufälligem Schlüssel; Blöcke werden nie überschrieben.
 - **In der Suite-Datei** (Drive-Tresor): Drive-Schlüssel, SSH-Schlüssel, Serveradresse, Host-Key und die höchste
@@ -119,7 +125,7 @@ Wieder auf dem Handy: öffnen.
 
 ### 6.3 Im Alltag
 
-- **Lesen:** Index laden, Siegel prüfen, entschlüsseln. Ist die Revision kleiner als die gemerkte, hat der Server
+- **Lesen:** Index laden, entschlüsseln und prüfen. Ist die Revision kleiner als die gemerkte, hat der Server
   einen alten Stand zurückgespielt: Die App warnt und schreibt nichts.
 - **Ändern** (Hochladen, Umbenennen, Verschieben, Löschen) unter einer Sperre:
   1. `index.lock` exklusiv anlegen (SFTP legt sie nur an, wenn es sie noch nicht gibt); eine Sperre, die älter als
@@ -140,12 +146,17 @@ Bei jeder Schutzänderung (neues Passwort, neuer Code, Key oder Schlüsseldatei 
 
 1. **Lokal vormerken:** Die Arbeitskopie bekommt einen neuen Drive-Schlüssel und einen neuen SSH-Schlüssel, zusätzlich
    zu den alten, mit dem Vermerk „Wechsel läuft“. Bricht etwas ab, setzt die App beim nächsten Start dort fort.
-2. **Index umschlüsseln** (unter der Sperre): mit dem alten Schlüssel lesen, mit dem neuen Schlüssel und neuem Siegel
-   schreiben, `index.bak` (alter Schlüssel) löschen. Ein Schreibvorgang; die Blöcke bleiben unverändert, denn ihre
-   Schlüssel stehen nur im Index.
+   **Erst speichern:** Die Schritte 2 und 3 laufen erst, wenn die Suite-Datei mit dem neuen Schutz gespeichert (oder
+   geöffnet) ist. Bis dahin ist die ältere Datei die einzige Kopie; GhulDrive liest und schreibt den Index mit dem
+   Schlüssel, den er hat, und der alte SSH-Schlüssel bleibt eingetragen. Geht das Gerät vorher verloren, öffnet die
+   ältere Datei GhulDrive und die Server weiter. Die App bittet nach der Schutzänderung und bei jedem Entsperren darum.
+2. **Index umschlüsseln** (unter der Sperre): mit dem alten Schlüssel lesen, mit dem neuen Schlüssel schreiben,
+   `index.bak` (alter Schlüssel) löschen. Ein Schreibvorgang; die Blöcke bleiben unverändert, denn ihre Schlüssel
+   stehen nur im Index. Ist der Index älter als gesehen, beschädigt oder fehlt er, wird nichts still übernommen: der
+   Nutzer entscheidet wie beim normalen Lesen (6.3).
 3. **SSH-Zugang tauschen:** neuen öffentlichen Schlüssel auf dem Server eintragen, damit anmelden und prüfen, dann den
-   alten entfernen.
-4. **Abschließen:** alte Schlüssel aus der Arbeitskopie entfernen; die App fordert auf, die Suite-Datei zu speichern.
+   alten entfernen und prüfen, dass er abgewiesen wird (je Anbieter, siehe unten).
+4. **Abschließen:** alte SSH- und Drive-Schlüssel aus der Arbeitskopie entfernen. Eine Sicherung des Servers von vor der Schutzänderung ist danach nicht mehr lesbar (6.5).
 
 Danach:
 - Eine **alte Datei** (z. B. auf einem verlorenen Stick) kann sich nicht mehr am Server anmelden und den Index nicht
@@ -155,10 +166,35 @@ Danach:
 - Regel: Nach einer Schutzänderung arbeitet nur das Gerät weiter, das sie gemacht hat; alle anderen öffnen zuerst die
   neue Datei.
 
+**Je Anbieter.** Wie Schritt 3 abläuft, hängt davon ab, wo der Anbieter die erlaubten Schlüssel hält. Die App erkennt
+das selbst, eine Einstellung braucht es nicht:
+
+- **Der Server liest `~/.ssh/authorized_keys`** (eigene Server, VPS, NAS, die meisten Webhoster mit SSH-Zugang und
+  Speicherboxen mit SFTP): Die App meldet sich mit dem alten Schlüssel an, hängt den neuen an die Datei an, meldet sich
+  mit dem neuen an, entfernt die Zeilen der alten Schlüssel (alle anderen Zeilen bleiben) und prüft zum Schluss, dass
+  der alte Schlüssel abgewiesen wird. Ohne Zutun des Nutzers.
+- **Der Anbieter verwaltet Schlüssel nur in seinem Webpanel** (die Datei wird angelegt, aber nicht gelesen, oder ist
+  nicht beschreibbar): Die Anmeldung mit dem neuen Schlüssel scheitert. Die App zeigt den neuen öffentlichen Schlüssel
+  und bittet, ihn im Webpanel einzutragen; „Prüfen“ meldet sich damit an. Danach bittet sie, den alten im Webpanel zu
+  entfernen; „Prüfen“ stellt sicher, dass er abgewiesen wird. Bis dahin meldet sich die App mit dem alten Schlüssel an,
+  der Server bleibt also nutzbar.
+- **Nur Passwort-Anmeldung, keine Schlüssel:** Solche Server nimmt die App nicht auf (6.1), es gibt nichts zu tauschen.
+
+Ist ein Server gerade nicht erreichbar, bleibt er auf „wartet“ und wird nach dem nächsten Entsperren wieder versucht.
+Nur eine abgewiesene Anmeldung zählt als „alter Schlüssel abgewiesen“; bricht die Verbindung ab (Zeitlimit,
+Verbindungssperren nach vielen Anmeldungen), wartet der Server. Neuere SSH-Server sperren eine Adresse nach
+abgewiesenen Anmeldungen kurz (bei OpenSSH ab 9.8 einige Sekunden); auch dann wartet der Server und wird beim nächsten
+Mal fertig. Nach dem Entfernen der alten Zeilen prüft die App, dass
+der neue Schlüssel weiter funktioniert, sonst schreibt sie die Datei zurück. Kommt kein Schlüssel mehr hinein (der
+alte wurde im Webpanel schon entfernt), bittet sie, den neuen dort einzutragen.
+Der Wechsel gilt erst als abgeschlossen, wenn alle Server und alle Drive-Speicherorte durch sind; erst dann werden die
+alten Schlüssel aus der Suite gelöscht.
+
 ### 6.5 Grenzen
 
 - Verliert der Server Daten (Hoster setzt zurück, Datenträger kaputt), merkt die App es (Revision, fehlende Blöcke),
-  retten kann sie es nicht. Dagegen hilft nur eine Sicherung beim Hoster.
+  retten kann sie es nicht. Dagegen hilft nur eine Sicherung beim Hoster, und zwar eine von nach der letzten
+  Schutzänderung: Ältere sind mit einem Drive-Schlüssel verschlüsselt, den die Suite nicht mehr hat.
 - Wer die aktuelle Datei mit Passwort und Key öffnen kann, hat Zugriff auf Drive. So ist es gedacht.
 - Unfertige Uploads werden auf dem Gerät mit einem eigenen Geräteschlüssel versiegelt.
 
@@ -190,7 +226,8 @@ Danach:
 | Hat Stick und einen alten Code | lesen, was im alten Stand galt | etwas unterschieben; den aktuellen Stand lesen; nach dem Schlüsselwechsel an den Server |
 | Hat Stick, alten Code und altes Passwort | einen alten Stand mit altem Schutz anbieten | ihn auf einem Gerät mit neuerem Stand öffnen lassen (Schutz-Epoche, Sperre); an den Server |
 | Hat eine alte Suite-Datei (vor einer Schutzänderung) | die damaligen Inhalte lesen | sich am Server anmelden; den aktuellen Drive-Index öffnen; neue Drive-Dateien lesen |
-| Betreibt den Server | Blöcke löschen, einen alten Index zurückspielen, Freigaben stören | Dateien lesen; einen Index fälschen (Siegel); einen alten Index unbemerkt unterschieben (Revision) |
+| Betreibt den Server | Blöcke löschen, einen alten Index zurückspielen, Freigaben stören | Dateien lesen; einen Index fälschen (authentisiert mit dem Drive-Schlüssel); einen alten Index unbemerkt unterschieben (Revision) |
+| Betreibt den Server und hat eine alte Kopie der Suite-Datei | einen Index unter dem alten Drive-Schlüssel ablegen | ihn unterschieben (nach dem Schlüsselwechsel kennt die Suite den alten Schlüssel nicht mehr; während des Wechsels nur nach Bestätigung einer eigenen Warnung) |
 
 ## 9. Umsetzung in Paketen (je ein Pull Request, Doku jeweils mit)
 

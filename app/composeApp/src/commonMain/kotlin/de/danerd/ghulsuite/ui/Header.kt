@@ -12,24 +12,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Inventory2
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Archive
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Dns
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Layers
-import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.Report
-import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -52,10 +37,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import de.danerd.ghulsuite.model.DriveStatusUi
-import de.danerd.ghulsuite.model.MailAccountUi
-import de.danerd.ghulsuite.model.MailFolderUi
-import de.danerd.ghulsuite.model.ServerUi
 import de.danerd.ghulsuite.model.VaultKindUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
@@ -66,20 +47,15 @@ import org.jetbrains.compose.resources.stringResource
 /** The line under the area title: what is shown right now, in the area's colour; tap to switch. */
 @Composable
 fun AreaContext(state: AppState) {
-    val net = state.backend.net
     var label by remember { mutableStateOf("") }
     val all = stringResource(Res.string.vault_all)
     val allAccounts = stringResource(Res.string.ctx_all_codes)
-    val notSet = stringResource(Res.string.ctx_not_set_up)
     val suite = stringResource(Res.string.set_my_suite)
-    val inbox = stringResource(Res.string.mail_inbox)
     val allVaults = stringResource(Res.string.vault_all_vaults)
-    val myFiles = stringResource(Res.string.drive_my_files)
-    val allInboxes = stringResource(Res.string.mail_all_inboxes)
     val allCalendars = stringResource(Res.string.cal_all_calendars)
     // Texts looked up later (after a count is known) use the language of the screen.
     val env = rememberResourceEnvironment()
-    LaunchedEffect(state.tab, state.revision, state.passVault, state.authVault, state.mailAccount, state.mailFolder, state.calendars, state.backend.settings.calHidden, state.hidden) {
+    LaunchedEffect(state.tab, state.revision, state.passVault, state.authVault, state.docsVault, state.calendars, state.backend.settings.calHidden, state.hidden) {
         label = when (state.tab) {
             Tab.PASS -> state.vaults.firstOrNull { it.id == state.passVault }?.name ?: allVaults
             Tab.AUTH -> {
@@ -88,21 +64,8 @@ fun AreaContext(state: AppState) {
                     .count { (state.authVault == null || it.vaultId == state.authVault) && hiddenKey("auth", it.vaultId, it.id) !in state.hidden }
                 (state.vaults.firstOrNull { it.id == state.authVault }?.name ?: allAccounts) + " · " + countText(env, Res.plurals.auth_count, n, n.toString())
             }
-            Tab.DRIVE -> {
-                // From the settings on this device only: driveStatus() reads Drive's index, after a
-                // restart from the server, and the line stayed empty that long (slow network).
-                // Drive's locations are not in the suite's list (only the sync servers are).
-                val srv = catching { net.driveLocations() }.getOrNull()?.firstOrNull { it.active }?.server
-                if (srv == null) notSet else "${srv.name} · $myFiles"
-            }
-            Tab.MAIL -> {
-                val acc = catching { net.mailAccounts() }.getOrDefault(emptyList()).firstOrNull { it.id == state.mailAccount }
-                when {
-                    state.mailAccount == ALL_INBOXES -> allInboxes
-                    acc == null -> notSet
-                    else -> "${acc.name} · " + if (state.mailFolder.equals("INBOX", true)) inbox else state.mailFolder
-                }
-            }
+            Tab.DOCS -> state.vaults.firstOrNull { it.id == state.docsVault }?.name
+                ?: state.vaultsOf(VaultKindUi.DOCS).singleOrNull()?.name ?: allVaults
             Tab.CAL -> {
                 val cals = state.calendars
                 val hidden = state.backend.settings.calHiddenSet()
@@ -137,14 +100,13 @@ private fun CtxRow(title: String, subtitle: String? = null, selected: Boolean = 
     )
 }
 
-/** Bottom sheet behind the context line: vault filter, storage, mailbox, the same pattern everywhere. */
+/** Bottom sheet behind the context line: vault filter or calendars, the same pattern everywhere. */
 @Composable
 fun AreaContextSheet(state: AppState) {
     val close = { state.contextSheet = false }
     when (state.tab) {
         Tab.PASS, Tab.AUTH -> VaultSheet(state, if (state.tab == Tab.PASS) VaultKindUi.PASS else VaultKindUi.TOTP, close)
-        Tab.DRIVE -> DriveSheet(state, close)
-        Tab.MAIL -> MailboxSheet(state, close)
+        Tab.DOCS -> VaultSheet(state, VaultKindUi.DOCS, close)
         Tab.CAL -> CalendarsSheet(state, close)
         Tab.SETTINGS -> close()
     }
@@ -152,169 +114,31 @@ fun AreaContextSheet(state: AppState) {
 
 @Composable
 private fun VaultSheet(state: AppState, kind: VaultKindUi, close: () -> Unit) {
-    val selected = if (kind == VaultKindUi.PASS) state.passVault else state.authVault
-    val pick = { id: String? -> if (kind == VaultKindUi.PASS) state.passVault = id else state.authVault = id; close() }
+    val selected = when (kind) {
+        VaultKindUi.PASS -> state.passVault
+        VaultKindUi.DOCS -> state.docsVault
+        else -> state.authVault
+    }
+    val pick = { id: String? ->
+        when (kind) {
+            VaultKindUi.PASS -> state.passVault = id
+            VaultKindUi.DOCS -> state.docsVault = id
+            else -> state.authVault = id
+        }
+        close()
+    }
     GhulSheet(close, stringResource(Res.string.ctx_choose_vault)) {
         SheetList {
             CtxRow(stringResource(Res.string.vault_all_vaults), selected = selected == null, leading = { IconTile(Icons.Filled.Layers, paletteColor(0)) }) { pick(null) }
             for (v in state.vaultsOf(kind)) {
                 CtxRow(v.name, pluralStringResource(Res.plurals.ctx_entries, v.entries, v.entries.toString()), selected = selected == v.id, divider = true, leading = { Avatar(v.name) }) { pick(v.id) }
             }
-            CtxRow(stringResource(Res.string.set_vaults), divider = true, leading = { IconTile(Icons.Filled.Tune, paletteColor(5)) }) {
-                close(); state.push(Screen.SettingsPage(SetPage.VAULTS))
+            // A vault open on its own: no vaults of a suite to manage.
+            if (state.single == null) {
+                CtxRow(stringResource(Res.string.set_vaults), divider = true, leading = { IconTile(Icons.Filled.Tune, paletteColor(5)) }) {
+                    close(); state.push(Screen.SettingsPage(SetPage.VAULTS))
+                }
             }
         }
     }
-}
-
-@Composable
-private fun DriveSheet(state: AppState, close: () -> Unit) {
-    val net = state.backend.net
-    var locations by remember { mutableStateOf<List<de.danerd.ghulsuite.model.DriveLocationUi>>(emptyList()) }
-    LaunchedEffect(Unit) { locations = catching { net.driveLocations() }.getOrNull().orEmpty() }
-    val switched = stringResource(Res.string.drive_switched)
-    GhulSheet(close, stringResource(Res.string.ctx_storage)) {
-        SheetList {
-            // Every storage location; tapping another one switches GhulDrive to it.
-            locations.forEachIndexed { i, l ->
-                val srv = l.server
-                CtxRow(srv.name, srv.location.ifBlank { srv.host } + "/drive", selected = l.active, divider = i > 0,
-                    leading = { IconTile(Icons.Filled.Dns, paletteColor(1)) }) {
-                    close()
-                    if (!l.active) {
-                        state.run(block = { net.driveSwitchLocation(srv.id) }) {
-                            state.message(switched.replace("%1\$s", srv.name))
-                            state.changed()
-                        }
-                    }
-                }
-            }
-            CtxRow(stringResource(Res.string.shares_title), stringResource(Res.string.ctx_shares_sub), divider = locations.isNotEmpty(), leading = { IconTile(Icons.Filled.Link, paletteColor(5)) }) {
-                close(); state.push(Screen.Shares)
-            }
-            // Adding, removing and the server modules: on the Drive page of Options.
-            CtxRow(stringResource(Res.string.drive_locations_manage), divider = true, leading = { IconTile(Icons.Filled.Tune, paletteColor(5)) }) {
-                close(); state.push(Screen.SettingsPage(SetPage.DRIVE))
-            }
-        }
-    }
-}
-
-@Composable
-private fun MailboxSheet(state: AppState, close: () -> Unit) {
-    val net = state.backend.net
-    var accounts by remember { mutableStateOf<List<MailAccountUi>>(emptyList()) }
-    var folders by remember { mutableStateOf<List<MailFolderUi>>(emptyList()) }
-    var archiveFolder by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(state.mailAccount) {
-        accounts = catching { net.mailAccounts() }.getOrDefault(emptyList())
-        folders = state.mailAccount?.let { catching { net.mailFolders(it) }.getOrDefault(emptyList()) } ?: emptyList()
-        archiveFolder = state.mailAccount?.takeIf { it != ALL_INBOXES }?.let { catching { net.archiveFolder(it) }.getOrNull() }
-    }
-    val t = g
-    GhulSheet(close, stringResource(Res.string.ctx_mailbox)) {
-        // Accounts and folders as pill rows (.mailbox): the chosen one in the accent colour, as every choice.
-        @Composable
-        fun Pill(on: Boolean, leading: @Composable () -> Unit, title: String, sub: String? = null, onClick: () -> Unit) {
-            Row(
-                Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(24.dp))
-                    .background(if (on) t.accentSoft else androidx.compose.ui.graphics.Color.Transparent)
-                    .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                leading()
-                Column(Modifier.weight(1f)) {
-                    Text(title, color = if (on) t.accent else t.fg, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal)
-                    if (sub != null) Text(sub, fontSize = 14.sp, color = t.muted)
-                }
-            }
-        }
-        var drafts by remember { mutableStateOf<List<de.danerd.ghulsuite.model.MailDraftUi>>(emptyList()) }
-        var scheduled by remember { mutableStateOf<List<de.danerd.ghulsuite.model.ScheduledMailUi>>(emptyList()) }
-        var showDrafts by remember { mutableStateOf(false) }
-        var showScheduled by remember { mutableStateOf(false) }
-        LaunchedEffect(Unit) {
-            drafts = catching { net.mailDrafts() }.getOrDefault(emptyList())
-            scheduled = catching { net.mailScheduled() }.getOrDefault(emptyList())
-        }
-        if (accounts.size > 1) {
-            Pill(state.mailAccount == ALL_INBOXES, { Icon(Icons.Filled.Inbox, null, Modifier.size(20.dp), tint = if (state.mailAccount == ALL_INBOXES) t.accent else t.fg) },
-                stringResource(Res.string.mail_all_inboxes)) {
-                state.mailAccount = ALL_INBOXES
-                state.mailFolder = "INBOX"
-                close()
-            }
-        }
-        for (a in accounts) {
-            Pill(a.id == state.mailAccount, { Avatar(a.name, size = 34.dp) }, a.name, a.email) {
-                state.mailAccount = a.id
-                state.mailFolder = "INBOX"
-            }
-        }
-        if (folders.isNotEmpty()) {
-            SectionLabel(stringResource(Res.string.ctx_folders), Modifier.padding(start = 10.dp, top = 4.dp))
-            for (f in folders) {
-                val on = f.name == state.mailFolder
-                Pill(on, { Icon(folderIcon(f.role), null, Modifier.size(20.dp), tint = if (on) t.accent else t.fg) }, folderLabelOf(f)) {
-                    state.mailFolder = f.name
-                    close()
-                }
-            }
-            // The copies in GhulDrive, once something was archived.
-            val archive = archiveFolder
-            if (archive != null) {
-                Pill(false, { Icon(Icons.Filled.Inventory2, null, Modifier.size(20.dp), tint = t.fg) }, stringResource(Res.string.mail_archive_entry)) {
-                    val account = state.mailAccount ?: return@Pill
-                    close()
-                    state.archivePath = emptyList()
-                    state.push(Screen.MailArchive(account))
-                }
-            }
-        }
-        Text("", modifier = Modifier.padding(top = 4.dp))
-        Pill(showDrafts, { Icon(Icons.Filled.Description, null, Modifier.size(20.dp), tint = t.fg) },
-            stringResource(Res.string.mail_drafts_local) + if (drafts.isNotEmpty()) " (${drafts.size})" else "") { showDrafts = !showDrafts }
-        if (showDrafts) {
-            if (drafts.isEmpty()) HintText(stringResource(Res.string.mail_drafts_none), Modifier.padding(start = 14.dp))
-            for (d in drafts) {
-                Pill(false, { Avatar(d.to.ifBlank { "?" }, size = 30.dp) }, d.subject.ifBlank { stringResource(Res.string.mail_no_subject) }, d.to.ifBlank { formatDateTime(d.updated) }) {
-                    close()
-                    state.push(Screen.MailCompose(MailDraft(d.accountId, d.to, d.cc, d.subject, d.text, d.inReplyTo, attachments = d.attachments, draftId = d.id, bcc = d.bcc)))
-                }
-            }
-        }
-        Pill(showScheduled, { Icon(Icons.Filled.Schedule, null, Modifier.size(20.dp), tint = t.fg) },
-            stringResource(Res.string.mail_scheduled) + if (scheduled.isNotEmpty()) " (${scheduled.size})" else "") { showScheduled = !showScheduled }
-        if (showScheduled) {
-            if (scheduled.isEmpty()) HintText(stringResource(Res.string.mail_scheduled_none), Modifier.padding(start = 14.dp))
-            for (m in scheduled) {
-                Row(Modifier.fillMaxWidth().padding(start = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(m.subject.ifBlank { stringResource(Res.string.mail_no_subject) }, fontWeight = FontWeight.W500, maxLines = 1)
-                        Text(formatDateTime(m.sendAt) + " · " + m.to.joinToString(", "), fontSize = 13.sp, color = t.muted, maxLines = 1)
-                    }
-                    BarIcon(Icons.Filled.Close, stringResource(Res.string.a_cancel)) {
-                        state.run(block = { net.mailCancelScheduled(m.id) }) { scheduled = scheduled - m }
-                    }
-                }
-            }
-        }
-        Pill(false, { Icon(Icons.Filled.Add, null, Modifier.size(20.dp), tint = t.fg) }, stringResource(Res.string.mail_account_new)) {
-            close(); state.mailAccountSheet = MailSheet(null)
-        }
-        Pill(false, { Icon(Icons.Filled.Tune, null, Modifier.size(20.dp), tint = t.fg) }, stringResource(Res.string.mail_settings_row)) {
-            close(); state.push(Screen.SettingsPage(SetPage.MAIL))
-        }
-    }
-}
-
-@Composable
-fun folderLabelOf(f: MailFolderUi): String = when (f.role) {
-    "inbox" -> stringResource(Res.string.mail_inbox)
-    "sent" -> stringResource(Res.string.mail_sent)
-    "drafts" -> stringResource(Res.string.mail_drafts)
-    "trash" -> stringResource(Res.string.mail_trash)
-    "junk" -> stringResource(Res.string.mail_junk)
-    "archive" -> stringResource(Res.string.mail_archive)
-    else -> f.name
 }

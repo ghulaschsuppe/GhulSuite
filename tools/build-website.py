@@ -6,7 +6,7 @@ Everything that changes is filled in here, so the site never fetches anything fr
 when it is visited:
   - texts in German and English (website/i18n/*.json, website/pages/<lang>/*.html),
   - the newest stable version and pre-release with date and file sizes (GitHub API),
-  - numbers from the project (test functions, attacks on the PHP module),
+  - numbers from the project (test functions in the core),
   - the legal notice: name, address, e-mail and hoster come from the environment
     (GitHub secrets IMPRESSUM_NAME, IMPRESSUM_ADRESSE, IMPRESSUM_EMAIL, IMPRESSUM_HOSTER),
     never from the repository.
@@ -40,11 +40,11 @@ PAGES = {
     "privacy_app": ("datenschutz-app.html", "en/privacy-app.html", "datenschutz-app|privacy-app", "privacy_app_title"),
 }
 IMAGES = [
-    "phone-pass-dark", "phone-mail", "phone-unlock", "phone-pass", "phone-auth-grid",
-    "phone-drive-grid", "phone-mail-read", "phone-cal-week", "phone-setup", "windows-dark",
+    "phone-pass-dark", "phone-docs", "phone-unlock", "phone-pass", "phone-auth-grid",
+    "phone-docs-pdf", "phone-scan", "phone-cal-week", "phone-setup", "windows-dark",
 ]
 IMPORTS = ["Proton Pass", "Bitwarden", "KeePass", "KeePassXC", "1Password", "LastPass", "Proton Authenticator",
-           "Aegis", "2FAS", "Google Authenticator", "otpauth://", "ICS", "IMAP"]
+           "Aegis", "2FAS", "Google Authenticator", "otpauth://", "ICS"]
 
 S = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"'
 ICONS = {
@@ -53,19 +53,15 @@ ICONS = {
     "check": f'<svg {S}><path d="M20 6L9 17l-5-5"/></svg>',
     "key": f'<svg {S}><circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.7 12.3L21 2M17 6l3 3M14 9l2 2"/></svg>',
     "clock": f'<svg {S}><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
-    "cloud": f'<svg {S}><path d="M7 18a5 5 0 0 1-.5-9.97A6 6 0 0 1 18 9a4.5 4.5 0 0 1-.5 9z"/></svg>',
-    "mail": f'<svg {S}><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>',
+    "doc": f'<svg {S}><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>',
     "cal": f'<svg {S}><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
     "phone": f'<svg {S}><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></svg>',
     "lock": f'<svg {S}><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
-    "server": f'<svg {S}><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>',
     "shield": f'<svg {S}><path d="M12 3l8 3v6c0 4.5-3.2 8.2-8 9-4.8-.8-8-4.5-8-9V6z"/></svg>',
     "code": f'<svg {S}><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></svg>',
     "zap": f'<svg {S}><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>',
     "eye": f'<svg {S}><path d="M3 3l18 18M10.6 5.1A10 10 0 0 1 22 12a17 17 0 0 1-3.2 4.2M6.6 6.6A17 17 0 0 0 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>',
     "refresh": f'<svg {S}><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16M3 12a9 9 0 0 1 15.5-6.2L21 8M21 3v5h-5M3 21v-5h5"/></svg>',
-    "terminal": f'<svg {S}><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M13 15h4"/></svg>',
-    "globe": f'<svg {S}><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
     "android": f'<svg {S}><path d="M5 10v7M19 10v7M7 9h10v9a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1zM8 21v-2M16 21v-2M7 9a5 5 0 0 1 10 0M9 5L7.5 3M15 5l1.5-2"/></svg>',
     "windows": f'<svg {S}><path d="M3 5.5l7.5-1v7H3zM12.5 4.2L21 3v8.5h-8.5zM3 13.5h7.5v6L3 18.5zM12.5 13.5H21V21l-8.5-1.2z"/></svg>',
     "usb": f'<svg {S}><rect x="7" y="9" width="10" height="13" rx="2"/><path d="M9 9V3h6v6M10.5 5.5h.01M13.5 5.5h.01"/></svg>',
@@ -124,16 +120,10 @@ def releases():
 
 
 def project_numbers():
-    tests, attacks = 272, 347
+    """Number of test functions in the core, from the test protocol."""
     proto = (ROOT / "docs/TESTPROTOKOLL.md").read_text(encoding="utf-8")
     m = re.search(r"Testfunktionen im Kern \| (\d+)", proto)
-    if m:
-        tests = int(m.group(1))
-    audit = (ROOT / "docs/AUDIT.md").read_text(encoding="utf-8")
-    m = re.search(r"(\d+) Angriffe auf das\s+PHP-Modul", audit)
-    if m:
-        attacks = int(m.group(1))
-    return tests, attacks
+    return int(m.group(1)) if m else 200
 
 
 def download_block(lang, t, stable, pre):
@@ -215,11 +205,6 @@ def legal_values(preview):
     }
 
 
-def php_str(s):
-    """Content of a single-quoted PHP string."""
-    return s.replace("\\", "\\\\").replace("'", "\\'")
-
-
 def rel_link(current, target):
     """Relative link from the page `current` to `target` (both relative to the site root)."""
     up = "../" * current.count("/")
@@ -266,7 +251,7 @@ def main():
     layout = (WEB / "templates/layout.html").read_text(encoding="utf-8")
     home = (WEB / "templates/home.html").read_text(encoding="utf-8")
     stable, pre = releases()
-    tests, attacks = project_numbers()
+    tests = project_numbers()
     legal = legal_values(args.preview)
     build = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d%H%M")
     imports = "".join(f"<span>{esc(n)}</span>" for n in IMPORTS)
@@ -298,7 +283,7 @@ def main():
                 "page_privacy_app": page("privacy_app", lang),
                 "version_label": esc(("v" + stable["tag_name"].lstrip("v")) if stable else
                                      (pre["tag_name"] if pre else "Beta")),
-                "tests": tests, "attacks": attacks, "imports": imports,
+                "tests": tests, "imports": imports,
                 "download": download_block(lang, t, stable, pre),
                 **legal,
             }
@@ -338,11 +323,6 @@ def main():
             '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
             + "\n".join(urls) + "\n</urlset>\n", encoding="utf-8")
         shutil.copy(WEB / "htaccess-live", out / ".htaccess")
-        # Error reports from the app go to the address of the legal notice (or REPORT_EMAIL).
-        to = os.environ.get("REPORT_EMAIL", "").strip() or os.environ.get("IMPRESSUM_EMAIL", "").strip()
-        (out / "report-config.php").write_text(
-            "<?php\n// Written by tools/build-website.py when the site is uploaded.\n"
-            f"return ['to' => '{php_str(to)}', 'bits' => 20];\n", encoding="utf-8")
 
     # Nothing of the build may stay unresolved, and the legal pages must carry the details.
     for f in out.rglob("*.html"):
@@ -350,7 +330,7 @@ def main():
         if "{{" in s:
             sys.exit(f"Fehler: Platzhalter in {f}")
     print(f"Website gebaut: {out} (stabil: {stable['tag_name'] if stable else '-'}, vorab: {pre['tag_name'] if pre else '-'}, "
-          f"{tests} Testfunktionen, {attacks} Angriffe{', Vorschau' if args.preview else ''})")
+          f"{tests} Testfunktionen{', Vorschau' if args.preview else ''})")
 
 
 if __name__ == "__main__":
