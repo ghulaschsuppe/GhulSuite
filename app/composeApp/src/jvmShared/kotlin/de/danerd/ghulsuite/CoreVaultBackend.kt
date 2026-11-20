@@ -299,6 +299,44 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
         written && b != null
     }
 
+    override suspend fun docsSaveVault(
+        vaultId: String,
+        target: SuiteFileRef,
+        created: Boolean,
+        onProgress: (Long, Long) -> Unit,
+    ): Boolean = io {
+        val s = suite
+        var built: de.danerd.ghulsuite.core.DocsArchive? = null
+        // One bar for both steps: writing is the first half, reading back the second.
+        writeSuiteStreamed(
+            target,
+            created,
+            write = { out -> built = s.docsExportVault(vaultId, StreamSink(out), Progress { d, t -> onProgress(d, 2 * t) }) },
+            check = { input ->
+                val b = built ?: return@writeSuiteStreamed false
+                val size = b.size.toLong()
+                archiveWrittenMatches(StreamSource(input), b.size, b.sha256, Progress { d, _ -> onProgress(size + d, 2 * size) })
+            },
+        ) && built != null
+    }
+
+    override suspend fun deleteSuite() {
+        // A vault open on its own is closed (written back) first; the own suite is deleted.
+        lock()
+        val s = ownSuite
+        try {
+            io { s.deleteWorkingCopy() }
+        } finally {
+            // Also when a file could not be deleted: nothing of the old suite opens quickly or
+            // reminds of it, and the app does not save into its suite file.
+            onProtectionChanged()
+            cal.clearReminders()
+            setSuiteFile(null)
+            settings.forgetSuite()
+            unlockedState.value = false
+        }
+    }
+
     override fun suiteFile(): SuiteFileRef? =
         devicePref("suite_file")?.takeIf { it.contains('|') }?.let { SuiteFileRef(it.substringBefore('|'), it.substringAfter('|')) }
 

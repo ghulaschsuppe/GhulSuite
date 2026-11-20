@@ -222,7 +222,7 @@ fun SetupScreen(state: AppState) {
 }
 
 @Composable
-private fun StartOption(icon: ImageVector, color: androidx.compose.ui.graphics.Color, title: String, text: String, onClick: () -> Unit) {
+fun StartOption(icon: ImageVector, color: androidx.compose.ui.graphics.Color, title: String, text: String, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(g.surface).clickable(onClick = onClick)
             .heightIn(min = 60.dp).padding(horizontal = 16.dp, vertical = 12.dp),

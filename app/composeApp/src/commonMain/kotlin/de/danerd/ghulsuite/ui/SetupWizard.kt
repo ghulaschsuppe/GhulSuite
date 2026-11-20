@@ -23,6 +23,9 @@ import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Pin
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Usb
@@ -53,7 +56,6 @@ import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.StringResource
-import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 
 /** The seven steps of a new setup, in this order. */
@@ -83,6 +85,9 @@ val AREAS = listOf(
 val NAMED_AREAS = setOf(VaultKindUi.PASS, VaultKindUi.TOTP, VaultKindUi.DOCS, VaultKindUi.CAL)
 
 private enum class QuickChoice { NONE, BIO, PIN }
+
+/** Step 3 over an existing suite: replaced after saving it, or deleted without. */
+private enum class Replace { SAVE, DELETE }
 
 
 /** Area visibility on this device follows the areas chosen (a file exists = shown). */
@@ -133,32 +138,36 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
 
     LaunchedEffect(Unit) {
         kdf = catching { backend.calibrateKdf() }.getOrElse { KdfChoice(64 * 1024, 3, 0) }
-        keyLabel = getString(Res.string.setup_default_key_label)
-        areaName[VaultKindUi.PASS] = getString(Res.string.area_pass_default)
-        areaName[VaultKindUi.TOTP] = getString(Res.string.area_auth_default)
-        areaName[VaultKindUi.DOCS] = getString(Res.string.area_docs_default)
-        areaName[VaultKindUi.CAL] = getString(Res.string.area_cal_default)
+        keyLabel = state.str(Res.string.setup_default_key_label)
+        areaName[VaultKindUi.PASS] = state.str(Res.string.area_pass_default)
+        areaName[VaultKindUi.TOTP] = state.str(Res.string.area_auth_default)
+        areaName[VaultKindUi.DOCS] = state.str(Res.string.area_docs_default)
+        areaName[VaultKindUi.CAL] = state.str(Res.string.area_cal_default)
     }
     val saveKeyfile = rememberSaveFile { ok -> keyfileSaved = ok; if (ok) error = null }
     val openKeyfile = rememberOpenFile { file -> keyfile = file.bytes; keyfileSaved = true; error = null }
     val notSaved = stringResource(Res.string.keyfile_not_saved)
-    val suiteThere = stringResource(Res.string.storage_suite_exists)
+    /** A suite on this device already (step 3 offers to open or replace it). */
+    var existing by remember { mutableStateOf(backend.exists()) }
+    var replacing by remember { mutableStateOf<Replace?>(null) }
     val oneArea = stringResource(Res.string.wz_one_area)
+    val deletedMsg = stringResource(Res.string.wz_deleted)
     val pinRule = stringResource(Res.string.wz_pin_rule)
     val keyPinMissing = stringResource(Res.string.wz_key_pin_missing)
 
     fun create() {
-        if (backend.exists()) { error = suiteThere; return }
+        // The choices on the screen say what to do with it (no second message).
+        if (backend.exists()) { existing = true; return }
         val choice = kdf ?: KdfChoice(64 * 1024, 3, 0)
         state.run(onError = { error = it }, block = {
             backend.create(
                 SetupUi(
                     password = password,
                     keyPin = if (useKey) pin else null,
-                    keyLabel = keyLabel.ifBlank { getString(Res.string.setup_default_key_label) },
+                    keyLabel = keyLabel.ifBlank { state.str(Res.string.setup_default_key_label) },
                     keyfile = if (useKey) null else keyfile,
-                    keyfileLabel = getString(Res.string.keyfile_default_label),
-                    recoveryLabel = getString(Res.string.setup_recovery_label),
+                    keyfileLabel = state.str(Res.string.keyfile_default_label),
+                    recoveryLabel = state.str(Res.string.setup_recovery_label),
                     kdf = choice,
                     vaults = emptyList(),
                 ),
@@ -302,10 +311,22 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
         }
 
         3 -> {
+            LaunchedEffect(Unit) { existing = backend.exists() }
             HintText(stringResource(Res.string.wz_create_hint))
-            if (backend.exists()) {
-                Text(suiteThere, color = warnColor())
-                TextButton(onClick = { state.showStart = false; state.vaultExists = true }) { Text(stringResource(Res.string.storage_open_existing)) }
+            if (existing) {
+                // Once, with the three ways on: open it, save it and replace it, delete it and replace it.
+                Banner(Icons.Filled.Warning, stringResource(Res.string.wz_exists))
+                StartOption(Icons.Filled.Folder, paletteColor(2), stringResource(Res.string.storage_open_existing), stringResource(Res.string.wz_exists_open_sub)) {
+                    state.showStart = false; state.vaultExists = true
+                }
+                if (filePickersAvailable) {
+                    StartOption(Icons.Filled.Save, paletteColor(0), stringResource(Res.string.wz_replace_save), stringResource(Res.string.wz_replace_save_sub)) {
+                        error = null; replacing = Replace.SAVE
+                    }
+                }
+                StartOption(Icons.Filled.DeleteForever, paletteColor(7), stringResource(Res.string.wz_replace_delete), stringResource(Res.string.wz_replace_delete_sub)) {
+                    error = null; replacing = Replace.DELETE
+                }
             }
             if (useKey) HintText(stringResource(Res.string.wz_create_touch))
             if (kdf == null) Hint(stringResource(Res.string.setup_calibrating))
@@ -387,13 +408,29 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
         7 -> RecoveryCodeSteps(state, code) { finishWizard(state) }
     }
 
+    when (replacing) {
+        Replace.SAVE -> SaveExistingSuiteDialog(state, onReplaced = { replacing = null; existing = false; create() }) { replacing = null }
+        Replace.DELETE -> DeleteExistingSuiteDialog(onConfirm = {
+            replacing = null
+            state.run(onError = { error = it }, block = {
+                backend.deleteSuite()
+                state.vaultExists = backend.exists()
+            }) {
+                existing = false
+                state.message(deletedMsg)
+                create()
+            }
+        }) { replacing = null }
+        null -> {}
+    }
+
     ErrorText(error)
     if (step < 7) {
         ButtonRow {
             if (step > 1 && !(created && step <= 4)) OutlinedButton(onClick = { back() }, modifier = Modifier.weight(1f)) { Text(stringResource(Res.string.a_back)) }
             Button(
                 onClick = { next() },
-                enabled = !state.busy && (step != 3 || kdf != null),
+                enabled = !state.busy && (step != 3 || (kdf != null && !existing)),
                 modifier = Modifier.weight(1f),
             ) {
                 Text(stringResource(when {

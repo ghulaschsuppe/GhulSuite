@@ -116,6 +116,7 @@ class InteractionTest {
     private fun DesktopComposeUiTest.waitFor(t: String, substring: Boolean) =
         waitUntil(timeoutMillis = 10_000) { onAllNodesWithText(t, substring = substring, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
     private fun DesktopComposeUiTest.waitGone(t: String) = waitUntil(timeoutMillis = 10_000) { !shown(t) }
+    private fun DesktopComposeUiTest.dialogButton(t: String) = onAllNodes(hasText(t) and hasAnyAncestor(isDialog())).onFirst().performClick()
     /** F103: every deletion asks first; answers the question with [button]. */
     private fun DesktopComposeUiTest.confirm(button: String? = null) {
         waitUntil(timeoutMillis = 10_000) { shown("Delete?") || shown("Move to the trash?") }
@@ -829,5 +830,142 @@ class InteractionTest {
         shot("share-vault-code")
         onAllNodes(hasText("Next") and hasAnyAncestor(isDialog())).onFirst().performClick()
         waitFor("Save key file")
+    }
+
+    /** Through steps 1 and 2 of "Set up new" to step 3 ("Create"), from the start screen. */
+    private fun DesktopComposeUiTest.toCreateStep() {
+        waitFor("Set up new")
+        text("Set up new").performClick()
+        waitFor("Master password")
+        onAllNodes(hasSetTextAction())[0].performTextInput("Kater-Ufer-Mondlicht-73")
+        onAllNodes(hasSetTextAction())[1].performTextInput("Kater-Ufer-Mondlicht-73")
+        text("Next").performClick()
+        waitFor("PIN of the security key")
+        // The key's name, then its PIN.
+        onAllNodes(hasSetTextAction())[1].performTextInput("1234")
+        text("Next").performClick()
+        waitFor("Create")
+    }
+
+    private fun withPickers(block: () -> Unit) {
+        System.setProperty("ghul.pickers", "true")
+        try {
+            block()
+        } finally {
+            System.clearProperty("ghul.pickers")
+            de.danerd.ghulsuite.ui.CreateFilePicker.override = null
+        }
+    }
+
+    /**
+     * "Set up new" over a suite on this device: step 3 says so once (no second red message) and
+     * offers three ways; "Set up" itself waits for the choice. "Open this suite" goes to unlocking it.
+     */
+    @Test
+    fun setupOverAnExistingSuiteSaysSoOnceAndOpensIt() = withPickers {
+        app(setup = { showStart = true }, prepare = { unlocked.value = false }) { state, fake ->
+            toCreateStep()
+            val hint = "There already is a suite on this device. Choose what happens to it."
+            waitFor(hint)
+            assertEquals(1, onAllNodesWithText(hint, useUnmergedTree = true).fetchSemanticsNodes().size)
+            assertFalse(shown("There already are GhulSuite files here."))
+            assertTrue(shown("Save the existing suite and replace it"))
+            assertTrue(shown("Delete the existing suite and replace it"))
+            onNode(hasText("Register key") and hasClickAction()).assertIsNotEnabled()
+            shot("setup-existing")
+            assertEquals(1, onAllNodesWithText(hint, useUnmergedTree = true).fetchSemanticsNodes().size, "still once")
+            text("Open this suite").performClick()
+            waitUntil(timeoutMillis = 10_000) { !state.showStart }
+            waitFor("Unlock")
+            assertTrue(fake.existsNow)
+            assertTrue(fake.calls.none { it == "deleteSuite" || it == "create" }, fake.calls.toString())
+        }
+    }
+
+    /**
+     * "Save the existing suite and replace it": unlocked with its own password and key, saved
+     * where the user picks, and only then deleted and the new suite set up. Cancelled or not
+     * written, nothing is deleted; leaving locks the existing suite again.
+     */
+    @Test
+    fun setupSavesTheExistingSuiteBeforeReplacingIt() = withPickers {
+        app(setup = { showStart = true }, prepare = { unlocked.value = false; unlockOpens = true }) { _, fake ->
+            toCreateStep()
+            text("Save the existing suite and replace it").performClick()
+            waitFor("Save the existing suite")
+            val fields = onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog()))
+            fields[0].performTextInput("Das alte Passwort!")
+            fields[1].performTextInput("1234")
+            shot("setup-save-existing")
+            dialogButton("Unlock")
+            waitFor("Unlocked. Now choose where the file is saved.")
+            assertTrue("unlock" in fake.calls)
+            shot("setup-save-unlocked")
+            // The save dialog cancelled: nothing saved, nothing deleted.
+            de.danerd.ghulsuite.ui.CreateFilePicker.override = { null }
+            dialogButton("Save and replace")
+            waitFor("Not saved. Nothing was deleted.")
+            assertTrue(fake.existsNow)
+            assertTrue(fake.calls.none { it.startsWith("archiveSave") || it == "deleteSuite" }, fake.calls.toString())
+            // Leaving locks the existing suite again.
+            val locks = fake.locks
+            dialogButton("Cancel")
+            waitGone("Save the existing suite")
+            assertEquals(locks + 1, fake.locks)
+            assertTrue(fake.existsNow)
+
+            // Not written completely: nothing deleted.
+            text("Save the existing suite and replace it").performClick()
+            waitFor("Save the existing suite")
+            onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog()))[0].performTextInput("Das alte Passwort!")
+            onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog()))[1].performTextInput("1234")
+            dialogButton("Unlock")
+            waitFor("Unlocked. Now choose where the file is saved.")
+            de.danerd.ghulsuite.ui.CreateFilePicker.override = { name -> de.danerd.ghulsuite.model.SuiteFileRef("/stick/$name", name) }
+            fake.saveOk = false
+            dialogButton("Save and replace")
+            waitFor("The file was not written completely. Nothing was deleted.")
+            assertTrue(fake.existsNow)
+            assertTrue("deleteSuite" !in fake.calls)
+
+            // Written and read back: then deleted, then the new suite is set up.
+            fake.saveOk = true
+            dialogButton("Save and replace")
+            waitUntil(timeoutMillis = 10_000) { "create" in fake.calls }
+            val saved = fake.calls.lastIndexOf("archiveSave:GhulSuite.ghlzip:true")
+            assertTrue(saved >= 0 && saved < fake.calls.indexOf("deleteSuite") && fake.calls.indexOf("deleteSuite") < fake.calls.indexOf("create"), fake.calls.toString())
+            waitFor("Areas")
+            assertFalse(shown("Save the existing suite"))
+            shot("setup-replaced")
+        }
+    }
+
+    /**
+     * "Delete the existing suite and replace it" asks first with a warning and the word typed
+     * out; "Cancel" keeps the suite, confirmed it is deleted and the new one set up.
+     */
+    @Test
+    fun setupDeletesTheExistingSuiteOnlyWhenConfirmed() = withPickers {
+        app(setup = { showStart = true }, prepare = { unlocked.value = false }) { _, fake ->
+            toCreateStep()
+            text("Delete the existing suite and replace it").performClick()
+            waitFor("Delete the existing suite for good?")
+            assertTrue(shown("A suite file (.ghlzip) saved somewhere else is not touched. If you have not saved the suite as a file yet, better choose “Save the existing suite and replace it”."))
+            onNode(hasText("Delete and replace") and hasAnyAncestor(isDialog()) and hasClickAction()).assertIsNotEnabled()
+            shot("setup-delete-existing")
+            dialogButton("Cancel")
+            waitGone("Delete the existing suite for good?")
+            assertTrue(fake.existsNow)
+            assertTrue("deleteSuite" !in fake.calls)
+
+            text("Delete the existing suite and replace it").performClick()
+            waitFor("Delete the existing suite for good?")
+            onNode(hasSetTextAction() and hasAnyAncestor(isDialog())).performTextInput("delete")
+            dialogButton("Delete and replace")
+            waitUntil(timeoutMillis = 10_000) { "create" in fake.calls }
+            assertTrue(fake.calls.indexOf("deleteSuite") in 0 until fake.calls.indexOf("create"), fake.calls.toString())
+            assertTrue(fake.calls.none { it.startsWith("archiveSave") })
+            waitFor("Areas")
+        }
     }
 }

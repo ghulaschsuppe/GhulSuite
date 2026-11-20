@@ -69,16 +69,51 @@ class ScreenshotTest {
             override fun putBoolean(key: String, value: Boolean) { map[key] = value }
         })
         var quickReady = false
-        override fun exists() = existsFlag
+        /** Whether a suite is on this device (deleting it or setting one up changes it). */
+        var existsNow = existsFlag
+        override fun exists() = existsNow
+        /** Unlocking opens the suite (off: the screens stay as they are, as most tests expect). */
+        var unlockOpens = false
+        /** What saving the suite file or a GhulDocs package answers (false: not written completely). */
+        var saveOk = true
+        override suspend fun archiveSave(target: de.danerd.ghulsuite.model.SuiteFileRef, device: String, created: Boolean, onProgress: (Long, Long) -> Unit): Boolean {
+            kotlinx.coroutines.delay(30)
+            calls += "archiveSave:${target.name}:$created"
+            return saveOk
+        }
+        override suspend fun docsSaveVault(vaultId: String, target: de.danerd.ghulsuite.model.SuiteFileRef, created: Boolean, onProgress: (Long, Long) -> Unit): Boolean {
+            kotlinx.coroutines.delay(30)
+            calls += "docsSaveVault:$vaultId:${target.name}:$created"
+            return saveOk
+        }
+        override suspend fun deleteSuite() {
+            // As the real backend: locked first, then the files go.
+            kotlinx.coroutines.delay(30)
+            unlocked.value = false
+            calls += "deleteSuite"
+            existsNow = false
+        }
         override fun protection() = protection
         override suspend fun inspectFile(data: ByteArray) = ContainerInfoUi("pass", protection)
         override suspend fun calibrateKdf() = KdfChoice(256 * 1024, 3, 800)
         override suspend fun keyInfo() = KeyStatus("Yubico Security Key", true, true, 4)
         override suspend fun setKeyPin(newPin: String) {}
         override fun generateKeyfile() = ByteArray(46)
-        override suspend fun create(setup: SetupUi, onTouchNeeded: () -> Unit) = ""
+        override suspend fun create(setup: SetupUi, onTouchNeeded: () -> Unit): String {
+            kotlinx.coroutines.delay(30)
+            // As the core: never over an existing suite.
+            if (existsNow) throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.ALREADY_EXISTS)
+            calls += "create"
+            existsNow = true
+            return ""
+        }
         override suspend fun createFromVault(open: OpenVaultUi, onTouchNeeded: () -> Unit): String? = null
-        override suspend fun unlock(password: String, pin: String?, keyfile: ByteArray?, onTouchNeeded: () -> Unit) {}
+        override suspend fun unlock(password: String, pin: String?, keyfile: ByteArray?, onTouchNeeded: () -> Unit) {
+            if (!unlockOpens) return
+            kotlinx.coroutines.delay(30)
+            calls += "unlock"
+            unlocked.value = true
+        }
         override suspend fun unlockWithRecoveryCode(code: String, newPassword: String) {}
         var locks = 0
         /** Windows (true) or a phone (false): what only one of them has (keyboard keys …). */
