@@ -238,13 +238,13 @@ class DocsBackendTest {
 
     @Test
     fun docsLimitIsMapped() {
-        val e = GhulException.DocsLimit(412_000_000u, 1_000_000_000u).toVault()
+        val e = GhulException.DocsLimit(412_000_000u, 1_000_000_000u, 600_000_000u).toVault()
         assertEquals(VaultErrorKind.DOCS_LIMIT, e.kind)
-        assertEquals("412000000|1000000000", e.detail)
+        assertEquals("412000000|1000000000|600000000", e.detail)
     }
 
     /**
-     * A GhulDocs vault saved on its own: a .ghlzip that the app tells from a suite file, opened on
+     * A GhulDocs package: a .ghldocs that the app tells from a suite file, opened on
      * its own on another device (no suite there), changed, written back into its file as a stream,
      * and opened again with the change.
      */
@@ -257,7 +257,7 @@ class DocsBackendTest {
             val vault = a.listVaults().single { it.kind == VaultKindUi.DOCS }
             val first = random(300_000)
             a.docs.add(vault.id, null, "Erstes.pdf", "application/pdf", Bytes("Erstes.pdf", first))
-            val file = File(dir, "Dokumente.ghlzip")
+            val file = File(dir, "Dokumente.ghldocs")
             java.io.FileOutputStream(file).use { out ->
                 a.docs.exportVault(vault.id, object : ByteSink {
                     override fun write(data: ByteArray) = out.write(data)
@@ -305,6 +305,123 @@ class DocsBackendTest {
             c.panicLock()
         } finally {
             Thread.sleep(300)
+            dir.deleteRecursively()
+        }
+    }
+
+    /**
+     * A suite has one GhulDocs vault: a second one is refused with a text of its own, and a
+     * GhulDocs package added to a suite that has one goes into it, in a folder named after it.
+     * Each kind of file says what it is when it is opened as the other.
+     */
+    @Test
+    fun aPackageGoesIntoTheOneDocsVault() = runBlocking<Unit> {
+        val dir = Files.createTempDirectory("ghul-docs-merge").toFile()
+        try {
+            val kfa = generateKeyfile()
+            val a = device(File(dir, "a"), kfa)
+            val va = a.listVaults().single { it.kind == VaultKindUi.DOCS }
+            val first = random(100_000)
+            a.docs.add(va.id, null, "Bescheid.pdf", "application/pdf", Bytes("Bescheid.pdf", first))
+            val file = File(dir, "Steuer.ghldocs")
+            java.io.FileOutputStream(file).use { out ->
+                a.docs.exportVault(va.id, object : ByteSink {
+                    override fun write(data: ByteArray) = out.write(data)
+                    override fun close() {}
+                })
+            }
+            val ref = SuiteFileRef(file.absolutePath, file.name)
+            // Opened as a suite file: it says what it is.
+            val e = assertFailsWith<VaultException> { a.archiveOpen(ref, password, null, kfa, {}, { _, _ -> }) }
+            assertEquals(VaultErrorKind.INVALID_INPUT, e.kind)
+            assertEquals("this is a GhulDocs package, not a suite file", e.detail)
+            // A suite file added as a GhulDocs package: the same the other way round.
+            val suiteFile = File(dir, "GhulSuite.ghlzip")
+            assertTrue(a.archiveSave(SuiteFileRef(suiteFile.absolutePath, suiteFile.name), "Laptop", created = true))
+            val e2 = assertFailsWith<VaultException> {
+                a.docs.adoptVault(SuiteFileRef(suiteFile.absolutePath, suiteFile.name), "", password, null, kfa, {}, { _, _ -> })
+            }
+            assertEquals("this is a suite file, not a GhulDocs package", e2.detail)
+
+            val kfb = generateKeyfile()
+            val b = device(File(dir, "b"), kfb)
+            val vb = b.listVaults().single { it.kind == VaultKindUi.DOCS }
+            val second = assertFailsWith<VaultException> { b.createVault(VaultKindUi.DOCS, "Zweiter") }
+            assertEquals("a suite has only one GhulDocs vault", second.detail)
+            assertEquals(vb.id, b.docs.adoptVault(ref, "Steuer", password, null, kfa, {}, { _, _ -> }))
+            assertEquals(1, b.listVaults().count { it.kind == VaultKindUi.DOCS })
+            val top = b.docs.list(vb.id, null)
+            assertEquals(listOf("Steuer"), top.map { it.name })
+            val inside = b.docs.list(vb.id, top[0].id)
+            assertEquals(listOf("Bescheid.pdf"), inside.map { it.name })
+            val sink = MemorySink()
+            b.docs.read(vb.id, inside[0].id, sink)
+            assertContentEquals(first, sink.bytes())
+            // The same package again: its documents are there already.
+            val again = assertFailsWith<VaultException> { b.docs.adoptVault(ref, "Steuer", password, null, kfa, {}, { _, _ -> }) }
+            assertEquals(VaultErrorKind.ALREADY_EXISTS, again.kind)
+            a.lock()
+            b.lock()
+        } finally {
+            Thread.sleep(300)
+            dir.deleteRecursively()
+        }
+    }
+
+    /**
+     * "Save the existing GhulDocs and replace it" through the app's backend: the GhulDocs vault is
+     * saved as a package and read back, then a package of another suite takes its place (with
+     * this suite's protection); a refused package leaves it as it was.
+     */
+    @Test
+    fun ghulDocsIsSavedAsAPackageAndReplaced() = runBlocking<Unit> {
+        val dir = Files.createTempDirectory("ghul-docs-replace").toFile()
+        try {
+            val kfa = generateKeyfile()
+            val a = device(File(dir, "a"), kfa)
+            val va = a.listVaults().single { it.kind == VaultKindUi.DOCS }
+            val theirs = random(120_000)
+            a.docs.add(va.id, null, "Von A.pdf", "application/pdf", Bytes("Von A.pdf", theirs))
+            val pkg = File(dir, "A.ghldocs")
+            assertTrue(a.docsSaveVault(va.id, SuiteFileRef(pkg.absolutePath, pkg.name), created = true))
+
+            val kfb = generateKeyfile()
+            val b = device(File(dir, "b"), kfb)
+            val vb = b.listVaults().single { it.kind == VaultKindUi.DOCS }
+            val mine = random(80_000)
+            b.docs.add(vb.id, null, "Meins.pdf", "application/pdf", Bytes("Meins.pdf", mine))
+            // Saved where the user picked, read back: a package that opens with B's protection.
+            val saved = File(dir, "stick/Dokumente.ghldocs")
+            File(dir, "stick").mkdirs()
+            val steps = mutableListOf<Pair<Long, Long>>()
+            assertTrue(b.docsSaveVault(vb.id, SuiteFileRef(saved.absolutePath, saved.name), created = true) { d, t -> steps += d to t })
+            assertTrue(steps.last().let { (d, t) -> t > 0 && d == t }, steps.toString())
+            assertFalse(File(dir, "stick/Dokumente.ghldocs.ghltmp").exists())
+            assertEquals(ArchiveContentUi.DOCS_VAULT, b.archiveInspect(SuiteFileRef(saved.absolutePath, saved.name))?.content)
+            // Not writable there: false, nothing replaced.
+            assertFalse(runCatching { b.docsSaveVault(vb.id, SuiteFileRef(File(dir, "kein/Ordner/X.ghldocs").absolutePath, "X.ghldocs"), created = true) }.getOrDefault(false))
+
+            // A wrong password: refused, the old GhulDocs stays.
+            assertFailsWith<VaultException> { b.docs.replaceVault(SuiteFileRef(pkg.absolutePath, pkg.name), "", "falsch", null, kfa, {}) }
+            assertEquals(listOf("Meins.pdf"), b.docs.list(vb.id, null).map { it.name })
+
+            val id = b.docs.replaceVault(SuiteFileRef(pkg.absolutePath, pkg.name), "Von A", password, null, kfa, {})
+            assertEquals(va.id, id)
+            val docs = b.listVaults().filter { it.kind == VaultKindUi.DOCS }
+            assertEquals(listOf(va.id), docs.map { it.id })
+            assertEquals(listOf("Von A.pdf"), b.docs.list(id, null).map { it.name })
+            val sink = MemorySink()
+            b.docs.read(id, b.docs.list(id, null).single().id, sink)
+            assertContentEquals(theirs, sink.bytes())
+            assertFalse(File(dir, "b/suite/docs-${vb.id}").exists(), "the old documents are gone")
+
+            // The saved package still holds the old GhulDocs (opened on its own on another device).
+            val c = Backend(File(dir, "c"))
+            c.openSingleDocs(SuiteFileRef(saved.absolutePath, saved.name), password, null, kfb, {})
+            val cv = c.listVaults().single()
+            assertEquals(listOf("Meins.pdf"), c.docs.list(cv.id, null).map { it.name })
+            c.lock()
+        } finally {
             dir.deleteRecursively()
         }
     }

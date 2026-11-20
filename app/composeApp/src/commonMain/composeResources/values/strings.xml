@@ -342,7 +342,7 @@
     <string name="start_open_suite">Open suite file</string>
     <string name="start_open_suite_text">A saved suite (.ghlzip), e.g. from a USB stick.</string>
     <string name="start_open_vault">Open a single vault</string>
-    <string name="start_open_vault_text">A single vault file (.ghlpss, .ghltotp, .ghlcal and others). Open only this vault, or add it to your suite.</string>
+    <string name="start_open_vault_text">A single vault file (.ghlpss, .ghltotp, .ghlcal and others) or a GhulDocs package (.ghldocs). Open only this vault, or add it to your suite.</string>
     <string name="storage_open_existing">Open this suite</string>
     <string name="storage_suite_exists">There already are GhulSuite files here.</string>
     <string name="t_card">Payment card</string>
@@ -369,7 +369,7 @@
     <string name="unlock_use_quick">Use fingerprint or app PIN</string>
     <string name="untitled">(untitled)</string>
     <string name="vault_add_file">Add vault file</string>
-    <string name="vault_add_file_hint">A .ghlpss or .ghltotp file. If it has another password, you are asked for it once and it is switched to your protection.</string>
+    <string name="vault_add_file_hint">A .ghlpss or .ghltotp file, or a GhulDocs package (.ghldocs): its files go into your GhulDocs, in a folder of their own. If it has another password, you are asked for it once and it is switched to your protection.</string>
     <string name="vault_all">All</string>
     <string name="vault_default_name">Personal</string>
     <string name="vault_missing">File damaged: %1$s</string>
@@ -926,8 +926,12 @@
     <string name="core_doc_bad_id">This document does not exist.</string>
     <string name="core_doc_bad_name">This name is not allowed: it must not be empty or contain a slash.</string>
     <string name="core_docs_no_place">Documents cannot be stored in this folder.</string>
-    <string name="core_docs_with_documents">A GhulDocs vault is saved and opened together with its documents (as a .ghlzip file).</string>
+    <string name="core_docs_with_documents">A GhulDocs vault is saved and opened together with its documents (as a GhulDocs package, a .ghldocs file).</string>
     <string name="core_docs_index_bad">The table of contents of a GhulDocs vault is damaged.</string>
+    <string name="core_one_docs_vault">A suite has only one GhulDocs vault. A GhulDocs package (.ghldocs) is added into it, in a folder of its own.</string>
+    <string name="core_docs_package_not_suite">This is a GhulDocs package (.ghldocs), not a suite file. Add it under Options, Vaults, or open it with “Open a single vault”.</string>
+    <string name="core_suite_not_docs_package">This is a suite file (.ghlzip), not a GhulDocs package. Open it under Options, Suite file, or with “Open suite file”.</string>
+    <string name="core_docs_vaults_many">This file holds more than one GhulDocs vault and is no valid suite file. It was not opened.</string>
     <string name="core_vault_other_kind">The target vault is of another kind.</string>
     <string name="core_vault_no_key">This vault has no security key.</string>
     <string name="core_attach_many">Too many attachments.</string>
@@ -1271,7 +1275,7 @@
         <item quantity="one">%1$s page</item>
         <item quantity="other">%1$s pages</item>
     </plurals>
-    <string name="docs_limit_hint">GhulDocs holds up to 1 GB, all its vaults and the trash together, a single file also up to 1 GB.</string>
+    <string name="docs_limit_hint">GhulDocs holds up to 1 GB, the trash included, a single file also up to 1 GB. A suite has one GhulDocs vault.</string>
     <string name="docs_usage_title">Storage used</string>
     <string name="docs_verify_title">Check documents</string>
     <string name="docs_verify_hint">Reads every document of a vault and compares it with its checksum. Nothing is changed.</string>
@@ -1283,16 +1287,58 @@
     </plurals>
     <string name="docs_verify_bad_hint">Open an earlier suite file to get them back.</string>
     <plurals name="docs_trash_count">
-        <item quantity="one">%1$s item in the trash, in all GhulDocs vaults.</item>
-        <item quantity="other">%1$s items in the trash, in all GhulDocs vaults.</item>
+        <item quantity="one">%1$s item in the trash.</item>
+        <item quantity="other">%1$s items in the trash.</item>
     </plurals>
     <string name="docs_vault_exporting">Saving %1$s …</string>
     <string name="docs_vault_export_cancelled">Saving %1$s cancelled. The incomplete file was removed.</string>
     <plurals name="docs_share_text">
-        <item quantity="one">%1$s picked item goes into a GhulDocs vault of its own (a .ghlzip file with the documents), with a password and second factor of its own and a new recovery code.</item>
-        <item quantity="other">%1$s picked items go into a GhulDocs vault of its own (a .ghlzip file with the documents), with a password and second factor of its own and a new recovery code.</item>
+        <item quantity="one">%1$s picked item goes into a GhulDocs package of its own (a .ghldocs file with the documents), with a password and second factor of its own and a new recovery code.</item>
+        <item quantity="other">%1$s picked items go into a GhulDocs package of its own (a .ghldocs file with the documents), with a password and second factor of its own and a new recovery code.</item>
     </plurals>
     <string name="docs_single_no_new_suite">To keep it in a suite of its own: set up a new suite first, then add this file under Options, Vaults.</string>
     <string name="docs_single_pending_text">The last changes of the GhulDocs vault in %1$s could not be written into its file before it was locked. A GhulDocs vault can only be written while it is open: give them up to open the file again.</string>
-    <string name="docs_foreign_text">Open the GhulDocs vault once with its own password and its key or key file. It is then added with its documents and gets the protection of your suite.</string>
+    <string name="docs_foreign_text">Open the GhulDocs package once with its own password and its key or key file. It then becomes your GhulDocs vault with its documents and gets the protection of your suite.</string>
+    <string name="docs_merge_title">Add to GhulDocs</string>
+    <string name="docs_merge_text">Open the GhulDocs package once with its own password and its key or key file. Its files and folders then go into your GhulDocs, in a new folder with this name, and get the protection of your suite.</string>
+    <string name="l_docs_folder_name">Folder name</string>
+    <string name="msg_docs_merged">Added to GhulDocs.</string>
+    <string name="err_docs_room_file">The file needs %1$s, %2$s are free. Nothing was added. Empty the trash or delete documents and then try again.</string>
+    <string name="err_docs_room_package">The package needs %1$s, %2$s are free. Nothing was added. Empty the trash or delete documents and then try again.</string>
+    <string name="err_docs_room">This needs %1$s in GhulDocs, %2$s are free. Nothing was added. Empty the trash or delete documents and then try again.</string>
+    <string name="err_docs_package_too_large">The package needs %1$s, GhulDocs holds at most %2$s. Nothing was changed.</string>
+    <string name="delete_word">DELETE</string>
+    <string name="wz_exists">There already is a suite on this device. Choose what happens to it.</string>
+    <string name="wz_exists_open_sub">The new suite is not set up.</string>
+    <string name="wz_replace_save">Save the existing suite and replace it</string>
+    <string name="wz_replace_save_sub">Save it as a file (.ghlzip) first, then delete it and set up the new one</string>
+    <string name="wz_replace_delete">Delete the existing suite and replace it</string>
+    <string name="wz_replace_delete_sub">Without saving: its data is then gone for good</string>
+    <string name="wz_save_title">Save the existing suite</string>
+    <string name="wz_save_text">Unlock the existing suite with its master password and its key or key file. Then choose where the file (.ghlzip) is saved. Only once it is written and checked, the existing suite is deleted on this device and the new one is set up.</string>
+    <string name="wz_save_unlocked">Unlocked. Now choose where the file is saved.</string>
+    <string name="wz_save_not_saved">Not saved. Nothing was deleted.</string>
+    <string name="wz_save_failed">The file was not written completely. Nothing was deleted.</string>
+    <string name="wz_save_other_file">This file belongs to another suite or holds another state. Choose a new name so nothing is overwritten. Nothing was deleted.</string>
+    <string name="wz_saved_as">Existing suite saved as %1$s.</string>
+    <string name="wz_deleted">Existing suite deleted.</string>
+    <string name="wz_delete_title">Delete the existing suite for good?</string>
+    <string name="wz_delete_warning">Everything of the existing suite on this device is deleted for good: all vaults (passwords, 2FA, documents in GhulDocs, calendars) and the quick unlock.</string>
+    <string name="wz_delete_note">A suite file (.ghlzip) saved somewhere else is not touched. If you have not saved the suite as a file yet, better choose “Save the existing suite and replace it”.</string>
+    <string name="a_save_and_replace">Save and replace</string>
+    <string name="a_delete_and_replace">Delete and replace</string>
+    <string name="docs_pkg_merge">Add as a folder</string>
+    <string name="docs_pkg_merge_sub">Your GhulDocs stays, the package goes into a new folder</string>
+    <string name="docs_pkg_save_replace">Save the existing GhulDocs and replace it</string>
+    <string name="docs_pkg_save_replace_sub">Save it as a package (.ghldocs) first, then replace it with the new one</string>
+    <string name="docs_pkg_delete_replace">Delete the existing GhulDocs and replace it</string>
+    <string name="docs_pkg_delete_replace_sub">Without saving: its documents are then gone for good</string>
+    <string name="docs_replace_text">Open the GhulDocs package once with its own password and its key or key file. It then replaces your GhulDocs with all its documents (those in the trash too) and gets the protection of your suite. If anything goes wrong, your GhulDocs stays as it is.</string>
+    <string name="docs_replaced">GhulDocs replaced.</string>
+    <string name="docs_saved_replaced">GhulDocs saved as %1$s and replaced.</string>
+    <string name="docs_save_not_saved">Not saved. Nothing was replaced.</string>
+    <string name="docs_save_failed">The package was not written completely. Nothing was replaced.</string>
+    <string name="docs_delete_title">Delete the existing GhulDocs for good?</string>
+    <string name="docs_delete_warning">All documents and folders of your GhulDocs on this device are deleted for good, those in the trash too, and replaced by the package.</string>
+    <string name="docs_delete_note">A suite file (.ghlzip) or GhulDocs package (.ghldocs) saved somewhere else is not touched. If you have not saved your GhulDocs yet, better choose “Save the existing GhulDocs and replace it”.</string>
 </resources>

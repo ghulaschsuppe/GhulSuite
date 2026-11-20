@@ -197,9 +197,9 @@ private fun DocViewHeader(state: AppState, item: DocsItemUi?) {
     }
     if (moving) {
         FolderPickerDialog(
-            state, fixedVault = item.vaultId, title = stringResource(Res.string.docs_move_title, item.name),
+            state, vault = item.vaultId, title = stringResource(Res.string.docs_move_title, item.name),
             confirm = stringResource(Res.string.docs_move_here), onDismiss = { moving = false },
-        ) { _, picked ->
+        ) { picked ->
             moving = false
             val target = picked.lastOrNull()?.first
             if (target != item.parent) state.run(block = { docs.move(item.vaultId, item.id, target) }) { state.changed() }

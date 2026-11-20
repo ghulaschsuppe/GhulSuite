@@ -206,7 +206,7 @@ private fun ImportResultCard(r: ImportResultUi, onDone: () -> Unit) {
 @Composable
 fun ExportScreen(state: AppState, padding: PaddingValues) {
     val backend = state.backend
-    // GhulDocs exports its documents one by one (and a vault as a .ghlzip under Options, Vaults).
+    // GhulDocs exports its documents one by one (and the vault as a .ghldocs under Options, Vaults).
     val vaults = state.vaults.filter { it.available && it.kind != VaultKindUi.DOCS }
     var target by remember { mutableStateOf(vaults.firstOrNull()?.id) }
     var password by remember { mutableStateOf("") }

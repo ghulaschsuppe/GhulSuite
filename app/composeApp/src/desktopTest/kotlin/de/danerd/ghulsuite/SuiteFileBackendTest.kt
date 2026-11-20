@@ -159,4 +159,55 @@ class SuiteFileBackendTest {
             dir.deleteRecursively()
         }
     }
+
+    /**
+     * "Save the existing suite and replace it" through the app's backend: saved and read back,
+     * then deleted on this device (nothing of it left: vault files, documents, quick unlock, the
+     * remembered suite file, settings naming its entries), then a new suite set up in its place.
+     * The saved file opens elsewhere with the old data. A save that fails deletes nothing.
+     */
+    @Test
+    fun theExistingSuiteIsSavedThenDeletedAndReplaced() = runBlocking<Unit> {
+        val dir = Files.createTempDirectory("ghul-suitefile-replace").toFile()
+        try {
+            val kf = generateKeyfile()
+            val a = device(File(dir, "a"), kf)
+            a.settings.markRecent("p1", "e1")
+            a.settings.calHidden = "c1"
+            val gone = SuiteFileRef(File(dir, "kein/Ordner/GhulSuite.ghlzip").absolutePath, "GhulSuite.ghlzip")
+            assertFalse(runCatching { a.archiveSave(gone, "Laptop", created = true) }.getOrDefault(false))
+            assertTrue(a.exists(), "a failed save deletes nothing")
+
+            val target = File(dir, "stick/GhulSuite.ghlzip").apply { parentFile.mkdirs() }
+            val ref = SuiteFileRef(target.absolutePath, target.name)
+            assertTrue(a.archiveSave(ref, "Laptop", created = true))
+            a.setSuiteFile(ref)
+            a.deleteSuite()
+            assertFalse(a.exists())
+            assertFalse(a.unlocked.value)
+            assertEquals(emptyList(), File(dir, "a/suite").listFiles().orEmpty().map { it.name })
+            assertTrue(File(dir, "a/local").listFiles().orEmpty().none { it.name.startsWith("quick-") || it.name == "archive-unsaved" })
+            assertNull(a.suiteFile())
+            assertEquals("", a.settings.recentEntries)
+            assertEquals("", a.settings.calHidden)
+            assertTrue(target.isFile, "the saved file is not touched")
+
+            val code = a.create(
+                de.danerd.ghulsuite.model.SetupUi(
+                    password = "Ein neues Passwort!", keyPin = null, keyLabel = "Key", keyfile = generateKeyfile(),
+                    keyfileLabel = "Datei", recoveryLabel = "Code", kdf = de.danerd.ghulsuite.model.KdfChoice(65536, 3, 0), vaults = emptyList(),
+                ),
+            ) {}
+            assertTrue(code.isNotBlank())
+            assertTrue(a.exists())
+            assertEquals(emptyList(), a.listVaults().map { it.name })
+
+            val b = Backend(File(dir, "b"))
+            b.archiveOpen(ref, password, null, kf, {})
+            b.archiveAccept()
+            assertEquals(listOf("Privat"), b.listVaults().map { it.name })
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
 }

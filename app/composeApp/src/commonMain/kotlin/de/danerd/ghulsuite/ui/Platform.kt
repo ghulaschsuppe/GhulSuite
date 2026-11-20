@@ -45,7 +45,7 @@ expect fun rememberOpenFile(onPicked: (de.danerd.ghulsuite.model.PickedFile) -> 
 expect fun rememberSaveFile(onSaved: (Boolean) -> Unit): (String, ByteArray) -> Unit
 
 /**
- * Returns a launcher that picks a suite file (`.ghlzip`) or a vault file to open. Nothing is read
+ * Returns a launcher that picks a suite file (`.ghlzip`), a GhulDocs package (`.ghldocs`) or a vault file to open. Nothing is read
  * yet. The app keeps access to it, so it can save into the same file later (Android: a kept
  * document permission; Windows: the path).
  */

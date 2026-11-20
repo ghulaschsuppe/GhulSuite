@@ -244,7 +244,7 @@ class FakeDocs : DocsBackend {
         val n = checkName(name)
         val have = used()
         // Known size: refused before anything is read.
-        if (source.size >= 0 && have + source.size > limit) throw VaultException(VaultErrorKind.DOCS_LIMIT, "$have|$limit")
+        if (source.size >= 0 && have + source.size > limit) throw VaultException(VaultErrorKind.DOCS_LIMIT, "$have|$limit|${source.size}")
         val out = java.io.ByteArrayOutputStream()
         val buf = ByteArray(section)
         while (true) {
@@ -254,7 +254,7 @@ class FakeDocs : DocsBackend {
             val r = source.read(buf, 0, buf.size)
             if (r < 0) break
             out.write(buf, 0, r)
-            if (have + out.size() > limit) throw VaultException(VaultErrorKind.DOCS_LIMIT, "$have|$limit")
+            if (have + out.size() > limit) throw VaultException(VaultErrorKind.DOCS_LIMIT, "$have|$limit|0")
             onProgress(out.size().toLong())
         }
         calls += "add:$vaultId:$folder:$n:$mime:${out.size()}"
@@ -313,8 +313,29 @@ class FakeDocs : DocsBackend {
         onProgress: (Long, Long) -> Unit,
     ): String {
         delay(delayMs)
+        // As the core: the package's documents count towards the limit, before anything is copied.
+        val have = used()
+        if (have + packageSize > limit) throw VaultException(VaultErrorKind.DOCS_LIMIT, "$have|$limit|$packageSize")
         calls += "adoptVault:${file.name}:$name"
         return "d2"
+    }
+
+    /** Bytes of the documents in a GhulDocs package to be added (the limit counts them). */
+    var packageSize = 1000L
+
+    override suspend fun replaceVault(
+        file: SuiteFileRef, name: String, password: String, pin: String?, keyfile: ByteArray?, onTouchNeeded: () -> Unit,
+        onProgress: (Long, Long) -> Unit,
+    ): String {
+        delay(delayMs)
+        // As the core: the package alone counts (the old vault goes); refused, nothing changes.
+        if (packageSize > limit) throw VaultException(VaultErrorKind.DOCS_LIMIT, "0|$limit|$packageSize")
+        calls += "replaceVault:${file.name}:$name"
+        synchronized(nodes) {
+            nodes.removeAll { it.vaultId == "d1" }
+            nodes += Node("d1", newId(), null, "Aus dem Paket.pdf", false, ByteArray(packageSize.toInt()), "application/pdf")
+        }
+        return "d1"
     }
 
     companion object {

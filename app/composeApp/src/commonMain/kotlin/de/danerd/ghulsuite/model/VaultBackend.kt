@@ -179,6 +179,20 @@ interface VaultBackend {
      * a failed write removes it again.
      */
     suspend fun archiveSave(target: SuiteFileRef, device: String, created: Boolean, onProgress: (Long, Long) -> Unit = { _, _ -> }): Boolean = false
+    /**
+     * Saves the GhulDocs vault [vaultId] with its documents as a GhulDocs package (`.ghldocs`, this
+     * suite's protection) into [target]: written as a stream, read back and compared. False when
+     * it could not be written completely ([created]: a failed write removes the file again).
+     */
+    suspend fun docsSaveVault(vaultId: String, target: SuiteFileRef, created: Boolean, onProgress: (Long, Long) -> Unit = { _, _ -> }): Boolean = false
+    /**
+     * Deletes the suite on this device for good, to set up a new one in its place: it is locked,
+     * then its quick unlock (with the platform's keys), calendar reminders, the remembered suite
+     * file and this device's settings that name its vaults or entries go, and the core removes
+     * every vault file, the documents of GhulDocs and the suite file. Suite files elsewhere are
+     * not touched.
+     */
+    suspend fun deleteSuite()
     /** The suite file used last on this device (opened or saved), if any. */
     fun suiteFile(): SuiteFileRef? = null
     fun setSuiteFile(ref: SuiteFileRef?) {}
@@ -257,11 +271,11 @@ interface VaultBackend {
     /** Copies to the clipboard, marked as sensitive and cleared automatically. */
     fun copySensitive(label: String, text: String)
 
-    // --- A GhulDocs vault saved on its own (a .ghlzip with the vault and its documents)
-    /** What a `.ghlzip` holds (reads only its first entry); null if it is no `.ghlzip` at all. */
+    // --- A GhulDocs package (a .ghldocs with the vault and its documents)
+    /** What a `.ghlzip` or `.ghldocs` holds (reads only its first entry); null if it is neither. */
     suspend fun archiveInspect(file: SuiteFileRef): ArchiveInfoUi? = null
     /**
-     * Opens a GhulDocs vault saved on its own, like [openSingle]: only that vault is unlocked, its
+     * Opens a GhulDocs package, like [openSingle]: only that vault is unlocked, its
      * changes go back into [file] (as a stream, with its documents).
      */
     suspend fun openSingleDocs(

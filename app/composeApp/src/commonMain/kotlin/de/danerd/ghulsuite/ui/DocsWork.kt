@@ -77,13 +77,9 @@ fun docViewKind(item: DocsItemUi): DocViewKind {
     }
 }
 
-/** "GhulDocs is full: 412 MB of 1 GB used …" in the language of the screens. */
-private suspend fun AppState.limitText(e: VaultException): String {
-    val used = e.detail.substringBefore('|').toLongOrNull() ?: 0
-    val limit = e.detail.substringAfter('|').toLongOrNull() ?: 1_000_000_000
-    return if (used > 0) str(Res.string.err_docs_limit, formatSizeSi(used), formatSizeSi(limit))
-    else str(Res.string.err_docs_too_large, formatSizeSi(limit))
-}
+/** "The file needs 180 MB, 40 MB are free …" (or "GhulDocs is full …") in the language of the screens. */
+private suspend fun AppState.limitText(e: VaultException): String =
+    docsLimitText(e.detail, DocsAdding.FILE) { res, args -> str(res, *args) }
 
 /**
  * Adds files to a GhulDocs folder, one after the other, each encrypted while it is read. A failed
@@ -193,7 +189,7 @@ fun AppState.openDocWith(item: DocsItemUi) {
 }
 
 /**
- * Saves a GhulDocs vault with its documents as a `.ghlzip` into [sink] (this suite's protection).
+ * Saves the GhulDocs vault with its documents as a GhulDocs package (`.ghldocs`) into [sink] (this suite's protection).
  * Cancelled or failed, the half written file is removed.
  */
 fun AppState.exportDocsVault(vault: VaultUi, sink: ByteSink) {

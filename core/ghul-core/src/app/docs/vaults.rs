@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! The content files of GhulDocs in `.ghlzip` files: in the suite file next to their vault, and
-//! in a GhulDocs vault saved on its own (FORMAT.md section 10).
+//! The content files of GhulDocs in ZIP files: in the suite file (`.ghlzip`) next to their
+//! vault, and in a GhulDocs package (`.ghldocs`, FORMAT.md section 10).
 //!
-//! A GhulDocs vault on its own is a `.ghlzip` with the vault file as the first entry and then
-//! its content files, nothing else:
+//! A GhulDocs package is the vault saved or handed on on its own: a ZIP of the same form as the
+//! suite file with the vault file as the first entry and then its content files, nothing else:
 //!
 //! ```text
 //! <id>.ghldoc                         the vault (its index lists every content file)
@@ -27,22 +27,22 @@ use zeroize::Zeroizing;
 use super::index::{self, Id, Tree};
 use super::{blob, check_room, unhex16, usage, Usage, DIR_PREFIX, DOCS_LIMIT};
 use crate::app::archive::{
-    mismatch, not_a_suite_file, read_container, suite_zip, write_zip, zip_error, ArchiveProgress, ArchiveSink,
-    ArchiveSource, SourceReader, HEADER_FILE,
+    mismatch, not_a_suite_file, read_container, suite_not_docs_package, suite_zip, write_zip, zip_error,
+    ArchiveProgress, ArchiveSink, ArchiveSource, SourceReader, HEADER_FILE,
 };
 use crate::app::error::{GhulError, Result};
 use crate::app::single::single_file;
 use crate::app::storage::VaultStorage;
 use crate::app::suite::{
-    file_name, now_ms, parse_keyfile, protection_of, register_key, second_factor, set_vault_name, with_authenticator,
-    GhulSuite, ProtectionInfo, VaultKind,
+    docs_vault_id, file_name, now_ms, parse_keyfile, protection_of, register_key, second_factor, set_vault_name,
+    vault_name, with_authenticator, GhulSuite, ProtectionInfo, VaultKind,
 };
 use crate::app::zipstream::{EntryInfo, ZipReader};
 use crate::vault::container::{Fido2Registration, KdfCost, SuiteKeys};
 use crate::vault::{ContainerKind, Entry, LockedContainer, PasswordKey, Slot, SlotMeta, UnlockedContainer};
 use crate::{FidoListener, HidTransport, RP_ID};
 
-/// Folder (in the content root) of content files read from a `.ghlzip` and not yet in place.
+/// Folder (in the content root) of content files read from a ZIP and not yet in place.
 const STAGING_DIR: &str = ".staging";
 /// A staging folder older than this was left by an app that ended (it is removed), unless it is
 /// in use (see [`LIVE`]) or kept on purpose ([`KEEP_MARK`]).
@@ -68,12 +68,12 @@ pub(in crate::app) fn content_root_of(storage: &dyn VaultStorage) -> Result<Path
         .ok_or_else(|| GhulError::Storage { msg: "documents cannot be stored in this folder".into() })
 }
 
-/// The name of a content file in a `.ghlzip`.
+/// The name of a content file in a suite file or GhulDocs package.
 pub(in crate::app) fn entry_name(vault_id: &str, content: &Id) -> String {
     format!("{DIR_PREFIX}{vault_id}/{}", blob::file_name(content))
 }
 
-/// Vault id and content id of a content file in a `.ghlzip` (exactly `docs-<32 hex>/<32
+/// Vault id and content id of a content file in a ZIP (exactly `docs-<32 hex>/<32
 /// hex>.ghlblob`, lower case), `None` for any other name.
 pub(in crate::app) fn parse_entry_name(name: &str) -> Option<(String, Id)> {
     let rest = name.strip_prefix(DIR_PREFIX)?;
@@ -83,7 +83,7 @@ pub(in crate::app) fn parse_entry_name(name: &str) -> Option<(String, Id)> {
     Some((vid.to_owned(), unhex16(content)?))
 }
 
-/// A content file to copy into a `.ghlzip`.
+/// A content file to copy into a suite file or GhulDocs package.
 pub(in crate::app) struct ContentFile {
     pub(in crate::app) name: String,
     pub(in crate::app) path: PathBuf,
@@ -92,7 +92,7 @@ pub(in crate::app) struct ContentFile {
 }
 
 /// The content files of an index (all its documents, also those in the trash), from `dir`,
-/// named for vault `vault_id` in the `.ghlzip`. Each must be there with its size, otherwise
+/// named for vault `vault_id` in the ZIP. Each must be there with its size, otherwise
 /// nothing is written: a missing document would be gone wherever the file is opened.
 pub(in crate::app) fn content_files(dir: &Path, vault_id: &str, entries: &[Entry]) -> Result<Vec<ContentFile>> {
     let mut out = Vec::new();
@@ -108,7 +108,7 @@ pub(in crate::app) fn content_files(dir: &Path, vault_id: &str, entries: &[Entry
     Ok(out)
 }
 
-/// A folder for content files read from a `.ghlzip` until they are checked; removed with
+/// A folder for content files read from a ZIP until they are checked; removed with
 /// everything still in it when dropped. It knows every file staged into it (with its size), so
 /// nothing moves into place unless all of them are still there.
 pub(in crate::app) struct Staging {
@@ -202,6 +202,20 @@ impl Drop for Staging {
     }
 }
 
+/// Removes every content folder of GhulDocs under `root` (`docs-<id>`), the staging folders
+/// (those kept on purpose too) and folders of documents rescued earlier
+/// (`rescued-documents-<id>`): the suite on this device is deleted. Nothing else is touched.
+pub(in crate::app) fn remove_all_contents(root: &Path) -> Result<()> {
+    for e in fs::read_dir(root).into_iter().flatten().flatten() {
+        let name = e.file_name().to_string_lossy().into_owned();
+        let ours = name == STAGING_DIR || name.starts_with(DIR_PREFIX) || name.starts_with("rescued-documents-");
+        if ours && e.file_type().is_ok_and(|t| t.is_dir()) {
+            fs::remove_dir_all(e.path())?;
+        }
+    }
+    Ok(())
+}
+
 /// Removes staging folders an app left behind when it ended: never one in use by this process,
 /// never one kept on purpose.
 pub(in crate::app) fn tidy_staging(root: &Path) {
@@ -223,7 +237,7 @@ pub(in crate::app) fn tidy_staging(root: &Path) {
     }
 }
 
-/// The content files a GhulDocs vault read from a `.ghlzip` must come with: from its index,
+/// The content files a GhulDocs vault read from a ZIP must come with: from its index,
 /// which is checked first (complete items, unique ids, no cycles, sizes within the limit).
 pub(in crate::app) struct Expected {
     files: HashMap<Id, (u64, [u8; 32])>,
@@ -278,7 +292,7 @@ pub(in crate::app) fn stage_entry<R: Read>(
     Ok(())
 }
 
-/// The first entry of a `.ghlzip`: its name and container (not opened).
+/// The first entry of a suite file or GhulDocs package: its name and container (not opened).
 fn read_first(z: &mut ZipReader<SourceReader>) -> Result<(String, LockedContainer)> {
     let e = z.next_entry().map_err(zip_error)?.ok_or_else(not_a_suite_file)?;
     let (data, _) = read_container(z, &e)?;
@@ -286,16 +300,19 @@ fn read_first(z: &mut ZipReader<SourceReader>) -> Result<(String, LockedContaine
     Ok((e.name, l))
 }
 
-/// The vault of a GhulDocs vault saved on its own (the first entry).
+/// The vault of a GhulDocs package (the first entry); a suite file says that it is one.
 fn read_docs_head(z: &mut ZipReader<SourceReader>) -> Result<(String, LockedContainer)> {
     let (name, l) = read_first(z)?;
+    if l.kind() == ContainerKind::Export && name == HEADER_FILE {
+        return Err(suite_not_docs_package());
+    }
     if l.kind() != ContainerKind::Docs || !name.ends_with(".ghldoc") || !crate::app::storage::plain_file_name(&name) {
         return Err(not_a_suite_file());
     }
     Ok((name, l))
 }
 
-/// The rest of a GhulDocs vault saved on its own: exactly the content files of `c`, checked,
+/// The rest of a GhulDocs package: exactly the content files of `c`, checked,
 /// into `staging`.
 fn stage_docs_rest(
     z: &mut ZipReader<SourceReader>,
@@ -321,25 +338,26 @@ fn stage_docs_rest(
     Ok(())
 }
 
-/// What a `.ghlzip` is.
+/// What a suite file or GhulDocs package is (by its first entry, not by its name).
 #[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ArchiveContent {
-    /// A suite file (open with `archive_open`).
+    /// A suite file, `.ghlzip` (open with `archive_open`).
     Suite,
-    /// A GhulDocs vault saved on its own (open with `open_single_docs` or add with
+    /// A GhulDocs package, `.ghldocs` (open with `open_single_docs` or add with
     /// `docs_adopt_vault`).
     DocsVault,
 }
 
-/// What a `.ghlzip` holds and what it needs to be opened.
+/// What a suite file or GhulDocs package holds and what it needs to be opened.
 #[derive(uniffi::Record, Clone, Debug, PartialEq)]
 pub struct ArchiveInfo {
     pub content: ArchiveContent,
     pub protection: ProtectionInfo,
 }
 
-/// Reads only the first entry of a `.ghlzip`: whether it is a suite file or a GhulDocs vault
-/// saved on its own, and what it needs to be opened. Nothing is opened.
+/// Reads only the first entry of a `.ghlzip` or `.ghldocs`: whether it is a suite file or a
+/// GhulDocs package, and what it needs to be opened. Nothing is opened. The app opens each only
+/// as what it is; the core refuses the other with a message that says what it is.
 #[uniffi::export]
 pub fn archive_inspect(source: Arc<dyn ArchiveSource>) -> Result<ArchiveInfo> {
     let mut z = suite_zip(source, None);
@@ -352,7 +370,7 @@ pub fn archive_inspect(source: Arc<dyn ArchiveSource>) -> Result<ArchiveInfo> {
     Ok(ArchiveInfo { content, protection: protection_of(&l) })
 }
 
-/// A `.ghlzip` written by GhulDocs: size and SHA-256 (hex) of the whole file as written.
+/// A GhulDocs package (`.ghldocs`) as written: size and SHA-256 (hex) of the whole file as written.
 #[derive(uniffi::Record, Clone, Debug, PartialEq)]
 pub struct DocsArchive {
     pub size: u64,
@@ -439,7 +457,7 @@ fn picked(entries: &[Entry], ids: &[Id]) -> Entries {
 
 #[uniffi::export]
 impl GhulSuite {
-    /// Writes a GhulDocs vault on its own into `sink`: a `.ghlzip` with the vault (with this
+    /// Writes the GhulDocs vault on its own into `sink`: a GhulDocs package (`.ghldocs`) with the vault (with this
     /// suite's protection, like `export_vault`) and all its content files. Open it with
     /// `open_single_docs`, add it with `docs_adopt_vault`.
     pub fn docs_export_vault(
@@ -462,7 +480,7 @@ impl GhulSuite {
 
     /// Hands on a GhulDocs vault (or picked files and folders of it) as a vault of its own:
     /// `options.password` plus a new key file (`options.keyfile`) or a security key (`transport`
-    /// and `pin`, two touches), and a new recovery code; written into `sink` as a `.ghlzip` with
+    /// and `pin`, two touches), and a new recovery code; written into `sink` as a GhulDocs package (`.ghldocs`) with
     /// its content files (copied as they are: the documents' keys are in the new index).
     pub fn docs_share_vault(
         &self,
@@ -531,10 +549,15 @@ impl GhulSuite {
         Ok(DocsShared { size, sha256, recovery_code: code.to_display().to_string() })
     }
 
-    /// Adds a GhulDocs vault saved on its own (a `.ghlzip` from `docs_export_vault` or
-    /// `docs_share_vault`) to this suite: opened once with its own password plus key or key
-    /// file, then switched to this suite's protection like `adopt_vault`. Its documents count
-    /// towards the limit (`DocsLimit` before anything is copied). Returns the vault's id.
+    /// Adds a GhulDocs package (a `.ghldocs` from `docs_export_vault` or `docs_share_vault`) to
+    /// this suite: opened once with its own password plus key or key file. A suite has one
+    /// GhulDocs vault: if it has one already, the package's files and folders go into it, in a
+    /// new folder at the top named `name` (or the package's name; a name that is taken gets a
+    /// number), their content files moved as they are (their keys are in the index). A document
+    /// that is in it already (the same content file, e.g. the package was added before):
+    /// `AlreadyExists`. Without a GhulDocs vault the package becomes it, switched to this
+    /// suite's protection like `adopt_vault`. Its documents count towards the limit
+    /// (`DocsLimit` before anything is copied). Returns the id of the suite's GhulDocs vault.
     #[allow(clippy::too_many_arguments)]
     pub fn docs_adopt_vault(
         &self,
@@ -567,21 +590,42 @@ impl GhulSuite {
         let vid = crate::kdf::hex(&c.container_id());
         Expected::of(&c)?;
         let add = Usage::of(&c.payload.entries);
+        let blobs: HashSet<Id> = c.payload.entries.iter().filter_map(index::content).map(|x| x.blob).collect();
         let limit = self.docs_limit();
-        let room = |o: &mut crate::app::suite::Open| {
+        let (blobs, vid) = (&blobs, vid.as_str());
+        let room = move |o: &mut crate::app::suite::Open| {
             crate::app::single::refuse_single(o)?;
-            if o.vaults.iter().any(|v| v.reference.id == vid) {
-                return Err(GhulError::AlreadyExists);
+            match docs_vault_id(o) {
+                Some(dst) => {
+                    let have = &o.docs(&dst)?.payload.entries;
+                    if have.iter().filter_map(index::blob).any(|b| blobs.contains(&b)) {
+                        return Err(GhulError::AlreadyExists);
+                    }
+                }
+                None if o.vaults.iter().any(|v| v.reference.id == vid) => return Err(GhulError::AlreadyExists),
+                None => {}
             }
             check_room(usage(o), add, limit)
         };
         self.with_open(|o| room(o))?;
         let staging = Staging::new(&root)?;
-        stage_docs_rest(&mut z, &entry, &c, &staging)?;
-        self.with_open(|o| {
+        if let Err(e) = stage_docs_rest(&mut z, &entry, &c, &staging) {
+            c.payload.entries.iter_mut().for_each(zeroize::Zeroize::zeroize);
+            return Err(e);
+        }
+        self.with_open(move |o| {
+            if let Some(dst) = docs_vault_id(o) {
+                let folder = if name.trim().is_empty() { vault_name(&c, &entry) } else { name };
+                let r = room(o).and_then(|()| {
+                    staging.verify()?;
+                    self.merge_docs(o, &dst, &c.payload.entries, &folder, &staging.vault_dir(vid))
+                });
+                c.payload.entries.iter_mut().for_each(zeroize::Zeroize::zeroize);
+                return r;
+            }
             room(o)?;
             self.take_over(o, &mut c)?;
-            staging.move_vault(&vid, &root)?;
+            staging.move_vault(vid, &root)?;
             let dir = root.join(format!("{DIR_PREFIX}{vid}"));
             self.insert_vault(o, c, &name).inspect_err(|_| {
                 let _ = fs::remove_dir_all(&dir);
@@ -589,7 +633,70 @@ impl GhulSuite {
         })
     }
 
-    /// Opens a GhulDocs vault saved on its own (a `.ghlzip`) like `open_single_vault`: this
+    /// Replaces the suite's GhulDocs vault by a GhulDocs package (`.ghldocs`), opened once with
+    /// its own password plus key or key file and switched to this suite's protection like
+    /// `docs_adopt_vault`. The old vault goes with all its documents (the trash included); the
+    /// limit counts the package alone (`DocsLimit` before anything is copied). Everything of the
+    /// package is checked and staged first; the old vault is removed only after the new one is
+    /// written: if anything fails before, the old GhulDocs vault stays as it was. A package of
+    /// the same vault (e.g. a saved older state) replaces it as well. Without a GhulDocs vault
+    /// the package becomes it. `name` empty: the package's own name. Returns the new vault's id.
+    #[allow(clippy::too_many_arguments)]
+    pub fn docs_replace_vault(
+        &self,
+        source: Arc<dyn ArchiveSource>,
+        name: String,
+        password: String,
+        transport: Option<Arc<dyn HidTransport>>,
+        listener: Option<Arc<dyn FidoListener>>,
+        pin: Option<String>,
+        keyfile: Option<Vec<u8>>,
+        progress: Option<Arc<dyn ArchiveProgress>>,
+    ) -> Result<String> {
+        let password = Zeroizing::new(password);
+        let pin = pin.map(Zeroizing::new);
+        self.with_open(|o| crate::app::single::refuse_single(o))?;
+        let root = self.content_root()?;
+        let mut z = suite_zip(source, progress);
+        let (entry, locked) = read_docs_head(&mut z)?;
+        let keyfile = parse_keyfile(keyfile)?;
+        let s = second_factor(
+            &locked,
+            transport.as_ref(),
+            listener.as_ref(),
+            pin.as_deref().map(|p| p.as_str()),
+            keyfile.as_ref(),
+        )?;
+        let pk = PasswordKey::derive(&password, &locked.header().kdf)?;
+        let mut c = locked.unlock(&pk, &s)?;
+        let vid = crate::kdf::hex(&c.container_id());
+        Expected::of(&c)?;
+        // The old vault goes: the package alone has to fit.
+        let add = Usage::of(&c.payload.entries);
+        let limit = self.docs_limit();
+        check_room(Usage::default(), add, limit)?;
+        let staging = Staging::new(&root)?;
+        if let Err(e) = stage_docs_rest(&mut z, &entry, &c, &staging) {
+            c.payload.entries.iter_mut().for_each(zeroize::Zeroize::zeroize);
+            return Err(e);
+        }
+        self.with_open(move |o| {
+            crate::app::single::refuse_single(o)?;
+            check_room(Usage::default(), add, limit)?;
+            staging.verify()?;
+            self.take_over(o, &mut c)?;
+            let Some(old) = docs_vault_id(o) else {
+                staging.move_vault(&vid, &root)?;
+                let dir = root.join(format!("{DIR_PREFIX}{vid}"));
+                return self.insert_vault(o, c, &name).inspect_err(|_| {
+                    let _ = fs::remove_dir_all(&dir);
+                });
+            };
+            self.replace_docs(o, &old, c, &vid, &name, &root, &staging)
+        })
+    }
+
+    /// Opens a GhulDocs package (`.ghldocs`) like `open_single_vault`: this
     /// suite's folder must be empty (the app gives it a temporary one); the vault keeps its
     /// protection and is written back with `single_docs_write`. Returns the vault's id.
     #[allow(clippy::too_many_arguments)]
@@ -629,7 +736,7 @@ impl GhulSuite {
         Ok(vid)
     }
 
-    /// The GhulDocs vault opened on its own as it is now, written into `sink` as a `.ghlzip`
+    /// The GhulDocs vault opened on its own as it is now, written into `sink` as a `.ghldocs`
     /// (to replace the file it came from), with the change it holds: confirm with
     /// `single_saved(change)` once the file is in place.
     pub fn single_docs_write(
@@ -651,5 +758,144 @@ impl GhulSuite {
         })?;
         let (size, sha256) = write_zip(&[(file, data.to_vec())], &contents, sink, progress)?;
         Ok(SingleDocsWritten { change, size, sha256 })
+    }
+}
+
+impl GhulSuite {
+    /// Puts the items `from` of a GhulDocs package into the suite's GhulDocs vault `dst`, in a
+    /// new folder `folder` at the top: every item gets a new id (the package may hold ids the
+    /// vault has), the content files (checked, in `staged`) move into the vault's folder. If
+    /// anything fails, the index stays as it was and the moved content files go.
+    fn merge_docs(
+        &self,
+        o: &mut crate::app::suite::Open,
+        dst: &str,
+        from: &[Entry],
+        folder: &str,
+        staged: &Path,
+    ) -> Result<String> {
+        let dir = self.docs_dir(dst)?;
+        let now = now_ms();
+        let items: Vec<&Entry> = from.iter().filter(|e| index::is_item(e)).collect();
+        let ids: HashMap<Id, Id> =
+            items.iter().filter_map(|e| index::id_of(e)).map(|id| (id, crate::app::suite::new_id())).collect();
+        let name = {
+            let clean: String = folder
+                .trim()
+                .chars()
+                .map(|ch| if ch.is_control() || ch == '/' || ch == '\\' { '_' } else { ch })
+                .take(super::MAX_NAME)
+                .collect();
+            let clean = super::check_name(&clean).unwrap_or_else(|_| "GhulDocs".to_owned());
+            Tree::new(&o.docs(dst)?.payload.entries).free_name(None, &clean, None)
+        };
+        let top = super::new_entry(index::FOLDER, name, None, now);
+        let top_id = index::id_of(&top).unwrap_or_default();
+        let mut add = Entries(vec![top]);
+        for e in items {
+            let mut e = e.clone();
+            e.id = ids.get(&index::id_of(&e).unwrap_or_default()).ok_or(GhulError::NotFound)?.to_vec();
+            let parent = index::parent(&e).and_then(|p| ids.get(&p).copied()).unwrap_or(top_id);
+            index::set_parent(&mut e, Some(parent));
+            add.0.push(e);
+        }
+        // The content files first: the index never names one that is not there.
+        fs::create_dir_all(&dir)?;
+        let mut moved: Vec<PathBuf> = Vec::new();
+        let mut out: Result<()> = Ok(());
+        for b in add.0.iter().filter_map(index::blob) {
+            let to = dir.join(blob::file_name(&b));
+            if let Err(e) = fs::rename(staged.join(blob::file_name(&b)), &to) {
+                out = Err(e.into());
+                break;
+            }
+            moved.push(to);
+        }
+        let out = out.and_then(|()| {
+            let before = o.docs(dst)?.payload.entries.len();
+            o.docs_mut(dst)?.payload.entries.extend(add.0.iter().cloned());
+            self.save_vault(o, dst).inspect_err(|_| {
+                // Back to what is on the disk.
+                if let Ok(c) = o.docs_mut(dst) {
+                    c.payload.entries.drain(before..).for_each(|mut e| zeroize::Zeroize::zeroize(&mut e));
+                }
+            })
+        });
+        if out.is_err() {
+            moved.iter().for_each(|p| {
+                let _ = fs::remove_file(p);
+            });
+        }
+        out.map(|()| dst.to_owned())
+    }
+
+    /// Puts the GhulDocs vault `c` (with this suite's protection, its content files in
+    /// `staging`) in place of the vault `old`: the old content files move aside, the new ones in,
+    /// the new vault file is written; only then the old vault file goes and the old content
+    /// files with the aside folder. Anything failing before puts the old vault back as it was.
+    #[allow(clippy::too_many_arguments)]
+    fn replace_docs(
+        &self,
+        o: &mut crate::app::suite::Open,
+        old: &str,
+        c: UnlockedContainer,
+        vid: &str,
+        name: &str,
+        root: &Path,
+        staging: &Staging,
+    ) -> Result<String> {
+        let pos = o.vaults.iter().position(|v| v.reference.id == old).ok_or(GhulError::NotFound)?;
+        let old_file = o.vaults[pos].reference.file.clone();
+        // A package of the same vault writes the same file: its bytes are kept to put it back.
+        let old_data = Zeroizing::new(self.storage.read(old_file.clone())?.unwrap_or_default());
+        let old_dir = root.join(format!("{DIR_PREFIX}{old}"));
+        let new_dir = root.join(format!("{DIR_PREFIX}{vid}"));
+        // Only a package of the same vault needs the old content folder's place: it moves aside.
+        // Otherwise the old folder stays where it is until the end (a copy into a suite file may
+        // be reading it).
+        let aside = if vid == old { Some(Staging::new(root)?) } else { None };
+        let aside_dir = aside.as_ref().map(|a| a.vault_dir(old)).unwrap_or_default();
+        if aside.is_some() && old_dir.exists() {
+            fs::rename(&old_dir, &aside_dir)?;
+        }
+        let put_back = |o: &mut crate::app::suite::Open, removed: Option<crate::app::suite::OpenVault>| {
+            let _ = fs::remove_dir_all(&new_dir);
+            if !aside_dir.as_os_str().is_empty() && aside_dir.exists() {
+                let _ = fs::rename(&aside_dir, &old_dir);
+            }
+            if let Some(v) = removed {
+                o.vaults.insert(pos.min(o.vaults.len()), v);
+            }
+            if !old_data.is_empty() {
+                let _ = self.storage.write(old_file.clone(), old_data.to_vec());
+            }
+        };
+        if let Err(e) = staging.move_vault(vid, root) {
+            put_back(o, None);
+            return Err(e);
+        }
+        let removed = o.vaults.remove(pos);
+        match self.insert_vault(o, c, name) {
+            Ok(id) => {
+                let mut removed = removed;
+                if let Some(c) = removed.container.as_mut() {
+                    c.payload.entries.iter_mut().for_each(zeroize::Zeroize::zeroize);
+                }
+                if old_file != file_name(VaultKind::Docs, &id) {
+                    self.storage.delete(old_file.clone())?;
+                }
+                // The old documents go: with the aside folder, or their own folder (later, if a
+                // copy into a suite file still runs).
+                if aside.is_none() {
+                    self.remove_contents(vec![old_dir.clone()]);
+                }
+                self.save_container(&mut o.suite, crate::app::suite::SUITE_FILE)?;
+                Ok(id)
+            }
+            Err(e) => {
+                put_back(o, Some(removed));
+                Err(e)
+            }
+        }
     }
 }

@@ -192,6 +192,10 @@ Geräte oder einen bezahlten Gerätedienst; bis dahin deckt der Testplan die Her
   etwas ersetzt wird; ein älterer Schutz öffnet nie. Gelesen und geschrieben als Datenstrom, beim Speichern
   zurückgelesen. Getestet mit fehlenden, vertauschten, alten, fremden und abgezweigten Teilen, falschem Siegel, Code
   ohne Passwort, ZIP-Tricks, Abbruch an jeder Stelle und einer Suite-Datei mit vollem GhulDocs.
+  Höchstens ein GhulDocs-Tresor je Suite-Datei; ein GhulDocs-Paket (`.ghldocs`, dieselbe ZIP-Form, der Tresor als
+  erster Eintrag) wird nie als Suite-Datei geöffnet und umgekehrt (der erste Eintrag entscheidet, nicht der Name).
+  Ein hinzugefügtes Paket kommt mit neuen Kennungen in den GhulDocs-Tresor der Suite, seine geprüften Inhaltsdateien
+  unverändert; ist eine davon schon da, wird nichts übernommen.
 - **GhulDocs:** jede Datei mit eigenem zufälligem Schlüssel, Abschnitte zu 4 MiB mit XChaCha20-Poly1305, an Kennung,
   Nummer und „letzter Abschnitt“ gebunden, die Länge verschlüsselt am Ende, Füllung muss null sein. Getestet:
   vertauschte, weggelassene, abgeschnittene, veränderte und fremde Abschnitte, falsche Füllung und Länge, eine

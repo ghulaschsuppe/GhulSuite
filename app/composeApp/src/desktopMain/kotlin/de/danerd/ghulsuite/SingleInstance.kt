@@ -146,7 +146,10 @@ object SingleInstance {
         }.apply { isDaemon = true; name = "GhulSuite single instance" }.start()
     }
 
-    /** A suite file from the command line (double click) for the app to open. */
+    /**
+     * A suite file or GhulDocs package from the command line (double click) for the app to open;
+     * which of the two its name says (see SuiteFileSection and SetupScreen).
+     */
     fun open(path: String) {
         val f = File(path)
         // Read as a stream when it is opened; the core counts the size itself.
@@ -154,6 +157,7 @@ object SingleInstance {
         AppLaunch.suiteFile.value = PickedSuiteFile(SuiteFileRef(f.absolutePath, f.name))
     }
 
-    /** The suite file among the program's arguments. */
-    fun suiteFileArg(args: Array<String>): String? = args.firstOrNull { it.endsWith(".ghlzip", ignoreCase = true) }
+    /** The suite file (`.ghlzip`) or GhulDocs package (`.ghldocs`) among the program's arguments. */
+    fun suiteFileArg(args: Array<String>): String? =
+        args.firstOrNull { it.endsWith(".ghlzip", ignoreCase = true) || it.endsWith(".ghldocs", ignoreCase = true) }
 }

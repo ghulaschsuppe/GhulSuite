@@ -137,8 +137,9 @@ der Leiste, seine Tresore bleiben unberührt.
 - **Ansehen in der App** ohne Klartext auf dem Datenträger: Bilder, PDF und Text.
 - **Exportieren** (entschlüsselt an einen Ort deiner Wahl, mit Rückfrage) oder **mit einer anderen App öffnen**
   (eine befristete Kopie, gelöscht, sobald GhulSuite sperrt).
-- **Mehrere Tresore**, z. B. „Wichtige Dokumente“ und „Steuer 2025“. Einen GhulDocs-Tresor gibst du mit seinen
-  Dokumenten als eigene Datei weiter, mit eigenem Passwort.
+- **Ein Tresor je Suite**, geordnet in Ordnern. Ihn oder ausgewählte Ordner und Dateien gibst du mit den Dokumenten
+  als **GhulDocs-Paket** (`.ghldocs`) weiter, mit eigenem Passwort. Fügt der Empfänger das Paket seiner Suite hinzu,
+  landet es in seinem GhulDocs, in einem eigenen Ordner, oder ersetzt es (auf Wunsch nach dem Sichern des bisherigen).
 
 </td></tr></table>
 
@@ -231,8 +232,8 @@ am PC dieselbe Datei öffnen, arbeiten, speichern; wieder am Handy öffnen.
   zurücksetzen.
 - **Einzelne Tresore:** Eine Tresordatei lässt sich auch für sich öffnen, mit Passwort und zweitem Faktor oder dem
   Wiederherstellungscode, und zu deiner Suite hinzufügen. Ausgewählte Einträge gibst du als neuen Tresor mit eigener
-  Schlüsseldatei oder eigenem Security Key weiter. Ein GhulDocs-Tresor reist dabei mit seinen Dokumenten als
-  `.ghlzip`.
+  Schlüsseldatei oder eigenem Security Key weiter. GhulDocs reist dabei mit seinen Dokumenten als eigene Dateiart, das
+  GhulDocs-Paket (`.ghldocs`); die Suite-Datei bleibt `.ghlzip`.
 
 ## Auch auf dem großen Bildschirm
 

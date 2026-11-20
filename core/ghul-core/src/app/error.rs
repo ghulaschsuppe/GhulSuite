@@ -76,10 +76,11 @@ pub enum GhulError {
     ProtectionOutdated,
     #[error("this area has not been set up")]
     NotConfigured,
-    /// GhulDocs holds as much as it may (all its vaults together, the trash included): nothing
-    /// was added.
-    #[error("GhulDocs is full ({used} of {limit} bytes used)")]
-    DocsLimit { used: u64, limit: u64 },
+    /// GhulDocs holds as much as it may (the trash included): nothing
+    /// was added. `needed`: bytes of what was to be added (0: not known, e.g. a source without a
+    /// size that turned out too large while it was read).
+    #[error("GhulDocs is full ({used} of {limit} bytes used, {needed} needed)")]
+    DocsLimit { used: u64, limit: u64, needed: u64 },
     // --- network (update check)
     #[error("network error: {msg}")]
     Network { msg: String },

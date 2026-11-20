@@ -74,9 +74,10 @@
                 <data android:mimeType="application/ics" />
             </intent-filter>
             <!--
-              A suite file (.ghlzip) tapped in a file manager: GhulSuite opens it after checking it
-              completely, the same as "Open suite file". Only by its name: a file of another type
-              is not handed to GhulSuite.
+              A suite file (.ghlzip) or GhulDocs package (.ghldocs) tapped in a file manager:
+              GhulSuite opens a suite file after checking it completely, the same as "Open suite
+              file", and offers a GhulDocs package to open on its own or to add to GhulDocs. Only by
+              its name: a file of another type is not handed to GhulSuite.
             -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
@@ -89,6 +90,9 @@
                 <data android:pathPattern=".*\\.ghlzip" />
                 <data android:pathPattern=".*\\..*\\.ghlzip" />
                 <data android:pathPattern=".*\\..*\\..*\\.ghlzip" />
+                <data android:pathPattern=".*\\.ghldocs" />
+                <data android:pathPattern=".*\\..*\\.ghldocs" />
+                <data android:pathPattern=".*\\..*\\..*\\.ghldocs" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.INSERT" />

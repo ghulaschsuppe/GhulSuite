@@ -342,7 +342,7 @@
     <string name="start_open_suite">Suite-Datei öffnen</string>
     <string name="start_open_suite_text">Eine gespeicherte Suite (.ghlzip), z. B. von einem USB-Stick.</string>
     <string name="start_open_vault">Einzelnen Tresor öffnen</string>
-    <string name="start_open_vault_text">Eine einzelne Tresordatei (.ghlpss, .ghltotp, .ghlcal und andere). Nur diesen Tresor öffnen oder zu deiner Suite hinzufügen.</string>
+    <string name="start_open_vault_text">Eine einzelne Tresordatei (.ghlpss, .ghltotp, .ghlcal und andere) oder ein GhulDocs-Paket (.ghldocs). Nur diesen Tresor öffnen oder zu deiner Suite hinzufügen.</string>
     <string name="storage_open_existing">Diese Suite öffnen</string>
     <string name="storage_suite_exists">Hier liegen bereits GhulSuite-Dateien.</string>
     <string name="t_card">Kreditkarte</string>
@@ -369,7 +369,7 @@
     <string name="unlock_use_quick">Mit Fingerabdruck oder App-PIN</string>
     <string name="untitled">(ohne Titel)</string>
     <string name="vault_add_file">Tresordatei hinzufügen</string>
-    <string name="vault_add_file_hint">Eine .ghlpss- oder .ghltotp-Datei. Hat sie ein anderes Passwort, wird einmal danach gefragt und sie wird auf deinen Schutz umgestellt.</string>
+    <string name="vault_add_file_hint">Eine .ghlpss- oder .ghltotp-Datei oder ein GhulDocs-Paket (.ghldocs): Dessen Dateien kommen in dein GhulDocs, in einen eigenen Ordner. Hat sie ein anderes Passwort, wird einmal danach gefragt und sie wird auf deinen Schutz umgestellt.</string>
     <string name="vault_all">Alle</string>
     <string name="vault_default_name">Persönlich</string>
     <string name="vault_missing">Datei beschädigt: %1$s</string>
@@ -926,8 +926,12 @@
     <string name="core_doc_bad_id">Dieses Dokument gibt es nicht.</string>
     <string name="core_doc_bad_name">Dieser Name ist nicht erlaubt: Er darf nicht leer sein und keinen Schrägstrich enthalten.</string>
     <string name="core_docs_no_place">In diesem Ordner können keine Dokumente gespeichert werden.</string>
-    <string name="core_docs_with_documents">Ein GhulDocs-Tresor wird mit seinen Dokumenten gespeichert und geöffnet (als .ghlzip-Datei).</string>
+    <string name="core_docs_with_documents">Ein GhulDocs-Tresor wird mit seinen Dokumenten gespeichert und geöffnet (als GhulDocs-Paket, eine .ghldocs-Datei).</string>
     <string name="core_docs_index_bad">Das Inhaltsverzeichnis eines GhulDocs-Tresors ist beschädigt.</string>
+    <string name="core_one_docs_vault">Eine Suite hat nur einen GhulDocs-Tresor. Ein GhulDocs-Paket (.ghldocs) wird in ihn aufgenommen, in einen eigenen Ordner.</string>
+    <string name="core_docs_package_not_suite">Das ist ein GhulDocs-Paket (.ghldocs), keine Suite-Datei. Füge es unter Optionen, Tresore hinzu oder öffne es mit „Einzelnen Tresor öffnen“.</string>
+    <string name="core_suite_not_docs_package">Das ist eine Suite-Datei (.ghlzip), kein GhulDocs-Paket. Öffne sie unter Optionen, Suite-Datei oder mit „Suite-Datei öffnen“.</string>
+    <string name="core_docs_vaults_many">Diese Datei enthält mehr als einen GhulDocs-Tresor und ist keine gültige Suite-Datei. Sie wurde nicht geöffnet.</string>
     <string name="core_vault_other_kind">Der Ziel-Tresor ist von einer anderen Art.</string>
     <string name="core_vault_no_key">Dieser Tresor hat keinen Key.</string>
     <string name="core_attach_many">Zu viele Anhänge.</string>
@@ -1271,7 +1275,7 @@
         <item quantity="one">%1$s Seite</item>
         <item quantity="other">%1$s Seiten</item>
     </plurals>
-    <string name="docs_limit_hint">GhulDocs fasst bis zu 1 GB, alle seine Tresore und der Papierkorb zusammen, eine einzelne Datei ebenfalls bis 1 GB.</string>
+    <string name="docs_limit_hint">GhulDocs fasst bis zu 1 GB, der Papierkorb eingeschlossen, eine einzelne Datei ebenfalls bis 1 GB. Eine Suite hat einen GhulDocs-Tresor.</string>
     <string name="docs_usage_title">Belegung</string>
     <string name="docs_verify_title">Dokumente prüfen</string>
     <string name="docs_verify_hint">Liest jedes Dokument eines Tresors und vergleicht es mit seiner Prüfsumme. Dabei wird nichts geändert.</string>
@@ -1283,16 +1287,58 @@
     </plurals>
     <string name="docs_verify_bad_hint">Öffne eine ältere Suite-Datei, um sie zurückzubekommen.</string>
     <plurals name="docs_trash_count">
-        <item quantity="one">%1$s Element im Papierkorb, in allen GhulDocs-Tresoren.</item>
-        <item quantity="other">%1$s Elemente im Papierkorb, in allen GhulDocs-Tresoren.</item>
+        <item quantity="one">%1$s Element im Papierkorb.</item>
+        <item quantity="other">%1$s Elemente im Papierkorb.</item>
     </plurals>
     <string name="docs_vault_exporting">%1$s wird gespeichert …</string>
     <string name="docs_vault_export_cancelled">Speichern von %1$s abgebrochen. Die unvollständige Datei wurde entfernt.</string>
     <plurals name="docs_share_text">
-        <item quantity="one">%1$s gewähltes Element kommt in einen eigenen GhulDocs-Tresor (eine .ghlzip-Datei mit den Dokumenten), mit eigenem Passwort, eigenem zweiten Faktor und neuem Wiederherstellungscode.</item>
-        <item quantity="other">%1$s gewählte Elemente kommen in einen eigenen GhulDocs-Tresor (eine .ghlzip-Datei mit den Dokumenten), mit eigenem Passwort, eigenem zweiten Faktor und neuem Wiederherstellungscode.</item>
+        <item quantity="one">%1$s gewähltes Element kommt in ein eigenes GhulDocs-Paket (eine .ghldocs-Datei mit den Dokumenten), mit eigenem Passwort, eigenem zweiten Faktor und neuem Wiederherstellungscode.</item>
+        <item quantity="other">%1$s gewählte Elemente kommen in ein eigenes GhulDocs-Paket (eine .ghldocs-Datei mit den Dokumenten), mit eigenem Passwort, eigenem zweiten Faktor und neuem Wiederherstellungscode.</item>
     </plurals>
     <string name="docs_single_no_new_suite">Für eine eigene Suite: Richte zuerst eine neue Suite ein und füge diese Datei dann unter Optionen, Tresore hinzu.</string>
     <string name="docs_single_pending_text">Die letzten Änderungen des GhulDocs-Tresors in %1$s konnten vor dem Sperren nicht in seine Datei geschrieben werden. Ein GhulDocs-Tresor kann nur geschrieben werden, solange er geöffnet ist: Verwirf sie, um die Datei wieder zu öffnen.</string>
-    <string name="docs_foreign_text">Öffne den GhulDocs-Tresor einmal mit seinem eigenen Passwort und seinem Key bzw. seiner Schlüsseldatei. Er wird dann mit seinen Dokumenten hinzugefügt und bekommt den Schutz deiner Suite.</string>
+    <string name="docs_foreign_text">Öffne das GhulDocs-Paket einmal mit seinem eigenen Passwort und seinem Key bzw. seiner Schlüsseldatei. Es wird dann mit seinen Dokumenten dein GhulDocs-Tresor und bekommt den Schutz deiner Suite.</string>
+    <string name="docs_merge_title">In GhulDocs aufnehmen</string>
+    <string name="docs_merge_text">Öffne das GhulDocs-Paket einmal mit seinem eigenen Passwort und seinem Key bzw. seiner Schlüsseldatei. Seine Dateien und Ordner kommen dann in dein GhulDocs, in einen neuen Ordner mit diesem Namen, und bekommen den Schutz deiner Suite.</string>
+    <string name="l_docs_folder_name">Name des Ordners</string>
+    <string name="msg_docs_merged">In GhulDocs aufgenommen.</string>
+    <string name="err_docs_room_file">Die Datei braucht %1$s, frei sind %2$s. Es wurde nichts hinzugefügt. Leere den Papierkorb oder lösche Dokumente und versuche es dann noch einmal.</string>
+    <string name="err_docs_room_package">Das Paket braucht %1$s, frei sind %2$s. Es wurde nichts hinzugefügt. Leere den Papierkorb oder lösche Dokumente und versuche es dann noch einmal.</string>
+    <string name="err_docs_room">Das braucht %1$s in GhulDocs, frei sind %2$s. Es wurde nichts hinzugefügt. Leere den Papierkorb oder lösche Dokumente und versuche es dann noch einmal.</string>
+    <string name="err_docs_package_too_large">Das Paket braucht %1$s, in GhulDocs passen höchstens %2$s. Es wurde nichts geändert.</string>
+    <string name="delete_word">LÖSCHEN</string>
+    <string name="wz_exists">Auf diesem Gerät gibt es schon eine Suite. Wähle, was mit ihr geschehen soll.</string>
+    <string name="wz_exists_open_sub">Die neue Suite wird nicht eingerichtet.</string>
+    <string name="wz_replace_save">Vorhandene sichern und ersetzen</string>
+    <string name="wz_replace_save_sub">Erst als Datei (.ghlzip) sichern, dann löschen und die neue einrichten</string>
+    <string name="wz_replace_delete">Vorhandene löschen und ersetzen</string>
+    <string name="wz_replace_delete_sub">Ohne Sichern: ihre Daten sind dann endgültig weg</string>
+    <string name="wz_save_title">Vorhandene Suite sichern</string>
+    <string name="wz_save_text">Entsperre die vorhandene Suite mit ihrem Master-Passwort und ihrem Key bzw. ihrer Schlüsseldatei. Dann wählst du, wo die Datei (.ghlzip) gespeichert wird. Erst wenn sie geschrieben und geprüft ist, wird die vorhandene Suite auf diesem Gerät gelöscht und die neue eingerichtet.</string>
+    <string name="wz_save_unlocked">Entsperrt. Wähle jetzt, wo die Datei gespeichert wird.</string>
+    <string name="wz_save_not_saved">Nicht gesichert. Es wurde nichts gelöscht.</string>
+    <string name="wz_save_failed">Die Datei wurde nicht vollständig geschrieben. Es wurde nichts gelöscht.</string>
+    <string name="wz_save_other_file">Diese Datei gehört zu einer anderen Suite oder hat einen anderen Stand. Wähle einen neuen Namen, damit nichts überschrieben wird. Es wurde nichts gelöscht.</string>
+    <string name="wz_saved_as">Vorhandene Suite gesichert als %1$s.</string>
+    <string name="wz_deleted">Vorhandene Suite gelöscht.</string>
+    <string name="wz_delete_title">Vorhandene Suite endgültig löschen?</string>
+    <string name="wz_delete_warning">Alles der vorhandenen Suite auf diesem Gerät wird endgültig gelöscht: alle Tresore (Passwörter, 2FA, Dokumente in GhulDocs, Kalender) und die Schnellentsperrung.</string>
+    <string name="wz_delete_note">Eine gesicherte Suite-Datei (.ghlzip) an einem anderen Ort bleibt unberührt. Hast du die Suite noch nicht als Datei gesichert, wähle besser „Vorhandene sichern und ersetzen“.</string>
+    <string name="a_save_and_replace">Sichern und ersetzen</string>
+    <string name="a_delete_and_replace">Löschen und ersetzen</string>
+    <string name="docs_pkg_merge">Als Ordner einsortieren</string>
+    <string name="docs_pkg_merge_sub">Dein GhulDocs bleibt, das Paket kommt in einen neuen Ordner</string>
+    <string name="docs_pkg_save_replace">Vorhandenes GhulDocs sichern und ersetzen</string>
+    <string name="docs_pkg_save_replace_sub">Erst als Paket (.ghldocs) sichern, dann durch das neue ersetzen</string>
+    <string name="docs_pkg_delete_replace">Vorhandenes GhulDocs löschen und ersetzen</string>
+    <string name="docs_pkg_delete_replace_sub">Ohne Sichern: seine Dokumente sind dann endgültig weg</string>
+    <string name="docs_replace_text">Öffne das GhulDocs-Paket einmal mit seinem eigenen Passwort und seinem Key bzw. seiner Schlüsseldatei. Es ersetzt dann dein GhulDocs mit allen Dokumenten (auch denen im Papierkorb) und bekommt den Schutz deiner Suite. Geht dabei etwas schief, bleibt dein GhulDocs, wie es ist.</string>
+    <string name="docs_replaced">GhulDocs ersetzt.</string>
+    <string name="docs_saved_replaced">GhulDocs gesichert als %1$s und ersetzt.</string>
+    <string name="docs_save_not_saved">Nicht gesichert. Es wurde nichts ersetzt.</string>
+    <string name="docs_save_failed">Das Paket wurde nicht vollständig geschrieben. Es wurde nichts ersetzt.</string>
+    <string name="docs_delete_title">Vorhandenes GhulDocs endgültig löschen?</string>
+    <string name="docs_delete_warning">Alle Dokumente und Ordner deines GhulDocs auf diesem Gerät werden endgültig gelöscht, auch die im Papierkorb, und durch das Paket ersetzt.</string>
+    <string name="docs_delete_note">Eine gesicherte Suite-Datei (.ghlzip) oder ein GhulDocs-Paket (.ghldocs) an einem anderen Ort bleibt unberührt. Hast du dein GhulDocs noch nicht gesichert, wähle besser „Vorhandenes GhulDocs sichern und ersetzen“.</string>
 </resources>

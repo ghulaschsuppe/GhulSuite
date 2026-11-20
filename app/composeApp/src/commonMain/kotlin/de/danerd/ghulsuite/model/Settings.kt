@@ -192,6 +192,18 @@ class Settings(private val store: KeyValueStore) {
     /** 0 = by name, 1 = newest first, 2 = favourites first. */
     var authSort by int("auth_sort", 0)
 
+    /**
+     * The suite on this device was deleted: what names its vaults, entries or calendars, and its
+     * quick unlock, goes. Settings of the device itself (look, locking, updates) stay.
+     */
+    fun forgetSuite() {
+        recentEntries = ""
+        calHidden = ""
+        calDefault = ""
+        quickUnlockBiometric = false
+        quickUnlockPin = false
+    }
+
     fun markRecent(vaultId: String, id: String) {
         val key = "$vaultId/$id"
         recentEntries = (listOf(key) + recentEntries.split(',').filter { it.isNotBlank() && it != key }).take(8).joinToString(",")
