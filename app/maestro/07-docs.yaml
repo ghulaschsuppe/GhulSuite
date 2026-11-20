@@ -206,3 +206,35 @@ name: GhulDocs
     timeout: 15000
 - takeScreenshot: 07-17-second-vault
 - assertNotVisible: ".*[Ee]xception.*"
+
+# --- Tidy up: the second vault goes again (deleting asks for its name), so later flows find one ---
+- tapOn: { id: "tab-settings" }
+- scrollUntilVisible:
+    element: "Vaults"
+    direction: DOWN
+- tapOn: "Vaults"
+- scrollUntilVisible:
+    element: { id: "vault-menu-Steuer 2025" }
+    direction: DOWN
+- tapOn: { id: "vault-menu-Steuer 2025" }
+- extendedWaitUntil:
+    visible: "Share as separate vault"
+    timeout: 10000
+- tapOn: "Delete"
+- extendedWaitUntil:
+    visible: "Delete .Steuer 2025.\\?"
+    timeout: 10000
+- tapOn: "Type .Steuer 2025. to confirm"
+- inputText: "Steuer 2025"
+- hideKeyboard
+- takeScreenshot: 07-18-delete-vault
+- tapOn: "Delete"
+- extendedWaitUntil:
+    notVisible: "Steuer 2025"
+    timeout: 15000
+- back
+- tapOn: { id: "tab-docs" }
+- extendedWaitUntil:
+    visible: "Steuer"
+    timeout: 15000
+- assertNotVisible: ".*[Ee]xception.*"
