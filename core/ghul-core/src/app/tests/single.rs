@@ -211,6 +211,67 @@ fn handed_on_with_a_security_key() {
     assert!(matches!(s.share_as_vault(o, None, None, None), Err(GhulError::InvalidInput { .. })));
 }
 
+/// "Hand on" from a vault's menu: no ids picked, the whole vault; a calendar too, with its
+/// events still in their calendars.
+#[test]
+fn a_whole_vault_is_handed_on() {
+    let (_d, s, _, _) = suite_with_entries("share-whole");
+    let new_kf = generate_keyfile();
+    let shared = s.share_as_vault(share_opts(&s, Vec::new(), Some(new_kf.clone())), None, None, None).unwrap();
+    assert_eq!(shared.kind, VaultKind::Pass);
+    let t_dirs = Dirs::new("share-whole-t");
+    let t = t_dirs.suite();
+    t.open_single_vault(shared.data, NEW_PW.into(), None, None, None, Some(new_kf.clone())).unwrap();
+    assert_eq!(titles(&t), vec!["Bank", "Forum", "Kino"]);
+
+    let cal = s
+        .cal_save_calendar(super::super::cal::CalCalendar {
+            id: String::new(),
+            vault_id: vault_id(&s, "Kalender"),
+            name: "Familie".into(),
+            color: 1,
+            default_reminder: 0,
+            events: 0,
+        })
+        .unwrap();
+    s.cal_save_event(super::super::cal::CalEvent {
+        calendar_id: cal.clone(),
+        title: "Geburtstag".into(),
+        start: "2026-12-01T10:00".into(),
+        end: "2026-12-01T11:00".into(),
+        ..Default::default()
+    })
+    .unwrap();
+    let mut o = share_opts(&s, Vec::new(), Some(new_kf.clone()));
+    o.vault_id = vault_id(&s, "Kalender");
+    let shared = s.share_as_vault(o, None, None, None).unwrap();
+    assert_eq!(shared.kind, VaultKind::Cal);
+    let c_dirs = Dirs::new("share-whole-c");
+    let c = c_dirs.suite();
+    c.open_single_vault(shared.data.clone(), NEW_PW.into(), None, None, None, Some(new_kf.clone())).unwrap();
+    let cals = c.cal_calendars().unwrap();
+    let fam = cals.iter().find(|x| x.name == "Familie").expect("the calendar came along");
+    assert_eq!(fam.events, 1, "the event is still in its calendar");
+    assert_ne!(fam.id, cal, "a new id: nothing points back to the own vault");
+
+    // Handed back into the same suite: two calendars "Familie", each with its own id; deleting
+    // the one that came back leaves the own one and its event.
+    s.adopt_vault(shared.data, "Zurück".into(), NEW_PW.into(), None, None, None, Some(new_kf)).unwrap();
+    let both: Vec<_> = s.cal_calendars().unwrap().into_iter().filter(|x| x.name == "Familie").collect();
+    assert_eq!(both.len(), 2);
+    assert_ne!(both[0].id, both[1].id);
+    let back = both.iter().find(|x| x.id != cal).unwrap();
+    s.cal_delete_calendar(back.id.clone()).unwrap();
+    let own = s.cal_calendars().unwrap().into_iter().find(|x| x.id == cal).expect("the own calendar is still there");
+    assert_eq!(own.events, 1);
+
+    // An empty vault is handed on as an empty vault.
+    let empty = s.create_vault(VaultKind::Pass, "Leer".into()).unwrap();
+    let mut o = share_opts(&s, Vec::new(), Some(generate_keyfile()));
+    o.vault_id = empty;
+    assert_eq!(s.share_as_vault(o, None, None, None).unwrap().kind, VaultKind::Pass);
+}
+
 #[test]
 fn a_vault_on_its_own_stays_one_vault() {
     let (_d, s, kf, _) = suite_with_entries("single-one");

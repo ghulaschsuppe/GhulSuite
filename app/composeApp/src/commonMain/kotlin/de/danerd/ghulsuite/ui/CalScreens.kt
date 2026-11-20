@@ -311,10 +311,13 @@ fun CalScreen(state: AppState, padding: PaddingValues) {
     }
     Column(Modifier.fillMaxSize().padding(padding)) {
     if (selected.active) {
+        val selectable = data.occ.filter { it.eventId.isNotEmpty() && (state.calView == CalView.LIST || it in data.occ.on(sel)) }
         SelectionHeader(
             selected.keys.size,
             onClose = { selected.clear() },
-            onAll = { selected.all(data.occ.filter { it.eventId.isNotEmpty() && (state.calView == CalView.LIST || it in data.occ.on(sel)) }.map(::occKey)) },
+            onAll = { selected.all(selectable.map(::occKey)) },
+            // As in every list: "Select all" again takes them back.
+            total = selectable.size,
             actions = listOf(
                 SelAction(Icons.Filled.Folder, stringResource(Res.string.cal_move)) { movingTo = chosen },
                 SelAction(Icons.Filled.Delete, stringResource(Res.string.a_delete), danger = true) {

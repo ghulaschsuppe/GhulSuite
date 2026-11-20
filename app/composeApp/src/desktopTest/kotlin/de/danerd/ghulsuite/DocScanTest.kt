@@ -330,7 +330,7 @@ class DocScanTest {
         tag("scan-save").performClick()
         // How much the PDF needs and how much is free.
         waitPart("The file needs")
-        waitPart("${formatSizeSi(1000)} are free. Nothing was added.")
+        waitPart("${formatSizeSi(1000)} are free in this GhulDocs vault. Nothing was added.")
         shot("8-full")
         val s = assertNotNull(state.scanSession)
         assertEquals(1, s.pages.size)

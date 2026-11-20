@@ -72,6 +72,7 @@ Jeder Test hat eine Nummer, die mit **W** beginnt (z. B. **WE3**), damit sie sic
 | WP3 | QR-Code als Bild kopieren (Rechtsklick → Bild kopieren) → „Bild aus der Zwischenablage“. | Wird erkannt. |
 | WP4 | Ohne QR-Code auf dem Bildschirm scannen. | „Kein QR-Code gefunden.“ |
 | WP5 | Codes mit dem Handy vergleichen (gleiches Konto, gleiche Zeit). | Identisch. |
+| WP6 | GhulPass und GhulAuth: mehrere Einträge auswählen (wie unter Android) → „Zu Favoriten“, dann „Aus Favoriten“. | Wie Android-Plan G8 und A7: alle gewählten auf einmal. |
 
 ## 5. Tresore, Import und Export
 
@@ -82,6 +83,7 @@ Jeder Test hat eine Nummer, die mit **W** beginnt (z. B. **WE3**), damit sie sic
 | WT3 | Export eines Tresors (verschlüsselt) speichern; unverschlüsselt exportieren. | Dateien entstehen am gewählten Ort; unverschlüsselt nur mit Master-Passwort. |
 | WT4 | „Einzelnen Tresor öffnen“ mit einer `.ghlpss` → „Nur diesen Tresor öffnen“; etwas ändern; „Tresor schließen“. | Wie Android-Plan T6 und T7: Änderungen gehen direkt in die Datei am selben Pfad zurück; die eigene Suite bleibt gesperrt. |
 | WT5 | GhulPass: Einträge auswählen → „Als Tresor weitergeben“ mit neuer Schlüsseldatei. | Wie Android-Plan T13: Schlüsseldatei und Tresordatei über den Windows-Speichern-Dialog, Code wird einmal gezeigt. |
+| WT6 | Optionen → Tresore: Hinweis über der Liste und die Untertitel im Menü ⋮ lesen; dann „Als Tresor weitergeben“ aus dem Menü je für einen GhulPass-, GhulAuth-, GhulDocs- und GhulCal-Tresor (einmal mit neuer Schlüsseldatei, einmal mit Security Key über den Windows-Dialog). | Wie Android-Plan T16: „Exportieren“ für dich, „Als Tresor weitergeben“ für jemand anderen; Name mit dem Tresornamen vorbelegt; Schlüsseldatei und Tresordatei über den Windows-Speichern-Dialog (GhulDocs schlägt `.ghldocs` vor), Code wird einmal gezeigt. Jede Datei öffnet auf dem Handy mit dem neuen Schutz vollständig (Kalender mit ihren Terminen, Dokumente ohne Papierkorb), mit dem eigenen nicht. |
 
 ## 6. Android und Windows gemeinsam (Suite-Datei)
 
@@ -114,7 +116,7 @@ Windows nicht. Unter Windows anders:
 | WD6 | Breites Fenster: Dokument anklicken, „Zurück“. | Die Ansicht steht in der Spalte an der Stelle der Liste, die Seitenleiste bleibt. |
 | WD7 | Einen Scan vom Handy (PDF mit JPEG-Seiten) ansehen; vorher und nachher `%TEMP%` nach `imageio*.tmp` durchsuchen (auch mit einem Programm, das gelöschte Dateien zeigt). | Keine Datei von ImageIO; die Seiten entstehen nur im Arbeitsspeicher. |
 | WD8 | GhulSuite starten und sofort, noch während es startet, eine `.ghlzip` doppelklicken; dann ein zweites Mal GhulSuite starten. | Es bleibt bei einem Fenster: die Datei wird im ersten geöffnet, der zweite Start holt es nur nach vorn. Mit „Mit App öffnen“ geöffnete Dokumente bleiben dabei offen (der zweite Start löscht keine Kopien). |
-| WD9 | Nach der Installation (MSI) eine `.ghldocs` (GhulDocs-Paket) im Explorer doppelklicken, einmal mit gesperrter, einmal mit entsperrter Suite; ebenso während GhulSuite schon läuft. | Das Symbol von GhulSuite steht an der Datei („GhulDocs-Paket“). Gesperrt: Auswahl „Nur diesen Tresor öffnen“ / „Zu meiner Suite hinzufügen“; entsperrt: „In GhulDocs aufnehmen“ mit dem Namen der Datei als Ordner. Läuft GhulSuite schon, übernimmt das laufende Fenster die Datei. Der Speichern-Dialog beim Weitergeben schlägt `.ghldocs` vor. |
+| WD9 | Nach der Installation (MSI) eine `.ghldocs` (GhulDocs-Paket) im Explorer doppelklicken, einmal mit gesperrter, einmal mit entsperrter Suite; ebenso während GhulSuite schon läuft. | Das Symbol von GhulSuite steht an der Datei („GhulDocs-Paket“). Gesperrt: Auswahl „Nur diesen Tresor öffnen“ / „Zu meiner Suite hinzufügen“; entsperrt: „Tresor übernehmen“ mit dem Namen der Datei als Name des neuen GhulDocs-Tresors und dem Feld „Passwort dieses Tresors“ (wie Android-Plan GD13c); dasselbe Paket ein zweites Mal: „Das ist schon vorhanden …“. Läuft GhulSuite schon, übernimmt das laufende Fenster die Datei. Der Speichern-Dialog beim Weitergeben schlägt `.ghldocs` vor. |
 
 ## 8. GhulMail mit Verschlüsselung (entfernt)
 
@@ -158,7 +160,7 @@ Die Abläufe sind dieselben wie unter Android (Testplan Android, Abschnitte 1 un
 | W11.1 | „Neu einrichten“ mit Security Key: Schritt 2 → Schritt 3 „Anlegen“. | Der Windows-Dialog fragt PIN und Berührung ab; danach Schritt 4 · Bereiche. |
 | W11.2 | Schritt 6 · Entsperren. | „Zusätzlich Fingerabdruck“ ist ausgegraut (unter Windows nicht verfügbar); App-PIN geht. |
 | W11.3 | Schritt 4: Bereiche. | Alle vier Bereiche wählbar; keiner fragt nach einem Server oder Konto. |
-| W11.4 | Optionen → Bereiche verwalten → GhulDocs einrichten. | Name abgefragt, danach steht GhulDocs in der Leiste mit „0 B von 1 GB“. |
+| W11.4 | Optionen → Bereiche verwalten → GhulDocs einrichten; danach Optionen → Tresore → „Neuer Tresor“ → GhulDocs. | Name abgefragt, danach steht GhulDocs in der Leiste mit „0 B von 1 GB“. Mit dem zweiten Tresor: Tresorwahl in der Kontextzeile; unter der Karte eines einzelnen Tresors „Alle GhulDocs-Tresore: … von 3 GB“, bei „Alle Tresore“ als Hauptzeile „… von 3 GB“ und darunter die Liste der Tresore (wie Android-Plan GD1 und GD13). |
 | W11.5 | Optionen → Suite-Datei → „Speichern unter …“, die `.ghlzip` mit 7-Zip oder dem Explorer öffnen. | Darin `export.ghlexp` (zuerst), je Tresor eine Datei (`.ghlpss`, `.ghltotp`, `.ghldoc`, `.ghlcal`, Namen nach der Kennung), `suite.ghlsuite` und je Dokument eine `docs-…/….ghlblob`; nichts lesbar, keine Dateinamen der Dokumente. |
 
 ## 12. Runde 6
@@ -168,6 +170,7 @@ Die Abläufe sind dieselben wie unter Android (Testplan Android, Abschnitte 1 un
 | WR1 | Einrichtung bis Schritt 6 (Schnell-Entsperren). | Keine App-PIN zur Auswahl, Hinweis auf Windows Hello später (U8). |
 | WR2 | Termin mit Erinnerung in 10 Minuten, dann in Windows die Zeitzone ändern und GhulSuite offen lassen. | Spätestens nach 5 Minuten wird neu geplant; die Erinnerung kommt zur richtigen Uhrzeit (B22). |
 | WR3 | Optionen → GhulCal. | Hinweis: Erinnerungen kommen nur, solange GhulSuite läuft (B22). |
+| WR4 | Zweiten GhulCal-Tresor anlegen; „Alle Kalender“ öffnen, „Neuer Kalender“; in der Liste „Alle wählen“ zweimal. | Wie Android-Plan K21 und K20: Kalender unter ihrem Tresor, Tresorwahl beim neuen Kalender, zweites „Alle wählen“ nimmt die Auswahl zurück. |
 
 ## 13. Aufgaben im Hintergrund
 

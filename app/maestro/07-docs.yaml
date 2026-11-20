@@ -139,6 +139,7 @@ name: GhulDocs
     element: "Storage used, check, trash"
     direction: DOWN
 - tapOn: "Storage used, check, trash"
+# One GhulDocs vault: its own limit.
 - extendedWaitUntil:
     visible: ".* of 1 GB"
     timeout: 15000
@@ -151,3 +152,89 @@ name: GhulDocs
     timeout: 30000
 - takeScreenshot: 07-11-options
 - back
+
+# --- A second GhulDocs vault: like every other area (each up to 1 GB, all of them up to 3 GB) ----
+- tapOn: { id: "tab-settings" }
+- scrollUntilVisible:
+    element: "Vaults"
+    direction: DOWN
+- tapOn: "Vaults"
+- extendedWaitUntil:
+    visible: ".*for someone else.*"
+    timeout: 15000
+- takeScreenshot: 07-12-vaults-hint
+- scrollUntilVisible:
+    element: "New vault"
+    direction: DOWN
+- tapOn: "New vault"
+- tapOn: "GhulDocs"
+- tapOn: "Vault name"
+- inputText: "Steuer 2025"
+- hideKeyboard
+- tapOn: "Create"
+- extendedWaitUntil:
+    visible: "Steuer 2025"
+    timeout: 15000
+- takeScreenshot: 07-13-second-docs-vault
+# Its menu says what "Export" and "Share as separate vault" are for.
+- tapOn: { id: "vault-menu-Steuer 2025" }
+- extendedWaitUntil:
+    visible: "Share as separate vault"
+    timeout: 10000
+- assertVisible: "For you, encrypted.*"
+- assertVisible: "For someone else: .*"
+- takeScreenshot: 07-14-vault-menu
+- tapOn: "Share as separate vault"
+- extendedWaitUntil:
+    visible: "The whole GhulDocs vault .*"
+    timeout: 10000
+- takeScreenshot: 07-15-hand-on
+- tapOn: "Cancel"
+- back
+# GhulDocs lists both vaults ("All vaults"), each opens on its own.
+- tapOn: { id: "tab-docs" }
+- extendedWaitUntil:
+    visible: "Steuer 2025"
+    timeout: 15000
+- extendedWaitUntil:
+    visible: ".* of 3 GB"
+    timeout: 15000
+- takeScreenshot: 07-16-all-vaults
+- tapOn: "Steuer 2025"
+- extendedWaitUntil:
+    visible: ".* of 1 GB"
+    timeout: 15000
+- takeScreenshot: 07-17-second-vault
+- assertNotVisible: ".*[Ee]xception.*"
+
+# --- Tidy up: the second vault goes again (deleting asks for its name), so later flows find one ---
+- tapOn: { id: "tab-settings" }
+- scrollUntilVisible:
+    element: "Vaults"
+    direction: DOWN
+- tapOn: "Vaults"
+- scrollUntilVisible:
+    element: { id: "vault-menu-Steuer 2025" }
+    direction: DOWN
+- tapOn: { id: "vault-menu-Steuer 2025" }
+- extendedWaitUntil:
+    visible: "Share as separate vault"
+    timeout: 10000
+- tapOn: "Delete"
+- extendedWaitUntil:
+    visible: "Delete .Steuer 2025.\\?"
+    timeout: 10000
+- tapOn: "Type .Steuer 2025. to confirm"
+- inputText: "Steuer 2025"
+- hideKeyboard
+- takeScreenshot: 07-18-delete-vault
+- tapOn: "Delete"
+- extendedWaitUntil:
+    notVisible: "Steuer 2025"
+    timeout: 15000
+- back
+- tapOn: { id: "tab-docs" }
+- extendedWaitUntil:
+    visible: "Steuer"
+    timeout: 15000
+- assertNotVisible: ".*[Ee]xception.*"

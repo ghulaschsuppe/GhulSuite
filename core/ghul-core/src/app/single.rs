@@ -55,7 +55,7 @@ pub(super) fn refuse_single(o: &Open) -> Result<()> {
 #[derive(uniffi::Record, Clone)]
 pub struct ShareVaultOptions {
     pub vault_id: String,
-    /// The picked entries.
+    /// The picked entries; empty: the whole vault.
     pub ids: Vec<Vec<u8>>,
     /// Name of the new vault.
     pub name: String,
@@ -171,10 +171,12 @@ impl GhulSuite {
         self.clear_unsaved_at(change);
     }
 
-    /// Puts the picked entries of a GhulPass or GhulAuth vault into a new vault file with a
-    /// protection of its own: `options.password` plus a new key file (`options.keyfile`) or a
-    /// security key (`transport` and `pin`, two touches), and a new recovery code. Password
-    /// histories stay behind.
+    /// Puts the picked entries of a GhulPass or GhulAuth vault (or, with no ids picked, the whole
+    /// vault, also a GhulCal vault) into a new vault file with a protection of its own:
+    /// `options.password` plus a new key file (`options.keyfile`) or a security key (`transport`
+    /// and `pin`, two touches), and a new recovery code. Password histories stay behind; entries
+    /// get new ids (the events of a GhulCal vault follow their calendars to theirs).
+    /// GhulDocs vaults are handed on with `docs_share_vault`.
     pub fn share_as_vault(
         &self,
         options: ShareVaultOptions,
@@ -202,28 +204,46 @@ impl GhulSuite {
         let (kind, cost, entries) = self.with_open(|o| {
             let (r, c) = o.vault_mut(&options.vault_id)?;
             let kind = VaultKind::from_name(&r.kind);
-            if !matches!(kind, VaultKind::Pass | VaultKind::Totp) {
+            let whole = options.ids.is_empty();
+            if !(matches!(kind, VaultKind::Pass | VaultKind::Totp) || (whole && kind == VaultKind::Cal)) {
                 return Err(GhulError::InvalidInput {
                     msg: "only GhulPass and GhulAuth entries can be handed on".into(),
                 });
             }
-            let entries: Vec<Entry> = c
-                .payload
-                .entries
-                .iter()
-                .filter(|e| !e.deleted && options.ids.contains(&e.id))
+            let picked: Vec<&Entry> =
+                c.payload.entries.iter().filter(|e| !e.deleted && (whole || options.ids.contains(&e.id))).collect();
+            // Nothing about the own vault: every entry gets a new id. Events of GhulCal name their
+            // calendar by its id: they follow it to its new one (handed back into the same suite,
+            // nothing is there twice).
+            let ids: std::collections::HashMap<Vec<u8>, Vec<u8>> =
+                picked.iter().map(|e| (e.id.clone(), new_id().to_vec())).collect();
+            let hex_ids: std::collections::HashMap<String, String> =
+                ids.iter().map(|(o, n)| (crate::kdf::hex(o), crate::kdf::hex(n))).collect();
+            let entries: Vec<Entry> = picked
+                .into_iter()
                 .cloned()
                 .map(|mut e| {
-                    // Nothing about the own vault: new ids, a fresh history.
+                    // A fresh history.
                     e.extra.remove(HISTORY);
                     e.extra.insert(CREATED.into(), ciborium::value::Value::Integer(now.into()));
-                    e.id = new_id().to_vec();
+                    if let Some(n) = ids.get(&e.id) {
+                        e.id = n.clone();
+                    }
+                    if kind == VaultKind::Cal {
+                        if let Some(crate::vault::Field::Text(cal)) = e.fields.get_mut("calendar") {
+                            if let Some(n) = hex_ids.get(cal.as_str()) {
+                                *cal = n.clone();
+                            }
+                        }
+                    }
                     e.revision = 1;
                     e.modified = now;
                     e
                 })
                 .collect();
-            if entries.is_empty() {
+            // Picked entries that are gone: nothing to hand on. A whole vault may be empty (as a
+            // GhulDocs vault handed on whole).
+            if entries.is_empty() && !whole {
                 return Err(GhulError::NotFound);
             }
             let kdf = o.kdf();

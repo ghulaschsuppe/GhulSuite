@@ -816,6 +816,8 @@ fun CalendarsSheet(state: AppState, close: () -> Unit) {
     var editing by remember { mutableStateOf<CalCalendarUi?>(null) }
     var importInto by remember { mutableStateOf<String?>(null) }
     var chooseImport by remember { mutableStateOf(false) }
+    /** Several GhulCal vaults: which one gets the new calendar (as for a new entry in GhulPass). */
+    var chooseVault by remember { mutableStateOf(false) }
     val noCalendar = stringResource(Res.string.cal_import_no_calendar)
     // Texts looked up later (after a count is known) use the language of the screen.
     val env = rememberResourceEnvironment()
@@ -834,6 +836,14 @@ fun CalendarsSheet(state: AppState, close: () -> Unit) {
         CalendarEditSheet(state, e) { editing = null }
         return
     }
+    fun newCalendar(vault: String) {
+        editing = CalCalendarUi("", vault, "", CAL_COLORS[state.calendars.size % CAL_COLORS.size], 15, 0)
+    }
+    if (chooseVault) {
+        VaultPickerDialog(state, de.danerd.ghulsuite.model.VaultKindUi.CAL, onPick = { chooseVault = false; newCalendar(it) }, onDismiss = { chooseVault = false })
+        return
+    }
+    val calVaults = state.vaultsOf(de.danerd.ghulsuite.model.VaultKindUi.CAL).filter { it.available }
     GhulSheet(close, stringResource(Res.string.cal_calendars)) {
         val hidden = settings.calHiddenSet()
         val year = remember(state.revision) { mutableStateOf<Map<String, Int>>(emptyMap()) }
@@ -843,10 +853,23 @@ fun CalendarsSheet(state: AppState, close: () -> Unit) {
                 .groupingBy { it.calendarId }.eachCount()
         }
         SheetList {
-            state.calendars.forEachIndexed { i, c ->
-                val n = year.value[c.id] ?: 0
-                CalVisRow(c.name, pluralStringResource(Res.plurals.cal_n_events_year, n, n.toString()), calColor(c.color), c.id !in hidden, i > 0,
-                    onToggle = { settings.toggleCalHidden(c.id) }, onMore = { editing = c })
+            // Several GhulCal vaults: the calendars under the name of their vault (as GhulPass lists its vaults).
+            val groups = if (calVaults.size > 1) {
+                calVaults.map { v -> v.name to state.calendars.filter { it.vaultId == v.id } }.filter { it.second.isNotEmpty() }
+            } else {
+                listOf("" to state.calendars)
+            }
+            var first = true
+            for ((vaultName, cals) in groups) {
+                if (vaultName.isNotEmpty()) {
+                    Text(vaultName, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = t.muted, modifier = Modifier.padding(start = 16.dp, top = if (first) 4.dp else 12.dp, bottom = 2.dp))
+                }
+                cals.forEachIndexed { i, c ->
+                    val n = year.value[c.id] ?: 0
+                    CalVisRow(c.name, pluralStringResource(Res.plurals.cal_n_events_year, n, n.toString()), calColor(c.color), c.id !in hidden, i > 0,
+                        onToggle = { settings.toggleCalHidden(c.id) }, onMore = { editing = c })
+                }
+                first = false
             }
             if (state.backend.settings.calRegion.isNotEmpty()) {
                 CalVisRow(stringResource(Res.string.cal_holidays), stringResource(Res.string.cal_holidays_sub, state.calRegionName), calColor(0x6F7187),
@@ -854,8 +877,9 @@ fun CalendarsSheet(state: AppState, close: () -> Unit) {
                     onToggle = { if (!settings.calHolidays) settings.calHolidays = true else settings.toggleCalHidden(CalOccurrenceUi.HOLIDAYS) }, onMore = null)
             }
             SheetRow(stringResource(Res.string.cal_new_calendar), leading = { IconTile(Icons.Filled.Add, paletteColor(5)) }, divider = true) {
-                val vault = state.vaultsOf(de.danerd.ghulsuite.model.VaultKindUi.CAL).firstOrNull()?.id ?: return@SheetRow
-                editing = CalCalendarUi("", vault, "", CAL_COLORS[state.calendars.size % CAL_COLORS.size], 15, 0)
+                // One GhulCal vault: it; several (or none yet): asked, as for a new entry elsewhere.
+                val only = calVaults.singleOrNull()
+                if (only != null) newCalendar(only.id) else chooseVault = true
             }
         }
         ButtonRow {

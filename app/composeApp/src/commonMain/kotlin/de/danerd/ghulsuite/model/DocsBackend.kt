@@ -24,8 +24,20 @@ data class DocsItemUi(
     val items: Int,
 )
 
-/** How much GhulDocs holds (all its vaults together, the trash included). */
-data class DocsUsageUi(val used: Long, val limit: Long, val files: Int)
+/**
+ * How much a GhulDocs vault holds ([used] of [limit], 1 GB; [files] documents; the trash
+ * included) and all GhulDocs vaults of the suite together ([suiteUsed] of [suiteLimit], 3 GB;
+ * [suiteFiles] of [maxFiles] documents).
+ */
+data class DocsUsageUi(
+    val used: Long,
+    val limit: Long,
+    val files: Int,
+    val suiteUsed: Long = used,
+    val suiteLimit: Long = 3 * limit,
+    val suiteFiles: Int = files,
+    val maxFiles: Int = 20_000,
+)
 
 /** What a suite file (`.ghlzip`) or GhulDocs package (`.ghldocs`) holds. */
 enum class ArchiveContentUi { SUITE, DOCS_VAULT }
@@ -68,7 +80,8 @@ interface DocsBackend {
      */
     suspend fun read(vaultId: String, id: String, sink: ByteSink, onProgress: (Long) -> Unit = {})
 
-    suspend fun usage(): DocsUsageUi
+    /** How much the vault [vaultId] holds and all GhulDocs vaults together (null: the numbers of all vaults). */
+    suspend fun usage(vaultId: String?): DocsUsageUi
 
     /** Checks every document of a vault; returns those that are damaged or missing. */
     suspend fun verify(vaultId: String): List<DocsItemUi>
@@ -83,26 +96,10 @@ interface DocsBackend {
     suspend fun shareVault(share: ShareVaultUi, pin: String?, onTouchNeeded: () -> Unit, sink: ByteSink, onProgress: (Long, Long) -> Unit = { _, _ -> }): String
 
     /**
-     * Adds a GhulDocs package (opened once with its own protection): into the suite's GhulDocs
-     * vault (a new folder named [name]) if it has one, else as it; the vault's id.
+     * Adds a GhulDocs package (opened once with its own protection) as a GhulDocs vault of its
+     * own named [name], with the suite's protection; the new vault's id.
      */
     suspend fun adoptVault(
-        file: SuiteFileRef,
-        name: String,
-        password: String,
-        pin: String?,
-        keyfile: ByteArray?,
-        onTouchNeeded: () -> Unit,
-        onProgress: (Long, Long) -> Unit = { _, _ -> },
-    ): String
-
-    /**
-     * Replaces the suite's GhulDocs vault by a GhulDocs package (opened once with its own
-     * protection, then switched to the suite's): the old vault goes with all its documents, the
-     * limit counts the package alone. Anything failing leaves the old vault as it was. The new
-     * vault's id.
-     */
-    suspend fun replaceVault(
         file: SuiteFileRef,
         name: String,
         password: String,
@@ -131,15 +128,11 @@ object NoDocsBackend : DocsBackend {
     override suspend fun emptyTrash(vaultId: String?) = none()
     override suspend fun add(vaultId: String, folder: String?, name: String, mime: String, source: ByteSource, onProgress: (Long) -> Unit): DocsItemUi = none()
     override suspend fun read(vaultId: String, id: String, sink: ByteSink, onProgress: (Long) -> Unit) = none()
-    override suspend fun usage() = DocsUsageUi(0, 1_000_000_000, 0)
+    override suspend fun usage(vaultId: String?) = DocsUsageUi(0, 1_000_000_000, 0)
     override suspend fun verify(vaultId: String) = emptyList<DocsItemUi>()
     override suspend fun exportVault(vaultId: String, sink: ByteSink, onProgress: (Long, Long) -> Unit) = none()
     override suspend fun shareVault(share: ShareVaultUi, pin: String?, onTouchNeeded: () -> Unit, sink: ByteSink, onProgress: (Long, Long) -> Unit): String = none()
     override suspend fun adoptVault(
-        file: SuiteFileRef, name: String, password: String, pin: String?, keyfile: ByteArray?, onTouchNeeded: () -> Unit,
-        onProgress: (Long, Long) -> Unit,
-    ): String = none()
-    override suspend fun replaceVault(
         file: SuiteFileRef, name: String, password: String, pin: String?, keyfile: ByteArray?, onTouchNeeded: () -> Unit,
         onProgress: (Long, Long) -> Unit,
     ): String = none()

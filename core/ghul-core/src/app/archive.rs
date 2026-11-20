@@ -49,13 +49,14 @@ const UNSAVED_FILE: &str = "archive-unsaved";
 const NOT_A_SUITE_FILE: &str = "not a GhulSuite file";
 const DOCS_PACKAGE_NOT_SUITE: &str = "this is a GhulDocs package, not a suite file";
 const SUITE_NOT_DOCS_PACKAGE: &str = "this is a suite file, not a GhulDocs package";
-/// A suite file with more than one GhulDocs vault is invalid.
-const DOCS_VAULTS_MANY: &str = "a suite file holds at most one GhulDocs vault";
-/// Largest `.ghlzip` read (counted while reading, not taken from the ZIP): 1 GB of documents
-/// plus the other vaults.
-pub(crate) const MAX_ARCHIVE: u64 = 1280 * 1024 * 1024;
+/// A suite file with more GhulDocs vaults than a suite may have is invalid.
+const DOCS_VAULTS_MANY: &str = "a suite file holds at most 3 GhulDocs vaults";
+/// Largest `.ghlzip` read (counted while reading, not taken from the ZIP): full GhulDocs vaults
+/// (3 GB together) plus the other vaults, 3.75 GiB. Below 4 GiB with room for the central
+/// directory: the ZIP has no ZIP64, and FAT32 sticks take it.
+pub(crate) const MAX_ARCHIVE: u64 = 3840 * 1024 * 1024;
 /// What the vaults besides GhulDocs (and the suite file) may take in a suite file together, so a
-/// full GhulDocs ([`super::docs::stored_limit`] of the content files plus the ZIP entries of
+/// full GhulDocs ([`super::docs::stored_limit`] of the content files of all GhulDocs vaults plus the ZIP entries of
 /// [`super::docs::DOCS_MAX_FILES`] documents) and these always fit into [`MAX_ARCHIVE`]; checked
 /// when attachments or vaults are added (estimated from the payloads, see [`container_weight`]).
 pub(crate) const OTHER_LIMIT: u64 = 200 * 1024 * 1024;
@@ -416,8 +417,11 @@ fn read_checked(
     if !header.files.iter().any(|f| f.name == SUITE_FILE) {
         return Err(mismatch("no suite file"));
     }
-    // Every container is listed with its kind (checked below): one GhulDocs vault at most.
-    if header.files.iter().filter(|f| f.kind == ContainerKind::Docs.name()).count() > 1 {
+    // Every container is listed with its kind (checked below): no more GhulDocs vaults than a
+    // suite may have (this app never writes such a file).
+    if header.files.iter().filter(|f| f.kind == ContainerKind::Docs.name()).count() as u64
+        > super::docs::DOCS_SUITE_VAULTS
+    {
         return Err(GhulError::InvalidInput { msg: DOCS_VAULTS_MANY.into() });
     }
     let mut out: Files = Vec::new();
@@ -511,7 +515,9 @@ pub(super) fn archive_len(files: &[(String, Vec<u8>)], contents: &[ContentFile])
             .map(|(n, d)| (n.as_str(), d.len() as u64))
             .chain(contents.iter().map(|c| (c.name.as_str(), c.len))),
     );
-    if total > limits().0 {
+    // As many entries as are read at most (a vault file each, a content file each): a file with
+    // more could never be opened.
+    if total > limits().0 || files.len() + contents.len() > MAX_ENTRIES {
         return Err(GhulError::InvalidInput { msg: "the suite file would be too large".into() });
     }
     Ok(total)
@@ -1295,14 +1301,30 @@ mod pending_tests {
     /// and the other vaults at their limit always fit into the largest suite file read.
     #[test]
     fn a_full_suite_fits_into_the_largest_file() {
-        use super::super::docs::{stored_limit, DOCS_LIMIT, DOCS_MAX_FILES};
+        use super::super::docs::{stored_limit, DOCS_MAX_FILES, DOCS_SUITE_LIMIT};
         let doc = format!("docs-{0}/{0}.ghlblob", "0".repeat(32));
         let entries = DOCS_MAX_FILES * super::super::zipstream::entry_len(&doc, 0);
         // The header, the suite file and a few hundred vaults (their names; their content is in
         // OTHER_LIMIT).
         let vaults = 500 * super::super::zipstream::entry_len(&format!("{}.ghlpss", "0".repeat(32)), 0);
-        let full = stored_limit(DOCS_LIMIT) + entries + OTHER_LIMIT + vaults;
+        let full = stored_limit(DOCS_SUITE_LIMIT) + entries + OTHER_LIMIT + vaults;
         assert!(full <= MAX_ARCHIVE, "{full} > {MAX_ARCHIVE}");
+        // The ZIP has 32-bit offsets and sizes (no ZIP64): the largest file and its central
+        // directory (every entry with a name of at most 80 bytes: `docs-<32>/<32>.ghlblob` is 78)
+        // stay below 4 GiB.
+        let central = (MAX_ENTRIES as u64) * (46 + 80) + 22;
+        assert!(MAX_ARCHIVE + central < u64::from(u32::MAX), "{MAX_ARCHIVE} + {central}");
+    }
+
+    /// A file with more entries than are read is not written either.
+    #[test]
+    fn a_file_with_too_many_entries_is_not_written() {
+        let many: Vec<(String, Vec<u8>)> = (0..=MAX_ENTRIES).map(|i| (format!("{i:032x}.ghlpss"), vec![1])).collect();
+        assert!(matches!(
+            archive_len(&many, &[]),
+            Err(GhulError::InvalidInput { msg }) if msg == "the suite file would be too large"
+        ));
+        assert!(archive_len(&many[..MAX_ENTRIES], &[]).is_ok());
     }
 
     /// A file larger than is read is not written at all (nothing reaches the sink).

@@ -809,8 +809,8 @@ class InteractionTest {
         longPress("Codeberg")
         waitFor("1 selected")
         desc("More").performClick()
-        waitFor("Hand on as a vault")
-        text("Hand on as a vault").performClick()
+        waitFor("Share as separate vault")
+        text("Share as separate vault").performClick()
         waitFor("Password of the new vault")
         shot("share-vault-form")
         val fields = onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog()))
@@ -967,5 +967,35 @@ class InteractionTest {
             assertTrue(fake.calls.none { it.startsWith("archiveSave") })
             waitFor("Areas")
         }
+    }
+
+    /** GhulPass: the selection makes all picked entries favourites at once (as GhulDocs and GhulAuth). */
+    @Test
+    fun severalEntriesBecomeFavourites() = app(setup = { tab = Tab.PASS }) { _, fake ->
+        waitFor("Codeberg")
+        onAllNodesWithText("Codeberg", useUnmergedTree = true).onFirst().performTouchInput { longClick() }
+        waitUntil(timeoutMillis = 10_000) { shown("1 selected") }
+        // All of them (two vaults: no "Share as separate vault"), so the favourite is one of the icons.
+        onAllNodesWithTag("sel-all").onFirst().performClick()
+        waitUntil(timeoutMillis = 10_000) { onAllNodesWithContentDescription("Add to favourites").fetchSemanticsNodes().isNotEmpty() }
+        onAllNodesWithContentDescription("Add to favourites").onFirst().performClick()
+        waitUntil(timeoutMillis = 10_000) { fake.calls.count { it.startsWith("setFavorite:") && it.endsWith(":true") } >= 2 }
+    }
+
+    /** GhulCal with two GhulCal vaults: the calendars under their vault, a new calendar asks where it goes. */
+    @Test
+    fun aNewCalendarAsksForItsVault() = app(
+        setup = { tab = Tab.CAL; calView = CalView.LIST },
+        prepare = { vaults = vaults + de.danerd.ghulsuite.model.VaultUi("c2", de.danerd.ghulsuite.model.VaultKindUi.CAL, "Verein", "verein-c2.ghlcal", true, 0) },
+    ) { state, _ ->
+        waitForIdle()
+        runOnIdle { state.contextSheet = true }
+        waitFor("New calendar")
+        assertTrue(shown("Kalender"), "the calendars under the name of their vault")
+        text("New calendar").performClick()
+        waitFor("Which vault?")
+        assertTrue(shown("Verein"))
+        text("Verein").performClick()
+        waitUntil(timeoutMillis = 10_000) { !shown("Which vault?") }
     }
 }

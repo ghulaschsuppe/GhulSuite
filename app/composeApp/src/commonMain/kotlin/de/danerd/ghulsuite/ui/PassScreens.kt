@@ -135,7 +135,7 @@ fun PassListScreen(state: AppState, padding: PaddingValues) {
     // every list. With one entry chosen it also copies and edits.
     val selected = rememberListSelection()
     val keyOf = { e: EntrySummaryUi -> e.vaultId + "/" + e.id }
-    /** "Hand on as a vault": the vault and the picked entries. */
+    /** "Share as separate vault": the vault and the picked entries. */
     var sharing by remember { mutableStateOf<Pair<String, List<String>>?>(null) }
     sharing?.let { (v, ids) -> ShareAsVaultDialog(state, v, ids) { sharing = null } }
     val selecting = selected.active
@@ -170,6 +170,13 @@ fun PassListScreen(state: AppState, padding: PaddingValues) {
                     add(SelAction(Icons.Filled.Key, stringResource(Res.string.pass_copy_password)) { selected.clear(); copyField(one, "password", pwLabel) })
                     add(SelAction(Icons.Filled.Edit, stringResource(Res.string.a_edit)) { selected.clear(); state.push(Screen.EntryEdit(one.vaultId, one.id, one.type)) })
                 }
+                // Favourite for all of them at once (as in GhulDocs): all favourites already, it takes it back.
+                val allFav = chosen.isNotEmpty() && chosen.all { it.favorite }
+                add(SelAction(if (allFav) Icons.Filled.StarBorder else Icons.Filled.Star, stringResource(if (allFav) Res.string.a_unfavorite else Res.string.a_favorite)) {
+                    val list = chosen
+                    selected.clear()
+                    state.run(block = { list.forEach { state.backend.setFavorite(it.vaultId, it.id, !allFav) } }) { state.changed() }
+                })
                 // Picked entries of one vault: into a vault file of their own.
                 chosen.map { it.vaultId }.distinct().singleOrNull()?.let { v ->
                     add(SelAction(Icons.Filled.Share, stringResource(Res.string.share_vault_action)) {

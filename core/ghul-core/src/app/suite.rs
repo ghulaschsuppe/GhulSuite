@@ -588,8 +588,8 @@ pub struct GhulSuite {
     pub(super) pending_gen: std::sync::atomic::AtomicU64,
     /// The last `archive_accept` got as far as removing this device's data of the old state.
     pub(super) wiped: AtomicBool,
-    /// How much content the GhulDocs vault may hold ([`super::docs::DOCS_LIMIT`]; smaller only
-    /// in tests).
+    /// How much content a GhulDocs vault may hold ([`super::docs::DOCS_LIMIT`]; smaller only
+    /// in tests; all GhulDocs vaults together [`super::docs::suite_limit`] of it).
     pub(super) docs_limit: std::sync::atomic::AtomicU64,
     /// Content files being copied into a `.ghlzip` right now, and content files deleted
     /// meanwhile (deleted only when the last copy ended, see `docs::ContentCopy`).
@@ -703,19 +703,16 @@ pub(super) fn second_factor(
     }
 }
 
-/// Refused: a suite has at most one GhulDocs vault (FORMAT.md section 11).
-pub(super) const ONE_DOCS_VAULT: &str = "a suite has only one GhulDocs vault";
+/// The message when a suite has as many GhulDocs vaults as it may (translated by the app).
+pub(super) const DOCS_VAULTS_FULL: &str = "a suite has at most 3 GhulDocs vaults";
 
-/// The GhulDocs vault of the suite, if it has one (also when it cannot be read).
-pub(super) fn docs_vault_id(o: &Open) -> Option<String> {
+/// A suite holds at most [`super::docs::DOCS_SUITE_VAULTS`] GhulDocs vaults (each up to 1 GB, the
+/// suite file stays below 4 GiB): one more is refused wherever a vault comes in.
+pub(super) fn refuse_docs_vault_over_limit(o: &Open, kind: VaultKind) -> Result<()> {
     let name = VaultKind::Docs.container().name();
-    o.vaults.iter().find(|v| v.reference.kind == name).map(|v| v.reference.id.clone())
-}
-
-/// A second GhulDocs vault is refused.
-fn refuse_second_docs(o: &Open, kind: VaultKind) -> Result<()> {
-    if kind == VaultKind::Docs && docs_vault_id(o).is_some() {
-        return Err(GhulError::InvalidInput { msg: ONE_DOCS_VAULT.into() });
+    let have = o.vaults.iter().filter(|v| v.reference.kind == name).count() as u64;
+    if kind == VaultKind::Docs && have >= super::docs::DOCS_SUITE_VAULTS {
+        return Err(GhulError::InvalidInput { msg: DOCS_VAULTS_FULL.into() });
     }
     Ok(())
 }
@@ -1015,7 +1012,7 @@ impl GhulSuite {
 
     /// Creates a vault with the suite's protection and recovery code.
     pub(super) fn add_vault(&self, o: &mut Open, kind: VaultKind, name: &str) -> Result<String> {
-        refuse_second_docs(o, kind)?;
+        refuse_docs_vault_over_limit(o, kind)?;
         let mut c = o.new_container(kind.container())?;
         set_vault_name(&mut c, name);
         let id = crate::kdf::hex(&c.container_id());
@@ -1034,7 +1031,7 @@ impl GhulSuite {
         if o.vaults.iter().any(|v| v.reference.id == id) {
             return Err(GhulError::AlreadyExists);
         }
-        refuse_second_docs(o, kind)?;
+        refuse_docs_vault_over_limit(o, kind)?;
         if !name.trim().is_empty() {
             set_vault_name(&mut c, name);
         }
@@ -1042,6 +1039,11 @@ impl GhulSuite {
             super::archive::check_other_room(o, super::archive::container_weight(&c)?)?;
         }
         let file = file_name(kind, &id);
+        // The file name holds only the first half of the id: another vault (one listed, or a
+        // damaged one that is only in the folder) with that name is never overwritten.
+        if self.vault_file_taken(o, &file)? {
+            return Err(GhulError::AlreadyExists);
+        }
         let name = vault_name(&c, &file);
         let reference = VaultRef { id: id.clone(), kind: kind.container().name().into(), name, file: file.clone() };
         o.vaults.push(OpenVault { reference, container: Some(c) });
@@ -1058,6 +1060,15 @@ impl GhulSuite {
             return Err(e);
         }
         Ok(id)
+    }
+
+    /// Whether a vault file `file` is there already: listed in the open suite, or in the folder
+    /// (e.g. a vault that cannot be read and is kept as it is).
+    pub(super) fn vault_file_taken(&self, o: &Open, file: &str) -> Result<bool> {
+        if o.vaults.iter().any(|v| v.reference.file == file) {
+            return Ok(true);
+        }
+        Ok(self.storage.list()?.iter().any(|n| n == file))
     }
 
     /// Switches a vault opened with another protection to this suite's password, keys and

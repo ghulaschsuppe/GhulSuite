@@ -13,14 +13,16 @@ GhulMail ersetzt und die App ohne Server auskommt, in [`docs/UMBAU-GHULDOCS.md`]
 - **Offline, ohne bestimmten Anbieter:** keine Server, keine Konten, kein Cloud-Dienst. Nach draußen gehen nur die
   Update-Prüfung (GitHub) und die Leak-Prüfung von GhulPass (Pwned Passwords, k-Anonymität); beide sind abschaltbar.
   Fehlerberichte werden nur angezeigt, nie hochgeladen.
-- **Vier Bereiche in einer App:** GhulPass (Passwörter), GhulAuth (2FA), GhulDocs (Dokumente, bis 1 GB, mit Scannen
-  auf Android), GhulCal (Kalender).
-- **Die Suite ist eine Datei, ohne Synchronisation:** Die Suite-Datei `.ghlzip` (bis 1,25 GiB, als Datenstrom
-  geschrieben und gelesen) enthält die Tresore (`.ghlpss` Passwörter, `.ghltotp` 2FA, `.ghldoc` Dokumente mit ihren
-  Inhaltsdateien `.ghlblob`, `.ghlcal` Kalender), `suite.ghlsuite` (Einstellungen, Schutz-Epoche) und die Kopfdatei
-  `export.ghlexp`. Öffnen prüft alles, bevor etwas ersetzt wird; Speichern schreibt die Arbeitskopie zurück.
+- **Vier Bereiche in einer App:** GhulPass (Passwörter), GhulAuth (2FA), GhulDocs (Dokumente, bis zu 3 Tresore
+  mit je bis 1 GB, mit Scannen auf Android), GhulCal (Kalender). Je Bereich kann es mehrere Tresore geben (GhulDocs bis zu 3); jeder
+  lässt sich exportieren (für sich selbst) oder als Tresor weitergeben (für jemand anderen, mit eigenem Schutz).
+- **Die Suite ist eine Datei, ohne Synchronisation:** Die Suite-Datei `.ghlzip` (bis 3,75 GiB, unter 4 GiB wegen
+  ZIP ohne ZIP64 und FAT32, als Datenstrom geschrieben und gelesen) enthält die Tresore (`.ghlpss` Passwörter,
+  `.ghltotp` 2FA, `.ghldoc` Dokumente mit ihren Inhaltsdateien `.ghlblob`, `.ghlcal` Kalender),
+  `suite.ghlsuite` (Einstellungen, Schutz-Epoche) und die Kopfdatei `export.ghlexp`. Öffnen prüft alles, bevor etwas ersetzt wird; Speichern schreibt die Arbeitskopie zurück.
   Abgeglichen oder zusammengeführt wird nichts: Aktuell ist der Stand, der zuletzt gespeichert wurde. `.ghlkey` ist
-  eine Schlüsseldatei.
+  eine Schlüsseldatei, `.ghldocs` ein einzelner GhulDocs-Tresor mit seinen Dokumenten (GhulDocs-Paket); hinzugefügt
+  wird es ein eigener GhulDocs-Tresor der Suite.
 - **Schutz:** Master-Passwort **plus** zweiter Faktor (Security Key oder Schlüsseldatei); der Wiederherstellungscode
   ist Pflicht und steckt in jeder Datei.
 - **Plattformen:** Android und Windows (auch portabel), eine gemeinsame Oberfläche. Kein Web-Client.

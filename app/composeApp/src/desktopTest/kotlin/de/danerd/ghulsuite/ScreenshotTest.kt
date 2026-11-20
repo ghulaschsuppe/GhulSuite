@@ -81,11 +81,6 @@ class ScreenshotTest {
             calls += "archiveSave:${target.name}:$created"
             return saveOk
         }
-        override suspend fun docsSaveVault(vaultId: String, target: de.danerd.ghulsuite.model.SuiteFileRef, created: Boolean, onProgress: (Long, Long) -> Unit): Boolean {
-            kotlinx.coroutines.delay(30)
-            calls += "docsSaveVault:$vaultId:${target.name}:$created"
-            return saveOk
-        }
         override suspend fun deleteSuite() {
             // As the real backend: locked first, then the files go.
             kotlinx.coroutines.delay(30)
@@ -187,6 +182,7 @@ class ScreenshotTest {
         override suspend fun createVault(kind: VaultKindUi, name: String) = "new"
         override suspend fun renameVault(id: String, name: String) {}
         override suspend fun removeVault(id: String) { calls += "removeVault:$id" }
+        override suspend fun setFavorite(vaultId: String, id: String, favorite: Boolean) { calls += "setFavorite:$vaultId:$id:$favorite" }
         override suspend fun exportVault(id: String) = ByteArray(0)
         override suspend fun addVaultFile(data: ByteArray, name: String) = "x"
         override suspend fun adoptVault(

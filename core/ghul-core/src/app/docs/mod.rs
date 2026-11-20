@@ -8,8 +8,9 @@
 //! vault files (see [`blob`]); it is written once and never changed. Plaintext never reaches the
 //! disk: content is encrypted while it is read in and decrypted while it is written out.
 //!
-//! A suite has at most one GhulDocs vault; it holds at most [`DOCS_LIMIT`] bytes of content (also
-//! what is in the trash until it is emptied). The content files travel in the suite file
+//! A suite may have several GhulDocs vaults; each holds at most [`DOCS_LIMIT`] bytes of content
+//! (also what is in the trash until it is emptied), all of them together at most
+//! [`DOCS_SUITE_LIMIT`] and [`DOCS_MAX_FILES`] documents. The content files travel in the suite file
 //! (`archive`) and in a GhulDocs package (`.ghldocs`, `vaults`).
 
 pub(crate) mod blob;
@@ -39,9 +40,15 @@ use super::error::{GhulError, Result};
 use super::suite::{new_id, now_ms, GhulSuite, Open};
 use crate::vault::{Entry, Field, UnlockedContainer};
 
-/// Content the GhulDocs vault of a suite may hold (bytes, also the largest document).
+/// Content a GhulDocs vault may hold (bytes, also the largest document).
 pub const DOCS_LIMIT: u64 = 1_000_000_000;
-/// Documents a suite may hold (each is an entry of the suite file).
+/// How many full GhulDocs vaults a suite holds at most: all GhulDocs vaults of a suite together
+/// hold at most this many times [`DOCS_LIMIT`], so the suite file stays below 4 GiB (no ZIP64,
+/// and FAT32 sticks take it).
+pub const DOCS_SUITE_VAULTS: u64 = 3;
+/// Content all GhulDocs vaults of a suite may hold together (bytes).
+pub const DOCS_SUITE_LIMIT: u64 = DOCS_SUITE_VAULTS * DOCS_LIMIT;
+/// Documents a suite may hold, all GhulDocs vaults together (each is an entry of the suite file).
 pub const DOCS_MAX_FILES: u64 = 20_000;
 /// Longest name of a file or folder (characters).
 pub(super) const MAX_NAME: usize = 255;
@@ -50,8 +57,8 @@ pub(super) const DIR_PREFIX: &str = "docs-";
 const DEFAULT_MIME: &str = "application/octet-stream";
 
 /// The content files may take this much room on the disk and in the suite file: the content
-/// plus up to 10 % for the rounding to 64 KiB, so a full GhulDocs (1 GB) and the other vaults
-/// fit into the largest suite file (1.25 GiB).
+/// plus up to 10 % for the rounding to 64 KiB, so full GhulDocs vaults (3 GB together) and the
+/// other vaults fit into the largest suite file (3.75 GiB).
 pub(crate) fn stored_limit(limit: u64) -> u64 {
     limit / 10 * 11
 }
@@ -83,15 +90,24 @@ pub struct DocsItem {
     pub items: u32,
 }
 
-/// How much of GhulDocs is used (the trash included).
+/// How much of a GhulDocs vault is used (the trash included), and of all GhulDocs vaults of the
+/// suite together.
 #[derive(uniffi::Record, Clone, Debug, PartialEq)]
 pub struct DocsUsage {
-    /// Bytes of content.
+    /// Bytes of content in this vault.
     pub used: u64,
-    /// The most there may be (1 GB).
+    /// The most a vault may hold (1 GB).
     pub limit: u64,
-    /// Number of documents.
+    /// Number of documents in this vault.
     pub files: u32,
+    /// Bytes of content in all GhulDocs vaults of the suite.
+    pub suite_used: u64,
+    /// The most all GhulDocs vaults of the suite may hold together (3 GB).
+    pub suite_limit: u64,
+    /// Number of documents in all GhulDocs vaults of the suite.
+    pub suite_files: u32,
+    /// The most documents a suite may hold.
+    pub max_files: u32,
 }
 
 /// A name of a file or folder as it is kept: trimmed, not empty, at most [`MAX_NAME`]
@@ -149,7 +165,7 @@ pub(super) fn blob_error(e: BlobError) -> GhulError {
     match e {
         BlobError::Io(e) | BlobError::Out(e) => GhulError::Storage { msg: e.to_string() },
         BlobError::Damaged(_) => damaged_doc(),
-        BlobError::TooLarge => GhulError::DocsLimit { used: 0, limit: DOCS_LIMIT, needed: 0 },
+        BlobError::TooLarge => GhulError::DocsLimit { used: 0, limit: DOCS_LIMIT, needed: 0, suite: false },
     }
 }
 
@@ -184,22 +200,57 @@ impl Usage {
     }
 }
 
-/// Whether `add` still fits next to `have` (content, room of the content files, number).
-pub(super) fn check_room(have: Usage, add: Usage, limit: u64) -> Result<()> {
-    let all = have.plus(add);
-    if all.used > limit || all.stored > stored_limit(limit) || all.files > DOCS_MAX_FILES {
-        return Err(GhulError::DocsLimit { used: have.used, limit, needed: add.used });
+/// What all GhulDocs vaults of a suite may hold together when one may hold `limit`.
+pub(crate) fn suite_limit(limit: u64) -> u64 {
+    limit.saturating_mul(DOCS_SUITE_VAULTS)
+}
+
+/// What a GhulDocs vault holds and what all GhulDocs vaults of the suite hold.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) struct Room {
+    pub(super) vault: Usage,
+    pub(super) suite: Usage,
+}
+
+impl Room {
+    /// Bytes of content that still fit into the vault (and next to the other vaults).
+    pub(super) fn free(&self, limit: u64) -> u64 {
+        let total = suite_limit(limit);
+        let vault = limit.saturating_sub(self.vault.used).min(stored_limit(limit).saturating_sub(self.vault.stored));
+        let suite = total.saturating_sub(self.suite.used).min(stored_limit(total).saturating_sub(self.suite.stored));
+        vault.min(suite)
+    }
+}
+
+/// Whether `add` still fits into the vault (content and room of its content files, `limit`) and
+/// next to the other GhulDocs vaults of the suite (content, room, number). Too much for the
+/// vault: `DocsLimit` with the vault's numbers; too much for the suite: with the suite's.
+pub(super) fn check_room(have: Room, add: Usage, limit: u64) -> Result<()> {
+    let vault = have.vault.plus(add);
+    if vault.used > limit || vault.stored > stored_limit(limit) {
+        return Err(GhulError::DocsLimit { used: have.vault.used, limit, needed: add.used, suite: false });
+    }
+    let total = suite_limit(limit);
+    let suite = have.suite.plus(add);
+    if suite.used > total || suite.stored > stored_limit(total) || suite.files > DOCS_MAX_FILES {
+        return Err(GhulError::DocsLimit { used: have.suite.used, limit: total, needed: add.used, suite: true });
     }
     Ok(())
 }
 
-/// What the GhulDocs vault of the open suite holds (there is one at most).
-pub(super) fn usage(o: &Open) -> Usage {
-    o.vaults
-        .iter()
-        .filter(|v| v.reference.kind == "docs")
-        .filter_map(|v| v.container.as_ref())
-        .fold(Usage::default(), |u, c| u.plus(Usage::of(&c.payload.entries)))
+/// What the GhulDocs vault `vault_id` holds (nothing for a vault that is not there yet) and what
+/// all GhulDocs vaults of the open suite hold.
+pub(super) fn room(o: &Open, vault_id: Option<&str>) -> Room {
+    let mut r = Room::default();
+    for v in o.vaults.iter().filter(|v| v.reference.kind == "docs") {
+        let Some(c) = v.container.as_ref() else { continue };
+        let u = Usage::of(&c.payload.entries);
+        r.suite = r.suite.plus(u);
+        if vault_id == Some(v.reference.id.as_str()) {
+            r.vault = u;
+        }
+    }
+    r
 }
 
 impl Open {
@@ -365,14 +416,15 @@ impl GhulSuite {
     }
 
     /// Changes the index of a GhulDocs vault and saves it; `change` gets the entries, the time
-    /// and what GhulDocs holds now. If anything fails, the index stays as it was.
+    /// and what the vault and all GhulDocs vaults hold now. If anything fails, the index stays
+    /// as it was.
     fn docs_change<T>(
         &self,
         vault_id: &str,
-        change: impl FnOnce(&mut Vec<Entry>, i64, Usage) -> Result<T>,
+        change: impl FnOnce(&mut Vec<Entry>, i64, Room) -> Result<T>,
     ) -> Result<T> {
         self.with_open(|o| {
-            let have = usage(o);
+            let have = room(o, Some(vault_id));
             let c = o.docs_mut(vault_id)?;
             let before = c.payload.entries.clone();
             let out =
@@ -692,7 +744,7 @@ impl GhulSuite {
 
     /// Adds a document: its content is read from `source` and encrypted while it is read (no
     /// plaintext reaches the disk), into `folder` (`None`: the top). A name that is taken gets a
-    /// number. More than GhulDocs may hold: `DocsLimit`, before anything is written when the
+    /// number. More than the vault (or all GhulDocs vaults together) may hold: `DocsLimit`, before anything is written when the
     /// source knows its size, otherwise as soon as it is too much (then nothing stays).
     /// `progress` gets the bytes read.
     pub fn docs_add_file(
@@ -711,10 +763,16 @@ impl GhulSuite {
         let limit = self.docs_limit();
         let (dir, room, used) = self.with_open(|o| {
             check_folder(&Tree::new(&o.docs(&vault_id)?.payload.entries), folder)?;
-            let have = usage(o);
+            let have = room(o, Some(&vault_id));
             check_room(have, Usage::file(declared), limit)?;
-            let room = limit.saturating_sub(have.used).min(stored_limit(limit).saturating_sub(have.stored));
-            Ok((self.docs_dir(&vault_id)?, room, have.used))
+            // The limit that is reached first, as `check_room` says it.
+            let free_vault = Room { suite: Usage::default(), ..have }.free(limit);
+            let (used, full, suite) = if have.free(limit) < free_vault {
+                (have.suite.used, suite_limit(limit), true)
+            } else {
+                (have.vault.used, limit, false)
+            };
+            Ok((self.docs_dir(&vault_id)?, have.free(limit), (used, full, suite)))
         })?;
         let content_id = new_id();
         let mut key = Zeroizing::new([0u8; 32]);
@@ -722,7 +780,7 @@ impl GhulSuite {
         let mut report = reporter(progress, declared);
         let info = blob::write_file(&dir, &content_id, &key, &mut SourceReader::new(source), room, &mut |d| report(d))
             .map_err(|e| match e {
-                BlobError::TooLarge => GhulError::DocsLimit { used, limit, needed: 0 },
+                BlobError::TooLarge => GhulError::DocsLimit { used: used.0, limit: used.1, needed: 0, suite: used.2 },
                 e => blob_error(e),
             })?;
         let r = self.docs_change(&vault_id, |entries, now, have| {
@@ -774,11 +832,26 @@ impl GhulSuite {
         blob::read_file(&dir, &content.blob, &key, content.size, &mut out, &mut |d| report(d)).map_err(blob_error)
     }
 
-    /// How much of GhulDocs is used (the trash included) and the limit.
-    pub fn docs_usage(&self) -> Result<DocsUsage> {
+    /// How much of the GhulDocs vault `vault_id` is used (the trash included) and of all
+    /// GhulDocs vaults of the suite, with the limits. `vault_id` empty: the vault's numbers are
+    /// those of all vaults.
+    pub fn docs_usage(&self, vault_id: String) -> Result<DocsUsage> {
         self.with_open(|o| {
-            let u = usage(o);
-            Ok(DocsUsage { used: u.used, limit: self.docs_limit(), files: u.files as u32 })
+            if !vault_id.is_empty() {
+                o.docs(&vault_id)?;
+            }
+            let r = room(o, Some(&vault_id));
+            let v = if vault_id.is_empty() { r.suite } else { r.vault };
+            let limit = self.docs_limit();
+            Ok(DocsUsage {
+                used: v.used,
+                limit,
+                files: v.files as u32,
+                suite_used: r.suite.used,
+                suite_limit: suite_limit(limit),
+                suite_files: r.suite.files as u32,
+                max_files: DOCS_MAX_FILES as u32,
+            })
         })
     }
 
