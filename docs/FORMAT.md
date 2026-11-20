@@ -628,8 +628,8 @@ vorübergehenden Arbeitskopie) oder der Suite hinzufügen. „Als Tresor weiterg
 ausgewählte Einträge oder, mit leerer Liste `ids`, den ganzen Tresor in eine neue Tresordatei mit eigener Suite-ID,
 eigenem Passwort und neuer Schlüsseldatei oder eigenem Security Key und neuem Wiederherstellungscode. Das geht für
 GhulPass und GhulAuth (auch ausgewählte Einträge; sie bekommen neue `id`s, Passwort-Verläufe bleiben zurück) und für
-einen ganzen GhulCal-Tresor (die Einträge behalten ihre `id`s, weil jeder Termin seinen Kalender über dessen `id`
-nennt); GhulDocs geht als Paket (`docs_share_vault`, oben).
+einen ganzen GhulCal-Tresor (die Einträge bekommen ebenfalls neue `id`s; das Feld `calendar` jedes Termins wird auf
+die neue `id` seines Kalenders umgeschrieben); GhulDocs geht als Paket (`docs_share_vault`, oben).
 
 **Dateizuordnung:** Unter Android öffnet ein Tippen auf eine `.ghlzip` oder `.ghldocs` im Dateimanager GhulSuite
 (über den Namen erkannt, nur als `content://`), unter Windows ein Doppelklick (MSI, beide Endungen); läuft GhulSuite

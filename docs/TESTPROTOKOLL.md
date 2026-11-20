@@ -496,3 +496,19 @@ Was es prüft:
 | Oberfläche | `DocsBackendTest.aPackageBecomesADocsVaultOfItsOwn`; `DocsInteractionTest.severalVaultsAreChosen`, `aHandedOverDocsPackageBecomesAVaultOfItsOwn`, `aPackageThatDoesNotFitSaysHowMuch`, `aSecondDocsVaultIsOffered`, `aVaultIsHandedOnFromItsMenu` | Paket wird eigener Tresor; Tresorwahl; Meldung mit Bedarf und freiem Platz; „Neuer Tresor“ bietet GhulDocs an; Weitergeben aus dem Tresor-Menü |
 | Von Hand | Testplan T16, DS3, GD1, GD11, GD13 bis GD13c, SC13, S3, S6; Windows WT6, WD9, W11.4 | |
 
+Funde der unabhängigen Durchsicht dieses Umbaus (20.11.2026), alle behoben:
+
+| Nr. | Stufe | Fund | Behoben, Test |
+|---|---|---|---|
+| MV-1 | H | Ein manipuliertes Paket, dessen Kennung in den ersten 8 Byte mit einem vorhandenen Tresor übereinstimmt (der Dateiname enthält nur 16 Hex-Zeichen), konnte beim Hinzufügen dessen Tresordatei überschreiben | Hinzufügen lehnt in allen Bereichen (`insert_vault`) jeden Tresor ab, dessen Dateiname schon vergeben ist, auch durch eine nicht lesbare Datei im Ordner; `adopting_never_overwrites_a_vault_with_the_same_file_name` |
+| MV-2 | M | Ein Paket mit derselben Kennung wie ein beschädigter, nicht lesbarer GhulDocs-Tresor löschte dessen Dokumentordner | „schon vorhanden“, nichts wird gelöscht; `adopting_never_removes_a_damaged_docs_vault` |
+| MV-3 | N | Eine Suite mit mehr Einträgen, als gelesen werden (21 000), konnte geschrieben werden | wird nicht mehr geschrieben; `a_file_with_too_many_entries_is_not_written` |
+| MV-4 | N | App: „Alle Tresore“ in der Kopfzeile zeigte nach einem Wechsel noch den zuvor betretenen Tresor | Kopfzeile folgt der Wahl; Testplan DS3 |
+| MV-5 | N | App: Optionen → GhulDocs zeigte bei einem Tresor die Belegung gegen 3 GB | bei einem Tresor „… von 1 GB“, erst bei mehreren die Summe und jeder Tresor; Testplan GD13 |
+| MV-6 | N | App: „fast voll“ sagte nicht, was voll ist | „Dieser GhulDocs-Tresor ist fast voll.“ bzw. „Alle GhulDocs-Tresore zusammen sind fast voll (höchstens 3 GB je Suite).“; Testplan GD13 |
+| MV-7 | N | App: Die Auswahl in GhulDocs ließ den Kopf springen | Testplan GD1 |
+| MV-8 | N | App: „Vorher exportieren“ beim Löschen führte zum unverschlüsselten Export, ohne GhulDocs | startet den verschlüsselten Export des Tresors (beim Bereich: Optionen → Tresore); Testplan V1 |
+| MV-9 | N | App: Einen leeren Tresor weitergeben endete mit „Nicht gefunden“ | es entsteht ein leerer Tresor; Testplan T16 |
+| MV-10 | M | Ein ganz weitergegebener GhulCal-Tresor behielt die Kennungen seiner Kalender und Termine; kam er in dieselbe Suite zurück, gab es jede Kennung zweimal, und Löschen eines Kalenders traf den im eigenen Tresor | alle Einträge bekommen neue Kennungen, Termine zeigen auf die neue Kennung ihres Kalenders; `a_whole_vault_is_handed_on` |
+| MV-11 | M | Ein Docs-Tresor, der entfernt wurde, während eine Suite-Datei geschrieben wurde, und gleich wieder hinzugefügt wurde, verlor danach seine Dokumente (das aufgeschobene Löschen traf den neuen Ordner) | solange der alte Ordner noch da ist: „schon vorhanden“, danach geht es; `a_vault_added_again_while_saving_never_loses_its_documents` |
+

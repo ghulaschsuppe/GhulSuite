@@ -244,8 +244,9 @@ Was beim Bauen anders oder genauer wurde als oben geplant:
   `DocsLimit` hat die Felder `used`, `limit`, `needed` und `suite`: Bei `suite = true` sind alle GhulDocs-Tresore
   zusammen voll, `used` und `limit` sind dann die der Suite (3 GB), sonst die des Tresors (1 GB). Die App sagt
   entsprechend „Dieser GhulDocs-Tresor ist voll …“ bzw. „… in allen GhulDocs-Tresoren zusammen sind noch … frei
-  (höchstens 3 GB je Suite)“. Die Belegung zeigt „… von 1 GB“ für den gezeigten Tresor und bei mehreren darunter
-  „Alle GhulDocs-Tresore: … von 3 GB“; Optionen → GhulDocs zeigt die Summe und jeden Tresor einzeln. Das Speichern
+  (höchstens 3 GB je Suite)“. Die Belegung: ein einzelner Tresor (auch aus „Alle Tresore“ angetippt) zeigt oben die Belegungskarte „… von 1 GB“, bei mehreren Tresoren darunter „Alle GhulDocs-Tresore: … von 3 GB“, und die Kacheln Favoriten und Papierkorb; „Alle Tresore“ zeigt als Hauptzeile die Summe „… von 3 GB“ und darunter die Liste der Tresore. Fast voll sagt die App, was fast voll ist
+  (der Tresor oder alle zusammen). Optionen → GhulDocs zeigt bei einem Tresor „… von 1 GB“, erst bei mehreren die Summe
+  „… von 3 GB“ und darunter jeden Tresor einzeln. Das Speichern
   dauert mit vollen 3 GB grob dreimal so lang wie in Abschnitt 6 für 1 GB geschätzt.
 - **Ein GhulDocs-Paket wird ein eigener Tresor** (20.11.2026; ersetzt das Einsortieren als Ordner aus „Genau ein
   GhulDocs-Tresor je Suite“ und das Ersetzen): Beim Hinzufügen (Optionen → Tresore → „Tresordatei hinzufügen“,
@@ -261,15 +262,19 @@ Was beim Bauen anders oder genauer wurde als oben geplant:
   vorhandene Suite einrichten“ (Diese Suite öffnen, Vorhandene sichern und ersetzen, Vorhandene löschen und ersetzen),
   das die ganze Suite betrifft.
 - **Exportieren und Weitergeben für alle Bereiche gleich** (20.11.2026): Im Menü jedes Tresors (Optionen → Tresore →
-  ⋮) steht neben „Exportieren“ („Für dich: mit deinem Passwort und Key bzw. deiner Schlüsseldatei, als Sicherung oder
-  für ein anderes Gerät“) jetzt „Als Tresor weitergeben“ („Für jemand anderen: mit eigenem Passwort, eigenem Key bzw.
-  eigener Schlüsseldatei und eigenem Wiederherstellungscode“); ein Hinweis über der Tresorliste erklärt beides. Aus
+  ⋮) steht neben „Exportieren“ („Für dich, verschlüsselt mit deinem Passwort und Key bzw. deiner Schlüsseldatei: als
+  Sicherung oder für ein anderes Gerät“) jetzt „Als Tresor weitergeben“ („Für jemand anderen: mit eigenem Passwort, eigenem Key bzw.
+  eigener Schlüsseldatei und eigenem Wiederherstellungscode“); ein Hinweis über der Tresorliste erklärt beides („Unter ⋮: „Exportieren“ speichert den Tresor verschlüsselt mit deinem
+  Schutz, für dich. „Als Tresor weitergeben“ ist für jemand anderen (mit eigenem Passwort, zweitem Faktor und
+  Wiederherstellungscode).“). „Vorher exportieren“ beim Löschen eines Tresors startet diesen verschlüsselten Export,
+  beim Entfernen eines Bereichs führt es zu Optionen → Tresore. Aus
   dem Menü geht der **ganze Tresor** weiter, für GhulPass, GhulAuth, GhulDocs (als `.ghldocs`, ohne Papierkorb) und
-  jetzt auch GhulCal; der Name ist mit dem Tresornamen vorbelegt. Die Kalender eines GhulCal-Tresors behalten ihre
-  Kennungen, weil die Termine ihren Kalender über die Kennung nennen; Einträge aus GhulPass und GhulAuth bekommen neue
-  Kennungen, Passwort-Verläufe bleiben zurück. Der Ablauf ist der bisherige (eigenes Passwort, neue Schlüsseldatei
+  jetzt auch GhulCal; der Name ist mit dem Tresornamen vorbelegt. Alle Einträge bekommen neue Kennungen (die Termine
+  eines GhulCal-Tresors zeigen danach auf die neuen Kennungen ihrer Kalender), Passwort-Verläufe bleiben zurück. Der Ablauf ist der bisherige (eigenes Passwort, neue Schlüsseldatei
   oder Security Key mit zwei Berührungen, eigenes Master-Passwort zur Bestätigung, Wiederherstellungscode nur einmal
-  angezeigt, Datei, Schlüsseldatei und Passwort getrennt weitergeben). Die Auswahl in den Listen bleibt; einzelne
+  angezeigt, zum Schluss „Fertig. Gib die Tresordatei, das Passwort und gegebenenfalls die Schlüsseldatei getrennt
+  weiter; den Wiederherstellungscode bewahrt der Empfänger sicher auf.“). Auch ein leerer Tresor lässt sich weitergeben
+  (es entsteht ein leerer Tresor). Die Auswahl in den Listen bleibt; einzelne
   Termine gehen über `.ics`. Im Kern: `share_as_vault` mit leerer Liste `ids` heißt der ganze Tresor.
 - **Website:** `report.php` und sein Datenordner sind entfernt; die Datenschutzerklärung der App nennt nur noch die
   Update- und die Leak-Prüfung. Auf dem Webspace der Live-Seite liegen die alten Dateien, bis sie von Hand gelöscht

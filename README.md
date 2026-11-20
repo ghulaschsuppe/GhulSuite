@@ -135,8 +135,8 @@ der Leiste, seine Tresore bleiben unberührt.
   ungefähr sind (in Schritten von 64 KiB) und auf dem Gerät, wann sie hinzukamen.
 - **Hinzufügen** aus dem Dateisystem, mehrere auf einmal; auf Android auch über „Teilen“ aus anderen Apps
   („In GhulDocs speichern“) und mit der Kamera, siehe [unten](#dokumente-scannen).
-- **Ordner, Suche, Favoriten und Papierkorb**, Anzeige der Belegung („412 MB von 1 GB“, bei mehreren Tresoren
-  dazu „Alle GhulDocs-Tresore: … von 3 GB“).
+- **Ordner, Suche, Favoriten und Papierkorb**, Anzeige der Belegung je Tresor („412 MB von 1 GB“), bei mehreren
+  Tresoren dazu „Alle GhulDocs-Tresore: … von 3 GB“; die App sagt, ob der Tresor oder alle zusammen fast voll sind.
 - **Ansehen in der App** ohne Klartext auf dem Datenträger: Bilder, PDF und Text.
 - **Exportieren** (entschlüsselt an einen Ort deiner Wahl, mit Rückfrage) oder **mit einer anderen App öffnen**
   (eine befristete Kopie, gelöscht, sobald GhulSuite sperrt).
@@ -166,8 +166,8 @@ der Leiste, seine Tresore bleiben unberührt.
 **Für alle Bereiche:** Sofortsperre (Schütteln oder Schnellkachel), Auto-Sperre, Entsperren per Fingerabdruck oder
 App-PIN, Schutz vor Bildschirmfotos und vor Apps, die sich über GhulSuite legen, die ganze Suite als eine Datei,
 „Rückgängig“ nach dem Löschen, dunkles Design und Deutsch oder Englisch. Jeden Tresor kannst du unter Optionen →
-Tresore **exportieren** (für dich: mit deinem Passwort und Key bzw. deiner Schlüsseldatei, als Sicherung oder für ein
-anderes Gerät) oder **als Tresor weitergeben** (für jemand anderen: mit eigenem Passwort, eigenem Key bzw. eigener
+Tresore **exportieren** (für dich, verschlüsselt mit deinem Passwort und Key bzw. deiner Schlüsseldatei: als
+Sicherung oder für ein anderes Gerät) oder **als Tresor weitergeben** (für jemand anderen: mit eigenem Passwort, eigenem Key bzw. eigener
 Schlüsseldatei und eigenem Wiederherstellungscode).
 
 ## Dokumente scannen
@@ -217,9 +217,9 @@ GhulSuite synchronisiert nicht. Die Suite ist **eine Datei** (`.ghlzip`): Du öf
 speicherst sie. Wohin sie wandert, entscheidest du, etwa auf einen USB-Stick. Am Handy öffnen, arbeiten, speichern;
 am PC dieselbe Datei öffnen, arbeiten, speichern; wieder am Handy öffnen.
 
-- **Alles steckt darin:** Passwörter, 2FA, Kalender und alle GhulDocs-Tresore mit allen Dokumenten. Sind sie
-  zusammen voll (3 GB), ist die Datei gut 3 GB groß (höchstens 3,75 GiB, also unter 4 GiB, die auch ein USB-Stick mit
-  FAT32 fasst). Speichern und Öffnen zeigen einen Fortschritt; mit 3 GB Dokumenten dauert das Speichern nach unserer
+- **Alles steckt darin:** Passwörter, 2FA, alle GhulDocs-Tresore mit allen Dokumenten und Kalender. Sind die
+  GhulDocs-Tresore zusammen voll (3 GB), ist die Datei gut 3 GB groß (höchstens 3,75 GiB, also unter 4 GiB, die auch
+  ein USB-Stick mit FAT32 fasst). Speichern und Öffnen zeigen einen Fortschritt; mit 3 GB Dokumenten dauert das Speichern nach unserer
   Schätzung unter Windows etwa 6 bis 15 Sekunden, auf dem Handy bis etwa 40 Sekunden, auf einen langsamen
   USB-Stick bis etwa viereinhalb Minuten.
 - **Speichern unter Optionen → Suite-Datei.** Die App merkt sich die Datei und speichert direkt dorthin, auch auf

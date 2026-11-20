@@ -489,8 +489,9 @@ geöffnet werden soll, lehnt die App mit einer Meldung ab, die sagt, was die Dat
 **Exportieren und Weitergeben** sind für alle Bereiche gleich und stehen im Menü jedes Tresors (Optionen → Tresore →
 ⋮); ein Hinweis über der Tresorliste erklärt den Unterschied:
 
-- **Exportieren** ist **für dich**: Die Tresordatei behält dein Passwort und deinen Key bzw. deine Schlüsseldatei,
-  als Sicherung oder für ein anderes Gerät (GhulDocs als `.ghldocs`).
+- **Exportieren** ist **für dich**: „Für dich, verschlüsselt mit deinem Passwort und Key bzw. deiner Schlüsseldatei:
+  als Sicherung oder für ein anderes Gerät“ (GhulDocs als `.ghldocs`). „Vorher exportieren“ beim Löschen eines Tresors
+  startet genau diesen verschlüsselten Export; beim Entfernen eines Bereichs führt es zu Optionen → Tresore.
 - **Als Tresor weitergeben** ist **für jemand anderen**: eine Kopie mit eigenem Passwort, eigenem Key bzw. eigener
   Schlüsseldatei und eigenem Wiederherstellungscode.
 
@@ -500,8 +501,10 @@ Tresornamen vorbelegt. In den Listen von GhulPass, GhulAuth und GhulDocs lassen 
 Einträge** (bzw. Ordner und Dateien) weitergeben; einzelne Termine gehen über `.ics`. Der neue Tresor bekommt eine
 eigene Suite-ID, ein eigenes Passwort, als zweiten Faktor eine **neue Schlüsseldatei** oder einen **Security Key**
 (zwei Berührungen) und einen eigenen Wiederherstellungscode (wird nur einmal angezeigt). Nichts vom Schutz der eigenen
-Suite geht mit. Einträge aus GhulPass und GhulAuth bekommen neue Kennungen, Passwort-Verläufe bleiben zurück; die
-Kalender eines GhulCal-Tresors behalten ihre Kennungen, weil die Termine ihren Kalender über die Kennung nennen. Im
+Suite geht mit. Alle Einträge bekommen neue Kennungen, Passwort-Verläufe bleiben zurück; die Termine eines
+GhulCal-Tresors zeigen danach auf die neuen Kennungen ihrer Kalender. Kommt der Tresor in dieselbe Suite zurück, gibt
+es darum nichts doppelt (Durchsicht 20.11.2026: vorher behielten Kalender ihre Kennungen, und Löschen traf den
+falschen Kalender). Auch ein leerer Tresor lässt sich so weitergeben (es entsteht ein leerer Tresor). Im
 Kern ist das `share_as_vault`; eine leere Liste `ids` heißt „der ganze Tresor“. Die Inhaltsdateien von GhulDocs werden
 unverändert kopiert, ihre Schlüssel stehen im neuen Inhaltsverzeichnis. Zur Bestätigung fragt die App das eigene Master-Passwort ab, damit
 niemand an einem entsperrten Gerät Einträge unter eigenem Passwort mitnimmt. Tresordatei, Schlüsseldatei und
@@ -619,8 +622,11 @@ und weitergeben, immer mit seinen Dokumenten, als GhulDocs-Paket `.ghldocs` (Abs
   einer App öffnen oder exportieren.
 - **Exportieren** (entschlüsselt an einen gewählten Ort, mit Rückfrage) und **Mit App öffnen** (befristete Kopie,
   gelöscht, sobald GhulSuite sperrt, wie bisher bei Anhängen).
-- **Belegung:** GhulDocs zeigt sie für den gezeigten Tresor (z. B. „412 MB von 1 GB“), bei mehreren Tresoren darunter
-  „Alle GhulDocs-Tresore: … von 3 GB“; Optionen → GhulDocs zeigt die Summe und jeden Tresor einzeln.
+- **Belegung:** Ein einzelner Tresor (auch aus „Alle Tresore“ angetippt) zeigt oben die Belegungskarte „… von 1 GB“, bei mehreren Tresoren darunter „Alle GhulDocs-Tresore: … von 3 GB“, und die Kacheln Favoriten und Papierkorb; „Alle Tresore“ zeigt als Hauptzeile die Summe „… von 3 GB“ und darunter die Liste der Tresore (keine Dateien; Suche, Favoriten und Papierkorb nennen dort zu jeder Datei ihren
+  Tresor). Ein Tresor aus „Alle Tresore“ hat darunter den Brotkrumen „Alle Tresore › Name“. Fast voll: „Dieser
+  GhulDocs-Tresor ist fast voll.“ bzw., wenn nur alle zusammen fast voll sind, „Alle GhulDocs-Tresore zusammen sind
+  fast voll (höchstens 3 GB je Suite).“ Optionen → GhulDocs zeigt bei einem Tresor „… von 1 GB“, erst bei mehreren die
+  Summe „… von 3 GB“ und darunter jeden Tresor einzeln.
 - **Dokumente prüfen** (jedes Dokument gegen seine Prüfsumme lesen, ohne
   etwas zu ändern) unter Optionen → GhulDocs.
 

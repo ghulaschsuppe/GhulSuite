@@ -2,7 +2,7 @@
 
 Ziel: Die Suite läuft stabil, verliert nie Daten und gibt nie Geheimnisse preis, auch wenn Netz, Dateien, USB-Sticks, andere Apps oder der Nutzer selbst „allen möglichen Mist“ machen. Dieses Konzept beschreibt, *was* geprüft wird, *womit* (eigene Tests und fertige Testsammlungen aus dem Netz) und *wann* es in der CI läuft.
 
-**Stand:** 19.11.2026, nach dem Umbau zu GhulDocs ([`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)): eine reine
+**Stand:** 20.11.2026, nach dem Umbau zu GhulDocs ([`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)): eine reine
 Offline-App. Die Suite wandert als eine Datei (`.ghlzip`, Datenstrom bis 3,75 GiB), die man speichert und öffnet;
 Dokumente liegen verschlüsselt in GhulDocs (seit 20.11.2026 wieder mehrere Tresore, je bis 1 GB, zusammen bis 3 GB), Scannen auf Android nur im Arbeitsspeicher. Tests, die nur die
 Synchronisation, FTP/FTPS, die frühere Sicherung, GhulMail, GhulDrive, Server, das PHP-Modul, Freigaben oder den
