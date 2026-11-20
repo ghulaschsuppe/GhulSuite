@@ -50,7 +50,7 @@
   "file_2": "<b>Nothing gets lost unnoticed:</b> a banner shows unsaved changes. If the file was saved elsewhere in the meantime, the app asks before overwriting it.",
   "file_3": "<b>Everything travels along:</b> passwords, 2FA, calendar and GhulDocs with all documents. Saving and opening show progress; with a full GhulDocs it takes seconds on a PC and up to about a minute and a half on a slow stick.",
   "file_4": "<b>Delete old copies:</b> after a change of protection the app no longer opens a suite file with the older protection. A copy elsewhere opens only for someone with the old password and the old second factor. Replace your key or key file and that copy is useless too.",
-  "file_5": "<b>Single vaults:</b> open a vault file on its own or add it to your suite. Hand on selected entries as a new vault with a key file or security key of its own, a GhulDocs vault with its documents.",
+  "file_5": "<b>Single vaults:</b> open a vault file on its own or add it to your suite. Hand on selected entries as a new vault with a key file or security key of its own, GhulDocs with its documents as a GhulDocs package (.ghldocs).",
   "file_img": "Unlock screen with the option to open another suite or vault",
   "scan_eyebrow": "Scanning documents",
   "scan_title": "Paper in. PDF out. Encrypted.",

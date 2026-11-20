@@ -3,9 +3,11 @@
 Stand: 17.11.2026, freigegeben. Grundlage ist der Umbau ohne Synchronisation
 ([`UMBAU-OHNE-SYNC.md`](UMBAU-OHNE-SYNC.md)). Umsetzung auf dem Branch `feature/ghulvault`.
 
-**Status (19.11.2026):** Pakete G1 bis G8 umgesetzt; aus G9 die unabhängige Durchsicht mit 14 Befunden, alle
-behoben ([`TESTPROTOKOLL.md`](TESTPROTOKOLL.md), Abschnitt 10); der PR nach `dev` steht aus.
-Abweichungen bei der Umsetzung stehen in Abschnitt 11.
+**Status (20.11.2026):** Pakete G1 bis G8 umgesetzt; aus G9 die unabhängige Durchsicht mit 14 Befunden, alle
+behoben ([`TESTPROTOKOLL.md`](TESTPROTOKOLL.md), Abschnitt 10); der PR nach `dev` ist offen. Danach entschieden
+(20.11.2026): **genau ein GhulDocs-Tresor je Suite** und eine **eigene Endung `.ghldocs`** für den weitergegebenen
+GhulDocs-Tresor (GhulDocs-Paket); beides umgesetzt, siehe Abschnitt 11. Abweichungen bei der Umsetzung stehen in
+Abschnitt 11.
 
 ## 1. Grundidee
 
@@ -22,7 +24,8 @@ Passwort); beide lassen sich abschalten.
 | **GhulDocs** | neu: verschlüsselter Speicher für wichtige Scans und Dokumente, bis 1 GB |
 
 Das Prinzip der Tresore bleibt: Jeder Bereich besteht aus Tresoren (eigene verschlüsselte Dateien), eine Suite kann
-mehrere Tresore je Bereich haben, und alle zusammen sind die Suite-Datei.
+mehrere Tresore je Bereich haben (GhulDocs ausgenommen: genau einer, siehe Abschnitt 11), und alle zusammen sind die
+Suite-Datei.
 
 ## 2. Keine Altlasten
 
@@ -76,7 +79,8 @@ Ein GhulDocs-Tresor besteht aus
 - je Datei einer **Inhaltsdatei** `docs-<id>/<zufällige Kennung>.ghlblob` mit dem verschlüsselten Inhalt.
 
 Mehrere GhulDocs-Tresore sind möglich, z. B. „Wichtige Dokumente“ und „Steuer 2025“. Ein einzelner Tresor lässt sich
-wie jeder andere für sich öffnen und speichern, etwa um ihn weiterzugeben (siehe 7).
+wie jeder andere für sich öffnen und speichern, etwa um ihn weiterzugeben (siehe 7). (Geändert: genau einer je Suite,
+siehe Abschnitt 11.)
 
 ### 5.2 Verschlüsselung
 
@@ -143,7 +147,8 @@ Mit typischen 100 bis 300 MB ist es ein Bruchteil davon.
 ## 7. Einen GhulDocs-Tresor weitergeben
 
 Ein einzelner GhulDocs-Tresor wird wie die anderen Einzeltresore gespeichert, als `.ghlzip` mit nur diesem Tresor
-(Inhaltsverzeichnis und Inhaltsdateien) und eigenem Passwort. Der Empfänger öffnet ihn mit GhulSuite.
+(Inhaltsverzeichnis und Inhaltsdateien) und eigenem Passwort. Der Empfänger öffnet ihn mit GhulSuite. (Umgesetzt mit
+eigener Endung `.ghldocs`, siehe Abschnitt 11.)
 
 ## 8. Bedrohungsmodell (Kurzfassung)
 
@@ -200,8 +205,24 @@ Was beim Bauen anders oder genauer wurde als oben geplant:
   Prüfen als Datenstrom gehen; beim Öffnen kommen die Inhaltsdateien erst in einen Zwischenordner und nach dem
   Bestätigen an ihren Platz. Unter Android wird direkt in das gewählte Dokument geschrieben (keine Zwischendatei
   möglich), danach zurückgelesen.
-- **Ein GhulDocs-Tresor für sich** ist eine `.ghlzip` ohne Kopfdatei und Suite-Container (der Tresor als erster
+- **Ein GhulDocs-Tresor für sich** ist ein GhulDocs-Paket ohne Kopfdatei und Suite-Container (der Tresor als erster
   Eintrag); „Als Tresor weitergeben“ geht auch für ausgewählte Ordner und Dateien.
+- **Genau ein GhulDocs-Tresor je Suite** (entschieden am 20.11.2026, statt mehrerer wie in 5.1 geplant): Der Kern lehnt
+  einen zweiten ab, wo immer ein Tresor hinzukommt (anlegen, einrichten, hinzufügen); eine Suite-Datei mit mehr als
+  einem ist ungültig. Die Oberfläche bietet keinen zweiten an; „Alle Tresore“, die Liste der Tresore in GhulDocs und
+  die Auswahl in der Kontextzeile von GhulDocs sind entfallen. Ein GhulDocs-Paket, das einer Suite mit GhulDocs
+  hinzugefügt wird, kommt in deren Tresor, in einen neuen Ordner (benannt nach dem Paket, änderbar); jeder Eintrag
+  bekommt eine neue Kennung, die geprüften Inhaltsdateien werden unverändert verschoben (ihre Schlüssel stehen im
+  Inhaltsverzeichnis), die Grenzen (1 GB, 20 000 Dokumente) gelten wie beim Hinzufügen. Steht eine Inhaltsdatei des
+  Pakets schon im Tresor (dasselbe Paket noch einmal), wird nichts übernommen. Die 1 GB gelten weiter nur für
+  GhulDocs, die Suite-Datei bleibt bis 1,25 GiB.
+- **Eigene Endung `.ghldocs`** (entschieden am 20.11.2026, statt `.ghlzip` wie in Abschnitt 7): Der GhulDocs-Tresor
+  für sich (exportiert oder weitergegeben) heißt GhulDocs-Paket und hat die Endung `.ghldocs`; die Suite-Datei bleibt
+  `.ghlzip`. Innen unterscheidet sie der erste Eintrag (Kopf oder GhulDocs-Tresor): Ein Paket, das als Suite-Datei
+  geöffnet werden soll, und eine Suite-Datei, die als Paket geöffnet werden soll, werden mit einer Meldung abgelehnt,
+  die sagt, was die Datei ist. Speichern-Dialoge schlagen `.ghldocs` vor; Android öffnet `.ghldocs` aus dem
+  Dateimanager wie `.ghlzip` (nur `content://`), Windows verknüpft beide Endungen (MSI) und reicht beide an ein schon
+  laufendes Programm weiter.
 - **Website:** `report.php` und sein Datenordner sind entfernt; die Datenschutzerklärung der App nennt nur noch die
   Update- und die Leak-Prüfung. Auf dem Webspace der Live-Seite liegen die alten Dateien, bis sie von Hand gelöscht
   werden (der Upload löscht nichts).

@@ -34,7 +34,7 @@ Jeder Test prüft eine oder mehrere dieser Zusagen. Ein Test, der keine davon pr
 ### E2: Eigenschaftstests (Rundreisen und Regeln)
 Zufällig erzeugte, aber gültige Daten; geprüft wird eine Eigenschaft statt eines festen Ergebnisses:
 - verschlüsseln → entschlüsseln = gleich (Container, Inhaltsdateien von GhulDocs in allen Größen um die Abschnitts- und Füllgrenzen);
-- speichern → öffnen = gleich (Suite-Datei `.ghlzip` mit allen Bereichen und Dokumenten, auch über viele Geräte und Speicherungen; ein einzelner GhulDocs-Tresor);
+- speichern → öffnen = gleich (Suite-Datei `.ghlzip` mit allen Bereichen und Dokumenten, auch über viele Geräte und Speicherungen; der GhulDocs-Tresor als GhulDocs-Paket `.ghldocs`, für sich geöffnet oder in den GhulDocs-Tresor einer anderen Suite übernommen);
 - exportieren → importieren = gleich (CSV, Bitwarden, Aegis, ICS, otpauth-Links);
 - Stand der Suite-Datei: neuer, älter, Abzweig und andere Suite werden richtig erkannt, auch viele Speicherungen auseinander (Z5);
 - Termin-Serien: jede berechnete Wiederholung liegt im Zeitraum und auf dem richtigen Wochentag.

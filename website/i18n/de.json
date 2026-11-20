@@ -50,7 +50,7 @@
   "file_2": "<b>Nichts geht unbemerkt verloren:</b> Ein Hinweis zeigt nicht gespeicherte Änderungen. Wurde die Datei inzwischen anderswo gespeichert, fragt die App vor dem Überschreiben.",
   "file_3": "<b>Alles reist mit:</b> Passwörter, 2FA, Kalender und GhulDocs mit allen Dokumenten. Speichern und Öffnen zeigen einen Fortschritt; mit vollem GhulDocs dauert es auf dem PC Sekunden, auf einem langsamen Stick bis etwa eineinhalb Minuten.",
   "file_4": "<b>Alte Kopien löschen:</b> Nach einer Schutzänderung öffnet die App keine Suite-Datei mit dem älteren Schutz mehr. Eine Kopie anderswo öffnet nur, wer das alte Passwort und den alten zweiten Faktor hat. Tauschst du Key oder Schlüsseldatei, ist auch sie unbrauchbar.",
-  "file_5": "<b>Einzelne Tresore:</b> Eine Tresordatei für sich öffnen oder zur Suite hinzufügen. Ausgewählte Einträge gibst du als neuen Tresor mit eigener Schlüsseldatei oder eigenem Security Key weiter, einen GhulDocs-Tresor mit seinen Dokumenten.",
+  "file_5": "<b>Einzelne Tresore:</b> Eine Tresordatei für sich öffnen oder zur Suite hinzufügen. Ausgewählte Einträge gibst du als neuen Tresor mit eigener Schlüsseldatei oder eigenem Security Key weiter, GhulDocs mit seinen Dokumenten als GhulDocs-Paket (.ghldocs).",
   "file_img": "Entsperren mit der Wahl, eine andere Suite oder einen Tresor zu öffnen",
   "scan_eyebrow": "Dokumente scannen",
   "scan_title": "Papier rein. PDF raus. Verschlüsselt.",

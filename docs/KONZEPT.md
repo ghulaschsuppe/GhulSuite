@@ -1,6 +1,6 @@
 # GhulSuite: Sicherheits- und Architekturkonzept
 
-**Stand:** Entwurf v0.9 · 19.11.2026 (v0.8: ohne Synchronisation, die Suite ist eine Datei (`.ghlzip`), Formatversion 3 mit Schreibsiegel, [`UMBAU-OHNE-SYNC.md`](UMBAU-OHNE-SYNC.md); **v0.9: eine reine Offline-App. GhulDocs statt GhulDrive und GhulMail, keine Server, keine Freigabelinks, kein Schlüsselwechsel; die Suite-Datei als Datenstrom bis 1,25 GiB; Dokumente scannen auf Android**, Abschnitte 8 und 9. Begründung und Pakete: [`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md))
+**Stand:** Entwurf v0.9 · 20.11.2026 (v0.8: ohne Synchronisation, die Suite ist eine Datei (`.ghlzip`), Formatversion 3 mit Schreibsiegel, [`UMBAU-OHNE-SYNC.md`](UMBAU-OHNE-SYNC.md); **v0.9: eine reine Offline-App. GhulDocs statt GhulDrive und GhulMail, keine Server, keine Freigabelinks, kein Schlüsselwechsel; die Suite-Datei als Datenstrom bis 1,25 GiB; Dokumente scannen auf Android**, Abschnitte 8 und 9. Begründung und Pakete: [`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md))
 **App:** GhulSuite mit den Bereichen **GhulPass** (Passwörter) · **GhulAuth** (TOTP) · **GhulDocs** (Dokumente) · **GhulCal** (Kalender)
 **Plattformen:** Android (nativ) und Windows (nativ, auch portabel vom USB-Stick); Android kam zuerst (Abschnitt 4.1)
 **Lizenz:** AGPL-3.0-or-later
@@ -468,13 +468,19 @@ Tresordatei mit der App öffnen bietet:
 - **Neue Suite damit anlegen** (wenn auf dem Gerät noch keine ist): Um den Tresor wird eine neue Suite gebaut, nur
   dieser Bereich wird eingeschaltet; hat er noch keinen Wiederherstellungscode, entsteht ein neuer.
 
-**Ein GhulDocs-Tresor** reist nie ohne seine Dokumente: Er wird für sich als `.ghlzip` gespeichert, mit seiner
-Tresordatei als erstem Eintrag und genau seinen Inhaltsdateien, ohne Kopfdatei und Suite-Container. Geöffnet,
-geprüft, hinzugefügt und zurückgeschrieben wird er wie oben, als Datenstrom.
+**Ein GhulDocs-Tresor** reist nie ohne seine Dokumente: Er wird für sich als **GhulDocs-Paket** gespeichert, einer
+eigenen Dateiart mit der Endung `.ghldocs` (die Suite-Datei bleibt `.ghlzip`), mit seiner Tresordatei als erstem
+Eintrag und genau seinen Inhaltsdateien, ohne Kopfdatei und Suite-Container. Geöffnet, geprüft und zurückgeschrieben
+wird er wie oben, als Datenstrom. Da eine Suite nur einen GhulDocs-Tresor hat, wird ein Paket beim **Hinzufügen** zu
+einer Suite, die schon einen hat, in diesen übernommen: sein Inhalt kommt in einen neuen Ordner, benannt nach dem
+Paket (änderbar), mit dem Schutz der Suite; die Grenzen von GhulDocs gelten dabei wie beim Hinzufügen von Dateien.
+Hat die Suite noch keinen, wird das Paket ihr GhulDocs-Tresor. Eine Suite-Datei, die als Paket geöffnet werden soll,
+und ein Paket, das als Suite-Datei geöffnet werden soll, lehnt die App mit einer Meldung ab, die sagt, was die Datei
+ist.
 
 **Als Tresor weitergeben:** Ausgewählte Einträge aus GhulPass oder GhulAuth lassen sich als **eigener Tresor**
 weitergeben, z. B. an eine Person, die selbst GhulSuite nutzt; ebenso ein GhulDocs-Tresor (auch nur ausgewählte
-Ordner und Dateien) als `.ghlzip`. Der neue Tresor bekommt eine eigene Suite-ID, ein eigenes Passwort, als zweiten
+Ordner und Dateien) als GhulDocs-Paket (`.ghldocs`). Der neue Tresor bekommt eine eigene Suite-ID, ein eigenes Passwort, als zweiten
 Faktor eine **neue Schlüsseldatei** oder einen **Security Key** (zwei Berührungen) und einen eigenen
 Wiederherstellungscode (wird nur einmal angezeigt). Nichts vom Schutz der eigenen Suite geht mit; Einträge bekommen
 neue Kennungen, Passwort-Verläufe bleiben zurück. Die Inhaltsdateien von GhulDocs werden unverändert kopiert, ihre
@@ -554,8 +560,10 @@ GhulDrive, das auf einem eigenen Server lag. Format: [`FORMAT.md`](FORMAT.md), A
 - je Datei einer **Inhaltsdatei** `docs-<Tresor-ID>/<zufällige Kennung>.ghlblob` mit dem verschlüsselten Inhalt. Sie
   wird einmal geschrieben und nie geändert.
 
-Mehrere GhulDocs-Tresore sind möglich, z. B. „Wichtige Dokumente“ und „Steuer 2025“. Ein einzelner Tresor lässt sich
-wie jeder andere für sich öffnen, speichern und weitergeben, immer mit seinen Dokumenten (Abschnitt 8.3).
+Eine Suite hat **genau einen** GhulDocs-Tresor (oder keinen, solange GhulDocs nicht eingerichtet ist); Ordnung
+schaffen Ordner darin. Einen zweiten legt die App nicht an und bietet ihn nicht an; eine Suite-Datei mit mehr als
+einem ist ungültig. Der Tresor lässt sich wie jeder andere für sich öffnen, speichern und weitergeben, immer mit
+seinen Dokumenten, als GhulDocs-Paket `.ghldocs` (Abschnitt 8.3).
 
 **Verschlüsselung.**
 - Das Inhaltsverzeichnis ist durch den Container geschützt: Argon2id mit Passwort und zweitem Faktor, Schreibsiegel.
@@ -585,7 +593,7 @@ wie jeder andere für sich öffnen, speichern und weitergeben, immer mit seinen 
   etwas zu ändern) unter Optionen → GhulDocs.
 
 **Grenzen.**
-- Fest **1 GB Inhalt je Suite** (alle GhulDocs-Tresore zusammen, mit dem Papierkorb, bis er geleert wird), eine
+- Fest **1 GB Inhalt je Suite** (ihr GhulDocs-Tresor mit dem Papierkorb, bis er geleert wird), eine
   einzelne Datei ebenfalls bis 1 GB. Darüber lehnt die App das Hinzufügen mit einer klaren Meldung ab, bevor etwas
   geschrieben wird.
 - Zusätzlich (bei der Umsetzung ergänzt): höchstens **20 000 Dokumente** je Suite und höchstens 1 100 000 000 Byte

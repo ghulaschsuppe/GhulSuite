@@ -1,6 +1,6 @@
 # GhulSuite: Testplan Windows (Version 0.5.0-dev)
 
-**Stand:** 19.11.2026 · **neu: Umbau zu GhulDocs** ([`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)): eine reine
+**Stand:** 20.11.2026 · **neu: Umbau zu GhulDocs** ([`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)): eine reine
 Offline-App mit GhulPass, GhulAuth, GhulDocs und GhulCal. Die Suite wandert als eine Datei (`.ghlzip`, mit allen
 Dokumenten) zwischen Android und Windows, z. B. auf dem USB-Stick (Abschnitt 6); GhulDocs unter Windows in Abschnitt 7.
 GhulMail, GhulDrive, Server, Freigabelinks und der Schlüsselwechsel sind entfallen (Abschnitt 8 bleibt nur als
@@ -100,7 +100,7 @@ gespeichert wurde. Alle Rückfragen sind dieselben wie im Android-Plan, Abschnit
 
 ## 7. GhulDocs unter Windows
 
-Dieselben Abläufe wie im Android-Plan, Abschnitt 39 (GD1, GD2, GD4 bis GD6, GD8 bis GD15). Scannen gibt es unter
+Dieselben Abläufe wie im Android-Plan, Abschnitt 39 (GD1, GD2, GD4 bis GD6, GD8 bis GD15, mit GD13a). Scannen gibt es unter
 Windows nicht. Unter Windows anders:
 
 | Nr. | Schritt | Erwartet |
@@ -113,6 +113,7 @@ Windows nicht. Unter Windows anders:
 | WD6 | Breites Fenster: Dokument anklicken, „Zurück“. | Die Ansicht steht in der Spalte an der Stelle der Liste, die Seitenleiste bleibt. |
 | WD7 | Einen Scan vom Handy (PDF mit JPEG-Seiten) ansehen; vorher und nachher `%TEMP%` nach `imageio*.tmp` durchsuchen (auch mit einem Programm, das gelöschte Dateien zeigt). | Keine Datei von ImageIO; die Seiten entstehen nur im Arbeitsspeicher. |
 | WD8 | GhulSuite starten und sofort, noch während es startet, eine `.ghlzip` doppelklicken; dann ein zweites Mal GhulSuite starten. | Es bleibt bei einem Fenster: die Datei wird im ersten geöffnet, der zweite Start holt es nur nach vorn. Mit „Mit App öffnen“ geöffnete Dokumente bleiben dabei offen (der zweite Start löscht keine Kopien). |
+| WD9 | Nach der Installation (MSI) eine `.ghldocs` (GhulDocs-Paket) im Explorer doppelklicken, einmal mit gesperrter, einmal mit entsperrter Suite; ebenso während GhulSuite schon läuft. | Das Symbol von GhulSuite steht an der Datei („GhulDocs-Paket“). Gesperrt: Auswahl „Nur diesen Tresor öffnen“ / „Zu meiner Suite hinzufügen“; entsperrt: „In GhulDocs aufnehmen“ mit dem Namen der Datei als Ordner. Läuft GhulSuite schon, übernimmt das laufende Fenster die Datei. Der Speichern-Dialog beim Weitergeben schlägt `.ghldocs` vor. |
 
 ## 8. GhulMail mit Verschlüsselung (entfernt)
 
