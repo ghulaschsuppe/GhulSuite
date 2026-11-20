@@ -17,6 +17,10 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.onLast
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.runDesktopComposeUiTest
@@ -230,7 +234,8 @@ class DocsInteractionTest {
         val used = fake.docs.nodes.filter { !it.isFolder }.sumOf { it.data.size.toLong() }
         fake.docs.limit = used + 500
         runOnIdle { state.addDocs("d1", null, listOf(Source("Gross.pdf", 5000))) }
-        val msg = "GhulDocs is full: ${formatSizeSi(used)} of ${formatSizeSi(used + 500)} used. Nothing was added."
+        // How much the file needs and how much is free.
+        val msg = "The file needs ${formatSizeSi(5000)}, ${formatSizeSi(500)} are free. Nothing was added."
         waitPart(msg)
         shot("limit")
         // Without a known size: refused as soon as it is too much, and nothing stays.
@@ -548,5 +553,117 @@ class DocsInteractionTest {
         assertTrue(onAllNodes(hasText("GhulDocs") and hasAnyAncestor(isDialog()), useUnmergedTree = true).fetchSemanticsNodes().isEmpty())
         assertTrue(onAllNodes(hasText("GhulCal") and hasAnyAncestor(isDialog()), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
         shot("new-vault")
+    }
+
+    private val keyPackage: ScreenshotTest.Fake.() -> Unit = {
+        archiveInfo = de.danerd.ghulsuite.model.ArchiveInfoUi(
+            de.danerd.ghulsuite.model.ArchiveContentUi.DOCS_VAULT,
+            de.danerd.ghulsuite.model.ProtectionUi(securityKeys = 1, keyfiles = 0, recoveryCodes = 1),
+        )
+    }
+
+    /** The package's password and the key's PIN typed into the open dialog. */
+    private fun DesktopComposeUiTest.packageSecrets() {
+        val fields = onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog()))
+        fields[1].performTextReplacement("Paket-Passwort!")
+        fields[2].performTextReplacement("1234")
+    }
+
+    private fun withPickers(block: () -> Unit) {
+        System.setProperty("ghul.pickers", "true")
+        try {
+            block()
+        } finally {
+            System.clearProperty("ghul.pickers")
+            de.danerd.ghulsuite.ui.CreateFilePicker.override = null
+        }
+    }
+
+    /**
+     * A GhulDocs package while the suite has a GhulDocs vault: three ways. Added as a folder, a
+     * full GhulDocs says how much the package needs and how much is free, and nothing is added.
+     */
+    @Test
+    fun aPackageOffersThreeWaysAndAFullGhulDocsSaysHowMuch() = withPickers {
+        app(prepare = keyPackage) { _, fake ->
+            waitFor("Mietvertrag.pdf")
+            handOver("Steuer 2025.ghldocs") { shown("Add to GhulDocs") }
+            assertTrue(shown("Add as a folder"))
+            assertTrue(shown("Save the existing GhulDocs and replace it"))
+            assertTrue(shown("Delete the existing GhulDocs and replace it"))
+            shot("package-choices")
+            val used = fake.docs.nodes.filter { !it.isFolder }.sumOf { it.data.size.toLong() }
+            fake.docs.limit = used + 40_000
+            fake.docs.packageSize = 60_000
+            val before = fake.docs.nodes.map { it.name }
+            packageSecrets()
+            dialogButton("Add")
+            waitPart("The package needs ${formatSizeSi(60_000)}, ${formatSizeSi(40_000)} are free. Nothing was added.")
+            shot("package-full")
+            assertEquals(before, fake.docs.nodes.map { it.name }, "nothing changed")
+            assertTrue(fake.docs.calls.none { it.startsWith("adoptVault") || it.startsWith("replaceVault") })
+            dialogButton("Cancel")
+            waitGone("Add to GhulDocs")
+        }
+    }
+
+    /** "Delete the existing GhulDocs and replace it" asks with the word typed out; "Cancel" keeps it. */
+    @Test
+    fun aPackageReplacesGhulDocsOnlyWhenConfirmed() = withPickers {
+        app(prepare = keyPackage) { _, fake ->
+            waitFor("Mietvertrag.pdf")
+            handOver("Steuer 2025.ghldocs") { shown("Add to GhulDocs") }
+            text("Delete the existing GhulDocs and replace it").performClick()
+            waitFor("Delete and replace")
+            packageSecrets()
+            dialogButton("Delete and replace")
+            waitFor("Delete the existing GhulDocs for good?")
+            shot("package-delete-ask")
+            onAllNodes(hasText("Delete and replace") and hasAnyAncestor(isDialog()) and hasClickAction()).onLast().assertIsNotEnabled()
+            onAllNodes(hasText("Cancel") and hasAnyAncestor(isDialog())).onLast().performClick()
+            waitGone("Delete the existing GhulDocs for good?")
+            assertTrue(fake.docs.nodes.any { it.name == "Mietvertrag.pdf" })
+            assertTrue(fake.docs.calls.none { it.startsWith("replaceVault") })
+
+            dialogButton("Delete and replace")
+            waitFor("Delete the existing GhulDocs for good?")
+            onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog())).onLast().performTextInput("DELETE")
+            onAllNodes(hasText("Delete and replace") and hasAnyAncestor(isDialog()) and hasClickAction()).onLast().performClick()
+            waitFor("GhulDocs replaced.")
+            assertTrue("replaceVault:Steuer 2025.ghldocs:Steuer 2025" in fake.docs.calls, fake.docs.calls.toString())
+            assertTrue(fake.docs.nodes.none { it.name == "Mietvertrag.pdf" })
+            assertTrue(fake.calls.none { it.startsWith("docsSaveVault") })
+        }
+    }
+
+    /**
+     * "Save the existing GhulDocs and replace it": saved as a package where the user picks, read
+     * back, and only then replaced. Cancelled or not written, nothing is replaced.
+     */
+    @Test
+    fun aPackageReplacesGhulDocsAfterSavingIt() = withPickers {
+        app(prepare = keyPackage) { _, fake ->
+            waitFor("Mietvertrag.pdf")
+            handOver("Steuer 2025.ghldocs") { shown("Add to GhulDocs") }
+            text("Save the existing GhulDocs and replace it").performClick()
+            waitFor("Save and replace")
+            packageSecrets()
+            shot("package-save-replace")
+            de.danerd.ghulsuite.ui.CreateFilePicker.override = { null }
+            dialogButton("Save and replace")
+            waitFor("Not saved. Nothing was replaced.")
+            de.danerd.ghulsuite.ui.CreateFilePicker.override = { name -> de.danerd.ghulsuite.model.SuiteFileRef("/stick/$name", name) }
+            fake.saveOk = false
+            dialogButton("Save and replace")
+            waitFor("The package was not written completely. Nothing was replaced.")
+            assertTrue(fake.docs.calls.none { it.startsWith("replaceVault") })
+            assertTrue(fake.docs.nodes.any { it.name == "Mietvertrag.pdf" })
+            fake.saveOk = true
+            dialogButton("Save and replace")
+            waitFor("GhulDocs saved as Dokumente.ghldocs and replaced.")
+            assertTrue("docsSaveVault:d1:Dokumente.ghldocs:true" in fake.calls, fake.calls.toString())
+            assertTrue("replaceVault:Steuer 2025.ghldocs:Steuer 2025" in fake.docs.calls)
+            assertTrue(fake.docs.nodes.none { it.name == "Mietvertrag.pdf" })
+        }
     }
 }

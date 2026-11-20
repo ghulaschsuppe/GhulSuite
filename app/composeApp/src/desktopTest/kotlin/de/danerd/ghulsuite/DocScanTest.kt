@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package de.danerd.ghulsuite
 
+import de.danerd.ghulsuite.ui.formatSizeSi
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asSkiaBitmap
@@ -327,7 +328,9 @@ class DocScanTest {
         text("Done").performClick()
         waitFor("Save as PDF")
         tag("scan-save").performClick()
-        waitPart("GhulDocs is full")
+        // How much the PDF needs and how much is free.
+        waitPart("The file needs")
+        waitPart("${formatSizeSi(1000)} are free. Nothing was added.")
         shot("8-full")
         val s = assertNotNull(state.scanSession)
         assertEquals(1, s.pages.size)

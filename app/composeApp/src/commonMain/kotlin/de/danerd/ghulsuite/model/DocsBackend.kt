@@ -95,6 +95,22 @@ interface DocsBackend {
         onTouchNeeded: () -> Unit,
         onProgress: (Long, Long) -> Unit = { _, _ -> },
     ): String
+
+    /**
+     * Replaces the suite's GhulDocs vault by a GhulDocs package (opened once with its own
+     * protection, then switched to the suite's): the old vault goes with all its documents, the
+     * limit counts the package alone. Anything failing leaves the old vault as it was. The new
+     * vault's id.
+     */
+    suspend fun replaceVault(
+        file: SuiteFileRef,
+        name: String,
+        password: String,
+        pin: String?,
+        keyfile: ByteArray?,
+        onTouchNeeded: () -> Unit,
+        onProgress: (Long, Long) -> Unit = { _, _ -> },
+    ): String
 }
 
 /** Without GhulDocs (test fakes of other areas). */
@@ -120,6 +136,10 @@ object NoDocsBackend : DocsBackend {
     override suspend fun exportVault(vaultId: String, sink: ByteSink, onProgress: (Long, Long) -> Unit) = none()
     override suspend fun shareVault(share: ShareVaultUi, pin: String?, onTouchNeeded: () -> Unit, sink: ByteSink, onProgress: (Long, Long) -> Unit): String = none()
     override suspend fun adoptVault(
+        file: SuiteFileRef, name: String, password: String, pin: String?, keyfile: ByteArray?, onTouchNeeded: () -> Unit,
+        onProgress: (Long, Long) -> Unit,
+    ): String = none()
+    override suspend fun replaceVault(
         file: SuiteFileRef, name: String, password: String, pin: String?, keyfile: ByteArray?, onTouchNeeded: () -> Unit,
         onProgress: (Long, Long) -> Unit,
     ): String = none()

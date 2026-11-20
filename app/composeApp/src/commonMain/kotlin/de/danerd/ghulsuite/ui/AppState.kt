@@ -962,12 +962,7 @@ private suspend fun describeText(e: Throwable): String {
         VaultErrorKind.CERT_UNTRUSTED -> getString(Res.string.err_cert_untrusted, e.detail)
         VaultErrorKind.NOT_CONFIGURED -> getString(Res.string.err_not_configured)
         VaultErrorKind.NOT_FOUND -> getString(Res.string.err_not_found)
-        VaultErrorKind.DOCS_LIMIT -> {
-            val used = e.detail.substringBefore('|').toLongOrNull() ?: 0
-            val limit = e.detail.substringAfter('|').toLongOrNull() ?: 1_000_000_000
-            if (used > 0) getString(Res.string.err_docs_limit, formatSizeSi(used), formatSizeSi(limit))
-            else getString(Res.string.err_docs_too_large, formatSizeSi(limit))
-        }
+        VaultErrorKind.DOCS_LIMIT -> docsLimitText(e.detail, DocsAdding.ANY) { res, args -> getString(res, *args) }
         VaultErrorKind.OTHER -> getString(Res.string.err_other, coreText(e.detail) ?: e.detail)
     }
 }
@@ -991,5 +986,41 @@ object PasswordPolicy {
         backend.passwordScore(password) < MIN_SCORE -> tooWeak
         password != repeat -> mismatch
         else -> null
+    }
+}
+
+/** What was to be added when GhulDocs had no room: it names it in the message. */
+enum class DocsAdding { FILE, PACKAGE, ANY }
+
+/**
+ * The text for [VaultErrorKind.DOCS_LIMIT] (detail `used|limit|needed`, bytes): how much it needs
+ * and how much is free when that is the reason, else that GhulDocs is full (too many documents,
+ * or a size that was not known before). [get] reads a text in the language of the screens.
+ */
+suspend fun docsLimitText(
+    detail: String,
+    adding: DocsAdding,
+    get: suspend (org.jetbrains.compose.resources.StringResource, Array<String>) -> String,
+): String {
+    val parts = detail.split('|')
+    val used = parts.getOrNull(0)?.toLongOrNull() ?: 0
+    val limit = parts.getOrNull(1)?.toLongOrNull() ?: 1_000_000_000
+    val needed = parts.getOrNull(2)?.toLongOrNull() ?: 0
+    val free = (limit - used).coerceAtLeast(0)
+    return when {
+        // More than GhulDocs holds at all: emptying the trash would not help.
+        needed > limit && adding == DocsAdding.PACKAGE ->
+            get(Res.string.err_docs_package_too_large, arrayOf(formatSizeSi(needed), formatSizeSi(limit)))
+        needed > limit -> get(Res.string.err_docs_too_large, arrayOf(formatSizeSi(limit)))
+        needed > free -> get(
+            when (adding) {
+                DocsAdding.FILE -> Res.string.err_docs_room_file
+                DocsAdding.PACKAGE -> Res.string.err_docs_room_package
+                DocsAdding.ANY -> Res.string.err_docs_room
+            },
+            arrayOf(formatSizeSi(needed), formatSizeSi(free)),
+        )
+        used > 0 -> get(Res.string.err_docs_limit, arrayOf(formatSizeSi(used), formatSizeSi(limit)))
+        else -> get(Res.string.err_docs_too_large, arrayOf(formatSizeSi(limit)))
     }
 }

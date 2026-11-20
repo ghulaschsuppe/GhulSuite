@@ -233,6 +233,24 @@ class CoreDocsBackend(
         }
     }
 
+    override suspend fun replaceVault(
+        file: SuiteFileRef,
+        name: String,
+        password: String,
+        pin: String?,
+        keyfile: ByteArray?,
+        onTouchNeeded: () -> Unit,
+        onProgress: (Long, Long) -> Unit,
+    ): String {
+        val s = suite()
+        return keys.run(pin) { t ->
+            val input = openInput(file) ?: throw VaultException(VaultErrorKind.STORAGE, "the file cannot be read")
+            input.stream.use {
+                mapped { s.docsReplaceVault(SuiteInputSource(input), name, password, t, t?.let { Touch(onTouchNeeded) }, pin, keyfile, BytesProgress(onProgress)) }
+            }
+        }
+    }
+
     /** What a `.ghlzip` or `.ghldocs` holds; null if it is neither (or cannot be read). */
     suspend fun inspect(file: SuiteFileRef): ArchiveInfoUi? = withContext(Dispatchers.IO) {
         val input = openInput(file) ?: return@withContext null
