@@ -551,7 +551,9 @@ Fortschritt. Geprüft wird vor jeder Änderung auf dem Gerät:
 1. die Form oben (abgeschnitten, beschädigt, zu groß, zu viele Einträge: keine Suite-Datei); nur die erlaubten
    Einträge, keine doppelt, keine Ordner und keine anderen Pfade als die der Inhaltsdateien; ist der erste Eintrag
    ein GhulDocs-Tresor, ist die Datei ein GhulDocs-Paket und keine Suite-Datei (Fehler, der das sagt);
-2. der Kopf (erster Eintrag) öffnet mit Passwort und zweitem Faktor, sein Siegel stimmt;
+2. der Kopf (erster Eintrag) öffnet mit Passwort und zweitem Faktor, sein Siegel stimmt; er listet höchstens 3
+   GhulDocs-Tresore (Abschnitt 11), sonst wird die Datei nicht geöffnet (Fehler „a suite file holds at most 3 GhulDocs
+   vaults“);
 3. genau die gelisteten Dateien sind da, jede mit ihrem SHA-256 (beim Lesen gerechnet), ihrer Art, ihrer
    `CONTAINER_ID` und derselben `suite_id`; jede öffnet, sobald sie gelesen ist, ihr Siegel stimmt; die Epoche des
    Suite-Containers ist die des Kopfs;
@@ -607,7 +609,7 @@ Inhaltsdateien werden dabei unverändert kopiert, ihre Schlüssel stehen im neue
 Suite hinzu.
 
 **Hinzufügen** (`docs_adopt_vault`): Das Paket wird **immer ein eigener GhulDocs-Tresor** der Suite, wie
-`adopt_vault` bei den anderen Tresoren, gleich wie viele GhulDocs-Tresore sie schon hat. Es wird einmal mit seinem
+`adopt_vault` bei den anderen Tresoren; hat sie schon 3, wird es abgelehnt („a suite has at most 3 GhulDocs vaults“). Es wird einmal mit seinem
 eigenen Passwort und zweitem Faktor geöffnet und bekommt den Schutz der Suite und neue Schlüssel (das Paket öffnet
 nichts, was danach gespeichert wird); sein Name ist der gewählte, sonst der des Pakets. Vorher wird geprüft, dass es
 in die Grenzen passt (Abschnitt 11.3: der Tresor selbst und alle GhulDocs-Tresore der Suite zusammen, `DocsLimit`,
@@ -648,7 +650,9 @@ GhulDocs speichert wichtige Dokumente und Scans verschlüsselt. Ein GhulDocs-Tre
   `<Inhalts-ID>` eine zufällige Kennung (16 Byte, 32 Hex-Zeichen). Eine Inhaltsdatei wird einmal geschrieben und
   nie geändert; ein neuer Inhalt bekommt eine neue Kennung und einen neuen Schlüssel.
 
-Eine Suite kann **mehrere** GhulDocs-Tresore haben, wie bei den anderen Bereichen; jeder ist in sich geschlossen
+Eine Suite kann **bis zu 3** GhulDocs-Tresore haben (`DOCS_SUITE_VAULTS`); einen vierten lehnt der Kern ab, wo
+immer ein Tresor hinzukommt (Tresor anlegen, Bereich einrichten, Paket hinzufügen; Fehler „a suite has at most 3
+GhulDocs vaults“), und eine Suite-Datei mit mehr wird nicht geöffnet (Abschnitt 10). Jeder ist in sich geschlossen
 (eigenes Inhaltsverzeichnis mit Ordnern, Papierkorb und Favoriten, eigener Ordner `docs-<Tresor-ID>`). Ein
 GhulDocs-Paket, das einer Suite hinzugefügt wird, wird ein eigener GhulDocs-Tresor (Abschnitt 10). (Vom 17. bis
 20.11.2026 hatte eine Suite höchstens einen; die Fehler „a suite has only one GhulDocs vault“ und „a suite file holds
@@ -733,8 +737,8 @@ Abschnitt = nonce ‖ XChaCha20-Poly1305(BK, nonce, Klartext des Abschnitts, aad
 
 - Höchstens **1 GB** (`DOCS_LIMIT`, 1 000 000 000 Byte) Inhalt je GhulDocs-Tresor (mit dem Papierkorb, bis er
   geleert wird). Ein einzelnes Dokument ebenso.
-- Alle GhulDocs-Tresore einer Suite zusammen höchstens **3 GB** (`DOCS_SUITE_LIMIT` = 3 × `DOCS_LIMIT`) und
-  höchstens **20 000 Dokumente** (`DOCS_MAX_FILES`).
+- Höchstens **3 GhulDocs-Tresore** je Suite (`DOCS_SUITE_VAULTS`), zusammen also höchstens **3 GB**
+  (`DOCS_SUITE_LIMIT` = 3 × `DOCS_LIMIT`), und für alle zusammen höchstens **20 000 Dokumente** (`DOCS_MAX_FILES`).
 - Die Inhaltsdateien eines Tresors zusammen höchstens 1 100 000 000 Byte, die aller GhulDocs-Tresore zusammen
   höchstens 3 300 000 000 Byte (der Inhalt und die Aufrundung auf 64 KiB), damit volle GhulDocs-Tresore mit den
   übrigen Tresoren (höchstens 200 MiB, Abschnitt 10) in die größte Suite-Datei passen (3,75 GiB); bei sehr vielen sehr

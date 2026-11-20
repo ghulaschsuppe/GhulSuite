@@ -7,7 +7,7 @@ Stand: 17.11.2026, freigegeben. Grundlage ist der Umbau ohne Synchronisation
 behoben ([`TESTPROTOKOLL.md`](TESTPROTOKOLL.md), Abschnitt 10); der PR nach `dev` ist offen. Danach entschieden
 (20.11.2026): **genau ein GhulDocs-Tresor je Suite** und eine **eigene Endung `.ghldocs`** für den weitergegebenen
 GhulDocs-Tresor (GhulDocs-Paket); beides umgesetzt, siehe Abschnitt 11. Noch am selben Tag wieder geändert: **mehrere
-GhulDocs-Tresore je Suite**, je bis 1 GB, zusammen bis 3 GB; ein hinzugefügtes Paket wird ein eigener Tresor; jeder
+GhulDocs-Tresore je Suite**, höchstens 3 mit je bis 1 GB; ein hinzugefügtes Paket wird ein eigener Tresor; jeder
 Tresor jedes Bereichs lässt sich als Ganzes weitergeben (Abschnitt 11, letzte Einträge). Abweichungen bei der
 Umsetzung stehen in Abschnitt 11.
 
@@ -26,7 +26,7 @@ Passwort); beide lassen sich abschalten.
 | **GhulDocs** | neu: verschlüsselter Speicher für wichtige Scans und Dokumente, bis 1 GB |
 
 Das Prinzip der Tresore bleibt: Jeder Bereich besteht aus Tresoren (eigene verschlüsselte Dateien), eine Suite kann
-mehrere Tresore je Bereich haben (auch GhulDocs; zwischenzeitlich genau einer, siehe Abschnitt 11), und alle
+mehrere Tresore je Bereich haben (auch GhulDocs, dort höchstens 3; zwischenzeitlich genau einer, siehe Abschnitt 11), und alle
 zusammen sind die Suite-Datei.
 
 ## 2. Keine Altlasten
@@ -235,6 +235,12 @@ Was beim Bauen anders oder genauer wurde als oben geplant:
   geschlossen (eigene Ordner, Papierkorb, Favoriten, eigene Inhaltsdateien `docs-<Tresor-ID>/`). „Neuer Tresor“ bietet
   GhulDocs an; bei mehreren Tresoren zeigt GhulDocs „Alle Tresore“ und eine Tresorwahl in der Kontextzeile oben (wie
   GhulPass und GhulAuth); die Ordnerwahl und „Teilen → In GhulDocs speichern“ können den Tresor wählen.
+- **Höchstens 3 GhulDocs-Tresore je Suite** (Entscheidung des Inhabers, 20.11.2026; schränkt „Wieder mehrere“ oben
+  ein): Der Kern lehnt einen vierten ab, wo immer einer hinzukommt (Neuer Tresor, Bereich, Paket hinzufügen; Kernfehler
+  `a suite has at most 3 GhulDocs vaults`), die App sagt „Eine Suite hat höchstens 3 GhulDocs-Tresore (je bis 1 GB). Lösche einen, um einen neuen anzulegen oder ein GhulDocs-Paket hinzuzufügen.“ „Neuer Tresor“ zeigt
+  GhulDocs dann ausgegraut mit diesem Hinweis, die Tresorwahl bietet keinen neuen an. Eine Suite-Datei mit mehr als 3
+  GhulDocs-Tresoren wird nicht geöffnet („a suite file holds at most 3 GhulDocs vaults“). Die 3 GB für alle zusammen
+  sind damit die natürliche Folge (3 × 1 GB); die 20 000 Dokumente gelten weiter für alle zusammen.
 - **Grenzen je Tresor und je Suite** (20.11.2026; ersetzt die 1 GB je Suite aus 5.5 und die Zahlen im ersten Eintrag
   dieses Abschnitts): höchstens 1 GB (1 000 000 000 Byte) Inhalt je GhulDocs-Tresor, der Papierkorb zählt mit, eine
   einzelne Datei ebenfalls bis 1 GB. Alle GhulDocs-Tresore einer Suite zusammen höchstens 3 GB (`DOCS_SUITE_LIMIT`,

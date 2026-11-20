@@ -59,7 +59,7 @@ ohne Sync-Dienst und ohne Vertrauensvorschuss. Die Daten liegen da, wo **du** si
 | **Zwei Faktoren, immer** | Master-Passwort **plus** Security Key (FIDO2) oder Schlüsseldatei, dazu ein Notfallblatt |
 | **Eine Datei** | Die ganze Suite in einer verschlüsselten Datei (`.ghlzip`, bis 3,75 GiB): speichern, z. B. auf einen USB-Stick, und auf dem nächsten Gerät öffnen. Kein Sync, kein Abgleich |
 | **Offline** | Keine Server, keine Konten, kein Cloud-Dienst. Nach draußen gehen nur die Update-Prüfung und, wenn du sie einschaltest, die Prüfung auf Datenlecks; beide abschaltbar |
-| **Dokumente und Scans** | GhulDocs hält wichtige Dokumente verschlüsselt, bis 1 GB je Tresor und 3 GB je Suite; auf Android scannst du Papier mit der Kamera direkt als PDF hinein |
+| **Dokumente und Scans** | GhulDocs hält wichtige Dokumente verschlüsselt, in bis zu 3 Tresoren mit je bis 1 GB; auf Android scannst du Papier mit der Kamera direkt als PDF hinein |
 | **Plattformen** | Android 10+ und Windows 10/11 (Installer oder portabel vom USB-Stick) |
 | **Offen** | Freie Software (AGPL-3.0), Dateiformat dokumentiert, Tests öffentlich |
 
@@ -128,8 +128,8 @@ der Leiste, seine Tresore bleiben unberührt.
 <td valign="top">
 
 - **Verschlüsselter Speicher** für das, was du nicht verlieren und niemandem zeigen willst: Ausweis, Verträge,
-  Zeugnisse, Steuer, Versicherungen. Bis zu **1 GB** je Tresor, alle GhulDocs-Tresore einer Suite zusammen bis
-  **3 GB**.
+  Zeugnisse, Steuer, Versicherungen. Bis zu **3 Tresore** je Suite mit je bis zu **1 GB**,
+  zusammen also bis **3 GB**.
 - **Jede Datei mit eigenem Schlüssel**, verschlüsselt in Abschnitten. Namen, Ordner und Typen stehen nur im
   verschlüsselten Inhaltsverzeichnis; von außen sieht man nur, wie viele Dokumente es gibt (genau), wie groß sie
   ungefähr sind (in Schritten von 64 KiB) und auf dem Gerät, wann sie hinzukamen.
@@ -140,10 +140,10 @@ der Leiste, seine Tresore bleiben unberührt.
 - **Ansehen in der App** ohne Klartext auf dem Datenträger: Bilder, PDF und Text.
 - **Exportieren** (entschlüsselt an einen Ort deiner Wahl, mit Rückfrage) oder **mit einer anderen App öffnen**
   (eine befristete Kopie, gelöscht, sobald GhulSuite sperrt).
-- **Mehrere Tresore**, z. B. „Privat“ und „Firma“, jeder mit eigenen Ordnern, eigenem Papierkorb und eigenen
+- **Bis zu 3 Tresore**, z. B. „Privat“ und „Firma“, jeder mit eigenen Ordnern, eigenem Papierkorb und eigenen
   Favoriten; oben wählst du den Tresor oder „Alle Tresore“. Einen ganzen Tresor oder ausgewählte Ordner und Dateien
   gibst du mit den Dokumenten als **GhulDocs-Paket** (`.ghldocs`) weiter, mit eigenem Passwort. Fügt der Empfänger
-  das Paket seiner Suite hinzu, wird es dort ein eigener GhulDocs-Tresor.
+  das Paket seiner Suite hinzu, wird es dort ein eigener GhulDocs-Tresor (solange er noch keine 3 hat).
 
 </td></tr></table>
 
@@ -154,7 +154,8 @@ der Leiste, seine Tresore bleiben unberührt.
 <td valign="top">
 
 - **Termine verschlüsselt** in der Suite-Datei, unterwegs mit allem anderen; bewusst ohne CalDAV.
-- **Monat, Woche, Tag und Liste**, mehrere Kalender in eigenen Farben, Geburtstage mit Alter.
+- **Monat, Woche, Tag und Liste**, mehrere Kalender in eigenen Farben, Geburtstage mit Alter. Hast du mehrere
+  Kalender-Tresore, stehen die Kalender unter dem Namen ihres Tresors, und ein neuer Kalender fragt, in welchen Tresor.
 - **Schnell-Eintragen** in Alltagssprache, etwa „Zahnarzt Fr 10 Uhr“.
 - **Serien und Erinnerungen**, auch bei gesperrter App (Android); Zeitzonen-Wechsel auf Reisen werden beachtet.
 - **Feiertage** nach Bundesland, für Österreich und die Schweiz.
@@ -390,9 +391,9 @@ Datenschutzerklärung der App.
 and Windows. Everything is encrypted on your device (master password **plus** FIDO2 security key or key file). There
 are no servers and no accounts, and there is no sync: the whole suite is one encrypted file (`.ghlzip`, up to
 3.75 GiB) you save and open on your next device, e.g. from a USB stick; the state saved last is the current one.
-GhulDocs keeps important documents encrypted (several vaults, up to 1 GB each and 3 GB per suite, every file with its
+GhulDocs keeps important documents encrypted (up to 3 vaults of up to 1 GB each, every file with its
 own key) and, on Android, scans paper with the camera straight into a PDF, with the photos kept in memory only. Every
-vault can be exported for yourself (with your password and key) or handed on as a vault of its own to someone else
+vault can be exported for yourself (with your password and key) or shared as a separate vault with someone else
 (with its own password, second factor and recovery code); a GhulDocs package (`.ghldocs`) added to a suite becomes a
 GhulDocs vault of its own. The app only goes online for the update
 check and, if you switch it on, the password leak check (k-anonymity, Pwned Passwords); both can be switched off.

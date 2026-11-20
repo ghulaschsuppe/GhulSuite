@@ -1,6 +1,6 @@
 # GhulSuite: Sicherheits- und Architekturkonzept
 
-**Stand:** Entwurf v0.9 · 20.11.2026 (v0.8: ohne Synchronisation, die Suite ist eine Datei (`.ghlzip`), Formatversion 3 mit Schreibsiegel, [`UMBAU-OHNE-SYNC.md`](UMBAU-OHNE-SYNC.md); **v0.9: eine reine Offline-App. GhulDocs statt GhulDrive und GhulMail, keine Server, keine Freigabelinks, kein Schlüsselwechsel; die Suite-Datei als Datenstrom; Dokumente scannen auf Android**, Abschnitte 8 und 9. Begründung und Pakete: [`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md). Seit 20.11.2026 wieder mehrere GhulDocs-Tresore je Suite, je bis 1 GB, zusammen bis 3 GB; die Suite-Datei bis 3,75 GiB; jeder Tresor lässt sich als Ganzes weitergeben)
+**Stand:** Entwurf v0.9 · 20.11.2026 (v0.8: ohne Synchronisation, die Suite ist eine Datei (`.ghlzip`), Formatversion 3 mit Schreibsiegel, [`UMBAU-OHNE-SYNC.md`](UMBAU-OHNE-SYNC.md); **v0.9: eine reine Offline-App. GhulDocs statt GhulDrive und GhulMail, keine Server, keine Freigabelinks, kein Schlüsselwechsel; die Suite-Datei als Datenstrom; Dokumente scannen auf Android**, Abschnitte 8 und 9. Begründung und Pakete: [`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md). Seit 20.11.2026 wieder mehrere GhulDocs-Tresore je Suite, höchstens 3 mit je bis 1 GB; die Suite-Datei bis 3,75 GiB; jeder Tresor lässt sich als Ganzes weitergeben)
 **App:** GhulSuite mit den Bereichen **GhulPass** (Passwörter) · **GhulAuth** (TOTP) · **GhulDocs** (Dokumente) · **GhulCal** (Kalender)
 **Plattformen:** Android (nativ) und Windows (nativ, auch portabel vom USB-Stick); Android kam zuerst (Abschnitt 4.1)
 **Lizenz:** AGPL-3.0-or-later
@@ -43,11 +43,11 @@ verschlüsselte Datei**, die man öffnet, darin arbeitet und speichert, und die 
 | Schnell-Entsperren | **Fingerabdruck und/oder App-PIN**, optional und mit engen Grenzen (Abschnitt 6.5) |
 | Module | Jeder Bereich (GhulPass, GhulAuth, GhulDocs, GhulCal) ist in den Einstellungen **abschaltbar**; er verschwindet dann aus dem Menü, die Daten bleiben erhalten |
 | Sofortsperre | **Sofort sperren** (Stufe 1), auch durch **Schütteln**; kein Löschen, kein Notfall-Passwort (Abschnitt 6.6) |
-| Dokumente | **GhulDocs** in der Suite: fest **1 GB** Inhalt je GhulDocs-Tresor, alle GhulDocs-Tresore einer Suite zusammen **3 GB** (seit 20.11.2026; vorher genau ein Tresor mit 1 GB), jede Datei mit eigenem Schlüssel, in der Suite-Datei mit unterwegs (Abschnitt 9.3). Eigene Server, SFTP und das PHP-Modul sind entfernt (17.11.2026) |
+| Dokumente | **GhulDocs** in der Suite: fest **1 GB** Inhalt je GhulDocs-Tresor, höchstens **3** GhulDocs-Tresore je Suite, zusammen also **3 GB** (seit 20.11.2026; vorher genau ein Tresor mit 1 GB), jede Datei mit eigenem Schlüssel, in der Suite-Datei mit unterwegs (Abschnitt 9.3). Eigene Server, SFTP und das PHP-Modul sind entfernt (17.11.2026) |
 | Plattformen | **Android und Windows**; Android kam zuerst, die Architektur war von Anfang an auf beide ausgelegt (Abschnitt 4.1). Scannen nur auf Android |
 | Schutz | **Master-Passwort plus zweiter Faktor, immer.** Zweiter Faktor: Security Key (empfohlen) oder Schlüsseldatei; beliebig viele, jederzeit austauschbar, ohne dass etwas ungültig wird. Einen Schutz nur mit Passwort gibt es nicht (geändert am 11.11.2026) |
 | Wiederherstellungscode | **Pflicht** bei jeder Suite; öffnet alles allein, auch ohne Passwort, Key und Schlüsseldatei; danach wird ein neues Passwort gesetzt |
-| Suite und Tresore | **Die Suite ist eine Datei:** Der Suite-Container `suite.ghlsuite`, alle Tresore mit den Inhaltsdateien von GhulDocs und eine Kopfdatei liegen zusammen in der `.ghlzip`. Je Bereich beliebig viele Tresore (z. B. GhulPass „Privat“ und „Arbeit“). Auf dem Gerät gibt es eine Arbeitskopie (geändert am 17.11.2026; davor „Der Ordner ist die Suite“) |
+| Suite und Tresore | **Die Suite ist eine Datei:** Der Suite-Container `suite.ghlsuite`, alle Tresore mit den Inhaltsdateien von GhulDocs und eine Kopfdatei liegen zusammen in der `.ghlzip`. Je Bereich beliebig viele Tresore, GhulDocs höchstens 3 (z. B. GhulPass „Privat“ und „Arbeit“). Auf dem Gerät gibt es eine Arbeitskopie (geändert am 17.11.2026; davor „Der Ordner ist die Suite“) |
 | Erster Start | Auswahl: **neu einrichten**, **Suite-Datei öffnen** (`.ghlzip`) oder **einzelnen Tresor öffnen** (Tresordatei: nur diesen Tresor öffnen, zur eigenen Suite hinzufügen oder eine neue Suite damit anlegen; Abschnitt 8.3) |
 | Speicherort | Die **Arbeitskopie** liegt im privaten App-Speicher (Windows portabel: im Ordner `GhulSuite-Daten` neben dem Programm), damit die App auch ohne den Stick funktioniert. Die **Suite-Datei** liegt, wo der Nutzer sie speichert; die App merkt sich die zuletzt geöffnete Datei und speichert direkt dorthin |
 | GhulAuth-Passwort | Alle Tresore einer Suite haben dasselbe Passwort und dieselben Faktoren. Wer ein getrenntes Passwort will, legt eine zweite Suite an |
@@ -591,9 +591,12 @@ GhulDrive, das auf einem eigenen Server lag. Format: [`FORMAT.md`](FORMAT.md), A
 - je Datei einer **Inhaltsdatei** `docs-<Tresor-ID>/<zufällige Kennung>.ghlblob` mit dem verschlüsselten Inhalt. Sie
   wird einmal geschrieben und nie geändert.
 
-Eine Suite kann **mehrere** GhulDocs-Tresore haben, wie bei den anderen Bereichen (seit 20.11.2026; vom 17. bis
-20.11.2026 war es genau einer). Jeder ist in sich geschlossen: eigene Ordner, eigener Papierkorb, eigene Favoriten,
-eigene Inhaltsdateien `docs-<Tresor-ID>/`. „Neuer Tresor“ bietet GhulDocs an. Bei mehreren Tresoren zeigt GhulDocs
+Eine Suite kann **bis zu 3** GhulDocs-Tresore haben (seit 20.11.2026; vom 17. bis 20.11.2026 war es genau einer).
+Der Kern lehnt einen vierten ab, wo immer einer hinzukommt (Neuer Tresor, Bereich einrichten, Paket hinzufügen;
+Kernfehler `a suite has at most 3 GhulDocs vaults`); die App sagt „Eine Suite hat höchstens 3 GhulDocs-Tresore (je bis 1 GB). Lösche einen, um einen neuen anzulegen oder ein GhulDocs-Paket hinzuzufügen.“ „Neuer Tresor“ zeigt
+GhulDocs dann ausgegraut mit diesem Hinweis, die Tresorwahl bietet keinen neuen an. Eine Suite-Datei mit mehr als 3
+GhulDocs-Tresoren wird nicht geöffnet. Die 3 GB für alle zusammen ergeben sich daraus (3 × 1 GB). Jeder ist in sich geschlossen: eigene Ordner, eigener Papierkorb, eigene Favoriten,
+eigene Inhaltsdateien `docs-<Tresor-ID>/`. „Neuer Tresor“ bietet GhulDocs an, solange es weniger als 3 sind. Bei mehreren Tresoren zeigt GhulDocs
 „Alle Tresore“ und eine Tresorwahl in der Kontextzeile oben (wie GhulPass und GhulAuth); die Ordnerwahl und „Teilen →
 In GhulDocs speichern“ können den Tresor wählen. Jeder Tresor lässt sich wie jeder andere für sich öffnen, speichern
 und weitergeben, immer mit seinen Dokumenten, als GhulDocs-Paket `.ghldocs` (Abschnitt 8.3).
@@ -632,8 +635,8 @@ und weitergeben, immer mit seinen Dokumenten, als GhulDocs-Paket `.ghldocs` (Abs
 
 **Grenzen.**
 - Fest **1 GB Inhalt je GhulDocs-Tresor** (1 000 000 000 Byte, mit dem Papierkorb, bis er geleert wird), eine
-  einzelne Datei ebenfalls bis 1 GB. Alle GhulDocs-Tresore einer Suite zusammen höchstens **3 GB** und **20 000
-  Dokumente**. Darüber lehnt die App das Hinzufügen mit einer klaren Meldung ab, bevor etwas geschrieben wird; sie
+  einzelne Datei ebenfalls bis 1 GB. Höchstens **3 GhulDocs-Tresore** je Suite, zusammen also höchstens **3 GB**,
+  und für alle zusammen höchstens **20 000 Dokumente**. Darüber lehnt die App das Hinzufügen mit einer klaren Meldung ab, bevor etwas geschrieben wird; sie
   sagt, ob der Tresor voll ist („Dieser GhulDocs-Tresor ist voll …“, „… in diesem GhulDocs-Tresor sind noch … frei“)
   oder alle zusammen („… in allen GhulDocs-Tresoren zusammen sind noch … frei (höchstens 3 GB je Suite)“).
 - Zusätzlich: höchstens 1 100 000 000 Byte Inhaltsdateien auf dem Datenträger je Tresor, 3 300 000 000 Byte für alle
@@ -663,6 +666,9 @@ und weitergeben, immer mit seinen Dokumenten, als GhulDocs-Paket `.ghldocs` (Abs
 
 - Termine verschlüsselt im Kalender-Tresor (`.ghlcal`), unterwegs in der Suite-Datei; bewusst ohne CalDAV (ein
   CalDAV-Server kann verschlüsselte Termine nicht lesen).
+- **Mehrere Kalender-Tresore:** Im Kalenderblatt (Kopfzeile „Alle Kalender“) stehen die Kalender bei mehreren
+  GhulCal-Tresoren unter dem Namen ihres Tresors. „Neuer Kalender“ fragt bei mehreren (oder keinem) GhulCal-Tresor,
+  in welchen Tresor (Tresorwahl mit „Neuer Tresor“, wie beim neuen Eintrag in GhulPass).
 - Monat, Woche, Tag und Liste; mehrere Kalender in eigenen Farben; Serien mit Ausnahmen; Geburtstage mit Alter;
   Feiertage nach Bundesland, für Österreich und die Schweiz; Schnell-Eintragen in Alltagssprache.
 - Erinnerungen plant das Gerät selbst (Android: exakte Wecker, auch nach einem Neustart; Windows: solange GhulSuite

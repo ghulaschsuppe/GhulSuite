@@ -72,6 +72,7 @@ Jeder Test hat eine Nummer, die mit **W** beginnt (z. B. **WE3**), damit sie sic
 | WP3 | QR-Code als Bild kopieren (Rechtsklick → Bild kopieren) → „Bild aus der Zwischenablage“. | Wird erkannt. |
 | WP4 | Ohne QR-Code auf dem Bildschirm scannen. | „Kein QR-Code gefunden.“ |
 | WP5 | Codes mit dem Handy vergleichen (gleiches Konto, gleiche Zeit). | Identisch. |
+| WP6 | GhulPass und GhulAuth: mehrere Einträge auswählen (wie unter Android) → „Zu Favoriten“, dann „Aus Favoriten“. | Wie Android-Plan G8 und A7: alle gewählten auf einmal. |
 
 ## 5. Tresore, Import und Export
 
@@ -169,6 +170,7 @@ Die Abläufe sind dieselben wie unter Android (Testplan Android, Abschnitte 1 un
 | WR1 | Einrichtung bis Schritt 6 (Schnell-Entsperren). | Keine App-PIN zur Auswahl, Hinweis auf Windows Hello später (U8). |
 | WR2 | Termin mit Erinnerung in 10 Minuten, dann in Windows die Zeitzone ändern und GhulSuite offen lassen. | Spätestens nach 5 Minuten wird neu geplant; die Erinnerung kommt zur richtigen Uhrzeit (B22). |
 | WR3 | Optionen → GhulCal. | Hinweis: Erinnerungen kommen nur, solange GhulSuite läuft (B22). |
+| WR4 | Zweiten GhulCal-Tresor anlegen; „Alle Kalender“ öffnen, „Neuer Kalender“; in der Liste „Alle wählen“ zweimal. | Wie Android-Plan K21 und K20: Kalender unter ihrem Tresor, Tresorwahl beim neuen Kalender, zweites „Alle wählen“ nimmt die Auswahl zurück. |
 
 ## 13. Aufgaben im Hintergrund
 

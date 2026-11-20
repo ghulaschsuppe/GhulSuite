@@ -29,7 +29,7 @@
   "auth_title": "2FA-Codes",
   "auth_text": "TOTP, HOTP und Steam-Codes. Übernahme aus Google Authenticator, Aegis, 2FAS und Proton Authenticator per QR-Code oder Datei.",
   "docs_title": "Dokumente",
-  "docs_text": "Ausweis, Verträge, Steuer: verschlüsselt bis 1 GB je Tresor und 3 GB je Suite, jede Datei mit eigenem Schlüssel. Mehrere Tresore, Ordner, Papierkorb, Ansehen in der App. Auf Android scannst du Papier direkt als PDF hinein.",
+  "docs_text": "Ausweis, Verträge, Steuer: verschlüsselt in bis zu 3 Tresoren mit je bis 1 GB, jede Datei mit eigenem Schlüssel. Ordner, Papierkorb, Ansehen in der App. Auf Android scannst du Papier direkt als PDF hinein.",
   "cal_title": "Kalender",
   "cal_text": "Termine, Serien, Erinnerungen und Feiertage, Import und Export als ICS, Zeitzonen richtig umgerechnet. Mit Verknüpfungen zu Einträgen.",
   "imports_label": "Übernahme aus anderen Apps",

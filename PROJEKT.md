@@ -13,8 +13,8 @@ GhulMail ersetzt und die App ohne Server auskommt, in [`docs/UMBAU-GHULDOCS.md`]
 - **Offline, ohne bestimmten Anbieter:** keine Server, keine Konten, kein Cloud-Dienst. Nach draußen gehen nur die
   Update-Prüfung (GitHub) und die Leak-Prüfung von GhulPass (Pwned Passwords, k-Anonymität); beide sind abschaltbar.
   Fehlerberichte werden nur angezeigt, nie hochgeladen.
-- **Vier Bereiche in einer App:** GhulPass (Passwörter), GhulAuth (2FA), GhulDocs (Dokumente, bis 1 GB je Tresor
-  und 3 GB je Suite, mit Scannen auf Android), GhulCal (Kalender). Je Bereich kann es mehrere Tresore geben; jeder
+- **Vier Bereiche in einer App:** GhulPass (Passwörter), GhulAuth (2FA), GhulDocs (Dokumente, bis zu 3 Tresore
+  mit je bis 1 GB, mit Scannen auf Android), GhulCal (Kalender). Je Bereich kann es mehrere Tresore geben (GhulDocs bis zu 3); jeder
   lässt sich exportieren (für sich selbst) oder als Tresor weitergeben (für jemand anderen, mit eigenem Schutz).
 - **Die Suite ist eine Datei, ohne Synchronisation:** Die Suite-Datei `.ghlzip` (bis 3,75 GiB, unter 4 GiB wegen
   ZIP ohne ZIP64 und FAT32, als Datenstrom geschrieben und gelesen) enthält die Tresore (`.ghlpss` Passwörter,

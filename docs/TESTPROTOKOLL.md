@@ -470,7 +470,8 @@ Funde der unabhängigen Durchsicht in Paket G9 (19.11.2026), alle behoben:
 Entschieden vom Inhaber am 20.11.2026, Begründung und Einzelheiten in [`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md),
 Abschnitt 11 (letzte Einträge). Geändert wurde:
 
-- **Mehrere GhulDocs-Tresore je Suite** statt genau einem, jeder in sich geschlossen (eigene Ordner, Papierkorb,
+- **Mehrere GhulDocs-Tresore je Suite, höchstens 3** statt genau einem (ein vierter wird abgelehnt: „Eine Suite hat
+  höchstens 3 GhulDocs-Tresore (je bis 1 GB) …“; eine Suite-Datei mit mehr wird nicht geöffnet), jeder in sich geschlossen (eigene Ordner, Papierkorb,
   Favoriten, Inhaltsdateien `docs-<Tresor-ID>/`); „Neuer Tresor“ bietet GhulDocs an, GhulDocs zeigt „Alle Tresore“
   und eine Tresorwahl in der Kontextzeile, die Ordnerwahl und „In GhulDocs speichern“ können den Tresor wählen.
 - **Grenzen:** 1 GB je GhulDocs-Tresor, alle zusammen 3 GB und 20 000 Dokumente; Inhaltsdateien 1,1 GB je Tresor,
@@ -487,7 +488,8 @@ Was es prüft:
 
 | Bereich | Geprüft durch | Ergebnis |
 |---|---|---|
-| Mehrere GhulDocs-Tresore | `several_docs_vaults_each_on_their_own` (`tests/docs.rs`) | jeder Tresor hat seine eigenen Ordner, Papierkorb, Favoriten und Inhaltsdateien |
+| Mehrere GhulDocs-Tresore | `several_docs_vaults_each_on_their_own` (`tests/docs.rs`) | jeder Tresor hat seine eigenen Ordner, Papierkorb, Favoriten und Inhaltsdateien; ein vierter wird abgelehnt, nach dem Löschen eines Tresors geht es wieder |
+| Höchstens 3 in der Suite-Datei | `a_suite_file_with_four_docs_vaults_is_refused` | eine Suite-Datei mit vier GhulDocs-Tresoren wird nicht geöffnet |
 | Grenzen je Tresor und für alle zusammen | `the_limit_holds_with_the_trash` (`tests/docs.rs`) | der Papierkorb zählt mit; `DocsLimit` mit den Zahlen des Tresors bzw. der Suite (`suite`) |
 | Ein GhulDocs-Tresor für sich | `a_docs_vault_on_its_own_export_open_write_back_adopt_and_share` (`tests/docs.rs`) | exportieren, für sich öffnen, zurückschreiben, als eigenen Tresor hinzufügen (zweimal: schon vorhanden), weitergeben |
 | Hinzufügen scheitert beim Speichern | `an_adopted_docs_vault_that_cannot_be_saved_is_not_half_added` (`tests/docs.rs`) | die Suite bleibt, wie sie war |

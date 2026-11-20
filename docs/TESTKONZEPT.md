@@ -4,7 +4,7 @@ Ziel: Die Suite läuft stabil, verliert nie Daten und gibt nie Geheimnisse preis
 
 **Stand:** 20.11.2026, nach dem Umbau zu GhulDocs ([`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)): eine reine
 Offline-App. Die Suite wandert als eine Datei (`.ghlzip`, Datenstrom bis 3,75 GiB), die man speichert und öffnet;
-Dokumente liegen verschlüsselt in GhulDocs (seit 20.11.2026 wieder mehrere Tresore, je bis 1 GB, zusammen bis 3 GB), Scannen auf Android nur im Arbeitsspeicher. Tests, die nur die
+Dokumente liegen verschlüsselt in GhulDocs (seit 20.11.2026 bis zu 3 Tresore, je bis 1 GB), Scannen auf Android nur im Arbeitsspeicher. Tests, die nur die
 Synchronisation, FTP/FTPS, die frühere Sicherung, GhulMail, GhulDrive, Server, das PHP-Modul, Freigaben oder den
 Schlüsselwechsel prüften, sind mit diesen Funktionen entfallen; Testserver gibt es nicht mehr.
 
