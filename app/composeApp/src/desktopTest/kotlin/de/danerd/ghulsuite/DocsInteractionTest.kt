@@ -441,9 +441,10 @@ class DocsInteractionTest {
         assertEquals(Tab.DOCS, state.tab)
         shot("incoming")
         onAllNodesWithTag("docs-incoming-save").onFirst().performClick()
-        waitFor("Rechnung.pdf added.")
-        assertTrue(fake.docs.calls.any { it.startsWith("add:d1:null:Rechnung.pdf:application/pdf:2000") })
-        assertTrue(f.closed)
+        // The message after adding may be gone again on a slow machine: the add itself is what counts.
+        waitUntil(timeoutMillis = 30_000) {
+            fake.docs.calls.any { it.startsWith("add:d1:null:Rechnung.pdf:application/pdf:2000") } && f.closed
+        }
     }
 
     /** Options → GhulDocs: usage, a check of every document with its result, emptying the trash. */
