@@ -474,6 +474,9 @@ Eintrag und genau seinen Inhaltsdateien, ohne Kopfdatei und Suite-Container. Ge�
 wird er wie oben, als Datenstrom. Da eine Suite nur einen GhulDocs-Tresor hat, wird ein Paket beim **Hinzufügen** zu
 einer Suite, die schon einen hat, in diesen übernommen: sein Inhalt kommt in einen neuen Ordner, benannt nach dem
 Paket (änderbar), mit dem Schutz der Suite; die Grenzen von GhulDocs gelten dabei wie beim Hinzufügen von Dateien.
+Statt einsortiert kann das Paket das eigene GhulDocs auch **ersetzen**: nach dem Sichern des bisherigen als
+GhulDocs-Paket (an einem Ort deiner Wahl, geschrieben und zurückgelesen) oder ohne Sichern nach einer Rückfrage mit
+eingetipptem Wort. Die Grenze zählt dann nur das Paket; scheitert etwas, bleibt das bisherige GhulDocs, wie es war.
 Hat die Suite noch keinen, wird das Paket ihr GhulDocs-Tresor. Eine Suite-Datei, die als Paket geöffnet werden soll,
 und ein Paket, das als Suite-Datei geöffnet werden soll, lehnt die App mit einer Meldung ab, die sagt, was die Datei
 ist.
@@ -524,6 +527,15 @@ erst als bestätigt, wenn ein Block richtig abgetippt wurde. **Absturzsicher:** 
 die App nach dem Entsperren einen neuen (ohne „später“). Liegen Tresordateien ohne Suite-Datei vor, erkennt die App
 die unterbrochene Einrichtung, und das Entsperren vervollständigt die Suite. Auf dem Security Key ist nichts
 aufzuräumen: GhulSuite legt nicht-residente Zugänge an (`rk = false`), der Key speichert nichts.
+**Über eine vorhandene Suite:** Liegt auf dem Gerät schon eine, sagt Schritt 3 das einmal und bietet drei Wege:
+„Diese Suite öffnen“, „Vorhandene sichern und ersetzen“ (mit ihrem Passwort und Key entsperren, als `.ghlzip` an einem
+Ort deiner Wahl speichern, zurücklesen und vergleichen; erst dann wird sie gelöscht und die neue eingerichtet;
+abgebrochen oder gescheitert wird nichts gelöscht) und „Vorhandene löschen und ersetzen“ (Rückfrage in Rot mit
+eingetipptem Wort). Gelöscht wird alles der alten Suite auf dem Gerät: Tresordateien, Suite-Datei, die Dokumente von
+GhulDocs (auch Zwischen- und gerettete Ordner), die Schnellentsperrung samt Schlüsseln im Android-Keystore, ihre
+Kalender-Erinnerungen, der vermerkte Ort ihrer Suite-Datei, was das Gerät von ihren Suite-Dateien gesehen hat, und
+Einstellungen, die ihre Einträge nennen (zuletzt geöffnet, ausgeblendete Kalender). Eine Suite-Datei an einem anderen
+Ort bleibt unberührt.
 
 ### 9.1 GhulPass
 

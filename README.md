@@ -139,7 +139,7 @@ der Leiste, seine Tresore bleiben unberührt.
   (eine befristete Kopie, gelöscht, sobald GhulSuite sperrt).
 - **Ein Tresor je Suite**, geordnet in Ordnern. Ihn oder ausgewählte Ordner und Dateien gibst du mit den Dokumenten
   als **GhulDocs-Paket** (`.ghldocs`) weiter, mit eigenem Passwort. Fügt der Empfänger das Paket seiner Suite hinzu,
-  landet es in seinem GhulDocs, in einem eigenen Ordner.
+  landet es in seinem GhulDocs, in einem eigenen Ordner, oder ersetzt es (auf Wunsch nach dem Sichern des bisherigen).
 
 </td></tr></table>
 

@@ -46,6 +46,7 @@ Jeder Test hat eine Nummer, die mit **W** beginnt (z. B. **WE3**), damit sie sic
 | WE6 | Passwort eingeben → „Entsperren“. | Windows-Fenster für PIN und Berührung; danach offen. |
 | WE7 | Entsperren, im Windows-Fenster „Abbrechen“. | Verständliche Meldung, App bleibt gesperrt und bedienbar. |
 | WE8 | Mit einem **anderen**, nicht registrierten Key entsperren. | Windows bzw. GhulSuite meldet, dass dieser Key nicht passt. |
+| WE9 | Über eine vorhandene Suite neu einrichten (wie E22 bis E24 im Android-Testplan): „Vorhandene sichern und ersetzen“ mit dem Windows-Speichern-Dialog, danach „Vorhandene löschen und ersetzen“. | Wie E23 und E24; nach dem Löschen enthält `%APPDATA%\GhulSuite\suite` (portabel `GhulSuite-Daten\suite`) nur die Dateien der neuen Suite, keine `docs-…`-Ordner der alten. |
 | WE9 | Variante Schlüsseldatei: neue Suite (z. B. portabel auf einem zweiten Stick) mit „Schlüsseldatei“ einrichten, speichern (Windows-Speichern-Dialog), sperren, mit Passwort und Datei entsperren. | Klappt. |
 | WE10 | „Mit Wiederherstellungscode öffnen“. | Mit Code und neuem Passwort wieder offen. |
 

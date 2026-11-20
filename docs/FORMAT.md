@@ -614,8 +614,17 @@ dieselbe Form) oder fügt ihn seiner Suite hinzu:
   Inhaltsverzeichnis), dann wird das Inhaltsverzeichnis gespeichert; scheitert das, bleibt es, wie es war, und die
   verschobenen Inhaltsdateien werden gelöscht. Steht eine Inhaltsdatei des Pakets schon im Tresor (dasselbe Paket
   noch einmal), wird nichts übernommen (`AlreadyExists`).
+- **Die Suite hat einen, und der Nutzer will ihn ersetzen** (`docs_replace_vault`, in der App „Vorhandenes GhulDocs
+  sichern und ersetzen“ bzw. „… löschen und ersetzen“; Sichern ist ein GhulDocs-Paket mit dem Schutz der Suite,
+  geschrieben, zurückgelesen und verglichen, bevor ersetzt wird): Das Paket wird geprüft und seine Inhaltsdateien in
+  einen Zwischenordner gelegt, dann bekommt der Tresor den Schutz der Suite und einen neuen Container-Schlüssel,
+  seine Inhaltsdateien kommen an ihren Platz und seine Tresordatei wird geschrieben. Erst danach wird die alte
+  Tresordatei gelöscht und mit ihr die alten Inhaltsdateien (auch die im Papierkorb). Scheitert vorher etwas, bleibt
+  der alte Tresor, wie er war. Ein Paket desselben Tresors (ein früher gesicherter Stand) ersetzt ihn ebenso; die
+  alten Inhaltsdateien liegen dann bis zum Ende in einem Zwischenordner.
 
-In beiden Fällen zählen seine Dokumente zu den Grenzen (Abschnitt 11.3), geprüft bevor etwas kopiert wird.
+In allen Fällen zählen seine Dokumente zu den Grenzen (Abschnitt 11.3), geprüft bevor etwas kopiert wird; beim
+Ersetzen nur die des Pakets (der alte Tresor geht).
 
 Was eine Datei ist, zeigt ihr erster Eintrag (Kopf `export.ghlexp` oder GhulDocs-Tresor `<id>.ghldoc`), nicht ihr
 Name: Eine Suite-Datei, die als GhulDocs-Paket geöffnet werden soll, und ein GhulDocs-Paket, das als Suite-Datei
@@ -731,5 +740,7 @@ Abschnitt = nonce ‖ XChaCha20-Poly1305(BK, nonce, Klartext des Abschnitts, aad
   Dokumenten greift diese Grenze vor der ersten (jedes belegt mindestens 64 KiB).
 - Höchstens 20 000 Dokumente je Suite.
 
-Darüber wird das Hinzufügen abgelehnt (Fehler `DocsLimit`), bevor etwas geschrieben wird, wenn die Größe vorher
-bekannt ist; sonst, sobald es zu viel wird, und nichts bleibt zurück.
+Darüber wird das Hinzufügen abgelehnt (Fehler `DocsLimit` mit `used`, `limit` und `needed`: belegt, Grenze und
+was hinzukommen sollte, 0 wenn das nicht vorher bekannt war), bevor etwas geschrieben wird, wenn die Größe vorher
+bekannt ist; sonst, sobald es zu viel wird, und nichts bleibt zurück. Die App nennt damit, wie viel die Datei bzw.
+das Paket braucht und wie viel frei ist.
