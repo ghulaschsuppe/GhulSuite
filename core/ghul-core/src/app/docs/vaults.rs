@@ -602,6 +602,8 @@ impl GhulSuite {
             {
                 return Err(GhulError::AlreadyExists);
             }
+            // A vault of its own: at most three GhulDocs vaults (said after "already there").
+            crate::app::suite::refuse_docs_vault_over_limit(o, VaultKind::Docs)?;
             check_room(room(o, None), add, limit)
         };
         if let Err(e) = self.with_open(|o| fits(o)) {

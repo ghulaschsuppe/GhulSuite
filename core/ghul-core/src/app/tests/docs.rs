@@ -1197,22 +1197,19 @@ fn several_docs_vaults_each_on_their_own() {
     // The third vault has room for 1 MB: its own limit comes first.
     let r = s.docs_add_file(x.clone(), None, "zu viel".into(), "".into(), generated(1_500_000, true), None);
     assert!(matches!(r, Err(GhulError::DocsLimit { used: 9_000_000, limit: 10_000_000, suite: false, .. })), "{r:?}");
-    // A fourth: empty, but all vaults together have room for about 5 MB only.
+    // At most three GhulDocs vaults: a fourth is refused wherever it would come in.
+    let full = |r: Result<String, GhulError>| matches!(&r, Err(GhulError::InvalidInput { msg }) if msg == "a suite has at most 3 GhulDocs vaults");
+    assert!(full(s.create_vault(VaultKind::Docs, "Vierter".into())));
+    assert!(s.add_area(VaultKind::Docs, "".into()).is_ok(), "the area is there: nothing new");
+    assert_eq!(docs_vaults(&s).len(), 3);
+    s.create_vault(VaultKind::Pass, "Noch ein Passwort-Tresor".into()).unwrap();
+    // Removed, one may come again.
+    s.remove_vault(x.clone()).unwrap();
     let y = s.create_vault(VaultKind::Docs, "Vierter".into()).unwrap();
-    let r = s.docs_add_file(y.clone(), None, "zu viel".into(), "".into(), generated(5_000_000, true), None);
-    assert!(
-        matches!(r, Err(GhulError::DocsLimit { used: 25_003_000, limit: 30_000_000, needed: 5_000_000, suite: true })),
-        "{r:?}"
-    );
-    // Not known before: stopped at the room left in all vaults, nothing stays.
-    let r = s.docs_add_file(y.clone(), None, "zu viel".into(), "".into(), generated(5_000_000, false), None);
-    assert!(matches!(r, Err(GhulError::DocsLimit { used: 25_003_000, limit: 30_000_000, suite: true, .. })), "{r:?}");
-    assert!(content_files(&d, &y).is_empty());
     add(&s, &y, None, "passt.pdf", &content(4_000_000, 6));
     s.set_docs_limit(DOCS_LIMIT);
     // Removing one vault takes only its documents.
-    s.remove_vault(y.clone()).unwrap();
-    assert!(!docs_dir(&d, &y).exists());
+    assert!(!docs_dir(&d, &x).exists());
     assert_eq!(read(&s, &w, &b.id).unwrap(), content(2000, 2));
     // In the suite file and back, after a lock, on another device.
     s.lock();
@@ -1226,7 +1223,7 @@ fn several_docs_vaults_each_on_their_own() {
     assert_eq!(docs_vaults(&s2).len(), 3);
     assert_eq!(read(&s2, &v, &a.id).unwrap(), content(1000, 1));
     assert_eq!(read(&s2, &w, &b.id).unwrap(), content(2000, 2));
-    assert_eq!(names(&s2.docs_list(x.clone(), None).unwrap()), vec!["c.pdf"]);
+    assert_eq!(names(&s2.docs_list(y.clone(), None).unwrap()), vec!["passt.pdf"]);
     // Set up with two at once.
     let d3 = Dirs::new("many-docs-setup");
     let s3 = d3.suite();
@@ -1452,4 +1449,35 @@ fn a_vault_added_again_while_saving_never_loses_its_documents() {
     let id = s.docs_adopt_vault(source(pkg), "".into(), PW.into(), None, None, None, Some(kf), None).unwrap();
     assert_eq!(id, v);
     assert_eq!(read(&s, &v, &x.id).unwrap(), b"hello");
+}
+
+/// A suite file with more GhulDocs vaults than a suite may have (this app never writes one) is
+/// not opened.
+#[test]
+fn a_suite_file_with_four_docs_vaults_is_refused() {
+    let (_d, a, kf, _, _) = docs_suite("four-docs-a");
+    a.create_vault(VaultKind::Docs, "Zwei".into()).unwrap();
+    a.create_vault(VaultKind::Docs, "Drei".into()).unwrap();
+    // Past the check, as another program might have done it.
+    a.with_open(|o| {
+        let mut c = o.new_container(crate::vault::ContainerKind::Docs)?;
+        super::super::suite::set_vault_name(&mut c, "Vier");
+        let id = crate::kdf::hex(&c.container_id());
+        let file = super::super::suite::file_name(VaultKind::Docs, &id);
+        let reference =
+            super::super::suite::VaultRef { id: id.clone(), kind: "docs".into(), name: "Vier".into(), file };
+        o.vaults.push(super::super::suite::OpenVault { reference, container: Some(c) });
+        a.save_vault(o, &id)
+    })
+    .unwrap();
+    let file = save(&a);
+    let db = Dirs::new("four-docs-b");
+    let b = db.suite();
+    let r = b.archive_open_bytes(file, PW.into(), None, None, None, Some(kf));
+    assert!(
+        matches!(&r, Err(GhulError::InvalidInput { msg }) if msg == "a suite file holds at most 3 GhulDocs vaults"),
+        "{:?}",
+        r.map(|_| ())
+    );
+    assert!(!b.exists().unwrap());
 }

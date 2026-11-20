@@ -703,6 +703,20 @@ pub(super) fn second_factor(
     }
 }
 
+/// The message when a suite has as many GhulDocs vaults as it may (translated by the app).
+pub(super) const DOCS_VAULTS_FULL: &str = "a suite has at most 3 GhulDocs vaults";
+
+/// A suite holds at most [`super::docs::DOCS_SUITE_VAULTS`] GhulDocs vaults (each up to 1 GB, the
+/// suite file stays below 4 GiB): one more is refused wherever a vault comes in.
+pub(super) fn refuse_docs_vault_over_limit(o: &Open, kind: VaultKind) -> Result<()> {
+    let name = VaultKind::Docs.container().name();
+    let have = o.vaults.iter().filter(|v| v.reference.kind == name).count() as u64;
+    if kind == VaultKind::Docs && have >= super::docs::DOCS_SUITE_VAULTS {
+        return Err(GhulError::InvalidInput { msg: DOCS_VAULTS_FULL.into() });
+    }
+    Ok(())
+}
+
 /// A GhulDocs vault is more than its vault file: it goes with its content files (`docs`).
 pub(super) fn refuse_docs_file(kind: VaultKind) -> Result<()> {
     if kind == VaultKind::Docs {
@@ -998,6 +1012,7 @@ impl GhulSuite {
 
     /// Creates a vault with the suite's protection and recovery code.
     pub(super) fn add_vault(&self, o: &mut Open, kind: VaultKind, name: &str) -> Result<String> {
+        refuse_docs_vault_over_limit(o, kind)?;
         let mut c = o.new_container(kind.container())?;
         set_vault_name(&mut c, name);
         let id = crate::kdf::hex(&c.container_id());
@@ -1016,6 +1031,7 @@ impl GhulSuite {
         if o.vaults.iter().any(|v| v.reference.id == id) {
             return Err(GhulError::AlreadyExists);
         }
+        refuse_docs_vault_over_limit(o, kind)?;
         if !name.trim().is_empty() {
             set_vault_name(&mut c, name);
         }

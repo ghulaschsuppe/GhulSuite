@@ -49,6 +49,8 @@ const UNSAVED_FILE: &str = "archive-unsaved";
 const NOT_A_SUITE_FILE: &str = "not a GhulSuite file";
 const DOCS_PACKAGE_NOT_SUITE: &str = "this is a GhulDocs package, not a suite file";
 const SUITE_NOT_DOCS_PACKAGE: &str = "this is a suite file, not a GhulDocs package";
+/// A suite file with more GhulDocs vaults than a suite may have is invalid.
+const DOCS_VAULTS_MANY: &str = "a suite file holds at most 3 GhulDocs vaults";
 /// Largest `.ghlzip` read (counted while reading, not taken from the ZIP): full GhulDocs vaults
 /// (3 GB together) plus the other vaults, 3.75 GiB. Below 4 GiB with room for the central
 /// directory: the ZIP has no ZIP64, and FAT32 sticks take it.
@@ -414,6 +416,13 @@ fn read_checked(
     let suite_id = header_c.header().suite_id;
     if !header.files.iter().any(|f| f.name == SUITE_FILE) {
         return Err(mismatch("no suite file"));
+    }
+    // Every container is listed with its kind (checked below): no more GhulDocs vaults than a
+    // suite may have (this app never writes such a file).
+    if header.files.iter().filter(|f| f.kind == ContainerKind::Docs.name()).count() as u64
+        > super::docs::DOCS_SUITE_VAULTS
+    {
+        return Err(GhulError::InvalidInput { msg: DOCS_VAULTS_MANY.into() });
     }
     let mut out: Files = Vec::new();
     let mut docs: BTreeMap<String, Expected> = BTreeMap::new();
