@@ -356,7 +356,7 @@ fn the_limit_holds_with_the_trash() {
     let half = Usage::file(DOCS_LIMIT / 2);
     assert!(check_room(half, half, DOCS_LIMIT).is_ok());
     assert!(
-        matches!(check_room(half, Usage::file(DOCS_LIMIT / 2 + 1), DOCS_LIMIT), Err(GhulError::DocsLimit { used, limit }) if used == DOCS_LIMIT / 2 && limit == DOCS_LIMIT)
+        matches!(check_room(half, Usage::file(DOCS_LIMIT / 2 + 1), DOCS_LIMIT), Err(GhulError::DocsLimit { used, limit, needed }) if used == DOCS_LIMIT / 2 && limit == DOCS_LIMIT && needed == DOCS_LIMIT / 2 + 1)
     );
     assert!(blob::file_len(DOCS_LIMIT) <= stored_limit(DOCS_LIMIT));
     assert!(stored_limit(DOCS_LIMIT) + 64 * 1024 * 1024 < super::super::archive::MAX_ARCHIVE);
@@ -380,7 +380,7 @@ fn the_limit_holds_with_the_trash() {
     let a = add(&s, &v, None, "a", &content(6_000_000, 1));
     let before = content_files(&d, &v);
     let r = s.docs_add_file(v.clone(), None, "b".into(), "".into(), generated(5_000_000, true), None);
-    assert!(matches!(r, Err(GhulError::DocsLimit { used: 6_000_000, limit: 10_000_000 })), "{r:?}");
+    assert!(matches!(r, Err(GhulError::DocsLimit { used: 6_000_000, limit: 10_000_000, needed: 5_000_000 })), "{r:?}");
     // Size not known before: stopped as soon as it is too much, nothing stays.
     let r = s.docs_add_file(v.clone(), None, "b".into(), "".into(), generated(5_000_000, false), None);
     assert!(matches!(r, Err(GhulError::DocsLimit { .. })), "{r:?}");
@@ -669,9 +669,17 @@ fn a_docs_vault_on_its_own_export_open_write_back_adopt_and_share() {
     let (db, b, kfb, _, vb) = docs_suite("docs-single-b");
     let mine = add(&b, &vb, None, "Von A", b"meins");
     b.set_docs_limit(1000);
+    let files_before = content_files(&db, &vb);
+    let list_before = names(&b.docs_list(vb.clone(), None).unwrap());
     let r =
         b.docs_adopt_vault(source(exported.clone()), "".into(), PW.into(), None, None, None, Some(kf.clone()), None);
-    assert!(matches!(r, Err(GhulError::DocsLimit { .. })), "{:?}", r.err());
+    // The error says how much the package needs (all its documents, the trash included).
+    let needed = (SECTION + 5 + 300 + 30) as u64;
+    assert!(matches!(r, Err(GhulError::DocsLimit { used: 5, limit: 1000, needed: n }) if n == needed), "{:?}", r.err());
+    // Refused, nothing changed: the same documents, no content file and no staging folder left.
+    assert_eq!(names(&b.docs_list(vb.clone(), None).unwrap()), list_before);
+    assert_eq!(content_files(&db, &vb), files_before);
+    assert_eq!(staging_left(&db), 0);
     b.set_docs_limit(DOCS_LIMIT);
     let r = b.docs_adopt_vault(source(save(&b)), "".into(), PW.into(), None, None, None, Some(kfb.clone()), None);
     assert!(
@@ -1234,4 +1242,159 @@ fn a_docs_package_and_a_suite_file_are_told_apart() {
     // Something else entirely stays "not a GhulSuite file".
     let r = b.archive_protection(source(b"PK\x03\x04 nothing".to_vec()));
     assert!(matches!(&r, Err(GhulError::InvalidInput { msg }) if msg == "not a GhulSuite file"), "{r:?}");
+}
+
+/// The GhulDocs vault of a suite as a package (`.ghldocs`, the suite's protection).
+fn export(s: &GhulSuite, v: &str) -> Vec<u8> {
+    let sink = Arc::new(BytesSink::default());
+    s.docs_export_vault(v.into(), sink.clone(), None).unwrap();
+    let out = std::mem::take(&mut *sink.0.lock().unwrap());
+    out
+}
+
+fn docs_vaults(s: &GhulSuite) -> Vec<String> {
+    s.list_vaults().unwrap().into_iter().filter(|v| v.kind == VaultKind::Docs).map(|v| v.id).collect()
+}
+
+#[test]
+fn a_package_replaces_the_docs_vault_and_a_failure_keeps_the_old_one() {
+    // The package: two documents (one in the trash), its own protection (suite A).
+    let (_da, a, kf, _, va) = docs_suite("docs-replace-a");
+    let x = add(&a, &va, None, "x.pdf", &content(60_000, 1));
+    let t = add(&a, &va, None, "t.pdf", &content(10_000, 2));
+    a.docs_to_trash(va.clone(), t.id.clone()).unwrap();
+    let package = export(&a, &va);
+
+    // Suite B with a GhulDocs vault of its own.
+    let (db, b, kfb, _, vb) = docs_suite("docs-replace-b");
+    let mine = add(&b, &vb, None, "meins.pdf", &content(100_000, 3));
+    let before = content_files(&db, &vb);
+
+    // Wrong password, a suite file, too large for the limit: refused, the old vault stays.
+    let r = b.docs_replace_vault(
+        source(package.clone()),
+        "".into(),
+        "falsch".into(),
+        None,
+        None,
+        None,
+        Some(kf.clone()),
+        None,
+    );
+    assert!(matches!(r, Err(GhulError::WrongPassword)), "{r:?}");
+    let r = b.docs_replace_vault(source(save(&b)), "".into(), PW.into(), None, None, None, Some(kfb.clone()), None);
+    assert!(matches!(r, Err(GhulError::InvalidInput { .. })), "{r:?}");
+    b.set_docs_limit(60_000);
+    let r =
+        b.docs_replace_vault(source(package.clone()), "".into(), PW.into(), None, None, None, Some(kf.clone()), None);
+    // The package alone counts (the old vault goes): it needs 70 000 bytes.
+    assert!(matches!(r, Err(GhulError::DocsLimit { used: 0, limit: 60_000, needed: 70_000 })), "{r:?}");
+    assert_eq!(docs_vaults(&b), vec![vb.clone()]);
+    assert_eq!(read(&b, &vb, &mine.id).unwrap(), content(100_000, 3));
+    assert_eq!(content_files(&db, &vb), before);
+    assert_eq!(staging_left(&db), 0);
+
+    // Room for the package alone, not for both: merging is refused, replacing works.
+    b.set_docs_limit(150_000);
+    let r = b.docs_adopt_vault(source(package.clone()), "".into(), PW.into(), None, None, None, Some(kf.clone()), None);
+    assert!(matches!(r, Err(GhulError::DocsLimit { used: 100_000, limit: 150_000, needed: 70_000 })), "{r:?}");
+    let id = b
+        .docs_replace_vault(
+            source(package.clone()),
+            "Von A".into(),
+            PW.into(),
+            None,
+            None,
+            None,
+            Some(kf.clone()),
+            None,
+        )
+        .unwrap();
+    assert_eq!(id, va);
+    assert_eq!(docs_vaults(&b), vec![va.clone()]);
+    assert_eq!(b.list_vaults().unwrap().iter().find(|v| v.id == va).unwrap().name, "Von A");
+    assert_eq!(names(&b.docs_list(va.clone(), None).unwrap()), vec!["x.pdf"]);
+    assert_eq!(names(&b.docs_trash(Some(va.clone())).unwrap()), vec!["t.pdf"]);
+    assert_eq!(read(&b, &va, &x.id).unwrap(), content(60_000, 1));
+    assert!(!docs_dir(&db, &vb).exists(), "the old documents are gone");
+    assert_eq!(staging_left(&db), 0);
+    let files: Vec<String> = std::fs::read_dir(db.root.join("vault"))
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.ends_with(".ghldoc"))
+        .collect();
+    assert_eq!(files.len(), 1, "one GhulDocs vault file: {files:?}");
+    // It has the suite's protection now: after locking it opens with B's password and key file.
+    b.lock();
+    b.finish_lock();
+    b.unlock(PW.into(), None, None, None, Some(kfb.clone())).unwrap();
+    assert_eq!(read(&b, &va, &x.id).unwrap(), content(60_000, 1));
+
+    // A package of the same vault (an earlier state saved before) replaces it as well.
+    b.set_docs_limit(DOCS_LIMIT);
+    let earlier = export(&b, &va);
+    let later = add(&b, &va, None, "später.pdf", b"neu");
+    let id =
+        b.docs_replace_vault(source(earlier), "".into(), PW.into(), None, None, None, Some(kfb.clone()), None).unwrap();
+    assert_eq!(id, va);
+    assert_eq!(docs_vaults(&b), vec![va.clone()]);
+    assert!(read(&b, &va, &later.id).is_err(), "the later document is not in the earlier state");
+    assert_eq!(read(&b, &va, &x.id).unwrap(), content(60_000, 1));
+    assert_eq!(content_files(&db, &va).len(), 2);
+    assert_eq!(staging_left(&db), 0);
+    b.lock();
+    b.finish_lock();
+    b.unlock(PW.into(), None, None, None, Some(kfb.clone())).unwrap();
+    assert_eq!(read(&b, &va, &x.id).unwrap(), content(60_000, 1));
+}
+
+#[test]
+fn deleting_the_working_copy_leaves_nothing_of_the_suite() {
+    let (d, s, kf, _, v) = docs_suite("delete-working-copy");
+    let x = add(&s, &v, None, "x.pdf", &content(300, 1));
+    s.quick_unlock_enable("pin".into(), Some("123456".into())).unwrap();
+    let file = save(&s);
+    add(&s, &v, None, "unsaved.pdf", b"u");
+    assert!(s.archive_unsaved());
+    let vault = d.root.join("vault");
+    let local = d.root.join("local");
+    // What an earlier failure may have left: a staging folder kept on purpose, rescued documents.
+    std::fs::create_dir_all(vault.join(".staging").join("kept")).unwrap();
+    std::fs::write(vault.join(".staging").join("kept").join("KEEP"), b"").unwrap();
+    std::fs::create_dir_all(vault.join("rescued-documents-1")).unwrap();
+    assert!(std::fs::read_dir(&local)
+        .unwrap()
+        .flatten()
+        .any(|e| e.file_name().to_string_lossy().starts_with("quick-")));
+    let seen = std::fs::read_to_string(local.join("archive-seen.json")).unwrap();
+    let suite_id = seen.split('"').nth(1).unwrap().to_owned();
+
+    s.delete_working_copy().unwrap();
+    assert!(!s.is_unlocked());
+    assert!(!s.exists().unwrap());
+    let left: Vec<String> =
+        std::fs::read_dir(&vault).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+    assert!(left.is_empty(), "nothing of the suite is left: {left:?}");
+    let left: Vec<String> = std::fs::read_dir(&local)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with("quick-") || n == "archive-unsaved")
+        .collect();
+    assert!(left.is_empty(), "no quick unlock, no unsaved mark: {left:?}");
+    let seen = std::fs::read_to_string(local.join("archive-seen.json")).unwrap_or_default();
+    assert!(!seen.contains(&suite_id), "what was seen of its suite files is forgotten: {seen}");
+    assert!(!s.quick_unlock_exists("pin".into()));
+    // Deleting again finds nothing to delete.
+    s.delete_working_copy().unwrap();
+
+    // A new suite in its place; the saved suite file still opens on another device with the old data.
+    s.create(options("neues-pw-123", Some(generate_keyfile()), &[(VaultKind::Pass, "Neu")]), None, None, None).unwrap();
+    assert_eq!(s.list_vaults().unwrap().iter().map(|v| v.name.clone()).collect::<Vec<_>>(), vec!["Neu"]);
+    let other = Dirs::new("delete-working-copy-other");
+    let o = other.suite();
+    o.archive_open_bytes(file, PW.into(), None, None, None, Some(kf)).unwrap();
+    o.archive_accept().unwrap();
+    assert_eq!(read(&o, &v, &x.id).unwrap(), content(300, 1));
 }

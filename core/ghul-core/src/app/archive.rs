@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
 
-use super::docs::{content_files, parse_entry_name, stage_entry, ContentFile, Expected, Staging};
+use super::docs::{content_files, parse_entry_name, remove_all_contents, stage_entry, ContentFile, Expected, Staging};
 use super::error::{GhulError, Result};
 use super::storage::StorageError;
 use super::suite::{
@@ -944,6 +944,52 @@ impl GhulSuite {
         // After the recovery code everything was written anew: that is a change to save.
         if p.recovery.is_none() {
             self.clear_unsaved();
+        }
+        Ok(())
+    }
+
+    /// Deletes the suite on this device for good (to set up a new one in its place): it is
+    /// locked, then this device's data of it goes (quick unlock, what was seen of its suite
+    /// files, the mark of unsaved changes), the content folders of GhulDocs (staging and rescued
+    /// folders included), every vault file and the suite file last. Suite files (`.ghlzip`)
+    /// elsewhere are not touched. If a file cannot be deleted, the error says so and what is
+    /// left can be deleted again.
+    pub fn delete_working_copy(&self) -> Result<()> {
+        let suite_id = self.working_suite_id();
+        self.lock();
+        self.finish_lock();
+        super::quick::delete_all(&self.local_dir);
+        for e in std::fs::read_dir(&self.local_dir).into_iter().flatten().flatten() {
+            let n = e.file_name().to_string_lossy().into_owned();
+            if n.starts_with("quick-") && n.ends_with(".stamp") {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+        if let Some(id) = suite_id {
+            let mut all = self.seen_all();
+            if all.remove(&crate::kdf::hex(&id)).is_some() {
+                self.write_seen(&all);
+            }
+        }
+        self.clear_unsaved();
+        if let Ok(root) = self.content_root() {
+            remove_all_contents(&root)?;
+        }
+        let names = self.storage.list()?;
+        for n in names.iter().filter(|n| *n != SUITE_FILE && (is_vault_file(n) || *n == HEADER_FILE)) {
+            self.storage.delete(n.clone())?;
+        }
+        self.storage.delete(SUITE_FILE.to_owned())?;
+        // Temporary files of an earlier write that did not end.
+        if let Ok(root) = self.content_root() {
+            for e in std::fs::read_dir(&root).into_iter().flatten().flatten() {
+                let n = e.file_name().to_string_lossy().into_owned();
+                let stem = n.trim_start_matches('.').trim_end_matches(".tmp").trim_end_matches(".bak");
+                let leftover = n.ends_with(".tmp") || n.ends_with(".bak");
+                if leftover && (stem == SUITE_FILE || is_vault_file(stem)) && e.file_type().is_ok_and(|t| t.is_file()) {
+                    let _ = std::fs::remove_file(e.path());
+                }
+            }
         }
         Ok(())
     }

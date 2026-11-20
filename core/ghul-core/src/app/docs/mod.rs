@@ -28,7 +28,8 @@ pub use self::vaults::{
     archive_inspect, ArchiveContent, ArchiveInfo, DocsArchive, DocsShared, ShareDocsOptions, SingleDocsWritten,
 };
 pub(super) use self::vaults::{
-    content_files, content_root_of, parse_entry_name, stage_entry, tidy_staging, ContentFile, Expected, Staging,
+    content_files, content_root_of, parse_entry_name, remove_all_contents, stage_entry, tidy_staging, ContentFile,
+    Expected, Staging,
 };
 
 use self::blob::BlobError;
@@ -148,7 +149,7 @@ pub(super) fn blob_error(e: BlobError) -> GhulError {
     match e {
         BlobError::Io(e) | BlobError::Out(e) => GhulError::Storage { msg: e.to_string() },
         BlobError::Damaged(_) => damaged_doc(),
-        BlobError::TooLarge => GhulError::DocsLimit { used: 0, limit: DOCS_LIMIT },
+        BlobError::TooLarge => GhulError::DocsLimit { used: 0, limit: DOCS_LIMIT, needed: 0 },
     }
 }
 
@@ -187,7 +188,7 @@ impl Usage {
 pub(super) fn check_room(have: Usage, add: Usage, limit: u64) -> Result<()> {
     let all = have.plus(add);
     if all.used > limit || all.stored > stored_limit(limit) || all.files > DOCS_MAX_FILES {
-        return Err(GhulError::DocsLimit { used: have.used, limit });
+        return Err(GhulError::DocsLimit { used: have.used, limit, needed: add.used });
     }
     Ok(())
 }
@@ -721,7 +722,7 @@ impl GhulSuite {
         let mut report = reporter(progress, declared);
         let info = blob::write_file(&dir, &content_id, &key, &mut SourceReader::new(source), room, &mut |d| report(d))
             .map_err(|e| match e {
-                BlobError::TooLarge => GhulError::DocsLimit { used, limit },
+                BlobError::TooLarge => GhulError::DocsLimit { used, limit, needed: 0 },
                 e => blob_error(e),
             })?;
         let r = self.docs_change(&vault_id, |entries, now, have| {
