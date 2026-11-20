@@ -79,8 +79,10 @@ pub enum GhulError {
     /// GhulDocs holds as much as it may (the trash included): nothing
     /// was added. `needed`: bytes of what was to be added (0: not known, e.g. a source without a
     /// size that turned out too large while it was read).
+    /// `suite`: all GhulDocs vaults together are full (`used` and `limit`, 3 GB, are the
+    /// suite's); otherwise the vault is (its `used`, `limit` 1 GB).
     #[error("GhulDocs is full ({used} of {limit} bytes used, {needed} needed)")]
-    DocsLimit { used: u64, limit: u64, needed: u64 },
+    DocsLimit { used: u64, limit: u64, needed: u64, suite: bool },
     // --- network (update check)
     #[error("network error: {msg}")]
     Network { msg: String },

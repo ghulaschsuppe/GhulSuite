@@ -55,7 +55,7 @@ pub(super) fn refuse_single(o: &Open) -> Result<()> {
 #[derive(uniffi::Record, Clone)]
 pub struct ShareVaultOptions {
     pub vault_id: String,
-    /// The picked entries.
+    /// The picked entries; empty: the whole vault.
     pub ids: Vec<Vec<u8>>,
     /// Name of the new vault.
     pub name: String,
@@ -171,10 +171,12 @@ impl GhulSuite {
         self.clear_unsaved_at(change);
     }
 
-    /// Puts the picked entries of a GhulPass or GhulAuth vault into a new vault file with a
-    /// protection of its own: `options.password` plus a new key file (`options.keyfile`) or a
-    /// security key (`transport` and `pin`, two touches), and a new recovery code. Password
-    /// histories stay behind.
+    /// Puts the picked entries of a GhulPass or GhulAuth vault (or, with no ids picked, the whole
+    /// vault, also a GhulCal vault) into a new vault file with a protection of its own:
+    /// `options.password` plus a new key file (`options.keyfile`) or a security key (`transport`
+    /// and `pin`, two touches), and a new recovery code. Password histories stay behind; entries
+    /// get new ids, except those of a GhulCal vault (its events name their calendars by id).
+    /// GhulDocs vaults are handed on with `docs_share_vault`.
     pub fn share_as_vault(
         &self,
         options: ShareVaultOptions,
@@ -202,22 +204,26 @@ impl GhulSuite {
         let (kind, cost, entries) = self.with_open(|o| {
             let (r, c) = o.vault_mut(&options.vault_id)?;
             let kind = VaultKind::from_name(&r.kind);
-            if !matches!(kind, VaultKind::Pass | VaultKind::Totp) {
+            let whole = options.ids.is_empty();
+            if !(matches!(kind, VaultKind::Pass | VaultKind::Totp) || (whole && kind == VaultKind::Cal)) {
                 return Err(GhulError::InvalidInput {
                     msg: "only GhulPass and GhulAuth entries can be handed on".into(),
                 });
             }
+            let new_ids = kind != VaultKind::Cal;
             let entries: Vec<Entry> = c
                 .payload
                 .entries
                 .iter()
-                .filter(|e| !e.deleted && options.ids.contains(&e.id))
+                .filter(|e| !e.deleted && (whole || options.ids.contains(&e.id)))
                 .cloned()
                 .map(|mut e| {
                     // Nothing about the own vault: new ids, a fresh history.
                     e.extra.remove(HISTORY);
                     e.extra.insert(CREATED.into(), ciborium::value::Value::Integer(now.into()));
-                    e.id = new_id().to_vec();
+                    if new_ids {
+                        e.id = new_id().to_vec();
+                    }
                     e.revision = 1;
                     e.modified = now;
                     e

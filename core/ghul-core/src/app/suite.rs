@@ -588,8 +588,8 @@ pub struct GhulSuite {
     pub(super) pending_gen: std::sync::atomic::AtomicU64,
     /// The last `archive_accept` got as far as removing this device's data of the old state.
     pub(super) wiped: AtomicBool,
-    /// How much content the GhulDocs vault may hold ([`super::docs::DOCS_LIMIT`]; smaller only
-    /// in tests).
+    /// How much content a GhulDocs vault may hold ([`super::docs::DOCS_LIMIT`]; smaller only
+    /// in tests; all GhulDocs vaults together [`super::docs::suite_limit`] of it).
     pub(super) docs_limit: std::sync::atomic::AtomicU64,
     /// Content files being copied into a `.ghlzip` right now, and content files deleted
     /// meanwhile (deleted only when the last copy ended, see `docs::ContentCopy`).
@@ -701,23 +701,6 @@ pub(super) fn second_factor(
         _ if locked.fido2_requests().is_empty() => Err(GhulError::KeyfileRequired),
         _ => Err(GhulError::SecurityKeyRequired),
     }
-}
-
-/// Refused: a suite has at most one GhulDocs vault (FORMAT.md section 11).
-pub(super) const ONE_DOCS_VAULT: &str = "a suite has only one GhulDocs vault";
-
-/// The GhulDocs vault of the suite, if it has one (also when it cannot be read).
-pub(super) fn docs_vault_id(o: &Open) -> Option<String> {
-    let name = VaultKind::Docs.container().name();
-    o.vaults.iter().find(|v| v.reference.kind == name).map(|v| v.reference.id.clone())
-}
-
-/// A second GhulDocs vault is refused.
-fn refuse_second_docs(o: &Open, kind: VaultKind) -> Result<()> {
-    if kind == VaultKind::Docs && docs_vault_id(o).is_some() {
-        return Err(GhulError::InvalidInput { msg: ONE_DOCS_VAULT.into() });
-    }
-    Ok(())
 }
 
 /// A GhulDocs vault is more than its vault file: it goes with its content files (`docs`).
@@ -1015,7 +998,6 @@ impl GhulSuite {
 
     /// Creates a vault with the suite's protection and recovery code.
     pub(super) fn add_vault(&self, o: &mut Open, kind: VaultKind, name: &str) -> Result<String> {
-        refuse_second_docs(o, kind)?;
         let mut c = o.new_container(kind.container())?;
         set_vault_name(&mut c, name);
         let id = crate::kdf::hex(&c.container_id());
@@ -1034,7 +1016,6 @@ impl GhulSuite {
         if o.vaults.iter().any(|v| v.reference.id == id) {
             return Err(GhulError::AlreadyExists);
         }
-        refuse_second_docs(o, kind)?;
         if !name.trim().is_empty() {
             set_vault_name(&mut c, name);
         }
