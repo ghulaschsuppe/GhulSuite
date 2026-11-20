@@ -348,7 +348,7 @@ fn add_into_trashed(s: &GhulSuite, v: &str, folder: &DocsItem) -> Result<DocsIte
 }
 
 #[test]
-fn the_limit_holds_for_all_vaults_and_the_trash() {
+fn the_limit_holds_with_the_trash() {
     // The real numbers: 1 GB of content in all, also as one document, and it fits into a suite file.
     let none = Usage::default();
     assert!(check_room(none, Usage::file(DOCS_LIMIT), DOCS_LIMIT).is_ok());
@@ -374,27 +374,26 @@ fn the_limit_holds_for_all_vaults_and_the_trash() {
         Err(GhulError::DocsLimit { .. })
     ));
 
-    // A small limit, so it is reached quickly: two vaults share it, the trash counts.
+    // A small limit, so it is reached quickly: the trash counts.
     let (d, s, _, _, v) = docs_suite("docs-limit");
-    let w = s.create_vault(VaultKind::Docs, "Zweiter".into()).unwrap();
     s.set_docs_limit(10_000_000);
     let a = add(&s, &v, None, "a", &content(6_000_000, 1));
-    let before = (content_files(&d, &v), content_files(&d, &w));
-    let r = s.docs_add_file(w.clone(), None, "b".into(), "".into(), generated(5_000_000, true), None);
+    let before = content_files(&d, &v);
+    let r = s.docs_add_file(v.clone(), None, "b".into(), "".into(), generated(5_000_000, true), None);
     assert!(matches!(r, Err(GhulError::DocsLimit { used: 6_000_000, limit: 10_000_000 })), "{r:?}");
     // Size not known before: stopped as soon as it is too much, nothing stays.
-    let r = s.docs_add_file(w.clone(), None, "b".into(), "".into(), generated(5_000_000, false), None);
+    let r = s.docs_add_file(v.clone(), None, "b".into(), "".into(), generated(5_000_000, false), None);
     assert!(matches!(r, Err(GhulError::DocsLimit { .. })), "{r:?}");
-    assert_eq!((content_files(&d, &v), content_files(&d, &w)), before, "nothing written, no temporary file left");
-    s.docs_add_file(w.clone(), None, "b".into(), "".into(), generated(3_900_000, false), None).unwrap();
+    assert_eq!(content_files(&d, &v), before, "nothing written, no temporary file left");
+    s.docs_add_file(v.clone(), None, "b".into(), "".into(), generated(3_900_000, false), None).unwrap();
     // In the trash it still counts; emptied, there is room again.
     s.docs_to_trash(v.clone(), a.id.clone()).unwrap();
     assert!(matches!(
-        s.docs_add_file(w.clone(), None, "c".into(), "".into(), generated(1_000_000, true), None),
+        s.docs_add_file(v.clone(), None, "c".into(), "".into(), generated(1_000_000, true), None),
         Err(GhulError::DocsLimit { .. })
     ));
     s.docs_empty_trash(Some(v.clone())).unwrap();
-    s.docs_add_file(w.clone(), None, "c".into(), "".into(), generated(6_000_000, true), None).unwrap();
+    s.docs_add_file(v.clone(), None, "c".into(), "".into(), generated(6_000_000, true), None).unwrap();
     assert_eq!(s.docs_usage().unwrap().used, 9_900_000);
 }
 
@@ -665,26 +664,73 @@ fn a_docs_vault_on_its_own_export_open_write_back_adopt_and_share() {
     assert!(matches!(r, Err(GhulError::Corrupted { .. })), "{:?}", r.err());
     assert!(!t3.suite().exists().unwrap());
 
-    // Added to another suite (another protection): its documents count towards the limit.
-    let (_db, b, kfb, _, _) = docs_suite("docs-single-b");
+    // Added to another suite (another protection) that has a GhulDocs vault: merged into it, in
+    // a new folder named after the package; its documents count towards the limit.
+    let (db, b, kfb, _, vb) = docs_suite("docs-single-b");
+    let mine = add(&b, &vb, None, "Von A", b"meins");
     b.set_docs_limit(1000);
     let r =
         b.docs_adopt_vault(source(exported.clone()), "".into(), PW.into(), None, None, None, Some(kf.clone()), None);
     assert!(matches!(r, Err(GhulError::DocsLimit { .. })), "{:?}", r.err());
     b.set_docs_limit(DOCS_LIMIT);
+    let r = b.docs_adopt_vault(source(save(&b)), "".into(), PW.into(), None, None, None, Some(kfb.clone()), None);
+    assert!(
+        matches!(&r, Err(GhulError::InvalidInput { msg }) if msg == "this is a suite file, not a GhulDocs package"),
+        "{r:?}"
+    );
     let id = b
         .docs_adopt_vault(source(exported.clone()), "Von A".into(), PW.into(), None, None, None, Some(kf.clone()), None)
         .unwrap();
-    assert_eq!(id, v);
-    assert_eq!(read(&b, &v, &x.id).unwrap(), content(SECTION + 5, 1));
-    assert_eq!(names(&b.docs_trash(Some(v.clone())).unwrap()), vec!["trash.pdf"]);
+    assert_eq!(id, vb);
+    assert_eq!(b.list_vaults().unwrap().iter().filter(|x| x.kind == VaultKind::Docs).count(), 1);
+    // "Von A" is taken (by a file): the folder gets a number.
+    let top = b.docs_list(vb.clone(), None).unwrap();
+    assert_eq!(names(&top), vec!["Von A (2)", "Von A"]);
+    let folder = top[0].clone();
+    let inside = b.docs_list(vb.clone(), Some(folder.id.clone())).unwrap();
+    assert_eq!(names(&inside), vec!["Ordner", "y.pdf"]);
+    let ordner = b.docs_list(vb.clone(), Some(inside[0].id.clone())).unwrap();
+    assert_eq!(names(&ordner), vec!["x.pdf"]);
+    assert_eq!(ordner[0].path, "Von A (2)/Ordner");
+    assert_eq!(read(&b, &vb, &ordner[0].id).unwrap(), content(SECTION + 5, 1));
+    assert_eq!(read(&b, &vb, &inside[1].id).unwrap(), content(300, 2));
+    assert_eq!(read(&b, &vb, &mine.id).unwrap(), b"meins");
+    assert_eq!(names(&b.docs_trash(Some(vb.clone())).unwrap()), vec!["trash.pdf"]);
+    assert_eq!(b.docs_usage().unwrap().files, 4);
+    assert_eq!(content_files(&db, &vb).len(), 4);
+    assert!(!docs_dir(&db, &v).exists());
+    // The same package again: its documents are there already.
     let r =
         b.docs_adopt_vault(source(exported.clone()), "".into(), PW.into(), None, None, None, Some(kf.clone()), None);
-    assert!(matches!(r, Err(GhulError::AlreadyExists)));
-    // It has b's protection now: b's key file opens it after a lock.
+    assert!(matches!(r, Err(GhulError::AlreadyExists)), "{r:?}");
+    assert_eq!(b.docs_usage().unwrap().files, 4);
+    // It all has b's protection: b's key file opens it after a lock, and it is in b's suite file.
     b.lock();
-    b.unlock(PW.into(), None, None, None, Some(kfb)).unwrap();
-    assert_eq!(read(&b, &v, &y.id).unwrap(), content(300, 2));
+    b.unlock(PW.into(), None, None, None, Some(kfb.clone())).unwrap();
+    assert_eq!(read(&b, &vb, &inside[1].id).unwrap(), content(300, 2));
+    assert!(b.docs_verify(vb.clone()).unwrap().is_empty());
+    let dc = Dirs::new("docs-single-c");
+    let c = dc.suite();
+    c.archive_open_bytes(save(&b), PW.into(), None, None, None, Some(kfb)).unwrap();
+    c.archive_accept().unwrap();
+    assert_eq!(read(&c, &vb, &ordner[0].id).unwrap(), content(SECTION + 5, 1));
+
+    // A suite without a GhulDocs vault: the package becomes it (with this suite's protection).
+    let de = Dirs::new("docs-single-e");
+    let e = de.suite();
+    let kfe = generate_keyfile();
+    e.create(options(PW, Some(kfe.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    let id = e
+        .docs_adopt_vault(source(exported.clone()), "Von A".into(), PW.into(), None, None, None, Some(kf.clone()), None)
+        .unwrap();
+    assert_eq!(id, v);
+    assert_eq!(read(&e, &v, &x.id).unwrap(), content(SECTION + 5, 1));
+    let r =
+        e.docs_adopt_vault(source(exported.clone()), "".into(), PW.into(), None, None, None, Some(kf.clone()), None);
+    assert!(matches!(r, Err(GhulError::AlreadyExists)), "{r:?}");
+    e.lock();
+    e.unlock(PW.into(), None, None, None, Some(kfe)).unwrap();
+    assert_eq!(read(&e, &v, &y.id).unwrap(), content(300, 2));
 
     // Handed on with a protection of its own: only the picked folder (and nothing from the trash).
     let new_kf = generate_keyfile();
@@ -838,7 +884,7 @@ fn open_for_times(path: &std::path::Path) -> std::io::Result<std::fs::File> {
 #[test]
 fn generic_entry_functions_refuse_docs_vaults() {
     let (_d, a, kf, _, v) = docs_suite("g9-entry");
-    let v2 = a.create_vault(VaultKind::Docs, "Zweiter".into()).unwrap();
+    let v2 = vault_id(&a, "Privat");
     let x = add(&a, &v, None, "x.pdf", b"hello");
     let id = unhex(&x.id);
     assert!(refused_as_docs(a.duplicate_entry(v.clone(), id.clone(), " (Kopie)".into())));
@@ -961,31 +1007,54 @@ fn an_adopted_docs_vault_that_cannot_be_saved_is_not_half_added() {
     let sink = Arc::new(BytesSink::default());
     a.docs_export_vault(va.clone(), sink.clone(), None).unwrap();
     let file = std::mem::take(&mut *sink.0.lock().unwrap());
-    let db = Dirs::new("g9-adopt-b");
-    let flaky = Arc::new(super::archive::FailOnce { inner: db.storage(), armed: false.into() });
-    let b = GhulSuite::new(flaky.clone(), db.local());
-    let kf_b = generate_keyfile();
-    b.create(options(PW, Some(kf_b), &[(VaultKind::Docs, "Eigene")]), None, None, None).unwrap();
-    flaky.armed.store(true, std::sync::atomic::Ordering::SeqCst);
-    let adopt = || {
-        b.docs_adopt_vault(
-            source(file.clone()),
-            "Übernommen".into(),
-            PW.into(),
-            None,
-            None,
-            None,
-            Some(kf_a.clone()),
-            None,
-        )
-    };
-    assert!(adopt().is_err());
-    assert!(!b.list_vaults().unwrap().iter().any(|i| i.id == va));
-    assert!(!flaky.list().unwrap().iter().any(|f| f.contains(&va)), "no vault file");
-    assert!(!docs_dir(&db, &va).exists(), "no content folder");
-    b.archive_build_bytes("Test".into()).unwrap();
-    assert_eq!(adopt().unwrap(), va);
-    assert_eq!(read(&b, &va, &x.id).unwrap(), b"hello");
+    // Into the GhulDocs vault of the suite (merged) and as its GhulDocs vault (none yet).
+    for (name, kinds) in
+        [("g9-adopt-b", vec![(VaultKind::Docs, "Eigene")]), ("g9-adopt-c", vec![(VaultKind::Pass, "P")])]
+    {
+        let db = Dirs::new(name);
+        let flaky = Arc::new(super::archive::FailOnce { inner: db.storage(), armed: false.into() });
+        let b = GhulSuite::new(flaky.clone(), db.local());
+        let kf_b = generate_keyfile();
+        b.create(options(PW, Some(kf_b), &kinds), None, None, None).unwrap();
+        let own = b.list_vaults().unwrap().into_iter().find(|i| i.kind == VaultKind::Docs).map(|i| i.id);
+        flaky.armed.store(true, std::sync::atomic::Ordering::SeqCst);
+        let adopt = || {
+            b.docs_adopt_vault(
+                source(file.clone()),
+                "Übernommen".into(),
+                PW.into(),
+                None,
+                None,
+                None,
+                Some(kf_a.clone()),
+                None,
+            )
+        };
+        assert!(adopt().is_err());
+        assert!(!b.list_vaults().unwrap().iter().any(|i| i.id == va));
+        assert!(!flaky.list().unwrap().iter().any(|f| f.contains(&va)), "no vault file");
+        assert!(!docs_dir(&db, &va).exists(), "no content folder");
+        if let Some(vb) = &own {
+            assert!(b.docs_list(vb.clone(), None).unwrap().is_empty(), "the index as it was");
+            assert!(content_files(&db, vb).is_empty(), "no content file moved in");
+        }
+        assert_eq!(b.docs_usage().unwrap().files, 0);
+        b.archive_build_bytes("Test".into()).unwrap();
+        let id = adopt().unwrap();
+        match &own {
+            Some(vb) => {
+                assert_eq!(&id, vb);
+                let top = b.docs_list(id.clone(), None).unwrap();
+                assert_eq!(names(&top), vec!["Übernommen"]);
+                let inside = b.docs_list(id.clone(), Some(top[0].id.clone())).unwrap();
+                assert_eq!(read(&b, &id, &inside[0].id).unwrap(), b"hello");
+            }
+            None => {
+                assert_eq!(id, va);
+                assert_eq!(read(&b, &va, &x.id).unwrap(), b"hello");
+            }
+        }
+    }
 }
 
 /// Deletes a document for good when the first piece of the suite file is written.
@@ -1055,4 +1124,114 @@ fn files_of_an_older_development_version_say_so() {
     std::fs::write(d.root.join("vault").join("suite.ghlsuite"), &suite).unwrap();
     let r = a.unlock(PW.into(), None, None, None, Some(_kf));
     assert!(matches!(r, Err(GhulError::OldFormat)), "{r:?}");
+}
+
+// --- one GhulDocs vault per suite, and the GhulDocs package ------------------------------------
+
+fn one_docs_vault<T: std::fmt::Debug>(r: Result<T, GhulError>) -> bool {
+    matches!(&r, Err(GhulError::InvalidInput { msg }) if msg == "a suite has only one GhulDocs vault")
+}
+
+/// A suite has one GhulDocs vault: a second one is refused wherever a vault comes in.
+#[test]
+fn a_second_docs_vault_is_refused() {
+    let (d, s, kf, _, v) = docs_suite("one-docs");
+    assert!(one_docs_vault(s.create_vault(VaultKind::Docs, "Zweiter".into())));
+    assert_eq!(s.add_area(VaultKind::Docs, "".into()).unwrap(), v, "the area is there");
+    // Other kinds still have several vaults.
+    s.create_vault(VaultKind::Pass, "Arbeit".into()).unwrap();
+    assert_eq!(s.list_vaults().unwrap().iter().filter(|i| i.kind == VaultKind::Docs).count(), 1);
+    // Set up with two: refused, nothing written.
+    let d2 = Dirs::new("one-docs-setup");
+    let s2 = d2.suite();
+    let r = s2.create(
+        options(PW, Some(generate_keyfile()), &[(VaultKind::Docs, "A"), (VaultKind::Docs, "B")]),
+        None,
+        None,
+        None,
+    );
+    assert!(one_docs_vault(r.map(|_| ())));
+    assert!(!s2.exists().unwrap());
+    // Removed, a new one may come.
+    s.remove_vault(v.clone()).unwrap();
+    let n = s.create_vault(VaultKind::Docs, "Neu".into()).unwrap();
+    assert_ne!(n, v);
+    assert!(one_docs_vault(s.create_vault(VaultKind::Docs, "Noch einer".into())));
+    // After a lock it is still one.
+    s.lock();
+    s.unlock(PW.into(), None, None, None, Some(kf)).unwrap();
+    assert!(one_docs_vault(s.create_vault(VaultKind::Docs, "x".into())));
+    drop(d);
+}
+
+/// A suite file with two GhulDocs vaults (none of this app writes one) is not opened.
+#[test]
+fn a_suite_file_with_two_docs_vaults_is_refused() {
+    let (_d, a, kf, _, v) = docs_suite("two-docs-a");
+    add(&a, &v, None, "x.pdf", b"x");
+    // Past the check, as an older or another program might have done it.
+    a.with_open(|o| {
+        let mut c = o.new_container(crate::vault::ContainerKind::Docs)?;
+        super::super::suite::set_vault_name(&mut c, "Zweiter");
+        let id = crate::kdf::hex(&c.container_id());
+        let file = super::super::suite::file_name(VaultKind::Docs, &id);
+        let reference =
+            super::super::suite::VaultRef { id: id.clone(), kind: "docs".into(), name: "Zweiter".into(), file };
+        o.vaults.push(super::super::suite::OpenVault { reference, container: Some(c) });
+        a.save_vault(o, &id)
+    })
+    .unwrap();
+    let file = save(&a);
+    let db = Dirs::new("two-docs-b");
+    let b = db.suite();
+    let r = b.archive_open_bytes(file, PW.into(), None, None, None, Some(kf));
+    assert!(
+        matches!(&r, Err(GhulError::InvalidInput { msg }) if msg == "a suite file holds at most one GhulDocs vault"),
+        "{:?}",
+        r.map(|_| ())
+    );
+    assert!(!b.exists().unwrap());
+}
+
+/// A GhulDocs package is not a suite file and a suite file no GhulDocs package: each says what
+/// it is.
+#[test]
+fn a_docs_package_and_a_suite_file_are_told_apart() {
+    let (_d, a, kf, _, v) = docs_suite("package-kind");
+    add(&a, &v, None, "x.pdf", b"x");
+    let sink = Arc::new(BytesSink::default());
+    a.docs_export_vault(v.clone(), sink.clone(), None).unwrap();
+    let package = std::mem::take(&mut *sink.0.lock().unwrap());
+    let suite_file = save(&a);
+    let is_package = |r: Result<(), GhulError>| matches!(&r, Err(GhulError::InvalidInput { msg }) if msg == "this is a GhulDocs package, not a suite file");
+    let is_suite = |r: Result<String, GhulError>| matches!(&r, Err(GhulError::InvalidInput { msg }) if msg == "this is a suite file, not a GhulDocs package");
+    let db = Dirs::new("package-kind-b");
+    let b = db.suite();
+    assert!(is_package(b.archive_protection(source(package.clone())).map(|_| ())));
+    assert!(is_package(
+        b.archive_open_bytes(package.clone(), PW.into(), None, None, None, Some(kf.clone())).map(|_| ())
+    ));
+    assert!(is_suite(b.open_single_docs(
+        source(suite_file.clone()),
+        PW.into(),
+        None,
+        None,
+        None,
+        Some(kf.clone()),
+        None
+    )));
+    assert!(!b.exists().unwrap());
+    assert!(is_suite(a.docs_adopt_vault(
+        source(suite_file),
+        "".into(),
+        PW.into(),
+        None,
+        None,
+        None,
+        Some(kf.clone()),
+        None
+    )));
+    // Something else entirely stays "not a GhulSuite file".
+    let r = b.archive_protection(source(b"PK\x03\x04 nothing".to_vec()));
+    assert!(matches!(&r, Err(GhulError::InvalidInput { msg }) if msg == "not a GhulSuite file"), "{r:?}");
 }

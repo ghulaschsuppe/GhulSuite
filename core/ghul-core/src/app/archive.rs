@@ -47,6 +47,10 @@ const SEEN_FILE: &str = "archive-seen.json";
 const UNSAVED_FILE: &str = "archive-unsaved";
 /// The message for anything that is no `.ghlzip` (translated by the app).
 const NOT_A_SUITE_FILE: &str = "not a GhulSuite file";
+const DOCS_PACKAGE_NOT_SUITE: &str = "this is a GhulDocs package, not a suite file";
+const SUITE_NOT_DOCS_PACKAGE: &str = "this is a suite file, not a GhulDocs package";
+/// A suite file with more than one GhulDocs vault is invalid.
+const DOCS_VAULTS_MANY: &str = "a suite file holds at most one GhulDocs vault";
 /// Largest `.ghlzip` read (counted while reading, not taken from the ZIP): 1 GB of documents
 /// plus the other vaults.
 pub(crate) const MAX_ARCHIVE: u64 = 1280 * 1024 * 1024;
@@ -314,6 +318,16 @@ pub(super) fn not_a_suite_file() -> GhulError {
     GhulError::InvalidInput { msg: NOT_A_SUITE_FILE.into() }
 }
 
+/// A GhulDocs package (`.ghldocs`) where a suite file was expected.
+pub(super) fn docs_package_not_suite() -> GhulError {
+    GhulError::InvalidInput { msg: DOCS_PACKAGE_NOT_SUITE.into() }
+}
+
+/// A suite file (`.ghlzip`) where a GhulDocs package was expected.
+pub(super) fn suite_not_docs_package() -> GhulError {
+    GhulError::InvalidInput { msg: SUITE_NOT_DOCS_PACKAGE.into() }
+}
+
 /// The first container of a `.ghlzip`: anything that is no container of this format is "not a
 /// GhulSuite file", except a container of an older or newer format version, which says so.
 pub(super) fn parse_first(data: &[u8]) -> Result<LockedContainer> {
@@ -344,12 +358,12 @@ pub(super) fn read_container(z: &mut ZipReader<SourceReader>, e: &EntryInfo) -> 
 /// The header, the first entry of a `.ghlzip`.
 fn read_header(z: &mut ZipReader<SourceReader>) -> Result<LockedContainer> {
     let e = z.next_entry().map_err(zip_error)?.ok_or_else(not_a_suite_file)?;
-    if e.name != HEADER_FILE {
-        return Err(not_a_suite_file());
-    }
     let (data, _) = read_container(z, &e)?;
     let l = parse_first(&data)?;
-    if l.kind() != ContainerKind::Export {
+    if l.kind() == ContainerKind::Docs && e.name.ends_with(".ghldoc") {
+        return Err(docs_package_not_suite());
+    }
+    if e.name != HEADER_FILE || l.kind() != ContainerKind::Export {
         return Err(not_a_suite_file());
     }
     Ok(l)
@@ -401,6 +415,10 @@ fn read_checked(
     let suite_id = header_c.header().suite_id;
     if !header.files.iter().any(|f| f.name == SUITE_FILE) {
         return Err(mismatch("no suite file"));
+    }
+    // Every container is listed with its kind (checked below): one GhulDocs vault at most.
+    if header.files.iter().filter(|f| f.kind == ContainerKind::Docs.name()).count() > 1 {
+        return Err(GhulError::InvalidInput { msg: DOCS_VAULTS_MANY.into() });
     }
     let mut out: Files = Vec::new();
     let mut docs: BTreeMap<String, Expected> = BTreeMap::new();
