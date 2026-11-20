@@ -114,7 +114,8 @@ fun RemoveAreaDialog(state: AppState, kind: VaultKindUi, onDone: () -> Unit, onD
                 Banner(Icons.Filled.Warning, stringResource(Res.string.area_remove_warning, areaInfo(kind).ext))
                 if (entries > 0) Text(pluralStringResource(Res.plurals.remove_count, entries, entries.toString()))
                 Text(stringResource(Res.string.area_remove_tip))
-                OutlinedButton(onClick = { onDismiss(); state.push(Screen.Export) }, modifier = Modifier.fillMaxWidth()) {
+                // To the vaults: each is exported there encrypted (GhulDocs with its documents).
+                OutlinedButton(onClick = { onDismiss(); state.push(Screen.SettingsPage(SetPage.VAULTS)) }, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(Res.string.remove_export_first))
                 }
                 ConfirmByName(name, typed) { typed = it }

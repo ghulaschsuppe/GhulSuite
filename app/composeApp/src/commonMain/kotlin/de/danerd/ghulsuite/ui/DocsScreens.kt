@@ -103,6 +103,8 @@ fun DocsScreen(state: AppState, padding: PaddingValues) {
     /** A vault entered from "All vaults" (the header's choice stays "All"). */
     var entered by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(vaults.map { it.id }) { if (entered != null && vaults.none { it.id == entered }) entered = null }
+    // A choice in the header line ("All vaults" included) starts from there, not from a vault entered before.
+    LaunchedEffect(state.docsVault) { entered = null }
     val vault: String? = state.docsVault ?: entered ?: vaults.singleOrNull()?.id
     val vaultName = vaults.firstOrNull { it.id == vault }?.name.orEmpty()
     val severalVaults = vaults.size > 1 && state.docsVault == null
@@ -120,7 +122,7 @@ fun DocsScreen(state: AppState, padding: PaddingValues) {
     DisposableEffect(Unit) { onDispose { state.docsTrashShown = false } }
     val active = LocalTabActive.current
     // Back: out of a view, up one folder, back to "All vaults" (only while GhulDocs is visible).
-    PlatformBackHandler(enabled = active && (view.isNotEmpty() || path.isNotEmpty() || (entered != null && state.docsVault == null))) {
+    PlatformBackHandler(enabled = active && (view.isNotEmpty() || path.isNotEmpty() || (entered != null && state.docsVault == null && vaults.size > 1))) {
         when {
             view.isNotEmpty() -> view = ""
             path.isNotEmpty() -> setPath(path.dropLast(1))
@@ -274,14 +276,16 @@ fun DocsScreen(state: AppState, padding: PaddingValues) {
                     SearchField(query, { query = it; selected.clear() }, placeholder = stringResource(Res.string.docs_search))
                     LoadError(error) { error = null; reload++ }
                     if (!loaded && error == null && !showVaults) LoadingHint()
-                    val atTop = path.isEmpty() && query.isBlank() && !selecting && view.isEmpty() && (vault == null || !severalVaults || entered == null)
+                    // Selecting keeps the head as it is (nothing jumps, no second title).
+                    val atTop = path.isEmpty() && query.isBlank() && view.isEmpty()
                     if (atTop) {
                         DocsUsageCard(usage, severalVaults = vaults.size > 1, all = vault == null)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             QuickTile(Icons.Filled.StarBorder, stringResource(Res.string.chip_favorites), Modifier.weight(1f).testTag("docs-view-fav")) { view = "fav"; selected.clear() }
                             QuickTile(Icons.Filled.Delete, stringResource(Res.string.docs_trash), Modifier.weight(1f).testTag("docs-view-trash")) { view = "trash"; selected.clear() }
                         }
-                    } else if (query.isBlank() && view.isNotEmpty()) {
+                    }
+                    if (query.isBlank() && view.isNotEmpty()) {
                         // A view (favourites, trash): the way back to the folders.
                         Breadcrumb(
                             listOf(
@@ -289,7 +293,8 @@ fun DocsScreen(state: AppState, padding: PaddingValues) {
                                 stringResource(if (view == "fav") Res.string.chip_favorites else Res.string.docs_trash),
                             ),
                         ) { view = ""; selected.clear() }
-                    } else if (query.isBlank() && view.isEmpty() && vault != null) {
+                    } else if (query.isBlank() && view.isEmpty() && vault != null && (path.isNotEmpty() || severalVaults)) {
+                        // Inside a folder, or a vault entered from "All vaults": the way back up.
                         Breadcrumb(
                             buildList {
                                 if (severalVaults) add(stringResource(Res.string.vault_all_vaults))
@@ -515,7 +520,9 @@ fun DocsUsageCard(usage: DocsUsageUi?, severalVaults: Boolean = false, all: Bool
         // The bar stands there while the usage is still counted: nothing jumps.
         val suitePart = usage?.let { (it.suiteUsed.toFloat() / it.suiteLimit.coerceAtLeast(1)).coerceIn(0f, 1f) } ?: 0f
         val part = if (all) suitePart else usage?.let { (it.used.toFloat() / it.limit.coerceAtLeast(1)).coerceIn(0f, 1f) } ?: 0f
-        val full = part >= 0.9f || suitePart >= 0.9f
+        val full = part >= 0.9f
+        // All vaults together almost full while this one is not: said as such.
+        val suiteFull = !full && !all && suitePart >= 0.9f
         Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(t.surface3)) {
             if (part > 0f) Box(Modifier.fillMaxWidth(part.coerceAtLeast(0.01f)).fillMaxHeight().background(if (full) t.warn else color))
         }
@@ -525,7 +532,8 @@ fun DocsUsageCard(usage: DocsUsageUi?, severalVaults: Boolean = false, all: Bool
                 fontSize = 13.sp, color = if (suitePart >= 0.9f) t.warn else t.muted, maxLines = 2,
             )
         }
-        if (full) Text(stringResource(Res.string.docs_almost_full), fontSize = 13.sp, color = t.warn)
+        if (full) Text(stringResource(if (all) Res.string.docs_almost_full_suite else Res.string.docs_almost_full), fontSize = 13.sp, color = t.warn)
+        if (suiteFull) Text(stringResource(Res.string.docs_almost_full_suite), fontSize = 13.sp, color = t.warn)
     }
 }
 
@@ -556,7 +564,7 @@ private fun Breadcrumb(parts: List<String>, onPick: (Int) -> Unit) {
             Text(
                 p, maxLines = 1, fontSize = 14.sp,
                 fontWeight = if (last) FontWeight.SemiBold else FontWeight.Normal,
-                color = if (last) t.fg else t.accent,
+                color = if (last) t.fg else areaColor(Tab.DOCS),
                 modifier = Modifier.clip(RoundedCornerShape(8.dp)).testTag("docs-crumb-$i").then(if (last) Modifier else Modifier.clickable { onPick(i) })
                     .padding(horizontal = 4.dp, vertical = 6.dp),
             )
@@ -653,6 +661,8 @@ private fun IncomingDocsSheet(state: AppState, files: List<ByteSource>, vaults: 
                 if (name == null) stringResource(Res.string.docs_no_vault) else (listOf(name) + folder.map { it.second }).joinToString(" › "),
                 leading = { IconTile(Icons.Filled.Folder, areaColor(Tab.DOCS)) },
                 end = { Text(stringResource(Res.string.docs_change), color = g.accent, fontSize = 14.sp) },
+                // Without a GhulDocs vault there is nothing to choose.
+                enabled = target != null,
             ) { choosing = true }
         }
         ButtonRow {
@@ -692,7 +702,7 @@ fun DocsSettingsSection(state: AppState) {
     }
     val vaults = state.vaultsOf(VaultKindUi.DOCS)
     SectionCard(stringResource(Res.string.docs_usage_title)) {
-        DocsUsageCardFlat(usage)
+        DocsUsageCardFlat(usage, several = vaults.size > 1)
         // Each vault on its own, against its own limit.
         if (vaults.size > 1) {
             for (v in vaults) DocsVaultUsageRow(state, v)
@@ -758,22 +768,38 @@ fun DocsSettingsSection(state: AppState) {
 @Composable
 private fun DocsVaultUsageRow(state: AppState, v: de.danerd.ghulsuite.model.VaultUi) {
     var u by remember { mutableStateOf<DocsUsageUi?>(null) }
-    LaunchedEffect(v.id, state.liveRevision()) { u = if (v.available) catching { state.backend.docs.usage(v.id) }.getOrNull() else null }
+    var failed by remember { mutableStateOf(false) }
+    LaunchedEffect(v.id, state.liveRevision()) {
+        val r = if (v.available) catching { state.backend.docs.usage(v.id) }.getOrNull() else null
+        u = r
+        failed = r == null
+    }
     ListRow(
-        v.name, u?.let { stringResource(Res.string.docs_usage, formatSizeSi(it.used), formatSizeSi(it.limit)) } ?: stringResource(Res.string.loading),
+        v.name,
+        when {
+            !v.available -> stringResource(Res.string.vault_missing, v.file)
+            u != null -> stringResource(Res.string.docs_usage, formatSizeSi(u!!.used), formatSizeSi(u!!.limit))
+            failed -> stringResource(Res.string.docs_usage_failed)
+            else -> stringResource(Res.string.loading)
+        },
         leading = { IconTile(tabIcon(Tab.DOCS), areaColor(Tab.DOCS), size = 36.dp) }, flush = true,
     )
 }
 
 /** The usage of all GhulDocs vaults inside a card of its own (Options): the same texts and bar as above the list. */
 @Composable
-private fun DocsUsageCardFlat(usage: DocsUsageUi?) {
+private fun DocsUsageCardFlat(usage: DocsUsageUi?, several: Boolean) {
     val t = g
     Text(
-        if (usage == null) stringResource(Res.string.loading) else stringResource(Res.string.docs_usage, formatSizeSi(usage.suiteUsed), formatSizeSi(usage.suiteLimit)),
+        when {
+            usage == null -> stringResource(Res.string.loading)
+            // One vault: its own limit, as over the list.
+            !several -> stringResource(Res.string.docs_usage, formatSizeSi(usage.used), formatSizeSi(usage.limit))
+            else -> stringResource(Res.string.docs_usage, formatSizeSi(usage.suiteUsed), formatSizeSi(usage.suiteLimit))
+        },
         fontWeight = FontWeight.Bold,
     )
-    val part = usage?.let { (it.suiteUsed.toFloat() / it.suiteLimit.coerceAtLeast(1)).coerceIn(0f, 1f) } ?: 0f
+    val part = usage?.let { if (several) it.suiteUsed.toFloat() / it.suiteLimit.coerceAtLeast(1) else it.used.toFloat() / it.limit.coerceAtLeast(1) }?.coerceIn(0f, 1f) ?: 0f
     Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(t.surface3)) {
         if (part > 0f) Box(Modifier.fillMaxWidth(part.coerceAtLeast(0.01f)).fillMaxHeight().background(if (part >= 0.9f) t.warn else areaColor(Tab.DOCS)))
     }

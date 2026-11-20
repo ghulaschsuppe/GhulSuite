@@ -331,10 +331,16 @@ class FakeDocs : DocsBackend {
     ): String {
         delay(delayMs)
         // As the core: a vault of its own; its documents count towards the limits before anything is copied.
+        // As the core: the same package (the same vault) twice is refused.
+        if (file.name in adopted) throw VaultException(VaultErrorKind.ALREADY_EXISTS)
         room(null, packageSize)
+        adopted += file.name
         calls += "adoptVault:${file.name}:$name"
         return "d2"
     }
+
+    /** Packages taken over (their file names stand for the vaults in them). */
+    private val adopted = mutableSetOf<String>()
 
     /** Bytes of the documents in a GhulDocs package to be added (the limit counts them). */
     var packageSize = 1000L

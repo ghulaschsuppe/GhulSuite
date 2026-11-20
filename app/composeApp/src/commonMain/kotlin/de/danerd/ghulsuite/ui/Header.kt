@@ -65,7 +65,7 @@ fun AreaContext(state: AppState) {
                 (state.vaults.firstOrNull { it.id == state.authVault }?.name ?: allAccounts) + " · " + countText(env, Res.plurals.auth_count, n, n.toString())
             }
             Tab.DOCS -> state.vaults.firstOrNull { it.id == state.docsVault }?.name
-                ?: state.vaultsOf(VaultKindUi.DOCS).singleOrNull()?.name ?: allVaults
+                ?: state.vaultsOf(VaultKindUi.DOCS).filter { it.available }.singleOrNull()?.name ?: allVaults
             Tab.CAL -> {
                 val cals = state.calendars
                 val hidden = state.backend.settings.calHiddenSet()

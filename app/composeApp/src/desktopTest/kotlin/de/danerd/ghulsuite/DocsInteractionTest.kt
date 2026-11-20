@@ -464,8 +464,8 @@ class DocsInteractionTest {
     /** Options → GhulDocs: usage, a check of every document with its result, emptying the trash. */
     @Test
     fun optionsPageVerifiesAndEmptiesTrash() = app(setup = { tab = Tab.SETTINGS; push(Screen.SettingsPage(SetPage.DOCS)) }) { _, fake ->
-        // All GhulDocs vaults together (one here): of 3 GB.
-        waitPart("of 3 GB")
+        // One GhulDocs vault: its own limit (all of them together only with several).
+        waitPart("of 1 GB")
         waitFor("1 item in the trash, in all GhulDocs vaults.")
         onAllNodesWithTag("docs-verify-d1").onFirst().performClick()
         waitFor("All documents are intact.")
@@ -609,7 +609,7 @@ class DocsInteractionTest {
             waitPart("for someone else")
             onAllNodesWithTag("vault-menu-Dokumente", useUnmergedTree = true).onFirst().performClick()
             waitFor("Hand on as a vault")
-            assertTrue(part("For you: with your password"))
+            assertTrue(part("For you, encrypted with your password"))
             assertTrue(part("For someone else: with a password"))
             shot("vault-menu")
             text("Hand on as a vault").performClick()

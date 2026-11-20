@@ -139,8 +139,9 @@ name: GhulDocs
     element: "Storage used, check, trash"
     direction: DOWN
 - tapOn: "Storage used, check, trash"
+# One GhulDocs vault: its own limit.
 - extendedWaitUntil:
-    visible: ".* of 3 GB"
+    visible: ".* of 1 GB"
     timeout: 15000
 - scrollUntilVisible:
     element: "Check"
@@ -180,7 +181,7 @@ name: GhulDocs
 - extendedWaitUntil:
     visible: "Hand on as a vault"
     timeout: 10000
-- assertVisible: "For you: .*"
+- assertVisible: "For you, encrypted.*"
 - assertVisible: "For someone else: .*"
 - takeScreenshot: 07-14-vault-menu
 - tapOn: "Hand on as a vault"

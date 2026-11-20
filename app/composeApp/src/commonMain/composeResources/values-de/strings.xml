@@ -15,8 +15,8 @@
     <string name="ask_delete_title">Löschen?</string>
     <string name="ask_delete_named">„%1$s“ wird gelöscht.</string>
     <plurals name="share_vault_text">
-        <item quantity="one">%1$s ausgewählter Eintrag kommt in eine neue Tresordatei mit eigenem Passwort. Nichts vom Schutz deiner Suite geht mit, alte Passwörter bleiben zurück.</item>
-        <item quantity="other">Die %1$s ausgewählten Einträge kommen in eine neue Tresordatei mit eigenem Passwort. Nichts vom Schutz deiner Suite geht mit, alte Passwörter bleiben zurück.</item>
+        <item quantity="one">%1$s ausgewählter Eintrag kommt in eine neue Tresordatei mit eigenem Passwort, eigenem zweiten Faktor und eigenem Wiederherstellungscode. Nichts vom Schutz deiner Suite geht mit; aus GhulPass bleiben alte Passwörter zurück.</item>
+        <item quantity="other">Die %1$s ausgewählten Einträge kommen in eine neue Tresordatei mit eigenem Passwort, eigenem zweiten Faktor und eigenem Wiederherstellungscode. Nichts vom Schutz deiner Suite geht mit; aus GhulPass bleiben alte Passwörter zurück.</item>
     </plurals>
     <plurals name="ask_delete_n">
         <item quantity="one">%1$s Element wird gelöscht.</item>
@@ -369,7 +369,7 @@
     <string name="unlock_use_quick">Mit Fingerabdruck oder App-PIN</string>
     <string name="untitled">(ohne Titel)</string>
     <string name="vault_add_file">Tresordatei hinzufügen</string>
-    <string name="vault_add_file_hint">Eine .ghlpss-, .ghltotp- oder .ghlcal-Datei oder ein GhulDocs-Paket (.ghldocs): Sie wird ein eigener Tresor deiner Suite. Hat sie ein anderes Passwort, wird einmal danach gefragt und sie wird auf deinen Schutz umgestellt.</string>
+    <string name="vault_add_file_hint">Eine .ghlpss- oder .ghltotp-Datei, ein GhulDocs-Paket (.ghldocs) oder eine .ghlcal-Datei: Sie wird ein eigener Tresor deiner Suite. Hat sie ein anderes Passwort, wird einmal danach gefragt und sie wird auf deinen Schutz umgestellt.</string>
     <string name="vault_all">Alle</string>
     <string name="vault_default_name">Persönlich</string>
     <string name="vault_missing">Datei beschädigt: %1$s</string>
@@ -850,10 +850,10 @@
     <string name="area_hidden_msg">%1$s auf diesem Gerät ausgeblendet</string>
     <string name="area_shown_msg">%1$s wieder eingeblendet</string>
     <string name="area_remove">Bereich entfernen</string>
-    <string name="area_remove_sub">Löscht die %1$s-Datei auf allen Geräten</string>
+    <string name="area_remove_sub">Löscht jede Tresordatei des Bereichs (%1$s)</string>
     <string name="area_remove_everywhere">Auf allen Geräten, mit Rückfrage</string>
     <string name="area_remove_title">%1$s entfernen?</string>
-    <string name="area_remove_warning">Die %1$s-Datei wird auf allen Geräten gelöscht, samt Inhalt und Einstellungen.</string>
+    <string name="area_remove_warning">Jede Tresordatei des Bereichs (%1$s) wird gelöscht, samt Inhalt und Einstellungen; mit dem nächsten Speichern auch in der Suite-Datei.</string>
     <string name="area_remove_tip">Tipp: Exportiere vorher, was du behalten willst. Willst du den Bereich nur hier nicht sehen, wähle „Auf diesem Gerät ausblenden“.</string>
     <string name="area_removed">%1$s entfernt</string>
     <string name="area_tag_not_set_up">nicht eingerichtet</string>
@@ -934,7 +934,7 @@
     <string name="core_vault_no_key">Dieser Tresor hat keinen Key.</string>
     <string name="core_attach_many">Zu viele Anhänge.</string>
     <string name="core_attach_big">Anhang zu groß (höchstens 10 MB).</string>
-    <string name="core_suite_too_large">Die Suite-Datei würde zu groß (höchstens 1,25 GiB) und ließe sich nicht mehr öffnen. Es wurde nichts gespeichert. Entferne große Anhänge oder Dokumente und speichere dann erneut.</string>
+    <string name="core_suite_too_large">Die Suite-Datei würde zu groß (höchstens 3,75 GiB) und ließe sich nicht mehr öffnen. Es wurde nichts gespeichert. Entferne große Anhänge oder Dokumente und speichere dann erneut.</string>
     <string name="core_other_full">Die Tresore neben GhulDocs sind voll (zusammen höchstens 200 MiB, vor allem Anhänge). Es wurde nichts hinzugefügt.</string>
     <string name="core_docs_kept_aside">Die bisherigen Dokumente ließen sich nicht an ihren Platz zurücklegen. Sie wurden nicht gelöscht, sondern in einem eigenen Ordner „rescued-documents-…“ im Ordner der Suite aufbewahrt.</string>
     <string name="core_no_group">Diese Gruppe gibt es nicht.</string>
@@ -1089,7 +1089,7 @@
     <string name="core_pw_short">Das Passwort ist zu kurz.</string>
     <string name="l_vault_password">Passwort des neuen Tresors</string>
     <string name="single_not_writable">Die App darf diese Datei nicht beschreiben (z. B. ein Mail-Anhang). Speichere sie zuerst woanders oder füge den Tresor zu deiner Suite hinzu.</string>
-    <string name="share_vault_done">Fertig. Gib Tresordatei, Schlüsseldatei und Passwort getrennt weiter.</string>
+    <string name="share_vault_done">Fertig. Gib die Tresordatei, das Passwort und gegebenenfalls die Schlüsseldatei getrennt weiter; den Wiederherstellungscode bewahrt der Empfänger sicher auf.</string>
     <string name="single_pending_title">Änderungen nicht in der Datei</string>
     <string name="single_pending_text">Die letzten Änderungen an %1$s ließen sich nicht in die Datei schreiben (war der Speicher weg oder wurde die App beendet?). Jetzt schreiben oder verwerfen.</string>
     <string name="single_pending_write">Jetzt schreiben</string>
@@ -1118,7 +1118,7 @@
     <string name="prot_save_now">Jetzt speichern</string>
     <!-- GhulDocs -->
     <string name="tab_docs">GhulDocs</string>
-    <string name="area_docs_sub">Wichtige Dokumente und Scans, bis 1 GB</string>
+    <string name="area_docs_sub">Wichtige Dokumente und Scans, bis 1 GB je Tresor</string>
     <string name="area_docs_default">Dokumente</string>
     <string name="set_docs_sub">Belegung, Prüfung, Papierkorb</string>
     <string name="set_start_fourth">4. Bereich</string>
@@ -1139,7 +1139,7 @@
     <string name="docs_search">Dokumente suchen</string>
     <string name="docs_search_results">Suchergebnisse</string>
     <string name="docs_trash">Papierkorb</string>
-    <string name="docs_trash_hint">Was im Papierkorb liegt, zählt weiter zum 1 GB, bis der Papierkorb geleert wird.</string>
+    <string name="docs_trash_hint">Was im Papierkorb liegt, zählt weiter zur Grenze von 1 GB je Tresor, bis der Papierkorb geleert wird.</string>
     <string name="docs_trash_empty">Der Papierkorb ist leer.</string>
     <string name="docs_empty_trash">Leeren</string>
     <string name="docs_empty_trash_title">Papierkorb leeren</string>
@@ -1150,7 +1150,7 @@
     <string name="docs_empty">Dieser Ordner ist leer. Füge Dateien mit „Hinzufügen“ hinzu.</string>
     <string name="docs_nothing_found">Nichts gefunden.</string>
     <string name="docs_no_favorites">Noch keine Favoriten. Markiere ein Dokument mit dem Stern.</string>
-    <string name="docs_no_vault">Noch kein GhulDocs-Tresor.</string>
+    <string name="docs_no_vault">Noch kein GhulDocs-Tresor. Lege unter Optionen → Tresore einen an.</string>
     <string name="docs_privacy">Verschlüsselt auf diesem Gerät. Namen, Ordner und Inhalte stehen nur im Tresor.</string>
     <string name="docs_usage">%1$s von %2$s</string>
     <plurals name="docs_n_documents">
@@ -1166,7 +1166,7 @@
         <item quantity="other">%1$s Dokumente und Ordner</item>
     </plurals>
     <string name="docs_encrypted_here">verschlüsselt auf diesem Gerät</string>
-    <string name="docs_almost_full">GhulDocs ist fast voll.</string>
+    <string name="docs_almost_full">Dieser GhulDocs-Tresor ist fast voll.</string>
     <string name="docs_in">in %1$s</string>
     <string name="docs_at_top">oberste Ebene</string>
     <string name="docs_add_title">Zu GhulDocs hinzufügen</string>
@@ -1291,8 +1291,8 @@
     <string name="docs_vault_exporting">%1$s wird gespeichert …</string>
     <string name="docs_vault_export_cancelled">Speichern von %1$s abgebrochen. Die unvollständige Datei wurde entfernt.</string>
     <plurals name="docs_share_text">
-        <item quantity="one">%1$s gewähltes Element kommt in ein eigenes GhulDocs-Paket (eine .ghldocs-Datei mit den Dokumenten), mit eigenem Passwort, eigenem zweiten Faktor und neuem Wiederherstellungscode.</item>
-        <item quantity="other">%1$s gewählte Elemente kommen in ein eigenes GhulDocs-Paket (eine .ghldocs-Datei mit den Dokumenten), mit eigenem Passwort, eigenem zweiten Faktor und neuem Wiederherstellungscode.</item>
+        <item quantity="one">%1$s ausgewähltes Element kommt in ein eigenes GhulDocs-Paket (eine .ghldocs-Datei mit den Dokumenten), mit eigenem Passwort, eigenem zweiten Faktor und eigenem Wiederherstellungscode. Nichts vom Schutz deiner Suite geht mit.</item>
+        <item quantity="other">%1$s ausgewählte Elemente kommen in ein eigenes GhulDocs-Paket (eine .ghldocs-Datei mit den Dokumenten), mit eigenem Passwort, eigenem zweiten Faktor und eigenem Wiederherstellungscode. Nichts vom Schutz deiner Suite geht mit.</item>
     </plurals>
     <string name="docs_single_no_new_suite">Für eine eigene Suite: Richte zuerst eine neue Suite ein und füge diese Datei dann unter Optionen, Tresore hinzu.</string>
     <string name="docs_single_pending_text">Die letzten Änderungen des GhulDocs-Tresors in %1$s konnten vor dem Sperren nicht in seine Datei geschrieben werden. Ein GhulDocs-Tresor kann nur geschrieben werden, solange er geöffnet ist: Verwirf sie, um die Datei wieder zu öffnen.</string>
@@ -1321,11 +1321,14 @@
     <string name="err_docs_suite_room">Das braucht %1$s, in allen GhulDocs-Tresoren zusammen sind noch %2$s frei (höchstens %3$s je Suite). Es wurde nichts hinzugefügt. Leere einen Papierkorb oder lösche Dokumente oder einen GhulDocs-Tresor.</string>
     <string name="err_docs_suite_full">Alle GhulDocs-Tresore zusammen sind voll: %1$s von %2$s belegt (höchstens 20 000 Dokumente). Es wurde nichts hinzugefügt. Leere einen Papierkorb oder lösche Dokumente oder einen GhulDocs-Tresor.</string>
     <string name="docs_usage_suite">Alle GhulDocs-Tresore: %1$s von %2$s</string>
-    <string name="vault_export_sub">Für dich: mit deinem Passwort und Key bzw. deiner Schlüsseldatei, als Sicherung oder für ein anderes Gerät</string>
+    <string name="vault_export_sub">Für dich, verschlüsselt mit deinem Passwort und Key bzw. deiner Schlüsseldatei: als Sicherung oder für ein anderes Gerät</string>
     <string name="vault_share_sub">Für jemand anderen: mit eigenem Passwort, eigenem Key bzw. eigener Schlüsseldatei und eigenem Wiederherstellungscode</string>
-    <string name="vaults_export_share_hint">Unter ⋮: „Exportieren“ ist für dich (mit deinem Schutz), „Als Tresor weitergeben“ für jemand anderen (mit eigenem Passwort, zweitem Faktor und Wiederherstellungscode).</string>
-    <string name="share_vault_whole_text">Der ganze Tresor „%1$s“ kommt in eine neue Tresordatei mit eigenem Passwort, eigenem zweiten Faktor und neuem Wiederherstellungscode. Nichts vom Schutz deiner Suite geht mit; aus GhulPass bleiben alte Passwörter zurück.</string>
+    <string name="vaults_export_share_hint">Unter ⋮: „Exportieren“ speichert den Tresor verschlüsselt mit deinem Schutz, für dich. „Als Tresor weitergeben“ ist für jemand anderen (mit eigenem Passwort, zweitem Faktor und Wiederherstellungscode).</string>
+    <string name="share_vault_whole_text">Der ganze Tresor „%1$s“ kommt in eine neue Tresordatei mit eigenem Passwort, eigenem zweiten Faktor und eigenem Wiederherstellungscode. Nichts vom Schutz deiner Suite geht mit; aus GhulPass bleiben alte Passwörter zurück.</string>
     <string name="docs_share_whole_text">Der ganze GhulDocs-Tresor „%1$s“ kommt mit allen Dokumenten (ohne Papierkorb) in ein eigenes GhulDocs-Paket (.ghldocs), mit eigenem Passwort, eigenem zweiten Faktor und neuem Wiederherstellungscode. Nichts vom Schutz deiner Suite geht mit.</string>
     <string name="a_save_and_replace">Sichern und ersetzen</string>
     <string name="a_delete_and_replace">Löschen und ersetzen</string>
+    <string name="foreign_password">Passwort dieses Tresors</string>
+    <string name="docs_almost_full_suite">Alle GhulDocs-Tresore zusammen sind fast voll (höchstens 3 GB je Suite).</string>
+    <string name="docs_usage_failed">Belegung nicht lesbar</string>
 </resources>

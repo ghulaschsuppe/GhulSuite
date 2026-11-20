@@ -15,8 +15,8 @@
     <string name="ask_delete_title">Delete?</string>
     <string name="ask_delete_named">“%1$s” will be deleted.</string>
     <plurals name="share_vault_text">
-        <item quantity="one">%1$s selected entry goes into a new vault file with a password of its own. Nothing of the protection of your suite goes along, old passwords stay behind.</item>
-        <item quantity="other">The %1$s selected entries go into a new vault file with a password of its own. Nothing of the protection of your suite goes along, old passwords stay behind.</item>
+        <item quantity="one">%1$s selected entry goes into a new vault file with a password, second factor and recovery code of its own. Nothing of your suite's protection goes with it; from GhulPass, old passwords stay behind.</item>
+        <item quantity="other">The %1$s selected entries go into a new vault file with a password, second factor and recovery code of its own. Nothing of your suite's protection goes with it; from GhulPass, old passwords stay behind.</item>
     </plurals>
     <plurals name="ask_delete_n">
         <item quantity="one">%1$s item will be deleted.</item>
@@ -369,7 +369,7 @@
     <string name="unlock_use_quick">Use fingerprint or app PIN</string>
     <string name="untitled">(untitled)</string>
     <string name="vault_add_file">Add vault file</string>
-    <string name="vault_add_file_hint">A .ghlpss, .ghltotp or .ghlcal file or a GhulDocs package (.ghldocs): it becomes a vault of its own in your suite. If it has another password, you are asked for it once and it is switched to your protection.</string>
+    <string name="vault_add_file_hint">A .ghlpss or .ghltotp file, a GhulDocs package (.ghldocs) or a .ghlcal file: it becomes a vault of its own in your suite. If it has another password, you are asked for it once and it is switched to your protection.</string>
     <string name="vault_all">All</string>
     <string name="vault_default_name">Personal</string>
     <string name="vault_missing">File damaged: %1$s</string>
@@ -850,10 +850,10 @@
     <string name="area_hidden_msg">%1$s hidden on this device</string>
     <string name="area_shown_msg">%1$s shown again</string>
     <string name="area_remove">Remove area</string>
-    <string name="area_remove_sub">Deletes the %1$s file on all devices</string>
+    <string name="area_remove_sub">Deletes every vault file of the area (%1$s)</string>
     <string name="area_remove_everywhere">On all devices, after asking</string>
     <string name="area_remove_title">Remove %1$s?</string>
-    <string name="area_remove_warning">The %1$s file is deleted on all devices, with its content and settings.</string>
+    <string name="area_remove_warning">Every vault file of the area (%1$s) is deleted, with its content and settings; with the next save also in the suite file.</string>
     <string name="area_remove_tip">Tip: export first what you want to keep. If you only do not want to see the area here, choose “Hide on this device”.</string>
     <string name="area_removed">%1$s removed</string>
     <string name="area_tag_not_set_up">not set up</string>
@@ -934,7 +934,7 @@
     <string name="core_vault_no_key">This vault has no security key.</string>
     <string name="core_attach_many">Too many attachments.</string>
     <string name="core_attach_big">Attachment too large (at most 10 MB).</string>
-    <string name="core_suite_too_large">The suite file would be too large (at most 1.25 GiB) and could not be opened any more. Nothing was saved. Remove large attachments or documents and save again.</string>
+    <string name="core_suite_too_large">The suite file would be too large (at most 3.75 GiB) and could not be opened any more. Nothing was saved. Remove large attachments or documents and save again.</string>
     <string name="core_other_full">The vaults besides GhulDocs are full (at most 200 MiB together, mostly attachments). Nothing was added.</string>
     <string name="core_docs_kept_aside">The previous documents could not be put back in their place. They were not deleted but kept in a folder of their own, "rescued-documents-…", in the folder of the suite.</string>
     <string name="core_no_group">This group does not exist.</string>
@@ -1089,7 +1089,7 @@
     <string name="core_pw_short">The password is too short.</string>
     <string name="l_vault_password">Password of the new vault</string>
     <string name="single_not_writable">The app may not write into this file (e.g. a mail attachment). Save it somewhere else first, or add the vault to your suite.</string>
-    <string name="share_vault_done">Done. Hand on the vault file, the key file and the password separately.</string>
+    <string name="share_vault_done">Done. Hand on the vault file, the password and, if there is one, the key file separately; the recipient keeps the recovery code safe.</string>
     <string name="single_pending_title">Changes not in the file</string>
     <string name="single_pending_text">The last changes to %1$s could not be written into its file (was the storage gone, or the app ended?). Write them now, or give them up.</string>
     <string name="single_pending_write">Write now</string>
@@ -1118,7 +1118,7 @@
     <string name="prot_save_now">Save now</string>
     <!-- GhulDocs -->
     <string name="tab_docs">GhulDocs</string>
-    <string name="area_docs_sub">Important documents and scans, up to 1 GB</string>
+    <string name="area_docs_sub">Important documents and scans, up to 1 GB per vault</string>
     <string name="area_docs_default">Documents</string>
     <string name="set_docs_sub">Storage used, check, trash</string>
     <string name="set_start_fourth">4th area</string>
@@ -1139,7 +1139,7 @@
     <string name="docs_search">Search documents</string>
     <string name="docs_search_results">Search results</string>
     <string name="docs_trash">Trash</string>
-    <string name="docs_trash_hint">What is in the trash still counts towards the 1 GB until the trash is emptied.</string>
+    <string name="docs_trash_hint">What is in the trash still counts towards the limit of 1 GB per vault until the trash is emptied.</string>
     <string name="docs_trash_empty">The trash is empty.</string>
     <string name="docs_empty_trash">Empty</string>
     <string name="docs_empty_trash_title">Empty the trash</string>
@@ -1150,7 +1150,7 @@
     <string name="docs_empty">This folder is empty. Add files with “Add”.</string>
     <string name="docs_nothing_found">Nothing found.</string>
     <string name="docs_no_favorites">No favourites yet. Mark a document with the star.</string>
-    <string name="docs_no_vault">No GhulDocs vault yet.</string>
+    <string name="docs_no_vault">No GhulDocs vault yet. Create one under Options → Vaults.</string>
     <string name="docs_privacy">Encrypted on this device. Names, folders and contents are only in the vault.</string>
     <string name="docs_usage">%1$s of %2$s</string>
     <plurals name="docs_n_documents">
@@ -1166,7 +1166,7 @@
         <item quantity="other">%1$s documents and folders</item>
     </plurals>
     <string name="docs_encrypted_here">encrypted on this device</string>
-    <string name="docs_almost_full">GhulDocs is almost full.</string>
+    <string name="docs_almost_full">This GhulDocs vault is almost full.</string>
     <string name="docs_in">in %1$s</string>
     <string name="docs_at_top">at the top</string>
     <string name="docs_add_title">Add to GhulDocs</string>
@@ -1291,8 +1291,8 @@
     <string name="docs_vault_exporting">Saving %1$s …</string>
     <string name="docs_vault_export_cancelled">Saving %1$s cancelled. The incomplete file was removed.</string>
     <plurals name="docs_share_text">
-        <item quantity="one">%1$s picked item goes into a GhulDocs package of its own (a .ghldocs file with the documents), with a password and second factor of its own and a new recovery code.</item>
-        <item quantity="other">%1$s picked items go into a GhulDocs package of its own (a .ghldocs file with the documents), with a password and second factor of its own and a new recovery code.</item>
+        <item quantity="one">%1$s selected item goes into a GhulDocs package of its own (a .ghldocs file with the documents), with a password, second factor and recovery code of its own. Nothing of your suite's protection goes with it.</item>
+        <item quantity="other">%1$s selected items go into a GhulDocs package of its own (a .ghldocs file with the documents), with a password, second factor and recovery code of its own. Nothing of your suite's protection goes with it.</item>
     </plurals>
     <string name="docs_single_no_new_suite">To keep it in a suite of its own: set up a new suite first, then add this file under Options, Vaults.</string>
     <string name="docs_single_pending_text">The last changes of the GhulDocs vault in %1$s could not be written into its file before it was locked. A GhulDocs vault can only be written while it is open: give them up to open the file again.</string>
@@ -1321,11 +1321,14 @@
     <string name="err_docs_suite_room">This needs %1$s, all GhulDocs vaults together have %2$s free (at most %3$s per suite). Nothing was added. Empty a trash or delete documents or a GhulDocs vault.</string>
     <string name="err_docs_suite_full">All GhulDocs vaults together are full: %1$s of %2$s used (at most 20,000 documents). Nothing was added. Empty a trash or delete documents or a GhulDocs vault.</string>
     <string name="docs_usage_suite">All GhulDocs vaults: %1$s of %2$s</string>
-    <string name="vault_export_sub">For you: with your password and key or key file, as a backup or for another device</string>
+    <string name="vault_export_sub">For you, encrypted with your password and key or key file: as a backup or for another device</string>
     <string name="vault_share_sub">For someone else: with a password, key or key file and recovery code of its own</string>
-    <string name="vaults_export_share_hint">Under ⋮: "Export" is for you (with your protection), "Hand on as a vault" for someone else (with a password, second factor and recovery code of its own).</string>
+    <string name="vaults_export_share_hint">Under ⋮: "Export" saves the vault encrypted with your protection, for you. "Hand on as a vault" is for someone else (with a password, second factor and recovery code of its own).</string>
     <string name="share_vault_whole_text">The whole vault "%1$s" goes into a new vault file with a password, second factor and recovery code of its own. Nothing of your suite's protection goes with it; from GhulPass, old passwords stay behind.</string>
     <string name="docs_share_whole_text">The whole GhulDocs vault "%1$s" goes with all its documents (not the trash) into a GhulDocs package of its own (.ghldocs), with a password, second factor and recovery code of its own. Nothing of your suite's protection goes with it.</string>
     <string name="a_save_and_replace">Save and replace</string>
     <string name="a_delete_and_replace">Delete and replace</string>
+    <string name="foreign_password">This vault's password</string>
+    <string name="docs_almost_full_suite">All GhulDocs vaults together are almost full (at most 3 GB per suite).</string>
+    <string name="docs_usage_failed">Usage cannot be read</string>
 </resources>

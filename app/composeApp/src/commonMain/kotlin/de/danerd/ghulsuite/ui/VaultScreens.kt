@@ -214,6 +214,19 @@ fun VaultsSection(state: AppState) {
         }
     }
 
+    /** "Export": the vault encrypted with this suite's protection (GhulDocs with its documents, as a package). */
+    fun exportEncrypted(v: VaultUi) {
+        if (v.kind == VaultKindUi.DOCS) {
+            // With its documents, as a stream into the file chosen.
+            exportingDocs[0] = v
+            exportDocs(docsPackageName(v.name), "application/octet-stream")
+        } else {
+            state.run(block = { backend.exportVault(v.id) }) { data ->
+                save("${v.name.ifBlank { "vault" }}.${extensionOf(v.kind)}", data)
+            }
+        }
+    }
+
     SectionCard(stringResource(Res.string.set_vaults)) {
         Hint(stringResource(Res.string.set_vaults_hint))
         Hint(stringResource(Res.string.vaults_export_share_hint))
@@ -248,15 +261,7 @@ fun VaultsSection(state: AppState) {
                                     leading = { IconTile(Icons.Filled.Upload, g.accent) }, divider = true,
                                 ) {
                                     close()
-                                    if (v.kind == VaultKindUi.DOCS) {
-                                        // With its documents, as a stream into the file chosen.
-                                        exportingDocs[0] = v
-                                        exportDocs(docsPackageName(v.name), "application/octet-stream")
-                                    } else {
-                                        state.run(block = { backend.exportVault(v.id) }) { data ->
-                                            save("${v.name.ifBlank { "vault" }}.${extensionOf(v.kind)}", data)
-                                        }
-                                    }
+                                    exportEncrypted(v)
                                 }
                             }
                             if (v.available && filePickersAvailable) {
@@ -315,7 +320,11 @@ fun VaultsSection(state: AppState) {
                     Banner(Icons.Filled.Warning, stringResource(Res.string.vault_remove_warning))
                     if (v.entries > 0) Text(pluralStringResource(Res.plurals.remove_count, v.entries, v.entries.toString()))
                     Text(stringResource(Res.string.vault_remove_tip))
-                    OutlinedButton(onClick = { removing = null; state.push(Screen.Export) }, modifier = Modifier.fillMaxWidth()) {
+                    // Saved first as "Export" in its menu does (encrypted, GhulDocs with its documents).
+                    OutlinedButton(onClick = {
+                        removing = null
+                        if (v.available && filePickersAvailable) exportEncrypted(v) else state.push(Screen.Export)
+                    }, modifier = Modifier.fillMaxWidth()) {
                         Text(stringResource(Res.string.remove_export_first))
                     }
                     ConfirmByName(v.name, typed) { typed = it }
@@ -371,7 +380,7 @@ fun ForeignVaultDialog(state: AppState, request: ForeignRequest, onDone: () -> U
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Hint(stringResource(if (request.kind == VaultKindUi.DOCS) Res.string.docs_foreign_text else Res.string.foreign_text))
                 OutlinedTextField(name, { name = it }, label = { Text(stringResource(Res.string.l_vault_name)) }, singleLine = true)
-                SecretTextField(password, { password = it; error = null }, stringResource(Res.string.l_master_password))
+                SecretTextField(password, { password = it; error = null }, stringResource(Res.string.foreign_password))
                 if (hasKey && hasKeyfile) FactorChoice(withKey) { withKey = it; error = null }
                 if (needsKey) {
                     KeyPinField(state, pin) { pin = it; error = null }
