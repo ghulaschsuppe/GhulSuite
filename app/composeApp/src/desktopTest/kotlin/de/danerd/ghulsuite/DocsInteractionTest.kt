@@ -599,7 +599,7 @@ class DocsInteractionTest {
     }
 
     /**
-     * A vault's menu says what "Export" and "Hand on as a vault" are for; "Hand on as a vault"
+     * A vault's menu says what "Export" and "Share as separate vault" are for; "Share as separate vault"
      * hands on the whole vault with a protection of its own: the name is the vault's, no entries
      * picked (all of it). GhulDocs says it goes as a package.
      */
@@ -608,21 +608,21 @@ class DocsInteractionTest {
         app(setup = { tab = Tab.SETTINGS; push(Screen.SettingsPage(SetPage.VAULTS)) }) { _, fake ->
             waitPart("for someone else")
             onAllNodesWithTag("vault-menu-Dokumente", useUnmergedTree = true).onFirst().performClick()
-            waitFor("Hand on as a vault")
+            waitFor("Share as separate vault")
             assertTrue(part("For you, encrypted with your password"))
             assertTrue(part("For someone else: with a password"))
             shot("vault-menu")
-            text("Hand on as a vault").performClick()
+            text("Share as separate vault").performClick()
             waitPart("The whole GhulDocs vault")
             assertTrue(part("(.ghldocs)"))
             shot("vault-hand-on")
             dialogButton("Cancel")
-            waitGone("Hand on as a vault")
+            waitGone("Share as separate vault")
 
             // GhulPass: the whole vault, handed on; the code is shown next.
             onAllNodesWithTag("vault-menu-Privat", useUnmergedTree = true).onFirst().performClick()
-            waitFor("Hand on as a vault")
-            text("Hand on as a vault").performClick()
+            waitFor("Share as separate vault")
+            text("Share as separate vault").performClick()
             waitPart("The whole vault")
             val fields = onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog()))
             fields[1].performTextReplacement("Anna-Passwort-2468!")
@@ -631,5 +631,26 @@ class DocsInteractionTest {
             dialogButton("Create")
             waitUntil(timeoutMillis = 10_000) { fake.calls.any { it.startsWith("shareAsVault:p1::Privat:true:master") } }
         }
+    }
+
+    /** Three GhulDocs vaults: "New vault" cannot make a fourth and says why; the vault picker offers none. */
+    @Test
+    fun aFourthDocsVaultIsNotOffered() = app(
+        setup = { tab = Tab.SETTINGS; push(Screen.SettingsPage(SetPage.VAULTS)) },
+        prepare = {
+            vaults = vaults + listOf(
+                de.danerd.ghulsuite.model.VaultUi("d2", de.danerd.ghulsuite.model.VaultKindUi.DOCS, "Steuer", "d2.ghldoc", true, 0),
+                de.danerd.ghulsuite.model.VaultUi("d3", de.danerd.ghulsuite.model.VaultKindUi.DOCS, "Firma", "d3.ghldoc", true, 0),
+            )
+        },
+    ) { _, _ ->
+        waitFor("New vault")
+        text("New vault").performClick()
+        waitUntil(timeoutMillis = 10_000) { onAllNodes(hasText("GhulDocs") and hasAnyAncestor(isDialog())).fetchSemanticsNodes().isNotEmpty() }
+        onAllNodes(hasText("GhulDocs") and hasAnyAncestor(isDialog()), useUnmergedTree = true).onFirst().performClick()
+        waitPart("at most 3 GhulDocs vaults")
+        onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog())).onFirst().performTextReplacement("Vierter")
+        // GhulDocs was not chosen: "Create" makes a GhulPass vault, never a fourth GhulDocs vault.
+        shot("fourth-docs-vault")
     }
 }

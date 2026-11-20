@@ -1273,7 +1273,7 @@
         <item quantity="one">%1$s Seite</item>
         <item quantity="other">%1$s Seiten</item>
     </plurals>
-    <string name="docs_limit_hint">Ein GhulDocs-Tresor fasst bis zu 1 GB, der Papierkorb eingeschlossen, eine einzelne Datei ebenfalls bis 1 GB. Alle GhulDocs-Tresore einer Suite zusammen fassen bis zu 3 GB und 20 000 Dokumente.</string>
+    <string name="docs_limit_hint">Ein GhulDocs-Tresor fasst bis zu 1 GB, der Papierkorb eingeschlossen, eine einzelne Datei ebenfalls bis 1 GB. Eine Suite hat bis zu 3 GhulDocs-Tresore (zusammen 3 GB und 20 000 Dokumente).</string>
     <string name="docs_usage_title">Belegung</string>
     <string name="docs_verify_title">Dokumente prüfen</string>
     <string name="docs_verify_hint">Liest jedes Dokument eines Tresors und vergleicht es mit seiner Prüfsumme. Dabei wird nichts geändert.</string>
@@ -1331,4 +1331,6 @@
     <string name="foreign_password">Passwort dieses Tresors</string>
     <string name="docs_almost_full_suite">Alle GhulDocs-Tresore zusammen sind fast voll (höchstens 3 GB je Suite).</string>
     <string name="docs_usage_failed">Belegung nicht lesbar</string>
+    <string name="docs_vaults_full">Eine Suite hat höchstens 3 GhulDocs-Tresore (je bis 1 GB). Lösche einen, um einen neuen anzulegen oder ein GhulDocs-Paket hinzuzufügen.</string>
+    <string name="core_docs_vaults_many">Diese Datei enthält mehr GhulDocs-Tresore, als eine Suite haben darf (höchstens 3), und ist keine gültige Suite-Datei. Sie wurde nicht geöffnet.</string>
 </resources>

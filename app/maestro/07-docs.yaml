@@ -176,15 +176,15 @@ name: GhulDocs
     visible: "Steuer 2025"
     timeout: 15000
 - takeScreenshot: 07-13-second-docs-vault
-# Its menu says what "Export" and "Hand on as a vault" are for.
+# Its menu says what "Export" and "Share as separate vault" are for.
 - tapOn: { id: "vault-menu-Steuer 2025" }
 - extendedWaitUntil:
-    visible: "Hand on as a vault"
+    visible: "Share as separate vault"
     timeout: 10000
 - assertVisible: "For you, encrypted.*"
 - assertVisible: "For someone else: .*"
 - takeScreenshot: 07-14-vault-menu
-- tapOn: "Hand on as a vault"
+- tapOn: "Share as separate vault"
 - extendedWaitUntil:
     visible: "The whole GhulDocs vault .*"
     timeout: 10000

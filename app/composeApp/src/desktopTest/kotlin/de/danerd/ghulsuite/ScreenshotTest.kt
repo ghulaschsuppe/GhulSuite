@@ -182,6 +182,7 @@ class ScreenshotTest {
         override suspend fun createVault(kind: VaultKindUi, name: String) = "new"
         override suspend fun renameVault(id: String, name: String) {}
         override suspend fun removeVault(id: String) { calls += "removeVault:$id" }
+        override suspend fun setFavorite(vaultId: String, id: String, favorite: Boolean) { calls += "setFavorite:$vaultId:$id:$favorite" }
         override suspend fun exportVault(id: String) = ByteArray(0)
         override suspend fun addVaultFile(data: ByteArray, name: String) = "x"
         override suspend fun adoptVault(

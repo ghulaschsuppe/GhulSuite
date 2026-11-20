@@ -104,7 +104,11 @@ fun VaultPickerDialog(state: AppState, kind: VaultKindUi, onPick: (String) -> Un
                 for (v in vaults) {
                     ListRow(v.name, leading = { Avatar(v.name) }, divider = v != vaults.first()) { onPick(v.id) }
                 }
-                ListRow(stringResource(Res.string.vault_new), leading = { IconTile(Icons.Filled.Add, paletteColor(0)) }, divider = vaults.isNotEmpty()) { create = true }
+                if (kind == VaultKindUi.DOCS && docsVaultsFull(state)) {
+                    Hint(stringResource(Res.string.docs_vaults_full))
+                } else {
+                    ListRow(stringResource(Res.string.vault_new), leading = { IconTile(Icons.Filled.Add, paletteColor(0)) }, divider = vaults.isNotEmpty()) { create = true }
+                }
             }
         },
         confirmButton = {},
@@ -112,10 +116,18 @@ fun VaultPickerDialog(state: AppState, kind: VaultKindUi, onPick: (String) -> Un
     )
 }
 
+/** The most GhulDocs vaults a suite has (each up to 1 GB, the suite file stays below 4 GiB). */
+const val MAX_DOCS_VAULTS = 3
+
+/** The suite has as many GhulDocs vaults as it may. */
+fun docsVaultsFull(state: AppState) = state.vaultsOf(VaultKindUi.DOCS).size >= MAX_DOCS_VAULTS
+
 /** Creates a vault; [kind] fixed or chosen by the user when null. */
 @Composable
 fun CreateVaultDialog(state: AppState, kind: VaultKindUi?, onCreated: (String) -> Unit, onDismiss: () -> Unit) {
     val kinds = VaultKindUi.entries
+    // Three GhulDocs vaults: GhulDocs is shown, but cannot be chosen (the hint says why).
+    val docsFull = docsVaultsFull(state)
     var chosen by remember { mutableStateOf(kind ?: VaultKindUi.PASS) }
     var name by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
@@ -127,13 +139,17 @@ fun CreateVaultDialog(state: AppState, kind: VaultKindUi?, onCreated: (String) -
                 if (kind == null) {
                     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                         kinds.forEachIndexed { i, k ->
-                            SegmentedButton(chosen == k, { chosen = k }, SegmentedButtonDefaults.itemShape(i, kinds.size)) {
+                            // Three GhulDocs vaults: GhulDocs cannot be chosen (the hint below says why).
+                            SegmentedButton(
+                                chosen == k, { if (!(k == VaultKindUi.DOCS && docsFull)) chosen = k }, SegmentedButtonDefaults.itemShape(i, kinds.size),
+                            ) {
                                 SegLabel(stringResource(kindLabel(k)))
                             }
                         }
                     }
                 }
                 Hint(stringResource(Res.string.vault_new_text))
+                if (docsFull && (kind == null || kind == VaultKindUi.DOCS)) Hint(stringResource(Res.string.docs_vaults_full))
                 OutlinedTextField(
                     name, { name = it; error = null }, label = { Text(stringResource(Res.string.l_vault_name)) },
                     placeholder = { Text(stringResource(Res.string.vault_name_example)) }, singleLine = true,
@@ -149,7 +165,7 @@ fun CreateVaultDialog(state: AppState, kind: VaultKindUi?, onCreated: (String) -
                     state.changed()
                     onCreated(id)
                 }
-            }, enabled = !state.busy && name.isNotBlank()) { Text(stringResource(Res.string.a_create)) }
+            }, enabled = !state.busy && name.isNotBlank() && !(chosen == VaultKindUi.DOCS && docsFull)) { Text(stringResource(Res.string.a_create)) }
         },
         dismissButton = { TextButton(onClick = onDismiss, enabled = !state.busy) { Text(stringResource(Res.string.a_cancel)) } },
     )

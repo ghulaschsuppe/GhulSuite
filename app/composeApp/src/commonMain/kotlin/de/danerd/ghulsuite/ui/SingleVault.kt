@@ -284,7 +284,7 @@ fun PendingAddHandler(state: AppState) {
 }
 
 /**
- * "Hand on as a vault": the picked entries (or, with [wholeVault], the name of the vault, all of
+ * "Share as separate vault": the picked entries (or, with [wholeVault], the name of the vault, all of
  * it: [ids] empty) go into a new vault file with a password of its own and a new key file or a
  * security key. The file is saved, then the key file, then the new recovery code is shown.
  */

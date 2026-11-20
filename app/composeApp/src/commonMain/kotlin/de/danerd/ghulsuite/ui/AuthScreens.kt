@@ -104,7 +104,7 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
     // F103: deleting asks first; "Undo" in the snackbar brings the accounts back as well.
     val selected = rememberListSelection()
     val keyOf = { c: TotpCodeUi -> c.vaultId + "/" + c.id }
-    /** "Hand on as a vault": the vault and the picked entries. */
+    /** "Share as separate vault": the vault and the picked entries. */
     var sharing by remember { mutableStateOf<Pair<String, List<String>>?>(null) }
     sharing?.let { (v, ids) -> ShareAsVaultDialog(state, v, ids) { sharing = null } }
     val selecting = selected.active
@@ -128,16 +128,18 @@ fun AuthListScreen(state: AppState, padding: PaddingValues) {
             actions = buildList {
                 if (one != null) {
                     add(SelAction(Icons.Filled.Edit, stringResource(Res.string.a_rename)) { selected.clear(); renaming = one })
-                    add(SelAction(if (one.favorite) Icons.Filled.Star else Icons.Filled.StarBorder,
-                        stringResource(if (one.favorite) Res.string.a_unfavorite else Res.string.a_favorite)) {
-                        selected.clear()
-                        state.run(block = { state.backend.setFavorite(one.vaultId, one.id, !one.favorite) }) { state.changed() }
-                    })
                     add(SelAction(Icons.Filled.QrCode2, stringResource(Res.string.auth_export_qr)) {
                         selected.clear()
                         state.run(block = { state.backend.totpUri(one.vaultId, one.id) }) { exporting = one to it }
                     })
                 }
+                // Favourite for all of them at once (as in GhulDocs): all favourites already, it takes it back.
+                val allFav = chosen.isNotEmpty() && chosen.all { it.favorite }
+                add(SelAction(if (allFav) Icons.Filled.StarBorder else Icons.Filled.Star, stringResource(if (allFav) Res.string.a_unfavorite else Res.string.a_favorite)) {
+                    val list = chosen
+                    selected.clear()
+                    state.run(block = { list.forEach { state.backend.setFavorite(it.vaultId, it.id, !allFav) } }) { state.changed() }
+                })
                 // Picked entries of one vault: into a vault file of their own.
                 chosen.map { it.vaultId }.distinct().singleOrNull()?.let { v ->
                     add(SelAction(Icons.Filled.Share, stringResource(Res.string.share_vault_action)) {
