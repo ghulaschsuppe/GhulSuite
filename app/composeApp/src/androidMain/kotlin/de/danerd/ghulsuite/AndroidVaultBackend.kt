@@ -402,6 +402,8 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
     }
 
     override fun crashReport(): String? = CrashLog.pending(context)
+
+    override fun clearCrashReport() = CrashLog.clear(context)
 }
 
 /** Opens its stream only when the first byte is written (nothing is truncated before). */

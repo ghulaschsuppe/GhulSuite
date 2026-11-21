@@ -579,16 +579,16 @@ private fun AboutSection(state: AppState) {
                     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(g.surface2).padding(12.dp))
             }
             ButtonRow {
-                OutlinedButton(onClick = { state.copy(reportLabel, report) }, modifier = Modifier.weight(1f)) {
+                OutlinedButton(onClick = { state.copy(reportLabel, report); backend.clearCrashReport() }, modifier = Modifier.weight(1f)) {
                     Text(stringResource(Res.string.a_copy))
                 }
                 // Android: hand it to another app (mail, messenger); elsewhere save it as a file.
                 if (backend.canShareToApps) {
                     OutlinedButton(onClick = {
-                        state.run(block = { backend.shareToApps(reportFile, "text/plain", report.encodeToByteArray()) })
+                        state.run(block = { backend.shareToApps(reportFile, "text/plain", report.encodeToByteArray()) }) { backend.clearCrashReport() }
                     }, modifier = Modifier.weight(1f)) { Text(stringResource(Res.string.a_share)) }
                 } else if (filePickersAvailable) {
-                    OutlinedButton(onClick = { save(reportFile, report.encodeToByteArray()) }, modifier = Modifier.weight(1f)) {
+                    OutlinedButton(onClick = { save(reportFile, report.encodeToByteArray()); backend.clearCrashReport() }, modifier = Modifier.weight(1f)) {
                         Text(stringResource(Res.string.a_save))
                     }
                 }

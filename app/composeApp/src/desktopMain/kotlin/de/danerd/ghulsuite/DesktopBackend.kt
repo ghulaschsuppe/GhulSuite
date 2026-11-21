@@ -166,10 +166,16 @@ class PropertiesStore(private val file: File) : KeyValueStore {
     @Synchronized
     private fun save() {
         val tmp = File(file.parentFile, file.name + ".tmp")
-        tmp.outputStream().use { props.store(it, "GhulSuite") }
-        if (!tmp.renameTo(file)) {
-            file.delete()
-            tmp.renameTo(file)
+        java.io.FileOutputStream(tmp).use { out ->
+            props.store(out, "GhulSuite")
+            out.fd.sync()
+        }
+        // One step (also on Windows, where renameTo fails over an existing file): the file is
+        // never missing, also not when the power goes or a portable stick is pulled.
+        try {
+            java.nio.file.Files.move(tmp.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+        } catch (e: java.nio.file.AtomicMoveNotSupportedException) {
+            java.nio.file.Files.move(tmp.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
         }
     }
 
@@ -255,6 +261,10 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
 
     override fun crashReport(): String? = File(DesktopPaths.dataDir, "absturz.txt").takeIf { it.exists() }?.readText()
 
+    override fun clearCrashReport() {
+        File(DesktopPaths.dataDir, "absturz.txt").delete()
+    }
+
     override fun panicLock() {
         // Nothing is written back first (a GhulDocs vault open on its own locks at once).
         panicking = true
@@ -331,7 +341,7 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
 
     override fun copySensitive(label: String, text: String) {
         val seconds = settings.clipboardClearSeconds
-        val sequence = WinNative.copyPrivate(text)
+        val sequence = WinNative.copyPrivate(text, window())
         if (sequence != null) {
             if (seconds > 0) timer.schedule(seconds * 1000L) { WinNative.clearIfUnchanged(sequence) }
             return

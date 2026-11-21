@@ -199,7 +199,7 @@ actual fun rememberOpenFile(onPicked: (PickedFile) -> Unit): () -> Unit = {
 @Composable
 actual fun rememberSaveFile(onSaved: (Boolean) -> Unit): (String, ByteArray) -> Unit = { name, data ->
     val f = chooseSave(name)
-    onSaved(f != null && runCatching { f.writeBytes(data) }.isSuccess)
+    onSaved(f != null && runCatching { writeReplacing(f, data) }.isSuccess)
 }
 
 @Composable
@@ -224,7 +224,8 @@ actual fun rememberPickFolder(onPicked: (FolderRef) -> Unit): () -> Unit = {
 @Composable
 actual fun rememberOpenStream(onPicked: (ByteSource) -> Unit): () -> Unit = {
     chooseOpen()?.let { f ->
-        val raf = RandomAccessFile(f, "r")
+        // Locked by another program or not readable: nothing is handed on (no crash in the click).
+        val raf = runCatching { RandomAccessFile(f, "r") }.getOrNull() ?: return@let
         onPicked(object : ByteSource {
             override val name: String = f.name
             override val size: Long = f.length()
@@ -260,12 +261,17 @@ actual fun rememberCreateStream(onCreated: (ByteSink?) -> Unit): (String, String
     if (f == null) {
         onCreated(null)
     } else {
-        val out = f.outputStream().buffered()
-        onCreated(object : ByteSink {
-            override fun write(data: ByteArray) = out.write(data)
-            override fun close() = out.close()
-            override fun discard() { f.delete() }
-        })
+        // A read-only stick or a file locked by another program: "not created", no crash.
+        val out = runCatching { f.outputStream().buffered() }.getOrNull()
+        if (out == null) {
+            onCreated(null)
+        } else {
+            onCreated(object : ByteSink {
+                override fun write(data: ByteArray) = out.write(data)
+                override fun close() = out.close()
+                override fun discard() { f.delete() }
+            })
+        }
     }
 }
 
@@ -364,3 +370,21 @@ actual fun openPdf(bytes: ByteArray): PdfView? = runCatching {
 actual val docScanAvailable: Boolean = false
 
 actual fun platformScanEngine(): de.danerd.ghulsuite.scan.ScanEngine? = null
+
+/** Writes [data] next to [f] first and moves it over [f] in one step: an existing file stays whole if writing fails. */
+private fun writeReplacing(f: File, data: ByteArray) {
+    val tmp = File(f.absoluteFile.parentFile, f.name + ".ghltmp")
+    try {
+        java.io.FileOutputStream(tmp).use { out ->
+            out.write(data)
+            out.fd.sync()
+        }
+        try {
+            java.nio.file.Files.move(tmp.toPath(), f.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+        } catch (e: java.nio.file.AtomicMoveNotSupportedException) {
+            java.nio.file.Files.move(tmp.toPath(), f.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+        }
+    } finally {
+        tmp.delete()
+    }
+}

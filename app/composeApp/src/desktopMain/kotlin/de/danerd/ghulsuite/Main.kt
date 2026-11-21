@@ -61,8 +61,14 @@ fun main(args: Array<String>) {
     ShareFiles.wipe()
     // The core library lies next to the program (installer, portable folder, Gradle run).
     System.getProperty("compose.application.resources.dir")?.let { System.setProperty("jna.library.path", it) }
-    Thread.setDefaultUncaughtExceptionHandler { _, e ->
-        runCatching { File(DesktopPaths.dataDir, "absturz.txt").writeText(e.stackTraceToString()) }
+    // A crash is noted with version and time (no contents of the suite), then handled as before.
+    val previous = Thread.getDefaultUncaughtExceptionHandler()
+    Thread.setDefaultUncaughtExceptionHandler { t, e ->
+        runCatching {
+            val version = System.getProperty("jpackage.app-version") ?: "?"
+            File(DesktopPaths.dataDir, "absturz.txt").writeText("GhulSuite $version · ${java.time.Instant.now()}\n" + e.stackTraceToString())
+        }
+        previous?.uncaughtException(t, e) ?: e.printStackTrace()
     }
 
     val backend = DesktopVaultBackend { awtWindow }

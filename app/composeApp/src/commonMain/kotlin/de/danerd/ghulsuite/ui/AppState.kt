@@ -351,6 +351,12 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     /** Downloads the update, checks it and hands it to the installer of the system. */
     fun installUpdate(u: UpdateUi) {
         if (updateBusy) return
+        // Installing ends the app: not while the suite file is saved, files are added or an
+        // entry is edited (that would be lost). The working copy itself is safe.
+        if (saveJob != null || jobs.running || editorDirty) {
+            scope.launch { catching { message(getString(Res.string.upd_wait)) } }
+            return
+        }
         update = null
         updateBusy = true
         // The note must not hold up the installation.

@@ -244,6 +244,8 @@ interface VaultBackend {
         throw VaultException(VaultErrorKind.OTHER)
     /** Last crash report of this device, if any. */
     fun crashReport(): String? = null
+    /** The crash was handed on (copied, shared, saved): it is not shown again. */
+    fun clearCrashReport() {}
     /** Breach check (k-anonymity); network. */
     suspend fun pwnedCount(password: String): Int = 0
 
