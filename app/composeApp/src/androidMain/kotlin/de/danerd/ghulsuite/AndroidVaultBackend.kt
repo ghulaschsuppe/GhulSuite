@@ -164,6 +164,8 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
     override fun lock() {
         // Decrypted copies handed to other apps and a copied password do not outlive the session.
         File(context.cacheDir, "shared").deleteRecursively()
+        // An "open with" choice that waited would point at a deleted copy, above the lock screen.
+        pendingChooser = null
         clearOwnClip()
         super.lock()
     }
@@ -349,7 +351,7 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
         }
     }
 
-    /** "Open with" that waits for the app to come to the front (see [onFront]). */
+    /** "Open with" that waits for the app to come to the front (see [onFront]); dropped when locking. */
     @Volatile private var pendingChooser: Intent? = null
 
     /** Back in front: the "open with" choice that waited, and a clipboard that is due to be cleared. */

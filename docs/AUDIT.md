@@ -196,6 +196,9 @@ behoben (Testprotokoll PR-…), „klein“ (Randfall, Komfort, Werkzeug) kommt 
 | K-5 | Werkzeuge | `intent-attacks.sh` greift noch Aktionen von GhulMail und GhulDrive an, die es nicht mehr gibt; der deutsche Rundgang (`tour-de.yaml`) zeigt GhulDocs und zwei Optionsseiten nicht |
 | K-6 | Update | Die signierte Prüfsummendatei nennt die Version nicht; ein altes, korrekt signiertes Paket ließe sich unter neuem Tag anbieten (Android lehnt kleinere Versionen ab, beim MSI schützt nur jpackage) |
 | K-7 | Release | Jeder Push auf `dev` baut und signiert eine Vorabversion ohne vorgeschaltete Tests; der Schutz des Branches `dev` ist im Repository nicht nachprüfbar |
+| K-8 | GhulDocs | „Mit App öffnen“: Dateinamen mit `: * ? " < > |` (von Android) lassen sich unter Windows nicht öffnen; zwei gleichnamige Dokumente teilen sich einen Pfad |
+| K-9 | GhulDocs | Wird während eines Speicherns der Papierkorb geleert und zugleich ein älterer Stand übernommen, kann das aufgeschobene Löschen Inhaltsdateien des neuen Stands treffen (die App lässt Öffnen während des Speicherns ohnehin nicht zu) |
+| K-10 | Scan | Zurück während des Speicherns eines Scans: scheitert das Speichern danach, sind die Seiten schon gelöscht |
 
 ## 5. Geprüft und in Ordnung
 

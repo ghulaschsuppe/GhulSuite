@@ -66,6 +66,11 @@ object DesktopPaths {
 object ShareFiles {
     private val timer = Timer("share-wipe", true)
     private var retrying = false
+    /**
+     * The copies that were there when [wipe] was called: only these are tried again (a copy made
+     * after the next unlock is not touched while it is written or open in another program).
+     */
+    private val pending = mutableSetOf<File>()
 
     init {
         Runtime.getRuntime().addShutdownHook(Thread { wipeOnce() })
@@ -74,14 +79,26 @@ object ShareFiles {
     /** Wipes the folder now and keeps retrying in the background for files still in use. */
     @Synchronized
     fun wipe() {
-        if (wipeOnce() || retrying) return
+        val dir = DesktopPaths.shareDir
+        if (dir.exists()) pending += dir.walkBottomUp().filter { it.isFile }
+        if (wipePending() || retrying) return
         retrying = true
         timer.schedule(30_000L, 30_000L) {
-            if (wipeOnce()) {
-                synchronized(this@ShareFiles) { retrying = false }
-                cancel()
-            }
+            val done = synchronized(this@ShareFiles) { wipePending().also { if (it) retrying = false } }
+            if (done) cancel()
         }
+    }
+
+    /** Wipes what was noted; true when none of it is left. */
+    @Synchronized
+    private fun wipePending(): Boolean {
+        pending.removeAll { f ->
+            if (f.exists()) wipeFile(f)
+            !f.exists()
+        }
+        // Empty folders of earlier copies go as well.
+        DesktopPaths.shareDir.takeIf { it.exists() }?.walkBottomUp()?.filter { it.isDirectory }?.forEach { it.delete() }
+        return pending.isEmpty()
     }
 
     /** Overwrites one file with zeros and deletes it (a copy that was not finished). */

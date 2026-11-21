@@ -313,7 +313,8 @@ actual fun applyAppLanguage(tag: String) {
 actual fun decodeImage(bytes: ByteArray, maxSide: Int): androidx.compose.ui.graphics.ImageBitmap? = runCatching {
     val image = org.jetbrains.skia.Image.makeFromEncoded(bytes)
     val side = maxOf(image.width, image.height)
-    if (side <= maxSide) return@runCatching image.toComposeImageBitmap()
+    // The decoded copy of the file is released at once (not when the garbage collector comes).
+    if (side <= maxSide) return@runCatching image.toComposeImageBitmap().also { image.close() }
     // Scaled down in memory: a photo of a phone camera is far larger than any window.
     val scale = maxSide.toFloat() / side
     val w = (image.width * scale).toInt().coerceAtLeast(1)
