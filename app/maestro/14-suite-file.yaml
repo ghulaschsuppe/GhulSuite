@@ -125,24 +125,7 @@ name: Suite file
 - assertVisible: "Everything is saved in the suite file\\."
 - takeScreenshot: 14-06-file-after-open
 
-# Opening a suite file removes this device's quick unlock (on purpose: it belonged to the state
-# replaced). The flows after this one unlock with the app PIN: switch it on again.
-- runFlow: home.yaml
-- tapOn: { id: "tab-settings" }
-- scrollUntilVisible:
-    element: "Unlocking"
-    direction: UP
-- tapOn: "Unlocking"
-- tapOn: "App PIN"
-- tapOn:
-    text: "App PIN"
-    index: 1
-- inputText: "246813"
-- tapOn: "Repeat app PIN"
-- inputText: "246813"
-# Switching on the app PIN needs the master password (who finds the app unlocked cannot).
-- tapOn: "Master password"
-- inputText: "Ghul-Test-Passwort-2026!"
-- hideKeyboard
-- tapOn: "Save"
-- takeScreenshot: 14-07-pin-again
+# A newer state of the same suite with the same protection keeps this device's quick unlock
+# (the same password key): the app PIN still unlocks, the flows after this one rely on it.
+- runFlow: unlock.yaml
+- takeScreenshot: 14-07-pin-kept
