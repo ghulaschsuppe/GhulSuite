@@ -596,6 +596,9 @@ pub struct GhulSuite {
     pub(super) content_copies: Mutex<super::docs::Copies>,
     /// The state the last `archive_build` sealed, until `archive_saved` notes it.
     pub(super) built: Mutex<Option<super::archive::BuiltState>>,
+    /// Marking and clearing the unsaved mark one at a time (a change while a save is noted is
+    /// never left unmarked).
+    pub(super) unsaved_lock: Mutex<()>,
 }
 
 /// How containers of the folder are opened.
@@ -982,6 +985,8 @@ impl GhulSuite {
 
     /// Saves all vaults first and the suite last.
     pub(super) fn save_all(&self, o: &mut Open) -> Result<()> {
+        // Marked before the first file changes (see `mark_unsaved`).
+        self.mark_unsaved()?;
         for v in &mut o.vaults {
             if let Some(c) = v.container.as_mut() {
                 let data = c.seal(&mut OsRng)?;
@@ -1137,6 +1142,7 @@ impl GhulSuite {
             docs_limit: std::sync::atomic::AtomicU64::new(super::docs::DOCS_LIMIT),
             content_copies: Mutex::new(Default::default()),
             built: Mutex::new(None),
+            unsaved_lock: Mutex::new(()),
         })
     }
 
@@ -1476,6 +1482,7 @@ impl GhulSuite {
             super::single::refuse_single(o)?;
             let pos = o.vaults.iter().position(|v| v.reference.id == id).ok_or(GhulError::NotFound)?;
             let v = o.vaults.remove(pos);
+            self.mark_unsaved()?;
             self.storage.delete(v.reference.file.clone())?;
             // The content files of a GhulDocs vault go with it (what is left goes at the next unlock).
             if v.reference.kind == "docs" {

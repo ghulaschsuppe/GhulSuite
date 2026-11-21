@@ -1365,4 +1365,5 @@
     <string name="wz_step_file">Suite-Datei</string>
     <string name="wz_file_failed">Ohne Suite-Datei liegen deine Daten nur auf diesem Gerät. Geht es verloren, ist alles weg. Versuche es noch einmal oder wähle einen anderen Ort; anlegen kannst du sie auch später oben mit dem Speichern-Symbol.</string>
     <string name="wz_file_skip">Ohne Suite-Datei weiter</string>
+    <string name="close_editing">Ein Eintrag wird gerade bearbeitet und ist noch nicht übernommen. Übernimm ihn zuerst und speichere dann, oder beende ohne ihn.</string>
 </resources>

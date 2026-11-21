@@ -568,7 +568,7 @@ private fun SideNav(state: AppState, tabs: List<Tab>) {
         }
         Spacer(Modifier.weight(1f))
         // Changes not in the suite file yet: "Save" above "Lock" (Ctrl+S).
-        if (state.saveNeeded || state.saveJob != null) {
+        if ((state.saveNeeded || state.saveJob != null) && state.canSaveHere) {
             Row(
                 Modifier.fillMaxWidth().padding(bottom = 8.dp).testTag(SAVE_BUTTON_TAG).clip(RoundedCornerShape(14.dp)).background(t.surface2)
                     .clickable { state.askSave() }.padding(horizontal = 12.dp, vertical = 11.dp),
@@ -636,8 +636,7 @@ private fun TabActions(state: AppState) {
  */
 @Composable
 fun SaveButton(state: AppState) {
-    val top = state.stack.lastOrNull()
-    if (top is Screen.EntryEdit || top is Screen.CalEdit || top is Screen.DocScan) return
+    if (!state.canSaveHere) return
     val running = state.saveJob != null
     if (!state.saveNeeded && !running) return
     val t = g
@@ -658,6 +657,8 @@ fun QuitDialog(state: AppState) {
     if (!state.quitAsk) return
     val unlocked by state.backend.unlocked.collectAsState()
     val job = state.saveJob
+    // An entry is being edited: apply it first (saving now would not hold it).
+    val editing = job == null && unlocked && state.editorDirty
     val close = { state.quitAsk = false }
     AlertDialog(
         onDismissRequest = close,
@@ -666,6 +667,7 @@ fun QuitDialog(state: AppState) {
             Text(
                 when {
                     job != null -> stringResource(Res.string.close_saving, savePercent(job.progress).ifEmpty { "…" })
+                    editing -> stringResource(Res.string.close_editing)
                     unlocked -> stringResource(Res.string.close_text)
                     else -> stringResource(Res.string.close_text_locked)
                 },
@@ -674,6 +676,7 @@ fun QuitDialog(state: AppState) {
         confirmButton = {
             when {
                 job != null -> TextButton(onClick = { state.quitAfterSave = true; close() }) { Text(stringResource(Res.string.close_after_save)) }
+                editing -> TextButton(onClick = close) { Text(stringResource(Res.string.edit_keep)) }
                 unlocked -> TextButton(onClick = { state.quitAfterSave = true; close(); state.askSave() }, modifier = Modifier.testTag("quit-save")) {
                     Text(stringResource(Res.string.file_save))
                 }

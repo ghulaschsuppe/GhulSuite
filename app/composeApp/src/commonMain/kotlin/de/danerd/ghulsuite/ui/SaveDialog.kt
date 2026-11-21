@@ -61,7 +61,8 @@ val AppState.saveJob: BgJob? get() = jobs.list.firstOrNull { it.kind == JobKind.
  * ([startSaveJob]). [created]: the file was just made for this ("Save as").
  */
 fun AppState.checkAndSave(target: SuiteFileRef, force: Boolean = false, created: Boolean = false) {
-    if (saveJob != null) return
+    // One at a time (a second tap while the file is checked is dropped).
+    if (saveJob != null || saveStep == SaveStep.Checking) return
     saveStep = SaveStep.Checking
     scope.launch {
         val info = if (force) {
@@ -72,9 +73,14 @@ fun AppState.checkAndSave(target: SuiteFileRef, force: Boolean = false, created:
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                saveStep = SaveStep.Failed(describe(e), target)
+                if (saveStep == SaveStep.Checking) saveStep = SaveStep.Failed(describe(e), target)
                 return@launch
             }
+        }
+        // Closed meanwhile (cancelled) or locked: the result is not used.
+        if (saveStep != SaveStep.Checking || !backend.unlocked.value) {
+            if (saveStep == SaveStep.Checking) saveStep = SaveStep.Ask
+            return@launch
         }
         // The place of the suite file cannot be read (a stick that is not there).
         if (!force && info == null && target == backend.suiteFile()) {
@@ -165,7 +171,7 @@ fun SaveSuiteDialog(state: AppState) {
     }
     val step = state.saveStep
     val target = backend.suiteFile()
-    val dismiss = { if (step !is SaveStep.Checking) state.closeSaveDialog() }
+    val dismiss = { state.closeSaveDialog() }
     GhulSheet(onDismissRequest = dismiss, title = stringResource(
         when (step) {
             is SaveStep.Conflict -> Res.string.save_conflict_title
@@ -201,6 +207,10 @@ fun SaveSuiteDialog(state: AppState) {
             SaveStep.Checking -> {
                 Text(stringResource(Res.string.save_checking))
                 LinearProgressIndicator(Modifier.fillMaxWidth(), color = g.accent, trackColor = g.surface3)
+                // A slow place (a cloud app fetching the file first): cancelled, the result is dropped.
+                OutlinedButton(onClick = { state.closeSaveDialog() }, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(Res.string.a_cancel))
+                }
             }
             is SaveStep.Conflict -> {
                 Text(stringResource(if (step.info.target == ArchiveTargetUi.OTHER_SUITE) Res.string.save_conflict_other else Res.string.save_conflict_changed))

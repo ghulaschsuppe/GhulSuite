@@ -440,16 +440,29 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
      * in the suite file, or a save that still runs and would leave a temporary file behind).
      */
     fun requestQuit(): Boolean {
-        if (saveJob == null && !(unsaved && single == null)) return true
+        // An entry being edited is not applied yet: asked about as well.
+        if (saveJob == null && !(unsaved && single == null) && !editorDirty) return true
         quitAsk = true
         return false
     }
 
     /** Opens the save dialog ([then]: runs after it was saved, e.g. opening another file). */
     fun askSave(then: (() -> Unit)? = null) {
+        // Open already (e.g. Ctrl+S while a file is checked or a conflict is shown): it stays as it is.
+        if (saveDialog != null) return
         if (saveJob == null) saveStep = SaveStep.Ask
         saveDialog = SaveRequest(then)
     }
+
+    /**
+     * Saving makes sense here: unlocked, the own suite, and not on a page that edits something
+     * (what is not applied yet would not be in the file). The save button, the side bar and Ctrl+S.
+     */
+    val canSaveHere: Boolean
+        get() {
+            val top = stack.lastOrNull()
+            return single == null && top !is Screen.EntryEdit && top !is Screen.CalEdit && top !is Screen.DocScan
+        }
 
     init {
         scope.launch {
@@ -463,6 +476,11 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     // What is unsaved is read anew (the suite may be gone); the save dialog closes
                     // (a save that runs goes on, its job says how it ended).
                     saveDialog = null
+                    if (saveJob == null) {
+                        saveStep = SaveStep.Ask
+                        // Quitting waited for a save that was not started: it does not any more.
+                        quitAfterSave = false
+                    }
                     readUnsaved()
                     recoveredGuide = false
                     confirmDiscard = false
@@ -489,7 +507,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     if (single != null) {
                         // The vault opened on its own is closed: back to the own suite (locked) or the start.
                         single = null
-                        unsaved = false
+                        // The own suite again: its unsaved changes count.
+                        readUnsaved()
                         vaultExists = backend.exists()
                     }
                 } else {
@@ -525,6 +544,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             if (backend.unlocked.value && single == null && vaults.any { it.kind == kind }) {
                 scope.launch {
                     catching { backend.setAreaOptions(kind, mapOf(key to value)) }
+                    // Written into the area's file: a change for the suite file.
+                    readUnsaved()
                 }
             }
         }
@@ -731,6 +752,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             val missing = st.deviceValues(kind).filterKeys { it !in stored }
             if (missing.isNotEmpty()) catching { backend.setAreaOptions(kind, missing) }
         }
+        readUnsaved()
     }
 
     fun vaultsOf(kind: VaultKindUi): List<VaultUi> = vaults.filter { it.kind == kind }

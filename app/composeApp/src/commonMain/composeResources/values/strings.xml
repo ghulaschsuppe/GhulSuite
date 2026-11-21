@@ -1365,4 +1365,5 @@
     <string name="wz_step_file">Suite file</string>
     <string name="wz_file_failed">Without a suite file your data is on this device only. If it is lost, everything is gone. Try again or choose another place; you can also create it later with the save icon at the top.</string>
     <string name="wz_file_skip">Continue without a suite file</string>
+    <string name="close_editing">An entry is being edited and not applied yet. Apply it first and then save, or quit without it.</string>
 </resources>

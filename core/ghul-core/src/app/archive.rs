@@ -666,6 +666,7 @@ impl GhulSuite {
     /// is there even if the device goes off right after): it differs from the file it was loaded
     /// from or saved into. The mark holds the time of the first unsaved change.
     pub(super) fn mark_unsaved(&self) -> Result<()> {
+        let _one = self.unsaved_lock.lock().unwrap_or_else(|e| e.into_inner());
         self.changes.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         if self.unsaved() {
             return Ok(());
@@ -685,12 +686,14 @@ impl GhulSuite {
 
     /// Clears the unsaved mark if nothing changed since `change` was read.
     pub(super) fn clear_unsaved_at(&self, change: u64) {
+        let _one = self.unsaved_lock.lock().unwrap_or_else(|e| e.into_inner());
         if self.change() == change {
-            self.clear_unsaved();
+            let _ = std::fs::remove_file(self.local_dir.join(UNSAVED_FILE));
         }
     }
 
     pub(super) fn clear_unsaved(&self) {
+        let _one = self.unsaved_lock.lock().unwrap_or_else(|e| e.into_inner());
         let _ = std::fs::remove_file(self.local_dir.join(UNSAVED_FILE));
     }
 

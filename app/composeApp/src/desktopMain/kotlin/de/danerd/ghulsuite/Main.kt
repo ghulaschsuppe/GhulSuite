@@ -123,7 +123,7 @@ fun main(args: Array<String>) {
                     // What waits for "Undo" is carried out first, as with every lock button.
                     state.lockNow()
                     true
-                } else if (e.type == KeyEventType.KeyDown && e.isCtrlPressed && e.key == Key.S && backend.unlocked.value && state.single == null) {
+                } else if (e.type == KeyEventType.KeyDown && e.isCtrlPressed && e.key == Key.S && backend.unlocked.value && state.canSaveHere) {
                     // Ctrl+S: the save dialog (as the save button).
                     state.askSave()
                     true

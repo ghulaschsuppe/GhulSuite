@@ -313,7 +313,11 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
             },
         )
         val b = built
-        if (written && b != null) s.archiveSaved(b.state, b.change)
+        if (written && b != null) {
+            s.archiveSaved(b.state, b.change)
+            // Here, not after returning: the app may end meanwhile, the place must be known then.
+            setSuiteFile(target)
+        }
         written && b != null
     } }
 
