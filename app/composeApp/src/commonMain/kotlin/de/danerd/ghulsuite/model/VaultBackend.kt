@@ -335,8 +335,10 @@ data class ArchiveCheckUi(
     val vaults: Int,
 )
 
-/** The file at the place the suite is saved to. */
-/** OTHER_PROTECTION: this suite with a protection changed elsewhere; overwriting would undo the change. */
+/**
+ * The file at the place the suite is saved to. OTHER_PROTECTION: this suite with a protection
+ * changed elsewhere; overwriting would undo the change.
+ */
 enum class ArchiveTargetUi { NEW, SAME, CHANGED_ELSEWHERE, OTHER_SUITE, OTHER_PROTECTION }
 
 /** Both factors of now, before a change of the protection: the master password plus the PIN of a key ([pin]) or a key file. */

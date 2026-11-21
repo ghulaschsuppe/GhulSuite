@@ -132,6 +132,40 @@ struct Seen {
     /// for one that was opened; 0 if not known).
     #[serde(default)]
     saved: i64,
+    /// The protections this device had for this suite (see [`protection_print`]), the latest
+    /// last: a file with one of them is older than the protection of now, not newer.
+    #[serde(default)]
+    protections: Vec<String>,
+}
+
+/// How many earlier protections a device keeps in mind.
+const MAX_PROTECTIONS: usize = 64;
+
+/// The protection of a container as its plaintext header shows it: the KDF (salt) and the
+/// factor slots (the recovery slot is new in every container and holds neither the password key
+/// nor the factor secret). Two files with the same print open with the same password key and
+/// the same keys and key files.
+pub(super) fn protection_print(h: &crate::vault::format::Header) -> String {
+    let mut ids: Vec<[u8; 16]> =
+        h.slots.iter().filter(|s| !matches!(s, crate::vault::Slot::Recovery(_))).map(|s| *s.id()).collect();
+    ids.sort();
+    let mut d = Sha256::new();
+    d.update(h.kdf.memory_kib.to_le_bytes());
+    d.update(h.kdf.iterations.to_le_bytes());
+    d.update(h.kdf.parallelism.to_le_bytes());
+    d.update(h.kdf.salt);
+    for id in ids {
+        d.update(id);
+    }
+    crate::kdf::hex(&d.finalize()[..16])
+}
+
+fn note_protection(e: &mut Seen, print: String) {
+    e.protections.retain(|p| *p != print);
+    e.protections.push(print);
+    if e.protections.len() > MAX_PROTECTIONS {
+        e.protections.remove(0);
+    }
 }
 
 /// What [`GhulSuite::archive_build`] built, kept until [`GhulSuite::archive_saved`] notes it:
@@ -646,7 +680,20 @@ impl GhulSuite {
         e.epoch = e.epoch.max(epoch);
         e.file = state.file.clone();
         e.saved = saved;
+        if let Ok(a) = self.anchor() {
+            note_protection(e, protection_print(a.header()));
+        }
         self.write_seen(&all);
+    }
+
+    /// The protection of the working copy as it is now is about to change: it is kept in mind as
+    /// an earlier one (a file saved with it elsewhere later is older, not newer).
+    pub(super) fn note_protection_left(&self, suite_id: &[u8; 16]) -> Result<()> {
+        let Ok(a) = self.anchor() else { return Ok(()) };
+        let mut all = self.seen_all();
+        let e = all.entry(crate::kdf::hex(suite_id)).or_default();
+        note_protection(e, protection_print(a.header()));
+        self.try_write_seen(&all)
     }
 
     /// The protection of a suite changed on this device (its epoch is `epoch` now).
@@ -979,12 +1026,20 @@ impl GhulSuite {
         self.lock();
         self.finish_lock();
         // Quick unlock holds the password key and the factor secret of the working copy. They stay
-        // the same for a newer state of the same suite with the same protection (epoch): then
-        // fingerprint and app PIN stay. Another suite, another protection or the recovery code:
+        // the same for a newer state of the same suite with the same protection: the same KDF
+        // (salt) and the same slots, compared in the headers themselves (two devices can each
+        // reach the same epoch with different changes). Anything else, or the recovery code:
         // they go.
+        let same_header = || -> bool {
+            let Ok(old) = self.anchor() else { return false };
+            let Some((_, data)) = p.files.iter().find(|(n, _)| n == SUITE_FILE) else { return false };
+            let Ok(new) = LockedContainer::parse(data) else { return false };
+            protection_print(old.header()) == protection_print(new.header())
+        };
         let same_protection = p.recovery.is_none()
             && self.working_suite_id() == Some(p.suite_id)
-            && self.seen_all().get(&crate::kdf::hex(&p.suite_id)).is_some_and(|s| s.epoch == p.header.epoch);
+            && self.seen_all().get(&crate::kdf::hex(&p.suite_id)).is_some_and(|s| s.epoch == p.header.epoch)
+            && same_header();
         if !same_protection {
             self.wipe_device_data();
             self.wiped.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -1127,13 +1182,23 @@ impl GhulSuite {
             }
             let s = FactorSecret::from_bytes(*o.suite.factor_secret().expose());
             let file_id = crate::kdf::hex(&locked.header().container_id);
+            let print = protection_print(locked.header());
             let Ok(c) = locked.unlock(&o.password_key, &s) else {
                 // Not readable with the keys of now: the file this device saved or opened last,
                 // from before a change of the protection, is its own (overwriting it is what
-                // the change asks for). Any other file was saved elsewhere.
+                // the change asks for). Another file with a protection this device had before
+                // is older: saved elsewhere meanwhile, but overwriting undoes no change. Any
+                // other protection is newer: it was changed elsewhere.
                 let seen = self.seen_all().remove(&crate::kdf::hex(&o.suite.header().suite_id));
-                let own = seen.is_some_and(|s| !s.file.is_empty() && s.file == file_id);
-                return Ok(bare(if own { ArchiveTarget::Same } else { ArchiveTarget::OtherProtection }));
+                let own = seen.as_ref().is_some_and(|s| !s.file.is_empty() && s.file == file_id);
+                let older = seen.is_some_and(|s| s.protections.contains(&print));
+                return Ok(bare(if own {
+                    ArchiveTarget::Same
+                } else if older {
+                    ArchiveTarget::ChangedElsewhere
+                } else {
+                    ArchiveTarget::OtherProtection
+                }));
             };
             let header: ArchiveHeader = setting(&c, HEADER_KEY);
             let mine: StateRef = setting(&o.suite, STATE_KEY);

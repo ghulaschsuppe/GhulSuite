@@ -126,10 +126,14 @@ fun OpenSuiteFile(
     val readOnly = stringResource(Res.string.file_opened_read_only)
 
     fun accept() {
+        // Read before accepting: whether the file holds the suite of the working copy.
+        val sameSuite = check?.relation.let { it != null && it != ArchiveRelationUi.NO_SUITE && it != ArchiveRelationUi.OTHER_SUITE }
         state.run(onError = { error = it }, block = { backend.archiveAccept() }) {
             // A file handed over without the right to write it again keeps the place known before
-            // (the save there still checks the file); "Save as" chooses a new one.
-            if (file.ref.id.isNotEmpty()) backend.setSuiteFile(file.ref)
+            // only for the same suite (the save there still checks the file); the place of
+            // another suite is forgotten, so its file is never offered for overwriting.
+            // "Save as" chooses a new one.
+            if (file.ref.id.isNotEmpty()) backend.setSuiteFile(file.ref) else if (!sameSuite) backend.setSuiteFile(null)
             backend.settings.factorKey = needsKey
             check = null
             password = ""; pin = ""; code = ""; newPassword = ""; repeat = ""

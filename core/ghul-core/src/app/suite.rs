@@ -885,7 +885,7 @@ impl GhulSuite {
 
     /// The suite file, or, if it is missing, any readable vault file of the folder. All
     /// containers carry the same slots, so each of them can be used to unlock.
-    fn anchor(&self) -> Result<LockedContainer> {
+    pub(super) fn anchor(&self) -> Result<LockedContainer> {
         if let Some(l) = self.read_locked(SUITE_FILE)? {
             return Ok(l);
         }
@@ -1143,6 +1143,8 @@ impl GhulSuite {
     /// Notes a change of the protection: the epoch grows in the suite, and this device knows from
     /// now on that files with an older protection are not to be opened.
     pub(super) fn protection_changed(&self, o: &mut Open) -> Result<()> {
+        // The suite file on the disk still has the protection before (it is saved after this).
+        self.note_protection_left(&o.suite.header().suite_id)?;
         o.bump_epoch()?;
         self.note_epoch(&o.suite.header().suite_id, o.epoch())
     }
@@ -1249,6 +1251,8 @@ impl GhulSuite {
             return Err(GhulError::InvalidInput { msg: "a security key or key file is required".into() });
         }
         let now = now_ms();
+        // A key alone still needs its backup (added next, see `add_security_key`).
+        let backup_follows = factor.len() == 1 && matches!(factor[0].0, Slot::Fido2(_));
         let slots: Vec<Slot> = factor.iter().map(|(s, _)| s.clone()).collect();
         let mut suite = keys.create_container(ContainerKind::Suite, slots, &mut OsRng)?;
         for (slot, label) in &factor {
@@ -1267,7 +1271,8 @@ impl GhulSuite {
         self.save_all(&mut open)?;
         self.set_open(open);
         // Both factors were just used: the backup of a key may follow with the password alone.
-        *self.factors_confirmed.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
+        *self.factors_confirmed.lock().unwrap_or_else(|e| e.into_inner()) =
+            backup_follows.then(std::time::Instant::now);
         Ok(SetupResult { recovery_code: Some(code.to_display().to_string()) })
     }
 
@@ -2160,6 +2165,8 @@ impl GhulSuite {
         transport: Option<Arc<dyn HidTransport>>,
         listener: Option<Arc<dyn FidoListener>>,
     ) -> Result<()> {
+        // Always both factors: a confirmation is not carried on by the password alone.
+        *self.factors_confirmed.lock().unwrap_or_else(|e| e.into_inner()) = None;
         self.require_factors(&proof, transport.as_ref(), listener.as_ref())?;
         *self.factors_confirmed.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
         Ok(())

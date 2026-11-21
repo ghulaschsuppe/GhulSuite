@@ -225,6 +225,7 @@ behoben (Testprotokoll PR-…), „klein“ (Randfall, Komfort, Werkzeug) kommt 
 | K-33 | App | Vor dem Speichern wird der freie Platz am Ziel nicht geprüft (ein voller Stick scheitert erst beim Schreiben; ob die alte Datei dann heil bleibt, hängt unter Android vom Speicherort ab: prüfen) |
 | K-34 | Update | Der Installer prüft nicht noch einmal auf eine neuere Version, wenn zwischen Prüfung und Start Zeit vergangen ist |
 | K-35 | Format | Es gibt keine Zusage, welche ältere App-Version eine neue Suite-Datei noch öffnet; vor der ersten öffentlichen Version festlegen (z. B. „N-1“) und testen |
+| K-36 | Kern | Entfernen zwei Geräte unabhängig denselben Key, haben beide dieselben Slots, aber verschiedene Faktorgeheimnisse; öffnet das eine die Datei des anderen, bleibt das Schnell-Entsperren eingerichtet und scheitert beim nächsten Mal (dann Passwort und Key; kein Zugang für Fremde) |
 
 ## 5. Geprüft und in Ordnung
 

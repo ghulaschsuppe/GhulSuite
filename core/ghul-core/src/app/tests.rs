@@ -1250,8 +1250,15 @@ fn confirmed_factors_count_once_and_not_past_locking() {
     let kf = generate_keyfile();
     s.create(options(PW, Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
     let pw_only = || super::suite::FactorProof { password: PW.into(), pin: None, keyfile: None };
-    // Just created: the first change needs the password alone, the next one both factors again.
+    // Created with a key file (no backup follows): nothing is confirmed.
+    assert!(s.add_keyfile(pw_only(), None, None, generate_keyfile(), "K2".into()).is_err());
+    // Confirmed: the next change needs the password alone, the one after both factors again.
+    s.confirm_factors(kf_proof(PW, &kf), None, None).unwrap();
     s.add_keyfile(pw_only(), None, None, generate_keyfile(), "K2".into()).unwrap();
+    assert!(s.add_keyfile(pw_only(), None, None, generate_keyfile(), "K3".into()).is_err());
+    // A confirmation is not carried on with the password alone.
+    s.confirm_factors(kf_proof(PW, &kf), None, None).unwrap();
+    assert!(s.confirm_factors(pw_only(), None, None).is_err());
     assert!(s.add_keyfile(pw_only(), None, None, generate_keyfile(), "K3".into()).is_err());
     // A wrong password does not use a confirmation up.
     s.confirm_factors(kf_proof(PW, &kf), None, None).unwrap();
@@ -1266,4 +1273,19 @@ fn confirmed_factors_count_once_and_not_past_locking() {
     // Wrong factors confirm nothing.
     assert!(s.confirm_factors(kf_proof(PW, &generate_keyfile()), None, None).is_err());
     assert!(s.add_keyfile(pw_only(), None, None, generate_keyfile(), "K5".into()).is_err());
+}
+
+#[test]
+fn a_new_suite_with_a_key_takes_its_backup_with_the_password() {
+    let d = Dirs::new("backup-after-create");
+    let s = d.suite();
+    let k = key();
+    s.create(options(PW, None, &[(VaultKind::Pass, "Privat")]), Some(k.clone()), Some(listener()), Some("1234".into()))
+        .unwrap();
+    let pw_only = || super::suite::FactorProof { password: PW.into(), pin: None, keyfile: None };
+    // Right after creating: the backup key with the password alone (the first key is not touched again).
+    s.add_security_key(pw_only(), None, key(), listener(), "1234".into(), "Backup".into()).unwrap();
+    assert_eq!(s.slots().unwrap().iter().filter(|x| x.kind == super::suite::SlotKind::SecurityKey).count(), 2);
+    // Once only.
+    assert!(s.add_keyfile(pw_only(), None, None, generate_keyfile(), "K".into()).is_err());
 }

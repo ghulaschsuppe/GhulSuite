@@ -800,3 +800,40 @@ fn quick_unlock_off_leaves_no_copy() {
     assert!(!dir.join("quick-pin.ghlq").exists());
     assert!(!dir.join("quick-pin.ghlq.bak").exists());
 }
+
+/// A file with a protection this device had before is older, not newer: overwriting it undoes
+/// nothing (offered as "saved elsewhere"). A protection it never had was changed elsewhere.
+#[test]
+fn an_older_protection_there_is_no_newer_one() {
+    let (_da, a, kf, _) = device_with_suite("older-a");
+    let file = save(&a);
+    let db = Dirs::new("older-b");
+    let b = db.suite();
+    open(&b, &file, &kf);
+    b.archive_accept().unwrap();
+    // A changes the password; B saves a newer state with the old protection.
+    a.change_password(kf_proof(PW, &kf), None, None, "pw-neu-7890".into()).unwrap();
+    b.save_entry(vault_id(&b, "Privat"), login("Von B", "u", "2")).unwrap();
+    let from_b = save(&b);
+    assert_eq!(a.archive_target_bytes(from_b).unwrap(), ArchiveTarget::ChangedElsewhere);
+}
+
+/// Two devices reach the same epoch with different changes: the quick unlock of one does not
+/// fit the file of the other and goes.
+#[test]
+fn the_same_epoch_with_another_protection_removes_quick_unlock() {
+    let (_da, a, kf, _) = device_with_suite("epoch-a");
+    let file = save(&a);
+    let db = Dirs::new("epoch-b");
+    let b = db.suite();
+    open(&b, &file, &kf);
+    b.archive_accept().unwrap();
+    a.new_recovery_code(kf_proof(PW, &kf), None, None, "neu".into()).unwrap();
+    a.quick_unlock_enable(PW.into(), "pin".into(), Some("1234".into())).unwrap();
+    b.change_password(kf_proof(PW, &kf), None, None, "pw-neu-7890".into()).unwrap();
+    let from_b = save(&b);
+    a.archive_open_bytes(from_b, "pw-neu-7890".into(), None, None, None, Some(kf.clone())).unwrap();
+    a.archive_accept().unwrap();
+    assert!(!a.quick_unlock_exists("pin".into()), "another password key");
+    assert!(a.archive_device_data_wiped());
+}
