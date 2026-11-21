@@ -56,7 +56,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -1054,6 +1056,14 @@ fun CalSettingsSection(state: AppState) {
         SingleChoiceSegmentedButtonRow {
             listOf(Res.string.cal_lock_min, Res.string.cal_lock_title, Res.string.cal_lock_full).forEachIndexed { i, r ->
                 SegmentedButton(settings.calNotifyDetail == i, { settings.calNotifyDetail = i; state.refreshCalendar() }) { SegLabel(stringResource(r)) }
+            }
+        }
+        // Notifications turned off for the app: reminders would not arrive, and nothing would say so.
+        val allowed = remember(state.revision, AppLaunch.inFront.collectAsState().value) { state.backend.notificationsAllowed() }
+        if (!allowed) {
+            Banner(androidx.compose.material.icons.Icons.Filled.NotificationsOff, stringResource(Res.string.cal_notifications_off))
+            OutlinedButton(onClick = { state.backend.openNotificationSettings() }, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(Res.string.cal_notifications_settings))
             }
         }
         OutlinedButton(onClick = { state.calTestReminder(testText) }, modifier = Modifier.fillMaxWidth()) {

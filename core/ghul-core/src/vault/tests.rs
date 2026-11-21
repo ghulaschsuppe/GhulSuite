@@ -373,7 +373,7 @@ fn end_to_end_with_ctap2_authenticator() {
     let keys = SuiteKeys::create("pw", COST, &mut r).unwrap();
 
     let auth = Authenticator::new(CtapHid::open(key.as_ref(), None).unwrap()).unwrap();
-    let cred = auth.make_credential(RP, "GhulSuite", "1234").unwrap();
+    let cred = auth.make_credential(RP, "GhulSuite", "1234", &[]).unwrap();
     let prf_input = SuiteKeys::new_prf_input(&mut r);
     let out = auth.hmac_secret(RP, &cred.id, &prf_salt(&prf_input), "1234").unwrap();
     let first: [u8; 32] = out.output.as_slice().try_into().unwrap();

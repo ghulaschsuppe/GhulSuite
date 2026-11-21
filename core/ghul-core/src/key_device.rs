@@ -37,7 +37,15 @@ pub(crate) struct KeyOutput {
 
 pub(crate) trait KeyDevice {
     /// A new non-resident credential with `hmac-secret` enabled.
-    fn make_credential(&self, rp_id: &str, rp_name: &str, pin: &str) -> Result<Credential, FidoError>;
+    /// `exclude`: credentials of keys registered already; such a key refuses (no second slot of
+    /// the same key, which would be no backup).
+    fn make_credential(
+        &self,
+        rp_id: &str,
+        rp_name: &str,
+        pin: &str,
+        exclude: &[Vec<u8>],
+    ) -> Result<Credential, FidoError>;
     /// Evaluates `hmac-secret` with whichever of the credentials is on the key.
     fn hmac_secret_any(&self, requests: &[CredRequest<'_>], pin: &str) -> Result<KeyOutput, FidoError>;
     /// Platform API only: switches between passing the hashed salt and the PRF input, for the
@@ -48,8 +56,14 @@ pub(crate) trait KeyDevice {
 }
 
 impl KeyDevice for Authenticator<'_> {
-    fn make_credential(&self, rp_id: &str, rp_name: &str, pin: &str) -> Result<Credential, FidoError> {
-        Authenticator::make_credential(self, rp_id, rp_name, pin)
+    fn make_credential(
+        &self,
+        rp_id: &str,
+        rp_name: &str,
+        pin: &str,
+        exclude: &[Vec<u8>],
+    ) -> Result<Credential, FidoError> {
+        Authenticator::make_credential(self, rp_id, rp_name, pin, exclude)
     }
 
     fn hmac_secret_any(&self, requests: &[CredRequest<'_>], pin: &str) -> Result<KeyOutput, FidoError> {
@@ -136,7 +150,7 @@ mod imp {
     }
 
     impl KeyDevice for WebAuthn {
-        fn make_credential(&self, _: &str, _: &str, _: &str) -> Result<Credential, FidoError> {
+        fn make_credential(&self, _: &str, _: &str, _: &str, _: &[Vec<u8>]) -> Result<Credential, FidoError> {
             Err(FidoError::Transport { msg: "not supported on this system".into() })
         }
         fn hmac_secret_any(&self, _: &[CredRequest<'_>], _: &str) -> Result<KeyOutput, FidoError> {
@@ -209,9 +223,8 @@ mod imp {
             NTE_USER_CANCELLED => FidoError::NotConfirmed,
             NTE_NOT_SUPPORTED => FidoError::HmacSecretUnsupported,
             NTE_DEVICE_NOT_FOUND => FidoError::Timeout,
-            NTE_EXISTS | NTE_TOKEN_KEYSET_STORAGE_FULL => {
-                FidoError::Protocol { msg: format!("key refused (0x{hr:08x})") }
-            }
+            NTE_EXISTS => FidoError::CredentialExcluded,
+            NTE_TOKEN_KEYSET_STORAGE_FULL => FidoError::Protocol { msg: format!("key refused (0x{hr:08x})") },
             _ => FidoError::Transport { msg: format!("Windows WebAuthn error 0x{:08x}", hr as u32) },
         }
     }
@@ -225,7 +238,13 @@ mod imp {
     }
 
     impl KeyDevice for WebAuthn {
-        fn make_credential(&self, rp_id: &str, rp_name: &str, _pin: &str) -> Result<Credential, FidoError> {
+        fn make_credential(
+            &self,
+            rp_id: &str,
+            rp_name: &str,
+            _pin: &str,
+            exclude: &[Vec<u8>],
+        ) -> Result<Credential, FidoError> {
             let rp_id_w = wide(rp_id);
             let rp_name_w = wide(rp_name);
             let rp = WEBAUTHN_RP_ENTITY_INFORMATION {
@@ -296,6 +315,19 @@ mod imp {
             options.bRequireResidentKey = 0;
             options.dwUserVerificationRequirement = WEBAUTHN_USER_VERIFICATION_REQUIREMENT_REQUIRED;
             options.dwAttestationConveyancePreference = WEBAUTHN_ATTESTATION_CONVEYANCE_PREFERENCE_NONE;
+            // Keys registered already refuse (Windows says so in its dialog).
+            let mut excluded_ids: Vec<Vec<u8>> = exclude.to_vec();
+            let mut excluded: Vec<WEBAUTHN_CREDENTIAL> = excluded_ids
+                .iter_mut()
+                .map(|id| WEBAUTHN_CREDENTIAL {
+                    dwVersion: WEBAUTHN_CREDENTIAL_CURRENT_VERSION,
+                    cbId: id.len() as u32,
+                    pbId: id.as_mut_ptr(),
+                    pwszCredentialType: WEBAUTHN_CREDENTIAL_TYPE_PUBLIC_KEY,
+                })
+                .collect();
+            options.CredentialList =
+                WEBAUTHN_CREDENTIALS { cCredentials: excluded.len() as u32, pCredentials: excluded.as_mut_ptr() };
 
             let mut att: *mut WEBAUTHN_CREDENTIAL_ATTESTATION = null_mut();
             let hr = unsafe {

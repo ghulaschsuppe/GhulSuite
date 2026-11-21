@@ -16,6 +16,7 @@
 pub(crate) mod blob;
 mod index;
 mod vaults;
+pub(crate) use vaults::Entries;
 
 use std::collections::HashSet;
 use std::fs;
@@ -431,8 +432,10 @@ impl GhulSuite {
                 change(&mut c.payload.entries, now_ms(), have).and_then(|t| self.save_vault(o, vault_id).map(|_| t));
             let mut dropped = before;
             if out.is_err() {
-                // Back to what is on the disk.
+                // Back to what was before, also on the disk: the vault may have been written and
+                // only the suite failed (then its new index names content that goes again).
                 std::mem::swap(&mut o.docs_mut(vault_id)?.payload.entries, &mut dropped);
+                let _ = self.save_vault(o, vault_id);
             }
             dropped.iter_mut().for_each(zeroize::Zeroize::zeroize);
             out
@@ -463,8 +466,11 @@ impl GhulSuite {
     /// folders of vaults that are gone. A vault that cannot be opened (damaged, another
     /// protection) keeps its folder.
     pub(super) fn docs_tidy(&self, o: &Open) {
-        // A copy into a `.ghlzip` still runs (begun before a lock): what it copies stays.
-        if self.content_copies.lock().unwrap_or_else(|e| e.into_inner()).running > 0 {
+        // A copy into a `.ghlzip` still runs (begun before a lock): what it copies stays. A
+        // document being added: its content file is not in the index yet.
+        if self.content_copies.lock().unwrap_or_else(|e| e.into_inner()).running > 0
+            || self.docs_adds.load(std::sync::atomic::Ordering::SeqCst) > 0
+        {
             return;
         }
         let Ok(root) = self.content_root() else { return };
@@ -774,6 +780,8 @@ impl GhulSuite {
             };
             Ok((self.docs_dir(&vault_id)?, have.free(limit), (used, full, suite)))
         })?;
+        // Tidying up (after a lock and quick unlock meanwhile) leaves this content file alone.
+        let _adding = AddRunning::new(&self.docs_adds);
         let content_id = new_id();
         let mut key = Zeroizing::new([0u8; 32]);
         OsRng.fill_bytes(key.as_mut());
@@ -800,9 +808,8 @@ impl GhulSuite {
             entries.push(e);
             item_of(&vault_id, entries, &id)
         });
-        if r.is_err() {
-            let _ = fs::remove_file(dir.join(blob::file_name(&content_id)));
-        }
+        // Not added: the content file stays until the next unlock tidies it up (`docs_tidy`). An
+        // index on the disk that could not be written back may still name it.
         r
     }
 
@@ -989,5 +996,21 @@ pub(crate) mod fuzz {
                 let _ = tree.free_name(index::parent(e), &index::name(e), Some(&id));
             }
         }
+    }
+}
+
+/// Counts a document being added while it lives (see `docs_tidy`).
+struct AddRunning<'a>(&'a std::sync::atomic::AtomicUsize);
+
+impl<'a> AddRunning<'a> {
+    fn new(count: &'a std::sync::atomic::AtomicUsize) -> Self {
+        count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        AddRunning(count)
+    }
+}
+
+impl Drop for AddRunning<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
     }
 }

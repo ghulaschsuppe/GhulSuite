@@ -340,13 +340,28 @@ pub fn preview_import(data: Vec<u8>, file_name: String) -> Result<ImportPreview>
     })
 }
 
-fn dedup_key(entry_type: &str, fields: &BTreeMap<String, Field>) -> String {
-    let get = |k: &str| match fields.get(k) {
-        Some(Field::Text(s)) | Some(Field::Secret(s)) | Some(Field::Url(s)) => s.trim().to_lowercase(),
-        Some(Field::List(l)) => l.first().map(|x| x.trim().to_lowercase()).unwrap_or_default(),
-        _ => String::new(),
-    };
-    format!("{entry_type}\u{1f}{}\u{1f}{}\u{1f}{}\u{1f}{}", get("title"), get("username"), get("urls"), get("password"))
+/// What makes two imported entries the same: every field (two cards "Visa" with different
+/// numbers, or two notes without a title, are two entries). Title, user name and addresses
+/// ignore case and spaces around them; everything else must match exactly.
+pub(super) fn dedup_key(entry_type: &str, fields: &BTreeMap<String, Field>) -> String {
+    let mut key = entry_type.to_owned();
+    for (name, f) in fields {
+        let loose = matches!(name.as_str(), "title" | "username" | "urls");
+        let value = match f {
+            Field::Text(s) | Field::Secret(s) | Field::Url(s) if loose => s.trim().to_lowercase(),
+            Field::List(l) if loose => l.iter().map(|x| x.trim().to_lowercase()).collect::<Vec<_>>().join("\u{1e}"),
+            Field::Text(s) | Field::Secret(s) | Field::Url(s) => s.clone(),
+            other => format!("{other:?}"),
+        };
+        if value.is_empty() {
+            continue;
+        }
+        key.push('\u{1f}');
+        key.push_str(name);
+        key.push('\u{1d}');
+        key.push_str(&value);
+    }
+    key
 }
 
 // --- files and names --------------------------------------------------------------------------
@@ -569,6 +584,15 @@ impl Open {
     }
 }
 
+/// Proof of both factors before a change of the protection: the master password plus a key
+/// file or the PIN of a security key (touched through the transport given with the call).
+#[derive(uniffi::Record, Clone)]
+pub struct FactorProof {
+    pub password: String,
+    pub pin: Option<String>,
+    pub keyfile: Option<Vec<u8>>,
+}
+
 #[derive(uniffi::Object)]
 pub struct GhulSuite {
     pub(super) storage: Arc<dyn VaultStorage>,
@@ -599,6 +623,11 @@ pub struct GhulSuite {
     /// Marking and clearing the unsaved mark one at a time (a change while a save is noted is
     /// never left unmarked).
     pub(super) unsaved_lock: Mutex<()>,
+    /// Documents being added right now (their content files are not in an index yet).
+    pub(super) docs_adds: std::sync::atomic::AtomicUsize,
+    /// Both factors were shown a moment ago (`confirm_factors`, or the suite was just created):
+    /// the next change of the protection needs the password alone, once (see `require_factors`).
+    pub(super) factors_confirmed: Mutex<Option<std::time::Instant>>,
 }
 
 /// How containers of the folder are opened.
@@ -630,8 +659,9 @@ pub(super) fn with_authenticator<T>(
 type NewKey = (Vec<u8>, [u8; 32], Zeroizing<[u8; 32]>);
 
 /// Registers a new credential and evaluates hmac-secret once (two touches).
-pub(super) fn register_key(auth: &dyn KeyDevice, pin: &str) -> Result<NewKey> {
-    let cred = auth.make_credential(RP_ID, RP_NAME, pin)?;
+/// `exclude`: the credentials of the keys a suite has already (the same key twice is no backup).
+pub(super) fn register_key(auth: &dyn KeyDevice, pin: &str, exclude: &[Vec<u8>]) -> Result<NewKey> {
+    let cred = auth.make_credential(RP_ID, RP_NAME, pin, exclude)?;
     if !cred.hmac_secret {
         return Err(GhulError::HmacSecretUnsupported);
     }
@@ -855,7 +885,7 @@ impl GhulSuite {
 
     /// The suite file, or, if it is missing, any readable vault file of the folder. All
     /// containers carry the same slots, so each of them can be used to unlock.
-    fn anchor(&self) -> Result<LockedContainer> {
+    pub(super) fn anchor(&self) -> Result<LockedContainer> {
         if let Some(l) = self.read_locked(SUITE_FILE)? {
             return Ok(l);
         }
@@ -936,7 +966,14 @@ impl GhulSuite {
             let Some(kind) = VaultKind::from_container(locked.kind()) else { continue };
             let opened = match opener {
                 Opener::Factors { pk, s, suite_id, kdf } => {
-                    if &locked.header().suite_id != suite_id || &locked.header().kdf != *kdf {
+                    if &locked.header().suite_id != suite_id {
+                        continue;
+                    }
+                    // A vault of this suite with another protection (a change of the password
+                    // that was saved halfway): unavailable, not gone. Saving the suite file is
+                    // refused then, and the recovery code still opens it.
+                    if &locked.header().kdf != *kdf {
+                        vaults.push(damaged(&file));
                         continue;
                     }
                     locked.unlock(pk, s).ok()
@@ -1106,9 +1143,10 @@ impl GhulSuite {
     /// Notes a change of the protection: the epoch grows in the suite, and this device knows from
     /// now on that files with an older protection are not to be opened.
     pub(super) fn protection_changed(&self, o: &mut Open) -> Result<()> {
+        // The suite file on the disk still has the protection before (it is saved after this).
+        self.note_protection_left(&o.suite.header().suite_id)?;
         o.bump_epoch()?;
-        self.note_epoch(&o.suite.header().suite_id, o.epoch());
-        Ok(())
+        self.note_epoch(&o.suite.header().suite_id, o.epoch())
     }
 
     /// Copies a new factor slot (created in the suite) into every vault and saves all.
@@ -1143,6 +1181,8 @@ impl GhulSuite {
             content_copies: Mutex::new(Default::default()),
             built: Mutex::new(None),
             unsaved_lock: Mutex::new(()),
+            docs_adds: std::sync::atomic::AtomicUsize::new(0),
+            factors_confirmed: Mutex::new(None),
         })
     }
 
@@ -1193,7 +1233,8 @@ impl GhulSuite {
         let mut factor: Vec<(Slot, &str)> = Vec::new();
         match (&transport, &pin) {
             (Some(t), Some(pin)) => {
-                let (cred_id, prf_input, output) = with_authenticator(t, listener.as_ref(), |a| register_key(a, pin))?;
+                let (cred_id, prf_input, output) =
+                    with_authenticator(t, listener.as_ref(), |a| register_key(a, pin, &[]))?;
                 let slot = keys.fido2_slot(
                     &Fido2Registration { rp_id: RP_ID, credential_id: &cred_id, prf_input, hmac_output: &output },
                     &mut OsRng,
@@ -1210,6 +1251,8 @@ impl GhulSuite {
             return Err(GhulError::InvalidInput { msg: "a security key or key file is required".into() });
         }
         let now = now_ms();
+        // A key alone still needs its backup (added next, see `add_security_key`).
+        let backup_follows = factor.len() == 1 && matches!(factor[0].0, Slot::Fido2(_));
         let slots: Vec<Slot> = factor.iter().map(|(s, _)| s.clone()).collect();
         let mut suite = keys.create_container(ContainerKind::Suite, slots, &mut OsRng)?;
         for (slot, label) in &factor {
@@ -1227,6 +1270,9 @@ impl GhulSuite {
         }
         self.save_all(&mut open)?;
         self.set_open(open);
+        // Both factors were just used: the backup of a key may follow with the password alone.
+        *self.factors_confirmed.lock().unwrap_or_else(|e| e.into_inner()) =
+            backup_follows.then(std::time::Instant::now);
         Ok(SetupResult { recovery_code: Some(code.to_display().to_string()) })
     }
 
@@ -1347,6 +1393,7 @@ impl GhulSuite {
     /// thread: it covers a call ending in the same moment.
     pub fn lock(&self) {
         self.lock_pending.store(true, Ordering::SeqCst);
+        *self.factors_confirmed.lock().unwrap_or_else(|e| e.into_inner()) = None;
         // A checked suite file holds its keys: not past locking either.
         self.set_pending(None);
         self.drop_open(false);
@@ -1361,8 +1408,9 @@ impl GhulSuite {
     // --- quick unlock ------------------------------------------------------------------------
 
     /// Enables quick unlock under `name` (`bio` or `pin`); returns the quick key for the platform to protect.
-    pub fn quick_unlock_enable(&self, name: String, pin: Option<String>) -> Result<Vec<u8>> {
+    pub fn quick_unlock_enable(&self, password: String, name: String, pin: Option<String>) -> Result<Vec<u8>> {
         let pin = pin.map(Zeroizing::new);
+        self.require_password(&Zeroizing::new(password))?;
         self.with_open(|o| {
             // The device's quick unlock belongs to the own suite.
             super::single::refuse_single(o)?;
@@ -1415,8 +1463,11 @@ impl GhulSuite {
 
     pub fn quick_unlock_disable(&self, name: String) -> Result<()> {
         let p = super::quick::path(&self.local_dir, &name)?;
-        if p.exists() {
-            super::quick::wipe(&p)?;
+        // Also the copies of an earlier write (`.bak`, `.tmp`): they hold the same keys.
+        for f in [p.clone(), p.with_extension("ghlq.bak"), p.with_extension("ghlq.tmp")] {
+            if f.exists() {
+                super::quick::wipe(&f)?;
+            }
         }
         let _ = std::fs::remove_file(self.local_dir.join(format!("quick-{name}.stamp")));
         Ok(())
@@ -1946,17 +1997,31 @@ impl GhulSuite {
 
     /// Registers a security key for all files (two touches). Nothing else changes: other keys,
     /// key files and the recovery code stay valid.
+    /// `proof`: both factors of now; a key of now is touched through `proof_transport` first (in
+    /// the app the same USB or NFC connection: one key after the other), then the new one.
+    #[allow(clippy::too_many_arguments)]
     pub fn add_security_key(
         &self,
+        proof: FactorProof,
+        proof_transport: Option<Arc<dyn HidTransport>>,
         transport: Arc<dyn HidTransport>,
         listener: Arc<dyn FidoListener>,
         pin: String,
         label: String,
     ) -> Result<()> {
         let pin = Zeroizing::new(pin);
-        // Refused before the key is touched.
-        self.with_open(|o| super::single::refuse_single(o))?;
-        let (cred_id, prf_input, output) = with_authenticator(&transport, Some(&listener), |a| register_key(a, &pin))?;
+        // Refused before the new key is touched.
+        self.require_factors(&proof, proof_transport.as_ref(), Some(&listener))?;
+        // A key of this suite refuses (registered already: it would be no backup).
+        let known: Vec<Vec<u8>> = self.with_open(|o| {
+            Ok(o.suite
+                .slots()
+                .iter()
+                .filter_map(|s| if let Slot::Fido2(f) = s { Some(f.credential_id.clone()) } else { None })
+                .collect())
+        })?;
+        let (cred_id, prf_input, output) =
+            with_authenticator(&transport, Some(&listener), |a| register_key(a, &pin, &known))?;
         self.with_open(|o| {
             super::single::refuse_single(o)?;
             let reg = Fido2Registration { rp_id: RP_ID, credential_id: &cred_id, prf_input, hmac_output: &output };
@@ -1967,8 +2032,16 @@ impl GhulSuite {
     }
 
     /// Adds a key file (from `generate_keyfile`) as second factor for all files.
-    pub fn add_keyfile(&self, keyfile: Vec<u8>, label: String) -> Result<()> {
+    pub fn add_keyfile(
+        &self,
+        proof: FactorProof,
+        transport: Option<Arc<dyn HidTransport>>,
+        listener: Option<Arc<dyn FidoListener>>,
+        keyfile: Vec<u8>,
+        label: String,
+    ) -> Result<()> {
         let keyfile = Keyfile::parse(&Zeroizing::new(keyfile))?;
+        self.require_factors(&proof, transport.as_ref(), listener.as_ref())?;
         self.with_open(|o| {
             super::single::refuse_single(o)?;
             let id = keyfile.id();
@@ -1982,7 +2055,14 @@ impl GhulSuite {
     }
 
     /// Creates a new recovery code for all files; the previous code stops working.
-    pub fn new_recovery_code(&self, label: String) -> Result<String> {
+    pub fn new_recovery_code(
+        &self,
+        proof: FactorProof,
+        transport: Option<Arc<dyn HidTransport>>,
+        listener: Option<Arc<dyn FidoListener>>,
+        label: String,
+    ) -> Result<String> {
+        self.require_factors(&proof, transport.as_ref(), listener.as_ref())?;
         self.with_open(|o| {
             super::single::refuse_single(o)?;
             let code = RecoveryCode::generate(&mut OsRng);
@@ -2000,9 +2080,16 @@ impl GhulSuite {
 
     /// Removes a security key or key file from all files. The last one cannot be removed (a
     /// second factor is always required). Recovery codes are replaced, not removed.
-    pub fn remove_slot(&self, slot_id: Vec<u8>) -> Result<()> {
+    pub fn remove_slot(
+        &self,
+        proof: FactorProof,
+        transport: Option<Arc<dyn HidTransport>>,
+        listener: Option<Arc<dyn FidoListener>>,
+        slot_id: Vec<u8>,
+    ) -> Result<()> {
         let id: [u8; 16] =
             slot_id.as_slice().try_into().map_err(|_| GhulError::InvalidInput { msg: "invalid slot id".into() })?;
+        self.require_factors(&proof, transport.as_ref(), listener.as_ref())?;
         self.with_open(|o| {
             super::single::refuse_single(o)?;
             let slot = o.suite.slots().iter().find(|s| *s.id() == id).cloned().ok_or(GhulError::NotFound)?;
@@ -2011,6 +2098,11 @@ impl GhulSuite {
             }
             if o.suite.slots().iter().filter(|s| s.provides_factor()).count() <= 1 {
                 return Err(GhulError::LastFactor);
+            }
+            // A security key keeps a backup: a second key or a key file.
+            let left: Vec<&Slot> = o.suite.slots().iter().filter(|s| s.provides_factor() && *s.id() != id).collect();
+            if left.len() < 2 && left.iter().any(|s| matches!(s, Slot::Fido2(_))) {
+                return Err(GhulError::BackupFactorRequired);
             }
             for (c, _) in o.containers_mut() {
                 match c.remove_slot(&id) {
@@ -2028,9 +2120,18 @@ impl GhulSuite {
         })
     }
 
-    /// Changes the master password (new salt) for all files. The current password must be given.
-    pub fn change_password(&self, current: String, new_password: String) -> Result<()> {
-        let current = Zeroizing::new(current);
+    /// Changes the master password (new salt) for all files. Both factors of now must be given
+    /// (`proof`: the current password plus a key or key file): who knows the password and finds
+    /// the app unlocked cannot lock the owner out.
+    pub fn change_password(
+        &self,
+        proof: FactorProof,
+        transport: Option<Arc<dyn HidTransport>>,
+        listener: Option<Arc<dyn FidoListener>>,
+        new_password: String,
+    ) -> Result<()> {
+        self.require_factors(&proof, transport.as_ref(), listener.as_ref())?;
+        let current = Zeroizing::new(proof.password.clone());
         let new_password = Zeroizing::new(new_password);
         self.with_open(|o| {
             super::single::refuse_single(o)?;
@@ -2055,6 +2156,22 @@ impl GhulSuite {
         })
     }
 
+    /// Both factors of now, shown before the next change of the protection (a security key is
+    /// touched here; the change itself then needs the password alone, once, within two minutes).
+    /// For a new key on a phone: the key of now goes out before the new one comes in.
+    pub fn confirm_factors(
+        &self,
+        proof: FactorProof,
+        transport: Option<Arc<dyn HidTransport>>,
+        listener: Option<Arc<dyn FidoListener>>,
+    ) -> Result<()> {
+        // Always both factors: a confirmation is not carried on by the password alone.
+        *self.factors_confirmed.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        self.require_factors(&proof, transport.as_ref(), listener.as_ref())?;
+        *self.factors_confirmed.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
+        Ok(())
+    }
+
     pub fn verify_password(&self, password: String) -> Result<bool> {
         let password = Zeroizing::new(password);
         self.with_open(|o| {
@@ -2076,4 +2193,42 @@ pub struct ContainerInfo {
 pub fn inspect_container(data: Vec<u8>) -> Result<ContainerInfo> {
     let l = LockedContainer::parse(&data)?;
     Ok(ContainerInfo { kind: l.kind().name().to_owned(), protection: protection_of(&l) })
+}
+
+impl GhulSuite {
+    /// Both factors, as for unlocking (password plus security key or key file), before a change
+    /// of the protection: who finds the app unlocked must not give himself lasting access (a
+    /// recovery code, a key, a key file) nor lock the owner out. Checked against the suite file
+    /// of the working copy, without holding the open suite.
+    pub(super) fn require_factors(
+        &self,
+        proof: &FactorProof,
+        transport: Option<&Arc<dyn HidTransport>>,
+        listener: Option<&Arc<dyn FidoListener>>,
+    ) -> Result<()> {
+        self.with_open(|o| super::single::refuse_single(o))?;
+        // Confirmed a moment ago (`confirm_factors`): the password alone, once.
+        if proof.pin.is_none() && proof.keyfile.is_none() {
+            let confirmed = self.factors_confirmed.lock().unwrap_or_else(|e| e.into_inner()).take();
+            if confirmed.is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(120)) {
+                return self.require_password(&Zeroizing::new(proof.password.clone()));
+            }
+        }
+        let locked = self.anchor()?;
+        let keyfile = parse_keyfile(proof.keyfile.clone())?;
+        let pin = proof.pin.clone().map(Zeroizing::new);
+        let s = second_factor(&locked, transport, listener, pin.as_deref().map(|p| p.as_str()), keyfile.as_ref())?;
+        let pk = PasswordKey::derive(&Zeroizing::new(proof.password.clone()), &locked.header().kdf)?;
+        locked.unlock(&pk, &s).map(|_| ())?;
+        Ok(())
+    }
+
+    /// The master password, before a change of the protection or of quick unlock: who finds the
+    /// app unlocked must not give himself lasting access (a recovery code, a key, an app PIN)
+    /// nor lock the owner out. Derived without holding the open suite.
+    pub(super) fn require_password(&self, password: &str) -> Result<()> {
+        let kdf = self.with_open(|o| Ok(o.kdf()))?;
+        let pk = PasswordKey::derive(password, &kdf)?;
+        self.with_open(|o| if o.suite.verify_password_key(&pk) { Ok(()) } else { Err(GhulError::WrongPassword) })
+    }
 }

@@ -21,13 +21,22 @@ import kotlin.test.assertTrue
  * work is posted, not run at once; the UI tests use Unconfined, where these mistakes do not show).
  */
 class AppStateRunTest {
+    /** Scopes of the states made here, ended after each test (they listen to AppLaunch, one for all tests). */
+    private val scopes = java.util.Collections.synchronizedList(mutableListOf<CoroutineScope>())
+
+    @kotlin.test.AfterTest
+    fun endScopes() {
+        scopes.forEach { it.coroutineContext[kotlinx.coroutines.Job]?.cancel() }
+        scopes.clear()
+    }
+
     private fun state(prepare: ScreenshotTest.Fake.() -> Unit = {}): AppState {
         val ui = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
         // Texts AppState looks up in the background need a display, which the tests do not have:
         // only that failure is let through (as in the other UI tests). Without this handler it
         // reached the next test class and failed it there.
         val headlessOnly = kotlinx.coroutines.CoroutineExceptionHandler { _, e -> if (e !is java.awt.HeadlessException) throw e }
-        return AppState(ScreenshotTest.Fake(exists = true, unlocked = true).apply(prepare), CoroutineScope(SupervisorJob() + ui + headlessOnly))
+        return AppState(ScreenshotTest.Fake(exists = true, unlocked = true).apply(prepare), CoroutineScope(SupervisorJob() + ui + headlessOnly).also { scopes += it })
     }
 
     /** Save tapped twice in a row: the action runs once (it ran twice: busy was set too late). */

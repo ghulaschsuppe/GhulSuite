@@ -87,7 +87,7 @@ fun AppState.checkAndSave(target: SuiteFileRef, force: Boolean = false, created:
             saveStep = SaveStep.Failed(str(Res.string.file_unreachable), target)
             return@launch
         }
-        if (info != null && (info.target == ArchiveTargetUi.CHANGED_ELSEWHERE || info.target == ArchiveTargetUi.OTHER_SUITE)) {
+        if (info != null && info.target in setOf(ArchiveTargetUi.CHANGED_ELSEWHERE, ArchiveTargetUi.OTHER_SUITE, ArchiveTargetUi.OTHER_PROTECTION)) {
             saveStep = SaveStep.Conflict(target, info, created)
             return@launch
         }
@@ -213,7 +213,15 @@ fun SaveSuiteDialog(state: AppState) {
                 }
             }
             is SaveStep.Conflict -> {
-                Text(stringResource(if (step.info.target == ArchiveTargetUi.OTHER_SUITE) Res.string.save_conflict_other else Res.string.save_conflict_changed))
+                Text(
+                    stringResource(
+                        when (step.info.target) {
+                            ArchiveTargetUi.OTHER_SUITE -> Res.string.save_conflict_other
+                            ArchiveTargetUi.OTHER_PROTECTION -> Res.string.save_conflict_protection
+                            else -> Res.string.save_conflict_changed
+                        },
+                    ),
+                )
                 if (step.info.device.isNotBlank() && step.info.time > 0) {
                     Hint(stringResource(Res.string.file_saved_on, formatDateTime(step.info.time), step.info.device))
                 }
@@ -222,11 +230,14 @@ fun SaveSuiteDialog(state: AppState) {
                         Text(stringResource(Res.string.save_keep_mine))
                     }
                 }
-                androidx.compose.runtime.CompositionLocalProvider(LocalButtonLook provides ButtonLook.DANGER) {
-                    TextButton(
-                        onClick = { state.checkAndSave(step.target, force = true, created = step.created) },
-                        modifier = Modifier.testTag("save-overwrite"),
-                    ) { Text(stringResource(Res.string.file_overwrite)) }
+                // A newer protection there is not overwritten from here: that would undo it.
+                if (step.info.target != ArchiveTargetUi.OTHER_PROTECTION) {
+                    androidx.compose.runtime.CompositionLocalProvider(LocalButtonLook provides ButtonLook.DANGER) {
+                        TextButton(
+                            onClick = { state.checkAndSave(step.target, force = true, created = step.created) },
+                            modifier = Modifier.testTag("save-overwrite"),
+                        ) { Text(stringResource(Res.string.file_overwrite)) }
+                    }
                 }
                 OutlinedButton(onClick = { state.closeSaveDialog() }, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(Res.string.a_cancel))

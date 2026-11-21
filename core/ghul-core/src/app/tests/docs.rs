@@ -500,8 +500,8 @@ fn a_change_of_the_protection_keeps_every_document_and_renews_the_index_key() {
         .map(|f| (f.clone(), std::fs::read(docs_dir(&d, &v).join(f)).unwrap()))
         .collect();
     let old_key = index_key(&d, &v, PW, &kf);
-    s.change_password(PW.into(), "neu-654321".into()).unwrap();
-    let code = s.new_recovery_code("Blatt".into()).unwrap();
+    s.change_password(super::kf_proof(PW, &kf), None, None, "neu-654321".into()).unwrap();
+    let code = s.new_recovery_code(super::kf_proof("neu-654321", &kf), None, None, "Blatt".into()).unwrap();
     assert_eq!(read(&s, &v, &a.id).unwrap(), content(SECTION + 1, 1));
     assert_eq!(read(&s, &v, &b.id).unwrap(), content(10, 2));
     // The content files are untouched (their keys are in the index), the index key is new.
@@ -1288,7 +1288,7 @@ fn docs_vaults(s: &GhulSuite) -> Vec<String> {
 fn deleting_the_working_copy_leaves_nothing_of_the_suite() {
     let (d, s, kf, _, v) = docs_suite("delete-working-copy");
     let x = add(&s, &v, None, "x.pdf", &content(300, 1));
-    s.quick_unlock_enable("pin".into(), Some("123456".into())).unwrap();
+    s.quick_unlock_enable(PW.into(), "pin".into(), Some("123456".into())).unwrap();
     let file = save(&s);
     add(&s, &v, None, "unsaved.pdf", b"u");
     assert!(s.archive_unsaved());
@@ -1480,4 +1480,29 @@ fn a_suite_file_with_four_docs_vaults_is_refused() {
         r.map(|_| ())
     );
     assert!(!b.exists().unwrap());
+}
+
+/// A document whose add failed after its vault file was written (the suite file failed): the
+/// index on the disk is written back, the document is not there and nothing is damaged; the
+/// suite file can still be saved.
+#[test]
+fn a_failed_add_leaves_no_document_without_content() {
+    let (d, s, kf, _, v) = docs_suite("docs-add-fail");
+    add(&s, &v, None, "a.pdf", b"a");
+    s.lock();
+    s.finish_lock();
+    let flaky =
+        Arc::new(super::archive::FailOnce { inner: d.storage(), armed: std::sync::atomic::AtomicBool::new(false) });
+    let t = GhulSuite::new(flaky.clone(), d.local());
+    t.unlock(PW.into(), None, None, None, Some(kf.clone())).unwrap();
+    flaky.armed.store(true, std::sync::atomic::Ordering::SeqCst);
+    assert!(t
+        .docs_add_file(v.clone(), None, "b.pdf".into(), "application/pdf".into(), source(b"b".to_vec()), None)
+        .is_err());
+    t.lock();
+    t.finish_lock();
+    t.unlock(PW.into(), None, None, None, Some(kf)).unwrap();
+    assert_eq!(names(&t.docs_list(v.clone(), None).unwrap()), vec!["a.pdf"]);
+    assert_eq!(content_files(&d, &v).len(), 1, "the content of the failed add is tidied up");
+    assert!(t.archive_build_bytes("Test".into()).is_ok());
 }

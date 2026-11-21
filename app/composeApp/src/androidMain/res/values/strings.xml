@@ -8,7 +8,7 @@
     <string name="notif_text_no_shake">Tap to open. “Lock” locks immediately.</string>
     <string name="notif_lock">Lock</string>
     <string name="bio_title">Unlock GhulSuite</string>
-    <string name="bio_subtitle">Confirm with your fingerprint</string>
+    <string name="bio_subtitle">Confirm with biometrics</string>
     <string name="bio_cancel">Cancel</string>
     <string name="cal_channel">Event reminders</string>
     <string name="cal_channel_silent">Event reminders (silent)</string>

@@ -46,6 +46,11 @@ jobs:
       # What other apps can reach and which permissions the app asks for: only as listed.
       - name: Android-Manifest prüfen (von außen erreichbare Komponenten, Berechtigungen)
         run: python3 tools/check-android-manifest.py
+      # The texts the emulator flows look for are texts of the app (before the emulator runs).
+      - name: Maestro-Abläufe gegen die App-Texte prüfen
+        run: |
+          .venv/bin/pip install -q pyyaml
+          .venv/bin/python tools/check-maestro.py
 
   audit:
     name: Abhängigkeiten auf bekannte Sicherheitslücken prüfen
@@ -411,7 +416,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          id=$(gh run list -R "$GITHUB_REPOSITORY" -w android.yml -b dev -s success -L 1 --json databaseId -q '.[0].databaseId')
+          id=$(gh run list -R "$GITHUB_REPOSITORY" -w android.yml -e push -b dev -s success -L 1 --json databaseId -q '.[0].databaseId')
           [ -n "$id" ] || { echo "Kein grüner Lauf auf dev zum Vergleichen."; exit 0; }
           gh run download "$id" -R "$GITHUB_REPOSITORY" -n screenshots -D "$RUNNER_TEMP/before"
           pip install --quiet pillow

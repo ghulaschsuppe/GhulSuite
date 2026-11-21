@@ -19,6 +19,9 @@ name: App PIN, lock and unlock
 - inputText: "246813"
 - tapOn: "Repeat app PIN"
 - inputText: "246813"
+# Switching on the app PIN needs the master password (who finds the app unlocked cannot).
+- tapOn: "Master password"
+- inputText: "Ghul-Test-Passwort-2026!"
 - hideKeyboard
 - tapOn: "Save"
 - takeScreenshot: 04-pin-on

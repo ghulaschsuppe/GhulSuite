@@ -32,7 +32,7 @@ use super::suite::{
 };
 use super::zipstream::{zip_len, EntryInfo, ZipError, ZipReader, ZipWriter, CHUNK};
 use crate::vault::format::MAX_FILE_LEN;
-use crate::vault::{ContainerKind, FactorSecret, LockedContainer, PasswordKey, RecoveryCode, UnlockedContainer};
+use crate::vault::{ContainerKind, FactorSecret, LockedContainer, PasswordKey, RecoveryCode, Slot, UnlockedContainer};
 use crate::{FidoListener, HidTransport};
 
 /// Name of the header inside a `.ghlzip`.
@@ -132,6 +132,44 @@ struct Seen {
     /// for one that was opened; 0 if not known).
     #[serde(default)]
     saved: i64,
+    /// The protections this device had for this suite (see [`protection_print`]), the latest
+    /// last: a file with one of them is older than the protection of now, not newer.
+    #[serde(default)]
+    protections: Vec<String>,
+}
+
+/// How many earlier protections a device keeps in mind.
+const MAX_PROTECTIONS: usize = 64;
+
+/// The protection of a container as its plaintext header shows it: the KDF (salt) and the
+/// factor slots in full (with the wrapping of the factor secret: a removed key gives the other
+/// slots a new factor secret under the same slot ids). The recovery slot is new in every
+/// container and holds neither the password key nor the factor secret. Two files with the same
+/// print open with the same password key and factor secret; the factor slots are the same bytes
+/// in the suite file, the vaults and the header of a `.ghlzip`.
+pub(super) fn protection_print(h: &crate::vault::format::Header) -> String {
+    let mut slots: Vec<&Slot> = h.slots.iter().filter(|s| !matches!(s, Slot::Recovery(_))).collect();
+    slots.sort_by_key(|s| *s.id());
+    let mut d = Sha256::new();
+    d.update(h.kdf.memory_kib.to_le_bytes());
+    d.update(h.kdf.iterations.to_le_bytes());
+    d.update(h.kdf.parallelism.to_le_bytes());
+    d.update(h.kdf.salt);
+    for s in slots {
+        let mut bytes = Vec::new();
+        s.encode(&mut bytes);
+        d.update((bytes.len() as u64).to_le_bytes());
+        d.update(&bytes);
+    }
+    crate::kdf::hex(&d.finalize()[..16])
+}
+
+fn note_protection(e: &mut Seen, print: String) {
+    e.protections.retain(|p| *p != print);
+    e.protections.push(print);
+    if e.protections.len() > MAX_PROTECTIONS {
+        e.protections.remove(0);
+    }
 }
 
 /// What [`GhulSuite::archive_build`] built, kept until [`GhulSuite::archive_saved`] notes it:
@@ -193,10 +231,13 @@ pub enum ArchiveTarget {
     New,
     /// The state this working copy was loaded from or last saved as: overwriting loses nothing.
     Same,
-    /// Saved there from somewhere else meanwhile (or with a protection this device cannot open).
+    /// Saved there from somewhere else meanwhile.
     ChangedElsewhere,
     /// Another suite (or no GhulSuite file at all).
     OtherSuite,
+    /// This suite with a protection this device does not have (changed elsewhere: a new
+    /// password, a key removed): overwriting it would undo that change. Open it first.
+    OtherProtection,
 }
 
 /// A built `.ghlzip`, written to the sink of `archive_build`: once the file is in place (and
@@ -622,10 +663,12 @@ pub fn archive_written_matches(
 
 impl GhulSuite {
     fn seen_all(&self) -> BTreeMap<String, Seen> {
-        std::fs::read(self.local_dir.join(SEEN_FILE))
-            .ok()
-            .and_then(|d| serde_json::from_slice(&d).ok())
-            .unwrap_or_default()
+        // The copy before the last write when the file cannot be read (see `write_atomic`): the
+        // epoch in it keeps older protections out.
+        let read = |name: &str| -> Option<BTreeMap<String, Seen>> {
+            std::fs::read(self.local_dir.join(name)).ok().and_then(|d| serde_json::from_slice(&d).ok())
+        };
+        read(SEEN_FILE).or_else(|| read(&format!("{SEEN_FILE}.bak"))).unwrap_or_default()
     }
 
     /// This device has `state` now (opened or saved; also an older one or a branch the user
@@ -641,25 +684,42 @@ impl GhulSuite {
         e.epoch = e.epoch.max(epoch);
         e.file = state.file.clone();
         e.saved = saved;
+        if let Ok(a) = self.anchor() {
+            note_protection(e, protection_print(a.header()));
+        }
         self.write_seen(&all);
+    }
+
+    /// The protection of the working copy as it is now is about to change: it is kept in mind as
+    /// an earlier one (a file saved with it elsewhere later is older, not newer).
+    pub(super) fn note_protection_left(&self, suite_id: &[u8; 16]) -> Result<()> {
+        let Ok(a) = self.anchor() else { return Ok(()) };
+        let mut all = self.seen_all();
+        let e = all.entry(crate::kdf::hex(suite_id)).or_default();
+        note_protection(e, protection_print(a.header()));
+        self.try_write_seen(&all)
     }
 
     /// The protection of a suite changed on this device (its epoch is `epoch` now).
-    pub(super) fn note_epoch(&self, suite_id: &[u8; 16], epoch: u64) {
+    /// It must be noted: without it, a file with the older protection would open again.
+    pub(super) fn note_epoch(&self, suite_id: &[u8; 16], epoch: u64) -> Result<()> {
         let mut all = self.seen_all();
         let e = all.entry(crate::kdf::hex(suite_id)).or_default();
         if epoch <= e.epoch {
-            return;
+            return Ok(());
         }
         e.epoch = epoch;
-        self.write_seen(&all);
+        self.try_write_seen(&all)
     }
 
     fn write_seen(&self, all: &BTreeMap<String, Seen>) {
-        if let Ok(json) = serde_json::to_vec(all) {
-            let _ = std::fs::create_dir_all(&self.local_dir);
-            let _ = super::storage::write_atomic(&self.local_dir, SEEN_FILE, &json);
-        }
+        let _ = self.try_write_seen(all);
+    }
+
+    fn try_write_seen(&self, all: &BTreeMap<String, Seen>) -> Result<()> {
+        let json = serde_json::to_vec(all).map_err(|e| GhulError::Storage { msg: e.to_string() })?;
+        std::fs::create_dir_all(&self.local_dir)?;
+        super::storage::write_atomic(&self.local_dir, SEEN_FILE, &json)
     }
 
     /// The working copy is about to change (called before a container is written, so the mark
@@ -969,8 +1029,25 @@ impl GhulSuite {
         }
         self.lock();
         self.finish_lock();
-        self.wipe_device_data();
-        self.wiped.store(true, std::sync::atomic::Ordering::SeqCst);
+        // Quick unlock holds the password key and the factor secret of the working copy. They stay
+        // the same for a newer state of the same suite with the same protection: the same KDF
+        // (salt) and the same slots, compared in the headers themselves (two devices can each
+        // reach the same epoch with different changes). Anything else, or the recovery code:
+        // they go.
+        let same_header = || -> bool {
+            let Ok(old) = self.anchor() else { return false };
+            let Some((_, data)) = p.files.iter().find(|(n, _)| n == SUITE_FILE) else { return false };
+            let Ok(new) = LockedContainer::parse(data) else { return false };
+            protection_print(old.header()) == protection_print(new.header())
+        };
+        let same_protection = p.recovery.is_none()
+            && self.working_suite_id() == Some(p.suite_id)
+            && self.seen_all().get(&crate::kdf::hex(&p.suite_id)).is_some_and(|s| s.epoch == p.header.epoch)
+            && same_header();
+        if !same_protection {
+            self.wipe_device_data();
+            self.wiped.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
         *self.built.lock().unwrap_or_else(|e| e.into_inner()) = None;
         self.replace_working_copy(&p.files, p.staged.as_ref())?;
         match (&p.recovery, p.keys) {
@@ -1109,13 +1186,23 @@ impl GhulSuite {
             }
             let s = FactorSecret::from_bytes(*o.suite.factor_secret().expose());
             let file_id = crate::kdf::hex(&locked.header().container_id);
+            let print = protection_print(locked.header());
             let Ok(c) = locked.unlock(&o.password_key, &s) else {
                 // Not readable with the keys of now: the file this device saved or opened last,
                 // from before a change of the protection, is its own (overwriting it is what
-                // the change asks for). Any other file was saved elsewhere.
+                // the change asks for). Another file with a protection this device had before
+                // is older: saved elsewhere meanwhile, but overwriting undoes no change. Any
+                // other protection is newer: it was changed elsewhere.
                 let seen = self.seen_all().remove(&crate::kdf::hex(&o.suite.header().suite_id));
-                let own = seen.is_some_and(|s| !s.file.is_empty() && s.file == file_id);
-                return Ok(bare(if own { ArchiveTarget::Same } else { ArchiveTarget::ChangedElsewhere }));
+                let own = seen.as_ref().is_some_and(|s| !s.file.is_empty() && s.file == file_id);
+                let older = seen.is_some_and(|s| s.protections.contains(&print));
+                return Ok(bare(if own {
+                    ArchiveTarget::Same
+                } else if older {
+                    ArchiveTarget::ChangedElsewhere
+                } else {
+                    ArchiveTarget::OtherProtection
+                }));
             };
             let header: ArchiveHeader = setting(&c, HEADER_KEY);
             let mine: StateRef = setting(&o.suite, STATE_KEY);

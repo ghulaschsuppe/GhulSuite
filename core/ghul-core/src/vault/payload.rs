@@ -226,7 +226,9 @@ pub fn padded_len(cbor_len: usize) -> usize {
 }
 
 pub fn pad(cbor: &[u8]) -> Result<Zeroizing<Vec<u8>>> {
-    if cbor.len() > MAX_PAYLOAD_LEN {
+    // Padded to a power of two, the length prefix included: at most `MAX_PAYLOAD_LEN`, so the
+    // whole file stays within `MAX_FILE_LEN` and can be read again.
+    if cbor.len() + 4 > MAX_PAYLOAD_LEN {
         return Err(VaultError::Payload("payload too large".into()));
     }
     let total = padded_len(cbor.len());
@@ -254,6 +256,12 @@ pub fn unpad(data: &[u8]) -> Result<&[u8]> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_largest_payload_still_fits_a_file() {
+        assert!(padded_len(MAX_PAYLOAD_LEN - 4) <= MAX_PAYLOAD_LEN);
+        assert!(pad(&vec![0u8; MAX_PAYLOAD_LEN - 3]).is_err(), "it would be padded beyond the file limit");
+    }
 
     #[test]
     fn padding_buckets() {

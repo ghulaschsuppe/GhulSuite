@@ -254,10 +254,8 @@ private fun OpenVaultWizard(state: AppState, file: PickedFile, info: ContainerIn
     val backend = state.backend
     // U10: the kind comes from the file itself (a calendar file is no GhulAuth vault).
     val kind = vaultKindOf(info.kind)
-    val hasKey = info.protection.securityKeys > 0
-    val hasKeyfile = info.protection.keyfiles > 0
-    var withKey by remember { mutableStateOf(hasKey) }
-    val needsKey = withKey && hasKey
+    var withKey by remember { mutableStateOf(state.backend.settings.factorKey) }
+    val needsKey = withKey
     var name by remember { mutableStateOf(file.name.substringBeforeLast('.')) }
     var password by remember { mutableStateOf("") }
     var pin by remember { mutableStateOf("") }
@@ -283,12 +281,14 @@ private fun OpenVaultWizard(state: AppState, file: PickedFile, info: ContainerIn
             singleLine = true, modifier = Modifier.fillMaxWidth(),
         )
         SecretTextField(password, { password = it; error = null }, stringResource(Res.string.l_master_password))
+        // Always both ways: what the file is protected with is not given away here.
+        FactorChoice(withKey) { withKey = it; error = null; state.backend.settings.factorKey = it }
         if (needsKey) {
             Hint(stringResource(Res.string.open_vault_needs_key))
             KeyPinField(state, pin) { pin = it; error = null }
+        } else {
+            KeyfilePicker(keyfile) { keyfile = it; error = null }
         }
-        if (hasKey && hasKeyfile) FactorChoice(withKey) { withKey = it; error = null }
-        if (!needsKey) KeyfilePicker(keyfile) { keyfile = it; error = null }
         Hint(stringResource(Res.string.open_vault_new_code))
         ErrorText(error)
         ButtonRow {
@@ -436,4 +436,37 @@ fun RecoveryCodeView(code: String) {
             )
         }
     }
+}
+
+/**
+ * Both factors of now, before a change of the protection: the master password plus the PIN of a
+ * security key or a key file. The choice of key or key file is always offered.
+ */
+class ProofInput(withKey: Boolean) {
+    var password by mutableStateOf("")
+    var withKey by mutableStateOf(withKey)
+    var pin by mutableStateOf("")
+    var keyfile by mutableStateOf<PickedFile?>(null)
+
+    fun ok(state: AppState): Boolean = password.isNotEmpty() && (if (withKey) keyPinOk(state, pin) else keyfile != null)
+
+    fun proof() = de.danerd.ghulsuite.model.FactorProofUi(password, if (withKey) pin else null, if (withKey) null else keyfile?.bytes)
+
+    fun clear() {
+        password = ""
+        pin = ""
+        keyfile = null
+    }
+}
+
+@Composable
+fun rememberProofInput(state: AppState): ProofInput = remember { ProofInput(state.backend.settings.factorKey) }
+
+/** The fields of [ProofInput]: master password, then key (with its PIN) or key file. */
+@Composable
+fun ProofFields(state: AppState, input: ProofInput, onChange: () -> Unit = {}) {
+    Hint(stringResource(Res.string.proof_hint))
+    SecretTextField(input.password, { input.password = it; onChange() }, stringResource(Res.string.l_master_password))
+    FactorChoice(input.withKey) { input.withKey = it; state.backend.settings.factorKey = it; onChange() }
+    if (input.withKey) KeyPinField(state, input.pin) { input.pin = it; onChange() } else KeyfilePicker(input.keyfile) { input.keyfile = it; onChange() }
 }

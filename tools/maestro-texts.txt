@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Texts the Maestro flows look for that are no texts of the app (tools/check-maestro.py):
+# names of test files, codes, texts the app puts together itself. One per line, exactly as in
+# the flow (one alternative of an "A|B" on its own line). Lines with # are notes.
+
+# Files the flows make or pick (key file, document, suite file)
+ghulsuite.*\.ghlkey
+ghuldocs-probe\.txt
+GhulSuite.*\.ghlzip
+# A one-time code (six digits in two groups)
+\d{3} \d{3}
+# The path of a folder in GhulDocs (parts joined by the app)
+.* › Steuer
+# A dialog of the system on a fresh emulator ("App isn't responding: Wait")
+Wait
+# The title GhulCal takes from the typed "Run tomorrow 6:30pm-7:30pm #sports"
+Run

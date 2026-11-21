@@ -647,6 +647,22 @@ fn parse_bitwarden(root: &Json, items: &[Json]) -> Parsed {
                     .filter(|x| !x.is_empty())
                     .collect();
                 d.text("address", &addr.join("\n"));
+                // Everything else of the identity (title, company, passport …) as fields of its own.
+                flatten_rest(
+                    &mut d,
+                    i,
+                    &[
+                        "firstName",
+                        "lastName",
+                        "email",
+                        "phone",
+                        "address1",
+                        "address2",
+                        "postalCode",
+                        "city",
+                        "country",
+                    ],
+                );
                 d
             }
             other => {
@@ -658,11 +674,13 @@ fn parse_bitwarden(root: &Json, items: &[Json]) -> Parsed {
         d.text("notes", s(it, "notes"));
         for f in it.get("fields").and_then(Json::as_array).into_iter().flatten() {
             let (n, v) = (s(f, "name"), s(f, "value"));
-            if !n.is_empty() && !d.fields.contains_key(n) {
+            if !n.is_empty() {
+                // A name that is taken (a second "PIN", a field "password"): kept under a free one.
+                let n = free_field_name(&d, n);
                 if f.get("type").and_then(Json::as_i64) == Some(1) {
-                    d.secret(n, v);
+                    d.secret(&n, v);
                 } else {
-                    d.text(n, v);
+                    d.text(&n, v);
                 }
             }
         }
@@ -742,6 +760,19 @@ fn parse_proton_pass(vaults: &serde_json::Map<String, Json>) -> Parsed {
                         .filter(|x| !x.is_empty())
                         .collect();
                     d.text("address", &addr.join("\n"));
+                    flatten_rest(
+                        &mut d,
+                        c,
+                        &[
+                            "fullName",
+                            "email",
+                            "phoneNumber",
+                            "streetAddress",
+                            "zipOrPostalCode",
+                            "city",
+                            "countryOrRegion",
+                        ],
+                    );
                     d
                 }
                 "wifi" => {
@@ -772,12 +803,13 @@ fn parse_proton_pass(vaults: &serde_json::Map<String, Json>) -> Parsed {
             for f in data.get("extraFields").and_then(Json::as_array).into_iter().flatten() {
                 let n = s(f, "fieldName");
                 let val = f.get("data").map(|x| s(x, "content")).unwrap_or("");
-                if n.is_empty() || d.fields.contains_key(n) {
+                if n.is_empty() {
                     continue;
                 }
+                let n = free_field_name(&d, n);
                 match s(f, "type") {
-                    "hidden" | "totp" => d.secret(n, val),
-                    _ => d.text(n, val),
+                    "hidden" | "totp" => d.secret(&n, val),
+                    _ => d.text(&n, val),
                 }
             }
             if !vault_name.is_empty() {
@@ -787,6 +819,23 @@ fn parse_proton_pass(vaults: &serde_json::Map<String, Json>) -> Parsed {
         }
     }
     p
+}
+
+/// The values of the object `v` that were not mapped (`used`) as fields of `d`.
+fn flatten_rest(d: &mut Draft, v: &Json, used: &[&str]) {
+    if let Json::Object(o) = v {
+        let rest: serde_json::Map<String, Json> =
+            o.iter().filter(|(k, _)| !used.contains(&k.as_str())).map(|(k, x)| (k.clone(), x.clone())).collect();
+        flatten_into(d, &Json::Object(rest), "");
+    }
+}
+
+/// `name`, or "name (2)", "name (3)" … when the entry has a field of that name already.
+fn free_field_name(d: &Draft, name: &str) -> String {
+    if !d.fields.contains_key(name) {
+        return name.to_owned();
+    }
+    (2..).map(|n| format!("{name} ({n})")).find(|c| !d.fields.contains_key(c)).unwrap_or_default()
 }
 
 /// Every text value of `v` as a field of `d` (nested keys joined with "."); keys that sound
@@ -1046,7 +1095,7 @@ fn parse_csv(text: &str) -> Result<Parsed> {
     let header: Vec<String> = header.iter().map(|h| h.trim().to_lowercase()).collect();
     let col = |names: &[&str]| names.iter().find_map(|n| header.iter().position(|h| h == n));
     let title = col(&["name", "title", "account", "item name"]);
-    let user = col(&["login_username", "username", "user name", "user", "login", "email address"]);
+    let user = col(&["login_username", "username", "user name", "login name", "user", "login", "email address"]);
     let email = col(&["email"]);
     let password = col(&["login_password", "password"]);
     let url = col(&["login_uri", "url", "uri", "website", "web site", "urls"]);
@@ -1080,6 +1129,27 @@ fn parse_csv(text: &str) -> Result<Parsed> {
             .map(|s| if own { s.strip_prefix('\'').unwrap_or(s).to_owned() } else { s.trim().to_owned() })
             .unwrap_or_default()
     };
+    // Passwords and codes as they are: spaces at their ends may belong to them.
+    let get_exact = |row: &Vec<String>, c: Option<usize>| {
+        c.and_then(|i| row.get(i))
+            .map(|s| if own { s.strip_prefix('\'').unwrap_or(s).to_owned() } else { s.to_owned() })
+            .unwrap_or_default()
+    };
+    // Columns a login keeps as fields of its own (the others are mapped above, or only describe
+    // the export itself).
+    let known = [title, user, email, password, url, notes, totp, kind, folder];
+    const META: [&str; 10] = [
+        "favorite",
+        "reprompt",
+        "guid",
+        "id",
+        "timecreated",
+        "timelastused",
+        "timepasswordchanged",
+        "formactionorigin",
+        "httprealm",
+        "created",
+    ];
     for row in body {
         let t = get(row, kind).to_lowercase();
         let is_note = t == "note" || t == "securenote" || get(row, url) == "http://sn";
@@ -1117,7 +1187,7 @@ fn parse_csv(text: &str) -> Result<Parsed> {
         };
         if !is_note {
             d.text("username", &username);
-            d.secret("password", &get(row, password));
+            d.secret("password", &get_exact(row, password));
             d.urls(get(row, url).split(['\n', ',']).map(str::to_owned).collect());
             let e = get(row, email);
             if !e.is_empty() && e != username {
@@ -1125,7 +1195,27 @@ fn parse_csv(text: &str) -> Result<Parsed> {
             }
         }
         d.text("notes", &get(row, notes));
-        let otp = get(row, totp);
+        // Every other column with a value stays (custom fields of Bitwarden, a second user name …).
+        for (i, h) in header.iter().enumerate() {
+            if known.contains(&Some(i)) || META.contains(&h.as_str()) || h.is_empty() {
+                continue;
+            }
+            let v = row.get(i).map(|x| x.trim()).unwrap_or("");
+            if v.is_empty() || d.fields.contains_key(h) {
+                continue;
+            }
+            if h.contains("password")
+                || h.contains("totp")
+                || h.contains("otp")
+                || h.contains("secret")
+                || h.contains("pin")
+            {
+                d.secret(h, v);
+            } else {
+                d.text(h, v);
+            }
+        }
+        let otp = get_exact(row, totp).trim().to_owned();
         if !otp.is_empty() && !is_note {
             d.secret("totp", &otp);
             login_totp(&mut p, &otp, &name, &username);
@@ -1168,23 +1258,30 @@ fn field_text(f: &Field) -> String {
     }
 }
 
-/// GhulPass entries as CSV (`type,title,username,password,url,notes,totp,folder`). Fields of
-/// other entry types are written into `notes` as `name: value` lines.
+/// GhulPass entries as CSV (`type,title,username,password,url,notes,totp,folder`). Every field
+/// without a column of its own (custom fields of logins and notes, the fields of other entry
+/// types) and the tags are written into `notes` as `name: value` lines: nothing is lost.
 pub(crate) fn export_csv(entries: &[Entry]) -> Zeroizing<String> {
     let mut out = Zeroizing::new(OWN_CSV_COLUMNS.join(",") + "\n");
     for e in entries.iter().filter(|e| !e.deleted) {
         let get = |k: &str| e.fields.get(k).map(field_text).unwrap_or_default();
         let mut notes = get("notes");
-        if e.entry_type != "login" && e.entry_type != "note" {
-            let extra: Vec<String> = e
-                .fields
-                .iter()
-                .filter(|(k, _)| !["title", "notes"].contains(&k.as_str()))
-                .map(|(k, v)| format!("{k}: {}", field_text(v)))
-                .collect();
-            if !extra.is_empty() {
-                notes = if notes.is_empty() { extra.join("\n") } else { format!("{}\n{}", extra.join("\n"), notes) };
-            }
+        let columns: &[&str] = if e.entry_type == "login" {
+            &["title", "notes", "username", "password", "urls", "totp"]
+        } else {
+            &["title", "notes", "totp"]
+        };
+        let mut extra: Vec<String> = e
+            .fields
+            .iter()
+            .filter(|(k, v)| !columns.contains(&k.as_str()) && !field_text(v).is_empty())
+            .map(|(k, v)| format!("{k}: {}", field_text(v)))
+            .collect();
+        if !e.tags.is_empty() {
+            extra.push(format!("tags: {}", e.tags.join(", ")));
+        }
+        if !extra.is_empty() {
+            notes = if notes.is_empty() { extra.join("\n") } else { format!("{}\n{}", extra.join("\n"), notes) };
         }
         let (username, password, url) = if e.entry_type == "login" {
             (get("username"), get("password"), get("urls"))
@@ -1389,6 +1486,48 @@ mod tests {
         assert_eq!(p.format, "Bitwarden (CSV)");
         assert_eq!(p.entries[1].entry_type, "note");
         assert!(matches!(parse(b"just some text\nwithout columns", "x.txt"), Err(GhulError::ImportUnknownFormat)));
+    }
+
+    /// Nothing of a CSV row is dropped: KeePass 1.x calls the user "Login Name", other columns of
+    /// a login become fields of their own, and passwords keep their spaces.
+    #[test]
+    fn csv_keeps_every_column_of_a_login() {
+        let kp1 = "Account,Login Name,Password,Web Site,Comments\nBank,me, pw with space ,https://bank.example,\n";
+        let p = parse(kp1.as_bytes(), "keepass1.csv").unwrap();
+        assert_eq!(p.entries[0].get("username"), "me");
+        assert_eq!(p.entries[0].fields["password"], Field::Secret(" pw with space ".into()));
+        let bw = "folder,favorite,type,name,notes,fields,reprompt,login_uri,login_username,login_password,login_totp\n\
+                  ,1,login,Site,,\"PIN: 1234\",0,https://site.example,user,pw,\n";
+        let p = parse(bw.as_bytes(), "bitwarden.csv").unwrap();
+        assert_eq!(p.entries[0].get("fields"), "PIN: 1234");
+        assert!(!p.entries[0].fields.contains_key("favorite"), "describes the export, no field");
+    }
+
+    /// Identities keep every value, and a second field of the same name is kept under a free one.
+    #[test]
+    fn json_keeps_identities_and_fields_of_the_same_name() {
+        let json = r#"{"encrypted":false,"items":[
+          {"type":4,"name":"Ich","notes":"n","identity":{"firstName":"G","lastName":"Hul","email":"g@h.de","passportNumber":"C01X","company":"Ghul AG"},
+           "fields":[{"name":"PIN","value":"1","type":1},{"name":"PIN","value":"2","type":1},{"name":"notes","value":"x","type":0}]}]}"#;
+        let p = parse(json.as_bytes(), "export.json").unwrap();
+        let e = &p.entries[0];
+        assert_eq!(e.get("passportNumber"), "C01X");
+        assert_eq!(e.get("company"), "Ghul AG");
+        assert_eq!(e.fields["PIN (2)"], Field::Secret("2".into()));
+        assert_eq!(e.get("notes (2)"), "x");
+    }
+
+    /// The CSV export keeps custom fields of logins and notes, and the tags, in the notes.
+    #[test]
+    fn csv_export_keeps_custom_fields() {
+        let mut e = Entry::new([1; 16], "login", 0);
+        e.fields.insert("title".into(), Field::Text("Shop".into()));
+        e.fields.insert("password".into(), Field::Secret("pw".into()));
+        e.fields.insert("Kundennr".into(), Field::Text("4711".into()));
+        e.tags = vec!["privat".into()];
+        let csv = export_csv(&[e]);
+        assert!(csv.contains("Kundennr: 4711"), "{}", csv.as_str());
+        assert!(csv.contains("tags: privat"));
     }
 
     #[test]

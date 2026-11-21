@@ -372,10 +372,8 @@ class ForeignRequest(
  */
 @Composable
 fun ForeignVaultDialog(state: AppState, request: ForeignRequest, onDone: () -> Unit) {
-    val hasKey = request.protection.securityKeys > 0
-    val hasKeyfile = request.protection.keyfiles > 0
-    var withKey by remember { mutableStateOf(hasKey) }
-    val needsKey = withKey && hasKey
+    var withKey by remember { mutableStateOf(state.backend.settings.factorKey) }
+    val needsKey = withKey
     var name by remember { mutableStateOf(request.name) }
     var password by remember { mutableStateOf("") }
     var pin by remember { mutableStateOf("") }
@@ -394,7 +392,8 @@ fun ForeignVaultDialog(state: AppState, request: ForeignRequest, onDone: () -> U
                 Hint(stringResource(if (request.kind == VaultKindUi.DOCS) Res.string.docs_foreign_text else Res.string.foreign_text))
                 OutlinedTextField(name, { name = it }, label = { Text(stringResource(Res.string.l_vault_name)) }, singleLine = true)
                 SecretTextField(password, { password = it; error = null }, stringResource(Res.string.foreign_password))
-                if (hasKey && hasKeyfile) FactorChoice(withKey) { withKey = it; error = null }
+                // Always both ways: what the file is protected with is not given away here.
+        FactorChoice(withKey) { withKey = it; error = null; state.backend.settings.factorKey = it }
                 if (needsKey) {
                     KeyPinField(state, pin) { pin = it; error = null }
                 } else {

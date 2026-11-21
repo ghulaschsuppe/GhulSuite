@@ -101,6 +101,7 @@ internal fun GhulException.toVault(): VaultException {
         is GhulException.DifferentProtection -> VaultException(VaultErrorKind.DIFFERENT_PROTECTION, d)
         is GhulException.AlreadyExists -> VaultException(VaultErrorKind.ALREADY_EXISTS, d)
         is GhulException.LastFactor -> VaultException(VaultErrorKind.LAST_FACTOR, d)
+        is GhulException.BackupFactorRequired -> VaultException(VaultErrorKind.BACKUP_FACTOR_REQUIRED, d)
         is GhulException.ImportEncrypted -> VaultException(VaultErrorKind.IMPORT_ENCRYPTED, d)
         is GhulException.ImportUnknownFormat -> VaultException(VaultErrorKind.IMPORT_UNKNOWN, d)
         is GhulException.NoVault -> VaultException(VaultErrorKind.STORAGE, d)

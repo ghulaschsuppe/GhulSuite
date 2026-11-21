@@ -198,7 +198,7 @@ pub fn fido_register(
     let pin = Zeroizing::new(pin);
     let auth = open(transport.as_ref(), Some(listener.as_ref()))?;
     let proto = auth.info.pin_protocol()?;
-    let cred = auth.make_credential(RP_ID, RP_NAME, &pin)?;
+    let cred = auth.make_credential(RP_ID, RP_NAME, &pin, &[])?;
     Ok(Registration {
         credential_id: cred.id,
         hmac_secret_enabled: cred.hmac_secret,

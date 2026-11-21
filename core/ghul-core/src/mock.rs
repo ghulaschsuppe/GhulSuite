@@ -221,6 +221,16 @@ impl State {
         let rp = map_get_int(p, 2).ok_or(0x14)?;
         let rp_id = map_get_text(rp, "id").and_then(Value::as_text).ok_or(0x14)?;
         let ext = map_get_int(p, 6).and_then(|e| map_get_text(e, "hmac-secret")).and_then(Value::as_bool);
+        // excludeList: a credential of this key in it, CTAP2_ERR_CREDENTIAL_EXCLUDED.
+        if let Some(Value::Array(list)) = map_get_int(p, 5) {
+            for c in list {
+                if let Some(Value::Bytes(id)) = map_get_text(c, "id") {
+                    if self.creds.contains_key(id) {
+                        return Err(0x19);
+                    }
+                }
+            }
+        }
         let mut cred_id = vec![0u8; 48];
         OsRng.fill_bytes(&mut cred_id);
         let mut cred_random = [0u8; 32];

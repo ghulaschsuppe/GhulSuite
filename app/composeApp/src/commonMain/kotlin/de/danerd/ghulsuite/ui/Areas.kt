@@ -239,19 +239,19 @@ fun areaPage(kind: VaultKindUi): SetPage = when (kind) {
  */
 @Composable
 fun CodeReminderDialog(state: AppState) {
+    var asking by remember { mutableStateOf(false) }
+    // A new code needs both factors (see NewCodeDialog).
+    if (asking) {
+        NewCodeDialog(state) { asking = false }
+        return
+    }
     AlertDialog(
         onDismissRequest = {},
         icon = { Icon(Icons.Filled.Warning, null, tint = warnColor()) },
         title = { Text(stringResource(Res.string.code_unconfirmed)) },
         text = { Text(stringResource(Res.string.code_unconfirmed_text)) },
         confirmButton = {
-            TextButton(onClick = {
-                state.run(block = { state.backend.newRecoveryCode(getString(Res.string.setup_recovery_label)) }) {
-                    state.codeUnconfirmed = false
-                    state.protectionChanged()
-                    state.push(Screen.RecoveryCode(it))
-                }
-            }, enabled = !state.busy) { Text(stringResource(Res.string.code_do_now)) }
+            TextButton(onClick = { asking = true }, enabled = !state.busy) { Text(stringResource(Res.string.code_do_now)) }
         },
     )
 }
