@@ -506,7 +506,7 @@ Der Kopf trägt in `settings.export` (CBOR):
 | `files` | Liste aller Container-Einträge (ohne die Inhaltsdateien): `name`, `kind` (Art des Containers), `id` (hex der `CONTAINER_ID`), `sha256` (hex der Datei) |
 | `state` | zufällige Stand-ID (16 Byte hex), neu bei jedem Speichern |
 | `previous` | die Stand-ID, von der aus gespeichert wurde (leer beim ersten Mal) |
-| `ancestors`, `complete` | die Stände, aus denen dieser hervorging, neuester zuerst (höchstens 64); `complete`: die Liste reicht bis zum ersten Speichern |
+| `ancestors`, `complete` | die Stände, aus denen dieser hervorging, neuester zuerst (höchstens 1024, seit dem automatischen Speichern; vorher 64); `complete`: die Liste reicht bis zum ersten Speichern |
 | `counter` | Zähler, wächst mit jedem Speichern über alles hinaus, was das Gerät gesehen hat |
 | `epoch` | Schutz-Epoche der Suite (`protection_epoch`, Abschnitt 5.5) |
 | `time`, `device` | wann und auf welchem Gerät gespeichert (ms, Gerätename) |

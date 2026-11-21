@@ -1342,4 +1342,8 @@
     <string name="file_auto_changed_elsewhere_here">The suite file was saved elsewhere meanwhile. Nothing is overwritten automatically: save here with "Save" (the app then asks whether to overwrite) or with "Save as …" under a new name.</string>
     <string name="file_auto_unreachable_here">The place of the suite file cannot be reached right now (e.g. stick not plugged in). The app tries again every 30 seconds; you can also choose "Save as …" for another place.</string>
     <string name="file_auto_no_file">No suite file yet: save once with "Save as …", then the app saves there by itself.</string>
+    <string name="file_auto_other_file">Not saved automatically: another file or one that cannot be read is at the place of the suite file. Tap to decide.</string>
+    <string name="file_auto_failed">Not saved automatically: %1$s Tap to save.</string>
+    <string name="file_auto_other_file_here">Another file or one that cannot be read is at the place of the suite file (another suite, or a save that was cut off). Nothing is overwritten automatically: save here with "Save" (the app then asks) or with "Save as …".</string>
+    <string name="file_auto_failed_here">Saving automatically failed: %1$s It is tried again after the next change; you can also choose "Save" or "Save as …".</string>
 </resources>

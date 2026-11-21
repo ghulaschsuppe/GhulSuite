@@ -257,9 +257,11 @@ fun SuiteFileSection(state: AppState) {
             } else {
                 ref = target
                 error = null
-                state.unsaved = false
+                // A change made while it was written (files added) is still unsaved.
+                state.unsaved = backend.archiveUnsaved()
                 // Decided and saved: saving by itself goes on.
                 state.autoSaveBlocked = null
+                state.autoSaveError = null
                 state.message(savedMsg.replace("%1\$s", target.name))
             }
         }
@@ -311,6 +313,8 @@ fun SuiteFileSection(state: AppState) {
             when {
                 state.autoSaving -> Hint(stringResource(Res.string.file_auto_saving))
                 state.autoSaveBlocked == AutoSaveBlock.CHANGED_ELSEWHERE -> Banner(Icons.Filled.Warning, stringResource(Res.string.file_auto_changed_elsewhere_here))
+                state.autoSaveBlocked == AutoSaveBlock.OTHER_FILE -> Banner(Icons.Filled.Warning, stringResource(Res.string.file_auto_other_file_here))
+                state.autoSaveBlocked == AutoSaveBlock.FAILED -> Banner(Icons.Filled.Warning, stringResource(Res.string.file_auto_failed_here, state.autoSaveError.orEmpty()))
                 state.autoSaveBlocked == AutoSaveBlock.UNREACHABLE -> Banner(Icons.Filled.Warning, stringResource(Res.string.file_auto_unreachable_here))
                 r == null -> Hint(stringResource(Res.string.file_auto_no_file))
             }
@@ -324,7 +328,7 @@ fun SuiteFileSection(state: AppState) {
             OutlinedButton(onClick = { saveAs(r?.name ?: SUITE_FILE_NAME) }, enabled = !state.busy && !state.autoSaving, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(Res.string.file_save_as))
             }
-            OutlinedButton(onClick = openOther, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(onClick = openOther, enabled = !state.busy && !state.autoSaving, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(Res.string.file_open_other))
             }
         }
@@ -363,6 +367,9 @@ fun AppState.afterSuiteFileOpened() {
     vaultExists = true
     openFirstArea = true
     stack.clear()
+    // Another file (and its state) now: saving by itself starts afresh.
+    autoSaveBlocked = null
+    autoSaveError = null
     unsaved = backend.archiveUnsaved()
     changed()
 }

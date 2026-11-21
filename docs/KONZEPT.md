@@ -433,8 +433,13 @@ bearbeitet wird, Dateien hinzukommen oder die App gesperrt ist. Ist der Ort nich
 versucht sie es alle 30 Sekunden wieder und sagt es oben („Nicht gespeichert: Der Ort der Suite-Datei ist gerade nicht
 erreichbar …“). Wurde die Datei inzwischen anderswo gespeichert, überschreibt sie **nie** von selbst, sondern hält an
 („Nicht automatisch gespeichert: Die Suite-Datei wurde inzwischen anderswo gespeichert. Tippen, um zu entscheiden.“);
-entschieden wird mit „Speichern“ (fragt, ob überschreiben) oder „Speichern unter“. Ohne gemerkte Suite-Datei bleibt es
-beim Hinweis, einmal „Speichern unter“ zu wählen. Ausgeschaltet speichert nur „Speichern“.
+entschieden wird mit „Speichern“ (fragt, ob überschreiben) oder „Speichern unter“. Ebenso bei einer anderen oder
+unlesbaren Datei am Ort. Die eigene Datei aus der Zeit vor einer Schutzänderung (neues Passwort, Key, Schlüsseldatei)
+erkennt das Gerät an der Kennung ihres Kopfs wieder und überschreibt sie, wie die Schutzänderung es verlangt. Scheitert
+das Speichern aus einem anderen Grund (z. B. Stick voll), nennt die App den Grund und versucht es erst nach der nächsten
+Änderung wieder. Im Hintergrund wird nicht gespeichert; Speichern, Öffnen einer anderen Suite-Datei und Löschen der
+Arbeitskopie warten aufeinander. Ohne gemerkte Suite-Datei bleibt es beim Hinweis, einmal „Speichern unter“ zu wählen.
+Ausgeschaltet speichert nur „Speichern“.
 
 **„Nicht gespeicherte Änderungen“.** Gibt es Änderungen seit dem letzten Speichern (und speichert die App nicht gleich
 von selbst), zeigt sie oben einen Hinweis („Nicht gespeicherte Änderungen. Tippen zum Speichern.“) und auf der Seite

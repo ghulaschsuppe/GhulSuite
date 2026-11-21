@@ -398,6 +398,28 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         pendingTab = null
     }
 
+    /** The working copy has changes that are not in the suite file yet (see [SuiteFileSection]). */
+    var unsaved by mutableStateOf(false)
+
+    // --- Saving by itself ("Automatically save" in Options, Suite file)
+    /** Why saving by itself did not happen; null: nothing in the way (or it is off). */
+    var autoSaveBlocked by mutableStateOf<AutoSaveBlock?>(null)
+    /** The suite file is being saved by itself right now (the save buttons wait). */
+    var autoSaving by mutableStateOf(false)
+    /** Saving by itself takes a while: shown ("Saving …"). */
+    var autoSavingShown by mutableStateOf(false)
+    /** Why saving by itself failed ([AutoSaveBlock.FAILED]), in the words of the screens. */
+    var autoSaveError by mutableStateOf<String?>(null)
+    /** The change that saving by itself failed with (tried again after a newer one). */
+    private var autoSaveFailedAt = 0L
+    /** A clock that only moves forward (ms since the app started), for the quiet time. */
+    private val started = kotlin.time.TimeSource.Monotonic.markNow()
+    private fun currentTimeMillis(): Long = started.elapsedNow().inWholeMilliseconds
+    /** When the working copy last changed (ms): saved by itself once it was quiet for a while. */
+    private var lastChangeAt = 0L
+    /** When an unreachable place is tried again (ms). */
+    private var autoSaveRetryAt = 0L
+
     init {
         scope.launch {
             backend.unlocked.collect { unlocked ->
@@ -407,6 +429,11 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     jobs.lockWhenDone = false
                     if (editorDirty) discardedOnLock = true
                     editorDirty = false
+                    // Saving by itself starts afresh after unlocking (a decision about a file elsewhere
+                    // is asked again then); what is unsaved is read anew (the suite may be gone).
+                    autoSaveBlocked = null
+                    autoSaveError = null
+                    unsaved = backend.archiveUnsaved()
                     recoveredGuide = false
                     confirmDiscard = false
                     pendingTab = null
@@ -441,6 +468,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                         message(getString(Res.string.edit_dropped_on_lock))
                     }
                     afterUnlock.toList().also { afterUnlock.clear() }.forEach { message(it) }
+                    // Changes from before (the app ended before saving, or saving failed): saved by itself.
+                    unsaved = backend.archiveUnsaved()
                     refreshVaults()
                     if (single != null) {
                         refreshCalendar()
@@ -621,22 +650,6 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex)
     }
 
-    /** The working copy has changes that are not in the suite file yet (see [SuiteFileSection]). */
-    var unsaved by mutableStateOf(false)
-
-    // --- Saving by itself ("Automatically save" in Options, Suite file)
-    /** Why saving by itself did not happen; null: nothing in the way (or it is off). */
-    var autoSaveBlocked by mutableStateOf<AutoSaveBlock?>(null)
-    /** The suite file is being saved by itself right now (the save buttons wait). */
-    var autoSaving by mutableStateOf(false)
-    /** A clock that only moves forward (ms since the app started), for the quiet time. */
-    private val started = kotlin.time.TimeSource.Monotonic.markNow()
-    private fun currentTimeMillis(): Long = started.elapsedNow().inWholeMilliseconds
-    /** When the working copy last changed (ms): saved by itself once it was quiet for a while. */
-    private var lastChangeAt = 0L
-    /** When an unreachable place is tried again (ms). */
-    private var autoSaveRetryAt = 0L
-
     /**
      * One step of saving by itself: with changes not in the suite file, the place of the suite file
      * known, nothing else running and [AUTO_SAVE_QUIET_MS] after the last change, the file is
@@ -646,12 +659,23 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
      */
     suspend fun autoSaveTick() {
         if (!backend.settings.autoSave || single != null || !backend.unlocked.value || !unsaved) return
-        if (busy || autoSaving || jobs.running || stack.any { it is Screen.EntryEdit }) return
+        // Not in the background (the system may end the app midway) and not beside anything else
+        // that works on the suite (an editor, files being added, another action).
+        if (!AppLaunch.inFront.value) return
+        if (busy || autoSaving || jobs.running || editorDirty || stack.any { it is Screen.EntryEdit || it is Screen.CalEdit }) return
         val target = backend.suiteFile() ?: run { autoSaveBlocked = AutoSaveBlock.NO_FILE; return }
-        if (autoSaveBlocked == AutoSaveBlock.CHANGED_ELSEWHERE) return
+        // A file saved elsewhere or another file there: the user decides, nothing is tried.
+        if (autoSaveBlocked == AutoSaveBlock.CHANGED_ELSEWHERE || autoSaveBlocked == AutoSaveBlock.OTHER_FILE) return
         val now = currentTimeMillis()
         if (now - lastChangeAt < AUTO_SAVE_QUIET_MS || now < autoSaveRetryAt) return
+        // A save that failed for another reason than the place: again only after the next change.
+        if (autoSaveBlocked == AutoSaveBlock.FAILED && lastChangeAt <= autoSaveFailedAt) return
         autoSaving = true
+        // "Saving …" only when it takes a while (a small suite would make it blink with every change).
+        val shown = scope.launch {
+            kotlinx.coroutines.delay(800)
+            autoSavingShown = true
+        }
         try {
             val there = catching { backend.archiveTarget(target) }.getOrNull()
             when (there) {
@@ -659,20 +683,35 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     autoSaveBlocked = AutoSaveBlock.UNREACHABLE
                     autoSaveRetryAt = now + AUTO_SAVE_RETRY_MS
                 }
-                ArchiveTargetUi.CHANGED_ELSEWHERE, ArchiveTargetUi.OTHER_SUITE -> autoSaveBlocked = AutoSaveBlock.CHANGED_ELSEWHERE
+                ArchiveTargetUi.CHANGED_ELSEWHERE -> autoSaveBlocked = AutoSaveBlock.CHANGED_ELSEWHERE
+                ArchiveTargetUi.OTHER_SUITE -> autoSaveBlocked = AutoSaveBlock.OTHER_FILE
                 else -> {
-                    val ok = catching { backend.archiveSave(target, deviceInfo(), created = false) }.getOrDefault(false)
-                    if (ok) {
-                        autoSaveBlocked = null
-                    } else {
-                        autoSaveBlocked = AutoSaveBlock.UNREACHABLE
-                        autoSaveRetryAt = now + AUTO_SAVE_RETRY_MS
+                    val r = catching { backend.archiveSave(target, deviceInfo(), created = false) }
+                    when {
+                        r.getOrDefault(false) -> {
+                            autoSaveBlocked = null
+                            autoSaveError = null
+                        }
+                        // Locked meanwhile: not a failure; saved again after unlocking.
+                        !backend.unlocked.value -> {}
+                        r.isFailure -> {
+                            autoSaveBlocked = AutoSaveBlock.FAILED
+                            autoSaveError = describe(r.exceptionOrNull()!!)
+                            autoSaveFailedAt = lastChangeAt
+                        }
+                        // Written incompletely: the place went away while writing (a stick pulled).
+                        else -> {
+                            autoSaveBlocked = AutoSaveBlock.UNREACHABLE
+                            autoSaveRetryAt = now + AUTO_SAVE_RETRY_MS
+                        }
                     }
                     unsaved = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { backend.archiveUnsaved() }
                 }
             }
         } finally {
+            shown.cancel()
             autoSaving = false
+            autoSavingShown = false
         }
     }
 
@@ -1106,8 +1145,12 @@ enum class AutoSaveBlock {
     NO_FILE,
     /** Its place cannot be reached (a stick that is not there): tried again. */
     UNREACHABLE,
-    /** It was saved elsewhere meanwhile (or holds another suite): the user decides, nothing is overwritten by itself. */
+    /** It was saved elsewhere meanwhile: the user decides, nothing is overwritten by itself. */
     CHANGED_ELSEWHERE,
+    /** Another file is there (another suite, or one that cannot be read): the user decides. */
+    OTHER_FILE,
+    /** Saving failed for another reason (see AppState.autoSaveError): again after the next change. */
+    FAILED,
 }
 
 /** Quiet time after the last change before the suite file is saved by itself. */

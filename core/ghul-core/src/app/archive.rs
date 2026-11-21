@@ -67,7 +67,7 @@ const CONTAINER_EXTRA: u64 = 64 * 1024;
 /// [`super::docs::DOCS_MAX_FILES`] documents).
 pub(crate) const MAX_ENTRIES: usize = super::docs::DOCS_MAX_FILES as usize + 1000;
 /// How many earlier states a file and a device remember (to tell newer states from branches).
-const MAX_ANCESTORS: usize = 64;
+const MAX_ANCESTORS: usize = 1024;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
 struct ArchiveFile {
@@ -106,6 +106,10 @@ struct StateRef {
     ancestors: Vec<String>,
     /// See [`ArchiveHeader::complete`].
     complete: bool,
+    /// The id of the header container of the file this state was last written to or opened
+    /// from (hex; visible without a key, new with every save). Empty before.
+    #[serde(default)]
+    file: String,
 }
 
 /// What a device saw last of a suite.
@@ -119,6 +123,11 @@ struct Seen {
     complete: bool,
     /// The counter of `state` (`counter` is the highest one seen).
     at: u64,
+    /// The header container id of the file this device last saved or opened (see
+    /// [`StateRef::file`]): after a change of the protection the file cannot be read with the new
+    /// keys, but it is still known as this device's own.
+    #[serde(default)]
+    file: String,
 }
 
 /// How a `.ghlzip` relates to what this device has.
@@ -217,6 +226,8 @@ pub(super) struct Pending {
     keys: Option<(PasswordKey, FactorSecret)>,
     /// The checked content files of its GhulDocs vaults (on the disk, removed when dropped).
     staged: Option<Staging>,
+    /// The id of its header container (see [`StateRef::file`]).
+    file_id: [u8; 16],
 }
 
 /// An [`ArchiveSource`] as a reader.
@@ -605,6 +616,7 @@ impl GhulSuite {
         e.ancestors = state.ancestors.iter().take(MAX_ANCESTORS).cloned().collect();
         e.complete = state.complete;
         e.epoch = e.epoch.max(epoch);
+        e.file = state.file.clone();
         self.write_seen(&all);
     }
 
@@ -853,6 +865,7 @@ impl GhulSuite {
         let pin = pin.map(Zeroizing::new);
         let mut z = suite_zip(source, progress);
         let locked = read_header(&mut z)?;
+        let file_id = locked.header().container_id;
         let keyfile = parse_keyfile(keyfile)?;
         let s = second_factor(
             &locked,
@@ -865,7 +878,10 @@ impl GhulSuite {
         let root = self.content_root().ok();
         let (files, header, suite_id, staged) = read_checked(&mut z, locked, &Key::Password(&pk, &s), root.as_deref())?;
         let check = self.check_of(&header, &suite_id, false)?;
-        self.keep_pending(gen, Pending { files, header, suite_id, recovery: None, keys: Some((pk, s)), staged })?;
+        self.keep_pending(
+            gen,
+            Pending { files, header, suite_id, recovery: None, keys: Some((pk, s)), staged, file_id },
+        )?;
         Ok(check)
     }
 
@@ -884,6 +900,7 @@ impl GhulSuite {
         let parsed = RecoveryCode::parse(&code)?;
         let mut z = suite_zip(source, progress);
         let locked = read_header(&mut z)?;
+        let file_id = locked.header().container_id;
         let root = self.content_root().ok();
         let (files, header, suite_id, staged) = read_checked(&mut z, locked, &Key::Code(&parsed), root.as_deref())?;
         let check = self.check_of(&header, &suite_id, true)?;
@@ -896,6 +913,7 @@ impl GhulSuite {
                 recovery: Some((code, Zeroizing::new(new_password))),
                 keys: None,
                 staged,
+                file_id,
             },
         )?;
         Ok(check)
@@ -939,6 +957,7 @@ impl GhulSuite {
             previous: String::new(),
             ancestors: p.header.ancestors.clone(),
             complete: p.header.complete,
+            file: crate::kdf::hex(&p.file_id),
         };
         self.with_open(|o| {
             put_setting(&mut o.suite, STATE_KEY, &accepted)?;
@@ -1026,7 +1045,15 @@ impl GhulSuite {
                 return Ok(ArchiveTarget::OtherSuite);
             }
             let s = FactorSecret::from_bytes(*o.suite.factor_secret().expose());
-            let Ok(c) = locked.unlock(&o.password_key, &s) else { return Ok(ArchiveTarget::ChangedElsewhere) };
+            let file_id = crate::kdf::hex(&locked.header().container_id);
+            let Ok(c) = locked.unlock(&o.password_key, &s) else {
+                // Not readable with the keys of now: the file this device saved or opened last,
+                // from before a change of the protection, is its own (overwriting it is what
+                // the change asks for). Any other file was saved elsewhere.
+                let seen = self.seen_all().remove(&crate::kdf::hex(&o.suite.header().suite_id));
+                let own = seen.is_some_and(|s| !s.file.is_empty() && s.file == file_id);
+                return Ok(if own { ArchiveTarget::Same } else { ArchiveTarget::ChangedElsewhere });
+            };
             let header: ArchiveHeader = setting(&c, HEADER_KEY);
             let mine: StateRef = setting(&o.suite, STATE_KEY);
             // The file holds a state of this working copy's own line (also after a build that was
@@ -1076,7 +1103,14 @@ impl GhulSuite {
             put_setting(
                 &mut o.suite,
                 STATE_KEY,
-                &StateRef { state: state.clone(), counter, previous, ancestors: ancestors.clone(), complete },
+                &StateRef {
+                    state: state.clone(),
+                    counter,
+                    previous,
+                    ancestors: ancestors.clone(),
+                    complete,
+                    file: String::new(),
+                },
             )?;
             let mut files: Vec<(String, Vec<u8>)> = Vec::new();
             for v in &mut o.vaults {
@@ -1126,6 +1160,10 @@ impl GhulSuite {
             }
             let mut hc = o.new_container(ContainerKind::Export)?;
             put_setting(&mut hc, HEADER_KEY, &header)?;
+            // Which file this state goes into (kept here only; noted when it is saved).
+            let mut written: StateRef = setting(&o.suite, STATE_KEY);
+            written.file = crate::kdf::hex(&hc.container_id());
+            put_setting(&mut o.suite, STATE_KEY, &written)?;
             let header_file = (HEADER_FILE.to_owned(), hc.seal(&mut OsRng)?);
             // A file that could never be opened is not written (and the working copy keeps its
             // state).
@@ -1294,6 +1332,7 @@ mod pending_tests {
             recovery: None,
             keys: None,
             staged: None,
+            file_id: [0; 16],
         }
     }
 

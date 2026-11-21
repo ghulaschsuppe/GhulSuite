@@ -1342,4 +1342,8 @@
     <string name="file_auto_changed_elsewhere_here">Die Suite-Datei wurde inzwischen anderswo gespeichert. Automatisch wird nichts überschrieben: Speichere hier mit „Speichern“ (die App fragt dann, ob überschreiben) oder mit „Speichern unter …“ unter neuem Namen.</string>
     <string name="file_auto_unreachable_here">Der Ort der Suite-Datei ist gerade nicht erreichbar (z. B. Stick nicht eingesteckt). Die App versucht es alle 30 Sekunden wieder; du kannst auch „Speichern unter …“ an einem anderen Ort wählen.</string>
     <string name="file_auto_no_file">Noch keine Suite-Datei: Speichere einmal mit „Speichern unter …“, danach speichert die App von selbst dorthin.</string>
+    <string name="file_auto_other_file">Nicht automatisch gespeichert: Am Ort der Suite-Datei liegt eine andere oder unlesbare Datei. Tippen, um zu entscheiden.</string>
+    <string name="file_auto_failed">Nicht automatisch gespeichert: %1$s Tippen zum Speichern.</string>
+    <string name="file_auto_other_file_here">Am Ort der Suite-Datei liegt eine andere oder unlesbare Datei (eine andere Suite, oder ein abgebrochenes Speichern). Automatisch wird nichts überschrieben: Speichere hier mit „Speichern“ (die App fragt dann) oder mit „Speichern unter …“.</string>
+    <string name="file_auto_failed_here">Das automatische Speichern ist gescheitert: %1$s Es wird nach der nächsten Änderung wieder versucht; du kannst auch „Speichern“ oder „Speichern unter …“ wählen.</string>
 </resources>

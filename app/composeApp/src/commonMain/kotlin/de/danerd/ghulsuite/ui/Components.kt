@@ -558,18 +558,22 @@ fun BusyBanner(state: AppState) {
     if (state.unsaved && state.stack.isEmpty() && !state.busy) {
         val auto = state.backend.settings.autoSave
         if (unlocked && state.autoSaving) {
-            Banner(Icons.Filled.Save, stringResource(Res.string.file_auto_saving))
+            // Only when it takes a while (no banner blinking with every change of a small suite).
+            if (state.autoSavingShown) Banner(Icons.Filled.Save, stringResource(Res.string.file_auto_saving))
         } else if (unlocked) {
             val block = state.autoSaveBlocked
             // Saved by itself in a moment: nothing to do (no banner that comes and goes with every change).
             if (auto && block == null) return
             val text = when {
-                !auto || block == AutoSaveBlock.NO_FILE -> Res.string.file_unsaved_banner
-                block == AutoSaveBlock.CHANGED_ELSEWHERE -> Res.string.file_auto_changed_elsewhere
-                else -> Res.string.file_auto_unreachable
+                !auto || block == AutoSaveBlock.NO_FILE -> stringResource(Res.string.file_unsaved_banner)
+                block == AutoSaveBlock.CHANGED_ELSEWHERE -> stringResource(Res.string.file_auto_changed_elsewhere)
+                block == AutoSaveBlock.OTHER_FILE -> stringResource(Res.string.file_auto_other_file)
+                block == AutoSaveBlock.FAILED -> stringResource(Res.string.file_auto_failed, state.autoSaveError.orEmpty())
+                else -> stringResource(Res.string.file_auto_unreachable)
             }
+            val warn = block == AutoSaveBlock.CHANGED_ELSEWHERE || block == AutoSaveBlock.OTHER_FILE || block == AutoSaveBlock.FAILED
             Box(Modifier.fillMaxWidth().clickable { state.push(Screen.SettingsPage(SetPage.FILE)) }) {
-                Banner(if (block == AutoSaveBlock.CHANGED_ELSEWHERE) Icons.Filled.Warning else Icons.Filled.Save, stringResource(text))
+                Banner(if (warn) Icons.Filled.Warning else Icons.Filled.Save, text)
             }
         } else {
             // Locked (the unlock screen): saving needs the open suite, so a tap could do nothing here.

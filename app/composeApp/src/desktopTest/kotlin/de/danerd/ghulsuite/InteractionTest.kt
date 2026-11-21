@@ -1054,4 +1054,24 @@ class InteractionTest {
         Thread.sleep(5_500)
         assertTrue(fake.calls.none { it.startsWith("archiveSave") })
     }
+
+    /** Saving fails for another reason than the place: the reason is shown, not tried again and again. */
+    @Test
+    fun savingByItselfSaysWhyItFailed() = app(setup = { tab = Tab.DOCS; unsaved = true }, prepare = {
+        unsavedChanges = true; suiteRef = stick; target = de.danerd.ghulsuite.model.ArchiveTargetUi.SAME
+        saveError = de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.STORAGE, "no space left on device")
+    }) { _, fake ->
+        waitUntil(timeoutMillis = 15_000) { part("Not saved automatically:") }
+        assertFalse(part("cannot be reached"))
+        val tries = fake.calls.count { it.startsWith("archiveSave") }
+        Thread.sleep(6_000)
+        assertEquals(tries, fake.calls.count { it.startsWith("archiveSave") }, "not again without a new change")
+    }
+
+    /** Another file (or one that cannot be read) where the suite file was: nothing overwritten, said as such. */
+    @Test
+    fun savingByItselfLeavesAnotherFileAlone() = app(setup = { tab = Tab.DOCS; unsaved = true }, prepare = { unsavedChanges = true; suiteRef = stick; target = de.danerd.ghulsuite.model.ArchiveTargetUi.OTHER_SUITE }) { _, fake ->
+        waitUntil(timeoutMillis = 15_000) { part("another file or one that cannot be read") }
+        assertTrue(fake.calls.none { it.startsWith("archiveSave") })
+    }
 }
