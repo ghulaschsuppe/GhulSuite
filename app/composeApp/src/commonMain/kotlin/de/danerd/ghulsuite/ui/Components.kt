@@ -561,7 +561,11 @@ fun BusyBanner(state: AppState) {
         // Locked (the unlock screen): a save that still runs, or changes that wait for it.
         val p = saving
         if (p != null) {
-            Banner(Icons.Filled.Save, stringResource(Res.string.save_running_locked, savePercent(p).ifEmpty { "…" }))
+            val percent = savePercent(p)
+            Banner(
+                Icons.Filled.Save,
+                if (percent.isEmpty()) stringResource(Res.string.save_running_locked_unknown) else stringResource(Res.string.save_running_locked, percent),
+            )
         } else if (state.unsaved) {
             Banner(Icons.Filled.Save, stringResource(Res.string.file_unsaved_locked))
         }

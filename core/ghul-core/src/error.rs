@@ -40,6 +40,9 @@ pub enum FidoError {
     HmacSecretUnsupported,
     #[error("credential not found on this key")]
     NoCredentials,
+    /// The key already holds one of the credentials it was asked to exclude (registered before).
+    #[error("this key is registered already")]
+    CredentialExcluded,
     #[error("operation denied or not confirmed on the key")]
     NotConfirmed,
     #[error("invalid input: {msg}")]
@@ -63,6 +66,7 @@ impl FidoError {
     pub fn from_ctap(code: u8) -> Self {
         match code {
             0x2E => FidoError::NoCredentials,
+            0x19 => FidoError::CredentialExcluded,
             0x27 | 0x2F => FidoError::NotConfirmed,
             0x32 => FidoError::PinBlocked,
             0x34 => FidoError::PinAuthBlocked,

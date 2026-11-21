@@ -12,6 +12,19 @@ use super::tools::{OtpAlgo, TotpInput};
 use crate::mock::{MockAuthenticator, MockConfig};
 use crate::{FidoListener, FidoStatus, HidTransport};
 
+/// The master password most tests use.
+const PW: &str = "pw-123456";
+
+/// Both factors with a key file, for changes of the protection.
+fn kf_proof(password: &str, kf: &[u8]) -> super::suite::FactorProof {
+    super::suite::FactorProof { password: password.into(), pin: None, keyfile: Some(kf.to_vec()) }
+}
+
+/// Both factors with a security key (PIN "1234", touched through the transport given with the call).
+fn key_proof(password: &str) -> super::suite::FactorProof {
+    super::suite::FactorProof { password: password.into(), pin: Some("1234".into()), keyfile: None }
+}
+
 struct Quiet;
 impl FidoListener for Quiet {
     fn on_status(&self, _status: FidoStatus) {}
@@ -199,7 +212,10 @@ fn keyfile_then_security_key_without_invalidating_anything() {
     assert_eq!((p.security_keys, p.keyfiles, p.recovery_codes), (0, 1, 1));
     let privat = vault_id(&s, "Privat");
     s.save_entry(privat.clone(), login("A", "b", "c")).unwrap();
-    assert!(matches!(s.add_keyfile(kf.clone(), "again".into()), Err(GhulError::AlreadyExists)));
+    assert!(matches!(
+        s.add_keyfile(kf_proof(PW, &kf), None, None, kf.clone(), "again".into()),
+        Err(GhulError::AlreadyExists)
+    ));
     s.lock();
 
     assert!(matches!(s.unlock("pw-123456".into(), None, None, None, None), Err(GhulError::KeyfileRequired)));
@@ -213,7 +229,7 @@ fn keyfile_then_security_key_without_invalidating_anything() {
 
     // Add a security key: key file, recovery code and older copies keep working.
     let k = key();
-    s.add_security_key(k.clone(), listener(), "1234".into(), "Key".into()).unwrap();
+    s.add_security_key(kf_proof(PW, &kf), None, k.clone(), listener(), "1234".into(), "Key".into()).unwrap();
     assert_eq!(s.protection().unwrap().security_keys, 1);
     s.lock();
     s.unlock("pw-123456".into(), Some(k.clone()), Some(listener()), Some("1234".into()), None).unwrap();
@@ -236,13 +252,30 @@ fn keyfile_then_security_key_without_invalidating_anything() {
     .unwrap();
     assert_eq!(f.list_entries(VaultKind::Pass, None).unwrap().len(), 1);
 
-    // Retire the key file; the last second factor cannot be removed.
+    // The key file is the key's backup: it stays until a second key takes its place.
     let kf_slot = s.slots().unwrap().into_iter().find(|x| x.kind == SlotKind::Keyfile).unwrap();
-    s.remove_slot(kf_slot.slot_id).unwrap();
+    assert!(matches!(
+        s.remove_slot(kf_proof("pw-654321", &kf), None, None, kf_slot.slot_id.clone()),
+        Err(GhulError::BackupFactorRequired)
+    ));
+    let k2 = key();
+    s.add_security_key(kf_proof("pw-654321", &kf), None, k2.clone(), listener(), "1234".into(), "Key 2".into())
+        .unwrap();
+    s.remove_slot(kf_proof("pw-654321", &kf), None, None, kf_slot.slot_id).unwrap();
+    // Two keys: neither can go alone (the other one would be without a backup).
     let key_slot = s.slots().unwrap().into_iter().find(|x| x.kind == SlotKind::SecurityKey).unwrap();
-    assert!(matches!(s.remove_slot(key_slot.slot_id), Err(GhulError::LastFactor)));
+    assert!(matches!(
+        s.remove_slot(key_proof("pw-654321"), Some(k.clone()), Some(listener()), key_slot.slot_id),
+        Err(GhulError::BackupFactorRequired)
+    ));
+    // The backup key opens just like the first one.
+    s.lock();
+    s.unlock("pw-654321".into(), Some(k2), Some(listener()), Some("1234".into()), None).unwrap();
     let code_slot = s.slots().unwrap().into_iter().find(|x| x.kind == SlotKind::RecoveryCode).unwrap();
-    assert!(matches!(s.remove_slot(code_slot.slot_id), Err(GhulError::InvalidInput { .. })));
+    assert!(matches!(
+        s.remove_slot(key_proof("pw-654321"), Some(k.clone()), Some(listener()), code_slot.slot_id),
+        Err(GhulError::InvalidInput { .. })
+    ));
     s.lock();
     assert!(matches!(s.unlock("pw-654321".into(), None, None, None, Some(kf.clone())), Err(GhulError::WrongKeyfile)));
     s.unlock("pw-654321".into(), Some(k.clone()), Some(listener()), Some("1234".into()), None).unwrap();
@@ -344,8 +377,8 @@ fn quick_unlock_fingerprint_and_pin() {
         .unwrap();
     s.save_entry(vault_id(&s, "P"), login("Example", "u", "p")).unwrap();
 
-    let bio = s.quick_unlock_enable("bio".into(), None).unwrap();
-    let pin = s.quick_unlock_enable("pin".into(), Some("246810".into())).unwrap();
+    let bio = s.quick_unlock_enable("pw-1".into(), "bio".into(), None).unwrap();
+    let pin = s.quick_unlock_enable("pw-1".into(), "pin".into(), Some("246810".into())).unwrap();
     assert!(s.quick_unlock_exists("bio".into()) && s.quick_unlock_exists("pin".into()));
     s.lock();
 
@@ -376,7 +409,7 @@ fn quick_unlock_fingerprint_and_pin() {
 
     // A password change invalidates all quick unlocks.
     s.unlock_quick("pin".into(), pin.clone(), Some("246810".into()), 3600).unwrap();
-    s.change_password("pw-1".into(), "pw-2".into()).unwrap();
+    s.change_password(key_proof("pw-1"), Some(k.clone()), Some(listener()), "pw-2".into()).unwrap();
     assert!(!s.quick_unlock_exists("pin".into()));
     s.lock();
     assert!(matches!(
@@ -563,7 +596,7 @@ fn foreign_vaults() {
     single.suite().unlock_with_recovery_code(code.clone(), "neu-neu-123".into()).unwrap();
 
     // Password change: an old copy (old salt) needs the old password once and is brought up to date.
-    s.change_password("pw-123456".into(), "pw-neu-7890".into()).unwrap();
+    s.change_password(kf_proof("pw-123456", &kf), None, None, "pw-neu-7890".into()).unwrap();
     s.remove_vault(privat.clone()).unwrap();
     s.adopt_vault(old_privat, "".into(), "pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
     s.lock();
@@ -572,7 +605,7 @@ fn foreign_vaults() {
 
     // A key added later reaches every file, also the taken-over one.
     let k = key();
-    s.add_security_key(k.clone(), listener(), "1234".into(), "Key".into()).unwrap();
+    s.add_security_key(kf_proof("pw-neu-7890", &kf), None, k.clone(), listener(), "1234".into(), "Key".into()).unwrap();
     s.lock();
     s.unlock("pw-neu-7890".into(), Some(k), Some(listener()), Some("1234".into()), None).unwrap();
     assert_eq!(s.list_vaults().unwrap().iter().filter(|v| v.available).count(), 2);
@@ -929,10 +962,10 @@ fn recovery_code_counts_only_when_a_group_was_typed_back() {
     assert!(s.recovery_confirmed().unwrap());
     assert!(s.confirm_recovery_code(99, "x".into()).is_err());
     s.lock();
-    s.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    s.unlock("pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
     assert!(s.recovery_confirmed().unwrap());
     // A new code needs its own confirmation.
-    let new = s.new_recovery_code("Neu".into()).unwrap();
+    let new = s.new_recovery_code(kf_proof(PW, &kf), None, None, "Neu".into()).unwrap();
     assert!(!s.recovery_confirmed().unwrap());
     assert!(s.confirm_recovery_code(0, group(&new, 0)).unwrap());
     assert!(s.recovery_confirmed().unwrap());
@@ -1123,4 +1156,136 @@ fn unknown_server_name_and_refused_port_have_fixed_texts() {
     // Other failures keep their text.
     let other = GhulError::from(NetError::Connect("connection closed".into()));
     assert!(matches!(other, GhulError::Network { msg } if msg == "connection failed: connection closed"));
+}
+
+/// Two cards "Visa" with different numbers (or two notes without a title) are two entries; the
+/// same login with other spelling of its title is one.
+#[test]
+fn import_duplicates_are_only_the_same_entry() {
+    use super::suite::dedup_key;
+    use crate::vault::Field;
+    let card = |n: &str| {
+        let mut f = std::collections::BTreeMap::new();
+        f.insert("title".to_owned(), Field::Text("Visa".into()));
+        f.insert("number".to_owned(), Field::Secret(n.into()));
+        f
+    };
+    assert_ne!(dedup_key("card", &card("4111")), dedup_key("card", &card("5500")));
+    let login = |t: &str, pw: &str| {
+        let mut f = std::collections::BTreeMap::new();
+        f.insert("title".to_owned(), Field::Text(t.into()));
+        f.insert("password".to_owned(), Field::Secret(pw.into()));
+        f
+    };
+    assert_eq!(dedup_key("login", &login("GitHub", "pw")), dedup_key("login", &login(" github ", "pw")));
+    assert_ne!(
+        dedup_key("login", &login("GitHub", "pw")),
+        dedup_key("login", &login("GitHub", "PW")),
+        "passwords are exact"
+    );
+}
+
+/// Who finds the app unlocked cannot change its protection: a new recovery code, a key file, a
+/// security key, removing a factor and quick unlock all need the master password; with a wrong
+/// one nothing changes.
+#[test]
+fn protection_changes_need_the_master_password() {
+    let d = Dirs::new("needs-pw");
+    let s = d.suite();
+    let kf = generate_keyfile();
+    let setup = s.create(options(PW, Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    // Locked and unlocked again: no confirmation from creating is left.
+    s.lock();
+    s.unlock(PW.into(), None, None, None, Some(kf.clone())).unwrap();
+    let slots = s.slots().unwrap();
+    let wrong = || kf_proof("falsch-123", &kf);
+    // The password alone is not enough: the key file is asked for as well.
+    let no_factor = || super::suite::FactorProof { password: PW.into(), pin: None, keyfile: None };
+    let wrong_file = || kf_proof(PW, &generate_keyfile());
+    assert!(matches!(s.new_recovery_code(wrong(), None, None, "x".into()), Err(GhulError::WrongPassword)));
+    assert!(matches!(s.new_recovery_code(no_factor(), None, None, "x".into()), Err(GhulError::KeyfileRequired)));
+    assert!(matches!(s.new_recovery_code(wrong_file(), None, None, "x".into()), Err(GhulError::WrongKeyfile)));
+    assert!(matches!(
+        s.add_keyfile(wrong(), None, None, generate_keyfile(), "x".into()),
+        Err(GhulError::WrongPassword)
+    ));
+    assert!(matches!(
+        s.add_security_key(wrong(), None, key(), listener(), "1234".into(), "x".into()),
+        Err(GhulError::WrongPassword)
+    ));
+    assert!(matches!(s.remove_slot(wrong(), None, None, slots[0].slot_id.clone()), Err(GhulError::WrongPassword)));
+    assert!(matches!(
+        s.quick_unlock_enable("falsch-123".into(), "pin".into(), Some("246810".into())),
+        Err(GhulError::WrongPassword)
+    ));
+    assert_eq!(s.slots().unwrap().len(), slots.len(), "nothing changed");
+    assert!(!s.quick_unlock_exists("pin".into()));
+    s.lock();
+    // The old recovery code still works: no new one was made.
+    s.unlock_with_recovery_code(setup.recovery_code.unwrap(), "pw-654321".into()).unwrap();
+}
+
+#[test]
+fn the_same_key_twice_is_no_backup() {
+    let d = Dirs::new("same-key");
+    let s = d.suite();
+    let kf = generate_keyfile();
+    s.create(options(PW, Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    let k = key();
+    s.add_security_key(kf_proof(PW, &kf), None, k.clone(), listener(), "1234".into(), "A".into()).unwrap();
+    let n = s.slots().unwrap().len();
+    // The key refuses a second credential for this suite (excludeList): nothing is added.
+    let r = s.add_security_key(kf_proof(PW, &kf), None, k.clone(), listener(), "1234".into(), "A2".into());
+    assert!(matches!(r, Err(GhulError::AlreadyExists)), "{r:?}");
+    assert_eq!(s.slots().unwrap().len(), n);
+    // Another key is a backup.
+    s.add_security_key(kf_proof(PW, &kf), None, key(), listener(), "1234".into(), "B".into()).unwrap();
+    assert_eq!(s.slots().unwrap().len(), n + 1);
+}
+
+#[test]
+fn confirmed_factors_count_once_and_not_past_locking() {
+    let d = Dirs::new("confirm");
+    let s = d.suite();
+    let kf = generate_keyfile();
+    s.create(options(PW, Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    let pw_only = || super::suite::FactorProof { password: PW.into(), pin: None, keyfile: None };
+    // Created with a key file (no backup follows): nothing is confirmed.
+    assert!(s.add_keyfile(pw_only(), None, None, generate_keyfile(), "K2".into()).is_err());
+    // Confirmed: the next change needs the password alone, the one after both factors again.
+    s.confirm_factors(kf_proof(PW, &kf), None, None).unwrap();
+    s.add_keyfile(pw_only(), None, None, generate_keyfile(), "K2".into()).unwrap();
+    assert!(s.add_keyfile(pw_only(), None, None, generate_keyfile(), "K3".into()).is_err());
+    // A confirmation is not carried on with the password alone.
+    s.confirm_factors(kf_proof(PW, &kf), None, None).unwrap();
+    assert!(s.confirm_factors(pw_only(), None, None).is_err());
+    assert!(s.add_keyfile(pw_only(), None, None, generate_keyfile(), "K3".into()).is_err());
+    // A wrong password does not use a confirmation up.
+    s.confirm_factors(kf_proof(PW, &kf), None, None).unwrap();
+    let wrong = super::suite::FactorProof { password: "falsch-123".into(), pin: None, keyfile: None };
+    assert!(matches!(s.add_keyfile(wrong, None, None, generate_keyfile(), "x".into()), Err(GhulError::WrongPassword)));
+    assert!(s.add_keyfile(pw_only(), None, None, generate_keyfile(), "K3".into()).is_err(), "taken by the try");
+    // Locking ends a confirmation.
+    s.confirm_factors(kf_proof(PW, &kf), None, None).unwrap();
+    s.lock();
+    s.unlock(PW.into(), None, None, None, Some(kf.clone())).unwrap();
+    assert!(s.add_keyfile(pw_only(), None, None, generate_keyfile(), "K4".into()).is_err());
+    // Wrong factors confirm nothing.
+    assert!(s.confirm_factors(kf_proof(PW, &generate_keyfile()), None, None).is_err());
+    assert!(s.add_keyfile(pw_only(), None, None, generate_keyfile(), "K5".into()).is_err());
+}
+
+#[test]
+fn a_new_suite_with_a_key_takes_its_backup_with_the_password() {
+    let d = Dirs::new("backup-after-create");
+    let s = d.suite();
+    let k = key();
+    s.create(options(PW, None, &[(VaultKind::Pass, "Privat")]), Some(k.clone()), Some(listener()), Some("1234".into()))
+        .unwrap();
+    let pw_only = || super::suite::FactorProof { password: PW.into(), pin: None, keyfile: None };
+    // Right after creating: the backup key with the password alone (the first key is not touched again).
+    s.add_security_key(pw_only(), None, key(), listener(), "1234".into(), "Backup".into()).unwrap();
+    assert_eq!(s.slots().unwrap().iter().filter(|x| x.kind == super::suite::SlotKind::SecurityKey).count(), 2);
+    // Once only.
+    assert!(s.add_keyfile(pw_only(), None, None, generate_keyfile(), "K".into()).is_err());
 }

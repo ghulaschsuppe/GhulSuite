@@ -195,7 +195,8 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
     var addTotpFor by remember { mutableStateOf<String?>(null) }
     val top = state.stack.lastOrNull()
     val tabs = state.tabs
-    if (state.tab !in tabs) state.tab = tabs.first()
+    // An area that is gone (removed, another suite): the first one, after this composition.
+    LaunchedEffect(tabs) { if (state.tab !in tabs) state.tab = tabs.first() }
     // Tabs opened since unlocking; a plain set, read together with state.tab.
     val visited = remember { LinkedHashSet<Tab>() }
     visited.add(state.tab)
@@ -666,7 +667,9 @@ fun QuitDialog(state: AppState) {
         text = {
             Text(
                 when {
-                    job != null -> stringResource(Res.string.close_saving, savePercent(job.progress).ifEmpty { "…" })
+                    job != null -> savePercent(job.progress).let { p ->
+                        if (p.isEmpty()) stringResource(Res.string.close_saving_unknown) else stringResource(Res.string.close_saving, p)
+                    }
                     editing -> stringResource(Res.string.close_editing)
                     unlocked -> stringResource(Res.string.close_text)
                     else -> stringResource(Res.string.close_text_locked)

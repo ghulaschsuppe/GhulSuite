@@ -74,7 +74,8 @@ Schutzänderung erneuert die inneren Schlüssel und erhöht die Schutz-Epoche ([
 **Grenze ohne Server** ([`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md), Abschnitt 2): Eine Kopie der Suite-Datei, die schon
 irgendwo liegt (Stick, Cloud, anderes Gerät), lässt sich nicht nachträglich unbrauchbar machen. Die App sagt nach
 jeder Schutzänderung deutlich: alte Kopien löschen. Sicher unbrauchbar werden sie, wenn der zweite Faktor getauscht
-wird (neuen hinzufügen, alten entfernen, alte Schlüsseldatei vernichten bzw. alten Key zurücksetzen).
+wird (neuen hinzufügen, alten entfernen, alte Schlüsseldatei vernichten bzw. alten Key zurücksetzen) **und** ein neuer
+Wiederherstellungscode erstellt wird (der bisherige steckt auch in alten Kopien).
 
 Bewusste Ausnahme: Wer nur den Wiederherstellungscode hat (Passwort vergessen), kann eine Suite-Datei öffnen, ohne
 dass sich die Siegel prüfen lassen. Die App sagt das, prüft Stand und Schutz-Epoche trotzdem und versiegelt danach
@@ -181,6 +182,50 @@ Alle früher als „noch nicht eingebaut“ geführten Werkzeuge laufen jetzt je
 
 Bewusst nicht automatisiert: eine Geräte-Matrix (Samsung, Pixel, Xiaomi; Android 10 bis 16). Dafür braucht es echte
 Geräte oder einen bezahlten Gerätedienst; bis dahin deckt der Testplan die Hersteller-Eigenheiten von Hand ab.
+
+### 4.4 Kleine Punkte aus den Prüfrunden vom 21.11.2026
+
+Fünf Runden mit je zwei unabhängigen Prüfern über das ganze Projekt. Regel: „hoch“ und „mittel“ werden sofort
+behoben (Testprotokoll PR-…), „klein“ (Randfall, Komfort, Werkzeug) kommt hierher und wird später erledigt.
+
+| Nr. | Bereich | Punkt |
+|---|---|---|
+| K-1 | Windows | Der portable Modus hinterlässt Spuren auf dem PC: zuletzt benutzte Ordner und Dateinamen der Windows-Dateidialoge (Registry, ComDlg32), die von JNA entpackte DLL und `hsperfdata` in `%TEMP%`. Inhalte der Suite sind nicht darunter |
+| K-2 | Release | Ab der 99. Vorabversion einer Version bekommen Builds denselben `versionCode` (Begrenzung auf 98); `release.yml` sollte dann abbrechen |
+| K-3 | CI | Ein sofort abgebrochener Monkey-Lauf gilt als „ohne Absturz“; ein leeres Systemprotokoll im Emulator nur als Warnung |
+| K-4 | Werkzeuge | `precheck.sh` räumt relativ zum Aufrufordner auf und meldet bei übersprungenen Prüfungen trotzdem „Alles grün“ |
+| K-5 | Werkzeuge | `intent-attacks.sh` greift noch Aktionen von GhulMail und GhulDrive an, die es nicht mehr gibt; der deutsche Rundgang (`tour-de.yaml`) zeigt GhulDocs und zwei Optionsseiten nicht |
+| K-6 | Update | Die signierte Prüfsummendatei nennt die Version nicht; ein altes, korrekt signiertes Paket ließe sich unter neuem Tag anbieten (Android lehnt kleinere Versionen ab, beim MSI schützt nur jpackage) |
+| K-7 | Release | Jeder Push auf `dev` baut und signiert eine Vorabversion ohne vorgeschaltete Tests; der Schutz des Branches `dev` ist im Repository nicht nachprüfbar |
+| K-8 | GhulDocs | „Mit App öffnen“: Dateinamen mit `: * ? " < > |` (von Android) lassen sich unter Windows nicht öffnen; zwei gleichnamige Dokumente teilen sich einen Pfad |
+| K-9 | GhulDocs | Wird während eines Speicherns der Papierkorb geleert und zugleich ein älterer Stand übernommen, kann das aufgeschobene Löschen Inhaltsdateien des neuen Stands treffen (die App lässt Öffnen während des Speicherns ohnehin nicht zu) |
+| K-10 | Scan | Zurück während des Speicherns eines Scans: scheitert das Speichern danach, sind die Seiten schon gelöscht |
+| K-11 | GhulPass | Die Leak-Prüfung läuft nach dem Ausschalten bis zum Ende der laufenden Runde weiter (nur 5-stellige Hash-Präfixe, kein Klartext) |
+| K-12 | GhulPass | Eigene geheime Felder (z. B. „PIN“ aus einem Import) stehen im Editor im Klartext, in der Ansicht verdeckt |
+| K-13 | GhulAuth | Beim Scannen eines Google-Authenticator-Exports werden übersprungene Konten (HOTP, ungültig) nicht genannt; MD5-Konten werden still als SHA1 übernommen |
+| K-14 | GhulPass/Auth | `steam://` im TOTP-Feld eines Logins wird nicht erkannt (das Feld fehlt dann in der Ansicht); Steam-Konten werden als `algorithm=STEAM` exportiert, leerer Aussteller als `&issuer=` |
+| K-15 | GhulCal | Ein Termin, der in einen anderen Kalender-Tresor verschoben wird, wird in der Quelle zuerst gelöscht (bei einem Schreibfehler am Ziel fehlt er) |
+| K-16 | GhulCal | Android-Erinnerungen von Serien mit eigener Zone kommen nach einem Zonenwechsel bis zum nächsten Entsperren zur falschen Zeit; ein verschobener Einzeltermin einer solchen Serie kann den falschen Tag streichen |
+| K-17 | Import | Eine Zeile, die mit „otpauth“ beginnt (auch in einer Notiz), macht eine ganze CSV-Datei zur otpauth-Liste (die Vorschau zeigt dann 0 Einträge) |
+| K-18 | GhulCal | ICS-Export: „monatlich am 31.“ endet in anderen Apps anders als in GhulCal (RFC 5545 lässt kurze Monate aus); `UNTIL` als Ortszeit neben `TZID`, kein `VTIMEZONE` |
+| K-19 | Kern | Argon2-Werte einer fremden Datei (bis 2 GiB Speicher) werden vor dem Ableiten nicht gegen das Gerät geprüft: eine präparierte Datei kann die App nach Eingabe des Passworts beenden (nichts wird ersetzt) |
+| K-20 | Kern | Die RP-ID eines Key-Slots kommt ungeprüft aus der Datei (unter Windows zeigt der Systemdialog dann eine fremde Domain an; nichts verlässt das Gerät) |
+| K-21 | Windows | Die PDF-Ansicht begrenzt die Seitenhöhe nicht (ein präpariertes PDF kann den Speicher ausschöpfen) |
+| K-22 | Android | Der Absturzbericht erscheint vor dem Bildschirmschutz und wird ohne „sensibel“-Markierung kopiert (er enthält nur Stacktraces) |
+| K-23 | Website | Der Hinweis „Keine Cookies“ bleibt unsichtbar in der Tab-Reihenfolge; Kontrast der blassen Schrift knapp unter WCAG AA; doppelt vorgelesene Laufband-Liste und Bildtexte |
+| K-24 | Texte | „Alles wird nur auf diesem Gerät geprüft“ auch bei eingeschalteter Leak-Prüfung; Hinweis der Sperr-Benachrichtigung „Schütteln oder ‚Sperren‘ sperrt sofort“; Reste von GhulMail/GhulDrive im Testplan; Hinweis zu Testschlüsseln auf der Download-Seite des Testservers |
+| K-25 | Website | Ein früher hochgeladenes `report.php` könnte auf dem Webspace noch liegen (der Upload löscht nichts): von Hand prüfen und löschen |
+| K-26 | Kern | `create_from_vault` und `share_as_vault` legen noch Suiten bzw. Tresordateien mit einem einzelnen Key ohne Backup an; die App fordert danach beim Entfernen ein Backup, verlangt es aber nicht beim Anlegen |
+| K-27 | App | Das Löschsymbol eines Faktors erscheint auch, wenn Entfernen abgelehnt wird (letzter Faktor, letztes Backup); der Hinweis „Backup fehlt“ steht doppelt (Liste und Dialog) |
+| K-28 | Kern | `FactorProof` (Passwort, Key-PIN, Schlüsseldatei) wird über UniFFI kopiert und nicht ausdrücklich überschrieben; Kopien liegen bis zur Speicherbereinigung im Speicher |
+| K-29 | Kern | Scheitert beim Übernehmen einer Suite-Datei das Zurückrollen der Arbeitskopie, wird dieser zweite Fehler nicht gemeldet (der erste schon) |
+| K-30 | Tests | Fehlende Oberflächentests: Backup-Schritt im Assistenten mit zweitem Key, Konflikt „anderer Schutz“ im Speichern-Dialog, Hinweis beim Öffnen einer schreibgeschützten Datei |
+| K-31 | GhulDocs | Mehrere Dokumente auf einmal verschieben oder löschen fehlt (nur einzeln) |
+| K-32 | App | Barrierefreiheit: einigen Symbolknöpfen fehlt ein Text für Screenreader; die blasse Hinweisschrift liegt knapp unter WCAG AA |
+| K-33 | App | Vor dem Speichern wird der freie Platz am Ziel nicht geprüft (ein voller Stick scheitert erst beim Schreiben; ob die alte Datei dann heil bleibt, hängt unter Android vom Speicherort ab: prüfen) |
+| K-34 | Update | Der Installer prüft nicht noch einmal auf eine neuere Version, wenn zwischen Prüfung und Start Zeit vergangen ist |
+| K-35 | Format | Es gibt keine Zusage, welche ältere App-Version eine neue Suite-Datei noch öffnet; vor der ersten öffentlichen Version festlegen (z. B. „N-1“) und testen |
+| K-36 | Kern | Entfernen zwei Geräte unabhängig denselben Key, haben beide dieselben Slots, aber verschiedene Faktorgeheimnisse; öffnet das eine die Datei des anderen, bleibt das Schnell-Entsperren eingerichtet und scheitert beim nächsten Mal (dann Passwort und Key; kein Zugang für Fremde) |
 
 ## 5. Geprüft und in Ordnung
 

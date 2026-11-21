@@ -66,6 +66,11 @@ object DesktopPaths {
 object ShareFiles {
     private val timer = Timer("share-wipe", true)
     private var retrying = false
+    /**
+     * The copies that were there when [wipe] was called: only these are tried again (a copy made
+     * after the next unlock is not touched while it is written or open in another program).
+     */
+    private val pending = mutableSetOf<File>()
 
     init {
         Runtime.getRuntime().addShutdownHook(Thread { wipeOnce() })
@@ -74,14 +79,26 @@ object ShareFiles {
     /** Wipes the folder now and keeps retrying in the background for files still in use. */
     @Synchronized
     fun wipe() {
-        if (wipeOnce() || retrying) return
+        val dir = DesktopPaths.shareDir
+        if (dir.exists()) pending += dir.walkBottomUp().filter { it.isFile }
+        if (wipePending() || retrying) return
         retrying = true
         timer.schedule(30_000L, 30_000L) {
-            if (wipeOnce()) {
-                synchronized(this@ShareFiles) { retrying = false }
-                cancel()
-            }
+            val done = synchronized(this@ShareFiles) { wipePending().also { if (it) retrying = false } }
+            if (done) cancel()
         }
+    }
+
+    /** Wipes what was noted; true when none of it is left. */
+    @Synchronized
+    private fun wipePending(): Boolean {
+        pending.removeAll { f ->
+            if (f.exists()) wipeFile(f)
+            !f.exists()
+        }
+        // Empty folders of earlier copies go as well.
+        DesktopPaths.shareDir.takeIf { it.exists() }?.walkBottomUp()?.filter { it.isDirectory }?.forEach { it.delete() }
+        return pending.isEmpty()
     }
 
     /** Overwrites one file with zeros and deletes it (a copy that was not finished). */
@@ -166,10 +183,16 @@ class PropertiesStore(private val file: File) : KeyValueStore {
     @Synchronized
     private fun save() {
         val tmp = File(file.parentFile, file.name + ".tmp")
-        tmp.outputStream().use { props.store(it, "GhulSuite") }
-        if (!tmp.renameTo(file)) {
-            file.delete()
-            tmp.renameTo(file)
+        java.io.FileOutputStream(tmp).use { out ->
+            props.store(out, "GhulSuite")
+            out.fd.sync()
+        }
+        // One step (also on Windows, where renameTo fails over an existing file): the file is
+        // never missing, also not when the power goes or a portable stick is pulled.
+        try {
+            java.nio.file.Files.move(tmp.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+        } catch (e: java.nio.file.AtomicMoveNotSupportedException) {
+            java.nio.file.Files.move(tmp.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
         }
     }
 
@@ -250,10 +273,38 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
 
     override fun lock() {
         ShareFiles.wipe()
+        // A copied password does not outlive the session (also not the app: see the hook below).
+        clearOwnClip()
         super.lock()
     }
 
+    /** What GhulSuite put on the clipboard last (cleared when locking or quitting, if still there). */
+    @Volatile private var copiedSequence: Int? = null
+    @Volatile private var copiedText: String? = null
+
+    private fun clearOwnClip() {
+        copiedSequence?.let { WinNative.clearIfUnchanged(it) }
+        copiedSequence = null
+        copiedText?.let { text ->
+            runCatching {
+                val clipboard = Toolkit.getDefaultToolkit().systemClipboard
+                if (clipboard.getData(java.awt.datatransfer.DataFlavor.stringFlavor) as? String == text) {
+                    clipboard.setContents(StringSelection(""), null)
+                }
+            }
+        }
+        copiedText = null
+    }
+
+    init {
+        Runtime.getRuntime().addShutdownHook(Thread { runCatching { clearOwnClip() } })
+    }
+
     override fun crashReport(): String? = File(DesktopPaths.dataDir, "absturz.txt").takeIf { it.exists() }?.readText()
+
+    override fun clearCrashReport() {
+        File(DesktopPaths.dataDir, "absturz.txt").delete()
+    }
 
     override fun panicLock() {
         // Nothing is written back first (a GhulDocs vault open on its own locks at once).
@@ -287,8 +338,8 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
 
     override fun biometricAvailable(): Boolean = false
     override fun quickUnlockReady(): QuickUnlockReady = QuickUnlockReady(false, false)
-    override suspend fun enableBiometricUnlock() = throw VaultException(VaultErrorKind.QUICK_UNAVAILABLE)
-    override suspend fun enablePinUnlock(pin: String) = throw VaultException(VaultErrorKind.QUICK_UNAVAILABLE)
+    override suspend fun enableBiometricUnlock(password: String) = throw VaultException(VaultErrorKind.QUICK_UNAVAILABLE)
+    override suspend fun enablePinUnlock(password: String, pin: String) = throw VaultException(VaultErrorKind.QUICK_UNAVAILABLE)
     override fun disableQuickUnlock() {}
     override fun disableQuickUnlockMethod(bio: Boolean) {}
     override suspend fun unlockWithBiometric() = throw VaultException(VaultErrorKind.QUICK_UNAVAILABLE)
@@ -331,11 +382,22 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
 
     override fun copySensitive(label: String, text: String) {
         val seconds = settings.clipboardClearSeconds
-        val sequence = WinNative.copyPrivate(text)
+        // Another program may hold the clipboard open for a moment: tried a few times before the
+        // normal clipboard (which Windows keeps in its history) is used.
+        var sequence: Int? = null
+        for (attempt in 0 until 5) {
+            sequence = WinNative.copyPrivate(text, window())
+            if (sequence != null) break
+            Thread.sleep(40)
+        }
         if (sequence != null) {
+            copiedSequence = sequence
+            copiedText = null
             if (seconds > 0) timer.schedule(seconds * 1000L) { WinNative.clearIfUnchanged(sequence) }
             return
         }
+        copiedSequence = null
+        copiedText = text
         val clipboard = Toolkit.getDefaultToolkit().systemClipboard
         val selection = StringSelection(text)
         clipboard.setContents(selection, selection)

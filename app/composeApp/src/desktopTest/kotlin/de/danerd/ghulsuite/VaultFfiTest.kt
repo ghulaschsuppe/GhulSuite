@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package de.danerd.ghulsuite
 
+import de.danerd.ghulsuite.coretest.FactorProof
+
 import de.danerd.ghulsuite.coretest.CalCalendar
 import de.danerd.ghulsuite.coretest.EntryData
 import de.danerd.ghulsuite.coretest.FidoListener
@@ -85,13 +87,18 @@ class VaultFfiTest {
 
             // A key file as additional second factor; removing it later changes nothing else.
             val kf = generateKeyfile()
-            s.addKeyfile(kf, "USB-Stick")
+            s.addKeyfile(FactorProof("Master Passwort!", "1234", null), key, listener, kf, "USB-Stick")
             s.lock()
             s.unlock("Master Passwort!", null, null, null, kf)
+            // The key file is the key's backup: it cannot go while the key is there alone.
             val kfSlot = s.slots().first { it.kind == SlotKind.KEYFILE }
-            s.removeSlot(kfSlot.slotId)
+            assertFailsWith<GhulException.BackupFactorRequired> {
+                s.removeSlot(FactorProof("Master Passwort!", null, kf), null, null, kfSlot.slotId)
+            }
+            // The key may go (the key file alone needs no backup); then the key file is the last factor.
             val keySlot = s.slots().first { it.kind == SlotKind.SECURITY_KEY }
-            assertFailsWith<GhulException.LastFactor> { s.removeSlot(keySlot.slotId) }
+            s.removeSlot(FactorProof("Master Passwort!", null, kf), null, null, keySlot.slotId)
+            assertFailsWith<GhulException.LastFactor> { s.removeSlot(FactorProof("Master Passwort!", null, kf), null, null, kfSlot.slotId) }
             s.lock()
             s.unlockWithRecoveryCode(setup.recoveryCode!!, "Neues Passwort!")
             assertEquals(1, s.totpCodes(59uL).size)
@@ -165,7 +172,7 @@ class VaultFfiTest {
             }
             s.unlock("Master Passwort!", null, null, null, kf)
             val key = mockAuthenticator("1234")
-            s.addSecurityKey(key, listener, "1234", "Key")
+            s.addSecurityKey(FactorProof("Master Passwort!", null, kf), null, key, listener, "1234", "Key")
             s.lock()
             s.unlock("Master Passwort!", key, listener, "1234", null)
             s.lock()

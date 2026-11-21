@@ -49,10 +49,8 @@ private enum class UnlockMode { QUICK, FULL, RECOVERY }
 fun UnlockScreen(state: AppState) {
     val backend = state.backend
     val protection = remember { backend.protection() }
-    val hasKey = (protection?.securityKeys ?: 1) > 0
-    val hasKeyfile = (protection?.keyfiles ?: 0) > 0
-    var withKey by remember { mutableStateOf(hasKey) }
-    val needsKey = withKey && hasKey
+    var withKey by remember { mutableStateOf(state.backend.settings.factorKey) }
+    val needsKey = withKey
     var ready by remember { mutableStateOf(backend.quickUnlockReady()) }
     var mode by remember { mutableStateOf(if (ready.any) UnlockMode.QUICK else UnlockMode.FULL) }
     var password by remember { mutableStateOf("") }
@@ -81,6 +79,8 @@ fun UnlockScreen(state: AppState) {
     // When the last fingerprint prompt ended: the prompt itself can pause and resume the app,
     // which must not open it again right away (a cancelled prompt would come back forever).
     var promptEnded by remember { mutableStateOf<kotlin.time.TimeSource.Monotonic.ValueTimeMark?>(null) }
+    // Too many failed attempts: not asked for again by itself (it would close at once, again and again).
+    var bioLockedOut by remember { mutableStateOf(false) }
 
     fun biometric() {
         state.run(onError = { error = it; promptEnded = kotlin.time.TimeSource.Monotonic.markNow() }, block = {
@@ -88,6 +88,7 @@ fun UnlockScreen(state: AppState) {
                 backend.unlockWithBiometric()
                 true
             } catch (e: VaultException) {
+                if (e.kind == VaultErrorKind.BIOMETRIC_LOCKOUT) bioLockedOut = true
                 if (e.kind != VaultErrorKind.BIOMETRIC_CANCELLED) quickFailed(e) else error = null
                 false
             }
@@ -104,7 +105,7 @@ fun UnlockScreen(state: AppState) {
     val inFront by AppLaunch.inFront.collectAsState()
     LaunchedEffect(resumed, inFront) {
         val recent = promptEnded?.let { it.elapsedNow() < kotlin.time.Duration.parse("1.5s") } == true
-        if (inFront && mode == UnlockMode.QUICK && ready.biometric && !state.busy && !recent) biometric()
+        if (inFront && mode == UnlockMode.QUICK && ready.biometric && !state.busy && !recent && !bioLockedOut) biometric()
     }
 
     val t = g
@@ -153,13 +154,14 @@ fun UnlockScreen(state: AppState) {
                 ErrorText(error)
                 Spacer(Modifier.height(6.dp))
                 Links(
-                    stringResource(if (hasKey) Res.string.unlock_use_full else Res.string.unlock_use_password) to { mode = UnlockMode.FULL; error = null },
+                    stringResource(Res.string.unlock_use_full) to { mode = UnlockMode.FULL; error = null },
                     stringResource(Res.string.unlock_other_suite) to { clear(); state.showStart = true },
                 )
             }
 
             UnlockMode.FULL -> {
-                if (hasKey && hasKeyfile) FactorChoice(withKey) { withKey = it; error = null }
+                // Always both ways: what the file is protected with is not given away here.
+        FactorChoice(withKey) { withKey = it; error = null; state.backend.settings.factorKey = it }
                 SecretTextField(password, { password = it; error = null }, stringResource(Res.string.l_master_password))
                 if (needsKey) {
                     if (backend.keyPinInApp) SecretTextField(pin, { pin = it; error = null }, stringResource(Res.string.l_key_pin))
@@ -189,7 +191,11 @@ fun UnlockScreen(state: AppState) {
                             } else {
                                 backend.unlock(password, null, keyfile?.bytes, state.onTouchNeeded)
                             }
-                        }) { clear() }
+                        }) {
+                            // What worked is chosen first next time.
+                            backend.settings.factorKey = needsKey
+                            clear()
+                        }
                     },
                     enabled = !state.busy && password.isNotEmpty() && (if (needsKey) keyPinOk(state, pin) else keyfile != null),
                     modifier = Modifier.fillMaxWidth(),

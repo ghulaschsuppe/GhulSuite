@@ -25,8 +25,15 @@ name: Setup
 - hideKeyboard
 - takeScreenshot: 01-password
 - tapOn: "Next"
-# Step 2: second factor: key file.
-- tapOn: "Key file"
+# Step 2: second factor: key file. The option itself, by its text: with a key chosen, a chip
+# "Key file" (the key's backup) stands above it.
+- scrollUntilVisible:
+    element: "A small file you keep.*"
+    direction: DOWN
+- tapOn: "A small file you keep.*"
+- scrollUntilVisible:
+    element: "Create and save key file"
+    direction: DOWN
 - tapOn: "Create and save key file"
 # System dialog "Save to" (DocumentsUI)
 - tapOn:
@@ -35,6 +42,9 @@ name: Setup
 - extendedWaitUntil:
     visible: "Key file ready."
     timeout: 15000
+- scrollUntilVisible:
+    element: "Next"
+    direction: DOWN
 - tapOn: "Next"
 # Step 3: create (kept on this device). "Set up" is enabled once the key derivation is calibrated.
 - extendedWaitUntil:

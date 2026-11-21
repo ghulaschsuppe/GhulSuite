@@ -58,6 +58,10 @@ pub enum GhulError {
     WrongKeyfile,
     #[error("the last security key or key file cannot be removed")]
     LastFactor,
+    /// With a security key, a second key or a key file stays as a backup (losing one key must
+    /// not lock the user out).
+    #[error("a security key needs a backup: a second key or a key file")]
+    BackupFactorRequired,
     /// The file was made by a newer GhulSuite (new file kind or format): update the app.
     #[error("please update GhulSuite to open this file")]
     UpdateRequired,
@@ -116,6 +120,7 @@ impl From<FidoError> for GhulError {
             FidoError::PinPolicyViolation => GhulError::PinPolicyViolation,
             FidoError::HmacSecretUnsupported => GhulError::HmacSecretUnsupported,
             FidoError::NoCredentials => GhulError::KeyNotRegistered,
+            FidoError::CredentialExcluded => GhulError::AlreadyExists,
             FidoError::NotConfirmed => GhulError::NotConfirmed,
             FidoError::InvalidInput { msg } => GhulError::InvalidInput { msg },
             other => GhulError::KeyProtocol { msg: other.to_string() },

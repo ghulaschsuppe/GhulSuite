@@ -70,6 +70,12 @@ class LayoutCheckTest {
             kotlinx.coroutines.CoroutineExceptionHandler { _, e -> if (e !is java.awt.HeadlessException) errors += e },
     ).also { scopes += it }
 
+    @kotlin.test.AfterTest
+    fun endScopes() {
+        scopes.forEach { it.coroutineContext[kotlinx.coroutines.Job]?.cancel() }
+        scopes.clear()
+    }
+
     private fun endOldScopes() {
         while (scopes.size > 1) scopes.removeAt(0).coroutineContext[kotlinx.coroutines.Job]?.cancel()
     }

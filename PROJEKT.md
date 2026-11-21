@@ -58,6 +58,14 @@ tools/                 Prüfskripte, Website-Bau, Emulator-Skripte
   Desktop-Paketierung mit den Gradle-Prüfsummen), bricht beim ersten Fehler **nicht** ab und listet am Ende alle
   Fehler mit Log. Erst wenn alles grün ist, pushen; mehrere Korrekturen gesammelt pushen. `--quick` lässt Gradle
   weg, `--full` nimmt die langen Release-Tests dazu. Nur Windows selbst und der Emulator bleiben der CI.
+- **Emulator-Abläufe (Maestro) vor dem Push mitdenken.** Sie laufen nur in der CI. Deshalb gilt:
+  1. `tools/check-maestro.py` (läuft im Precheck mit) prüft, dass jeder Text, den ein Ablauf in `app/maestro`
+     antippt, abwartet oder sucht, ein Text der App ist. Texte des Systems oder der Testdaten stehen in
+     `tools/maestro-texts.txt`.
+  2. **Ändert sich Verhalten oder Ablauf in der Oberfläche** (ein Schritt, ein Dialog, ein Knopf kommt dazu oder
+     fällt weg, etwas bleibt erhalten statt gelöscht zu werden), werden alle Abläufe nach den betroffenen Texten
+     und Schritten durchsucht (`grep -rn "<Text>" app/maestro`) und jeder Treffer Schritt für Schritt gegen das
+     neue Verhalten gelesen und angepasst, **vor** dem Push. Das Skript sieht nur Texte, keine Reihenfolge.
 - Voraussetzungen: Rust (Ziele `aarch64-linux-android`, `x86_64-linux-android`), `cargo-ndk`, Android SDK mit
   NDK 28.2.13676358, JDK 17+.
 - Kern: `cd core && cargo fmt --all && cargo clippy -p ghul-core --all-targets -- -D warnings && cargo test -p ghul-core`.

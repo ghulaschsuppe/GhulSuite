@@ -45,17 +45,18 @@ class UnlockedService : Service() {
             JobStatus.cancelAll()
             return START_NOT_STICKY
         }
-        if (!ghul.backend.unlocked.value && !savingNow()) {
-            stopSelf()
-            return START_NOT_STICKY
-        }
+        // Started as a foreground service: Android requires startForeground() also when it stops
+        // right away (locked before this ran), else it ends the app.
         val notification = buildNotification(JobStatus.current.value)
         if (Build.VERSION.SDK_INT >= 34) {
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
-        startShakeDetection()
+        if (!ghul.backend.unlocked.value && !savingNow()) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
         watchJobs()
         return START_NOT_STICKY
     }
@@ -80,6 +81,13 @@ class UnlockedService : Service() {
             androidx.compose.runtime.snapshotFlow { ghul.backend.settings.shakeToLock }.drop(1).collect {
                 if (ghul.backend.unlocked.value) runCatching { nm.notify(NOTIFICATION_ID, buildNotification(JobStatus.current.value)) }
             }
+        }
+        // The sensor runs only while shaking can lock something.
+        scope.launch {
+            kotlinx.coroutines.flow.combine(
+                androidx.compose.runtime.snapshotFlow { ghul.backend.settings.shakeToLock },
+                ghul.backend.unlocked,
+            ) { on, unlocked -> on && unlocked }.collect { if (it) startShakeDetection() else stopShakeDetection() }
         }
     }
 
@@ -178,23 +186,28 @@ class UnlockedService : Service() {
     }
 
     /**
-     * Listens always while unlocked; [ShakeDetector] checks the setting on each sample, so
-     * switching "shake to lock" on or off takes effect at once.
+     * Listens only while "shake to lock" is on and the suite is unlocked (the sensor costs
+     * battery); switched with the setting and the lock state (see [watchJobs]).
      */
     private fun startShakeDetection() {
         if (shake != null) return
         shake = ShakeDetector(this) {
-            val wasUnlocked = ghul.backend.unlocked.value
+            // Locked meanwhile (a save still runs): nothing to lock, quick unlock stays.
+            if (!ghul.backend.unlocked.value) return@ShakeDetector false
             ghul.backend.panicLock()
             if (!savingNow()) stopSelf()
-            wasUnlocked
+            true
         }.also { it.start() }
+    }
+
+    private fun stopShakeDetection() {
+        shake?.stop()
+        shake = null
     }
 
     override fun onDestroy() {
         scope.cancel()
-        shake?.stop()
-        shake = null
+        stopShakeDetection()
         super.onDestroy()
     }
 

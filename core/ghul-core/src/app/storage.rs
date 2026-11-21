@@ -142,8 +142,16 @@ impl VaultStorage for LocalDirStorage {
 
     fn list(&self) -> std::result::Result<Vec<String>, StorageError> {
         let mut out = Vec::new();
-        if let Ok(entries) = fs::read_dir(&self.dir) {
-            for e in entries.flatten() {
+        // No folder yet: no files. Any other error is one (an empty list would open the suite
+        // without its vaults).
+        let entries = match fs::read_dir(&self.dir) {
+            Ok(entries) => Some(entries),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => return Err(io(e)),
+        };
+        if let Some(entries) = entries {
+            for e in entries {
+                let e = e.map_err(io)?;
                 // Only files: the content files of GhulDocs live in folders of their own.
                 if !e.file_type().is_ok_and(|t| t.is_file()) {
                     continue;
@@ -191,5 +199,18 @@ mod atomic_tests {
         write_atomic(&dir, "a.ghlpss", b"newer").unwrap();
         assert_eq!(fs::read(dir.join("a.ghlpss.bak")).unwrap(), b"new");
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// A folder that cannot be read is an error, not an empty suite; one that is not there yet is.
+    #[test]
+    fn a_folder_that_cannot_be_read_is_no_empty_list() {
+        let base = std::env::temp_dir().join(format!("ghul-list-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&base).unwrap();
+        assert!(LocalDirStorage::new(base.join("noch-nicht")).list().unwrap().is_empty());
+        let file = base.join("eine-datei");
+        fs::write(&file, b"x").unwrap();
+        assert!(LocalDirStorage::new(&file).list().is_err());
+        let _ = fs::remove_dir_all(&base);
     }
 }

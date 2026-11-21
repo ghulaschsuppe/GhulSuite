@@ -159,9 +159,21 @@ Daten neu verschlüsselt werden müssen.
 | **Schlüsseldatei** `.ghlkey` | zweiter Faktor, gleichwertig zum Key, beliebig viele; z. B. zum Einstieg oder als Reserve |
 | **Wiederherstellungscode** (Notfallblatt) | öffnet allein **alles**: für den Fall, dass nichts anderes mehr da ist |
 
-Mindestens ein Key oder eine Schlüsseldatei muss immer eingetragen sein. Jeder Key und jede Schlüsseldatei öffnet
-zusammen mit dem Passwort dasselbe Faktor-Geheimnis `S`. Darum lässt sich eine Schlüsseldatei später gegen einen Key
-tauschen (Key hinzufügen, Datei entfernen), ohne dass der Wiederherstellungscode oder die übrigen Keys ungültig werden.
+Mindestens ein Key oder eine Schlüsseldatei muss immer eingetragen sein. **Ein Security Key braucht immer ein Backup**
+(seit 21.11.2026): einen zweiten Key oder eine Schlüsseldatei. Der Assistent fragt bei einem Key gleich danach, und das
+letzte Backup eines Keys lässt sich nicht entfernen; ältere Suiten mit nur einem Key zeigen unter Optionen → Schlüssel
+einen Hinweis. Das Backup funktioniert genau wie der erste Key. Jeder Key und jede Schlüsseldatei öffnet zusammen mit
+dem Passwort dasselbe Faktor-Geheimnis `S`. Darum lässt sich eine Schlüsseldatei später gegen einen Key tauschen (Key
+hinzufügen, Datei entfernen), ohne dass der Wiederherstellungscode oder die übrigen Keys ungültig werden.
+
+**Schutzänderungen brauchen beide Faktoren** (seit 21.11.2026): ein neuer Wiederherstellungscode, ein Key oder eine
+Schlüsseldatei hinzufügen oder entfernen verlangt das Master-Passwort plus einen Key oder eine Schlüsseldatei von jetzt,
+geprüft wie beim Entsperren. Fingerabdruck und App-PIN einschalten verlangt das Master-Passwort. So kann sich niemand,
+der die App kurz entsperrt in der Hand hat, dauerhaften Zugang verschaffen oder den Besitzer aussperren.
+
+**Beim Entsperren und Öffnen** werden immer beide Wege angeboten, Key und Schlüsseldatei (vorgewählt ist, was auf
+diesem Gerät zuletzt benutzt wurde): Die Oberfläche verrät nicht, womit eine Datei geschützt ist. Der Kopf einer
+Datei nennt die Arten ihrer Slots allerdings unverschlüsselt (FORMAT 1), wer die Datei selbst hat, sieht das also.
 
 ### 6.2 Schlüsselhierarchie
 
@@ -199,7 +211,8 @@ flowchart TB
 - **Ein Passwort, eine Berührung** öffnet alle Container. Jeder Container hat trotzdem seinen eigenen VMK.
 - Jeder Container enthält alle Slots in seinem eigenen Header und lässt sich daher **auch einzeln** öffnen,
   z. B. nur eine `.ghlpss` vom USB-Stick ohne Suite-Datei (Abschnitt 8.3).
-- Passwort ändern geht mit einem einzigen Key. Ein Key oder eine Schlüsseldatei wird hinzugefügt oder entfernt, indem man einen Slot hinzufügt oder löscht. Die App aktualisiert dabei alle Container. Der letzte zweite Faktor lässt sich nicht entfernen.
+- Passwort ändern verlangt das aktuelle Passwort und **einen** zweiten Faktor (ein Key oder eine Schlüsseldatei genügt, nicht alle). Ein Key oder eine Schlüsseldatei wird hinzugefügt oder entfernt, indem man einen Slot hinzufügt oder löscht; auch das verlangt beide Faktoren. Die App aktualisiert dabei alle Container. Der letzte zweite Faktor lässt sich nicht entfernen, und solange ein Security Key eingetragen ist, auch nicht der vorletzte (das Backup). Denselben Key ein zweites Mal einzutragen lehnt der Key selbst ab (excludeList): er wäre kein Backup.
+- Öffnet ein Gerät einen neueren Stand derselben Suite mit **demselben** Schutz (gleiche Epoche, gleicher KDF-Salt und gleiche Faktor-Slots im Klartext-Header, kein Wiederherstellungscode), bleiben Fingerabdruck und App-PIN eingerichtet; sie halten denselben Passwortschlüssel. Bei anderem Schutz werden sie gelöscht. Jedes Gerät merkt sich die Schutzstände, die es selbst hatte. Eine Suite-Datei dieser Suite mit einem davon ist älter: Überschreiben wird angeboten. Eine mit einem Schutz, den das Gerät nie hatte (anderswo geändert), wird beim Speichern nicht überschrieben: das machte die Änderung rückgängig. Sie ist zuerst zu öffnen.
 - **Erneuern bei jeder Schutzänderung:** Neues Notfallblatt, neues Passwort oder ein entfernter Key geben jedem
   Container einen neuen VMK; ein entfernter Key erneuert zusätzlich `S` für alle übrigen Keys. So öffnet ein
   verlorenes Notfallblatt oder ein entfernter Key zusammen mit einer **alten Kopie der Suite-Datei** nichts, was
@@ -490,8 +503,9 @@ damals. Was danach gespeichert wurde, sieht er nicht.
 
 **Sicher unbrauchbar** werden alte Kopien, wenn der zweite Faktor getauscht wird: neuen Security Key oder neue
 Schlüsseldatei hinzufügen, den alten entfernen und die alte Schlüsseldatei vernichten bzw. den alten Key
-zurücksetzen. Ohne den alten Faktor öffnet keine alte Kopie mehr, auch nicht mit dem alten Passwort. Ein altes
-Notfallblatt öffnet eine alte Kopie allein; deshalb gehört es nach einem neuen Code vernichtet.
+zurücksetzen, **und** einen neuen Wiederherstellungscode erstellen. Ohne den alten Faktor öffnet keine alte Kopie
+mehr, auch nicht mit dem alten Passwort. Der Wiederherstellungscode bleibt beim Tausch eines Faktors gleich und öffnet
+alte Kopien allein; deshalb gehört nach einem Verlust ein neuer Code dazu und das alte Notfallblatt vernichtet.
 
 ### 8.3 Einzelne Tresore
 
@@ -601,8 +615,7 @@ Ort bleibt unberührt.
   kleine Anhänge und die Passwort-Historie.
 - Passwort-Generator (Zeichen oder gut merkbare Passphrase in Deutsch bzw. Englisch).
 - **Windows:** Kopieren mit automatischem Leeren der Zwischenablage, ohne Eintrag im Zwischenablage-Verlauf.
-  **Auto-Type** per Tastenkürzel: Benutzername, Tab, Passwort und Enter werden ins aktive Fenster getippt.
-- Nach dem Ausfüllen eines Logins bietet die App den passenden **TOTP-Code aus GhulAuth** an.
+  (Auto-Type per Tastenkürzel ist für später vorgesehen.)
 - Import (umgesetzt): Proton Pass (ZIP/JSON/CSV), Bitwarden (JSON/CSV), KeePass/KeePassXC- und andere CSV-Dateien;
   Duplikate werden übersprungen. `.kdbx` direkt folgt später. Export: `.ghlpss` (verschlüsselt) und unverschlüsselt
   als CSV nur mit Master-Passwort und deutlicher Warnung; `.kdbx` als Notausgang später.
@@ -611,10 +624,10 @@ Ort bleibt unberührt.
 
 ### 9.2 GhulAuth
 
-- TOTP/HOTP nach RFC 6238/4226, SHA-1/256/512, 6 bis 8 Stellen.
+- TOTP nach RFC 6238, SHA-1/256/512, 6 bis 8 Stellen, dazu Steam-Codes (HOTP-Konten werden beim Import genannt und übersprungen).
 - QR-Scan mit der Kamera (Android) bzw. per Bildschirmausschnitt (Windows), `otpauth://`-Links.
 - Import: Proton Authenticator, Aegis, 2FAS, Google Authenticator (Migrations-QR).
-- Optional: Codes erst nach Antippen zeigen. Warnung, wenn die Geräteuhr abweicht.
+- Optional: Codes erst nach Antippen zeigen.
 - Vollständig offline.
 
 ### 9.3 GhulDocs (abgestimmt und umgesetzt am 17. bis 19.11.2026)

@@ -27,14 +27,24 @@ class DesktopUpdater : CoreUpdater(if (DesktopPaths.portable) "-portable.zip" el
         val dir = File(System.getProperty("java.io.tmpdir"), "GhulSuite-Update")
         val msi = download(update, dir)
         val script = File(dir, "update.cmd")
+        // cmd reads a batch file in the console code page: UTF-8 is switched on first (paths with
+        // umlauts, e.g. C:\Users\Jürgen), and "%" in a path is doubled (else it is expanded). The
+        // installer starts only once this process has ended (no file of the app in use).
+        fun q(path: String) = "\"" + path.replace("%", "%%") + "\""
+        val pid = ProcessHandle.current().pid()
         script.writeText(
             "@echo off\r\n" +
-                "msiexec /i \"${msi.absolutePath}\" /passive /norestart\r\n" +
-                "start \"\" \"${exe!!.absolutePath}\"\r\n" +
-                "del \"${msi.absolutePath}\"\r\n",
+                "chcp 65001 >nul\r\n" +
+                ":wait\r\n" +
+                "tasklist /FI \"PID eq $pid\" 2>nul | find \"$pid\" >nul && (timeout /t 1 /nobreak >nul & goto wait)\r\n" +
+                "msiexec /i ${q(msi.absolutePath)} /passive /norestart\r\n" +
+                "start \"\" ${q(exe!!.absolutePath)}\r\n" +
+                "del ${q(msi.absolutePath)}\r\n",
+            Charsets.UTF_8,
         )
         ProcessBuilder("cmd", "/c", script.absolutePath).directory(dir).start()
-        // The installer replaces the files of the running app: close it (this locks the suite).
+        // The installer replaces the files of the running app: it ends now (the keys go with the
+        // process; the app made sure before that nothing is being saved or edited).
         exitProcess(0)
     }
 }

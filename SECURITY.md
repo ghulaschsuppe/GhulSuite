@@ -1,6 +1,6 @@
 # Sicherheit
 
-GhulSuite schützt Passwörter, 2FA-Schlüssel, Dateien und Mails. Sicherheitslücken nehme ich sehr ernst.
+GhulSuite schützt Passwörter, 2FA-Schlüssel, Dokumente und Termine. Sicherheitslücken nehme ich sehr ernst.
 
 ## Eine Lücke melden
 

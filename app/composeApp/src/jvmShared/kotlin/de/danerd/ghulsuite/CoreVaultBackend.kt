@@ -73,6 +73,7 @@ import de.danerd.ghulsuite.core.archiveWrittenMatches
 import de.danerd.ghulsuite.model.ArchiveCheckUi
 import de.danerd.ghulsuite.model.ArchiveRelationUi
 import de.danerd.ghulsuite.model.ArchiveTargetUi
+import de.danerd.ghulsuite.model.FactorProofUi
 import de.danerd.ghulsuite.model.ArchiveTargetInfoUi
 import de.danerd.ghulsuite.model.SuiteFileRef
 import de.danerd.ghulsuite.core.ArchiveCheck
@@ -268,8 +269,8 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
             unlockedState.value = runCatching { s.isUnlocked() }.getOrDefault(false)
             throw e
         }
-        // The device's quick unlock belonged to the state before.
-        onProtectionChanged()
+        // The device's quick unlock belonged to the state before (kept with the same protection).
+        if (runCatching { s.archiveDeviceDataWiped() }.getOrDefault(true)) onProtectionChanged()
         unlockedState.value = true
     }
 
@@ -289,6 +290,7 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
             ArchiveTarget.SAME -> ArchiveTargetUi.SAME
             ArchiveTarget.CHANGED_ELSEWHERE -> ArchiveTargetUi.CHANGED_ELSEWHERE
             ArchiveTarget.OTHER_SUITE -> ArchiveTargetUi.OTHER_SUITE
+            ArchiveTarget.OTHER_PROTECTION -> ArchiveTargetUi.OTHER_PROTECTION
         }
         ArchiveTargetInfoUi(target, info.device, info.time)
     }
@@ -1031,20 +1033,33 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
         }
     }
 
-    override suspend fun addSecurityKey(pin: String, label: String, onTouchNeeded: () -> Unit) =
-        withKey { t -> suite.addSecurityKey(t, Touch(onTouchNeeded), pin, label) }
+    private fun FactorProofUi.core() = de.danerd.ghulsuite.core.FactorProof(password, pin, keyfile)
 
-    override suspend fun addKeyfile(keyfile: ByteArray, label: String) = io { suite.addKeyfile(keyfile, label) }
+    override suspend fun addSecurityKey(proof: FactorProofUi, pin: String, label: String, onTouchNeeded: () -> Unit) {
+        // Confirmed with a key of now: that key first, in a connection of its own (on a phone
+        // only one key is plugged in), then the new key in the next one.
+        val rest = if (proof.pin != null) {
+            withKey { t -> suite.confirmFactors(proof.core(), t, Touch(onTouchNeeded)) }
+            FactorProofUi(proof.password, null, null)
+        } else {
+            proof
+        }
+        withKey { t -> suite.addSecurityKey(rest.core(), null, t, Touch(onTouchNeeded), pin, label) }
+    }
 
-    override suspend fun newRecoveryCode(label: String): String = io { suite.newRecoveryCode(label) }
+    override suspend fun addKeyfile(proof: FactorProofUi, keyfile: ByteArray, label: String, onTouchNeeded: () -> Unit) =
+        maybeWithKey(proof.pin) { t -> suite.addKeyfile(proof.core(), t, t?.let { Touch(onTouchNeeded) }, keyfile, label) }
 
-    override suspend fun removeSlot(id: String) {
-        io { suite.removeSlot(id.hexToBytes()) }
+    override suspend fun newRecoveryCode(proof: FactorProofUi, label: String, onTouchNeeded: () -> Unit): String =
+        maybeWithKey(proof.pin) { t -> suite.newRecoveryCode(proof.core(), t, t?.let { Touch(onTouchNeeded) }, label) }
+
+    override suspend fun removeSlot(proof: FactorProofUi, id: String, onTouchNeeded: () -> Unit) {
+        maybeWithKey(proof.pin) { t -> suite.removeSlot(proof.core(), t, t?.let { Touch(onTouchNeeded) }, id.hexToBytes()) }
         onProtectionChanged()
     }
 
-    override suspend fun changePassword(current: String, new: String) {
-        io { suite.changePassword(current, new) }
+    override suspend fun changePassword(proof: FactorProofUi, new: String, onTouchNeeded: () -> Unit) {
+        maybeWithKey(proof.pin) { t -> suite.changePassword(proof.core(), t, t?.let { Touch(onTouchNeeded) }, new) }
         onProtectionChanged()
     }
 

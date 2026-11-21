@@ -120,20 +120,25 @@ fun OpenSuiteFile(
         catching { backend.archiveProtection(file.source) }.onSuccess { protection = it }.onFailure { error = describe(it) }
     }
     val p = protection
-    val hasKey = (p?.securityKeys ?: 0) > 0
-    val hasKeyfile = (p?.keyfiles ?: 0) > 0
-    var withKey by remember(p) { mutableStateOf(hasKey) }
-    val needsKey = withKey && hasKey
+    var withKey by remember(p) { mutableStateOf(state.backend.settings.factorKey) }
+    val needsKey = withKey
     val opened = stringResource(Res.string.file_opened)
+    val readOnly = stringResource(Res.string.file_opened_read_only)
 
     fun accept() {
+        // Read before accepting: whether the file holds the suite of the working copy.
+        val sameSuite = check?.relation.let { it != null && it != ArchiveRelationUi.NO_SUITE && it != ArchiveRelationUi.OTHER_SUITE }
         state.run(onError = { error = it }, block = { backend.archiveAccept() }) {
-            // A file handed over without the right to write it again: "Save as" chooses the place.
-            backend.setSuiteFile(file.ref.takeIf { it.id.isNotEmpty() })
+            // A file handed over without the right to write it again keeps the place known before
+            // only for the same suite (the save there still checks the file); the place of
+            // another suite is forgotten, so its file is never offered for overwriting.
+            // "Save as" chooses a new one.
+            if (file.ref.id.isNotEmpty()) backend.setSuiteFile(file.ref) else if (!sameSuite) backend.setSuiteFile(null)
+            backend.settings.factorKey = needsKey
             check = null
             password = ""; pin = ""; code = ""; newPassword = ""; repeat = ""
             state.afterSuiteFileOpened()
-            state.message(opened.replace("%1\$s", file.ref.name))
+            state.message(opened.replace("%1\$s", file.ref.name) + if (file.ref.id.isEmpty()) "\n" + readOnly else "")
             onOpened()
         }
     }
@@ -148,7 +153,8 @@ fun OpenSuiteFile(
         }
         if (!withCode) {
             SecretTextField(password, { password = it; error = null }, stringResource(Res.string.l_master_password))
-            if (hasKey && hasKeyfile) FactorChoice(withKey) { withKey = it; error = null }
+            // Always both ways: what the file is protected with is not given away here.
+        FactorChoice(withKey) { withKey = it; error = null; state.backend.settings.factorKey = it }
             if (needsKey) KeyPinField(state, pin) { pin = it; error = null } else KeyfilePicker(keyfile) { keyfile = it; error = null }
             TextButton(onClick = { withCode = true; error = null }) { Text(stringResource(Res.string.file_with_code)) }
         } else {
@@ -307,6 +313,7 @@ fun SuiteFileSection(state: AppState) {
 fun AppState.afterSuiteFileOpened() {
     // A vault file waiting for the suite before is not added to this one unasked.
     pendingAdd = null
+    pendingDocsAdd = null
     showStart = false
     vaultExists = true
     openFirstArea = true

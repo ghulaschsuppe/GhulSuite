@@ -246,7 +246,13 @@ impl<'a> Authenticator<'a> {
     }
 
     /// Creates a non-discoverable credential with the `hmac-secret` extension enabled.
-    pub fn make_credential(&self, rp_id: &str, rp_name: &str, pin: &str) -> Result<Credential, FidoError> {
+    pub fn make_credential(
+        &self,
+        rp_id: &str,
+        rp_name: &str,
+        pin: &str,
+        exclude: &[Vec<u8>],
+    ) -> Result<Credential, FidoError> {
         if !self.info.supports_hmac_secret() {
             return Err(FidoError::HmacSecretUnsupported);
         }
@@ -261,7 +267,7 @@ impl<'a> Authenticator<'a> {
         if self.info.supports_cred_protect() {
             ext.push((Cbor::text("credProtect"), Cbor::Int(CRED_PROTECT_UV_REQUIRED)));
         }
-        let params = Cbor::Map(vec![
+        let mut params = vec![
             (Cbor::Int(1), Cbor::bytes(&cdh)),
             (
                 Cbor::Int(2),
@@ -286,7 +292,18 @@ impl<'a> Authenticator<'a> {
             (Cbor::Int(7), Cbor::Map(vec![(Cbor::text("rk"), Cbor::Bool(false))])),
             (Cbor::Int(8), Cbor::Bytes(proto.authenticate(&token, &cdh))),
             (Cbor::Int(9), Cbor::Int(proto.id())),
-        ]);
+        ];
+        // excludeList (key 5, in its place between 4 and 6): a key registered already refuses.
+        if !exclude.is_empty() {
+            let list = exclude
+                .iter()
+                .map(|id| {
+                    Cbor::Map(vec![(Cbor::text("id"), Cbor::bytes(id)), (Cbor::text("type"), Cbor::text("public-key"))])
+                })
+                .collect();
+            params.insert(4, (Cbor::Int(5), Cbor::Array(list)));
+        }
+        let params = Cbor::Map(params);
         let v = self.command(CMD_MAKE_CREDENTIAL, Some(params), USER_ACTION)?;
         let auth_data =
             map_get_int(&v, 0x02).and_then(as_bytes).ok_or_else(|| FidoError::protocol("missing authData"))?;

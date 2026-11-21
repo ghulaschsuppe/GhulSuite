@@ -67,10 +67,13 @@ object WinNative {
      * nor syncs it to the cloud. Returns the clipboard sequence number to check later, or null if
      * the native way failed (the caller then uses the normal clipboard).
      */
-    fun copyPrivate(text: String): Int? {
+    fun copyPrivate(text: String, owner: java.awt.Window?): Int? {
         val u = user32 ?: return null
         val k = kernel32 ?: return null
-        if (!u.OpenClipboard(null)) return null
+        // With no owner window, EmptyClipboard leaves the clipboard without an owner and
+        // SetClipboardData fails: the app's window owns it.
+        val hwnd = owner?.let { runCatching { Native.getWindowPointer(it) }.getOrNull() } ?: return null
+        if (!u.OpenClipboard(hwnd)) return null
         try {
             u.EmptyClipboard()
             val chars = (text + "\u0000").toCharArray()

@@ -275,7 +275,7 @@ fn a_month_of_everyday_use_on_two_devices() {
         // Day 15: new master password; the other device gets it with the next copy.
         if day == 15 {
             let new_pw = "Neues-Alltag-pw-15".to_string();
-            devices[holder].suite.change_password(password.clone(), new_pw.clone()).unwrap();
+            devices[holder].suite.change_password(super::kf_proof(&password, &kf), None, None, new_pw.clone()).unwrap();
             password = new_pw;
         }
         // Day 20: backup.

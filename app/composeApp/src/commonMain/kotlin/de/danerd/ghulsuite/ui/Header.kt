@@ -51,6 +51,7 @@ fun AreaContext(state: AppState) {
     val all = stringResource(Res.string.vault_all)
     val allAccounts = stringResource(Res.string.ctx_all_codes)
     val suite = stringResource(Res.string.set_my_suite)
+    val versionWord = stringResource(Res.string.ctx_version)
     val allVaults = stringResource(Res.string.vault_all_vaults)
     val allCalendars = stringResource(Res.string.cal_all_calendars)
     // Texts looked up later (after a count is known) use the language of the screen.
@@ -72,7 +73,7 @@ fun AreaContext(state: AppState) {
                 val visible = cals.count { it.id !in hidden }
                 if (visible == cals.size) allCalendars else countText(env, Res.plurals.cal_some_calendars, cals.size, visible.toString(), cals.size.toString())
             }
-            Tab.SETTINGS -> "$suite · Version " + state.backend.appVersion.substringBefore("-").split('.').take(2).joinToString(".")
+            Tab.SETTINGS -> "$suite · " + versionWord.replace("%1\$s", state.backend.appVersion.substringBefore("-").split('.').take(2).joinToString("."))
         }
     }
     val clickable = state.tab != Tab.SETTINGS

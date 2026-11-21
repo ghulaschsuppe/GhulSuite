@@ -230,10 +230,24 @@ impl GhulSuite {
                 };
                 n += 1;
             }
-            e.fields.insert(format!("{ATTACHMENT_PREFIX}{unique}"), Field::Bytes(data.to_vec()));
+            let key = format!("{ATTACHMENT_PREFIX}{unique}");
+            e.fields.insert(key.clone(), Field::Bytes(data.to_vec()));
             e.revision += 1;
             e.modified = now_ms();
-            self.save_vault(o, &vault_id)
+            // A vault file has its own limit as well: too large to be sealed, or not written,
+            // the attachment goes again (else every later save of the vault failed).
+            let saved = self.save_vault(o, &vault_id);
+            if saved.is_err() {
+                if let Ok((_, c)) = o.entry_vault_mut(&vault_id) {
+                    if let Ok(e) = find_entry(&mut c.payload.entries, &id) {
+                        if let Some(mut f) = e.fields.remove(&key) {
+                            zeroize::Zeroize::zeroize(&mut f);
+                        }
+                        e.revision -= 1;
+                    }
+                }
+            }
+            saved
         })
     }
 

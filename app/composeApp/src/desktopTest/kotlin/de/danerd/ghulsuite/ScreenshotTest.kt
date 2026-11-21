@@ -125,6 +125,8 @@ class ScreenshotTest {
             if (existsNow) throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.ALREADY_EXISTS)
             calls += "create"
             existsNow = true
+            // As the core: the new suite is open.
+            unlocked.value = true
             return ""
         }
         override suspend fun createFromVault(open: OpenVaultUi, onTouchNeeded: () -> Unit): String? = null
@@ -172,8 +174,8 @@ class ScreenshotTest {
         override fun panicLock() {}
         override fun biometricAvailable() = true
         override fun quickUnlockReady() = QuickUnlockReady(biometric = quickReady, pin = quickReady)
-        override suspend fun enableBiometricUnlock() {}
-        override suspend fun enablePinUnlock(pin: String) {}
+        override suspend fun enableBiometricUnlock(password: String) {}
+        override suspend fun enablePinUnlock(password: String, pin: String) {}
         override fun disableQuickUnlock() {}
         override fun disableQuickUnlockMethod(bio: Boolean) {}
         override suspend fun unlockWithBiometric() {}
@@ -250,11 +252,11 @@ class ScreenshotTest {
             SlotUi("f", SlotType.KEYFILE, "USB-Stick", 1_762_800_000_000),
             SlotUi("c", SlotType.RECOVERY_CODE, "Wiederherstellungscode", 1_762_800_000_000),
         )
-        override suspend fun addSecurityKey(pin: String, label: String, onTouchNeeded: () -> Unit) {}
-        override suspend fun addKeyfile(keyfile: ByteArray, label: String) {}
-        override suspend fun newRecoveryCode(label: String) = ""
-        override suspend fun removeSlot(id: String) {}
-        override suspend fun changePassword(current: String, new: String) {}
+        override suspend fun addSecurityKey(proof: de.danerd.ghulsuite.model.FactorProofUi, pin: String, label: String, onTouchNeeded: () -> Unit) {}
+        override suspend fun addKeyfile(proof: de.danerd.ghulsuite.model.FactorProofUi, keyfile: ByteArray, label: String, onTouchNeeded: () -> Unit) {}
+        override suspend fun newRecoveryCode(proof: de.danerd.ghulsuite.model.FactorProofUi, label: String, onTouchNeeded: () -> Unit) = ""
+        override suspend fun removeSlot(proof: de.danerd.ghulsuite.model.FactorProofUi, id: String, onTouchNeeded: () -> Unit) {}
+        override suspend fun changePassword(proof: de.danerd.ghulsuite.model.FactorProofUi, new: String, onTouchNeeded: () -> Unit) {}
         override fun generatePassword(options: PasswordOptionsUi) = "x7#Kq!9mVw2\$Lp4@Zr8&"
         override fun passwordScore(password: String) = if (password.length > 12) 4 else 1
         override fun copySensitive(label: String, text: String) {}
@@ -281,8 +283,20 @@ class ScreenshotTest {
         }
     }
 
+    /** Scopes of the states shown here, ended after the test (they listen to AppLaunch, one for all tests). */
+    private val scopes = java.util.Collections.synchronizedList(mutableListOf<CoroutineScope>())
+
+    @kotlin.test.AfterTest
+    fun endScopes() {
+        scopes.forEach { it.coroutineContext[kotlinx.coroutines.Job]?.cancel() }
+        scopes.clear()
+    }
+
     private fun state(exists: Boolean, unlocked: Boolean, setup: AppState.() -> Unit = {}): AppState =
-        AppState(Fake(exists, unlocked).apply { docs.delayMs = 0; docs.sectionDelayMs = 0 }, CoroutineScope(Dispatchers.Unconfined)).apply(setup)
+        AppState(
+            Fake(exists, unlocked).apply { docs.delayMs = 0; docs.sectionDelayMs = 0 },
+            CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Unconfined).also { scopes += it },
+        ).apply(setup)
 
     @Test
     fun screens() {

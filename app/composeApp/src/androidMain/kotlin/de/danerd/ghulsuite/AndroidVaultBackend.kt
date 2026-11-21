@@ -164,6 +164,8 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
     override fun lock() {
         // Decrypted copies handed to other apps and a copied password do not outlive the session.
         File(context.cacheDir, "shared").deleteRecursively()
+        // An "open with" choice that waited would point at a deleted copy, above the lock screen.
+        pendingChooser = null
         clearOwnClip()
         super.lock()
     }
@@ -214,14 +216,19 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
             }
         }
         val uri = androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".files", target)
-        val intent = Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, uri)
-        intent.type = mime
+        // "Open with": the apps that show this type (not the share targets).
+        val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime)
         intent.clipData = ClipData.newRawUri("", uri)
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        ExternalActivity.started()
-        context.startActivity(
-            Intent.createChooser(intent, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION),
-        )
+        val chooser = Intent.createChooser(intent, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        // Decrypting took a while and the user went elsewhere: Android does not start it from the
+        // background, so it waits until GhulSuite is in front again.
+        if (de.danerd.ghulsuite.ui.AppLaunch.inFront.value) {
+            ExternalActivity.started()
+            context.startActivity(chooser)
+        } else {
+            pendingChooser = chooser
+        }
         return true
     }
 
@@ -298,12 +305,12 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
         context.getString(R.string.bio_cancel),
     )
 
-    override suspend fun enableBiometricUnlock() {
+    override suspend fun enableBiometricUnlock(password: String) {
         val (t, s, c) = bioTexts()
-        quick.enableBiometric(t, s, c)
+        quick.enableBiometric(password, t, s, c)
     }
 
-    override suspend fun enablePinUnlock(pin: String) = quick.enablePin(pin)
+    override suspend fun enablePinUnlock(password: String, pin: String) = quick.enablePin(password, pin)
 
     override fun disableQuickUnlock() = quick.disableAll()
 
@@ -325,8 +332,40 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
 
     override fun printEmergencySheet(code: String, text: EmergencySheetText) {
         val act = activity() ?: return
+        // The print preview is an activity of the system: the automatic lock waits (as for a picker).
+        ExternalActivity.started()
         EmergencySheet.print(act, code, text)
     }
+
+    override fun notificationsAllowed(): Boolean =
+        runCatching { context.getSystemService(android.app.NotificationManager::class.java).areNotificationsEnabled() }.getOrDefault(true)
+
+    override fun openNotificationSettings() {
+        ExternalActivity.started()
+        runCatching {
+            context.startActivity(
+                Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }
+    }
+
+    /** "Open with" that waits for the app to come to the front (see [onFront]); dropped when locking. */
+    @Volatile private var pendingChooser: Intent? = null
+
+    /** Back in front: the "open with" choice that waited, and a clipboard that is due to be cleared. */
+    fun onFront() {
+        pendingChooser?.let { c ->
+            pendingChooser = null
+            ExternalActivity.started()
+            runCatching { context.startActivity(c) }
+        }
+        if (clipDueAt > 0 && android.os.SystemClock.elapsedRealtime() >= clipDueAt) clearOwnClip()
+    }
+
+    /** When the copied secret is to be cleared (elapsed realtime, counts in deep sleep); 0: none. */
+    @Volatile private var clipDueAt = 0L
 
     /** Label of the last copied secret, until it was cleared. */
     @Volatile private var copiedLabel: String? = null
@@ -335,6 +374,7 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
     private fun clearOwnClip() {
         val label = copiedLabel ?: return
         copiedLabel = null
+        clipDueAt = 0
         val cm = context.getSystemService(ClipboardManager::class.java)
         // In the background Android may hide the clipboard: then clear to be safe.
         val current = runCatching { cm.primaryClipDescription?.label?.toString() }.getOrNull()
@@ -343,7 +383,8 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
 
     override fun copySensitive(label: String, text: String) {
         val cm = context.getSystemService(ClipboardManager::class.java)
-        val tagged = "$label \u2022 GhulSuite ${System.nanoTime() % 100000}"
+        // Neutral: the label is visible to keyboards and clipboard previews (no account names).
+        val tagged = "GhulSuite ${System.nanoTime() % 100000}"
         val clip = ClipData.newPlainText(tagged, text)
         clip.description.extras = PersistableBundle().apply {
             if (Build.VERSION.SDK_INT >= 33) {
@@ -356,11 +397,16 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
         copiedLabel = tagged
         val seconds = settings.clipboardClearSeconds
         if (seconds > 0) {
+            // The handler's clock stops in deep sleep: the due time is checked again when the
+            // app comes to the front (see onFront).
+            clipDueAt = android.os.SystemClock.elapsedRealtime() + seconds * 1000L
             main.postDelayed({ if (copiedLabel == tagged) clearOwnClip() }, seconds * 1000L)
         }
     }
 
     override fun crashReport(): String? = CrashLog.pending(context)
+
+    override fun clearCrashReport() = CrashLog.clear(context)
 }
 
 /** Opens its stream only when the first byte is written (nothing is truncated before). */

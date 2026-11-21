@@ -140,7 +140,7 @@
     <string name="factor_keyfile">Key file</string>
     <string name="foreign_text">Open the vault once with its previous password and its key or key file.</string>
     <string name="foreign_title">Take over vault</string>
-    <string name="foreign_warning">Afterwards it is switched to your password, your keys and your recovery code. Its previous password no longer works for this file.</string>
+    <string name="foreign_warning">The copy in your suite is switched to your password, your keys and your recovery code. The original file stays as it is and still opens with its previous password: delete it if you no longer need it.</string>
     <string name="gen_again">New password</string>
     <string name="gen_ambiguous">Avoid confusable characters</string>
     <string name="gen_digits">Digits</string>
@@ -293,7 +293,7 @@
     <string name="set_totp_next">GhulAuth: show next code shortly before expiry</string>
     <string name="set_unlock">Unlocking</string>
     <string name="set_vaults">Vaults</string>
-    <string name="set_vaults_hint">All vault files in your folder belong to your suite. Each can also be taken along and opened on its own: with your password and second factor or with the recovery code.</string>
+    <string name="set_vaults_hint">All vaults here belong to your suite. Each can also be taken along and opened on its own: with your password and second factor or with the recovery code.</string>
     <string name="set_view">Display</string>
     <string name="setup_calibrating">Measuring the speed of this device …</string>
     <string name="setup_code_noted">I have written down or printed the code</string>
@@ -336,7 +336,7 @@
     <string name="slot_key">Security key</string>
     <string name="slot_keyfile">Key file</string>
     <string name="start_back_to_suite">Back to the suite</string>
-    <string name="start_is_suite_file">This is the settings file of a suite. Choose “Open existing suite” and then the folder it is in.</string>
+    <string name="start_is_suite_file">This is a file from inside a suite. Choose “Open suite file” and then the suite file (.ghlzip).</string>
     <string name="start_new">Set up new</string>
     <string name="start_new_text">New suite with master password and security key or key file.</string>
     <string name="start_open_suite">Open suite file</string>
@@ -365,7 +365,6 @@
     <string name="unlock_other_suite">Open another suite or vault</string>
     <string name="unlock_use_code">Locked out? Use recovery code</string>
     <string name="unlock_use_full">Use password and key or key file</string>
-    <string name="unlock_use_password">Use password and key file</string>
     <string name="unlock_use_quick">Use fingerprint or app PIN</string>
     <string name="untitled">(untitled)</string>
     <string name="vault_add_file">Add vault file</string>
@@ -375,10 +374,10 @@
     <string name="vault_missing">File damaged: %1$s</string>
     <string name="vault_name_example">e.g. Work</string>
     <string name="vault_new">New vault</string>
-    <string name="vault_new_text">The new vault gets your password, keys and recovery code and is stored as a separate file in your folder.</string>
+    <string name="vault_new_text">The new vault gets your password, keys and recovery code and is stored as a separate file in your suite.</string>
     <string name="vault_none_yet">There is no vault for this area yet.</string>
     <string name="vault_pick_title">Which vault?</string>
-    <string name="vault_remove_warning">The file is deleted from your folder, with all its entries.</string>
+    <string name="vault_remove_warning">The vault is deleted from your suite, with all its entries.</string>
     <string name="vault_remove_tip">Tip: export first what you want to keep.</string>
     <string name="vault_remove_title">Delete “%1$s”?</string>
     <string name="vault_summary">%1$s · entries: %2$s</string>
@@ -420,7 +419,7 @@
         <item quantity="one">%1$s vault</item>
         <item quantity="other">%1$s vaults</item>
     </plurals>
-    <string name="set_unlock_sub_off">Password only</string>
+    <string name="set_unlock_sub_off">Password and second factor</string>
     <plurals name="set_vaults_sub">
         <item quantity="one">%1$s vault</item>
         <item quantity="other">%1$s vaults</item>
@@ -546,7 +545,7 @@
     <string name="side_lock_key">Ctrl+L</string>
     <string name="gen_separator">Separator</string>
     <string name="about_made_by">Made by Daniel Erdmann · 2026</string>
-    <string name="about_made_by_sub">Passwords, 2FA and calendar, encrypted on your devices. Open source under AGPL-3.0.</string>
+    <string name="about_made_by_sub">Passwords, 2FA, documents and calendar, encrypted on your devices. Open source under AGPL-3.0.</string>
     <string name="about_trademark">“GhulSuite” and the logo are marks of Daniel Erdmann. Changed versions need a name of their own.</string>
     <string name="pass_export_one">Export entry</string>
     <string name="pass_export_one_sub">As an unencrypted CSV file</string>
@@ -717,7 +716,7 @@
     <string name="cal_default_reminder">Default reminder</string>
     <string name="cal_export_one">Export as .ics</string>
     <string name="cal_delete_calendar">Delete calendar</string>
-    <string name="cal_delete_calendar_text">“%1$s” and all its events will be deleted, also on your other devices.</string>
+    <string name="cal_delete_calendar_text">“%1$s” and all its events will be deleted; with the next save also in the suite file.</string>
     <string name="cal_import">Import (.ics)</string>
     <string name="cal_export">Export (.ics)</string>
     <string name="cal_import_confirm_title">Take over the calendar file?</string>
@@ -777,7 +776,7 @@
     <string name="cal_manage">Manage calendars (%1$s)</string>
     <string name="cal_data_hint">Colours, visibility, import and export of .ics files from Google, Outlook, Apple or Thunderbird.</string>
     <string name="cal_closed_title">Closed by design</string>
-    <string name="cal_closed_text">GhulCal speaks no CalDAV and subscribes to no foreign calendars. Events leave the device only encrypted, in the suite file. Exchange with other programs via .ics files.</string>
+    <string name="cal_closed_text">GhulCal speaks no CalDAV and subscribes to no foreign calendars. Events travel encrypted in the suite file; only when you share an event or export it as .ics does it leave the device unencrypted.</string>
     <string name="cal_channel">Event reminders</string>
     <string name="cal_notify_min">Event in %1$s</string>
     <string name="cal_notify_soon">Event now</string>
@@ -807,13 +806,13 @@
     <string name="wz_step_of">Step %1$s of 8 · %2$s</string>
     <string name="wz_step_password">Master password</string>
     <string name="wz_step_factor">Second factor</string>
-    <string name="wz_create_hint">The suite is kept on this device. To take it to another device (e.g. on a USB stick), save it as a file (.ghlzip) later under Options, Suite file.</string>
+    <string name="wz_create_hint">The suite is made on this device now. In the last step you create it as a suite file (.ghlzip) at a place you choose, e.g. on a USB stick.</string>
     <string name="wz_step_storage">Create</string>
     <string name="wz_step_areas">Areas</string>
     <string name="wz_step_lock">Locking</string>
     <string name="wz_step_unlock">Unlocking</string>
     <string name="wz_step_code">Recovery code</string>
-    <string name="wz_pw_hint">The password never leaves your device. Without password and second factor only the recovery code helps (step 8).</string>
+    <string name="wz_pw_hint">The password never leaves your device. Without password and second factor only the recovery code helps (step 7).</string>
     <string name="wz_key_sub">Recommended · YubiKey, Nitrokey … via USB or NFC</string>
     <string name="wz_key_touch">Plug in the key or hold it to the phone (NFC) and touch it when GhulSuite asks (after choosing the storage location).</string>
     <string name="wz_keyfile_hint">Keep it on a USB stick or another safe place, not next to the suite.</string>
@@ -842,18 +841,18 @@
     <string name="area_pass_default">Private</string>
     <string name="area_auth_default">Personal</string>
     <string name="area_cal_default">Calendar</string>
-    <string name="area_group_all">For %1$s · all devices</string>
+    <string name="area_group_all">For %1$s · in the suite</string>
     <string name="area_group_device">Only on this device</string>
-    <string name="area_file_note">Top: stored in the %1$s file, applies on all devices. Below: only on this device.</string>
+    <string name="area_file_note">Top: stored in the %1$s file, travels with the suite file. Below: only on this device.</string>
     <string name="area_section">Area</string>
     <string name="area_hide">Hide on this device</string>
     <string name="area_show">Show on this device</string>
-    <string name="area_hide_sub">Display only: the file stays, other devices keep showing the area</string>
+    <string name="area_hide_sub">Display only: the file stays in the suite, nothing changes on other devices</string>
     <string name="area_hidden_msg">%1$s hidden on this device</string>
     <string name="area_shown_msg">%1$s shown again</string>
     <string name="area_remove">Remove area</string>
     <string name="area_remove_sub">Deletes every vault file of the area (%1$s)</string>
-    <string name="area_remove_everywhere">On all devices, after asking</string>
+    <string name="area_remove_everywhere">From the suite, after asking</string>
     <string name="area_remove_title">Remove %1$s?</string>
     <string name="area_remove_warning">Every vault file of the area (%1$s) is deleted, with its content and settings; with the next save also in the suite file.</string>
     <string name="area_remove_tip">Tip: export first what you want to keep. If you only do not want to see the area here, choose “Hide on this device”.</string>
@@ -861,7 +860,7 @@
     <string name="area_tag_not_set_up">not set up</string>
     <string name="area_tag_hidden">hidden here</string>
     <string name="area_tag_active">active</string>
-    <string name="areas_hint">Every area is an encrypted file of its own with its settings. “Hide” applies to this device only, “Remove” deletes the file everywhere.</string>
+    <string name="areas_hint">Every area is an encrypted file of its own with its settings. “Hide” applies to this device only, “Remove” deletes the file from the suite (with the next save also from the suite file).</string>
     <string name="area_set_up_title">Set up %1$s</string>
     <string name="area_set_up_text">%1$s. The file %2$s is created and saved in the suite file like everything else.</string>
     <string name="area_set_up">Set up</string>
@@ -911,13 +910,13 @@
     <string name="msg_deleted_n">%1$s deleted</string>
     <!-- U5: error details from the core, translated (tools/check-texts.py checks every one is here) -->
     <string name="core_name_req">Please enter a name.</string>
-    <string name="core_suite_not_vault">This is a suite file, not a single vault. Open its folder instead.</string>
-    <string name="core_suite_file">This is a suite file. Open its folder instead.</string>
+    <string name="core_suite_not_vault">This is a suite file, not a single vault. Open it with “Open suite file”.</string>
+    <string name="core_suite_file">This is a suite file. Open it with “Open suite file”.</string>
     <string name="core_key_pin_unverified">The key did not confirm the PIN.</string>
     <string name="core_key_bad_answer">The key gave an unexpected answer.</string>
     <string name="core_timeout">Timed out.</string>
     <string name="core_host_not_found">The server address was not found. Check its spelling and the internet connection.</string>
-    <string name="core_refused">The server refused the connection. Check the port.</string>
+    <string name="core_refused">The connection was refused. Try again later.</string>
     <string name="core_not_pass">This is not a GhulPass vault.</string>
     <string name="core_not_auth">This is not a GhulAuth vault.</string>
     <string name="core_not_cal">This is not a calendar.</string>
@@ -938,7 +937,7 @@
     <string name="core_attach_big">Attachment too large (at most 10 MB).</string>
     <string name="core_suite_too_large">The suite file would be too large (at most 3.75 GiB) and could not be opened any more. Nothing was saved. Remove large attachments or documents and save again.</string>
     <string name="core_other_full">The vaults besides GhulDocs are full (at most 200 MiB together, mostly attachments). Nothing was added.</string>
-    <string name="core_docs_kept_aside">The previous documents could not be put back in their place. They were not deleted but kept in a folder of their own, "rescued-documents-…", in the folder of the suite.</string>
+    <string name="core_docs_kept_aside">The previous documents could not be put back in their place. They were not deleted but kept in a folder of their own, "rescued-documents-…", with the app\'s data on this device.</string>
     <string name="core_no_group">This group does not exist.</string>
     <string name="core_no_password">No password given.</string>
     <string name="core_password_empty">The password must not be empty.</string>
@@ -1366,4 +1365,23 @@
     <string name="wz_file_failed">Without a suite file your data is on this device only. If it is lost, everything is gone. Try again or choose another place; you can also create it later with the save icon at the top.</string>
     <string name="wz_file_skip">Continue without a suite file</string>
     <string name="close_editing">An entry is being edited and not applied yet. Apply it first and then save, or quit without it.</string>
+    <string name="close_saving_unknown">The suite file is being saved right now. The app quits as soon as saving is done.</string>
+    <string name="save_running_locked_unknown">The suite file is still being saved. Do not pull the USB stick.</string>
+    <string name="ctx_version">Version %1$s</string>
+    <string name="about_report_file">GhulSuite-error-report.txt</string>
+    <string name="err_bio_lockout">Too many failed biometric attempts. Unlock with the master password and key or key file, or try again later.</string>
+    <string name="cal_notifications_off">Notifications are turned off for GhulSuite: reminders do not arrive.</string>
+    <string name="cal_notifications_settings">Turn on notifications …</string>
+    <string name="upd_wait">Finish saving, adding or editing first, then update.</string>
+    <string name="err_backup_factor">A security key needs a backup: a second key or a key file. Add a backup first.</string>
+    <string name="proof_hint">To confirm: master password and your key or key file. Whoever has the unlocked app in hand for a moment cannot change your protection this way.</string>
+    <string name="set_add_key_new">Then the new key: name and, if it needs one, its PIN. If you confirm with your current key, touch it first; then plug in the new one. A key that is registered already refuses.</string>
+    <string name="wz_backup_title">Backup for the key (required)</string>
+    <string name="wz_backup_text">If your key gets lost, the backup still gets you in. It works just like the key: a key file (e.g. on a second stick, kept apart) or a second security key.</string>
+    <string name="wz_backup_second_key">Second key</string>
+    <string name="wz_backup_second_key_hint">First you touch your first key twice (creating), then you plug in the second one and touch it twice as well. If it is the same key, it refuses.</string>
+    <string name="set_key_no_backup">Your key has no backup. If it gets lost, only the recovery code gets you in. Add a second key or a key file.</string>
+    <string name="wz_backup_failed">The suite is made, but the backup is still missing. Try the second key again (touch the first one first) or take a key file instead.</string>
+    <string name="save_conflict_protection">The suite file at this place has another protection: on another device the password was changed or a key removed meanwhile. Overwriting it would undo that change. Open the file first (with the new password or key) or save your state as a new file.</string>
+    <string name="file_opened_read_only">The app may not write back into this file. Use \u201cSave as\u201d to save to a place of your choice.</string>
 </resources>

@@ -104,7 +104,9 @@ fn an_old_copy_and_the_old_recovery_code_do_not_open_the_current_files() {
     let old = files(&d);
     assert!(old.len() >= 4);
 
-    let new_code = RecoveryCode::parse(&s.new_recovery_code("Neues Blatt".into()).unwrap()).unwrap();
+    let new_code =
+        RecoveryCode::parse(&s.new_recovery_code(kf_proof(PW, &kf), None, None, "Neues Blatt".into()).unwrap())
+            .unwrap();
     s.save_entry(vault_id(&s, "Privat"), login("Neu", "u", "neu")).unwrap();
     let now = files(&d);
 
@@ -135,12 +137,12 @@ fn a_removed_key_file_with_an_old_copy_does_not_open_the_current_files() {
         None,
     )
     .unwrap();
-    s.add_keyfile(kf2.clone(), "Verloren".into()).unwrap();
+    s.add_keyfile(kf_proof(PW, &kf1), None, None, kf2.clone(), "Verloren".into()).unwrap();
     s.save_entry(vault_id(&s, "Privat"), login("Bank", "u", "alt")).unwrap();
     let old = files(&d);
 
     // The second key file got lost: it is removed.
-    s.remove_slot(slot_id(&s, "Verloren")).unwrap();
+    s.remove_slot(kf_proof(PW, &kf1), None, None, slot_id(&s, "Verloren")).unwrap();
     s.save_entry(vault_id(&s, "Privat"), login("Neu", "u", "neu")).unwrap();
     let now = files(&d);
 
@@ -174,7 +176,7 @@ fn a_removed_security_key_with_an_old_copy_does_not_open_the_current_files() {
         Some("1234".into()),
     )
     .unwrap();
-    s.add_security_key(k2.clone(), listener(), "1234".into(), "Key B".into()).unwrap();
+    s.add_security_key(key_proof(PW), Some(k1.clone()), k2.clone(), listener(), "1234".into(), "Key B".into()).unwrap();
     s.save_entry(vault_id(&s, "Privat"), login("Bank", "u", "alt")).unwrap();
     // The thief gets an old copy and key B (with its PIN) and the password.
     let old = files(&d);
@@ -187,7 +189,10 @@ fn a_removed_security_key_with_an_old_copy_does_not_open_the_current_files() {
     assert_eq!(titles(&t), vec!["Bank"]);
     t.lock();
 
-    s.remove_slot(slot_id(&s, "Key B")).unwrap();
+    // Key A keeps a backup (a key file) when key B goes.
+    let kf = generate_keyfile();
+    s.add_keyfile(key_proof(PW), Some(k1.clone()), Some(listener()), kf, "Ersatz".into()).unwrap();
+    s.remove_slot(key_proof(PW), Some(k1.clone()), Some(listener()), slot_id(&s, "Key B")).unwrap();
     s.save_entry(vault_id(&s, "Privat"), login("Neu", "u", "neu")).unwrap();
     // With the current files, key B opens nothing any more, even with the old copy's help.
     for (n, data) in files(&d) {
@@ -208,7 +213,7 @@ fn an_old_copy_and_the_old_password_do_not_open_the_current_files() {
     s.create(options("pw-alt-123", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
     s.save_entry(vault_id(&s, "Privat"), login("Bank", "u", "alt")).unwrap();
     let old = files(&d);
-    s.change_password("pw-alt-123".into(), "pw-neu-456".into()).unwrap();
+    s.change_password(kf_proof("pw-alt-123", &kf), None, None, "pw-neu-456".into()).unwrap();
     let now = files(&d);
     // Someone who knew the old password and has the key file opens the old copy, but its
     // container keys do not open the current files.
@@ -221,13 +226,13 @@ fn quick_unlock_survives_a_new_code_but_not_a_removed_key() {
     let d = Dirs::new("rekey-quick");
     let (kf1, kf2) = (generate_keyfile(), generate_keyfile());
     let s = d.suite();
-    s.create(options("pw-123456", Some(kf1), &[(VaultKind::Pass, "P")]), None, None, None).unwrap();
-    s.add_keyfile(kf2, "Zwei".into()).unwrap();
-    let bio = s.quick_unlock_enable("bio".into(), None).unwrap();
-    s.new_recovery_code("Neu".into()).unwrap();
+    s.create(options("pw-123456", Some(kf1.clone()), &[(VaultKind::Pass, "P")]), None, None, None).unwrap();
+    s.add_keyfile(kf_proof(PW, &kf1), None, None, kf2, "Zwei".into()).unwrap();
+    let bio = s.quick_unlock_enable(PW.into(), "bio".into(), None).unwrap();
+    s.new_recovery_code(kf_proof(PW, &kf1), None, None, "Neu".into()).unwrap();
     s.lock();
     s.unlock_quick("bio".into(), bio.clone(), None, 3600).unwrap();
-    s.remove_slot(slot_id(&s, "Zwei")).unwrap();
+    s.remove_slot(kf_proof(PW, &kf1), None, None, slot_id(&s, "Zwei")).unwrap();
     assert!(!s.quick_unlock_exists("bio".into()));
 }
 
@@ -247,7 +252,7 @@ fn files_forged_with_an_old_code_are_rejected() {
     a.save_entry(privat.clone(), login("Bank", "u", "1")).unwrap();
     // The old copy the attacker has.
     let old = files(&d);
-    a.new_recovery_code("Neu".into()).unwrap();
+    a.new_recovery_code(kf_proof(PW, &kf), None, None, "Neu".into()).unwrap();
     a.lock();
 
     // A vault with an entry of the attacker's, sealed without the password.
@@ -299,12 +304,12 @@ fn the_recovery_code_does_not_reveal_a_password_key() {
         let data = d.storage().read("suite.ghlsuite".into()).unwrap().unwrap();
         LockedContainer::parse(&data).unwrap().recover(code).unwrap().payload.to_cbor().unwrap()
     };
-    let code = RecoveryCode::parse(&s.new_recovery_code("Neu".into()).unwrap()).unwrap();
+    let code = RecoveryCode::parse(&s.new_recovery_code(kf_proof(PW, &kf), None, None, "Neu".into()).unwrap()).unwrap();
     let pk: Vec<u8> = s.with_open(|o| Ok(o.password_key.expose().to_vec())).unwrap();
     let cbor = suite(&code);
     assert!(!cbor.windows(32).any(|w| w == pk.as_slice()), "the password key is readable with the code");
     assert!(!cbor.windows(32).any(|w| w == first_code.expose().as_slice()), "the old code is readable");
-    s.change_password("pw-123456".into(), "pw-neu-789".into()).unwrap();
+    s.change_password(kf_proof("pw-123456", &kf), None, None, "pw-neu-789".into()).unwrap();
     let cbor = suite(&code);
     assert!(!cbor.windows(32).any(|w| w == pk.as_slice()), "the old password key is readable");
 }

@@ -92,10 +92,8 @@ fun DeleteExistingSuiteDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
 fun SaveExistingSuiteDialog(state: AppState, onReplaced: () -> Unit, onDismiss: () -> Unit) {
     val backend = state.backend
     val protection = remember { backend.protection() }
-    val hasKey = (protection?.securityKeys ?: 1) > 0
-    val hasKeyfile = (protection?.keyfiles ?: 0) > 0
-    var withKey by remember { mutableStateOf(hasKey) }
-    val needsKey = withKey && hasKey
+    var withKey by remember { mutableStateOf(state.backend.settings.factorKey) }
+    val needsKey = withKey
     var password by remember { mutableStateOf("") }
     var pin by remember { mutableStateOf("") }
     var keyfile by remember { mutableStateOf<PickedFile?>(null) }
@@ -127,7 +125,7 @@ fun SaveExistingSuiteDialog(state: AppState, onReplaced: () -> Unit, onDismiss: 
         state.run(onError = { error = plain[0] ?: it }, block = {
             // Never over a file of another suite or another state: the old suite is deleted next.
             val there = backend.archiveTarget(target)
-            if (there == ArchiveTargetUi.OTHER_SUITE || there == ArchiveTargetUi.CHANGED_ELSEWHERE) {
+            if (there != ArchiveTargetUi.NEW && there != ArchiveTargetUi.SAME) {
                 fail(otherFile)
             }
             if (!backend.archiveSave(target, deviceInfo(), created = true, state.onProgress)) {
@@ -152,7 +150,8 @@ fun SaveExistingSuiteDialog(state: AppState, onReplaced: () -> Unit, onDismiss: 
                 if (!unlocked) {
                     Hint(stringResource(Res.string.wz_save_text))
                     SecretTextField(password, { password = it; error = null }, stringResource(Res.string.l_master_password))
-                    if (hasKey && hasKeyfile) FactorChoice(withKey) { withKey = it; error = null }
+                    // Always both ways: what the file is protected with is not given away here.
+        FactorChoice(withKey) { withKey = it; error = null; state.backend.settings.factorKey = it }
                     if (needsKey) KeyPinField(state, pin) { pin = it; error = null } else KeyfilePicker(keyfile) { keyfile = it; error = null }
                 } else {
                     Hint(stringResource(Res.string.wz_save_unlocked))

@@ -140,7 +140,7 @@
     <string name="factor_keyfile">Schlüsseldatei</string>
     <string name="foreign_text">Öffne den Tresor einmal mit seinem bisherigen Passwort und seinem Key bzw. seiner Schlüsseldatei.</string>
     <string name="foreign_title">Tresor übernehmen</string>
-    <string name="foreign_warning">Danach wird er auf dein Passwort, deine Keys und deinen Wiederherstellungscode umgestellt. Das bisherige Passwort gilt für diese Datei dann nicht mehr.</string>
+    <string name="foreign_warning">Die Kopie in deiner Suite wird auf dein Passwort, deine Keys und deinen Wiederherstellungscode umgestellt. Die Originaldatei bleibt, wie sie ist, und öffnet sich weiter mit dem bisherigen Passwort: lösche sie, wenn du sie nicht mehr brauchst.</string>
     <string name="gen_again">Neues Passwort</string>
     <string name="gen_ambiguous">Verwechselbare Zeichen vermeiden</string>
     <string name="gen_digits">Ziffern</string>
@@ -293,7 +293,7 @@
     <string name="set_totp_next">GhulAuth: nächsten Code kurz vor Ablauf zeigen</string>
     <string name="set_unlock">Entsperren</string>
     <string name="set_vaults">Tresore</string>
-    <string name="set_vaults_hint">Alle Tresordateien in deinem Ordner gehören zu deiner Suite. Jede lässt sich auch einzeln mitnehmen und öffnen: mit deinem Passwort und zweitem Faktor oder mit dem Wiederherstellungscode.</string>
+    <string name="set_vaults_hint">Alle Tresore hier gehören zu deiner Suite. Jeder lässt sich auch einzeln mitnehmen und öffnen: mit deinem Passwort und zweitem Faktor oder mit dem Wiederherstellungscode.</string>
     <string name="set_view">Darstellung</string>
     <string name="setup_calibrating">Messe die Geschwindigkeit dieses Geräts …</string>
     <string name="setup_code_noted">Ich habe den Code notiert oder ausgedruckt</string>
@@ -336,7 +336,7 @@
     <string name="slot_key">Key</string>
     <string name="slot_keyfile">Schlüsseldatei</string>
     <string name="start_back_to_suite">Zurück zur Suite</string>
-    <string name="start_is_suite_file">Das ist die Einstellungsdatei einer Suite. Wähle „Vorhandene Suite öffnen“ und dann den Ordner, in dem sie liegt.</string>
+    <string name="start_is_suite_file">Das ist eine Datei aus dem Inneren einer Suite. Wähle „Suite-Datei öffnen“ und dann die Suite-Datei (.ghlzip).</string>
     <string name="start_new">Neu einrichten</string>
     <string name="start_new_text">Neue Suite mit Master-Passwort und Key oder Schlüsseldatei.</string>
     <string name="start_open_suite">Suite-Datei öffnen</string>
@@ -365,7 +365,6 @@
     <string name="unlock_other_suite">Andere Suite oder Tresor öffnen</string>
     <string name="unlock_use_code">Mit Wiederherstellungscode öffnen</string>
     <string name="unlock_use_full">Mit Passwort und Key oder Schlüsseldatei</string>
-    <string name="unlock_use_password">Mit Passwort und Schlüsseldatei</string>
     <string name="unlock_use_quick">Mit Fingerabdruck oder App-PIN</string>
     <string name="untitled">(ohne Titel)</string>
     <string name="vault_add_file">Tresordatei hinzufügen</string>
@@ -375,10 +374,10 @@
     <string name="vault_missing">Datei beschädigt: %1$s</string>
     <string name="vault_name_example">z. B. Arbeit</string>
     <string name="vault_new">Neuer Tresor</string>
-    <string name="vault_new_text">Der neue Tresor bekommt dein Passwort, deine Keys und deinen Wiederherstellungscode und wird als eigene Datei in deinem Ordner gespeichert.</string>
+    <string name="vault_new_text">Der neue Tresor bekommt dein Passwort, deine Keys und deinen Wiederherstellungscode und wird als eigene Datei in deiner Suite gespeichert.</string>
     <string name="vault_none_yet">Es gibt noch keinen Tresor für diesen Bereich.</string>
     <string name="vault_pick_title">In welchen Tresor?</string>
-    <string name="vault_remove_warning">Die Datei wird aus deinem Ordner gelöscht, mit allen Einträgen.</string>
+    <string name="vault_remove_warning">Der Tresor wird mit allen Einträgen aus deiner Suite gelöscht.</string>
     <string name="vault_remove_tip">Tipp: Exportiere vorher, was du behalten willst.</string>
     <string name="vault_remove_title">„%1$s“ löschen?</string>
     <string name="vault_summary">%1$s · Einträge: %2$s</string>
@@ -420,7 +419,7 @@
         <item quantity="one">%1$s Tresor</item>
         <item quantity="other">%1$s Tresore</item>
     </plurals>
-    <string name="set_unlock_sub_off">Nur Passwort</string>
+    <string name="set_unlock_sub_off">Passwort und zweiter Faktor</string>
     <plurals name="set_vaults_sub">
         <item quantity="one">%1$s Tresor</item>
         <item quantity="other">%1$s Tresore</item>
@@ -546,7 +545,7 @@
     <string name="side_lock_key">Strg+L</string>
     <string name="gen_separator">Trennzeichen</string>
     <string name="about_made_by">Made by Daniel Erdmann · 2026</string>
-    <string name="about_made_by_sub">Passwörter, 2FA und Kalender, verschlüsselt auf deinen Geräten. Open Source unter AGPL-3.0.</string>
+    <string name="about_made_by_sub">Passwörter, 2FA, Dokumente und Kalender, verschlüsselt auf deinen Geräten. Open Source unter AGPL-3.0.</string>
     <string name="about_trademark">„GhulSuite“ und das Logo sind Kennzeichen von Daniel Erdmann. Veränderte Fassungen brauchen einen eigenen Namen.</string>
     <string name="pass_export_one">Eintrag exportieren</string>
     <string name="pass_export_one_sub">Als unverschlüsselte CSV-Datei</string>
@@ -717,7 +716,7 @@
     <string name="cal_default_reminder">Standard-Erinnerung</string>
     <string name="cal_export_one">Als .ics exportieren</string>
     <string name="cal_delete_calendar">Kalender löschen</string>
-    <string name="cal_delete_calendar_text">„%1$s“ und alle seine Termine werden gelöscht, auch auf deinen anderen Geräten.</string>
+    <string name="cal_delete_calendar_text">„%1$s“ und alle seine Termine werden gelöscht; mit dem nächsten Speichern auch in der Suite-Datei.</string>
     <string name="cal_import">Import (.ics)</string>
     <string name="cal_export">Export (.ics)</string>
     <string name="cal_import_confirm_title">Kalenderdatei übernehmen?</string>
@@ -777,7 +776,7 @@
     <string name="cal_manage">Kalender verwalten (%1$s)</string>
     <string name="cal_data_hint">Farben, Sichtbarkeit, Import und Export von .ics-Dateien aus Google, Outlook, Apple oder Thunderbird.</string>
     <string name="cal_closed_title">Bewusst geschlossen</string>
-    <string name="cal_closed_text">GhulCal spricht kein CalDAV und abonniert keine fremden Kalender. Termine verlassen das Gerät nur verschlüsselt, in der Suite-Datei. Austausch mit anderen Programmen über .ics-Dateien.</string>
+    <string name="cal_closed_text">GhulCal spricht kein CalDAV und abonniert keine fremden Kalender. Termine reisen verschlüsselt in der Suite-Datei; nur wenn du einen Termin teilst oder als .ics exportierst, verlässt er das Gerät unverschlüsselt.</string>
     <string name="cal_channel">Termin-Erinnerungen</string>
     <string name="cal_notify_min">Termin in %1$s</string>
     <string name="cal_notify_soon">Termin jetzt</string>
@@ -807,13 +806,13 @@
     <string name="wz_step_of">Schritt %1$s von 8 · %2$s</string>
     <string name="wz_step_password">Master-Passwort</string>
     <string name="wz_step_factor">Zweiter Faktor</string>
-    <string name="wz_create_hint">Die Suite liegt auf diesem Gerät. Um sie auf ein anderes Gerät mitzunehmen (z. B. auf einem USB-Stick), speicherst du sie später als Datei (.ghlzip) unter Optionen, Suite-Datei.</string>
+    <string name="wz_create_hint">Die Suite entsteht jetzt auf diesem Gerät. Im letzten Schritt legst du sie als Suite-Datei (.ghlzip) an einem Ort deiner Wahl an, z. B. auf einem USB-Stick.</string>
     <string name="wz_step_storage">Anlegen</string>
     <string name="wz_step_areas">Bereiche</string>
     <string name="wz_step_lock">Sperren</string>
     <string name="wz_step_unlock">Entsperren</string>
     <string name="wz_step_code">Wiederherstellungscode</string>
-    <string name="wz_pw_hint">Das Passwort verlässt nie dein Gerät. Ohne Passwort und zweiten Faktor hilft nur noch der Wiederherstellungscode (Schritt 8).</string>
+    <string name="wz_pw_hint">Das Passwort verlässt nie dein Gerät. Ohne Passwort und zweiten Faktor hilft nur noch der Wiederherstellungscode (Schritt 7).</string>
     <string name="wz_key_sub">Empfohlen · YubiKey, Nitrokey … per USB</string>
     <string name="wz_key_touch">Key einstecken und berühren, wenn GhulSuite darum bittet (nach der Wahl des Speicherorts).</string>
     <string name="wz_keyfile_hint">Lege sie auf einen USB-Stick oder an einen anderen sicheren Ort, nicht neben die Suite.</string>
@@ -842,18 +841,18 @@
     <string name="area_pass_default">Privat</string>
     <string name="area_auth_default">Persönlich</string>
     <string name="area_cal_default">Kalender</string>
-    <string name="area_group_all">Für %1$s · alle Geräte</string>
+    <string name="area_group_all">Für %1$s · in der Suite</string>
     <string name="area_group_device">Nur auf diesem Gerät</string>
-    <string name="area_file_note">Oben: liegt in der %1$s-Datei und gilt auf allen Geräten. Unten: nur auf diesem Gerät.</string>
+    <string name="area_file_note">Oben: liegt in der %1$s-Datei und reist mit der Suite-Datei mit. Unten: nur auf diesem Gerät.</string>
     <string name="area_section">Bereich</string>
     <string name="area_hide">Auf diesem Gerät ausblenden</string>
     <string name="area_show">Auf diesem Gerät einblenden</string>
-    <string name="area_hide_sub">Nur Anzeige: Die Datei bleibt, andere Geräte zeigen den Bereich weiter</string>
+    <string name="area_hide_sub">Nur Anzeige: Die Datei bleibt in der Suite, auf anderen Geräten ändert sich nichts</string>
     <string name="area_hidden_msg">%1$s auf diesem Gerät ausgeblendet</string>
     <string name="area_shown_msg">%1$s wieder eingeblendet</string>
     <string name="area_remove">Bereich entfernen</string>
     <string name="area_remove_sub">Löscht jede Tresordatei des Bereichs (%1$s)</string>
-    <string name="area_remove_everywhere">Auf allen Geräten, mit Rückfrage</string>
+    <string name="area_remove_everywhere">Aus der Suite, mit Rückfrage</string>
     <string name="area_remove_title">%1$s entfernen?</string>
     <string name="area_remove_warning">Jede Tresordatei des Bereichs (%1$s) wird gelöscht, samt Inhalt und Einstellungen; mit dem nächsten Speichern auch in der Suite-Datei.</string>
     <string name="area_remove_tip">Tipp: Exportiere vorher, was du behalten willst. Willst du den Bereich nur hier nicht sehen, wähle „Auf diesem Gerät ausblenden“.</string>
@@ -861,7 +860,7 @@
     <string name="area_tag_not_set_up">nicht eingerichtet</string>
     <string name="area_tag_hidden">hier ausgeblendet</string>
     <string name="area_tag_active">aktiv</string>
-    <string name="areas_hint">Jeder Bereich ist eine eigene verschlüsselte Datei mit seinen Einstellungen. „Ausblenden“ gilt nur für dieses Gerät, „Entfernen“ löscht die Datei überall.</string>
+    <string name="areas_hint">Jeder Bereich ist eine eigene verschlüsselte Datei mit seinen Einstellungen. „Ausblenden“ gilt nur für dieses Gerät, „Entfernen“ löscht die Datei aus der Suite (mit dem nächsten Speichern auch aus der Suite-Datei).</string>
     <string name="area_set_up_title">%1$s einrichten</string>
     <string name="area_set_up_text">%1$s. Es entsteht die Datei %2$s, sie wird wie alles andere in der Suite-Datei gespeichert.</string>
     <string name="area_set_up">Einrichten</string>
@@ -911,13 +910,13 @@
     <string name="msg_deleted_n">%1$s gelöscht</string>
     <!-- U5: error details from the core, translated (tools/check-texts.py checks every one is here) -->
     <string name="core_name_req">Bitte einen Namen eingeben.</string>
-    <string name="core_suite_not_vault">Das ist eine Suite-Datei, kein einzelner Tresor. Öffne stattdessen ihren Ordner.</string>
-    <string name="core_suite_file">Das ist eine Suite-Datei. Öffne stattdessen ihren Ordner.</string>
+    <string name="core_suite_not_vault">Das ist eine Suite-Datei, kein einzelner Tresor. Öffne sie mit „Suite-Datei öffnen“.</string>
+    <string name="core_suite_file">Das ist eine Suite-Datei. Öffne sie mit „Suite-Datei öffnen“.</string>
     <string name="core_key_pin_unverified">Der Key hat die PIN nicht bestätigt.</string>
     <string name="core_key_bad_answer">Der Key hat eine unerwartete Antwort geliefert.</string>
     <string name="core_timeout">Zeitüberschreitung.</string>
     <string name="core_host_not_found">Die Serveradresse wurde nicht gefunden. Bitte Schreibweise und Internetverbindung prüfen.</string>
-    <string name="core_refused">Der Server hat die Verbindung abgelehnt. Bitte den Port prüfen.</string>
+    <string name="core_refused">Die Verbindung wurde abgelehnt. Versuche es später noch einmal.</string>
     <string name="core_not_pass">Das ist kein GhulPass-Tresor.</string>
     <string name="core_not_auth">Das ist kein GhulAuth-Tresor.</string>
     <string name="core_not_cal">Das ist kein Kalender.</string>
@@ -938,7 +937,7 @@
     <string name="core_attach_big">Anhang zu groß (höchstens 10 MB).</string>
     <string name="core_suite_too_large">Die Suite-Datei würde zu groß (höchstens 3,75 GiB) und ließe sich nicht mehr öffnen. Es wurde nichts gespeichert. Entferne große Anhänge oder Dokumente und speichere dann erneut.</string>
     <string name="core_other_full">Die Tresore neben GhulDocs sind voll (zusammen höchstens 200 MiB, vor allem Anhänge). Es wurde nichts hinzugefügt.</string>
-    <string name="core_docs_kept_aside">Die bisherigen Dokumente ließen sich nicht an ihren Platz zurücklegen. Sie wurden nicht gelöscht, sondern in einem eigenen Ordner „rescued-documents-…“ im Ordner der Suite aufbewahrt.</string>
+    <string name="core_docs_kept_aside">Die bisherigen Dokumente ließen sich nicht an ihren Platz zurücklegen. Sie wurden nicht gelöscht, sondern in einem eigenen Ordner „rescued-documents-…“ bei den Daten der App auf diesem Gerät aufbewahrt.</string>
     <string name="core_no_group">Diese Gruppe gibt es nicht.</string>
     <string name="core_no_password">Kein Passwort angegeben.</string>
     <string name="core_password_empty">Das Passwort darf nicht leer sein.</string>
@@ -1366,4 +1365,23 @@
     <string name="wz_file_failed">Ohne Suite-Datei liegen deine Daten nur auf diesem Gerät. Geht es verloren, ist alles weg. Versuche es noch einmal oder wähle einen anderen Ort; anlegen kannst du sie auch später oben mit dem Speichern-Symbol.</string>
     <string name="wz_file_skip">Ohne Suite-Datei weiter</string>
     <string name="close_editing">Ein Eintrag wird gerade bearbeitet und ist noch nicht übernommen. Übernimm ihn zuerst und speichere dann, oder beende ohne ihn.</string>
+    <string name="close_saving_unknown">Die Suite-Datei wird gerade gespeichert. Die App beendet sich, sobald das Speichern fertig ist.</string>
+    <string name="save_running_locked_unknown">Die Suite-Datei wird noch gespeichert. USB-Stick nicht abziehen.</string>
+    <string name="ctx_version">Version %1$s</string>
+    <string name="about_report_file">GhulSuite-Fehlerbericht.txt</string>
+    <string name="err_bio_lockout">Zu viele Fehlversuche mit der Biometrie. Entsperre mit Master-Passwort und Key oder Schlüsseldatei, oder versuche es später wieder.</string>
+    <string name="cal_notifications_off">Benachrichtigungen sind für GhulSuite ausgeschaltet: Erinnerungen kommen nicht an.</string>
+    <string name="cal_notifications_settings">Benachrichtigungen einschalten …</string>
+    <string name="upd_wait">Erst fertig speichern, hinzufügen oder bearbeiten, dann aktualisieren.</string>
+    <string name="err_backup_factor">Ein Security Key braucht ein Backup: einen zweiten Key oder eine Schlüsseldatei. Füge zuerst ein Backup hinzu.</string>
+    <string name="proof_hint">Zur Bestätigung: Master-Passwort und dein Key oder deine Schlüsseldatei. Wer die entsperrte App kurz in der Hand hat, kann so nichts an deinem Schutz ändern.</string>
+    <string name="set_add_key_new">Dann der neue Key: Name und, wenn er es braucht, seine PIN. Bestätigst du mit deinem bisherigen Key, berühre erst ihn; danach steckst du den neuen ein. Ein Key, der schon eingetragen ist, lehnt ab.</string>
+    <string name="wz_backup_title">Backup für den Key (Pflicht)</string>
+    <string name="wz_backup_text">Geht dein Key verloren, kommst du mit dem Backup weiter hinein. Es funktioniert genau wie der Key: eine Schlüsseldatei (z. B. auf einem zweiten Stick, getrennt aufbewahrt) oder ein zweiter Security Key.</string>
+    <string name="wz_backup_second_key">Zweiter Key</string>
+    <string name="wz_backup_second_key_hint">Erst berührst du deinen ersten Key zweimal (Anlegen), dann steckst du den zweiten ein und berührst ihn ebenfalls zweimal. Ist es derselbe Key, lehnt er ab.</string>
+    <string name="set_key_no_backup">Dein Key hat kein Backup. Geht er verloren, kommst du nur noch mit dem Wiederherstellungscode hinein. Füge einen zweiten Key oder eine Schlüsseldatei hinzu.</string>
+    <string name="wz_backup_failed">Die Suite ist angelegt, aber das Backup fehlt noch. Versuche den zweiten Key noch einmal (erst den ersten berühren) oder nimm stattdessen eine Schlüsseldatei.</string>
+    <string name="save_conflict_protection">Die Suite-Datei an diesem Ort hat einen anderen Schutz: Auf einem anderen Gerät wurde inzwischen das Passwort geändert oder ein Key entfernt. Überschreiben würde diese Änderung rückgängig machen. Öffne die Datei zuerst (mit dem neuen Passwort bzw. Key) oder sichere deinen Stand als neue Datei.</string>
+    <string name="file_opened_read_only">In diese Datei darf die App nicht zurückschreiben. Sichere mit „Speichern unter“ an einen Ort deiner Wahl.</string>
 </resources>

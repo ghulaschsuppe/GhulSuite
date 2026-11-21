@@ -74,8 +74,8 @@ class SingleBackendTest {
         override fun panicLock() = lock()
         override fun biometricAvailable() = false
         override fun quickUnlockReady() = de.danerd.ghulsuite.model.QuickUnlockReady(false, false)
-        override suspend fun enableBiometricUnlock() {}
-        override suspend fun enablePinUnlock(pin: String) {}
+        override suspend fun enableBiometricUnlock(password: String) {}
+        override suspend fun enablePinUnlock(password: String, pin: String) {}
         override fun disableQuickUnlock() {}
         override fun disableQuickUnlockMethod(bio: Boolean) {}
         override suspend fun unlockWithBiometric() {}
