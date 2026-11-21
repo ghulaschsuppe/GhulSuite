@@ -144,6 +144,26 @@ actual fun rememberCreateSuiteFile(onCreated: (de.danerd.ghulsuite.model.SuiteFi
     }
 }
 
+/**
+ * The folder of the suite file, shared once: then saving writes the new file next to the old one
+ * and swaps them (see AndroidVaultBackend.safeWrite). Access is kept across restarts.
+ */
+@Composable
+actual fun rememberGrantFolder(onGranted: () -> Unit): (near: String) -> Unit {
+    val context = LocalContext.current
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+        ExternalActivity.finished()
+        if (uri != null) keepAccess(context, uri)
+        onGranted()
+    }
+    return remember(launcher) {
+        { near ->
+            ExternalActivity.started()
+            launcher.launch(runCatching { Uri.parse(near) }.getOrNull()?.takeIf { near.isNotEmpty() })
+        }
+    }
+}
+
 @Composable
 actual fun rememberPickFolder(onPicked: (FolderRef) -> Unit): () -> Unit {
     val context = LocalContext.current

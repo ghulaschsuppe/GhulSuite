@@ -48,6 +48,9 @@ private const val MAX_VAULT_FILE_BYTES = 256 * 1024 * 1024
 /** How long unlocking waits for a security key to be plugged in. */
 private const val KEY_WAIT_MS = 60_000L
 
+/** The provider of the device's storage, SD cards and USB sticks (document ids are paths). */
+private const val EXTERNAL_STORAGE = "com.android.externalstorage.documents"
+
 class AndroidVaultBackend(private val context: Context, private val activity: () -> Activity?) :
     CoreVaultBackend(File(context.filesDir, "local").absolutePath) {
     private val keys = UsbSecurityKeys(context)
@@ -97,9 +100,13 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
     }.getOrNull()
 
     /**
-     * The Storage Access Framework hands over the chosen document only, no folder to write a
-     * temporary file into: the document is truncated and written ("wt"; the provider, a USB stick
-     * or a cloud app, keeps its name and place), then read back. Until then the working copy is
+     * Saving never leaves the place without a complete suite file when its folder is shared
+     * (USB stick, SD card, the phone's storage; see [safeWrite]): the new file is written next to
+     * the old one and checked, then the two are swapped.
+     *
+     * Without the folder the Storage Access Framework hands over the chosen document only, no
+     * folder to write a temporary file into: the document is truncated and written ("wt"; the
+     * provider, a USB stick or a cloud app, keeps its name and place), then read back. Until then the working copy is
      * the only complete state and stays marked as unsaved. The document is opened only when the
      * first byte comes (everything is sealed by then): a save that fails before, e.g. because the
      * suite was locked, leaves the file there as it was. A document made just for this that
@@ -111,6 +118,7 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
         write: (java.io.OutputStream) -> Unit,
         check: (SuiteInput) -> Boolean,
     ): Boolean {
+        safePlace(ref)?.let { return safeWrite(it, write, check) }
         val uri = Uri.parse(ref.id)
         var ok = false
         try {
@@ -130,11 +138,110 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
     }
 
     override suspend fun writeSuiteFile(ref: SuiteFileRef, data: ByteArray): Boolean = withContext(Dispatchers.IO) {
+        safePlace(ref)?.let { place ->
+            return@withContext runCatching {
+                safeWrite(place, { it.write(data) }) { input -> input.stream.readBytes().contentEquals(data) }
+            }.getOrDefault(false)
+        }
         // "wt": the document is truncated and written; the provider (a USB stick, a cloud app)
         // keeps its name and place.
         runCatching {
             context.contentResolver.openOutputStream(Uri.parse(ref.id), "wt")?.use { it.write(data); it.flush() } != null
         }.getOrDefault(false) && readSuiteFile(ref)?.contentEquals(data) == true
+    }
+
+    override fun safeSave(ref: SuiteFileRef): de.danerd.ghulsuite.model.SafeSaveUi = when {
+        ref.id.isEmpty() || safePlace(ref) != null -> de.danerd.ghulsuite.model.SafeSaveUi.SAFE
+        runCatching { Uri.parse(ref.id).authority == EXTERNAL_STORAGE }.getOrDefault(false) -> de.danerd.ghulsuite.model.SafeSaveUi.FOLDER_NEEDED
+        else -> de.danerd.ghulsuite.model.SafeSaveUi.OVERWRITES
+    }
+
+    /** A file on the device's own storage, an SD card or a USB stick, in a folder shared with the app. */
+    private class Place(val tree: Uri, val parentId: String, val name: String)
+
+    /**
+     * Where [ref] can be replaced safely: a document of the device's storage (USB sticks and SD
+     * cards too), whose document ids are paths ("1234-ABCD:Folder/GhulSuite.ghlzip"), in a
+     * folder the user shared with the app (kept access). Anything else: null.
+     */
+    private fun safePlace(ref: SuiteFileRef): Place? = runCatching {
+        val uri = Uri.parse(ref.id)
+        if (uri.authority != EXTERNAL_STORAGE) return@runCatching null
+        val docId = android.provider.DocumentsContract.getDocumentId(uri)
+        val colon = docId.indexOf(':')
+        if (colon < 0) return@runCatching null
+        val slash = docId.lastIndexOf('/')
+        val parentId = if (slash > colon) docId.substring(0, slash) else docId.substring(0, colon + 1)
+        val name = docId.substring(maxOf(slash, colon) + 1)
+        if (name.isEmpty()) return@runCatching null
+        val tree = context.contentResolver.persistedUriPermissions.firstOrNull { p ->
+            p.isReadPermission && p.isWritePermission && p.uri.authority == EXTERNAL_STORAGE &&
+                android.provider.DocumentsContract.isTreeUri(p.uri) &&
+                android.provider.DocumentsContract.getTreeDocumentId(p.uri).let { t ->
+                    parentId == t || parentId.startsWith(if (t.endsWith(":")) t else "$t/")
+                }
+        }?.uri ?: return@runCatching null
+        Place(tree, parentId, name)
+    }.getOrNull()
+
+    private fun Place.doc(fileName: String): Uri = android.provider.DocumentsContract.buildDocumentUriUsingTree(
+        tree, if (parentId.endsWith(":")) parentId + fileName else "$parentId/$fileName",
+    )
+
+    private fun exists(uri: Uri): Boolean = runCatching {
+        context.contentResolver.query(uri, arrayOf(android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID), null, null, null)
+            ?.use { it.moveToFirst() } == true
+    }.getOrDefault(false)
+
+    /**
+     * Writes "<name>.neu" next to the file, reads it back ([check]), then swaps: the old file
+     * becomes "<name>.alt", the new one takes the name, the old one goes. At every moment a
+     * complete file is there: until the new one is checked the old one is not touched, and if
+     * the device goes off during the swap, the next save first puts "<name>.alt" back. Fails
+     * (false) without touching the old file when anything before the swap fails.
+     */
+    private fun safeWrite(
+        place: Place,
+        write: (java.io.OutputStream) -> Unit,
+        check: (SuiteInput) -> Boolean,
+    ): Boolean {
+        val r = context.contentResolver
+        val target = place.doc(place.name)
+        val alt = place.doc(place.name + ".alt")
+        val neu = place.doc(place.name + ".neu")
+        // A swap that stopped half way (the device went off): the old file comes back first.
+        if (!exists(target) && exists(alt)) {
+            android.provider.DocumentsContract.renameDocument(r, alt, place.name) ?: return false
+        }
+        if (exists(alt)) android.provider.DocumentsContract.deleteDocument(r, alt)
+        if (exists(neu)) android.provider.DocumentsContract.deleteDocument(r, neu)
+        val parent = android.provider.DocumentsContract.buildDocumentUriUsingTree(place.tree, place.parentId)
+        val tmp = android.provider.DocumentsContract.createDocument(r, parent, "application/octet-stream", place.name + ".neu")
+            ?: return false
+        var tmpPlaced = false
+        try {
+            val raw = r.openOutputStream(tmp, "w") ?: return false
+            java.io.BufferedOutputStream(raw, 1 shl 20).use { buffered ->
+                write(buffered)
+                buffered.flush()
+                (raw as? java.io.FileOutputStream)?.let { f -> runCatching { f.fd.sync() } }
+            }
+            val written = openSuiteInput(SuiteFileRef(tmp.toString(), place.name))?.let { input -> input.stream.use { check(input) } } == true
+            if (!written) return false
+            // The swap. Until here the old file was not touched.
+            val old = if (exists(target)) android.provider.DocumentsContract.renameDocument(r, target, place.name + ".alt") ?: return false else null
+            val placed = runCatching { android.provider.DocumentsContract.renameDocument(r, tmp, place.name) }.getOrNull()
+            if (placed == null) {
+                // Back as it was: the old file takes its name again.
+                old?.let { runCatching { android.provider.DocumentsContract.renameDocument(r, it, place.name) } }
+                return false
+            }
+            tmpPlaced = true
+            old?.let { runCatching { android.provider.DocumentsContract.deleteDocument(r, it) } }
+            return true
+        } finally {
+            if (!tmpPlaced) runCatching { android.provider.DocumentsContract.deleteDocument(r, tmp) }
+        }
     }
 
     /** A deleted document cannot be opened for writing again: "save as" instead. */

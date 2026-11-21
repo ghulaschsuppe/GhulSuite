@@ -213,6 +213,10 @@ actual fun rememberCreateSuiteFile(onCreated: (de.danerd.ghulsuite.model.SuiteFi
     onCreated(f?.let { de.danerd.ghulsuite.model.SuiteFileRef(it.absolutePath, it.name) })
 }
 
+/** Windows writes by path (a file next to it, then moved into place): nothing to share. */
+@Composable
+actual fun rememberGrantFolder(onGranted: () -> Unit): (near: String) -> Unit = remember { { _: String -> onGranted() } }
+
 @Composable
 actual fun rememberPickFolder(onPicked: (FolderRef) -> Unit): () -> Unit = {
     val chooser = JFileChooser().apply { fileSelectionMode = JFileChooser.DIRECTORIES_ONLY }

@@ -233,6 +233,14 @@ interface VaultBackend {
     val singleIsDocs: Boolean get() = false
     /** Whether the app may write into this file (a vault opened on its own goes back into it). */
     suspend fun canWriteSuiteFile(ref: SuiteFileRef): Boolean = true
+
+    /**
+     * How saving to [ref] replaces the file there: SAFE (the new file is written next to it and
+     * checked, then put in its place: there is always a complete file), FOLDER_NEEDED (Android:
+     * safe once the folder is shared with the app), OVERWRITES (the place allows nothing else,
+     * e.g. some cloud apps: the file there is written over; the working copy stays complete).
+     */
+    fun safeSave(ref: SuiteFileRef): SafeSaveUi = SafeSaveUi.SAFE
     /** Whether changes of an earlier opening still wait for [ref] (cheap: only their records). */
     suspend fun hasPendingSingleWrite(ref: SuiteFileRef): Boolean = false
     /** Vaults opened on their own whose last changes could not be written back into their file. */
@@ -320,6 +328,9 @@ data class FolderRef(val uri: String, val name: String)
 
 /** A suite file the app may read and write again (Android: a document it keeps access to, Windows: a path). */
 data class SuiteFileRef(val id: String, val name: String)
+
+/** See [VaultBackend.safeSave]. */
+enum class SafeSaveUi { SAFE, FOLDER_NEEDED, OVERWRITES }
 
 /** How a suite file relates to what this device has. */
 enum class ArchiveRelationUi { NO_SUITE, OTHER_SUITE, SAME, NEWER, OLDER, BRANCH }

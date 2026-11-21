@@ -69,7 +69,7 @@ Die Runden vor dem Funktionsstopp stehen ausführlich im [Sicherheitsbericht](AU
 | Keine Zusage zum Dateiformat | **Erledigt:** Format 3 eingefroren, echte Dateien als dauerhafte Testfälle (PR-19) |
 | Ein übernommenes GitHub-Konto reicht für signierte Updates; Signieren ohne vorgeschaltete Tests | Schlüssel bleiben (Entscheidung des Inhabers, Konto mit Hardware-Key). **Erledigt:** Veröffentlichung nur nach grüner CI für genau diesen Commit, Workflow vom Standardzweig; die falsche Aussage im AUDIT richtiggestellt (K-7) |
 | Keine Prüfung durch Dritte, keine festgehaltenen Gerätetests | **Offen.** Gerätetests durch den Inhaber kommen mit Datum in Abschnitt 2; eine externe Prüfung (z. B. gefördert über NLnet/NGI) ist vor einer öffentlichen 1.0 vorgesehen |
-| Speichern unter Android leert die einzige Suite-Datei zuerst | In Arbeit |
+| Speichern unter Android leert die einzige Suite-Datei zuerst | **Umgesetzt, auf einem Gerät noch nicht geprüft:** mit einmal freigegebenem Ordner (Stick, SD-Karte, Gerätespeicher) neue Datei daneben, prüfen, dann tauschen; ohne Freigabe oder bei Cloud-Apps ein Hinweis (PR-20, Testplan E19e) |
 | Übernehmen einer Suite-Datei ersetzt Datei für Datei | **Erledigt:** Journal, nach einem Absturz kommt der Stand davor vollständig zurück (PR-19) |
 | Windows-Installer ohne Authenticode-Signatur | **Offen**, braucht ein Zertifikat des Inhabers (z. B. SignPath für Open Source) |
 | Rust-Version im Release nicht festgelegt | **Erledigt:** `rust-toolchain.toml` |

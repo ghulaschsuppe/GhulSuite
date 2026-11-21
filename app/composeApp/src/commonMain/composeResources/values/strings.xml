@@ -1384,4 +1384,7 @@
     <string name="wz_backup_failed">The suite is made, but the backup is still missing. Try the second key again (touch the first one first) or take a key file instead.</string>
     <string name="save_conflict_protection">The suite file at this place has another protection: on another device the password was changed or a key removed meanwhile. Overwriting it would undo that change. Open the file first (with the new password or key) or save your state as a new file.</string>
     <string name="file_opened_read_only">The app may not write back into this file. Use \u201cSave as\u201d to save to a place of your choice.</string>
+    <string name="save_safe_folder">So that saving never leaves half a file, share the folder of the suite file once. Then the app writes the new file next to it, checks it and only then swaps it for the old one.</string>
+    <string name="save_safe_grant">Share folder</string>
+    <string name="save_overwrites">This place (e.g. a cloud app) does not allow swapping: the file there is written over directly. If that fails, everything stays in the app; then save to another place.</string>
 </resources>
