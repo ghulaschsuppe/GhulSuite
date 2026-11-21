@@ -182,6 +182,21 @@ Alle früher als „noch nicht eingebaut“ geführten Werkzeuge laufen jetzt je
 Bewusst nicht automatisiert: eine Geräte-Matrix (Samsung, Pixel, Xiaomi; Android 10 bis 16). Dafür braucht es echte
 Geräte oder einen bezahlten Gerätedienst; bis dahin deckt der Testplan die Hersteller-Eigenheiten von Hand ab.
 
+### 4.4 Kleine Punkte aus den Prüfrunden vom 21.11.2026
+
+Fünf Runden mit je zwei unabhängigen Prüfern über das ganze Projekt. Regel: „hoch“ und „mittel“ werden sofort
+behoben (Testprotokoll PR-…), „klein“ (Randfall, Komfort, Werkzeug) kommt hierher und wird später erledigt.
+
+| Nr. | Bereich | Punkt |
+|---|---|---|
+| K-1 | Windows | Der portable Modus hinterlässt Spuren auf dem PC: zuletzt benutzte Ordner und Dateinamen der Windows-Dateidialoge (Registry, ComDlg32), die von JNA entpackte DLL und `hsperfdata` in `%TEMP%`. Inhalte der Suite sind nicht darunter |
+| K-2 | Release | Ab der 99. Vorabversion einer Version bekommen Builds denselben `versionCode` (Begrenzung auf 98); `release.yml` sollte dann abbrechen |
+| K-3 | CI | Ein sofort abgebrochener Monkey-Lauf gilt als „ohne Absturz“; ein leeres Systemprotokoll im Emulator nur als Warnung |
+| K-4 | Werkzeuge | `precheck.sh` räumt relativ zum Aufrufordner auf und meldet bei übersprungenen Prüfungen trotzdem „Alles grün“ |
+| K-5 | Werkzeuge | `intent-attacks.sh` greift noch Aktionen von GhulMail und GhulDrive an, die es nicht mehr gibt; der deutsche Rundgang (`tour-de.yaml`) zeigt GhulDocs und zwei Optionsseiten nicht |
+| K-6 | Update | Die signierte Prüfsummendatei nennt die Version nicht; ein altes, korrekt signiertes Paket ließe sich unter neuem Tag anbieten (Android lehnt kleinere Versionen ab, beim MSI schützt nur jpackage) |
+| K-7 | Release | Jeder Push auf `dev` baut und signiert eine Vorabversion ohne vorgeschaltete Tests; der Schutz des Branches `dev` ist im Repository nicht nachprüfbar |
+
 ## 5. Geprüft und in Ordnung
 
 - **Dateiformat:** strenge Prüfung aller Längen, Versionen und Arten; Header als AAD (jede Änderung macht die Datei

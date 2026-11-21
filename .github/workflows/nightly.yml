@@ -86,7 +86,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          for id in $(gh run list -R "$GITHUB_REPOSITORY" -w android.yml -b main -L 15 --json databaseId -q '.[].databaseId'); do
+          for id in $(gh run list -R "$GITHUB_REPOSITORY" -w android.yml -e push -b main -L 15 --json databaseId -q '.[].databaseId'); do
             if gh run download "$id" -R "$GITHUB_REPOSITORY" -n ghulsuite-dev -D dist 2> /dev/null; then echo "APK aus Lauf $id"; break; fi
           done
           test -f dist/ghulsuite-dev.apk
@@ -199,7 +199,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          for id in $(gh run list -R "$GITHUB_REPOSITORY" -w android.yml -b main -L 15 --json databaseId -q '.[].databaseId'); do
+          for id in $(gh run list -R "$GITHUB_REPOSITORY" -w android.yml -e push -b main -L 15 --json databaseId -q '.[].databaseId'); do
             if gh run download "$id" -R "$GITHUB_REPOSITORY" -n ghulsuite-dev -D dist 2> /dev/null; then echo "APK aus Lauf $id"; break; fi
           done
           test -f dist/ghulsuite-dev.apk

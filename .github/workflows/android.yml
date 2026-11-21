@@ -411,7 +411,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          id=$(gh run list -R "$GITHUB_REPOSITORY" -w android.yml -b dev -s success -L 1 --json databaseId -q '.[0].databaseId')
+          id=$(gh run list -R "$GITHUB_REPOSITORY" -w android.yml -e push -b dev -s success -L 1 --json databaseId -q '.[0].databaseId')
           [ -n "$id" ] || { echo "Kein grüner Lauf auf dev zum Vergleichen."; exit 0; }
           gh run download "$id" -R "$GITHUB_REPOSITORY" -n screenshots -D "$RUNNER_TEMP/before"
           pip install --quiet pillow
