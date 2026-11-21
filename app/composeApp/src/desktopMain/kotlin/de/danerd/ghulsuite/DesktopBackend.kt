@@ -314,8 +314,8 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
 
     override fun biometricAvailable(): Boolean = false
     override fun quickUnlockReady(): QuickUnlockReady = QuickUnlockReady(false, false)
-    override suspend fun enableBiometricUnlock() = throw VaultException(VaultErrorKind.QUICK_UNAVAILABLE)
-    override suspend fun enablePinUnlock(pin: String) = throw VaultException(VaultErrorKind.QUICK_UNAVAILABLE)
+    override suspend fun enableBiometricUnlock(password: String) = throw VaultException(VaultErrorKind.QUICK_UNAVAILABLE)
+    override suspend fun enablePinUnlock(password: String, pin: String) = throw VaultException(VaultErrorKind.QUICK_UNAVAILABLE)
     override fun disableQuickUnlock() {}
     override fun disableQuickUnlockMethod(bio: Boolean) {}
     override suspend fun unlockWithBiometric() = throw VaultException(VaultErrorKind.QUICK_UNAVAILABLE)

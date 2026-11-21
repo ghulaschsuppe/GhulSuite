@@ -120,10 +120,8 @@ fun OpenSuiteFile(
         catching { backend.archiveProtection(file.source) }.onSuccess { protection = it }.onFailure { error = describe(it) }
     }
     val p = protection
-    val hasKey = (p?.securityKeys ?: 0) > 0
-    val hasKeyfile = (p?.keyfiles ?: 0) > 0
-    var withKey by remember(p) { mutableStateOf(hasKey) }
-    val needsKey = withKey && hasKey
+    var withKey by remember(p) { mutableStateOf(state.backend.settings.factorKey) }
+    val needsKey = withKey
     val opened = stringResource(Res.string.file_opened)
 
     fun accept() {
@@ -148,7 +146,8 @@ fun OpenSuiteFile(
         }
         if (!withCode) {
             SecretTextField(password, { password = it; error = null }, stringResource(Res.string.l_master_password))
-            if (hasKey && hasKeyfile) FactorChoice(withKey) { withKey = it; error = null }
+            // Always both ways: what the file is protected with is not given away here.
+        FactorChoice(withKey) { withKey = it; error = null; state.backend.settings.factorKey = it }
             if (needsKey) KeyPinField(state, pin) { pin = it; error = null } else KeyfilePicker(keyfile) { keyfile = it; error = null }
             TextButton(onClick = { withCode = true; error = null }) { Text(stringResource(Res.string.file_with_code)) }
         } else {

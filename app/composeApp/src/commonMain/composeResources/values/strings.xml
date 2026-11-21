@@ -365,7 +365,6 @@
     <string name="unlock_other_suite">Open another suite or vault</string>
     <string name="unlock_use_code">Locked out? Use recovery code</string>
     <string name="unlock_use_full">Use password and key or key file</string>
-    <string name="unlock_use_password">Use password and key file</string>
     <string name="unlock_use_quick">Use fingerprint or app PIN</string>
     <string name="untitled">(untitled)</string>
     <string name="vault_add_file">Add vault file</string>
@@ -1374,4 +1373,12 @@
     <string name="cal_notifications_off">Notifications are turned off for GhulSuite: reminders do not arrive.</string>
     <string name="cal_notifications_settings">Turn on notifications …</string>
     <string name="upd_wait">Finish saving, adding or editing first, then update.</string>
+    <string name="err_backup_factor">A security key needs a backup: a second key or a key file. Add a backup first.</string>
+    <string name="proof_hint">To confirm: master password and your key or key file. Whoever has the unlocked app in hand for a moment cannot change your protection this way.</string>
+    <string name="set_add_key_new">Then the new key: name and, if it needs one, its PIN. If you confirm with your current key, touch it first, then plug in the new one.</string>
+    <string name="wz_backup_title">Backup for the key (required)</string>
+    <string name="wz_backup_text">If your key gets lost, the backup still gets you in. It works just like the key: a key file (e.g. on a second stick, kept apart) or a second security key.</string>
+    <string name="wz_backup_second_key">Second key</string>
+    <string name="wz_backup_second_key_hint">While setting up you touch your first key twice (creating, confirming), then you plug in the second one and touch it.</string>
+    <string name="set_key_no_backup">Your key has no backup. If it gets lost, only the recovery code gets you in. Add a second key or a key file.</string>
 </resources>

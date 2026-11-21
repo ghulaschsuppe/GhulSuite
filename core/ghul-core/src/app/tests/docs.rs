@@ -501,7 +501,7 @@ fn a_change_of_the_protection_keeps_every_document_and_renews_the_index_key() {
         .collect();
     let old_key = index_key(&d, &v, PW, &kf);
     s.change_password(PW.into(), "neu-654321".into()).unwrap();
-    let code = s.new_recovery_code("Blatt".into()).unwrap();
+    let code = s.new_recovery_code(super::kf_proof("neu-654321", &kf), None, None, "Blatt".into()).unwrap();
     assert_eq!(read(&s, &v, &a.id).unwrap(), content(SECTION + 1, 1));
     assert_eq!(read(&s, &v, &b.id).unwrap(), content(10, 2));
     // The content files are untouched (their keys are in the index), the index key is new.
@@ -1288,7 +1288,7 @@ fn docs_vaults(s: &GhulSuite) -> Vec<String> {
 fn deleting_the_working_copy_leaves_nothing_of_the_suite() {
     let (d, s, kf, _, v) = docs_suite("delete-working-copy");
     let x = add(&s, &v, None, "x.pdf", &content(300, 1));
-    s.quick_unlock_enable("pin".into(), Some("123456".into())).unwrap();
+    s.quick_unlock_enable(PW.into(), "pin".into(), Some("123456".into())).unwrap();
     let file = save(&s);
     add(&s, &v, None, "unsaved.pdf", b"u");
     assert!(s.archive_unsaved());

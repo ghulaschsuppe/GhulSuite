@@ -137,8 +137,8 @@ class AndroidQuickUnlock(
 
     // --- fingerprint ---------------------------------------------------------------------
 
-    suspend fun enableBiometric(title: String, subtitle: String, cancel: String) {
-        val qk = withContext(Dispatchers.IO) { mappedQuick { suite().quickUnlockEnable(BIO, null) } }
+    suspend fun enableBiometric(password: String, title: String, subtitle: String, cancel: String) {
+        val qk = withContext(Dispatchers.IO) { mappedQuick { suite().quickUnlockEnable(password, BIO, null) } }
         try {
             val key = createKey(BIO, biometric = true)
             val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key) }
@@ -172,8 +172,8 @@ class AndroidQuickUnlock(
 
     // --- app PIN -------------------------------------------------------------------------
 
-    suspend fun enablePin(pin: String) {
-        val qk = withContext(Dispatchers.IO) { mappedQuick { suite().quickUnlockEnable(PIN, pin) } }
+    suspend fun enablePin(password: String, pin: String) {
+        val qk = withContext(Dispatchers.IO) { mappedQuick { suite().quickUnlockEnable(password, PIN, pin) } }
         try {
             val key = createKey(PIN, biometric = false)
             val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key) }

@@ -305,12 +305,12 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
         context.getString(R.string.bio_cancel),
     )
 
-    override suspend fun enableBiometricUnlock() {
+    override suspend fun enableBiometricUnlock(password: String) {
         val (t, s, c) = bioTexts()
-        quick.enableBiometric(t, s, c)
+        quick.enableBiometric(password, t, s, c)
     }
 
-    override suspend fun enablePinUnlock(pin: String) = quick.enablePin(pin)
+    override suspend fun enablePinUnlock(password: String, pin: String) = quick.enablePin(password, pin)
 
     override fun disableQuickUnlock() = quick.disableAll()
 

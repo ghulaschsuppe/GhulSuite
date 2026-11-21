@@ -1079,6 +1079,7 @@ private suspend fun describeText(e: Throwable): String {
         VaultErrorKind.DIFFERENT_PROTECTION -> getString(Res.string.err_different_protection)
         VaultErrorKind.ALREADY_EXISTS -> getString(Res.string.err_already_exists)
         VaultErrorKind.LAST_FACTOR -> getString(Res.string.err_last_factor)
+        VaultErrorKind.BACKUP_FACTOR_REQUIRED -> getString(Res.string.err_backup_factor)
         VaultErrorKind.IMPORT_ENCRYPTED -> getString(Res.string.err_import_encrypted)
         VaultErrorKind.IMPORT_UNKNOWN -> getString(Res.string.err_import_unknown)
         VaultErrorKind.NETWORK -> getString(Res.string.err_network, coreText(e.detail) ?: e.detail)

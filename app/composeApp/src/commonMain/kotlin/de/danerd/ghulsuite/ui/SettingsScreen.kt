@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material3.DropdownMenu
@@ -39,6 +40,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import de.danerd.ghulsuite.model.SlotType
 import de.danerd.ghulsuite.model.ThemeMode
@@ -123,6 +125,7 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
     var newCode by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<SlotUi?>(null) }
     var setPin by remember { mutableStateOf(false) }
+    var askBioPassword by remember { mutableStateOf(false) }
     var screenshotWarning by remember { mutableStateOf(false) }
     var ready by remember { mutableStateOf(backend.quickUnlockReady()) }
     var keyfileDialog by remember { mutableStateOf(false) }
@@ -144,7 +147,7 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                 val bioAvailable = backend.biometricAvailable()
                 SwitchRow(stringResource(Res.string.set_quick_bio), settings.quickUnlockBiometric && ready.biometric) { on ->
                     if (on) {
-                        state.run(block = { backend.enableBiometricUnlock() }) { state.changed() }
+                        askBioPassword = true
                     } else {
                         backend.disableQuickUnlockMethod(bio = true)
                         state.changed()
@@ -196,6 +199,8 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                 SetPage.FACTORS -> {
             SectionCard(stringResource(Res.string.set_keys)) {
                 Hint(stringResource(Res.string.set_keys_hint))
+                // A key without a backup (a suite from before the backup was required): said plainly.
+                if (keyCount > 0 && factorCount < 2) Banner(Icons.Filled.Warning, stringResource(Res.string.set_key_no_backup))
                 for (s in slots) {
                     ListRow(
                         s.label.ifBlank { stringResource(typeLabel(s.type)) },
@@ -314,6 +319,7 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
     if (addKey) AddKeyDialog(state) { addKey = false }
     if (keyfileDialog) KeyfileDialog(state) { keyfileDialog = false }
     if (setPin) SetAppPinDialog(state) { setPin = false; ready = backend.quickUnlockReady() }
+    if (askBioPassword) BioPasswordDialog(state) { askBioPassword = false; ready = backend.quickUnlockReady() }
     if (screenshotWarning) {
         AlertDialog(
             onDismissRequest = { screenshotWarning = false },
@@ -327,44 +333,75 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
             dismissButton = { TextButton(onClick = { screenshotWarning = false }) { Text(stringResource(Res.string.a_cancel)) } },
         )
     }
-    if (newCode) {
-        AlertDialog(
-            onDismissRequest = { newCode = false },
-            title = { Text(stringResource(Res.string.a_new_code)) },
-            text = { Text(stringResource(Res.string.set_new_code_text)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    newCode = false
-                    state.run(block = { backend.newRecoveryCode(getString(Res.string.setup_recovery_label)) }) {
-                        state.protectionChanged()
-                        state.push(Screen.RecoveryCode(it))
-                    }
-                }) { Text(stringResource(Res.string.a_create)) }
-            },
-            dismissButton = { TextButton(onClick = { newCode = false }) { Text(stringResource(Res.string.a_cancel)) } },
-        )
-    }
-    removing?.let { s ->
-        AlertDialog(
-            danger = true,
-            onDismissRequest = { removing = null },
-            title = { Text(stringResource(Res.string.set_remove_title)) },
-            text = {
+    if (newCode) NewCodeDialog(state) { newCode = false }
+    removing?.let { s -> RemoveSlotDialog(state, s) { removing = null } }
+}
+
+/** A new recovery code: both factors of now first (who finds the app unlocked cannot do it). */
+@Composable
+fun NewCodeDialog(state: AppState, onDismiss: () -> Unit) {
+    val proof = rememberProofInput(state)
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = { if (!state.busy) onDismiss() },
+        title = { Text(stringResource(Res.string.a_new_code)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(Res.string.set_new_code_text))
+                ProofFields(state, proof) { error = null }
+                BusyBanner(state)
+                ErrorText(error)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                state.run(onError = { error = it }, block = {
+                    state.backend.newRecoveryCode(proof.proof(), getString(Res.string.setup_recovery_label), state.onTouchNeeded)
+                }) {
+                    proof.clear()
+                    onDismiss()
+                    state.codeUnconfirmed = false
+                    state.protectionChanged()
+                    state.push(Screen.RecoveryCode(it))
+                }
+            }, enabled = !state.busy && proof.ok(state), modifier = Modifier.testTag("new-code-confirm")) { Text(stringResource(Res.string.a_create)) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !state.busy) { Text(stringResource(Res.string.a_cancel)) } },
+    )
+}
+
+@Composable
+private fun RemoveSlotDialog(state: AppState, s: SlotUi, onDismiss: () -> Unit) {
+    val proof = rememberProofInput(state)
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        danger = true,
+        onDismissRequest = { if (!state.busy) onDismiss() },
+        title = { Text(stringResource(Res.string.set_remove_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(Res.string.set_remove_text, s.label.ifBlank { stringResource(typeLabel(s.type)) }))
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    removing = null
-                    state.run(block = { backend.removeSlot(s.id) }) { state.protectionChanged() }
-                }) { Text(stringResource(Res.string.a_delete)) }
-            },
-            dismissButton = { TextButton(onClick = { removing = null }) { Text(stringResource(Res.string.a_cancel)) } },
-        )
-    }
+                ProofFields(state, proof) { error = null }
+                BusyBanner(state)
+                ErrorText(error)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                state.run(onError = { error = it }, block = { state.backend.removeSlot(proof.proof(), s.id, state.onTouchNeeded) }) {
+                    proof.clear()
+                    onDismiss()
+                    state.protectionChanged()
+                }
+            }, enabled = !state.busy && proof.ok(state)) { Text(stringResource(Res.string.a_delete)) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !state.busy) { Text(stringResource(Res.string.a_cancel)) } },
+    )
 }
 
 @Composable
 private fun SetAppPinDialog(state: AppState, onDismiss: () -> Unit) {
+    var password by remember { mutableStateOf("") }
     var pin by remember { mutableStateOf("") }
     var repeat by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
@@ -375,6 +412,8 @@ private fun SetAppPinDialog(state: AppState, onDismiss: () -> Unit) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Hint(stringResource(Res.string.set_app_pin_text))
+                // Who finds the app unlocked cannot set a PIN of his own.
+                SecretTextField(password, { password = it; error = null }, stringResource(Res.string.l_master_password))
                 SecretTextField(pin, { pin = it.filter(Char::isDigit).take(12); error = null }, stringResource(Res.string.l_app_pin), numeric = true)
                 SecretTextField(repeat, { repeat = it.filter(Char::isDigit).take(12); error = null }, stringResource(Res.string.l_app_pin_repeat), numeric = true)
                 BusyBanner(state)
@@ -386,12 +425,13 @@ private fun SetAppPinDialog(state: AppState, onDismiss: () -> Unit) {
                 if (pin != repeat) {
                     error = mismatch
                 } else {
-                    state.run(onError = { error = it }, block = { state.backend.enablePinUnlock(pin) }) {
+                    state.run(onError = { error = it }, block = { state.backend.enablePinUnlock(password, pin) }) {
+                        password = ""
                         state.changed()
                         onDismiss()
                     }
                 }
-            }, enabled = !state.busy && pin.length >= 6) { Text(stringResource(Res.string.a_save)) }
+            }, enabled = !state.busy && pin.length >= 6 && password.isNotEmpty()) { Text(stringResource(Res.string.a_save)) }
         },
         dismissButton = { TextButton(onClick = onDismiss, enabled = !state.busy) { Text(stringResource(Res.string.a_cancel)) } },
     )
@@ -412,6 +452,7 @@ private fun KeyfileDialog(state: AppState, onDismiss: () -> Unit) {
     val save = rememberSaveFile { ok -> saved = ok }
     val open = rememberOpenFile { file -> keyfile = file.bytes; saved = true }
     var label by remember { mutableStateOf("") }
+    val proof = rememberProofInput(state)
     val done = stringResource(Res.string.msg_keyfile_added)
     AlertDialog(
         onDismissRequest = { if (!state.busy) onDismiss() },
@@ -428,6 +469,7 @@ private fun KeyfileDialog(state: AppState, onDismiss: () -> Unit) {
                 OutlinedTextField(
                     label, { label = it }, label = { Text(stringResource(Res.string.l_keyfile_label)) }, singleLine = true,
                 )
+                ProofFields(state, proof) { error = null }
                 BusyBanner(state)
                 ErrorText(error)
             }
@@ -436,13 +478,14 @@ private fun KeyfileDialog(state: AppState, onDismiss: () -> Unit) {
             TextButton(onClick = {
                 val data = keyfile ?: return@TextButton
                 state.run(onError = { error = it }, block = {
-                    state.backend.addKeyfile(data, label.ifBlank { getString(Res.string.keyfile_default_label) })
+                    state.backend.addKeyfile(proof.proof(), data, label.ifBlank { getString(Res.string.keyfile_default_label) }, state.onTouchNeeded)
                 }) {
+                    proof.clear()
                     state.changed()
                     state.message(done)
                     onDismiss()
                 }
-            }, enabled = !state.busy && saved && keyfile != null) { Text(stringResource(Res.string.a_add)) }
+            }, enabled = !state.busy && saved && keyfile != null && proof.ok(state)) { Text(stringResource(Res.string.a_add)) }
         },
         dismissButton = { TextButton(onClick = onDismiss, enabled = !state.busy) { Text(stringResource(Res.string.a_cancel)) } },
     )
@@ -453,12 +496,16 @@ private fun AddKeyDialog(state: AppState, onDismiss: () -> Unit) {
     var pin by remember { mutableStateOf("") }
     var label by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
+    val proof = rememberProofInput(state)
     AlertDialog(
         onDismissRequest = { if (!state.busy) onDismiss() },
         title = { Text(stringResource(Res.string.a_add_key)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Hint(stringResource(Res.string.set_add_key_text))
+                ProofFields(state, proof) { error = null }
+                // The new key (after the one of now, if that is how it is confirmed).
+                Hint(stringResource(Res.string.set_add_key_new))
                 OutlinedTextField(label, { label = it }, label = { Text(stringResource(Res.string.l_key_label)) }, singleLine = true)
                 KeyPinField(state, pin) { pin = it; error = null }
                 BusyBanner(state)
@@ -469,13 +516,14 @@ private fun AddKeyDialog(state: AppState, onDismiss: () -> Unit) {
             val added = stringResource(Res.string.msg_key_added)
             TextButton(onClick = {
                 state.run(onError = { error = it }, block = {
-                    state.backend.addSecurityKey(pin, label.ifBlank { getString(Res.string.slot_backup_key) }, state.onTouchNeeded)
+                    state.backend.addSecurityKey(proof.proof(), pin, label.ifBlank { getString(Res.string.slot_backup_key) }, state.onTouchNeeded)
                 }) {
+                    proof.clear()
                     state.changed()
                     state.message(added)
                     onDismiss()
                 }
-            }, enabled = !state.busy && keyPinOk(state, pin)) { Text(stringResource(Res.string.a_register_key)) }
+            }, enabled = !state.busy && keyPinOk(state, pin) && proof.ok(state)) { Text(stringResource(Res.string.a_register_key)) }
         },
         dismissButton = { TextButton(onClick = onDismiss, enabled = !state.busy) { Text(stringResource(Res.string.a_cancel)) } },
     )
@@ -676,3 +724,31 @@ private val LIBRARIES = listOf(
     "JNA (Windows)" to "Apache-2.0 / LGPL-2.1",
     "EFF Large Wordlist" to "CC BY 3.0 US",
 )
+
+/** The master password before fingerprint unlock is switched on (who finds the app unlocked cannot). */
+@Composable
+private fun BioPasswordDialog(state: AppState, onDismiss: () -> Unit) {
+    var password by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = { if (!state.busy) onDismiss() },
+        title = { Text(stringResource(Res.string.set_quick_bio)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SecretTextField(password, { password = it; error = null }, stringResource(Res.string.l_master_password))
+                BusyBanner(state)
+                ErrorText(error)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                state.run(onError = { error = it }, block = { state.backend.enableBiometricUnlock(password) }) {
+                    password = ""
+                    state.changed()
+                    onDismiss()
+                }
+            }, enabled = !state.busy && password.isNotEmpty()) { Text(stringResource(Res.string.a_save)) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !state.busy) { Text(stringResource(Res.string.a_cancel)) } },
+    )
+}

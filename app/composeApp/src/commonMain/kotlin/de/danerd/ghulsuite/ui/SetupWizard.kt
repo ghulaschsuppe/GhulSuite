@@ -128,6 +128,11 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
     var keyfile by remember { mutableStateOf<ByteArray?>(null) }
     var keyfileSaved by remember { mutableStateOf(false) }
     var kdf by remember { mutableStateOf<KdfChoice?>(null) }
+    // 2: the backup of a security key (required): a key file, or a second key added after setting up.
+    var backupKey by remember { mutableStateOf(false) }
+    var backupLabel by remember { mutableStateOf("") }
+    var backupPin by remember { mutableStateOf("") }
+    var backupDone by remember { mutableStateOf(false) }
     var code by remember { mutableStateOf("") }
     // 4: areas
     val areaOn = remember { mutableStateMapOf(VaultKindUi.PASS to true, VaultKindUi.TOTP to true, VaultKindUi.DOCS to true, VaultKindUi.CAL to true) }
@@ -157,6 +162,25 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
     val pinRule = stringResource(Res.string.wz_pin_rule)
     val keyPinMissing = stringResource(Res.string.wz_key_pin_missing)
 
+    /**
+     * The backup of the security key: confirmed with the key just made (touched again), then the
+     * key file is added, or the second key registered (touched after the first one).
+     */
+    fun addBackup() {
+        state.run(onError = { error = it }, block = {
+            val proof = de.danerd.ghulsuite.model.FactorProofUi(password, pin, null)
+            if (backupKey) {
+                backend.addSecurityKey(proof, backupPin, backupLabel.ifBlank { state.str(Res.string.slot_backup_key) }, state.onTouchNeeded)
+            } else {
+                backend.addKeyfile(proof, keyfile!!, state.str(Res.string.keyfile_default_label), state.onTouchNeeded)
+            }
+        }) {
+            backupDone = true
+            pin = ""; backupPin = ""; keyfile = null
+            step = 4
+        }
+    }
+
     fun create() {
         // The choices on the screen say what to do with it (no second message).
         if (backend.exists()) { existing = true; return }
@@ -178,8 +202,9 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
         }) {
             code = it
             created = true
-            password = ""; repeat = ""; pin = ""; keyfile = null
-            step = 4
+            repeat = ""
+            // The password stays until quick unlock is set (step 6); a key needs its backup first.
+            if (useKey) addBackup() else { keyfile = null; step = 4 }
         }
     }
 
@@ -211,10 +236,16 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                 if (error == null) step = 2
             }
             2 -> if (useKey) {
-                // U9: "Next" without the key's PIN says why it does not go on.
-                if (keyPinOk(state, pin)) step = 3 else error = keyPinMissing
+                // U9: "Next" without the key's PIN says why it does not go on; the backup is required.
+                when {
+                    !keyPinOk(state, pin) -> error = keyPinMissing
+                    !backupKey && (keyfile == null || !keyfileSaved) -> error = notSaved
+                    backupKey && !keyPinOk(state, backupPin) -> error = keyPinMissing
+                    else -> step = 3
+                }
             } else if (keyfile != null && keyfileSaved) step = 3 else error = notSaved
-            3 -> create()
+            // Made already, only the backup failed (e.g. the second key was not there): again.
+            3 -> if (created && useKey && !backupDone) addBackup() else create()
             4 -> if (AREAS.none { areaOn[it.kind] == true }) error = oneArea else applyAreas()
             5 -> step = 6
             6 -> {
@@ -222,11 +253,12 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                 when (quick) {
                     QuickChoice.NONE -> {
                         backend.disableQuickUnlock()
+                        password = ""
                         step = 7
                     }
-                    QuickChoice.BIO -> state.run(onError = { error = it }, block = { backend.enableBiometricUnlock() }) { step = 7 }
+                    QuickChoice.BIO -> state.run(onError = { error = it }, block = { backend.enableBiometricUnlock(password) }) { password = ""; step = 7 }
                     QuickChoice.PIN -> if (quickPin.length !in 6..12 || !quickPin.all(Char::isDigit)) error = pinRule
-                    else state.run(onError = { error = it }, block = { backend.enablePinUnlock(quickPin) }) { quickPin = ""; step = 7 }
+                    else state.run(onError = { error = it }, block = { backend.enablePinUnlock(password, quickPin) }) { quickPin = ""; password = ""; step = 7 }
                 }
             }
         }
@@ -334,6 +366,25 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                     }
                     // Holding the key to the phone (NFC) only where there is a phone.
                     HintText(stringResource(if (state.backend.isDesktop) Res.string.wz_key_touch_desktop else Res.string.wz_key_touch))
+                    // Required: a backup, so access does not hang on one key that could get lost.
+                    Text(stringResource(Res.string.wz_backup_title), fontWeight = FontWeight.SemiBold)
+                    Hint(stringResource(Res.string.wz_backup_text))
+                    ChipRow {
+                        FilterChip(!backupKey, { backupKey = false; error = null }, label = { Text(stringResource(Res.string.factor_keyfile)) })
+                        FilterChip(backupKey, { backupKey = true; error = null }, label = { Text(stringResource(Res.string.wz_backup_second_key)) })
+                    }
+                    if (backupKey) {
+                        OutlinedTextField(backupLabel, { backupLabel = it }, Modifier.fillMaxWidth(), label = { Text(stringResource(Res.string.l_key_label)) }, singleLine = true)
+                        KeyPinField(state, backupPin) { backupPin = it; error = null }
+                        Hint(stringResource(Res.string.wz_backup_second_key_hint))
+                    } else if (filePickersAvailable) {
+                        FilledTonalButton(onClick = {
+                            val data = keyfile ?: backend.generateKeyfile().also { keyfile = it }
+                            saveKeyfile(KEYFILE_NAME, data)
+                        }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.keyfile_create_save)) }
+                        OutlinedButton(onClick = openKeyfile, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.keyfile_use_existing)) }
+                        if (keyfileSaved) Text(stringResource(Res.string.keyfile_ready), color = okColor())
+                    }
                 }
                 if (filePickersAvailable) {
                     PickRow(!useKey, Icons.Filled.Description, 9, stringResource(Res.string.setup_use_keyfile), stringResource(Res.string.setup_use_keyfile_text), divider = true, onClick = { useKey = false }) {

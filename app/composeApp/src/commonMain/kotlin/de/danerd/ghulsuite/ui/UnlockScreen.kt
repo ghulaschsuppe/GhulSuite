@@ -49,10 +49,8 @@ private enum class UnlockMode { QUICK, FULL, RECOVERY }
 fun UnlockScreen(state: AppState) {
     val backend = state.backend
     val protection = remember { backend.protection() }
-    val hasKey = (protection?.securityKeys ?: 1) > 0
-    val hasKeyfile = (protection?.keyfiles ?: 0) > 0
-    var withKey by remember { mutableStateOf(hasKey) }
-    val needsKey = withKey && hasKey
+    var withKey by remember { mutableStateOf(state.backend.settings.factorKey) }
+    val needsKey = withKey
     var ready by remember { mutableStateOf(backend.quickUnlockReady()) }
     var mode by remember { mutableStateOf(if (ready.any) UnlockMode.QUICK else UnlockMode.FULL) }
     var password by remember { mutableStateOf("") }
@@ -156,13 +154,14 @@ fun UnlockScreen(state: AppState) {
                 ErrorText(error)
                 Spacer(Modifier.height(6.dp))
                 Links(
-                    stringResource(if (hasKey) Res.string.unlock_use_full else Res.string.unlock_use_password) to { mode = UnlockMode.FULL; error = null },
+                    stringResource(Res.string.unlock_use_full) to { mode = UnlockMode.FULL; error = null },
                     stringResource(Res.string.unlock_other_suite) to { clear(); state.showStart = true },
                 )
             }
 
             UnlockMode.FULL -> {
-                if (hasKey && hasKeyfile) FactorChoice(withKey) { withKey = it; error = null }
+                // Always both ways: what the file is protected with is not given away here.
+        FactorChoice(withKey) { withKey = it; error = null; state.backend.settings.factorKey = it }
                 SecretTextField(password, { password = it; error = null }, stringResource(Res.string.l_master_password))
                 if (needsKey) {
                     if (backend.keyPinInApp) SecretTextField(pin, { pin = it; error = null }, stringResource(Res.string.l_key_pin))

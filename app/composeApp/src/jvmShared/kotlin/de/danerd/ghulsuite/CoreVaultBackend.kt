@@ -73,6 +73,7 @@ import de.danerd.ghulsuite.core.archiveWrittenMatches
 import de.danerd.ghulsuite.model.ArchiveCheckUi
 import de.danerd.ghulsuite.model.ArchiveRelationUi
 import de.danerd.ghulsuite.model.ArchiveTargetUi
+import de.danerd.ghulsuite.model.FactorProofUi
 import de.danerd.ghulsuite.model.ArchiveTargetInfoUi
 import de.danerd.ghulsuite.model.SuiteFileRef
 import de.danerd.ghulsuite.core.ArchiveCheck
@@ -1031,15 +1032,19 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
         }
     }
 
-    override suspend fun addSecurityKey(pin: String, label: String, onTouchNeeded: () -> Unit) =
-        withKey { t -> suite.addSecurityKey(t, Touch(onTouchNeeded), pin, label) }
+    private fun FactorProofUi.core() = de.danerd.ghulsuite.core.FactorProof(password, pin, keyfile)
 
-    override suspend fun addKeyfile(keyfile: ByteArray, label: String) = io { suite.addKeyfile(keyfile, label) }
+    override suspend fun addSecurityKey(proof: FactorProofUi, pin: String, label: String, onTouchNeeded: () -> Unit) =
+        withKey { t -> suite.addSecurityKey(proof.core(), t.takeIf { proof.pin != null }, t, Touch(onTouchNeeded), pin, label) }
 
-    override suspend fun newRecoveryCode(label: String): String = io { suite.newRecoveryCode(label) }
+    override suspend fun addKeyfile(proof: FactorProofUi, keyfile: ByteArray, label: String, onTouchNeeded: () -> Unit) =
+        maybeWithKey(proof.pin) { t -> suite.addKeyfile(proof.core(), t, t?.let { Touch(onTouchNeeded) }, keyfile, label) }
 
-    override suspend fun removeSlot(id: String) {
-        io { suite.removeSlot(id.hexToBytes()) }
+    override suspend fun newRecoveryCode(proof: FactorProofUi, label: String, onTouchNeeded: () -> Unit): String =
+        maybeWithKey(proof.pin) { t -> suite.newRecoveryCode(proof.core(), t, t?.let { Touch(onTouchNeeded) }, label) }
+
+    override suspend fun removeSlot(proof: FactorProofUi, id: String, onTouchNeeded: () -> Unit) {
+        maybeWithKey(proof.pin) { t -> suite.removeSlot(proof.core(), t, t?.let { Touch(onTouchNeeded) }, id.hexToBytes()) }
         onProtectionChanged()
     }
 

@@ -48,8 +48,9 @@ interface VaultBackend {
     fun biometricAvailable(): Boolean
     /** Which quick unlock methods can be used right now (not expired, not reset by a reboot). */
     fun quickUnlockReady(): QuickUnlockReady
-    suspend fun enableBiometricUnlock()
-    suspend fun enablePinUnlock(pin: String)
+    /** [password]: the master password (who finds the app unlocked must not give himself lasting access). */
+    suspend fun enableBiometricUnlock(password: String)
+    suspend fun enablePinUnlock(password: String, pin: String)
     fun disableQuickUnlock()
     fun disableQuickUnlockMethod(bio: Boolean)
     suspend fun unlockWithBiometric()
@@ -104,12 +105,16 @@ interface VaultBackend {
     // --- Protection
     suspend fun slots(): List<SlotUi>
     /** Adds a security key; nothing else changes (other keys, key files, recovery code stay valid). */
-    suspend fun addSecurityKey(pin: String, label: String, onTouchNeeded: () -> Unit)
+    /**
+     * Changes of the protection need both factors of now ([proof]: password plus key or key file);
+     * a key of now is touched first, then the new one.
+     */
+    suspend fun addSecurityKey(proof: FactorProofUi, pin: String, label: String, onTouchNeeded: () -> Unit)
     /** Adds a key file as alternative second factor. */
-    suspend fun addKeyfile(keyfile: ByteArray, label: String)
-    suspend fun newRecoveryCode(label: String): String
+    suspend fun addKeyfile(proof: FactorProofUi, keyfile: ByteArray, label: String, onTouchNeeded: () -> Unit)
+    suspend fun newRecoveryCode(proof: FactorProofUi, label: String, onTouchNeeded: () -> Unit): String
     /** Removes a security key or key file (not the last one). */
-    suspend fun removeSlot(id: String)
+    suspend fun removeSlot(proof: FactorProofUi, id: String, onTouchNeeded: () -> Unit)
     suspend fun changePassword(current: String, new: String)
 
     // --- Import and export
@@ -331,6 +336,9 @@ data class ArchiveCheckUi(
 
 /** The file at the place the suite is saved to. */
 enum class ArchiveTargetUi { NEW, SAME, CHANGED_ELSEWHERE, OTHER_SUITE }
+
+/** Both factors of now, before a change of the protection: the master password plus the PIN of a key ([pin]) or a key file. */
+class FactorProofUi(val password: String, val pin: String?, val keyfile: ByteArray?)
 
 /** The file at the place a suite is saved to: how it relates, and who saved it when ([device] empty, [time] 0: not known). */
 data class ArchiveTargetInfoUi(val target: ArchiveTargetUi, val device: String = "", val time: Long = 0)
@@ -660,6 +668,8 @@ enum class VaultErrorKind {
     DIFFERENT_PROTECTION,
     ALREADY_EXISTS,
     LAST_FACTOR,
+    /** A security key needs a backup (a second key or a key file). */
+    BACKUP_FACTOR_REQUIRED,
     IMPORT_ENCRYPTED,
     IMPORT_UNKNOWN,
     QUICK_UNAVAILABLE,

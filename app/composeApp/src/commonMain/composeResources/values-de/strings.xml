@@ -365,7 +365,6 @@
     <string name="unlock_other_suite">Andere Suite oder Tresor öffnen</string>
     <string name="unlock_use_code">Mit Wiederherstellungscode öffnen</string>
     <string name="unlock_use_full">Mit Passwort und Key oder Schlüsseldatei</string>
-    <string name="unlock_use_password">Mit Passwort und Schlüsseldatei</string>
     <string name="unlock_use_quick">Mit Fingerabdruck oder App-PIN</string>
     <string name="untitled">(ohne Titel)</string>
     <string name="vault_add_file">Tresordatei hinzufügen</string>
@@ -1374,4 +1373,12 @@
     <string name="cal_notifications_off">Benachrichtigungen sind für GhulSuite ausgeschaltet: Erinnerungen kommen nicht an.</string>
     <string name="cal_notifications_settings">Benachrichtigungen einschalten …</string>
     <string name="upd_wait">Erst fertig speichern, hinzufügen oder bearbeiten, dann aktualisieren.</string>
+    <string name="err_backup_factor">Ein Security Key braucht ein Backup: einen zweiten Key oder eine Schlüsseldatei. Füge zuerst ein Backup hinzu.</string>
+    <string name="proof_hint">Zur Bestätigung: Master-Passwort und dein Key oder deine Schlüsseldatei. Wer die entsperrte App kurz in der Hand hat, kann so nichts an deinem Schutz ändern.</string>
+    <string name="set_add_key_new">Dann der neue Key: Name, und wenn er es braucht, seine PIN. Bestätigst du mit deinem bisherigen Key, berühre erst ihn und stecke danach den neuen ein.</string>
+    <string name="wz_backup_title">Backup für den Key (Pflicht)</string>
+    <string name="wz_backup_text">Geht dein Key verloren, kommst du mit dem Backup weiter hinein. Es funktioniert genau wie der Key: eine Schlüsseldatei (z. B. auf einem zweiten Stick, getrennt aufbewahrt) oder ein zweiter Security Key.</string>
+    <string name="wz_backup_second_key">Zweiter Key</string>
+    <string name="wz_backup_second_key_hint">Beim Einrichten berührst du erst deinen ersten Key zweimal (Anlegen, Bestätigen), dann steckst du den zweiten ein und berührst ihn.</string>
+    <string name="set_key_no_backup">Dein Key hat kein Backup. Geht er verloren, kommst du nur noch mit dem Wiederherstellungscode hinein. Füge einen zweiten Key oder eine Schlüsseldatei hinzu.</string>
 </resources>

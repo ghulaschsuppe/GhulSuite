@@ -99,10 +99,8 @@ fun VaultFileChoice(
 fun OpenSingleVault(state: AppState, file: PickedVaultFile, info: ContainerInfoUi, onCancel: () -> Unit) {
     val backend = state.backend
     val kind = vaultKindOf(info.kind)
-    val hasKey = info.protection.securityKeys > 0
-    val hasKeyfile = info.protection.keyfiles > 0
-    var withKey by remember { mutableStateOf(hasKey) }
-    val needsKey = withKey && hasKey
+    var withKey by remember { mutableStateOf(state.backend.settings.factorKey) }
+    val needsKey = withKey
     var password by remember { mutableStateOf("") }
     var pin by remember { mutableStateOf("") }
     var keyfile by remember { mutableStateOf<PickedFile?>(null) }
@@ -111,7 +109,8 @@ fun OpenSingleVault(state: AppState, file: PickedVaultFile, info: ContainerInfoU
     SectionCard(stringResource(Res.string.single_open_title)) {
         Hint(stringResource(Res.string.single_open_text, file.ref.name, stringResource(kindLabel(kind))))
         SecretTextField(password, { password = it; error = null }, stringResource(Res.string.l_master_password))
-        if (hasKey && hasKeyfile) FactorChoice(withKey) { withKey = it; error = null }
+        // Always both ways: what the file is protected with is not given away here.
+        FactorChoice(withKey) { withKey = it; error = null; state.backend.settings.factorKey = it }
         if (needsKey) KeyPinField(state, pin) { pin = it; error = null } else KeyfilePicker(keyfile) { keyfile = it; error = null }
         BusyBanner(state)
         ErrorText(error)

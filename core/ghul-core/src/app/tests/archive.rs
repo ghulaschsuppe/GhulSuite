@@ -223,7 +223,7 @@ fn the_recovery_code_opens_a_file_unverified_and_sets_a_new_password() {
 fn opening_a_file_removes_this_devices_data_of_the_old_state() {
     let (_da, a, kf, _) = device_with_suite("wipe-a");
     let file = save(&a);
-    a.quick_unlock_enable("pin".into(), Some("1234".into())).unwrap();
+    a.quick_unlock_enable(PW.into(), "pin".into(), Some("1234".into())).unwrap();
     assert!(a.quick_unlock_exists("pin".into()));
     open(&a, &file, &kf);
     a.archive_accept().unwrap();
@@ -779,8 +779,8 @@ fn an_attachment_that_cannot_be_saved_goes_again() {
 #[test]
 fn quick_unlock_off_leaves_no_copy() {
     let (d, a, _kf, _) = device_with_suite("quick-bak");
-    a.quick_unlock_enable("pin".into(), Some("123456".into())).unwrap();
-    a.quick_unlock_enable("pin".into(), Some("654321".into())).unwrap();
+    a.quick_unlock_enable(PW.into(), "pin".into(), Some("123456".into())).unwrap();
+    a.quick_unlock_enable(PW.into(), "pin".into(), Some("654321".into())).unwrap();
     let dir = std::path::PathBuf::from(d.local());
     assert!(dir.join("quick-pin.ghlq.bak").exists(), "a copy of the first one");
     a.quick_unlock_disable("pin".into()).unwrap();
