@@ -20,6 +20,7 @@ import androidx.lifecycle.ProcessLifecycleOwner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -151,6 +152,16 @@ class GhulApplication : Application() {
         if (screenReceiverRegistered) {
             runCatching { unregisterReceiver(screenOffReceiver) }
             screenReceiverRegistered = false
+        }
+        // The suite file is still being written: the service (a notification without names)
+        // keeps the app alive until it is done, else Android could end it midway and leave an
+        // incomplete file on the stick.
+        if (de.danerd.ghulsuite.ui.JobStatus.saving.value != null) {
+            scope.launch {
+                de.danerd.ghulsuite.ui.JobStatus.saving.first { it == null }
+                if (!backend.unlocked.value) stopService(Intent(this@GhulApplication, UnlockedService::class.java))
+            }
+            return
         }
         stopService(Intent(this, UnlockedService::class.java))
     }

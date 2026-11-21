@@ -28,6 +28,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.PaddingValues
@@ -222,17 +224,21 @@ fun PassListScreen(state: AppState, padding: PaddingValues) {
             }
             if (recent.isNotEmpty()) {
                 item(key = "recent") {
-                    Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         SectionLabel(stringResource(Res.string.pass_recent))
                         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             for (e in recent) {
+                                // A pill with room around its round badge (a square badge filling it looked squeezed).
                                 Row(
-                                    Modifier.height(36.dp).clip(CircleShape).background(t.surface).border(1.dp, t.line, CircleShape)
-                                        .clickable { state.push(Screen.EntryDetail(e.vaultId, e.id)) }.padding(start = 3.dp, end = 14.dp),
-                                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    Modifier.height(40.dp).clip(CircleShape).background(t.surface).border(1.dp, t.line, CircleShape)
+                                        .clickable { state.push(Screen.EntryDetail(e.vaultId, e.id)) }.padding(start = 6.dp, end = 16.dp),
+                                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
                                 ) {
-                                    TypeBadge(e.type, e.title, 30.dp)
-                                    Text(e.title.ifBlank { stringResource(Res.string.untitled) }, fontSize = 14.sp, fontWeight = FontWeight.W500)
+                                    Box(Modifier.clip(CircleShape)) { TypeBadge(e.type, e.title, 28.dp) }
+                                    Text(
+                                        e.title.ifBlank { stringResource(Res.string.untitled) }, fontSize = 14.sp, fontWeight = FontWeight.W500,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 160.dp),
+                                    )
                                 }
                             }
                         }

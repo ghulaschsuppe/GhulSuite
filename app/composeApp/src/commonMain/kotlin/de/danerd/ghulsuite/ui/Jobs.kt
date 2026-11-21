@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
@@ -46,7 +47,7 @@ import org.jetbrains.compose.resources.stringResource
 enum class JobState { WAITING, RUNNING, DONE, FAILED, CANCELLED }
 
 /** What a job does (its picture in the strip and the notification). */
-enum class JobKind { UPLOAD, DOWNLOAD, ADD, EXPORT }
+enum class JobKind { UPLOAD, DOWNLOAD, ADD, EXPORT, SAVE }
 
 /** A job ends with this text (the message) as failed, e.g. "stopped after 12 of 40 files: …". */
 class JobFailed(val text: String) : Exception(text)
@@ -56,7 +57,17 @@ class JobFailed(val text: String) : Exception(text)
  * scope, so leaving a screen does not stop it. The strip in the header shows it with its progress
  * and "Cancel"; when it ends, a message says how it went.
  */
-class BgJob internal constructor(val id: Int, val kind: JobKind, val quiet: Boolean, private val onChange: (BgJob) -> Unit) {
+/**
+ * [cancellable] false: saving the suite file. It has no "Cancel" and goes on when the suite is
+ * locked (stopping midway would leave an incomplete file on a stick, see AppState.saveSuiteFile).
+ */
+class BgJob internal constructor(
+    val id: Int,
+    val kind: JobKind,
+    val quiet: Boolean,
+    val cancellable: Boolean = true,
+    private val onChange: (BgJob) -> Unit,
+) {
     /** When it last reported progress (the clock of [Jobs]); a job that stops reporting counts as stalled. */
     internal var lastProgress = 0L
 
@@ -106,12 +117,14 @@ class BgJob internal constructor(val id: Int, val kind: JobKind, val quiet: Bool
             }
         }
 
-    fun info() = JobInfo(title, done, total, bytes, bytesTotal, item, progress)
+    fun info() = JobInfo(title, done, total, bytes, bytesTotal, item, progress, cancellable)
 }
 
 /** A job as the platform shows it outside the app's window (Android notification). */
 data class JobInfo(
     val title: String, val done: Int, val total: Int, val bytes: Long, val bytesTotal: Long, val item: String, val progress: Float?,
+    /** False: saving the suite file (no "Cancel"). */
+    val cancellable: Boolean = true,
 )
 
 /**
@@ -146,6 +159,12 @@ object JobStatus {
 
     /** An automatic lock while jobs run (see AppState.autoLock); null: lock directly. */
     var autoLock: (() -> Unit)? = null
+
+    /**
+     * The suite file is being written (0 to 1; -1: how far is not known yet; null: not now). It
+     * goes on after locking: Android keeps the app alive meanwhile (a notification without names).
+     */
+    val saving = MutableStateFlow<Float?>(null)
 
     /** The user is back: an automatic lock that waits for jobs is dropped. */
     var keepUnlocked: (() -> Unit)? = null
@@ -221,11 +240,12 @@ class Jobs internal constructor(private val state: AppState) {
         title: suspend () -> String,
         quiet: Boolean = false,
         lane: String = "files",
+        cancellable: Boolean = true,
         cancelled: suspend (BgJob) -> String? = { null },
         onEnd: () -> Unit = {},
         block: suspend (BgJob) -> String?,
     ): BgJob {
-        val job = BgJob(++nextId, kind, quiet) { j ->
+        val job = BgJob(++nextId, kind, quiet, cancellable) { j ->
             j.lastProgress = clock()
             publish()
         }
@@ -279,12 +299,15 @@ class Jobs internal constructor(private val state: AppState) {
     }
 
     fun cancel(job: BgJob) {
-        job.coroutine?.cancel()
+        if (job.cancellable) job.coroutine?.cancel()
     }
 
-    /** Cancels every running job; [byLock]: the suite is being locked (the message waits for the next unlock). */
+    /**
+     * Cancels every running job; [byLock]: the suite is being locked (the message waits for the
+     * next unlock). Saving the suite file goes on (see [BgJob.cancellable]).
+     */
     fun cancelAll(byLock: Boolean = false) {
-        for (j in list.filter { it.active }) {
+        for (j in list.filter { it.active && it.cancellable }) {
             if (byLock) j.byLock = true
             j.coroutine?.cancel()
         }
@@ -321,6 +344,7 @@ class Jobs internal constructor(private val state: AppState) {
                 JobKind.DOWNLOAD -> Res.string.job_kind_download
                 JobKind.ADD -> Res.string.job_kind_add
                 JobKind.EXPORT -> Res.string.job_kind_export
+                JobKind.SAVE -> Res.string.job_kind_save
             },
         )
         val end = state.str(
@@ -340,6 +364,7 @@ class Jobs internal constructor(private val state: AppState) {
      */
     private fun publish() {
         val first = list.firstOrNull { it.active && it.shown } ?: list.firstOrNull { it.active }
+        JobStatus.saving.value = list.firstOrNull { it.active && !it.cancellable }?.let { it.progress ?: -1f }
         JobStatus.current.value = when {
             first == null -> null
             first.shown -> first.info()
@@ -378,6 +403,7 @@ private fun JobRow(jobs: Jobs, job: BgJob) {
     val icon = when (job.kind) {
         JobKind.UPLOAD, JobKind.ADD -> Icons.Filled.Upload
         JobKind.DOWNLOAD, JobKind.EXPORT -> Icons.Filled.Download
+        JobKind.SAVE -> Icons.Filled.Save
     }
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(t.surface)
@@ -397,7 +423,9 @@ private fun JobRow(jobs: Jobs, job: BgJob) {
             }
             Text(jobDetail(job), fontSize = 12.sp, color = t.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        TextButton(onClick = { jobs.cancel(job) }, modifier = Modifier.testTag(JOB_CANCEL_TAG)) { Text(stringResource(Res.string.a_cancel)) }
+        if (job.cancellable) {
+            TextButton(onClick = { jobs.cancel(job) }, modifier = Modifier.testTag(JOB_CANCEL_TAG)) { Text(stringResource(Res.string.a_cancel)) }
+        }
     }
 }
 
@@ -405,6 +433,11 @@ private fun JobRow(jobs: Jobs, job: BgJob) {
 @Composable
 private fun jobDetail(job: BgJob): String {
     if (job.state == JobState.WAITING) return stringResource(Res.string.job_waiting)
+    // Saving: written and read back in one bar, so a percentage says more than the bytes.
+    if (job.kind == JobKind.SAVE) {
+        val p = job.progress ?: return stringResource(Res.string.job_starting)
+        return stringResource(Res.string.save_progress, "${(p * 100).toInt()} %")
+    }
     return listOfNotNull(
         if (job.total > 1) stringResource(Res.string.job_of, job.done.toString(), job.total.toString()) else null,
         job.item.takeIf { it.isNotEmpty() },

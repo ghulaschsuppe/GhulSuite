@@ -100,7 +100,9 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
      * The Storage Access Framework hands over the chosen document only, no folder to write a
      * temporary file into: the document is truncated and written ("wt"; the provider, a USB stick
      * or a cloud app, keeps its name and place), then read back. Until then the working copy is
-     * the only complete state and stays marked as unsaved. A document made just for this that
+     * the only complete state and stays marked as unsaved. The document is opened only when the
+     * first byte comes (everything is sealed by then): a save that fails before, e.g. because the
+     * suite was locked, leaves the file there as it was. A document made just for this that
      * could not be written completely is removed.
      */
     override fun writeSuiteStreamed(
@@ -112,12 +114,12 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
         val uri = Uri.parse(ref.id)
         var ok = false
         try {
-            val out = context.contentResolver.openOutputStream(uri, "wt") ?: return false
-            out.use { raw ->
-                java.io.BufferedOutputStream(raw, 1 shl 20).use { buffered ->
+            val lazy = LazyOutput { context.contentResolver.openOutputStream(uri, "wt") ?: throw java.io.IOException("not writable") }
+            lazy.use {
+                java.io.BufferedOutputStream(lazy, 1 shl 20).use { buffered ->
                     write(buffered)
                     buffered.flush()
-                    if (raw is java.io.FileOutputStream) runCatching { raw.fd.sync() }
+                    (lazy.opened as? java.io.FileOutputStream)?.let { raw -> runCatching { raw.fd.sync() } }
                 }
             }
             ok = openSuiteInput(ref)?.let { input -> input.stream.use { check(input) } } == true
@@ -359,4 +361,24 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
     }
 
     override fun crashReport(): String? = CrashLog.pending(context)
+}
+
+/** Opens its stream only when the first byte is written (nothing is truncated before). */
+private class LazyOutput(private val open: () -> java.io.OutputStream) : java.io.OutputStream() {
+    var opened: java.io.OutputStream? = null
+        private set
+
+    private fun out(): java.io.OutputStream = opened ?: open().also { opened = it }
+
+    override fun write(b: Int) = out().write(b)
+
+    override fun write(b: ByteArray, off: Int, len: Int) = out().write(b, off, len)
+
+    override fun flush() {
+        opened?.flush()
+    }
+
+    override fun close() {
+        opened?.close()
+    }
 }

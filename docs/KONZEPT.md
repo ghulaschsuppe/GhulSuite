@@ -426,9 +426,48 @@ Was ein Gerät zuletzt gesehen hat (höchster Zähler, Stand-ID, Schutz-Epoche),
 nicht in der Arbeitskopie: Eine ältere Datei, ein Abzweig oder ein älterer Schutz fallen auch auf, nachdem die
 Arbeitskopie ersetzt wurde.
 
-**„Nicht gespeicherte Änderungen“.** Gibt es Änderungen seit dem letzten Speichern, zeigt die App oben einen Hinweis
-(„Nicht gespeicherte Änderungen. Tippen zum Speichern.“) und auf der Seite Suite-Datei den Stand. Ohne Änderungen:
-„Alles ist in der Suite-Datei gespeichert.“
+**Speichern nur von Hand** (seit 21.11.2026; ein automatisches Speichern gab es kurz in einer Testversion, es passt
+nicht zu einem Tresor auf einem Stick): Jede Änderung liegt sofort verschlüsselt in der Arbeitskopie auf dem Gerät. In
+die Suite-Datei kommt sie erst, wenn der Nutzer speichert. Dafür gibt es den **Speichern-Button**: in der Kopfzeile
+neben „Sperren“ (in breiten Fenstern in der Seitenleiste über „Sperren“, unter Windows auch **Strg+S**), mit einem
+Punkt, solange etwas ungespeichert ist; ebenso ein Punkt am Reiter Optionen. Er erscheint auch ohne Suite-Datei
+(dann wird ein Ort gewählt), nicht aber auf Seiten, die gerade etwas bearbeiten.
+
+Ein Tippen öffnet den **Speichern-Dialog**: „Änderungen jetzt in die Suite-Datei schreiben?“, Datei, „Zuletzt
+gespeichert: …“ und der Hinweis, den Stick nicht abzuziehen (bei einem Cloud-Ordner lädt die Cloud-App danach hoch).
+Zuerst wird nur der Kopf der Datei am Ort gelesen. Wurde sie inzwischen anderswo gespeichert, nennt der Dialog Gerät
+und Zeit und bietet zuerst „Meine als neue Datei sichern …“, dann „Überschreiben“ (rot) und „Abbrechen“; ebenso bei
+einer anderen oder unlesbaren Datei. Ist der Ort nicht erreichbar oder scheitert das Speichern, sagt der Dialog
+warum, mit „Erneut versuchen“ und „Speichern unter …“. Gespeichert wird als **Hintergrundauftrag ohne „Abbrechen“**
+mit Fortschritt in Prozent (geschrieben und zurückgelesen in einem Balken); „Im Hintergrund weiter“ schließt den
+Dialog, der Auftrag steht dann unter der Kopfzeile. Kamen während des Schreibens Änderungen hinzu, sagt „Gespeichert“
+das dazu, sie bleiben ungespeichert.
+
+**Sperren während des Speicherns:** Das Speichern läuft weiter (es braucht nach dem Versiegeln keinen Schlüssel
+mehr), der Kern trägt den gespeicherten Stand auch gesperrt ein; der Entsperren-Bildschirm zeigt „Die Suite-Datei
+wird noch gespeichert (… %). USB-Stick nicht abziehen.“. Die automatische Sperre wartet, solange es vorangeht. Unter
+Android hält eine Benachrichtigung ohne Namen die App bis zum Ende am Leben. Android schreibt direkt in das gewählte
+Dokument (es gibt keinen Ordner für eine Zwischendatei); geöffnet wird es erst, wenn alles versiegelt ist. Bricht das
+Schreiben trotzdem ab (Stick gezogen), sagt die App, dass die Datei am Ort unvollständig sein kann; die Arbeitskopie
+ist vollständig. Windows schreibt in eine Zwischendatei und ersetzt erst dann; eine liegengebliebene Zwischendatei
+wird beim nächsten Start entfernt.
+
+**Beenden unter Windows** mit ungespeicherten Änderungen: „Speichern“ (danach beendet sich die App),
+„Ohne Speichern beenden“ (die Änderungen bleiben auf dem Gerät) oder Wegklicken; gesperrt zuerst entsperren. Läuft
+ein Speichern, beendet sich die App erst danach. Unter Android gibt es kein verlässliches Beenden: dort bleiben Button
+und Hinweise.
+
+**Erinnerung:** Ist seit drei Tagen etwas ungespeichert, steht über den Listen „Seit … nicht in der Suite-Datei
+gespeichert. Tippen zum Speichern.“. Die Markierung „ungespeichert“ schreibt der Kern **vor** jeder Änderung der
+Arbeitskopie (mit fsync), mit der Zeit der ersten Änderung: Auch nach einem Absturz fehlt der Button nie. Beim Öffnen
+einer anderen Suite-Datei mit ungespeicherten Änderungen gibt es „Erst speichern“. Der letzte Schritt der Einrichtung
+(8 von 8) legt die Suite-Datei an einem gewählten Ort an; nur wenn das scheitert, geht es nach einer Warnung ohne sie
+weiter (der Button bleibt dann). Exportieren und Teilen ersetzen das
+Speichern nicht. Ein einzeln geöffneter Tresor wird weiter gleich in seine Datei zurückgeschrieben.
+
+**Auf dem Entsperren-Bildschirm** steht bei ungespeicherten Änderungen ein Hinweis ohne Tippen („… Entsperre und tippe
+oben auf das Speichern-Symbol.“): gespeichert wird nur entsperrt. Ohne Änderungen sagt Optionen → Suite-Datei: „Alles
+ist in der Suite-Datei gespeichert.“
 
 **Schutzänderungen** wirken in der Arbeitskopie und reisen mit dem nächsten Speichern mit; sie erneuern die inneren
 Schlüssel (Abschnitt 6.2) und erhöhen die Schutz-Epoche. Keys und Schlüsseldateien funktionieren auf jedem Gerät;
@@ -594,7 +633,7 @@ GhulDrive, das auf einem eigenen Server lag. Format: [`FORMAT.md`](FORMAT.md), A
 Eine Suite kann **bis zu 3** GhulDocs-Tresore haben (seit 20.11.2026; vom 17. bis 20.11.2026 war es genau einer).
 Der Kern lehnt einen vierten ab, wo immer einer hinzukommt (Neuer Tresor, Bereich einrichten, Paket hinzufügen;
 Kernfehler `a suite has at most 3 GhulDocs vaults`); die App sagt „Eine Suite hat höchstens 3 GhulDocs-Tresore (je bis 1 GB). Lösche einen, um einen neuen anzulegen oder ein GhulDocs-Paket hinzuzufügen.“ „Neuer Tresor“ zeigt
-GhulDocs dann ausgegraut mit diesem Hinweis, die Tresorwahl bietet keinen neuen an. Eine Suite-Datei mit mehr als 3
+GhulDocs dann gar nicht mehr an (nur den Hinweis), die Tresorwahl bietet keinen neuen an. Eine Suite-Datei mit mehr als 3
 GhulDocs-Tresoren wird nicht geöffnet. Die 3 GB für alle zusammen ergeben sich daraus (3 × 1 GB). Jeder ist in sich geschlossen: eigene Ordner, eigener Papierkorb, eigene Favoriten,
 eigene Inhaltsdateien `docs-<Tresor-ID>/`. „Neuer Tresor“ bietet GhulDocs an, solange es weniger als 3 sind. Bei mehreren Tresoren zeigt GhulDocs
 „Alle Tresore“ und eine Tresorwahl in der Kontextzeile oben (wie GhulPass und GhulAuth); die Ordnerwahl und „Teilen →

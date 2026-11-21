@@ -37,14 +37,15 @@ class UnlockedService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_LOCK) {
             ghul.backend.lock()
-            stopSelf()
+            // A save that runs goes on (GhulApplication stops the service when it is done).
+            if (!savingNow()) stopSelf()
             return START_NOT_STICKY
         }
         if (intent?.action == ACTION_CANCEL_JOBS) {
             JobStatus.cancelAll()
             return START_NOT_STICKY
         }
-        if (!ghul.backend.unlocked.value) {
+        if (!ghul.backend.unlocked.value && !savingNow()) {
             stopSelf()
             return START_NOT_STICKY
         }
@@ -66,7 +67,7 @@ class UnlockedService : Service() {
         val nm = getSystemService(NotificationManager::class.java)
         scope.launch {
             JobStatus.current.collect { job ->
-                if (ghul.backend.unlocked.value) runCatching { nm.notify(NOTIFICATION_ID, buildNotification(job)) }
+                if (ghul.backend.unlocked.value || savingNow()) runCatching { nm.notify(NOTIFICATION_ID, buildNotification(job)) }
                 // Android drops updates that come faster; the newest state is taken after the pause.
                 delay(700)
             }
@@ -110,6 +111,9 @@ class UnlockedService : Service() {
         runCatching { nm.notify(DONE_ID, n) }
     }
 
+    /** The suite file is being written (it goes on after locking, see JobStatus.saving). */
+    private fun savingNow() = JobStatus.saving.value != null
+
     private fun buildNotification(job: JobInfo?): Notification {
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
@@ -134,6 +138,20 @@ class UnlockedService : Service() {
             .setOngoing(true)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .addAction(Notification.Action.Builder(null, getString(R.string.notif_lock), lock).build())
+        // Locked while the suite file is still written: how far, no names, no actions.
+        if (!ghul.backend.unlocked.value) {
+            val p = JobStatus.saving.value
+            return Notification.Builder(this, CHANNEL)
+                .setSmallIcon(R.drawable.ic_shield)
+                .setContentTitle(getString(R.string.notif_saving_title))
+                .setContentText(getString(R.string.notif_saving_text))
+                .setProgress(100, ((p ?: 0f).coerceAtLeast(0f) * 100).toInt(), p == null || p < 0f)
+                .setContentIntent(open)
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .setVisibility(Notification.VISIBILITY_PUBLIC)
+                .build()
+        }
         if (job == null || job.title.isEmpty()) return plain.build()
         // A job runs: its title, how far, "Cancel" and "Lock". The lock screen shows the plain version.
         val cancel = PendingIntent.getService(
@@ -144,7 +162,7 @@ class UnlockedService : Service() {
             job.item.takeIf { it.isNotEmpty() },
         ).joinToString(" · ")
         val p = job.progress
-        return Notification.Builder(this, CHANNEL)
+        val b = Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_shield)
             .setContentTitle(job.title)
             .setContentText(detail)
@@ -154,9 +172,9 @@ class UnlockedService : Service() {
             .setOnlyAlertOnce(true)
             .setVisibility(Notification.VISIBILITY_PRIVATE)
             .setPublicVersion(plain.build())
-            .addAction(Notification.Action.Builder(null, getString(R.string.notif_job_cancel), cancel).build())
-            .addAction(Notification.Action.Builder(null, getString(R.string.notif_lock), lock).build())
-            .build()
+        // Saving the suite file cannot be cancelled (it would leave an incomplete file).
+        if (job.cancellable) b.addAction(Notification.Action.Builder(null, getString(R.string.notif_job_cancel), cancel).build())
+        return b.addAction(Notification.Action.Builder(null, getString(R.string.notif_lock), lock).build()).build()
     }
 
     /**
@@ -168,7 +186,7 @@ class UnlockedService : Service() {
         shake = ShakeDetector(this) {
             val wasUnlocked = ghul.backend.unlocked.value
             ghul.backend.panicLock()
-            stopSelf()
+            if (!savingNow()) stopSelf()
             wasUnlocked
         }.also { it.start() }
     }

@@ -15,6 +15,8 @@
     <string name="cal_done">Erledigt</string>
     <string name="update_failed">Das Update konnte nicht installiert werden. Lade es stattdessen von der Release-Seite.</string>
     <string name="notif_job_channel">Aufgaben im Hintergrund</string>
+    <string name="notif_saving_title">Suite-Datei wird gespeichert</string>
+    <string name="notif_saving_text">USB-Stick nicht abziehen, bis das Speichern fertig ist.</string>
     <string name="notif_job_cancel">Abbrechen</string>
     <string name="notif_job_of">%1$d von %2$d fertig</string>
     <string name="share_to_docs">In GhulDocs speichern</string>

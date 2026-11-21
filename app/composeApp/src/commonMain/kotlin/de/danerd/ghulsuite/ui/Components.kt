@@ -65,6 +65,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.FolderZip
@@ -77,6 +78,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -553,9 +555,15 @@ fun BusyBanner(state: AppState) {
         }
         return
     }
-    if (state.unsaved && state.stack.isEmpty() && !state.busy) {
-        Box(Modifier.fillMaxWidth().clickable { state.push(Screen.SettingsPage(SetPage.FILE)) }) {
-            Banner(Icons.Filled.Save, stringResource(Res.string.file_unsaved_banner))
+    val unlocked by state.backend.unlocked.collectAsState()
+    val saving by JobStatus.saving.collectAsState()
+    if (!unlocked) {
+        // Locked (the unlock screen): a save that still runs, or changes that wait for it.
+        val p = saving
+        if (p != null) {
+            Banner(Icons.Filled.Save, stringResource(Res.string.save_running_locked, savePercent(p).ifEmpty { "…" }))
+        } else if (state.unsaved) {
+            Banner(Icons.Filled.Save, stringResource(Res.string.file_unsaved_locked))
         }
     }
     // The running action itself is shown in front of everything (BusyOverlay).

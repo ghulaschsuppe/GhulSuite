@@ -155,6 +155,10 @@ name: GhulDocs
 
 # --- A second GhulDocs vault: like every other area (each up to 1 GB, all of them up to 3 GB) ----
 - tapOn: { id: "tab-settings" }
+# The tab keeps its place from before (on purpose): start at the top.
+- scrollUntilVisible:
+    element: "Unlocking"
+    direction: UP
 - scrollUntilVisible:
     element: "Vaults"
     direction: DOWN
@@ -209,6 +213,10 @@ name: GhulDocs
 
 # --- Tidy up: the second vault goes again (deleting asks for its name), so later flows find one ---
 - tapOn: { id: "tab-settings" }
+# The tab keeps its place from before (on purpose): start at the top.
+- scrollUntilVisible:
+    element: "Unlocking"
+    direction: UP
 - scrollUntilVisible:
     element: "Vaults"
     direction: DOWN

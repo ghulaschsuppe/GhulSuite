@@ -397,6 +397,73 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         pendingTab = null
     }
 
+    /** The working copy has changes that are not in the suite file yet (see [readUnsaved]). */
+    var unsaved by mutableStateOf(false)
+    /** When the first of them was made (ms since 1970; 0: none). */
+    var unsavedSince by mutableStateOf(0L)
+
+    /**
+     * Something is not in the suite file: the save button shows in the header (beside "Lock")
+     * wherever the user is, and a dot on Options. Not for a vault opened on its own (that is
+     * written back by itself).
+     */
+    val saveNeeded: Boolean
+        get() = unsaved && single == null
+
+    /** The time (ms since 1970); tests may replace it. */
+    var clockMs: () -> Long by mutableStateOf({ nowSeconds() * 1000 })
+
+    /** Unsaved for [REMIND_UNSAVED_MS] or longer: a reminder above the lists. */
+    val saveOverdue: Boolean
+        get() = saveNeeded && unsavedSince > 0 && clockMs() - unsavedSince >= REMIND_UNSAVED_MS
+
+    /** The dialog "Write the changes into the suite file now?" is open (see [SaveSuiteDialog]). */
+    var saveDialog by mutableStateOf<SaveRequest?>(null)
+    /** Where saving stands in that dialog. */
+    var saveStep by mutableStateOf<SaveStep>(SaveStep.Ask)
+
+    /** Reads anew what is unsaved and since when (also while locked). */
+    fun readUnsaved() {
+        unsaved = backend.archiveUnsaved()
+        unsavedSince = if (unsaved) backend.archiveUnsavedSince() else 0L
+    }
+
+    /** Windows: the window is to close while changes are not in the suite file (see [QuitDialog]). */
+    var quitAsk by mutableStateOf(false)
+    /** Quit once the save that runs (or is started now) is done. */
+    var quitAfterSave = false
+    /** Ends the app (Windows: locks and closes the window); null where the app is not quit this way. */
+    var onQuit: (() -> Unit)? = null
+
+    /**
+     * The window is to close: true if it may at once; else [QuitDialog] asks first (changes not
+     * in the suite file, or a save that still runs and would leave a temporary file behind).
+     */
+    fun requestQuit(): Boolean {
+        // An entry being edited is not applied yet: asked about as well.
+        if (saveJob == null && !(unsaved && single == null) && !editorDirty) return true
+        quitAsk = true
+        return false
+    }
+
+    /** Opens the save dialog ([then]: runs after it was saved, e.g. opening another file). */
+    fun askSave(then: (() -> Unit)? = null) {
+        // Open already (e.g. Ctrl+S while a file is checked or a conflict is shown): it stays as it is.
+        if (saveDialog != null) return
+        if (saveJob == null) saveStep = SaveStep.Ask
+        saveDialog = SaveRequest(then)
+    }
+
+    /**
+     * Saving makes sense here: unlocked, the own suite, and not on a page that edits something
+     * (what is not applied yet would not be in the file). The save button, the side bar and Ctrl+S.
+     */
+    val canSaveHere: Boolean
+        get() {
+            val top = stack.lastOrNull()
+            return single == null && top !is Screen.EntryEdit && top !is Screen.CalEdit && top !is Screen.DocScan
+        }
+
     init {
         scope.launch {
             backend.unlocked.collect { unlocked ->
@@ -406,6 +473,15 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     jobs.lockWhenDone = false
                     if (editorDirty) discardedOnLock = true
                     editorDirty = false
+                    // What is unsaved is read anew (the suite may be gone); the save dialog closes
+                    // (a save that runs goes on, its job says how it ended).
+                    saveDialog = null
+                    if (saveJob == null) {
+                        saveStep = SaveStep.Ask
+                        // Quitting waited for a save that was not started: it does not any more.
+                        quitAfterSave = false
+                    }
+                    readUnsaved()
                     recoveredGuide = false
                     confirmDiscard = false
                     pendingTab = null
@@ -431,7 +507,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     if (single != null) {
                         // The vault opened on its own is closed: back to the own suite (locked) or the start.
                         single = null
-                        unsaved = false
+                        // The own suite again: its unsaved changes count.
+                        readUnsaved()
                         vaultExists = backend.exists()
                     }
                 } else {
@@ -440,6 +517,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                         message(getString(Res.string.edit_dropped_on_lock))
                     }
                     afterUnlock.toList().also { afterUnlock.clear() }.forEach { message(it) }
+                    // Changes from before (the app ended before saving, or saving failed): the save button shows.
+                    readUnsaved()
                     refreshVaults()
                     if (single != null) {
                         refreshCalendar()
@@ -465,6 +544,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             if (backend.unlocked.value && single == null && vaults.any { it.kind == kind }) {
                 scope.launch {
                     catching { backend.setAreaOptions(kind, mapOf(key to value)) }
+                    // Written into the area's file: a change for the suite file.
+                    readUnsaved()
                 }
             }
         }
@@ -613,9 +694,6 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex)
     }
 
-    /** The working copy has changes that are not in the suite file yet (see [SuiteFileSection]). */
-    var unsaved by mutableStateOf(false)
-
     /** Writes the vault opened on its own back into its file now ("Try again", "Overwrite", "Write anew"). */
     fun saveSingle(mode: de.danerd.ghulsuite.model.SingleWrite = de.danerd.ghulsuite.model.SingleWrite.CHECKED) {
         if (single == null) return
@@ -627,7 +705,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
 
     /** Something changed: reload. */
     fun changed() {
-        unsaved = backend.archiveUnsaved()
+        readUnsaved()
         revision++
         refreshVaults()
         refreshCalendar()
@@ -674,6 +752,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             val missing = st.deviceValues(kind).filterKeys { it !in stored }
             if (missing.isNotEmpty()) catching { backend.setAreaOptions(kind, missing) }
         }
+        readUnsaved()
     }
 
     fun vaultsOf(kind: VaultKindUi): List<VaultUi> = vaults.filter { it.kind == kind }
@@ -1038,3 +1117,9 @@ suspend fun docsLimitText(
         else -> get(Res.string.err_docs_too_large, arrayOf(formatSizeSi(limit)))
     }
 }
+
+/** A reminder above the lists when changes were not saved into the suite file for this long (3 days). */
+const val REMIND_UNSAVED_MS = 3 * 24 * 60 * 60_000L
+
+/** The save dialog was asked for; [then] runs once it was saved (e.g. "Save first" before opening another file). */
+class SaveRequest(val then: (() -> Unit)? = null)

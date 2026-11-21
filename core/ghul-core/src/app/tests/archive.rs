@@ -181,6 +181,28 @@ fn saving_over_a_file_saved_elsewhere_is_noticed() {
     assert_eq!(a.archive_target_bytes(save(&c)).unwrap(), ArchiveTarget::OtherSuite);
 }
 
+/// After a change of the password the own file cannot be read with the new keys: it is still
+/// this device's own (saving over it is what the change asks for, also saving by itself), while
+/// a file another device saved with a protection changed there is not.
+#[test]
+fn the_own_file_stays_own_after_a_change_of_the_protection() {
+    let (_da, a, kf, _) = device_with_suite("target-protect-a");
+    let file = save(&a);
+    a.change_password(PW.into(), "pw-neu-7890".into()).unwrap();
+    assert_eq!(a.archive_target_bytes(file.clone()).unwrap(), ArchiveTarget::Same);
+    // Saved with the new protection: the new file is its own as well.
+    let newer = save(&a);
+    assert_eq!(a.archive_target_bytes(newer).unwrap(), ArchiveTarget::Same);
+    // Another device opened the old file, changed its own password there and saved: not ours.
+    let db = Dirs::new("target-protect-b");
+    let b = db.suite();
+    open(&b, &file, &kf);
+    b.archive_accept().unwrap();
+    b.change_password(PW.into(), "pw-anders-4321".into()).unwrap();
+    let from_b = save(&b);
+    assert_eq!(a.archive_target_bytes(from_b).unwrap(), ArchiveTarget::ChangedElsewhere);
+}
+
 #[test]
 fn the_recovery_code_opens_a_file_unverified_and_sets_a_new_password() {
     let (_da, a, kf, code) = device_with_suite("code-a");
@@ -647,4 +669,54 @@ fn failing_writes_and_reads_are_storage_errors() {
     let r = b.archive_open(source, PW.into(), None, None, None, Some(kf), None);
     assert!(matches!(r, Err(GhulError::Storage { .. })), "{:?}", r.err());
     assert!(!b.exists().unwrap());
+}
+
+#[test]
+fn a_file_written_while_locked_counts_as_saved() {
+    let (_da, a, kf, _) = device_with_suite("locked-save-a");
+    let built = a.archive_build_bytes("Test".into()).unwrap();
+    // Locked while the file was still being written: it is whole and noted all the same.
+    a.lock();
+    a.archive_saved(built.state, built.change).unwrap();
+    assert!(!a.archive_unsaved());
+    assert!(a.archive_saved_at() > 0, "known while locked");
+    a.unlock(PW.into(), None, None, None, Some(kf)).unwrap();
+    assert_eq!(a.archive_target_bytes(built.data).unwrap(), ArchiveTarget::Same);
+}
+
+#[test]
+fn the_mark_of_unsaved_changes_keeps_the_time_of_the_first_change() {
+    let (_da, a, _kf, _) = device_with_suite("since-a");
+    assert!(a.archive_unsaved_since() > 0, "created and changed: unsaved");
+    save(&a);
+    assert_eq!(a.archive_unsaved_since(), 0);
+    let saved = a.archive_saved_at();
+    assert!(saved > 0);
+    a.save_entry(vault_id(&a, "Privat"), login("Post", "u", "2")).unwrap();
+    let since = a.archive_unsaved_since();
+    assert!(since >= saved);
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    a.save_entry(vault_id(&a, "Privat"), login("Shop", "u", "3")).unwrap();
+    assert_eq!(a.archive_unsaved_since(), since, "the first change counts");
+    a.lock();
+    assert_eq!(a.archive_unsaved_since(), since, "also while locked");
+    assert_eq!(a.archive_saved_at(), saved);
+}
+
+#[test]
+fn a_file_saved_elsewhere_tells_by_whom_and_when() {
+    let (_da, a, kf, _) = device_with_suite("info-a");
+    let file = save(&a);
+    let db = Dirs::new("info-b");
+    let b = db.suite();
+    open(&b, &file, &kf);
+    b.archive_accept().unwrap();
+    b.save_entry(vault_id(&b, "Privat"), login("Post", "u", "2")).unwrap();
+    let built = b.archive_build_bytes("Laptop".into()).unwrap();
+    b.archive_saved(built.state, built.change).unwrap();
+    let info = a.archive_target_info_bytes(built.data).unwrap();
+    assert_eq!(info.target, ArchiveTarget::ChangedElsewhere);
+    assert_eq!(info.device, "Laptop");
+    assert!(info.time > 0);
+    assert_eq!(a.archive_target_info_bytes(Vec::new()).unwrap().time, 0);
 }

@@ -67,7 +67,7 @@ const CONTAINER_EXTRA: u64 = 64 * 1024;
 /// [`super::docs::DOCS_MAX_FILES`] documents).
 pub(crate) const MAX_ENTRIES: usize = super::docs::DOCS_MAX_FILES as usize + 1000;
 /// How many earlier states a file and a device remember (to tell newer states from branches).
-const MAX_ANCESTORS: usize = 64;
+const MAX_ANCESTORS: usize = 1024;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
 struct ArchiveFile {
@@ -106,6 +106,10 @@ struct StateRef {
     ancestors: Vec<String>,
     /// See [`ArchiveHeader::complete`].
     complete: bool,
+    /// The id of the header container of the file this state was last written to or opened
+    /// from (hex; visible without a key, new with every save). Empty before.
+    #[serde(default)]
+    file: String,
 }
 
 /// What a device saw last of a suite.
@@ -119,6 +123,34 @@ struct Seen {
     complete: bool,
     /// The counter of `state` (`counter` is the highest one seen).
     at: u64,
+    /// The header container id of the file this device last saved or opened (see
+    /// [`StateRef::file`]): after a change of the protection the file cannot be read with the new
+    /// keys, but it is still known as this device's own.
+    #[serde(default)]
+    file: String,
+    /// When the state of `state` was saved into a file (Unix ms; the time in the file's header
+    /// for one that was opened; 0 if not known).
+    #[serde(default)]
+    saved: i64,
+}
+
+/// What [`GhulSuite::archive_build`] built, kept until [`GhulSuite::archive_saved`] notes it:
+/// that works also when the suite was locked while the file was written.
+pub(super) struct BuiltState {
+    suite_id: [u8; 16],
+    state: StateRef,
+    epoch: u64,
+}
+
+/// The file at the place a suite is saved to, before overwriting it (see
+/// [`GhulSuite::archive_target_info`]).
+#[derive(uniffi::Record, Clone, Debug, PartialEq)]
+pub struct ArchiveTargetInfo {
+    pub target: ArchiveTarget,
+    /// The device that saved it (empty if not known, e.g. not readable with the keys of now).
+    pub device: String,
+    /// When it was saved (Unix ms; 0 if not known).
+    pub time: i64,
 }
 
 /// How a `.ghlzip` relates to what this device has.
@@ -217,6 +249,8 @@ pub(super) struct Pending {
     keys: Option<(PasswordKey, FactorSecret)>,
     /// The checked content files of its GhulDocs vaults (on the disk, removed when dropped).
     staged: Option<Staging>,
+    /// The id of its header container (see [`StateRef::file`]).
+    file_id: [u8; 16],
 }
 
 /// An [`ArchiveSource`] as a reader.
@@ -596,7 +630,7 @@ impl GhulSuite {
 
     /// This device has `state` now (opened or saved; also an older one or a branch the user
     /// took). The counter only grows: a later save goes above everything seen.
-    fn note_archive_seen(&self, suite_id: &[u8; 16], state: &StateRef, epoch: u64) {
+    fn note_archive_seen(&self, suite_id: &[u8; 16], state: &StateRef, epoch: u64, saved: i64) {
         let mut all = self.seen_all();
         let e = all.entry(crate::kdf::hex(suite_id)).or_default();
         e.counter = e.counter.max(state.counter);
@@ -605,6 +639,8 @@ impl GhulSuite {
         e.ancestors = state.ancestors.iter().take(MAX_ANCESTORS).cloned().collect();
         e.complete = state.complete;
         e.epoch = e.epoch.max(epoch);
+        e.file = state.file.clone();
+        e.saved = saved;
         self.write_seen(&all);
     }
 
@@ -626,11 +662,17 @@ impl GhulSuite {
         }
     }
 
-    /// The working copy changed since it was loaded from or saved into a file.
-    pub(super) fn mark_unsaved(&self) {
+    /// The working copy is about to change (called before a container is written, so the mark
+    /// is there even if the device goes off right after): it differs from the file it was loaded
+    /// from or saved into. The mark holds the time of the first unsaved change.
+    pub(super) fn mark_unsaved(&self) -> Result<()> {
+        let _one = self.unsaved_lock.lock().unwrap_or_else(|e| e.into_inner());
         self.changes.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let _ = std::fs::create_dir_all(&self.local_dir);
-        let _ = std::fs::write(self.local_dir.join(UNSAVED_FILE), b"1");
+        if self.unsaved() {
+            return Ok(());
+        }
+        std::fs::create_dir_all(&self.local_dir)?;
+        super::storage::write_atomic(&self.local_dir, UNSAVED_FILE, now_ms().to_string().as_bytes())
     }
 
     fn unsaved(&self) -> bool {
@@ -644,12 +686,14 @@ impl GhulSuite {
 
     /// Clears the unsaved mark if nothing changed since `change` was read.
     pub(super) fn clear_unsaved_at(&self, change: u64) {
+        let _one = self.unsaved_lock.lock().unwrap_or_else(|e| e.into_inner());
         if self.change() == change {
-            self.clear_unsaved();
+            let _ = std::fs::remove_file(self.local_dir.join(UNSAVED_FILE));
         }
     }
 
     pub(super) fn clear_unsaved(&self) {
+        let _one = self.unsaved_lock.lock().unwrap_or_else(|e| e.into_inner());
         let _ = std::fs::remove_file(self.local_dir.join(UNSAVED_FILE));
     }
 
@@ -853,6 +897,7 @@ impl GhulSuite {
         let pin = pin.map(Zeroizing::new);
         let mut z = suite_zip(source, progress);
         let locked = read_header(&mut z)?;
+        let file_id = locked.header().container_id;
         let keyfile = parse_keyfile(keyfile)?;
         let s = second_factor(
             &locked,
@@ -865,7 +910,10 @@ impl GhulSuite {
         let root = self.content_root().ok();
         let (files, header, suite_id, staged) = read_checked(&mut z, locked, &Key::Password(&pk, &s), root.as_deref())?;
         let check = self.check_of(&header, &suite_id, false)?;
-        self.keep_pending(gen, Pending { files, header, suite_id, recovery: None, keys: Some((pk, s)), staged })?;
+        self.keep_pending(
+            gen,
+            Pending { files, header, suite_id, recovery: None, keys: Some((pk, s)), staged, file_id },
+        )?;
         Ok(check)
     }
 
@@ -884,6 +932,7 @@ impl GhulSuite {
         let parsed = RecoveryCode::parse(&code)?;
         let mut z = suite_zip(source, progress);
         let locked = read_header(&mut z)?;
+        let file_id = locked.header().container_id;
         let root = self.content_root().ok();
         let (files, header, suite_id, staged) = read_checked(&mut z, locked, &Key::Code(&parsed), root.as_deref())?;
         let check = self.check_of(&header, &suite_id, true)?;
@@ -896,6 +945,7 @@ impl GhulSuite {
                 recovery: Some((code, Zeroizing::new(new_password))),
                 keys: None,
                 staged,
+                file_id,
             },
         )?;
         Ok(check)
@@ -921,6 +971,7 @@ impl GhulSuite {
         self.finish_lock();
         self.wipe_device_data();
         self.wiped.store(true, std::sync::atomic::Ordering::SeqCst);
+        *self.built.lock().unwrap_or_else(|e| e.into_inner()) = None;
         self.replace_working_copy(&p.files, p.staged.as_ref())?;
         match (&p.recovery, p.keys) {
             (Some((code, new_password)), _) => {
@@ -939,12 +990,13 @@ impl GhulSuite {
             previous: String::new(),
             ancestors: p.header.ancestors.clone(),
             complete: p.header.complete,
+            file: crate::kdf::hex(&p.file_id),
         };
         self.with_open(|o| {
             put_setting(&mut o.suite, STATE_KEY, &accepted)?;
             let epoch = o.epoch();
             self.save_container(&mut o.suite, SUITE_FILE)?;
-            self.note_archive_seen(&p.suite_id, &accepted, epoch.max(p.header.epoch));
+            self.note_archive_seen(&p.suite_id, &accepted, epoch.max(p.header.epoch), p.header.time);
             Ok(())
         })?;
         // After the recovery code everything was written anew: that is a change to save.
@@ -964,6 +1016,7 @@ impl GhulSuite {
         let suite_id = self.working_suite_id();
         self.lock();
         self.finish_lock();
+        *self.built.lock().unwrap_or_else(|e| e.into_inner()) = None;
         super::quick::delete_all(&self.local_dir);
         for e in std::fs::read_dir(&self.local_dir).into_iter().flatten().flatten() {
             let n = e.file_name().to_string_lossy().into_owned();
@@ -1011,22 +1064,59 @@ impl GhulSuite {
         self.unsaved()
     }
 
+    /// When the first change not in a file yet was made (Unix ms), 0 if nothing is unsaved.
+    /// An older mark holds no time: then the time the mark was written.
+    pub fn archive_unsaved_since(&self) -> i64 {
+        let path = self.local_dir.join(UNSAVED_FILE);
+        let Ok(data) = std::fs::read(&path) else { return 0 };
+        if let Some(t) = std::str::from_utf8(&data).ok().and_then(|s| s.trim().parse::<i64>().ok()).filter(|t| *t > 1) {
+            return t;
+        }
+        std::fs::metadata(&path)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map_or(1, |d| d.as_millis() as i64)
+    }
+
+    /// When the state of the working copy was last saved into a suite file or came from one
+    /// (Unix ms), 0 if never or not known. Also while locked.
+    pub fn archive_saved_at(&self) -> i64 {
+        let Some(id) = self.working_suite_id() else { return 0 };
+        self.seen_all().get(&crate::kdf::hex(&id)).map_or(0, |s| s.saved)
+    }
+
     /// Compares the file at the place the suite is saved to (reading only its header; an empty
     /// file counts as none) with the working copy, before overwriting it.
     pub fn archive_target(&self, source: Arc<dyn ArchiveSource>) -> Result<ArchiveTarget> {
+        Ok(self.archive_target_info(source)?.target)
+    }
+
+    /// [`Self::archive_target`] with the device and time of the file there, when its header can
+    /// be read (shown before overwriting a file saved elsewhere).
+    pub fn archive_target_info(&self, source: Arc<dyn ArchiveSource>) -> Result<ArchiveTargetInfo> {
+        let bare = |target| ArchiveTargetInfo { target, device: String::new(), time: 0 };
         let mut z = suite_zip(source, None);
         let locked = match read_header(&mut z) {
             Ok(l) => l,
             Err(e @ GhulError::Storage { .. }) => return Err(e),
-            Err(_) if z.position() == 0 => return Ok(ArchiveTarget::New),
-            Err(_) => return Ok(ArchiveTarget::OtherSuite),
+            Err(_) if z.position() == 0 => return Ok(bare(ArchiveTarget::New)),
+            Err(_) => return Ok(bare(ArchiveTarget::OtherSuite)),
         };
         self.with_open(|o| {
             if locked.header().suite_id != o.suite.header().suite_id {
-                return Ok(ArchiveTarget::OtherSuite);
+                return Ok(bare(ArchiveTarget::OtherSuite));
             }
             let s = FactorSecret::from_bytes(*o.suite.factor_secret().expose());
-            let Ok(c) = locked.unlock(&o.password_key, &s) else { return Ok(ArchiveTarget::ChangedElsewhere) };
+            let file_id = crate::kdf::hex(&locked.header().container_id);
+            let Ok(c) = locked.unlock(&o.password_key, &s) else {
+                // Not readable with the keys of now: the file this device saved or opened last,
+                // from before a change of the protection, is its own (overwriting it is what
+                // the change asks for). Any other file was saved elsewhere.
+                let seen = self.seen_all().remove(&crate::kdf::hex(&o.suite.header().suite_id));
+                let own = seen.is_some_and(|s| !s.file.is_empty() && s.file == file_id);
+                return Ok(bare(if own { ArchiveTarget::Same } else { ArchiveTarget::ChangedElsewhere }));
+            };
             let header: ArchiveHeader = setting(&c, HEADER_KEY);
             let mine: StateRef = setting(&o.suite, STATE_KEY);
             // The file holds a state of this working copy's own line (also after a build that was
@@ -1035,7 +1125,11 @@ impl GhulSuite {
                 && (header.state == mine.state
                     || header.state == mine.previous
                     || mine.ancestors.contains(&header.state));
-            Ok(if ours { ArchiveTarget::Same } else { ArchiveTarget::ChangedElsewhere })
+            Ok(ArchiveTargetInfo {
+                target: if ours { ArchiveTarget::Same } else { ArchiveTarget::ChangedElsewhere },
+                device: header.device,
+                time: header.time,
+            })
         })
     }
 
@@ -1076,7 +1170,14 @@ impl GhulSuite {
             put_setting(
                 &mut o.suite,
                 STATE_KEY,
-                &StateRef { state: state.clone(), counter, previous, ancestors: ancestors.clone(), complete },
+                &StateRef {
+                    state: state.clone(),
+                    counter,
+                    previous,
+                    ancestors: ancestors.clone(),
+                    complete,
+                    file: String::new(),
+                },
             )?;
             let mut files: Vec<(String, Vec<u8>)> = Vec::new();
             for v in &mut o.vaults {
@@ -1126,6 +1227,10 @@ impl GhulSuite {
             }
             let mut hc = o.new_container(ContainerKind::Export)?;
             put_setting(&mut hc, HEADER_KEY, &header)?;
+            // Which file this state goes into (kept here only; noted when it is saved).
+            let mut written: StateRef = setting(&o.suite, STATE_KEY);
+            written.file = crate::kdf::hex(&hc.container_id());
+            put_setting(&mut o.suite, STATE_KEY, &written)?;
             let header_file = (HEADER_FILE.to_owned(), hc.seal(&mut OsRng)?);
             // A file that could never be opened is not written (and the working copy keeps its
             // state).
@@ -1139,6 +1244,8 @@ impl GhulSuite {
             for (n, d) in &all[1..] {
                 self.storage.write(n.clone(), d.clone())?;
             }
+            *self.built.lock().unwrap_or_else(|e| e.into_inner()) =
+                Some(BuiltState { suite_id: o.suite.header().suite_id, state: written, epoch: o.epoch() });
             // The header first: opening knows every hash before the files come.
             Ok((all, contents, state, self.change()))
         })?;
@@ -1148,15 +1255,28 @@ impl GhulSuite {
 
     /// The built file was written: this device has this state now. Nothing is unsaved unless
     /// the working copy changed after it was built (`change` from [`ArchiveBuilt`]).
+    /// Also after the suite was locked while the file was written (the file is whole then, and
+    /// this device's own).
     pub fn archive_saved(&self, state: String, change: u64) -> Result<()> {
-        self.with_open(|o| {
-            let mine: StateRef = setting(&o.suite, STATE_KEY);
-            if mine.state != state {
-                return Err(GhulError::InvalidInput { msg: "another state was built meanwhile".into() });
+        let built = {
+            let mut b = self.built.lock().unwrap_or_else(|e| e.into_inner());
+            if b.as_ref().is_some_and(|b| b.state.state == state) {
+                b.take()
+            } else {
+                None
             }
-            self.note_archive_seen(&o.suite.header().suite_id, &mine, o.epoch());
-            Ok(())
-        })?;
+        };
+        match built {
+            Some(b) => self.note_archive_seen(&b.suite_id, &b.state, b.epoch, now_ms()),
+            None => self.with_open(|o| {
+                let mine: StateRef = setting(&o.suite, STATE_KEY);
+                if mine.state != state {
+                    return Err(GhulError::InvalidInput { msg: "another state was built meanwhile".into() });
+                }
+                self.note_archive_seen(&o.suite.header().suite_id, &mine, o.epoch(), now_ms());
+                Ok(())
+            })?,
+        }
         self.clear_unsaved_at(change);
         Ok(())
     }
@@ -1279,6 +1399,10 @@ pub(crate) mod in_memory {
         pub(crate) fn archive_target_bytes(&self, data: Vec<u8>) -> Result<ArchiveTarget> {
             self.archive_target(source(data))
         }
+
+        pub(crate) fn archive_target_info_bytes(&self, data: Vec<u8>) -> Result<ArchiveTargetInfo> {
+            self.archive_target_info(source(data))
+        }
     }
 }
 
@@ -1294,6 +1418,7 @@ mod pending_tests {
             recovery: None,
             keys: None,
             staged: None,
+            file_id: [0; 16],
         }
     }
 

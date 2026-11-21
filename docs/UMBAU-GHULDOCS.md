@@ -238,7 +238,7 @@ Was beim Bauen anders oder genauer wurde als oben geplant:
 - **Höchstens 3 GhulDocs-Tresore je Suite** (Entscheidung des Inhabers, 20.11.2026; schränkt „Wieder mehrere“ oben
   ein): Der Kern lehnt einen vierten ab, wo immer einer hinzukommt (Neuer Tresor, Bereich, Paket hinzufügen; Kernfehler
   `a suite has at most 3 GhulDocs vaults`), die App sagt „Eine Suite hat höchstens 3 GhulDocs-Tresore (je bis 1 GB). Lösche einen, um einen neuen anzulegen oder ein GhulDocs-Paket hinzuzufügen.“ „Neuer Tresor“ zeigt
-  GhulDocs dann ausgegraut mit diesem Hinweis, die Tresorwahl bietet keinen neuen an. Eine Suite-Datei mit mehr als 3
+  GhulDocs dann gar nicht mehr an (nur den Hinweis), die Tresorwahl bietet keinen neuen an. Eine Suite-Datei mit mehr als 3
   GhulDocs-Tresoren wird nicht geöffnet („a suite file holds at most 3 GhulDocs vaults“). Die 3 GB für alle zusammen
   sind damit die natürliche Folge (3 × 1 GB); die 20 000 Dokumente gelten weiter für alle zusammen.
 - **Grenzen je Tresor und je Suite** (20.11.2026; ersetzt die 1 GB je Suite aus 5.5 und die Zahlen im ersten Eintrag

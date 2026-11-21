@@ -125,9 +125,9 @@ fun docsVaultsFull(state: AppState) = state.vaultsOf(VaultKindUi.DOCS).size >= M
 /** Creates a vault; [kind] fixed or chosen by the user when null. */
 @Composable
 fun CreateVaultDialog(state: AppState, kind: VaultKindUi?, onCreated: (String) -> Unit, onDismiss: () -> Unit) {
-    val kinds = VaultKindUi.entries
-    // Three GhulDocs vaults: GhulDocs is shown, but cannot be chosen (the hint says why).
+    // Three GhulDocs vaults: GhulDocs is not offered at all (the hint below says why).
     val docsFull = docsVaultsFull(state)
+    val kinds = VaultKindUi.entries.filter { it != VaultKindUi.DOCS || !docsFull }
     var chosen by remember { mutableStateOf(kind ?: VaultKindUi.PASS) }
     var name by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
@@ -139,10 +139,7 @@ fun CreateVaultDialog(state: AppState, kind: VaultKindUi?, onCreated: (String) -
                 if (kind == null) {
                     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                         kinds.forEachIndexed { i, k ->
-                            // Three GhulDocs vaults: GhulDocs cannot be chosen (the hint below says why).
-                            SegmentedButton(
-                                chosen == k, { if (!(k == VaultKindUi.DOCS && docsFull)) chosen = k }, SegmentedButtonDefaults.itemShape(i, kinds.size),
-                            ) {
+                            SegmentedButton(chosen == k, { chosen = k }, SegmentedButtonDefaults.itemShape(i, kinds.size)) {
                                 SegLabel(stringResource(kindLabel(k)))
                             }
                         }

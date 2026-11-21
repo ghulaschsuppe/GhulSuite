@@ -20,6 +20,8 @@ import de.danerd.ghulsuite.scan.pdfName
 import de.danerd.ghulsuite.scan.pdfPageSize
 import de.danerd.ghulsuite.scan.perspective
 import de.danerd.ghulsuite.scan.scanFileName
+import de.danerd.ghulsuite.scan.sheetAspect
+import de.danerd.ghulsuite.scan.trueSize
 import de.danerd.ghulsuite.scan.uprightSize
 import de.danerd.ghulsuite.scan.uprightToRaw
 import java.io.File
@@ -266,6 +268,56 @@ class ScanAlgorithmsTest {
         assertTrue(abs(bw - 2500 * 1001 / 1414) <= 1)
         // Never smaller than one pixel.
         assertEquals(1 to 1, pageSize(Quad(Pt(0f, 0f), Pt(0f, 0f), Pt(0f, 0f), Pt(0f, 0f)), 2500))
+    }
+
+    /**
+     * A sheet photographed by a camera ([f] focal length in pixels, the photo [w] x [h]): turned by
+     * [tiltX] about the horizontal and [tiltY] about the vertical axis (degrees), [dist] away.
+     * Returns its corners in the photo (top left, top right, bottom right, bottom left).
+     */
+    private fun photographed(sheetW: Double, sheetH: Double, tiltX: Double, tiltY: Double, dist: Double, f: Double, w: Int, h: Int): Quad {
+        val ax = Math.toRadians(tiltX)
+        val ay = Math.toRadians(tiltY)
+        fun project(x: Double, y: Double): Pt {
+            // Rotate about x, then about y, then move away from the camera.
+            val y1 = y * kotlin.math.cos(ax)
+            val z1 = y * kotlin.math.sin(ax)
+            val x2 = x * kotlin.math.cos(ay) + z1 * kotlin.math.sin(ay)
+            val z2 = -x * kotlin.math.sin(ay) + z1 * kotlin.math.cos(ay) + dist
+            return Pt((w / 2.0 + f * x2 / z2).toFloat(), (h / 2.0 + f * y1 / z2).toFloat())
+        }
+        val hw = sheetW / 2
+        val hh = sheetH / 2
+        return Quad(project(-hw, -hh), project(hw, -hh), project(hw, hh), project(-hw, hh))
+    }
+
+    /**
+     * An A4 sheet photographed at an angle keeps its shape (1 : 1.414): the sides measured in the
+     * photo are shortened along the tilt (a sheet taken from below came out almost square).
+     */
+    @Test
+    fun aSheetPhotographedAtAnAngleKeepsItsShape() {
+        val (w, h) = 3000 to 4000
+        val tilts = listOf(0.0 to 0.0, 20.0 to 0.0, 35.0 to 0.0, 45.0 to 0.0, 0.0 to 30.0, 45.0 to 10.0, -30.0 to 20.0, 20.0 to -25.0)
+        // Phone cameras: about 23 to 28 mm (35 mm film); tilted about one axis only, the focal
+        // length cannot be found and a typical one is taken.
+        val focals = listOf(0.68 * h, 0.75 * h, 0.82 * h)
+        // Every shape: A4 upright and lying, square, 16 : 9, a card, 4 : 3.
+        for ((sw, sh) in listOf(210.0 to 297.0, 297.0 to 210.0, 200.0 to 200.0, 160.0 to 90.0, 85.6 to 54.0, 120.0 to 90.0)) {
+            val real = sw / sh
+            for ((tx, ty) in tilts) for (f in focals) {
+                val q = photographed(sw, sh, tx, ty, 400.0, f, w, h)
+                val r = assertNotNull(sheetAspect(q, w / 2f, h / 2f, h.toFloat()))
+                assertTrue(abs(r / real - 1) < 0.055, "$sw x $sh, tilt $tx/$ty, f $f: $r instead of $real")
+                // The page has that shape; no shape (DIN A or any other) is preferred.
+                val (pw, ph) = trueSize(q, w / 2f, h / 2f, h.toFloat(), 2500)
+                assertTrue(abs(pw.toDouble() / ph / real - 1) < 0.055, "$sw x $sh, tilt $tx/$ty, f $f: $pw x $ph")
+            }
+        }
+        // The old way: 35 degrees from below made an A4 sheet far too wide.
+        val q = photographed(210.0, 297.0, 35.0, 0.0, 400.0, 0.75 * h, w, h)
+        val (mw, mh) = pageSize(q, Int.MAX_VALUE)
+        assertTrue(mw.toDouble() / mh > 210.0 / 297.0 * 1.15, "the measured sides alone are wrong: ${mw.toDouble() / mh}")
     }
 
     @Test

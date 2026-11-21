@@ -15,7 +15,7 @@ name: Setup
     timeout: 30000
 - takeScreenshot: 01-start
 - tapOn: "Set up new"
-# Step 1 of 7: master password. Index 0 is the step title, index 1 the field label.
+# Step 1 of 8: master password. Index 0 is the step title, index 1 the field label.
 - tapOn:
     text: "Master password"
     index: 1
@@ -46,7 +46,7 @@ name: Setup
 - tapOn: "Set up"
 # Step 4: areas (GhulPass, GhulAuth, GhulCal are on by default).
 - extendedWaitUntil:
-    visible: "Step 4 of 7.*"
+    visible: "Step 4 of 8.*"
     timeout: 90000
 - takeScreenshot: 01-areas
 - scrollUntilVisible:
@@ -55,11 +55,11 @@ name: Setup
 - tapOn: "Next"
 # Step 5: locking, step 6: unlocking (no fingerprint on the emulator).
 - extendedWaitUntil:
-    visible: "Step 5 of 7.*"
+    visible: "Step 5 of 8.*"
     timeout: 30000
 - tapOn: "Next"
 - extendedWaitUntil:
-    visible: "Step 6 of 7.*"
+    visible: "Step 6 of 8.*"
     timeout: 30000
 - scrollUntilVisible:
     element: "Next"
@@ -79,6 +79,15 @@ name: Setup
 - inputText: ${output.group3}
 - hideKeyboard
 - tapOn: "Finish"
+# Step 8: the suite file, at a place chosen in the system dialog "Save to" (DocumentsUI).
+- extendedWaitUntil:
+    visible: "Step 8 of 8.*"
+    timeout: 30000
+- takeScreenshot: 01-suite-file
+- tapOn: { id: "wz-file" }
+- tapOn:
+    text: "(?i)save"
+    retryTapIfNoChange: false
 - extendedWaitUntil:
     visible: "Search entries"
     timeout: 30000

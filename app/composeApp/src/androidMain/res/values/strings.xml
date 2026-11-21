@@ -16,6 +16,8 @@
     <string name="cal_done">Done</string>
     <string name="update_failed">Update could not be installed. Download it from the release page instead.</string>
     <string name="notif_job_channel">Tasks in the background</string>
+    <string name="notif_saving_title">Saving the suite file</string>
+    <string name="notif_saving_text">Do not pull the USB stick until saving is done.</string>
     <string name="notif_job_cancel">Cancel</string>
     <string name="notif_job_of">%1$d of %2$d done</string>
     <string name="share_to_docs">Save in GhulDocs</string>

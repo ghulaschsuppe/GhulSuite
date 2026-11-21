@@ -170,8 +170,14 @@ interface VaultBackend {
     suspend fun archiveAccept() {}
     /** The working copy has changes that are not in a file yet. */
     fun archiveUnsaved(): Boolean = false
+    /** When the first change not in a file yet was made (ms since 1970); 0: nothing unsaved. Also while locked. */
+    fun archiveUnsavedSince(): Long = 0
+    /** When the state of the working copy was last saved into a suite file or came from one (ms); 0: not known. */
+    fun archiveSavedAt(): Long = 0
     /** The file at the place the suite is saved to, compared with the working copy; null if it cannot be read. */
-    suspend fun archiveTarget(file: SuiteFileRef): ArchiveTargetUi? = ArchiveTargetUi.NEW
+    suspend fun archiveTarget(file: SuiteFileRef): ArchiveTargetUi? = archiveTargetInfo(file)?.target
+    /** [archiveTarget] with the device and time of the file there (when they can be read). */
+    suspend fun archiveTargetInfo(file: SuiteFileRef): ArchiveTargetInfoUi? = ArchiveTargetInfoUi(ArchiveTargetUi.NEW)
     /**
      * Saves the working copy into [target]: built and written as a stream, read back and compared,
      * only then the working copy counts as saved. False (an error message is up to the caller) when
@@ -319,6 +325,9 @@ data class ArchiveCheckUi(
 
 /** The file at the place the suite is saved to. */
 enum class ArchiveTargetUi { NEW, SAME, CHANGED_ELSEWHERE, OTHER_SUITE }
+
+/** The file at the place a suite is saved to: how it relates, and who saved it when ([device] empty, [time] 0: not known). */
+data class ArchiveTargetInfoUi(val target: ArchiveTargetUi, val device: String = "", val time: Long = 0)
 
 /** A file picked by the user. */
 class PickedFile(val name: String, val bytes: ByteArray)

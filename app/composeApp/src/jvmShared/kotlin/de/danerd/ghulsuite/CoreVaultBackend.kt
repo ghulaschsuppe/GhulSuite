@@ -73,6 +73,7 @@ import de.danerd.ghulsuite.core.archiveWrittenMatches
 import de.danerd.ghulsuite.model.ArchiveCheckUi
 import de.danerd.ghulsuite.model.ArchiveRelationUi
 import de.danerd.ghulsuite.model.ArchiveTargetUi
+import de.danerd.ghulsuite.model.ArchiveTargetInfoUi
 import de.danerd.ghulsuite.model.SuiteFileRef
 import de.danerd.ghulsuite.core.ArchiveCheck
 import de.danerd.ghulsuite.core.ArchiveRelation
@@ -224,6 +225,13 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
     override suspend fun archiveProtection(file: SuiteFileRef): ProtectionUi =
         io { reading(file) { suite.archiveProtection(it).toUi() } }
 
+    /**
+     * One action on the suite file or the working copy at a time: saving (also by itself), opening
+     * a suite file, taking it over, deleting the working copy. Otherwise a save could stream
+     * documents that are just being replaced, or a file be read while it is written.
+     */
+    private val fileLock = kotlinx.coroutines.sync.Mutex()
+
     override suspend fun archiveOpen(
         file: SuiteFileRef,
         password: String,
@@ -231,22 +239,24 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
         keyfile: ByteArray?,
         onTouchNeeded: () -> Unit,
         onProgress: (Long, Long) -> Unit,
-    ): ArchiveCheckUi = maybeWithKey(pin) { t ->
+    ): ArchiveCheckUi = fileLock.withLock { maybeWithKey(pin) { t ->
         reading(file) { src ->
             suite.archiveOpen(src, password, t, t?.let { Touch(onTouchNeeded) }, pin, keyfile, Progress(onProgress)).toUi()
         }
-    }
+    } }
 
     override suspend fun archiveOpenWithCode(
         file: SuiteFileRef,
         code: String,
         newPassword: String,
         onProgress: (Long, Long) -> Unit,
-    ): ArchiveCheckUi = io { reading(file) { suite.archiveOpenWithCode(it, code, newPassword, Progress(onProgress)).toUi() } }
+    ): ArchiveCheckUi = fileLock.withLock { io { reading(file) { suite.archiveOpenWithCode(it, code, newPassword, Progress(onProgress)).toUi() } } }
 
     override fun archiveCancel() = suite.archiveCancel()
 
-    override suspend fun archiveAccept() {
+    override suspend fun archiveAccept() = fileLock.withLock { acceptLocked() }
+
+    private suspend fun acceptLocked() {
         val s = suite
         try {
             io { s.archiveAccept() }
@@ -265,14 +275,22 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
 
     override fun archiveUnsaved(): Boolean = runCatching { suite.archiveUnsaved() }.getOrDefault(false)
 
-    override suspend fun archiveTarget(file: SuiteFileRef): ArchiveTargetUi? = io {
+    override fun archiveUnsavedSince(): Long = runCatching { suite.archiveUnsavedSince() }.getOrDefault(0L)
+
+    override fun archiveSavedAt(): Long = runCatching { suite.archiveSavedAt() }.getOrDefault(0L)
+
+    override suspend fun archiveTarget(file: SuiteFileRef): ArchiveTargetUi? = archiveTargetInfo(file)?.target
+
+    override suspend fun archiveTargetInfo(file: SuiteFileRef): ArchiveTargetInfoUi? = io {
         val input = openSuiteInput(file) ?: return@io null
-        when (input.stream.use { suite.archiveTarget(StreamSource(input)) }) {
+        val info = input.stream.use { suite.archiveTargetInfo(StreamSource(input)) }
+        val target = when (info.target) {
             ArchiveTarget.NEW -> ArchiveTargetUi.NEW
             ArchiveTarget.SAME -> ArchiveTargetUi.SAME
             ArchiveTarget.CHANGED_ELSEWHERE -> ArchiveTargetUi.CHANGED_ELSEWHERE
             ArchiveTarget.OTHER_SUITE -> ArchiveTargetUi.OTHER_SUITE
         }
+        ArchiveTargetInfoUi(target, info.device, info.time)
     }
 
     override suspend fun archiveSave(
@@ -280,7 +298,7 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
         device: String,
         created: Boolean,
         onProgress: (Long, Long) -> Unit,
-    ): Boolean = io {
+    ): Boolean = fileLock.withLock { io {
         val s = suite
         var built: ArchiveBuilt? = null
         // One bar for both steps: writing is the first half, reading back the second.
@@ -295,11 +313,17 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
             },
         )
         val b = built
-        if (written && b != null) s.archiveSaved(b.state, b.change)
+        if (written && b != null) {
+            s.archiveSaved(b.state, b.change)
+            // Here, not after returning: the app may end meanwhile, the place must be known then.
+            setSuiteFile(target)
+        }
         written && b != null
-    }
+    } }
 
-    override suspend fun deleteSuite() {
+    override suspend fun deleteSuite() = fileLock.withLock { deleteLocked() }
+
+    private suspend fun deleteLocked() {
         // A vault open on its own is closed (written back) first; the own suite is deleted.
         lock()
         val s = ownSuite
