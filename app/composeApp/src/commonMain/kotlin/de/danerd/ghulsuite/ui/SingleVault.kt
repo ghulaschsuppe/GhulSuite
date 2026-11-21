@@ -207,7 +207,8 @@ fun SingleVaultSection(state: AppState) {
                 Text(stringResource(Res.string.file_save_as))
             }
         }
-        Button(onClick = { backend.lock() }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+        // As every lock button: what waits for "Undo" is carried out first.
+        Button(onClick = { state.lockNow() }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(Res.string.single_close))
         }
         // Only with an own suite on this device to add it to.
@@ -215,9 +216,9 @@ fun SingleVaultSection(state: AppState) {
         if (backend.singleFile() != null && backend.ownSuiteExists() && !backend.singleIsDocs) {
             OutlinedButton(onClick = {
                 // The vault as it is here (also when writing its file failed), then the own suite.
-                state.run(block = { backend.singleVaultBytes() }) { data ->
+                state.run(block = { state.settlePending(); backend.singleVaultBytes() }) { data ->
                     state.pendingAdd = PickedFile(s.file.name, data)
-                    backend.lock()
+                    state.lockNow()
                 }
             }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.single_add_to_suite)) }
         }

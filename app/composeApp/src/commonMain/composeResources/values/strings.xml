@@ -1366,4 +1366,8 @@
     <string name="wz_file_failed">Without a suite file your data is on this device only. If it is lost, everything is gone. Try again or choose another place; you can also create it later with the save icon at the top.</string>
     <string name="wz_file_skip">Continue without a suite file</string>
     <string name="close_editing">An entry is being edited and not applied yet. Apply it first and then save, or quit without it.</string>
+    <string name="close_saving_unknown">The suite file is being saved right now. The app quits as soon as saving is done.</string>
+    <string name="save_running_locked_unknown">The suite file is still being saved. Do not pull the USB stick.</string>
+    <string name="ctx_version">Version %1$s</string>
+    <string name="about_report_file">GhulSuite-error-report.txt</string>
 </resources>

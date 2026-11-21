@@ -382,6 +382,12 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     fun discardAndBack() {
         editorDirty = false
         confirmDiscard = false
+        // Something from outside waited for this: it replaces the editor.
+        if (launchWaiting) {
+            pendingTab = null
+            applyLaunch()
+            return
+        }
         val tab = pendingTab
         pendingTab = null
         // Leaving through the sidebar: the editor goes and the chosen area opens.
@@ -483,6 +489,11 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     }
                     readUnsaved()
                     recoveredGuide = false
+                    // Sheets of the screens before do not come back after unlocking (maybe in another suite).
+                    calQuickOpen = false
+                    contextSheet = false
+                    icsPending = null
+                    launchWaiting = false
                     confirmDiscard = false
                     pendingTab = null
                     deleteAsk = null
@@ -524,8 +535,9 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                         refreshCalendar()
                         return@collect
                     }
-                    val start = backend.settings.startTab.let { if (it < 0) backend.settings.lastTab else it }
-                    tabs.getOrNull(start)?.let { tab = it }
+                    val st = backend.settings
+                    val start = if (st.startTab < 0) tabs.firstOrNull { it.name == st.lastTabName } else tabs.getOrNull(st.startTab)
+                    start?.let { tab = it }
                     applyLaunch()
                     refreshCalendar()
                     checkUpdate(manual = false)
@@ -550,6 +562,12 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             }
         }
         scope.launch { AppLaunch.openTab.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
+        // "Keep editing" and the editor ended (applied or left): what came from outside follows now.
+        scope.launch {
+            androidx.compose.runtime.snapshotFlow { editorDirty }.collect { dirty ->
+                if (!dirty && launchWaiting && backend.unlocked.value) applyLaunch()
+            }
+        }
         scope.launch { AppLaunch.timeZoneChanged.collect { if (it > 0 && backend.unlocked.value) refreshCalendar() } }
         scope.launch { AppLaunch.openEvent.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
         scope.launch { AppLaunch.newEvent.collect { if (it != null && backend.unlocked.value) applyLaunch() } }
@@ -581,7 +599,21 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         }
     }
 
+    /** Something came from outside while an editor had unsaved input: it waits for "discard" (or the editor's end). */
+    private var launchWaiting = false
+
+    private fun launchPending(): Boolean = AppLaunch.openEvent.value != null || AppLaunch.newEvent.value != null ||
+        AppLaunch.icsFile.value != null || AppLaunch.openTab.value != null ||
+        (AppLaunch.suiteFile.value != null && single == null) || (AppLaunch.docsFiles.value != null && single == null)
+
     private fun applyLaunch() {
+        // An editor with unsaved input is not closed unasked (a reminder tapped, a file handed over).
+        if (editorDirty && launchPending()) {
+            launchWaiting = true
+            confirmDiscard = true
+            return
+        }
+        launchWaiting = false
         AppLaunch.openEvent.value?.let { ev ->
             AppLaunch.openEvent.value = null
             if (Tab.CAL in tabs) {
@@ -687,7 +719,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         }
         if (wide) stack.clear()
         tab = t
-        tabs.indexOf(t).takeIf { it >= 0 }?.let { backend.settings.lastTab = it }
+        // By its name (the list of tabs changes); not for a vault opened on its own.
+        if (single == null) backend.settings.lastTabName = t.name
     }
 
     fun pop() {

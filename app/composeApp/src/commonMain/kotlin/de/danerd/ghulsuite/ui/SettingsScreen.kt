@@ -572,6 +572,7 @@ private fun AboutSection(state: AppState) {
     when (sheet) {
         "report" -> GhulSheet({ sheet = "" }, stringResource(Res.string.about_report)) {
             val reportLabel = stringResource_report()
+            val reportFile = stringResource(Res.string.about_report_file)
             HintText(stringResource(Res.string.about_report_hint))
             SelectionContainer {
                 Text(report, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = 12.sp,
@@ -584,10 +585,10 @@ private fun AboutSection(state: AppState) {
                 // Android: hand it to another app (mail, messenger); elsewhere save it as a file.
                 if (backend.canShareToApps) {
                     OutlinedButton(onClick = {
-                        state.run(block = { backend.shareToApps(REPORT_FILE, "text/plain", report.encodeToByteArray()) })
+                        state.run(block = { backend.shareToApps(reportFile, "text/plain", report.encodeToByteArray()) })
                     }, modifier = Modifier.weight(1f)) { Text(stringResource(Res.string.a_share)) }
                 } else if (filePickersAvailable) {
-                    OutlinedButton(onClick = { save(REPORT_FILE, report.encodeToByteArray()) }, modifier = Modifier.weight(1f)) {
+                    OutlinedButton(onClick = { save(reportFile, report.encodeToByteArray()) }, modifier = Modifier.weight(1f)) {
                         Text(stringResource(Res.string.a_save))
                     }
                 }
@@ -609,8 +610,6 @@ private fun AboutSection(state: AppState) {
 @Composable
 private fun stringResource_report(): String = stringResource(Res.string.about_report)
 
-/** File name of the error report when it is shared or saved. */
-private const val REPORT_FILE = "GhulSuite-Fehlerbericht.txt"
 
 /** Updates: automatically or by hand, stable or development versions. */
 @Composable

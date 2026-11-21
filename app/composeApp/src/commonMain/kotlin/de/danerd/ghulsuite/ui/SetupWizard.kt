@@ -33,6 +33,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -231,6 +232,19 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
         }
     }
 
+    // Locked after the suite was made (screen off, idle): the wizard (and the recovery code on it)
+    // goes; unlocking leads on, and the code is asked for again there (CodeReminderDialog).
+    val unlockedNow by backend.unlocked.collectAsState()
+    LaunchedEffect(unlockedNow, created) {
+        if (created && !unlockedNow) {
+            code = ""
+            state.pendingAdd = null
+            state.pendingDocsAdd = null
+            state.vaultExists = true
+            state.showStart = false
+        }
+    }
+
     // Step 8: the suite file, at a place the user chooses (written, read back, checked).
     var fileFailed by remember { mutableStateOf(false) }
     val notWritten = stringResource(Res.string.file_not_written)
@@ -238,11 +252,13 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
     val chooseSuiteFile = rememberCreateSuiteFile { ref ->
         if (ref != null) {
             state.run(onError = { error = it; fileFailed = true }, block = {
-                if (!backend.archiveSave(ref, deviceInfo(), created = true, state.onProgress)) {
-                    throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.OTHER, notWritten)
+                backend.archiveSave(ref, deviceInfo(), created = true, state.onProgress).also { if (it) backend.setSuiteFile(ref) }
+            }) { ok ->
+                if (!ok) {
+                    error = notWritten
+                    fileFailed = true
+                    return@run
                 }
-                backend.setSuiteFile(ref)
-            }) {
                 state.message(savedMsg.replace("%1\$s", ref.name))
                 finishWizard(state)
             }
@@ -486,6 +502,7 @@ private fun finishWizard(state: AppState) {
     state.openFirstArea = true
     // A vault file waiting for the suite before belongs to that one, not to this new suite.
     state.pendingAdd = null
+    state.pendingDocsAdd = null
     state.showStart = false
     state.vaultExists = true
     state.refreshVaults()

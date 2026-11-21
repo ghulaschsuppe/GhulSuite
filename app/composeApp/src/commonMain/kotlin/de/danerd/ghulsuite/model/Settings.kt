@@ -183,7 +183,8 @@ class Settings(private val store: KeyValueStore) {
     // --- Start
     /** Area opened after unlocking: -1 = the one used last, else the tab index. */
     var startTab by int("start_tab", -1)
-    var lastTab by int("last_tab", 0)
+    /** The area used last ([de.danerd.ghulsuite.ui.Tab] name; the old index "last_tab" is not read any more). */
+    var lastTabName by str("last_tab_name", "")
 
     /** App language: "" follows the system, otherwise a language tag ("de", "en"). */
     var appLanguage by str("app_language", "")

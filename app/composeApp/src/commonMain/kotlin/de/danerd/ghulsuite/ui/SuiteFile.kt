@@ -307,6 +307,7 @@ fun SuiteFileSection(state: AppState) {
 fun AppState.afterSuiteFileOpened() {
     // A vault file waiting for the suite before is not added to this one unasked.
     pendingAdd = null
+    pendingDocsAdd = null
     showStart = false
     vaultExists = true
     openFirstArea = true
