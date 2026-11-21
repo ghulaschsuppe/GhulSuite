@@ -18,6 +18,9 @@ Dieser Bericht fasst alle bisherigen Runden zusammen und sagt ehrlich, was offen
 
 ## 1. Die Runden
 
+Alle Prüfläufe, auch die künftigen, und die Geschichte des Konzepts stehen chronologisch in der
+[Prüf-Chronik](PRUEFCHRONIK.md); hier die Runden bis 20.11.2026 im Einzelnen.
+
 | Datum | Runde | Ergebnis |
 |---|---|---|
 | 11.11.2026 | Audit 0.5.0: Freigabelinks, Empfängerseite, PHP-Server-Modul, FTPS, HTTPS-Client, Teilen an andere Apps, OpenPGP, Abhängigkeiten | 8 Befunde (A1 bis A8) und 2 Abhängigkeits-Hinweise, alle behoben bzw. begründet |

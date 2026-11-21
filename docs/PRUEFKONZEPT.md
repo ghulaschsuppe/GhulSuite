@@ -53,7 +53,7 @@ Jeder Bereich hat eine Liste, die mit jedem Fund wächst. Beispiele:
 5. **Beheben:** je Fund ein Beheber; zuerst der scheiternde Test, dann die Behebung, dann
    `tools/precheck.sh`.
 6. **Nachprüfen:** frischer Nachprüfer je Behebung. Neue Funde gehen zurück zu Schritt 3.
-7. **Festhalten:** Eintrag im TESTPROTOKOLL mit Testname; Prüfliste des Bereichs um die Frage ergänzt,
+7. **Festhalten:** Eintrag im TESTPROTOKOLL mit Testname und ein Eintrag der Runde in der PRUEFCHRONIK.md; Prüfliste des Bereichs um die Frage ergänzt,
    die den Fund gefunden hätte.
 
 ## 5. Wann ist es genug?
