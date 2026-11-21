@@ -94,12 +94,22 @@ fun main(args: Array<String>) {
         AWTEvent.MOUSE_EVENT_MASK,
     )
 
+    // A save that was cut off (the app ended midway) left its temporary file next to the suite file.
+    backend.suiteFile()?.let { ref -> runCatching { java.io.File(ref.id + ".ghltmp").takeIf { it.isFile }?.delete() } }
+
     application {
+        state.onQuit = {
+            backend.lock()
+            exitApplication()
+        }
         val icon = remember { appIcon() }
         Window(
             onCloseRequest = {
-                backend.lock()
-                exitApplication()
+                // Changes not in the suite file, or a save that runs: the app asks first (QuitDialog).
+                if (state.requestQuit()) {
+                    backend.lock()
+                    exitApplication()
+                }
             },
             title = "GhulSuite",
             icon = icon,
@@ -112,6 +122,10 @@ fun main(args: Array<String>) {
                 if (e.type == KeyEventType.KeyDown && e.isCtrlPressed && e.key == Key.L) {
                     // What waits for "Undo" is carried out first, as with every lock button.
                     state.lockNow()
+                    true
+                } else if (e.type == KeyEventType.KeyDown && e.isCtrlPressed && e.key == Key.S && backend.unlocked.value && state.single == null) {
+                    // Ctrl+S: the save dialog (as the save button).
+                    state.askSave()
                     true
                 } else {
                     false

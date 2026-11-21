@@ -19,6 +19,11 @@ import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onNodeWithTag
+import de.danerd.ghulsuite.ui.SAVE_BUTTON_TAG
+import de.danerd.ghulsuite.ui.SAVE_CONFIRM_TAG
+import de.danerd.ghulsuite.ui.JOB_CANCEL_TAG
+import de.danerd.ghulsuite.ui.saveJob
 import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -634,6 +639,7 @@ class InteractionTest {
 
     // --- Background jobs -----------------------------------------------------------------------
 
+    private fun DesktopComposeUiTest.tagged(t: String) = onAllNodesWithTag(t, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
     private fun DesktopComposeUiTest.part(t: String) = onAllNodesWithText(t, substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
 
     /**
@@ -1001,16 +1007,16 @@ class InteractionTest {
 
     /**
      * Unsaved changes while locked: the unlock screen says so, but offers no tap that cannot work
-     * there (saving needs the open suite); once unlocked, the banner leads to the suite file.
+     * there (saving needs the open suite); unlocked, the save button is in the header.
      */
     @Test
     fun unsavedChangesWhileLockedSayUnlockFirst() = app(setup = { tab = Tab.DOCS; unsaved = true }, prepare = { unsavedChanges = true }) { state, fake ->
-        waitFor("Unsaved changes. Tap to save.")
+        waitUntil(timeoutMillis = 10_000) { tagged(SAVE_BUTTON_TAG) }
         runOnIdle { state.lockNow() }
         waitUntil(timeoutMillis = 5_000) { fake.locks == 1 }
         fake.unlocked.value = false
-        waitUntil(timeoutMillis = 10_000) { shown("There are unsaved changes. Unlock to save them in the suite file.") }
-        assertFalse(shown("Unsaved changes. Tap to save."), "no tap on the unlock screen")
+        waitUntil(timeoutMillis = 10_000) { shown("There are changes that are not in the suite file yet. Unlock and tap the save icon at the top.") }
+        assertFalse(tagged(SAVE_BUTTON_TAG), "no save button on the unlock screen")
         shot("unsaved-locked")
     }
 
@@ -1023,55 +1029,161 @@ class InteractionTest {
 
     private val stick = de.danerd.ghulsuite.model.SuiteFileRef("/stick/GhulSuite.ghlzip", "GhulSuite.ghlzip")
 
-    /** Saving by itself: a few seconds after a change the suite file is written as "Save" does it. */
+    /** The save button asks, then the suite file is written with its progress, and the button goes. */
     @Test
-    fun theSuiteFileIsSavedByItself() = app(setup = { tab = Tab.DOCS; unsaved = true }, prepare = { unsavedChanges = true; suiteRef = stick; target = de.danerd.ghulsuite.model.ArchiveTargetUi.SAME }) { state, fake ->
-        waitUntil(timeoutMillis = 15_000) { "archiveSave:GhulSuite.ghlzip:false" in fake.calls }
-        waitUntil(timeoutMillis = 5_000) { !state.unsaved }
-        assertFalse(part("Unsaved changes"))
-        assertFalse(part("Not saved"))
+    fun theSaveButtonAsksAndSaves() = app(setup = { tab = Tab.DOCS; unsaved = true }, prepare = { unsavedChanges = true; suiteRef = stick; target = de.danerd.ghulsuite.model.ArchiveTargetUi.SAME; savedAtMs = 1_700_000_000_000L }) { state, fake ->
+        waitUntil(timeoutMillis = 10_000) { tagged(SAVE_BUTTON_TAG) }
+        onAllNodesWithTag(SAVE_BUTTON_TAG, useUnmergedTree = true).onFirst().performClick()
+        waitFor("Write the changes into the suite file now?")
+        assertTrue(part("File: GhulSuite.ghlzip"))
+        assertTrue(part("Last saved: "))
+        shot("save-ask")
+        onNodeWithTag(SAVE_CONFIRM_TAG, useUnmergedTree = true).performClick()
+        waitUntil(timeoutMillis = 10_000) { shown("Saved in GhulSuite.ghlzip.") }
+        assertTrue("archiveSave:GhulSuite.ghlzip:false" in fake.calls)
+        onNodeWithTag("save-done", useUnmergedTree = true).performClick()
+        waitUntil(timeoutMillis = 10_000) { !tagged(SAVE_BUTTON_TAG) }
+        assertFalse(state.unsaved)
     }
 
-    /** Saved elsewhere meanwhile: nothing is overwritten by itself; the banner asks to decide. */
+    /** Nothing is written by itself: the suite file changes only when the user saves. */
     @Test
-    fun savingByItselfNeverOverwritesAFileSavedElsewhere() = app(setup = { tab = Tab.DOCS; unsaved = true }, prepare = { unsavedChanges = true; suiteRef = stick; target = de.danerd.ghulsuite.model.ArchiveTargetUi.CHANGED_ELSEWHERE }) { _, fake ->
-        waitUntil(timeoutMillis = 15_000) { part("Not saved automatically: the suite file was saved elsewhere meanwhile.") }
-        shot("auto-save-changed-elsewhere")
+    fun nothingIsSavedByItself() = app(setup = { tab = Tab.DOCS; unsaved = true }, prepare = { unsavedChanges = true; suiteRef = stick; target = de.danerd.ghulsuite.model.ArchiveTargetUi.SAME }) { _, fake ->
+        waitUntil(timeoutMillis = 10_000) { tagged(SAVE_BUTTON_TAG) }
+        Thread.sleep(6_000)
+        assertTrue(fake.calls.none { it.startsWith("archiveSave") })
+        assertTrue(tagged(SAVE_BUTTON_TAG))
+    }
+
+    /** Saved elsewhere meanwhile: who and when, "save mine as a new file" first, overwriting only when asked. */
+    @Test
+    fun aFileSavedElsewhereIsOnlyOverwrittenWhenAsked() = app(setup = { tab = Tab.DOCS; unsaved = true }, prepare = {
+        unsavedChanges = true; suiteRef = stick; target = de.danerd.ghulsuite.model.ArchiveTargetUi.CHANGED_ELSEWHERE
+        targetDevice = "Laptop"; targetTime = 1_700_000_000_000L
+    }) { state, fake ->
+        waitUntil(timeoutMillis = 10_000) { tagged(SAVE_BUTTON_TAG) }
+        runOnIdle { state.askSave() }
+        onNodeWithTag(SAVE_CONFIRM_TAG, useUnmergedTree = true).performClick()
+        waitFor("The file was saved elsewhere")
+        assertTrue(part("on Laptop."))
+        assertTrue(shown("Save mine as a new file …"))
+        shot("save-conflict")
+        assertTrue(fake.calls.none { it.startsWith("archiveSave") })
+        onNodeWithTag("save-overwrite", useUnmergedTree = true).performClick()
+        waitUntil(timeoutMillis = 10_000) { "archiveSave:GhulSuite.ghlzip:false" in fake.calls }
+    }
+
+    /** The stick is not there: said in the dialog, with "Try again"; nothing written. */
+    @Test
+    fun aPlaceThatIsGoneIsSaidInTheDialog() = app(setup = { tab = Tab.DOCS; unsaved = true }, prepare = { unsavedChanges = true; suiteRef = stick; target = null }) { state, fake ->
+        waitUntil(timeoutMillis = 10_000) { tagged(SAVE_BUTTON_TAG) }
+        runOnIdle { state.askSave() }
+        onNodeWithTag(SAVE_CONFIRM_TAG, useUnmergedTree = true).performClick()
+        waitUntil(timeoutMillis = 10_000) { part("The suite file cannot be reached right now") }
+        assertTrue(shown("Try again"))
         assertTrue(fake.calls.none { it.startsWith("archiveSave") })
     }
 
-    /** The stick is not there: said so, tried again later; nothing lost. */
+    /** Saving fails (e.g. the stick is full): the reason in the dialog; still unsaved. */
     @Test
-    fun savingByItselfSaysWhenThePlaceIsGone() = app(setup = { tab = Tab.DOCS; unsaved = true }, prepare = { unsavedChanges = true; suiteRef = stick; target = null }) { _, fake ->
-        waitUntil(timeoutMillis = 15_000) { part("the place of the suite file cannot be reached right now") }
-        assertTrue(fake.calls.none { it.startsWith("archiveSave") })
-    }
-
-    /** Turned off: only "Save" saves; the banner says so as before. */
-    @Test
-    fun savingByItselfCanBeTurnedOff() = app(setup = { tab = Tab.DOCS; unsaved = true }, prepare = { unsavedChanges = true; suiteRef = stick; settings.autoSave = false }) { _, fake ->
-        waitFor("Unsaved changes. Tap to save.")
-        Thread.sleep(5_500)
-        assertTrue(fake.calls.none { it.startsWith("archiveSave") })
-    }
-
-    /** Saving fails for another reason than the place: the reason is shown, not tried again and again. */
-    @Test
-    fun savingByItselfSaysWhyItFailed() = app(setup = { tab = Tab.DOCS; unsaved = true }, prepare = {
+    fun aFailedSaveSaysWhy() = app(setup = { tab = Tab.DOCS; unsaved = true }, prepare = {
         unsavedChanges = true; suiteRef = stick; target = de.danerd.ghulsuite.model.ArchiveTargetUi.SAME
         saveError = de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.STORAGE, "no space left on device")
-    }) { _, fake ->
-        waitUntil(timeoutMillis = 15_000) { part("Not saved automatically:") }
-        assertFalse(part("cannot be reached"))
-        val tries = fake.calls.count { it.startsWith("archiveSave") }
-        Thread.sleep(6_000)
-        assertEquals(tries, fake.calls.count { it.startsWith("archiveSave") }, "not again without a new change")
+    }) { state, _ ->
+        waitUntil(timeoutMillis = 10_000) { tagged(SAVE_BUTTON_TAG) }
+        runOnIdle { state.askSave() }
+        onNodeWithTag(SAVE_CONFIRM_TAG, useUnmergedTree = true).performClick()
+        waitFor("Not saved")
+        assertTrue(state.unsaved)
+        assertTrue(shown("Try again"))
     }
 
-    /** Another file (or one that cannot be read) where the suite file was: nothing overwritten, said as such. */
+    /** No suite file yet: the dialog asks for a place (the button shows also then). */
     @Test
-    fun savingByItselfLeavesAnotherFileAlone() = app(setup = { tab = Tab.DOCS; unsaved = true }, prepare = { unsavedChanges = true; suiteRef = stick; target = de.danerd.ghulsuite.model.ArchiveTargetUi.OTHER_SUITE }) { _, fake ->
-        waitUntil(timeoutMillis = 15_000) { part("another file or one that cannot be read") }
+    fun withoutASuiteFileThePlaceIsAskedFor() = app(setup = { tab = Tab.PASS; unsaved = true }, prepare = { unsavedChanges = true }) { state, _ ->
+        waitUntil(timeoutMillis = 10_000) { tagged(SAVE_BUTTON_TAG) }
+        runOnIdle { state.askSave() }
+        waitUntil(timeoutMillis = 10_000) { part("There is no suite file yet.") }
+        assertTrue(shown("Choose a place …"))
+        shot("save-no-file")
+    }
+
+    /** Changes not in the suite file: the save button with a dot in the header of every area and a dot on Options. */
+    @Test
+    fun unsavedChangesShowEverywhere() = app(setup = { tab = Tab.PASS; unsaved = true }, prepare = { unsavedChanges = true; suiteRef = stick }) { state, _ ->
+        waitUntil(timeoutMillis = 10_000) { tagged(SAVE_BUTTON_TAG) }
+        shot("save-needed-pass")
+        for (t in listOf(Tab.AUTH, Tab.DOCS, Tab.CAL, Tab.SETTINGS)) {
+            runOnIdle { state.selectTab(t) }
+            waitUntil(timeoutMillis = 10_000) { tagged(SAVE_BUTTON_TAG) }
+        }
+        onAllNodesWithTag(SAVE_BUTTON_TAG, useUnmergedTree = true).onFirst().performClick()
+        waitFor("Write the changes into the suite file now?")
+    }
+
+    /**
+     * Locked while the suite file is written: the save goes on (no "Cancel", not stopped by the
+     * lock), the unlock screen says so; afterwards it counts as saved.
+     */
+    @Test
+    fun aSaveGoesOnWhenTheSuiteIsLocked() = app(setup = { tab = Tab.DOCS; unsaved = true }, prepare = {
+        unsavedChanges = true; suiteRef = stick; target = de.danerd.ghulsuite.model.ArchiveTargetUi.SAME
+        saveGate = kotlinx.coroutines.CompletableDeferred()
+    }) { state, fake ->
+        waitUntil(timeoutMillis = 10_000) { tagged(SAVE_BUTTON_TAG) }
+        runOnIdle { state.askSave() }
+        onNodeWithTag(SAVE_CONFIRM_TAG, useUnmergedTree = true).performClick()
+        waitUntil(timeoutMillis = 10_000) { part("50 %") }
+        assertFalse(tagged(JOB_CANCEL_TAG), "saving has no Cancel")
+        runOnIdle { state.lockNow() }
+        waitUntil(timeoutMillis = 5_000) { fake.locks == 1 }
+        fake.unlocked.value = false
+        waitUntil(timeoutMillis = 10_000) { part("The suite file is still being saved") }
+        shot("saving-locked")
+        assertTrue(state.saveJob != null, "not cancelled by locking")
+        runOnIdle { fake.saveGate!!.complete(Unit) }
+        waitUntil(timeoutMillis = 10_000) { state.saveJob == null }
+        assertFalse(state.unsaved)
+    }
+
+    /** Not saved for three days: a reminder above the lists; a day is not enough. */
+    @Test
+    fun aReminderAfterThreeDays() = app(setup = { tab = Tab.PASS; unsaved = true }, prepare = {
+        unsavedChanges = true; suiteRef = stick; unsavedSinceMs = 1_700_000_000_000L
+    }) { state, _ ->
+        runOnIdle { state.clockMs = { 1_700_000_000_000L + 24 * 3_600_000L }; state.readUnsaved() }
+        waitUntil(timeoutMillis = 10_000) { tagged(SAVE_BUTTON_TAG) }
+        assertFalse(tagged("save-reminder"))
+        runOnIdle { state.clockMs = { 1_700_000_000_000L + 4 * 24 * 3_600_000L }; state.readUnsaved() }
+        runOnIdle { state.changed() }
+        waitUntil(timeoutMillis = 10_000) { tagged("save-reminder") }
+        shot("save-reminder")
+    }
+
+    /** Quitting (Windows) with unsaved changes asks; "Quit without saving" quits, nothing is written. */
+    @Test
+    fun quittingWithUnsavedChangesAsks() = app(setup = { tab = Tab.PASS; unsaved = true }, prepare = { unsavedChanges = true; suiteRef = stick }) { state, fake ->
+        var quit = 0
+        runOnIdle { state.onQuit = { quit++ } }
+        waitUntil(timeoutMillis = 10_000) { tagged(SAVE_BUTTON_TAG) }
+        runOnIdle { assertFalse(state.requestQuit()) }
+        waitFor("Unsaved changes")
+        shot("quit-ask")
+        onNodeWithTag("quit-without", useUnmergedTree = true).performClick()
+        waitUntil(timeoutMillis = 5_000) { quit == 1 }
         assertTrue(fake.calls.none { it.startsWith("archiveSave") })
+    }
+
+    /** "Save" before quitting: saved, then the app quits by itself. */
+    @Test
+    fun quittingAfterSaving() = app(setup = { tab = Tab.PASS; unsaved = true }, prepare = { unsavedChanges = true; suiteRef = stick; target = de.danerd.ghulsuite.model.ArchiveTargetUi.SAME }) { state, fake ->
+        var quit = 0
+        runOnIdle { state.onQuit = { quit++ } }
+        waitUntil(timeoutMillis = 10_000) { tagged(SAVE_BUTTON_TAG) }
+        runOnIdle { assertFalse(state.requestQuit()) }
+        onNodeWithTag("quit-save", useUnmergedTree = true).performClick()
+        onNodeWithTag(SAVE_CONFIRM_TAG, useUnmergedTree = true).performClick()
+        waitUntil(timeoutMillis = 10_000) { quit == 1 }
+        assertTrue("archiveSave:GhulSuite.ghlzip:false" in fake.calls)
     }
 }

@@ -270,7 +270,7 @@ fun SaveAfterProtectionDialog(state: AppState) {
         confirmButton = {
             TextButton(onClick = {
                 state.saveAfterProtection = false
-                state.push(Screen.SettingsPage(SetPage.FILE))
+                state.askSave()
             }) { Text(stringResource(Res.string.prot_save_now)) }
         },
         dismissButton = {

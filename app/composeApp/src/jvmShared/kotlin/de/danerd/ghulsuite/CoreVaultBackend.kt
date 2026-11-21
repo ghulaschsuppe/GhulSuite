@@ -73,6 +73,7 @@ import de.danerd.ghulsuite.core.archiveWrittenMatches
 import de.danerd.ghulsuite.model.ArchiveCheckUi
 import de.danerd.ghulsuite.model.ArchiveRelationUi
 import de.danerd.ghulsuite.model.ArchiveTargetUi
+import de.danerd.ghulsuite.model.ArchiveTargetInfoUi
 import de.danerd.ghulsuite.model.SuiteFileRef
 import de.danerd.ghulsuite.core.ArchiveCheck
 import de.danerd.ghulsuite.core.ArchiveRelation
@@ -274,14 +275,22 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
 
     override fun archiveUnsaved(): Boolean = runCatching { suite.archiveUnsaved() }.getOrDefault(false)
 
-    override suspend fun archiveTarget(file: SuiteFileRef): ArchiveTargetUi? = io {
+    override fun archiveUnsavedSince(): Long = runCatching { suite.archiveUnsavedSince() }.getOrDefault(0L)
+
+    override fun archiveSavedAt(): Long = runCatching { suite.archiveSavedAt() }.getOrDefault(0L)
+
+    override suspend fun archiveTarget(file: SuiteFileRef): ArchiveTargetUi? = archiveTargetInfo(file)?.target
+
+    override suspend fun archiveTargetInfo(file: SuiteFileRef): ArchiveTargetInfoUi? = io {
         val input = openSuiteInput(file) ?: return@io null
-        when (input.stream.use { suite.archiveTarget(StreamSource(input)) }) {
+        val info = input.stream.use { suite.archiveTargetInfo(StreamSource(input)) }
+        val target = when (info.target) {
             ArchiveTarget.NEW -> ArchiveTargetUi.NEW
             ArchiveTarget.SAME -> ArchiveTargetUi.SAME
             ArchiveTarget.CHANGED_ELSEWHERE -> ArchiveTargetUi.CHANGED_ELSEWHERE
             ArchiveTarget.OTHER_SUITE -> ArchiveTargetUi.OTHER_SUITE
         }
+        ArchiveTargetInfoUi(target, info.device, info.time)
     }
 
     override suspend fun archiveSave(

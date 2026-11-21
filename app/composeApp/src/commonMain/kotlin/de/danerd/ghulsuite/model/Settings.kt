@@ -111,13 +111,6 @@ class Settings(private val store: KeyValueStore) {
     /** Last automatic check (seconds since 1970, as text). */
     var updateLastCheck by str("update_last_check", "0")
 
-    // --- Suite file
-    /**
-     * Save the suite file by itself a few seconds after a change, while its place can be reached
-     * (see AppState.autoSave). On unless the user turns it off.
-     */
-    var autoSave by bool("auto_save", true)
-
     // --- Security
     /** Seconds in the background before locking; 0 = immediately. */
     var autoLockSeconds by int("auto_lock_seconds", 60)

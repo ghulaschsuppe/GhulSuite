@@ -14,7 +14,6 @@ import de.danerd.ghulsuite.model.VaultUi
 import de.danerd.ghulsuite.model.VaultErrorKind
 import de.danerd.ghulsuite.model.VaultException
 import de.danerd.ghulsuite.model.FolderRef
-import de.danerd.ghulsuite.model.ArchiveTargetUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
 import kotlinx.coroutines.CancellationException
@@ -398,27 +397,59 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         pendingTab = null
     }
 
-    /** The working copy has changes that are not in the suite file yet (see [SuiteFileSection]). */
+    /** The working copy has changes that are not in the suite file yet (see [readUnsaved]). */
     var unsaved by mutableStateOf(false)
+    /** When the first of them was made (ms since 1970; 0: none). */
+    var unsavedSince by mutableStateOf(0L)
 
-    // --- Saving by itself ("Automatically save" in Options, Suite file)
-    /** Why saving by itself did not happen; null: nothing in the way (or it is off). */
-    var autoSaveBlocked by mutableStateOf<AutoSaveBlock?>(null)
-    /** The suite file is being saved by itself right now (the save buttons wait). */
-    var autoSaving by mutableStateOf(false)
-    /** Saving by itself takes a while: shown ("Saving …"). */
-    var autoSavingShown by mutableStateOf(false)
-    /** Why saving by itself failed ([AutoSaveBlock.FAILED]), in the words of the screens. */
-    var autoSaveError by mutableStateOf<String?>(null)
-    /** The change that saving by itself failed with (tried again after a newer one). */
-    private var autoSaveFailedAt = 0L
-    /** A clock that only moves forward (ms since the app started), for the quiet time. */
-    private val started = kotlin.time.TimeSource.Monotonic.markNow()
-    private fun currentTimeMillis(): Long = started.elapsedNow().inWholeMilliseconds
-    /** When the working copy last changed (ms): saved by itself once it was quiet for a while. */
-    private var lastChangeAt = 0L
-    /** When an unreachable place is tried again (ms). */
-    private var autoSaveRetryAt = 0L
+    /**
+     * Something is not in the suite file: the save button shows in the header (beside "Lock")
+     * wherever the user is, and a dot on Options. Not for a vault opened on its own (that is
+     * written back by itself).
+     */
+    val saveNeeded: Boolean
+        get() = unsaved && single == null
+
+    /** The time (ms since 1970); tests may replace it. */
+    var clockMs: () -> Long = { nowSeconds() * 1000 }
+
+    /** Unsaved for [REMIND_UNSAVED_MS] or longer: a reminder above the lists. */
+    val saveOverdue: Boolean
+        get() = saveNeeded && unsavedSince > 0 && clockMs() - unsavedSince >= REMIND_UNSAVED_MS
+
+    /** The dialog "Write the changes into the suite file now?" is open (see [SaveSuiteDialog]). */
+    var saveDialog by mutableStateOf<SaveRequest?>(null)
+    /** Where saving stands in that dialog. */
+    var saveStep by mutableStateOf<SaveStep>(SaveStep.Ask)
+
+    /** Reads anew what is unsaved and since when (also while locked). */
+    fun readUnsaved() {
+        unsaved = backend.archiveUnsaved()
+        unsavedSince = if (unsaved) backend.archiveUnsavedSince() else 0L
+    }
+
+    /** Windows: the window is to close while changes are not in the suite file (see [QuitDialog]). */
+    var quitAsk by mutableStateOf(false)
+    /** Quit once the save that runs (or is started now) is done. */
+    var quitAfterSave = false
+    /** Ends the app (Windows: locks and closes the window); null where the app is not quit this way. */
+    var onQuit: (() -> Unit)? = null
+
+    /**
+     * The window is to close: true if it may at once; else [QuitDialog] asks first (changes not
+     * in the suite file, or a save that still runs and would leave a temporary file behind).
+     */
+    fun requestQuit(): Boolean {
+        if (saveJob == null && !(unsaved && single == null)) return true
+        quitAsk = true
+        return false
+    }
+
+    /** Opens the save dialog ([then]: runs after it was saved, e.g. opening another file). */
+    fun askSave(then: (() -> Unit)? = null) {
+        if (saveJob == null) saveStep = SaveStep.Ask
+        saveDialog = SaveRequest(then)
+    }
 
     init {
         scope.launch {
@@ -429,11 +460,10 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     jobs.lockWhenDone = false
                     if (editorDirty) discardedOnLock = true
                     editorDirty = false
-                    // Saving by itself starts afresh after unlocking (a decision about a file elsewhere
-                    // is asked again then); what is unsaved is read anew (the suite may be gone).
-                    autoSaveBlocked = null
-                    autoSaveError = null
-                    unsaved = backend.archiveUnsaved()
+                    // What is unsaved is read anew (the suite may be gone); the save dialog closes
+                    // (a save that runs goes on, its job says how it ended).
+                    saveDialog = null
+                    readUnsaved()
                     recoveredGuide = false
                     confirmDiscard = false
                     pendingTab = null
@@ -468,8 +498,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                         message(getString(Res.string.edit_dropped_on_lock))
                     }
                     afterUnlock.toList().also { afterUnlock.clear() }.forEach { message(it) }
-                    // Changes from before (the app ended before saving, or saving failed): saved by itself.
-                    unsaved = backend.archiveUnsaved()
+                    // Changes from before (the app ended before saving, or saving failed): the save button shows.
+                    readUnsaved()
                     refreshVaults()
                     if (single != null) {
                         refreshCalendar()
@@ -510,13 +540,6 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             AppLaunch.suiteFile.collect {
                 if (it == null) return@collect
                 if (backend.unlocked.value) applyLaunch() else if (vaultExists) showStart = true
-            }
-        }
-        // The suite file is saved by itself a few seconds after the last change (Options, Suite file).
-        scope.launch {
-            while (true) {
-                kotlinx.coroutines.delay(1000)
-                autoSaveTick()
             }
         }
         // A vault opened on its own goes back into its file soon after every change, whatever made it.
@@ -650,71 +673,6 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex)
     }
 
-    /**
-     * One step of saving by itself: with changes not in the suite file, the place of the suite file
-     * known, nothing else running and [AUTO_SAVE_QUIET_MS] after the last change, the file is
-     * written exactly as "Save" does it (built, written, read back), never over a file that was
-     * saved elsewhere meanwhile (that waits for the user's decision) and never while locked. A
-     * place that cannot be reached (stick not there) is tried again every [AUTO_SAVE_RETRY_MS].
-     */
-    suspend fun autoSaveTick() {
-        if (!backend.settings.autoSave || single != null || !backend.unlocked.value || !unsaved) return
-        // Not in the background (the system may end the app midway) and not beside anything else
-        // that works on the suite (an editor, files being added, another action).
-        if (!AppLaunch.inFront.value) return
-        if (busy || autoSaving || jobs.running || editorDirty || stack.any { it is Screen.EntryEdit || it is Screen.CalEdit }) return
-        val target = backend.suiteFile() ?: run { autoSaveBlocked = AutoSaveBlock.NO_FILE; return }
-        // A file saved elsewhere or another file there: the user decides, nothing is tried.
-        if (autoSaveBlocked == AutoSaveBlock.CHANGED_ELSEWHERE || autoSaveBlocked == AutoSaveBlock.OTHER_FILE) return
-        val now = currentTimeMillis()
-        if (now - lastChangeAt < AUTO_SAVE_QUIET_MS || now < autoSaveRetryAt) return
-        // A save that failed for another reason than the place: again only after the next change.
-        if (autoSaveBlocked == AutoSaveBlock.FAILED && lastChangeAt <= autoSaveFailedAt) return
-        autoSaving = true
-        // "Saving …" only when it takes a while (a small suite would make it blink with every change).
-        val shown = scope.launch {
-            kotlinx.coroutines.delay(800)
-            autoSavingShown = true
-        }
-        try {
-            val there = catching { backend.archiveTarget(target) }.getOrNull()
-            when (there) {
-                null -> {
-                    autoSaveBlocked = AutoSaveBlock.UNREACHABLE
-                    autoSaveRetryAt = now + AUTO_SAVE_RETRY_MS
-                }
-                ArchiveTargetUi.CHANGED_ELSEWHERE -> autoSaveBlocked = AutoSaveBlock.CHANGED_ELSEWHERE
-                ArchiveTargetUi.OTHER_SUITE -> autoSaveBlocked = AutoSaveBlock.OTHER_FILE
-                else -> {
-                    val r = catching { backend.archiveSave(target, deviceInfo(), created = false) }
-                    when {
-                        r.getOrDefault(false) -> {
-                            autoSaveBlocked = null
-                            autoSaveError = null
-                        }
-                        // Locked meanwhile: not a failure; saved again after unlocking.
-                        !backend.unlocked.value -> {}
-                        r.isFailure -> {
-                            autoSaveBlocked = AutoSaveBlock.FAILED
-                            autoSaveError = describe(r.exceptionOrNull()!!)
-                            autoSaveFailedAt = lastChangeAt
-                        }
-                        // Written incompletely: the place went away while writing (a stick pulled).
-                        else -> {
-                            autoSaveBlocked = AutoSaveBlock.UNREACHABLE
-                            autoSaveRetryAt = now + AUTO_SAVE_RETRY_MS
-                        }
-                    }
-                    unsaved = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { backend.archiveUnsaved() }
-                }
-            }
-        } finally {
-            shown.cancel()
-            autoSaving = false
-            autoSavingShown = false
-        }
-    }
-
     /** Writes the vault opened on its own back into its file now ("Try again", "Overwrite", "Write anew"). */
     fun saveSingle(mode: de.danerd.ghulsuite.model.SingleWrite = de.danerd.ghulsuite.model.SingleWrite.CHECKED) {
         if (single == null) return
@@ -726,8 +684,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
 
     /** Something changed: reload. */
     fun changed() {
-        unsaved = backend.archiveUnsaved()
-        lastChangeAt = currentTimeMillis()
+        readUnsaved()
         revision++
         refreshVaults()
         refreshCalendar()
@@ -1139,22 +1096,8 @@ suspend fun docsLimitText(
     }
 }
 
-/** What keeps the suite file from being saved by itself. */
-enum class AutoSaveBlock {
-    /** No suite file yet: "Save as" once, then it is saved by itself. */
-    NO_FILE,
-    /** Its place cannot be reached (a stick that is not there): tried again. */
-    UNREACHABLE,
-    /** It was saved elsewhere meanwhile: the user decides, nothing is overwritten by itself. */
-    CHANGED_ELSEWHERE,
-    /** Another file is there (another suite, or one that cannot be read): the user decides. */
-    OTHER_FILE,
-    /** Saving failed for another reason (see AppState.autoSaveError): again after the next change. */
-    FAILED,
-}
+/** A reminder above the lists when changes were not saved into the suite file for this long (3 days). */
+const val REMIND_UNSAVED_MS = 3 * 24 * 60 * 60_000L
 
-/** Quiet time after the last change before the suite file is saved by itself. */
-const val AUTO_SAVE_QUIET_MS = 4_000L
-
-/** An unreachable place of the suite file is tried again after this long. */
-const val AUTO_SAVE_RETRY_MS = 30_000L
+/** The save dialog was asked for; [then] runs once it was saved (e.g. "Save first" before opening another file). */
+class SaveRequest(val then: (() -> Unit)? = null)

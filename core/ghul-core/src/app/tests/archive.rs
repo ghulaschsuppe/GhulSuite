@@ -670,3 +670,53 @@ fn failing_writes_and_reads_are_storage_errors() {
     assert!(matches!(r, Err(GhulError::Storage { .. })), "{:?}", r.err());
     assert!(!b.exists().unwrap());
 }
+
+#[test]
+fn a_file_written_while_locked_counts_as_saved() {
+    let (_da, a, kf, _) = device_with_suite("locked-save-a");
+    let built = a.archive_build_bytes("Test".into()).unwrap();
+    // Locked while the file was still being written: it is whole and noted all the same.
+    a.lock();
+    a.archive_saved(built.state, built.change).unwrap();
+    assert!(!a.archive_unsaved());
+    assert!(a.archive_saved_at() > 0, "known while locked");
+    a.unlock(PW.into(), None, None, None, Some(kf)).unwrap();
+    assert_eq!(a.archive_target_bytes(built.data).unwrap(), ArchiveTarget::Same);
+}
+
+#[test]
+fn the_mark_of_unsaved_changes_keeps_the_time_of_the_first_change() {
+    let (_da, a, _kf, _) = device_with_suite("since-a");
+    assert!(a.archive_unsaved_since() > 0, "created and changed: unsaved");
+    save(&a);
+    assert_eq!(a.archive_unsaved_since(), 0);
+    let saved = a.archive_saved_at();
+    assert!(saved > 0);
+    a.save_entry(vault_id(&a, "Privat"), login("Post", "u", "2")).unwrap();
+    let since = a.archive_unsaved_since();
+    assert!(since >= saved);
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    a.save_entry(vault_id(&a, "Privat"), login("Shop", "u", "3")).unwrap();
+    assert_eq!(a.archive_unsaved_since(), since, "the first change counts");
+    a.lock();
+    assert_eq!(a.archive_unsaved_since(), since, "also while locked");
+    assert_eq!(a.archive_saved_at(), saved);
+}
+
+#[test]
+fn a_file_saved_elsewhere_tells_by_whom_and_when() {
+    let (_da, a, kf, _) = device_with_suite("info-a");
+    let file = save(&a);
+    let db = Dirs::new("info-b");
+    let b = db.suite();
+    open(&b, &file, &kf);
+    b.archive_accept().unwrap();
+    b.save_entry(vault_id(&b, "Privat"), login("Post", "u", "2")).unwrap();
+    let built = b.archive_build_bytes("Laptop".into()).unwrap();
+    b.archive_saved(built.state, built.change).unwrap();
+    let info = a.archive_target_info_bytes(built.data).unwrap();
+    assert_eq!(info.target, ArchiveTarget::ChangedElsewhere);
+    assert_eq!(info.device, "Laptop");
+    assert!(info.time > 0);
+    assert_eq!(a.archive_target_info_bytes(Vec::new()).unwrap().time, 0);
+}

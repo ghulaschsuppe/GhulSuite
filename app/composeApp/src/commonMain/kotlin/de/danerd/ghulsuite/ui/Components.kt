@@ -78,6 +78,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -555,29 +556,19 @@ fun BusyBanner(state: AppState) {
         return
     }
     val unlocked by state.backend.unlocked.collectAsState()
-    if (state.unsaved && state.stack.isEmpty() && !state.busy) {
-        val auto = state.backend.settings.autoSave
-        if (unlocked && state.autoSaving) {
-            // Only when it takes a while (no banner blinking with every change of a small suite).
-            if (state.autoSavingShown) Banner(Icons.Filled.Save, stringResource(Res.string.file_auto_saving))
-        } else if (unlocked) {
-            val block = state.autoSaveBlocked
-            // Saved by itself in a moment: nothing to do (no banner that comes and goes with every change).
-            if (auto && block == null) return
-            val text = when {
-                !auto || block == AutoSaveBlock.NO_FILE -> stringResource(Res.string.file_unsaved_banner)
-                block == AutoSaveBlock.CHANGED_ELSEWHERE -> stringResource(Res.string.file_auto_changed_elsewhere)
-                block == AutoSaveBlock.OTHER_FILE -> stringResource(Res.string.file_auto_other_file)
-                block == AutoSaveBlock.FAILED -> stringResource(Res.string.file_auto_failed, state.autoSaveError.orEmpty())
-                else -> stringResource(Res.string.file_auto_unreachable)
-            }
-            val warn = block == AutoSaveBlock.CHANGED_ELSEWHERE || block == AutoSaveBlock.OTHER_FILE || block == AutoSaveBlock.FAILED
-            Box(Modifier.fillMaxWidth().clickable { state.push(Screen.SettingsPage(SetPage.FILE)) }) {
-                Banner(if (warn) Icons.Filled.Warning else Icons.Filled.Save, text)
-            }
-        } else {
-            // Locked (the unlock screen): saving needs the open suite, so a tap could do nothing here.
+    val saving by JobStatus.saving.collectAsState()
+    if (!unlocked) {
+        // Locked (the unlock screen): a save that still runs, or changes that wait for it.
+        val p = saving
+        if (p != null) {
+            Banner(Icons.Filled.Save, stringResource(Res.string.save_running_locked, savePercent(p).ifEmpty { "…" }))
+        } else if (state.unsaved) {
             Banner(Icons.Filled.Save, stringResource(Res.string.file_unsaved_locked))
+        }
+    } else if (state.saveOverdue && state.stack.isEmpty() && !state.busy && saving == null) {
+        // Not saved for days: a reminder (the save button in the header shows anyway).
+        Box(Modifier.fillMaxWidth().clickable { state.askSave() }.testTag("save-reminder")) {
+            Banner(Icons.Filled.Warning, stringResource(Res.string.save_reminder, formatDate(state.unsavedSince)))
         }
     }
     // The running action itself is shown in front of everything (BusyOverlay).

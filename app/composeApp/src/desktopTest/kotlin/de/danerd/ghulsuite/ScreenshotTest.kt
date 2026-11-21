@@ -83,10 +83,24 @@ class ScreenshotTest {
         override fun suiteFile() = suiteRef
         /** What is at the place of the suite file (null: it cannot be reached). */
         var target: de.danerd.ghulsuite.model.ArchiveTargetUi? = de.danerd.ghulsuite.model.ArchiveTargetUi.NEW
-        override suspend fun archiveTarget(file: de.danerd.ghulsuite.model.SuiteFileRef) = target
+        /** Who saved the file there, and when (shown before overwriting it). */
+        var targetDevice = ""
+        var targetTime = 0L
+        override suspend fun archiveTargetInfo(file: de.danerd.ghulsuite.model.SuiteFileRef) =
+            target?.let { de.danerd.ghulsuite.model.ArchiveTargetInfoUi(it, targetDevice, targetTime) }
+        /** Since when changes are unsaved, when it was saved last (ms). */
+        var unsavedSinceMs = 0L
+        var savedAtMs = 0L
+        override fun archiveUnsavedSince() = if (unsavedChanges) unsavedSinceMs.takeIf { it > 0 } ?: 1L else 0L
+        override fun archiveSavedAt() = savedAtMs
+        /** Saving waits here halfway (to lock meanwhile); null: it does not wait. */
+        var saveGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
         override suspend fun archiveSave(target: de.danerd.ghulsuite.model.SuiteFileRef, device: String, created: Boolean, onProgress: (Long, Long) -> Unit): Boolean {
             kotlinx.coroutines.delay(30)
             calls += "archiveSave:${target.name}:$created"
+            onProgress(50, 100)
+            saveGate?.await()
+            onProgress(100, 100)
             saveError?.let { throw it }
             // As the core: saved, nothing is unsaved any more.
             if (saveOk) unsavedChanges = false

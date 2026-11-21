@@ -426,26 +426,47 @@ Was ein Gerät zuletzt gesehen hat (höchster Zähler, Stand-ID, Schutz-Epoche),
 nicht in der Arbeitskopie: Eine ältere Datei, ein Abzweig oder ein älterer Schutz fallen auch auf, nachdem die
 Arbeitskopie ersetzt wurde.
 
-**Automatisch speichern** (seit 21.11.2026, Optionen → Suite-Datei, standardmäßig an): Jede Änderung liegt sofort
-verschlüsselt in der Arbeitskopie. Etwa vier Sekunden nach der letzten Änderung schreibt die App die Suite-Datei von
-selbst an ihren gemerkten Ort, genau wie „Speichern“ (geschrieben, zurückgelesen, geprüft); nicht während ein Eintrag
-bearbeitet wird, Dateien hinzukommen oder die App gesperrt ist. Ist der Ort nicht erreichbar (Stick nicht eingesteckt),
-versucht sie es alle 30 Sekunden wieder und sagt es oben („Nicht gespeichert: Der Ort der Suite-Datei ist gerade nicht
-erreichbar …“). Wurde die Datei inzwischen anderswo gespeichert, überschreibt sie **nie** von selbst, sondern hält an
-(„Nicht automatisch gespeichert: Die Suite-Datei wurde inzwischen anderswo gespeichert. Tippen, um zu entscheiden.“);
-entschieden wird mit „Speichern“ (fragt, ob überschreiben) oder „Speichern unter“. Ebenso bei einer anderen oder
-unlesbaren Datei am Ort. Die eigene Datei aus der Zeit vor einer Schutzänderung (neues Passwort, Key, Schlüsseldatei)
-erkennt das Gerät an der Kennung ihres Kopfs wieder und überschreibt sie, wie die Schutzänderung es verlangt. Scheitert
-das Speichern aus einem anderen Grund (z. B. Stick voll), nennt die App den Grund und versucht es erst nach der nächsten
-Änderung wieder. Im Hintergrund wird nicht gespeichert; Speichern, Öffnen einer anderen Suite-Datei und Löschen der
-Arbeitskopie warten aufeinander. Ohne gemerkte Suite-Datei bleibt es beim Hinweis, einmal „Speichern unter“ zu wählen.
-Ausgeschaltet speichert nur „Speichern“.
+**Speichern nur von Hand** (seit 21.11.2026; ein automatisches Speichern gab es kurz in einer Testversion, es passt
+nicht zu einem Tresor auf einem Stick): Jede Änderung liegt sofort verschlüsselt in der Arbeitskopie auf dem Gerät. In
+die Suite-Datei kommt sie erst, wenn der Nutzer speichert. Dafür gibt es den **Speichern-Button**: in der Kopfzeile
+neben „Sperren“ (in breiten Fenstern in der Seitenleiste über „Sperren“, unter Windows auch **Strg+S**), mit einem
+Punkt, solange etwas ungespeichert ist; ebenso ein Punkt am Reiter Optionen. Er erscheint auch ohne Suite-Datei
+(dann wird ein Ort gewählt), nicht aber auf Seiten, die gerade etwas bearbeiten.
 
-**„Nicht gespeicherte Änderungen“.** Gibt es Änderungen seit dem letzten Speichern (und speichert die App nicht gleich
-von selbst), zeigt sie oben einen Hinweis („Nicht gespeicherte Änderungen. Tippen zum Speichern.“) und auf der Seite
-Suite-Datei den Stand. Auf dem Entsperren-Bildschirm steht stattdessen ein Hinweis ohne Tippen („Es gibt nicht
-gespeicherte Änderungen. Entsperre, um sie in der Suite-Datei zu speichern.“): gespeichert wird nur entsperrt. Ohne
-Änderungen: „Alles ist in der Suite-Datei gespeichert.“
+Ein Tippen öffnet den **Speichern-Dialog**: „Änderungen jetzt in die Suite-Datei schreiben?“, Datei, „Zuletzt
+gespeichert: …“ und der Hinweis, den Stick nicht abzuziehen (bei einem Cloud-Ordner lädt die Cloud-App danach hoch).
+Zuerst wird nur der Kopf der Datei am Ort gelesen. Wurde sie inzwischen anderswo gespeichert, nennt der Dialog Gerät
+und Zeit und bietet zuerst „Meine als neue Datei sichern …“, dann „Überschreiben“ (rot) und „Abbrechen“; ebenso bei
+einer anderen oder unlesbaren Datei. Ist der Ort nicht erreichbar oder scheitert das Speichern, sagt der Dialog
+warum, mit „Erneut versuchen“ und „Speichern unter …“. Gespeichert wird als **Hintergrundauftrag ohne „Abbrechen“**
+mit Fortschritt in Prozent (geschrieben und zurückgelesen in einem Balken); „Im Hintergrund weiter“ schließt den
+Dialog, der Auftrag steht dann unter der Kopfzeile. Kamen während des Schreibens Änderungen hinzu, sagt „Gespeichert“
+das dazu, sie bleiben ungespeichert.
+
+**Sperren während des Speicherns:** Das Speichern läuft weiter (es braucht nach dem Versiegeln keinen Schlüssel
+mehr), der Kern trägt den gespeicherten Stand auch gesperrt ein; der Entsperren-Bildschirm zeigt „Die Suite-Datei
+wird noch gespeichert (… %). USB-Stick nicht abziehen.“. Die automatische Sperre wartet, solange es vorangeht. Unter
+Android hält eine Benachrichtigung ohne Namen die App bis zum Ende am Leben. Android schreibt direkt in das gewählte
+Dokument (es gibt keinen Ordner für eine Zwischendatei); geöffnet wird es erst, wenn alles versiegelt ist. Bricht das
+Schreiben trotzdem ab (Stick gezogen), sagt die App, dass die Datei am Ort unvollständig sein kann; die Arbeitskopie
+ist vollständig. Windows schreibt in eine Zwischendatei und ersetzt erst dann; eine liegengebliebene Zwischendatei
+wird beim nächsten Start entfernt.
+
+**Beenden unter Windows** mit ungespeicherten Änderungen: „Speichern“ (danach beendet sich die App),
+„Ohne Speichern beenden“ (die Änderungen bleiben auf dem Gerät) oder Wegklicken; gesperrt zuerst entsperren. Läuft
+ein Speichern, beendet sich die App erst danach. Unter Android gibt es kein verlässliches Beenden: dort bleiben Button
+und Hinweise.
+
+**Erinnerung:** Ist seit drei Tagen etwas ungespeichert, steht über den Listen „Seit … nicht in der Suite-Datei
+gespeichert. Tippen zum Speichern.“. Die Markierung „ungespeichert“ schreibt der Kern **vor** jeder Änderung der
+Arbeitskopie (mit fsync), mit der Zeit der ersten Änderung: Auch nach einem Absturz fehlt der Button nie. Beim Öffnen
+einer anderen Suite-Datei mit ungespeicherten Änderungen gibt es „Erst speichern“. Am Ende der Einrichtung bietet der
+Dialog an, die Suite-Datei gleich anzulegen („Später“ geht, der Button bleibt). Exportieren und Teilen ersetzen das
+Speichern nicht. Ein einzeln geöffneter Tresor wird weiter gleich in seine Datei zurückgeschrieben.
+
+**Auf dem Entsperren-Bildschirm** steht bei ungespeicherten Änderungen ein Hinweis ohne Tippen („… Entsperre und tippe
+oben auf das Speichern-Symbol.“): gespeichert wird nur entsperrt. Ohne Änderungen sagt Optionen → Suite-Datei: „Alles
+ist in der Suite-Datei gespeichert.“
 
 **Schutzänderungen** wirken in der Arbeitskopie und reisen mit dem nächsten Speichern mit; sie erneuern die inneren
 Schlüssel (Abschnitt 6.2) und erhöhen die Schutz-Epoche. Keys und Schlüsseldateien funktionieren auf jedem Gerät;

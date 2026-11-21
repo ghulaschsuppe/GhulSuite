@@ -45,7 +45,8 @@ pub trait VaultStorage: Send + Sync {
     fn content_dir(&self) -> Option<String>;
 }
 
-/// Writes atomically: temporary file, fsync, keep the previous version as `.bak`, rename.
+/// Writes atomically: temporary file, fsync, keep the previous version as `.bak` (a hard link or
+/// a copy), rename over the old file. The name always holds a whole file: the old one or the new.
 pub(crate) fn write_atomic(dir: &Path, name: &str, data: &[u8]) -> Result<()> {
     let tmp = dir.join(format!("{name}.tmp"));
     let target = dir.join(name);
@@ -55,8 +56,13 @@ pub(crate) fn write_atomic(dir: &Path, name: &str, data: &[u8]) -> Result<()> {
         f.sync_all()?;
     }
     if target.exists() {
-        fs::rename(&target, dir.join(format!("{name}.bak")))?;
+        let bak = dir.join(format!("{name}.bak"));
+        let _ = fs::remove_file(&bak);
+        if fs::hard_link(&target, &bak).is_err() {
+            fs::copy(&target, &bak)?;
+        }
     }
+    // Replaces the old file in one step (also on Windows).
     fs::rename(&tmp, &target)?;
     if let Ok(d) = fs::File::open(dir) {
         let _ = d.sync_all();
@@ -165,4 +171,25 @@ impl VaultStorage for LocalDirStorage {
 #[uniffi::export]
 pub fn local_storage(dir: String) -> Arc<dyn VaultStorage> {
     Arc::new(LocalDirStorage::new(dir))
+}
+
+#[cfg(test)]
+mod atomic_tests {
+    use super::*;
+
+    #[test]
+    fn a_replaced_file_is_never_missing_and_the_old_one_is_kept() {
+        let dir = std::env::temp_dir().join(format!("ghul-atomic-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        write_atomic(&dir, "a.ghlpss", b"old").unwrap();
+        assert!(!dir.join("a.ghlpss.bak").exists());
+        write_atomic(&dir, "a.ghlpss", b"new").unwrap();
+        assert_eq!(fs::read(dir.join("a.ghlpss")).unwrap(), b"new");
+        assert_eq!(fs::read(dir.join("a.ghlpss.bak")).unwrap(), b"old");
+        assert!(!dir.join("a.ghlpss.tmp").exists());
+        write_atomic(&dir, "a.ghlpss", b"newer").unwrap();
+        assert_eq!(fs::read(dir.join("a.ghlpss.bak")).unwrap(), b"new");
+        let _ = fs::remove_dir_all(&dir);
+    }
 }

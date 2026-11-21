@@ -594,6 +594,8 @@ pub struct GhulSuite {
     /// Content files being copied into a `.ghlzip` right now, and content files deleted
     /// meanwhile (deleted only when the last copy ended, see `docs::ContentCopy`).
     pub(super) content_copies: Mutex<super::docs::Copies>,
+    /// The state the last `archive_build` sealed, until `archive_saved` notes it.
+    pub(super) built: Mutex<Option<super::archive::BuiltState>>,
 }
 
 /// How containers of the folder are opened.
@@ -965,8 +967,8 @@ impl GhulSuite {
 
     pub(super) fn save_container(&self, c: &mut UnlockedContainer, file: &str) -> Result<()> {
         let data = c.seal(&mut OsRng)?;
+        self.mark_unsaved()?;
         self.storage.write(file.to_owned(), data)?;
-        self.mark_unsaved();
         Ok(())
     }
 
@@ -1134,6 +1136,7 @@ impl GhulSuite {
             wiped: AtomicBool::new(false),
             docs_limit: std::sync::atomic::AtomicU64::new(super::docs::DOCS_LIMIT),
             content_copies: Mutex::new(Default::default()),
+            built: Mutex::new(None),
         })
     }
 

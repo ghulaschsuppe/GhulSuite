@@ -79,6 +79,12 @@ name: Setup
 - inputText: ${output.group3}
 - hideKeyboard
 - tapOn: "Finish"
+# A suite file is offered at once (it is created in 14-suite-file.yaml): later.
+- extendedWaitUntil:
+    visible: "There is no suite file yet\\..*"
+    timeout: 30000
+- takeScreenshot: 01-save-offer
+- tapOn: "Later"
 - extendedWaitUntil:
     visible: "Search entries"
     timeout: 30000

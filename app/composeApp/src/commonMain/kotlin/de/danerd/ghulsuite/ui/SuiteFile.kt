@@ -22,7 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import de.danerd.ghulsuite.model.ArchiveCheckUi
 import de.danerd.ghulsuite.model.ArchiveRelationUi
-import de.danerd.ghulsuite.model.ArchiveTargetUi
+import androidx.compose.ui.platform.testTag
 import de.danerd.ghulsuite.model.PickedFile
 import de.danerd.ghulsuite.model.ProtectionUi
 import de.danerd.ghulsuite.model.SuiteFileRef
@@ -208,6 +208,14 @@ fun OpenSuiteFile(
                         if (c.device.isNotBlank() && c.savedAt > 0) {
                             Hint(stringResource(Res.string.file_saved_on, formatDateTime(c.savedAt), c.device))
                         }
+                        // Changes here would be lost: saving them first (then "Open" again; the
+                        // password stays in its field).
+                        if (c.unsavedChanges && state.single == null) {
+                            Button(
+                                onClick = { check = null; backend.archiveCancel(); state.askSave() },
+                                modifier = Modifier.fillMaxWidth().testTag("open-save-first"),
+                            ) { Text(stringResource(Res.string.save_first)) }
+                        }
                     }
                 },
                 confirmButton = { TextButton(onClick = { accept() }) { Text(stringResource(Res.string.file_q_open_anyway)) } },
@@ -226,47 +234,16 @@ fun OpenSuiteFile(
 @Composable
 fun SuiteFileSection(state: AppState) {
     val backend = state.backend
-    var ref by remember { mutableStateOf(backend.suiteFile()) }
     var error by remember { mutableStateOf<String?>(null) }
-    /** The file there was saved elsewhere meanwhile (or is no file of this suite): ask first. */
-    var ask by remember { mutableStateOf<Triple<SuiteFileRef, ArchiveTargetUi, Boolean>?>(null) }
     var opening by remember { mutableStateOf<PickedSuiteFile?>(null) }
     var foreignDocs by remember { mutableStateOf<ForeignRequest?>(null) }
-    val savedMsg = stringResource(Res.string.file_saved)
-    val unreachable = stringResource(Res.string.file_unreachable)
-    val notWritten = stringResource(Res.string.file_not_written)
-
-    /** [created]: the file was just made for this ("Save as"). */
-    fun save(target: SuiteFileRef, force: Boolean, created: Boolean = false) {
-        state.run(onError = { error = it }, block = {
-            // Only its header is read: is it this working copy's own state?
-            val there = backend.archiveTarget(target)
-            if (there == null && target == backend.suiteFile()) throw VaultException(VaultErrorKind.OTHER, unreachable)
-            if (!force && (there == ArchiveTargetUi.CHANGED_ELSEWHERE || there == ArchiveTargetUi.OTHER_SUITE)) {
-                return@run there
-            }
-            // Built, written and read back as a stream, with progress; only then saved.
-            if (!backend.archiveSave(target, deviceInfo(), created, state.onProgress)) {
-                throw VaultException(VaultErrorKind.OTHER, notWritten)
-            }
-            backend.setSuiteFile(target)
-            null
-        }) { there ->
-            if (there != null) {
-                ask = Triple(target, there, created)
-            } else {
-                ref = target
-                error = null
-                // A change made while it was written (files added) is still unsaved.
-                state.unsaved = backend.archiveUnsaved()
-                // Decided and saved: saving by itself goes on.
-                state.autoSaveBlocked = null
-                state.autoSaveError = null
-                state.message(savedMsg.replace("%1\$s", target.name))
-            }
+    // Saving goes through the save dialog (the same as the button in the header).
+    val saveAs = rememberCreateSuiteFile { created ->
+        if (created != null) {
+            state.askSave()
+            state.checkAndSave(created, created = true)
         }
     }
-    val saveAs = rememberCreateSuiteFile { created -> if (created != null) save(created, force = false, created = true) }
     val openOther = rememberOpenSuiteFile { r -> opening = PickedSuiteFile(r) }
     // A suite file or GhulDocs package handed over by another app while unlocked (see
     // AppState.applyLaunch): a GhulDocs package (by its name) is added to GhulDocs.
@@ -289,73 +266,40 @@ fun SuiteFileSection(state: AppState) {
 
     foreignDocs?.let { r -> ForeignVaultDialog(state, r, onDone = { foreignDocs = null }) }
     opening?.let { f ->
-        OpenSuiteFile(state, f, onOpened = { opening = null; ref = backend.suiteFile() }, onCancel = { opening = null })
+        OpenSuiteFile(state, f, onOpened = { opening = null }, onCancel = { opening = null })
         return
     }
 
     SectionCard(stringResource(Res.string.file_title)) {
-        val r = ref
+        // Read anew with every change (a save that ended, a file opened).
+        val r = remember(state.unsaved, state.saveJob, opening) { backend.suiteFile() }
         Hint(if (r == null) stringResource(Res.string.file_none) else stringResource(Res.string.file_current, r.name))
         if (state.unsaved) {
             Banner(Icons.Filled.Warning, stringResource(Res.string.file_unsaved))
         } else if (r != null) {
             Banner(Icons.Filled.CheckCircle, stringResource(Res.string.file_all_saved))
         }
-        // Saving by itself: what it does and why it may not have happened.
-        var auto by remember { mutableStateOf(backend.settings.autoSave) }
-        SwitchRow(stringResource(Res.string.file_auto_save), auto) {
-            auto = it
-            backend.settings.autoSave = it
-            state.autoSaveBlocked = null
-        }
-        Hint(stringResource(Res.string.file_auto_save_hint))
-        if (auto && state.unsaved) {
-            when {
-                state.autoSaving -> Hint(stringResource(Res.string.file_auto_saving))
-                state.autoSaveBlocked == AutoSaveBlock.CHANGED_ELSEWHERE -> Banner(Icons.Filled.Warning, stringResource(Res.string.file_auto_changed_elsewhere_here))
-                state.autoSaveBlocked == AutoSaveBlock.OTHER_FILE -> Banner(Icons.Filled.Warning, stringResource(Res.string.file_auto_other_file_here))
-                state.autoSaveBlocked == AutoSaveBlock.FAILED -> Banner(Icons.Filled.Warning, stringResource(Res.string.file_auto_failed_here, state.autoSaveError.orEmpty()))
-                state.autoSaveBlocked == AutoSaveBlock.UNREACHABLE -> Banner(Icons.Filled.Warning, stringResource(Res.string.file_auto_unreachable_here))
-                r == null -> Hint(stringResource(Res.string.file_auto_no_file))
-            }
-        }
+        val at = remember(state.unsaved, state.saveJob) { backend.archiveSavedAt() }
+        if (at > 0) Hint(stringResource(Res.string.save_last, formatDateTime(at)))
+        // What is where: the working copy at once, the suite file when saving.
+        Hint(stringResource(Res.string.file_save_explain))
+        val running = state.saveJob != null
         if (filePickersAvailable) {
-            if (r != null) {
-                Button(onClick = { save(r, force = false) }, enabled = !state.busy && !state.autoSaving, modifier = Modifier.fillMaxWidth()) {
+            if (r != null || state.unsaved) {
+                Button(onClick = { state.askSave() }, enabled = !state.busy, modifier = Modifier.fillMaxWidth().testTag("file-save")) {
                     Text(stringResource(Res.string.file_save))
                 }
             }
-            OutlinedButton(onClick = { saveAs(r?.name ?: SUITE_FILE_NAME) }, enabled = !state.busy && !state.autoSaving, modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(onClick = { saveAs(r?.name ?: SUITE_FILE_NAME) }, enabled = !state.busy && !running, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(Res.string.file_save_as))
             }
-            OutlinedButton(onClick = openOther, enabled = !state.busy && !state.autoSaving, modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(onClick = openOther, enabled = !state.busy && !running, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(Res.string.file_open_other))
             }
         }
         Hint(stringResource(Res.string.file_hint))
         BusyBanner(state)
         ErrorText(error)
-    }
-
-    ask?.let { (target, there, created) ->
-        AlertDialog(
-            danger = true,
-            onDismissRequest = { ask = null },
-            title = { Text(stringResource(Res.string.file_overwrite_title)) },
-            text = {
-                Text(
-                    stringResource(
-                        if (there == ArchiveTargetUi.OTHER_SUITE) Res.string.file_overwrite_other else Res.string.file_overwrite_changed,
-                    ),
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { ask = null; save(target, force = true, created = created) }) { Text(stringResource(Res.string.file_overwrite)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { ask = null; saveAs(SUITE_FILE_NAME) }) { Text(stringResource(Res.string.file_save_as)) }
-            },
-        )
     }
 }
 
@@ -367,10 +311,6 @@ fun AppState.afterSuiteFileOpened() {
     vaultExists = true
     openFirstArea = true
     stack.clear()
-    // Another file (and its state) now: saving by itself starts afresh.
-    autoSaveBlocked = null
-    autoSaveError = null
-    unsaved = backend.archiveUnsaved()
     changed()
 }
 

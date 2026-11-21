@@ -330,6 +330,10 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
             }
             if (useKey) HintText(stringResource(Res.string.wz_create_touch))
             if (kdf == null) Hint(stringResource(Res.string.setup_calibrating))
+            // Working copy and suite file: what saving means (asked again at the end of the wizard).
+            SectionCard(stringResource(Res.string.setup_save_title)) {
+                Hint(stringResource(Res.string.setup_save_text))
+            }
         }
 
         4 -> {
@@ -453,6 +457,9 @@ private fun finishWizard(state: AppState) {
     state.vaultExists = true
     state.refreshVaults()
     state.changed()
+    // The new suite is on this device only: a suite file is offered right away (or "Later";
+    // the save button in the header stays until it is saved).
+    if (filePickersAvailable) state.askSave()
 }
 
 /** Selectable row (radio) with icon tile; [more] opens under it while selected. */

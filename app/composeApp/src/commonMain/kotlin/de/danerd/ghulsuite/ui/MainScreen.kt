@@ -96,6 +96,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.Save
 import de.danerd.ghulsuite.model.VaultKindUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
@@ -116,7 +118,10 @@ fun GhulSuiteApp(state: AppState) {
                 val undoLabel = stringResource(Res.string.a_undo)
                 val env = org.jetbrains.compose.resources.rememberResourceEnvironment()
                 SideEffect { state.wide = wide; state.undoLabel = undoLabel; state.resEnv.value = env }
-                CompositionLocalProvider(LocalWide provides wide, LocalBusy provides BusyState(state.busy, state.touchNeeded, state.progress), LocalJobs provides state.jobs) {
+                CompositionLocalProvider(
+                    LocalWide provides wide, LocalBusy provides BusyState(state.busy, state.touchNeeded, state.progress), LocalJobs provides state.jobs,
+                    LocalSaveButton provides (if (unlocked && state.single == null) ({ SaveButton(state) }) else null),
+                ) {
                     // One place for messages: the main screen on phones shows them above its own bar,
                     // everywhere else this outer host shows them (never both, which doubled every message).
                     val mainHasHost = state.vaultExists && !state.showStart && unlocked
@@ -129,6 +134,10 @@ fun GhulSuiteApp(state: AppState) {
                     }
                     // A vault file waiting to be added once the own suite is unlocked.
                     if (unlocked && state.single == null && !state.showStart) PendingAddHandler(state)
+                    // Saving into the suite file (the save button, Ctrl+S, before opening another file).
+                    if (unlocked) SaveSuiteDialog(state)
+                    // Windows: quitting with changes not in the suite file (see AppState.requestQuit).
+                    QuitDialog(state)
                     // Changes of a vault opened on its own that did not reach its file.
                     PendingSingleWrites(state)
                     // A running action, in front of the screens (sheets show it themselves).
@@ -418,6 +427,8 @@ private fun navTabs(state: AppState): List<NavTab> = state.tabs.map { t ->
         tabIcon(t),
         areaColor(t),
         tag = "tab-" + t.name.lowercase(),
+        // Options holds the suite file: a dot while something is not saved in it.
+        dot = t == Tab.SETTINGS && state.saveNeeded,
     )
 }
 
@@ -539,9 +550,24 @@ private fun SideNav(state: AppState, tabs: List<Tab>) {
                     stringResource(tabTitle(area)), Modifier.weight(1f), fontSize = 15.sp,
                     fontWeight = if (on) FontWeight.Bold else FontWeight.SemiBold, color = if (on) nav.color else t.fg,
                 )
+                if (nav.dot) Box(Modifier.size(9.dp).clip(CircleShape).background(t.warn))
             }
         }
         Spacer(Modifier.weight(1f))
+        // Changes not in the suite file yet: "Save" above "Lock" (Ctrl+S).
+        if (state.saveNeeded || state.saveJob != null) {
+            Row(
+                Modifier.fillMaxWidth().padding(bottom = 8.dp).testTag(SAVE_BUTTON_TAG).clip(RoundedCornerShape(14.dp)).background(t.surface2)
+                    .clickable { state.askSave() }.padding(horizontal = 12.dp, vertical = 11.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Icon(Icons.Filled.Save, null, Modifier.size(20.dp), tint = if (state.saveJob != null) t.accent else t.warn)
+                Text(stringResource(Res.string.file_save), Modifier.weight(1f), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = t.fg)
+                if (state.backend.isDesktop) Text(stringResource(Res.string.side_save_key), fontSize = 12.sp, color = t.muted)
+                if (state.saveJob == null) Box(Modifier.size(9.dp).clip(CircleShape).background(t.warn))
+            }
+        }
         Row(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(t.surface2)
                 .clickable { state.lockNow() }.padding(horizontal = 12.dp, vertical = 11.dp),
@@ -588,6 +614,70 @@ private fun TabActions(state: AppState) {
         }
         else -> {}
     }
+}
+
+/**
+ * The save button beside "Lock": changes not in the suite file yet (or a save that runs). A tap
+ * opens the save dialog. Not on screens that edit something (what is not applied yet would not
+ * be in the file).
+ */
+@Composable
+fun SaveButton(state: AppState) {
+    val top = state.stack.lastOrNull()
+    if (top is Screen.EntryEdit || top is Screen.CalEdit || top is Screen.DocScan) return
+    val running = state.saveJob != null
+    if (!state.saveNeeded && !running) return
+    val t = g
+    Box(Modifier.testTag(SAVE_BUTTON_TAG)) {
+        BarIcon(Icons.Filled.Save, stringResource(Res.string.save_button_desc), tint = if (running) t.accent else t.warn) {
+            state.askSave()
+        }
+        if (!running) Box(Modifier.align(Alignment.TopEnd).padding(top = 6.dp, end = 6.dp).size(9.dp).clip(CircleShape).background(t.warn))
+    }
+}
+
+/**
+ * Quitting (Windows) with changes not in the suite file: save first, quit without saving (they
+ * stay on this device) or stay. While a save runs: quit once it is done.
+ */
+@Composable
+fun QuitDialog(state: AppState) {
+    if (!state.quitAsk) return
+    val unlocked by state.backend.unlocked.collectAsState()
+    val job = state.saveJob
+    val close = { state.quitAsk = false }
+    AlertDialog(
+        onDismissRequest = close,
+        title = { Text(stringResource(Res.string.close_title)) },
+        text = {
+            Text(
+                when {
+                    job != null -> stringResource(Res.string.close_saving, savePercent(job.progress).ifEmpty { "…" })
+                    unlocked -> stringResource(Res.string.close_text)
+                    else -> stringResource(Res.string.close_text_locked)
+                },
+            )
+        },
+        confirmButton = {
+            when {
+                job != null -> TextButton(onClick = { state.quitAfterSave = true; close() }) { Text(stringResource(Res.string.close_after_save)) }
+                unlocked -> TextButton(onClick = { state.quitAfterSave = true; close(); state.askSave() }, modifier = Modifier.testTag("quit-save")) {
+                    Text(stringResource(Res.string.file_save))
+                }
+                // Locked: unlock first (the unlock screen is behind the dialog).
+                else -> TextButton(onClick = close) { Text(stringResource(Res.string.a_unlock)) }
+            }
+        },
+        dismissButton = {
+            if (job == null) {
+                TextButton(onClick = { close(); state.onQuit?.invoke() }, modifier = Modifier.testTag("quit-without")) {
+                    Text(stringResource(Res.string.close_without))
+                }
+            } else {
+                TextButton(onClick = close) { Text(stringResource(Res.string.a_cancel)) }
+            }
+        },
+    )
 }
 
 /** Whether the composable is the visible tab (top screens are always active). */

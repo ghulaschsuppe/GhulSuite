@@ -718,6 +718,8 @@ fun GhulTopBar(
         }
         actions()
         if (showLock) {
+            // Changes not in the suite file yet: the save button beside "Lock" (MainScreen provides it).
+            LocalSaveButton.current?.invoke()
             BarIcon(androidx.compose.material.icons.Icons.Outlined.Lock, org.jetbrains.compose.resources.stringResource(Res.string.a_lock_now)) {
                 if (!HeaderGuard.lockBlocked()) onLock()
             }
@@ -730,9 +732,13 @@ fun GhulTopBar(
 @Composable
 private fun Modifier.androidx_statusBarsPadding(): Modifier = this.statusBarsPadding()
 
+/** The save button of the header (beside "Lock"); null where there is nothing to save into. */
+val LocalSaveButton = androidx.compose.runtime.compositionLocalOf<(@Composable () -> Unit)?> { null }
+
 /** One tab of the bottom navigation. */
 /** [tag]: "tab-pass", "tab-auth" …: the emulator flows tap the bar by it (the area's name is also its title). */
-class NavTab(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector, val color: Color, val tag: String = "")
+/** [dot]: something needs attention there (Options: changes not in the suite file yet). */
+class NavTab(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector, val color: Color, val tag: String = "", val dot: Boolean = false)
 
 /** Bottom navigation: 80 dp, surface, line on top, pill indicator in the tab colour. */
 @Composable
@@ -756,6 +762,9 @@ fun GhulNavBar(tabs: List<NavTab>, selected: Int, onSelect: (Int) -> Unit) {
                         contentAlignment = Alignment.Center,
                     ) {
                         androidx.compose.material3.Icon(tab.icon, null, Modifier.size(22.dp), tint = if (on) tab.color else t.muted)
+                        if (tab.dot) {
+                            Box(Modifier.align(Alignment.TopEnd).padding(top = 2.dp, end = 12.dp).size(9.dp).clip(CircleShape).background(t.warn))
+                        }
                     }
                     Text(tab.label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = if (on) tab.color else t.muted, maxLines = 1, softWrap = false)
                 }
