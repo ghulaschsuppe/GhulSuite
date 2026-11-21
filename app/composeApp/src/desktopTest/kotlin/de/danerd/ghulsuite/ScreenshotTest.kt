@@ -125,6 +125,8 @@ class ScreenshotTest {
             if (existsNow) throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.ALREADY_EXISTS)
             calls += "create"
             existsNow = true
+            // As the core: the new suite is open.
+            unlocked.value = true
             return ""
         }
         override suspend fun createFromVault(open: OpenVaultUi, onTouchNeeded: () -> Unit): String? = null
