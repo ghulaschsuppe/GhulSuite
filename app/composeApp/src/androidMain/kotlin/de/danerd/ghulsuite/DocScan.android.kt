@@ -173,6 +173,7 @@ object AndroidScanEngine : ScanEngine {
                         } else {
                             // Refused for good: only the system's page of the app can allow it.
                             runCatching {
+                                ExternalActivity.started()
                                 context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null)))
                             }
                         }

@@ -271,7 +271,11 @@ class AndroidQuickUnlock(
 
                         override fun onAuthenticationError(errorCode: Int, errString: CharSequence?) {
                             if (cont.isActive) {
-                                cont.resumeWithException(VaultException(VaultErrorKind.BIOMETRIC_CANCELLED, errString?.toString().orEmpty()))
+                                // Locked out after too many attempts: said as such (not "cancelled").
+                                val kind = if (errorCode == BiometricPrompt.BIOMETRIC_ERROR_LOCKOUT ||
+                                    errorCode == BiometricPrompt.BIOMETRIC_ERROR_LOCKOUT_PERMANENT
+                                ) VaultErrorKind.BIOMETRIC_LOCKOUT else VaultErrorKind.BIOMETRIC_CANCELLED
+                                cont.resumeWithException(VaultException(kind, errString?.toString().orEmpty()))
                             }
                         }
                     },

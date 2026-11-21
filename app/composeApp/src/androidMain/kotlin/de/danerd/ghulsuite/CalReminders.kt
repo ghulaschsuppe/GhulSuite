@@ -27,7 +27,8 @@ import org.json.JSONObject
 /**
  * GhulCal reminders on Android: exact alarms for the next 30 days, set while the suite is unlocked,
  * so they arrive while it is locked or the app is closed. The prepared texts are kept encrypted
- * with a key of the Android Keystore that never leaves the device; the panic lock deletes them.
+ * with a key of the Android Keystore that never leaves the device. They stay after a panic lock
+ * (reminders arrive also then, see test plan K11); deleting the suite removes them.
  */
 class CalReminders(private val context: Context) {
     private val prefs = context.getSharedPreferences("cal_alarms", Context.MODE_PRIVATE)
@@ -66,6 +67,19 @@ class CalReminders(private val context: Context) {
 
     fun alarm(index: Int): CalAlarmUi? = load().getOrNull(index)
 
+    /**
+     * Reminders shown lately, by their key (also the test reminder): "again in 5 minutes" finds
+     * its reminder by the key, not by a place in the list (which changes when the list is set anew).
+     */
+    fun remember(a: CalAlarmUi) {
+        val all = loadFrom(SHOWN).filter { it.key != a.key }.takeLast(SHOWN_MAX - 1) + a
+        val json = JSONArray()
+        all.forEach { json.put(it.toJson()) }
+        storeTo(SHOWN, json.toString())
+    }
+
+    fun shown(key: String): CalAlarmUi? = loadFrom(SHOWN).lastOrNull { it.key == key }
+
     val sound: Boolean get() = prefs.getBoolean(SOUND, true)
 
     private fun setAlarm(index: Int, at: Long) {
@@ -90,8 +104,10 @@ class CalReminders(private val context: Context) {
         }
     }
 
-    private fun load(): List<CalAlarmUi> = runCatching {
-        val raw = Base64.decode(prefs.getString(DATA, null) ?: return emptyList(), Base64.NO_WRAP)
+    private fun load(): List<CalAlarmUi> = loadFrom(DATA)
+
+    private fun loadFrom(name: String): List<CalAlarmUi> = runCatching {
+        val raw = Base64.decode(prefs.getString(name, null) ?: return emptyList(), Base64.NO_WRAP)
         val key = keyStore.getKey(ALIAS, null) as? SecretKey ?: return emptyList()
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, raw, 0, 12))
@@ -99,10 +115,12 @@ class CalReminders(private val context: Context) {
         (0 until arr.length()).map { arr.getJSONObject(it).toAlarm() }
     }.getOrDefault(emptyList())
 
-    private fun store(json: String) {
+    private fun store(json: String) = storeTo(DATA, json)
+
+    private fun storeTo(name: String, json: String) {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
         val ct = cipher.doFinal(json.toByteArray())
-        prefs.edit().putString(DATA, Base64.encodeToString(cipher.iv + ct, Base64.NO_WRAP)).apply()
+        prefs.edit().putString(name, Base64.encodeToString(cipher.iv + ct, Base64.NO_WRAP)).apply()
     }
 
     private fun key(): SecretKey {
@@ -121,6 +139,8 @@ class CalReminders(private val context: Context) {
     companion object {
         private const val ALIAS = "ghulsuite.cal.alarms"
         private const val DATA = "data"
+        private const val SHOWN = "shown"
+        private const val SHOWN_MAX = 20
         private const val COUNT = "count"
         private const val SOUND = "sound"
         private const val REQUEST = 7000
@@ -169,9 +189,12 @@ fun postCalNotification(ctx: Context, a: CalAlarmUi, sound: Boolean, index: Int)
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
+    // "Again in 5 minutes" finds it by its key (see CalReminders.remember).
+    runCatching { CalReminders(ctx).remember(a) }
     fun action(act: String, req: Int) = PendingIntent.getBroadcast(
         ctx, req,
-        Intent(ctx, CalAlarmReceiver::class.java).setAction(act).putExtra(CalReminders.EXTRA_INDEX, index).putExtra("notify_id", id),
+        Intent(ctx, CalAlarmReceiver::class.java).setAction(act).putExtra(CalReminders.EXTRA_INDEX, index)
+            .putExtra(CalReminders.EXTRA_KEY, a.key).putExtra("notify_id", id),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
     val color = 0xFFD6336C.toInt()
@@ -204,14 +227,17 @@ class CalAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val r = CalReminders(context)
         val index = intent.getIntExtra(CalReminders.EXTRA_INDEX, -1)
+        val key = intent.getStringExtra(CalReminders.EXTRA_KEY)
         when (intent.action) {
-            CalReminders.ACTION_FIRE -> r.alarm(index)?.let { postCalNotification(context, it, r.sound, index) }
+            // A snoozed reminder comes by its key; a scheduled one by its place in the list.
+            CalReminders.ACTION_FIRE -> (key?.let { r.shown(it) } ?: r.alarm(index))?.let { postCalNotification(context, it, r.sound, index) }
             CalReminders.ACTION_DONE -> context.getSystemService(NotificationManager::class.java).cancel(intent.getIntExtra("notify_id", 0))
             CalReminders.ACTION_SNOOZE -> {
                 context.getSystemService(NotificationManager::class.java).cancel(intent.getIntExtra("notify_id", 0))
                 val pi = PendingIntent.getBroadcast(
-                    context, 6000 + index,
-                    Intent(context, CalAlarmReceiver::class.java).setAction(CalReminders.ACTION_FIRE).putExtra(CalReminders.EXTRA_INDEX, index),
+                    context, 6000 + ((key ?: index.toString()).hashCode() and 0xfff),
+                    Intent(context, CalAlarmReceiver::class.java).setAction(CalReminders.ACTION_FIRE).putExtra(CalReminders.EXTRA_INDEX, index)
+                        .putExtra(CalReminders.EXTRA_KEY, key),
                     PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
                 )
                 val am = context.getSystemService(AlarmManager::class.java)

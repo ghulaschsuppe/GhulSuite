@@ -58,12 +58,16 @@ actual fun QrScanner(onResult: (String) -> Unit) {
     val reader = remember {
         MultiFormatReader().apply { setHints(mapOf(DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE))) }
     }
+    // Left before the camera was ready: it is not switched on afterwards (as in DocScan).
+    val camera = remember { object { var disposed = false; var provider: ProcessCameraProvider? = null } }
     Box(Modifier.fillMaxWidth().height(320.dp)) {
         AndroidView(factory = { ctx ->
             val view = PreviewView(ctx)
             val providerFuture = ProcessCameraProvider.getInstance(ctx)
             providerFuture.addListener({
-                val provider = providerFuture.get()
+                if (camera.disposed) return@addListener
+                val provider = runCatching { providerFuture.get() }.getOrNull() ?: return@addListener
+                camera.provider = provider
                 val preview = Preview.Builder().build().also { it.surfaceProvider = view.surfaceProvider }
                 val analysis = ImageAnalysis.Builder()
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
@@ -77,14 +81,16 @@ actual fun QrScanner(onResult: (String) -> Unit) {
                     }
                 }
                 provider.unbindAll()
-                provider.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
+                runCatching { provider.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis) }
             }, ContextCompat.getMainExecutor(ctx))
             view
         }, modifier = Modifier.fillMaxWidth().height(320.dp))
     }
     DisposableEffect(Unit) {
         onDispose {
-            runCatching { ProcessCameraProvider.getInstance(context).get().unbindAll() }
+            // No blocking get() on the main thread: only a provider that is there already.
+            camera.disposed = true
+            runCatching { camera.provider?.unbindAll() }
             executor.shutdown()
         }
     }

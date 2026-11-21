@@ -1370,4 +1370,7 @@
     <string name="save_running_locked_unknown">Die Suite-Datei wird noch gespeichert. USB-Stick nicht abziehen.</string>
     <string name="ctx_version">Version %1$s</string>
     <string name="about_report_file">GhulSuite-Fehlerbericht.txt</string>
+    <string name="err_bio_lockout">Zu viele Fehlversuche mit der Biometrie. Entsperre mit Master-Passwort und Key oder Schlüsseldatei, oder versuche es später wieder.</string>
+    <string name="cal_notifications_off">Benachrichtigungen sind für GhulSuite ausgeschaltet: Erinnerungen kommen nicht an.</string>
+    <string name="cal_notifications_settings">Benachrichtigungen einschalten …</string>
 </resources>

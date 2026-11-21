@@ -42,7 +42,9 @@ class AndroidUpdater(private val context: Context) : CoreUpdater(".apk") {
     override suspend fun install(update: UpdateUi): UpdateStep {
         val pm = context.packageManager
         if (!pm.canRequestPackageInstalls()) {
-            // Once: "Allow from this source" for GhulSuite in the system settings.
+            // Once: "Allow from this source" for GhulSuite in the system settings (the automatic
+            // lock waits meanwhile, as for a picker).
+            ExternalActivity.started()
             context.startActivity(
                 Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
@@ -57,19 +59,26 @@ class AndroidUpdater(private val context: Context) : CoreUpdater(".apk") {
                 setSize(apk.length())
             }
             val id = installer.createSession(params)
-            installer.openSession(id).use { session ->
-                session.openWrite("GhulSuite.apk", 0, apk.length()).use { out ->
-                    apk.inputStream().use { it.copyTo(out) }
-                    session.fsync(out)
+            var committed = false
+            try {
+                installer.openSession(id).use { session ->
+                    session.openWrite("GhulSuite.apk", 0, apk.length()).use { out ->
+                        apk.inputStream().use { it.copyTo(out) }
+                        session.fsync(out)
+                    }
+                    val result = PendingIntent.getBroadcast(
+                        context, id,
+                        Intent(context, UpdateResultReceiver::class.java).setPackage(context.packageName),
+                        // The installer fills in the result: must be mutable.
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+                    )
+                    session.commit(result.intentSender)
+                    committed = true
                 }
+            } finally {
                 apk.delete()
-                val result = PendingIntent.getBroadcast(
-                    context, id,
-                    Intent(context, UpdateResultReceiver::class.java).setPackage(context.packageName),
-                    // The installer fills in the result: must be mutable.
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
-                )
-                session.commit(result.intentSender)
+                // A session that failed (no room, …) is not left behind with its partial copy.
+                if (!committed) runCatching { installer.abandonSession(id) }
             }
         }
         return UpdateStep.STARTED

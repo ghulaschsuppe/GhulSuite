@@ -81,6 +81,8 @@ fun UnlockScreen(state: AppState) {
     // When the last fingerprint prompt ended: the prompt itself can pause and resume the app,
     // which must not open it again right away (a cancelled prompt would come back forever).
     var promptEnded by remember { mutableStateOf<kotlin.time.TimeSource.Monotonic.ValueTimeMark?>(null) }
+    // Too many failed attempts: not asked for again by itself (it would close at once, again and again).
+    var bioLockedOut by remember { mutableStateOf(false) }
 
     fun biometric() {
         state.run(onError = { error = it; promptEnded = kotlin.time.TimeSource.Monotonic.markNow() }, block = {
@@ -88,6 +90,7 @@ fun UnlockScreen(state: AppState) {
                 backend.unlockWithBiometric()
                 true
             } catch (e: VaultException) {
+                if (e.kind == VaultErrorKind.BIOMETRIC_LOCKOUT) bioLockedOut = true
                 if (e.kind != VaultErrorKind.BIOMETRIC_CANCELLED) quickFailed(e) else error = null
                 false
             }
@@ -104,7 +107,7 @@ fun UnlockScreen(state: AppState) {
     val inFront by AppLaunch.inFront.collectAsState()
     LaunchedEffect(resumed, inFront) {
         val recent = promptEnded?.let { it.elapsedNow() < kotlin.time.Duration.parse("1.5s") } == true
-        if (inFront && mode == UnlockMode.QUICK && ready.biometric && !state.busy && !recent) biometric()
+        if (inFront && mode == UnlockMode.QUICK && ready.biometric && !state.busy && !recent && !bioLockedOut) biometric()
     }
 
     val t = g

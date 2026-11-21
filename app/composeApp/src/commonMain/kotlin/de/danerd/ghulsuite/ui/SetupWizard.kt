@@ -235,8 +235,11 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
     // Locked after the suite was made (screen off, idle): the wizard (and the recovery code on it)
     // goes; unlocking leads on, and the code is asked for again there (CodeReminderDialog).
     val unlockedNow by backend.unlocked.collectAsState()
+    // Only a lock after it was unlocked (not before the suite is made).
+    var wasUnlocked by remember { mutableStateOf(false) }
     LaunchedEffect(unlockedNow, created) {
-        if (created && !unlockedNow) {
+        if (unlockedNow) wasUnlocked = true
+        if (created && wasUnlocked && !unlockedNow) {
             code = ""
             state.pendingAdd = null
             state.pendingDocsAdd = null

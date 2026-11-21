@@ -267,6 +267,10 @@ interface VaultBackend {
 
     /** Whether [shareToApps] lets the user pick another app to send the file with (Android). */
     val canShareToApps: Boolean get() = false
+    /** Whether the system shows notifications of the app (Android 13+ asks once; reminders need them). */
+    fun notificationsAllowed(): Boolean = true
+    /** Opens the system settings of the app's notifications. */
+    fun openNotificationSettings() {}
 
     /** Copies to the clipboard, marked as sensitive and cleared automatically. */
     fun copySensitive(label: String, text: String)
@@ -660,6 +664,8 @@ enum class VaultErrorKind {
     QUICK_EXPIRED,
     QUICK_INVALID,
     BIOMETRIC_CANCELLED,
+    /** Too many failed attempts: the system blocks biometrics for a while (or until the device PIN). */
+    BIOMETRIC_LOCKOUT,
     BIOMETRIC_CHANGED,
     HMAC_UNSUPPORTED,
     KEY_NOT_REGISTERED,

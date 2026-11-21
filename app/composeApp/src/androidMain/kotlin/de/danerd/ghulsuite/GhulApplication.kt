@@ -107,18 +107,12 @@ class GhulApplication : Application() {
                 lockDueAt = 0
                 // Back in the app: the grace period of a file picker, share or camera is over.
                 ExternalActivity.finished()
+                backend.onFront()
             }
 
             override fun onStop(owner: LifecycleOwner) {
                 if (!backend.unlocked.value) return
-                var delay = backend.settings.autoLockSeconds
-                if (ExternalActivity.active) delay = maxOf(delay, ExternalActivity.GRACE_SECONDS)
-                if (delay <= 0) {
-                    autoLock()
-                } else {
-                    lockDueAt = android.os.SystemClock.elapsedRealtime() + delay * 1000L
-                    handler.postDelayed(lockRunnable, delay * 1000L)
-                }
+                scheduleLock()
             }
         })
 
@@ -134,7 +128,29 @@ class GhulApplication : Application() {
     @Volatile
     private var lockDueAt = 0L
 
+    /** The app left the screen while unlocked: locks after the auto-lock time (at once with 0). */
+    private fun scheduleLock() {
+        var delay = backend.settings.autoLockSeconds
+        if (ExternalActivity.active) delay = maxOf(delay, ExternalActivity.GRACE_SECONDS)
+        if (delay <= 0) {
+            autoLock()
+        } else {
+            lockDueAt = android.os.SystemClock.elapsedRealtime() + delay * 1000L
+            handler.postDelayed(lockRunnable, delay * 1000L)
+        }
+    }
+
     private fun onUnlocked() {
+        // Unlocking ended while the app was away (Home or the power key while the password was
+        // derived): what leaving would have done happens now.
+        if (!ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+            val screenOn = getSystemService(android.os.PowerManager::class.java)?.isInteractive != false
+            if (!screenOn && backend.settings.lockOnScreenOff) {
+                autoLock()
+                return
+            }
+            scheduleLock()
+        }
         if (!screenReceiverRegistered) {
             val filter = IntentFilter(Intent.ACTION_SCREEN_OFF)
             if (Build.VERSION.SDK_INT >= 33) {

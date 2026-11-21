@@ -1370,4 +1370,7 @@
     <string name="save_running_locked_unknown">The suite file is still being saved. Do not pull the USB stick.</string>
     <string name="ctx_version">Version %1$s</string>
     <string name="about_report_file">GhulSuite-error-report.txt</string>
+    <string name="err_bio_lockout">Too many failed biometric attempts. Unlock with the master password and key or key file, or try again later.</string>
+    <string name="cal_notifications_off">Notifications are turned off for GhulSuite: reminders do not arrive.</string>
+    <string name="cal_notifications_settings">Turn on notifications …</string>
 </resources>

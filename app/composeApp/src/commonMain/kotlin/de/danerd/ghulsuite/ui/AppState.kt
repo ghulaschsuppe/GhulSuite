@@ -1049,6 +1049,7 @@ private suspend fun describeText(e: Throwable): String {
         VaultErrorKind.QUICK_EXPIRED -> getString(Res.string.err_quick_expired)
         VaultErrorKind.QUICK_INVALID -> getPluralString(Res.plurals.err_quick_invalid, e.retries ?: 0, (e.retries ?: 0).toString())
         VaultErrorKind.BIOMETRIC_CANCELLED -> getString(Res.string.err_bio_cancelled)
+        VaultErrorKind.BIOMETRIC_LOCKOUT -> getString(Res.string.err_bio_lockout)
         VaultErrorKind.BIOMETRIC_CHANGED -> getString(Res.string.err_bio_changed)
         VaultErrorKind.HMAC_UNSUPPORTED -> getString(Res.string.err_hmac)
         VaultErrorKind.KEY_NOT_REGISTERED -> getString(Res.string.err_key_not_registered)
