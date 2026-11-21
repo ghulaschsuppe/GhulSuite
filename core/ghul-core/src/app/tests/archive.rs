@@ -837,3 +837,22 @@ fn the_same_epoch_with_another_protection_removes_quick_unlock() {
     assert!(!a.quick_unlock_exists("pin".into()), "another password key");
     assert!(a.archive_device_data_wiped());
 }
+
+/// A removed key gives the other slots a new factor secret under the same ids: a file saved
+/// after that is newer, also when its slots look like an earlier state of this device.
+#[test]
+fn a_removed_factor_is_not_brought_back_by_an_older_print() {
+    let (_da, a, kf, _) = device_with_suite("print-a");
+    let kf2 = generate_keyfile();
+    a.add_keyfile(kf_proof(PW, &kf), None, None, kf2.clone(), "K2".into()).unwrap();
+    let file = save(&a);
+    let db = Dirs::new("print-b");
+    let b = db.suite();
+    open(&b, &file, &kf);
+    b.archive_accept().unwrap();
+    // B removes the second key file again: the same slot ids as A had before adding it.
+    let k2 = b.slots().unwrap().into_iter().find(|s| s.label == "K2").unwrap();
+    b.remove_slot(kf_proof(PW, &kf), None, None, k2.slot_id).unwrap();
+    let from_b = save(&b);
+    assert_eq!(a.archive_target_bytes(from_b).unwrap(), ArchiveTarget::OtherProtection);
+}

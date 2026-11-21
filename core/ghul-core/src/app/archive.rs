@@ -32,7 +32,7 @@ use super::suite::{
 };
 use super::zipstream::{zip_len, EntryInfo, ZipError, ZipReader, ZipWriter, CHUNK};
 use crate::vault::format::MAX_FILE_LEN;
-use crate::vault::{ContainerKind, FactorSecret, LockedContainer, PasswordKey, RecoveryCode, UnlockedContainer};
+use crate::vault::{ContainerKind, FactorSecret, LockedContainer, PasswordKey, RecoveryCode, Slot, UnlockedContainer};
 use crate::{FidoListener, HidTransport};
 
 /// Name of the header inside a `.ghlzip`.
@@ -142,20 +142,24 @@ struct Seen {
 const MAX_PROTECTIONS: usize = 64;
 
 /// The protection of a container as its plaintext header shows it: the KDF (salt) and the
-/// factor slots (the recovery slot is new in every container and holds neither the password key
-/// nor the factor secret). Two files with the same print open with the same password key and
-/// the same keys and key files.
+/// factor slots in full (with the wrapping of the factor secret: a removed key gives the other
+/// slots a new factor secret under the same slot ids). The recovery slot is new in every
+/// container and holds neither the password key nor the factor secret. Two files with the same
+/// print open with the same password key and factor secret; the factor slots are the same bytes
+/// in the suite file, the vaults and the header of a `.ghlzip`.
 pub(super) fn protection_print(h: &crate::vault::format::Header) -> String {
-    let mut ids: Vec<[u8; 16]> =
-        h.slots.iter().filter(|s| !matches!(s, crate::vault::Slot::Recovery(_))).map(|s| *s.id()).collect();
-    ids.sort();
+    let mut slots: Vec<&Slot> = h.slots.iter().filter(|s| !matches!(s, Slot::Recovery(_))).collect();
+    slots.sort_by_key(|s| *s.id());
     let mut d = Sha256::new();
     d.update(h.kdf.memory_kib.to_le_bytes());
     d.update(h.kdf.iterations.to_le_bytes());
     d.update(h.kdf.parallelism.to_le_bytes());
     d.update(h.kdf.salt);
-    for id in ids {
-        d.update(id);
+    for s in slots {
+        let mut bytes = Vec::new();
+        s.encode(&mut bytes);
+        d.update((bytes.len() as u64).to_le_bytes());
+        d.update(&bytes);
     }
     crate::kdf::hex(&d.finalize()[..16])
 }

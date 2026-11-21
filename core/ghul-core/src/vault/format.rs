@@ -205,7 +205,7 @@ impl Slot {
         !matches!(self, Slot::Recovery(_))
     }
 
-    fn encode(&self, out: &mut Vec<u8>) {
+    pub(crate) fn encode(&self, out: &mut Vec<u8>) {
         match self {
             Slot::Fido2(s) => {
                 out.push(SLOT_FIDO2_X25519);

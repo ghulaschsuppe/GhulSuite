@@ -445,8 +445,8 @@ class InteractionTest {
         waitFor("New master password")
         assertFalse(shown("very weak"))
         assertFalse(shown("weak"))
-        // Current, new, repeat: the second field is the new password.
-        onAllNodes(hasSetTextAction())[1].performTextInput("kurz")
+        // Current, the second factor, new, repeat: the field of the new password by its label.
+        onNode(hasSetTextAction() and hasText("New master password")).performTextInput("kurz")
         waitFor("weak")
     }
 
@@ -877,6 +877,10 @@ class InteractionTest {
         waitFor("PIN of the security key")
         // The key's name, then its PIN.
         onAllNodes(hasSetTextAction())[1].performTextInput("1234")
+        // The backup is required: a second key (its name, then its PIN).
+        onAllNodesWithText("Second key").onFirst().performClick()
+        waitUntil(timeoutMillis = 10_000) { onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size >= 4 }
+        onAllNodes(hasSetTextAction())[3].performTextInput("1234")
         text("Next").performClick()
         waitFor("Create")
     }
