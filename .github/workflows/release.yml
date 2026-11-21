@@ -11,41 +11,74 @@
 # SHA-256 of the file, before anything is installed (see core/ghul-core/src/update.rs).
 # Releasing a new stable version: merge dev into main. The number is found automatically (see the
 # step "v" below); VERSION only matters for a jump (1.0.0) or a fix release (0.5.1).
+#
+# Nothing is signed or released before the whole CI ("Android & Kern": core, Android, Windows,
+# emulator) passed for exactly this commit: the release starts when that run ends green, and
+# checks it once more by itself. The workflow file used is the one of the default branch, so a
+# change to it in a pull request cannot reach the signing key.
 name: Veröffentlichen
 
 on:
-  push:
+  workflow_run:
+    workflows: ["Android & Kern"]
+    types: [completed]
     branches: [main, dev]
-    paths: ['core/**', 'app/**', 'VERSION', '.github/workflows/release.yml']
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.event.workflow_run.head_branch || github.ref_name }}
   cancel-in-progress: false
 
 env:
   CARGO_INCREMENTAL: "0"
+  # The commit the green CI run was for (a manual start: the one started on).
+  SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+  BRANCH: ${{ github.event.workflow_run.head_branch || github.ref_name }}
   NDK_VERSION: 28.2.13676358
   CARGO_NDK_VERSION: 4.1.2
 
 jobs:
   plan:
     name: Version und Schlüssel
-    # Only the original repository has the signing key.
-    if: github.repository_owner == 'ghulaschsuppe' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
+    # Only the original repository has the signing key; only a push to main or dev that passed the
+    # CI (a run for a pull request never releases).
+    if: >-
+      github.repository_owner == 'ghulaschsuppe' &&
+      (github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') ||
+       github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
       version: ${{ steps.v.outputs.version }}
       prerelease: ${{ steps.v.outputs.prerelease }}
       pubkey: ${{ steps.k.outputs.pubkey }}
+      release: ${{ steps.gate.outputs.release }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ env.SHA }}
           fetch-depth: 0
+      # Once more, by itself: the newest CI run for this commit on this branch passed (also for a
+      # manual start), and something of the app changed since the last release (a change of the
+      # documents only gives no new version).
+      - id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          ci=$(gh run list -w android.yml -b "$BRANCH" -c "$SHA" -e push -L 1 --json conclusion -q '.[0].conclusion')
+          if [ "$ci" != success ]; then echo "::error::Die CI für $SHA ist nicht grün ($ci): keine Veröffentlichung."; exit 1; fi
+          git fetch --tags --quiet
+          last=$(git tag --merged HEAD -l 'v*' --sort=-creatordate | head -1)
+          if [ -n "$last" ] && git diff --quiet "$last" HEAD -- core app VERSION rust-toolchain.toml .github/workflows/release.yml; then
+            echo "Seit $last nichts an der App geändert: keine neue Version."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
       # The version needs no hand work: VERSION is the wish ("0.6.0", or "1.0.0" for a jump, "0.5.1"
       # for a fix). If it is already released (or lower than the newest release), the next minor
       # version after the newest release is taken: after v0.5.0 the next one is 0.6.0, on dev as
@@ -62,7 +95,7 @@ jobs:
             base="$major.$((minor + 1)).0"
             echo "VERSION $wish ist schon veröffentlicht oder älter als v$latest: nächste Version $base."
           fi
-          if [ "$GITHUB_REF_NAME" = main ]; then
+          if [ "$BRANCH" = main ]; then
             version=$base; pre=false
           else
             n=$(( $(git tag -l "v$base-dev.*" | sed "s/^v$base-dev\.//" | grep -E '^[0-9]+$' | sort -n | tail -1) + 1 ))
@@ -87,17 +120,20 @@ jobs:
   android:
     name: Android (signiertes Release-APK)
     needs: plan
+    if: needs.plan.outputs.release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.SHA }}
       - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
         with:
           distribution: temurin
           java-version: '17'
       - name: Rust-Toolchain und NDK
         run: |
-          rustup toolchain install stable --profile minimal
+          rustup toolchain install  # the version of rust-toolchain.toml
           rustup target add aarch64-linux-android x86_64-linux-android
           cargo install cargo-ndk --locked --version "$CARGO_NDK_VERSION"
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION" > /dev/null
@@ -130,10 +166,13 @@ jobs:
   windows:
     name: Windows (Installer und portable Version)
     needs: plan
+    if: needs.plan.outputs.release == 'true'
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.SHA }}
       - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
         with:
           distribution: temurin
@@ -145,7 +184,7 @@ jobs:
           GHUL_VERSION: ${{ needs.plan.outputs.version }}
           GHUL_UPDATE_KEY: ${{ needs.plan.outputs.pubkey }}
         run: |
-          rustup toolchain install stable --profile minimal
+          rustup toolchain install  # the version of rust-toolchain.toml
           ./gradlew --no-daemon --console=plain :composeApp:packageMsi :composeApp:createDistributable
       - name: Bereitstellen
         shell: pwsh
@@ -185,7 +224,8 @@ jobs:
           PUBKEY: ${{ needs.plan.outputs.pubkey }}
         run: |
           cd dist
-          sha256sum GhulSuite.apk GhulSuite.msi GhulSuite-portable.zip > SHA256SUMS
+          # The version is part of what is signed: an old file cannot be offered under a new tag.
+          { echo "version ${{ needs.plan.outputs.version }}"; sha256sum GhulSuite.apk GhulSuite.msi GhulSuite-portable.zip; } > SHA256SUMS
           cat SHA256SUMS
           t="$RUNNER_TEMP"
           printf '%s' "$KEYSTORE_B64" | base64 -d > "$t/k.jks"
@@ -205,14 +245,14 @@ jobs:
         run: |
           if [ "$PRE" = true ]; then
             title="GhulSuite $VERSION (Vorabversion)"
-            notes="Entwicklungsversion vom Zweig dev ($GITHUB_SHA). Neuer, aber weniger getestet als die stabile Version. In der App: Optionen, Über, Updates, Kanal „Vorab“."
+            notes="Entwicklungsversion vom Zweig dev ($SHA). Neuer, aber weniger getestet als die stabile Version. In der App: Optionen, Über, Updates, Kanal „Vorab“."
             flags="--prerelease"
           else
             title="GhulSuite $VERSION"
             notes="Stabile Version. Prüfsummen in SHA256SUMS, signiert in SHA256SUMS.sig."
             flags="--latest"
           fi
-          gh release create "v$VERSION" dist/* --target "$GITHUB_SHA" --title "$title" --notes "$notes" --generate-notes $flags
+          gh release create "v$VERSION" dist/* --target "$SHA" --title "$title" --notes "$notes" --generate-notes $flags
       # Only the newest five development versions stay (the stable ones all stay).
       - name: Alte Vorabversionen aufräumen
         if: needs.plan.outputs.prerelease == 'true'

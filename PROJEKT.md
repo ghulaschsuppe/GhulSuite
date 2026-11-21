@@ -8,6 +8,9 @@ GhulMail ersetzt und die App ohne Server auskommt, in [`docs/UMBAU-GHULDOCS.md`]
 
 ## Grundsätze
 
+- **Funktionsstopp seit 21.11.2026 (Entscheidung des Inhabers):** Es kommen keine neuen Funktionen mehr dazu, nur
+  noch Fehlerbehebungen und kleinere Anpassungen an Design und Dialogen. Ziel ist eine Version, die man der
+  Öffentlichkeit sicher geben kann (Gutachten und Weg dorthin: [`docs/PRUEFCHRONIK.md`](docs/PRUEFCHRONIK.md)).
 - **Sicherheit zuerst, dicht gefolgt von Benutzerfreundlichkeit.** Alles wird auf dem Gerät verschlüsselt;
   die Suite-Datei enthält nur Chiffretext.
 - **Offline, ohne bestimmten Anbieter:** keine Server, keine Konten, kein Cloud-Dienst. Nach draußen gehen nur die
@@ -119,6 +122,9 @@ tools/                 Prüfskripte, Website-Bau, Emulator-Skripte
   (GitHub-Release, „latest“). `dev` ist der Zwischenschritt: Jeder Push dort wird zur **Vorabversion**
   `v0.6.0-dev.<n>` (GitHub-Pre-Release, die neuesten fünf bleiben). Beides baut und signiert
   `.github/workflows/release.yml`; die README verlinkt die Dateien, die App holt daraus ihre Updates.
+  **Erst nach grüner CI:** Der Release startet, wenn der Lauf von `android.yml` für genau diesen Commit grün endete
+  (`workflow_run`), prüft das selbst noch einmal und gibt nur eine neue Version heraus, wenn sich an der App etwas
+  geändert hat. Die Rust-Version steht in `rust-toolchain.toml` (für lokal, CI und Release gleich).
 - **Versionsnummern ohne Handarbeit:** Ablauf: Arbeits-Branches per PR nach `dev`, dort Vorabversionen testen; zum
   Freigeben PR `dev` → `main`. Die Nummer ergibt sich von selbst: nach `v0.5.0` heißt die nächste Version `0.6.0`
   (auf `dev` `0.6.0-dev.1`, `-dev.2` …, bis `main` sie veröffentlicht). **`VERSION`** (Wurzel) braucht man nur für

@@ -128,7 +128,7 @@ Nichts davon gibt einem Angreifer ohne Passwort **und** zweiten Faktor Zugriff a
 
 | Nr. | Entscheidung | Begründung |
 |---|---|---|
-| L4, B17 | **Ein Signaturschlüssel für alles:** Entwicklerversionen aller eigenen Branches und spätere Veröffentlichungen werden mit demselben Schlüssel signiert, ein getrennter Release-Schlüssel ist nicht vorgesehen | Entwicklerversionen sollen sich über die installierte App aktualisieren lassen; mit einem anderen Schlüssel müsste man sie erst deinstallieren und verlöre die Daten auf dem Gerät. Ein zweiter Schlüssel schützte vor allem gegen einen übernommenen GitHub-Zugang, und mit dem ließe sich auch `main` ändern. Schutz: Der Schlüssel steht nur im eigenen Repository bereit (bei Pushes und bei Pull Requests aus diesem Repository, seit 16.11.2026, damit ein Push mit offenem Pull Request nicht doppelt läuft), nie bei Pull Requests aus Forks; pushen und solche Pull Requests anlegen kann nur, wer Schreibrecht hat, also der Inhaber. Voraussetzungen: Zwei-Faktor-Anmeldung bei GitHub (Passkey oder Security Key), eine Offline-Sicherung der Keystore-Datei und ihres Passworts (ohne sie lässt sich keine installierte App mehr aktualisieren), Abhängigkeiten nur bewusst aktualisieren (Gradle-Prüfsummen, `Cargo.lock`) |
+| L4, B17 | **Ein Signaturschlüssel für alles:** Entwicklerversionen aller eigenen Branches und spätere Veröffentlichungen werden mit demselben Schlüssel signiert, ein getrennter Release-Schlüssel ist nicht vorgesehen | Entwicklerversionen sollen sich über die installierte App aktualisieren lassen; mit einem anderen Schlüssel müsste man sie erst deinstallieren und verlöre die Daten auf dem Gerät. Ein zweiter Schlüssel schützte vor allem gegen einen übernommenen GitHub-Zugang, und mit dem ließe sich auch `main` ändern. Schutz: Der Schlüssel steht nur im eigenen Repository bereit (bei Pushes und bei Pull Requests aus diesem Repository, seit 16.11.2026, damit ein Push mit offenem Pull Request nicht doppelt läuft), nie bei Pull Requests aus Forks; pushen und solche Pull Requests anlegen kann nur, wer Schreibrecht hat, also der Inhaber. Am 21.11.2026 nach dem unabhängigen Gutachten erneut so entschieden (der Inhaber behält die Schlüssel; sein GitHub-Konto ist mit einem Hardware-Key gesichert, veröffentlicht wird nur nach grüner CI). Voraussetzungen: Zwei-Faktor-Anmeldung bei GitHub (Passkey oder Security Key), eine Offline-Sicherung der Keystore-Datei und ihres Passworts (ohne sie lässt sich keine installierte App mehr aktualisieren), Abhängigkeiten nur bewusst aktualisieren (Gradle-Prüfsummen, `Cargo.lock`) |
 | F24 | Titel werden ohne Leerraum am Rand gespeichert | Absicht (Suche, Sortierung, Anzeige); alles Geheime bleibt Zeichen für Zeichen erhalten |
 
 ### 4.2 Nachprüfbarkeit des Builds
@@ -140,15 +140,23 @@ Nichts davon gibt einem Angreifer ohne Passwort **und** zweiten Faktor Zugriff a
   `cargo deny` dasselbe.
 - **Reproduzierbarkeit (L4, B17):** Der Nachtlauf baut den Kern zweimal in verschiedenen Ordnern und verlangt
   byte-gleiche Ergebnisse. Für die ganze APK (Kotlin, Ressourcen) ist das noch nicht nachgewiesen; das gehört zu
-  festen Releases (Issue #6).
+  festen Releases (Issue #6). Seit 21.11.2026 legt `rust-toolchain.toml` eine Rust-Version für lokale Builds, CI
+  und Releases fest: Veröffentlicht wird, was getestet wurde.
 
 - **Updates (Runde 7):** Der Updater ist ein neuer Weg, Code auf das Gerät zu bringen. Geschützt durch: signierte
   Prüfsummen (RSA oder P-256, geprüft mit `ring`), Größe und SHA-256 der Datei vor der Übergabe an den Installer,
   nur `https` zu `api.github.com`, `github.com` und `*.githubusercontent.com` (auch Weiterleitungen), Download
   höchstens 600 MB in eine Datei statt in den Speicher, Entwürfe und auf dem stabilen Kanal Vorabversionen werden
   nie angeboten, Installation nur nach Zustimmung. Wer den Signaturschlüssel hat, kann Updates ausliefern; das war
-  mit der APK-Signatur schon vorher so (AUDIT 4.1). Ein kompromittiertes GitHub-Konto allein reicht nicht: Ohne den
-  Schlüssel passt die Signatur nicht. Rücksprung auf ältere Versionen bietet die App nie an (nur neuere).
+  mit der APK-Signatur schon vorher so (AUDIT 4.1). **Richtiggestellt am 21.11.2026:** Hier stand, ein
+  kompromittiertes GitHub-Konto allein reiche nicht. Das stimmt nicht. Der Schlüssel liegt als Secret im
+  Repository; wer Schreibrecht hat, kann einen Workflow ändern und damit signieren. Ein übernommenes Konto des
+  Inhabers reicht also für ein signiertes Update. Schutz dagegen: Schreibrecht hat nur der Inhaber, sein Konto ist
+  mit einem Hardware-Key gesichert; veröffentlicht wird nur nach einer grünen CI für genau diesen Commit, und der
+  Release-Workflow kommt immer vom Standardzweig, ein Pull Request kann ihn nicht ändern (`release.yml`,
+  `workflow_run`). Die signierte Prüfsummenliste nennt ihre Version, die App prüft sie: Eine alte, gültig signierte
+  Datei lässt sich nicht unter einem neuen Tag anbieten (K-6). Rücksprung auf ältere Versionen bietet die App nie
+  an (nur neuere).
 
 ### 4.3 Grenzen, die keine App lösen kann
 
@@ -195,8 +203,8 @@ behoben (Testprotokoll PR-…), „klein“ (Randfall, Komfort, Werkzeug) kommt 
 | K-3 | CI | Ein sofort abgebrochener Monkey-Lauf gilt als „ohne Absturz“; ein leeres Systemprotokoll im Emulator nur als Warnung |
 | K-4 | Werkzeuge | `precheck.sh` räumt relativ zum Aufrufordner auf und meldet bei übersprungenen Prüfungen trotzdem „Alles grün“ |
 | K-5 | Werkzeuge | `intent-attacks.sh` greift noch Aktionen von GhulMail und GhulDrive an, die es nicht mehr gibt; der deutsche Rundgang (`tour-de.yaml`) zeigt GhulDocs und zwei Optionsseiten nicht |
-| K-6 | Update | Die signierte Prüfsummendatei nennt die Version nicht; ein altes, korrekt signiertes Paket ließe sich unter neuem Tag anbieten (Android lehnt kleinere Versionen ab, beim MSI schützt nur jpackage) |
-| K-7 | Release | Jeder Push auf `dev` baut und signiert eine Vorabversion ohne vorgeschaltete Tests; der Schutz des Branches `dev` ist im Repository nicht nachprüfbar |
+| K-6 | Update | **Erledigt (21.11.2026):** Die signierte Prüfsummenliste nennt ihre Version (`version x.y.z`), die App lehnt eine Liste für eine andere Version ab (`the_signed_checksums_name_their_version`) |
+| K-7 | Release | **Erledigt (21.11.2026):** Veröffentlicht wird nur nach einer grünen CI (Kern, Android, Windows, Emulator) für genau diesen Commit (`workflow_run`, dazu eine eigene Prüfung im Release); der Schutz des Branches `dev` ist im Repository weiterhin nicht nachprüfbar |
 | K-8 | GhulDocs | „Mit App öffnen“: Dateinamen mit `: * ? " < > |` (von Android) lassen sich unter Windows nicht öffnen; zwei gleichnamige Dokumente teilen sich einen Pfad |
 | K-9 | GhulDocs | Wird während eines Speicherns der Papierkorb geleert und zugleich ein älterer Stand übernommen, kann das aufgeschobene Löschen Inhaltsdateien des neuen Stands treffen (die App lässt Öffnen während des Speicherns ohnehin nicht zu) |
 | K-10 | Scan | Zurück während des Speicherns eines Scans: scheitert das Speichern danach, sind die Seiten schon gelöscht |

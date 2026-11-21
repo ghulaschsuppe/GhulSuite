@@ -76,7 +76,7 @@ jobs:
       - name: cargo audit (Ausnahmen begründet in docs/AUDIT.md)
         working-directory: core
         run: |
-          rustup toolchain install stable --profile minimal
+          rustup toolchain install  # the version of rust-toolchain.toml
           command -v cargo-audit > /dev/null || cargo install cargo-audit --locked --quiet
           cargo audit
 
@@ -195,7 +195,7 @@ jobs:
       - name: Alltagstest und Stresstests
         working-directory: core
         run: |
-          rustup toolchain install stable --profile minimal
+          rustup toolchain install  # the version of rust-toolchain.toml
           cargo test --locked --release -p ghul-core --lib everyday -- --include-ignored --nocapture --test-threads=1
 
   windows:
@@ -240,7 +240,7 @@ jobs:
         # All checks run, also after a failing one: one run shows every error (tools/precheck.sh
         # finds most of them before a push).
         run: |
-          rustup toolchain install stable --profile minimal --component clippy
+          rustup toolchain install  # the version of rust-toolchain.toml
           rc=0
           cargo clippy --locked -p ghul-core --all-targets -- -D warnings || { echo "::error::Clippy (Windows)"; rc=1; }
           cargo test --locked --no-fail-fast -p ghul-core || { echo "::error::Tests (Windows)"; rc=1; }
@@ -348,7 +348,7 @@ jobs:
 
       - name: Rust-Toolchain
         run: |
-          rustup toolchain install stable --profile minimal
+          rustup toolchain install  # the version of rust-toolchain.toml
           rustup target add aarch64-linux-android x86_64-linux-android
           cargo ndk --version 2> /dev/null | grep -q "$CARGO_NDK_VERSION" || cargo install cargo-ndk --locked --force --version "$CARGO_NDK_VERSION"
 
