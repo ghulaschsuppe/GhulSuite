@@ -565,11 +565,6 @@ fun BusyBanner(state: AppState) {
         } else if (state.unsaved) {
             Banner(Icons.Filled.Save, stringResource(Res.string.file_unsaved_locked))
         }
-    } else if (state.saveOverdue && state.stack.isEmpty() && !state.busy && saving == null) {
-        // Not saved for days: a reminder (the save button in the header shows anyway).
-        Box(Modifier.fillMaxWidth().clickable { state.askSave() }.testTag("save-reminder")) {
-            Banner(Icons.Filled.Warning, stringResource(Res.string.save_reminder, formatDate(state.unsavedSince)))
-        }
     }
     // The running action itself is shown in front of everything (BusyOverlay).
 }

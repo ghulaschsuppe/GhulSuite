@@ -98,6 +98,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Warning
 import de.danerd.ghulsuite.model.VaultKindUi
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
@@ -399,12 +400,24 @@ private fun ownHeader(top: Screen) = top is Screen.EntryDetail ||
 
 @Composable
 private fun TabTopBar(state: AppState) {
-    GhulTopBar(
-        title = screenTitle(null, state.tab),
-        onLock = { state.lockNow() },
-        context = { AreaContext(state) },
-        actions = { TabActions(state) },
-    )
+    Column {
+        GhulTopBar(
+            title = screenTitle(null, state.tab),
+            onLock = { state.lockNow() },
+            context = { AreaContext(state) },
+            actions = { TabActions(state) },
+        )
+        SaveReminder(state)
+    }
+}
+
+/** Not saved into the suite file for days: a reminder under the header of every area (tap: save). */
+@Composable
+private fun SaveReminder(state: AppState) {
+    if (!state.saveOverdue || state.saveJob != null) return
+    Box(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 8.dp).clickable { state.askSave() }.testTag("save-reminder")) {
+        Banner(Icons.Filled.Warning, stringResource(Res.string.save_reminder, formatDate(state.unsavedSince)))
+    }
 }
 
 /** The icon that leaves a sub-page, the same for every screen (also those with their own header). */

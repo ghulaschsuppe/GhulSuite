@@ -411,7 +411,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         get() = unsaved && single == null
 
     /** The time (ms since 1970); tests may replace it. */
-    var clockMs: () -> Long = { nowSeconds() * 1000 }
+    var clockMs: () -> Long by mutableStateOf({ nowSeconds() * 1000 })
 
     /** Unsaved for [REMIND_UNSAVED_MS] or longer: a reminder above the lists. */
     val saveOverdue: Boolean

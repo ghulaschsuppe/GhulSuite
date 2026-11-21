@@ -310,7 +310,8 @@ class InteractionTest {
         shot("protection-save")
         onAllNodes(hasText("Save now") and hasAnyAncestor(isDialog())).onFirst().performClick()
         waitGone("Save the suite file now")
-        assertTrue(state.stack.lastOrNull() == Screen.SettingsPage(SetPage.FILE), state.stack.toString())
+        // The save dialog, as the save button opens it.
+        assertTrue(state.saveDialog != null)
         assertFalse(state.saveAfterProtection)
     }
 
@@ -1066,7 +1067,8 @@ class InteractionTest {
         onNodeWithTag(SAVE_CONFIRM_TAG, useUnmergedTree = true).performClick()
         waitFor("The file was saved elsewhere")
         assertTrue(part("on Laptop."))
-        assertTrue(shown("Save mine as a new file …"))
+        // Saving as a new file needs the file dialogs (not there in the headless tests).
+        assertEquals(de.danerd.ghulsuite.ui.filePickersAvailable, shown("Save mine as a new file …"))
         shot("save-conflict")
         assertTrue(fake.calls.none { it.startsWith("archiveSave") })
         onNodeWithTag("save-overwrite", useUnmergedTree = true).performClick()
@@ -1104,7 +1106,7 @@ class InteractionTest {
         waitUntil(timeoutMillis = 10_000) { tagged(SAVE_BUTTON_TAG) }
         runOnIdle { state.askSave() }
         waitUntil(timeoutMillis = 10_000) { part("There is no suite file yet.") }
-        assertTrue(shown("Choose a place …"))
+        assertEquals(de.danerd.ghulsuite.ui.filePickersAvailable, shown("Choose a place …"))
         shot("save-no-file")
     }
 
