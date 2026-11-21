@@ -15,16 +15,16 @@ Dieses Protokoll ist die Arbeitsliste für die nächsten Durchgänge: Jeder Fund
 
 ## 1. Ergebnis in Zahlen
 
-Stand 19.11.2026, nach dem Umbau zu GhulDocs (die Zahlen vor den Umbauten stehen in [`AUDIT.md`](AUDIT.md), Abschnitt 1).
+Stand 21.11.2026, nach den fünf Prüfrunden und dem Gutachten zur Veröffentlichung (die Zahlen vor den Umbauten stehen in [`AUDIT.md`](AUDIT.md), Abschnitt 1; alle Prüfläufe in [`PRUEFCHRONIK.md`](PRUEFCHRONIK.md)).
 
 | | |
 |---|---|
-| Testfunktionen im Kern | 211 (205 bei jedem Lauf, 6 lange oder mit externen Daten nur nachts) |
+| Testfunktionen im Kern | 265 (259 bei jedem Lauf, 6 lange oder mit externen Daten nur nachts) |
 | Einzelprüfungen pro Lauf | über 1 Million (u. a. Zeitzonen-Umrechnungen in 446 Zonen, Kalendertage, Fuzz-Eingaben, Base32-Schreibweisen, Wiederherstellungscodes, HOTP-Fälle, Passwortgenerator-Varianten, Aktionen „bekloppter Nutzer“, 515 Naughty Strings in jedem Feld) |
 | Davon gegen echte Server | keine mehr (Testserver mit dem Umbau entfallen); nachts badssl.com und x509-limbo gegen den TLS-Prüfer |
 | Externe Testsammlungen | Big List of Naughty Strings, Project Wycheproof (XChaCha20-Poly1305, HKDF, HMAC, P-256), RFC 4226/6238, JSONTestSuite, 304 Kalenderdateien aus den Tests von iCal4j und python-icalendar, Zeitzonen-Regeln aller Zonen der IANA-Datenbank |
 | Gefundene Fehler | Abschnitt 3 (Geschichte, F01 bis F149); zu GhulDocs und Scannen Abschnitt 10 |
-| Offene Punkte | werden in Paket G9 von [`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md) neu gesichtet |
+| Offene Punkte | kleine Punkte in [`AUDIT.md`](AUDIT.md) 4.5 (K-1 bis K-36), der Weg zur Veröffentlichung in [`PRUEFCHRONIK.md`](PRUEFCHRONIK.md) |
 
 Alle Tests sind grün (Kern, Android-Kotlin, Desktop-Tests). Die App-Tests im Emulator (Maestro, Monkey) laufen in der CI.
 

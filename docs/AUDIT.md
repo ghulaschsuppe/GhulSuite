@@ -191,7 +191,7 @@ Alle früher als „noch nicht eingebaut“ geführten Werkzeuge laufen jetzt je
 Bewusst nicht automatisiert: eine Geräte-Matrix (Samsung, Pixel, Xiaomi; Android 10 bis 16). Dafür braucht es echte
 Geräte oder einen bezahlten Gerätedienst; bis dahin deckt der Testplan die Hersteller-Eigenheiten von Hand ab.
 
-### 4.4 Kleine Punkte aus den Prüfrunden vom 21.11.2026
+### 4.5 Kleine Punkte aus den Prüfrunden vom 21.11.2026
 
 Fünf Runden mit je zwei unabhängigen Prüfern über das ganze Projekt. Regel: „hoch“ und „mittel“ werden sofort
 behoben (Testprotokoll PR-…), „klein“ (Randfall, Komfort, Werkzeug) kommt hierher und wird später erledigt.
@@ -216,7 +216,7 @@ behoben (Testprotokoll PR-…), „klein“ (Randfall, Komfort, Werkzeug) kommt 
 | K-16 | GhulCal | Android-Erinnerungen von Serien mit eigener Zone kommen nach einem Zonenwechsel bis zum nächsten Entsperren zur falschen Zeit; ein verschobener Einzeltermin einer solchen Serie kann den falschen Tag streichen |
 | K-17 | Import | Eine Zeile, die mit „otpauth“ beginnt (auch in einer Notiz), macht eine ganze CSV-Datei zur otpauth-Liste (die Vorschau zeigt dann 0 Einträge) |
 | K-18 | GhulCal | ICS-Export: „monatlich am 31.“ endet in anderen Apps anders als in GhulCal (RFC 5545 lässt kurze Monate aus); `UNTIL` als Ortszeit neben `TZID`, kein `VTIMEZONE` |
-| K-19 | Kern | Argon2-Werte einer fremden Datei (bis 2 GiB Speicher) werden vor dem Ableiten nicht gegen das Gerät geprüft: eine präparierte Datei kann die App nach Eingabe des Passworts beenden (nichts wird ersetzt) |
+| K-19 | Kern | **Erledigt (21.11.2026):** Abgeleitet wird mit höchstens 512 MiB (die App legt höchstens 256 MiB an); eine Datei, die mehr verlangt, wird vor dem Ableiten abgelehnt (`a_key_derivation_beyond_what_the_app_uses_is_refused_at_once`) |
 | K-20 | Kern | Die RP-ID eines Key-Slots kommt ungeprüft aus der Datei (unter Windows zeigt der Systemdialog dann eine fremde Domain an; nichts verlässt das Gerät) |
 | K-21 | Windows | Die PDF-Ansicht begrenzt die Seitenhöhe nicht (ein präpariertes PDF kann den Speicher ausschöpfen) |
 | K-22 | Android | Der Absturzbericht erscheint vor dem Bildschirmschutz und wird ohne „sensibel“-Markierung kopiert (er enthält nur Stacktraces) |

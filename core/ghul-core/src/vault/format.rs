@@ -26,6 +26,10 @@ pub const MAX_CREDENTIAL_ID_LEN: usize = 1023;
 /// files that would exhaust memory or time when opened.
 pub const MIN_MEMORY_KIB: u32 = 64 * 1024;
 pub const MAX_MEMORY_KIB: u32 = 2 * 1024 * 1024;
+/// The most memory this app derives with (K-19): the app itself makes files with at most 256 MiB
+/// (calibrated on the device), twice that is accepted. A file asking for more (allowed by the
+/// format, made by hand to stop the app) is refused before anything is allocated.
+pub const DERIVE_MAX_MEMORY_KIB: u32 = 512 * 1024;
 pub const MIN_ITERATIONS: u32 = 3;
 pub const MAX_ITERATIONS: u32 = 64;
 pub const MIN_PARALLELISM: u32 = 1;

@@ -627,3 +627,17 @@ fn check_vectors(version: u16) {
         assert_eq!(super::keys::file_tag(&ak, signed).as_slice(), tag);
     }
 }
+
+/// K-19: a file that asks for more memory than the app ever uses (allowed by the format, made
+/// by hand to stop the app) is refused at once, before anything is allocated.
+#[test]
+fn a_key_derivation_beyond_what_the_app_uses_is_refused_at_once() {
+    use super::format::{KdfParams, DERIVE_MAX_MEMORY_KIB, MAX_MEMORY_KIB};
+    let started = std::time::Instant::now();
+    let kdf = KdfParams { memory_kib: MAX_MEMORY_KIB, iterations: 64, parallelism: 1, salt: [7; 32] };
+    assert!(kdf.validate().is_ok(), "within the format");
+    assert!(matches!(super::keys::PasswordKey::derive("pw", &kdf), Err(super::VaultError::Format(_))));
+    let kdf = KdfParams { memory_kib: DERIVE_MAX_MEMORY_KIB + 1024, ..kdf };
+    assert!(super::keys::PasswordKey::derive("pw", &kdf).is_err());
+    assert!(started.elapsed() < std::time::Duration::from_secs(1), "nothing was derived");
+}

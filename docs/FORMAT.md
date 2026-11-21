@@ -123,6 +123,11 @@ Folge von Records: `tag (u16) ‖ len (u32) ‖ value[len]`.
 Das Minimum verhindert, dass eine manipulierte Datei schwache Parameter unterschiebt. Das Maximum verhindert,
 dass eine Datei beim Öffnen Speicher oder Zeit erschöpft. Die App kalibriert beim Anlegen auf ca. 1 Sekunde.
 
+**Grenze der App (21.11.2026, K-19):** Die App legt Dateien mit höchstens 256 MiB an (kalibriert auf dem Gerät)
+und leitet mit höchstens 512 MiB ab (`DERIVE_MAX_MEMORY_KIB`). Eine Datei, die mehr verlangt, ist zwar im Format
+erlaubt, stammt aber nicht von der App; sie wird abgelehnt, bevor Speicher belegt wird, statt die App zu beenden.
+Hebt eine spätere Version die Kalibrierung an, hebt sie diese Grenze mit (Kompatibilitätszusage).
+
 ### 3.2 Schlüssel-Slots
 
 ```
