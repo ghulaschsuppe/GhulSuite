@@ -92,6 +92,11 @@ pub fn update_check(
     if !key.verify(&sums, &sig) {
         return Err(bad("the signature of the update is not valid"));
     }
+    // The signed list names its version: an old, validly signed file offered under a newer
+    // tag (an older version with known faults) is refused.
+    if signed_version(&sums).as_deref() != Some(info.version.as_str()) {
+        return Err(bad("the signed checksums are for another version"));
+    }
     let sha256 = sha_for(&sums, &info.asset).ok_or_else(|| bad("the update file is not in the signed checksums"))?;
     Ok(Some(UpdateInfo { sha256, ..info }))
 }
@@ -242,6 +247,11 @@ fn pick(release: &serde_json::Value, current: &str, suffix: &str, prerelease: bo
         size: a["size"].as_u64().unwrap_or(0),
         sha256: String::new(),
     }))
+}
+
+/// The version a signed `SHA256SUMS` is for: its line "version <x.y.z>" (written by the release).
+fn signed_version(sums: &[u8]) -> Option<String> {
+    std::str::from_utf8(sums).ok()?.lines().find_map(|l| l.trim().strip_prefix("version ").map(|v| v.trim().to_owned()))
 }
 
 /// The SHA-256 of `name` in a `sha256sum` list ("<hex>  <name>" or "<hex> *<name>").
@@ -559,6 +569,14 @@ f3j2T3ZQ17VauB9iOzX7I9V6neeaHdUFnkjcMgaHR5uant+ua9qb79Qfig==
         );
         assert!(sha_for(SUMS, "GhulSuite-0.6.0.ap").is_none());
         assert!(sha_for(b"abc  x.apk\n", "x.apk").is_none());
+    }
+
+    #[test]
+    fn the_signed_checksums_name_their_version() {
+        let sums = b"version 0.6.0\n0000000000000000000000000000000000000000000000000000000000000000  GhulSuite.apk\n";
+        assert_eq!(signed_version(sums).as_deref(), Some("0.6.0"));
+        assert!(sha_for(sums, "GhulSuite.apk").is_some(), "the version line does not disturb the checksums");
+        assert_eq!(signed_version(b"0000  GhulSuite.apk\n"), None, "an old list without a version");
     }
 
     #[test]

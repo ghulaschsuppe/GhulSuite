@@ -60,6 +60,14 @@ expect fun rememberCreateSuiteFile(onCreated: (de.danerd.ghulsuite.model.SuiteFi
 @Composable
 expect fun rememberPickFolder(onPicked: (de.danerd.ghulsuite.model.FolderRef) -> Unit): () -> Unit
 
+/**
+ * Returns a launcher that asks to share the folder of a file (Android: kept across restarts),
+ * starting at the file given; [onGranted] afterwards (whether a folder was chosen). Nothing to do where files are written
+ * by path (Windows).
+ */
+@Composable
+expect fun rememberGrantFolder(onGranted: (picked: Boolean) -> Unit): (near: String) -> Unit
+
 /** Returns a launcher that opens the system file picker for a file of any size (read as a stream). */
 @Composable
 expect fun rememberOpenStream(onPicked: (de.danerd.ghulsuite.model.ByteSource) -> Unit): () -> Unit

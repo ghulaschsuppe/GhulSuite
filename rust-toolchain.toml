@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# One Rust version for local builds, the CI and the releases: what is released is what was tested,
+# and the same source gives the same build. Raise it on purpose (with a full CI run), never by itself.
+[toolchain]
+channel = "1.97.0"
+profile = "minimal"
+components = ["rustfmt", "clippy"]

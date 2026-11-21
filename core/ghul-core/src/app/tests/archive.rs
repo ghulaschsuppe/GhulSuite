@@ -856,3 +856,94 @@ fn a_removed_factor_is_not_brought_back_by_an_older_print() {
     let from_b = save(&b);
     assert_eq!(a.archive_target_bytes(from_b).unwrap(), ArchiveTarget::OtherProtection);
 }
+
+/// The device goes off while a suite file replaces the working copy, after any number of files
+/// written: at the next start the working copy before is back, complete, documents included,
+/// and the file can be opened again.
+#[test]
+fn a_device_that_goes_off_while_a_file_replaces_the_working_copy_keeps_the_state_before() {
+    use super::super::archive::in_memory::{source, BytesSink};
+    use super::super::archive::CRASH_AFTER_WRITES;
+    let read_doc = |s: &GhulSuite, v: &str, id: &str| {
+        let sink = Arc::new(BytesSink::default());
+        s.docs_read_file(v.into(), id.into(), sink.clone(), None).unwrap();
+        let out = std::mem::take(&mut *sink.0.lock().unwrap());
+        out
+    };
+    let mut crash_at = 0usize;
+    loop {
+        let d = Dirs::new(&format!("crash-replace-{crash_at}"));
+        let kf = generate_keyfile();
+        let a = d.suite();
+        a.create(
+            options(PW, Some(kf.clone()), &[(VaultKind::Pass, "Privat"), (VaultKind::Docs, "Dokumente")]),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let pass = vault_id(&a, "Privat");
+        let docs = vault_id(&a, "Dokumente");
+        a.save_entry(pass.clone(), login("Vorher", "u", "1")).unwrap();
+        let old_doc = a
+            .docs_add_file(
+                docs.clone(),
+                None,
+                "alt.txt".into(),
+                "text/plain".into(),
+                source(b"der alte Stand".to_vec()),
+                None,
+            )
+            .unwrap();
+        let file = save(&a);
+        // Another device makes a newer state with other content.
+        let db = Dirs::new(&format!("crash-replace-b-{crash_at}"));
+        let b = db.suite();
+        open(&b, &file, &kf);
+        b.archive_accept().unwrap();
+        b.save_entry(vault_id(&b, "Privat"), login("Nachher", "u", "2")).unwrap();
+        b.docs_add_file(
+            vault_id(&b, "Dokumente"),
+            None,
+            "neu.txt".into(),
+            "text/plain".into(),
+            source(b"neu".to_vec()),
+            None,
+        )
+        .unwrap();
+        let newer = save(&b);
+        // Meanwhile A changed its working copy too (a state that is only here).
+        a.save_entry(pass.clone(), login("Nur auf A", "u", "3")).unwrap();
+
+        open(&a, &newer, &kf);
+        CRASH_AFTER_WRITES.with(|c| c.set(Some(crash_at)));
+        let r = a.archive_accept();
+        let crashed = CRASH_AFTER_WRITES.with(|c| c.get()).is_none() && r.is_err();
+        CRASH_AFTER_WRITES.with(|c| c.set(None));
+        if !crashed {
+            // More writes than the replacing has: it went through.
+            r.unwrap();
+            assert!(crash_at > 0, "at least one point to go off at");
+            break;
+        }
+        drop(a);
+        // The next start: the state before is back.
+        let a = d.suite();
+        a.unlock(PW.into(), None, None, None, Some(kf.clone())).unwrap();
+        let titles: Vec<String> = a.list_entries(VaultKind::Pass, None).unwrap().into_iter().map(|e| e.title).collect();
+        assert!(
+            titles.contains(&"Nur auf A".to_string()) && !titles.contains(&"Nachher".to_string()),
+            "after {crash_at}: {titles:?}"
+        );
+        assert_eq!(read_doc(&a, &docs, &old_doc.id), b"der alte Stand", "after {crash_at}");
+        let names: Vec<String> = a.docs_list(docs.clone(), None).unwrap().into_iter().map(|i| i.name).collect();
+        assert_eq!(names, vec!["alt.txt".to_string()], "after {crash_at}");
+        a.docs_verify(docs.clone()).unwrap();
+        // And the newer file can be taken now, completely.
+        open(&a, &newer, &kf);
+        a.archive_accept().unwrap();
+        let titles: Vec<String> = a.list_entries(VaultKind::Pass, None).unwrap().into_iter().map(|e| e.title).collect();
+        assert!(titles.contains(&"Nachher".to_string()), "{titles:?}");
+        crash_at += 1;
+    }
+}

@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import de.danerd.ghulsuite.model.ArchiveTargetInfoUi
 import de.danerd.ghulsuite.model.ArchiveTargetUi
+import de.danerd.ghulsuite.model.SafeSaveUi
 import de.danerd.ghulsuite.model.SuiteFileRef
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.*
@@ -171,6 +172,10 @@ fun SaveSuiteDialog(state: AppState) {
     }
     val step = state.saveStep
     val target = backend.suiteFile()
+    // Android: a folder shared once makes saving safe (new file next to the old one, then swapped).
+    var shared by androidx.compose.runtime.remember { mutableStateOf(0) }
+    val grant = rememberGrantFolder { picked -> if (picked) shared++ }
+    val safe = androidx.compose.runtime.remember(target, shared) { target?.let { backend.safeSave(it) } }
     val dismiss = { state.closeSaveDialog() }
     GhulSheet(onDismissRequest = dismiss, title = stringResource(
         when (step) {
@@ -190,6 +195,18 @@ fun SaveSuiteDialog(state: AppState) {
                 val at = backend.archiveSavedAt()
                 Hint(if (at > 0) stringResource(Res.string.save_last, formatDateTime(at)) else stringResource(Res.string.save_never))
                 Hint(stringResource(Res.string.save_hint))
+                when (safe) {
+                    SafeSaveUi.FOLDER_NEEDED -> {
+                        // A folder was chosen, and still not safe: Android does not share every
+                        // folder (Download, the top of the storage or of an SD card), or another one.
+                        Hint(stringResource(if (shared > 0) Res.string.save_safe_folder_refused else Res.string.save_safe_folder))
+                        OutlinedButton(onClick = { target?.let { grant(it.id) } }, modifier = Modifier.fillMaxWidth()) {
+                            Text(stringResource(Res.string.save_safe_grant))
+                        }
+                    }
+                    SafeSaveUi.OVERWRITES -> Hint(stringResource(Res.string.save_overwrites))
+                    else -> {}
+                }
                 if (target != null) {
                     Button(onClick = { state.checkAndSave(target) }, modifier = Modifier.fillMaxWidth().testTag(SAVE_CONFIRM_TAG)) {
                         Text(stringResource(Res.string.file_save))

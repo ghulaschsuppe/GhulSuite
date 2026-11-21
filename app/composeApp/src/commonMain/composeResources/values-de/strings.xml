@@ -1384,4 +1384,8 @@
     <string name="wz_backup_failed">Die Suite ist angelegt, aber das Backup fehlt noch. Versuche den zweiten Key noch einmal (erst den ersten berühren) oder nimm stattdessen eine Schlüsseldatei.</string>
     <string name="save_conflict_protection">Die Suite-Datei an diesem Ort hat einen anderen Schutz: Auf einem anderen Gerät wurde inzwischen das Passwort geändert oder ein Key entfernt. Überschreiben würde diese Änderung rückgängig machen. Öffne die Datei zuerst (mit dem neuen Passwort bzw. Key) oder sichere deinen Stand als neue Datei.</string>
     <string name="file_opened_read_only">In diese Datei darf die App nicht zurückschreiben. Sichere mit „Speichern unter“ an einen Ort deiner Wahl.</string>
+    <string name="save_safe_folder">Damit beim Speichern nie eine halbe Datei entsteht, gib den Ordner der Suite-Datei einmal frei. Dann schreibt die App die neue Datei daneben, prüft sie und tauscht erst danach die alte aus.</string>
+    <string name="save_safe_grant">Ordner freigeben</string>
+    <string name="save_overwrites">Dieser Speicherort (z. B. eine Cloud-App) erlaubt kein Austauschen: Die Datei dort wird direkt überschrieben. Scheitert das, bleibt alles in der App erhalten; speichere dann an einem anderen Ort.</string>
+    <string name="save_safe_folder_refused">Dieser Ordner hilft nicht: Android gibt den Ordner „Download“ und die oberste Ebene des Speichers oder einer SD-Karte nicht frei, oder es war nicht der Ordner der Suite-Datei. Speichere die Suite-Datei mit „Speichern unter …“ in einem eigenen Unterordner (z. B. „GhulSuite“) und gib diesen frei.</string>
 </resources>

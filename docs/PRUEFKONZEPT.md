@@ -49,11 +49,11 @@ Jeder Bereich hat eine Liste, die mit jedem Fund wächst. Beispiele:
 1. **Einfrieren:** Ein Stand (Commit) wird geprüft, nicht ein bewegliches Ziel.
 2. **Prüfen:** Je Bereich ein Prüfer, parallel. Jeder liefert eine Liste nach festem Schema.
 3. **Gegenprüfen:** Jeder Fund an einen Gegenprüfer. Widerlegt: verworfen, mit Grund notiert.
-4. **Sortieren:** hoch und mittel werden behoben, klein kommt in AUDIT.md 4.4.
+4. **Sortieren:** hoch und mittel werden behoben, klein kommt in AUDIT.md 4.5.
 5. **Beheben:** je Fund ein Beheber; zuerst der scheiternde Test, dann die Behebung, dann
    `tools/precheck.sh`.
 6. **Nachprüfen:** frischer Nachprüfer je Behebung. Neue Funde gehen zurück zu Schritt 3.
-7. **Festhalten:** Eintrag im TESTPROTOKOLL mit Testname; Prüfliste des Bereichs um die Frage ergänzt,
+7. **Festhalten:** Eintrag im TESTPROTOKOLL mit Testname und ein Eintrag der Runde in der PRUEFCHRONIK.md; Prüfliste des Bereichs um die Frage ergänzt,
    die den Fund gefunden hätte.
 
 ## 5. Wann ist es genug?

@@ -18,6 +18,9 @@ Dieser Bericht fasst alle bisherigen Runden zusammen und sagt ehrlich, was offen
 
 ## 1. Die Runden
 
+Alle Prüfläufe, auch die künftigen, und die Geschichte des Konzepts stehen chronologisch in der
+[Prüf-Chronik](PRUEFCHRONIK.md); hier die Runden bis 20.11.2026 im Einzelnen.
+
 | Datum | Runde | Ergebnis |
 |---|---|---|
 | 11.11.2026 | Audit 0.5.0: Freigabelinks, Empfängerseite, PHP-Server-Modul, FTPS, HTTPS-Client, Teilen an andere Apps, OpenPGP, Abhängigkeiten | 8 Befunde (A1 bis A8) und 2 Abhängigkeits-Hinweise, alle behoben bzw. begründet |
@@ -128,7 +131,7 @@ Nichts davon gibt einem Angreifer ohne Passwort **und** zweiten Faktor Zugriff a
 
 | Nr. | Entscheidung | Begründung |
 |---|---|---|
-| L4, B17 | **Ein Signaturschlüssel für alles:** Entwicklerversionen aller eigenen Branches und spätere Veröffentlichungen werden mit demselben Schlüssel signiert, ein getrennter Release-Schlüssel ist nicht vorgesehen | Entwicklerversionen sollen sich über die installierte App aktualisieren lassen; mit einem anderen Schlüssel müsste man sie erst deinstallieren und verlöre die Daten auf dem Gerät. Ein zweiter Schlüssel schützte vor allem gegen einen übernommenen GitHub-Zugang, und mit dem ließe sich auch `main` ändern. Schutz: Der Schlüssel steht nur im eigenen Repository bereit (bei Pushes und bei Pull Requests aus diesem Repository, seit 16.11.2026, damit ein Push mit offenem Pull Request nicht doppelt läuft), nie bei Pull Requests aus Forks; pushen und solche Pull Requests anlegen kann nur, wer Schreibrecht hat, also der Inhaber. Voraussetzungen: Zwei-Faktor-Anmeldung bei GitHub (Passkey oder Security Key), eine Offline-Sicherung der Keystore-Datei und ihres Passworts (ohne sie lässt sich keine installierte App mehr aktualisieren), Abhängigkeiten nur bewusst aktualisieren (Gradle-Prüfsummen, `Cargo.lock`) |
+| L4, B17 | **Ein Signaturschlüssel für alles:** Entwicklerversionen aller eigenen Branches und spätere Veröffentlichungen werden mit demselben Schlüssel signiert, ein getrennter Release-Schlüssel ist nicht vorgesehen | Entwicklerversionen sollen sich über die installierte App aktualisieren lassen; mit einem anderen Schlüssel müsste man sie erst deinstallieren und verlöre die Daten auf dem Gerät. Ein zweiter Schlüssel schützte vor allem gegen einen übernommenen GitHub-Zugang, und mit dem ließe sich auch `main` ändern. Schutz: Der Schlüssel steht nur im eigenen Repository bereit (bei Pushes und bei Pull Requests aus diesem Repository, seit 16.11.2026, damit ein Push mit offenem Pull Request nicht doppelt läuft), nie bei Pull Requests aus Forks; pushen und solche Pull Requests anlegen kann nur, wer Schreibrecht hat, also der Inhaber. Am 21.11.2026 nach dem unabhängigen Gutachten erneut so entschieden (der Inhaber behält die Schlüssel; sein GitHub-Konto ist mit einem Hardware-Key gesichert, veröffentlicht wird nur nach grüner CI). Voraussetzungen: Zwei-Faktor-Anmeldung bei GitHub (Passkey oder Security Key), eine Offline-Sicherung der Keystore-Datei und ihres Passworts (ohne sie lässt sich keine installierte App mehr aktualisieren), Abhängigkeiten nur bewusst aktualisieren (Gradle-Prüfsummen, `Cargo.lock`) |
 | F24 | Titel werden ohne Leerraum am Rand gespeichert | Absicht (Suche, Sortierung, Anzeige); alles Geheime bleibt Zeichen für Zeichen erhalten |
 
 ### 4.2 Nachprüfbarkeit des Builds
@@ -140,15 +143,23 @@ Nichts davon gibt einem Angreifer ohne Passwort **und** zweiten Faktor Zugriff a
   `cargo deny` dasselbe.
 - **Reproduzierbarkeit (L4, B17):** Der Nachtlauf baut den Kern zweimal in verschiedenen Ordnern und verlangt
   byte-gleiche Ergebnisse. Für die ganze APK (Kotlin, Ressourcen) ist das noch nicht nachgewiesen; das gehört zu
-  festen Releases (Issue #6).
+  festen Releases (Issue #6). Seit 21.11.2026 legt `rust-toolchain.toml` eine Rust-Version für lokale Builds, CI
+  und Releases fest: Veröffentlicht wird, was getestet wurde.
 
 - **Updates (Runde 7):** Der Updater ist ein neuer Weg, Code auf das Gerät zu bringen. Geschützt durch: signierte
   Prüfsummen (RSA oder P-256, geprüft mit `ring`), Größe und SHA-256 der Datei vor der Übergabe an den Installer,
   nur `https` zu `api.github.com`, `github.com` und `*.githubusercontent.com` (auch Weiterleitungen), Download
   höchstens 600 MB in eine Datei statt in den Speicher, Entwürfe und auf dem stabilen Kanal Vorabversionen werden
   nie angeboten, Installation nur nach Zustimmung. Wer den Signaturschlüssel hat, kann Updates ausliefern; das war
-  mit der APK-Signatur schon vorher so (AUDIT 4.1). Ein kompromittiertes GitHub-Konto allein reicht nicht: Ohne den
-  Schlüssel passt die Signatur nicht. Rücksprung auf ältere Versionen bietet die App nie an (nur neuere).
+  mit der APK-Signatur schon vorher so (AUDIT 4.1). **Richtiggestellt am 21.11.2026:** Hier stand, ein
+  kompromittiertes GitHub-Konto allein reiche nicht. Das stimmt nicht. Der Schlüssel liegt als Secret im
+  Repository; wer Schreibrecht hat, kann einen Workflow ändern und damit signieren. Ein übernommenes Konto des
+  Inhabers reicht also für ein signiertes Update. Schutz dagegen: Schreibrecht hat nur der Inhaber, sein Konto ist
+  mit einem Hardware-Key gesichert; veröffentlicht wird nur nach einer grünen CI für genau diesen Commit, und der
+  Release-Workflow kommt immer vom Standardzweig, ein Pull Request kann ihn nicht ändern (`release.yml`,
+  `workflow_run`). Die signierte Prüfsummenliste nennt ihre Version, die App prüft sie: Eine alte, gültig signierte
+  Datei lässt sich nicht unter einem neuen Tag anbieten (K-6). Rücksprung auf ältere Versionen bietet die App nie
+  an (nur neuere).
 
 ### 4.3 Grenzen, die keine App lösen kann
 
@@ -183,7 +194,7 @@ Alle früher als „noch nicht eingebaut“ geführten Werkzeuge laufen jetzt je
 Bewusst nicht automatisiert: eine Geräte-Matrix (Samsung, Pixel, Xiaomi; Android 10 bis 16). Dafür braucht es echte
 Geräte oder einen bezahlten Gerätedienst; bis dahin deckt der Testplan die Hersteller-Eigenheiten von Hand ab.
 
-### 4.4 Kleine Punkte aus den Prüfrunden vom 21.11.2026
+### 4.5 Kleine Punkte aus den Prüfrunden vom 21.11.2026
 
 Fünf Runden mit je zwei unabhängigen Prüfern über das ganze Projekt. Regel: „hoch“ und „mittel“ werden sofort
 behoben (Testprotokoll PR-…), „klein“ (Randfall, Komfort, Werkzeug) kommt hierher und wird später erledigt.
@@ -195,8 +206,8 @@ behoben (Testprotokoll PR-…), „klein“ (Randfall, Komfort, Werkzeug) kommt 
 | K-3 | CI | Ein sofort abgebrochener Monkey-Lauf gilt als „ohne Absturz“; ein leeres Systemprotokoll im Emulator nur als Warnung |
 | K-4 | Werkzeuge | `precheck.sh` räumt relativ zum Aufrufordner auf und meldet bei übersprungenen Prüfungen trotzdem „Alles grün“ |
 | K-5 | Werkzeuge | `intent-attacks.sh` greift noch Aktionen von GhulMail und GhulDrive an, die es nicht mehr gibt; der deutsche Rundgang (`tour-de.yaml`) zeigt GhulDocs und zwei Optionsseiten nicht |
-| K-6 | Update | Die signierte Prüfsummendatei nennt die Version nicht; ein altes, korrekt signiertes Paket ließe sich unter neuem Tag anbieten (Android lehnt kleinere Versionen ab, beim MSI schützt nur jpackage) |
-| K-7 | Release | Jeder Push auf `dev` baut und signiert eine Vorabversion ohne vorgeschaltete Tests; der Schutz des Branches `dev` ist im Repository nicht nachprüfbar |
+| K-6 | Update | **Erledigt (21.11.2026):** Die signierte Prüfsummenliste nennt ihre Version (`version x.y.z`), die App lehnt eine Liste für eine andere Version ab (`the_signed_checksums_name_their_version`) |
+| K-7 | Release | **Erledigt (21.11.2026):** Veröffentlicht wird nur nach einer grünen CI (Kern, Android, Windows, Emulator) für genau diesen Commit (`workflow_run`, dazu eine eigene Prüfung im Release); der Schutz des Branches `dev` ist im Repository weiterhin nicht nachprüfbar |
 | K-8 | GhulDocs | „Mit App öffnen“: Dateinamen mit `: * ? " < > |` (von Android) lassen sich unter Windows nicht öffnen; zwei gleichnamige Dokumente teilen sich einen Pfad |
 | K-9 | GhulDocs | Wird während eines Speicherns der Papierkorb geleert und zugleich ein älterer Stand übernommen, kann das aufgeschobene Löschen Inhaltsdateien des neuen Stands treffen (die App lässt Öffnen während des Speicherns ohnehin nicht zu) |
 | K-10 | Scan | Zurück während des Speicherns eines Scans: scheitert das Speichern danach, sind die Seiten schon gelöscht |
@@ -208,7 +219,7 @@ behoben (Testprotokoll PR-…), „klein“ (Randfall, Komfort, Werkzeug) kommt 
 | K-16 | GhulCal | Android-Erinnerungen von Serien mit eigener Zone kommen nach einem Zonenwechsel bis zum nächsten Entsperren zur falschen Zeit; ein verschobener Einzeltermin einer solchen Serie kann den falschen Tag streichen |
 | K-17 | Import | Eine Zeile, die mit „otpauth“ beginnt (auch in einer Notiz), macht eine ganze CSV-Datei zur otpauth-Liste (die Vorschau zeigt dann 0 Einträge) |
 | K-18 | GhulCal | ICS-Export: „monatlich am 31.“ endet in anderen Apps anders als in GhulCal (RFC 5545 lässt kurze Monate aus); `UNTIL` als Ortszeit neben `TZID`, kein `VTIMEZONE` |
-| K-19 | Kern | Argon2-Werte einer fremden Datei (bis 2 GiB Speicher) werden vor dem Ableiten nicht gegen das Gerät geprüft: eine präparierte Datei kann die App nach Eingabe des Passworts beenden (nichts wird ersetzt) |
+| K-19 | Kern | **Erledigt (21.11.2026):** Abgeleitet wird mit höchstens 512 MiB (die App legt höchstens 256 MiB an); eine Datei, die mehr verlangt, wird vor dem Ableiten abgelehnt (`a_key_derivation_beyond_what_the_app_uses_is_refused_at_once`) |
 | K-20 | Kern | Die RP-ID eines Key-Slots kommt ungeprüft aus der Datei (unter Windows zeigt der Systemdialog dann eine fremde Domain an; nichts verlässt das Gerät) |
 | K-21 | Windows | Die PDF-Ansicht begrenzt die Seitenhöhe nicht (ein präpariertes PDF kann den Speicher ausschöpfen) |
 | K-22 | Android | Der Absturzbericht erscheint vor dem Bildschirmschutz und wird ohne „sensibel“-Markierung kopiert (er enthält nur Stacktraces) |
@@ -222,10 +233,12 @@ behoben (Testprotokoll PR-…), „klein“ (Randfall, Komfort, Werkzeug) kommt 
 | K-30 | Tests | Fehlende Oberflächentests: Backup-Schritt im Assistenten mit zweitem Key, Konflikt „anderer Schutz“ im Speichern-Dialog, Hinweis beim Öffnen einer schreibgeschützten Datei |
 | K-31 | GhulDocs | Mehrere Dokumente auf einmal verschieben oder löschen fehlt (nur einzeln) |
 | K-32 | App | Barrierefreiheit: einigen Symbolknöpfen fehlt ein Text für Screenreader; die blasse Hinweisschrift liegt knapp unter WCAG AA |
-| K-33 | App | Vor dem Speichern wird der freie Platz am Ziel nicht geprüft (ein voller Stick scheitert erst beim Schreiben; ob die alte Datei dann heil bleibt, hängt unter Android vom Speicherort ab: prüfen) |
+| K-33 | App | **Teilweise erledigt (21.11.2026):** Unter Android schreibt die App, wenn der Ordner der Suite-Datei einmal freigegeben ist (Stick, SD-Karte, Gerätespeicher), die neue Datei daneben, prüft sie und tauscht erst dann; vorher bleibt die alte unberührt, ein voller Stick scheitert ohne Schaden. Ohne Freigabe und bei Cloud-Apps wird weiter direkt überschrieben (mit Hinweis). Auf einem Gerät noch nicht geprüft (Testplan E19e) |
 | K-34 | Update | Der Installer prüft nicht noch einmal auf eine neuere Version, wenn zwischen Prüfung und Start Zeit vergangen ist |
-| K-35 | Format | Es gibt keine Zusage, welche ältere App-Version eine neue Suite-Datei noch öffnet; vor der ersten öffentlichen Version festlegen (z. B. „N-1“) und testen |
+| K-35 | Format | **Erledigt (21.11.2026):** Format 3 ist eingefroren, jede spätere Version liest es (Zusage in FORMAT.md, echte Dateien als Testfälle in `core/ghul-core/tests/fixtures/format3`) |
 | K-36 | Kern | Entfernen zwei Geräte unabhängig denselben Key, haben beide dieselben Slots, aber verschiedene Faktorgeheimnisse; öffnet das eine die Datei des anderen, bleibt das Schnell-Entsperren eingerichtet und scheitert beim nächsten Mal (dann Passwort und Key; kein Zugang für Fremde) |
+| K-37 | Android | Nach dem ersten sicheren Speichern hängt der Zugriff auf die Suite-Datei an der Freigabe des Ordners (Android nimmt beim Umbenennen den Zugriff auf das einzelne Dokument weg). Wird die Freigabe zurückgenommen oder von Android verdrängt (höchstens 128 dauerhafte Freigaben), ist die Datei „nicht erreichbar“, bis der Ordner wieder freigegeben oder die Datei neu gewählt wird; kein Datenverlust. Gezielt „Ordner erneut freigeben“ anbieten. Auf einem Gerät prüfen, ob die Kennung nach dem Umbenennen dieselbe Form hat wie aus der Dateiauswahl (Testplan E19e) |
+| K-38 | Android | Während eines sicheren Speicherns sehen gleichzeitige Leser kurz keine Suite-Datei (höchstens eine falsche Meldung „nicht lesbar“, nichts geht kaputt); eine liegen gebliebene `<Name>.alt`, die sich nicht wegräumen lässt, verhindert jedes weitere Speichern an diesem Ort, ohne dass der Dialog sagt warum (eigener Fehlertext fehlt) |
 
 ## 5. Geprüft und in Ordnung
 

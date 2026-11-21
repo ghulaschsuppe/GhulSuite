@@ -49,7 +49,7 @@ jobs:
       - name: Lange Läufe
         working-directory: core
         run: |
-          rustup toolchain install stable --profile minimal
+          rustup toolchain install  # the version of rust-toolchain.toml
           cargo test --locked --release -p ghul-core --lib -- --include-ignored --nocapture --test-threads=2 \
             crazy everyday attacks absurd fuzz_tests wycheproof collections properties badssl
 
@@ -67,7 +67,7 @@ jobs:
         run: cp -r a b
       - name: Zweimal bauen und vergleichen
         run: |
-          rustup toolchain install stable --profile minimal
+          rustup toolchain install  # the version of rust-toolchain.toml
           for d in a b; do
             (cd "$d/core" && SOURCE_DATE_EPOCH=0 CARGO_INCREMENTAL=0 \
               RUSTFLAGS="--remap-path-prefix=$GITHUB_WORKSPACE/$d=/src --remap-path-prefix=$HOME/.cargo=/cargo" \
@@ -167,7 +167,7 @@ jobs:
       - name: Kern bauen (Tests)
         working-directory: core
         run: |
-          rustup toolchain install stable --profile minimal
+          rustup toolchain install  # the version of rust-toolchain.toml
           cargo test --locked -p ghul-core --lib --no-run
       - name: TLS-Zertifikatsprüfung gegen x509-limbo
         working-directory: core

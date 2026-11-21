@@ -9,7 +9,7 @@ use zeroize::Zeroizing;
 
 use super::error::{GhulError, Result};
 use crate::totp::OtpAlgorithm;
-use crate::vault::format::{MAX_MEMORY_KIB, MIN_ITERATIONS, MIN_MEMORY_KIB};
+use crate::vault::format::{DERIVE_MAX_MEMORY_KIB, MAX_MEMORY_KIB, MIN_ITERATIONS, MIN_MEMORY_KIB};
 
 #[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OtpAlgo {
@@ -286,7 +286,8 @@ pub fn calibrate_kdf(target_ms: u32, max_memory_mib: u32) -> Result<KdfChoice> {
     crate::kdf::argon2id(b"calibration", b"ghulsuite-calibration", MIN_MEMORY_KIB, MIN_ITERATIONS, 1)
         .map_err(|msg| GhulError::InvalidInput { msg })?;
     let base_ms = (t.elapsed().as_millis() as u64).max(1);
-    let max_kib = (max_memory_mib.saturating_mul(1024)).clamp(MIN_MEMORY_KIB, MAX_MEMORY_KIB);
+    let max_kib =
+        (max_memory_mib.saturating_mul(1024)).clamp(MIN_MEMORY_KIB, MAX_MEMORY_KIB.min(DERIVE_MAX_MEMORY_KIB));
     let mut memory_kib = MIN_MEMORY_KIB;
     let mut estimate = base_ms;
     while memory_kib * 2 <= max_kib && estimate * 2 <= target_ms as u64 {

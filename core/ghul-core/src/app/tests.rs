@@ -1134,6 +1134,7 @@ mod collections;
 mod crazy_user;
 mod docs;
 mod everyday;
+mod format_freeze;
 mod properties;
 mod rekey;
 mod single;

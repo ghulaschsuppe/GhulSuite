@@ -7,6 +7,31 @@
 [`tools/verify_testvectors.py`](../tools/verify_testvectors.py) (Python, andere Krypto-Bibliotheken)
 
 Diese Spezifikation ist so geschrieben, dass eine zweite Implementierung allein daraus entstehen kann.
+
+## Kompatibilitätszusage (Format 3 ist eingefroren, seit 21.11.2026)
+
+Für echte Passwörter und Dokumente darf ein Update nie den Zugang kosten. Deshalb gilt ab Format 3:
+
+1. **Jede spätere Version der App liest jede Datei im Format 3** (alle oben genannten Dateiarten), mit ihrem
+   ganzen Inhalt, mit Passwort und Key oder Schlüsseldatei und mit dem Wiederherstellungscode. Das gilt auch
+   dann, wenn ein späteres Format 4 eingeführt wird: Format 3 wird dann weiter gelesen und beim nächsten Speichern
+   ins neue Format übertragen, nie still verworfen.
+2. **Innerhalb von Format 3 kommt nur Neues dazu, nichts ändert seine Bedeutung.** Neue Angaben sind neue,
+   optionale Schlüssel im Inhalt. Ältere Versionen bewahren Schlüssel, die sie nicht kennen, und schreiben sie
+   unverändert zurück (`extra`, Test `unknown_keys_are_preserved`): Wer mit einer älteren und einer neueren App
+   abwechselnd arbeitet, verliert nichts.
+3. **Was nicht nur hinzukommt** (ein anderes Verfahren, ein geänderter Header, eine andere Bedeutung), ist ein
+   neues Format mit neuer Nummer. Eine ältere App meldet dann „bitte aktualisieren“ (`UpdateRequired`) und öffnet
+   die Datei nicht halb.
+4. **Nachweis:** Echte Dateien vom 21.11.2026 liegen unverändert im Repository
+   ([`core/ghul-core/tests/fixtures/format3`](../core/ghul-core/tests/fixtures/format3/README.md)): eine
+   Suite-Datei mit allen vier Bereichen, ein einzelner Tresor, die Schlüsseldatei und der Wiederherstellungscode.
+   Die Tests `app::tests::format_freeze` öffnen sie bei jedem Lauf und prüfen den Inhalt; ihre Prüfsummen stehen
+   im Test, damit niemand sie durch neu erzeugte ersetzt. Kommt ein Format 4, kommt ein Ordner `format4` dazu,
+   `format3` bleibt.
+
+Dateien der Formate 1 und 2 stammen nur von Entwicklerversionen vor dem 20.11.2026 und werden nicht gelesen
+(`OldFormat`, siehe unten).
 Alle Zahlen sind **Little-Endian**, sofern nicht anders angegeben. `‖` bedeutet Aneinanderhängen von Bytes.
 
 ---
@@ -97,6 +122,11 @@ Folge von Records: `tag (u16) ‖ len (u32) ‖ value[len]`.
 
 Das Minimum verhindert, dass eine manipulierte Datei schwache Parameter unterschiebt. Das Maximum verhindert,
 dass eine Datei beim Öffnen Speicher oder Zeit erschöpft. Die App kalibriert beim Anlegen auf ca. 1 Sekunde.
+
+**Grenze der App (21.11.2026, K-19):** Die App legt Dateien mit höchstens 256 MiB an (kalibriert auf dem Gerät)
+und leitet mit höchstens 512 MiB ab (`DERIVE_MAX_MEMORY_KIB`). Eine Datei, die mehr verlangt, ist zwar im Format
+erlaubt, stammt aber nicht von der App; sie wird abgelehnt, bevor Speicher belegt wird, statt die App zu beenden.
+Hebt eine spätere Version die Kalibrierung an, hebt sie diese Grenze mit (Kompatibilitätszusage).
 
 ### 3.2 Schlüssel-Slots
 

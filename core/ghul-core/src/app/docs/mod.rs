@@ -17,6 +17,7 @@ pub(crate) mod blob;
 mod index;
 mod vaults;
 pub(crate) use vaults::Entries;
+pub(in crate::app) use vaults::KEEP_MARK;
 
 use std::collections::HashSet;
 use std::fs;
