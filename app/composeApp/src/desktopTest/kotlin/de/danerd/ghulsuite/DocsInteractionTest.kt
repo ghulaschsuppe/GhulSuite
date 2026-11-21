@@ -646,11 +646,11 @@ class DocsInteractionTest {
     ) { _, _ ->
         waitFor("New vault")
         text("New vault").performClick()
-        waitUntil(timeoutMillis = 10_000) { onAllNodes(hasText("GhulDocs") and hasAnyAncestor(isDialog())).fetchSemanticsNodes().isNotEmpty() }
-        onAllNodes(hasText("GhulDocs") and hasAnyAncestor(isDialog()), useUnmergedTree = true).onFirst().performClick()
         waitPart("at most 3 GhulDocs vaults")
-        onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog())).onFirst().performTextReplacement("Vierter")
-        // GhulDocs was not chosen: "Create" makes a GhulPass vault, never a fourth GhulDocs vault.
+        // GhulDocs is not offered at all (no choice that does nothing); the other areas are.
+        assertTrue(onAllNodes(hasText("GhulDocs") and hasAnyAncestor(isDialog()), useUnmergedTree = true).fetchSemanticsNodes().isEmpty())
+        assertTrue(onAllNodes(hasText("GhulPass") and hasAnyAncestor(isDialog()), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        assertTrue(onAllNodes(hasText("GhulCal") and hasAnyAncestor(isDialog()), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
         shot("fourth-docs-vault")
     }
 }

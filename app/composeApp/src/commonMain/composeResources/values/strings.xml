@@ -1333,4 +1333,13 @@
     <string name="docs_usage_failed">Usage cannot be read</string>
     <string name="docs_vaults_full">A suite has at most 3 GhulDocs vaults (up to 1 GB each). Delete one to create a new one or add a GhulDocs package.</string>
     <string name="core_docs_vaults_many">This file holds more GhulDocs vaults than a suite may have (at most 3) and is no valid suite file. It was not opened.</string>
+    <string name="file_unsaved_locked">There are unsaved changes. Unlock to save them in the suite file.</string>
+    <string name="file_auto_save">Save automatically</string>
+    <string name="file_auto_save_hint">A few seconds after every change, the app writes the suite file to its place by itself, just as "Save" does (written, read back, checked). If the place cannot be reached (e.g. the USB stick is not plugged in), it tries again every 30 seconds and tells you. If the file was saved on another device meanwhile, it overwrites nothing by itself but lets you decide. With many documents a save can take a while; turned off, you save only with "Save".</string>
+    <string name="file_auto_saving">Saving to the suite file automatically …</string>
+    <string name="file_auto_changed_elsewhere">Not saved automatically: the suite file was saved elsewhere meanwhile. Tap to decide.</string>
+    <string name="file_auto_unreachable">Not saved: the place of the suite file cannot be reached right now (e.g. stick not plugged in). It is tried again. Tap to save.</string>
+    <string name="file_auto_changed_elsewhere_here">The suite file was saved elsewhere meanwhile. Nothing is overwritten automatically: save here with "Save" (the app then asks whether to overwrite) or with "Save as …" under a new name.</string>
+    <string name="file_auto_unreachable_here">The place of the suite file cannot be reached right now (e.g. stick not plugged in). The app tries again every 30 seconds; you can also choose "Save as …" for another place.</string>
+    <string name="file_auto_no_file">No suite file yet: save once with "Save as …", then the app saves there by itself.</string>
 </resources>

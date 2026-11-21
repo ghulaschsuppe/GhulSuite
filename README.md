@@ -224,8 +224,10 @@ am PC dieselbe Datei öffnen, arbeiten, speichern; wieder am Handy öffnen.
   Schätzung unter Windows etwa 6 bis 15 Sekunden, auf dem Handy bis etwa 40 Sekunden, auf einen langsamen
   USB-Stick bis etwa viereinhalb Minuten.
 - **Speichern unter Optionen → Suite-Datei.** Die App merkt sich die Datei und speichert direkt dorthin, auch auf
-  den Stick. Gibt es Änderungen, die noch nicht in der Datei sind, zeigt sie das an („Nicht gespeicherte
-  Änderungen“). Auf dem Gerät bleibt eine Arbeitskopie, damit die App auch ohne den Stick funktioniert.
+  den Stick. **Automatisch speichern** (standardmäßig an): ein paar Sekunden nach jeder Änderung schreibt sie die
+  Datei von selbst, genau wie „Speichern“. Ist der Stick nicht da, versucht sie es wieder und sagt es dir; wurde die
+  Datei inzwischen auf einem anderen Gerät gespeichert, überschreibt sie nichts von selbst, sondern lässt dich
+  entscheiden. Auf dem Gerät bleibt eine Arbeitskopie, damit die App auch ohne den Stick funktioniert.
 - **Aktuell ist, was zuletzt gespeichert wurde.** Zusammengeführt wird nichts. Wurde die Datei inzwischen auf einem
   anderen Gerät gespeichert, fragt die App, bevor sie sie überschreibt: überschreiben oder unter neuem Namen
   speichern.

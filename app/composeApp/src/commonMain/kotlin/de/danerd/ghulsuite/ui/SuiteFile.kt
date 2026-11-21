@@ -258,6 +258,8 @@ fun SuiteFileSection(state: AppState) {
                 ref = target
                 error = null
                 state.unsaved = false
+                // Decided and saved: saving by itself goes on.
+                state.autoSaveBlocked = null
                 state.message(savedMsg.replace("%1\$s", target.name))
             }
         }
@@ -297,13 +299,29 @@ fun SuiteFileSection(state: AppState) {
         } else if (r != null) {
             Banner(Icons.Filled.CheckCircle, stringResource(Res.string.file_all_saved))
         }
+        // Saving by itself: what it does and why it may not have happened.
+        var auto by remember { mutableStateOf(backend.settings.autoSave) }
+        SwitchRow(stringResource(Res.string.file_auto_save), auto) {
+            auto = it
+            backend.settings.autoSave = it
+            state.autoSaveBlocked = null
+        }
+        Hint(stringResource(Res.string.file_auto_save_hint))
+        if (auto && state.unsaved) {
+            when {
+                state.autoSaving -> Hint(stringResource(Res.string.file_auto_saving))
+                state.autoSaveBlocked == AutoSaveBlock.CHANGED_ELSEWHERE -> Banner(Icons.Filled.Warning, stringResource(Res.string.file_auto_changed_elsewhere_here))
+                state.autoSaveBlocked == AutoSaveBlock.UNREACHABLE -> Banner(Icons.Filled.Warning, stringResource(Res.string.file_auto_unreachable_here))
+                r == null -> Hint(stringResource(Res.string.file_auto_no_file))
+            }
+        }
         if (filePickersAvailable) {
             if (r != null) {
-                Button(onClick = { save(r, force = false) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+                Button(onClick = { save(r, force = false) }, enabled = !state.busy && !state.autoSaving, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(Res.string.file_save))
                 }
             }
-            OutlinedButton(onClick = { saveAs(r?.name ?: SUITE_FILE_NAME) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(onClick = { saveAs(r?.name ?: SUITE_FILE_NAME) }, enabled = !state.busy && !state.autoSaving, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(Res.string.file_save_as))
             }
             OutlinedButton(onClick = openOther, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {

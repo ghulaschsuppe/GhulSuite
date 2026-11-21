@@ -1333,4 +1333,13 @@
     <string name="docs_usage_failed">Belegung nicht lesbar</string>
     <string name="docs_vaults_full">Eine Suite hat höchstens 3 GhulDocs-Tresore (je bis 1 GB). Lösche einen, um einen neuen anzulegen oder ein GhulDocs-Paket hinzuzufügen.</string>
     <string name="core_docs_vaults_many">Diese Datei enthält mehr GhulDocs-Tresore, als eine Suite haben darf (höchstens 3), und ist keine gültige Suite-Datei. Sie wurde nicht geöffnet.</string>
+    <string name="file_unsaved_locked">Es gibt nicht gespeicherte Änderungen. Entsperre, um sie in der Suite-Datei zu speichern.</string>
+    <string name="file_auto_save">Automatisch speichern</string>
+    <string name="file_auto_save_hint">Ein paar Sekunden nach jeder Änderung schreibt die App die Suite-Datei von selbst an ihren Ort, genau wie „Speichern“ (geschrieben, zurückgelesen, geprüft). Ist der Ort nicht erreichbar (z. B. der USB-Stick steckt nicht), versucht sie es alle 30 Sekunden wieder und sagt es dir. Wurde die Datei inzwischen auf einem anderen Gerät gespeichert, überschreibt sie nichts von selbst, sondern lässt dich entscheiden. Mit vielen Dokumenten kann ein Speichern eine Weile dauern; ausgeschaltet speicherst du nur mit „Speichern“.</string>
+    <string name="file_auto_saving">Wird automatisch in der Suite-Datei gespeichert …</string>
+    <string name="file_auto_changed_elsewhere">Nicht automatisch gespeichert: Die Suite-Datei wurde inzwischen anderswo gespeichert. Tippen, um zu entscheiden.</string>
+    <string name="file_auto_unreachable">Nicht gespeichert: Der Ort der Suite-Datei ist gerade nicht erreichbar (z. B. Stick nicht eingesteckt). Es wird wieder versucht. Tippen zum Speichern.</string>
+    <string name="file_auto_changed_elsewhere_here">Die Suite-Datei wurde inzwischen anderswo gespeichert. Automatisch wird nichts überschrieben: Speichere hier mit „Speichern“ (die App fragt dann, ob überschreiben) oder mit „Speichern unter …“ unter neuem Namen.</string>
+    <string name="file_auto_unreachable_here">Der Ort der Suite-Datei ist gerade nicht erreichbar (z. B. Stick nicht eingesteckt). Die App versucht es alle 30 Sekunden wieder; du kannst auch „Speichern unter …“ an einem anderen Ort wählen.</string>
+    <string name="file_auto_no_file">Noch keine Suite-Datei: Speichere einmal mit „Speichern unter …“, danach speichert die App von selbst dorthin.</string>
 </resources>

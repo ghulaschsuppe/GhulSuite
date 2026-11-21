@@ -144,6 +144,73 @@ fun pageSize(q: Quad, maxSide: Int): Pair<Int, Int> {
 }
 
 /**
+ * The real width : height of the sheet whose corners [q] (pixels of the upright photo, its centre
+ * at [cx], [cy]) were photographed at an angle: the sides measured in the photo are shortened by
+ * the perspective (both sides along the tilt alike), so their lengths alone give a wrong shape (an
+ * A4 sheet taken at an angle came out almost square). The perspective of the quad gives the
+ * camera's focal length and with it the shape of the sheet (Z. Zhang, L. He, "Whiteboard scanning
+ * and image enhancement", 2007). A focal length that cannot be found reliably (almost no
+ * perspective, or a value no phone camera has) is taken as a typical one of a phone ([longSide]
+ * of the photo times 0.75). Null if the quad gives no shape at all.
+ */
+fun sheetAspect(q: Quad, cx: Float, cy: Float, longSide: Float): Double? {
+    fun h(p: Pt) = doubleArrayOf(p.x.toDouble(), p.y.toDouble(), 1.0)
+    fun crossV(a: DoubleArray, b: DoubleArray) =
+        doubleArrayOf(a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
+    fun dot(a: DoubleArray, b: DoubleArray) = a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+    // m1 top left, m2 top right (along the width), m3 bottom left (along the height), m4 bottom right.
+    val m1 = h(q.tl)
+    val m2 = h(q.tr)
+    val m3 = h(q.bl)
+    val m4 = h(q.br)
+    val c14 = crossV(m1, m4)
+    val d2 = dot(crossV(m2, m4), m3)
+    val d3 = dot(crossV(m3, m4), m2)
+    if (abs(d2) < 1e-9 || abs(d3) < 1e-9) return null
+    val k2 = dot(c14, m3) / d2
+    val k3 = dot(c14, m2) / d3
+    val n2 = DoubleArray(3) { k2 * m2[it] - m1[it] }
+    val n3 = DoubleArray(3) { k3 * m3[it] - m1[it] }
+    val u0 = cx.toDouble()
+    val v0 = cy.toDouble()
+    val typical = 0.75 * longSide
+    val denom = n2[2] * n3[2]
+    var f = typical
+    if (abs(denom) > 1e-12) {
+        val f2 = -((n2[0] * n3[0] - (n2[0] * n3[2] + n2[2] * n3[0]) * u0 + n2[2] * n3[2] * u0 * u0) +
+            (n2[1] * n3[1] - (n2[1] * n3[2] + n2[2] * n3[1]) * v0 + n2[2] * n3[2] * v0 * v0)) / denom
+        val found = if (f2 > 0) kotlin.math.sqrt(f2) else Double.NaN
+        // Phones: roughly 0.5 (wide) to 2.5 (tele) times the long side of the photo.
+        if (found.isFinite() && found in 0.5 * longSide..2.5 * longSide) f = found
+    }
+    // n^T K^-T K^-1 n with K = [[f, 0, u0], [0, f, v0], [0, 0, 1]].
+    fun len2(n: DoubleArray): Double {
+        val x = (n[0] - u0 * n[2]) / f
+        val y = (n[1] - v0 * n[2]) / f
+        return x * x + y * y + n[2] * n[2]
+    }
+    val a = len2(n2)
+    val b = len2(n3)
+    if (a <= 0 || b <= 0) return null
+    val r = kotlin.math.sqrt(a / b)
+    return r.takeIf { it.isFinite() && it > 0.05 && it < 20 }
+}
+
+/**
+ * The size of the straightened page: the shape from [sheetAspect], whatever it is (upright, lying,
+ * square, any other; no shape is preferred), the longer side as long as the longer side measured
+ * in the photo; at most [maxSide].
+ */
+fun trueSize(q: Quad, cx: Float, cy: Float, longSide: Float, maxSide: Int): Pair<Int, Int> {
+    val measured = pageSize(q, Int.MAX_VALUE)
+    val aspect = sheetAspect(q, cx, cy, longSide) ?: return pageSize(q, maxSide)
+    val long = max(measured.first, measured.second).toDouble()
+    val (w, h) = if (aspect >= 1) long to long / aspect else long * aspect to long
+    val f = minOf(1.0, maxSide / max(max(w, h), 1.0))
+    return max(1, (w * f).roundToInt()) to max(1, (h * f).roundToInt())
+}
+
+/**
  * The 3 x 3 perspective transform (row-major, the last value 1) that maps the corners of [src]
  * onto those of [dst]: as Android's `Matrix.setPolyToPoly` with four points, and Skia's Matrix33.
  */
@@ -214,7 +281,8 @@ class PageTransform(val width: Int, val height: Int, val matrix: FloatArray)
 fun pageTransform(corners: Quad, rotation: Int, rawW: Int, rawH: Int, turns: Int, maxSide: Int): PageTransform {
     val (uw, uh) = uprightSize(rotation, rawW, rawH)
     val px = corners.scale(uw.toFloat(), uh.toFloat())
-    val (pw, ph) = pageSize(px, maxSide)
+    // The real shape of the sheet, not the shortened sides of the photo.
+    val (pw, ph) = trueSize(px, uw / 2f, uh / 2f, max(uw, uh).toFloat(), maxSide)
     val k = ((turns % 4) + 4) % 4
     val (ow, oh) = if (k % 2 == 1) ph to pw else pw to ph
     val rect = listOf(Pt(0f, 0f), Pt(ow.toFloat(), 0f), Pt(ow.toFloat(), oh.toFloat()), Pt(0f, oh.toFloat()))

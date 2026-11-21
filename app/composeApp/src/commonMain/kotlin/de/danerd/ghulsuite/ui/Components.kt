@@ -65,6 +65,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.FolderZip
@@ -553,9 +554,26 @@ fun BusyBanner(state: AppState) {
         }
         return
     }
+    val unlocked by state.backend.unlocked.collectAsState()
     if (state.unsaved && state.stack.isEmpty() && !state.busy) {
-        Box(Modifier.fillMaxWidth().clickable { state.push(Screen.SettingsPage(SetPage.FILE)) }) {
-            Banner(Icons.Filled.Save, stringResource(Res.string.file_unsaved_banner))
+        val auto = state.backend.settings.autoSave
+        if (unlocked && state.autoSaving) {
+            Banner(Icons.Filled.Save, stringResource(Res.string.file_auto_saving))
+        } else if (unlocked) {
+            val block = state.autoSaveBlocked
+            // Saved by itself in a moment: nothing to do (no banner that comes and goes with every change).
+            if (auto && block == null) return
+            val text = when {
+                !auto || block == AutoSaveBlock.NO_FILE -> Res.string.file_unsaved_banner
+                block == AutoSaveBlock.CHANGED_ELSEWHERE -> Res.string.file_auto_changed_elsewhere
+                else -> Res.string.file_auto_unreachable
+            }
+            Box(Modifier.fillMaxWidth().clickable { state.push(Screen.SettingsPage(SetPage.FILE)) }) {
+                Banner(if (block == AutoSaveBlock.CHANGED_ELSEWHERE) Icons.Filled.Warning else Icons.Filled.Save, stringResource(text))
+            }
+        } else {
+            // Locked (the unlock screen): saving needs the open suite, so a tap could do nothing here.
+            Banner(Icons.Filled.Save, stringResource(Res.string.file_unsaved_locked))
         }
     }
     // The running action itself is shown in front of everything (BusyOverlay).

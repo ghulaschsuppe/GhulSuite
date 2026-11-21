@@ -76,9 +76,17 @@ class ScreenshotTest {
         var unlockOpens = false
         /** What saving the suite file or a GhulDocs package answers (false: not written completely). */
         var saveOk = true
+        /** The place of the suite file this device remembers (null: none yet). */
+        var suiteRef: de.danerd.ghulsuite.model.SuiteFileRef? = null
+        override fun suiteFile() = suiteRef
+        /** What is at the place of the suite file (null: it cannot be reached). */
+        var target: de.danerd.ghulsuite.model.ArchiveTargetUi? = de.danerd.ghulsuite.model.ArchiveTargetUi.NEW
+        override suspend fun archiveTarget(file: de.danerd.ghulsuite.model.SuiteFileRef) = target
         override suspend fun archiveSave(target: de.danerd.ghulsuite.model.SuiteFileRef, device: String, created: Boolean, onProgress: (Long, Long) -> Unit): Boolean {
             kotlinx.coroutines.delay(30)
             calls += "archiveSave:${target.name}:$created"
+            // As the core: saved, nothing is unsaved any more.
+            if (saveOk) unsavedChanges = false
             return saveOk
         }
         override suspend fun deleteSuite() {
@@ -111,6 +119,9 @@ class ScreenshotTest {
         }
         override suspend fun unlockWithRecoveryCode(code: String, newPassword: String) {}
         var locks = 0
+        /** The working copy has changes that are not in the suite file (as the core says it). */
+        var unsavedChanges = false
+        override fun archiveUnsaved() = unsavedChanges
         /** Windows (true) or a phone (false): what only one of them has (keyboard keys …). */
         var desktop = false
         override val isDesktop get() = desktop

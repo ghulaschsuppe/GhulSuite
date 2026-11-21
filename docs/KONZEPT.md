@@ -426,9 +426,21 @@ Was ein Gerät zuletzt gesehen hat (höchster Zähler, Stand-ID, Schutz-Epoche),
 nicht in der Arbeitskopie: Eine ältere Datei, ein Abzweig oder ein älterer Schutz fallen auch auf, nachdem die
 Arbeitskopie ersetzt wurde.
 
-**„Nicht gespeicherte Änderungen“.** Gibt es Änderungen seit dem letzten Speichern, zeigt die App oben einen Hinweis
-(„Nicht gespeicherte Änderungen. Tippen zum Speichern.“) und auf der Seite Suite-Datei den Stand. Ohne Änderungen:
-„Alles ist in der Suite-Datei gespeichert.“
+**Automatisch speichern** (seit 21.11.2026, Optionen → Suite-Datei, standardmäßig an): Jede Änderung liegt sofort
+verschlüsselt in der Arbeitskopie. Etwa vier Sekunden nach der letzten Änderung schreibt die App die Suite-Datei von
+selbst an ihren gemerkten Ort, genau wie „Speichern“ (geschrieben, zurückgelesen, geprüft); nicht während ein Eintrag
+bearbeitet wird, Dateien hinzukommen oder die App gesperrt ist. Ist der Ort nicht erreichbar (Stick nicht eingesteckt),
+versucht sie es alle 30 Sekunden wieder und sagt es oben („Nicht gespeichert: Der Ort der Suite-Datei ist gerade nicht
+erreichbar …“). Wurde die Datei inzwischen anderswo gespeichert, überschreibt sie **nie** von selbst, sondern hält an
+(„Nicht automatisch gespeichert: Die Suite-Datei wurde inzwischen anderswo gespeichert. Tippen, um zu entscheiden.“);
+entschieden wird mit „Speichern“ (fragt, ob überschreiben) oder „Speichern unter“. Ohne gemerkte Suite-Datei bleibt es
+beim Hinweis, einmal „Speichern unter“ zu wählen. Ausgeschaltet speichert nur „Speichern“.
+
+**„Nicht gespeicherte Änderungen“.** Gibt es Änderungen seit dem letzten Speichern (und speichert die App nicht gleich
+von selbst), zeigt sie oben einen Hinweis („Nicht gespeicherte Änderungen. Tippen zum Speichern.“) und auf der Seite
+Suite-Datei den Stand. Auf dem Entsperren-Bildschirm steht stattdessen ein Hinweis ohne Tippen („Es gibt nicht
+gespeicherte Änderungen. Entsperre, um sie in der Suite-Datei zu speichern.“): gespeichert wird nur entsperrt. Ohne
+Änderungen: „Alles ist in der Suite-Datei gespeichert.“
 
 **Schutzänderungen** wirken in der Arbeitskopie und reisen mit dem nächsten Speichern mit; sie erneuern die inneren
 Schlüssel (Abschnitt 6.2) und erhöhen die Schutz-Epoche. Keys und Schlüsseldateien funktionieren auf jedem Gerät;
@@ -594,7 +606,7 @@ GhulDrive, das auf einem eigenen Server lag. Format: [`FORMAT.md`](FORMAT.md), A
 Eine Suite kann **bis zu 3** GhulDocs-Tresore haben (seit 20.11.2026; vom 17. bis 20.11.2026 war es genau einer).
 Der Kern lehnt einen vierten ab, wo immer einer hinzukommt (Neuer Tresor, Bereich einrichten, Paket hinzufügen;
 Kernfehler `a suite has at most 3 GhulDocs vaults`); die App sagt „Eine Suite hat höchstens 3 GhulDocs-Tresore (je bis 1 GB). Lösche einen, um einen neuen anzulegen oder ein GhulDocs-Paket hinzuzufügen.“ „Neuer Tresor“ zeigt
-GhulDocs dann ausgegraut mit diesem Hinweis, die Tresorwahl bietet keinen neuen an. Eine Suite-Datei mit mehr als 3
+GhulDocs dann gar nicht mehr an (nur den Hinweis), die Tresorwahl bietet keinen neuen an. Eine Suite-Datei mit mehr als 3
 GhulDocs-Tresoren wird nicht geöffnet. Die 3 GB für alle zusammen ergeben sich daraus (3 × 1 GB). Jeder ist in sich geschlossen: eigene Ordner, eigener Papierkorb, eigene Favoriten,
 eigene Inhaltsdateien `docs-<Tresor-ID>/`. „Neuer Tresor“ bietet GhulDocs an, solange es weniger als 3 sind. Bei mehreren Tresoren zeigt GhulDocs
 „Alle Tresore“ und eine Tresorwahl in der Kontextzeile oben (wie GhulPass und GhulAuth); die Ordnerwahl und „Teilen →

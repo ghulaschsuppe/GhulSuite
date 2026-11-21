@@ -998,4 +998,60 @@ class InteractionTest {
         text("Verein").performClick()
         waitUntil(timeoutMillis = 10_000) { !shown("Which vault?") }
     }
+
+    /**
+     * Unsaved changes while locked: the unlock screen says so, but offers no tap that cannot work
+     * there (saving needs the open suite); once unlocked, the banner leads to the suite file.
+     */
+    @Test
+    fun unsavedChangesWhileLockedSayUnlockFirst() = app(setup = { tab = Tab.DOCS; unsaved = true }, prepare = { unsavedChanges = true }) { state, fake ->
+        waitFor("Unsaved changes. Tap to save.")
+        runOnIdle { state.lockNow() }
+        waitUntil(timeoutMillis = 5_000) { fake.locks == 1 }
+        fake.unlocked.value = false
+        waitUntil(timeoutMillis = 10_000) { shown("There are unsaved changes. Unlock to save them in the suite file.") }
+        assertFalse(shown("Unsaved changes. Tap to save."), "no tap on the unlock screen")
+        shot("unsaved-locked")
+    }
+
+    /** "Recently used": the pills have room around their round badge (they looked squeezed). */
+    @Test
+    fun recentlyUsedPills() = app(setup = { tab = Tab.PASS }, prepare = { settings.recentEntries = "p1/1,p2/2" }) { _, _ ->
+        waitFor("Codeberg")
+        shot("recent-pills")
+    }
+
+    private val stick = de.danerd.ghulsuite.model.SuiteFileRef("/stick/GhulSuite.ghlzip", "GhulSuite.ghlzip")
+
+    /** Saving by itself: a few seconds after a change the suite file is written as "Save" does it. */
+    @Test
+    fun theSuiteFileIsSavedByItself() = app(setup = { tab = Tab.DOCS; unsaved = true }, prepare = { unsavedChanges = true; suiteRef = stick; target = de.danerd.ghulsuite.model.ArchiveTargetUi.SAME }) { state, fake ->
+        waitUntil(timeoutMillis = 15_000) { "archiveSave:GhulSuite.ghlzip:false" in fake.calls }
+        waitUntil(timeoutMillis = 5_000) { !state.unsaved }
+        assertFalse(part("Unsaved changes"))
+        assertFalse(part("Not saved"))
+    }
+
+    /** Saved elsewhere meanwhile: nothing is overwritten by itself; the banner asks to decide. */
+    @Test
+    fun savingByItselfNeverOverwritesAFileSavedElsewhere() = app(setup = { tab = Tab.DOCS; unsaved = true }, prepare = { unsavedChanges = true; suiteRef = stick; target = de.danerd.ghulsuite.model.ArchiveTargetUi.CHANGED_ELSEWHERE }) { _, fake ->
+        waitUntil(timeoutMillis = 15_000) { part("Not saved automatically: the suite file was saved elsewhere meanwhile.") }
+        shot("auto-save-changed-elsewhere")
+        assertTrue(fake.calls.none { it.startsWith("archiveSave") })
+    }
+
+    /** The stick is not there: said so, tried again later; nothing lost. */
+    @Test
+    fun savingByItselfSaysWhenThePlaceIsGone() = app(setup = { tab = Tab.DOCS; unsaved = true }, prepare = { unsavedChanges = true; suiteRef = stick; target = null }) { _, fake ->
+        waitUntil(timeoutMillis = 15_000) { part("the place of the suite file cannot be reached right now") }
+        assertTrue(fake.calls.none { it.startsWith("archiveSave") })
+    }
+
+    /** Turned off: only "Save" saves; the banner says so as before. */
+    @Test
+    fun savingByItselfCanBeTurnedOff() = app(setup = { tab = Tab.DOCS; unsaved = true }, prepare = { unsavedChanges = true; suiteRef = stick; settings.autoSave = false }) { _, fake ->
+        waitFor("Unsaved changes. Tap to save.")
+        Thread.sleep(5_500)
+        assertTrue(fake.calls.none { it.startsWith("archiveSave") })
+    }
 }
