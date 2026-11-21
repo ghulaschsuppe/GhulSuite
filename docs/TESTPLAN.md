@@ -32,13 +32,13 @@ soll; weicht etwas ab, notiere die Nummer, was du gemacht hast und was stattdess
 
 ## 1. Erster Start und Einrichtung
 
-Der Assistent hat sieben Schritte; oben steht „Schritt n von 7“ mit Fortschrittsbalken. Die Suite entsteht beim
+Der Assistent hat acht Schritte (der letzte legt die Suite-Datei an); oben steht „Schritt n von 8“ mit Fortschrittsbalken. Die Suite entsteht beim
 Verlassen von Schritt 3 im App-Speicher, danach geht „Zurück“ nur noch bis Schritt 4.
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
 | E1 | App öffnen. | Startbildschirm mit „Neu einrichten“, „Suite-Datei öffnen“ (.ghlzip, z. B. von einem USB-Stick) und „Einzelnen Tresor öffnen“. Kein „Von meinem Server holen“, kein „Sicherung wiederherstellen“. |
-| E2 | „Neu einrichten“. | Schritt 1 von 7 · Master-Passwort. |
+| E2 | „Neu einrichten“. | Schritt 1 von 8 · Master-Passwort. |
 | E3 | Passwort „abc“ eingeben, Weiter. Dann ein schwaches 10-Zeichen-Passwort. Dann zwei verschiedene Passwörter. | Jeweils klare Meldung: zu kurz / zu leicht zu erraten / stimmen nicht überein. |
 | E4 | „Passwort vorschlagen“ antippen, Wiederholung eingeben, Weiter. | Langes Zufallspasswort, Stärkebalken voll; Schritt 2 · Zweiter Faktor. |
 | E5 | „Security Key“ gewählt lassen, Name des Keys, Key-PIN eingeben (Android: „Key prüfen“ zeigt „Erkannt: …“). Weiter. | Schritt 3 · Anlegen, mit dem Hinweis, dass die Suite auf diesem Gerät liegt und du sie später als Datei (.ghlzip) unter Optionen → Suite-Datei speicherst. Keine Ordnerwahl. |

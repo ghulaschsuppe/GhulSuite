@@ -804,7 +804,7 @@
     <string name="quick_4h">4 Stunden</string>
     <string name="quick_always">Immer</string>
     <string name="wz_title">Neu einrichten</string>
-    <string name="wz_step_of">Schritt %1$s von 7 · %2$s</string>
+    <string name="wz_step_of">Schritt %1$s von 8 · %2$s</string>
     <string name="wz_step_password">Master-Passwort</string>
     <string name="wz_step_factor">Zweiter Faktor</string>
     <string name="wz_create_hint">Die Suite liegt auf diesem Gerät. Um sie auf ein anderes Gerät mitzunehmen (z. B. auf einem USB-Stick), speicherst du sie später als Datei (.ghlzip) unter Optionen, Suite-Datei.</string>
