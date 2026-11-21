@@ -1355,7 +1355,6 @@
     <string name="save_running_locked">The suite file is still being saved (%1$s). Do not pull the USB stick.</string>
     <string name="save_first">Save first</string>
     <string name="file_save_explain">Everything you change is on this device at once, encrypted (in the working copy). It gets into the suite file, your backup to take along, only when you save: tap the save icon at the top (on a PC also Ctrl+S). It shows as soon as something is unsaved. Save before you go on working on another device. Exporting and sharing do not replace saving.</string>
-    <string name="setup_save_title">Saving</string>
     <string name="setup_save_text">Everything you change is on this device at once, encrypted. It gets into the suite file, your backup to take along (e.g. on a USB stick), only when you tap the save icon at the top. It shows as soon as something is unsaved. If this device is lost, only what was saved into the suite file is left. Input you have not applied yet is lost when the app locks.</string>
     <string name="close_title">Unsaved changes</string>
     <string name="close_text">There are changes that are not in the suite file yet. Save before quitting? Without saving they stay on this device and can be saved later.</string>
@@ -1363,4 +1362,7 @@
     <string name="close_without">Quit without saving</string>
     <string name="close_saving">The suite file is being saved right now (%1$s). The app quits as soon as saving is done.</string>
     <string name="close_after_save">Quit after saving</string>
+    <string name="wz_step_file">Suite file</string>
+    <string name="wz_file_failed">Without a suite file your data is on this device only. If it is lost, everything is gone. Try again or choose another place; you can also create it later with the save icon at the top.</string>
+    <string name="wz_file_skip">Continue without a suite file</string>
 </resources>

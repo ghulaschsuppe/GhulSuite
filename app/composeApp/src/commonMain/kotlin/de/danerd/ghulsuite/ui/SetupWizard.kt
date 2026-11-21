@@ -41,6 +41,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -61,7 +62,7 @@ import org.jetbrains.compose.resources.stringResource
 /** The seven steps of a new setup, in this order. */
 private val WZ_STEPS = listOf(
     Res.string.wz_step_password, Res.string.wz_step_factor, Res.string.wz_step_storage,
-    Res.string.wz_step_areas, Res.string.wz_step_lock, Res.string.wz_step_unlock, Res.string.wz_step_code,
+    Res.string.wz_step_areas, Res.string.wz_step_lock, Res.string.wz_step_unlock, Res.string.wz_step_code, Res.string.wz_step_file,
 )
 
 /** An area as offered in the wizard and in "manage areas". */
@@ -230,10 +231,30 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
         }
     }
 
+    // Step 8: the suite file, at a place the user chooses (written, read back, checked).
+    var fileFailed by remember { mutableStateOf(false) }
+    val notWritten = stringResource(Res.string.file_not_written)
+    val savedMsg = stringResource(Res.string.file_saved)
+    val chooseSuiteFile = rememberCreateSuiteFile { ref ->
+        if (ref != null) {
+            state.run(onError = { error = it; fileFailed = true }, block = {
+                if (!backend.archiveSave(ref, deviceInfo(), created = true, state.onProgress)) {
+                    throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.OTHER, notWritten)
+                }
+                backend.setSuiteFile(ref)
+            }) {
+                state.message(savedMsg.replace("%1\$s", ref.name))
+                finishWizard(state)
+            }
+        }
+    }
+
     fun back() {
         error = null
         when {
             step == 1 -> onCancel()
+            // The recovery code was confirmed: no way back to it.
+            step == 8 -> {}
             // The suite exists from step 4 on: password, factor and storage stay as they are.
             created && step <= 4 -> {}
             else -> step--
@@ -245,14 +266,14 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
 
     // Header: title, "Step n of 8 · name", progress bar.
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (!(created && step <= 4)) BarIcon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(Res.string.a_back)) { back() }
+        if (!(created && step <= 4) && step != 8) BarIcon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(Res.string.a_back)) { back() }
         Column {
             Text(stringResource(Res.string.wz_title), fontSize = 18.sp, fontWeight = FontWeight.Bold)
             Text(stringResource(Res.string.wz_step_of, step.toString(), stringResource(WZ_STEPS[step - 1])), fontSize = 13.sp, color = g.muted)
         }
     }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        for (i in 1..7) Box(Modifier.weight(1f).height(4.dp).clip(RoundedCornerShape(2.dp)).background(if (i <= step) g.accent else g.line))
+        for (i in 1..WZ_STEPS.size) Box(Modifier.weight(1f).height(4.dp).clip(RoundedCornerShape(2.dp)).background(if (i <= step) g.accent else g.line))
     }
     Text(stringResource(WZ_STEPS[step - 1]), fontSize = 22.sp, fontWeight = FontWeight.Bold)
     BusyBanner(state)
@@ -330,10 +351,6 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
             }
             if (useKey) HintText(stringResource(Res.string.wz_create_touch))
             if (kdf == null) Hint(stringResource(Res.string.setup_calibrating))
-            // Working copy and suite file: what saving means (asked again at the end of the wizard).
-            SectionCard(stringResource(Res.string.setup_save_title)) {
-                Hint(stringResource(Res.string.setup_save_text))
-            }
         }
 
         4 -> {
@@ -409,7 +426,23 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
             HintText(stringResource(Res.string.set_quick_always_full))
         }
 
-        7 -> RecoveryCodeSteps(state, code) { finishWizard(state) }
+        // The suite file is part of setting up (without it the suite is on this device only).
+        7 -> RecoveryCodeSteps(state, code) { if (filePickersAvailable) step = 8 else finishWizard(state) }
+
+        8 -> {
+            HintText(stringResource(Res.string.setup_save_text))
+            Hint(stringResource(Res.string.save_hint))
+            Button(onClick = { chooseSuiteFile(SUITE_FILE_NAME) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth().testTag("wz-file")) {
+                Text(stringResource(Res.string.save_place))
+            }
+            // Only after it failed (no stick, no room): on without it, with a clear warning.
+            if (fileFailed) {
+                Banner(Icons.Filled.Warning, stringResource(Res.string.wz_file_failed))
+                OutlinedButton(onClick = { finishWizard(state) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(Res.string.wz_file_skip))
+                }
+            }
+        }
     }
 
     when (replacing) {
@@ -457,9 +490,6 @@ private fun finishWizard(state: AppState) {
     state.vaultExists = true
     state.refreshVaults()
     state.changed()
-    // The new suite is on this device only: a suite file is offered right away (or "Later";
-    // the save button in the header stays until it is saved).
-    if (filePickersAvailable) state.askSave()
 }
 
 /** Selectable row (radio) with icon tile; [more] opens under it while selected. */

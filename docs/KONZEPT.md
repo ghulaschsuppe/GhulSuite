@@ -460,8 +460,9 @@ und Hinweise.
 **Erinnerung:** Ist seit drei Tagen etwas ungespeichert, steht über den Listen „Seit … nicht in der Suite-Datei
 gespeichert. Tippen zum Speichern.“. Die Markierung „ungespeichert“ schreibt der Kern **vor** jeder Änderung der
 Arbeitskopie (mit fsync), mit der Zeit der ersten Änderung: Auch nach einem Absturz fehlt der Button nie. Beim Öffnen
-einer anderen Suite-Datei mit ungespeicherten Änderungen gibt es „Erst speichern“. Am Ende der Einrichtung bietet der
-Dialog an, die Suite-Datei gleich anzulegen („Später“ geht, der Button bleibt). Exportieren und Teilen ersetzen das
+einer anderen Suite-Datei mit ungespeicherten Änderungen gibt es „Erst speichern“. Der letzte Schritt der Einrichtung
+(8 von 8) legt die Suite-Datei an einem gewählten Ort an; nur wenn das scheitert, geht es nach einer Warnung ohne sie
+weiter (der Button bleibt dann). Exportieren und Teilen ersetzen das
 Speichern nicht. Ein einzeln geöffneter Tresor wird weiter gleich in seine Datei zurückgeschrieben.
 
 **Auf dem Entsperren-Bildschirm** steht bei ungespeicherten Änderungen ein Hinweis ohne Tippen („… Entsperre und tippe

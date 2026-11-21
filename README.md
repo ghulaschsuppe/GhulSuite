@@ -203,8 +203,10 @@ Ein Assistent führt in wenigen Schritten durch alles:
 2. **Zweiter Faktor:** Security Key (FIDO2) oder eine Schlüsseldatei, z. B. auf einem USB-Stick.
 3. **Notfallblatt** als PDF: ein Wiederherstellungscode mit QR, falls Passwort oder Key verloren gehen.
 4. **Bereiche** auswählen.
+5. **Suite-Datei** an einem Ort deiner Wahl anlegen, z. B. auf dem USB-Stick oder in einem Cloud-Ordner.
 
-Die Suite liegt dann auf diesem Gerät. Zum Mitnehmen speicherst du sie unter **Optionen → Suite-Datei** als Datei.
+Die Suite liegt dann auf diesem Gerät (Arbeitskopie) und als Datei an dem gewählten Ort. Änderungen kommen in die
+Datei, wenn du oben auf das Speichern-Symbol tippst.
 
 **Im Alltag** reicht auf dem Handy Fingerabdruck oder App-PIN; der Schnellzugang liegt geschützt im Schlüsselspeicher
 des Geräts. Die **Sofortsperre** schließt alles mit einem Schütteln oder über
