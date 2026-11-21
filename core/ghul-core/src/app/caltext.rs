@@ -963,6 +963,26 @@ impl Zones<'_> {
     fn series_zone(&self, raw: &RawEvent) -> Option<(String, DateTime, DateTime)> {
         raw.rrule.as_ref()?;
         let p = raw.dtstart.as_ref()?;
+        // A series in UTC ("…Z"): the same instant every time, so on the device's clock it moves
+        // with summer time. Kept in the zone UTC (unless the device's zone is UTC all year).
+        if p.param("TZID").is_none() && p.value.trim().ends_with(['Z', 'z']) && p.value.is_ascii() {
+            let v = p.value.trim();
+            let start = DateTime::parse_compact(&v[..v.len() - 1])?;
+            self.device.offset_at_local("UTC".to_owned(), start.minutes())?;
+            if self.like_device("UTC", start) {
+                return None;
+            }
+            let end = match (&raw.dtend, raw.duration.as_deref().and_then(parse_duration)) {
+                (Some(e), _) if e.value.trim().ends_with(['Z', 'z']) && e.value.is_ascii() => {
+                    let ev = e.value.trim();
+                    DateTime::parse_compact(&ev[..ev.len() - 1])?
+                }
+                (Some(_), _) => return None,
+                (None, Some(d)) => start.add_minutes(d),
+                (None, None) => start.add_minutes(60),
+            };
+            return Some(("UTC".to_owned(), start, if end > start { end } else { start.add_minutes(60) }));
+        }
         let id = p.param("TZID")?;
         let v = p.value.trim();
         if !v.is_ascii() || v.ends_with(['Z', 'z']) || p.param("VALUE").is_some_and(|x| x.eq_ignore_ascii_case("DATE"))
@@ -1035,10 +1055,18 @@ fn finish_event(raw: RawEvent, z: &Zones) -> Option<CalEvent> {
         ev.end = e.to_string();
     }
     if let Some(rule) = raw.rrule.as_deref() {
-        let (rep, until) = map_rrule(rule, start_date, z);
-        ev.repeat = rep;
-        if rep != CalRepeat::None {
-            ev.repeat_until = until.map(|d| d.to_string()).unwrap_or_default();
+        match map_rrule(rule, start_date, z) {
+            Some((rep, until)) => {
+                ev.repeat = rep;
+                if rep != CalRepeat::None {
+                    ev.repeat_until = until.map(|d| d.to_string()).unwrap_or_default();
+                }
+            }
+            // Taken once; the rule stays readable in the notes (nothing on wrong days).
+            None => {
+                let line = format!("RRULE:{}", rule.trim());
+                ev.notes = if ev.notes.trim().is_empty() { line } else { format!("{}\n\n{line}", ev.notes) };
+            }
         }
     }
     if ev.repeat != CalRepeat::None {
@@ -1085,7 +1113,7 @@ fn finish_event(raw: RawEvent, z: &Zones) -> Option<CalEvent> {
             rule.split(';').filter_map(|p| p.split_once('=')).find(|(k, _)| k.trim().eq_ignore_ascii_case("UNTIL"));
         let until = match until_value {
             Some((_, v)) => z.day_in_zone(&zone, v),
-            None => map_rrule(rule, start.date, z).1,
+            None => map_rrule(rule, start.date, z).and_then(|r| r.1),
         };
         ev.repeat_until = until.map(|d| d.to_string()).unwrap_or_default();
         let mut ex: Vec<String> = raw
@@ -1103,13 +1131,16 @@ fn finish_event(raw: RawEvent, z: &Zones) -> Option<CalEvent> {
     Some(ev)
 }
 
-/// Maps the supported `RRULE` subset onto [`CalRepeat`]; returns the last day if known.
-fn map_rrule(rule: &str, start: Date, z: &Zones) -> (CalRepeat, Option<Date>) {
+/// Maps the supported `RRULE` subset onto [`CalRepeat`]; returns the last day if known. A rule
+/// GhulCal cannot show exactly (every third week, the second Tuesday, Mondays and Wednesdays …)
+/// is `None`: the event is taken once (with the rule in its notes), never on wrong days.
+fn map_rrule(rule: &str, start: Date, z: &Zones) -> Option<(CalRepeat, Option<Date>)> {
     let mut freq = "";
     let mut interval = 1u32;
     let mut byday: Vec<String> = Vec::new();
     let mut until: Option<Date> = None;
     let mut count: Option<u32> = None;
+    let mut exact = true;
     for part in rule.split(';') {
         let Some((k, v)) = part.split_once('=') else {
             continue;
@@ -1117,11 +1148,15 @@ fn map_rrule(rule: &str, start: Date, z: &Zones) -> (CalRepeat, Option<Date>) {
         let v = v.trim();
         match k.trim().to_ascii_uppercase().as_str() {
             "FREQ" => freq = v,
-            "INTERVAL" => interval = v.parse().unwrap_or(1),
+            "INTERVAL" => interval = v.parse().unwrap_or(0),
             "BYDAY" => byday = v.split(',').map(|d| d.trim().to_ascii_uppercase()).collect(),
             "UNTIL" => until = parse_ics_time(v, None, None, z).map(|t| t.dt.date),
             "COUNT" => count = v.parse().ok().filter(|n| (1..=10_000).contains(n)),
-            _ => {}
+            // The day of the start itself: what GhulCal does anyway.
+            "BYMONTHDAY" => exact &= v.parse::<u32>().ok() == Some(start.d),
+            "BYMONTH" => exact &= v.parse::<u32>().ok() == Some(start.m),
+            "WKST" => {}
+            _ => exact = false,
         }
     }
     let workdays = {
@@ -1129,7 +1164,19 @@ fn map_rrule(rule: &str, start: Date, z: &Zones) -> (CalRepeat, Option<Date>) {
         d.sort();
         d == ["FR", "MO", "TH", "TU", "WE"]
     };
-    let rep = match freq.to_ascii_uppercase().as_str() {
+    const DAYS: [&str; 7] = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
+    let start_day = byday.is_empty() || (byday.len() == 1 && byday[0] == DAYS[start.weekday() as usize]);
+    let f = freq.to_ascii_uppercase();
+    exact &= match f.as_str() {
+        "DAILY" => interval == 1 && (byday.is_empty() || workdays),
+        "WEEKLY" => (interval == 1 && (start_day || workdays)) || (interval == 2 && start_day),
+        "MONTHLY" | "YEARLY" => interval == 1 && byday.is_empty(),
+        _ => false,
+    };
+    if !exact {
+        return None;
+    }
+    let rep = match f.as_str() {
         "DAILY" if workdays => CalRepeat::Weekdays,
         "DAILY" => CalRepeat::Daily,
         "WEEKLY" if workdays && interval == 1 => CalRepeat::Weekdays,
@@ -1144,7 +1191,7 @@ fn map_rrule(rule: &str, start: Date, z: &Zones) -> (CalRepeat, Option<Date>) {
             until = count_to_until(rep, start, n).filter(|d| d.y <= 9999);
         }
     }
-    (rep, until)
+    Some((rep, until))
 }
 
 /// The date of the `n`-th occurrence (1 = the start itself).
@@ -2722,15 +2769,46 @@ TRIGGER;VALUE=DATE-TIME:20260714T233000Z\r\nEND:VALARM";
         assert_eq!(zone_of("Europe/Berlin", own), (String::new(), "2026-07-14T20:00".into()));
         // A device in New York reading a New York series.
         assert_eq!(zone_of("America/New_York", NY_SERIES).0, "");
-        // A zone nobody knows, a single event, an all-day series, a series in UTC.
+        // A zone nobody knows, a single event, an all-day series.
         let unknown = "DTSTART;TZID=Mars/Olympus_Mons:20260714T200000\r\nRRULE:FREQ=WEEKLY";
         assert_eq!(zone_of("Europe/Berlin", unknown), (String::new(), "2026-07-14T20:00".into()));
         assert_eq!(zone_of("Europe/Berlin", "DTSTART;TZID=America/New_York:20260714T200000").0, "");
         assert_eq!(zone_of("Europe/Berlin", "DTSTART;VALUE=DATE:20260714\r\nRRULE:FREQ=YEARLY").0, "");
+        // A series in UTC keeps UTC (in Berlin it moves an hour with summer time); on a device in
+        // UTC it needs no zone.
         let utc = "DTSTART:20260714T180000Z\r\nRRULE:FREQ=WEEKLY";
-        assert_eq!(zone_of("Europe/Berlin", utc), (String::new(), "2026-07-14T20:00".into()));
+        assert_eq!(zone_of("Europe/Berlin", utc), ("UTC".into(), "2026-07-14T18:00".into()));
+        assert_eq!(zone_of("UTC", utc), (String::new(), "2026-07-14T18:00".into()));
         // A fixed offset device (as in most other tests) knows no zones at all.
         assert_eq!(ics_import(&file("", &[NY_SERIES]), 60).unwrap()[0].zone, "");
+    }
+
+    /// Rules GhulCal cannot show exactly are taken once, with the rule in the notes; the ones it
+    /// can show keep their repetition.
+    #[test]
+    fn rules_that_cannot_be_shown_exactly_are_taken_once() {
+        // 14 July 2026 is a Tuesday.
+        let rep = |rule: &str| {
+            let v = ics_import(&file("", &[&format!("DTSTART:20260714T100000\r\nRRULE:{rule}")]), 60).unwrap();
+            (v[0].repeat, v[0].notes.contains("RRULE:"))
+        };
+        for rule in [
+            "FREQ=DAILY;INTERVAL=7",
+            "FREQ=WEEKLY;INTERVAL=3",
+            "FREQ=MONTHLY;INTERVAL=3",
+            "FREQ=WEEKLY;BYDAY=MO,WE",
+            "FREQ=MONTHLY;BYDAY=2TU",
+            "FREQ=MONTHLY;BYMONTHDAY=1",
+            "FREQ=MONTHLY;BYSETPOS=-1;BYDAY=MO,TU,WE,TH,FR",
+            "FREQ=HOURLY",
+        ] {
+            assert_eq!(rep(rule), (CalRepeat::None, true), "{rule}");
+        }
+        assert_eq!(rep("FREQ=WEEKLY;BYDAY=TU"), (CalRepeat::Weekly, false));
+        assert_eq!(rep("FREQ=WEEKLY;INTERVAL=2;BYDAY=TU;WKST=MO"), (CalRepeat::Biweekly, false));
+        assert_eq!(rep("FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"), (CalRepeat::Weekdays, false));
+        assert_eq!(rep("FREQ=MONTHLY;BYMONTHDAY=14"), (CalRepeat::Monthly, false));
+        assert_eq!(rep("FREQ=YEARLY;BYMONTH=7;BYMONTHDAY=14;COUNT=3"), (CalRepeat::Yearly, false));
     }
 
     /// Outlook writes Windows names and sends the rules along. If they agree with the zone the

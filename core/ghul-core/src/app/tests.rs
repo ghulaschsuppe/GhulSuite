@@ -1124,3 +1124,30 @@ fn unknown_server_name_and_refused_port_have_fixed_texts() {
     let other = GhulError::from(NetError::Connect("connection closed".into()));
     assert!(matches!(other, GhulError::Network { msg } if msg == "connection failed: connection closed"));
 }
+
+/// Two cards "Visa" with different numbers (or two notes without a title) are two entries; the
+/// same login with other spelling of its title is one.
+#[test]
+fn import_duplicates_are_only_the_same_entry() {
+    use super::suite::dedup_key;
+    use crate::vault::Field;
+    let card = |n: &str| {
+        let mut f = std::collections::BTreeMap::new();
+        f.insert("title".to_owned(), Field::Text("Visa".into()));
+        f.insert("number".to_owned(), Field::Secret(n.into()));
+        f
+    };
+    assert_ne!(dedup_key("card", &card("4111")), dedup_key("card", &card("5500")));
+    let login = |t: &str, pw: &str| {
+        let mut f = std::collections::BTreeMap::new();
+        f.insert("title".to_owned(), Field::Text(t.into()));
+        f.insert("password".to_owned(), Field::Secret(pw.into()));
+        f
+    };
+    assert_eq!(dedup_key("login", &login("GitHub", "pw")), dedup_key("login", &login(" github ", "pw")));
+    assert_ne!(
+        dedup_key("login", &login("GitHub", "pw")),
+        dedup_key("login", &login("GitHub", "PW")),
+        "passwords are exact"
+    );
+}

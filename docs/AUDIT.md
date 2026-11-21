@@ -199,6 +199,14 @@ behoben (Testprotokoll PR-…), „klein“ (Randfall, Komfort, Werkzeug) kommt 
 | K-8 | GhulDocs | „Mit App öffnen“: Dateinamen mit `: * ? " < > |` (von Android) lassen sich unter Windows nicht öffnen; zwei gleichnamige Dokumente teilen sich einen Pfad |
 | K-9 | GhulDocs | Wird während eines Speicherns der Papierkorb geleert und zugleich ein älterer Stand übernommen, kann das aufgeschobene Löschen Inhaltsdateien des neuen Stands treffen (die App lässt Öffnen während des Speicherns ohnehin nicht zu) |
 | K-10 | Scan | Zurück während des Speicherns eines Scans: scheitert das Speichern danach, sind die Seiten schon gelöscht |
+| K-11 | GhulPass | Die Leak-Prüfung läuft nach dem Ausschalten bis zum Ende der laufenden Runde weiter (nur 5-stellige Hash-Präfixe, kein Klartext) |
+| K-12 | GhulPass | Eigene geheime Felder (z. B. „PIN“ aus einem Import) stehen im Editor im Klartext, in der Ansicht verdeckt |
+| K-13 | GhulAuth | Beim Scannen eines Google-Authenticator-Exports werden übersprungene Konten (HOTP, ungültig) nicht genannt; MD5-Konten werden still als SHA1 übernommen |
+| K-14 | GhulPass/Auth | `steam://` im TOTP-Feld eines Logins wird nicht erkannt (das Feld fehlt dann in der Ansicht); Steam-Konten werden als `algorithm=STEAM` exportiert, leerer Aussteller als `&issuer=` |
+| K-15 | GhulCal | Ein Termin, der in einen anderen Kalender-Tresor verschoben wird, wird in der Quelle zuerst gelöscht (bei einem Schreibfehler am Ziel fehlt er) |
+| K-16 | GhulCal | Android-Erinnerungen von Serien mit eigener Zone kommen nach einem Zonenwechsel bis zum nächsten Entsperren zur falschen Zeit; ein verschobener Einzeltermin einer solchen Serie kann den falschen Tag streichen |
+| K-17 | Import | Eine Zeile, die mit „otpauth“ beginnt (auch in einer Notiz), macht eine ganze CSV-Datei zur otpauth-Liste (die Vorschau zeigt dann 0 Einträge) |
+| K-18 | GhulCal | ICS-Export: „monatlich am 31.“ endet in anderen Apps anders als in GhulCal (RFC 5545 lässt kurze Monate aus); `UNTIL` als Ortszeit neben `TZID`, kein `VTIMEZONE` |
 
 ## 5. Geprüft und in Ordnung
 
