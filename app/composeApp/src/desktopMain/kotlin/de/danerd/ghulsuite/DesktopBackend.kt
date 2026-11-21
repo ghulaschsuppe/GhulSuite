@@ -273,7 +273,31 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
 
     override fun lock() {
         ShareFiles.wipe()
+        // A copied password does not outlive the session (also not the app: see the hook below).
+        clearOwnClip()
         super.lock()
+    }
+
+    /** What GhulSuite put on the clipboard last (cleared when locking or quitting, if still there). */
+    @Volatile private var copiedSequence: Int? = null
+    @Volatile private var copiedText: String? = null
+
+    private fun clearOwnClip() {
+        copiedSequence?.let { WinNative.clearIfUnchanged(it) }
+        copiedSequence = null
+        copiedText?.let { text ->
+            runCatching {
+                val clipboard = Toolkit.getDefaultToolkit().systemClipboard
+                if (clipboard.getData(java.awt.datatransfer.DataFlavor.stringFlavor) as? String == text) {
+                    clipboard.setContents(StringSelection(""), null)
+                }
+            }
+        }
+        copiedText = null
+    }
+
+    init {
+        Runtime.getRuntime().addShutdownHook(Thread { runCatching { clearOwnClip() } })
     }
 
     override fun crashReport(): String? = File(DesktopPaths.dataDir, "absturz.txt").takeIf { it.exists() }?.readText()
@@ -358,11 +382,22 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
 
     override fun copySensitive(label: String, text: String) {
         val seconds = settings.clipboardClearSeconds
-        val sequence = WinNative.copyPrivate(text, window())
+        // Another program may hold the clipboard open for a moment: tried a few times before the
+        // normal clipboard (which Windows keeps in its history) is used.
+        var sequence: Int? = null
+        for (attempt in 0 until 5) {
+            sequence = WinNative.copyPrivate(text, window())
+            if (sequence != null) break
+            Thread.sleep(40)
+        }
         if (sequence != null) {
+            copiedSequence = sequence
+            copiedText = null
             if (seconds > 0) timer.schedule(seconds * 1000L) { WinNative.clearIfUnchanged(sequence) }
             return
         }
+        copiedSequence = null
+        copiedText = text
         val clipboard = Toolkit.getDefaultToolkit().systemClipboard
         val selection = StringSelection(text)
         clipboard.setContents(selection, selection)

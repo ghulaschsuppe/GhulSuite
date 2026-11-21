@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package de.danerd.ghulsuite
 
-import de.danerd.ghulsuite.core.FactorProof
+import de.danerd.ghulsuite.coretest.FactorProof
 
 import de.danerd.ghulsuite.coretest.CalCalendar
 import de.danerd.ghulsuite.coretest.EntryData

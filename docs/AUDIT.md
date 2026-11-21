@@ -74,7 +74,8 @@ Schutzänderung erneuert die inneren Schlüssel und erhöht die Schutz-Epoche ([
 **Grenze ohne Server** ([`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md), Abschnitt 2): Eine Kopie der Suite-Datei, die schon
 irgendwo liegt (Stick, Cloud, anderes Gerät), lässt sich nicht nachträglich unbrauchbar machen. Die App sagt nach
 jeder Schutzänderung deutlich: alte Kopien löschen. Sicher unbrauchbar werden sie, wenn der zweite Faktor getauscht
-wird (neuen hinzufügen, alten entfernen, alte Schlüsseldatei vernichten bzw. alten Key zurücksetzen).
+wird (neuen hinzufügen, alten entfernen, alte Schlüsseldatei vernichten bzw. alten Key zurücksetzen) **und** ein neuer
+Wiederherstellungscode erstellt wird (der bisherige steckt auch in alten Kopien).
 
 Bewusste Ausnahme: Wer nur den Wiederherstellungscode hat (Passwort vergessen), kann eine Suite-Datei öffnen, ohne
 dass sich die Siegel prüfen lassen. Die App sagt das, prüft Stand und Schutz-Epoche trotzdem und versiegelt danach
@@ -207,6 +208,13 @@ behoben (Testprotokoll PR-…), „klein“ (Randfall, Komfort, Werkzeug) kommt 
 | K-16 | GhulCal | Android-Erinnerungen von Serien mit eigener Zone kommen nach einem Zonenwechsel bis zum nächsten Entsperren zur falschen Zeit; ein verschobener Einzeltermin einer solchen Serie kann den falschen Tag streichen |
 | K-17 | Import | Eine Zeile, die mit „otpauth“ beginnt (auch in einer Notiz), macht eine ganze CSV-Datei zur otpauth-Liste (die Vorschau zeigt dann 0 Einträge) |
 | K-18 | GhulCal | ICS-Export: „monatlich am 31.“ endet in anderen Apps anders als in GhulCal (RFC 5545 lässt kurze Monate aus); `UNTIL` als Ortszeit neben `TZID`, kein `VTIMEZONE` |
+| K-19 | Kern | Argon2-Werte einer fremden Datei (bis 2 GiB Speicher) werden vor dem Ableiten nicht gegen das Gerät geprüft: eine präparierte Datei kann die App nach Eingabe des Passworts beenden (nichts wird ersetzt) |
+| K-20 | Kern | Die RP-ID eines Key-Slots kommt ungeprüft aus der Datei (unter Windows zeigt der Systemdialog dann eine fremde Domain an; nichts verlässt das Gerät) |
+| K-21 | Windows | Die PDF-Ansicht begrenzt die Seitenhöhe nicht (ein präpariertes PDF kann den Speicher ausschöpfen) |
+| K-22 | Android | Der Absturzbericht erscheint vor dem Bildschirmschutz und wird ohne „sensibel“-Markierung kopiert (er enthält nur Stacktraces) |
+| K-23 | Website | Der Hinweis „Keine Cookies“ bleibt unsichtbar in der Tab-Reihenfolge; Kontrast der blassen Schrift knapp unter WCAG AA; doppelt vorgelesene Laufband-Liste und Bildtexte |
+| K-24 | Texte | „Alles wird nur auf diesem Gerät geprüft“ auch bei eingeschalteter Leak-Prüfung; Hinweis der Sperr-Benachrichtigung „Schütteln oder ‚Sperren‘ sperrt sofort“; Reste von GhulMail/GhulDrive im Testplan; Hinweis zu Testschlüsseln auf der Download-Seite des Testservers |
+| K-25 | Website | Ein früher hochgeladenes `report.php` könnte auf dem Webspace noch liegen (der Upload löscht nichts): von Hand prüfen und löschen |
 
 ## 5. Geprüft und in Ordnung
 

@@ -116,7 +116,6 @@ der Leiste, seine Tresore bleiben unberührt.
 - **TOTP für jeden Dienst**, als Liste oder Kacheln, mit Favoriten und eigener Sortierung; Steam-Codes inklusive.
 - **Hinzufügen** per Kamera, aus einem Bildschirmfoto, als `otpauth://`-Link oder von Hand.
 - **Umzug:** Import aus Google Authenticator (Export-QR), Aegis, 2FAS und anderen; Export als QR-Code.
-- **Uhr-Prüfung:** Geht die Uhr des Geräts falsch, warnt die App, statt falsche Codes zu zeigen.
 - Auf Wunsch **verdeckte Codes**, die erst beim Antippen erscheinen, und der nächste Code schon vorab.
 
 </td></tr></table>
@@ -244,7 +243,7 @@ am PC dieselbe Datei öffnen, arbeiten, speichern; wieder am Handy öffnen.
   (Stick, Cloud, anderes Gerät), öffnet jemand mit dem alten Passwort **und** dem alten zweiten Faktor weiterhin, mit
   dem Stand von damals. Sicher unbrauchbar wird sie, wenn du den zweiten Faktor tauschst: neuen Key oder neue
   Schlüsseldatei hinzufügen, den alten entfernen und die alte Schlüsseldatei vernichten bzw. den alten Key
-  zurücksetzen.
+  zurücksetzen, **und** einen neuen Wiederherstellungscode erstellen (der bisherige steckt auch in alten Kopien).
 - **Einzelne Tresore:** Eine Tresordatei lässt sich auch für sich öffnen, mit Passwort und zweitem Faktor oder dem
   Wiederherstellungscode, und zu deiner Suite hinzufügen; sie wird dort ein eigener Tresor. Einen ganzen Tresor oder
   ausgewählte Einträge gibst du als neuen Tresor mit eigener Schlüsseldatei oder eigenem Security Key weiter. Ein
@@ -293,7 +292,8 @@ App (etwa deine Mail-App) an den Entwickler schickst. Von selbst sendet GhulSuit
 | Wer | sieht | sieht nicht |
 |---|---|---|
 | Jemand mit deiner Suite-Datei (z. B. verlorener USB-Stick) | Datensalat; ungefähr, wie viele Dokumente es gibt und wie groß sie sind | ohne Passwort **und** zweiten Faktor nichts; er kann nichts unterschieben (Siegel) und dir keine ältere Datei unbemerkt unterjubeln (die App fragt nach) |
-| Jemand mit deinem gesperrten Handy | Benachrichtigungen ohne Inhalt | Einträge, Codes, Dokumente, Termine |
+| Jemand mit deinem gesperrten Handy | Termin-Erinnerungen mit Titel und Uhrzeit (einstellbar bis „nur Hinweis“) | Einträge, Codes, Dokumente |
+| Jemand, der deine App kurz entsperrt in der Hand hat | was gerade offen ist | keinen neuen Wiederherstellungscode, keinen eigenen Key, keine eigene App-PIN: dafür braucht es Passwort und zweiten Faktor bzw. das Passwort |
 | Ein verlorener Key oder ein altes Notfallblatt | nach dem Entfernen bzw. Erneuern höchstens eine alte Kopie der Suite-Datei, mit dem Stand von damals | alles, was du danach speicherst |
 | Wer dein Netz beobachtet | dass die App GitHub nach Updates fragt und, falls eingeschaltet, Pwned Passwords | Inhalte, Passwörter, Dokumente |
 | Eine App, mit der du ein Dokument öffnest | genau dieses Dokument (eine befristete Kopie) | alles andere |

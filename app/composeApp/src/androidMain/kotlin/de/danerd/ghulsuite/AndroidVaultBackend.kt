@@ -383,7 +383,8 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
 
     override fun copySensitive(label: String, text: String) {
         val cm = context.getSystemService(ClipboardManager::class.java)
-        val tagged = "$label \u2022 GhulSuite ${System.nanoTime() % 100000}"
+        // Neutral: the label is visible to keyboards and clipboard previews (no account names).
+        val tagged = "GhulSuite ${System.nanoTime() % 100000}"
         val clip = ClipData.newPlainText(tagged, text)
         clip.description.extras = PersistableBundle().apply {
             if (Build.VERSION.SDK_INT >= 33) {
