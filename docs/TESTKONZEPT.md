@@ -77,7 +77,7 @@ Verbindungen.
 
 ### E10: App und Oberfläche
 - **Desktop-UI-Tests** (Compose, Fake-Backends und echter Kern): alle Hauptwege, absurde Eingaben (Naughty Strings in Formularen), schnelles Doppeltippen, Zurück an jeder Stelle; GhulDocs (`DocsInteractionTest`, `DocsBackendTest`) und das Scannen mit gezeichneten Fotos und einer Ersatz-Kamera (`DocScanTest`, `ScanAlgorithmsTest`).
-- **Maestro-Abläufe** im Android-Emulator, vorhanden: bei Pull Requests und auf `main` die Grundabläufe aller vier Bereiche (GhulDocs: `07-docs.yaml`) und Speichern/Öffnen der Suite-Datei mit Dokumenten (`14-suite-file.yaml`), in einem Teil. Die Kamera hat im Emulator keinen Ablauf; das Scannen prüfen die Desktop-Tests und der Testplan (Abschnitt 38).
+- **Maestro-Abläufe** im Android-Emulator, vorhanden: bei Pull Requests und auf `main` die Grundabläufe aller vier Bereiche (GhulDocs: `07-docs.yaml`) und Speichern/Öffnen der Suite-Datei mit Dokumenten (`14-suite-file.yaml`), in einem Teil. Die Kamera hat im Emulator keinen Ablauf; das Scannen prüfen die Desktop-Tests und der Testplan (Abschnitt 38). Vorab prüft `tools/check-maestro.py` (Precheck und CI, vor dem Emulator), dass jeder Text, den ein Ablauf sucht, noch ein Text der App ist.
 - **Android Monkey:** zehntausende zufällige Gesten mit mehreren festen Startwerten; jeder Absturz oder „App reagiert nicht“ ist ein Fehler.
 - Barrierefreiheit (Kontraste, Beschriftungen, Zielgrößen).
 

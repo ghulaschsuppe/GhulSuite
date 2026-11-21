@@ -53,6 +53,8 @@ have() { command -v "$1" > /dev/null 2>&1; }
 # --- texts, manifest, test vectors -------------------------------------------------------------
 step "Texte (Übersetzungen, Platzhalter, Striche)" python3 tools/check-texts.py
 step "Android-Manifest" python3 tools/check-android-manifest.py
+# The texts the emulator flows (CI only) tap and wait for: still texts of the app.
+step "Maestro-Abläufe gegen App-Texte" python3 tools/check-maestro.py
 # The website (www.ghulsuite.de) builds: templates, texts in both languages, links between them.
 step "Website bauen (Vorschau)" env GHUL_RELEASES_JSON=/dev/null python3 tools/build-website.py --out "$out/website" --preview
 # Like the CI: an own Python environment with the independent crypto libraries (made once, reused).
