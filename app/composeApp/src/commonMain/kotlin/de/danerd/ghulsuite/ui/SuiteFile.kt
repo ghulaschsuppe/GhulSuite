@@ -123,15 +123,18 @@ fun OpenSuiteFile(
     var withKey by remember(p) { mutableStateOf(state.backend.settings.factorKey) }
     val needsKey = withKey
     val opened = stringResource(Res.string.file_opened)
+    val readOnly = stringResource(Res.string.file_opened_read_only)
 
     fun accept() {
         state.run(onError = { error = it }, block = { backend.archiveAccept() }) {
-            // A file handed over without the right to write it again: "Save as" chooses the place.
-            backend.setSuiteFile(file.ref.takeIf { it.id.isNotEmpty() })
+            // A file handed over without the right to write it again keeps the place known before
+            // (the save there still checks the file); "Save as" chooses a new one.
+            if (file.ref.id.isNotEmpty()) backend.setSuiteFile(file.ref)
+            backend.settings.factorKey = needsKey
             check = null
             password = ""; pin = ""; code = ""; newPassword = ""; repeat = ""
             state.afterSuiteFileOpened()
-            state.message(opened.replace("%1\$s", file.ref.name))
+            state.message(opened.replace("%1\$s", file.ref.name) + if (file.ref.id.isEmpty()) "\n" + readOnly else "")
             onOpened()
         }
     }

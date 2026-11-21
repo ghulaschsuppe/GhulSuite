@@ -325,7 +325,7 @@ getestet wird und was nicht:
 - **Jede Nacht** zusätzlich: langes Fuzzing, Dauerläufe, zufällige Bedienung im Emulator, Server mit kaputtem TLS
   und 9.807 Zertifikatsketten gegen den TLS-Prüfer der Update- und Leak-Prüfung, ein Scan der APK.
 - **Was gefunden wurde und was offen ist,** steht mit Nummer und Schwere im
-  [Testprotokoll](docs/TESTPROTOKOLL.md); wie getestet wird, im [Testkonzept](docs/TESTKONZEPT.md).
+  [Testprotokoll](docs/TESTPROTOKOLL.md); wie getestet wird, im [Testkonzept](docs/TESTKONZEPT.md); wie mehrere Prüfer den Code prüfen, beheben und nachprüfen, im [Prüfkonzept](docs/PRUEFKONZEPT.md).
 
 Kein Test beweist, dass es keine Lücke mehr gibt. GhulSuite ist eine **Entwicklungsversion**: Speichere die
 Suite-Datei regelmäßig und bewahre eine Kopie auf. Und wenn du dich mit Sicherheit auskennst: Lies mit, greif an, melde, was du findest.

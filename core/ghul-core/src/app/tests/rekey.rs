@@ -213,7 +213,7 @@ fn an_old_copy_and_the_old_password_do_not_open_the_current_files() {
     s.create(options("pw-alt-123", Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
     s.save_entry(vault_id(&s, "Privat"), login("Bank", "u", "alt")).unwrap();
     let old = files(&d);
-    s.change_password("pw-alt-123".into(), "pw-neu-456".into()).unwrap();
+    s.change_password(kf_proof("pw-alt-123", &kf), None, None, "pw-neu-456".into()).unwrap();
     let now = files(&d);
     // Someone who knew the old password and has the key file opens the old copy, but its
     // container keys do not open the current files.
@@ -309,7 +309,7 @@ fn the_recovery_code_does_not_reveal_a_password_key() {
     let cbor = suite(&code);
     assert!(!cbor.windows(32).any(|w| w == pk.as_slice()), "the password key is readable with the code");
     assert!(!cbor.windows(32).any(|w| w == first_code.expose().as_slice()), "the old code is readable");
-    s.change_password("pw-123456".into(), "pw-neu-789".into()).unwrap();
+    s.change_password(kf_proof("pw-123456", &kf), None, None, "pw-neu-789".into()).unwrap();
     let cbor = suite(&code);
     assert!(!cbor.windows(32).any(|w| w == pk.as_slice()), "the old password key is readable");
 }

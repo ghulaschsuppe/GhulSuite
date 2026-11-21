@@ -500,7 +500,7 @@ fn a_change_of_the_protection_keeps_every_document_and_renews_the_index_key() {
         .map(|f| (f.clone(), std::fs::read(docs_dir(&d, &v).join(f)).unwrap()))
         .collect();
     let old_key = index_key(&d, &v, PW, &kf);
-    s.change_password(PW.into(), "neu-654321".into()).unwrap();
+    s.change_password(super::kf_proof(PW, &kf), None, None, "neu-654321".into()).unwrap();
     let code = s.new_recovery_code(super::kf_proof("neu-654321", &kf), None, None, "Blatt".into()).unwrap();
     assert_eq!(read(&s, &v, &a.id).unwrap(), content(SECTION + 1, 1));
     assert_eq!(read(&s, &v, &b.id).unwrap(), content(10, 2));

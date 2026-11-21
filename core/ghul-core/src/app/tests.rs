@@ -409,7 +409,7 @@ fn quick_unlock_fingerprint_and_pin() {
 
     // A password change invalidates all quick unlocks.
     s.unlock_quick("pin".into(), pin.clone(), Some("246810".into()), 3600).unwrap();
-    s.change_password("pw-1".into(), "pw-2".into()).unwrap();
+    s.change_password(key_proof("pw-1"), Some(k.clone()), Some(listener()), "pw-2".into()).unwrap();
     assert!(!s.quick_unlock_exists("pin".into()));
     s.lock();
     assert!(matches!(
@@ -596,7 +596,7 @@ fn foreign_vaults() {
     single.suite().unlock_with_recovery_code(code.clone(), "neu-neu-123".into()).unwrap();
 
     // Password change: an old copy (old salt) needs the old password once and is brought up to date.
-    s.change_password("pw-123456".into(), "pw-neu-7890".into()).unwrap();
+    s.change_password(kf_proof("pw-123456", &kf), None, None, "pw-neu-7890".into()).unwrap();
     s.remove_vault(privat.clone()).unwrap();
     s.adopt_vault(old_privat, "".into(), "pw-123456".into(), None, None, None, Some(kf.clone())).unwrap();
     s.lock();
@@ -1194,6 +1194,9 @@ fn protection_changes_need_the_master_password() {
     let s = d.suite();
     let kf = generate_keyfile();
     let setup = s.create(options(PW, Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    // Locked and unlocked again: no confirmation from creating is left.
+    s.lock();
+    s.unlock(PW.into(), None, None, None, Some(kf.clone())).unwrap();
     let slots = s.slots().unwrap();
     let wrong = || kf_proof("falsch-123", &kf);
     // The password alone is not enough: the key file is asked for as well.
@@ -1220,4 +1223,47 @@ fn protection_changes_need_the_master_password() {
     s.lock();
     // The old recovery code still works: no new one was made.
     s.unlock_with_recovery_code(setup.recovery_code.unwrap(), "pw-654321".into()).unwrap();
+}
+
+#[test]
+fn the_same_key_twice_is_no_backup() {
+    let d = Dirs::new("same-key");
+    let s = d.suite();
+    let kf = generate_keyfile();
+    s.create(options(PW, Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    let k = key();
+    s.add_security_key(kf_proof(PW, &kf), None, k.clone(), listener(), "1234".into(), "A".into()).unwrap();
+    let n = s.slots().unwrap().len();
+    // The key refuses a second credential for this suite (excludeList): nothing is added.
+    let r = s.add_security_key(kf_proof(PW, &kf), None, k.clone(), listener(), "1234".into(), "A2".into());
+    assert!(matches!(r, Err(GhulError::AlreadyExists)), "{r:?}");
+    assert_eq!(s.slots().unwrap().len(), n);
+    // Another key is a backup.
+    s.add_security_key(kf_proof(PW, &kf), None, key(), listener(), "1234".into(), "B".into()).unwrap();
+    assert_eq!(s.slots().unwrap().len(), n + 1);
+}
+
+#[test]
+fn confirmed_factors_count_once_and_not_past_locking() {
+    let d = Dirs::new("confirm");
+    let s = d.suite();
+    let kf = generate_keyfile();
+    s.create(options(PW, Some(kf.clone()), &[(VaultKind::Pass, "Privat")]), None, None, None).unwrap();
+    let pw_only = || super::suite::FactorProof { password: PW.into(), pin: None, keyfile: None };
+    // Just created: the first change needs the password alone, the next one both factors again.
+    s.add_keyfile(pw_only(), None, None, generate_keyfile(), "K2".into()).unwrap();
+    assert!(s.add_keyfile(pw_only(), None, None, generate_keyfile(), "K3".into()).is_err());
+    // A wrong password does not use a confirmation up.
+    s.confirm_factors(kf_proof(PW, &kf), None, None).unwrap();
+    let wrong = super::suite::FactorProof { password: "falsch-123".into(), pin: None, keyfile: None };
+    assert!(matches!(s.add_keyfile(wrong, None, None, generate_keyfile(), "x".into()), Err(GhulError::WrongPassword)));
+    assert!(s.add_keyfile(pw_only(), None, None, generate_keyfile(), "K3".into()).is_err(), "taken by the try");
+    // Locking ends a confirmation.
+    s.confirm_factors(kf_proof(PW, &kf), None, None).unwrap();
+    s.lock();
+    s.unlock(PW.into(), None, None, None, Some(kf.clone())).unwrap();
+    assert!(s.add_keyfile(pw_only(), None, None, generate_keyfile(), "K4".into()).is_err());
+    // Wrong factors confirm nothing.
+    assert!(s.confirm_factors(kf_proof(PW, &generate_keyfile()), None, None).is_err());
+    assert!(s.add_keyfile(pw_only(), None, None, generate_keyfile(), "K5".into()).is_err());
 }

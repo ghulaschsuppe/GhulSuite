@@ -125,7 +125,7 @@ fun SaveExistingSuiteDialog(state: AppState, onReplaced: () -> Unit, onDismiss: 
         state.run(onError = { error = plain[0] ?: it }, block = {
             // Never over a file of another suite or another state: the old suite is deleted next.
             val there = backend.archiveTarget(target)
-            if (there == ArchiveTargetUi.OTHER_SUITE || there == ArchiveTargetUi.CHANGED_ELSEWHERE) {
+            if (there != ArchiveTargetUi.NEW && there != ArchiveTargetUi.SAME) {
                 fail(otherFile)
             }
             if (!backend.archiveSave(target, deviceInfo(), created = true, state.onProgress)) {

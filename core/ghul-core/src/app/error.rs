@@ -120,6 +120,7 @@ impl From<FidoError> for GhulError {
             FidoError::PinPolicyViolation => GhulError::PinPolicyViolation,
             FidoError::HmacSecretUnsupported => GhulError::HmacSecretUnsupported,
             FidoError::NoCredentials => GhulError::KeyNotRegistered,
+            FidoError::CredentialExcluded => GhulError::AlreadyExists,
             FidoError::NotConfirmed => GhulError::NotConfirmed,
             FidoError::InvalidInput { msg } => GhulError::InvalidInput { msg },
             other => GhulError::KeyProtocol { msg: other.to_string() },

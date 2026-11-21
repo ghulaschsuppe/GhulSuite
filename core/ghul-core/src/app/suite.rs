@@ -625,6 +625,9 @@ pub struct GhulSuite {
     pub(super) unsaved_lock: Mutex<()>,
     /// Documents being added right now (their content files are not in an index yet).
     pub(super) docs_adds: std::sync::atomic::AtomicUsize,
+    /// Both factors were shown a moment ago (`confirm_factors`, or the suite was just created):
+    /// the next change of the protection needs the password alone, once (see `require_factors`).
+    pub(super) factors_confirmed: Mutex<Option<std::time::Instant>>,
 }
 
 /// How containers of the folder are opened.
@@ -656,8 +659,9 @@ pub(super) fn with_authenticator<T>(
 type NewKey = (Vec<u8>, [u8; 32], Zeroizing<[u8; 32]>);
 
 /// Registers a new credential and evaluates hmac-secret once (two touches).
-pub(super) fn register_key(auth: &dyn KeyDevice, pin: &str) -> Result<NewKey> {
-    let cred = auth.make_credential(RP_ID, RP_NAME, pin)?;
+/// `exclude`: the credentials of the keys a suite has already (the same key twice is no backup).
+pub(super) fn register_key(auth: &dyn KeyDevice, pin: &str, exclude: &[Vec<u8>]) -> Result<NewKey> {
+    let cred = auth.make_credential(RP_ID, RP_NAME, pin, exclude)?;
     if !cred.hmac_secret {
         return Err(GhulError::HmacSecretUnsupported);
     }
@@ -1176,6 +1180,7 @@ impl GhulSuite {
             built: Mutex::new(None),
             unsaved_lock: Mutex::new(()),
             docs_adds: std::sync::atomic::AtomicUsize::new(0),
+            factors_confirmed: Mutex::new(None),
         })
     }
 
@@ -1226,7 +1231,8 @@ impl GhulSuite {
         let mut factor: Vec<(Slot, &str)> = Vec::new();
         match (&transport, &pin) {
             (Some(t), Some(pin)) => {
-                let (cred_id, prf_input, output) = with_authenticator(t, listener.as_ref(), |a| register_key(a, pin))?;
+                let (cred_id, prf_input, output) =
+                    with_authenticator(t, listener.as_ref(), |a| register_key(a, pin, &[]))?;
                 let slot = keys.fido2_slot(
                     &Fido2Registration { rp_id: RP_ID, credential_id: &cred_id, prf_input, hmac_output: &output },
                     &mut OsRng,
@@ -1260,6 +1266,8 @@ impl GhulSuite {
         }
         self.save_all(&mut open)?;
         self.set_open(open);
+        // Both factors were just used: the backup of a key may follow with the password alone.
+        *self.factors_confirmed.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
         Ok(SetupResult { recovery_code: Some(code.to_display().to_string()) })
     }
 
@@ -1380,6 +1388,7 @@ impl GhulSuite {
     /// thread: it covers a call ending in the same moment.
     pub fn lock(&self) {
         self.lock_pending.store(true, Ordering::SeqCst);
+        *self.factors_confirmed.lock().unwrap_or_else(|e| e.into_inner()) = None;
         // A checked suite file holds its keys: not past locking either.
         self.set_pending(None);
         self.drop_open(false);
@@ -1998,7 +2007,16 @@ impl GhulSuite {
         let pin = Zeroizing::new(pin);
         // Refused before the new key is touched.
         self.require_factors(&proof, proof_transport.as_ref(), Some(&listener))?;
-        let (cred_id, prf_input, output) = with_authenticator(&transport, Some(&listener), |a| register_key(a, &pin))?;
+        // A key of this suite refuses (registered already: it would be no backup).
+        let known: Vec<Vec<u8>> = self.with_open(|o| {
+            Ok(o.suite
+                .slots()
+                .iter()
+                .filter_map(|s| if let Slot::Fido2(f) = s { Some(f.credential_id.clone()) } else { None })
+                .collect())
+        })?;
+        let (cred_id, prf_input, output) =
+            with_authenticator(&transport, Some(&listener), |a| register_key(a, &pin, &known))?;
         self.with_open(|o| {
             super::single::refuse_single(o)?;
             let reg = Fido2Registration { rp_id: RP_ID, credential_id: &cred_id, prf_input, hmac_output: &output };
@@ -2097,9 +2115,18 @@ impl GhulSuite {
         })
     }
 
-    /// Changes the master password (new salt) for all files. The current password must be given.
-    pub fn change_password(&self, current: String, new_password: String) -> Result<()> {
-        let current = Zeroizing::new(current);
+    /// Changes the master password (new salt) for all files. Both factors of now must be given
+    /// (`proof`: the current password plus a key or key file): who knows the password and finds
+    /// the app unlocked cannot lock the owner out.
+    pub fn change_password(
+        &self,
+        proof: FactorProof,
+        transport: Option<Arc<dyn HidTransport>>,
+        listener: Option<Arc<dyn FidoListener>>,
+        new_password: String,
+    ) -> Result<()> {
+        self.require_factors(&proof, transport.as_ref(), listener.as_ref())?;
+        let current = Zeroizing::new(proof.password.clone());
         let new_password = Zeroizing::new(new_password);
         self.with_open(|o| {
             super::single::refuse_single(o)?;
@@ -2122,6 +2149,20 @@ impl GhulSuite {
             super::quick::delete_all(&self.local_dir);
             Ok(())
         })
+    }
+
+    /// Both factors of now, shown before the next change of the protection (a security key is
+    /// touched here; the change itself then needs the password alone, once, within two minutes).
+    /// For a new key on a phone: the key of now goes out before the new one comes in.
+    pub fn confirm_factors(
+        &self,
+        proof: FactorProof,
+        transport: Option<Arc<dyn HidTransport>>,
+        listener: Option<Arc<dyn FidoListener>>,
+    ) -> Result<()> {
+        self.require_factors(&proof, transport.as_ref(), listener.as_ref())?;
+        *self.factors_confirmed.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
+        Ok(())
     }
 
     pub fn verify_password(&self, password: String) -> Result<bool> {
@@ -2159,6 +2200,13 @@ impl GhulSuite {
         listener: Option<&Arc<dyn FidoListener>>,
     ) -> Result<()> {
         self.with_open(|o| super::single::refuse_single(o))?;
+        // Confirmed a moment ago (`confirm_factors`): the password alone, once.
+        if proof.pin.is_none() && proof.keyfile.is_none() {
+            let confirmed = self.factors_confirmed.lock().unwrap_or_else(|e| e.into_inner()).take();
+            if confirmed.is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(120)) {
+                return self.require_password(&Zeroizing::new(proof.password.clone()));
+            }
+        }
         let locked = self.anchor()?;
         let keyfile = parse_keyfile(proof.keyfile.clone())?;
         let pin = proof.pin.clone().map(Zeroizing::new);

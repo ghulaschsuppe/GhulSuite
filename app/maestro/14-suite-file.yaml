@@ -62,6 +62,8 @@ name: Suite file
     index: 0
 - inputText: "Ghul-Test-Passwort-2026!"
 - hideKeyboard
+# Key and key file are always both offered: the key file it is.
+- tapOn: "Key file"
 - tapOn: "Choose key file"
 - extendedWaitUntil:
     visible: "ghulsuite.*\\.ghlkey"
@@ -138,6 +140,9 @@ name: Suite file
 - inputText: "246813"
 - tapOn: "Repeat app PIN"
 - inputText: "246813"
+# Switching on the app PIN needs the master password (who finds the app unlocked cannot).
+- tapOn: "Master password"
+- inputText: "Ghul-Test-Passwort-2026!"
 - hideKeyboard
 - tapOn: "Save"
 - takeScreenshot: 14-07-pin-again

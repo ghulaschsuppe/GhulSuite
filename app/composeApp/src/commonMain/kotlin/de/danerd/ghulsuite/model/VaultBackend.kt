@@ -115,7 +115,8 @@ interface VaultBackend {
     suspend fun newRecoveryCode(proof: FactorProofUi, label: String, onTouchNeeded: () -> Unit): String
     /** Removes a security key or key file (not the last one). */
     suspend fun removeSlot(proof: FactorProofUi, id: String, onTouchNeeded: () -> Unit)
-    suspend fun changePassword(current: String, new: String)
+    /** [proof]: the current password plus a key or key file of now. */
+    suspend fun changePassword(proof: FactorProofUi, new: String, onTouchNeeded: () -> Unit)
 
     // --- Import and export
     /** What an import file contains (nothing is changed). */
@@ -335,7 +336,8 @@ data class ArchiveCheckUi(
 )
 
 /** The file at the place the suite is saved to. */
-enum class ArchiveTargetUi { NEW, SAME, CHANGED_ELSEWHERE, OTHER_SUITE }
+/** OTHER_PROTECTION: this suite with a protection changed elsewhere; overwriting would undo the change. */
+enum class ArchiveTargetUi { NEW, SAME, CHANGED_ELSEWHERE, OTHER_SUITE, OTHER_PROTECTION }
 
 /** Both factors of now, before a change of the protection: the master password plus the PIN of a key ([pin]) or a key file. */
 class FactorProofUi(val password: String, val pin: String?, val keyfile: ByteArray?)

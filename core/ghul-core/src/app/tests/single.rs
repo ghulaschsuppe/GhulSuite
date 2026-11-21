@@ -287,7 +287,7 @@ fn a_vault_on_its_own_stays_one_vault() {
     refused(t.add_vault_file(other, "Codes".into()).map(|_| ()));
     refused(t.remove_vault(id.clone()));
     refused(t.add_keyfile(super::kf_proof(PW, &kf), None, None, generate_keyfile(), "Zweite".into()));
-    refused(t.change_password(PW.into(), "ganz-neu-123".into()));
+    refused(t.change_password(super::kf_proof(PW, &kf), None, None, "ganz-neu-123".into()));
     refused(t.new_recovery_code(super::kf_proof(PW, &kf), None, None, "Neu".into()).map(|_| ()));
     refused(t.archive_build_bytes("Test".into()).map(|_| ()));
     // The device's quick unlock belongs to the own suite.

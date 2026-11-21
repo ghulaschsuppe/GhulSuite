@@ -211,7 +211,8 @@ flowchart TB
 - **Ein Passwort, eine Berührung** öffnet alle Container. Jeder Container hat trotzdem seinen eigenen VMK.
 - Jeder Container enthält alle Slots in seinem eigenen Header und lässt sich daher **auch einzeln** öffnen,
   z. B. nur eine `.ghlpss` vom USB-Stick ohne Suite-Datei (Abschnitt 8.3).
-- Passwort ändern geht mit einem einzigen Key. Ein Key oder eine Schlüsseldatei wird hinzugefügt oder entfernt, indem man einen Slot hinzufügt oder löscht. Die App aktualisiert dabei alle Container. Der letzte zweite Faktor lässt sich nicht entfernen.
+- Passwort ändern verlangt das aktuelle Passwort und **einen** zweiten Faktor (ein Key oder eine Schlüsseldatei genügt, nicht alle). Ein Key oder eine Schlüsseldatei wird hinzugefügt oder entfernt, indem man einen Slot hinzufügt oder löscht; auch das verlangt beide Faktoren. Die App aktualisiert dabei alle Container. Der letzte zweite Faktor lässt sich nicht entfernen, und solange ein Security Key eingetragen ist, auch nicht der vorletzte (das Backup). Denselben Key ein zweites Mal einzutragen lehnt der Key selbst ab (excludeList): er wäre kein Backup.
+- Öffnet ein Gerät einen neueren Stand derselben Suite mit **demselben** Schutz (gleiche Epoche, kein Wiederherstellungscode), bleiben Fingerabdruck und App-PIN eingerichtet; sie halten denselben Passwortschlüssel. Bei anderem Schutz werden sie gelöscht. Eine Suite-Datei dieser Suite mit einem Schutz, den das Gerät nicht kennt (anderswo geändert), wird beim Speichern nicht überschrieben: das machte die Änderung rückgängig. Sie ist zuerst zu öffnen.
 - **Erneuern bei jeder Schutzänderung:** Neues Notfallblatt, neues Passwort oder ein entfernter Key geben jedem
   Container einen neuen VMK; ein entfernter Key erneuert zusätzlich `S` für alle übrigen Keys. So öffnet ein
   verlorenes Notfallblatt oder ein entfernter Key zusammen mit einer **alten Kopie der Suite-Datei** nichts, was

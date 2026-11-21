@@ -545,7 +545,8 @@ fun RecoveryCodeScreen(state: AppState, code: String, padding: PaddingValues) {
 
 @Composable
 fun ChangePasswordScreen(state: AppState, padding: PaddingValues) {
-    var current by remember { mutableStateOf("") }
+    // The current password plus a key or key file (who knows the password cannot lock the owner out).
+    val proof = rememberProofInput(state)
     var new by remember { mutableStateOf("") }
     var repeat by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
@@ -555,7 +556,7 @@ fun ChangePasswordScreen(state: AppState, padding: PaddingValues) {
             BusyBanner(state)
             SectionCard(stringResource(Res.string.a_change_password)) {
                 Hint(stringResource(Res.string.set_change_pw_text))
-                SecretTextField(current, { current = it; error = null }, stringResource(Res.string.l_current_password))
+                ProofFields(state, proof) { error = null }
                 SecretTextField(new, { new = it; error = null }, stringResource(Res.string.l_new_password))
                 // Only once something is typed: an empty field is not "very weak".
                 if (new.isNotEmpty()) StrengthMeter(state.backend.passwordScore(new))
@@ -566,14 +567,16 @@ fun ChangePasswordScreen(state: AppState, padding: PaddingValues) {
                     scope.launch {
                         error = PasswordPolicy.check(state.backend, new, repeat)
                         if (error == null) {
-                            state.run(onError = { error = it }, block = { state.backend.changePassword(current, new) }) {
+                            state.run(onError = { error = it }, block = { state.backend.changePassword(proof.proof(), new, state.onTouchNeeded) }) {
+                                proof.clear()
+                                new = ""; repeat = ""
                                 state.protectionChanged()
                                 state.message(done)
                                 state.pop()
                             }
                         }
                     }
-                }, enabled = !state.busy && current.isNotEmpty(), modifier = Modifier.fillMaxWidth()) {
+                }, enabled = !state.busy && proof.ok(state), modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(Res.string.a_save))
                 }
             }

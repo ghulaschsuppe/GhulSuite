@@ -215,6 +215,16 @@ behoben (Testprotokoll PR-…), „klein“ (Randfall, Komfort, Werkzeug) kommt 
 | K-23 | Website | Der Hinweis „Keine Cookies“ bleibt unsichtbar in der Tab-Reihenfolge; Kontrast der blassen Schrift knapp unter WCAG AA; doppelt vorgelesene Laufband-Liste und Bildtexte |
 | K-24 | Texte | „Alles wird nur auf diesem Gerät geprüft“ auch bei eingeschalteter Leak-Prüfung; Hinweis der Sperr-Benachrichtigung „Schütteln oder ‚Sperren‘ sperrt sofort“; Reste von GhulMail/GhulDrive im Testplan; Hinweis zu Testschlüsseln auf der Download-Seite des Testservers |
 | K-25 | Website | Ein früher hochgeladenes `report.php` könnte auf dem Webspace noch liegen (der Upload löscht nichts): von Hand prüfen und löschen |
+| K-26 | Kern | `create_from_vault` und `share_as_vault` legen noch Suiten bzw. Tresordateien mit einem einzelnen Key ohne Backup an; die App fordert danach beim Entfernen ein Backup, verlangt es aber nicht beim Anlegen |
+| K-27 | App | Das Löschsymbol eines Faktors erscheint auch, wenn Entfernen abgelehnt wird (letzter Faktor, letztes Backup); der Hinweis „Backup fehlt“ steht doppelt (Liste und Dialog) |
+| K-28 | Kern | `FactorProof` (Passwort, Key-PIN, Schlüsseldatei) wird über UniFFI kopiert und nicht ausdrücklich überschrieben; Kopien liegen bis zur Speicherbereinigung im Speicher |
+| K-29 | Kern | Scheitert beim Übernehmen einer Suite-Datei das Zurückrollen der Arbeitskopie, wird dieser zweite Fehler nicht gemeldet (der erste schon) |
+| K-30 | Tests | Fehlende Oberflächentests: Backup-Schritt im Assistenten mit zweitem Key, Konflikt „anderer Schutz“ im Speichern-Dialog, Hinweis beim Öffnen einer schreibgeschützten Datei |
+| K-31 | GhulDocs | Mehrere Dokumente auf einmal verschieben oder löschen fehlt (nur einzeln) |
+| K-32 | App | Barrierefreiheit: einigen Symbolknöpfen fehlt ein Text für Screenreader; die blasse Hinweisschrift liegt knapp unter WCAG AA |
+| K-33 | App | Vor dem Speichern wird der freie Platz am Ziel nicht geprüft (ein voller Stick scheitert erst beim Schreiben; ob die alte Datei dann heil bleibt, hängt unter Android vom Speicherort ab: prüfen) |
+| K-34 | Update | Der Installer prüft nicht noch einmal auf eine neuere Version, wenn zwischen Prüfung und Start Zeit vergangen ist |
+| K-35 | Format | Es gibt keine Zusage, welche ältere App-Version eine neue Suite-Datei noch öffnet; vor der ersten öffentlichen Version festlegen (z. B. „N-1“) und testen |
 
 ## 5. Geprüft und in Ordnung
 

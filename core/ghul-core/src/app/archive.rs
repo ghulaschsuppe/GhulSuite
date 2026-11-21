@@ -193,10 +193,13 @@ pub enum ArchiveTarget {
     New,
     /// The state this working copy was loaded from or last saved as: overwriting loses nothing.
     Same,
-    /// Saved there from somewhere else meanwhile (or with a protection this device cannot open).
+    /// Saved there from somewhere else meanwhile.
     ChangedElsewhere,
     /// Another suite (or no GhulSuite file at all).
     OtherSuite,
+    /// This suite with a protection this device does not have (changed elsewhere: a new
+    /// password, a key removed): overwriting it would undo that change. Open it first.
+    OtherProtection,
 }
 
 /// A built `.ghlzip`, written to the sink of `archive_build`: once the file is in place (and
@@ -975,8 +978,17 @@ impl GhulSuite {
         }
         self.lock();
         self.finish_lock();
-        self.wipe_device_data();
-        self.wiped.store(true, std::sync::atomic::Ordering::SeqCst);
+        // Quick unlock holds the password key and the factor secret of the working copy. They stay
+        // the same for a newer state of the same suite with the same protection (epoch): then
+        // fingerprint and app PIN stay. Another suite, another protection or the recovery code:
+        // they go.
+        let same_protection = p.recovery.is_none()
+            && self.working_suite_id() == Some(p.suite_id)
+            && self.seen_all().get(&crate::kdf::hex(&p.suite_id)).is_some_and(|s| s.epoch == p.header.epoch);
+        if !same_protection {
+            self.wipe_device_data();
+            self.wiped.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
         *self.built.lock().unwrap_or_else(|e| e.into_inner()) = None;
         self.replace_working_copy(&p.files, p.staged.as_ref())?;
         match (&p.recovery, p.keys) {
@@ -1121,7 +1133,7 @@ impl GhulSuite {
                 // the change asks for). Any other file was saved elsewhere.
                 let seen = self.seen_all().remove(&crate::kdf::hex(&o.suite.header().suite_id));
                 let own = seen.is_some_and(|s| !s.file.is_empty() && s.file == file_id);
-                return Ok(bare(if own { ArchiveTarget::Same } else { ArchiveTarget::ChangedElsewhere }));
+                return Ok(bare(if own { ArchiveTarget::Same } else { ArchiveTarget::OtherProtection }));
             };
             let header: ArchiveHeader = setting(&c, HEADER_KEY);
             let mine: StateRef = setting(&o.suite, STATE_KEY);

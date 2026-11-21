@@ -256,7 +256,8 @@ impl GhulSuite {
         let (slot, label): (Slot, &str) = match (&keyfile, &transport, &pin) {
             (Some(kf), _, _) => (keys.keyfile_slot(kf, &mut OsRng), &options.keyfile_label),
             (None, Some(t), Some(pin)) => {
-                let (cred_id, prf_input, output) = with_authenticator(t, listener.as_ref(), |a| register_key(a, pin))?;
+                let (cred_id, prf_input, output) =
+                    with_authenticator(t, listener.as_ref(), |a| register_key(a, pin, &[]))?;
                 let slot = keys.fido2_slot(
                     &Fido2Registration { rp_id: RP_ID, credential_id: &cred_id, prf_input, hmac_output: &output },
                     &mut OsRng,

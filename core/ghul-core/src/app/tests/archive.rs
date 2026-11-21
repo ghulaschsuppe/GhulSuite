@@ -141,7 +141,7 @@ fn a_file_with_an_older_protection_is_not_opened() {
     open(&b, &old, &kf);
     b.archive_accept().unwrap();
     // A changes the password: from now on A refuses the old file, also before saving.
-    a.change_password(PW.into(), "pw-neu-7890".into()).unwrap();
+    a.change_password(kf_proof(PW, &kf), None, None, "pw-neu-7890".into()).unwrap();
     let r = a.archive_open_bytes(old.clone(), PW.into(), None, None, None, Some(kf.clone()));
     assert!(matches!(r, Err(GhulError::ProtectionOutdated)), "{r:?}");
     let newer = a.archive_build_bytes("A".into()).unwrap();
@@ -188,7 +188,7 @@ fn saving_over_a_file_saved_elsewhere_is_noticed() {
 fn the_own_file_stays_own_after_a_change_of_the_protection() {
     let (_da, a, kf, _) = device_with_suite("target-protect-a");
     let file = save(&a);
-    a.change_password(PW.into(), "pw-neu-7890".into()).unwrap();
+    a.change_password(kf_proof(PW, &kf), None, None, "pw-neu-7890".into()).unwrap();
     assert_eq!(a.archive_target_bytes(file.clone()).unwrap(), ArchiveTarget::Same);
     // Saved with the new protection: the new file is its own as well.
     let newer = save(&a);
@@ -198,9 +198,9 @@ fn the_own_file_stays_own_after_a_change_of_the_protection() {
     let b = db.suite();
     open(&b, &file, &kf);
     b.archive_accept().unwrap();
-    b.change_password(PW.into(), "pw-anders-4321".into()).unwrap();
+    b.change_password(kf_proof(PW, &kf), None, None, "pw-anders-4321".into()).unwrap();
     let from_b = save(&b);
-    assert_eq!(a.archive_target_bytes(from_b).unwrap(), ArchiveTarget::ChangedElsewhere);
+    assert_eq!(a.archive_target_bytes(from_b).unwrap(), ArchiveTarget::OtherProtection);
 }
 
 #[test]
@@ -225,9 +225,22 @@ fn opening_a_file_removes_this_devices_data_of_the_old_state() {
     let file = save(&a);
     a.quick_unlock_enable(PW.into(), "pin".into(), Some("1234".into())).unwrap();
     assert!(a.quick_unlock_exists("pin".into()));
+    // The same protection (a newer state from the other device): quick unlock stays.
     open(&a, &file, &kf);
     a.archive_accept().unwrap();
+    assert!(a.quick_unlock_exists("pin".into()), "same password key and factor secret");
+    assert!(!a.archive_device_data_wiped());
+    // Another protection (the password changed elsewhere): it goes.
+    let db = Dirs::new("wipe-b");
+    let b = db.suite();
+    open(&b, &file, &kf);
+    b.archive_accept().unwrap();
+    b.change_password(kf_proof(PW, &kf), None, None, "pw-neu-7890".into()).unwrap();
+    let newer = save(&b);
+    a.archive_open_bytes(newer, "pw-neu-7890".into(), None, None, None, Some(kf.clone())).unwrap();
+    a.archive_accept().unwrap();
     assert!(!a.quick_unlock_exists("pin".into()), "quick unlock holds the old password key");
+    assert!(a.archive_device_data_wiped());
 }
 
 /// Every way of changing a `.ghlzip` without the password is refused before anything is
@@ -416,7 +429,7 @@ fn locking_forgets_a_checked_file() {
     assert!(!b.archive_device_data_wiped(), "failed before anything was removed");
     open(&a, &file, &kf);
     a.archive_accept().unwrap();
-    assert!(a.archive_device_data_wiped());
+    assert!(!a.archive_device_data_wiped(), "the same protection: nothing of this device goes");
 }
 
 /// More entries than any suite has: refused before anything is read.
@@ -733,7 +746,7 @@ fn a_password_change_saved_halfway_never_hides_vaults() {
     let s = GhulSuite::new(flaky.clone(), d.local());
     s.unlock(PW.into(), None, None, None, Some(kf.clone())).unwrap();
     flaky.armed.store(true, std::sync::atomic::Ordering::SeqCst);
-    assert!(s.change_password(PW.into(), "pw-neu-7890".into()).is_err());
+    assert!(s.change_password(kf_proof(PW, &kf), None, None, "pw-neu-7890".into()).is_err());
     s.lock();
     s.finish_lock();
     // The suite file still has the old password: it opens, the vault is there but unavailable.
@@ -750,7 +763,7 @@ fn a_password_change_saved_halfway_never_hides_vaults() {
 fn a_damaged_note_of_what_was_seen_keeps_the_epoch() {
     let (d, a, kf, _) = device_with_suite("seen-bak");
     let old = save(&a);
-    a.change_password(PW.into(), "pw-neu-7890".into()).unwrap();
+    a.change_password(kf_proof(PW, &kf), None, None, "pw-neu-7890".into()).unwrap();
     save(&a);
     std::fs::write(std::path::Path::new(&d.local()).join("archive-seen.json"), b"{kaputt").unwrap();
     let r = a.archive_open_bytes(old, PW.into(), None, None, None, Some(kf));

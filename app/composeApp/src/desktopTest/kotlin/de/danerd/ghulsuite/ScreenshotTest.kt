@@ -254,7 +254,7 @@ class ScreenshotTest {
         override suspend fun addKeyfile(proof: de.danerd.ghulsuite.model.FactorProofUi, keyfile: ByteArray, label: String, onTouchNeeded: () -> Unit) {}
         override suspend fun newRecoveryCode(proof: de.danerd.ghulsuite.model.FactorProofUi, label: String, onTouchNeeded: () -> Unit) = ""
         override suspend fun removeSlot(proof: de.danerd.ghulsuite.model.FactorProofUi, id: String, onTouchNeeded: () -> Unit) {}
-        override suspend fun changePassword(current: String, new: String) {}
+        override suspend fun changePassword(proof: de.danerd.ghulsuite.model.FactorProofUi, new: String, onTouchNeeded: () -> Unit) {}
         override fun generatePassword(options: PasswordOptionsUi) = "x7#Kq!9mVw2\$Lp4@Zr8&"
         override fun passwordScore(password: String) = if (password.length > 12) 4 else 1
         override fun copySensitive(label: String, text: String) {}

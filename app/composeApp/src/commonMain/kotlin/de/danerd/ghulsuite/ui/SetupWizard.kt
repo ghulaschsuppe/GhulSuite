@@ -163,15 +163,17 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
     val keyPinMissing = stringResource(Res.string.wz_key_pin_missing)
 
     /**
-     * The backup of the security key: confirmed with the key just made (touched again), then the
-     * key file is added, or the second key registered (touched after the first one).
+     * A second key as the backup: right after making the suite the password alone confirms it
+     * (both factors were just used); after a failed try the first key is touched again first.
      */
+    var backupTried by remember { mutableStateOf(false) }
     fun addBackup() {
-        state.run(onError = { error = it }, block = {
-            val proof = de.danerd.ghulsuite.model.FactorProofUi(password, pin, null)
+        state.run(onError = { error = it; backupTried = true }, block = {
+            val proof = de.danerd.ghulsuite.model.FactorProofUi(password, if (backupTried) pin else null, null)
             if (backupKey) {
                 backend.addSecurityKey(proof, backupPin, backupLabel.ifBlank { state.str(Res.string.slot_backup_key) }, state.onTouchNeeded)
             } else {
+                // Switched to a key file after the second key did not work.
                 backend.addKeyfile(proof, keyfile!!, state.str(Res.string.keyfile_default_label), state.onTouchNeeded)
             }
         }) {
@@ -191,7 +193,8 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                     password = password,
                     keyPin = if (useKey) pin else null,
                     keyLabel = keyLabel.ifBlank { state.str(Res.string.setup_default_key_label) },
-                    keyfile = if (useKey) null else keyfile,
+                    // A key file as the backup of a key comes in the same step (no extra touch).
+                    keyfile = if (useKey && backupKey) null else keyfile,
                     keyfileLabel = state.str(Res.string.keyfile_default_label),
                     recoveryLabel = state.str(Res.string.setup_recovery_label),
                     kdf = choice,
@@ -202,9 +205,10 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
         }) {
             code = it
             created = true
+            backend.settings.factorKey = useKey
             repeat = ""
-            // The password stays until quick unlock is set (step 6); a key needs its backup first.
-            if (useKey) addBackup() else { keyfile = null; step = 4 }
+            // The password stays until quick unlock is set (step 6); a second key as backup follows.
+            if (useKey && backupKey) addBackup() else { keyfile = null; pin = ""; step = 4 }
         }
     }
 
@@ -245,7 +249,11 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                 }
             } else if (keyfile != null && keyfileSaved) step = 3 else error = notSaved
             // Made already, only the backup failed (e.g. the second key was not there): again.
-            3 -> if (created && useKey && !backupDone) addBackup() else create()
+            3 -> when {
+                !(created && useKey && !backupDone) -> create()
+                !backupKey && (keyfile == null || !keyfileSaved) -> error = notSaved
+                else -> addBackup()
+            }
             4 -> if (AREAS.none { areaOn[it.kind] == true }) error = oneArea else applyAreas()
             5 -> step = 6
             6 -> {
@@ -420,6 +428,21 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                 }
             }
             if (useKey) HintText(stringResource(Res.string.wz_create_touch))
+            // The second key did not work (not there, the same key): a key file instead is offered.
+            if (created && useKey && !backupDone && backupTried) {
+                Banner(Icons.Filled.Warning, stringResource(Res.string.wz_backup_failed))
+                ChipRow {
+                    FilterChip(backupKey, { backupKey = true; error = null }, label = { Text(stringResource(Res.string.wz_backup_second_key)) })
+                    FilterChip(!backupKey, { backupKey = false; error = null }, label = { Text(stringResource(Res.string.factor_keyfile)) })
+                }
+                if (!backupKey && filePickersAvailable) {
+                    FilledTonalButton(onClick = {
+                        val data = keyfile ?: backend.generateKeyfile().also { keyfile = it }
+                        saveKeyfile(KEYFILE_NAME, data)
+                    }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.keyfile_create_save)) }
+                    if (keyfileSaved) Text(stringResource(Res.string.keyfile_ready), color = okColor())
+                }
+            }
             if (kdf == null) Hint(stringResource(Res.string.setup_calibrating))
         }
 

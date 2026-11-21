@@ -1375,10 +1375,13 @@
     <string name="upd_wait">Erst fertig speichern, hinzufügen oder bearbeiten, dann aktualisieren.</string>
     <string name="err_backup_factor">Ein Security Key braucht ein Backup: einen zweiten Key oder eine Schlüsseldatei. Füge zuerst ein Backup hinzu.</string>
     <string name="proof_hint">Zur Bestätigung: Master-Passwort und dein Key oder deine Schlüsseldatei. Wer die entsperrte App kurz in der Hand hat, kann so nichts an deinem Schutz ändern.</string>
-    <string name="set_add_key_new">Dann der neue Key: Name, und wenn er es braucht, seine PIN. Bestätigst du mit deinem bisherigen Key, berühre erst ihn und stecke danach den neuen ein.</string>
+    <string name="set_add_key_new">Dann der neue Key: Name und, wenn er es braucht, seine PIN. Bestätigst du mit deinem bisherigen Key, berühre erst ihn; danach steckst du den neuen ein. Ein Key, der schon eingetragen ist, lehnt ab.</string>
     <string name="wz_backup_title">Backup für den Key (Pflicht)</string>
     <string name="wz_backup_text">Geht dein Key verloren, kommst du mit dem Backup weiter hinein. Es funktioniert genau wie der Key: eine Schlüsseldatei (z. B. auf einem zweiten Stick, getrennt aufbewahrt) oder ein zweiter Security Key.</string>
     <string name="wz_backup_second_key">Zweiter Key</string>
-    <string name="wz_backup_second_key_hint">Beim Einrichten berührst du erst deinen ersten Key zweimal (Anlegen, Bestätigen), dann steckst du den zweiten ein und berührst ihn.</string>
+    <string name="wz_backup_second_key_hint">Erst berührst du deinen ersten Key zweimal (Anlegen), dann steckst du den zweiten ein und berührst ihn ebenfalls zweimal. Ist es derselbe Key, lehnt er ab.</string>
     <string name="set_key_no_backup">Dein Key hat kein Backup. Geht er verloren, kommst du nur noch mit dem Wiederherstellungscode hinein. Füge einen zweiten Key oder eine Schlüsseldatei hinzu.</string>
+    <string name="wz_backup_failed">Die Suite ist angelegt, aber das Backup fehlt noch. Versuche den zweiten Key noch einmal (erst den ersten berühren) oder nimm stattdessen eine Schlüsseldatei.</string>
+    <string name="save_conflict_protection">Die Suite-Datei an diesem Ort hat einen anderen Schutz: Auf einem anderen Gerät wurde inzwischen das Passwort geändert oder ein Key entfernt. Überschreiben würde diese Änderung rückgängig machen. Öffne die Datei zuerst (mit dem neuen Passwort bzw. Key) oder sichere deinen Stand als neue Datei.</string>
+    <string name="file_opened_read_only">In diese Datei darf die App nicht zurückschreiben. Sichere mit „Speichern unter“ an einen Ort deiner Wahl.</string>
 </resources>

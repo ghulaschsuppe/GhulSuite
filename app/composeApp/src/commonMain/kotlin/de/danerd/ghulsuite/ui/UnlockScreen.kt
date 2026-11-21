@@ -191,7 +191,11 @@ fun UnlockScreen(state: AppState) {
                             } else {
                                 backend.unlock(password, null, keyfile?.bytes, state.onTouchNeeded)
                             }
-                        }) { clear() }
+                        }) {
+                            // What worked is chosen first next time.
+                            backend.settings.factorKey = needsKey
+                            clear()
+                        }
                     },
                     enabled = !state.busy && password.isNotEmpty() && (if (needsKey) keyPinOk(state, pin) else keyfile != null),
                     modifier = Modifier.fillMaxWidth(),
