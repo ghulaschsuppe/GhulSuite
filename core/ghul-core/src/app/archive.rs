@@ -622,10 +622,12 @@ pub fn archive_written_matches(
 
 impl GhulSuite {
     fn seen_all(&self) -> BTreeMap<String, Seen> {
-        std::fs::read(self.local_dir.join(SEEN_FILE))
-            .ok()
-            .and_then(|d| serde_json::from_slice(&d).ok())
-            .unwrap_or_default()
+        // The copy before the last write when the file cannot be read (see `write_atomic`): the
+        // epoch in it keeps older protections out.
+        let read = |name: &str| -> Option<BTreeMap<String, Seen>> {
+            std::fs::read(self.local_dir.join(name)).ok().and_then(|d| serde_json::from_slice(&d).ok())
+        };
+        read(SEEN_FILE).or_else(|| read(&format!("{SEEN_FILE}.bak"))).unwrap_or_default()
     }
 
     /// This device has `state` now (opened or saved; also an older one or a branch the user
@@ -645,21 +647,25 @@ impl GhulSuite {
     }
 
     /// The protection of a suite changed on this device (its epoch is `epoch` now).
-    pub(super) fn note_epoch(&self, suite_id: &[u8; 16], epoch: u64) {
+    /// It must be noted: without it, a file with the older protection would open again.
+    pub(super) fn note_epoch(&self, suite_id: &[u8; 16], epoch: u64) -> Result<()> {
         let mut all = self.seen_all();
         let e = all.entry(crate::kdf::hex(suite_id)).or_default();
         if epoch <= e.epoch {
-            return;
+            return Ok(());
         }
         e.epoch = epoch;
-        self.write_seen(&all);
+        self.try_write_seen(&all)
     }
 
     fn write_seen(&self, all: &BTreeMap<String, Seen>) {
-        if let Ok(json) = serde_json::to_vec(all) {
-            let _ = std::fs::create_dir_all(&self.local_dir);
-            let _ = super::storage::write_atomic(&self.local_dir, SEEN_FILE, &json);
-        }
+        let _ = self.try_write_seen(all);
+    }
+
+    fn try_write_seen(&self, all: &BTreeMap<String, Seen>) -> Result<()> {
+        let json = serde_json::to_vec(all).map_err(|e| GhulError::Storage { msg: e.to_string() })?;
+        std::fs::create_dir_all(&self.local_dir)?;
+        super::storage::write_atomic(&self.local_dir, SEEN_FILE, &json)
     }
 
     /// The working copy is about to change (called before a container is written, so the mark

@@ -599,6 +599,8 @@ pub struct GhulSuite {
     /// Marking and clearing the unsaved mark one at a time (a change while a save is noted is
     /// never left unmarked).
     pub(super) unsaved_lock: Mutex<()>,
+    /// Documents being added right now (their content files are not in an index yet).
+    pub(super) docs_adds: std::sync::atomic::AtomicUsize,
 }
 
 /// How containers of the folder are opened.
@@ -936,7 +938,14 @@ impl GhulSuite {
             let Some(kind) = VaultKind::from_container(locked.kind()) else { continue };
             let opened = match opener {
                 Opener::Factors { pk, s, suite_id, kdf } => {
-                    if &locked.header().suite_id != suite_id || &locked.header().kdf != *kdf {
+                    if &locked.header().suite_id != suite_id {
+                        continue;
+                    }
+                    // A vault of this suite with another protection (a change of the password
+                    // that was saved halfway): unavailable, not gone. Saving the suite file is
+                    // refused then, and the recovery code still opens it.
+                    if &locked.header().kdf != *kdf {
+                        vaults.push(damaged(&file));
                         continue;
                     }
                     locked.unlock(pk, s).ok()
@@ -1107,8 +1116,7 @@ impl GhulSuite {
     /// now on that files with an older protection are not to be opened.
     pub(super) fn protection_changed(&self, o: &mut Open) -> Result<()> {
         o.bump_epoch()?;
-        self.note_epoch(&o.suite.header().suite_id, o.epoch());
-        Ok(())
+        self.note_epoch(&o.suite.header().suite_id, o.epoch())
     }
 
     /// Copies a new factor slot (created in the suite) into every vault and saves all.
@@ -1143,6 +1151,7 @@ impl GhulSuite {
             content_copies: Mutex::new(Default::default()),
             built: Mutex::new(None),
             unsaved_lock: Mutex::new(()),
+            docs_adds: std::sync::atomic::AtomicUsize::new(0),
         })
     }
 
@@ -1415,8 +1424,11 @@ impl GhulSuite {
 
     pub fn quick_unlock_disable(&self, name: String) -> Result<()> {
         let p = super::quick::path(&self.local_dir, &name)?;
-        if p.exists() {
-            super::quick::wipe(&p)?;
+        // Also the copies of an earlier write (`.bak`, `.tmp`): they hold the same keys.
+        for f in [p.clone(), p.with_extension("ghlq.bak"), p.with_extension("ghlq.tmp")] {
+            if f.exists() {
+                super::quick::wipe(&f)?;
+            }
         }
         let _ = std::fs::remove_file(self.local_dir.join(format!("quick-{name}.stamp")));
         Ok(())

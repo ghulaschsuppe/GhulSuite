@@ -420,7 +420,7 @@ pub struct ShareDocsOptions {
 crate::app::redact::redacted_debug!(ShareDocsOptions { vault_id, ids, name, key_label, keyfile_label, recovery_label });
 
 /// Copies of index entries, wiped when dropped (they hold the documents' keys).
-struct Entries(Vec<Entry>);
+pub(crate) struct Entries(pub(crate) Vec<Entry>);
 
 impl Drop for Entries {
     fn drop(&mut self) {
@@ -544,6 +544,12 @@ impl GhulSuite {
         let contents = content_files(&dir, &new_id, &entries.0)?;
         c.payload.entries = entries.0.clone();
         let data = Zeroizing::new(c.seal(&mut OsRng)?);
+        // The keys of every document are not needed while the content files are copied (that
+        // may take long, also after a lock): gone from memory now.
+        c.payload.entries.iter_mut().for_each(zeroize::Zeroize::zeroize);
+        drop(c);
+        drop(entries);
+        drop(keys);
         let (size, sha256) =
             write_zip(&[(file_name(VaultKind::Docs, &new_id), data.to_vec())], &contents, sink, progress)?;
         Ok(DocsShared { size, sha256, recovery_code: code.to_display().to_string() })

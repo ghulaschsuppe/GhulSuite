@@ -506,6 +506,33 @@ class InteractionTest {
     }
 
     /**
+     * Something handed over from outside (here: open GhulAuth) while an editor has unsaved input
+     * asks first instead of dropping the input; "Discard" then carries it out.
+     */
+    @Test
+    fun aHandOverWhileEditingAsksFirst() = app(setup = { tab = Tab.CAL; calView = CalView.LIST }) { state, _ ->
+        waitFor("Abendessen mit Jana")
+        text("Abendessen mit Jana").performClick()
+        waitFor("Trattoria Da Luca")
+        desc("Edit").performClick()
+        waitUntil(timeoutMillis = 10_000) { state.stack.lastOrNull() is Screen.CalEdit }
+        onNode(hasSetTextAction() and hasText("Abendessen mit Jana")).performTextInput(" neu")
+        waitUntil(timeoutMillis = 10_000) { state.editorDirty }
+        runOnIdle { de.danerd.ghulsuite.ui.AppLaunch.openTab.value = Tab.AUTH }
+        waitFor("Discard changes?")
+        assertTrue(state.stack.lastOrNull() is Screen.CalEdit, "the input is still there")
+        text("Discard").performClick()
+        waitUntil(timeoutMillis = 10_000) { state.tab == Tab.AUTH && state.stack.isEmpty() }
+    }
+
+    /** The area used last is kept by its name (the list of areas changes). */
+    @Test
+    fun theLastAreaIsKeptByName() = app(setup = { tab = Tab.PASS }) { state, fake ->
+        runOnIdle { state.selectTab(Tab.CAL) }
+        assertEquals("CAL", fake.settings.lastTabName)
+    }
+
+    /**
      * A phone lying sideways with large font: the week view keeps hours to look at and shows the
      * evening event (bug: the head left the hours almost no room); the page scrolls instead.
      */

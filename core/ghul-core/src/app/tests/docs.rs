@@ -1481,3 +1481,28 @@ fn a_suite_file_with_four_docs_vaults_is_refused() {
     );
     assert!(!b.exists().unwrap());
 }
+
+/// A document whose add failed after its vault file was written (the suite file failed): the
+/// index on the disk is written back, the document is not there and nothing is damaged; the
+/// suite file can still be saved.
+#[test]
+fn a_failed_add_leaves_no_document_without_content() {
+    let (d, s, kf, _, v) = docs_suite("docs-add-fail");
+    add(&s, &v, None, "a.pdf", b"a");
+    s.lock();
+    s.finish_lock();
+    let flaky =
+        Arc::new(super::archive::FailOnce { inner: d.storage(), armed: std::sync::atomic::AtomicBool::new(false) });
+    let t = GhulSuite::new(flaky.clone(), d.local());
+    t.unlock(PW.into(), None, None, None, Some(kf.clone())).unwrap();
+    flaky.armed.store(true, std::sync::atomic::Ordering::SeqCst);
+    assert!(t
+        .docs_add_file(v.clone(), None, "b.pdf".into(), "application/pdf".into(), source(b"b".to_vec()), None)
+        .is_err());
+    t.lock();
+    t.finish_lock();
+    t.unlock(PW.into(), None, None, None, Some(kf)).unwrap();
+    assert_eq!(names(&t.docs_list(v.clone(), None).unwrap()), vec!["a.pdf"]);
+    assert_eq!(content_files(&d, &v).len(), 1, "the content of the failed add is tidied up");
+    assert!(t.archive_build_bytes("Test".into()).is_ok());
+}

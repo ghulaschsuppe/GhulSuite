@@ -720,3 +720,70 @@ fn a_file_saved_elsewhere_tells_by_whom_and_when() {
     assert!(info.time > 0);
     assert_eq!(a.archive_target_info_bytes(Vec::new()).unwrap().time, 0);
 }
+
+/// A change of the password that was saved halfway (the suite file failed after the vaults):
+/// the vaults with the new protection are listed as unavailable, not left out, and no suite file
+/// without them is written.
+#[test]
+fn a_password_change_saved_halfway_never_hides_vaults() {
+    let (d, a, kf, _) = device_with_suite("half-pw");
+    a.lock();
+    a.finish_lock();
+    let flaky = Arc::new(FailOnce { inner: d.storage(), armed: std::sync::atomic::AtomicBool::new(false) });
+    let s = GhulSuite::new(flaky.clone(), d.local());
+    s.unlock(PW.into(), None, None, None, Some(kf.clone())).unwrap();
+    flaky.armed.store(true, std::sync::atomic::Ordering::SeqCst);
+    assert!(s.change_password(PW.into(), "pw-neu-7890".into()).is_err());
+    s.lock();
+    s.finish_lock();
+    // The suite file still has the old password: it opens, the vault is there but unavailable.
+    s.unlock(PW.into(), None, None, None, Some(kf)).unwrap();
+    let vaults = s.list_vaults().unwrap();
+    assert_eq!(vaults.len(), 1, "listed, not left out");
+    assert!(!vaults[0].available);
+    assert!(s.archive_build_bytes("Test".into()).is_err(), "no suite file without it");
+}
+
+/// The file of what this device has seen keeps its copy: a damaged file does not forget the
+/// epoch (an older protection would open again).
+#[test]
+fn a_damaged_note_of_what_was_seen_keeps_the_epoch() {
+    let (d, a, kf, _) = device_with_suite("seen-bak");
+    let old = save(&a);
+    a.change_password(PW.into(), "pw-neu-7890".into()).unwrap();
+    save(&a);
+    std::fs::write(std::path::Path::new(&d.local()).join("archive-seen.json"), b"{kaputt").unwrap();
+    let r = a.archive_open_bytes(old, PW.into(), None, None, None, Some(kf));
+    assert!(matches!(r, Err(GhulError::ProtectionOutdated)), "{r:?}");
+}
+
+/// An attachment that cannot be saved (here: the storage is full) goes again: later saves of the
+/// vault still work.
+#[test]
+fn an_attachment_that_cannot_be_saved_goes_again() {
+    let (d, a, kf, _) = device_with_suite("attach-fail");
+    a.lock();
+    a.finish_lock();
+    let flaky = Arc::new(FailOnce { inner: d.storage(), armed: std::sync::atomic::AtomicBool::new(false) });
+    let s = GhulSuite::new(flaky.clone(), d.local());
+    s.unlock(PW.into(), None, None, None, Some(kf)).unwrap();
+    let v = vault_id(&s, "Privat");
+    let id = s.list_entries(VaultKind::Pass, None).unwrap()[0].id.clone();
+    flaky.armed.store(true, std::sync::atomic::Ordering::SeqCst);
+    assert!(s.add_entry_attachment(v.clone(), id.clone(), "Vertrag.pdf".into(), b"%PDF".to_vec()).is_err());
+    assert!(s.entry_extras(v.clone(), id.clone()).unwrap().attachments.is_empty());
+    s.save_entry(v, login("Post", "u", "2")).unwrap();
+}
+
+/// Turning quick unlock off removes its copies as well (they hold the same keys).
+#[test]
+fn quick_unlock_off_leaves_no_copy() {
+    let (d, a, _kf, _) = device_with_suite("quick-bak");
+    a.quick_unlock_enable("pin".into(), Some("123456".into())).unwrap();
+    a.quick_unlock_enable("pin".into(), Some("654321".into())).unwrap();
+    let dir = std::path::PathBuf::from(d.local());
+    assert!(dir.join("quick-pin.ghlq.bak").exists(), "a copy of the first one");
+    a.quick_unlock_disable("pin".into()).unwrap();
+    assert!(!dir.join("quick-pin.ghlq").exists());
+    assert!(!dir.join("quick-pin.ghlq.bak").exists());
+}

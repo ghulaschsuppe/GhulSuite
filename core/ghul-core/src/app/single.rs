@@ -219,31 +219,33 @@ impl GhulSuite {
                 picked.iter().map(|e| (e.id.clone(), new_id().to_vec())).collect();
             let hex_ids: std::collections::HashMap<String, String> =
                 ids.iter().map(|(o, n)| (crate::kdf::hex(o), crate::kdf::hex(n))).collect();
-            let entries: Vec<Entry> = picked
-                .into_iter()
-                .cloned()
-                .map(|mut e| {
-                    // A fresh history.
-                    e.extra.remove(HISTORY);
-                    e.extra.insert(CREATED.into(), ciborium::value::Value::Integer(now.into()));
-                    if let Some(n) = ids.get(&e.id) {
-                        e.id = n.clone();
-                    }
-                    if kind == VaultKind::Cal {
-                        if let Some(crate::vault::Field::Text(cal)) = e.fields.get_mut("calendar") {
-                            if let Some(n) = hex_ids.get(cal.as_str()) {
-                                *cal = n.clone();
+            let entries = super::docs::Entries(
+                picked
+                    .into_iter()
+                    .cloned()
+                    .map(|mut e| {
+                        // A fresh history.
+                        e.extra.remove(HISTORY);
+                        e.extra.insert(CREATED.into(), ciborium::value::Value::Integer(now.into()));
+                        if let Some(n) = ids.get(&e.id) {
+                            e.id = n.clone();
+                        }
+                        if kind == VaultKind::Cal {
+                            if let Some(crate::vault::Field::Text(cal)) = e.fields.get_mut("calendar") {
+                                if let Some(n) = hex_ids.get(cal.as_str()) {
+                                    *cal = n.clone();
+                                }
                             }
                         }
-                    }
-                    e.revision = 1;
-                    e.modified = now;
-                    e
-                })
-                .collect();
+                        e.revision = 1;
+                        e.modified = now;
+                        e
+                    })
+                    .collect(),
+            );
             // Picked entries that are gone: nothing to hand on. A whole vault may be empty (as a
             // GhulDocs vault handed on whole).
-            if entries.is_empty() && !whole {
+            if entries.0.is_empty() && !whole {
                 return Err(GhulError::NotFound);
             }
             let kdf = o.kdf();
@@ -270,7 +272,7 @@ impl GhulSuite {
         );
         let (_, code) = c.add_recovery_slot(&options.recovery_label, now, &mut OsRng)?;
         set_vault_name(&mut c, &options.name);
-        c.payload.entries = entries;
+        c.payload.entries = entries.0.clone();
         let data = c.seal(&mut OsRng)?;
         Ok(SharedVault { kind, data, recovery_code: code.to_display().to_string() })
     }
