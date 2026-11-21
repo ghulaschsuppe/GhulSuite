@@ -51,6 +51,9 @@ private const val KEY_WAIT_MS = 60_000L
 /** The provider of the device's storage, SD cards and USB sticks (document ids are paths). */
 private const val EXTERNAL_STORAGE = "com.android.externalstorage.documents"
 
+/** The document id of a suite file whose swap put the new file in place (see AndroidVaultBackend.recover). */
+private const val SWAP_DONE = "suite_swap_done"
+
 class AndroidVaultBackend(private val context: Context, private val activity: () -> Activity?) :
     CoreVaultBackend(File(context.filesDir, "local").absolutePath) {
     private val keys = UsbSecurityKeys(context)
@@ -196,9 +199,19 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
      * anything reads the file.
      */
     private fun io(ref: SuiteFileRef): Uri = safePlace(ref)?.let { place ->
-        recover(place)
+        // Not while a save swaps the files (it repairs by itself, under the same lock).
+        if (swapLock.tryLock()) {
+            try {
+                recover(place)
+            } finally {
+                swapLock.unlock()
+            }
+        }
         place.doc(place.name)
     } ?: Uri.parse(ref.id)
+
+    /** Held while [safeWrite] swaps and while [recover] repairs: never both at once. */
+    private val swapLock = java.util.concurrent.locks.ReentrantLock()
 
     private fun exists(uri: Uri): Boolean = runCatching {
         context.contentResolver.query(uri, arrayOf(android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID), null, null, null)
@@ -210,8 +223,11 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
     /**
      * A swap stopped half way (the device went off between the two renames): "<name>" is
      * missing and "<name>.alt" is the complete file before; it takes its name back. A
-     * "<name>.alt" next to "<name>" is left from a swap that only did not tidy up: it goes.
-     * Nothing else is touched; a rename that does not end at the expected name is undone.
+     * "<name>.alt" next to "<name>" goes only when this app noted that its swap put the new
+     * file in place (only the tidying was missing). Any other one is kept under its own name
+     * ("<name>.alt-<time>"), never deleted: "<name>" might be a half file written over directly
+     * (a place that was not shared then). A rename that does not end at the expected name is
+     * undone.
      */
     private fun recover(place: Place) {
         val r = context.contentResolver
@@ -225,8 +241,11 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
                     // The provider chose another name ("… (1)"): back to ".alt", nothing lost.
                     runCatching { android.provider.DocumentsContract.renameDocument(r, back, place.name + ".alt") }
                 }
-            } else {
+            } else if (devicePref(SWAP_DONE) == place.id(place.name)) {
                 android.provider.DocumentsContract.deleteDocument(r, alt)
+                setDevicePref(SWAP_DONE, "")
+            } else {
+                android.provider.DocumentsContract.renameDocument(r, alt, place.name + ".alt-" + System.currentTimeMillis())
             }
         }
     }
@@ -246,9 +265,25 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
         write: (java.io.OutputStream) -> Unit,
         check: (SuiteInput) -> Boolean,
     ): Boolean {
+        swapLock.lock()
+        try {
+            return safeWriteLocked(place, created, write, check)
+        } finally {
+            swapLock.unlock()
+        }
+    }
+
+    private fun safeWriteLocked(
+        place: Place,
+        created: Boolean,
+        write: (java.io.OutputStream) -> Unit,
+        check: (SuiteInput) -> Boolean,
+    ): Boolean {
         val r = context.contentResolver
         val target = place.doc(place.name)
         recover(place)
+        // An old file next to it that could not be put away: no swap now (its name is taken).
+        if (exists(place.doc(place.name + ".alt"))) return false
         val neu = place.doc(place.name + ".neu")
         if (exists(neu)) runCatching { android.provider.DocumentsContract.deleteDocument(r, neu) }
         val parent = android.provider.DocumentsContract.buildDocumentUriUsingTree(place.tree, place.parentId)
@@ -270,7 +305,9 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
             val old: Uri? = if (exists(target)) {
                 val moved = android.provider.DocumentsContract.renameDocument(r, target, place.name + ".alt") ?: return false
                 if (idOf(moved) != place.id(place.name + ".alt")) {
-                    runCatching { android.provider.DocumentsContract.renameDocument(r, moved, place.name) }
+                    // Back to its name; where that fails too, the checked new file stays next to it.
+                    val back = runCatching { android.provider.DocumentsContract.renameDocument(r, moved, place.name) }.getOrNull()
+                    keepTmp = idOf(back) != place.id(place.name)
                     return false
                 }
                 moved
@@ -291,7 +328,11 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
                 return false
             }
             keepTmp = true
+            // Noted before the old file goes: if the device goes off now, the next access knows
+            // that "<name>" is the new, complete file and ".alt" may go.
+            setDevicePref(SWAP_DONE, place.id(place.name))
             old?.let { runCatching { android.provider.DocumentsContract.deleteDocument(r, it) } }
+            setDevicePref(SWAP_DONE, "")
             ok = true
             return true
         } finally {

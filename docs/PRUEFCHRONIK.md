@@ -61,6 +61,8 @@ Die Runden vor dem Funktionsstopp stehen ausführlich im [Sicherheitsbericht](AU
 | KI, 1 Agent | Nachprüfung dieser Behebungen (neuer Agent, kannte sie nicht) | 1 hoch (ein entfernter Key hätte durch Überschreiben zurückkommen können), 1 klein, behoben | PR-16 |
 | CI | Läufe von Android, Windows und Emulator zum Pull Request | Android-Build seit Runde 4 rot (lokal ohne Android-SDK nicht sichtbar), Oberflächentests und zwei Emulator-Abläufe nicht nachgezogen; behoben, dazu eine Prüfung der Emulator-Abläufe vor dem Push | PR-17, PR-18 |
 | KI, 1 Agent | **Gutachten: Kann GhulSuite an die Öffentlichkeit?** Kryptografie, Dateiformat, Datenverlust, Plattformen, Updates, Bedienung, Build, Rechtliches; Dokumente als Behauptungen geprüft | **Noch nicht reif für die Öffentlichkeit, eine begrenzte, klar gekennzeichnete Beta mit Testdaten ist möglich.** Blocker: keine Formatzusage, Signieren ohne Freigabe, keine Prüfung durch Dritte und keine festgehaltenen Gerätetests. Die beiden schwersten Code-Funde wurden nachgeprüft und bestätigt | Abschnitt 3 |
+| KI, 1 Agent | Durchsicht des sicheren Speicherns unter Android vor dem Push (ohne Android-SDK, gegen das Verhalten von AOSP gelesen) | 2 hoch (nach dem ersten Tausch „nicht erreichbar“, Wiederherstellung nie erreicht), 1 mittel (stille Namenskollision meldete „gespeichert“), 3 klein; behoben | PR-20 |
+| KI, 1 Agent | Nachprüfung dieser Korrektur (neuer Agent; Kontrollfluss mit dem Kotlin-Compiler gegen Attrappen gebaut) | 1 mittel und 2 klein, nur bei Doppel-Störungen oder gleichzeitigem Zugriff; behoben (Sperre, `.alt` nur mit eigener Notiz löschen, sonst aufheben); 1 klein offen (K-37) | PR-20 |
 
 ## 3. Gutachten vom 21.11.2026 und was daraus wurde
 

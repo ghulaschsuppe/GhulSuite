@@ -237,6 +237,7 @@ behoben (Testprotokoll PR-…), „klein“ (Randfall, Komfort, Werkzeug) kommt 
 | K-34 | Update | Der Installer prüft nicht noch einmal auf eine neuere Version, wenn zwischen Prüfung und Start Zeit vergangen ist |
 | K-35 | Format | **Erledigt (21.11.2026):** Format 3 ist eingefroren, jede spätere Version liest es (Zusage in FORMAT.md, echte Dateien als Testfälle in `core/ghul-core/tests/fixtures/format3`) |
 | K-36 | Kern | Entfernen zwei Geräte unabhängig denselben Key, haben beide dieselben Slots, aber verschiedene Faktorgeheimnisse; öffnet das eine die Datei des anderen, bleibt das Schnell-Entsperren eingerichtet und scheitert beim nächsten Mal (dann Passwort und Key; kein Zugang für Fremde) |
+| K-37 | Android | Nach dem ersten sicheren Speichern hängt der Zugriff auf die Suite-Datei an der Freigabe des Ordners (Android nimmt beim Umbenennen den Zugriff auf das einzelne Dokument weg). Wird die Freigabe zurückgenommen oder von Android verdrängt (höchstens 128 dauerhafte Freigaben), ist die Datei „nicht erreichbar“, bis der Ordner wieder freigegeben oder die Datei neu gewählt wird; kein Datenverlust. Gezielt „Ordner erneut freigeben“ anbieten. Auf einem Gerät prüfen, ob die Kennung nach dem Umbenennen dieselbe Form hat wie aus der Dateiauswahl (Testplan E19e) |
 
 ## 5. Geprüft und in Ordnung
 
