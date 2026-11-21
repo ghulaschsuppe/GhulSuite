@@ -26,6 +26,7 @@ import de.danerd.ghulsuite.ui.SAVE_BUTTON_TAG
 import de.danerd.ghulsuite.ui.SAVE_CONFIRM_TAG
 import de.danerd.ghulsuite.ui.JOB_CANCEL_TAG
 import de.danerd.ghulsuite.ui.saveJob
+import de.danerd.ghulsuite.ui.checkAndSave
 import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -95,6 +96,8 @@ class InteractionTest {
         DevChecks.alarms.clear()
         // No "Save" of an earlier test holds the lock back.
         HeaderGuard.reset()
+        // Nothing handed over in an earlier test (one AppLaunch for the whole process).
+        de.danerd.ghulsuite.ui.AppLaunch.suiteFile.value = null
         val fake = ScreenshotTest.Fake(exists = true, unlocked = true).apply(prepare)
         // Texts that AppState looks up outside of the screen need a display (screen resolution);
         // the tests run without one, so only that failure is let through, every other one counts.
@@ -375,12 +378,16 @@ class InteractionTest {
         app(setup = { passVault = "p2" }, prepare = { report = SecurityReportUi(80, 1, listOf(weak("p2", "2", "Jira"))) }) { _, _ ->
             // The section label is upper-cased.
             waitFor("1 ENTRY")
-            waitFor("1 entry needs attention")
             assertFalse(shown("1 ENTRIES"))
             shot("pass-one-entry")
+            // M33: the check itself runs on its own page.
+            text("Security check").performClick()
+            waitFor("1 entry needs attention")
         }
-        app(prepare = { report = SecurityReportUi(60, 5, listOf(weak("p2", "2", "Jira"), weak("p1", "1", "Codeberg"))) }) { _, _ ->
+        app(prepare = { report = SecurityReportUi(60, 5, listOf(weak("p2", "2", "Jira"), weak("p1", "1", "Codeberg"))) }) { _, fake ->
             waitFor("5 ENTRIES")
+            assertFalse(fake.calls.contains("securityReport"), "the list does not run the security check")
+            text("Security check").performClick()
             waitFor("2 entries need attention")
         }
     }
@@ -620,9 +627,273 @@ class InteractionTest {
         override val available = true
         override val installs = true
         override suspend fun check(prerelease: Boolean) = found.takeIf { prerelease }.also { checks += prerelease }
-        override suspend fun install(update: de.danerd.ghulsuite.model.UpdateUi): de.danerd.ghulsuite.model.UpdateStep {
+        /** The download waits here (null: it does not wait). */
+        var downloadGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
+        /** What the app answered right before the hand-over. */
+        val asked = java.util.Collections.synchronizedList(mutableListOf<Boolean>())
+        override suspend fun install(update: de.danerd.ghulsuite.model.UpdateUi, mayFinish: () -> Boolean): de.danerd.ghulsuite.model.UpdateStep {
+            // As the real ones: the download takes a while, then the app is asked once more.
+            kotlinx.coroutines.delay(30)
+            downloadGate?.await()
+            val ok = mayFinish()
+            asked += ok
+            if (!ok) return de.danerd.ghulsuite.model.UpdateStep.WAIT
             installed += update.version
             return de.danerd.ghulsuite.model.UpdateStep.STARTED
+        }
+    }
+
+    /**
+     * M14: a setting that weakens the protection takes effect only after the master password; a
+     * wrong one changes nothing, making it stronger asks nothing.
+     */
+    @Test
+    fun weakeningTheLockAsksForThePassword() = app(setup = { push(Screen.SettingsPage(SetPage.LOCK)) }) { _, fake ->
+        waitFor("Lock when the screen turns off")
+        assertTrue(fake.settings.lockOnScreenOff)
+        text("Lock when the screen turns off").performClick()
+        waitFor("Weaken the protection?")
+        shot("weaken-ask")
+        assertTrue(fake.settings.lockOnScreenOff, "nothing changed before the password")
+        gateField().performTextInput("falsch")
+        onNodeWithTag("gate-confirm", useUnmergedTree = true).performClick()
+        waitFor("Wrong master password.")
+        assertTrue(fake.settings.lockOnScreenOff, "a wrong password changes nothing")
+        gateField().performTextReplacement(fake.masterPassword)
+        onNodeWithTag("gate-confirm", useUnmergedTree = true).performClick()
+        waitUntil(timeoutMillis = 5_000) { !fake.settings.lockOnScreenOff }
+        waitGone("Weaken the protection?")
+        // Back on: no question.
+        text("Lock when the screen turns off").performClick()
+        waitUntil(timeoutMillis = 5_000) { fake.settings.lockOnScreenOff }
+        assertFalse(shown("Weaken the protection?"))
+        // The instant lock keeping the reminders again: asked as well.
+        runOnIdle { fake.settings.panicClearReminders = true }
+        text("Instant lock also deletes the event reminders").performScrollTo().performClick()
+        waitFor("Weaken the protection?")
+        assertTrue(fake.settings.panicClearReminders)
+        dialogButton("Cancel")
+        waitGone("Weaken the protection?")
+        assertTrue(fake.settings.panicClearReminders, "cancelled: unchanged")
+    }
+
+    /**
+     * H6: the app PIN is set up only with both factors (the password alone does not enable
+     * "Save"), with the validity chosen in the dialog; that validity is what the core gets.
+     */
+    @Test
+    fun theAppPinNeedsBothFactorsAndItsValidity() = app(setup = { push(Screen.SettingsPage(SetPage.UNLOCK)) }) { _, fake ->
+        waitFor("App PIN")
+        onAllNodesWithText("App PIN", useUnmergedTree = true).onFirst().performClick()
+        waitFor("Repeat app PIN")
+        val fields = { onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog())) }
+        fields()[0].performTextInput("246813")
+        fields()[1].performTextInput("246813")
+        fields()[2].performTextInput(fake.masterPassword)
+        // A key is chosen (the default), its PIN still missing: not yet.
+        onNode(hasText("Save") and hasAnyAncestor(isDialog()) and hasClickAction()).assertIsNotEnabled()
+        fields()[3].performTextInput("1234")
+        shot("app-pin-proof")
+        dialogButton("Save")
+        waitUntil(timeoutMillis = 10_000) { fake.quickSetups.isNotEmpty() }
+        assertEquals("pin:246813:${fake.settings.quickUnlockHours}", fake.quickSetups.single())
+    }
+
+    /** H6: two methods with their own validity: each is shown (and changed) on its own. */
+    @Test
+    fun eachQuickUnlockMethodShowsItsOwnValidity() = app(
+        setup = { push(Screen.SettingsPage(SetPage.UNLOCK)) },
+        prepare = {
+            quickReady = true
+            settings.quickUnlockBiometric = true; settings.quickUnlockPin = true
+            settings.quickHoursBio = 24; settings.quickHoursPin = 0; settings.quickUnlockHours = 24
+        },
+    ) { _, _ ->
+        waitFor("Fingerprint valid for")
+        assertTrue(shown("App PIN valid for"))
+        assertFalse(shown("Valid for"), "no single validity for both")
+        shot("quick-validity-per-method")
+    }
+
+    /**
+     * H3: opened with the recovery code, the lost factors cannot be shown: a change of the
+     * protection asks for the new master password alone, and says why.
+     */
+    @Test
+    fun afterTheRecoveryCodeThePasswordAloneIsAsked() = app(
+        setup = { push(Screen.SettingsPage(SetPage.FACTORS)) },
+        prepare = { recovered = true },
+    ) { _, _ ->
+        waitFor("New recovery code")
+        text("New recovery code").performScrollTo().performClick()
+        waitFor("Opened with the recovery code", substring = true)
+        assertFalse(shown("Key file"), "no choice of a factor")
+        assertEquals(1, onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog())).fetchSemanticsNodes().size, "the password only")
+        shot("recovered-password-only")
+    }
+
+    /**
+     * The quick unlock of an older version: the unlock screen goes to password and second
+     * factor, and Options, Unlocking says to set it up again.
+     */
+    @Test
+    fun anOutdatedQuickUnlockAsksToSetItUpAgain() = app(prepare = {
+        unlocked.value = false
+        quickReady = true
+        quickError = de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.QUICK_OUTDATED)
+    }) { state, fake ->
+        waitFor("Unlock with app PIN")
+        onAllNodes(hasSetTextAction()).onFirst().performTextInput("246813")
+        text("Unlock with app PIN").performClick()
+        waitUntil(timeoutMillis = 10_000) { part("Master password") }
+        assertFalse(shown("Unlock with app PIN"))
+        assertTrue(part("set up again") || part("QUICK_OUTDATED"), "says why")
+        // Unlocked fully: the options say what to do.
+        runOnIdle { fake.unlocked.value = true; state.push(Screen.SettingsPage(SetPage.UNLOCK)) }
+        waitFor("Quick unlock must be set up again", substring = true)
+        assertTrue(fake.settings.quickUnlockHours > 0)
+    }
+
+    /** The text field of the master password question (M13, M14). */
+    private fun DesktopComposeUiTest.gateField() =
+        onAllNodes(hasSetTextAction() and hasAnyAncestor(androidx.compose.ui.test.hasTestTag("gate-password")), useUnmergedTree = true).onFirst()
+
+    /** M13: the secret of a 2FA account as a QR code only after the master password. */
+    @Test
+    fun aQrCodeOfASecretNeedsThePassword() = app(setup = { tab = Tab.AUTH }) { state, fake ->
+        waitFor("Codeberg")
+        val before = fake.calls.count { it == "verifyPassword" }
+        onAllNodesWithText("Codeberg", useUnmergedTree = true).onFirst().performTouchInput { longClick() }
+        waitUntil(timeoutMillis = 10_000) { shown("1 selected") }
+        // An icon of the bar, or in "More" when the bar has more actions than room.
+        if (onAllNodesWithContentDescription("Export as QR code").fetchSemanticsNodes().isNotEmpty()) {
+            onAllNodesWithContentDescription("Export as QR code").onFirst().performClick()
+        } else {
+            onAllNodesWithContentDescription("More").onFirst().performClick()
+            waitFor("Export as QR code")
+            text("Export as QR code").performClick()
+        }
+        waitFor("Confirm with your master password", substring = true)
+        assertTrue(fake.calls.none { it.startsWith("totpUri") }, "no secret before the password")
+        gateField().performTextInput(fake.masterPassword)
+        onNodeWithTag("gate-confirm", useUnmergedTree = true).performClick()
+        waitUntil(timeoutMillis = 5_000) { fake.calls.count { it == "verifyPassword" } > before }
+        waitUntil(timeoutMillis = 5_000) { fake.calls.any { it.startsWith("totpUri") } }
+        shot("qr-after-password")
+    }
+
+    /**
+     * M2: after unlocking, the suite file at its place holds a state saved elsewhere since: the
+     * app says so (who, when) before anything is edited, and "Open now" opens that file.
+     */
+    @Test
+    fun newerSuiteFileIsOfferedAfterUnlocking() = app(prepare = {
+        suiteRef = de.danerd.ghulsuite.model.SuiteFileRef("stick", "GhulSuite.ghlzip")
+        target = de.danerd.ghulsuite.model.ArchiveTargetUi.CHANGED_ELSEWHERE
+        targetDevice = "Pixel 8"
+        targetTime = 1_762_900_000_000
+    }) { state, _ ->
+        waitFor("The suite file was saved elsewhere")
+        assertTrue(part("Pixel 8"))
+        shot("newer-suite-file")
+        text("Open now").performClick()
+        waitUntil(timeoutMillis = 5_000) { state.stack.lastOrNull() == Screen.SettingsPage(SetPage.FILE) }
+        assertNull(state.newerSuiteFile)
+        // The page of the suite file took the file over (AppLaunch is one for the whole process:
+        // nothing may be left for the next test).
+        waitUntil(timeoutMillis = 5_000) { de.danerd.ghulsuite.ui.AppLaunch.suiteFile.value == null }
+    }
+
+    /** M2: the other device changed the protection and saved: the most important case, said as such. */
+    @Test
+    fun aFileWithANewerProtectionIsOfferedAfterUnlocking() = app(prepare = {
+        suiteRef = de.danerd.ghulsuite.model.SuiteFileRef("stick", "GhulSuite.ghlzip")
+        target = de.danerd.ghulsuite.model.ArchiveTargetUi.OTHER_PROTECTION
+    }) { state, _ ->
+        waitFor("The suite file was saved elsewhere")
+        assertTrue(part("saved with a changed protection"))
+        text("Later").performClick()
+        waitUntil(timeoutMillis = 5_000) { state.newerSuiteFile == null }
+    }
+
+    /** M2: the same file as this device's state: nothing is asked. */
+    @Test
+    fun sameSuiteFileAsksNothing() = app(prepare = {
+        suiteRef = de.danerd.ghulsuite.model.SuiteFileRef("stick", "GhulSuite.ghlzip")
+        target = de.danerd.ghulsuite.model.ArchiveTargetUi.SAME
+    }) { state, _ ->
+        waitFor("Search entries")
+        Thread.sleep(200)
+        waitForIdle()
+        assertFalse(shown("The suite file was saved elsewhere"))
+        assertNull(state.newerSuiteFile)
+    }
+
+    /**
+     * M12, M18, M9: the reminders handed to the system carry only the chosen detail (below
+     * "everything" no place, with "notice only" no title either), and a failed read keeps the
+     * reminders already set instead of clearing them.
+     */
+    @Test
+    fun remindersCarryOnlyTheChosenDetail() = app(prepare = {
+        (cal as FakeCal).reminderList = listOf(
+            de.danerd.ghulsuite.model.CalReminderUi(
+                "e1", "Zahnarzt Dr. Weber", "Praxis am Markt", false,
+                de.danerd.ghulsuite.ui.dateTime(de.danerd.ghulsuite.ui.today().plus(1), 600),
+                de.danerd.ghulsuite.ui.dateTime(de.danerd.ghulsuite.ui.today().plus(1), 645),
+                de.danerd.ghulsuite.ui.dateTime(de.danerd.ghulsuite.ui.today().plus(1), 585), 15,
+            ),
+        )
+    }) { state, fake ->
+        val cal = fake.cal as FakeCal
+        fun scheduleWith(detail: Int): de.danerd.ghulsuite.model.CalAlarmUi {
+            val before = cal.scheduled.size
+            runOnIdle { fake.settings.calNotifyDetail = detail; state.refreshCalendar() }
+            waitUntil(timeoutMillis = 5_000) { cal.scheduled.size > before }
+            return cal.scheduled.last().single()
+        }
+        val notice = scheduleWith(0)
+        for (t in listOf(notice.title, notice.text, notice.publicTitle, notice.publicText)) {
+            assertFalse(t.contains("Zahnarzt") || t.contains("Praxis"), "notice only: $t")
+        }
+        val titled = scheduleWith(1)
+        assertEquals("Zahnarzt Dr. Weber", titled.title)
+        assertFalse(titled.text.contains("Praxis"), "no place below everything: ${titled.text}")
+        val full = scheduleWith(2)
+        assertTrue(full.text.contains("Praxis"), full.text)
+        // Reading fails: what is set stays.
+        cal.remindersFail = true
+        val before = cal.scheduled.size
+        runOnIdle { state.refreshCalendar() }
+        Thread.sleep(300)
+        waitForIdle()
+        assertEquals(before, cal.scheduled.size, "a failed read does not replace the reminders")
+    }
+
+    /**
+     * M7: input started while the update downloads stops the hand-over (the installer would end
+     * the app and lose it); saving does not start while the update is being installed.
+     */
+    @Test
+    fun updateWaitsForInputStartedMeanwhile() {
+        val dev = de.danerd.ghulsuite.model.UpdateUi("0.6.0-dev.3", "Calendar faster", "https://github.com/x/y/releases/v", 31_000_000)
+        val up = FakeUpdater(dev).apply { downloadGate = kotlinx.coroutines.CompletableDeferred() }
+        app(prepare = { updater = up; unsavedChanges = true }) { state, fake ->
+            runOnIdle { state.installUpdate(dev) }
+            waitUntil(timeoutMillis = 5_000) { state.updateInstalling }
+            // Saving now is refused with a word.
+            runOnIdle { state.checkAndSave(de.danerd.ghulsuite.model.SuiteFileRef("x", "GhulSuite.ghlzip")) }
+            waitFor("The update is being installed; the app ends in a moment. Save afterwards.")
+            assertFalse(fake.calls.any { it.startsWith("archiveSave") }, "nothing saved while the update installs")
+            // An edit starts meanwhile: the update does not go ahead.
+            runOnIdle { state.editorDirty = true }
+            up.downloadGate!!.complete(Unit)
+            waitUntil(timeoutMillis = 5_000) { up.asked.isNotEmpty() && !state.updateBusy }
+            assertEquals(listOf(false), up.asked.toList())
+            assertTrue(up.installed.isEmpty())
+            assertEquals(dev, state.update, "offered again")
+            assertFalse(state.updateInstalling)
+            runOnIdle { state.editorDirty = false }
         }
     }
 
@@ -869,7 +1140,9 @@ class InteractionTest {
         fields[0].performTextReplacement("Für Anna")
         fields[1].performTextReplacement("kurz")
         fields[2].performTextReplacement("kurz")
-        fields[3].performTextReplacement("Master Passwort!")
+        fields[3].performTextReplacement("Gruener Kaktus singt 1987!")
+        // M15: both factors of the own suite (a key chosen: its PIN).
+        fields[4].performTextReplacement("1234")
         onAllNodes(hasText("Create") and hasAnyAncestor(isDialog())).onFirst().performClick()
         waitForIdle()
         assertFalse(fake.calls.any { it.startsWith("shareAsVault") }, "a weak password is refused first")
@@ -878,7 +1151,7 @@ class InteractionTest {
         onAllNodes(hasText("Create") and hasAnyAncestor(isDialog())).onFirst().performClick()
         // The code first: no vault file exists without it having been shown.
         waitFor("The recovery code of the new vault", substring = true)
-        assertTrue("shareAsVault:p1:1:Für Anna:true:Master Passwort!" in fake.calls, fake.calls.toString())
+        assertTrue("shareAsVault:p1:1:Für Anna:true:Gruener Kaktus singt 1987!" in fake.calls, fake.calls.toString())
         shot("share-vault-code")
         onAllNodes(hasText("Next") and hasAnyAncestor(isDialog())).onFirst().performClick()
         waitFor("Save key file")
@@ -951,7 +1224,7 @@ class InteractionTest {
             text("Save the existing suite and replace it").performClick()
             waitFor("Save the existing suite")
             val fields = onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog()))
-            fields[0].performTextInput("Das alte Passwort!")
+            fields[0].performTextInput(fake.masterPassword)
             fields[1].performTextInput("1234")
             shot("setup-save-existing")
             dialogButton("Unlock")
@@ -974,7 +1247,7 @@ class InteractionTest {
             // Not written completely: nothing deleted.
             text("Save the existing suite and replace it").performClick()
             waitFor("Save the existing suite")
-            onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog()))[0].performTextInput("Das alte Passwort!")
+            onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog()))[0].performTextInput(fake.masterPassword)
             onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog()))[1].performTextInput("1234")
             dialogButton("Unlock")
             waitFor("Unlocked. Now choose where the file is saved.")
@@ -985,15 +1258,48 @@ class InteractionTest {
             assertTrue(fake.existsNow)
             assertTrue("deleteSuite" !in fake.calls)
 
-            // Written and read back: then deleted, then the new suite is set up.
+            // Written and read back, but the key's second touch breaks off: the file is kept,
+            // the deletion is asked for once more (without saving again).
             fake.saveOk = true
+            fake.deleteFailsOnce = de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.TIMEOUT)
             dialogButton("Save and replace")
+            waitFor("Deleting the existing suite was not confirmed", substring = true)
+            assertTrue(fake.existsNow)
+            val saves = fake.calls.count { it.startsWith("archiveSave") }
+            onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog()))[0].performTextInput(fake.masterPassword)
+            onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog()))[1].performTextInput("1234")
+            dialogButton("Delete and replace")
             waitUntil(timeoutMillis = 10_000) { "create" in fake.calls }
+            assertEquals(saves, fake.calls.count { it.startsWith("archiveSave") }, "not saved twice")
             val saved = fake.calls.lastIndexOf("archiveSave:GhulSuite.ghlzip:true")
             assertTrue(saved >= 0 && saved < fake.calls.indexOf("deleteSuite") && fake.calls.indexOf("deleteSuite") < fake.calls.indexOf("create"), fake.calls.toString())
             waitFor("Areas")
             assertFalse(shown("Save the existing suite"))
             shot("setup-replaced")
+        }
+    }
+
+    /**
+     * H6 in the wizard: the fingerprint (preset where there is a sensor) is set up in step 6 with
+     * the factor of the suite just made, never with an empty PIN to the key.
+     */
+    @Test
+    fun theWizardSetsUpQuickUnlockWithTheFactorItWasMadeWith() = withPickers {
+        app(setup = { showStart = true }, prepare = { unlocked.value = false; existsNow = false; masterPassword = "Kater-Ufer-Mondlicht-73" }) { _, fake ->
+            toCreateStep()
+            waitUntil(timeoutMillis = 10_000) { onAllNodes(hasText("Register key") and hasClickAction()).fetchSemanticsNodes().isNotEmpty() }
+            onNode(hasText("Register key") and hasClickAction()).performScrollTo().performClick()
+            waitUntil(timeoutMillis = 10_000) { "create" in fake.calls }
+            // Areas, locking, then unlocking (fingerprint preset).
+            waitFor("Areas")
+            text("Next").performScrollTo().performClick()
+            waitUntil(timeoutMillis = 10_000) { part("Step 5 of 8") }
+            text("Next").performScrollTo().performClick()
+            waitUntil(timeoutMillis = 10_000) { part("Step 6 of 8") }
+            text("Next").performScrollTo().performClick()
+            waitUntil(timeoutMillis = 10_000) { fake.quickSetups.isNotEmpty() || part("PIN_INVALID") || part("Wrong key PIN") }
+            assertEquals(listOf("bio:${fake.settings.quickUnlockHours}:1234:false"), fake.quickSetups.toList())
+            waitUntil(timeoutMillis = 10_000) { part("Step 7 of 8") }
         }
     }
 
@@ -1015,9 +1321,22 @@ class InteractionTest {
             assertTrue(fake.existsNow)
             assertTrue("deleteSuite" !in fake.calls)
 
+            // H5: only with the proof of the existing suite. A wrong password deletes nothing.
             text("Delete the existing suite and replace it").performClick()
             waitFor("Delete the existing suite for good?")
-            onNode(hasSetTextAction() and hasAnyAncestor(isDialog())).performTextInput("delete")
+            assertTrue(part("To delete it you need the existing suite"))
+            val fields = { onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog())) }
+            fields()[0].performTextInput("Ein falsches Passwort 42!")
+            fields()[1].performTextInput("1234")
+            fields().onLast().performTextInput("delete")
+            dialogButton("Delete and replace")
+            // The message (headless tests show the kind of the error, the app its text).
+            waitUntil(timeoutMillis = 10_000) { part("Wrong master password") || part("WRONG_PASSWORD") }
+            assertTrue(fake.existsNow, "a wrong proof deletes nothing")
+            assertTrue("deleteSuite" !in fake.calls)
+            // With the recovery code instead.
+            dialogButton("With the recovery code")
+            fields()[0].performTextInput(fake.recoveryCode.lowercase())
             dialogButton("Delete and replace")
             waitUntil(timeoutMillis = 10_000) { "create" in fake.calls }
             assertTrue(fake.calls.indexOf("deleteSuite") in 0 until fake.calls.indexOf("create"), fake.calls.toString())
@@ -1097,6 +1416,27 @@ class InteractionTest {
         assertFalse(state.unsaved)
     }
 
+    /**
+     * M1: a place that only allows writing over the file (Android without a shared folder, a
+     * cloud app): "Save" first says what is at stake; it overwrites only when asked again.
+     */
+    @Test
+    fun overwritingTheOnlyFileIsAskedFirst() = app(setup = { tab = Tab.DOCS; unsaved = true }, prepare = {
+        unsavedChanges = true; suiteRef = stick; target = de.danerd.ghulsuite.model.ArchiveTargetUi.SAME
+        safe = de.danerd.ghulsuite.model.SafeSaveUi.OVERWRITES
+    }) { _, fake ->
+        waitUntil(timeoutMillis = 10_000) { tagged(SAVE_BUTTON_TAG) }
+        onAllNodesWithTag(SAVE_BUTTON_TAG, useUnmergedTree = true).onFirst().performClick()
+        waitFor("Write the changes into the suite file now?")
+        assertTrue(part("Cloud apps also keep older versions"))
+        onNodeWithTag(SAVE_CONFIRM_TAG, useUnmergedTree = true).performClick()
+        waitFor("The suite file is written over directly", substring = true)
+        assertTrue(fake.calls.none { it.startsWith("archiveSave") }, "not written before the second answer")
+        shot("save-overwrite-risk")
+        text("Overwrite anyway").performClick()
+        waitUntil(timeoutMillis = 10_000) { "archiveSave:GhulSuite.ghlzip:false" in fake.calls }
+    }
+
     /** Nothing is written by itself: the suite file changes only when the user saves. */
     @Test
     fun nothingIsSavedByItself() = app(setup = { tab = Tab.DOCS; unsaved = true }, prepare = { unsavedChanges = true; suiteRef = stick; target = de.danerd.ghulsuite.model.ArchiveTargetUi.SAME }) { _, fake ->
@@ -1106,6 +1446,26 @@ class InteractionTest {
         assertTrue(tagged(SAVE_BUTTON_TAG))
     }
 
+    /**
+     * H11: a newer protection at the place: no overwrite, and the dialog says honestly that a side
+     * file keeps the old protection, with the way that keeps this device's changes.
+     */
+    @Test
+    fun aNewerProtectionThereSaysHowToKeepTheChanges() = app(setup = { tab = Tab.DOCS; unsaved = true }, prepare = {
+        unsavedChanges = true; suiteRef = stick; target = de.danerd.ghulsuite.model.ArchiveTargetUi.OTHER_PROTECTION
+    }) { state, fake ->
+        waitUntil(timeoutMillis = 10_000) { state.newerSuiteFile != null }
+        text("Later").performClick()
+        waitUntil(timeoutMillis = 10_000) { state.newerSuiteFile == null }
+        runOnIdle { state.askSave() }
+        onNodeWithTag(SAVE_CONFIRM_TAG, useUnmergedTree = true).performClick()
+        waitFor("Share as separate vault", substring = true)
+        assertTrue(part("keeps the old protection"))
+        assertFalse(tagged("save-overwrite"), "a newer protection is never overwritten")
+        shot("save-conflict-protection")
+        assertTrue(fake.calls.none { it.startsWith("archiveSave") })
+    }
+
     /** Saved elsewhere meanwhile: who and when, "save mine as a new file" first, overwriting only when asked. */
     @Test
     fun aFileSavedElsewhereIsOnlyOverwrittenWhenAsked() = app(setup = { tab = Tab.DOCS; unsaved = true }, prepare = {
@@ -1113,6 +1473,10 @@ class InteractionTest {
         targetDevice = "Laptop"; targetTime = 1_700_000_000_000L
     }) { state, fake ->
         waitUntil(timeoutMillis = 10_000) { tagged(SAVE_BUTTON_TAG) }
+        // After unlocking the newer file was offered (M2): "Later".
+        waitUntil(timeoutMillis = 10_000) { state.newerSuiteFile != null }
+        text("Later").performClick()
+        waitUntil(timeoutMillis = 10_000) { state.newerSuiteFile == null }
         runOnIdle { state.askSave() }
         onNodeWithTag(SAVE_CONFIRM_TAG, useUnmergedTree = true).performClick()
         waitFor("The file was saved elsewhere")

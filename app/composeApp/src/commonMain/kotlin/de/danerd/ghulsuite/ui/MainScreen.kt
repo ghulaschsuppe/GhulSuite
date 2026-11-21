@@ -137,6 +137,11 @@ fun GhulSuiteApp(state: AppState) {
                     if (unlocked && state.single == null && !state.showStart) PendingAddHandler(state)
                     // Saving into the suite file (the save button, Ctrl+S, before opening another file).
                     if (unlocked) SaveSuiteDialog(state)
+                    // M2: the suite file at its place holds a state saved elsewhere since.
+                    // Not over another dialog (a save, a file handed over, the steps after the code).
+                    if (unlocked && state.single == null && !state.showStart && state.saveDialog == null &&
+                        state.pendingAdd == null && state.pendingDocsAdd == null && !state.recoveredGuide
+                    ) NewerSuiteFileDialog(state)
                     // Windows: quitting with changes not in the suite file (see AppState.requestQuit).
                     QuitDialog(state)
                     // Changes of a vault opened on its own that did not reach its file.
@@ -209,7 +214,22 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
     // A new recovery code cannot be skipped: it must be confirmed first.
     PlatformBackHandler(enabled = top != null && top !is Screen.RecoveryCode) { state.back() }
     UpdateDialog(state)
-    if (state.recoveredGuide) {
+    state.archiveAsk?.let { item ->
+        AlertDialog(
+            onDismissRequest = { state.archiveAsk = null },
+            icon = { Icon(Icons.Filled.Warning, null, tint = warnColor()) },
+            title = { Text(item.name) },
+            text = { Text(stringResource(Res.string.docs_open_archive)) },
+            confirmButton = {
+                TextButton(onClick = { state.archiveAsk = null; state.openDocWith(item, archiveConfirmed = true) }, modifier = Modifier.testTag("archive-open")) {
+                    Text(stringResource(Res.string.docs_open_with))
+                }
+            },
+            dismissButton = { TextButton(onClick = { state.archiveAsk = null }) { Text(stringResource(Res.string.a_cancel)) } },
+        )
+    }
+    // After the save dialog (opened with the code from a file: first a new place for it).
+    if (state.recoveredGuide && state.saveDialog == null) {
         AlertDialog(
             onDismissRequest = { state.recoveredGuide = false },
             title = { Text(stringResource(Res.string.recovered_title)) },
@@ -347,8 +367,8 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
             text.startsWith("otpauth-migration://") -> state.run(block = {
                 val r = state.backend.importData(text.encodeToByteArray(), "google-authenticator", null, vaultId, false)
                 getPluralString(Res.plurals.msg_migration_done, r.duplicates, getPluralString(Res.plurals.n_accounts, r.totps, r.totps.toString()), r.duplicates.toString())
-            }) { msg -> state.message(msg); state.changed() }
-            else -> state.run(block = { state.backend.addTotp(vaultId, state.backend.parseOtpauth(text)) }) { state.message(addedMsg); state.changed() }
+            }) { msg -> state.message(msg); state.changed(); state.promptSave() }
+            else -> state.run(block = { state.backend.addTotp(vaultId, state.backend.parseOtpauth(text)) }) { state.message(addedMsg); state.changed(); state.promptSave() }
         }
     }
     addTotpFor?.let { vaultId ->
@@ -408,16 +428,35 @@ private fun TabTopBar(state: AppState) {
             context = { AreaContext(state) },
             actions = { TabActions(state) },
         )
+        RecoveredBanner(state)
         SaveReminder(state)
     }
 }
 
-/** Not saved into the suite file for days: a reminder under the header of every area (tap: save). */
+/** H3: opened with the recovery code: until the lock the new password alone repairs the protection. */
+@Composable
+private fun RecoveredBanner(state: AppState) {
+    if (!state.recoveredOpen) return
+    Box(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 8.dp).clickable { state.push(Screen.SettingsPage(SetPage.FACTORS)) }.testTag("recovered-banner")) {
+        Banner(Icons.Filled.Warning, stringResource(Res.string.recovered_banner))
+    }
+}
+
+/**
+ * Not saved into the suite file for days, or a password or 2FA account was just added or changed
+ * (M32: until it is saved, it is only on this device): a reminder under the header of every area
+ * (tap: save). It never blocks anything.
+ */
 @Composable
 private fun SaveReminder(state: AppState) {
-    if (!state.saveOverdue || state.saveJob != null) return
+    if (state.saveJob != null || !state.saveNeeded) return
+    val text = when {
+        state.saveOverdue -> stringResource(Res.string.save_reminder, formatDate(state.unsavedSince))
+        state.savePrompt -> stringResource(Res.string.save_prompt)
+        else -> return
+    }
     Box(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 8.dp).clickable { state.askSave() }.testTag("save-reminder")) {
-        Banner(Icons.Filled.Warning, stringResource(Res.string.save_reminder, formatDate(state.unsavedSince)))
+        Banner(Icons.Filled.Warning, text)
     }
 }
 
@@ -647,6 +686,40 @@ fun SaveButton(state: AppState) {
         }
         if (!running) Box(Modifier.align(Alignment.TopEnd).padding(top = 6.dp, end = 6.dp).size(9.dp).clip(CircleShape).background(t.warn))
     }
+}
+
+/**
+ * M2: right after unlocking, before anything is edited: the suite file at the remembered place
+ * was saved elsewhere since (another device). Open it now (this device's unsaved changes are
+ * asked about by the opening itself) or later.
+ */
+@Composable
+fun NewerSuiteFileDialog(state: AppState) {
+    val info = state.newerSuiteFile ?: return
+    val name = remember(info) { state.backend.suiteFile()?.name.orEmpty() }
+    AlertDialog(
+        onDismissRequest = { state.newerLater() },
+        title = { Text(stringResource(Res.string.newer_file_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    stringResource(
+                        if (info.target == de.danerd.ghulsuite.model.ArchiveTargetUi.OTHER_PROTECTION) Res.string.newer_file_protection else Res.string.newer_file_text,
+                        name,
+                    ),
+                )
+                if (info.device.isNotBlank() && info.time > 0) {
+                    Text(stringResource(Res.string.file_saved_on, formatDateTime(info.time), info.device))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { state.openNewerSuiteFile() }, modifier = Modifier.testTag("newer-open")) {
+                Text(stringResource(Res.string.newer_file_open))
+            }
+        },
+        dismissButton = { TextButton(onClick = { state.newerLater() }) { Text(stringResource(Res.string.a_later)) } },
+    )
 }
 
 /**

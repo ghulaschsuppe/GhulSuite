@@ -27,23 +27,29 @@ import org.json.JSONObject
 /**
  * GhulCal reminders on Android: exact alarms for the next 30 days, set while the suite is unlocked,
  * so they arrive while it is locked or the app is closed. The prepared texts are kept encrypted
- * with a key of the Android Keystore that never leaves the device. They stay after a panic lock
- * (reminders arrive also then, see test plan K11); deleting the suite removes them.
+ * with a key of the Android Keystore that never leaves the device (not bound to an unlocked
+ * device: they must be readable when a reminder comes on the locked phone). What is kept is only
+ * the chosen detail (M12): below "everything" the full text is not even prepared; with
+ * "everything" the lock screen shows (and the device keeps) title, time and place for 30 days.
+ * The part for full texts with a key bound to an unlocked device (Android 9+) is only written
+ * when they differ from the lock screen part, which the app's detail levels never make; it stays
+ * as a guard, not as a protection the app relies on. The reminders stay after a panic lock unless
+ * the user chose otherwise (see test plan K11); deleting the suite removes them.
  */
 class CalReminders(private val context: Context) {
     private val prefs = context.getSharedPreferences("cal_alarms", Context.MODE_PRIVATE)
     private val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
     private val alarms = context.getSystemService(AlarmManager::class.java)
 
+    // N5: one at a time (unlocking and saving an event can both plan anew).
+    @Synchronized
     fun schedule(list: List<CalAlarmUi>, sound: Boolean) {
         cancelAll()
         val now = System.currentTimeMillis()
         val future = list.filter { it.atMillis > now - 60_000 }.take(MAX)
-        val json = JSONArray()
-        future.forEach { json.put(it.toJson()) }
-        store(json.toString())
+        store(future)
         prefs.edit().putInt(COUNT, future.size).putBoolean(SOUND, sound).apply()
-        future.forEachIndexed { i, a -> setAlarm(i, a.atMillis) }
+        future.forEachIndexed { i, a -> setAlarm(i, a.atMillis, a.key) }
     }
 
     /**
@@ -55,7 +61,7 @@ class CalReminders(private val context: Context) {
         val now = System.currentTimeMillis()
         list.forEachIndexed { i, a ->
             val at = if (a.atLocal.isEmpty()) a.atMillis else runCatching { epochMillisOf(a.atLocal) }.getOrDefault(a.atMillis)
-            if (at > now - 10 * 60_000) setAlarm(i, maxOf(at, now + 5_000))
+            if (at > now - 10 * 60_000) setAlarm(i, maxOf(at, now + 5_000), a.key)
         }
     }
 
@@ -63,9 +69,14 @@ class CalReminders(private val context: Context) {
         cancelAll()
         prefs.edit().clear().apply()
         runCatching { keyStore.deleteEntry(ALIAS) }
+        runCatching { keyStore.deleteEntry(ALIAS_FULL) }
     }
 
-    fun alarm(index: Int): CalAlarmUi? = load().getOrNull(index)
+    /** The reminder of an alarm: by its key (the list may have been planned anew meanwhile), else its place. */
+    fun alarm(index: Int, key: String? = null): CalAlarmUi? {
+        val list = load()
+        return key?.let { k -> list.firstOrNull { it.key == k } } ?: list.getOrNull(index)
+    }
 
     /**
      * Reminders shown lately, by their key (also the test reminder): "again in 5 minutes" finds
@@ -73,19 +84,17 @@ class CalReminders(private val context: Context) {
      */
     fun remember(a: CalAlarmUi) {
         val all = loadFrom(SHOWN).filter { it.key != a.key }.takeLast(SHOWN_MAX - 1) + a
-        val json = JSONArray()
-        all.forEach { json.put(it.toJson()) }
-        storeTo(SHOWN, json.toString())
+        storeTo(SHOWN, all)
     }
 
     fun shown(key: String): CalAlarmUi? = loadFrom(SHOWN).lastOrNull { it.key == key }
 
     val sound: Boolean get() = prefs.getBoolean(SOUND, true)
 
-    private fun setAlarm(index: Int, at: Long) {
+    private fun setAlarm(index: Int, at: Long, key: String) {
         val pi = PendingIntent.getBroadcast(
             context, REQUEST + index,
-            Intent(context, CalAlarmReceiver::class.java).setAction(ACTION_FIRE).putExtra(EXTRA_INDEX, index),
+            Intent(context, CalAlarmReceiver::class.java).setAction(ACTION_FIRE).putExtra(EXTRA_INDEX, index).putExtra(EXTRA_ALARM, key),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val exact = Build.VERSION.SDK_INT < 31 || alarms.canScheduleExactAlarms()
@@ -106,38 +115,82 @@ class CalReminders(private val context: Context) {
 
     private fun load(): List<CalAlarmUi> = loadFrom(DATA)
 
-    private fun loadFrom(name: String): List<CalAlarmUi> = runCatching {
-        val raw = Base64.decode(prefs.getString(name, null) ?: return emptyList(), Base64.NO_WRAP)
-        val key = keyStore.getKey(ALIAS, null) as? SecretKey ?: return emptyList()
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, raw, 0, 12))
-        val arr = JSONArray(String(cipher.doFinal(raw, 12, raw.size - 12)))
-        (0 until arr.length()).map { arr.getJSONObject(it).toAlarm() }
-    }.getOrDefault(emptyList())
-
-    private fun store(json: String) = storeTo(DATA, json)
-
-    private fun storeTo(name: String, json: String) {
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
-        val ct = cipher.doFinal(json.toByteArray())
-        prefs.edit().putString(name, Base64.encodeToString(cipher.iv + ct, Base64.NO_WRAP)).apply()
+    /**
+     * The reminders kept under [name]: the lock screen part always; the full texts only while the
+     * device is unlocked (their key refuses otherwise), else the lock screen part stands in.
+     */
+    private fun loadFrom(name: String): List<CalAlarmUi> {
+        val shown = decrypt(name, ALIAS)?.let { arr -> (0 until arr.length()).map { arr.getJSONObject(it).toAlarm() } }
+            ?: return emptyList()
+        val full = decrypt(name + FULL, ALIAS_FULL)?.let { arr ->
+            (0 until arr.length()).associate { i -> arr.getJSONObject(i).let { it.getString("k") to (it.getString("t") to it.getString("x")) } }
+        }.orEmpty()
+        return shown.map { a -> full[a.key]?.let { (t, x) -> a.copy(title = t, text = x) } ?: a }
     }
 
-    private fun key(): SecretKey {
-        (keyStore.getKey(ALIAS, null) as? SecretKey)?.let { return it }
+    private fun decrypt(name: String, alias: String): JSONArray? = runCatching {
+        val raw = Base64.decode(prefs.getString(name, null) ?: return null, Base64.NO_WRAP)
+        val key = keyStore.getKey(alias, null) as? SecretKey ?: return null
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, raw, 0, 12))
+        JSONArray(String(cipher.doFinal(raw, 12, raw.size - 12)))
+    }.getOrNull()
+
+    private fun store(json: List<CalAlarmUi>) = storeTo(DATA, json)
+
+    /**
+     * M12: the lock screen part (key, time, public texts) with the key that works while locked;
+     * the full texts, where they differ, with the key bound to an unlocked device.
+     */
+    private fun storeTo(name: String, list: List<CalAlarmUi>) {
+        val shown = JSONArray()
+        val full = JSONArray()
+        for (a in list) {
+            shown.put(a.toPublicJson())
+            if (a.title != a.publicTitle || a.text != a.publicText) {
+                full.put(JSONObject().put("k", a.key).put("t", a.title).put("x", a.text))
+            }
+        }
+        val edit = prefs.edit().putString(name, encrypt(shown.toString(), key(ALIAS, unlockedOnly = false)))
+        // Written while the device is locked (a reminder shown at night): the full texts kept so
+        // far cannot be read now, and the list holds only their lock screen part. They stay as
+        // they are instead of being replaced by nothing.
+        val fullUnreadable = prefs.getString(name + FULL, null) != null && decrypt(name + FULL, ALIAS_FULL) == null
+        if (!fullUnreadable) {
+            val fullKey = if (full.length() > 0) runCatching { key(ALIAS_FULL, unlockedOnly = true) }.getOrNull() else null
+            // Without a key bound to an unlocked device, the full texts are not kept at all.
+            if (fullKey != null) edit.putString(name + FULL, encrypt(full.toString(), fullKey)) else edit.remove(name + FULL)
+        }
+        edit.apply()
+    }
+
+    private fun encrypt(json: String, key: SecretKey): String {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key) }
+        val ct = cipher.doFinal(json.toByteArray())
+        return Base64.encodeToString(cipher.iv + ct, Base64.NO_WRAP)
+    }
+
+    private fun key(alias: String, unlockedOnly: Boolean): SecretKey {
+        (keyStore.getKey(alias, null) as? SecretKey)?.let { return it }
         val gen = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
-        gen.init(
-            KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
-                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                .setKeySize(256)
-                .build(),
-        )
+        val spec = KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+            .setKeySize(256)
+        if (unlockedOnly) {
+            // Before Android 9 there is no such binding: the full texts are then not kept.
+            if (Build.VERSION.SDK_INT < 28) throw IllegalStateException("no unlocked-device binding")
+            spec.setUnlockedDeviceRequired(true)
+        }
+        gen.init(spec.build())
         return gen.generateKey()
     }
 
     companion object {
         private const val ALIAS = "ghulsuite.cal.alarms"
+        /** M12: the key of the full texts, usable only while the device is unlocked. */
+        private const val ALIAS_FULL = "ghulsuite.cal.alarms.full"
+        private const val FULL = "_full"
         private const val DATA = "data"
         private const val SHOWN = "shown"
         private const val SHOWN_MAX = 20
@@ -150,17 +203,24 @@ class CalReminders(private val context: Context) {
         const val ACTION_DONE = "de.danerd.ghulsuite.CAL_DONE"
         const val EXTRA_INDEX = "index"
         const val EXTRA_KEY = "key"
+        /** The key of a planned reminder (N5: found by it, not only by its place in the list). */
+        const val EXTRA_ALARM = "alarm"
         // B4: new IDs, private on the lock screen also with Android's default settings.
         const val CHANNEL = "cal_private"
         const val CHANNEL_SILENT = "cal_silent_private"
     }
 }
 
-private fun CalAlarmUi.toJson() = JSONObject()
-    .put("k", key).put("at", atMillis).put("t", title).put("x", text).put("pt", publicTitle).put("px", publicText).put("al", atLocal)
+/** What may show on the lock screen: the full texts are not part of it (M12). */
+private fun CalAlarmUi.toPublicJson() = JSONObject()
+    .put("k", key).put("at", atMillis).put("pt", publicTitle).put("px", publicText).put("al", atLocal)
 
-private fun JSONObject.toAlarm() =
-    CalAlarmUi(getString("k"), getLong("at"), getString("t"), getString("x"), getString("pt"), getString("px"), optString("al"))
+/** Read back: until the full texts are added, the lock screen texts stand in for them. */
+private fun JSONObject.toAlarm(): CalAlarmUi {
+    val pt = getString("pt")
+    val px = getString("px")
+    return CalAlarmUi(getString("k"), getLong("at"), pt, px, pt, px, optString("al"))
+}
 
 /**
  * B4: whether the device is locked right now (secure lock screen). Android lets only the user decide
@@ -230,7 +290,8 @@ class CalAlarmReceiver : BroadcastReceiver() {
         val key = intent.getStringExtra(CalReminders.EXTRA_KEY)
         when (intent.action) {
             // A snoozed reminder comes by its key; a scheduled one by its place in the list.
-            CalReminders.ACTION_FIRE -> (key?.let { r.shown(it) } ?: r.alarm(index))?.let { postCalNotification(context, it, r.sound, index) }
+            CalReminders.ACTION_FIRE -> (key?.let { r.shown(it) } ?: r.alarm(index, intent.getStringExtra(CalReminders.EXTRA_ALARM)))
+                ?.let { postCalNotification(context, it, r.sound, index) }
             CalReminders.ACTION_DONE -> context.getSystemService(NotificationManager::class.java).cancel(intent.getIntExtra("notify_id", 0))
             CalReminders.ACTION_SNOOZE -> {
                 context.getSystemService(NotificationManager::class.java).cancel(intent.getIntExtra("notify_id", 0))

@@ -184,3 +184,167 @@ fn the_files_of_format_3_are_the_ones_of_21_11_2026() {
         assert_eq!(crate::kdf::hex(&Sha256::digest(fixture(name))), sum, "{name} was changed");
     }
 }
+
+// --- more kinds of files of format 3 (round 5, M5) -----------------------------------------------
+
+const EXTRA_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/format3-extra");
+const ATTACHMENT: &[u8] = b"Anhang im Format 3\n";
+/// A key of a newer version in an entry and in the payload: kept as it is (promise 2).
+const FUTURE_KEY: &str = "x_future_field";
+
+fn extra(name: &str) -> Vec<u8> {
+    std::fs::read(format!("{EXTRA_DIR}/{name}")).unwrap_or_else(|e| panic!("{EXTRA_DIR}/{name}: {e}"))
+}
+
+/// A GhulDocs package (`.ghldocs`) of format 3 opens on its own, the document byte for byte.
+#[test]
+fn a_ghuldocs_package_of_format_3_opens() {
+    let d = Dirs::new("format3-ghldocs");
+    let s = d.suite();
+    let vid = s
+        .open_single_docs(
+            source(extra("dokumente.ghldocs")),
+            PW.into(),
+            None,
+            None,
+            None,
+            Some(extra("key.ghlkey")),
+            None,
+        )
+        .unwrap();
+    let root = s.docs_list(vid.clone(), None).unwrap();
+    let file = root.iter().find(|i| i.name == "probe.txt").expect("document");
+    let sink = Arc::new(BytesSink::default());
+    s.docs_read_file(vid, file.id.clone(), sink.clone(), None).unwrap();
+    assert_eq!(&*sink.0.lock().unwrap(), DOC);
+}
+
+/// Single `.ghltotp` and `.ghlcal` files of format 3 open on their own.
+#[test]
+fn single_2fa_and_calendar_files_of_format_3_open() {
+    let d = Dirs::new("format3-totp");
+    let s = d.suite();
+    assert_eq!(
+        s.open_single_vault(extra("2fa.ghltotp"), PW.into(), None, None, None, Some(extra("key.ghlkey"))).unwrap(),
+        VaultKind::Totp
+    );
+    assert_eq!(s.totp_codes(59).unwrap()[0].code, "94287082");
+    let d = Dirs::new("format3-cal");
+    let s = d.suite();
+    assert_eq!(
+        s.open_single_vault(extra("kalender.ghlcal"), PW.into(), None, None, None, Some(extra("key.ghlkey"))).unwrap(),
+        VaultKind::Cal
+    );
+    let occ = s.cal_occurrences("2026-12-01".into(), "2026-12-31".into(), String::new(), "de".into()).unwrap();
+    assert!(occ.iter().any(|o| o.title == "Weihnachtsessen"), "{occ:?}");
+}
+
+/// A GhulPass file of format 3 with an attachment and keys of a newer version: the attachment
+/// opens, the unknown keys are kept, also after an edit.
+#[test]
+fn a_pass_file_of_format_3_keeps_attachments_and_unknown_keys() {
+    let d = Dirs::new("format3-attach");
+    let s = d.suite();
+    s.open_single_vault(extra("anhang.ghlpss"), PW.into(), None, None, None, Some(extra("key.ghlkey"))).unwrap();
+    let e = s.list_entries(VaultKind::Pass, None).unwrap().into_iter().find(|e| e.title == "Mit Anhang").unwrap();
+    assert_eq!(s.entry_attachment(e.vault_id.clone(), e.id.clone(), "probe.txt".into()).unwrap(), ATTACHMENT);
+    let keys = |s: &GhulSuite| {
+        let vid = e.vault_id.clone();
+        s.with_open(|o| {
+            let (_, c) = o.vault_mut(&vid)?;
+            Ok((
+                c.payload.extra.contains_key(FUTURE_KEY),
+                c.payload.entries.iter().any(|x| x.extra.contains_key(FUTURE_KEY)),
+            ))
+        })
+        .unwrap()
+    };
+    assert_eq!(keys(&s), (true, true), "unknown keys read");
+    let mut entry = s.get_entry(e.vault_id.clone(), e.id.clone()).unwrap();
+    entry.fields.push(FieldData { name: "notes".into(), value: FieldValue::Text { value: "bearbeitet".into() } });
+    s.save_entry(e.vault_id.clone(), entry).unwrap();
+    assert_eq!(keys(&s), (true, true), "unknown keys kept after an edit");
+}
+
+/// Writes the files of `format3-extra` (only once, like `write_format3_fixtures`). No FIDO2 slot:
+/// the software authenticator of the tests makes new keys every run, so its file could not be
+/// opened again.
+#[test]
+#[ignore]
+fn write_format3_extra_fixtures() {
+    let d = Dirs::new("format3-extra-write");
+    let s = d.suite();
+    let kf = generate_keyfile();
+    s.create(
+        options(
+            PW,
+            Some(kf.clone()),
+            &[
+                (VaultKind::Pass, "Anhang"),
+                (VaultKind::Totp, "2FA"),
+                (VaultKind::Cal, "Kalender"),
+                (VaultKind::Docs, "Dokumente"),
+            ],
+        ),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    let pass = vault_id(&s, "Anhang");
+    let id = s.save_entry(pass.clone(), login("Mit Anhang", "kunde", "geheim-456")).unwrap();
+    s.add_entry_attachment(pass.clone(), id.clone(), "probe.txt".into(), ATTACHMENT.to_vec()).unwrap();
+    s.with_open(|o| {
+        let (_, c) = o.vault_mut(&pass)?;
+        c.payload.extra.insert(FUTURE_KEY.into(), ciborium::value::Value::Text("from a newer version".into()));
+        let e = c.payload.entries.iter_mut().find(|e| e.id == id).unwrap();
+        e.extra.insert(FUTURE_KEY.into(), ciborium::value::Value::Integer(42.into()));
+        Ok(())
+    })
+    .unwrap();
+    s.with_open(|o| s.save_vault(o, &pass)).unwrap();
+    s.add_totp(vault_id(&s, "2FA"), totp_input()).unwrap();
+    let calendar = s
+        .cal_save_calendar(CalCalendar {
+            id: String::new(),
+            vault_id: vault_id(&s, "Kalender"),
+            name: "Familie".into(),
+            color: 0xd6336c,
+            default_reminder: 15,
+            events: 0,
+        })
+        .unwrap();
+    s.cal_save_event(CalEvent {
+        calendar_id: calendar,
+        title: "Weihnachtsessen".into(),
+        start: "2026-12-24T18:00".into(),
+        end: "2026-12-24T21:00".into(),
+        ..Default::default()
+    })
+    .unwrap();
+    let docs = vault_id(&s, "Dokumente");
+    s.docs_add_file(docs.clone(), None, "probe.txt".into(), "text/plain".into(), source(DOC.to_vec()), None).unwrap();
+    let sink = Arc::new(BytesSink::default());
+    s.docs_export_vault(docs, sink.clone(), None).unwrap();
+    std::fs::create_dir_all(EXTRA_DIR).unwrap();
+    std::fs::write(format!("{EXTRA_DIR}/key.ghlkey"), &kf).unwrap();
+    std::fs::write(format!("{EXTRA_DIR}/dokumente.ghldocs"), &*sink.0.lock().unwrap()).unwrap();
+    std::fs::write(format!("{EXTRA_DIR}/anhang.ghlpss"), s.export_vault(pass).unwrap()).unwrap();
+    std::fs::write(format!("{EXTRA_DIR}/2fa.ghltotp"), s.export_vault(vault_id(&s, "2FA")).unwrap()).unwrap();
+    std::fs::write(format!("{EXTRA_DIR}/kalender.ghlcal"), s.export_vault(vault_id(&s, "Kalender")).unwrap()).unwrap();
+}
+
+/// The files of `format3-extra` stay as they were written (see `the_files_of_format_3_are_the_ones_of_21_11_2026`).
+#[test]
+fn the_extra_files_of_format_3_are_unchanged() {
+    use sha2::{Digest, Sha256};
+    for (name, sum) in [
+        ("2fa.ghltotp", "61d851e3800ebd0d732393a8a6652dcbd9e9b978fbab9bf6d588e8ebacde830b"),
+        ("anhang.ghlpss", "36337f08d8e700a906e3fef37d6dd6fa5afbeb64633cf9bf99777598e44c36ea"),
+        ("dokumente.ghldocs", "b5bc2118d86d4273610749051124114476e29487e6c46d2b05037d07ad11ac4f"),
+        ("kalender.ghlcal", "b0abc72658c48630554309e0266fffe31561e23b919ff8633fd4023b080624c0"),
+        ("key.ghlkey", "f130dcf146ce7c9ba606688b16737bc6264fae3813dc85119150131201b609dc"),
+    ] {
+        assert_eq!(crate::kdf::hex(&Sha256::digest(extra(name))), sum, "{name} was changed");
+    }
+}

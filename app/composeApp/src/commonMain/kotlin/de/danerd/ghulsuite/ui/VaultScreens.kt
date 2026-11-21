@@ -277,7 +277,7 @@ fun VaultsSection(state: AppState) {
                                     exportEncrypted(v)
                                 }
                             }
-                            if (v.available && filePickersAvailable) {
+                            if (v.available && filePickersAvailable && state.single == null) {
                                 SheetRow(
                                     stringResource(Res.string.share_vault_action), stringResource(Res.string.vault_share_sub),
                                     leading = { IconTile(Icons.Filled.Share, paletteColor(5)) }, divider = true,

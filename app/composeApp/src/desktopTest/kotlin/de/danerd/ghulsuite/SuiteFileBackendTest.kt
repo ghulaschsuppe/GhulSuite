@@ -23,6 +23,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -45,7 +46,12 @@ class SuiteFileBackendTest {
             created: Boolean,
             write: (java.io.OutputStream) -> Unit,
             check: (SuiteInput) -> Boolean,
-        ): Boolean = SuiteFiles.writeReplacing(File(ref.id), write, check)
+            wipeOld: Boolean,
+            onWipe: () -> Unit,
+        ): Boolean = SuiteFiles.writeReplacing(File(ref.id), write, check, wipeOld, onWipe)
+        /** The room the place has (H12), as the platforms say it; null: not known. */
+        var free: Long? = null
+        override fun freeSpaceAt(ref: SuiteFileRef): Long? = free
         override val settings = Settings(object : KeyValueStore {
             private val map = mutableMapOf<String, Any>()
             override fun getInt(key: String, default: Int) = map[key] as? Int ?: default
@@ -62,15 +68,15 @@ class SuiteFileBackendTest {
         override fun panicLock() = lock()
         override fun biometricAvailable() = false
         override fun quickUnlockReady() = de.danerd.ghulsuite.model.QuickUnlockReady(false, false)
-        override suspend fun enableBiometricUnlock(password: String) {}
-        override suspend fun enablePinUnlock(password: String, pin: String) {}
+        override suspend fun enableBiometricUnlock(proof: de.danerd.ghulsuite.model.FactorProofUi, hours: Int, onTouchNeeded: () -> Unit) {}
+        override suspend fun enablePinUnlock(proof: de.danerd.ghulsuite.model.FactorProofUi, pin: String, hours: Int, onTouchNeeded: () -> Unit) {}
         override fun disableQuickUnlock() {}
         override fun disableQuickUnlockMethod(bio: Boolean) {}
         override suspend fun unlockWithBiometric() {}
         override suspend fun unlockWithPin(pin: String) {}
     }
 
-    private val password = "Master Passwort!"
+    private val password = "Gruener Kaktus singt 1987!"
 
     /** A device with a suite made by the core directly, unlocked through the backend. */
     private fun device(dir: File, kf: ByteArray): Backend {
@@ -130,6 +136,122 @@ class SuiteFileBackendTest {
         }
     }
 
+    /**
+     * H5: a file of another suite replaces the one on this device only with that one's proof
+     * (both factors or its recovery code); a wrong proof leaves it as it is.
+     */
+    @Test
+    fun anotherSuiteReplacesThisOneOnlyWithItsProof() = runBlocking<Unit> {
+        val dir = Files.createTempDirectory("ghul-suitefile-other").toFile()
+        try {
+            val kfA = generateKeyfile()
+            val a = device(File(dir, "a"), kfA)
+            val target = File(dir, "stick/GhulSuite.ghlzip").apply { parentFile.mkdirs() }
+            val ref = SuiteFileRef(target.absolutePath, target.name)
+            assertTrue(a.archiveSave(ref, "Laptop", created = true))
+
+            val kfB = generateKeyfile()
+            val b = device(File(dir, "b"), kfB)
+            b.renameVault(b.listVaults().single().id, "Bs Tresor")
+            assertEquals(ArchiveRelationUi.OTHER_SUITE, b.archiveOpen(ref, password, null, kfA, {}).relation)
+            assertFailsWith<de.danerd.ghulsuite.model.VaultException> { b.archiveAccept() }
+            // The key file of the file's suite is no proof of the one here.
+            assertFailsWith<de.danerd.ghulsuite.model.VaultException> {
+                b.archiveAcceptReplacing(de.danerd.ghulsuite.model.FactorProofUi(password, null, kfA), null)
+            }
+            assertEquals(listOf("Bs Tresor"), b.listVaults().map { it.name }, "nothing replaced")
+            b.archiveAcceptReplacing(de.danerd.ghulsuite.model.FactorProofUi(password, null, kfB), null)
+            assertEquals(listOf("Privat"), b.listVaults().map { it.name })
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    /**
+     * H12: a place with too little room for the suite file is refused before anything is
+     * written, with what it needs and has; with room enough it is saved.
+     */
+    @Test
+    fun tooLittleRoomIsSaidBeforeWriting() = runBlocking<Unit> {
+        val dir = Files.createTempDirectory("ghul-suitefile-room").toFile()
+        try {
+            val a = device(File(dir, "a"), generateKeyfile())
+            val target = File(dir, "stick/GhulSuite.ghlzip").apply { parentFile.mkdirs() }
+            val ref = SuiteFileRef(target.absolutePath, target.name)
+            a.free = 1000
+            val e = assertFailsWith<de.danerd.ghulsuite.model.VaultException> { a.archiveSave(ref, "Laptop", created = false) }
+            assertEquals(de.danerd.ghulsuite.model.VaultErrorKind.NO_SPACE, e.kind)
+            val (free, need) = e.detail.split('|').map { it.toLong() }
+            assertEquals(1000L, free)
+            assertTrue(need > 1000, e.detail)
+            assertFalse(target.exists(), "nothing written")
+            a.free = need
+            assertTrue(a.archiveSave(ref, "Laptop", created = false))
+            assertTrue(target.length() <= need, "the estimate is not too small")
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    /**
+     * N2/N3: after a change of the protection the file it replaced is overwritten at the place of
+     * the suite file only: a save to another place leaves the mark, the save there wipes (said in
+     * the progress) and clears it. Opening a file with the recovery code marks that file.
+     */
+    @Test
+    fun theOldFileIsWipedAtItsOwnPlaceOnly() = runBlocking<Unit> {
+        val dir = Files.createTempDirectory("ghul-suitefile-wipe").toFile()
+        try {
+            val kf = generateKeyfile()
+            val code = GhulSuite(localStorage(File(dir, "a/suite").path), File(dir, "a/local").path).create(
+                SetupOptions(password, kf, "Key", "Datei", "Code", 65536u, 3u, listOf(NewVault(VaultKind.PASS, "Privat"))),
+                null, null, null,
+            ).recoveryCode
+            val a = Backend(File(dir, "a")).also { it.unlock(password, null, kf) {} }
+            val stick = File(dir, "stick").apply { mkdirs() }
+            fun ref(name: String) = File(stick, name).let { SuiteFileRef(it.absolutePath, it.name) }
+            val main = ref("GhulSuite.ghlzip")
+            val other = ref("Andere.ghlzip")
+            fun wiped(steps: Steps) = steps.list.any { it.second == de.danerd.ghulsuite.model.WIPING_OLD_FILE }
+            assertTrue(a.archiveSave(main, "Laptop", created = true))
+
+            a.changePassword(de.danerd.ghulsuite.model.FactorProofUi(password, null, kf), "$password neu") {}
+            val elsewhere = Steps()
+            assertTrue(a.archiveSave(other, "Laptop", created = true, onProgress = elsewhere.report))
+            assertFalse(wiped(elsewhere), "nothing was replaced there")
+            // The app took the other place as the suite file's; the old one stays marked.
+            a.setSuiteFile(main)
+            val there = Steps()
+            assertTrue(a.archiveSave(main, "Laptop", created = false, onProgress = there.report))
+            assertTrue(wiped(there), "the old file at its place is overwritten")
+            assertEquals(listOf("Andere.ghlzip", "GhulSuite.ghlzip"), stick.list()!!.sorted(), "no .ghlold left")
+            val again = Steps()
+            assertTrue(a.archiveSave(main, "Laptop", created = false, onProgress = again.report))
+            assertFalse(wiped(again), "only once")
+
+            // Another device opens the file of the old protection with the code.
+            val old = ref("Alt.ghlzip")
+            File(stick, "GhulSuite.ghlzip").copyTo(File(stick, "Alt.ghlzip"))
+            val b = Backend(File(dir, "b"))
+            b.archiveOpenWithCode(old, code!!, "Neues Passwort fuer B 2024!") { _, _ -> }
+            b.archiveAccept()
+            b.setSuiteFile(old)
+            val opened = Steps()
+            assertTrue(b.archiveSave(old, "PC", created = false, onProgress = opened.report))
+            assertTrue(wiped(opened), "the file opened with the code is overwritten at the next save")
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    /** The core's error for an older quick unlock file becomes its own kind (its own message). */
+    @Test
+    fun anOutdatedQuickUnlockHasItsOwnKind() {
+        assertEquals(de.danerd.ghulsuite.model.VaultErrorKind.QUICK_OUTDATED, de.danerd.ghulsuite.core.GhulException.QuickUnlockOutdated().toVault().kind)
+        assertEquals(de.danerd.ghulsuite.model.VaultErrorKind.NO_SPACE, de.danerd.ghulsuite.core.GhulException.NoSpace(10uL, 3uL).toVault().kind)
+        assertEquals("3|10", de.danerd.ghulsuite.core.GhulException.NoSpace(10uL, 3uL).toVault().detail)
+    }
+
     @Test
     fun aFileThatCannotBeWrittenOrReadIsNoSavedFile() = runBlocking<Unit> {
         val dir = Files.createTempDirectory("ghul-suitefile-fail").toFile()
@@ -182,7 +304,13 @@ class SuiteFileBackendTest {
             val ref = SuiteFileRef(target.absolutePath, target.name)
             assertTrue(a.archiveSave(ref, "Laptop", created = true))
             a.setSuiteFile(ref)
-            a.deleteSuite()
+            // H5: a wrong proof deletes nothing; the right one (password and key file) does.
+            assertFailsWith<de.danerd.ghulsuite.model.VaultException> {
+                a.deleteSuite(de.danerd.ghulsuite.model.FactorProofUi("falsch falsch falsch", null, kf), null)
+            }
+            assertTrue(a.exists(), "a wrong proof deletes nothing")
+            assertNotNull(a.suiteFile(), "nor the device's data")
+            a.deleteSuite(de.danerd.ghulsuite.model.FactorProofUi(password, null, kf), null)
             assertFalse(a.exists())
             assertFalse(a.unlocked.value)
             assertEquals(emptyList(), File(dir, "a/suite").listFiles().orEmpty().map { it.name })
@@ -194,7 +322,7 @@ class SuiteFileBackendTest {
 
             val code = a.create(
                 de.danerd.ghulsuite.model.SetupUi(
-                    password = "Ein neues Passwort!", keyPin = null, keyLabel = "Key", keyfile = generateKeyfile(),
+                    password = "Ein neuer Morgen 4711 kommt!", keyPin = null, keyLabel = "Key", keyfile = generateKeyfile(),
                     keyfileLabel = "Datei", recoveryLabel = "Code", kdf = de.danerd.ghulsuite.model.KdfChoice(65536, 3, 0), vaults = emptyList(),
                 ),
             ) {}

@@ -164,8 +164,17 @@ fun SettingsScreen(state: AppState, padding: PaddingValues) {
                         pin -> stringResource(Res.string.set_quick_pin)
                         else -> null
                     }
-                    val validity = if (settings.quickUnlockHours == 0) stringResource(Res.string.set_unlock_no_expiry)
-                    else QUICK_HOURS_OPTIONS.firstOrNull { it.first == settings.quickUnlockHours }?.let { stringResource(it.second) }
+                    // Each method with the validity it was set up with (H6).
+                    @Composable
+                    fun label(h: Int): String? = if (h == 0) stringResource(Res.string.set_unlock_no_expiry)
+                    else QUICK_HOURS_OPTIONS.firstOrNull { it.first == h }?.let { stringResource(it.second) }
+                    val bioHours = settings.quickHoursBio.takeIf { it >= 0 } ?: settings.quickUnlockHours
+                    val pinHours = settings.quickHoursPin.takeIf { it >= 0 } ?: settings.quickUnlockHours
+                    val validity = when {
+                        bio && pin && bioHours != pinHours -> listOfNotNull(label(bioHours), label(pinHours)).joinToString(" / ")
+                        bio -> label(bioHours)
+                        else -> label(pinHours)
+                    }
                     SetRow(Icons.Filled.Fingerprint, Violet, stringResource(Res.string.set_unlock),
                         if (method == null) stringResource(Res.string.set_unlock_sub_off) else listOfNotNull(method, validity).joinToString(" · "),
                         first = true) { open(SetPage.UNLOCK) }

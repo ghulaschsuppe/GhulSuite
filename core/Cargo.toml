@@ -13,7 +13,9 @@ rust-version = "1.80"
 opt-level = 3
 lto = true
 codegen-units = 1
-panic = "abort"
+# M28: a panic in the core unwinds, so UniFFI's scaffolding (catch_unwind around every call)
+# turns it into an exception for the app (Kotlin: InternalException) instead of ending the app.
+panic = "unwind"
 strip = "debuginfo"
 
 # Argon2 is unusably slow without optimizations; keep tests fast with realistic parameters.

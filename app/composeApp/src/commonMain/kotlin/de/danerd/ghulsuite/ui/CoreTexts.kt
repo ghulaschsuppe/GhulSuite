@@ -29,6 +29,23 @@ private val CORE_TEXTS: Map<String, StringResource> = mapOf(
     "server address not found" to Res.string.core_host_not_found,
     "connection refused" to Res.string.core_refused,
     "not a GhulSuite file" to Res.string.file_not_suite,
+    // M10: the start of a suite file without its end (saving was interrupted).
+    "the suite file is incomplete" to Res.string.file_incomplete,
+    "the master password is too short" to Res.string.core_mpw_short,
+    "the master password is too weak" to Res.string.core_mpw_weak,
+    "replacing the suite on this device needs its proof" to Res.string.core_replace_proof,
+    "the working copy changed since the file was checked" to Res.string.core_copy_changed,
+    "documents are being added or copied, try again when that is done" to Res.string.core_docs_busy,
+    "folders cannot be nested deeper" to Res.string.core_folders_deep,
+    "a GhulDocs vault holds no more folders" to Res.string.core_folders_many,
+    "the file holds too many events" to Res.string.core_ics_many,
+    "quick unlock needs a validity" to Res.string.core_quick_validity,
+    "PIN must have at least 6 characters" to Res.string.core_pin_six,
+    // From the app (Windows, "Open with app", H4).
+    "the copy could not be marked as downloaded" to Res.string.docs_open_no_mark,
+    "the update needs PowerShell" to Res.string.upd_no_powershell,
+    "an earlier opening of a suite file could not be finished" to Res.string.core_replace_unfinished,
+    "the documents before the replace were not found" to Res.string.core_replace_aside_missing,
     // From the app's own file access (reading or writing a suite file as a stream).
     "the file cannot be read" to Res.string.file_unreadable,
     "the file cannot be written" to Res.string.file_not_written,

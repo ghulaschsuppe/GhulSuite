@@ -294,7 +294,8 @@ fun ShareAsVaultDialog(state: AppState, vaultId: String, ids: List<String>, docs
     var name by remember { mutableStateOf(wholeVault.orEmpty()) }
     var password by remember { mutableStateOf("") }
     var repeat by remember { mutableStateOf("") }
-    var master by remember { mutableStateOf("") }
+    // M15: both factors of this suite (who finds it unlocked and knows the password cannot carry entries off).
+    val master = rememberProofInput(state)
     var withKey by remember { mutableStateOf(false) }
     var pin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
@@ -336,7 +337,7 @@ fun ShareAsVaultDialog(state: AppState, vaultId: String, ids: List<String>, docs
                 throw e
             }
         }) { code ->
-            master = ""; password = ""; repeat = ""; pin = ""
+            master.clear(); password = ""; repeat = ""; pin = ""
             keyfile = share.keyfile
             shared = SharedVaultUi(VaultKindUi.DOCS, ByteArray(0), code)
         }
@@ -372,7 +373,7 @@ fun ShareAsVaultDialog(state: AppState, vaultId: String, ids: List<String>, docs
                         }
                         if (withKey) KeyPinField(state, pin) { pin = it; error = null }
                         Hint(stringResource(Res.string.share_vault_master))
-                        SecretTextField(master, { master = it; error = null }, stringResource(Res.string.l_master_password))
+                        ProofFields(state, master) { error = null }
                     }
                     step == 0 -> {
                         Hint(stringResource(Res.string.share_vault_code))
@@ -390,7 +391,7 @@ fun ShareAsVaultDialog(state: AppState, vaultId: String, ids: List<String>, docs
         confirmButton = {
             when {
                 result == null -> TextButton(
-                    enabled = !state.busy && name.isNotBlank() && password.isNotEmpty() && master.isNotEmpty() &&
+                    enabled = !state.busy && name.isNotBlank() && password.isNotEmpty() && master.ok(state) &&
                         (!withKey || keyPinOk(state, pin)),
                     onClick = {
                         run {
@@ -399,7 +400,7 @@ fun ShareAsVaultDialog(state: AppState, vaultId: String, ids: List<String>, docs
                             val kf = if (withKey) null else backend.generateKeyfile()
                             if (docs) {
                                 docsShare[0] = ShareVaultUi(
-                                    vaultId = vaultId, ids = ids, name = name.trim(), masterPassword = master,
+                                    vaultId = vaultId, ids = ids, name = name.trim(), proof = master.proof(),
                                     password = password, keyfile = kf,
                                     keyLabel = keyLabel, keyfileLabel = keyfileLabel, recoveryLabel = recoveryLabel,
                                 ) to (if (withKey) pin else null)
@@ -409,14 +410,14 @@ fun ShareAsVaultDialog(state: AppState, vaultId: String, ids: List<String>, docs
                             state.run(onError = { error = it }, block = {
                                 backend.shareAsVault(
                                     ShareVaultUi(
-                                        vaultId = vaultId, ids = ids, name = name.trim(), masterPassword = master,
+                                        vaultId = vaultId, ids = ids, name = name.trim(), proof = master.proof(),
                                         password = password, keyfile = kf,
                                         keyLabel = keyLabel, keyfileLabel = keyfileLabel, recoveryLabel = recoveryLabel,
                                     ),
                                     if (withKey) pin else null, state.onTouchNeeded,
                                 )
                             }) { r ->
-                                master = ""; password = ""; repeat = ""; pin = ""
+                                master.clear(); password = ""; repeat = ""; pin = ""
                                 keyfile = kf
                                 shared = r
                             }

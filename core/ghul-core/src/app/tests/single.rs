@@ -6,7 +6,7 @@ use super::super::single::ShareVaultOptions;
 use super::*;
 use crate::vault::{LockedContainer, RecoveryCode};
 
-const PW: &str = "pw-123456";
+const PW: &str = "pw-123456-Kq7wZ";
 const NEW_PW: &str = "weiter-98765";
 
 /// A suite with a GhulPass vault "Privat" (Bank, Kino, Forum), a GhulAuth and a calendar vault.
@@ -42,12 +42,12 @@ fn entry_id(s: &GhulSuite, title: &str) -> Vec<u8> {
     s.list_entries(VaultKind::Pass, None).unwrap().into_iter().find(|e| e.title == title).unwrap().id
 }
 
-fn share_opts(s: &GhulSuite, ids: Vec<Vec<u8>>, keyfile: Option<Vec<u8>>) -> ShareVaultOptions {
+fn share_opts(s: &GhulSuite, ids: Vec<Vec<u8>>, keyfile: Option<Vec<u8>>, own_kf: &[u8]) -> ShareVaultOptions {
     ShareVaultOptions {
         vault_id: vault_id(s, "Privat"),
         ids,
         name: "Für Anna".into(),
-        master_password: PW.into(),
+        proof: super::kf_proof(PW, own_kf),
         password: NEW_PW.into(),
         keyfile,
         key_label: "Key".into(),
@@ -144,18 +144,25 @@ fn picked_entries_go_into_a_vault_of_their_own() {
     let new_kf = generate_keyfile();
 
     // The own master password is asked again; the new one must be long enough; one factor.
-    let mut o = share_opts(&s, ids.clone(), Some(new_kf.clone()));
-    o.master_password = "falsch".into();
-    assert!(matches!(s.share_as_vault(o, None, None, None), Err(GhulError::WrongPassword)));
-    let mut o = share_opts(&s, ids.clone(), Some(new_kf.clone()));
+    let mut o = share_opts(&s, ids.clone(), Some(new_kf.clone()), &kf);
+    o.proof = super::kf_proof("falsch", &kf);
+    assert!(matches!(s.share_as_vault(o, None, None, None, None), Err(GhulError::WrongPassword)));
+    // M15: both factors, not the password alone.
+    let mut o = share_opts(&s, ids.clone(), Some(new_kf.clone()), &kf);
+    o.proof = super::no_key_proof(PW);
+    assert!(matches!(s.share_as_vault(o, None, None, None, None), Err(GhulError::KeyfileRequired)));
+    let mut o = share_opts(&s, ids.clone(), Some(new_kf.clone()), &kf);
     o.password = "kurz".into();
-    assert!(matches!(s.share_as_vault(o, None, None, None), Err(GhulError::InvalidInput { .. })));
-    let o = share_opts(&s, ids.clone(), Some(new_kf.clone()));
-    assert!(matches!(s.share_as_vault(o, Some(key()), None, Some("1234".into())), Err(GhulError::InvalidInput { .. })));
-    let o = share_opts(&s, vec![vec![9; 16]], Some(new_kf.clone()));
-    assert!(matches!(s.share_as_vault(o, None, None, None), Err(GhulError::NotFound)));
+    assert!(matches!(s.share_as_vault(o, None, None, None, None), Err(GhulError::InvalidInput { .. })));
+    let o = share_opts(&s, ids.clone(), Some(new_kf.clone()), &kf);
+    assert!(matches!(
+        s.share_as_vault(o, None, Some(key()), None, Some("1234".into())),
+        Err(GhulError::InvalidInput { .. })
+    ));
+    let o = share_opts(&s, vec![vec![9; 16]], Some(new_kf.clone()), &kf);
+    assert!(matches!(s.share_as_vault(o, None, None, None, None), Err(GhulError::NotFound)));
 
-    let shared = s.share_as_vault(share_opts(&s, ids, Some(new_kf.clone())), None, None, None).unwrap();
+    let shared = s.share_as_vault(share_opts(&s, ids, Some(new_kf.clone()), &kf), None, None, None, None).unwrap();
     assert_eq!(shared.kind, VaultKind::Pass);
 
     // Nothing of the own protection: another suite, salt and recovery code.
@@ -164,13 +171,16 @@ fn picked_entries_go_into_a_vault_of_their_own() {
     assert_ne!(mine.header().suite_id, theirs.header().suite_id);
     assert_ne!(mine.header().kdf.salt, theirs.header().kdf.salt);
     assert_ne!(shared.recovery_code, code);
-    assert!(LockedContainer::parse(&shared.data).unwrap().recover(&RecoveryCode::parse(&code).unwrap()).is_err());
+    assert_eq!(
+        LockedContainer::parse(&shared.data).unwrap().recover(&RecoveryCode::parse(&code).unwrap()).err(),
+        Some(crate::vault::VaultError::WrongSecondFactor)
+    );
     assert!(theirs.recover(&RecoveryCode::parse(&shared.recovery_code).unwrap()).is_ok());
 
     let t_dirs = Dirs::new("share-vault-t");
     let t = t_dirs.suite();
     let old = t.open_single_vault(shared.data.clone(), PW.into(), None, None, None, Some(kf));
-    assert!(old.is_err(), "the own password and key file do not open it");
+    assert!(matches!(old, Err(GhulError::WrongKeyfile)), "the own password and key file do not open it: {old:?}");
     t.open_single_vault(shared.data.clone(), NEW_PW.into(), None, None, None, Some(new_kf)).unwrap();
     assert_eq!(titles(&t), vec!["Bank", "Kino"]);
     assert_eq!(t.list_vaults().unwrap()[0].name, "Für Anna");
@@ -190,34 +200,35 @@ fn picked_entries_go_into_a_vault_of_their_own() {
 
 #[test]
 fn handed_on_with_a_security_key() {
-    let (_d, s, _, _) = suite_with_entries("share-key");
+    let (_d, s, kf, _) = suite_with_entries("share-key");
     let k = key();
     let codes = vault_id(&s, "Codes");
     let ids: Vec<Vec<u8>> = s.list_entries(VaultKind::Totp, None).unwrap().into_iter().map(|e| e.id).collect();
-    let mut o = share_opts(&s, ids, None);
+    let mut o = share_opts(&s, ids, None, &kf);
     o.vault_id = codes;
-    let shared = s.share_as_vault(o, Some(k.clone()), Some(listener()), Some("1234".into())).unwrap();
+    let shared = s.share_as_vault(o, None, Some(k.clone()), Some(listener()), Some("1234".into())).unwrap();
     assert_eq!(shared.kind, VaultKind::Totp);
     let t_dirs = Dirs::new("share-key-t");
     let t = t_dirs.suite();
     let without = t.open_single_vault(shared.data.clone(), NEW_PW.into(), None, None, None, Some(generate_keyfile()));
-    assert!(without.is_err());
+    assert!(matches!(without, Err(GhulError::WrongKeyfile)), "{without:?}");
     t.open_single_vault(shared.data, NEW_PW.into(), Some(k), Some(listener()), Some("1234".into()), None).unwrap();
     assert_eq!(t.list_entries(VaultKind::Totp, None).unwrap().len(), 1);
 
     // Calendar entries are not handed on this way.
-    let mut o = share_opts(&s, vec![vec![1; 16]], Some(generate_keyfile()));
+    let mut o = share_opts(&s, vec![vec![1; 16]], Some(generate_keyfile()), &kf);
     o.vault_id = vault_id(&s, "Kalender");
-    assert!(matches!(s.share_as_vault(o, None, None, None), Err(GhulError::InvalidInput { .. })));
+    assert!(matches!(s.share_as_vault(o, None, None, None, None), Err(GhulError::InvalidInput { .. })));
 }
 
 /// "Hand on" from a vault's menu: no ids picked, the whole vault; a calendar too, with its
 /// events still in their calendars.
 #[test]
 fn a_whole_vault_is_handed_on() {
-    let (_d, s, _, _) = suite_with_entries("share-whole");
+    let (_d, s, kf, _) = suite_with_entries("share-whole");
     let new_kf = generate_keyfile();
-    let shared = s.share_as_vault(share_opts(&s, Vec::new(), Some(new_kf.clone())), None, None, None).unwrap();
+    let shared =
+        s.share_as_vault(share_opts(&s, Vec::new(), Some(new_kf.clone()), &kf), None, None, None, None).unwrap();
     assert_eq!(shared.kind, VaultKind::Pass);
     let t_dirs = Dirs::new("share-whole-t");
     let t = t_dirs.suite();
@@ -242,9 +253,9 @@ fn a_whole_vault_is_handed_on() {
         ..Default::default()
     })
     .unwrap();
-    let mut o = share_opts(&s, Vec::new(), Some(new_kf.clone()));
+    let mut o = share_opts(&s, Vec::new(), Some(new_kf.clone()), &kf);
     o.vault_id = vault_id(&s, "Kalender");
-    let shared = s.share_as_vault(o, None, None, None).unwrap();
+    let shared = s.share_as_vault(o, None, None, None, None).unwrap();
     assert_eq!(shared.kind, VaultKind::Cal);
     let c_dirs = Dirs::new("share-whole-c");
     let c = c_dirs.suite();
@@ -267,9 +278,9 @@ fn a_whole_vault_is_handed_on() {
 
     // An empty vault is handed on as an empty vault.
     let empty = s.create_vault(VaultKind::Pass, "Leer".into()).unwrap();
-    let mut o = share_opts(&s, Vec::new(), Some(generate_keyfile()));
+    let mut o = share_opts(&s, Vec::new(), Some(generate_keyfile()), &kf);
     o.vault_id = empty;
-    assert_eq!(s.share_as_vault(o, None, None, None).unwrap().kind, VaultKind::Pass);
+    assert_eq!(s.share_as_vault(o, None, None, None, None).unwrap().kind, VaultKind::Pass);
 }
 
 #[test]
@@ -291,7 +302,10 @@ fn a_vault_on_its_own_stays_one_vault() {
     refused(t.new_recovery_code(super::kf_proof(PW, &kf), None, None, "Neu".into()).map(|_| ()));
     refused(t.archive_build_bytes("Test".into()).map(|_| ()));
     // The device's quick unlock belongs to the own suite.
-    refused(t.quick_unlock_enable(PW.into(), "pin".into(), Some("1234".into())).map(|_| ()));
+    refused(
+        t.quick_unlock_enable(super::kf_proof(PW, &kf), None, None, "pin".into(), Some("123456".into()), 3600)
+            .map(|_| ()),
+    );
     assert_eq!(t.list_vaults().unwrap().len(), 1);
     assert_eq!(t.single_vault_name().unwrap(), t.list_vaults().unwrap()[0].file);
     // Entries change as usual.

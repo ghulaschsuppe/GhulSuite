@@ -131,6 +131,18 @@ fn rrule_text(repeat: CalRepeat, until: &str, timed_start: Option<DateTime>) -> 
     Some(rule)
 }
 
+/// The message when an `.ics` file holds more than [`super::cal::MAX_IMPORT_EVENTS`] events.
+pub const TOO_MANY_EVENTS: &str = "the file holds too many events";
+
+/// Exceptions of an imported series, sorted, each once, at most [`super::cal::MAX_EXCEPTIONS`]
+/// (the latest: the earliest are long past).
+fn latest_exceptions(mut ex: Vec<String>) -> Vec<String> {
+    ex.sort();
+    ex.dedup();
+    let cut = ex.len().saturating_sub(super::cal::MAX_EXCEPTIONS);
+    ex.split_off(cut)
+}
+
 fn exception_dates(ex: &[String]) -> Vec<Date> {
     let mut v: Vec<Date> = ex.iter().filter_map(|s| s.get(..10).and_then(Date::parse)).collect();
     v.sort();
@@ -877,24 +889,37 @@ pub fn ics_import_zoned(text: &str, device: &dyn TimeZones) -> Result<Vec<CalEve
             }
         }
     }
-    for (uid, rid, ev) in overrides {
-        if let Some(date) = rid {
-            if let Some((_, master)) =
-                out.iter_mut().find(|(u, m)| !u.is_empty() && *u == uid && m.repeat != CalRepeat::None)
-            {
-                let d = date.to_string();
-                if !master.exceptions.contains(&d) {
-                    master.exceptions.push(d);
-                    master.exceptions.sort();
-                }
-            }
-        }
-        if let Some(ev) = ev {
-            out.push((uid, ev));
+    // M26: the series by their UID, and their exceptions as sets, found at once for each moved
+    // or cancelled occurrence (a file may hold hundreds of thousands).
+    let mut series: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for (i, (u, m)) in out.iter().enumerate() {
+        if !u.is_empty() && m.repeat != CalRepeat::None {
+            series.entry(u.clone()).or_insert(i);
         }
     }
+    let mut extra: std::collections::HashMap<usize, std::collections::BTreeSet<String>> =
+        std::collections::HashMap::new();
+    let mut moved: Vec<(String, CalEvent)> = Vec::new();
+    for (uid, rid, ev) in overrides {
+        if let (Some(date), Some(&i)) = (rid, series.get(&uid)) {
+            extra.entry(i).or_insert_with(|| out[i].1.exceptions.iter().cloned().collect()).insert(date.to_string());
+        }
+        if let Some(ev) = ev {
+            moved.push((uid, ev));
+        }
+        if out.len() + moved.len() > super::cal::MAX_IMPORT_EVENTS {
+            return Err(TOO_MANY_EVENTS.into());
+        }
+    }
+    for (i, ex) in extra {
+        out[i].1.exceptions = latest_exceptions(ex.into_iter().collect());
+    }
+    out.extend(moved);
     if out.is_empty() {
         return Err("No events found".into());
+    }
+    if out.len() > super::cal::MAX_IMPORT_EVENTS {
+        return Err(TOO_MANY_EVENTS.into());
     }
     Ok(out.into_iter().map(|(_, e)| e).collect())
 }
@@ -1070,7 +1095,7 @@ fn finish_event(raw: RawEvent, z: &Zones) -> Option<CalEvent> {
         }
     }
     if ev.repeat != CalRepeat::None {
-        let mut ex: Vec<String> = raw
+        let ex: Vec<String> = raw
             .exdates
             .iter()
             .flat_map(|p| {
@@ -1081,9 +1106,7 @@ fn finish_event(raw: RawEvent, z: &Zones) -> Option<CalEvent> {
                     .collect::<Vec<_>>()
             })
             .collect();
-        ex.sort();
-        ex.dedup();
-        ev.exceptions = ex;
+        ev.exceptions = latest_exceptions(ex);
     }
     let start_min = st.dt.minutes();
     let mut rem: Vec<u32> = raw
@@ -1116,16 +1139,14 @@ fn finish_event(raw: RawEvent, z: &Zones) -> Option<CalEvent> {
             None => map_rrule(rule, start.date, z).and_then(|r| r.1),
         };
         ev.repeat_until = until.map(|d| d.to_string()).unwrap_or_default();
-        let mut ex: Vec<String> = raw
+        let ex: Vec<String> = raw
             .exdates
             .iter()
             .flat_map(|p| {
                 p.value.split(',').filter_map(|v| z.day_in_zone(&zone, v)).map(|d| d.to_string()).collect::<Vec<_>>()
             })
             .collect();
-        ex.sort();
-        ex.dedup();
-        ev.exceptions = ex;
+        ev.exceptions = latest_exceptions(ex);
         ev.zone = zone;
     }
     Some(ev)
@@ -1872,6 +1893,38 @@ fn holidays_of_year(region: &str, y: i32, de: bool, out: &mut Vec<(Date, &'stati
 
 #[cfg(test)]
 mod tests {
+    /// M26: hundreds of thousands of cancelled occurrences of one series import quickly and
+    /// leave at most MAX_EXCEPTIONS (the latest); too many events are refused.
+    #[test]
+    fn huge_ics_files_are_limited() {
+        let mut ics = String::from("BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:s@x\r\nSUMMARY:Serie\r\nDTSTART;VALUE=DATE:20200101\r\nRRULE:FREQ=DAILY\r\nEND:VEVENT\r\n");
+        let mut d = super::Date::parse("2020-01-02").unwrap();
+        for _ in 0..50_000 {
+            ics.push_str(&format!(
+                "BEGIN:VEVENT\r\nUID:s@x\r\nRECURRENCE-ID;VALUE=DATE:{}\r\nSTATUS:CANCELLED\r\nDTSTART;VALUE=DATE:{}\r\nSUMMARY:x\r\nEND:VEVENT\r\n",
+                d.compact(),
+                d.compact()
+            ));
+            d = d.add_days(1);
+        }
+        ics.push_str("END:VCALENDAR\r\n");
+        let t = std::time::Instant::now();
+        let v = super::ics_import(&ics, 0).unwrap();
+        assert!(t.elapsed() < std::time::Duration::from_secs(20), "{:?}", t.elapsed());
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].exceptions.len(), super::super::cal::MAX_EXCEPTIONS);
+        assert_eq!(v[0].exceptions.last().unwrap(), &d.add_days(-1).to_string(), "the latest are kept");
+
+        let mut many = String::from("BEGIN:VCALENDAR\r\n");
+        for i in 0..=super::super::cal::MAX_IMPORT_EVENTS {
+            many.push_str(&format!(
+                "BEGIN:VEVENT\r\nUID:{i}\r\nSUMMARY:e\r\nDTSTART;VALUE=DATE:20260101\r\nEND:VEVENT\r\n"
+            ));
+        }
+        many.push_str("END:VCALENDAR\r\n");
+        assert_eq!(super::ics_import(&many, 0).unwrap_err(), super::TOO_MANY_EVENTS);
+    }
+
     use super::*;
 
     const NOW: i64 = 1_794_492_000; // 2026-11-12 14:00:00 UTC

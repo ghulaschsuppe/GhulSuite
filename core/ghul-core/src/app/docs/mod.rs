@@ -15,9 +15,10 @@
 
 pub(crate) mod blob;
 mod index;
+pub use index::{DOCS_MAX_DEPTH, DOCS_MAX_FOLDERS};
 mod vaults;
 pub(crate) use vaults::Entries;
-pub(in crate::app) use vaults::KEEP_MARK;
+pub(in crate::app) use vaults::{staging_root, JOURNAL_MARK};
 
 use std::collections::HashSet;
 use std::fs;
@@ -322,6 +323,11 @@ fn sorted(mut list: Vec<DocsItem>) -> Vec<DocsItem> {
 }
 
 /// A folder things can go into: it exists and is not in the trash (`None`: the top).
+/// A folder would be nested deeper than [`index::DOCS_MAX_DEPTH`] (translated by the app).
+pub const FOLDERS_TOO_DEEP: &str = "folders cannot be nested deeper";
+/// A vault has [`index::DOCS_MAX_FOLDERS`] folders already (translated by the app).
+pub const TOO_MANY_FOLDERS: &str = "a GhulDocs vault holds no more folders";
+
 fn check_folder(tree: &Tree<'_>, folder: Option<Id>) -> Result<()> {
     if let Some(f) = folder {
         let e = tree.get(&f).ok_or(GhulError::NotFound)?;
@@ -392,6 +398,11 @@ impl GhulSuite {
     pub(super) fn content_copy(&self) -> ContentCopy<'_> {
         self.content_copies.lock().unwrap_or_else(|e| e.into_inner()).running += 1;
         ContentCopy(self)
+    }
+
+    /// Whether content files are being copied into a file right now (see [`ContentCopy`]).
+    pub(in crate::app) fn content_copies_running(&self) -> bool {
+        self.content_copies.lock().unwrap_or_else(|e| e.into_inner()).running > 0
     }
 
     /// The folder of the device the content files are kept in (the suite's folder).
@@ -609,6 +620,14 @@ impl GhulSuite {
             if tree.name_taken(folder, &name, None) {
                 return Err(GhulError::AlreadyExists);
             }
+            // M25: within the depth and the number of folders an index may have.
+            let depth = folder.and_then(|f| tree.get(&f)).map_or(0, |f| tree.depth(f));
+            if depth + 1 > index::DOCS_MAX_DEPTH {
+                return Err(GhulError::InvalidInput { msg: FOLDERS_TOO_DEEP.into() });
+            }
+            if entries.iter().filter(|e| index::is_item(e) && index::is_folder(e)).count() >= index::DOCS_MAX_FOLDERS {
+                return Err(GhulError::InvalidInput { msg: TOO_MANY_FOLDERS.into() });
+            }
             let e = new_entry(index::FOLDER, name, folder, now);
             let id = index::id_of(&e).unwrap_or_default();
             entries.push(e);
@@ -651,6 +670,13 @@ impl GhulSuite {
             check_folder(&tree, folder)?;
             if folder.is_some_and(|f| tree.is_within(&f, &id)) {
                 return Err(GhulError::InvalidInput { msg: "a folder cannot go into itself".into() });
+            }
+            // M25: what is moved keeps within the depth an index may have.
+            let at = folder.and_then(|f| tree.get(&f)).map_or(0, |f| tree.depth(f));
+            let own = tree.depth(e);
+            let below = tree.subtree(&id).iter().map(|x| tree.depth(x) - own).max().unwrap_or(0);
+            if at + 1 + below > index::DOCS_MAX_DEPTH {
+                return Err(GhulError::InvalidInput { msg: FOLDERS_TOO_DEEP.into() });
             }
             if tree.name_taken(folder, &index::name(e), Some(&id)) {
                 return Err(GhulError::AlreadyExists);

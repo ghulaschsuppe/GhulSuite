@@ -124,9 +124,13 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
     var addKey by remember { mutableStateOf(false) }
     var newCode by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<SlotUi?>(null) }
-    var setPin by remember { mutableStateOf(false) }
-    var askBioPassword by remember { mutableStateOf(false) }
+    // H6: quick unlock is set up with both factors and a validity that is fixed in its file:
+    // the validity to set it up with (null: no dialog open).
+    var setPin by remember { mutableStateOf<Int?>(null) }
+    var askBioPassword by remember { mutableStateOf<Int?>(null) }
     var screenshotWarning by remember { mutableStateOf(false) }
+    // M14: a change that weakens the protection waits here for the master password.
+    var weaken by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
     var ready by remember { mutableStateOf(backend.quickUnlockReady()) }
     var keyfileDialog by remember { mutableStateOf(false) }
 
@@ -143,11 +147,13 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
             when (page) {
                 SetPage.UNLOCK -> {
             SectionCard(stringResource(Res.string.set_unlock)) {
+                // From an older version: switched on, but its file must be made anew (H6).
+                if (ready.needsSetup) Banner(Icons.Filled.Warning, stringResource(Res.string.set_quick_needs_setup))
                 Hint(stringResource(Res.string.set_quick_hint))
                 val bioAvailable = backend.biometricAvailable()
                 SwitchRow(stringResource(Res.string.set_quick_bio), settings.quickUnlockBiometric && ready.biometric) { on ->
                     if (on) {
-                        askBioPassword = true
+                        askBioPassword = settings.quickUnlockHours
                     } else {
                         backend.disableQuickUnlockMethod(bio = true)
                         state.changed()
@@ -155,14 +161,31 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                 }
                 if (!bioAvailable) Hint(stringResource(Res.string.set_quick_bio_unavailable))
                 SwitchRow(stringResource(Res.string.set_quick_pin), settings.quickUnlockPin && ready.pin) { on ->
-                    if (on) setPin = true else {
+                    if (on) setPin = settings.quickUnlockHours else {
                         backend.disableQuickUnlockMethod(bio = false)
                         state.changed()
                     }
                 }
-                ChoiceRow(stringResource(Res.string.set_quick_validity), QUICK_HOURS_OPTIONS, settings.quickUnlockHours) {
-                    settings.quickUnlockHours = it
+                // The validity is part of each method's quick unlock file (H6): shown per method,
+                // another one sets that method up again, with both factors.
+                val bioOn = settings.quickUnlockBiometric && ready.biometric
+                val pinOn = settings.quickUnlockPin && ready.pin
+                if (bioOn) {
+                    val now = settings.quickHoursBio.takeIf { it >= 0 } ?: settings.quickUnlockHours
+                    ChoiceRow(stringResource(Res.string.set_quick_validity_bio), QUICK_HOURS_OPTIONS, now) { hours ->
+                        if (hours != now) askBioPassword = hours
+                    }
                 }
+                if (pinOn) {
+                    val now = settings.quickHoursPin.takeIf { it >= 0 } ?: settings.quickUnlockHours
+                    ChoiceRow(stringResource(Res.string.set_quick_validity_pin), QUICK_HOURS_OPTIONS, now) { hours ->
+                        if (hours != now) setPin = hours
+                    }
+                }
+                if (!bioOn && !pinOn) {
+                    ChoiceRow(stringResource(Res.string.set_quick_validity), QUICK_HOURS_OPTIONS, settings.quickUnlockHours) { settings.quickUnlockHours = it }
+                }
+                if (ready.any) Hint(stringResource(Res.string.set_quick_validity_fixed))
                 Hint(stringResource(Res.string.set_quick_always_full))
             }
 
@@ -170,15 +193,33 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                 SetPage.LOCK -> {
             SectionCard(stringResource(Res.string.set_security)) {
                 Button(onClick = { state.lockNow() }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.a_lock_now)) }
-                ChoiceRow(stringResource(Res.string.set_auto_lock), AUTO_LOCK_OPTIONS, settings.autoLockSeconds) { settings.autoLockSeconds = it }
+                val autoLockText = stringResource(Res.string.gate_auto_lock)
+                val screenOffText = stringResource(Res.string.gate_screen_off)
+                val shakeText = stringResource(Res.string.gate_shake)
+                ChoiceRow(stringResource(Res.string.set_auto_lock), AUTO_LOCK_OPTIONS, settings.autoLockSeconds) { v ->
+                    if (autoLockWeakens(settings.autoLockSeconds, v)) weaken = autoLockText to { settings.autoLockSeconds = v }
+                    else settings.autoLockSeconds = v
+                }
                 SwitchRow(
                     stringResource(if (backend.isDesktop) Res.string.set_lock_session else Res.string.set_lock_screen_off),
                     settings.lockOnScreenOff,
-                ) { settings.lockOnScreenOff = it }
+                ) { on -> if (on) settings.lockOnScreenOff = true else weaken = screenOffText to { settings.lockOnScreenOff = false } }
                 if (!backend.isDesktop) {
-                    SwitchRow(stringResource(Res.string.set_shake), settings.shakeToLock) { settings.shakeToLock = it }
+                    SwitchRow(stringResource(Res.string.set_shake), settings.shakeToLock) { on ->
+                        if (on) settings.shakeToLock = true else weaken = shakeText to { settings.shakeToLock = false }
+                    }
                     if (settings.shakeToLock) {
-                        ChoiceRow(stringResource(Res.string.set_shake_sensitivity), SHAKE_OPTIONS, settings.shakeSensitivity) { settings.shakeSensitivity = it }
+                        val sensText = stringResource(Res.string.gate_shake_sensitivity)
+                        ChoiceRow(stringResource(Res.string.set_shake_sensitivity), SHAKE_OPTIONS, settings.shakeSensitivity) { v ->
+                            // Less sensitive is nearly "shaking off".
+                            if (v < settings.shakeSensitivity) weaken = sensText to { settings.shakeSensitivity = v } else settings.shakeSensitivity = v
+                        }
+                    }
+                    if (settings.moduleGhulCal) {
+                        val remText = stringResource(Res.string.gate_panic_reminders)
+                        SwitchRow(stringResource(Res.string.set_panic_reminders), settings.panicClearReminders) { on ->
+                            if (on) settings.panicClearReminders = true else weaken = remText to { settings.panicClearReminders = false }
+                        }
                     }
                     Hint(stringResource(Res.string.set_panic_hint))
                 } else {
@@ -189,7 +230,11 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                 }
                 SetPage.PRIVACY -> {
             SectionCard(stringResource(Res.string.set_privacy)) {
-                ChoiceRow(stringResource(Res.string.set_clipboard), CLIPBOARD_OPTIONS, settings.clipboardClearSeconds) { settings.clipboardClearSeconds = it }
+                val clipText = stringResource(Res.string.gate_clipboard)
+                ChoiceRow(stringResource(Res.string.set_clipboard), CLIPBOARD_OPTIONS, settings.clipboardClearSeconds) { v ->
+                    if (clipboardWeakens(settings.clipboardClearSeconds, v)) weaken = clipText to { settings.clipboardClearSeconds = v }
+                    else settings.clipboardClearSeconds = v
+                }
                 SwitchRow(stringResource(Res.string.set_screenshots), settings.allowScreenshots) { on ->
                     if (on) screenshotWarning = true else settings.allowScreenshots = false
                 }
@@ -318,20 +363,21 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
 
     if (addKey) AddKeyDialog(state) { addKey = false }
     if (keyfileDialog) KeyfileDialog(state) { keyfileDialog = false }
-    if (setPin) SetAppPinDialog(state) { setPin = false; ready = backend.quickUnlockReady() }
-    if (askBioPassword) BioPasswordDialog(state) { askBioPassword = false; ready = backend.quickUnlockReady() }
+    setPin?.let { hours -> SetAppPinDialog(state, hours) { setPin = null; ready = backend.quickUnlockReady() } }
+    askBioPassword?.let { hours -> BioPasswordDialog(state, hours) { askBioPassword = null; ready = backend.quickUnlockReady() } }
     if (screenshotWarning) {
-        AlertDialog(
-            onDismissRequest = { screenshotWarning = false },
-            title = { Text(stringResource(Res.string.set_screenshots)) },
-            text = { Text(stringResource(Res.string.set_screenshots_warning)) },
-            confirmButton = {
-                TextButton(onClick = { settings.allowScreenshots = true; screenshotWarning = false }) {
-                    Text(stringResource(Res.string.a_allow))
-                }
-            },
-            dismissButton = { TextButton(onClick = { screenshotWarning = false }) { Text(stringResource(Res.string.a_cancel)) } },
-        )
+        // The warning and the master password in one step (M14).
+        PasswordGateDialog(
+            state, stringResource(Res.string.set_screenshots), stringResource(Res.string.set_screenshots_warning),
+            confirmLabel = stringResource(Res.string.a_allow),
+            onDismiss = { screenshotWarning = false },
+        ) { settings.allowScreenshots = true; screenshotWarning = false }
+    }
+    weaken?.let { (text, apply) ->
+        PasswordGateDialog(
+            state, stringResource(Res.string.gate_weaken_title), text, confirmLabel = stringResource(Res.string.a_apply),
+            onDismiss = { weaken = null },
+        ) { apply(); weaken = null }
     }
     if (newCode) NewCodeDialog(state) { newCode = false }
     removing?.let { s -> RemoveSlotDialog(state, s) { removing = null } }
@@ -400,10 +446,11 @@ private fun RemoveSlotDialog(state: AppState, s: SlotUi, onDismiss: () -> Unit) 
 }
 
 @Composable
-private fun SetAppPinDialog(state: AppState, onDismiss: () -> Unit) {
-    var password by remember { mutableStateOf("") }
+private fun SetAppPinDialog(state: AppState, hours: Int, onDismiss: () -> Unit) {
+    val proof = rememberProofInput(state)
     var pin by remember { mutableStateOf("") }
     var repeat by remember { mutableStateOf("") }
+    var validity by remember { mutableStateOf(hours) }
     var error by remember { mutableStateOf<String?>(null) }
     val mismatch = stringResource(Res.string.set_pin_mismatch)
     AlertDialog(
@@ -412,10 +459,11 @@ private fun SetAppPinDialog(state: AppState, onDismiss: () -> Unit) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Hint(stringResource(Res.string.set_app_pin_text))
-                // Who finds the app unlocked cannot set a PIN of his own.
-                SecretTextField(password, { password = it; error = null }, stringResource(Res.string.l_master_password))
                 SecretTextField(pin, { pin = it.filter(Char::isDigit).take(12); error = null }, stringResource(Res.string.l_app_pin), numeric = true)
                 SecretTextField(repeat, { repeat = it.filter(Char::isDigit).take(12); error = null }, stringResource(Res.string.l_app_pin_repeat), numeric = true)
+                ChoiceRow(stringResource(Res.string.set_quick_validity), QUICK_HOURS_OPTIONS, validity) { validity = it }
+                // H6: who finds the app unlocked cannot set a PIN of his own: both factors.
+                ProofFields(state, proof) { error = null }
                 BusyBanner(state)
                 ErrorText(error)
             }
@@ -425,13 +473,13 @@ private fun SetAppPinDialog(state: AppState, onDismiss: () -> Unit) {
                 if (pin != repeat) {
                     error = mismatch
                 } else {
-                    state.run(onError = { error = it }, block = { state.backend.enablePinUnlock(password, pin) }) {
-                        password = ""
+                    state.run(onError = { error = it }, block = { state.backend.enablePinUnlock(proof.proof(), pin, validity, state.onTouchNeeded) }) {
+                        proof.clear()
                         state.changed()
                         onDismiss()
                     }
                 }
-            }, enabled = !state.busy && pin.length >= 6 && password.isNotEmpty()) { Text(stringResource(Res.string.a_save)) }
+            }, enabled = !state.busy && pin.length >= MIN_APP_PIN && proof.ok(state), modifier = Modifier.testTag("quick-pin-save")) { Text(stringResource(Res.string.a_save)) }
         },
         dismissButton = { TextButton(onClick = onDismiss, enabled = !state.busy) { Text(stringResource(Res.string.a_cancel)) } },
     )
@@ -728,29 +776,33 @@ private val LIBRARIES = listOf(
     "EFF Large Wordlist" to "CC BY 3.0 US",
 )
 
-/** The master password before fingerprint unlock is switched on (who finds the app unlocked cannot). */
+/** Fingerprint unlock: both factors of now and the validity first (who finds the app unlocked cannot). */
 @Composable
-private fun BioPasswordDialog(state: AppState, onDismiss: () -> Unit) {
-    var password by remember { mutableStateOf("") }
+private fun BioPasswordDialog(state: AppState, hours: Int, onDismiss: () -> Unit) {
+    val proof = rememberProofInput(state)
+    var validity by remember { mutableStateOf(hours) }
     var error by remember { mutableStateOf<String?>(null) }
     AlertDialog(
         onDismissRequest = { if (!state.busy) onDismiss() },
         title = { Text(stringResource(Res.string.set_quick_bio)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SecretTextField(password, { password = it; error = null }, stringResource(Res.string.l_master_password))
+                ChoiceRow(stringResource(Res.string.set_quick_validity), QUICK_HOURS_OPTIONS, validity) { validity = it }
+                // Set up again (another validity): the old one is replaced as soon as it starts.
+                if (state.backend.quickUnlockReady().biometric) Hint(stringResource(Res.string.set_quick_bio_cancel_note))
+                ProofFields(state, proof) { error = null }
                 BusyBanner(state)
                 ErrorText(error)
             }
         },
         confirmButton = {
             TextButton(onClick = {
-                state.run(onError = { error = it }, block = { state.backend.enableBiometricUnlock(password) }) {
-                    password = ""
+                state.run(onError = { error = it }, block = { state.backend.enableBiometricUnlock(proof.proof(), validity, state.onTouchNeeded) }) {
+                    proof.clear()
                     state.changed()
                     onDismiss()
                 }
-            }, enabled = !state.busy && password.isNotEmpty()) { Text(stringResource(Res.string.a_save)) }
+            }, enabled = !state.busy && proof.ok(state), modifier = Modifier.testTag("quick-bio-save")) { Text(stringResource(Res.string.a_save)) }
         },
         dismissButton = { TextButton(onClick = onDismiss, enabled = !state.busy) { Text(stringResource(Res.string.a_cancel)) } },
     )

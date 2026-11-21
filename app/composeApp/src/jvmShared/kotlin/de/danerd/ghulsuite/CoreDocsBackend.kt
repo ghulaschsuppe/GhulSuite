@@ -32,6 +32,8 @@ import kotlinx.coroutines.withContext
 /** Runs a call of the core with the security key when [pin] is given (else without). */
 interface KeyRunner {
     suspend fun <T> run(pin: String?, block: (HidTransport?) -> T): T
+    /** Both factors of now, a security key touched first (see CoreVaultBackend.confirmedProof). */
+    suspend fun confirm(proof: de.danerd.ghulsuite.model.FactorProofUi, onTouchNeeded: () -> Unit): de.danerd.ghulsuite.model.FactorProofUi
 }
 
 /** A file the app picked or another app handed over, for the core to read piece by piece. */
@@ -63,7 +65,7 @@ internal class ByteSinkOutput(private val sink: ByteSink, private val active: ()
         try {
             sink.write(data)
         } catch (e: Exception) {
-            throw StorageException.Io("the file cannot be written")
+            throw StorageException.Io(if (isNoSpace(e) { sink.freeBytes() }) NO_SPACE_IO else "the file cannot be written")
         } finally {
             // The core hands over a copy of its own: what was written does not stay in this one.
             data.fill(0)
@@ -204,7 +206,7 @@ class CoreDocsBackend(
             vaultId = share.vaultId,
             ids = share.ids,
             name = share.name,
-            masterPassword = share.masterPassword,
+            proof = keys.confirm(share.proof, onTouchNeeded).let { de.danerd.ghulsuite.core.FactorProof(it.password, it.pin, it.keyfile) },
             password = share.password,
             keyfile = share.keyfile,
             keyLabel = share.keyLabel,
@@ -214,7 +216,7 @@ class CoreDocsBackend(
         val active = activity()
         val s = suite()
         return keys.run(pin) { t ->
-            mapped { s.docsShareVault(options, t, t?.let { Touch(onTouchNeeded) }, pin, ByteSinkOutput(sink, active), BytesProgress(onProgress)).recoveryCode }
+            mapped { s.docsShareVault(options, null, t, t?.let { Touch(onTouchNeeded) }, pin, ByteSinkOutput(sink, active), BytesProgress(onProgress)).recoveryCode }
         }
     }
 

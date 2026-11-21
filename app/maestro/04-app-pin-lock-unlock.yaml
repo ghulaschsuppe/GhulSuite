@@ -19,10 +19,30 @@ name: App PIN, lock and unlock
 - inputText: "246813"
 - tapOn: "Repeat app PIN"
 - inputText: "246813"
-# Switching on the app PIN needs the master password (who finds the app unlocked cannot).
+# Switching on the app PIN needs both factors (H6: who finds the app unlocked cannot): the
+# master password and the key file of the setup.
 - tapOn: "Master password"
 - inputText: "Ghul-Test-Passwort-2026!"
 - hideKeyboard
+- scrollUntilVisible:
+    element: "Key file"
+    direction: DOWN
+- tapOn: "Key file"
+- scrollUntilVisible:
+    element: "Choose key file"
+    direction: DOWN
+- tapOn: "Choose key file"
+- extendedWaitUntil:
+    visible: "ghulsuite.*\\.ghlkey"
+    timeout: 30000
+- tapOn: "ghulsuite.*\\.ghlkey"
+- extendedWaitUntil:
+    visible: "Key file: .*"
+    timeout: 15000
+- takeScreenshot: 04-pin-proof
+- scrollUntilVisible:
+    element: "Save"
+    direction: DOWN
 - tapOn: "Save"
 - takeScreenshot: 04-pin-on
 # Header button (screen reader label), works with and without a keyboard on screen.

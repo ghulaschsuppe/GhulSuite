@@ -18,7 +18,7 @@ use super::super::zipstream::ZipWriter;
 use super::*;
 use crate::vault::{Keyfile, LockedContainer, PasswordKey, SecondFactor};
 
-const PW: &str = "pw-123456";
+const PW: &str = "pw-123456-Kq7wZ";
 
 /// Deterministic content: byte `i` is `(i * 7 + seed) % 251`.
 fn content(len: usize, seed: u8) -> Vec<u8> {
@@ -281,7 +281,7 @@ fn folders_names_search_and_favorites() {
     assert!(matches!(s.docs_list(pass, None), Err(GhulError::InvalidInput { .. })));
     assert!(matches!(s.save_entry(v.clone(), login("x", "y", "z")), Err(GhulError::InvalidInput { .. })));
     assert!(matches!(s.export_vault(v.clone()), Err(GhulError::InvalidInput { .. })));
-    assert!(matches!(s.export_plain(v.clone(), PW.into()), Err(GhulError::InvalidInput { .. })));
+    assert!(matches!(s.export_plain(v.clone(), PW.into(), false), Err(GhulError::InvalidInput { .. })));
     let info = s.list_vaults().unwrap().into_iter().find(|i| i.id == v).unwrap();
     assert_eq!((info.kind, info.entries, info.file.ends_with(".ghldoc")), (VaultKind::Docs, 4, true));
 
@@ -500,8 +500,8 @@ fn a_change_of_the_protection_keeps_every_document_and_renews_the_index_key() {
         .map(|f| (f.clone(), std::fs::read(docs_dir(&d, &v).join(f)).unwrap()))
         .collect();
     let old_key = index_key(&d, &v, PW, &kf);
-    s.change_password(super::kf_proof(PW, &kf), None, None, "neu-654321".into()).unwrap();
-    let code = s.new_recovery_code(super::kf_proof("neu-654321", &kf), None, None, "Blatt".into()).unwrap();
+    s.change_password(super::kf_proof(PW, &kf), None, None, "neu-654321-Kq7wZ".into()).unwrap();
+    let code = s.new_recovery_code(super::kf_proof("neu-654321-Kq7wZ", &kf), None, None, "Blatt".into()).unwrap();
     assert_eq!(read(&s, &v, &a.id).unwrap(), content(SECTION + 1, 1));
     assert_eq!(read(&s, &v, &b.id).unwrap(), content(10, 2));
     // The content files are untouched (their keys are in the index), the index key is new.
@@ -515,7 +515,7 @@ fn a_change_of_the_protection_keeps_every_document_and_renews_the_index_key() {
         LockedContainer::parse(&data).unwrap().unlock_with_vmk(&old_key).is_err(),
         "an old copy's key opens nothing new"
     );
-    assert_ne!(index_key(&d, &v, "neu-654321", &kf), old_key);
+    assert_ne!(index_key(&d, &v, "neu-654321-Kq7wZ", &kf), old_key);
     // Also after unlocking anew, and with the new recovery code.
     s.lock();
     s.unlock_with_recovery_code(code, "dritt-13579".into()).unwrap();
@@ -557,15 +557,15 @@ fn documents_travel_in_the_suite_file() {
     // With the recovery code as well.
     let dc = Dirs::new("docs-arch-c");
     let c = dc.suite();
-    c.archive_open_with_code_bytes(file.clone(), code, "neu-24680".into()).unwrap();
+    c.archive_open_with_code_bytes(file.clone(), code, "neu-24680-Kq7wZ".into()).unwrap();
     c.archive_accept().unwrap();
     assert_eq!(read(&c, &v, &z.id).unwrap(), content(70_000, 3));
 
     // A device with documents of its own: the file replaces them.
-    let (dd, d2, _, _, own) = docs_suite("docs-arch-d");
+    let (dd, d2, kf_d2, _, own) = docs_suite("docs-arch-d");
     add(&d2, &own, None, "own.pdf", b"mine");
     d2.archive_open_bytes(file.clone(), PW.into(), None, None, None, Some(kf.clone())).unwrap();
-    d2.archive_accept().unwrap();
+    d2.archive_accept_replacing(kf_proof(PW, &kf_d2), None, None).unwrap();
     assert!(!docs_dir(&dd, &own).exists(), "the old documents are gone");
     assert_eq!(read(&d2, &v, &x.id).unwrap(), content(SECTION + 5, 1));
 }
@@ -580,7 +580,7 @@ fn suite_files_with_missing_extra_or_changed_documents_are_refused() {
     let docs_at: Vec<usize> = (0..list.len()).filter(|&i| list[i].0.starts_with("docs-")).collect();
     let vault_at = list.iter().position(|(n, _)| n.ends_with(".ghldoc")).unwrap();
 
-    let (db, b, _, _, own) = docs_suite("docs-bad-b");
+    let (db, b, kf_own, _, own) = docs_suite("docs-bad-b");
     let mine = add(&b, &own, None, "mine.pdf", b"meins");
     let refused = |data: Vec<u8>, what: &str| {
         let r = b.archive_open_bytes(data, PW.into(), None, None, None, Some(kf.clone()));
@@ -634,7 +634,7 @@ fn suite_files_with_missing_extra_or_changed_documents_are_refused() {
     assert_eq!(read(&b, &own, &mine.id).unwrap(), b"meins");
     // The real file opens.
     b.archive_open_bytes(file, PW.into(), None, None, None, Some(kf.clone())).unwrap();
-    b.archive_accept().unwrap();
+    b.archive_accept_replacing(kf_proof(PW, &kf_own), None, None).unwrap();
     assert_eq!(read(&b, &v, &x.id).unwrap(), content(SECTION + 5, 1));
 }
 
@@ -781,7 +781,7 @@ fn a_docs_vault_on_its_own_export_open_write_back_adopt_and_share() {
         vault_id: v.clone(),
         ids: vec![f.id.clone(), t.id.clone()],
         name: "Für Anna".into(),
-        master_password: PW.into(),
+        proof: kf_proof(PW, &kf),
         password: "anna-24680".into(),
         keyfile: Some(new_kf.clone()),
         key_label: "Key".into(),
@@ -789,14 +789,24 @@ fn a_docs_vault_on_its_own_export_open_write_back_adopt_and_share() {
         recovery_label: "Blatt".into(),
     };
     let sink = Arc::new(BytesSink::default());
-    let wrong = ShareDocsOptions { master_password: "falsch".into(), ..opts.clone() };
-    assert!(matches!(a.docs_share_vault(wrong, None, None, None, sink.clone(), None), Err(GhulError::WrongPassword)));
-    let shared = a.docs_share_vault(opts, None, None, None, sink.clone(), None).unwrap();
+    let wrong = ShareDocsOptions { proof: kf_proof("falsch", &kf), ..opts.clone() };
+    assert!(matches!(
+        a.docs_share_vault(wrong, None, None, None, None, sink.clone(), None),
+        Err(GhulError::WrongPassword)
+    ));
+    // M15: the password alone is not enough.
+    let alone = ShareDocsOptions { proof: no_key_proof(PW), ..opts.clone() };
+    assert!(matches!(
+        a.docs_share_vault(alone, None, None, None, None, sink.clone(), None),
+        Err(GhulError::KeyfileRequired)
+    ));
+    let shared = a.docs_share_vault(opts, None, None, None, None, sink.clone(), None).unwrap();
     assert_eq!(shared.recovery_code.split('-').count(), 11);
     let data = std::mem::take(&mut *sink.0.lock().unwrap());
     let t4 = Dirs::new("docs-single-t4");
     let s4 = t4.suite();
-    assert!(s4.open_single_docs(source(data.clone()), PW.into(), None, None, None, Some(kf.clone()), None).is_err());
+    let r = s4.open_single_docs(source(data.clone()), PW.into(), None, None, None, Some(kf.clone()), None);
+    assert!(matches!(r, Err(GhulError::WrongKeyfile)), "{r:?}");
     let nv = s4.open_single_docs(source(data), "anna-24680".into(), None, None, None, Some(new_kf), None).unwrap();
     assert_ne!(nv, v);
     assert_eq!(names(&s4.docs_list(nv.clone(), None).unwrap()), vec!["Ordner"]);
@@ -941,7 +951,7 @@ fn generic_entry_functions_refuse_docs_vaults() {
     assert!(refused_as_docs(a.get_entry(v.clone(), id.clone())));
     assert!(refused_as_docs(a.delete_entry(v.clone(), id.clone())));
     assert!(refused_as_docs(a.rename_totp(v.clone(), id.clone(), "i".into(), "a".into())));
-    assert!(refused_as_docs(a.totp_uri(v.clone(), id.clone())));
+    assert!(refused_as_docs(a.totp_uri(v.clone(), id.clone(), PW.into())));
     // Nothing changed: one document, the suite file saves and opens elsewhere with it.
     assert_eq!(a.docs_usage(String::new()).unwrap().files, 1);
     let file = save(&a);
@@ -974,13 +984,13 @@ fn accept_with_a_checked_document_missing_changes_nothing() {
     let (_da, a, kf_a, _, va) = docs_suite("g9-miss-a");
     add(&a, &va, None, "x.pdf", b"hello");
     let file = save(&a);
-    let (db, b, _kf_b, _, vb) = docs_suite("g9-miss-b");
+    let (db, b, kf_b, _, vb) = docs_suite("g9-miss-b");
     let y = add(&b, &vb, None, "y.pdf", b"mine");
     b.archive_open_bytes(file, PW.into(), None, None, None, Some(kf_a)).unwrap();
     let staging = db.root.join("vault").join(".staging");
     let mut gone = 0;
     for s in std::fs::read_dir(&staging).unwrap().flatten() {
-        for v in std::fs::read_dir(s.path()).unwrap().flatten() {
+        for v in std::fs::read_dir(s.path()).unwrap().flatten().filter(|v| v.path().is_dir()) {
             for f in std::fs::read_dir(v.path()).unwrap().flatten() {
                 std::fs::remove_file(f.path()).unwrap();
                 gone += 1;
@@ -988,11 +998,14 @@ fn accept_with_a_checked_document_missing_changes_nothing() {
         }
     }
     assert_eq!(gone, 1);
-    let r = b.archive_accept();
+    let r = b.archive_accept_replacing(kf_proof(PW, &kf_b), None, None);
     assert!(matches!(&r, Err(GhulError::Corrupted { msg }) if msg == "a document is damaged or missing"), "{r:?}");
     assert!(b.is_unlocked(), "failed before anything was replaced");
     assert!(!b.archive_device_data_wiped());
     assert_eq!(read(&b, &vb, &y.id).unwrap(), b"mine");
+    // The checked file stays for another try (it fails the same way), until it is cancelled.
+    assert!(matches!(b.archive_accept_replacing(kf_proof(PW, &kf_b), None, None), Err(GhulError::Corrupted { .. })));
+    b.archive_cancel();
     assert_eq!(staging_left(&db), 0);
 }
 
@@ -1288,7 +1301,7 @@ fn docs_vaults(s: &GhulSuite) -> Vec<String> {
 fn deleting_the_working_copy_leaves_nothing_of_the_suite() {
     let (d, s, kf, _, v) = docs_suite("delete-working-copy");
     let x = add(&s, &v, None, "x.pdf", &content(300, 1));
-    s.quick_unlock_enable(PW.into(), "pin".into(), Some("123456".into())).unwrap();
+    s.quick_unlock_enable(kf_proof(PW, &kf), None, None, "pin".into(), Some("123456".into()), 3600).unwrap();
     let file = save(&s);
     add(&s, &v, None, "unsaved.pdf", b"u");
     assert!(s.archive_unsaved());
@@ -1305,7 +1318,17 @@ fn deleting_the_working_copy_leaves_nothing_of_the_suite() {
     let seen = std::fs::read_to_string(local.join("archive-seen.json")).unwrap();
     let suite_id = seen.split('"').nth(1).unwrap().to_owned();
 
-    s.delete_working_copy().unwrap();
+    // H5: never without the proof of the suite, also while it is locked.
+    s.lock();
+    assert!(matches!(s.delete_working_copy(no_key_proof(PW), None, None), Err(GhulError::KeyfileRequired)));
+    assert!(matches!(s.delete_working_copy(kf_proof("falsch-falsch", &kf), None, None), Err(GhulError::WrongPassword)));
+    assert!(matches!(
+        s.delete_working_copy(kf_proof(PW, &generate_keyfile()), None, None),
+        Err(GhulError::WrongKeyfile)
+    ));
+    assert!(s.exists().unwrap(), "nothing deleted");
+    s.unlock(PW.into(), None, None, None, Some(kf.clone())).unwrap();
+    s.delete_working_copy(kf_proof(PW, &kf), None, None).unwrap();
     assert!(!s.is_unlocked());
     assert!(!s.exists().unwrap());
     let left: Vec<String> =
@@ -1321,8 +1344,8 @@ fn deleting_the_working_copy_leaves_nothing_of_the_suite() {
     let seen = std::fs::read_to_string(local.join("archive-seen.json")).unwrap_or_default();
     assert!(!seen.contains(&suite_id), "what was seen of its suite files is forgotten: {seen}");
     assert!(!s.quick_unlock_exists("pin".into()));
-    // Deleting again finds nothing to delete.
-    s.delete_working_copy().unwrap();
+    // Deleting again finds nothing to delete (and nothing a proof could be checked against).
+    s.delete_working_copy(no_key_proof(PW), None, None).unwrap();
 
     // A new suite in its place; the saved suite file still opens on another device with the old data.
     s.create(options("neues-pw-123", Some(generate_keyfile()), &[(VaultKind::Pass, "Neu")]), None, None, None).unwrap();

@@ -76,8 +76,11 @@ class MainActivity : ComponentActivity() {
         }
         // No screenshots, screen recordings or previews in the app switcher (unless allowed in the settings).
         window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
-        // L10: no taps while another app draws over GhulSuite (tapjacking).
-        window.decorView.filterTouchesWhenObscured = true
+        // L10: no taps while another app draws over GhulSuite (tapjacking). M17: hidden from
+        // accessibility services that are not tools (Android 14+), and other apps' overlay
+        // windows are hidden while GhulSuite is in front (Android 12+).
+        de.danerd.ghulsuite.ui.guardView(window.decorView)
+        if (android.os.Build.VERSION.SDK_INT >= 31) window.setHideOverlayWindows(true)
         lifecycleScope.launch {
             val testRun = TestDevice.screenshotsAllowed(this@MainActivity)
             snapshotFlow { ghul.backend.settings.allowScreenshots || testRun }.collect { allowed ->

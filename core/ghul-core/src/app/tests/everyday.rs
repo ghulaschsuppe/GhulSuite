@@ -486,7 +486,7 @@ fn stress_parallel_access_from_several_threads() {
     let d = Dirs::new("stress-par");
     let s = d.suite();
     s.create(
-        options("Par-pw-1", Some(kf.clone()), &[(VaultKind::Pass, "Privat"), (VaultKind::Totp, "2FA")]),
+        options("Par-pw-1-Kq7wZ", Some(kf.clone()), &[(VaultKind::Pass, "Privat"), (VaultKind::Totp, "2FA")]),
         None,
         None,
         None,
@@ -537,6 +537,6 @@ fn stress_parallel_access_from_several_threads() {
     let d2 = Dirs::new("stress-par-b");
     copy_folder(&d, &d2);
     let b = d2.suite();
-    b.unlock("Par-pw-1".into(), None, None, None, Some(kf)).unwrap();
+    b.unlock("Par-pw-1-Kq7wZ".into(), None, None, None, Some(kf)).unwrap();
     assert_eq!(titles(&b), titles(&s));
 }

@@ -8,11 +8,14 @@
 //! Keystore: fingerprint-bound or device-bound).
 //!
 //! ```text
-//! "GHULQUIK" | version u16 = 2 | suite_id[16] | salt[32] | has_pin u8 | created_ms i64 | nonce[24]
-//!   | AEAD(PK[32] || S[32])
+//! "GHULQUIK" | version u16 = 3 | suite_id[16] | salt[32] | has_pin u8 | created_ms i64
+//!   | max_age_ms i64 | nonce[24] | AEAD(PK[32] || S[32])
 //! key = HKDF(QK [|| Argon2id(NFC(PIN), salt)], "ghul/v1/quick" || suite_id), AAD = everything before the nonce
 //! ```
 //!
+//! The validity (`max_age_ms`) is chosen when quick unlock is enabled (with both factors) and is
+//! part of the AEAD's associated data: the app cannot extend it without enabling it again.
+//! Files of version 2 (validity given by the app at every unlock) are no longer opened.
 //! The validity is counted from the last *full* unlock: every full unlock writes
 //! `quick-<name>.stamp` = `time_ms i64 || HMAC-SHA256(HKDF(PK, "ghul/v2/quick-stamp" || name), time_ms)`.
 //! The stamp can only be verified (and forged) with the password key.
@@ -28,11 +31,20 @@ use super::error::{GhulError, Result};
 use crate::vault::keys::{hkdf, open, seal};
 
 const MAGIC: &[u8; 8] = b"GHULQUIK";
-const VERSION: u16 = 2;
-const PREFIX_LEN: usize = 8 + 2 + 16 + 32 + 1 + 8;
+const VERSION: u16 = 3;
+const PREFIX_LEN: usize = 8 + 2 + 16 + 32 + 1 + 8 + 8;
 const PIN_MEMORY_KIB: u32 = 64 * 1024;
 const PIN_ITERATIONS: u32 = 3;
-pub const MIN_PIN_LEN: usize = 4;
+/// The shortest app PIN (M42: the same rule as the app's).
+pub const MIN_PIN_LEN: usize = 6;
+
+/// The app PIN: at least [`MIN_PIN_LEN`] characters.
+pub fn check_pin(pin: &str) -> Result<()> {
+    if pin.chars().count() < MIN_PIN_LEN {
+        return Err(GhulError::InvalidInput { msg: format!("PIN must have at least {MIN_PIN_LEN} characters") });
+    }
+    Ok(())
+}
 
 pub fn path(dir: &Path, name: &str) -> Result<PathBuf> {
     if name.is_empty() || name.len() > 16 || !name.chars().all(|c| c.is_ascii_lowercase()) {
@@ -67,7 +79,9 @@ pub struct QuickSecret {
     pub factor_secret: Zeroizing<[u8; 32]>,
 }
 
-/// Writes the quick unlock file and returns the new quick key.
+/// Writes the quick unlock file and returns the new quick key. `max_age_ms`: how long after a
+/// full unlock it opens (stored in the file).
+#[allow(clippy::too_many_arguments)]
 pub fn create(
     dir: &Path,
     name: &str,
@@ -76,11 +90,13 @@ pub fn create(
     factor_secret: &[u8; 32],
     pin: Option<&str>,
     now_ms: i64,
+    max_age_ms: i64,
 ) -> Result<Zeroizing<Vec<u8>>> {
     if let Some(p) = pin {
-        if p.chars().count() < MIN_PIN_LEN {
-            return Err(GhulError::InvalidInput { msg: format!("PIN must have at least {MIN_PIN_LEN} characters") });
-        }
+        check_pin(p)?;
+    }
+    if max_age_ms <= 0 {
+        return Err(GhulError::InvalidInput { msg: "quick unlock needs a validity".into() });
     }
     let mut qk = Zeroizing::new(vec![0u8; 32]);
     OsRng.fill_bytes(&mut qk);
@@ -95,6 +111,7 @@ pub fn create(
     out.extend_from_slice(&salt);
     out.push(u8::from(pin.is_some()));
     out.extend_from_slice(&now_ms.to_le_bytes());
+    out.extend_from_slice(&max_age_ms.to_le_bytes());
     let mut nonce = [0u8; 24];
     OsRng.fill_bytes(&mut nonce);
     let mut secret = Zeroizing::new([0u8; SECRET_LEN]);
@@ -108,18 +125,25 @@ pub fn create(
     Ok(qk)
 }
 
-/// Opens the quick unlock file. Expired files are deleted.
+/// Opens the quick unlock file, within the validity stored in it. An expired one is refused and
+/// kept (a full unlock makes it valid again).
 pub fn open_file(
     dir: &Path,
     name: &str,
     suite_id: &[u8; 16],
     qk: &[u8],
     pin: Option<&str>,
-    max_age_ms: i64,
     now_ms: i64,
 ) -> Result<QuickSecret> {
     let p = path(dir, name)?;
     let data = fs::read(&p).map_err(|_| GhulError::QuickUnlockUnavailable)?;
+    // An older file (version 2: the app gave the validity at every unlock): never used again,
+    // and the app can say why (H6).
+    if data.len() >= 10 && &data[..8] == MAGIC && u16::from_le_bytes([data[8], data[9]]) < VERSION {
+        let _ = wipe(&p);
+        let _ = fs::remove_file(stamp_path(dir, name));
+        return Err(GhulError::QuickUnlockOutdated);
+    }
     if data.len() != PREFIX_LEN + 24 + SECRET_LEN + 16 || &data[..8] != MAGIC {
         let _ = wipe(&p);
         return Err(GhulError::QuickUnlockUnavailable);
@@ -132,6 +156,8 @@ pub fn open_file(
     let salt: [u8; 32] = data[26..58].try_into().expect("32 bytes");
     let has_pin = data[58] == 1;
     let created = i64::from_le_bytes(data[59..67].try_into().expect("8 bytes"));
+    // Checked by the AEAD below (associated data): only trusted once it opened.
+    let max_age_ms = i64::from_le_bytes(data[67..75].try_into().expect("8 bytes"));
     if has_pin != pin.is_some() {
         return Err(GhulError::InvalidInput { msg: "PIN required".into() });
     }
@@ -144,9 +170,9 @@ pub fn open_file(
     pk.copy_from_slice(&plain[..32]);
     secret.copy_from_slice(&plain[32..64]);
     let last_full_unlock = read_stamp(dir, name, &pk).map_or(created, |t| t.max(created));
+    // M30: expired is refused, not deleted: the next full unlock writes a new stamp and quick
+    // unlock works again (it stays enabled until it is turned off or the protection changes).
     if now_ms < last_full_unlock || now_ms - last_full_unlock > max_age_ms {
-        let _ = wipe(&p);
-        let _ = fs::remove_file(stamp_path(dir, name));
         return Err(GhulError::QuickUnlockExpired);
     }
     Ok(QuickSecret { password_key: pk, factor_secret: secret })
@@ -190,10 +216,23 @@ pub fn refresh_stamps(dir: &Path, password_key: &[u8; 32], now_ms: i64) {
     }
 }
 
-/// Overwrites and deletes a file.
+/// Overwrites and deletes a file. The zeros go in pieces (a copy of a large vault must not need
+/// its size in memory).
 pub fn wipe(p: &Path) -> std::io::Result<()> {
     if let Ok(meta) = fs::metadata(p) {
-        let _ = fs::write(p, vec![0u8; meta.len() as usize]);
+        let zero = |len: u64| -> std::io::Result<()> {
+            use std::io::Write;
+            let mut f = fs::OpenOptions::new().write(true).open(p)?;
+            let piece = [0u8; 64 * 1024];
+            let mut left = len;
+            while left > 0 {
+                let n = left.min(piece.len() as u64) as usize;
+                f.write_all(&piece[..n])?;
+                left -= n as u64;
+            }
+            f.sync_all()
+        };
+        let _ = zero(meta.len());
     }
     fs::remove_file(p)
 }

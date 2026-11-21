@@ -397,6 +397,7 @@ fun GhulSheet(onDismissRequest: () -> Unit, title: String? = null, content: @Com
                 Modifier.testTagsAsIds().padding(24.dp).widthIn(max = 520.dp).fillMaxWidth().heightIn(max = 760.dp)
                     .shadow(24.dp, RoundedCornerShape(28.dp)).clip(RoundedCornerShape(28.dp)).background(t.surface),
             ) {
+                GuardWindow()
                 CompositionLocalProvider(LocalOnCard provides true) {
                     Column(
                         Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 24.dp),
@@ -424,6 +425,7 @@ fun GhulSheet(onDismissRequest: () -> Unit, title: String? = null, content: @Com
     ) {
         // A window of its own: test tags (e.g. "ask-confirm") as ids here as well.
         Box(Modifier.testTagsAsIds()) {
+            GuardWindow()
             CompositionLocalProvider(LocalOnCard provides true) {
                 Column(
                     Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 28.dp).navigationBarsPadding(),

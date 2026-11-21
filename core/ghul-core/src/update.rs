@@ -69,7 +69,7 @@ pub fn update_check(
         return Err(GhulError::InvalidInput { msg: "invalid repository name".into() });
     }
     let path = if prerelease { "releases?per_page=30" } else { "releases/latest" };
-    let resp = get(&format!("https://api.github.com/repos/{repo}/{path}"))?;
+    let resp = get(&format!("{}/repos/{repo}/{path}", api_base()))?;
     if resp.status == 404 {
         return Ok(None);
     }
@@ -262,6 +262,21 @@ fn sha_for(sums: &[u8], name: &str) -> Option<String> {
         (file == name && hash.len() == 64 && hash.chars().all(|c| c.is_ascii_hexdigit()))
             .then(|| hash.to_ascii_lowercase())
     })
+}
+
+/// Where the release list comes from: GitHub's API (tests only: a server on this computer).
+fn api_base() -> String {
+    #[cfg(test)]
+    if let Some(b) = API_BASE.with(|b| b.borrow().clone()) {
+        return b;
+    }
+    "https://api.github.com".to_owned()
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Tests only: the API address of [`update_check`] (a server on this computer).
+    static API_BASE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
 }
 
 /// Only GitHub's own hosts, only https (tests: a server on this computer).
@@ -656,6 +671,138 @@ f3j2T3ZQ17VauB9iOzX7I9V6neeaHdUFnkjcMgaHR5uant+ua9qb79Qfig==
         }
         // Plain http to anything but this device is refused before any connection.
         assert!(Url::parse("http://github.com/x").is_err());
+    }
+
+    /// Paths and what the test server answers for them.
+    type Routes = Vec<(String, Vec<u8>)>;
+
+    /// A server on this computer answering GET requests by their path (anything else: 404); new
+    /// routes can be sent to it at any time.
+    fn serve_paths(routes: Routes) -> (u16, std::sync::mpsc::Sender<Routes>) {
+        use std::io::{Read, Write as _};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (tx, rx) = std::sync::mpsc::channel::<Routes>();
+        std::thread::spawn(move || {
+            let mut routes = routes;
+            for conn in listener.incoming() {
+                while let Ok(r) = rx.try_recv() {
+                    routes = r;
+                }
+                let Ok(mut c) = conn else { continue };
+                let mut req = Vec::new();
+                let mut buf = [0u8; 2048];
+                while !req.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match c.read(&mut buf) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => req.extend_from_slice(&buf[..n]),
+                    }
+                }
+                let line = String::from_utf8_lossy(&req).lines().next().unwrap_or("").to_owned();
+                let path = line.split_whitespace().nth(1).unwrap_or("").to_owned();
+                match routes.iter().find(|(p, _)| *p == path) {
+                    Some((_, body)) => {
+                        let _ =
+                            write!(c, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
+                        let _ = c.write_all(body);
+                    }
+                    None => {
+                        let _ = write!(c, "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                    }
+                }
+            }
+        });
+        (port, tx)
+    }
+
+    /// H13: the whole update check against a server on this computer: a valid signature, a
+    /// broken one, a signed list of another version, a file missing from the list, no release.
+    #[test]
+    fn update_check_end_to_end() {
+        use base64::Engine;
+        use ring::signature::{EcdsaKeyPair, KeyPair, ECDSA_P256_SHA256_ASN1_SIGNING};
+        let rng = ring::rand::SystemRandom::new();
+        let pkcs8 = EcdsaKeyPair::generate_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, &rng).unwrap();
+        let pair = EcdsaKeyPair::from_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, pkcs8.as_ref(), &rng).unwrap();
+        let mut spki = hex_bytes("3059301306072a8648ce3d020106082a8648ce3d030107034200");
+        spki.extend_from_slice(pair.public_key().as_ref());
+        let pem = format!(
+            "-----BEGIN PUBLIC KEY-----\n{}\n-----END PUBLIC KEY-----\n",
+            base64::engine::general_purpose::STANDARD.encode(&spki)
+        );
+        let sign = |data: &[u8]| pair.sign(&rng, data).unwrap().as_ref().to_vec();
+        let apk_sha = "ab".repeat(32);
+
+        let (port, routes) = serve_paths(Vec::new());
+        let base = format!("http://127.0.0.1:{port}");
+        API_BASE.with(|b| *b.borrow_mut() = Some(base.clone()));
+        let assets: Vec<serde_json::Value> = ["GhulSuite.apk", "SHA256SUMS", "SHA256SUMS.sig"]
+            .iter()
+            .map(|n| serde_json::json!({"name": n, "size": 10, "browser_download_url": format!("{base}/dl/{n}")}))
+            .collect();
+        let release = serde_json::json!({
+            "tag_name": "v0.6.0", "draft": false, "prerelease": false, "body": "Neu",
+            "html_url": "https://github.com/x/y/releases/v0.6.0", "assets": assets,
+        });
+        let set = |sums: &[u8], sig: Vec<u8>| {
+            routes
+                .send(vec![
+                    ("/repos/x/y/releases/latest".to_owned(), release.to_string().into_bytes()),
+                    ("/dl/SHA256SUMS".to_owned(), sums.to_vec()),
+                    ("/dl/SHA256SUMS.sig".to_owned(), sig),
+                ])
+                .unwrap();
+        };
+        let check = || update_check("x/y".into(), "0.5.0".into(), ".apk".into(), pem.clone(), false);
+
+        // Signed and for this version: found, with the checksum from the list.
+        let good = format!("version 0.6.0\n{apk_sha}  GhulSuite.apk\n").into_bytes();
+        set(&good, sign(&good));
+        let info = check().unwrap().expect("a newer version");
+        assert_eq!(
+            (info.version.as_str(), info.asset.as_str(), info.sha256.as_str()),
+            ("0.6.0", "GhulSuite.apk", apk_sha.as_str())
+        );
+        assert_eq!(info.url, format!("{base}/dl/GhulSuite.apk"));
+        // The running version is not older: nothing.
+        assert_eq!(update_check("x/y".into(), "0.6.0".into(), ".apk".into(), pem.clone(), false).unwrap(), None);
+
+        // A broken signature (one bit), or one over another list.
+        let mut sig = sign(&good);
+        let last = sig.len() - 1;
+        sig[last] ^= 1;
+        set(&good, sig);
+        assert!(
+            matches!(check(), Err(GhulError::Corrupted { msg }) if msg == "the signature of the update is not valid")
+        );
+        let other = format!("version 0.6.0\n{}  GhulSuite.apk\n", "cd".repeat(32)).into_bytes();
+        set(&good, sign(&other));
+        assert!(
+            matches!(check(), Err(GhulError::Corrupted { msg }) if msg == "the signature of the update is not valid")
+        );
+
+        // A validly signed list of another (older) version offered under the new tag.
+        let old = format!("version 0.5.1\n{apk_sha}  GhulSuite.apk\n").into_bytes();
+        set(&old, sign(&old));
+        assert!(
+            matches!(check(), Err(GhulError::Corrupted { msg }) if msg == "the signed checksums are for another version")
+        );
+
+        // The file of this platform is not in the signed list.
+        let without = format!("version 0.6.0\n{apk_sha}  GhulSuite.msi\n").into_bytes();
+        set(&without, sign(&without));
+        assert!(
+            matches!(check(), Err(GhulError::Corrupted { msg }) if msg == "the update file is not in the signed checksums")
+        );
+
+        // No release at all (404): nothing to update.
+        routes.send(Vec::new()).unwrap();
+        assert_eq!(check().unwrap(), None);
+        API_BASE.with(|b| *b.borrow_mut() = None);
+    }
+
+    fn hex_bytes(s: &str) -> Vec<u8> {
+        (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect()
     }
 
     /// A small HTTP server on this computer: a redirect, then the file (or a wrong one).

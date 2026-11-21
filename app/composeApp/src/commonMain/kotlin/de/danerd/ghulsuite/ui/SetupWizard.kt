@@ -167,6 +167,14 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
      * (both factors were just used); after a failed try the first key is touched again first.
      */
     var backupTried by remember { mutableStateOf(false) }
+    /**
+     * H6: the second factor of the suite just made, kept until quick unlock is set up in step 6
+     * (the fields are cleared before that): the key file (also when it is the backup of a key),
+     * else the PIN of the key (touched once more). Gone after step 6.
+     */
+    var quickProof by remember { mutableStateOf<de.danerd.ghulsuite.model.FactorProofUi?>(null) }
+    // N5: a second key was added as backup; step 6 asks for the first one (its PIN is the one kept).
+    var twoKeys by remember { mutableStateOf(false) }
     fun addBackup() {
         state.run(onError = { error = it; backupTried = true }, block = {
             val proof = de.danerd.ghulsuite.model.FactorProofUi(password, if (backupTried) pin else null, null)
@@ -178,6 +186,9 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
             }
         }) {
             backupDone = true
+            twoKeys = backupKey && keyfile == null
+            quickProof = keyfile?.let { de.danerd.ghulsuite.model.FactorProofUi(password, null, it) }
+                ?: de.danerd.ghulsuite.model.FactorProofUi(password, pin, null)
             pin = ""; backupPin = ""; keyfile = null
             step = 4
         }
@@ -208,7 +219,13 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
             backend.settings.factorKey = useKey
             repeat = ""
             // The password stays until quick unlock is set (step 6); a second key as backup follows.
-            if (useKey && backupKey) addBackup() else { keyfile = null; pin = ""; step = 4 }
+            if (useKey && backupKey) {
+                addBackup()
+            } else {
+                quickProof = keyfile?.let { de.danerd.ghulsuite.model.FactorProofUi(password, null, it) }
+                    ?: de.danerd.ghulsuite.model.FactorProofUi(password, pin, null)
+                keyfile = null; pin = ""; step = 4
+            }
         }
     }
 
@@ -231,6 +248,9 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
             step = 5
         }
     }
+
+    /** Never an empty PIN to the key (it would count as a wrong one). */
+    fun wizardProof() = quickProof ?: de.danerd.ghulsuite.model.FactorProofUi(password, null, null)
 
     fun next() {
         error = null
@@ -262,11 +282,14 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                     QuickChoice.NONE -> {
                         backend.disableQuickUnlock()
                         password = ""
+                        quickProof = null
                         step = 7
                     }
-                    QuickChoice.BIO -> state.run(onError = { error = it }, block = { backend.enableBiometricUnlock(password) }) { password = ""; step = 7 }
-                    QuickChoice.PIN -> if (quickPin.length !in 6..12 || !quickPin.all(Char::isDigit)) error = pinRule
-                    else state.run(onError = { error = it }, block = { backend.enablePinUnlock(password, quickPin) }) { quickPin = ""; password = ""; step = 7 }
+                    // H6: both factors of the suite just made: the key file (also when it is the
+                    // backup of a key) needs no touch, else the key is touched once more.
+                    QuickChoice.BIO -> state.run(onError = { error = it }, block = { backend.enableBiometricUnlock(wizardProof(), settings.quickUnlockHours, state.onTouchNeeded) }) { password = ""; quickProof = null; step = 7 }
+                    QuickChoice.PIN -> if (quickPin.length !in MIN_APP_PIN..12 || !quickPin.all(Char::isDigit)) error = pinRule
+                    else state.run(onError = { error = it }, block = { backend.enablePinUnlock(wizardProof(), quickPin, settings.quickUnlockHours, state.onTouchNeeded) }) { quickPin = ""; password = ""; quickProof = null; step = 7 }
                 }
             }
         }
@@ -290,6 +313,11 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
 
     // Step 8: the suite file, at a place the user chooses (written, read back, checked).
     var fileFailed by remember { mutableStateOf(false) }
+    // M1: the file is written, but later saves there would write over it directly (Android
+    // without a shared folder, a cloud app): said before the wizard ends.
+    var unsafePlace by remember { mutableStateOf<Pair<de.danerd.ghulsuite.model.SuiteFileRef, de.danerd.ghulsuite.model.SafeSaveUi>?>(null) }
+    var folderShared by remember { mutableStateOf(0) }
+    val grantFolder = rememberGrantFolder { picked -> if (picked) folderShared++ }
     val notWritten = stringResource(Res.string.file_not_written)
     val savedMsg = stringResource(Res.string.file_saved)
     val chooseSuiteFile = rememberCreateSuiteFile { ref ->
@@ -303,7 +331,8 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                     return@run
                 }
                 state.message(savedMsg.replace("%1\$s", ref.name))
-                finishWizard(state)
+                val safe = backend.safeSave(ref)
+                if (safe == de.danerd.ghulsuite.model.SafeSaveUi.SAFE) finishWizard(state) else unsafePlace = ref to safe
             }
         }
     }
@@ -491,6 +520,15 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                 }
             }
             HintText(stringResource(Res.string.wz_lock_hint))
+            // Asked here, not switched on silently: the one connection the app makes by itself.
+            if (backend.updater.available) {
+                ListCard {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+                        SwitchRow(stringResource(Res.string.upd_auto), settings.updateAuto) { settings.updateAuto = it }
+                        Hint(stringResource(Res.string.wz_update_sub))
+                    }
+                }
+            }
         }
 
         6 -> {
@@ -508,6 +546,9 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                 }
             }
             if (backend.isDesktop) Hint(stringResource(Res.string.wz_quick_desktop))
+            if (twoKeys && quick != QuickChoice.NONE) {
+                Hint(stringResource(Res.string.wz_quick_first_key, keyLabel.ifBlank { stringResource(Res.string.setup_default_key_label) }))
+            }
             if (quick != QuickChoice.NONE) {
                 SectionCard(stringResource(Res.string.wz_quick_valid)) {
                     Hint(stringResource(Res.string.wz_quick_valid_sub))
@@ -522,8 +563,32 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
         // The suite file is part of setting up (without it the suite is on this device only).
         7 -> RecoveryCodeSteps(state, code) { if (filePickersAvailable) step = 8 else finishWizard(state) }
 
-        8 -> {
+        8 -> unsafePlace?.let { (ref, how) ->
+            // The folder shared meanwhile: saving there is safe now, the wizard ends.
+            androidx.compose.runtime.LaunchedEffect(folderShared) {
+                if (folderShared > 0 && backend.safeSave(ref) == de.danerd.ghulsuite.model.SafeSaveUi.SAFE) finishWizard(state)
+            }
+            if (how == de.danerd.ghulsuite.model.SafeSaveUi.FOLDER_NEEDED) {
+                Banner(Icons.Filled.Warning, stringResource(if (folderShared > 0) Res.string.save_safe_folder_refused else Res.string.wz_share_folder))
+                Button(onClick = { grantFolder(ref.id) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth().testTag("wz-share-folder")) {
+                    Text(stringResource(Res.string.save_safe_grant))
+                }
+                // A folder Android does not share (Download): a place of its own instead.
+                OutlinedButton(onClick = { unsafePlace = null; chooseSuiteFile(SUITE_FILE_NAME) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(Res.string.wz_other_place))
+                }
+            } else {
+                Banner(Icons.Filled.Warning, stringResource(Res.string.wz_cloud_place))
+                Button(onClick = { unsafePlace = null; chooseSuiteFile(SUITE_FILE_NAME) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(Res.string.wz_other_place))
+                }
+            }
+            OutlinedButton(onClick = { finishWizard(state) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth().testTag("wz-share-later")) {
+                Text(stringResource(Res.string.a_later))
+            }
+        } ?: run {
             HintText(stringResource(Res.string.setup_save_text))
+            if (!backend.isDesktop) Hint(stringResource(Res.string.wz_place_hint))
             Hint(stringResource(Res.string.save_hint))
             Button(onClick = { chooseSuiteFile(SUITE_FILE_NAME) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth().testTag("wz-file")) {
                 Text(stringResource(Res.string.save_place))
@@ -540,16 +605,11 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
 
     when (replacing) {
         Replace.SAVE -> SaveExistingSuiteDialog(state, onReplaced = { replacing = null; existing = false; create() }) { replacing = null }
-        Replace.DELETE -> DeleteExistingSuiteDialog(onConfirm = {
+        Replace.DELETE -> DeleteExistingSuiteDialog(state, onDeleted = {
             replacing = null
-            state.run(onError = { error = it }, block = {
-                backend.deleteSuite()
-                state.vaultExists = backend.exists()
-            }) {
-                existing = false
-                state.message(deletedMsg)
-                create()
-            }
+            existing = false
+            state.message(deletedMsg)
+            create()
         }) { replacing = null }
         null -> {}
     }

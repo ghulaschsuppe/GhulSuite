@@ -14,6 +14,14 @@ expect fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit)
  */
 expect fun androidx.compose.ui.Modifier.testTagsAsIds(): androidx.compose.ui.Modifier
 
+/**
+ * M17: protects the window it is composed in (a dialog or a sheet is a window of its own): no
+ * taps while another app draws over it (tapjacking), and on Android 14+ hidden from accessibility
+ * services that are not tools for people who need them. Nothing on Windows.
+ */
+@Composable
+expect fun GuardWindow()
+
 /** Current Unix time in seconds. */
 expect fun nowSeconds(): Long
 

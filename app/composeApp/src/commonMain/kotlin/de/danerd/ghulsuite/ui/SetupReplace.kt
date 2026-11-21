@@ -68,16 +68,58 @@ fun DeleteForGoodDialog(
     )
 }
 
-/** Step 3 of the setup over an existing suite: deleting it without saving asks first. */
+/**
+ * Step 3 of the setup over an existing suite: deleting it without saving asks first. H5: only
+ * with the proof of that suite, its master password plus key or key file, or its recovery code
+ * (whoever finds the phone, even locked, must not wipe it). A wrong proof deletes nothing.
+ */
 @Composable
-fun DeleteExistingSuiteDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    DeleteForGoodDialog(
-        title = stringResource(Res.string.wz_delete_title),
-        warning = stringResource(Res.string.wz_delete_warning),
-        note = stringResource(Res.string.wz_delete_note),
-        confirm = stringResource(Res.string.a_delete_and_replace),
-        onConfirm = onConfirm,
-        onDismiss = onDismiss,
+fun DeleteExistingSuiteDialog(state: AppState, onDeleted: () -> Unit, onDismiss: () -> Unit) {
+    val word = stringResource(Res.string.delete_word)
+    var typed by remember { mutableStateOf("") }
+    val proof = remember { ProofInput(state.backend.settings.factorKey) }
+    var withCode by remember { mutableStateOf(false) }
+    var code by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        danger = true,
+        onDismissRequest = { if (!state.busy) onDismiss() },
+        title = { Text(stringResource(Res.string.wz_delete_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Banner(Icons.Filled.Warning, stringResource(Res.string.wz_delete_warning))
+                Text(stringResource(Res.string.wz_delete_note))
+                Hint(stringResource(Res.string.wz_delete_proof))
+                if (withCode) {
+                    SecretTextField(code, { code = it; error = null }, stringResource(Res.string.l_recovery_code))
+                    TextButton(onClick = { withCode = false; error = null }) { Text(stringResource(Res.string.wz_delete_with_factors)) }
+                } else {
+                    ProofFields(state, proof) { error = null }
+                    TextButton(onClick = { withCode = true; error = null }) { Text(stringResource(Res.string.wz_delete_with_code)) }
+                }
+                ConfirmByName(word, typed) { typed = it }
+                BusyBanner(state)
+                ErrorText(error)
+                // The last way out, where no proof is possible (or the suite here is damaged).
+                Hint(deleteWayOut(state))
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !state.busy && nameMatches(typed, word) && (if (withCode) code.isNotBlank() else proof.ok(state)),
+                onClick = {
+                    state.run(onError = { error = it }, block = {
+                        state.backend.deleteSuite(if (withCode) null else proof.proof(), if (withCode) code else null, state.onTouchNeeded)
+                        state.vaultExists = state.backend.exists()
+                    }) {
+                        proof.clear()
+                        code = ""
+                        onDeleted()
+                    }
+                },
+            ) { Text(stringResource(Res.string.a_delete_and_replace)) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !state.busy) { Text(stringResource(Res.string.a_cancel)) } },
     )
 }
 
@@ -103,6 +145,8 @@ fun SaveExistingSuiteDialog(state: AppState, onReplaced: () -> Unit, onDismiss: 
     val failed = stringResource(Res.string.wz_save_failed)
     val otherFile = stringResource(Res.string.wz_save_other_file)
     val savedAs = stringResource(Res.string.wz_saved_as)
+    /** The factors the existing suite was unlocked with: deleting it needs them again (H5). */
+    val kept = remember { arrayOfNulls<de.danerd.ghulsuite.model.FactorProofUi>(1) }
     /** A text of this dialog that says what happened (shown as it is, not as an error of the core). */
     val plain = remember { arrayOfNulls<String>(1) }
     fun fail(text: String): Nothing {
@@ -112,8 +156,35 @@ fun SaveExistingSuiteDialog(state: AppState, onReplaced: () -> Unit, onDismiss: 
 
     fun leave() {
         if (state.busy) return
+        kept[0] = null
         if (unlocked) backend.lock()
         onDismiss()
+    }
+
+    /**
+     * The file the existing suite was saved to in this dialog: the deletion can fail after it
+     * (the key's second touch broke off); then only the deletion is tried again, the file stays
+     * the place of the suite.
+     */
+    var savedTo by remember { mutableStateOf<SuiteFileRef?>(null) }
+    val notDeleted = stringResource(Res.string.wz_saved_not_deleted)
+
+    /** Deletes the existing suite with [kept] (H5), then the new one is set up. */
+    fun replaceNow() {
+        val name = savedTo?.name ?: return
+        state.run(onError = { e ->
+            // Locked by the try (see deleteSuite): the factors once more, the file is kept.
+            unlocked = backend.unlocked.value
+            error = notDeleted.replace("%1\$s", name) + "\n" + e
+        }, block = {
+            backend.deleteSuite(kept[0], null, state.onTouchNeeded)
+            state.vaultExists = backend.exists()
+        }) {
+            unlocked = false
+            kept[0] = null
+            state.message(savedAs.replace("%1\$s", name))
+            onReplaced()
+        }
     }
 
     val pick = rememberCreateFile { target ->
@@ -131,14 +202,13 @@ fun SaveExistingSuiteDialog(state: AppState, onReplaced: () -> Unit, onDismiss: 
             if (!backend.archiveSave(target, deviceInfo(), created = true, state.onProgress)) {
                 fail(failed)
             }
-            // Saved and read back: only now the existing suite goes.
-            backend.deleteSuite()
-            state.vaultExists = backend.exists()
-            target.name
-        }) { name ->
-            unlocked = false
-            state.message(savedAs.replace("%1\$s", name))
-            onReplaced()
+            target
+        }) { saved ->
+            // Saved and read back (and remembered as the place of the suite): only now the
+            // existing suite goes (H5: with the factors it was unlocked with; a key is touched
+            // once more).
+            savedTo = saved
+            replaceNow()
         }
     }
 
@@ -148,7 +218,7 @@ fun SaveExistingSuiteDialog(state: AppState, onReplaced: () -> Unit, onDismiss: 
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (!unlocked) {
-                    Hint(stringResource(Res.string.wz_save_text))
+                    Hint(if (savedTo != null) stringResource(Res.string.wz_saved_confirm_delete) else stringResource(Res.string.wz_save_text))
                     SecretTextField(password, { password = it; error = null }, stringResource(Res.string.l_master_password))
                     // Always both ways: what the file is protected with is not given away here.
         FactorChoice(withKey) { withKey = it; error = null; state.backend.settings.factorKey = it }
@@ -167,16 +237,25 @@ fun SaveExistingSuiteDialog(state: AppState, onReplaced: () -> Unit, onDismiss: 
                     onClick = {
                         // The app's own screens must not follow this unlock: it is only for saving.
                         state.showStart = true
+                        // Saved already: the factors only confirm the deletion.
+                        if (savedTo != null) {
+                            kept[0] = de.danerd.ghulsuite.model.FactorProofUi(password, if (needsKey) pin else null, if (needsKey) null else keyfile?.bytes)
+                            password = ""; pin = ""; keyfile = null
+                            error = null
+                            replaceNow()
+                            return@TextButton
+                        }
                         state.run(onError = { error = it }, block = {
                             if (needsKey) backend.unlock(password, pin, null, state.onTouchNeeded)
                             else backend.unlock(password, null, keyfile?.bytes, state.onTouchNeeded)
                         }) {
+                            kept[0] = de.danerd.ghulsuite.model.FactorProofUi(password, if (needsKey) pin else null, if (needsKey) null else keyfile?.bytes)
                             password = ""; pin = ""; keyfile = null
                             unlocked = true
                             error = null
                         }
                     },
-                ) { Text(stringResource(Res.string.a_unlock)) }
+                ) { Text(stringResource(if (savedTo != null) Res.string.a_delete_and_replace else Res.string.a_unlock)) }
             } else {
                 TextButton(enabled = !state.busy, onClick = {
                     error = null
@@ -187,3 +266,9 @@ fun SaveExistingSuiteDialog(state: AppState, onReplaced: () -> Unit, onDismiss: 
         dismissButton = { TextButton(enabled = !state.busy, onClick = { leave() }) { Text(stringResource(Res.string.a_cancel)) } },
     )
 }
+
+/** Where no proof of the suite here is possible: how to remove it by hand (Android, Windows). */
+@Composable
+fun deleteWayOut(state: AppState): String =
+    if (state.backend.isDesktop) stringResource(Res.string.wz_delete_way_desktop, state.backend.dataFolder)
+    else stringResource(Res.string.wz_delete_way_android)

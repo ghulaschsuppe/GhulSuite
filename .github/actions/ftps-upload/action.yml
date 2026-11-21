@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 name: FTPS upload
-description: Uploads a local directory to the dev server via FTPS (lftp). Credentials come from the caller's secrets.
+description: Uploads a local directory via FTPS (lftp), used for the live website. Credentials come from the caller's secrets.
 
 inputs:
   server:
@@ -28,14 +28,14 @@ runs:
       env:
         RAW: ${{ inputs.server }}
       run: |
-        if [ -z "$RAW" ]; then echo "::error::Secret FTP_SERVER ist leer oder fehlt."; exit 1; fi
+        if [ -z "$RAW" ]; then echo "::error::Der Servername (Eingabe server, z. B. Secret WEBSITE_FTP_SERVER) ist leer oder fehlt."; exit 1; fi
         host="$(printf '%s' "$RAW" | tr -d '[:space:]')"
         case "$host" in *://*) host="${host#*://}";; esac
         case "$host" in */*) host="${host%%/*}";; esac
         case "$host" in *:*) host="${host%%:*}";; esac
         echo "::add-mask::$host"
         if ! getent hosts "$host" > /dev/null; then
-          echo "::error::Hostname aus FTP_SERVER lässt sich nicht auflösen. Bitte nur den Servernamen eintragen."
+          echo "::error::Der Servername (Eingabe server) lässt sich nicht auflösen. Bitte nur den Servernamen eintragen."
           exit 1
         fi
         echo "host=$host" >> "$GITHUB_OUTPUT"

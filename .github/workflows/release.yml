@@ -15,7 +15,12 @@
 # Nothing is signed or released before the whole CI ("Android & Kern": core, Android, Windows,
 # emulator) passed for exactly this commit: the release starts when that run ends green, and
 # checks it once more by itself. The workflow file used is the one of the default branch, so a
-# change to it in a pull request cannot reach the signing key.
+# change to it in a pull request cannot reach the signing key. There is no manual start: that would
+# run the release.yml of the chosen branch. The jobs that use the signing key (android, publish)
+# run in the environment "release" (its secrets set by the owner, deployment branch main only:
+# a workflow_run always runs on the default branch, also for a release of dev; optionally with
+# an approval). The public half of the key comes from the repository
+# variable GHUL_UPDATE_KEY (not a secret); publishing checks the signature against it.
 name: Veröffentlichen
 
 on:
@@ -23,22 +28,23 @@ on:
     workflows: ["Android & Kern"]
     types: [completed]
     branches: [main, dev]
-  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.event.workflow_run.head_branch || github.ref_name }}
+  group: release-${{ github.event.workflow_run.head_branch }}
   cancel-in-progress: false
 
 env:
   CARGO_INCREMENTAL: "0"
-  # The commit the green CI run was for (a manual start: the one started on).
-  SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
-  BRANCH: ${{ github.event.workflow_run.head_branch || github.ref_name }}
+  # The commit the green CI run was for.
+  SHA: ${{ github.event.workflow_run.head_sha }}
+  BRANCH: ${{ github.event.workflow_run.head_branch }}
   NDK_VERSION: 28.2.13676358
   CARGO_NDK_VERSION: 4.1.2
+  # As in android.yml: the official gradle-wrapper.jar of Gradle 8.14.3.
+  GRADLE_WRAPPER_SHA256: 7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172
 
 jobs:
   plan:
@@ -47,8 +53,8 @@ jobs:
     # CI (a run for a pull request never releases).
     if: >-
       github.repository_owner == 'ghulaschsuppe' &&
-      (github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') ||
-       github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+      github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' &&
+      (github.event.workflow_run.head_branch == 'main' || github.event.workflow_run.head_branch == 'dev')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -61,8 +67,7 @@ jobs:
         with:
           ref: ${{ env.SHA }}
           fetch-depth: 0
-      # Once more, by itself: the newest CI run for this commit on this branch passed (also for a
-      # manual start), and something of the app changed since the last release (a change of the
+      # Once more, by itself: the newest CI run for this commit on this branch passed, and something of the app changed since the last release (a change of the
       # documents only gives no new version).
       - id: gate
         env:
@@ -72,7 +77,14 @@ jobs:
           ci=$(gh run list -w android.yml -b "$BRANCH" -c "$SHA" -e push -L 1 --json conclusion -q '.[0].conclusion')
           if [ "$ci" != success ]; then echo "::error::Die CI für $SHA ist nicht grün ($ci): keine Veröffentlichung."; exit 1; fi
           git fetch --tags --quiet
-          last=$(git tag --merged HEAD -l 'v*' --sort=-creatordate | head -1)
+          # main is compared with the last stable release only (a merge of dev brings the last
+          # pre-release tag along, and would otherwise count as "nothing changed"); dev with the
+          # last release of any kind.
+          if [ "$BRANCH" = main ]; then
+            last=$(git tag --merged HEAD -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          else
+            last=$(git tag --merged HEAD -l 'v*' --sort=-creatordate | head -1)
+          fi
           if [ -n "$last" ] && git diff --quiet "$last" HEAD -- core app VERSION rust-toolchain.toml .github/workflows/release.yml; then
             echo "Seit $last nichts an der App geändert: keine neue Version."
             echo "release=false" >> "$GITHUB_OUTPUT"
@@ -99,22 +111,22 @@ jobs:
             version=$base; pre=false
           else
             n=$(( $(git tag -l "v$base-dev.*" | sed "s/^v$base-dev\.//" | grep -E '^[0-9]+$' | sort -n | tail -1) + 1 ))
+            # The Android versionCode and the MSI version count pre-releases up to 98 only: one
+            # more would get the same number as dev.98 and never install as an update.
+            if [ "$n" -gt 98 ]; then echo "::error::Schon 98 Vorabversionen von $base: VERSION auf die nächste Version anheben."; exit 1; fi
             version="$base-dev.$n"; pre=true
           fi
           echo "Version: $version (Vorab: $pre)"
           { echo "version=$version"; echo "prerelease=$pre"; } >> "$GITHUB_OUTPUT"
-      # The public half of the signing key: built into the app, it checks SHA256SUMS.sig. Not a secret.
+      # The public half of the signing key: built into the app, it checks SHA256SUMS.sig. Not a
+      # secret: a repository variable, so this job needs no environment (publish checks that the
+      # signature made with the real key matches it).
       - id: k
         env:
-          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          PUBKEY: ${{ vars.GHUL_UPDATE_KEY }}
         run: |
-          if [ -z "$KEYSTORE_B64" ]; then echo "::error::Secret ANDROID_KEYSTORE_BASE64 fehlt: ohne Signaturschlüssel keine Veröffentlichung."; exit 1; fi
-          printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/k.jks"
-          keytool -exportcert -rfc -keystore "$RUNNER_TEMP/k.jks" -storepass:env KEYSTORE_PASSWORD -alias "$KEY_ALIAS" > "$RUNNER_TEMP/cert.pem"
-          pub=$(openssl x509 -in "$RUNNER_TEMP/cert.pem" -pubkey -noout | grep -v -- '-----' | tr -d '\n')
-          rm -f "$RUNNER_TEMP/k.jks" "$RUNNER_TEMP/cert.pem"
+          pub=$(printf '%s' "$PUBKEY" | tr -d ' \r\n')
+          if ! printf '%s' "$pub" | grep -qE '^[A-Za-z0-9+/=]{80,}$'; then echo "::error::Repository-Variable GHUL_UPDATE_KEY fehlt oder ist ungültig: keine Veröffentlichung."; exit 1; fi
           echo "pubkey=$pub" >> "$GITHUB_OUTPUT"
 
   android:
@@ -122,6 +134,7 @@ jobs:
     needs: plan
     if: needs.plan.outputs.release == 'true'
     runs-on: ubuntu-latest
+    environment: release
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -137,26 +150,27 @@ jobs:
           rustup target add aarch64-linux-android x86_64-linux-android
           cargo install cargo-ndk --locked --version "$CARGO_NDK_VERSION"
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION" > /dev/null
-      - name: Signaturschlüssel aus den Secrets
-        env:
-          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-        run: |
-          file="$RUNNER_TEMP/ghulsuite-release.jks"
-          printf '%s' "$KEYSTORE_B64" | base64 -d > "$file"
-          { echo "GHUL_KEYSTORE_FILE=$file"; echo "GHUL_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"; echo "GHUL_KEY_ALIAS=$KEY_ALIAS"; } >> "$GITHUB_ENV"
+      - name: Gradle-Wrapper prüfen (Prüfsumme von services.gradle.org)
+        run: echo "$GRADLE_WRAPPER_SHA256  app/gradle/wrapper/gradle-wrapper.jar" | sha256sum -c -
+      # The keystore exists only inside this step (not in GITHUB_ENV) and is deleted when it ends.
       - name: Release-APK
         working-directory: app
         env:
           GHUL_VERSION: ${{ needs.plan.outputs.version }}
           GHUL_UPDATE_KEY: ${{ needs.plan.outputs.pubkey }}
-        run: ./gradlew --no-daemon --console=plain :composeApp:assembleRelease
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          file="$RUNNER_TEMP/ghulsuite-release.jks"
+          trap 'rm -f "$file"' EXIT
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$file"
+          GHUL_KEYSTORE_FILE="$file" GHUL_KEYSTORE_PASSWORD="$KEYSTORE_PASSWORD" GHUL_KEY_ALIAS="$KEY_ALIAS" \
+            ./gradlew --no-daemon --console=plain :composeApp:assembleRelease
       - name: Bereitstellen
         run: |
           mkdir -p dist
           cp app/composeApp/build/outputs/apk/release/composeApp-release.apk dist/GhulSuite.apk
-          rm -f "$GHUL_KEYSTORE_FILE"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-android
@@ -177,6 +191,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Gradle-Wrapper prüfen (Prüfsumme von services.gradle.org)
+        shell: bash
+        run: echo "$GRADLE_WRAPPER_SHA256  app/gradle/wrapper/gradle-wrapper.jar" | sha256sum -c -
       - name: Installer (MSI) und portable Version
         working-directory: app
         shell: bash
@@ -205,6 +222,7 @@ jobs:
     name: Signieren und veröffentlichen
     needs: [plan, android, windows]
     runs-on: ubuntu-latest
+    environment: release
     timeout-minutes: 15
     permissions:
       contents: write

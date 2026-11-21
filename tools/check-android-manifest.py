@@ -36,6 +36,7 @@ PERMISSIONS = {
     "android.permission.USE_EXACT_ALARM",
     "android.permission.SCHEDULE_EXACT_ALARM",
     "android.permission.REQUEST_INSTALL_PACKAGES",  # app updates from signed releases (AndroidUpdater)
+    "android.permission.HIDE_OVERLAY_WINDOWS",  # no foreign windows over the app's dialogs (M17)
 }
 # Files opened by their name (VIEW): the suite file and the GhulDocs package, only as content://
 # (a file:// path could point at any file of the app).

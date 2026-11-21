@@ -31,6 +31,12 @@ pub(super) const CRC32: &str = "crc32";
 
 pub(super) type Id = [u8; 16];
 
+/// M25: how deep folders may be nested (a folder at the top has depth 1), and how many folders
+/// a vault may have. An index from outside beyond them is refused; the own functions keep
+/// within them. Folders are cheap, but every walk up a chain of folders costs its depth.
+pub const DOCS_MAX_DEPTH: usize = 64;
+pub const DOCS_MAX_FOLDERS: usize = 20_000;
+
 pub(super) fn id_of(e: &Entry) -> Option<Id> {
     e.id.as_slice().try_into().ok()
 }
@@ -144,10 +150,25 @@ pub(super) fn content(e: &Entry) -> Option<Content> {
 
 /// Checks an index that came from outside (a suite file, a vault handed on): every item is
 /// complete, ids and content files are unique, parents are folders of this index and there
-/// are no cycles. `max_size`: the largest document allowed.
+/// are no cycles. `max_size`: the largest document allowed. The limits of depth and number of
+/// folders ([`DOCS_MAX_DEPTH`], [`DOCS_MAX_FOLDERS`]) hold here as well; see [`validate_own`].
 pub(super) fn validate(entries: &[Entry], max_size: u64) -> bool {
+    validate_with(entries, max_size, true)
+}
+
+/// [`validate`] for an index of a suite file (this user's own suite, also from another device):
+/// without the limits of depth and number of folders, which an older version did not have
+/// (round 5); cycles are refused all the same.
+pub(super) fn validate_own(entries: &[Entry], max_size: u64) -> bool {
+    validate_with(entries, max_size, false)
+}
+
+fn validate_with(entries: &[Entry], max_size: u64, limits: bool) -> bool {
     let items: Vec<&Entry> = entries.iter().filter(|e| !e.deleted).collect();
     if items.iter().any(|e| !is_item(e)) {
+        return false;
+    }
+    if limits && items.iter().filter(|e| is_folder(e)).count() > DOCS_MAX_FOLDERS {
         return false;
     }
     let mut ids = HashSet::new();
@@ -171,11 +192,12 @@ pub(super) fn validate(entries: &[Entry], max_size: u64) -> bool {
             return false;
         }
     }
-    let tree = Tree::new(entries);
-    items.iter().all(|e| match parent(e) {
-        None => true,
-        Some(p) => folders.contains(&p) && !tree.has_cycle(e),
-    })
+    if !items.iter().all(|e| parent(e).map_or(true, |p| folders.contains(&p))) {
+        return false;
+    }
+    // No cycles and no deeper nesting than DOCS_MAX_DEPTH, found in one pass (M25: walking
+    // up from every item would take the square of a long chain).
+    Tree::new(entries).depths_within(if limits { DOCS_MAX_DEPTH } else { usize::MAX }).is_some()
 }
 
 /// The items of an index, with their folders and children at hand.
@@ -218,9 +240,10 @@ impl<'a> Tree<'a> {
     /// The folders above an item, the nearest first (stops at a cycle).
     pub(super) fn ancestors(&self, e: &Entry) -> Vec<&'a Entry> {
         let mut out: Vec<&'a Entry> = Vec::new();
+        let mut seen: HashSet<&[u8]> = HashSet::from([e.id.as_slice()]);
         let mut cur = self.up(e);
         while let Some(f) = cur {
-            if out.len() > self.entries.len() || out.iter().any(|x| x.id == f.id) || f.id == e.id {
+            if out.len() > self.entries.len() || !seen.insert(f.id.as_slice()) {
                 break;
             }
             out.push(f);
@@ -229,17 +252,50 @@ impl<'a> Tree<'a> {
         out
     }
 
-    fn has_cycle(&self, e: &Entry) -> bool {
-        let mut seen = HashSet::new();
-        seen.insert(e.id.clone());
-        let mut cur = self.up(e);
-        while let Some(f) = cur {
-            if !seen.insert(f.id.clone()) {
-                return true;
+    /// The depth of every item (1 at the top, one more per folder above it), each item visited
+    /// once; `None` if folders form a cycle or nest deeper than [`DOCS_MAX_DEPTH`].
+    #[cfg(test)]
+    pub(super) fn depths(&self) -> Option<HashMap<Id, usize>> {
+        self.depths_within(DOCS_MAX_DEPTH)
+    }
+
+    /// [`Self::depths`] with another limit (`usize::MAX`: only cycles are refused).
+    pub(super) fn depths_within(&self, max: usize) -> Option<HashMap<Id, usize>> {
+        let mut depth: HashMap<Id, usize> = HashMap::with_capacity(self.by_id.len());
+        for (&start, &i) in &self.by_id {
+            if depth.contains_key(&start) {
+                continue;
             }
-            cur = self.up(f);
+            // Up from here until an item whose depth is known, or the top.
+            let mut chain: Vec<Id> = vec![start];
+            let mut on_chain: HashSet<Id> = HashSet::from([start]);
+            let mut cur = &self.entries[i];
+            let base = loop {
+                let Some(up) = self.up(cur) else { break 0 };
+                let up_id = id_of(up).unwrap_or_default();
+                if let Some(&d) = depth.get(&up_id) {
+                    break d;
+                }
+                if !on_chain.insert(up_id) || chain.len() > max {
+                    return None;
+                }
+                chain.push(up_id);
+                cur = up;
+            };
+            for (k, id) in chain.iter().rev().enumerate() {
+                let d = base + k + 1;
+                if d > max {
+                    return None;
+                }
+                depth.insert(*id, d);
+            }
         }
-        false
+        Some(depth)
+    }
+
+    /// The depth of an item (see [`Self::depths`]): 1 at the top.
+    pub(super) fn depth(&self, e: &Entry) -> usize {
+        self.ancestors(e).len() + 1
     }
 
     /// Whether the item or a folder above it is in the trash.
@@ -307,5 +363,51 @@ impl<'a> Tree<'a> {
             })
             .find(|n| !self.name_taken(folder, n, except))
             .unwrap_or_else(|| name_.to_owned())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn folder(id: u8, parent: Option<u8>) -> Entry {
+        folder_n(u32::from(id), parent.map(u32::from))
+    }
+
+    fn folder_n(id: u32, parent: Option<u32>) -> Entry {
+        let mut bid = [0u8; 16];
+        bid[..4].copy_from_slice(&id.to_le_bytes());
+        let mut e = Entry::new(bid, FOLDER, 1);
+        e.fields.insert(NAME.into(), Field::Text(format!("f{id}")));
+        if let Some(p) = parent {
+            let mut pid = [0u8; 16];
+            pid[..4].copy_from_slice(&p.to_le_bytes());
+            e.fields.insert(PARENT.into(), Field::Bytes(pid.to_vec()));
+        }
+        e
+    }
+
+    /// M25: a chain of folders deeper than allowed is refused at once (one pass, not the square
+    /// of its length), and so is a cycle; up to the limit it is fine.
+    #[test]
+    fn deep_chains_and_cycles_are_refused_quickly() {
+        let chain = |n: u32| -> Vec<Entry> { (0..n).map(|i| folder_n(i, i.checked_sub(1))).collect() };
+        assert!(validate(&chain(DOCS_MAX_DEPTH as u32), 1 << 30));
+        assert!(!validate(&chain(DOCS_MAX_DEPTH as u32 + 1), 1 << 30));
+        let t = std::time::Instant::now();
+        assert!(!validate(&chain(DOCS_MAX_FOLDERS as u32), 1 << 30));
+        assert!(t.elapsed() < std::time::Duration::from_secs(2), "{:?}", t.elapsed());
+        // A cycle (each folder in the other).
+        assert!(!validate(&[folder(1, Some(2)), folder(2, Some(1))], 1 << 30));
+        assert!(!validate(&[folder(1, Some(1))], 1 << 30));
+        // Wide is fine, too many folders are not.
+        let wide: Vec<Entry> =
+            (1..=DOCS_MAX_FOLDERS as u32).map(|i| folder_n(i, Some(0))).chain([folder_n(0, None)]).collect();
+        assert!(!validate(&wide, 1 << 30), "one folder too many");
+        assert!(validate(&wide[1..], 1 << 30));
+        let tree_entries = chain(10);
+        let tree = Tree::new(&tree_entries);
+        assert_eq!(tree.depths().unwrap().values().max(), Some(&10));
+        assert_eq!(tree.depth(&tree_entries[9]), 10);
     }
 }

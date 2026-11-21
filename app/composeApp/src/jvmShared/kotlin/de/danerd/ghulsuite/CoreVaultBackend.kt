@@ -76,6 +76,7 @@ import de.danerd.ghulsuite.model.ArchiveTargetUi
 import de.danerd.ghulsuite.model.FactorProofUi
 import de.danerd.ghulsuite.model.ArchiveTargetInfoUi
 import de.danerd.ghulsuite.model.SuiteFileRef
+import de.danerd.ghulsuite.model.WIPING_OLD_FILE
 import de.danerd.ghulsuite.core.ArchiveCheck
 import de.danerd.ghulsuite.core.ArchiveRelation
 import de.danerd.ghulsuite.core.ArchiveTarget
@@ -97,14 +98,16 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
     override val unlocked: StateFlow<Boolean> = unlockedState.asStateFlow()
     override val coreVersion: String = coreVersionString()
 
-    private var current: GhulSuite? = null
+    @Volatile private var current: GhulSuite? = null
+    private val currentLock = Any()
 
     /** The temporary suite around a vault opened on its own (see [openSingle]). */
     @Volatile private var temp: GhulSuite? = null
 
     /** The own suite (created on first use, after the subclass is initialised). */
     protected val ownSuite: GhulSuite
-        get() = current ?: newSuite().also { current = it }
+        // N6: one only, also when the screens and a receiver (reminder, tile) ask at once.
+        get() = current ?: synchronized(currentLock) { current ?: newSuite().also { current = it } }
 
     /** The suite the screens work with: a vault opened on its own, else the own suite. */
     protected val suite: GhulSuite
@@ -156,6 +159,7 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
     /** Calls of the core with the security key when a PIN is given (GhulDocs: hand on, take over). */
     private val keyRunner = object : KeyRunner {
         override suspend fun <T> run(pin: String?, block: (HidTransport?) -> T): T = maybeWithKey(pin, block)
+        override suspend fun confirm(proof: FactorProofUi, onTouchNeeded: () -> Unit): FactorProofUi = confirmedProof(proof, onTouchNeeded)
     }
 
     private val coreDocs by lazy { CoreDocsBackend({ suite }, { openSuiteInput(it) }, keyRunner) }
@@ -174,13 +178,16 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
      * [check] reads the result back and says whether it is complete. True only when the file is
      * in place and [check] said so; where the platform allows it the old file is replaced only
      * then (see the platforms). [created]: the file was just made for this; a failed write
-     * removes it.
+     * removes it. [wipeOld] (G2-M2): the file replaced is overwritten with zeros once the new
+     * one is in place; [onWipe] is called right before that (it can take minutes on a stick).
      */
     protected open fun writeSuiteStreamed(
         ref: SuiteFileRef,
         created: Boolean,
         write: (java.io.OutputStream) -> Unit,
         check: (SuiteInput) -> Boolean,
+        wipeOld: Boolean = false,
+        onWipe: () -> Unit = {},
     ): Boolean = false
 
     /** A suite file for the core to read, piece by piece. */
@@ -203,14 +210,36 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
         }
     }
 
-    private class StreamSink(private val out: java.io.OutputStream) : ArchiveSink {
+    /** [freeBytes]: the room left where it is written (H12: a full storage, see [isNoSpace]). */
+    private class StreamSink(private val out: java.io.OutputStream, private val freeBytes: () -> Long? = { null }) : ArchiveSink {
         override fun write(data: ByteArray) {
             try {
                 out.write(data)
             } catch (e: java.io.IOException) {
-                throw StorageException.Io("the file cannot be written")
+                throw StorageException.Io(if (isNoSpace(e, freeBytes)) NO_SPACE_IO else "the file cannot be written")
             }
         }
+    }
+
+    /**
+     * Free bytes at the place of [ref] (its folder), null where the platform cannot say (a
+     * document of a cloud app). H12: checked before the suite file is written.
+     */
+    protected open fun freeSpaceAt(ref: SuiteFileRef): Long? = null
+
+    /**
+     * Bytes the place of [ref] needs for a suite file of [size] bytes: all of it where the new
+     * file is written next to the old one (replaced only once it is checked).
+     */
+    protected open fun roomNeeded(ref: SuiteFileRef, size: Long): Long = size
+
+    /** H12: refused before anything is written when the place surely has too little room. */
+    private fun checkRoom(s: GhulSuite, target: SuiteFileRef) {
+        // Where the place cannot say (a cloud app), nothing else is asked either.
+        val free = runCatching { freeSpaceAt(target) }.getOrNull() ?: return
+        val size = runCatching { s.archiveEstimatedSize().toLong() }.getOrNull() ?: return
+        val need = roomNeeded(target, size)
+        if (free < need) throw VaultException(VaultErrorKind.NO_SPACE, "$free|$need")
     }
 
     private class Progress(private val report: (Long, Long) -> Unit) : ArchiveProgress {
@@ -240,7 +269,7 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
         keyfile: ByteArray?,
         onTouchNeeded: () -> Unit,
         onProgress: (Long, Long) -> Unit,
-    ): ArchiveCheckUi = fileLock.withLock { maybeWithKey(pin) { t ->
+    ): ArchiveCheckUi = fileLock.withLock { openedWithCode = null; maybeWithKey(pin) { t ->
         reading(file) { src ->
             suite.archiveOpen(src, password, t, t?.let { Touch(onTouchNeeded) }, pin, keyfile, Progress(onProgress)).toUi()
         }
@@ -251,16 +280,42 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
         code: String,
         newPassword: String,
         onProgress: (Long, Long) -> Unit,
-    ): ArchiveCheckUi = fileLock.withLock { io { reading(file) { suite.archiveOpenWithCode(it, code, newPassword, Progress(onProgress)).toUi() } } }
+    ): ArchiveCheckUi = fileLock.withLock {
+        openedWithCode = null
+        io { reading(file) { suite.archiveOpenWithCode(it, code, newPassword, Progress(onProgress)).toUi() } }
+            .also { openedWithCode = file }
+    }
 
-    override fun archiveCancel() = suite.archiveCancel()
+    /**
+     * N2: the suite file last opened with the recovery code (until it is taken over or given up).
+     * It holds the protection before (the old password); once taken over, the next save there
+     * overwrites it with zeros.
+     */
+    @Volatile
+    private var openedWithCode: SuiteFileRef? = null
 
-    override suspend fun archiveAccept() = fileLock.withLock { acceptLocked() }
+    override fun archiveCancel() {
+        openedWithCode = null
+        suite.archiveCancel()
+    }
 
-    private suspend fun acceptLocked() {
+    override suspend fun archiveAccept() = fileLock.withLock { acceptLocked { s -> io { s.archiveAccept() } } }
+
+    override suspend fun archiveAcceptReplacing(proof: FactorProofUi?, code: String?, onTouchNeeded: () -> Unit) = fileLock.withLock {
+        acceptLocked { s ->
+            if (code != null) {
+                io { s.archiveAcceptReplacingWithCode(code) }
+            } else {
+                val p = proof ?: throw VaultException(VaultErrorKind.INVALID_INPUT, "a security key or key file is required")
+                maybeWithKey(p.pin) { t -> s.archiveAcceptReplacing(p.core(), t, t?.let { Touch(onTouchNeeded) }) }
+            }
+        }
+    }
+
+    private suspend fun acceptLocked(accept: suspend (GhulSuite) -> Unit) {
         val s = suite
         try {
-            io { s.archiveAccept() }
+            accept(s)
         } catch (e: Throwable) {
             // The core may have locked before failing: the app must not show an open suite.
             // The core got as far as removing this device's quick unlock of the old state: the
@@ -271,6 +326,8 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
         }
         // The device's quick unlock belonged to the state before (kept with the same protection).
         if (runCatching { s.archiveDeviceDataWiped() }.getOrDefault(true)) onProtectionChanged()
+        openedWithCode?.let { markOldFileToWipe(it) }
+        openedWithCode = null
         unlockedState.value = true
     }
 
@@ -302,38 +359,66 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
         onProgress: (Long, Long) -> Unit,
     ): Boolean = fileLock.withLock { io {
         val s = suite
+        checkRoom(s, target)
         var built: ArchiveBuilt? = null
         // One bar for both steps: writing is the first half, reading back the second.
         val written = writeSuiteStreamed(
             target,
             created,
-            write = { out -> built = s.archiveBuild(device, StreamSink(out), Progress { d, t -> onProgress(d, 2 * t) }) },
+            write = { out -> built = s.archiveBuild(device, StreamSink(out) { freeSpaceAt(target) }, Progress { d, t -> onProgress(d, 2 * t) }) },
             check = { input ->
                 val b = built ?: return@writeSuiteStreamed false
                 val size = b.size.toLong()
                 archiveWrittenMatches(StreamSource(input), b.size, b.sha256, Progress { d, _ -> onProgress(size + d, 2 * size) })
             },
+            wipeOld = wipeOldFileAt(target),
+            onWipe = { onProgress(WIPING_OLD_FILE, WIPING_OLD_FILE) },
         )
         val b = built
         if (written && b != null) {
             s.archiveSaved(b.state, b.change)
+            // N2: the file before (with the protection before) is overwritten now, at this
+            // place only; one waiting at another place stays marked.
+            wipedAt(target)
             // Here, not after returning: the app may end meanwhile, the place must be known then.
             setSuiteFile(target)
         }
         written && b != null
     } }
 
-    override suspend fun deleteSuite() = fileLock.withLock { deleteLocked() }
+    override suspend fun deleteSuite(proof: FactorProofUi?, code: String?, onTouchNeeded: () -> Unit) =
+        fileLock.withLock { deleteLocked(proof, code, onTouchNeeded) }
 
-    private suspend fun deleteLocked() {
+    private suspend fun deleteLocked(proof: FactorProofUi?, code: String?, onTouchNeeded: () -> Unit) {
         // A vault open on its own is closed (written back) first; the own suite is deleted.
         lock()
         val s = ownSuite
+        // H5: the core checks the proof against the files of the suite before anything goes; a
+        // wrong proof (or any other error before the deletion began) deletes nothing, also
+        // nothing of the device's data. DELETE_INCOMPLETE: it began, the rest can be deleted again.
+        var proven = false
         try {
-            io { s.deleteWorkingCopy() }
+            if (code != null) {
+                io { s.deleteWorkingCopyWithCode(code) }
+            } else {
+                val p = proof ?: throw VaultException(VaultErrorKind.INVALID_INPUT, "a security key or key file is required")
+                maybeWithKey(p.pin) { t -> s.deleteWorkingCopy(p.core(), t, t?.let { Touch(onTouchNeeded) }) }
+            }
+            proven = true
+        } catch (e: VaultException) {
+            proven = e.kind == VaultErrorKind.DELETE_INCOMPLETE
+            throw e
         } finally {
-            // Also when a file could not be deleted: nothing of the old suite opens quickly or
-            // reminds of it, and the app does not save into its suite file.
+            if (proven) forgetDeletedSuite()
+        }
+    }
+
+    /**
+     * After the suite was deleted (also when a file could not be): nothing of the old suite opens
+     * quickly or reminds of it, and the app does not save into its suite file.
+     */
+    private fun forgetDeletedSuite() {
+        run {
             onProtectionChanged()
             cal.clearReminders()
             setSuiteFile(null)
@@ -806,14 +891,14 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
             vaultId = share.vaultId,
             ids = share.ids.map { it.hexToBytes() },
             name = share.name,
-            masterPassword = share.masterPassword,
+            proof = confirmedProof(share.proof, onTouchNeeded).core(),
             password = share.password,
             keyfile = share.keyfile,
             keyLabel = share.keyLabel,
             keyfileLabel = share.keyfileLabel,
             recoveryLabel = share.recoveryLabel,
         )
-        val r = maybeWithKey(pin) { t -> suite.shareAsVault(options, t, t?.let { Touch(onTouchNeeded) }, pin) }
+        val r = maybeWithKey(pin) { t -> suite.shareAsVault(options, null, t, t?.let { Touch(onTouchNeeded) }, pin) }
         return SharedVaultUi(r.kind.toUi(), r.data, r.recoveryCode)
     }
 
@@ -885,6 +970,7 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
 
     override suspend fun unlockWithRecoveryCode(code: String, newPassword: String) {
         io { suite.unlockWithRecoveryCode(code, newPassword) }
+        markOldFileToWipe()
         onProtectionChanged()
         unlockedState.value = true
     }
@@ -958,8 +1044,8 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
                 id = entry.id?.hexToBytes() ?: ByteArray(0),
                 entryType = entry.type,
                 fields = entry.fields.map { it.toCore() },
-                tags = emptyList(),
-                folder = null,
+                // H8: the editor does not show tags and folder; null keeps them as they are.
+                placement = null,
                 modified = 0,
                 revision = 0uL,
             ),
@@ -1033,7 +1119,27 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
         }
     }
 
-    private fun FactorProofUi.core() = de.danerd.ghulsuite.core.FactorProof(password, pin, keyfile)
+    internal fun FactorProofUi.core() = de.danerd.ghulsuite.core.FactorProof(password, pin, keyfile)
+
+    /**
+     * Both factors with a security key of now: that key is touched first, in a connection of its
+     * own (on a phone only one key is plugged in); what follows then takes the password alone
+     * (once, within two minutes). With a key file: as it is.
+     */
+    internal suspend fun confirmedProof(proof: FactorProofUi, onTouchNeeded: () -> Unit): FactorProofUi =
+        if (proof.pin != null) {
+            withKey { t -> suite.confirmFactors(proof.core(), t, Touch(onTouchNeeded)) }
+            FactorProofUi(proof.password, null, null)
+        } else {
+            proof
+        }
+
+    override fun openedWithRecoveryCode(): Boolean = runCatching { suite.openedWithRecoveryCode() }.getOrDefault(false)
+
+    override fun securityRules(): de.danerd.ghulsuite.model.SecurityRulesUi = runCatching {
+        val r = de.danerd.ghulsuite.core.securityRules()
+        de.danerd.ghulsuite.model.SecurityRulesUi(r.passwordMinLength.toInt(), r.passwordMinScore.toInt(), r.appPinMinLength.toInt())
+    }.getOrDefault(de.danerd.ghulsuite.model.SecurityRulesUi())
 
     override suspend fun addSecurityKey(proof: FactorProofUi, pin: String, label: String, onTouchNeeded: () -> Unit) {
         // Confirmed with a key of now: that key first, in a connection of its own (on a phone
@@ -1052,15 +1158,45 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
 
     override suspend fun newRecoveryCode(proof: FactorProofUi, label: String, onTouchNeeded: () -> Unit): String =
         maybeWithKey(proof.pin) { t -> suite.newRecoveryCode(proof.core(), t, t?.let { Touch(onTouchNeeded) }, label) }
+            .also { markOldFileToWipe() }
 
     override suspend fun removeSlot(proof: FactorProofUi, id: String, onTouchNeeded: () -> Unit) {
         maybeWithKey(proof.pin) { t -> suite.removeSlot(proof.core(), t, t?.let { Touch(onTouchNeeded) }, id.hexToBytes()) }
+        markOldFileToWipe()
         onProtectionChanged()
     }
 
     override suspend fun changePassword(proof: FactorProofUi, new: String, onTouchNeeded: () -> Unit) {
         maybeWithKey(proof.pin) { t -> suite.changePassword(proof.core(), t, t?.let { Touch(onTouchNeeded) }, new) }
+        markOldFileToWipe()
         onProtectionChanged()
+    }
+
+    /**
+     * G2-M2: a code, factor or password that is gone still opens the suite file saved before.
+     * The next save at that place overwrites that file with zeros once the new one is in place
+     * (see the platforms), instead of only deleting it (on a stick it could be carved back).
+     * N2: bound to the place ([at], by default the suite file known now): a save to another
+     * place leaves the mark of this one. Without a known place there is no old file to name.
+     */
+    private fun markOldFileToWipe(at: SuiteFileRef? = suiteFile()) {
+        val id = at?.id ?: return
+        val now = placesToWipe()
+        if (id !in now) setDevicePref(WIPE_OLD_FILE, (now + id).joinToString("\n"))
+    }
+
+    /** The places whose next save overwrites the file it replaces (an old "1": the next save anywhere). */
+    private fun placesToWipe(): List<String> =
+        devicePref(WIPE_OLD_FILE)?.split('\n')?.filter { it.isNotEmpty() } ?: emptyList()
+
+    /** Whether the next save at [ref] overwrites the file it replaces with zeros (see [markOldFileToWipe]). */
+    protected fun wipeOldFileAt(ref: SuiteFileRef): Boolean = placesToWipe().let { ref.id in it || LEGACY_WIPE_ANY in it }
+
+    /** The file at [ref] was replaced (and wiped where marked): its mark goes. */
+    private fun wipedAt(ref: SuiteFileRef) {
+        val now = placesToWipe()
+        val left = now.filter { it != ref.id && it != LEGACY_WIPE_ANY }
+        if (left != now) setDevicePref(WIPE_OLD_FILE, left.joinToString("\n"))
     }
 
     // --- import and export --------------------------------------------------------------------
@@ -1095,9 +1231,11 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
         ImportResultUi(r.entries.toInt(), r.totps.toInt(), r.duplicates.toInt(), r.skipped.toInt(), r.skippedItems.map { it.toUi() }, r.kept.toInt())
     }
 
-    override suspend fun exportPlain(vaultId: String, password: String): ByteArray = io { suite.exportPlain(vaultId, password) }
-    override suspend fun exportEntries(vaultId: String, ids: List<String>, password: String): ByteArray =
-        io { suite.exportEntries(vaultId, ids.map { it.hexToBytes() }, password) }
+    override suspend fun exportPlain(vaultId: String, password: String, spreadsheetSafe: Boolean): ByteArray =
+        io { suite.exportPlain(vaultId, password, spreadsheetSafe) }
+    override suspend fun verifyPassword(password: String): Boolean = io { suite.verifyPassword(password) }
+    override suspend fun exportEntries(vaultId: String, ids: List<String>, password: String, spreadsheetSafe: Boolean): ByteArray =
+        io { suite.exportEntries(vaultId, ids.map { it.hexToBytes() }, password, spreadsheetSafe) }
 
     // --- tools --------------------------------------------------------------------------------
 
@@ -1165,7 +1303,7 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
         de.danerd.ghulsuite.core.generatePassphrase(words.toUInt(), separator, capitalize, number)
     }
 
-    override suspend fun totpUri(vaultId: String, id: String): String = io { suite.totpUri(vaultId, id.hexToBytes()) }
+    override suspend fun totpUri(vaultId: String, id: String, password: String): String = io { suite.totpUri(vaultId, id.hexToBytes(), password) }
 
     override suspend fun pwnedCount(password: String): Int = io { de.danerd.ghulsuite.core.pwnedCount(password).toInt() }
 }
@@ -1185,3 +1323,9 @@ internal fun ArchiveCheck.toUi() = ArchiveCheckUi(
     device = device,
     vaults = vaults.toInt(),
 )
+
+/** Device setting: the next save wipes the file it replaces (after a change of the protection). */
+private const val WIPE_OLD_FILE = "wipe_old_file"
+
+/** The mark as round 5 wrote it (not bound to a place). */
+private const val LEGACY_WIPE_ANY = "1"

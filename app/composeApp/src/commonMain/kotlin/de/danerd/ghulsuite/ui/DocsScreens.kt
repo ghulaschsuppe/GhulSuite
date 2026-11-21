@@ -260,7 +260,7 @@ fun DocsScreen(state: AppState, padding: PaddingValues) {
                     if (one != null) add(SelAction(Icons.Filled.Edit, stringResource(Res.string.a_rename)) { selected.clear(); renaming = one })
                     if (oneVault != null) {
                         add(SelAction(Icons.AutoMirrored.Filled.DriveFileMove, stringResource(Res.string.a_move)) { moving = chosen })
-                        add(SelAction(Icons.Filled.Share, stringResource(Res.string.share_vault_action)) {
+                        if (state.single == null) add(SelAction(Icons.Filled.Share, stringResource(Res.string.share_vault_action)) {
                             selected.clear()
                             sharing = oneVault to chosen.map { it.id }
                         })

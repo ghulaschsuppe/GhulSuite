@@ -576,7 +576,10 @@ fun CalEditScreen(state: AppState, start: CalEventUi, padding: PaddingValues) {
                 }) { Text(stringResource(Res.string.a_ok)) }
             },
             dismissButton = { TextButton(onClick = { datePick = null }) { Text(stringResource(Res.string.a_cancel)) } },
-        ) { DatePicker(st) }
+        ) {
+            GuardWindow()
+            DatePicker(st)
+        }
     }
     timePick?.let { which ->
         val cur = minutesOf(if (which == 0) d.start else d.end)
@@ -1053,10 +1056,21 @@ fun CalSettingsSection(state: AppState) {
         Text(stringResource(Res.string.cal_lock_content), fontSize = 15.sp)
         Text(stringResource(listOf(Res.string.cal_lock_min_sub, Res.string.cal_lock_title_sub, Res.string.cal_lock_full_sub)[settings.calNotifyDetail.coerceIn(0, 2)]),
             fontSize = 14.sp, color = g.muted)
+        // M14: more detail in the reminders (they show on the lock screen and reach apps with
+        // access to notifications) only after the master password.
+        var moreDetail by remember { mutableStateOf<Int?>(null) }
         SingleChoiceSegmentedButtonRow {
             listOf(Res.string.cal_lock_min, Res.string.cal_lock_title, Res.string.cal_lock_full).forEachIndexed { i, r ->
-                SegmentedButton(settings.calNotifyDetail == i, { settings.calNotifyDetail = i; state.refreshCalendar() }) { SegLabel(stringResource(r)) }
+                SegmentedButton(settings.calNotifyDetail == i, {
+                    if (i > settings.calNotifyDetail) moreDetail = i else { settings.calNotifyDetail = i; state.refreshCalendar() }
+                }) { SegLabel(stringResource(r)) }
             }
+        }
+        moreDetail?.let { i ->
+            PasswordGateDialog(
+                state, stringResource(Res.string.gate_weaken_title), stringResource(Res.string.gate_cal_detail),
+                confirmLabel = stringResource(Res.string.a_apply), onDismiss = { moreDetail = null },
+            ) { moreDetail = null; settings.calNotifyDetail = i; state.refreshCalendar() }
         }
         // Notifications turned off for the app: reminders would not arrive, and nothing would say so.
         val allowed = remember(state.revision, AppLaunch.inFront.collectAsState().value) { state.backend.notificationsAllowed() }

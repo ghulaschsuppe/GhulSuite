@@ -29,7 +29,73 @@ private val MIME_BY_EXT = mapOf(
 )
 
 /** The media type of a file by its name (application/octet-stream when the ending is not known). */
-fun mimeOf(name: String): String = MIME_BY_EXT[name.substringAfterLast('.', "").lowercase()] ?: "application/octet-stream"
+fun mimeOf(name: String): String = MIME_BY_EXT[openEnding(name)] ?: "application/octet-stream"
+
+/**
+ * Endings that Windows or Android runs, installs or mounts instead of just showing: programs,
+ * scripts, shortcuts, installers, help and control panel files, disk images and Android packages.
+ * "Open with app" refuses them, because a document from a shared package can be named
+ * "Rechnung.pdf.exe" (H4).
+ */
+private val RUNNABLE_ENDINGS = setOf(
+    // programs and libraries
+    "exe", "com", "scr", "pif", "cpl", "dll", "ocx", "sys", "drv", "efi", "msc", "gadget", "xll",
+    // scripts
+    "bat", "cmd", "btm", "vb", "vbs", "vbe", "js", "jse", "mjs", "wsf", "wsh", "wsc", "ws", "sct", "hta",
+    "ps1", "ps1xml", "ps2", "ps2xml", "psc1", "psc2", "psm1", "psd1", "msh", "msh1", "msh2", "mshxml", "msh1xml", "msh2xml",
+    "py", "pyw", "pyc", "pyz", "pl", "rb", "sh", "bash", "jar", "jnlp", "class",
+    // installers and packages
+    "msi", "msp", "mst", "msu", "msix", "msixbundle", "appx", "appxbundle", "appinstaller", "appref-ms", "application",
+    "xbap", "vsix", "diagcab", "reg", "inf", "ins", "isp", "apk", "apks", "apkm", "xapk", "aab",
+    // shortcuts and places that point at programs
+    "lnk", "url", "scf", "shb", "shs", "website", "library-ms", "settingcontent-ms", "search-ms", "searchconnector-ms",
+    "desktop", "rdp", "theme", "themepack", "deskthemepack", "job", "crx",
+    // help files, Office add-ins and databases that run code
+    "chm", "hlp", "mde", "mda", "mdb", "accdb", "accde", "accdr", "ade", "adp", "mam", "ppa", "ppam", "xla", "xlam", "wbk",
+    // disk images (mounted, their files lose the warning of downloaded files)
+    "iso", "img", "vhd", "vhdx", "udf",
+    // OneNote, browser add-ons and cabinets, Excel web queries and links, Windows Sandbox
+    "one", "onepkg", "xpi", "cab", "iqy", "slk", "wsb",
+    // pages that run scripts in the browser (and imitate any login page)
+    "html", "htm", "xhtml", "shtml", "mht", "mhtml", "svg", "svgz",
+)
+
+/**
+ * The ending of [name] as Windows and Android see it: in lower case, after the characters Windows
+ * does not allow in a name are replaced (so "a.pdf:x.exe" counts as ".exe") and trailing dots
+ * and spaces are dropped (Windows drops them, "a.exe." is "a.exe").
+ */
+fun openEnding(name: String): String {
+    val clean = name.map { if (it in "<>:\"|?*/\\" || it.code < 32) '_' else it }.joinToString("").trimEnd('.', ' ')
+    return clean.substringAfterLast('.', "").lowercase()
+}
+
+/**
+ * What Android itself would install, run or mount (H4): packages, scripts for a terminal app,
+ * disk images. Web pages and the like open in the browser's sandbox there.
+ */
+private val ANDROID_RUNNABLE = setOf(
+    "apk", "apks", "apkm", "xapk", "aab", "sh", "bash", "py", "pyc", "jar", "iso", "img", "vhd", "vhdx",
+)
+
+/** Whether Android's "Open with" refuses [name] (see [ANDROID_RUNNABLE]). */
+fun isRunnableOnAndroid(name: String): Boolean = openEnding(name) in ANDROID_RUNNABLE
+
+/** Archives: allowed, but asked once (a program packed in one loses the warning of downloaded files in some unpackers). */
+private val ARCHIVES = setOf("zip", "7z", "rar", "tar", "gz", "tgz", "bz2", "xz")
+
+/** Whether [name] is an archive (see [ARCHIVES]). */
+fun isArchive(name: String): Boolean = openEnding(name) in ARCHIVES
+
+/**
+ * Whether "Open with app" refuses [name]: its ending runs a program (see [RUNNABLE_ENDINGS]), or
+ * one of [moreEndings] (Windows adds those of PATHEXT) names it.
+ */
+fun isRunnableFile(name: String, moreEndings: Collection<String> = emptyList()): Boolean {
+    val ending = openEnding(name)
+    if (ending.isEmpty()) return false
+    return ending in RUNNABLE_ENDINGS || moreEndings.any { it.trim().trimStart('.').lowercase() == ending }
+}
 
 /** Characters that turn the direction of text (e.g. "rechnung\u202Efdp.exe" shows as "rechnungexe.pdf"). */
 private fun isBidiControl(c: Char): Boolean = c in '\u202A'..'\u202E' || c in '\u2066'..'\u2069'
@@ -173,15 +239,24 @@ fun AppState.exportDoc(item: DocsItemUi, sink: ByteSink) {
  * it) through a temporary copy that is wiped when the app locks. A read that fails removes the
  * half copy and hands nothing over.
  */
-fun AppState.openDocWith(item: DocsItemUi) {
+fun AppState.openDocWith(item: DocsItemUi, archiveConfirmed: Boolean = false) {
+    // An archive can hold programs: asked once (H4), then opened.
+    if (!archiveConfirmed && isArchive(item.name) && !backend.refusesToOpen(item.name)) {
+        archiveAsk = item
+        return
+    }
     jobs.start(
         JobKind.EXPORT,
         title = { str(Res.string.docs_opening, item.name) },
         cancelled = { str(Res.string.docs_open_cancelled, item.name) },
     ) { job ->
+        // A program, script or shortcut is not started from here (H4): it is refused before
+        // anything is decrypted, with the way to export it instead.
+        if (backend.refusesToOpen(item.name)) return@start str(Res.string.docs_open_refused, openEnding(item.name))
         job.item = item.name
         job.bytesTotal = item.size
-        val ok = backend.shareStreamToApps(item.name, item.mime.ifBlank { mimeOf(item.name) }) { sink ->
+        // The type comes from the name, not from what a (possibly foreign) package stored.
+        val ok = backend.shareStreamToApps(item.name, mimeOf(item.name)) { sink ->
             backend.docs.read(item.vaultId, item.id, sink) { job.bytes = it }
         }
         if (ok) null else str(Res.string.docs_no_app)

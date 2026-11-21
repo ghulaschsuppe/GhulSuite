@@ -350,6 +350,7 @@ private fun ViewerActions(state: AppState, item: DocsItemUi) {
         }
     }
     HintText(stringResource(Res.string.docs_copy_hint))
+    if (state.backend.openCopiesOnThisPc) HintText(stringResource(Res.string.docs_copy_hint_portable))
     if (askExport) {
         AlertDialog(
             onDismissRequest = { askExport = false },

@@ -118,6 +118,8 @@ class Settings(private val store: KeyValueStore) {
     var shakeToLock by bool("shake_to_lock", true)
     /** 0 = low, 1 = medium, 2 = high sensitivity. */
     var shakeSensitivity by int("shake_sensitivity", 1)
+    /** M12: the panic lock also deletes the prepared calendar reminders (they come back with the next unlock). */
+    var panicClearReminders by bool("panic_clear_reminders", false)
     /** 0 = never clear. */
     var clipboardClearSeconds by int("clipboard_clear_seconds", 45)
     var allowScreenshots by bool("allow_screenshots", false)
@@ -127,6 +129,12 @@ class Settings(private val store: KeyValueStore) {
     var quickUnlockPin by bool("quick_pin", false)
     /** How long a quick unlock stays valid after the last full unlock. */
     var quickUnlockHours by int("quick_hours", 24)
+    /**
+     * H6: the validity each method was set up with (it is fixed in its quick unlock file); -1:
+     * not known (set up by an older version), then [quickUnlockHours].
+     */
+    var quickHoursBio by int("quick_hours_bio", -1)
+    var quickHoursPin by int("quick_hours_pin", -1)
 
     // --- View
     var themeOrdinal by int("theme", ThemeMode.SYSTEM.ordinal)

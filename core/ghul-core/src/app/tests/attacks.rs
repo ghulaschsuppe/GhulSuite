@@ -48,7 +48,7 @@ fn marked_suite(name: &str) -> (Dirs, Arc<GhulSuite>, Vec<u8>) {
     let s = d.suite();
     s.create(
         options(
-            "pw-123456",
+            "pw-123456-Kq7wZ",
             Some(kf.clone()),
             &[(VaultKind::Pass, "KlauTresorX9"), (VaultKind::Totp, "T"), (VaultKind::Cal, "K")],
         ),
@@ -124,15 +124,18 @@ fn stolen_files_do_not_open_without_both_factors() {
         thief.storage().write(f.clone(), d.storage().read(f).unwrap().unwrap()).unwrap();
     }
     let t = thief.suite();
-    assert!(t.unlock("pw-123456".into(), None, None, None, None).is_err(), "password alone");
+    assert!(t.unlock("pw-123456-Kq7wZ".into(), None, None, None, None).is_err(), "password alone");
     assert!(t.unlock("falsch".into(), None, None, None, Some(kf.clone())).is_err(), "key file alone");
-    assert!(t.unlock("pw-123456".into(), None, None, None, Some(generate_keyfile())).is_err(), "another key file");
+    assert!(
+        t.unlock("pw-123456-Kq7wZ".into(), None, None, None, Some(generate_keyfile())).is_err(),
+        "another key file"
+    );
     let mut bent = kf.clone();
     let last = bent.len() - 1;
     bent[last] ^= 1;
-    assert!(t.unlock("pw-123456".into(), None, None, None, Some(bent)).is_err(), "changed key file");
+    assert!(t.unlock("pw-123456-Kq7wZ".into(), None, None, None, Some(bent)).is_err(), "changed key file");
     // The owner still can.
-    t.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    t.unlock("pw-123456-Kq7wZ".into(), None, None, None, Some(kf)).unwrap();
 }
 
 #[test]
@@ -198,14 +201,15 @@ fn backups_with_path_tricks_and_bombs_write_nothing_outside() {
 fn exports_are_safe_to_open_in_a_spreadsheet() {
     let d = Dirs::new("csv");
     let s = d.suite();
-    s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "P")]), None, None, None).unwrap();
+    s.create(options("pw-123456-Kq7wZ", Some(generate_keyfile()), &[(VaultKind::Pass, "P")]), None, None, None)
+        .unwrap();
     let pass = vault_id(&s, "P");
     // A website stored a "user name" that is a spreadsheet formula (via import ...).
     let formulas = ["=HYPERLINK(\"https://evil\",\"x\")", "+cmd|' /C calc'!A0", "-2+3", "@SUM(1)", "\t=1", "'=quoted"];
     for f in formulas {
         s.save_entry(pass.clone(), login(f, f, f)).unwrap();
     }
-    let csv = String::from_utf8(s.export_plain(pass.clone(), "pw-123456".into()).unwrap()).unwrap();
+    let csv = String::from_utf8(s.export_plain(pass.clone(), "pw-123456-Kq7wZ".into(), true).unwrap()).unwrap();
     for line in csv.lines().skip(1) {
         for cell in line.split(',') {
             let c = cell.trim_start_matches('"');
@@ -215,7 +219,8 @@ fn exports_are_safe_to_open_in_a_spreadsheet() {
     // Importing the own export gives the exact passwords back (titles are trimmed as always).
     let other = Dirs::new("csv-back");
     let o = other.suite();
-    o.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "P")]), None, None, None).unwrap();
+    o.create(options("pw-123456-Kq7wZ", Some(generate_keyfile()), &[(VaultKind::Pass, "P")]), None, None, None)
+        .unwrap();
     let ov = vault_id(&o, "P");
     o.import_data(csv.into_bytes(), "ghulsuite.csv".into(), Some(ov.clone()), None, false, None).unwrap();
     let mut got: Vec<String> = o
@@ -265,7 +270,7 @@ fn secrets_never_show_up_in_debug_output_or_errors() {
     let errors = [
         format!("{:?}", s.unlock(format!("{M}x"), None, None, None, Some(kf.clone())).unwrap_err()),
         format!("{:?}", s.unlock(M.into(), None, None, None, Some(M.as_bytes().to_vec())).unwrap_err()),
-        format!("{:?}", s.export_plain(pass.clone(), M.into()).unwrap_err()),
+        format!("{:?}", s.export_plain(pass.clone(), M.into(), false).unwrap_err()),
     ];
     for e in &errors {
         assert!(!e.contains(M) && !e.contains("PasswortGeheimX7"), "{e}");

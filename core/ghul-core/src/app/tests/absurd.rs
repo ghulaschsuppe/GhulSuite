@@ -23,8 +23,7 @@ fn note(title: &str, text: &str) -> EntryData {
             FieldData { name: "title".into(), value: FieldValue::Text { value: title.into() } },
             FieldData { name: "notes".into(), value: FieldValue::Text { value: text.into() } },
         ],
-        tags: vec![],
-        folder: None,
+        placement: None,
         modified: 0,
         revision: 0,
     }
@@ -36,7 +35,7 @@ fn naughty_strings_come_back_exactly_everywhere() {
     let s = d.suite();
     s.create(
         options(
-            "pw-123456",
+            "pw-123456-Kq7wZ",
             Some(generate_keyfile()),
             &[(VaultKind::Pass, "P"), (VaultKind::Totp, "T"), (VaultKind::Cal, "K")],
         ),
@@ -99,7 +98,7 @@ fn values_round_trip_after_reopen() {
     let d = Dirs::new("roundtrip");
     let kf = generate_keyfile();
     let s = d.suite();
-    s.create(options("pw-123456", Some(kf.clone()), &[(VaultKind::Pass, "P")]), None, None, None).unwrap();
+    s.create(options("pw-123456-Kq7wZ", Some(kf.clone()), &[(VaultKind::Pass, "P")]), None, None, None).unwrap();
     let pass = vault_id(&s, "P");
     let mut saved = Vec::new();
     for n in naughty() {
@@ -117,7 +116,7 @@ fn values_round_trip_after_reopen() {
     let many_id = s.save_entry(pass.clone(), many).unwrap();
     s.lock();
     let s = d.suite();
-    s.unlock("pw-123456".into(), None, None, None, Some(kf)).unwrap();
+    s.unlock("pw-123456-Kq7wZ".into(), None, None, None, Some(kf)).unwrap();
     for (id, n) in &saved {
         let e = s.get_entry(pass.clone(), id.clone()).unwrap();
         // An empty field is simply not stored; everything else comes back unchanged.
@@ -138,7 +137,7 @@ fn odd_master_passwords() {
         "🔐🔑 sicher 🔐🔑",
         "  Leerzeichen außen  ",
         "\u{202e}rechts-nach-links",
-        &"x".repeat(10_000),
+        &(0..2_500u32).map(|i| char::from_u32(0x4e00 + (i * 7919) % 20_000).unwrap_or('x')).collect::<String>(),
     ] {
         let d = Dirs::new("pw");
         let kf = generate_keyfile();
@@ -160,19 +159,24 @@ fn odd_master_passwords() {
     s.create(options("Caf\u{e9}-Passwort", Some(kf.clone()), &[(VaultKind::Pass, "P")]), None, None, None).unwrap();
     s.lock();
     s.unlock("Cafe\u{301}-Passwort".into(), None, None, None, Some(kf)).unwrap();
-    // Too short or empty is refused clearly.
+    // Too short, empty or weak is refused clearly (M42: the same rule as in the app).
     let d = Dirs::new("short");
-    assert!(d
-        .suite()
-        .create(options("", Some(generate_keyfile()), &[(VaultKind::Pass, "P")]), None, None, None)
-        .is_err());
+    let too =
+        |pw: &str| d.suite().create(options(pw, Some(generate_keyfile()), &[(VaultKind::Pass, "P")]), None, None, None);
+    let short = super::super::tools::PASSWORD_TOO_SHORT;
+    let weak = super::super::tools::PASSWORD_TOO_WEAK;
+    assert!(matches!(too(""), Err(GhulError::InvalidInput { msg }) if msg == short));
+    assert!(matches!(too("Kq7wZ-ab9"), Err(GhulError::InvalidInput { msg }) if msg == short), "9 characters");
+    assert!(matches!(too("1234567890"), Err(GhulError::InvalidInput { msg }) if msg == weak));
+    assert!(matches!(too("passwort123"), Err(GhulError::InvalidInput { msg }) if msg == weak));
+    assert!(!d.suite().exists().unwrap(), "nothing was created");
 }
 
 #[test]
 fn impossible_dates_and_series() {
     let d = Dirs::new("dates");
     let s = d.suite();
-    s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Cal, "K")]), None, None, None).unwrap();
+    s.create(options("pw-123456-Kq7wZ", Some(generate_keyfile()), &[(VaultKind::Cal, "K")]), None, None, None).unwrap();
     let calv = vault_id(&s, "K");
     let cal = s
         .cal_save_calendar(CalCalendar {
@@ -246,7 +250,8 @@ fn impossible_dates_and_series() {
 fn locked_suite_answers_every_call_with_an_error() {
     let d = Dirs::new("lockedcalls");
     let s = d.suite();
-    s.create(options("pw-123456", Some(generate_keyfile()), &[(VaultKind::Pass, "P")]), None, None, None).unwrap();
+    s.create(options("pw-123456-Kq7wZ", Some(generate_keyfile()), &[(VaultKind::Pass, "P")]), None, None, None)
+        .unwrap();
     let pass = vault_id(&s, "P");
     s.lock();
     assert!(s.list_vaults().is_err());

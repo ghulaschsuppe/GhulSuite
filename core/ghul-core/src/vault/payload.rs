@@ -208,8 +208,17 @@ impl Payload {
         Ok(out)
     }
 
+    /// M34: a payload of a newer schema, or with a field of a type this version does not know
+    /// (written by a newer app), is [`VaultError::NewerKind`] ("please update"), not damaged.
     pub fn from_cbor(data: &[u8], kind: ContainerKind) -> Result<Self> {
-        let p: Payload = ciborium::de::from_reader(data).map_err(|e| VaultError::Payload(e.to_string()))?;
+        let p: Payload = match ciborium::de::from_reader(data) {
+            Ok(p) => p,
+            Err(_) if newer_payload(data) => return Err(VaultError::NewerKind),
+            Err(e) => return Err(VaultError::Payload(e.to_string())),
+        };
+        if p.schema > PAYLOAD_SCHEMA {
+            return Err(VaultError::NewerKind);
+        }
         if p.schema != PAYLOAD_SCHEMA {
             return Err(VaultError::Payload(format!("unsupported payload schema {}", p.schema)));
         }
@@ -218,6 +227,31 @@ impl Payload {
         }
         Ok(p)
     }
+}
+
+/// The field types this version knows (the tags of [`Field`]).
+const FIELD_TYPES: [&str; 7] = ["text", "secret", "url", "bytes", "int", "bool", "list"];
+
+/// Whether a payload that does not read was written by a newer app: a higher schema, or an
+/// entry with a field of a type not in [`FIELD_TYPES`].
+fn newer_payload(data: &[u8]) -> bool {
+    let Ok(Value::Map(top)) = ciborium::de::from_reader::<Value, _>(data) else { return false };
+    let get =
+        |m: &[(Value, Value)], k: &str| m.iter().find(|(key, _)| key.as_text() == Some(k)).map(|(_, v)| v.clone());
+    let schema = get(&top, "schema").and_then(|v| v.as_integer()).and_then(|i| u64::try_from(i128::from(i)).ok());
+    if schema.is_some_and(|s| s > u64::from(PAYLOAD_SCHEMA)) {
+        return true;
+    }
+    let Some(Value::Array(entries)) = get(&top, "entries") else { return false };
+    entries.iter().filter_map(Value::as_map).any(|e| match get(e, "fields") {
+        Some(Value::Map(fields)) => fields.iter().any(|(_, f)| {
+            f.as_map()
+                .and_then(|f| get(f, "t"))
+                .and_then(|t| t.as_text().map(str::to_owned))
+                .is_some_and(|t| !FIELD_TYPES.contains(&t.as_str()))
+        }),
+        _ => false,
+    })
 }
 
 /// Padded size: at least 4 KiB, otherwise the next power of two.
@@ -293,5 +327,39 @@ mod tests {
         assert_eq!(back, p);
         assert_eq!(back.entries[0].extra.get("future_field"), Some(&Value::Integer(42.into())));
         assert!(Payload::from_cbor(&cbor, ContainerKind::Totp).is_err());
+    }
+
+    /// M34: what a newer app wrote asks for an update, not "damaged".
+    #[test]
+    fn a_newer_schema_or_field_type_asks_for_an_update() {
+        let mut p = Payload::new(ContainerKind::Pass);
+        p.schema = PAYLOAD_SCHEMA + 1;
+        let cbor = p.to_cbor().unwrap();
+        assert_eq!(Payload::from_cbor(&cbor, ContainerKind::Pass), Err(VaultError::NewerKind));
+
+        let mut p = Payload::new(ContainerKind::Pass);
+        let mut e = Entry::new([1; 16], "login", 1);
+        e.fields.insert("title".into(), Field::Text("x".into()));
+        p.entries.push(e);
+        let mut v: Value = ciborium::de::from_reader(&p.to_cbor().unwrap()[..]).unwrap();
+        // The field "title" becomes one of a type that does not exist yet.
+        let fields = v.as_map_mut().unwrap().iter_mut().find(|(k, _)| k.as_text() == Some("entries")).unwrap();
+        let entry = fields.1.as_array_mut().unwrap()[0].as_map_mut().unwrap();
+        let f = entry.iter_mut().find(|(k, _)| k.as_text() == Some("fields")).unwrap();
+        let title = f.1.as_map_mut().unwrap()[0].1.as_map_mut().unwrap();
+        title.iter_mut().find(|(k, _)| k.as_text() == Some("t")).unwrap().1 = Value::Text("date".into());
+        let mut cbor = Vec::new();
+        ciborium::ser::into_writer(&v, &mut cbor).unwrap();
+        assert_eq!(Payload::from_cbor(&cbor, ContainerKind::Pass), Err(VaultError::NewerKind));
+        assert_eq!(
+            crate::app::error::GhulError::from(VaultError::NewerKind).to_string(),
+            "please update GhulSuite to open this file"
+        );
+
+        // Damaged stays damaged; an older schema is not "newer".
+        assert!(matches!(Payload::from_cbor(b"\xa1\x01", ContainerKind::Pass), Err(VaultError::Payload(_))));
+        let mut p = Payload::new(ContainerKind::Pass);
+        p.schema = 0;
+        assert!(matches!(Payload::from_cbor(&p.to_cbor().unwrap(), ContainerKind::Pass), Err(VaultError::Payload(_))));
     }
 }

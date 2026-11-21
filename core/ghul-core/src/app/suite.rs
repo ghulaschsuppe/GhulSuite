@@ -24,7 +24,7 @@ use zeroize::Zeroizing;
 
 use super::error::{GhulError, Result};
 use super::storage::VaultStorage;
-use super::tools::{validate_totp, OtpAlgo, TotpInput};
+use super::tools::{check_master_password, validate_totp, OtpAlgo, TotpInput};
 use crate::ctap2::Authenticator;
 use crate::ctaphid::CtapHid;
 use crate::key_device::{CredRequest, KeyDevice};
@@ -41,7 +41,17 @@ const NAME_KEY: &str = "name";
 pub(super) const EPOCH_KEY: &str = "protection_epoch";
 
 pub(super) fn now_ms() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0);
+    #[cfg(test)]
+    return now + NOW_SHIFT_MS.with(std::cell::Cell::get);
+    #[cfg(not(test))]
+    now
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Tests: the clock of the core moved on by this many milliseconds (in this thread).
+    pub(crate) static NOW_SHIFT_MS: std::cell::Cell<i64> = const { std::cell::Cell::new(0) };
 }
 
 pub(super) fn new_id() -> [u8; 16] {
@@ -129,10 +139,20 @@ pub struct EntryData {
     pub id: Vec<u8>,
     pub entry_type: String,
     pub fields: Vec<FieldData>,
-    pub tags: Vec<String>,
-    pub folder: Option<String>,
+    /// Tags and folder. `get_entry` always gives them; for `save_entry`, `None` keeps those the
+    /// entry has (H8: an edit that does not show them must not drop them; a new entry gets
+    /// none).
+    pub placement: Option<EntryPlacement>,
     pub modified: i64,
     pub revision: u64,
+}
+
+/// The tags and the folder of a GhulPass entry.
+#[derive(uniffi::Record, Clone, Debug, PartialEq, Default)]
+pub struct EntryPlacement {
+    pub tags: Vec<String>,
+    /// `None`: in no folder.
+    pub folder: Option<String>,
 }
 
 #[derive(uniffi::Record, Clone, Debug, PartialEq)]
@@ -431,6 +451,10 @@ pub(super) struct Open {
     pub(super) password_key: PasswordKey,
     pub(super) suite: UnlockedContainer,
     pub(super) vaults: Vec<OpenVault>,
+    /// Opened with the recovery code (H3): until the next lock, a change of the protection needs
+    /// the (new) master password alone, so a user who lost every key and key file can add new
+    /// ones, remove the lost ones and get a new recovery code.
+    pub(super) recovered: bool,
 }
 
 impl Open {
@@ -503,7 +527,7 @@ impl Open {
     }
 
     /// Notes a change of the protection: the epoch grows (see [`EPOCH_KEY`]). Use
-    /// [`GhulSuite::protection_changed`], which also tells the device.
+    /// [`GhulSuite::commit_protection`], which also tells the device.
     fn bump_epoch(&mut self) -> Result<()> {
         let epoch: u64 = setting(&self.suite, EPOCH_KEY);
         put_setting(&mut self.suite, EPOCH_KEY, &(epoch + 1))
@@ -602,12 +626,21 @@ pub struct GhulSuite {
     /// A lock was asked for while a call (e.g. a slow import) still held the open suite: the
     /// suite counts as locked at once and is dropped as soon as that call ends (F92).
     lock_pending: AtomicBool,
+    /// Grows with every `lock` (H10): an unlock or `archive_accept` that started before a lock
+    /// does not open the suite afterwards (see `set_open`).
+    lock_gen: std::sync::atomic::AtomicU64,
+    /// Read-modify-write of the device's notes (`archive-seen.json`) one at a time (M5).
+    pub(super) seen_lock: Mutex<()>,
+    /// One replace of the working copy (or its recovery) at a time (see `finish_earlier_replace`).
+    pub(super) replace_lock: Mutex<()>,
     /// The time zone database of the device (see `set_time_zones`).
     pub(super) zones: Mutex<Option<Arc<dyn super::caltext::TimeZones>>>,
     /// A checked `.ghlzip` waiting to replace the working copy (see `archive_accept`).
     pub(super) pending: Mutex<Option<super::archive::Pending>>,
     /// Grows with every write of a container (see `archive_saved`, `single_saved`).
     pub(super) changes: std::sync::atomic::AtomicU64,
+    /// Grows with every write or removal of a vault file (see `content_change`).
+    pub(super) content_changes: std::sync::atomic::AtomicU64,
     /// Grows with every lock and cancel: a file checked meanwhile is not kept (see `archive_open`).
     pub(super) pending_gen: std::sync::atomic::AtomicU64,
     /// The last `archive_accept` got as far as removing this device's data of the old state.
@@ -817,24 +850,103 @@ fn apply(e: &mut Entry, data: EntryData) {
         .map(|f| (f.name, from_field_value(f.value)))
         .filter(|(_, v)| !matches!(v, Field::Text(s) | Field::Secret(s) | Field::Url(s) if s.is_empty()))
         .collect();
-    e.tags = data.tags;
-    e.folder = data.folder.filter(|f| !f.is_empty());
+    if let Some(p) = data.placement {
+        e.tags = p.tags;
+        e.folder = p.folder.filter(|f| !f.is_empty());
+    }
 }
 
 pub(super) fn slot_label(c: &UnlockedContainer, s: &Slot) -> (String, i64) {
     c.payload.slots.get(&crate::kdf::hex(s.id())).map(|m| (m.label.clone(), m.created)).unwrap_or_default()
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Tests: runs once at the next point where a call that started before would open the suite
+    /// or keep a confirmation (`set_open`, `confirm_factors`), e.g. a lock from another thread.
+    pub(crate) static LOCK_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const { std::cell::RefCell::new(None) };
+    /// Tests: added to the age of a confirmation of both factors (the two minutes of
+    /// `confirm_factors`).
+    pub(crate) static CLOCK_SHIFT: std::cell::Cell<std::time::Duration> = const { std::cell::Cell::new(std::time::Duration::ZERO) };
+}
+
+#[cfg(test)]
+pub(super) fn run_lock_hook() {
+    if let Some(f) = LOCK_HOOK.with(|h| h.borrow_mut().take()) {
+        f();
+    }
+}
+
+/// How long ago a confirmation of both factors was given.
+fn ticket_age(t: std::time::Instant) -> std::time::Duration {
+    #[cfg(test)]
+    return t.elapsed() + CLOCK_SHIFT.with(std::cell::Cell::get);
+    #[cfg(not(test))]
+    t.elapsed()
+}
+
+/// In the device's own folder: older copies of containers are still to be removed (see
+/// `purge_old_copies`).
+pub(super) const PURGE_PENDING: &str = "purge-pending";
+
+#[cfg(test)]
+thread_local! {
+    /// Tests: no older copy can be removed (as if another program held them open).
+    pub(crate) static PURGE_FAILS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// How long a confirmation of both factors (`confirm_factors`) holds.
+pub(super) const TICKET_VALIDITY: std::time::Duration = std::time::Duration::from_secs(120);
+
 impl GhulSuite {
-    fn guard(&self) -> MutexGuard<'_, Option<Open>> {
-        self.open.lock().unwrap_or_else(|p| p.into_inner())
+    /// Locks without counting a new lock generation: the suite counts as locked at once, its
+    /// keys go (see `lock`). `archive_accept` uses it for its own lock, so a lock from outside
+    /// during the call still wins.
+    pub(super) fn lock_now(&self) {
+        self.lock_pending.store(true, Ordering::SeqCst);
+        *self.factors_confirmed.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        // A checked suite file holds its keys: not past locking either.
+        self.set_pending(None);
+        self.drop_open(false);
     }
 
-    /// Unlocked: a lock asked for before is done with.
-    pub(super) fn set_open(&self, open: Open) {
+    /// The open suite. A call that panicked while it held it (the core unwinds, M28) may have
+    /// left it half changed (a change of the protection, for one): it is dropped then, the suite
+    /// is locked, and the next unlock reads what is on the disk.
+    fn guard(&self) -> MutexGuard<'_, Option<Open>> {
+        self.open.lock().unwrap_or_else(|p| self.poisoned(p.into_inner()))
+    }
+
+    fn poisoned<'a>(&self, mut g: MutexGuard<'a, Option<Open>>) -> MutexGuard<'a, Option<Open>> {
+        *g = None;
+        self.open.clear_poison();
+        g
+    }
+
+    /// The lock generation now: taken when an unlock (or `archive_accept`) starts, given to
+    /// [`Self::set_open`] at its end.
+    pub(super) fn lock_gen_now(&self) -> u64 {
+        self.lock_gen.load(Ordering::SeqCst)
+    }
+
+    /// Unlocked: a lock asked for before the call started (`gen`) is done with. A lock asked for
+    /// after it started wins (H10): the suite stays locked and the call ends with `Locked`.
+    pub(super) fn set_open(&self, open: Open, gen: u64) -> Result<()> {
+        #[cfg(test)]
+        run_lock_hook();
         let mut guard = self.guard();
-        self.lock_pending.store(false, Ordering::SeqCst);
+        if self.lock_gen.load(Ordering::SeqCst) != gen {
+            return Err(GhulError::Locked);
+        }
         *guard = Some(open);
+        self.lock_pending.store(false, Ordering::SeqCst);
+        // `lock` counts first and marks the pending lock after: a lock counted by now either
+        // is seen here, or its mark comes after the one cleared above and drops the suite.
+        if self.lock_gen.load(Ordering::SeqCst) != gen {
+            *guard = None;
+            return Err(GhulError::Locked);
+        }
+        Ok(())
     }
 
     /// Drops the open suite (if a lock is still pending). With `wait` false it gives up at once
@@ -842,7 +954,7 @@ impl GhulSuite {
     fn drop_open(&self, wait: bool) -> bool {
         let mut guard = match self.open.try_lock() {
             Ok(g) => g,
-            Err(TryLockError::Poisoned(p)) => p.into_inner(),
+            Err(TryLockError::Poisoned(p)) => self.poisoned(p.into_inner()),
             Err(TryLockError::WouldBlock) if wait => self.guard(),
             Err(TryLockError::WouldBlock) => return false,
         };
@@ -886,8 +998,19 @@ impl GhulSuite {
     /// The suite file, or, if it is missing, any readable vault file of the folder. All
     /// containers carry the same slots, so each of them can be used to unlock.
     pub(super) fn anchor(&self) -> Result<LockedContainer> {
-        if let Some(l) = self.read_locked(SUITE_FILE)? {
-            return Ok(l);
+        self.anchor_with(false)
+    }
+
+    /// [`Self::anchor`]; with `past_damaged`, a suite file that cannot be read (cut off,
+    /// damaged) is passed over as well: the vault files carry the same protection. Only for the
+    /// proof before deleting or replacing (round 6, M4): unlocking with a vault as anchor would
+    /// make a new suite file without the protection epoch.
+    pub(super) fn anchor_with(&self, past_damaged: bool) -> Result<LockedContainer> {
+        match self.read_locked(SUITE_FILE) {
+            Ok(Some(l)) => return Ok(l),
+            Ok(None) => {}
+            Err(GhulError::Corrupted { .. }) if past_damaged => {}
+            Err(e) => return Err(e),
         }
         for f in self.vault_files()? {
             if let Ok(Some(l)) = self.read_locked(&f) {
@@ -1016,6 +1139,7 @@ impl GhulSuite {
     pub(super) fn save_vault(&self, o: &mut Open, id: &str) -> Result<()> {
         let (r, c) = o.vault_mut(id)?;
         let file = r.file.clone();
+        self.note_content_change();
         self.save_container(c, &file)?;
         self.save_container(&mut o.suite, SUITE_FILE)
     }
@@ -1024,6 +1148,7 @@ impl GhulSuite {
     pub(super) fn save_all(&self, o: &mut Open) -> Result<()> {
         // Marked before the first file changes (see `mark_unsaved`).
         self.mark_unsaved()?;
+        self.note_content_change();
         for v in &mut o.vaults {
             if let Some(c) = v.container.as_mut() {
                 let data = c.seal(&mut OsRng)?;
@@ -1033,25 +1158,41 @@ impl GhulSuite {
         self.save_container(&mut o.suite, SUITE_FILE)
     }
 
-    /// Opens the folder's vaults with the suite's password and factor secret and keeps the session.
-    pub(super) fn finish_unlock(&self, password_key: PasswordKey, suite: UnlockedContainer, full: bool) -> Result<()> {
+    /// Opens the folder's vaults with the suite's password and factor secret and keeps the
+    /// session, unless the suite was locked since the call started (`gen`, see `set_open`).
+    pub(super) fn finish_unlock(
+        &self,
+        password_key: PasswordKey,
+        suite: UnlockedContainer,
+        full: bool,
+        gen: u64,
+    ) -> Result<()> {
+        let open = self.open_folder(password_key, suite, full)?;
+        self.set_open(open, gen)
+    }
+
+    /// Opens the folder's vaults with the suite's password and factor secret (not kept yet).
+    pub(super) fn open_folder(&self, password_key: PasswordKey, suite: UnlockedContainer, full: bool) -> Result<Open> {
         let s = FactorSecret::from_bytes(*suite.factor_secret().expose());
         let kdf = suite.header().kdf.clone();
         let opener = Opener::Factors { pk: &password_key, s: &s, suite_id: suite.header().suite_id, kdf: &kdf };
         let vaults = self.scan(&opener)?;
-        let mut open = Open { password_key, suite, vaults };
+        let mut open = Open { password_key, suite, vaults, recovered: false };
         let suite_missing = self.storage.read(SUITE_FILE.to_owned())?.is_none();
         if open.harmonize(now_ms())? {
             self.save_all(&mut open)?;
+            // Vaults that had another protection: their copies before go (H7).
+            self.purge_old_copies();
         } else if suite_missing {
             self.save_container(&mut open.suite, SUITE_FILE)?;
         }
+        // Copies that could not be removed after an earlier change go now.
+        self.retry_purge();
         if full {
             super::quick::refresh_stamps(&self.local_dir, open.password_key.expose(), now_ms());
         }
         self.docs_tidy(&open);
-        self.set_open(open);
-        Ok(())
+        Ok(open)
     }
 
     /// Creates a vault with the suite's protection and recovery code.
@@ -1140,13 +1281,73 @@ impl GhulSuite {
         Ok(())
     }
 
-    /// Notes a change of the protection: the epoch grows in the suite, and this device knows from
-    /// now on that files with an older protection are not to be opened.
-    pub(super) fn protection_changed(&self, o: &mut Open) -> Result<()> {
+    /// Saves a change of the protection made in `o`: the protection before is noted as an
+    /// earlier one, the epoch grows in the suite, every file is written, and only then this
+    /// device notes the new epoch (M4: files with an older protection are not opened from now
+    /// on) and removes every older copy of the containers (H7, see `purge_old_copies`).
+    pub(super) fn commit_protection(&self, o: &mut Open) -> Result<()> {
         // The suite file on the disk still has the protection before (it is saved after this).
         self.note_protection_left(&o.suite.header().suite_id)?;
         o.bump_epoch()?;
-        self.note_epoch(&o.suite.header().suite_id, o.epoch())
+        self.save_all(o)?;
+        self.note_epoch(&o.suite.header().suite_id, o.epoch())?;
+        // The change is saved: tidying up never makes it fail (it is tried again later).
+        self.purge_old_copies();
+        Ok(())
+    }
+
+    /// H7: after a change of the protection, no copy of a container with the protection before
+    /// stays on the device: the `.bak` and `.tmp` of the suite file and of every vault file in
+    /// the working copy (`write_atomic` keeps the version before as `.bak`), and the copies of a
+    /// replaced working copy in the local folder (`replace-old`) unless a replace still needs
+    /// them (its journal is there). Called once the new files are written. It never fails the
+    /// action it follows: a copy that cannot be removed now (Windows: a virus scanner or a
+    /// backup program holds it) is noted ([`PURGE_PENDING`]) and removed at the next unlock or
+    /// start ([`Self::retry_purge`]).
+    pub(super) fn purge_old_copies(&self) {
+        let mut left = 0usize;
+        if let Some(dir) = self.storage.content_dir().map(PathBuf::from) {
+            for e in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+                let n = e.file_name().to_string_lossy().into_owned();
+                let Some(stem) = n.strip_suffix(".bak").or_else(|| n.strip_suffix(".tmp")) else { continue };
+                if (stem == SUITE_FILE || is_vault_file(stem)) && e.file_type().is_ok_and(|t| t.is_file()) {
+                    #[cfg(test)]
+                    if PURGE_FAILS.with(std::cell::Cell::get) {
+                        left += 1;
+                        continue;
+                    }
+                    // Only removed, never overwritten in place: a `.bak` may be a hard link to
+                    // the live file (a write whose rename failed), and overwriting it would wipe
+                    // that file. It is ciphertext; on flash overwriting is no sure wipe anyway.
+                    if let Err(err) = std::fs::remove_file(e.path()) {
+                        eprintln!("GhulSuite: an older copy could not be removed yet ({n}): {err}");
+                        left += 1;
+                    }
+                }
+            }
+        }
+        self.purge_replace_old();
+        let mark = self.local_dir.join(PURGE_PENDING);
+        if left > 0 {
+            let _ = std::fs::create_dir_all(&self.local_dir);
+            let _ = std::fs::write(&mark, b"");
+        } else {
+            let _ = std::fs::remove_file(&mark);
+        }
+    }
+
+    /// Removes the older copies an earlier [`Self::purge_old_copies`] could not remove.
+    pub(super) fn retry_purge(&self) {
+        if self.local_dir.join(PURGE_PENDING).exists() {
+            self.purge_old_copies();
+        }
+    }
+
+    /// Copies kept for a working copy that is replaced: gone unless its journal still needs them.
+    pub(super) fn purge_replace_old(&self) {
+        if !self.local_dir.join(super::archive::REPLACE_JOURNAL).exists() {
+            let _ = std::fs::remove_dir_all(self.local_dir.join(super::archive::REPLACE_OLD_DIR));
+        }
     }
 
     /// Copies a new factor slot (created in the suite) into every vault and saves all.
@@ -1156,8 +1357,60 @@ impl GhulSuite {
                 c.insert_slot(slot.clone(), label, now)?;
             }
         }
-        self.protection_changed(o)?;
-        self.save_all(o)
+        self.commit_protection(o)
+    }
+
+    /// A change of the protection of the open suite (M4). `f` checks first and sets `began`
+    /// before it changes anything in memory; if it fails after that (e.g. a file cannot be
+    /// written), the suite is locked at once: neither the new protection nor a mix of both stays
+    /// in memory for the next change to write. The next unlock reads what is on the disk.
+    pub(super) fn change_protection<T>(&self, f: impl FnOnce(&mut Open, &mut bool) -> Result<T>) -> Result<T> {
+        let mut guard = self.guard();
+        if self.lock_pending.swap(false, Ordering::SeqCst) {
+            *guard = None;
+        }
+        let mut began = false;
+        let result = match guard.as_mut() {
+            None => Err(GhulError::Locked),
+            Some(o) => f(o, &mut began),
+        };
+        if result.is_err() && began {
+            *guard = None;
+            *self.factors_confirmed.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        }
+        if self.lock_pending.swap(false, Ordering::SeqCst) {
+            *guard = None;
+        }
+        result
+    }
+}
+
+impl GhulSuite {
+    /// Opens everything with the recovery code and writes it again with `new_password` (see
+    /// `unlock_with_recovery_code`); not kept yet.
+    pub(super) fn open_with_code(&self, code: String, new_password: String) -> Result<Open> {
+        let code = Zeroizing::new(code);
+        let new_password = Zeroizing::new(new_password);
+        let code = RecoveryCode::parse(&code)?;
+        check_master_password(&new_password)?;
+        let anchor = self.anchor()?.recover(&code)?;
+        let mut kdf = anchor.header().kdf.clone();
+        OsRng.fill_bytes(&mut kdf.salt);
+        let pk = PasswordKey::derive(&new_password, &kdf)?;
+        let suite = self.suite_from_anchor(anchor, &pk)?;
+        let vaults = self.scan(&Opener::Code(&code))?;
+        let mut open = Open { password_key: PasswordKey::from_bytes(*pk.expose()), suite, vaults, recovered: true };
+        open.suite.rekey(&pk, kdf.clone(), &mut OsRng)?;
+        open.harmonize(now_ms())?;
+        for (c, _) in open.containers_mut() {
+            c.rekey(&pk, kdf.clone(), &mut OsRng)?;
+        }
+        open.renew_keys(false, now_ms())?;
+        self.commit_protection(&mut open)?;
+        super::quick::delete_all(&self.local_dir);
+        super::quick::refresh_stamps(&self.local_dir, open.password_key.expose(), now_ms());
+        self.docs_tidy(&open);
+        Ok(open)
     }
 }
 
@@ -1172,9 +1425,13 @@ impl GhulSuite {
             local_dir: PathBuf::from(local_dir),
             open: Mutex::new(None),
             lock_pending: AtomicBool::new(false),
+            lock_gen: std::sync::atomic::AtomicU64::new(0),
+            seen_lock: Mutex::new(()),
+            replace_lock: Mutex::new(()),
             zones: Mutex::new(None),
             pending: Mutex::new(None),
             changes: std::sync::atomic::AtomicU64::new(0),
+            content_changes: std::sync::atomic::AtomicU64::new(0),
             pending_gen: std::sync::atomic::AtomicU64::new(0),
             wiped: AtomicBool::new(false),
             docs_limit: std::sync::atomic::AtomicU64::new(super::docs::DOCS_LIMIT),
@@ -1189,6 +1446,10 @@ impl GhulSuite {
         if let Err(e) = suite.recover_replace() {
             eprintln!("GhulSuite: the working copy could not be put back after a stop: {e}");
         }
+        // Older copies an earlier change could not remove (H7), old documents of a replace that
+        // ended (round 5, M2).
+        suite.retry_purge();
+        suite.tidy_asides();
         suite
     }
 
@@ -1207,7 +1468,7 @@ impl GhulSuite {
         }
         match self.open.try_lock() {
             Ok(g) => g.is_some(),
-            Err(TryLockError::Poisoned(p)) => p.into_inner().is_some(),
+            Err(TryLockError::Poisoned(p)) => self.poisoned(p.into_inner()).is_some(),
             // A call works with the open suite right now (F92: never wait for it here).
             Err(TryLockError::WouldBlock) => true,
         }
@@ -1228,11 +1489,16 @@ impl GhulSuite {
         listener: Option<Arc<dyn FidoListener>>,
         pin: Option<String>,
     ) -> Result<SetupResult> {
+        let gen = self.lock_gen_now();
         let password = Zeroizing::new(options.password.clone());
         let pin = pin.map(Zeroizing::new);
         if self.exists()? {
             return Err(GhulError::AlreadyExists);
         }
+        check_master_password(&password)?;
+        // A journal of a replace of a suite that is gone (round 6, M1): it must never put that
+        // suite back over the new one.
+        self.discard_journal();
         let keyfile = parse_keyfile(options.keyfile.clone())?;
         let cost = KdfCost { memory_kib: options.memory_kib, iterations: options.iterations, parallelism: 1 };
         let keys = SuiteKeys::create(&password, cost, &mut OsRng)?;
@@ -1269,16 +1535,19 @@ impl GhulSuite {
         }
         let (_, code) = suite.add_recovery_slot(&options.recovery_label, now, &mut OsRng)?;
         super::setup::mark_unconfirmed(&mut suite)?;
-        let mut open =
-            Open { password_key: PasswordKey::from_bytes(*keys.password_key.expose()), suite, vaults: Vec::new() };
+        let mut open = Open {
+            password_key: PasswordKey::from_bytes(*keys.password_key.expose()),
+            suite,
+            vaults: Vec::new(),
+            recovered: false,
+        };
         for v in &options.vaults {
             self.add_vault(&mut open, v.kind, &v.name)?;
         }
         self.save_all(&mut open)?;
-        self.set_open(open);
+        self.set_open(open, gen)?;
         // Both factors were just used: the backup of a key may follow with the password alone.
-        *self.factors_confirmed.lock().unwrap_or_else(|e| e.into_inner()) =
-            backup_follows.then(std::time::Instant::now);
+        self.set_ticket(backup_follows.then(std::time::Instant::now), gen)?;
         Ok(SetupResult { recovery_code: Some(code.to_display().to_string()) })
     }
 
@@ -1297,6 +1566,7 @@ impl GhulSuite {
         keyfile: Option<Vec<u8>>,
         recovery_label: String,
     ) -> Result<SetupResult> {
+        let gen = self.lock_gen_now();
         let password = Zeroizing::new(password);
         let pin = pin.map(Zeroizing::new);
         if self.exists()? {
@@ -1329,9 +1599,14 @@ impl GhulSuite {
         let suite = self.suite_for_vault(&vault, &pk)?;
         let name = self::vault_name(&vault, &file);
         let reference = VaultRef { id, kind: kind.container().name().into(), name, file };
-        let mut open = Open { password_key: pk, suite, vaults: vec![OpenVault { reference, container: Some(vault) }] };
+        let mut open = Open {
+            password_key: pk,
+            suite,
+            vaults: vec![OpenVault { reference, container: Some(vault) }],
+            recovered: false,
+        };
         self.save_all(&mut open)?;
-        self.set_open(open);
+        self.set_open(open, gen)?;
         Ok(SetupResult { recovery_code: new_code })
     }
 
@@ -1345,6 +1620,8 @@ impl GhulSuite {
         pin: Option<String>,
         keyfile: Option<Vec<u8>>,
     ) -> Result<()> {
+        let gen = self.lock_gen_now();
+        self.finish_earlier_replace()?;
         let password = Zeroizing::new(password);
         let pin = pin.map(Zeroizing::new);
         let locked = self.anchor()?;
@@ -1359,36 +1636,24 @@ impl GhulSuite {
         let pk = PasswordKey::derive(&password, &locked.header().kdf)?;
         let anchor = locked.unlock(&pk, &s)?;
         let suite = self.suite_from_anchor(anchor, &pk)?;
-        self.finish_unlock(pk, suite, true)?;
-        Ok(())
+        self.finish_unlock(pk, suite, true, gen)
     }
 
     /// Emergency: opens everything with the recovery code alone and sets a new master password.
-    /// Keys, key files and the recovery code stay valid.
+    /// Keys, key files and the recovery code stay valid. Until the next lock, a change of the
+    /// protection needs the new master password alone (see `opened_with_recovery_code`).
     pub fn unlock_with_recovery_code(&self, code: String, new_password: String) -> Result<()> {
-        let code = Zeroizing::new(code);
-        let new_password = Zeroizing::new(new_password);
-        let code = RecoveryCode::parse(&code)?;
-        let anchor = self.anchor()?.recover(&code)?;
-        let mut kdf = anchor.header().kdf.clone();
-        OsRng.fill_bytes(&mut kdf.salt);
-        let pk = PasswordKey::derive(&new_password, &kdf)?;
-        let suite = self.suite_from_anchor(anchor, &pk)?;
-        let vaults = self.scan(&Opener::Code(&code))?;
-        let mut open = Open { password_key: PasswordKey::from_bytes(*pk.expose()), suite, vaults };
-        open.suite.rekey(&pk, kdf.clone(), &mut OsRng)?;
-        open.harmonize(now_ms())?;
-        for (c, _) in open.containers_mut() {
-            c.rekey(&pk, kdf.clone(), &mut OsRng)?;
-        }
-        open.renew_keys(false, now_ms())?;
-        self.protection_changed(&mut open)?;
-        self.save_all(&mut open)?;
-        super::quick::delete_all(&self.local_dir);
-        super::quick::refresh_stamps(&self.local_dir, open.password_key.expose(), now_ms());
-        self.docs_tidy(&open);
-        self.set_open(open);
-        Ok(())
+        let gen = self.lock_gen_now();
+        self.finish_earlier_replace()?;
+        let open = self.open_with_code(code, new_password)?;
+        self.set_open(open, gen)
+    }
+
+    /// Whether the open suite was opened with the recovery code (since the last lock): a change
+    /// of the protection then takes the master password alone as proof, so the app asks only
+    /// for it (H3). False while locked.
+    pub fn opened_with_recovery_code(&self) -> bool {
+        self.with_open(|o| Ok(o.recovered)).unwrap_or(false)
     }
 
     /// Locks immediately; all secrets are wiped from memory.
@@ -1398,11 +1663,9 @@ impl GhulSuite {
     /// still holds them, as soon as it ends. Callers then run `finish_lock` on a background
     /// thread: it covers a call ending in the same moment.
     pub fn lock(&self) {
-        self.lock_pending.store(true, Ordering::SeqCst);
-        *self.factors_confirmed.lock().unwrap_or_else(|e| e.into_inner()) = None;
-        // A checked suite file holds its keys: not past locking either.
-        self.set_pending(None);
-        self.drop_open(false);
+        // Counted before the lock is marked (see `set_open`).
+        self.lock_gen.fetch_add(1, Ordering::SeqCst);
+        self.lock_now();
     }
 
     /// After `lock`, on a background thread: waits until a call still holding the open suite has
@@ -1413,10 +1676,32 @@ impl GhulSuite {
 
     // --- quick unlock ------------------------------------------------------------------------
 
-    /// Enables quick unlock under `name` (`bio` or `pin`); returns the quick key for the platform to protect.
-    pub fn quick_unlock_enable(&self, password: String, name: String, pin: Option<String>) -> Result<Vec<u8>> {
+    /// Enables quick unlock under `name` (`bio` or `pin`) for `max_age_seconds` after each full
+    /// unlock; returns the quick key for the platform to protect. Like a change of the
+    /// protection it needs both factors (`proof`, or the password alone right after
+    /// `confirm_factors`, H6): who saw the password and finds the app unlocked must not set up a
+    /// way in without the key. The validity is stored inside the quick unlock file, under its
+    /// encryption: it can only be changed by enabling quick unlock again.
+    #[allow(clippy::too_many_arguments)]
+    pub fn quick_unlock_enable(
+        &self,
+        proof: FactorProof,
+        transport: Option<Arc<dyn HidTransport>>,
+        listener: Option<Arc<dyn FidoListener>>,
+        name: String,
+        pin: Option<String>,
+        max_age_seconds: u64,
+    ) -> Result<Vec<u8>> {
         let pin = pin.map(Zeroizing::new);
-        self.require_password(&Zeroizing::new(password))?;
+        if max_age_seconds == 0 {
+            return Err(GhulError::InvalidInput { msg: "quick unlock needs a validity".into() });
+        }
+        // Checked before a key is touched.
+        super::quick::path(&self.local_dir, &name)?;
+        if let Some(p) = &pin {
+            super::quick::check_pin(p)?;
+        }
+        self.require_factors(&proof, transport.as_ref(), listener.as_ref())?;
         self.with_open(|o| {
             // The device's quick unlock belongs to the own suite.
             super::single::refuse_single(o)?;
@@ -1428,6 +1713,7 @@ impl GhulSuite {
                 o.suite.factor_secret().expose(),
                 pin.as_deref().map(|p| p.as_str()),
                 now_ms(),
+                (max_age_seconds.min(i64::MAX as u64 / 1000) * 1000) as i64,
             )?;
             Ok(qk.to_vec())
         })
@@ -1437,13 +1723,11 @@ impl GhulSuite {
         super::quick::path(&self.local_dir, &name).map(|p| p.exists()).unwrap_or(false)
     }
 
-    pub fn unlock_quick(
-        &self,
-        name: String,
-        quick_key: Vec<u8>,
-        pin: Option<String>,
-        max_age_seconds: u64,
-    ) -> Result<()> {
+    /// Unlocks with quick unlock, within the validity chosen when it was enabled (counted from
+    /// the last full unlock).
+    pub fn unlock_quick(&self, name: String, quick_key: Vec<u8>, pin: Option<String>) -> Result<()> {
+        let gen = self.lock_gen_now();
+        self.finish_earlier_replace()?;
         let quick_key = Zeroizing::new(quick_key);
         let pin = pin.map(Zeroizing::new);
         let locked = self.read_locked(SUITE_FILE)?.ok_or(GhulError::QuickUnlockUnavailable)?;
@@ -1453,7 +1737,6 @@ impl GhulSuite {
             &locked.header().suite_id,
             &quick_key,
             pin.as_deref().map(|p| p.as_str()),
-            (max_age_seconds.min(i64::MAX as u64 / 1000) * 1000) as i64,
             now_ms(),
         )?;
         let pk = PasswordKey::from_bytes(*secret.password_key);
@@ -1464,7 +1747,7 @@ impl GhulSuite {
                 return Err(GhulError::QuickUnlockUnavailable);
             }
         };
-        self.finish_unlock(pk, suite, false)
+        self.finish_unlock(pk, suite, false, gen)
     }
 
     pub fn quick_unlock_disable(&self, name: String) -> Result<()> {
@@ -1539,6 +1822,7 @@ impl GhulSuite {
             super::single::refuse_single(o)?;
             let pos = o.vaults.iter().position(|v| v.reference.id == id).ok_or(GhulError::NotFound)?;
             let v = o.vaults.remove(pos);
+            self.note_content_change();
             self.mark_unsaved()?;
             self.storage.delete(v.reference.file.clone())?;
             // The content files of a GhulDocs vault go with it (what is left goes at the next unlock).
@@ -1650,8 +1934,7 @@ impl GhulSuite {
                     .iter()
                     .filter_map(|(k, v)| to_field_value(v).map(|value| FieldData { name: k.clone(), value }))
                     .collect(),
-                tags: e.tags.clone(),
-                folder: e.folder.clone(),
+                placement: Some(EntryPlacement { tags: e.tags.clone(), folder: e.folder.clone() }),
                 modified: e.modified,
                 revision: e.revision,
             })
@@ -1935,7 +2218,10 @@ impl GhulSuite {
 
     /// Unencrypted export of one vault: GhulPass as CSV, GhulAuth as `otpauth://` links (one per
     /// line). Requires the master password, because the result is readable by anyone.
-    pub fn export_plain(&self, vault_id: String, password: String) -> Result<Vec<u8>> {
+    /// `spreadsheet_safe`: the CSV is for a spreadsheet program (cells that would run as a
+    /// formula get an apostrophe); without it the values go as they are, for another password
+    /// manager (M29). The own import reads both.
+    pub fn export_plain(&self, vault_id: String, password: String, spreadsheet_safe: bool) -> Result<Vec<u8>> {
         if !self.verify_password(password)? {
             return Err(GhulError::WrongPassword);
         }
@@ -1943,7 +2229,7 @@ impl GhulSuite {
             let (r, c) = o.vault_mut(&vault_id)?;
             refuse_docs_file(VaultKind::from_name(&r.kind))?;
             let text = if r.kind == "pass" {
-                super::import::export_csv(&c.payload.entries)
+                super::import::export_csv(&c.payload.entries, spreadsheet_safe)
             } else if r.kind == "cal" {
                 let name = vault_name(c, &r.file);
                 super::cal::export_vault_ics(c, &name)
@@ -1955,8 +2241,14 @@ impl GhulSuite {
     }
 
     /// Some entries of a vault as unencrypted CSV (same columns as the full export). Like the full
-    /// export, only with the master password.
-    pub fn export_entries(&self, vault_id: String, ids: Vec<Vec<u8>>, password: String) -> Result<Vec<u8>> {
+    /// export, only with the master password; `spreadsheet_safe` as there.
+    pub fn export_entries(
+        &self,
+        vault_id: String,
+        ids: Vec<Vec<u8>>,
+        password: String,
+        spreadsheet_safe: bool,
+    ) -> Result<Vec<u8>> {
         if !self.verify_password(password)? {
             return Err(GhulError::WrongPassword);
         }
@@ -1969,7 +2261,7 @@ impl GhulSuite {
                 return Err(GhulError::NotFound);
             }
             let text = if r.kind == "pass" {
-                super::import::export_csv(&picked)
+                super::import::export_csv(&picked, spreadsheet_safe)
             } else {
                 super::import::export_otpauth(&picked)
             };
@@ -2028,10 +2320,11 @@ impl GhulSuite {
         })?;
         let (cred_id, prf_input, output) =
             with_authenticator(&transport, Some(&listener), |a| register_key(a, &pin, &known))?;
-        self.with_open(|o| {
+        self.change_protection(|o, began| {
             super::single::refuse_single(o)?;
             let reg = Fido2Registration { rp_id: RP_ID, credential_id: &cred_id, prf_input, hmac_output: &output };
             let now = now_ms();
+            *began = true;
             let slot = o.suite.add_fido2_slot(&reg, &label, now, &mut OsRng)?;
             self.insert_everywhere(o, slot, &label, now)
         })
@@ -2048,13 +2341,14 @@ impl GhulSuite {
     ) -> Result<()> {
         let keyfile = Keyfile::parse(&Zeroizing::new(keyfile))?;
         self.require_factors(&proof, transport.as_ref(), listener.as_ref())?;
-        self.with_open(|o| {
+        self.change_protection(|o, began| {
             super::single::refuse_single(o)?;
             let id = keyfile.id();
             if o.suite.slots().iter().any(|s| matches!(s, Slot::Keyfile(k) if k.keyfile_id == id)) {
                 return Err(GhulError::AlreadyExists);
             }
             let now = now_ms();
+            *began = true;
             let slot = o.suite.add_keyfile_slot(&keyfile, &label, now, &mut OsRng)?;
             self.insert_everywhere(o, slot, &label, now)
         })
@@ -2069,17 +2363,17 @@ impl GhulSuite {
         label: String,
     ) -> Result<String> {
         self.require_factors(&proof, transport.as_ref(), listener.as_ref())?;
-        self.with_open(|o| {
+        self.change_protection(|o, began| {
             super::single::refuse_single(o)?;
             let code = RecoveryCode::generate(&mut OsRng);
             let now = now_ms();
+            *began = true;
             for (c, _) in o.containers_mut() {
                 c.set_recovery_code(&code, &label, now, &mut OsRng)?;
             }
             // The old code with an old copy of a file must not open what is written now.
             o.renew_keys(false, now)?;
-            self.protection_changed(o)?;
-            self.save_all(o)?;
+            self.commit_protection(o)?;
             Ok(code.to_display().to_string())
         })
     }
@@ -2096,7 +2390,7 @@ impl GhulSuite {
         let id: [u8; 16] =
             slot_id.as_slice().try_into().map_err(|_| GhulError::InvalidInput { msg: "invalid slot id".into() })?;
         self.require_factors(&proof, transport.as_ref(), listener.as_ref())?;
-        self.with_open(|o| {
+        self.change_protection(|o, began| {
             super::single::refuse_single(o)?;
             let slot = o.suite.slots().iter().find(|s| *s.id() == id).cloned().ok_or(GhulError::NotFound)?;
             if !slot.provides_factor() {
@@ -2110,6 +2404,7 @@ impl GhulSuite {
             if left.len() < 2 && left.iter().any(|s| matches!(s, Slot::Fido2(_))) {
                 return Err(GhulError::BackupFactorRequired);
             }
+            *began = true;
             for (c, _) in o.containers_mut() {
                 match c.remove_slot(&id) {
                     Ok(()) | Err(crate::vault::VaultError::SlotNotFound) => {}
@@ -2119,8 +2414,7 @@ impl GhulSuite {
             // The removed key with an old copy of a file must not open what is written now:
             // new factor secret for the remaining keys and key files, new container keys.
             o.renew_keys(true, now_ms())?;
-            self.protection_changed(o)?;
-            self.save_all(o)?;
+            self.commit_protection(o)?;
             super::quick::delete_all(&self.local_dir);
             Ok(())
         })
@@ -2136,10 +2430,12 @@ impl GhulSuite {
         listener: Option<Arc<dyn FidoListener>>,
         new_password: String,
     ) -> Result<()> {
+        let new_password = Zeroizing::new(new_password);
+        // Checked before a key is touched.
+        check_master_password(&new_password)?;
         self.require_factors(&proof, transport.as_ref(), listener.as_ref())?;
         let current = Zeroizing::new(proof.password.clone());
-        let new_password = Zeroizing::new(new_password);
-        self.with_open(|o| {
+        self.change_protection(|o, began| {
             super::single::refuse_single(o)?;
             let kdf = o.kdf();
             let old_pk = PasswordKey::derive(&current, &kdf)?;
@@ -2149,14 +2445,14 @@ impl GhulSuite {
             let mut new_kdf = kdf;
             OsRng.fill_bytes(&mut new_kdf.salt);
             let new_pk = PasswordKey::derive(&new_password, &new_kdf)?;
+            *began = true;
             for (c, _) in o.containers_mut() {
                 c.rekey(&new_pk, new_kdf.clone(), &mut OsRng)?;
             }
             o.password_key = new_pk;
             // The old password with an old copy of a file must not open what is written now.
             o.renew_keys(false, now_ms())?;
-            self.protection_changed(o)?;
-            self.save_all(o)?;
+            self.commit_protection(o)?;
             super::quick::delete_all(&self.local_dir);
             Ok(())
         })
@@ -2171,11 +2467,12 @@ impl GhulSuite {
         transport: Option<Arc<dyn HidTransport>>,
         listener: Option<Arc<dyn FidoListener>>,
     ) -> Result<()> {
+        let gen = self.lock_gen_now();
         // Always both factors: a confirmation is not carried on by the password alone.
         *self.factors_confirmed.lock().unwrap_or_else(|e| e.into_inner()) = None;
         self.require_factors(&proof, transport.as_ref(), listener.as_ref())?;
-        *self.factors_confirmed.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
-        Ok(())
+        // Not kept if the suite was locked meanwhile (H10).
+        self.set_ticket(Some(std::time::Instant::now()), gen)
     }
 
     pub fn verify_password(&self, password: String) -> Result<bool> {
@@ -2212,11 +2509,18 @@ impl GhulSuite {
         transport: Option<&Arc<dyn HidTransport>>,
         listener: Option<&Arc<dyn FidoListener>>,
     ) -> Result<()> {
-        self.with_open(|o| super::single::refuse_single(o))?;
-        // Confirmed a moment ago (`confirm_factors`): the password alone, once.
+        let recovered = self.with_open(|o| {
+            super::single::refuse_single(o)?;
+            Ok(o.recovered)
+        })?;
         if proof.pin.is_none() && proof.keyfile.is_none() {
+            // Opened with the recovery code (H3): the new master password alone, until the lock.
+            if recovered {
+                return self.require_password(&Zeroizing::new(proof.password.clone()));
+            }
+            // Confirmed a moment ago (`confirm_factors`): the password alone, once.
             let confirmed = self.factors_confirmed.lock().unwrap_or_else(|e| e.into_inner()).take();
-            if confirmed.is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(120)) {
+            if confirmed.is_some_and(|t| ticket_age(t) < TICKET_VALIDITY) {
                 return self.require_password(&Zeroizing::new(proof.password.clone()));
             }
         }
@@ -2226,6 +2530,20 @@ impl GhulSuite {
         let s = second_factor(&locked, transport, listener, pin.as_deref().map(|p| p.as_str()), keyfile.as_ref())?;
         let pk = PasswordKey::derive(&Zeroizing::new(proof.password.clone()), &locked.header().kdf)?;
         locked.unlock(&pk, &s).map(|_| ())?;
+        Ok(())
+    }
+
+    /// Keeps (or clears) the confirmation of both factors, unless the suite was locked since the
+    /// call started (`gen`): then it is not kept and the call ends with `Locked` (H10).
+    pub(super) fn set_ticket(&self, t: Option<std::time::Instant>, gen: u64) -> Result<()> {
+        #[cfg(test)]
+        run_lock_hook();
+        let mut ticket = self.factors_confirmed.lock().unwrap_or_else(|e| e.into_inner());
+        if self.lock_gen_now() != gen {
+            *ticket = None;
+            return Err(GhulError::Locked);
+        }
+        *ticket = t;
         Ok(())
     }
 

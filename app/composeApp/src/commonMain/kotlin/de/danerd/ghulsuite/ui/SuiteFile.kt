@@ -98,11 +98,13 @@ fun OpenSuiteFile(
     file: PickedSuiteFile,
     onOpened: () -> Unit,
     onCancel: () -> Unit,
+    /** M31: opened from the emergency sheet: the field of the recovery code first. */
+    startWithCode: Boolean = false,
 ) {
     val backend = state.backend
     var protection by remember { mutableStateOf<ProtectionUi?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    var withCode by remember { mutableStateOf(false) }
+    var withCode by remember { mutableStateOf(startWithCode) }
     var password by remember { mutableStateOf("") }
     var pin by remember { mutableStateOf("") }
     var keyfile by remember { mutableStateOf<PickedFile?>(null) }
@@ -124,22 +126,61 @@ fun OpenSuiteFile(
     val needsKey = withKey
     val opened = stringResource(Res.string.file_opened)
     val readOnly = stringResource(Res.string.file_opened_read_only)
+    val byCodeNote = stringResource(Res.string.file_opened_by_code)
+
+    // H5: the file holds another suite than the one here: replacing that needs its proof.
+    val existingProof = remember { ProofInput(backend.settings.factorKey) }
+    var existingWithCode by remember { mutableStateOf(false) }
+    var existingCode by remember { mutableStateOf("") }
+    var replaceError by remember { mutableStateOf<String?>(null) }
 
     fun accept() {
         // Read before accepting: whether the file holds the suite of the working copy.
         val sameSuite = check?.relation.let { it != null && it != ArchiveRelationUi.NO_SUITE && it != ArchiveRelationUi.OTHER_SUITE }
-        state.run(onError = { error = it }, block = { backend.archiveAccept() }) {
+        val replacing = check?.relation == ArchiveRelationUi.OTHER_SUITE
+        state.run(onError = { if (replacing) replaceError = it else error = it }, block = {
+            try {
+                when {
+                    !replacing -> backend.archiveAccept()
+                    existingWithCode -> backend.archiveAcceptReplacing(null, existingCode, state.onTouchNeeded)
+                    else -> backend.archiveAcceptReplacing(existingProof.proof(), null, state.onTouchNeeded)
+                }
+            } catch (e: de.danerd.ghulsuite.model.VaultException) {
+                // The checked file was dropped (the working copy changed since, or it was locked):
+                // it has to be opened again, which the core's text for that case says.
+                if (e.kind == de.danerd.ghulsuite.model.VaultErrorKind.NOT_FOUND) {
+                    throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.INVALID_INPUT, "the working copy changed since the file was checked")
+                }
+                throw e
+            }
+        }) {
+            existingProof.clear()
+            existingCode = ""
             // A file handed over without the right to write it again keeps the place known before
             // only for the same suite (the save there still checks the file); the place of
             // another suite is forgotten, so its file is never offered for overwriting.
             // "Save as" chooses a new one.
-            if (file.ref.id.isNotEmpty()) backend.setSuiteFile(file.ref) else if (!sameSuite) backend.setSuiteFile(null)
+            // M11: opened with the recovery code (an emergency, maybe someone else's file): that
+            // file is not the place to save to; "Save as" puts the new state at a new place and
+            // the old file stays as it was.
+            val byCode = withCode
+            when {
+                byCode -> backend.setSuiteFile(null)
+                file.ref.id.isNotEmpty() -> backend.setSuiteFile(file.ref)
+                !sameSuite -> backend.setSuiteFile(null)
+            }
             backend.settings.factorKey = needsKey
             check = null
             password = ""; pin = ""; code = ""; newPassword = ""; repeat = ""
             state.afterSuiteFileOpened()
-            state.message(opened.replace("%1\$s", file.ref.name) + if (file.ref.id.isEmpty()) "\n" + readOnly else "")
+            state.message(opened.replace("%1\$s", file.ref.name) + (if (file.ref.id.isEmpty()) "\n" + readOnly else "") + if (byCode) "\n" + byCodeNote else "")
             onOpened()
+            if (byCode) {
+                // M11 and H3: a new place for the file, and the steps to do before the lock.
+                state.recoveredOpen = true
+                state.recoveredGuide = true
+                state.askSave()
+            }
         }
     }
 
@@ -211,6 +252,19 @@ fun OpenSuiteFile(
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         for (q in asks) Text(q)
+                        if (c.relation == ArchiveRelationUi.OTHER_SUITE) {
+                            Hint(stringResource(Res.string.file_replace_proof))
+                            if (existingWithCode) {
+                                SecretTextField(existingCode, { existingCode = it; replaceError = null }, stringResource(Res.string.l_recovery_code))
+                                TextButton(onClick = { existingWithCode = false; replaceError = null }) { Text(stringResource(Res.string.wz_delete_with_factors)) }
+                            } else {
+                                ProofFields(state, existingProof) { replaceError = null }
+                                TextButton(onClick = { existingWithCode = true; replaceError = null }) { Text(stringResource(Res.string.wz_delete_with_code)) }
+                            }
+                            BusyBanner(state)
+                            ErrorText(replaceError)
+                            if (replaceError != null) Hint(deleteWayOut(state))
+                        }
                         if (c.device.isNotBlank() && c.savedAt > 0) {
                             Hint(stringResource(Res.string.file_saved_on, formatDateTime(c.savedAt), c.device))
                         }
@@ -224,7 +278,13 @@ fun OpenSuiteFile(
                         }
                     }
                 },
-                confirmButton = { TextButton(onClick = { accept() }) { Text(stringResource(Res.string.file_q_open_anyway)) } },
+                confirmButton = {
+                    TextButton(
+                        enabled = !state.busy && (c.relation != ArchiveRelationUi.OTHER_SUITE ||
+                            (if (existingWithCode) existingCode.isNotBlank() else existingProof.ok(state))),
+                        onClick = { accept() },
+                    ) { Text(stringResource(Res.string.file_q_open_anyway)) }
+                },
                 dismissButton = {
                     TextButton(onClick = { check = null; backend.archiveCancel() }) { Text(stringResource(Res.string.a_cancel)) }
                 },

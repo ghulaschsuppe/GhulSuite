@@ -272,7 +272,7 @@ fn series_from_other_time_zones_are_right_all_year() {
     let d = Dirs::new("zoned-series");
     let s = d.suite();
     let kf = generate_keyfile();
-    s.create(options("pw pw pw pw", Some(kf), &[(VaultKind::Cal, "Kalender")]), None, None, None).unwrap();
+    s.create(options("pw pw pw pw-Kq7wZ", Some(kf), &[(VaultKind::Cal, "Kalender")]), None, None, None).unwrap();
     let cal = s
         .cal_save_calendar(CalCalendar {
             id: String::new(),

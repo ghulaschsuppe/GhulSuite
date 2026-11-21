@@ -15,6 +15,21 @@ actual fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit) = BackHandl
 actual fun androidx.compose.ui.Modifier.testTagsAsIds(): androidx.compose.ui.Modifier =
     this.then(androidx.compose.ui.Modifier.semantics { testTagsAsResourceId = true })
 
+@Composable
+actual fun GuardWindow() {
+    val view = androidx.compose.ui.platform.LocalView.current
+    androidx.compose.runtime.DisposableEffect(view) {
+        guardView(view.rootView)
+        onDispose {}
+    }
+}
+
+/** M17: see [GuardWindow]; also used for the main window (its decor view). */
+fun guardView(root: android.view.View) {
+    root.filterTouchesWhenObscured = true
+    if (android.os.Build.VERSION.SDK_INT >= 34) root.setAccessibilityDataSensitive(android.view.View.ACCESSIBILITY_DATA_SENSITIVE_YES)
+}
+
 actual fun nowSeconds(): Long = System.currentTimeMillis() / 1000
 
 actual fun formatDate(millis: Long): String = DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(millis))

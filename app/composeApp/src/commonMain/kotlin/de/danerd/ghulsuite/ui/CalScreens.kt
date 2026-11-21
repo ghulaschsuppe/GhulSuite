@@ -156,44 +156,62 @@ fun rememberCalNames(): CalNames {
     }
 }
 
+/** Texts outside of composition: of the system's language, or (the app state) of the screens'. */
+interface Texts {
+    suspend fun s(res: org.jetbrains.compose.resources.StringResource, vararg args: Any): String
+    suspend fun p(res: org.jetbrains.compose.resources.PluralStringResource, count: Int, vararg args: Any): String
+}
+
+/** The texts in the language of the system. */
+object SystemTexts : Texts {
+    override suspend fun s(res: org.jetbrains.compose.resources.StringResource, vararg args: Any) = getString(res, *args)
+    override suspend fun p(res: org.jetbrains.compose.resources.PluralStringResource, count: Int, vararg args: Any) = getPluralString(res, count, *args)
+}
+
 /** The same outside of composition (notifications). */
-suspend fun loadCalNames(): CalNames = CalNames(
-    getString(Res.string.cal_wd_short).split(','), getString(Res.string.cal_wd_long).split(','),
-    getString(Res.string.cal_months).split(','), getString(Res.string.cal_months_short).split(','),
-    getString(Res.string.cal_fmt_short), getString(Res.string.cal_fmt_long), getString(Res.string.cal_fmt_day),
-    getString(Res.string.cal_fmt_dm), getString(Res.string.cal_fmt_d),
-    getString(Res.string.cal_today), getString(Res.string.cal_tomorrow), getString(Res.string.cal_yesterday),
+suspend fun loadCalNames(t: Texts = SystemTexts): CalNames = CalNames(
+    t.s(Res.string.cal_wd_short).split(','), t.s(Res.string.cal_wd_long).split(','),
+    t.s(Res.string.cal_months).split(','), t.s(Res.string.cal_months_short).split(','),
+    t.s(Res.string.cal_fmt_short), t.s(Res.string.cal_fmt_long), t.s(Res.string.cal_fmt_day),
+    t.s(Res.string.cal_fmt_dm), t.s(Res.string.cal_fmt_d),
+    t.s(Res.string.cal_today), t.s(Res.string.cal_tomorrow), t.s(Res.string.cal_yesterday),
 )
 
 /**
  * Notification texts of a reminder: full while unlocked, on the lock screen per [detail]
  * (0 only "event in 15 min", 1 title and time, 2 title, time and place).
  */
-suspend fun calAlarm(r: de.danerd.ghulsuite.model.CalReminderUi, detail: Int, names: CalNames): de.danerd.ghulsuite.model.CalAlarmUi {
+suspend fun calAlarm(r: de.danerd.ghulsuite.model.CalReminderUi, detail: Int, names: CalNames, t: Texts = SystemTexts): de.danerd.ghulsuite.model.CalAlarmUi {
     val day = Day.parse(r.start) ?: today()
-    val time = if (r.allDay) names.short(day) + " · " + getString(Res.string.cal_all_day) else names.short(day) + ", " + hm(r.start) + " - " + hm(r.end)
+    val time = if (r.allDay) names.short(day) + " · " + t.s(Res.string.cal_all_day) else names.short(day) + ", " + hm(r.start) + " - " + hm(r.end)
     val full = time + if (r.location.isNotEmpty()) " · " + r.location else ""
     val soon = when {
-        r.allDay && r.minutesBefore <= 0 -> getString(Res.string.cal_notify_today)
-        r.allDay && r.minutesBefore <= 1440 -> getString(Res.string.cal_notify_tomorrow)
-        r.allDay -> getString(Res.string.cal_notify_on, names.short(day))
-        r.minutesBefore == 0 -> getString(Res.string.cal_notify_soon)
-        else -> getString(Res.string.cal_notify_min, durationLabel(r.minutesBefore))
+        r.allDay && r.minutesBefore <= 0 -> t.s(Res.string.cal_notify_today)
+        r.allDay && r.minutesBefore <= 1440 -> t.s(Res.string.cal_notify_tomorrow)
+        r.allDay -> t.s(Res.string.cal_notify_on, names.short(day))
+        r.minutesBefore == 0 -> t.s(Res.string.cal_notify_soon)
+        else -> t.s(Res.string.cal_notify_min, durationLabel(r.minutesBefore, t))
     }
     val publicTitle = if (detail == 0) soon else r.title
     val publicText = when (detail) {
-        0 -> getString(Res.string.cal_notify_locked)
-        1 -> if (r.allDay) time else getString(Res.string.cal_notify_in, durationLabel(r.minutesBefore), names.short(day) + ", " + hm(r.start))
+        0 -> t.s(Res.string.cal_notify_locked)
+        1 -> if (r.allDay) time else t.s(Res.string.cal_notify_in, durationLabel(r.minutesBefore, t), names.short(day) + ", " + hm(r.start))
         else -> full
     }
-    return de.danerd.ghulsuite.model.CalAlarmUi("${r.eventId}|$day", epochMillisOf(r.at), r.title, full, publicTitle, publicText, r.at)
+    // M12, M18: the chosen detail counts everywhere, not only on the lock screen. Below
+    // "everything", the full text is not even prepared: what the device keeps for the reminders
+    // (Android: its encrypted cache, Windows: the Info Center) and what an app with access to
+    // notifications reads is only the chosen part.
+    val title = if (detail >= 2) r.title else publicTitle
+    val text = if (detail >= 2) full else publicText
+    return de.danerd.ghulsuite.model.CalAlarmUi("${r.eventId}|$day", epochMillisOf(r.at), title, text, publicTitle, publicText, r.at)
 }
 
-private suspend fun durationLabel(m: Int): String = when {
-    m < 60 -> getString(Res.string.cal_dur_min, m.toString())
-    m < 1440 -> getString(Res.string.cal_dur_hours, (m / 60).toString())
-    m < 10080 -> getPluralString(Res.plurals.cal_dur_days, m / 1440, (m / 1440).toString())
-    else -> getPluralString(Res.plurals.cal_dur_weeks, m / 10080, (m / 10080).toString())
+private suspend fun durationLabel(m: Int, t: Texts): String = when {
+    m < 60 -> t.s(Res.string.cal_dur_min, m.toString())
+    m < 1440 -> t.s(Res.string.cal_dur_hours, (m / 60).toString())
+    m < 10080 -> t.p(Res.plurals.cal_dur_days, m / 1440, (m / 1440).toString())
+    else -> t.p(Res.plurals.cal_dur_weeks, m / 10080, (m / 10080).toString())
 }
 
 /** First day of the week containing [d] (setting: Monday or Sunday). */

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 package de.danerd.ghulsuite
 
+import de.danerd.ghulsuite.model.autoLockSecondsNow
 import android.app.Activity
 import android.app.Application
 import android.os.Bundle
@@ -130,7 +131,7 @@ class GhulApplication : Application() {
 
     /** The app left the screen while unlocked: locks after the auto-lock time (at once with 0). */
     private fun scheduleLock() {
-        var delay = backend.settings.autoLockSeconds
+        var delay = backend.autoLockSecondsNow()
         if (ExternalActivity.active) delay = maxOf(delay, ExternalActivity.GRACE_SECONDS)
         if (delay <= 0) {
             autoLock()

@@ -50,6 +50,16 @@ skip() {
 
 have() { command -v "$1" > /dev/null 2>&1; }
 
+# --- files not in git ------------------------------------------------------------------------------
+# A source file that is not added to git is built here but missing from the commit: the CI then
+# fails (a test module declared in tests.rs, a new Kotlin file). Only a warning: it may be new on
+# purpose and added with the commit.
+untracked=$(cd "$root" && git ls-files --others --exclude-standard -- 'core/*.rs' 'app/*.kt' 2> /dev/null)
+if [ -n "$untracked" ]; then
+  printf '⚠ Nicht in git (vor dem Commit hinzufügen?):\n'
+  printf '    %s\n' $untracked
+fi
+
 # --- texts, manifest, test vectors -------------------------------------------------------------
 step "Texte (Übersetzungen, Platzhalter, Striche)" python3 tools/check-texts.py
 step "Android-Manifest" python3 tools/check-android-manifest.py

@@ -97,6 +97,9 @@ object DesktopBack {
 actual fun androidx.compose.ui.Modifier.testTagsAsIds(): androidx.compose.ui.Modifier = this
 
 @Composable
+actual fun GuardWindow() {}
+
+@Composable
 actual fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit) {
     val handler = androidx.compose.runtime.remember { DesktopBack.Handler(enabled, onBack) }
     androidx.compose.runtime.SideEffect {
@@ -204,7 +207,7 @@ actual fun rememberSaveFile(onSaved: (Boolean) -> Unit): (String, ByteArray) -> 
 
 @Composable
 actual fun rememberOpenSuiteFile(onPicked: (de.danerd.ghulsuite.model.SuiteFileRef) -> Unit): () -> Unit = {
-    chooseOpen()?.takeIf { it.isFile }?.let { f -> onPicked(de.danerd.ghulsuite.model.SuiteFileRef(f.absolutePath, f.name)) }
+    chooseOpen()?.let { de.danerd.ghulsuite.SuiteFiles.resolve(it) }?.takeIf { it.isFile }?.let { f -> onPicked(de.danerd.ghulsuite.model.SuiteFileRef(f.absolutePath, f.name)) }
 }
 
 @Composable
@@ -274,6 +277,7 @@ actual fun rememberCreateStream(onCreated: (ByteSink?) -> Unit): (String, String
                 override fun write(data: ByteArray) = out.write(data)
                 override fun close() = out.close()
                 override fun discard() { f.delete() }
+                override fun freeBytes(): Long? = f.absoluteFile.parentFile?.usableSpace?.takeIf { it > 0 }
             })
         }
     }

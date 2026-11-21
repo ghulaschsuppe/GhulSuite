@@ -98,6 +98,17 @@ name: Setup
 - tapOn:
     text: "(?i)save"
     retryTapIfNoChange: false
+# M1: a place where later saves would write over the file (a folder not shared with the app, as
+# Download in the emulator): the wizard says so and offers to share the folder; "Later" goes on.
+- extendedWaitUntil:
+    visible: "Search entries|Saved\\. .*"
+    timeout: 30000
+- runFlow:
+    when:
+      visible: { id: "wz-share-later" }
+    commands:
+      - takeScreenshot: 01-share-folder
+      - tapOn: { id: "wz-share-later" }
 - extendedWaitUntil:
     visible: "Search entries"
     timeout: 30000

@@ -59,9 +59,11 @@ pub struct ShareVaultOptions {
     pub ids: Vec<Vec<u8>>,
     /// Name of the new vault.
     pub name: String,
-    /// The own master password, asked again: whoever finds the device unlocked must not
-    /// carry entries off under a password of their own.
-    pub master_password: String,
+    /// Both factors of this suite (M15): whoever finds the device unlocked and knows the
+    /// password must not carry entries off under a protection of their own. A security key of
+    /// now is touched through `proof_transport` (before the new one); right after
+    /// `confirm_factors` the password alone.
+    pub proof: crate::app::suite::FactorProof,
     /// Password of the new vault.
     pub password: String,
     /// Key file of the new vault (from `generate_keyfile`); `None` with a security key.
@@ -85,7 +87,13 @@ super::redact::redacted_debug!(SharedVault { kind });
 
 impl GhulSuite {
     /// Makes this (empty) suite the temporary one around a vault opened on its own.
-    pub(super) fn start_single(&self, vault: crate::vault::UnlockedContainer, pk: PasswordKey) -> Result<VaultKind> {
+    /// `gen`: the lock generation when the call started (a lock since then wins, see `set_open`).
+    pub(super) fn start_single(
+        &self,
+        vault: crate::vault::UnlockedContainer,
+        pk: PasswordKey,
+        gen: u64,
+    ) -> Result<VaultKind> {
         let kind = VaultKind::from_container(vault.kind())
             .ok_or_else(|| GhulError::InvalidInput { msg: "this is a suite file, open its folder instead".into() })?;
         let mut suite = self.suite_for_vault(&vault, &pk)?;
@@ -96,10 +104,15 @@ impl GhulSuite {
         put_setting(&mut suite, SINGLE_KEY, &file)?;
         let name = super::suite::vault_name(&vault, &file);
         let reference = VaultRef { id, kind: kind.container().name().into(), name, file };
-        let mut open = Open { password_key: pk, suite, vaults: vec![OpenVault { reference, container: Some(vault) }] };
+        let mut open = Open {
+            password_key: pk,
+            suite,
+            vaults: vec![OpenVault { reference, container: Some(vault) }],
+            recovered: false,
+        };
         self.save_all(&mut open)?;
         self.clear_unsaved();
-        self.set_open(open);
+        self.set_open(open, gen)?;
         Ok(kind)
     }
 }
@@ -117,6 +130,7 @@ impl GhulSuite {
         pin: Option<String>,
         keyfile: Option<Vec<u8>>,
     ) -> Result<VaultKind> {
+        let gen = self.lock_gen_now();
         let password = Zeroizing::new(password);
         let pin = pin.map(Zeroizing::new);
         let data = Zeroizing::new(data);
@@ -137,7 +151,7 @@ impl GhulSuite {
         )?;
         let pk = PasswordKey::derive(&password, &locked.header().kdf)?;
         let vault = locked.unlock(&pk, &s)?;
-        self.start_single(vault, pk)
+        self.start_single(vault, pk, gen)
     }
 
     /// Whether this suite is the temporary one around a vault opened on its own.
@@ -180,6 +194,7 @@ impl GhulSuite {
     pub fn share_as_vault(
         &self,
         options: ShareVaultOptions,
+        proof_transport: Option<Arc<dyn HidTransport>>,
         transport: Option<Arc<dyn HidTransport>>,
         listener: Option<Arc<dyn FidoListener>>,
         pin: Option<String>,
@@ -189,16 +204,14 @@ impl GhulSuite {
         if options.name.trim().is_empty() {
             return Err(GhulError::InvalidInput { msg: "name required".into() });
         }
-        if password.chars().count() < 8 {
-            return Err(GhulError::InvalidInput { msg: "password too short".into() });
-        }
+        // M42: the master password of the new vault follows the same rules as the own one.
+        crate::app::tools::check_master_password(&password)?;
         let keyfile = parse_keyfile(options.keyfile.clone())?;
         if keyfile.is_some() == pin.is_some() {
             return Err(GhulError::InvalidInput { msg: "either a key file or a security key".into() });
         }
-        if !self.verify_password(options.master_password.clone())? {
-            return Err(GhulError::WrongPassword);
-        }
+        // Refused before the new key is touched.
+        self.require_factors(&options.proof, proof_transport.as_ref(), listener.as_ref())?;
         let now = now_ms();
         // Copied first: the key may take a while to be touched, the suite is not held meanwhile.
         let (kind, cost, entries) = self.with_open(|o| {

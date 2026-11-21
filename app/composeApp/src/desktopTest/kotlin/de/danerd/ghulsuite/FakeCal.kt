@@ -87,7 +87,19 @@ class FakeCal : CalBackend {
         }
         return out.sortedWith(compareBy({ it.start.take(10) }, { !it.allDay }, { it.start }))
     }
-    override suspend fun reminders(now: String, days: Int) = emptyList<CalReminderUi>()
+    /** What [reminders] answers; [remindersFail]: reading fails (a damaged calendar). */
+    var reminderList: List<CalReminderUi> = emptyList()
+    var remindersFail = false
+    /** Every list handed to the system (newest last). */
+    val scheduled = java.util.Collections.synchronizedList(mutableListOf<List<de.danerd.ghulsuite.model.CalAlarmUi>>())
+    override suspend fun reminders(now: String, days: Int): List<CalReminderUi> {
+        kotlinx.coroutines.delay(20)
+        if (remindersFail) throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.CORRUPTED, "calendar damaged")
+        return reminderList
+    }
+    override fun scheduleReminders(alarms: List<de.danerd.ghulsuite.model.CalAlarmUi>, sound: Boolean) {
+        scheduled += alarms
+    }
     override suspend fun exportIcs(calendarIds: List<String>) = ""
     override suspend fun eventIcs(id: String) = ""
     override suspend fun importIcs(calendarId: String, data: ByteArray) = 0

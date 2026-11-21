@@ -39,7 +39,7 @@ class AndroidUpdater(private val context: Context) : CoreUpdater(".apk") {
         return installer in STORES
     }
 
-    override suspend fun install(update: UpdateUi): UpdateStep {
+    override suspend fun install(update: UpdateUi, mayFinish: () -> Boolean): UpdateStep {
         val pm = context.packageManager
         if (!pm.canRequestPackageInstalls()) {
             // Once: "Allow from this source" for GhulSuite in the system settings (the automatic
@@ -52,6 +52,11 @@ class AndroidUpdater(private val context: Context) : CoreUpdater(".apk") {
             return UpdateStep.ALLOW_FIRST
         }
         val apk = download(update, File(context.cacheDir, "update"))
+        // M7: checked again right before the installer takes over (it ends the app).
+        if (!mayFinish()) {
+            apk.delete()
+            return UpdateStep.WAIT
+        }
         withContext(Dispatchers.IO) {
             val installer = pm.packageInstaller
             val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
