@@ -18,6 +18,8 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.printToString
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithTag
 import de.danerd.ghulsuite.ui.SAVE_BUTTON_TAG
@@ -46,6 +48,7 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import org.jetbrains.skia.EncodedImageFormat
 import org.jetbrains.skia.Image
 import java.awt.HeadlessException
@@ -99,10 +102,16 @@ class InteractionTest {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined + CoroutineExceptionHandler { _, e -> if (e !is HeadlessException) errors += e })
         val state = AppState(fake, scope).apply(setup)
         val (w, h) = size ?: if (wide) 1280 to 820 else 412 to 892
-        runDesktopComposeUiTest(w * 2, h * 2) {
-            setContent { CompositionLocalProvider(LocalDensity provides Density(2f, fontScale)) { GhulSuiteApp(state) } }
-            waitForIdle()
-            block(state, fake)
+        try {
+            runDesktopComposeUiTest(w * 2, h * 2) {
+                setContent { CompositionLocalProvider(LocalDensity provides Density(2f, fontScale)) { GhulSuiteApp(state) } }
+                waitForIdle()
+                block(state, fake)
+            }
+        } finally {
+            // The app of this test ends with it: its collectors of AppLaunch (one object for all
+            // tests) would otherwise take what a later test hands over.
+            scope.cancel()
         }
         assertTrue(errors.isEmpty(), "errors in the app: $errors")
         assertTrue(DevChecks.alarms.isEmpty(), "alarms of the development build: ${DevChecks.alarms.toList()}")
@@ -117,7 +126,16 @@ class InteractionTest {
     private fun DesktopComposeUiTest.text(t: String): SemanticsNodeInteraction = onAllNodesWithText(t, useUnmergedTree = true).onFirst()
     private fun DesktopComposeUiTest.desc(d: String): SemanticsNodeInteraction = onAllNodesWithContentDescription(d).onFirst()
     private fun DesktopComposeUiTest.shown(t: String) = onAllNodesWithText(t, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
-    private fun DesktopComposeUiTest.waitFor(t: String) = waitUntil(timeoutMillis = 10_000) { shown(t) }
+    private fun DesktopComposeUiTest.waitFor(t: String) {
+        try {
+            waitUntil(timeoutMillis = 10_000) { shown(t) }
+        } catch (e: androidx.compose.ui.test.ComposeTimeoutException) {
+            // What was there instead (for the test report).
+            File(out, "waitfor-" + t.filter { it.isLetterOrDigit() }.take(40) + ".txt")
+                .writeText(onRoot(useUnmergedTree = true).printToString())
+            throw e
+        }
+    }
     private fun DesktopComposeUiTest.waitFor(t: String, substring: Boolean) =
         waitUntil(timeoutMillis = 10_000) { onAllNodesWithText(t, substring = substring, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
     private fun DesktopComposeUiTest.waitGone(t: String) = waitUntil(timeoutMillis = 10_000) { !shown(t) }
@@ -445,8 +463,8 @@ class InteractionTest {
         waitFor("New master password")
         assertFalse(shown("very weak"))
         assertFalse(shown("weak"))
-        // Current, the second factor, new, repeat: the field of the new password by its label.
-        onNode(hasSetTextAction() and hasText("New master password")).performTextInput("kurz")
+        // Current, the second factor, new, repeat: the new password is the second field from the end.
+        onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size.let { n -> onAllNodes(hasSetTextAction())[n - 2].performTextInput("kurz") }
         waitFor("weak")
     }
 
@@ -878,10 +896,11 @@ class InteractionTest {
         // The key's name, then its PIN.
         onAllNodes(hasSetTextAction())[1].performTextInput("1234")
         // The backup is required: a second key (its name, then its PIN).
-        onAllNodesWithText("Second key").onFirst().performClick()
+        onAllNodesWithText("Second key").onFirst().performScrollTo().performClick()
         waitUntil(timeoutMillis = 10_000) { onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size >= 4 }
         onAllNodes(hasSetTextAction())[3].performTextInput("1234")
-        text("Next").performClick()
+        // The step is longer now: the button below is scrolled to first.
+        text("Next").performScrollTo().performClick()
         waitFor("Create")
     }
 

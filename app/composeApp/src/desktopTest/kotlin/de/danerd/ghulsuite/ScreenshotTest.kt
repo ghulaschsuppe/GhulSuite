@@ -281,8 +281,20 @@ class ScreenshotTest {
         }
     }
 
+    /** Scopes of the states shown here, ended after the test (they listen to AppLaunch, one for all tests). */
+    private val scopes = java.util.Collections.synchronizedList(mutableListOf<CoroutineScope>())
+
+    @kotlin.test.AfterTest
+    fun endScopes() {
+        scopes.forEach { it.coroutineContext[kotlinx.coroutines.Job]?.cancel() }
+        scopes.clear()
+    }
+
     private fun state(exists: Boolean, unlocked: Boolean, setup: AppState.() -> Unit = {}): AppState =
-        AppState(Fake(exists, unlocked).apply { docs.delayMs = 0; docs.sectionDelayMs = 0 }, CoroutineScope(Dispatchers.Unconfined)).apply(setup)
+        AppState(
+            Fake(exists, unlocked).apply { docs.delayMs = 0; docs.sectionDelayMs = 0 },
+            CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Unconfined).also { scopes += it },
+        ).apply(setup)
 
     @Test
     fun screens() {

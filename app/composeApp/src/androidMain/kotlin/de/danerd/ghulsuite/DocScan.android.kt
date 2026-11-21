@@ -57,6 +57,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
+import de.danerd.ghulsuite.ExternalActivity
 import de.danerd.ghulsuite.resources.Res
 import de.danerd.ghulsuite.resources.scan_camera_failed
 import de.danerd.ghulsuite.resources.scan_permission
