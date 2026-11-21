@@ -234,7 +234,11 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
         val target = place.doc(place.name)
         val alt = place.doc(place.name + ".alt")
         runCatching {
-            if (!exists(alt)) return@runCatching
+            if (!exists(alt)) {
+                // A note left from a swap whose tidying ended (the device went off right after).
+                if (devicePref(SWAP_DONE) == place.id(place.name)) noteSwap("")
+                return@runCatching
+            }
             if (!exists(target)) {
                 val back = android.provider.DocumentsContract.renameDocument(r, alt, place.name)
                 if (back != null && idOf(back) != place.id(place.name)) {
@@ -243,7 +247,7 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
                 }
             } else if (devicePref(SWAP_DONE) == place.id(place.name)) {
                 android.provider.DocumentsContract.deleteDocument(r, alt)
-                setDevicePref(SWAP_DONE, "")
+                noteSwap("")
             } else {
                 android.provider.DocumentsContract.renameDocument(r, alt, place.name + ".alt-" + System.currentTimeMillis())
             }
@@ -330,9 +334,9 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
             keepTmp = true
             // Noted before the old file goes: if the device goes off now, the next access knows
             // that "<name>" is the new, complete file and ".alt" may go.
-            setDevicePref(SWAP_DONE, place.id(place.name))
+            noteSwap(place.id(place.name))
             old?.let { runCatching { android.provider.DocumentsContract.deleteDocument(r, it) } }
-            setDevicePref(SWAP_DONE, "")
+            noteSwap("")
             ok = true
             return true
         } finally {
@@ -342,6 +346,11 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
                 runCatching { if (fileSize(target) == 0L) android.provider.DocumentsContract.deleteDocument(r, target) }
             }
         }
+    }
+
+    /** The note of [recover], written at once (`commit`, not `apply`): it must be on the disk before the next step. */
+    private fun noteSwap(id: String) {
+        prefs.edit().putString(SWAP_DONE, id).commit()
     }
 
     private fun fileSize(uri: Uri): Long? = runCatching {

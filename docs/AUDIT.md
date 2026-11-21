@@ -238,6 +238,7 @@ behoben (Testprotokoll PR-…), „klein“ (Randfall, Komfort, Werkzeug) kommt 
 | K-35 | Format | **Erledigt (21.11.2026):** Format 3 ist eingefroren, jede spätere Version liest es (Zusage in FORMAT.md, echte Dateien als Testfälle in `core/ghul-core/tests/fixtures/format3`) |
 | K-36 | Kern | Entfernen zwei Geräte unabhängig denselben Key, haben beide dieselben Slots, aber verschiedene Faktorgeheimnisse; öffnet das eine die Datei des anderen, bleibt das Schnell-Entsperren eingerichtet und scheitert beim nächsten Mal (dann Passwort und Key; kein Zugang für Fremde) |
 | K-37 | Android | Nach dem ersten sicheren Speichern hängt der Zugriff auf die Suite-Datei an der Freigabe des Ordners (Android nimmt beim Umbenennen den Zugriff auf das einzelne Dokument weg). Wird die Freigabe zurückgenommen oder von Android verdrängt (höchstens 128 dauerhafte Freigaben), ist die Datei „nicht erreichbar“, bis der Ordner wieder freigegeben oder die Datei neu gewählt wird; kein Datenverlust. Gezielt „Ordner erneut freigeben“ anbieten. Auf einem Gerät prüfen, ob die Kennung nach dem Umbenennen dieselbe Form hat wie aus der Dateiauswahl (Testplan E19e) |
+| K-38 | Android | Während eines sicheren Speicherns sehen gleichzeitige Leser kurz keine Suite-Datei (höchstens eine falsche Meldung „nicht lesbar“, nichts geht kaputt); eine liegen gebliebene `<Name>.alt`, die sich nicht wegräumen lässt, verhindert jedes weitere Speichern an diesem Ort, ohne dass der Dialog sagt warum (eigener Fehlertext fehlt) |
 
 ## 5. Geprüft und in Ordnung
 
