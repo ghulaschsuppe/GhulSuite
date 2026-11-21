@@ -62,11 +62,11 @@ expect fun rememberPickFolder(onPicked: (de.danerd.ghulsuite.model.FolderRef) ->
 
 /**
  * Returns a launcher that asks to share the folder of a file (Android: kept across restarts),
- * starting at the file given; [onGranted] after a choice. Nothing to do where files are written
+ * starting at the file given; [onGranted] afterwards (whether a folder was chosen). Nothing to do where files are written
  * by path (Windows).
  */
 @Composable
-expect fun rememberGrantFolder(onGranted: () -> Unit): (near: String) -> Unit
+expect fun rememberGrantFolder(onGranted: (picked: Boolean) -> Unit): (near: String) -> Unit
 
 /** Returns a launcher that opens the system file picker for a file of any size (read as a stream). */
 @Composable

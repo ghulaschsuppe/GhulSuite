@@ -74,7 +74,7 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
 
     override suspend fun readSuiteFile(ref: SuiteFileRef): ByteArray? = withContext(Dispatchers.IO) {
         runCatching {
-            context.contentResolver.openInputStream(Uri.parse(ref.id))?.use { input ->
+            context.contentResolver.openInputStream(io(ref))?.use { input ->
                 // A vault file is read as a whole: at most as large as the core reads one.
                 val out = java.io.ByteArrayOutputStream()
                 val buf = ByteArray(64 * 1024)
@@ -89,8 +89,9 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
         }.getOrNull()
     }
 
-    override fun openSuiteInput(ref: SuiteFileRef): SuiteInput? = runCatching {
-        val uri = Uri.parse(ref.id)
+    override fun openSuiteInput(ref: SuiteFileRef): SuiteInput? = openInputAt(io(ref))
+
+    private fun openInputAt(uri: Uri): SuiteInput? = runCatching {
         val size = runCatching {
             context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)?.use { c ->
                 if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else 0L
@@ -118,7 +119,7 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
         write: (java.io.OutputStream) -> Unit,
         check: (SuiteInput) -> Boolean,
     ): Boolean {
-        safePlace(ref)?.let { return safeWrite(it, write, check) }
+        safePlace(ref)?.let { return safeWrite(it, created, write, check) }
         val uri = Uri.parse(ref.id)
         var ok = false
         try {
@@ -140,7 +141,7 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
     override suspend fun writeSuiteFile(ref: SuiteFileRef, data: ByteArray): Boolean = withContext(Dispatchers.IO) {
         safePlace(ref)?.let { place ->
             return@withContext runCatching {
-                safeWrite(place, { it.write(data) }) { input -> input.stream.readBytes().contentEquals(data) }
+                safeWrite(place, false, { it.write(data) }) { input -> input.stream.readBytes().contentEquals(data) }
             }.getOrDefault(false)
         }
         // "wt": the document is truncated and written; the provider (a USB stick, a cloud app)
@@ -157,7 +158,10 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
     }
 
     /** A file on the device's own storage, an SD card or a USB stick, in a folder shared with the app. */
-    private class Place(val tree: Uri, val parentId: String, val name: String)
+    private class Place(val tree: Uri, val parentId: String, val name: String) {
+        fun id(fileName: String): String = if (parentId.endsWith(":")) parentId + fileName else "$parentId/$fileName"
+        fun doc(fileName: String): Uri = android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, id(fileName))
+    }
 
     /**
      * Where [ref] can be replaced safely: a document of the device's storage (USB sticks and SD
@@ -184,41 +188,75 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
         Place(tree, parentId, name)
     }.getOrNull()
 
-    private fun Place.doc(fileName: String): Uri = android.provider.DocumentsContract.buildDocumentUriUsingTree(
-        tree, if (parentId.endsWith(":")) parentId + fileName else "$parentId/$fileName",
-    )
+    /**
+     * The URI to read and write [ref] with. In a shared folder it is the URI through the folder:
+     * the provider takes the access to a document away when it is renamed, so the URI kept for
+     * the document itself stops working after the first swap ([safeWrite]); the one through the
+     * folder keeps working. A swap that stopped half way is put right first ([recover]), before
+     * anything reads the file.
+     */
+    private fun io(ref: SuiteFileRef): Uri = safePlace(ref)?.let { place ->
+        recover(place)
+        place.doc(place.name)
+    } ?: Uri.parse(ref.id)
 
     private fun exists(uri: Uri): Boolean = runCatching {
         context.contentResolver.query(uri, arrayOf(android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID), null, null, null)
             ?.use { it.moveToFirst() } == true
     }.getOrDefault(false)
 
+    private fun idOf(uri: Uri?): String? = uri?.let { runCatching { android.provider.DocumentsContract.getDocumentId(it) }.getOrNull() }
+
+    /**
+     * A swap stopped half way (the device went off between the two renames): "<name>" is
+     * missing and "<name>.alt" is the complete file before; it takes its name back. A
+     * "<name>.alt" next to "<name>" is left from a swap that only did not tidy up: it goes.
+     * Nothing else is touched; a rename that does not end at the expected name is undone.
+     */
+    private fun recover(place: Place) {
+        val r = context.contentResolver
+        val target = place.doc(place.name)
+        val alt = place.doc(place.name + ".alt")
+        runCatching {
+            if (!exists(alt)) return@runCatching
+            if (!exists(target)) {
+                val back = android.provider.DocumentsContract.renameDocument(r, alt, place.name)
+                if (back != null && idOf(back) != place.id(place.name)) {
+                    // The provider chose another name ("… (1)"): back to ".alt", nothing lost.
+                    runCatching { android.provider.DocumentsContract.renameDocument(r, back, place.name + ".alt") }
+                }
+            } else {
+                android.provider.DocumentsContract.deleteDocument(r, alt)
+            }
+        }
+    }
+
     /**
      * Writes "<name>.neu" next to the file, reads it back ([check]), then swaps: the old file
      * becomes "<name>.alt", the new one takes the name, the old one goes. At every moment a
-     * complete file is there: until the new one is checked the old one is not touched, and if
-     * the device goes off during the swap, the next save first puts "<name>.alt" back. Fails
-     * (false) without touching the old file when anything before the swap fails.
+     * complete file is there: until the new one is checked the old one is not touched; every
+     * rename is checked to end at the expected name (the provider would silently pick
+     * "… (1)" for a name in use) and undone otherwise; if the device goes off between the two
+     * renames, the next access puts "<name>.alt" back ([recover]). Fails (false) without
+     * losing anything.
      */
     private fun safeWrite(
         place: Place,
+        created: Boolean,
         write: (java.io.OutputStream) -> Unit,
         check: (SuiteInput) -> Boolean,
     ): Boolean {
         val r = context.contentResolver
         val target = place.doc(place.name)
-        val alt = place.doc(place.name + ".alt")
+        recover(place)
         val neu = place.doc(place.name + ".neu")
-        // A swap that stopped half way (the device went off): the old file comes back first.
-        if (!exists(target) && exists(alt)) {
-            android.provider.DocumentsContract.renameDocument(r, alt, place.name) ?: return false
-        }
-        if (exists(alt)) android.provider.DocumentsContract.deleteDocument(r, alt)
-        if (exists(neu)) android.provider.DocumentsContract.deleteDocument(r, neu)
+        if (exists(neu)) runCatching { android.provider.DocumentsContract.deleteDocument(r, neu) }
         val parent = android.provider.DocumentsContract.buildDocumentUriUsingTree(place.tree, place.parentId)
         val tmp = android.provider.DocumentsContract.createDocument(r, parent, "application/octet-stream", place.name + ".neu")
             ?: return false
-        var tmpPlaced = false
+        // Whether the checked new file must stay (it is the only complete one left).
+        var keepTmp = false
+        var ok = false
         try {
             val raw = r.openOutputStream(tmp, "w") ?: return false
             java.io.BufferedOutputStream(raw, 1 shl 20).use { buffered ->
@@ -226,29 +264,56 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
                 buffered.flush()
                 (raw as? java.io.FileOutputStream)?.let { f -> runCatching { f.fd.sync() } }
             }
-            val written = openSuiteInput(SuiteFileRef(tmp.toString(), place.name))?.let { input -> input.stream.use { check(input) } } == true
+            val written = openInputAt(tmp)?.let { input -> input.stream.use { check(input) } } == true
             if (!written) return false
             // The swap. Until here the old file was not touched.
-            val old = if (exists(target)) android.provider.DocumentsContract.renameDocument(r, target, place.name + ".alt") ?: return false else null
+            val old: Uri? = if (exists(target)) {
+                val moved = android.provider.DocumentsContract.renameDocument(r, target, place.name + ".alt") ?: return false
+                if (idOf(moved) != place.id(place.name + ".alt")) {
+                    runCatching { android.provider.DocumentsContract.renameDocument(r, moved, place.name) }
+                    return false
+                }
+                moved
+            } else {
+                null
+            }
             val placed = runCatching { android.provider.DocumentsContract.renameDocument(r, tmp, place.name) }.getOrNull()
-            if (placed == null) {
-                // Back as it was: the old file takes its name again.
-                old?.let { runCatching { android.provider.DocumentsContract.renameDocument(r, it, place.name) } }
+            if (placed == null || idOf(placed) != place.id(place.name)) {
+                // Not at its name: back as it was. Where the old file cannot take its name back,
+                // the new one stays (complete and checked) next to it.
+                val restored = old == null || runCatching {
+                    idOf(android.provider.DocumentsContract.renameDocument(r, old, place.name)) == place.id(place.name)
+                }.getOrDefault(false)
+                if (placed != null) {
+                    if (restored) runCatching { android.provider.DocumentsContract.deleteDocument(r, placed) } else keepTmp = true
+                }
+                keepTmp = keepTmp || (placed == null && !restored)
                 return false
             }
-            tmpPlaced = true
+            keepTmp = true
             old?.let { runCatching { android.provider.DocumentsContract.deleteDocument(r, it) } }
+            ok = true
             return true
         } finally {
-            if (!tmpPlaced) runCatching { android.provider.DocumentsContract.deleteDocument(r, tmp) }
+            if (!keepTmp) runCatching { android.provider.DocumentsContract.deleteDocument(r, tmp) }
+            // A document made just for this that could not be written stays no empty file.
+            if (!ok && created && exists(target) && !exists(place.doc(place.name + ".alt"))) {
+                runCatching { if (fileSize(target) == 0L) android.provider.DocumentsContract.deleteDocument(r, target) }
+            }
         }
     }
+
+    private fun fileSize(uri: Uri): Long? = runCatching {
+        context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)?.use { c ->
+            if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else null
+        }
+    }.getOrNull()
 
     /** A deleted document cannot be opened for writing again: "save as" instead. */
     override val canWriteFilesAnew: Boolean = false
 
     override suspend fun canWriteSuiteFile(ref: SuiteFileRef): Boolean = withContext(Dispatchers.IO) {
-        runCatching { androidx.documentfile.provider.DocumentFile.fromSingleUri(context, Uri.parse(ref.id))?.canWrite() == true }
+        runCatching { androidx.documentfile.provider.DocumentFile.fromSingleUri(context, io(ref))?.canWrite() == true }
             .getOrDefault(false)
     }
 

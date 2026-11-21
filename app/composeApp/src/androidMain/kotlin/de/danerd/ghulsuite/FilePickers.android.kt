@@ -149,12 +149,12 @@ actual fun rememberCreateSuiteFile(onCreated: (de.danerd.ghulsuite.model.SuiteFi
  * and swaps them (see AndroidVaultBackend.safeWrite). Access is kept across restarts.
  */
 @Composable
-actual fun rememberGrantFolder(onGranted: () -> Unit): (near: String) -> Unit {
+actual fun rememberGrantFolder(onGranted: (picked: Boolean) -> Unit): (near: String) -> Unit {
     val context = LocalContext.current
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
         ExternalActivity.finished()
         if (uri != null) keepAccess(context, uri)
-        onGranted()
+        onGranted(uri != null)
     }
     return remember(launcher) {
         { near ->

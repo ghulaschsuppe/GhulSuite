@@ -1387,4 +1387,5 @@
     <string name="save_safe_folder">Damit beim Speichern nie eine halbe Datei entsteht, gib den Ordner der Suite-Datei einmal frei. Dann schreibt die App die neue Datei daneben, prüft sie und tauscht erst danach die alte aus.</string>
     <string name="save_safe_grant">Ordner freigeben</string>
     <string name="save_overwrites">Dieser Speicherort (z. B. eine Cloud-App) erlaubt kein Austauschen: Die Datei dort wird direkt überschrieben. Scheitert das, bleibt alles in der App erhalten; speichere dann an einem anderen Ort.</string>
+    <string name="save_safe_folder_refused">Dieser Ordner hilft nicht: Android gibt den Ordner „Download“ und die oberste Ebene des Speichers oder einer SD-Karte nicht frei, oder es war nicht der Ordner der Suite-Datei. Speichere die Suite-Datei mit „Speichern unter …“ in einem eigenen Unterordner (z. B. „GhulSuite“) und gib diesen frei.</string>
 </resources>

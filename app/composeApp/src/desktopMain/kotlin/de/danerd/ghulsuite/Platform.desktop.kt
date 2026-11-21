@@ -215,7 +215,7 @@ actual fun rememberCreateSuiteFile(onCreated: (de.danerd.ghulsuite.model.SuiteFi
 
 /** Windows writes by path (a file next to it, then moved into place): nothing to share. */
 @Composable
-actual fun rememberGrantFolder(onGranted: () -> Unit): (near: String) -> Unit = remember { { _: String -> onGranted() } }
+actual fun rememberGrantFolder(onGranted: (picked: Boolean) -> Unit): (near: String) -> Unit = remember { { _: String -> onGranted(true) } }
 
 @Composable
 actual fun rememberPickFolder(onPicked: (FolderRef) -> Unit): () -> Unit = {

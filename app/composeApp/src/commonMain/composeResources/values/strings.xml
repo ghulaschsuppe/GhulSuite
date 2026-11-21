@@ -1387,4 +1387,5 @@
     <string name="save_safe_folder">So that saving never leaves half a file, share the folder of the suite file once. Then the app writes the new file next to it, checks it and only then swaps it for the old one.</string>
     <string name="save_safe_grant">Share folder</string>
     <string name="save_overwrites">This place (e.g. a cloud app) does not allow swapping: the file there is written over directly. If that fails, everything stays in the app; then save to another place.</string>
+    <string name="save_safe_folder_refused">This folder does not help: Android does not share the folder \u201cDownload\u201d and the top level of the storage or of an SD card, or it was not the folder of the suite file. Use \u201cSave as\u201d to save the suite file in a folder of its own (e.g. \u201cGhulSuite\u201d) and share that one.</string>
 </resources>

@@ -174,7 +174,7 @@ fun SaveSuiteDialog(state: AppState) {
     val target = backend.suiteFile()
     // Android: a folder shared once makes saving safe (new file next to the old one, then swapped).
     var shared by androidx.compose.runtime.remember { mutableStateOf(0) }
-    val grant = rememberGrantFolder { shared++ }
+    val grant = rememberGrantFolder { picked -> if (picked) shared++ }
     val safe = androidx.compose.runtime.remember(target, shared) { target?.let { backend.safeSave(it) } }
     val dismiss = { state.closeSaveDialog() }
     GhulSheet(onDismissRequest = dismiss, title = stringResource(
@@ -197,7 +197,9 @@ fun SaveSuiteDialog(state: AppState) {
                 Hint(stringResource(Res.string.save_hint))
                 when (safe) {
                     SafeSaveUi.FOLDER_NEEDED -> {
-                        Hint(stringResource(Res.string.save_safe_folder))
+                        // A folder was chosen, and still not safe: Android does not share every
+                        // folder (Download, the top of the storage or of an SD card), or another one.
+                        Hint(stringResource(if (shared > 0) Res.string.save_safe_folder_refused else Res.string.save_safe_folder))
                         OutlinedButton(onClick = { target?.let { grant(it.id) } }, modifier = Modifier.fillMaxWidth()) {
                             Text(stringResource(Res.string.save_safe_grant))
                         }
