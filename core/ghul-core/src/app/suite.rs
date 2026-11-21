@@ -1167,7 +1167,7 @@ impl GhulSuite {
     /// (quick unlock).
     #[uniffi::constructor]
     pub fn new(storage: Arc<dyn VaultStorage>, local_dir: String) -> Arc<Self> {
-        Arc::new(GhulSuite {
+        let suite = Arc::new(GhulSuite {
             storage,
             local_dir: PathBuf::from(local_dir),
             open: Mutex::new(None),
@@ -1183,7 +1183,13 @@ impl GhulSuite {
             unsaved_lock: Mutex::new(()),
             docs_adds: std::sync::atomic::AtomicUsize::new(0),
             factors_confirmed: Mutex::new(None),
-        })
+        });
+        // A suite file that replaced the working copy when the device went off: the state
+        // before comes back (complete), before anything else looks at the folders.
+        if let Err(e) = suite.recover_replace() {
+            eprintln!("GhulSuite: the working copy could not be put back after a stop: {e}");
+        }
+        suite
     }
 
     /// Whether the folder contains a suite (settings file or any vault file).

@@ -69,6 +69,33 @@ pub(crate) const MAX_ENTRIES: usize = super::docs::DOCS_MAX_FILES as usize + 100
 /// How many earlier states a file and a device remember (to tell newer states from branches).
 const MAX_ANCESTORS: usize = 1024;
 
+/// While a suite file replaces the working copy (in the local folder): what was there before, so
+/// that a device that went off in the middle finds the state before again at the next start.
+const REPLACE_JOURNAL: &str = "replace-journal.json";
+/// The files of the working copy before, kept until the replacing is complete.
+const REPLACE_OLD_DIR: &str = "replace-old";
+
+/// See [`REPLACE_JOURNAL`].
+#[derive(Serialize, Deserialize, Default)]
+struct ReplaceJournal {
+    /// The suite file and vault files of the working copy before (copies in [`REPLACE_OLD_DIR`]).
+    old_files: Vec<String>,
+    /// The content folders of GhulDocs before (`docs-<id>`).
+    old_docs: Vec<String>,
+    /// The folder they are moved aside to (absolute), once it exists.
+    aside: Option<String>,
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Tests: the replacing stops after this many files written, as if the device went off.
+    pub(crate) static CRASH_AFTER_WRITES: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+}
+
+/// Tests: the device "went off" (see [`CRASH_AFTER_WRITES`]).
+#[cfg(test)]
+const CRASHED: &str = "device went off (test)";
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
 struct ArchiveFile {
     name: String,
@@ -855,22 +882,111 @@ impl GhulSuite {
                 }
             }
         }
-        let aside = self.docs_aside(staged)?;
+        // First on the disk what was there before (a journal): the device may go off at any point
+        // from here on, the next start puts the state before back (`recover_replace`).
+        let old_dir = self.local_dir.join(REPLACE_OLD_DIR);
+        let _ = std::fs::remove_dir_all(&old_dir);
+        std::fs::create_dir_all(&old_dir)?;
+        for (n, d) in &before {
+            super::storage::write_atomic(&old_dir, n, d)?;
+        }
+        let mut journal = ReplaceJournal {
+            old_files: before.iter().map(|(n, _)| n.clone()).collect(),
+            old_docs: self.content_root().ok().map(|r| docs_folders(&r)).unwrap_or_default(),
+            aside: None,
+        };
+        self.write_journal(&journal)?;
+        let aside = self.docs_aside(staged, &mut |dir| {
+            journal.aside = Some(dir.to_string_lossy().into_owned());
+            self.write_journal(&journal)
+        })?;
         let new: Vec<(String, Vec<u8>)> = files.iter().filter(|(n, _)| n != HEADER_FILE).cloned().collect();
         if let Err(e) = self.put_files(&new, &before) {
+            #[cfg(test)]
+            if matches!(&e, GhulError::Storage { msg } if msg == CRASHED) {
+                // Gone without a word: the journal and the folders stay as they are.
+                if let Some(a) = aside {
+                    std::mem::forget(a);
+                }
+                return Err(e);
+            }
             // Half replaced is neither state: back to the one before.
             let _ = self.put_files(&before, &new);
             if let Some(a) = aside {
                 a.back()?;
             }
+            self.end_journal();
             return Err(e);
         }
+        // Complete: the journal goes first, then what it kept (the old documents with `aside`).
+        self.end_journal();
+        drop(aside);
+        Ok(())
+    }
+
+    fn write_journal(&self, journal: &ReplaceJournal) -> Result<()> {
+        let json = serde_json::to_vec(journal).map_err(|e| GhulError::Storage { msg: e.to_string() })?;
+        super::storage::write_atomic(&self.local_dir, REPLACE_JOURNAL, &json)
+    }
+
+    fn end_journal(&self) {
+        let _ = std::fs::remove_file(self.local_dir.join(REPLACE_JOURNAL));
+        let _ = std::fs::remove_file(self.local_dir.join(format!("{REPLACE_JOURNAL}.bak")));
+        let _ = std::fs::remove_dir_all(self.local_dir.join(REPLACE_OLD_DIR));
+    }
+
+    /// A suite file replaced the working copy when the device went off (the journal is still
+    /// there): the working copy before comes back, complete, with its documents. Called when the
+    /// suite starts, before anything tidies the folders. A journal that cannot be read stays (and
+    /// the folders with it) for a later look; nothing is deleted then.
+    pub(super) fn recover_replace(&self) -> Result<()> {
+        let path = self.local_dir.join(REPLACE_JOURNAL);
+        let Ok(data) = std::fs::read(&path) else { return Ok(()) };
+        let journal: ReplaceJournal =
+            serde_json::from_slice(&data).map_err(|e| GhulError::Storage { msg: format!("replace journal: {e}") })?;
+        // The documents: what was moved aside goes back, what came in goes.
+        if let Ok(root) = self.content_root() {
+            if let Some(aside) = journal.aside.as_deref().map(std::path::PathBuf::from) {
+                for n in &journal.old_docs {
+                    let kept = aside.join(n);
+                    if kept.is_dir() {
+                        let _ = std::fs::remove_dir_all(root.join(n));
+                        std::fs::rename(&kept, root.join(n))?;
+                    }
+                }
+            }
+            for n in docs_folders(&root) {
+                if !journal.old_docs.contains(&n) {
+                    std::fs::remove_dir_all(root.join(&n))?;
+                }
+            }
+        }
+        // The files: those before, written again; those that came in, removed.
+        let old_dir = self.local_dir.join(REPLACE_OLD_DIR);
+        for n in &journal.old_files {
+            let d = std::fs::read(old_dir.join(n))?;
+            self.storage.write(n.clone(), d)?;
+        }
+        for n in self.storage.list()? {
+            if (n == SUITE_FILE || is_vault_file(&n)) && !journal.old_files.contains(&n) {
+                self.storage.delete(n)?;
+            }
+        }
+        if let Some(aside) = journal.aside {
+            let _ = std::fs::remove_dir_all(aside);
+        }
+        self.end_journal();
         Ok(())
     }
 
     /// Moves the content folders of the working copy aside and the staged ones into place
     /// (`None` without a content root and nothing to stage).
-    fn docs_aside(&self, staged: Option<&Staging>) -> Result<Option<Aside>> {
+    /// `noted`: the folder the old ones go to, told before anything is moved (the journal).
+    fn docs_aside(
+        &self,
+        staged: Option<&Staging>,
+        noted: &mut dyn FnMut(&std::path::Path) -> Result<()>,
+    ) -> Result<Option<Aside>> {
         let root = match self.content_root() {
             Ok(r) => r,
             Err(_) if staged.is_none() => return Ok(None),
@@ -881,6 +997,9 @@ impl GhulSuite {
             s.verify()?;
         }
         let old = Staging::new(&root)?;
+        // Not tidied away at the next start while the journal still needs it.
+        std::fs::write(old.path().join(super::docs::KEEP_MARK), b"")?;
+        noted(old.path())?;
         let mut aside = Aside { root: root.clone(), old, moved_in: Vec::new(), moved_out: Vec::new() };
         let result = (|| {
             for d in std::fs::read_dir(&root).into_iter().flatten().flatten() {
@@ -907,10 +1026,28 @@ impl GhulSuite {
 
     /// Writes `files` (the suite file last) and removes what only `old` had.
     fn put_files(&self, files: &[(String, Vec<u8>)], old: &[(String, Vec<u8>)]) -> Result<()> {
+        #[cfg(test)]
+        let crash = || {
+            CRASH_AFTER_WRITES.with(|c| match c.get() {
+                Some(0) => {
+                    c.set(None);
+                    Err(GhulError::Storage { msg: CRASHED.into() })
+                }
+                Some(n) => {
+                    c.set(Some(n - 1));
+                    Ok(())
+                }
+                None => Ok(()),
+            })
+        };
+        #[cfg(not(test))]
+        let crash = || Ok::<(), GhulError>(());
         for (n, d) in files.iter().filter(|(n, _)| n != SUITE_FILE) {
+            crash()?;
             self.storage.write(n.clone(), d.clone())?;
         }
         if let Some((_, d)) = files.iter().find(|(n, _)| n == SUITE_FILE) {
+            crash()?;
             self.storage.write(SUITE_FILE.to_owned(), d.clone())?;
         }
         for (n, _) in old {
@@ -1611,4 +1748,16 @@ mod pending_tests {
         assert!(s.pending.lock().unwrap().is_none());
         let _ = std::fs::remove_dir_all(dir);
     }
+}
+
+/// The content folders of GhulDocs in `root` (`docs-<id>`).
+fn docs_folders(root: &std::path::Path) -> Vec<String> {
+    std::fs::read_dir(root)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with(super::docs::DIR_PREFIX))
+        .collect()
 }
