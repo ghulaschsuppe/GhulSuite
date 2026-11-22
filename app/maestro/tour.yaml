@@ -15,9 +15,10 @@ appId: de.danerd.ghulsuite.dev
     timeout: 3000
 - takeScreenshot: ${PREFIX}-cal
 - tapOn: { id: "tab-settings" }
-# The tab keeps its place from before (on purpose): start at the top.
+# The tab keeps its place from before (on purpose): start at the top ("Lock now" stays above
+# any banner, e.g. the one about unsaved entries, also in landscape).
 - scrollUntilVisible:
-    element: "Unlocking|Entsperren"
+    element: "Lock now|Jetzt sperren"
     direction: UP
 - waitForAnimationToEnd:
     timeout: 3000
