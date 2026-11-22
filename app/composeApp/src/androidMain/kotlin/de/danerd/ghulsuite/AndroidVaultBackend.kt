@@ -500,7 +500,7 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
         val rows = try {
             context.contentResolver.query(uri, arrayOf(android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID), null, null, null)
                 ?.use { it.count }
-        } catch (e: Exception) {
+        } catch (e: java.io.FileNotFoundException) {
             // Review N-3: the device's storage answers a missing document with FileNotFound.
             // Gone where its folder (or at least its volume) is there; else not reachable.
             return when {
@@ -508,6 +508,10 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
                 volumeThere(ref) -> Presence.GONE
                 else -> Presence.UNREACHABLE
             }
+        } catch (e: Exception) {
+            // Review N-e (fifth review): any other answer (no permission any more, a provider
+            // that fails) says nothing about the file: not reachable, never gone.
+            return Presence.UNREACHABLE
         }
         return when {
             rows == null -> Presence.UNREACHABLE

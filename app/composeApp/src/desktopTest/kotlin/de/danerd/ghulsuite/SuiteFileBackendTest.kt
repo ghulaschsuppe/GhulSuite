@@ -50,10 +50,14 @@ class SuiteFileBackendTest {
             onWipe: () -> Unit,
         ): Boolean = SuiteFiles.writeReplacing(File(ref.id), write, check, wipeOld, onWipe)
         override fun deleteSuiteDocument(ref: SuiteFileRef, wipe: Boolean): SuiteDocDelete {
+            deleteCalls += ref.id
             if (wipe) wiped += ref.id
             return SuiteFiles.delete(File(ref.id), wipe)
         }
         val wiped = mutableListOf<String>()
+        val deleteCalls = mutableListOf<String>()
+        val released = mutableListOf<String>()
+        override fun releaseOldPlace(old: SuiteFileRef) { released += old.id }
         override fun samePlace(a: SuiteFileRef, b: SuiteFileRef): Boolean = SuiteFiles.sameFile(File(a.id), File(b.id))
         override fun placeReachable(ref: SuiteFileRef): Boolean = File(ref.id).absoluteFile.parentFile?.isDirectory == true
         override fun presence(ref: SuiteFileRef): Presence = Presence.valueOf(SuiteFiles.presence(File(ref.id)))
@@ -466,6 +470,33 @@ class SuiteFileBackendTest {
             assertEquals(de.danerd.ghulsuite.model.OldFileOutcome.DIFFERENT_STATE, a.deleteOldSuiteFile(pRef).outcome)
             assertTrue(p.isFile, "S1 stays")
             assertTrue(a.wiped.isEmpty())
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    /**
+     * Review N-b (fifth review): an old file already gone is not deleted again (an access to its
+     * place could put a leftover back first): only its record and its grant go.
+     */
+    @Test
+    fun anOldFileAlreadyGoneIsOnlyForgotten() = runBlocking<Unit> {
+        val dir = Files.createTempDirectory("ghul-gone").toFile()
+        try {
+            val kf = generateKeyfile()
+            val a = device(File(dir, "a"), kf)
+            val old = File(dir, "stick/GhulSuite.ghlzip").apply { parentFile.mkdirs() }
+            val oldRef = SuiteFileRef(old.absolutePath, old.name)
+            assertTrue(a.archiveSave(oldRef, "Laptop", created = true))
+            val now = File(dir, "neu/GhulSuite.ghlzip").apply { parentFile.mkdirs() }
+            assertTrue(a.archiveSave(SuiteFileRef(now.absolutePath, now.name), "Laptop", created = true))
+            assertTrue(old.delete())
+            assertEquals(de.danerd.ghulsuite.model.OldFileCheck.GONE, a.oldFileCheck(oldRef))
+            assertEquals(de.danerd.ghulsuite.model.OldFileOutcome.DELETED, a.deleteOldSuiteFile(oldRef).outcome)
+            assertTrue(a.deleteCalls.isEmpty(), "nothing deleted: " + a.deleteCalls)
+            assertEquals(listOf(old.absolutePath), a.released)
+            assertFalse(a.prefs["suite_written"].orEmpty().contains(old.absolutePath), "its record went")
+            assertTrue(now.isFile)
         } finally {
             dir.deleteRecursively()
         }

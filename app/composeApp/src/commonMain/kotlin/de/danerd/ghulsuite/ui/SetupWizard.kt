@@ -330,6 +330,8 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
     val refusedOther = stringResource(Res.string.safe_place_other_app)
     fun writeSuiteFile(ref: de.danerd.ghulsuite.model.SuiteFileRef, created: Boolean, release: () -> Unit = {}) {
             val before = backend.suiteFile()
+            // Review N-c (fifth review): the old-file question only within the same unlock as this save.
+            val locksAtStart = backend.lockCount
             state.run(onError = { error = it; fileFailed = true; release() }, block = {
                 backend.archiveSave(ref, deviceInfo(), created = created, state.onProgress).also { if (it) backend.setSuiteFile(ref) }
             }) { ok ->
@@ -342,9 +344,11 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                 state.message(savedMsg.replace("%1\$s", ref.name))
                 // The file written before with "Save as" stays at its place: said, with its name
                 // and a way to delete it.
-                if (before != null && !backend.isSamePlace(before, ref)) {
+                if (before != null && !backend.isSamePlace(before, ref) && backend.unlocked.value && backend.lockCount == locksAtStart) {
                     state.scope.launch {
-                        state.oldCheck = backend.oldFileCheck(before)
+                        val check = backend.oldFileCheck(before)
+                        if (!backend.unlocked.value || backend.lockCount != locksAtStart) return@launch
+                        state.oldCheck = check
                         state.movedTo = ref
                         state.oldSuiteFile = before
                     }

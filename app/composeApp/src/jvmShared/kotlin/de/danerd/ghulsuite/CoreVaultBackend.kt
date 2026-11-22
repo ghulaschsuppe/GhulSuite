@@ -487,12 +487,24 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
     }
 
     /** Review H2, M-a, N3: what [ref] is: a state of the own line, this device's last file with an earlier protection, or other. */
-    private suspend fun checkOld(ref: SuiteFileRef): de.danerd.ghulsuite.model.OldFileCheck {
+    private suspend fun checkOld(ref: SuiteFileRef): de.danerd.ghulsuite.model.OldFileCheck = checkOldHashed(ref).first
+
+    /**
+     * [checkOld] with the file's SHA-256 as read for the check (null when gone, unreachable or
+     * unreadable). Review N-d: the delete compares with it, so the file is read for a hash at most
+     * twice (here and right before it is written over or deleted).
+     */
+    private suspend fun checkOldHashed(ref: SuiteFileRef): Pair<de.danerd.ghulsuite.model.OldFileCheck, String?> {
         when (io { presence(ref) }) {
-            Presence.GONE -> return de.danerd.ghulsuite.model.OldFileCheck.GONE
-            Presence.UNREACHABLE -> return de.danerd.ghulsuite.model.OldFileCheck.UNREACHABLE
+            Presence.GONE -> return de.danerd.ghulsuite.model.OldFileCheck.GONE to null
+            Presence.UNREACHABLE -> return de.danerd.ghulsuite.model.OldFileCheck.UNREACHABLE to null
             Presence.THERE -> {}
         }
+        val hash = io { fileHash(ref) }
+        return checkOldOf(ref, hash) to hash
+    }
+
+    private suspend fun checkOldOf(ref: SuiteFileRef, hash: String?): de.danerd.ghulsuite.model.OldFileCheck {
         val info = runCatching { archiveTargetInfo(ref) }.getOrNull()
         if (info?.target == de.danerd.ghulsuite.model.ArchiveTargetUi.SAME) return de.danerd.ghulsuite.model.OldFileCheck.SAME
         // Review H-1 (fourth review): only a file the keys of now cannot read (the protection
@@ -501,7 +513,7 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
         // device's save) never counts, whatever its bytes.
         val written = writtenAt(ref)
         if (info != null && !info.readable && written != null && info.target != de.danerd.ghulsuite.model.ArchiveTargetUi.OTHER_SUITE &&
-            info.target != de.danerd.ghulsuite.model.ArchiveTargetUi.NEW && io { fileHash(ref) } == written
+            info.target != de.danerd.ghulsuite.model.ArchiveTargetUi.NEW && hash == written
         ) {
             return de.danerd.ghulsuite.model.OldFileCheck.EARLIER_PROTECTION
         }
@@ -550,12 +562,21 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
             return result(de.danerd.ghulsuite.model.OldFileOutcome.SAME_FILE)
         }
         // Review H2: only a state of this suite's own line (else changes made elsewhere go).
-        // Review N-1: its bytes now, to compare right before it is written over or deleted.
-        val hashAtCheck = io { fileHash(old) }
-        val check = checkOld(old)
+        // Review N-1: its bytes at the check, to compare right before it is written over or deleted.
+        val (check, hashAtCheck) = checkOldHashed(old)
         when (check) {
             de.danerd.ghulsuite.model.OldFileCheck.UNREACHABLE -> return result(de.danerd.ghulsuite.model.OldFileOutcome.UNREACHABLE)
             de.danerd.ghulsuite.model.OldFileCheck.OTHER -> return result(de.danerd.ghulsuite.model.OldFileOutcome.DIFFERENT_STATE)
+            // Review N-b (fifth review): already gone: nothing is deleted (an access to the place
+            // could put a leftover back in its place first, see the Android recovery of a swap).
+            // Only its record and its grant go.
+            de.danerd.ghulsuite.model.OldFileCheck.GONE -> {
+                io {
+                    forgetWritten(old)
+                    runCatching { releaseOldPlace(old) }
+                }
+                return result(de.danerd.ghulsuite.model.OldFileOutcome.DELETED)
+            }
             else -> {}
         }
         val leftovers = io { leftoversOf(old) }.filter { l -> !isSamePlace(l, now) && checkOld(l) == de.danerd.ghulsuite.model.OldFileCheck.SAME }
@@ -564,7 +585,7 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
         val wipe = wipeOldFileAt(old) || check == de.danerd.ghulsuite.model.OldFileCheck.EARLIER_PROTECTION
         io { beforeOldFileDelete() }
         // Review N-1: changed since the check (another device saved there meanwhile): kept.
-        if (check != de.danerd.ghulsuite.model.OldFileCheck.GONE && io { fileHash(old) } != hashAtCheck) {
+        if (hashAtCheck == null || io { fileHash(old) } != hashAtCheck) {
             return result(de.danerd.ghulsuite.model.OldFileOutcome.CHANGED)
         }
         val done = io { deleteSuiteDocument(old, wipe) }
