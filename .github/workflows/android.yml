@@ -345,12 +345,17 @@ jobs:
       contents: read
       # For the screenshot comparison: the artifacts of the last run of dev.
       actions: read
-    # From scratch on main and dev (no cache, see SIGNING): more time.
+    # Rust from scratch on main and dev (no Rust cache, see SIGNING): more time.
     timeout-minutes: 60
     env:
-      # r9 M1: the run that gets the real signing key restores no cache (a cache entry written
-      # by any job of the branch could bring a changed cargo-ndk or Gradle file into the step
-      # with the key). It builds from scratch and saves its result for the other runs.
+      # r9 M1: the run that gets the real signing key restores no Rust cache (a cache entry could
+      # bring a changed cargo-ndk binary into the step with the key, and nothing checks it). It
+      # builds Rust from scratch and saves its result for the other runs. The Gradle cache it
+      # does restore (22.11.2026): only caches of main and dev reach it (GitHub keeps branch and
+      # pull request caches apart), and Gradle checks every artifact against
+      # verification-metadata.xml also when it comes from the cache. Without it, every run on
+      # main and dev downloaded everything again; when Maven Central throttled (429), Gradle
+      # fell back to the plugin portal, whose files differ, and verification failed the build.
       SIGNING: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -375,7 +380,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-          cache: ${{ env.SIGNING != 'true' && 'gradle' || '' }}
+          cache: gradle
           cache-dependency-path: |
             app/**/*.gradle.kts
             app/gradle/libs.versions.toml
