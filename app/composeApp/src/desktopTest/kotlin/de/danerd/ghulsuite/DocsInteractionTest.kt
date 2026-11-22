@@ -535,10 +535,15 @@ class DocsInteractionTest {
         text("Dokumente").performClick()
         waitFor("Mietvertrag.pdf")
         assertTrue(tagged("docs-breadcrumb"))
+        // Device test: entered from the list is the same as chosen in the header (which names it).
+        assertEquals("d1", state.docsVault)
         onAllNodes(hasText("All vaults") and hasAnyAncestor(androidx.compose.ui.test.hasTestTag("docs-breadcrumb")), useUnmergedTree = true).onFirst().performClick()
         waitGone("Mietvertrag.pdf")
+        assertNull(state.docsVault, "back to all vaults: the header too")
         runOnIdle { state.docsVault = "d1" }
         waitFor("Mietvertrag.pdf")
+        // Chosen in the header: the same breadcrumb with the way back to all vaults.
+        assertTrue(tagged("docs-breadcrumb"))
     }
 
 

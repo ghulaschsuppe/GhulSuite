@@ -171,6 +171,29 @@ object SuiteFiles {
     fun input(f: File): SuiteInput? = runCatching { resolve(f).takeIf { it.isFile }?.let { SuiteInput(it.inputStream(), it.length()) } }.getOrNull()
 
     /**
+     * Deletes a suite file (an old place), [wipe]: overwritten with zeros first. Review M-b: a
+     * folder or drive that is not there (a stick pulled) is UNREACHABLE, not "deleted".
+     */
+    fun delete(f: File, wipe: Boolean = false): SuiteDocDelete {
+        val dir = f.absoluteFile.parentFile
+        if (dir == null || !dir.isDirectory) return SuiteDocDelete.UNREACHABLE
+        if (!f.exists()) return SuiteDocDelete.GONE
+        if (wipe) ShareFiles.wipeFile(f) else f.delete()
+        return if (f.exists()) SuiteDocDelete.FAILED else SuiteDocDelete.DELETED
+    }
+
+    /** Whether [a] and [b] are one file: the same file where both are there, else the same path ignoring case. */
+    fun sameFile(a: File, b: File): Boolean {
+        if (a.exists() && b.exists()) return java.nio.file.Files.isSameFile(a.toPath(), b.toPath())
+        return a.canonicalPath.equals(b.canonicalPath, ignoreCase = true) || a.absolutePath.equals(b.absolutePath, ignoreCase = true)
+    }
+
+    /** What a cut off save left next to [f]: the moved aside old file and the new one not moved in. */
+    fun leftovers(f: File): List<de.danerd.ghulsuite.model.SuiteFileRef> =
+        listOf(OLD_EXT, ".ghltmp").map { File(f.absoluteFile.parentFile, f.name + it) }.filter { it.isFile }
+            .map { de.danerd.ghulsuite.model.SuiteFileRef(it.absolutePath, it.name) }
+
+    /**
      * N3: the save before was cut off between its two moves (see [writeReplacing]): only
      * "<name>.ghlold" is there, complete and not wiped yet. It takes its name back, so the file
      * opens here and is found on another PC; where it cannot be renamed (read only) it is read
@@ -314,6 +337,16 @@ class DesktopVaultBackend(private val window: () -> java.awt.Window?) :
     }
 
     override fun openSuiteInput(ref: SuiteFileRef): SuiteInput? = SuiteFiles.input(File(ref.id))
+
+    override fun deleteSuiteDocument(ref: SuiteFileRef, wipe: Boolean): SuiteDocDelete = SuiteFiles.delete(File(ref.id), wipe)
+
+    override fun samePlace(a: SuiteFileRef, b: SuiteFileRef): Boolean = SuiteFiles.sameFile(File(a.id), File(b.id))
+
+    override fun placeReachable(ref: SuiteFileRef): Boolean = File(ref.id).absoluteFile.parentFile?.isDirectory == true
+
+    override fun leftoversOf(ref: SuiteFileRef): List<SuiteFileRef> = SuiteFiles.leftovers(File(ref.id))
+
+    override fun whereIs(ref: SuiteFileRef): String = File(ref.id).absolutePath
 
     /** The room on the drive of the file's folder (0 from Java means: the folder is not there). */
     override fun freeSpaceAt(ref: SuiteFileRef): Long? =

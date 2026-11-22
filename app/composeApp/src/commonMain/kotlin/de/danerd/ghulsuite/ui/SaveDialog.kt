@@ -98,11 +98,16 @@ fun AppState.checkAndSave(target: SuiteFileRef, force: Boolean = false, created:
         }
         if (info != null && info.target in setOf(ArchiveTargetUi.CHANGED_ELSEWHERE, ArchiveTargetUi.OTHER_SUITE, ArchiveTargetUi.OTHER_PROTECTION)) {
             saveStep = SaveStep.Conflict(target, info, created)
+            // Review H2: after a conflict the old file may hold changes made elsewhere: no "delete".
+            saveConflictSeen = true
             return@launch
         }
         startSaveJob(target, created)
     }
 }
+
+/** The button "Choose a safe place" (save dialog and wizard). */
+const val SAFE_PLACE_TAG = "safe-place"
 
 /**
  * Writes the suite file as a background job without "Cancel": it goes on when the suite is
@@ -117,6 +122,8 @@ fun AppState.startSaveJob(target: SuiteFileRef, created: Boolean) {
         lane = "suite-file",
         cancellable = false,
     ) { job ->
+        // The place before: saved elsewhere ("Save as"), the old file stays there (said after).
+        val before = backend.suiteFile()
         try {
             val ok = backend.archiveSave(target, deviceInfo(), created) { done, total ->
                 if (total == WIPING_OLD_FILE) {
@@ -128,6 +135,20 @@ fun AppState.startSaveJob(target: SuiteFileRef, created: Boolean) {
             }
             if (!ok) throw JobFailed(str(Res.string.file_not_written))
             backend.setSuiteFile(target)
+            // A safe place chosen for this save: its folder grant stays now.
+            if (pendingPlace?.id == target.id) { pendingPlace = null; pendingPlaceRelease = null }
+            // Review H1: another place by the file's identity, not by the text of its address.
+            if (before != null && !backend.isSamePlace(before, target)) {
+                // Written and checked at the new place: the old file is named; "Delete old file"
+                // only where it holds just a state of this suite's own line (not after a conflict).
+                if (backend.unlocked.value) {
+                    oldDeletable = !saveConflictSeen && backend.oldFileDeletable(before)
+                    movedTo = target
+                    oldSuiteFile = before
+                } else {
+                    noteAfterUnlock(str(Res.string.file_saved_moved, target.name, before.name))
+                }
+            }
             readUnsaved()
             // Windows: "Save" before quitting, or "Quit after saving".
             if (quitAfterSave) {
@@ -146,6 +167,8 @@ fun AppState.startSaveJob(target: SuiteFileRef, created: Boolean) {
         } catch (e: Exception) {
             readUnsaved()
             quitAfterSave = false
+            // Not saved at a safe place chosen for it: its new folder grant goes again.
+            if (pendingPlace?.id == target.id && saveDialog == null) releasePendingPlace()
             val text = if (e is JobFailed) e.text else describe(e)
             when {
                 !backend.unlocked.value -> { noteAfterUnlock(str(Res.string.save_failed_title) + ": " + text); null }
@@ -160,6 +183,9 @@ fun AppState.startSaveJob(target: SuiteFileRef, created: Boolean) {
 /** Closes the save dialog; once saved, what was asked to follow (e.g. opening another file) runs. */
 fun AppState.closeSaveDialog() {
     val then = (saveStep as? SaveStep.Done)?.let { saveDialog?.then }
+    // A safe place chosen, but not saved there (cancelled in a conflict, failed): its grant goes.
+    if (saveJob == null) releasePendingPlace()
+    saveConflictSeen = false
     // Closed without saving: quitting does not wait for a save any more.
     if (saveJob == null) quitAfterSave = false
     saveDialog = null
@@ -184,10 +210,28 @@ fun SaveSuiteDialog(state: AppState) {
     }
     val step = state.saveStep
     val target = backend.suiteFile()
-    // Android: a folder shared once makes saving safe (new file next to the old one, then swapped).
-    var shared by androidx.compose.runtime.remember { mutableStateOf(0) }
-    val grant = rememberGrantFolder { picked -> if (picked) shared++ }
-    val safe = androidx.compose.runtime.remember(target, shared) { target?.let { backend.safeSave(it) } }
+    // Android (device test): one step to a safe place: choose or create a folder, the app keeps
+    // the right to it and saves the suite file there (new file next to the old, then swapped).
+    var placeRefused by androidx.compose.runtime.remember { mutableStateOf<Boolean?>(null) }
+    val chooseSafePlace = rememberChooseSafePlace { r ->
+        when (r) {
+            is SafePlaceResult.Chosen -> {
+                placeRefused = null
+                if (state.saveJob != null || state.saveStep == SaveStep.Checking) {
+                    // A save runs already (this one would be dropped): the folder is not taken.
+                    r.release()
+                } else {
+                    state.releasePendingPlace()
+                    state.pendingPlace = r.ref
+                    state.pendingPlaceRelease = r.release
+                    state.checkAndSave(r.ref, created = !r.exists)
+                }
+            }
+            is SafePlaceResult.Refused -> placeRefused = r.notShareable
+            SafePlaceResult.Cancelled -> {}
+        }
+    }
+    val safe = androidx.compose.runtime.remember(target, step) { target?.let { backend.safeSave(it) } }
     // M1: where the file can only be written over, "Save" asks first (the only file at stake).
     var riskAsked by androidx.compose.runtime.remember(target) { mutableStateOf(false) }
     val dismiss = { state.closeSaveDialog() }
@@ -209,16 +253,20 @@ fun SaveSuiteDialog(state: AppState) {
                 }
                 val at = backend.archiveSavedAt()
                 Hint(if (at > 0) stringResource(Res.string.save_last, formatDateTime(at)) else stringResource(Res.string.save_never))
+                // Which areas the save takes along (from the core; nothing listed when not known).
+                if (state.unsaved) unsavedAreasText(state.unsavedAreas)?.let { Hint(it) }
                 Hint(stringResource(Res.string.save_hint))
-                val unsafe = target != null && (safe == SafeSaveUi.FOLDER_NEEDED || safe == SafeSaveUi.OVERWRITES)
+                val unsafe = target != null && safe != null && safe != SafeSaveUi.SAFE
                 when (safe) {
-                    SafeSaveUi.FOLDER_NEEDED -> {
-                        // A folder was chosen, and still not safe: Android does not share every
-                        // folder (Download, the top of the storage or of an SD card), or another one.
-                        Banner(Icons.Filled.Warning, stringResource(if (shared > 0) Res.string.save_safe_folder_refused else Res.string.save_safe_folder))
-                        // The safe way first.
-                        Button(onClick = { target?.let { grant(it.id) } }, modifier = Modifier.fillMaxWidth()) {
-                            Text(stringResource(Res.string.save_safe_grant))
+                    SafeSaveUi.FOLDER_NEEDED, SafeSaveUi.NOT_SHAREABLE -> {
+                        // Not safe here: the way to a safe place first (a folder of its own, kept
+                        // for the app; the file is saved anew there, the old one stays).
+                        Banner(Icons.Filled.Warning, stringResource(if (safe == SafeSaveUi.NOT_SHAREABLE) Res.string.save_not_shareable else Res.string.save_safe_folder))
+                        placeRefused?.let { Text(stringResource(if (it) Res.string.safe_place_refused else Res.string.safe_place_other_app), color = warnColor()) }
+                        if (chooseSafePlace != null) {
+                            Button(onClick = { chooseSafePlace(target?.name ?: SUITE_FILE_NAME) }, modifier = Modifier.fillMaxWidth().testTag(SAFE_PLACE_TAG)) {
+                                Text(stringResource(Res.string.safe_place_choose))
+                            }
                         }
                     }
                     SafeSaveUi.OVERWRITES -> Banner(Icons.Filled.Warning, stringResource(Res.string.save_overwrites))
@@ -343,7 +391,7 @@ fun SaveSuiteDialog(state: AppState) {
                 step.target?.let { t ->
                     // M1: where the file is written over directly, a failed save may have left half a
                     // file: "Try again" asks again (with "Save as a new file") instead of writing over it.
-                    val unsafeHere = backend.safeSave(t).let { it == SafeSaveUi.FOLDER_NEEDED || it == SafeSaveUi.OVERWRITES }
+                    val unsafeHere = backend.safeSave(t) != SafeSaveUi.SAFE
                     Button(onClick = {
                         if (unsafeHere && t == target) {
                             riskAsked = true

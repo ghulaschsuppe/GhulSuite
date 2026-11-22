@@ -214,6 +214,7 @@ private fun MainScreen(state: AppState, wide: Boolean, width: Dp) {
     // A new recovery code cannot be skipped: it must be confirmed first.
     PlatformBackHandler(enabled = top != null && top !is Screen.RecoveryCode) { state.back() }
     UpdateDialog(state)
+    if (state.saveDialog == null && !state.recoveredGuide) OldSuiteFileDialog(state)
     if (state.saveDialog == null && !state.recoveredGuide) state.saveTargetOffer?.let { ref ->
         AlertDialog(
             onDismissRequest = { state.saveTargetOffer = null },
@@ -511,9 +512,30 @@ private fun navTabs(state: AppState): List<NavTab> = state.tabs.map { t ->
         tabIcon(t),
         areaColor(t),
         tag = "tab-" + t.name.lowercase(),
-        // Options holds the suite file: a dot while something is not saved in it.
-        dot = t == Tab.SETTINGS && state.saveNeeded,
+        // Options holds the suite file: a dot while something is not saved in it; an area with
+        // changes not in it has its own dot.
+        dot = state.saveNeeded && (t == Tab.SETTINGS || areaKey(t) in state.unsavedAreas),
     )
+}
+
+/** The name of an area as the core lists unsaved changes ("pass", "auth", "docs", "cal"). */
+fun areaKey(t: Tab): String = when (t) {
+    Tab.PASS -> "pass"
+    Tab.AUTH -> "auth"
+    Tab.DOCS -> "docs"
+    Tab.CAL -> "cal"
+    Tab.SETTINGS -> "suite"
+}
+
+/** The unsaved areas for the save dialog ("GhulPass, GhulCal"); null: none listed. */
+@Composable
+fun unsavedAreasText(areas: List<String>): String? {
+    if (areas.isEmpty()) return null
+    if ("unknown" in areas) return stringResource(Res.string.save_unsaved_unknown)
+    // Review N3: in the order of the areas everywhere (Pass, Auth, Docs, Cal), the suite last.
+    val names = listOf(Tab.PASS, Tab.AUTH, Tab.DOCS, Tab.CAL).filter { areaKey(it) in areas }.map { stringResource(tabTitle(it)) } +
+        (if ("suite" in areas) listOf(stringResource(Res.string.save_unsaved_suite)) else emptyList())
+    return if (names.isEmpty()) null else stringResource(Res.string.save_unsaved_areas, names.joinToString(", "))
 }
 
 /** The icon of an area: the same in the navigation, in Options and wherever the area is named. */
@@ -855,5 +877,79 @@ private fun IcsImportDialog(state: AppState, data: ByteArray) {
             }, enabled = events > 0) { Text(stringResource(Res.string.a_import)) }
         },
         dismissButton = { TextButton(onClick = { state.icsPending = null }) { Text(stringResource(Res.string.a_cancel)) } },
+    )
+}
+
+/** Tag of "Delete old file" (after the suite moved to another place). */
+const val DELETE_OLD_FILE_TAG = "delete-old-file"
+
+/**
+ * The suite moved to another place (written there and checked): where the old file is. Where it
+ * holds only a state of this suite's own line (checked, never after a conflict), "Delete old
+ * file": asked again naming it, then the master password (it deletes for good), and checked once
+ * more by the backend right before. Where the app may not, or the place is not there, it says so.
+ */
+@Composable
+fun OldSuiteFileDialog(state: AppState) {
+    val old = state.oldSuiteFile ?: return
+    val now = state.movedTo
+    var asking by remember(old) { mutableStateOf(false) }
+    var gate by remember(old) { mutableStateOf(false) }
+    var outcome by remember(old) { mutableStateOf<de.danerd.ghulsuite.model.OldFileDelete?>(null) }
+    val close = { state.oldSuiteFile = null; state.movedTo = null; state.oldDeletable = false }
+    val deletedMsg = stringResource(Res.string.old_file_deleted, old.name)
+    if (gate) {
+        PasswordGateDialog(
+            state, stringResource(Res.string.old_file_title), stringResource(Res.string.old_file_ask, old.name),
+            confirmLabel = stringResource(Res.string.old_file_delete_now), onDismiss = { gate = false; asking = false },
+        ) {
+            gate = false
+            asking = false
+            state.run(block = { state.backend.deleteOldSuiteFile(old) }) { r ->
+                if (r.deleted) {
+                    close()
+                    state.message(deletedMsg)
+                } else {
+                    outcome = r
+                }
+            }
+        }
+        return
+    }
+    val o = outcome
+    val canDelete = state.oldDeletable && (o == null || o.outcome == de.danerd.ghulsuite.model.OldFileOutcome.FAILED ||
+        o.outcome == de.danerd.ghulsuite.model.OldFileOutcome.UNREACHABLE)
+    AlertDialog(
+        onDismissRequest = close,
+        title = { Text(stringResource(Res.string.old_file_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(Res.string.file_saved_moved, now?.name ?: "", old.name))
+                if (!state.oldDeletable) Text(stringResource(Res.string.old_file_other_state))
+                if (asking) Text(stringResource(Res.string.old_file_ask, old.name), color = warnColor())
+                o?.let {
+                    Text(
+                        when (it.outcome) {
+                            de.danerd.ghulsuite.model.OldFileOutcome.UNREACHABLE -> stringResource(Res.string.old_file_unreachable, it.where)
+                            de.danerd.ghulsuite.model.OldFileOutcome.FAILED -> stringResource(Res.string.old_file_failed, it.where)
+                            de.danerd.ghulsuite.model.OldFileOutcome.DIFFERENT_STATE, de.danerd.ghulsuite.model.OldFileOutcome.SAME_FILE ->
+                                stringResource(Res.string.old_file_other_state)
+                            else -> stringResource(Res.string.old_file_by_hand, it.where)
+                        },
+                        color = warnColor(),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            if (canDelete) {
+                androidx.compose.runtime.CompositionLocalProvider(LocalButtonLook provides ButtonLook.DANGER) {
+                    TextButton(onClick = { if (!asking) asking = true else gate = true }, enabled = !state.busy, modifier = Modifier.testTag(DELETE_OLD_FILE_TAG)) {
+                        Text(stringResource(if (asking) Res.string.old_file_delete_now else if (o != null) Res.string.old_file_retry else Res.string.old_file_delete))
+                    }
+                }
+            }
+        },
+        dismissButton = { TextButton(onClick = close) { Text(stringResource(if (canDelete) Res.string.old_file_keep else Res.string.a_ok)) } },
     )
 }

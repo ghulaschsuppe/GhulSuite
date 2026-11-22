@@ -176,6 +176,7 @@ fun VaultsSection(state: AppState) {
     var menuFor by remember { mutableStateOf<String?>(null) }
     var renaming by remember { mutableStateOf<VaultUi?>(null) }
     var removing by remember { mutableStateOf<VaultUi?>(null) }
+    var removeGate by remember { mutableStateOf<VaultUi?>(null) }
     /** The vault handed on as a whole (with a protection of its own). */
     var sharing by remember { mutableStateOf<VaultUi?>(null) }
     val exported = stringResource(Res.string.msg_exported)
@@ -348,11 +349,22 @@ fun VaultsSection(state: AppState) {
             confirmButton = {
                 TextButton(enabled = nameMatches(typed, v.name), onClick = {
                     removing = null
-                    state.run(block = { backend.removeVault(v.id) }) { state.changed() }
-                }) { Text(stringResource(Res.string.a_delete)) }
+                    removeGate = v
+                }, modifier = Modifier.testTag("vault-remove-confirm")) { Text(stringResource(Res.string.a_delete)) }
             },
             dismissButton = { TextButton(onClick = { removing = null }) { Text(stringResource(Res.string.a_cancel)) } },
         )
+    }
+    // Device test: removing a vault (for good, on every device) needs the master password, like
+    // the other steps that delete for good; it always asks.
+    removeGate?.let { v ->
+        PasswordGateDialog(
+            state, stringResource(Res.string.vault_remove_title, v.name), stringResource(Res.string.vault_remove_warning),
+            confirmLabel = stringResource(Res.string.a_delete), onDismiss = { removeGate = null },
+        ) {
+            removeGate = null
+            state.run(block = { backend.removeVault(v.id) }) { state.changed() }
+        }
     }
 }
 

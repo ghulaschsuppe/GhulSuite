@@ -290,7 +290,6 @@
     <string name="set_keys">Protection and recovery</string>
     <string name="set_keys_hint">What opens your suite: the password plus one of the keys or key files. The recovery code opens everything on its own. Keep it safe.</string>
     <string name="set_lock_screen_off">Lock when the screen turns off</string>
-    <string name="set_modules">Manage areas</string>
     <string name="set_new_code_text">A new recovery code is created. The previous one then opens nothing you save from now on; it still opens old copies of the suite file.</string>
     <string name="set_no_key_hint">Your suite is protected with a key file. A security key is even more secure: it cannot be copied.</string>
     <string name="set_panic_hint">The lock button and the notification lock normally. Shaking and the tile “Lock GhulSuite” in the quick settings are an instant lock: they also remove fingerprint and app PIN unlock, after that only the master password and the second factor open it. Event reminders keep working, unless you let the instant lock delete them too (they come back with the next unlock). A short vibration confirms locking by shaking.</string>
@@ -445,7 +444,6 @@
     <string name="set_lock_hint_short">Removes all keys from memory</string>
     <string name="set_lock_panic">Locking</string>
     <string name="set_lock_panic_sub">Time, shake, quick tile</string>
-    <string name="set_modules_sub">Set up, hide, remove</string>
     <string name="set_my_suite">My suite</string>
     <string name="set_pass_sub">Display, generator</string>
     <string name="set_privacy">Privacy</string>
@@ -569,7 +567,6 @@
     <string name="set_start_second">2nd area</string>
     <string name="set_start_third">3rd area</string>
     <string name="set_start_hint">Order: %1$s</string>
-    <string name="set_areas_in_bar">Show or hide areas in the bar</string>
     <string name="about_report">Show error report</string>
     <string name="about_report_sub">With device and version, no vault contents</string>
     <string name="about_report_hint">Contains only version, device type and the last crash report, no passwords or content. Nothing is sent by itself: copy it, share it (e.g. with your mail app) or save it, and send it to the developer.</string>
@@ -809,7 +806,7 @@
     <string name="cal_lock_full_sub">Title, time and place</string>
     <string name="cal_test">Show a test reminder</string>
     <string name="cal_test_title">Test reminder</string>
-    <string name="cal_reminder_info">When unlocking, the device schedules the reminders of the next 30 days itself (Android: exact alarms, Windows: while GhulSuite runs). They arrive on time even while the app is locked, no server, no permanent notification.</string>
+    <string name="cal_reminder_info">When you unlock, the device plans the reminders of the next 30 days itself (Android: exact alarms, Windows: while GhulSuite runs). They come on time, also while the app is locked, without a server and without a permanent notification. If you do not unlock for 28 days, GhulSuite reminds you to open the app; events after that are planned at the next unlock.</string>
     <string name="cal_data">Data</string>
     <string name="cal_manage">Manage calendars (%1$s)</string>
     <string name="cal_data_hint">Colours, visibility, import and export of .ics files from Google, Outlook, Apple or Thunderbird.</string>
@@ -819,6 +816,8 @@
     <string name="cal_notify_min">Event in %1$s</string>
     <string name="cal_notify_soon">Event now</string>
     <string name="cal_notify_locked">Unlock to see the details.</string>
+    <string name="cal_open_app_title">GhulSuite</string>
+    <string name="cal_open_app_text">Open GhulSuite so your event reminders keep coming.</string>
     <string name="cal_notify_in">in %1$s · %2$s</string>
     <string name="cal_open">Open</string>
     <string name="cal_snooze">Again in 5 min</string>
@@ -895,10 +894,8 @@
     <string name="area_remove_warning">Every vault file of the area (%1$s) is deleted, with its content and settings; with the next save also in the suite file.</string>
     <string name="area_remove_tip">Tip: export first what you want to keep. If you only do not want to see the area here, choose “Hide on this device”.</string>
     <string name="area_removed">%1$s removed</string>
-    <string name="area_tag_not_set_up">not set up</string>
-    <string name="area_tag_hidden">hidden here</string>
-    <string name="area_tag_active">active</string>
-    <string name="areas_hint">Every area is an encrypted file of its own with its settings. “Hide” applies to this device only, “Remove” deletes the file from the suite (with the next save also from the suite file).</string>
+    <string name="area_tag_not_set_up">Not set up</string>
+    <string name="area_tag_hidden">Hidden</string>
     <string name="area_set_up_title">Set up %1$s</string>
     <string name="area_set_up_text">%1$s. The file %2$s is created and saved in the suite file like everything else.</string>
     <string name="area_set_up">Set up</string>
@@ -1076,6 +1073,18 @@
     <string name="file_open_other">Open another suite file</string>
     <string name="file_hint">The suite file (.ghlzip) holds all vaults, encrypted and sealed. Take it to another device, e.g. on a USB stick, and open it there. Nothing is matched: the state saved last is the current one.</string>
     <string name="file_saved">Saved in %1$s.</string>
+    <string name="file_saved_moved">From now on %1$s is the suite file. The old file %2$s is still at its old place.</string>
+    <string name="old_file_title">Old suite file</string>
+    <string name="old_file_delete">Delete old file</string>
+    <string name="old_file_delete_now">Yes, delete</string>
+    <string name="old_file_keep">Keep</string>
+    <string name="old_file_ask">Really delete %1$s? The new file is written and checked, and the old one only holds a state of this suite that the new file already contains.</string>
+    <string name="old_file_by_hand">The app cannot delete this file there. Delete it yourself if you no longer need it: %1$s</string>
+    <string name="old_file_deleted">%1$s is deleted.</string>
+    <string name="old_file_other_state">The old file holds a state or protection this device does not have (e.g. changes from another device). So it is kept; open it if you need its changes.</string>
+    <string name="old_file_unreachable">The place of the old file cannot be reached right now (stick pulled out?). Try again later: %1$s</string>
+    <string name="old_file_failed">Deleting failed. Try again or delete it yourself: %1$s</string>
+    <string name="old_file_retry">Try again</string>
     <string name="file_unreachable">The suite file cannot be reached right now (is the USB stick plugged in?). Save to a new place or try again.</string>
     <string name="file_not_written">The suite file could not be written completely. The file at its place may be incomplete now; everything is safe in the app. Save again or at a new place.</string>
     <string name="file_save_failed">The file could not be saved. Try again or choose another place.</string>
@@ -1412,6 +1421,9 @@
     <string name="save_file">File: %1$s</string>
     <string name="save_last">Last saved: %1$s</string>
     <string name="save_never">Never saved into a suite file yet.</string>
+    <string name="save_unsaved_areas">Not saved: %1$s</string>
+    <string name="save_unsaved_suite">Suite (protection, vaults, settings)</string>
+    <string name="save_unsaved_unknown">Not saved: areas unknown</string>
     <string name="save_no_file">There is no suite file yet. Choose where it should be, best on a USB stick in a folder of its own. Until then your data is on this device only.</string>
     <string name="save_place">Choose a place …</string>
     <string name="save_hint">While it is saved: do not pull the USB stick and keep the app open.</string>
@@ -1445,10 +1457,10 @@
     <string name="wz_step_file">Suite file</string>
     <string name="wz_file_failed">Without a suite file your data is on this device only. If it is lost, everything is gone. Try again or choose another place; you can also create it later with the save icon at the top.</string>
     <string name="wz_file_skip">Continue without a suite file</string>
-    <string name="wz_share_folder">Saved. Now share the folder of the suite file: otherwise every later save writes directly over your only suite file, and an interruption (stick pulled, app ended) makes it unusable.</string>
+    <string name="wz_share_folder">At this place the suite file would be written over directly at every save. Choose a safe place: a folder of its own (e.g. “GhulSuite”, create it in the picker). The app creates the suite file there anew; the one just saved stays where it is.</string>
     <string name="wz_cloud_place">Saved. This place (e.g. a cloud app) only allows writing over the file directly: if a later save is interrupted, the file there is unusable. Cloud apps also keep older versions, even after deleting. A USB stick or a folder on the device is better.</string>
     <string name="wz_other_place">Choose another place</string>
-    <string name="wz_place_hint">Best on a USB stick in a folder of its own (e.g. “GhulSuite”), not in the folder “Download”: Android does not share it, and then the file is written over directly at every save.</string>
+    <string name="wz_place_hint">Best on a USB stick or in the storage in a folder of its own (e.g. “GhulSuite”), which you can create in the picker. Not “Download” and not the top level: Android does not share those.</string>
     <string name="close_editing">An entry is being edited and not applied yet. Apply it first and then save, or quit without it.</string>
     <string name="close_saving_unknown">The suite file is being saved right now. The app quits as soon as saving is done.</string>
     <string name="save_running_locked_unknown">The suite file is still being saved. Do not pull the USB stick.</string>
@@ -1483,11 +1495,14 @@
     <string name="file_offer_no">Not here</string>
     <string name="file_offer_no_access">This app does not let GhulSuite keep writing to the file. Save with “Save as” to a place you choose.</string>
     <string name="file_network_path">%1$s is on a network drive and is not opened by double click while GhulSuite runs. Open it in GhulSuite with “Open suite file”.</string>
-    <string name="save_safe_folder">So that saving never leaves half a file, share the folder of the suite file once. Then the app writes the new file next to it, checks it and only then swaps it for the old one.</string>
-    <string name="save_safe_grant">Share folder</string>
+    <string name="save_safe_folder">Here the app can only write over the suite file directly. So that saving never leaves half a file, choose a safe place once: a folder of its own (e.g. “GhulSuite”, create it in the picker). The app creates the suite file there anew; the old one stays where it is.</string>
+    <string name="safe_place_choose">Choose a safe place</string>
+    <string name="safe_place_refused">Android does not share this folder (“Download” or the top level). Choose a subfolder or create one, e.g. “GhulSuite”.</string>
+    <string name="safe_place_other_app">This folder belongs to another app (e.g. a cloud app) or could not be shared. Choose a folder in the device’s storage, on the SD card or a USB stick, or use “Save as”.</string>
+    <string name="safe_place_taken">There is already a file GhulSuite.ghlzip in this folder. Choose another folder or create a new one.</string>
+    <string name="save_not_shareable">The suite file is in the folder “Download” or at the top of the storage. Android does not share these places with any app, so the file is written over directly at every save. Choose a safe place once: a folder of its own (e.g. “GhulSuite”, create it in the picker). The app creates the suite file there anew; the old one stays where it is.</string>
     <string name="save_overwrites">This place (e.g. a cloud app) does not allow swapping: the file there is written over directly. If that is interrupted, the file is unusable; your data then stays in the app. Cloud apps also keep older versions, even after deleting. A USB stick or a folder on the device is safer.</string>
     <string name="save_risk_text">The suite file is written over directly. If saving is interrupted (stick pulled, app ended, cloud app failing), it is unusable and only the state in this app is left. Safer: save it as a new file next to it.</string>
     <string name="save_as_new">Save as a new file</string>
     <string name="save_overwrite_anyway">Overwrite anyway</string>
-    <string name="save_safe_folder_refused">This folder does not help: Android does not share the folder \u201cDownload\u201d and the top level of the storage or of an SD card, or it was not the folder of the suite file. Use \u201cSave as\u201d to save the suite file in a folder of its own (e.g. \u201cGhulSuite\u201d) and share that one.</string>
 </resources>

@@ -111,10 +111,11 @@ name: Setup
 - tapOn:
     text: "(?i)save"
     retryTapIfNoChange: false
-# M1: a place where later saves would write over the file (a folder not shared with the app, as
-# Download in the emulator): the wizard says so and offers to share the folder; "Later" goes on.
+# M1: a place where later saves would write over the file (Download in the emulator): the wizard
+# says so and offers "Choose a safe place" (its folder picker is not driven here); "Later" goes on.
+# Waited for: the app (done) or the "Later" button of that step.
 - extendedWaitUntil:
-    visible: "Search entries|Saved\\. .*"
+    visible: "Search entries|Later"
     timeout: 30000
 - runFlow:
     when:

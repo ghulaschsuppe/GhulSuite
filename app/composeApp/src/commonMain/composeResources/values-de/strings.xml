@@ -290,7 +290,6 @@
     <string name="set_keys">Schutz und Wiederherstellung</string>
     <string name="set_keys_hint">Womit sich deine Suite öffnen lässt: Passwort plus einer der Keys oder Schlüsseldateien. Der Wiederherstellungscode öffnet alles allein. Bewahre ihn sicher auf.</string>
     <string name="set_lock_screen_off">Sperren, wenn der Bildschirm ausgeht</string>
-    <string name="set_modules">Bereiche verwalten</string>
     <string name="set_new_code_text">Es wird ein neuer Wiederherstellungscode erstellt. Der bisherige öffnet danach nichts mehr, was du ab jetzt speicherst; alte Kopien der Suite-Datei öffnet er weiter.</string>
     <string name="set_no_key_hint">Deine Suite ist mit einer Schlüsseldatei geschützt. Ein Key ist noch sicherer: Er lässt sich nicht kopieren.</string>
     <string name="set_panic_hint">Der Sperr-Knopf und die Benachrichtigung sperren normal. Schütteln und die Kachel „GhulSuite sperren“ in den Schnelleinstellungen sind eine Sofortsperre: Sie löschen zusätzlich Fingerabdruck- und App-PIN-Entsperren, danach öffnen nur Master-Passwort und zweiter Faktor. Termin-Erinnerungen laufen weiter, außer du lässt die Sofortsperre sie mitlöschen (beim nächsten Entsperren kommen sie zurück). Ein kurzes Vibrieren bestätigt das Sperren durch Schütteln.</string>
@@ -445,7 +444,6 @@
     <string name="set_lock_hint_short">Entfernt alle Schlüssel aus dem Speicher</string>
     <string name="set_lock_panic">Sperre</string>
     <string name="set_lock_panic_sub">Zeit, Schütteln, Schnellkachel</string>
-    <string name="set_modules_sub">Einrichten, ausblenden, entfernen</string>
     <string name="set_my_suite">Meine Suite</string>
     <string name="set_pass_sub">Anzeige, Generator</string>
     <string name="set_privacy">Privatsphäre</string>
@@ -569,7 +567,6 @@
     <string name="set_start_second">2. Bereich</string>
     <string name="set_start_third">3. Bereich</string>
     <string name="set_start_hint">Reihenfolge: %1$s</string>
-    <string name="set_areas_in_bar">Bereiche in der Leiste ein- und ausblenden</string>
     <string name="about_report">Fehlerbericht anzeigen</string>
     <string name="about_report_sub">Mit Gerät und Version, ohne Tresor-Inhalte</string>
     <string name="about_report_hint">Enthält nur Version, Gerätetyp und den letzten Absturzbericht, keine Passwörter oder Inhalte. Von selbst wird nichts gesendet: Kopiere ihn, teile ihn (z. B. mit deiner Mail-App) oder speichere ihn und schicke ihn an den Entwickler.</string>
@@ -809,7 +806,7 @@
     <string name="cal_lock_full_sub">Titel, Uhrzeit und Ort</string>
     <string name="cal_test">Test-Erinnerung zeigen</string>
     <string name="cal_test_title">Test-Erinnerung</string>
-    <string name="cal_reminder_info">Beim Entsperren plant das Gerät die Erinnerungen der nächsten 30 Tage selbst ein (Android: exakte Wecker, Windows: solange GhulSuite läuft). Sie kommen pünktlich, auch wenn die App gesperrt ist, ohne Server und ohne Dauerbenachrichtigung.</string>
+    <string name="cal_reminder_info">Beim Entsperren plant das Gerät die Erinnerungen der nächsten 30 Tage selbst ein (Android: exakte Wecker, Windows: solange GhulSuite läuft). Sie kommen pünktlich, auch wenn die App gesperrt ist, ohne Server und ohne Dauerbenachrichtigung. Entsperrst du 28 Tage lang nicht, erinnert dich GhulSuite daran, die App zu öffnen; Termine danach werden beim nächsten Entsperren eingeplant.</string>
     <string name="cal_data">Daten</string>
     <string name="cal_manage">Kalender verwalten (%1$s)</string>
     <string name="cal_data_hint">Farben, Sichtbarkeit, Import und Export von .ics-Dateien aus Google, Outlook, Apple oder Thunderbird.</string>
@@ -819,6 +816,8 @@
     <string name="cal_notify_min">Termin in %1$s</string>
     <string name="cal_notify_soon">Termin jetzt</string>
     <string name="cal_notify_locked">Details siehst du nach dem Entsperren.</string>
+    <string name="cal_open_app_title">GhulSuite</string>
+    <string name="cal_open_app_text">Öffne GhulSuite, damit deine Termin-Erinnerungen weiterlaufen.</string>
     <string name="cal_notify_in">in %1$s · %2$s</string>
     <string name="cal_open">Öffnen</string>
     <string name="cal_snooze">In 5 Min. erneut</string>
@@ -895,10 +894,8 @@
     <string name="area_remove_warning">Jede Tresordatei des Bereichs (%1$s) wird gelöscht, samt Inhalt und Einstellungen; mit dem nächsten Speichern auch in der Suite-Datei.</string>
     <string name="area_remove_tip">Tipp: Exportiere vorher, was du behalten willst. Willst du den Bereich nur hier nicht sehen, wähle „Auf diesem Gerät ausblenden“.</string>
     <string name="area_removed">%1$s entfernt</string>
-    <string name="area_tag_not_set_up">nicht eingerichtet</string>
-    <string name="area_tag_hidden">hier ausgeblendet</string>
-    <string name="area_tag_active">aktiv</string>
-    <string name="areas_hint">Jeder Bereich ist eine eigene verschlüsselte Datei mit seinen Einstellungen. „Ausblenden“ gilt nur für dieses Gerät, „Entfernen“ löscht die Datei aus der Suite (mit dem nächsten Speichern auch aus der Suite-Datei).</string>
+    <string name="area_tag_not_set_up">Nicht eingerichtet</string>
+    <string name="area_tag_hidden">Ausgeblendet</string>
     <string name="area_set_up_title">%1$s einrichten</string>
     <string name="area_set_up_text">%1$s. Es entsteht die Datei %2$s, sie wird wie alles andere in der Suite-Datei gespeichert.</string>
     <string name="area_set_up">Einrichten</string>
@@ -1076,6 +1073,18 @@
     <string name="file_open_other">Andere Suite-Datei öffnen</string>
     <string name="file_hint">Die Suite-Datei (.ghlzip) enthält alle Tresore, verschlüsselt und versiegelt. Du nimmst sie z. B. auf einem USB-Stick zu einem anderen Gerät mit und öffnest sie dort. Abgeglichen wird nichts: Aktuell ist der Stand, der zuletzt gespeichert wurde.</string>
     <string name="file_saved">Gespeichert in %1$s.</string>
+    <string name="file_saved_moved">Ab jetzt ist %1$s die Suite-Datei. Die alte Datei %2$s liegt noch an ihrem bisherigen Ort.</string>
+    <string name="old_file_title">Alte Suite-Datei</string>
+    <string name="old_file_delete">Alte Datei löschen</string>
+    <string name="old_file_delete_now">Ja, löschen</string>
+    <string name="old_file_keep">Behalten</string>
+    <string name="old_file_ask">%1$s wirklich löschen? Die neue Datei ist geschrieben und geprüft, und die alte hält nur einen Stand dieser Suite, den die neue Datei schon enthält.</string>
+    <string name="old_file_by_hand">Die App kann diese Datei dort nicht löschen. Lösche sie selbst, wenn du sie nicht mehr brauchst: %1$s</string>
+    <string name="old_file_deleted">%1$s ist gelöscht.</string>
+    <string name="old_file_other_state">Die alte Datei hält einen Stand oder Schutz, den dieses Gerät nicht hat (z. B. Änderungen von einem anderen Gerät). Sie bleibt darum liegen; öffne sie, wenn du ihre Änderungen brauchst.</string>
+    <string name="old_file_unreachable">Der Ort der alten Datei ist gerade nicht erreichbar (Stick abgezogen?). Versuche es später erneut: %1$s</string>
+    <string name="old_file_failed">Löschen ist fehlgeschlagen. Versuche es erneut oder lösche sie selbst: %1$s</string>
+    <string name="old_file_retry">Erneut versuchen</string>
     <string name="file_unreachable">Die Suite-Datei ist gerade nicht erreichbar (ist der USB-Stick eingesteckt?). Speichere unter einem neuen Ort oder versuche es erneut.</string>
     <string name="file_not_written">Die Suite-Datei ließ sich nicht vollständig schreiben. Die Datei am Ort kann jetzt unvollständig sein; in der App ist alles sicher da. Speichere erneut oder an einem neuen Ort.</string>
     <string name="file_save_failed">Die Datei ließ sich nicht speichern. Versuche es erneut oder wähle einen anderen Ort.</string>
@@ -1412,6 +1421,9 @@
     <string name="save_file">Datei: %1$s</string>
     <string name="save_last">Zuletzt gespeichert: %1$s</string>
     <string name="save_never">Noch nie in eine Suite-Datei gespeichert.</string>
+    <string name="save_unsaved_areas">Ungespeichert: %1$s</string>
+    <string name="save_unsaved_suite">Suite (Schutz, Tresore, Einstellungen)</string>
+    <string name="save_unsaved_unknown">Ungespeichert: Bereiche unbekannt</string>
     <string name="save_no_file">Es gibt noch keine Suite-Datei. Wähle, wo sie liegen soll, am besten auf einem USB-Stick in einem eigenen Ordner. Bis dahin liegen deine Daten nur auf diesem Gerät.</string>
     <string name="save_place">Ort wählen …</string>
     <string name="save_hint">Solange gespeichert wird: USB-Stick nicht abziehen und die App offen lassen.</string>
@@ -1445,10 +1457,10 @@
     <string name="wz_step_file">Suite-Datei</string>
     <string name="wz_file_failed">Ohne Suite-Datei liegen deine Daten nur auf diesem Gerät. Geht es verloren, ist alles weg. Versuche es noch einmal oder wähle einen anderen Ort; anlegen kannst du sie auch später oben mit dem Speichern-Symbol.</string>
     <string name="wz_file_skip">Ohne Suite-Datei weiter</string>
-    <string name="wz_share_folder">Gespeichert. Gib jetzt noch den Ordner der Suite-Datei frei: Sonst schreibt jedes spätere Speichern direkt über deine einzige Suite-Datei, und ein Abbruch (Stick abgezogen, App beendet) macht sie unbrauchbar.</string>
+    <string name="wz_share_folder">An diesem Ort würde die Suite-Datei bei jedem Speichern direkt überschrieben. Wähle einen sicheren Speicherort: einen eigenen Ordner (z. B. „GhulSuite“, im Auswahlfenster neu anlegen). Die App legt die Suite-Datei dort neu an; die eben gespeicherte bleibt, wo sie ist.</string>
     <string name="wz_cloud_place">Gespeichert. Dieser Ort (z. B. eine Cloud-App) erlaubt nur direktes Überschreiben: Bricht ein späteres Speichern ab, ist die Datei dort unbrauchbar. Cloud-Apps behalten außerdem ältere Fassungen, auch nach dem Löschen. Besser ist ein USB-Stick oder ein Ordner auf dem Gerät.</string>
     <string name="wz_other_place">Anderen Ort wählen</string>
-    <string name="wz_place_hint">Am besten auf einem USB-Stick in einem eigenen Ordner (z. B. „GhulSuite“), nicht im Ordner „Download“: Den gibt Android nicht frei, dann wird die Datei bei jedem Speichern direkt überschrieben.</string>
+    <string name="wz_place_hint">Am besten auf einem USB-Stick oder im Speicher in einem eigenen Ordner (z. B. „GhulSuite“), den du im Auswahlfenster neu anlegen kannst. Nicht „Download“ und nicht die oberste Ebene: Die gibt Android nicht frei.</string>
     <string name="close_editing">Ein Eintrag wird gerade bearbeitet und ist noch nicht übernommen. Übernimm ihn zuerst und speichere dann, oder beende ohne ihn.</string>
     <string name="close_saving_unknown">Die Suite-Datei wird gerade gespeichert. Die App beendet sich, sobald das Speichern fertig ist.</string>
     <string name="save_running_locked_unknown">Die Suite-Datei wird noch gespeichert. USB-Stick nicht abziehen.</string>
@@ -1483,11 +1495,14 @@
     <string name="file_offer_no">Nicht hierhin</string>
     <string name="file_offer_no_access">Diese App lässt GhulSuite nicht dauerhaft in die Datei schreiben. Sichere mit „Speichern unter“ an einen Ort deiner Wahl.</string>
     <string name="file_network_path">%1$s liegt auf einem Netzlaufwerk und wird bei laufendem GhulSuite nicht per Doppelklick geöffnet. Öffne sie in GhulSuite mit „Suite-Datei öffnen“.</string>
-    <string name="save_safe_folder">Damit beim Speichern nie eine halbe Datei entsteht, gib den Ordner der Suite-Datei einmal frei. Dann schreibt die App die neue Datei daneben, prüft sie und tauscht erst danach die alte aus.</string>
-    <string name="save_safe_grant">Ordner freigeben</string>
+    <string name="save_safe_folder">Hier kann die App die Suite-Datei nur direkt überschreiben. Damit beim Speichern nie eine halbe Datei entsteht, wähle einmal einen sicheren Speicherort: einen eigenen Ordner (z. B. „GhulSuite“, im Auswahlfenster neu anlegen). Die App legt die Suite-Datei dort neu an; die alte bleibt, wo sie ist.</string>
+    <string name="safe_place_choose">Sicheren Speicherort wählen</string>
+    <string name="safe_place_refused">Diesen Ordner gibt Android nicht frei („Download“ oder die oberste Ebene). Wähle einen Unterordner oder lege einen an, z. B. „GhulSuite“.</string>
+    <string name="safe_place_other_app">Dieser Ordner gehört zu einer anderen App (z. B. einer Cloud-App) oder ließ sich nicht freigeben. Wähle einen Ordner im Speicher des Geräts, auf der SD-Karte oder einem USB-Stick, oder nimm „Speichern unter …“.</string>
+    <string name="safe_place_taken">In diesem Ordner liegt schon eine Datei GhulSuite.ghlzip. Wähle einen anderen Ordner oder lege einen neuen an.</string>
+    <string name="save_not_shareable">Die Suite-Datei liegt im Ordner „Download“ oder ganz oben im Speicher. Diese Orte gibt Android für keine App frei, dort wird die Datei bei jedem Speichern direkt überschrieben. Wähle einmal einen sicheren Speicherort: einen eigenen Ordner (z. B. „GhulSuite“, im Auswahlfenster neu anlegen). Die App legt die Suite-Datei dort neu an; die alte bleibt, wo sie ist.</string>
     <string name="save_overwrites">Dieser Speicherort (z. B. eine Cloud-App) erlaubt kein Austauschen: Die Datei dort wird direkt überschrieben. Bricht das ab, ist sie unbrauchbar; deine Daten bleiben dann in der App. Cloud-Apps behalten außerdem ältere Fassungen, auch nach dem Löschen. Sicherer ist ein USB-Stick oder ein Ordner auf dem Gerät.</string>
     <string name="save_risk_text">Die Suite-Datei wird direkt überschrieben. Bricht das Speichern ab (Stick abgezogen, App beendet, Cloud-App gestört), ist sie unbrauchbar und es gibt nur noch den Stand in dieser App. Sicherer: als neue Datei daneben speichern.</string>
     <string name="save_as_new">Als neue Datei speichern</string>
     <string name="save_overwrite_anyway">Trotzdem überschreiben</string>
-    <string name="save_safe_folder_refused">Dieser Ordner hilft nicht: Android gibt den Ordner „Download“ und die oberste Ebene des Speichers oder einer SD-Karte nicht frei, oder es war nicht der Ordner der Suite-Datei. Speichere die Suite-Datei mit „Speichern unter …“ in einem eigenen Unterordner (z. B. „GhulSuite“) und gib diesen frei.</string>
 </resources>

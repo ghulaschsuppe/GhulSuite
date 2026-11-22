@@ -333,6 +333,8 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
 
     override fun archiveUnsaved(): Boolean = runCatching { suite.archiveUnsaved() }.getOrDefault(false)
 
+    override fun archiveUnsavedAreas(): List<String> = runCatching { suite.archiveUnsavedAreas() }.getOrDefault(emptyList())
+
     override fun archiveUnsavedSince(): Long = runCatching { suite.archiveUnsavedSince() }.getOrDefault(0L)
 
     override fun archiveSavedAt(): Long = runCatching { suite.archiveSavedAt() }.getOrDefault(0L)
@@ -424,6 +426,96 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
             setSuiteFile(null)
             settings.forgetSuite()
             unlockedState.value = false
+        }
+    }
+
+    /**
+     * Deletes the document [ref] of a suite file ([wipe]: written over with zeros first). GONE: it
+     * is not there (its place is); UNREACHABLE: its place (stick, folder) is not there now.
+     */
+    protected open fun deleteSuiteDocument(ref: SuiteFileRef, wipe: Boolean): SuiteDocDelete = SuiteDocDelete.NOT_ALLOWED
+
+    /** What a cut off save may have left next to [ref] (Android: .alt and .neu, Windows: .ghlold and .ghltmp). */
+    protected open fun leftoversOf(ref: SuiteFileRef): List<SuiteFileRef> = emptyList()
+
+    /** Where [ref] lies, as the user finds it (a path, a folder and name). */
+    protected open fun whereIs(ref: SuiteFileRef): String = ref.name
+
+    /** After the old file is gone: the rights the app took for its place may go (Android). */
+    protected open fun releaseOldPlace(old: SuiteFileRef) {}
+
+    /** Whether the folder or drive of [ref] is there now (a stick plugged in). */
+    protected open fun placeReachable(ref: SuiteFileRef): Boolean = true
+
+    /** The platform's answer to [isSamePlace] (see there); the default compares the ids. */
+    protected open fun samePlace(a: SuiteFileRef, b: SuiteFileRef): Boolean = a.id == b.id
+
+    override fun isSamePlace(a: SuiteFileRef, b: SuiteFileRef): Boolean =
+        a.id == b.id || runCatching { samePlace(a, b) }.getOrDefault(true)
+
+    /** Review H2: only a file of this working copy's own line (its loss loses nothing). */
+    private suspend fun ofOwnLine(ref: SuiteFileRef): Boolean =
+        runCatching { archiveTargetInfo(ref)?.target == de.danerd.ghulsuite.model.ArchiveTargetUi.SAME }.getOrDefault(false)
+
+    /** Review H1: the same bytes as [b] (then it holds the state just written: the same file or a copy of it). */
+    private fun sameContent(a: SuiteFileRef, b: SuiteFileRef): Boolean = runCatching {
+        val x = openSuiteInput(a) ?: return@runCatching false
+        x.stream.use { xs ->
+            val y = openSuiteInput(b) ?: return@runCatching false
+            y.stream.use { ys ->
+                if (x.size >= 0 && y.size >= 0 && x.size != y.size) return@runCatching false
+                val bx = ByteArray(1 shl 16)
+                val by = ByteArray(1 shl 16)
+                while (true) {
+                    val n = xs.readNBytes(bx, 0, bx.size)
+                    val m = ys.readNBytes(by, 0, by.size)
+                    if (n != m) return@runCatching false
+                    if (n == 0) return@runCatching true
+                    if (!java.util.Arrays.equals(bx, 0, n, by, 0, n)) return@runCatching false
+                }
+                false
+            }
+        }
+    }.getOrDefault(true)
+
+    /** The suite file of now, by identity (and a missing place counts as not that one). */
+    private fun isCurrent(ref: SuiteFileRef): Boolean = suiteFile()?.let { isSamePlace(ref, it) } ?: false
+
+    override suspend fun oldFileDeletable(old: SuiteFileRef): Boolean =
+        old.id.isNotEmpty() && !isCurrent(old) && ofOwnLine(old)
+
+    override suspend fun deleteOldSuiteFile(old: SuiteFileRef): de.danerd.ghulsuite.model.OldFileDelete {
+        val where = whereIs(old)
+        fun result(o: de.danerd.ghulsuite.model.OldFileOutcome) = de.danerd.ghulsuite.model.OldFileDelete(o, where)
+        val now = suiteFile()
+        // Review H1: never the place the suite is saved to now, by identity and by content.
+        if (old.id.isEmpty() || now == null || isSamePlace(old, now) || io { sameContent(old, now) }) {
+            return result(de.danerd.ghulsuite.model.OldFileOutcome.SAME_FILE)
+        }
+        // Review H2: only a state of this suite's own line (else changes made elsewhere go).
+        if (!ofOwnLine(old)) {
+            // Not readable because its stick is not there: said so, not "another state".
+            return result(
+                if (io { placeReachable(old) }) de.danerd.ghulsuite.model.OldFileOutcome.DIFFERENT_STATE
+                else de.danerd.ghulsuite.model.OldFileOutcome.UNREACHABLE,
+            )
+        }
+        val leftovers = io { leftoversOf(old) }.filter { l -> !isSamePlace(l, now) && ofOwnLine(l) }
+        // Review M-a: after a change of the protection the old file is written over first.
+        val wipe = wipeOldFileAt(old)
+        val done = io { deleteSuiteDocument(old, wipe) }
+        return when (done) {
+            SuiteDocDelete.DELETED, SuiteDocDelete.GONE -> {
+                io {
+                    leftovers.forEach { runCatching { deleteSuiteDocument(it, wipe) } }
+                    if (wipe) wipedAt(old)
+                    runCatching { releaseOldPlace(old) }
+                }
+                result(de.danerd.ghulsuite.model.OldFileOutcome.DELETED)
+            }
+            SuiteDocDelete.NOT_ALLOWED -> result(de.danerd.ghulsuite.model.OldFileOutcome.NOT_ALLOWED)
+            SuiteDocDelete.UNREACHABLE -> result(de.danerd.ghulsuite.model.OldFileOutcome.UNREACHABLE)
+            SuiteDocDelete.FAILED -> result(de.danerd.ghulsuite.model.OldFileOutcome.FAILED)
         }
     }
 
@@ -909,7 +1001,12 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
         ContainerInfoUi(i.kind, i.protection.toUi())
     }
 
+    @Volatile
+    private var locks = 0L
+    override val lockCount: Long get() = locks
+
     override fun lock() {
+        locks++
         if (single != null) {
             closeSingle()
             return
@@ -1331,3 +1428,6 @@ private const val WIPE_OLD_FILE = "wipe_old_file"
 
 /** The mark as round 5 wrote it (not bound to a place). */
 private const val LEGACY_WIPE_ANY = "1"
+
+/** How deleting a suite file's document went (see CoreVaultBackend.deleteSuiteDocument). */
+enum class SuiteDocDelete { DELETED, GONE, NOT_ALLOWED, UNREACHABLE, FAILED }

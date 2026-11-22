@@ -237,9 +237,11 @@ fun postCalNotification(ctx: Context, a: CalAlarmUi, sound: Boolean, index: Int)
     )
     val channel = if (sound) CalReminders.CHANNEL else CalReminders.CHANNEL_SILENT
     val id = NOTIFY_BASE + (a.key.hashCode() and 0xffff)
+    // The neutral "open GhulSuite" reminder: opens the app only, no snooze or done.
+    val openApp = a.key == de.danerd.ghulsuite.ui.OPEN_APP_ALARM_KEY
     val open = PendingIntent.getActivity(
         ctx, id,
-        Intent(ctx, MainActivity::class.java).setAction(MainActivity.ACTION_OPEN_EVENT).putExtra(CalReminders.EXTRA_KEY, a.key)
+        (if (openApp) Intent(ctx, MainActivity::class.java) else Intent(ctx, MainActivity::class.java).setAction(MainActivity.ACTION_OPEN_EVENT).putExtra(CalReminders.EXTRA_KEY, a.key))
             .putExtra(IntentToken.EXTRA, IntentToken.get(ctx))
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
@@ -269,8 +271,12 @@ fun postCalNotification(ctx: Context, a: CalAlarmUi, sound: Boolean, index: Int)
         .setAutoCancel(true)
         .setVisibility(Notification.VISIBILITY_PRIVATE)
         .setPublicVersion(public)
-        .addAction(Notification.Action.Builder(null, ctx.getString(R.string.cal_snooze), action(CalReminders.ACTION_SNOOZE, id + 1)).build())
-        .addAction(Notification.Action.Builder(null, ctx.getString(R.string.cal_done), action(CalReminders.ACTION_DONE, id + 2)).build())
+        .apply {
+            if (!openApp) {
+                addAction(Notification.Action.Builder(null, ctx.getString(R.string.cal_snooze), action(CalReminders.ACTION_SNOOZE, id + 1)).build())
+                addAction(Notification.Action.Builder(null, ctx.getString(R.string.cal_done), action(CalReminders.ACTION_DONE, id + 2)).build())
+            }
+        }
         .build()
     runCatching { nm.notify(id, n) }
 }

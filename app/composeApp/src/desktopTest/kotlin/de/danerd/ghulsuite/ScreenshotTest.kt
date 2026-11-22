@@ -82,10 +82,22 @@ class ScreenshotTest {
         var suiteRef: de.danerd.ghulsuite.model.SuiteFileRef? = null
         override fun suiteFile() = suiteRef
         override fun setSuiteFile(ref: de.danerd.ghulsuite.model.SuiteFileRef?) { suiteRef = ref }
+        /** The areas the core lists as unsaved (device test). */
+        var areas = listOf<String>()
+        override fun archiveUnsavedAreas() = areas
         /** r9 M-2: the places whose access was kept; [keepOk] false: the other app does not allow it. */
         val kept = mutableListOf<de.danerd.ghulsuite.model.SuiteFileRef>()
         var keepOk = true
         override fun keepAccess(ref: de.danerd.ghulsuite.model.SuiteFileRef): Boolean { kept += ref; return keepOk }
+        /** Old suite files deleted (device test: "Delete old file"). */
+        val oldDeleted = mutableListOf<de.danerd.ghulsuite.model.SuiteFileRef>()
+        override suspend fun deleteOldSuiteFile(old: de.danerd.ghulsuite.model.SuiteFileRef): de.danerd.ghulsuite.model.OldFileDelete {
+            oldDeleted += old
+            return de.danerd.ghulsuite.model.OldFileDelete(de.danerd.ghulsuite.model.OldFileOutcome.DELETED, old.id)
+        }
+        /** Whether "Delete old file" is offered (the real backend checks the file's state). */
+        var oldOwnLine = true
+        override suspend fun oldFileDeletable(old: de.danerd.ghulsuite.model.SuiteFileRef) = oldOwnLine
         /** What is at the place of the suite file (null: it cannot be reached). */
         var target: de.danerd.ghulsuite.model.ArchiveTargetUi? = de.danerd.ghulsuite.model.ArchiveTargetUi.NEW
         /** Who saved the file there, and when (shown before overwriting it). */
@@ -196,6 +208,7 @@ class ScreenshotTest {
         /** Windows (true) or a phone (false): what only one of them has (keyboard keys …). */
         var desktop = false
         override val isDesktop get() = desktop
+        override val lockCount: Long get() = locks.toLong()
         override fun lock() {
             locks++
             // A vault open on its own ends with locking.
@@ -289,6 +302,7 @@ class ScreenshotTest {
         override suspend fun createVault(kind: VaultKindUi, name: String) = "new"
         override suspend fun renameVault(id: String, name: String) {}
         override suspend fun removeVault(id: String) { calls += "removeVault:$id" }
+        override suspend fun removeArea(kind: VaultKindUi) { calls += "removeArea:$kind" }
         override suspend fun setFavorite(vaultId: String, id: String, favorite: Boolean) { calls += "setFavorite:$vaultId:$id:$favorite" }
         override suspend fun exportVault(id: String) = ByteArray(0)
         override suspend fun addVaultFile(data: ByteArray, name: String) = "x"

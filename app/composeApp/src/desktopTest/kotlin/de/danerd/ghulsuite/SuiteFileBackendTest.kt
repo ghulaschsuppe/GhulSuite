@@ -34,7 +34,7 @@ import kotlin.test.assertTrue
 class SuiteFileBackendTest {
     private class Backend(dir: File) : CoreVaultBackend(File(dir, "local").absolutePath) {
         private val root = dir
-        private val prefs = mutableMapOf<String, String>()
+        val prefs = mutableMapOf<String, String>()
         override fun storage(): VaultStorage = localStorage(File(root, "suite").absolutePath)
         override suspend fun <T> withKey(block: (HidTransport) -> T): T = throw UnsupportedOperationException()
         override fun devicePref(key: String): String? = prefs[key]
@@ -49,6 +49,15 @@ class SuiteFileBackendTest {
             wipeOld: Boolean,
             onWipe: () -> Unit,
         ): Boolean = SuiteFiles.writeReplacing(File(ref.id), write, check, wipeOld, onWipe)
+        override fun deleteSuiteDocument(ref: SuiteFileRef, wipe: Boolean): SuiteDocDelete {
+            if (wipe) wiped += ref.id
+            return SuiteFiles.delete(File(ref.id), wipe)
+        }
+        val wiped = mutableListOf<String>()
+        override fun samePlace(a: SuiteFileRef, b: SuiteFileRef): Boolean = SuiteFiles.sameFile(File(a.id), File(b.id))
+        override fun placeReachable(ref: SuiteFileRef): Boolean = File(ref.id).absoluteFile.parentFile?.isDirectory == true
+        override fun leftoversOf(ref: SuiteFileRef): List<SuiteFileRef> = SuiteFiles.leftovers(File(ref.id))
+        override fun whereIs(ref: SuiteFileRef): String = File(ref.id).absolutePath
         /** The room the place has (H12), as the platforms say it; null: not known. */
         var free: Long? = null
         override fun freeSpaceAt(ref: SuiteFileRef): Long? = free
@@ -258,6 +267,119 @@ class SuiteFileBackendTest {
             val e = assertFailsWith<de.danerd.ghulsuite.model.VaultException> { mappedQuickErrors<Unit> { throw core } }
             assertEquals(kind, e.kind, core.toString())
             if (kind != de.danerd.ghulsuite.model.VaultErrorKind.QUICK_INVALID) assertTrue(kind in de.danerd.ghulsuite.model.QUICK_UNLOCK_KEPT_ON)
+        }
+    }
+
+    /**
+     * Device test: after the suite moved, "Delete old file" deletes the old one and what a cut off
+     * save of this suite left next to it; a file of another suite there stays; the current place
+     * is never deleted.
+     */
+    @Test
+    fun theOldFileIsDeletedButNeverTheCurrentOne() = runBlocking<Unit> {
+        val dir = Files.createTempDirectory("ghul-oldfile").toFile()
+        try {
+            val kf = generateKeyfile()
+            val a = device(File(dir, "a"), kf)
+            val stick = File(dir, "stick").apply { mkdirs() }
+            val old = File(stick, "GhulSuite.ghlzip")
+            val oldRef = SuiteFileRef(old.absolutePath, old.name)
+            assertTrue(a.archiveSave(oldRef, "Laptop", created = true))
+            // What a cut off save of this suite left beside it, and a file of another suite.
+            old.copyTo(File(stick, "GhulSuite.ghlzip.ghlold"))
+            val b = device(File(dir, "b"), generateKeyfile())
+            val foreign = File(stick, "GhulSuite.ghlzip.ghltmp")
+            assertTrue(b.archiveSave(SuiteFileRef(foreign.absolutePath, foreign.name), "PC", created = true))
+            val now = File(dir, "neu/GhulSuite.ghlzip").apply { parentFile.mkdirs() }
+            val nowRef = SuiteFileRef(now.absolutePath, now.name)
+            assertTrue(a.archiveSave(nowRef, "Laptop", created = true))
+            assertEquals(nowRef, a.suiteFile())
+            // The current place: never.
+            val refused = a.deleteOldSuiteFile(nowRef)
+            assertEquals(de.danerd.ghulsuite.model.OldFileOutcome.SAME_FILE, refused.outcome)
+            assertTrue(now.isFile)
+            assertTrue(a.oldFileDeletable(oldRef))
+            val r = a.deleteOldSuiteFile(oldRef)
+            assertEquals(de.danerd.ghulsuite.model.OldFileOutcome.DELETED, r.outcome, r.toString())
+            assertEquals(old.absolutePath, r.where)
+            assertFalse(old.exists())
+            assertFalse(File(stick, "GhulSuite.ghlzip.ghlold").exists(), "the leftover of this suite went too")
+            assertTrue(foreign.exists(), "another suite's file stays")
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    /**
+     * Review H1: the current suite file is never deleted, whatever its address looks like: a path
+     * with another case, a path with "..", a link to it, or a copy with the same content.
+     */
+    @Test
+    fun theCurrentFileIsKnownByItsIdentityNotByItsText() = runBlocking<Unit> {
+        val dir = Files.createTempDirectory("ghul-samefile").toFile()
+        try {
+            val a = device(File(dir, "a"), generateKeyfile())
+            val stick = File(dir, "stick").apply { mkdirs() }
+            val now = File(stick, "GhulSuite.ghlzip")
+            assertTrue(a.archiveSave(SuiteFileRef(now.absolutePath, now.name), "Laptop", created = true))
+            val link = File(dir, "link.ghlzip").also { Files.createSymbolicLink(it.toPath(), now.toPath()) }
+            val copy = File(dir, "copy/GhulSuite.ghlzip").also { it.parentFile.mkdirs(); now.copyTo(it) }
+            for (other in listOf(
+                File(stick, "ghulsuite.GHLZIP").absolutePath,
+                File(dir, "stick/../stick/GhulSuite.ghlzip").path,
+                link.absolutePath,
+                copy.absolutePath,
+            )) {
+                val r = a.deleteOldSuiteFile(SuiteFileRef(other, File(other).name))
+                assertEquals(de.danerd.ghulsuite.model.OldFileOutcome.SAME_FILE, r.outcome, other)
+                assertTrue(now.isFile, "still there after $other")
+            }
+            assertTrue(copy.isFile)
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    /**
+     * Review H2, M-a, M-b: a file with a state this device lacks is kept; a file of the protection
+     * before is written over with zeros before it goes; a place not there is "not reachable".
+     */
+    @Test
+    fun onlyAFileOfTheOwnLineIsDeletedAndWipedWhereMarked() = runBlocking<Unit> {
+        val dir = Files.createTempDirectory("ghul-oldline").toFile()
+        try {
+            val kf = generateKeyfile()
+            val a = device(File(dir, "a"), kf)
+            val stick = File(dir, "stick").apply { mkdirs() }
+            val shared = File(stick, "GhulSuite.ghlzip")
+            val sharedRef = SuiteFileRef(shared.absolutePath, shared.name)
+            assertTrue(a.archiveSave(sharedRef, "Laptop", created = true))
+            // Device B takes the file, changes it and saves it there: A lacks that state.
+            val b = Backend(File(dir, "b"))
+            b.archiveOpen(sharedRef, password, null, kf, {})
+            b.archiveAccept()
+            b.renameVault(b.listVaults().single().id, "Von B")
+            assertTrue(b.archiveSave(sharedRef, "PC", created = false))
+            val mine = File(dir, "neu/GhulSuite.ghlzip").apply { parentFile.mkdirs() }
+            assertTrue(a.archiveSave(SuiteFileRef(mine.absolutePath, mine.name), "Laptop", created = true))
+            assertFalse(a.oldFileDeletable(sharedRef), "B's state: no delete offered")
+            assertEquals(de.danerd.ghulsuite.model.OldFileOutcome.DIFFERENT_STATE, a.deleteOldSuiteFile(sharedRef).outcome)
+            assertTrue(shared.isFile, "B's changes stay")
+            // A stick that is not there: not reachable (no "deleted").
+            val gone = SuiteFileRef(File(dir, "weg/GhulSuite.ghlzip").absolutePath, "GhulSuite.ghlzip")
+            assertEquals(de.danerd.ghulsuite.model.OldFileOutcome.UNREACHABLE, a.deleteOldSuiteFile(gone).outcome)
+            // Marked to be written over (a change of the protection, here the mark of an older
+            // version for any place): zeros first, then deleted, and the mark is gone.
+            val third = File(dir, "drei/GhulSuite.ghlzip").apply { parentFile.mkdirs() }
+            assertTrue(a.archiveSave(SuiteFileRef(third.absolutePath, third.name), "Laptop", created = true))
+            val before = SuiteFileRef(mine.absolutePath, mine.name)
+            a.prefs["wipe_old_file"] = "1"
+            assertEquals(de.danerd.ghulsuite.model.OldFileOutcome.DELETED, a.deleteOldSuiteFile(before).outcome)
+            assertEquals(listOf(mine.absolutePath), a.wiped)
+            assertFalse(mine.exists())
+            assertEquals("", a.prefs["wipe_old_file"], "the mark is cleared")
+        } finally {
+            dir.deleteRecursively()
         }
     }
 

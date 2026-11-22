@@ -6,6 +6,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
@@ -168,21 +170,73 @@ actual fun rememberCreateSuiteFile(onCreated: (de.danerd.ghulsuite.model.SuiteFi
 }
 
 /**
- * The folder of the suite file, shared once: then saving writes the new file next to the old one
- * and swaps them (see AndroidVaultBackend.safeWrite). Access is kept across restarts.
+ * A safe place for the suite file: a folder kept for the app; saving there writes the new file
+ * next to the old one and swaps them (see AndroidVaultBackend.safeWrite). Access is kept across
+ * restarts; given back when the caller refuses the folder ([SafePlaceResult.Chosen.release]).
  */
 @Composable
-actual fun rememberGrantFolder(onGranted: (picked: Boolean) -> Unit): (near: String) -> Unit {
+actual fun rememberChooseSafePlace(onResult: (SafePlaceResult) -> Unit): ((fileName: String) -> Unit)? {
     val context = LocalContext.current
+    // Review N1: kept over a configuration change while the picker is open.
+    var name by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf("") }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
         ExternalActivity.finished()
-        if (uri != null) keepAccess(context, uri)
-        onGranted(uri != null)
+        if (uri == null) {
+            onResult(SafePlaceResult.Cancelled)
+            return@rememberLauncherForActivityResult
+        }
+        val authority = "com.android.externalstorage.documents"
+        val treeId = runCatching { android.provider.DocumentsContract.getTreeDocumentId(uri) }.getOrNull()
+        when {
+            // A folder of another app (a cloud app, Downloads): no safe swap there.
+            uri.authority != authority || treeId == null -> onResult(SafePlaceResult.Refused(notShareable = false))
+            // Download or the top of a storage: Android lets no app keep them (and the picker
+            // mostly refuses them anyway).
+            !de.danerd.ghulsuite.treeFolderAccepted(treeId) -> onResult(SafePlaceResult.Refused(notShareable = true))
+            else -> {
+                // Review N-a: a grant held before (for something else) is not given back later.
+                val heldBefore = context.contentResolver.persistedUriPermissions.any { it.uri == uri && it.isReadPermission && it.isWritePermission }
+                val kept = runCatching {
+                    context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                }.isSuccess
+                if (kept && !heldBefore) de.danerd.ghulsuite.SafePlaceGrants.add(context, uri.toString())
+                if (!kept) {
+                    onResult(SafePlaceResult.Refused(notShareable = false))
+                } else {
+                    val fileName = name.ifEmpty { de.danerd.ghulsuite.ui.SUITE_FILE_NAME }
+                    val docId = "$treeId/$fileName"
+                    // Review N2: a file of that name, or what a cut off swap left (.alt, .neu),
+                    // counts as there; so does a folder that cannot be asked.
+                    fun there(id: String) = runCatching {
+                        context.contentResolver.query(
+                            android.provider.DocumentsContract.buildDocumentUriUsingTree(uri, id),
+                            arrayOf(android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID), null, null, null,
+                        )?.use { it.moveToFirst() } == true
+                    }.getOrDefault(true)
+                    val exists = there(docId) || there("$docId.alt") || there("$docId.neu")
+                    // Kept as the document's own address: the backend finds the shared folder for it.
+                    val ref = de.danerd.ghulsuite.model.SuiteFileRef(android.provider.DocumentsContract.buildDocumentUri(authority, docId).toString(), fileName)
+                    val release = {
+                        if (!heldBefore) {
+                            runCatching {
+                                context.contentResolver.releasePersistableUriPermission(
+                                    uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                                )
+                            }
+                            de.danerd.ghulsuite.SafePlaceGrants.forget(context, uri.toString())
+                        }
+                        Unit
+                    }
+                    onResult(SafePlaceResult.Chosen(ref, exists, release))
+                }
+            }
+        }
     }
     return remember(launcher) {
-        { near ->
+        { fileName ->
+            name = fileName
             ExternalActivity.started()
-            launcher.launch(runCatching { Uri.parse(near) }.getOrNull()?.takeIf { near.isNotEmpty() })
+            launcher.launch(null)
         }
     }
 }

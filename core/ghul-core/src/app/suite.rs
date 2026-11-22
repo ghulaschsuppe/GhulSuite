@@ -1226,8 +1226,14 @@ impl GhulSuite {
     }
 
     pub(super) fn save_container(&self, c: &mut UnlockedContainer, file: &str) -> Result<()> {
+        self.save_container_as(c, file, &[super::archive::unsaved_area_of(file)])
+    }
+
+    /// [`Self::save_container`], noting `areas` as unsaved (none: the suite file written along
+    /// with a vault, its area is the vault's).
+    fn save_container_as(&self, c: &mut UnlockedContainer, file: &str, areas: &[&str]) -> Result<()> {
         let data = c.seal(&mut OsRng)?;
-        self.mark_unsaved()?;
+        self.mark_unsaved(areas)?;
         self.storage.write(file.to_owned(), data)?;
         Ok(())
     }
@@ -1238,7 +1244,7 @@ impl GhulSuite {
         let file = r.file.clone();
         self.note_content_change();
         self.save_container(c, &file)?;
-        self.save_container(&mut o.suite, SUITE_FILE)
+        self.save_container_as(&mut o.suite, SUITE_FILE, &[])
     }
 
     /// Saves all vaults first and the suite last. H-D1: every container is sealed before the
@@ -1283,11 +1289,11 @@ impl GhulSuite {
             }
         }
         if !lines.iter().any(|l| l.starts_with("keep ")) {
-            return self.write_sealed(sealed).map_err(|(_, e)| e);
+            return self.write_sealed(sealed, &["suite"]).map_err(|(_, e)| e);
         }
         std::fs::create_dir_all(&self.local_dir)?;
         super::storage::write_atomic(&self.local_dir, SAVE_JOURNAL, lines.join("\n").as_bytes())?;
-        if let Err((_, e)) = self.write_sealed(sealed) {
+        if let Err((_, e)) = self.write_sealed(sealed, &["suite"]) {
             #[cfg(test)]
             if STOP_AFTER_FAILED_WRITE.with(std::cell::Cell::get) {
                 return Err(e);
@@ -1407,9 +1413,14 @@ impl GhulSuite {
 
     /// Writes sealed containers in this order (the suite last). On an error: how many were
     /// written before it.
-    fn write_sealed(&self, sealed: Vec<(String, Vec<u8>)>) -> std::result::Result<(), (usize, GhulError)> {
+    /// `areas`: what is noted as unsaved (see `mark_unsaved`).
+    fn write_sealed(
+        &self,
+        sealed: Vec<(String, Vec<u8>)>,
+        areas: &[&str],
+    ) -> std::result::Result<(), (usize, GhulError)> {
         // Marked before the first file changes (see `mark_unsaved`).
-        self.mark_unsaved().map_err(|e| (0, e))?;
+        self.mark_unsaved(areas).map_err(|e| (0, e))?;
         self.note_content_change();
         for (i, (file, data)) in sealed.into_iter().enumerate() {
             #[cfg(test)]
@@ -1455,8 +1466,9 @@ impl GhulSuite {
                 let file = r.file.clone();
                 sealed.push((file, c.seal(&mut OsRng)?));
             }
+            let areas: Vec<&str> = sealed.iter().map(|(f, _)| super::archive::unsaved_area_of(f)).collect();
             sealed.push((SUITE_FILE.to_owned(), o.suite.seal(&mut OsRng)?));
-            self.write_sealed(sealed).map_err(|(n, e)| {
+            self.write_sealed(sealed, &areas).map_err(|(n, e)| {
                 wrote = n;
                 e
             })?;
@@ -2326,7 +2338,7 @@ impl GhulSuite {
             let pos = o.vaults.iter().position(|v| v.reference.id == id).ok_or(GhulError::NotFound)?;
             let file = o.vaults[pos].reference.file.clone();
             self.note_content_change();
-            self.mark_unsaved()?;
+            self.mark_unsaved(&["suite"])?;
             // M8: the vault leaves the open suite only once its file is gone; if that fails it
             // stays listed (and goes into the next suite file), as on the disk.
             self.storage.delete(file).map_err(|e| match GhulError::from(e) {

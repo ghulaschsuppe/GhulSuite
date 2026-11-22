@@ -37,6 +37,13 @@ name: Suite file
     timeout: 60000
 - takeScreenshot: 14-02a-save-dialog
 - tapOn: { id: "save-done" }
+# Saved at another place than before: the old file is named, with "Delete old file". Kept here.
+- runFlow:
+    when:
+      visible: { id: "delete-old-file" }
+    commands:
+      - takeScreenshot: 14-02b-old-file
+      - tapOn: "Keep"
 - scrollUntilVisible:
     element: "Everything is saved in the suite file\\."
     direction: UP

@@ -1075,7 +1075,7 @@ fun CalSettingsSection(state: AppState) {
         moreDetail?.let { i ->
             PasswordGateDialog(
                 state, stringResource(Res.string.gate_weaken_title), stringResource(Res.string.gate_cal_detail),
-                confirmLabel = stringResource(Res.string.a_apply), onDismiss = { moreDetail = null },
+                confirmLabel = stringResource(Res.string.a_apply), onDismiss = { moreDetail = null }, weakening = true,
             ) { moreDetail = null; settings.calNotifyDetail = i; state.refreshCalendar() }
         }
         // Notifications turned off for the app: reminders would not arrive, and nothing would say so.

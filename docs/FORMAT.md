@@ -599,8 +599,9 @@ eines einzelnen GhulDocs-Tresors.
 - Android ohne Freigabe (oder an Orten, die kein Austauschen erlauben, etwa Cloud-Apps): Das Storage Access Framework
   gibt nur das gewählte Dokument frei, keinen Ordner, in dem eine Zwischendatei entstehen könnte. Geschrieben wird
   darum direkt in das Dokument; ein Abbruch kann dort eine halbe Datei hinterlassen, die beim nächsten Speichern
-  ersetzt wird (die Arbeitskopie hat alles). Die App fragt vorher (Ordner freigeben, als neue Datei speichern oder
-  trotzdem überschreiben). Ein unter neuem Namen
+  ersetzt wird (die Arbeitskopie hat alles). Die App fragt vorher (sicheren Speicherort wählen, als neue Datei
+  speichern oder trotzdem überschreiben); der sichere Speicherort ist ein eigener, dauerhaft freigegebener Ordner, in
+  dem die Suite-Datei neu angelegt wird. Ein unter neuem Namen
   angelegtes Dokument, das nicht vollständig geschrieben werden konnte, wird gelöscht.
 
 Liegt dort schon eine Datei, wird vorher ihr Kopf gelesen: derselbe Stand wie die Arbeitskopie (überschreiben),

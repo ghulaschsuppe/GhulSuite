@@ -39,6 +39,9 @@ fun appPinTooSimple(pin: String): Boolean {
     return repeated || run || dated
 }
 
+/** How long one confirmation of the master password covers further weakening steps (device test). */
+const val WEAKENING_VALID_MS = 2 * 60 * 1000L
+
 /** From this many at once (not into a trash), deleting asks for the master password (r9 dieb N7). */
 const val MANY_TO_DELETE = 10
 
@@ -64,9 +67,18 @@ fun PasswordGateDialog(
     text: String,
     confirmLabel: String = stringResource(Res.string.a_apply),
     onDismiss: () -> Unit,
-    /** Gets the password that was confirmed (for a call of the core that wants it as well). */
+    /**
+     * A step that weakens a setting: one confirmation covers the next ones for
+     * [WEAKENING_VALID_MS] (until a lock). Others (a 2FA secret, deleting for good) always ask.
+     */
+    weakening: Boolean = false,
+    /** Gets the password that was confirmed (for a call of the core that wants it as well; empty when confirmed before). */
     onConfirmed: (password: String) -> Unit,
 ) {
+    if (weakening && state.weakeningStillConfirmed()) {
+        androidx.compose.runtime.LaunchedEffect(Unit) { onConfirmed("") }
+        return
+    }
     var password by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     val wrong = stringResource(Res.string.err_wrong_password)
@@ -87,6 +99,7 @@ fun PasswordGateDialog(
             TextButton(onClick = {
                 state.run(onError = { error = it }, block = { state.backend.verifyPassword(password) }) { ok ->
                     if (ok) {
+                        if (weakening) state.noteWeakeningConfirmed()
                         val confirmed = password
                         password = ""
                         onConfirmed(confirmed)

@@ -114,6 +114,8 @@ actual fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit) {
 
 actual fun nowSeconds(): Long = System.currentTimeMillis() / 1000
 
+actual fun monotonicMillis(): Long = System.nanoTime() / 1_000_000
+
 actual fun formatDate(millis: Long): String = DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(millis))
 
 actual fun formatTime(millis: Long): String = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(millis))
@@ -228,9 +230,9 @@ actual fun rememberCreateSuiteFile(onCreated: (de.danerd.ghulsuite.model.SuiteFi
     onCreated(f?.let { de.danerd.ghulsuite.model.SuiteFileRef(it.absolutePath, it.name) })
 }
 
-/** Windows writes by path (a file next to it, then moved into place): nothing to share. */
+/** Windows writes by path (a file next to it, then moved into place): every place is safe. */
 @Composable
-actual fun rememberGrantFolder(onGranted: (picked: Boolean) -> Unit): (near: String) -> Unit = remember { { _: String -> onGranted(true) } }
+actual fun rememberChooseSafePlace(onResult: (SafePlaceResult) -> Unit): ((fileName: String) -> Unit)? = null
 
 @Composable
 actual fun rememberPickFolder(onPicked: (FolderRef) -> Unit): () -> Unit = {

@@ -202,7 +202,12 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
 
     override fun safeSave(ref: SuiteFileRef): de.danerd.ghulsuite.model.SafeSaveUi = when {
         ref.id.isEmpty() || safePlace(ref) != null -> de.danerd.ghulsuite.model.SafeSaveUi.SAFE
-        runCatching { Uri.parse(ref.id).authority == EXTERNAL_STORAGE }.getOrDefault(false) -> de.danerd.ghulsuite.model.SafeSaveUi.FOLDER_NEEDED
+        runCatching { Uri.parse(ref.id).authority == EXTERNAL_STORAGE }.getOrDefault(false) ->
+            if (runCatching { folderShareable(android.provider.DocumentsContract.getDocumentId(Uri.parse(ref.id))) }.getOrDefault(true)) {
+                de.danerd.ghulsuite.model.SafeSaveUi.FOLDER_NEEDED
+            } else {
+                de.danerd.ghulsuite.model.SafeSaveUi.NOT_SHAREABLE
+            }
         else -> de.danerd.ghulsuite.model.SafeSaveUi.OVERWRITES
     }
 
@@ -458,6 +463,90 @@ class AndroidVaultBackend(private val context: Context, private val activity: ()
     override fun onFullUnlock() = quick.onFullUnlock()
 
     override fun onProtectionChanged() = quick.disableAll()
+
+    /** Deleting the old suite file: only where its provider says it may (FLAG_SUPPORTS_DELETE). */
+    /**
+     * Deleting the old suite file: only where its provider says it may (FLAG_SUPPORTS_DELETE);
+     * [wipe]: written over with zeros first. Review M-b: a provider that cannot be asked (a stick
+     * pulled) is UNREACHABLE; "not there" (GONE) only where its folder answers.
+     */
+    override fun deleteSuiteDocument(ref: SuiteFileRef, wipe: Boolean): de.danerd.ghulsuite.SuiteDocDelete {
+        val uri = runCatching { io(ref) }.getOrNull() ?: return de.danerd.ghulsuite.SuiteDocDelete.UNREACHABLE
+        if (!runCatching { android.provider.DocumentsContract.isDocumentUri(context, uri) }.getOrDefault(false)) {
+            return de.danerd.ghulsuite.SuiteDocDelete.NOT_ALLOWED
+        }
+        val flags = try {
+            context.contentResolver.query(uri, arrayOf(android.provider.DocumentsContract.Document.COLUMN_FLAGS), null, null, null)
+                ?.use { c -> if (c.moveToFirst()) c.getInt(0) else -1 }
+        } catch (e: Exception) {
+            null
+        }
+        when (flags) {
+            null -> return de.danerd.ghulsuite.SuiteDocDelete.UNREACHABLE
+            -1 -> return if (placeReachable(ref)) de.danerd.ghulsuite.SuiteDocDelete.GONE else de.danerd.ghulsuite.SuiteDocDelete.UNREACHABLE
+        }
+        if ((flags and android.provider.DocumentsContract.Document.FLAG_SUPPORTS_DELETE) == 0) return de.danerd.ghulsuite.SuiteDocDelete.NOT_ALLOWED
+        if (wipe) runCatching { overwriteWithZeros(uri) }
+        val ok = runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri) }.getOrDefault(false)
+        return if (ok) de.danerd.ghulsuite.SuiteDocDelete.DELETED else de.danerd.ghulsuite.SuiteDocDelete.FAILED
+    }
+
+    /** The folder of [ref] answers (only known through a shared folder; else: not known, so not). */
+    override fun placeReachable(ref: SuiteFileRef): Boolean {
+        val place = safePlace(ref) ?: return false
+        return exists(android.provider.DocumentsContract.buildDocumentUriUsingTree(place.tree, place.parentId))
+    }
+
+    /** Review H1: the same document by its provider and id (on the device's storage regardless of case). */
+    override fun samePlace(a: SuiteFileRef, b: SuiteFileRef): Boolean {
+        val x = Uri.parse(a.id)
+        val y = Uri.parse(b.id)
+        if (x.authority != y.authority) return false
+        val ix = android.provider.DocumentsContract.getDocumentId(x)
+        val iy = android.provider.DocumentsContract.getDocumentId(y)
+        return if (x.authority == EXTERNAL_STORAGE) ix.equals(iy, ignoreCase = true) else ix == iy
+    }
+
+    override fun leftoversOf(ref: SuiteFileRef): List<SuiteFileRef> {
+        val place = safePlace(ref) ?: return emptyList()
+        return listOf(".alt", ".neu").map { place.name + it }.filter { exists(place.doc(it)) }
+            .map { SuiteFileRef(place.doc(it).toString(), it) }
+    }
+
+    /** "Download/GhulSuite.ghlzip" (on the device's storage) or the name. */
+    override fun whereIs(ref: SuiteFileRef): String = runCatching {
+        val uri = Uri.parse(ref.id)
+        if (uri.authority != EXTERNAL_STORAGE) return@runCatching ref.name
+        android.provider.DocumentsContract.getDocumentId(uri).substringAfter(':').ifEmpty { ref.name }
+    }.getOrDefault(ref.name)
+
+    /**
+     * Review N4: the rights kept for the old place go once its file is gone: the document's own,
+     * and that of its folder, unless the suite file now lies in that folder (or below it).
+     */
+    override fun releaseOldPlace(old: SuiteFileRef) {
+        val r = context.contentResolver
+        val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        val oldUri = Uri.parse(old.id)
+        val oldParent = runCatching { android.provider.DocumentsContract.getDocumentId(oldUri).substringBeforeLast('/') }.getOrNull()
+        val now = suiteFile()?.let { runCatching { android.provider.DocumentsContract.getDocumentId(Uri.parse(it.id)) }.getOrNull() }
+        // Review N-a: only a folder the app took for a safe place (others may serve a vault open
+        // on its own, a GhulDocs export and so on), and never the one the suite file lies in now.
+        val taken = SafePlaceGrants.all(context)
+        for (p in r.persistedUriPermissions) {
+            val isDoc = p.uri == oldUri
+            val isFolder = runCatching {
+                p.uri.toString() in taken &&
+                    android.provider.DocumentsContract.isTreeUri(p.uri) &&
+                    android.provider.DocumentsContract.getTreeDocumentId(p.uri) == oldParent &&
+                    (now == null || !now.startsWith("$oldParent/"))
+            }.getOrDefault(false)
+            if (isDoc || isFolder) {
+                runCatching { r.releasePersistableUriPermission(p.uri, flags) }
+                if (isFolder) SafePlaceGrants.forget(context, p.uri.toString())
+            }
+        }
+    }
 
     override fun keepAccess(ref: SuiteFileRef): Boolean = runCatching {
         val uri = Uri.parse(ref.id)

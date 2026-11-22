@@ -15,7 +15,7 @@
 //! is kept per suite in the device's own folder, so an older file, a branch or a file with an
 //! older protection is noticed even after the working copy was replaced.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Read, Write};
 use std::sync::Arc;
 
@@ -46,6 +46,23 @@ const STATE_KEY: &str = "archive_state";
 const SEEN_FILE: &str = "archive-seen.json";
 /// Marks unsaved changes in the working copy (in the device's own folder).
 const UNSAVED_FILE: &str = "archive-unsaved";
+/// The area of an unsaved mark of an older version (only the time was noted).
+pub const UNSAVED_UNKNOWN: &str = "unknown";
+
+/// The area a file of the working copy belongs to, for the unsaved mark.
+pub(super) fn unsaved_area_of(file: &str) -> &'static str {
+    if file.ends_with(".ghlpss") {
+        "pass"
+    } else if file.ends_with(".ghltotp") {
+        "auth"
+    } else if file.ends_with(".ghlcal") {
+        "cal"
+    } else if file.ends_with(".ghldoc") {
+        "docs"
+    } else {
+        "suite"
+    }
+}
 /// The message for anything that is no `.ghlzip` (translated by the app).
 const NOT_A_SUITE_FILE: &str = "not a GhulSuite file";
 /// M10: a suite file or GhulDocs package that ends early (not written completely).
@@ -805,15 +822,41 @@ impl GhulSuite {
 
     /// The working copy is about to change (called before a container is written, so the mark
     /// is there even if the device goes off right after): it differs from the file it was loaded
-    /// from or saved into. The mark holds the time of the first unsaved change.
-    pub(super) fn mark_unsaved(&self) -> Result<()> {
+    /// from or saved into. The mark holds the time of the first unsaved change and the areas
+    /// changed since (`areas`, see [`unsaved_area_of`]; none: only the time, or nothing new):
+    /// `<time>` and, on a second line, `areas:<area>,<area>`. A mark of an older version (the
+    /// time alone) stays as it is: its areas are not known.
+    pub(super) fn mark_unsaved(&self, areas: &[&str]) -> Result<()> {
         let _one = self.unsaved_lock.lock().unwrap_or_else(|e| e.into_inner());
         self.changes.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        if self.unsaved() {
+        let (time, known) = match self.unsaved_mark() {
+            None => (now_ms(), Some(BTreeSet::new())),
+            Some((time, known)) => (time, known),
+        };
+        let Some(mut known) = known else { return Ok(()) };
+        let before = known.len();
+        known.extend(areas.iter().map(|a| (*a).to_owned()));
+        if self.unsaved() && known.len() == before {
             return Ok(());
         }
+        let mut text = time.to_string();
+        text.push_str("\nareas:");
+        text.push_str(&known.into_iter().collect::<Vec<_>>().join(","));
         std::fs::create_dir_all(&self.local_dir)?;
-        super::storage::write_atomic(&self.local_dir, UNSAVED_FILE, now_ms().to_string().as_bytes())
+        super::storage::write_atomic(&self.local_dir, UNSAVED_FILE, text.as_bytes())
+    }
+
+    /// The unsaved mark: the time it holds (0 if none) and its areas (`None`: a mark of an
+    /// older version, areas not known). `None` without a mark.
+    fn unsaved_mark(&self) -> Option<(i64, Option<BTreeSet<String>>)> {
+        let data = std::fs::read(self.local_dir.join(UNSAVED_FILE)).ok()?;
+        let text = String::from_utf8_lossy(&data);
+        let mut lines = text.lines();
+        let time = lines.next().and_then(|l| l.trim().parse::<i64>().ok()).unwrap_or(0);
+        let areas = lines
+            .find_map(|l| l.strip_prefix("areas:"))
+            .map(|list| list.split(',').map(str::trim).filter(|a| !a.is_empty()).map(str::to_owned).collect());
+        Some((time, areas))
     }
 
     fn unsaved(&self) -> bool {
@@ -1389,12 +1432,24 @@ impl GhulSuite {
         self.unsaved()
     }
 
+    /// Which areas have changes that are not in a file yet, sorted: "auth", "cal", "docs",
+    /// "pass" (a vault of that kind) and "suite" (the suite itself: protection, list of vaults,
+    /// its settings). Empty if nothing is unsaved; `["unknown"]` for a mark of an older version
+    /// (only its time is known). Device-local, like the mark.
+    pub fn archive_unsaved_areas(&self) -> Vec<String> {
+        match self.unsaved_mark() {
+            None => Vec::new(),
+            Some((_, None)) => vec![UNSAVED_UNKNOWN.to_owned()],
+            Some((_, Some(areas))) => areas.into_iter().collect(),
+        }
+    }
+
     /// When the first change not in a file yet was made (Unix ms), 0 if nothing is unsaved.
     /// An older mark holds no time: then the time the mark was written.
     pub fn archive_unsaved_since(&self) -> i64 {
         let path = self.local_dir.join(UNSAVED_FILE);
-        let Ok(data) = std::fs::read(&path) else { return 0 };
-        if let Some(t) = std::str::from_utf8(&data).ok().and_then(|s| s.trim().parse::<i64>().ok()).filter(|t| *t > 1) {
+        let Some((t, _)) = self.unsaved_mark() else { return 0 };
+        if t > 1 {
             return t;
         }
         std::fs::metadata(&path)

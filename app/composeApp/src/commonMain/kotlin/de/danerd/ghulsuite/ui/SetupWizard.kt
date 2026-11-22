@@ -323,24 +323,51 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
     // M1: the file is written, but later saves there would write over it directly (Android
     // without a shared folder, a cloud app): said before the wizard ends.
     var unsafePlace by remember { mutableStateOf<Pair<de.danerd.ghulsuite.model.SuiteFileRef, de.danerd.ghulsuite.model.SafeSaveUi>?>(null) }
-    var folderShared by remember { mutableStateOf(0) }
-    val grantFolder = rememberGrantFolder { picked -> if (picked) folderShared++ }
     val notWritten = stringResource(Res.string.file_not_written)
     val savedMsg = stringResource(Res.string.file_saved)
-    val chooseSuiteFile = rememberCreateSuiteFile { ref ->
-        if (ref != null) {
-            state.run(onError = { error = it; fileFailed = true }, block = {
-                backend.archiveSave(ref, deviceInfo(), created = true, state.onProgress).also { if (it) backend.setSuiteFile(ref) }
+    val placeTaken = stringResource(Res.string.safe_place_taken)
+    val refusedRoot = stringResource(Res.string.safe_place_refused)
+    val refusedOther = stringResource(Res.string.safe_place_other_app)
+    fun writeSuiteFile(ref: de.danerd.ghulsuite.model.SuiteFileRef, created: Boolean, release: () -> Unit = {}) {
+            val before = backend.suiteFile()
+            state.run(onError = { error = it; fileFailed = true; release() }, block = {
+                backend.archiveSave(ref, deviceInfo(), created = created, state.onProgress).also { if (it) backend.setSuiteFile(ref) }
             }) { ok ->
                 if (!ok) {
                     error = notWritten
                     fileFailed = true
+                    release()
                     return@run
                 }
                 state.message(savedMsg.replace("%1\$s", ref.name))
+                // The file written before with "Save as" stays at its place: said, with its name
+                // and a way to delete it.
+                if (before != null && !backend.isSamePlace(before, ref)) {
+                    state.scope.launch {
+                        state.oldDeletable = backend.oldFileDeletable(before)
+                        state.movedTo = ref
+                        state.oldSuiteFile = before
+                    }
+                }
                 val safe = backend.safeSave(ref)
                 if (safe == de.danerd.ghulsuite.model.SafeSaveUi.SAFE) finishWizard(state) else unsafePlace = ref to safe
             }
+    }
+    val chooseSuiteFile = rememberCreateSuiteFile { ref -> if (ref != null) writeSuiteFile(ref, created = true) }
+    // Android (device test): the safe place in one step: choose or create a folder, the app keeps
+    // it and writes the new suite file into it. A file of that name there already is not replaced.
+    val chooseSafePlace = rememberChooseSafePlace { r ->
+        when (r) {
+            // Review M3: its own file just saved there is no "taken"; only a foreign one is.
+            is SafePlaceResult.Chosen -> if (r.exists && backend.suiteFile()?.let { backend.isSamePlace(r.ref, it) } != true) {
+                r.release()
+                error = placeTaken
+            } else {
+                unsafePlace = null
+                writeSuiteFile(r.ref, created = !r.exists, release = r.release)
+            }
+            is SafePlaceResult.Refused -> error = if (r.notShareable) refusedRoot else refusedOther
+            SafePlaceResult.Cancelled -> {}
         }
     }
 
@@ -570,19 +597,15 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
         // The suite file is part of setting up (without it the suite is on this device only).
         7 -> RecoveryCodeSteps(state, code) { if (filePickersAvailable) step = 8 else finishWizard(state) }
 
-        8 -> unsafePlace?.let { (ref, how) ->
-            // The folder shared meanwhile: saving there is safe now, the wizard ends.
-            androidx.compose.runtime.LaunchedEffect(folderShared) {
-                if (folderShared > 0 && backend.safeSave(ref) == de.danerd.ghulsuite.model.SafeSaveUi.SAFE) finishWizard(state)
-            }
-            if (how == de.danerd.ghulsuite.model.SafeSaveUi.FOLDER_NEEDED) {
-                Banner(Icons.Filled.Warning, stringResource(if (folderShared > 0) Res.string.save_safe_folder_refused else Res.string.wz_share_folder))
-                Button(onClick = { grantFolder(ref.id) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth().testTag("wz-share-folder")) {
-                    Text(stringResource(Res.string.save_safe_grant))
-                }
-                // A folder Android does not share (Download): a place of its own instead.
-                OutlinedButton(onClick = { unsafePlace = null; chooseSuiteFile(SUITE_FILE_NAME) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(Res.string.wz_other_place))
+        8 -> unsafePlace?.let { (_, how) ->
+            if (how == de.danerd.ghulsuite.model.SafeSaveUi.NOT_SHAREABLE || how == de.danerd.ghulsuite.model.SafeSaveUi.FOLDER_NEEDED) {
+                // Saved with "Save as" at a place that is not safe: the safe place now (the file
+                // is written anew there; the one just written stays where it is).
+                Banner(Icons.Filled.Warning, stringResource(if (how == de.danerd.ghulsuite.model.SafeSaveUi.NOT_SHAREABLE) Res.string.save_not_shareable else Res.string.wz_share_folder))
+                if (chooseSafePlace != null) {
+                    Button(onClick = { error = null; chooseSafePlace(SUITE_FILE_NAME) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth().testTag("wz-share-folder")) {
+                        Text(stringResource(Res.string.safe_place_choose))
+                    }
                 }
             } else {
                 Banner(Icons.Filled.Warning, stringResource(Res.string.wz_cloud_place))
@@ -595,10 +618,21 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
             }
         } ?: run {
             HintText(stringResource(Res.string.setup_save_text))
-            if (!backend.isDesktop) Hint(stringResource(Res.string.wz_place_hint))
+            if (chooseSafePlace != null) Hint(stringResource(Res.string.wz_place_hint))
             Hint(stringResource(Res.string.save_hint))
-            Button(onClick = { chooseSuiteFile(SUITE_FILE_NAME) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth().testTag("wz-file")) {
-                Text(stringResource(Res.string.save_place))
+            if (chooseSafePlace != null) {
+                // Android: the safe place first (a folder of its own, kept for the app).
+                Button(onClick = { error = null; chooseSafePlace(SUITE_FILE_NAME) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth().testTag(SAFE_PLACE_TAG)) {
+                    Text(stringResource(Res.string.safe_place_choose))
+                }
+                // "Save as" (any app, e.g. a cloud app), with the warning afterwards.
+                OutlinedButton(onClick = { chooseSuiteFile(SUITE_FILE_NAME) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth().testTag("wz-file")) {
+                    Text(stringResource(Res.string.file_save_as))
+                }
+            } else {
+                Button(onClick = { chooseSuiteFile(SUITE_FILE_NAME) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth().testTag("wz-file")) {
+                    Text(stringResource(Res.string.save_place))
+                }
             }
             // Only after it failed (no stick, no room): on without it, with a clear warning.
             if (fileFailed) {

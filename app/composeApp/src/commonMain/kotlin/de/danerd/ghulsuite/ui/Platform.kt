@@ -25,6 +25,12 @@ expect fun GuardWindow()
 /** Current Unix time in seconds. */
 expect fun nowSeconds(): Long
 
+/**
+ * Milliseconds of a clock that only goes forward and also runs while the device sleeps (Android:
+ * elapsedRealtime; Windows: nanoTime, which counts sleep there too): for time windows.
+ */
+expect fun monotonicMillis(): Long
+
 /** Formats a Unix time in milliseconds as a local date. */
 expect fun formatDate(millis: Long): String
 
@@ -69,13 +75,29 @@ expect fun rememberCreateSuiteFile(onCreated: (de.danerd.ghulsuite.model.SuiteFi
 @Composable
 expect fun rememberPickFolder(onPicked: (de.danerd.ghulsuite.model.FolderRef) -> Unit): () -> Unit
 
+/** What choosing a safe place for the suite file gave (device test: one step instead of "share a folder"). */
+sealed class SafePlaceResult {
+    /** The file [ref] in the chosen folder (shared with the app for good); it may not exist yet. */
+    class Chosen(
+        val ref: de.danerd.ghulsuite.model.SuiteFileRef,
+        val exists: Boolean,
+        /** Gives the kept right to the folder back (when the folder is not taken after all). */
+        val release: () -> Unit = {},
+    ) : SafePlaceResult()
+
+    /** A folder Android never shares ("Download", the top of a storage) or one of another app. */
+    class Refused(val notShareable: Boolean) : SafePlaceResult()
+
+    object Cancelled : SafePlaceResult()
+}
+
 /**
- * Returns a launcher that asks to share the folder of a file (Android: kept across restarts),
- * starting at the file given; [onGranted] afterwards (whether a folder was chosen). Nothing to do where files are written
- * by path (Windows).
+ * Android: returns a launcher that lets the user choose (or create) a folder for the suite file,
+ * keeps the right to read and write it, and gives the file of the given name in it: saving there
+ * is safe (written next to it, checked, then swapped). Windows has no need for it (null).
  */
 @Composable
-expect fun rememberGrantFolder(onGranted: (picked: Boolean) -> Unit): (near: String) -> Unit
+expect fun rememberChooseSafePlace(onResult: (SafePlaceResult) -> Unit): ((fileName: String) -> Unit)?
 
 /** Returns a launcher that opens the system file picker for a file of any size (read as a stream). */
 @Composable

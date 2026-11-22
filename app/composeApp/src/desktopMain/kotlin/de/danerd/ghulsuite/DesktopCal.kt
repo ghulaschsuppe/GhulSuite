@@ -96,7 +96,8 @@ class DesktopCalBackend(private val window: () -> java.awt.Window?, suite: () ->
 
     /** Click on the notification: bring GhulSuite to the front and open the event. */
     private fun open() {
-        lastKey?.takeIf { it.substringBefore('|').isNotEmpty() }?.let { AppLaunch.openEvent.value = it }
+        // The neutral "open GhulSuite" reminder only brings the app to the front.
+        lastKey?.takeIf { it.substringBefore('|').isNotEmpty() && it != de.danerd.ghulsuite.ui.OPEN_APP_ALARM_KEY }?.let { AppLaunch.openEvent.value = it }
         java.awt.EventQueue.invokeLater {
             window()?.let { w ->
                 (w as? java.awt.Frame)?.let { f -> if (f.state == java.awt.Frame.ICONIFIED) f.state = java.awt.Frame.NORMAL }

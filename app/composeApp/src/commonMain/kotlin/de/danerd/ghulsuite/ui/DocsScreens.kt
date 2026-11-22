@@ -100,14 +100,11 @@ fun docKind(item: DocsItemUi): Pair<ImageVector, Color> {
 fun DocsScreen(state: AppState, padding: PaddingValues) {
     val docs = state.backend.docs
     val vaults = state.vaultsOf(VaultKindUi.DOCS).filter { it.available }
-    /** A vault entered from "All vaults" (the header's choice stays "All"). */
-    var entered by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(vaults.map { it.id }) { if (entered != null && vaults.none { it.id == entered }) entered = null }
-    // A choice in the header line ("All vaults" included) starts from there, not from a vault entered before.
-    LaunchedEffect(state.docsVault) { entered = null }
-    val vault: String? = state.docsVault ?: entered ?: vaults.singleOrNull()?.id
+    // Device test: a vault entered from "All vaults" is the header's choice as well (one state,
+    // as in the other areas); "All vaults" in the breadcrumb or the header goes back to all.
+    val vault: String? = state.docsVault ?: vaults.singleOrNull()?.id
     val vaultName = vaults.firstOrNull { it.id == vault }?.name.orEmpty()
-    val severalVaults = vaults.size > 1 && state.docsVault == null
+    val severalVaults = vaults.size > 1
     // The folders inside the vault (another vault starts at its top).
     var pathState by remember { mutableStateOf<Pair<String?, List<Crumb>>>(null to emptyList()) }
     val path = pathState.second.takeIf { pathState.first == vault }.orEmpty()
@@ -122,11 +119,11 @@ fun DocsScreen(state: AppState, padding: PaddingValues) {
     DisposableEffect(Unit) { onDispose { state.docsTrashShown = false } }
     val active = LocalTabActive.current
     // Back: out of a view, up one folder, back to "All vaults" (only while GhulDocs is visible).
-    PlatformBackHandler(enabled = active && (view.isNotEmpty() || path.isNotEmpty() || (entered != null && state.docsVault == null && vaults.size > 1))) {
+    PlatformBackHandler(enabled = active && (view.isNotEmpty() || path.isNotEmpty() || (state.docsVault != null && vaults.size > 1))) {
         when {
             view.isNotEmpty() -> view = ""
             path.isNotEmpty() -> setPath(path.dropLast(1))
-            else -> entered = null
+            else -> state.docsVault = null
         }
     }
     // Long press selects (as in every list); registered after the back of the folders, so "back"
@@ -207,7 +204,7 @@ fun DocsScreen(state: AppState, padding: PaddingValues) {
                 val inList = query.isBlank() && view.isEmpty() && item.vaultId == vault && item.parent == folder
                 query = ""
                 view = ""
-                if (state.docsVault == null && vaults.size > 1) entered = item.vaultId
+                if (vaults.size > 1) state.docsVault = item.vaultId
                 // From a search or a view the folders above it are not listed here: its breadcrumb
                 // starts at the vault.
                 setPath(if (inList) path + Crumb(item.id, item.name) else listOf(Crumb(item.id, item.name)), item.vaultId)
@@ -304,7 +301,7 @@ fun DocsScreen(state: AppState, padding: PaddingValues) {
                         ) { i ->
                             val offset = if (severalVaults) 1 else 0
                             when {
-                                severalVaults && i == 0 -> { entered = null; setPath(emptyList()) }
+                                severalVaults && i == 0 -> { state.docsVault = null; setPath(emptyList()) }
                                 else -> setPath(path.take(i - offset))
                             }
                             selected.clear()
@@ -350,7 +347,7 @@ fun DocsScreen(state: AppState, padding: PaddingValues) {
                             v.name, pluralStringResource(Res.plurals.docs_vault_items, v.entries, v.entries.toString()),
                             leading = { IconTile(tabIcon(Tab.DOCS), color) },
                             trailing = { ChevronEnd() }, divider = i > 0,
-                        ) { entered = v.id }
+                        ) { state.docsVault = v.id }
                     }
                 }
             } else {
@@ -375,7 +372,7 @@ fun DocsScreen(state: AppState, padding: PaddingValues) {
     if (choosingVault) {
         VaultPickerDialog(state, VaultKindUi.DOCS, onPick = { id ->
             choosingVault = false
-            entered = id
+            state.docsVault = id
             addSheet = true
         }, onDismiss = { choosingVault = false })
     }
