@@ -147,12 +147,6 @@ data class JobEnd(val text: String, val publicText: String)
  * [current] is not null; a job that ended is announced in [finished] (a system notification while
  * the app is not in front).
  */
-/**
- * Whether "back" on the first screen sends the app to the background instead of closing it: while
- * a job runs on Android 11 (API 30) or older, where closing the window would end the job. Newer
- * Android versions do that by themselves.
- */
-fun backKeepsJobs(jobRunning: Boolean, sdk: Int): Boolean = jobRunning && sdk < 31
 
 object JobStatus {
     /** The first running job; null while none runs. */
@@ -167,6 +161,9 @@ object JobStatus {
     /** An automatic lock while jobs run (see AppState.autoLock); null: lock directly. */
     var autoLock: (() -> Unit)? = null
 
+    /** The same for the screen going off: not dropped when the user is back (r9 dieb N3). */
+    var autoLockFirm: (() -> Unit)? = null
+
     /**
      * The suite file is being written (0 to 1; -1: how far is not known yet; null: not now). It
      * goes on after locking: Android keeps the app alive meanwhile (a notification without names).
@@ -175,6 +172,13 @@ object JobStatus {
 
     /** The user is back: an automatic lock that waits for jobs is dropped. */
     var keepUnlocked: (() -> Unit)? = null
+
+    /**
+     * r10 M2, r11: a job the user started runs and reported progress lately (Android keeps the
+     * display on meanwhile, so the screen going off by itself does not lock and cut the job off;
+     * only switching it off by hand does). A job that stalled keeps nothing on. Set by the app state.
+     */
+    var userJobProgressing: () -> Boolean = { false }
 }
 
 /** The jobs of the app: running ones and the last few that ended. */
@@ -189,6 +193,12 @@ class Jobs internal constructor(private val state: AppState) {
     /** An automatic lock came while jobs ran: it follows when the last one the user started ends. */
     var lockWhenDone = false
 
+    /**
+     * r9 dieb N3: the waiting lock came from the screen going off (Windows: the session locked).
+     * Coming back does not drop it: whoever looks at the app then finds it locked.
+     */
+    var firmLock = false
+
     /** A job the user started that reported no progress for this long counts as stalled. */
     var stallMillis = 120_000L
 
@@ -200,7 +210,7 @@ class Jobs internal constructor(private val state: AppState) {
     private var watchdog: kotlinx.coroutines.Job? = null
 
     /** A job the user started is running and reported progress lately. */
-    private fun progressing(): Boolean = list.any { it.active && !it.quiet && clock() - it.lastProgress < stallMillis }
+    internal fun progressing(): Boolean = list.any { it.active && !it.quiet && clock() - it.lastProgress < stallMillis }
 
     /**
      * An automatic lock (time away, idle, screen off). Quiet jobs stop at once: they continue
@@ -208,7 +218,7 @@ class Jobs internal constructor(private val state: AppState) {
      * started are waited for while they make progress; once none reported progress for
      * [stallMillis], the suite locks and cancels them.
      */
-    fun autoLock() {
+    fun autoLock(firm: Boolean = false) {
         for (j in list.filter { it.active && it.quiet }) {
             j.byLock = true
             j.coroutine?.cancel()
@@ -219,6 +229,7 @@ class Jobs internal constructor(private val state: AppState) {
             return
         }
         lockWhenDone = true
+        if (firm) firmLock = true
         if (watchdog?.isActive == true) return
         watchdog = state.scope.launch {
             while (lockWhenDone) {

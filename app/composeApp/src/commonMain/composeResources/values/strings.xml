@@ -70,7 +70,7 @@
     <string name="err_tampered">A file of the suite was changed without the master password. It is not used.</string>
     <string name="err_corrupted">The vault files are damaged or were modified (%1$s).</string>
     <string name="err_different_protection">This vault is protected with a different password or keys/key files than your suite. Open it as a separate suite.</string>
-    <string name="err_hmac">This key does not support hmac-secret and cannot be used.</string>
+    <string name="err_hmac">This key does not support what GhulSuite needs (hmac-secret protected by the key’s PIN), for example because it is too old. Use a newer key or a key file.</string>
     <string name="err_import_encrypted">This export file is encrypted. Export without encryption in the other app and try again.</string>
     <string name="err_import_unknown">This file format is not recognised.</string>
     <string name="err_input">Invalid input: %1$s</string>
@@ -99,10 +99,17 @@
     <string name="err_out_of_memory">This device does not have enough memory for this file. Close other apps and try again, or open the file on another device.</string>
     <string name="err_delete_incomplete">The suite was deleted only in part (a file could not be removed). Try deleting again.</string>
     <plurals name="err_quick_invalid">
-        <item quantity="one">Wrong app PIN. Attempts left: %1$s.</item>
+        <item quantity="one">Wrong app PIN. Attempts left: %1$s, then password and second factor are needed.</item>
         <item quantity="other">Wrong app PIN. Attempts left: %1$s.</item>
     </plurals>
     <string name="err_quick_unavailable">Quick unlock is not available. Unlock with password and second factor.</string>
+    <string name="err_quick_invalid_plain">Quick unlock did not match. Try again or unlock with password and second factor.</string>
+    <string name="err_quick_pin_used_up">Wrong app PIN. That was the second wrong attempt, the app PIN is deleted now. Unlock with password and second factor; then you can set it up again under Options → Unlocking.</string>
+    <string name="err_device_locked">Unlock the device first. The app PIN works only while the device is unlocked; no attempt was used.</string>
+    <string name="err_clipboard_busy">Not copied: another program is holding the clipboard right now. Try again in a moment. (GhulSuite does not use the normal clipboard with its history instead.)</string>
+    <string name="err_try_again">That did not work just now (it was locked in between). Please try once more.</string>
+    <string name="idle_lock_warning">Without input GhulSuite locks in about a minute. What you have not saved in the editor is lost then: save it now.</string>
+    <string name="core_app_pin_internal">The app PIN could not be used (internal error). Unlock with password and second factor and set it up again.</string>
     <string name="err_storage">Could not save: %1$s</string>
     <string name="err_timeout">Timeout: the key was not touched in time.</string>
     <string name="err_transport">USB communication failed: %1$s</string>
@@ -214,12 +221,12 @@
     <string name="keyfile_needed">Choose your key file (.ghlkey).</string>
     <string name="keyfile_not_saved">Save the key file first.</string>
     <string name="keyfile_ready">Key file ready.</string>
-    <string name="keyfile_text">Save the key file somewhere only you have access to, apart from the suite file (not on the same stick, not in the same folder), and keep a copy. Anyone with password and key file gets in. Kept next to the suite file, only the password protects you.</string>
+    <string name="keyfile_text">Save the key file somewhere only you have access to, apart from the suite file: not on this phone, not on the device or stick the suite file is on, and not in the same folder. Keep a copy. Anyone with password and key file gets in. Kept next to the suite file or on the same device, only the password protects you.</string>
     <string name="keyfile_title">Key file</string>
     <string name="keyfile_use_existing">Use an existing key file</string>
     <string name="l_app_pin">App PIN</string>
     <string name="l_app_pin_repeat">Repeat app PIN</string>
-    <string name="l_code_group_3">Group 3 of the code</string>
+    <string name="l_code_whole">The whole code</string>
     <string name="l_current_password">Current master password</string>
     <string name="l_key_label">Name of the key (e.g. “Key on keyring”)</string>
     <string name="l_key_pin">PIN of the security key</string>
@@ -237,7 +244,7 @@
     <string name="lock_30s">after 30 seconds</string>
     <string name="lock_5m">after 5 minutes</string>
     <string name="lock_immediately">immediately</string>
-    <string name="msg_code_kept">The vault already carries a recovery code. Your existing emergency sheet stays valid.</string>
+    <string name="msg_code_kept">Whoever gave you the vault knows its password and key file. Change the password and add a key or key file of your own under Options → Keys and key files.</string>
     <string name="msg_copied">%1$s copied, will be cleared from the clipboard shortly</string>
     <string name="msg_exported">Vault file saved.</string>
     <string name="msg_exported_plain">Unencrypted file saved. Remember to delete it after the move.</string>
@@ -250,7 +257,7 @@
     <string name="msg_password_changed">Master password changed.</string>
     <string name="msg_vault_added">Vault added.</string>
     <string name="open_vault_needs_key">Plug in your security key.</string>
-    <string name="open_vault_new_code">The file is copied to your storage location. If it already carries a recovery code, its emergency sheet stays valid; otherwise you get a new code.</string>
+    <string name="open_vault_new_code">The file is copied to your storage location, and the new suite gets a recovery code of its own: a code that belonged to the file before does not open it. But whoever gave you the file knows the password and key file. Afterwards change the password and add a key or key file of your own.</string>
     <string name="open_vault_text">File: %1$s (%2$s)</string>
     <string name="open_vault_title">Open vault</string>
     <string name="pass_empty">No entries yet. Use + to add your first password.</string>
@@ -272,7 +279,7 @@
     <string name="s_touch_key">Touch your security key now</string>
     <string name="set_about">About and help</string>
     <string name="set_add_key_text">Plug in the key. You touch it twice. Afterwards it opens the suite just like your other keys and key files. They stay unchanged.</string>
-    <string name="set_app_pin_text">Choose an app PIN with 6 to 12 digits. It only works on this device and only for quick unlock. After 5 wrong attempts it is deleted.</string>
+    <string name="set_app_pin_text">Choose an app PIN with 8 to 12 digits, not your screen lock PIN and no date. It only works on this device and only for quick unlock. After 2 wrong attempts it is gone; then only password and second factor open the suite.</string>
     <string name="set_auto_lock">Lock in the background</string>
     <string name="set_backup_key_hint">Recommendation: add a backup (second key or key file). If your only one gets lost, only the recovery code gets you back in.</string>
     <string name="set_change_pw_text">Applies to the suite and all vaults. Keys, key files and the recovery code stay valid.</string>
@@ -290,7 +297,7 @@
     <string name="set_panic_reminders">Instant lock also deletes the event reminders</string>
     <string name="set_password">Master password</string>
     <string name="set_pin_mismatch">The PINs do not match.</string>
-    <string name="set_quick_always_full">Password and second factor (key or key file) are needed after a restart and after the validity ends; after that quick unlock works again. You set it up again after an instant lock, after 5 wrong app PINs, when fingerprints are changed, and after every change of the protection (password, key, key file).</string>
+    <string name="set_quick_always_full">Password and second factor (key or key file) are needed after a restart and after the validity ends; after that quick unlock works again. You set it up again after an instant lock, after 2 wrong app PINs, when fingerprints are changed, and after every change of the protection (password, key, key file).</string>
     <string name="set_quick_bio">Fingerprint</string>
     <string name="set_quick_bio_unavailable">No secure fingerprint sensor or no fingerprint set up on this device.</string>
     <string name="set_quick_hint">After unlocking with password and second factor, you can open GhulSuite with your fingerprint or an app PIN for a while.</string>
@@ -322,9 +329,9 @@
     <string name="setup_code_noted">I have written down or printed the code</string>
     <string name="setup_code_text">This code opens all your vaults on its own, even if password, key and key file are gone. It is part of every one of your files. Write it down or print it and keep it safe, not on this device.</string>
     <string name="setup_code_title">Your recovery code</string>
-    <string name="setup_confirm_text">To be sure you have the code, enter its third group (5 characters).</string>
+    <string name="setup_confirm_text">To be sure you have the code right, type in the whole code, best from your emergency sheet (spaces and dashes do not matter). GhulSuite compares every character.</string>
     <string name="setup_confirm_title">Check recovery code</string>
-    <string name="setup_confirm_wrong">That is not the third group.</string>
+    <string name="setup_confirm_wrong">That is not the code. Compare your emergency sheet with the code, character by character (with “Back”).</string>
     <string name="setup_default_key_label">Security key</string>
     <string name="setup_key_detected">Detected: %1$s</string>
     <string name="wz_key_pin_missing">Please enter your key's PIN. If the key has none yet, tap "Check key" to set one.</string>
@@ -341,7 +348,7 @@
     <string name="setup_recovery_label">Recovery code</string>
     <string name="setup_use_key">Security key (recommended)</string>
     <string name="setup_use_keyfile">Key file</string>
-    <string name="setup_use_keyfile_text">A small file you keep apart from the suite file, e.g. on a stick of its own. Good to start with; later you can swap it for a key.</string>
+    <string name="setup_use_keyfile_text">A small file you keep apart from the suite file, e.g. on a stick of its own, not on the phone with the app. Good to start with; later you can swap it for a key.</string>
     <string name="shake_high">high</string>
     <string name="shake_low">low</string>
     <string name="shake_medium">medium</string>
@@ -350,7 +357,7 @@
     <string name="sheet_need">You need: this sheet, the suite file (%1$s, e.g. on the USB stick) and an Android phone or a Windows PC with the app GhulSuite (free at www.ghulsuite.de). The phone alone is not enough: the data is in the suite file.</string>
     <string name="sheet_default_name">%1$s (the suggested name, unless you chose another one when saving)</string>
     <string name="sheet_intro">This recovery code opens your suite (suite file %1$s) completely, even without master password, security key and key file. Keep this sheet as safe as cash, away from your devices and key.</string>
-    <string name="sheet_print_hint">Print it directly via USB or Wi-Fi Direct if possible. Network and cloud printers may keep print jobs. “Save as PDF” puts the code into a file (usually in “Downloads”): delete it after printing.</string>
+    <string name="sheet_print_hint">Print it directly via USB or Wi-Fi Direct if possible. Network and cloud printers may keep print jobs, and on Android the sheet goes through the printer maker’s print app, which is another app. “Save as PDF” puts the code into a file (usually in “Downloads”): delete it after printing. Copying it by hand is safest.</string>
     <string name="sheet_step1">Open GhulSuite, choose “Open with emergency sheet” on the start screen and pick the suite file. If the suite is already set up on the device: “Locked out? Use recovery code” on the lock screen.</string>
     <string name="sheet_step2">Enter this code (dashes and upper/lower case do not matter) and set a new master password.</string>
     <string name="sheet_step3">In the options, add a new key or key file and remove lost ones before GhulSuite locks again.</string>
@@ -861,8 +868,8 @@
     <string name="wz_quick_bio_sub">For the time in between</string>
     <string name="wz_quick_pin">Also app PIN</string>
     <string name="wz_quick_pin_sub">When no fingerprint is possible</string>
-    <string name="wz_quick_pin_field">App PIN (6 to 12 digits)</string>
-    <string name="wz_pin_rule">The app PIN needs 6 to 12 digits.</string>
+    <string name="wz_quick_pin_field">App PIN (8 to 12 digits)</string>
+    <string name="wz_pin_rule">The app PIN needs 8 to 12 digits.</string>
     <string name="wz_quick_valid">Quick unlock is valid</string>
     <string name="wz_quick_valid_sub">Then password and second factor again.</string>
     <string name="wz_quick_always_note">No expiry. After a restart of the device, an instant lock or a password change you still need password and second factor again.</string>
@@ -967,7 +974,11 @@
     <string name="core_attach_many">Too many attachments.</string>
     <string name="core_attach_big">Attachment too large (at most 10 MB).</string>
     <string name="core_suite_too_large">The suite file would be too large (at most 3.75 GiB) and could not be opened any more. Nothing was saved. Remove large attachments or documents and save again.</string>
-    <string name="core_other_full">The vaults besides GhulDocs are full (at most 200 MiB together, mostly attachments). Nothing was added.</string>
+    <string name="core_other_full">The vaults besides GhulDocs are full (at most 200 MiB together, mostly attachments and imports). Nothing was added.</string>
+    <string name="pin_too_simple">This app PIN is too easy to guess: not just one digit (11111111), no repeated blocks (12121212), no runs like 12345678, no date such as a birthday. Do not use your screen lock PIN either.</string>
+    <string name="core_vault_full">This vault is full: one vault file holds at most 128 MiB. Nothing was added; add another vault or remove large attachments.</string>
+    <string name="core_ics_too_large">The calendar file is larger than 16 MiB and is not taken over.</string>
+    <string name="core_csv_too_wide">This CSV file has too many columns or fields. It was not taken over.</string>
     <string name="core_docs_kept_aside">The previous documents could not be put back in their place. They were not deleted but kept in a folder of their own, "rescued-documents-…", with the app\'s data on this device.</string>
     <string name="core_no_group">This group does not exist.</string>
     <string name="core_no_password">No password given.</string>
@@ -1026,6 +1037,9 @@
     <string name="upd_title_dev">Pre-release %1$s</string>
     <string name="upd_text">Download %1$s. Size, checksum and signature are checked before anything is installed; your data stays as it is.</string>
     <string name="upd_text_portable">The portable version is not changed on its own: the release page opens with the new ZIP (%1$s). Unpack it over the old folder; the folder GhulSuite-Daten stays.</string>
+    <string name="upd_notes_caption">Text of the release page (not checked). GhulSuite never asks for password, key or code there.</string>
+    <string name="about_portable_title">Portable version</string>
+    <string name="about_portable_stick">Program and settings are on the stick here, without a seal. Whoever had the stick for a while can swap the program and read password and second factor at the next unlock. Do not start GhulSuite from a stick that was out of your hands: download the portable version again from the release page and check its checksum (SHA256SUMS).</string>
     <string name="upd_install">Install</string>
     <string name="upd_open_page">Open release page</string>
     <string name="upd_loading">Loading the update…</string>
@@ -1125,6 +1139,7 @@
     <string name="core_replace_proof">The suite on this device is only replaced when you confirm it with its master password and key or key file, or its recovery code.</string>
     <string name="core_copy_changed">Something changed on this device since the file was checked. Open the file again.</string>
     <string name="core_replace_unfinished">An earlier opening of a suite file could not be finished. Restart the app. If it stays, free some space and close other programs that might use the files of GhulSuite.</string>
+    <string name="core_save_unfinished">An earlier save was not finished, and the state before it cannot be put back right now. Free some space, close other programs that might use the files of GhulSuite and unlock again. Do not delete the suite.</string>
     <string name="core_only_usb_nfc">Only a security key over USB or NFC can be added; a phone or a Bluetooth device does not work.</string>
     <string name="core_vault_not_removed">The vault could not be removed: its file cannot be deleted right now. Close other programs that may have it open and try again.</string>
     <string name="core_replace_aside_missing">The documents from before the last opening of a suite file were not found. So that nothing is lost, everything stays as it is. Restart the app and check that its data folder is all there (is the stick plugged in properly, for example?).</string>
@@ -1133,9 +1148,8 @@
     <string name="core_folders_many">This GhulDocs vault already has as many folders as it can hold.</string>
     <string name="core_ics_many">The file holds too many events (at most 20,000 at once).</string>
     <string name="core_quick_validity">Choose how long quick unlock should stay valid.</string>
-    <string name="core_pin_six">The app PIN needs at least 6 digits.</string>
     <string name="l_vault_password">Password of the new vault</string>
-    <string name="single_not_writable">The app may not write into this file (e.g. a mail attachment). Save it somewhere else first, or add the vault to your suite.</string>
+    <string name="single_not_writable">The app may not write into this file (e.g. a mail attachment, or another app handed it over without the right to write). Choose it in GhulSuite itself with “Open”, save it somewhere else first, or add the vault to your suite.</string>
     <string name="share_vault_done">Done. Give the vault file, the password and, if there is one, the key file separately; the recipient keeps the recovery code safe.</string>
     <string name="single_pending_title">Changes not in the file</string>
     <string name="single_pending_text">The last changes to %1$s could not be written into its file (was the storage gone, or the app ended?). Write them now, or give them up.</string>
@@ -1316,7 +1330,7 @@
     <string name="docs_reading">Decrypting … %1$s %</string>
     <string name="docs_no_preview">The app cannot show this type of file.</string>
     <string name="docs_too_large_to_show">Too large to show in the app (more than %1$s).</string>
-    <string name="docs_pdf_not_here">This PDF cannot be shown here (protected by a password, damaged, or not on this Android version).</string>
+    <string name="docs_pdf_not_here">This PDF cannot be shown here (protected by a password or damaged).</string>
     <string name="docs_image_not_read">This image cannot be shown here.</string>
     <string name="docs_open_hint">Open it with another app or export it.</string>
     <string name="docs_text_cut">Only the beginning of the text is shown.</string>
@@ -1411,7 +1425,7 @@
     <string name="save_conflict_changed">The suite file at this place was saved on another device meanwhile. If you overwrite it, the changes from there are lost.</string>
     <string name="newer_file_title">The suite file was saved elsewhere</string>
     <string name="newer_file_text">The suite file %1$s was saved from another state meanwhile, usually on another device. Open it now, before you change anything here, or there will be two states. When opening, the app says whether it is newer or older.</string>
-    <string name="newer_file_protection">The suite file %1$s was saved with a changed protection (e.g. a new password on another device). Open it now with the new protection, before you change anything here.</string>
+    <string name="newer_file_protection">The suite file %1$s was saved with a changed protection (e.g. a new password or a new recovery code on another device). Open it now, before you change anything here.</string>
     <string name="newer_file_open">Open now</string>
     <string name="save_conflict_other">At this place there is another suite or a file that cannot be read (e.g. from a save that was cut off).</string>
     <string name="save_keep_mine">Save mine as a new file …</string>
@@ -1461,10 +1475,14 @@
     <string name="wz_backup_second_key_hint">First you touch your first key twice (creating), then you plug in the second one and touch it twice as well. If it is the same key, it refuses.</string>
     <string name="set_key_no_backup">Your key has no backup. If it gets lost, only the recovery code gets you in. Add a second key or a key file.</string>
     <string name="wz_backup_failed">The suite is made, but the backup is still missing. Try the second key again (touch the first one first) or take a key file instead.</string>
-    <string name="save_conflict_protection">The suite file at this place has a newer protection: on another device the password was changed or a key removed meanwhile. Overwriting would undo that, so it is not offered. If you open the file (with the new password or key), the changes of this device that are not in it are lost.</string>
-    <string name="save_protection_way">To keep them: hand on every vault with changes from here as a file of its own under Options → Vaults → ⋮ “Share as separate vault” (own password and key file). Then open the new suite file and take the files back in with “Add vault file”. “Save as a new file” does not help for this: that file keeps the old protection and will not open on this or the other device afterwards.</string>
-    <string name="save_keep_mine_old_protection">Save as a new file anyway (old protection) …</string>
+    <string name="save_conflict_protection">The suite file at this place has a newer protection: on another device the password was changed, a key removed or a new recovery code made meanwhile. Overwriting would undo that (an old code would open it again), so it is not offered. If you open the file (with your current or the new password and key), the changes of this device that are not in it are lost.</string>
+    <string name="save_protection_way">To keep them: hand on every vault with changes from here as a file of its own under Options → Vaults → ⋮ “Share as separate vault” (own password and key file). Then open the new suite file and take the files back in with “Add vault file”. A new suite file from here is not offered for this: it would have the old protection, and an old recovery code would open it.</string>
     <string name="file_opened_read_only">The app may not write back into this file. Use \u201cSave as\u201d to save to a place of your choice.</string>
+    <string name="file_offer_place">This file came from another app. Should GhulSuite save here from now on? Only if you put it there yourself; otherwise save with “Save as” to a place you choose.</string>
+    <string name="file_offer_yes">Save here</string>
+    <string name="file_offer_no">Not here</string>
+    <string name="file_offer_no_access">This app does not let GhulSuite keep writing to the file. Save with “Save as” to a place you choose.</string>
+    <string name="file_network_path">%1$s is on a network drive and is not opened by double click while GhulSuite runs. Open it in GhulSuite with “Open suite file”.</string>
     <string name="save_safe_folder">So that saving never leaves half a file, share the folder of the suite file once. Then the app writes the new file next to it, checks it and only then swaps it for the old one.</string>
     <string name="save_safe_grant">Share folder</string>
     <string name="save_overwrites">This place (e.g. a cloud app) does not allow swapping: the file there is written over directly. If that is interrupted, the file is unusable; your data then stays in the app. Cloud apps also keep older versions, even after deleting. A USB stick or a folder on the device is safer.</string>

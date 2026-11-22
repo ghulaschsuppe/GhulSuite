@@ -5,7 +5,7 @@
 Everything that changes is filled in here, so the site never fetches anything from elsewhere
 when it is visited:
   - texts in German and English (website/i18n/*.json, website/pages/<lang>/*.html),
-  - the newest stable version and pre-release with date and file sizes (GitHub API),
+  - the newest stable version with date and file sizes (GitHub API; pre-releases only as a link to the release page),
   - numbers from the project (test functions in the core),
   - the legal notice: name, address, e-mail and hoster come from the environment
     (GitHub secrets IMPRESSUM_NAME, IMPRESSUM_ADRESSE, IMPRESSUM_EMAIL, IMPRESSUM_HOSTER),
@@ -146,7 +146,11 @@ def download_block(lang, t, stable, pre):
                 f'<h3>{t[title]}</h3><p>{t[sub]}</p>{meta}'
                 f'<a class="btn primary" href="{href}" rel="noopener">{ICONS["download"]}{t["dl_get"]}</a></article>')
 
-    rel = stable or pre
+    # The live site is built again only for a stable release (release.yml), not for a pre-release
+    # of dev, and only the newest five pre-releases stay. So nothing names or links one specific
+    # pre-release: its card and, while there is no stable version, the download buttons lead to
+    # the release page, which never goes stale.
+    rel = stable
     out = ['<div class="channel">']
     if stable:
         out.append(f'<div class="card rv" style="--c:var(--ok)"><span class="badge stable">{t["dl_stable"]}</span>'
@@ -156,15 +160,9 @@ def download_block(lang, t, stable, pre):
     else:
         out.append(f'<div class="card rv" style="--c:var(--ok)"><span class="badge stable">{t["dl_stable"]}</span>'
                    f'<h3 style="margin-top:12px">{t["dl_stable_title"]}</h3><p>{t["dl_none_stable"]}</p></div>')
-    if pre:
-        out.append(f'<div class="card rv" style="--c:var(--warn);--d:.06s"><span class="badge pre">{t["dl_pre"]}</span>'
-                   f'<h3 style="margin-top:12px">{t["dl_pre_title"]} {esc(pre["tag_name"].lstrip("v"))}</h3>'
-                   f'<p>{t["dl_pre_text"]} {t["dl_released"]} {date_text(pre.get("published_at"), lang)}. '
-                   f'<a href="{esc(pre["html_url"])}" rel="noopener">{t["dl_pre_link"]}</a></p></div>')
-    else:
-        out.append(f'<div class="card rv" style="--c:var(--warn);--d:.06s"><span class="badge pre">{t["dl_pre"]}</span>'
-                   f'<h3 style="margin-top:12px">{t["dl_pre_title"]}</h3><p>{t["dl_pre_text"]} '
-                   f'<a href="https://github.com/{REPO}/releases" rel="noopener">{t["dl_pre_link"]}</a></p></div>')
+    out.append(f'<div class="card rv" style="--c:var(--warn);--d:.06s"><span class="badge pre">{t["dl_pre"]}</span>'
+               f'<h3 style="margin-top:12px">{t["dl_pre_title"]}</h3><p>{t["dl_pre_text"]} '
+               f'<a href="https://github.com/{REPO}/releases" rel="noopener">{t["dl_pre_link"]}</a></p></div>')
     out.append("</div>")
     latest = stable is not None
     out.append('<div class="dl" style="margin-top:18px">')
@@ -281,8 +279,8 @@ def main():
                 "page_imprint": page("imprint", lang),
                 "page_privacy": page("privacy", lang),
                 "page_privacy_app": page("privacy_app", lang),
-                "version_label": esc(("v" + stable["tag_name"].lstrip("v")) if stable else
-                                     (pre["tag_name"] if pre else "Beta")),
+                # Only a stable version is named (a pre-release would go stale, see download_block).
+                "version_label": esc(("v" + stable["tag_name"].lstrip("v")) if stable else "Beta"),
                 "tests": tests, "imports": imports,
                 "download": download_block(lang, t, stable, pre),
                 **legal,

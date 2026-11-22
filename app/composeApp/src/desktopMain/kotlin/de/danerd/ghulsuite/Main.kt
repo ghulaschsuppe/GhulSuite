@@ -29,8 +29,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 
-/** Without any input in the window for this long, GhulSuite locks itself (also while in front). */
-private const val IDLE_LOCK_MS = 15 * 60 * 1000L
+
+/** A gap between two ticks of the lock check this long means: the PC was asleep (or hibernated). */
+private const val SLEEP_GAP_MS = 30_000L
 
 fun main(args: Array<String>) {
     // Before anything can use ImageIO (PDFBox decoding JPEG pages, the icon): its disk cache would
@@ -50,7 +51,7 @@ fun main(args: Array<String>) {
     // Later starts come here at once, also before the window is there; the window comes to the
     // front once it is.
     SingleInstance.listen { path ->
-        path?.let { SingleInstance.open(it) }
+        path?.let { SingleInstance.open(it, handedOver = true) }
         java.awt.EventQueue.invokeLater {
             val w = awtWindow as? java.awt.Frame ?: return@invokeLater
             if (w.state == java.awt.Frame.ICONIFIED) w.state = java.awt.Frame.NORMAL
@@ -172,21 +173,34 @@ fun main(args: Array<String>) {
                         if (e.oppositeWindow == null) lostFocusAt = System.currentTimeMillis()
                     }
                 })
+                var lastTick = System.currentTimeMillis()
                 while (true) {
                     delay(1000)
+                    val tick = System.currentTimeMillis()
+                    // r9 dieb N5: the PC slept (a tick of a second took far longer): locked at
+                    // once on waking, before anyone looks.
+                    val slept = tick - lastTick > SLEEP_GAP_MS
+                    lastTick = tick
                     if (!backend.unlocked.value) continue
+                    if (slept) {
+                        state.lockNow()
+                        continue
+                    }
                     val now = System.currentTimeMillis()
                     val away = lostFocusAt?.let { now - it } ?: 0L
                     // A system dialog (e.g. Windows asking for the key PIN) must not lock.
                     val waitingForKey = state.busy
                     // A few seconds of grace, so that a short switch (e.g. to a system dialog) does not lock.
                     val autoLock = maxOf(backend.autoLockSecondsNow() * 1000L, 3000L)
+                    state.idleWarning = de.danerd.ghulsuite.model.idleLockWarning(now - lastInput, backend.autoLockSecondsNow(), state.editorDirty)
                     // A running background job is not cut off: the lock
                     // follows when it ends, unless the user is back by then. Ctrl+L locks at once.
                     when {
+                        // r10 M2: Windows locked (Win+L) waits for a job the user started, as other
+                        // automatic locks do: getting back in needs the Windows password anyway.
                         backend.settings.lockOnScreenOff && WinNative.workstationLocked() -> state.autoLock()
                         !waitingForKey && lostFocusAt != null && away >= autoLock -> state.autoLock()
-                        !waitingForKey && now - lastInput >= maxOf(IDLE_LOCK_MS, autoLock) -> state.autoLock()
+                        de.danerd.ghulsuite.model.idleLockDue(now - lastInput, backend.autoLockSecondsNow(), state.editorDirty, waitingForKey) -> state.autoLock()
                         else -> state.keepUnlocked()
                     }
                 }

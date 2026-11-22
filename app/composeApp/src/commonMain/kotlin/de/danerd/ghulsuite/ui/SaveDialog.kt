@@ -282,15 +282,11 @@ fun SaveSuiteDialog(state: AppState) {
                 // rescue (it keeps the old protection): the way that works is said first.
                 val otherProtection = step.info.target == ArchiveTargetUi.OTHER_PROTECTION
                 if (otherProtection) Banner(Icons.Filled.Warning, stringResource(Res.string.save_protection_way))
-                if (filePickersAvailable) {
-                    if (otherProtection) {
-                        OutlinedButton(onClick = { state.saveStep = SaveStep.Ask; saveAs(SUITE_FILE_NAME) }, modifier = Modifier.fillMaxWidth()) {
-                            Text(stringResource(Res.string.save_keep_mine_old_protection))
-                        }
-                    } else {
-                        Button(onClick = { state.saveStep = SaveStep.Ask; saveAs(SUITE_FILE_NAME) }, modifier = Modifier.fillMaxWidth()) {
-                            Text(stringResource(Res.string.save_keep_mine))
-                        }
+                // r9 krypto H1: no new file with the old protection either (after a new recovery
+                // code there, the old code would open it).
+                if (filePickersAvailable && !otherProtection) {
+                    Button(onClick = { state.saveStep = SaveStep.Ask; saveAs(SUITE_FILE_NAME) }, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(Res.string.save_keep_mine))
                     }
                 }
                 // A newer protection there is not overwritten from here: that would undo it.

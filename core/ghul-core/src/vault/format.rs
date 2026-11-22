@@ -30,6 +30,11 @@ pub const MAX_MEMORY_KIB: u32 = 2 * 1024 * 1024;
 /// (calibrated on the device), twice that is accepted. A file asking for more (allowed by the
 /// format, made by hand to stop the app) is refused before anything is allocated.
 pub const DERIVE_MAX_MEMORY_KIB: u32 = 512 * 1024;
+/// The most work (memory in KiB times iterations) this app derives with (r9 N8): the app makes
+/// files with at most 256 MiB and 3 iterations, twice that is accepted (512 MiB with 3, or
+/// 64 MiB with 24). A file asking for more would block the app for minutes before "wrong
+/// password".
+pub const DERIVE_MAX_WORK: u64 = 2 * 256 * 1024 * 3;
 pub const MIN_ITERATIONS: u32 = 3;
 pub const MAX_ITERATIONS: u32 = 64;
 pub const MIN_PARALLELISM: u32 = 1;

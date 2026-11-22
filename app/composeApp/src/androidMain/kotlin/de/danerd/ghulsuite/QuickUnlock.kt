@@ -5,7 +5,6 @@ import android.app.Activity
 import android.content.Context
 import android.hardware.biometrics.BiometricManager
 import android.hardware.biometrics.BiometricPrompt
-import android.os.Build
 import android.os.CancellationSignal
 import android.provider.Settings as AndroidSettings
 import android.security.keystore.KeyGenParameterSpec
@@ -36,8 +35,9 @@ import kotlinx.coroutines.withContext
  * (QK); this class keeps QK wrapped by a hardware-backed Android Keystore key:
  * - fingerprint: key usable only after a strong biometric authentication, invalidated when a new
  *   fingerprint is enrolled;
- * - app PIN: key usable only while the device is unlocked; the PIN is also mixed into the core
- *   encryption; after 5 wrong PINs the PIN quick unlock is destroyed.
+ * - app PIN (M19): two single use HMAC keys per generation, usable only while the device is
+ *   unlocked; the PIN goes into what they sign, so every attempt needs one of them (see
+ *   [PinSlots]); after 2 wrong PINs none is left and password plus second factor are needed.
  * Every quick unlock also ends after a reboot, after the configured validity and on a panic lock.
  */
 class AndroidQuickUnlock(
@@ -48,16 +48,11 @@ class AndroidQuickUnlock(
 ) {
     private val prefs = context.getSharedPreferences("quick_unlock", Context.MODE_PRIVATE)
     private val keyStore: KeyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+    private val pinSlots = PinSlots(AndroidPinKeyStore(context, keyStore), { suite().pinCore() })
 
     fun biometricAvailable(): Boolean {
         val bm = context.getSystemService(BiometricManager::class.java) ?: return false
-        val result = if (Build.VERSION.SDK_INT >= 30) {
-            bm.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG)
-        } else {
-            @Suppress("DEPRECATION")
-            bm.canAuthenticate()
-        }
-        return result == BiometricManager.BIOMETRIC_SUCCESS
+        return bm.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG) == BiometricManager.BIOMETRIC_SUCCESS
     }
 
     private fun bootCount(): Int =
@@ -67,13 +62,63 @@ class AndroidQuickUnlock(
         val blob = prefs.getString("$name.blob", null) ?: return false
         if (blob.isEmpty() || prefs.getInt("$name.boot", -2) != bootCount()) return false
         // M30: run out; it waits for the next full unlock (which starts its time anew).
-        if (prefs.getBoolean("$name.expired", false)) return false
+        if (prefs.getBoolean("$name.expired", false) || runOutByUptime(name)) return false
         return keyStore.containsAlias(alias(name)) && suite().quickUnlockExists(name)
     }
 
-    fun ready(): QuickUnlockReady = QuickUnlockReady(
+    /**
+     * r9 dieb N1: the validity also by the time since boot, which a clock set back does not change
+     * (the core counts by the wall clock). Within one boot only; unknown (older data): no verdict.
+     */
+    private fun runOutByUptime(name: String): Boolean {
+        val since = prefs.getLong("$name.since", -1L).takeIf { it >= 0 && prefs.getInt("$name.boot", -2) == bootCount() } ?: return false
+        val hours = (if (name == BIO) settings.quickHoursBio else settings.quickHoursPin).takeIf { it >= 0 } ?: settings.quickUnlockHours
+        if (hours <= 0) return false
+        val over = android.os.SystemClock.elapsedRealtime() - since > hours * 3_600_000L
+        if (over) expired(name)
+        return over
+    }
+
+    /**
+     * The app PIN: its file, its time and at least one slot left in the keystore. A file the core
+     * already removed (an old version: set it up again; damaged or of another suite: gone) is
+     * handled here; one that cannot be read right now only hides the PIN for now (nothing goes).
+     */
+    private fun usablePin(): Boolean {
+        if (!settings.quickUnlockPin) return false
+        if (prefs.getInt("$PIN.boot", -2) != bootCount() || prefs.getBoolean("$PIN.expired", false) || runOutByUptime(PIN)) return false
+        return try {
+            pinSlots.left() > 0
+        } catch (e: VaultException) {
+            pinFileGone(e.kind)
+            false
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /** The core removed the PIN's file ([kind]): what this device keeps for it goes the same way. */
+    private fun pinFileGone(kind: VaultErrorKind) {
+        when (kind) {
+            VaultErrorKind.QUICK_OUTDATED -> outdated(PIN)
+            VaultErrorKind.QUICK_UNAVAILABLE -> disable(PIN)
+            else -> {}
+        }
+    }
+
+    fun ready(): QuickUnlockReady {
+        // M19: a PIN of the version before (its key unwrapped the quick key without the PIN):
+        // its file goes, the setting asks to set it up again.
+        if (prefs.contains("$PIN.blob")) {
+            runCatching { suite().quickUnlockDisable(PIN) }
+            outdated(PIN)
+        }
+        return readyNow()
+    }
+
+    private fun readyNow(): QuickUnlockReady = QuickUnlockReady(
         biometric = settings.quickUnlockBiometric && usable(BIO),
-        pin = settings.quickUnlockPin && usable(PIN),
+        pin = usablePin(),
         needsSetup = (settings.quickUnlockBiometric && prefs.getBoolean("$BIO.outdated", false)) ||
             (settings.quickUnlockPin && prefs.getBoolean("$PIN.outdated", false)),
     )
@@ -85,7 +130,8 @@ class AndroidQuickUnlock(
      */
     private fun outdated(name: String) {
         runCatching { if (keyStore.containsAlias(alias(name))) keyStore.deleteEntry(alias(name)) }
-        prefs.edit().remove("$name.blob").remove("$name.boot").remove("$name.fails").remove("$name.expired")
+        if (name == PIN) pinSlots.tidy(null)
+        prefs.edit().remove("$name.blob").remove("$name.boot").remove("$name.fails").remove("$name.expired").remove("$name.since")
             .putBoolean("$name.outdated", true).apply()
     }
 
@@ -107,17 +153,12 @@ class AndroidQuickUnlock(
             setBlockModes(KeyProperties.BLOCK_MODE_GCM)
             setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
             setKeySize(256)
-            if (strongBox && Build.VERSION.SDK_INT >= 28) setIsStrongBoxBacked(true)
-            if (unlockedOnly && Build.VERSION.SDK_INT >= 28) setUnlockedDeviceRequired(true)
+            if (strongBox) setIsStrongBoxBacked(true)
+            if (unlockedOnly) setUnlockedDeviceRequired(true)
             if (biometric) {
                 setUserAuthenticationRequired(true)
                 setInvalidatedByBiometricEnrollment(true)
-                if (Build.VERSION.SDK_INT >= 30) {
-                    setUserAuthenticationParameters(0, KeyProperties.AUTH_BIOMETRIC_STRONG)
-                } else {
-                    @Suppress("DEPRECATION")
-                    setUserAuthenticationValidityDurationSeconds(-1)
-                }
+                setUserAuthenticationParameters(0, KeyProperties.AUTH_BIOMETRIC_STRONG)
             }
         }.build()
         // "Only while the device is unlocked" needs a screen lock on the device; without one Android
@@ -141,7 +182,9 @@ class AndroidQuickUnlock(
     private fun store(name: String, cipher: Cipher, qk: ByteArray) {
         val ct = cipher.doFinal(qk)
         val blob = Base64.encodeToString(cipher.iv + ct, Base64.NO_WRAP)
-        prefs.edit().putString("$name.blob", blob).putInt("$name.boot", bootCount()).putInt("$name.fails", 0).remove("$name.outdated").apply()
+        // r10 M4: its time starts now (as the core's created_ms), not at the full unlock before.
+        prefs.edit().putString("$name.blob", blob).putInt("$name.boot", bootCount()).putInt("$name.fails", 0).remove("$name.outdated")
+            .putLong("$name.since", android.os.SystemClock.elapsedRealtime()).apply()
         qk.fill(0)
     }
 
@@ -158,7 +201,7 @@ class AndroidQuickUnlock(
     // --- fingerprint ---------------------------------------------------------------------
 
     suspend fun enableBiometric(proof: FactorProof, hours: Int, title: String, subtitle: String, cancel: String) {
-        val qk = withContext(Dispatchers.IO) { mappedQuick { suite().quickUnlockEnable(proof, null, null, BIO, null, maxAgeSeconds(hours)) } }
+        val qk = withContext(Dispatchers.IO) { mappedQuick { suite().quickUnlockEnable(proof, null, null, BIO, maxAgeSeconds(hours)) } }
         try {
             val key = createKey(BIO, biometric = true)
             val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key) }
@@ -183,7 +226,7 @@ class AndroidQuickUnlock(
         val authed = authenticate(cipher, title, subtitle, cancel)
         val qk = authed.doFinal(ct)
         try {
-            withContext(Dispatchers.IO) { mappedQuick { suite().unlockQuick(BIO, qk, null) } }
+            withContext(Dispatchers.IO) { mappedQuick { suite().unlockQuick(BIO, qk) } }
         } catch (e: VaultException) {
             when (e.kind) {
                 // N1: nothing wrong with the quick unlock (e.g. an earlier opening of a suite
@@ -202,50 +245,55 @@ class AndroidQuickUnlock(
     // --- app PIN -------------------------------------------------------------------------
 
     suspend fun enablePin(proof: FactorProof, pin: String, hours: Int) {
-        val qk = withContext(Dispatchers.IO) { mappedQuick { suite().quickUnlockEnable(proof, null, null, PIN, pin, maxAgeSeconds(hours)) } }
         try {
-            val key = createKey(PIN, biometric = false)
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key) }
-            store(PIN, cipher, qk)
+            withContext(Dispatchers.IO) {
+                // The key of the version before (a PIN file of version 3, deleted by the core).
+                runCatching { if (keyStore.containsAlias(alias(PIN))) keyStore.deleteEntry(alias(PIN)) }
+                pinSlots.enable(suite().enablePinSlots(proof, pin, maxAgeSeconds(hours)))
+            }
+            prefs.edit().putInt("$PIN.boot", bootCount()).remove("$PIN.blob").remove("$PIN.fails").remove("$PIN.expired")
+                .putLong("$PIN.since", android.os.SystemClock.elapsedRealtime())
+                .remove("$PIN.outdated").commit()
             settings.quickUnlockHours = hours
             settings.quickHoursPin = hours
             settings.quickUnlockPin = true
-        } catch (e: Exception) {
+        } catch (e: PinSlots.SealedButNotStored) {
+            // r8 M2: the core sealed already, the keys did not get into the keystore: that PIN
+            // cannot work. Anything before (a wrong password, a cancelled touch) leaves the PIN
+            // there before as it was.
             disable(PIN)
-            throw e
+            throw VaultException(VaultErrorKind.QUICK_UNAVAILABLE, e.message.orEmpty())
         }
     }
 
-    suspend fun unlockPin(pin: String) {
-        // Counted before the try and written to disk at once: killing the app right after a wrong
-        // PIN (before a delayed write) must not give a free attempt.
-        val fails = prefs.getInt("$PIN.fails", 0) + 1
-        if (fails > MAX_PIN_ATTEMPTS) {
+    /**
+     * One attempt with the app PIN (M19, see [PinSlots]): a wrong one uses up a slot, after the
+     * second there is none and the PIN is switched off. What says nothing against the PIN (a
+     * locked device, a full storage, a keystore that is busy) leaves it as it is.
+     */
+    suspend fun unlockPin(pin: String) = withContext(Dispatchers.IO) {
+        try {
+            pinSlots.unlock(pin)
+        } catch (e: PinSlots.NoSlots) {
+            // Certain: no PIN file (null generation) or no slot of it left.
             disable(PIN)
             throw VaultException(VaultErrorKind.QUICK_INVALID, retries = 0)
-        }
-        prefs.edit().putInt("$PIN.fails", fails).commit()
-        val (cipher, ct) = decryptCipher(PIN)
-        val qk = cipher.doFinal(ct)
-        try {
-            withContext(Dispatchers.IO) { mappedQuick { suite().unlockQuick(PIN, qk, pin) } }
-            prefs.edit().putInt("$PIN.fails", 0).commit()
+        } catch (e: PinKeyStore.DeviceLocked) {
+            throw VaultException(VaultErrorKind.DEVICE_LOCKED)
+        } catch (e: PinSlots.KeystoreFailed) {
+            // Nothing against the PIN: it stays (the next attempt tries again).
+            throw VaultException(VaultErrorKind.QUICK_UNAVAILABLE, e.message.orEmpty())
         } catch (e: VaultException) {
-            if (e.kind == VaultErrorKind.QUICK_INVALID) {
-                val left = MAX_PIN_ATTEMPTS - fails
-                if (left <= 0) disable(PIN)
-                throw VaultException(VaultErrorKind.QUICK_INVALID, retries = left.coerceAtLeast(0))
-            }
             when (e.kind) {
-                // N1: as with the fingerprint; the attempt is not counted either.
-                in QUICK_UNLOCK_KEPT_ON -> prefs.edit().putInt("$PIN.fails", fails - 1).commit()
+                // Only when it is certain that no attempt is left (null: the keystore could not say).
+                VaultErrorKind.QUICK_INVALID -> if (e.retries == 0) disable(PIN)
                 VaultErrorKind.QUICK_EXPIRED -> expired(PIN)
-                VaultErrorKind.QUICK_OUTDATED -> outdated(PIN)
-                else -> disable(PIN)
+                // The core removed the file (old version, or damaged / of another suite).
+                VaultErrorKind.QUICK_OUTDATED, VaultErrorKind.QUICK_UNAVAILABLE -> pinFileGone(e.kind)
+                // A storage or read error (also N1) and anything else: the PIN stays, no key goes.
+                else -> {}
             }
             throw e
-        } finally {
-            qk.fill(0)
         }
     }
 
@@ -253,8 +301,9 @@ class AndroidQuickUnlock(
     fun onFullUnlock() {
         val edit = prefs.edit()
         for (name in listOf(BIO, PIN)) {
-            if (prefs.contains("$name.blob")) edit.putInt("$name.boot", bootCount())
+            if (prefs.contains("$name.blob") || (name == PIN && prefs.contains("$PIN.boot"))) edit.putInt("$name.boot", bootCount())
             edit.remove("$name.expired")
+            edit.putLong("$name.since", android.os.SystemClock.elapsedRealtime())
         }
         edit.apply()
     }
@@ -272,7 +321,9 @@ class AndroidQuickUnlock(
     fun disable(name: String) {
         runCatching { suite().quickUnlockDisable(name) }
         runCatching { if (keyStore.containsAlias(alias(name))) keyStore.deleteEntry(alias(name)) }
-        prefs.edit().remove("$name.blob").remove("$name.boot").remove("$name.fails").remove("$name.expired").remove("$name.outdated").apply()
+        if (name == PIN) pinSlots.tidy(null)
+        prefs.edit().remove("$name.blob").remove("$name.boot").remove("$name.fails").remove("$name.expired").remove("$name.outdated")
+            .remove("$name.since").apply()
         when (name) {
             BIO -> settings.quickUnlockBiometric = false
             PIN -> settings.quickUnlockPin = false
@@ -298,9 +349,7 @@ class AndroidQuickUnlock(
                     .setNegativeButton(cancel, act.mainExecutor) { _, _ ->
                         if (cont.isActive) cont.resumeWithException(VaultException(VaultErrorKind.BIOMETRIC_CANCELLED))
                     }
-                    .apply {
-                        if (Build.VERSION.SDK_INT >= 30) setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
-                    }
+                    .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
                     .build()
                 prompt.authenticate(
                     BiometricPrompt.CryptoObject(cipher), signal, act.mainExecutor,
@@ -335,21 +384,13 @@ class AndroidQuickUnlock(
         const val ALWAYS_SECONDS: ULong = 3_153_600_000uL
         const val BIO = "bio"
         const val PIN = "pin"
-        const val MAX_PIN_ATTEMPTS = 5
+
     }
 }
 
-/** Maps core errors of the quick unlock functions. */
-private inline fun <T> mappedQuick(block: () -> T): T = try {
-    block()
-} catch (e: GhulException.QuickUnlockInvalid) {
-    throw VaultException(VaultErrorKind.QUICK_INVALID)
-} catch (e: GhulException.QuickUnlockExpired) {
-    throw VaultException(VaultErrorKind.QUICK_EXPIRED)
-} catch (e: GhulException.QuickUnlockOutdated) {
-    throw VaultException(VaultErrorKind.QUICK_OUTDATED)
-} catch (e: GhulException.QuickUnlockUnavailable) {
-    throw VaultException(VaultErrorKind.QUICK_UNAVAILABLE)
-} catch (e: GhulException) {
-    throw VaultException(VaultErrorKind.OTHER, e.message.orEmpty())
-}
+/**
+ * Maps core errors of the quick unlock functions. r13 M1: every other error keeps its own kind
+ * (storage, full storage, locked meanwhile), so it does not count as "something is wrong with
+ * the quick unlock" (which would switch it off), see QUICK_UNLOCK_KEPT_ON.
+ */
+private inline fun <T> mappedQuick(block: () -> T): T = mappedQuickErrors(block)

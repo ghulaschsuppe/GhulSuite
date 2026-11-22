@@ -1,6 +1,6 @@
 # GhulSuite: Testplan Windows (Version 0.5.0-dev)
 
-**Stand:** 22.11.2026 (Abschnitt 14: nach der Großprüfung) · **Umbau zu GhulDocs** ([`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)): eine reine
+**Stand:** 22.11.2026 (Abschnitt 14: nach der Großprüfung; Abschnitt 15: nach den Runden 9 bis 14) · **Umbau zu GhulDocs** ([`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)): eine reine
 Offline-App mit GhulPass, GhulAuth, GhulDocs und GhulCal. Die Suite wandert als eine Datei (`.ghlzip`, mit allen
 Dokumenten) zwischen Android und Windows, z. B. auf dem USB-Stick (Abschnitt 6); GhulDocs unter Windows in Abschnitt 7.
 GhulMail, GhulDrive, Server, Freigabelinks und der Schlüsselwechsel sind entfallen (Abschnitt 8 bleibt nur als
@@ -41,7 +41,7 @@ Jeder Test hat eine Nummer, die mit **W** beginnt (z. B. **WE3**), damit sie sic
 | WE1 | „Neu einrichten“ → Passwort → „Security Key (empfohlen)“ → Schritt 3 · Anlegen. | Statt eines PIN-Felds der Hinweis, dass Windows nach PIN und Berührung fragt. |
 | WE2 | Key einstecken, „Anlegen“, die übrigen Schritte durchgehen. | Windows-Sicherheitsfenster: PIN eingeben, Key berühren, **zweimal** (Registrieren und Schlüssel ableiten). Am Ende der Wiederherstellungscode. |
 | WE3 | „Notfallblatt drucken / als PDF speichern“ → Drucker „Microsoft Print to PDF“. | PDF mit Code, QR-Code und Anleitung. Danach das PDF vom PC löschen. |
-| WE4 | Code bestätigen (Gruppe 3). | Hauptansicht GhulPass. |
+| WE4 | Code bestätigen: den ganzen Code abtippen (seit 22.11.2026, nicht mehr nur Gruppe 3), einmal mit einem Tippfehler in der letzten Gruppe. | Mit Tippfehler „Das ist nicht der Code …“; richtig: Hauptansicht GhulPass. |
 | WE5 | Strg+L drücken. | Sofort gesperrt (Entsperren-Seite). |
 | WE6 | Passwort eingeben → „Entsperren“. | Windows-Fenster für PIN und Berührung; danach offen. |
 | WE7 | Entsperren, im Windows-Fenster „Abbrechen“. | Verständliche Meldung, App bleibt gesperrt und bedienbar. |
@@ -57,7 +57,7 @@ Jeder Test hat eine Nummer, die mit **W** beginnt (z. B. **WE3**), damit sie sic
 | WL1 | Optionen → Sperren: „Sofort“. Zu einem anderen Programm wechseln, 5 Sekunden warten, zurück. | Gesperrt. |
 | WL2 | „Datei wählen“ (z. B. Import) öffnen und wieder schließen. | **Nicht** gesperrt (eigene Dialoge zählen nicht als Hintergrund). |
 | WL3 | Windows mit Win+L sperren und wieder anmelden. | GhulSuite ist gesperrt („Sperren, wenn Windows gesperrt wird“). |
-| WL4 | 15 Minuten nichts in GhulSuite tun (Fenster im Vordergrund). | Gesperrt. |
+| WL4 | Nichts in GhulSuite tun (Fenster im Vordergrund): einmal mit Auto-Sperre „1 Minute“ 5 Minuten lang, einmal mit einer langen Auto-Sperre 15 Minuten lang. | Gesperrt nach der Zeit der automatischen Sperre, mindestens 5 und höchstens 15 Minuten (seit 22.11.2026; vorher fest 15 Minuten). |
 | WL5 | Ausschneiden-Tool (Win+Umschalt+S) oder Bildschirmfreigabe (Teams/Zoom) auf das GhulSuite-Fenster. | Das Fenster erscheint schwarz bzw. leer. |
 | WL6 | Optionen → Privatsphäre → Bildschirmfotos erlauben, erneut aufnehmen. | Jetzt sichtbar. Danach wieder ausschalten. |
 | WL7 | Passwort eines Eintrags kopieren, in Notepad einfügen, dann Win+V. | Einfügen klappt. Im Zwischenablage-Verlauf (Win+V) taucht es **nicht** auf. |
@@ -196,6 +196,22 @@ Windows zusätzlich oder anders:
 | WG3 | Suite-Datei auf einen fast vollen USB-Stick speichern. | Vor dem Schreiben: „Nicht genug freier Speicherplatz: Gebraucht werden …, frei sind …“; die alte Datei bleibt unverändert, keine `.ghltmp` bleibt liegen. |
 | WG4 | Passwort ändern, danach die Suite-Datei am selben Ort speichern. | Während des Speicherns die Phase „Alte Fassung wird überschrieben …“; danach liegt dort nur die neue Datei (kein `.ghlold`). Eine `.ghlold` ohne die Datei daneben bekommt beim nächsten Öffnen ihren Namen zurück. |
 | WG5 | **Update über das MSI** (nur mit einer installierten Version, die Updates bekommt): Update installieren; einmal mit einem Virenschutz, der PowerShell blockiert, falls vorhanden; einmal im Windows-Dialog abbrechen. | Die App beendet sich, das MSI installiert, die App startet neu. Abgebrochen: beim nächsten Start „abgebrochen“. Lief das Update nicht (blockiert): nach einigen Minuten beim nächsten Start „Update wurde nicht ausgeführt …“ mit Link zur Release-Seite. **Dieser Ablauf wurde bisher nur als Text des Skripts getestet, nie auf Windows ausgeführt.** |
+
+## 15. Nach den Runden 9 bis 14 (22.11.2026)
+
+Wie im Android-Testplan Abschnitt 42 (AR1, AR2, AR4, AR7 ohne App-PIN, AR8, AR9, AR10). Unter Windows zusätzlich oder
+anders:
+
+| Nr. | Schritt | Erwartet |
+|---|---|---|
+| WG6 | **Handy als Key** (Windows 11 mit einem Handy in der Nähe): Optionen → Keys und Schlüsseldateien → Security Key hinzufügen, im Windows-Dialog „Anderes Gerät verwenden“ bzw. das Handy wählen und dort bestätigen. Danach mit einem echten Key über USB, wenn vorhanden auch über NFC. | Das Handy wird abgelehnt: „Nur ein Key (Sicherheitsschlüssel) über USB oder NFC lässt sich hinzufügen …“, nichts eingetragen. USB und NFC gehen (GP-M21; bisher nur in der Windows-CI gebaut). |
+| WG7 | **Key unter Windows anlegen, auf Android öffnen:** wie WX2, mit einer Suite, deren einziger zweiter Faktor dieser unter Windows angelegte Key ist (Schlüsseldatei als Backup vorher beiseitelegen). | Am Handy entsperrt der Key; bliebe es bei „falscher Key“, hätte Windows das Salz anders behandelt (Runde 9, Krypto N4). Dann das Backup nehmen und die Nummer melden. |
+| WG8 | **Sperre nach dem Ruhezustand:** GhulSuite entsperrt lassen, den Laptop zuklappen bzw. „Energie sparen“, nach einer Minute wieder aufwecken. | Beim Aufwachen sofort gesperrt. (Vor dem Einschlafen kann die App nicht sperren: vor dem Zuklappen am besten selbst sperren.) |
+| WG9 | **Aufschub durch ungespeicherte Eingabe:** einen Eintrag bearbeiten, etwas tippen, nicht speichern, Fenster vorn lassen (Auto-Sperre „1 Minute“). | Nach etwa 14 Minuten „Ohne Eingabe sperrt GhulSuite in etwa einer Minute …“, nach 15 Minuten gesperrt; die Eingabe ist verloren. |
+| WG10 | **Netzlaufwerk:** GhulSuite läuft; im Explorer eine Suite-Datei auf einem Netzlaufwerk (`\\server\freigabe\GhulSuite.ghlzip`) doppelt klicken. Dann dieselbe Datei in GhulSuite mit „Suite-Datei öffnen“ wählen. | Doppelklick: die Meldung „… liegt auf einem Netzlaufwerk und wird bei laufendem GhulSuite nicht per Doppelklick geöffnet. Öffne sie in GhulSuite mit ‚Suite-Datei öffnen‘.“ Über „Suite-Datei öffnen“ geht es. |
+| WG11 | **Zwischenablage belegt:** ein Programm, das die Zwischenablage festhält (z. B. ein Zwischenablage-Manager), dann in GhulSuite ein Passwort kopieren. | Entweder kopiert (nicht im Verlauf, WL7) oder „Nicht kopiert: Ein anderes Programm hält gerade die Zwischenablage …“; nie ein stiller Rückfall auf den Verlauf. |
+| WG12 | **Update startet PowerShell mit vollem Pfad** (installierte Version mit Update): eine leere Datei `powershell.exe` in den Ordner der Suite-Datei legen, GhulSuite per Doppelklick auf die Suite-Datei starten, Update installieren. | Das Update läuft wie in WG5; die Datei im Ordner wird nicht gestartet. Fehlt Windows PowerShell selbst: „Das Update braucht Windows PowerShell …“ mit Link zur Release-Seite. |
+| WG13 | **Portabel:** Optionen → Über und Hilfe in der portablen Version. | Hinweis: Programm und Einstellungen liegen ohne Siegel auf dem Stick; einen Stick, der aus der Hand war, nicht mehr starten, die portable Version neu laden und die Prüfsumme prüfen. |
 
 ## Fehler melden
 

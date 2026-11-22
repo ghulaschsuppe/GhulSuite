@@ -35,6 +35,7 @@ import androidx.compose.ui.test.runDesktopComposeUiTest
 import androidx.compose.ui.unit.Density
 import de.danerd.ghulsuite.ui.DevChecks
 import de.danerd.ghulsuite.ui.AppState
+import de.danerd.ghulsuite.ui.MANY_TO_DELETE
 import de.danerd.ghulsuite.ui.CalView
 import de.danerd.ghulsuite.ui.GhulSuiteApp
 import de.danerd.ghulsuite.ui.HeaderGuard
@@ -349,6 +350,30 @@ class InteractionTest {
         // "Stick.ghlzip is checked completely first …": the form of opening, not the page alone.
         waitFor("Stick.ghlzip is checked completely first", substring = true)
         shot("suite-file-handed-over")
+    }
+
+    /**
+     * r9 N-D2 and M-2: a suite file from another app becomes the place to save to only when the
+     * user says so, and only then is the access to it kept.
+     */
+    @Test
+    fun aFileFromAnotherAppBecomesThePlaceOnlyWhenAsked() = app { state, fake ->
+        waitForIdle()
+        val other = de.danerd.ghulsuite.model.SuiteFileRef("content://andere.app/GhulSuite.ghlzip", "GhulSuite.ghlzip")
+        state.saveTargetOffer = other
+        waitFor("This file came from another app", substring = true)
+        assertTrue(fake.kept.isEmpty(), "nothing kept before the answer")
+        assertEquals(null, fake.suiteRef)
+        shot("suite-file-offer")
+        text("Not here").performClick()
+        waitUntil(timeoutMillis = 10_000) { !part("This file came from another app") }
+        assertTrue(fake.kept.isEmpty())
+        assertEquals(null, fake.suiteRef)
+        state.saveTargetOffer = other
+        waitFor("Save here")
+        text("Save here").performClick()
+        waitUntil(timeoutMillis = 5_000) { fake.suiteRef == other }
+        assertEquals(listOf(other), fake.kept)
     }
 
     /** The error report is only shown, to copy (or share or save): nothing is sent by itself. */
@@ -687,8 +712,8 @@ class InteractionTest {
         onAllNodesWithText("App PIN", useUnmergedTree = true).onFirst().performClick()
         waitFor("Repeat app PIN")
         val fields = { onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog())) }
-        fields()[0].performTextInput("246813")
-        fields()[1].performTextInput("246813")
+        fields()[0].performTextInput("24681357")
+        fields()[1].performTextInput("24681357")
         fields()[2].performTextInput(fake.masterPassword)
         // A key is chosen (the default), its PIN still missing: not yet.
         onNode(hasText("Save") and hasAnyAncestor(isDialog()) and hasClickAction()).assertIsNotEnabled()
@@ -696,7 +721,7 @@ class InteractionTest {
         shot("app-pin-proof")
         dialogButton("Save")
         waitUntil(timeoutMillis = 10_000) { fake.quickSetups.isNotEmpty() }
-        assertEquals("pin:246813:${fake.settings.quickUnlockHours}", fake.quickSetups.single())
+        assertEquals("pin:24681357:${fake.settings.quickUnlockHours}", fake.quickSetups.single())
     }
 
     /** H6: two methods with their own validity: each is shown (and changed) on its own. */
@@ -743,7 +768,7 @@ class InteractionTest {
         quickError = de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.QUICK_OUTDATED)
     }) { state, fake ->
         waitFor("Unlock with app PIN")
-        onAllNodes(hasSetTextAction()).onFirst().performTextInput("246813")
+        onAllNodes(hasSetTextAction()).onFirst().performTextInput("24681357")
         text("Unlock with app PIN").performClick()
         waitUntil(timeoutMillis = 10_000) { part("Master password") }
         assertFalse(shown("Unlock with app PIN"))
@@ -757,6 +782,28 @@ class InteractionTest {
     /** The text field of the master password question (M13, M14). */
     private fun DesktopComposeUiTest.gateField() =
         onAllNodes(hasSetTextAction() and hasAnyAncestor(androidx.compose.ui.test.hasTestTag("gate-password")), useUnmergedTree = true).onFirst()
+
+    /** r9 dieb N7: deleting many entries at once needs the master password; a few only the question. */
+    @Test
+    fun deletingManyAtOnceNeedsThePassword() = app { state, fake ->
+        waitForIdle()
+        var done = 0
+        runOnIdle { state.askDelete(List(3) { "Eintrag $it" }) { done++ } }
+        waitUntil(timeoutMillis = 5_000) { tagged("ask-confirm") }
+        assertFalse(tagged("gate-password"))
+        onAllNodesWithTag("ask-confirm").onFirst().performClick()
+        waitUntil(timeoutMillis = 5_000) { done == 1 }
+        runOnIdle { state.askDelete(List(MANY_TO_DELETE) { "Eintrag $it" }) { done++ } }
+        waitUntil(timeoutMillis = 5_000) { tagged("gate-password") }
+        val before = fake.calls.count { it == "verifyPassword" }
+        gateField().performTextInput("falsch")
+        onAllNodesWithTag("gate-confirm").onFirst().performClick()
+        waitUntil(timeoutMillis = 5_000) { fake.calls.count { it == "verifyPassword" } == before + 1 }
+        assertEquals(1, done, "a wrong password deletes nothing")
+        gateField().performTextReplacement(fake.masterPassword)
+        onAllNodesWithTag("gate-confirm").onFirst().performClick()
+        waitUntil(timeoutMillis = 5_000) { done == 2 }
+    }
 
     /** M13: the secret of a 2FA account as a QR code only after the master password. */
     @Test
@@ -1460,7 +1507,7 @@ class InteractionTest {
         runOnIdle { state.askSave() }
         onNodeWithTag(SAVE_CONFIRM_TAG, useUnmergedTree = true).performClick()
         waitFor("Share as separate vault", substring = true)
-        assertTrue(part("keeps the old protection"))
+        assertTrue(part("an old recovery code would open it"))
         assertFalse(tagged("save-overwrite"), "a newer protection is never overwritten")
         shot("save-conflict-protection")
         assertTrue(fake.calls.none { it.startsWith("archiveSave") })

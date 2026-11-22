@@ -145,12 +145,18 @@ internal fun FidoException.toVault(): VaultException {
  * file), no trailing dots or spaces (Windows drops them, "a.exe." would be "a.exe"), not "." or
  * "..", and unique among the files shared together.
  */
+private val WINDOWS_DEVICES = setOf("CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$") +
+    (0..9).flatMap { listOf("COM$it", "LPT$it") } + listOf("COM¹", "COM²", "COM³", "LPT¹", "LPT²", "LPT³")
+
 internal fun safeFileName(name: String, used: MutableSet<String>): String {
     val clean = name.map { if (it in "/\\<>:\"|?*" || it.code < 32) '_' else it }.joinToString("").trim().trimEnd('.', ' ')
     // Shortened, the ending stays: cutting "aaa…a.exe.txt" must not leave "aaa…a.exe".
     val dot = clean.lastIndexOf('.').takeIf { it > 0 && clean.length - it <= 16 } ?: clean.length
     var base = if (clean.length <= 120) clean else clean.substring(0, 120 - (clean.length - dot)).trimEnd('.', ' ') + clean.substring(dot)
     if (base.isEmpty() || base.all { it == '.' }) base = "file"
+    // r9 N-D5: a name Windows takes for a device ("CON", "NUL.txt", "COM1.jpg", also with spaces
+    // before the dot) would write to the device instead of a file.
+    if (base.substringBefore('.').trimEnd(' ').uppercase() in WINDOWS_DEVICES) base = "_$base"
     var candidate = base
     var n = 2
     while (!used.add(candidate.lowercase())) {

@@ -24,6 +24,8 @@ pub struct MockConfig {
     pub protocols: Vec<i64>,
     pub fido_2_1: bool,
     pub pin: Option<String>,
+    /// Lists the extension credProtect (every key of CTAP 2.1, many of 2.0).
+    pub cred_protect: bool,
 }
 
 struct State {
@@ -133,13 +135,17 @@ impl State {
     fn dispatch(&mut self, cmd: u8, p: &Value) -> Result<Option<Cbor>, u8> {
         match cmd {
             0x04 => {
+                let mut extensions = vec![Cbor::text("hmac-secret")];
+                if self.cfg.cred_protect {
+                    extensions.push(Cbor::text("credProtect"));
+                }
                 let mut versions = vec![Cbor::text("FIDO_2_0")];
                 if self.cfg.fido_2_1 {
                     versions.push(Cbor::text("FIDO_2_1"));
                 }
                 Ok(Some(Cbor::Map(vec![
                     (Cbor::Int(1), Cbor::Array(versions)),
-                    (Cbor::Int(2), Cbor::Array(vec![Cbor::text("hmac-secret"), Cbor::text("credProtect")])),
+                    (Cbor::Int(2), Cbor::Array(extensions)),
                     (Cbor::Int(3), Cbor::bytes(&[0xAA; 16])),
                     (
                         Cbor::Int(4),
@@ -346,7 +352,7 @@ impl HidTransport for MockAuthenticator {
 #[cfg(feature = "mock")]
 #[uniffi::export]
 pub fn mock_authenticator(pin: Option<String>) -> Arc<dyn HidTransport> {
-    MockAuthenticator::new(MockConfig { protocols: vec![2, 1], fido_2_1: true, pin })
+    MockAuthenticator::new(MockConfig { protocols: vec![2, 1], fido_2_1: true, pin, cred_protect: true })
 }
 
 #[cfg(test)]
@@ -367,8 +373,33 @@ mod tests {
     use super::*;
     use crate::{fido_get_info, fido_register, fido_set_pin, fido_unlock_test, FidoError};
 
+    /// r9 M1: a key of CTAP 2.0 without credProtect is refused before anything is registered;
+    /// one with credProtect, or of CTAP 2.1, is fine.
+    #[test]
+    fn a_ctap_2_0_key_without_cred_protect_is_refused() {
+        let mock = MockAuthenticator::new(MockConfig {
+            protocols: vec![1],
+            fido_2_1: false,
+            pin: Some("1234".into()),
+            cred_protect: false,
+        });
+        let listener = Arc::new(RecordingListener::default());
+        let r = fido_register(mock, listener.clone(), "1234".into());
+        assert!(matches!(r, Err(FidoError::HmacSecretUnsupported)), "{r:?}");
+        for (fido_2_1, cred_protect) in [(true, false), (false, true)] {
+            let mock = MockAuthenticator::new(MockConfig {
+                protocols: vec![2, 1],
+                fido_2_1,
+                pin: Some("1234".into()),
+                cred_protect,
+            });
+            fido_register(mock, listener.clone(), "1234".into()).unwrap();
+        }
+    }
+
     fn run_flow(protocols: Vec<i64>, fido_2_1: bool) {
-        let mock = MockAuthenticator::new(MockConfig { protocols, fido_2_1, pin: Some("1234".into()) });
+        let mock =
+            MockAuthenticator::new(MockConfig { protocols, fido_2_1, pin: Some("1234".into()), cred_protect: true });
         let listener = Arc::new(RecordingListener::default());
 
         let info = fido_get_info(mock.clone()).unwrap();
@@ -417,7 +448,7 @@ mod tests {
     #[test]
     fn set_pin_then_register() {
         for protocols in [vec![2], vec![1]] {
-            let mock = MockAuthenticator::new(MockConfig { protocols, fido_2_1: true, pin: None });
+            let mock = MockAuthenticator::new(MockConfig { protocols, fido_2_1: true, pin: None, cred_protect: true });
             let listener = Arc::new(RecordingListener::default());
             assert!(!fido_get_info(mock.clone()).unwrap().pin_set);
             assert!(matches!(fido_register(mock.clone(), listener.clone(), "1234".into()), Err(FidoError::PinNotSet)));

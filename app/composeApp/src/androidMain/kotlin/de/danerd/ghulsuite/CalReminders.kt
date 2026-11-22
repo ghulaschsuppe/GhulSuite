@@ -9,7 +9,6 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
@@ -31,7 +30,7 @@ import org.json.JSONObject
  * device: they must be readable when a reminder comes on the locked phone). What is kept is only
  * the chosen detail (M12): below "everything" the full text is not even prepared; with
  * "everything" the lock screen shows (and the device keeps) title, time and place for 30 days.
- * The part for full texts with a key bound to an unlocked device (Android 9+) is only written
+ * The part for full texts with a key bound to an unlocked device is only written
  * when they differ from the lock screen part, which the app's detail levels never make; it stays
  * as a guard, not as a protection the app relies on. The reminders stay after a panic lock unless
  * the user chose otherwise (see test plan K11); deleting the suite removes them.
@@ -97,7 +96,7 @@ class CalReminders(private val context: Context) {
             Intent(context, CalAlarmReceiver::class.java).setAction(ACTION_FIRE).putExtra(EXTRA_INDEX, index).putExtra(EXTRA_ALARM, key),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val exact = Build.VERSION.SDK_INT < 31 || alarms.canScheduleExactAlarms()
+        val exact = alarms.canScheduleExactAlarms()
         if (exact) alarms.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
         else alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
     }
@@ -177,11 +176,7 @@ class CalReminders(private val context: Context) {
             .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
             .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
             .setKeySize(256)
-        if (unlockedOnly) {
-            // Before Android 9 there is no such binding: the full texts are then not kept.
-            if (Build.VERSION.SDK_INT < 28) throw IllegalStateException("no unlocked-device binding")
-            spec.setUnlockedDeviceRequired(true)
-        }
+        if (unlockedOnly) spec.setUnlockedDeviceRequired(true)
         gen.init(spec.build())
         return gen.generateKey()
     }
@@ -303,7 +298,7 @@ class CalAlarmReceiver : BroadcastReceiver() {
                 )
                 val am = context.getSystemService(AlarmManager::class.java)
                 val at = System.currentTimeMillis() + 5 * 60_000
-                if (Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms()) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
+                if (am.canScheduleExactAlarms()) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
                 else am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
             }
             Intent.ACTION_TIMEZONE_CHANGED -> {

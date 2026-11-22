@@ -29,12 +29,7 @@ class AndroidUpdater(private val context: Context) : CoreUpdater(".apk") {
     /** Installed by an app store: that store brings the updates (and may require it). */
     private fun fromStore(): Boolean {
         val installer = runCatching {
-            if (Build.VERSION.SDK_INT >= 30) {
-                context.packageManager.getInstallSourceInfo(context.packageName).installingPackageName
-            } else {
-                @Suppress("DEPRECATION")
-                context.packageManager.getInstallerPackageName(context.packageName)
-            }
+            context.packageManager.getInstallSourceInfo(context.packageName).installingPackageName
         }.getOrNull() ?: return false
         return installer in STORES
     }

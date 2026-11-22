@@ -70,7 +70,7 @@
     <string name="err_tampered">Eine Datei der Suite wurde ohne das Master-Passwort verändert. Sie wird nicht verwendet.</string>
     <string name="err_corrupted">Die Tresor-Dateien sind beschädigt oder wurden verändert (%1$s).</string>
     <string name="err_different_protection">Dieser Tresor ist mit einem anderen Passwort oder anderen Keys/Schlüsseldateien geschützt als deine Suite. Öffne ihn als eigene Suite.</string>
-    <string name="err_hmac">Dieser Key unterstützt kein hmac-secret und ist nicht geeignet.</string>
+    <string name="err_hmac">Dieser Key unterstützt nicht, was GhulSuite braucht (hmac-secret mit Schutz durch die PIN des Keys), etwa weil er zu alt ist. Nimm einen neueren Key oder eine Schlüsseldatei.</string>
     <string name="err_import_encrypted">Diese Exportdatei ist verschlüsselt. Exportiere in der anderen App ohne Verschlüsselung und versuche es erneut.</string>
     <string name="err_import_unknown">Dieses Dateiformat wird nicht erkannt.</string>
     <string name="err_input">Ungültige Eingabe: %1$s</string>
@@ -99,10 +99,17 @@
     <string name="err_out_of_memory">Für diese Datei reicht der Arbeitsspeicher dieses Geräts nicht. Schließe andere Apps und versuche es erneut, oder öffne die Datei auf einem anderen Gerät.</string>
     <string name="err_delete_incomplete">Die Suite wurde nur zum Teil gelöscht (eine Datei ließ sich nicht entfernen). Versuche das Löschen noch einmal.</string>
     <plurals name="err_quick_invalid">
-        <item quantity="one">Falsche App-PIN. Noch %1$s Versuch.</item>
+        <item quantity="one">Falsche App-PIN. Noch %1$s Versuch, danach sind Passwort und zweiter Faktor nötig.</item>
         <item quantity="other">Falsche App-PIN. Noch %1$s Versuche.</item>
     </plurals>
     <string name="err_quick_unavailable">Schnell-Entsperren ist nicht verfügbar. Bitte mit Passwort und zweitem Faktor entsperren.</string>
+    <string name="err_quick_invalid_plain">Das Schnell-Entsperren hat nicht gepasst. Versuche es noch einmal oder entsperre mit Passwort und zweitem Faktor.</string>
+    <string name="err_quick_pin_used_up">Falsche App-PIN. Das war der zweite Fehlversuch, die App-PIN ist jetzt gelöscht. Entsperre mit Passwort und zweitem Faktor; danach kannst du sie unter Optionen → Entsperren neu einrichten.</string>
+    <string name="err_device_locked">Entsperre zuerst das Gerät. Die App-PIN geht nur bei entsperrtem Gerät; es wurde kein Versuch verbraucht.</string>
+    <string name="err_clipboard_busy">Nicht kopiert: Ein anderes Programm hält gerade die Zwischenablage. Versuche es gleich noch einmal. (Die normale Zwischenablage mit Verlauf nimmt GhulSuite dafür nicht.)</string>
+    <string name="err_try_again">Das hat gerade nicht geklappt (zwischendurch wurde gesperrt). Bitte noch einmal versuchen.</string>
+    <string name="idle_lock_warning">Ohne Eingabe sperrt GhulSuite in etwa einer Minute. Was du im Editor noch nicht gespeichert hast, geht dabei verloren: Speichere es jetzt.</string>
+    <string name="core_app_pin_internal">Die App-PIN ließ sich nicht verwenden (interner Fehler). Entsperre mit Passwort und zweitem Faktor und richte sie neu ein.</string>
     <string name="err_storage">Speichern fehlgeschlagen: %1$s</string>
     <string name="err_timeout">Zeitüberschreitung: Der Key wurde nicht rechtzeitig berührt.</string>
     <string name="err_transport">USB-Kommunikation fehlgeschlagen: %1$s</string>
@@ -214,12 +221,12 @@
     <string name="keyfile_needed">Wähle deine Schlüsseldatei (.ghlkey).</string>
     <string name="keyfile_not_saved">Speichere zuerst die Schlüsseldatei.</string>
     <string name="keyfile_ready">Schlüsseldatei bereit.</string>
-    <string name="keyfile_text">Speichere die Schlüsseldatei an einem Ort, den nur du hast, getrennt von der Suite-Datei (nicht auf demselben Stick, nicht im selben Ordner), und lege eine Kopie an. Wer Passwort und Schlüsseldatei hat, kommt hinein. Liegt sie neben der Suite-Datei, schützt dich nur noch das Passwort.</string>
+    <string name="keyfile_text">Speichere die Schlüsseldatei an einem Ort, den nur du hast, getrennt von der Suite-Datei: nicht auf diesem Handy, nicht auf dem Gerät oder Stick, auf dem die Suite-Datei liegt, und nicht im selben Ordner. Lege eine Kopie an. Wer Passwort und Schlüsseldatei hat, kommt hinein. Liegt sie neben der Suite-Datei oder auf demselben Gerät, schützt dich nur noch das Passwort.</string>
     <string name="keyfile_title">Schlüsseldatei</string>
     <string name="keyfile_use_existing">Vorhandene Schlüsseldatei verwenden</string>
     <string name="l_app_pin">App-PIN</string>
     <string name="l_app_pin_repeat">App-PIN wiederholen</string>
-    <string name="l_code_group_3">Gruppe 3 des Codes</string>
+    <string name="l_code_whole">Der ganze Code</string>
     <string name="l_current_password">Aktuelles Master-Passwort</string>
     <string name="l_key_label">Name des Keys (z. B. „Key am Schlüsselbund“)</string>
     <string name="l_key_pin">PIN des Keys</string>
@@ -237,7 +244,7 @@
     <string name="lock_30s">nach 30 Sekunden</string>
     <string name="lock_5m">nach 5 Minuten</string>
     <string name="lock_immediately">sofort</string>
-    <string name="msg_code_kept">Der Tresor trägt schon einen Wiederherstellungscode. Dein bisheriges Notfallblatt gilt weiter.</string>
+    <string name="msg_code_kept">Wer dir den Tresor gegeben hat, kennt sein Passwort und seine Schlüsseldatei. Ändere das Passwort und lege unter Optionen → Keys und Schlüsseldateien einen eigenen Key oder eine eigene Schlüsseldatei an.</string>
     <string name="msg_copied">%1$s kopiert, wird gleich aus der Zwischenablage gelöscht</string>
     <string name="msg_exported">Tresordatei gespeichert.</string>
     <string name="msg_exported_plain">Unverschlüsselte Datei gespeichert. Denk daran, sie nach dem Umzug zu löschen.</string>
@@ -250,7 +257,7 @@
     <string name="msg_password_changed">Master-Passwort geändert.</string>
     <string name="msg_vault_added">Tresor hinzugefügt.</string>
     <string name="open_vault_needs_key">Stecke deinen Key ein.</string>
-    <string name="open_vault_new_code">Die Datei wird in deinen Speicherort kopiert. Trägt sie schon einen Wiederherstellungscode, gilt das zugehörige Notfallblatt weiter, sonst bekommst du einen neuen Code.</string>
+    <string name="open_vault_new_code">Die Datei wird in deinen Speicherort kopiert, und die neue Suite bekommt einen eigenen Wiederherstellungscode: Ein Code, der vorher zur Datei gehörte, öffnet sie nicht. Wer dir die Datei gegeben hat, kennt aber Passwort und Schlüsseldatei. Ändere danach das Passwort und lege einen eigenen Key oder eine eigene Schlüsseldatei an.</string>
     <string name="open_vault_text">Datei: %1$s (%2$s)</string>
     <string name="open_vault_title">Tresor öffnen</string>
     <string name="pass_empty">Noch keine Einträge. Mit + legst du dein erstes Passwort an.</string>
@@ -272,7 +279,7 @@
     <string name="s_touch_key">Jetzt den Key berühren</string>
     <string name="set_about">Über und Hilfe</string>
     <string name="set_add_key_text">Stecke den Key ein. Du berührst ihn zweimal. Danach öffnet er die Suite genau wie deine anderen Keys und Schlüsseldateien. An diesen ändert sich nichts.</string>
-    <string name="set_app_pin_text">Wähle eine App-PIN mit 6 bis 12 Ziffern. Sie gilt nur auf diesem Gerät und nur für das Schnell-Entsperren. Nach 5 Fehlversuchen wird sie gelöscht.</string>
+    <string name="set_app_pin_text">Wähle eine App-PIN mit 8 bis 12 Ziffern, nicht die PIN deiner Displaysperre und kein Datum. Sie gilt nur auf diesem Gerät und nur für das Schnell-Entsperren. Nach 2 falschen Eingaben ist sie weg; dann öffnen nur Passwort und zweiter Faktor.</string>
     <string name="set_auto_lock">Im Hintergrund sperren</string>
     <string name="set_backup_key_hint">Empfehlung: Lege einen Ersatz an (zweiter Key oder Schlüsseldatei). Geht dein einziger verloren, kommst du nur noch mit dem Wiederherstellungscode hinein.</string>
     <string name="set_change_pw_text">Gilt für die Suite und alle Tresore. Keys, Schlüsseldateien und der Wiederherstellungscode bleiben gültig.</string>
@@ -290,7 +297,7 @@
     <string name="set_panic_reminders">Sofortsperre löscht auch die Termin-Erinnerungen</string>
     <string name="set_password">Master-Passwort</string>
     <string name="set_pin_mismatch">Die PINs stimmen nicht überein.</string>
-    <string name="set_quick_always_full">Passwort und zweiter Faktor (Key oder Schlüsseldatei) sind nötig nach einem Neustart und nach Ablauf der Gültigkeit; danach geht Schnell-Entsperren wieder. Neu einrichten musst du es nach einer Sofortsperre, nach 5 falschen App-PINs, wenn Fingerabdrücke geändert werden, und nach jeder Änderung des Schutzes (Passwort, Key, Schlüsseldatei).</string>
+    <string name="set_quick_always_full">Passwort und zweiter Faktor (Key oder Schlüsseldatei) sind nötig nach einem Neustart und nach Ablauf der Gültigkeit; danach geht Schnell-Entsperren wieder. Neu einrichten musst du es nach einer Sofortsperre, nach 2 falschen App-PINs, wenn Fingerabdrücke geändert werden, und nach jeder Änderung des Schutzes (Passwort, Key, Schlüsseldatei).</string>
     <string name="set_quick_bio">Fingerabdruck</string>
     <string name="set_quick_bio_unavailable">Kein sicherer Fingerabdrucksensor oder kein Fingerabdruck auf diesem Gerät eingerichtet.</string>
     <string name="set_quick_hint">Nach dem Entsperren mit Passwort und zweitem Faktor kannst du GhulSuite für eine Weile per Fingerabdruck oder App-PIN öffnen.</string>
@@ -322,9 +329,9 @@
     <string name="setup_code_noted">Ich habe den Code notiert oder ausgedruckt</string>
     <string name="setup_code_text">Dieser Code öffnet alle deine Tresore ganz allein, auch wenn Passwort, Key und Schlüsseldatei weg sind. Er steckt in jeder deiner Dateien. Schreibe ihn ab oder drucke ihn aus und bewahre ihn sicher auf, nicht auf diesem Gerät.</string>
     <string name="setup_code_title">Dein Wiederherstellungscode</string>
-    <string name="setup_confirm_text">Damit sicher ist, dass du den Code hast: Gib seine dritte Gruppe ein (5 Zeichen).</string>
+    <string name="setup_confirm_text">Damit sicher ist, dass du den Code richtig hast: Tippe den ganzen Code ab, am besten von deinem Notfallblatt (Leerzeichen und Bindestriche sind egal). GhulSuite vergleicht jedes Zeichen.</string>
     <string name="setup_confirm_title">Wiederherstellungscode prüfen</string>
-    <string name="setup_confirm_wrong">Das ist nicht die dritte Gruppe.</string>
+    <string name="setup_confirm_wrong">Das ist nicht der Code. Vergleiche dein Notfallblatt Zeichen für Zeichen mit dem Code (mit „Zurück“).</string>
     <string name="setup_default_key_label">Key</string>
     <string name="setup_key_detected">Erkannt: %1$s</string>
     <string name="wz_key_pin_missing">Bitte gib die PIN deines Keys ein. Hat der Key noch keine, tippe auf „Key prüfen“, dann kannst du eine festlegen.</string>
@@ -341,7 +348,7 @@
     <string name="setup_recovery_label">Wiederherstellungscode</string>
     <string name="setup_use_key">Key (Sicherheitsschlüssel, empfohlen)</string>
     <string name="setup_use_keyfile">Schlüsseldatei</string>
-    <string name="setup_use_keyfile_text">Eine kleine Datei, die du getrennt von der Suite-Datei aufbewahrst, z. B. auf einem eigenen Stick. Gut für den Anfang; später kannst du sie gegen einen Key tauschen.</string>
+    <string name="setup_use_keyfile_text">Eine kleine Datei, die du getrennt von der Suite-Datei aufbewahrst, z. B. auf einem eigenen Stick, nicht auf dem Handy mit der App. Gut für den Anfang; später kannst du sie gegen einen Key tauschen.</string>
     <string name="shake_high">hoch</string>
     <string name="shake_low">gering</string>
     <string name="shake_medium">mittel</string>
@@ -350,7 +357,7 @@
     <string name="sheet_need">Du brauchst: dieses Blatt, die Suite-Datei (%1$s, z. B. auf dem USB-Stick) und ein Android-Handy oder einen Windows-PC mit der App GhulSuite (kostenlos auf www.ghulsuite.de). Das Handy allein genügt nicht: Die Daten stecken in der Suite-Datei.</string>
     <string name="sheet_default_name">%1$s (der vorgeschlagene Name, falls du beim Speichern keinen anderen gewählt hast)</string>
     <string name="sheet_intro">Dieser Wiederherstellungscode öffnet deine Suite (Suite-Datei %1$s) vollständig, auch ohne Master-Passwort, Security Key und Schlüsseldatei. Bewahre dieses Blatt so sicher auf wie Bargeld, getrennt von Gerät und Key.</string>
-    <string name="sheet_print_hint">Am besten direkt per USB oder WLAN-Direkt drucken. Netzwerk- und Cloud-Drucker speichern Druckaufträge teilweise. „Als PDF speichern“ legt den Code als Datei ab (meist in „Downloads“): Lösche sie nach dem Drucken.</string>
+    <string name="sheet_print_hint">Am besten direkt per USB oder WLAN-Direkt drucken. Netzwerk- und Cloud-Drucker speichern Druckaufträge teilweise, und unter Android geht das Blatt über die Druck-App des Herstellers, also eine fremde App. „Als PDF speichern“ legt den Code als Datei ab (meist in „Downloads“): Lösche sie nach dem Drucken. Am sichersten ist Abschreiben.</string>
     <string name="sheet_step1">GhulSuite öffnen, auf dem Startbildschirm „Mit Notfallblatt öffnen“ wählen und die Suite-Datei auswählen. Ist die Suite auf dem Gerät schon eingerichtet: auf dem Sperrbildschirm „Mit Wiederherstellungscode öffnen“.</string>
     <string name="sheet_step2">Diesen Code eingeben (Bindestriche und Groß-/Kleinschreibung sind egal) und ein neues Master-Passwort festlegen.</string>
     <string name="sheet_step3">In den Optionen einen neuen Key oder eine neue Schlüsseldatei hinzufügen und verlorene entfernen, bevor GhulSuite wieder gesperrt wird.</string>
@@ -861,8 +868,8 @@
     <string name="wz_quick_bio_sub">Für die Zeit dazwischen</string>
     <string name="wz_quick_pin">Zusätzlich App-PIN</string>
     <string name="wz_quick_pin_sub">Wenn kein Fingerabdruck möglich ist</string>
-    <string name="wz_quick_pin_field">App-PIN (6 bis 12 Ziffern)</string>
-    <string name="wz_pin_rule">Die App-PIN braucht 6 bis 12 Ziffern.</string>
+    <string name="wz_quick_pin_field">App-PIN (8 bis 12 Ziffern)</string>
+    <string name="wz_pin_rule">Die App-PIN braucht 8 bis 12 Ziffern.</string>
     <string name="wz_quick_valid">Schnell-Entsperren gilt</string>
     <string name="wz_quick_valid_sub">Danach wieder Passwort und zweiter Faktor.</string>
     <string name="wz_quick_always_note">Ohne Ablauf. Nach einem Neustart des Geräts, einer Sofortsperre oder einem Passwortwechsel brauchst du trotzdem wieder Passwort und zweiten Faktor.</string>
@@ -967,7 +974,11 @@
     <string name="core_attach_many">Zu viele Anhänge.</string>
     <string name="core_attach_big">Anhang zu groß (höchstens 10 MB).</string>
     <string name="core_suite_too_large">Die Suite-Datei würde zu groß (höchstens 3,75 GiB) und ließe sich nicht mehr öffnen. Es wurde nichts gespeichert. Entferne große Anhänge oder Dokumente und speichere dann erneut.</string>
-    <string name="core_other_full">Die Tresore neben GhulDocs sind voll (zusammen höchstens 200 MiB, vor allem Anhänge). Es wurde nichts hinzugefügt.</string>
+    <string name="core_other_full">Die Tresore neben GhulDocs sind voll (zusammen höchstens 200 MiB, vor allem Anhänge und Importe). Es wurde nichts hinzugefügt.</string>
+    <string name="pin_too_simple">Diese App-PIN ist zu leicht zu erraten: nicht nur eine Ziffer (11111111), keine wiederholten Blöcke (12121212), keine Folgen wie 12345678, kein Datum wie ein Geburtstag. Nimm auch nicht die PIN deiner Displaysperre.</string>
+    <string name="core_vault_full">Dieser Tresor ist voll: Eine Tresordatei fasst höchstens 128 MiB. Es wurde nichts hinzugefügt; lege einen weiteren Tresor an oder entferne große Anhänge.</string>
+    <string name="core_ics_too_large">Die Kalenderdatei ist größer als 16 MiB und wird nicht übernommen.</string>
+    <string name="core_csv_too_wide">Diese CSV-Datei hat zu viele Spalten oder Felder. Sie wurde nicht übernommen.</string>
     <string name="core_docs_kept_aside">Die bisherigen Dokumente ließen sich nicht an ihren Platz zurücklegen. Sie wurden nicht gelöscht, sondern in einem eigenen Ordner „rescued-documents-…“ bei den Daten der App auf diesem Gerät aufbewahrt.</string>
     <string name="core_no_group">Diese Gruppe gibt es nicht.</string>
     <string name="core_no_password">Kein Passwort angegeben.</string>
@@ -1026,6 +1037,9 @@
     <string name="upd_title_dev">Vorabversion %1$s</string>
     <string name="upd_text">Download %1$s. Größe, Prüfsumme und Signatur werden geprüft, bevor etwas installiert wird; deine Daten bleiben, wie sie sind.</string>
     <string name="upd_text_portable">Die portable Version wird nicht von selbst verändert: Die Release-Seite öffnet sich mit dem neuen ZIP (%1$s). Entpacke es über den alten Ordner; der Ordner GhulSuite-Daten bleibt.</string>
+    <string name="upd_notes_caption">Text der Release-Seite (nicht geprüft). GhulSuite fragt dort nie nach Passwort, Key oder Code.</string>
+    <string name="about_portable_title">Portable Version</string>
+    <string name="about_portable_stick">Programm und Einstellungen liegen hier auf dem Stick, ohne Siegel. Wer den Stick eine Weile hatte, kann das Programm austauschen und beim nächsten Entsperren Passwort und zweiten Faktor mitlesen. Starte GhulSuite von einem Stick, der aus der Hand war, nicht mehr: Lade die portable Version neu von der Release-Seite und prüfe die Prüfsumme (SHA256SUMS).</string>
     <string name="upd_install">Installieren</string>
     <string name="upd_open_page">Release-Seite öffnen</string>
     <string name="upd_loading">Update wird geladen…</string>
@@ -1125,6 +1139,7 @@
     <string name="core_replace_proof">Die Suite auf diesem Gerät wird nur ersetzt, wenn du sie mit ihrem Master-Passwort und Key oder Schlüsseldatei oder ihrem Wiederherstellungscode bestätigst.</string>
     <string name="core_copy_changed">Auf diesem Gerät hat sich seit der Prüfung der Datei etwas geändert. Öffne die Datei noch einmal.</string>
     <string name="core_replace_unfinished">Ein früheres Öffnen einer Suite-Datei ließ sich nicht abschließen. Starte die App neu. Bleibt es dabei, schaffe Speicherplatz und schließe andere Programme, die auf die Dateien von GhulSuite zugreifen könnten.</string>
+    <string name="core_save_unfinished">Ein früheres Speichern wurde nicht beendet, und der vorige Stand lässt sich gerade nicht zurückschreiben. Schaffe Speicherplatz, schließe andere Programme, die auf die Dateien von GhulSuite zugreifen könnten, und entsperre erneut. Lösche die Suite nicht.</string>
     <string name="core_only_usb_nfc">Nur ein Key (Sicherheitsschlüssel) über USB oder NFC lässt sich hinzufügen; ein Handy oder ein Bluetooth-Gerät geht nicht.</string>
     <string name="core_vault_not_removed">Der Tresor ließ sich nicht entfernen: Seine Datei kann gerade nicht gelöscht werden. Schließe andere Programme, die sie geöffnet haben könnten, und versuche es erneut.</string>
     <string name="core_replace_aside_missing">Die Dokumente von vor dem letzten Öffnen einer Suite-Datei wurden nicht gefunden. Damit nichts verloren geht, bleibt alles, wie es ist. Starte die App neu und prüfe, ob ihr Datenordner vollständig da ist (steckt z. B. der Stick richtig?).</string>
@@ -1133,9 +1148,8 @@
     <string name="core_folders_many">Dieser GhulDocs-Tresor hat schon so viele Ordner, wie er fassen kann.</string>
     <string name="core_ics_many">Die Datei enthält zu viele Termine (höchstens 20.000 auf einmal).</string>
     <string name="core_quick_validity">Wähle, wie lange Schnell-Entsperren gelten soll.</string>
-    <string name="core_pin_six">Die App-PIN braucht mindestens 6 Ziffern.</string>
     <string name="l_vault_password">Passwort des neuen Tresors</string>
-    <string name="single_not_writable">Die App darf diese Datei nicht beschreiben (z. B. ein Mail-Anhang). Speichere sie zuerst woanders oder füge den Tresor zu deiner Suite hinzu.</string>
+    <string name="single_not_writable">Die App darf diese Datei nicht beschreiben (z. B. ein Mail-Anhang, oder eine andere App hat sie ohne Schreibrecht übergeben). Wähle sie in GhulSuite selbst mit „Öffnen“, speichere sie zuerst woanders oder füge den Tresor zu deiner Suite hinzu.</string>
     <string name="share_vault_done">Fertig. Gib die Tresordatei, das Passwort und gegebenenfalls die Schlüsseldatei getrennt weiter; den Wiederherstellungscode bewahrt der Empfänger sicher auf.</string>
     <string name="single_pending_title">Änderungen nicht in der Datei</string>
     <string name="single_pending_text">Die letzten Änderungen an %1$s ließen sich nicht in die Datei schreiben (war der Speicher weg oder wurde die App beendet?). Jetzt schreiben oder verwerfen.</string>
@@ -1316,7 +1330,7 @@
     <string name="docs_reading">Wird entschlüsselt … %1$s %</string>
     <string name="docs_no_preview">Diese Art von Datei kann die App nicht anzeigen.</string>
     <string name="docs_too_large_to_show">Zu groß zum Anzeigen in der App (mehr als %1$s).</string>
-    <string name="docs_pdf_not_here">Diese PDF kann hier nicht angezeigt werden (mit Passwort geschützt, beschädigt oder nicht auf dieser Android-Version).</string>
+    <string name="docs_pdf_not_here">Diese PDF kann hier nicht angezeigt werden (mit Passwort geschützt oder beschädigt).</string>
     <string name="docs_image_not_read">Dieses Bild kann hier nicht angezeigt werden.</string>
     <string name="docs_open_hint">Öffne es mit einer anderen App oder exportiere es.</string>
     <string name="docs_text_cut">Nur der Anfang des Textes wird angezeigt.</string>
@@ -1411,7 +1425,7 @@
     <string name="save_conflict_changed">Die Suite-Datei an diesem Ort wurde inzwischen auf einem anderen Gerät gespeichert. Überschreibst du sie, gehen die Änderungen von dort verloren.</string>
     <string name="newer_file_title">Die Suite-Datei wurde woanders gespeichert</string>
     <string name="newer_file_text">Die Suite-Datei %1$s wurde inzwischen von einem anderen Stand aus gespeichert, meist auf einem anderen Gerät. Öffne sie jetzt, bevor du hier etwas änderst, sonst entstehen zwei Stände. Beim Öffnen sagt die App, ob sie neuer oder älter ist.</string>
-    <string name="newer_file_protection">Die Suite-Datei %1$s wurde mit einem geänderten Schutz gespeichert (z. B. neues Passwort auf einem anderen Gerät). Öffne sie jetzt mit dem neuen Schutz, bevor du hier etwas änderst.</string>
+    <string name="newer_file_protection">Die Suite-Datei %1$s wurde mit einem geänderten Schutz gespeichert (z. B. neues Passwort oder neuer Wiederherstellungscode auf einem anderen Gerät). Öffne sie jetzt, bevor du hier etwas änderst.</string>
     <string name="newer_file_open">Jetzt öffnen</string>
     <string name="save_conflict_other">An diesem Ort liegt eine andere Suite oder eine Datei, die sich nicht lesen lässt (z. B. von einem abgebrochenen Speichern).</string>
     <string name="save_keep_mine">Meine als neue Datei sichern …</string>
@@ -1461,10 +1475,14 @@
     <string name="wz_backup_second_key_hint">Erst berührst du deinen ersten Key zweimal (Anlegen), dann steckst du den zweiten ein und berührst ihn ebenfalls zweimal. Ist es derselbe Key, lehnt er ab.</string>
     <string name="set_key_no_backup">Dein Key hat kein Backup. Geht er verloren, kommst du nur noch mit dem Wiederherstellungscode hinein. Füge einen zweiten Key oder eine Schlüsseldatei hinzu.</string>
     <string name="wz_backup_failed">Die Suite ist angelegt, aber das Backup fehlt noch. Versuche den zweiten Key noch einmal (erst den ersten berühren) oder nimm stattdessen eine Schlüsseldatei.</string>
-    <string name="save_conflict_protection">Die Suite-Datei an diesem Ort hat einen neueren Schutz: Auf einem anderen Gerät wurde inzwischen das Passwort geändert oder ein Key entfernt. Überschreiben würde das rückgängig machen, darum geht es hier nicht. Öffnest du die Datei (mit dem neuen Passwort bzw. Key), gehen die Änderungen dieses Geräts verloren, die nicht in ihr sind.</string>
-    <string name="save_protection_way">So behältst du sie: Gib jeden Tresor mit Änderungen von hier unter Optionen → Tresore → ⋮ „Als Tresor weitergeben“ als eigene Datei weiter (eigenes Passwort und Schlüsseldatei). Öffne dann die neue Suite-Datei und nimm die Dateien mit „Tresordatei hinzufügen“ wieder auf. „Als neue Datei sichern“ hilft dafür nicht: Diese Datei behält den alten Schutz und öffnet sich danach auf diesem und dem anderen Gerät nicht mehr.</string>
-    <string name="save_keep_mine_old_protection">Trotzdem als neue Datei sichern (alter Schutz) …</string>
+    <string name="save_conflict_protection">Die Suite-Datei an diesem Ort hat einen neueren Schutz: Auf einem anderen Gerät wurde inzwischen das Passwort geändert, ein Key entfernt oder ein neuer Wiederherstellungscode erstellt. Überschreiben würde das rückgängig machen (ein alter Code würde wieder öffnen), darum geht es hier nicht. Öffnest du die Datei (mit deinem aktuellen bzw. dem neuen Passwort und Key), gehen die Änderungen dieses Geräts verloren, die nicht in ihr sind.</string>
+    <string name="save_protection_way">So behältst du sie: Gib jeden Tresor mit Änderungen von hier unter Optionen → Tresore → ⋮ „Als Tresor weitergeben“ als eigene Datei weiter (eigenes Passwort und Schlüsseldatei). Öffne dann die neue Suite-Datei und nimm die Dateien mit „Tresordatei hinzufügen“ wieder auf. Eine neue Suite-Datei von hier gibt es dafür nicht: Sie hätte den alten Schutz, und ein alter Wiederherstellungscode würde sie öffnen.</string>
     <string name="file_opened_read_only">In diese Datei darf die App nicht zurückschreiben. Sichere mit „Speichern unter“ an einen Ort deiner Wahl.</string>
+    <string name="file_offer_place">Diese Datei kam aus einer anderen App. Soll GhulSuite künftig hierhin speichern? Nur wenn du sie selbst dort abgelegt hast; sonst sichere mit „Speichern unter“ an einen Ort deiner Wahl.</string>
+    <string name="file_offer_yes">Hierhin speichern</string>
+    <string name="file_offer_no">Nicht hierhin</string>
+    <string name="file_offer_no_access">Diese App lässt GhulSuite nicht dauerhaft in die Datei schreiben. Sichere mit „Speichern unter“ an einen Ort deiner Wahl.</string>
+    <string name="file_network_path">%1$s liegt auf einem Netzlaufwerk und wird bei laufendem GhulSuite nicht per Doppelklick geöffnet. Öffne sie in GhulSuite mit „Suite-Datei öffnen“.</string>
     <string name="save_safe_folder">Damit beim Speichern nie eine halbe Datei entsteht, gib den Ordner der Suite-Datei einmal frei. Dann schreibt die App die neue Datei daneben, prüft sie und tauscht erst danach die alte aus.</string>
     <string name="save_safe_grant">Ordner freigeben</string>
     <string name="save_overwrites">Dieser Speicherort (z. B. eine Cloud-App) erlaubt kein Austauschen: Die Datei dort wird direkt überschrieben. Bricht das ab, ist sie unbrauchbar; deine Daten bleiben dann in der App. Cloud-Apps behalten außerdem ältere Fassungen, auch nach dem Löschen. Sicherer ist ein USB-Stick oder ein Ordner auf dem Gerät.</string>

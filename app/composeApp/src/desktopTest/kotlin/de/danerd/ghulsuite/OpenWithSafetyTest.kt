@@ -40,6 +40,19 @@ class OpenWithSafetyTest {
         assertEquals("a.pdf_x.exe", safeFileName("a.pdf:x.exe", mutableSetOf()))
         assertEquals("Rechnung.exe", safeFileName("Rechnung.exe. . ", mutableSetOf()))
         assertEquals("a_b_c_d_e_f.txt", safeFileName("a<b>c\"d|e?f.txt", mutableSetOf()))
+        // r9 N-D5: Windows device names get a "_" before them (with or without an ending).
+        assertEquals("_CON.pdf", safeFileName("CON.pdf", mutableSetOf()))
+        assertEquals("_nul.txt", safeFileName("nul.txt", mutableSetOf()))
+        assertEquals("_COM1", safeFileName("COM1", mutableSetOf()))
+        assertEquals("_LPT9 .tar.gz", safeFileName("LPT9 .tar.gz", mutableSetOf()))
+        assertEquals("CONTRACT.pdf", safeFileName("CONTRACT.pdf", mutableSetOf()))
+        assertEquals("COM10.txt", safeFileName("COM10.txt", mutableSetOf()))
+        // r9 N-3: a path handed over by a second start is never a network or device path.
+        for (p in listOf("\\\\server\\share\\x.ghlzip", "//server/share/x.ghlzip", "\\\\?\\UNC\\server\\x.ghlzip", "\\\\.\\pipe\\x")) {
+            assertTrue(SingleInstance.isRemoteOrDevicePath(p), p)
+        }
+        assertFalse(SingleInstance.isRemoteOrDevicePath("C:\\Users\\a\\x.ghlzip"))
+        assertFalse(SingleInstance.isRemoteOrDevicePath("/home/a/x.ghlzip"))
         // A long name is cut before its ending, so "aaa….exe.txt" stays a ".txt".
         val long = "a".repeat(116) + ".exe.txt"
         val cut = safeFileName(long, mutableSetOf())
@@ -117,6 +130,13 @@ class WipeOldSuiteFileTest {
         assertTrue(de.danerd.ghulsuite.model.VaultErrorKind.STORAGE in de.danerd.ghulsuite.model.QUICK_UNLOCK_KEPT_ON)
         assertTrue(de.danerd.ghulsuite.model.VaultErrorKind.NO_SPACE in de.danerd.ghulsuite.model.QUICK_UNLOCK_KEPT_ON)
         assertFalse(de.danerd.ghulsuite.model.VaultErrorKind.CORRUPTED in de.danerd.ghulsuite.model.QUICK_UNLOCK_KEPT_ON)
+        // r13 M1: locked meanwhile keeps it too (the kinds on the way: SuiteFileBackendTest).
+        assertTrue(de.danerd.ghulsuite.model.VaultErrorKind.LOCKED in de.danerd.ghulsuite.model.QUICK_UNLOCK_KEPT_ON)
+        // r13 N3: on the unlock screen "locked" reads "please try once more".
+        val e = kotlin.test.assertFailsWith<de.danerd.ghulsuite.model.VaultException> {
+            kotlinx.coroutines.runBlocking { de.danerd.ghulsuite.ui.lockedMeansTryAgain<Unit> { throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.LOCKED) } }
+        }
+        assertEquals(de.danerd.ghulsuite.model.VaultErrorKind.TRY_AGAIN, e.kind)
     }
 
     @Test

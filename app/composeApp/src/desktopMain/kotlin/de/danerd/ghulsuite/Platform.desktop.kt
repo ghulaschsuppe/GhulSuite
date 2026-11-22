@@ -209,7 +209,8 @@ internal fun saveChosenFile(f: File?, data: ByteArray): SaveFileResult {
     f ?: return SaveFileResult.CANCELLED
     return try {
         writeReplacing(f, data)
-        SaveFileResult.SAVED
+        // r9 krypto N6: read back before it counts.
+        if (f.readBytes().contentEquals(data)) SaveFileResult.SAVED else SaveFileResult.FAILED
     } catch (e: Exception) {
         val free = { f.absoluteFile.parentFile?.takeIf { it.isDirectory }?.usableSpace }
         if (de.danerd.ghulsuite.isNoSpace(e, free)) SaveFileResult.NO_SPACE else SaveFileResult.FAILED

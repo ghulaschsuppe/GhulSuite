@@ -6,8 +6,9 @@
 #                          environment "website", whose deployment branch the owner limits to main)
 #   (there is no preview on a server; tools/precheck.sh builds the site locally with --preview)
 #
-# It is built again whenever its content changes and after every release (new version numbers,
-# dates and file sizes). The legal notice comes from the secrets IMPRESSUM_NAME, IMPRESSUM_ADRESSE,
+# It is built again whenever its content changes on main and after every stable release (new
+# version numbers, dates and file sizes): release.yml calls this workflow then, inside the CI run
+# of the push to main. A pre-release of dev does not call it. The legal notice comes from the secrets IMPRESSUM_NAME, IMPRESSUM_ADRESSE,
 # IMPRESSUM_EMAIL and IMPRESSUM_HOSTER; it is never part of the repository.
 name: Website
 
@@ -16,27 +17,32 @@ on:
     branches: [main]
     paths: ['website/**', 'tools/build-website.py', 'docs/images/**', 'docs/TESTPROTOKOLL.md',
             '.github/workflows/website.yml', '.github/actions/ftps-upload/**']
-  # After a release: the download section shows the new version.
-  workflow_run:
-    workflows: ["Veröffentlichen"]
-    types: [completed]
+  # After a stable release (called by release.yml): the download section shows the new version.
+  workflow_call:
+    secrets:
+      IMPRESSUM_NAME:
+        required: false
+      IMPRESSUM_ADRESSE:
+        required: false
+      IMPRESSUM_EMAIL:
+        required: false
+      IMPRESSUM_HOSTER:
+        required: false
   workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: website-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
   live:
     name: Live-Seite (www.ghulsuite.de)
-    if: >-
-      github.repository_owner == 'ghulaschsuppe' && (
-        (github.event_name != 'workflow_run' && github.ref == 'refs/heads/main') ||
-        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'))
+    # Called by release.yml, the github context is the one of the push to main that released.
+    if: github.repository_owner == 'ghulaschsuppe' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    # One upload at a time (a push of the site and a release at once); the newest waiting one wins.
+    concurrency:
+      group: website-live
+      cancel-in-progress: false
     # The credentials of the live site only exist in this environment (main only): a push to any
     # other branch cannot reach them, even with a changed copy of this workflow.
     environment: website

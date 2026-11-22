@@ -69,7 +69,11 @@ suspend fun docsPackageProtection(backend: de.danerd.ghulsuite.model.VaultBacken
  * A suite file picked to be opened: read from [source] (as a stream, when it is opened), saved
  * into [ref] later (an empty id: the app may not write it, "Save as" chooses the place).
  */
-class PickedSuiteFile(val ref: SuiteFileRef, val source: SuiteFileRef = ref)
+/**
+ * [offer] (r9 N-D2, M-2): a file another app handed over. It is no place to save to by itself;
+ * after it was opened the app asks whether it should be (and only then keeps the right to it).
+ */
+class PickedSuiteFile(val ref: SuiteFileRef, val source: SuiteFileRef = ref, val offer: SuiteFileRef? = null)
 
 /** A vault file picked to be opened on its own or added (small: read as a whole). */
 class PickedVaultFile(val ref: SuiteFileRef, val data: ByteArray)
@@ -173,7 +177,11 @@ fun OpenSuiteFile(
             check = null
             password = ""; pin = ""; code = ""; newPassword = ""; repeat = ""
             state.afterSuiteFileOpened()
-            state.message(opened.replace("%1\$s", file.ref.name) + (if (file.ref.id.isEmpty()) "\n" + readOnly else "") + if (byCode) "\n" + byCodeNote else "")
+            // r9 N-D2: a file from another app becomes the place to save to only when the user says so.
+            // r10 N2: not when it is the place already; an older question goes with any opened file.
+            state.saveTargetOffer = null
+            if (!byCode && file.offer != null && file.offer.id != backend.suiteFile()?.id) state.saveTargetOffer = file.offer
+            state.message(opened.replace("%1\$s", file.ref.name) + (if (file.ref.id.isEmpty() && (byCode || file.offer == null)) "\n" + readOnly else "") + if (byCode) "\n" + byCodeNote else "")
             onOpened()
             if (byCode) {
                 // M11 and H3: a new place for the file, and the steps to do before the lock.

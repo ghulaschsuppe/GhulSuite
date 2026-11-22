@@ -109,6 +109,13 @@ class DocsInteractionTest {
     private fun DesktopComposeUiTest.tagged(t: String) = onAllNodesWithTag(t, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
     private fun DesktopComposeUiTest.waitFor(t: String) = waitUntil(timeoutMillis = 10_000) { shown(t) }
     private fun DesktopComposeUiTest.waitPart(t: String) = waitUntil(timeoutMillis = 10_000) { part(t) }
+    /** The master password into the question before deleting for good (r9 dieb N7), then confirmed. */
+    private fun DesktopComposeUiTest.gatePassword(password: String = "Sicheres-Passwort-1") {
+        onAllNodes(hasSetTextAction() and hasAnyAncestor(androidx.compose.ui.test.hasTestTag("gate-password")), useUnmergedTree = true).onFirst()
+            .performTextInput(password)
+        onAllNodesWithTag("gate-confirm").onFirst().performClick()
+    }
+
     private fun DesktopComposeUiTest.waitGone(t: String) = waitUntil(timeoutMillis = 10_000) { !shown(t) }
     private fun DesktopComposeUiTest.dialogButton(t: String) = onAllNodes(hasText(t) and hasAnyAncestor(isDialog())).onFirst().performClick()
 
@@ -294,7 +301,8 @@ class DocsInteractionTest {
         onAllNodesWithTag("docs-empty-trash").onFirst().performClick()
         waitFor("Empty the trash")
         shot("empty-trash-ask")
-        dialogButton("Delete for good")
+        // r9 dieb N7: only with the master password.
+        gatePassword()
         waitUntil(timeoutMillis = 10_000) { fake.docs.calls.any { it.startsWith("emptyTrash") } }
         waitFor("The trash is empty.")
     }
@@ -511,7 +519,7 @@ class DocsInteractionTest {
         shot("options")
         onAllNodesWithTag("docs-settings-empty-trash").onFirst().performClick()
         waitFor("Empty the trash")
-        dialogButton("Delete for good")
+        gatePassword()
         waitUntil(timeoutMillis = 10_000) { "emptyTrash:null" in fake.docs.calls }
     }
 

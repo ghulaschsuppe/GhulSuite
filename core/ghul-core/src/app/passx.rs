@@ -280,7 +280,6 @@ impl GhulSuite {
             let src = find_entry(&mut c.payload.entries, &id)?.clone();
             let bytes: usize = src.fields.values().map(|f| if let Field::Bytes(b) = f { b.len() } else { 0 }).sum();
             crate::app::archive::check_other_room(o, bytes as u64)?;
-            let (_, c) = o.entry_vault_mut(&vault_id)?;
             let now = now_ms();
             let mut e = Entry::new(new_id(), &src.entry_type, now);
             e.fields = src.fields;
@@ -290,9 +289,11 @@ impl GhulSuite {
             e.fields.insert("title".into(), Field::Text(format!("{title}{title_suffix}")));
             e.extra.insert(CREATED.into(), Value::Integer(now.into()));
             let new = e.id.clone();
-            c.payload.entries.push(e);
-            self.save_vault(o, &vault_id)?;
-            Ok(new)
+            // H-D1: the copy goes again if the vault then cannot be saved (too large).
+            self.add_entries(o, std::slice::from_ref(&vault_id), |o| {
+                o.entry_vault_mut(&vault_id)?.1.payload.entries.push(e);
+                Ok(new)
+            })
         })
     }
 
@@ -305,7 +306,7 @@ impl GhulSuite {
             let (src_ref, c) = o.entry_vault_mut(&vault_id)?;
             let kind = src_ref.kind.clone();
             let src = find_entry(&mut c.payload.entries, &id)?.clone();
-            let (dst_ref, dst) = o.entry_vault_mut(&target_vault_id)?;
+            let (dst_ref, _) = o.entry_vault_mut(&target_vault_id)?;
             if dst_ref.kind != kind {
                 return Err(GhulError::InvalidInput { msg: "target vault is of another kind".into() });
             }
@@ -316,8 +317,11 @@ impl GhulSuite {
             e.folder = src.folder.clone();
             e.extra = src.extra.clone();
             let new = e.id.clone();
-            dst.payload.entries.push(e);
-            self.save_vault(o, &target_vault_id)?;
+            // r10 M5: the copy goes again if the target then cannot be saved (too large).
+            self.add_entries(o, std::slice::from_ref(&target_vault_id), |o| {
+                o.entry_vault_mut(&target_vault_id)?.1.payload.entries.push(e);
+                Ok(())
+            })?;
             // Only after the copy is safely stored: delete the original (tombstone).
             let (_, c) = o.entry_vault_mut(&vault_id)?;
             let old = find_entry(&mut c.payload.entries, &id)?;

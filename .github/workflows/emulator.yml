@@ -16,6 +16,10 @@ on:
         description: The APK comes from the calling run (artifact ghulsuite-dev).
         type: boolean
         default: false
+      branch:
+        description: The branch whose code and newest APK are tested (empty for the branch of the run).
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -31,6 +35,8 @@ jobs:
       MAESTRO_SHA256: 54dbb0716425626604973cbb374c585ca30272375d9ce15177a1152765ddd9d7
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.branch }}
       - name: APK aus diesem Lauf
         if: inputs.same-run
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -41,9 +47,10 @@ jobs:
         if: ${{ !inputs.same-run }}
         env:
           GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ inputs.branch || github.ref_name }}
         run: |
           # Newest APK of this branch; a new branch without its own build yet uses the one of main.
-          for branch in "$GITHUB_REF_NAME" main; do
+          for branch in "$BRANCH" main; do
             for id in $(gh run list -R "$GITHUB_REPOSITORY" -w android.yml -e push -b "$branch" -L 15 --json databaseId -q '.[].databaseId'); do
               if gh run download "$id" -R "$GITHUB_REPOSITORY" -n ghulsuite-dev -D dist 2> /dev/null; then echo "APK aus Lauf $id ($branch)"; break 2; fi
             done

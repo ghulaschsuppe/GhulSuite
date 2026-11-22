@@ -455,6 +455,17 @@ pub(super) struct Open {
     /// the (new) master password alone, so a user who lost every key and key file can add new
     /// ones, remove the lost ones and get a new recovery code.
     pub(super) recovered: bool,
+    /// r12 M1: the count of saves of all containers (`protection_changes`) this state goes with:
+    /// taken when the call that opened it began, advanced by its own saves.
+    pub(super) changes: u64,
+}
+
+/// When a call that opens the suite began (see `lock_gen_now`): the lock generation (H10) and
+/// the count of saves of all containers (r12 M1).
+#[derive(Clone, Copy, Debug)]
+pub(super) struct Gen {
+    pub(super) lock: u64,
+    pub(super) changes: u64,
 }
 
 impl Open {
@@ -608,6 +619,32 @@ impl Open {
     }
 }
 
+/// The first step of an attempt with the app PIN (see `GhulSuite::quick_pin_challenge`).
+#[derive(uniffi::Record, Clone)]
+pub struct QuickPinChallenge {
+    /// The generation of the PIN's file: the app's Keystore aliases name it.
+    pub generation: u32,
+    /// What the Keystore key of the slot signs with HMAC-SHA256 (53 bytes: 21 of the label, 32 of `P`; secret like the PIN).
+    pub message: Vec<u8>,
+}
+
+super::redact::redacted_debug!(QuickPinChallenge { generation });
+
+/// Two keys of 32 bytes for the app PIN's slots.
+fn slot_keys_of(keys: Vec<Vec<u8>>) -> Result<Zeroizing<[[u8; 32]; super::quick::PIN_SLOTS]>> {
+    let bad = || GhulError::InvalidInput { msg: "two keys of 32 bytes".into() };
+    if keys.len() != super::quick::PIN_SLOTS {
+        return Err(bad());
+    }
+    let mut out = Zeroizing::new([[0u8; 32]; super::quick::PIN_SLOTS]);
+    for (o, k) in out.iter_mut().zip(keys.iter()) {
+        *o = k.as_slice().try_into().map_err(|_| bad())?;
+    }
+    let mut keys = keys;
+    keys.iter_mut().for_each(zeroize::Zeroize::zeroize);
+    Ok(out)
+}
+
 /// Proof of both factors before a change of the protection: the master password plus a key
 /// file or the PIN of a security key (touched through the transport given with the call).
 #[derive(uniffi::Record, Clone)]
@@ -633,6 +670,15 @@ pub struct GhulSuite {
     pub(super) seen_lock: Mutex<()>,
     /// One replace of the working copy (or its recovery) at a time (see `finish_earlier_replace`).
     pub(super) replace_lock: Mutex<()>,
+    /// r11 M1: one journaled save of all containers (or its putting back) at a time (see
+    /// `write_journaled`). Taken after `replace_lock` where both are held.
+    /// It assumes one `GhulSuite` per local folder and storage (the app makes exactly one; a
+    /// second object on the same folders would not see this lock).
+    pub(super) save_lock: Mutex<()>,
+    /// r12 M1: grows with every save of all containers (`write_journaled`) and when the suite
+    /// is deleted, under `save_lock` before the first file is written. A call that read the
+    /// files before does not open (`set_open`) or write (`write_journaled`) what it read.
+    pub(super) protection_changes: std::sync::atomic::AtomicU64,
     /// The time zone database of the device (see `set_time_zones`).
     pub(super) zones: Mutex<Option<Arc<dyn super::caltext::TimeZones>>>,
     /// A checked `.ghlzip` waiting to replace the working copy (see `archive_accept`).
@@ -708,16 +754,22 @@ pub(super) fn register_key(auth: &dyn KeyDevice, pin: &str, exclude: &[Vec<u8>])
     Ok((cred.id, prf_input, out.output))
 }
 
-/// Asks the key for the factor secret of one of the container's FIDO2 slots.
-fn key_factor(
+/// Asks the key for the factor secret of one of the container's FIDO2 slots. r9 N3: only slots
+/// of GhulSuite's own RP ID are asked for: a vault file from elsewhere naming another one (a
+/// website) never makes the key answer for it with the user's PIN.
+pub(super) fn key_factor(
     locked: &LockedContainer,
     transport: &Arc<dyn HidTransport>,
     listener: Option<&Arc<dyn FidoListener>>,
     pin: &str,
 ) -> Result<FactorSecret> {
-    let requests = locked.fido2_requests();
-    if requests.is_empty() {
+    let all = locked.fido2_requests();
+    if all.is_empty() {
         return Err(GhulError::InvalidInput { msg: "this vault has no security key".into() });
+    }
+    let requests: Vec<_> = all.into_iter().filter(|r| r.rp_id == RP_ID).collect();
+    if requests.is_empty() {
+        return Err(GhulError::KeyNotRegistered);
     }
     let list: Vec<CredRequest<'_>> = requests
         .iter()
@@ -869,6 +921,9 @@ thread_local! {
     /// Tests: runs once at the next point where a call that started before would open the suite
     /// or keep a confirmation (`set_open`, `confirm_factors`), e.g. a lock from another thread.
     pub(crate) static LOCK_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const { std::cell::RefCell::new(None) };
+    /// Tests: runs once when `open_folder` begins (after the anchor was read and opened), e.g.
+    /// a deletion from another thread (r13 N1).
+    pub(crate) static FOLDER_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const { std::cell::RefCell::new(None) };
     /// Tests: added to the age of a confirmation of both factors (the two minutes of
     /// `confirm_factors`).
     pub(crate) static CLOCK_SHIFT: std::cell::Cell<std::time::Duration> = const { std::cell::Cell::new(std::time::Duration::ZERO) };
@@ -892,6 +947,38 @@ fn ticket_age(t: std::time::Instant) -> std::time::Duration {
 /// In the device's own folder: older copies of containers are still to be removed (see
 /// `purge_old_copies`).
 pub(super) const PURGE_PENDING: &str = "purge-pending";
+
+/// r10 N5: the journal of a save of all containers (local folder) and the copies of the files
+/// before it (in the storage, `<file>.prev`).
+const SAVE_JOURNAL: &str = "save-journal";
+const PREV_SUFFIX: &str = ".prev";
+/// The journal once its save is written or put back: nothing is put back any more.
+const SAVE_DONE: &str = "done";
+
+/// r11 N2: the message when the files before an unfinished save cannot be put back (unlocking
+/// waits until they can: the storage is full or a file is held by another program).
+pub const SAVE_UNFINISHED: &str = "an earlier save could not be finished: the files before it cannot be put back yet";
+
+/// A copy of a save (`<file>.prev`) or a leftover of writing one (`.prev.tmp`, `.prev.bak`).
+pub(super) fn is_prev_copy(name: &str) -> bool {
+    let name = name.trim_start_matches('.');
+    name.ends_with(PREV_SUFFIX) || name.ends_with(".prev.tmp") || name.ends_with(".prev.bak")
+}
+
+fn prev_name(file: &str) -> String {
+    format!("{file}{PREV_SUFFIX}")
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Tests: writing a container fails from this one on (0-based), as if the storage went away.
+    pub(crate) static WRITES_BEFORE_FAILURE: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+    /// Tests: after such a failure nothing is put back at once (as if the app stopped there).
+    pub(crate) static STOP_AFTER_FAILED_WRITE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// H-D1: what is added does not fit into the vault's file any more.
+pub const VAULT_FULL: &str = "this vault is full: one vault file holds at most 128 MiB";
 
 #[cfg(test)]
 thread_local! {
@@ -929,24 +1016,30 @@ impl GhulSuite {
 
     /// The lock generation now: taken when an unlock (or `archive_accept`) starts, given to
     /// [`Self::set_open`] at its end.
-    pub(super) fn lock_gen_now(&self) -> u64 {
-        self.lock_gen.load(Ordering::SeqCst)
+    pub(super) fn lock_gen_now(&self) -> Gen {
+        Gen { lock: self.lock_gen.load(Ordering::SeqCst), changes: self.protection_changes.load(Ordering::SeqCst) }
     }
 
     /// Unlocked: a lock asked for before the call started (`gen`) is done with. A lock asked for
     /// after it started wins (H10): the suite stays locked and the call ends with `Locked`.
-    pub(super) fn set_open(&self, open: Open, gen: u64) -> Result<()> {
+    pub(super) fn set_open(&self, open: Open, gen: Gen) -> Result<()> {
         #[cfg(test)]
         run_lock_hook();
         let mut guard = self.guard();
-        if self.lock_gen.load(Ordering::SeqCst) != gen {
+        if self.lock_gen.load(Ordering::SeqCst) != gen.lock {
+            return Err(GhulError::Locked);
+        }
+        // r12 M1: the files were read before a save of all of them (a change of the protection,
+        // or the suite deleted) wrote anew: what was opened is the state before. The app
+        // unlocks again.
+        if self.protection_changes.load(Ordering::SeqCst) != open.changes {
             return Err(GhulError::Locked);
         }
         *guard = Some(open);
         self.lock_pending.store(false, Ordering::SeqCst);
         // `lock` counts first and marks the pending lock after: a lock counted by now either
         // is seen here, or its mark comes after the one cleared above and drops the suite.
-        if self.lock_gen.load(Ordering::SeqCst) != gen {
+        if self.lock_gen.load(Ordering::SeqCst) != gen.lock {
             *guard = None;
             return Err(GhulError::Locked);
         }
@@ -1148,18 +1241,243 @@ impl GhulSuite {
         self.save_container(&mut o.suite, SUITE_FILE)
     }
 
-    /// Saves all vaults first and the suite last.
+    /// Saves all vaults first and the suite last. H-D1: every container is sealed before the
+    /// first file is written, so a container that cannot be sealed (too large) changes nothing
+    /// on the disk: a change of the protection never lands half (some vaults with the new
+    /// protection, the suite with the one before).
     pub(super) fn save_all(&self, o: &mut Open) -> Result<()> {
-        // Marked before the first file changes (see `mark_unsaved`).
-        self.mark_unsaved()?;
-        self.note_content_change();
+        let mut sealed = Vec::with_capacity(o.vaults.len() + 1);
         for v in &mut o.vaults {
             if let Some(c) = v.container.as_mut() {
-                let data = c.seal(&mut OsRng)?;
-                self.storage.write(v.reference.file.clone(), data)?;
+                sealed.push((v.reference.file.clone(), c.seal(&mut OsRng)?));
             }
         }
-        self.save_container(&mut o.suite, SUITE_FILE)
+        sealed.push((SUITE_FILE.to_owned(), o.suite.seal(&mut OsRng)?));
+        self.write_journaled(sealed, &mut o.changes)
+    }
+
+    /// r10 N5: writes all containers so that a failure or a stop in the middle never leaves a
+    /// change of the protection half on the disk. Each file there is first copied to
+    /// `<file>.prev`, then a journal names them (`keep`) and the files this save makes new
+    /// (`new`); only then the new files are written, and the journal is marked done. A failed
+    /// write puts the copies back at once, a stop does so at the next unlock
+    /// ([`Self::finish_earlier_save`]). Without files before (a new suite) it writes directly.
+    /// r11 M1: one at a time with the putting back (`save_lock`).
+    /// r12 M1: `changes` is the count the caller's state goes with; if another save of all
+    /// containers (or a deletion) came since, nothing is written (`Locked`). Otherwise the count
+    /// grows before the first file is written, and `changes` with it.
+    fn write_journaled(&self, sealed: Vec<(String, Vec<u8>)>, changes: &mut u64) -> Result<()> {
+        let _one = self.save_lock.lock().unwrap_or_else(|e| e.into_inner());
+        if self.protection_changes.load(Ordering::SeqCst) != *changes {
+            return Err(GhulError::Locked);
+        }
+        *changes = self.protection_changes.fetch_add(1, Ordering::SeqCst) + 1;
+        let mut lines = Vec::new();
+        for (file, _) in &sealed {
+            match self.storage.read(file.clone())? {
+                Some(old) => {
+                    self.storage.write(prev_name(file), old)?;
+                    lines.push(format!("keep {file}"));
+                }
+                None => lines.push(format!("new {file}")),
+            }
+        }
+        if !lines.iter().any(|l| l.starts_with("keep ")) {
+            return self.write_sealed(sealed).map_err(|(_, e)| e);
+        }
+        std::fs::create_dir_all(&self.local_dir)?;
+        super::storage::write_atomic(&self.local_dir, SAVE_JOURNAL, lines.join("\n").as_bytes())?;
+        if let Err((_, e)) = self.write_sealed(sealed) {
+            #[cfg(test)]
+            if STOP_AFTER_FAILED_WRITE.with(std::cell::Cell::get) {
+                return Err(e);
+            }
+            if let Err(back) = self.finish_earlier_save_held() {
+                eprintln!("GhulSuite: the files before a failed save could not be put back yet: {back}");
+            }
+            return Err(e);
+        }
+        // Written: from now on the new files count (r11 N1: marked in one step, so a journal
+        // that cannot be deleted right now puts nothing back later), then the copies go.
+        super::storage::write_atomic(&self.local_dir, SAVE_JOURNAL, SAVE_DONE.as_bytes())?;
+        let _ = self.end_save_journal();
+        Ok(())
+    }
+
+    /// Puts back the files of a save that failed or stopped in the middle (see
+    /// [`Self::write_journaled`]) and removes the copies; copies without a journal (a stop
+    /// before it was written) are only removed. Called before every unlock.
+    pub(super) fn finish_earlier_save(&self) -> Result<()> {
+        let _one = self.save_lock.lock().unwrap_or_else(|e| e.into_inner());
+        self.finish_earlier_save_held()
+    }
+
+    fn finish_earlier_save_held(&self) -> Result<()> {
+        let journal = self.local_dir.join(SAVE_JOURNAL);
+        let list = match std::fs::read_to_string(&journal) {
+            Ok(list) => list,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::from(SAVE_DONE),
+            Err(e) => return Err(e.into()),
+        };
+        // r11 H1: only for the suite in the folder now. A journal of a suite deleted since
+        // (and a new one made) never writes the old one over the new one. r12 N4: the suite
+        // the copies are of is read from the first kept copy (the suite file's when it was
+        // kept, else a vault's), so a suite file this save made new does not hide it.
+        let id = |name: &str| -> Result<Option<[u8; 16]>> {
+            Ok(self
+                .storage
+                .read(name.to_owned())?
+                .map(|d| LockedContainer::parse(&d).map_or([0; 16], |l| l.header().suite_id)))
+        };
+        let kept: Vec<&str> = list.lines().filter_map(|l| l.strip_prefix("keep ")).collect();
+        let first = kept.iter().find(|f| **f == SUITE_FILE).or(kept.first()).copied();
+        let ours = match (list != SAVE_DONE, first) {
+            (true, Some(first)) => {
+                let now = id(SUITE_FILE)?;
+                now.is_none() || now == id(&prev_name(first))?
+            }
+            _ => false,
+        };
+        if ours {
+            for line in list.lines() {
+                if let Some(file) = line.strip_prefix("keep ") {
+                    // r12 N1: a copy that is missing is an error, never skipped (the file
+                    // would stay with the protection of the failed save).
+                    let old = self.storage.read(prev_name(file))?.ok_or_else(|| GhulError::Storage {
+                        msg: format!("the copy of {file} before the save is missing"),
+                    })?;
+                    self.storage.write(file.to_owned(), old)?;
+                } else if let Some(file) = line.strip_prefix("new ") {
+                    // r11 N4: a file only this save made goes again.
+                    self.storage.delete(file.to_owned())?;
+                }
+            }
+            super::storage::write_atomic(&self.local_dir, SAVE_JOURNAL, SAVE_DONE.as_bytes())?;
+            // r12 N5: the `.bak` of the files of the failed save go as well.
+            self.purge_copies(false);
+        }
+        let _ = self.end_save_journal();
+        Ok(())
+    }
+
+    /// Removes the journal of a save and every copy `<file>.prev` (with the `.tmp` and `.bak`
+    /// of writing them). What cannot be removed now is noted for later ([`PURGE_PENDING`]):
+    /// the copies hold the protection before. Also when the suite is deleted or a new one made.
+    /// Returns whether something stayed (r12 N2).
+    pub(super) fn end_save_journal(&self) -> bool {
+        let mut left = false;
+        let journal = self.local_dir.join(SAVE_JOURNAL);
+        if let Err(e) = std::fs::remove_file(&journal) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                eprintln!("GhulSuite: the journal of a save could not be removed yet: {e}");
+                // r13 N4: a journal marked done that stays does no harm (it puts nothing back,
+                // its copies go below); only one that could not even be marked is a rest.
+                let done = std::fs::read_to_string(&journal).is_ok_and(|j| j == SAVE_DONE)
+                    || super::storage::write_atomic(&self.local_dir, SAVE_JOURNAL, SAVE_DONE.as_bytes()).is_ok();
+                left |= !done;
+            }
+        }
+        for name in self.storage.list().unwrap_or_default() {
+            if name.ends_with(PREV_SUFFIX) && self.storage.delete(name.clone()).is_err() {
+                left = true;
+            }
+        }
+        if let Some(dir) = self.storage.content_dir().map(PathBuf::from) {
+            for e in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+                let n = e.file_name().to_string_lossy().into_owned();
+                if is_prev_copy(&n) && std::fs::remove_file(e.path()).is_err() {
+                    left = true;
+                }
+            }
+        }
+        if left {
+            let _ = std::fs::create_dir_all(&self.local_dir);
+            let _ = std::fs::write(self.local_dir.join(PURGE_PENDING), b"");
+        }
+        left
+    }
+
+    /// r12 N1: whether the copies of a save are still needed: a journal that is not done.
+    /// r13 N4: not for a deleted suite: nothing would put its copies back. r14 N1: the suite
+    /// counts as there while any of its files is (a save may have written the suite file last).
+    fn save_journal_open(&self) -> bool {
+        std::fs::read_to_string(self.local_dir.join(SAVE_JOURNAL)).is_ok_and(|j| j != SAVE_DONE)
+            && self.exists().unwrap_or(true)
+    }
+
+    /// Writes sealed containers in this order (the suite last). On an error: how many were
+    /// written before it.
+    fn write_sealed(&self, sealed: Vec<(String, Vec<u8>)>) -> std::result::Result<(), (usize, GhulError)> {
+        // Marked before the first file changes (see `mark_unsaved`).
+        self.mark_unsaved().map_err(|e| (0, e))?;
+        self.note_content_change();
+        for (i, (file, data)) in sealed.into_iter().enumerate() {
+            #[cfg(test)]
+            if WRITES_BEFORE_FAILURE.with(|c| c.get().is_some_and(|n| i >= n)) {
+                return Err((i, GhulError::Storage { msg: String::from("test: the storage went away") }));
+            }
+            self.storage.write(file, data).map_err(|e| (i, e.into()))?;
+        }
+        Ok(())
+    }
+
+    /// H-D1: adds entries to `vaults` (`add` only appends to their entries) and saves them with
+    /// the suite. If they do not fit (all vaults besides GhulDocs, see `check_other_room`, or one
+    /// vault file, see `MAX_PAYLOAD_LEN`) or cannot be written, the added entries go again: a
+    /// vault that cannot be saved never stays in memory (every later save of it, and every
+    /// change of the protection, would fail).
+    pub(super) fn add_entries<T>(
+        &self,
+        o: &mut Open,
+        vaults: &[String],
+        add: impl FnOnce(&mut Open) -> Result<T>,
+    ) -> Result<T> {
+        let mut before = Vec::with_capacity(vaults.len());
+        for id in vaults {
+            if !before.iter().any(|(v, _)| v == id) {
+                before.push((id.clone(), o.vault_mut(id)?.1.payload.entries.len()));
+            }
+        }
+        let mut wrote = 0;
+        let result = add(o).and_then(|t| {
+            let unchanged =
+                before.iter().all(|(id, len)| o.vault_mut(id).is_ok_and(|(_, c)| c.payload.entries.len() == *len));
+            if unchanged {
+                return Ok(t);
+            }
+            super::archive::check_other_room(o, 0)?;
+            let mut sealed = Vec::with_capacity(before.len() + 1);
+            for (id, _) in &before {
+                let (r, c) = o.vault_mut(id)?;
+                if !crate::vault::payload::fits(c.payload.to_cbor()?.len()) {
+                    return Err(GhulError::InvalidInput { msg: VAULT_FULL.into() });
+                }
+                let file = r.file.clone();
+                sealed.push((file, c.seal(&mut OsRng)?));
+            }
+            sealed.push((SUITE_FILE.to_owned(), o.suite.seal(&mut OsRng)?));
+            self.write_sealed(sealed).map_err(|(n, e)| {
+                wrote = n;
+                e
+            })?;
+            Ok(t)
+        });
+        if result.is_err() {
+            for (id, len) in &before {
+                if let Ok((_, c)) = o.vault_mut(id) {
+                    c.payload.entries.truncate(*len);
+                }
+            }
+            // Some files were written before the error: they get the state without the entries.
+            if wrote > 0 {
+                for (id, _) in &before {
+                    if let Err(e) = self.save_vault(o, id) {
+                        eprintln!("GhulSuite: a vault could not be written back after a failed save: {e}");
+                    }
+                }
+            }
+        }
+        result
     }
 
     /// Opens the folder's vaults with the suite's password and factor secret and keeps the
@@ -1169,26 +1487,50 @@ impl GhulSuite {
         password_key: PasswordKey,
         suite: UnlockedContainer,
         full: bool,
-        gen: u64,
+        gen: Gen,
     ) -> Result<()> {
-        let open = self.open_folder(password_key, suite, full)?;
+        let open = self.open_folder(password_key, suite, full, gen.changes)?;
         self.set_open(open, gen)
     }
 
     /// Opens the folder's vaults with the suite's password and factor secret (not kept yet).
-    pub(super) fn open_folder(&self, password_key: PasswordKey, suite: UnlockedContainer, full: bool) -> Result<Open> {
+    pub(super) fn open_folder(
+        &self,
+        password_key: PasswordKey,
+        suite: UnlockedContainer,
+        full: bool,
+        changes: u64,
+    ) -> Result<Open> {
+        #[cfg(test)]
+        if let Some(f) = FOLDER_HOOK.with(|h| h.borrow_mut().take()) {
+            f();
+        }
         let s = FactorSecret::from_bytes(*suite.factor_secret().expose());
         let kdf = suite.header().kdf.clone();
         let opener = Opener::Factors { pk: &password_key, s: &s, suite_id: suite.header().suite_id, kdf: &kdf };
         let vaults = self.scan(&opener)?;
-        let mut open = Open { password_key, suite, vaults, recovered: false };
+        let mut open = Open { password_key, suite, vaults, recovered: false, changes };
         let suite_missing = self.storage.read(SUITE_FILE.to_owned())?.is_none();
-        if open.harmonize(now_ms())? {
+        let harmonized = open.harmonize(now_ms())?;
+        {
+            // r13 N1: nothing is written for files read before a save of all containers or a
+            // deletion (the deleted suite would come back).
+            let _one = self.save_lock.lock().unwrap_or_else(|e| e.into_inner());
+            if self.protection_changes.load(Ordering::SeqCst) != open.changes {
+                return Err(GhulError::Locked);
+            }
+            // r11 N3: a note of the epoch that failed after a change of the protection.
+            if let Err(e) = self.note_epoch(&open.suite.header().suite_id, open.epoch()) {
+                eprintln!("GhulSuite: the epoch could not be noted: {e}");
+            }
+            if !harmonized && suite_missing {
+                self.save_container(&mut open.suite, SUITE_FILE)?;
+            }
+        }
+        if harmonized {
             self.save_all(&mut open)?;
             // Vaults that had another protection: their copies before go (H7).
             self.purge_old_copies();
-        } else if suite_missing {
-            self.save_container(&mut open.suite, SUITE_FILE)?;
         }
         // Copies that could not be removed after an earlier change go now.
         self.retry_purge();
@@ -1294,7 +1636,11 @@ impl GhulSuite {
         self.note_protection_left(&o.suite.header().suite_id)?;
         o.bump_epoch()?;
         self.save_all(o)?;
-        self.note_epoch(&o.suite.header().suite_id, o.epoch())?;
+        // r11 N3: the change is saved; a note that fails now is made at the next unlock
+        // (`open_folder` notes the epoch of the suite it opens).
+        if let Err(e) = self.note_epoch(&o.suite.header().suite_id, o.epoch()) {
+            eprintln!("GhulSuite: the new epoch could not be noted yet: {e}");
+        }
         // The change is saved: tidying up never makes it fail (it is tried again later).
         self.purge_old_copies();
         Ok(())
@@ -1309,12 +1655,29 @@ impl GhulSuite {
     /// backup program holds it) is noted ([`PURGE_PENDING`]) and removed at the next unlock or
     /// start ([`Self::retry_purge`]).
     pub(super) fn purge_old_copies(&self) {
+        // r12 N1: the copies of a save only while no save runs (it may be copying right now).
+        match self.save_lock.try_lock() {
+            Ok(_one) => self.purge_copies(true),
+            Err(_) => {
+                self.purge_copies(false);
+                let _ = std::fs::create_dir_all(&self.local_dir);
+                let _ = std::fs::write(self.local_dir.join(PURGE_PENDING), b"");
+            }
+        }
+    }
+
+    /// [`Self::purge_old_copies`]; `with_saves`: also the copies of a save (`save_lock` held).
+    fn purge_copies(&self, with_saves: bool) {
         let mut left = 0usize;
+        let saves = with_saves && !self.save_journal_open();
         if let Some(dir) = self.storage.content_dir().map(PathBuf::from) {
             for e in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
                 let n = e.file_name().to_string_lossy().into_owned();
-                let Some(stem) = n.strip_suffix(".bak").or_else(|| n.strip_suffix(".tmp")) else { continue };
-                if (stem == SUITE_FILE || is_vault_file(stem)) && e.file_type().is_ok_and(|t| t.is_file()) {
+                // r11 M3: the copies of a save as well, unless its journal still needs them.
+                let prev = saves && is_prev_copy(&n);
+                let stem = n.strip_suffix(".bak").or_else(|| n.strip_suffix(".tmp"));
+                let old = stem.is_some_and(|stem| stem == SUITE_FILE || is_vault_file(stem));
+                if (prev || old) && e.file_type().is_ok_and(|t| t.is_file()) {
                     #[cfg(test)]
                     if PURGE_FAILS.with(std::cell::Cell::get) {
                         left += 1;
@@ -1335,7 +1698,8 @@ impl GhulSuite {
         if left > 0 {
             let _ = std::fs::create_dir_all(&self.local_dir);
             let _ = std::fs::write(&mark, b"");
-        } else {
+        } else if with_saves {
+            // Without the copies of a save looked at, a mark for them stays.
             let _ = std::fs::remove_file(&mark);
         }
     }
@@ -1392,7 +1756,7 @@ impl GhulSuite {
 impl GhulSuite {
     /// Opens everything with the recovery code and writes it again with `new_password` (see
     /// `unlock_with_recovery_code`); not kept yet.
-    pub(super) fn open_with_code(&self, code: String, new_password: String) -> Result<Open> {
+    pub(super) fn open_with_code(&self, code: String, new_password: String, changes: u64) -> Result<Open> {
         let code = Zeroizing::new(code);
         let new_password = Zeroizing::new(new_password);
         let code = RecoveryCode::parse(&code)?;
@@ -1403,7 +1767,8 @@ impl GhulSuite {
         let pk = PasswordKey::derive(&new_password, &kdf)?;
         let suite = self.suite_from_anchor(anchor, &pk)?;
         let vaults = self.scan(&Opener::Code(&code))?;
-        let mut open = Open { password_key: PasswordKey::from_bytes(*pk.expose()), suite, vaults, recovered: true };
+        let mut open =
+            Open { password_key: PasswordKey::from_bytes(*pk.expose()), suite, vaults, recovered: true, changes };
         open.suite.rekey(&pk, kdf.clone(), &mut OsRng)?;
         open.harmonize(now_ms())?;
         for (c, _) in open.containers_mut() {
@@ -1432,6 +1797,8 @@ impl GhulSuite {
             lock_gen: std::sync::atomic::AtomicU64::new(0),
             seen_lock: Mutex::new(()),
             replace_lock: Mutex::new(()),
+            save_lock: Mutex::new(()),
+            protection_changes: std::sync::atomic::AtomicU64::new(0),
             zones: Mutex::new(None),
             pending: Mutex::new(None),
             changes: std::sync::atomic::AtomicU64::new(0),
@@ -1544,6 +1911,7 @@ impl GhulSuite {
             suite,
             vaults: Vec::new(),
             recovered: false,
+            changes: gen.changes,
         };
         for v in &options.vaults {
             self.add_vault(&mut open, v.kind, &v.name)?;
@@ -1556,8 +1924,8 @@ impl GhulSuite {
     }
 
     /// Starts a suite in this (empty) folder from a single vault file, opened with its own
-    /// password plus key or key file. The vault keeps its protection; if it carries no recovery
-    /// code yet, a new one is created and returned.
+    /// password plus key or key file. The vault keeps its password and second factor; it always
+    /// gets a new recovery code (returned) and a new container key (r9 M-D1).
     #[allow(clippy::too_many_arguments)]
     pub fn create_from_vault(
         &self,
@@ -1576,6 +1944,8 @@ impl GhulSuite {
         if self.exists()? {
             return Err(GhulError::AlreadyExists);
         }
+        // As in `create`: journals of a suite gone before never act on this one (r11 H1).
+        self.discard_journal();
         let locked = LockedContainer::parse(&vault_file)?;
         let kind = VaultKind::from_container(locked.kind())
             .ok_or_else(|| GhulError::InvalidInput { msg: "this is a suite file, open its folder instead".into() })?;
@@ -1590,11 +1960,12 @@ impl GhulSuite {
         )?;
         let pk = PasswordKey::derive(&password, &locked.header().kdf)?;
         let mut vault = locked.unlock(&pk, &s)?;
-        let mut new_code = None;
-        if vault.recovery_code().is_none() {
-            let (_, code) = vault.add_recovery_slot(&recovery_label, now_ms(), &mut OsRng)?;
-            new_code = Some(code.to_display().to_string());
-        }
+        // r9 M-D1: always a new recovery code and a new container key. The file may come from
+        // someone else (a vault passed on): the code of the one who made it must not open the
+        // new suite and what is added to it later, also not with an old copy of the file.
+        let (_, code) = vault.add_recovery_slot(&recovery_label, now_ms(), &mut OsRng)?;
+        vault.renew_container_key(&pk, &mut OsRng)?;
+        let new_code = Some(code.to_display().to_string());
         if !vault_name.trim().is_empty() {
             set_vault_name(&mut vault, &vault_name);
         }
@@ -1608,6 +1979,7 @@ impl GhulSuite {
             suite,
             vaults: vec![OpenVault { reference, container: Some(vault) }],
             recovered: false,
+            changes: gen.changes,
         };
         self.save_all(&mut open)?;
         self.set_open(open, gen)?;
@@ -1649,7 +2021,7 @@ impl GhulSuite {
     pub fn unlock_with_recovery_code(&self, code: String, new_password: String) -> Result<()> {
         let gen = self.lock_gen_now();
         self.finish_earlier_replace()?;
-        let open = self.open_with_code(code, new_password)?;
+        let open = self.open_with_code(code, new_password, gen.changes)?;
         self.set_open(open, gen)
     }
 
@@ -1680,30 +2052,27 @@ impl GhulSuite {
 
     // --- quick unlock ------------------------------------------------------------------------
 
-    /// Enables quick unlock under `name` (`bio` or `pin`) for `max_age_seconds` after each full
-    /// unlock; returns the quick key for the platform to protect. Like a change of the
-    /// protection it needs both factors (`proof`, or the password alone right after
-    /// `confirm_factors`, H6): who saw the password and finds the app unlocked must not set up a
-    /// way in without the key. The validity is stored inside the quick unlock file, under its
-    /// encryption: it can only be changed by enabling quick unlock again.
-    #[allow(clippy::too_many_arguments)]
+    /// Enables quick unlock with the fingerprint (`name` `bio`; the app PIN has
+    /// [`Self::quick_unlock_enable_pin`]) for `max_age_seconds` after each full unlock; returns
+    /// the quick key for the platform to protect. Like a change of the protection it needs both
+    /// factors (`proof`, or the password alone right after `confirm_factors`, H6). The validity
+    /// is stored inside the quick unlock file, under its encryption: it can only be changed by
+    /// enabling quick unlock again.
     pub fn quick_unlock_enable(
         &self,
         proof: FactorProof,
         transport: Option<Arc<dyn HidTransport>>,
         listener: Option<Arc<dyn FidoListener>>,
         name: String,
-        pin: Option<String>,
         max_age_seconds: u64,
     ) -> Result<Vec<u8>> {
-        let pin = pin.map(Zeroizing::new);
         if max_age_seconds == 0 {
             return Err(GhulError::InvalidInput { msg: "quick unlock needs a validity".into() });
         }
         // Checked before a key is touched.
         super::quick::path(&self.local_dir, &name)?;
-        if let Some(p) = &pin {
-            super::quick::check_pin(p)?;
+        if name == super::quick::PIN_NAME {
+            return Err(GhulError::InvalidInput { msg: super::quick::PIN_HAS_SLOTS.into() });
         }
         self.require_factors(&proof, transport.as_ref(), listener.as_ref())?;
         self.with_open(|o| {
@@ -1715,7 +2084,6 @@ impl GhulSuite {
                 &o.suite.header().suite_id,
                 o.password_key.expose(),
                 o.suite.factor_secret().expose(),
-                pin.as_deref().map(|p| p.as_str()),
                 now_ms(),
                 (max_age_seconds.min(i64::MAX as u64 / 1000) * 1000) as i64,
             )?;
@@ -1723,26 +2091,157 @@ impl GhulSuite {
         })
     }
 
+    /// Enables the app PIN (M19; see `quick.rs`): at least 8 digits, valid `max_age_seconds`
+    /// after each full unlock, both factors as for `quick_unlock_enable`. `slot_keys`: two new
+    /// random keys of 32 bytes made by the app; after this call returned the app imports them
+    /// into the Android Keystore as single-use HMAC-SHA256 keys (`setMaxUsageCount(1)`) under the
+    /// aliases of the returned generation and slots 0 and 1, then zeroes them. Returns the
+    /// generation.
+    #[allow(clippy::too_many_arguments)]
+    pub fn quick_unlock_enable_pin(
+        &self,
+        proof: FactorProof,
+        transport: Option<Arc<dyn HidTransport>>,
+        listener: Option<Arc<dyn FidoListener>>,
+        pin: String,
+        max_age_seconds: u64,
+        slot_keys: Vec<Vec<u8>>,
+    ) -> Result<u32> {
+        let pin = Zeroizing::new(pin);
+        if max_age_seconds == 0 {
+            return Err(GhulError::InvalidInput { msg: "quick unlock needs a validity".into() });
+        }
+        super::quick::check_pin(&pin)?;
+        let keys = slot_keys_of(slot_keys)?;
+        self.require_factors(&proof, transport.as_ref(), listener.as_ref())?;
+        let (salt, input) = super::quick::new_pin_input(&pin)?;
+        self.with_open(|o| {
+            super::single::refuse_single(o)?;
+            let suite_id = o.suite.header().suite_id;
+            // A generation the aliases of an earlier PIN never had.
+            let generation = super::quick::read_pin_header(&self.local_dir, &suite_id)
+                .map_or(1, |h| h.generation.wrapping_add(1).max(1));
+            let header = super::quick::PinHeader {
+                salt,
+                created_ms: now_ms(),
+                max_age_ms: (max_age_seconds.min(i64::MAX as u64 / 1000) * 1000) as i64,
+                generation,
+            };
+            super::quick::write_pin(
+                &self.local_dir,
+                &suite_id,
+                o.password_key.expose(),
+                o.suite.factor_secret().expose(),
+                &input,
+                &header,
+                &keys,
+            )?;
+            Ok(generation)
+        })
+    }
+
+    /// The generation of the app PIN's file. The app deletes every Keystore key of another
+    /// generation before an attempt (and at the start).
+    /// - `Ok(None)`: there is no PIN file (or no suite): no PIN set up, turn it off in the app.
+    /// - `Ok(Some(g))`: the file of generation `g`.
+    /// - `Err(QuickUnlockOutdated)`: a PIN file of before version 4 (deleted): set up again.
+    /// - `Err(QuickUnlockUnavailable)`: a damaged file or one of another suite (deleted).
+    /// - `Err(Storage)` (or another error reading the suite file): could not be read now; keep
+    ///   the PIN and its keys, try again later (a full unlock is still possible).
+    pub fn quick_pin_generation(&self) -> Result<Option<u32>> {
+        let Some(locked) = self.read_locked(SUITE_FILE)? else { return Ok(None) };
+        super::quick::pin_generation(&self.local_dir, &locked.header().suite_id)
+    }
+
+    /// The first step of an attempt with the app PIN: what the Keystore key of the slot signs
+    /// (HMAC-SHA256), `message` = "ghul/v4/quick-pin-tag" || Argon2id(PIN). Refused before any
+    /// key is used if the PIN quick unlock is expired (`QuickUnlockExpired`), outdated
+    /// (`QuickUnlockOutdated`, a file of version 3: deleted) or not there.
+    pub fn quick_pin_challenge(&self, pin: String) -> Result<QuickPinChallenge> {
+        let pin = Zeroizing::new(pin);
+        self.finish_earlier_replace()?;
+        let locked = self.read_locked(SUITE_FILE)?.ok_or(GhulError::QuickUnlockUnavailable)?;
+        let header = super::quick::read_pin_header(&self.local_dir, &locked.header().suite_id)?;
+        if super::quick::pin_expired_by_header(&self.local_dir, &header, now_ms()) {
+            return Err(GhulError::QuickUnlockExpired);
+        }
+        let input = super::quick::pin_challenge(&pin, &header)?;
+        let mut message = super::quick::PIN_TAG_INFO.to_vec();
+        message.extend_from_slice(input.as_ref());
+        Ok(QuickPinChallenge { generation: header.generation, message })
+    }
+
+    /// The second step: unlocks with the tag the Keystore key of `slot` (0 or 1) of the
+    /// challenge's generation computed over `message` (from `quick_pin_challenge`). A wrong PIN
+    /// is `QuickUnlockInvalid` and changes nothing (that slot's key is used up). A right PIN
+    /// seals the file anew for `next_slot_keys` (two new keys the app imported before the call
+    /// as the next generation) with the same validity, removes the copy before, and then
+    /// unlocks. Returns the generation the file has now: the next one (the app deletes the keys
+    /// of the old generation), or, if sealing anew failed (e.g. a full storage, the suite is
+    /// open all the same), the old one (the app deletes the new keys and keeps the old slot it
+    /// has left).
+    pub fn unlock_quick_pin(
+        &self,
+        slot: u32,
+        tag: Vec<u8>,
+        message: Vec<u8>,
+        next_slot_keys: Vec<Vec<u8>>,
+    ) -> Result<u32> {
+        let gen = self.lock_gen_now();
+        let tag = Zeroizing::new(tag);
+        let message = Zeroizing::new(message);
+        let keys = slot_keys_of(next_slot_keys)?;
+        let input: [u8; 32] = message
+            .strip_prefix(super::quick::PIN_TAG_INFO)
+            .and_then(|p| p.try_into().ok())
+            .ok_or_else(|| GhulError::InvalidInput { msg: "not a challenge of the app PIN".into() })?;
+        let input = Zeroizing::new(input);
+        self.finish_earlier_replace()?;
+        let locked = self.read_locked(SUITE_FILE)?.ok_or(GhulError::QuickUnlockUnavailable)?;
+        let suite_id = locked.header().suite_id;
+        let (secret, header) = super::quick::open_pin(&self.local_dir, &suite_id, slot, &tag, now_ms())?;
+        let pk = PasswordKey::from_bytes(*secret.password_key);
+        let suite = match locked.unlock(&pk, &FactorSecret::from_bytes(*secret.factor_secret)) {
+            Ok(s) => s,
+            Err(_) => {
+                super::quick::delete_all(&self.local_dir);
+                return Err(GhulError::QuickUnlockUnavailable);
+            }
+        };
+        // Sealed anew before the suite opens: a failure of the unlock afterwards (a full
+        // storage) costs no attempt. Same salt, same validity, the next generation.
+        let next = super::quick::PinHeader { generation: header.generation.wrapping_add(1).max(1), ..header };
+        let now = match super::quick::write_pin(
+            &self.local_dir,
+            &suite_id,
+            &secret.password_key,
+            &secret.factor_secret,
+            &input,
+            &next,
+            &keys,
+        ) {
+            Ok(()) => next.generation,
+            Err(e) => {
+                eprintln!("GhulSuite: the app PIN could not be sealed anew: {e}");
+                header.generation
+            }
+        };
+        self.finish_unlock(pk, suite, false, gen)?;
+        Ok(now)
+    }
+
     pub fn quick_unlock_exists(&self, name: String) -> bool {
         super::quick::path(&self.local_dir, &name).map(|p| p.exists()).unwrap_or(false)
     }
 
-    /// Unlocks with quick unlock, within the validity chosen when it was enabled (counted from
-    /// the last full unlock).
-    pub fn unlock_quick(&self, name: String, quick_key: Vec<u8>, pin: Option<String>) -> Result<()> {
+    /// Unlocks with the fingerprint's quick unlock (`bio`; the app PIN: `unlock_quick_pin`),
+    /// within the validity chosen when it was enabled (counted from the last full unlock).
+    pub fn unlock_quick(&self, name: String, quick_key: Vec<u8>) -> Result<()> {
         let gen = self.lock_gen_now();
         self.finish_earlier_replace()?;
         let quick_key = Zeroizing::new(quick_key);
-        let pin = pin.map(Zeroizing::new);
         let locked = self.read_locked(SUITE_FILE)?.ok_or(GhulError::QuickUnlockUnavailable)?;
-        let secret = super::quick::open_file(
-            &self.local_dir,
-            &name,
-            &locked.header().suite_id,
-            &quick_key,
-            pin.as_deref().map(|p| p.as_str()),
-            now_ms(),
-        )?;
+        let secret = super::quick::open_file(&self.local_dir, &name, &locked.header().suite_id, &quick_key, now_ms())?;
         let pk = PasswordKey::from_bytes(*secret.password_key);
         let suite = match locked.unlock(&pk, &FactorSecret::from_bytes(*secret.factor_secret)) {
             Ok(s) => s,
@@ -2034,9 +2533,11 @@ impl GhulSuite {
             e.fields.insert("digits".into(), Field::Int(input.digits as i64));
             e.fields.insert("period".into(), Field::Int(input.period as i64));
             let id = e.id.clone();
-            c.payload.entries.push(e);
-            self.save_vault(o, &vault_id)?;
-            Ok(id)
+            // r10 M5: through `add_entries` (limits, and the entry goes again on an error).
+            self.add_entries(o, std::slice::from_ref(&vault_id), |o| {
+                o.vault_mut(&vault_id)?.1.payload.entries.push(e);
+                Ok(id)
+            })
         })
     }
 
@@ -2110,122 +2611,129 @@ impl GhulSuite {
         let data = Zeroizing::new(data);
         let mut parsed = super::import::parse(&data, &file_name)?;
         self.with_open(|o| {
-            let now = now_ms();
-            let mut result =
-                ImportResult { entries: 0, totps: 0, duplicates: 0, skipped: 0, skipped_items: Vec::new(), kept: 0 };
-            if let Some(vid) = &pass_vault {
-                let (r, c) = o.vault_mut(vid)?;
-                if r.kind != "pass" {
-                    return Err(GhulError::InvalidInput { msg: "not a GhulPass vault".into() });
-                }
-                let mut seen: Vec<String> = c
-                    .payload
-                    .entries
-                    .iter()
-                    .filter(|e| !e.deleted)
-                    .map(|e| dedup_key(&e.entry_type, &e.fields))
-                    .collect();
-                for d in &parsed.entries {
-                    let key = dedup_key(&d.entry_type, &d.fields);
-                    if seen.contains(&key) {
-                        result.duplicates += 1;
-                        continue;
+            let targets: Vec<String> = [&pass_vault, &totp_vault].into_iter().flatten().cloned().collect();
+            self.add_entries(o, &targets, |o| {
+                let now = now_ms();
+                let mut result = ImportResult {
+                    entries: 0,
+                    totps: 0,
+                    duplicates: 0,
+                    skipped: 0,
+                    skipped_items: Vec::new(),
+                    kept: 0,
+                };
+                if let Some(vid) = &pass_vault {
+                    let (r, c) = o.vault_mut(vid)?;
+                    if r.kind != "pass" {
+                        return Err(GhulError::InvalidInput { msg: "not a GhulPass vault".into() });
                     }
-                    let mut e = Entry::new(new_id(), &d.entry_type, now);
-                    e.fields = d.fields.clone();
-                    e.folder = d.folder.clone();
-                    c.payload.entries.push(e);
-                    seen.push(key);
-                    result.entries += 1;
-                }
-            }
-            if let Some(vid) = &totp_vault {
-                let (r, c) = o.vault_mut(vid)?;
-                if r.kind != "totp" {
-                    return Err(GhulError::InvalidInput { msg: "not a GhulAuth vault".into() });
-                }
-                let mut secrets: Vec<Zeroizing<Vec<u8>>> = c
-                    .payload
-                    .entries
-                    .iter()
-                    .filter(|e| !e.deleted)
-                    .filter_map(|e| match e.fields.get("secret") {
-                        Some(Field::Bytes(b)) => Some(Zeroizing::new(b.clone())),
-                        _ => None,
-                    })
-                    .collect();
-                for t in parsed.totps.iter().filter(|t| totps_from_logins || !t.from_login) {
-                    let Some(secret) = super::import::totp_secret(&t.input) else {
-                        let i = &t.input;
-                        parsed.skipped.push(super::import::Skipped {
-                            name: format!("{} {}", i.issuer, i.account).trim().to_owned(),
-                            kind: "totp".into(),
-                            reason: super::import::SkipReason::InvalidCode,
-                            detail: String::new(),
-                            raw: format!("{}\n{}\nSecret (Base32): {}", i.issuer, i.account, i.secret_base32),
-                            in_entry: t.from_login,
-                        });
-                        continue;
-                    };
-                    if secrets.iter().any(|x| **x == *secret) {
-                        result.duplicates += 1;
-                        continue;
+                    // N-D1: a set (a list made a large file take hours).
+                    let mut seen: std::collections::HashSet<String> = c
+                        .payload
+                        .entries
+                        .iter()
+                        .filter(|e| !e.deleted)
+                        .map(|e| dedup_key(&e.entry_type, &e.fields))
+                        .collect();
+                    for d in &parsed.entries {
+                        let key = dedup_key(&d.entry_type, &d.fields);
+                        if seen.contains(&key) {
+                            result.duplicates += 1;
+                            continue;
+                        }
+                        let mut e = Entry::new(new_id(), &d.entry_type, now);
+                        e.fields = d.fields.clone();
+                        e.folder = d.folder.clone();
+                        c.payload.entries.push(e);
+                        seen.insert(key);
+                        result.entries += 1;
                     }
-                    let input = &t.input;
-                    let mut e = Entry::new(new_id(), "totp", now);
-                    e.fields.insert("issuer".into(), Field::Text(input.issuer.trim().to_owned()));
-                    e.fields.insert("account".into(), Field::Text(input.account.trim().to_owned()));
-                    e.fields.insert("secret".into(), Field::Bytes(secret.to_vec()));
-                    e.fields.insert("algorithm".into(), Field::Text(input.algorithm.name().into()));
-                    e.fields.insert("digits".into(), Field::Int(input.digits as i64));
-                    e.fields.insert("period".into(), Field::Int(input.period as i64));
-                    c.payload.entries.push(e);
-                    secrets.push(secret);
-                    result.totps += 1;
                 }
-            }
-            // Nothing is lost: what could not be converted becomes a note with its original data.
-            if let (Some(k), Some(vid)) = (&keep, &pass_vault) {
-                let (_, c) = o.vault_mut(vid)?;
-                // Already kept by an earlier import of the same file: not again.
-                let kept_before: Vec<String> = c
-                    .payload
-                    .entries
-                    .iter()
-                    .filter(|e| !e.deleted && e.entry_type == "note")
-                    .filter_map(|e| match e.fields.get(&k.data_label) {
-                        Some(Field::Secret(raw)) => Some(raw.clone()),
-                        _ => None,
-                    })
-                    .collect();
-                for x in parsed.skipped.iter().filter(|x| !x.in_entry && !x.raw.is_empty()) {
-                    if kept_before.contains(&x.raw) {
-                        result.duplicates += 1;
-                        continue;
+                if let Some(vid) = &totp_vault {
+                    let (r, c) = o.vault_mut(vid)?;
+                    if r.kind != "totp" {
+                        return Err(GhulError::InvalidInput { msg: "not a GhulAuth vault".into() });
                     }
-                    let reason = match x.reason {
-                        super::import::SkipReason::Hotp => &k.reason_hotp,
-                        super::import::SkipReason::Unsupported => &k.reason_unsupported,
-                        super::import::SkipReason::InvalidCode => &k.reason_invalid,
-                    };
-                    let mut e = Entry::new(new_id(), "note", now);
-                    let title =
-                        if x.name.is_empty() { format!("{} ({})", parsed.format, x.kind) } else { x.name.clone() };
-                    e.fields.insert("title".into(), Field::Text(title));
-                    let why = if x.detail.is_empty() { reason.clone() } else { format!("{reason} ({})", x.detail) };
-                    e.fields.insert(k.reason_label.clone(), Field::Text(format!("{} · {why}", parsed.format)));
-                    e.fields.insert(k.data_label.clone(), Field::Secret(x.raw.clone()));
-                    e.folder = (!k.folder.is_empty()).then(|| k.folder.clone());
-                    c.payload.entries.push(e);
-                    result.kept += 1;
+                    let mut secrets: Vec<Zeroizing<Vec<u8>>> = c
+                        .payload
+                        .entries
+                        .iter()
+                        .filter(|e| !e.deleted)
+                        .filter_map(|e| match e.fields.get("secret") {
+                            Some(Field::Bytes(b)) => Some(Zeroizing::new(b.clone())),
+                            _ => None,
+                        })
+                        .collect();
+                    for t in parsed.totps.iter().filter(|t| totps_from_logins || !t.from_login) {
+                        let Some(secret) = super::import::totp_secret(&t.input) else {
+                            let i = &t.input;
+                            parsed.skipped.push(super::import::Skipped {
+                                name: format!("{} {}", i.issuer, i.account).trim().to_owned(),
+                                kind: "totp".into(),
+                                reason: super::import::SkipReason::InvalidCode,
+                                detail: String::new(),
+                                raw: format!("{}\n{}\nSecret (Base32): {}", i.issuer, i.account, i.secret_base32),
+                                in_entry: t.from_login,
+                            });
+                            continue;
+                        };
+                        if secrets.iter().any(|x| **x == *secret) {
+                            result.duplicates += 1;
+                            continue;
+                        }
+                        let input = &t.input;
+                        let mut e = Entry::new(new_id(), "totp", now);
+                        e.fields.insert("issuer".into(), Field::Text(input.issuer.trim().to_owned()));
+                        e.fields.insert("account".into(), Field::Text(input.account.trim().to_owned()));
+                        e.fields.insert("secret".into(), Field::Bytes(secret.to_vec()));
+                        e.fields.insert("algorithm".into(), Field::Text(input.algorithm.name().into()));
+                        e.fields.insert("digits".into(), Field::Int(input.digits as i64));
+                        e.fields.insert("period".into(), Field::Int(input.period as i64));
+                        c.payload.entries.push(e);
+                        secrets.push(secret);
+                        result.totps += 1;
+                    }
                 }
-            }
-            result.skipped = parsed.skipped.len() as u32;
-            result.skipped_items = skipped_items(&parsed.skipped);
-            for vid in [&pass_vault, &totp_vault].into_iter().flatten() {
-                self.save_vault(o, vid)?;
-            }
-            Ok(result)
+                // Nothing is lost: what could not be converted becomes a note with its original data.
+                if let (Some(k), Some(vid)) = (&keep, &pass_vault) {
+                    let (_, c) = o.vault_mut(vid)?;
+                    // Already kept by an earlier import of the same file: not again.
+                    let kept_before: Vec<String> = c
+                        .payload
+                        .entries
+                        .iter()
+                        .filter(|e| !e.deleted && e.entry_type == "note")
+                        .filter_map(|e| match e.fields.get(&k.data_label) {
+                            Some(Field::Secret(raw)) => Some(raw.clone()),
+                            _ => None,
+                        })
+                        .collect();
+                    for x in parsed.skipped.iter().filter(|x| !x.in_entry && !x.raw.is_empty()) {
+                        if kept_before.contains(&x.raw) {
+                            result.duplicates += 1;
+                            continue;
+                        }
+                        let reason = match x.reason {
+                            super::import::SkipReason::Hotp => &k.reason_hotp,
+                            super::import::SkipReason::Unsupported => &k.reason_unsupported,
+                            super::import::SkipReason::InvalidCode => &k.reason_invalid,
+                        };
+                        let mut e = Entry::new(new_id(), "note", now);
+                        let title =
+                            if x.name.is_empty() { format!("{} ({})", parsed.format, x.kind) } else { x.name.clone() };
+                        e.fields.insert("title".into(), Field::Text(title));
+                        let why = if x.detail.is_empty() { reason.clone() } else { format!("{reason} ({})", x.detail) };
+                        e.fields.insert(k.reason_label.clone(), Field::Text(format!("{} · {why}", parsed.format)));
+                        e.fields.insert(k.data_label.clone(), Field::Secret(x.raw.clone()));
+                        e.folder = (!k.folder.is_empty()).then(|| k.folder.clone());
+                        c.payload.entries.push(e);
+                        result.kept += 1;
+                    }
+                }
+                result.skipped = parsed.skipped.len() as u32;
+                result.skipped_items = skipped_items(&parsed.skipped);
+                Ok(result)
+            })
         })
     }
 
@@ -2548,11 +3056,11 @@ impl GhulSuite {
 
     /// Keeps (or clears) the confirmation of both factors, unless the suite was locked since the
     /// call started (`gen`): then it is not kept and the call ends with `Locked` (H10).
-    pub(super) fn set_ticket(&self, t: Option<std::time::Instant>, gen: u64) -> Result<()> {
+    pub(super) fn set_ticket(&self, t: Option<std::time::Instant>, gen: Gen) -> Result<()> {
         #[cfg(test)]
         run_lock_hook();
         let mut ticket = self.factors_confirmed.lock().unwrap_or_else(|e| e.into_inner());
-        if self.lock_gen_now() != gen {
+        if self.lock_gen.load(Ordering::SeqCst) != gen.lock {
             *ticket = None;
             return Err(GhulError::Locked);
         }

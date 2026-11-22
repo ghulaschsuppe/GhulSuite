@@ -165,6 +165,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
     val oneArea = stringResource(Res.string.wz_one_area)
     val deletedMsg = stringResource(Res.string.wz_deleted)
     val pinRule = stringResource(Res.string.wz_pin_rule)
+    val pinSimple = stringResource(Res.string.pin_too_simple)
     val keyPinMissing = stringResource(Res.string.wz_key_pin_missing)
 
     /**
@@ -294,6 +295,7 @@ fun NewSuiteWizard(state: AppState, onCancel: () -> Unit) {
                     // backup of a key) needs no touch, else the key is touched once more.
                     QuickChoice.BIO -> state.run(onError = { error = it }, block = { backend.enableBiometricUnlock(wizardProof(), settings.quickUnlockHours, state.onTouchNeeded) }) { password = ""; quickProof = null; step = 7 }
                     QuickChoice.PIN -> if (quickPin.length !in MIN_APP_PIN..12 || !quickPin.all(Char::isDigit)) error = pinRule
+                    else if (appPinTooSimple(quickPin)) error = pinSimple
                     else state.run(onError = { error = it }, block = { backend.enablePinUnlock(wizardProof(), quickPin, settings.quickUnlockHours, state.onTouchNeeded) }) { quickPin = ""; password = ""; quickProof = null; step = 7 }
                 }
             }

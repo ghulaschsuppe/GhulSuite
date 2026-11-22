@@ -103,6 +103,24 @@ impl GhulSuite {
             Ok(true)
         })
     }
+
+    /// r9 krypto M2: checks the whole recovery code as the user typed it back from the sheet
+    /// (with its checksum, so a slip in any group is found now, not in an emergency). Only the
+    /// suite's own code marks it as confirmed; returns whether it was. Separators, spaces and
+    /// case do not matter, as when the code is used.
+    pub fn confirm_whole_recovery_code(&self, typed: String) -> Result<bool> {
+        let typed = zeroize::Zeroizing::new(typed);
+        let Ok(parsed) = RecoveryCode::parse(&typed) else { return Ok(false) };
+        self.with_open(|o| {
+            let code = o.suite.recovery_code().ok_or(GhulError::NotFound)?;
+            if !bool::from(subtle::ConstantTimeEq::ct_eq(parsed.0.as_ref(), code.0.as_ref())) {
+                return Ok(false);
+            }
+            put_setting(&mut o.suite, CONFIRMED_KEY, &fingerprint(&code))?;
+            self.save_container(&mut o.suite, SUITE_FILE)?;
+            Ok(true)
+        })
+    }
 }
 
 #[cfg(test)]

@@ -78,7 +78,11 @@ actual fun rememberSaveFile(onSaved: (de.danerd.ghulsuite.ui.SaveFileResult) -> 
             // M8: a failed write says so (a full storage with its own text).
             val result = withContext(Dispatchers.IO) {
                 try {
-                    if (context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(data) } != null) {
+                    // r9 krypto N6: read back before it counts (a cloud provider may take the
+                    // bytes and fail later; a key file that is not really there locks out).
+                    if (context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(data) } != null &&
+                        context.contentResolver.openInputStream(uri)?.use { it.readBytes() }?.contentEquals(data) == true
+                    ) {
                         de.danerd.ghulsuite.ui.SaveFileResult.SAVED
                     } else {
                         de.danerd.ghulsuite.ui.SaveFileResult.FAILED
@@ -321,12 +325,10 @@ actual fun decodeImage(bytes: ByteArray, maxSide: Int): androidx.compose.ui.grap
 }.getOrNull()
 
 /**
- * A PDF in an anonymous file in memory (memfd, Android 11 and newer): PdfRenderer needs a file
- * it can seek in, and this one never reaches the storage. Older Android versions show no preview
- * (the app offers to open or export the document instead).
+ * A PDF in an anonymous file in memory (memfd): PdfRenderer needs a file it can seek in, and this
+ * one never reaches the storage.
  */
 actual fun openPdf(bytes: ByteArray): PdfView? {
-    if (android.os.Build.VERSION.SDK_INT < 30) return null
     return runCatching {
         val fd = android.system.Os.memfd_create("ghuldocs", 0)
         try {

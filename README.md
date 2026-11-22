@@ -61,7 +61,7 @@ ohne Sync-Dienst und ohne Vertrauensvorschuss. Die Daten liegen da, wo **du** si
 | **Eine Datei** | Die ganze Suite in einer verschlüsselten Datei (`.ghlzip`, bis 3,75 GiB): speichern, z. B. auf einen USB-Stick, und auf dem nächsten Gerät öffnen. Kein Sync, kein Abgleich |
 | **Offline** | Keine Server, keine Konten, kein Cloud-Dienst. Nach draußen gehen nur die Update-Prüfung und, wenn du sie einschaltest, die Prüfung auf Datenlecks; beide abschaltbar |
 | **Dokumente und Scans** | GhulDocs hält wichtige Dokumente verschlüsselt, in bis zu 3 Tresoren mit je bis 1 GB; auf Android scannst du Papier mit der Kamera direkt als PDF hinein |
-| **Plattformen** | Android 10+ und Windows 10/11 (Installer oder portabel vom USB-Stick) |
+| **Plattformen** | Android 12+ und Windows 10/11 (Installer oder portabel vom USB-Stick) |
 | **Offen** | Freie Software (AGPL-3.0), Dateiformat dokumentiert, Tests öffentlich |
 
 ## Warum GhulSuite?
@@ -219,7 +219,7 @@ Die Suite liegt dann auf diesem Gerät (Arbeitskopie) und als Datei an dem gewä
 Datei, wenn du oben auf das Speichern-Symbol tippst.
 
 **Im Alltag** reicht auf dem Handy Fingerabdruck oder App-PIN; der Schnellzugang liegt geschützt im Schlüsselspeicher
-des Geräts. Eingerichtet wird er mit Passwort und zweitem Faktor, mit einer Gültigkeit, die du dabei wählst. Die **Sofortsperre** schließt alles mit einem Schütteln oder über
+des Geräts. Eingerichtet wird er mit Passwort und zweitem Faktor, mit einer Gültigkeit, die du dabei wählst. Die App-PIN hat 8 bis 12 Ziffern und zwei Versuche; nach zwei falschen ist sie weg. Die **Sofortsperre** schließt alles mit einem Schütteln oder über
 die Schnellkachel und löscht den Schnellzugang: Danach entsperrst du mit beiden Faktoren und richtest ihn neu ein.
 
 </td></tr></table>
@@ -359,6 +359,10 @@ Bisher gibt es **nur Vorabversionen**; eine stabile Version gibt es noch nicht.
 | **Android** | `GhulSuite.apk` auf der [Release-Seite](https://github.com/ghulaschsuppe/GhulSuite/releases) |
 | **Windows, Installer** | `GhulSuite.msi` auf der [Release-Seite](https://github.com/ghulaschsuppe/GhulSuite/releases) |
 | **Windows, portabel** (USB-Stick) | `GhulSuite-portable.zip` auf der [Release-Seite](https://github.com/ghulaschsuppe/GhulSuite/releases) |
+
+> **Portabel heißt: auch das Programm liegt auf dem Stick.** Wer den Stick eine Weile hatte, kann es austauschen und
+> beim nächsten Entsperren mitlesen. Einen Stick, der aus der Hand war, nicht mehr starten, sondern die portable
+> Version neu laden und die Prüfsumme prüfen (`sha256sum -c SHA256SUMS`).
 
 - **Vorabversionen** (z. B. `0.5.0-dev.12`) entstehen automatisch aus dem Zweig `dev` und sind auf der
   Release-Seite als „Pre-release“ markiert. Stabile Versionen kommen später vom Zweig `main`.

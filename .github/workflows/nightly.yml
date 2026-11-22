@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # The long tests of docs/TESTKONZEPT.md: every night (and on demand). They take too long for every
 # push. A failure shows up as a failed run (GitHub e-mails the owner) with the logs as artifacts.
+# A schedule always runs the file of the default branch (main); it tests the code of dev, where
+# the work goes on (every checkout names ref dev, the APKs come from the runs of dev). A change of
+# this file only takes effect once it is merged into main.
 name: Nachtlauf (lange Tests)
 
 on:
@@ -23,6 +26,8 @@ jobs:
     timeout-minutes: 75
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: dev
       - name: Nightly und cargo-fuzz
         run: |
           rustup toolchain install nightly --profile minimal
@@ -46,6 +51,8 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: dev
       - name: Lange Läufe
         working-directory: core
         run: |
@@ -82,11 +89,13 @@ jobs:
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: APK des letzten Laufs von main holen
+        with:
+          ref: dev
+      - name: APK des letzten Laufs von dev holen
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          for id in $(gh run list -R "$GITHUB_REPOSITORY" -w android.yml -e push -b main -L 15 --json databaseId -q '.[].databaseId'); do
+          for id in $(gh run list -R "$GITHUB_REPOSITORY" -w android.yml -e push -b dev -L 15 --json databaseId -q '.[].databaseId'); do
             if gh run download "$id" -R "$GITHUB_REPOSITORY" -n ghulsuite-dev -D dist 2> /dev/null; then echo "APK aus Lauf $id"; break; fi
           done
           test -f dist/ghulsuite-dev.apk
@@ -116,11 +125,13 @@ jobs:
           path: monkey-out/
           retention-days: 14
 
-  # All Maestro flows of the app on main once more (the same as for every pull request in
-  # android.yml, here with the newest APK of main).
+  # All Maestro flows of the app once more (the same as for every pull request in android.yml,
+  # here with the newest APK of dev).
   emulator:
     name: Emulator-Abläufe
     uses: ./.github/workflows/emulator.yml
+    with:
+      branch: dev
 
   static:
     name: Statische Prüfung (Geheimnisse, Abhängigkeiten)
@@ -132,6 +143,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: dev
           fetch-depth: 0
       - name: Zugangsdaten im Repository? (gitleaks, ganze Historie)
         run: |
@@ -158,6 +170,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: dev
       - name: x509-limbo laden
         run: |
           mkdir -p interop-out
@@ -195,11 +209,13 @@ jobs:
       MOBSF_IMAGE: opensecurity/mobile-security-framework-mobsf:v4.6.4@sha256:cf1465a3cc0c95488b9a6cdb1c7799d4b576d391ee28232c221f6a196bf2f74c
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: APK des letzten Laufs von main holen
+        with:
+          ref: dev
+      - name: APK des letzten Laufs von dev holen
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          for id in $(gh run list -R "$GITHUB_REPOSITORY" -w android.yml -e push -b main -L 15 --json databaseId -q '.[].databaseId'); do
+          for id in $(gh run list -R "$GITHUB_REPOSITORY" -w android.yml -e push -b dev -L 15 --json databaseId -q '.[].databaseId'); do
             if gh run download "$id" -R "$GITHUB_REPOSITORY" -n ghulsuite-dev -D dist 2> /dev/null; then echo "APK aus Lauf $id"; break; fi
           done
           test -f dist/ghulsuite-dev.apk

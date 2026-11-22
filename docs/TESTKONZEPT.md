@@ -114,7 +114,7 @@ Daten aus Sammlungen liegen unter `core/ghul-core/tests/data/` mit Herkunft und 
 |---|---|---|
 | Jeder Push | E1 bis E9 Kurzläufe (Fuzz-Kurzlauf, Chaos, Naughty Strings, Wycheproof, Alltagstest, Angriffs-Matrix), clippy, audit | < 15 min zusätzlich |
 | Jeder Push (eigener Job) | Stresstest (Release) | ~5 min |
-| Nachts (`nightly.yml`) | cargo-fuzz je Ziel 15 min, lange Chaos-/Alltags-/Stresstests, Monkey 30.000 Gesten × 3 mit Intent-Angriffen, Emulator-Abläufe, gitleaks, cargo-audit, x509-limbo, badssl, MobSF, reproduzierbarer Kern | 2 bis 3 h |
+| Nachts (`nightly.yml`, mit dem Stand von `dev`; wirkt, sobald die Fassung in `main` ist) | cargo-fuzz je Ziel 15 min, lange Chaos-/Alltags-/Stresstests, Monkey 30.000 Gesten × 3 mit Intent-Angriffen, Emulator-Abläufe, gitleaks, cargo-audit, x509-limbo, badssl, MobSF, reproduzierbarer Kern | 2 bis 3 h |
 | Später (geplant) | Mutationstests (cargo-mutants), Semgrep | |
 
 Jeder gefundene Fehler wird zuerst als Test festgehalten (rot), dann behoben (grün), so kommt er nie zurück.

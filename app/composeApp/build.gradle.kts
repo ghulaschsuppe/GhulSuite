@@ -150,7 +150,7 @@ android {
 
     defaultConfig {
         applicationId = "de.danerd.ghulsuite"
-        minSdk = 29
+        minSdk = 31
         targetSdk = 36
         versionCode = appVersionCode
         versionName = appVersion
@@ -296,7 +296,7 @@ val generateHostBindings by tasks.registering(Exec::class) {
 tasks.matching { it.name == "compileTestKotlinDesktop" }.configureEach { dependsOn(generateHostBindings) }
 // Tests through the app's own bindings (package de.danerd.ghulsuite.core) run in a JVM of their
 // own: both binding packages register their callbacks in the same library, the last one wins.
-val appBindingTests = listOf("*SingleBackendTest", "*SuiteFileBackendTest", "*DocsBackendTest")
+val appBindingTests = listOf("*SingleBackendTest", "*SuiteFileBackendTest", "*DocsBackendTest", "*PinSlotsTest")
 val desktopAppBindingTest by tasks.registering(Test::class) {
     group = "verification"
     description = "Desktop tests through the app's own core bindings (own JVM)."

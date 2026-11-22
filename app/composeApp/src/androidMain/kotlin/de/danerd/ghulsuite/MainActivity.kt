@@ -17,7 +17,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.snapshotFlow
+import de.danerd.ghulsuite.model.autoLockSecondsNow
 import de.danerd.ghulsuite.ui.AppLaunch
 import de.danerd.ghulsuite.ui.AppState
 import de.danerd.ghulsuite.ui.GhulSuiteApp
@@ -38,7 +40,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 }
 
 class MainActivity : ComponentActivity() {
-    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean = guardStaleTextKey { super.dispatchKeyEvent(event) }
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        lastInput = android.os.SystemClock.elapsedRealtime()
+        return guardStaleTextKey { super.dispatchKeyEvent(event) }
+    }
+
+    /** r9 dieb N4: the last touch or key (for the idle lock while GhulSuite is in front). */
+    private var lastInput = android.os.SystemClock.elapsedRealtime()
+
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        lastInput = android.os.SystemClock.elapsedRealtime()
+        return super.dispatchTouchEvent(ev)
+    }
 
     private val notificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* optional */ }
@@ -61,12 +74,6 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    private val rootBackKeepsJobs = object : androidx.activity.OnBackPressedCallback(false) {
-        override fun handleOnBackPressed() {
-            moveTaskToBack(true)
-        }
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         current = java.lang.ref.WeakReference(this)
@@ -80,7 +87,7 @@ class MainActivity : ComponentActivity() {
         // accessibility services that are not tools (Android 14+), and other apps' overlay
         // windows are hidden while GhulSuite is in front (Android 12+).
         de.danerd.ghulsuite.ui.guardView(window.decorView)
-        if (android.os.Build.VERSION.SDK_INT >= 31) window.setHideOverlayWindows(true)
+        window.setHideOverlayWindows(true)
         lifecycleScope.launch {
             val testRun = TestDevice.screenshotsAllowed(this@MainActivity)
             snapshotFlow { ghul.backend.settings.allowScreenshots || testRun }.collect { allowed ->
@@ -95,14 +102,6 @@ class MainActivity : ComponentActivity() {
             }
         }
         enableEdgeToEdge()
-        // "Back" on the first screen while a job runs: up to Android 11 that would close the
-        // window for good and end the job with it (its scope is this window's). Send the app to
-        // the background instead, as Android 12 and newer do anyway. Registered first, so every
-        // back step inside the app (dialogs, sub pages) still comes before it.
-        onBackPressedDispatcher.addCallback(this, rootBackKeepsJobs)
-        lifecycleScope.launch {
-            de.danerd.ghulsuite.ui.JobStatus.current.collect { rootBackKeepsJobs.isEnabled = de.danerd.ghulsuite.ui.backKeepsJobs(it != null, android.os.Build.VERSION.SDK_INT) }
-        }
         val vm = ViewModelProvider(this)[MainViewModel::class.java]
         setContent {
             // Test tags (e.g. "tab-pass" of the bottom bar) are visible to the emulator flows as ids.
@@ -112,6 +111,49 @@ class MainActivity : ComponentActivity() {
             ) { GhulSuiteApp(vm.state) }
         }
         handleLaunch(intent)
+
+        // r10 M2: while a job the user started runs (adding many scans, an export), the display
+        // stays on: it going off by itself would lock firmly (r9 dieb N3) and cut the job off.
+        // Switching it off by hand still locks.
+        // r11: only while it makes progress (a stalled job does not keep the display on for good).
+        lifecycleScope.launch {
+            repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                var on = false
+                while (true) {
+                    val keep = de.danerd.ghulsuite.ui.JobStatus.userJobProgressing()
+                    if (keep != on) {
+                        on = keep
+                        if (keep) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    }
+                    kotlinx.coroutines.delay(5_000)
+                }
+            }
+        }
+        // r9 dieb N4: like on Windows, an app in front without any touch for long locks itself
+        // (someone took the unlocked phone and keeps the display on). Time in deep sleep counts.
+        lifecycleScope.launch {
+            repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+                lastInput = android.os.SystemClock.elapsedRealtime()
+                while (true) {
+                    kotlinx.coroutines.delay(5_000)
+                    // Touches and keys of this window, plus what the app saw elsewhere (dialogs,
+                    // typing on the screen keyboard).
+                    val idle = minOf(
+                        android.os.SystemClock.elapsedRealtime() - lastInput,
+                        de.danerd.ghulsuite.ui.UserActivity.idleMillis() ?: Long.MAX_VALUE,
+                    )
+                    vm.state.idleWarning = ghul.backend.unlocked.value &&
+                        de.danerd.ghulsuite.model.idleLockWarning(idle, ghul.backend.autoLockSecondsNow(), vm.state.editorDirty)
+                    if (ghul.backend.unlocked.value &&
+                        de.danerd.ghulsuite.model.idleLockDue(idle, ghul.backend.autoLockSecondsNow(), vm.state.editorDirty, vm.state.busy)
+                    ) {
+                        ghul.autoLock()
+                        lastInput = android.os.SystemClock.elapsedRealtime()
+                    }
+                }
+            }
+        }
 
         // Ask once for notifications so that the "Lock" notification is visible while unlocked.
         lifecycleScope.launch {

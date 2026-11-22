@@ -4,7 +4,10 @@ name: Android & Kern
 on:
   push:
     branches: ['**']
+    # VERSION, rust-toolchain.toml and release.yml count as a change of the app for the release
+    # (its gate), so they start this run, which ends with the release.
     paths: ['core/**', 'app/**', 'docs/testvectors/**', 'tools/**', '.github/workflows/android.yml',
+            'VERSION', 'rust-toolchain.toml', '.github/workflows/release.yml',
             '!app/maestro/**', '!tools/ci-emulator.sh', '!tools/run-maestro.sh', '!tools/check-reminders.sh']
   # Every pull request: "build" and "Windows-App (Installer und portable Version)" are required
   # checks. They come from the jobs "build-check" and "windows-check", which always run and report
@@ -17,9 +20,11 @@ permissions:
   # Only to ask whether a pushed branch has an open pull request (job "changes").
   pull-requests: read
 
+# A newer push cancels the older run, except on main and dev: there the run ends with the release
+# (job "release"), which must not stop halfway; a newer run waits for it.
 concurrency:
   group: android-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ !(github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) }}
 
 env:
   # No incremental build data in CI: smaller caches, same result.
@@ -40,9 +45,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      # r9 H1 (supply chain): every Python package with its version and hash
+      # (tools/requirements/*.txt, made with pip-compile --generate-hashes).
       - run: |
           python3 -m venv .venv
-          .venv/bin/pip install -q argon2-cffi cryptography pynacl cbor2
+          .venv/bin/pip install -q --require-hashes -r tools/requirements/ci-python.txt
           .venv/bin/python tools/verify_testvectors.py
       # Texts: missing translations and differing placeholders fail; terms are listed.
       - name: Texte prüfen (Übersetzungen, Platzhalter, Begriffe)
@@ -52,9 +59,7 @@ jobs:
         run: python3 tools/check-android-manifest.py
       # The texts the emulator flows look for are texts of the app (before the emulator runs).
       - name: Maestro-Abläufe gegen die App-Texte prüfen
-        run: |
-          .venv/bin/pip install -q pyyaml
-          .venv/bin/python tools/check-maestro.py
+        run: .venv/bin/python tools/check-maestro.py
 
   audit:
     name: Abhängigkeiten auf bekannte Sicherheitslücken prüfen
@@ -84,8 +89,9 @@ jobs:
           command -v cargo-audit > /dev/null || cargo install cargo-audit --locked --quiet
           cargo audit
 
-  # Which parts changed: fuzzing only runs when the core (or its test vectors) changed; the other
-  # jobs only when app, core, tools or this workflow changed (pull requests run this workflow always).
+  # Which parts changed: fuzzing only runs when the core (or its test vectors, or the toolchain)
+  # changed; the other jobs only when app, core, tools, VERSION, the toolchain, this workflow or
+  # release.yml changed (pull requests run this workflow always): what is released is tested first.
   changes:
     name: Geänderte Bereiche
     runs-on: ubuntu-latest
@@ -122,9 +128,15 @@ jobs:
           if [ -z "$BASE" ] || [ "$BASE" = 0000000000000000000000000000000000000000 ] || ! git cat-file -e "$BASE^{commit}" 2> /dev/null; then
             echo "core=true" >> "$GITHUB_OUTPUT"; echo "code=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
+          # r9 M2: a push to main or dev runs everything (it ends with the release, which
+          # compares with the last release, not with the push before: fuzzing and the stress
+          # test must not be skipped for a core that changed earlier).
+          if [ "$EVENT" = push ] && { [ "$GITHUB_REF_NAME" = main ] || [ "$GITHUB_REF_NAME" = dev ]; }; then
+            echo "core=true" >> "$GITHUB_OUTPUT"; echo "code=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
           files=$(git diff --name-only "$BASE" HEAD)
-          if printf '%s\n' "$files" | grep -qE '^(core/|docs/testvectors/)'; then core=true; else core=false; fi
-          if printf '%s\n' "$files" | grep -qE '^(core/|app/|docs/testvectors/|tools/|\.github/workflows/android\.yml)'; then code=true; else code=false; fi
+          if printf '%s\n' "$files" | grep -qE '^(core/|docs/testvectors/|rust-toolchain\.toml$)'; then core=true; else core=false; fi
+          if printf '%s\n' "$files" | grep -qE '^(core/|app/|docs/testvectors/|tools/|\.github/workflows/(android|release)\.yml|VERSION$|rust-toolchain\.toml$)'; then code=true; else code=false; fi
           echo "Kern geändert: $core · App/Kern/Werkzeuge geändert: $code"
           echo "core=$core" >> "$GITHUB_OUTPUT"; echo "code=$code" >> "$GITHUB_OUTPUT"
 
@@ -333,11 +345,18 @@ jobs:
       contents: read
       # For the screenshot comparison: the artifacts of the last run of dev.
       actions: read
-    timeout-minutes: 45
+    # From scratch on main and dev (no cache, see SIGNING): more time.
+    timeout-minutes: 60
+    env:
+      # r9 M1: the run that gets the real signing key restores no cache (a cache entry written
+      # by any job of the branch could bring a changed cargo-ndk or Gradle file into the step
+      # with the key). It builds from scratch and saves its result for the other runs.
+      SIGNING: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       # Compiled Rust code from earlier runs: only what changed is built again.
       - name: Rust-Zwischenspeicher
+        if: env.SIGNING != 'true'
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
@@ -356,7 +375,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-          cache: gradle
+          cache: ${{ env.SIGNING != 'true' && 'gradle' || '' }}
           cache-dependency-path: |
             app/**/*.gradle.kts
             app/gradle/libs.versions.toml
@@ -420,6 +439,21 @@ jobs:
           echo "$GRADLE_WRAPPER_SHA256  gradle/wrapper/gradle-wrapper.jar" | sha256sum -c - || exit 1
           ./gradlew --no-daemon --console=plain --continue :composeApp:desktopTest :composeApp:assembleDebug
 
+      # Built from scratch on main and dev: saved for the runs of working branches and pull
+      # requests (they restore it; this run never does).
+      - name: Rust-Zwischenspeicher sichern
+        if: ${{ !cancelled() && env.SIGNING == 'true' }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            core/target/
+            app/composeApp/build/rust/
+          key: ${{ runner.os }}-build-${{ hashFiles('core/Cargo.lock') }}-${{ github.sha }}
+
       - name: APK bereitstellen
         run: |
           mkdir -p dist
@@ -450,7 +484,7 @@ jobs:
           id=$(gh run list -R "$GITHUB_REPOSITORY" -w android.yml -e push -b dev -s success -L 1 --json databaseId -q '.[0].databaseId')
           [ -n "$id" ] || { echo "Kein grüner Lauf auf dev zum Vergleichen."; exit 0; }
           gh run download "$id" -R "$GITHUB_REPOSITORY" -n screenshots -D "$RUNNER_TEMP/before"
-          pip install --quiet 'pillow==11.3.0'
+          pip install --quiet --require-hashes -r tools/requirements/ci-pillow.txt
           python3 tools/compare-screenshots.py "$RUNNER_TEMP/before" app/composeApp/build/screenshots "$RUNNER_TEMP/screenshot-diff" \
             | tee -a "$GITHUB_STEP_SUMMARY"
 
@@ -515,3 +549,27 @@ jobs:
           echo "Geänderte Bereiche: $CHANGES · Windows-App bauen: $RESULT"
           [ "$SECRETS" = success ] || echo "::error::Secrets auf Repository-Ebene (siehe Job secrets-check)."
           [ "$SECRETS" = success ] && [ "$CHANGES" = success ] && { [ "$RESULT" = success ] || [ "$RESULT" = skipped ]; }
+
+  # The release (release.yml), as the last job of this run: only for a push to main or dev, and
+  # only when the required checks passed and no other job failed or was cancelled (skipped jobs,
+  # e.g. the emulator on dev, are fine). Whether the app changed since the last release, and so
+  # whether there is a new version at all, release.yml decides by itself. The signing key comes
+  # from the environment "release" inside the called jobs; only the legal notice of the website
+  # (repository secrets) is passed on.
+  release:
+    name: Veröffentlichen
+    needs: [testvectors, audit, changes, secrets-check, fuzz, stress, windows, build, emulator, build-check, windows-check]
+    if: >-
+      ${{ !cancelled() && github.repository_owner == 'ghulaschsuppe' && github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') &&
+      needs.secrets-check.result == 'success' && needs.build-check.result == 'success' &&
+      needs.windows-check.result == 'success' &&
+      !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    secrets:
+      IMPRESSUM_NAME: ${{ secrets.IMPRESSUM_NAME }}
+      IMPRESSUM_ADRESSE: ${{ secrets.IMPRESSUM_ADRESSE }}
+      IMPRESSUM_EMAIL: ${{ secrets.IMPRESSUM_EMAIL }}
+      IMPRESSUM_HOSTER: ${{ secrets.IMPRESSUM_HOSTER }}

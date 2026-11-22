@@ -303,7 +303,7 @@ fn a_vault_on_its_own_stays_one_vault() {
     refused(t.archive_build_bytes("Test".into()).map(|_| ()));
     // The device's quick unlock belongs to the own suite.
     refused(
-        t.quick_unlock_enable(super::kf_proof(PW, &kf), None, None, "pin".into(), Some("123456".into()), 3600)
+        t.quick_unlock_enable_pin(super::kf_proof(PW, &kf), None, None, "13572468".into(), 3600, super::pin_keys())
             .map(|_| ()),
     );
     assert_eq!(t.list_vaults().unwrap().len(), 1);

@@ -92,7 +92,7 @@ impl GhulSuite {
         &self,
         vault: crate::vault::UnlockedContainer,
         pk: PasswordKey,
-        gen: u64,
+        gen: super::suite::Gen,
     ) -> Result<VaultKind> {
         let kind = VaultKind::from_container(vault.kind())
             .ok_or_else(|| GhulError::InvalidInput { msg: "this is a suite file, open its folder instead".into() })?;
@@ -109,6 +109,7 @@ impl GhulSuite {
             suite,
             vaults: vec![OpenVault { reference, container: Some(vault) }],
             recovered: false,
+            changes: gen.changes,
         };
         self.save_all(&mut open)?;
         self.clear_unsaved();

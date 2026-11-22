@@ -81,6 +81,11 @@ class ScreenshotTest {
         /** The place of the suite file this device remembers (null: none yet). */
         var suiteRef: de.danerd.ghulsuite.model.SuiteFileRef? = null
         override fun suiteFile() = suiteRef
+        override fun setSuiteFile(ref: de.danerd.ghulsuite.model.SuiteFileRef?) { suiteRef = ref }
+        /** r9 M-2: the places whose access was kept; [keepOk] false: the other app does not allow it. */
+        val kept = mutableListOf<de.danerd.ghulsuite.model.SuiteFileRef>()
+        var keepOk = true
+        override fun keepAccess(ref: de.danerd.ghulsuite.model.SuiteFileRef): Boolean { kept += ref; return keepOk }
         /** What is at the place of the suite file (null: it cannot be reached). */
         var target: de.danerd.ghulsuite.model.ArchiveTargetUi? = de.danerd.ghulsuite.model.ArchiveTargetUi.NEW
         /** Who saved the file there, and when (shown before overwriting it). */

@@ -1301,7 +1301,7 @@ fn docs_vaults(s: &GhulSuite) -> Vec<String> {
 fn deleting_the_working_copy_leaves_nothing_of_the_suite() {
     let (d, s, kf, _, v) = docs_suite("delete-working-copy");
     let x = add(&s, &v, None, "x.pdf", &content(300, 1));
-    s.quick_unlock_enable(kf_proof(PW, &kf), None, None, "pin".into(), Some("123456".into()), 3600).unwrap();
+    s.quick_unlock_enable_pin(kf_proof(PW, &kf), None, None, "13572468".into(), 3600, super::pin_keys()).unwrap();
     let file = save(&s);
     add(&s, &v, None, "unsaved.pdf", b"u");
     assert!(s.archive_unsaved());

@@ -80,7 +80,7 @@ class IntentEntryActivity : Activity() {
             // point at any file of the app). Which of the two, its name says (see SuiteFileSection).
             intent.action == Intent.ACTION_VIEW && data != null && isSuiteOrDocsPackage(name(data)) ->
                 if (foreign(data)) {
-                    AppLaunch.suiteFile.value = suiteFile(data)
+                    AppLaunch.suiteFile.value = suiteFile(data, intent.flags)
                     return data
                 }
             intent.action == Intent.ACTION_VIEW && data != null ->
@@ -93,16 +93,19 @@ class IntentEntryActivity : Activity() {
         name.endsWith(".ghlzip", ignoreCase = true) || name.endsWith(".ghldocs", ignoreCase = true)
 
     /**
-     * A suite file or GhulDocs package handed over. It is remembered for saving only where Android lets GhulSuite
-     * keep the right to write it; otherwise "Save as" chooses the place (empty id).
+     * A suite file or GhulDocs package handed over. r9 M-2 and N-D2: nothing is kept here (another
+     * app could hand over many files and push out the kept access to the suite file's folder, or
+     * make its own address the place to save to). It is read through the grant of this intent;
+     * once it is opened, the app asks whether to save there from now on, and only then keeps the
+     * right (only for a document of a documents provider, see AndroidVaultBackend.keepAccess).
      */
-    private fun suiteFile(uri: Uri): de.danerd.ghulsuite.ui.PickedSuiteFile {
-        val writable = runCatching {
-            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-        }.isSuccess
+    private fun suiteFile(uri: Uri, flags: Int): de.danerd.ghulsuite.ui.PickedSuiteFile {
         val name = name(uri)
-        val ref = de.danerd.ghulsuite.model.SuiteFileRef(if (writable) uri.toString() else "", name)
-        return de.danerd.ghulsuite.ui.PickedSuiteFile(ref, de.danerd.ghulsuite.model.SuiteFileRef(uri.toString(), name))
+        val source = de.danerd.ghulsuite.model.SuiteFileRef(uri.toString(), name)
+        // r10 N2: only offered where it can work: the other app granted writing and keeping it.
+        val keepable = (flags and Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION) != 0 && (flags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != 0
+        val offer = source.takeIf { keepable && android.provider.DocumentsContract.isDocumentUri(this, uri) }
+        return de.danerd.ghulsuite.ui.PickedSuiteFile(de.danerd.ghulsuite.model.SuiteFileRef("", name), source, offer)
     }
 
     /** "Add to calendar" from other apps (CalendarContract extras). */

@@ -259,10 +259,30 @@ pub fn padded_len(cbor_len: usize) -> usize {
     (cbor_len + 4).next_power_of_two().max(MIN_PADDED_LEN)
 }
 
+/// The limit for sealing: [`MAX_PAYLOAD_LEN`]; tests set a smaller one (in their thread).
+fn seal_limit() -> usize {
+    #[cfg(test)]
+    if let Some(l) = TEST_SEAL_LIMIT.with(std::cell::Cell::get) {
+        return l;
+    }
+    MAX_PAYLOAD_LEN
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Tests only: a smaller limit for sealing a payload (in this thread).
+    pub(crate) static TEST_SEAL_LIMIT: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+}
+
+/// Whether a payload of `cbor_len` bytes (CBOR) can still be sealed.
+pub fn fits(cbor_len: usize) -> bool {
+    cbor_len + 4 <= seal_limit()
+}
+
 pub fn pad(cbor: &[u8]) -> Result<Zeroizing<Vec<u8>>> {
     // Padded to a power of two, the length prefix included: at most `MAX_PAYLOAD_LEN`, so the
     // whole file stays within `MAX_FILE_LEN` and can be read again.
-    if cbor.len() + 4 > MAX_PAYLOAD_LEN {
+    if !fits(cbor.len()) {
         return Err(VaultError::Payload("payload too large".into()));
     }
     let total = padded_len(cbor.len());

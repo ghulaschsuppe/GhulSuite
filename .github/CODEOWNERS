@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# r9 (supply chain, N3): changes of the CI, the release and the tools need the owner's review
+# (effective once the owner turns on "Require review from Code Owners" for main and dev).
+/.github/ @ghulaschsuppe
+/tools/ @ghulaschsuppe

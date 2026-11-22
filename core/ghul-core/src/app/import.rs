@@ -210,6 +210,11 @@ fn parse_zip(data: &[u8]) -> Result<Parsed> {
         let json: Json = serde_json::from_str(text).map_err(|_| GhulError::ImportUnknownFormat)?;
         return parse_json(&json);
     }
+    // r9 M-D2: no ZIP inside a ZIP (each level would hold its buffer, and the nesting had no
+    // limit: a small file could take gigabytes or overflow the stack).
+    if buf.starts_with(b"PK\x03\x04") {
+        return Err(GhulError::ImportUnknownFormat);
+    }
     parse(&buf, &pick)
 }
 
@@ -1058,14 +1063,22 @@ pub(crate) fn parse_migration(uri: &str) -> Result<(Vec<TotpInput>, Vec<Skipped>
 
 // --- CSV ------------------------------------------------------------------------------------
 
+/// The most columns of one CSV row and fields of a whole CSV file (r9 N-D1: a file of commas
+/// made one `String` per empty field, gigabytes from 64 MiB). Real exports have a few dozen
+/// columns and some ten thousand rows.
+const MAX_CSV_COLUMNS: usize = 1000;
+const MAX_CSV_FIELDS: usize = 2_000_000;
+
 /// RFC 4180 CSV: quoted fields may contain separators, quotes (`""`) and line breaks.
-fn csv_records(text: &str) -> Vec<Vec<String>> {
+fn csv_records(text: &str) -> Result<Vec<Vec<String>>> {
     let first = text.lines().next().unwrap_or("");
     let sep = if first.matches(';').count() > first.matches(',').count() { ';' } else { ',' };
     let mut rows = Vec::new();
     let mut row = Vec::new();
     let mut field = String::new();
     let mut quoted = false;
+    let mut fields = 0usize;
+    let too_many = || invalid("too many columns or fields in this CSV file");
     let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {
         if quoted {
@@ -1081,9 +1094,19 @@ fn csv_records(text: &str) -> Vec<Vec<String>> {
         }
         match c {
             '"' => quoted = true,
-            c if c == sep => row.push(std::mem::take(&mut field)),
+            c if c == sep => {
+                fields += 1;
+                if row.len() >= MAX_CSV_COLUMNS || fields > MAX_CSV_FIELDS {
+                    return Err(too_many());
+                }
+                row.push(std::mem::take(&mut field));
+            }
             '\r' => {}
             '\n' => {
+                fields += 1;
+                if fields > MAX_CSV_FIELDS {
+                    return Err(too_many());
+                }
                 row.push(std::mem::take(&mut field));
                 if !(row.len() == 1 && row[0].is_empty()) {
                     rows.push(std::mem::take(&mut row));
@@ -1097,11 +1120,11 @@ fn csv_records(text: &str) -> Vec<Vec<String>> {
         row.push(field);
         rows.push(row);
     }
-    rows
+    Ok(rows)
 }
 
 fn parse_csv(text: &str) -> Result<Parsed> {
-    let rows = csv_records(text);
+    let rows = csv_records(text)?;
     let (header, body) = rows.split_first().ok_or(GhulError::ImportUnknownFormat)?;
     let header: Vec<String> = header.iter().map(|h| h.trim().to_lowercase()).collect();
     let col = |names: &[&str]| names.iter().find_map(|n| header.iter().position(|h| h == n));
@@ -1382,6 +1405,46 @@ mod tests {
 
     const SECRET: &str = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
 
+    fn zip_with(name: &str, data: &[u8]) -> Vec<u8> {
+        use std::io::Write;
+        let mut out = Vec::new();
+        let mut z = zip::ZipWriter::new(std::io::Cursor::new(&mut out));
+        z.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
+        z.write_all(data).unwrap();
+        z.finish().unwrap();
+        out
+    }
+
+    /// r9 M-D2: a ZIP inside a ZIP is not read (no nesting, whatever its depth); one level is.
+    #[test]
+    fn a_zip_inside_a_zip_is_refused() {
+        let csv = b"name,url,username,password\nGitHub,https://github.com,ghul,pw\n";
+        let one = zip_with("export.csv", csv);
+        assert_eq!(parse(&one, "export.zip").unwrap().entries.len(), 1);
+        let two = zip_with("x.csv", &one);
+        assert!(matches!(parse(&two, "export.zip"), Err(GhulError::ImportUnknownFormat)));
+        let mut deep = one;
+        for _ in 0..50 {
+            deep = zip_with("x.csv", &deep);
+        }
+        assert!(matches!(parse(&deep, "export.zip"), Err(GhulError::ImportUnknownFormat)));
+    }
+
+    /// r9 N-D1: a CSV of separators is refused, not turned into millions of fields.
+    #[test]
+    fn a_csv_of_separators_is_refused() {
+        let wide = format!("name,url,username,password{}\n", ",".repeat(MAX_CSV_COLUMNS));
+        assert!(matches!(parse(wide.as_bytes(), "x.csv"), Err(GhulError::InvalidInput { .. })));
+        let mut many = String::from("name,url,username,password\n");
+        let row = format!("{}\n", ",".repeat(99));
+        while many.len() < (MAX_CSV_FIELDS / 100 + 10) * row.len() {
+            many.push_str(&row);
+        }
+        assert!(matches!(parse(many.as_bytes(), "x.csv"), Err(GhulError::InvalidInput { .. })));
+        let ok = "name,url,username,password\nGitHub,https://github.com,ghul,pw\n";
+        assert_eq!(parse(ok.as_bytes(), "x.csv").unwrap().entries.len(), 1);
+    }
+
     #[test]
     fn bitwarden_json() {
         let json = r#"{"encrypted":false,"folders":[{"id":"f1","name":"Arbeit"}],"items":[
@@ -1585,7 +1648,7 @@ mod tests {
             })
             .collect();
         let password_cells = |csv: &str| -> Vec<String> {
-            let rows = csv_records(csv);
+            let rows = csv_records(csv).unwrap();
             rows[1..].iter().map(|r| r[3].clone()).collect()
         };
         let plain = export_csv(&entries, false);

@@ -110,6 +110,10 @@ suspend fun reminderLabel(m: Int, allDay: Boolean): String = when {
     else -> getPluralString(Res.plurals.cal_rem_days, m / 1440, (m / 1440).toString())
 }
 
+
+/** The largest calendar file that is imported (the core's limit, r9 N-D3). */
+const val MAX_ICS_FILE = 16 * 1024 * 1024
+
 @Composable
 fun reminderText(m: Int, allDay: Boolean): String = when {
     allDay && m == 0 -> stringResource(Res.string.cal_rem_day_9)
@@ -830,6 +834,8 @@ fun CalendarsSheet(state: AppState, close: () -> Unit) {
     val pick = rememberOpenFile { f ->
         val target = importInto ?: return@rememberOpenFile
         state.run(block = {
+            // r9 N-D3: the core's limit already here (the file is not handed on at all).
+            if (f.bytes.size > MAX_ICS_FILE) throw de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.INVALID_INPUT, "the calendar file is larger than 16 MiB")
             val n = cal.importIcs(target, f.bytes)
             countText(env, Res.plurals.cal_import_done, n, n.toString())
         }) { msg ->

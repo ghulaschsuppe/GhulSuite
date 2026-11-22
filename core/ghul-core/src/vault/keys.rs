@@ -53,7 +53,9 @@ impl PasswordKey {
             return Err(VaultError::InvalidInput("password must not be empty".into()));
         }
         kdf.validate()?;
-        if kdf.memory_kib > super::format::DERIVE_MAX_MEMORY_KIB {
+        if kdf.memory_kib > super::format::DERIVE_MAX_MEMORY_KIB
+            || u64::from(kdf.memory_kib) * u64::from(kdf.iterations) > super::format::DERIVE_MAX_WORK
+        {
             return Err(VaultError::Format("the key derivation asks for more memory than this app uses".into()));
         }
         let normalized: Zeroizing<String> = Zeroizing::new(password.nfc().collect());

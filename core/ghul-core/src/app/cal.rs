@@ -833,36 +833,45 @@ impl GhulSuite {
         data: Vec<u8>,
         zones: std::sync::Arc<dyn super::caltext::TimeZones>,
     ) -> Result<u32> {
+        // N-D3: an upper limit in the core as well (the Android intent stops at 5 MiB, the
+        // desktop file chooser had none).
+        if data.len() > MAX_ICS_LEN {
+            return Err(GhulError::InvalidInput { msg: ICS_TOO_LARGE.into() });
+        }
         let text = String::from_utf8_lossy(&data);
         let events =
             super::caltext::ics_import_zoned(&text, zones.as_ref()).map_err(|msg| GhulError::InvalidInput { msg })?;
         self.with_open(|o| {
             let vid = vault_with(o, &calendar_id, T_CAL)?;
-            let (_, c) = o.vault_mut(&vid)?;
-            let key = |e: &CalEvent| format!("{}{SEP}{}{SEP}{}", e.title.trim().to_lowercase(), e.start, e.end);
-            let mut seen: std::collections::HashSet<String> =
-                live(c, T_EVENT).map(event_of).filter(|e| e.calendar_id == calendar_id).map(|e| key(&e)).collect();
-            let mut added = 0;
-            let now = now_ms();
-            for mut ev in events {
-                ev.calendar_id = calendar_id.clone();
-                ev.id.clear();
-                if validate(&mut ev).is_err() || seen.contains(&key(&ev)) {
-                    continue;
+            self.add_entries(o, std::slice::from_ref(&vid), |o| {
+                let (_, c) = o.vault_mut(&vid)?;
+                let key = |e: &CalEvent| format!("{}{SEP}{}{SEP}{}", e.title.trim().to_lowercase(), e.start, e.end);
+                let mut seen: std::collections::HashSet<String> =
+                    live(c, T_EVENT).map(event_of).filter(|e| e.calendar_id == calendar_id).map(|e| key(&e)).collect();
+                let mut added = 0;
+                let now = now_ms();
+                for mut ev in events {
+                    ev.calendar_id = calendar_id.clone();
+                    ev.id.clear();
+                    if validate(&mut ev).is_err() || seen.contains(&key(&ev)) {
+                        continue;
+                    }
+                    seen.insert(key(&ev));
+                    let mut e = Entry::new(new_id(), T_EVENT, now);
+                    put_event_fields(&mut e, &ev);
+                    c.payload.entries.push(e);
+                    added += 1;
                 }
-                seen.insert(key(&ev));
-                let mut e = Entry::new(new_id(), T_EVENT, now);
-                put_event_fields(&mut e, &ev);
-                c.payload.entries.push(e);
-                added += 1;
-            }
-            if added > 0 {
-                self.save_vault(o, &vid)?;
-            }
-            Ok(added)
+                Ok(added)
+            })
         })
     }
 }
+
+/// The largest `.ics` file [`GhulSuite::cal_import_ics`] reads (N-D3).
+pub const MAX_ICS_LEN: usize = 16 * 1024 * 1024;
+/// The message for a larger one.
+pub const ICS_TOO_LARGE: &str = "the calendar file is larger than 16 MiB";
 
 /// Plain export of a whole calendar vault (for "export unencrypted").
 pub(crate) fn export_vault_ics(c: &UnlockedContainer, name: &str) -> zeroize::Zeroizing<String> {

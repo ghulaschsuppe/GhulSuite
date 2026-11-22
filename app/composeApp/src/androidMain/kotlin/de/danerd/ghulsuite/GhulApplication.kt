@@ -44,9 +44,9 @@ class GhulApplication : Application() {
      * An automatic lock: while background jobs run, the app's state decides (quiet jobs stop, a
      * job the user started is waited for while it makes progress); else it locks at once.
      */
-    private fun autoLock() {
+    internal fun autoLock(firm: Boolean = false) {
         val jobs = de.danerd.ghulsuite.ui.JobStatus
-        val hook = jobs.autoLock
+        val hook = if (firm) jobs.autoLockFirm else jobs.autoLock
         if (hook != null && jobs.current.value != null) hook() else backend.lock()
     }
 
@@ -57,7 +57,7 @@ class GhulApplication : Application() {
     private val screenOffReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == Intent.ACTION_SCREEN_OFF && backend.settings.lockOnScreenOff) {
-                autoLock()
+                autoLock(firm = true)
             }
         }
     }

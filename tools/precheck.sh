@@ -70,7 +70,7 @@ step "Website bauen (Vorschau)" env GHUL_RELEASES_JSON=/dev/null python3 tools/b
 # Like the CI: an own Python environment with the independent crypto libraries (made once, reused).
 venv="${XDG_CACHE_HOME:-$HOME/.cache}/ghul-precheck-venv"
 if [ ! -x "$venv/bin/python" ]; then
-  python3 -m venv "$venv" > /dev/null 2>&1 && "$venv/bin/pip" install -q argon2-cffi cryptography pynacl cbor2 > /dev/null 2>&1 \
+  python3 -m venv "$venv" > /dev/null 2>&1 && "$venv/bin/pip" install -q --require-hashes -r tools/requirements/ci-python.txt > /dev/null 2>&1 \
     || rm -rf "$venv"
 fi
 if [ -x "$venv/bin/python" ]; then

@@ -41,6 +41,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -281,7 +282,11 @@ private fun OpenVaultWizard(state: AppState, file: PickedFile, info: ContainerIn
 
     val current = code
     if (current != null) {
-        RecoveryCodeSteps(state, current) { finishSetup(state, kind) }
+        RecoveryCodeSteps(state, current) {
+            // r9 M-D1: the new code is the suite's own, but the sender still knows password and factor.
+            state.message(keptCode)
+            finishSetup(state, kind)
+        }
         return
     }
     SectionCard(stringResource(Res.string.open_vault_title)) {
@@ -380,7 +385,7 @@ fun KeyfilePicker(selected: PickedFile?, onPicked: (PickedFile) -> Unit) {
     }
 }
 
-/** Shows the new recovery code, then asks for its third group. */
+/** Shows the new recovery code, then asks for the whole code back (r9 krypto M2). */
 @Composable
 fun RecoveryCodeSteps(state: AppState, code: String, onDone: () -> Unit) {
     var confirming by remember { mutableStateOf(false) }
@@ -404,19 +409,18 @@ fun RecoveryCodeSteps(state: AppState, code: String, onDone: () -> Unit) {
     } else {
         SectionCard(stringResource(Res.string.setup_confirm_title)) {
             Hint(stringResource(Res.string.setup_confirm_text))
-            OutlinedTextField(
-                confirm, { confirm = it.uppercase(); error = null },
-                label = { Text(stringResource(Res.string.l_code_group_3)) },
-                singleLine = true, modifier = Modifier.fillMaxWidth(),
-            )
+            RecoveryCodeField(confirm, { confirm = it; error = null }, stringResource(Res.string.l_code_whole),
+                Modifier.fillMaxWidth().testTag("code-confirm"), minLines = 2)
             ErrorText(error)
             val wrong = stringResource(Res.string.setup_confirm_wrong)
             ButtonRow {
                 OutlinedButton(onClick = { confirming = false }, modifier = Modifier.weight(1f)) { Text(stringResource(Res.string.a_back)) }
-                // The core checks the group and only then marks the code as confirmed.
+                // The core reads the whole code (with its checksum, so a slip in any group shows
+                // now, not in an emergency) and only then marks it as confirmed.
                 Button(modifier = Modifier.weight(1f), onClick = {
-                    state.run(onError = { error = it }, block = { state.backend.confirmRecoveryCode(2, confirm) }) { ok ->
+                    state.run(onError = { error = it }, block = { state.backend.confirmWholeRecoveryCode(confirm) }) { ok ->
                         if (ok) {
+                            confirm = ""
                             state.codeUnconfirmed = false
                             onDone()
                         } else {

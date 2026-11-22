@@ -382,6 +382,19 @@ fun BusyOverlay(modifier: Modifier = Modifier) {
 
 // --- Sheets (.sheet: from the bottom, handle, 28 dp corners) -------------------------------------
 
+/**
+ * r10 M3: touches in a dialog or sheet (a window of its own, which the app's window does not
+ * see) count as input for the idle lock.
+ */
+fun Modifier.countsAsInput(): Modifier = pointerInput(Unit) {
+    awaitPointerEventScope {
+        while (true) {
+            awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+            UserActivity.touch()
+        }
+    }
+}
+
 /** Bottom sheet in the look of the design preview: handle, title, content. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -394,7 +407,7 @@ fun GhulSheet(onDismissRequest: () -> Unit, title: String? = null, content: @Com
             properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
         ) {
             Box(
-                Modifier.testTagsAsIds().padding(24.dp).widthIn(max = 520.dp).fillMaxWidth().heightIn(max = 760.dp)
+                Modifier.testTagsAsIds().countsAsInput().padding(24.dp).widthIn(max = 520.dp).fillMaxWidth().heightIn(max = 760.dp)
                     .shadow(24.dp, RoundedCornerShape(28.dp)).clip(RoundedCornerShape(28.dp)).background(t.surface),
             ) {
                 GuardWindow()
@@ -424,7 +437,7 @@ fun GhulSheet(onDismissRequest: () -> Unit, title: String? = null, content: @Com
         },
     ) {
         // A window of its own: test tags (e.g. "ask-confirm") as ids here as well.
-        Box(Modifier.testTagsAsIds()) {
+        Box(Modifier.testTagsAsIds().countsAsInput()) {
             GuardWindow()
             CompositionLocalProvider(LocalOnCard provides true) {
                 Column(

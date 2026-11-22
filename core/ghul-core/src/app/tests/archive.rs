@@ -13,7 +13,7 @@ use crate::vault::{Keyfile, LockedContainer, RecoveryCode};
 const PW: &str = "pw-123456-Kq7wZ";
 
 /// A device with a new suite (one login), its key file and recovery code.
-fn device_with_suite(name: &str) -> (Dirs, Arc<GhulSuite>, Vec<u8>, String) {
+pub(super) fn device_with_suite(name: &str) -> (Dirs, Arc<GhulSuite>, Vec<u8>, String) {
     let d = Dirs::new(name);
     let s = d.suite();
     let kf = generate_keyfile();
@@ -23,13 +23,13 @@ fn device_with_suite(name: &str) -> (Dirs, Arc<GhulSuite>, Vec<u8>, String) {
 }
 
 /// Saves the suite into a file and confirms it.
-fn save(s: &GhulSuite) -> Vec<u8> {
+pub(super) fn save(s: &GhulSuite) -> Vec<u8> {
     let built = s.archive_build_bytes("Test".into()).unwrap();
     s.archive_saved(built.state, built.change).unwrap();
     built.data
 }
 
-fn open(s: &GhulSuite, data: &[u8], kf: &[u8]) -> super::super::archive::ArchiveCheck {
+pub(super) fn open(s: &GhulSuite, data: &[u8], kf: &[u8]) -> super::super::archive::ArchiveCheck {
     s.archive_open_bytes(data.to_vec(), PW.into(), None, None, None, Some(kf.to_vec())).unwrap()
 }
 
@@ -212,6 +212,24 @@ fn the_own_file_stays_own_after_a_change_of_the_protection() {
     assert_eq!(a.archive_target_bytes(from_b).unwrap(), ArchiveTarget::OtherProtection);
 }
 
+/// r9 H1: a new recovery code made on another device keeps the password and the factor, so the
+/// file there still opens with this device's keys: it is a newer protection all the same, never
+/// a state to overwrite (that would bring the code before back).
+#[test]
+fn a_new_recovery_code_elsewhere_is_a_newer_protection() {
+    let (_da, a, kf, _) = device_with_suite("target-code-a");
+    let file = save(&a);
+    let db = Dirs::new("target-code-b");
+    let b = db.suite();
+    open(&b, &file, &kf);
+    b.archive_accept().unwrap();
+    b.new_recovery_code(kf_proof(PW, &kf), None, None, "Neues Blatt".into()).unwrap();
+    let from_b = save(&b);
+    assert_eq!(a.archive_target_bytes(from_b.clone()).unwrap(), ArchiveTarget::OtherProtection);
+    // On b itself, its own file stays its own.
+    assert_eq!(b.archive_target_bytes(from_b).unwrap(), ArchiveTarget::Same);
+}
+
 #[test]
 fn the_recovery_code_opens_a_file_unverified_and_sets_a_new_password() {
     let (_da, a, kf, code) = device_with_suite("code-a");
@@ -232,7 +250,7 @@ fn the_recovery_code_opens_a_file_unverified_and_sets_a_new_password() {
 fn opening_a_file_removes_this_devices_data_of_the_old_state() {
     let (_da, a, kf, _) = device_with_suite("wipe-a");
     let file = save(&a);
-    a.quick_unlock_enable(kf_proof(PW, &kf), None, None, "pin".into(), Some("123456".into()), 3600).unwrap();
+    a.quick_unlock_enable_pin(kf_proof(PW, &kf), None, None, "13572468".into(), 3600, super::pin_keys()).unwrap();
     assert!(a.quick_unlock_exists("pin".into()));
     // The same protection (a newer state from the other device): quick unlock stays.
     open(&a, &file, &kf);
@@ -744,9 +762,9 @@ fn a_file_saved_elsewhere_tells_by_whom_and_when() {
     assert_eq!(a.archive_target_info_bytes(Vec::new()).unwrap().time, 0);
 }
 
-/// A change of the password that was saved halfway (the suite file failed after the vaults):
-/// the vaults with the new protection are listed as unavailable, not left out, and no suite file
-/// without them is written.
+/// A change of the password whose suite file failed after the vaults were written: r10 N5, the
+/// vault files before are put back at once, so the password before opens everything (before,
+/// the vaults with the new protection were listed as unavailable).
 #[test]
 fn a_password_change_saved_halfway_never_hides_vaults() {
     let (d, a, kf, _) = device_with_suite("half-pw");
@@ -759,12 +777,12 @@ fn a_password_change_saved_halfway_never_hides_vaults() {
     assert!(s.change_password(kf_proof(PW, &kf), None, None, "pw-neu-7890".into()).is_err());
     s.lock();
     s.finish_lock();
-    // The suite file still has the old password: it opens, the vault is there but unavailable.
+    // The suite file and the vault have the old password again: everything opens.
     s.unlock(PW.into(), None, None, None, Some(kf)).unwrap();
     let vaults = s.list_vaults().unwrap();
     assert_eq!(vaults.len(), 1, "listed, not left out");
-    assert!(!vaults[0].available);
-    assert!(s.archive_build_bytes("Test".into()).is_err(), "no suite file without it");
+    assert!(vaults[0].available, "put back");
+    assert!(s.archive_build_bytes("Test".into()).is_ok());
 }
 
 /// The file of what this device has seen keeps its copy: a damaged file does not forget the
@@ -802,13 +820,18 @@ fn an_attachment_that_cannot_be_saved_goes_again() {
 #[test]
 fn quick_unlock_off_leaves_no_copy() {
     let (d, a, kf, _) = device_with_suite("quick-bak");
-    a.quick_unlock_enable(kf_proof(PW, &kf), None, None, "pin".into(), Some("123456".into()), 3600).unwrap();
-    a.quick_unlock_enable(kf_proof(PW, &kf), None, None, "pin".into(), Some("654321".into()), 3600).unwrap();
+    a.quick_unlock_enable(kf_proof(PW, &kf), None, None, "bio".into(), 3600).unwrap();
+    a.quick_unlock_enable(kf_proof(PW, &kf), None, None, "bio".into(), 3600).unwrap();
     let dir = std::path::PathBuf::from(d.local());
-    assert!(dir.join("quick-pin.ghlq.bak").exists(), "a copy of the first one");
-    a.quick_unlock_disable("pin".into()).unwrap();
-    assert!(!dir.join("quick-pin.ghlq").exists());
-    assert!(!dir.join("quick-pin.ghlq.bak").exists());
+    assert!(dir.join("quick-bio.ghlq.bak").exists(), "a copy of the first one");
+    a.quick_unlock_disable("bio".into()).unwrap();
+    assert!(!dir.join("quick-bio.ghlq").exists());
+    assert!(!dir.join("quick-bio.ghlq.bak").exists());
+    // The app PIN never keeps a copy of the file before (with a key left over, an attempt on
+    // the old generation would come back).
+    a.quick_unlock_enable_pin(kf_proof(PW, &kf), None, None, "13572468".into(), 3600, super::pin_keys()).unwrap();
+    a.quick_unlock_enable_pin(kf_proof(PW, &kf), None, None, "13572468".into(), 3600, super::pin_keys()).unwrap();
+    assert!(!dir.join("quick-pin.ghlq.bak").exists() && !dir.join("quick-pin.ghlq.tmp").exists());
 }
 
 /// A file with a protection this device had before is older, not newer: overwriting it undoes
@@ -839,7 +862,7 @@ fn the_same_epoch_with_another_protection_removes_quick_unlock() {
     open(&b, &file, &kf);
     b.archive_accept().unwrap();
     a.new_recovery_code(kf_proof(PW, &kf), None, None, "neu".into()).unwrap();
-    a.quick_unlock_enable(kf_proof(PW, &kf), None, None, "pin".into(), Some("123456".into()), 3600).unwrap();
+    a.quick_unlock_enable_pin(kf_proof(PW, &kf), None, None, "13572468".into(), 3600, super::pin_keys()).unwrap();
     b.change_password(kf_proof(PW, &kf), None, None, "pw-neu-7890".into()).unwrap();
     let from_b = save(&b);
     a.archive_open_bytes(from_b, "pw-neu-7890".into(), None, None, None, Some(kf.clone())).unwrap();

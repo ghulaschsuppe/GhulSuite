@@ -95,6 +95,9 @@ interface VaultBackend {
     suspend fun recoveryConfirmed(): Boolean = true
     /** Checks a typed group (0-based) of the recovery code; only a correct one confirms it. */
     suspend fun confirmRecoveryCode(group: Int, typed: String): Boolean = true
+
+    /** r9 krypto M2: the whole code typed back (the core checks it with its checksum and marks it confirmed). */
+    suspend fun confirmWholeRecoveryCode(typed: String): Boolean = true
     suspend fun exportVault(id: String): ByteArray
     /** Adds a vault file with the suite's protection; DIFFERENT_PROTECTION if it needs its own password. */
     suspend fun addVaultFile(data: ByteArray, name: String): String
@@ -232,6 +235,12 @@ interface VaultBackend {
     suspend fun deleteSuite(proof: FactorProofUi?, code: String?, onTouchNeeded: () -> Unit = {})
     /** The suite file used last on this device (opened or saved), if any. */
     fun suiteFile(): SuiteFileRef? = null
+
+    /**
+     * r9 M-2: keeps the right to read and write [ref] across restarts (Android: a persisted URI
+     * permission), once the user chose it as the place to save to. False: not possible.
+     */
+    fun keepAccess(ref: SuiteFileRef): Boolean = true
     fun setSuiteFile(ref: SuiteFileRef?) {}
     /**
      * Reads / writes a vault file (opened on its own) at a remembered place, as a whole; null / false
@@ -382,7 +391,7 @@ const val WIPING_OLD_FILE = -2L
  * an earlier opening of a suite file that could not be finished, a full disk). It stays set up
  * for the next try instead of being switched off.
  */
-val QUICK_UNLOCK_KEPT_ON: Set<VaultErrorKind> = setOf(VaultErrorKind.STORAGE, VaultErrorKind.NO_SPACE)
+val QUICK_UNLOCK_KEPT_ON: Set<VaultErrorKind> = setOf(VaultErrorKind.STORAGE, VaultErrorKind.NO_SPACE, VaultErrorKind.LOCKED)
 
 /** See [VaultBackend.safeSave]. */
 enum class SafeSaveUi { SAFE, FOLDER_NEEDED, OVERWRITES }
@@ -408,7 +417,7 @@ data class ArchiveCheckUi(
 enum class ArchiveTargetUi { NEW, SAME, CHANGED_ELSEWHERE, OTHER_SUITE, OTHER_PROTECTION }
 
 /** M42: the rules of the core (the defaults are its values). */
-data class SecurityRulesUi(val passwordMinLength: Int = 10, val passwordMinScore: Int = 3, val appPinMinLength: Int = 6)
+data class SecurityRulesUi(val passwordMinLength: Int = 10, val passwordMinScore: Int = 3, val appPinMinLength: Int = 8)
 
 /** Both factors of now, before a change of the protection: the master password plus the PIN of a key ([pin]) or a key file. */
 class FactorProofUi(val password: String, val pin: String?, val keyfile: ByteArray?)
@@ -758,6 +767,12 @@ enum class VaultErrorKind {
     /** The quick unlock file of an older version (validity not in the file): set it up again. */
     QUICK_OUTDATED,
     QUICK_INVALID,
+    /** r13 N3: the unlock met a lock that came meanwhile (e.g. the screen went off): just once more. */
+    TRY_AGAIN,
+    /** Windows: another program holds the clipboard; nothing was copied (r9 dieb N6). */
+    CLIPBOARD_BUSY,
+    /** The device is locked: the app PIN's keys work only while it is unlocked (nothing used up). */
+    DEVICE_LOCKED,
     BIOMETRIC_CANCELLED,
     /** Too many failed attempts: the system blocks biometrics for a while (or until the device PIN). */
     BIOMETRIC_LOCKOUT,
@@ -800,5 +815,33 @@ private val NOT_WAITING = kotlinx.coroutines.flow.MutableStateFlow(false)
  * (H3: the password alone repairs the protection only until the lock; finding a new key takes a
  * while). Screen off and the instant lock still lock at once.
  */
+/**
+ * r9 dieb N4/N5: how long without any input GhulSuite stays open while it is in front (Android and
+ * Windows alike): the automatic lock's time, at least 5 minutes (reading a long note must not lock),
+ * at most 15 (a longer time for the background does not keep an unwatched app open).
+ */
+fun idleLockMillis(autoLockSeconds: Int): Long = (autoLockSeconds * 1000L).coerceIn(IDLE_MIN_MS, IDLE_MAX_MS)
+
+const val IDLE_MIN_MS = 5 * 60 * 1000L
+
+/**
+ * r10 M3, r11 M2: whether the idle lock locks now after [idleMs] without input. Unsaved input in
+ * an editor or a running action (e.g. waiting for the key) only defer it, up to
+ * [idleLockLatestMillis]: an app left alone never stays open for good.
+ */
+fun idleLockDue(idleMs: Long, autoLockSeconds: Int, editorDirty: Boolean, busy: Boolean): Boolean =
+    idleMs >= idleLockLatestMillis(autoLockSeconds) || (!editorDirty && !busy && idleMs >= idleLockMillis(autoLockSeconds))
+
+/** The latest idle lock, also over unsaved input: twice the idle time, at least [IDLE_MAX_MS]. */
+fun idleLockLatestMillis(autoLockSeconds: Int): Long = maxOf(IDLE_MAX_MS, 2 * idleLockMillis(autoLockSeconds))
+
+/** How long before that latest lock the app warns that unsaved input will be lost. */
+const val IDLE_WARN_MS = 60_000L
+
+/** r11 M2: whether to warn now that the lock comes soon and takes the unsaved input with it. */
+fun idleLockWarning(idleMs: Long, autoLockSeconds: Int, editorDirty: Boolean): Boolean =
+    editorDirty && idleMs >= idleLockMillis(autoLockSeconds) && idleMs >= idleLockLatestMillis(autoLockSeconds) - IDLE_WARN_MS
+const val IDLE_MAX_MS = 15 * 60 * 1000L
+
 fun VaultBackend.autoLockSecondsNow(): Int =
     if (settings.autoLockSeconds < 300 && runCatching { openedWithRecoveryCode() }.getOrDefault(false)) 300 else settings.autoLockSeconds
