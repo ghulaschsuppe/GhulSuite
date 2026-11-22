@@ -139,7 +139,13 @@ Daten neu verschlüsselt werden müssen.
 - **Windows:** über die Windows-WebAuthn-API. Es erscheint der bekannte Windows-Sicherheitsdialog. Das funktioniert
   ohne Administratorrechte, also auch portabel auf fremden PCs.
 - **PIN auf dem Key ist Pflicht.** Der Key sperrt sich nach 8 Fehlversuchen. `hmac-secret` wird immer „mit PIN“ ausgewertet,
-  dieser Wert unterscheidet sich vom Wert ohne PIN.
+  dieser Wert unterscheidet sich vom Wert ohne PIN (ab CTAP 2.1).
+- **`credProtect` für neue Keys** (seit 22.11.2026, Runde 9): Ein Key nur mit CTAP 2.0 hat einen einzigen
+  `hmac-secret`-Wert mit und ohne PIN; ohne `credProtect` beantwortet er eine Abfrage auch ohne PIN, die Key-PIN
+  schützte den zweiten Faktor dann nicht. Darum legt GhulSuite Credentials mit `credProtect` Stufe 3
+  (`userVerificationRequired`) an und lehnt beim Registrieren einen Key ab, der weder `credProtect` noch CTAP 2.1
+  kann (Meldung wie bei fehlendem `hmac-secret`). Unter Windows verlangt die App `credProtect` immer
+  (`bRequireCredProtect`). Schon eingetragene Keys entsperren weiter.
 - **Feste RP-ID** `ghulsuite.invalid` auf allen Plattformen, damit derselbe Key überall denselben Wert liefert
   und keine Webseite die Credentials ansprechen kann (siehe Abschnitt 3, Befund 3).
 - **Nicht auffindbare Credentials:** Sie belegen keinen Speicher auf dem Key. Die Credential-ID steht im Container-Header.
@@ -172,6 +178,8 @@ geprüft wie beim Entsperren. Ebenso brauchen beide Faktoren: Fingerabdruck oder
 Gültigkeit ändern, Abschnitt 6.5), einen Tresor als Tresor weitergeben (Abschnitt 8.3) und die Suite auf dem Gerät
 löschen oder durch eine andere ersetzen (Abschnitt 9; dort genügt statt der Faktoren auch der Wiederherstellungscode).
 Mit einem Security Key berührt man ihn einmal (`confirm_factors`); danach reicht für diesen einen Schritt das Passwort.
+Schutzänderungen werden vollständig versiegelt, bevor etwas geschrieben wird, und über ein Journal geschrieben
+(Abschnitt 8.2): Es bleibt immer der alte oder der neue Schutz, nie eine Mischung.
 So kann sich niemand, der die App kurz entsperrt in der Hand hat, dauerhaften Zugang verschaffen oder den Besitzer
 aussperren. **Ausnahme nach dem Notfallblatt:** Wurde mit dem Wiederherstellungscode entsperrt, reicht bis zum
 nächsten Sperren das neue Master-Passwort allein (Abschnitt 6.3).
@@ -180,14 +188,19 @@ nächsten Sperren das neue Master-Passwort allein (Abschnitt 6.3).
 abschwächen oder ein Geheimnis zeigen: die automatische Sperre verlängern, „Sperren, wenn der Bildschirm ausgeht“,
 das Schütteln oder „Sofortsperre löscht auch die Termin-Erinnerungen“ ausschalten, die Schüttel-Empfindlichkeit
 senken, Bildschirmfotos erlauben, die Zwischenablage länger oder nie leeren, mehr Inhalt in den Erinnerungen
-zeigen; dazu ein 2FA-Geheimnis als QR-Code oder `otpauth://`-Link (`totp_uri` gibt es nur mit dem Passwort heraus)
+zeigen; **„Papierkorb leeren“ und das endgültige Löschen von 10 oder mehr Einträgen auf einmal** (seit 22.11.2026,
+damit niemand an einer offenen Suite alles löscht und speichert; kleinere Mengen und das Verschieben in den
+Papierkorb gehen ohne Abfrage); dazu ein 2FA-Geheimnis als QR-Code oder `otpauth://`-Link (`totp_uri` gibt es nur mit dem Passwort heraus)
 und der gespeicherte 2FA-Schlüssel eines GhulPass-Logins im Editor. Strenger stellen geht ohne Abfrage.
 
 **Regeln für Passwort und PIN** prüft der Kern selbst (`security_rules`, die App übernimmt sie): Ein neues
 Master-Passwort (Einrichten, Passwort ändern, nach dem Wiederherstellungscode, das Passwort einer Weitergabe) hat
 mindestens 10 Zeichen und eine Stärke von mindestens 3 nach zxcvbn (Skala 0 bis 4); sonst „zu kurz“ bzw. „zu
-schwach“. Die App-PIN hat 8 bis 12 Ziffern (der Kern verlangt mindestens 8 Ziffern und nichts anderes, seit
-22.11.2026; vorher 6).
+schwach“. Die App-PIN hat 8 bis 12 Ziffern (der Kern verlangt mindestens 8 Ziffern, seit 22.11.2026; vorher 6).
+**Leicht zu erratende App-PINs** lehnen Kern und App beim Einrichten ab (seit 22.11.2026, Runde 9): nur eine Ziffer
+(`11111111`), wiederholte Blöcke (`12121212`), auf- oder absteigende Folgen (`12345678`) und achtstellige Daten
+(`TTMMJJJJ`, `MMTTJJJJ`, `JJJJMMTT` der Jahre 1900 bis 2099); bei zwei Versuchen wären sie zu leicht. Eine schon
+eingerichtete PIN entsperrt weiter.
 
 **Beim Entsperren und Öffnen** werden immer beide Wege angeboten, Key und Schlüsseldatei (vorgewählt ist, was auf
 diesem Gerät zuletzt benutzt wurde): Die Oberfläche verrät nicht, womit eine Datei geschützt ist. Der Kopf einer
@@ -254,7 +267,8 @@ flowchart TB
   Key oder Schlüsseldatei), auch eine einzelne Tresordatei ohne den Rest und eine ganze `.ghlzip`. Danach wird ein neues
   Master-Passwort gesetzt; Keys, Schlüsseldateien und der Code selbst bleiben gültig. Empfohlen wird anschließend ein
   neuer Code. Ein neuer Code macht das alte Blatt wertlos, auch zusammen mit einer alten Kopie der Suite-Datei (für
-  alles, was danach gespeichert wird).
+  alles, was danach gespeichert wird), **sofern danach jedes Gerät zuerst die neue Suite-Datei öffnet** (Abschnitt
+  8.2).
 - **Danach bis zum Sperren das Passwort allein:** Wer mit dem Code öffnet, hat oft keinen Faktor mehr. Bis zum
   nächsten Sperren genügt darum für jede Schutzänderung das neue Master-Passwort (`opened_with_recovery_code`). Die
   App zeigt eine Anleitung (neuen Key oder neue Schlüsseldatei hinzufügen, bei einem Key auch sein Backup, dann den
@@ -265,10 +279,15 @@ flowchart TB
   das beim Öffnen, prüft Stand und Schutz-Epoche trotzdem und versiegelt danach alles mit dem neuen Passwort neu.
 - Bewusste Abwägung: Wer Notfallblatt **und** Dateien hat, hat Zugriff. Das Blatt ist wie ein Tresorschlüssel aufzubewahren.
 
-- 256 Bit Zufall, dargestellt als 52 Zeichen Base32 in Vierergruppen mit Prüfsumme, zusätzlich als QR-Code.
+- 256 Bit Zufall mit 16 Bit Prüfsumme, dargestellt als 55 Zeichen Base32 in 11 Gruppen zu 5 Zeichen (FORMAT 6),
+  zusätzlich als QR-Code. (Bis 22.11.2026 stand hier „52 Zeichen in Vierergruppen“; das entsprach nicht dem Code.)
 - Das Notfallblatt wird **lokal** als PDF erzeugt. Es enthält Suite-Name, ID, Datum, den Code und eine Anleitung,
   **aber nicht das Passwort**.
-- Nach dem Drucken tippt man zur Bestätigung vier Zeichen vom Ausdruck ab.
+- **Bestätigung des ganzen Codes** (seit 22.11.2026, Runde 9; vorher nur Gruppe 3): Man tippt den ganzen Code ab, am
+  besten vom Ausdruck; Leerzeichen, Bindestriche und Groß- und Kleinschreibung zählen nicht. Der Kern liest ihn mit
+  Prüfsumme und vergleicht ihn mit dem gespeicherten (`confirm_whole_recovery_code`), so fällt ein Tippfehler in
+  jeder Gruppe jetzt auf und nicht erst im Notfall. Das Feld ist sichtbar, aber für die Tastatur ein Passwortfeld
+  ohne Autokorrektur (sie lernt den Code nicht).
 - Warnhinweis: Netzwerk- und Cloud-Drucker speichern Druckaufträge teilweise.
 
 ### 6.4 Schlüsseldatei `.ghlkey`
@@ -316,14 +335,17 @@ Nach einer vollständigen Entsperrung (Passwort und Key) lässt sich die App fü
   `max_age_ms` in den zusätzlich authentifizierten Daten): Die App kann sie nicht nachträglich verlängern. Jede
   Methode (Fingerabdruck, App-PIN) hat ihre eigene Gültigkeit; eine andere Dauer richtet die Methode neu ein, wieder
   mit beiden Faktoren. Gezählt wird ab dem **letzten vollständigen Entsperren** (signierter Zeitstempel, nur mit dem
-  Passwortschlüssel fälschbar).
+  Passwortschlüssel fälschbar) bzw. ab dem Einrichten. Die App prüft die Frist zusätzlich an der Zeit seit dem Start
+  des Geräts (seit 22.11.2026): Eine zurückgestellte Uhr hebt sie nicht auf.
 - **Abgelaufen heißt abgelehnt, nicht gelöscht:** Nach Ablauf lehnt der Kern das Schnell-Entsperren ab
   (`QuickUnlockExpired`), die Datei bleibt. Nach dem nächsten vollständigen Entsperren geht es wieder.
 - **Ältere Schnell-Dateien** (Version 2, und für die App-PIN auch Version 3 aus einer Version vor dem 22.11.2026)
   öffnet der Kern nicht mehr (`QuickUnlockOutdated`): Die Datei wird entfernt, die App sagt, dass Fingerabdruck bzw.
   App-PIN nach einem vollständigen Entsperren unter Optionen → Entsperren neu einzurichten sind. Eine alte App-PIN
   bietet die App gar nicht erst an. Der Fingerabdruck (Version 3) bleibt unverändert.
-- Passwort und Key sind immer wieder nötig: nach **jedem Neustart** und nach Ablauf. **Neu einrichten** muss man das
+- Passwort und Key sind immer wieder nötig: nach **jedem Neustart** und nach Ablauf. Das Ende nach dem Neustart setzt
+  die App durch (Zähler der Starts in ihren Einstellungen), nicht der Keystore; mit Root ließe es sich umgehen, der
+  Faktor (Finger, App-PIN) bliebe trotzdem nötig. **Neu einrichten** muss man das
   Schnell-Entsperren nach einer **Sofortsperre**, nach 2 falschen App-PINs, wenn Fingerabdrücke geändert wurden, nach
   einem **Passwortwechsel**, nach dem **Entfernen** eines Keys oder einer Schlüsseldatei, nach dem Entsperren mit dem
   **Wiederherstellungscode** (die Schnell-Dateien werden dabei gelöscht) und nach dem **Öffnen einer Suite-Datei** mit
@@ -334,8 +356,11 @@ Nach einer vollständigen Entsperrung (Passwort und Key) lässt sich die App fü
 - **Grenze gegen Root:** Ob ein Slot wirklich nur einmal geht, erzwingt bei Root die Hardware nur auf Geräten mit
   rollback-festem Keystore (KeyMint mit Rollback-Schutz, typisch StrongBox). Auf den übrigen Geräten (die meisten ohne
   StrongBox) zählt Android die Nutzung in seiner Keystore-Datenbank; wer Root hat, könnte sie zurückspielen und so
-  weiter raten, aber nur **auf dem Gerät** und langsam (je Versuch Argon2id und ein Zurückspielen), bei 8 Ziffern
-  über Jahre. Dass StrongBox das hart erzwingt, beruht auf der AOSP-Dokumentation und ist auf einem Gerät noch nicht
+  weiter raten, aber nur **auf dem Gerät**. **Richtiggestellt am 22.11.2026 (Runde 9):** Hier stand „langsam (je
+  Versuch Argon2id und ein Zurückspielen), bei 8 Ziffern über Jahre“. Das ist zu günstig: Argon2id(PIN, Salt) lässt
+  sich mit dem Salz aus der Datei für alle PINs vorab auf fremder Hardware rechnen, auf dem Gerät bleibt je Versuch
+  nur ein HMAC und das Zurückspielen; zusammen **Tage bis wenige Wochen**. Ob die Einmal-Nutzung eines importierten
+  Schlüssels in der Hardware gezählt wird, kann die App nicht prüfen. Dass StrongBox das hart erzwingt, beruht auf der AOSP-Dokumentation und ist auf einem Gerät noch nicht
   nachgeprüft. **Richtiggestellt am 22.11.2026:** Hier stand, ein Durchprobieren der App-PIN außerhalb des Geräts
   sei nicht möglich. Für die App-PIN bis dahin (Schnell-Datei Version 3, Zähler in den Einstellungen der App) stimmte
   das nicht: Der Keystore-Schlüssel gab den Schnellschlüssel ohne PIN frei, die PIN steckte nur im Argon2id. Mit
@@ -488,7 +513,10 @@ Mit typischen 100 bis 300 MB ist es ein Bruchteil davon.
 2. Vorher vergleicht die App die Zieldatei mit der Arbeitskopie. Wurde sie seit dem Öffnen anderswo gespeichert
    (andere Stand-ID), fragt sie: „Die Datei wurde inzwischen anderswo gespeichert. Überschreiben (die Änderungen von
    dort gehen verloren) oder unter neuem Namen speichern?“ Liegt dort eine andere Suite oder gar keine GhulSuite-Datei,
-   fragt sie ebenfalls. Zusammengeführt wird nicht.
+   fragt sie ebenfalls. Zusammengeführt wird nicht. Hat die Datei dort einen **neueren Schutz** (eine höhere
+   Schutz-Epoche: neues Passwort, entfernter Faktor oder, seit 22.11.2026, auch ein neuer Wiederherstellungscode),
+   bietet der Dialog kein Überschreiben an, nur den Weg über „Als Tresor weitergeben“; Überschreiben machte die
+   Änderung des Schutzes rückgängig.
 3. Danach merkt sich das Gerät Stand-ID, Zähler und Schutz-Epoche. Eine Änderung, die während des Schreibens
    entstand, bleibt als „nicht gespeichert“ markiert.
 4. **Nach einer Schutzänderung** (neues Passwort, neuer Code, Faktor entfernt, Öffnen mit dem Code) wird die ersetzte
@@ -607,6 +635,30 @@ zurücksetzen, **und** einen neuen Wiederherstellungscode erstellen. Ohne den al
 mehr, auch nicht mit dem alten Passwort. Der Wiederherstellungscode bleibt beim Tausch eines Faktors gleich und öffnet
 alte Kopien allein; deshalb gehört nach einem Verlust ein neuer Code dazu und das alte Notfallblatt vernichtet.
 
+**Nach einem neuen Wiederherstellungscode muss jedes Gerät zuerst die neue Suite-Datei öffnen** (Runde 9, Krypto H1).
+Ein neuer Code erneuert nur den Containerschlüssel; Passwort und Faktor bleiben, also öffnet ein anderes Gerät die
+neue Datei weiter. Speichert es auf die neue Datei, erkennt die App den neueren Schutz an der Schutz-Epoche und lehnt
+das Überschreiben ab. Ohne Server nicht zu verhindern ist: Ein Gerät mit dem alten Stand schreibt mit „Speichern
+unter“ eine neue Datei, und eine alte Suite-Datei auf einem neuen Gerät (ohne Notiz, was es gesehen hat) öffnet mit
+dem aktuellen Passwort und Key. Beide tragen dann den **alten** Code weiter, der wieder alles öffnet, was so
+gespeichert wird. Darum: nach einem neuen Code auf jedem Gerät zuerst die neue Suite-Datei öffnen, alte Kopien
+löschen.
+
+**Wie eine Schutzänderung geschrieben wird** (seit 22.11.2026, Runden 9 bis 14): Erst werden alle Container mit dem
+neuen Schutz versiegelt, im Arbeitsspeicher; scheitert eines (etwa ein Tresor über seiner Grenze), wird nichts
+geschrieben. Dann legt der Kern von jeder Datei, die sich ändert, eine Kopie `<Datei>.prev` an, schreibt ein
+**Speicher-Journal** (`save-journal` im Ordner des Geräts, Zeilen `keep` für vorhandene und `new` für neu angelegte
+Dateien), schreibt die neuen Dateien, markiert das Journal als erledigt und löscht danach Journal und Kopien. Scheitert
+ein Schreiben, wird der alte Stand sofort zurückgeschrieben; bricht es ab (App beendet, Akku leer), beim nächsten
+Entsperren. Zurückgeschrieben wird nur in dieselbe Suite (Kennung der Suite aus der ersten `keep`-Kopie); Löschen der
+Suite und Neuanlegen verwerfen ein liegengebliebenes Journal mit seinen Kopien. Eine Sperre (`save_lock`) und ein
+Zähler der Schutzänderungen sorgen dafür, dass ein gleichzeitiges Entsperren, Löschen oder Übernehmen einer
+Suite-Datei weder dazwischenschreibt noch mit Schlüsseln öffnet, die es vor der Änderung gelesen hat; es meldet dann
+„Bitte noch einmal versuchen“. Lässt sich der vorige Stand gerade nicht zurückschreiben (Speicher voll, Datei
+gesperrt), wartet das Entsperren mit einer eigenen Meldung, statt einen gemischten Stand zu öffnen. Ergebnis: Nach
+einer Schutzänderung gilt auf der Platte entweder ganz der alte oder ganz der neue Schutz, und „erfolgreich“ heißt,
+dass der neue auf der Platte steht.
+
 ### 8.3 Einzelne Tresore
 
 Jede Tresordatei (`.ghlpss`, `.ghltotp`, `.ghlcal` …) trägt alle Slots und den Wiederherstellungscode in sich und
@@ -622,7 +674,10 @@ Tresordatei mit der App öffnen bietet:
   Passwort, Keys und Wiederherstellungscode der Suite umgestellt (mit neuem Inhalts-Schlüssel, damit die alte Datei
   nichts öffnet, was danach gespeichert wird).
 - **Neue Suite damit anlegen** (wenn auf dem Gerät noch keine ist): Um den Tresor wird eine neue Suite gebaut, nur
-  dieser Bereich wird eingeschaltet; hat er noch keinen Wiederherstellungscode, entsteht ein neuer.
+  dieser Bereich wird eingeschaltet. Sie bekommt **immer einen neuen Wiederherstellungscode** und einen neuen
+  Containerschlüssel (`create_from_vault`, seit 22.11.2026; vorher blieb ein vorhandener Code): Die Datei kann von
+  jemand anderem stammen, der den alten Code kennt. Weil der Absender auch Passwort und Schlüsseldatei kennt, rät die
+  App danach, das Passwort zu ändern und einen eigenen Key oder eine eigene Schlüsseldatei anzulegen.
 
 **Ein GhulDocs-Tresor** reist nie ohne seine Dokumente: Er wird für sich als **GhulDocs-Paket** gespeichert, einer
 eigenen Dateiart mit der Endung `.ghldocs` (die Suite-Datei bleibt `.ghlzip`), mit seiner Tresordatei als erstem
@@ -861,7 +916,7 @@ und weitergeben, immer mit seinen Dokumenten, als GhulDocs-Paket `.ghldocs` (Abs
 1. **Erster Start:** „Neu einrichten“, „Suite-Datei öffnen“ oder „Einzelnen Tresor öffnen“.
    **Einrichtung:** Passwort (Stärkeanzeige, Vorschlag) → zweiter Faktor (Key empfohlen oder Schlüsseldatei, ggf.
    erstellen und speichern) → Key berühren → Bereiche und Tresornamen → Sperren und Entsperren →
-   Notfallblatt drucken und Gruppe 3 bestätigen.
+   Notfallblatt drucken und den ganzen Code abtippen (Abschnitt 6.3).
 2. **Neues Gerät:** App installieren, Suite-Datei öffnen (z. B. vom Stick), Passwort, Key, fertig. Kein Konto, keine
    Registrierung. GhulDocs ist mit allen Dokumenten dabei, weil es in der Suite-Datei steckt.
 3. **Ein Entsperren für alles.** Die automatische Sperre ist pro Bereich einstellbar (z. B. GhulPass 2 Minuten, GhulCal 1 Stunde).
@@ -890,8 +945,29 @@ und weitergeben, immer mit seinen Dokumenten, als GhulDocs-Paket `.ghldocs` (Abs
 | Befristete Kopien („Mit App öffnen“) beim Sperren löschen | ✓ | ✓, überschrieben, auch wenn ein Programm sie erst später freigibt |
 | Portabler Modus: nichts in Registry/Benutzerprofil, temporäre Dateien beim Beenden löschen | - | ✓ |
 
+**Regeln der automatischen Sperre** (seit 22.11.2026, Runden 9 bis 11):
+- **Untätigkeit im Vordergrund:** Ohne Eingabe sperrt die App nach der eingestellten Zeit der automatischen Sperre,
+  mindestens 5 und höchstens 15 Minuten (Android und Windows). Als Eingabe zählen Berührungen und Tasten, auch über
+  die Bildschirmtastatur, in Textfeldern und in Dialogen. Ungespeicherte Eingabe in einem Editor oder eine laufende
+  Aktion (etwa das Warten auf den Key) schieben die Sperre nur auf, höchstens auf die doppelte Zeit, mindestens
+  15 Minuten; eine Minute vorher warnt die App, dass Ungespeichertes verloren geht.
+- **Bildschirm aus** (Android) bzw. **Windows gesperrt**: „Sperren, wenn der Bildschirm ausgeht“ ist eine feste
+  Sperre; Zurückkommen hebt sie nicht auf. Unter Windows wartet eine Sperre durch Win+L auf einen laufenden Auftrag
+  (zurück in die Sitzung kommt man nur mit dem Windows-Passwort).
+- **Nach dem Ruhezustand** (Windows): Merkt die App beim Aufwachen eine Lücke von über 30 Sekunden, sperrt sie sofort.
+  Vor dem Einschlafen sperren kann sie nicht; Schlüssel bleiben bis dahin im Arbeitsspeicher bzw. in `hiberfil.sys`
+  (Geräteverschlüsselung nutzen).
+- **Anzeige an während eines Auftrags** (Android): Solange ein Auftrag des Nutzers Fortschritt meldet (Dokumente
+  hinzufügen, exportieren, speichern), bleibt die Anzeige an, damit sie nicht von selbst ausgeht und die feste Sperre
+  den Auftrag abbricht. Ein Auftrag ohne Fortschritt hält sie nicht an.
+
 **Grenzen:**
-- Ein mit Schadsoftware infiziertes Gerät kann bei geöffnetem Tresor mitlesen. Das verhindert keine Software.
+- Ein mit Schadsoftware infiziertes Gerät kann bei geöffnetem Tresor mitlesen. Das verhindert keine Software. Unter
+  Windows reicht dafür Schadsoftware mit den Rechten des Benutzers: Die App ist für den Benutzer installiert und lässt
+  sich von ihm verändern; eine so veränderte App liest auch die nächste Entsperrung mit.
+- **Portabel auf dem Stick:** Programm und Einstellungen liegen ohne Siegel auf dem Stick. Wer ihn eine Weile hatte,
+  kann das Programm austauschen. Einen Stick, der aus der Hand war, nicht mehr starten: die portable Version neu von
+  der Release-Seite laden und die Prüfsumme prüfen (die App sagt das in „Über und Hilfe“).
 - Ein fremder PC hinterlässt trotz portablem Modus Spuren (z. B. Auslagerungsdatei, Verlauf gestarteter Programme).
   Fremde PCs nur im Notfall nutzen.
 - Firmen-PCs blockieren oft Programme vom USB-Stick.
@@ -910,8 +986,9 @@ und weitergeben, immer mit seinen Dokumenten, als GhulDocs-Paket `.ghldocs` (Abs
 | Key gestohlen | wertlos ohne Passwort; der Key sperrt sich nach 8 falschen PINs |
 | Entsperren per Fingerabdruck wird erzwungen | Sofortsperre vorher auslösen (Schütteln); danach nur noch Passwort und Key |
 | Gerät mit aktivem Fingerabdruck-Zugang gestohlen | ohne deinen Finger wertlos; erlischt spätestens nach Neustart oder Ablauf der Frist |
+| Gerät mit App-PIN gestohlen, Displaysperre bekannt | 2 Versuche, danach nur noch Passwort und zweiter Faktor; leicht zu erratende PINs (Daten, Folgen) lassen sich nicht einrichten. Mit Root auf Geräten ohne rollback-festen Keystore: Tage bis Wochen (Abschnitt 6.5) |
 | Key **und** Passwort gestohlen | Zugriff, sofort Slot des Keys löschen (von jedem anderen Gerät aus) und die Suite-Datei speichern |
-| Notfallblatt gefunden | zusammen mit den Dateien voller Zugriff (bewusst so gewählt); sofort neuen Code erzeugen, der alte wird damit ungültig |
+| Notfallblatt gefunden | zusammen mit den Dateien voller Zugriff (bewusst so gewählt); sofort neuen Code erzeugen, der alte wird damit ungültig, sobald jedes Gerät die neue Suite-Datei geöffnet hat und alte Kopien gelöscht sind (Abschnitt 8.2) |
 | Schlüsseldatei kopiert | wertlos ohne Passwort; Datei in den Einstellungen entfernen (andere Keys bleiben gültig) |
 | Präparierte Suite-Datei, präparierter GhulDocs-Tresor | fehlende, vertauschte, zusätzliche, zu große oder fremde Teile, vertauschte oder abgeschnittene Abschnitte eines Dokuments: abgelehnt, bevor etwas ersetzt wird |
 | Eine App, mit der ein Dokument geöffnet wird | bekommt genau diese befristete Kopie; was sie damit tut, liegt bei ihr (die App sagt das) |
@@ -919,7 +996,10 @@ und weitergeben, immer mit seinen Dokumenten, als GhulDocs-Paket `.ghldocs` (Abs
 | Präparierte Webseite will den Key-Wert abfragen | unmöglich durch die RP-ID `ghulsuite.invalid` |
 | Manipuliertes Update | Release-Signaturen, die die App vor dem Update prüft |
 | GitHub-Konto übernommen | 2FA mit FIDO2 auf GitHub, Branch-Schutz, signierte Releases |
-| Schadsoftware auf dem entsperrten Gerät | sieht alles, was gerade angezeigt wird; nicht verhinderbar |
+| Schadsoftware auf dem entsperrten Gerät | sieht alles, was gerade angezeigt wird; nicht verhinderbar. Unter Windows kann Schadsoftware desselben Benutzers auch die App selbst verändern und die nächste Entsperrung mitlesen |
+| App mit Zugriff auf Benachrichtigungen (Android) | sieht „entsperrt“ und „gesperrt“ und die Erinnerungen im gewählten Umfang; kann „Sperren“ und „Abbrechen“ auslösen, nicht das Speichern und keine Sofortsperre |
+| Hat den Stick der portablen Version eine Weile | kann Programm und Einstellungen austauschen und die nächste Entsperrung mitlesen; Abhilfe: einen solchen Stick nicht mehr starten, die portable Version neu laden (Abschnitt 11) |
+| Kurz an der offenen Suite | Schutzänderungen, Abschwächen der Sperre, „Papierkorb leeren“ und Löschen von 10 oder mehr Einträgen verlangen das Passwort (Abschnitt 6.1); Lesen und Löschen kleinerer Mengen nicht |
 | Passwort vergessen | Daten weg, bewusst keine Hintertür |
 
 Klartext entsteht nur beim Ansehen (im Arbeitsspeicher), beim Scannen (im Arbeitsspeicher) und beim Exportieren oder
@@ -1031,7 +1111,7 @@ GhulDocs ersetzt, das ohne Netz auskommt. Jede Phase ist für sich nutzbar.
    Ziel ca. 1 s, Untergrenze 128 MiB; die Werte stehen im Container-Header und gelten dann auf allen Geräten
 7. Key-Bedienung: Ist beim Entsperren kein Key eingesteckt, wartet die App auf das Einstecken (USB-Ereignis) und macht
    automatisch weiter, statt sofort einen Fehler zu zeigen
-6. Credentials mit `credProtect` Stufe 3 anlegen (vom Key unterstützt): Der Key gibt das Credential dann nur nach PIN-Prüfung preis
+6. Credentials mit `credProtect` Stufe 3 anlegen (vom Key unterstützt): Der Key gibt das Credential dann nur nach PIN-Prüfung preis. **Umgesetzt am 22.11.2026** (Abschnitt 5): Keys ohne `credProtect` und ohne CTAP 2.1 werden beim Registrieren abgelehnt
 3. Android-Mindestversion: **entschieden am 22.11.2026: Android 12 / API 31** (vorher Android 10 / API 29). Ab API 31
    gibt es die Einmal-Schlüssel der App-PIN (`setMaxUsageCount`), der Schutz vor überlagernden Fenstern gilt immer,
    die PDF-Anzeige gibt es immer. Wer die App auf Android 10 oder 11 direkt installiert hat, bekommt keine Updates

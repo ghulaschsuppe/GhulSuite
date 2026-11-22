@@ -140,6 +140,16 @@ tools/                 Prüfskripte, Website-Bau, Emulator-Skripte
   `gradle-wrapper.jar` (`GRADLE_WRAPPER_SHA256`); scheitert die Prüfung, läuft Gradle nicht. Die heruntergeladene
   Gradle-Verteilung prüft `distributionSha256Sum` in `app/gradle/wrapper/gradle-wrapper.properties`. Bei einem
   Gradle-Update beide Werte zusammen ändern.
+- **Python-Pakete mit Hash:** Die Python-Pakete der CI (Testvektoren und Maestro-Prüfung, Bildvergleich und
+  Emulator-Bilder) stehen mit Version und Hash in `tools/requirements/ci-python.txt` und `ci-pillow.txt` und werden
+  mit `pip install --require-hashes` installiert (`android.yml`, `tools/precheck.sh`, `tools/ci-emulator.sh`). Die
+  Wünsche stehen in den `.in`-Dateien daneben; nach einer Änderung dort die `.txt` neu erzeugen:
+  `cd tools/requirements && pip-compile --allow-unsafe --generate-hashes --no-emit-index-url --strip-extras
+  --output-file=ci-python.txt ci-python.in` (ebenso für `ci-pillow`), und prüfen, dass es die Pakete für Python 3.12
+  und 3.13 gibt.
+- **Veröffentlicht wird nur, was gebaut wurde:** `publish` in `release.yml` lädt nur die Artefakte `release-android`
+  und `release-windows`, erwartet genau `GhulSuite.apk`, `GhulSuite.msi` und `GhulSuite-portable.zip` und vergleicht
+  ihre SHA-256 mit den Ausgaben der Bau-Jobs; der Bau mit dem echten Schlüssel stellt keine Caches wieder her.
 
 ## Versionen und Veröffentlichung
 
@@ -205,6 +215,9 @@ tools/                 Prüfskripte, Website-Bau, Emulator-Skripte
 ## Arbeitsweise: Branches, Pull Requests, Issues
 
 - `main` ist immer lauffähig und geschützt: Änderungen kommen nur über einen **Pull Request** mit grünen Tests hinein.
+- `.github/CODEOWNERS` nennt den Inhaber für `.github/` und `tools/` (Workflows, Release, Prüfwerkzeuge): GitHub
+  fordert für Änderungen dort sein Review an. Eine Pflicht ist das nicht (die Regel „Review durch Code-Owner“ bleibt
+  aus, Entscheidung des Inhabers); Änderungen an Workflows im Pull Request darum gesondert lesen.
 - Jede Aufgabe bekommt einen eigenen **Branch** (`feature/…`, `fix/…`, `ci/…`, `docs/…`) und einen Pull Request,
   der das zugehörige **Issue** nennt (`Closes #12`). Ziel der Pull Requests ist `dev`, sobald es den Zweig gibt
   (siehe „Versionen und Veröffentlichung“).

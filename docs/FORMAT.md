@@ -115,6 +115,10 @@ Folge von Records: `tag (u16) ‖ len (u32) ‖ value[len]`.
 - Records stehen in **aufsteigender Tag-Reihenfolge**. Nur `SLOT` darf mehrfach vorkommen (direkt hintereinander).
 - Tags mit gesetztem Bit `0x8000` sind **optional**: Unbekannte optionale Records werden übersprungen (sie sind trotzdem
   authentifiziert). Unbekannte Pflicht-Records führen zur Ablehnung.
+- **Optionale Records bleiben beim Zurückschreiben nicht erhalten** (festgehalten am 22.11.2026, Runde 9, Krypto N5):
+  Eine Version, die einen optionalen Record nicht kennt, schreibt ihn beim nächsten Speichern nicht zurück. Ein
+  optionaler Record darf darum nichts tragen, was einen Wechsel zwischen älterer und neuerer App überleben muss; was
+  bleiben muss, gehört als Schlüssel in den Inhalt (Kompatibilitätszusage, Punkt 2).
 
 | Tag | Name | Pflicht | Wert |
 |---|---|---|---|
@@ -140,6 +144,9 @@ dass eine Datei beim Öffnen Speicher oder Zeit erschöpft. Die App kalibriert b
 **Grenze der App (21.11.2026, K-19):** Die App legt Dateien mit höchstens 256 MiB an (kalibriert auf dem Gerät)
 und leitet mit höchstens 512 MiB ab (`DERIVE_MAX_MEMORY_KIB`). Eine Datei, die mehr verlangt, ist zwar im Format
 erlaubt, stammt aber nicht von der App; sie wird abgelehnt, bevor Speicher belegt wird, statt die App zu beenden.
+Seit 22.11.2026 (Runde 9) gilt zusätzlich eine Grenze für die Arbeit: Speicher mal Iterationen höchstens wie
+512 MiB mal 3 (`DERIVE_MAX_WORK`, also z. B. auch 64 MiB mit höchstens 24 Iterationen); eine Datei mit 64 Iterationen
+hielte die App sonst minutenlang auf, bevor „falsches Passwort“ kommt.
 Hebt eine spätere Version die Kalibrierung an, hebt sie diese Grenze mit (Kompatibilitätszusage).
 
 ### 3.2 Schlüssel-Slots
@@ -234,7 +241,13 @@ Zum Verpacken erzeugt die App einen zufälligen Schlüssel `e`, setzt `ephemeral
 `shared = X25519(e, public_key)`; der Rest ist gleich. Dafür braucht sie nur `public_key` aus dem Slot.
 
 `hmac-secret` liefert mit und ohne PIN-Prüfung verschiedene Werte; GhulSuite verwendet immer den Wert **mit** PIN-Prüfung.
+**Richtiggestellt am 22.11.2026 (Runde 9, Krypto M1):** Das gilt erst ab CTAP 2.1 (`CredRandomWithUV` und
+`CredRandomWithoutUV`). Ein Key nur mit CTAP 2.0 hat einen Wert für beide Fälle und beantwortet ohne `credProtect`
+eine Abfrage auch ohne PIN. **Neue Keys** legt die App darum mit `credProtect` Stufe 3 (`userVerificationRequired`)
+an; ein Key, der weder `credProtect` noch CTAP 2.1 kann, wird beim Registrieren abgelehnt, unter Windows verlangt die
+App `credProtect` immer. Das Format ändert sich dadurch nicht: Vorhandene Slots und Keys bleiben gültig.
 Die RP-ID ist `ghulsuite.invalid` (reservierte Endung nach RFC 6761, damit keine Webseite das Credential ansprechen kann).
+Slots mit einer anderen RP-ID (nur in einer präparierten Datei möglich) fragt die App nicht an (seit 22.11.2026).
 
 Passt die `keyfile_id` keines Slots, wird die Datei mit klarer Meldung abgelehnt.
 

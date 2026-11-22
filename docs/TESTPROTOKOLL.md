@@ -1,36 +1,340 @@
 # Testprotokoll und Fehlerbericht
 
-> **Hinweis (19.11.2026):** Die Abschnitte 3 bis 9 stammen aus der Zeit **vor den Umbauten** und bleiben als
-> Geschichte unverändert. Damals gab es noch Synchronisation, FTPS, Sicherung und Wiederherstellung (entfernt mit
-> [`UMBAU-OHNE-SYNC.md`](UMBAU-OHNE-SYNC.md)) sowie GhulMail, GhulDrive, eigene Server (SFTP, PHP-Modul), Freigabelinks,
-> den Schlüsselwechsel, das Mail-Archiv und das Hochladen von Fehlerberichten (entfernt mit
-> [`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)). Funde und offene Punkte zu diesen Funktionen sind **obsolet**; welche das
-> sind, fasst [`AUDIT.md`](AUDIT.md), Abschnitt 3, zusammen. **Aktuell** sind die Abschnitte 1 und 2 (Zahlen und
-> Testsuite), Abschnitt 10 (GhulDocs und Scannen), Abschnitt 11 (mehrere GhulDocs-Tresore, ganzen Tresor
-> weitergeben) und Abschnitt 12 (Großprüfung vom 21. und 22.11.2026).
+Dieses Protokoll ist die Arbeitsliste der Prüfungen: Jeder Fund hat eine Nummer, eine Schwere, den Test, der ihn
+zeigt, und, wenn behoben, was geändert wurde. Aufbau seit dem 22.11.2026 (Wunsch des Inhabers): **ganz oben der
+Gesamtstand**, der bei jeder Runde mit nachgezogen wird; darunter **die Runden, die neueste zuerst**; danach die
+**Testsuite** zum Nachschlagen; ganz unten unverändert alles **von vor dem Umbau dieses Protokolls** (Abschnitte 1
+bis 12, mit der Großprüfung bis zur Schlussprüfung). Wer prüfte und wann, steht auch in der
+[Prüf-Chronik](PRUEFCHRONIK.md); die Sicherheitslage und die Restrisiken im [Sicherheitsbericht](AUDIT.md); wie
+getestet wird im [Testkonzept](TESTKONZEPT.md).
 
-Stand: 14. November 2026 (vierte Runde: B1 Schlüssel bei jeder Schutzänderung erneuern, F23 neutrale Dateinamen, Geräte lange offline) · Branch `feat/rekey-neutral-names` · Zusammenfassung aller Audits: Sicherheitsbericht (`docs/AUDIT.md`); Testkonzept: `docs/TESTKONZEPT.md`.
+Schwere: **K** kritisch (Datenverlust, Geheimnis preisgegeben) · **H** hoch (Angriff möglich, Absturz von außen,
+Aussperrung) · **M** mittel · **N** niedrig.
 
-Dieses Protokoll ist die Arbeitsliste für die nächsten Durchgänge: Jeder Fund hat eine Nummer, eine Schwere, den Test, der ihn zeigt, und, wenn behoben, den Commit. Offene Punkte haben einen Vorschlag, wie sie behoben werden, und den Test, der danach grün werden muss.
+## Gesamtstand
 
-## 1. Ergebnis in Zahlen
+**Stand: 22.11.2026**, nach Runde 14. Diesen Abschnitt bei jeder neuen Runde, jedem Gerätetest und jeder
+Entscheidung anpassen (Zahlen, Bewertung, Offenes).
 
-Stand 22.11.2026, nach den fünf Prüfrunden, dem Gutachten zur Veröffentlichung und der Großprüfung (die Zahlen vor den Umbauten stehen in [`AUDIT.md`](AUDIT.md), Abschnitt 1; alle Prüfläufe in [`PRUEFCHRONIK.md`](PRUEFCHRONIK.md)).
+### Was insgesamt gemacht wurde
+
+- **Konzept umgebaut** (12. bis 20.11.2026): Autofill und Foto-Sicherung gestrichen, die Synchronisation durch eine
+  Suite-Datei ersetzt, GhulMail, GhulDrive, alle Server und Freigabelinks entfernt, GhulDocs mit Scannen neu, mehrere
+  GhulDocs-Tresore, Format 3 mit Schreibsiegel und Kompatibilitätszusage. Seit 21.11.2026 **Funktionsstopp**: nur
+  noch Fehlerbehebungen und kleinere Anpassungen. Gründe und Ablauf: [Prüf-Chronik](PRUEFCHRONIK.md), Abschnitt 1.
+- **Prüfrunden am 21.11.2026**: fünf Runden mit je zwei Prüfern, unabhängige Durchsichten, ein Gutachten zur
+  Veröffentlichung, drei Durchsichten des sicheren Speicherns unter Android (unten Abschnitt 11, PR-1 bis PR-20).
+- **Großprüfung** (21. und 22.11.2026): 25 Prüfer in vier Wellen, Behebung durch zwei Entwickler-Agenten mit
+  gegenseitiger Durchsicht, Runde 5 mit fünf Prüfern, Runde 6 (Schlussprüfung), Runde 7 (M8 und M21) (unten
+  Abschnitt 12 und Runde 7).
+- **App-PIN neu gebaut** (22.11.2026): Gutachten von zwei Beratern, dann zwei Einmal-Schlüssel im Android-Keystore,
+  an die PIN gebunden, mindestens 8 Ziffern, 2 Versuche; **Android 12** (`minSdk` 31) als Mindestversion; der
+  **Release** startet aus dem CI-Lauf (`workflow_call`), weil `workflow_run` seit PR #50 keine Vorabversion mehr
+  erzeugte. Durchsicht in Runde 8.
+- **Angreifer-Runde** (Runde 9): fünf Angreifer mit je einem Blickwinkel (Dieb und Finder, präparierte Dateien,
+  Schadsoftware auf dem Gerät, Lieferkette und Release, Kryptografie und Format).
+- **Behebungsrunden 10 bis 14**: je ein neuer Prüfer prüft nur die Behebungen der Runde davor, bis keine hohen und
+  mittleren Funde mehr kommen. Ergebnis: Runde 14 ohne hohen und ohne mittleren Fund.
+
+### Tests in Zahlen
 
 | | |
 |---|---|
-| Testfunktionen im Kern | 312 (305 bei jedem Lauf, alle bestanden; 7 ignoriert: Langläufe und Stresstests, Netz und x509-limbo nur nachts, dazu die zwei Helfer, die die Format-3-Dateien einmal erzeugt haben) |
-| Tests der App am Desktop | 159 (`desktopTest`) und 20 mit der echten Kern-Anbindung (`desktopAppBindingTest`), alle bestanden |
-| Letzter vollständiger Precheck | 22.11.2026, grün (`tools/precheck.sh` mit Gradle, Android-Build und Desktop-Paketen). Windows (Clippy, Build, Tests) und der Emulator laufen nur in der CI |
-| Einzelprüfungen pro Lauf | über 1 Million (u. a. Zeitzonen-Umrechnungen in 446 Zonen, Kalendertage, Fuzz-Eingaben, Base32-Schreibweisen, Wiederherstellungscodes, HOTP-Fälle, Passwortgenerator-Varianten, Aktionen „bekloppter Nutzer“, 515 Naughty Strings in jedem Feld) |
-| Davon gegen echte Server | keine mehr (Testserver mit dem Umbau entfallen); nachts badssl.com und x509-limbo gegen den TLS-Prüfer |
-| Externe Testsammlungen | Big List of Naughty Strings, Project Wycheproof (XChaCha20-Poly1305, HKDF, HMAC, P-256), RFC 4226/6238, JSONTestSuite, 304 Kalenderdateien aus den Tests von iCal4j und python-icalendar, Zeitzonen-Regeln aller Zonen der IANA-Datenbank |
-| Gefundene Fehler | Abschnitt 3 (Geschichte, F01 bis F149); zu GhulDocs und Scannen Abschnitt 10; Großprüfung Abschnitt 12 (H1 bis H13, M1 bis M44) |
-| Offene Punkte | kleine Punkte in [`AUDIT.md`](AUDIT.md) 4.5 (K-1 bis K-38), Restrisiken in 4.6, offene Funde der Großprüfung in Abschnitt 12, der Weg zur Veröffentlichung in [`PRUEFCHRONIK.md`](PRUEFCHRONIK.md) |
+| Testfunktionen im Kern | 348 (341 bei jedem Lauf, alle bestanden; 7 ignoriert: zwei Stresstests und der lange Lauf „bekloppter Nutzer“ (in Release, CI und nachts), badssl und x509-limbo (Netz, nur nachts), die zwei Helfer, die die Format-3-Dateien einmal erzeugt haben) |
+| Tests der App am Desktop | 168 in `desktopTest` und 28 mit der echten Kern-Anbindung in `desktopAppBindingTest`, alle bestanden (letzter Lauf des Entwickler-Agenten B nach Runde 13) |
+| Fuzzing | 4 libFuzzer-Ziele (`parsers`, `container_parse`, `ctap_responses`, `docs_files`): in der CI 3 Ziele je 2 Minuten bei jedem Push mit Kernänderung und vor jedem Release, nachts alle 4 je 15 Minuten; dazu 5 schnelle Fuzz-Tests in `fuzz_tests.rs` bei jedem Lauf (in den 341 enthalten) |
+| Stress und Langläufe | 2 Stresstests (5.000 Einträge, 64 MB, 8 Threads) und „bekloppter Nutzer“ lang, in Release im CI-Job `stress` und nachts |
+| Emulator (Maestro) | 14 Abläufe (`app/maestro/01-setup.yaml` bis `14-suite-file.yaml`) mit Hilfsabläufen (Entsperren, Startseite, Optionen, Rundgang, Beenden durch das System), ein Bild nach jedem Schritt; bei jedem Pull Request, auf `main` und nachts; nachts dazu Monkey und Intent-Angriffe |
+| Testvektoren in Python | 4 Container (`docs/testvectors/container-v3.json`) und 3 Inhaltsdateien (`docs-blob-v1.json`), unabhängig nachgerechnet von `tools/verify_testvectors.py` mit anderen Krypto-Bibliotheken |
+| Einzelprüfungen je Lauf | über 1 Million (Zeitzonen in 446 Zonen, Kalendertage, Fuzz-Eingaben, Wiederherstellungscodes, 515 Naughty Strings in jedem Feld …) |
+| Externe Testsammlungen | Big List of Naughty Strings, Project Wycheproof, RFC 4226/6238, JSONTestSuite, 304 Kalenderdateien anderer Programme, IANA-Zeitzonen; nachts badssl.com und 9.807 Ketten aus x509-limbo |
+| Nur in der CI | Windows (Clippy, Build, Tests) und der Emulator; lokal grün zuletzt am 22.11.2026 (`tools/precheck.sh`, mit Android-Build) |
 
-Alle Tests sind grün (Kern, Android-Kotlin, Desktop-Tests). Die App-Tests im Emulator (Maestro, Monkey) laufen in der CI.
+### Prüfrunden und Agenten
 
-## 2. Testsuite: was es gibt und wie man es startet
+Gezählt sind **Prüf-Agenten**: jeder ein neuer KI-Agent (Claude), der den Code liest und Funde meldet, ohne ihn
+geändert zu haben. Nicht mitgezählt sind die Entwickler-Agenten A (Kern, Workflows, Werkzeuge) und B (App, README,
+Website), die alle Funde behoben und sich einmal gegenseitig durchgesehen haben, die Agenten, die die Dokumentation
+nachgezogen haben, und der koordinierende Agent. Gezählt wurde aus der [Prüf-Chronik](PRUEFCHRONIK.md) (Abschnitte
+2.2 bis 2.5: jede Zeile „KI, n Agenten“, außer den Entwicklern) und den Runden unten.
+
+- **Seit dem 21.11.2026: 28 Prüfdurchgänge mit 63 Prüf-Agenten.** 21.11.2026: 12 Durchgänge mit 18 Agenten.
+  Großprüfung bis Runde 7: 4 Wellen mit 25 Agenten, die gegenseitige Durchsicht der beiden Entwickler (ohne neue
+  Agenten), Runde 5 mit 5, Runden 6 und 7 mit je 1. App-PIN: Gutachten mit 2 Beratern, Runde 8 mit 1. Runde 9 mit
+  5 Angreifern, Runden 10 bis 14 mit je 1.
+- **Vor dem 21.11.2026:** rund ein Dutzend Runden (Audits, Testrunden 1 bis 10, Durchsichten der Umbauten, siehe
+  [AUDIT](AUDIT.md), Abschnitt 1); wie viele Agenten daran beteiligt waren, ist nicht festgehalten.
+- **Prüfung durch Dritte:** nicht vorgesehen (Entscheidung des Inhabers).
+
+### Funde nach Phase und Schwere
+
+Gezählt wie gemeldet; doppelte Funde mehrerer Prüfer sind nur bei der Großprüfung zusammengefasst. „Niedrig“ heißt
+bei den Runden ab dem 21.11.2026 meist ein kleiner Punkt (Randfall, Text, Werkzeug).
+
+| Phase | Datum | Prüf-Agenten | K | H | M | N |
+|---|---|---|---|---|---|---|
+| Testrunden und Audits (F01 bis F149, unten Abschnitt 3) | 11. bis 16.11.2026 | nicht festgehalten | 4 | 27 | 57 | 60 (F68 ohne Stufe) |
+| Durchsicht GhulDocs (G9-1 bis G9-14, Abschnitt 10) | 19.11.2026 | nicht festgehalten | | 1 | 3 | 10 |
+| Durchsicht mehrere GhulDocs-Tresore (MV-1 bis MV-16, Abschnitt 11) | 20.11.2026 | nicht festgehalten | | 1 | 4 | 11 |
+| Prüfrunden 1 bis 5, Gutachten, Durchsichten (MV-17 bis MV-19, PR-1 bis PR-20, Abschnitt 11; kleine Punkte K-1 bis K-38 in AUDIT 4.5) | 21.11.2026 | 18 | 2 | 6 | 14 | 1 |
+| Großprüfung, Wellen 1 bis 4 (GP-H1 bis GP-H13, GP-M1 bis GP-M44, Abschnitt 12) | 21. und 22.11.2026 | 25 | | 13 | 44 | kleine Punkte |
+| Gegenseitige Durchsicht der Entwickler | 22.11.2026 | (2 Entwickler) | | 1 | 11 | 13 |
+| Runde 5 (GP-R2 bis GP-R6) | 22.11.2026 | 5 | | 6 | 21 | 38 (teils doppelt) |
+| Runde 6, Schlussprüfung (GP-R7 bis GP-R11) | 22.11.2026 | 1 | | 0 | 4 | 7 |
+| Runde 7 (M8 und M21) | 22.11.2026 | 1 | | 0 | 2 | 7 |
+| Gutachten App-PIN | 22.11.2026 | 2 | | GP-M19 bestätigt und schwerer als gedacht (offline durchprobierbar) | | |
+| Runde 8 (App-PIN, Android 12, Release) | 22.11.2026 | 1 | | 0 | 4 | 9 |
+| Runde 9, fünf Angreifer | 22.11.2026 | 5 | | 4 | 13 | 32 |
+| Runde 10 | 22.11.2026 | 1 | | 0 | 5 | 5 |
+| Runde 11 | 22.11.2026 | 1 | | 1 | 3 | 4 |
+| Runde 12 | 22.11.2026 | 1 | | 0 | 1 | 5 |
+| Runde 13 | 22.11.2026 | 1 | | 0 | 1 | 4 |
+| Runde 14 | 22.11.2026 | 1 | | 0 | 0 | 2 |
+
+Alle hohen und mittleren Funde sind behoben, bis auf die unter „Offen“ genannten. Kein Prüfer und kein Angreifer kam
+ohne Master-Passwort plus zweiten Faktor (oder den Wiederherstellungscode) an den Inhalt einer Suite-Datei. Die hohen
+Funde lagen daneben: Codeausführung über das Windows-Update, fremde Pakete im signierten Release, ein widerrufener
+Wiederherstellungscode, der über ein zweites Gerät zurückkam, und Aussperrungen oder Mischstände nach Schreibfehlern,
+Abbrüchen und gleichzeitigen Abläufen bei Schutzänderungen (Runden 9 bis 13).
+
+### Einschätzung
+
+**Bereit für eine öffentliche Beta, sobald PR #52 grün ist und die Handtests auf echten Geräten (unten „Offen“)
+festgehalten sind.** Eine stabile Version (1.0) erst später, nach einigen Monaten Beta ohne schweren Fund. Begründung:
+Die Funde der letzten Runden werden kleiner (Runde 11 noch ein hoher, Runden 12 und 13 je ein mittlerer, Runde 14
+nur zwei niedrige), sie betreffen seltene gleichzeitige Abläufe, keine Schwäche des Schutzes. Dagegen steht: Vieles,
+was nur auf echten Geräten geht (Keystore und StrongBox, sicheres Speichern unter Android, Update unter Windows), ist
+nur aus Code und Dokumentation abgeleitet, und Windows und der Emulator laufen nur in der CI.
+
+### Offen
+
+- **PR #52** muss grün sein, besonders der Emulator (App-PIN mit dem Software-Keystore der Testversion, ganzer
+  Wiederherstellungscode im Ablauf `01-setup`) und Windows (Build, Tests).
+- **Handtests auf echten Geräten** (noch keiner festgehalten): App-PIN auf einem echten Handy, auch wie sich
+  StrongBox verhält ([Testplan](TESTPLAN.md), Abschnitt 41); Fingerabdruck im Assistenten, Schritt 6 (E12);
+  sicheres Speichern unter Android (E19e); die neuen Schritte in Abschnitt 42; unter Windows 11 das Update über das
+  MSI (WG5) und dass ein Handy-Passkey nicht als Security Key angenommen wird (GP-M21, WG6), Sperre nach dem
+  Ruhezustand ([Testplan Windows](TESTPLAN-WINDOWS.md), Abschnitt 15).
+- **Einrichtung durch den Inhaber:** Environments `signing`, `release` und `website`, die Repository-Variable
+  `GHUL_UPDATE_KEY` und das Löschen der Secrets auf Repository-Ebene sind erledigt (`secrets-check` auf `dev` grün am
+  22.11.2026). Offen ist nur noch, im Environment `release` zusätzlich den Deployment-Branch `dev` zu erlauben.
+- **Release-Notizen:** Der Hinweis „ab Android 12, App-PIN neu einrichten“ steht noch nicht in den Release-Notizen
+  (R8-N7); der Inhaber ergänzt ihn beim Veröffentlichen.
+- **Offene Funde, niedrig oder zum Teil:** R14-N2 (Merker nach einem Wettlauf mit der Übernahme), GP-H11 zum Teil
+  (kein Zusammenführen paralleler Schutzänderungen), GP-M44 (Android-Code ohne Unit-Tests), R9-Krypto-N2 (Klartext-
+  Export mit dem Passwort allein, Entscheidung des Inhabers steht aus), R9-Krypto-N4 (Windows-Salz beim Registrieren,
+  nur als Handtest WG7), R9-Lieferkette-M3 (Fingerabdruck des Signaturzertifikats nirgends veröffentlicht), dazu die
+  kleinen Punkte K-1 bis K-38 in [AUDIT](AUDIT.md) 4.5, soweit nicht erledigt.
+- **Restrisiken** (dokumentiert in [AUDIT](AUDIT.md) 4.6): App-PIN mit Root auf Geräten ohne rollback-festen
+  Keystore (Tage bis Wochen), präparierte fremde Tresore mit sehr viel CBOR, Apps mit Zugriff auf Benachrichtigungen,
+  Schadsoftware desselben Benutzers unter Windows kann die App verändern, Programmtausch auf dem portablen Stick,
+  das MSI-Update nur als Text getestet, Erinnerungen mit „Alles“.
+
+### Entscheidungen des Inhabers
+
+| Entscheidung | Seit |
+|---|---|
+| Die Signaturschlüssel bleiben (ein Schlüssel für APK und Updates), aber nur in den Environments `signing` und `release` | 21.11.2026 |
+| Keine Prüfung durch Dritte | 21.11.2026 |
+| Kein Testserver mehr; Pakete von Branches und Pull Requests nur als Artefakte | 21.11.2026 |
+| Android 12 als Mindestversion (`minSdk` 31), ohne letzte Version für Android 10 und 11 | 22.11.2026 |
+| App-PIN mit mindestens 8 Ziffern (die App nimmt 8 bis 12) und 2 Versuchen | 22.11.2026 |
+| Der Release startet aus dem CI-Lauf (`workflow_call`), kein Release von Hand | 22.11.2026 |
+| **Abgelehnt** (Vorschläge der Runde 9, Lieferkette): „Immutable releases“, Pflicht-Review durch Code-Owner (die Datei `.github/CODEOWNERS` gibt es, die Regel bleibt aus), die `IMPRESSUM_*`-Secrets ins Environment `website` verschieben, Rulesets für Tags | 22.11.2026 |
+
+## Runde 14 (22.11.2026)
+
+**Wer:** 1 Prüf-Agent, nur die Behebungen aus Runde 13 (Kern N1, N2, N4; App M1, N3), Tests und eine Probe in einer
+Kopie des Kerns. **Ergebnis:** kein Fund hoch, kein Fund mittel, 2 niedrig.
+
+| Nr. | Stufe | Fund | Behoben, Test |
+|---|---|---|---|
+| R14-N1 | N | Neu durch R13-N4: Fehlte `suite.ghlsuite`, galt ein offenes Journal als erledigt; das Aufräumen beim Start löschte die `.prev`-Kopien, die es noch brauchte, danach scheiterte jedes Entsperren dauerhaft mit „früheres Speichern nicht beendet“ (selten: fehlende Suite-Datei, Angleichen, Abbruch, Löschmarke) | Ein Journal gilt als gebraucht, solange irgendeine Datei der Suite da ist. `an_open_journal_without_a_suite_file_keeps_its_copies` (die Probe als Regressionstest; behoben vom koordinierenden Agenten) |
+| R14-N2 | N | Ein Schnell-Entsperren, das nach dem Hochzählen in `replace_working_copy` beginnt, kann die Sitzung einer gerade übernommenen Suite-Datei durch einen Stand ohne den Merker des übernommenen Zustands ersetzen; das nächste Speichern schreibt den Merker weg. Kein Datenverlust, nur mit zwei gleichzeitigen Abläufen erreichbar | **Offen** (niedrig) |
+
+## Runde 13 (22.11.2026)
+
+**Wer:** 1 Prüf-Agent, die Behebungen aus Runde 12 (Zähler `protection_changes`, Journal, Aufräumen) und die Wege des
+Schnell-Entsperrens, wenn der Kern `Locked` meldet; Tests (189 grün) und eine Probe in einer Kopie. **Ergebnis:** kein
+Fund hoch, 1 mittel, 4 niedrig; alle behoben.
+
+| Nr. | Stufe | Fund | Behoben, Test |
+|---|---|---|---|
+| R13-M1 | M | Meldete der Kern beim Entsperren per Fingerabdruck `Locked` oder einen Speicherfehler (nichts verbraucht), schaltete die App den Fingerabdruck ab; er war mit beiden Faktoren neu einzurichten | Fehler des Kerns behalten ihre Art; `LOCKED`, `STORAGE` und `NO_SPACE` lassen das Schnell-Entsperren stehen. `SuiteFileBackendTest.quickUnlockErrorsKeepTheirKind` |
+| R13-N1 | N | Ein Entsperren, das vor einem Löschen der Suite begonnen hatte, schrieb danach `suite.ghlsuite` zurück; die gelöschte Suite öffnete wieder mit dem alten Passwort (in der App kaum erreichbar) | `open_folder` prüft den Zähler unter `save_lock`, bevor es schreibt. `an_unlock_begun_before_a_deletion_writes_nothing_back` |
+| R13-N2 | N | Das Übernehmen einer Suite-Datei zählte `protection_changes` nicht hoch; ein gleichzeitiges Entsperren mit der alten Arbeitskopie konnte sie danach öffnen | Hochgezählt unter `save_lock`. `an_unlock_that_read_before_an_accept_does_not_open_it` |
+| R13-N3 | N | `Locked` beim Entsperren zeigte „Der Tresor ist gesperrt.“ | Eigene Meldung „Bitte noch einmal versuchen“ (`TRY_AGAIN`) auf allen Entsperr-Wegen, ohne selbst zu wiederholen (eine PIN-Eingabe kostet einen Slot). Desktop-Test |
+| R13-N4 | N | Kopien einer gelöschten Suite blieben, solange ein hängendes Journal da war; ein nur nicht löschbares, erledigtes Journal meldete „Kopie nicht entfernt“ | `copies_of_a_deleted_suite_are_not_kept_for_its_journal` (die Bedingung dafür war zu eng, siehe R14-N1) |
+
+## Runde 12 (22.11.2026)
+
+**Wer:** 1 Prüf-Agent, das Journal der Schutzänderungen aus Runde 11 und die aufgeschobene Leerlauf-Sperre; Tests und
+zwei Proben in einer Kopie. **Ergebnis:** kein Fund hoch, 1 mittel, 5 niedrig; alle behoben.
+
+| Nr. | Stufe | Fund | Behoben, Test |
+|---|---|---|---|
+| R12-M1 | M | Ein Entsperren, das die Dateien vor einer laufenden Passwortänderung gelesen hatte (Sperren und sofort Fingerabdruck während der Änderung), öffnete danach mit den alten Schlüsseln; das nächste Speichern schrieb den alten Schutz zurück: Nach einer als erfolgreich gemeldeten Änderung ging das neue Passwort nicht, Tresore waren gemischt (Probe bestätigt) | Neuer Zähler `protection_changes`: Jede Schutzänderung zählt ihn vor der ersten Datei hoch, eine Sitzung, die vorher gelesen hat, öffnet nicht (`Locked`, das Entsperren wird wiederholt). `an_unlock_that_read_before_a_change_does_not_open_it` |
+| R12-N1 | N | Das Aufräumen der `.prev`-Kopien lief ohne Sperre und konnte einem laufenden Journal die Kopien nehmen | Nur mit `save_lock` (`try_lock`), sonst später; eine fehlende Kopie ist ein Fehler. `tidying_up_during_a_save_leaves_its_copies`, `a_missing_copy_is_not_skipped` |
+| R12-N2 | N | Löschen meldete Erfolg, obwohl Journal oder Kopien der gelöschten Suite blieben | `DeleteIncomplete` mit „eine Kopie der Suite ließ sich noch nicht entfernen“ |
+| R12-N3 | N | Ein Entsperren parallel zum Löschen konnte danach schreiben | Löschen zählt den Zähler hoch (Rest in R13-N1 behoben) |
+| R12-N4 | N | Bei fehlender Suite-Datei galt ein Journal mit `new suite.ghlsuite` als fremd | Die Kennung der Suite kommt aus der ersten `keep`-Kopie |
+| R12-N5 | N | Das Zurückschreiben ließ `.bak` mit dem neuen Schutz liegen | Danach aufgeräumt (`purge_copies(false)`) |
+
+## Runde 11 (22.11.2026)
+
+**Wer:** 1 Prüf-Agent, das neue Journal von `save_all` (Runde 10, N5) und die Änderungen an Sperre und Leerlauf;
+Probe in einer Kopie. **Ergebnis:** 1 hoch, 3 mittel, 4 niedrig; alle behoben.
+
+| Nr. | Stufe | Fund | Behoben, Test |
+|---|---|---|---|
+| R11-H1 | H | Ein liegengebliebenes Journal mit seinen `.prev`-Kopien überlebte das Löschen der Suite; beim ersten Entsperren einer neu eingerichteten Suite schrieb es die gelöschte alte Suite zurück, das neue Passwort öffnete nichts mehr (Probe bestätigt) | Löschen und Neuanlegen (`create`, `create_from_vault`) entfernen Journal und Kopien; zurückgeschrieben wird nur bei gleicher Suite. `a_stopped_save_never_comes_back_after_the_suite_was_deleted`, `the_journal_of_another_suite_puts_nothing_back` |
+| R11-M1 | M | Journal und Zurückschreiben liefen ohne gemeinsame Sperre; ein Entsperren während einer Passwortänderung setzte Dateien zurück, die gerade neu geschrieben wurden | Neue Sperre `save_lock` für das ganze Schreiben und das Zurückschreiben. `an_unlock_during_a_save_waits_for_it` |
+| R11-M2 | M | Ungespeicherte Eingabe im Editor schaltete die Leerlauf-Sperre ganz ab (ein Zeichen tippen genügte); ein hängender Auftrag hielt die Anzeige dauerhaft an | Eingabe und laufende Aktion schieben die Sperre nur auf, höchstens auf die doppelte Leerlaufzeit (mindestens 15 Minuten), eine Minute vorher eine Warnung; die Anzeige bleibt nur an, solange ein Auftrag Fortschritt meldet. `R9SafetyTest.theIdleLockWaitsForAnEditorWithInput`, `JobsTest.onlyAProgressingUserJobKeepsTheScreenOn` |
+| R11-M3 | M | `.prev`-Kopien mit dem alten Schutz konnten nach einer erfolgreichen Änderung bleiben (Virenscanner), `.prev.tmp` nach einem Abbruch für immer | Aufräumen erfasst `.prev`, `.prev.tmp`, `.prev.bak`, bei einem Fehler wird es später wiederholt. `a_done_journal_and_stray_copies_are_only_removed` |
+| R11-N1 | N | Ein nicht löschbares Journal nach erfolgreichem Schreiben ließ jedes Entsperren scheitern | Erst atomar als erledigt markiert, dann gelöscht |
+| R11-N2 | N | Fehler beim Nachholen kamen als roher Speicherfehler | Eigene Meldung `SAVE_UNFINISHED` („Ein früheres Speichern wurde nicht beendet …“). `files_that_cannot_be_put_back_yet_give_a_clear_message` |
+| R11-N3 | N | Scheiterte nach erfolgreichem Schreiben nur das Notieren der Epoche, galt die Änderung als gescheitert, obwohl sie auf der Platte war | Nur protokolliert, beim nächsten Entsperren nachgeholt |
+| R11-N4 | N | Eine neu angelegte Datei stand nicht im Journal | Zeilen `keep` und `new`, `new` wird beim Zurückrollen gelöscht. `a_file_made_by_a_failed_save_goes_again` |
+
+## Runde 10 (22.11.2026)
+
+**Wer:** 1 Prüf-Agent, alle Behebungen der Runde 9; Kerntests mit Filtern und `pip download --require-hashes` beider
+Hash-Dateien für Python 3.12 und 3.13. **Ergebnis:** kein Fund hoch (alle vier hohen Funde der Runde 9 schließen den
+Angriff), 5 mittel, 5 niedrig; behoben bis auf einen dokumentierten Rest.
+
+| Nr. | Stufe | Fund | Behoben, Test |
+|---|---|---|---|
+| R10-M1 | M | Der ganze Wiederherstellungscode wurde in ein normales Textfeld getippt: Die Tastatur lernt mit, Großschreibung beim Tippen | Eigenes Feld (`RecoveryCodeField`): sichtbar, Tastatur als Passwortfeld ohne Autokorrektur, der Kern normalisiert; auch beim Entsperren mit dem Code |
+| R10-M2 | M | Android: War die Anzeige während eines langen Auftrags von selbst ausgegangen, brach das Einschalten den Auftrag ab (feste Sperre aus R9-Dieb-N3) | Solange ein Auftrag des Nutzers Fortschritt meldet, bleibt die Anzeige an; die feste Sperre gilt beim Ausschalten von Hand. Windows: Win+L wartet wieder auf den Auftrag. `JobsTest.aUserJobIsReportedForKeepingTheScreenOn` |
+| R10-M3 | M | Die Leerlauf-Sperre unter Android sah keine Eingaben über die Bildschirmtastatur und keine in Dialogen; mitten im Schreiben gesperrt, Eingabe weg | Eingaben in Text- und Codefeldern und Berührungen in Dialogen zählen; ungespeicherte Eingabe schiebt auf (seit R11-M2 begrenzt). Desktop-Test |
+| R10-M4 | M | Ein neu eingerichtetes Schnell-Entsperren galt sofort als abgelaufen, wenn das letzte vollständige Entsperren länger zurücklag als seine Gültigkeit | Die Zeit seit dem Entsperren wird beim Einrichten neu gesetzt. Nur Android, kein Desktop-Test |
+| R10-M5 | M | Verschieben eines Eintrags in einen fast vollen Tresor (und neue 2FA-Konten) nahm nichts zurück; jedes weitere Speichern scheiterte | Über `add_entries` mit Grenze und Rücknahme. `a_move_into_a_full_vault_leaves_the_entry_where_it_was`, `a_totp_into_a_full_vault_goes_again` |
+| R10-N1 | N | Windows: Ein Netzwerkpfad per Doppelklick bei laufender App wurde still verworfen | Meldung „… liegt auf einem Netzlaufwerk … Öffne sie in GhulSuite mit ‚Suite-Datei öffnen‘“ |
+| R10-N2 | N | Android: Die Frage „Hierhin speichern?“ kam auch, wenn es nicht ging oder die Datei schon der Ort war, und blieb über das Sperren stehen | Nur mit dauerhaftem Schreibrecht, nicht beim eigenen Ort, beim Sperren und Öffnen zurückgesetzt |
+| R10-N3 | N | Android: Ein `.ghldocs` aus einer anderen App ließ sich nicht mehr „nur diesen“ öffnen | Der Hinweis nennt den Weg über „Öffnen“ in der App |
+| R10-N4 | N | Texte: Konfliktdialog und „neuerer Schutz“ passten nicht zum neuen Code, „keine gleichen Ziffern“ las sich zu streng, Notizen der Release-Seite, Prüfsumme | Texte DE und EN angepasst; Testplan Windows WL4 (5 bis 15 Minuten) |
+| R10-N5 | N | Schutzänderungen schrieben weiter Datei für Datei: ein Schreibfehler (Stick voll) konnte einen Mischstand lassen; „Speichern unter“ auf einem Gerät mit altem Stand trägt den alten Code weiter; Löschen in Neunerschritten braucht kein Passwort | Schreiben über ein Journal (`save-journal`, Kopien `.prev`, Zurückschreiben sofort oder beim nächsten Entsperren). `a_failed_write_in_the_middle_of_a_password_change_is_undone`, `a_stop_in_the_middle_of_a_password_change_is_undone_at_the_next_unlock`. Der alte Code über „Speichern unter“ ist ohne Server nicht zu verhindern (KONZEPT 8.2); die Neunerschritte bleiben (Grenze der Maßnahme) |
+
+## Runde 9: fünf Angreifer (22.11.2026)
+
+**Wer:** 5 Prüf-Agenten als Angreifer, je ein Blickwinkel: **Dieb und Finder** (Handy, Laptop, Stick, Notfallblatt),
+**präparierte Dateien** (Importe, Pakete, Intents; nachgestellt mit eigenen Programmen gegen den echten Kern),
+**Schadsoftware** auf demselben Gerät, **Lieferkette** (Fork-PR, Mitwirkender, Abhängigkeit, Re-Run, Tags, Netz),
+**Kryptografie und Format**. Stand: App-PIN neu, `minSdk` 31. **Ergebnis:** 4 hoch, 13 mittel, 32 niedrig. Was
+gehalten hat, steht am Ende jeder Liste in den Berichten; kurz: Suite-Datei, Pakete, ZIP-Leser, Pfade, Intents,
+Container, Nonces, Siegel und die neue App-PIN ohne Root.
+
+### Hoch
+
+| Nr. | Stufe | Fund | Behoben, Test |
+|---|---|---|---|
+| R9-Dateien-H1 | H | Eine Schutzänderung, nachdem ein Tresor im Speicher über 128 MiB gewachsen war (Duplizieren eines Eintrags mit großen Anhängen, präparierte Importe, große `.ics`), schrieb die ersten Tresore mit dem neuen Schutz und scheiterte am nächsten: ein Tresor „beschädigt“, das neue Passwort ungültig, nur der Code half (nachgestellt) | Erst alle Container versiegeln, dann schreiben (seit Runde 10 über ein Journal); Duplizieren, Import und ICS über `add_entries` mit der Grenze je Tresor und den 200 MiB, Rücknahme bei einem Fehler; ICS höchstens 16 MiB (Kern und App). `a_duplicate_over_the_vault_limit_goes_again_and_the_password_change_holds`, `a_change_of_the_protection_writes_nothing_if_one_vault_cannot_be_sealed`, `an_import_over_the_vault_limit_adds_nothing`, `a_calendar_import_is_limited_and_goes_again` |
+| R9-Malware-H1 | H | Windows: Das Update startete `powershell` ohne Pfad; eine `powershell.exe` im Ordner einer doppelt geklickten Suite-Datei (Stick, Download-Ordner) wäre beim Update gelaufen | Voller Pfad (`%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`, sonst „kein PowerShell“), `NoDefaultCurrentDirectoryInExePath=1`, `msiexec` mit vollem Pfad. `UpdateScriptTest.powershellIsStartedByItsFullPath`; unter Windows nicht ausgeführt |
+| R9-Lieferkette-H1 | H | `publish` nahm jedes Artefakt `release-*` des Laufs: Code in irgendeinem Job (z. B. eine ungepinnte Python-Abhängigkeit) hätte eine eigene MSI hochladen können, die signiert veröffentlicht worden wäre | Nur `release-android` und `release-windows` mit festem Namen, genau drei Dateien, ihre SHA-256 aus den Ausgaben der Bau-Jobs verglichen; Python-Pakete mit Hash (`tools/requirements/*.txt`, erzeugt mit `pip-compile --generate-hashes`, installiert mit `--require-hashes`). Nur in der CI prüfbar |
+| R9-Krypto-H1 | H | Ein neuer Wiederherstellungscode ließ sich von einem zweiten Gerät still rückgängig machen: Die Datei am Ziel galt nur als „anderswo gespeichert“, „Überschreiben“ schrieb den alten Code wieder hinein | Eine größere Schutz-Epoche am Ziel ist „neuerer Schutz“: kein Überschreiben, kein „als neue Datei (alter Schutz)“; die Texte nennen den neuen Code. `a_new_recovery_code_elsewhere_is_a_newer_protection`. **Rest:** Ein Gerät mit altem Stand kann mit „Speichern unter“ eine neue Datei mit dem alten Code schreiben, und eine alte Suite-Datei auf einem neuen Gerät bringt den alten Code zurück (ohne Server nicht zu verhindern; KONZEPT 8.2: nach einem neuen Code öffnet jedes Gerät zuerst die neue Datei) |
+
+### Mittel
+
+| Nr. | Stufe | Fund | Behoben, Test |
+|---|---|---|---|
+| R9-Dieb-M1 | M | Portabler Stick: Wer ihn kurz hat, tauscht das Programm oder die unversiegelten Einstellungen und liest beim nächsten Entsperren mit | Nur Texte (README, Hinweis „Über und Hilfe“ der portablen Version, KONZEPT 12, AUDIT 2.1 und 4.6): einen Stick, der aus der Hand war, nicht mehr starten, die portable Version neu laden und die Prüfsumme prüfen. **Restrisiko** |
+| R9-Dieb-M2 | M | Triviale App-PINs (Geburtsdatum, `12345678`) waren erlaubt; zwei Versuche reichen dafür | Kern und App lehnen ab: nur eine Ziffer, wiederholte Blöcke, auf- und absteigende Folgen, Daten `TTMMJJJJ`, `MMTTJJJJ`, `JJJJMMTT` (1900 bis 2099); Dialog „nicht die PIN deiner Displaysperre, kein Datum“. Bestehende PINs entsperren weiter. `the_app_pin_needs_eight_digits_and_both_factors`, `R9SafetyTest.easyAppPinsAreRefusedFirstHere` |
+| R9-Dieb-M3 | M | Schlüsseldatei und Suite-Datei auf demselben Handy: Wer die Displaysperre kennt, kopiert beides ohne Root | Texte: nicht auf diesem Handy und nicht auf dem Gerät der Suite-Datei |
+| R9-Dateien-M1 | M | „Neue Suite mit diesem Tresor anlegen“ behielt den Wiederherstellungscode des Absenders; er hätte alles gelesen, was später hinzukommt | Immer ein neuer Code und ein neuer Containerschlüssel; Hinweis, dass der Absender Passwort und Schlüsseldatei kennt. `vault_management_and_suite_from_vault` |
+| R9-Dateien-M2 | M | Import: verschachtelte ZIPs ohne Tiefengrenze (66 KB brauchten 659 MB, 2000 Ebenen beendeten den Prozess) | Kein ZIP im ZIP. `a_zip_inside_a_zip_is_refused` |
+| R9-Malware-M1 | M | Android: Freigaben an andere Apps wurden nie zurückgenommen, der Pfad wurde wiederverwendet (eine App bekam später ein anderes Dokument gleichen Namens) | Jede Kopie in einem eigenen Zufallsordner, `revokeUriPermission` beim Sperren und vor der nächsten Kopie |
+| R9-Malware-M2 | M | Android: Eine fremde App konnte GhulSuite viele dauerhafte Freigaben aufzwingen und so die des Suite-Ordners verdrängen; eine Datei aus einer fremden App wurde still Speicherort (auch R9-Dateien-N2) | Dauerhafte Freigabe erst nach „Künftig hierhin speichern?“ und nur für Dokument-URIs. `InteractionTest.aFileFromAnotherAppBecomesThePlaceOnlyWhenAsked` |
+| R9-Lieferkette-M1 | M | Der echte Signaturschlüssel stand im Gradle-Lauf des Jobs `build` neben wiederhergestellten Caches (ein vergifteter Cache von `main` hätte ihn lesen können) | Der Bau mit dem echten Schlüssel stellt keine Caches wieder her (nur sichern); `release.yml` nutzt keine |
+| R9-Lieferkette-M2 | M | Fuzzing und Stresstest konnten vor einem Release übersprungen werden (Push ohne Kernänderung nach einem roten Lauf) | Auf `main` und `dev` laufen sie bei jedem Push |
+| R9-Lieferkette-M3 | M | Erstinstallation und portable Version ohne prüfbare Signatur; die Download-Knöpfe folgen „latest“ | **Offen:** Fingerabdruck des Zertifikats und SHA-256 im Dialog der portablen Version nicht umgesetzt; „Immutable releases“ vom Inhaber abgelehnt |
+| R9-Lieferkette-M4 | M | Ein fremder Tag während des Releases ließ das Release auf einen fremden Quellstand zeigen | Abbruch, wenn der Tag schon auf einen anderen Commit zeigt |
+| R9-Krypto-M1 | M | Bei FIDO2-Keys nur mit CTAP 2.0 ohne `credProtect` schützt die Key-PIN `hmac-secret` nicht (dieselbe Ausgabe mit und ohne PIN) | Neue Keys brauchen `credProtect` oder CTAP 2.1, sonst „nicht geeignet“; unter Windows `bRequireCredProtect = 1`. Vorhandene Keys entsperren weiter. `a_ctap_2_0_key_without_cred_protect_is_refused` (Software-Key); auf Hardware nicht geprüft |
+| R9-Krypto-M2 | M | Die Bestätigung des Codes prüfte nur Gruppe 3, direkt nach dem Anzeigen: ein Tippfehler in einer anderen Gruppe fiel erst im Notfall auf | Der ganze Code wird abgetippt und mit Prüfsumme verglichen (`confirm_whole_recovery_code`). `recovery_code_counts_only_when_a_group_was_typed_back`, Maestro `01-setup` |
+
+### Niedrig
+
+| Nr. | Fund | Stand |
+|---|---|---|
+| R9-Dieb-N1 | Uhr zurückstellen hob die Gültigkeit des Schnell-Entsperrens auf | Zusätzlich über die Zeit seit dem Start geprüft (nur Android) |
+| R9-Dieb-N2 | „Erlischt nach Neustart“ setzt die App durch, nicht der Keystore | Doku (KONZEPT 6.5) |
+| R9-Dieb-N3 | Bildschirm aus während eines Auftrags: die Sperre wurde beim Zurückkommen verworfen | Feste Sperre. `JobsTest.theScreenOffLockIsNotDroppedByComingBack` (dazu R10-M2) |
+| R9-Dieb-N4, N5 | Android ohne Leerlauf-Sperre im Vordergrund; Windows fest 15 Minuten, kein Sperren beim Ruhezustand | Leerlauf = Zeit der automatischen Sperre, 5 bis 15 Minuten; Windows sperrt nach dem Aufwachen (Lücke über 30 s). `R9SafetyTest.theIdleLockIsBetweenFiveAndFifteenMinutes` |
+| R9-Dieb-N6 | Windows: stiller Rückfall auf die Zwischenablage mit Verlauf | Meldung „Nicht kopiert …“ |
+| R9-Dieb-N7 | Bei offener Suite alles löschen und speichern, ohne Passwort | Papierkorb leeren und Löschen ab 10 Einträgen nur mit Master-Passwort. `InteractionTest.deletingManyAtOnceNeedsThePassword` |
+| R9-Dieb-N8 | Android: Kopie für „Mit App öffnen“ überlebt ein Beenden durch das System bis zum nächsten Start | Bleibt (beim Wechsel in den Hintergrund liest die andere App genau dann) |
+| R9-Dateien-N1 | CSV: quadratische Doppelprüfung, Speicherverstärkung | `HashSet`, höchstens 1000 Spalten und 2 Mio. Felder. `a_csv_of_separators_is_refused` |
+| R9-Dateien-N3 | Große `.ics` unter Windows ohne Grenze | 16 MiB in Kern und App |
+| R9-Dateien-N4 | Fremder Tresor mit 128 MiB CBOR kann die App beim Öffnen beenden (nicht nachgestellt) | **Restrisiko** (AUDIT 4.6) |
+| R9-Dateien-N5 | Windows-Gerätenamen (`CON.pdf`) in Dokumentnamen | `_` davor. `OpenWithSafetyTest` |
+| R9-Malware-N1 | Android 12: USB-Empfänger für alle Apps offen | `RECEIVER_NOT_EXPORTED` |
+| R9-Malware-N2 | Apps mit Zugriff auf Benachrichtigungen können „Abbrechen“ und „Sperren“ auslösen und Erinnerungen lesen | Doku (AUDIT 4.3, 4.6) |
+| R9-Malware-N3 | Windows portabel: UNC-Pfad über die Übergabe löst eine NTLM-Anmeldung aus | UNC- und Gerätepfade abgelehnt (mit Meldung, R10-N1), Token in konstanter Zeit verglichen |
+| R9-Malware-N4 | Windows: Schadsoftware desselben Benutzers kann die per Benutzer installierte App verändern | Doku (AUDIT 4.3, 4.6). **Restrisiko** |
+| R9-Malware-N5 | Notfallblatt im Klartext an Druck-Apps | Druckhinweis nennt Druck-Apps und Abschreiben |
+| R9-Malware-N6 | AUDIT: Ablageort entschlüsselter Kopien portabel widersprüchlich | Doku (AUDIT 3) |
+| R9-Lieferkette-N1, N2 | Beliebige Tags verschieben die Versionsnummer; ein Schein-Release stört die Update-Prüfung | Nur mit Schreibrecht; Tag-Rulesets vom Inhaber abgelehnt. **Restrisiko** |
+| R9-Lieferkette-N3 | Pull Requests bestimmen ihre Pflicht-Checks selbst | `.github/CODEOWNERS` für `.github/` und `tools/`; die Pflicht-Review durch Code-Owner bleibt aus (Inhaber) |
+| R9-Lieferkette-N4 | Release-Notizen aus PR-Titeln im Update-Dialog | Kein `--generate-notes`; der Dialog zeigt bereinigten Klartext, höchstens 1500 Zeichen, mit Hinweis. `R9SafetyTest.releaseNotesArePlainAndShort` |
+| R9-Lieferkette-N5 | `IMPRESSUM_*` auf Repository-Ebene | Bleibt (Inhaber; der Inhalt ist ohnehin öffentlich) |
+| R9-Krypto-N1 | Restrisiko der App-PIN mit Root zu günstig beschrieben („Jahre“) | Doku: Tage bis Wochen (AUDIT 4.6, KONZEPT 6.5) |
+| R9-Krypto-N2 | Klartext-Export braucht nur das Passwort, Weitergeben beide Faktoren | **Offen**, Entscheidung des Inhabers steht aus |
+| R9-Krypto-N3 | RP-ID aus dem Dateikopf nicht auf `ghulsuite.invalid` beschränkt (K-20) | Nur Slots mit der eigenen RP-ID werden angefragt. `a_slot_of_another_rp_id_is_not_asked_for` |
+| R9-Krypto-N4 | Windows könnte das Salz beim Registrieren anders behandeln als Android (hypothetisch) | **Offen**, Handtest (Testplan Windows WG7) |
+| R9-Krypto-N5 | Unbekannte optionale Header-Records gehen beim Zurückschreiben verloren | Doku (FORMAT 3) |
+| R9-Krypto-N6 | Gespeicherte Schlüsseldatei nicht zurückgelesen | Android und Desktop lesen zurück und vergleichen |
+| R9-Krypto-N7 | Windows: Mischwerte beim Transport (`USB | HYBRID`) | Nur genau USB oder NFC. `only_usb_or_nfc_keys_are_registered` |
+| R9-Krypto-N8 | Fremde Datei mit 64 Iterationen blockiert das Öffnen minutenlang | Höchstens Speicher mal Iterationen wie 512 MiB mal 3 (`DERIVE_MAX_WORK`). `a_key_derivation_beyond_what_the_app_uses_is_refused_at_once` |
+
+Dazu in der App: Der Emulator (Testversion) nimmt einen Software-Keystore für die App-PIN an, echte Geräte und
+die Release-Version nie (`R9SafetyTest.softwareKeysOnlyForTheDevBuildOnAnEmulator`; R8-N6).
+
+## Runde 8: App-PIN, Android 12, Release (22.11.2026)
+
+**Wer:** 1 Prüf-Agent, die Umsetzung von App-PIN, `minSdk` 31 und Release aus dem CI-Lauf. **Ergebnis:** kein Fund
+hoch, 4 mittel, 9 niedrig; behoben.
+
+| Nr. | Stufe | Fund | Behoben, Test |
+|---|---|---|---|
+| R8-M1 | M | Die Website wurde nach einer Vorabversion nicht mehr neu gebaut; ihr Link auf die Vorabversion lief ins Leere, wenn diese gelöscht wurde | Die Karte „Vorab“ verlinkt nur die Release-Seite, ohne Nummer |
+| R8-M2 | M | Ein gescheitertes Neu-Einrichten der App-PIN (falsches Passwort, abgebrochene Berührung) löschte die vorhandene PIN | Nur abgeschaltet, wenn der Kern schon versiegelt hat. `PinSlotsTest.aFailedSetupAgainKeepsThePinThere`; Testplan AP5 |
+| R8-M3 | M | Das Environment `release` muss jetzt `dev` zulassen; die Doku beschrieb noch `workflow_run` | Doku (PROJEKT, AUDIT 4.1, 4.2, K-7); Einstellung beim Inhaber |
+| R8-M4 | M | Ein erneuter Lauf eines älteren Commits hätte alten Code als neue Version veröffentlicht | Veröffentlicht nur, wenn der Commit noch der Stand des Branches ist |
+| R8-N1 bis N9 | N | Aufräumfehler nach dem Neuversiegeln kostete die PIN; vorübergehende Lesefehler schalteten sie ab; Datei zweimal gelesen; PIN-gleiche Werte im Speicher; falscher Text beim Fingerabdruck; Software-Keystore im Emulator; Android 10 und 11 ohne Hinweis; kein CI-Lauf bei reinen Änderungen an `VERSION`; Kleinkram | `a_copy_left_after_sealing_anew_costs_nothing`, `the_generation_tells_a_missing_file_from_a_read_error`, `a_file_changed_before_the_unlock_is_refused`, `PinSlotsTest.aKeystoreErrorAfterAWrongPinIsNoZeroLeft`; Werte im `finally` genullt (Kopien in UniFFI und `SecretKeySpec` bleiben, dokumentiert); eigener Text; Emulator siehe Runde 9; Android 10 und 11 nur in der Doku (AUDIT 7), nicht in den Release-Notizen; `VERSION`, `rust-toolchain.toml`, `release.yml` in `push.paths`; `PinSlots` serialisiert |
+
+## App-PIN neu, Android 12, Release aus dem CI-Lauf (22.11.2026)
+
+**Gutachten:** 2 Berater (Prüf-Agenten) zu GP-M19. Befund: Die alte App-PIN war mit Root **außerhalb des Geräts**
+durchprobierbar (ein Keystore-Aufruf gab den Schnellschlüssel ohne PIN frei, danach nur noch Argon2id, Stunden bis
+Tage); KONZEPT 6.5 und AUDIT GP-M19 waren falsch und sind richtiggestellt. Empfehlung: die PIN in eine
+Keystore-Operation, zwei Einmal-Schlüssel, Android 12. **Entscheidung des Inhabers:** mindestens 8 Ziffern, 2
+Versuche, `minSdk` 31 direkt.
+
+**Umsetzung** (Entwickler A im Kern, B in der App): Schnell-Datei Version 4 mit zwei HMAC-Slots im Android-Keystore
+(`setMaxUsageCount(1)`, StrongBox zuerst, sonst TEE), Kryptografie ganz im Kern; Version 3 der App-PIN wird
+abgelehnt, der Fingerabdruck bleibt. Tests: `tests/quick_pin.rs` (10 Tests, u. a. `two_wrong_pins_end_the_pin`,
+`a_right_pin_opens_and_seals_anew`, `a_stop_costs_at_most_one_attempt`, `the_file_alone_checks_no_pin`,
+`sealing_anew_keeps_the_validity`), `PinSlotsTest` mit einem nachgebauten Keystore, der die Einmal-Nutzung erzwingt.
+Dabei gefunden: `workflow_run` führte immer die Fassung von `main` aus, wo es `release.yml` nicht gab; seit PR #50
+entstand keine Vorabversion. Jetzt ruft der letzte Job von `android.yml` den Release auf. **Nicht getestet:** der echte
+Keystore (nur Emulator und Gerät, Testplan Abschnitt 41).
+
+## Runde 7: M8 und M21 (22.11.2026)
+
+**Wer:** 1 Prüf-Agent, die Behebung von GP-M8 (Tresor entfernen, gescheiterte Exporte) und GP-M21 (Windows nimmt nur
+USB oder NFC). **Ergebnis:** kein Fund hoch, 2 mittel, 7 niedrig; behoben.
+
+| Nr. | Stufe | Fund | Behoben, Test |
+|---|---|---|---|
+| R7-M1 | M | Android: Nach einem gescheiterten Speichern (Schlüsseldatei auf eine volle SD-Karte) blieb eine leere oder halbe Datei liegen | Das angelegte Dokument wird bei Fehler gelöscht |
+| R7-M2 | M | Android: Kam eine Adresse ohne Daten zurück (App neu erzeugt), hieß das „abgebrochen“ und das leere Dokument blieb | Gelöscht, „fehlgeschlagen“ gemeldet |
+| R7-N1 bis N7 | N | Transportwert 0 unter Windows; Bedingung ungetestet; alter Fehler neben „bereit“; Abbrechen löschte einen anderen Fehler; Stream-Exporte meldeten einen nicht beschreibbaren Ort nicht; „bestätigt“ bei M21 zu stark; roher Fehlertext beim Entfernen eines Tresors | `key_device::transport_allowed` als reine Funktion, `only_usb_or_nfc_keys_are_registered`; Fehler im Dialog richtig gesetzt und behalten; `onFailed` für alle GhulDocs-Exporte; Text in GP-M21 berichtigt; `VAULT_NOT_REMOVED` mit eigener Meldung. `SaveFileResultTest` |
+
+**Ältere Runden:** Großprüfung mit den Wellen 1 bis 4, der gegenseitigen Durchsicht, Runde 5 und Runde 6 unten in
+Abschnitt 12; die Prüfrunden vom 21.11.2026 in Abschnitt 11; alles davor in den Abschnitten 3 bis 10.
+
+## Testsuite: was es gibt und wie man es startet
+
+Aktuell gehalten (bis zum 22.11.2026 Abschnitt 2 dieses Protokolls). Die Zahlen stehen oben im Gesamtstand.
 
 | Datei | Was | Zusage* |
 |---|---|---|
@@ -42,6 +346,8 @@ Alle Tests sind grün (Kern, Android-Kotlin, Desktop-Tests). Die App-Tests im Em
 | `…/tests/attacks.rs` | Datenklau (Klartextsuche in allen Dateien), gestohlene Dateien, gefälschte/geschwächte Tresordateien, CSV-Formeln | Z2, Z3, Z7 |
 | `…/tests/properties.rs` | Generierte Reihen: Kalender 1600 bis 2400, RFC-Vektoren, Base32, Wiederherstellungscodes, Passwortgenerator, ICS-Rundreise | Z5, Z8 |
 | `…/tests/everyday.rs` | Alltagstest (2 Geräte, 30 Tage) und Stresstests (5.000 Einträge, 64 MB, 8 Threads) | Z1, Z5 |
+| `…/tests/quick_pin.rs` | App-PIN Version 4: zwei Einmal-Slots, zwei Fehlversuche beenden die PIN, Neuversiegeln behält die Gültigkeit, Abbruch kostet höchstens einen Versuch, die Datei allein prüft keine PIN, einfache PINs abgelehnt | Z2, Z7 |
+| `…/tests/r9.rs` | Runden 9 bis 14: Grenzen je Tresor beim Duplizieren, Importieren und Verschieben, Schutzänderung über ein Journal (Schreibfehler, Abbruch, Löschen, fremde Suite, Wettläufe mit Entsperren, Löschen und Übernehmen) | Z1, Z5 |
 | `…/tests.rs` (`rekey`, `single`) | Neue innere Schlüssel bei jeder Schutzänderung, alte Kopien danach; einzelne Tresore öffnen, hinzufügen, weitergeben (Auswahl und ganzer Tresor, auch GhulCal) | Z5, Z9 |
 | `core/ghul-core/src/fuzz_tests.rs` | Schnelles Fuzzing aller Parser bei jedem Lauf | Z3 |
 | `…/tests/collections.rs` | JSONTestSuite durch alle JSON-Importe; 304 Kalenderdateien anderer Programme durch Import, Anzeige und Export | Z3, Z8 |
@@ -55,6 +361,8 @@ Alle Tests sind grün (Kern, Android-Kotlin, Desktop-Tests). Die App-Tests im Em
 | `app/…/desktopTest/DocsInteractionTest.kt`, `DocsBackendTest.kt` | GhulDocs am Desktop: Bedienung mit Compose UI Test und gegen den echten Kern (Hinzufügen, Ansehen, Exportieren, Papierkorb, Grenze, Sperren) | Z1, Z2, Z6 |
 | `app/…/desktopTest/DocScanTest.kt`, `ScanAlgorithmsTest.kt` | Scannen mit gezeichneten Fotos und einer Ersatz-Kamera: Blatt finden, Ecken ziehen, mehrere Seiten, Filter, PDF; nach Speichern, Verlassen und Sperren bleibt nichts im Speicher | Z2, Z6 |
 | `app/…/desktopTest/InteractionTest.kt`, `AppStateRunTest.kt` | Bedienung: langes Drücken, Auswahl, Löschen mit „Rückgängig“, Rückfragen, zweite Spalte; Aktionen mit verzögerter Ausführung wie auf dem Gerät | Z1, Z6 |
+| `app/…/desktopTest/PinSlotsTest.kt` (läuft in `desktopAppBindingTest`) | App-PIN mit echtem Kern und einem nachgebauten Keystore, der die Einmal-Nutzung erzwingt: zwei Fehlversuche, Neuversiegeln, gesperrtes Gerät und gescheiterter Import ohne Verbrauch, Absturz an jeder Stelle | Z2, Z7 |
+| `app/…/desktopTest/R9SafetyTest.kt`, `JobsTest.kt`, `UpdateScriptTest.kt` | Leerlauf-Sperre (5 bis 15 Minuten, aufgeschoben höchstens bis zur Grenze), einfache App-PINs, Release-Notizen als Klartext, Software-Keystore nur für die Testversion im Emulator, feste Sperre nach Bildschirm aus, Anzeige an nur bei Fortschritt, PowerShell mit vollem Pfad | Z6, Z7 |
 | `app/…/desktopTest/LayoutCheckTest.kt`, `ScreenshotTest.kt` | Alle Hauptbildschirme auf drei Handys, deutsch und englisch (Umbrüche, Abschneiden, Tippflächen); Bilder für die Durchsicht und die README | Z6 |
 | `tools/ci-emulator.sh` + `emulator.yml` | Bei jedem Pull Request und auf main: die Android-App im Emulator (Einrichtung, alle vier Bereiche, GhulDocs `07-docs.yaml`, Suite-Datei mit Dokumenten `14-suite-file.yaml`, Optionen, dunkel und quer), ein Bild nach jedem Schritt; nachts Monkey und Intent-Angriffe. Die Kamera hat keinen Ablauf im Emulator | Z1, Z3, Z6 |
 | `tools/check-logcat.sh`, `tools/check-reminders.sh`, `tools/compare-screenshots.py` | Absturz, ANR oder Alarm der Entwicklerversion im Systemprotokoll; Erinnerungen im System; Bildvergleich mit dev | Z1, Z6, Z8 |
@@ -72,7 +380,47 @@ cargo test --release -p ghul-core -- --ignored crazy      # bekloppter Nutzer, l
 python3 ../tools/check-texts.py                            # Texte
 ```
 
-## 3. Gefundene Fehler
+## Stand vor dem Umbau dieses Protokolls (bis 22.11.2026, Runde 6)
+
+Unverändert übernommen (nur die Überschriften eine Ebene tiefer, Abschnitt 2 steht jetzt oben als „Testsuite“). Die
+Nummern der Abschnitte bleiben, damit Verweise wie „Testprotokoll, Abschnitt 12“ weiter stimmen. Die Zahlen in
+Abschnitt 1 sind der Stand vom 22.11.2026 vor den Runden 7 bis 14; aktuell sind die im Gesamtstand.
+
+> **Hinweis (19.11.2026):** Die Abschnitte 3 bis 9 stammen aus der Zeit **vor den Umbauten** und bleiben als
+> Geschichte unverändert. Damals gab es noch Synchronisation, FTPS, Sicherung und Wiederherstellung (entfernt mit
+> [`UMBAU-OHNE-SYNC.md`](UMBAU-OHNE-SYNC.md)) sowie GhulMail, GhulDrive, eigene Server (SFTP, PHP-Modul), Freigabelinks,
+> den Schlüsselwechsel, das Mail-Archiv und das Hochladen von Fehlerberichten (entfernt mit
+> [`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)). Funde und offene Punkte zu diesen Funktionen sind **obsolet**; welche das
+> sind, fasst [`AUDIT.md`](AUDIT.md), Abschnitt 3, zusammen. **Aktuell** sind die Abschnitte 1 und 2 (Zahlen und
+> Testsuite), Abschnitt 10 (GhulDocs und Scannen), Abschnitt 11 (mehrere GhulDocs-Tresore, ganzen Tresor
+> weitergeben) und Abschnitt 12 (Großprüfung vom 21. und 22.11.2026).
+
+Stand: 14. November 2026 (vierte Runde: B1 Schlüssel bei jeder Schutzänderung erneuern, F23 neutrale Dateinamen, Geräte lange offline) · Branch `feat/rekey-neutral-names` · Zusammenfassung aller Audits: Sicherheitsbericht (`docs/AUDIT.md`); Testkonzept: `docs/TESTKONZEPT.md`.
+
+Dieses Protokoll ist die Arbeitsliste für die nächsten Durchgänge: Jeder Fund hat eine Nummer, eine Schwere, den Test, der ihn zeigt, und, wenn behoben, den Commit. Offene Punkte haben einen Vorschlag, wie sie behoben werden, und den Test, der danach grün werden muss.
+
+### 1. Ergebnis in Zahlen
+
+Stand 22.11.2026, nach den fünf Prüfrunden, dem Gutachten zur Veröffentlichung und der Großprüfung (die Zahlen vor den Umbauten stehen in [`AUDIT.md`](AUDIT.md), Abschnitt 1; alle Prüfläufe in [`PRUEFCHRONIK.md`](PRUEFCHRONIK.md)).
+
+| | |
+|---|---|
+| Testfunktionen im Kern | 312 (305 bei jedem Lauf, alle bestanden; 7 ignoriert: Langläufe und Stresstests, Netz und x509-limbo nur nachts, dazu die zwei Helfer, die die Format-3-Dateien einmal erzeugt haben) |
+| Tests der App am Desktop | 159 (`desktopTest`) und 20 mit der echten Kern-Anbindung (`desktopAppBindingTest`), alle bestanden |
+| Letzter vollständiger Precheck | 22.11.2026, grün (`tools/precheck.sh` mit Gradle, Android-Build und Desktop-Paketen). Windows (Clippy, Build, Tests) und der Emulator laufen nur in der CI |
+| Einzelprüfungen pro Lauf | über 1 Million (u. a. Zeitzonen-Umrechnungen in 446 Zonen, Kalendertage, Fuzz-Eingaben, Base32-Schreibweisen, Wiederherstellungscodes, HOTP-Fälle, Passwortgenerator-Varianten, Aktionen „bekloppter Nutzer“, 515 Naughty Strings in jedem Feld) |
+| Davon gegen echte Server | keine mehr (Testserver mit dem Umbau entfallen); nachts badssl.com und x509-limbo gegen den TLS-Prüfer |
+| Externe Testsammlungen | Big List of Naughty Strings, Project Wycheproof (XChaCha20-Poly1305, HKDF, HMAC, P-256), RFC 4226/6238, JSONTestSuite, 304 Kalenderdateien aus den Tests von iCal4j und python-icalendar, Zeitzonen-Regeln aller Zonen der IANA-Datenbank |
+| Gefundene Fehler | Abschnitt 3 (Geschichte, F01 bis F149); zu GhulDocs und Scannen Abschnitt 10; Großprüfung Abschnitt 12 (H1 bis H13, M1 bis M44) |
+| Offene Punkte | kleine Punkte in [`AUDIT.md`](AUDIT.md) 4.5 (K-1 bis K-38), Restrisiken in 4.6, offene Funde der Großprüfung in Abschnitt 12, der Weg zur Veröffentlichung in [`PRUEFCHRONIK.md`](PRUEFCHRONIK.md) |
+
+Alle Tests sind grün (Kern, Android-Kotlin, Desktop-Tests). Die App-Tests im Emulator (Maestro, Monkey) laufen in der CI.
+
+### 2. Testsuite
+
+Verschoben nach oben: [Testsuite](#testsuite-was-es-gibt-und-wie-man-es-startet).
+
+### 3. Gefundene Fehler
 
 Schwere: **K** kritisch (Datenverlust, Geheimnis preisgegeben) · **H** hoch (Angriff möglich, Absturz von außen) · **M** mittel · **N** niedrig.
 
@@ -232,9 +580,9 @@ Zu F23: Im Ordner sieht man nicht mehr, welche Datei welcher Tresor ist; die App
 
 Zu F17 (Verhalten seit der Behebung): Die erste Mail eines neuen Kontakts mit Autocrypt-Schlüssel zeigt „Schlüssel unbekannt/unbestätigt“; ab der nächsten Mail „gültig“ (Vertrauen beim ersten Kontakt). Öffnet man dieselbe erste Mail erneut, zeigt sie „gültig“, das ist eine kleine Unstimmigkeit (siehe B12).
 
-## 4. Offene Punkte (Audit und Tests)
+### 4. Offene Punkte (Audit und Tests)
 
-### Sicherheit und Datenhaltung
+#### Sicherheit und Datenhaltung
 
 | Nr. | Schwere | Punkt | Vorschlag | Test, der grün werden muss |
 |---|---|---|---|---|
@@ -261,7 +609,7 @@ Zu F17 (Verhalten seit der Behebung): Die erste Mail eines neuen Kontakts mit Au
 | B22 | - | ~~Windows: Erinnerungen nur, solange die App läuft; Zeitzonen-Wechsel im laufenden Programm ungeprüft~~ | erledigt: Zeitzonen-Wechsel wird alle 5 Minuten erkannt und die Erinnerungen neu geplant. Dass Erinnerungen nur bei laufendem Programm kommen, ist eine Grenze der Windows-Version ohne Hintergrunddienst (zusammen mit #9); die Kalender-Optionen sagen es | Testplan WR |
 | B19 | - | ~~Test-Hilfe: Nach Sperren/Entsperren muss Drive im Test neu verbunden werden~~ | erledigt: nur die Test-Hilfe `drive_use_folder` hält die Verbindung im Speicher; die App verbindet sich aus dem gespeicherten Server neu (Nachweis im PHP-Modul-Test: sperren, entsperren, herunterladen) | `tests::php_module_storage_drive_and_limited_shares` |
 
-### Bedienung (Fehler, die Nutzer machen)
+#### Bedienung (Fehler, die Nutzer machen)
 
 | Nr. | Punkt | Vorschlag |
 |---|---|---|
@@ -286,7 +634,7 @@ Offen (Layout): `LayoutCheckTest` prüft die Handy-Darstellung mit den Schriften
 
 ~~Offen (Kern): `sync_now` arbeitet über das Netz, während der Kern seine Sperre hält (`with_open`). Solange eine Synchronisation mit einem langsamen Server läuft, warten alle anderen Aufrufe der App (Serverliste, Status). Die App zeigt dann „Wird geladen …“ (F61); die Sperre kürzer zu halten (Netz außerhalb, nur das Zusammenführen unter der Sperre) ist ein eigener Umbau.~~ **Hinfällig** (20.11.2026): Mit dem Umbau ohne Synchronisation gibt es `sync_now` und Sync-Server nicht mehr, der Punkt betraf nur die Synchronisation.
 
-### Uneinheitliche Bedienung
+#### Uneinheitliche Bedienung
 
 | Nr. | Punkt |
 |---|---|
@@ -299,7 +647,7 @@ Offen (Layout): `LayoutCheckTest` prüft die Handy-Darstellung mit den Schriften
 | K7 | ~~Hinweise für Windows erscheinen auf Android und umgekehrt~~ erledigt |
 | K8 | ~~Falscher Hinweis „Favorit: Konto lange drücken“~~ erledigt (entfernt) |
 
-## 5. Texte und Begriffe
+### 5. Texte und Begriffe
 
 `tools/check-texts.py` findet aktuell **0 Fehler** und **22 Hinweise** (Stand 14.11.2026). Die 60 nicht mehr verwendeten Texte sind entfernt; „Security Key“, „Ersatzkey“, „Label“, „Login“, „Sync“ und das NFC-Versprechen sind vereinheitlicht. Die übrigen Hinweise sind überwiegend Fehlalarme der Begriffsregeln (z. B. „Autofill-Einstellungen“ von Android, „Webspace“). Die wichtigsten Gruppen (vollständige Liste: Skript ausführen):
 
@@ -315,7 +663,7 @@ Offen (Layout): `LayoutCheckTest` prüft die Handy-Darstellung mit den Schriften
 
 Sobald die Begriffe bereinigt sind: `tools/check-texts.py --strict` in der CI einschalten, dann kommen neue Unstimmigkeiten nicht mehr durch.
 
-## 6. Was geprüft wurde und in Ordnung ist
+### 6. Was geprüft wurde und in Ordnung ist
 
 - Kein Klartext auf Gerät, Server, in Sicherung oder Export (Marker in allen Bereichen, auch als UTF-16, Hex, Base64 gesucht).
 - Gestohlene Dateien öffnen sich nur mit Master-Passwort **und** zweitem Faktor; eine um ein Bit veränderte Schlüsseldatei wird abgelehnt.
@@ -329,7 +677,7 @@ Sobald die Begriffe bereinigt sind: `tools/check-texts.py --strict` in der CI ei
 - Kalender-Import: 304 Dateien anderer Programme ohne Absturz; was angenommen wird, übersteht Export → Import unverändert. Zeiten aus UTC und aus anderen Zeitzonen landen auf der richtigen Stunde; die Regeln aller 446 Zeitzonen stimmen in 777.000 Stichproben mit der Zeitzonendatenbank überein.
 - Bekloppter Nutzer (3 Geräte, 3.000+ Aktionen, auch Sperren, Neustarts, Müll-Importe, falsche Ordner): kein Absturz, nur verständliche Ablehnungen, nichts verloren, nichts Gelöschtes zurück.
 
-## 7. Empfohlene Reihenfolge
+### 7. Empfohlene Reihenfolge
 
 1. **Diesen Branch mergen** (alle Funde F01 bis F22 behoben, Nachtlauf aktiv).
 2. ~~F23~~ und ~~B1~~ erledigt (Formatversion 2).
@@ -340,11 +688,11 @@ Sobald die Begriffe bereinigt sind: `tools/check-texts.py --strict` in der CI ei
 
 Nach jedem Durchgang: dieses Protokoll aktualisieren (Status, Commit), neue Funde mit nächster Nummer anhängen.
 
-## 8. Lückenanalyse Sicherheit (zweite Runde)
+### 8. Lückenanalyse Sicherheit (zweite Runde)
 
 Was nach beiden Runden **nicht** oder nur teilweise abgedeckt ist, ehrlich aufgelistet, damit nichts als „geprüft“ gilt, was es nicht ist.
 
-### Braucht eine Entscheidung oder größeren Umbau
+#### Braucht eine Entscheidung oder größeren Umbau
 
 | Nr. | Lücke | Bedeutung | Vorschlag |
 |---|---|---|---|
@@ -356,7 +704,7 @@ Was nach beiden Runden **nicht** oder nur teilweise abgedeckt ist, ehrlich aufge
 | L6 | **Metadaten auf dem Server** | Server sieht Anzahl, Größe und Änderungszeit der Dateien und die IP (Tresornamen nicht mehr, F23) | dokumentieren (unvermeidbar ohne eigenen Dienst) |
 | L7 | ~~PGP-Schlüssel von Kontakten nur „Vertrauen beim ersten Kontakt“~~ | erledigt: Fingerabdruck vergleichen und bestätigen; ein bestätigter Schlüssel wird nicht stillschweigend ersetzt, ein Wechsel wird gemeldet (`security::confirmed_pgp_keys_stay_and_key_changes_are_reported`) | erledigt |
 
-### Technisch nicht testbar oder außerhalb der App
+#### Technisch nicht testbar oder außerhalb der App
 
 | Nr. | Lücke | Einordnung |
 |---|---|---|
@@ -367,7 +715,7 @@ Was nach beiden Runden **nicht** oder nur teilweise abgedeckt ist, ehrlich aufge
 | L12 | Zeit-Seitenkanäle | Nicht gemessen; Vergleiche von Geheimnissen laufen in konstanter Zeit, die Kryptobibliotheken sind dafür ausgelegt |
 | L13 | ~~Windows portable: Rechte, DLL-Suchpfad, fremde PCs~~ | erledigt, soweit eine App es kann: Das Arbeitsverzeichnis ist aus dem DLL-Suchpfad genommen; entschlüsselte Kopien liegen portabel im Datenordner statt im Windows-Temp und werden sicher gelöscht (B10). Der installierte Datenordner liegt im Benutzerprofil (lesbar nur für dich und Administratoren); auf einem USB-Stick (FAT/exFAT) gibt es keine Rechte, dort schützt die Verschlüsselung. Auf fremden PCs kann ein Keylogger mitlesen: nur auf eigenen Geräten entsperren (Hinweis in Abschnitt 7 des Sicherheitsberichts) |
 
-### Weitere Sammlungen und Werkzeuge
+#### Weitere Sammlungen und Werkzeuge
 
 Seit 14.11.2026 im Nachtlauf: MobSF, Intent-Angriffe (statt drozer), OWASP ZAP, x509-limbo, OpenPGP mit GnuPG (statt der Sequoia-Testsuite, die einen eigenen Dienst braucht) und ein Reproduzierbarkeits-Check des Kerns. Die übrigen Zeilen (auch Semgrep und cargo-mutants) sind Ideen für später; sie betreffen keine offene Sicherheitslücke.
 
@@ -388,7 +736,7 @@ Seit 14.11.2026 im Nachtlauf: MobSF, Intent-Angriffe (statt drozer), OWASP ZAP, 
 | **csv-spectrum**, **fuzzdb**, **IntruderPayloads** | weitere Eingabe-Sammlungen | klein |
 | Geräte-Matrix (Samsung, Pixel, Xiaomi; Android 10 bis 16) | Hersteller-Eigenheiten bei Hintergrunddiensten, Keystore | groß, braucht Testgeräte oder einen Gerätedienst |
 
-### Stand der Abdeckung nach Angriffsfläche
+#### Stand der Abdeckung nach Angriffsfläche
 
 | Angriffsfläche | Abdeckung | Rest |
 |---|---|---|
@@ -404,7 +752,7 @@ Seit 14.11.2026 im Nachtlauf: MobSF, Intent-Angriffe (statt drozer), OWASP ZAP, 
 | Kalender (Rechnen, Import, Zeitzonen, Erinnerungen) | hoch (Kalendertage, Dateien anderer Programme, alle Zeitzonen, Alarm-Prüfung im Emulator) | B22, B6, B4 |
 | Oberfläche (Fehlbedienung) | hoch (Maestro für alle fünf Bereiche, auch mit echtem Server; 10 Bedienungstests am Desktop; Monkey nachts) | Abschnitt 4 U |
 
-## 9. Gestaltung (Durchsicht aller Bildschirme)
+### 9. Gestaltung (Durchsicht aller Bildschirme)
 
 Der Oberflächen-Code wurde Bildschirm für Bildschirm gegen das eigene Design-System geprüft (rund 50 Abweichungen) und angeglichen. Geprüft an den gerenderten Bildschirmfotos (hell, dunkel, Handy, breites Fenster).
 
@@ -435,7 +783,7 @@ Bedienung (zweiter Durchgang), alles erledigt:
 
 Noch nicht auf einem Gerät ausprobiert: Zurück-Taste beendet die Auswahl, Wechsel in den Hintergrund führt eine offene Löschung aus, Strg+L unter Windows.
 
-## 10. GhulDocs und Scannen (Umbau, 17. bis 19.11.2026)
+### 10. GhulDocs und Scannen (Umbau, 17. bis 19.11.2026)
 
 Mit den Paketen G1 bis G7 von [`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md) sind Mail, Drive, Server und Freigaben samt
 ihren Tests entfernt und GhulDocs mit dem Scannen dazugekommen. Was dafür neu geprüft wird:
@@ -467,7 +815,7 @@ Funde der unabhängigen Durchsicht in Paket G9 (19.11.2026), alle behoben:
 | G9-13 | N | Dateien älterer Entwicklerversionen: nur allgemeiner Fehler; Reste entfernter Funktionen blieben auf Android | Fehler `OldFormat` mit eigener Meldung; einmaliges Aufräumen (`LegacyCleanup`, `LeftoversTest`, `files_of_an_older_development_version_say_so`) |
 | G9-14 | N | Ließ sich ein bisheriger Dokumentordner beim Ersetzen nicht zurücklegen, wurde er gelöscht | nie gelöscht: in `rescued-documents-…` aufbewahrt, Fehler sagt es; `content_folders_that_cannot_go_back_are_kept` |
 
-## 11. Mehrere GhulDocs-Tresore und ganzen Tresor weitergeben (20.11.2026)
+### 11. Mehrere GhulDocs-Tresore und ganzen Tresor weitergeben (20.11.2026)
 
 Entschieden vom Inhaber am 20.11.2026, Begründung und Einzelheiten in [`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md),
 Abschnitt 11 (letzte Einträge). Geändert wurde:
@@ -545,7 +893,7 @@ Funde der unabhängigen Durchsicht dieses Umbaus (20.11.2026), alle behoben:
 | PR-19 | H | Unabhängiges Gutachten zur Veröffentlichung: keine Zusage, dass spätere Versionen heutige Dateien lesen (ein Update hätte den Zugang kosten können); ging das Gerät aus, während eine Suite-Datei die Arbeitskopie ersetzte, konnte ein gemischter Stand bleiben und das Aufräumen beim nächsten Start die alten GhulDocs-Dokumente löschen | Format 3 eingefroren (Zusage in FORMAT.md, echte Dateien vom 21.11.2026 als Testfälle mit Prüfsummen, `format_freeze`); Übernehmen mit Journal: alte Dateien und Dokumentordner werden vorher gesichert und vermerkt, der nächste Start stellt den Stand davor vollständig her (`a_device_that_goes_off_while_a_file_replaces_the_working_copy_keeps_the_state_before`, Abbruch nach jedem einzelnen Schreibschritt) |
 | PR-20 | H | Gutachten: Speichern unter Android leerte die einzige Suite-Datei, bevor die neue geschrieben war (`"wt"`); ein voller oder abgezogener Stick oder ein Absturz hinterließ eine kaputte Datei, dann gab es nur noch die Arbeitskopie | Mit einmal freigegebenem Ordner schreibt die App `<Name>.neu` daneben, liest sie zurück und prüft sie, benennt die alte in `<Name>.alt` um, die neue auf den Namen und löscht erst dann die alte; ein abgebrochener Tausch wird beim nächsten Zugriff zurückgedreht. Gelesen und geschrieben wird dann über den freigegebenen Ordner (Android nimmt den Zugriff auf ein umbenanntes Dokument weg), jede Umbenennung wird auf den erwarteten Namen geprüft. Speichern-Dialog: „Ordner freigeben“, Hinweis bei Ordnern, die Android nicht freigibt, und bei Cloud-Apps, dass direkt überschrieben wird. Die erste Fassung hatte zwei schwere Fehler (nach dem ersten Tausch „nicht erreichbar“, Wiederherstellung nie erreicht), gefunden von der unabhängigen Durchsicht vor dem Push **Nur auf dem Gerät prüfbar** (Testplan E19e); Windows schrieb schon daneben und tauschte |
 
-## 12. Großprüfung (21. und 22.11.2026)
+### 12. Großprüfung (21. und 22.11.2026)
 
 25 KI-Agenten in vier Wellen, danach Behebung durch zwei Entwickler-Agenten mit gegenseitiger Durchsicht, Runde 5 mit
 fünf Prüfern und eine Schlussprüfung; Ablauf und Zahlen in [`PRUEFCHRONIK.md`](PRUEFCHRONIK.md), Abschnitt 2.3. Die
@@ -558,7 +906,7 @@ Schritte von Hand stehen im [Testplan](TESTPLAN.md), Abschnitt 40 (GR1 bis GR14)
 hat jetzt Version 3, GP-H6). Branch- und PR-Builds sind bei jedem Lauf anders signiert: vorher die `.dev`-App
 deinstallieren.
 
-### 12.1 Hoch
+#### 12.1 Hoch
 
 | Nr. | Stufe | Fund | Behoben, Test |
 |---|---|---|---|
@@ -576,7 +924,7 @@ deinstallieren.
 | GP-H12 | H | Kein Vorab-Check des Speicherplatzes; voller Speicher kam als roher Fehler, der Zwischenordner blieb liegen | Schätzung der Größe und Vergleich mit dem freien Platz vor dem Schreiben; „voll“ am Fehlercode erkannt (`NoSpace`); Zwischenordner ohne laufenden Besitzer sofort entfernt (unter Windows bleiben fremde bis zu 24 Stunden). `no_room_is_said_before_staging`, `the_estimate_of_the_suite_file_is_not_too_small`, `a_staging_folder_of_a_running_process_stays`, `SuiteFileBackendTest.tooLittleRoomIsSaidBeforeWriting`, `NoSpaceTest`; Testplan GR11 |
 | GP-H13 | H | Die Update-Prüfung war als Ganzes ungetestet; Mutanten überlebten (Passwortwechsel ohne zweiten Faktor, Journal, Abstammung, Zwei-Minuten-Fenster) | `update_check_end_to_end` (lokaler Server: gültig, kaputte Signatur, andere Version, Datei fehlt, 404), `every_protection_change_with_the_password_alone_is_refused`, `going_off_while_new_vaults_come_in_leaves_the_state_before`, `a_cut_off_lineage_goes_by_the_counter`, `a_confirmation_holds_two_minutes`. `safeWrite` unter Android hat weiter keinen automatischen Test (GP-M44) |
 
-### 12.2 Mittel
+#### 12.2 Mittel
 
 | Nr. | Stufe | Fund | Behoben, Test |
 |---|---|---|---|
@@ -619,7 +967,7 @@ deinstallieren.
 | GP-M43 | M | Reste der Synchronisation, AES der ZIP-Bibliothek | ZIP nur mit `deflate` (verschlüsselte Einträge: `ImportEncrypted`), vier Krypto-Crates weniger; alle Listen und Exporte filtern gelöschte Einträge |
 | GP-M44 | M | Android-Code (Schnell-Entsperren, Erinnerungen, USB-Key, Speichern) ohne Unit-Tests | **Offen.** Nur die Menge `QUICK_UNLOCK_KEPT_ON` ist am Desktop getestet (`OpenWithSafetyTest`) |
 
-### 12.3 Aus den Durchsichten danach (Auswahl)
+#### 12.3 Aus den Durchsichten danach (Auswahl)
 
 | Nr. | Stufe | Fund | Behoben, Test |
 |---|---|---|---|
