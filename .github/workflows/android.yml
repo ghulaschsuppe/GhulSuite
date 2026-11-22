@@ -554,8 +554,9 @@ jobs:
   # only when the required checks passed and no other job failed or was cancelled (skipped jobs,
   # e.g. the emulator on dev, are fine). Whether the app changed since the last release, and so
   # whether there is a new version at all, release.yml decides by itself. The signing key comes
-  # from the environment "release" inside the called jobs; only the legal notice of the website
-  # (repository secrets) is passed on.
+  # from the environment "release" inside the called jobs. GitHub hands environment secrets to a
+  # called workflow only with "secrets: inherit" (with secrets passed one by one they arrive
+  # empty, which broke the first releases of PR #52 and #53).
   release:
     name: Veröffentlichen
     needs: [testvectors, audit, changes, secrets-check, fuzz, stress, windows, build, emulator, build-check, windows-check]
@@ -568,8 +569,4 @@ jobs:
     permissions:
       contents: write
     uses: ./.github/workflows/release.yml
-    secrets:
-      IMPRESSUM_NAME: ${{ secrets.IMPRESSUM_NAME }}
-      IMPRESSUM_ADRESSE: ${{ secrets.IMPRESSUM_ADRESSE }}
-      IMPRESSUM_EMAIL: ${{ secrets.IMPRESSUM_EMAIL }}
-      IMPRESSUM_HOSTER: ${{ secrets.IMPRESSUM_HOSTER }}
+    secrets: inherit

@@ -30,8 +30,8 @@ name: Veröffentlichen
 
 on:
   workflow_call:
-    # Only for the website after a stable release: the legal notice of the live site (repository
-    # secrets, passed on one by one by android.yml).
+    # Secrets come with "secrets: inherit" from android.yml (environment secrets of "release" and
+    # "website" reach the called jobs only that way); declared here only for documentation.
     secrets:
       IMPRESSUM_NAME:
         required: false
@@ -390,8 +390,5 @@ jobs:
     permissions:
       contents: read
     uses: ./.github/workflows/website.yml
-    secrets:
-      IMPRESSUM_NAME: ${{ secrets.IMPRESSUM_NAME }}
-      IMPRESSUM_ADRESSE: ${{ secrets.IMPRESSUM_ADRESSE }}
-      IMPRESSUM_EMAIL: ${{ secrets.IMPRESSUM_EMAIL }}
-      IMPRESSUM_HOSTER: ${{ secrets.IMPRESSUM_HOSTER }}
+    # inherit: the live job needs WEBSITE_FTP_* from the environment "website".
+    secrets: inherit
