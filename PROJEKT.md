@@ -28,7 +28,8 @@ GhulMail ersetzt und die App ohne Server auskommt, in [`docs/UMBAU-GHULDOCS.md`]
   wird es ein eigener GhulDocs-Tresor der Suite.
 - **Schutz:** Master-Passwort **plus** zweiter Faktor (Security Key oder Schlüsseldatei); der Wiederherstellungscode
   ist Pflicht und steckt in jeder Datei.
-- **Plattformen:** Android und Windows (auch portabel), eine gemeinsame Oberfläche. Kein Web-Client.
+- **Plattformen:** Android ab 12 (`minSdk` 31, seit 22.11.2026) und Windows (auch portabel), eine gemeinsame
+  Oberfläche. Kein Web-Client.
 - **Sprachen:** Deutsch und Englisch (`app/composeApp/src/commonMain/composeResources/values*/strings.xml`).
 - **Lizenz:** AGPL-3.0-or-later mit Zusatzbedingung (Urhebervermerk bleibt sichtbar), siehe [`LICENSE`](LICENSE)
   und [`NOTICE`](NOTICE). Name und Logo: [`TRADEMARKS.md`](TRADEMARKS.md). Beiträge: [`CONTRIBUTING.md`](CONTRIBUTING.md).
@@ -76,7 +77,10 @@ tools/                 Prüfskripte, Website-Bau, Emulator-Skripte
 - App: `cd app && ./gradlew :composeApp:desktopTest :composeApp:assembleDebug` (baut Kern und Anbindung mit).
 - Oberfläche im Emulator: `tools/run-maestro.sh <apk>`, unter Windows `maestro test app\maestro`.
 - Weitere Prüfungen: `tools/check-texts.py`, `tools/check-android-manifest.py`, `tools/verify_testvectors.py`; nachts
-  läuft `.github/workflows/nightly.yml` (Fuzzing lang, Langläufe, Monkey, x509-limbo, MobSF).
+  läuft `.github/workflows/nightly.yml` (Fuzzing lang, Langläufe, Monkey, x509-limbo, MobSF). Der Nachtlauf prüft
+  den Stand von `dev` (jeder Checkout mit `ref: dev`, die APKs aus den Läufen von `dev`, der Emulator mit
+  `branch: dev`). Weil ein Zeitplan immer die Fassung von `main` ausführt, wirkt eine Änderung an `nightly.yml` erst,
+  wenn sie in `main` ist.
 - Bilder für README und Website: `ScreenshotTest` (und `DocScanTest` für das Zuschneiden) schreiben nach
   `app/composeApp/build/screenshots/`; auf die halbe Größe verkleinert (Handy 412 × 892, Windows 1280 × 820) liegen sie
   in `docs/images/`.
@@ -85,14 +89,17 @@ tools/                 Prüfskripte, Website-Bau, Emulator-Skripte
 ## CI und Signatur
 
 - `.github/workflows/release.yml`: stabile Versionen (`main`) und Vorabversionen (`dev`) als GitHub-Releases,
-  siehe „Versionen und Veröffentlichung“.
+  aufgerufen vom letzten Job von `android.yml` (`workflow_call`), siehe „Versionen und Veröffentlichung“.
 - `.github/workflows/android.yml`: Kern (Format, Clippy, Tests, Fuzzing, Audit), Windows-Pakete (MSI und portabel),
-  APK, Emulator-Abläufe. Format, Clippy, Tests und der App-Build laufen auch nach einem Fehler weiter, damit ein Lauf
-  alle Fehler auf einmal zeigt. Artefakte: `ghulsuite-dev`, `ghulsuite-windows-dev`, `screenshots`, `emulator-base`.
-  Die App-Pakete eines Branches oder Pull Requests gibt es nur als diese Artefakte (einen Testserver gibt es nicht
+  APK, Emulator-Abläufe, zuletzt der Job `release` (nur bei einem Push auf `main` oder `dev`). Format, Clippy, Tests
+  und der App-Build laufen auch nach einem Fehler weiter, damit ein Lauf alle Fehler auf einmal zeigt. Auf `main` und
+  `dev` bricht ein neuer Push einen laufenden Lauf nicht ab (er wartet), damit der Release nicht mittendrin endet.
+  `android.yml` startet bei einem Push auch, wenn sich nur `VERSION`, `rust-toolchain.toml` oder `release.yml`
+  ändert (sie zählen für den Release als Änderung der App). Artefakte: `ghulsuite-dev`, `ghulsuite-windows-dev`,
+  `screenshots`, `emulator-base`. Die App-Pakete eines Branches oder Pull Requests gibt es nur als diese Artefakte (einen Testserver gibt es nicht
   mehr).
 - **Emulator-Abläufe** (langsam, weil ein ganzes Android startet) laufen nicht bei jedem Push eines Arbeits-Branches,
-  sondern bei jedem Pull Request, auf `main` und nachts, in einem Teil (`base`; Testserver für SFTP und Mail gibt es nicht mehr). Die
+  sondern bei jedem Pull Request, bei einem Push auf `main` und nachts, in einem Teil (`base`; Testserver für SFTP und Mail gibt es nicht mehr). Die
   Kamera hat keinen Ablauf im Emulator; das Scannen prüfen die Desktop-Tests. Von Hand für jeden Branch:
   `.github/workflows/emulator.yml` („Run workflow“, nutzt die zuletzt gebaute APK des Branches).
 - **Kein doppelter Lauf:** Ein Push auf einen Arbeits-Branch mit offenem, konfliktfreiem Pull Request startet in
@@ -108,8 +115,9 @@ tools/                 Prüfskripte, Website-Bau, Emulator-Skripte
   google_apis-Abbild) statt über `run-as`.
 - **Signatur:** Der echte Android-Schlüssel steht nur in zwei GitHub-Environments: `signing` (für den APK-Bau in
   `android.yml` bei einem Push auf `main` oder `dev`) und `release` (für die Jobs `android` und `publish` in
-  `release.yml`, Deployment-Branch nur `main`, weil `workflow_run` immer auf dem Standardzweig läuft). Jeder andere
-  Lauf (Arbeits-Branches, Pull Requests, Forks, manueller Start von `android.yml`) erzeugt im Gradle-Schritt einen
+  `release.yml`). **Beide Environments brauchen die Deployment-Branches `main` und `dev`** (vom Inhaber in GitHub
+  einzustellen): `release.yml` läuft als Teil des CI-Laufs mit dem Branch des Pushes; steht bei `release` nur `main`,
+  lehnt GitHub die Jobs auf `dev` ab und es gibt keine Vorabversion. Jeder andere Lauf (Arbeits-Branches, Pull Requests, Forks, manueller Start von `android.yml`) erzeugt im Gradle-Schritt einen
   Wegwerf-Schlüssel; Keystore-Datei und Passwort gibt es nur in diesem Schritt (nicht in `GITHUB_ENV`), danach wird
   die Datei gelöscht. Gradle liest den Schlüssel aus `GHUL_KEYSTORE_FILE`, `GHUL_KEYSTORE_PASSWORD` und
   `GHUL_KEY_ALIAS` (`app/composeApp/build.gradle.kts`); ohne sie signiert es mit dem lokalen Debug-Schlüssel.
@@ -139,17 +147,22 @@ tools/                 Prüfskripte, Website-Bau, Emulator-Skripte
   (GitHub-Release, „latest“). `dev` ist der Zwischenschritt: Jeder Push dort wird zur **Vorabversion**
   `v0.6.0-dev.<n>` (GitHub-Pre-Release, die neuesten fünf bleiben). Beides baut und signiert
   `.github/workflows/release.yml`; die README verlinkt die Dateien, die App holt daraus ihre Updates.
-  **Erst nach grüner CI:** Der Release startet, wenn der Lauf von `android.yml` für genau diesen Commit grün endete
-  (`workflow_run`), prüft das selbst noch einmal und gibt nur eine neue Version heraus, wenn sich an der App etwas
-  geändert hat (auf `main` gegen die letzte stabile Version, auf `dev` gegen die letzte Version jeder Art). **Kein
-  manueller Release:** `release.yml` hat keinen `workflow_dispatch`, weil ein Start von Hand die Fassung des
-  gewählten Branches ausführen würde. Die Rust-Version steht in `rust-toolchain.toml` (für lokal, CI und Release gleich).
+  **Erst nach grüner CI:** Der letzte Job von `android.yml` (`release`) ruft `release.yml` auf (`workflow_call`),
+  nur bei einem Push auf `main` oder `dev`, nur wenn `secrets-check`, `build-check` und `windows-check` grün sind
+  und kein anderer Job scheiterte oder abgebrochen wurde (übersprungene Jobs stören nicht, z. B. der Emulator auf `dev`).
+  Es läuft also die `release.yml` des gepushten Commits, im selben Lauf. Der Release gibt nur etwas heraus, wenn der
+  Commit noch der Stand des Branches ist (ein erneuter Lauf eines älteren Commits veröffentlicht nichts) und sich an
+  der App etwas geändert hat (`core`, `app`, `VERSION`, `rust-toolchain.toml`, `release.yml`; auf `main` gegen die
+  letzte stabile Version, auf `dev` gegen die letzte Version jeder Art). Bis zum 22.11.2026 startete er über
+  `workflow_run`; das führt immer die Fassung des Standardzweigs `main` aus, wo es `release.yml` nicht gab: Seit
+  PR #50 entstand keine Vorabversion. **Kein manueller Release:** `release.yml` hat keinen `workflow_dispatch`. Die
+  Rust-Version steht in `rust-toolchain.toml` (für lokal, CI und Release gleich).
 - **Versionsnummern ohne Handarbeit:** Ablauf: Arbeits-Branches per PR nach `dev`, dort Vorabversionen testen; zum
   Freigeben PR `dev` → `main`. Die Nummer ergibt sich von selbst: nach `v0.5.0` heißt die nächste Version `0.6.0`
   (auf `dev` `0.6.0-dev.1`, `-dev.2` …, bis `main` sie veröffentlicht). **`VERSION`** (Wurzel) braucht man nur für
   einen Sprung (`1.0.0`) oder eine Fehlerbehebung (`0.5.1`); ist die Version darin schon veröffentlicht oder älter,
-  zählt der Workflow selbst weiter. Jeder Merge nach `main`, der App, Kern oder `VERSION` ändert, wird eine stabile
-  Version.
+  zählt der Workflow selbst weiter. Jeder Merge nach `main`, der App, Kern, `VERSION`, `rust-toolchain.toml` oder
+  `release.yml` ändert, wird eine stabile Version.
 - **Versionsnummern der Pakete** (`app/composeApp/build.gradle.kts`): Android `versionCode` = Version × 100 plus
   laufende Nummer (Vorabversionen 0 bis 98, die stabile 99), Windows-MSI `Major.Minor.(Patch × 100 + Nummer)`. So
   ist jede Version höher als die vorige und eine stabile höher als alle ihre Vorabversionen.
@@ -176,8 +189,10 @@ tools/                 Prüfskripte, Website-Bau, Emulator-Skripte
   nicht gebaut.
 - `.github/workflows/website.yml`: nur `main` → Live-Seite, im Environment `website` (`WEBSITE_FTP_SERVER`,
   `WEBSITE_FTP_USER`, `WEBSITE_FTP_PASSWORD`, Deployment-Branch nur `main`). Eine Vorschau auf einem Server gibt es
-  nicht mehr; `tools/precheck.sh` baut die Seite lokal mit `--preview`. Nach jedem Release wird die Live-Seite neu
-  gebaut.
+  nicht mehr; `tools/precheck.sh` baut die Seite lokal mit `--preview`. Neu gebaut wird die Live-Seite bei einem Push
+  auf `main`, der sie betrifft, und nach jedem **stabilen** Release (`release.yml` ruft `website.yml` auf). Eine
+  Vorabversion von `dev` baut sie nicht neu; die Seite nennt darum keine einzelne Vorabversion, die Karte „Vorab“
+  verlinkt nur die Release-Seite (ohne stabile Version führen auch die Download-Knöpfe dorthin).
 - Die Seite setzt keine Cookies und lädt nichts von fremden Servern (keine Schriften, keine Skripte); die
   Content-Security-Policy in `htaccess-live` verbietet es auch. Neue Funktionen der App kommen mit dem
   jeweiligen PR in die Texte (wie bei der README). Ändert sich, was die App an Verbindungen aufbaut, wird

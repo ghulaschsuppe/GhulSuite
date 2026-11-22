@@ -272,7 +272,7 @@ pub fn password_strength(password: String) -> PasswordStrength {
 
 /// M42: the rules for the master password and the app PIN, the same in the core as in the app
 /// (the core enforces them where a password is set: `create`, `change_password`,
-/// `unlock_with_recovery_code`, and the app PIN in `quick_unlock_enable`).
+/// `unlock_with_recovery_code`, and the app PIN (8 digits) in `quick_unlock_enable_pin`).
 pub const PASSWORD_MIN_LENGTH: u32 = 10;
 /// The lowest zxcvbn score of a master password (0 to 4).
 pub const PASSWORD_MIN_SCORE: u8 = 3;

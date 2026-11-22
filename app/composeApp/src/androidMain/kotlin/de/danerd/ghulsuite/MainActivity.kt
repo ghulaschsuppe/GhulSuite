@@ -61,12 +61,6 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    private val rootBackKeepsJobs = object : androidx.activity.OnBackPressedCallback(false) {
-        override fun handleOnBackPressed() {
-            moveTaskToBack(true)
-        }
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         current = java.lang.ref.WeakReference(this)
@@ -80,7 +74,7 @@ class MainActivity : ComponentActivity() {
         // accessibility services that are not tools (Android 14+), and other apps' overlay
         // windows are hidden while GhulSuite is in front (Android 12+).
         de.danerd.ghulsuite.ui.guardView(window.decorView)
-        if (android.os.Build.VERSION.SDK_INT >= 31) window.setHideOverlayWindows(true)
+        window.setHideOverlayWindows(true)
         lifecycleScope.launch {
             val testRun = TestDevice.screenshotsAllowed(this@MainActivity)
             snapshotFlow { ghul.backend.settings.allowScreenshots || testRun }.collect { allowed ->
@@ -95,14 +89,6 @@ class MainActivity : ComponentActivity() {
             }
         }
         enableEdgeToEdge()
-        // "Back" on the first screen while a job runs: up to Android 11 that would close the
-        // window for good and end the job with it (its scope is this window's). Send the app to
-        // the background instead, as Android 12 and newer do anyway. Registered first, so every
-        // back step inside the app (dialogs, sub pages) still comes before it.
-        onBackPressedDispatcher.addCallback(this, rootBackKeepsJobs)
-        lifecycleScope.launch {
-            de.danerd.ghulsuite.ui.JobStatus.current.collect { rootBackKeepsJobs.isEnabled = de.danerd.ghulsuite.ui.backKeepsJobs(it != null, android.os.Build.VERSION.SDK_INT) }
-        }
         val vm = ViewModelProvider(this)[MainViewModel::class.java]
         setContent {
             // Test tags (e.g. "tab-pass" of the bottom bar) are visible to the emulator flows as ids.

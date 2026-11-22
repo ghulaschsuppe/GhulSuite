@@ -30,6 +30,98 @@ fn key_proof(password: &str) -> super::suite::FactorProof {
     super::suite::FactorProof { password: password.into(), pin: Some("1234".into()), keyfile: None }
 }
 
+/// Two new random keys for the app PIN's slots (what the app makes before it imports them).
+fn pin_keys() -> Vec<Vec<u8>> {
+    (0..2)
+        .map(|_| {
+            let mut k = vec![0u8; 32];
+            rand_core::RngCore::fill_bytes(&mut rand_core::OsRng, &mut k);
+            k
+        })
+        .collect()
+}
+
+/// The Android Keystore as the app PIN uses it (M19): HMAC-SHA256 keys by generation and slot,
+/// each usable once (`setMaxUsageCount(1)`), and the app's sequence around the core's calls.
+#[derive(Default)]
+pub(super) struct PinKeystore {
+    pub(super) keys: std::collections::BTreeMap<(u32, u32), [u8; 32]>,
+}
+
+impl PinKeystore {
+    pub(super) fn import(&mut self, generation: u32, keys: &[Vec<u8>]) {
+        for (i, k) in keys.iter().enumerate() {
+            self.keys.insert((generation, i as u32), k.as_slice().try_into().unwrap());
+        }
+    }
+
+    /// One use of a key: it is gone afterwards.
+    pub(super) fn sign(&mut self, generation: u32, slot: u32, message: &[u8]) -> Option<Vec<u8>> {
+        use hmac::{Hmac, Mac};
+        let k = self.keys.remove(&(generation, slot))?;
+        let mut mac = <Hmac<sha2::Sha256> as Mac>::new_from_slice(&k).unwrap();
+        mac.update(message);
+        Some(mac.finalize().into_bytes().to_vec())
+    }
+
+    pub(super) fn slots(&self, generation: u32) -> Vec<u32> {
+        self.keys.keys().filter(|(g, _)| *g == generation).map(|(_, s)| *s).collect()
+    }
+
+    pub(super) fn keep_only(&mut self, generation: u32) {
+        self.keys.retain(|(g, _), _| *g == generation);
+    }
+
+    /// Enabling: the core seals with the keys, then they go into the Keystore.
+    pub(super) fn enable(
+        &mut self,
+        s: &GhulSuite,
+        proof: super::suite::FactorProof,
+        transport: Option<Arc<dyn HidTransport>>,
+        pin: &str,
+    ) -> Result<u32, GhulError> {
+        let keys = pin_keys();
+        let listener = transport.as_ref().map(|_| listener());
+        let generation = s.quick_unlock_enable_pin(proof, transport, listener, pin.into(), 3600, keys.clone())?;
+        self.keys.clear();
+        self.import(generation, &keys);
+        Ok(generation)
+    }
+
+    /// One attempt as the app makes it: keys of other generations go, the next generation's keys
+    /// are imported first, the challenge, one use of the first slot left, the core's unlock.
+    pub(super) fn attempt(&mut self, s: &GhulSuite, pin: &str) -> Result<u32, GhulError> {
+        let generation = s.quick_pin_generation()?.ok_or(GhulError::QuickUnlockUnavailable)?;
+        self.keep_only(generation);
+        let Some(&slot) = self.slots(generation).first() else {
+            // No key left: two wrong PINs. The app turns the PIN off.
+            s.quick_unlock_disable("pin".into()).unwrap();
+            return Err(GhulError::QuickUnlockUnavailable);
+        };
+        let next = generation.wrapping_add(1).max(1);
+        let keys = pin_keys();
+        self.import(next, &keys);
+        let challenge = match s.quick_pin_challenge(pin.into()) {
+            Ok(c) => c,
+            Err(e) => {
+                self.keep_only(generation);
+                return Err(e);
+            }
+        };
+        let tag = self.sign(generation, slot, &challenge.message).unwrap();
+        match s.unlock_quick_pin(slot, tag, challenge.message, keys) {
+            Ok(now) => {
+                self.keep_only(now);
+                Ok(now)
+            }
+            Err(e) => {
+                self.keep_only(generation);
+                Err(e)
+            }
+        }
+    }
+}
+
 struct Quiet;
 impl FidoListener for Quiet {
     fn on_status(&self, _status: FidoStatus) {}
@@ -409,69 +501,56 @@ fn quick_unlock_fingerprint_and_pin() {
     s.lock();
     s.unlock("pw-1-Kq7wZ".into(), Some(k.clone()), Some(listener()), Some("1234".into()), None).unwrap();
     assert!(matches!(
-        s.quick_unlock_enable(no_key_proof("pw-1-Kq7wZ"), None, None, "bio".into(), None, 3600),
+        s.quick_unlock_enable(no_key_proof("pw-1-Kq7wZ"), None, None, "bio".into(), 3600),
         Err(GhulError::SecurityKeyRequired)
     ));
-    let bio = s
-        .quick_unlock_enable(key_proof("pw-1-Kq7wZ"), Some(k.clone()), Some(listener()), "bio".into(), None, 3600)
-        .unwrap();
-    let pin = s
-        .quick_unlock_enable(
-            key_proof("pw-1-Kq7wZ"),
-            Some(k.clone()),
-            Some(listener()),
-            "pin".into(),
-            Some("246810".into()),
-            3600,
-        )
-        .unwrap();
+    let bio =
+        s.quick_unlock_enable(key_proof("pw-1-Kq7wZ"), Some(k.clone()), Some(listener()), "bio".into(), 3600).unwrap();
+    let mut ks = PinKeystore::default();
+    ks.enable(&s, key_proof("pw-1-Kq7wZ"), Some(k.clone()), "24681357").unwrap();
     assert!(s.quick_unlock_exists("bio".into()) && s.quick_unlock_exists("pin".into()));
     s.lock();
 
-    s.unlock_quick("bio".into(), bio.clone(), None).unwrap();
+    s.unlock_quick("bio".into(), bio.clone()).unwrap();
     assert_eq!(s.list_entries(VaultKind::Pass, None).unwrap().len(), 1);
     // A new vault can be created after a quick unlock (needs the password key).
     s.create_vault(VaultKind::Totp, "2FA".into()).unwrap();
     s.lock();
-    assert!(matches!(s.unlock_quick("bio".into(), vec![0; 32], None), Err(GhulError::QuickUnlockInvalid)));
-    assert!(matches!(
-        s.unlock_quick("pin".into(), pin.clone(), Some("000000".into())),
-        Err(GhulError::QuickUnlockInvalid)
-    ));
-    s.unlock_quick("pin".into(), pin.clone(), Some("246810".into())).unwrap();
+    assert!(matches!(s.unlock_quick("bio".into(), vec![0; 32]), Err(GhulError::QuickUnlockInvalid)));
+    assert!(matches!(ks.attempt(&s, "00000000"), Err(GhulError::QuickUnlockInvalid)));
+    ks.attempt(&s, "24681357").unwrap();
     assert_eq!(s.list_vaults().unwrap().len(), 2);
 
     // A full unlock restarts the validity period (one hour, chosen when it is enabled), on a
     // test clock: no waiting, nothing that depends on how fast the runner is.
     use super::suite::NOW_SHIFT_MS;
     let hour = 3_600_000;
-    let bio = s
-        .quick_unlock_enable(key_proof("pw-1-Kq7wZ"), Some(k.clone()), Some(listener()), "bio".into(), None, 3600)
-        .unwrap();
+    let bio =
+        s.quick_unlock_enable(key_proof("pw-1-Kq7wZ"), Some(k.clone()), Some(listener()), "bio".into(), 3600).unwrap();
     s.lock();
     NOW_SHIFT_MS.with(|c| c.set(hour * 3 / 4));
     s.unlock("pw-1-Kq7wZ".into(), Some(k.clone()), Some(listener()), Some("1234".into()), None).unwrap();
     s.lock();
     // 1.5 hours after enabling, 45 minutes after the full unlock: still valid.
     NOW_SHIFT_MS.with(|c| c.set(hour * 3 / 2));
-    s.unlock_quick("bio".into(), bio.clone(), None).unwrap();
+    s.unlock_quick("bio".into(), bio.clone()).unwrap();
     s.lock();
     // Over an hour after the last full unlock: expired.
     NOW_SHIFT_MS.with(|c| c.set(hour * 2));
-    assert!(matches!(s.unlock_quick("bio".into(), bio.clone(), None), Err(GhulError::QuickUnlockExpired)));
+    assert!(matches!(s.unlock_quick("bio".into(), bio.clone()), Err(GhulError::QuickUnlockExpired)));
     // M30: expired is not gone: after the next full unlock it works again.
     assert!(s.quick_unlock_exists("bio".into()));
     s.unlock("pw-1-Kq7wZ".into(), Some(k.clone()), Some(listener()), Some("1234".into()), None).unwrap();
     s.lock();
-    s.unlock_quick("bio".into(), bio, None).unwrap();
+    s.unlock_quick("bio".into(), bio).unwrap();
     s.lock();
 
     // A password change invalidates all quick unlocks.
-    s.unlock_quick("pin".into(), pin.clone(), Some("246810".into())).unwrap();
+    ks.attempt(&s, "24681357").unwrap();
     s.change_password(key_proof("pw-1-Kq7wZ"), Some(k.clone()), Some(listener()), "pw-2-Kq7wZ".into()).unwrap();
     assert!(!s.quick_unlock_exists("pin".into()));
     s.lock();
-    assert!(matches!(s.unlock_quick("pin".into(), pin, Some("246810".into())), Err(GhulError::QuickUnlockUnavailable)));
+    assert!(matches!(ks.attempt(&s, "24681357"), Err(GhulError::QuickUnlockUnavailable)));
     NOW_SHIFT_MS.with(|c| c.set(0));
 }
 
@@ -1200,6 +1279,7 @@ mod everyday;
 mod format_freeze;
 mod hardening;
 mod properties;
+mod quick_pin;
 mod rekey;
 mod single;
 
@@ -1280,11 +1360,11 @@ fn protection_changes_need_the_master_password() {
     ));
     assert!(matches!(s.remove_slot(wrong(), None, None, slots[0].slot_id.clone()), Err(GhulError::WrongPassword)));
     assert!(matches!(
-        s.quick_unlock_enable(wrong(), None, None, "pin".into(), Some("246810".into()), 3600),
+        s.quick_unlock_enable_pin(wrong(), None, None, "13572468".into(), 3600, pin_keys()),
         Err(GhulError::WrongPassword)
     ));
     assert!(matches!(
-        s.quick_unlock_enable(no_factor(), None, None, "pin".into(), Some("246810".into()), 3600),
+        s.quick_unlock_enable_pin(no_factor(), None, None, "13572468".into(), 3600, pin_keys()),
         Err(GhulError::KeyfileRequired)
     ));
     assert_eq!(s.slots().unwrap().len(), slots.len(), "nothing changed");

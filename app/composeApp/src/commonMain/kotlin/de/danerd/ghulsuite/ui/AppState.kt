@@ -1178,7 +1178,13 @@ private suspend fun describeText(e: Throwable): String {
         VaultErrorKind.QUICK_EXPIRED -> getString(Res.string.err_quick_expired)
         VaultErrorKind.QUICK_OUTDATED -> getString(Res.string.err_quick_outdated)
         VaultErrorKind.DELETE_INCOMPLETE -> getString(Res.string.err_delete_incomplete)
-        VaultErrorKind.QUICK_INVALID -> getPluralString(Res.plurals.err_quick_invalid, e.retries ?: 0, (e.retries ?: 0).toString())
+        // M19: after the second wrong PIN no attempt is left (the PIN is gone). Without a count
+        // (the fingerprint, or the keystore could not say): a text without one (r8 N5).
+        VaultErrorKind.QUICK_INVALID -> when (val left = e.retries) {
+            null -> getString(Res.string.err_quick_invalid_plain)
+            0 -> getString(Res.string.err_quick_pin_used_up)
+            else -> getPluralString(Res.plurals.err_quick_invalid, left, left.toString())
+        }
         VaultErrorKind.BIOMETRIC_CANCELLED -> getString(Res.string.err_bio_cancelled)
         VaultErrorKind.BIOMETRIC_LOCKOUT -> getString(Res.string.err_bio_lockout)
         VaultErrorKind.BIOMETRIC_CHANGED -> getString(Res.string.err_bio_changed)
@@ -1190,6 +1196,7 @@ private suspend fun describeText(e: Throwable): String {
         VaultErrorKind.WRONG_SECOND_FACTOR -> getString(Res.string.err_wrong_code)
         VaultErrorKind.INVALID_RECOVERY_CODE -> getString(Res.string.err_invalid_code)
         VaultErrorKind.LOCKED -> getString(Res.string.err_locked)
+        VaultErrorKind.DEVICE_LOCKED -> getString(Res.string.err_device_locked)
         VaultErrorKind.CORRUPTED -> getString(Res.string.err_corrupted, coreText(e.detail) ?: e.detail)
         VaultErrorKind.TAMPERED -> getString(Res.string.err_tampered)
         VaultErrorKind.PROTECTION_OUTDATED -> getString(Res.string.err_protection_outdated)
@@ -1229,7 +1236,7 @@ object PasswordPolicy {
         private set
     var MIN_SCORE = 3
         private set
-    var MIN_APP_PIN = 6
+    var MIN_APP_PIN = 8
         private set
 
     fun apply(rules: de.danerd.ghulsuite.model.SecurityRulesUi) {

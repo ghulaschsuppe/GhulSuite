@@ -147,12 +147,6 @@ data class JobEnd(val text: String, val publicText: String)
  * [current] is not null; a job that ended is announced in [finished] (a system notification while
  * the app is not in front).
  */
-/**
- * Whether "back" on the first screen sends the app to the background instead of closing it: while
- * a job runs on Android 11 (API 30) or older, where closing the window would end the job. Newer
- * Android versions do that by themselves.
- */
-fun backKeepsJobs(jobRunning: Boolean, sdk: Int): Boolean = jobRunning && sdk < 31
 
 object JobStatus {
     /** The first running job; null while none runs. */

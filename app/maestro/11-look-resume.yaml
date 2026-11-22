@@ -52,7 +52,7 @@ name: Design, landscape and background
       visible: "Unlock with app PIN"
     commands:
       - tapOn: "App PIN"
-      - inputText: "246813"
+      - inputText: "24681357"
       - hideKeyboard
       - tapOn: "Unlock with app PIN"
 - extendedWaitUntil:

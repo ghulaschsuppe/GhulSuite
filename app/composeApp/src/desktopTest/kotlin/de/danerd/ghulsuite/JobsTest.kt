@@ -40,14 +40,6 @@ class JobsTest {
         }
     }
 
-    /** "Back" on the first screen keeps a running job alive only where Android would end it. */
-    @Test
-    fun backOnTheFirstScreenKeepsJobsOnOldAndroid() {
-        assertTrue(de.danerd.ghulsuite.ui.backKeepsJobs(jobRunning = true, sdk = 30))
-        assertTrue(!de.danerd.ghulsuite.ui.backKeepsJobs(jobRunning = false, sdk = 30), "no job: closes as usual")
-        assertTrue(!de.danerd.ghulsuite.ui.backKeepsJobs(jobRunning = true, sdk = 31), "Android 12+ keeps it anyway")
-    }
-
     /** A quiet job (one the app started itself) never holds the automatic lock back: it stops. */
     @Test
     fun quietJobDoesNotDelayTheAutoLock() {

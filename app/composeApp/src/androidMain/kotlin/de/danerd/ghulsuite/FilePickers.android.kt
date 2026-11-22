@@ -321,12 +321,10 @@ actual fun decodeImage(bytes: ByteArray, maxSide: Int): androidx.compose.ui.grap
 }.getOrNull()
 
 /**
- * A PDF in an anonymous file in memory (memfd, Android 11 and newer): PdfRenderer needs a file
- * it can seek in, and this one never reaches the storage. Older Android versions show no preview
- * (the app offers to open or export the document instead).
+ * A PDF in an anonymous file in memory (memfd): PdfRenderer needs a file it can seek in, and this
+ * one never reaches the storage.
  */
 actual fun openPdf(bytes: ByteArray): PdfView? {
-    if (android.os.Build.VERSION.SDK_INT < 30) return null
     return runCatching {
         val fd = android.system.Os.memfd_create("ghuldocs", 0)
         try {

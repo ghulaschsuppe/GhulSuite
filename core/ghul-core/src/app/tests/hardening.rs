@@ -118,7 +118,7 @@ fn every_protection_change_with_the_password_alone_is_refused() {
     need(s.change_password(alone(PW), None, None, "Ganz-anders-5Wq!".into()), "change_password");
     need(s.confirm_factors(alone(PW), None, None), "confirm_factors");
     need(
-        s.quick_unlock_enable(alone(PW), None, None, "pin".into(), Some("135790".into()), 3600).map(|_| ()),
+        s.quick_unlock_enable_pin(alone(PW), None, None, "13572468".into(), 3600, super::pin_keys()).map(|_| ()),
         "quick_unlock_enable",
     );
     let opts = super::super::single::ShareVaultOptions {
@@ -181,20 +181,16 @@ fn a_confirmation_holds_two_minutes() {
 #[test]
 fn quick_unlock_keeps_the_validity_it_was_enabled_with() {
     let (d, s, kf, _) = keyfile_suite("quick-validity");
-    let qk = s.quick_unlock_enable(kf_proof(PW, &kf), None, None, "pin".into(), Some("135790".into()), 3600).unwrap();
-    assert!(matches!(
-        s.quick_unlock_enable(kf_proof(PW, &kf), None, None, "pin".into(), Some("1357".into()), 3600),
-        Err(GhulError::InvalidInput { .. })
-    ));
+    let qk = s.quick_unlock_enable(kf_proof(PW, &kf), None, None, "bio".into(), 3600).unwrap();
     s.lock();
-    s.unlock_quick("pin".into(), qk.clone(), Some("135790".into())).unwrap();
+    s.unlock_quick("bio".into(), qk.clone()).unwrap();
     s.lock();
     // Someone with the device changes the stored validity: the file no longer opens.
-    let file = std::path::PathBuf::from(d.local()).join("quick-pin.ghlq");
+    let file = std::path::PathBuf::from(d.local()).join("quick-bio.ghlq");
     let mut data = std::fs::read(&file).unwrap();
     data[67..75].copy_from_slice(&i64::MAX.to_le_bytes());
     std::fs::write(&file, &data).unwrap();
-    assert!(matches!(s.unlock_quick("pin".into(), qk, Some("135790".into())), Err(GhulError::QuickUnlockInvalid)));
+    assert!(matches!(s.unlock_quick("bio".into(), qk), Err(GhulError::QuickUnlockInvalid)));
 }
 
 /// H10: a lock during an unlock, a confirmation or the taking of a suite file wins.
@@ -587,14 +583,14 @@ fn a_copy_that_cannot_be_removed_does_not_fail_the_change() {
 #[test]
 fn an_older_quick_unlock_file_asks_to_set_it_up_again() {
     let (d, s, kf, _) = keyfile_suite("quick-v2");
-    let qk = s.quick_unlock_enable(kf_proof(PW, &kf), None, None, "bio".into(), None, 3600).unwrap();
+    let qk = s.quick_unlock_enable(kf_proof(PW, &kf), None, None, "bio".into(), 3600).unwrap();
     s.lock();
     let file = std::path::PathBuf::from(d.local()).join("quick-bio.ghlq");
     let mut data = std::fs::read(&file).unwrap();
     data[8..10].copy_from_slice(&2u16.to_le_bytes());
     data.truncate(data.len() - 8);
     std::fs::write(&file, &data).unwrap();
-    assert!(matches!(s.unlock_quick("bio".into(), qk.clone(), None), Err(GhulError::QuickUnlockOutdated)));
+    assert!(matches!(s.unlock_quick("bio".into(), qk.clone()), Err(GhulError::QuickUnlockOutdated)));
     assert!(!s.quick_unlock_exists("bio".into()), "never used again");
     assert_eq!(GhulError::QuickUnlockOutdated.to_string(), "quick unlock must be set up again");
 }
@@ -720,7 +716,7 @@ fn a_damaged_suite_file_does_not_block_deleting() {
 fn a_deletion_that_did_not_end_says_so() {
     use super::super::archive::DELETE_FAILS;
     let (_d, s, kf, _) = keyfile_suite("delete-incomplete");
-    s.quick_unlock_enable(kf_proof(PW, &kf), None, None, "pin".into(), Some("135790".into()), 3600).unwrap();
+    s.quick_unlock_enable_pin(kf_proof(PW, &kf), None, None, "13572468".into(), 3600, super::pin_keys()).unwrap();
     assert!(matches!(
         s.delete_working_copy(kf_proof("falsch-falsch-1", &kf), None, None),
         Err(GhulError::WrongPassword)

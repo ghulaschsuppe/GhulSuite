@@ -259,5 +259,5 @@ fun UnlockScreen(state: AppState) {
     }
 }
 
-/** M19, M42: an app PIN has 6 to 12 digits (the rule of the core), wherever it is set or typed. */
+/** M19, M42: an app PIN has 8 to 12 digits (the rule of the core), wherever it is set or typed. */
 val MIN_APP_PIN: Int get() = PasswordPolicy.MIN_APP_PIN

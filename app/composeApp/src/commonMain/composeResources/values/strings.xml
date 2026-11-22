@@ -99,10 +99,14 @@
     <string name="err_out_of_memory">This device does not have enough memory for this file. Close other apps and try again, or open the file on another device.</string>
     <string name="err_delete_incomplete">The suite was deleted only in part (a file could not be removed). Try deleting again.</string>
     <plurals name="err_quick_invalid">
-        <item quantity="one">Wrong app PIN. Attempts left: %1$s.</item>
+        <item quantity="one">Wrong app PIN. Attempts left: %1$s, then password and second factor are needed.</item>
         <item quantity="other">Wrong app PIN. Attempts left: %1$s.</item>
     </plurals>
     <string name="err_quick_unavailable">Quick unlock is not available. Unlock with password and second factor.</string>
+    <string name="err_quick_invalid_plain">Quick unlock did not match. Try again or unlock with password and second factor.</string>
+    <string name="err_quick_pin_used_up">Wrong app PIN. That was the second wrong attempt, the app PIN is deleted now. Unlock with password and second factor; then you can set it up again under Options → Unlocking.</string>
+    <string name="err_device_locked">Unlock the device first. The app PIN works only while the device is unlocked; no attempt was used.</string>
+    <string name="core_app_pin_internal">The app PIN could not be used (internal error). Unlock with password and second factor and set it up again.</string>
     <string name="err_storage">Could not save: %1$s</string>
     <string name="err_timeout">Timeout: the key was not touched in time.</string>
     <string name="err_transport">USB communication failed: %1$s</string>
@@ -272,7 +276,7 @@
     <string name="s_touch_key">Touch your security key now</string>
     <string name="set_about">About and help</string>
     <string name="set_add_key_text">Plug in the key. You touch it twice. Afterwards it opens the suite just like your other keys and key files. They stay unchanged.</string>
-    <string name="set_app_pin_text">Choose an app PIN with 6 to 12 digits. It only works on this device and only for quick unlock. After 5 wrong attempts it is deleted.</string>
+    <string name="set_app_pin_text">Choose an app PIN with 8 to 12 digits. It only works on this device and only for quick unlock. After 2 wrong attempts it is gone; then only password and second factor open the suite.</string>
     <string name="set_auto_lock">Lock in the background</string>
     <string name="set_backup_key_hint">Recommendation: add a backup (second key or key file). If your only one gets lost, only the recovery code gets you back in.</string>
     <string name="set_change_pw_text">Applies to the suite and all vaults. Keys, key files and the recovery code stay valid.</string>
@@ -290,7 +294,7 @@
     <string name="set_panic_reminders">Instant lock also deletes the event reminders</string>
     <string name="set_password">Master password</string>
     <string name="set_pin_mismatch">The PINs do not match.</string>
-    <string name="set_quick_always_full">Password and second factor (key or key file) are needed after a restart and after the validity ends; after that quick unlock works again. You set it up again after an instant lock, after 5 wrong app PINs, when fingerprints are changed, and after every change of the protection (password, key, key file).</string>
+    <string name="set_quick_always_full">Password and second factor (key or key file) are needed after a restart and after the validity ends; after that quick unlock works again. You set it up again after an instant lock, after 2 wrong app PINs, when fingerprints are changed, and after every change of the protection (password, key, key file).</string>
     <string name="set_quick_bio">Fingerprint</string>
     <string name="set_quick_bio_unavailable">No secure fingerprint sensor or no fingerprint set up on this device.</string>
     <string name="set_quick_hint">After unlocking with password and second factor, you can open GhulSuite with your fingerprint or an app PIN for a while.</string>
@@ -861,8 +865,8 @@
     <string name="wz_quick_bio_sub">For the time in between</string>
     <string name="wz_quick_pin">Also app PIN</string>
     <string name="wz_quick_pin_sub">When no fingerprint is possible</string>
-    <string name="wz_quick_pin_field">App PIN (6 to 12 digits)</string>
-    <string name="wz_pin_rule">The app PIN needs 6 to 12 digits.</string>
+    <string name="wz_quick_pin_field">App PIN (8 to 12 digits)</string>
+    <string name="wz_pin_rule">The app PIN needs 8 to 12 digits.</string>
     <string name="wz_quick_valid">Quick unlock is valid</string>
     <string name="wz_quick_valid_sub">Then password and second factor again.</string>
     <string name="wz_quick_always_note">No expiry. After a restart of the device, an instant lock or a password change you still need password and second factor again.</string>
@@ -1133,7 +1137,6 @@
     <string name="core_folders_many">This GhulDocs vault already has as many folders as it can hold.</string>
     <string name="core_ics_many">The file holds too many events (at most 20,000 at once).</string>
     <string name="core_quick_validity">Choose how long quick unlock should stay valid.</string>
-    <string name="core_pin_six">The app PIN needs at least 6 digits.</string>
     <string name="l_vault_password">Password of the new vault</string>
     <string name="single_not_writable">The app may not write into this file (e.g. a mail attachment). Save it somewhere else first, or add the vault to your suite.</string>
     <string name="share_vault_done">Done. Give the vault file, the password and, if there is one, the key file separately; the recipient keeps the recovery code safe.</string>
@@ -1316,7 +1319,7 @@
     <string name="docs_reading">Decrypting … %1$s %</string>
     <string name="docs_no_preview">The app cannot show this type of file.</string>
     <string name="docs_too_large_to_show">Too large to show in the app (more than %1$s).</string>
-    <string name="docs_pdf_not_here">This PDF cannot be shown here (protected by a password, damaged, or not on this Android version).</string>
+    <string name="docs_pdf_not_here">This PDF cannot be shown here (protected by a password or damaged).</string>
     <string name="docs_image_not_read">This image cannot be shown here.</string>
     <string name="docs_open_hint">Open it with another app or export it.</string>
     <string name="docs_text_cut">Only the beginning of the text is shown.</string>

@@ -44,7 +44,7 @@ verschlüsselte Datei**, die man öffnet, darin arbeitet und speichert, und die 
 | Module | Jeder Bereich (GhulPass, GhulAuth, GhulDocs, GhulCal) ist in den Einstellungen **abschaltbar**; er verschwindet dann aus dem Menü, die Daten bleiben erhalten |
 | Sofortsperre | **Sofort sperren** (Stufe 1), auch durch **Schütteln**; kein Löschen, kein Notfall-Passwort (Abschnitt 6.6) |
 | Dokumente | **GhulDocs** in der Suite: fest **1 GB** Inhalt je GhulDocs-Tresor, höchstens **3** GhulDocs-Tresore je Suite, zusammen also **3 GB** (seit 20.11.2026; vorher genau ein Tresor mit 1 GB), jede Datei mit eigenem Schlüssel, in der Suite-Datei mit unterwegs (Abschnitt 9.3). Eigene Server, SFTP und das PHP-Modul sind entfernt (17.11.2026) |
-| Plattformen | **Android und Windows**; Android kam zuerst, die Architektur war von Anfang an auf beide ausgelegt (Abschnitt 4.1). Scannen nur auf Android |
+| Plattformen | **Android und Windows**; Android kam zuerst, die Architektur war von Anfang an auf beide ausgelegt (Abschnitt 4.1). Scannen nur auf Android. Android ab **Version 12** (API 31, seit 22.11.2026; vorher Android 10), Abschnitt 16 |
 | Schutz | **Master-Passwort plus zweiter Faktor, immer.** Zweiter Faktor: Security Key (empfohlen) oder Schlüsseldatei; beliebig viele, jederzeit austauschbar, ohne dass etwas ungültig wird. Einen Schutz nur mit Passwort gibt es nicht (geändert am 11.11.2026) |
 | Wiederherstellungscode | **Pflicht** bei jeder Suite; öffnet alles allein, auch ohne Passwort, Key und Schlüsseldatei; danach wird ein neues Passwort gesetzt |
 | Suite und Tresore | **Die Suite ist eine Datei:** Der Suite-Container `suite.ghlsuite`, alle Tresore mit den Inhaltsdateien von GhulDocs und eine Kopfdatei liegen zusammen in der `.ghlzip`. Je Bereich beliebig viele Tresore, GhulDocs höchstens 3 (z. B. GhulPass „Privat“ und „Arbeit“). Auf dem Gerät gibt es eine Arbeitskopie (geändert am 17.11.2026; davor „Der Ordner ist die Suite“) |
@@ -186,7 +186,8 @@ und der gespeicherte 2FA-Schlüssel eines GhulPass-Logins im Editor. Strenger st
 **Regeln für Passwort und PIN** prüft der Kern selbst (`security_rules`, die App übernimmt sie): Ein neues
 Master-Passwort (Einrichten, Passwort ändern, nach dem Wiederherstellungscode, das Passwort einer Weitergabe) hat
 mindestens 10 Zeichen und eine Stärke von mindestens 3 nach zxcvbn (Skala 0 bis 4); sonst „zu kurz“ bzw. „zu
-schwach“. Die App-PIN hat 6 bis 12 Ziffern (der Kern verlangt mindestens 6 Zeichen).
+schwach“. Die App-PIN hat 8 bis 12 Ziffern (der Kern verlangt mindestens 8 Ziffern und nichts anderes, seit
+22.11.2026; vorher 6).
 
 **Beim Entsperren und Öffnen** werden immer beide Wege angeboten, Key und Schlüsseldatei (vorgewählt ist, was auf
 diesem Gerät zuletzt benutzt wurde): Die Oberfläche verrät nicht, womit eine Datei geschützt ist. Der Kopf einer
@@ -281,35 +282,64 @@ mit dem Passwort aufzubewahren und eine Kopie anzulegen.
 Nach einer vollständigen Entsperrung (Passwort und Key) lässt sich die App für eine einstellbare Zeit per
 **Fingerabdruck** und/oder **App-PIN** öffnen. Umgesetzt in Etappe 2a:
 
-- Der Kern legt `PK` und den Suite-Schlüssel in `quick-<bio|pin>.ghlq` ab, verschlüsselt mit einem zufälligen Schnellschlüssel `QK`
-  (bei der App-PIN zusätzlich mit Argon2id(PIN)). `QK` liegt nur verschlüsselt durch einen **Android-Keystore-Schlüssel** vor:
-  - Fingerabdruck: Keystore-Schlüssel nur nach **starker biometrischer Prüfung** (Klasse 3) nutzbar, wird beim
-    Registrieren eines **neuen Fingerabdrucks ungültig**.
-  - App-PIN: 6 bis 12 Ziffern, Keystore-Schlüssel nur bei entsperrtem Gerät nutzbar, wenn vorhanden in **StrongBox**;
-    nach **5 Fehlversuchen** wird der PIN-Zugang gelöscht.
+- Der Kern legt `PK` und den Suite-Schlüssel in `quick-<bio|pin>.ghlq` ab (nur im App-Speicher des Geräts, nie in der
+  Suite-Datei).
+  - **Fingerabdruck** (Schnell-Datei Version 3): verschlüsselt mit einem zufälligen Schnellschlüssel `QK`, der nur
+    verschlüsselt durch einen **Android-Keystore-Schlüssel** vorliegt. Dieser ist nur nach **starker biometrischer
+    Prüfung** (Klasse 3) nutzbar und wird beim Registrieren eines **neuen Fingerabdrucks ungültig**.
+  - **App-PIN** (Schnell-Datei Version 4, seit 22.11.2026): 8 bis 12 Ziffern. Jeder Versuch braucht einen
+    Keystore-Schlüssel, der **genau einmal** geht (HMAC-SHA256, `setMaxUsageCount(1)`), und die PIN geht in das ein,
+    was dieser Schlüssel rechnet: `T = HMAC(K, "ghul/v4/quick-pin-tag" || Argon2id(PIN, salt))`, daraus mit HKDF
+    (dazu Suite-Kennung, Generation und Slot) der Schlüssel der Datei. Es gibt **zwei** solche Schlüssel (Slots), also
+    zwei Versuche; jeder Slot hat in der Datei seine eigene verschlüsselte Kopie. Die App erzeugt die beiden Schlüssel
+    zufällig, der Kern versiegelt die Datei damit, danach importiert die App sie in den Keystore (StrongBox, sonst
+    TEE; nach dem Import wird geprüft, dass der Schlüssel in sicherer Hardware liegt und genau eine Nutzung übrig hat,
+    sonst wird die PIN nicht eingerichtet). Durch den Import verbraucht das Einrichten die eine Nutzung nicht. Hat das
+    Gerät eine Displaysperre, gehen die Schlüssel nur bei entsperrtem Gerät.
+  - **Ein Versuch** verbraucht einen Slot, ob die PIN stimmt oder nicht. Eine richtige PIN versiegelt die Datei sofort
+    neu für zwei neue Schlüssel (die nächste **Generation**, sie steht im authentifizierten Kopf der Datei; Salt,
+    Einrichtungszeit und Gültigkeit bleiben, das Neuversiegeln verlängert die Gültigkeit also nicht). Danach gibt es
+    wieder zwei Versuche. **Nach 2 falschen PINs** ist kein Slot mehr übrig: Die App-PIN ist gelöscht, es öffnen nur
+    noch Passwort und zweiter Faktor. Verbleibende Versuche sind die vorhandenen Slots der Generation in der Datei,
+    kein Zähler in den Einstellungen; Schlüssel anderer Generationen (aus einem abgebrochenen Versuch) löscht die App
+    vor jedem Versuch. Ein Absturz mitten im Versuch kostet höchstens diesen einen Slot.
+  - **Kein Versuch verbraucht** wird bei gesperrtem Gerät (der Keystore lehnt ab, bevor der Schlüssel benutzt ist), bei
+    abgelaufener Gültigkeit (der Kern prüft sie vorher am Kopf der Datei) und wenn das Vorbereiten der neuen Schlüssel
+    scheitert. Scheitert das **Neu-Einrichten** (falsches Passwort, abgebrochene Berührung des Keys), bleibt die
+    vorhandene App-PIN, wie sie war.
+  - Die Datei allein erlaubt **keine Prüfung** einer PIN, auch nicht außerhalb des Geräts: Ohne den
+    Keystore-Schlüssel fehlt `T`.
 - **Einrichten nur mit beiden Faktoren** (seit 21.11.2026): Fingerabdruck oder App-PIN einschalten verlangt das
-  Master-Passwort und einen Key oder eine Schlüsseldatei (`quick_unlock_enable` mit `FactorProof`). Der Assistent
+  Master-Passwort und einen Key oder eine Schlüsseldatei (`quick_unlock_enable` bzw. `quick_unlock_enable_pin` mit `FactorProof`). Der Assistent
   (Schritt 6) nimmt dafür den Faktor, mit dem die Suite gerade angelegt wurde.
-- **Gültigkeit** (1, 4 oder 8 Stunden, 1, 3 oder 7 Tage oder „Immer“, Standard 24 Stunden) wird beim Einrichten gewählt und steht **fest in der Schnell-Datei** (Version 3,
+- **Gültigkeit** (1, 4 oder 8 Stunden, 1, 3 oder 7 Tage oder „Immer“, Standard 24 Stunden) wird beim Einrichten gewählt und steht **fest in der Schnell-Datei** (Version 3 bzw. 4,
   `max_age_ms` in den zusätzlich authentifizierten Daten): Die App kann sie nicht nachträglich verlängern. Jede
   Methode (Fingerabdruck, App-PIN) hat ihre eigene Gültigkeit; eine andere Dauer richtet die Methode neu ein, wieder
   mit beiden Faktoren. Gezählt wird ab dem **letzten vollständigen Entsperren** (signierter Zeitstempel, nur mit dem
   Passwortschlüssel fälschbar).
 - **Abgelaufen heißt abgelehnt, nicht gelöscht:** Nach Ablauf lehnt der Kern das Schnell-Entsperren ab
   (`QuickUnlockExpired`), die Datei bleibt. Nach dem nächsten vollständigen Entsperren geht es wieder.
-- **Ältere Schnell-Dateien (Version 2)** öffnet der Kern nicht mehr (`QuickUnlockOutdated`): Die Datei wird
-  entfernt, die App sagt, dass Fingerabdruck bzw. App-PIN nach einem vollständigen Entsperren unter Optionen →
-  Entsperren neu einzurichten sind.
+- **Ältere Schnell-Dateien** (Version 2, und für die App-PIN auch Version 3 aus einer Version vor dem 22.11.2026)
+  öffnet der Kern nicht mehr (`QuickUnlockOutdated`): Die Datei wird entfernt, die App sagt, dass Fingerabdruck bzw.
+  App-PIN nach einem vollständigen Entsperren unter Optionen → Entsperren neu einzurichten sind. Eine alte App-PIN
+  bietet die App gar nicht erst an. Der Fingerabdruck (Version 3) bleibt unverändert.
 - Passwort und Key sind immer wieder nötig: nach **jedem Neustart** und nach Ablauf. **Neu einrichten** muss man das
-  Schnell-Entsperren nach einer **Sofortsperre**, nach 5 falschen App-PINs, wenn Fingerabdrücke geändert wurden, nach
+  Schnell-Entsperren nach einer **Sofortsperre**, nach 2 falschen App-PINs, wenn Fingerabdrücke geändert wurden, nach
   einem **Passwortwechsel**, nach dem **Entfernen** eines Keys oder einer Schlüsseldatei, nach dem Entsperren mit dem
   **Wiederherstellungscode** (die Schnell-Dateien werden dabei gelöscht) und nach dem **Öffnen einer Suite-Datei** mit
   anderem Schutz (Abschnitt 6.2). Ein neuer Wiederherstellungscode und ein hinzugefügter Faktor lassen es bestehen.
 - **Ehrlich:** In der Gültigkeitszeit reichen das entsperrte Handy plus Finger bzw. App-PIN. Deshalb optional; der
   Assistent schlägt den Fingerabdruck vor, wenn das Gerät einen Sensor hat, „Immer Passwort und zweiter Faktor“ ist
-  wählbar. Ein Angreifer mit Root-Zugriff auf das laufende Gerät könnte den Fehlversuchszähler umgehen (er steht in
-  den Einstellungen der App); die PIN ist aber an den Hardware-Schlüssel des Geräts gebunden, ein Durchprobieren
-  außerhalb des Geräts ist nicht möglich.
+  wählbar.
+- **Grenze gegen Root:** Ob ein Slot wirklich nur einmal geht, erzwingt bei Root die Hardware nur auf Geräten mit
+  rollback-festem Keystore (KeyMint mit Rollback-Schutz, typisch StrongBox). Auf den übrigen Geräten (die meisten ohne
+  StrongBox) zählt Android die Nutzung in seiner Keystore-Datenbank; wer Root hat, könnte sie zurückspielen und so
+  weiter raten, aber nur **auf dem Gerät** und langsam (je Versuch Argon2id und ein Zurückspielen), bei 8 Ziffern
+  über Jahre. Dass StrongBox das hart erzwingt, beruht auf der AOSP-Dokumentation und ist auf einem Gerät noch nicht
+  nachgeprüft. **Richtiggestellt am 22.11.2026:** Hier stand, ein Durchprobieren der App-PIN außerhalb des Geräts
+  sei nicht möglich. Für die App-PIN bis dahin (Schnell-Datei Version 3, Zähler in den Einstellungen der App) stimmte
+  das nicht: Der Keystore-Schlüssel gab den Schnellschlüssel ohne PIN frei, die PIN steckte nur im Argon2id. Mit
+  Root reichte ein Aufruf, danach ließ sich die PIN mit der Datei auf fremder Hardware durchprobieren, ohne Zähler.
 - **Nicht verfügbar in der portablen Windows-Version.**
 
 ### 6.6 Sofortsperre
@@ -754,8 +784,8 @@ und weitergeben, immer mit seinen Dokumenten, als GhulDocs-Paket `.ghldocs` (Abs
   endgültig löschen, leeren).
 - **Ansehen in der App** ohne Klartext auf dem Datenträger: Bilder, PDF und Text, entschlüsselt in den
   Arbeitsspeicher und beim Verlassen oder Sperren überschrieben. PDF unter Android mit dem `PdfRenderer` des Systems
-  über eine anonyme Datei im Arbeitsspeicher (`memfd`, ab **Android 11**; darunter „Mit App öffnen“ oder
-  Exportieren), unter Windows mit **Apache PDFBox** nur im Arbeitsspeicher. Größere Dateien und andere Typen: mit
+  über eine anonyme Datei im Arbeitsspeicher (`memfd`; die App braucht Android 12, ein Rückfallpfad für ältere
+  Versionen entfällt), unter Windows mit **Apache PDFBox** nur im Arbeitsspeicher. Größere Dateien und andere Typen: mit
   einer App öffnen oder exportieren.
 - **Exportieren** (entschlüsselt an einen gewählten Ort, mit Rückfrage) und **Mit App öffnen** (befristete Kopie,
   gelöscht, sobald GhulSuite sperrt, wie bisher bei Anhängen; in der portablen Windows-Version im Temp-Ordner des PCs,
@@ -1002,7 +1032,11 @@ GhulDocs ersetzt, das ohne Netz auskommt. Jede Phase ist für sich nutzbar.
 7. Key-Bedienung: Ist beim Entsperren kein Key eingesteckt, wartet die App auf das Einstecken (USB-Ereignis) und macht
    automatisch weiter, statt sofort einen Fehler zu zeigen
 6. Credentials mit `credProtect` Stufe 3 anlegen (vom Key unterstützt): Der Key gibt das Credential dann nur nach PIN-Prüfung preis
-3. Android-Mindestversion (Vorschlag: Android 10 / API 29, deckt fast alle aktiven Geräte ab und bringt die nötigen Sicherheitsfunktionen mit)
+3. Android-Mindestversion: **entschieden am 22.11.2026: Android 12 / API 31** (vorher Android 10 / API 29). Ab API 31
+   gibt es die Einmal-Schlüssel der App-PIN (`setMaxUsageCount`), der Schutz vor überlagernden Fenstern gilt immer,
+   die PDF-Anzeige gibt es immer. Wer die App auf Android 10 oder 11 direkt installiert hat, bekommt keine Updates
+   mehr: Der Updater lädt die neue Version, der System-Installer lehnt sie ab, die App meldet nur „Das Update
+   konnte nicht installiert werden …“, ohne Grund; die installierte Version läuft weiter
 4. Verbreitung der APK: GitHub Releases, später ggf. F-Droid
 8. **GhulCal, Kalender als Tresor** (`.ghlcal`, umgesetzt): Termine verschlüsselt in der Suite, reisen mit der
    Suite-Datei wie die anderen Tresore, Erinnerungen auf dem Gerät, Import/Export als `.ics`. Ein CalDAV-Server

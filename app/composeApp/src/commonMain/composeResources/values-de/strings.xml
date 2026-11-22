@@ -99,10 +99,14 @@
     <string name="err_out_of_memory">Für diese Datei reicht der Arbeitsspeicher dieses Geräts nicht. Schließe andere Apps und versuche es erneut, oder öffne die Datei auf einem anderen Gerät.</string>
     <string name="err_delete_incomplete">Die Suite wurde nur zum Teil gelöscht (eine Datei ließ sich nicht entfernen). Versuche das Löschen noch einmal.</string>
     <plurals name="err_quick_invalid">
-        <item quantity="one">Falsche App-PIN. Noch %1$s Versuch.</item>
+        <item quantity="one">Falsche App-PIN. Noch %1$s Versuch, danach sind Passwort und zweiter Faktor nötig.</item>
         <item quantity="other">Falsche App-PIN. Noch %1$s Versuche.</item>
     </plurals>
     <string name="err_quick_unavailable">Schnell-Entsperren ist nicht verfügbar. Bitte mit Passwort und zweitem Faktor entsperren.</string>
+    <string name="err_quick_invalid_plain">Das Schnell-Entsperren hat nicht gepasst. Versuche es noch einmal oder entsperre mit Passwort und zweitem Faktor.</string>
+    <string name="err_quick_pin_used_up">Falsche App-PIN. Das war der zweite Fehlversuch, die App-PIN ist jetzt gelöscht. Entsperre mit Passwort und zweitem Faktor; danach kannst du sie unter Optionen → Entsperren neu einrichten.</string>
+    <string name="err_device_locked">Entsperre zuerst das Gerät. Die App-PIN geht nur bei entsperrtem Gerät; es wurde kein Versuch verbraucht.</string>
+    <string name="core_app_pin_internal">Die App-PIN ließ sich nicht verwenden (interner Fehler). Entsperre mit Passwort und zweitem Faktor und richte sie neu ein.</string>
     <string name="err_storage">Speichern fehlgeschlagen: %1$s</string>
     <string name="err_timeout">Zeitüberschreitung: Der Key wurde nicht rechtzeitig berührt.</string>
     <string name="err_transport">USB-Kommunikation fehlgeschlagen: %1$s</string>
@@ -272,7 +276,7 @@
     <string name="s_touch_key">Jetzt den Key berühren</string>
     <string name="set_about">Über und Hilfe</string>
     <string name="set_add_key_text">Stecke den Key ein. Du berührst ihn zweimal. Danach öffnet er die Suite genau wie deine anderen Keys und Schlüsseldateien. An diesen ändert sich nichts.</string>
-    <string name="set_app_pin_text">Wähle eine App-PIN mit 6 bis 12 Ziffern. Sie gilt nur auf diesem Gerät und nur für das Schnell-Entsperren. Nach 5 Fehlversuchen wird sie gelöscht.</string>
+    <string name="set_app_pin_text">Wähle eine App-PIN mit 8 bis 12 Ziffern. Sie gilt nur auf diesem Gerät und nur für das Schnell-Entsperren. Nach 2 falschen Eingaben ist sie weg; dann öffnen nur Passwort und zweiter Faktor.</string>
     <string name="set_auto_lock">Im Hintergrund sperren</string>
     <string name="set_backup_key_hint">Empfehlung: Lege einen Ersatz an (zweiter Key oder Schlüsseldatei). Geht dein einziger verloren, kommst du nur noch mit dem Wiederherstellungscode hinein.</string>
     <string name="set_change_pw_text">Gilt für die Suite und alle Tresore. Keys, Schlüsseldateien und der Wiederherstellungscode bleiben gültig.</string>
@@ -290,7 +294,7 @@
     <string name="set_panic_reminders">Sofortsperre löscht auch die Termin-Erinnerungen</string>
     <string name="set_password">Master-Passwort</string>
     <string name="set_pin_mismatch">Die PINs stimmen nicht überein.</string>
-    <string name="set_quick_always_full">Passwort und zweiter Faktor (Key oder Schlüsseldatei) sind nötig nach einem Neustart und nach Ablauf der Gültigkeit; danach geht Schnell-Entsperren wieder. Neu einrichten musst du es nach einer Sofortsperre, nach 5 falschen App-PINs, wenn Fingerabdrücke geändert werden, und nach jeder Änderung des Schutzes (Passwort, Key, Schlüsseldatei).</string>
+    <string name="set_quick_always_full">Passwort und zweiter Faktor (Key oder Schlüsseldatei) sind nötig nach einem Neustart und nach Ablauf der Gültigkeit; danach geht Schnell-Entsperren wieder. Neu einrichten musst du es nach einer Sofortsperre, nach 2 falschen App-PINs, wenn Fingerabdrücke geändert werden, und nach jeder Änderung des Schutzes (Passwort, Key, Schlüsseldatei).</string>
     <string name="set_quick_bio">Fingerabdruck</string>
     <string name="set_quick_bio_unavailable">Kein sicherer Fingerabdrucksensor oder kein Fingerabdruck auf diesem Gerät eingerichtet.</string>
     <string name="set_quick_hint">Nach dem Entsperren mit Passwort und zweitem Faktor kannst du GhulSuite für eine Weile per Fingerabdruck oder App-PIN öffnen.</string>
@@ -861,8 +865,8 @@
     <string name="wz_quick_bio_sub">Für die Zeit dazwischen</string>
     <string name="wz_quick_pin">Zusätzlich App-PIN</string>
     <string name="wz_quick_pin_sub">Wenn kein Fingerabdruck möglich ist</string>
-    <string name="wz_quick_pin_field">App-PIN (6 bis 12 Ziffern)</string>
-    <string name="wz_pin_rule">Die App-PIN braucht 6 bis 12 Ziffern.</string>
+    <string name="wz_quick_pin_field">App-PIN (8 bis 12 Ziffern)</string>
+    <string name="wz_pin_rule">Die App-PIN braucht 8 bis 12 Ziffern.</string>
     <string name="wz_quick_valid">Schnell-Entsperren gilt</string>
     <string name="wz_quick_valid_sub">Danach wieder Passwort und zweiter Faktor.</string>
     <string name="wz_quick_always_note">Ohne Ablauf. Nach einem Neustart des Geräts, einer Sofortsperre oder einem Passwortwechsel brauchst du trotzdem wieder Passwort und zweiten Faktor.</string>
@@ -1133,7 +1137,6 @@
     <string name="core_folders_many">Dieser GhulDocs-Tresor hat schon so viele Ordner, wie er fassen kann.</string>
     <string name="core_ics_many">Die Datei enthält zu viele Termine (höchstens 20.000 auf einmal).</string>
     <string name="core_quick_validity">Wähle, wie lange Schnell-Entsperren gelten soll.</string>
-    <string name="core_pin_six">Die App-PIN braucht mindestens 6 Ziffern.</string>
     <string name="l_vault_password">Passwort des neuen Tresors</string>
     <string name="single_not_writable">Die App darf diese Datei nicht beschreiben (z. B. ein Mail-Anhang). Speichere sie zuerst woanders oder füge den Tresor zu deiner Suite hinzu.</string>
     <string name="share_vault_done">Fertig. Gib die Tresordatei, das Passwort und gegebenenfalls die Schlüsseldatei getrennt weiter; den Wiederherstellungscode bewahrt der Empfänger sicher auf.</string>
@@ -1316,7 +1319,7 @@
     <string name="docs_reading">Wird entschlüsselt … %1$s %</string>
     <string name="docs_no_preview">Diese Art von Datei kann die App nicht anzeigen.</string>
     <string name="docs_too_large_to_show">Zu groß zum Anzeigen in der App (mehr als %1$s).</string>
-    <string name="docs_pdf_not_here">Diese PDF kann hier nicht angezeigt werden (mit Passwort geschützt, beschädigt oder nicht auf dieser Android-Version).</string>
+    <string name="docs_pdf_not_here">Diese PDF kann hier nicht angezeigt werden (mit Passwort geschützt oder beschädigt).</string>
     <string name="docs_image_not_read">Dieses Bild kann hier nicht angezeigt werden.</string>
     <string name="docs_open_hint">Öffne es mit einer anderen App oder exportiere es.</string>
     <string name="docs_text_cut">Nur der Anfang des Textes wird angezeigt.</string>

@@ -687,8 +687,8 @@ class InteractionTest {
         onAllNodesWithText("App PIN", useUnmergedTree = true).onFirst().performClick()
         waitFor("Repeat app PIN")
         val fields = { onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog())) }
-        fields()[0].performTextInput("246813")
-        fields()[1].performTextInput("246813")
+        fields()[0].performTextInput("24681357")
+        fields()[1].performTextInput("24681357")
         fields()[2].performTextInput(fake.masterPassword)
         // A key is chosen (the default), its PIN still missing: not yet.
         onNode(hasText("Save") and hasAnyAncestor(isDialog()) and hasClickAction()).assertIsNotEnabled()
@@ -696,7 +696,7 @@ class InteractionTest {
         shot("app-pin-proof")
         dialogButton("Save")
         waitUntil(timeoutMillis = 10_000) { fake.quickSetups.isNotEmpty() }
-        assertEquals("pin:246813:${fake.settings.quickUnlockHours}", fake.quickSetups.single())
+        assertEquals("pin:24681357:${fake.settings.quickUnlockHours}", fake.quickSetups.single())
     }
 
     /** H6: two methods with their own validity: each is shown (and changed) on its own. */
@@ -743,7 +743,7 @@ class InteractionTest {
         quickError = de.danerd.ghulsuite.model.VaultException(de.danerd.ghulsuite.model.VaultErrorKind.QUICK_OUTDATED)
     }) { state, fake ->
         waitFor("Unlock with app PIN")
-        onAllNodes(hasSetTextAction()).onFirst().performTextInput("246813")
+        onAllNodes(hasSetTextAction()).onFirst().performTextInput("24681357")
         text("Unlock with app PIN").performClick()
         waitUntil(timeoutMillis = 10_000) { part("Master password") }
         assertFalse(shown("Unlock with app PIN"))

@@ -6,10 +6,8 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
-import android.os.Build
 import android.os.SystemClock
 import android.os.VibrationEffect
-import android.os.Vibrator
 import android.os.VibratorManager
 
 /**
@@ -72,12 +70,7 @@ class ShakeDetector(private val context: Context, private val onShake: () -> Boo
     /** A short buzz: the lock happened (the screen may not be visible while shaking). */
     private fun confirm() {
         runCatching {
-            val vibrator = if (Build.VERSION.SDK_INT >= 31) {
-                context.getSystemService(VibratorManager::class.java)?.defaultVibrator
-            } else {
-                @Suppress("DEPRECATION")
-                context.getSystemService(Vibrator::class.java)
-            }
+            val vibrator = context.getSystemService(VibratorManager::class.java)?.defaultVibrator
             vibrator?.vibrate(VibrationEffect.createOneShot(120, VibrationEffect.DEFAULT_AMPLITUDE))
         }
     }

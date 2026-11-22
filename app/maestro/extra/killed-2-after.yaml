@@ -8,7 +8,7 @@ name: Vom System beendet 2
 - extendedWaitUntil: { visible: "Unlock with app PIN", timeout: 30000 }
 - takeScreenshot: x2-02-locked
 - tapOn: "App PIN"
-- inputText: "246813"
+- inputText: "24681357"
 - hideKeyboard
 - tapOn: "Unlock with app PIN"
 - extendedWaitUntil: { visible: "Lock now", timeout: 30000 }

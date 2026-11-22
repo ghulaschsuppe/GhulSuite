@@ -4,7 +4,10 @@ name: Android & Kern
 on:
   push:
     branches: ['**']
+    # VERSION, rust-toolchain.toml and release.yml count as a change of the app for the release
+    # (its gate), so they start this run, which ends with the release.
     paths: ['core/**', 'app/**', 'docs/testvectors/**', 'tools/**', '.github/workflows/android.yml',
+            'VERSION', 'rust-toolchain.toml', '.github/workflows/release.yml',
             '!app/maestro/**', '!tools/ci-emulator.sh', '!tools/run-maestro.sh', '!tools/check-reminders.sh']
   # Every pull request: "build" and "Windows-App (Installer und portable Version)" are required
   # checks. They come from the jobs "build-check" and "windows-check", which always run and report
@@ -17,9 +20,11 @@ permissions:
   # Only to ask whether a pushed branch has an open pull request (job "changes").
   pull-requests: read
 
+# A newer push cancels the older run, except on main and dev: there the run ends with the release
+# (job "release"), which must not stop halfway; a newer run waits for it.
 concurrency:
   group: android-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ !(github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) }}
 
 env:
   # No incremental build data in CI: smaller caches, same result.
@@ -84,8 +89,9 @@ jobs:
           command -v cargo-audit > /dev/null || cargo install cargo-audit --locked --quiet
           cargo audit
 
-  # Which parts changed: fuzzing only runs when the core (or its test vectors) changed; the other
-  # jobs only when app, core, tools or this workflow changed (pull requests run this workflow always).
+  # Which parts changed: fuzzing only runs when the core (or its test vectors, or the toolchain)
+  # changed; the other jobs only when app, core, tools, VERSION, the toolchain, this workflow or
+  # release.yml changed (pull requests run this workflow always): what is released is tested first.
   changes:
     name: Geänderte Bereiche
     runs-on: ubuntu-latest
@@ -123,8 +129,8 @@ jobs:
             echo "core=true" >> "$GITHUB_OUTPUT"; echo "code=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
           files=$(git diff --name-only "$BASE" HEAD)
-          if printf '%s\n' "$files" | grep -qE '^(core/|docs/testvectors/)'; then core=true; else core=false; fi
-          if printf '%s\n' "$files" | grep -qE '^(core/|app/|docs/testvectors/|tools/|\.github/workflows/android\.yml)'; then code=true; else code=false; fi
+          if printf '%s\n' "$files" | grep -qE '^(core/|docs/testvectors/|rust-toolchain\.toml$)'; then core=true; else core=false; fi
+          if printf '%s\n' "$files" | grep -qE '^(core/|app/|docs/testvectors/|tools/|\.github/workflows/(android|release)\.yml|VERSION$|rust-toolchain\.toml$)'; then code=true; else code=false; fi
           echo "Kern geändert: $core · App/Kern/Werkzeuge geändert: $code"
           echo "core=$core" >> "$GITHUB_OUTPUT"; echo "code=$code" >> "$GITHUB_OUTPUT"
 
@@ -515,3 +521,27 @@ jobs:
           echo "Geänderte Bereiche: $CHANGES · Windows-App bauen: $RESULT"
           [ "$SECRETS" = success ] || echo "::error::Secrets auf Repository-Ebene (siehe Job secrets-check)."
           [ "$SECRETS" = success ] && [ "$CHANGES" = success ] && { [ "$RESULT" = success ] || [ "$RESULT" = skipped ]; }
+
+  # The release (release.yml), as the last job of this run: only for a push to main or dev, and
+  # only when the required checks passed and no other job failed or was cancelled (skipped jobs,
+  # e.g. the emulator on dev, are fine). Whether the app changed since the last release, and so
+  # whether there is a new version at all, release.yml decides by itself. The signing key comes
+  # from the environment "release" inside the called jobs; only the legal notice of the website
+  # (repository secrets) is passed on.
+  release:
+    name: Veröffentlichen
+    needs: [testvectors, audit, changes, secrets-check, fuzz, stress, windows, build, emulator, build-check, windows-check]
+    if: >-
+      ${{ !cancelled() && github.repository_owner == 'ghulaschsuppe' && github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') &&
+      needs.secrets-check.result == 'success' && needs.build-check.result == 'success' &&
+      needs.windows-check.result == 'success' &&
+      !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    secrets:
+      IMPRESSUM_NAME: ${{ secrets.IMPRESSUM_NAME }}
+      IMPRESSUM_ADRESSE: ${{ secrets.IMPRESSUM_ADRESSE }}
+      IMPRESSUM_EMAIL: ${{ secrets.IMPRESSUM_EMAIL }}
+      IMPRESSUM_HOSTER: ${{ secrets.IMPRESSUM_HOSTER }}

@@ -249,11 +249,11 @@ fn quick_unlock_survives_a_new_code_but_not_a_removed_key() {
     let s = d.suite();
     s.create(options("pw-123456-Kq7wZ", Some(kf1.clone()), &[(VaultKind::Pass, "P")]), None, None, None).unwrap();
     s.add_keyfile(kf_proof(PW, &kf1), None, None, kf2, "Zwei".into()).unwrap();
-    let bio = s.quick_unlock_enable(kf_proof(PW, &kf1), None, None, "bio".into(), None, 3600).unwrap();
+    let bio = s.quick_unlock_enable(kf_proof(PW, &kf1), None, None, "bio".into(), 3600).unwrap();
     s.new_recovery_code(kf_proof(PW, &kf1), None, None, "Neu".into()).unwrap();
     assert_no_old_copies(&d, "new_recovery_code");
     s.lock();
-    s.unlock_quick("bio".into(), bio.clone(), None).unwrap();
+    s.unlock_quick("bio".into(), bio.clone()).unwrap();
     s.remove_slot(kf_proof(PW, &kf1), None, None, slot_id(&s, "Zwei")).unwrap();
     assert_no_old_copies(&d, "remove_slot");
     assert!(!s.quick_unlock_exists("bio".into()));

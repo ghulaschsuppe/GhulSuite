@@ -20,9 +20,9 @@ name: App PIN, lock and unlock
 - tapOn:
     text: "App PIN"
     index: 1
-- inputText: "246813"
+- inputText: "24681357"
 - tapOn: "Repeat app PIN"
-- inputText: "246813"
+- inputText: "24681357"
 # Switching on the app PIN needs both factors (H6: who finds the app unlocked cannot): the
 # master password and the key file of the setup.
 - tapOn: "Master password"
@@ -56,7 +56,7 @@ name: App PIN, lock and unlock
     timeout: 15000
 - takeScreenshot: 04-locked
 - tapOn: "App PIN"
-- inputText: "246813"
+- inputText: "24681357"
 - hideKeyboard
 - tapOn: "Unlock with app PIN"
 - extendedWaitUntil:

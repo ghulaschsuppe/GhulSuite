@@ -408,7 +408,7 @@ data class ArchiveCheckUi(
 enum class ArchiveTargetUi { NEW, SAME, CHANGED_ELSEWHERE, OTHER_SUITE, OTHER_PROTECTION }
 
 /** M42: the rules of the core (the defaults are its values). */
-data class SecurityRulesUi(val passwordMinLength: Int = 10, val passwordMinScore: Int = 3, val appPinMinLength: Int = 6)
+data class SecurityRulesUi(val passwordMinLength: Int = 10, val passwordMinScore: Int = 3, val appPinMinLength: Int = 8)
 
 /** Both factors of now, before a change of the protection: the master password plus the PIN of a key ([pin]) or a key file. */
 class FactorProofUi(val password: String, val pin: String?, val keyfile: ByteArray?)
@@ -758,6 +758,8 @@ enum class VaultErrorKind {
     /** The quick unlock file of an older version (validity not in the file): set it up again. */
     QUICK_OUTDATED,
     QUICK_INVALID,
+    /** The device is locked: the app PIN's keys work only while it is unlocked (nothing used up). */
+    DEVICE_LOCKED,
     BIOMETRIC_CANCELLED,
     /** Too many failed attempts: the system blocks biometrics for a while (or until the device PIN). */
     BIOMETRIC_LOCKOUT,

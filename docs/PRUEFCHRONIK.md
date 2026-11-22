@@ -35,6 +35,8 @@ ließ, wurde entfernt statt weiter geflickt.
 | 21.11.2026 | **Schlüssel bleiben, aber nur noch in GitHub-Environments** (`signing` für die Testversionen von `main` und `dev`, `release` für Veröffentlichungen); alle anderen Läufe signieren mit einem Wegwerf-Schlüssel; kein Release von Hand | Großprüfung, Befund H1 und H2: Der Schlüssel stand jedem Push auf jeden Branch zur Verfügung. Ein Wechsel der Schlüssel war dafür nicht nötig, der Inhaber behält sie | [PROJEKT](../PROJEKT.md), „Signatur“; [AUDIT](AUDIT.md), Abschnitt 4.1 |
 | 21.11.2026 | **Kein Testserver mehr** (dev.danerd.de): Pakete von Branches und Pull Requests gibt es nur als GitHub-Artefakte, die Vorschau der Website auf dem Server entfällt | Entscheidung des Inhabers: Die Zugangsdaten des Testservers mussten jedem Branch offenstehen (Großprüfung, Runde 5) | [PROJEKT](../PROJEKT.md), „CI und Signatur“ |
 | 21.11.2026 | **Keine externe oder bezahlte Prüfung** | Entscheidung des Inhabers: Hobbyprojekt, getragen von der Community; geprüft wird mit KI-Agenten, eigenen Gerätetests und einer Beta | Abschnitt 3 |
+| 22.11.2026 | **App-PIN neu:** 8 bis 12 Ziffern, zwei Einmal-Schlüssel im Android-Keystore, an die PIN gebunden; nach 2 falschen nur noch Passwort und zweiter Faktor. Alte App-PINs sind neu einzurichten | Gutachten zu M19: Die alte App-PIN war mit Root außerhalb des Geräts durchprobierbar; Entscheidung des Inhabers zu Länge und Versuchen | [KONZEPT](KONZEPT.md), Abschnitt 6.5; Abschnitt 2.4 |
+| 22.11.2026 | **Android 12 als Mindestversion** (`minSdk` 31, vorher Android 10) | Erst ab API 31 gibt es die Einmal-Schlüssel; Entscheidung des Inhabers, direkt umzustellen. Direkt installierte Apps auf Android 10 und 11 bekommen keine Updates mehr | [KONZEPT](KONZEPT.md), Abschnitt 16; [AUDIT](AUDIT.md), Abschnitt 7 |
 
 ## 2. Prüfläufe
 
@@ -95,22 +97,38 @@ und ein Weg über „Als Tresor weitergeben“, kein Zusammenführen); von den m
 
 **Offen nach der Großprüfung:**
 - Die Environments und Secrets richtet der Inhaber in GitHub ein (Environments `signing`, `release`, `website`,
-  Repository-Variable `GHUL_UPDATE_KEY`, danach die Secrets auf Repository-Ebene löschen). Bis dahin meldet der Job
+  Repository-Variable `GHUL_UPDATE_KEY`, danach die Secrets auf Repository-Ebene löschen; seit 22.11.2026 braucht
+  auch `release` die Deployment-Branches `main` und `dev`, Abschnitt 2.4). Bis dahin meldet der Job
   `secrets-check` auf `main` und `dev` einen Fehler, und der Schutz aus H1 wirkt noch nicht.
 - M44 (Android-Code ohne Unit-Tests) und die übrigen kleinen Punkte, soweit nicht im Testprotokoll als behoben
   genannt. M8 und M21 wurden am 22.11.2026 nachträglich behoben; M21 (nur USB oder NFC unter Windows) ist erst
   in der Windows-CI gebaut und muss auf einem echten Windows-11-Gerät mit Handy nachgeprüft werden.
 - Restrisiken (AUDIT 4.6): das MSI-Update ist nur als Text des Skripts getestet (M24); Windows und Emulator laufen
-  nur in der CI; die App-PIN ist mit Root offline angreifbar (M19); Erinnerungen mit „Alles“ (M12, M18).
+  nur in der CI; die App-PIN ist mit Root offline angreifbar (M19; am 22.11.2026 neu gebaut, das Restrisiko steht
+  in Abschnitt 2.4); Erinnerungen mit „Alles“ (M12, M18).
 - Festgehaltene Tests auf echten Geräten (Testplan, besonders E19e und Abschnitt 40) und eine Beta mit Leuten aus der
   Community.
+
+### 2.4 22.11.2026: App-PIN (M19), Android 12, Release
+
+| Wer | Prüfung | Ergebnis | Einzelheiten |
+|---|---|---|---|
+| KI, 2 Agenten | **Gutachten zu M19:** Wie lässt sich die App-PIN gegen ein gerootetes Gerät halten, was bringt Android 12 als Mindestversion? | Die App-PIN war mit Root **offline** angreifbar: Der Keystore-Schlüssel gab den Schnellschlüssel ohne PIN frei, die PIN steckte nur im Argon2id, der Zähler in den Einstellungen half nicht. KONZEPT 6.5 („außerhalb des Geräts nicht möglich“) und AUDIT GP-M19 („auf dem Gerät“) waren falsch, beide richtiggestellt. Empfehlung: zwei an die PIN gebundene, importierte Einmal-Schlüssel (`setMaxUsageCount(1)`), mehr Ziffern, Android 12 | [KONZEPT](KONZEPT.md) 6.5, [AUDIT](AUDIT.md) GP-M19 |
+| Inhaber | Entscheidungen | App-PIN mit mindestens 8 Ziffern und **2 Versuchen**; **Android 12** (`minSdk` 31) direkt, ohne eine letzte Version für Android 10 und 11; der Auslöser des Release wird repariert | Abschnitt 1 |
+| KI, 2 Agenten (Entwickler A: Kern, Workflows; Entwickler B: App) | Umsetzung: App-PIN neu (Schnell-Datei Version 4 im Kern, Einmal-Schlüssel in der App), `minSdk` 31, Release aus dem CI-Lauf | Dabei gefunden: `workflow_run` läuft nur mit der Fassung des Standardzweigs `main`, und dort gab es `release.yml` nicht: Seit PR #50 entstand **keine Vorabversion** mehr. Jetzt ruft der letzte Job von `android.yml` den Release auf (`workflow_call`); das Environment `release` muss dafür auch `dev` zulassen (stellt der Inhaber ein) | [PROJEKT](../PROJEKT.md), „Versionen und Veröffentlichung“; [AUDIT](AUDIT.md) 4.2, K-7 |
+| KI, 1 Agent | **Durchsicht r8** der Umsetzung (App-PIN, `minSdk` 31, Release) | kein Fund hoch; 4 mittel (die Website verlinkte eine Vorabversion, die später gelöscht wird; ein gescheitertes Neu-Einrichten löschte die vorhandene App-PIN, auch bei falschem Passwort; das Environment `release` ließ nur `main` zu, die Doku beschrieb noch `workflow_run`; ein erneuter Lauf eines älteren Commits hätte alten Code als neue Version veröffentlicht), 9 klein; behoben. Ob der Keystore im Emulator die Schlüssel als sichere Hardware meldet (sonst lässt sich die App-PIN dort nicht einrichten), zeigt erst der Emulator-Lauf des Pull Requests | Testplan Abschnitt 41 |
+
+**Restrisiko** (AUDIT GP-M19): Auf Geräten ohne rollback-festen Keystore (die meisten ohne StrongBox) könnte jemand mit
+Root die Keystore-Datenbank zurückspielen und weiter raten, aber nur auf dem Gerät und langsam (bei 8 Ziffern Jahre).
+Auf Geräten mit StrongBox erzwingt das die Hardware; das beruht auf der AOSP-Dokumentation und ist auf einem Gerät
+noch nicht nachgeprüft. Die App-PIN ist im echten Keystore noch nicht getestet (Testplan Abschnitt 41).
 
 ## 3. Gutachten vom 21.11.2026 und was daraus wurde
 
 | Punkt des Gutachtens | Stand |
 |---|---|
 | Keine Zusage zum Dateiformat | **Erledigt:** Format 3 eingefroren, echte Dateien als dauerhafte Testfälle (PR-19) |
-| Ein übernommenes GitHub-Konto reicht für signierte Updates; Signieren ohne vorgeschaltete Tests | Schlüssel bleiben (Entscheidung des Inhabers, Konto mit Hardware-Key). **Erledigt:** Veröffentlichung nur nach grüner CI für genau diesen Commit, Workflow vom Standardzweig; die falsche Aussage im AUDIT richtiggestellt (K-7). Seit der Großprüfung liegt der Schlüssel nur noch in den Environments `signing` und `release` (Abschnitt 2.3) |
+| Ein übernommenes GitHub-Konto reicht für signierte Updates; Signieren ohne vorgeschaltete Tests | Schlüssel bleiben (Entscheidung des Inhabers, Konto mit Hardware-Key). **Erledigt:** Veröffentlichung nur nach grüner CI für genau diesen Commit, Workflow vom Standardzweig; die falsche Aussage im AUDIT richtiggestellt (K-7). **Geändert am 22.11.2026:** Der Workflow vom Standardzweig lief nie, weil es `release.yml` auf `main` nicht gab; jetzt ruft der letzte Job der CI den Release auf (Abschnitt 2.4). Seit der Großprüfung liegt der Schlüssel nur noch in den Environments `signing` und `release` (Abschnitt 2.3) |
 | Keine Prüfung durch Dritte, keine festgehaltenen Gerätetests | Prüfung durch Dritte: **entfällt** (Entscheidung des Inhabers, Abschnitt 1). Gerätetests: **offen**, sie kommen mit Datum in Abschnitt 2 |
 | Speichern unter Android leert die einzige Suite-Datei zuerst | **Umgesetzt, auf einem Gerät noch nicht geprüft:** mit einmal freigegebenem Ordner (Stick, SD-Karte, Gerätespeicher) neue Datei daneben, prüfen, dann tauschen; ohne Freigabe oder bei Cloud-Apps ein Hinweis (PR-20, Testplan E19e) |
 | Übernehmen einer Suite-Datei ersetzt Datei für Datei | **Erledigt:** Journal, nach einem Absturz kommt der Stand davor vollständig zurück (PR-19) |

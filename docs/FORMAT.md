@@ -438,7 +438,9 @@ Wert `{v, at}` (Map aus genau `v` und ganzzahligem `at`, Zeit der Änderung). Zu
 Stand der zuletzt gespeicherten Suite-Datei. Bekannte Optionen: GhulPass `generator_mode`, `generator_length`; GhulCal
 `cal_holidays`, `cal_region`, `cal_default_reminder`, `cal_allday_reminder`, `cal_default`, `cal_week_start`.
 Unbekannte Optionen bleiben erhalten. Was nur ein Gerät betrifft (Sperren, Schnell-Entsperren, Design,
-Update-Prüfung, Prüfung auf Datenlecks), bleibt auf dem Gerät und steht in keiner Datei.
+Update-Prüfung, Prüfung auf Datenlecks), bleibt auf dem Gerät und steht in keiner Datei der Suite. Die Dateien des
+Schnell-Entsperrens liegen nur im App-Speicher des Geräts; sie gehören nicht zu den hier beschriebenen Dateiarten und
+nicht zur Kompatibilitätszusage (eine veraltete heißt nur: Schnell-Entsperren neu einrichten, KONZEPT 6.5).
 
 ---
 

@@ -608,6 +608,32 @@ impl Open {
     }
 }
 
+/// The first step of an attempt with the app PIN (see `GhulSuite::quick_pin_challenge`).
+#[derive(uniffi::Record, Clone)]
+pub struct QuickPinChallenge {
+    /// The generation of the PIN's file: the app's Keystore aliases name it.
+    pub generation: u32,
+    /// What the Keystore key of the slot signs with HMAC-SHA256 (53 bytes: 21 of the label, 32 of `P`; secret like the PIN).
+    pub message: Vec<u8>,
+}
+
+super::redact::redacted_debug!(QuickPinChallenge { generation });
+
+/// Two keys of 32 bytes for the app PIN's slots.
+fn slot_keys_of(keys: Vec<Vec<u8>>) -> Result<Zeroizing<[[u8; 32]; super::quick::PIN_SLOTS]>> {
+    let bad = || GhulError::InvalidInput { msg: "two keys of 32 bytes".into() };
+    if keys.len() != super::quick::PIN_SLOTS {
+        return Err(bad());
+    }
+    let mut out = Zeroizing::new([[0u8; 32]; super::quick::PIN_SLOTS]);
+    for (o, k) in out.iter_mut().zip(keys.iter()) {
+        *o = k.as_slice().try_into().map_err(|_| bad())?;
+    }
+    let mut keys = keys;
+    keys.iter_mut().for_each(zeroize::Zeroize::zeroize);
+    Ok(out)
+}
+
 /// Proof of both factors before a change of the protection: the master password plus a key
 /// file or the PIN of a security key (touched through the transport given with the call).
 #[derive(uniffi::Record, Clone)]
@@ -1680,30 +1706,27 @@ impl GhulSuite {
 
     // --- quick unlock ------------------------------------------------------------------------
 
-    /// Enables quick unlock under `name` (`bio` or `pin`) for `max_age_seconds` after each full
-    /// unlock; returns the quick key for the platform to protect. Like a change of the
-    /// protection it needs both factors (`proof`, or the password alone right after
-    /// `confirm_factors`, H6): who saw the password and finds the app unlocked must not set up a
-    /// way in without the key. The validity is stored inside the quick unlock file, under its
-    /// encryption: it can only be changed by enabling quick unlock again.
-    #[allow(clippy::too_many_arguments)]
+    /// Enables quick unlock with the fingerprint (`name` `bio`; the app PIN has
+    /// [`Self::quick_unlock_enable_pin`]) for `max_age_seconds` after each full unlock; returns
+    /// the quick key for the platform to protect. Like a change of the protection it needs both
+    /// factors (`proof`, or the password alone right after `confirm_factors`, H6). The validity
+    /// is stored inside the quick unlock file, under its encryption: it can only be changed by
+    /// enabling quick unlock again.
     pub fn quick_unlock_enable(
         &self,
         proof: FactorProof,
         transport: Option<Arc<dyn HidTransport>>,
         listener: Option<Arc<dyn FidoListener>>,
         name: String,
-        pin: Option<String>,
         max_age_seconds: u64,
     ) -> Result<Vec<u8>> {
-        let pin = pin.map(Zeroizing::new);
         if max_age_seconds == 0 {
             return Err(GhulError::InvalidInput { msg: "quick unlock needs a validity".into() });
         }
         // Checked before a key is touched.
         super::quick::path(&self.local_dir, &name)?;
-        if let Some(p) = &pin {
-            super::quick::check_pin(p)?;
+        if name == super::quick::PIN_NAME {
+            return Err(GhulError::InvalidInput { msg: super::quick::PIN_HAS_SLOTS.into() });
         }
         self.require_factors(&proof, transport.as_ref(), listener.as_ref())?;
         self.with_open(|o| {
@@ -1715,7 +1738,6 @@ impl GhulSuite {
                 &o.suite.header().suite_id,
                 o.password_key.expose(),
                 o.suite.factor_secret().expose(),
-                pin.as_deref().map(|p| p.as_str()),
                 now_ms(),
                 (max_age_seconds.min(i64::MAX as u64 / 1000) * 1000) as i64,
             )?;
@@ -1723,26 +1745,157 @@ impl GhulSuite {
         })
     }
 
+    /// Enables the app PIN (M19; see `quick.rs`): at least 8 digits, valid `max_age_seconds`
+    /// after each full unlock, both factors as for `quick_unlock_enable`. `slot_keys`: two new
+    /// random keys of 32 bytes made by the app; after this call returned the app imports them
+    /// into the Android Keystore as single-use HMAC-SHA256 keys (`setMaxUsageCount(1)`) under the
+    /// aliases of the returned generation and slots 0 and 1, then zeroes them. Returns the
+    /// generation.
+    #[allow(clippy::too_many_arguments)]
+    pub fn quick_unlock_enable_pin(
+        &self,
+        proof: FactorProof,
+        transport: Option<Arc<dyn HidTransport>>,
+        listener: Option<Arc<dyn FidoListener>>,
+        pin: String,
+        max_age_seconds: u64,
+        slot_keys: Vec<Vec<u8>>,
+    ) -> Result<u32> {
+        let pin = Zeroizing::new(pin);
+        if max_age_seconds == 0 {
+            return Err(GhulError::InvalidInput { msg: "quick unlock needs a validity".into() });
+        }
+        super::quick::check_pin(&pin)?;
+        let keys = slot_keys_of(slot_keys)?;
+        self.require_factors(&proof, transport.as_ref(), listener.as_ref())?;
+        let (salt, input) = super::quick::new_pin_input(&pin)?;
+        self.with_open(|o| {
+            super::single::refuse_single(o)?;
+            let suite_id = o.suite.header().suite_id;
+            // A generation the aliases of an earlier PIN never had.
+            let generation = super::quick::read_pin_header(&self.local_dir, &suite_id)
+                .map_or(1, |h| h.generation.wrapping_add(1).max(1));
+            let header = super::quick::PinHeader {
+                salt,
+                created_ms: now_ms(),
+                max_age_ms: (max_age_seconds.min(i64::MAX as u64 / 1000) * 1000) as i64,
+                generation,
+            };
+            super::quick::write_pin(
+                &self.local_dir,
+                &suite_id,
+                o.password_key.expose(),
+                o.suite.factor_secret().expose(),
+                &input,
+                &header,
+                &keys,
+            )?;
+            Ok(generation)
+        })
+    }
+
+    /// The generation of the app PIN's file. The app deletes every Keystore key of another
+    /// generation before an attempt (and at the start).
+    /// - `Ok(None)`: there is no PIN file (or no suite): no PIN set up, turn it off in the app.
+    /// - `Ok(Some(g))`: the file of generation `g`.
+    /// - `Err(QuickUnlockOutdated)`: a PIN file of before version 4 (deleted): set up again.
+    /// - `Err(QuickUnlockUnavailable)`: a damaged file or one of another suite (deleted).
+    /// - `Err(Storage)` (or another error reading the suite file): could not be read now; keep
+    ///   the PIN and its keys, try again later (a full unlock is still possible).
+    pub fn quick_pin_generation(&self) -> Result<Option<u32>> {
+        let Some(locked) = self.read_locked(SUITE_FILE)? else { return Ok(None) };
+        super::quick::pin_generation(&self.local_dir, &locked.header().suite_id)
+    }
+
+    /// The first step of an attempt with the app PIN: what the Keystore key of the slot signs
+    /// (HMAC-SHA256), `message` = "ghul/v4/quick-pin-tag" || Argon2id(PIN). Refused before any
+    /// key is used if the PIN quick unlock is expired (`QuickUnlockExpired`), outdated
+    /// (`QuickUnlockOutdated`, a file of version 3: deleted) or not there.
+    pub fn quick_pin_challenge(&self, pin: String) -> Result<QuickPinChallenge> {
+        let pin = Zeroizing::new(pin);
+        self.finish_earlier_replace()?;
+        let locked = self.read_locked(SUITE_FILE)?.ok_or(GhulError::QuickUnlockUnavailable)?;
+        let header = super::quick::read_pin_header(&self.local_dir, &locked.header().suite_id)?;
+        if super::quick::pin_expired_by_header(&self.local_dir, &header, now_ms()) {
+            return Err(GhulError::QuickUnlockExpired);
+        }
+        let input = super::quick::pin_challenge(&pin, &header)?;
+        let mut message = super::quick::PIN_TAG_INFO.to_vec();
+        message.extend_from_slice(input.as_ref());
+        Ok(QuickPinChallenge { generation: header.generation, message })
+    }
+
+    /// The second step: unlocks with the tag the Keystore key of `slot` (0 or 1) of the
+    /// challenge's generation computed over `message` (from `quick_pin_challenge`). A wrong PIN
+    /// is `QuickUnlockInvalid` and changes nothing (that slot's key is used up). A right PIN
+    /// seals the file anew for `next_slot_keys` (two new keys the app imported before the call
+    /// as the next generation) with the same validity, removes the copy before, and then
+    /// unlocks. Returns the generation the file has now: the next one (the app deletes the keys
+    /// of the old generation), or, if sealing anew failed (e.g. a full storage, the suite is
+    /// open all the same), the old one (the app deletes the new keys and keeps the old slot it
+    /// has left).
+    pub fn unlock_quick_pin(
+        &self,
+        slot: u32,
+        tag: Vec<u8>,
+        message: Vec<u8>,
+        next_slot_keys: Vec<Vec<u8>>,
+    ) -> Result<u32> {
+        let gen = self.lock_gen_now();
+        let tag = Zeroizing::new(tag);
+        let message = Zeroizing::new(message);
+        let keys = slot_keys_of(next_slot_keys)?;
+        let input: [u8; 32] = message
+            .strip_prefix(super::quick::PIN_TAG_INFO)
+            .and_then(|p| p.try_into().ok())
+            .ok_or_else(|| GhulError::InvalidInput { msg: "not a challenge of the app PIN".into() })?;
+        let input = Zeroizing::new(input);
+        self.finish_earlier_replace()?;
+        let locked = self.read_locked(SUITE_FILE)?.ok_or(GhulError::QuickUnlockUnavailable)?;
+        let suite_id = locked.header().suite_id;
+        let (secret, header) = super::quick::open_pin(&self.local_dir, &suite_id, slot, &tag, now_ms())?;
+        let pk = PasswordKey::from_bytes(*secret.password_key);
+        let suite = match locked.unlock(&pk, &FactorSecret::from_bytes(*secret.factor_secret)) {
+            Ok(s) => s,
+            Err(_) => {
+                super::quick::delete_all(&self.local_dir);
+                return Err(GhulError::QuickUnlockUnavailable);
+            }
+        };
+        // Sealed anew before the suite opens: a failure of the unlock afterwards (a full
+        // storage) costs no attempt. Same salt, same validity, the next generation.
+        let next = super::quick::PinHeader { generation: header.generation.wrapping_add(1).max(1), ..header };
+        let now = match super::quick::write_pin(
+            &self.local_dir,
+            &suite_id,
+            &secret.password_key,
+            &secret.factor_secret,
+            &input,
+            &next,
+            &keys,
+        ) {
+            Ok(()) => next.generation,
+            Err(e) => {
+                eprintln!("GhulSuite: the app PIN could not be sealed anew: {e}");
+                header.generation
+            }
+        };
+        self.finish_unlock(pk, suite, false, gen)?;
+        Ok(now)
+    }
+
     pub fn quick_unlock_exists(&self, name: String) -> bool {
         super::quick::path(&self.local_dir, &name).map(|p| p.exists()).unwrap_or(false)
     }
 
-    /// Unlocks with quick unlock, within the validity chosen when it was enabled (counted from
-    /// the last full unlock).
-    pub fn unlock_quick(&self, name: String, quick_key: Vec<u8>, pin: Option<String>) -> Result<()> {
+    /// Unlocks with the fingerprint's quick unlock (`bio`; the app PIN: `unlock_quick_pin`),
+    /// within the validity chosen when it was enabled (counted from the last full unlock).
+    pub fn unlock_quick(&self, name: String, quick_key: Vec<u8>) -> Result<()> {
         let gen = self.lock_gen_now();
         self.finish_earlier_replace()?;
         let quick_key = Zeroizing::new(quick_key);
-        let pin = pin.map(Zeroizing::new);
         let locked = self.read_locked(SUITE_FILE)?.ok_or(GhulError::QuickUnlockUnavailable)?;
-        let secret = super::quick::open_file(
-            &self.local_dir,
-            &name,
-            &locked.header().suite_id,
-            &quick_key,
-            pin.as_deref().map(|p| p.as_str()),
-            now_ms(),
-        )?;
+        let secret = super::quick::open_file(&self.local_dir, &name, &locked.header().suite_id, &quick_key, now_ms())?;
         let pk = PasswordKey::from_bytes(*secret.password_key);
         let suite = match locked.unlock(&pk, &FactorSecret::from_bytes(*secret.factor_secret)) {
             Ok(s) => s,

@@ -232,7 +232,7 @@ fn the_recovery_code_opens_a_file_unverified_and_sets_a_new_password() {
 fn opening_a_file_removes_this_devices_data_of_the_old_state() {
     let (_da, a, kf, _) = device_with_suite("wipe-a");
     let file = save(&a);
-    a.quick_unlock_enable(kf_proof(PW, &kf), None, None, "pin".into(), Some("123456".into()), 3600).unwrap();
+    a.quick_unlock_enable_pin(kf_proof(PW, &kf), None, None, "13572468".into(), 3600, super::pin_keys()).unwrap();
     assert!(a.quick_unlock_exists("pin".into()));
     // The same protection (a newer state from the other device): quick unlock stays.
     open(&a, &file, &kf);
@@ -802,13 +802,18 @@ fn an_attachment_that_cannot_be_saved_goes_again() {
 #[test]
 fn quick_unlock_off_leaves_no_copy() {
     let (d, a, kf, _) = device_with_suite("quick-bak");
-    a.quick_unlock_enable(kf_proof(PW, &kf), None, None, "pin".into(), Some("123456".into()), 3600).unwrap();
-    a.quick_unlock_enable(kf_proof(PW, &kf), None, None, "pin".into(), Some("654321".into()), 3600).unwrap();
+    a.quick_unlock_enable(kf_proof(PW, &kf), None, None, "bio".into(), 3600).unwrap();
+    a.quick_unlock_enable(kf_proof(PW, &kf), None, None, "bio".into(), 3600).unwrap();
     let dir = std::path::PathBuf::from(d.local());
-    assert!(dir.join("quick-pin.ghlq.bak").exists(), "a copy of the first one");
-    a.quick_unlock_disable("pin".into()).unwrap();
-    assert!(!dir.join("quick-pin.ghlq").exists());
-    assert!(!dir.join("quick-pin.ghlq.bak").exists());
+    assert!(dir.join("quick-bio.ghlq.bak").exists(), "a copy of the first one");
+    a.quick_unlock_disable("bio".into()).unwrap();
+    assert!(!dir.join("quick-bio.ghlq").exists());
+    assert!(!dir.join("quick-bio.ghlq.bak").exists());
+    // The app PIN never keeps a copy of the file before (with a key left over, an attempt on
+    // the old generation would come back).
+    a.quick_unlock_enable_pin(kf_proof(PW, &kf), None, None, "13572468".into(), 3600, super::pin_keys()).unwrap();
+    a.quick_unlock_enable_pin(kf_proof(PW, &kf), None, None, "13572468".into(), 3600, super::pin_keys()).unwrap();
+    assert!(!dir.join("quick-pin.ghlq.bak").exists() && !dir.join("quick-pin.ghlq.tmp").exists());
 }
 
 /// A file with a protection this device had before is older, not newer: overwriting it undoes
@@ -839,7 +844,7 @@ fn the_same_epoch_with_another_protection_removes_quick_unlock() {
     open(&b, &file, &kf);
     b.archive_accept().unwrap();
     a.new_recovery_code(kf_proof(PW, &kf), None, None, "neu".into()).unwrap();
-    a.quick_unlock_enable(kf_proof(PW, &kf), None, None, "pin".into(), Some("123456".into()), 3600).unwrap();
+    a.quick_unlock_enable_pin(kf_proof(PW, &kf), None, None, "13572468".into(), 3600, super::pin_keys()).unwrap();
     b.change_password(kf_proof(PW, &kf), None, None, "pw-neu-7890".into()).unwrap();
     let from_b = save(&b);
     a.archive_open_bytes(from_b, "pw-neu-7890".into(), None, None, None, Some(kf.clone())).unwrap();

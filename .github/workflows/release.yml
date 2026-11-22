@@ -13,34 +13,47 @@
 # step "v" below); VERSION only matters for a jump (1.0.0) or a fix release (0.5.1).
 #
 # Nothing is signed or released before the whole CI ("Android & Kern": core, Android, Windows,
-# emulator) passed for exactly this commit: the release starts when that run ends green, and
-# checks it once more by itself. The workflow file used is the one of the default branch, so a
-# change to it in a pull request cannot reach the signing key. There is no manual start: that would
-# run the release.yml of the chosen branch. The jobs that use the signing key (android, publish)
-# run in the environment "release" (its secrets set by the owner, deployment branch main only:
-# a workflow_run always runs on the default branch, also for a release of dev; optionally with
-# an approval). The public half of the key comes from the repository
-# variable GHUL_UPDATE_KEY (not a secret); publishing checks the signature against it.
+# emulator) passed for exactly this commit: the last job of that run (android.yml, job "release")
+# calls this workflow, only on a push to main or dev and only when every other job of the run
+# passed or was skipped. A called workflow runs in the run of the caller, so the github context is
+# the one of that push (event, ref, sha) and the file used is the release.yml of the pushed commit
+# (a workflow_run would always take the file of the default branch). A pull request never gets
+# here: its run has the event pull_request, and its changed copy of this file cannot reach the
+# signing key, since the environment "release" only admits main and dev. There is no manual start.
+# The jobs that use the signing key (android, publish) run in the environment "release" (its
+# secrets set by the owner, deployment branches main and dev; optionally with an approval). The
+# public half of the key comes from the repository variable GHUL_UPDATE_KEY (not a secret);
+# publishing checks the signature against it. After a stable release (main) the live website is
+# built again (website.yml, environment "website", main only); a pre-release of dev does not
+# touch the live site.
 name: Veröffentlichen
 
 on:
-  workflow_run:
-    workflows: ["Android & Kern"]
-    types: [completed]
-    branches: [main, dev]
+  workflow_call:
+    # Only for the website after a stable release: the legal notice of the live site (repository
+    # secrets, passed on one by one by android.yml).
+    secrets:
+      IMPRESSUM_NAME:
+        required: false
+      IMPRESSUM_ADRESSE:
+        required: false
+      IMPRESSUM_EMAIL:
+        required: false
+      IMPRESSUM_HOSTER:
+        required: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.event.workflow_run.head_branch }}
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 env:
   CARGO_INCREMENTAL: "0"
-  # The commit the green CI run was for.
-  SHA: ${{ github.event.workflow_run.head_sha }}
-  BRANCH: ${{ github.event.workflow_run.head_branch }}
+  # The pushed commit whose CI run calls this workflow.
+  SHA: ${{ github.sha }}
+  BRANCH: ${{ github.ref_name }}
   NDK_VERSION: 28.2.13676358
   CARGO_NDK_VERSION: 4.1.2
   # As in android.yml: the official gradle-wrapper.jar of Gradle 8.14.3.
@@ -49,12 +62,11 @@ env:
 jobs:
   plan:
     name: Version und Schlüssel
-    # Only the original repository has the signing key; only a push to main or dev that passed the
-    # CI (a run for a pull request never releases).
+    # Only the original repository has the signing key; only a push to main or dev (a run for a
+    # pull request never releases). The caller checks the same and that the CI passed.
     if: >-
-      github.repository_owner == 'ghulaschsuppe' &&
-      github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' &&
-      (github.event.workflow_run.head_branch == 'main' || github.event.workflow_run.head_branch == 'dev')
+      github.repository_owner == 'ghulaschsuppe' && github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -67,15 +79,18 @@ jobs:
         with:
           ref: ${{ env.SHA }}
           fetch-depth: 0
-      # Once more, by itself: the newest CI run for this commit on this branch passed, and something of the app changed since the last release (a change of the
-      # documents only gives no new version).
+      # Something of the app changed since the last release (a change of the documents only gives
+      # no new version). That the CI passed is already known: this workflow runs in that run.
+      # Only the current head of the branch is released: a re-run of an older run (its commit
+      # no longer the head) would otherwise publish old code under a new, higher version.
       - id: gate
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
         run: |
-          ci=$(gh run list -w android.yml -b "$BRANCH" -c "$SHA" -e push -L 1 --json conclusion -q '.[0].conclusion')
-          if [ "$ci" != success ]; then echo "::error::Die CI für $SHA ist nicht grün ($ci): keine Veröffentlichung."; exit 1; fi
+          head=$(git ls-remote origin "refs/heads/$BRANCH" | cut -f1)
+          if [ "$head" != "$SHA" ]; then
+            echo "::warning::$SHA ist nicht mehr der Stand von $BRANCH (${head:-unbekannt}): keine Veröffentlichung."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           git fetch --tags --quiet
           # main is compared with the last stable release only (a merge of dev brings the last
           # pre-release tag along, and would otherwise count as "nothing changed"); dev with the
@@ -283,3 +298,18 @@ jobs:
           while read -r tag; do
             [ -n "$tag" ] && gh release delete "$tag" --cleanup-tag --yes
           done
+
+  # After a stable release: the download section of the live site shows the new version. Only
+  # for main (the environment "website" admits main only); a pre-release of dev skips this.
+  website:
+    name: Website nach dem Release
+    needs: [plan, publish]
+    if: needs.plan.outputs.prerelease == 'false'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/website.yml
+    secrets:
+      IMPRESSUM_NAME: ${{ secrets.IMPRESSUM_NAME }}
+      IMPRESSUM_ADRESSE: ${{ secrets.IMPRESSUM_ADRESSE }}
+      IMPRESSUM_EMAIL: ${{ secrets.IMPRESSUM_EMAIL }}
+      IMPRESSUM_HOSTER: ${{ secrets.IMPRESSUM_HOSTER }}

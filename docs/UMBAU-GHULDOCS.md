@@ -197,7 +197,8 @@ Was beim Bauen anders oder genauer wurde als oben geplant:
   (1,25 GiB), auch bei sehr vielen kleinen Dateien; eine größere schreibt die App nicht. Der Papierkorb zählt mit, bis er geleert wird.
   (Die 1,1 GB und die 1,25 GiB gelten nicht mehr: ersetzt durch „Grenzen je Tresor und je Suite“ unten.)
 - **Ansehen von PDF:** unter Android mit dem `PdfRenderer` des Systems über eine anonyme Datei im Arbeitsspeicher
-  (`memfd`), das gibt es erst ab **Android 11**; darunter bietet die App „Mit App öffnen“ und „Exportieren“ an. Unter
+  (`memfd`), das gibt es ab Android 11. Seit dem 22.11.2026 braucht die App Android 12 (API 31), die Anzeige gibt es
+  also immer; der frühere Rückfallpfad („Mit App öffnen“ und „Exportieren“ statt der Anzeige) entfällt. Unter
   Windows zeigt **Apache PDFBox** die Seiten, nur im Arbeitsspeicher.
 - **Scannen:** eigener Kamera-Bildschirm mit CameraX; Blatterkennung, Entzerren und der Filter „Dokument“ in eigenem
   Kotlin-Code; ein **eigener kleiner PDF-Schreiber** bettet die JPEG-Seiten unverändert ein (keine PDF-Bibliothek auf
