@@ -155,6 +155,49 @@ jobs:
     outputs:
       apk: ${{ steps.dist.outputs.apk }}
     steps:
+      # Before anything is built: the three secrets of the environment "release" are there, the
+      # keystore decodes and opens with password and alias, and its certificate is the key the app
+      # checks updates with (GHUL_UPDATE_KEY). A clear message instead of a failure after minutes.
+      - name: Signaturschlüssel prüfen
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          PUBKEY: ${{ needs.plan.outputs.pubkey }}
+        run: |
+          set -euo pipefail
+          missing=""
+          [ -n "$KEYSTORE_B64" ] || missing="$missing ANDROID_KEYSTORE_BASE64"
+          [ -n "$KEYSTORE_PASSWORD" ] || missing="$missing ANDROID_KEYSTORE_PASSWORD"
+          [ -n "$(printf '%s' "$KEY_ALIAS" | tr -d ' \r\n\t')" ] || missing="$missing ANDROID_KEY_ALIAS"
+          if [ -n "$missing" ]; then echo "::error::Im Environment release fehlen oder sind leer:$missing"; exit 1; fi
+          file="$RUNNER_TEMP/check.jks"
+          trap 'rm -f "$file"' EXIT
+          if ! printf '%s' "$KEYSTORE_B64" | tr -d ' \r\n\t' | base64 -d > "$file" 2> /dev/null; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 im Environment release ist kein gültiges Base64 (unvollständig eingefügt?)."; exit 1
+          fi
+          alias=$(printf '%s' "$KEY_ALIAS" | tr -d ' \r\n\t')
+          if ! keytool -list -keystore "$file" -storepass:env KEYSTORE_PASSWORD > /dev/null 2>&1; then
+            echo "::error::Der Keystore aus ANDROID_KEYSTORE_BASE64 lässt sich nicht öffnen: Datei beschädigt oder ANDROID_KEYSTORE_PASSWORD falsch."; exit 1
+          fi
+          if ! cert=$(keytool -exportcert -rfc -keystore "$file" -storepass:env KEYSTORE_PASSWORD -alias "$alias" 2> /dev/null); then
+            echo "::error::Im Keystore gibt es keinen Schlüssel mit dem Alias aus ANDROID_KEY_ALIAS."; exit 1
+          fi
+          if ! have=$(printf '%s\n' "$cert" | openssl x509 -pubkey -noout | grep -v -- '-----' | tr -d '\n'); then
+            echo "::error::Das Zertifikat zum Alias aus ANDROID_KEY_ALIAS lässt sich nicht lesen."; exit 1
+          fi
+          # The private key opens with the same password (publish relies on that).
+          if ! keytool -importkeystore -noprompt -srckeystore "$file" -srcstorepass:env KEYSTORE_PASSWORD -srcalias "$alias" \
+              -srckeypass:env KEYSTORE_PASSWORD -destkeystore "$RUNNER_TEMP/check.p12" -deststoretype PKCS12 \
+              -deststorepass:env KEYSTORE_PASSWORD > /dev/null 2>&1; then
+            rm -f "$RUNNER_TEMP/check.p12"
+            echo "::error::Der private Schlüssel lässt sich mit ANDROID_KEYSTORE_PASSWORD nicht öffnen (eigenes Key-Passwort?)."; exit 1
+          fi
+          rm -f "$RUNNER_TEMP/check.p12"
+          if [ "$have" != "$PUBKEY" ]; then
+            echo "::error::Der Schlüssel im Environment release passt nicht zu GHUL_UPDATE_KEY: falscher Keystore oder Alias."; exit 1
+          fi
+          echo "Signaturschlüssel in Ordnung."
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ env.SHA }}
@@ -182,8 +225,8 @@ jobs:
         run: |
           file="$RUNNER_TEMP/ghulsuite-release.jks"
           trap 'rm -f "$file"' EXIT
-          printf '%s' "$KEYSTORE_B64" | base64 -d > "$file"
-          GHUL_KEYSTORE_FILE="$file" GHUL_KEYSTORE_PASSWORD="$KEYSTORE_PASSWORD" GHUL_KEY_ALIAS="$KEY_ALIAS" \
+          printf '%s' "$KEYSTORE_B64" | tr -d ' \r\n\t' | base64 -d > "$file"
+          GHUL_KEYSTORE_FILE="$file" GHUL_KEYSTORE_PASSWORD="$KEYSTORE_PASSWORD" GHUL_KEY_ALIAS="$(printf '%s' "$KEY_ALIAS" | tr -d ' \r\n\t')" \
             ./gradlew --no-daemon --console=plain :composeApp:assembleRelease
       - name: Bereitstellen
         id: dist
@@ -293,8 +336,8 @@ jobs:
           { echo "version ${{ needs.plan.outputs.version }}"; sha256sum GhulSuite.apk GhulSuite.msi GhulSuite-portable.zip; } > SHA256SUMS
           cat SHA256SUMS
           t="$RUNNER_TEMP"
-          printf '%s' "$KEYSTORE_B64" | base64 -d > "$t/k.jks"
-          keytool -importkeystore -noprompt -srckeystore "$t/k.jks" -srcstorepass:env KEYSTORE_PASSWORD -srcalias "$KEY_ALIAS" \
+          printf '%s' "$KEYSTORE_B64" | tr -d ' \r\n\t' | base64 -d > "$t/k.jks"
+          keytool -importkeystore -noprompt -srckeystore "$t/k.jks" -srcstorepass:env KEYSTORE_PASSWORD -srcalias "$(printf '%s' "$KEY_ALIAS" | tr -d ' \r\n\t')" \
             -srckeypass:env KEYSTORE_PASSWORD -destkeystore "$t/k.p12" -deststoretype PKCS12 -deststorepass:env KEYSTORE_PASSWORD > /dev/null
           openssl pkcs12 -in "$t/k.p12" -nocerts -nodes -passin env:KEYSTORE_PASSWORD -out "$t/key.pem" 2> /dev/null
           openssl dgst -sha256 -sign "$t/key.pem" -out SHA256SUMS.sig SHA256SUMS
