@@ -1,6 +1,6 @@
 # GhulSuite: Testplan Windows (Version 0.5.0-dev)
 
-**Stand:** 20.11.2026 · **neu: Umbau zu GhulDocs** ([`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)): eine reine
+**Stand:** 22.11.2026 (Abschnitt 14: nach der Großprüfung) · **Umbau zu GhulDocs** ([`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)): eine reine
 Offline-App mit GhulPass, GhulAuth, GhulDocs und GhulCal. Die Suite wandert als eine Datei (`.ghlzip`, mit allen
 Dokumenten) zwischen Android und Windows, z. B. auf dem USB-Stick (Abschnitt 6); GhulDocs unter Windows in Abschnitt 7.
 GhulMail, GhulDrive, Server, Freigabelinks und der Schlüsselwechsel sind entfallen (Abschnitt 8 bleibt nur als
@@ -18,7 +18,7 @@ Jeder Test hat eine Nummer, die mit **W** beginnt (z. B. **WE3**), damit sie sic
 | Nr. | Schritt |
 |---|---|
 | WV1 | Windows 10 (ab 22H2) oder Windows 11, 64 Bit. |
-| WV2 | Download-Seite auf dem Testserver (Ordner `ghulsuite/download/`) öffnen oder das Artefakt „ghulsuite-windows-dev“ im Actions-Tab herunterladen. |
+| WV2 | Das Artefakt „ghulsuite-windows-dev“ im Actions-Tab auf GitHub herunterladen (einen Testserver gibt es nicht mehr). |
 | WV3 | Security Key mit PIN (z. B. YubiKey), ein USB-Stick, das Android-Handy mit GhulSuite (für Abschnitt 6), ein paar Testdokumente (PDF, Fotos, Text, eine große Datei). |
 | WV4 | Wichtig: Entwicklerversion, nicht signiert. **Keine echten Passwörter speichern.** |
 
@@ -46,7 +46,7 @@ Jeder Test hat eine Nummer, die mit **W** beginnt (z. B. **WE3**), damit sie sic
 | WE6 | Passwort eingeben → „Entsperren“. | Windows-Fenster für PIN und Berührung; danach offen. |
 | WE7 | Entsperren, im Windows-Fenster „Abbrechen“. | Verständliche Meldung, App bleibt gesperrt und bedienbar. |
 | WE8 | Mit einem **anderen**, nicht registrierten Key entsperren. | Windows bzw. GhulSuite meldet, dass dieser Key nicht passt. |
-| WE9 | Über eine vorhandene Suite neu einrichten (wie E22 bis E24 im Android-Testplan): „Vorhandene sichern und ersetzen“ mit dem Windows-Speichern-Dialog, danach „Vorhandene löschen und ersetzen“. | Wie E23 und E24; nach dem Löschen enthält `%APPDATA%\GhulSuite\suite` (portabel `GhulSuite-Daten\suite`) nur die Dateien der neuen Suite, keine `docs-…`-Ordner der alten. |
+| WE9 | Über eine vorhandene Suite neu einrichten (wie E22 bis E24 im Android-Testplan): „Vorhandene sichern und ersetzen“ mit dem Windows-Speichern-Dialog, danach „Vorhandene löschen und ersetzen“ mit dem Nachweis der vorhandenen Suite (erst falsch, dann richtig). | Wie E23 und E24 (ohne richtigen Nachweis wird nichts gelöscht; als letzter Ausweg nennt der Dialog den Datenordner mit Pfad); nach dem Löschen enthält `%APPDATA%\GhulSuite\suite` (portabel `GhulSuite-Daten\suite`) nur die Dateien der neuen Suite, keine `docs-…`-Ordner der alten. |
 | WE9 | Variante Schlüsseldatei: neue Suite (z. B. portabel auf einem zweiten Stick) mit „Schlüsseldatei“ einrichten, speichern (Windows-Speichern-Dialog), sperren, mit Passwort und Datei entsperren. | Klappt. |
 | WE10 | „Mit Wiederherstellungscode öffnen“. | Mit Code und neuem Passwort wieder offen. |
 
@@ -158,7 +158,7 @@ Die Abläufe sind dieselben wie unter Android (Testplan Android, Abschnitte 1 un
 | Nr. | Schritt | Erwartet |
 |---|---|---|
 | W11.1 | „Neu einrichten“ mit Security Key: Schritt 2 → Schritt 3 „Anlegen“. | Der Windows-Dialog fragt PIN und Berührung ab; danach Schritt 4 · Bereiche. |
-| W11.2 | Schritt 6 · Entsperren. | „Zusätzlich Fingerabdruck“ ist ausgegraut (unter Windows nicht verfügbar); App-PIN geht. |
+| W11.2 | Schritt 6 · Entsperren. | Hinweis: Unter Windows entsperrst du immer mit Passwort und Key bzw. Schlüsseldatei; Schnell-Entsperren gibt es dort nicht. |
 | W11.3 | Schritt 4: Bereiche. | Alle vier Bereiche wählbar; keiner fragt nach einem Server oder Konto. |
 | W11.4 | Optionen → Bereiche verwalten → GhulDocs einrichten; danach Optionen → Tresore → „Neuer Tresor“ → GhulDocs. | Name abgefragt, danach steht GhulDocs in der Leiste mit „0 B von 1 GB“. Mit dem zweiten Tresor: Tresorwahl in der Kontextzeile; unter der Karte eines einzelnen Tresors „Alle GhulDocs-Tresore: … von 3 GB“, bei „Alle Tresore“ als Hauptzeile „… von 3 GB“ und darunter die Liste der Tresore (wie Android-Plan GD1 und GD13). |
 | W11.5 | Optionen → Suite-Datei → „Speichern unter …“, die `.ghlzip` mit 7-Zip oder dem Explorer öffnen. | Darin `export.ghlexp` (zuerst), je Tresor eine Datei (`.ghlpss`, `.ghltotp`, `.ghldoc`, `.ghlcal`, Namen nach der Kennung), `suite.ghlsuite` und je Dokument eine `docs-…/….ghlblob`; nichts lesbar, keine Dateinamen der Dokumente. |
@@ -167,7 +167,7 @@ Die Abläufe sind dieselben wie unter Android (Testplan Android, Abschnitte 1 un
 
 | Nr. | Schritt | Erwartet |
 |---|---|---|
-| WR1 | Einrichtung bis Schritt 6 (Schnell-Entsperren). | Keine App-PIN zur Auswahl, Hinweis auf Windows Hello später (U8). |
+| WR1 | Einrichtung bis Schritt 6 (Schnell-Entsperren). | Keine App-PIN zur Auswahl; der Hinweis sagt, dass es Schnell-Entsperren unter Windows nicht gibt (kein Versprechen einer späteren Funktion). |
 | WR2 | Termin mit Erinnerung in 10 Minuten, dann in Windows die Zeitzone ändern und GhulSuite offen lassen. | Spätestens nach 5 Minuten wird neu geplant; die Erinnerung kommt zur richtigen Uhrzeit (B22). |
 | WR3 | Optionen → GhulCal. | Hinweis: Erinnerungen kommen nur, solange GhulSuite läuft (B22). |
 | WR4 | Zweiten GhulCal-Tresor anlegen; „Alle Kalender“ öffnen, „Neuer Kalender“; in der Liste „Alle wählen“ zweimal. | Wie Android-Plan K21 und K20: Kalender unter ihrem Tresor, Tresorwahl beim neuen Kalender, zweites „Alle wählen“ nimmt die Auswahl zurück. |
@@ -183,6 +183,19 @@ Wie im Android-Testplan Abschnitt 33 (BG1, BG2, BG6, BG8). Unter Windows anders:
 | WJ3 | Hinzufügen läuft, Strg+L. | Sofort gesperrt, Auftrag gestoppt, nichts Halbes bleibt; nach dem Entsperren „GhulSuite wurde gesperrt. … abgebrochen: …“. |
 | WJ4 | Hinzufügen oder Speichern der Suite-Datei läuft, anderes Fenster vorne, Auftrag endet. | Windows-Benachrichtigung mit dem Ergebnis, ohne Dateinamen; ein Klick holt GhulSuite nach vorne. Ist GhulSuite vorne, nur die Meldung in der App. |
 | WJ5 | Windows sperren (Win+L), während ein Auftrag läuft (mit „Sperren, wenn Windows gesperrt wird“). | GhulSuite sperrt, sobald der Auftrag fertig ist; seine Meldung erscheint erst nach dem Entsperren. |
+
+## 14. Nach der Großprüfung (21. und 22.11.2026)
+
+Wie im Android-Testplan Abschnitt 40 (GR1, GR2, GR7, GR8, GR10 ohne die Android-Schalter, GR12 bis GR14). Unter
+Windows zusätzlich oder anders:
+
+| Nr. | Schritt | Erwartet |
+|---|---|---|
+| WG1 | In GhulDocs Dateien `test.exe`, `test.lnk`, `test.html`, `test.js` und `test.zip` hinzufügen (umbenannte Testdateien) und jeweils „Mit App öffnen“. Dann eine PDF öffnen und im Explorer die Eigenschaften der Kopie im Temp-Ordner ansehen. | Programme, Verknüpfungen, Webseiten und Skripte: „Dateien vom Typ … öffnet GhulSuite nicht mit einer anderen App …“, nichts wird entschlüsselt. `.zip`: einmal die Rückfrage zu Archiven. Die PDF öffnet; ihre Kopie trägt die Kennzeichnung „aus dem Internet“ (Eigenschaften: „Zulassen“). |
+| WG2 | Portabel: eine PDF „Mit App öffnen“. | Die Kopie liegt im Temp-Ordner des PCs, nicht auf dem Stick (Hinweis in der App). |
+| WG3 | Suite-Datei auf einen fast vollen USB-Stick speichern. | Vor dem Schreiben: „Nicht genug freier Speicherplatz: Gebraucht werden …, frei sind …“; die alte Datei bleibt unverändert, keine `.ghltmp` bleibt liegen. |
+| WG4 | Passwort ändern, danach die Suite-Datei am selben Ort speichern. | Während des Speicherns die Phase „Alte Fassung wird überschrieben …“; danach liegt dort nur die neue Datei (kein `.ghlold`). Eine `.ghlold` ohne die Datei daneben bekommt beim nächsten Öffnen ihren Namen zurück. |
+| WG5 | **Update über das MSI** (nur mit einer installierten Version, die Updates bekommt): Update installieren; einmal mit einem Virenschutz, der PowerShell blockiert, falls vorhanden; einmal im Windows-Dialog abbrechen. | Die App beendet sich, das MSI installiert, die App startet neu. Abgebrochen: beim nächsten Start „abgebrochen“. Lief das Update nicht (blockiert): nach einigen Minuten beim nächsten Start „Update wurde nicht ausgeführt …“ mit Link zur Release-Seite. **Dieser Ablauf wurde bisher nur als Text des Skripts getestet, nie auf Windows ausgeführt.** |
 
 ## Fehler melden
 

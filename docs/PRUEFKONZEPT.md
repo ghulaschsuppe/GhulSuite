@@ -2,7 +2,7 @@
 # Prüfkonzept: mehrere Agenten prüfen, beheben, prüfen nach
 
 Ziel: Fehler früh und zuverlässig finden, ohne dass jede Runde neue Funde an schon geprüften Stellen bringt.
-Das Konzept ersetzt keine externe Prüfung (Abschnitt 6), macht sie aber billiger und ergiebiger.
+Was Agenten nicht ersetzen, steht in Abschnitt 6.
 
 ## 1. Warum immer wieder Funde auftauchen
 
@@ -67,8 +67,6 @@ Jeder Bereich hat eine Liste, die mit jedem Fund wächst. Beispiele:
 
 ## 6. Was Agenten nicht ersetzen
 
-- **Externe Prüfung der Kryptografie und des Dateiformats** durch Fachleute vor der ersten
-  öffentlichen Version.
 - **Tests auf echten Geräten** mit echten Security Keys (verschiedene Hersteller, NFC und USB) und
   echten USB-Sticks (voll, abgezogen).
 - **Fuzzing** der Lesepfade (Suite-Datei, Tresordateien, Import) über längere Zeit.

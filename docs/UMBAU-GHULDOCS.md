@@ -162,7 +162,7 @@ eigener Endung `.ghldocs`, siehe Abschnitt 11.)
 | Schadsoftware auf dem entsperrten Gerät | alles, was gerade angezeigt wird | nicht verhinderbar (Grenze, wie bisher) |
 
 Klartext entsteht nur beim Ansehen (im Arbeitsspeicher) und beim Exportieren oder Öffnen mit einer anderen App
-(befristete Kopie). Ein unabhängiges Sicherheitsaudit gibt es weiterhin nicht (Grenze L2 in `AUDIT.md`).
+(befristete Kopie). Eine Prüfung durch Dritte gibt es nicht (siehe Kopf von `AUDIT.md`).
 
 ## 9. Folgen für die offenen Befunde
 

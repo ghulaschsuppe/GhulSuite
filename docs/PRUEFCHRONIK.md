@@ -5,8 +5,9 @@ Diese Datei hält **jede Prüfung** von GhulSuite fest, in der Reihenfolge, in d
 warum sich das Konzept geändert hat**. Sie ist bewusst offen: Wer GhulSuite nutzen oder prüfen will, soll sehen
 können, wer was wann geprüft hat, was dabei herauskam und was noch fehlt.
 
-- **Wer prüft:** bisher der Inhaber (Entscheidungen, eigene Tests) und KI-Agenten (Claude, jeweils neue, voneinander
-  unabhängige Agenten je Durchsicht). **Eine Prüfung durch unabhängige Menschen oder eine Firma gab es noch nicht.**
+- **Wer prüft:** der Inhaber (Entscheidungen, eigene Tests) und KI-Agenten (Claude, jeweils neue, voneinander
+  unabhängige Agenten je Durchsicht). Eine Prüfung durch Dritte ist nicht vorgesehen (Entscheidung des Inhabers vom
+  21.11.2026, Abschnitt 1).
 - **Was hier steht:** Datum, wer, was geprüft wurde, das Ergebnis und wo die Einzelheiten stehen. Die einzelnen Funde
   mit Test und Behebung stehen im [Testprotokoll](TESTPROTOKOLL.md) (Nummern F…, MV…, PR…), die offenen kleinen
   Punkte und die Sicherheitslage im [Sicherheitsbericht](AUDIT.md), das Vorgehen im [Prüfkonzept](PRUEFKONZEPT.md).
@@ -31,6 +32,9 @@ ließ, wurde entfernt statt weiter geflickt.
 | 21.11.2026 | **Format 3 eingefroren**, Kompatibilitätszusage | Gutachten: Für echte Daten darf ein Update nie den Zugang kosten | [FORMAT](FORMAT.md), Testprotokoll PR-19 |
 | 21.11.2026 | **Funktionsstopp:** keine neuen Funktionen, nur Fehlerbehebungen und kleinere Anpassungen an Design und Dialogen | Entscheidung des Inhabers, Ziel: eine Version, die man der Öffentlichkeit sicher geben kann | [PROJEKT](../PROJEKT.md) |
 | 21.11.2026 | **Signaturschlüssel bleiben wie sie sind** (ein Schlüssel für APK und Updates, als Secret in GitHub) | Entscheidung des Inhabers nach dem Gutachten; sein GitHub-Konto ist mit einem Hardware-Key gesichert, veröffentlicht wird nur nach grüner CI | [AUDIT](AUDIT.md), Abschnitt 4.1 und 4.2 |
+| 21.11.2026 | **Schlüssel bleiben, aber nur noch in GitHub-Environments** (`signing` für die Testversionen von `main` und `dev`, `release` für Veröffentlichungen); alle anderen Läufe signieren mit einem Wegwerf-Schlüssel; kein Release von Hand | Großprüfung, Befund H1 und H2: Der Schlüssel stand jedem Push auf jeden Branch zur Verfügung. Ein Wechsel der Schlüssel war dafür nicht nötig, der Inhaber behält sie | [PROJEKT](../PROJEKT.md), „Signatur“; [AUDIT](AUDIT.md), Abschnitt 4.1 |
+| 21.11.2026 | **Kein Testserver mehr** (dev.danerd.de): Pakete von Branches und Pull Requests gibt es nur als GitHub-Artefakte, die Vorschau der Website auf dem Server entfällt | Entscheidung des Inhabers: Die Zugangsdaten des Testservers mussten jedem Branch offenstehen (Großprüfung, Runde 5) | [PROJEKT](../PROJEKT.md), „CI und Signatur“ |
+| 21.11.2026 | **Keine externe oder bezahlte Prüfung** | Entscheidung des Inhabers: Hobbyprojekt, getragen von der Community; geprüft wird mit KI-Agenten, eigenen Gerätetests und einer Beta | Abschnitt 3 |
 
 ## 2. Prüfläufe
 
@@ -66,13 +70,48 @@ Die Runden vor dem Funktionsstopp stehen ausführlich im [Sicherheitsbericht](AU
 | KI, 1 Agent | Dritte Prüfung des sicheren Speicherns unter Android (Kontrollfluss mit dem Kotlin-Compiler gebaut) | kein Fund hoch oder mittel; 3 klein: die Notiz zum fertigen Tausch wird jetzt sofort geschrieben (`commit`), 2 kommen auf die Liste (K-38) | PR-20 |
 | Lokal (neu: Android-SDK in der Sitzung) | Vollständiger Precheck mit signierter APK, Lint, Desktop-Tests und Paketierung | grün, erstmals mit Android-Build vor dem Push | |
 
+### 2.3 21. und 22.11.2026: Großprüfung
+
+Eine Prüfung in mehreren Stufen, jeder Prüfer ein neuer KI-Agent (Claude) ohne Kenntnis der anderen Berichte. Die
+Rohberichte und die Auswertung liegen nicht im Repository; die Funde mit Nummer, Test und Stand stehen im
+[Testprotokoll](TESTPROTOKOLL.md), Abschnitt 12.
+
+| Wer | Prüfung | Ergebnis | Einzelheiten |
+|---|---|---|---|
+| KI, 10 Agenten | **Welle 1:** ganzheitlich, erst das Gesamtbild, dann dort in die Tiefe, wo der Prüfer selbst das größte Risiko sieht | zusammen mit den Wellen 2 bis 4 ausgewertet (unten) | Testprotokoll 12 |
+| KI, 5 Agenten | **Welle 2:** als Angreifer (Dieb mit gesperrtem Gerät, kurz entsperrte App, präparierte Dateien, Lieferkette und Netz, andere Apps auf dem Gerät) | wie oben | Testprotokoll 12 |
+| KI, 5 Agenten | **Welle 3:** Nutzerwege über Monate (Key verloren, zwei Geräte mit Stick, Gerätewechsel und Updates, Erben mit Notfallblatt, Vielnutzer an den Grenzen) | wie oben | Testprotokoll 12 |
+| KI, 5 Agenten | **Welle 4:** Methoden (Testqualität mit Mutationsprobe, Fehlerpfade, Nebenläufigkeit, Versprechen gegen Code, Wartbarkeit) | wie oben | Testprotokoll 12 |
+| KI (Auswertung) | Zusammenführen der 25 Berichte, doppelte Funde vereint, die wichtigsten im Code nachgeprüft | **Einstimmig: noch nicht reif für die breite Öffentlichkeit, eine geschlossene, klar gekennzeichnete Beta mit Testdaten ist vertretbar.** Kein Prüfer kam ohne Master-Passwort plus zweiten Faktor (oder den Wiederherstellungscode) an die Daten einer Suite-Datei. **13 hoch** (H1 bis H13), **44 mittel** (M1 bis M44), dazu kleine Punkte. Die Probleme lagen an den Rändern: Signaturschlüssel in der CI, Notfallweg, „Mit App öffnen“ unter Windows, fehlende Abfragen, seltene Datenverluste, Texte, die mehr versprachen als der Code | Testprotokoll 12 |
+| KI, 2 Agenten (Entwickler A: Kern, Workflows, Werkzeuge; Entwickler B: App, README, Website) | Behebung der Funde, danach gegenseitige Durchsicht (A über B, B über A) | A über B: 5 mittel, 7 klein; B über A: 1 hoch (ein Aufräumfehler ließ eine schon geschriebene Schutzänderung als gescheitert erscheinen), 6 mittel, 6 klein; behoben | Testprotokoll 12 |
+| KI, 5 Agenten | **Runde 5:** zwei prüfen die behobenen Schwächen (Kern und CI, App), drei das ganze Projekt (Nutzer über Monate, Angreifer, Robustheit und Wartbarkeit) | 6 hoch (u. a. Schnell-Entsperren im Assistenten scheiterte immer und verbrauchte PIN-Versuche des Keys; der Schutz des Schlüssels hing an Einstellungen außerhalb des Repositorys; nach dem Merge nach `main` entstand keine stabile Version), 21 mittel, 38 klein (teils doppelt); behoben bis auf die unten genannten | Testprotokoll 12 |
+| KI, 1 Agent | **Schlussprüfung (r6)** nur der Änderungen aus Runde 5 | kein Fund hoch; 4 mittel (Löschen ließ ein Ersetzungs-Journal liegen, das eine neue Suite hätte überschreiben können; Marke mit absolutem Pfad; Prüfung des Gradle-Wrappers verhinderte den Gradle-Lauf nicht; Ausweich-Anker beim Entsperren), 7 klein; alle behoben, der Punkt „Dokumentation veraltet“ mit diesem Nachtrag | Testprotokoll 12 |
+| Inhaber | Entscheidungen | Schlüssel bleiben (nur in Environments), keine externe Prüfung, kein Testserver | Abschnitt 1 |
+| Lokal | Vollständiger Precheck (22.11.2026) | grün: Kern 303 Tests bestanden, 7 ignoriert; Desktop 158 Tests und 20 in `desktopAppBindingTest`. Windows (Clippy, Build, Tests) und der Emulator laufen nur in der CI | Testprotokoll 1 |
+
+**Behoben** (Einzelheiten im Testprotokoll, Abschnitt 12): 12 der 13 hohen Funde ganz, H11 zum Teil (ehrlicher Dialog
+und ein Weg über „Als Tresor weitergeben“, kein Zusammenführen); von den mittleren alle bis auf die unten genannten
+(einige mit Restrisiko).
+
+**Offen nach der Großprüfung:**
+- Die Environments und Secrets richtet der Inhaber in GitHub ein (Environments `signing`, `release`, `website`,
+  Repository-Variable `GHUL_UPDATE_KEY`, danach die Secrets auf Repository-Ebene löschen). Bis dahin meldet der Job
+  `secrets-check` auf `main` und `dev` einen Fehler, und der Schutz aus H1 wirkt noch nicht.
+- M8 (Tresor entfernen im Fehlerfall nur halb rückgängig; gescheiterte Exporte melden nichts), M21 (unter Windows
+  vermutlich ein Handy-Passkey als „Security Key“), M44 (Android-Code ohne Unit-Tests) und die übrigen kleinen
+  Punkte, soweit nicht im Testprotokoll als behoben genannt.
+- Restrisiken (AUDIT 4.6): das MSI-Update ist nur als Text des Skripts getestet (M24); Windows und Emulator laufen
+  nur in der CI; die App-PIN ist mit Root offline angreifbar (M19); Erinnerungen mit „Alles“ (M12, M18).
+- Festgehaltene Tests auf echten Geräten (Testplan, besonders E19e und Abschnitt 40) und eine Beta mit Leuten aus der
+  Community.
+
 ## 3. Gutachten vom 21.11.2026 und was daraus wurde
 
 | Punkt des Gutachtens | Stand |
 |---|---|
 | Keine Zusage zum Dateiformat | **Erledigt:** Format 3 eingefroren, echte Dateien als dauerhafte Testfälle (PR-19) |
-| Ein übernommenes GitHub-Konto reicht für signierte Updates; Signieren ohne vorgeschaltete Tests | Schlüssel bleiben (Entscheidung des Inhabers, Konto mit Hardware-Key). **Erledigt:** Veröffentlichung nur nach grüner CI für genau diesen Commit, Workflow vom Standardzweig; die falsche Aussage im AUDIT richtiggestellt (K-7) |
-| Keine Prüfung durch Dritte, keine festgehaltenen Gerätetests | **Offen.** Gerätetests durch den Inhaber kommen mit Datum in Abschnitt 2; eine externe Prüfung (z. B. gefördert über NLnet/NGI) ist vor einer öffentlichen 1.0 vorgesehen |
+| Ein übernommenes GitHub-Konto reicht für signierte Updates; Signieren ohne vorgeschaltete Tests | Schlüssel bleiben (Entscheidung des Inhabers, Konto mit Hardware-Key). **Erledigt:** Veröffentlichung nur nach grüner CI für genau diesen Commit, Workflow vom Standardzweig; die falsche Aussage im AUDIT richtiggestellt (K-7). Seit der Großprüfung liegt der Schlüssel nur noch in den Environments `signing` und `release` (Abschnitt 2.3) |
+| Keine Prüfung durch Dritte, keine festgehaltenen Gerätetests | Prüfung durch Dritte: **entfällt** (Entscheidung des Inhabers, Abschnitt 1). Gerätetests: **offen**, sie kommen mit Datum in Abschnitt 2 |
 | Speichern unter Android leert die einzige Suite-Datei zuerst | **Umgesetzt, auf einem Gerät noch nicht geprüft:** mit einmal freigegebenem Ordner (Stick, SD-Karte, Gerätespeicher) neue Datei daneben, prüfen, dann tauschen; ohne Freigabe oder bei Cloud-Apps ein Hinweis (PR-20, Testplan E19e) |
 | Übernehmen einer Suite-Datei ersetzt Datei für Datei | **Erledigt:** Journal, nach einem Absturz kommt der Stand davor vollständig zurück (PR-19) |
 | Windows-Installer ohne Authenticode-Signatur | **Offen**, braucht ein Zertifikat des Inhabers (z. B. SignPath für Open Source) |
@@ -81,7 +120,7 @@ Die Runden vor dem Funktionsstopp stehen ausführlich im [Sicherheitsbericht](AU
 | Präparierte Datei kann über den Speicherbedarf abstürzen (K-19) | **Erledigt:** abgeleitet wird mit höchstens 512 MiB |
 | Wiederherstellungscode öffnet alles allein, deutlich machen | War schon so: Einrichtung und Notfallblatt sagen, dass der Code alles allein öffnet |
 | Doku widerspricht sich (Testzahlen, doppelte Abschnittsnummer) | **Erledigt** |
-| Weg zur Veröffentlichung | Funktionsstopp (seit 21.11.2026), Gerätetests, geschlossene Beta, externe Prüfung, öffentliche Beta 0.9, 1.0 erst nach einigen Monaten ohne schweren Fund |
+| Weg zur Veröffentlichung | Funktionsstopp (seit 21.11.2026), Behebung der Großprüfung (Abschnitt 2.3), Gerätetests, geschlossene Beta, öffentliche Beta 0.9, 1.0 erst nach einigen Monaten ohne schweren Fund |
 
 ## 4. Vorlage für neue Einträge
 

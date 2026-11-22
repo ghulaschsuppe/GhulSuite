@@ -168,8 +168,25 @@ hinzufügen, Datei entfernen), ohne dass der Wiederherstellungscode oder die üb
 
 **Schutzänderungen brauchen beide Faktoren** (seit 21.11.2026): ein neuer Wiederherstellungscode, ein Key oder eine
 Schlüsseldatei hinzufügen oder entfernen verlangt das Master-Passwort plus einen Key oder eine Schlüsseldatei von jetzt,
-geprüft wie beim Entsperren. Fingerabdruck und App-PIN einschalten verlangt das Master-Passwort. So kann sich niemand,
-der die App kurz entsperrt in der Hand hat, dauerhaften Zugang verschaffen oder den Besitzer aussperren.
+geprüft wie beim Entsperren. Ebenso brauchen beide Faktoren: Fingerabdruck oder App-PIN einrichten (und ihre
+Gültigkeit ändern, Abschnitt 6.5), einen Tresor als Tresor weitergeben (Abschnitt 8.3) und die Suite auf dem Gerät
+löschen oder durch eine andere ersetzen (Abschnitt 9; dort genügt statt der Faktoren auch der Wiederherstellungscode).
+Mit einem Security Key berührt man ihn einmal (`confirm_factors`); danach reicht für diesen einen Schritt das Passwort.
+So kann sich niemand, der die App kurz entsperrt in der Hand hat, dauerhaften Zugang verschaffen oder den Besitzer
+aussperren. **Ausnahme nach dem Notfallblatt:** Wurde mit dem Wiederherstellungscode entsperrt, reicht bis zum
+nächsten Sperren das neue Master-Passwort allein (Abschnitt 6.3).
+
+**Das Master-Passwort** (ohne zweiten Faktor) fragen App und Kern vor Schritten, die den Schutz auf dem Gerät
+abschwächen oder ein Geheimnis zeigen: die automatische Sperre verlängern, „Sperren, wenn der Bildschirm ausgeht“,
+das Schütteln oder „Sofortsperre löscht auch die Termin-Erinnerungen“ ausschalten, die Schüttel-Empfindlichkeit
+senken, Bildschirmfotos erlauben, die Zwischenablage länger oder nie leeren, mehr Inhalt in den Erinnerungen
+zeigen; dazu ein 2FA-Geheimnis als QR-Code oder `otpauth://`-Link (`totp_uri` gibt es nur mit dem Passwort heraus)
+und der gespeicherte 2FA-Schlüssel eines GhulPass-Logins im Editor. Strenger stellen geht ohne Abfrage.
+
+**Regeln für Passwort und PIN** prüft der Kern selbst (`security_rules`, die App übernimmt sie): Ein neues
+Master-Passwort (Einrichten, Passwort ändern, nach dem Wiederherstellungscode, das Passwort einer Weitergabe) hat
+mindestens 10 Zeichen und eine Stärke von mindestens 3 nach zxcvbn (Skala 0 bis 4); sonst „zu kurz“ bzw. „zu
+schwach“. Die App-PIN hat 6 bis 12 Ziffern (der Kern verlangt mindestens 6 Zeichen).
 
 **Beim Entsperren und Öffnen** werden immer beide Wege angeboten, Key und Schlüsseldatei (vorgewählt ist, was auf
 diesem Gerät zuletzt benutzt wurde): Die Oberfläche verrät nicht, womit eine Datei geschützt ist. Der Kopf einer
@@ -237,6 +254,12 @@ flowchart TB
   Master-Passwort gesetzt; Keys, Schlüsseldateien und der Code selbst bleiben gültig. Empfohlen wird anschließend ein
   neuer Code. Ein neuer Code macht das alte Blatt wertlos, auch zusammen mit einer alten Kopie der Suite-Datei (für
   alles, was danach gespeichert wird).
+- **Danach bis zum Sperren das Passwort allein:** Wer mit dem Code öffnet, hat oft keinen Faktor mehr. Bis zum
+  nächsten Sperren genügt darum für jede Schutzänderung das neue Master-Passwort (`opened_with_recovery_code`). Die
+  App zeigt eine Anleitung (neuen Key oder neue Schlüsseldatei hinzufügen, bei einem Key auch sein Backup, dann den
+  verlorenen Faktor entfernen und einen neuen Code erstellen). Solange so entsperrt ist, steht ein Hinweis über den
+  Bereichen, und die automatische Sperre beträgt mindestens 5 Minuten. Eine mit dem Code geöffnete Suite-Datei wird
+  nicht Speicherziel; der Speicherdialog lässt danach einen Ort wählen.
 - **Notfall-Ausnahme beim Siegel:** Ohne Passwort lässt sich das Schreibsiegel nicht prüfen, nur lesen. Die App sagt
   das beim Öffnen, prüft Stand und Schutz-Epoche trotzdem und versiegelt danach alles mit dem neuen Passwort neu.
 - Bewusste Abwägung: Wer Notfallblatt **und** Dateien hat, hat Zugriff. Das Blatt ist wie ein Tresorschlüssel aufzubewahren.
@@ -264,14 +287,29 @@ Nach einer vollständigen Entsperrung (Passwort und Key) lässt sich die App fü
     Registrieren eines **neuen Fingerabdrucks ungültig**.
   - App-PIN: 6 bis 12 Ziffern, Keystore-Schlüssel nur bei entsperrtem Gerät nutzbar, wenn vorhanden in **StrongBox**;
     nach **5 Fehlversuchen** wird der PIN-Zugang gelöscht.
-- **Gültigkeit** (1 Stunde bis 7 Tage, Standard 24 Stunden) zählt ab dem **letzten vollständigen Entsperren**
-  (signierter Zeitstempel, nur mit `S` fälschbar).
-- Passwort und Key sind immer wieder nötig: nach **jedem Neustart**, nach Ablauf, nach einer **Sofortsperre**, nach
-  einem **Passwortwechsel**, nach dem **Öffnen einer Suite-Datei** (die Schnell-Entsperren-Dateien des alten Stands
-  werden gelöscht) und wenn Fingerabdrücke geändert wurden.
-- **Ehrlich:** In der Gültigkeitszeit reichen das entsperrte Handy plus Finger bzw. App-PIN. Deshalb optional und
-  standardmäßig aus. Ein Angreifer mit Root-Zugriff auf das laufende Gerät könnte den Fehlversuchszähler umgehen;
-  die PIN ist aber an den Hardware-Schlüssel des Geräts gebunden, ein Durchprobieren außerhalb des Geräts ist nicht möglich.
+- **Einrichten nur mit beiden Faktoren** (seit 21.11.2026): Fingerabdruck oder App-PIN einschalten verlangt das
+  Master-Passwort und einen Key oder eine Schlüsseldatei (`quick_unlock_enable` mit `FactorProof`). Der Assistent
+  (Schritt 6) nimmt dafür den Faktor, mit dem die Suite gerade angelegt wurde.
+- **Gültigkeit** (1, 4 oder 8 Stunden, 1, 3 oder 7 Tage oder „Immer“, Standard 24 Stunden) wird beim Einrichten gewählt und steht **fest in der Schnell-Datei** (Version 3,
+  `max_age_ms` in den zusätzlich authentifizierten Daten): Die App kann sie nicht nachträglich verlängern. Jede
+  Methode (Fingerabdruck, App-PIN) hat ihre eigene Gültigkeit; eine andere Dauer richtet die Methode neu ein, wieder
+  mit beiden Faktoren. Gezählt wird ab dem **letzten vollständigen Entsperren** (signierter Zeitstempel, nur mit dem
+  Passwortschlüssel fälschbar).
+- **Abgelaufen heißt abgelehnt, nicht gelöscht:** Nach Ablauf lehnt der Kern das Schnell-Entsperren ab
+  (`QuickUnlockExpired`), die Datei bleibt. Nach dem nächsten vollständigen Entsperren geht es wieder.
+- **Ältere Schnell-Dateien (Version 2)** öffnet der Kern nicht mehr (`QuickUnlockOutdated`): Die Datei wird
+  entfernt, die App sagt, dass Fingerabdruck bzw. App-PIN nach einem vollständigen Entsperren unter Optionen →
+  Entsperren neu einzurichten sind.
+- Passwort und Key sind immer wieder nötig: nach **jedem Neustart** und nach Ablauf. **Neu einrichten** muss man das
+  Schnell-Entsperren nach einer **Sofortsperre**, nach 5 falschen App-PINs, wenn Fingerabdrücke geändert wurden, nach
+  einem **Passwortwechsel**, nach dem **Entfernen** eines Keys oder einer Schlüsseldatei, nach dem Entsperren mit dem
+  **Wiederherstellungscode** (die Schnell-Dateien werden dabei gelöscht) und nach dem **Öffnen einer Suite-Datei** mit
+  anderem Schutz (Abschnitt 6.2). Ein neuer Wiederherstellungscode und ein hinzugefügter Faktor lassen es bestehen.
+- **Ehrlich:** In der Gültigkeitszeit reichen das entsperrte Handy plus Finger bzw. App-PIN. Deshalb optional; der
+  Assistent schlägt den Fingerabdruck vor, wenn das Gerät einen Sensor hat, „Immer Passwort und zweiter Faktor“ ist
+  wählbar. Ein Angreifer mit Root-Zugriff auf das laufende Gerät könnte den Fehlversuchszähler umgehen (er steht in
+  den Einstellungen der App); die PIN ist aber an den Hardware-Schlüssel des Geräts gebunden, ein Durchprobieren
+  außerhalb des Geräts ist nicht möglich.
 - **Nicht verfügbar in der portablen Windows-Version.**
 
 ### 6.6 Sofortsperre
@@ -281,8 +319,12 @@ Ein Fingerabdruck kann erzwungen werden, ein Passwort im Kopf nicht so leicht. D
 - **Wirkung:** Alle Bereiche werden gesperrt, alle Schlüssel aus dem Arbeitsspeicher gelöscht und Fingerabdruck- und
   App-PIN-Zugang werden **vernichtet** (Keystore-Schlüssel und Schnell-Dateien werden gelöscht). Danach öffnet die App
   nur noch mit Passwort **und** Key.
-- **Das reicht kryptografisch vollständig:** Alle Dateien auf dem Gerät sind ohnehin verschlüsselt. Ohne
-  Fingerabdruck-Zugang lassen sie sich ohne Passwort und Key nicht öffnen, auch nicht forensisch. Löschen ist nicht nötig.
+- **Das reicht kryptografisch für die Tresore:** Alle Tresordateien auf dem Gerät sind ohnehin verschlüsselt. Ohne
+  Fingerabdruck-Zugang lassen sie sich ohne Passwort und Key nicht öffnen, auch nicht forensisch. Löschen ist nicht
+  nötig. **Ausnahme: die Termin-Erinnerungen** (Abschnitt 9.4). Sie müssen auch auf dem gesperrten Handy erscheinen
+  und liegen darum mit einem Keystore-Schlüssel ohne Bindung an ein entsperrtes Gerät verschlüsselt vor, im
+  gewählten Umfang für die nächsten 30 Tage. Die Sofortsperre lässt sie stehen, außer „Sofortsperre löscht auch die
+  Termin-Erinnerungen“ ist eingeschaltet (beim nächsten Entsperren werden sie neu geplant).
 - **Auslöser Android:**
   - **Schütteln** (Bewegungssensor, kurzes kräftiges Schütteln). Die Erkennung läuft nur, solange etwas entsperrt
     ist, danach gibt es nichts mehr zu sperren, und der Akku wird geschont.
@@ -399,16 +441,30 @@ Mit typischen 100 bis 300 MB ist es ein Bruchteil davon.
 
 1. Alle Container werden frisch versiegelt und mit der Kopfdatei und den Inhaltsdateien als Datenstrom geschrieben.
    Unter Windows erst in eine Zwischendatei neben dem Ziel, die zurückgelesen und dann in einem Schritt über die alte
-   geschoben wird (kurzzeitig ist doppelter Platz nötig). Android gibt nur das gewählte Dokument frei: Dort wird
-   direkt hineingeschrieben und danach zurückgelesen; ein Abbruch kann eine halbe Datei hinterlassen, die beim
-   nächsten Speichern ersetzt wird. In beiden Fällen gilt die Arbeitskopie erst als gespeichert, wenn die
-   geschriebene Datei zurückgelesen und geprüft ist; bis dahin hält sie den ganzen Stand.
+   geschoben wird (kurzzeitig ist doppelter Platz nötig). Unter Android ebenso, wenn der Ordner der Suite-Datei der
+   App freigegeben ist (`<Name>.neu` daneben schreiben, prüfen, dann tauschen). Ohne Freigabe (und bei Orten, die
+   kein Austauschen erlauben, etwa Cloud-Apps) gibt Android nur das gewählte Dokument frei: Dort wird direkt
+   hineingeschrieben und danach zurückgelesen; ein Abbruch kann eine halbe Datei hinterlassen. Darum bietet der
+   Speicherdialog in diesem Fall zuerst „Ordner freigeben“ an; „Speichern“ fragt dann mit einem Risikotext und bietet
+   „Als neue Datei speichern“ oder „Trotzdem überschreiben“. Einen Cloud-Ordner empfiehlt die App nicht (Cloud-Apps
+   behalten ältere Fassungen, auch nach dem Löschen). In jedem Fall gilt die Arbeitskopie erst als gespeichert, wenn
+   die geschriebene Datei zurückgelesen und geprüft ist; bis dahin hält sie den ganzen Stand.
+   **Freier Platz:** Vor dem Schreiben schätzt der Kern die Größe der Suite-Datei (`archive_estimated_size`), und die
+   App vergleicht sie mit dem freien Platz am Ziel (unter Windows immer, unter Android, wenn der Ort ein Pfad auf dem
+   Gerät, einer SD-Karte oder einem Stick ist). Reicht er nicht, sagt sie das, bevor etwas geschrieben wird, mit
+   Bedarf und freiem Platz. Ist der Speicher beim Schreiben oder beim Öffnen voll, erkennt der Kern das am
+   Fehlercode des Systems und meldet „Nicht genug freier Speicherplatz“ statt eines rohen Fehlers; vor dem Öffnen
+   prüft er den Platz für den Zwischenordner.
 2. Vorher vergleicht die App die Zieldatei mit der Arbeitskopie. Wurde sie seit dem Öffnen anderswo gespeichert
    (andere Stand-ID), fragt sie: „Die Datei wurde inzwischen anderswo gespeichert. Überschreiben (die Änderungen von
    dort gehen verloren) oder unter neuem Namen speichern?“ Liegt dort eine andere Suite oder gar keine GhulSuite-Datei,
    fragt sie ebenfalls. Zusammengeführt wird nicht.
 3. Danach merkt sich das Gerät Stand-ID, Zähler und Schutz-Epoche. Eine Änderung, die während des Schreibens
    entstand, bleibt als „nicht gespeichert“ markiert.
+4. **Nach einer Schutzänderung** (neues Passwort, neuer Code, Faktor entfernt, Öffnen mit dem Code) wird die ersetzte
+   alte Fassung der Suite-Datei an genau diesem Ort beim nächsten Speichern mit Nullen überschrieben, erst wenn die
+   neue Datei liegt und geprüft ist (Anzeige „Alte Fassung wird überschrieben …“). Auf Flash-Speichern ist das nicht
+   verlässlich; nach einem Verlust empfiehlt die App einen frisch formatierten Stick.
 
 **Öffnen.**
 
@@ -426,6 +482,10 @@ Mit typischen 100 bis 300 MB ist es ein Bruchteil davon.
    - **Abzweig** (von einem anderen Stand aus weiterbearbeitet als dem hier bekannten): „Diese Datei wurde von einem
      anderen Stand aus weiterbearbeitet als deinem hier.“
    - **Nicht gespeicherte Änderungen** auf dem Gerät: Sie gehen verloren; die App bietet an, vorher zu speichern.
+     Ändert sich nach der Prüfung noch ein Tresor der Arbeitskopie, wird die geprüfte Datei verworfen und muss neu
+     geöffnet werden; während Dokumente hinzugefügt oder kopiert werden, wird nicht übernommen.
+   - **Andere Suite** ersetzt die Suite auf dem Gerät nur mit deren Nachweis (Passwort mit Key oder Schlüsseldatei
+     der vorhandenen Suite, oder ihr Wiederherstellungscode).
 4. **Älterer Schutz** (kleinere Schutz-Epoche als hier zuletzt gesehen): **wird nie geöffnet**, auch nicht nach
    Rückfrage und nicht mit dem Wiederherstellungscode. Die Datei ist durch eine neuere mit geändertem Schutz ersetzt.
 5. Ersetzt wird in einem Schritt; bricht es mittendrin ab, bleibt der bisherige Stand.
@@ -447,7 +507,7 @@ Punkt, solange etwas ungespeichert ist; ebenso ein Punkt am Reiter Optionen. Er 
 (dann wird ein Ort gewählt), nicht aber auf Seiten, die gerade etwas bearbeiten.
 
 Ein Tippen öffnet den **Speichern-Dialog**: „Änderungen jetzt in die Suite-Datei schreiben?“, Datei, „Zuletzt
-gespeichert: …“ und der Hinweis, den Stick nicht abzuziehen (bei einem Cloud-Ordner lädt die Cloud-App danach hoch).
+gespeichert: …“ und der Hinweis, den Stick nicht abzuziehen und die App offen zu lassen.
 Zuerst wird nur der Kopf der Datei am Ort gelesen. Wurde sie inzwischen anderswo gespeichert, nennt der Dialog Gerät
 und Zeit und bietet zuerst „Meine als neue Datei sichern …“, dann „Überschreiben“ (rot) und „Abbrechen“; ebenso bei
 einer anderen oder unlesbaren Datei. Ist der Ort nicht erreichbar oder scheitert das Speichern, sagt der Dialog
@@ -470,8 +530,11 @@ wird beim nächsten Start entfernt.
 ein Speichern, beendet sich die App erst danach. Unter Android gibt es kein verlässliches Beenden: dort bleiben Button
 und Hinweise.
 
-**Erinnerung:** Ist seit drei Tagen etwas ungespeichert, steht über den Listen „Seit … nicht in der Suite-Datei
-gespeichert. Tippen zum Speichern.“. Die Markierung „ungespeichert“ schreibt der Kern **vor** jeder Änderung der
+**Erinnerung:** Gleich nach einem neuen oder geänderten Eintrag in GhulPass oder GhulAuth steht über den Listen, dass
+er erst auf diesem Gerät ist, noch nicht in der Suite-Datei. Ist seit drei Tagen etwas ungespeichert, steht dort „Seit … nicht in der Suite-Datei
+gespeichert. Tippen zum Speichern.“. **Nach dem Entsperren** liest die App im Hintergrund den Kopf der gemerkten
+Suite-Datei; wurde sie inzwischen woanders gespeichert (auch mit anderem Schutz), bietet ein Dialog „Jetzt öffnen“
+oder „Später“ an. Die Markierung „ungespeichert“ schreibt der Kern **vor** jeder Änderung der
 Arbeitskopie (mit fsync), mit der Zeit der ersten Änderung: Auch nach einem Absturz fehlt der Button nie. Beim Öffnen
 einer anderen Suite-Datei mit ungespeicherten Änderungen gibt es „Erst speichern“. Der letzte Schritt der Einrichtung
 (8 von 8) legt die Suite-Datei an einem gewählten Ort an; nur wenn das scheitert, geht es nach einer Warnung ohne sie
@@ -483,7 +546,14 @@ oben auf das Speichern-Symbol.“): gespeichert wird nur entsperrt. Ohne Änderu
 ist in der Suite-Datei gespeichert.“
 
 **Schutzänderungen** wirken in der Arbeitskopie und reisen mit dem nächsten Speichern mit; sie erneuern die inneren
-Schlüssel (Abschnitt 6.2) und erhöhen die Schutz-Epoche. Keys und Schlüsseldateien funktionieren auf jedem Gerät;
+Schlüssel (Abschnitt 6.2) und erhöhen die Schutz-Epoche. Danach entfernt der Kern die älteren Kopien der Tresordateien
+auf dem Gerät (`.bak`, `.tmp`), damit kein Rest mit dem alten Schutz bleibt; lässt sich eine nicht entfernen, wird es
+beim nächsten Entsperren und beim nächsten Start erneut versucht.
+
+**Schutz anderswo geändert:** Liegt am Ort eine Suite-Datei mit einem Schutz, den dieses Gerät nie hatte, sagt der
+Speicherdialog ehrlich, was passiert: Öffnen kostet die Änderungen dieses Geräts, die nicht in ihr sind; eine neue
+Datei mit dem alten Schutz öffnet sich danach nirgends mehr (der Knopf dafür ist nur zweitrangig). Als Weg nennt er
+„Als Tresor weitergeben“ für jeden Tresor mit Änderungen und danach „Tresordatei hinzufügen“ in der neuen Suite. Keys und Schlüsseldateien funktionieren auf jedem Gerät;
 Schnell-Entsperren bleibt je Gerät.
 
 **Dateizuordnung:** Unter Android öffnet ein Tippen auf eine `.ghlzip` im Dateimanager GhulSuite, unter Windows ein
@@ -559,8 +629,10 @@ GhulCal-Tresors zeigen danach auf die neuen Kennungen ihrer Kalender. Kommt der 
 es darum nichts doppelt (Durchsicht 20.11.2026: vorher behielten Kalender ihre Kennungen, und Löschen traf den
 falschen Kalender). Auch ein leerer Tresor lässt sich so weitergeben (es entsteht ein leerer Tresor). Im
 Kern ist das `share_as_vault`; eine leere Liste `ids` heißt „der ganze Tresor“. Die Inhaltsdateien von GhulDocs werden
-unverändert kopiert, ihre Schlüssel stehen im neuen Inhaltsverzeichnis. Zur Bestätigung fragt die App das eigene Master-Passwort ab, damit
-niemand an einem entsperrten Gerät Einträge unter eigenem Passwort mitnimmt. Tresordatei, Schlüsseldatei und
+unverändert kopiert, ihre Schlüssel stehen im neuen Inhaltsverzeichnis. Zur Bestätigung fragt die App das eigene
+Master-Passwort und einen Key oder eine Schlüsseldatei ab (seit 21.11.2026), damit niemand an einem entsperrten Gerät
+Einträge unter eigenem Passwort mitnimmt; das neue Passwort muss die Passwortregel erfüllen (Abschnitt 6.1). Eine
+einzeln geöffnete Tresordatei bietet das Weitergeben nicht an. Tresordatei, Schlüsseldatei und
 Passwort gibt man getrennt weiter.
 
 ### 8.4 Verbindungen nach draußen
@@ -591,10 +663,11 @@ Bereichsseiten der Optionen zeigen beides getrennt.
 - **Bereich entfernen** löscht seine Tresore aus der Suite (mit Rückfrage); andere Geräte bekommen das mit der nächsten
   gespeicherten Suite-Datei. **Auf diesem Gerät ausblenden** ändert nur die Anzeige. Ein später eingeschalteter Bereich fragt sofort nach seiner Einrichtung; nichts wird still angelegt.
 
-**Einrichtungsassistent** in sieben Schritten: Master-Passwort, zweiter Faktor, Anlegen, Bereiche, Sperren, Entsperren
-(Schnell entsperren = Fingerabdruck oder App-PIN; gültig 4 Std., 24 Std., 3 Tage, 7 Tage oder immer, nach Neustart,
-Sofortsperre oder Passwortwechsel trotzdem wieder Passwort und Key), Wiederherstellungscode. Die Suite entsteht nach
-Schritt 3 im App-Speicher; als Datei zum Mitnehmen speichert man sie später (Optionen → Suite-Datei); der Code gilt
+**Einrichtungsassistent** in acht Schritten: Master-Passwort, zweiter Faktor, Anlegen, Bereiche, Sperren, Entsperren
+(Schnell entsperren = Fingerabdruck oder App-PIN, eingerichtet mit dem Faktor, mit dem die Suite gerade angelegt
+wurde; nach Neustart, Sofortsperre oder Passwortwechsel trotzdem wieder Passwort und Key, Abschnitt 6.5),
+Wiederherstellungscode, Suite-Datei. Die Suite entsteht nach Schritt 3 im App-Speicher; als Datei zum Mitnehmen
+legt sie Schritt 8 an einem gewählten Ort an (Abschnitt 8.1); der Code gilt
 erst als bestätigt, wenn ein Block richtig abgetippt wurde. **Absturzsicher:** Wurde der Code nie bestätigt, verlangt
 die App nach dem Entsperren einen neuen (ohne „später“). Liegen Tresordateien ohne Suite-Datei vor, erkennt die App
 die unterbrochene Einrichtung, und das Entsperren vervollständigt die Suite. Auf dem Security Key ist nichts
@@ -603,7 +676,12 @@ aufzuräumen: GhulSuite legt nicht-residente Zugänge an (`rk = false`), der Key
 „Diese Suite öffnen“, „Vorhandene sichern und ersetzen“ (mit ihrem Passwort und Key entsperren, als `.ghlzip` an einem
 Ort deiner Wahl speichern, zurücklesen und vergleichen; erst dann wird sie gelöscht und die neue eingerichtet;
 abgebrochen oder gescheitert wird nichts gelöscht) und „Vorhandene löschen und ersetzen“ (Rückfrage in Rot mit
-eingetipptem Wort). Gelöscht wird alles der alten Suite auf dem Gerät: Tresordateien, Suite-Datei, die Dokumente von
+eingetipptem Wort). **Löschen nur mit Nachweis** (seit 21.11.2026): In beiden Fällen braucht das Löschen das
+Master-Passwort mit Key oder Schlüsseldatei der vorhandenen Suite oder ihren Wiederherstellungscode; ein falscher
+Nachweis löscht nichts. Ohne einen lesbaren Tresor der alten Suite braucht es keinen Nachweis. Wer gar keinen
+Nachweis mehr hat, findet im Dialog den letzten Ausweg (Android: den Speicher der App löschen; Windows: den
+Datenordner löschen). Bricht das Löschen mittendrin ab, sagt die App das; erneutes Löschen entfernt den Rest.
+Gelöscht wird alles der alten Suite auf dem Gerät: Tresordateien, Suite-Datei, die Dokumente von
 GhulDocs (auch Zwischen- und gerettete Ordner), die Schnellentsperrung samt Schlüsseln im Android-Keystore, ihre
 Kalender-Erinnerungen, der vermerkte Ort ihrer Suite-Datei, was das Gerät von ihren Suite-Dateien gesehen hat, und
 Einstellungen, die ihre Einträge nennen (zuletzt geöffnet, ausgeblendete Kalender). Eine Suite-Datei an einem anderen
@@ -618,7 +696,11 @@ Ort bleibt unberührt.
   (Auto-Type per Tastenkürzel ist für später vorgesehen.)
 - Import (umgesetzt): Proton Pass (ZIP/JSON/CSV), Bitwarden (JSON/CSV), KeePass/KeePassXC- und andere CSV-Dateien;
   Duplikate werden übersprungen. `.kdbx` direkt folgt später. Export: `.ghlpss` (verschlüsselt) und unverschlüsselt
-  als CSV nur mit Master-Passwort und deutlicher Warnung; `.kdbx` als Notausgang später.
+  als CSV nur mit Master-Passwort und deutlicher Warnung; `.kdbx` als Notausgang später. Der **Tabellenschutz** (ein
+  Apostroph vor Werten, die mit `=`, `+`, `-` oder `@` beginnen, damit Excel oder LibreOffice sie nicht als Formel
+  ausführen) ist ein eigener Schalter im Export, standardmäßig aus: Für den Umzug in einen anderen Passwortmanager
+  stünde das Apostroph sonst im Passwort. Der eigene Import liest beide Formen.
+- Bearbeiten behält Tags und Ordner eines Eintrags (etwa aus einem Import), auch wenn die App sie nicht bearbeiten kann.
 - Optionaler Leak-Check (Have I Been Pwned, k-Anonymität), standardmäßig aus, im Sicherheitscheck abschaltbar; eine
   der beiden Verbindungen nach draußen (Abschnitt 8.4).
 
@@ -676,7 +758,14 @@ und weitergeben, immer mit seinen Dokumenten, als GhulDocs-Paket `.ghldocs` (Abs
   Exportieren), unter Windows mit **Apache PDFBox** nur im Arbeitsspeicher. Größere Dateien und andere Typen: mit
   einer App öffnen oder exportieren.
 - **Exportieren** (entschlüsselt an einen gewählten Ort, mit Rückfrage) und **Mit App öffnen** (befristete Kopie,
-  gelöscht, sobald GhulSuite sperrt, wie bisher bei Anhängen).
+  gelöscht, sobald GhulSuite sperrt, wie bisher bei Anhängen; in der portablen Windows-Version im Temp-Ordner des PCs,
+  nicht auf dem Stick).
+- **„Mit App öffnen“ lehnt ausführbare Dateien ab**, bevor etwas entschlüsselt wird: unter Windows Programme,
+  Skripte, Verknüpfungen, Installer, Abbilder, Webseiten und andere Endungen, die Code ausführen (dazu alle aus
+  `PATHEXT`), unter Android Pakete (`.apk` …), Skripte für eine Terminal-App und Abbilder. Die Meldung rät, die Datei zu
+  exportieren und zuerst zu prüfen. Archive (`.zip`, `.7z`, `.rar` …) öffnet die App nach einer Rückfrage. Unter
+  Windows bekommt jede Kopie die Kennzeichnung „aus dem Internet“ (`Zone.Identifier`); scheitert das, wird sie nicht
+  geöffnet. Unter Android bestimmt die App den Dateityp aus der Endung, nie als Installationspaket.
 - **Belegung:** Ein einzelner Tresor (auch aus „Alle Tresore“ angetippt) zeigt oben die Belegungskarte „… von 1 GB“, bei mehreren Tresoren darunter „Alle GhulDocs-Tresore: … von 3 GB“, und die Kacheln Favoriten und Papierkorb; „Alle Tresore“ zeigt als Hauptzeile die Summe „… von 3 GB“ und darunter die Liste der Tresore (keine Dateien; Suche, Favoriten und Papierkorb nennen dort zu jeder Datei ihren
   Tresor). Ein Tresor aus „Alle Tresore“ hat darunter den Brotkrumen „Alle Tresore › Name“. Fast voll: „Dieser
   GhulDocs-Tresor ist fast voll.“ bzw., wenn nur alle zusammen fast voll sind, „Alle GhulDocs-Tresore zusammen sind
@@ -724,7 +813,14 @@ und weitergeben, immer mit seinen Dokumenten, als GhulDocs-Paket `.ghldocs` (Abs
 - Monat, Woche, Tag und Liste; mehrere Kalender in eigenen Farben; Serien mit Ausnahmen; Geburtstage mit Alter;
   Feiertage nach Bundesland, für Österreich und die Schweiz; Schnell-Eintragen in Alltagssprache.
 - Erinnerungen plant das Gerät selbst (Android: exakte Wecker, auch nach einem Neustart; Windows: solange GhulSuite
-  läuft), ohne Server.
+  läuft), ohne Server, beim Entsperren für die nächsten 30 Tage. **Inhalt der Erinnerungen** (je Gerät): „Nur
+  Hinweis“ („Termin in 15 Minuten“, ohne Titel und Ort), „Mit Titel“ (Titel und Uhrzeit, Standard) oder „Alles“
+  (Titel, Uhrzeit und Ort); mehr Inhalt erst nach dem Master-Passwort. Gespeichert wird nur der gewählte Umfang, unterhalb
+  von „Alles“ wird der volle Text gar nicht erst erzeugt. Was angezeigt wird, sehen auch der Sperrbildschirm und Apps mit
+  Zugriff auf Benachrichtigungen (unter Windows das Info-Center). Lässt sich die Liste beim Planen nicht lesen,
+  bleiben die geplanten Erinnerungen. Zur Sofortsperre siehe Abschnitt 6.6.
+- Präparierte `.ics`-Dateien: höchstens 20 000 Termine je Import und 1000 Ausnahmen je Serie (beim Import die
+  neuesten); beim Bearbeiten bleiben Felder erhalten, die diese Version nicht kennt.
 - Import und Export als `.ics`, Termine aus anderen Zeitzonen werden richtig umgerechnet; Einladungen gehen als Datei
   über eine andere App.
 
@@ -809,12 +905,13 @@ Ausführlich, mit Grenzen und Befunden: [`AUDIT.md`](AUDIT.md), Abschnitt 2.
   `webpki` für die beiden Verbindungen. Die Suite-Datei schreibt und liest der Kern selbst (ein ZIP in einer festen,
   einfachen Form als Datenstrom). Für CTAP2 eine etablierte Rust-Implementierung. In der App: CameraX (Android) und
   Apache PDFBox (Windows). Keine eigenen Krypto-Primitive.
-- **Abhängigkeiten festgeschrieben** (`Cargo.lock`, Gradle-Prüfsummen), geprüft mit `cargo-audit`, `cargo-deny` und Dependabot.
+- **Abhängigkeiten festgeschrieben** (`Cargo.lock`, Gradle-Prüfsummen, dazu die Prüfsummen des Gradle-Wrappers und
+  der Gradle-Verteilung), geprüft mit `cargo audit` (in der CI und nachts) und Dependabot.
   GitHub Actions auf Commit-Hashes festgelegt, CodeQL.
 - **Tests:** Testvektoren für jede Ableitung, Fuzzing des Container-Parsers, Tests über beide Plattformen hinweg
   (eine Suite-Datei von Android öffnet sich unter Windows identisch und umgekehrt), Angriffe auf Suite-Datei und
   GhulDocs, Oberflächen-Tests am Desktop (auch das Scannen mit gezeichneten Fotos) und im Emulator. Testserver gibt es
-  seit dem Umbau nicht mehr.
+  nicht mehr (weder für Tests noch für App-Pakete).
 - **Signierte Releases** (`.github/workflows/release.yml`):
   - Zwei Kanäle: **stabil** aus `main` (`v0.6.0`) und **Vorab** aus `dev` (`v0.6.0-dev.3`, GitHub-Pre-Release). Die
     Nummer zählt der Workflow selbst weiter (nach `v0.5.0` kommt `0.6.0`); die Datei `VERSION` braucht man nur für
@@ -826,7 +923,9 @@ Ausführlich, mit Grenzen und Befunden: [`AUDIT.md`](AUDIT.md), Abschnitt 2.
     keinen zusätzlichen Schutz.
   - Windows: **keine** kostenpflichtige Code-Signatur. SmartScreen warnt beim ersten Start („Weitere Informationen → Trotzdem ausführen“).
     Zur Prüfung der Echtheit gibt es die signierten SHA-256-Prüfsummen.
-  - Die Signaturschlüssel trägt der Inhaber selbst als GitHub-Secrets ein.
+  - Die Signaturschlüssel trägt der Inhaber selbst als Secrets der GitHub-Environments `signing` und `release` ein;
+    alle anderen Läufe signieren mit einem Wegwerf-Schlüssel (PROJEKT.md, „Signatur“, und AUDIT 4.1). Kein Release
+    von Hand.
 - **Updates aus der App** (`core/ghul-core/src/update.rs`): Optionen → Über → Updates, Kanal „Stabil“ oder „Vorab“,
   automatische Prüfung höchstens einmal am Tag nach dem Entsperren (abschaltbar), Installation nur nach Zustimmung.
   Angenommen wird eine Datei nur, wenn die Signatur über `SHA256SUMS` zum eingebauten öffentlichen Schlüssel passt und
@@ -837,10 +936,10 @@ Ausführlich, mit Grenzen und Befunden: [`AUDIT.md`](AUDIT.md), Abschnitt 2.
 - **Sprache im Repository:** Code und Kommentare auf Englisch (öffentliches Projekt), Oberfläche Deutsch und Englisch.
   Konzept-Dokumente vorerst auf Deutsch, README zur Veröffentlichung zweisprachig.
 - **Lizenz: AGPL-3.0-or-later** für App und Kern. Alle Abhängigkeiten müssen AGPL-3.0-kompatibel sein (MIT, Apache-2.0,
-  BSD, LGPL, MPL-2.0); `cargo-deny` und ein Gradle-Lizenz-Check prüfen das automatisch. Jede Quelldatei bekommt einen
+  BSD, LGPL, MPL-2.0); ein automatischer Lizenz-Check (etwa `cargo-deny`) ist nicht eingerichtet. Jede Quelldatei bekommt einen
   SPDX-Kopf (`SPDX-License-Identifier: AGPL-3.0-or-later`). GPL-3.0 passt zur Verbreitung über F-Droid.
 - **Veröffentlichung später:** `SECURITY.md`, offene Format-Spezifikation, Bedrohungsmodell.
-  Im README steht ehrlich „nicht unabhängig auditiert“, bis eine Prüfung erfolgt ist.
+  Im README steht ehrlich, dass es keine Prüfung durch Dritte gibt.
 
 ---
 

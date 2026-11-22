@@ -48,10 +48,9 @@ app/                   Kotlin + Compose Multiplatform (Android und Windows), Anb
   composeApp/src/desktopMain  Windows (WebAuthn, Fenster, Pakete, PDF-Anzeige mit PDFBox)
   composeApp/src/desktopTest  FFI-, GhulDocs-, Scan-, Layout- und Screenshot-Tests
 app/maestro/           Oberflächen-Abläufe für Emulator oder Gerät (Maestro)
-public/                Testseiten für den Testserver (WebAuthn-Test, Download-Seite) und die alte Designvorschau
 docs/                  Konzept, Format, Audit, Testpläne, Testvektoren, Bilder
 tools/                 Prüfskripte, Website-Bau, Emulator-Skripte
-.github/               Workflows und FTPS-Upload-Action (nur für Testserver und Website, nicht Teil der App)
+.github/               Workflows und FTPS-Upload-Action (nur für die Website, nicht Teil der App)
 ```
 
 ## Bauen und testen
@@ -60,7 +59,9 @@ tools/                 Prüfskripte, Website-Bau, Emulator-Skripte
   Format, Clippy für Linux und Windows, alle Kerntests, Website, Workflows, signierte APK mit Lint,
   Desktop-Paketierung mit den Gradle-Prüfsummen), bricht beim ersten Fehler **nicht** ab und listet am Ende alle
   Fehler mit Log. Erst wenn alles grün ist, pushen; mehrere Korrekturen gesammelt pushen. `--quick` lässt Gradle
-  weg, `--full` nimmt die langen Release-Tests dazu. Nur Windows selbst und der Emulator bleiben der CI.
+  weg, `--full` nimmt die langen Release-Tests dazu. Nur Windows selbst und der Emulator bleiben der CI. Vorab
+  warnt es vor Quelldateien (`*.rs` unter `core/`, `*.kt` unter `app/`), die nicht in git sind: Sie würden lokal
+  gebaut, fehlten aber im Commit.
 - **Emulator-Abläufe (Maestro) vor dem Push mitdenken.** Sie laufen nur in der CI. Deshalb gilt:
   1. `tools/check-maestro.py` (läuft im Precheck mit) prüft, dass jeder Text, den ein Ablauf in `app/maestro`
      antippt, abwartet oder sucht, ein Text der App ist. Texte des Systems oder der Testdaten stehen in
@@ -81,13 +82,15 @@ tools/                 Prüfskripte, Website-Bau, Emulator-Skripte
   in `docs/images/`.
 - Manuelle Tests: [`docs/TESTPLAN.md`](docs/TESTPLAN.md) (Android), [`docs/TESTPLAN-WINDOWS.md`](docs/TESTPLAN-WINDOWS.md).
 
-## CI und Testserver
+## CI und Signatur
 
 - `.github/workflows/release.yml`: stabile Versionen (`main`) und Vorabversionen (`dev`) als GitHub-Releases,
   siehe „Versionen und Veröffentlichung“.
 - `.github/workflows/android.yml`: Kern (Format, Clippy, Tests, Fuzzing, Audit), Windows-Pakete (MSI und portabel),
   APK, Emulator-Abläufe. Format, Clippy, Tests und der App-Build laufen auch nach einem Fehler weiter, damit ein Lauf
   alle Fehler auf einmal zeigt. Artefakte: `ghulsuite-dev`, `ghulsuite-windows-dev`, `screenshots`, `emulator-base`.
+  Die App-Pakete eines Branches oder Pull Requests gibt es nur als diese Artefakte (einen Testserver gibt es nicht
+  mehr).
 - **Emulator-Abläufe** (langsam, weil ein ganzes Android startet) laufen nicht bei jedem Push eines Arbeits-Branches,
   sondern bei jedem Pull Request, auf `main` und nachts, in einem Teil (`base`; Testserver für SFTP und Mail gibt es nicht mehr). Die
   Kamera hat keinen Ablauf im Emulator; das Scannen prüfen die Desktop-Tests. Von Hand für jeden Branch:
@@ -100,21 +103,35 @@ tools/                 Prüfskripte, Website-Bau, Emulator-Skripte
   käme der Check nie an und der Pull Request bliebe blockiert) und sind grün, wenn der eigentliche Job grün war oder
   übersprungen wurde (keine passenden Änderungen oder Push-Lauf neben einem Pull Request). Im Push-Lauf eines Arbeits-Branches heißen sie `build (Push)` und
   `Windows-App (Push)`: die Pflicht-Checks kommen so nur aus dem Lauf des Pull Requests.
-  Dessen APK ist darum mit dem echten Schlüssel signiert und nicht debuggable: der Emulator-Schritt „vom System
-  beendet“ beendet den Prozess dann als root (`su` im google_apis-Abbild) statt über `run-as`.
-- Uploads auf den Testserver des Inhabers laufen **nur im Original-Repository**: bei Pushes und bei Pull Requests
-  aus diesem Repository (dieselbe Vertrauensstufe wie ein Push), **nie bei Pull Requests aus Forks**.
-  Ziel ist für `main` der Ordner `ghulsuite/` (Testseiten) bzw. `ghulsuite/download/` (App-Pakete), für jeden
-  anderen Branch `ghulsuite/branches/<branch>/` bzw. `…/download/` (im Lauf eines Pull Requests der Ordner seines
-  Branches; Pull Requests von `main` oder `dev` laden nichts hoch, das tun deren Push-Läufe); so bleibt
-  `ghulsuite/download/` der stabile Stand.
-- **Secrets** (vom Inhaber selbst eingetragen, niemals im Repository): `FTP_SERVER`, `FTP_USER`, `FTP_PASSWORD`,
-  `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`.
-- **Signatur:** Der Android-Schlüssel kommt nur aus den Secrets (`GHUL_KEYSTORE_FILE`, `GHUL_KEYSTORE_PASSWORD`,
-  `GHUL_KEY_ALIAS` in `app/composeApp/build.gradle.kts`). Ohne ihn signiert Gradle mit dem lokalen Debug-Schlüssel.
-  **Ein Schlüssel für alles** (Entwicklerversionen und Veröffentlichungen, Begründung in `docs/AUDIT.md` 4.1). Die
+  Dessen APK ist mit einem Wegwerf-Schlüssel signiert (siehe „Signatur“), aber wie mit dem echten Schlüssel nicht
+  debuggable: der Emulator-Schritt „vom System beendet“ beendet den Prozess dann als root (`su` im
+  google_apis-Abbild) statt über `run-as`.
+- **Signatur:** Der echte Android-Schlüssel steht nur in zwei GitHub-Environments: `signing` (für den APK-Bau in
+  `android.yml` bei einem Push auf `main` oder `dev`) und `release` (für die Jobs `android` und `publish` in
+  `release.yml`, Deployment-Branch nur `main`, weil `workflow_run` immer auf dem Standardzweig läuft). Jeder andere
+  Lauf (Arbeits-Branches, Pull Requests, Forks, manueller Start von `android.yml`) erzeugt im Gradle-Schritt einen
+  Wegwerf-Schlüssel; Keystore-Datei und Passwort gibt es nur in diesem Schritt (nicht in `GITHUB_ENV`), danach wird
+  die Datei gelöscht. Gradle liest den Schlüssel aus `GHUL_KEYSTORE_FILE`, `GHUL_KEYSTORE_PASSWORD` und
+  `GHUL_KEY_ALIAS` (`app/composeApp/build.gradle.kts`); ohne sie signiert es mit dem lokalen Debug-Schlüssel.
+  **Folge für Tests:** Die APK eines Branches oder Pull Requests hat bei jedem Lauf eine andere Signatur. Vor dem
+  Installieren eines Branch-Builds die vorhandene Testversion (`.dev`) deinstallieren. Die echte App kann eine
+  solche APK nicht ersetzen (`applicationIdSuffix = ".dev"`). Mit dem echten Schlüssel signiert werden die
+  Testversionen von `main` und `dev` und alle Veröffentlichungen (Begründung in `docs/AUDIT.md` 4.1). Die
   Keystore-Datei und ihr Passwort gehören zusätzlich offline gesichert: Ohne sie lässt sich keine installierte App
   mehr aktualisieren.
+- **Secrets und Variablen** (vom Inhaber selbst eingetragen, niemals im Repository): `ANDROID_KEYSTORE_BASE64`,
+  `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` in den Environments `signing` und `release`; `WEBSITE_FTP_SERVER`,
+  `WEBSITE_FTP_USER`, `WEBSITE_FTP_PASSWORD` im Environment `website`; `IMPRESSUM_*` bleiben Repository-Secrets. Der
+  öffentliche Teil des Signaturschlüssels ist die Repository-Variable `GHUL_UPDATE_KEY` (kein Secret).
+- **Kontrolle der Secrets:** Der Job `secrets-check` in `android.yml` prüft, ob eines der sechs Signatur- oder
+  Website-Secrets noch auf Repository-Ebene liegt (dort könnte es jeder Job jedes Branches lesen). In
+  Arbeits-Branches und Pull Requests gibt das eine Warnung, bei einem Push auf `main` oder `dev` einen Fehler. Nur die
+  Pflicht-Checks `build-check` und `windows-check` (und damit der Release, der auf eine grüne CI wartet) werten ihn
+  aus; Tests und Artefakte laufen trotzdem.
+- **Gradle-Wrapper geprüft:** Vor jedem `gradlew` prüfen `android.yml` und `release.yml` die SHA-256 von
+  `gradle-wrapper.jar` (`GRADLE_WRAPPER_SHA256`); scheitert die Prüfung, läuft Gradle nicht. Die heruntergeladene
+  Gradle-Verteilung prüft `distributionSha256Sum` in `app/gradle/wrapper/gradle-wrapper.properties`. Bei einem
+  Gradle-Update beide Werte zusammen ändern.
 
 ## Versionen und Veröffentlichung
 
@@ -124,7 +141,9 @@ tools/                 Prüfskripte, Website-Bau, Emulator-Skripte
   `.github/workflows/release.yml`; die README verlinkt die Dateien, die App holt daraus ihre Updates.
   **Erst nach grüner CI:** Der Release startet, wenn der Lauf von `android.yml` für genau diesen Commit grün endete
   (`workflow_run`), prüft das selbst noch einmal und gibt nur eine neue Version heraus, wenn sich an der App etwas
-  geändert hat. Die Rust-Version steht in `rust-toolchain.toml` (für lokal, CI und Release gleich).
+  geändert hat (auf `main` gegen die letzte stabile Version, auf `dev` gegen die letzte Version jeder Art). **Kein
+  manueller Release:** `release.yml` hat keinen `workflow_dispatch`, weil ein Start von Hand die Fassung des
+  gewählten Branches ausführen würde. Die Rust-Version steht in `rust-toolchain.toml` (für lokal, CI und Release gleich).
 - **Versionsnummern ohne Handarbeit:** Ablauf: Arbeits-Branches per PR nach `dev`, dort Vorabversionen testen; zum
   Freigeben PR `dev` → `main`. Die Nummer ergibt sich von selbst: nach `v0.5.0` heißt die nächste Version `0.6.0`
   (auf `dev` `0.6.0-dev.1`, `-dev.2` …, bis `main` sie veröffentlicht). **`VERSION`** (Wurzel) braucht man nur für
@@ -135,8 +154,9 @@ tools/                 Prüfskripte, Website-Bau, Emulator-Skripte
   laufende Nummer (Vorabversionen 0 bis 98, die stabile 99), Windows-MSI `Major.Minor.(Patch × 100 + Nummer)`. So
   ist jede Version höher als die vorige und eine stabile höher als alle ihre Vorabversionen.
 - **Signierte Prüfsummen:** Jedes Release enthält `SHA256SUMS` und `SHA256SUMS.sig` (signiert im Workflow mit dem
-  Signaturschlüssel der App). Der öffentliche Teil steckt als `BuildInfo.UPDATE_KEY` in der App (Gradle-Variable
-  `GHUL_UPDATE_KEY`); ohne ihn (lokale Builds, F-Droid, Forks) aktualisiert sich die App nicht selbst.
+  Signaturschlüssel der App). Der öffentliche Teil steckt als `BuildInfo.UPDATE_KEY` in der App (Umgebungsvariable
+  `GHUL_UPDATE_KEY` beim Gradle-Bau, im Release aus der gleichnamigen Repository-Variable; `publish` prüft die
+  Signatur dagegen); ohne ihn (lokale Builds, F-Droid, Forks) aktualisiert sich die App nicht selbst.
 - **Updates in der App** (`core/ghul-core/src/update.rs`, `AppUpdater`): nur `https` zu GitHub, nur signierte
   Prüfsummen, Größe und SHA-256 vor der Installation. Android über den System-Installer (prüft zusätzlich den
   Signaturschlüssel), Windows-MSI über `msiexec`, portabel nur die Release-Seite. Testversionen (`.dev`) und
@@ -152,10 +172,12 @@ tools/                 Prüfskripte, Website-Bau, Emulator-Skripte
   `htaccess-live`. Gebaut mit `tools/build-website.py`: setzt Sprachen und Seiten zusammen und trägt Versionen,
   Daten, Dateigrößen (GitHub-Releases) und Kennzahlen (Testprotokoll, Sicherheitsbericht) selbst ein.
 - **Rechtliche Angaben nur aus Secrets:** `IMPRESSUM_NAME`, `IMPRESSUM_ADRESSE` (mehrzeilig), `IMPRESSUM_EMAIL`,
-  `IMPRESSUM_HOSTER` (mehrzeilig: Name, Anschrift). Ohne die ersten drei wird die Live-Seite nicht gebaut.
-- `.github/workflows/website.yml`: `main` → Live-Seite (`WEBSITE_FTP_SERVER`, `WEBSITE_FTP_USER`,
-  `WEBSITE_FTP_PASSWORD`), `dev` und andere Branches → Vorschau auf dem Testserver (`ghulsuite/website/` bzw.
-  `ghulsuite/branches/<branch>/website/`, nicht für Suchmaschinen). Nach jedem Release wird beides neu gebaut.
+  `IMPRESSUM_HOSTER` (mehrzeilig: Name, Anschrift), als Repository-Secrets. Ohne die ersten drei wird die Live-Seite
+  nicht gebaut.
+- `.github/workflows/website.yml`: nur `main` → Live-Seite, im Environment `website` (`WEBSITE_FTP_SERVER`,
+  `WEBSITE_FTP_USER`, `WEBSITE_FTP_PASSWORD`, Deployment-Branch nur `main`). Eine Vorschau auf einem Server gibt es
+  nicht mehr; `tools/precheck.sh` baut die Seite lokal mit `--preview`. Nach jedem Release wird die Live-Seite neu
+  gebaut.
 - Die Seite setzt keine Cookies und lädt nichts von fremden Servern (keine Schriften, keine Skripte); die
   Content-Security-Policy in `htaccess-live` verbietet es auch. Neue Funktionen der App kommen mit dem
   jeweiligen PR in die Texte (wie bei der README). Ändert sich, was die App an Verbindungen aufbaut, wird
@@ -171,8 +193,9 @@ tools/                 Prüfskripte, Website-Bau, Emulator-Skripte
 - Jede Aufgabe bekommt einen eigenen **Branch** (`feature/…`, `fix/…`, `ci/…`, `docs/…`) und einen Pull Request,
   der das zugehörige **Issue** nennt (`Closes #12`). Ziel der Pull Requests ist `dev`, sobald es den Zweig gibt
   (siehe „Versionen und Veröffentlichung“).
-- Getestet wird der Branch über die CI und die App-Pakete aus seinem Lauf (Artefakte oder der Branch-Ordner auf dem
-  Testserver). Zusammengeführt wird nach Durchsicht durch den Inhaber.
+- Getestet wird der Branch über die CI und die App-Pakete aus seinem Lauf (Artefakte `ghulsuite-dev` und
+  `ghulsuite-windows-dev`; vor dem Installieren die vorhandene `.dev`-App deinstallieren, siehe „Signatur“).
+  Zusammengeführt wird nach Durchsicht durch den Inhaber.
 
 ## Regeln für Änderungen
 

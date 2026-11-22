@@ -290,7 +290,7 @@
     <string name="set_panic_reminders">Sofortsperre löscht auch die Termin-Erinnerungen</string>
     <string name="set_password">Master-Passwort</string>
     <string name="set_pin_mismatch">Die PINs stimmen nicht überein.</string>
-    <string name="set_quick_always_full">Passwort und zweiter Faktor (Key oder Schlüsseldatei) sind nötig nach einem Neustart und nach Ablauf der Gültigkeit; danach geht Schnell-Entsperren wieder. Neu einrichten musst du es nach einer Sofortsperre, nach 5 falschen App-PINs, wenn Fingerabdrücke geändert werden, und nach jeder Änderung des Schutzes (Passwort, Key, Schlüsseldatei, Notfallblatt).</string>
+    <string name="set_quick_always_full">Passwort und zweiter Faktor (Key oder Schlüsseldatei) sind nötig nach einem Neustart und nach Ablauf der Gültigkeit; danach geht Schnell-Entsperren wieder. Neu einrichten musst du es nach einer Sofortsperre, nach 5 falschen App-PINs, wenn Fingerabdrücke geändert werden, und nach jeder Änderung des Schutzes (Passwort, Key, Schlüsseldatei).</string>
     <string name="set_quick_bio">Fingerabdruck</string>
     <string name="set_quick_bio_unavailable">Kein sicherer Fingerabdrucksensor oder kein Fingerabdruck auf diesem Gerät eingerichtet.</string>
     <string name="set_quick_hint">Nach dem Entsperren mit Passwort und zweitem Faktor kannst du GhulSuite für eine Weile per Fingerabdruck oder App-PIN öffnen.</string>

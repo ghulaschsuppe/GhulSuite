@@ -29,6 +29,20 @@ Für echte Passwörter und Dokumente darf ein Update nie den Zugang kosten. Desh
    Die Tests `app::tests::format_freeze` öffnen sie bei jedem Lauf und prüfen den Inhalt; ihre Prüfsummen stehen
    im Test, damit niemand sie durch neu erzeugte ersetzt. Kommt ein Format 4, kommt ein Ordner `format4` dazu,
    `format3` bleibt.
+   Ergänzt am 21.11.2026 um den Ordner
+   [`core/ghul-core/tests/fixtures/format3-extra`](../core/ghul-core/tests/fixtures/format3-extra/README.md): ein
+   GhulDocs-Paket `.ghldocs` (mit einem Dokument), ein GhulAuth-Tresor `.ghltotp` und ein GhulCal-Tresor `.ghlcal`
+   als einzelne Dateien, ein GhulPass-Tresor `.ghlpss` mit einem Anhang und einem unbekannten Schlüssel im Eintrag
+   und in den Nutzdaten, dazu die Schlüsseldatei (ohne FIDO2-Slot: der Software-Authenticator der Tests erzeugt bei
+   jedem Lauf neue Schlüssel). Die Tests `a_ghuldocs_package_of_format_3_opens`,
+   `single_2fa_and_calendar_files_of_format_3_open` und `a_pass_file_of_format_3_keeps_attachments_and_unknown_keys`
+   öffnen sie (der letzte prüft auch, dass die unbekannten Schlüssel nach dem Bearbeiten bleiben); ihre Prüfsummen
+   stehen im Test `the_extra_files_of_format_3_are_unchanged`.
+
+**Kein neuer Feldtyp innerhalb von Format 3:** Die Feldtypen (`t`, Abschnitt 5.3) und `schema = 1` (Abschnitt 5.2)
+bleiben, wie sie sind; ein neuer Feldtyp oder ein höheres `schema` kommt nur mit einem neuen Format (Punkt 3). Liest
+eine Version trotzdem einen Feldtyp oder ein `schema`, das sie nicht kennt, meldet sie „bitte aktualisieren“ (`UpdateRequired`) statt „beschädigt“ (Test
+`a_newer_schema_or_field_type_asks_for_an_update`).
 
 Dateien der Formate 1 und 2 stammen nur von Entwicklerversionen vor dem 20.11.2026 und werden nicht gelesen
 (`OldFormat`, siehe unten).
@@ -564,9 +578,14 @@ eines einzelnen GhulDocs-Tresors.
 - Windows: erst in eine Zwischendatei daneben (`<Name>.ghltmp`), die zurückgelesen und erst dann in einem Schritt
   über die alte Datei geschoben wird. Bricht etwas ab, bleibt die alte Datei unverändert und die Zwischendatei wird
   gelöscht. Kurzzeitig ist doppelter Platz nötig.
-- Android: Das Storage Access Framework gibt nur das gewählte Dokument frei, keinen Ordner, in dem eine
-  Zwischendatei entstehen könnte. Geschrieben wird darum direkt in das Dokument; ein Abbruch kann dort eine halbe
-  Datei hinterlassen, die beim nächsten Speichern ersetzt wird (die Arbeitskopie hat alles). Ein unter neuem Namen
+- Android, Ordner der Datei für die App freigegeben (Gerät, SD-Karte, USB-Stick): wie unter Windows, erst
+  `<Name>.neu` daneben, zurückgelesen, dann getauscht (die alte wird kurz `<Name>.alt`). Bricht der Tausch ab, bekommt
+  beim nächsten Zugriff die alte Datei ihren Namen zurück.
+- Android ohne Freigabe (oder an Orten, die kein Austauschen erlauben, etwa Cloud-Apps): Das Storage Access Framework
+  gibt nur das gewählte Dokument frei, keinen Ordner, in dem eine Zwischendatei entstehen könnte. Geschrieben wird
+  darum direkt in das Dokument; ein Abbruch kann dort eine halbe Datei hinterlassen, die beim nächsten Speichern
+  ersetzt wird (die Arbeitskopie hat alles). Die App fragt vorher (Ordner freigeben, als neue Datei speichern oder
+  trotzdem überschreiben). Ein unter neuem Namen
   angelegtes Dokument, das nicht vollständig geschrieben werden konnte, wird gelöscht.
 
 Liegt dort schon eine Datei, wird vorher ihr Kopf gelesen: derselbe Stand wie die Arbeitskopie (überschreiben),
@@ -578,7 +597,8 @@ wie beim Schreiben) und 21 000 Einträge (bis zu 20 000 Dokumente und die Tresor
 gleich was in den Köpfen steht; ein Container höchstens 256 MiB. Die Datei wird einmal als Datenstrom gelesen, mit
 Fortschritt. Geprüft wird vor jeder Änderung auf dem Gerät:
 
-1. die Form oben (abgeschnitten, beschädigt, zu groß, zu viele Einträge: keine Suite-Datei); nur die erlaubten
+1. die Form oben (beschädigt, zu groß, zu viele Einträge: keine Suite-Datei; beginnt sie als Suite-Datei und endet zu
+   früh: „the suite file is incomplete“); nur die erlaubten
    Einträge, keine doppelt, keine Ordner und keine anderen Pfade als die der Inhaltsdateien; ist der erste Eintrag
    ein GhulDocs-Tresor, ist die Datei ein GhulDocs-Paket und keine Suite-Datei (Fehler, der das sagt);
 2. der Kopf (erster Eintrag) öffnet mit Passwort und zweitem Faktor, sein Siegel stimmt; er listet höchstens 3

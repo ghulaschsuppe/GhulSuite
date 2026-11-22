@@ -220,7 +220,7 @@ Datei, wenn du oben auf das Speichern-Symbol tippst.
 
 **Im Alltag** reicht auf dem Handy Fingerabdruck oder App-PIN; der Schnellzugang liegt geschützt im Schlüsselspeicher
 des Geräts. Eingerichtet wird er mit Passwort und zweitem Faktor, mit einer Gültigkeit, die du dabei wählst. Die **Sofortsperre** schließt alles mit einem Schütteln oder über
-die Schnellkachel und löscht den Schnellzugang, bis du wieder mit beiden Faktoren entsperrst.
+die Schnellkachel und löscht den Schnellzugang: Danach entsperrst du mit beiden Faktoren und richtest ihn neu ein.
 
 </td></tr></table>
 
@@ -370,7 +370,8 @@ Bisher gibt es **nur Vorabversionen**; eine stabile Version gibt es noch nicht.
   zusätzlich, dass das neue APK mit demselben Schlüssel signiert ist. Von Hand: `sha256sum -c SHA256SUMS`.
 - Der Windows-Installer ist (noch) nicht von Microsoft signiert: Windows SmartScreen fragt beim ersten Start nach.
 - **Testversionen** zu jeder Änderung (als eigene App neben der normalen installierbar, ohne Updates) gibt es weiterhin unter
-  **Actions → letzter grüner Lauf → Artefakte**.
+  **Actions → letzter grüner Lauf → Artefakte**. Die Testversion eines Arbeits-Branches oder Pull Requests ist bei
+  jedem Lauf mit einem anderen Wegwerf-Schlüssel signiert: vorher die installierte Testversion deinstallieren.
 
 ## Selbst bauen
 

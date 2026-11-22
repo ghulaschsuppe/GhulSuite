@@ -80,7 +80,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// --- Tokens of the design preview (public/design/design.css) ---------------------------------
+// --- Tokens of the former design preview (design.css) -----------------------------------------
 
 /** The colour tokens of the design preview, light and dark. */
 class GhulTokens(

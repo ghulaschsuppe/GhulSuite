@@ -6,8 +6,8 @@
 > den Schlüsselwechsel, das Mail-Archiv und das Hochladen von Fehlerberichten (entfernt mit
 > [`UMBAU-GHULDOCS.md`](UMBAU-GHULDOCS.md)). Funde und offene Punkte zu diesen Funktionen sind **obsolet**; welche das
 > sind, fasst [`AUDIT.md`](AUDIT.md), Abschnitt 3, zusammen. **Aktuell** sind die Abschnitte 1 und 2 (Zahlen und
-> Testsuite), Abschnitt 10 (GhulDocs und Scannen) und Abschnitt 11 (mehrere GhulDocs-Tresore, ganzen Tresor
-> weitergeben).
+> Testsuite), Abschnitt 10 (GhulDocs und Scannen), Abschnitt 11 (mehrere GhulDocs-Tresore, ganzen Tresor
+> weitergeben) und Abschnitt 12 (Großprüfung vom 21. und 22.11.2026).
 
 Stand: 14. November 2026 (vierte Runde: B1 Schlüssel bei jeder Schutzänderung erneuern, F23 neutrale Dateinamen, Geräte lange offline) · Branch `feat/rekey-neutral-names` · Zusammenfassung aller Audits: Sicherheitsbericht (`docs/AUDIT.md`); Testkonzept: `docs/TESTKONZEPT.md`.
 
@@ -15,16 +15,18 @@ Dieses Protokoll ist die Arbeitsliste für die nächsten Durchgänge: Jeder Fund
 
 ## 1. Ergebnis in Zahlen
 
-Stand 21.11.2026, nach den fünf Prüfrunden und dem Gutachten zur Veröffentlichung (die Zahlen vor den Umbauten stehen in [`AUDIT.md`](AUDIT.md), Abschnitt 1; alle Prüfläufe in [`PRUEFCHRONIK.md`](PRUEFCHRONIK.md)).
+Stand 22.11.2026, nach den fünf Prüfrunden, dem Gutachten zur Veröffentlichung und der Großprüfung (die Zahlen vor den Umbauten stehen in [`AUDIT.md`](AUDIT.md), Abschnitt 1; alle Prüfläufe in [`PRUEFCHRONIK.md`](PRUEFCHRONIK.md)).
 
 | | |
 |---|---|
-| Testfunktionen im Kern | 265 (259 bei jedem Lauf, 6 lange oder mit externen Daten nur nachts) |
+| Testfunktionen im Kern | 310 (303 bei jedem Lauf, alle bestanden; 7 ignoriert: Langläufe und Stresstests, Netz und x509-limbo nur nachts, dazu die zwei Helfer, die die Format-3-Dateien einmal erzeugt haben) |
+| Tests der App am Desktop | 158 (`desktopTest`) und 20 mit der echten Kern-Anbindung (`desktopAppBindingTest`), alle bestanden |
+| Letzter vollständiger Precheck | 22.11.2026, grün (`tools/precheck.sh` mit Gradle, Android-Build und Desktop-Paketen). Windows (Clippy, Build, Tests) und der Emulator laufen nur in der CI |
 | Einzelprüfungen pro Lauf | über 1 Million (u. a. Zeitzonen-Umrechnungen in 446 Zonen, Kalendertage, Fuzz-Eingaben, Base32-Schreibweisen, Wiederherstellungscodes, HOTP-Fälle, Passwortgenerator-Varianten, Aktionen „bekloppter Nutzer“, 515 Naughty Strings in jedem Feld) |
 | Davon gegen echte Server | keine mehr (Testserver mit dem Umbau entfallen); nachts badssl.com und x509-limbo gegen den TLS-Prüfer |
 | Externe Testsammlungen | Big List of Naughty Strings, Project Wycheproof (XChaCha20-Poly1305, HKDF, HMAC, P-256), RFC 4226/6238, JSONTestSuite, 304 Kalenderdateien aus den Tests von iCal4j und python-icalendar, Zeitzonen-Regeln aller Zonen der IANA-Datenbank |
-| Gefundene Fehler | Abschnitt 3 (Geschichte, F01 bis F149); zu GhulDocs und Scannen Abschnitt 10 |
-| Offene Punkte | kleine Punkte in [`AUDIT.md`](AUDIT.md) 4.5 (K-1 bis K-36), der Weg zur Veröffentlichung in [`PRUEFCHRONIK.md`](PRUEFCHRONIK.md) |
+| Gefundene Fehler | Abschnitt 3 (Geschichte, F01 bis F149); zu GhulDocs und Scannen Abschnitt 10; Großprüfung Abschnitt 12 (H1 bis H13, M1 bis M44) |
+| Offene Punkte | kleine Punkte in [`AUDIT.md`](AUDIT.md) 4.5 (K-1 bis K-38), Restrisiken in 4.6, offene Funde der Großprüfung in Abschnitt 12, der Weg zur Veröffentlichung in [`PRUEFCHRONIK.md`](PRUEFCHRONIK.md) |
 
 Alle Tests sind grün (Kern, Android-Kotlin, Desktop-Tests). Die App-Tests im Emulator (Maestro, Monkey) laufen in der CI.
 
@@ -542,3 +544,98 @@ Funde der unabhängigen Durchsicht dieses Umbaus (20.11.2026), alle behoben:
 | PR-18 | M | Emulator-Abläufe der CI: der Einrichtungsablauf tippte nach dem Pflicht-Backup auf den gleichnamigen Chip statt auf die Option „Schlüsseldatei“; der Ablauf zur Suite-Datei schaltete die App-PIN aus, die seit Runde 5 beim Öffnen mit gleichem Schutz erhalten bleibt. Ursache: Verhalten geändert, Abläufe nicht mit durchgesehen (sie laufen nur in der CI) | Abläufe angepasst (`01-setup`, `14-suite-file` entsperrt jetzt mit der erhaltenen PIN); neu `tools/check-maestro.py` im Precheck und in der CI (jeder gesuchte Text ist ein Text der App) und die Regel in PROJEKT.md, Abläufe bei geänderter Oberfläche vor dem Push durchzusehen |
 | PR-19 | H | Unabhängiges Gutachten zur Veröffentlichung: keine Zusage, dass spätere Versionen heutige Dateien lesen (ein Update hätte den Zugang kosten können); ging das Gerät aus, während eine Suite-Datei die Arbeitskopie ersetzte, konnte ein gemischter Stand bleiben und das Aufräumen beim nächsten Start die alten GhulDocs-Dokumente löschen | Format 3 eingefroren (Zusage in FORMAT.md, echte Dateien vom 21.11.2026 als Testfälle mit Prüfsummen, `format_freeze`); Übernehmen mit Journal: alte Dateien und Dokumentordner werden vorher gesichert und vermerkt, der nächste Start stellt den Stand davor vollständig her (`a_device_that_goes_off_while_a_file_replaces_the_working_copy_keeps_the_state_before`, Abbruch nach jedem einzelnen Schreibschritt) |
 | PR-20 | H | Gutachten: Speichern unter Android leerte die einzige Suite-Datei, bevor die neue geschrieben war (`"wt"`); ein voller oder abgezogener Stick oder ein Absturz hinterließ eine kaputte Datei, dann gab es nur noch die Arbeitskopie | Mit einmal freigegebenem Ordner schreibt die App `<Name>.neu` daneben, liest sie zurück und prüft sie, benennt die alte in `<Name>.alt` um, die neue auf den Namen und löscht erst dann die alte; ein abgebrochener Tausch wird beim nächsten Zugriff zurückgedreht. Gelesen und geschrieben wird dann über den freigegebenen Ordner (Android nimmt den Zugriff auf ein umbenanntes Dokument weg), jede Umbenennung wird auf den erwarteten Namen geprüft. Speichern-Dialog: „Ordner freigeben“, Hinweis bei Ordnern, die Android nicht freigibt, und bei Cloud-Apps, dass direkt überschrieben wird. Die erste Fassung hatte zwei schwere Fehler (nach dem ersten Tausch „nicht erreichbar“, Wiederherstellung nie erreicht), gefunden von der unabhängigen Durchsicht vor dem Push **Nur auf dem Gerät prüfbar** (Testplan E19e); Windows schrieb schon daneben und tauschte |
+
+## 12. Großprüfung (21. und 22.11.2026)
+
+25 KI-Agenten in vier Wellen, danach Behebung durch zwei Entwickler-Agenten mit gegenseitiger Durchsicht, Runde 5 mit
+fünf Prüfern und eine Schlussprüfung; Ablauf und Zahlen in [`PRUEFCHRONIK.md`](PRUEFCHRONIK.md), Abschnitt 2.3. Die
+Nummern H1 bis H13 und M1 bis M44 stammen aus der Auswertung dieser Prüfung und bekommen hier das Kürzel **GP-**,
+damit sie sich nicht mit älteren Nummern (H…, M… früherer Durchsichten) vermischen. Stufe wie in Abschnitt 3. Die
+Schritte von Hand stehen im [Testplan](TESTPLAN.md), Abschnitt 40 (GR1 bis GR14), und im
+[Testplan Windows](TESTPLAN-WINDOWS.md), Abschnitt 14.
+
+**Wichtig für Tester:** Nach dem Update auf diesen Stand Fingerabdruck und App-PIN neu einrichten (die Schnell-Datei
+hat jetzt Version 3, GP-H6). Branch- und PR-Builds sind bei jedem Lauf anders signiert: vorher die `.dev`-App
+deinstallieren.
+
+### 12.1 Hoch
+
+| Nr. | Stufe | Fund | Behoben, Test |
+|---|---|---|---|
+| GP-H1 | H | Der Signaturschlüssel stand bei jedem Push auf jeden Branch bereit; wer einen Branch pushen konnte, hätte ihn auslesen und ein gültig signiertes Update veröffentlichen können | Echter Schlüssel nur in den Environments `signing` (Push auf `main`/`dev`) und `release`; alle anderen Läufe mit einem Wegwerf-Schlüssel, nur im Gradle-Schritt; Job `secrets-check` meldet Secrets auf Repository-Ebene. **Wirkt erst, wenn der Inhaber die Environments eingerichtet und die Repository-Secrets gelöscht hat** |
+| GP-H2 | H | Ein Release von Hand (`workflow_dispatch`) führte die `release.yml` des gewählten Branches aus | `workflow_dispatch` entfernt |
+| GP-H3 | H | Sackgasse nach dem Notfallblatt: Wer Key und Backup verloren hatte, konnte nach dem Öffnen mit dem Code keinen Faktor tauschen und keinen neuen Code erstellen | Bis zum Sperren genügt das neue Passwort; Anleitung, Hinweis, Auto-Sperre mindestens 5 Minuten. `after_the_recovery_code_the_new_password_alone_repairs_the_protection`, `opening_with_the_code_checks_the_new_password_first`, `InteractionTest.afterTheRecoveryCodeThePasswordAloneIsAsked`; Testplan GR7 |
+| GP-H4 | H | „Mit App öffnen“ startete unter Windows Programme aus einem fremden Paket (`.exe`, `.hta`, `.lnk` …); unter Android konnte ein untergeschobener MIME-Typ den Paketinstaller öffnen | Sperrliste (Windows dazu `PATHEXT`), Archive nach Rückfrage, Mark-of-the-Web, MIME-Typ aus der Endung. `OpenWithSafetyTest`, `DocsInteractionTest.openWithRefusesPrograms`, `anArchiveIsAskedFor`; Testplan GR9 |
+| GP-H5 | H | Die Suite ließ sich ohne Anmeldung löschen oder durch eine andere ersetzen, auch vom Sperrbildschirm | Nur mit Nachweis (beide Faktoren oder Code der vorhandenen Suite); unterbrochenes Löschen meldet sich (`DeleteIncomplete`). `another_suite_replaces_this_one_only_with_its_proof`, `a_damaged_suite_file_does_not_block_deleting`, `a_damaged_suite_file_still_refuses_unlocking`, `a_deletion_that_did_not_end_says_so`, `a_new_suite_after_deleting_is_not_overwritten_by_an_old_journal`, `InteractionTest.setupDeletesTheExistingSuiteOnlyWhenConfirmed`, `SuiteFileBackendTest.anotherSuiteReplacesThisOneOnlyWithItsProof`; Testplan E24, SD9, GR1, GR2 |
+| GP-H6 | H | Eine eigene App-PIN ließ sich mit dem Passwort allein einrichten, die Gültigkeit „immer“ ohne Abfrage einstellen | Einrichten nur mit beiden Faktoren; Gültigkeit fest in der Schnell-Datei (Version 3), je Methode; Version 2 wird nicht mehr geöffnet. `quick_unlock_keeps_the_validity_it_was_enabled_with`, `an_older_quick_unlock_file_asks_to_set_it_up_again`, `InteractionTest.theAppPinNeedsBothFactorsAndItsValidity`, `theWizardSetsUpQuickUnlockWithTheFactorItWasMadeWith`, `eachQuickUnlockMethodShowsItsOwnValidity`, `anOutdatedQuickUnlockAsksToSetItUpAgain`, `SuiteFileBackendTest.anOutdatedQuickUnlockHasItsOwnKind`; Testplan E12, U9, U10, U12, GR3 bis GR6 |
+| GP-H7 | H | Ältere `.bak`-Kopien der Tresordateien überlebten eine Schutzänderung und öffneten mit dem alten Notfallblatt | Nach jeder Schutzänderung, Wiederherstellung und Übernahme entfernt (nie an Ort und Stelle überschrieben); was sich nicht entfernen lässt, beim nächsten Entsperren und Start. Die Tests in `rekey` prüfen `.bak` und `.tmp`; `a_copy_that_cannot_be_removed_does_not_fail_the_change`, `a_hard_linked_copy_is_removed_not_overwritten` |
+| GP-H8 | H | Bearbeiten löschte Tags und Ordner eines Eintrags | Nicht angegeben heißt unverändert (`placement`). `an_edit_keeps_tags_and_folder`, `VaultFfiTest.anEditKeepsTagsAndFolder` |
+| GP-H9 | H | Termine verloren beim Bearbeiten Felder einer neueren Version, beim Verschieben auch `extra` | Unbekannte Felder bleiben. `events_keep_what_this_version_does_not_know` |
+| GP-H10 | H | Sperren während des Öffnens einer Suite-Datei konnte sie wieder öffnen | Sperr-Generation, ein späteres `set_open` wird abgelehnt. `a_lock_during_unlocking_wins` |
+| GP-H11 | H | Paralleler Schutzwechsel auf zwei Geräten: die Änderungen eines Geräts gingen verloren, der Dialog riet zu einer Datei, die sich danach nie mehr öffnen ließ | **Zum Teil:** Der Dialog sagt ehrlich, was passiert, und nennt den Weg „Als Tresor weitergeben“ und „Tresordatei hinzufügen“; zusammengeführt wird weiter nicht. `VaultFfiTest.aVaultExportedBeforeAProtectionChangeCanBeTakenBack`, `InteractionTest.aNewerProtectionThereSaysHowToKeepTheChanges`; Testplan GR12 |
+| GP-H12 | H | Kein Vorab-Check des Speicherplatzes; voller Speicher kam als roher Fehler, der Zwischenordner blieb liegen | Schätzung der Größe und Vergleich mit dem freien Platz vor dem Schreiben; „voll“ am Fehlercode erkannt (`NoSpace`); Zwischenordner ohne laufenden Besitzer sofort entfernt (unter Windows bleiben fremde bis zu 24 Stunden). `no_room_is_said_before_staging`, `the_estimate_of_the_suite_file_is_not_too_small`, `a_staging_folder_of_a_running_process_stays`, `SuiteFileBackendTest.tooLittleRoomIsSaidBeforeWriting`, `NoSpaceTest`; Testplan GR11 |
+| GP-H13 | H | Die Update-Prüfung war als Ganzes ungetestet; Mutanten überlebten (Passwortwechsel ohne zweiten Faktor, Journal, Abstammung, Zwei-Minuten-Fenster) | `update_check_end_to_end` (lokaler Server: gültig, kaputte Signatur, andere Version, Datei fehlt, 404), `every_protection_change_with_the_password_alone_is_refused`, `going_off_while_new_vaults_come_in_leaves_the_state_before`, `a_cut_off_lineage_goes_by_the_counter`, `a_confirmation_holds_two_minutes`. `safeWrite` unter Android hat weiter keinen automatischen Test (GP-M44) |
+
+### 12.2 Mittel
+
+| Nr. | Stufe | Fund | Behoben, Test |
+|---|---|---|---|
+| GP-M1 | M | Ohne Ordnerfreigabe und bei Cloud-Apps wurde die einzige Suite-Datei unter Android zuerst geleert; die README empfahl einen Cloud-Ordner | Speicherdialog bietet zuerst „Ordner freigeben“, sonst Risikofrage mit „Als neue Datei speichern“; keine Cloud-Empfehlung. `InteractionTest.overwritingTheOnlyFileIsAskedFirst`; Testplan E19e |
+| GP-M2 | M | Beim Start prüfte die App nicht, ob am Ort ein neuerer Stand liegt | Nach dem Entsperren wird der Kopf gelesen, Dialog „Jetzt öffnen“. `newerSuiteFileIsOfferedAfterUnlocking`, `sameSuiteFileAsksNothing`, `aFileWithANewerProtectionIsOfferedAfterUnlocking`; Testplan GR13 |
+| GP-M3 | M | Scheiterte beim Übernehmen auch das Zurückrollen, wurde das Journal trotzdem gelöscht | Journal bleibt; vor jedem Entsperren und Übernehmen wird der Stand davor erst zurückgeholt, sonst abgelehnt, nichts gelöscht. `a_failed_rollback_keeps_the_journal`, `a_journal_finds_its_old_documents_by_name`, `old_documents_of_a_finished_replace_are_tidied`, `creating_a_suite_drops_a_journal_without_a_suite` |
+| GP-M4 | M | Eine gescheiterte Schutzänderung blieb im Speicher | Die Suite wird gesperrt. `a_change_of_the_protection_that_fails_locks_the_suite`, `a_panic_while_the_suite_is_held_locks_it` |
+| GP-M5 | M | Schutz-Notizen ohne Sperre gelesen und geschrieben | Eigene Sperre. `notes_of_the_device_are_written_one_at_a_time` |
+| GP-M6 | M | Übernehmen löschte Dokumentordner, während GhulDocs-Aufträge liefen | Abgelehnt, solange Dokumente hinzukommen oder sich ein Tresor seit der Prüfung geändert hat. `taking_a_file_after_a_change_or_during_a_copy_is_refused`, `only_a_change_of_the_content_refuses_taking_a_file` |
+| GP-M7 | M | Ein Update konnte ein laufendes Speichern oder eine Eingabe abbrechen | Direkt vor dem Übergeben erneut geprüft. `InteractionTest.updateWaitsForInputStartedMeanwhile` |
+| GP-M8 | M | Tresor entfernen war im Fehlerfall nur halb rückgängig; gescheiterte Exporte meldeten nichts | **Offen** |
+| GP-M9 | M | Ein Lesefehler löschte alle geplanten Kalender-Erinnerungen | Sie bleiben. `InteractionTest.remindersCarryOnlyTheChosenDetail` |
+| GP-M10 | M | Eine halb geschriebene Datei hieß „keine GhulSuite-Datei“ | „the suite file is incomplete“. `a_cut_suite_file_is_incomplete` |
+| GP-M11 | M | Notfall: Speichern überschrieb die Datei, die mit dem Code geöffnet wurde, ohne Rückfrage | Sie wird nicht Speicherziel, der Dialog lässt einen Ort wählen; Testplan GR7 |
+| GP-M12 | M | Kalender-Erinnerungen (30 Tage) mit einem Schlüssel ohne Gerätebindung, überlebten die Sofortsperre, auch bei „Nur Hinweis“ mit vollem Text | Gespeichert wird nur der gewählte Umfang; Einstellung „Sofortsperre löscht auch die Termin-Erinnerungen“; mehr Inhalt erst nach dem Passwort. `InteractionTest.remindersCarryOnlyTheChosenDetail`; Testplan K11. **Rest:** mit „Alles“ liegen Titel, Zeit und Ort für 30 Tage auf dem Gerät (AUDIT 4.6) |
+| GP-M13 | M | 2FA-Geheimnisse ließen sich ohne Passwort als QR zeigen | `totp_uri` nur mit dem Master-Passwort, ebenso der 2FA-Schlüssel eines Logins im Editor. `totp_export_link_round_trip`, `InteractionTest.aQrCodeOfASecretNeedsThePassword`; Testplan GR10 |
+| GP-M14 | M | Sperr-Einstellungen ohne Passwort abschaltbar | Abschwächen nur nach dem Master-Passwort. `InteractionTest.weakeningTheLockAsksForThePassword`; Testplan GR10 |
+| GP-M15 | M | Weitergabe als Tresor mit dem Passwort allein | Beide Faktoren, das neue Passwort nach der Regel. `InteractionTest.shareAsVaultFromTheSelection`, `DocsInteractionTest.aVaultIsHandedOnFromItsMenu`, `VaultFfiTest`; Testplan GR14 |
+| GP-M16 | M | Windows portabel: Kopien für „Mit App öffnen“ lagen auf dem Stick | Immer im Temp-Ordner des PCs; Texte sagen „entfernt“ statt „sicher gelöscht“ |
+| GP-M17 | M | Bedienungshilfen und darübergelegte Fenster | `setAccessibilityDataSensitive` (ab Android 14), `filterTouchesWhenObscured` auf jedem Fenster, `setHideOverlayWindows` (ab Android 12). `GuardedWindowsTest` |
+| GP-M18 | M | Erinnerungstexte im Volltext an Apps mit Benachrichtigungszugriff und ins Info-Center | Wie GP-M12; **Rest** mit „Alles“ |
+| GP-M19 | M | App-PIN: Kern erlaubte 4 Ziffern, Zähler nur in den App-Einstellungen, mit Root offline angreifbar | Mindestens 6 auch im Kern und beim Entsperren. **Rest:** Zähler und Root (AUDIT 4.6) |
+| GP-M20 | M | Schlüsseldatei-Texte empfahlen denselben Stick wie für die Suite-Datei | Texte: getrennt aufbewahren |
+| GP-M21 | M | Unter Windows lässt sich vermutlich ein Handy-Passkey als „Security Key“ registrieren | **Offen** (nicht nachgeprüft) |
+| GP-M22 | M | Website-Zugangsdaten standen jedem Push zur Verfügung | Environment `website`, nur `main`; die Vorschau auf dem Testserver entfällt |
+| GP-M23 | M | Gradle ohne Prüfsumme, `pillow` ohne Version | `distributionSha256Sum`, Prüfsumme von `gradle-wrapper.jar` vor jedem `gradlew` (Gradle läuft nur nach bestandener Prüfung), `pillow==11.3.0` |
+| GP-M24 | M | MSI-Update: Datei zwischen Prüfung und Installation austauschbar, Fehlschlag stumm | Kein Skript auf der Platte (`-EncodedCommand`), MSI bis zum Ende von `msiexec` offen gehalten, SHA-256 direkt davor, Ergebnis beim nächsten Start (auch „nicht ausgeführt“ nach 10 Minuten). `UpdateScriptTest`, `UpdateScriptTest.pendingCountsAsNotRunOnlyAfterSomeMinutes`. **Nur als Text des Skripts getestet**, unter Windows nicht ausgeführt (AUDIT 4.6) |
+| GP-M25 | M | Tiefe Ordnerkette im GhulDocs-Index ließ die App stundenlang rechnen | Tiefe höchstens 64, höchstens 20 000 Ordner (für GhulDocs-Pakete), Zyklen überall abgelehnt. `folders_nest_only_so_deep`, `deep_chains_and_cycles_are_refused_quickly` |
+| GP-M26 | M | ICS mit Hunderttausenden Ausnahmen bremste den Kalender | Höchstens 1000 Ausnahmen je Serie und 20 000 Termine je Import. `huge_ics_files_are_limited`, `a_series_with_too_many_exceptions_can_be_edited` |
+| GP-M27 | M | Gelöschte Einträge in einem fremden Paket umgingen die 1-GB-Grenze | Gezählt werden nur lebende Einträge, gelöschte mit Inhalt gelten als beschädigt. `deleted_entries_bring_no_content` |
+| GP-M28 | M | Jede Panik im Kern beendete die App (`panic = "abort"`) | `panic = "unwind"`; der Schnitt bei Mehrbyte-Zeichen behoben. `a_multibyte_expiry_is_kept`, `a_panic_while_the_suite_is_held_locks_it` |
+| GP-M29 | M | CSV-Export setzte immer ein Apostroph vor `= + - @`; andere Passwortmanager übernahmen es | Eigener Schalter „Tabellenschutz“, standardmäßig aus. `csv_export_plain_or_safe_for_spreadsheets`; Testplan GR8 |
+| GP-M30 | M | Schnell-Entsperren schaltete sich nach Ablauf dauerhaft ab | Abgelehnt, nicht gelöscht. `quick_unlock_fingerprint_and_pin`; Testplan GR4 |
+| GP-M31 | M | Notfallblatt reichte für Fremde nicht | Name der Suite-Datei, Geräte, Website, Startbildschirm „Mit Notfallblatt öffnen“, Schritt 1 korrigiert |
+| GP-M32 | M | Neues 2FA-Konto bis zur Erinnerung nach 3 Tagen nur auf dem Gerät | Hinweis gleich nach einer neuen oder geänderten Angabe |
+| GP-M33 | M | Sicherheitsbericht rechnete zxcvbn für alle Passwörter unter der Kernsperre | Nur noch auf seiner Seite, im Hintergrund |
+| GP-M34 | M | Neuer Feldtyp einer späteren Version: ältere App meldete „beschädigt“ | `UpdateRequired`. `a_newer_schema_or_field_type_asks_for_an_update`; FORMAT.md, „Kein neuer Feldtyp innerhalb von Format 3“ |
+| GP-M35 bis GP-M41 | M | Texte versprachen mehr als der Code (Format „jederzeit änderbar“, „zwei Faktoren ohne Ausnahme“, Tabelle „kurz entsperrt“, „Stabile Version“, veraltete Angaben in KONZEPT und FORMAT, Panik-Hinweis, „unabhängig“) | README, Website und App-Texte angepasst; KONZEPT und FORMAT mit diesem Nachtrag |
+| GP-M42 | M | Passwort- und PIN-Regeln nur in der Oberfläche | Im Kern (`security_rules`): 10 Zeichen und zxcvbn mindestens 3, App-PIN mindestens 6 |
+| GP-M43 | M | Reste der Synchronisation, AES der ZIP-Bibliothek | ZIP nur mit `deflate` (verschlüsselte Einträge: `ImportEncrypted`), vier Krypto-Crates weniger; alle Listen und Exporte filtern gelöschte Einträge |
+| GP-M44 | M | Android-Code (Schnell-Entsperren, Erinnerungen, USB-Key, Speichern) ohne Unit-Tests | **Offen.** Nur die Menge `QUICK_UNLOCK_KEPT_ON` ist am Desktop getestet (`OpenWithSafetyTest`) |
+
+### 12.3 Aus den Durchsichten danach (Auswahl)
+
+| Nr. | Stufe | Fund | Behoben, Test |
+|---|---|---|---|
+| GP-R1 | H | Durchsicht B über A: Ein `.bak`, das sich nicht löschen ließ, ließ eine schon geschriebene Schutzänderung als gescheitert erscheinen | Aufräumen scheitert nie die Aktion, Wiederholung später. `a_copy_that_cannot_be_removed_does_not_fail_the_change` |
+| GP-R2 | H | Runde 5: Schnell-Entsperren im Assistenten (Schritt 6) scheiterte immer und schickte eine leere PIN an den Key | Der Faktor der Anlage wird bis Schritt 6 behalten. `InteractionTest.theWizardSetsUpQuickUnlockWithTheFactorItWasMadeWith`; Testplan E12 |
+| GP-R3 | H | Runde 5: Nach einem Merge von `dev` nach `main` entstand keine stabile Version (Vergleich mit dem letzten Vorab-Tag) | `main` vergleicht nur mit dem letzten stabilen Tag; mehr als 98 Vorabversionen brechen ab |
+| GP-R4 | H | Runde 5: Der Schutz des Signaturschlüssels hing an Einstellungen außerhalb des Repositorys, die niemand prüfte | Job `secrets-check` (Fehler auf `main`/`dev`, Warnung sonst); die Einrichtung bleibt beim Inhaber |
+| GP-R5 | M | Runde 5: Die Zugangsdaten des Testservers standen jedem Branch offen | Testserver entfernt (Entscheidung des Inhabers) |
+| GP-R6 | M | Runde 5: Die alte Fassung der Suite-Datei blieb nach einer Schutzänderung auf dem Stick wiederherstellbar | Beim nächsten Speichern am selben Ort mit Nullen überschrieben, nachdem die neue Datei liegt (auf Flash nicht verlässlich). `SuiteFileBackendTest.theOldFileIsWipedAtItsOwnPlaceOnly`, `WipeOldSuiteFileTest` |
+| GP-R7 | M | Schlussprüfung: Löschen ließ ein Ersetzungs-Journal liegen, das eine neue Suite überschreiben konnte | `a_new_suite_after_deleting_is_not_overwritten_by_an_old_journal`, `creating_a_suite_drops_a_journal_without_a_suite` |
+| GP-R8 | M | Schlussprüfung: Marke mit absolutem Pfad (portabel, anderer Laufwerksbuchstabe) | Nur der Name des Ordners. `a_journal_finds_its_old_documents_by_name` |
+| GP-R9 | M | Schlussprüfung: Die Prüfung des Gradle-Wrappers in `android.yml` verhinderte den Gradle-Lauf nicht | Gradle nur nach bestandener Prüfung, dazu erneut im Gradle-Schritt |
+| GP-R10 | M | Schlussprüfung: Bei beschädigter Suite-Datei nahm auch das Entsperren einen Tresor als Anker | Nur noch beim Löschen und Ersetzen. `a_damaged_suite_file_still_refuses_unlocking` |
+| GP-R11 | N | Schlussprüfung: Schnell-Entsperren wurde bei einem Speicherfehler vor dem Entsperren abgeschaltet | Bleibt bei `STORAGE` und `NO_SPACE`. `OpenWithSafetyTest` (Menge `QUICK_UNLOCK_KEPT_ON`) |
+
+Kleine Punkte der Großprüfung, die behoben sind: mehr als 98 Vorabversionen (K-2, GP-R3), Absturzbericht nur mit
+Klassen und Stack (`CrashTraceTest`), Update-Prüfung im Assistenten gefragt, die Fehlermeldung „älterer Schutz“
+nennt einen Ausweg. Offen ist unter anderem die Windows-Arbeitskopie in `%APPDATA%` (Roaming-Profil). Die übrigen
+kleinen Punkte sind offen, soweit sie hier nicht genannt sind.

@@ -290,7 +290,7 @@
     <string name="set_panic_reminders">Instant lock also deletes the event reminders</string>
     <string name="set_password">Master password</string>
     <string name="set_pin_mismatch">The PINs do not match.</string>
-    <string name="set_quick_always_full">Password and second factor (key or key file) are needed after a restart and after the validity ends; after that quick unlock works again. You set it up again after an instant lock, after 5 wrong app PINs, when fingerprints are changed, and after every change of the protection (password, key, key file, recovery sheet).</string>
+    <string name="set_quick_always_full">Password and second factor (key or key file) are needed after a restart and after the validity ends; after that quick unlock works again. You set it up again after an instant lock, after 5 wrong app PINs, when fingerprints are changed, and after every change of the protection (password, key, key file).</string>
     <string name="set_quick_bio">Fingerprint</string>
     <string name="set_quick_bio_unavailable">No secure fingerprint sensor or no fingerprint set up on this device.</string>
     <string name="set_quick_hint">After unlocking with password and second factor, you can open GhulSuite with your fingerprint or an app PIN for a while.</string>
