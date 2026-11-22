@@ -281,6 +281,36 @@ interface VaultBackend {
      * e.g. some cloud apps: the file there is written over; the working copy stays complete).
      */
     fun safeSave(ref: SuiteFileRef): SafeSaveUi = SafeSaveUi.SAFE
+
+    /**
+     * The suite file at [old] after the suite moved to another place: deleted where the app may
+     * (never the current place); leftovers of a cut off save next to it go too, only if they are
+     * of this suite. [OldFileDelete.where]: where it lies, for the user to delete it by hand.
+     */
+    suspend fun deleteOldSuiteFile(old: SuiteFileRef): OldFileDelete = OldFileDelete(OldFileOutcome.NOT_ALLOWED, old.name)
+
+    /**
+     * Whether [a] and [b] name the same file, by its identity, not by the text of the id
+     * (Windows: case, 8.3 names, links; Android: two forms of a document's address). When this
+     * cannot be told, true (the safe answer before a delete).
+     */
+    fun isSamePlace(a: SuiteFileRef, b: SuiteFileRef): Boolean = a.id == b.id
+
+    /** Whether "Delete old file" may be offered for [old], and why not (review N3). */
+    suspend fun oldFileCheck(old: SuiteFileRef): OldFileCheck = OldFileCheck.OTHER
+
+    /** [isSamePlace] that says "not the same" when it cannot tell (before writing over a file found there). */
+    fun isSamePlaceStrict(a: SuiteFileRef, b: SuiteFileRef): Boolean = a.id == b.id
+
+    /** How often the suite was locked in this process (review N5: windows tied to an unlock end at once). */
+    val lockCount: Long get() = 0L
+
+    /**
+     * The areas with changes not in the suite file yet: a sorted subset of "auth", "cal", "docs",
+     * "pass", "suite" (protection, a removed vault, suite settings); empty: nothing; ["unknown"]:
+     * marked by an older version, which areas is not known.
+     */
+    fun archiveUnsavedAreas(): List<String> = emptyList()
     /** Whether changes of an earlier opening still wait for [ref] (cheap: only their records). */
     suspend fun hasPendingSingleWrite(ref: SuiteFileRef): Boolean = false
     /** Vaults opened on their own whose last changes could not be written back into their file. */
@@ -379,6 +409,44 @@ data class FolderRef(val uri: String, val name: String)
 /** A suite file the app may read and write again (Android: a document it keeps access to, Windows: a path). */
 data class SuiteFileRef(val id: String, val name: String)
 
+/** How deleting the old suite file went, and [where] it lies (for the user). */
+data class OldFileDelete(val outcome: OldFileOutcome, val where: String) {
+    val deleted: Boolean get() = outcome == OldFileOutcome.DELETED
+}
+
+/** What the old suite file is, for "Delete old file". */
+enum class OldFileCheck {
+    /** A state of this suite's own line: may go. */
+    SAME,
+    /** The file this device saved last there, with the protection before a change: written over and deleted. */
+    EARLIER_PROTECTION,
+    /** Another state or protection (e.g. saved on another device): kept. */
+    OTHER,
+    /** Its place is not there now. */
+    UNREACHABLE,
+    /** It is not there any more. */
+    GONE,
+    ;
+
+    val deletable: Boolean get() = this == SAME || this == EARLIER_PROTECTION
+}
+
+enum class OldFileOutcome {
+    DELETED,
+    /** It is the suite file of now (by its identity or its content): never deleted. */
+    SAME_FILE,
+    /** It holds a state or protection this device does not have: kept. */
+    DIFFERENT_STATE,
+    /** The place does not let the app delete it. */
+    NOT_ALLOWED,
+    /** The stick or folder is not there now: try again later. */
+    UNREACHABLE,
+    /** Deleting failed (try again). */
+    FAILED,
+    /** The file changed between the check and the delete: kept. */
+    CHANGED,
+}
+
 /**
  * Given as both numbers to the progress of [VaultBackend.archiveSave] (N3): the new file is in
  * place and checked, the file it replaced is now overwritten with zeros (after a change of the
@@ -394,7 +462,12 @@ const val WIPING_OLD_FILE = -2L
 val QUICK_UNLOCK_KEPT_ON: Set<VaultErrorKind> = setOf(VaultErrorKind.STORAGE, VaultErrorKind.NO_SPACE, VaultErrorKind.LOCKED)
 
 /** See [VaultBackend.safeSave]. */
-enum class SafeSaveUi { SAFE, FOLDER_NEEDED, OVERWRITES }
+/**
+ * NOT_SHAREABLE (Android): the file lies in a folder Android never shares with an app ("Download",
+ * the top of the storage, an SD card or a stick): sharing a folder cannot help, only saving it
+ * once into a folder of its own ("Save as").
+ */
+enum class SafeSaveUi { SAFE, FOLDER_NEEDED, NOT_SHAREABLE, OVERWRITES }
 
 /** How a suite file relates to what this device has. */
 enum class ArchiveRelationUi { NO_SUITE, OTHER_SUITE, SAME, NEWER, OLDER, BRANCH }
@@ -423,7 +496,8 @@ data class SecurityRulesUi(val passwordMinLength: Int = 10, val passwordMinScore
 class FactorProofUi(val password: String, val pin: String?, val keyfile: ByteArray?)
 
 /** The file at the place a suite is saved to: how it relates, and who saved it when ([device] empty, [time] 0: not known). */
-data class ArchiveTargetInfoUi(val target: ArchiveTargetUi, val device: String = "", val time: Long = 0)
+/** [readable]: the keys of now open the file (false also when not known). */
+data class ArchiveTargetInfoUi(val target: ArchiveTargetUi, val device: String = "", val time: Long = 0, val readable: Boolean = false)
 
 /** A file picked by the user. */
 class PickedFile(val name: String, val bytes: ByteArray)

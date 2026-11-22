@@ -333,6 +333,8 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
 
     override fun archiveUnsaved(): Boolean = runCatching { suite.archiveUnsaved() }.getOrDefault(false)
 
+    override fun archiveUnsavedAreas(): List<String> = runCatching { suite.archiveUnsavedAreas() }.getOrDefault(emptyList())
+
     override fun archiveUnsavedSince(): Long = runCatching { suite.archiveUnsavedSince() }.getOrDefault(0L)
 
     override fun archiveSavedAt(): Long = runCatching { suite.archiveSavedAt() }.getOrDefault(0L)
@@ -349,7 +351,7 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
             ArchiveTarget.OTHER_SUITE -> ArchiveTargetUi.OTHER_SUITE
             ArchiveTarget.OTHER_PROTECTION -> ArchiveTargetUi.OTHER_PROTECTION
         }
-        ArchiveTargetInfoUi(target, info.device, info.time)
+        ArchiveTargetInfoUi(target, info.device, info.time, info.readable)
     }
 
     override suspend fun archiveSave(
@@ -377,6 +379,8 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
         val b = built
         if (written && b != null) {
             s.archiveSaved(b.state, b.change)
+            // Review M-a: the bytes this device wrote here (its own file, also after a change of the protection).
+            noteWritten(target, b.sha256)
             // N2: the file before (with the protection before) is overwritten now, at this
             // place only; one waiting at another place stays marked.
             wipedAt(target)
@@ -422,8 +426,182 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
             onProtectionChanged()
             cal.clearReminders()
             setSuiteFile(null)
+            // Review N-2: the record of what this device wrote where goes with the suite.
+            setDevicePref(WRITTEN_KEY, "")
             settings.forgetSuite()
             unlockedState.value = false
+        }
+    }
+
+    /**
+     * Deletes the document [ref] of a suite file ([wipe]: written over with zeros first). GONE: it
+     * is not there (its place is); UNREACHABLE: its place (stick, folder) is not there now.
+     */
+    protected open fun deleteSuiteDocument(ref: SuiteFileRef, wipe: Boolean): SuiteDocDelete = SuiteDocDelete.NOT_ALLOWED
+
+    /** What a cut off save may have left next to [ref] (Android: .alt and .neu, Windows: .ghlold and .ghltmp). */
+    protected open fun leftoversOf(ref: SuiteFileRef): List<SuiteFileRef> = emptyList()
+
+    /** Where [ref] lies, as the user finds it (a path, a folder and name). */
+    protected open fun whereIs(ref: SuiteFileRef): String = ref.name
+
+    /** After the old file is gone: the rights the app took for its place may go (Android). */
+    protected open fun releaseOldPlace(old: SuiteFileRef) {}
+
+    /** Whether the folder or drive of [ref] is there now (a stick plugged in). */
+    protected open fun placeReachable(ref: SuiteFileRef): Boolean = true
+
+    /** Called between the check of an old file and its delete (tests change the file there). */
+    protected open fun beforeOldFileDelete() {}
+
+    /** The platform's answer to [isSamePlace] (see there); the default compares the ids. */
+    protected open fun samePlace(a: SuiteFileRef, b: SuiteFileRef): Boolean = a.id == b.id
+
+    override fun isSamePlace(a: SuiteFileRef, b: SuiteFileRef): Boolean =
+        a.id == b.id || runCatching { samePlace(a, b) }.getOrDefault(true)
+
+    /** Whether a document is there: its place answers, or not (review N3, M-b). */
+    protected enum class Presence { THERE, GONE, UNREACHABLE }
+
+    /** The platform's answer: the file there, gone (its place answers), or its place not there. */
+    protected open fun presence(ref: SuiteFileRef): Presence =
+        if (openSuiteInput(ref)?.also { it.stream.close() } != null) Presence.THERE else Presence.UNREACHABLE
+
+    /**
+     * Review M-a: what this device wrote last at each place (SHA-256 of the whole file), kept for
+     * a few places. A file there with exactly these bytes is this device's own last save, also
+     * when the keys of now cannot read it any more (a change of the protection since).
+     */
+    private fun writtenAt(ref: SuiteFileRef): String? =
+        devicePref(WRITTEN_KEY)?.lines()?.firstOrNull { it.substringBefore('\t') == ref.id }?.substringAfter('\t')?.ifEmpty { null }
+
+    /** Review N-2: the record of a place goes once its file is gone. */
+    private fun forgetWritten(ref: SuiteFileRef) {
+        val left = devicePref(WRITTEN_KEY)?.lines()?.filter { it.isNotBlank() && it.substringBefore('\t') != ref.id } ?: return
+        setDevicePref(WRITTEN_KEY, left.joinToString("\n"))
+    }
+
+    private fun noteWritten(ref: SuiteFileRef, sha256: String) {
+        val others = devicePref(WRITTEN_KEY)?.lines()?.filter { it.isNotBlank() && it.substringBefore('\t') != ref.id }.orEmpty()
+        setDevicePref(WRITTEN_KEY, (listOf(ref.id + "\t" + sha256.lowercase()) + others).take(WRITTEN_KEEP).joinToString("\n"))
+    }
+
+    /** Review H2, M-a, N3: what [ref] is: a state of the own line, this device's last file with an earlier protection, or other. */
+    private suspend fun checkOld(ref: SuiteFileRef): de.danerd.ghulsuite.model.OldFileCheck = checkOldHashed(ref).first
+
+    /**
+     * [checkOld] with the file's SHA-256 as read for the check (null when gone, unreachable or
+     * unreadable). Review N-d: the delete compares with it, so the file is read for a hash at most
+     * twice (here and right before it is written over or deleted).
+     */
+    private suspend fun checkOldHashed(ref: SuiteFileRef): Pair<de.danerd.ghulsuite.model.OldFileCheck, String?> {
+        when (io { presence(ref) }) {
+            Presence.GONE -> return de.danerd.ghulsuite.model.OldFileCheck.GONE to null
+            Presence.UNREACHABLE -> return de.danerd.ghulsuite.model.OldFileCheck.UNREACHABLE to null
+            Presence.THERE -> {}
+        }
+        val hash = io { fileHash(ref) }
+        return checkOldOf(ref, hash) to hash
+    }
+
+    private suspend fun checkOldOf(ref: SuiteFileRef, hash: String?): de.danerd.ghulsuite.model.OldFileCheck {
+        val info = runCatching { archiveTargetInfo(ref) }.getOrNull()
+        if (info?.target == de.danerd.ghulsuite.model.ArchiveTargetUi.SAME) return de.danerd.ghulsuite.model.OldFileCheck.SAME
+        // Review H-1 (fourth review): only a file the keys of now cannot read (the protection
+        // before a change), and only with the very bytes this device wrote last at that place.
+        // A readable file that is not of the own line (a state the working copy left, another
+        // device's save) never counts, whatever its bytes.
+        val written = writtenAt(ref)
+        if (info != null && !info.readable && written != null && info.target != de.danerd.ghulsuite.model.ArchiveTargetUi.OTHER_SUITE &&
+            info.target != de.danerd.ghulsuite.model.ArchiveTargetUi.NEW && hash == written
+        ) {
+            return de.danerd.ghulsuite.model.OldFileCheck.EARLIER_PROTECTION
+        }
+        return de.danerd.ghulsuite.model.OldFileCheck.OTHER
+    }
+
+    /** Review H2: only a file of this working copy's own line (its loss loses nothing). */
+    private suspend fun ofOwnLine(ref: SuiteFileRef): Boolean = checkOld(ref).deletable
+
+    /** Review H1: the same bytes as [b] (then it holds the state just written: the same file or a copy of it). */
+    private fun sameContent(a: SuiteFileRef, b: SuiteFileRef): Boolean = runCatching {
+        val x = openSuiteInput(a) ?: return@runCatching false
+        x.stream.use { xs ->
+            val y = openSuiteInput(b) ?: return@runCatching false
+            y.stream.use { ys ->
+                if (x.size >= 0 && y.size >= 0 && x.size != y.size) return@runCatching false
+                val bx = ByteArray(1 shl 16)
+                val by = ByteArray(1 shl 16)
+                while (true) {
+                    val n = xs.readNBytes(bx, 0, bx.size)
+                    val m = ys.readNBytes(by, 0, by.size)
+                    if (n != m) return@runCatching false
+                    if (n == 0) return@runCatching true
+                    if (!java.util.Arrays.equals(bx, 0, n, by, 0, n)) return@runCatching false
+                }
+                false
+            }
+        }
+    }.getOrDefault(true)
+
+    /** The suite file of now, by identity (and a missing place counts as not that one). */
+    private fun isCurrent(ref: SuiteFileRef): Boolean = suiteFile()?.let { isSamePlace(ref, it) } ?: false
+
+    override suspend fun oldFileCheck(old: SuiteFileRef): de.danerd.ghulsuite.model.OldFileCheck =
+        if (old.id.isEmpty() || isCurrent(old)) de.danerd.ghulsuite.model.OldFileCheck.OTHER else checkOld(old)
+
+    override fun isSamePlaceStrict(a: SuiteFileRef, b: SuiteFileRef): Boolean =
+        a.id == b.id || runCatching { samePlace(a, b) }.getOrDefault(false)
+
+    override suspend fun deleteOldSuiteFile(old: SuiteFileRef): de.danerd.ghulsuite.model.OldFileDelete {
+        val where = whereIs(old)
+        fun result(o: de.danerd.ghulsuite.model.OldFileOutcome) = de.danerd.ghulsuite.model.OldFileDelete(o, where)
+        val now = suiteFile()
+        // Review H1: never the place the suite is saved to now, by identity and by content.
+        if (old.id.isEmpty() || now == null || isSamePlace(old, now) || io { sameContent(old, now) }) {
+            return result(de.danerd.ghulsuite.model.OldFileOutcome.SAME_FILE)
+        }
+        // Review H2: only a state of this suite's own line (else changes made elsewhere go).
+        // Review N-1: its bytes at the check, to compare right before it is written over or deleted.
+        val (check, hashAtCheck) = checkOldHashed(old)
+        when (check) {
+            de.danerd.ghulsuite.model.OldFileCheck.UNREACHABLE -> return result(de.danerd.ghulsuite.model.OldFileOutcome.UNREACHABLE)
+            de.danerd.ghulsuite.model.OldFileCheck.OTHER -> return result(de.danerd.ghulsuite.model.OldFileOutcome.DIFFERENT_STATE)
+            // Review N-b (fifth review): already gone: nothing is deleted (an access to the place
+            // could put a leftover back in its place first, see the Android recovery of a swap).
+            // Only its record and its grant go.
+            de.danerd.ghulsuite.model.OldFileCheck.GONE -> {
+                io {
+                    forgetWritten(old)
+                    runCatching { releaseOldPlace(old) }
+                }
+                return result(de.danerd.ghulsuite.model.OldFileOutcome.DELETED)
+            }
+            else -> {}
+        }
+        val leftovers = io { leftoversOf(old) }.filter { l -> !isSamePlace(l, now) && checkOld(l) == de.danerd.ghulsuite.model.OldFileCheck.SAME }
+        // Review M-a: after a change of the protection (or the file of the protection before)
+        // the old file is written over first.
+        val wipe = wipeOldFileAt(old) || check == de.danerd.ghulsuite.model.OldFileCheck.EARLIER_PROTECTION
+        io { beforeOldFileDelete() }
+        // Review N-1: changed since the check (another device saved there meanwhile): kept.
+        if (hashAtCheck == null || io { fileHash(old) } != hashAtCheck) {
+            return result(de.danerd.ghulsuite.model.OldFileOutcome.CHANGED)
+        }
+        val done = io { deleteSuiteDocument(old, wipe) }
+        return when (done) {
+            SuiteDocDelete.DELETED, SuiteDocDelete.GONE -> {
+                io {
+                    leftovers.forEach { runCatching { deleteSuiteDocument(it, wipe) } }
+                    if (wipe) wipedAt(old)
+                    forgetWritten(old)
+                    runCatching { releaseOldPlace(old) }
+                }
+                result(de.danerd.ghulsuite.model.OldFileOutcome.DELETED)
+            }
+            SuiteDocDelete.NOT_ALLOWED -> result(de.danerd.ghulsuite.model.OldFileOutcome.NOT_ALLOWED)
+            SuiteDocDelete.UNREACHABLE -> result(de.danerd.ghulsuite.model.OldFileOutcome.UNREACHABLE)
+            SuiteDocDelete.FAILED -> result(de.danerd.ghulsuite.model.OldFileOutcome.FAILED)
         }
     }
 
@@ -909,7 +1087,12 @@ abstract class CoreVaultBackend(private val localDir: String) : VaultBackend {
         ContainerInfoUi(i.kind, i.protection.toUi())
     }
 
+    @Volatile
+    private var locks = 0L
+    override val lockCount: Long get() = locks
+
     override fun lock() {
+        locks++
         if (single != null) {
             closeSingle()
             return
@@ -1331,3 +1514,10 @@ private const val WIPE_OLD_FILE = "wipe_old_file"
 
 /** The mark as round 5 wrote it (not bound to a place). */
 private const val LEGACY_WIPE_ANY = "1"
+
+/** The device setting with the last file this device wrote at each place (see CoreVaultBackend.writtenAt). */
+private const val WRITTEN_KEY = "suite_written"
+private const val WRITTEN_KEEP = 8
+
+/** How deleting a suite file's document went (see CoreVaultBackend.deleteSuiteDocument). */
+enum class SuiteDocDelete { DELETED, GONE, NOT_ALLOWED, UNREACHABLE, FAILED }

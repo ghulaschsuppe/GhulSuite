@@ -32,6 +32,8 @@ fun guardView(root: android.view.View) {
 
 actual fun nowSeconds(): Long = System.currentTimeMillis() / 1000
 
+actual fun monotonicMillis(): Long = android.os.SystemClock.elapsedRealtime()
+
 actual fun formatDate(millis: Long): String = DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(millis))
 actual fun formatTime(millis: Long): String = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(millis))
 

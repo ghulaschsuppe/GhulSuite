@@ -237,6 +237,14 @@ name: GhulDocs
 - hideKeyboard
 - takeScreenshot: 07-18-delete-vault
 - tapOn: "Delete"
+# Removing a vault always asks for the master password as well.
+- extendedWaitUntil:
+    visible: { id: "gate-password" }
+    timeout: 10000
+- tapOn: { id: "gate-password" }
+- inputText: "Ghul-Test-Passwort-2026!"
+- hideKeyboard
+- tapOn: { id: "gate-confirm" }
 - extendedWaitUntil:
     notVisible: "Steuer 2025"
     timeout: 15000

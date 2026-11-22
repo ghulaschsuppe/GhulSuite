@@ -181,6 +181,26 @@ suspend fun loadCalNames(t: Texts = SystemTexts): CalNames = CalNames(
  * Notification texts of a reminder: full while unlocked, on the lock screen per [detail]
  * (0 only "event in 15 min", 1 title and time, 2 title, time and place).
  */
+/** The key of the neutral "open GhulSuite" reminder near the end of the planned 30 days. */
+const val OPEN_APP_ALARM_KEY = "ghulsuite|open-app"
+
+/** How many days after planning it comes (the reminders are planned for 30 days). */
+const val OPEN_APP_AFTER_DAYS = 28
+
+/**
+ * Device test: reminders are planned for the next 30 days at each unlock. Near the end of that
+ * window a neutral reminder (no event, nothing of the suite) asks to open GhulSuite, so the
+ * reminders keep coming; every unlock plans it anew, later. Only with at least one calendar.
+ * Day [planned] + 28 at 10:00 local time; null without a calendar.
+ */
+suspend fun openAppAlarm(planned: Day, hasCalendar: Boolean, t: Texts = SystemTexts): de.danerd.ghulsuite.model.CalAlarmUi? {
+    if (!hasCalendar) return null
+    val at = planned.plus(OPEN_APP_AFTER_DAYS).toString() + "T10:00"
+    val title = t.s(Res.string.cal_open_app_title)
+    val text = t.s(Res.string.cal_open_app_text)
+    return de.danerd.ghulsuite.model.CalAlarmUi(OPEN_APP_ALARM_KEY, epochMillisOf(at), title, text, title, text, at)
+}
+
 suspend fun calAlarm(r: de.danerd.ghulsuite.model.CalReminderUi, detail: Int, names: CalNames, t: Texts = SystemTexts): de.danerd.ghulsuite.model.CalAlarmUi {
     val day = Day.parse(r.start) ?: today()
     val time = if (r.allDay) names.short(day) + " · " + t.s(Res.string.cal_all_day) else names.short(day) + ", " + hm(r.start) + " - " + hm(r.end)

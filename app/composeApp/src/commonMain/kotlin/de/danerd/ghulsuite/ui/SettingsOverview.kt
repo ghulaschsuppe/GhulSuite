@@ -38,6 +38,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.background
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -68,7 +74,6 @@ fun SetPage.title(): StringResource = when (this) {
     SetPage.VAULTS -> Res.string.set_vaults
     SetPage.FILE -> Res.string.file_title
     SetPage.IMPORT -> Res.string.set_import_export
-    SetPage.MODULES -> Res.string.set_modules
     SetPage.PASS -> Res.string.tab_pass
     SetPage.AUTH -> Res.string.tab_auth
     SetPage.DOCS -> Res.string.tab_docs
@@ -77,12 +82,27 @@ fun SetPage.title(): StringResource = when (this) {
     SetPage.ABOUT -> Res.string.set_about
 }
 
+
+/** The mark of unsaved changes on the row of the suite file (as on the header's save button). */
+const val UNSAVED_DOT_TAG = "unsaved-dot"
+
 @Composable
-private fun SetRow(icon: ImageVector, color: Color, title: String, subtitle: String, first: Boolean = false, onClick: () -> Unit) {
+private fun SetRow(icon: ImageVector, color: Color, title: String, subtitle: String, first: Boolean = false, dot: Boolean = false, onClick: () -> Unit) {
     ListRow(
         title = title,
         subtitle = subtitle,
-        leading = { IconTile(icon, color, solid = true) },
+        leading = {
+            Box {
+                IconTile(icon, color, solid = true)
+                // The same mark as on the save button in the header: there is something to save.
+                if (dot) {
+                    Box(
+                        Modifier.align(Alignment.TopEnd).offset(x = 3.dp, y = (-3).dp).size(9.dp).clip(CircleShape).background(g.warn)
+                            .testTag(UNSAVED_DOT_TAG),
+                    )
+                }
+            }
+        },
         divider = !first,
         trailing = { ChevronEnd() },
         onClick = onClick,
@@ -104,6 +124,9 @@ fun SettingsScreen(state: AppState, padding: PaddingValues) {
         slots = catching { backend.slots() }.getOrDefault(emptyList())
     }
     val open = { p: SetPage -> state.push(Screen.SettingsPage(p)) }
+    // An area not set up yet: its set-up sheet (as on first use).
+    var setUpArea by remember { mutableStateOf<VaultKindUi?>(null) }
+    setUpArea?.let { kind -> AreaSheet(state, kind) { setUpArea = null } }
     val keys = slots.count { it.type == SlotType.SECURITY_KEY }
     val files = slots.count { it.type == SlotType.KEYFILE }
 
@@ -192,26 +215,36 @@ fun SettingsScreen(state: AppState, padding: PaddingValues) {
             }
             Group(stringResource(Res.string.set_g_data)) {
                 SetRow(Icons.Filled.Save, Blue, stringResource(Res.string.file_title),
-                    stringResource(if (state.unsaved) Res.string.file_unsaved_short else Res.string.file_sub), first = true) { open(SetPage.FILE) }
+                    stringResource(if (state.unsaved) Res.string.file_unsaved_short else Res.string.file_sub), first = true,
+                    dot = state.saveNeeded && state.saveJob == null) { open(SetPage.FILE) }
                 SetRow(Icons.Filled.Layers, Teal, stringResource(Res.string.set_vaults),
                     pluralStringResource(Res.plurals.set_vaults_sub, state.vaults.size, state.vaults.size.toString())) { open(SetPage.VAULTS) }
                 SetRow(Icons.Filled.Download, Cyan, stringResource(Res.string.set_import_export), stringResource(Res.string.set_import_sub)) { open(SetPage.IMPORT) }
             }
+            // Device test: all four areas, each with its state; one not set up opens its set-up,
+            // the others their page (hide and remove are at its end).
             Group(stringResource(Res.string.set_g_areas)) {
-                SetRow(Icons.Filled.Apps, Gray, stringResource(Res.string.set_modules), stringResource(Res.string.set_modules_sub), first = true) { open(SetPage.MODULES) }
-                if (state.vaults.any { it.kind == VaultKindUi.PASS }) {
-                    SetRow(tabIcon(Tab.PASS), areaColor(Tab.PASS), stringResource(Res.string.tab_pass),
-                        stringResource(Res.string.set_pass_sub)) { open(SetPage.PASS) }
-                }
-                if (state.vaults.any { it.kind == VaultKindUi.TOTP }) {
-                    SetRow(tabIcon(Tab.AUTH), areaColor(Tab.AUTH), stringResource(Res.string.tab_auth), stringResource(Res.string.set_auth_sub)) { open(SetPage.AUTH) }
-                }
-                if (state.vaults.any { it.kind == VaultKindUi.DOCS }) {
-                    SetRow(tabIcon(Tab.DOCS), areaColor(Tab.DOCS), stringResource(Res.string.tab_docs), stringResource(Res.string.set_docs_sub)) { open(SetPage.DOCS) }
-                }
-                if (state.vaults.any { it.kind == VaultKindUi.CAL }) {
-                    SetRow(tabIcon(Tab.CAL), areaColor(Tab.CAL), stringResource(Res.string.tab_cal),
-                        stringResource(if (settings.calHolidays && state.calRegionName.isNotEmpty()) Res.string.set_cal_sub_holidays else Res.string.set_cal_sub, state.calRegionName)) { open(SetPage.CAL) }
+                val subs = mapOf(
+                    VaultKindUi.PASS to stringResource(Res.string.set_pass_sub),
+                    VaultKindUi.TOTP to stringResource(Res.string.set_auth_sub),
+                    VaultKindUi.DOCS to stringResource(Res.string.set_docs_sub),
+                    VaultKindUi.CAL to stringResource(
+                        if (settings.calHolidays && state.calRegionName.isNotEmpty()) Res.string.set_cal_sub_holidays else Res.string.set_cal_sub,
+                        state.calRegionName,
+                    ),
+                )
+                val notSetUp = stringResource(Res.string.area_tag_not_set_up)
+                val hidden = stringResource(Res.string.area_tag_hidden)
+                AREAS.forEachIndexed { i, a ->
+                    val exists = state.vaults.any { it.kind == a.kind }
+                    val sub = when {
+                        !exists -> notSetUp
+                        !moduleShown(state, a.kind) -> hidden
+                        else -> subs.getValue(a.kind)
+                    }
+                    SetRow(tabIcon(a.tab), areaColor(a.tab), stringResource(a.title), sub, first = i == 0) {
+                        if (exists) open(areaPage(a.kind)) else setUpArea = a.kind
+                    }
                 }
             }
             Group(stringResource(Res.string.set_g_general)) {

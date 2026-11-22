@@ -628,3 +628,44 @@ fn an_open_journal_without_a_suite_file_keeps_its_copies() {
     let r = b.unlock(PW.into(), None, None, None, Some(kf));
     assert!(r.is_ok(), "{r:?}");
 }
+
+/// Owner wish: the unsaved mark names the areas changed since the last save; a mark of an older
+/// version (only its time) gives "unknown".
+#[test]
+fn the_unsaved_mark_names_the_areas() {
+    use super::super::cal::CalCalendar;
+    use super::archive::save;
+    let d = Dirs::new("unsaved-areas");
+    let s = d.suite();
+    let kf = generate_keyfile();
+    s.create(options(PW, Some(kf), &[(VaultKind::Pass, "P"), (VaultKind::Cal, "Kalender")]), None, None, None).unwrap();
+    save(&s);
+    assert!(s.archive_unsaved_areas().is_empty());
+    s.save_entry(vault_id(&s, "P"), login("Bank", "ich", "x")).unwrap();
+    assert_eq!(s.archive_unsaved_areas(), vec!["pass".to_owned()]);
+    let since = s.archive_unsaved_since();
+    assert!(since > 0);
+    s.cal_save_calendar(CalCalendar {
+        id: String::new(),
+        vault_id: vault_id(&s, "Kalender"),
+        name: "Privat".into(),
+        color: 0xd6336c,
+        default_reminder: 15,
+        events: 0,
+    })
+    .unwrap();
+    assert_eq!(s.archive_unsaved_areas(), vec!["cal".to_owned(), "pass".to_owned()]);
+    assert_eq!(s.archive_unsaved_since(), since, "the time of the first change stays");
+    // A change of the suite itself (a vault removed) is "suite".
+    s.remove_vault(vault_id(&s, "Kalender")).unwrap();
+    assert_eq!(s.archive_unsaved_areas(), vec!["cal".to_owned(), "pass".to_owned(), "suite".to_owned()]);
+    save(&s);
+    assert!(s.archive_unsaved_areas().is_empty());
+    assert!(!s.archive_unsaved());
+    // A mark of an older version: the time alone.
+    std::fs::write(std::path::Path::new(&d.local()).join("archive-unsaved"), b"12345").unwrap();
+    assert_eq!(s.archive_unsaved_areas(), vec!["unknown".to_owned()]);
+    assert_eq!(s.archive_unsaved_since(), 12345);
+    s.save_entry(vault_id(&s, "P"), login("Forum", "ich", "y")).unwrap();
+    assert_eq!(s.archive_unsaved_areas(), vec!["unknown".to_owned()], "still not known");
+}

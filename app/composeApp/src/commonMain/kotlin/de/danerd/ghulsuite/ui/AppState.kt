@@ -307,7 +307,9 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
             // stay as they are, instead of being replaced by an empty list.
             val rem = catching { backend.cal.reminders(localNow(), 30) }.getOrElse { return@launch }
             val names = loadCalNames(texts)
-            backend.cal.scheduleReminders(rem.take(400).map { calAlarm(it, st.calNotifyDetail, names, texts) }, st.calSound)
+            // The neutral "open GhulSuite" one first, so it is never cut off by the limit.
+            val openApp = openAppAlarm(today(), calendars.isNotEmpty(), texts)
+            backend.cal.scheduleReminders(listOfNotNull(openApp) + rem.take(399).map { calAlarm(it, st.calNotifyDetail, names, texts) }, st.calSound)
         }
     }
 
@@ -323,6 +325,26 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
      */
     var editorDirty by mutableStateOf(false)
 
+    /**
+     * Device test: when the master password was last confirmed for weakening a setting (in memory
+     * only; a lock and a restart forget it). Within [WEAKENING_VALID_MS] the next weakening step
+     * does not ask again. [gateClock]: milliseconds of a monotonic clock (tests set it).
+     */
+    var weakeningConfirmedAt: Long? = null
+    var gateClock: () -> Long = { monotonicMillis() }
+
+    /** The lock generation of the backend at the confirmation: any lock since ends the window at once. */
+    var weakeningConfirmedLocks = -1L
+
+    fun noteWeakeningConfirmed() {
+        weakeningConfirmedAt = gateClock()
+        weakeningConfirmedLocks = backend.lockCount
+    }
+
+    fun weakeningStillConfirmed(): Boolean =
+        weakeningConfirmedLocks == backend.lockCount && backend.unlocked.value &&
+            weakeningConfirmedAt?.let { gateClock() - it in 0 until WEAKENING_VALID_MS } == true
+
     /** r11 M2: the idle lock comes within a minute and takes unsaved input with it (said once). */
     var idleWarning by mutableStateOf(false)
 
@@ -331,6 +353,27 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
 
     /** U11: opened with the recovery code: the next steps are shown once (see [RecoveredDialog]). */
     var recoveredGuide by mutableStateOf(false)
+
+    /**
+     * The suite moved to another place (written there and checked): the file at the old place,
+     * with the hint and "Delete old file" (null: nothing to say). New place: [movedTo].
+     */
+    var oldSuiteFile by mutableStateOf<de.danerd.ghulsuite.model.SuiteFileRef?>(null)
+    var movedTo by mutableStateOf<de.danerd.ghulsuite.model.SuiteFileRef?>(null)
+    /** What the old file is (checked: only a state of this suite's own line may go). */
+    var oldCheck by mutableStateOf(de.danerd.ghulsuite.model.OldFileCheck.OTHER)
+    /** A conflict was shown in this save dialog (then no "Delete old file", review H2). */
+    var saveConflictSeen = false
+
+    /** A safe place chosen in the save dialog, not saved there yet: its new folder grant, to give back. */
+    var pendingPlace: de.danerd.ghulsuite.model.SuiteFileRef? = null
+    var pendingPlaceRelease: (() -> Unit)? = null
+
+    fun releasePendingPlace() {
+        pendingPlaceRelease?.invoke()
+        pendingPlaceRelease = null
+        pendingPlace = null
+    }
 
     /** r9 N-D2: a suite file from another app, opened: "save here from now on?" (null: nothing asked). */
     var saveTargetOffer by mutableStateOf<de.danerd.ghulsuite.model.SuiteFileRef?>(null)
@@ -518,6 +561,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
 
     /** The working copy has changes that are not in the suite file yet (see [readUnsaved]). */
     var unsaved by mutableStateOf(false)
+    /** Which areas have them (see VaultBackend.archiveUnsavedAreas; empty: not known or none). */
+    var unsavedAreas by mutableStateOf<List<String>>(emptyList())
     /** When the first of them was made (ms since 1970; 0: none). */
     var unsavedSince by mutableStateOf(0L)
 
@@ -555,6 +600,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
     /** Reads anew what is unsaved and since when (also while locked). */
     fun readUnsaved() {
         unsaved = backend.archiveUnsaved()
+        unsavedAreas = if (unsaved) backend.archiveUnsavedAreas() else emptyList()
         unsavedSince = if (unsaved) backend.archiveUnsavedSince() else 0L
         if (!unsaved) savePrompt = false
     }
@@ -617,6 +663,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     readUnsaved()
                     recoveredGuide = false
                     recoveredOpen = false
+                    // A master password confirmed for weakening a setting does not outlive a lock.
+                    weakeningConfirmedAt = null
                     // Sheets of the screens before do not come back after unlocking (maybe in another suite).
                     calQuickOpen = false
                     contextSheet = false
@@ -627,6 +675,11 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
                     deleteAsk = null
                     // r10 N2: a question about another file's place does not wait across a lock.
                     saveTargetOffer = null
+                    oldSuiteFile = null
+                    // Review N2: a conflict shown before does not count after the lock; a safe
+                    // place chosen but not saved to gives its grant back.
+                    saveConflictSeen = false
+                    if (saveJob == null) releasePendingPlace()
                     dropPending()
                     // A scan in progress: its photos and pages are overwritten now, not saved.
                     scanSession?.wipe()
@@ -685,7 +738,15 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         JobStatus.userJobProgressing = { jobs.progressing() }
         JobStatus.keepUnlocked = { keepUnlocked() }
         // Going to the background carries out what waits for "Undo": the auto lock may come next.
-        scope.launch { AppLaunch.inFront.collect { if (!it) catching { settlePending() } } }
+        scope.launch {
+            AppLaunch.inFront.collect {
+                if (!it) {
+                    // Review M1: away (the screen off, another app): the password window ends.
+                    weakeningConfirmedAt = null
+                    catching { settlePending() }
+                }
+            }
+        }
         // Area settings go into the area's file (they travel with the suite file).
         backend.settings.onAreaChange = { kind, key, value ->
             if (backend.unlocked.value && single == null && vaults.any { it.kind == kind }) {
@@ -759,7 +820,8 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
         launchWaiting = false
         AppLaunch.openEvent.value?.let { ev ->
             AppLaunch.openEvent.value = null
-            if (Tab.CAL in tabs) {
+            // The neutral "open GhulSuite" reminder has no event: it only opens the app.
+            if (ev != OPEN_APP_ALARM_KEY && Tab.CAL in tabs) {
                 stack.clear()
                 tab = Tab.CAL
                 stack.add(Screen.CalEvent(ev.substringBefore('|'), ev.substringAfter('|', "")))
@@ -1060,6 +1122,7 @@ class AppState(val backend: VaultBackend, val scope: CoroutineScope) {
      * running job stops at once (its message follows after the next unlock).
      */
     fun lockNow() {
+        weakeningConfirmedAt = null
         jobs.lockWhenDone = false
         jobs.firmLock = false
         jobs.cancelAll(byLock = true)

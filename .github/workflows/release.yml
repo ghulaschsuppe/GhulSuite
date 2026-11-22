@@ -201,10 +201,17 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ env.SHA }}
+      # The Gradle cache of the branch (see the build job in android.yml): fewer downloads from
+      # Maven Central; every artifact is still checked against verification-metadata.xml.
       - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
+          cache-dependency-path: |
+            app/**/*.gradle.kts
+            app/gradle/libs.versions.toml
+            app/gradle/wrapper/gradle-wrapper.properties
       - name: Rust-Toolchain und NDK
         run: |
           rustup toolchain install  # the version of rust-toolchain.toml
@@ -253,10 +260,17 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ env.SHA }}
+      # The Gradle cache of the branch (see the build job in android.yml): fewer downloads from
+      # Maven Central; every artifact is still checked against verification-metadata.xml.
       - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
+          cache-dependency-path: |
+            app/**/*.gradle.kts
+            app/gradle/libs.versions.toml
+            app/gradle/wrapper/gradle-wrapper.properties
       - name: Gradle-Wrapper prüfen (Prüfsumme von services.gradle.org)
         shell: bash
         run: echo "$GRADLE_WRAPPER_SHA256  app/gradle/wrapper/gradle-wrapper.jar" | sha256sum -c -

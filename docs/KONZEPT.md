@@ -500,7 +500,10 @@ Mit typischen 100 bis 300 MB ist es ein Bruchteil davon.
    App freigegeben ist (`<Name>.neu` daneben schreiben, prüfen, dann tauschen). Ohne Freigabe (und bei Orten, die
    kein Austauschen erlauben, etwa Cloud-Apps) gibt Android nur das gewählte Dokument frei: Dort wird direkt
    hineingeschrieben und danach zurückgelesen; ein Abbruch kann eine halbe Datei hinterlassen. Darum bietet der
-   Speicherdialog in diesem Fall zuerst „Ordner freigeben“ an; „Speichern“ fragt dann mit einem Risikotext und bietet
+   Speicherdialog in diesem Fall zuerst „Sicheren Speicherort wählen“ an: Der Nutzer wählt oder legt einen eigenen
+   Ordner an (nicht „Download“ und nicht die oberste Ebene, die Android für keine App freigibt), die App behält das
+   Recht darauf und legt die Suite-Datei dort neu an; sie wird der Speicherort, die alte Datei bleibt liegen und wird
+   mit „Alte Datei löschen“ angeboten. „Speichern“ am unsicheren Ort fragt mit einem Risikotext und bietet
    „Als neue Datei speichern“ oder „Trotzdem überschreiben“. Einen Cloud-Ordner empfiehlt die App nicht (Cloud-Apps
    behalten ältere Fassungen, auch nach dem Löschen). In jedem Fall gilt die Arbeitskopie erst als gespeichert, wenn
    die geschriebene Datei zurückgelesen und geprüft ist; bis dahin hält sie den ganzen Stand.

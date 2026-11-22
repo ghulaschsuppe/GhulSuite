@@ -23,6 +23,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -105,6 +106,22 @@ fun RemoveAreaDialog(state: AppState, kind: VaultKindUi, onDone: () -> Unit, onD
     // U4: how much goes, a way to save it first, and the name typed out instead of one tap.
     val entries = state.vaultsOf(kind).sumOf { it.entries }
     var typed by remember { mutableStateOf("") }
+    // Device test: after the name, the master password (it deletes for good, on every device).
+    var gate by remember { mutableStateOf(false) }
+    if (gate) {
+        PasswordGateDialog(
+            state, stringResource(Res.string.area_remove_title, name), stringResource(Res.string.area_remove_warning, areaInfo(kind).ext),
+            confirmLabel = stringResource(Res.string.area_remove), onDismiss = onDismiss,
+        ) {
+            state.run(block = { state.backend.removeArea(kind) }) {
+                showModule(state, kind, false)
+                state.message(removed)
+                state.changed()
+                onDone()
+            }
+        }
+        return
+    }
     AlertDialog(
         danger = true,
         onDismissRequest = onDismiss,
@@ -122,49 +139,17 @@ fun RemoveAreaDialog(state: AppState, kind: VaultKindUi, onDone: () -> Unit, onD
             }
         },
         confirmButton = {
-            TextButton(enabled = nameMatches(typed, name), onClick = {
-                state.run(block = { state.backend.removeArea(kind) }) {
-                    showModule(state, kind, false)
-                    state.message(removed)
-                    state.changed()
-                    onDone()
-                }
-            }) { Text(stringResource(Res.string.area_remove)) }
+            TextButton(enabled = nameMatches(typed, name), onClick = { gate = true }, modifier = Modifier.testTag("area-remove-confirm")) {
+                Text(stringResource(Res.string.area_remove))
+            }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(Res.string.a_cancel)) } },
     )
 }
 
-/** Options → Areas: every area with its state; set up, hide, remove. */
-@Composable
-fun AreasPage(state: AppState) {
-    var sheet by remember { mutableStateOf<VaultKindUi?>(null) }
-    ListCard {
-        AREAS.forEachIndexed { i, a ->
-            val exists = state.vaults.any { it.kind == a.kind }
-            val shown = moduleShown(state, a.kind)
-            val names = state.vaults.filter { it.kind == a.kind }.joinToString(", ") { it.name + a.ext }
-            ListRow(
-                stringResource(a.title), if (exists) names else stringResource(a.sub),
-                leading = { IconTile(tabIcon(a.tab), areaColor(a.tab)) },
-                trailing = {
-                    when {
-                        !exists -> Tag(stringResource(Res.string.area_tag_not_set_up))
-                        !shown -> Tag(stringResource(Res.string.area_tag_hidden), warnColor())
-                        else -> Tag(stringResource(Res.string.area_tag_active), okColor(), Icons.Filled.CheckCircle)
-                    }
-                },
-                divider = i > 0,
-            ) { sheet = a.kind }
-        }
-    }
-    HintText(stringResource(Res.string.areas_hint))
-    sheet?.let { kind -> AreaSheet(state, kind) { sheet = null } }
-}
-
 /** One area: set it up (no file yet) or open, hide, remove it. */
 @Composable
-private fun AreaSheet(state: AppState, kind: VaultKindUi, onDismiss: () -> Unit) {
+internal fun AreaSheet(state: AppState, kind: VaultKindUi, onDismiss: () -> Unit) {
     val a = areaInfo(kind)
     val exists = state.vaults.any { it.kind == kind }
     val title = stringResource(a.title)

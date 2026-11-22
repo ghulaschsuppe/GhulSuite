@@ -35,6 +35,8 @@ import androidx.compose.ui.test.runDesktopComposeUiTest
 import androidx.compose.ui.unit.Density
 import de.danerd.ghulsuite.ui.DevChecks
 import de.danerd.ghulsuite.ui.AppState
+import de.danerd.ghulsuite.ui.startSaveJob
+import de.danerd.ghulsuite.ui.closeSaveDialog
 import de.danerd.ghulsuite.ui.MANY_TO_DELETE
 import de.danerd.ghulsuite.ui.CalView
 import de.danerd.ghulsuite.ui.GhulSuiteApp
@@ -318,6 +320,14 @@ class InteractionTest {
         waitFor("Delete “Privat”?")
         shot("vault-delete")
         assertFalse(fake.calls.any { it.startsWith("removeVault") }, "a vault is only deleted after confirming")
+        // Device test: after the name, the master password (always asked, like deleting for good).
+        onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog()), useUnmergedTree = true).onFirst().performTextInput("Privat")
+        onAllNodesWithTag("vault-remove-confirm").onFirst().performClick()
+        waitUntil(timeoutMillis = 5_000) { tagged("gate-password") }
+        assertFalse(fake.calls.any { it.startsWith("removeVault") }, "not before the password")
+        gateField().performTextInput(fake.masterPassword)
+        onAllNodesWithTag("gate-confirm").onFirst().performClick()
+        waitUntil(timeoutMillis = 5_000) { fake.calls.any { it.startsWith("removeVault") } }
     }
 
     /**
@@ -388,11 +398,27 @@ class InteractionTest {
     }
 
     @Test
-    fun areaRemoveAsks() = app(setup = { push(Screen.SettingsPage(SetPage.CAL)) }) { _, _ ->
+    fun areaRemoveAsks() = app(setup = { push(Screen.SettingsPage(SetPage.CAL)) }) { _, fake ->
         waitFor("Remove area")
         text("Remove area").performScrollTo().performClick()
         waitFor("Remove GhulCal?")
         shot("area-remove")
+        // Device test: after the name, the master password (it deletes for good, on every device).
+        onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog()), useUnmergedTree = true).onFirst().performTextInput("GhulCal")
+        onAllNodesWithTag("area-remove-confirm").onFirst().performClick()
+        waitUntil(timeoutMillis = 5_000) { tagged("gate-password") }
+        assertFalse(fake.calls.any { it.startsWith("removeArea") }, "not before the password")
+        gateField().performTextInput(fake.masterPassword)
+        onAllNodesWithTag("gate-confirm").onFirst().performClick()
+        waitUntil(timeoutMillis = 5_000) { fake.calls.any { it.startsWith("removeArea") } }
+    }
+
+    /** Device test: Options lists all four areas; one not set up says so and opens its set-up. */
+    @Test
+    fun allFourAreasAreListedInTheOptions() = app(setup = { tab = Tab.SETTINGS }) { _, _ ->
+        waitFor("GhulCal")
+        for (area in listOf("GhulPass", "GhulAuth", "GhulDocs", "GhulCal")) assertTrue(shown(area), area)
+        assertFalse(part("Manage areas"))
     }
 
     /** A count before a noun reads "1 entry" for one and "2 entries" otherwise (plural texts). */
@@ -673,7 +699,7 @@ class InteractionTest {
      * wrong one changes nothing, making it stronger asks nothing.
      */
     @Test
-    fun weakeningTheLockAsksForThePassword() = app(setup = { push(Screen.SettingsPage(SetPage.LOCK)) }) { _, fake ->
+    fun weakeningTheLockAsksForThePassword() = app(setup = { push(Screen.SettingsPage(SetPage.LOCK)) }) { state, fake ->
         waitFor("Lock when the screen turns off")
         assertTrue(fake.settings.lockOnScreenOff)
         text("Lock when the screen turns off").performClick()
@@ -692,8 +718,13 @@ class InteractionTest {
         text("Lock when the screen turns off").performClick()
         waitUntil(timeoutMillis = 5_000) { fake.settings.lockOnScreenOff }
         assertFalse(shown("Weaken the protection?"))
-        // The instant lock keeping the reminders again: asked as well.
+        // Device test: a second weakening within two minutes does not ask again.
         runOnIdle { fake.settings.panicClearReminders = true }
+        text("Instant lock also deletes the event reminders").performScrollTo().performClick()
+        waitUntil(timeoutMillis = 5_000) { !fake.settings.panicClearReminders }
+        assertFalse(shown("Weaken the protection?"))
+        // Two minutes later (or after a lock) it asks again.
+        runOnIdle { fake.settings.panicClearReminders = true; state.weakeningConfirmedAt = state.gateClock() - de.danerd.ghulsuite.ui.WEAKENING_VALID_MS }
         text("Instant lock also deletes the event reminders").performScrollTo().performClick()
         waitFor("Weaken the protection?")
         assertTrue(fake.settings.panicClearReminders)
@@ -897,7 +928,8 @@ class InteractionTest {
             val before = cal.scheduled.size
             runOnIdle { fake.settings.calNotifyDetail = detail; state.refreshCalendar() }
             waitUntil(timeoutMillis = 5_000) { cal.scheduled.size > before }
-            return cal.scheduled.last().single()
+            // The neutral "open GhulSuite" reminder is planned beside it (no event in it).
+            return cal.scheduled.last().single { it.key != de.danerd.ghulsuite.ui.OPEN_APP_ALARM_KEY }
         }
         val notice = scheduleWith(0)
         for (t in listOf(notice.title, notice.text, notice.publicTitle, notice.publicText)) {
@@ -1511,6 +1543,80 @@ class InteractionTest {
         assertFalse(tagged("save-overwrite"), "a newer protection is never overwritten")
         shot("save-conflict-protection")
         assertTrue(fake.calls.none { it.startsWith("archiveSave") })
+    }
+
+    /**
+     * Device test: a suite file in "Download" (or at the top of a storage) cannot be made safe by
+     * sharing a folder: the dialog says so and does not offer "Share folder".
+     */
+    @Test
+    fun aFileInDownloadIsNotOfferedAFolderToShare() = app(setup = { tab = Tab.DOCS; unsaved = true }, prepare = {
+        unsavedChanges = true; suiteRef = stick; target = de.danerd.ghulsuite.model.ArchiveTargetUi.SAME
+        safe = de.danerd.ghulsuite.model.SafeSaveUi.NOT_SHAREABLE
+    }) { state, _ ->
+        waitUntil(timeoutMillis = 10_000) { tagged(SAVE_BUTTON_TAG) }
+        runOnIdle { state.askSave() }
+        waitFor("Android does not share these places", substring = true)
+        assertFalse(part("Share folder"))
+        // Saving there is still possible, after the question (written over directly).
+        assertTrue(tagged(SAVE_CONFIRM_TAG))
+        shot("save-not-shareable")
+    }
+
+    /** Device test: the save dialog names the areas with changes (as the core lists them). */
+    @Test
+    fun theSaveDialogNamesTheUnsavedAreas() = app(setup = { tab = Tab.DOCS; unsaved = true }, prepare = {
+        unsavedChanges = true; suiteRef = stick; target = de.danerd.ghulsuite.model.ArchiveTargetUi.SAME
+        areas = listOf("cal", "pass", "suite")
+    }) { state, fake ->
+        waitUntil(timeoutMillis = 10_000) { tagged(SAVE_BUTTON_TAG) }
+        runOnIdle { state.readUnsaved(); state.askSave() }
+        waitFor("Not saved: GhulPass, GhulCal, Suite (protection, vaults, settings)")
+        runOnIdle { state.closeSaveDialog(); fake.areas = listOf("unknown"); state.readUnsaved(); state.askSave() }
+        waitFor("Not saved: areas unknown")
+    }
+
+    /** Device test: the row of the suite file in the options carries the same mark as the save button. */
+    @Test
+    fun theSuiteFileRowShowsUnsavedChanges() = app(setup = { tab = Tab.SETTINGS; unsaved = true }, prepare = {
+        unsavedChanges = true; suiteRef = stick
+    }) { state, _ ->
+        waitUntil(timeoutMillis = 10_000) { state.saveNeeded }
+        waitUntil(timeoutMillis = 10_000) { tagged(de.danerd.ghulsuite.ui.UNSAVED_DOT_TAG) }
+    }
+
+    /** "Save as" at another place makes that file the suite file and says where the old one is. */
+    @Test
+    fun saveAsElsewhereMovesThePlaceAndNamesTheOldFile() = app(setup = { tab = Tab.DOCS; unsaved = true }, prepare = {
+        unsavedChanges = true; suiteRef = stick; target = de.danerd.ghulsuite.model.ArchiveTargetUi.NEW
+    }) { state, fake ->
+        waitForIdle()
+        val other = de.danerd.ghulsuite.model.SuiteFileRef("/anders/Neu.ghlzip", "Neu.ghlzip")
+        runOnIdle { state.startSaveJob(other, created = true) }
+        waitUntil(timeoutMillis = 10_000) { fake.suiteRef == other }
+        waitFor("From now on Neu.ghlzip is the suite file", substring = true)
+        assertTrue(part("GhulSuite.ghlzip is still at its old place"))
+        // "Delete old file" asks once more, naming it; only then the backend deletes.
+        onAllNodesWithTag(de.danerd.ghulsuite.ui.DELETE_OLD_FILE_TAG).onFirst().performClick()
+        waitFor("Really delete GhulSuite.ghlzip?", substring = true)
+        assertTrue(fake.oldDeleted.isEmpty())
+        onAllNodesWithTag(de.danerd.ghulsuite.ui.DELETE_OLD_FILE_TAG).onFirst().performClick()
+        // Review N-b: then the master password (it deletes for good).
+        waitUntil(timeoutMillis = 5_000) { tagged("gate-password") }
+        assertTrue(fake.oldDeleted.isEmpty(), "not before the password")
+        gateField().performTextInput(fake.masterPassword)
+        onAllNodesWithTag("gate-confirm").onFirst().performClick()
+        waitUntil(timeoutMillis = 5_000) { fake.oldDeleted == listOf(stick) }
+        waitFor("GhulSuite.ghlzip is deleted.")
+    }
+
+    /** Review M2: the neutral "open GhulSuite" reminder opens the app, no (deleted) event. */
+    @Test
+    fun theOpenAppReminderOpensNoEvent() = app { state, _ ->
+        waitForIdle()
+        runOnIdle { de.danerd.ghulsuite.ui.AppLaunch.openEvent.value = de.danerd.ghulsuite.ui.OPEN_APP_ALARM_KEY }
+        waitUntil(timeoutMillis = 5_000) { de.danerd.ghulsuite.ui.AppLaunch.openEvent.value == null }
+        assertTrue(state.stack.none { it is Screen.CalEvent })
     }
 
     /** Saved elsewhere meanwhile: who and when, "save mine as a new file" first, overwriting only when asked. */

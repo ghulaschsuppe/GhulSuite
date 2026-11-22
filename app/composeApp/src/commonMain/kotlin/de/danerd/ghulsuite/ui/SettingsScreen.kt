@@ -114,7 +114,7 @@ fun <T> ChoiceRow(label: String, options: List<Pair<T, StringResource>>, selecte
 }
 
 /** Pages of the settings, opened from the overview. */
-enum class SetPage { UNLOCK, LOCK, PRIVACY, FACTORS, VAULTS, FILE, IMPORT, MODULES, PASS, AUTH, DOCS, CAL, LOOK, ABOUT }
+enum class SetPage { UNLOCK, LOCK, PRIVACY, FACTORS, VAULTS, FILE, IMPORT, PASS, AUTH, DOCS, CAL, LOOK, ABOUT }
 
 @Composable
 fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
@@ -290,7 +290,6 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                 SetPage.VAULTS -> if (state.single == null) VaultsSection(state) else SingleVaultSection(state)
                 SetPage.FILE -> if (state.single != null) SingleVaultSection(state) else SuiteFileSection(state)
                 SetPage.IMPORT -> ImportExportSection(state)
-                SetPage.MODULES -> AreasPage(state)
                 SetPage.PASS -> {
             SectionCard(areaGroupTitle(VaultKindUi.PASS)) {
                 ChoiceRow(stringResource(Res.string.set_gen_default), listOf(0 to Res.string.gen_chars, 1 to Res.string.gen_passphrase), settings.generatorMode) { settings.generatorMode = it }
@@ -340,9 +339,6 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
                 // F90: name the areas, not the internal tab codes.
                 val order = state.tabs.dropLast(1).map { stringResource(tabTitle(it)) }
                 Hint(stringResource(Res.string.set_start_hint, order.joinToString(", ")))
-                OutlinedButton(onClick = { state.push(Screen.SettingsPage(SetPage.MODULES)) }, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(Res.string.set_areas_in_bar))
-                }
                 ChoiceRow(
                     stringResource(Res.string.set_language),
                     listOf("" to Res.string.set_language_system, "de" to Res.string.set_language_de, "en" to Res.string.set_language_en),
@@ -370,13 +366,13 @@ fun SettingsPageScreen(state: AppState, page: SetPage, padding: PaddingValues) {
         PasswordGateDialog(
             state, stringResource(Res.string.set_screenshots), stringResource(Res.string.set_screenshots_warning),
             confirmLabel = stringResource(Res.string.a_allow),
-            onDismiss = { screenshotWarning = false },
+            onDismiss = { screenshotWarning = false }, weakening = true,
         ) { settings.allowScreenshots = true; screenshotWarning = false }
     }
     weaken?.let { (text, apply) ->
         PasswordGateDialog(
             state, stringResource(Res.string.gate_weaken_title), text, confirmLabel = stringResource(Res.string.a_apply),
-            onDismiss = { weaken = null },
+            onDismiss = { weaken = null }, weakening = true,
         ) { apply(); weaken = null }
     }
     if (newCode) NewCodeDialog(state) { newCode = false }

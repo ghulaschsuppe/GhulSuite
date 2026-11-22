@@ -87,3 +87,53 @@ class PinKeyLevelTest {
         assertFalse(looksLikeEmulator("google/husky/husky:14/AP1A/1:user/release-keys", "husky", "", "0"))
     }
 }
+
+/** Device test: which folders Android lets the user share with the app. */
+class StorageFoldersTest {
+    @Test
+    fun downloadAndTheTopOfAStorageCannotBeShared() {
+        assertFalse(folderShareable("primary:Download/GhulSuite.ghlzip"))
+        assertFalse(folderShareable("primary:download/GhulSuite.ghlzip"))
+        assertFalse(folderShareable("primary:GhulSuite.ghlzip"))
+        assertFalse(folderShareable("1234-ABCD:GhulSuite.ghlzip"))
+        assertTrue(folderShareable("primary:Download/GhulSuite/GhulSuite.ghlzip"))
+        assertTrue(folderShareable("1234-ABCD:GhulSuite/GhulSuite.ghlzip"))
+        assertTrue(folderShareable("primary:Documents/GhulSuite.ghlzip"))
+    }
+
+    /** The safe place: a chosen folder is refused when it is the top of a volume or Download itself. */
+    @Test
+    fun aChosenSafePlaceIsNotTheTopOrDownload() {
+        assertFalse(treeFolderAccepted("primary:"))
+        assertFalse(treeFolderAccepted("1234-ABCD:"))
+        assertFalse(treeFolderAccepted("primary:Download"))
+        assertFalse(treeFolderAccepted("primary:download/"))
+        assertTrue(treeFolderAccepted("primary:GhulSuite"))
+        assertTrue(treeFolderAccepted("primary:Download/GhulSuite"))
+        assertTrue(treeFolderAccepted("1234-ABCD:Backup/GhulSuite"))
+    }
+}
+
+/** Device test: near the end of the 30 planned days a neutral reminder asks to open GhulSuite. */
+class OpenAppReminderTest {
+    private val keys = object : de.danerd.ghulsuite.ui.Texts {
+        override suspend fun s(res: org.jetbrains.compose.resources.StringResource, vararg args: Any) = res.key
+        override suspend fun p(res: org.jetbrains.compose.resources.PluralStringResource, count: Int, vararg args: Any) = res.key
+    }
+
+    @Test
+    fun itComesOnDay28AtTenWithoutAnyEvent() = kotlinx.coroutines.runBlocking {
+        val day = de.danerd.ghulsuite.ui.Day(2026, 11, 22)
+        assertEquals(null, de.danerd.ghulsuite.ui.openAppAlarm(day, hasCalendar = false, t = keys), "no calendar: no reminder")
+        val a = de.danerd.ghulsuite.ui.openAppAlarm(day, hasCalendar = true, t = keys)!!
+        assertEquals("2026-12-20T10:00", a.atLocal)
+        assertEquals(de.danerd.ghulsuite.ui.OPEN_APP_ALARM_KEY, a.key)
+        // Nothing of an event, also not on the lock screen.
+        assertEquals("cal_open_app_text", a.text)
+        assertEquals(a.text, a.publicText)
+        assertEquals(a.title, a.publicTitle)
+        // Planned again at the next unlock: later.
+        val later = de.danerd.ghulsuite.ui.openAppAlarm(day.plus(5), hasCalendar = true, t = keys)!!
+        assertTrue(later.atMillis > a.atMillis)
+    }
+}
